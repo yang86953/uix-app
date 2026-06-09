@@ -10,21 +10,21 @@ mod tests {
         rt
     }
 
-    /// 提取像素的 RGBA 分量 (非预乘) — pixel buffer 为 ABGR 格式
+    /// 提取像素的 RGBA 分量 (非预乘) — BGRA 格式
     fn unpack(p: u32) -> (u8, u8, u8, u8) {
-        let r = (p & 0xFF) as u8;
+        let b = (p & 0xFF) as u8;
         let g = ((p >> 8) & 0xFF) as u8;
-        let b = ((p >> 16) & 0xFF) as u8;
+        let r = ((p >> 16) & 0xFF) as u8;
         let a = ((p >> 24) & 0xFF) as u8;
         (r, g, b, a)
     }
 
-    /// 提取像素的预乘分量 — pixel buffer 为 ABGR 格式
+    /// 提取像素的预乘分量 — BGRA 格式
     fn unpack_premul(p: u32) -> (u32, u32, u32, u32) {
         let a = (p >> 24) & 0xFF;
-        let r = p & 0xFF;
+        let r = (p >> 16) & 0xFF;
         let g = (p >> 8) & 0xFF;
-        let b = (p >> 16) & 0xFF;
+        let b = p & 0xFF;
         (r, g, b, a)
     }
 
@@ -391,10 +391,10 @@ mod tests {
                 if a == 0 || a == 255 {
                     continue; // 全透明或全不透明跳过
                 }
-                // 反预乘 — ABGR 格式: [7:0]=R, [15:8]=G, [23:16]=B
-                let pr = p & 0xFF;
+                // 反预乘 — BGRA 格式: [7:0]=B, [15:8]=G, [23:16]=R
+                let pb = p & 0xFF;
                 let pg = (p >> 8) & 0xFF;
-                let pb = (p >> 16) & 0xFF;
+                let pr = (p >> 16) & 0xFF;
                 let r = (pr * 255 / a).min(255);
                 let g = (pg * 255 / a).min(255);
                 let b = (pb * 255 / a).min(255);
