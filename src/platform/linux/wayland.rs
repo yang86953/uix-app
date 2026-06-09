@@ -41,8 +41,9 @@ struct ShmBuffer {
 }
 
 impl ShmBuffer {
-    /// Write BGRA pixel data to the shared memory buffer.
-    /// `pixels` is &[u32] in ARGB8888 format (0xAARRGGBB, BGRA byte order on LE).
+    /// Write pixel data to the shared memory buffer.
+    /// Internal pixel format is ABGR8888 (0xAABBGGRR, byte order R,G,B,A on LE),
+    /// which matches wl_shm::Format::Abgr8888 directly.
     /// Returns the number of bytes written.
     fn write_pixels(&mut self, pixels: &[u32]) -> std::io::Result<usize> {
         use std::io::{Seek, Write};
@@ -388,7 +389,7 @@ impl WaylandBackend {
 
         let raw_fd = file.as_raw_fd();
         let pool = shm.create_pool(raw_fd, size as i32);
-        let buffer = pool.create_buffer(0, width, height, stride, wl_shm::Format::Argb8888);
+        let buffer = pool.create_buffer(0, width, height, stride, wl_shm::Format::Abgr8888);
 
         // Clean up temp file (the fd stays open via `file`)
         let _ = std::fs::remove_file(&tmp_path);

@@ -287,7 +287,8 @@ impl RenderTarget {
         let r = (c.r as u32 * a / 255).min(255);
         let g = (c.g as u32 * a / 255).min(255);
         let b = (c.b as u32 * a / 255).min(255);
-        (a << 24) | (r << 16) | (g << 8) | b
+        // ABGR format: (A<<24) | (B<<16) | (G<<8) | R
+        (a << 24) | (b << 16) | (g << 8) | r
     }
 
     pub fn apply_opacity(&self, c: u32) -> u32 {

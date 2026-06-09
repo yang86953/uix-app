@@ -80,13 +80,16 @@ impl SoftwareEngine {
             ]
         } else {
             // Linux — proportional UI fonts (fallback chain)
+            // LXGWWenKai (霞鹜文楷) is placed first as a comprehensive CJK+Latin
+            // font that supports Chinese characters correctly. LiberationSans and
+            // other Latin-only fonts render CJK as .notdef boxes, causing garbled text.
             &[
+                "/home/yang86/.local/share/fonts/l/LXGWWenKai_Regular.ttf",
+                "/home/yang86/.local/share/fonts/l/LXGWBrightCodeGB_Regular.ttf",
                 "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
                 "/usr/share/fonts/adwaita-sans-fonts/AdwaitaSans-Regular.ttf",
-                "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
                 "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
                 "/usr/share/fonts/abattis-cantarell-fonts/Cantarell-Regular.otf",
-                "/home/yang86/.local/share/fonts/l/LXGWWenKai_Regular.ttf",
             ]
         };
 
