@@ -281,17 +281,16 @@ impl GraphicsEngine for SoftwareEngine {
 
     fn draw_text(
         &mut self,
-        font: &FontHandle,
+        _font: &FontHandle,
         text: &str,
         pos: Point,
         color: Color,
-        opts: &TextLayoutOptions,
+        _opts: &TextLayoutOptions,
     ) {
-        if let Some(data) = self.assets.find_font(font) {
-            self.rt.draw_ttf(data, text, pos, color, opts);
-        } else {
-            self.rt.draw_bitmap_text(text, pos, color);
-        }
+        // 位图字体为默认——字形正确，渲染稳定。
+        // TTF 渲染（fontdue）在部分字体上存在字形偏移问题，
+        // 作为实验功能保留，暂不默认启用。
+        self.rt.draw_bitmap_text(text, pos, color);
     }
 
     fn load_image(&mut self, data: &[u8]) -> Result<&mut ImageHandle, Error> {
