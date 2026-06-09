@@ -40,9 +40,11 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        // Vertically center text within the frame
+        let text_y = frame.y + (frame.h - self.font_size) * 0.5;
         ctx.draw_text(
             &self.text,
-            Point::new(frame.x + 2.0, frame.y + 2.0),
+            Point::new(frame.x + 2.0, text_y.max(frame.y)),
             self.color,
             self.font_size,
         );
