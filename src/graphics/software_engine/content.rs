@@ -232,15 +232,11 @@ impl RenderTarget {
             VAlign::Bottom => -total_h,
             VAlign::Baseline => 0.0,
         };
-        // Use font ascent as the baseline reference (consistent across all text).
-        // This ensures all glyphs share the same baseline, with character
-        // tops naturally varying by their individual ymin values.
         let ascent = font
             .font
             .horizontal_line_metrics(fs)
             .map(|m| m.ascent)
             .unwrap_or(fs * 0.8);
-        let baseline_y = pos.y + ascent + vy_offset;
 
         // Pre-rasterize for consistent baseline across all glyphs
         struct GlyphCache {
@@ -259,6 +255,22 @@ impl RenderTarget {
                 line: gp.line,
             });
         }
+
+        // Compute baseline based on VAlign.
+        // For VAlign::Top, pos.y is the visual top of the first line.
+        // We find the highest glyph top (minimum ymin) and set baseline so
+        // that the tallest glyph's top exactly matches pos.y.
+        let baseline_y = if matches!(opts.v_align, VAlign::Top | VAlign::Baseline) {
+            if opts.v_align == VAlign::Baseline {
+                pos.y
+            } else {
+                let min_ymin = cache.iter().map(|g| g.metrics.ymin).min().unwrap_or(0);
+                // baseline_y + min_ymin = pos.y → baseline_y = pos.y - min_ymin
+                pos.y - min_ymin as f32
+            }
+        } else {
+            pos.y + ascent + vy_offset
+        };
 
         for (i, gp) in cache.iter().enumerate() {
             let gx = (pos.x + gp.x + gp.metrics.xmin as f32) as i32;

@@ -1,6 +1,6 @@
 //! Label widget — displays text.
 
-use crate::graphics::{Color, GraphicsEngine, Point, Rect, Size};
+use crate::graphics::{Color, FontHandle, GraphicsEngine, Point, Rect, Size, TextLayoutOptions};
 use crate::ui::render_context::RenderContext;
 use crate::define_widget;
 use crate::ui::widget::WidgetTree;
@@ -14,10 +14,26 @@ define_widget! {
         pub fixed_height: Option<f32>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
+    preferred_size => (&self, engine: Option<&dyn GraphicsEngine>) -> Size {
         if let (Some(w), Some(h)) = (self.fixed_width, self.fixed_height) {
             Size::new(w, h)
         } else {
+            // 使用 TTF 度量计算实际尺寸，回退到位图字体
+            if let Some(eng) = engine {
+                let opts = TextLayoutOptions {
+                    max_width: f32::MAX,
+                    line_height: self.font_size + 2.0,
+                    word_wrap: false,
+                    h_align: crate::graphics::HAlign::Left,
+                    v_align: crate::graphics::VAlign::Top,
+                    font_size: self.font_size,
+                };
+                let sz = eng.measure_text(&FontHandle::default(), &self.text, &opts);
+                if sz.w > 0.0 && sz.h > 0.0 {
+                    return Size::new(sz.w + 4.0, sz.h.max(self.font_size + 4.0));
+                }
+            }
+            // Fallback: bitmap font estimate
             let len = self.text.len() as f32;
             Size::new(len * 6.0 + 4.0, self.font_size + 4.0)
         }
