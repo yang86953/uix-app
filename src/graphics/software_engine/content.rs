@@ -248,33 +248,34 @@ impl RenderTarget {
             });
         }
 
-        // Compute baseline. fontdue coverage layout: row 0 = glyph bottom,
-        // row height-1 = glyph top. Screen Y goes downward, so
-        // screen_y = baseline + ymin - row (bottom→upward).
+        // Compute baseline.
+        // fontdue coverage layout is row-major with row 0 at the top of the
+        // glyph bitmap and row height-1 at the bottom. We render from
+        // the glyph top (smaller Y in screen coords) downward.
         let baseline_y = if opts.v_align == VAlign::Baseline {
             pos.y
         } else if opts.v_align == VAlign::Top {
-            // VAlign::Top: tallest glyph top = pos.y.
-            // Find the glyph with highest top (ymin - height + 1 is most negative)
-            let max_top = cache.iter()
+            // VAlign::Top: tallest glyph's visual top = pos.y.
+            // glyph_top = baseline + ymin - height + 1 (in screen coords)
+            let tallest_top = cache.iter()
                 .map(|g| g.metrics.ymin - g.metrics.height as i32 + 1)
                 .min()
                 .unwrap_or(0);
-            // baseline + max_top = pos.y → baseline = pos.y - max_top
-            pos.y - max_top as f32
+            pos.y - tallest_top as f32
         } else {
             pos.y + ascent + vy_offset
         };
 
         for gp in &cache {
             let gx = (pos.x + gp.x + gp.metrics.xmin as f32) as i32;
-            // fontdue: row 0 = glyph bottom at y = baseline + ymin
-            // Screen Y goes downward: bottom at larger Y, so we go UPWARD from bottom
-            let bottom_y = (baseline_y + gp.metrics.ymin as f32 + gp.line as f32 * lh) as i32;
+            // Glyph top in screen coords (ymin = bottom-most edge of bitmap)
+            let top_y = (baseline_y + gp.metrics.ymin as f32
+                - gp.metrics.height as f32 + 1.0
+                + gp.line as f32 * lh) as i32;
 
             for row in 0..gp.metrics.height {
-                // coverage[row] = bottom→top, screen Y goes upward: bottom_y - row
-                let sy = bottom_y - row as i32;
+                // coverage[row] = top→bottom, screen Y goes downward: top_y + row
+                let sy = top_y + row as i32;
                 for col in 0..gp.metrics.width {
                     let cov = gp.coverage[row * gp.metrics.width + col];
                     if cov == 0 {
