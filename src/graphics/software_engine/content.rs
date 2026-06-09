@@ -102,61 +102,58 @@ impl RenderTarget {
         }
     }
 
-    // ── TTF 文本渲染 ──
+    // ── TTF 文本渲染（使用 fontdue Layout 引擎）──
+
+    /// 将 TextLayoutOptions 转换为 fontdue LayoutSettings 并运行布局
+    fn run_layout<'a>(font: &'a FontData, text: &str, opts: &TextLayoutOptions, pos_x: f32, pos_y: f32)
+        -> fontdue::layout::Layout<()>
+    {
+        use fontdue::layout::*;
+        let fs = opts.font_size.max(1.0);
+        let new_line_size = font.font.horizontal_line_metrics(fs)
+            .map(|m| m.new_line_size).unwrap_or(fs * 1.3);
+        let lh_abs = if opts.line_height > 0.0 { opts.line_height } else { new_line_size };
+        let lh_mult = lh_abs / new_line_size;
+        let max_w = if opts.max_width.is_finite() && opts.max_width > 0.0 {
+            Some(opts.max_width) } else { None };
+
+        let h_align = match opts.h_align {
+            crate::graphics::HAlign::Left => HorizontalAlign::Left,
+            crate::graphics::HAlign::Center => HorizontalAlign::Center,
+            crate::graphics::HAlign::Right => HorizontalAlign::Right,
+        };
+        let v_align = match opts.v_align {
+            VAlign::Top => VerticalAlign::Top,
+            VAlign::Middle => VerticalAlign::Middle,
+            VAlign::Bottom => VerticalAlign::Bottom,
+            VAlign::Baseline => VerticalAlign::Top, // fontdue Layout doesn't have Baseline
+        };
+        let wrap = if opts.word_wrap { WrapStyle::Word } else { WrapStyle::Letter };
+
+        let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+        layout.reset(&LayoutSettings {
+            x: pos_x, y: pos_y,
+            max_width: max_w,
+            max_height: None,
+            horizontal_align: h_align,
+            vertical_align: v_align,
+            line_height: lh_mult,
+            wrap_style: wrap,
+            wrap_hard_breaks: true,
+        });
+        layout.append(&[&font.font], &TextStyle::new(text, fs, 0));
+        layout
+    }
 
     pub(crate) fn measure_ttf(font: &FontData, text: &str, opts: &TextLayoutOptions) -> Size {
         if text.is_empty() {
             return Size::new(0.0, 0.0);
         }
-        let fs = opts.font_size.max(1.0);
-        let lh = if opts.line_height > 0.0 {
-            opts.line_height
-        } else {
-            font.font
-                .horizontal_line_metrics(fs)
-                .map(|m| m.new_line_size)
-                .unwrap_or(fs * 1.3)
-        };
-        let max_w = if opts.max_width.is_finite() && opts.max_width > 0.0 {
-            opts.max_width
-        } else {
-            f32::MAX
-        };
-
-        if opts.word_wrap {
-            let mut line_w = 0.0f32;
-            let mut max_line = 0.0f32;
-            let mut lines = 1u32;
-            for ch in text.chars() {
-                if ch == '\n' {
-                    lines += 1;
-                    max_line = max_line.max(line_w);
-                    line_w = 0.0;
-                    continue;
-                }
-                let advance = font.font.metrics(ch, fs).advance_width;
-                if line_w + advance > max_w && line_w > 0.0 {
-                    lines += 1;
-                    max_line = max_line.max(line_w);
-                    line_w = advance;
-                } else {
-                    line_w += advance;
-                }
-            }
-            max_line = max_line.max(line_w);
-            Size::new(max_line.min(max_w), lines as f32 * lh)
-        } else {
-            let mut w = 0.0f32;
-            let mut lines = 1u32;
-            for ch in text.chars() {
-                if ch == '\n' {
-                    lines += 1;
-                } else {
-                    w += font.font.metrics(ch, fs).advance_width;
-                }
-            }
-            Size::new(w.min(max_w), lines as f32 * lh)
-        }
+        let layout = Self::run_layout(font, text, opts, 0.0, 0.0);
+        let gw = layout.glyphs();
+        let max_x = gw.iter().fold(0.0f32, |m, g| (g.x + g.width as f32).max(m));
+        let h = layout.height().max(0.0);
+        Size::new(max_x, h)
     }
 
     pub(crate) fn draw_ttf(
@@ -167,120 +164,25 @@ impl RenderTarget {
         color: Color,
         opts: &TextLayoutOptions,
     ) {
+        if text.is_empty() { return; }
         let fs = opts.font_size.max(1.0);
         let c = self.apply_opacity(Self::premul(color));
-        let lh = if opts.line_height > 0.0 {
-            opts.line_height
-        } else {
-            font.font
-                .horizontal_line_metrics(fs)
-                .map(|m| m.new_line_size)
-                .unwrap_or(fs * 1.3)
-        };
 
+        // 使用fontdue Layout引擎排版
+        let layout = Self::run_layout(font, text, opts, pos.x, pos.y);
+        let glyphs = layout.glyphs();
 
-        let max_w = if opts.max_width.is_finite() && opts.max_width > 0.0 {
-            opts.max_width
-        } else {
-            f32::MAX
-        };
+        for gp in glyphs {
+            let (metrics, coverage) = font.font.rasterize_config(gp.key);
+            if metrics.width == 0 || metrics.height == 0 { continue; }
+            let gx = gp.x as i32;
+            let gy = gp.y as i32; // PositiveYDown: glyph top
 
-        struct GlyphPos {
-            ch: char,
-            x: f32,
-            line: u32,
-        }
-        let mut glyphs: Vec<GlyphPos> = Vec::new();
-        let mut cursor_x = 0.0f32;
-        let mut cursor_y = 0.0f32;
-
-        for ch in text.chars() {
-            if ch == '\n' {
-                cursor_x = 0.0;
-                cursor_y += lh;
-                continue;
-            }
-            let advance = font.font.metrics(ch, fs).advance_width;
-            if opts.word_wrap && cursor_x + advance > max_w && cursor_x > 0.0 {
-                cursor_x = 0.0;
-                cursor_y += lh;
-            }
-            let line_idx = (cursor_y / lh.max(1.0)).floor() as u32;
-            glyphs.push(GlyphPos {
-                ch,
-                x: cursor_x,
-                line: line_idx,
-            });
-            cursor_x += advance;
-        }
-        if glyphs.is_empty() {
-            return;
-        }
-
-        let total_h = cursor_y + lh;
-        let vy_offset = match opts.v_align {
-            VAlign::Top => 0.0,
-            VAlign::Middle => -total_h / 2.0,
-            VAlign::Bottom => -total_h,
-            VAlign::Baseline => 0.0,
-        };
-        let ascent = font
-            .font
-            .horizontal_line_metrics(fs)
-            .map(|m| m.ascent)
-            .unwrap_or(fs * 0.8);
-
-        // Pre-rasterize for consistent baseline across all glyphs
-        struct GlyphCache {
-            metrics: fontdue::Metrics,
-            coverage: Vec<u8>,
-            x: f32,
-            line: u32,
-        }
-        let mut cache: Vec<GlyphCache> = Vec::with_capacity(glyphs.len());
-        for gp in &glyphs {
-            let (metrics, coverage) = font.font.rasterize(gp.ch, fs);
-            cache.push(GlyphCache {
-                metrics,
-                coverage,
-                x: gp.x,
-                line: gp.line,
-            });
-        }
-
-        // Compute baseline using fontdue's Layout formula.
-        // fontdue calculates glyph top (for PositiveYDown) as:
-        //   top_offset = -bounds.ymin - bounds.height  (relative to baseline)
-        // Coverage array is row-major, row 0 = bitmap top, rendered top→down.
-        let baseline_y = if opts.v_align == VAlign::Baseline {
-            pos.y
-        } else if opts.v_align == VAlign::Top {
-            // VAlign::Top: tallest glyph's visual top = pos.y.
-            // top_offset_i = -bounds.ymin - bounds.height for each glyph.
-            let tallest_top = cache.iter()
-                .map(|g| -g.metrics.bounds.ymin - g.metrics.bounds.height)
-                .max_by(|a, b| a.partial_cmp(b).unwrap())
-                .unwrap_or(0.0);
-            pos.y - tallest_top
-        } else {
-            pos.y + ascent + vy_offset
-        };
-
-        for gp in &cache {
-            let gx = (pos.x + gp.x + gp.metrics.xmin as f32) as i32;
-            // fontdue Layout formula for glyph top (PositiveYDown):
-            //   top_offset = -bounds.ymin - bounds.height
-            let top_y = (baseline_y + (-gp.metrics.bounds.ymin - gp.metrics.bounds.height)
-                + gp.line as f32 * lh) as i32;
-
-            for row in 0..gp.metrics.height {
-                // coverage[row] = top→bottom, screen Y goes downward: top_y + row
-                let sy = top_y + row as i32;
-                for col in 0..gp.metrics.width {
-                    let cov = gp.coverage[row * gp.metrics.width + col];
-                    if cov == 0 {
-                        continue;
-                    }
+            for row in 0..metrics.height {
+                let sy = gy + row as i32;
+                for col in 0..metrics.width {
+                    let cov = coverage[row * metrics.width + col];
+                    if cov == 0 { continue; }
                     let alpha = (c >> 24) & 0xFF;
                     let cov_u32 = cov as u32;
                     let blended_alpha = (alpha * cov_u32 / 255).min(255);
@@ -293,55 +195,35 @@ impl RenderTarget {
             }
         }
 
-        // 调试辅助线（UIX_TTF_DEBUG=1 时启用）
-        if std::env::var("UIX_TTF_DEBUG").as_deref() == Ok("1") {
-            let debug_color = 0x80FF0000u32; // 半透明红
-            let baseline_color = 0xFF0088FFu32; // 蓝
-            let ascent_color = 0xFF00FF00u32; // 绿
-            let advance_color = 0xFFFF00FFu32; // 紫
-
-            let mut cx = pos.x;
-            for gp in &glyphs {
-                let m = font.font.metrics(gp.ch, fs);
-                let bbox_x = (pos.x + gp.x + m.xmin as f32) as i32;
-                // fontdue 公式: top_offset = -bounds.ymin - bounds.height
-                let bbox_top = (baseline_y + (-m.bounds.ymin - m.bounds.height)) as i32;
-
-                // 红色 bbox 边框
+        // 调试辅助线
+        if std::env::var("UIX_TTF_DEBUG").as_deref() == Ok("1") && !glyphs.is_empty() {
+            let debug_color = 0x80FF0000u32;
+            let baseline_color = 0xFF0088FFu32;
+            let advance_color = 0xFFFF00FFu32;
+            for gp in glyphs {
+                let (m, _) = font.font.rasterize_config(gp.key);
+                let bx = gp.x as i32;
+                let by = gp.y as i32;
                 let bw = m.width as i32;
                 let bh = m.height as i32;
                 for row in 0..bh {
-                    let sy2 = bbox_top + row as i32;
+                    let sy = by + row;
                     if row == 0 || row == bh - 1 {
-                        for col in 0..bw {
-                            self.put_pixel_raw(bbox_x + col as i32, sy2, debug_color);
-                        }
+                        for col in 0..bw { self.put_pixel_raw(bx + col, sy, debug_color); }
                     } else {
-                        self.put_pixel_raw(bbox_x, sy2, debug_color);
-                        self.put_pixel_raw(bbox_x + bw - 1, sy2, debug_color);
+                        self.put_pixel_raw(bx, sy, debug_color);
+                        self.put_pixel_raw(bx + bw - 1, sy, debug_color);
                     }
                 }
-
-                // 紫色 advance 标记
-                let adv_x = (pos.x + gp.x + m.advance_width) as i32;
-                for row in 0..8 {
-                    self.put_pixel_raw(adv_x, bbox_top + row, advance_color);
-                }
-
-                cx += m.advance_width;
+                let adv_x = gp.x as i32 + m.advance_width as i32;
+                for row in 0..bh.min(8) { self.put_pixel_raw(adv_x, by + row, advance_color); }
             }
-
-            // 蓝色基线
-            let bl_y = baseline_y as i32;
-            for x in (pos.x as i32)..=(pos.x + cx) as i32 {
+            // 蓝色基线 — 从 Layout 获取第一行的基准线
+            let bl_y = pos.y as i32 + font.font.horizontal_line_metrics(fs)
+                .map(|m| m.ascent as i32).unwrap_or((fs * 0.8) as i32);
+            for x in (pos.x as i32)..=(pos.x + 200.0) as i32 {
                 self.put_pixel_raw(x, bl_y, baseline_color);
                 self.put_pixel_raw(x, bl_y + 1, baseline_color);
-            }
-
-            // 绿色 ascent 线（文字顶部）
-            let asc_y = (baseline_y - ascent) as i32;
-            for x in (pos.x as i32)..=(pos.x + cx) as i32 {
-                self.put_pixel_raw(x, asc_y, ascent_color);
             }
         }
     }
