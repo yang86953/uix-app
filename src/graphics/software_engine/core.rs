@@ -188,12 +188,10 @@ impl RenderTarget {
             return;
         }
 
-        // premultiplied channels are stored as: [A][R?][G?][B?] historically
-        // but downstream code expects packing (A<<24)|(B<<16)|(G<<8)|R.
-        // Keep channel ordering consistent with existing put_pixel_raw.
-        let src_r_p = (premul_color & 0xFF) as f32 * coverage;
+        // ARGB format: (A<<24) | (R<<16) | (G<<8) | B
+        let src_r_p = ((premul_color >> 16) & 0xFF) as f32 * coverage;
         let src_g_p = ((premul_color >> 8) & 0xFF) as f32 * coverage;
-        let src_b_p = ((premul_color >> 16) & 0xFF) as f32 * coverage;
+        let src_b_p = (premul_color & 0xFF) as f32 * coverage;
         let src_a_s = src_a * coverage;
 
         let w = self.width;
@@ -208,9 +206,9 @@ impl RenderTarget {
 
         let dst = self.pixels[idx];
         let dst_a = ((dst >> 24) & 0xFF) as f32;
-        let dst_r_p = (dst & 0xFF) as f32;
+        let dst_r_p = ((dst >> 16) & 0xFF) as f32;
         let dst_g_p = ((dst >> 8) & 0xFF) as f32;
-        let dst_b_p = ((dst >> 16) & 0xFF) as f32;
+        let dst_b_p = (dst & 0xFF) as f32;
 
         let inv = 1.0 - (src_a_s / 255.0);
         let out_a = src_a_s + dst_a * inv;
@@ -224,9 +222,9 @@ impl RenderTarget {
         let out_b_u = out_b_p.round() as u32;
 
         self.pixels[idx] = (out_a_u.min(255) << 24)
-            | (out_b_u.min(255) << 16)
+            | (out_r_u.min(255) << 16)
             | (out_g_u.min(255) << 8)
-            | out_r_u.min(255);
+            | out_b_u.min(255);
     }
 
     pub fn put_pixel_raw(&mut self, x: i32, y: i32, color: u32) {
@@ -257,17 +255,18 @@ impl RenderTarget {
             self.pixels[idx] = color;
             return;
         }
-        let src_r = color & 0xFF;
+        // ARGB format: byte[3]=A, byte[2]=R, byte[1]=G, byte[0]=B (LE: B,G,R,A)
+        let src_b = color & 0xFF;
         let src_g = (color >> 8) & 0xFF;
-        let src_b = (color >> 16) & 0xFF;
-        let dst_r = dst & 0xFF;
+        let src_r = (color >> 16) & 0xFF;
+        let dst_b = dst & 0xFF;
         let dst_g = (dst >> 8) & 0xFF;
-        let dst_b = (dst >> 16) & 0xFF;
+        let dst_r = (dst >> 16) & 0xFF;
         let out_a = src_a + dst_a - (src_a * dst_a / 255);
         let out_r = src_r + (dst_r * (255 - src_a) / 255);
         let out_g = src_g + (dst_g * (255 - src_a) / 255);
         let out_b = src_b + (dst_b * (255 - src_a) / 255);
-        self.pixels[idx] = out_a << 24 | out_b << 16 | out_g << 8 | out_r;
+        self.pixels[idx] = out_a << 24 | out_r << 16 | out_g << 8 | out_b;
     }
 
     pub(crate) fn fill_span(&mut self, x: i32, y: i32, w: i32, color: u32) {
@@ -292,13 +291,13 @@ impl RenderTarget {
 
     pub fn apply_opacity(&self, c: u32) -> u32 {
         let a = ((c >> 24) & 0xFF) as f32 * self.opacity;
-        let r = (c & 0xFF) as f32 * self.opacity;
+        let r = ((c >> 16) & 0xFF) as f32 * self.opacity;
         let g = ((c >> 8) & 0xFF) as f32 * self.opacity;
-        let b = ((c >> 16) & 0xFF) as f32 * self.opacity;
+        let b = (c & 0xFF) as f32 * self.opacity;
         ((a as u32).min(255) << 24)
-            | ((b as u32).min(255) << 16)
+            | ((r as u32).min(255) << 16)
             | ((g as u32).min(255) << 8)
-            | (r as u32).min(255)
+            | (b as u32).min(255)
     }
 
     pub(crate) fn intersect_clip(&self, r: &Rect) -> Option<Rect> {

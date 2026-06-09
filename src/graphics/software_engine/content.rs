@@ -262,10 +262,10 @@ impl RenderTarget {
                     let alpha = (c >> 24) & 0xFF;
                     let cov_u32 = cov as u32;
                     let blended_alpha = (alpha * cov_u32 / 255).min(255);
-                    let r = (c & 0xFF) * cov_u32 / 255;
+                    let r = ((c >> 16) & 0xFF) * cov_u32 / 255;
                     let g = ((c >> 8) & 0xFF) * cov_u32 / 255;
-                    let b = ((c >> 16) & 0xFF) * cov_u32 / 255;
-                    let pixel = (blended_alpha << 24) | (b << 16) | (g << 8) | r;
+                    let b = (c & 0xFF) * cov_u32 / 255;
+                    let pixel = (blended_alpha << 24) | (r << 16) | (g << 8) | b;
                     self.put_pixel_raw(gx + col as i32, gy + row as i32, pixel);
                 }
             }
@@ -310,13 +310,13 @@ impl RenderTarget {
             return color;
         }
         let a = ((color >> 24) & 0xFF) as f32 * opacity;
-        let r = (color & 0xFF) as f32 * opacity;
+        let r = ((color >> 16) & 0xFF) as f32 * opacity;
         let g = ((color >> 8) & 0xFF) as f32 * opacity;
-        let b = ((color >> 16) & 0xFF) as f32 * opacity;
+        let b = (color & 0xFF) as f32 * opacity;
         ((a as u32).min(255) << 24)
-            | ((b as u32).min(255) << 16)
+            | ((r as u32).min(255) << 16)
             | ((g as u32).min(255) << 8)
-            | (r as u32).min(255)
+            | (b as u32).min(255)
     }
 
     pub fn blit_image(

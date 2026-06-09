@@ -310,7 +310,7 @@ impl GraphicsEngine for SoftwareEngine {
                 let r = (p[0] as u32 * a / 255).min(255);
                 let g = (p[1] as u32 * a / 255).min(255);
                 let b = (p[2] as u32 * a / 255).min(255);
-                (a << 24) | (b << 16) | (g << 8) | r
+                (a << 24) | (r << 16) | (g << 8) | b
             })
             .collect();
         Ok(self.assets.load_image(pixels, w as i32, h as i32))
