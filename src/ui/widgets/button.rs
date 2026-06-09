@@ -108,7 +108,7 @@ define_widget! {
             ctx.stroke_rect(btn_frame, border, border_width, Some(Radius::uniform(border_radius)));
         }
         let text_x = btn_frame.x + self.btn_size.padding_h();
-        let text_y = btn_frame.y + (btn_frame.h - font_size) * 0.5 - 4.0;
+        let text_y = btn_frame.y + (btn_frame.h - font_size) * 0.5;
         ctx.draw_text(&self.text, Point::new(text_x, text_y), text_color, font_size);
     }
 }
