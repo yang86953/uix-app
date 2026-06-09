@@ -174,6 +174,18 @@ impl Platform for LinuxPlatform {
 // Drop
 // ════════════════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════════════
+// 像素呈现
+// ════════════════════════════════════════════════════════════════════════════
+
+impl LinuxPlatform {
+    /// Present a BGRA pixel buffer to the native window.
+    /// `pixels` is a slice of u32 in ARGB8888 format (0xAARRGGBB).
+    pub fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
+        self.backend.present_pixels(pixels, width, height);
+    }
+}
+
 impl Drop for LinuxPlatform {
     fn drop(&mut self) {
         self.backend.destroy_window();

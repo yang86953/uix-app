@@ -28,4 +28,10 @@ pub(crate) trait Backend:
     fn keyboard(&self) -> &dyn IKeyboard;
     fn display(&self) -> &dyn IDisplay;
     fn clipboard(&mut self) -> &mut dyn IClipboard;
+
+    // ── 像素呈现 ─────────────────────────────────────────────────
+    /// Present a BGRA pixel buffer to the native window.
+    /// `pixels` is a slice of u32 in ARGB8888 format (0xAARRGGBB),
+    /// stored in BGRA byte order on little-endian platforms.
+    fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32);
 }

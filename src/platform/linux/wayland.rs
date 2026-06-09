@@ -26,13 +26,30 @@ use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_bas
 
 struct ShmBuffer {
     /// The backing temp file (kept alive to prevent fd close)
-    _file: File,
+    file: File,
+    /// Size of the buffer in bytes
+    size: usize,
     /// SHM pool (kept alive; dropping it would invalidate the buffer)
     #[allow(dead_code)]
     pool: Main<wl_shm_pool::WlShmPool>,
     /// Buffer for window content
-    #[allow(dead_code)]
     buffer: Main<wl_buffer::WlBuffer>,
+}
+
+impl ShmBuffer {
+    /// Write BGRA pixel data to the shared memory buffer.
+    /// `pixels` is &[u32] in ARGB8888 format (0xAARRGGBB, BGRA byte order on LE).
+    /// Returns the number of bytes written.
+    fn write_pixels(&mut self, pixels: &[u32]) -> std::io::Result<usize> {
+        use std::io::{Seek, Write};
+        let byte_len = pixels.len().min(self.size / 4) * 4;
+        self.file.seek(std::io::SeekFrom::Start(0))?;
+        // Convert &[u32] to &[u8] via safe pointer cast
+        let bytes = unsafe {
+            std::slice::from_raw_parts(pixels.as_ptr() as *const u8, byte_len)
+        };
+        self.file.write(bytes)
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -140,6 +157,38 @@ impl WaylandBackend {
             last_pointer,
             clipboard,
         })
+    }
+
+    /// Present a BGRA pixel buffer to the Wayland surface.
+    /// Writes pixels to the SHM buffer, attaches it, damages the surface, and commits.
+    pub fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
+        let w = self.width;
+        let h = self.height;
+
+        // Re-create SHM buffer if dimensions changed
+        if width != w || height != h {
+            self.width = width;
+            self.height = height;
+            if let Ok(new_buf) = Self::create_shm_buffer(&self._shm, width, height) {
+                self.shm_buffer = Some(new_buf);
+            } else {
+                log::warn!("Wayland: failed to recreate SHM buffer for resize {}x{}", width, height);
+                return;
+            }
+        }
+
+        if let Some(ref mut shm) = self.shm_buffer {
+            if let Err(e) = shm.write_pixels(pixels) {
+                log::warn!("Wayland: write_pixels failed: {}", e);
+                return;
+            }
+            if let Some(ref surface) = self.surface {
+                surface.attach(Some(&shm.buffer), 0, 0);
+                surface.damage(0, 0, width, height);
+                surface.commit();
+            }
+            let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
+        }
     }
 
     pub(crate) fn create_window_inner(&mut self, title: &str, width: i32, height: i32) -> bool {
@@ -330,7 +379,7 @@ impl WaylandBackend {
         // Clean up temp file (the fd stays open via `file`)
         let _ = std::fs::remove_file(&tmp_path);
 
-        Ok(ShmBuffer { _file: file, pool, buffer })
+        Ok(ShmBuffer { file, size, pool, buffer })
     }
 }
 
@@ -471,6 +520,10 @@ impl INativeHandle for WaylandBackend {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Backend for WaylandBackend {
+    fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
+        self.present_pixels(pixels, width, height);
+    }
+
     fn cursor(&mut self) -> &mut dyn ICursor {
         struct WC;
         impl ICursor for WC {
