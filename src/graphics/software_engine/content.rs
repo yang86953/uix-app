@@ -248,29 +248,29 @@ impl RenderTarget {
             });
         }
 
-        // Compute baseline.
-        // fontdue coverage layout is row-major with row 0 at the top of the
-        // glyph bitmap and row height-1 at the bottom. We render from
-        // the glyph top (smaller Y in screen coords) downward.
+        // Compute baseline using fontdue's Layout formula.
+        // fontdue calculates glyph top (for PositiveYDown) as:
+        //   top_offset = -bounds.ymin - bounds.height  (relative to baseline)
+        // Coverage array is row-major, row 0 = bitmap top, rendered top→down.
         let baseline_y = if opts.v_align == VAlign::Baseline {
             pos.y
         } else if opts.v_align == VAlign::Top {
             // VAlign::Top: tallest glyph's visual top = pos.y.
-            // glyph_top = baseline + ymin - height + 1 (in screen coords)
+            // top_offset_i = -bounds.ymin - bounds.height for each glyph.
             let tallest_top = cache.iter()
-                .map(|g| g.metrics.ymin - g.metrics.height as i32 + 1)
-                .min()
-                .unwrap_or(0);
-            pos.y - tallest_top as f32
+                .map(|g| -g.metrics.bounds.ymin - g.metrics.bounds.height)
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap_or(0.0);
+            pos.y - tallest_top
         } else {
             pos.y + ascent + vy_offset
         };
 
         for gp in &cache {
             let gx = (pos.x + gp.x + gp.metrics.xmin as f32) as i32;
-            // Glyph top in screen coords (ymin = bottom-most edge of bitmap)
-            let top_y = (baseline_y + gp.metrics.ymin as f32
-                - gp.metrics.height as f32 + 1.0
+            // fontdue Layout formula for glyph top (PositiveYDown):
+            //   top_offset = -bounds.ymin - bounds.height
+            let top_y = (baseline_y + (-gp.metrics.bounds.ymin - gp.metrics.bounds.height)
                 + gp.line as f32 * lh) as i32;
 
             for row in 0..gp.metrics.height {
@@ -303,20 +303,22 @@ impl RenderTarget {
             let mut cx = pos.x;
             for gp in &glyphs {
                 let m = font.font.metrics(gp.ch, fs);
-                let (raster, _) = font.font.rasterize(gp.ch, fs);
-                let bbox_x = (pos.x + gp.x + raster.xmin as f32) as i32;
-                let bbox_top = (baseline_y + raster.ymin as f32 - raster.height as f32 + 1.0) as i32;
+                let bbox_x = (pos.x + gp.x + m.xmin as f32) as i32;
+                // fontdue 公式: top_offset = -bounds.ymin - bounds.height
+                let bbox_top = (baseline_y + (-m.bounds.ymin - m.bounds.height)) as i32;
 
                 // 红色 bbox 边框
-                for row in 0..raster.height {
+                let bw = m.width as i32;
+                let bh = m.height as i32;
+                for row in 0..bh {
                     let sy2 = bbox_top + row as i32;
-                    if row == 0 || row == raster.height - 1 {
-                        for col in 0..raster.width {
+                    if row == 0 || row == bh - 1 {
+                        for col in 0..bw {
                             self.put_pixel_raw(bbox_x + col as i32, sy2, debug_color);
                         }
                     } else {
                         self.put_pixel_raw(bbox_x, sy2, debug_color);
-                        self.put_pixel_raw(bbox_x + raster.width as i32 - 1, sy2, debug_color);
+                        self.put_pixel_raw(bbox_x + bw - 1, sy2, debug_color);
                     }
                 }
 
