@@ -292,6 +292,56 @@ impl RenderTarget {
                 }
             }
         }
+
+        // 调试辅助线（UIX_TTF_DEBUG=1 时启用）
+        if std::env::var("UIX_TTF_DEBUG").as_deref() == Ok("1") {
+            let debug_color = 0x80FF0000u32; // 半透明红
+            let baseline_color = 0xFF0088FFu32; // 蓝
+            let ascent_color = 0xFF00FF00u32; // 绿
+            let advance_color = 0xFFFF00FFu32; // 紫
+
+            let mut cx = pos.x;
+            for gp in &glyphs {
+                let m = font.font.metrics(gp.ch, fs);
+                let (raster, _) = font.font.rasterize(gp.ch, fs);
+                let bbox_x = (pos.x + gp.x + raster.xmin as f32) as i32;
+                let bbox_top = (baseline_y + raster.ymin as f32 - raster.height as f32 + 1.0) as i32;
+
+                // 红色 bbox 边框
+                for row in 0..raster.height {
+                    let sy2 = bbox_top + row as i32;
+                    if row == 0 || row == raster.height - 1 {
+                        for col in 0..raster.width {
+                            self.put_pixel_raw(bbox_x + col as i32, sy2, debug_color);
+                        }
+                    } else {
+                        self.put_pixel_raw(bbox_x, sy2, debug_color);
+                        self.put_pixel_raw(bbox_x + raster.width as i32 - 1, sy2, debug_color);
+                    }
+                }
+
+                // 紫色 advance 标记
+                let adv_x = (pos.x + gp.x + m.advance_width) as i32;
+                for row in 0..8 {
+                    self.put_pixel_raw(adv_x, bbox_top + row, advance_color);
+                }
+
+                cx += m.advance_width;
+            }
+
+            // 蓝色基线
+            let bl_y = baseline_y as i32;
+            for x in (pos.x as i32)..=(pos.x + cx) as i32 {
+                self.put_pixel_raw(x, bl_y, baseline_color);
+                self.put_pixel_raw(x, bl_y + 1, baseline_color);
+            }
+
+            // 绿色 ascent 线（文字顶部）
+            let asc_y = (baseline_y - ascent) as i32;
+            for x in (pos.x as i32)..=(pos.x + cx) as i32 {
+                self.put_pixel_raw(x, asc_y, ascent_color);
+            }
+        }
     }
 
     pub fn draw_bitmap_text(&mut self, text: &str, pos: Point, color: Color) {
