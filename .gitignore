@@ -11,3 +11,8 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+
+# Build artifacts
+clippy_out.txt
+clippy_output.txt
+nul

@@ -302,8 +302,8 @@ mod tests {
         // 圆角45°法线方向：从弧面（sd=0）沿法线向外/内采样
         // 右上角中心: (cx+half_w-r, cy-half_h+r) = (40+30-8, 40-30+8) = (62, 18)
         // 弧面沿45°方向点: (62+8/√2, 18-8/√2) = (67.657, 12.343)
-        let arc_x = cx + rect.w * 0.5 - 8.0 + 8.0 / 1.41421356;
-        let arc_y = rect.y + 8.0 - 8.0 / 1.41421356;
+        let arc_x = cx + rect.w * 0.5 - 8.0 + 8.0 / std::f32::consts::SQRT_2;
+        let arc_y = rect.y + 8.0 - 8.0 / std::f32::consts::SQRT_2;
         eprintln!(
             "\n=== 圆角45° SDF 梯度 (弧面=({:.1},{:.1}), 沿45°法线) ===",
             arc_x, arc_y
@@ -392,9 +392,9 @@ mod tests {
                     continue; // 全透明或全不透明跳过
                 }
                 // 反预乘 — BGRA 格式: [7:0]=B, [15:8]=G, [23:16]=R
-                let pb = (p & 0xFF) as u32;
-                let pg = ((p >> 8) & 0xFF) as u32;
-                let pr = ((p >> 16) & 0xFF) as u32;
+                let pb = p & 0xFF;
+                let pg = (p >> 8) & 0xFF;
+                let pr = (p >> 16) & 0xFF;
                 let r = (pr * 255 / a).min(255);
                 let g = (pg * 255 / a).min(255);
                 let b = (pb * 255 / a).min(255);
@@ -854,7 +854,7 @@ mod tests {
     fn diag_pixel_format() {
         use crate::graphics::SoftwareEngine;
         let mut engine = SoftwareEngine::new();
-        engine.initialize(std::ptr::null_mut(), 4, 1).unwrap_or(());
+        engine.initialize(4, 1).unwrap_or(());
         let dirty = crate::graphics::DirtyRegion::full();
 
         engine.begin_frame(&dirty);
@@ -1100,7 +1100,7 @@ mod tests {
             .filter(|&d| {
                 let x = 20 - d;
                 let y = 20 - d;
-                x >= 0 && x < 60 && y >= 0 && y < 60 && alpha(x, y) > 0
+                (0..60).contains(&x) && (0..60).contains(&y) && alpha(x, y) > 0
             })
             .count();
 

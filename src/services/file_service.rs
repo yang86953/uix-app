@@ -1,18 +1,27 @@
-use std::fs;
-use std::io::{Write, BufReader, BufRead};
-use std::path::Path;
 use crate::diag::Error;
 use crate::diag::Result;
+use std::fs;
+use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
 
 /// File I/O service providing read/write operations with proper error handling.
 #[derive(Debug, Clone, Copy)]
 pub struct FileService;
 
+impl Default for FileService {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl FileService {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 
     pub fn read_to_string(&self, path: &str) -> Result<String> {
-        fs::read_to_string(path).map_err(|e| Error::io_error(format!("failed to read '{}': {}", path, e)))
+        fs::read_to_string(path)
+            .map_err(|e| Error::io_error(format!("failed to read '{}': {}", path, e)))
     }
 
     pub fn read_bytes(&self, path: &str) -> Result<Vec<u8>> {
@@ -23,19 +32,23 @@ impl FileService {
         if let Some(parent) = Path::new(path).parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(path, content).map_err(|e| Error::io_error(format!("failed to write '{}': {}", path, e)))
+        fs::write(path, content)
+            .map_err(|e| Error::io_error(format!("failed to write '{}': {}", path, e)))
     }
 
     pub fn write_bytes(&self, path: &str, data: &[u8]) -> Result<()> {
         if let Some(parent) = Path::new(path).parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(path, data).map_err(|e| Error::io_error(format!("failed to write '{}': {}", path, e)))
+        fs::write(path, data)
+            .map_err(|e| Error::io_error(format!("failed to write '{}': {}", path, e)))
     }
 
     pub fn append_string(&self, path: &str, content: &str) -> Result<()> {
         let mut file = fs::OpenOptions::new()
-            .create(true).append(true).open(path)?;
+            .create(true)
+            .append(true)
+            .open(path)?;
         file.write_all(content.as_bytes())?;
         Ok(())
     }
@@ -55,7 +68,8 @@ impl FileService {
     }
 
     pub fn remove(&self, path: &str) -> Result<()> {
-        fs::remove_file(path).map_err(|e| Error::io_error(format!("failed to remove '{}': {}", path, e)))
+        fs::remove_file(path)
+            .map_err(|e| Error::io_error(format!("failed to remove '{}': {}", path, e)))
     }
 
     pub fn file_size(&self, path: &str) -> Result<u64> {

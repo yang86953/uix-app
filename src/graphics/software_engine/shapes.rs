@@ -138,8 +138,8 @@ impl RenderTarget {
             && rect.y.fract() == 0.0
             && rect.w.fract() == 0.0
             && rect.h.fract() == 0.0
+            && lw == 1.0
             && lw.fract() == 0.0
-            && lw >= 1.0
         {
             let x0 = rect.x as i32;
             let y0 = rect.y as i32;

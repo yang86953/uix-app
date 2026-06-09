@@ -182,7 +182,7 @@ impl RenderTarget {
         // premultiplied channels are stored as: [A][R?][G?][B?] historically
         // but downstream code expects packing (A<<24)|(B<<16)|(G<<8)|R.
         // Keep channel ordering consistent with existing put_pixel_raw.
-        let src_r_p = ((premul_color >> 0) & 0xFF) as f32 * coverage;
+        let src_r_p = (premul_color & 0xFF) as f32 * coverage;
         let src_g_p = ((premul_color >> 8) & 0xFF) as f32 * coverage;
         let src_b_p = ((premul_color >> 16) & 0xFF) as f32 * coverage;
         let src_a_s = src_a * coverage;
@@ -199,7 +199,7 @@ impl RenderTarget {
 
         let dst = self.pixels[idx];
         let dst_a = ((dst >> 24) & 0xFF) as f32;
-        let dst_r_p = ((dst >> 0) & 0xFF) as f32;
+        let dst_r_p = (dst & 0xFF) as f32;
         let dst_g_p = ((dst >> 8) & 0xFF) as f32;
         let dst_b_p = ((dst >> 16) & 0xFF) as f32;
 
@@ -240,18 +240,17 @@ impl RenderTarget {
             self.pixels[idx] = color;
             return;
         }
-        let src_r = (color >> 0) & 0xFF;
+        let src_r = color & 0xFF;
         let src_g = (color >> 8) & 0xFF;
         let src_b = (color >> 16) & 0xFF;
-        let dst_r = (dst >> 0) & 0xFF;
+        let dst_r = dst & 0xFF;
         let dst_g = (dst >> 8) & 0xFF;
         let dst_b = (dst >> 16) & 0xFF;
         let out_a = src_a + dst_a - (src_a * dst_a / 255);
         let out_r = src_r + (dst_r * (255 - src_a) / 255);
         let out_g = src_g + (dst_g * (255 - src_a) / 255);
         let out_b = src_b + (dst_b * (255 - src_a) / 255);
-        self.pixels[idx] =
-            (out_a as u32) << 24 | (out_b as u32) << 16 | (out_g as u32) << 8 | (out_r as u32);
+        self.pixels[idx] = out_a << 24 | out_b << 16 | out_g << 8 | out_r;
     }
 
     pub(crate) fn fill_span(&mut self, x: i32, y: i32, w: i32, color: u32) {
@@ -279,7 +278,7 @@ impl RenderTarget {
             return c;
         }
         let a = ((c >> 24) & 0xFF) as f32 * self.opacity;
-        let r = ((c >> 0) & 0xFF) as f32 * self.opacity;
+        let r = (c & 0xFF) as f32 * self.opacity;
         let g = ((c >> 8) & 0xFF) as f32 * self.opacity;
         let b = ((c >> 16) & 0xFF) as f32 * self.opacity;
         ((a as u32).min(255) << 24)

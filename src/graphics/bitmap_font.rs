@@ -93,8 +93,7 @@ impl BitmapFont {
                 continue;
             }
             let glyph = &self.glyphs[idx as usize];
-            for col in 0..5usize {
-                let byte = glyph[col];
+            for (col, &byte) in glyph.iter().enumerate() {
                 for row in 0..7usize {
                     if (byte >> row) & 1 != 0 {
                         put_pixel(ox + x + col as i32, oy + y + row as i32, color);
@@ -103,6 +102,12 @@ impl BitmapFont {
             }
             x += cw;
         }
+    }
+}
+
+impl Default for BitmapFont {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

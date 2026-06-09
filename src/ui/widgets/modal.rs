@@ -2,7 +2,6 @@
 
 use crate::graphics::{Color, Point, Radius, Rect, Size};
 use crate::ui::render_context::RenderContext;
-use crate::ui::theme::DesignTokens;
 use crate::ui::widget::{EventResult, Widget, WidgetEvent, WidgetTree};
 
 /// Modal dialog with title, body, and footer areas.
@@ -128,23 +127,33 @@ impl Widget for Modal {
             return;
         }
 
-        let tokens = DesignTokens::antd_light();
+        // Extract all token values upfront to avoid borrow conflict with ctx
+        let border_radius_lg = ctx.tokens().border_radius_lg();
+        let bg_container = ctx.tokens().color_bg_container();
+        let border_secondary = ctx.tokens().color_border_secondary();
+        let text_color = ctx.tokens().color_text();
+        let text_secondary = ctx.tokens().color_text_secondary();
 
         // Backdrop mask
         ctx.fill_rect(
-            Rect::new(frame.x - 1000.0, frame.y - 1000.0, frame.w + 2000.0, frame.h + 2000.0),
+            Rect::new(
+                frame.x - 1000.0,
+                frame.y - 1000.0,
+                frame.w + 2000.0,
+                frame.h + 2000.0,
+            ),
             Color::from_rgba(0, 0, 0, 128),
             None,
         );
 
         // Dialog card
-        let radius = Some(Radius::uniform(tokens.border_radius_lg));
+        let radius = Some(Radius::uniform(border_radius_lg));
 
         // Shadow/background
-        ctx.fill_rect(frame, tokens.color_bg_container, radius);
+        ctx.fill_rect(frame, bg_container, radius);
 
         // Border
-        ctx.stroke_rect(frame, tokens.color_border_secondary, 1.0, radius);
+        ctx.stroke_rect(frame, border_secondary, 1.0, radius);
 
         let title_h = 56.0;
         let footer_h = if self.footer_visible { 56.0 } else { 0.0 };
@@ -153,14 +162,14 @@ impl Widget for Modal {
         ctx.draw_text(
             &self.title,
             Point::new(frame.x + 24.0, frame.y + 16.0),
-            tokens.color_text,
+            text_color,
             16.0,
         );
 
         // Separator
         ctx.fill_rect(
             Rect::new(frame.x, frame.y + title_h, frame.w, 1.0),
-            tokens.color_border_secondary,
+            border_secondary,
             None,
         );
 
@@ -168,20 +177,20 @@ impl Widget for Modal {
         if self.closable {
             let cx = frame.x + frame.w - 36.0;
             let cy = frame.y + 16.0;
-            ctx.draw_text("✕", Point::new(cx, cy), tokens.color_text_secondary, 16.0);
+            ctx.draw_text("✕", Point::new(cx, cy), text_secondary, 16.0);
         }
 
         // ── Footer (placeholder) ──
         if self.footer_visible {
             ctx.fill_rect(
                 Rect::new(frame.x, frame.y + frame.h - footer_h, frame.w, 1.0),
-                tokens.color_border_secondary,
+                border_secondary,
                 None,
             );
             ctx.draw_text(
                 "",
                 Point::new(frame.x + 24.0, frame.y + frame.h - footer_h + 16.0),
-                tokens.color_text_secondary,
+                text_secondary,
                 14.0,
             );
         }

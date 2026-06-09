@@ -3,9 +3,11 @@
 // ============================================================================
 
 #![cfg(windows)]
+#![allow(clippy::upper_case_acronyms)]
 
-use crate::platform::{IFileSystem, SpecialDir};
+use crate::diag::{Errc, Error};
 use crate::platform::win32::util::to_utf8;
+use crate::platform::{IFileSystem, SpecialDir};
 use std::ptr;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -55,6 +57,15 @@ impl IFileSystem for Win32FileSystem {
 
     fn executable_dir(&self) -> String {
         get_executable_dir()
+    }
+
+    fn read_file(&self, path: &str) -> Result<Vec<u8>, Error> {
+        std::fs::read(path).map_err(|e| {
+            Error::new(
+                Errc::FileNotFound,
+                format!("cannot read file '{}': {}", path, e),
+            )
+        })
     }
 }
 

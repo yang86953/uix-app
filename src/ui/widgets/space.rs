@@ -60,10 +60,9 @@ impl Space {
         if self.children.borrow().is_none() {
             *self.children.borrow_mut() = Some(Vec::new());
         }
-        self.children
-            .borrow_mut()
-            .as_mut()
-            .map(|v| v.push(Box::new(w)));
+        if let Some(v) = self.children.borrow_mut().as_mut() {
+            v.push(Box::new(w));
+        }
         self
     }
 
@@ -106,6 +105,12 @@ impl Space {
     }
 }
 
+impl Default for Space {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Widget for Space {
     fn preferred_size(&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
         Size::new(
@@ -134,8 +139,14 @@ impl Widget for Space {
         }
 
         let gap = self.space_size.value();
-        let is_row = matches!(self.direction, FlexDirection::Row | FlexDirection::RowReverse);
-        let is_reverse = matches!(self.direction, FlexDirection::RowReverse | FlexDirection::ColumnReverse);
+        let is_row = matches!(
+            self.direction,
+            FlexDirection::Row | FlexDirection::RowReverse
+        );
+        let is_reverse = matches!(
+            self.direction,
+            FlexDirection::RowReverse | FlexDirection::ColumnReverse
+        );
 
         // Collect child preferred sizes along the main and cross axes
         let mut child_main_sizes: Vec<f32> = Vec::with_capacity(children.len());
@@ -160,7 +171,10 @@ impl Widget for Space {
         // Distribute remaining space evenly if justify is Stretch
         let adjusted_main_sizes = if remaining > 0.0 && self.justify == JustifyContent::Stretch {
             let extra_per_child = remaining / children.len() as f32;
-            child_main_sizes.iter().map(|&s| s + extra_per_child).collect::<Vec<_>>()
+            child_main_sizes
+                .iter()
+                .map(|&s| s + extra_per_child)
+                .collect::<Vec<_>>()
         } else {
             child_main_sizes.clone()
         };
@@ -219,7 +233,11 @@ impl Widget for Space {
                 AlignItems::Stretch => 0.0,
             };
 
-            let (cw, ch) = if is_row { (ms, child_cross) } else { (child_cross, ms) };
+            let (cw, ch) = if is_row {
+                (ms, child_cross)
+            } else {
+                (child_cross, ms)
+            };
             let (px, py) = if is_row {
                 (cursor, frame.y + cross_offset)
             } else {
@@ -228,7 +246,8 @@ impl Widget for Space {
 
             result.push((cid, Rect::new(px, py, cw, ch)));
 
-            cursor += (if is_row { cw } else { ch }) + if i != last_idx { effective_gap } else { 0.0 };
+            cursor +=
+                (if is_row { cw } else { ch }) + if i != last_idx { effective_gap } else { 0.0 };
         }
 
         result

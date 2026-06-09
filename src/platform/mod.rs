@@ -3,12 +3,15 @@
 // ============================================================================
 
 // ── 核心平台模块 ──────────────────────────────────────────────────
+pub mod abstraction;
 pub mod event;
-pub mod platform;
 pub mod types;
 
 #[cfg(windows)]
 pub mod win32;
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub mod linux;
 
 // ── 子系统 trait 模块 ─────────────────────────────────────────────
 pub mod clipboard;
@@ -32,16 +35,11 @@ pub use file_dialog::*;
 pub use file_system::*;
 pub use input::*;
 pub use notification::*;
-pub use platform::*;
 pub use system_info::*;
 pub use timer::*;
 
-// ── 向后兼容重导出 ─────────────────────────────────────────────
-pub use crate::diag::collector;
-pub use crate::diag::error;
-pub use crate::diag::log;
-pub use crate::diag::recovery;
-pub use crate::diag::result;
+// ── Platform 子 trait 重导出 ──────────────────────────────────────
+pub use abstraction::{IEventLoop, INativeHandle, IWindowManager, IWindowProperties, Platform};
 
 // ── 工厂函数 ──────────────────────────────────────────────────────
 
@@ -50,5 +48,10 @@ pub fn create_platform() -> Box<dyn Platform> {
     Box::new(win32::Win32Platform::new())
 }
 
-#[cfg(not(windows))]
-compile_error!("uix-platform only supports Windows targets");
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn create_platform() -> Box<dyn Platform> {
+    Box::new(linux::LinuxPlatform::new())
+}
+
+#[cfg(target_os = "macos")]
+compile_error!("uix-platform does not yet support macOS targets");

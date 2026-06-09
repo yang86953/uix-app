@@ -10,6 +10,7 @@ pub struct State<T> {
 struct StateInner<T> {
     value: T,
     generation: u64,
+    #[allow(clippy::type_complexity)]
     watchers: Vec<Arc<dyn Fn(&T) + Send + Sync>>,
 }
 
@@ -34,17 +35,19 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
 
     pub fn set(&self, value: T) {
         let watchers: Vec<Arc<dyn Fn(&T) + Send + Sync>>;
+        let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
             inner.value = value;
             inner.generation += 1;
-            // Clone Arcs before releasing the lock to avoid unsafe pointer dereference.
+            // Clone value and watcher Arcs before releasing the write lock
+            // to prevent deadlocks when watchers call back into set/update.
+            snapshot = inner.value.clone();
             watchers = inner.watchers.iter().map(|w| Arc::clone(w)).collect();
         }
-        // Notify watchers outside the lock to prevent deadlocks
-        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        // Notify watchers outside the lock — no lock held here
         for watcher in &watchers {
-            watcher(&inner.value);
+            watcher(&snapshot);
         }
     }
 
@@ -53,16 +56,19 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         F: FnOnce(&mut T),
     {
         let watchers: Vec<Arc<dyn Fn(&T) + Send + Sync>>;
+        let snapshot: T;
         {
             let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
             f(&mut inner.value);
             inner.generation += 1;
-            // Clone Arcs before releasing the lock to avoid unsafe pointer dereference.
+            // Clone value and watcher Arcs before releasing the write lock
+            // to prevent deadlocks when watchers call back into set/update.
+            snapshot = inner.value.clone();
             watchers = inner.watchers.iter().map(|w| Arc::clone(w)).collect();
         }
-        let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        // Notify watchers outside the lock — no lock held here
         for watcher in &watchers {
-            watcher(&inner.value);
+            watcher(&snapshot);
         }
     }
 

@@ -1,9 +1,8 @@
 //! Input widget — Ant Design style text input with placeholder, focus, and states.
 
-use crate::graphics::{Color, GraphicsEngine, Point, Rect, Size};
 use crate::graphics::Radius;
+use crate::graphics::{Color, GraphicsEngine, Point, Rect, Size};
 use crate::ui::render_context::RenderContext;
-use crate::ui::theme::DesignTokens;
 use crate::ui::widget::{EventResult, Widget, WidgetEvent, WidgetTree};
 
 /// Input size matching Ant Design.
@@ -70,11 +69,7 @@ impl Input {
 impl Widget for Input {
     fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         let h = self.input_size.height();
-        let text_w = self
-            .value
-            .len()
-            .max(self.placeholder.len()) as f32
-            * 7.0;
+        let text_w = self.value.len().max(self.placeholder.len()) as f32 * 7.0;
         let w = text_w + 24.0;
         Size::new(w.max(80.0), h)
     }
@@ -119,40 +114,33 @@ impl Widget for Input {
     }
 
     fn render(&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let tokens = DesignTokens::antd_light();
         let h = self.input_size.height();
         let font_size = 14.0;
 
         let input_frame = Rect::new(frame.x, frame.y, frame.w, h.min(frame.h));
 
+        // Extract all token values upfront to avoid borrow conflict with ctx
+        let fill_tertiary = ctx.tokens().color_fill_tertiary();
+        let border_color = ctx.tokens().color_border();
+        let text_quaternary = ctx.tokens().color_text_quaternary();
+        let primary = ctx.tokens().color_primary();
+        let primary_hover = ctx.tokens().color_primary_hover();
+        let text_color_token = ctx.tokens().color_text();
+        let text_tertiary = ctx.tokens().color_text_tertiary();
+        let border_radius_sm = ctx.tokens().border_radius_sm();
+
         // Determine colors based on state
         let (bg, border, text_color) = if self.disabled {
-            (
-                tokens.color_fill_tertiary,
-                tokens.color_border,
-                tokens.color_text_quaternary,
-            )
+            (fill_tertiary, border_color, text_quaternary)
         } else if self.focused {
-            (
-                Color::white(),
-                tokens.color_primary,
-                tokens.color_text,
-            )
+            (Color::white(), primary, text_color_token)
         } else if self.hovered {
-            (
-                Color::white(),
-                tokens.color_primary_hover,
-                tokens.color_text,
-            )
+            (Color::white(), primary_hover, text_color_token)
         } else {
-            (
-                Color::white(),
-                tokens.color_border,
-                tokens.color_text,
-            )
+            (Color::white(), border_color, text_color_token)
         };
 
-        let radius = Some(Radius::uniform(tokens.border_radius_sm));
+        let radius = Some(Radius::uniform(border_radius_sm));
 
         // Background fill
         ctx.fill_rect(input_frame, bg, radius);
@@ -168,7 +156,7 @@ impl Widget for Input {
             &self.value
         };
         let text_color = if self.value.is_empty() && !self.focused {
-            tokens.color_text_tertiary
+            text_tertiary
         } else {
             text_color
         };
@@ -177,7 +165,10 @@ impl Widget for Input {
         if !display_text.is_empty() {
             ctx.draw_text(
                 display_text,
-                Point::new(input_frame.x + pad, input_frame.y + (input_frame.h - font_size) * 0.5),
+                Point::new(
+                    input_frame.x + pad,
+                    input_frame.y + (input_frame.h - font_size) * 0.5,
+                ),
                 text_color,
                 font_size,
             );
@@ -194,7 +185,7 @@ impl Widget for Input {
                 });
             ctx.fill_rect(
                 Rect::new(cursor_x, input_frame.y + 4.0, 1.5, input_frame.h - 8.0),
-                tokens.color_primary,
+                primary,
                 None,
             );
         }

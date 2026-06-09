@@ -10,6 +10,19 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 // ════════════════════════════════════════════════════════════════════════════
+// Type aliases
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Fallback function type for recovery operations returning `()`.
+type FallbackFn = Box<dyn Fn(&Error) -> Result<(), Error> + Send + Sync>;
+
+/// Callback invoked before each retry attempt.
+type RetryFn = Box<dyn Fn(&Error, usize) + Send + Sync>;
+
+/// Fallback function type for typed recovery operations.
+type TypedFallback<T> = Box<dyn Fn(&Error) -> Result<T, Error> + Send + Sync>;
+
+// ════════════════════════════════════════════════════════════════════════════
 // RetryPolicy trait
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -379,8 +392,8 @@ pub enum RecoveryAction {
 
 pub struct RecoveryHandler {
     policy: Box<dyn RetryPolicy>,
-    fallback: Option<Box<dyn Fn(&Error) -> Result<(), Error> + Send + Sync>>,
-    on_retry: Option<Box<dyn Fn(&Error, usize) + Send + Sync>>,
+    fallback: Option<FallbackFn>,
+    on_retry: Option<RetryFn>,
 }
 
 impl RecoveryHandler {
@@ -452,7 +465,7 @@ impl RecoveryHandler {
 pub fn with_recovery(
     policy: Box<dyn RetryPolicy>,
     operation: impl Fn() -> Result<(), Error>,
-    fallback: Option<Box<dyn Fn(&Error) -> Result<(), Error> + Send + Sync>>,
+    fallback: Option<FallbackFn>,
 ) -> Result<(), Error> {
     let mut handler = RecoveryHandler::new(policy);
     if let Some(fb) = fallback {
@@ -485,7 +498,7 @@ pub fn retry(
 pub fn with_recovery_typed<T>(
     policy: Box<dyn RetryPolicy>,
     operation: impl Fn() -> Result<T, Error>,
-    fallback: Option<Box<dyn Fn(&Error) -> Result<T, Error> + Send + Sync>>,
+    fallback: Option<TypedFallback<T>>,
 ) -> Result<T, Error> {
     let mut last_error;
     let mut attempt = 0;

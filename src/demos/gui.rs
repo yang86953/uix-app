@@ -1,13 +1,15 @@
 //! GUI Dashboard Demo — Ant Design 5 style interface using all UI components.
 
 use std::cell::{Cell, RefCell};
-use std::time::Instant;
-use uix::graphics::{Color, FontHandle, GraphicsEngine, SoftwareEngine};
+use uix::app::Window;
+use uix::diag::log::info_fn;
+use uix::graphics::{Color, DirtyRegion, FontHandle, GraphicsEngine, SoftwareEngine};
 use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
-use uix::platform::log::info_fn;
 use uix::platform::types::{KeyCode as PlatformKeyCode, MouseButton as PlatformMouseButton};
+#[cfg(windows)]
+use uix::platform::win32::GdiPresenter;
+#[cfg(windows)]
 use uix::platform::win32::Win32Platform;
-use uix::platform::Platform;
 use uix::ui::theme::DesignTokens;
 use uix::ui::{
     AlignItems, Button, ButtonSize, Card, Container, Divider, DividerOrientation, FlexDirection,
@@ -384,7 +386,7 @@ fn ui_event_to_widget_event(ev: &UiEvent) -> Option<WidgetEvent> {
         UiEventType::MouseWheel => {
             if let UiEventPayload::MouseWheel(ref d) = ev.payload {
                 Some(WidgetEvent::MouseWheel {
-                    delta: uix::graphics::Point::new(d.delta_x, d.delta_y),
+                    delta: uix::base::Point::new(d.delta_x, d.delta_y),
                 })
             } else {
                 None
@@ -422,51 +424,98 @@ fn ui_event_to_widget_event(ev: &UiEvent) -> Option<WidgetEvent> {
     }
 }
 
+#[cfg(windows)]
 pub fn run_gui_demo() {
     let mut tree = WidgetTree::new();
     build_dashboard(&mut tree);
 
     let mut engine = SoftwareEngine::new();
-    let mut platform = Win32Platform::new();
+    let platform = Win32Platform::new();
+    let mut window = Window::new(Box::new(platform));
 
-    if !platform.create_window("UIX Dashboard — Ant Design 5", GW, GH) {
+    // Create native window
+    if !window.create("UIX Dashboard — Ant Design 5", GW, GH) {
         eprintln!("Failed to create window");
         return;
     }
-    platform.center_on_screen();
-    platform.show();
-    let hwnd = platform.native_window();
+    window.platform_mut().center_on_screen();
+
+    let hwnd = window.platform().native_window();
     if hwnd.is_null() {
         eprintln!("Native window handle is null");
-        platform.destroy_window();
-        return;
-    }
-    if let Err(e) = engine.initialize(hwnd, GW, GH) {
-        eprintln!("Engine init failed: {}", e.short_what());
-        platform.destroy_window();
         return;
     }
 
-    // 加载字体用于文字渲染。
-    let font_handle = match engine.load_font("C:\\Windows\\Fonts\\segoeui.ttf", 14.0) {
-        Ok(f) => *f,
-        Err(e) => {
-            eprintln!(
-                "Warning: font load failed ({}), text will be invisible",
-                e.short_what()
-            );
+    // Initialise engine (no native_window parameter)
+    if let Err(e) = engine.initialize(GW, GH) {
+        eprintln!("Engine init failed: {}", e.short_what());
+        return;
+    }
+
+    // Load font — caller reads file bytes, engine decodes
+    let font_handle = match std::fs::read("C:\\Windows\\Fonts\\segoeui.ttf") {
+        Ok(bytes) => match engine.load_font(&bytes, 14.0) {
+            Ok(f) => *f,
+            Err(e) => {
+                eprintln!(
+                    "Warning: font load failed ({}), text will be invisible",
+                    e.short_what()
+                );
+                FontHandle::default()
+            }
+        },
+        Err(_) => {
+            eprintln!("Warning: Segoe UI font not found, text will be invisible");
             FontHandle::default()
         }
     };
 
+    let tokens = DesignTokens::antd_light();
+
+    // Create GDI presenter (needs hwnd)
+    let presenter = match unsafe { GdiPresenter::new(hwnd, GW, GH) } {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Presenter creation failed: {}", e.short_what());
+            return;
+        }
+    };
+
+    // Render initial frame before showing window (avoids white flash)
+    let initial_dirty = DirtyRegion::full();
+    engine.begin_frame(&initial_dirty);
+    tree.layout();
+    let mut rctx = RenderContext::new(&mut engine, font_handle, &tokens);
+    tree.render_tree(&mut rctx);
+    engine.end_frame(&initial_dirty);
+    tree.reset_dirty();
+    presenter.present(engine.pixels());
+
+    window.show();
+
     let running = Cell::new(true);
     let pending_events: RefCell<Vec<UiEvent>> = RefCell::new(Vec::new());
-    let target_frame_time = std::time::Duration::from_secs_f64(1.0 / 60.0);
 
-    while running.get() {
-        let frame_start = Instant::now();
-
-        platform.poll_event(&|ev: &UiEvent| {
+    window.run(|platform| {
+        // 1. Block until platform events arrive (0 CPU when idle),
+        //    then drain the event queue.
+        //
+        //    `wait_event`:
+        //      - Drains any pending Win32 messages (non-blocking first pass)
+        //      - Calls the callback for each UiEvent in the internal queue
+        //      - Blocks on GetMessageW until a new message arrives
+        //      - Dispatches the new message (may enqueue UiEvents)
+        //      - Calls the callback again for any new UiEvents
+        //    Returns `false` on WM_QUIT or if any callback returned false.
+        // 1. Block until platform events arrive (0 CPU when idle),
+        //    then drain the event queue.
+        //
+        //    `wait_event` blocks the thread on `GetMessageW` until any
+        //    window message arrives.  This is the mechanism that gives
+        //    us **0 FPS when idle**.  After waking, we always render
+        //    to ensure WM_PAINT and other non-UiEvent messages are
+        //    handled (e.g. re-expose after being covered).
+        let alive = platform.wait_event(&|ev: &UiEvent| {
             match ev.type_ {
                 UiEventType::WindowClose => {
                     running.set(false);
@@ -486,34 +535,40 @@ pub fn run_gui_demo() {
             true
         });
 
-        if !running.get() {
-            break;
+        if !alive {
+            return false;
         }
 
+        // 2. Drain any remaining events that queued up during wait_event
+        platform.poll_event(&|ev: &UiEvent| {
+            pending_events.borrow_mut().push(ev.clone());
+            true
+        });
+
+        // 3. Dispatch events to widget tree
+        //    (may mark widgets dirty via dispatch_event)
         for ev in pending_events.borrow_mut().drain(..) {
             if let Some(we) = ui_event_to_widget_event(&ev) {
                 tree.dispatch_event(&we);
             }
         }
 
+        // 4. Render — always runs after `wait_event` returns because
+        //    any window message (including WM_PAINT) may require
+        //    redrawing.  The thread was blocked while idle, so the CPU
+        //    cost of rendering is incurred only when real work exists.
         let dirty = tree.dirty_region().clone();
         engine.begin_frame(&dirty);
-
         tree.layout();
-
-        let mut rctx = RenderContext::new(&mut engine, font_handle);
+        let mut rctx = RenderContext::new(&mut engine, font_handle, &tokens);
         tree.render_tree(&mut rctx);
-
         engine.end_frame(&dirty);
+        presenter.present(engine.pixels());
         tree.reset_dirty();
 
-        let elapsed = frame_start.elapsed();
-        if elapsed < target_frame_time {
-            std::thread::sleep(target_frame_time - elapsed);
-        }
-    }
+        running.get() // false → exit loop
+    });
 
     engine.shutdown();
-    platform.destroy_window();
     info_fn("UIX Dashboard Demo exited.");
 }

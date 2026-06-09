@@ -2,7 +2,6 @@
 
 use crate::graphics::{Color, Radius, Rect, Size};
 use crate::ui::render_context::RenderContext;
-use crate::ui::theme::DesignTokens;
 use crate::ui::widget::{Widget, WidgetTree};
 
 /// Progress mode.
@@ -23,6 +22,12 @@ pub struct ProgressBar {
     height: f32,
     width: f32,
     round: bool,
+}
+
+impl Default for ProgressBar {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProgressBar {
@@ -84,14 +89,14 @@ impl Widget for ProgressBar {
     }
 
     fn render(&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let tokens = DesignTokens::antd_light();
+        let tokens = ctx.tokens();
 
-        let track_c = self.track_color.unwrap_or(tokens.color_fill_tertiary);
-        let stroke_c = self.stroke_color.unwrap_or(tokens.color_primary);
+        let track_c = self.track_color.unwrap_or(tokens.color_fill_tertiary());
+        let stroke_c = self.stroke_color.unwrap_or(tokens.color_primary());
         let radius = if self.round {
             Some(Radius::uniform(frame.h * 0.5))
         } else {
-            Some(Radius::uniform(tokens.border_radius_sm))
+            Some(Radius::uniform(tokens.border_radius_sm()))
         };
 
         // Track (background)

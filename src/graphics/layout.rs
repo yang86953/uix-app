@@ -1,20 +1,20 @@
+use crate::graphics::{EdgeInsets, Rect, Size};
 use std::f32;
-use crate::graphics::{Rect, Size, EdgeInsets};
 
 /// Flex container direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlexDirection {
+    #[default]
     Row,
     Column,
     RowReverse,
     ColumnReverse,
 }
 
-impl Default for FlexDirection { fn default() -> Self { Self::Row } }
-
 /// Main-axis alignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum JustifyContent {
+    #[default]
     Start,
     Center,
     End,
@@ -24,18 +24,15 @@ pub enum JustifyContent {
     Stretch,
 }
 
-impl Default for JustifyContent { fn default() -> Self { Self::Start } }
-
 /// Cross-axis alignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlignItems {
     Start,
     Center,
     End,
+    #[default]
     Stretch,
 }
-
-impl Default for AlignItems { fn default() -> Self { Self::Stretch } }
 
 /// Individual child flex properties.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -116,8 +113,14 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
         };
     }
 
-    let is_row = matches!(input.direction, FlexDirection::Row | FlexDirection::RowReverse);
-    let is_reverse = matches!(input.direction, FlexDirection::RowReverse | FlexDirection::ColumnReverse);
+    let is_row = matches!(
+        input.direction,
+        FlexDirection::Row | FlexDirection::RowReverse
+    );
+    let is_reverse = matches!(
+        input.direction,
+        FlexDirection::RowReverse | FlexDirection::ColumnReverse
+    );
 
     let main_size = |s: &Size| if is_row { s.w } else { s.h };
     let cross_size = |s: &Size| if is_row { s.h } else { s.w };
@@ -138,9 +141,9 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
         let basis = if child.flex_basis.is_finite() && child.flex_basis >= 0.0 {
             child.flex_basis
         } else if is_row {
-            if child_size.w > 0.0 { child_size.w } else { child_size.w }
+            child_size.w
         } else {
-            if child_size.h > 0.0 { child_size.h } else { child_size.h }
+            child_size.h
         };
         base_main_sizes[i] = basis;
         cross_sizes[i] = cross_size(&child_size);
@@ -153,9 +156,8 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
     let remaining = (container_main - total_base - gaps).max(0.0);
 
     if total_flex_grow > 0.0 && remaining > 0.0 {
-        for i in 0..count {
-            let extra = remaining * (input.children[i].flex_grow / total_flex_grow);
-            base_main_sizes[i] += extra;
+        for (i, base) in base_main_sizes.iter_mut().enumerate().take(count) {
+            *base += remaining * (input.children[i].flex_grow / total_flex_grow);
         }
     }
 
@@ -212,9 +214,15 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
     }
 
     let (total_w, total_h) = if is_row {
-        (cursor - input.gap + input.padding.horizontal(), container_cross + input.padding.vertical())
+        (
+            cursor - input.gap + input.padding.horizontal(),
+            container_cross + input.padding.vertical(),
+        )
     } else {
-        (container_main + input.padding.horizontal(), cursor - input.gap + input.padding.vertical())
+        (
+            container_main + input.padding.horizontal(),
+            cursor - input.gap + input.padding.vertical(),
+        )
     };
 
     FlexOutput {
@@ -479,10 +487,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     let total_col_gap = input.col_gap * (n_cols.saturating_sub(1)) as f32;
     let total_row_gap = input.row_gap * (n_rows.saturating_sub(1)) as f32;
 
-    let resolve_tracks = |tracks: &[GridTrack],
-                          available: f32,
-                          total_gap: f32|
-     -> Vec<f32> {
+    let resolve_tracks = |tracks: &[GridTrack], available: f32, total_gap: f32| -> Vec<f32> {
         let mut sizes = vec![0.0f32; tracks.len()];
         let mut used = 0.0f32;
         let mut total_fr = 0.0f32;
@@ -524,8 +529,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
 
     let mut col_positions: Vec<(f32, f32)> = Vec::with_capacity(n_cols);
     let mut cx = inner.x;
-    for i in 0..n_cols {
-        let cw = col_sizes[i];
+    for (i, &cw) in col_sizes.iter().enumerate().take(n_cols) {
         col_positions.push((cx, cw));
         cx += cw;
         if i < n_cols - 1 {
@@ -535,8 +539,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
 
     let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(n_rows);
     let mut cy = inner.y;
-    for i in 0..n_rows {
-        let rh = row_sizes[i];
+    for (i, &rh) in row_sizes.iter().enumerate().take(n_rows) {
         row_positions.push((cy, rh));
         cy += rh;
         if i < n_rows - 1 {
@@ -544,8 +547,16 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         }
     }
 
-    let total_w = col_positions.last().map(|(x, w)| x + w - inner.x).unwrap_or(0.0) + input.padding.horizontal();
-    let total_h = row_positions.last().map(|(y, h)| y + h - inner.y).unwrap_or(0.0) + input.padding.vertical();
+    let total_w = col_positions
+        .last()
+        .map(|(x, w)| x + w - inner.x)
+        .unwrap_or(0.0)
+        + input.padding.horizontal();
+    let total_h = row_positions
+        .last()
+        .map(|(y, h)| y + h - inner.y)
+        .unwrap_or(0.0)
+        + input.padding.vertical();
 
     // ── Place children ──
 
@@ -686,10 +697,22 @@ mod grid_tests {
             align_items: AlignItems::Stretch,
             justify_items: JustifyContent::Stretch,
             children: vec![
-                GridChild { preferred_size: Size::new(50.0, 50.0), ..Default::default() },
-                GridChild { preferred_size: Size::new(50.0, 50.0), ..Default::default() },
-                GridChild { preferred_size: Size::new(50.0, 50.0), ..Default::default() },
-                GridChild { preferred_size: Size::new(50.0, 50.0), ..Default::default() },
+                GridChild {
+                    preferred_size: Size::new(50.0, 50.0),
+                    ..Default::default()
+                },
+                GridChild {
+                    preferred_size: Size::new(50.0, 50.0),
+                    ..Default::default()
+                },
+                GridChild {
+                    preferred_size: Size::new(50.0, 50.0),
+                    ..Default::default()
+                },
+                GridChild {
+                    preferred_size: Size::new(50.0, 50.0),
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         };
@@ -711,8 +734,14 @@ mod grid_tests {
             align_items: AlignItems::Stretch,
             justify_items: JustifyContent::Stretch,
             children: vec![
-                GridChild { preferred_size: Size::new(50.0, 50.0), ..Default::default() },
-                GridChild { preferred_size: Size::new(50.0, 50.0), ..Default::default() },
+                GridChild {
+                    preferred_size: Size::new(50.0, 50.0),
+                    ..Default::default()
+                },
+                GridChild {
+                    preferred_size: Size::new(50.0, 50.0),
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         };
@@ -733,9 +762,10 @@ mod grid_tests {
             row_gap: 10.0,
             align_items: AlignItems::Stretch,
             justify_items: JustifyContent::Stretch,
-            children: vec![
-                GridChild { preferred_size: Size::new(50.0, 50.0), ..Default::default() },
-            ],
+            children: vec![GridChild {
+                preferred_size: Size::new(50.0, 50.0),
+                ..Default::default()
+            }],
             ..Default::default()
         };
         let out = compute_grid_layout(&input);

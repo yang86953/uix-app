@@ -4,6 +4,7 @@
 //! UIX UI — Widget framework with reactive state management.
 //! Layer 5: Declarative widget tree with 10-manager system architecture.
 
+pub mod animation;
 pub mod context;
 pub mod managers;
 pub mod render_context;
@@ -13,6 +14,7 @@ pub mod widget;
 pub mod widget_builder;
 pub mod widgets;
 
+pub use animation::*;
 pub use context::*;
 pub use managers::*;
 pub use render_context::*;

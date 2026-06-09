@@ -3,6 +3,8 @@
 // ============================================================================
 
 #![cfg(windows)]
+#![allow(nonstandard_style)]
+#![allow(clippy::upper_case_acronyms)]
 
 use crate::platform::win32::util::to_utf8;
 use crate::platform::{ISystemInfo, MemoryInfo, OsInfo};
@@ -131,7 +133,7 @@ fn get_cpu_count() -> u32 {
     unsafe {
         let mut system_info = SYSTEM_INFO::default();
         GetNativeSystemInfo(&mut system_info);
-        system_info.dwNumberOfProcessors as u32
+        system_info.dwNumberOfProcessors
     }
 }
 

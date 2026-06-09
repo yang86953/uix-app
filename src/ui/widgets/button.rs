@@ -7,7 +7,6 @@
 use crate::graphics::Radius;
 use crate::graphics::{Color, GraphicsEngine, Point, Rect, Size, TextLayoutOptions};
 use crate::ui::render_context::RenderContext;
-use crate::ui::theme::DesignTokens;
 use crate::ui::widget::{Widget, WidgetTree};
 
 /// Button style variant matching Ant Design.
@@ -171,82 +170,63 @@ impl Widget for Button {
     }
 
     fn render(&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        // Resolve colors from tokens via static light preset for now.
-        // In a full integration, tokens would come from WidgetContext.
-        let tokens = DesignTokens::antd_light();
         let h = self.btn_size.height();
         let font_size = self.btn_size.font_size();
 
         // Center the button content vertically within frame
         let btn_frame = Rect::new(frame.x, frame.y, frame.w, h.min(frame.h));
 
+        // Extract all token values before mutably borrowing ctx
+        let primary_border = ctx.tokens().color_primary_border();
+        let primary_active = ctx.tokens().color_primary_active();
+        let primary_hover = ctx.tokens().color_primary_hover();
+        let primary = ctx.tokens().color_primary();
+        let border = ctx.tokens().color_border();
+        let text_quaternary = ctx.tokens().color_text_quaternary();
+        let text = ctx.tokens().color_text();
+        let border_radius = ctx.tokens().border_radius();
+
         let (bg, border, text_color, border_width) = if self.disabled {
             match self.variant {
-                ButtonVariant::Primary => (
-                    Some(tokens.color_primary_border),
-                    tokens.color_border,
-                    tokens.color_text_quaternary,
-                    1.0,
-                ),
-                ButtonVariant::Text | ButtonVariant::Link => (
-                    None,
-                    Color::transparent(),
-                    tokens.color_text_quaternary,
-                    0.0,
-                ),
-                _ => (None, tokens.color_border, tokens.color_text_quaternary, 1.0),
+                ButtonVariant::Primary => (Some(primary_border), border, text_quaternary, 1.0),
+                ButtonVariant::Text | ButtonVariant::Link => {
+                    (None, Color::transparent(), text_quaternary, 0.0)
+                }
+                _ => (None, border, text_quaternary, 1.0),
             }
         } else if self.pressed {
             match self.variant {
-                ButtonVariant::Primary => (
-                    Some(tokens.color_primary_active),
-                    tokens.color_primary_active,
-                    Color::white(),
-                    1.0,
-                ),
-                ButtonVariant::Text | ButtonVariant::Link => {
-                    (None, Color::transparent(), tokens.color_primary_active, 0.0)
+                ButtonVariant::Primary => {
+                    (Some(primary_active), primary_active, Color::white(), 1.0)
                 }
-                _ => (
-                    None,
-                    tokens.color_primary_active,
-                    tokens.color_primary_active,
-                    1.0,
-                ),
+                ButtonVariant::Text | ButtonVariant::Link => {
+                    (None, Color::transparent(), primary_active, 0.0)
+                }
+                _ => (None, primary_active, primary_active, 1.0),
             }
         } else if self.hovered {
             match self.variant {
-                ButtonVariant::Primary => (
-                    Some(tokens.color_primary_hover),
-                    tokens.color_primary_hover,
-                    Color::white(),
-                    1.0,
-                ),
+                ButtonVariant::Primary => (Some(primary_hover), primary_hover, Color::white(), 1.0),
                 ButtonVariant::Text | ButtonVariant::Link => {
-                    (None, Color::transparent(), tokens.color_primary_hover, 0.0)
+                    (None, Color::transparent(), primary_hover, 0.0)
                 }
-                _ => (None, tokens.color_primary, tokens.color_primary, 1.0),
+                _ => (None, primary, primary, 1.0),
             }
         } else {
             match self.variant {
-                ButtonVariant::Primary => (
-                    Some(tokens.color_primary),
-                    tokens.color_primary,
-                    Color::white(),
-                    1.0,
-                ),
-                ButtonVariant::Dashed => (None, tokens.color_border, tokens.color_text, 1.0),
+                ButtonVariant::Primary => (Some(primary), primary, Color::white(), 1.0),
+                ButtonVariant::Dashed => (None, border, text, 1.0),
                 ButtonVariant::Text | ButtonVariant::Link => {
-                    (None, Color::transparent(), tokens.color_primary, 0.0)
+                    (None, Color::transparent(), primary, 0.0)
                 }
-                _ => (None, tokens.color_border, tokens.color_text, 1.0),
+                _ => (None, border, text, 1.0),
             }
         };
 
         // Background
         if let Some(bg_color) = bg {
-            let radius = if tokens.border_radius > 0.0 {
-                Some(Radius::uniform(tokens.border_radius))
+            let radius = if border_radius > 0.0 {
+                Some(Radius::uniform(border_radius))
             } else {
                 None
             };
@@ -255,9 +235,7 @@ impl Widget for Button {
 
         // Border (solid or dashed)
         if border_width > 0.0 && border.a > 0 {
-            // Draw border as a filled rect behind — or use stroke_rect
-            // Since stroke_rect is available:
-            let radius = Some(Radius::uniform(tokens.border_radius));
+            let radius = Some(Radius::uniform(border_radius));
             ctx.stroke_rect(btn_frame, border, border_width, radius);
         }
 

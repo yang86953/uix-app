@@ -37,6 +37,12 @@ pub struct SoftwareEngine {
     pre_frame_clip: Rect,
 }
 
+impl Default for SoftwareEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SoftwareEngine {
     pub fn new() -> Self {
         Self {
@@ -71,12 +77,7 @@ impl SoftwareEngine {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl GraphicsEngine for SoftwareEngine {
-    fn initialize(
-        &mut self,
-        _native_window: *mut std::ffi::c_void,
-        width: i32,
-        height: i32,
-    ) -> Result<(), Error> {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.main_width = width;
         self.main_height = height;
         self.rt.initialize(width, height);
@@ -94,7 +95,7 @@ impl GraphicsEngine for SoftwareEngine {
     }
 
     fn resize(&mut self, width: i32, height: i32) {
-        let _ = self.initialize(std::ptr::null_mut(), width, height);
+        let _ = self.initialize(width, height);
     }
 
     // ── 帧控制 ──
@@ -181,6 +182,19 @@ impl GraphicsEngine for SoftwareEngine {
         self.rt.fill_ellipse(rect, color);
     }
 
+    fn draw_box_shadow(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    ) {
+        self.rt
+            .draw_box_shadow(rect, blur_radius, offset_x, offset_y, color, corner_radius);
+    }
+
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
         self.rt.draw_line(x1, y1, x2, y2, color, width);
     }
@@ -208,14 +222,8 @@ impl GraphicsEngine for SoftwareEngine {
             .fill_radial_gradient(cx, cy, inner_r, outer_r, inner_color, outer_color);
     }
 
-    fn load_font(&mut self, path: &str, size: f32) -> Result<&mut FontHandle, Error> {
-        let bytes = std::fs::read(path).map_err(|e| {
-            Error::new(
-                Errc::FileNotFound,
-                format!("cannot read font '{}': {}", path, e),
-            )
-        })?;
-        self.assets.load_font(bytes, size)
+    fn load_font(&mut self, data: &[u8], size: f32) -> Result<&mut FontHandle, Error> {
+        self.assets.load_font(data.to_vec(), size)
     }
 
     fn unload_font(&mut self, _font: &FontHandle) {}
@@ -243,19 +251,9 @@ impl GraphicsEngine for SoftwareEngine {
         }
     }
 
-    fn load_image(&mut self, path: &str) -> Result<&mut ImageHandle, Error> {
-        let bytes = std::fs::read(path).map_err(|e| {
-            Error::new(
-                Errc::FileNotFound,
-                format!("cannot read image '{}': {}", path, e),
-            )
-        })?;
-        let img = image::load_from_memory(&bytes).map_err(|e| {
-            Error::new(
-                Errc::FormatError,
-                format!("cannot decode image '{}': {}", path, e),
-            )
-        })?;
+    fn load_image(&mut self, data: &[u8]) -> Result<&mut ImageHandle, Error> {
+        let img = image::load_from_memory(data)
+            .map_err(|e| Error::new(Errc::FormatError, format!("cannot decode image: {}", e)))?;
         let rgba = img.to_rgba8();
         let (w, h) = rgba.dimensions();
         let pixels: Vec<u32> = rgba

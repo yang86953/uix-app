@@ -2,7 +2,6 @@
 
 use crate::graphics::{Color, Point, Rect, Size};
 use crate::ui::render_context::RenderContext;
-use crate::ui::theme::DesignTokens;
 use crate::ui::widget::{Widget, WidgetTree};
 
 /// Divider orientation for text placement.
@@ -27,6 +26,12 @@ pub struct Divider {
     direction: DividerDirection,
     color: Option<Color>,
     text_size: f32,
+}
+
+impl Default for Divider {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Divider {
@@ -74,8 +79,8 @@ impl Widget for Divider {
     }
 
     fn render(&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let tokens = DesignTokens::antd_light();
-        let line_color = self.color.unwrap_or(tokens.color_border_secondary);
+        let line_color = self.color.unwrap_or(ctx.tokens().color_border_secondary());
+        let text_secondary = ctx.tokens().color_text_secondary();
 
         match self.direction {
             DividerDirection::Horizontal => {
@@ -108,7 +113,7 @@ impl Widget for Divider {
                     ctx.draw_text(
                         text,
                         Point::new(text_x, text_y),
-                        tokens.color_text_secondary,
+                        text_secondary,
                         self.text_size,
                     );
 

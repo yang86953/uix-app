@@ -1,0 +1,21 @@
+{
+  "project": "uix-app",
+  "type": "rust-native-ui-framework",
+  "root": "/home/yang86/data/code/uix-app",
+  "language": "Rust",
+  "edition": "2021",
+  "last_commit": "f92f28d — 完成基本骨架",
+  "architecture": {
+    "philosophy": "composition-over-inheritance",
+    "patterns": ["trait abstractions", "dependency-injection", "strategy-pattern", "owned-widget-tree"],
+    "forbidden": ["unwrap()", "expect()", "global-mutable-state", "god-objects", "base-class-abstraction"]
+  },
+  "platforms": ["linux/wayland", "windows/win32"],
+  "modules": [
+    "graphics", "platform", "ui", "services", "diag", "app"
+  ],
+  "current_focus": null,
+  "last_session": "2026-06-09",
+  "session_count": 0,
+  "todo": []
+}

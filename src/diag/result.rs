@@ -24,16 +24,16 @@ impl<T> ResultExt<T> for Result<T, Error> {
     fn has_value(&self) -> bool { self.is_ok() }
     fn has_error(&self) -> bool { self.is_err() }
     fn value(&self) -> Option<&T> {
-        match self { Ok(v) => Some(v), Err(_) => None }
+        self.as_ref().ok()
     }
     fn value_mut(&mut self) -> Option<&mut T> {
-        match self { Ok(v) => Some(v), Err(_) => None }
+        self.as_mut().ok()
     }
     fn into_value(self) -> Option<T> {
-        match self { Ok(v) => Some(v), Err(_) => None }
+        self.ok()
     }
     fn error(&self) -> Option<&Error> {
-        match self { Err(e) => Some(e), Ok(_) => None }
+        self.as_ref().err()
     }
     fn value_or<U>(&self, default: U) -> T where T: Clone, U: Into<T> {
         match self {

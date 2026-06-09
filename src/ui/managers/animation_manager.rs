@@ -40,18 +40,15 @@ impl std::fmt::Debug for Animation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum Easing {
+    #[default]
     Linear,
     EaseIn,
     EaseOut,
     EaseInOut,
 }
 
-impl Default for Easing {
-    fn default() -> Self {
-        Self::Linear
-    }
-}
 
 impl Animation {
     pub fn new(from: f32, to: f32, duration: f32) -> Self {

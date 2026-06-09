@@ -12,7 +12,7 @@ use bitflags::bitflags;
 // 几何类型 — 从 graphics 模块统一引入，避免重复定义
 // ════════════════════════════════════════════════════════════════════════════
 
-pub use crate::graphics::{EdgeInsets, Point, Rect, Size};
+pub use crate::base::{EdgeInsets, Point, Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 按键码（被 event、input、cursor 等多个子系统共享）

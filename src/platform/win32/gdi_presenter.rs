@@ -4,12 +4,13 @@
 //! to a Win32 window via `CreateDIBSection` + `BitBlt`.
 
 #![cfg(windows)]
+#![allow(clippy::upper_case_acronyms)]
+#![allow(nonstandard_style)]
 
+use crate::diag::{Errc, Error};
 use std::mem::MaybeUninit;
 
-// ════════════════════════════════════════════════════════════════════════════
-// Win32 FFI declarations
-// ════════════════════════════════════════════════════════════════════════════
+// ── Win32 FFI declarations ────────────────────────────────────────────────
 
 #[link(name = "gdi32")]
 extern "system" {
@@ -26,9 +27,13 @@ extern "system" {
     fn DeleteDC(hdc: *mut std::ffi::c_void) -> i32;
     fn BitBlt(
         hdc_dst: *mut std::ffi::c_void,
-        x: i32, y: i32, w: i32, h: i32,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
         hdc_src: *mut std::ffi::c_void,
-        sx: i32, sy: i32,
+        sx: i32,
+        sy: i32,
         rop: u32,
     ) -> i32;
     fn CreateCompatibleDC(hdc: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
@@ -55,8 +60,6 @@ struct BITMAPINFOHEADER {
     bi_clr_important: u32,
 }
 
-// bmi_colors: ZST at end of repr(C) struct — occupies 0 bytes, placing
-// the flexible array member at the correct offset for the Win32 API.
 #[repr(C)]
 struct BITMAPINFO {
     bmi_header: BITMAPINFOHEADER,
@@ -84,10 +87,19 @@ pub struct GdiPresenter {
 impl GdiPresenter {
     /// Create a new DIB-backed presenter for the given window and dimensions.
     ///
-    /// # Panics
-    /// Panics if `w <= 0` or `h <= 0`.
-    pub fn new(hwnd: *mut std::ffi::c_void, w: i32, h: i32) -> Self {
-        assert!(w > 0 && h > 0, "GdiPresenter: dimensions must be positive");
+    /// # Safety
+    ///
+    /// `hwnd` must be a valid native window handle (non-null, owned by the caller).
+    /// The caller must ensure the window is not destroyed during this object's lifetime.
+    ///
+    /// Returns `Err` if `w <= 0` or `h <= 0`, or if the DIB cannot be created.
+    pub unsafe fn new(hwnd: *mut std::ffi::c_void, w: i32, h: i32) -> Result<Self, Error> {
+        if w <= 0 || h <= 0 {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!("GdiPresenter: dimensions must be positive, got {}x{}", w, h),
+            ));
+        }
         let mut dib_bits: *mut u32 = std::ptr::null_mut();
         let mut hdc_mem: *mut std::ffi::c_void = std::ptr::null_mut();
         let mut hbitmap: *mut std::ffi::c_void = std::ptr::null_mut();
@@ -112,8 +124,6 @@ impl GdiPresenter {
                         },
                         bmi_colors: [],
                     };
-                    // Use MaybeUninit to avoid strict-aliasing UB:
-                    // CreateDIBSection writes *mut c_void, we read it as *mut u32.
                     let mut ppv: MaybeUninit<*mut std::ffi::c_void> = MaybeUninit::uninit();
                     hbitmap = CreateDIBSection(
                         hdc_mem,
@@ -134,12 +144,23 @@ impl GdiPresenter {
                 ReleaseDC(hwnd, hdc);
             }
         }
-        Self { hwnd, hdc_mem, hbitmap, dib_bits, width: w, height: h }
+        if hdc_mem.is_null() || hbitmap.is_null() {
+            return Err(Error::new(
+                Errc::PlatformError,
+                "GdiPresenter: failed to create DIB section".to_string(),
+            ));
+        }
+        Ok(Self {
+            hwnd,
+            hdc_mem,
+            hbitmap,
+            dib_bits,
+            width: w,
+            height: h,
+        })
     }
 
     /// Copy pixel data to the DIB and blit to the window.
-    ///
-    /// Only the minimum of `pixels.len()` and `width*height` is copied.
     pub fn present(&self, pixels: &[u32]) {
         unsafe {
             if self.dib_bits.is_null() {
@@ -156,7 +177,17 @@ impl GdiPresenter {
             if hdc.is_null() {
                 return;
             }
-            BitBlt(hdc, 0, 0, self.width, self.height, self.hdc_mem, 0, 0, SRCCOPY);
+            BitBlt(
+                hdc,
+                0,
+                0,
+                self.width,
+                self.height,
+                self.hdc_mem,
+                0,
+                0,
+                SRCCOPY,
+            );
             ReleaseDC(self.hwnd, hdc);
         }
     }

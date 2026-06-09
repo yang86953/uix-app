@@ -1,33 +1,72 @@
-//! RenderContext — bridges Widget tree with GraphicsEngine for high-level rendering.
+//! RenderContext — bridges Widget tree with GraphicsEngine and token system.
+//!
+//! Widgets access design tokens via `RenderContext::tokens()` instead of
+//! hardcoding a concrete theme preset. This is the single point where the
+//! widget tree receives injectable design tokens during rendering.
 
-use crate::graphics::{Color, Point, Size};
-use crate::graphics::{FontHandle, GradientDirection, GraphicsEngine, Radius};
+use crate::graphics::{Color, FontHandle, GraphicsEngine, Point, Radius, Rect, Size};
+use crate::graphics::{GradientDirection, TextLayoutOptions};
+use crate::ui::theme::TokenProvider;
 
-/// RenderContext wraps a GraphicsEngine reference and provides widget-level drawing.
+/// RenderContext wraps a GraphicsEngine reference and a TokenProvider,
+/// providing widget-level drawing and token access.
+///
+/// Widgets **must not** call `DesignTokens::antd_light()` directly —
+/// use `ctx.tokens()` to get the active token provider.
 pub struct RenderContext<'a> {
     engine: &'a mut dyn GraphicsEngine,
     font: FontHandle,
     #[allow(dead_code)]
     pub(crate) global_opacity: f32,
+    max_text_width: f32,
+    tokens: &'a dyn TokenProvider,
 }
 
 impl<'a> RenderContext<'a> {
-    /// Create a new render context.
-    /// `font` should be obtained from `GraphicsEngine::load_font()` or similar.
-    /// Until a real font system is integrated, pass `FontHandle` (the unit struct).
-    pub fn new(engine: &'a mut dyn GraphicsEngine, font: FontHandle) -> Self {
+    /// Create a new render context with the given engine, font, and token provider.
+    ///
+    /// `tokens` should carry the active theme's token provider (e.g. from Theme).
+    /// When not needed for testing, `DesignTokens::antd_light()` can be passed.
+    pub fn new(
+        engine: &'a mut dyn GraphicsEngine,
+        font: FontHandle,
+        tokens: &'a dyn TokenProvider,
+    ) -> Self {
         Self {
             engine,
             font,
             global_opacity: 1.0,
+            max_text_width: f32::MAX,
+            tokens,
         }
+    }
+
+    /// Access the active design token provider.
+    ///
+    /// This is the **only** approved way for widgets to read design tokens.
+    /// Do not hardcode `DesignTokens::antd_light()` in widget code.
+    pub fn tokens(&self) -> &dyn TokenProvider {
+        self.tokens
     }
 
     pub fn engine(&mut self) -> &mut dyn GraphicsEngine {
         self.engine
     }
 
-    pub fn fill_rect(&mut self, rect: crate::graphics::Rect, color: Color, radius: Option<Radius>) {
+    pub fn draw_box_shadow(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    ) {
+        self.engine
+            .draw_box_shadow(rect, blur_radius, offset_x, offset_y, color, corner_radius);
+    }
+
+    pub fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
         self.engine.fill_rect(rect, color, radius);
     }
 
@@ -49,9 +88,15 @@ impl<'a> RenderContext<'a> {
         self.engine.stroke_circle(cx, cy, r, color, lw);
     }
 
+    /// Set a maximum text width for text layout.
+    /// Use `f32::MAX` (default) for unlimited width.
+    pub fn set_max_text_width(&mut self, width: f32) {
+        self.max_text_width = width;
+    }
+
     pub fn draw_text(&mut self, text: &str, pos: Point, color: Color, font_size: f32) {
-        let opts = crate::graphics::TextLayoutOptions {
-            max_width: 2000.0,
+        let opts = TextLayoutOptions {
+            max_width: self.max_text_width,
             line_height: font_size + 2.0,
             word_wrap: false,
             h_align: crate::graphics::HAlign::Left,
@@ -92,8 +137,8 @@ impl<'a> RenderContext<'a> {
     }
 
     pub fn measure_text(&self, text: &str, font_size: f32) -> Size {
-        let opts = crate::graphics::TextLayoutOptions {
-            max_width: 2000.0,
+        let opts = TextLayoutOptions {
+            max_width: self.max_text_width,
             line_height: font_size + 2.0,
             word_wrap: false,
             h_align: crate::graphics::HAlign::Left,

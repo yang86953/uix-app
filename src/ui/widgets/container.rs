@@ -19,6 +19,12 @@ pub struct Container {
     pub fixed_height: Option<f32>,
 }
 
+impl Default for Container {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Container {
     pub fn new() -> Self {
         Self {
@@ -162,7 +168,13 @@ impl Widget for Container {
             self.gap
         } else {
             match self.justify {
-                JustifyContent::SpaceBetween => self.gap + remaining / (children.len() - 1) as f32,
+                JustifyContent::SpaceBetween => {
+                    if children.len() <= 1 {
+                        self.gap
+                    } else {
+                        self.gap + remaining / (children.len() - 1) as f32
+                    }
+                }
                 JustifyContent::SpaceAround => self.gap + remaining / children.len() as f32,
                 JustifyContent::SpaceEvenly => self.gap + remaining / (children.len() + 1) as f32,
                 _ => self.gap,

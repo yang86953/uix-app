@@ -1,103 +1,129 @@
-use std::time::{Instant, Duration};
+// ============================================================================
+// app/window.rs — 基于 Platform 的事件驱动窗口
+//
+// 核心设计：
+//   - 组合 `Box<dyn Platform>`，将窗口管理职责委托给平台层
+//   - 不重复维护窗口状态（尺寸、最小化等），全部通过 Platform trait 获取
+//   - 提供 run() 事件循环 + 帧回调机制，调用者负责渲染管线
+// ============================================================================
 
-/// Event-driven rendering window.
-/// No fixed FPS — renders on demand when events, animations, or dirty regions occur.
+use crate::platform::Platform;
+
+/// Event-driven application window.
+///
+/// Wraps a `dyn Platform` and provides a high-level event loop.
+/// Does **not** duplicate platform window state — delegates all window
+/// management (dimensions, minimize, maximize, etc.) to the inner `Platform`.
 pub struct Window {
-    title: String,
-    width: i32,
-    height: i32,
+    platform: Box<dyn Platform>,
     running: bool,
-    frame_pending: bool,
-    minimized: bool,
+    exit_code: i32,
 }
 
 impl Window {
-    pub fn new(title: &str, width: i32, height: i32) -> Self {
+    /// Create a new Window from a platform implementation.
+    pub fn new(platform: Box<dyn Platform>) -> Self {
         Self {
-            title: title.to_string(),
-            width,
-            height,
+            platform,
             running: false,
-            frame_pending: true,
-            minimized: false,
+            exit_code: 0,
         }
     }
 
-    /// Run the event loop (blocks until window closes).
-    pub fn run(&mut self) {
-        self.running = true;
-        let mut last_time = Instant::now();
+    // ── 平台访问器 ──────────────────────────────────────────────────
 
-        log::info!("Window '{}' started ({}x{})", self.title, self.width, self.height);
+    /// Access the underlying platform (read-only).
+    pub fn platform(&self) -> &dyn Platform {
+        self.platform.as_ref()
+    }
 
-        // Event-driven loop
-        while self.running {
-            let now = Instant::now();
-            let _dt = now.duration_since(last_time).as_secs_f32();
-            last_time = now;
+    /// Access the underlying platform (mutable).
+    pub fn platform_mut(&mut self) -> &mut dyn Platform {
+        self.platform.as_mut()
+    }
 
-            // Process platform events
-            self.process_events();
+    // ── 窗口生命周期（委托给 platform）────────────────────────────
 
-            if self.minimized {
-                // Sleep to avoid busy-waiting when minimized
-                std::thread::sleep(Duration::from_millis(10));
-                continue;
-            }
-
-            // Check if we need to render
-            if self.frame_pending {
-                self.do_layout();
-                self.do_render();
-                self.frame_pending = false;
-            } else {
-                // No events + no animations = deep sleep via platform WaitMessage
-                // In a real implementation, platform::wait_event() blocks here
-                std::thread::sleep(Duration::from_millis(1));
-            }
+    /// Create the native window, center it on screen, show it, and raise.
+    /// Returns `true` on success.
+    pub fn create(&mut self, title: &str, width: i32, height: i32) -> bool {
+        if !self.platform.create_window(title, width, height) {
+            log::error!("Window::create: platform failed to create window");
+            return false;
         }
-
-        log::info!("Window '{}' closed", self.title);
+        // Auto-complete window initialization: center → show → raise
+        self.platform.center_on_screen();
+        self.platform.show();
+        self.platform.raise();
+        log::info!(
+            "Window created and shown ({}x{}, title='{}')",
+            width, height, title
+        );
+        true
     }
 
-    /// Request a frame to be rendered.
-    pub fn request_frame(&mut self) {
-        self.frame_pending = true;
+    /// Show the window (called automatically by `create()`).
+    pub fn show(&mut self) {
+        self.platform.show();
     }
 
-    /// Close the window.
+    /// Close the window and signal the event loop to exit.
     pub fn close(&mut self) {
         self.running = false;
     }
 
-    fn process_events(&mut self) {
-        // Platform-specific event processing would go here
-        // For now, this is a stub
+    /// Check whether the event loop is still running.
+    pub fn is_running(&self) -> bool {
+        self.running
     }
 
-    fn do_layout(&mut self) {
-        // Layout pass — would traverse widget tree and compute positions
+    // ── 事件循环 ────────────────────────────────────────────────────
+
+    /// Run the event loop (blocks until exit).
+    ///
+    /// For each iteration, calls `frame_fn` which receives `&mut dyn Platform`
+    /// and returns `true` to continue or `false` to exit the loop.
+    ///
+    /// The caller is responsible for:
+    /// - Polling or waiting for platform events via `platform.poll_event()`
+    ///   or `platform.wait_event()`
+    /// - Rendering via `GraphicsEngine`
+    /// - Presenting the pixel buffer
+    ///
+    /// No frame rate capping is applied — rendering only happens when
+    /// `frame_fn` chooses to do so. Use `wait_event()` inside `frame_fn`
+    /// to block until events arrive (0 CPU when idle).
+    pub fn run<F>(&mut self, mut frame_fn: F) -> i32
+    where
+        F: FnMut(&mut dyn Platform) -> bool,
+    {
+        self.running = true;
+
+        log::info!(
+            "Window event loop started ({}x{})",
+            self.platform.width(),
+            self.platform.height()
+        );
+
+        while self.running {
+            let should_continue = frame_fn(self.platform.as_mut());
+            if !should_continue {
+                self.running = false;
+            }
+        }
+
+        self.running = false;
+        log::info!("Window event loop ended");
+        self.exit_code
     }
+}
 
-    fn do_render(&mut self) {
-        // Render pass — would traverse widget tree and draw using GraphicsEngine
+impl Drop for Window {
+    fn drop(&mut self) {
+        if self.running {
+            // Ensure the native window is destroyed
+            self.platform.destroy_window();
+        }
+        self.running = false;
     }
-
-    // ── Accessors ──
-
-    pub fn title(&self) -> &str { &self.title }
-    pub fn set_title(&mut self, title: &str) { self.title = title.to_string(); }
-
-    pub fn width(&self) -> i32 { self.width }
-    pub fn height(&self) -> i32 { self.height }
-
-    pub fn resize(&mut self, w: i32, h: i32) {
-        self.width = w;
-        self.height = h;
-        self.request_frame();
-    }
-
-    pub fn set_minimized(&mut self, v: bool) { self.minimized = v; }
-    pub fn is_minimized(&self) -> bool { self.minimized }
-    pub fn is_running(&self) -> bool { self.running }
 }

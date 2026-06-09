@@ -2,7 +2,6 @@
 
 use crate::graphics::{Point, Radius, Rect, Size};
 use crate::ui::render_context::RenderContext;
-use crate::ui::theme::DesignTokens;
 use crate::ui::widget::{EventResult, Widget, WidgetEvent, WidgetTree};
 
 /// A single tab definition.
@@ -27,6 +26,12 @@ pub struct Tabs {
     tab_height: f32,
     fixed_width: Option<f32>,
     fixed_height: Option<f32>,
+}
+
+impl Default for Tabs {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Tabs {
@@ -106,7 +111,11 @@ impl Widget for Tabs {
     }
 
     fn render(&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let tokens = DesignTokens::antd_light();
+        // Extract all token values upfront to avoid borrow conflict with ctx
+        let bg_container = ctx.tokens().color_bg_container();
+        let border_secondary = ctx.tokens().color_border_secondary();
+        let primary = ctx.tokens().color_primary();
+        let text_secondary = ctx.tokens().color_text_secondary();
 
         // Tab bar background
         let tab_bar_h = self.tab_height;
@@ -118,14 +127,14 @@ impl Widget for Tabs {
         // Tab bar background
         ctx.fill_rect(
             Rect::new(frame.x, tab_bar_y, frame.w, tab_bar_h),
-            tokens.color_bg_container,
+            bg_container,
             None,
         );
 
         // Bottom border of tab bar
         ctx.fill_rect(
             Rect::new(frame.x, tab_bar_y + tab_bar_h - 2.0, frame.w, 2.0),
-            tokens.color_border_secondary,
+            border_secondary,
             None,
         );
 
@@ -136,25 +145,7 @@ impl Widget for Tabs {
 
         for (i, tab) in self.tabs.iter().enumerate() {
             let is_active = i == self.active_index;
-            let text_color = if is_active {
-                tokens.color_primary
-            } else {
-                tokens.color_text_secondary
-            };
-            let hover_bg = if is_active {
-                None // Active tab has indicator, not background
-            } else {
-                None
-            };
-
-            // Tab background on hover/active
-            if let Some(bg) = hover_bg {
-                ctx.fill_rect(
-                    Rect::new(cursor_x, tab_bar_y + 4.0, tab_w, tab_bar_h - 8.0),
-                    bg,
-                    Some(Radius::uniform(6.0)),
-                );
-            }
+            let text_color = if is_active { primary } else { text_secondary };
 
             // Tab label
             ctx.draw_text(
@@ -174,7 +165,7 @@ impl Widget for Tabs {
                 };
                 ctx.fill_rect(
                     Rect::new(indicator_x, indicator_y, indicator_w, 2.0),
-                    tokens.color_primary,
+                    primary,
                     Some(Radius::uniform(1.0)),
                 );
             }
@@ -192,7 +183,7 @@ impl Widget for Tabs {
         // Fill content background
         ctx.fill_rect(
             Rect::new(frame.x, content_y, frame.w, content_h),
-            tokens.color_bg_container,
+            bg_container,
             None,
         );
 

@@ -534,9 +534,7 @@ impl WidgetTree {
             return;
         };
         if !self.dirty_region.full_frame && frame.w > 0.0 && frame.h > 0.0 {
-            self.dirty_region = DirtyRegion::area(
-                self.dirty_region.rect.union(&frame),
-            );
+            self.dirty_region = DirtyRegion::area(self.dirty_region.rect.union(&frame));
         }
     }
 
@@ -645,6 +643,7 @@ impl WidgetTree {
             WidgetEvent::MouseDown { pos, .. } => {
                 let target = self.hit_test(*pos);
                 if let Some(t) = target {
+                    self.mark_dirty(t);
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
                         self.set_focus(Some(t));
@@ -657,6 +656,7 @@ impl WidgetTree {
             }
             WidgetEvent::MouseUp { pos, .. } => {
                 if let Some(t) = self.hit_test(*pos) {
+                    self.mark_dirty(t);
                     self.dispatch_to(t, event)
                 } else {
                     EventResult::NotHandled
@@ -666,9 +666,11 @@ impl WidgetTree {
                 let new_hover = self.hit_test(*pos);
                 if new_hover != self.hovered_widget {
                     if let Some(old) = self.hovered_widget {
+                        self.mark_dirty(old);
                         let _ = self.dispatch_to(old, &WidgetEvent::HoverLeave);
                     }
                     if let Some(new) = new_hover {
+                        self.mark_dirty(new);
                         let _ = self.dispatch_to(new, &WidgetEvent::HoverEnter);
                     }
                     self.hovered_widget = new_hover;
@@ -680,9 +682,7 @@ impl WidgetTree {
                 }
             }
             WidgetEvent::MouseWheel { .. } => {
-                let target = self
-                    .hovered_widget
-                    .or(self.root_id);
+                let target = self.hovered_widget.or(self.root_id);
                 if let Some(t) = target {
                     self.dispatch_to(t, event)
                 } else {
@@ -691,6 +691,7 @@ impl WidgetTree {
             }
             WidgetEvent::KeyDown { .. } | WidgetEvent::KeyUp { .. } => {
                 if let Some(t) = self.focused_widget {
+                    self.mark_dirty(t);
                     self.dispatch_to(t, event)
                 } else {
                     EventResult::NotHandled
@@ -747,10 +748,12 @@ impl WidgetTree {
             return;
         }
         if let Some(old) = self.focused_widget {
+            self.mark_dirty(old);
             let _ = self.dispatch_to(old, &WidgetEvent::FocusOut);
         }
         self.focused_widget = new_focus;
         if let Some(new) = new_focus {
+            self.mark_dirty(new);
             let _ = self.dispatch_to(new, &WidgetEvent::FocusIn);
         }
     }
@@ -787,7 +790,13 @@ mod tests {
             EventResult::Handled
         }
 
-        fn render(&self, _frame: Rect, _ctx: &mut crate::ui::render_context::RenderContext, _tree: &WidgetTree) {}
+        fn render(
+            &self,
+            _frame: Rect,
+            _ctx: &mut crate::ui::render_context::RenderContext,
+            _tree: &WidgetTree,
+        ) {
+        }
     }
 
     /// A container that passes events through (returns NotHandled for bubbling).
@@ -818,7 +827,13 @@ mod tests {
             EventResult::NotHandled // let it bubble to parent
         }
 
-        fn render(&self, _frame: Rect, _ctx: &mut crate::ui::render_context::RenderContext, _tree: &WidgetTree) {}
+        fn render(
+            &self,
+            _frame: Rect,
+            _ctx: &mut crate::ui::render_context::RenderContext,
+            _tree: &WidgetTree,
+        ) {
+        }
     }
 
     // ── WidgetTree Construction ──
@@ -828,7 +843,7 @@ mod tests {
         let mut tree = WidgetTree::new();
         let id = tree.set_root(Box::new(SpyWidget::new(100.0, 50.0)));
         assert!(tree.get(id).is_some());
-        assert_eq!(tree.root().unwrap().id(), id);
+        assert_eq!(tree.root().expect("root should exist").id(), id);
     }
 
     #[test]
@@ -837,8 +852,14 @@ mod tests {
         let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
         let cid = tree.add_child(root, Box::new(SpyWidget::new(80.0, 40.0)));
         assert!(tree.get(cid).is_some());
-        assert_eq!(tree.get(root).unwrap().children(), &[cid]);
-        assert_eq!(tree.get(cid).unwrap().parent(), Some(root));
+        assert_eq!(
+            tree.get(root).expect("root widget should exist").children(),
+            &[cid]
+        );
+        assert_eq!(
+            tree.get(cid).expect("child widget should exist").parent(),
+            Some(root)
+        );
     }
 
     #[test]
@@ -861,7 +882,13 @@ mod tests {
         tree.remove(a);
         assert!(tree.get(a).is_none());
         assert!(tree.get(b).is_none());
-        assert_eq!(tree.get(root).unwrap().children().len(), 0);
+        assert_eq!(
+            tree.get(root)
+                .expect("root widget should exist")
+                .children()
+                .len(),
+            0
+        );
     }
 
     // ── Hit Testing ──
@@ -886,15 +913,15 @@ mod tests {
     #[test]
     fn hit_test_returns_deepest_child() {
         let mut tree = WidgetTree::new();
-        let root = tree.set_root(Box::new(PassThroughContainer::new(
-            200.0,
-            200.0,
-            vec![],
-        )));
+        let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
         let child = tree.add_child(root, Box::new(SpyWidget::new(100.0, 100.0)));
         // Manually set frame since PassThroughContainer doesn't lay out children
-        tree.get_mut(root).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-        tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+        tree.get_mut(root)
+            .expect("root widget should exist")
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        tree.get_mut(child)
+            .expect("child widget should exist")
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
         let hit = tree.hit_test(Point::new(50.0, 50.0));
         assert_eq!(hit, Some(child));
     }
@@ -902,15 +929,17 @@ mod tests {
     #[test]
     fn hit_test_skips_invisible() {
         let mut tree = WidgetTree::new();
-        let root = tree.set_root(Box::new(PassThroughContainer::new(
-            200.0,
-            200.0,
-            vec![],
-        )));
+        let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
         let child = tree.add_child(root, Box::new(SpyWidget::new(100.0, 100.0)));
-        tree.get_mut(root).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-        tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
-        tree.get_mut(child).unwrap().set_visible(false);
+        tree.get_mut(root)
+            .expect("root widget should exist")
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        tree.get_mut(child)
+            .expect("child widget should exist")
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+        tree.get_mut(child)
+            .expect("child widget should exist")
+            .set_visible(false);
         let hit = tree.hit_test(Point::new(50.0, 50.0));
         assert_eq!(hit, Some(root));
     }
@@ -921,13 +950,14 @@ mod tests {
     fn dispatch_mouse_down_focuses_target() {
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-        let btn = tree.add_child(
-            root_id,
-            Box::new(SpyWidget::new(80.0, 40.0)),
-        );
+        let btn = tree.add_child(root_id, Box::new(SpyWidget::new(80.0, 40.0)));
         // Manually set frames
-        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-        tree.get_mut(btn).unwrap().set_frame(Rect::new(0.0, 0.0, 80.0, 40.0));
+        tree.get_mut(root_id)
+            .expect("root widget should exist")
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        tree.get_mut(btn)
+            .expect("button widget should exist")
+            .set_frame(Rect::new(0.0, 0.0, 80.0, 40.0));
 
         let result = tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(40.0, 20.0),
@@ -973,12 +1003,13 @@ mod tests {
     fn dispatch_mouse_move_triggers_hover_enter_leave() {
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-        let child = tree.add_child(
-            root_id,
-            Box::new(SpyWidget::new(100.0, 100.0)),
-        );
-        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-        tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+        let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
+        tree.get_mut(root_id)
+            .expect("root widget should exist")
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        tree.get_mut(child)
+            .expect("child widget should exist")
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
         // Move into child — should dispatch MouseMove to child
         tree.dispatch_event(&WidgetEvent::MouseMove {

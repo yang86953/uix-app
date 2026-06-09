@@ -3,7 +3,7 @@
 // ============================================================================
 
 use crate::diag::collector::Collector;
-use crate::diag::error::{Error, ErrorSeverity, Errc};
+use crate::diag::error::{Errc, Error, ErrorSeverity};
 use crate::diag::log::Logger;
 use std::fs;
 use std::io::Write;
@@ -27,8 +27,11 @@ pub fn install_fatal_handler() {
                 "unknown panic payload".to_string()
             };
 
-            let loc_file = info.location().map(|l| l.file().to_string()).unwrap_or_else(|| "unknown".to_string());
-            let loc_line = info.location().map(|l| l.line()).unwrap_or(0) as u32;
+            let loc_file = info
+                .location()
+                .map(|l| l.file().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            let loc_line = info.location().map(|l| l.line()).unwrap_or(0);
             let panic_msg = format!("PANIC at {}:{}: {}", loc_file, loc_line, msg_str);
 
             // 2. Log to all sinks
@@ -41,15 +44,14 @@ pub fn install_fatal_handler() {
             );
 
             // 3. Store in Collector for crash report
-            Collector::instance().collect(
-                Error::fatal(Errc::Unknown, panic_msg.clone()),
-            );
+            Collector::instance().collect(Error::fatal(Errc::Unknown, panic_msg.clone()));
 
             // 4. If message is a known fatal root cause, annotate
             if msg_str.contains("platform only supports Windows") {
-                Collector::instance().collect(
-                    Error::fatal(Errc::PlatformError, "compiled for unsupported target"),
-                );
+                Collector::instance().collect(Error::fatal(
+                    Errc::PlatformError,
+                    "compiled for unsupported target",
+                ));
             }
 
             // 5. Dump crash report to file
@@ -79,7 +81,7 @@ pub fn dump_crash_report() {
         snapshot.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
         snapshot.total_collected,
         snapshot.stored_count,
-        snapshot.to_string()
+        snapshot
     );
 
     // Write to file

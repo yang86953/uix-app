@@ -3,13 +3,13 @@
 #![allow(dead_code)]
 
 use std::cell::Cell;
+use uix::diag::log::{info_fn, Level, Logger};
 use uix::diag::{Errc, Error};
 use uix::graphics::{
     self, colors, compute_flex_layout, AlignItems as GAlign, EdgeInsets, FlexChild,
     FlexDirection as GDir, FlexInput, GraphicsEngine, JustifyContent as GJustify, Point, Rect,
     Size,
 };
-use uix::platform::log::{info_fn, Level, Logger};
 use uix::services::{
     FileService, LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline,
     RetryMiddleware, SettingsService,
@@ -270,11 +270,11 @@ pub fn demo_theme() {
 pub fn demo_graphics_engine() {
     println!("\n╔══ Graphics Engine ═══╗");
     let mut e = graphics::NullEngine::new();
-    let _ = e.initialize(std::ptr::null_mut(), 800, 600);
+    let _ = e.initialize(800, 600);
     e.fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
     e.shutdown();
     let mut boxed: Box<dyn GraphicsEngine> = Box::new(graphics::NullEngine::new());
-    let _ = boxed.initialize(std::ptr::null_mut(), 640, 480);
+    let _ = boxed.initialize(640, 480);
     println!("  Box<dyn GraphicsEngine> width={}", boxed.width());
     boxed.shutdown();
 }

@@ -1,11 +1,15 @@
 use crate::diag::Error;
-use crate::graphics::{Color, Point, Rect, Size};
 use crate::graphics::types::*;
+use crate::graphics::{Color, Point, Rect, Size};
 
 /// GraphicsEngine — abstract 2D rendering interface.
+///
+/// Design principle: pure renderer — no platform dependencies.
+/// File I/O is the caller's responsibility (pass `&[u8]` for assets).
+/// Presentation is handled externally (e.g. `GdiPresenter`).
 pub trait GraphicsEngine: 'static {
     // Lifetime
-    fn initialize(&mut self, native_window: *mut std::ffi::c_void, width: i32, height: i32) -> Result<(), Error>;
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error>;
     fn shutdown(&mut self);
     fn resize(&mut self, width: i32, height: i32);
 
@@ -32,18 +36,50 @@ pub trait GraphicsEngine: 'static {
     fn fill_ellipse(&mut self, rect: Rect, color: Color);
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32);
 
-    // Gradients
-    fn fill_linear_gradient(&mut self, rect: Rect, color_a: Color, color_b: Color, dir: GradientDirection);
-    fn fill_radial_gradient(&mut self, cx: f32, cy: f32, inner_r: f32, outer_r: f32, inner_color: Color, outer_color: Color);
+    // Shadows
+    fn draw_box_shadow(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    );
 
-    // Text
-    fn load_font(&mut self, path: &str, size: f32) -> Result<&mut FontHandle, Error>;
+    // Gradients
+    fn fill_linear_gradient(
+        &mut self,
+        rect: Rect,
+        color_a: Color,
+        color_b: Color,
+        dir: GradientDirection,
+    );
+    fn fill_radial_gradient(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        inner_r: f32,
+        outer_r: f32,
+        inner_color: Color,
+        outer_color: Color,
+    );
+
+    // Text — caller responsible for reading file bytes
+    fn load_font(&mut self, data: &[u8], size: f32) -> Result<&mut FontHandle, Error>;
     fn unload_font(&mut self, font: &FontHandle);
     fn measure_text(&self, font: &FontHandle, text: &str, opts: &TextLayoutOptions) -> Size;
-    fn draw_text(&mut self, font: &FontHandle, text: &str, pos: Point, color: Color, opts: &TextLayoutOptions);
+    fn draw_text(
+        &mut self,
+        font: &FontHandle,
+        text: &str,
+        pos: Point,
+        color: Color,
+        opts: &TextLayoutOptions,
+    );
 
-    // Images
-    fn load_image(&mut self, path: &str) -> Result<&mut ImageHandle, Error>;
+    // Images — caller responsible for reading file bytes
+    fn load_image(&mut self, data: &[u8]) -> Result<&mut ImageHandle, Error>;
     fn unload_image(&mut self, image: &ImageHandle);
     fn image_size(&self, image: &ImageHandle) -> Size;
     fn draw_image(&mut self, image: &ImageHandle, src: Rect, dst: Rect);
@@ -60,5 +96,7 @@ pub trait GraphicsEngine: 'static {
     fn height(&self) -> i32;
     // Supersample control for software renderer (0 = adaptive/default).
     fn set_supersample_level(&mut self, _level: u8) {}
-    fn supersample_level(&self) -> u8 { 0 }
+    fn supersample_level(&self) -> u8 {
+        0
+    }
 }

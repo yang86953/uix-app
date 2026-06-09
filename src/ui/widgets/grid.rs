@@ -27,6 +27,12 @@ pub struct Grid {
     fixed_height: Option<f32>,
 }
 
+impl Default for Grid {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Grid {
     pub fn new() -> Self {
         Self {
@@ -162,7 +168,7 @@ impl Widget for Grid {
                 let pref = tree
                     .get(cid)
                     .map(|c| c.preferred_size(None))
-                    .unwrap_or(Size::zero());
+                    .unwrap_or_default();
                 GridChild {
                     preferred_size: pref,
                     ..Default::default()

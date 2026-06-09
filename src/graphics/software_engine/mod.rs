@@ -20,8 +20,8 @@
 //! borrow checker — Rust's field-level split borrow allows simultaneous
 //! `&self.assets` and `&mut self.rt`.
 
-use crate::graphics::{FontHandle, ImageHandle, Transform};
 use crate::graphics::{BlendMode, Rect};
+use crate::graphics::{FontHandle, ImageHandle, Transform};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 内部数据容器（模块内共享）
@@ -61,17 +61,17 @@ pub(crate) struct RenderState {
 // ════════════════════════════════════════════════════════════════════════════
 
 pub(crate) struct FontSlot {
-    pub(crate) handle: Box<FontHandle>,
+    pub(crate) handle: FontHandle,
     pub(crate) data: FontData,
 }
 
 pub(crate) struct ImageSlot {
-    pub(crate) handle: Box<ImageHandle>,
+    pub(crate) handle: ImageHandle,
     pub(crate) data: ImageData,
 }
 
 pub(crate) struct OffscreenSlot {
-    pub(crate) handle: Box<ImageHandle>,
+    pub(crate) handle: ImageHandle,
     pub(crate) data: OffscreenData,
 }
 
@@ -80,11 +80,12 @@ pub(crate) struct OffscreenSlot {
 // ════════════════════════════════════════════════════════════════════════════
 
 mod asset_store;
-mod core;
-mod sdf;
-mod shapes;
 mod content;
+mod core;
 mod engine;
+mod sdf;
+mod shadow;
+mod shapes;
 #[cfg(test)]
 mod tests;
 

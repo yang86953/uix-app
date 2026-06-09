@@ -2,6 +2,7 @@
 ///
 /// Uses a slot index instead of a raw pointer for safe access
 /// to engine-managed image resources.
+#[derive(Default)]
 pub struct ImageManager {
     image_path: Option<String>,
     /// Index into the engine's internal image slot array.
@@ -11,16 +12,6 @@ pub struct ImageManager {
     tint_color: Option<crate::graphics::Color>,
 }
 
-impl Default for ImageManager {
-    fn default() -> Self {
-        Self {
-            image_path: None,
-            image_index: None,
-            source_rect: None,
-            tint_color: None,
-        }
-    }
-}
 
 impl ImageManager {
     pub fn new() -> Self {

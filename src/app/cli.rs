@@ -137,7 +137,7 @@ impl Cli {
         for (name, desc) in &self.descriptions {
             println!("  {:<20} {}", name, desc);
         }
-        println!("  {:<20} {}", "help", "Show this help message");
+        println!("  {:<20} Show this help message", "help");
     }
 
     pub fn program_name(&self) -> &str { &self.program_name }

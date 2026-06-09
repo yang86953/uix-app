@@ -6,6 +6,7 @@ use crate::diag::error::*;
 use crate::diag::log::*;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
 
@@ -60,24 +61,25 @@ impl CollectorSnapshot {
         }
         counts
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl fmt::Display for CollectorSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ts = self.timestamp.format("%H:%M:%S");
-        let mut result = format!(
-            "Collector snapshot @ {}\n  Total collected: {}\n  Stored: {}\n",
-            ts, self.total_collected, self.stored_count
-        );
+        writeln!(f, "Collector snapshot @ {}", ts)?;
+        writeln!(f, "  Total collected: {}", self.total_collected)?;
+        writeln!(f, "  Stored: {}", self.stored_count)?;
         let by_code = self.count_by_code();
         if !by_code.is_empty() {
-            result.push_str("  By code:\n");
+            writeln!(f, "  By code:")?;
             for (code, count) in by_code {
-                result.push_str(&format!("    {}: {}\n", code, count));
+                writeln!(f, "    {}: {}", code, count)?;
             }
         }
         for err in &self.errors {
-            result.push_str(&format!("  - {}\n", err.short_what()));
+            writeln!(f, "  - {}", err.short_what())?;
         }
-        result
+        Ok(())
     }
 }
 
@@ -85,10 +87,12 @@ impl CollectorSnapshot {
 // Collector — 错误收集器（线程安全）
 // ════════════════════════════════════════════════════════════════════════════
 
+type ErrorCallback = Box<dyn Fn(&Error) + Send + Sync>;
+
 struct CollectorInner {
     errors: VecDeque<Error>,
     config: CollectorConfig,
-    callbacks: HashMap<u64, Box<dyn Fn(&Error) + Send + Sync>>,
+    callbacks: HashMap<u64, ErrorCallback>,
     next_callback_id: u64,
     last_hash: u64,
 }
@@ -118,7 +122,11 @@ impl Collector {
     }
 
     pub fn get_config(&self) -> CollectorConfig {
-        self.inner.read().unwrap_or_else(|e| e.into_inner()).config.clone()
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .config
+            .clone()
     }
 
     pub fn set_max_errors(&self, max: usize) {
@@ -136,7 +144,11 @@ impl Collector {
     }
 
     pub fn set_deduplicate(&self, enabled: bool) {
-        self.inner.write().unwrap_or_else(|e| e.into_inner()).config.deduplicate = enabled;
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .config
+            .deduplicate = enabled;
     }
 
     pub fn collect(&self, err: Error) -> usize {
@@ -233,11 +245,20 @@ impl Collector {
     }
 
     pub fn stored_count(&self) -> usize {
-        self.inner.read().unwrap_or_else(|e| e.into_inner()).errors.len()
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .errors
+            .len()
     }
 
     pub fn has_errors(&self) -> bool {
-        !self.inner.read().unwrap_or_else(|e| e.into_inner()).errors.is_empty()
+        !self
+            .inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .errors
+            .is_empty()
     }
 
     pub fn errors(&self) -> Vec<Error> {
@@ -341,7 +362,7 @@ impl Collector {
             }
             result.push_str(", top: ");
             let mut sorted: Vec<_> = top_codes.into_iter().collect();
-            sorted.sort_by(|a, b| b.1.cmp(&a.1));
+            sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
             for (i, (code, count)) in sorted.iter().take(3).enumerate() {
                 if i > 0 {
                     result.push_str(", ");

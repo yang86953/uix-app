@@ -6,17 +6,13 @@ use crate::diag::Result;
 
 /// Key-value settings service with JSON persistence.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct SettingsService {
     path: Option<String>,
     values: HashMap<String, String>,
     dirty: bool,
 }
 
-impl Default for SettingsService {
-    fn default() -> Self {
-        Self { path: None, values: HashMap::new(), dirty: false }
-    }
-}
 
 impl SettingsService {
     pub fn new() -> Self { Self::default() }

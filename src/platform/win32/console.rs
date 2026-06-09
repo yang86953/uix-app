@@ -3,6 +3,8 @@
 // ============================================================================
 
 #![cfg(windows)]
+#![allow(clippy::upper_case_acronyms)]
+#![allow(nonstandard_style)]
 
 use crate::platform::{ConsoleColor, IConsole, TerminalCapabilities};
 use std::ptr;

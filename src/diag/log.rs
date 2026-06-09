@@ -60,35 +60,38 @@ pub struct Record {
     pub sequence: u64,
 }
 
-impl Record {
-    pub fn to_string(&self) -> String {
+impl fmt::Display for Record {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ts = self.timestamp.format("%H:%M:%S%.3f");
         let filename = Path::new(self.file)
             .file_name()
             .map(|n| n.to_string_lossy())
             .unwrap_or_else(|| std::borrow::Cow::Borrowed(self.file));
 
-        let mut result = format!(
-            "{} [{:7}] {} ({}:{})",
+        write!(
+            f,
+            "{} [{}] {} ({}:{})",
             ts,
             self.level.name(),
             self.message,
             filename,
             self.line
-        );
+        )?;
         if !self.attributes.is_empty() {
-            result.push_str(" {");
+            write!(f, " {{")?;
             for (i, (k, v)) in self.attributes.iter().enumerate() {
                 if i > 0 {
-                    result.push_str(", ");
+                    write!(f, ", ")?;
                 }
-                result.push_str(&format!("{}={}", k, v));
+                write!(f, "{}={}", k, v)?;
             }
-            result.push('}');
+            write!(f, "}}")?;
         }
-        result
+        Ok(())
     }
+}
 
+impl Record {
     pub fn to_json(&self) -> String {
         let ts = self.timestamp.format("%Y-%m-%dT%H:%M:%S%.3fZ");
         let filename = Path::new(self.file)
@@ -151,7 +154,7 @@ impl ConsoleSink {
 
 impl Sink for ConsoleSink {
     fn write(&self, record: &Record) {
-        let line = format!("{}\n", record.to_string());
+        let line = format!("{}\n", record);
         if record.level >= Level::Warn {
             let _ = io::Write::write(&mut io::stderr(), line.as_bytes());
         } else {
@@ -329,16 +332,26 @@ impl Logger {
     }
 
     pub fn add_sink(&self, sink: Arc<dyn Sink>) {
-        self.inner.write().unwrap_or_else(|e| e.into_inner()).sinks.push(sink);
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .sinks
+            .push(sink);
     }
 
     pub fn remove_sink(&self, sink_ptr: *const dyn Sink) {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
-        inner.sinks.retain(|s| !std::ptr::addr_eq(Arc::as_ptr(s), sink_ptr));
+        inner
+            .sinks
+            .retain(|s| !std::ptr::addr_eq(Arc::as_ptr(s), sink_ptr));
     }
 
     pub fn clear_sinks(&self) {
-        self.inner.write().unwrap_or_else(|e| e.into_inner()).sinks.clear();
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .sinks
+            .clear();
     }
 
     pub fn set_level(&self, level: Level) {
@@ -421,23 +434,86 @@ impl Logger {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 自由函数
+// 自由函数 — 使用 #[track_caller] 捕获调用者位置
 // ════════════════════════════════════════════════════════════════════════════
 
-macro_rules! log_fn {
-    ($name:ident, $level:expr) => {
-        pub fn $name(msg: impl fmt::Display) {
-            Logger::instance().log($level, msg.to_string(), file!(), line!(), Vec::new());
-        }
-    };
+/// 记录一条 TRACE 级别日志，自动捕获调用者源位置。
+#[track_caller]
+pub fn trace_fn(msg: impl fmt::Display) {
+    let loc = std::panic::Location::caller();
+    Logger::instance().log(
+        Level::Trace,
+        msg.to_string(),
+        loc.file(),
+        loc.line(),
+        Vec::new(),
+    );
 }
 
-log_fn!(trace_fn, Level::Trace);
-log_fn!(debug_fn, Level::Debug);
-log_fn!(info_fn, Level::Info);
-log_fn!(warn_fn, Level::Warn);
-log_fn!(error_fn, Level::Error);
-log_fn!(fatal_fn, Level::Fatal);
+/// 记录一条 DEBUG 级别日志，自动捕获调用者源位置。
+#[track_caller]
+pub fn debug_fn(msg: impl fmt::Display) {
+    let loc = std::panic::Location::caller();
+    Logger::instance().log(
+        Level::Debug,
+        msg.to_string(),
+        loc.file(),
+        loc.line(),
+        Vec::new(),
+    );
+}
+
+/// 记录一条 INFO 级别日志，自动捕获调用者源位置。
+#[track_caller]
+pub fn info_fn(msg: impl fmt::Display) {
+    let loc = std::panic::Location::caller();
+    Logger::instance().log(
+        Level::Info,
+        msg.to_string(),
+        loc.file(),
+        loc.line(),
+        Vec::new(),
+    );
+}
+
+/// 记录一条 WARN 级别日志，自动捕获调用者源位置。
+#[track_caller]
+pub fn warn_fn(msg: impl fmt::Display) {
+    let loc = std::panic::Location::caller();
+    Logger::instance().log(
+        Level::Warn,
+        msg.to_string(),
+        loc.file(),
+        loc.line(),
+        Vec::new(),
+    );
+}
+
+/// 记录一条 ERROR 级别日志，自动捕获调用者源位置。
+#[track_caller]
+pub fn error_fn(msg: impl fmt::Display) {
+    let loc = std::panic::Location::caller();
+    Logger::instance().log(
+        Level::Error,
+        msg.to_string(),
+        loc.file(),
+        loc.line(),
+        Vec::new(),
+    );
+}
+
+/// 记录一条 FATAL 级别日志，自动捕获调用者源位置。
+#[track_caller]
+pub fn fatal_fn(msg: impl fmt::Display) {
+    let loc = std::panic::Location::caller();
+    Logger::instance().log(
+        Level::Fatal,
+        msg.to_string(),
+        loc.file(),
+        loc.line(),
+        Vec::new(),
+    );
+}
 
 pub fn log_error(error: &Error) {
     Logger::instance().log_error(error, Level::Error);

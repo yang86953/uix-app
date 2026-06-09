@@ -100,66 +100,35 @@ impl Default for MouseWheelData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ResizeData {
     pub width: i32,
     pub height: i32,
 }
 
-impl Default for ResizeData {
-    fn default() -> Self {
-        Self {
-            width: 0,
-            height: 0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct TimerEventData {
     pub timer_id: u32,
 }
 
-impl Default for TimerEventData {
-    fn default() -> Self {
-        Self { timer_id: 0 }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct KeyPressData {
     pub text: String,
 }
 
-impl Default for KeyPressData {
-    fn default() -> Self {
-        Self {
-            text: String::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct FileDropData {
     pub files: Vec<String>,
     pub position: Point,
-}
-
-impl Default for FileDropData {
-    fn default() -> Self {
-        Self {
-            files: Vec::new(),
-            position: Point::default(),
-        }
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // UiEventPayload — 事件载荷枚举
 // ════════════════════════════════════════════════════════════════════════════
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum UiEventPayload {
+    #[default]
     None,
     Key(KeyEventData),
     MouseButton(MouseButtonEventData),
@@ -169,12 +138,6 @@ pub enum UiEventPayload {
     Timer(TimerEventData),
     KeyPress(KeyPressData),
     FileDrop(FileDropData),
-}
-
-impl Default for UiEventPayload {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

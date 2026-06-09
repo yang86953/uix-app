@@ -7,6 +7,7 @@ pub type ChangedCallback = Box<dyn FnMut()>;
 pub type SubmitCallback = Box<dyn FnMut()>;
 
 /// Manages mouse/touch interaction callbacks.
+#[derive(Default)]
 pub struct InteractionManager {
     on_click: Option<ClickCallback>,
     on_changed: Option<ChangedCallback>,
@@ -15,17 +16,6 @@ pub struct InteractionManager {
     pressed: bool,
 }
 
-impl Default for InteractionManager {
-    fn default() -> Self {
-        Self {
-            on_click: None,
-            on_changed: None,
-            on_submit: None,
-            hovered: false,
-            pressed: false,
-        }
-    }
-}
 
 impl InteractionManager {
     pub fn new() -> Self { Self::default() }

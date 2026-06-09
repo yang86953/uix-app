@@ -1,4 +1,4 @@
-use crate::graphics::geometry::EdgeInsets;
+use crate::graphics::EdgeInsets;
 use crate::graphics::Size;
 use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
 

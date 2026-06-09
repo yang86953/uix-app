@@ -5,7 +5,6 @@ use std::cell::RefCell;
 
 use crate::graphics::{Color, Point, Radius, Rect, Size};
 use crate::ui::render_context::RenderContext;
-use crate::ui::theme::DesignTokens;
 use crate::ui::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};
 
 /// Card widget with shadow elevation, hover highlight, and content padding.
@@ -20,6 +19,12 @@ pub struct Card {
     padding: f32,
     /// Elevation level 0-3: 0=flat, 1=subtle shadow, 2=medium, 3=prominent
     elevation: u8,
+}
+
+impl Default for Card {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Card {
@@ -66,10 +71,9 @@ impl Card {
         if self.children.borrow().is_none() {
             *self.children.borrow_mut() = Some(Vec::new());
         }
-        self.children
-            .borrow_mut()
-            .as_mut()
-            .map(|v| v.push(Box::new(w)));
+        if let Some(v) = self.children.borrow_mut().as_mut() {
+            v.push(Box::new(w))
+        }
         self
     }
     pub fn children(self, widgets: Vec<Box<dyn Widget>>) -> Self {
@@ -78,41 +82,65 @@ impl Card {
     }
 }
 
-/// Simulate a box shadow by drawing offset layered rectangles.
-fn draw_shadow(
-    ctx: &mut RenderContext,
-    frame: Rect,
-    elevation: u8,
-    tokens: &DesignTokens,
-) {
+/// Render a real box shadow from the theme's `ShadowToken` layers.
+///
+/// Each elevation level maps to progressively larger offset/blur values.
+/// Layer 1: small offset + small blur (tight, darker)
+/// Layer 2: medium offset + medium blur
+/// Layer 3: large offset + large blur (diffuse, lighter)
+fn draw_elevation_shadow(ctx: &mut RenderContext, frame: Rect, elevation: u8) {
     if elevation == 0 {
         return;
     }
-    let offsets: &[(f32, f32, f32)] = match elevation {
-        1 => &[(0.0, 1.0, 4.0), (0.0, 2.0, 8.0)],
-        2 => &[(0.0, 2.0, 8.0), (0.0, 4.0, 16.0)],
-        3 => &[(0.0, 4.0, 12.0), (0.0, 8.0, 24.0)],
+    // Extract the multi-layer shadow token from the current theme
+    let shadow = ctx.tokens().box_shadow();
+    let corner_radius = Some(Radius::uniform(ctx.tokens().border_radius_lg()));
+
+    // Scale factors per elevation level — higher elevation = more spread
+    let scale = match elevation {
+        1 => 0.6,
+        2 => 0.8,
+        3 => 1.0,
         _ => return,
     };
-    for (i, &(dx, dy, blur)) in offsets.iter().enumerate() {
-        let alpha_mult = if i == 0 { 1.0 } else { 0.6 };
-        let base = tokens.color_shadow;
-        let shadow_color = Color::from_rgba(
-            base.r,
-            base.g,
-            base.b,
-            (base.a as f32 * alpha_mult).min(255.0) as u8,
+
+    // Layer 1: tight shadow (small offset, small blur, higher opacity)
+    let (ox1, oy1, bl1, col1) = shadow.layer_1;
+    if bl1 > 0.0 && col1.a > 0 {
+        ctx.draw_box_shadow(
+            frame,
+            bl1 * scale,
+            ox1 * scale,
+            oy1 * scale,
+            col1,
+            corner_radius,
         );
-        // Draw a gradient-blur approximation: a filled rect slightly offset
-        let shadow_rect = Rect::new(
-            frame.x + dx,
-            frame.y + dy,
-            frame.w,
-            frame.h,
+    }
+
+    // Layer 2: medium shadow
+    let (ox2, oy2, bl2, col2) = shadow.layer_2;
+    if bl2 > 0.0 && col2.a > 0 {
+        ctx.draw_box_shadow(
+            frame,
+            bl2 * scale,
+            ox2 * scale,
+            oy2 * scale,
+            col2,
+            corner_radius,
         );
-        // Use a filled rect with the shadow color; for a more realistic shadow
-        // we'd use a gradient, but this is a lightweight approximation.
-        ctx.fill_rect(shadow_rect, shadow_color, Some(Radius::uniform(blur)));
+    }
+
+    // Layer 3: diffuse shadow (large offset, large blur, lower opacity)
+    let (ox3, oy3, bl3, col3) = shadow.layer_3;
+    if bl3 > 0.0 && col3.a > 0 {
+        ctx.draw_box_shadow(
+            frame,
+            bl3 * scale,
+            ox3 * scale,
+            oy3 * scale,
+            col3,
+            corner_radius,
+        );
     }
 }
 
@@ -147,40 +175,40 @@ impl Widget for Card {
     }
 
     fn render(&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let tokens = DesignTokens::antd_light();
-        let card_radius = Some(Radius::uniform(tokens.border_radius_lg));
+        // Extract all token values before mutably borrowing ctx
+        let border_radius_lg = ctx.tokens().border_radius_lg();
+        let bg_container = ctx.tokens().color_bg_container();
+        let bg_elevated = ctx.tokens().color_bg_elevated();
+        let primary = ctx.tokens().color_primary();
+        let border_secondary = ctx.tokens().color_border_secondary();
+        let text = ctx.tokens().color_text();
 
-        // ── Shadow (behind card body) ──
-        draw_shadow(ctx, frame, self.elevation, &tokens);
+        let card_radius = Some(Radius::uniform(border_radius_lg));
+
+        // ── Shadow (behind card body) — rendered using real box shadows
+        draw_elevation_shadow(ctx, frame, self.elevation);
 
         // ── Background ──
         let bg = if self.hovered {
-            // Slightly lighter when hovered
-            let base = tokens.color_bg_container;
             Color::from_rgb(
-                (base.r as f32 * 0.95 + 255.0 * 0.05) as u8,
-                (base.g as f32 * 0.95 + 255.0 * 0.05) as u8,
-                (base.b as f32 * 0.95 + 255.0 * 0.05) as u8,
+                (bg_container.r as f32 * 0.95 + 255.0 * 0.05) as u8,
+                (bg_container.g as f32 * 0.95 + 255.0 * 0.05) as u8,
+                (bg_container.b as f32 * 0.95 + 255.0 * 0.05) as u8,
             )
         } else {
-            tokens.color_bg_elevated
+            bg_elevated
         };
         ctx.fill_rect(frame, bg, card_radius);
 
         // ── Top accent line (elevation indicator) ──
         if self.elevation > 1 {
-            let accent_rect = Rect::new(
-                frame.x + 24.0,
-                frame.y,
-                frame.w - 48.0,
-                3.0,
-            );
-            ctx.fill_rect(accent_rect, tokens.color_primary, Some(Radius::uniform(1.5)));
+            let accent_rect = Rect::new(frame.x + 24.0, frame.y, frame.w - 48.0, 3.0);
+            ctx.fill_rect(accent_rect, primary, Some(Radius::uniform(1.5)));
         }
 
         // ── Border ──
         if self.bordered {
-            ctx.stroke_rect(frame, tokens.color_border_secondary, 1.0, card_radius);
+            ctx.stroke_rect(frame, border_secondary, 1.0, card_radius);
         }
 
         // ── Title region ──
@@ -189,7 +217,7 @@ impl Widget for Card {
             ctx.draw_text(
                 title,
                 Point::new(frame.x + self.padding, frame.y + 12.0),
-                tokens.color_text,
+                text,
                 15.0,
             );
 
@@ -201,7 +229,7 @@ impl Widget for Card {
                 frame.w - self.padding * 2.0,
                 1.0,
             );
-            ctx.fill_rect(sep_rect, tokens.color_border_secondary, None);
+            ctx.fill_rect(sep_rect, border_secondary, None);
         }
     }
 
@@ -216,7 +244,11 @@ impl Widget for Card {
             return result;
         }
 
-        let title_offset = if self.title.is_some() { 56.0 } else { self.padding };
+        let title_offset = if self.title.is_some() {
+            56.0
+        } else {
+            self.padding
+        };
         let inner = Rect::new(
             frame.x + self.padding,
             frame.y + title_offset,
@@ -234,7 +266,7 @@ impl Widget for Card {
             let pref = tree
                 .get(cid)
                 .map(|c| c.preferred_size(None))
-                .unwrap_or_else(|| Size::zero());
+                .unwrap_or_else(Size::zero);
             let ch = if pref.h > 0.0 {
                 pref.h.min(inner.h)
             } else {

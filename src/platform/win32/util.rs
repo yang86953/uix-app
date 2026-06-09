@@ -146,6 +146,8 @@ extern "system" {
         nSize: u32,
         Arguments: *const std::ffi::c_void,
     ) -> u32;
+    fn GetFileAttributesW(lpFileName: *const u16) -> u32;
+    fn GetWindowsDirectoryW(lpBuffer: *mut u16, uSize: u32) -> u32;
 }
 
 const FORMAT_MESSAGE_FROM_SYSTEM: u32 = 0x00001000;
@@ -182,4 +184,49 @@ pub fn get_last_error_string() -> String {
 pub fn win32_diag(code: crate::diag::Errc, context: &str) -> crate::diag::Error {
     let msg = format!("{}: {}", context, get_last_error_string());
     crate::diag::Error::new(code, msg)
+}
+
+/// Return the full path to the system default UI font (Segoe UI), or the first
+/// available fallback font file under the Windows Fonts directory.
+///
+/// On all modern Windows editions (Vista+) the default UI font is "Segoe UI".
+/// We try the known filenames in order — `segoeui.ttf` (Win8+), then fall back
+/// to `arial.ttf` / `tahoma.ttf` / `micross.ttf` if none of the above exist.
+///
+/// Returns `None` if no font file could be found (extremely unlikely).
+pub fn system_default_font_path() -> Option<String> {
+    unsafe {
+        // 1. Get Windows directory
+        let mut win_dir = vec![0u16; 260];
+        let len = GetWindowsDirectoryW(win_dir.as_mut_ptr(), win_dir.len() as u32);
+        if len == 0 || len as usize > win_dir.len() {
+            return None;
+        }
+        win_dir.truncate(len as usize);
+
+        // 2. Build Fonts directory path prefix: <Windows>\Fonts\
+        let windows_path = to_utf8(&win_dir);
+        let fonts_dir = format!(r"{}\Fonts\", windows_path);
+
+        // 3. Try font candidates in priority order
+        let candidates = [
+            "segoeui.ttf",  // Win8+ Segoe UI Regular (default since Windows 8)
+            "segoeuib.ttf", // Segoe UI Bold (fallback variant)
+            "arial.ttf",    // Universal fallback present on all Windows
+            "tahoma.ttf",   // Present on Win2000/XP/Vista/7
+            "micross.ttf",  // Microsoft Sans Serif
+        ];
+
+        for fname in &candidates {
+            let full = format!("{}{}", fonts_dir, fname);
+            let wide = to_wide(&full);
+            // Check file existence via GetFileAttributesW
+            let attrs = GetFileAttributesW(wide.as_ptr());
+            if attrs != 0xFFFFFFFF {
+                return Some(full);
+            }
+        }
+
+        None
+    }
 }
