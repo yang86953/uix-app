@@ -37,7 +37,6 @@ pub(crate) struct ImageData {
 /// Loaded font data with a rasterized size.
 pub(crate) struct FontData {
     pub(crate) font: fontdue::Font,
-    pub(crate) size: f32,
 }
 
 /// Offscreen render target.

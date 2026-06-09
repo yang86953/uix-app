@@ -5,7 +5,9 @@
 //! Layer 5: Declarative widget tree with 10-manager system architecture.
 
 pub mod animation;
+pub mod children;
 pub mod context;
+pub mod macros;
 pub mod managers;
 pub mod render_context;
 pub mod state;
@@ -15,6 +17,7 @@ pub mod widget_builder;
 pub mod widgets;
 
 pub use animation::*;
+pub use children::*;
 pub use context::*;
 pub use managers::*;
 pub use render_context::*;

@@ -131,12 +131,24 @@ pub trait Widget {
 
     /// Render this widget into the given render context.
     /// `frame` is the widget's current frame in the tree.
+    /// Called BEFORE children are rendered — use for background, clip rects, etc.
     fn render(
         &self,
         frame: Rect,
         ctx: &mut crate::ui::render_context::RenderContext,
         tree: &WidgetTree,
     );
+
+    /// Render overlay content AFTER children have been rendered.
+    /// Useful for scrollbars, tooltips, focus indicators, etc.
+    /// Default implementation does nothing.
+    fn post_render(
+        &self,
+        _frame: Rect,
+        _ctx: &mut crate::ui::render_context::RenderContext,
+        _tree: &WidgetTree,
+    ) {
+    }
 
     /// Compute child layout positions. Returns (child_id, rect) pairs.
     /// `frame` is the widget's current frame. `children` are child IDs from the tree.
@@ -148,6 +160,66 @@ pub trait Widget {
     ) -> Vec<(WidgetId, Rect)> {
         let _ = (frame, children, tree);
         Vec::new()
+    }
+}
+
+// ── WidgetNode — composable widget node ──────────────────────────────────
+
+/// A composable widget node for declarative tree construction.
+///
+/// Contains a widget and its children nodes, enabling recursive
+/// tree building and function-component composition
+/// (like React components returning JSX).
+pub struct WidgetNode {
+    pub widget: Box<dyn Widget>,
+    pub children: Vec<WidgetNode>,
+    pub z_index: i32,
+}
+
+impl WidgetNode {
+    /// Create a new node with children.
+    pub fn new(widget: Box<dyn Widget>, children: Vec<WidgetNode>) -> Self {
+        Self {
+            widget,
+            children,
+            z_index: 0,
+        }
+    }
+
+    /// Create a leaf node (no children).
+    pub fn leaf(widget: Box<dyn Widget>) -> Self {
+        Self {
+            widget,
+            children: vec![],
+            z_index: 0,
+        }
+    }
+
+    /// Set the z-index for this node. Higher values render on top.
+    pub fn z_index(mut self, z: i32) -> Self {
+        self.z_index = z;
+        self
+    }
+}
+
+/// Conversion into a `WidgetNode`.
+///
+/// Blanket-implemented for all `Widget + 'static` (leaf nodes).
+/// Also implemented for `WidgetNode` itself (identity) so
+/// function components can return `WidgetNode` directly.
+pub trait IntoWidgetNode {
+    fn into_node(self) -> WidgetNode;
+}
+
+impl<T: Widget + 'static> IntoWidgetNode for T {
+    fn into_node(self) -> WidgetNode {
+        WidgetNode::leaf(Box::new(self))
+    }
+}
+
+impl IntoWidgetNode for WidgetNode {
+    fn into_node(self) -> WidgetNode {
+        self
     }
 }
 
@@ -173,6 +245,9 @@ pub trait WidgetCore {
 
     fn opacity(&self) -> f32;
     fn set_opacity(&mut self, v: f32);
+
+    fn z_index(&self) -> i32;
+    fn set_z_index(&mut self, v: i32);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -190,6 +265,7 @@ pub struct BoxedWidget {
     visible: bool,
     is_dirty: bool,
     widget_opacity: f32,
+    z: i32,
 }
 
 impl BoxedWidget {
@@ -203,6 +279,7 @@ impl BoxedWidget {
             visible: true,
             is_dirty: true,
             widget_opacity: 1.0,
+            z: 0,
         }
     }
 
@@ -267,6 +344,12 @@ impl WidgetCore for BoxedWidget {
     }
     fn set_opacity(&mut self, v: f32) {
         self.widget_opacity = v;
+    }
+    fn z_index(&self) -> i32 {
+        self.z
+    }
+    fn set_z_index(&mut self, v: i32) {
+        self.z = v;
     }
 }
 
@@ -393,6 +476,14 @@ impl WidgetTree {
         self.nodes.get_mut(id).and_then(|n| n.as_mut())
     }
 
+    /// Set the z-index for a widget. Higher values render on top.
+    pub fn set_z_index(&mut self, id: WidgetId, z: i32) -> &mut Self {
+        if let Some(n) = self.get_mut(id) {
+            n.set_z_index(z);
+        }
+        self
+    }
+
     /// Add a child widget and recursively build its sub-tree via `Widget::build()`.
     pub fn add_child(&mut self, parent_id: WidgetId, child: Box<dyn Widget>) -> WidgetId {
         // Call build() BEFORE widget is moved into BoxedWidget
@@ -468,53 +559,43 @@ impl WidgetTree {
     /// so layout always starts from a well-defined origin.
     /// Widgets whose frame changes are automatically marked dirty.
     pub fn layout(&mut self) {
-        // Ensure root frame is set from preferred_size
-        let root_frame_changed = if let Some(root_id) = self.root_id {
+        // Ensure root frame is set from preferred_size each frame
+        if let Some(root_id) = self.root_id {
             let ps = self.get(root_id).map(|r| r.preferred_size(None));
             if let Some(ps) = ps {
                 let new_frame = Rect::new(0.0, 0.0, ps.w, ps.h);
-                let current = self.get(root_id).map(|r| r.frame());
-                let changed = current != Some(new_frame);
                 if let Some(root_mut) = self.get_mut(root_id) {
                     root_mut.set_frame(new_frame);
                 }
-                if changed {
-                    Some(root_id)
-                } else {
-                    None
-                }
-            } else {
-                None
             }
-        } else {
-            None
-        };
-        if let Some(root_id) = root_frame_changed {
-            self.mark_dirty(root_id);
         }
 
+        // Forward DFS traversal: parent processed BEFORE children, so
+        // each node's frame is already updated by its parent's
+        // layout_children, and frame updates are applied inline.
+        // This ensures full tree propagation in a single pass.
         let order = self.traverse();
-        // Collect (child_id, rect) pairs first, then apply
-        let mut changed: Vec<(WidgetId, Rect)> = Vec::new();
-        for id in order.into_iter().rev() {
-            if let Some(node) = self.get(id) {
+        for &id in &order {
+            // Step 1: compute positions (immutable borrow on self)
+            let positions: Vec<(WidgetId, Rect)> = {
+                let node = match self.get(id) {
+                    Some(n) => n,
+                    None => continue,
+                };
                 let frame = node.frame();
                 let children: Vec<WidgetId> = node.children().to_vec();
-                let positions = node.inner().layout_children(frame, &children, self);
-                for (child_id, rect) in positions {
-                    let current_frame = self.get(child_id).map(|c| c.frame());
-                    if current_frame != Some(rect) {
-                        changed.push((child_id, rect));
-                    }
+                if children.is_empty() {
+                    continue;
                 }
+                node.inner().layout_children(frame, &children, self)
+            };
+            // Step 2: apply positions inline (mutable borrow — node dropped)
+            for (child_id, rect) in positions {
+                if let Some(child) = self.get_mut(child_id) {
+                    child.set_frame(rect);
+                }
+                self.mark_dirty(child_id);
             }
-        }
-        // Apply frame changes and mark dirty
-        for (child_id, rect) in changed {
-            if let Some(child) = self.get_mut(child_id) {
-                child.set_frame(rect);
-            }
-            self.mark_dirty(child_id);
         }
     }
 
@@ -589,10 +670,19 @@ impl WidgetTree {
                 return;
             }
             let frame = node.frame();
+            // Save state BEFORE render so that any clip rects, transforms,
+            // or opacity changes made by the widget's render() take effect
+            // for its children and are then restored for sibling subtrees.
+            ctx.save();
             node.inner().render(frame, ctx, self);
-            for &child_id in node.children() {
+            // Render children sorted by z-index (ascending: lowest first = bottom-most)
+            let mut sorted: Vec<WidgetId> = node.children().to_vec();
+            sorted.sort_by_key(|&cid| self.get(cid).map_or(0, |c| c.z_index()));
+            for &child_id in &sorted {
                 self.render_node(child_id, ctx);
             }
+            node.inner().post_render(frame, ctx, self);
+            ctx.restore();
         }
     }
 
@@ -611,8 +701,14 @@ impl WidgetTree {
         if !node.visible() {
             return None;
         }
-        // Check children first (reverse = top-to-bottom z-order)
-        for &child_id in node.children().iter().rev() {
+        // Check children in descending z-index order (highest first = on top)
+        let mut sorted: Vec<WidgetId> = node.children().to_vec();
+        sorted.sort_by(|&a, &b| {
+            let za = self.get(a).map_or(0, |c| c.z_index());
+            let zb = self.get(b).map_or(0, |c| c.z_index());
+            zb.cmp(&za) // descending: higher z tested first
+        });
+        for &child_id in &sorted {
             if let Some(hit) = self.hit_test_internal(child_id, pos) {
                 return Some(hit);
             }
@@ -756,6 +852,35 @@ impl WidgetTree {
             self.mark_dirty(new);
             let _ = self.dispatch_to(new, &WidgetEvent::FocusIn);
         }
+    }
+
+    // ── WidgetNode tree building ───────────────────────────────────────
+
+    /// Build a widget tree from a `WidgetNode`.
+    ///
+    /// Recursively adds the node and all its children to the tree.
+    /// When `parent` is `None`, the node becomes the root.
+    pub fn build(&mut self, node: WidgetNode) -> WidgetId {
+        self.build_node(node, None)
+    }
+
+    fn build_node(
+        &mut self,
+        node: WidgetNode,
+        parent: Option<WidgetId>,
+    ) -> WidgetId {
+        let id = match parent {
+            Some(p) => self.add_child(p, node.widget),
+            None => self.set_root(node.widget),
+        };
+        // Transfer z_index from WidgetNode to the tree node
+        if let Some(n) = self.get_mut(id) {
+            n.set_z_index(node.z_index);
+        }
+        for child in node.children {
+            self.build_node(child, Some(id));
+        }
+        id
     }
 }
 

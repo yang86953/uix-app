@@ -35,13 +35,13 @@ impl AssetStore {
 
     // ── 字体 ──
 
-    pub fn load_font(&mut self, bytes: Vec<u8>, size: f32) -> Result<&mut FontHandle, Error> {
+    pub fn load_font(&mut self, bytes: Vec<u8>, _size: f32) -> Result<&mut FontHandle, Error> {
         let font = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
             .map_err(|e| Error::new(Errc::FormatError, format!("invalid font: {}", e)))?;
         let idx = self.font_slots.len() as u32;
         self.font_slots.push(FontSlot {
             handle: FontHandle::new(idx),
-            data: FontData { font, size },
+            data: FontData { font },
         });
         Ok(&mut self.font_slots[idx as usize].handle)
     }

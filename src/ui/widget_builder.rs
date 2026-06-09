@@ -1,4 +1,4 @@
-use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
+use crate::graphics::{compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use crate::graphics::{Color, EdgeInsets, Rect, Size};
 use crate::ui::widget::{Widget, WidgetId, WidgetTree};
 
@@ -181,101 +181,34 @@ impl Widget for ContainerWidget {
         children: &[WidgetId],
         tree: &WidgetTree,
     ) -> Vec<(WidgetId, Rect)> {
-        let mut result = Vec::new();
-        if children.is_empty() {
-            return result;
-        }
+        if children.is_empty() { return Vec::new(); }
 
-        let inner = Rect::new(
-            frame.x + self.padding.left,
-            frame.y + self.padding.top,
-            (frame.w - self.padding.horizontal()).max(0.0),
-            (frame.h - self.padding.vertical()).max(0.0),
-        );
-        if inner.w <= 0.0 || inner.h <= 0.0 {
-            return result;
-        }
+        let child_sizes: Vec<Size> = children
+            .iter()
+            .map(|&cid| {
+                tree.get(cid)
+                    .map(|c| c.preferred_size(None))
+                    .unwrap_or_default()
+            })
+            .collect();
 
-        let is_row = matches!(self.direction, FlexDirection::Row);
-        let total_gap = self.gap * (children.len() as f32 - 1.0);
-        let avail_main = if is_row { inner.w } else { inner.h } - total_gap;
-        let avail_cross = if is_row { inner.h } else { inner.w };
-
-        // Collect child preferred sizes along the main axis
-        let mut child_main_sizes: Vec<f32> = Vec::with_capacity(children.len());
-        for &cid in children {
-            if let Some(child) = tree.get(cid) {
-                let ps = child.preferred_size(None);
-                child_main_sizes.push(if is_row { ps.w } else { ps.h });
-            } else {
-                child_main_sizes.push(0.0);
-            }
-        }
-
-        let total_pref: f32 = child_main_sizes.iter().sum();
-        let remaining = avail_main - total_pref;
-
-        // Determine start offset along main axis based on JustifyContent
-        let start_offset = if remaining <= 0.0 {
-            0.0
-        } else {
-            match self.justify {
-                JustifyContent::Start | JustifyContent::Stretch => 0.0,
-                JustifyContent::Center => remaining * 0.5,
-                JustifyContent::End => remaining,
-                JustifyContent::SpaceBetween => 0.0,
-                JustifyContent::SpaceAround => remaining * 0.5 / children.len() as f32,
-                JustifyContent::SpaceEvenly => remaining / (children.len() + 1) as f32,
-            }
+        let input = FlexInput {
+            direction: self.direction,
+            gap: self.gap,
+            padding: self.padding,
+            container: frame,
+            children: vec![FlexChild::default(); children.len()],
+            child_sizes,
+            justify_content: self.justify,
+            align_items: AlignItems::Stretch,
+            ..FlexInput::default()
         };
 
-        // Determine effective gap between children
-        let effective_gap = if remaining <= 0.0 {
-            self.gap
-        } else {
-            match self.justify {
-                JustifyContent::SpaceBetween => {
-                    if children.len() <= 1 {
-                        self.gap
-                    } else {
-                        self.gap + remaining / (children.len() - 1) as f32
-                    }
-                }
-                JustifyContent::SpaceAround => self.gap + remaining / children.len() as f32,
-                JustifyContent::SpaceEvenly => self.gap + remaining / (children.len() + 1) as f32,
-                _ => self.gap,
-            }
-        };
-
-        let mut cursor = if is_row {
-            inner.x + start_offset
-        } else {
-            inner.y + start_offset
-        };
-
-        let last_idx = children.len().wrapping_sub(1);
-        for (i, &cid) in children.iter().enumerate() {
-            let main_size = child_main_sizes[i];
-
-            // Cross-axis: stretch children to fill available space
-            let cw = if is_row { main_size } else { avail_cross };
-            let ch = if is_row { avail_cross } else { main_size };
-
-            let rect = if is_row {
-                Rect::new(cursor, inner.y, cw, ch)
-            } else {
-                Rect::new(inner.x, cursor, cw, ch)
-            };
-            result.push((cid, rect));
-
-            cursor += if is_row { cw } else { ch };
-
-            // Add gap only between children, not after the last one.
-            if i != last_idx {
-                cursor += effective_gap;
-            }
-        }
-
-        result
+        let output = compute_flex_layout(&input);
+        children
+            .iter()
+            .zip(output.child_rects)
+            .map(|(&cid, rect)| (cid, rect))
+            .collect()
     }
 }

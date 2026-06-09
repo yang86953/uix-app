@@ -108,13 +108,14 @@ impl RenderTarget {
         if text.is_empty() {
             return Size::new(0.0, 0.0);
         }
+        let fs = opts.font_size.max(1.0);
         let lh = if opts.line_height > 0.0 {
             opts.line_height
         } else {
             font.font
-                .horizontal_line_metrics(font.size)
+                .horizontal_line_metrics(fs)
                 .map(|m| m.new_line_size)
-                .unwrap_or(font.size * 1.3)
+                .unwrap_or(fs * 1.3)
         };
         let max_w = if opts.max_width.is_finite() && opts.max_width > 0.0 {
             opts.max_width
@@ -133,7 +134,7 @@ impl RenderTarget {
                     line_w = 0.0;
                     continue;
                 }
-                let advance = font.char_advance(ch);
+                let advance = font.font.metrics(ch, fs).advance_width;
                 if line_w + advance > max_w && line_w > 0.0 {
                     lines += 1;
                     max_line = max_line.max(line_w);
@@ -151,7 +152,7 @@ impl RenderTarget {
                 if ch == '\n' {
                     lines += 1;
                 } else {
-                    w += font.char_advance(ch);
+                    w += font.font.metrics(ch, fs).advance_width;
                 }
             }
             Size::new(w.min(max_w), lines as f32 * lh)
@@ -166,14 +167,15 @@ impl RenderTarget {
         color: Color,
         opts: &TextLayoutOptions,
     ) {
+        let fs = opts.font_size.max(1.0);
         let c = self.apply_opacity(Self::premul(color));
         let lh = if opts.line_height > 0.0 {
             opts.line_height
         } else {
             font.font
-                .horizontal_line_metrics(font.size)
+                .horizontal_line_metrics(fs)
                 .map(|m| m.new_line_size)
-                .unwrap_or(font.size * 1.3)
+                .unwrap_or(fs * 1.3)
         };
         let max_w = if opts.max_width.is_finite() && opts.max_width > 0.0 {
             opts.max_width
@@ -184,7 +186,7 @@ impl RenderTarget {
         struct GlyphPos {
             ch: char,
             x: f32,
-            y: f32,
+            line: u32,
         }
         let mut glyphs: Vec<GlyphPos> = Vec::new();
         let mut cursor_x = 0.0f32;
@@ -196,15 +198,16 @@ impl RenderTarget {
                 cursor_y += lh;
                 continue;
             }
-            let advance = font.char_advance(ch);
+            let advance = font.font.metrics(ch, fs).advance_width;
             if opts.word_wrap && cursor_x + advance > max_w && cursor_x > 0.0 {
                 cursor_x = 0.0;
                 cursor_y += lh;
             }
+            let line_idx = (cursor_y / lh.max(1.0)).floor() as u32;
             glyphs.push(GlyphPos {
                 ch,
                 x: cursor_x,
-                y: cursor_y,
+                line: line_idx,
             });
             cursor_x += advance;
         }
@@ -219,14 +222,40 @@ impl RenderTarget {
             VAlign::Bottom => -total_h,
             VAlign::Baseline => 0.0,
         };
+        // Use font ascent as the baseline reference (consistent across all text).
+        // This ensures all glyphs share the same baseline, with character
+        // tops naturally varying by their individual ymin values.
+        let ascent = font
+            .font
+            .horizontal_line_metrics(fs)
+            .map(|m| m.ascent)
+            .unwrap_or(fs * 0.8);
+        let baseline_y = pos.y + ascent + vy_offset;
 
+        // Pre-rasterize for consistent baseline across all glyphs
+        struct GlyphCache {
+            metrics: fontdue::Metrics,
+            coverage: Vec<u8>,
+            x: f32,
+            line: u32,
+        }
+        let mut cache: Vec<GlyphCache> = Vec::with_capacity(glyphs.len());
         for gp in &glyphs {
-            let (metrics, coverage) = font.font.rasterize(gp.ch, font.size);
-            let gx = (pos.x + gp.x + metrics.xmin as f32) as i32;
-            let gy = (pos.y + gp.y + metrics.ymin as f32 + vy_offset) as i32;
-            for row in 0..metrics.height {
-                for col in 0..metrics.width {
-                    let cov = coverage[row * metrics.width + col];
+            let (metrics, coverage) = font.font.rasterize(gp.ch, fs);
+            cache.push(GlyphCache {
+                metrics,
+                coverage,
+                x: gp.x,
+                line: gp.line,
+            });
+        }
+
+        for gp in &cache {
+            let gx = (pos.x + gp.x + gp.metrics.xmin as f32) as i32;
+            let gy = (baseline_y + gp.metrics.ymin as f32 + gp.line as f32 * lh) as i32;
+            for row in 0..gp.metrics.height {
+                for col in 0..gp.metrics.width {
+                    let cov = gp.coverage[row * gp.metrics.width + col];
                     if cov == 0 {
                         continue;
                     }

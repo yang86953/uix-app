@@ -1,8 +1,9 @@
 //! ProgressBar widget — deterministic and indeterminate progress indicators.
 
+use crate::define_widget;
 use crate::graphics::{Color, Radius, Rect, Size};
 use crate::ui::render_context::RenderContext;
-use crate::ui::widget::{Widget, WidgetTree};
+use crate::ui::widget::WidgetTree;
 
 /// Progress mode.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -13,15 +14,52 @@ pub enum ProgressMode {
     Indeterminate,
 }
 
-/// ProgressBar widget.
-pub struct ProgressBar {
-    progress: f32,
-    mode: ProgressMode,
-    stroke_color: Option<Color>,
-    track_color: Option<Color>,
-    height: f32,
-    width: f32,
-    round: bool,
+define_widget! {
+    /// ProgressBar widget.
+    pub struct ProgressBar {
+        progress: f32,
+        mode: ProgressMode,
+        stroke_color: Option<Color>,
+        track_color: Option<Color>,
+        height: f32,
+        width: f32,
+        round: bool,
+    }
+
+    preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
+        Size::new(self.width, self.height)
+    }
+
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let tokens = ctx.tokens();
+
+        let track_c = self.track_color.unwrap_or(tokens.color_fill_tertiary());
+        let stroke_c = self.stroke_color.unwrap_or(tokens.color_primary());
+        let radius = if self.round {
+            Some(Radius::uniform(frame.h * 0.5))
+        } else {
+            Some(Radius::uniform(tokens.border_radius_sm()))
+        };
+
+        // Track (background)
+        ctx.fill_rect(frame, track_c, radius);
+
+        match self.mode {
+            ProgressMode::Determinate(p) => {
+                let fill_w = frame.w * p;
+                if fill_w > 0.0 {
+                    let fill_rect = Rect::new(frame.x, frame.y, fill_w, frame.h);
+                    ctx.fill_rect(fill_rect, stroke_c, radius);
+                }
+            }
+            ProgressMode::Indeterminate => {
+                let bar_w = frame.w * 0.3;
+                let bar_x = frame.x + (self.progress * (frame.w - bar_w));
+                let bar_rect = Rect::new(bar_x, frame.y, bar_w, frame.h);
+                ctx.fill_rect(bar_rect, stroke_c, radius);
+            }
+        }
+    }
 }
 
 impl Default for ProgressBar {
@@ -43,14 +81,12 @@ impl ProgressBar {
         }
     }
 
-    /// Set determinate progress (0.0 - 1.0).
     pub fn progress(mut self, p: f32) -> Self {
         self.progress = p.clamp(0.0, 1.0);
         self.mode = ProgressMode::Determinate(self.progress);
         self
     }
 
-    /// Set indeterminate mode.
     pub fn indeterminate(mut self) -> Self {
         self.mode = ProgressMode::Indeterminate;
         self
@@ -80,44 +116,5 @@ impl ProgressBar {
         self.width = w;
         self.height = h;
         self
-    }
-}
-
-impl Widget for ProgressBar {
-    fn preferred_size(&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
-        Size::new(self.width, self.height)
-    }
-
-    fn render(&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let tokens = ctx.tokens();
-
-        let track_c = self.track_color.unwrap_or(tokens.color_fill_tertiary());
-        let stroke_c = self.stroke_color.unwrap_or(tokens.color_primary());
-        let radius = if self.round {
-            Some(Radius::uniform(frame.h * 0.5))
-        } else {
-            Some(Radius::uniform(tokens.border_radius_sm()))
-        };
-
-        // Track (background)
-        ctx.fill_rect(frame, track_c, radius);
-
-        match self.mode {
-            ProgressMode::Determinate(p) => {
-                let fill_w = frame.w * p;
-                if fill_w > 0.0 {
-                    let fill_rect = Rect::new(frame.x, frame.y, fill_w, frame.h);
-                    ctx.fill_rect(fill_rect, stroke_c, radius);
-                }
-            }
-            ProgressMode::Indeterminate => {
-                // Simple indeterminate: show a 30% wide bar sweeping left-to-right.
-                // The actual animation is driven by external state (not animated here).
-                let bar_w = frame.w * 0.3;
-                let bar_x = frame.x + (self.progress * (frame.w - bar_w));
-                let bar_rect = Rect::new(bar_x, frame.y, bar_w, frame.h);
-                ctx.fill_rect(bar_rect, stroke_c, radius);
-            }
-        }
     }
 }

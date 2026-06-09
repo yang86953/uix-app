@@ -7,6 +7,7 @@ pub mod input;
 pub mod label;
 pub mod modal;
 pub mod progress;
+pub mod scroll_view;
 pub mod space;
 pub mod tabs;
 
@@ -19,5 +20,6 @@ pub use input::*;
 pub use label::*;
 pub use modal::*;
 pub use progress::*;
+pub use scroll_view::*;
 pub use space::*;
 pub use tabs::*;

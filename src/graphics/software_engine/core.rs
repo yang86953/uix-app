@@ -164,6 +164,15 @@ impl RenderTarget {
 
 impl RenderTarget {
     pub fn put_pixel_aa(&mut self, x: i32, y: i32, premul_color: u32, coverage: f32) {
+        // Respect clip rect using integer bounds (avoid float precision issues)
+        let cx0 = self.clip_rect.x as i32;
+        let cy0 = self.clip_rect.y as i32;
+        let cx1 = (self.clip_rect.x + self.clip_rect.w).ceil() as i32;
+        let cy1 = (self.clip_rect.y + self.clip_rect.h).ceil() as i32;
+        if x < cx0 || y < cy0 || x >= cx1 || y >= cy1 {
+            return;
+        }
+
         if coverage >= 1.0 - 1e-6 {
             self.put_pixel_raw(x, y, premul_color);
             return;
@@ -226,6 +235,14 @@ impl RenderTarget {
         if x < 0 || x >= w || y < 0 || y >= h {
             return;
         }
+        // Respect clip rect using integer bounds (avoid float precision issues)
+        let cx0 = self.clip_rect.x as i32;
+        let cy0 = self.clip_rect.y as i32;
+        let cx1 = (self.clip_rect.x + self.clip_rect.w).ceil() as i32;
+        let cy1 = (self.clip_rect.y + self.clip_rect.h).ceil() as i32;
+        if x < cx0 || y < cy0 || x >= cx1 || y >= cy1 {
+            return;
+        }
         let idx = (y * w + x) as usize;
         if idx >= self.pixels.len() {
             return;
@@ -274,9 +291,6 @@ impl RenderTarget {
     }
 
     pub fn apply_opacity(&self, c: u32) -> u32 {
-        if (self.opacity - 1.0).abs() < 0.001 {
-            return c;
-        }
         let a = ((c >> 24) & 0xFF) as f32 * self.opacity;
         let r = (c & 0xFF) as f32 * self.opacity;
         let g = ((c >> 8) & 0xFF) as f32 * self.opacity;

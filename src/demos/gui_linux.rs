@@ -13,157 +13,162 @@
 use uix::diag::log::{info_fn, Level, Logger};
 use std::sync::atomic::{AtomicBool, Ordering};
 use uix::platform::{IEventLoop, IWindowManager};
-use uix::graphics::{Color, DirtyRegion, GraphicsEngine, SoftwareEngine};
+use uix::graphics::{Color, DirtyRegion, GraphicsEngine, Rect, Size, SoftwareEngine};
 use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
 use uix::platform::linux::LinuxPlatform;
 use uix::platform::types::KeyCode as PlatformKeyCode;
 use uix::platform::types::MouseButton as PlatformMouseButton;
 use uix::ui::theme::DesignTokens;
+use uix::ui::render_context::RenderContext;
+use uix::ui::widget::{EventResult, WidgetEvent, WidgetTree};
 use uix::ui::{
-    AlignItems, Button, ButtonSize, Card, Container, Divider, DividerOrientation, FlexDirection,
-    Input, InputSize, JustifyContent, KeyCode as WidgetKeyCode, Label,
-    MouseButton as WidgetMouseButton, RenderContext, Space, SpaceSize, WidgetEvent, WidgetTree,
+    AlignItems, Button, ButtonSize, Card, Container, Divider,
+    DividerOrientation, FlexDirection, Input, InputSize, IntoWidgetNode, JustifyContent,
+    KeyCode as WidgetKeyCode, Label, MouseButton as WidgetMouseButton, ScrollDirection,
+    ScrollView, Space, SpaceSize, WidgetNode,
 };
+
+use uix::{define_widget, tree};
 
 const GW: i32 = 1024;
 const GH: i32 = 720;
 
-/// Build a simple dashboard widget tree (Ant Design 5 style).
+// ── Custom component: Counter ────────────────────────────────────────────
+
+define_widget! {
+    /// Counter button that increments on click.
+    pub struct Counter {
+        count: u32,
+    }
+
+    @new -> Self { Self { count: 0 } }
+
+    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
+        Size::new(120.0, 36.0)
+    }
+
+    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+        match event {
+            WidgetEvent::MouseDown { .. } => { self.count += 1; EventResult::Handled }
+            _ => EventResult::NotHandled
+        }
+    }
+
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let bg = ctx.tokens().color_primary_bg();
+        let color = ctx.tokens().color_primary();
+        ctx.fill_rect(frame, bg, None);
+        ctx.draw_text(
+            &format!("Count: {}", self.count),
+            uix::graphics::Point::new(frame.x + 8.0, frame.y + 8.0),
+            color,
+            14.0,
+        );
+    }
+}
+
+// ── Navigation item component (function component) ───────────────────────
+
+/// Build a nav item row.
+fn nav_item(label: &str, active: bool, text_color: Color, bg_color: Color) -> WidgetNode {
+    if active {
+        tree! {
+            Container::new().size(200.0, 36.0).dir(FlexDirection::Row).bg(bg_color) => [
+                Container::new().size(3.0, 36.0).bg(text_color),
+                Container::new().size(12.0, 36.0),
+                Label::new(label, text_color).font_size(14.0).size(170.0, 36.0),
+            ]
+        }
+    } else {
+        tree! {
+            Container::new().size(200.0, 36.0).dir(FlexDirection::Row) => [
+                Container::new().size(15.0, 36.0),
+                Label::new(label, text_color).font_size(14.0).size(170.0, 36.0),
+            ]
+        }
+    }
+}
+
+/// Build a stat card.
+fn stat_card(title: &str, value: &str, stat_color: Color, elevation: u8) -> Card {
+    Card::new()
+        .title(title).elevation(elevation).hoverable()
+        .size((GW as f32 - 200.0 - 40.0) / 4.0 - 10.0, 100.0)
+        .child(Label::new(value, stat_color).font_size(28.0))
+}
+
+/// Build the dashboard widget tree using `tree!` macro (React-style).
 fn build_dashboard(tree: &mut WidgetTree) {
     let t = DesignTokens::antd_light();
-    let root = Container::new()
-        .size(GW as f32, GH as f32)
-        .bg(t.color_bg_layout)
-        .dir(FlexDirection::Row);
-    let root_id = tree.set_root(Box::new(root));
-
-    // ── Sidebar ──
-    let sidebar = Container::new()
-        .size(200.0, GH as f32)
-        .bg(t.color_bg_elevated)
-        .dir(FlexDirection::Column);
-    let sidebar_id = tree.add_child(root_id, Box::new(sidebar));
-
-    let brand = Label::new("UIX Framework", t.color_primary)
-        .font_size(20.0)
-        .size(200.0, 52.0);
-    tree.add_child(sidebar_id, Box::new(brand));
-
-    let sd = Divider::new().color(t.color_border_secondary);
-    tree.add_child(sidebar_id, Box::new(sd));
-
-    let nav_items: [(&str, bool); 4] = [
-        (" Dashboard", true),
-        (" Widgets", false),
-        (" Settings", false),
-        (" About", false),
-    ];
-    for (label, active) in &nav_items {
-        let color = if *active { t.color_primary } else { t.color_text_secondary };
-        let bg_nav = if *active { t.color_primary_bg } else { Color::transparent() };
-        let item_bg = Container::new()
-            .size(200.0, 36.0).dir(FlexDirection::Row).bg(bg_nav);
-        let item_id = tree.add_child(sidebar_id, Box::new(item_bg));
-        if *active {
-            let indicator = Container::new().size(3.0, 36.0).bg(t.color_primary);
-            tree.add_child(item_id, Box::new(indicator));
-            let sp = Container::new().size(12.0, 36.0);
-            tree.add_child(item_id, Box::new(sp));
-        } else {
-            let sp = Container::new().size(15.0, 36.0);
-            tree.add_child(item_id, Box::new(sp));
-        }
-        let nav_lbl = Label::new(label, color).font_size(14.0).size(170.0, 36.0);
-        tree.add_child(item_id, Box::new(nav_lbl));
-    }
-
-    let filler = Container::new().size(200.0, GH as f32 - 200.0);
-    tree.add_child(sidebar_id, Box::new(filler));
-
-    let ver = Label::new("UIX v0.1.0 — Rust Native", t.color_text_quaternary)
-        .font_size(11.0).size(200.0, 24.0);
-    tree.add_child(sidebar_id, Box::new(ver));
-
-    // ── Main Content ──
     let cw = GW as f32 - 200.0;
-    let content = Container::new()
-        .size(cw, GH as f32).bg(t.color_bg_container).dir(FlexDirection::Column);
-    let content_id = tree.add_child(root_id, Box::new(content));
-
-    // Title bar
-    let titlebar = Container::new()
-        .size(cw, 44.0).bg(t.color_bg_elevated).dir(FlexDirection::Row);
-    let titlebar_id = tree.add_child(content_id, Box::new(titlebar));
-    let title_lbl = Label::new("  Dashboard", t.color_text).font_size(16.0).size(400.0, 44.0);
-    tree.add_child(titlebar_id, Box::new(title_lbl));
-    let tb_sp = Container::new().size(cw - 496.0, 44.0);
-    tree.add_child(titlebar_id, Box::new(tb_sp));
-
-    // Body
-    let body = Container::new()
-        .size(cw, GH as f32 - 44.0 - 1.0).dir(FlexDirection::Column);
-    let body_id = tree.add_child(content_id, Box::new(body));
-
-    // Stat cards
-    let section = Label::new("Overview", t.color_text).font_size(18.0).size(200.0, 28.0);
-    tree.add_child(body_id, Box::new(section));
-
-    let stat_data: [(&str, &str, Color, u8); 4] = [
-        ("Total Users", "1,234", t.color_primary, 2),
-        ("Revenue", "$8,291", t.color_success, 1),
-        ("Orders", "89", t.color_warning, 1),
-        ("Growth", "12.5%", t.color_info, 1),
-    ];
     let stats_w = cw - 40.0;
-    let card_w = (stats_w / 4.0) - 10.0;
     let card_h = 100.0;
 
-    let stat_row = Space::new()
-        .size(SpaceSize::Custom(10.0))
-        .width(stats_w).height(card_h)
-        .justify(JustifyContent::Start).align(AlignItems::Stretch);
-    let mut stat_row = stat_row;
-    for (title, value, stat_color, elevation) in &stat_data {
-        let card = Card::new()
-            .title(title).elevation(*elevation).hoverable()
-            .size(card_w, card_h)
-            .child(Label::new(*value, *stat_color).font_size(28.0));
-        stat_row = stat_row.child(card);
-    }
-    tree.add_child(body_id, Box::new(stat_row));
+    tree.build(tree! {
+        // ── Root: horizontal split ──
+        Container::new().size(GW as f32, GH as f32).bg(t.color_bg_layout).dir(FlexDirection::Row) => [
 
-    // Buttons
-    let btn_sec = Label::new("Buttons", t.color_text).font_size(16.0).size(200.0, 24.0);
-    tree.add_child(body_id, Box::new(btn_sec));
+            // ── Sidebar ──
+            tree! { Container::new().size(200.0, GH as f32).bg(t.color_bg_elevated).dir(FlexDirection::Column) => [
+                Label::new("UIX Framework", t.color_primary).font_size(20.0).size(200.0, 52.0),
+                Divider::new().color(t.color_border_secondary),
+                // Nav items from function component
+                nav_item(" Dashboard", true,  t.color_primary, t.color_primary_bg),
+                nav_item(" Widgets",  false, t.color_text_secondary, Color::transparent()),
+                nav_item(" Settings", false, t.color_text_secondary, Color::transparent()),
+                nav_item(" About",    false, t.color_text_secondary, Color::transparent()),
+                Container::new().size(200.0, GH as f32 - 200.0),
+                Label::new("UIX v0.1.0 — Rust Native", t.color_text_quaternary)
+                    .font_size(11.0).size(200.0, 24.0),
+            ]},
 
-    let btn_row = Space::new()
-        .size(SpaceSize::Custom(10.0))
-        .width(stats_w).height(36.0).align(AlignItems::Center);
-    let btn_row_id = tree.add_child(body_id, Box::new(btn_row));
-    let btn_data = ["Primary", "Default", "Dashed"];
-    let btn_variants: [fn(&str) -> Button; 3] = [
-        |t| Button::new(t).primary(),
-        |t| Button::new(t),
-        |t| Button::new(t).dashed(),
-    ];
-    for (i, label) in btn_data.iter().enumerate() {
-        tree.add_child(btn_row_id, Box::new(btn_variants[i](label).size(ButtonSize::Middle)));
-    }
+            // ── Main Content ──
+            tree! { Container::new().size(cw, GH as f32).bg(t.color_bg_container).dir(FlexDirection::Column) => [
 
-    // Form
-    let div = Divider::new()
-        .with_text("Form").orientation(DividerOrientation::Left)
-        .color(t.color_border);
-    tree.add_child(body_id, Box::new(div));
+                // Title bar
+                tree! { Container::new().size(cw, 44.0).bg(t.color_bg_elevated).dir(FlexDirection::Row) => [
+                    Label::new("  Dashboard", t.color_text).font_size(16.0).size(400.0, 44.0),
+                    Container::new().size(cw - 496.0, 44.0),
+                ]},
 
-    let form_row = Space::new()
-        .size(SpaceSize::Custom(10.0))
-        .width(stats_w).height(44.0).align(AlignItems::Center);
-    let form_id = tree.add_child(body_id, Box::new(form_row));
-    let input = Input::new("Type here...").size(InputSize::Middle);
-    tree.add_child(form_id, Box::new(input));
-    let submit = Button::new("Submit").primary().size(ButtonSize::Middle);
-    tree.add_child(form_id, Box::new(submit));
+                // Body — wrapped in ScrollView so content scrolls if the window is too short
+                tree! { ScrollView::new(ScrollDirection::Vertical).size(cw, GH as f32 - 44.0 - 1.0) => [
+                    tree! { Container::new().size(cw, 600.0).dir(FlexDirection::Column) => [
+
+                        Label::new("Overview", t.color_text).font_size(18.0).size(200.0, 28.0),
+
+                        // Stat cards
+                        Space::new().size(SpaceSize::Custom(10.0))
+                            .width(stats_w).height(card_h).direction(FlexDirection::Row)
+                            .justify(JustifyContent::Start).align(AlignItems::Stretch)
+                            .child(stat_card("Total Users", "1,234", t.color_primary, 2))
+                            .child(stat_card("Revenue", "$8,291", t.color_success, 1))
+                            .child(stat_card("Orders", "89", t.color_warning, 1))
+                            .child(stat_card("Growth", "12.5%", t.color_info, 1)),
+
+                        // Custom Counter component
+                        Label::new("Counter (click me)", t.color_text).font_size(16.0).size(200.0, 24.0),
+                        Counter { count: 0 }.into_node(),
+
+                        // Buttons
+                        Label::new("Buttons", t.color_text).font_size(16.0).size(200.0, 24.0),
+                        tree! { Space::new().size(SpaceSize::Custom(10.0)).width(stats_w).height(36.0).align(AlignItems::Center) => [
+                            Button::new("Primary").primary().size(ButtonSize::Middle),
+                            Button::new("Default").size(ButtonSize::Middle),
+                            Button::new("Dashed").dashed().size(ButtonSize::Middle),
+                        ]},
+
+                        // Form
+                        Divider::new().with_text("Form").orientation(DividerOrientation::Left).color(t.color_border),
+                        tree! { Space::new().size(SpaceSize::Custom(10.0)).width(stats_w).height(44.0).align(AlignItems::Center) => [
+                            Input::new("Type here...").size(InputSize::Middle),
+                            Button::new("Submit").primary().size(ButtonSize::Middle),
+                        ]},
+                    ]},
+                ]},
+            ]},
+        ]
+    });
 }
 
 // ── Event Conversion ──
@@ -312,54 +317,58 @@ pub fn run_gui_demo() {
     let mut tree = WidgetTree::new();
     build_dashboard(&mut tree);
 
-    // Render first frame
-    let dirty = DirtyRegion::full();
-    engine.begin_frame(&dirty);
-    tree.layout();
-    let mut rctx = RenderContext::new(&mut engine, uix::graphics::FontHandle::default(), &tokens);
-    tree.render_tree(&mut rctx);
-    engine.end_frame(&dirty);
-    tree.reset_dirty();
-
-    // Present initial frame to Wayland surface
-    platform.present_pixels(engine.pixels(), GW, GH);
-    info_fn("Initial frame presented, entering event loop");
-
-    // ── Event Loop (uses AtomicBool because wait_event takes &Fn, not FnMut) ──
+    // ── Event Loop — first render happens inside the loop after processing
+    // pending configure/resize events, ensuring the widget tree has correct
+    // dimensions before rendering. ──
     let pending_events = std::cell::RefCell::new(Vec::<UiEvent>::new());
     let running = AtomicBool::new(true);
+    let mut first_frame = true;
+
+    // Track whether the FIRST render has happened — first render must
+    // always use DirtyRegion::full() to fully initialize the framebuffer.
+    let mut rendered_first_frame = false;
 
     while running.load(Ordering::Relaxed) {
-        // Wait for Wayland events (blocks — 0 CPU when idle)
-        let alive = platform.wait_event(&|ev: &UiEvent| {
-            match ev.type_ {
-                UiEventType::WindowClose => {
-                    running.store(false, Ordering::Relaxed);
-                    return false;
-                }
-                UiEventType::KeyDown => {
-                    if let UiEventPayload::Key(ref d) = ev.payload {
-                        if d.key == PlatformKeyCode::Escape {
-                            running.store(false, Ordering::Relaxed);
-                            return false;
+        if first_frame {
+            // First iteration: drain pending configure/resize events from
+            // window creation without blocking, so the tree is configured.
+            platform.poll_event(&|ev: &UiEvent| {
+                pending_events.borrow_mut().push(ev.clone());
+                true
+            });
+            first_frame = false;
+        } else {
+            // Subsequent iterations: wait for Wayland events (blocks when idle)
+            let alive = platform.wait_event(&|ev: &UiEvent| {
+                match ev.type_ {
+                    UiEventType::WindowClose => {
+                        running.store(false, Ordering::Relaxed);
+                        return false;
+                    }
+                    UiEventType::KeyDown => {
+                        if let UiEventPayload::Key(ref d) = ev.payload {
+                            if d.key == PlatformKeyCode::Escape {
+                                running.store(false, Ordering::Relaxed);
+                                return false;
+                            }
                         }
                     }
+                    _ => {}
                 }
-                _ => {}
+                pending_events.borrow_mut().push(ev.clone());
+                true
+            });
+
+            if !alive {
+                break;
             }
-            pending_events.borrow_mut().push(ev.clone());
-            true
-        });
 
-        if !alive {
-            break;
+            // Drain any remaining events
+            platform.poll_event(&|ev: &UiEvent| {
+                pending_events.borrow_mut().push(ev.clone());
+                true
+            });
         }
-
-        // Drain any remaining events
-        platform.poll_event(&|ev: &UiEvent| {
-            pending_events.borrow_mut().push(ev.clone());
-            true
-        });
 
         // Dispatch events to widget tree
         for ev in pending_events.borrow_mut().drain(..) {
@@ -368,14 +377,21 @@ pub fn run_gui_demo() {
             }
         }
 
-        // Render frame
-        let region = tree.dirty_region().clone();
+        // Determine render region:
+        // - First frame always uses full clear to initialize framebuffer
+        // - Subsequent frames use incremental dirty region when available
+        let region = if !rendered_first_frame || tree.dirty_region().full_frame {
+            DirtyRegion::full()
+        } else {
+            tree.dirty_region().clone()
+        };
         engine.begin_frame(&region);
         tree.layout();
         let mut rctx = RenderContext::new(&mut engine, uix::graphics::FontHandle::default(), &tokens);
         tree.render_tree(&mut rctx);
         engine.end_frame(&region);
         tree.reset_dirty();
+        rendered_first_frame = true;
 
         // Present to Wayland surface
         platform.present_pixels(engine.pixels(), GW, GH);

@@ -88,6 +88,39 @@ impl<'a> RenderContext<'a> {
         self.engine.stroke_circle(cx, cy, r, color, lw);
     }
 
+    /// Push a clip rect onto the engine's clip stack.
+    /// Drawing outside this rect will be masked out.
+    pub fn push_clip_rect(&mut self, rect: Rect) {
+        self.engine.push_clip_rect(rect);
+    }
+
+    /// Pop the most recent clip rect from the engine's clip stack.
+    pub fn pop_clip_rect(&mut self) {
+        self.engine.pop_clip_rect();
+    }
+
+    /// Save the current engine state (clip, transform, opacity) and push
+    /// a clip rect. Use `pop_clip()` after rendering children to restore.
+    pub fn push_clip(&mut self, rect: Rect) {
+        self.engine.save();
+        self.engine.push_clip_rect(rect);
+    }
+
+    /// Pop the clip rect pushed by `push_clip`, restoring pre-clip state.
+    pub fn pop_clip(&mut self) {
+        self.engine.restore();
+    }
+
+    /// Save the current engine state (clip, transform, opacity).
+    pub fn save(&mut self) {
+        self.engine.save();
+    }
+
+    /// Restore the most recently saved engine state.
+    pub fn restore(&mut self) {
+        self.engine.restore();
+    }
+
     /// Set a maximum text width for text layout.
     /// Use `f32::MAX` (default) for unlimited width.
     pub fn set_max_text_width(&mut self, width: f32) {

@@ -18,6 +18,10 @@ use wayland_client::{
     protocol::{wl_buffer, wl_compositor, wl_keyboard, wl_pointer, wl_seat, wl_shm, wl_shm_pool, wl_surface},
     Display, EventQueue, GlobalManager, Main,
 };
+use wayland_protocols::misc::server_decoration::client::{
+    org_kde_kwin_server_decoration::{Mode, OrgKdeKwinServerDecoration},
+    org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager,
+};
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -91,6 +95,10 @@ pub struct WaylandBackend {
     // UiEvent queue (thread-safe for quick_assign callbacks)
     events: Arc<Mutex<VecDeque<UiEvent>>>,
 
+    // Server-side decoration (title bar with min/max/close)
+    decoration_manager: Option<Main<OrgKdeKwinServerDecorationManager>>,
+    decoration: Option<Main<OrgKdeKwinServerDecoration>>,
+
     // SHM buffer (RAII — owns fd, pool, and buffer)
     shm_buffer: Option<ShmBuffer>,
 
@@ -152,6 +160,8 @@ impl WaylandBackend {
             shown: false,
             closed: false,
             configured: false,
+            decoration_manager: None,
+            decoration: None,
             shm_buffer: None,
             events,
             last_pointer,
@@ -165,14 +175,14 @@ impl WaylandBackend {
         let w = self.width;
         let h = self.height;
 
-        // Re-create SHM buffer if dimensions changed
-        if width != w || height != h {
+        // Create or re-create SHM buffer if missing or dimensions changed
+        if self.shm_buffer.is_none() || width != w || height != h {
             self.width = width;
             self.height = height;
             if let Ok(new_buf) = Self::create_shm_buffer(&self._shm, width, height) {
                 self.shm_buffer = Some(new_buf);
             } else {
-                log::warn!("Wayland: failed to recreate SHM buffer for resize {}x{}", width, height);
+                log::warn!("Wayland: failed to create SHM buffer for {}x{}", width, height);
                 return;
             }
         }
@@ -186,6 +196,9 @@ impl WaylandBackend {
                 surface.attach(Some(&shm.buffer), 0, 0);
                 surface.damage(0, 0, width, height);
                 surface.commit();
+                if !self.shown {
+                    self.shown = true;
+                }
             }
             let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
         }
@@ -307,6 +320,19 @@ impl WaylandBackend {
             });
         }
 
+        // Request server-side decorations (title bar) via KDE protocol
+        match self._globals.instantiate_exact::<OrgKdeKwinServerDecorationManager>(1) {
+            Ok(dm) => {
+                let deco = dm.create(&surface);
+                deco.request_mode(Mode::Server);
+                self.decoration_manager = Some(dm);
+                self.decoration = Some(deco);
+            }
+            Err(_) => {
+                log::warn!("Wayland: no server_decoration_manager (running on non-KDE compositor?)");
+            }
+        }
+
         // First commit triggers xdg_surface.configure
         surface.commit();
 
@@ -317,24 +343,12 @@ impl WaylandBackend {
         // Roundtrip: process configure event + ack_configure
         let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
 
-        // Create SHM buffer (solid white fill) so the compositor shows the window
-        match Self::create_shm_buffer(&self._shm, width, height) {
-            Ok(shm_buf) => {
-                // Attach buffer and commit to make the surface visible
-                if let Some(ref s) = self.surface {
-                    s.attach(Some(&shm_buf.buffer), 0, 0);
-                    s.commit();
-                }
-                self.shm_buffer = Some(shm_buf);
-            }
-            Err(_) => {
-                // Fallback: commit without buffer (won't be visible)
-                if let Some(ref s) = self.surface { s.commit(); }
-            }
-        }
+        // Commit without buffer to acknowledge the configure
+        // Surface will become visible only on first present_pixels() call,
+        // which provides the real UI content — no white flash at startup.
+        if let Some(ref s) = self.surface { s.commit(); }
 
         self.configured = true;
-        self.shown = true;
         true
     }
 
@@ -392,6 +406,8 @@ impl IWindowManager for WaylandBackend {
         self.create_window_inner(title, width, height)
     }
     fn destroy_window(&mut self) {
+        self.decoration = None;
+        self.decoration_manager = None;
         self.shm_buffer = None;
         self.toplevel = None;
         self.xdg_surface = None;

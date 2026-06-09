@@ -1,22 +1,11 @@
 use super::asset_store::AssetStore;
 use super::core::RenderTarget;
-use super::FontData;
 use crate::diag::{Errc, Error};
 use crate::graphics::{
     BlendMode, Color, DirtyRegion, FontHandle, GraphicsEngine, ImageHandle, Point, Radius, Rect,
     Size, TextLayoutOptions,
 };
 use crate::graphics::{GradientDirection, Transform};
-
-// ════════════════════════════════════════════════════════════════════════════
-// FontData 辅助方法
-// ════════════════════════════════════════════════════════════════════════════
-
-impl FontData {
-    pub(crate) fn char_advance(&self, ch: char) -> f32 {
-        self.font.metrics(ch, self.size).advance_width
-    }
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // SoftwareEngine — 组合 AssetStore + RenderTarget
@@ -70,6 +59,58 @@ impl SoftwareEngine {
     pub fn set_supersample_level(&mut self, level: u8) {
         self.rt.set_supersample_level(level);
     }
+
+    // ── 系统字体自动检测 ──
+
+    /// Auto-detect and load a system font as the default.
+    /// Scans platform-specific font directories for a suitable TTF font.
+    /// The loaded font becomes `FontHandle(0)` — the default.
+    /// If no font is found, the built-in bitmap font is used as fallback.
+    pub fn load_default_system_font(&mut self, size: f32) {
+        let candidates: &[&str] = if cfg!(windows) {
+            &[
+                r"C:\Windows\Fonts\segoeui.ttf",
+                r"C:\Windows\Fonts\Segoe UI.ttf",
+                r"C:\Windows\Fonts\arial.ttf",
+            ]
+        } else if cfg!(target_os = "macos") {
+            &[
+                "/System/Library/Fonts/SFNS.ttf",
+                "/System/Library/Fonts/Helvetica.ttf",
+            ]
+        } else {
+            // Linux — proportional UI fonts (fallback chain)
+            &[
+                "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/adwaita-sans-fonts/AdwaitaSans-Regular.ttf",
+                "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
+                "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+                "/usr/share/fonts/abattis-cantarell-fonts/Cantarell-Regular.otf",
+                "/home/yang86/.local/share/fonts/l/LXGWWenKai_Regular.ttf",
+            ]
+        };
+
+        for path in candidates {
+            match std::fs::read(path) {
+                Ok(data) => {
+                    match self.assets.load_font(data, size) {
+                        Ok(_) => {
+                            crate::diag::log::info_fn(format!("Loaded font: {}", path));
+                            return;
+                        }
+                        Err(e) => {
+                            crate::diag::log::warn_fn(format!(
+                                "Font load failed {}: {}",
+                                path, e.short_what()
+                            ));
+                        }
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        crate::diag::log::info_fn("No system font, using bitmap fallback");
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -82,6 +123,8 @@ impl GraphicsEngine for SoftwareEngine {
         self.main_height = height;
         self.rt.initialize(width, height);
         self.active_target = ActiveTarget::Main;
+        // Auto-load system font as default (non-fatal if none found)
+        self.load_default_system_font(14.0);
         Ok(())
     }
 
