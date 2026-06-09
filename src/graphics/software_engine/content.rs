@@ -178,15 +178,7 @@ impl RenderTarget {
                 .unwrap_or(fs * 1.3)
         };
 
-        // Debug: log first render to diagnose garbled text
-        #[cfg(debug_assertions)]
-        if text.contains('\u{4e00}') || text.contains('\u{4e2d}') {
-            let metrics = font.font.horizontal_line_metrics(fs);
-            let ascent = metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
-            let preview: String = text.chars().take(4).collect();
-            eprintln!("[TTF] draw '{}' pos=({},{}) fs={} ascent={:.1} lh={}",
-                preview, pos.x, pos.y, fs, ascent, lh);
-        }
+
         let max_w = if opts.max_width.is_finite() && opts.max_width > 0.0 {
             opts.max_width
         } else {
@@ -256,33 +248,33 @@ impl RenderTarget {
             });
         }
 
-        // Compute baseline based on VAlign.
-        // For VAlign::Top, pos.y is the visual top of the first line.
-        // We find the highest glyph top (minimum ymin) and set baseline so
-        // that the tallest glyph's top exactly matches pos.y.
-        let baseline_y = if matches!(opts.v_align, VAlign::Top | VAlign::Baseline) {
-            if opts.v_align == VAlign::Baseline {
-                pos.y
-            } else {
-                let min_ymin = cache.iter().map(|g| g.metrics.ymin).min().unwrap_or(0);
-                // baseline_y + min_ymin = pos.y → baseline_y = pos.y - min_ymin
-                pos.y - min_ymin as f32
-            }
+        // Compute baseline. fontdue coverage layout: row 0 = glyph bottom,
+        // row height-1 = glyph top. Screen Y goes downward, so
+        // screen_y = baseline + ymin - row (bottom→upward).
+        let baseline_y = if opts.v_align == VAlign::Baseline {
+            pos.y
+        } else if opts.v_align == VAlign::Top {
+            // VAlign::Top: tallest glyph top = pos.y.
+            // Find the glyph with highest top (ymin - height + 1 is most negative)
+            let max_top = cache.iter()
+                .map(|g| g.metrics.ymin - g.metrics.height as i32 + 1)
+                .min()
+                .unwrap_or(0);
+            // baseline + max_top = pos.y → baseline = pos.y - max_top
+            pos.y - max_top as f32
         } else {
             pos.y + ascent + vy_offset
         };
 
-        for (i, gp) in cache.iter().enumerate() {
+        for gp in &cache {
             let gx = (pos.x + gp.x + gp.metrics.xmin as f32) as i32;
-            let gy = (baseline_y + gp.metrics.ymin as f32 + gp.line as f32 * lh) as i32;
-            if i < 4 && (text.contains('\u{4e00}') || text.contains('\u{4e2d}')) {
-                let ch = glyphs[i].ch;
-                eprintln!("[TTF]   '{}' x={:.0}+{}→{} y={:.0}+{}→{} bbox={}x{} pixels={}",
-                    ch, pos.x, gp.x, gx, baseline_y, gp.metrics.ymin, gy,
-                    gp.metrics.width, gp.metrics.height,
-                    gp.coverage.iter().any(|&c| c > 0));
-            }
+            // fontdue: row 0 = glyph bottom at y = baseline + ymin
+            // Screen Y goes downward: bottom at larger Y, so we go UPWARD from bottom
+            let bottom_y = (baseline_y + gp.metrics.ymin as f32 + gp.line as f32 * lh) as i32;
+
             for row in 0..gp.metrics.height {
+                // coverage[row] = bottom→top, screen Y goes upward: bottom_y - row
+                let sy = bottom_y - row as i32;
                 for col in 0..gp.metrics.width {
                     let cov = gp.coverage[row * gp.metrics.width + col];
                     if cov == 0 {
@@ -295,7 +287,7 @@ impl RenderTarget {
                     let g = ((c >> 8) & 0xFF) * cov_u32 / 255;
                     let b = (c & 0xFF) * cov_u32 / 255;
                     let pixel = (blended_alpha << 24) | (r << 16) | (g << 8) | b;
-                    self.put_pixel_raw(gx + col as i32, gy + row as i32, pixel);
+                    self.put_pixel_raw(gx + col as i32, sy, pixel);
                 }
             }
         }
