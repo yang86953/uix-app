@@ -136,6 +136,8 @@ fn build_dashboard(tree: &mut WidgetTree) {
                     tree! { Container::new().size(cw, 600.0).dir(FlexDirection::Column) => [
 
                         Label::new("Overview", t.color_text).font_size(18.0).size(200.0, 28.0),
+                        Label::new("你好世界！中文测试", t.color_primary).font_size(18.0).size(300.0, 30.0),
+                        Label::new("Hello 你好 中文 English 混合", t.color_text).font_size(14.0).size(400.0, 24.0),
 
                         // Stat cards
                         Space::new().size(SpaceSize::Custom(10.0))

@@ -177,6 +177,16 @@ impl RenderTarget {
                 .map(|m| m.new_line_size)
                 .unwrap_or(fs * 1.3)
         };
+
+        // Debug: log first render to diagnose garbled text
+        #[cfg(debug_assertions)]
+        if text.contains('\u{4e00}') || text.contains('\u{4e2d}') {
+            let metrics = font.font.horizontal_line_metrics(fs);
+            let ascent = metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
+            let preview: String = text.chars().take(4).collect();
+            eprintln!("[TTF] draw '{}' pos=({},{}) fs={} ascent={:.1} lh={}",
+                preview, pos.x, pos.y, fs, ascent, lh);
+        }
         let max_w = if opts.max_width.is_finite() && opts.max_width > 0.0 {
             opts.max_width
         } else {
@@ -250,9 +260,16 @@ impl RenderTarget {
             });
         }
 
-        for gp in &cache {
+        for (i, gp) in cache.iter().enumerate() {
             let gx = (pos.x + gp.x + gp.metrics.xmin as f32) as i32;
             let gy = (baseline_y + gp.metrics.ymin as f32 + gp.line as f32 * lh) as i32;
+            if i < 4 && (text.contains('\u{4e00}') || text.contains('\u{4e2d}')) {
+                let ch = glyphs[i].ch;
+                eprintln!("[TTF]   '{}' x={:.0}+{}→{} y={:.0}+{}→{} bbox={}x{} pixels={}",
+                    ch, pos.x, gp.x, gx, baseline_y, gp.metrics.ymin, gy,
+                    gp.metrics.width, gp.metrics.height,
+                    gp.coverage.iter().any(|&c| c > 0));
+            }
             for row in 0..gp.metrics.height {
                 for col in 0..gp.metrics.width {
                     let cov = gp.coverage[row * gp.metrics.width + col];
