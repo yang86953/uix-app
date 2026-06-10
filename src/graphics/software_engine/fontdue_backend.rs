@@ -5,12 +5,30 @@
 //! because fontdue 0.9 does not process the `gvar`/`CFF2` variation tables.
 //! Use a `FreeTypeBackend` (future) for complete format coverage.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use crate::diag::{Errc, Error};
 use crate::graphics::text_backend::{
     GlyphRaster, LineMetrics, PositionedGlyph, TextBackend, TextLayout, TextLayoutOptions,
 };
 use crate::graphics::FontHandle;
 use fontdue::layout::*;
+
+/// Glyph 位图缓存键：在同一字体文件中，(glyph_id, pixel_size) 唯一确定一个字形位图。
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct GlyphCacheKey {
+    glyph_id: u32,
+    /// 取整的像素尺寸（fontdue 按整数 px 渲染，floating 会重光栅化）
+    pixel_size: u32,
+}
+
+/// 缓存的字形位图，与 `GlyphRaster` 结构相同但去掉了泛化包装。
+struct CachedGlyph {
+    width: usize,
+    height: usize,
+    coverage: Vec<u8>,
+}
 
 /// Internal slot for a loaded font.
 #[derive(Debug)]
@@ -24,14 +42,44 @@ struct FontSlot {
 /// Stores parsed fonts in an internal `Vec`. Each `FontHandle` is an index
 /// into this vector. Thread-safe after construction (all methods take `&self`
 /// except `load_font`/`unload_font` which require `&mut self`).
-#[derive(Debug, Default)]
+///
+/// 内置 glyph 位图缓存（LRU），避免每帧重复调用 fontdue `rasterize_indexed`。
+/// 缓存按 font_index 分桶，unload_font 时自动清理对应条目。
 pub struct FontdueBackend {
     fonts: Vec<FontSlot>,
+    /// (font_index → map_of_key_to_cached_glyph)
+    glyph_cache: Mutex<HashMap<usize, HashMap<GlyphCacheKey, CachedGlyph>>>,
+    /// 每个 font 缓存上限，超过时清空该 font 的缓存
+    max_cache_per_font: usize,
+}
+
+impl std::fmt::Debug for FontdueBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let total_entries: usize = self
+            .glyph_cache
+            .lock()
+            .map(|g| g.values().map(|m| m.len()).sum::<usize>())
+            .unwrap_or(0);
+        f.debug_struct("FontdueBackend")
+            .field("fonts", &self.fonts.len())
+            .field("cache_entries", &total_entries)
+            .finish()
+    }
+}
+
+impl Default for FontdueBackend {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FontdueBackend {
     pub fn new() -> Self {
-        Self { fonts: Vec::new() }
+        Self {
+            fonts: Vec::new(),
+            glyph_cache: Mutex::new(HashMap::new()),
+            max_cache_per_font: 512,
+        }
     }
 
     /// Run the fontdue Layout engine, returning positioned glyphs that share
@@ -114,6 +162,10 @@ impl TextBackend for FontdueBackend {
     fn unload_font(&mut self, handle: &FontHandle) {
         let idx = handle.0 as usize;
         if idx < self.fonts.len() {
+            // 清理该字体的 glyph 缓存
+            if let Ok(mut cache) = self.glyph_cache.lock() {
+                cache.remove(&idx);
+            }
             // Replace with a placeholder to keep indices stable.
             // This prevents handle reuse from silently pointing to a different font.
             self.fonts[idx] = FontSlot {
@@ -198,6 +250,44 @@ impl TextBackend for FontdueBackend {
             }
         };
 
+        // Glyph 位图缓存：pixel_size 取整后做 key
+        let ps_int = pixel_size.round() as u32;
+        if ps_int > 0 {
+            let key = GlyphCacheKey {
+                glyph_id,
+                pixel_size: ps_int,
+            };
+            if let Ok(mut cache) = self.glyph_cache.lock() {
+                let font_cache = cache.entry(idx).or_insert_with(HashMap::new);
+                if let Some(cached) = font_cache.get(&key) {
+                    return GlyphRaster {
+                        width: cached.width,
+                        height: cached.height,
+                        coverage: cached.coverage.clone(),
+                    };
+                }
+                // 缓存未命中：光栅化并存入
+                let glyph_index = (glyph_id as u16).min(data.font.glyph_count() - 1);
+                let (metrics, coverage) = data.font.rasterize_indexed(glyph_index, pixel_size);
+                let entry = CachedGlyph {
+                    width: metrics.width,
+                    height: metrics.height,
+                    coverage: coverage.clone(),
+                };
+                // 缓存超限时清空该 font 的缓存（简单 FIFO 淘汰）
+                if font_cache.len() >= self.max_cache_per_font {
+                    font_cache.clear();
+                }
+                font_cache.insert(key, entry);
+                return GlyphRaster {
+                    width: metrics.width,
+                    height: metrics.height,
+                    coverage,
+                };
+            }
+        }
+
+        // 兜底：缓存不可用时直接光栅化
         let glyph_index = (glyph_id as u16).min(data.font.glyph_count() - 1);
         let (metrics, coverage) = data.font.rasterize_indexed(glyph_index, pixel_size);
         GlyphRaster {
