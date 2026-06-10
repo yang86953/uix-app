@@ -270,6 +270,25 @@ impl RenderTarget {
     }
 
     pub(crate) fn fill_span(&mut self, x: i32, y: i32, w: i32, color: u32) {
+        // 快速路径：不透明填充直接用 slice::fill 替代逐像素 put_pixel_raw。
+        // 当 alpha=255 时，混合结果 = 源色，slice::fill 语义等价。
+        if (color >> 24) == 0xFF {
+            // 裁剪到裁剪矩形 + 边界（clip_rect 保证在 buffer 范围内）
+            let tw = self.width as i32;
+            let th = self.height as i32;
+            let cx0 = self.clip_rect.x as i32;
+            let cy0 = self.clip_rect.y as i32;
+            let cx1 = (self.clip_rect.x + self.clip_rect.w).ceil() as i32;
+            let cy1 = (self.clip_rect.y + self.clip_rect.h).ceil() as i32;
+            let x0 = x.max(cx0).max(0);
+            let x1 = (x + w).min(cx1).min(tw);
+            if y >= cy0.max(0) && y < cy1.min(th) && x0 < x1 {
+                let start = (y * tw + x0) as usize;
+                self.pixels[start..start + (x1 - x0) as usize].fill(color);
+            }
+            return;
+        }
+        // 慢速路径：半透明填充逐像素执行 alpha 混合
         for dx in 0..w {
             self.put_pixel_raw(x + dx, y, color);
         }
