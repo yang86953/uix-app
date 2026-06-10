@@ -1,12 +1,13 @@
-use super::{FontData, FontSlot, ImageData, ImageSlot, OffscreenData, OffscreenSlot};
+use super::{ImageData, ImageSlot, OffscreenData, OffscreenSlot};
 use crate::diag::{Errc, Error};
 use crate::graphics::bitmap_font::BitmapFont;
-use crate::graphics::{FontHandle, HandleKind, ImageHandle};
+use crate::graphics::{HandleKind, ImageHandle};
 
-/// Owns all graphical resources (fonts, images, offscreen buffers).
+/// Owns graphical resources (images, offscreen buffers, bitmap font).
+///
+/// Fonts are now managed by the `TextBackend` trait — see `FontdueBackend`.
 pub struct AssetStore {
     bitmap_font: BitmapFont,
-    font_slots: Vec<FontSlot>,
     image_slots: Vec<ImageSlot>,
     offscreen_slots: Vec<OffscreenSlot>,
 }
@@ -21,34 +22,14 @@ impl AssetStore {
     pub fn new() -> Self {
         Self {
             bitmap_font: BitmapFont::new(),
-            font_slots: Vec::new(),
             image_slots: Vec::new(),
             offscreen_slots: Vec::new(),
         }
     }
 
     pub fn shutdown(&mut self) {
-        self.font_slots.clear();
         self.image_slots.clear();
         self.offscreen_slots.clear();
-    }
-
-    // ── 字体 ──
-
-    pub fn load_font(&mut self, bytes: Vec<u8>, _size: f32) -> Result<&mut FontHandle, Error> {
-        let font = fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default())
-            .map_err(|e| Error::new(Errc::FormatError, format!("invalid font: {}", e)))?;
-        let idx = self.font_slots.len() as u32;
-        self.font_slots.push(FontSlot {
-            handle: FontHandle::new(idx),
-            data: FontData { font },
-        });
-        Ok(&mut self.font_slots[idx as usize].handle)
-    }
-
-    pub(crate) fn find_font(&self, handle: &FontHandle) -> Option<&FontData> {
-        let idx = handle.0 as usize;
-        self.font_slots.get(idx).map(|s| &s.data)
     }
 
     pub fn bitmap_font(&self) -> &BitmapFont {

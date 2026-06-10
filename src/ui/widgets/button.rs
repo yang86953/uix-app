@@ -1,8 +1,9 @@
 //! Button widget — Ant Design style button with variants, sizes, and states.
 
 use crate::define_widget;
-use crate::graphics::{Color, GraphicsEngine, Point, Rect, Size, Radius};
+use crate::graphics::{Color, GraphicsEngine, Point, Rect, Size};
 use crate::ui::render_context::RenderContext;
+use crate::ui::style::Style;
 use crate::ui::widget::{EventResult, WidgetEvent, WidgetTree};
 
 /// Button style variant.
@@ -40,6 +41,10 @@ define_widget! {
         #[allow(dead_code)] loading: bool,
         hovered: bool,
         pressed: bool,
+        /// Click ripple animation progress (0.0 = idle, >0.0 = animating).
+        anim_progress: f32,
+        /// Mouse click position for ripple origin.
+        click_pos: Option<Point>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -51,7 +56,12 @@ define_widget! {
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            WidgetEvent::MouseDown { .. } => { self.pressed = true; EventResult::Handled }
+            WidgetEvent::MouseDown { pos, .. } => {
+                self.pressed = true;
+                self.click_pos = Some(*pos);
+                self.anim_progress = 0.001; // start ripple
+                EventResult::Handled
+            }
             WidgetEvent::MouseUp { .. } => { self.pressed = false; EventResult::Handled }
             WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
             WidgetEvent::HoverLeave => { self.hovered = false; self.pressed = false; EventResult::Handled }
@@ -59,68 +69,131 @@ define_widget! {
         }
     }
 
+    on_update => (&mut self, dt: f32) {
+        if self.anim_progress > 0.0 {
+            self.anim_progress += dt / 0.4; // 400ms wave duration
+            if self.anim_progress >= 1.0 {
+                self.anim_progress = 0.0;
+            }
+        }
+    }
+
+    needs_continuous_update => (&self) -> bool {
+        self.anim_progress > 0.0
+    }
+
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let h = self.btn_size.height();
-        let font_size = self.btn_size.font_size();
-        let btn_frame = Rect::new(frame.x, frame.y, frame.w, h.min(frame.h));
+        let btn_frame = Rect::new(frame.x, frame.y, frame.w,
+            self.btn_size.height().min(frame.h));
+        let style = self.compute_style(ctx);
 
-        let primary_border = ctx.tokens().color_primary_border();
-        let primary_active = ctx.tokens().color_primary_active();
-        let primary_hover = ctx.tokens().color_primary_hover();
+        ctx.apply_style(btn_frame, &style);
+        ctx.text_center(&self.text, btn_frame, style.color, style.font_size);
+    }
+
+    // ── Post-render: ripple overlay (separate from UI render) ──────────
+    // Rendered as an overlay so it doesn't couple with the button's base
+    // appearance. The dirty_rect() method ensures the ripple's bounding
+    // box is accurately tracked for incremental re-rendering.
+    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        if self.anim_progress <= 0.0 || self.anim_progress >= 1.0 {
+            return;
+        }
         let primary = ctx.tokens().color_primary();
-        let border = ctx.tokens().color_border();
-        let text_quaternary = ctx.tokens().color_text_quaternary();
-        let text = ctx.tokens().color_text();
-        let border_radius = ctx.tokens().border_radius();
-
-        let (bg, border, text_color, border_width) = if self.disabled {
-            match self.variant {
-                ButtonVariant::Primary => (Some(primary_border), border, text_quaternary, 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(), text_quaternary, 0.0),
-                _ => (None, border, text_quaternary, 1.0),
-            }
-        } else if self.pressed {
-            match self.variant {
-                ButtonVariant::Primary => (Some(primary_active), primary_active, Color::white(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(), primary_active, 0.0),
-                _ => (None, primary_active, primary_active, 1.0),
-            }
-        } else if self.hovered {
-            match self.variant {
-                ButtonVariant::Primary => (Some(primary_hover), primary_hover, Color::white(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(), primary_hover, 0.0),
-                _ => (None, primary, primary, 1.0),
-            }
-        } else {
-            match self.variant {
-                ButtonVariant::Primary => (Some(primary), primary, Color::white(), 1.0),
-                ButtonVariant::Dashed => (None, border, text, 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(), primary, 0.0),
-                _ => (None, border, text, 1.0),
-            }
+        let primary_hover = ctx.tokens().color_primary_hover();
+        let (r, g, b) = match self.variant {
+            ButtonVariant::Primary => (primary_hover.r, primary_hover.g, primary_hover.b),
+            _ => (primary.r, primary.g, primary.b),
         };
+        let (cx, cy) = self.click_pos
+            .map(|p| (p.x, p.y))
+            .unwrap_or((frame.x + frame.w / 2.0, frame.y + frame.h / 2.0));
+        let max_r = (frame.w.max(frame.h)) * 0.7;
+        let r_radius = max_r * self.anim_progress;
+        let alpha = (60.0 * (1.0 - self.anim_progress)).max(0.0) as u8;
+        if alpha > 0 {
+            ctx.fill_circle(cx, cy, r_radius, Color::from_rgba(r, g, b, alpha));
+        }
+    }
 
-        if let Some(bg_color) = bg {
-            let r = if border_radius > 0.0 { Some(Radius::uniform(border_radius)) } else { None };
-            ctx.fill_rect(btn_frame, bg_color, r);
+    // ── Dirty rect: exact ripple bounding box (may overflow button) ────
+    // The ripple circle may extend beyond the button frame. Returning the
+    // exact bounding box ensures the incremental renderer covers the full
+    // ripple area without overpainting the entire button.
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.anim_progress <= 0.0 || self.anim_progress >= 1.0 {
+            return frame;
         }
-        if border_width > 0.0 && border.a > 0 {
-            ctx.stroke_rect(btn_frame, border, border_width, Some(Radius::uniform(border_radius)));
-        }
-        let text_x = btn_frame.x + self.btn_size.padding_h();
-        let text_y = btn_frame.y + (btn_frame.h - font_size) * 0.5;
-        ctx.draw_text(&self.text, Point::new(text_x, text_y), text_color, font_size);
+        let (cx, cy) = self.click_pos
+            .map(|p| (p.x, p.y))
+            .unwrap_or((frame.x + frame.w / 2.0, frame.y + frame.h / 2.0));
+        let max_r = (frame.w.max(frame.h)) * 1.2;
+        let r = max_r * self.anim_progress;
+        Rect::new(cx - r, cy - r, r * 2.0, r * 2.0)
     }
 }
 
 impl Button {
+    /// 根据当前状态（disabled/pressed/hovered/normal × variant）计算 Style。
+    fn compute_style(&self, ctx: &RenderContext) -> Style {
+        let t = ctx.tokens();
+        let font_size = self.btn_size.font_size();
+
+        let (bg, border, text_color, bw) = if self.disabled {
+            match self.variant {
+                ButtonVariant::Primary => (Some(t.color_primary_border()), t.color_border(),
+                    t.color_text_quaternary(), 1.0),
+                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(),
+                    t.color_text_quaternary(), 0.0),
+                _ => (None, t.color_border(), t.color_text_quaternary(), 1.0),
+            }
+        } else if self.pressed {
+            match self.variant {
+                ButtonVariant::Primary => (Some(t.color_primary_active()), t.color_primary_active(),
+                    Color::white(), 1.0),
+                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(),
+                    t.color_primary_active(), 0.0),
+                _ => (None, t.color_primary_active(), t.color_primary_active(), 1.0),
+            }
+        } else if self.hovered {
+            match self.variant {
+                ButtonVariant::Primary => (Some(t.color_primary_hover()), t.color_primary_hover(),
+                    Color::white(), 1.0),
+                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(),
+                    t.color_primary_hover(), 0.0),
+                _ => (None, t.color_primary(), t.color_primary(), 1.0),
+            }
+        } else {
+            match self.variant {
+                ButtonVariant::Primary => (Some(t.color_primary()), t.color_primary(),
+                    Color::white(), 1.0),
+                ButtonVariant::Dashed => (None, t.color_border(), t.color_text(), 1.0),
+                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(),
+                    t.color_primary(), 0.0),
+                _ => (None, t.color_border(), t.color_text(), 1.0),
+            }
+        };
+
+        Style {
+            background: bg,
+            border_color: if bw > 0.0 { Some(border) } else { None },
+            border_width: bw,
+            border_radius: t.border_radius(),
+            padding: crate::base::EdgeInsets::new(
+                self.btn_size.padding_h(), 0.0, self.btn_size.padding_h(), 0.0),
+            color: text_color,
+            font_size,
+        }
+    }
+
     pub fn new(text: &str) -> Self {
         Self {
             text: text.to_string(),
             variant: ButtonVariant::Default,
             btn_size: ButtonSize::Middle,
             block: false, disabled: false, loading: false,
-            hovered: false, pressed: false,
+            hovered: false, pressed: false, anim_progress: 0.0,
+            click_pos: None,
         }
     }
     pub fn variant(mut self, v: ButtonVariant) -> Self { self.variant = v; self }

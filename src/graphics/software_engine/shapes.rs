@@ -204,6 +204,56 @@ impl RenderTarget {
         }
     }
 
+    /// Fill a circle with radial alpha gradient: full color.a at center → 0 at edge.
+    pub fn fill_circle_radial(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
+        let c = self.apply_opacity(Self::premul(color));
+        let expand = r + 1.0;
+        let outer2 = (r + 1.0) * (r + 1.0);
+        if Self::is_identity(&self.transform) {
+            let x0 = (cx - expand).max(self.clip_rect.x) as i32;
+            let y0 = (cy - expand).max(self.clip_rect.y) as i32;
+            let x1 = (cx + expand).min(self.clip_rect.x + self.clip_rect.w) as i32;
+            let y1 = (cy + expand).min(self.clip_rect.y + self.clip_rect.h) as i32;
+            for py in y0..y1 {
+                for px in x0..x1 {
+                    let dx = px as f32 + 0.5 - cx;
+                    let dy = py as f32 + 0.5 - cy;
+                    let dist2 = dx * dx + dy * dy;
+                    if dist2 >= outer2 {
+                        continue;
+                    }
+                    let dist = dist2.sqrt();
+                    let radial = 1.0 - (dist / r).min(1.0);
+                    let coverage = Self::sdf_to_coverage(dist - r);
+                    let effective = (radial * coverage).min(1.0);
+                    if effective > 0.0 {
+                        self.put_pixel_aa(px, py, c, effective);
+                    }
+                }
+            }
+        } else {
+            let bb = Rect::new(cx - expand, cy - expand, expand * 2.0, expand * 2.0);
+            let bounds = self.transform_rect(&bb);
+            if let Some(cr) = self.intersect_clip(&bounds) {
+                for py in (cr.y as i32)..((cr.y + cr.h) as i32) {
+                    for px in (cr.x as i32)..((cr.x + cr.w) as i32) {
+                        if let Some((ux, uy)) = self.apply_inverse(px as f32 + 0.5, py as f32 + 0.5) {
+                            let dx = ux - cx;
+                            let dy = uy - cy;
+                            let dist = (dx * dx + dy * dy).sqrt();
+                            let radial = 1.0 - (dist / r).min(1.0);
+                            let coverage = Self::sdf_to_coverage(dist - r);
+                            let effective = (radial * coverage).min(1.0);
+                            if effective > 0.0 {
+                                self.put_pixel_aa(px, py, c, effective);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
         let c = self.apply_opacity(Self::premul(color));
         let expand = r + 1.0;

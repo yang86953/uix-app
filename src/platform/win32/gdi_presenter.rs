@@ -1,14 +1,17 @@
 //! GdiPresenter — Win32 GDI DIB pixel presentation.
 //!
-//! Takes a `&[u32]` BGRA pixel buffer from a software renderer and presents it
+//! Takes a `&[u32]` ARGB pixel buffer from a software renderer and presents it
 //! to a Win32 window via `CreateDIBSection` + `BitBlt`.
+//!
+//! Uses memory DC (`CreateCompatibleDC` + `SelectObject`) + `BitBlt`, the
+//! classic and reliable GDI pixel-pushing approach.
 
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 #![allow(nonstandard_style)]
 
 use crate::diag::{Errc, Error};
-use std::mem::MaybeUninit;
+use crate::platform::presenter::IPresenter;
 
 // ── Win32 FFI declarations ────────────────────────────────────────────────
 
@@ -71,28 +74,89 @@ const DIB_RGB_COLORS: u32 = 0;
 const SRCCOPY: u32 = 0x00CC0020;
 
 // ════════════════════════════════════════════════════════════════════════════
+// DibHandle — own s a GDI DIB section + memory DC (RAII)
+// ════════════════════════════════════════════════════════════════════════════
+
+struct DibHandle {
+    hbitmap: *mut std::ffi::c_void,
+    hdc_mem: *mut std::ffi::c_void,
+    bits: *mut u32,
+}
+
+impl DibHandle {
+    unsafe fn new(hwnd: *mut std::ffi::c_void, w: i32, h: i32) -> Result<Self, Error> {
+        unsafe {
+            let hdc = GetDC(hwnd);
+            if hdc.is_null() {
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "GdiPresenter: GetDC failed".to_string(),
+                ));
+            }
+            let hdc_mem = CreateCompatibleDC(hdc);
+            if hdc_mem.is_null() {
+                ReleaseDC(hwnd, hdc);
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "GdiPresenter: CreateCompatibleDC failed".to_string(),
+                ));
+            }
+            let bmi = BITMAPINFO {
+                bmi_header: BITMAPINFOHEADER {
+                    bi_size: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    bi_width: w,
+                    bi_height: -h, // top-down
+                    bi_planes: 1,
+                    bi_bit_count: 32,
+                    bi_compression: BI_RGB,
+                    bi_size_image: 0,
+                    bi_xpels_per_meter: 0,
+                    bi_ypels_per_meter: 0,
+                    bi_clr_used: 0,
+                    bi_clr_important: 0,
+                },
+                bmi_colors: [],
+            };
+            let mut pbits: *mut std::ffi::c_void = std::ptr::null_mut();
+            let hbitmap = CreateDIBSection(
+                hdc_mem, &bmi, DIB_RGB_COLORS, &mut pbits, std::ptr::null_mut(), 0,
+            );
+            ReleaseDC(hwnd, hdc);
+            if hbitmap.is_null() || pbits.is_null() {
+                DeleteDC(hdc_mem);
+                if !hbitmap.is_null() { DeleteObject(hbitmap); }
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "GdiPresenter: CreateDIBSection failed".to_string(),
+                ));
+            }
+            SelectObject(hdc_mem, hbitmap);
+            Ok(Self { hbitmap, hdc_mem, bits: pbits as *mut u32 })
+        }
+    }
+}
+
+impl Drop for DibHandle {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.hbitmap.is_null() { DeleteObject(self.hbitmap); }
+            if !self.hdc_mem.is_null() { DeleteDC(self.hdc_mem); }
+        }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // GdiPresenter
 // ════════════════════════════════════════════════════════════════════════════
 
-/// Presents a BGRA pixel buffer to a Win32 window using GDI DIB sections.
 pub struct GdiPresenter {
     hwnd: *mut std::ffi::c_void,
-    hdc_mem: *mut std::ffi::c_void,
-    hbitmap: *mut std::ffi::c_void,
-    dib_bits: *mut u32,
+    dib: DibHandle,
     width: i32,
     height: i32,
 }
 
 impl GdiPresenter {
-    /// Create a new DIB-backed presenter for the given window and dimensions.
-    ///
-    /// # Safety
-    ///
-    /// `hwnd` must be a valid native window handle (non-null, owned by the caller).
-    /// The caller must ensure the window is not destroyed during this object's lifetime.
-    ///
-    /// Returns `Err` if `w <= 0` or `h <= 0`, or if the DIB cannot be created.
     pub unsafe fn new(hwnd: *mut std::ffi::c_void, w: i32, h: i32) -> Result<Self, Error> {
         if w <= 0 || h <= 0 {
             return Err(Error::new(
@@ -100,108 +164,60 @@ impl GdiPresenter {
                 format!("GdiPresenter: dimensions must be positive, got {}x{}", w, h),
             ));
         }
-        let mut dib_bits: *mut u32 = std::ptr::null_mut();
-        let mut hdc_mem: *mut std::ffi::c_void = std::ptr::null_mut();
-        let mut hbitmap: *mut std::ffi::c_void = std::ptr::null_mut();
-        unsafe {
-            let hdc = GetDC(hwnd);
-            if !hdc.is_null() {
-                hdc_mem = CreateCompatibleDC(hdc);
-                if !hdc_mem.is_null() {
-                    let bmi = BITMAPINFO {
-                        bmi_header: BITMAPINFOHEADER {
-                            bi_size: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                            bi_width: w,
-                            bi_height: -h,
-                            bi_planes: 1,
-                            bi_bit_count: 32,
-                            bi_compression: BI_RGB,
-                            bi_size_image: 0,
-                            bi_xpels_per_meter: 0,
-                            bi_ypels_per_meter: 0,
-                            bi_clr_used: 0,
-                            bi_clr_important: 0,
-                        },
-                        bmi_colors: [],
-                    };
-                    let mut ppv: MaybeUninit<*mut std::ffi::c_void> = MaybeUninit::uninit();
-                    hbitmap = CreateDIBSection(
-                        hdc_mem,
-                        &bmi,
-                        DIB_RGB_COLORS,
-                        ppv.as_mut_ptr(),
-                        std::ptr::null_mut(),
-                        0,
-                    );
-                    dib_bits = ppv.assume_init() as *mut u32;
-                    if !hbitmap.is_null() {
-                        SelectObject(hdc_mem, hbitmap);
-                    } else {
-                        DeleteDC(hdc_mem);
-                        hdc_mem = std::ptr::null_mut();
-                    }
-                }
-                ReleaseDC(hwnd, hdc);
-            }
-        }
-        if hdc_mem.is_null() || hbitmap.is_null() {
-            return Err(Error::new(
-                Errc::PlatformError,
-                "GdiPresenter: failed to create DIB section".to_string(),
-            ));
-        }
-        Ok(Self {
-            hwnd,
-            hdc_mem,
-            hbitmap,
-            dib_bits,
-            width: w,
-            height: h,
-        })
+        let dib = unsafe { DibHandle::new(hwnd, w, h)? };
+        Ok(Self { hwnd, dib, width: w, height: h })
     }
 
-    /// Copy pixel data to the DIB and blit to the window.
-    pub fn present(&self, pixels: &[u32]) {
+    fn blit(&self) {
         unsafe {
-            if self.dib_bits.is_null() {
-                return;
-            }
-            let len = (self.width as usize)
-                .checked_mul(self.height as usize)
-                .map_or(0, |n| n.min(pixels.len()));
-            if len == 0 {
-                return;
-            }
-            std::ptr::copy_nonoverlapping(pixels.as_ptr(), self.dib_bits, len);
             let hdc = GetDC(self.hwnd);
-            if hdc.is_null() {
-                return;
-            }
+            if hdc.is_null() { return; }
             BitBlt(
-                hdc,
-                0,
-                0,
-                self.width,
-                self.height,
-                self.hdc_mem,
-                0,
-                0,
-                SRCCOPY,
+                hdc, 0, 0, self.width, self.height,
+                self.dib.hdc_mem, 0, 0, SRCCOPY,
             );
             ReleaseDC(self.hwnd, hdc);
         }
     }
 }
 
-impl Drop for GdiPresenter {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.hbitmap.is_null() {
-                DeleteObject(self.hbitmap);
-            }
-            if !self.hdc_mem.is_null() {
-                DeleteDC(self.hdc_mem);
-            }
+// ════════════════════════════════════════════════════════════════════════════
+// IPresenter 实现
+// ════════════════════════════════════════════════════════════════════════════
+
+impl IPresenter for GdiPresenter {
+    fn present(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
+        // Auto-resize if dimensions changed
+        if (width != self.width || height != self.height) && self.resize(width, height).is_err() {
+            log::debug!("GdiPresenter: resize to {}x{} failed, fallback to {}x{}",
+                width, height, self.width, self.height);
         }
+        unsafe {
+            if self.dib.bits.is_null() {
+                return Err(Error::new(Errc::PlatformError, "GdiPresenter: DIB not initialized"));
+            }
+            let len = (self.width as usize)
+                .checked_mul(self.height as usize)
+                .map_or(0, |n| n.min(pixels.len()));
+            if len == 0 { return Ok(()); }
+            std::ptr::copy_nonoverlapping(pixels.as_ptr(), self.dib.bits, len);
+        }
+        self.blit();
+        Ok(())
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        if width <= 0 || height <= 0 {
+            return Err(Error::new(Errc::InvalidArgument,
+                format!("GdiPresenter::resize: got {}x{}", width, height)));
+        }
+        if width == self.width && height == self.height { return Ok(()); }
+
+        // Create new DIB first, then swap
+        let new_dib = unsafe { DibHandle::new(self.hwnd, width, height)? };
+        self.dib = new_dib;
+        self.width = width;
+        self.height = height;
+        Ok(())
     }
 }

@@ -143,6 +143,7 @@ impl Default for DirtyRegion {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextLayoutOptions {
     pub max_width: f32,
+    pub max_height: f32,
     pub line_height: f32,
     pub word_wrap: bool,
     pub h_align: HAlign,
@@ -154,6 +155,7 @@ impl Default for TextLayoutOptions {
     fn default() -> Self {
         Self {
             max_width: f32::MAX,
+            max_height: 0.0,
             line_height: 0.0,
             word_wrap: true,
             h_align: HAlign::Left,

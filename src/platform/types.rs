@@ -21,6 +21,7 @@ pub use crate::base::{EdgeInsets, Point, Rect, Size};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u32)]
 pub enum KeyCode {
+    // 未知/未映射的按键
     Unknown = 0,
 
     // 字母 A-Z

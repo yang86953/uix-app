@@ -79,6 +79,14 @@ pub trait INativeHandle {
 // ════════════════════════════════════════════════════════════════════════════
 
 pub trait Platform: IWindowManager + IWindowProperties + IEventLoop + INativeHandle {
+    // ── 像素呈现 ─────────────────────────────────────────────────
+
+    /// Present a pixel buffer to the native window.
+    fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32);
+
+    /// Access the pixel presenter for direct presentation control.
+    fn presenter(&mut self) -> &mut dyn IPresenter;
+
     // ── 子系统访问器（组合模式）────────────────────────────────────
 
     fn clipboard(&mut self) -> &mut dyn IClipboard;

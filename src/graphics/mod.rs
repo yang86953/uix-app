@@ -10,6 +10,7 @@ pub mod frame_graph;
 pub mod layout;
 pub mod null_engine;
 pub mod software_engine;
+pub mod text_backend;
 pub mod types;
 
 pub use color::*;

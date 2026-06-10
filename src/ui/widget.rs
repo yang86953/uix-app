@@ -3,87 +3,17 @@ use crate::graphics::{DirtyRegion, Point, Rect, Size};
 // Re-export layout types for backward compatibility
 pub use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
 
+// Platform types are used directly by WidgetEvent — no conversion needed.
+// The platform layer defines the canonical KeyCode and MouseButton enums
+// (which are supersets of the old widget-local definitions).
+pub use crate::platform::types::{KeyCode, MouseButton};
+
 /// Event result enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventResult {
     Handled,
     NotHandled,
     Bubbled,
-}
-
-/// Mouse button.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MouseButton {
-    None,
-    Left,
-    Right,
-    Middle,
-}
-
-/// Key codes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum KeyCode {
-    Unknown,
-    Enter,
-    Escape,
-    Backspace,
-    Delete,
-    Tab,
-    Space,
-    Up,
-    Down,
-    Left,
-    Right,
-    Home,
-    End,
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
-    H,
-    I,
-    J,
-    K,
-    L,
-    M,
-    N,
-    O,
-    P,
-    Q,
-    R,
-    S,
-    T,
-    U,
-    V,
-    W,
-    X,
-    Y,
-    Z,
-    Num0,
-    Num1,
-    Num2,
-    Num3,
-    Num4,
-    Num5,
-    Num6,
-    Num7,
-    Num8,
-    Num9,
-    F1,
-    F2,
-    F3,
-    F4,
-    F5,
-    F6,
-    F7,
-    F8,
-    F9,
-    F10,
-    F11,
-    F12,
 }
 
 /// Widget event types.
@@ -121,6 +51,24 @@ pub trait Widget {
     }
     fn on_update(&mut self, _dt: f32) {}
 
+    /// Whether this widget currently needs continuous update/render frames.
+    /// Return `true` when an animation is active (e.g. ripple, fade, slide).
+    /// The framework will keep the render loop running instead of blocking
+    /// on event wait, and will stop as soon as all widgets return `false`.
+    fn needs_continuous_update(&self) -> bool {
+        false
+    }
+
+    /// Return the region that needs to be re-rendered for active animations.
+    /// `frame` is the widget's current layout frame. The default returns
+    /// `frame` unchanged. An animating widget should return the bounding
+    /// box of its animation (which may extend beyond `frame`, e.g. a
+    /// ripple overflowing the button boundary).
+    /// Only called when `needs_continuous_update()` returns `true`.
+    fn dirty_rect(&self, frame: Rect) -> Rect {
+        frame
+    }
+
     /// Return this widget's preferred size for layout.
     /// When `engine` is provided, text-measuring widgets can compute
     /// accurate dimensions via the graphics backend; implementations
@@ -148,6 +96,30 @@ pub trait Widget {
         _ctx: &mut crate::ui::render_context::RenderContext,
         _tree: &WidgetTree,
     ) {
+    }
+
+    /// Flex grow factor for flexbox layout. 0.0 = don't grow (default),
+    /// 1.0 = fill remaining space proportionally.
+    fn flex_grow(&self) -> f32 {
+        0.0
+    }
+
+    /// Flex shrink factor for flexbox layout. 1.0 = shrink equally (default).
+    fn flex_shrink(&self) -> f32 {
+        1.0
+    }
+
+    /// Return an optional clip rect applied around children rendering.
+    ///
+    /// When `Some(rect)`, the engine pushes this clip rect before rendering
+    /// children (their `render` calls) and pops it before their `post_render`
+    /// calls. This allows overlay effects (ripples, shadows) to visually
+    /// overflow the clipping boundary.
+    ///
+    /// Used by `ScrollView` to clip content to its viewport while allowing
+    /// post-render effects (e.g. button click ripples) to overflow.
+    fn children_clip(&self, _frame: Rect) -> Option<Rect> {
+        None
     }
 
     /// Compute child layout positions. Returns (child_id, rect) pairs.
@@ -368,6 +340,10 @@ pub struct WidgetTree {
     hovered_widget: Option<WidgetId>,
     /// Accumulated dirty region for the current frame.
     dirty_region: DirtyRegion,
+    /// Widget that received the last MouseDown, used to ensure MouseUp
+    /// always reaches it even when the cursor has moved to a different
+    /// widget (e.g. scrollbar drag released outside the thumb).
+    mouse_down_target: Option<WidgetId>,
 }
 
 impl Default for WidgetTree {
@@ -381,6 +357,7 @@ impl Default for WidgetTree {
             focused_widget: None,
             hovered_widget: None,
             dirty_region: DirtyRegion::full(),
+            mouse_down_target: None,
         }
     }
 }
@@ -555,17 +532,23 @@ impl WidgetTree {
     }
 
     /// Layout phase: compute and assign positions for all children.
-    /// The root widget's frame is reset to its preferred size each frame
-    /// so layout always starts from a well-defined origin.
-    /// Widgets whose frame changes are automatically marked dirty.
+    ///
+    /// The root widget's frame is initialised from `preferred_size()` on
+    /// the first frame.  On subsequent frames the existing frame is
+    /// preserved so that external resize events (WindowResize →
+    /// WidgetEvent::Resize) can override it.
     pub fn layout(&mut self) {
-        // Ensure root frame is set from preferred_size each frame
+        // Set root frame from preferred_size only on the first layout
+        // (frame is zero).  Preserve externally-set frames.
         if let Some(root_id) = self.root_id {
-            let ps = self.get(root_id).map(|r| r.preferred_size(None));
-            if let Some(ps) = ps {
-                let new_frame = Rect::new(0.0, 0.0, ps.w, ps.h);
-                if let Some(root_mut) = self.get_mut(root_id) {
-                    root_mut.set_frame(new_frame);
+            let frame = self.get(root_id).map(|r| r.frame()).unwrap_or(Rect::zero());
+            if frame.w <= 0.0 || frame.h <= 0.0 {
+                let ps = self.get(root_id).map(|r| r.preferred_size(None));
+                if let Some(ps) = ps {
+                    let new_frame = Rect::new(0.0, 0.0, ps.w, ps.h);
+                    if let Some(root_mut) = self.get_mut(root_id) {
+                        root_mut.set_frame(new_frame);
+                    }
                 }
             }
         }
@@ -592,11 +575,54 @@ impl WidgetTree {
             // Step 2: apply positions inline (mutable borrow — node dropped)
             for (child_id, rect) in positions {
                 if let Some(child) = self.get_mut(child_id) {
-                    child.set_frame(rect);
+                    let old = child.frame();
+                    if old != rect {
+                        child.set_frame(rect);
+                        // Mark both old and new positions so the
+                        // area scrolled away from gets cleared.
+                        self.mark_dirty_rect(child_id, old);
+                        self.mark_dirty(child_id);
+                    }
                 }
-                self.mark_dirty(child_id);
             }
         }
+    }
+
+    /// Advance all widget animations by `dt` seconds.
+    ///
+    /// 1. Calls `on_update(dt)` on every widget (animation ticks).
+    /// 2. Marks any widget with `needs_continuous_update() == true` as
+    ///    dirty, so the incremental renderer picks up the visual changes.
+    /// 3. Returns `true` if any widget is still animating — the caller
+    ///    (event loop) uses this to decide whether to keep polling
+    ///    (non-blocking) vs. blocking on `wait_event`.
+    ///
+    /// This design keeps animation signalling clean: `on_update` owns the
+    /// animation logic, `mark_dirty` drives incremental re-rendering of
+    /// only the changed region, and the return value controls the event
+    /// loop's poll/wait decision without needing a separate query method.
+    pub fn update(&mut self, dt: f32) -> bool {
+        let order = self.traverse();
+        let mut any_animating = false;
+        for &id in &order {
+            // Phase 1: advance animation state
+            if let Some(node) = self.get_mut(id) {
+                node.inner_mut().on_update(dt);
+            }
+            // Phase 2: if still animating, use dirty_rect() to get the
+            // exact region to re-render (may extend beyond widget frame
+            // for overlow animations like ripples).
+            // Signal caller to keep the event loop running while active.
+            if let Some(node) = self.get(id) {
+                if node.inner().needs_continuous_update() {
+                    any_animating = true;
+                    let frame = node.frame();
+                    let rect = node.inner().dirty_rect(frame);
+                    self.mark_dirty_rect(id, rect);
+                }
+            }
+        }
+        any_animating
     }
 
     // ── Dirty Region Tracking ───────────────────────────────────────
@@ -616,6 +642,17 @@ impl WidgetTree {
         };
         if !self.dirty_region.full_frame && frame.w > 0.0 && frame.h > 0.0 {
             self.dirty_region = DirtyRegion::area(self.dirty_region.rect.union(&frame));
+        }
+    }
+
+    /// Mark a widget as dirty with an explicit dirty rectangle (may be
+    /// larger than the widget's frame, e.g. for overflowing animations).
+    pub fn mark_dirty_rect(&mut self, id: WidgetId, rect: Rect) {
+        if let Some(node) = self.get_mut(id) {
+            node.set_dirty(true);
+        }
+        if !self.dirty_region.full_frame && rect.w > 0.0 && rect.h > 0.0 {
+            self.dirty_region = DirtyRegion::area(self.dirty_region.rect.union(&rect));
         }
     }
 
@@ -658,30 +695,84 @@ impl WidgetTree {
     }
 
     /// Render phase: traverse and render all widgets.
+    ///
+    /// Two-pass approach:
+    /// 1. **Render pass**: calls `render()` on every widget.  Widgets that clip
+    ///    their children (e.g. `ScrollView`) push a clip rect here, so child
+    ///    content is properly masked to the viewport.
+    /// 2. **Post-render pass**: calls `post_render()` on every widget.  The
+    ///    children clip rect is **not** active during this pass, allowing
+    ///    overlay effects (click ripples, shadows, tooltips) to visually
+    ///    overflow the clipping boundary.
     pub fn render_tree(&self, ctx: &mut crate::ui::render_context::RenderContext) {
         if let Some(root_id) = self.root_id {
-            self.render_node(root_id, ctx);
+            self.render_pass(root_id, ctx);
+            self.post_render_pass(root_id, ctx);
         }
     }
 
-    fn render_node(&self, id: WidgetId, ctx: &mut crate::ui::render_context::RenderContext) {
+    /// First pass: render() calls with children clipping active.
+    fn render_pass(&self, id: WidgetId, ctx: &mut crate::ui::render_context::RenderContext) {
         if let Some(node) = self.get(id) {
             if !node.visible() {
                 return;
             }
             let frame = node.frame();
-            // Save state BEFORE render so that any clip rects, transforms,
-            // or opacity changes made by the widget's render() take effect
-            // for its children and are then restored for sibling subtrees.
+            let in_dirty = self.dirty_region.full_frame
+                || frame.intersect(&self.dirty_region.rect).is_some();
+
             ctx.save();
-            node.inner().render(frame, ctx, self);
-            // Render children sorted by z-index (ascending: lowest first = bottom-most)
+            if in_dirty {
+                node.inner().render(frame, ctx, self);
+            }
+
+            let clip = if in_dirty {
+                node.inner().children_clip(frame)
+            } else {
+                None
+            };
+            if let Some(rect) = clip {
+                ctx.engine().push_clip_rect(rect);
+            }
+
             let mut sorted: Vec<WidgetId> = node.children().to_vec();
             sorted.sort_by_key(|&cid| self.get(cid).map_or(0, |c| c.z_index()));
             for &child_id in &sorted {
-                self.render_node(child_id, ctx);
+                self.render_pass(child_id, ctx);
             }
-            node.inner().post_render(frame, ctx, self);
+
+            if let Some(_) = clip {
+                ctx.engine().pop_clip_rect();
+            }
+            ctx.restore();
+        }
+    }
+
+    /// Second pass: post_render() calls — children clip is NOT active,
+    /// so overlay effects can overflow the clipping boundary.
+    fn post_render_pass(
+        &self,
+        id: WidgetId,
+        ctx: &mut crate::ui::render_context::RenderContext,
+    ) {
+        if let Some(node) = self.get(id) {
+            if !node.visible() {
+                return;
+            }
+            let frame = node.frame();
+            let in_dirty = self.dirty_region.full_frame
+                || frame.intersect(&self.dirty_region.rect).is_some();
+
+            ctx.save();
+            if in_dirty {
+                node.inner().post_render(frame, ctx, self);
+            }
+
+            let mut sorted: Vec<WidgetId> = node.children().to_vec();
+            sorted.sort_by_key(|&cid| self.get(cid).map_or(0, |c| c.z_index()));
+            for &child_id in &sorted {
+                self.post_render_pass(child_id, ctx);
+            }
             ctx.restore();
         }
     }
@@ -738,6 +829,7 @@ impl WidgetTree {
         match event {
             WidgetEvent::MouseDown { pos, .. } => {
                 let target = self.hit_test(*pos);
+                self.mouse_down_target = target;
                 if let Some(t) = target {
                     self.mark_dirty(t);
                     let result = self.dispatch_to(t, event);
@@ -751,22 +843,40 @@ impl WidgetTree {
                 }
             }
             WidgetEvent::MouseUp { pos, .. } => {
-                if let Some(t) = self.hit_test(*pos) {
+                // Always dispatch MouseUp to the widget that received
+                // MouseDown, so it can release capture state (e.g.
+                // scrollbar drag, button press) even when the cursor
+                // has moved to a different widget.
+                let hold = self.mouse_down_target;
+                self.mouse_down_target = None;
+
+                // Dispatch to current hit-test target first (normal
+                // click-release on the same widget), then to the
+                // original mouse-down target if they differ.
+                let hit = self.hit_test(*pos);
+                let mut result = EventResult::NotHandled;
+
+                if let Some(t) = hit {
                     self.mark_dirty(t);
-                    self.dispatch_to(t, event)
-                } else {
-                    EventResult::NotHandled
+                    result = self.dispatch_to(t, event);
                 }
+                // Always notify the original mouse-down target so it
+                // can release drag / pressed state.
+                if let Some(t) = hold {
+                    if Some(t) != hit {
+                        self.mark_dirty(t);
+                        let _ = self.dispatch_to(t, event);
+                    }
+                }
+                result
             }
             WidgetEvent::MouseMove { pos } => {
                 let new_hover = self.hit_test(*pos);
                 if new_hover != self.hovered_widget {
                     if let Some(old) = self.hovered_widget {
-                        self.mark_dirty(old);
                         let _ = self.dispatch_to(old, &WidgetEvent::HoverLeave);
                     }
                     if let Some(new) = new_hover {
-                        self.mark_dirty(new);
                         let _ = self.dispatch_to(new, &WidgetEvent::HoverEnter);
                     }
                     self.hovered_widget = new_hover;
@@ -780,6 +890,7 @@ impl WidgetTree {
             WidgetEvent::MouseWheel { .. } => {
                 let target = self.hovered_widget.or(self.root_id);
                 if let Some(t) = target {
+                    self.mark_dirty(t);
                     self.dispatch_to(t, event)
                 } else {
                     EventResult::NotHandled
@@ -804,8 +915,17 @@ impl WidgetTree {
                 // Internally managed — external dispatch is a no-op.
                 EventResult::NotHandled
             }
-            WidgetEvent::Resize { .. } => {
+            WidgetEvent::Resize { width, height } => {
                 if let Some(root) = self.root_id {
+                    // Only update root frame when dimensions are valid.
+                    // Compositors may send configure(0,0) meaning "client
+                    // decides" — those should not reset the root frame.
+                    if *width > 0.0 && *height > 0.0 {
+                        if let Some(root_mut) = self.get_mut(root) {
+                            root_mut.set_frame(Rect::new(0.0, 0.0, *width, *height));
+                            self.mark_dirty(root);
+                        }
+                    }
                     self.dispatch_to(root, event)
                 } else {
                     EventResult::NotHandled

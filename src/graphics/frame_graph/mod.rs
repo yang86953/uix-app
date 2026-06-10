@@ -173,15 +173,15 @@ impl FrameGraph {
     /// 编译当前帧图。
     ///
     /// 执行裁剪、拓扑排序和屏障生成。
-    /// 返回 `CompiledGraph`，传递给 `execute()` 使用。
+    /// 返回 `CompiledGraph`，传递给 `execute()` / `execute_with()` 使用。
     pub fn compile(&mut self) -> CompiledGraph {
         self.compiler.compile(&self.passes, &self.current_versions)
     }
 
-    /// 执行编译后的帧图。
+    /// 执行编译后的帧图（使用 Pass 内建执行函数）。
     ///
-    /// 按 `plan.execution_order` 顺序执行每个 Pass，
-    /// 并在 Pass 间隐式应用屏障约束。
+    /// 按 `plan.execution_order` 顺序执行每个 Pass 的 `execute` 闭包。
+    /// 如果 Pass 的 execute 为 None 则直接跳过（由 `execute_with` 处理）。
     ///
     /// # 参数
     /// - `engine`：实现了 `GraphicsEngine` 的低级渲染引擎。
@@ -216,13 +216,57 @@ impl FrameGraph {
                 dirty_rect: None,
             };
 
-            // 执行
-            (pass.execute)(&mut ctx)?;
+            // 执行（跳过 None —— 配合 execute_with 使用）
+            if let Some(ref mut exec) = pass.execute {
+                (exec)(&mut ctx)?;
+            }
 
             // 写入资源版本提升
             for &res in &pass.writes {
                 let new_ver = self.registry.bump_version(res, pass.id);
                 self.current_versions.insert(res, new_ver);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 执行编译后的帧图（使用外部渲染回调）。
+    ///
+    /// 与 `execute()` 不同，此方法忽略 Pass 内建的 `execute` 闭包，
+    /// 改为对每个执行的 Pass 调用 `render_fn` 回调。
+    /// 回调可以捕获非 'static 引用（如 `&mut WidgetTree`），
+    /// 不受 `PassFn` 的 `'static` 限制。
+    ///
+    /// # 参数
+    /// - `engine`：低级渲染引擎。
+    /// - `plan`：由 `compile()` 生成的执行计划。
+    /// - `render_fn`：外部渲染回调，接收 (PassId, engine, frame_resources)。
+    pub fn execute_with(
+        &mut self,
+        engine: &mut dyn crate::graphics::GraphicsEngine,
+        plan: &CompiledGraph,
+        render_fn: &mut dyn FnMut(PassId, &mut dyn crate::graphics::GraphicsEngine, &mut FrameResources) -> Result<()>,
+    ) -> Result<()> {
+        // 将 PassId 到 PassNode 的快速查找建立
+        let pass_map: HashMap<PassId, usize> = self
+            .passes
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (p.id, i))
+            .collect();
+
+        // 按顺序执行
+        for &pid in &plan.execution_order {
+            // 调用外部渲染回调（取代 PassNode::execute）
+            render_fn(pid, engine, &mut self.resources)?;
+
+            // 写入资源版本提升
+            if let Some(&idx) = pass_map.get(&pid) {
+                for &res in &self.passes[idx].writes {
+                    let new_ver = self.registry.bump_version(res, pid);
+                    self.current_versions.insert(res, new_ver);
+                }
             }
         }
 
@@ -237,6 +281,12 @@ impl FrameGraph {
         let plan = self.compile();
         self.execute(engine, &plan)?;
         Ok(plan)
+    }
+
+    /// 清空 Pass 列表（保留资源注册表和版本历史）。
+    /// 用于在每帧重新构建 Pass 时保持资源版本追踪连续性。
+    pub fn clear_passes(&mut self) {
+        self.passes.clear();
     }
 
     /// 重置帧图状态（清空所有 Pass 和版本历史）。
@@ -461,5 +511,53 @@ mod tests {
         assert!(!plan3.zero_frame_cost);
         // Clear: writes color (未变但output被消费), Present: reads color (已变) → both run
         assert_eq!(plan3.execution_order.len(), 2);
+    }
+
+    #[test]
+    fn frame_graph_execute_with_callback() {
+        // 测试 execute_with：使用外部回调替代 Pass 内建 execute
+        let mut fg = FrameGraph::new();
+        let color = fg.register_texture("color", 50, 50);
+        let dirty = fg.register_buffer("dirty", 1);
+
+        // 添加一个仅结构化的 Pass（无 execute 函数）
+        fg.add_pass_node(PassNode::new_structural(
+            PassId(0),
+            "Render",
+            vec![dirty],
+            vec![color],
+        ));
+
+        let mut engine = NullEngine::new();
+        let _ = <NullEngine as GraphicsEngine>::initialize(&mut engine, 50, 50);
+        let mut render_count = 0u32;
+
+        // 第一次编译：无历史记录 → 应执行
+        let plan = fg.compile();
+        assert!(!plan.zero_frame_cost);
+
+        // 用 execute_with 执行，回调递增计数器
+        fg.execute_with(&mut engine, &plan, &mut |_pid, _eng, _res| {
+            render_count += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(render_count, 1);
+
+        // 第二次编译：dirty 未标记 → 输入未变 → 裁剪
+        let plan2 = fg.compile();
+        assert!(plan2.zero_frame_cost);
+        assert!(plan2.execution_order.is_empty());
+
+        // 标记 dirty → 再次执行
+        fg.mark_resource_dirty(dirty);
+        let plan3 = fg.compile();
+        assert!(!plan3.zero_frame_cost);
+        fg.execute_with(&mut engine, &plan3, &mut |_pid, _eng, _res| {
+            render_count += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(render_count, 2);
     }
 }

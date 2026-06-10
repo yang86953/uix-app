@@ -117,6 +117,8 @@ extern "system" {
 
     pub(super) fn GetSystemMetrics(nIndex: i32) -> i32;
 
+    pub(super) fn LoadIconW(hInstance: *mut std::ffi::c_void, lpIconName: *const u16) -> *mut std::ffi::c_void;
+
     pub(super) fn LoadImageW(
         hInst: *mut std::ffi::c_void,
         name: *const u16,

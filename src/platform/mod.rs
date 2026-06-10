@@ -13,6 +13,9 @@ pub mod win32;
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod linux;
 
+// ── 像素呈现策略 ────────────────────────────────────────────────
+pub mod presenter;
+
 // ── 子系统 trait 模块 ─────────────────────────────────────────────
 pub mod clipboard;
 pub mod console;
@@ -40,6 +43,7 @@ pub use timer::*;
 
 // ── Platform 子 trait 重导出 ──────────────────────────────────────
 pub use abstraction::{IEventLoop, INativeHandle, IWindowManager, IWindowProperties, Platform};
+pub use presenter::{IPresenter, NullPresenter};
 
 // ── 工厂函数 ──────────────────────────────────────────────────────
 

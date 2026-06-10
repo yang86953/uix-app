@@ -333,9 +333,7 @@ impl RenderTarget {
         let tw = self.width;
         for row in 0..h {
             let start = ((y + row) * tw + x) as usize;
-            for col in 0..w {
-                self.pixels[start + col as usize] = 0x00000000;
-            }
+            self.pixels[start..start + w as usize].fill(0x00000000);
         }
     }
 

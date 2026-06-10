@@ -4,8 +4,9 @@
 //! hardcoding a concrete theme preset. This is the single point where the
 //! widget tree receives injectable design tokens during rendering.
 
-use crate::graphics::{Color, FontHandle, GraphicsEngine, Point, Radius, Rect, Size};
+use crate::graphics::{Color, FontHandle, GraphicsEngine, HAlign, Point, Radius, Rect, Size, VAlign};
 use crate::graphics::{GradientDirection, TextLayoutOptions};
+use crate::ui::style::Style;
 use crate::ui::theme::TokenProvider;
 
 /// RenderContext wraps a GraphicsEngine reference and a TokenProvider,
@@ -42,9 +43,6 @@ impl<'a> RenderContext<'a> {
     }
 
     /// Access the active design token provider.
-    ///
-    /// This is the **only** approved way for widgets to read design tokens.
-    /// Do not hardcode `DesignTokens::antd_light()` in widget code.
     pub fn tokens(&self) -> &dyn TokenProvider {
         self.tokens
     }
@@ -70,59 +68,45 @@ impl<'a> RenderContext<'a> {
         self.engine.fill_rect(rect, color, radius);
     }
 
+    /// 应用 Style 到矩形区域（背景 + 边框）。
+    pub fn apply_style(&mut self, rect: Rect, style: &Style) {
+        let r = if style.border_radius > 0.0 {
+            Some(Radius::uniform(style.border_radius))
+        } else {
+            None
+        };
+        if let Some(bg) = style.background {
+            self.fill_rect(rect, bg, r);
+        }
+        if style.border_width > 0.0 {
+            if let Some(bc) = style.border_color {
+                self.stroke_rect(rect, bc, style.border_width, r);
+            }
+        }
+    }
+
     pub fn stroke_rect(
         &mut self,
-        rect: crate::graphics::Rect,
+        rect: Rect,
         color: Color,
-        lw: f32,
+        line_width: f32,
         radius: Option<Radius>,
     ) {
-        self.engine.stroke_rect(rect, color, lw, radius);
+        self.engine.stroke_rect(rect, color, line_width, radius);
     }
 
     pub fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
         self.engine.fill_circle(cx, cy, r, color);
     }
 
-    pub fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, lw: f32) {
-        self.engine.stroke_circle(cx, cy, r, color, lw);
-    }
-
-    /// Push a clip rect onto the engine's clip stack.
-    /// Drawing outside this rect will be masked out.
-    pub fn push_clip_rect(&mut self, rect: Rect) {
-        self.engine.push_clip_rect(rect);
-    }
-
-    /// Pop the most recent clip rect from the engine's clip stack.
-    pub fn pop_clip_rect(&mut self) {
-        self.engine.pop_clip_rect();
-    }
-
-    /// Save the current engine state (clip, transform, opacity) and push
-    /// a clip rect. Use `pop_clip()` after rendering children to restore.
-    pub fn push_clip(&mut self, rect: Rect) {
-        self.engine.save();
-        self.engine.push_clip_rect(rect);
-    }
-
-    /// Pop the clip rect pushed by `push_clip`, restoring pre-clip state.
-    pub fn pop_clip(&mut self) {
-        self.engine.restore();
-    }
-
-    /// Save the current engine state (clip, transform, opacity).
     pub fn save(&mut self) {
         self.engine.save();
     }
 
-    /// Restore the most recently saved engine state.
     pub fn restore(&mut self) {
         self.engine.restore();
     }
 
-    /// Set a maximum text width for text layout.
-    /// Use `f32::MAX` (default) for unlimited width.
     pub fn set_max_text_width(&mut self, width: f32) {
         self.max_text_width = width;
     }
@@ -130,6 +114,7 @@ impl<'a> RenderContext<'a> {
     pub fn draw_text(&mut self, text: &str, pos: Point, color: Color, font_size: f32) {
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
+            max_height: 0.0,
             line_height: font_size + 2.0,
             word_wrap: false,
             h_align: crate::graphics::HAlign::Left,
@@ -137,6 +122,33 @@ impl<'a> RenderContext<'a> {
             font_size,
         };
         self.engine.draw_text(&self.font, text, pos, color, &opts);
+    }
+
+    /// 在 rect 内竖直居中绘制文本（水平左对齐）。
+    ///
+    /// widget 只需说"把这个文本放在这个框里"——定位由布局系统处理。
+    /// 在 rect 内居中绘制文本（水平 + 竖直居中）。
+    ///
+    /// 水平用 `measure_text` 取实际文本宽度计算居中 x。
+    /// 竖直由 fontdue 的 `VAlign::Middle` + `max_height` 处理。
+    pub fn text_center(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
+        if text.is_empty() {
+            return;
+        }
+        // 水平居中
+        let text_w = self.measure_text(text, font_size).w.min(rect.w);
+        let x = rect.x + (rect.w - text_w) * 0.5;
+        // 竖直居中：fontdue 在 max_height 框内用 Middle 对齐
+        let opts = TextLayoutOptions {
+            max_width: self.max_text_width,
+            max_height: rect.h,
+            line_height: font_size + 2.0,
+            word_wrap: false,
+            h_align: HAlign::Left,
+            v_align: VAlign::Middle,
+            font_size,
+        };
+        self.engine.draw_text(&self.font, text, Point::new(x, rect.y), color, &opts);
     }
 
     pub fn set_supersample_level(&mut self, level: u8) {
@@ -172,6 +184,7 @@ impl<'a> RenderContext<'a> {
     pub fn measure_text(&self, text: &str, font_size: f32) -> Size {
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
+            max_height: 0.0,
             line_height: font_size + 2.0,
             word_wrap: false,
             h_align: crate::graphics::HAlign::Left,

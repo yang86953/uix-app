@@ -29,7 +29,7 @@ use crate::platform::linux::timer::LinuxTimer;
 // ════════════════════════════════════════════════════════════════════════════
 
 pub struct LinuxPlatform {
-    // ── 后端───────────────────────────────────────────────────────
+    // ── 后端（同时兼任 IPresenter）────────────────────────────────
     backend: Box<dyn Backend>,
 
     // ── 共享子系统─────────────────────────────────────────────────
@@ -157,6 +157,13 @@ impl INativeHandle for LinuxPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for LinuxPlatform {
+    fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
+        self.backend.present_pixels(pixels, width, height);
+    }
+    fn presenter(&mut self) -> &mut dyn IPresenter {
+        // Backend: IPresenter，所以 &mut dyn Backend 可直接协变到 &mut dyn IPresenter
+        self.backend.as_mut()
+    }
     fn clipboard(&mut self) -> &mut dyn IClipboard { self.backend.clipboard() }
     fn cursor(&mut self) -> &mut dyn ICursor { self.backend.cursor() }
     fn display(&self) -> &dyn IDisplay { self.backend.display() }
@@ -173,18 +180,6 @@ impl Platform for LinuxPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 // Drop
 // ════════════════════════════════════════════════════════════════════════════
-
-// ════════════════════════════════════════════════════════════════════════════
-// 像素呈现
-// ════════════════════════════════════════════════════════════════════════════
-
-impl LinuxPlatform {
-    /// Present a BGRA pixel buffer to the native window.
-    /// `pixels` is a slice of u32 in ARGB8888 format (0xAARRGGBB).
-    pub fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
-        self.backend.present_pixels(pixels, width, height);
-    }
-}
 
 impl Drop for LinuxPlatform {
     fn drop(&mut self) {

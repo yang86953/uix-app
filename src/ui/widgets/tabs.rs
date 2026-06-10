@@ -70,7 +70,10 @@ define_widget! {
             let is_active = i == self.active_index;
             let text_color = if is_active { primary } else { text_secondary };
 
-            ctx.draw_text(&tab.label, Point::new(cursor_x + 8.0, tab_bar_y + (tab_bar_h - 14.0) * 0.5), text_color, 14.0);
+            let tab_text_y = tab_bar_y + (tab_bar_h - 14.0) * 0.5;
+            ctx.draw_text(&tab.label,
+                Point::new(cursor_x + 8.0, tab_text_y.max(tab_bar_y)),
+                text_color, 14.0);
 
             if is_active {
                 let indicator_x = cursor_x + (100.0 - 60.0) * 0.5;

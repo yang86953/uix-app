@@ -22,6 +22,7 @@
 
 use crate::platform::event::*;
 use crate::platform::types::*;
+use crate::platform::presenter::NullPresenter;
 use crate::platform::win32::bindings::*;
 use crate::platform::win32::clipboard::Win32Clipboard;
 use crate::platform::win32::console::Win32Console;
@@ -30,6 +31,7 @@ use crate::platform::win32::display::Win32Display;
 use crate::platform::win32::ffi::*;
 use crate::platform::win32::file_dialog::Win32FileDialog;
 use crate::platform::win32::filesystem::Win32FileSystem;
+use crate::platform::win32::gdi_presenter::GdiPresenter;
 use crate::platform::win32::keyboard::Win32Keyboard;
 use crate::platform::win32::notification::Win32Notification;
 use crate::platform::win32::system_info::Win32SystemInfo;
@@ -74,6 +76,9 @@ pub struct Win32Platform {
 
     // ── 事件队列（窗口过程写入，事件循环读取）───────────────────
     event_queue: VecDeque<UiEvent>,
+
+    // ── 像素呈现器（默认 NullPresenter，窗口创建后替换为 GdiPresenter）─
+    presenter: Box<dyn IPresenter>,
 
     // ── 组合子系统（独立 struct，通过 accessor 暴露）─────────────
     clipboard_subsys: Win32Clipboard,
@@ -132,7 +137,7 @@ const ICON_BIG: usize = 1;
 const ICON_SMALL: usize = 0;
 
 const SW_HIDE: i32 = 0;
-const SW_SHOW: i32 = 5;
+const SW_SHOWNORMAL: i32 = 1;
 const SW_RESTORE: i32 = 9;
 const SW_MINIMIZE: i32 = 6;
 const SW_MAXIMIZE: i32 = 3;
@@ -140,6 +145,8 @@ const SW_MAXIMIZE: i32 = 3;
 const PM_REMOVE: u32 = 0x0001;
 
 const CW_USEDEFAULT: i32 = -2147483648;
+
+const IDI_APPLICATION: *const u16 = 32512 as *const u16;
 
 const SWP_NOMOVE: u32 = 0x0002;
 const SWP_NOSIZE: u32 = 0x0001;
@@ -235,6 +242,7 @@ impl Win32Platform {
             file_drop_enabled: false,
             text_input_active: false,
             event_queue: VecDeque::new(),
+            presenter: Box::new(NullPresenter::new()),
             clipboard_subsys: Win32Clipboard::new(),
             cursor_subsys: Win32Cursor::new(),
             display_subsys: Win32Display::new(),
@@ -281,7 +289,7 @@ impl Win32Platform {
                 cbClsExtra: 0,
                 cbWndExtra: std::mem::size_of::<*mut std::ffi::c_void>() as i32,
                 hInstance: hinstance,
-                hIcon: ptr::null_mut(),
+                hIcon: LoadIconW(ptr::null_mut(), IDI_APPLICATION),
                 hCursor: ptr::null_mut(),
                 hbrBackground: (COLOR_APPWORKSPACE + 1) as *mut std::ffi::c_void,
                 lpszMenuName: ptr::null(),
@@ -430,6 +438,12 @@ impl Win32Platform {
                 let h = Self::hiword(lparam) as i32;
                 self.width = w;
                 self.height = h;
+
+                // 同步呈现器尺寸
+                if let Err(e) = self.presenter.resize(w, h) {
+                    log::debug!("Win32Platform: presenter resize failed: {}", e.short_what());
+                }
+
                 match wparam {
                     SIZE_MINIMIZED => {
                         self.minimized = true;
@@ -731,6 +745,17 @@ impl IWindowManager for Win32Platform {
             self.text_input_subsys.set_hwnd(hwnd);
             self.timer_subsys.set_hwnd(hwnd);
             self.notification_subsys.set_hwnd(hwnd);
+
+            // 创建 GDI 呈现器（关联窗口的 DIB section）
+            match GdiPresenter::new(hwnd, width, height) {
+                Ok(p) => self.presenter = Box::new(p),
+                Err(e) => {
+                    log::warn!(
+                        "Win32Platform: GdiPresenter creation failed ({}), display disabled",
+                        e.short_what()
+                    );
+                }
+            }
         }
         true
     }
@@ -754,7 +779,7 @@ impl IWindowManager for Win32Platform {
 
     fn show(&mut self) {
         unsafe {
-            ShowWindow(self.hwnd, SW_SHOW);
+            ShowWindow(self.hwnd, SW_SHOWNORMAL);
         }
         self.visible = true;
     }
@@ -789,7 +814,7 @@ impl IWindowManager for Win32Platform {
                 0,
                 0,
                 0,
-                SWP_NOMOVE | SWP_NOSIZE,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
             );
         }
     }
@@ -892,7 +917,7 @@ impl IWindowProperties for Win32Platform {
                 y,
                 0,
                 0,
-                SWP_NOSIZE | SWP_NOZORDER,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
             );
         }
     }
@@ -1126,6 +1151,12 @@ impl INativeHandle for Win32Platform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for Win32Platform {
+    fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
+        let _ = self.presenter.present(pixels, width, height);
+    }
+    fn presenter(&mut self) -> &mut dyn IPresenter {
+        self.presenter.as_mut()
+    }
     fn clipboard(&mut self) -> &mut dyn IClipboard {
         &mut self.clipboard_subsys
     }

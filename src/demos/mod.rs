@@ -3,10 +3,5 @@
 
 pub mod cli;
 
-// GUI demo is Windows-only (uses Win32 API directly)
-#[cfg(windows)]
-pub mod gui;
-
-// Linux GUI demo uses Wayland (separate module)
-#[cfg(all(unix, not(target_os = "macos")))]
-pub mod gui_linux;
+// Cross-platform GUI demo — platform abstraction handles the differences.
+pub mod dashboard;

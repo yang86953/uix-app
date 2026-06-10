@@ -101,6 +101,10 @@ impl FrameResources {
 /// Pass 执行函数的类型别名。
 pub type PassFn = Box<dyn FnMut(&mut PassContext) -> Result<()>>;
 
+/// 外部渲染回调 —— 用于 execute_with()，在编译后由调用者提供渲染函数。
+/// 避免了 PassFn 的 'static 要求，可以捕获非 'static 引用。
+pub type RenderCallback<'a> = dyn FnMut(PassId, &mut dyn GraphicsEngine, &mut FrameResources) -> Result<()> + 'a;
+
 // ════════════════════════════════════════════════════════════════════════════
 // PassNode —— 帧图中的 Pass 节点
 // ════════════════════════════════════════════════════════════════════════════
@@ -108,16 +112,18 @@ pub type PassFn = Box<dyn FnMut(&mut PassContext) -> Result<()>>;
 /// 帧图中的单个 Pass 节点。
 ///
 /// 声明式定义：`name` 用于调试，`reads` / `writes` 声明资源依赖，
-/// `execute` 是渲染函数的载体。
+/// `execute` 是渲染函数的载体（可选 —— 使用 execute_with 时可留空）。
 pub struct PassNode {
     pub id: PassId,
     pub name: String,
     pub reads: Vec<ResourceId>,
     pub writes: Vec<ResourceId>,
-    pub execute: PassFn,
+    /// 内部执行函数。为 `None` 时表示该 Pass 由 `execute_with` 的外部回调驱动。
+    pub execute: Option<PassFn>,
 }
 
 impl PassNode {
+    /// 创建一个带执行函数的 Pass。
     pub fn new(
         id: PassId,
         name: impl Into<String>,
@@ -130,7 +136,23 @@ impl PassNode {
             name: name.into(),
             reads,
             writes,
-            execute,
+            execute: Some(execute),
+        }
+    }
+
+    /// 创建一个仅声明依赖的 Pass（无执行函数，配合 `execute_with` 使用）。
+    pub fn new_structural(
+        id: PassId,
+        name: impl Into<String>,
+        reads: Vec<ResourceId>,
+        writes: Vec<ResourceId>,
+    ) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            reads,
+            writes,
+            execute: None,
         }
     }
 
@@ -188,13 +210,27 @@ impl PassBuilder {
     }
 
     /// 构建 PassNode。
+    ///
+    /// 如果未设置 `execute_with()`，则 `execute` 字段为 `None`，
+    /// 该 Pass 仅声明依赖（供 `execute_with` 外部回调使用）。
     pub fn build(self) -> PassNode {
         PassNode {
             id: self.id,
             name: self.name,
             reads: self.reads,
             writes: self.writes,
-            execute: self.execute.expect("PassBuilder: execute function not set"),
+            execute: self.execute,
+        }
+    }
+
+    /// 直接构建为结构化的 Pass（不带执行函数，always None）。
+    pub fn build_structural(self) -> PassNode {
+        PassNode {
+            id: self.id,
+            name: self.name,
+            reads: self.reads,
+            writes: self.writes,
+            execute: None,
         }
     }
 }

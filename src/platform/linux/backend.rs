@@ -21,7 +21,7 @@ use crate::platform::*;
 // ════════════════════════════════════════════════════════════════════════════
 
 pub(crate) trait Backend:
-    IWindowManager + IWindowProperties + IEventLoop + INativeHandle
+    IWindowManager + IWindowProperties + IEventLoop + INativeHandle + IPresenter
 {
     // ── 后端特有的子系统 ───────────────────────────────────────────
     fn cursor(&mut self) -> &mut dyn ICursor;

@@ -8,20 +8,18 @@
 //!
 //! ## Architecture (v2 — split borrow)
 //!
-//! - **AssetStore**: owns immutable-like resources (fonts, images, offscreen
-//!   buffers, bitmap font). Lookups by handle pointer comparison.
+//! - **TextBackend**: abstract font loading, layout, and glyph rasterization
+//!   (currently `FontdueBackend`, replaceable with `FreeTypeBackend` etc.).
+//! - **AssetStore**: owns resource pools (images, offscreen buffers, bitmap
+//!   font). Fonts are now managed by the `TextBackend`, not by AssetStore.
 //! - **RenderTarget**: owns mutable render state (pixels, clip_rect, opacity,
 //!   transform, blend_mode). All pixel-level draw operations live here.
-//! - **SoftwareEngine**: composes RenderTarget + AssetStore, handles offscreen
-//!   target switching via pixel ownership transfer, and implements
-//!   GraphicsEngine by delegating to both.
-//!
-//! The split eliminates 3 `unsafe` pointer casts that previously bypassed the
-//! borrow checker — Rust's field-level split borrow allows simultaneous
-//! `&self.assets` and `&mut self.rt`.
+//! - **SoftwareEngine**: composes RenderTarget + AssetStore + TextBackend,
+//!   handles offscreen target switching via pixel ownership transfer, and
+//!   implements GraphicsEngine by delegating to all three.
 
 use crate::graphics::{BlendMode, Rect};
-use crate::graphics::{FontHandle, ImageHandle, Transform};
+use crate::graphics::{ImageHandle, Transform};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 内部数据容器（模块内共享）
@@ -32,11 +30,6 @@ pub(crate) struct ImageData {
     pub(crate) pixels: Vec<u32>,
     pub(crate) w: i32,
     pub(crate) h: i32,
-}
-
-/// Loaded font data with a rasterized size.
-pub(crate) struct FontData {
-    pub(crate) font: fontdue::Font,
 }
 
 /// Offscreen render target.
@@ -59,11 +52,6 @@ pub(crate) struct RenderState {
 // Slot types — Boxed handle + data pairs stored in AssetStore
 // ════════════════════════════════════════════════════════════════════════════
 
-pub(crate) struct FontSlot {
-    pub(crate) handle: FontHandle,
-    pub(crate) data: FontData,
-}
-
 pub(crate) struct ImageSlot {
     pub(crate) handle: ImageHandle,
     pub(crate) data: ImageData,
@@ -82,6 +70,7 @@ mod asset_store;
 mod content;
 mod core;
 mod engine;
+mod fontdue_backend;
 mod sdf;
 mod shadow;
 mod shapes;
@@ -93,4 +82,3 @@ mod tests;
 // ════════════════════════════════════════════════════════════════════════════
 
 pub use engine::SoftwareEngine;
-

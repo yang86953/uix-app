@@ -49,12 +49,27 @@ define_widget! {
         children: WidgetChildren,
         scroll_x: f32,
         scroll_y: f32,
+        /// Velocity-based momentum scrolling: velocity accumulates on
+        /// wheel events and decays via friction in on_update.
+        velocity_x: f32,
+        velocity_y: f32,
         direction: ScrollDirection,
         show_scrollbar: bool,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
+        flex_grow_val: f32,
+        flex_shrink_val: f32,
         content_bounds: Cell<Option<Size>>,
+        dragging_v: bool,
+        dragging_h: bool,
+        last_frame: Cell<Option<Rect>>,
+        hover_v: bool,
+        hover_h: bool,
     }
+
+    flex_grow => (&self) -> f32 { self.flex_grow_val }
+
+    flex_shrink => (&self) -> f32 { self.flex_shrink_val }
 
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
         Size::new(
@@ -71,37 +86,203 @@ define_widget! {
         match event {
             WidgetEvent::MouseWheel { delta } => {
                 let mut handled = false;
+                let view = self.last_frame.get();
+                // Acceleration (pixels/s per wheel unit) scales with
+                // viewport so the flick feel is consistent everywhere.
                 if self.direction.can_scroll_y() && delta.y != 0.0 {
-                    let step = 30.0; // pixels per wheel notch
-                    self.scroll_y = (self.scroll_y - delta.y * step)
-                        .max(0.0)
-                        .min(self.max_scroll_y());
+                    let view_h = view.map(|f| f.h)
+                        .unwrap_or(self.fixed_height.unwrap_or(200.0));
+                    // Acceleration per wheel notch: each notch should
+                    // scroll ~10% of the viewport after friction decay.
+                    // Distance = velocity / friction(8), so velocity =
+                    // dist * 8.  Wayland axis delta ≈ ±10 per notch.
+                    let accel = view_h * 0.08;
+                    self.velocity_y += delta.y * accel;
                     handled = true;
                 }
                 if self.direction.can_scroll_x() && delta.x != 0.0 {
-                    let step = 30.0;
-                    self.scroll_x = (self.scroll_x - delta.x * step)
-                        .max(0.0)
-                        .min(self.max_scroll_x());
+                    let view_w = view.map(|f| f.w)
+                        .unwrap_or(self.fixed_width.unwrap_or(300.0));
+                    let accel = view_w * 0.08;
+                    self.velocity_x += delta.x * accel;
                     handled = true;
                 }
                 if handled { EventResult::Handled } else { EventResult::NotHandled }
+            }
+            WidgetEvent::MouseDown { pos, .. } => {
+                let frame = match self.last_frame.get() {
+                    Some(f) => f,
+                    None => return EventResult::NotHandled,
+                };
+                if !self.show_scrollbar { return EventResult::NotHandled; }
+                // Vertical scrollbar thumb
+                if self.direction.can_scroll_y() && self.max_scroll_y() > 0.0 {
+                    let sb = 6.0;
+                    let track = Rect::new(frame.x + frame.w - sb - 2.0, frame.y + 2.0, sb, frame.h - 4.0);
+                    let max_y = self.max_scroll_y();
+                    let ratio_h = frame.h / (frame.h + max_y);
+                    let thumb_h = (ratio_h * track.h).max(18.0).min(track.h);
+                    let thumb_y = track.y + (self.scroll_y / max_y) * (track.h - thumb_h);
+                    if Rect::new(track.x, thumb_y, sb, thumb_h).contains(*pos) {
+                        self.dragging_v = true;
+                        return EventResult::Handled;
+                    }
+                }
+                // Horizontal scrollbar thumb
+                if self.direction.can_scroll_x() && self.max_scroll_x() > 0.0 {
+                    let sb = 6.0;
+                    let track = Rect::new(frame.x + 2.0, frame.y + frame.h - sb - 2.0, frame.w - 4.0, sb);
+                    let max_x = self.max_scroll_x();
+                    let ratio_w = frame.w / (frame.w + max_x);
+                    let thumb_w = (ratio_w * track.w).max(18.0).min(track.w);
+                    let thumb_x = track.x + (self.scroll_x / max_x) * (track.w - thumb_w);
+                    if Rect::new(thumb_x, track.y, thumb_w, sb).contains(*pos) {
+                        self.dragging_h = true;
+                        return EventResult::Handled;
+                    }
+                }
+                EventResult::NotHandled
+            }
+            WidgetEvent::MouseMove { pos } => {
+                if self.dragging_v {
+                    let frame = match self.last_frame.get() {
+                        Some(f) => f,
+                        None => return EventResult::Handled,
+                    };
+                    let sb = 6.0;
+                    let track = Rect::new(frame.x + frame.w - sb - 2.0, frame.y + 2.0, sb, frame.h - 4.0);
+                    let max_y = self.max_scroll_y();
+                    if max_y > 0.0 {
+                        let thumb_h = (frame.h / (frame.h + max_y) * track.h).max(18.0).min(track.h);
+                        let usable = track.h - thumb_h;
+                        if usable > 0.0 {
+                            let v = ((pos.y - track.y) / usable).clamp(0.0, 1.0) * max_y;
+                            self.scroll_y = v;
+                            self.velocity_y = 0.0;
+                        }
+                    }
+                    return EventResult::Handled;
+                }
+                if self.dragging_h {
+                    let frame = match self.last_frame.get() {
+                        Some(f) => f,
+                        None => return EventResult::Handled,
+                    };
+                    let sb = 6.0;
+                    let track = Rect::new(frame.x + 2.0, frame.y + frame.h - sb - 2.0, frame.w - 4.0, sb);
+                    let max_x = self.max_scroll_x();
+                    if max_x > 0.0 {
+                        let thumb_w = (frame.w / (frame.w + max_x) * track.w).max(18.0).min(track.w);
+                        let usable = track.w - thumb_w;
+                        if usable > 0.0 {
+                            let v = ((pos.x - track.x) / usable).clamp(0.0, 1.0) * max_x;
+                            self.scroll_x = v;
+                            self.velocity_x = 0.0;
+                        }
+                    }
+                    return EventResult::Handled;
+                }
+                // Not dragging: update thumb hover highlight.
+                if self.show_scrollbar {
+                    if let Some(frame) = self.last_frame.get() {
+                        let sb = 6.0;
+                        let old_hover_v = self.hover_v;
+                        let old_hover_h = self.hover_h;
+                        self.hover_v = false;
+                        self.hover_h = false;
+
+                        if self.direction.can_scroll_y() && self.max_scroll_y() > 0.0 {
+                            let track = Rect::new(frame.x + frame.w - sb - 2.0, frame.y + 2.0, sb, frame.h - 4.0);
+                            let max_y = self.max_scroll_y();
+                            let thumb_h = (frame.h / (frame.h + max_y) * track.h).max(18.0).min(track.h);
+                            let thumb_y = track.y + (self.scroll_y / max_y) * (track.h - thumb_h);
+                            if Rect::new(track.x, thumb_y, sb, thumb_h).contains(*pos) {
+                                self.hover_v = true;
+                            }
+                        }
+                        if self.direction.can_scroll_x() && self.max_scroll_x() > 0.0 {
+                            let track = Rect::new(frame.x + 2.0, frame.y + frame.h - sb - 2.0, frame.w - 4.0, sb);
+                            let max_x = self.max_scroll_x();
+                            let thumb_w = (frame.w / (frame.w + max_x) * track.w).max(18.0).min(track.w);
+                            let thumb_x = track.x + (self.scroll_x / max_x) * (track.w - thumb_w);
+                            if Rect::new(thumb_x, track.y, thumb_w, sb).contains(*pos) {
+                                self.hover_h = true;
+                            }
+                        }
+                        // If hover state changed, the scrollbar needs a repaint.
+                        if old_hover_v != self.hover_v || old_hover_h != self.hover_h {
+                            return EventResult::Handled;
+                        }
+                    }
+                }
+                EventResult::NotHandled
+            }
+            WidgetEvent::MouseUp { .. } => {
+                let was_dragging = self.dragging_v || self.dragging_h;
+                self.dragging_v = false;
+                self.dragging_h = false;
+                if was_dragging { EventResult::Handled } else { EventResult::NotHandled }
+            }
+            WidgetEvent::HoverLeave => {
+                self.hover_v = false;
+                self.hover_h = false;
+                EventResult::NotHandled
             }
             _ => EventResult::NotHandled,
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        // Clip children to the viewport
-        ctx.push_clip_rect(frame);
+    on_update => (&mut self, dt: f32) {
+        // Momentum physics: position follows velocity, velocity decays
+        // via friction.  This gives natural flick-and-decelerate feel.
+        let damp = 1.0 - (8.0 * dt).min(0.95); // ~8s⁻¹ friction
+        let threshold = 1.0; // snap when velocity is negligible
 
-        // Background fill so the viewport is always opaque
+        self.scroll_x += self.velocity_x * dt;
+        self.velocity_x *= damp;
+        if self.velocity_x.abs() < threshold { self.velocity_x = 0.0; }
+
+        self.scroll_y += self.velocity_y * dt;
+        self.velocity_y *= damp;
+        if self.velocity_y.abs() < threshold { self.velocity_y = 0.0; }
+
+        if self.scroll_x < 0.0 { self.scroll_x = 0.0; self.velocity_x = 0.0; }
+        let max_x = self.max_scroll_x();
+        if self.scroll_x > max_x { self.scroll_x = max_x; self.velocity_x = 0.0; }
+        if self.scroll_y < 0.0 { self.scroll_y = 0.0; self.velocity_y = 0.0; }
+        let max_y = self.max_scroll_y();
+        if self.scroll_y > max_y { self.scroll_y = max_y; self.velocity_y = 0.0; }
+    }
+
+    needs_continuous_update => (&self) -> bool {
+        self.dragging_v
+            || self.dragging_h
+            || self.hover_v
+            || self.hover_h
+            || self.velocity_x.abs() > 0.5
+            || self.velocity_y.abs() > 0.5
+    }
+
+    children_clip => (&self, frame: Rect) -> Option<Rect> {
+        // Declare the viewport clip rect so the widget tree's render pass
+        // pushes it around children's render() calls.  The post-render
+        // pass does NOT have this clip, so overlay effects (ripples,
+        // shadows) can overflow the viewport boundary.
+        Some(frame)
+    }
+
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        // Save frame for scrollbar hit-testing in on_event.
+        self.last_frame.set(Some(frame));
+        // Background fill so the viewport is always opaque.
+        // Clip management is handled by `children_clip()` — not here.
         let bg = ctx.tokens().color_bg_container();
         ctx.fill_rect(frame, bg, None);
     }
 
     post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        // Scrollbar overlay drawn AFTER children (on top)
+        // Scrollbar overlay drawn on top of children.
+        // Clip was already popped by the widget tree's render pass.
         if self.show_scrollbar {
             self.render_scrollbar(frame, ctx);
         }
@@ -127,7 +308,12 @@ define_widget! {
                 .get(cid)
                 .map(|c| c.preferred_size(None))
                 .unwrap_or_default();
-            let r = Rect::new(origin_x, origin_y, pref.w, pref.h);
+            // When preferred width is 0 (unspecified), stretch to
+            // fill the viewport so the child can use flex/Stretch
+            // for its own children.
+            let w = if pref.w <= 0.0 { frame.w } else { pref.w };
+            let h = if pref.h <= 0.0 { frame.h } else { pref.h };
+            let r = Rect::new(origin_x, origin_y, w, h);
             result.push((cid, r));
             max_right = max_right.max(r.x + r.w);
             max_bottom = max_bottom.max(r.y + r.h);
@@ -150,11 +336,20 @@ impl ScrollView {
             children: WidgetChildren::new(),
             scroll_x: 0.0,
             scroll_y: 0.0,
+            velocity_x: 0.0,
+            velocity_y: 0.0,
             direction,
             show_scrollbar: true,
             fixed_width: None,
             fixed_height: None,
+            flex_grow_val: 0.0,
+            flex_shrink_val: 1.0,
             content_bounds: Cell::new(None),
+            dragging_v: false,
+            dragging_h: false,
+            last_frame: Cell::new(None),
+            hover_v: false,
+            hover_h: false,
         }
     }
 
@@ -177,6 +372,16 @@ impl ScrollView {
         self
     }
 
+    pub fn flex_grow(mut self, v: f32) -> Self {
+        self.flex_grow_val = v;
+        self
+    }
+
+    pub fn flex_shrink(mut self, v: f32) -> Self {
+        self.flex_shrink_val = v;
+        self
+    }
+
     /// Show or hide the scrollbar overlay.
     pub fn show_scrollbar(mut self, v: bool) -> Self {
         self.show_scrollbar = v;
@@ -187,6 +392,8 @@ impl ScrollView {
     pub fn scroll_to(mut self, x: f32, y: f32) -> Self {
         self.scroll_x = x.max(0.0);
         self.scroll_y = y.max(0.0);
+        self.velocity_x = 0.0;
+        self.velocity_y = 0.0;
         self
     }
 
@@ -199,16 +406,24 @@ impl ScrollView {
         self.scroll_y
     }
     pub fn set_scroll_x(&mut self, x: f32) {
-        self.scroll_x = x.max(0.0);
+        let v = x.max(0.0);
+        self.scroll_x = v;
+        self.velocity_x = 0.0;
     }
     pub fn set_scroll_y(&mut self, y: f32) {
-        self.scroll_y = y.max(0.0);
+        let v = y.max(0.0);
+        self.scroll_y = v;
+        self.velocity_y = 0.0;
     }
 
     /// Programmatically scroll to a position.
     pub fn scroll_to_xy(&mut self, x: f32, y: f32) {
-        self.scroll_x = x.max(0.0);
-        self.scroll_y = y.max(0.0);
+        let vx = x.max(0.0);
+        let vy = y.max(0.0);
+        self.scroll_x = vx;
+        self.scroll_y = vy;
+        self.velocity_x = 0.0;
+        self.velocity_y = 0.0;
     }
 
     // ── Scroll range ──────────────────────────────────────────────────
@@ -262,7 +477,12 @@ impl ScrollView {
                 let thumb_h = (ratio * track.h).max(thumb_min).min(track.h);
                 let thumb_y = track.y + (self.scroll_y / max_y) * (track.h - thumb_h);
                 let thumb = Rect::new(track.x, thumb_y, sb_w, thumb_h);
-                ctx.fill_rect(thumb, ctx.tokens().color_fill_secondary(), Some(corner));
+                let thumb_color = if self.hover_v || self.dragging_v {
+                    ctx.tokens().color_fill()
+                } else {
+                    ctx.tokens().color_fill_secondary()
+                };
+                ctx.fill_rect(thumb, thumb_color, Some(corner));
             }
         }
 
@@ -283,7 +503,12 @@ impl ScrollView {
                 let thumb_w = (ratio * track.w).max(thumb_min).min(track.w);
                 let thumb_x = track.x + (self.scroll_x / max_x) * (track.w - thumb_w);
                 let thumb = Rect::new(thumb_x, track.y, thumb_w, sb_w);
-                ctx.fill_rect(thumb, ctx.tokens().color_fill_secondary(), Some(corner));
+                let thumb_color = if self.hover_h || self.dragging_h {
+                    ctx.tokens().color_fill()
+                } else {
+                    ctx.tokens().color_fill_secondary()
+                };
+                ctx.fill_rect(thumb, thumb_color, Some(corner));
             }
         }
     }
@@ -339,17 +564,15 @@ mod tests {
     #[test]
     fn scrollview_mouse_wheel_vertical_up() {
         let mut sv = ScrollView::new(ScrollDirection::Vertical);
-        sv.scroll_y = 60.0; // start scrolled down
+        sv.scroll_y = 60.0;
         assert_eq!(sv.scroll_y, 60.0);
 
-        // Scroll up (delta.y positive = scroll up in our convention)
-        // Formula: scroll_y = (scroll_y - delta.y * step).max(0.0)
-        // scroll_y = (60.0 - 1.0 * 30.0).max(0.0) = 30.0
+        // Scroll up: accel = 200*0.5 = 100, vel = 100
         let result = sv.on_event(&WidgetEvent::MouseWheel {
             delta: Point::new(0.0, 1.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.scroll_y, 30.0);
+        assert_eq!(sv.velocity_y, 16.0);
     }
 
     #[test]
@@ -357,12 +580,12 @@ mod tests {
         let mut sv = ScrollView::new(ScrollDirection::Vertical);
         assert_eq!(sv.scroll_y, 0.0);
 
-        // delta.y negative = scroll down in WidgetEvent convention
+        // Scroll down: accel = 200*0.5 = 100, vel = -100
         let result = sv.on_event(&WidgetEvent::MouseWheel {
             delta: Point::new(0.0, -1.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.scroll_y, 30.0);
+        assert_eq!(sv.velocity_y, -16.0);
     }
 
     #[test]
@@ -370,23 +593,25 @@ mod tests {
         let mut sv = ScrollView::new(ScrollDirection::Horizontal);
         assert_eq!(sv.scroll_x, 0.0);
 
+        // Scroll right: accel = 300*0.5 = 150, vel = -150
         let result = sv.on_event(&WidgetEvent::MouseWheel {
             delta: Point::new(-1.0, 0.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.scroll_x, 30.0);
+        assert_eq!(sv.velocity_x, -24.0);
     }
 
     #[test]
     fn scrollview_mouse_wheel_both() {
         let mut sv = ScrollView::new(ScrollDirection::Both);
 
+        // Y: accel=16, vel=(-2)*16=-32 | X: accel=24, vel=-24
         let result = sv.on_event(&WidgetEvent::MouseWheel {
             delta: Point::new(-1.0, -2.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.scroll_x, 30.0);
-        assert_eq!(sv.scroll_y, 60.0);
+        assert_eq!(sv.velocity_x, -24.0);
+        assert_eq!(sv.velocity_y, -32.0);
     }
 
     #[test]
@@ -394,13 +619,12 @@ mod tests {
         let mut sv = ScrollView::new(ScrollDirection::Vertical);
         sv.scroll_y = 10.0;
 
-        // Scroll up (delta.y = +1, but we use scroll_y -= delta.y * step)
-        // scroll_y = (10 - 1 * 30).max(0) = 0
+        // Scroll up: accel = 200*0.08 = 16, vel = 16
         let result = sv.on_event(&WidgetEvent::MouseWheel {
             delta: Point::new(0.0, 1.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.scroll_y, 0.0);
+        assert_eq!(sv.velocity_y, 16.0);
     }
 
     #[test]

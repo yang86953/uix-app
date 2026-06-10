@@ -23,19 +23,7 @@ fn main() {
             std::process::exit(1);
         }
     } else {
-        #[cfg(windows)]
-        {
-            info_fn("UIX Windows GUI Demo starting...");
-            demos::gui::run_gui_demo();
-        }
-        #[cfg(all(unix, not(target_os = "macos")))]
-        {
-            info_fn("UIX Linux GUI Demo starting...");
-            demos::gui_linux::run_gui_demo();
-        }
-        #[cfg(target_os = "macos")]
-        {
-            compile_error!("macOS is not yet supported by UIX");
-        }
+        info_fn("UIX GUI Demo starting...");
+        demos::dashboard::run_gui_demo();
     }
 }

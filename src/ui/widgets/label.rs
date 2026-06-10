@@ -1,6 +1,6 @@
 //! Label widget — displays text.
 
-use crate::graphics::{Color, FontHandle, GraphicsEngine, Point, Rect, Size, TextLayoutOptions};
+use crate::graphics::{Color, FontHandle, GraphicsEngine, Rect, Size, TextLayoutOptions};
 use crate::ui::render_context::RenderContext;
 use crate::define_widget;
 use crate::ui::widget::WidgetTree;
@@ -22,6 +22,7 @@ define_widget! {
             if let Some(eng) = engine {
                 let opts = TextLayoutOptions {
                     max_width: f32::MAX,
+                    max_height: 0.0,
                     line_height: self.font_size + 2.0,
                     word_wrap: false,
                     h_align: crate::graphics::HAlign::Left,
@@ -40,14 +41,7 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        // Vertically center text within the frame
-        let text_y = frame.y + (frame.h - self.font_size) * 0.5;
-        ctx.draw_text(
-            &self.text,
-            Point::new(frame.x + 2.0, text_y.max(frame.y)),
-            self.color,
-            self.font_size,
-        );
+        ctx.text_center(&self.text, frame, self.color, self.font_size);
     }
 }
 

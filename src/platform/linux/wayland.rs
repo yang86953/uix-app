@@ -2,6 +2,7 @@
 // platform/linux/wayland.rs — Native Wayland backend (wayland-client 0.29)
 // ============================================================================
 
+use crate::diag::Error;
 use crate::platform::event::*;
 use crate::platform::types::*;
 use crate::platform::*;
@@ -12,6 +13,8 @@ use crate::platform::linux::clipboard::{ClipboardState, LinuxClipboard};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::os::unix::io::AsRawFd;
+
+use libc::{poll, pollfd, POLLIN};
 use std::sync::{Arc, Mutex};
 
 use wayland_client::{
@@ -99,8 +102,10 @@ pub struct WaylandBackend {
     decoration_manager: Option<Main<OrgKdeKwinServerDecorationManager>>,
     decoration: Option<Main<OrgKdeKwinServerDecoration>>,
 
-    // SHM buffer (RAII — owns fd, pool, and buffer)
-    shm_buffer: Option<ShmBuffer>,
+    // SHM double buffers — always compose into the buffer that the
+    // compositor is NOT currently displaying, eliminating contention.
+    shm_buffers: [Option<ShmBuffer>; 2],
+    active_buffer: usize,
 
     // Last pointer position (for Button events that lack position)
     last_pointer: Arc<Mutex<LastPointerState>>,
@@ -162,46 +167,78 @@ impl WaylandBackend {
             configured: false,
             decoration_manager: None,
             decoration: None,
-            shm_buffer: None,
+            shm_buffers: [None, None],
+            active_buffer: 0,
             events,
             last_pointer,
+
             clipboard,
         })
     }
 
-    /// Present a BGRA pixel buffer to the Wayland surface.
-    /// Writes pixels to the SHM buffer, attaches it, damages the surface, and commits.
-    pub fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
-        let w = self.width;
-        let h = self.height;
-
-        // Create or re-create SHM buffer if missing or dimensions changed
-        if self.shm_buffer.is_none() || width != w || height != h {
-            self.width = width;
-            self.height = height;
-            if let Ok(new_buf) = Self::create_shm_buffer(&self._shm, width, height) {
-                self.shm_buffer = Some(new_buf);
-            } else {
-                log::warn!("Wayland: failed to create SHM buffer for {}x{}", width, height);
-                return;
-            }
-        }
-
-        if let Some(ref mut shm) = self.shm_buffer {
-            if let Err(e) = shm.write_pixels(pixels) {
-                log::warn!("Wayland: write_pixels failed: {}", e);
-                return;
-            }
-            if let Some(ref surface) = self.surface {
-                surface.attach(Some(&shm.buffer), 0, 0);
-                surface.damage(0, 0, width, height);
-                surface.commit();
-                if !self.shown {
-                    self.shown = true;
-                }
-            }
+    /// Non-blocking event dispatch: flushes pending requests, then uses
+    /// `poll()` to check if any data is available on the Wayland socket.
+    /// Only calls the blocking `dispatch()` when data is actually ready,
+    /// so the function never blocks waiting for events.
+    fn try_dispatch(&mut self) {
+        let _ = self.display.flush();
+        let fd = self.display.get_connection_fd();
+        let mut pfd = pollfd {
+            fd,
+            events: POLLIN,
+            revents: 0,
+        };
+        let ret = unsafe { poll(&mut pfd as *mut pollfd, 1, 0) };
+        if ret > 0 && (pfd.revents & POLLIN) != 0 {
             let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
         }
+    }
+
+    pub fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
+        // Create/resize both buffers when dimensions change.
+        if width != self.width || height != self.height
+            || self.shm_buffers[0].is_none() || self.shm_buffers[1].is_none()
+        {
+            self.width = width;
+            self.height = height;
+            for buf in self.shm_buffers.iter_mut() {
+                if let Ok(new_buf) = Self::create_shm_buffer(&self._shm, width, height) {
+                    *buf = Some(new_buf);
+                } else {
+                    log::warn!("Wayland: SHM buffer {}x{} failed", width, height);
+                    return;
+                }
+            }
+        }
+
+        // Write to the buffer the compositor is NOT reading.
+        // active_buffer tracks the last committed (displayed) buffer;
+        // we write to the other one.
+        let write_idx = 1 - self.active_buffer;
+        let shm = match self.shm_buffers[write_idx].as_mut() {
+            Some(s) => s,
+            None => return,
+        };
+        if let Err(e) = shm.write_pixels(pixels) {
+            log::warn!("Wayland: write_pixels failed: {}", e);
+            return;
+        }
+
+        let surface = match self.surface.as_ref() {
+            Some(s) => s,
+            None => return,
+        };
+
+        surface.attach(Some(&shm.buffer), 0, 0);
+        surface.damage(0, 0, width, height);
+        surface.commit();
+        self.active_buffer = write_idx;
+
+        if !self.shown {
+            self.shown = true;
+        }
+
+        self.try_dispatch();
     }
 
     pub(crate) fn create_window_inner(&mut self, title: &str, width: i32, height: i32) -> bool {
@@ -235,10 +272,21 @@ impl WaylandBackend {
                     let _ = toplevel_events.lock().unwrap_or_else(|e| e.into_inner())
                         .push_back(UiEvent::close());
                 }
-                xdg_toplevel::Event::Configure { width: w, height: h, .. } => {
+                xdg_toplevel::Event::Configure { width: w, height: h, states } => {
+                    // Check if maximized by looking for state value 1
+                    // in the wl_array of u32 state values.
+                    let is_maximized = states.chunks_exact(4).any(|c| {
+                        c.len() == 4 && u32::from_ne_bytes([c[0], c[1], c[2], c[3]]) == 1
+                    });
                     if w > 0 && h > 0 {
                         let _ = toplevel_events.lock().unwrap_or_else(|e| e.into_inner())
                             .push_back(UiEvent::resize(w, h));
+                    } else if is_maximized {
+                        // Compositor wants us maximized without giving
+                        // explicit dimensions.  Push a no-op resize so
+                        // the widget tree knows the state changed.
+                        let _ = toplevel_events.lock().unwrap_or_else(|e| e.into_inner())
+                            .push_back(UiEvent::resize(0, 0));
                     }
                 }
                 _ => {}
@@ -286,6 +334,9 @@ impl WaylandBackend {
                                     }
                                 }
                                 wl_pointer::Event::Axis { axis, value, .. } => {
+                                    // Natural scrolling: content follows the
+                                    // scroll direction.  Wheel down → content
+                                    // down, wheel up → content up.
                                     let (dx, dy) = match axis {
                                         wl_pointer::Axis::VerticalScroll => (0.0, value),
                                         wl_pointer::Axis::HorizontalScroll => (value, 0.0),
@@ -408,7 +459,7 @@ impl IWindowManager for WaylandBackend {
     fn destroy_window(&mut self) {
         self.decoration = None;
         self.decoration_manager = None;
-        self.shm_buffer = None;
+        self.shm_buffers = [None, None];
         self.toplevel = None;
         self.xdg_surface = None;
         self.surface = None;
@@ -494,7 +545,7 @@ impl IWindowProperties for WaylandBackend {
 
 impl IEventLoop for WaylandBackend {
     fn poll_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
-        let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
+        self.try_dispatch();
         let mut q = self.events.lock().unwrap_or_else(|e| e.into_inner());
         while let Some(event) = q.pop_front() {
             if !callback(&event) {
@@ -534,6 +585,22 @@ impl INativeHandle for WaylandBackend {
 // ════════════════════════════════════════════════════════════════════════════
 // Backend trait impl — delegates to trait impls + inline stubs for Wayland
 // ════════════════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════════════════
+// IPresenter impl — WordPress 的呈现通过 backend 自身的 SHM buffer 完成
+// ════════════════════════════════════════════════════════════════════════════
+
+impl IPresenter for WaylandBackend {
+    fn present(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
+        self.present_pixels(pixels, width, height);
+        Ok(())
+    }
+
+    fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+        // SHM buffer 在 present() 中按需重建，无需提前 resize
+        Ok(())
+    }
+}
 
 impl Backend for WaylandBackend {
     fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {

@@ -86,6 +86,7 @@ impl GraphicsEngine for NullEngine {
     }
 
     fn fill_circle(&mut self, _cx: f32, _cy: f32, _r: f32, _c: Color) {}
+    fn fill_circle_radial(&mut self, _cx: f32, _cy: f32, _r: f32, _c: Color) {}
     fn stroke_circle(&mut self, _cx: f32, _cy: f32, _r: f32, _c: Color, _lw: f32) {}
     fn fill_ellipse(&mut self, _r: Rect, _c: Color) {}
     fn draw_box_shadow(

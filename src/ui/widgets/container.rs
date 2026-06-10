@@ -21,6 +21,8 @@ define_widget! {
         pub align: AlignItems,
         pub fixed_width: Option<f32>,
         pub fixed_height: Option<f32>,
+        pub flex_grow: f32,
+        pub flex_shrink: f32,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
@@ -29,6 +31,10 @@ define_widget! {
             self.fixed_height.unwrap_or(0.0),
         )
     }
+
+    flex_grow => (&self) -> f32 { self.flex_grow }
+
+    flex_shrink => (&self) -> f32 { self.flex_shrink }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         // Background
@@ -64,12 +70,24 @@ define_widget! {
             })
             .collect();
 
+        let flex_children: Vec<FlexChild> = children
+            .iter()
+            .map(|&cid| {
+                let w = tree.get(cid);
+                FlexChild {
+                    flex_grow: w.map(|c| c.inner().flex_grow()).unwrap_or(0.0),
+                    flex_shrink: w.map(|c| c.inner().flex_shrink()).unwrap_or(1.0),
+                    ..FlexChild::default()
+                }
+            })
+            .collect();
+
         let input = FlexInput {
             direction: self.direction,
             gap: self.gap,
             padding: self.padding,
             container: frame,
-            children: vec![FlexChild::default(); children.len()],
+            children: flex_children,
             child_sizes,
             justify_content: self.justify,
             align_items: self.align,
@@ -105,6 +123,8 @@ impl Container {
             align: AlignItems::Stretch,
             fixed_width: None,
             fixed_height: None,
+            flex_grow: 0.0,
+            flex_shrink: 1.0,
         }
     }
 
@@ -136,6 +156,14 @@ impl Container {
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
+        self
+    }
+    pub fn flex_grow(mut self, v: f32) -> Self {
+        self.flex_grow = v;
+        self
+    }
+    pub fn flex_shrink(mut self, v: f32) -> Self {
+        self.flex_shrink = v;
         self
     }
 }

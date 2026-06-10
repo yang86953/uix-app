@@ -1,7 +1,7 @@
 //! Input widget — Ant Design style text input with placeholder, focus, and states.
 
 use crate::define_widget;
-use crate::graphics::{Color, GraphicsEngine, Point, Rect, Size, Radius};
+use crate::graphics::{Color, GraphicsEngine, Rect, Size, Radius};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
 
@@ -84,8 +84,8 @@ define_widget! {
 
         let pad = 12.0;
         if !display_text.is_empty() {
-            ctx.draw_text(display_text,
-                Point::new(input_frame.x + pad, input_frame.y + (input_frame.h - 14.0) * 0.5),
+            ctx.text_center(display_text,
+                Rect::new(input_frame.x + pad, input_frame.y, 0.0, input_frame.h),
                 text_color, 14.0);
         }
         if self.focused {
