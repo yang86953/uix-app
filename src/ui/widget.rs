@@ -605,17 +605,26 @@ impl WidgetTree {
         let order = self.traverse();
         let mut any_animating = false;
         for &id in &order {
-            // Phase 1: advance animation state
+            // Phase 1: 在 on_update 前预检动画状态，确保动画最后一帧
+            // （on_update 中速度/位置归零导致 needs_continuous_update 变 false）
+            // 仍能正确标记脏区域并触发渲染。
+            let was_animating = self.get(id)
+                .map(|n| n.inner().needs_continuous_update())
+                .unwrap_or(false);
+
+            // Phase 2: advance animation state
             if let Some(node) = self.get_mut(id) {
                 node.inner_mut().on_update(dt);
             }
-            // Phase 2: if still animating, use dirty_rect() to get the
-            // exact region to re-render (may extend beyond widget frame
-            // for overlow animations like ripples).
-            // Signal caller to keep the event loop running while active.
+
+            // Phase 3: 标记脏区域并判断是否仍需持续刷新
             if let Some(node) = self.get(id) {
-                if node.inner().needs_continuous_update() {
-                    any_animating = true;
+                let is_still_animating = node.inner().needs_continuous_update();
+                if was_animating || is_still_animating {
+                    // 动画最后一帧（was_animating=true, is_still_animating=false）：
+                    // 仍需标记脏区域让帧图渲染最终位置，但 any_animating 不设为 true，
+                    // 避免事件循环多轮询一帧。
+                    any_animating = any_animating || is_still_animating;
                     let frame = node.frame();
                     let rect = node.inner().dirty_rect(frame);
                     self.mark_dirty_rect(id, rect);

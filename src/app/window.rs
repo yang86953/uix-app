@@ -211,7 +211,9 @@ impl Window {
             keep_polling = tree.update(dt) || woke;
 
             // ── 帧图：标记脏状态 ──────────────────────────────────
-            if !rendered_first_frame || tree.dirty_region().clear_required {
+            // keep_polling 作为额外安全网：有动画在跑（如滚动惯性）时确保渲染，
+            // 即使 tree.dirty_region() 因某些原因未被标记。
+            if !rendered_first_frame || tree.dirty_region().clear_required || keep_polling {
                 fg.mark_resource_dirty(dirty_flag);
             }
 
