@@ -333,6 +333,10 @@ impl GraphicsEngine for SoftwareEngine {
         self.rt.clip_stack_mut().clear();
     }
 
+    fn scroll_region(&mut self, viewport: Rect, dy: f32) {
+        self.rt.scroll_region(viewport, dy);
+    }
+
     fn push_clip_rect(&mut self, rect: Rect) {
         self.rt.push_clip_rect(rect);
     }

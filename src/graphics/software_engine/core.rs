@@ -356,6 +356,42 @@ impl RenderTarget {
         }
     }
 
+    /// Scroll (shift) pixel content within `viewport` by `dy` pixels.
+    ///
+    /// `dy > 0` = 滚动向下（内容上移），`dy < 0` = 滚动向上（内容下移）。
+    /// 先复制行（memmove），之后调用方只需清除并渲染新增 strip。
+    pub fn scroll_region(&mut self, viewport: Rect, dy: f32) {
+        let vx = viewport.x as i32;
+        let vy = viewport.y as i32;
+        let vw = viewport.w as i32;
+        let vh = viewport.h as i32;
+        let stride = self.width;
+        let delta = dy.round() as i32;
+
+        if delta == 0 || delta.abs() >= vh || vw <= 0 || vh <= 0 {
+            return;
+        }
+
+        if delta > 0 {
+            // 向下滚动：内容上移 | 复制 [vy+delta..vy+vh) → [vy..vy+vh-delta)
+            // 方向：从源到目标正向复制（源 > 目标，无重叠风险）
+            for y in vy..vy + vh - delta {
+                let dst = (y * stride + vx) as usize;
+                let src = ((y + delta) * stride + vx) as usize;
+                self.pixels.copy_within(src..src + vw as usize, dst);
+            }
+        } else {
+            // 向上滚动：内容下移 | 复制 [vy..vy+vh+delta) → [vy-delta..vy+vh)
+            // 方向：从源到目标反向复制（源 < 目标，需逆序遍历防止覆盖）
+            let abs_d = -delta;
+            for y in (vy + abs_d..vy + vh).rev() {
+                let dst = (y * stride + vx) as usize;
+                let src = ((y - abs_d) * stride + vx) as usize;
+                self.pixels.copy_within(src..src + vw as usize, dst);
+            }
+        }
+    }
+
     pub fn push_clip_rect(&mut self, rect: Rect) {
         self.clip_stack.push(self.clip_rect);
         let cur = self.clip_rect;

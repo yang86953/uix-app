@@ -49,6 +49,9 @@ define_widget! {
         children: WidgetChildren,
         scroll_x: f32,
         scroll_y: f32,
+        /// 前一帧的 scroll 位置（用于计算滚动 delta 做 pixel buffer memmove）
+        prev_scroll_x: f32,
+        prev_scroll_y: f32,
         /// Velocity-based momentum scrolling: velocity accumulates on
         /// wheel events and decays via friction in on_update.
         velocity_x: f32,
@@ -233,6 +236,10 @@ define_widget! {
     }
 
     on_update => (&mut self, dt: f32) {
+        // 保存前一帧的 scroll 位置（像素缓冲滚动计算 delta 使用）
+        self.prev_scroll_x = self.scroll_x;
+        self.prev_scroll_y = self.scroll_y;
+
         // Momentum physics: position follows velocity, velocity decays
         // via friction.  This gives natural flick-and-decelerate feel.
         let damp = 1.0 - (8.0 * dt).min(0.95); // ~8s⁻¹ friction
@@ -326,6 +333,41 @@ define_widget! {
 
         result
     }
+
+    // ── 像素缓冲滚动：dirty_rect 只返回新增 strip ──
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        let dx = self.scroll_x - self.prev_scroll_x;
+        let dy = self.scroll_y - self.prev_scroll_y;
+        if dy > 0.0 {
+            // 向下滚动：新增 strip 在底部
+            let strip_h = dy.min(frame.h);
+            Rect::new(frame.x, frame.y + frame.h - strip_h, frame.w, strip_h)
+        } else if dy < 0.0 {
+            // 向上滚动：新增 strip 在顶部
+            let strip_h = (-dy).min(frame.h);
+            Rect::new(frame.x, frame.y, frame.w, strip_h)
+        } else if dx > 0.0 {
+            // 向右滚动：新增 strip 在右侧
+            let strip_w = dx.min(frame.w);
+            Rect::new(frame.x + frame.w - strip_w, frame.y, strip_w, frame.h)
+        } else if dx < 0.0 {
+            // 向左滚动：新增 strip 在左侧
+            let strip_w = (-dx).min(frame.w);
+            Rect::new(frame.x, frame.y, strip_w, frame.h)
+        } else {
+            frame
+        }
+    }
+
+    scroll_delta => (&self, _frame: Rect) -> Option<(f32, f32)> {
+        let dx = self.scroll_x - self.prev_scroll_x;
+        let dy = self.scroll_y - self.prev_scroll_y;
+        if dx != 0.0 || dy != 0.0 {
+            Some((dx, dy))
+        } else {
+            None
+        }
+    }
 }
 
 impl ScrollView {
@@ -336,6 +378,8 @@ impl ScrollView {
             children: WidgetChildren::new(),
             scroll_x: 0.0,
             scroll_y: 0.0,
+            prev_scroll_x: 0.0,
+            prev_scroll_y: 0.0,
             velocity_x: 0.0,
             velocity_y: 0.0,
             direction,

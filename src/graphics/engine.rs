@@ -17,6 +17,13 @@ pub trait GraphicsEngine: 'static {
     fn begin_frame(&mut self, dirty: &DirtyRegion);
     fn end_frame(&mut self, dirty: &DirtyRegion);
 
+    /// Scroll (shift) the pixel content within `viewport` by `dy` pixels.
+    ///
+    /// 滚动优化：将 viewport 内的像素缓冲上/下移动 dy 像素（memmove），
+    /// 再结合局部 dirty region 只渲染新增 strip。
+    /// `dy > 0` = 滚动向下（内容上移），`dy < 0` = 滚动向上（内容下移）。
+    fn scroll_region(&mut self, viewport: Rect, dy: f32);
+
     // Clip & state
     fn push_clip_rect(&mut self, rect: Rect);
     fn pop_clip_rect(&mut self);

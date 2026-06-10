@@ -69,6 +69,17 @@ pub trait Widget {
         frame
     }
 
+    /// Return the pixel buffer scroll delta for this frame, if the widget
+    /// supports pixel-buffer scrolling (e.g. ScrollView).
+    ///
+    /// 像素缓冲滚动优化：返回 (dx, dy) 表示内容偏移量，渲染循环会在
+    /// `begin_frame` 前调用 `engine.scroll_region` 做 pixel buffer memmove，
+    /// 避免全 viewport 重绘。
+    /// `dirty_rect` 同时应只返回新增 strip，而非全 frame。
+    fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
+        None
+    }
+
     /// Return this widget's preferred size for layout.
     /// When `engine` is provided, text-measuring widgets can compute
     /// accurate dimensions via the graphics backend; implementations
@@ -344,6 +355,9 @@ pub struct WidgetTree {
     /// always reaches it even when the cursor has moved to a different
     /// widget (e.g. scrollbar drag released outside the thumb).
     mouse_down_target: Option<WidgetId>,
+    /// 像素缓冲滚动 delta 队列：滚动时累计 (viewport, dx, dy)，
+    /// 在 render 循环的 `begin_frame` 前由 `drain_scroll_deltas` 消费。
+    scroll_deltas: Vec<(Rect, f32, f32)>,
 }
 
 impl Default for WidgetTree {
@@ -358,6 +372,7 @@ impl Default for WidgetTree {
             hovered_widget: None,
             dirty_region: DirtyRegion::full(),
             mouse_down_target: None,
+            scroll_deltas: Vec::new(),
         }
     }
 }
@@ -618,16 +633,25 @@ impl WidgetTree {
             }
 
             // Phase 3: 标记脏区域并判断是否仍需持续刷新
-            if let Some(node) = self.get(id) {
+            let (rect, scroll) = self.get(id).map(|node| {
                 let is_still_animating = node.inner().needs_continuous_update();
-                if was_animating || is_still_animating {
-                    // 动画最后一帧（was_animating=true, is_still_animating=false）：
-                    // 仍需标记脏区域让帧图渲染最终位置，但 any_animating 不设为 true，
-                    // 避免事件循环多轮询一帧。
+                let dirty_rect = if was_animating || is_still_animating {
                     any_animating = any_animating || is_still_animating;
-                    let frame = node.frame();
-                    let rect = node.inner().dirty_rect(frame);
-                    self.mark_dirty_rect(id, rect);
+                    node.inner().dirty_rect(node.frame())
+                } else {
+                    Rect::zero()
+                };
+                let scroll_delta = node.inner().scroll_delta(node.frame());
+                (dirty_rect, scroll_delta)
+            }).unwrap_or_default();
+            // 在 node 借用结束后才修改 self
+            if rect.w > 0.0 || rect.h > 0.0 {
+                self.mark_dirty_rect(id, rect);
+            }
+            if let Some((dx, dy)) = scroll {
+                if dx != 0.0 || dy != 0.0 {
+                    let frame = self.get(id).map(|n| n.frame()).unwrap_or_default();
+                    self.scroll_deltas.push((frame, dx, dy));
                 }
             }
         }
@@ -688,6 +712,12 @@ impl WidgetTree {
                 self.collect_subtree(child_id, result);
             }
         }
+    }
+
+    /// Drain the scroll deltas accumulated during `update()`.
+    /// 渲染循环在 `begin_frame` 前消费，用于 pixel buffer memmove。
+    pub fn drain_scroll_deltas(&mut self) -> Vec<(Rect, f32, f32)> {
+        std::mem::take(&mut self.scroll_deltas)
     }
 
     /// Reset the dirty region for the next frame.

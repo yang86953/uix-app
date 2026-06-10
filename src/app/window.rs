@@ -241,6 +241,10 @@ impl Window {
 
                 // 通过外部回调执行渲染（避免 PassFn 的 'static 限制）
                 fg.execute_with(engine, &plan, &mut |_pid, eng, _res| {
+                    // 像素缓冲滚动：在 begin_frame 前移像素内容，之后只需渲染 strip
+                    for (viewport, _dx, dy) in tree.drain_scroll_deltas() {
+                        eng.scroll_region(viewport, dy);
+                    }
                     eng.begin_frame(&region);
                     tree.layout();
                     let mut rctx = RenderContext::new(
