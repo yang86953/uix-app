@@ -334,11 +334,33 @@ define_widget! {
         result
     }
 
-    // ── 像素缓冲滚动：dirty_rect 暂返回全 frame（调试用）────
+    // ── 像素缓冲滚动：dirty_rect 只返回新增 strip ──
+    // 与 scroll_region 使用相同的 dy.round() 语义对齐，
+    // 确保缓冲偏移量和脏区域一致。
     dirty_rect => (&self, frame: Rect) -> Rect {
-        let _dx = self.scroll_x - self.prev_scroll_x;
-        let _dy = self.scroll_y - self.prev_scroll_y;
-        frame
+        let dx = self.scroll_x - self.prev_scroll_x;
+        let dy = self.scroll_y - self.prev_scroll_y;
+        let int_dy = dy.round();
+        let int_dx = dx.round();
+        if int_dy > 0.0 {
+            // 向下滚动：新增 strip 在底部
+            let strip_h = int_dy.min(frame.h);
+            Rect::new(frame.x, frame.y + frame.h - strip_h, frame.w, strip_h)
+        } else if int_dy < 0.0 {
+            // 向上滚动：新增 strip 在顶部
+            let strip_h = (-int_dy).min(frame.h);
+            Rect::new(frame.x, frame.y, frame.w, strip_h)
+        } else if int_dx > 0.0 {
+            // 向右滚动：新增 strip 在右侧
+            let strip_w = int_dx.min(frame.w);
+            Rect::new(frame.x + frame.w - strip_w, frame.y, strip_w, frame.h)
+        } else if int_dx < 0.0 {
+            // 向左滚动：新增 strip 在左侧
+            let strip_w = (-int_dx).min(frame.w);
+            Rect::new(frame.x, frame.y, strip_w, frame.h)
+        } else {
+            frame
+        }
     }
 
     scroll_delta => (&self, _frame: Rect) -> Option<(f32, f32)> {

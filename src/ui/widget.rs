@@ -486,6 +486,19 @@ impl WidgetTree {
         None
     }
 
+    /// Find all widgets of a specific type, in traversal order, with typed reference.
+    pub fn find_all_by_type<T: Widget + 'static>(&self) -> Vec<(WidgetId, &T)> {
+        let mut results = Vec::new();
+        for id in self.traverse() {
+            if let Some(node) = self.get(id) {
+                if let Some(w) = node.inner().as_any().downcast_ref::<T>() {
+                    results.push((id, w));
+                }
+            }
+        }
+        results
+    }
+
     /// Find the first widget of a specific type and apply a mutable operation.
     pub fn find_by_type_and_modify<T: Widget + 'static>(
         &mut self,

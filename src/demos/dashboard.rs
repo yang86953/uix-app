@@ -8,7 +8,7 @@ use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
 use uix::platform::types::KeyCode;
 use uix::ui::render_context::RenderContext;
 use uix::ui::theme::DesignTokens;
-use uix::ui::widget::{EventResult, WidgetEvent, WidgetNode, WidgetTree};
+use uix::ui::widget::{EventResult, WidgetCore, WidgetEvent, WidgetNode, WidgetTree};
 use uix::ui::{
     AlignItems, Button, ButtonSize, Card, Container, Divider,
     DividerOrientation, FlexDirection, Grid, Input,
@@ -391,54 +391,74 @@ fn sec_custom(tk: &DesignTokens, out: &mut Vec<WidgetNode>) {
 // UI 组装
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 生成内容区 widgets（不含外层布局）。
-/// 返回 content Vec 供手动组装。
+/// 生成内容区 widgets（不含外层布局），并在各 section 前插入 SectionAnchor。
 fn build_showcase_content(tk: &DesignTokens, content: &mut Vec<WidgetNode>) {
+    /// 插入一个 SectionAnchor 并递增计数器。
+    macro_rules! anchor {
+        ($content:expr, $counter:expr) => {{
+            let mut a = SectionAnchor::new();
+            a.section_index = $counter;
+            $counter += 1;
+            $content.push(WidgetNode::leaf(Box::new(a)));
+        }};
+    }
+
+    let mut section_idx = 0usize;
+
+    anchor!(content, section_idx);
     sec_dashboard(tk, content);
     content.push(Divider::new().color(tk.color_border).with_text("Typography").orientation(DividerOrientation::Left).into_node());
+    anchor!(content, section_idx);
     sec_typography(tk, content);
     content.push(Divider::new().color(tk.color_border).with_text("Buttons").orientation(DividerOrientation::Left).into_node());
+    anchor!(content, section_idx);
     sec_buttons(tk, content);
     content.push(Divider::new().color(tk.color_border).with_text("Inputs").orientation(DividerOrientation::Left).into_node());
+    anchor!(content, section_idx);
     sec_inputs(tk, content);
     content.push(Divider::new().color(tk.color_border).with_text("Data Display").orientation(DividerOrientation::Left).into_node());
+    anchor!(content, section_idx);
     sec_data_display(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
+    anchor!(content, section_idx);
     sec_nav(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
+    anchor!(content, section_idx);
     sec_tabs(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
+    anchor!(content, section_idx);
     sec_breadcrumb(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
+    anchor!(content, section_idx);
     sec_layout(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
+    anchor!(content, section_idx);
     sec_colors(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
+    anchor!(content, section_idx);
     sec_custom(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
     content.push(Label::new("UIX Framework — Native Rust UI, Ant Design 5 Theming", tk.color_text_quaternary).font_size(11.0).into_node());
+    // 抑制 unused_assignments 警告：anchor 宏会自增到最终值
+    let _ = section_idx;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 导航联动：选中侧边栏项→ScrollView 滚动到对应 section
+// SectionAnchor — 导航锚点 widget（零尺寸，仅标记 section 索引）
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 各 section 在 ScrollView 内容区中的近似 Y 坐标（px）。
-/// 由 `build_showcase` 中各 sec_* 函数产生的累积高度手动汇总。
-/// 不精确但足够让滚动落到正确 section 附近。
-const SECTION_YS: [f32; 11] = [
-    0.0,   // 📊 Dashboard  — heading(24) + row(110) = 134
-    160.0, // 🔤 Typography — 24 + 36 + 28 = 88 (+ divider ≈ 160)
-    290.0, // 🔘 Buttons    — 348px ≈ 290+348=638
-    680.0, // ⌨️ Inputs     — 168px ≈ 680+168=848
-    880.0, // 📋 Data Display — ~720px ≈ 880+720=1600  
-    1670.0,// 📌 Navigation — 122px ≈ 1670+122=1792
-    1830.0,// 📑 Tabs       — 204px ≈ 1830+204=2034
-    2080.0,// 🥖 Breadcrumb — 70px ≈ 2080+70=2150
-    2190.0,// 🧩 Layout     — ~708px ≈ 2190+708=2898
-    2950.0,// 🎨 Colors     — ~160px ≈ 2950+160=3110
-    3150.0,// ✨ Custom     — ~184px ≈ 3150+184=3334
-];
+define_widget! {
+    /// 不可见的导航锚点，用于在 layout 后定位各 section 的 Y 坐标。
+    pub struct SectionAnchor {
+        pub section_index: usize,
+    }
+
+    @new -> Self { Self { section_index: 0 } }
+
+    preferred_size => (&self, _eng: Option<&dyn GraphicsEngine>) -> Size { Size::new(0.0, 0.0) }
+
+    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
+}
 
 pub fn run_gui_demo() {
     let tk = DesignTokens::antd_light();
@@ -489,11 +509,10 @@ pub fn run_gui_demo() {
         ]
     });
 
-    // 找到 ScrollView 的 WidgetId
-    let _sv_id = tree.find_by_type::<ScrollView>().expect("ScrollView must exist");
-
     // 记录上一次激活索引，变化时触发滚动
     let prev_active = std::cell::Cell::new(0usize);
+    // 动态计算的 section Y 坐标（首次 on_frame 时从 tree 中扫描 SectionAnchor 获取）
+    let section_ys: std::cell::RefCell<Vec<f32>> = std::cell::RefCell::new(Vec::new());
 
     let mut app = App::new();
     app.title("UIX — Ant Design 5 Component Showcase");
@@ -517,11 +536,24 @@ pub fn run_gui_demo() {
             false
         },
         move |tree, _eng| {
+            // ── 动态初始化 section Y 坐标 ──
+            if section_ys.borrow().is_empty() {
+                let mut ys: Vec<(usize, f32)> = tree
+                    .find_all_by_type::<SectionAnchor>()
+                    .into_iter()
+                    .map(|(id, anchor)| (anchor.section_index, tree.get(id).unwrap().frame().y))
+                    .collect();
+                if ys.len() == 11 {
+                    ys.sort_by_key(|(idx, _)| *idx);
+                    *section_ys.borrow_mut() = ys.into_iter().map(|(_, y)| y).collect();
+                }
+            }
+
+            // ── 导航索引变化 → 滚动到对应 section ──
             let active = nav_active.get();
             if active != prev_active.get() {
                 prev_active.set(active);
-                if active < SECTION_YS.len() {
-                    let target_y = SECTION_YS[active];
+                if let Some(&target_y) = section_ys.borrow().get(active) {
                     tree.find_by_type_and_modify::<ScrollView>(|sv| {
                         sv.scroll_to_xy(0.0, target_y);
                     });

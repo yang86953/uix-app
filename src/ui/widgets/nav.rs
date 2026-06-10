@@ -253,7 +253,7 @@ impl Navigation {
     }
 
     /// Set the active item index.
-    pub fn active_index(mut self, index: usize) -> Self {
+    pub fn active_index(self, index: usize) -> Self {
         self.active.set(index);
         self
     }
