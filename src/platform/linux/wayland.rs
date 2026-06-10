@@ -194,7 +194,13 @@ impl WaylandBackend {
         }
     }
 
-    pub fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
+    pub fn present_pixels(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        dirty_rect: Option<(i32, i32, i32, i32)>,
+    ) {
         // Create/resize both buffers when dimensions change.
         if width != self.width || height != self.height
             || self.shm_buffers[0].is_none() || self.shm_buffers[1].is_none()
@@ -230,7 +236,15 @@ impl WaylandBackend {
         };
 
         surface.attach(Some(&shm.buffer), 0, 0);
-        surface.damage(0, 0, width, height);
+        // 局部 damage：仅标记实际发生变化的区域，减少合成器工作量
+        match dirty_rect {
+            Some((x, y, w, h)) if w > 0 && h > 0 => {
+                surface.damage_buffer(x, y, w, h);
+            }
+            _ => {
+                surface.damage(0, 0, width, height);
+            }
+        }
         surface.commit();
         self.active_buffer = write_idx;
 
@@ -592,7 +606,7 @@ impl INativeHandle for WaylandBackend {
 
 impl IPresenter for WaylandBackend {
     fn present(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
-        self.present_pixels(pixels, width, height);
+        self.present_pixels(pixels, width, height, None);
         Ok(())
     }
 
@@ -603,8 +617,14 @@ impl IPresenter for WaylandBackend {
 }
 
 impl Backend for WaylandBackend {
-    fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
-        self.present_pixels(pixels, width, height);
+    fn present_pixels(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        dirty_rect: Option<(i32, i32, i32, i32)>,
+    ) {
+        self.present_pixels(pixels, width, height, dirty_rect);
     }
 
     fn cursor(&mut self) -> &mut dyn ICursor {

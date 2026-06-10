@@ -1151,7 +1151,13 @@ impl INativeHandle for Win32Platform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for Win32Platform {
-    fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
+    fn present_pixels(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        _dirty_rect: Option<(i32, i32, i32, i32)>,
+    ) {
         let _ = self.presenter.present(pixels, width, height);
     }
     fn presenter(&mut self) -> &mut dyn IPresenter {

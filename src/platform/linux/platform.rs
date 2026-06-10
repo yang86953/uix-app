@@ -157,8 +157,14 @@ impl INativeHandle for LinuxPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for LinuxPlatform {
-    fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32) {
-        self.backend.present_pixels(pixels, width, height);
+    fn present_pixels(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        dirty_rect: Option<(i32, i32, i32, i32)>,
+    ) {
+        self.backend.present_pixels(pixels, width, height, dirty_rect);
     }
     fn presenter(&mut self) -> &mut dyn IPresenter {
         // Backend: IPresenter，所以 &mut dyn Backend 可直接协变到 &mut dyn IPresenter

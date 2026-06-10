@@ -82,7 +82,17 @@ pub trait Platform: IWindowManager + IWindowProperties + IEventLoop + INativeHan
     // ── 像素呈现 ─────────────────────────────────────────────────
 
     /// Present a pixel buffer to the native window.
-    fn present_pixels(&mut self, pixels: &[u32], width: i32, height: i32);
+    ///
+    /// `dirty_rect` 指定实际发生变化的区域（缓冲区坐标），
+    /// 为 `None` 时表示全帧变化。平台层可用此信息做局部 damage，
+    /// 减少合成器工作量。
+    fn present_pixels(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        dirty_rect: Option<(i32, i32, i32, i32)>,
+    );
 
     /// Access the pixel presenter for direct presentation control.
     fn presenter(&mut self) -> &mut dyn IPresenter;
