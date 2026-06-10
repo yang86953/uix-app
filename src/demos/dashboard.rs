@@ -391,85 +391,123 @@ fn sec_custom(tk: &DesignTokens, out: &mut Vec<WidgetNode>) {
 // UI 组装
 // ════════════════════════════════════════════════════════════════════════════
 
-fn build_showcase(tree: &mut WidgetTree) {
-    let tk = DesignTokens::antd_light();
-    let mut content: Vec<WidgetNode> = Vec::new();
-
-    sec_dashboard(&tk, &mut content);
+/// 生成内容区 widgets（不含外层布局）。
+/// 返回 content Vec 供手动组装。
+fn build_showcase_content(tk: &DesignTokens, content: &mut Vec<WidgetNode>) {
+    sec_dashboard(tk, content);
     content.push(Divider::new().color(tk.color_border).with_text("Typography").orientation(DividerOrientation::Left).into_node());
-    sec_typography(&tk, &mut content);
+    sec_typography(tk, content);
     content.push(Divider::new().color(tk.color_border).with_text("Buttons").orientation(DividerOrientation::Left).into_node());
-    sec_buttons(&tk, &mut content);
+    sec_buttons(tk, content);
     content.push(Divider::new().color(tk.color_border).with_text("Inputs").orientation(DividerOrientation::Left).into_node());
-    sec_inputs(&tk, &mut content);
+    sec_inputs(tk, content);
     content.push(Divider::new().color(tk.color_border).with_text("Data Display").orientation(DividerOrientation::Left).into_node());
-    sec_data_display(&tk, &mut content);
+    sec_data_display(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
-    sec_nav(&tk, &mut content);
+    sec_nav(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
-    sec_tabs(&tk, &mut content);
+    sec_tabs(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
-    sec_breadcrumb(&tk, &mut content);
+    sec_breadcrumb(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
-    sec_layout(&tk, &mut content);
+    sec_layout(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
-    sec_colors(&tk, &mut content);
+    sec_colors(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
-    sec_custom(&tk, &mut content);
+    sec_custom(tk, content);
     content.push(Divider::new().color(tk.color_border_secondary).into_node());
     content.push(Label::new("UIX Framework — Native Rust UI, Ant Design 5 Theming", tk.color_text_quaternary).font_size(11.0).into_node());
-
-    tree.build(tree! {
-        // 根容器初始尺寸 GW×GH，Resize 事件会覆盖
-        Container::new().size(GW as f32, GH as f32).bg(tk.color_bg_layout).dir(FlexDirection::Row) => [
-            Navigation::new("UIX Ant Design")
-                .item(" Dashboard", "📊").item(" Typography", "🔤").item(" Buttons", "🔘")
-                .item(" Inputs", "⌨️").item(" Data Display", "📋").item(" Navigation", "📌")
-                .item(" Tabs", "📑").item(" Breadcrumb", "🥖").item(" Layout", "🧩")
-                .item(" Colors", "🎨").item(" Custom", "✨")
-                .active_index(0).width(SB).height(GH as f32).build(&tk),
-            // 内容区 flex-grow=1 填充剩余宽度
-            WidgetNode::new(
-                Box::new(Container::new().bg(tk.color_bg_container).dir(FlexDirection::Column)
-                    .flex_grow(1.0)),
-                vec![
-                    // Header: 固定高度44px，宽度由flex Stretch自动填充
-                    tree! { Container::new().bg(tk.color_bg_elevated).dir(FlexDirection::Row)
-                        .size(0.0, 44.0) => [
-                        Label::new("  Ant Design 5 Component Showcase", tk.color_text)
-                            .font_size(16.0).size(600.0, 44.0),
-                        Container::new().flex_grow(1.0),  // 弹性 spacer
-                        Label::new("UIX v0.1.0", tk.color_text_quaternary)
-                            .font_size(12.0).size(100.0, 44.0),
-                    ]},
-                    // ScrollView flex-grow=1 填充剩余高度
-                    WidgetNode::new(
-                        Box::new(ScrollView::new(ScrollDirection::Vertical).flex_grow(1.0)),
-                        vec![WidgetNode::new(
-                            // 不设固定宽 → ScrollView 拉伸到视口宽
-                            Box::new(Container::new().size(0.0, 4000.0)
-                                .dir(FlexDirection::Column)),
-                            content,
-                        )],
-                    ),
-                ],
-            ),
-        ]
-    });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 入口
+// 导航联动：选中侧边栏项→ScrollView 滚动到对应 section
 // ════════════════════════════════════════════════════════════════════════════
 
+/// 各 section 在 ScrollView 内容区中的近似 Y 坐标（px）。
+/// 由 `build_showcase` 中各 sec_* 函数产生的累积高度手动汇总。
+/// 不精确但足够让滚动落到正确 section 附近。
+const SECTION_YS: [f32; 11] = [
+    0.0,   // 📊 Dashboard  — heading(24) + row(110) = 134
+    160.0, // 🔤 Typography — 24 + 36 + 28 = 88 (+ divider ≈ 160)
+    290.0, // 🔘 Buttons    — 348px ≈ 290+348=638
+    680.0, // ⌨️ Inputs     — 168px ≈ 680+168=848
+    880.0, // 📋 Data Display — ~720px ≈ 880+720=1600  
+    1670.0,// 📌 Navigation — 122px ≈ 1670+122=1792
+    1830.0,// 📑 Tabs       — 204px ≈ 1830+204=2034
+    2080.0,// 🥖 Breadcrumb — 70px ≈ 2080+70=2150
+    2190.0,// 🧩 Layout     — ~708px ≈ 2190+708=2898
+    2950.0,// 🎨 Colors     — ~160px ≈ 2950+160=3110
+    3150.0,// ✨ Custom     — ~184px ≈ 3150+184=3334
+];
+
 pub fn run_gui_demo() {
+    let tk = DesignTokens::antd_light();
+
+    // 先创建 Navigation 并克隆 active Cell（build 后无法再取）
+    let nav = Navigation::new("UIX Ant Design")
+        .item(" Dashboard", "📊").item(" Typography", "🔤").item(" Buttons", "🔘")
+        .item(" Inputs", "⌨️").item(" Data Display", "📋").item(" Navigation", "📌")
+        .item(" Tabs", "📑").item(" Breadcrumb", "🥖").item(" Layout", "🧩")
+        .item(" Colors", "🎨").item(" Custom", "✨")
+        .active_index(0).width(SB).height(GH as f32);
+    let nav_active = nav.active().clone();
+    let nav_node = nav.build(&tk);
+
+    // 构建内容区
+    let mut content: Vec<WidgetNode> = Vec::new();
+    build_showcase_content(&tk, &mut content);
+
+    // 组装完整树
     let mut tree = WidgetTree::new();
-    build_showcase(&mut tree);
+    let content_container = WidgetNode::new(
+        Box::new(Container::new().bg(tk.color_bg_container).dir(FlexDirection::Column)
+            .flex_grow(1.0)),
+        vec![
+            tree! { Container::new().bg(tk.color_bg_elevated).dir(FlexDirection::Row)
+                .size(0.0, 44.0) => [
+                Label::new("  Ant Design 5 Component Showcase", tk.color_text)
+                    .font_size(16.0).size(600.0, 44.0),
+                Container::new().flex_grow(1.0),
+                Label::new("UIX v0.1.0", tk.color_text_quaternary)
+                    .font_size(12.0).size(100.0, 44.0),
+            ]},
+            WidgetNode::new(
+                Box::new(ScrollView::new(ScrollDirection::Vertical).flex_grow(1.0)),
+                vec![WidgetNode::new(
+                    Box::new(Container::new().size(0.0, 4000.0)
+                        .dir(FlexDirection::Column)),
+                    content,
+                )],
+            ),
+        ],
+    );
+
+    tree.build(tree! {
+        Container::new().size(GW as f32, GH as f32).bg(tk.color_bg_layout).dir(FlexDirection::Row) => [
+            nav_node,
+            content_container,
+        ]
+    });
+
+    // 找到 ScrollView 的 WidgetId
+    let _sv_id = tree.find_by_type::<ScrollView>().expect("ScrollView must exist");
+
+    // 记录上一次激活索引，变化时触发滚动
+    let prev_active = std::cell::Cell::new(0usize);
 
     let mut app = App::new();
     app.title("UIX — Ant Design 5 Component Showcase");
-    app.run_widget(
-        &mut tree, GW, GH, map_ui_event,
+
+    // 创建引擎并运行（与旧版 run_widget 相同逻辑）
+    let mut engine = match app.take_engine(GW, GH) {
+        Some(e) => e,
+        None => return,
+    };
+
+    let exit_code = app.run_widget_with(
+        &mut *engine,
+        &mut tree,
+        GW, GH, map_ui_event,
         |ev: &UiEvent| -> bool {
             if let UiEventType::KeyDown = ev.type_ {
                 if let UiEventPayload::Key(ref d) = ev.payload {
@@ -478,5 +516,20 @@ pub fn run_gui_demo() {
             }
             false
         },
+        move |tree, _eng| {
+            let active = nav_active.get();
+            if active != prev_active.get() {
+                prev_active.set(active);
+                if active < SECTION_YS.len() {
+                    let target_y = SECTION_YS[active];
+                    tree.find_by_type_and_modify::<ScrollView>(|sv| {
+                        sv.scroll_to_xy(0.0, target_y);
+                    });
+                }
+            }
+        },
     );
+
+    engine.shutdown();
+    std::process::exit(exit_code);
 }

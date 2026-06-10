@@ -243,7 +243,7 @@ impl App {
     }
 
     /// 取出或创建引擎。
-    fn take_engine(&mut self, width: i32, height: i32) -> Option<Box<dyn GraphicsEngine>> {
+    pub fn take_engine(&mut self, width: i32, height: i32) -> Option<Box<dyn GraphicsEngine>> {
         if let Some(engine) = self.custom_engine.take() {
             log::info!("App: using custom engine ({:?})", self.render_strategy);
             Some(engine)
@@ -273,13 +273,13 @@ impl App {
             None => return 1,
         };
 
-        let exit_code = self.run_widget_with(&mut *engine, tree, width, height, map_event, on_exit);
+        let exit_code = self.run_widget_with(&mut *engine, tree, width, height, map_event, on_exit, |_, _| {});
         engine.shutdown();
         exit_code
     }
 
     /// 用指定引擎运行 widget 渲染循环（App 不接管引擎生命周期）。
-    pub fn run_widget_with<M, X>(
+    pub fn run_widget_with<M, X, F>(
         &mut self,
         engine: &mut dyn GraphicsEngine,
         tree: &mut WidgetTree,
@@ -287,10 +287,12 @@ impl App {
         height: i32,
         map_event: M,
         on_exit: X,
+        on_frame: F,
     ) -> i32
     where
         M: Fn(&UiEvent) -> Option<WidgetEvent>,
         X: Fn(&UiEvent) -> bool,
+        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine),
     {
         let tokens = DesignTokens::antd_light();
 
@@ -300,7 +302,7 @@ impl App {
 
         match self.window.as_mut() {
             Some(window) => {
-                window.run_widget_loop(tree, engine, &tokens, map_event, on_exit)
+                window.run_widget_loop(tree, engine, &tokens, map_event, on_exit, on_frame)
             }
             None => {
                 log::error!("App::run_widget_with: window creation failed");

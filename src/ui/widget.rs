@@ -35,9 +35,22 @@ pub enum WidgetEvent {
 /// Widget tree node ID.
 pub type WidgetId = usize;
 
+// ── AsAny — 安全下转型支持 ────────────────────────────────────────
+
+/// 安全下转型：从 `&dyn Widget` 向下转型到具体类型。
+pub trait AsAny {
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+impl<T: 'static> AsAny for T {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+}
+
 /// Widget trait — the core behavioral abstraction for all UI components.
 /// Pure behavior: no tree metadata. Tree metadata is managed by BoxedWidget via WidgetCore.
-pub trait Widget {
+pub trait Widget: AsAny {
     /// Return child widgets to be added to the tree.
     fn build(&self) -> Vec<Box<dyn Widget>> {
         vec![]
@@ -458,6 +471,32 @@ impl WidgetTree {
         self.root_id
             .and_then(|id| self.nodes.get_mut(id))
             .and_then(|n| n.as_mut())
+    }
+
+    /// Find the first widget of a specific type in the tree.
+    /// 使用 `as_any().downcast_ref::<T>()` 安全下转型。
+    pub fn find_by_type<T: Widget + 'static>(&self) -> Option<WidgetId> {
+        for id in self.traverse() {
+            if let Some(node) = self.get(id) {
+                if node.inner().as_any().downcast_ref::<T>().is_some() {
+                    return Some(id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Find the first widget of a specific type and apply a mutable operation.
+    pub fn find_by_type_and_modify<T: Widget + 'static>(
+        &mut self,
+        f: impl FnOnce(&mut T),
+    ) -> Option<WidgetId> {
+        let id = self.find_by_type::<T>()?;
+        let node = self.get_mut(id)?;
+        if let Some(w) = node.inner_mut().as_any_mut().downcast_mut::<T>() {
+            f(w);
+        }
+        Some(id)
     }
 
     pub fn get(&self, id: WidgetId) -> Option<&BoxedWidget> {

@@ -258,6 +258,11 @@ impl Navigation {
         self
     }
 
+    /// Get the shared active index Cell for external read.
+    pub fn active(&self) -> &SharedActive {
+        &self.active
+    }
+
     /// Set navigation width.
     pub fn width(mut self, w: f32) -> Self {
         self.width = w;

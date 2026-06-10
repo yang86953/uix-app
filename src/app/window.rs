@@ -112,17 +112,19 @@ impl Window {
     ///   and mouse button mappings go here.
     /// - `on_exit` — optional extra exit conditions (return `false` to
     ///   keep running, `true` to exit).
-    pub fn run_widget_loop<M, X>(
+    pub fn run_widget_loop<M, X, F>(
         &mut self,
         tree: &mut WidgetTree,
         engine: &mut dyn GraphicsEngine,
         tokens: &dyn TokenProvider,
         map_event: M,
         on_exit: X,
+        on_frame: F,
     ) -> i32
     where
         M: Fn(&UiEvent) -> Option<WidgetEvent>,
         X: Fn(&UiEvent) -> bool,
+        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine),
     {
         self.running = true;
         let running_flag = Cell::new(true);
@@ -209,6 +211,9 @@ impl Window {
             let dt = (now - last_frame).as_secs_f32().min(0.05);
             last_frame = now;
             keep_polling = tree.update(dt) || woke;
+
+            // ── 逐帧回调（应用层注入：如导航→滚动联动） ────────
+            on_frame(tree, engine);
 
             // ── 帧图：标记脏状态 ──────────────────────────────────
             // keep_polling 作为额外安全网：有动画在跑（如滚动惯性）时确保渲染，
