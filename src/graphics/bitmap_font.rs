@@ -2,7 +2,7 @@
 //! Each character is defined as 5 bytes (one per column), bits 0-6 are rows.
 
 use crate::graphics::TextLayoutOptions;
-use crate::graphics::{Point, Size};
+use crate::base::{Point, Size};
 
 /// A monospace bitmap font (5x7 pixels per character).
 pub struct BitmapFont {

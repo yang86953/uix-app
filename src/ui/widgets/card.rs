@@ -2,7 +2,8 @@
 //! title, body, hover feedback, and configurable border radius.
 
 use crate::define_widget;
-use crate::graphics::{Color, Point, Radius, Rect, Size};
+use crate::graphics::{Color, Radius};
+use crate::base::{Point, Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};

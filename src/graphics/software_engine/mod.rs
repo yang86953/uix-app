@@ -18,7 +18,8 @@
 //!   handles offscreen target switching via pixel ownership transfer, and
 //!   implements GraphicsEngine by delegating to all three.
 
-use crate::graphics::{BlendMode, Rect};
+use crate::graphics::{BlendMode};
+use crate::base::{Rect};
 use crate::graphics::{ImageHandle, Transform};
 
 // ════════════════════════════════════════════════════════════════════════════

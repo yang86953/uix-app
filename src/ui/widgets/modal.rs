@@ -1,7 +1,8 @@
 //! Modal widget — overlay dialog with backdrop and optional close button.
 
 use crate::define_widget;
-use crate::graphics::{Color, Point, Radius, Rect, Size};
+use crate::graphics::{Color, Radius};
+use crate::base::{Point, Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, WidgetEvent, WidgetTree};
 

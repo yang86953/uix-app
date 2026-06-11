@@ -1,5 +1,6 @@
 use super::core::RenderTarget;
-use crate::graphics::{Radius, Rect};
+use crate::graphics::{Radius};
+use crate::base::{Rect};
 
 impl RenderTarget {
     /// Signed distance field for a rounded rectangle with per-corner radii.

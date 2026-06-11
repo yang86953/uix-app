@@ -1,6 +1,7 @@
 use crate::diag::Error;
 use crate::graphics::types::*;
-use crate::graphics::{Color, Point, Rect, Size};
+use crate::graphics::{Color};
+use crate::base::{Point, Rect, Size};
 
 /// GraphicsEngine — abstract 2D rendering interface.
 ///
@@ -41,6 +42,14 @@ pub trait GraphicsEngine: 'static {
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color);
     fn fill_circle_radial(&mut self, cx: f32, cy: f32, r: f32, color: Color);
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32);
+    fn fill_sector(
+        &mut self,
+        cx: f32, cy: f32,
+        radius: f32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+    );
     fn fill_ellipse(&mut self, rect: Rect, color: Color);
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32);
 

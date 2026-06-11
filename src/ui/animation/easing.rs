@@ -205,7 +205,7 @@ impl Animatable for Color {
     }
 }
 
-impl Animatable for crate::graphics::Rect {
+impl Animatable for crate::base::Rect {
     fn lerp(from: Self, to: Self, t: f64) -> Self {
         let t = t as f32;
         Self {
@@ -224,7 +224,7 @@ impl Animatable for crate::graphics::Rect {
     }
 }
 
-impl Animatable for crate::graphics::Point {
+impl Animatable for crate::base::Point {
     fn lerp(from: Self, to: Self, t: f64) -> Self {
         let t = t as f32;
         Self {
@@ -289,9 +289,9 @@ mod tests {
 
     #[test]
     fn animatable_lerp_rect() {
-        let a = crate::graphics::Rect::new(0.0, 0.0, 100.0, 100.0);
-        let b = crate::graphics::Rect::new(10.0, 20.0, 200.0, 300.0);
-        let mid = crate::graphics::Rect::lerp(a, b, 0.5);
+        let a = crate::base::Rect::new(0.0, 0.0, 100.0, 100.0);
+        let b = crate::base::Rect::new(10.0, 20.0, 200.0, 300.0);
+        let mid = crate::base::Rect::lerp(a, b, 0.5);
         assert!((mid.x - 5.0).abs() < 1e-6);
         assert!((mid.y - 10.0).abs() < 1e-6);
         assert!((mid.w - 150.0).abs() < 1e-6);

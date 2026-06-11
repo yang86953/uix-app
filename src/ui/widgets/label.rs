@@ -1,6 +1,7 @@
 //! Label widget — displays text.
 
-use crate::graphics::{Color, FontHandle, GraphicsEngine, Rect, Size, TextLayoutOptions};
+use crate::graphics::{FontHandle, GraphicsEngine, TextLayoutOptions};
+use crate::base::{Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::define_widget;
 use crate::ui::widget::WidgetTree;
@@ -9,7 +10,7 @@ define_widget! {
     pub struct Label {
         pub text: String,
         pub font_size: f32,
-        pub color: Color,
+        pub color: Option<crate::graphics::Color>,
         pub fixed_width: Option<f32>,
         pub fixed_height: Option<f32>,
     }
@@ -41,19 +42,26 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        ctx.text_center(&self.text, frame, self.color, self.font_size);
+        let c = self.color.unwrap_or_else(|| ctx.tokens().color_text());
+        ctx.text_center(&self.text, frame, c, self.font_size);
     }
 }
 
 impl Label {
-    pub fn new(text: &str, color: Color) -> Self {
+    pub fn new(text: impl Into<String>) -> Self {
+        let t = text.into();
         Self {
-            text: text.to_string(),
+            text: t,
             font_size: 12.0,
-            color,
+            color: None,
             fixed_width: None,
             fixed_height: None,
         }
+    }
+
+    pub fn color(mut self, c: crate::graphics::Color) -> Self {
+        self.color = Some(c);
+        self
     }
 
     pub fn font_size(mut self, s: f32) -> Self {

@@ -1,4 +1,4 @@
-use crate::graphics::Point;
+use crate::base::Point;
 use crate::ui::widget::{EventResult, WidgetEvent};
 
 /// Callback types for user interactions.

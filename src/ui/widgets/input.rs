@@ -1,7 +1,8 @@
 //! Input widget — Ant Design style text input with placeholder, focus, and states.
 
 use crate::define_widget;
-use crate::graphics::{Color, GraphicsEngine, Rect, Size, Radius};
+use crate::graphics::{Color, GraphicsEngine, Radius};
+use crate::base::{Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
 
@@ -96,15 +97,15 @@ define_widget! {
 }
 
 impl Input {
-    pub fn new(placeholder: &str) -> Self {
+    pub fn new(placeholder: impl Into<String>) -> Self {
         Self {
             value: String::new(),
-            placeholder: placeholder.to_string(),
+            placeholder: placeholder.into(),
             input_size: InputSize::Middle,
             disabled: false, focused: false, hovered: false,
         }
     }
-    pub fn with_value(mut self, value: &str) -> Self { self.value = value.to_string(); self }
+    pub fn with_value(mut self, value: impl Into<String>) -> Self { self.value = value.into(); self }
     pub fn size(mut self, s: InputSize) -> Self { self.input_size = s; self }
     pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
     pub fn value(&self) -> &str { &self.value }

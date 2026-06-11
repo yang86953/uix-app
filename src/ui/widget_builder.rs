@@ -1,5 +1,6 @@
 use crate::graphics::{compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
-use crate::graphics::{Color, EdgeInsets, Rect, Size};
+use crate::graphics::{Color};
+use crate::base::{EdgeInsets, Rect, Size};
 use crate::ui::widget::{Widget, WidgetId, WidgetTree};
 
 /// Builder for constructing widget trees declaratively.

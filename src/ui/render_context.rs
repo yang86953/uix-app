@@ -4,7 +4,8 @@
 //! hardcoding a concrete theme preset. This is the single point where the
 //! widget tree receives injectable design tokens during rendering.
 
-use crate::graphics::{Color, FontHandle, GraphicsEngine, HAlign, Point, Radius, Rect, Size, VAlign};
+use crate::graphics::{Color, FontHandle, GraphicsEngine, HAlign, Radius, VAlign};
+use crate::base::{Point, Rect, Size};
 use crate::graphics::{GradientDirection, TextLayoutOptions};
 use crate::ui::style::Style;
 use crate::ui::theme::TokenProvider;
@@ -107,6 +108,16 @@ impl<'a> RenderContext<'a> {
         self.engine.restore();
     }
 
+    /// 临时替换字体句柄（用于 Icon widget 切换到图标字体渲染）。
+    pub fn set_font(&mut self, font: FontHandle) {
+        self.font = font;
+    }
+
+    /// 返回当前字体句柄（供需要手动 draw_text 的场景使用）。
+    pub fn font(&self) -> &FontHandle {
+        &self.font
+    }
+
     pub fn set_max_text_width(&mut self, width: f32) {
         self.max_text_width = width;
     }
@@ -161,7 +172,7 @@ impl<'a> RenderContext<'a> {
 
     pub fn fill_linear_gradient(
         &mut self,
-        rect: crate::graphics::Rect,
+        rect: crate::base::Rect,
         ca: Color,
         cb: Color,
         dir: GradientDirection,

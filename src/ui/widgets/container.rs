@@ -4,7 +4,8 @@ use crate::define_widget;
 use crate::graphics::{
     compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, Radius,
 };
-use crate::graphics::{Color, EdgeInsets, Rect, Size};
+use crate::graphics::{Color};
+use crate::base::{EdgeInsets, Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{WidgetId, WidgetTree};
 

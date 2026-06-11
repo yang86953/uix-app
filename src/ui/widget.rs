@@ -1,9 +1,10 @@
-use crate::graphics::{DirtyRegion, Point, Rect, Size};
+use crate::graphics::{DirtyRegion};
+use crate::base::{Point, Rect, Size};
 
 // Re-export layout types for backward compatibility
 pub use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
 
-// Platform types are used directly by WidgetEvent — no conversion needed.
+// Platform types are used directly by WidgetEvent - no conversion needed.
 // The platform layer defines the canonical KeyCode and MouseButton enums
 // (which are supersets of the old widget-local definitions).
 pub use crate::platform::types::{KeyCode, MouseButton};
@@ -35,9 +36,9 @@ pub enum WidgetEvent {
 /// Widget tree node ID.
 pub type WidgetId = usize;
 
-// ── AsAny — 安全下转型支持 ────────────────────────────────────────
+// ── AsAny - 安全下转型支持 ────────────────────────────────────────
 
-/// 安全下转型：从 `&dyn Widget` 向下转型到具体类型。
+/// 安全下转型:从 `&dyn Widget` 向下转型到具体类型。
 pub trait AsAny {
     fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
@@ -48,7 +49,7 @@ impl<T: 'static> AsAny for T {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
 }
 
-/// Widget trait — the core behavioral abstraction for all UI components.
+/// Widget trait - the core behavioral abstraction for all UI components.
 /// Pure behavior: no tree metadata. Tree metadata is managed by BoxedWidget via WidgetCore.
 pub trait Widget: AsAny {
     /// Return child widgets to be added to the tree.
@@ -85,10 +86,10 @@ pub trait Widget: AsAny {
     /// Return the pixel buffer scroll delta for this frame, if the widget
     /// supports pixel-buffer scrolling (e.g. ScrollView).
     ///
-    /// 像素缓冲滚动优化：返回 (dx, dy) 表示内容偏移量，渲染循环会在
-    /// `begin_frame` 前调用 `engine.scroll_region` 做 pixel buffer memmove，
+    /// 像素缓冲滚动优化:返回 (dx, dy) 表示内容偏移量,渲染循环会在
+    /// `begin_frame` 前调用 `engine.scroll_region` 做 pixel buffer memmove,
     /// 避免全 viewport 重绘。
-    /// `dirty_rect` 同时应只返回新增 strip，而非全 frame。
+    /// `dirty_rect` 同时应只返回新增 strip,而非全 frame。
     fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
         None
     }
@@ -103,7 +104,7 @@ pub trait Widget: AsAny {
 
     /// Render this widget into the given render context.
     /// `frame` is the widget's current frame in the tree.
-    /// Called BEFORE children are rendered — use for background, clip rects, etc.
+    /// Called BEFORE children are rendered - use for background, clip rects, etc.
     fn render(
         &self,
         frame: Rect,
@@ -159,7 +160,7 @@ pub trait Widget: AsAny {
     }
 }
 
-// ── WidgetNode — composable widget node ──────────────────────────────────
+// ── WidgetNode - composable widget node ──────────────────────────────────
 
 /// A composable widget node for declarative tree construction.
 ///
@@ -219,7 +220,7 @@ impl IntoWidgetNode for WidgetNode {
     }
 }
 
-/// Core widget tree metadata — managed solely by BoxedWidget, not by individual widgets.
+/// Core widget tree metadata - managed solely by BoxedWidget, not by individual widgets.
 pub trait WidgetCore {
     fn id(&self) -> WidgetId;
     fn set_id(&mut self, id: WidgetId);
@@ -247,7 +248,7 @@ pub trait WidgetCore {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// BoxedWidget — wrapper for trait-object based widget tree
+// BoxedWidget - wrapper for trait-object based widget tree
 // ──────────────────────────────────────────────────────────────────────────
 
 /// A type-erased widget stored in the tree.
@@ -349,7 +350,7 @@ impl WidgetCore for BoxedWidget {
     }
 }
 
-/// Widget tree — manages the tree of BoxedWidget nodes.
+/// Widget tree - manages the tree of BoxedWidget nodes.
 pub struct WidgetTree {
     nodes: Vec<Option<BoxedWidget>>,
     free_ids: Vec<WidgetId>,
@@ -368,7 +369,7 @@ pub struct WidgetTree {
     /// always reaches it even when the cursor has moved to a different
     /// widget (e.g. scrollbar drag released outside the thumb).
     mouse_down_target: Option<WidgetId>,
-    /// 像素缓冲滚动 delta 队列：滚动时累计 (viewport, dx, dy)，
+    /// 像素缓冲滚动 delta 队列:滚动时累计 (viewport, dx, dy),
     /// 在 render 循环的 `begin_frame` 前由 `drain_scroll_deltas` 消费。
     scroll_deltas: Vec<(Rect, f32, f32)>,
 }
@@ -639,7 +640,7 @@ impl WidgetTree {
                 }
                 node.inner().layout_children(frame, &children, self)
             };
-            // Step 2: apply positions inline (mutable borrow — node dropped)
+            // Step 2: apply positions inline (mutable borrow - node dropped)
             for (child_id, rect) in positions {
                 if let Some(child) = self.get_mut(child_id) {
                     let old = child.frame();
@@ -660,7 +661,7 @@ impl WidgetTree {
     /// 1. Calls `on_update(dt)` on every widget (animation ticks).
     /// 2. Marks any widget with `needs_continuous_update() == true` as
     ///    dirty, so the incremental renderer picks up the visual changes.
-    /// 3. Returns `true` if any widget is still animating — the caller
+    /// 3. Returns `true` if any widget is still animating - the caller
     ///    (event loop) uses this to decide whether to keep polling
     ///    (non-blocking) vs. blocking on `wait_event`.
     ///
@@ -672,8 +673,8 @@ impl WidgetTree {
         let order = self.traverse();
         let mut any_animating = false;
         for &id in &order {
-            // Phase 1: 在 on_update 前预检动画状态，确保动画最后一帧
-            // （on_update 中速度/位置归零导致 needs_continuous_update 变 false）
+            // Phase 1: 在 on_update 前预检动画状态,确保动画最后一帧
+            // (on_update 中速度/位置归零导致 needs_continuous_update 变 false)
             // 仍能正确标记脏区域并触发渲染。
             let was_animating = self.get(id)
                 .map(|n| n.inner().needs_continuous_update())
@@ -767,7 +768,7 @@ impl WidgetTree {
     }
 
     /// Drain the scroll deltas accumulated during `update()`.
-    /// 渲染循环在 `begin_frame` 前消费，用于 pixel buffer memmove。
+    /// 渲染循环在 `begin_frame` 前消费,用于 pixel buffer memmove。
     pub fn drain_scroll_deltas(&mut self) -> Vec<(Rect, f32, f32)> {
         std::mem::take(&mut self.scroll_deltas)
     }
@@ -781,6 +782,18 @@ impl WidgetTree {
         for id in ids {
             if let Some(node) = self.get_mut(id) {
                 node.set_dirty(false);
+            }
+        }
+    }
+
+    /// 强制全帧 dirty，确保下一帧被完整重新渲染。
+    /// 在重建 widget 树后调用，否则帧图可能因 dirty_region 为空而跳过渲染。
+    pub fn mark_full_frame_dirty(&mut self) {
+        self.dirty_region = DirtyRegion::full();
+        // 同时清除所有 widget 的 dirty 标志，因为全帧渲染不需要增量标记
+        for id in self.traverse() {
+            if let Some(node) = self.get_mut(id) {
+                node.set_dirty(true);
             }
         }
     }
@@ -839,7 +852,7 @@ impl WidgetTree {
         }
     }
 
-    /// Second pass: post_render() calls — children clip is NOT active,
+    /// Second pass: post_render() calls - children clip is NOT active,
     /// so overlay effects can overflow the clipping boundary.
     fn post_render_pass(
         &self,
@@ -895,7 +908,7 @@ impl WidgetTree {
                 return Some(hit);
             }
         }
-        // No child hit — check self
+        // No child hit - check self
         if node.frame().contains(pos) {
             Some(id)
         } else {
@@ -914,7 +927,7 @@ impl WidgetTree {
     /// - MouseWheel → dispatch to currently hovered widget (or root).
     /// - KeyDown / KeyUp → dispatch to the focused widget.
     /// - Resize → dispatch to root.
-    /// - HoverEnter / HoverLeave / FocusIn / FocusOut — internal bookkeeping;
+    /// - HoverEnter / HoverLeave / FocusIn / FocusOut - internal bookkeeping;
     ///   external callers typically do not emit these directly.
     pub fn dispatch_event(&mut self, event: &WidgetEvent) -> EventResult {
         match event {
@@ -1003,14 +1016,14 @@ impl WidgetTree {
                 }
             }
             WidgetEvent::HoverEnter | WidgetEvent::HoverLeave => {
-                // Internally managed — external dispatch is a no-op.
+                // Internally managed - external dispatch is a no-op.
                 EventResult::NotHandled
             }
             WidgetEvent::Resize { width, height } => {
                 if let Some(root) = self.root_id {
                     // Only update root frame when dimensions are valid.
                     // Compositors may send configure(0,0) meaning "client
-                    // decides" — those should not reset the root frame.
+                    // decides" - those should not reset the root frame.
                     if *width > 0.0 && *height > 0.0 {
                         if let Some(root_mut) = self.get_mut(root) {
                             root_mut.set_frame(Rect::new(0.0, 0.0, *width, *height));
@@ -1098,7 +1111,7 @@ impl WidgetTree {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graphics::{Point, Rect, Size};
+    use crate::base::{Point, Rect, Size};
     use std::cell::RefCell;
 
     /// A minimal test widget that records the last event it received.
@@ -1328,7 +1341,7 @@ mod tests {
             button: MouseButton::Left,
         });
 
-        // Now dispatch a key — should reach the focused widget
+        // Now dispatch a key - should reach the focused widget
         let result = tree.dispatch_event(&WidgetEvent::KeyDown {
             key: KeyCode::Enter,
         });
@@ -1347,7 +1360,7 @@ mod tests {
             .expect("child widget should exist")
             .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
-        // Move into child — should dispatch MouseMove to child
+        // Move into child - should dispatch MouseMove to child
         tree.dispatch_event(&WidgetEvent::MouseMove {
             pos: Point::new(50.0, 50.0),
         });

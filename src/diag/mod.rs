@@ -10,9 +10,5 @@ pub mod log;
 pub mod recovery;
 pub mod result;
 
-pub use collector::*;
-pub use error::*;
-pub use fatal::*;
-pub use log::*;
-pub use recovery::*;
-pub use result::*;
+mod api;
+pub use api::*;

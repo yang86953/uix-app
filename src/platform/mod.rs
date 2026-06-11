@@ -28,34 +28,6 @@ pub mod notification;
 pub mod system_info;
 pub mod timer;
 
-// ── 公开重导出 ────────────────────────────────────────────────────
-pub use clipboard::*;
-pub use console::*;
-pub use cursor::*;
-pub use display::*;
-pub use event::*;
-pub use file_dialog::*;
-pub use file_system::*;
-pub use input::*;
-pub use notification::*;
-pub use system_info::*;
-pub use timer::*;
-
-// ── Platform 子 trait 重导出 ──────────────────────────────────────
-pub use abstraction::{IEventLoop, INativeHandle, IWindowManager, IWindowProperties, Platform};
-pub use presenter::{IPresenter, NullPresenter};
-
-// ── 工厂函数 ──────────────────────────────────────────────────────
-
-#[cfg(windows)]
-pub fn create_platform() -> Box<dyn Platform> {
-    Box::new(win32::Win32Platform::new())
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-pub fn create_platform() -> Box<dyn Platform> {
-    Box::new(linux::LinuxPlatform::new())
-}
-
-#[cfg(target_os = "macos")]
-compile_error!("uix-platform does not yet support macOS targets");
+// ── API 出口：所有公共 API 通过 api.rs 暴露 ──────────────────────
+mod api;
+pub use api::*;

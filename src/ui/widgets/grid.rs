@@ -1,10 +1,8 @@
 //! Grid widget — CSS Grid-like layout container.
 
 use crate::define_widget;
-use crate::graphics::{
-    compute_grid_layout, AlignItems, Color, EdgeInsets, GridChild, GridInput, GridTrack,
-    JustifyContent, Radius, Rect, Size,
-};
+use crate::graphics::{compute_grid_layout, AlignItems, Color, GridChild, GridInput, GridTrack, JustifyContent, Radius};
+use crate::base::{EdgeInsets, Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{WidgetId, WidgetTree};
 

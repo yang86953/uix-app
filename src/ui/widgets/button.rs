@@ -1,7 +1,8 @@
 //! Button widget — Ant Design style button with variants, sizes, and states.
 
 use crate::define_widget;
-use crate::graphics::{Color, GraphicsEngine, Point, Rect, Size};
+use crate::graphics::{Color, GraphicsEngine};
+use crate::base::{Point, Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::style::Style;
 use crate::ui::widget::{EventResult, WidgetEvent, WidgetTree};
@@ -41,10 +42,9 @@ define_widget! {
         #[allow(dead_code)] loading: bool,
         hovered: bool,
         pressed: bool,
-        /// Click ripple animation progress (0.0 = idle, >0.0 = animating).
         anim_progress: f32,
-        /// Mouse click position for ripple origin.
         click_pos: Option<Point>,
+        on_click: Option<Box<dyn FnMut() + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -62,7 +62,13 @@ define_widget! {
                 self.anim_progress = 0.001; // start ripple
                 EventResult::Handled
             }
-            WidgetEvent::MouseUp { .. } => { self.pressed = false; EventResult::Handled }
+            WidgetEvent::MouseUp { .. } => {
+                self.pressed = false;
+                if let Some(ref mut cb) = self.on_click {
+                    cb();
+                }
+                EventResult::Handled
+            }
             WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
             WidgetEvent::HoverLeave => { self.hovered = false; self.pressed = false; EventResult::Handled }
             _ => EventResult::NotHandled,
@@ -186,14 +192,15 @@ impl Button {
         }
     }
 
-    pub fn new(text: &str) -> Self {
+    pub fn new(text: impl Into<String>) -> Self {
         Self {
-            text: text.to_string(),
+            text: text.into(),
             variant: ButtonVariant::Default,
             btn_size: ButtonSize::Middle,
             block: false, disabled: false, loading: false,
             hovered: false, pressed: false, anim_progress: 0.0,
             click_pos: None,
+            on_click: None,
         }
     }
     pub fn variant(mut self, v: ButtonVariant) -> Self { self.variant = v; self }
@@ -205,4 +212,8 @@ impl Button {
     pub fn block(mut self) -> Self { self.block = true; self }
     pub fn loading(mut self) -> Self { self.loading = true; self }
     pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
+    pub fn on_click<F: FnMut() + 'static>(mut self, f: F) -> Self {
+        self.on_click = Some(Box::new(f));
+        self
+    }
 }

@@ -13,12 +13,5 @@ pub mod software_engine;
 pub mod text_backend;
 pub mod types;
 
-pub use color::*;
-pub use engine::*;
-pub use layout::*;
-pub use null_engine::*;
-pub use software_engine::*;
-pub use types::*;
-
-// Foundation geometry types live in `crate::base` — re-export for convenience.
-pub use crate::base::{EdgeInsets, Point, Rect, Size};
+mod api;
+pub use api::*;

@@ -1,4 +1,5 @@
-use crate::graphics::{Color, EdgeInsets};
+use crate::graphics::{Color};
+use crate::base::{EdgeInsets};
 
 /// Visual style properties for a widget.
 #[derive(Debug, Clone, PartialEq)]

@@ -10,7 +10,8 @@
 //! - `sd > blur` (well outside) → 0% coverage (no shadow)
 
 use super::core::RenderTarget;
-use crate::graphics::{Color, Radius, Rect};
+use crate::graphics::{Color, Radius};
+use crate::base::{Rect};
 
 impl RenderTarget {
     /// Draw a single-layer box shadow.
@@ -109,7 +110,8 @@ impl RenderTarget {
 #[cfg(test)]
 mod tests {
     use super::super::core::RenderTarget;
-    use crate::graphics::{Color, Radius, Rect};
+    use crate::graphics::{Color, Radius};
+use crate::base::{Rect};
 
     fn make_rt(w: i32, h: i32) -> RenderTarget {
         let mut rt = RenderTarget::new();

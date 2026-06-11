@@ -1,5 +1,5 @@
-use crate::graphics::EdgeInsets;
-use crate::graphics::Size;
+use crate::base::EdgeInsets;
+use crate::base::Size;
 use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
 
 /// Manages layout constraints and flex properties for a widget.

@@ -1,7 +1,8 @@
 mod tests {
     use crate::graphics::engine::GraphicsEngine;
     use crate::graphics::software_engine::core::RenderTarget;
-    use crate::graphics::{Color, Radius, Rect};
+    use crate::graphics::{Color, Radius};
+use crate::base::{Rect};
 
     /// 创建 40×40 的渲染目标并填充黑色透明背景
     fn make_rt(w: i32, h: i32) -> RenderTarget {

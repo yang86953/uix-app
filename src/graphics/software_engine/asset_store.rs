@@ -1,7 +1,8 @@
 use super::{ImageData, ImageSlot, OffscreenData, OffscreenSlot};
 use crate::diag::{Errc, Error};
 use crate::graphics::bitmap_font::BitmapFont;
-use crate::graphics::{HandleKind, ImageHandle};
+use crate::graphics::types::HandleKind;
+use crate::graphics::ImageHandle;
 
 /// Owns graphical resources (images, offscreen buffers, bitmap font).
 ///

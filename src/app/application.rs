@@ -4,7 +4,9 @@ use crate::app::window::Window;
 use crate::graphics::{GraphicsEngine, SoftwareEngine};
 use crate::platform::create_platform;
 use crate::platform::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::ui::theme::DesignTokens;
+use std::cell::RefCell;
+
+use crate::ui::theme::Theme;
 use crate::ui::widget::{WidgetEvent, WidgetTree};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -54,6 +56,8 @@ pub struct App {
     render_strategy: RenderStrategy,
     /// 自定义渲染引擎（可选，默认使用 SoftwareEngine）
     custom_engine: Option<Box<dyn GraphicsEngine>>,
+    /// 应用主题（默认 Ant Design 亮色）
+    pub theme: Theme,
 }
 
 impl Default for App {
@@ -69,6 +73,7 @@ impl Default for App {
             window_title: "UIX App".to_string(),
             render_strategy: RenderStrategy::Cpu,
             custom_engine: None,
+            theme: Theme::antd_light(),
         }
     }
 }
@@ -294,18 +299,38 @@ impl App {
         X: Fn(&UiEvent) -> bool,
         F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine),
     {
-        let tokens = DesignTokens::antd_light();
+        // 使用 App 的 theme 字段创建运行时动态主题
+        let theme_cell = RefCell::new(self.theme.clone());
+        self.run_widget_with_tokens(engine, tree, width, height, &theme_cell, map_event, on_exit, on_frame)
+    }
 
+    /// 与 `run_widget_with` 相同，但允许自定义 tokens（用于暗色/亮色切换）。
+    pub fn run_widget_with_tokens<M, X, F>(
+        &mut self,
+        engine: &mut dyn GraphicsEngine,
+        tree: &mut WidgetTree,
+        width: i32,
+        height: i32,
+        theme: &RefCell<Theme>,
+        map_event: M,
+        on_exit: X,
+        on_frame: F,
+    ) -> i32
+    where
+        M: Fn(&UiEvent) -> Option<WidgetEvent>,
+        X: Fn(&UiEvent) -> bool,
+        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine),
+    {
         if self.window.is_none() {
             self.create_window("", width, height);
         }
 
         match self.window.as_mut() {
             Some(window) => {
-                window.run_widget_loop(tree, engine, &tokens, map_event, on_exit, on_frame)
+                window.run_widget_loop(tree, engine, theme, map_event, on_exit, on_frame)
             }
             None => {
-                log::error!("App::run_widget_with: window creation failed");
+                log::error!("App::run_widget_with_tokens: window creation failed");
                 1
             }
         }

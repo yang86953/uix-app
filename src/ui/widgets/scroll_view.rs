@@ -6,7 +6,8 @@
 use std::cell::Cell;
 
 use crate::define_widget;
-use crate::graphics::{Radius, Rect, Size};
+use crate::graphics::{Radius};
+use crate::base::{Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};
@@ -573,9 +574,9 @@ impl Default for ScrollView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graphics::Size;
+    use crate::base::Size;
     use crate::ui::widget::{Widget, WidgetId, WidgetTree, WidgetCore};
-    use crate::graphics::{Point, Rect};
+    use crate::base::{Point, Rect};
 
     /// A simple fixed-size widget for testing.
     struct FixedWidget {

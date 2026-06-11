@@ -7,6 +7,5 @@ pub mod file_service;
 pub mod middleware;
 pub mod settings;
 
-pub use file_service::*;
-pub use middleware::*;
-pub use settings::*;
+mod api;
+pub use api::*;

@@ -16,7 +16,9 @@ use crate::graphics::{DirtyRegion, GraphicsEngine};
 use crate::platform::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::Platform;
 use crate::ui::render_context::RenderContext;
-use crate::ui::theme::TokenProvider;
+use std::cell::RefCell;
+
+use crate::ui::theme::Theme;
 use crate::ui::widget::{WidgetEvent, WidgetTree};
 use std::time::Instant;
 
@@ -106,7 +108,7 @@ impl Window {
     /// # Parameters
     /// - `tree` — widget tree to update and render each frame.
     /// - `engine` — graphics engine for rendering.
-    /// - `tokens` — design tokens for widget rendering.
+    /// - `theme` — runtime-switchable theme (`RefCell<Theme>`, call `theme.borrow().tokens()` each frame).
     /// - `map_event` — converts a platform `UiEvent` into a `WidgetEvent`
     ///   (or `None` to ignore). Platform-specific details like key codes
     ///   and mouse button mappings go here.
@@ -116,7 +118,7 @@ impl Window {
         &mut self,
         tree: &mut WidgetTree,
         engine: &mut dyn GraphicsEngine,
-        tokens: &dyn TokenProvider,
+        theme: &RefCell<Theme>,
         map_event: M,
         on_exit: X,
         on_frame: F,
@@ -232,8 +234,13 @@ impl Window {
                 } else {
                     tree.dirty_region().clone()
                 };
+                // 像素缓冲滚动：提前 drain 以便判断是否需要全 surface damage
+                let scroll_deltas = tree.drain_scroll_deltas();
                 // 脏区域坐标（用于平台层局部 damage，减轻合成器负担）
-                let dirty = if region.full_frame {
+                // 当有像素缓冲滚动时，scroll_region 移位了整个视口内容，
+                // 必须上报全 surface damage，否则合成器只更新 strip 区域，
+                // 导致移位部分残留旧帧像素（"旧内容残留"）
+                let dirty = if region.full_frame || !scroll_deltas.is_empty() {
                     None
                 } else {
                     Some((
@@ -246,12 +253,13 @@ impl Window {
 
                 // 通过外部回调执行渲染（避免 PassFn 的 'static 限制）
                 fg.execute_with(engine, &plan, &mut |_pid, eng, _res| {
-                    // 像素缓冲滚动：在 begin_frame 前移像素内容，之后只需渲染 strip
-                    for (viewport, _dx, dy) in tree.drain_scroll_deltas() {
+                    for &(viewport, _dx, dy) in &scroll_deltas {
                         eng.scroll_region(viewport, dy);
                     }
                     eng.begin_frame(&region);
                     tree.layout();
+                    let theme_guard = theme.borrow();
+                    let tokens = theme_guard.tokens();
                     let mut rctx = RenderContext::new(
                         eng,
                         crate::graphics::FontHandle::default(),

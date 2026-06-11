@@ -5,10 +5,10 @@
 use std::cell::Cell;
 use uix::diag::log::{info_fn, Level, Logger};
 use uix::diag::{Errc, Error};
+use uix::base::{EdgeInsets, Point, Rect, Size};
 use uix::graphics::{
-    self, colors, compute_flex_layout, AlignItems as GAlign, EdgeInsets, FlexChild,
-    FlexDirection as GDir, FlexInput, GraphicsEngine, JustifyContent as GJustify, Point, Rect,
-    Size,
+    self, colors, compute_flex_layout, AlignItems as GAlign, FlexChild,
+    FlexDirection as GDir, FlexInput, GraphicsEngine, JustifyContent as GJustify,
 };
 use uix::services::{
     FileService, LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline,

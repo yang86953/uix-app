@@ -1,5 +1,6 @@
 use super::core::RenderTarget;
-use crate::graphics::{Color, Radius, Rect};
+use crate::graphics::{Color, Radius};
+use crate::base::{Rect};
 
 impl RenderTarget {
     pub fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
@@ -247,6 +248,66 @@ impl RenderTarget {
                             if effective > 0.0 {
                                 self.put_pixel_aa(px, py, c, effective);
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Fill a circular sector (pie slice).
+    /// Angles in radians. 0 = 3 o'clock (positive x-axis). CCW sweep.
+    pub fn fill_sector(
+        &mut self,
+        cx: f32, cy: f32,
+        r: f32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+    ) {
+        let c = self.apply_opacity(Self::premul(color));
+        let expand = r + 1.0;
+        let norm = |a: f32| a.rem_euclid(std::f32::consts::TAU);
+        let sa = norm(start_angle);
+        let ea = norm(end_angle);
+        let in_sector = |angle: f32| -> bool {
+            let a = norm(angle);
+            if sa <= ea { a >= sa && a <= ea }
+            else { a >= sa || a <= ea }
+        };
+        let outer2 = (r + 1.0) * (r + 1.0);
+        if Self::is_identity(&self.transform) {
+            let x0 = (cx - expand).max(self.clip_rect.x) as i32;
+            let y0 = (cy - expand).max(self.clip_rect.y) as i32;
+            let x1 = (cx + expand).min(self.clip_rect.x + self.clip_rect.w) as i32;
+            let y1 = (cy + expand).min(self.clip_rect.y + self.clip_rect.h) as i32;
+            for py in y0..y1 {
+                for px in x0..x1 {
+                    let dx = px as f32 + 0.5 - cx;
+                    let dy = py as f32 + 0.5 - cy;
+                    let dist2 = dx * dx + dy * dy;
+                    if dist2 >= outer2 { continue; }
+                    let angle = dy.atan2(dx);
+                    if !in_sector(angle) { continue; }
+                    let coverage = Self::sdf_to_coverage(dist2.sqrt() - r);
+                    if coverage > 0.0 { self.put_pixel_aa(px, py, c, coverage); }
+                }
+            }
+        } else {
+            let bb = Rect::new(cx - expand, cy - expand, expand * 2.0, expand * 2.0);
+            let bounds = self.transform_rect(&bb);
+            if let Some(cr) = self.intersect_clip(&bounds) {
+                for py in (cr.y as i32)..((cr.y + cr.h) as i32) {
+                    for px in (cr.x as i32)..((cr.x + cr.w) as i32) {
+                        if let Some((ux, uy)) = self.apply_inverse(px as f32 + 0.5, py as f32 + 0.5) {
+                            let dx = ux - cx;
+                            let dy = uy - cy;
+                            let dist = (dx * dx + dy * dy).sqrt();
+                            if dist >= r { continue; }
+                            let angle = dy.atan2(dx);
+                            if !in_sector(angle) { continue; }
+                            let coverage = Self::sdf_to_coverage(dist - r);
+                            if coverage > 0.0 { self.put_pixel_aa(px, py, c, coverage); }
                         }
                     }
                 }

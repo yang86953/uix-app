@@ -1,7 +1,8 @@
 //! ProgressBar widget — deterministic and indeterminate progress indicators.
 
 use crate::define_widget;
-use crate::graphics::{Color, Radius, Rect, Size};
+use crate::graphics::{Color, Radius};
+use crate::base::{Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::WidgetTree;
 
@@ -28,6 +29,16 @@ define_widget! {
 
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
         Size::new(self.width, self.height)
+    }
+
+    on_update => (&mut self, dt: f32) {
+        if matches!(self.mode, ProgressMode::Indeterminate) {
+            self.progress = (self.progress + dt * 0.5) % 1.0;
+        }
+    }
+
+    needs_continuous_update => (&self) -> bool {
+        matches!(self.mode, ProgressMode::Indeterminate)
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {

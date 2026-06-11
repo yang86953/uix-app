@@ -3,10 +3,8 @@ use super::core::RenderTarget;
 use super::fontdue_backend::FontdueBackend;
 use crate::diag::{Errc, Error};
 use crate::graphics::text_backend::TextBackend;
-use crate::graphics::{
-    BlendMode, Color, DirtyRegion, FontHandle, GraphicsEngine, ImageHandle, Point, Radius, Rect,
-    Size, TextLayoutOptions,
-};
+use crate::graphics::{BlendMode, Color, DirtyRegion, FontHandle, GraphicsEngine, ImageHandle, Radius, TextLayoutOptions};
+use crate::base::{Point, Rect, Size};
 use crate::graphics::{GradientDirection, Transform};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -379,6 +377,17 @@ impl GraphicsEngine for SoftwareEngine {
 
     fn fill_circle_radial(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
         self.rt.fill_circle_radial(cx, cy, r, color);
+    }
+
+    fn fill_sector(
+        &mut self,
+        cx: f32, cy: f32,
+        r: f32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+    ) {
+        self.rt.fill_sector(cx, cy, r, start_angle, end_angle, color);
     }
 
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32) {

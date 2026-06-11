@@ -1,4 +1,4 @@
-use crate::graphics::{EdgeInsets, Rect, Size};
+use crate::base::{EdgeInsets, Rect, Size};
 use std::f32;
 
 /// Flex container direction.

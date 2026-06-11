@@ -2,10 +2,8 @@
 //! All rendering operations are no-ops; font/image loading returns NotImplemented.
 
 use crate::diag::{info_fn, Errc, Error};
-use crate::graphics::{
-    BlendMode, Color, DirtyRegion, FontHandle, GradientDirection, GraphicsEngine, ImageHandle,
-    Point, Radius, Rect, Size, TextLayoutOptions, Transform,
-};
+use crate::graphics::{BlendMode, Color, DirtyRegion, FontHandle, GradientDirection, GraphicsEngine, ImageHandle, Radius, TextLayoutOptions, Transform};
+use crate::base::{Point, Rect, Size};
 
 /// A GraphicsEngine that does nothing — useful as a compile-time stub
 /// or for testing code that depends on `dyn GraphicsEngine`.
@@ -88,6 +86,7 @@ impl GraphicsEngine for NullEngine {
 
     fn fill_circle(&mut self, _cx: f32, _cy: f32, _r: f32, _c: Color) {}
     fn fill_circle_radial(&mut self, _cx: f32, _cy: f32, _r: f32, _c: Color) {}
+    fn fill_sector(&mut self, _cx: f32, _cy: f32, _r: f32, _sa: f32, _ea: f32, _c: Color) {}
     fn stroke_circle(&mut self, _cx: f32, _cy: f32, _r: f32, _c: Color, _lw: f32) {}
     fn fill_ellipse(&mut self, _r: Rect, _c: Color) {}
     fn draw_box_shadow(

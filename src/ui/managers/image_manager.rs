@@ -8,7 +8,7 @@ pub struct ImageManager {
     /// Index into the engine's internal image slot array.
     image_index: Option<usize>,
     #[allow(dead_code)]
-    source_rect: Option<crate::graphics::Rect>,
+    source_rect: Option<crate::base::Rect>,
     tint_color: Option<crate::graphics::Color>,
 }
 

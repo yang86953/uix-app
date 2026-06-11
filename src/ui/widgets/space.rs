@@ -6,7 +6,7 @@ use crate::define_widget;
 use crate::graphics::{
     compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
-use crate::graphics::{Rect, Size};
+use crate::base::{Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{Widget, WidgetId, WidgetTree};
@@ -77,7 +77,7 @@ define_widget! {
         let input = FlexInput {
             direction: self.direction,
             gap: self.space_size.value(),
-            padding: crate::graphics::EdgeInsets::zero(),
+            padding: crate::base::EdgeInsets::zero(),
             container: frame,
             children: vec![FlexChild::default(); children.len()],
             child_sizes,

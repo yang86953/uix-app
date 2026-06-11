@@ -88,7 +88,7 @@ impl WidgetChildren {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graphics::{Rect, Size};
+    use crate::base::{Rect, Size};
     use crate::ui::render_context::RenderContext;
     use crate::ui::widget::WidgetTree;
 

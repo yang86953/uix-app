@@ -1,7 +1,9 @@
 //! Tabs widget — Ant Design style tab bar with content panels.
 
+use std::cell::RefCell;
 use crate::define_widget;
-use crate::graphics::{Point, Radius, Rect, Size};
+use crate::graphics::{Radius};
+use crate::base::{Point, Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, WidgetEvent, WidgetTree};
 
@@ -28,6 +30,8 @@ define_widget! {
         tab_height: f32,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
+        /// 每帧 render 时计算的各 tab x 坐标（供 on_event 点击定位使用）
+        tab_x_positions: RefCell<Vec<f32>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
@@ -39,10 +43,21 @@ define_widget! {
             WidgetEvent::MouseDown { pos, .. } => {
                 let tab_count = self.tabs.len();
                 if tab_count == 0 { return EventResult::NotHandled; }
-                let click_x = pos.x - 16.0;
-                if click_x >= 0.0 {
-                    let idx = (click_x / (100.0 + 8.0)) as usize;
-                    if idx < tab_count { self.active_index = idx; return EventResult::Handled; }
+                // 使用 render 时存储的 tab_x_positions 做点击定位
+                let click_x = pos.x;
+                let positions = self.tab_x_positions.borrow();
+                for (i, &tx) in positions.iter().enumerate() {
+                    if i + 1 < positions.len() {
+                        if click_x >= tx && click_x < positions[i + 1] {
+                            self.active_index = i;
+                            return EventResult::Handled;
+                        }
+                    } else {
+                        if click_x >= tx {
+                            self.active_index = i;
+                            return EventResult::Handled;
+                        }
+                    }
                 }
                 EventResult::NotHandled
             }
@@ -56,6 +71,18 @@ define_widget! {
         let primary = ctx.tokens().color_primary();
         let text_secondary = ctx.tokens().color_text_secondary();
 
+        // 预计算各 tab 宽度和位置（使用 measure_text 确保与实际渲染一致）
+        let gap = 12.0;
+        let pad = 16.0;
+        let mut positions = Vec::with_capacity(self.tabs.len());
+        let mut cursor_x = frame.x + pad;
+        for tab in &self.tabs {
+            positions.push(cursor_x);
+            let tw = ctx.measure_text(&tab.label, 14.0).w + pad * 2.0;
+            cursor_x += tw + gap;
+        }
+        *self.tab_x_positions.borrow_mut() = positions;
+
         let tab_bar_h = self.tab_height;
         let tab_bar_y = match self.position {
             TabPosition::Top => frame.y,
@@ -65,25 +92,27 @@ define_widget! {
         ctx.fill_rect(Rect::new(frame.x, tab_bar_y, frame.w, tab_bar_h), bg_container, None);
         ctx.fill_rect(Rect::new(frame.x, tab_bar_y + tab_bar_h - 2.0, frame.w, 2.0), border_secondary, None);
 
-        let mut cursor_x = frame.x + 16.0;
+        let mut cursor_x = frame.x + pad;
         for (i, tab) in self.tabs.iter().enumerate() {
             let is_active = i == self.active_index;
             let text_color = if is_active { primary } else { text_secondary };
+            let tw = ctx.measure_text(&tab.label, 14.0).w + pad * 2.0;
 
             let tab_text_y = tab_bar_y + (tab_bar_h - 14.0) * 0.5;
             ctx.draw_text(&tab.label,
-                Point::new(cursor_x + 8.0, tab_text_y.max(tab_bar_y)),
+                Point::new(cursor_x + pad * 0.5, tab_text_y.max(tab_bar_y)),
                 text_color, 14.0);
 
             if is_active {
-                let indicator_x = cursor_x + (100.0 - 60.0) * 0.5;
+                let indicator_w = tw * 0.6;
+                let indicator_x = cursor_x + (tw - indicator_w) * 0.5;
                 let indicator_y = match self.position {
                     TabPosition::Top => tab_bar_y + tab_bar_h - 2.0,
                     TabPosition::Bottom => tab_bar_y - 2.0,
                 };
-                ctx.fill_rect(Rect::new(indicator_x, indicator_y, 60.0, 2.0), primary, Some(Radius::uniform(1.0)));
+                ctx.fill_rect(Rect::new(indicator_x, indicator_y, indicator_w, 2.0), primary, Some(Radius::uniform(1.0)));
             }
-            cursor_x += 100.0 + 8.0;
+            cursor_x += tw + gap;
         }
 
         let content_y = match self.position {
@@ -122,6 +151,7 @@ impl Tabs {
             tabs: Vec::new(), active_index: 0,
             position: TabPosition::Top, tab_height: 40.0,
             fixed_width: None, fixed_height: None,
+            tab_x_positions: RefCell::new(Vec::new()),
         }
     }
 

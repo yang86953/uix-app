@@ -1,4 +1,4 @@
-use crate::graphics::Point;
+use crate::base::Point;
 
 /// Result of a drag target operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

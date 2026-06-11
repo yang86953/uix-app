@@ -10,7 +10,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::define_widget;
-use crate::graphics::{Color, Radius, Rect, Size};
+use crate::graphics::{Color, Radius};
+use crate::base::{Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, WidgetEvent, WidgetTree};
 
@@ -94,10 +95,11 @@ define_widget! {
 
         let mut cursor_x = frame.x + indicator_w;
 
-        // Icon
+        // Icon（支持 Lucide 图标名称和 emoji 回退）
         if !self.icon.is_empty() {
             let icon_x = cursor_x + 10.0;
-            ctx.text_center(&self.icon, Rect::new(icon_x, frame.y, 0.0, self.fixed_height), text_color, 14.0);
+            let icon_str = crate::ui::widgets::icon::icon_char(&self.icon);
+            ctx.text_center(icon_str, Rect::new(icon_x, frame.y, 0.0, self.fixed_height), text_color, 14.0);
             cursor_x += 28.0;
         } else {
             cursor_x += if active { 12.0 } else { 15.0 };
@@ -292,7 +294,7 @@ impl Navigation {
 
         // Title
         children.push(
-            Label::new(&self.title, tokens.color_primary())
+            Label::new(&self.title).color(tokens.color_primary())
                 .font_size(20.0)
                 .size(self.width, 52.0)
                 .into_node(),
@@ -326,7 +328,7 @@ impl Navigation {
         // Version label
         if self.show_version {
             children.push(
-                Label::new("UIX v0.1.0 — Rust Native", tokens.color_text_quaternary())
+                Label::new("UIX v0.1.0 — Rust Native").color(tokens.color_text_quaternary())
                     .font_size(11.0).size(self.width, 24.0).into_node(),
             );
         }
