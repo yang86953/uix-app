@@ -467,17 +467,17 @@ impl ScrollView {
         self.velocity_y = 0.0;
     }
 
-    /// Programmatically scroll to a position.
+    /// Programmatically scroll to a position (clamped to valid range).
     pub fn scroll_to_xy(&mut self, x: f32, y: f32) {
-        let vx = x.max(0.0);
-        let vy = y.max(0.0);
+        let vx = x.max(0.0).min(self.max_scroll_x());
+        let vy = y.max(0.0).min(self.max_scroll_y());
         self.scroll_x = vx;
         self.scroll_y = vy;
         self.velocity_x = 0.0;
         self.velocity_y = 0.0;
     }
 
-    // ── Scroll range ──────────────────────────────────────────────────
+      // ── Scroll range ──────────────────────────────────────────────────
 
     /// Maximum scrollable offset along X axis.
     /// Returns `f32::MAX` if content bounds haven't been computed yet
@@ -485,7 +485,8 @@ impl ScrollView {
     pub fn max_scroll_x(&self) -> f32 {
         match self.content_bounds.get() {
             Some(cs) => {
-                let view_w = self.fixed_width.unwrap_or(300.0);
+                let view_w = self.last_frame.get().map(|f| f.w)
+                    .unwrap_or(self.fixed_width.unwrap_or(300.0));
                 (cs.w - view_w).max(0.0)
             }
             None => f32::MAX,
@@ -494,10 +495,13 @@ impl ScrollView {
 
     /// Maximum scrollable offset along Y axis.
     /// Returns `f32::MAX` if content bounds haven't been computed yet.
+    /// Uses the actual viewport frame (from last_frame) when available,
+    /// falling back to fixed_height or a sensible default.
     pub fn max_scroll_y(&self) -> f32 {
         match self.content_bounds.get() {
             Some(cs) => {
-                let view_h = self.fixed_height.unwrap_or(200.0);
+                let view_h = self.last_frame.get().map(|f| f.h)
+                    .unwrap_or(self.fixed_height.unwrap_or(200.0));
                 (cs.h - view_h).max(0.0)
             }
             None => f32::MAX,
