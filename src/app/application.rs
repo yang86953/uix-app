@@ -376,6 +376,11 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 Some(WidgetEvent::KeyUp { key: d.key })
             } else { None }
         }
+        UiEventType::KeyPress => {
+            if let UiEventPayload::KeyPress(ref d) = ev.payload {
+                Some(WidgetEvent::KeyPress { text: d.text.clone() })
+            } else { None }
+        }
         UiEventType::WindowResize => {
             if let UiEventPayload::Resize(ref d) = ev.payload {
                 Some(WidgetEvent::Resize { width: d.width as f32, height: d.height as f32 })

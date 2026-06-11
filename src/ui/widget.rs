@@ -26,6 +26,7 @@ pub enum WidgetEvent {
     MouseWheel { delta: Point },
     KeyDown { key: KeyCode },
     KeyUp { key: KeyCode },
+    KeyPress { text: String },
     FocusIn,
     FocusOut,
     HoverEnter,
@@ -1000,7 +1001,7 @@ impl WidgetTree {
                     EventResult::NotHandled
                 }
             }
-            WidgetEvent::KeyDown { .. } | WidgetEvent::KeyUp { .. } => {
+            WidgetEvent::KeyDown { .. } | WidgetEvent::KeyUp { .. } | WidgetEvent::KeyPress { .. } => {
                 if let Some(t) = self.focused_widget {
                     self.mark_dirty(t);
                     self.dispatch_to(t, event)

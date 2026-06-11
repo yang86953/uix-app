@@ -49,6 +49,10 @@ define_widget! {
                     _ => EventResult::NotHandled,
                 }
             }
+            WidgetEvent::KeyPress { text } => {
+                self.value.push_str(text);
+                EventResult::Handled
+            }
             _ => EventResult::NotHandled,
         }
     }
