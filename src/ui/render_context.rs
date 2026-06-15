@@ -7,6 +7,8 @@
 use crate::graphics::{Color, FontHandle, GraphicsEngine, HAlign, Radius, VAlign};
 use crate::base::{Point, Rect, Size};
 use crate::graphics::{GradientDirection, TextLayoutOptions};
+use crate::graphics::path::{FillRule, Path};
+use crate::graphics::stroker::StrokeOptions;
 use crate::ui::style::Style;
 use crate::ui::theme::TokenProvider;
 
@@ -63,6 +65,20 @@ impl<'a> RenderContext<'a> {
     ) {
         self.engine
             .draw_box_shadow(rect, blur_radius, offset_x, offset_y, color, corner_radius);
+    }
+
+    /// Ambient box shadow — wider, softer falloff for ambient layers.
+    pub fn draw_box_shadow_ambient(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    ) {
+        self.engine
+            .draw_box_shadow_ambient(rect, blur_radius, offset_x, offset_y, color, corner_radius);
     }
 
     pub fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
@@ -204,4 +220,74 @@ impl<'a> RenderContext<'a> {
         };
         self.engine.measure_text(&self.font, text, &opts)
     }
+<<<<<<< Updated upstream
+=======
+
+    /// Measure text with word wrap enabled at the given max width.
+    pub fn measure_text_wrapped(&self, text: &str, font_size: f32, max_width: f32) -> Size {
+        let opts = TextLayoutOptions {
+            max_width,
+            max_height: 0.0,
+            line_height: font_size + 2.0,
+            word_wrap: true,
+            h_align: crate::graphics::HAlign::Left,
+            v_align: crate::graphics::VAlign::Top,
+            font_size,
+        };
+        self.engine.measure_text(&self.font, text, &opts)
+    }
+
+    /// 命中测试：返回点击位置对应的字符索引。
+    pub fn hit_test(&self, text: &str, font_size: f32, point: Point) -> Option<usize> {
+        let opts = TextLayoutOptions {
+            max_width: self.max_text_width,
+            max_height: 0.0,
+            line_height: font_size + 2.0,
+            word_wrap: false,
+            h_align: crate::graphics::HAlign::Left,
+            v_align: crate::graphics::VAlign::Top,
+            font_size,
+        };
+        self.engine.hit_test_text(&self.font, text, &opts, point)
+    }
+
+    /// 获取指定字符的光标 x 位置（相对文本起始点）。
+    pub fn cursor_x(&self, text: &str, font_size: f32, char_index: usize) -> f32 {
+        let opts = TextLayoutOptions {
+            max_width: self.max_text_width,
+            max_height: 0.0,
+            line_height: font_size + 2.0,
+            word_wrap: false,
+            h_align: crate::graphics::HAlign::Left,
+            v_align: crate::graphics::VAlign::Top,
+            font_size,
+        };
+        self.engine.text_cursor_x(&self.font, text, &opts, char_index)
+    }
+
+    /// 用任意路径填充。
+    pub fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
+        self.engine.fill_path(path, color, fill_rule);
+    }
+
+    /// 用任意路径描边。
+    pub fn stroke_path(&mut self, path: &Path, color: Color, options: &StrokeOptions) {
+        self.engine.stroke_path(path, color, options);
+    }
+
+    /// Draw text with word wrap enabled within the given rect.
+    pub fn draw_text_wrapped(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
+        if text.is_empty() { return; }
+        let opts = TextLayoutOptions {
+            max_width: rect.w.max(1.0),
+            max_height: rect.h.max(0.0),
+            line_height: font_size + 2.0,
+            word_wrap: true,
+            h_align: crate::graphics::HAlign::Left,
+            v_align: crate::graphics::VAlign::Top,
+            font_size,
+        };
+        self.engine.draw_text(&self.font, text, Point::new(rect.x, rect.y), color, &opts);
+    }
+>>>>>>> Stashed changes
 }

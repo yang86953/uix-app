@@ -31,8 +31,8 @@ define_widget! {
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         let h = self.input_size.height();
-        let text_w = self.value.len().max(self.placeholder.len()) as f32 * 7.0;
-        Size::new(text_w + 24.0, h)
+        // 无首选宽度（0），让 flex 布局分配宽度，避免输入文字时自动扩展
+        Size::new(0.0, h)
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
@@ -88,13 +88,26 @@ define_widget! {
         let text_color = if self.value.is_empty() && !self.focused { text_tertiary } else { text_color };
 
         let pad = 12.0;
+        // 限制文本绘制区域在输入框范围内（文字溢出时自动裁剪）
+        let text_area = Rect::new(input_frame.x + pad, input_frame.y, input_frame.w - pad * 2.0, input_frame.h);
+        if text_area.w > 0.0 {
+            ctx.engine().push_clip_rect(text_area);
+        }
         if !display_text.is_empty() {
             ctx.text_center(display_text,
                 Rect::new(input_frame.x + pad, input_frame.y, 0.0, input_frame.h),
                 text_color, 14.0);
         }
+        if text_area.w > 0.0 {
+            ctx.engine().pop_clip_rect();
+        }
         if self.focused {
-            let cursor_x = input_frame.x + pad + self.value.len() as f32 * 7.0;
+            // 使用实际渲染文本宽度定位光标
+            let text_w = if !self.value.is_empty() {
+                ctx.measure_text(&self.value, 14.0).w
+            } else { 0.0 };
+            // 光标不超出输入框可见区域
+            let cursor_x = (input_frame.x + pad + text_w).min(input_frame.x + input_frame.w - pad - 1.5);
             ctx.fill_rect(Rect::new(cursor_x, input_frame.y + 4.0, 1.5, input_frame.h - 8.0), primary, None);
         }
     }

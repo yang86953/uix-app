@@ -11,6 +11,7 @@
 // Backend-owned:     cursor, keyboard, display, clipboard
 // ============================================================================
 
+use crate::diag::Error;
 use crate::platform::event::*;
 use crate::platform::types::*;
 use crate::platform::*;
@@ -50,7 +51,8 @@ impl LinuxPlatform {
     pub fn new() -> Self {
         let (timer_tx, _timer_rx) = std::sync::mpsc::channel();
 
-        let backend: Box<dyn Backend> = match crate::platform::linux::wayland::WaylandBackend::new() {
+        let backend: Box<dyn Backend> = match crate::platform::linux::wayland::WaylandBackend::new()
+        {
             Ok(wl) => {
                 log::info!("Wayland backend initialized");
                 Box::new(wl)
@@ -84,20 +86,40 @@ impl Default for LinuxPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IWindowManager for LinuxPlatform {
-    fn create_window(&mut self, title: &str, width: i32, height: i32) -> bool {
+    fn create_window(&mut self, title: &str, width: i32, height: i32) -> Result<(), Error> {
         log::info!("Creating window via Wayland ({}x{})", width, height);
         self.backend.create_window(title, width, height)
     }
-    fn destroy_window(&mut self) { self.backend.destroy_window(); }
-    fn set_title(&mut self, title: &str) { self.backend.set_title(title); }
-    fn show(&mut self) { self.backend.show(); }
-    fn hide(&mut self) { self.backend.hide(); }
-    fn is_visible(&self) -> bool { self.backend.is_visible() }
-    fn center_on_screen(&mut self) { self.backend.center_on_screen(); }
-    fn raise(&mut self) { self.backend.raise(); }
-    fn lower(&mut self) { self.backend.lower(); }
-    fn set_window_icon(&mut self, icon_path: &str) { self.backend.set_window_icon(icon_path); }
-    fn flash_window(&mut self) { self.backend.flash_window(); }
+    fn destroy_window(&mut self) {
+        self.backend.destroy_window();
+    }
+    fn set_title(&mut self, title: &str) {
+        self.backend.set_title(title);
+    }
+    fn show(&mut self) {
+        self.backend.show();
+    }
+    fn hide(&mut self) {
+        self.backend.hide();
+    }
+    fn is_visible(&self) -> bool {
+        self.backend.is_visible()
+    }
+    fn center_on_screen(&mut self) {
+        self.backend.center_on_screen();
+    }
+    fn raise(&mut self) {
+        self.backend.raise();
+    }
+    fn lower(&mut self) {
+        self.backend.lower();
+    }
+    fn set_window_icon(&mut self, icon_path: &str) {
+        self.backend.set_window_icon(icon_path);
+    }
+    fn flash_window(&mut self) {
+        self.backend.flash_window();
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -105,27 +127,69 @@ impl IWindowManager for LinuxPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IWindowProperties for LinuxPlatform {
-    fn width(&self) -> i32 { self.backend.width() }
-    fn height(&self) -> i32 { self.backend.height() }
-    fn set_size(&mut self, w: i32, h: i32) { self.backend.set_size(w, h); }
-    fn set_minimum_size(&mut self, w: i32, h: i32) { self.backend.set_minimum_size(w, h); }
-    fn set_maximum_size(&mut self, w: i32, h: i32) { self.backend.set_maximum_size(w, h); }
-    fn position(&self) -> Point { self.backend.position() }
-    fn set_position(&mut self, x: i32, y: i32) { self.backend.set_position(x, y); }
-    fn set_resizable(&mut self, resizable: bool) { self.backend.set_resizable(resizable); }
-    fn is_maximized(&self) -> bool { self.backend.is_maximized() }
-    fn is_minimized(&self) -> bool { self.backend.is_minimized() }
-    fn maximize(&mut self) { self.backend.maximize(); }
-    fn minimize(&mut self) { self.backend.minimize(); }
-    fn restore(&mut self) { self.backend.restore(); }
-    fn set_borderless(&mut self, borderless: bool) { self.backend.set_borderless(borderless); }
-    fn set_fullscreen(&mut self, fullscreen: bool) { self.backend.set_fullscreen(fullscreen); }
-    fn is_fullscreen(&self) -> bool { self.backend.is_fullscreen() }
-    fn set_always_on_top(&mut self, on: bool) { self.backend.set_always_on_top(on); }
-    fn set_window_opacity(&mut self, opacity: f32) { self.backend.set_window_opacity(opacity); }
-    fn start_text_input(&mut self) { self.backend.start_text_input(); }
-    fn stop_text_input(&mut self) { self.backend.stop_text_input(); }
-    fn enable_file_drop(&mut self, enable: bool) { self.backend.enable_file_drop(enable); }
+    fn width(&self) -> i32 {
+        self.backend.width()
+    }
+    fn height(&self) -> i32 {
+        self.backend.height()
+    }
+    fn set_size(&mut self, w: i32, h: i32) {
+        self.backend.set_size(w, h);
+    }
+    fn set_minimum_size(&mut self, w: i32, h: i32) {
+        self.backend.set_minimum_size(w, h);
+    }
+    fn set_maximum_size(&mut self, w: i32, h: i32) {
+        self.backend.set_maximum_size(w, h);
+    }
+    fn position(&self) -> Point {
+        self.backend.position()
+    }
+    fn set_position(&mut self, x: i32, y: i32) {
+        self.backend.set_position(x, y);
+    }
+    fn set_resizable(&mut self, resizable: bool) {
+        self.backend.set_resizable(resizable);
+    }
+    fn is_maximized(&self) -> bool {
+        self.backend.is_maximized()
+    }
+    fn is_minimized(&self) -> bool {
+        self.backend.is_minimized()
+    }
+    fn maximize(&mut self) {
+        self.backend.maximize();
+    }
+    fn minimize(&mut self) {
+        self.backend.minimize();
+    }
+    fn restore(&mut self) {
+        self.backend.restore();
+    }
+    fn set_borderless(&mut self, borderless: bool) {
+        self.backend.set_borderless(borderless);
+    }
+    fn set_fullscreen(&mut self, fullscreen: bool) {
+        self.backend.set_fullscreen(fullscreen);
+    }
+    fn is_fullscreen(&self) -> bool {
+        self.backend.is_fullscreen()
+    }
+    fn set_always_on_top(&mut self, on: bool) {
+        self.backend.set_always_on_top(on);
+    }
+    fn set_window_opacity(&mut self, opacity: f32) {
+        self.backend.set_window_opacity(opacity);
+    }
+    fn start_text_input(&mut self) {
+        self.backend.start_text_input();
+    }
+    fn stop_text_input(&mut self) {
+        self.backend.stop_text_input();
+    }
+    fn enable_file_drop(&mut self, enable: bool) {
+        self.backend.enable_file_drop(enable);
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -164,23 +228,46 @@ impl Platform for LinuxPlatform {
         height: i32,
         dirty_rect: Option<(i32, i32, i32, i32)>,
     ) {
-        self.backend.present_pixels(pixels, width, height, dirty_rect);
+        self.backend
+            .present_pixels(pixels, width, height, dirty_rect);
     }
     fn presenter(&mut self) -> &mut dyn IPresenter {
         // Backend: IPresenter，所以 &mut dyn Backend 可直接协变到 &mut dyn IPresenter
         self.backend.as_mut()
     }
-    fn clipboard(&mut self) -> &mut dyn IClipboard { self.backend.clipboard() }
-    fn cursor(&mut self) -> &mut dyn ICursor { self.backend.cursor() }
-    fn display(&self) -> &dyn IDisplay { self.backend.display() }
-    fn keyboard(&self) -> &dyn IKeyboard { self.backend.keyboard() }
-    fn file_dialog(&mut self) -> &mut dyn IFileDialog { &mut self.file_dialog_subsys }
-    fn text_input(&mut self) -> &mut dyn ITextInput { &mut self.text_input_subsys }
-    fn timer(&mut self) -> &mut dyn ITimer { &mut self.timer_subsys }
-    fn notification(&mut self) -> &mut dyn INotification { &mut self.notification_subsys }
-    fn console(&mut self) -> &mut dyn IConsole { &mut self.console_subsys }
-    fn file_system(&self) -> &dyn IFileSystem { &self.file_system_subsys }
-    fn system_info(&self) -> &dyn ISystemInfo { &self.system_info_subsys }
+    fn clipboard(&mut self) -> &mut dyn IClipboard {
+        self.backend.clipboard()
+    }
+    fn cursor(&mut self) -> &mut dyn ICursor {
+        self.backend.cursor()
+    }
+    fn display(&self) -> &dyn IDisplay {
+        self.backend.display()
+    }
+    fn keyboard(&self) -> &dyn IKeyboard {
+        self.backend.keyboard()
+    }
+    fn file_dialog(&mut self) -> &mut dyn IFileDialog {
+        &mut self.file_dialog_subsys
+    }
+    fn text_input(&mut self) -> &mut dyn ITextInput {
+        &mut self.text_input_subsys
+    }
+    fn timer(&mut self) -> &mut dyn ITimer {
+        &mut self.timer_subsys
+    }
+    fn notification(&mut self) -> &mut dyn INotification {
+        &mut self.notification_subsys
+    }
+    fn console(&mut self) -> &mut dyn IConsole {
+        &mut self.console_subsys
+    }
+    fn file_system(&self) -> &dyn IFileSystem {
+        &self.file_system_subsys
+    }
+    fn system_info(&self) -> &dyn ISystemInfo {
+        &self.system_info_subsys
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

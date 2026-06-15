@@ -8,6 +8,10 @@ pub struct Point {
 impl Point {
     pub const fn new(x: f32, y: f32) -> Self { Self { x, y } }
     pub const fn zero() -> Self { Self { x: 0.0, y: 0.0 } }
+    /// 两点中点。
+    pub fn midpoint(a: Self, b: Self) -> Self {
+        Self { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 }
+    }
 }
 
 impl Default for Point { fn default() -> Self { Self::zero() } }

@@ -16,7 +16,12 @@ use crate::platform::*;
 // ════════════════════════════════════════════════════════════════════════════
 
 pub trait IWindowManager {
-    fn create_window(&mut self, title: &str, width: i32, height: i32) -> bool;
+    fn create_window(
+        &mut self,
+        title: &str,
+        width: i32,
+        height: i32,
+    ) -> Result<(), crate::diag::Error>;
     fn destroy_window(&mut self);
     fn set_title(&mut self, title: &str);
     fn show(&mut self);

@@ -52,7 +52,9 @@ define_widget! {
 
         let card_radius = Some(Radius::uniform(border_radius_lg));
 
-        // Shadow
+        // 阴影绘制由图形引擎内部处理 clip 绕过。
+        // 引擎的 draw_box_shadow 会自动恢复到脏区域 clip，
+        // 绕过父级 children_clip 但保持在脏区域内。
         draw_elevation_shadow(ctx, frame, self.elevation);
 
         // Background
@@ -83,6 +85,26 @@ define_widget! {
             ctx.draw_text(title, Point::new(frame.x + self.padding, frame.y + 12.0), text, 15.0);
             let sep_y = frame.y + 44.0 + 4.0;
             ctx.fill_rect(Rect::new(frame.x + self.padding, sep_y, frame.w - self.padding * 2.0, 1.0), border_secondary, None);
+        }
+    }
+
+    // 扩展脏区域覆盖完整阴影渲染范围。
+    // 引擎的 draw_box_shadow 会自动恢复到脏区域 clip（绕过父级），
+    // 若 dirty_rect 不覆盖阴影边界，会产生像素叠加拖影。
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        let expand = match self.elevation {
+            // elevation 1: layer_3 blur=48, bounds=±49px → ±50
+            1 => 50.0,
+            // elevation 2: layer_3 blur=66, bounds=±67px → ±70
+            2 => 70.0,
+            // elevation 3: layer_3 blur=90, bounds=±91px → ±95
+            3 => 95.0,
+            _ => 0.0,
+        };
+        if expand > 0.0 {
+            Rect::new(frame.x - expand, frame.y - expand, frame.w + expand * 2.0, frame.h + expand * 2.0)
+        } else {
+            frame
         }
     }
 
@@ -118,19 +140,77 @@ define_widget! {
     }
 }
 
-/// Render a real box shadow from the theme's `ShadowToken` layers.
+/// Render a multi-layer elevation shadow with directional and ambient layers.
+///
+/// Three distinct layers produce a rich, realistic shadow:
+/// 1. **Contact shadow** (standard smoothstep) — tight, y-down offset, sharp edge
+/// 2. **Ambient shadow** (super-gaussian falloff) — wider, softer, spread around
+/// 3. **Diffuse glow** (super-gaussian) — very wide, no offset, fills uniformly
+///
+/// Each elevation level scales the layers differently so the visual depth
+/// increases naturally: the contact shadow grows slightly, while the ambient
+/// and glow layers expand significantly.
 fn draw_elevation_shadow(ctx: &mut RenderContext, frame: Rect, elevation: u8) {
     if elevation == 0 { return; }
     let shadow = ctx.tokens().box_shadow();
     let corner_radius = Some(Radius::uniform(ctx.tokens().border_radius_lg()));
-    let scale = match elevation { 1 => 0.6, 2 => 0.8, 3 => 1.0, _ => return };
 
+    // Per-elevation scaling factors for each layer role:
+    //   (directional_scale, ambient_spread, glow_spread, alpha_boost)
+    let (dir_s, amb_s, glow_s, alpha_b) = match elevation {
+        1 => (0.8, 1.2, 1.6, 1.1),
+        2 => (1.0, 1.6, 2.2, 1.0),
+        3 => (1.2, 2.2, 3.0, 0.9),
+        _ => return,
+    };
+
+    let boost = |c: Color| Color::from_rgba(
+        c.r, c.g, c.b,
+        (c.a as f32 * alpha_b).min(255.0) as u8,
+    );
+
+    // ── Layer 1: Contact shadow ──
+    // Directional (y-down), tight blur, sharp smoothstep falloff.
     let (ox1, oy1, bl1, col1) = shadow.layer_1;
-    if bl1 > 0.0 && col1.a > 0 { ctx.draw_box_shadow(frame, bl1 * scale, ox1 * scale, oy1 * scale, col1, corner_radius); }
+    if bl1 > 0.0 && col1.a > 0 {
+        ctx.draw_box_shadow(
+            frame,
+            bl1 * dir_s,                // blur
+            ox1,                         // x-offset (0 = centered contact)
+            oy1 * dir_s * 1.5,          // y-offset (emphasise downward)
+            boost(col1),
+            corner_radius,
+        );
+    }
+
+    // ── Layer 2: Ambient shadow ──
+    // Wider soft shadow that spreads around the card.
+    // Uses ambient falloff (super-gaussian) for a softer transition.
     let (ox2, oy2, bl2, col2) = shadow.layer_2;
-    if bl2 > 0.0 && col2.a > 0 { ctx.draw_box_shadow(frame, bl2 * scale, ox2 * scale, oy2 * scale, col2, corner_radius); }
-    let (ox3, oy3, bl3, col3) = shadow.layer_3;
-    if bl3 > 0.0 && col3.a > 0 { ctx.draw_box_shadow(frame, bl3 * scale, ox3 * scale, oy3 * scale, col3, corner_radius); }
+    if bl2 > 0.0 && col2.a > 0 {
+        ctx.draw_box_shadow_ambient(
+            frame,
+            bl2 * amb_s,                // larger blur = wider ambient
+            ox2 * 0.3,                  // slight x-spread
+            oy2 * amb_s * 0.6,          // moderate y-offset
+            boost(col2),
+            corner_radius,
+        );
+    }
+
+    // ── Layer 3: Diffuse glow ──
+    // Wide, uniform glow with no directional bias.
+    // Pure ambient occlusion fill — creates the "floating" feel.
+    let (_, _, bl3, col3) = shadow.layer_3;
+    if bl3 > 0.0 && col3.a > 0 {
+        ctx.draw_box_shadow_ambient(
+            frame,
+            bl3 * glow_s,               // very wide blur
+            0.0, 0.0,                   // no offset — uniform
+            boost(col3),
+            corner_radius,
+        );
+    }
 }
 
 impl Default for Card {

@@ -1,4 +1,4 @@
-//! CLI demos — exercises all major UIX subsystems from the command line.
+//! CLI 演示 — 从命令行运行所有主要 UIX 子系统的功能演示。
 
 #![allow(dead_code)]
 
@@ -21,13 +21,13 @@ use uix::ui::Theme;
 
 pub fn init_logger() {
     Logger::instance().set_level(Level::Info);
-    info_fn("Demo Logger initialized");
+    info_fn("演示日志初始化完成");
 }
 
-// ── Core Types ────────────────────────────────────────────────────────────
+// ── 核心类型 ──────────────────────────────────────────────────────────────
 
 pub fn demo_core_types() -> Result<(), Error> {
-    println!("\n╔══ Core Types ═══╗");
+    println!("\n╔══ 核心类型 ═══╗");
     let pt = Point::new(10.0, 20.0);
     println!("  Point(10,20) → ({},{})", pt.x, pt.y);
     let sz = Size::new(100.0, 50.0);
@@ -57,10 +57,10 @@ pub fn demo_core_types() -> Result<(), Error> {
     Ok(())
 }
 
-// ── Error Handling ────────────────────────────────────────────────────────
+// ── 错误处理 ──────────────────────────────────────────────────────────────
 
 pub fn demo_errors() -> Result<(), Error> {
-    println!("\n╔══ Error Handling ═══╗");
+    println!("\n╔══ 错误处理 ═══╗");
     println!("  Ok: {:?}", Ok::<i32, Error>(42));
     let e1 = Error::invalid_arg("bad input");
     println!("  invalid_arg: {}", e1);
@@ -79,10 +79,10 @@ pub fn demo_errors() -> Result<(), Error> {
     Ok(())
 }
 
-// ── Reactive State ────────────────────────────────────────────────────────
+// ── 响应式状态 ────────────────────────────────────────────────────────────
 
 pub fn demo_state() {
-    println!("\n╔══ Reactive State ═══╗");
+    println!("\n╔══ 响应式状态 ═══╗");
     let count = State::new(0i32);
     println!("  State(0) = {}", count.get());
     count.watch(|v| println!("    ⤷ Watcher: count = {}", v));
@@ -107,10 +107,10 @@ pub fn demo_state() {
     println!("  After a=10, invalidate: sum={}", sum.get());
 }
 
-// ── Flex Layout ───────────────────────────────────────────────────────────
+// ── Flex 布局 ────────────────────────────────────────────────────────────
 
 pub fn demo_flex() {
-    println!("\n╔══ Flex Layout ═══╗");
+    println!("\n╔══ Flex 布局 ═══╗");
     let out = compute_flex_layout(&FlexInput {
         direction: GDir::Row,
         gap: 8.0,
@@ -148,10 +148,10 @@ pub fn demo_flex() {
     }
 }
 
-// ── Settings Service ──────────────────────────────────────────────────────
+// ── 设置服务 ──────────────────────────────────────────────────────────────
 
 pub fn demo_settings() -> Result<(), Error> {
-    println!("\n╔══ Settings Service ═══╗");
+    println!("\n╔══ 设置服务 ═══╗");
     let mut s = SettingsService::new();
     s.set("theme", "dark");
     s.set("font_size", "14");
@@ -175,10 +175,10 @@ pub fn demo_settings() -> Result<(), Error> {
     Ok(())
 }
 
-// ── Middleware ─────────────────────────────────────────────────────────────
+// ── 中间件 ────────────────────────────────────────────────────────────────
 
 pub fn demo_middleware() {
-    println!("\n╔══ Middleware ═══╗");
+    println!("\n╔══ 中间件 ═══╗");
     let mut p = MiddlewarePipeline::new();
     p.add(SvcLogMiddleware);
     p.add(RetryMiddleware::new(2));
@@ -219,10 +219,10 @@ pub fn demo_middleware() {
     );
 }
 
-// ── File Service ──────────────────────────────────────────────────────────
+// ── 文件服务 ──────────────────────────────────────────────────────────────
 
 pub fn demo_file_service() -> Result<(), Error> {
-    println!("\n╔══ File Service ═══╗");
+    println!("\n╔══ 文件服务 ═══╗");
     let fs = FileService::new();
     let tmp = std::env::temp_dir().join("uix_demo_fs");
     let p = tmp.join("hello.txt");
@@ -241,10 +241,10 @@ pub fn demo_file_service() -> Result<(), Error> {
     Ok(())
 }
 
-// ── Theme ─────────────────────────────────────────────────────────────────
+// ── 主题 ───────────────────────────────────────────────────────────────────
 
 pub fn demo_theme() {
-    println!("\n╔══ Theme (Ant Design 5) ═══╗");
+    println!("\n╔══ 主题 (Ant Design 5) ═══╗");
     let l = Theme::antd_light();
     println!(
         "  Light: primary:{} bg:{} surface:{} text:{} dark:{}",
@@ -265,10 +265,10 @@ pub fn demo_theme() {
     );
 }
 
-// ── Graphics Engine ───────────────────────────────────────────────────────
+// ── 图形引擎 ──────────────────────────────────────────────────────────────
 
 pub fn demo_graphics_engine() {
-    println!("\n╔══ Graphics Engine ═══╗");
+    println!("\n╔══ 图形引擎 ═══╗");
     let mut e = graphics::NullEngine::new();
     let _ = e.initialize(800, 600);
     e.fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
@@ -279,10 +279,10 @@ pub fn demo_graphics_engine() {
     boxed.shutdown();
 }
 
-// ── DI Container ──────────────────────────────────────────────────────────
+// ── 依赖注入容器 ──────────────────────────────────────────────────────────
 
 pub fn demo_di_container() {
-    println!("\n╔══ DI Container ═══╗");
+    println!("\n╔══ 依赖注入容器 ═══╗");
     let mut c = uix::app::Container::new();
     c.singleton("config_value".to_string());
     c.singleton(42i32);
@@ -297,11 +297,11 @@ pub fn demo_di_container() {
     println!("  has::<f64>: {}", c.has::<f64>());
 }
 
-// ── Run All ───────────────────────────────────────────────────────────────
+// ── 运行全部 ──────────────────────────────────────────────────────────────
 
 pub fn run_all_cli() -> Result<(), Error> {
     println!("\n  ╔══════════════════════════════════╗");
-    println!("  ║   UIX Framework — CLI Demo      ║");
+    println!("  ║   UIX 框架 — CLI 演示         ║");
     println!("  ╚══════════════════════════════════╝");
     demo_core_types()?;
     demo_errors()?;
@@ -314,7 +314,7 @@ pub fn run_all_cli() -> Result<(), Error> {
     demo_graphics_engine();
     demo_di_container();
     println!("\n  ╔══════════════════════════════════╗");
-    println!("  ║   All demos completed!           ║");
+    println!("  ║   全部演示完成！                  ║");
     println!("  ╚══════════════════════════════════╝\n");
     Ok(())
 }

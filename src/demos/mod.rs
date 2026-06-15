@@ -1,7 +1,7 @@
-//! UIX demo programs — CLI and GUI demonstrations of the UIX framework.
-//! These are binary-only modules (not part of the `uix` library crate).
+//! UIX 演示程序 — UIX 框架的命令行与 GUI 功能展示。
+//! 这些是仅二进制模块（不属于 `uix` 库 crate）。
 
 pub mod cli;
 
-// Cross-platform GUI demo — platform abstraction handles the differences.
+// 跨平台 GUI 演示 — 平台抽象层处理平台差异。
 pub mod dashboard;

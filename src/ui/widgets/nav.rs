@@ -18,22 +18,12 @@ use crate::ui::widget::{EventResult, WidgetEvent, WidgetTree};
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。
 pub type SharedActive = Rc<Cell<usize>>;
 
-/// NavItem — 侧边栏导航项
-///
-/// 显示为一行，左侧有选中指示条（active 时显示），
-/// 可选图标（emoji/文字图标），标签文本。
-///
-/// 多个 NavItem 持有同一个 `SharedActive` 时，点击自动切换选中项。
-///
-/// # Example
-/// ```ignore
-/// let active = SharedActive::new(Cell::new(0));
-/// tree! { Container::new().dir(FlexDirection::Column) => [
-///     NavItem::new(" Dashboard", 0, active.clone()).icon("🏠"),
-///     NavItem::new(" Widgets",   1, active.clone()).icon("🧩"),
-///     NavItem::new(" Settings",  2, active.clone()).icon("⚙️"),
-/// ]};
-/// ```
+// NavItem — 侧边栏导航项
+//
+// 显示为一行，左侧有选中指示条（active 时显示），
+// 可选图标（emoji/文字图标），标签文本。
+//
+// 多个 NavItem 持有同一个 `SharedActive` 时，点击自动切换选中项。
 define_widget! {
     pub struct NavItem {
         label: String,

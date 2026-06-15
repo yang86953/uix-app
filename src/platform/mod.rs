@@ -8,7 +8,7 @@ pub mod event;
 pub mod types;
 
 #[cfg(windows)]
-pub mod win32;
+pub mod windows;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod linux;
@@ -30,4 +30,4 @@ pub mod timer;
 
 // ── API 出口：所有公共 API 通过 api.rs 暴露 ──────────────────────
 mod api;
-pub use api::*;
+

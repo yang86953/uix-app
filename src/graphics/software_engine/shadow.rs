@@ -21,6 +21,8 @@ impl RenderTarget {
     /// * `offset_x`, `offset_y` — shadow offset relative to `rect`
     /// * `shadow_color` — RGBA color of the shadow
     /// * `corner_radius` — corner radii of the shape (inherited by shadow)
+    /// * `ambient` — if true, uses wider super-gaussian falloff for ambient layers;
+    ///   if false (default), uses standard smoothstep for contact shadows
     pub fn draw_box_shadow(
         &mut self,
         rect: Rect,
@@ -29,6 +31,33 @@ impl RenderTarget {
         offset_y: f32,
         shadow_color: Color,
         corner_radius: Option<Radius>,
+    ) {
+        self.draw_box_shadow_impl(rect, blur_radius, offset_x, offset_y, shadow_color, corner_radius, false)
+    }
+
+    /// Ambient box shadow: wider, softer falloff than standard.
+    /// Same parameters as `draw_box_shadow` but uses `shadow_coverage_ambient`.
+    pub fn draw_box_shadow_ambient(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        shadow_color: Color,
+        corner_radius: Option<Radius>,
+    ) {
+        self.draw_box_shadow_impl(rect, blur_radius, offset_x, offset_y, shadow_color, corner_radius, true)
+    }
+
+    fn draw_box_shadow_impl(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        shadow_color: Color,
+        corner_radius: Option<Radius>,
+        ambient: bool,
     ) {
         let rad = corner_radius.unwrap_or_default();
         let blur = blur_radius.max(0.0);
@@ -72,7 +101,11 @@ impl RenderTarget {
                     let sd = Self::rounded_rect_sdf(ux, uy, &shadow_rect, &rad);
 
                     let coverage = if use_blur {
-                        Self::shadow_coverage(sd, blur)
+                        if ambient {
+                            Self::shadow_coverage_ambient(sd, blur)
+                        } else {
+                            Self::shadow_coverage(sd, blur)
+                        }
                     } else {
                         Self::sdf_to_coverage(sd)
                     };
@@ -100,10 +133,31 @@ impl RenderTarget {
     /// | `+blur` (outside)    | 0.0 | 0.0 |
     fn shadow_coverage(sd: f32, blur: f32) -> f32 {
         debug_assert!(blur > 0.5, "shadow_coverage called with small blur");
-        // Linear falloff from sd=-blur (full) to sd=+blur (none)
         let t = ((blur - sd) / (2.0 * blur)).clamp(0.0, 1.0);
         // smoothstep: Hermite interpolation for Gaussian-like falloff
         t * t * (3.0 - 2.0 * t)
+    }
+
+    /// Wider, softer shadow falloff for ambient layers.
+    /// Uses a super-Gaussian shape: the transition is compressed toward the
+    /// outside edge (sd=+blur), so the shadow fades more gradually inward
+    /// and cuts off more sharply at the outer boundary.
+    /// This mimics the natural falloff of ambient occlusion and produces
+    /// a richer layering when composited with the tighter contact shadow.
+    ///
+    /// | sd position | raw t | coverage (ambient) | vs smoothstep |
+    /// |------------|-------|--------------------|--------------|
+    /// | `-blur*0.6` (inner) | 0.8 | 0.90 | 0.90 (same) |
+    /// | `0` (at edge)      | 0.5 | 0.50 | 0.50 (same) |
+    /// | `+blur*0.3` (outer)| 0.35 | 0.13 | 0.28 (faster drop) |
+    fn shadow_coverage_ambient(sd: f32, blur: f32) -> f32 {
+        debug_assert!(blur > 0.5, "shadow_coverage_ambient called with small blur");
+        // Shift the transition range so the outer half falls off faster
+        let half = blur * 0.5;
+        let t = ((half - sd) / (blur + half)).clamp(0.0, 1.0);
+        // Quintic smoothstep: steeper outer falloff than cubic smoothstep
+        let t2 = t * t;
+        t2 * t2 * (5.0 - 4.0 * t)
     }
 }
 

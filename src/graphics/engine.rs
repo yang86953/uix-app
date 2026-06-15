@@ -1,7 +1,20 @@
+/// 帧渲染结果。
+#[derive(Debug, Clone, PartialEq)]
+pub enum RenderOutcome {
+    /// 零帧开销，未渲染（无需呈现）
+    Idle,
+    /// 已渲染，需呈现。`None` = 全屏，`Some((x,y,w,h))` = 局部损伤矩形
+    Present(Option<(i32, i32, i32, i32)>),
+}
+
+use std::cell::RefCell;
+
 use crate::diag::Error;
 use crate::graphics::types::*;
-use crate::graphics::{Color};
+use crate::graphics::{Color, DirtyRegion};
 use crate::base::{Point, Rect, Size};
+use crate::ui::widget::WidgetTree;
+use crate::ui::theme::Theme;
 
 /// GraphicsEngine — abstract 2D rendering interface.
 ///
@@ -64,6 +77,21 @@ pub trait GraphicsEngine: 'static {
         corner_radius: Option<Radius>,
     );
 
+    /// Ambient box shadow — wider, softer falloff for ambient layers.
+    fn draw_box_shadow_ambient(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    );
+
+    // Path — 任意形状渲染
+    fn fill_path(&mut self, _path: &crate::graphics::path::Path, _color: Color, _fill_rule: crate::graphics::path::FillRule) {}
+    fn stroke_path(&mut self, _path: &crate::graphics::path::Path, _color: Color, _options: &crate::graphics::stroker::StrokeOptions) {}
+
     // Gradients
     fn fill_linear_gradient(
         &mut self,
@@ -85,6 +113,7 @@ pub trait GraphicsEngine: 'static {
     // Text — caller responsible for reading file bytes
     fn load_font(&mut self, data: &[u8], size: f32) -> Result<&mut FontHandle, Error>;
     fn unload_font(&mut self, font: &FontHandle);
+    fn set_font_family(&mut self, _family: &str) {}
     fn measure_text(&self, font: &FontHandle, text: &str, opts: &TextLayoutOptions) -> Size;
     fn draw_text(
         &mut self,
@@ -94,6 +123,29 @@ pub trait GraphicsEngine: 'static {
         color: Color,
         opts: &TextLayoutOptions,
     );
+    /// 命中测试：给定文本布局后的像素位置，返回字符索引。
+    /// 返回 `None` 表示点击在文本区域外。
+    fn hit_test_text(
+        &self,
+        font: &FontHandle,
+        text: &str,
+        opts: &TextLayoutOptions,
+        point: Point,
+    ) -> Option<usize> {
+        let _ = (font, text, opts, point);
+        None
+    }
+    /// 获取指定字符索引的光标 x 位置（用于绘制光标/选中范围）。
+    fn text_cursor_x(
+        &self,
+        font: &FontHandle,
+        text: &str,
+        opts: &TextLayoutOptions,
+        char_index: usize,
+    ) -> f32 {
+        let _ = (font, text, opts, char_index);
+        0.0
+    }
 
     // Images — caller responsible for reading file bytes
     fn load_image(&mut self, data: &[u8]) -> Result<&mut ImageHandle, Error>;
@@ -116,4 +168,22 @@ pub trait GraphicsEngine: 'static {
     fn supersample_level(&self) -> u8 {
         0
     }
+
+    /// 执行一帧的完整渲染循环。
+    ///
+    /// 引擎内部处理：dirty_region 读取、FrameGraph Pass 编排、
+    /// begin_frame/end_frame、scroll_region、布局计算、
+    /// render_geometry + render_overlays 遍历、reset_dirty。
+    ///
+    /// 返回值：
+    /// - `RenderOutcome::Idle` — 零帧开销，未渲染
+    /// - `RenderOutcome::Present(None)` — 渲染了全屏
+    /// - `RenderOutcome::Present(Some((x,y,w,h)))` — 渲染了局部损伤
+    fn render_frame(
+        &mut self,
+        tree: &mut WidgetTree,
+        theme: &RefCell<Theme>,
+        first_frame: bool,
+        keep_polling: bool,
+    ) -> RenderOutcome;
 }

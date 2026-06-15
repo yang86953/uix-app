@@ -50,7 +50,6 @@ pub struct App {
     container: Container,
     running: Arc<AtomicBool>,
     exit_code: i32,
-    initialized: bool,
     window_title: String,
     /// 渲染策略（默认 Cpu）
     render_strategy: RenderStrategy,
@@ -69,7 +68,6 @@ impl Default for App {
             container: Container::new(),
             running: Arc::new(AtomicBool::new(false)),
             exit_code: 0,
-            initialized: false,
             window_title: "UIX App".to_string(),
             render_strategy: RenderStrategy::Cpu,
             custom_engine: None,
@@ -134,7 +132,11 @@ impl App {
     pub fn create_window(&mut self, title: &str, width: i32, height: i32) -> &mut Self {
         let platform = create_platform();
         let mut window = Window::new(platform);
-        let t = if title.is_empty() { &self.window_title } else { title };
+        let t = if title.is_empty() {
+            &self.window_title
+        } else {
+            title
+        };
         window.create(t, width, height);
         self.window = Some(window);
         self
@@ -166,14 +168,12 @@ impl App {
                 Some(window) => {
                     let running = Arc::clone(&self.running);
                     window.run(move |platform| {
-                        platform.wait_event(&|event: &UiEvent| {
-                            match event.type_ {
-                                UiEventType::WindowClose => {
-                                    running.store(false, Ordering::SeqCst);
-                                    false
-                                }
-                                _ => true,
+                        platform.wait_event(&|event: &UiEvent| match event.type_ {
+                            UiEventType::WindowClose => {
+                                running.store(false, Ordering::SeqCst);
+                                false
                             }
+                            _ => true,
                         })
                     });
                     0
@@ -222,7 +222,11 @@ impl App {
     // ── Widget 渲染循环（框架处理全部样板代码）──────────────────────
 
     /// 根据 `render_strategy` 创建引擎。
-    fn build_engine(strategy: RenderStrategy, width: i32, height: i32) -> Option<Box<dyn GraphicsEngine>> {
+    fn build_engine(
+        strategy: RenderStrategy,
+        width: i32,
+        height: i32,
+    ) -> Option<Box<dyn GraphicsEngine>> {
         match strategy {
             RenderStrategy::Cpu => {
                 let mut engine = SoftwareEngine::new();
@@ -278,7 +282,15 @@ impl App {
             None => return 1,
         };
 
-        let exit_code = self.run_widget_with(&mut *engine, tree, width, height, map_event, on_exit, |_, _| {});
+        let exit_code = self.run_widget_with(
+            &mut *engine,
+            tree,
+            width,
+            height,
+            map_event,
+            on_exit,
+            |_, _| {},
+        );
         engine.shutdown();
         exit_code
     }
@@ -301,7 +313,16 @@ impl App {
     {
         // 使用 App 的 theme 字段创建运行时动态主题
         let theme_cell = RefCell::new(self.theme.clone());
-        self.run_widget_with_tokens(engine, tree, width, height, &theme_cell, map_event, on_exit, on_frame)
+        self.run_widget_with_tokens(
+            engine,
+            tree,
+            width,
+            height,
+            &theme_cell,
+            map_event,
+            on_exit,
+            on_frame,
+        )
     }
 
     /// 与 `run_widget_with` 相同，但允许自定义 tokens（用于暗色/亮色切换）。
@@ -346,45 +367,72 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
     match ev.type_ {
         UiEventType::MouseDown => {
             if let UiEventPayload::MouseButton(ref d) = ev.payload {
-                Some(WidgetEvent::MouseDown { pos: d.pos, button: d.btn })
-            } else { None }
+                Some(WidgetEvent::MouseDown {
+                    pos: d.pos,
+                    button: d.btn,
+                })
+            } else {
+                None
+            }
         }
         UiEventType::MouseUp => {
             if let UiEventPayload::MouseButton(ref d) = ev.payload {
-                Some(WidgetEvent::MouseUp { pos: d.pos, button: d.btn })
-            } else { None }
+                Some(WidgetEvent::MouseUp {
+                    pos: d.pos,
+                    button: d.btn,
+                })
+            } else {
+                None
+            }
         }
         UiEventType::MouseMove => {
             if let UiEventPayload::MouseMove(ref d) = ev.payload {
                 Some(WidgetEvent::MouseMove { pos: d.pos })
-            } else { None }
+            } else {
+                None
+            }
         }
         UiEventType::MouseWheel => {
             if let UiEventPayload::MouseWheel(ref d) = ev.payload {
                 Some(WidgetEvent::MouseWheel {
                     delta: crate::base::Point::new(d.delta_x, d.delta_y),
                 })
-            } else { None }
+            } else {
+                None
+            }
         }
         UiEventType::KeyDown => {
             if let UiEventPayload::Key(ref d) = ev.payload {
                 Some(WidgetEvent::KeyDown { key: d.key })
-            } else { None }
+            } else {
+                None
+            }
         }
         UiEventType::KeyUp => {
             if let UiEventPayload::Key(ref d) = ev.payload {
                 Some(WidgetEvent::KeyUp { key: d.key })
-            } else { None }
+            } else {
+                None
+            }
         }
         UiEventType::KeyPress => {
             if let UiEventPayload::KeyPress(ref d) = ev.payload {
-                Some(WidgetEvent::KeyPress { text: d.text.clone() })
-            } else { None }
+                Some(WidgetEvent::KeyPress {
+                    text: d.text.clone(),
+                })
+            } else {
+                None
+            }
         }
         UiEventType::WindowResize => {
             if let UiEventPayload::Resize(ref d) = ev.payload {
-                Some(WidgetEvent::Resize { width: d.width as f32, height: d.height as f32 })
-            } else { None }
+                Some(WidgetEvent::Resize {
+                    width: d.width as f32,
+                    height: d.height as f32,
+                })
+            } else {
+                None
+            }
         }
         _ => None,
     }

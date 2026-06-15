@@ -1,5 +1,5 @@
 use super::*;
-use crate::graphics::{Color, Transform};
+use crate::graphics::{Transform};
 use crate::base::{Rect};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -8,8 +8,8 @@ use crate::base::{Rect};
 
 pub struct RenderTarget {
     pub(crate) pixels: Vec<u32>,
-    width: i32,
-    height: i32,
+    pub(crate) width: i32,
+    pub(crate) height: i32,
     pub(crate) clip_rect: Rect,
     clip_stack: Vec<Rect>,
     pub(crate) opacity: f32,
@@ -44,42 +44,22 @@ impl RenderTarget {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl RenderTarget {
-    pub fn pixels(&self) -> &[u32] {
-        &self.pixels
-    }
-    pub fn pixel_buffer(&self) -> &[u32] {
-        &self.pixels
-    }
-    pub fn pixel_buffer_mut(&mut self) -> &mut [u32] {
-        &mut self.pixels
-    }
+    pub fn pixels(&self) -> &[u32] { &self.pixels }
+    pub fn pixel_buffer(&self) -> &[u32] { &self.pixels }
+    pub fn pixel_buffer_mut(&mut self) -> &mut [u32] { &mut self.pixels }
     pub fn pixel_bytes(&self) -> &[u8] {
-        slice_u32_as_u8(&self.pixels)
+        crate::graphics::software_engine::core::slice_u32_as_u8(&self.pixels)
     }
-    pub fn width(&self) -> i32 {
-        self.width
-    }
-    pub fn height(&self) -> i32 {
-        self.height
-    }
-    pub fn opacity_val(&self) -> f32 {
-        self.opacity
-    }
+    pub fn width(&self) -> i32 { self.width }
+    pub fn height(&self) -> i32 { self.height }
+    pub fn opacity_val(&self) -> f32 { self.opacity }
     pub fn set_supersample_level(&mut self, level: u8) {
         self.supersample_level = level.min(8);
     }
-    pub fn supersample_level(&self) -> u8 {
-        self.supersample_level
-    }
-    pub fn clip_rect(&self) -> Rect {
-        self.clip_rect
-    }
-    pub fn clip_rect_mut(&mut self) -> &mut Rect {
-        &mut self.clip_rect
-    }
-    pub fn clip_stack_mut(&mut self) -> &mut Vec<Rect> {
-        &mut self.clip_stack
-    }
+    pub fn supersample_level(&self) -> u8 { self.supersample_level }
+    pub fn clip_rect(&self) -> Rect { self.clip_rect }
+    pub fn clip_rect_mut(&mut self) -> &mut Rect { &mut self.clip_rect }
+    pub fn clip_stack_mut(&mut self) -> &mut Vec<Rect> { &mut self.clip_stack }
 
     pub fn initialize(&mut self, width: i32, height: i32) {
         self.width = width;
@@ -108,28 +88,18 @@ impl RenderTarget {
 
 impl RenderTarget {
     pub fn is_identity(t: &Transform) -> bool {
-        t.m[0] == 1.0
-            && t.m[1] == 0.0
-            && t.m[2] == 0.0
-            && t.m[3] == 0.0
-            && t.m[4] == 1.0
-            && t.m[5] == 0.0
+        t.m[0] == 1.0 && t.m[1] == 0.0 && t.m[2] == 0.0
+            && t.m[3] == 0.0 && t.m[4] == 1.0 && t.m[5] == 0.0
     }
 
     fn compute_inverse(t: &Transform) -> Option<[f64; 6]> {
         let [a, b, tx, c, d, ty] = t.m.map(|v| v as f64);
         let det = a * d - b * c;
-        if det.abs() < 1e-12 {
-            return None;
-        }
+        if det.abs() < 1e-12 { return None; }
         let inv = 1.0 / det;
         Some([
-            inv * d,
-            inv * (-b),
-            inv * (b * ty - d * tx),
-            inv * (-c),
-            inv * a,
-            inv * (c * tx - a * ty),
+            inv * d, inv * (-b), inv * (b * ty - d * tx),
+            inv * (-c), inv * a, inv * (c * tx - a * ty),
         ])
     }
 
@@ -160,10 +130,11 @@ impl RenderTarget {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 像素操作
+// Clip / 状态 / 混合
 // ════════════════════════════════════════════════════════════════════════════
 
 impl RenderTarget {
+<<<<<<< Updated upstream
     pub fn put_pixel_aa(&mut self, x: i32, y: i32, premul_color: u32, coverage: f32) {
         // Respect clip rect using integer bounds (avoid float precision issues)
         let cx0 = self.clip_rect.x as i32;
@@ -393,6 +364,8 @@ impl RenderTarget {
         }
     }
 
+=======
+>>>>>>> Stashed changes
     pub fn push_clip_rect(&mut self, rect: Rect) {
         self.clip_stack.push(self.clip_rect);
         let cur = self.clip_rect;
@@ -404,9 +377,7 @@ impl RenderTarget {
     }
 
     pub fn pop_clip_rect(&mut self) {
-        self.clip_rect = self
-            .clip_stack
-            .pop()
+        self.clip_rect = self.clip_stack.pop()
             .unwrap_or_else(|| Rect::new(0.0, 0.0, self.width as f32, self.height as f32));
     }
 
@@ -448,7 +419,7 @@ impl RenderTarget {
     }
 }
 
-/// Reinterprets a `&[u32]` as `&[u8]` with 4× the length.
-pub(crate) fn slice_u32_as_u8(slice: &[u32]) -> &[u8] {
+/// Reinterprets a `&[u32]` as `&[u8]` with 4x the length.
+pub fn slice_u32_as_u8(slice: &[u32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const u8, slice.len() * 4) }
 }

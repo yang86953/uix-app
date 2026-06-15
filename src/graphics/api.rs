@@ -13,7 +13,7 @@ pub use crate::graphics::types::{
 };
 
 // ── 渲染引擎 Trait ──
-pub use crate::graphics::engine::GraphicsEngine;
+pub use crate::graphics::engine::{GraphicsEngine, RenderOutcome};
 
 // ── 空实现引擎 ──
 pub use crate::graphics::null_engine::NullEngine;
@@ -39,6 +39,11 @@ pub use crate::graphics::text_backend::{
 
 // ── Bitmap 字体 ──
 pub use crate::graphics::bitmap_font::BitmapFont;
+
+// ── 路径系统 ──
+pub use crate::graphics::path::{FillRule, LineCap, LineJoin, Path, PathBuilder, PathSegment};
+pub use crate::graphics::rasterizer::fill_polygons;
+pub use crate::graphics::stroker::{stroke_path, StrokeOptions};
 
 // ── 帧图（Frame Graph） ──
 pub use crate::graphics::frame_graph::FrameGraph;

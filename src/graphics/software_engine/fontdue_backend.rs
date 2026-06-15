@@ -10,7 +10,7 @@ use std::sync::Mutex;
 
 use crate::diag::{Errc, Error};
 use crate::graphics::text_backend::{
-    GlyphRaster, LineMetrics, PositionedGlyph, TextBackend, TextLayout, TextLayoutOptions,
+    GlyphRaster, LineInfo, LineMetrics, PositionedGlyph, TextBackend, TextLayout, TextLayoutOptions,
 };
 use crate::graphics::FontHandle;
 use fontdue::layout::*;
@@ -31,10 +31,11 @@ struct CachedGlyph {
 }
 
 /// Internal slot for a loaded font.
-#[derive(Debug)]
 struct FontSlot {
     handle: FontHandle,
     font: fontdue::Font,
+    /// 字体原始字节数据，用于检查覆盖范围和序列化等。
+    raw_data: Vec<u8>,
 }
 
 /// Fontdue-based text backend.
@@ -155,6 +156,7 @@ impl TextBackend for FontdueBackend {
         self.fonts.push(FontSlot {
             handle: FontHandle::new(idx),
             font,
+            raw_data: data.to_vec(),
         });
         Ok(FontHandle::new(idx))
     }
@@ -175,12 +177,9 @@ impl TextBackend for FontdueBackend {
                     fontdue::FontSettings::default(),
                 )
                 .unwrap_or_else(|_| {
-                    // Minimal empty font — should never fail because empty data
-                    // is not valid, but we need the slot to exist.  In practice
-                    // a successfully-loaded font will only be unloaded during
-                    // engine shutdown, so this code path is rarely hit.
                     panic!("fontdue_backend: failed to create placeholder font")
                 }),
+                raw_data: Vec::new(),
             };
         }
     }
@@ -188,6 +187,16 @@ impl TextBackend for FontdueBackend {
     fn is_valid(&self, handle: &FontHandle) -> bool {
         let idx = handle.0 as usize;
         idx < self.fonts.len() && self.fonts[idx].handle.0 != u32::MAX
+    }
+
+    fn has_glyph(&self, font: &FontHandle, ch: char) -> bool {
+        let idx = font.0 as usize;
+        match self.fonts.get(idx) {
+            Some(slot) if slot.handle.0 != u32::MAX => {
+                slot.font.lookup_glyph_index(ch) > 0
+            }
+            _ => false,
+        }
     }
 
     fn layout_text(
@@ -202,6 +211,7 @@ impl TextBackend for FontdueBackend {
             None => {
                 return TextLayout {
                     glyphs: Vec::new(),
+                    lines: Vec::new(),
                     width: 0.0,
                     height: 0.0,
                 };
@@ -213,13 +223,41 @@ impl TextBackend for FontdueBackend {
         let glyphs: Vec<PositionedGlyph> = gp
             .iter()
             .map(|g| PositionedGlyph {
-                x: g.x,
-                y: g.y,
-                width: g.width as f32,
-                height: g.height as f32,
-                glyph_id: u32::from(g.key.glyph_index),
+                    x: g.x,
+                    y: g.y,
+                    width: g.width as f32,
+                    height: g.height as f32,
+                    glyph_id: u32::from(g.key.glyph_index),
             })
             .collect();
+
+        // 提取行信息
+        let mut lines = Vec::new();
+        if let Some(g_lines) = layout.lines() {
+            let mut glyph_idx = 0;
+            for line in g_lines {
+                let count = line.glyph_end - line.glyph_start;
+                let start = glyph_idx;
+                // 计算该行宽度：遍历 glyph 找到最大 x
+                let mut w = 0.0f32;
+                for gi in start..start + count {
+                    if gi < glyphs.len() {
+                        let gx = glyphs[gi].x + glyphs[gi].width.max(0.0);
+                        w = w.max(gx);
+                    }
+                }
+                lines.push(LineInfo {
+                    y: line.baseline_y - line.max_ascent,
+                    height: line.max_new_line_size,
+                    width: w,
+                    start_char: 0,
+                    end_char: 0,
+                    glyph_start: start,
+                    glyph_count: count,
+                });
+                glyph_idx += count;
+            }
+        }
 
         let max_x = glyphs
             .iter()
@@ -229,6 +267,7 @@ impl TextBackend for FontdueBackend {
             width: max_x,
             height: opts.font_size.max(0.0),
             glyphs,
+            lines,
         }
     }
 
@@ -311,5 +350,14 @@ impl TextBackend for FontdueBackend {
                 descent: m.descent,
                 new_line_size: m.new_line_size,
             })
+    }
+
+    fn font_data(&self, font: &FontHandle) -> Option<Vec<u8>> {
+        let idx = font.0 as usize;
+        let slot = self.fonts.get(idx)?;
+        if slot.handle.0 == u32::MAX {
+            return None;
+        }
+        Some(slot.raw_data.clone())
     }
 }

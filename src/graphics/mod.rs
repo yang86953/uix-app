@@ -4,12 +4,18 @@
 //! Layers 0+3+4: Foundation types + Graphics + Layout
 
 pub mod bitmap_font;
+pub mod blur;
 pub mod color;
 pub mod engine;
+pub mod flattener;
 pub mod frame_graph;
+pub mod layer;
 pub mod layout;
 pub mod null_engine;
+pub mod path;
+pub mod rasterizer;
 pub mod software_engine;
+pub mod stroker;
 pub mod text_backend;
 pub mod types;
 

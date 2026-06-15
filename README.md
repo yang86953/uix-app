@@ -95,7 +95,3 @@ UIX ships with Ant Design 5 design tokens (light and dark themes):
 let tokens = DesignTokens::antd_light();
 // or DesignTokens::antd_dark()
 ```
-
-## License
-
-MIT

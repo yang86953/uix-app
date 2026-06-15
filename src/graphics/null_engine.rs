@@ -1,5 +1,5 @@
-//! NullEngine — GraphicsEngine stub implementation for testing/demo.
-//! All rendering operations are no-ops; font/image loading returns NotImplemented.
+//! NullEngine — 用于测试/演示的 GraphicsEngine 桩实现。
+//! 所有渲染操作均为空操作；字体/图片加载返回 NotImplemented。
 
 use crate::diag::{info_fn, Errc, Error};
 use crate::graphics::{BlendMode, Color, DirtyRegion, FontHandle, GradientDirection, GraphicsEngine, ImageHandle, Radius, TextLayoutOptions, Transform};
@@ -91,12 +91,23 @@ impl GraphicsEngine for NullEngine {
     fn fill_ellipse(&mut self, _r: Rect, _c: Color) {}
     fn draw_box_shadow(
         &mut self,
-        _r: Rect,
-        _blur: f32,
-        _ox: f32,
-        _oy: f32,
-        _c: Color,
-        _cr: Option<Radius>,
+        _rect: Rect,
+        _blur_radius: f32,
+        _offset_x: f32,
+        _offset_y: f32,
+        _color: Color,
+        _corner_radius: Option<Radius>,
+    ) {
+    }
+
+    fn draw_box_shadow_ambient(
+        &mut self,
+        _rect: Rect,
+        _blur_radius: f32,
+        _offset_x: f32,
+        _offset_y: f32,
+        _color: Color,
+        _corner_radius: Option<Radius>,
     ) {
     }
 
@@ -163,5 +174,15 @@ impl GraphicsEngine for NullEngine {
     fn set_supersample_level(&mut self, _level: u8) {}
     fn supersample_level(&self) -> u8 {
         0
+    }
+
+    fn render_frame(
+        &mut self,
+        _tree: &mut crate::ui::widget::WidgetTree,
+        _theme: &std::cell::RefCell<crate::ui::theme::Theme>,
+        _first_frame: bool,
+        _keep_polling: bool,
+    ) -> crate::graphics::RenderOutcome {
+        crate::graphics::RenderOutcome::Idle
     }
 }

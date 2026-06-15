@@ -28,11 +28,32 @@ pub struct PositionedGlyph {
     pub glyph_id: u32,
 }
 
+/// 一行文本的布局信息：包含该行所有 glyph 和行边界。
+#[derive(Debug, Clone, Copy)]
+pub struct LineInfo {
+    /// 行在布局中的 y 坐标。
+    pub y: f32,
+    /// 行高度。
+    pub height: f32,
+    /// 行宽。
+    pub width: f32,
+    /// 行在源文本中的起始 byte 偏移。
+    pub start_char: usize,
+    /// 行在源文本中的结束 byte 偏移。
+    pub end_char: usize,
+    /// 该行第一个 glyph 在 glyphs 中的索引。
+    pub glyph_start: usize,
+    /// 该行 glyph 数量。
+    pub glyph_count: usize,
+}
+
 /// Result of laying out a text string with a `TextBackend`.
 #[derive(Debug, Clone)]
 pub struct TextLayout {
     /// Sorted positioned glyphs (left-to-right, top-to-bottom).
     pub glyphs: Vec<PositionedGlyph>,
+    /// 每行的布局信息。
+    pub lines: Vec<LineInfo>,
     /// Total width of the laid-out text.
     pub width: f32,
     /// Total height of the laid-out text.
@@ -108,6 +129,13 @@ pub trait TextBackend: std::fmt::Debug + Send + Sync {
     /// Check whether a handle still refers to a valid (loaded) font.
     fn is_valid(&self, handle: &FontHandle) -> bool;
 
+    /// Check if a font has a glyph for the given character.
+    ///
+    /// Uses the already-parsed font data internally — no cloning or reparsing.
+    /// Called per character during multi-font text segmentation (rendering hot path).
+    /// Must be efficient (O(1) cmap lookup in the font engine).
+    fn has_glyph(&self, font: &FontHandle, ch: char) -> bool;
+
     /// Layout a text string, returning positioned glyphs.
     ///
     /// The returned `TextLayout` contains glyphs whose `x`/`y` fields are
@@ -122,4 +150,8 @@ pub trait TextBackend: std::fmt::Debug + Send + Sync {
 
     /// Horizontal line metrics for a font at `pixel_size`.
     fn horizontal_line_metrics(&self, font: &FontHandle, pixel_size: f32) -> Option<LineMetrics>;
+
+    /// 返回字体的原始字节数据（供引擎检查字体覆盖范围等）。
+    /// 返回 `None` 表示句柄无效或后端不支持此操作。
+    fn font_data(&self, _font: &FontHandle) -> Option<Vec<u8>> { None }
 }

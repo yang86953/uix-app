@@ -4,22 +4,17 @@
 
 #![cfg(test)]
 
-use super::*;
 use super::compile::{Barrier, BarrierKind};
-use std::collections::HashMap;
+use super::*;
 use crate::graphics::engine::GraphicsEngine;
 use crate::graphics::NullEngine;
+use std::collections::HashMap;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 辅助函数
 // ════════════════════════════════════════════════════════════════════════════
 
-fn dummy_pass(
-    id: PassId,
-    name: &str,
-    reads: Vec<ResourceId>,
-    writes: Vec<ResourceId>,
-) -> PassNode {
+fn dummy_pass(id: PassId, name: &str, reads: Vec<ResourceId>, writes: Vec<ResourceId>) -> PassNode {
     let pass_name = String::from(name);
     PassNode::new(
         id,
@@ -235,9 +230,7 @@ fn chain_passes() {
 
     // 应有 RAW 屏障
     let has_raw = result.barriers.iter().any(|b| {
-        b.from_pass == PassId(0)
-            && b.to_pass == PassId(1)
-            && b.kind == BarrierKind::ReadAfterWrite
+        b.from_pass == PassId(0) && b.to_pass == PassId(1) && b.kind == BarrierKind::ReadAfterWrite
     });
     assert!(has_raw);
 

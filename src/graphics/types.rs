@@ -98,38 +98,109 @@ impl Default for Transform {
     }
 }
 
+/// 脏矩形合并阈值：超过该数量则合并为 bounds（避免 Vec 膨胀）。
+const DIRTY_MERGE_THRESHOLD: usize = 16;
+
 /// Dirty region tracking for incremental rendering.
+///
+/// 支持多矩形损伤（multi-rect damage）：当多个不重叠区域变脏时，
+/// 分别记录各自矩形而非合并为一个巨大的 union，从而：
+/// - 清理（clear）时只清理实际脏区域，节省像素填充
+/// - 渲染遍历时更精确地判断 widget 是否需要绘制
+///
+/// 当矩形数量超过 `DIRTY_MERGE_THRESHOLD`（16）时自动合并为 bounds，
+/// 避免极端场景下的性能退化。
 #[derive(Debug, Clone, PartialEq)]
 pub struct DirtyRegion {
-    pub rect: Rect,
+    pub rects: Vec<Rect>,
     pub full_frame: bool,
     pub clear_required: bool,
 }
 
 impl DirtyRegion {
+    /// 全帧脏区域（强制全部重绘）。
     pub fn full() -> Self {
         Self {
-            rect: Rect::zero(),
+            rects: Vec::new(),
             full_frame: true,
             clear_required: true,
         }
     }
+
+    /// 空区域（无脏内容）。
     pub fn empty() -> Self {
         Self {
-            rect: Rect::zero(),
+            rects: Vec::new(),
             full_frame: false,
             clear_required: false,
         }
     }
+
+    /// 从单个矩形创建脏区域。
     pub fn area(rect: Rect) -> Self {
         Self {
-            rect,
+            rects: if rect.w > 0.0 && rect.h > 0.0 {
+                vec![rect]
+            } else {
+                Vec::new()
+            },
             full_frame: false,
             clear_required: true,
         }
     }
+
+    /// 重置为空区域。
     pub fn reset(&mut self) {
         *self = Self::empty();
+    }
+
+    /// 是否无脏内容。
+    pub fn is_empty(&self) -> bool {
+        !self.full_frame && self.rects.is_empty() && !self.clear_required
+    }
+
+    /// 添加一个脏矩形（支持合并阈值）。
+    pub fn add_rect(&mut self, rect: Rect) {
+        if rect.w <= 0.0 || rect.h <= 0.0 || self.full_frame {
+            return;
+        }
+        self.clear_required = true;
+        if self.rects.len() >= DIRTY_MERGE_THRESHOLD {
+            // 超过阈值，合并为一个 bounds
+            let b = self.bounds().union(&rect);
+            self.rects.clear();
+            self.rects.push(b);
+        } else {
+            self.rects.push(rect);
+        }
+    }
+
+    /// 所有脏矩形的外接 union 矩形。
+    pub fn bounds(&self) -> Rect {
+        if self.rects.is_empty() {
+            return Rect::zero();
+        }
+        let mut b = self.rects[0];
+        for &r in &self.rects[1..] {
+            b = b.union(&r);
+        }
+        b
+    }
+
+    /// 判断给定矩形是否与任意脏矩形相交。
+    pub fn intersects(&self, rect: Rect) -> bool {
+        if self.full_frame {
+            return true;
+        }
+        if rect.w <= 0.0 || rect.h <= 0.0 {
+            return false;
+        }
+        self.rects.iter().any(|&r| r.intersect(&rect).is_some())
+    }
+
+    /// 返回脏矩形切片。
+    pub fn rects(&self) -> &[Rect] {
+        &self.rects
     }
 }
 

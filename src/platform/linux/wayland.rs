@@ -18,7 +18,9 @@ use libc::{poll, pollfd, POLLIN};
 use std::sync::{Arc, Mutex};
 
 use wayland_client::{
-    protocol::{wl_buffer, wl_compositor, wl_keyboard, wl_pointer, wl_seat, wl_shm, wl_shm_pool, wl_surface},
+    protocol::{
+        wl_buffer, wl_compositor, wl_keyboard, wl_pointer, wl_seat, wl_shm, wl_shm_pool, wl_surface,
+    },
     Display, EventQueue, GlobalManager, Main,
 };
 use wayland_protocols::misc::server_decoration::client::{
@@ -52,9 +54,7 @@ impl ShmBuffer {
         let byte_len = pixels.len().min(self.size / 4) * 4;
         self.file.seek(std::io::SeekFrom::Start(0))?;
         // Convert &[u32] to &[u8] via safe pointer cast
-        let bytes = unsafe {
-            std::slice::from_raw_parts(pixels.as_ptr() as *const u8, byte_len)
-        };
+        let bytes = unsafe { std::slice::from_raw_parts(pixels.as_ptr() as *const u8, byte_len) };
         self.file.write(bytes)
     }
 }
@@ -116,8 +116,8 @@ pub struct WaylandBackend {
 
 impl WaylandBackend {
     pub fn new() -> Result<Self, String> {
-        let display = Display::connect_to_env()
-            .map_err(|e| format!("Wayland connect failed: {}", e))?;
+        let display =
+            Display::connect_to_env().map_err(|e| format!("Wayland connect failed: {}", e))?;
 
         let mut event_queue = display.create_event_queue();
         let attached = (*display).clone().attach(event_queue.token());
@@ -202,8 +202,10 @@ impl WaylandBackend {
         dirty_rect: Option<(i32, i32, i32, i32)>,
     ) {
         // Create/resize both buffers when dimensions change.
-        if width != self.width || height != self.height
-            || self.shm_buffers[0].is_none() || self.shm_buffers[1].is_none()
+        if width != self.width
+            || height != self.height
+            || self.shm_buffers[0].is_none()
+            || self.shm_buffers[1].is_none()
         {
             self.width = width;
             self.height = height;
@@ -255,7 +257,12 @@ impl WaylandBackend {
         self.try_dispatch();
     }
 
-    pub(crate) fn create_window_inner(&mut self, title: &str, width: i32, height: i32) -> bool {
+    pub(crate) fn create_window_inner(
+        &mut self,
+        title: &str,
+        width: i32,
+        height: i32,
+    ) -> Result<(), Error> {
         self.width = width;
         self.height = height;
 
@@ -273,7 +280,9 @@ impl WaylandBackend {
         xdg_surface.quick_assign(move |xs, event, _| {
             if let xdg_surface::Event::Configure { serial } = event {
                 xs.ack_configure(serial);
-                let _ = cfg_events.lock().unwrap_or_else(|e| e.into_inner())
+                let _ = cfg_events
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
                     .push_back(UiEvent::resize(0, 0));
             }
         });
@@ -283,23 +292,33 @@ impl WaylandBackend {
         toplevel.quick_assign(move |_, event, _| {
             match event {
                 xdg_toplevel::Event::Close => {
-                    let _ = toplevel_events.lock().unwrap_or_else(|e| e.into_inner())
+                    let _ = toplevel_events
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
                         .push_back(UiEvent::close());
                 }
-                xdg_toplevel::Event::Configure { width: w, height: h, states } => {
+                xdg_toplevel::Event::Configure {
+                    width: w,
+                    height: h,
+                    states,
+                } => {
                     // Check if maximized by looking for state value 1
                     // in the wl_array of u32 state values.
-                    let is_maximized = states.chunks_exact(4).any(|c| {
-                        c.len() == 4 && u32::from_ne_bytes([c[0], c[1], c[2], c[3]]) == 1
-                    });
+                    let is_maximized = states
+                        .chunks_exact(4)
+                        .any(|c| c.len() == 4 && u32::from_ne_bytes([c[0], c[1], c[2], c[3]]) == 1);
                     if w > 0 && h > 0 {
-                        let _ = toplevel_events.lock().unwrap_or_else(|e| e.into_inner())
+                        let _ = toplevel_events
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
                             .push_back(UiEvent::resize(w, h));
                     } else if is_maximized {
                         // Compositor wants us maximized without giving
                         // explicit dimensions.  Push a no-op resize so
                         // the widget tree knows the state changed.
-                        let _ = toplevel_events.lock().unwrap_or_else(|e| e.into_inner())
+                        let _ = toplevel_events
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
                             .push_back(UiEvent::resize(0, 0));
                     }
                 }
@@ -321,8 +340,16 @@ impl WaylandBackend {
                         ptr.quick_assign(move |_, event, _| {
                             let mut q = ev.lock().unwrap_or_else(|e| e.into_inner());
                             match event {
-                                wl_pointer::Event::Enter { surface_x, surface_y, .. }
-                                | wl_pointer::Event::Motion { surface_x, surface_y, .. } => {
+                                wl_pointer::Event::Enter {
+                                    surface_x,
+                                    surface_y,
+                                    ..
+                                }
+                                | wl_pointer::Event::Motion {
+                                    surface_x,
+                                    surface_y,
+                                    ..
+                                } => {
                                     let p = Point::new(surface_x as f32, surface_y as f32);
                                     // Track last position for button events
                                     if let Ok(mut lp) = pos.lock() {
@@ -338,9 +365,8 @@ impl WaylandBackend {
                                         _ => MouseButton::None,
                                     };
                                     // Use tracked position instead of Point::default()
-                                    let click_pos = pos.lock()
-                                        .map(|lp| lp.position)
-                                        .unwrap_or_default();
+                                    let click_pos =
+                                        pos.lock().map(|lp| lp.position).unwrap_or_default();
                                     if state == wl_pointer::ButtonState::Pressed {
                                         q.push_back(UiEvent::mouse_down(click_pos, btn));
                                     } else {
@@ -358,7 +384,10 @@ impl WaylandBackend {
                                     };
                                     if dx != 0.0 || dy != 0.0 {
                                         q.push_back(UiEvent::mouse_wheel(
-                                            Point::default(), dx as f32, dy as f32, KeyMod::NONE,
+                                            Point::default(),
+                                            dx as f32,
+                                            dy as f32,
+                                            KeyMod::NONE,
                                         ));
                                     }
                                 }
@@ -368,16 +397,40 @@ impl WaylandBackend {
                     }
                     if capabilities.contains(Capability::Keyboard) {
                         let ev = ptr_events.clone();
+                        let mods = Arc::new(Mutex::new(KeyMod::NONE));
                         let kbd = seat.get_keyboard();
                         kbd.quick_assign(move |_, event, _| {
-                            if let wl_keyboard::Event::Key { key, state, .. } = event {
-                                let code = linux_keycode_to_keycode(key);
-                                let mut q = ev.lock().unwrap_or_else(|e| e.into_inner());
-                                if state == wl_keyboard::KeyState::Pressed {
-                                    q.push_back(UiEvent::key_down(code, KeyMod::NONE));
-                                } else {
-                                    q.push_back(UiEvent::key_up(code, KeyMod::NONE));
+                            match event {
+                                wl_keyboard::Event::Key { key, state, .. } => {
+                                    let code = linux_keycode_to_keycode(key);
+                                    let mut q = ev.lock().unwrap_or_else(|e| e.into_inner());
+                                    let shift_down = mods
+                                        .lock()
+                                        .map(|m| m.intersects(KeyMod::SHIFT))
+                                        .unwrap_or(false);
+                                    if state == wl_keyboard::KeyState::Pressed {
+                                        q.push_back(UiEvent::key_down(code, KeyMod::NONE));
+                                        // 生成 KeyPress 文本字符（可打印字符才有）
+                                        // 使用已映射的 KeyCode 而非原始 evdev 码，
+                                        // 确保与 linux_keycode_to_keycode 映射一致。
+                                        if let Some(text) = keycode_to_char(code, shift_down) {
+                                            q.push_back(UiEvent::key_press(text));
+                                        }
+                                    } else {
+                                        q.push_back(UiEvent::key_up(code, KeyMod::NONE));
+                                    }
                                 }
+                                wl_keyboard::Event::Modifiers { mods_depressed, .. } => {
+                                    if let Ok(mut m) = mods.lock() {
+                                        const SHIFT_MASK: u32 = 1; // wl_keyboard modifier bit 0
+                                        *m = if (mods_depressed & SHIFT_MASK) != 0 {
+                                            KeyMod::SHIFT
+                                        } else {
+                                            KeyMod::NONE
+                                        };
+                                    }
+                                }
+                                _ => {}
                             }
                         });
                     }
@@ -386,7 +439,10 @@ impl WaylandBackend {
         }
 
         // Request server-side decorations (title bar) via KDE protocol
-        match self._globals.instantiate_exact::<OrgKdeKwinServerDecorationManager>(1) {
+        match self
+            ._globals
+            .instantiate_exact::<OrgKdeKwinServerDecorationManager>(1)
+        {
             Ok(dm) => {
                 let deco = dm.create(&surface);
                 deco.request_mode(Mode::Server);
@@ -394,7 +450,9 @@ impl WaylandBackend {
                 self.decoration = Some(deco);
             }
             Err(_) => {
-                log::warn!("Wayland: no server_decoration_manager (running on non-KDE compositor?)");
+                log::warn!(
+                    "Wayland: no server_decoration_manager (running on non-KDE compositor?)"
+                );
             }
         }
 
@@ -411,10 +469,12 @@ impl WaylandBackend {
         // Commit without buffer to acknowledge the configure
         // Surface will become visible only on first present_pixels() call,
         // which provides the real UI content — no white flash at startup.
-        if let Some(ref s) = self.surface { s.commit(); }
+        if let Some(ref s) = self.surface {
+            s.commit();
+        }
 
         self.configured = true;
-        true
+        Ok(())
     }
 
     /// Create an SHM buffer with solid white fill.
@@ -446,7 +506,9 @@ impl WaylandBackend {
         // Use a BufWriter for performance
         let mut writer = std::io::BufWriter::new(&file);
         for _ in 0..(width * height) {
-            if writer.write_all(&pixel).is_err() { break; }
+            if writer.write_all(&pixel).is_err() {
+                break;
+            }
         }
         writer.flush().ok();
         drop(writer);
@@ -458,7 +520,12 @@ impl WaylandBackend {
         // Clean up temp file (the fd stays open via `file`)
         let _ = std::fs::remove_file(&tmp_path);
 
-        Ok(ShmBuffer { file, size, pool, buffer })
+        Ok(ShmBuffer {
+            file,
+            size,
+            pool,
+            buffer,
+        })
     }
 }
 
@@ -467,7 +534,7 @@ impl WaylandBackend {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IWindowManager for WaylandBackend {
-    fn create_window(&mut self, title: &str, width: i32, height: i32) -> bool {
+    fn create_window(&mut self, title: &str, width: i32, height: i32) -> Result<(), Error> {
         self.create_window_inner(title, width, height)
     }
     fn destroy_window(&mut self) {
@@ -496,14 +563,25 @@ impl IWindowManager for WaylandBackend {
         }
     }
     fn hide(&mut self) {
-        if let Some(ref t) = self.toplevel { t.set_minimized(); }
+        if let Some(ref t) = self.toplevel {
+            t.set_minimized();
+        }
     }
-    fn is_visible(&self) -> bool { self.shown }
-    fn center_on_screen(&mut self) { /* Wayland compositor controls placement */ }
-    fn raise(&mut self) { /* Wayland compositor controls stacking */ }
-    fn lower(&mut self) { /* Wayland compositor controls stacking */ }
-    fn set_window_icon(&mut self, _: &str) { log::warn!("Wayland: set_window_icon not implemented"); }
-    fn flash_window(&mut self) { log::warn!("Wayland: flash_window not implemented"); }
+    fn is_visible(&self) -> bool {
+        self.shown
+    }
+    fn center_on_screen(&mut self) { /* Wayland compositor controls placement */
+    }
+    fn raise(&mut self) { /* Wayland compositor controls stacking */
+    }
+    fn lower(&mut self) { /* Wayland compositor controls stacking */
+    }
+    fn set_window_icon(&mut self, _: &str) {
+        log::warn!("Wayland: set_window_icon not implemented");
+    }
+    fn flash_window(&mut self) {
+        log::warn!("Wayland: flash_window not implemented");
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -511,46 +589,87 @@ impl IWindowManager for WaylandBackend {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IWindowProperties for WaylandBackend {
-    fn width(&self) -> i32 { self.width }
-    fn height(&self) -> i32 { self.height }
+    fn width(&self) -> i32 {
+        self.width
+    }
+    fn height(&self) -> i32 {
+        self.height
+    }
 
     fn set_size(&mut self, w: i32, h: i32) {
-        self.width = w; self.height = h;
+        self.width = w;
+        self.height = h;
         if let Some(ref xs) = self.xdg_surface {
             xs.set_window_geometry(0, 0, w, h);
         }
     }
     fn set_minimum_size(&mut self, w: i32, h: i32) {
-        if let Some(ref t) = self.toplevel { t.set_min_size(w, h); }
+        if let Some(ref t) = self.toplevel {
+            t.set_min_size(w, h);
+        }
     }
     fn set_maximum_size(&mut self, w: i32, h: i32) {
-        if let Some(ref t) = self.toplevel { t.set_max_size(w, h); }
+        if let Some(ref t) = self.toplevel {
+            t.set_max_size(w, h);
+        }
     }
-    fn position(&self) -> Point { Point::default() /* Wayland: no absolute position */ }
-    fn set_position(&mut self, _: i32, _: i32) { /* Wayland: compositor-controlled */ }
-    fn set_resizable(&mut self, _: bool) { /* Wayland: xdg-shell handles this */ }
-    fn is_maximized(&self) -> bool { false /* TODO: track via xdg_toplevel configure events */ }
-    fn is_minimized(&self) -> bool { false }
-    fn maximize(&mut self) { if let Some(ref t) = self.toplevel { t.set_maximized(); } }
-    fn minimize(&mut self) { if let Some(ref t) = self.toplevel { t.set_minimized(); } }
+    fn position(&self) -> Point {
+        Point::default() /* Wayland: no absolute position */
+    }
+    fn set_position(&mut self, _: i32, _: i32) { /* Wayland: compositor-controlled */
+    }
+    fn set_resizable(&mut self, _: bool) { /* Wayland: xdg-shell handles this */
+    }
+    fn is_maximized(&self) -> bool {
+        false /* TODO: track via xdg_toplevel configure events */
+    }
+    fn is_minimized(&self) -> bool {
+        false
+    }
+    fn maximize(&mut self) {
+        if let Some(ref t) = self.toplevel {
+            t.set_maximized();
+        }
+    }
+    fn minimize(&mut self) {
+        if let Some(ref t) = self.toplevel {
+            t.set_minimized();
+        }
+    }
     fn restore(&mut self) {
         if let Some(ref t) = self.toplevel {
             t.unset_maximized();
             t.unset_fullscreen();
         }
     }
-    fn set_borderless(&mut self, _: bool) { log::warn!("Wayland: set_borderless not directly supported"); }
+    fn set_borderless(&mut self, _: bool) {
+        log::warn!("Wayland: set_borderless not directly supported");
+    }
     fn set_fullscreen(&mut self, fullscreen: bool) {
         if let Some(ref t) = self.toplevel {
-            if fullscreen { t.set_fullscreen(None); } else { t.unset_fullscreen(); }
+            if fullscreen {
+                t.set_fullscreen(None);
+            } else {
+                t.unset_fullscreen();
+            }
         }
     }
-    fn is_fullscreen(&self) -> bool { false /* TODO: track via xdg_toplevel configure events */ }
-    fn set_always_on_top(&mut self, _: bool) { log::warn!("Wayland: set_always_on_top not supported"); }
-    fn set_window_opacity(&mut self, _: f32) { log::warn!("Wayland: set_window_opacity not supported"); }
-    fn start_text_input(&mut self) { log::warn!("Wayland: text_input protocol not yet implemented"); }
+    fn is_fullscreen(&self) -> bool {
+        false /* TODO: track via xdg_toplevel configure events */
+    }
+    fn set_always_on_top(&mut self, _: bool) {
+        log::warn!("Wayland: set_always_on_top not supported");
+    }
+    fn set_window_opacity(&mut self, _: f32) {
+        log::warn!("Wayland: set_window_opacity not supported");
+    }
+    fn start_text_input(&mut self) {
+        log::warn!("Wayland: text_input protocol not yet implemented");
+    }
     fn stop_text_input(&mut self) {}
-    fn enable_file_drop(&mut self, _: bool) { log::warn!("Wayland: file drop not yet implemented"); }
+    fn enable_file_drop(&mut self, _: bool) {
+        log::warn!("Wayland: file drop not yet implemented");
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -567,7 +686,9 @@ impl IEventLoop for WaylandBackend {
             }
         }
         drop(q);
-        if self.closed { return false; }
+        if self.closed {
+            return false;
+        }
         true
     }
 
@@ -632,7 +753,9 @@ impl Backend for WaylandBackend {
         impl ICursor for WC {
             fn set_cursor(&mut self, _: CursorType) {}
             fn show_cursor(&mut self, _: bool) {}
-            fn cursor_position(&self) -> Point { Point::default() }
+            fn cursor_position(&self) -> Point {
+                Point::default()
+            }
             fn set_cursor_position(&mut self, _: i32, _: i32) {}
             fn confine_cursor(&mut self, _: bool) {}
             fn capture_mouse(&mut self) {}
@@ -643,9 +766,15 @@ impl Backend for WaylandBackend {
     fn keyboard(&self) -> &dyn IKeyboard {
         struct WK;
         impl IKeyboard for WK {
-            fn is_down(&self, _: KeyCode) -> bool { false }
-            fn idle_ms(&self) -> u32 { 0 }
-            fn double_click_ms(&self) -> u32 { 400 }
+            fn is_down(&self, _: KeyCode) -> bool {
+                false
+            }
+            fn idle_ms(&self) -> u32 {
+                0
+            }
+            fn double_click_ms(&self) -> u32 {
+                400
+            }
         }
         static K: WK = WK;
         &K
@@ -653,22 +782,31 @@ impl Backend for WaylandBackend {
     fn display(&self) -> &dyn IDisplay {
         struct WD;
         impl IDisplay for WD {
-            fn dpi_scale(&self) -> f32 { 1.0 }
-            fn is_dark_mode(&self) -> bool {
-                std::env::var("GTK_THEME").map(|t| t.contains("dark")).unwrap_or(false)
+            fn dpi_scale(&self) -> f32 {
+                1.0
             }
-            fn count(&self) -> i32 { 1 }
+            fn is_dark_mode(&self) -> bool {
+                std::env::var("GTK_THEME")
+                    .map(|t| t.contains("dark"))
+                    .unwrap_or(false)
+            }
+            fn count(&self) -> i32 {
+                1
+            }
             fn info(&self, _: i32) -> DisplayInfo {
                 DisplayInfo {
                     bounds: Rect::new(0.0, 0.0, 1920.0, 1080.0),
-                    dpi_scale: 1.0, is_primary: true,
+                    dpi_scale: 1.0,
+                    is_primary: true,
                 }
             }
         }
         static D: WD = WD;
         &D
     }
-    fn clipboard(&mut self) -> &mut dyn IClipboard { &mut self.clipboard }
+    fn clipboard(&mut self) -> &mut dyn IClipboard {
+        &mut self.clipboard
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -678,31 +816,351 @@ impl Backend for WaylandBackend {
 fn linux_keycode_to_keycode(code: u32) -> KeyCode {
     match code {
         1 => KeyCode::Escape,
-        2..=11 => [KeyCode::Num1, KeyCode::Num2, KeyCode::Num3, KeyCode::Num4,
-                   KeyCode::Num5, KeyCode::Num6, KeyCode::Num7, KeyCode::Num8,
-                   KeyCode::Num9, KeyCode::Num0][(code - 2) as usize],
-        14 => KeyCode::Backspace, 15 => KeyCode::Tab,
-        16 => KeyCode::Q, 17 => KeyCode::W, 18 => KeyCode::E, 19 => KeyCode::R,
-        20 => KeyCode::T, 21 => KeyCode::Y, 22 => KeyCode::U, 23 => KeyCode::I,
-        24 => KeyCode::O, 25 => KeyCode::P,
-        28 => KeyCode::Enter, 29 => KeyCode::Ctrl,
-        30 => KeyCode::A, 31 => KeyCode::S, 32 => KeyCode::D, 33 => KeyCode::F,
-        34 => KeyCode::G, 35 => KeyCode::H, 36 => KeyCode::J, 37 => KeyCode::K,
+        2..=11 => [
+            KeyCode::Num1,
+            KeyCode::Num2,
+            KeyCode::Num3,
+            KeyCode::Num4,
+            KeyCode::Num5,
+            KeyCode::Num6,
+            KeyCode::Num7,
+            KeyCode::Num8,
+            KeyCode::Num9,
+            KeyCode::Num0,
+        ][(code - 2) as usize],
+        14 => KeyCode::Backspace,
+        15 => KeyCode::Tab,
+        16 => KeyCode::Q,
+        17 => KeyCode::W,
+        18 => KeyCode::E,
+        19 => KeyCode::R,
+        20 => KeyCode::T,
+        21 => KeyCode::Y,
+        22 => KeyCode::U,
+        23 => KeyCode::I,
+        24 => KeyCode::O,
+        25 => KeyCode::P,
+        28 => KeyCode::Enter,
+        29 => KeyCode::Ctrl,
+        30 => KeyCode::A,
+        31 => KeyCode::S,
+        32 => KeyCode::D,
+        33 => KeyCode::F,
+        34 => KeyCode::G,
+        35 => KeyCode::H,
+        36 => KeyCode::J,
+        37 => KeyCode::K,
         38 => KeyCode::L,
         42 => KeyCode::Shift,
-        44 => KeyCode::Z, 45 => KeyCode::X, 46 => KeyCode::C, 47 => KeyCode::V,
-        48 => KeyCode::B, 49 => KeyCode::N, 50 => KeyCode::M,
-        56 => KeyCode::Alt, 57 => KeyCode::Space,
-        59..=68 => [KeyCode::F1, KeyCode::F2, KeyCode::F3, KeyCode::F4,
-                    KeyCode::F5, KeyCode::F6, KeyCode::F7, KeyCode::F8,
-                    KeyCode::F9, KeyCode::F10][(code - 59) as usize],
-        87 => KeyCode::F11, 88 => KeyCode::F12,
-        97 => KeyCode::Ctrl, 100 => KeyCode::Alt,
-        102 => KeyCode::Home, 103 => KeyCode::Up, 104 => KeyCode::PageUp,
-        105 => KeyCode::Left, 106 => KeyCode::Right, 107 => KeyCode::End,
-        108 => KeyCode::Down, 109 => KeyCode::PageDown,
-        110 => KeyCode::Insert, 111 => KeyCode::Delete,
+        44 => KeyCode::Z,
+        45 => KeyCode::X,
+        46 => KeyCode::C,
+        47 => KeyCode::V,
+        48 => KeyCode::B,
+        49 => KeyCode::N,
+        50 => KeyCode::M,
+        56 => KeyCode::Alt,
+        57 => KeyCode::Space,
+        59..=68 => [
+            KeyCode::F1,
+            KeyCode::F2,
+            KeyCode::F3,
+            KeyCode::F4,
+            KeyCode::F5,
+            KeyCode::F6,
+            KeyCode::F7,
+            KeyCode::F8,
+            KeyCode::F9,
+            KeyCode::F10,
+        ][(code - 59) as usize],
+        87 => KeyCode::F11,
+        88 => KeyCode::F12,
+        97 => KeyCode::Ctrl,
+        100 => KeyCode::Alt,
+        102 => KeyCode::Home,
+        103 => KeyCode::Up,
+        104 => KeyCode::PageUp,
+        105 => KeyCode::Left,
+        106 => KeyCode::Right,
+        107 => KeyCode::End,
+        108 => KeyCode::Down,
+        109 => KeyCode::PageDown,
+        110 => KeyCode::Insert,
+        111 => KeyCode::Delete,
+        // 小键盘（映射到主行数字 KeyCode，keycode_to_char 自动支持）
+        71 => KeyCode::Num7,
+        72 => KeyCode::Num8,
+        73 => KeyCode::Num9,
+        75 => KeyCode::Num4,
+        76 => KeyCode::Num5,
+        77 => KeyCode::Num6,
+        79 => KeyCode::Num1,
+        80 => KeyCode::Num2,
+        81 => KeyCode::Num3,
+        82 => KeyCode::Num0,
         125 | 126 => KeyCode::Super,
         _ => KeyCode::Unknown,
     }
+}
+
+/// Map KeyCode to ASCII printable character (US keyboard layout).
+/// Returns `None` for non-printable keys (modifiers, function keys, etc.).
+fn keycode_to_char(code: KeyCode, shift: bool) -> Option<String> {
+    let ch = match code {
+        KeyCode::A => {
+            if shift {
+                'A'
+            } else {
+                'a'
+            }
+        }
+        KeyCode::B => {
+            if shift {
+                'B'
+            } else {
+                'b'
+            }
+        }
+        KeyCode::C => {
+            if shift {
+                'C'
+            } else {
+                'c'
+            }
+        }
+        KeyCode::D => {
+            if shift {
+                'D'
+            } else {
+                'd'
+            }
+        }
+        KeyCode::E => {
+            if shift {
+                'E'
+            } else {
+                'e'
+            }
+        }
+        KeyCode::F => {
+            if shift {
+                'F'
+            } else {
+                'f'
+            }
+        }
+        KeyCode::G => {
+            if shift {
+                'G'
+            } else {
+                'g'
+            }
+        }
+        KeyCode::H => {
+            if shift {
+                'H'
+            } else {
+                'h'
+            }
+        }
+        KeyCode::I => {
+            if shift {
+                'I'
+            } else {
+                'i'
+            }
+        }
+        KeyCode::J => {
+            if shift {
+                'J'
+            } else {
+                'j'
+            }
+        }
+        KeyCode::K => {
+            if shift {
+                'K'
+            } else {
+                'k'
+            }
+        }
+        KeyCode::L => {
+            if shift {
+                'L'
+            } else {
+                'l'
+            }
+        }
+        KeyCode::M => {
+            if shift {
+                'M'
+            } else {
+                'm'
+            }
+        }
+        KeyCode::N => {
+            if shift {
+                'N'
+            } else {
+                'n'
+            }
+        }
+        KeyCode::O => {
+            if shift {
+                'O'
+            } else {
+                'o'
+            }
+        }
+        KeyCode::P => {
+            if shift {
+                'P'
+            } else {
+                'p'
+            }
+        }
+        KeyCode::Q => {
+            if shift {
+                'Q'
+            } else {
+                'q'
+            }
+        }
+        KeyCode::R => {
+            if shift {
+                'R'
+            } else {
+                'r'
+            }
+        }
+        KeyCode::S => {
+            if shift {
+                'S'
+            } else {
+                's'
+            }
+        }
+        KeyCode::T => {
+            if shift {
+                'T'
+            } else {
+                't'
+            }
+        }
+        KeyCode::U => {
+            if shift {
+                'U'
+            } else {
+                'u'
+            }
+        }
+        KeyCode::V => {
+            if shift {
+                'V'
+            } else {
+                'v'
+            }
+        }
+        KeyCode::W => {
+            if shift {
+                'W'
+            } else {
+                'w'
+            }
+        }
+        KeyCode::X => {
+            if shift {
+                'X'
+            } else {
+                'x'
+            }
+        }
+        KeyCode::Y => {
+            if shift {
+                'Y'
+            } else {
+                'y'
+            }
+        }
+        KeyCode::Z => {
+            if shift {
+                'Z'
+            } else {
+                'z'
+            }
+        }
+        KeyCode::Num1 => {
+            if shift {
+                '!'
+            } else {
+                '1'
+            }
+        }
+        KeyCode::Num2 => {
+            if shift {
+                '@'
+            } else {
+                '2'
+            }
+        }
+        KeyCode::Num3 => {
+            if shift {
+                '#'
+            } else {
+                '3'
+            }
+        }
+        KeyCode::Num4 => {
+            if shift {
+                '$'
+            } else {
+                '4'
+            }
+        }
+        KeyCode::Num5 => {
+            if shift {
+                '%'
+            } else {
+                '5'
+            }
+        }
+        KeyCode::Num6 => {
+            if shift {
+                '^'
+            } else {
+                '6'
+            }
+        }
+        KeyCode::Num7 => {
+            if shift {
+                '&'
+            } else {
+                '7'
+            }
+        }
+        KeyCode::Num8 => {
+            if shift {
+                '*'
+            } else {
+                '8'
+            }
+        }
+        KeyCode::Num9 => {
+            if shift {
+                '('
+            } else {
+                '9'
+            }
+        }
+        KeyCode::Num0 => {
+            if shift {
+                ')'
+            } else {
+                '0'
+            }
+        }
+        KeyCode::Space => ' ',
+        _ => return None,
+    };
+    Some(ch.to_string())
 }
