@@ -46,6 +46,15 @@ define_widget! {
         EventResult::NotHandled
     }
 
+    // 始终包含弹窗区域，确保 visible 切换时残留像素被清除
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        let pop_w = 180.0;
+        let pop_h = 90.0;
+        let py = frame.y - pop_h - 8.0;
+        let pop = Rect::new(frame.x, py, pop_w, pop_h);
+        frame.union(&pop)
+    }
+
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border();

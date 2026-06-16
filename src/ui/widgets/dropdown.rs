@@ -8,6 +8,7 @@ use crate::ui::widget::{EventResult, WidgetEvent, WidgetTree};
 
 define_widget! {
     /// Dropdown — 点击触发的下拉菜单。
+    /// 菜单在 post_render 中渲染为浮层，不触发布局偏移。
     pub struct Dropdown {
         label: String,
         items: Vec<String>,
@@ -15,8 +16,8 @@ define_widget! {
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
-        let list_h = if self.open { self.items.len() as f32 * 30.0 } else { 0.0 };
-        Size::new(160.0, 32.0 + list_h)
+        // 固定为按钮高度，不随 open 变化，避免布局偏移
+        Size::new(160.0, 32.0)
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
@@ -28,7 +29,6 @@ define_widget! {
             if self.open && pos.y > 32.0 {
                 let idx = ((pos.y - 32.0) / 30.0) as usize;
                 if idx < self.items.len() {
-                    // 点击菜单项后关闭
                     self.open = false;
                     return EventResult::Handled;
                 }
@@ -38,30 +38,39 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let bg = ctx.tokens().color_bg_elevated();
-        let border = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
-        let _text_secondary = ctx.tokens().color_text_secondary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        // 触发按钮
+        // 触发按钮（固定高度 32px）
         let btn_rect = Rect::new(frame.x, frame.y, frame.w, 32.0);
         ctx.fill_rect(btn_rect, ctx.tokens().color_primary(), r);
         ctx.text_center(&self.label, btn_rect, crate::graphics::Color::white(), 13.0);
+    }
 
-        // 下拉菜单
-        if self.open {
-            let menu_y = frame.y + 32.0;
-            let menu_h = self.items.len() as f32 * 30.0;
-            let menu_rect = Rect::new(frame.x, menu_y, frame.w, menu_h);
-            ctx.fill_rect(menu_rect, bg, r);
-            ctx.stroke_rect(menu_rect, border, 1.0, r);
+    // 菜单作为浮层渲染（不影响布局定位）
+    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        if !self.open { return; }
+        let bg = ctx.tokens().color_bg_elevated();
+        let border = ctx.tokens().color_border();
+        let text_color = ctx.tokens().color_text();
+        let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-            for (i, item) in self.items.iter().enumerate() {
-                let item_rect = Rect::new(frame.x, menu_y + i as f32 * 30.0, frame.w, 30.0);
-                ctx.text_center(item, item_rect, text_color, 13.0);
-            }
+        let menu_y = frame.y + 32.0;
+        let menu_h = self.items.len() as f32 * 30.0;
+        let menu_rect = Rect::new(frame.x, menu_y, frame.w, menu_h);
+        ctx.fill_rect(menu_rect, bg, r);
+        ctx.stroke_rect(menu_rect, border, 1.0, r);
+
+        for (i, item) in self.items.iter().enumerate() {
+            let item_rect = Rect::new(frame.x, menu_y + i as f32 * 30.0, frame.w, 30.0);
+            ctx.text_center(item, item_rect, text_color, 13.0);
         }
+    }
+
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        // 始终包含菜单区域，确保 open 切换时残留像素被清除
+        let menu_h = self.items.len() as f32 * 30.0;
+        let menu = Rect::new(frame.x, frame.y + 32.0, frame.w, menu_h);
+        frame.union(&menu)
     }
 }
 

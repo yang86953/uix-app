@@ -69,9 +69,8 @@ define_widget! {
         ctx.text_center(&self.text, tip_frame, text_color, 12.0);
     }
 
-    // 弹窗区域超出 widget frame，需包含在 dirty_rect 中避免被 clip 裁剪
+    // 弹窗区域超出 widget frame，始终扩展 dirty_rect 确保切换时无残留
     dirty_rect => (&self, frame: Rect) -> Rect {
-        if !self.hovered || self.timer < 0.5 { return frame; }
         let text_w = self.text.len() as f32 * 7.5 + 16.0;
         let text_h = 26.0;
         let (tx, ty) = match self.placement {

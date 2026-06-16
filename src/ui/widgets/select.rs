@@ -185,9 +185,8 @@ define_widget! {
         }
     }
 
-    // 下拉列表在 frame 外，需包含在 dirty_rect 中
+    // 始终包含下拉列表区域，确保 open 切换时无像素残留
     dirty_rect => (&self, frame: Rect) -> Rect {
-        if !self.open || self.options.is_empty() { return frame; }
         let list_h = self.options.len() as f32 * 28.0;
         let list = Rect::new(frame.x, frame.y + 32.0, frame.w, list_h);
         frame.union(&list)

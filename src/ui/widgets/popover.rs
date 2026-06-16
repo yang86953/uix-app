@@ -66,15 +66,11 @@ define_widget! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        if self.visible {
-            let pop_w = 200.0;
-            let pop_h = 80.0;
-            let py = frame.y - pop_h - 8.0;
-            let pop = Rect::new(frame.x, py, pop_w, pop_h);
-            frame.union(&pop)
-        } else {
-            frame
-        }
+        let pop_w = 200.0;
+        let pop_h = 80.0;
+        let py = frame.y - pop_h - 8.0;
+        let pop = Rect::new(frame.x, py, pop_w, pop_h);
+        frame.union(&pop)
     }
 }
 
