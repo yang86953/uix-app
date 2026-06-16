@@ -89,19 +89,14 @@ pub fn stat_card(tk: &DesignTokens, title: &str, value: &str, color: Color, elev
 // ── 页面包装工具 ──
 
 /// 把内容列表包装进 ScrollView（不含 page_title，title 由 build_demo_tree 在外部添加）
-/// Container 高度根据子 widget 的 preferred_size 动态计算，
-/// 而非固定值，使 ScrollView 能正确判断内容是否溢出。
+/// Container 高度由 Phase 2 底部向上传播自动扩展，无需预计算。
 pub fn wrap_page(_tk: &DesignTokens, content: Vec<WidgetNode>) -> WidgetNode {
     const GAP: f32 = 8.0;
-    let n = content.len() as f32;
-    let total_gap = GAP * (n - 1.0).max(0.0);
-    // 计算内容所需高度（子 widget 高度总和 + gap 总和 + padding）
-    let content_h = content_height(&content) + total_gap + 24.0; // 8px top + 16px bottom padding
     WidgetNode::new(
             Box::new(ScrollView::new(ScrollDirection::Both).flex_grow(1.0)),
         vec![WidgetNode::new(
             Box::new(Container::new()
-                  .size(iw(), content_h.max(100.0))
+                  .size(iw(), 0.0)
                 .dir(FlexDirection::Column)
                 .gap(GAP)
                 .pad(EdgeInsets::new(8.0, 4.0, 16.0, 10.0))),
@@ -110,23 +105,6 @@ pub fn wrap_page(_tk: &DesignTokens, content: Vec<WidgetNode>) -> WidgetNode {
     )
 }
 
-/// 递归计算 widget 节点树的 preferred 高度总和（按 flex column 排列）
-fn content_height(nodes: &[WidgetNode]) -> f32 {
-    nodes.iter().map(|node| {
-        let pref = node.widget.preferred_size(None);
-        if pref.h > 0.0 {
-            pref.h
-        } else if !node.children.is_empty() {
-            // 自身未指定高度时，尝试递归子节点
-            content_height(&node.children)
-        } else {
-            // 既无高度又无子节点，用保底值
-            20.0
-        }
-    }).sum::<f32>()
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 // 页面调度 — 根据 nav_active 索引返回对应页面内容（不含 page_title）
 // ════════════════════════════════════════════════════════════════════════════
 
