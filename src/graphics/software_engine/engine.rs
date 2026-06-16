@@ -167,9 +167,13 @@ impl SoftwareEngine {
             return false;
         }
         match std::fs::read(&path) {
-            Ok(data) if self.try_load_user_font(data, size) => {
-                crate::diag::log::info_fn(format!("Loaded KDE font: {}", path));
-                true
+            Ok(data) => {
+                if self.try_load_user_font(data, size) {
+                    crate::diag::log::info_fn(format!("Loaded KDE font: {}", path));
+                    true
+                } else {
+                    false
+                }
             }
             _ => false,
         }
