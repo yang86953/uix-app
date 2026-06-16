@@ -155,7 +155,7 @@ fn build_page(page_index: usize, tk: &DesignTokens) -> WidgetNode {
 /// 构建完整的 demo widget tree（侧边栏 + 内容区 + 页面标题）。
 ///
 /// 页面标题固定在内容区顶部（ScrollView 外部），不受滚动影响。
-fn build_demo_tree(tk: &DesignTokens) -> (WidgetNode, SharedActive) {
+fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, SharedActive) {
     let nav = Navigation::new("UIX 组件")
         .item(" 仪表盘", "chart-bar")
         .item(" 排版", "type")
@@ -169,13 +169,11 @@ fn build_demo_tree(tk: &DesignTokens) -> (WidgetNode, SharedActive) {
         .item(" 布局", "grid")
         .item(" 主题色", "palette")
         .item(" 自定义", "settings")
-        .active_index(0)
+        .active_index(active_page)
         .width(SB)
         .height(GH as f32);
     let nav_active = nav.active().clone();
     let nav_node = nav.build(tk);
-
-    let active_page = nav_active.get();
     // 页面标题固定在 ScrollView 外部
     let (icon, label) = PAGE_TITLES[active_page.min(11)];
     let title_node = page_title(tk, icon, label);
@@ -214,7 +212,7 @@ fn build_demo_tree(tk: &DesignTokens) -> (WidgetNode, SharedActive) {
 /// 运行 GUI 演示的主入口。
 pub fn run_gui_demo() {
     let tk = DesignTokens::antd_light();
-    let (root_node, nav_active) = build_demo_tree(&tk);
+    let (root_node, nav_active) = build_demo_tree(&tk, 0);
     let nav_active: Rc<std::cell::RefCell<uix::ui::widgets::nav::SharedActive>> =
         Rc::new(std::cell::RefCell::new(nav_active));
     let mut tree = WidgetTree::new();
@@ -266,7 +264,7 @@ pub fn run_gui_demo() {
                 dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
                 let new_tk = dyn_tokens.snapshot();
-                let (new_root, new_active) = build_demo_tree(&new_tk);
+                let (new_root, new_active) = build_demo_tree(&new_tk, 0);
                 *nav_active.borrow_mut() = new_active;
                 tree.build(new_root);
                 // 重建后恢复 root frame 为实际窗口尺寸
@@ -284,7 +282,7 @@ pub fn run_gui_demo() {
             if active != prev_active.get() {
                 prev_active.set(active);
                 let tk = dyn_tokens.snapshot();
-                let (new_root, new_active) = build_demo_tree(&tk);
+                let (new_root, new_active) = build_demo_tree(&tk, active);
                 *nav_active.borrow_mut() = new_active;
                 tree.build(new_root);
                 // 重建后恢复 root frame 为实际窗口尺寸
