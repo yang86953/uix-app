@@ -312,7 +312,7 @@ define_widget! {
         let dy = self.scroll_y - self.prev_scroll_y;
         let int_dy = dy.round();
         let int_dx = dx.round();
-        if int_dy > 0.0 {
+        let strip = if int_dy > 0.0 {
             // 向下滚动：新增 strip 在底部
             let strip_h = int_dy.min(frame.h);
             Rect::new(frame.x, frame.y + frame.h - strip_h, frame.w, strip_h)
@@ -330,7 +330,15 @@ define_widget! {
             Rect::new(frame.x, frame.y, strip_w, frame.h)
         } else {
             frame
-        }
+        };
+        // 包含滚动条轨道区域，确保 scroll_region 移动的半透明轨道像素被清空重绘
+        let track = Rect::new(
+            frame.x + frame.w - 8.0,
+            frame.y,
+            8.0,
+            frame.h,
+        );
+        strip.union(&track)
     }
 
     scroll_delta => (&self, _frame: Rect) -> Option<(f32, f32)> {
