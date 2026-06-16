@@ -263,31 +263,15 @@ impl WidgetTree {
             if !any_resized { break; }
         }
 
-        // Phase 3: 更新 viewport 容器的 content bounds
-        // 子节点在 Phase 2 中被扩展后，父容器（如 ScrollView）的 layout_children
-        // 基于旧 frame 计算了 content_bounds，需要重新计算
+        // Phase 3: 仅更新 viewport 容器的 content_bounds，不移动子节点
         for &id in &self.traverse() {
-            let (viewport_frame, children) = match self.get(id) {
-                Some(n) if n.inner().children_clip(n.frame()).is_some() => {
-                    (n.frame(), n.children().to_vec())
-                }
-                _ => continue,
-            };
-            if children.is_empty() { continue; }
-            // 重新运行 layout_children 以更新内部的 content_bounds
-            let updated = self.get(id)
-                .unwrap()
-                .inner()
-                .layout_children(viewport_frame, &children, self);
-            for (child_id, rect) in updated {
-                if let Some(child) = self.get_mut(child_id) {
-                    let old = child.frame();
-                    if old != rect {
-                        child.set_frame(rect);
-                        self.mark_dirty_rect(child_id, old);
-                        self.mark_dirty(child_id);
-                    }
-                }
+            if let Some(node) = self.get(id) {
+                if node.inner().children_clip(node.frame()).is_none() { continue; }
+                let frame = node.frame();
+                let children = node.children().to_vec();
+                if children.is_empty() { continue; }
+                // 仅触发 content_bounds 副作用，丢弃返回的 child rects
+                let _ = node.inner().layout_children(frame, &children, self);
             }
         }
     }
