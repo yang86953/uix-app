@@ -28,8 +28,8 @@ define_widget! {
             .map(|o| o.len() as f32 * 9.0 + 32.0)
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(150.0).max(120.0);
-        let list_h = if self.open { self.options.len() as f32 * 28.0 } else { 0.0 };
-        Size::new(w, 32.0 + list_h)
+        // 固定高度 32，下拉列表在 post_render 中渲染
+        Size::new(w, 32.0)
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
@@ -121,7 +121,6 @@ define_widget! {
         let text_color = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
         let primary = ctx.tokens().color_primary();
-        let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let fill_quaternary = ctx.tokens().color_fill_quaternary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
@@ -153,30 +152,45 @@ define_widget! {
         // 下拉箭头
         let arrow = if self.open { "▲" } else { "▼" };
         ctx.draw_text(arrow, Point::new(frame.x + frame.w - 18.0, frame.y + 8.0), text_secondary, 10.0);
+    }
 
-        // 下拉列表
-        if self.open && !self.options.is_empty() {
-            let list_y = frame.y + 32.0;
-            let list_h = self.options.len() as f32 * 28.0;
-            let list_rect = Rect::new(frame.x, list_y, frame.w, list_h);
-            ctx.fill_rect(list_rect, bg, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
-            ctx.stroke_rect(list_rect, border, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
+    // ── Post-render: 下拉列表（浮在布局上方，不影响定位）──
+    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        if !self.open || self.options.is_empty() { return; }
+        let bg = ctx.tokens().color_bg_elevated();
+        let border = ctx.tokens().color_border();
+        let text_color = ctx.tokens().color_text();
+        let primary = ctx.tokens().color_primary();
+        let fill_tertiary = ctx.tokens().color_fill_tertiary();
 
-            for (i, opt) in self.options.iter().enumerate() {
-                let item_y = list_y + i as f32 * 28.0;
-                let item_rect = Rect::new(frame.x, item_y, frame.w, 28.0);
-                let is_hovered = self.hovered_option == Some(i);
-                let is_selected = i == self.selected;
+        let list_y = frame.y + 32.0;
+        let list_h = self.options.len() as f32 * 28.0;
+        let list_rect = Rect::new(frame.x, list_y, frame.w, list_h);
+        ctx.fill_rect(list_rect, bg, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
+        ctx.stroke_rect(list_rect, border, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
 
-                if is_hovered || is_selected {
-                    let highlight = if is_hovered { fill_tertiary } else { ctx.tokens().color_primary_bg() };
-                    ctx.fill_rect(item_rect, highlight, None);
-                }
+        for (i, opt) in self.options.iter().enumerate() {
+            let item_y = list_y + i as f32 * 28.0;
+            let item_rect = Rect::new(frame.x, item_y, frame.w, 28.0);
+            let is_hovered = self.hovered_option == Some(i);
+            let is_selected = i == self.selected;
 
-                let tc = if is_selected { primary } else { text_color };
-                ctx.draw_text(opt, Point::new(frame.x + 10.0, item_y + 6.0), tc, 13.0);
+            if is_hovered || is_selected {
+                let highlight = if is_hovered { fill_tertiary } else { ctx.tokens().color_primary_bg() };
+                ctx.fill_rect(item_rect, highlight, None);
             }
+
+            let tc = if is_selected { primary } else { text_color };
+            ctx.draw_text(opt, Point::new(frame.x + 10.0, item_y + 6.0), tc, 13.0);
         }
+    }
+
+    // 下拉列表在 frame 外，需包含在 dirty_rect 中
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        if !self.open || self.options.is_empty() { return frame; }
+        let list_h = self.options.len() as f32 * 28.0;
+        let list = Rect::new(frame.x, frame.y + 32.0, frame.w, list_h);
+        frame.union(&list)
     }
 }
 
