@@ -173,17 +173,21 @@ impl WidgetTree {
     }
 
     pub fn layout(&mut self) {
-        if let Some(root_id) = self.root_id {
-            let frame = self.get(root_id).map(|r| r.frame()).unwrap_or(Rect::zero());
-            if frame.w <= 0.0 || frame.h <= 0.0 {
+        let has_valid_root = self.root_id.and_then(|id| self.get(id))
+            .map(|r| r.frame().w > 0.0 && r.frame().h > 0.0)
+            .unwrap_or(false);
+        if !has_valid_root {
+            if let Some(root_id) = self.root_id {
                 let ps = self.get(root_id).map(|r| r.preferred_size(None));
                 if let Some(ps) = ps {
                     if let Some(root_mut) = self.get_mut(root_id) {
-                        root_mut.set_frame(Rect::new(0.0, 0.0, ps.w, ps.h));
+                        root_mut.set_frame(Rect::new(0.0, 0.0, ps.w.max(1.0), ps.h.max(1.0)));
                     }
                 }
             }
         }
+
+        // Phase 1: Top-down — 父容器根据 preferred_size 为子节点分配位置
         let order = self.traverse();
         for &id in &order {
             let positions: Vec<(WidgetId, Rect)> = {
@@ -203,6 +207,57 @@ impl WidgetTree {
                     }
                 }
             }
+        }
+
+        // Phase 2: Bottom-up — 容器根据内容自动扩展高度，逐层向上传播
+        for _pass in 0..3 {
+            let mut any_resized = false;
+            let rev_order: Vec<WidgetId> = self.traverse().into_iter().rev().collect();
+            for &id in &rev_order {
+                let node = match self.get(id) { Some(n) => n, None => continue };
+                let children: Vec<WidgetId> = node.children().to_vec();
+                if children.is_empty() { continue; }
+
+                let node_frame = node.frame();
+                // 取所有可见子节点的最大下边界
+                let mut max_bottom = node_frame.y + node_frame.h;
+                for &cid in &children {
+                    if let Some(child) = self.get(cid) {
+                        if child.visible() || self.get(cid).map(|c| c.children().is_empty()).unwrap_or(true) {
+                            let cf = child.frame();
+                            let child_bottom = cf.y + cf.h;
+                            max_bottom = max_bottom.max(child_bottom);
+                        }
+                    }
+                }
+
+                let new_h = max_bottom - node_frame.y;
+                if new_h > node_frame.h + 0.5 {
+                    let old_frame = node.frame();
+                    if let Some(node_mut) = self.get_mut(id) {
+                        node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, new_h));
+                        self.mark_dirty_rect(id, old_frame);
+                        self.mark_dirty(id);
+                    }
+                    // 容器扩展后，重新布局子节点
+                    let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, new_h);
+                    let new_positions = self.get(id)
+                        .map(|n| n.inner().layout_children(new_frame, &children, self))
+                        .unwrap_or_default();
+                    for (child_id, rect) in new_positions {
+                        if let Some(child) = self.get_mut(child_id) {
+                            let old = child.frame();
+                            if old != rect {
+                                child.set_frame(rect);
+                                self.mark_dirty_rect(child_id, old);
+                                self.mark_dirty(child_id);
+                            }
+                        }
+                    }
+                    any_resized = true;
+                }
+            }
+            if !any_resized { break; }
         }
     }
 
