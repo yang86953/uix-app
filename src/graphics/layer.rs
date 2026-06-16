@@ -145,7 +145,8 @@ impl LayerTree {
         } else {
             let children = Self::build_children(tree, id, origin);
             if children.is_empty() { None }
-            else if children.len() == 1 { Some(children.into_iter().next().unwrap()) }
+            else if children.len() == 1 { Some(children.into_iter().next()
+                .expect("layer: children.len()==1 guarantees next() returns Some")) }
             else {
                 Some(LayerNode::ClipRect {
                     rect: Rect::new(origin.x, origin.y, frame.w, frame.h),

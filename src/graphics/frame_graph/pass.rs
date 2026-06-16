@@ -57,7 +57,8 @@ impl FrameResources {
             .or_insert_with(|| vec![fill; len])
             .resize(len, fill);
         self.texture_meta.insert(id, (width, height));
-        self.textures.get_mut(&id).unwrap().as_mut_slice()
+        self.textures.get_mut(&id)
+            .expect("frame_graph: texture was just inserted via or_insert_with").as_mut_slice()
     }
 
     /// 获取 Texture 像素切片（只读）。
@@ -78,7 +79,8 @@ impl FrameResources {
     /// 分配或替换 Buffer 数据。返回可变引用。
     pub fn allocate_buffer(&mut self, id: ResourceId, size: usize, fill: u8) -> &mut [u8] {
         self.buffers.entry(id).or_insert_with(|| vec![fill; size]);
-        let buf = self.buffers.get_mut(&id).unwrap();
+        let buf = self.buffers.get_mut(&id)
+            .expect("frame_graph: buffer was just inserted via or_insert_with");
         buf.resize(size, fill);
         buf.as_mut_slice()
     }

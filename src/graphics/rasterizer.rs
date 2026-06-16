@@ -97,7 +97,9 @@ pub fn fill_polygons(
     // 按 ymin 排序
     global_edges.sort_by_key(|e| e.0);
 
-    let y_start = global_edges.first().unwrap().0.max(clip_y0);
+    let y_start = global_edges.first()
+        .expect("rasterizer: global_edges should have at least one edge after sort")
+        .0.max(clip_y0);
     let y_end = clip_y1;
 
     // 2. 逐行扫描

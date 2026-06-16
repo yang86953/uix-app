@@ -80,3 +80,92 @@ impl RenderTarget {
         Self::sdf_to_coverage_aa(sd, 0.5)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rounded_rect_sdf_inside_returns_negative() {
+        let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let rad = Radius::uniform(10.0);
+        let sd = RenderTarget::rounded_rect_sdf(50.0, 50.0, &r, &rad);
+        assert!(sd < 0.0, "center should be inside (sd<0), got {sd}");
+    }
+
+    #[test]
+    fn rounded_rect_sdf_outside_returns_positive() {
+        let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let rad = Radius::uniform(10.0);
+        let sd = RenderTarget::rounded_rect_sdf(200.0, 200.0, &r, &rad);
+        assert!(sd > 0.0, "far away should be outside (sd>0), got {sd}");
+    }
+
+    #[test]
+    fn rounded_rect_sdf_on_edge_is_near_zero() {
+        let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let rad = Radius::uniform(10.0);
+        let sd = RenderTarget::rounded_rect_sdf(100.0, 50.0, &r, &rad);
+        let abs = sd.abs();
+        assert!(abs < 1.0, "on-edge sd should be near zero, got {sd}");
+    }
+
+    #[test]
+    fn rounded_rect_sdf_sharp_rect_works() {
+        let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let rad = Radius::uniform(0.0);
+        let sd = RenderTarget::rounded_rect_sdf(50.0, 50.0, &r, &rad);
+        assert!(sd < 0.0, "sharp rect center should be inside");
+    }
+
+    #[test]
+    fn rounded_rect_sdf_per_corner_radius() {
+        let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let rad = Radius { tl: 20.0, tr: 0.0, br: 0.0, bl: 20.0 };
+        // Top-left corner (20px radius) — point inside rounded zone
+        let tl = RenderTarget::rounded_rect_sdf(5.0, 5.0, &r, &rad);
+        // Top-right corner (0px radius — sharp)
+        let tr = RenderTarget::rounded_rect_sdf(95.0, 5.0, &r, &rad);
+        // Sharp corner should have more negative SDF (deeper inside)
+        assert!(tr < tl, "sharp corner sdf {tr} should be < rounded corner sdf {tl}");
+    }
+
+    #[test]
+    fn line_segment_sdf_horizontal() {
+        let sd = RenderTarget::line_segment_sdf(0.0, 10.0, 0.0, 0.0, 100.0, 0.0);
+        assert!((sd - 10.0).abs() < 1e-5, "horizontal line distance {sd}");
+    }
+
+    #[test]
+    fn line_segment_sdf_degenerate_point() {
+        let sd = RenderTarget::line_segment_sdf(3.0, 4.0, 5.0, 5.0, 5.0, 5.0);
+        let expected = (2.0f32 * 2.0f32 + 1.0f32 * 1.0f32).sqrt();
+        assert!((sd - expected).abs() < 1e-5, "degenerate line distance {sd} vs {expected}");
+    }
+
+    #[test]
+    fn sdf_to_coverage_full_inside() {
+        let c = RenderTarget::sdf_to_coverage(-1.0);
+        assert!((c - 1.0).abs() < 1e-5, "full inside coverage {c}");
+    }
+
+    #[test]
+    fn sdf_to_coverage_full_outside() {
+        let c = RenderTarget::sdf_to_coverage(1.0);
+        assert!((c - 0.0).abs() < 1e-5, "full outside coverage {c}");
+    }
+
+    #[test]
+    fn sdf_to_coverage_exact_edge() {
+        let c = RenderTarget::sdf_to_coverage(0.0);
+        assert!((c - 0.5).abs() < 1e-5, "edge coverage should be 0.5, got {c}");
+    }
+
+    #[test]
+    fn sdf_to_coverage_aa_half_width() {
+        let c = RenderTarget::sdf_to_coverage_aa(0.0, 1.0);
+        assert!((c - 0.5).abs() < 1e-5, "aa edge coverage {c}");
+        let inner = RenderTarget::sdf_to_coverage_aa(-1.0, 1.0);
+        assert!((inner - 1.0).abs() < 1e-5, "aa fully inside {inner}");
+    }
+}
