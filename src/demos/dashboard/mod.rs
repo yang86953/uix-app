@@ -273,6 +273,7 @@ pub fn run_gui_demo() {
                 if let Some(root) = tree.root_mut() {
                     root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
                 }
+                tree.layout();
                 // 同步新树中 ThemeToggle 的状态
                 tree.find_by_type_and_modify::<ThemeToggle>(|w| { w.dark.set(dark_mode.get()); });
                 tree.mark_full_frame_dirty();
@@ -290,6 +291,7 @@ pub fn run_gui_demo() {
                 if let Some(root) = tree.root_mut() {
                     root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
                 }
+                tree.layout();
                 // 同步 ThemeToggle 状态到重建后的树
                 tree.find_by_type_and_modify::<ThemeToggle>(|w| { w.dark.set(dark_mode.get()); });
                 tree.mark_full_frame_dirty();
