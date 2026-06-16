@@ -9,7 +9,7 @@ use crate::graphics::{
 use crate::base::{Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::render_context::RenderContext;
-use crate::ui::widget::{Widget, WidgetId, WidgetTree};
+use crate::ui::widget::{Widget, WidgetCore, WidgetId, WidgetTree};
 
 /// Predefined space sizes matching Ant Design.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -68,9 +68,13 @@ define_widget! {
         let child_sizes: Vec<Size> = children
             .iter()
             .map(|&cid| {
-                tree.get(cid)
+                let pref = tree.get(cid)
                     .map(|c| c.preferred_size(None))
-                    .unwrap_or_default()
+                    .unwrap_or_default();
+                let actual_h = tree.get(cid)
+                    .map(|c| c.frame().h)
+                    .unwrap_or(0.0);
+                Size::new(pref.w, pref.h.max(actual_h))
             })
             .collect();
 
