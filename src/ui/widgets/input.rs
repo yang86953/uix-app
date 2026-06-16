@@ -31,8 +31,8 @@ define_widget! {
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         let h = self.input_size.height();
-        // 无首选宽度（0），让 flex 布局分配宽度，避免输入文字时自动扩展
-        Size::new(0.0, h)
+        // 最小宽度 80px，实际宽度由 flex 布局分配
+        Size::new(80.0, h)
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
