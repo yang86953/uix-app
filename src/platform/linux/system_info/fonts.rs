@@ -162,6 +162,7 @@ fn is_cff2_variable_font(path: &str) -> bool {
 }
 
 /// 用 fontconfig 查询适合 CJK 的字体路径（用于后备字体快速加载）。
+#[allow(dead_code)]
 pub fn probe_cjk_font_path() -> Option<String> {
     for pattern in &[
         "sans-serif:lang=zh:scalable=true",

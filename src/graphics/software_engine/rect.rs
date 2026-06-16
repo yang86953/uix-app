@@ -1,6 +1,6 @@
 use super::core::RenderTarget;
 use crate::graphics::{Color, Radius};
-use crate::base::{Point, Rect};
+use crate::base::Rect;
 
 impl RenderTarget {
     pub fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {

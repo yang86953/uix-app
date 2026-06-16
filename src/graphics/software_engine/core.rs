@@ -1,6 +1,6 @@
 use super::*;
 use crate::graphics::{Color, Transform};
-use crate::base::{KeyMod, Point, Rect};
+use crate::base::Rect;
 
 // ════════════════════════════════════════════════════════════════════════════
 // RenderTarget — holds all mutable render state

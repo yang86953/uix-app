@@ -85,8 +85,8 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let primary = ctx.tokens().color_primary();
-        let text_color = ctx.tokens().color_text();
+        let _primary = ctx.tokens().color_primary();
+        let _text_color = ctx.tokens().color_text();
         let cy = frame.y + self.item_h * 0.5;
 
         match self.direction {
