@@ -112,7 +112,7 @@ define_widget! {
             _ => (primary.r, primary.g, primary.b),
         };
         let (cx, cy) = self.click_pos
-            .map(|p| (p.x, p.y))
+            .map(|p| (frame.x + p.x, frame.y + p.y))
             .unwrap_or((frame.x + frame.w / 2.0, frame.y + frame.h / 2.0));
         let max_r = (frame.w.max(frame.h)) * 0.7;
         let r_radius = max_r * self.anim_progress;
@@ -131,7 +131,7 @@ define_widget! {
             return frame;
         }
         let (cx, cy) = self.click_pos
-            .map(|p| (p.x, p.y))
+            .map(|p| (frame.x + p.x, frame.y + p.y))
             .unwrap_or((frame.x + frame.w / 2.0, frame.y + frame.h / 2.0));
         let max_r = (frame.w.max(frame.h)) * 1.2;
         let r = max_r * self.anim_progress;
