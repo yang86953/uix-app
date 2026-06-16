@@ -217,6 +217,8 @@ impl WidgetTree {
                 let node = match self.get(id) { Some(n) => n, None => continue };
                 let children: Vec<WidgetId> = node.children().to_vec();
                 if children.is_empty() { continue; }
+                // 跳过 Viewport 类容器（如 ScrollView），frame 由父布局决定
+                if node.inner().children_clip(node.frame()).is_some() { continue; }
 
                 let node_frame = node.frame();
                 // 取所有可见子节点的最大下边界
