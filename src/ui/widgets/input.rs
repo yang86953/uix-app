@@ -94,8 +94,11 @@ define_widget! {
             ctx.engine().push_clip_rect(text_area);
         }
         if !display_text.is_empty() {
-            ctx.text_center(display_text,
-                Rect::new(input_frame.x + pad, input_frame.y, 0.0, input_frame.h),
+            // 左对齐绘制输入文本
+            let draw_x = input_frame.x + pad;
+            let draw_y = input_frame.y + (input_frame.h - 14.0) * 0.5;
+            ctx.draw_text(display_text,
+                crate::base::Point::new(draw_x, draw_y),
                 text_color, 14.0);
         }
         if text_area.w > 0.0 {
