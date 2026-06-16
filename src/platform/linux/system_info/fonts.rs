@@ -245,8 +245,23 @@ fn probe_desktop_font() -> Option<String> {
         }
     }
 
-    // KDE: kreadconfig5 或读取文件
-    // TODO: KDE 探测
+    // KDE: 通过 kreadconfig5 读取系统字体设置
+    // 格式: "Noto Sans,10,-1,5,50,0,0,0,0,0"
+    if let Ok(output) = std::process::Command::new("kreadconfig5")
+        .args(["--group", "General", "--key", "font"])
+        .output()
+    {
+        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !s.is_empty() {
+            // 字体名是第一个逗号前的部分
+            if let Some(family) = s.split(',').next() {
+                let cleaned = family.trim();
+                if !cleaned.is_empty() {
+                    return Some(cleaned.to_string());
+                }
+            }
+        }
+    }
 
     None
 }
