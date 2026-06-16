@@ -9,7 +9,7 @@ use super::platform::WindowsPlatform;
 use super::util::{to_utf8, to_wide};
 use crate::diag::{Errc, Error};
 use crate::platform::event::*;
-use crate::platform::types::*;
+use crate::base::*;
 
 use std::ptr;
 

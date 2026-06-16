@@ -5,8 +5,9 @@
 #![cfg(windows)]
 
 use super::ffi::*;
-use crate::platform::types::Rect;
-use crate::platform::{DisplayInfo, IDisplay};
+use crate::base::Rect;
+use crate::platform::types::DisplayInfo;
+use crate::platform::IDisplay;
 use std::ptr;
 
 pub struct WindowsDisplay;

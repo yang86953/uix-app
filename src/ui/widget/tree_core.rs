@@ -413,17 +413,17 @@ mod tests {
         tree.get_mut(n1).unwrap().set_frame(Rect::new(0.0, 36.0, 200.0, 36.0));
         assert_eq!(active.get(), 0);
         let result = tree.dispatch_event(&WidgetEvent::MouseDown {
-            pos: Point::new(50.0, 54.0), button: crate::platform::types::MouseButton::Left,
+            pos: Point::new(50.0, 54.0), button: crate::base::MouseButton::Left,
         });
         assert_eq!(result, EventResult::Handled);
         assert_eq!(active.get(), 1);
         let result = tree.dispatch_event(&WidgetEvent::MouseDown {
-            pos: Point::new(50.0, 18.0), button: crate::platform::types::MouseButton::Left,
+            pos: Point::new(50.0, 18.0), button: crate::base::MouseButton::Left,
         });
         assert_eq!(result, EventResult::Handled);
         assert_eq!(active.get(), 0);
         let result = tree.dispatch_event(&WidgetEvent::MouseDown {
-            pos: Point::new(50.0, 150.0), button: crate::platform::types::MouseButton::Left,
+            pos: Point::new(50.0, 150.0), button: crate::base::MouseButton::Left,
         });
         assert_eq!(result, EventResult::NotHandled);
         assert_eq!(active.get(), 0);

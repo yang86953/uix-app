@@ -10,6 +10,7 @@ use crate::graphics::{
 use crate::graphics::{GradientDirection, Transform};
 use crate::ui::render_context::RenderContext;
 use crate::ui::theme::Theme;
+use crate::platform::types::{CursorType, DisplayInfo};
 use crate::ui::widget::WidgetTree;
 
 // ════════════════════════════════════════════════════════════════════════════

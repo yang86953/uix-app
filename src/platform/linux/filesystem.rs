@@ -3,7 +3,8 @@
 // ============================================================================
 
 use crate::diag::{Errc, Error};
-use crate::platform::{IFileSystem, SpecialDir};
+use crate::platform::types::SpecialDir;
+use crate::platform::IFileSystem;
 
 // ════════════════════════════════════════════════════════════════════════════
 // LinuxFileSystem

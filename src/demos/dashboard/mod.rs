@@ -13,7 +13,7 @@ use uix::app::{map_ui_event, App};
 use uix::base::{EdgeInsets, Rect};
 use uix::graphics::Color;
 use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
-use uix::platform::types::KeyCode;
+use uix::base::KeyCode;
 use uix::ui::theme::{DesignTokens, DynTokens, Theme};
 use uix::ui::widget::{WidgetCore, WidgetNode, WidgetTree};
 use uix::ui::widgets::icon::init_lucide_font;
@@ -154,9 +154,8 @@ fn build_page(page_index: usize, tk: &DesignTokens) -> WidgetNode {
 /// 构建完整的 demo widget tree（侧边栏 + 内容区 + 页面标题）。
 ///
 /// 页面标题固定在内容区顶部（ScrollView 外部），不受滚动影响。
-fn build_demo_tree(tk: &DesignTokens, nav_active: &SharedActive) -> WidgetNode {
+fn build_demo_tree(tk: &DesignTokens) -> (WidgetNode, SharedActive) {
     let nav = Navigation::new("UIX 组件")
-        .shared_active(nav_active.clone())
         .item(" 仪表盘", "chart-bar")
         .item(" 排版", "type")
         .item(" 按钮", "square")
@@ -169,9 +168,10 @@ fn build_demo_tree(tk: &DesignTokens, nav_active: &SharedActive) -> WidgetNode {
         .item(" 布局", "grid")
         .item(" 主题色", "palette")
         .item(" 自定义", "settings")
-        .active_index(nav_active.get())
+        .active_index(0)
         .width(SB)
         .height(GH as f32);
+    let nav_active = nav.active().clone();
     let nav_node = nav.build(tk);
 
     let active_page = nav_active.get();
@@ -201,19 +201,19 @@ fn build_demo_tree(tk: &DesignTokens, nav_active: &SharedActive) -> WidgetNode {
         ],
     );
 
-    tree! {
+    let root = tree! {
         Container::new().size(GW as f32, GH as f32).bg(tk.color_bg_layout).dir(FlexDirection::Row) => [
             nav_node,
             content_container,
         ]
-    }
+    };
+    (root, nav_active)
 }
 
 /// 运行 GUI 演示的主入口。
 pub fn run_gui_demo() {
     let tk = DesignTokens::antd_light();
-    let nav_active: SharedActive = std::rc::Rc::new(std::cell::Cell::new(0));
-    let root_node = build_demo_tree(&tk, &nav_active);
+    let (root_node, nav_active) = build_demo_tree(&tk);
     let mut tree = WidgetTree::new();
     tree.build(root_node);
 
@@ -263,7 +263,7 @@ pub fn run_gui_demo() {
                 dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
                 let new_tk = dyn_tokens.snapshot();
-                let new_root = build_demo_tree(&new_tk, &nav_active);
+                let (new_root, _) = build_demo_tree(&new_tk);
                 tree.build(new_root);
                 // 重建后恢复 root frame 为实际窗口尺寸
                 if let Some(root) = tree.root_mut() {
@@ -279,7 +279,7 @@ pub fn run_gui_demo() {
             if active != prev_active.get() {
                 prev_active.set(active);
                 let tk = dyn_tokens.snapshot();
-                let new_root = build_demo_tree(&tk, &nav_active);
+                let (new_root, _) = build_demo_tree(&tk);
                 tree.build(new_root);
                 // 重建后恢复 root frame 为实际窗口尺寸（否则 layout 使用 preferred_size 1100x740）
                 if let Some(root) = tree.root_mut() {

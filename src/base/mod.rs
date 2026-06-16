@@ -5,6 +5,7 @@
 
 pub mod animation;
 pub mod geometry;
+pub mod types;
 
 mod api;
 pub use api::*;

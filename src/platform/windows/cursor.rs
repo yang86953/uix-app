@@ -5,8 +5,8 @@
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 
-use crate::platform::types::Point;
-use crate::platform::CursorType;
+use crate::base::Point;
+use crate::platform::types::CursorType;
 use crate::platform::ICursor;
 use std::ptr;
 

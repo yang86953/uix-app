@@ -11,9 +11,9 @@
 // Backend-owned:     cursor, keyboard, display, clipboard
 // ============================================================================
 
+use crate::base::Point;
 use crate::diag::Error;
 use crate::platform::event::*;
-use crate::platform::types::*;
 use crate::platform::*;
 
 use crate::platform::linux::backend::Backend;
@@ -267,6 +267,20 @@ impl Platform for LinuxPlatform {
     }
     fn system_info(&self) -> &dyn ISystemInfo {
         &self.system_info_subsys
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// IPresenter — 委托给 backend
+// ════════════════════════════════════════════════════════════════════════════
+
+impl IPresenter for LinuxPlatform {
+    fn present(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
+        self.backend.present(pixels, width, height)
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.backend.resize(width, height)
     }
 }
 

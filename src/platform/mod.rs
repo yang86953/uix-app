@@ -1,33 +1,52 @@
 // ============================================================================
-// platform/mod.rs — 平台能力接口（聚合入口）
+// platform/mod.rs — 平台层模块入口
+//
+// 平台层架构：
+//   api.rs       — 统一 API 契约：所有 trait 定义
+//   event.rs     — 事件类型（UiEvent 及其载荷）
+//   presenter.rs — NullPresenter（空操作实现）
+//   system_info.rs — 系统信息查询工具函数（probe_system_default_font）
+//   linux/       — Linux（Wayland）平台实现
+//   windows/     — Windows 平台实现
 // ============================================================================
 
-// ── 核心平台模块 ──────────────────────────────────────────────────
-pub mod abstraction;
+// ── 核心 API 契约 ──────────────────────────────────────────────
+pub mod api;
+pub use api::*;
+
+// ── 共享类型与事件 ──────────────────────────────────────────────
 pub mod event;
+
+// ── 平台专属类型 ─────────────────────────────────────────────
 pub mod types;
 
+// ── 像素呈现 ───────────────────────────────────────────────────
+pub mod presenter;
+
+// ── 平台工厂 ───────────────────────────────────────────────────
+
+/// 创建当前平台对应的 Platform 实例。
+///
+/// # Panics
+/// 如果平台初始化失败（如 Linux 下无 Wayland 会话），会 panic。
+#[cfg(windows)]
+pub fn create_platform() -> Box<dyn Platform> {
+    Box::new(crate::platform::windows::platform::WindowsPlatform::new())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn create_platform() -> Box<dyn Platform> {
+    Box::new(crate::platform::linux::platform::LinuxPlatform::new())
+}
+
+#[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
+pub fn create_platform() -> Box<dyn Platform> {
+    compile_error!("Unsupported platform: only Windows and Linux are supported");
+}
+
+// ── 平台实现 ───────────────────────────────────────────────────
 #[cfg(windows)]
 pub mod windows;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod linux;
-
-// ── 像素呈现策略 ────────────────────────────────────────────────
-pub mod presenter;
-
-// ── 子系统 trait 模块 ─────────────────────────────────────────────
-pub mod clipboard;
-pub mod console;
-pub mod cursor;
-pub mod display;
-pub mod file_dialog;
-pub mod file_system;
-pub mod input;
-pub mod notification;
-pub mod system_info;
-pub mod timer;
-
-// ── API 出口：所有公共 API 通过 api.rs 暴露 ──────────────────────
-mod api;
-

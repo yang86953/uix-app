@@ -12,7 +12,7 @@
 
 use super::ffi::{GetDC, ReleaseDC};
 use crate::diag::{Errc, Error};
-use crate::platform::presenter::IPresenter;
+use crate::platform::api::IPresenter;
 
 // ── Windows FFI declarations ────────────────────────────────────────────────
 

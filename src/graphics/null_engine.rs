@@ -54,7 +54,7 @@ impl GraphicsEngine for NullEngine {
 
     fn begin_frame(&mut self, _d: &DirtyRegion) {}
     fn end_frame(&mut self, _d: &DirtyRegion) {}
-    fn scroll_region(&mut self, _viewport: Rect, _dy: f32) {}
+    fn scroll_region(&mut self, _viewport: Rect, _dx: f32, _dy: f32) {}
 
     fn push_clip_rect(&mut self, _r: Rect) {}
     fn pop_clip_rect(&mut self) {}

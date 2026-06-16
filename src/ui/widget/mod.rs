@@ -4,7 +4,7 @@ use crate::base::{Point, Rect, Size};
 pub use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
 
 // Platform types are used directly by WidgetEvent - no conversion needed.
-pub use crate::platform::types::{KeyCode, MouseButton};
+pub use crate::base::{KeyCode, MouseButton};
 
 /// Event result enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

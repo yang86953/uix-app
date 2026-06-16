@@ -34,7 +34,7 @@ impl SoftwareEngine {
             #[cfg(target_os = "linux")]
             {
                 // 尝试 sans-serif 兜底（用户配置的字体可能不在系统中）
-                let fallback = crate::platform::system_info::probe_system_default_font();
+                let fallback = crate::platform::linux::system_info::probe_system_default_font();
                 if let Some(path) = fallback {
                     if let Ok(data) = std::fs::read(&path) {
                         if self.load_raw_font(data, size).is_some() {
@@ -49,7 +49,21 @@ impl SoftwareEngine {
             }
         } else {
             // 未配置：平台层取系统默认，不扫描
-            if let Some(path) = crate::platform::system_info::probe_system_default_font() {
+            let path_opt: Option<String> = {
+                #[cfg(target_os = "linux")]
+                {
+                    crate::platform::linux::system_info::probe_system_default_font()
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    crate::platform::windows::util::system_default_font_path()
+                }
+                #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+                {
+                    None
+                }
+            };
+            if let Some(path) = path_opt {
                 if let Ok(data) = std::fs::read(&path) {
                     if self.load_raw_font(data, size).is_some() {
                         crate::diag::log::info_fn(format!("Loaded system default font: {}", path));

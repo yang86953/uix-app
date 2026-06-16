@@ -3,10 +3,10 @@
 // ============================================================================
 //
 // Reads system information via:
-//   - uname(2)   for OS name / version / architecture
-//   - /proc/cpuinfo for CPU count
+//   - /proc/sys/kernel/* for OS name / version / build
 //   - /proc/meminfo  for memory info
-//   - gethostname(2) / getlogin_r(3) for hostname / username
+//   - /proc/sys/kernel/hostname for hostname
+//   - $USER / $LOGNAME / id(1) for username
 //   - /proc/uptime   for uptime
 //
 // Font discovery via fontconfig lives in the `fonts` submodule.
@@ -15,10 +15,10 @@
 mod fonts;
 pub(crate) use fonts::*;
 
-use crate::platform::{ISystemInfo, MemoryInfo, OsInfo};
+use crate::platform::types::{MemoryInfo, OsInfo};
+use crate::platform::ISystemInfo;
 
 use std::fs;
-use std::io::{self, BufRead};
 
 
 
@@ -81,26 +81,33 @@ impl ISystemInfo for LinuxSystemInfo {
 // ════════════════════════════════════════════════════════════════════════════
 
 fn probe_os_info() -> OsInfo {
-    // SAFETY: uname(2) writes into fixed-size buffers; the syscall always
-    // null-terminates, and we only read up to the null terminator.
-    let mut utsname: libc::utsname = unsafe { std::mem::zeroed() };
-    let ret = unsafe { libc::uname(&mut utsname) };
-    if ret != 0 {
-        return OsInfo {
-            name: "Linux (Unknown)".to_string(),
-            version: String::new(),
-            build: String::new(),
-            is_64bit: std::mem::size_of::<usize>() == 8,
-        };
-    }
-
-    let sysname = cstr_to_string(&utsname.sysname);
-    let release = cstr_to_string(&utsname.release);
-    let version = cstr_to_string(&utsname.version);
-    let machine = cstr_to_string(&utsname.machine);
+    // 安全替代：读取 /proc/sys/kernel/ 下的文本文件
+    let sysname = std::fs::read_to_string("/proc/sys/kernel/ostype")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let release = std::fs::read_to_string("/proc/sys/kernel/osrelease")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let version = std::fs::read_to_string("/proc/sys/kernel/version")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let machine = std::process::Command::new("uname")
+        .arg("-m")
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
 
     let os_name = if sysname == "Linux" {
-        // Try to get distro name from /etc/os-release
         detect_distro().unwrap_or_else(|| "Linux".to_string())
     } else {
         sysname
@@ -140,25 +147,10 @@ fn detect_distro() -> Option<String> {
 }
 
 fn probe_cpu_count() -> u32 {
-    // Try sysconf first (POSIX)
-    let count = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
-    if count > 0 {
-        return count as u32;
-    }
-
-    // Fallback: count "processor" lines in /proc/cpuinfo
-    if let Ok(file) = fs::File::open("/proc/cpuinfo") {
-        let reader = io::BufReader::new(file);
-        return reader
-            .lines()
-            .filter_map(|line| {
-                let l = line.ok()?;
-                if l.starts_with("processor") { Some(()) } else { None }
-            })
-            .count() as u32;
-    }
-
-    1
+    // 安全替代：std::thread::available_parallelism()
+    std::thread::available_parallelism()
+        .map(|n| n.get() as u32)
+        .unwrap_or(1)
 }
 
 fn probe_memory_info() -> MemoryInfo {
@@ -193,42 +185,34 @@ fn parse_meminfo_line(line: &str, key: &str) -> Option<u64> {
 }
 
 fn probe_hostname() -> String {
-    // SAFETY: gethostname(2) writes into a fixed buffer; null-terminated.
-    let mut buf = [0i8; 256];
-    let ret = unsafe { libc::gethostname(buf.as_mut_ptr(), buf.len()) };
-    if ret == 0 {
-        cstr_to_string(&buf)
-    } else {
-        String::new()
-    }
+    // 安全替代：读取 /proc/sys/kernel/hostname
+    std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
 }
 
 fn probe_username() -> String {
-    // Try $USER first, then $LOGNAME, then /etc/passwd fallback.
+    // Try $USER first, then $LOGNAME
     if let Ok(user) = std::env::var("USER") {
         return user;
     }
     if let Ok(user) = std::env::var("LOGNAME") {
         return user;
     }
-    // SAFETY: getpwuid_r reads from /etc/passwd; safe with proper buffer.
-    unsafe {
-        let mut buf = [0i8; 4096];
-        let mut pwd: libc::passwd = std::mem::zeroed();
-        let mut result: *mut libc::passwd = std::ptr::null_mut();
-        let ret = libc::getpwuid_r(
-            libc::getuid(),
-            &mut pwd,
-            buf.as_mut_ptr(),
-            buf.len(),
-            &mut result,
-        );
-        if ret == 0 && !result.is_null() && !pwd.pw_name.is_null() {
-            let name = std::ffi::CStr::from_ptr(pwd.pw_name);
-            return name.to_string_lossy().to_string();
-        }
-    }
-    String::new()
+    // 安全替代：读 /etc/passwd 取当前 uid 对应的用户名
+    let uid = std::process::Command::new("id")
+        .arg("-un")
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+    uid
 }
 
 fn probe_uptime_ms() -> u64 {
@@ -240,17 +224,4 @@ fn probe_uptime_ms() -> u64 {
         }
     }
     0
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Utility: convert C fixed-size char array to String
-// ════════════════════════════════════════════════════════════════════════════
-
-fn cstr_to_string(arr: &[i8]) -> String {
-    let bytes: Vec<u8> = arr
-        .iter()
-        .take_while(|&&c| c != 0)
-        .map(|&c| c as u8)
-        .collect();
-    String::from_utf8_lossy(&bytes).to_string()
 }

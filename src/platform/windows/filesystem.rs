@@ -7,7 +7,8 @@
 
 use crate::diag::{Errc, Error};
 use crate::platform::windows::util::to_utf8;
-use crate::platform::{IFileSystem, SpecialDir};
+use crate::platform::types::SpecialDir;
+use crate::platform::IFileSystem;
 use std::ptr;
 
 // ════════════════════════════════════════════════════════════════════════════

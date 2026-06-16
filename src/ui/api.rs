@@ -16,7 +16,7 @@ pub use crate::ui::context::WidgetContext;
 
 // ── 兼容性重导出（从 graphics/platform 层透传） ──
 pub use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
-pub use crate::platform::{KeyCode, MouseButton};
+pub use crate::base::{KeyCode, MouseButton};
 
 // ── 状态管理 ──
 pub use crate::ui::state::{Computed, State};

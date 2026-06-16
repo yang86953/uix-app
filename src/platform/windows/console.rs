@@ -6,7 +6,8 @@
 #![allow(clippy::upper_case_acronyms)]
 #![allow(nonstandard_style)]
 
-use crate::platform::{ConsoleColor, IConsole, TerminalCapabilities};
+use crate::platform::types::{ConsoleColor, TerminalCapabilities};
+use crate::platform::IConsole;
 use std::ptr;
 
 use crate::platform::windows::util::to_wide;

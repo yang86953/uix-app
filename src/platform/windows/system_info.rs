@@ -7,7 +7,8 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use crate::platform::windows::util::to_utf8;
-use crate::platform::{ISystemInfo, MemoryInfo, OsInfo};
+use crate::platform::types::{MemoryInfo, OsInfo};
+use crate::platform::ISystemInfo;
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsSystemInfo
@@ -51,6 +52,10 @@ impl ISystemInfo for WindowsSystemInfo {
 
     fn up_time(&self) -> u64 {
         get_uptime_ms()
+    }
+
+    fn default_font_path(&self) -> Option<String> {
+        None
     }
 }
 

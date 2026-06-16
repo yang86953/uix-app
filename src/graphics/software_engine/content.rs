@@ -1,6 +1,6 @@
 use super::core::RenderTarget;
 use crate::graphics::{Color, GradientDirection};
-use crate::base::{Point, Rect};
+use crate::base::{KeyCode, MouseButton, Point, Rect};
 
 impl RenderTarget {
     pub fn fill_linear_gradient(

@@ -9,7 +9,7 @@
 //   4. 支持通知级别：Info / Success / Warning / Error
 // ============================================================================
 
-use crate::platform::NotificationLevel;
+use crate::platform::types::NotificationLevel;
 use std::collections::VecDeque;
 
 /// A single notification entry displayed as a Toast in the UI.
@@ -116,12 +116,7 @@ impl NotificationService {
 
         // 1. Send platform notification (system-level toast/balloon)
         if let Some(ref mut pn) = self.platform_notifier {
-            let options = crate::platform::NotificationOptions {
-                level,
-                duration_ms,
-                action_label: None,
-            };
-            pn.show_with_options(title, message, &options);
+            pn.show(title, message);
         }
 
         // 2. Enqueue in-app toast

@@ -2,9 +2,10 @@
 // platform/linux/wayland.rs — Native Wayland backend (wayland-client 0.29)
 // ============================================================================
 
+use crate::base::{KeyCode, KeyMod, MouseButton, Point, Rect};
 use crate::diag::Error;
 use crate::platform::event::*;
-use crate::platform::types::*;
+use crate::platform::types::{CursorType, DisplayInfo};
 use crate::platform::*;
 
 use crate::platform::linux::backend::Backend;

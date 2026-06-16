@@ -18,7 +18,7 @@ use super::consts::*;
 use super::ffi::*;
 use super::platform::WindowsPlatform;
 use crate::platform::event::*;
-use crate::platform::types::*;
+use crate::base::*;
 
 use std::ptr;
 

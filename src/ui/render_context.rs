@@ -220,8 +220,6 @@ impl<'a> RenderContext<'a> {
         };
         self.engine.measure_text(&self.font, text, &opts)
     }
-<<<<<<< Updated upstream
-=======
 
     /// Measure text with word wrap enabled at the given max width.
     pub fn measure_text_wrapped(&self, text: &str, font_size: f32, max_width: f32) -> Size {
@@ -289,5 +287,4 @@ impl<'a> RenderContext<'a> {
         };
         self.engine.draw_text(&self.font, text, Point::new(rect.x, rect.y), color, &opts);
     }
->>>>>>> Stashed changes
 }

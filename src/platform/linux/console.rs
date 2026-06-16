@@ -7,7 +7,8 @@
 // level — it is handled by higher-level interactive shells when needed.
 // ============================================================================
 
-use crate::platform::{ConsoleColor, IConsole, TerminalCapabilities};
+use crate::platform::types::{ConsoleColor, TerminalCapabilities};
+use crate::platform::IConsole;
 
 // ════════════════════════════════════════════════════════════════════════════
 // ANSI color values

@@ -6,3 +6,4 @@
 // ============================================================================
 
 pub use crate::base::geometry::{EdgeInsets, Point, Rect, Size};
+pub use crate::base::types::*;

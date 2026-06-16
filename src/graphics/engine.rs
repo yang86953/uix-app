@@ -36,7 +36,7 @@ pub trait GraphicsEngine: 'static {
     /// 滚动优化：将 viewport 内的像素缓冲上/下移动 dy 像素（memmove），
     /// 再结合局部 dirty region 只渲染新增 strip。
     /// `dy > 0` = 滚动向下（内容上移），`dy < 0` = 滚动向上（内容下移）。
-    fn scroll_region(&mut self, viewport: Rect, dy: f32);
+    fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32);
 
     // Clip & state
     fn push_clip_rect(&mut self, rect: Rect);
