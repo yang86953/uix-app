@@ -68,6 +68,21 @@ define_widget! {
         ctx.fill_rect(tip_frame, bg, r);
         ctx.text_center(&self.text, tip_frame, text_color, 12.0);
     }
+
+    // 弹窗区域超出 widget frame，需包含在 dirty_rect 中避免被 clip 裁剪
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        if !self.hovered || self.timer < 0.5 { return frame; }
+        let text_w = self.text.len() as f32 * 7.5 + 16.0;
+        let text_h = 26.0;
+        let (tx, ty) = match self.placement {
+            TooltipPlacement::Top => (frame.x + frame.w * 0.5 - text_w * 0.5, frame.y - text_h - 6.0),
+            TooltipPlacement::Bottom => (frame.x + frame.w * 0.5 - text_w * 0.5, frame.y + frame.h + 6.0),
+            TooltipPlacement::Left => (frame.x - text_w - 8.0, frame.y + frame.h * 0.5 - text_h * 0.5),
+            TooltipPlacement::Right => (frame.x + frame.w + 8.0, frame.y + frame.h * 0.5 - text_h * 0.5),
+        };
+        let tip = Rect::new(tx, ty, text_w, text_h);
+        frame.union(&tip)
+    }
 }
 
 impl Default for Tooltip { fn default() -> Self { Self::new("") } }
