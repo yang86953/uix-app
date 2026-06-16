@@ -217,8 +217,9 @@ impl WidgetTree {
                 let node = match self.get(id) { Some(n) => n, None => continue };
                 let children: Vec<WidgetId> = node.children().to_vec();
                 if children.is_empty() { continue; }
-                // 跳过 Viewport 类容器（如 ScrollView），frame 由父布局决定
-                if node.inner().children_clip(node.frame()).is_some() { continue; }
+                // Viewport 类容器（如 ScrollView）本身不扩展，但需更新内部 bounds
+                let is_viewport = node.inner().children_clip(node.frame()).is_some();
+                if is_viewport { continue; }
 
                 let node_frame = node.frame();
                 // 取所有可见子节点的最大下边界
@@ -260,6 +261,34 @@ impl WidgetTree {
                 }
             }
             if !any_resized { break; }
+        }
+
+        // Phase 3: 更新 viewport 容器的 content bounds
+        // 子节点在 Phase 2 中被扩展后，父容器（如 ScrollView）的 layout_children
+        // 基于旧 frame 计算了 content_bounds，需要重新计算
+        for &id in &self.traverse() {
+            let (viewport_frame, children) = match self.get(id) {
+                Some(n) if n.inner().children_clip(n.frame()).is_some() => {
+                    (n.frame(), n.children().to_vec())
+                }
+                _ => continue,
+            };
+            if children.is_empty() { continue; }
+            // 重新运行 layout_children 以更新内部的 content_bounds
+            let updated = self.get(id)
+                .unwrap()
+                .inner()
+                .layout_children(viewport_frame, &children, self);
+            for (child_id, rect) in updated {
+                if let Some(child) = self.get_mut(child_id) {
+                    let old = child.frame();
+                    if old != rect {
+                        child.set_frame(rect);
+                        self.mark_dirty_rect(child_id, old);
+                        self.mark_dirty(child_id);
+                    }
+                }
+            }
         }
     }
 

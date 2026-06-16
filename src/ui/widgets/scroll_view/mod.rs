@@ -13,7 +13,7 @@ use crate::define_widget;
 use crate::base::{Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::render_context::RenderContext;
-use crate::ui::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};
+use crate::ui::widget::{EventResult, Widget, WidgetCore, WidgetEvent, WidgetId, WidgetTree};
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
 
 /// Scroll direction for a ScrollView.
@@ -289,7 +289,13 @@ define_widget! {
             // fill the viewport so the child can use flex/Stretch
             // for its own children.
             let w = if pref.w <= 0.0 { frame.w } else { pref.w };
-            let h = if pref.h <= 0.0 { frame.h } else { pref.h };
+            let h = if pref.h <= 0.0 {
+                // 未指定高度时优先用已存在的 frame 高度（Phase 2 可能已扩展）
+                let current = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
+                frame.h.max(current)
+            } else {
+                pref.h
+            };
             let r = Rect::new(origin_x, origin_y, w, h);
             result.push((cid, r));
             max_right = max_right.max(r.x + r.w);
