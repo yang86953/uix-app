@@ -104,16 +104,90 @@ impl SoftwareEngine {
         self.text_backend.load_font(&data).is_ok()
     }
 
+    // ── KDE 字体探测 ──
+
+    /// Detect if running under KDE Plasma desktop environment.
+    fn is_kde() -> bool {
+        if let Ok(de) = std::env::var("XDG_CURRENT_DESKTOP") {
+            if de.to_lowercase().contains("kde") {
+                return true;
+            }
+        }
+        std::env::var("KDE_DESKTOP_SESSION").is_ok()
+            || std::env::var("KDE_SESSION_VERSION").is_ok()
+            || std::env::var("DESKTOP_SESSION")
+                .map(|s| s.to_lowercase().contains("kde"))
+                .unwrap_or(false)
+    }
+
+    /// Read the configured font family from KDE's kdeglobals config file.
+    /// Returns the font family name (e.g. "Noto Sans") on success.
+    fn read_kde_font_family() -> Option<String> {
+        let home = std::env::var("HOME").ok()?;
+        let config_path = std::path::Path::new(&home).join(".config").join("kdeglobals");
+        let content = std::fs::read_to_string(config_path).ok()?;
+
+        // Look for font= setting in [General] section.
+        // Format: font=Family,PointSize,Pixelsize,...
+        let mut in_general = false;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('[') {
+                in_general = trimmed.eq_ignore_ascii_case("[general]");
+                continue;
+            }
+            if in_general && trimmed.to_lowercase().starts_with("font=") {
+                let value = &trimmed["font=".len()..];
+                return value
+                    .split(',')
+                    .next()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+            }
+        }
+        None
+    }
+
+    /// Resolve a font family name via fc-match and load it.
+    /// Returns true if a valid font was loaded.
+    fn probe_fc_family_font(&mut self, family: &str, size: f32) -> bool {
+        let output = match std::process::Command::new("fc-match")
+            .args([
+                "-f",
+                "%{file}\n",
+                &format!("{}:scalable=true", family),
+            ])
+            .output()
+        {
+            Ok(o) if o.status.success() => o,
+            _ => return false,
+        };
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() || path == "(null)" {
+            return false;
+        }
+        match std::fs::read(&path) {
+            Ok(data) if self.try_load_user_font(data, size) => {
+                crate::diag::log::info_fn(format!("Loaded KDE font: {}", path));
+                true
+            }
+            _ => false,
+        }
+    }
+
     // ── 系统字体自动检测 ──
 
     /// Auto-detect and load the OS system default font.
     ///
     /// Strategy per platform:
-    /// - **Windows**: scans `%WINDIR%\Fonts\` for `.ttf`/`.ttc` files, prioritising
+    /// - **Windows**: scans `%WINDIR%\\Fonts\\` for `.ttf`/`.ttc` files, prioritising
     ///   system UI fonts (Segoe UI, Microsoft Sans Serif, Arial).
-    /// - **Linux**: runs `fc-match` (fontconfig), then recursively scans common font
-    ///   directories.  Prefers non-variable TrueType fonts because fontdue 0.9 does
-    ///   not render CFF2 variable fonts correctly.
+    /// - **Linux (GNOME/other)**: runs `fc-match` (fontconfig), then recursively scans
+    ///   common font directories.  Prefers non-variable TrueType fonts because
+    ///   fontdue 0.9 does not render CFF2 variable fonts correctly.
+    /// - **Linux (KDE)**: reads KDE's own font configuration from `~/.config/kdeglobals`,
+    ///   resolves the family name via fc-match, and loads the resulting font file.
+    ///   Falls back to fc-match `sans-serif` if KDE config is unavailable.
     /// - **macOS**: scans `/System/Library/Fonts/` and `/Library/Fonts/`.
     ///
     /// The loaded font becomes `FontHandle(0)` — the default.
@@ -174,11 +248,24 @@ impl SoftwareEngine {
             }
         }
 
-        // Fallback 1 (Linux): fc-match discover.
+        // Fallback 1 (Linux): KDE font discovery via kdeglobals.
+        // Tried before generic fc-match because kdeglobals contains the user's
+        // explicitly configured desktop font.
+        #[cfg(target_os = "linux")]
+        if Self::is_kde() {
+            if let Some(family) = Self::read_kde_font_family() {
+                crate::diag::log::info_fn(format!("KDE font config: {}", family));
+                if self.probe_fc_family_font(&family, size) {
+                    return;
+                }
+            }
+        }
+
+        // Fallback 2 (Linux): fc-match discover.
         #[cfg(target_os = "linux")]
         {
             if let Ok(output) = std::process::Command::new("fc-match")
-                .args(["-f", "%{file}\n", "sans-serif"])
+                .args(["-f", "%{file}\\n", "sans-serif"])
                 .output()
             {
                 if output.status.success() {
@@ -195,7 +282,7 @@ impl SoftwareEngine {
             }
         }
 
-        // Fallback 2: scan directories for any loadable .ttf / .ttc / .otf file.
+        // Fallback 3: scan directories for any loadable .ttf / .ttc / .otf file.
         for dir in &font_dirs {
             let dir_path = std::path::Path::new(dir);
             if !dir_path.is_dir() {
@@ -221,7 +308,7 @@ impl SoftwareEngine {
             }
         }
 
-        // Fallback 3 (Linux): shallow recursive scan one level deeper.
+        // Fallback 4 (Linux): shallow recursive scan one level deeper.
         #[cfg(target_os = "linux")]
         {
             for dir in &font_dirs {
