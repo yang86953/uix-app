@@ -23,24 +23,29 @@ impl CollapsePanel {
 
 define_widget! {
     /// Collapse — 可折叠面板组。
-    /// 内容在 post_render 中渲染为浮层，不触发布局偏移。
     pub struct Collapse {
         panels: Vec<CollapsePanel>,
         accordion: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
-        // 固定为 header 总高度，不随 expanded 变化，避免布局偏移
-        let h = self.panels.len() as f32 * 36.0;
+        let mut h = 0.0f32;
+        for p in &self.panels {
+            h += 36.0; // header
+            if p.expanded {
+                h += p.content.len() as f32 * 0.4 * 14.0 + 16.0; // content estimate
+            }
+        }
         Size::new(300.0, h)
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
         if let WidgetEvent::MouseDown { pos, .. } = event {
+            let mut cy = 0.0f32;
             let panel_count = self.panels.len();
             for i in 0..panel_count {
-                let y0 = i as f32 * 36.0;
-                if pos.y >= y0 && pos.y <= y0 + 36.0 {
+                let header_h = 36.0f32;
+                if pos.y >= cy && pos.y <= cy + header_h {
                     if self.accordion {
                         for p in &mut self.panels {
                             p.expanded = false;
@@ -48,6 +53,10 @@ define_widget! {
                     }
                     self.panels[i].expanded = !self.panels[i].expanded;
                     return EventResult::Handled;
+                }
+                cy += header_h;
+                if self.panels[i].expanded {
+                    cy += self.panels[i].content.len() as f32 * 0.4 * 14.0 + 16.0;
                 }
             }
         }
@@ -64,22 +73,15 @@ define_widget! {
 
         for p in &self.panels {
             let header_rect = Rect::new(frame.x, y, frame.w, 36.0);
+            // header 背景
             ctx.fill_rect(header_rect, bg, r);
             ctx.stroke_rect(header_rect, border, 1.0, r);
+            // 展开指示符
             let arrow = if p.expanded { "▼" } else { "▶" };
             ctx.draw_text(arrow, crate::base::Point::new(frame.x + 10.0, y + 10.0), text_secondary, 12.0);
             ctx.draw_text(&p.header, crate::base::Point::new(frame.x + 28.0, y + 9.0), text_color, 14.0);
             y += 36.0;
-        }
-    }
 
-    // 内容作为浮层渲染（不影响布局定位）
-    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let text_secondary = ctx.tokens().color_text_secondary();
-        let mut y = frame.y;
-
-        for p in &self.panels {
-            y += 36.0; // header
             if p.expanded {
                 let content_y = y + 8.0;
                 ctx.draw_text(&p.content, crate::base::Point::new(frame.x + 16.0, content_y), text_secondary, 12.0);
@@ -88,8 +90,8 @@ define_widget! {
         }
     }
 
+    // 始终包含最大展开高度，确保 expanded 切换时残留像素被清除
     dirty_rect => (&self, frame: Rect) -> Rect {
-        // 始终包含最大展开内容区域，确保 expanded 切换时残留像素被清除
         let mut h = self.panels.len() as f32 * 36.0;
         for p in &self.panels {
             h += p.content.len() as f32 * 0.4 * 14.0 + 16.0;
