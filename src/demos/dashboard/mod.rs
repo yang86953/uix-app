@@ -8,6 +8,7 @@ pub mod widgets;
 pub mod sections;
 pub mod more_pages;
 
+use std::rc::Rc;
 use std::sync::Arc;
 use uix::app::{map_ui_event, App};
 use uix::base::{EdgeInsets, Rect};
@@ -214,6 +215,8 @@ fn build_demo_tree(tk: &DesignTokens) -> (WidgetNode, SharedActive) {
 pub fn run_gui_demo() {
     let tk = DesignTokens::antd_light();
     let (root_node, nav_active) = build_demo_tree(&tk);
+    let nav_active: Rc<std::cell::RefCell<uix::ui::widgets::nav::SharedActive>> =
+        Rc::new(std::cell::RefCell::new(nav_active));
     let mut tree = WidgetTree::new();
     tree.build(root_node);
 
@@ -263,7 +266,8 @@ pub fn run_gui_demo() {
                 dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
                 let new_tk = dyn_tokens.snapshot();
-                let (new_root, _) = build_demo_tree(&new_tk);
+                let (new_root, new_active) = build_demo_tree(&new_tk);
+                *nav_active.borrow_mut() = new_active;
                 tree.build(new_root);
                 // 重建后恢复 root frame 为实际窗口尺寸
                 if let Some(root) = tree.root_mut() {
@@ -275,13 +279,14 @@ pub fn run_gui_demo() {
             }
 
             // ── 导航切换 → 重建内容页 ──
-            let active = nav_active.get();
+            let active = nav_active.borrow().get();
             if active != prev_active.get() {
                 prev_active.set(active);
                 let tk = dyn_tokens.snapshot();
-                let (new_root, _) = build_demo_tree(&tk);
+                let (new_root, new_active) = build_demo_tree(&tk);
+                *nav_active.borrow_mut() = new_active;
                 tree.build(new_root);
-                // 重建后恢复 root frame 为实际窗口尺寸（否则 layout 使用 preferred_size 1100x740）
+                // 重建后恢复 root frame 为实际窗口尺寸
                 if let Some(root) = tree.root_mut() {
                     root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
                 }
