@@ -368,14 +368,12 @@ impl GraphicsEngine for SoftwareEngine {
                 Some((bounds.x as i32, bounds.y as i32, bounds.w as i32, bounds.h as i32))
             };
 
-        // ── Pass 0: Clear ───────────────────────────────────────
-        GraphicsEngine::begin_frame(self, &region);
-        GraphicsEngine::end_frame(self, &region);
-
-        // ── Pass 1: Geometry ────────────────────────────────────
+        // ── 滚动偏移（先于清理，避免滚动携带清除后的透明像素） ──
         for &(viewport, dx, dy) in &scroll_deltas {
             GraphicsEngine::scroll_region(self, viewport, dx, dy);
         }
+
+        // ── Pass 1: Clear + Geometry ───────────────────────────
         GraphicsEngine::begin_frame(self, &region);
         tree.layout();
 

@@ -202,7 +202,7 @@ impl LayerTree {
 
     fn render_picture_dirty(
         widget_id: WidgetId,
-        _bounds: &Rect,
+        bounds: &Rect,
         offscreen_handle: &mut Option<ImageHandle>,
         ctx: &mut RenderContext,
         tree: &WidgetTree,
@@ -228,6 +228,9 @@ impl LayerTree {
             Self::render_widget_subtree(widget_id, ctx, tree);
             ctx.engine().pop_clip_rect();
             ctx.engine().end_offscreen();
+            // 立即将离屏渲染结果回写到主缓冲，避免延迟一帧
+            let src = Rect::new(0.0, 0.0, w as f32, h as f32);
+            ctx.engine().draw_image(handle, src, *bounds);
         }
     }
 
