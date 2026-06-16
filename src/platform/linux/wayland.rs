@@ -95,6 +95,10 @@ pub struct WaylandBackend {
     shown: bool,
     closed: bool,
     configured: bool,
+    /// Tracked from xdg_toplevel configure events (state = 1 = maximized)
+    maximized: Arc<Mutex<bool>>,
+    /// Tracked from xdg_toplevel configure events (state = 3 or 4 = fullscreen)
+    fullscreen: Arc<Mutex<bool>>,
 
     // UiEvent queue (thread-safe for quick_assign callbacks)
     events: Arc<Mutex<VecDeque<UiEvent>>>,
@@ -166,6 +170,8 @@ impl WaylandBackend {
             shown: false,
             closed: false,
             configured: false,
+            maximized: Arc::new(Mutex::new(false)),
+            fullscreen: Arc::new(Mutex::new(false)),
             decoration_manager: None,
             decoration: None,
             shm_buffers: [None, None],
@@ -290,6 +296,8 @@ impl WaylandBackend {
 
         // xdg_toplevel events → UiEvent
         let toplevel_events = events.clone();
+        let maximized_state = self.maximized.clone();
+        let fullscreen_state = self.fullscreen.clone();
         toplevel.quick_assign(move |_, event, _| {
             match event {
                 xdg_toplevel::Event::Close => {
@@ -303,11 +311,20 @@ impl WaylandBackend {
                     height: h,
                     states,
                 } => {
-                    // Check if maximized by looking for state value 1
-                    // in the wl_array of u32 state values.
+                    // Parse xdg_toplevel_state from wl_array of u32:
+                    //   1 = maximized, 2 = fullscreen
                     let is_maximized = states
                         .chunks_exact(4)
                         .any(|c| c.len() == 4 && u32::from_ne_bytes([c[0], c[1], c[2], c[3]]) == 1);
+                    let is_fullscreen = states
+                        .chunks_exact(4)
+                        .any(|c| c.len() == 4 && u32::from_ne_bytes([c[0], c[1], c[2], c[3]]) == 2);
+                    if let Ok(mut m) = maximized_state.lock() {
+                        *m = is_maximized;
+                    }
+                    if let Ok(mut f) = fullscreen_state.lock() {
+                        *f = is_fullscreen;
+                    }
                     if w > 0 && h > 0 {
                         let _ = toplevel_events
                             .lock()
@@ -622,7 +639,7 @@ impl IWindowProperties for WaylandBackend {
     fn set_resizable(&mut self, _: bool) { /* Wayland: xdg-shell handles this */
     }
     fn is_maximized(&self) -> bool {
-        false /* TODO: track via xdg_toplevel configure events */
+        self.maximized.lock().map(|m| *m).unwrap_or(false)
     }
     fn is_minimized(&self) -> bool {
         false
@@ -656,7 +673,7 @@ impl IWindowProperties for WaylandBackend {
         }
     }
     fn is_fullscreen(&self) -> bool {
-        false /* TODO: track via xdg_toplevel configure events */
+        self.fullscreen.lock().map(|f| *f).unwrap_or(false)
     }
     fn set_always_on_top(&mut self, _: bool) {
         log::warn!("Wayland: set_always_on_top not supported");
