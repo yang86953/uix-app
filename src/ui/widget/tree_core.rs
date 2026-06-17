@@ -411,7 +411,6 @@ impl WidgetTree {
                 for &cid in &children {
                     if let Some(child) = self.get(cid) {
                         if child.visible()
-                            || self.get(cid).map(|c| c.children().is_empty()).unwrap_or(true)
                         {
                             let cf = child.frame();
                             let child_bottom = cf.y + cf.h;
