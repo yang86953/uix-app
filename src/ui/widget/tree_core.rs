@@ -284,10 +284,13 @@ impl WidgetTree {
                                 .unwrap_or(true)
                         {
                             let cf = child.frame();
+                            let child_bottom = cf.y + cf.h;
                             // 子节点底部相对于父容器顶部
                             let rel_bottom = (cf.y - node_frame.y) + cf.h;
-                            if rel_bottom > node_frame.h {
-                                max_bottom = max_bottom.max(cf.y + cf.h);
+                            // 只在子节点延伸到可见区域时才触发扩展
+                            // 防止滚动到视口上方时(cf.y+cf.h<=0)的无限膨胀循环
+                            if child_bottom > 0.0 && rel_bottom > node_frame.h {
+                                max_bottom = max_bottom.max(child_bottom);
                             }
                         }
                     }
