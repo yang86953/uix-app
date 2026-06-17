@@ -145,6 +145,9 @@ impl Window {
             let now = Instant::now();
             let dt = (now - last_frame).as_secs_f32().min(0.05);
             last_frame = now;
+            // 事件处理后先重新 layout，确保 content_bounds / max_scroll 正确
+            // 再让 on_update 做滚动钳制，否则展开面板后无法滚动到底。
+            tree.layout();
             keep_polling = tree.update(dt) || woke;
 
             on_frame(tree, engine);

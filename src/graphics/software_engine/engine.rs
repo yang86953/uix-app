@@ -1,8 +1,6 @@
 use super::asset_store::AssetStore;
 use super::core::RenderTarget;
-use super::fontdue_backend::FontdueBackend;
-use crate::graphics::text_backend::TextBackend;
-use crate::graphics::FontHandle;
+use crate::graphics::font_service::FontService;
 
 // ════════════════════════════════════════════════════════════════════════════
 // SoftwareEngine — 组合 AssetStore + RenderTarget
@@ -21,7 +19,6 @@ pub(crate) enum ActiveTarget {
 pub struct SoftwareEngine {
     pub(crate) rt: RenderTarget,
     pub(crate) assets: AssetStore,
-    pub(crate) text_backend: Box<dyn TextBackend>,
     pub(crate) active_target: ActiveTarget,
     pub(crate) main_width: i32,
     pub(crate) main_height: i32,
@@ -33,12 +30,8 @@ pub struct SoftwareEngine {
     pub(crate) layer_tree_stale: bool,
     /// 首帧已渲染标志（用于脏区域回退为全帧清理）
     pub(crate) rendered_first: bool,
-    /// Cached last loaded font handle for the `load_font` GraphicsEngine API.
-    pub(crate) loaded_font_handle: FontHandle,
-    /// 首选字体族名称（用户可通过 API 配置，默认 "sans-serif" 走系统默认）。
-    pub(crate) primary_family: String,
-    /// 用户是否已主动设置过字体族（优先于系统默认）。
-    pub(crate) user_family_set: bool,
+    /// 独立的字体服务，不与渲染器绑定
+    pub font_service: FontService,
 }
 
 impl Default for SoftwareEngine {
@@ -53,7 +46,6 @@ impl SoftwareEngine {
         Self {
             rt: RenderTarget::new(),
             assets: AssetStore::new(),
-            text_backend: Box::new(FontdueBackend::new()),
             active_target: ActiveTarget::Main,
             main_width: 0,
             main_height: 0,
@@ -62,16 +54,17 @@ impl SoftwareEngine {
             layer_tree: crate::graphics::layer::LayerTree::new(),
             layer_tree_stale: true,
             rendered_first: false,
-            loaded_font_handle: FontHandle::new(0),
-            primary_family: "sans-serif".into(),
-            user_family_set: false,
+            font_service: FontService::new(),
         }
     }
 
-    /// 替换文本后端（例如替换为 FreeType 后端）。
+    /// 替换字体服务的文本后端（例如替换为 FreeType 后端）。
     /// 必须在 `initialize()` 之前调用。
-    pub fn with_text_backend(mut self, backend: Box<dyn TextBackend>) -> Self {
-        self.text_backend = backend;
+    pub fn with_text_backend(
+        mut self,
+        backend: Box<dyn crate::graphics::text_backend::TextBackend>,
+    ) -> Self {
+        self.font_service = self.font_service.with_text_backend(backend);
         self
     }
 

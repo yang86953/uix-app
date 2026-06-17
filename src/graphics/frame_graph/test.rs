@@ -4,7 +4,7 @@
 
 #![cfg(test)]
 
-use super::compile::{Barrier, BarrierKind};
+use super::compile::BarrierKind;
 use super::*;
 use crate::graphics::engine::GraphicsEngine;
 use crate::graphics::NullEngine;

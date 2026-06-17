@@ -10,6 +10,8 @@
 //! Higher-level rendering (pixel placement, bitmap fallback) lives in the
 //! `SoftwareEngine` / `RenderTarget`.
 
+use std::sync::Arc;
+
 use crate::diag::Error;
 use crate::graphics::{FontHandle, HAlign, VAlign};
 
@@ -69,7 +71,7 @@ pub struct GlyphRaster {
     pub height: usize,
     /// Per-pixel α coverage values (0 = transparent, 255 = opaque).
     /// Row-major order, `width * height` elements.
-    pub coverage: Vec<u8>,
+    pub coverage: Arc<Vec<u8>>,
 }
 
 /// Horizontal line metrics for a font at a given pixel size.
@@ -153,5 +155,13 @@ pub trait TextBackend: std::fmt::Debug + Send + Sync {
 
     /// 返回字体的原始字节数据（供引擎检查字体覆盖范围等）。
     /// 返回 `None` 表示句柄无效或后端不支持此操作。
-    fn font_data(&self, _font: &FontHandle) -> Option<Vec<u8>> { None }
+    fn font_data(&self, _font: &FontHandle) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// 设置字体回退链：当主字体缺少某个字符的字形时，依次尝试回退字体。
+    ///
+    /// `fallback_handles` 中的句柄必须已通过 `load_font` 加载到同一个后端。
+    /// 默认实现为空操作（无回退）。
+    fn set_fallback_fonts(&mut self, _fallback_handles: &[FontHandle]) {}
 }

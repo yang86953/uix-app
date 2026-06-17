@@ -4,54 +4,57 @@
 //!
 //! 运行：`cargo run --bin uix-demo`
 
-pub mod widgets;
-pub mod sections;
 pub mod more_pages;
+pub mod sections;
+pub mod widgets;
 
 use std::rc::Rc;
 use std::sync::Arc;
 use uix::app::{map_ui_event, App};
+use uix::base::KeyCode;
 use uix::base::{EdgeInsets, Rect};
 use uix::graphics::Color;
+use uix::graphics::{AlignItems, FlexDirection};
 use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
-use uix::base::KeyCode;
+use uix::tree;
 use uix::ui::theme::{DesignTokens, DynTokens, Theme};
 use uix::ui::widget::{WidgetCore, WidgetNode, WidgetTree};
 use uix::ui::widgets::icon::init_lucide_font;
 use uix::ui::{
-    AlignItems, Card, Container, FlexDirection, Icon, IntoWidgetNode, Label, Navigation,
-    ScrollDirection, ScrollView, SharedActive, Space, SpaceSize,
+    Card, Container, Icon, IntoWidgetNode, Label, Navigation, ScrollDirection, ScrollView,
+    SharedActive, Space, SpaceSize,
 };
-use uix::tree;
 
-use widgets::{ThemeToggle};
+use more_pages::{page_breadcrumb, page_colors, page_custom, page_layout, page_nav, page_tabs};
 use sections::{
-    page_dashboard, page_typography, page_buttons, page_inputs, page_data_display, page_feedback,
+    page_buttons, page_dashboard, page_data_display, page_feedback, page_inputs, page_typography,
 };
-use more_pages::{
-    page_nav, page_tabs, page_breadcrumb, page_layout, page_colors, page_custom,
-};
+use widgets::ThemeToggle;
 
 const GW: i32 = 1100;
 const GH: i32 = 740;
-const SB: f32 = 200.0;         // sidebar width
-pub fn cw() -> f32 { GW as f32 - SB }
-pub fn iw() -> f32 { cw() - 40.0 }
+const SB: f32 = 200.0; // sidebar width
+pub fn cw() -> f32 {
+    GW as f32 - SB
+}
+pub fn iw() -> f32 {
+    cw() - 40.0
+}
 
 /// 每页的标题信息（图标名, 标签文本）。
 pub const PAGE_TITLES: &[(&str, &str)] = &[
-    ("chart-bar",    " 仪表盘"),
-    ("type",         " 排版"),
-    ("square",       " 按钮"),
-    ("edit",         " 输入与选择"),
-    ("table",        " 数据展示"),
+    ("chart-bar", " 仪表盘"),
+    ("type", " 排版"),
+    ("square", " 按钮"),
+    ("edit", " 输入与选择"),
+    ("table", " 数据展示"),
     ("alert-circle", " 反馈"),
-    ("menu",         " 导航"),
-    ("layout",       " 标签页"),
-    ("list",         " 面包屑"),
-    ("grid",         " 布局"),
-    ("palette",      " 主题色"),
-    ("settings",     " 自定义组件"),
+    ("menu", " 导航"),
+    ("layout", " 标签页"),
+    ("list", " 面包屑"),
+    ("grid", " 布局"),
+    ("palette", " 主题色"),
+    ("settings", " 自定义组件"),
 ];
 
 // ── 辅助构建函数 ──
@@ -61,27 +64,45 @@ pub fn page_title(tk: &DesignTokens, icon: &str, label: &str) -> WidgetNode {
         Icon::new(icon).size(22.0),
         Container::new().size(8.0, 0.0),
         Label::new(label).color(tk.color_text).font_size(22.0),
-    ]}.into_node()
+    ]}
+    .into_node()
 }
 pub fn sub(tk: &DesignTokens, text: &str) -> Label {
-    Label::new(text).color(tk.color_text_secondary).font_size(12.0)
+    Label::new(text)
+        .color(tk.color_text_secondary)
+        .font_size(12.0)
 }
 pub fn row(h: f32) -> Space {
-    Space::new().size(SpaceSize::Small).width(iw()).height(h)
-        .direction(FlexDirection::Row).align(AlignItems::Center)
+    Space::new()
+        .size(SpaceSize::Small)
+        .width(iw())
+        .height(h)
+        .direction(FlexDirection::Row)
+        .align(AlignItems::Center)
 }
 pub fn col(h: f32) -> Space {
-    Space::new().size(SpaceSize::Small).width(iw()).height(h)
-        .direction(FlexDirection::Column).align(AlignItems::Stretch)
+    Space::new()
+        .size(SpaceSize::Small)
+        .width(iw())
+        .height(h)
+        .direction(FlexDirection::Column)
+        .align(AlignItems::Stretch)
 }
 
 /// 统计卡片
 pub fn stat_card(tk: &DesignTokens, title: &str, value: &str, color: Color, elev: u8) -> Card {
     let w = (iw() - 24.0) / 4.0;
-    Card::new().title(title).elevation(elev).hoverable()
+    Card::new()
+        .title(title)
+        .elevation(elev)
+        .hoverable()
         .size(w, 100.0)
         .child(Label::new(value).color(color).font_size(26.0))
-        .child(Label::new(title).color(tk.color_text_quaternary).font_size(11.0))
+        .child(
+            Label::new(title)
+                .color(tk.color_text_quaternary)
+                .font_size(11.0),
+        )
 }
 
 // ── 自定义 widget 定义（移入 widgets.rs）──
@@ -93,13 +114,15 @@ pub fn stat_card(tk: &DesignTokens, title: &str, value: &str, color: Color, elev
 pub fn wrap_page(_tk: &DesignTokens, content: Vec<WidgetNode>) -> WidgetNode {
     const GAP: f32 = 8.0;
     WidgetNode::new(
-            Box::new(ScrollView::new(ScrollDirection::Both).flex_grow(1.0)),
+        Box::new(ScrollView::new(ScrollDirection::Both).flex_grow(1.0)),
         vec![WidgetNode::new(
-            Box::new(Container::new()
-                  .size(iw(), 0.0)
-                .dir(FlexDirection::Column)
-                .gap(GAP)
-                .pad(EdgeInsets::new(8.0, 4.0, 16.0, 10.0))),
+            Box::new(
+                Container::new()
+                    .size(iw(), 0.0)
+                    .dir(FlexDirection::Column)
+                    .gap(GAP)
+                    .pad(EdgeInsets::new(8.0, 4.0, 16.0, 10.0)),
+            ),
             content,
         )],
     )
@@ -158,8 +181,12 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
     let page_content = build_page(active_page, tk);
 
     let content_container = WidgetNode::new(
-        Box::new(Container::new().bg(tk.color_bg_container).dir(FlexDirection::Column)
-            .flex_grow(1.0)),
+        Box::new(
+            Container::new()
+                .bg(tk.color_bg_container)
+                .dir(FlexDirection::Column)
+                .flex_grow(1.0),
+        ),
         vec![
             // Top bar
             tree! { Container::new().bg(tk.color_bg_elevated).dir(FlexDirection::Row)
@@ -210,9 +237,16 @@ pub fn run_gui_demo() {
         None => return,
     };
 
-    // 加载 Lucide 图标字体
+    // 加载 Lucide 图标字体（通过 downcast 访问 FontService）
     if let Ok(ttf) = std::fs::read("assets/fonts/lucide.ttf") {
-        init_lucide_font(&ttf, &mut *engine);
+        if let Some(sw) = engine
+            .as_any_mut()
+            .downcast_mut::<uix::graphics::software_engine::SoftwareEngine>()
+        {
+            init_lucide_font(&ttf, &mut sw.font_service);
+        } else {
+            log::warn!("Engine is not SoftwareEngine — Lucide font not loaded");
+        }
     } else {
         log::warn!("Lucide font not found at assets/fonts/lucide.ttf — icons will be blank");
     }
@@ -223,7 +257,10 @@ pub fn run_gui_demo() {
     let exit_code = app.run_widget_with_tokens(
         &mut *engine,
         &mut tree,
-        GW, GH, tc_ref, map_ui_event,
+        GW,
+        GH,
+        tc_ref,
+        map_ui_event,
         |ev: &UiEvent| -> bool {
             if let UiEventType::KeyDown = ev.type_ {
                 if let UiEventPayload::Key(ref d) = ev.payload {
@@ -251,7 +288,9 @@ pub fn run_gui_demo() {
                 }
                 tree.layout();
                 // 同步新树中 ThemeToggle 的状态
-                tree.find_by_type_and_modify::<ThemeToggle>(|w| { w.dark.set(dark_mode.get()); });
+                tree.find_by_type_and_modify::<ThemeToggle>(|w| {
+                    w.dark.set(dark_mode.get());
+                });
                 tree.mark_full_frame_dirty();
             }
 
@@ -269,7 +308,9 @@ pub fn run_gui_demo() {
                 }
                 tree.layout();
                 // 同步 ThemeToggle 状态到重建后的树
-                tree.find_by_type_and_modify::<ThemeToggle>(|w| { w.dark.set(dark_mode.get()); });
+                tree.find_by_type_and_modify::<ThemeToggle>(|w| {
+                    w.dark.set(dark_mode.get());
+                });
                 tree.mark_full_frame_dirty();
             }
         },

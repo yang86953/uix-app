@@ -765,65 +765,66 @@ impl Backend for WaylandBackend {
     ) {
         self.present_pixels(pixels, width, height, dirty_rect);
     }
+}
 
-    fn cursor(&mut self) -> &mut dyn ICursor {
-        struct WC;
-        impl ICursor for WC {
-            fn set_cursor(&mut self, _: CursorType) {}
-            fn show_cursor(&mut self, _: bool) {}
-            fn cursor_position(&self) -> Point {
-                Point::default()
-            }
-            fn set_cursor_position(&mut self, _: i32, _: i32) {}
-            fn confine_cursor(&mut self, _: bool) {}
-            fn capture_mouse(&mut self) {}
-            fn release_mouse(&mut self) {}
-        }
-        Box::leak(Box::new(WC))
+// ════════════════════════════════════════════════════════════════════════════
+// Backend 子 trait 的直接实现（供 LinuxPlatform 通过 &mut dyn Backend 上转型使用）
+// ════════════════════════════════════════════════════════════════════════════
+
+impl ICursor for WaylandBackend {
+    fn set_cursor(&mut self, _: CursorType) {}
+    fn show_cursor(&mut self, _: bool) {}
+    fn cursor_position(&self) -> Point {
+        Point::default()
     }
-    fn keyboard(&self) -> &dyn IKeyboard {
-        struct WK;
-        impl IKeyboard for WK {
-            fn is_down(&self, _: KeyCode) -> bool {
-                false
-            }
-            fn idle_ms(&self) -> u32 {
-                0
-            }
-            fn double_click_ms(&self) -> u32 {
-                400
-            }
-        }
-        static K: WK = WK;
-        &K
+    fn set_cursor_position(&mut self, _: i32, _: i32) {}
+    fn confine_cursor(&mut self, _: bool) {}
+    fn capture_mouse(&mut self) {}
+    fn release_mouse(&mut self) {}
+}
+
+impl IKeyboard for WaylandBackend {
+    fn is_down(&self, _: KeyCode) -> bool {
+        false
     }
-    fn display(&self) -> &dyn IDisplay {
-        struct WD;
-        impl IDisplay for WD {
-            fn dpi_scale(&self) -> f32 {
-                1.0
-            }
-            fn is_dark_mode(&self) -> bool {
-                std::env::var("GTK_THEME")
-                    .map(|t| t.contains("dark"))
-                    .unwrap_or(false)
-            }
-            fn count(&self) -> i32 {
-                1
-            }
-            fn info(&self, _: i32) -> DisplayInfo {
-                DisplayInfo {
-                    bounds: Rect::new(0.0, 0.0, 1920.0, 1080.0),
-                    dpi_scale: 1.0,
-                    is_primary: true,
-                }
-            }
-        }
-        static D: WD = WD;
-        &D
+    fn idle_ms(&self) -> u32 {
+        0
     }
-    fn clipboard(&mut self) -> &mut dyn IClipboard {
-        &mut self.clipboard
+    fn double_click_ms(&self) -> u32 {
+        400
+    }
+}
+
+impl IDisplay for WaylandBackend {
+    fn dpi_scale(&self) -> f32 {
+        1.0
+    }
+    fn is_dark_mode(&self) -> bool {
+        std::env::var("GTK_THEME")
+            .map(|t| t.contains("dark"))
+            .unwrap_or(false)
+    }
+    fn count(&self) -> i32 {
+        1
+    }
+    fn info(&self, _: i32) -> DisplayInfo {
+        DisplayInfo {
+            bounds: Rect::new(0.0, 0.0, 1920.0, 1080.0),
+            dpi_scale: 1.0,
+            is_primary: true,
+        }
+    }
+}
+
+impl IClipboard for WaylandBackend {
+    fn text(&self) -> String {
+        self.clipboard.text()
+    }
+    fn set_text(&mut self, text: &str) {
+        self.clipboard.set_text(text);
+    }
+    fn has_text(&self) -> bool {
+        self.clipboard.has_text()
     }
 }
 

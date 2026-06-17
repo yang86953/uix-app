@@ -6,16 +6,14 @@
 // ============================================================================
 
 // ── 控件核心 ──
+pub use crate::ui::children::WidgetChildren;
+pub use crate::ui::context::WidgetContext;
 pub use crate::ui::widget::{
     AsAny, BoxedWidget, EventResult, IntoWidgetNode, Widget, WidgetCore, WidgetEvent, WidgetId,
     WidgetNode, WidgetTree,
 };
-pub use crate::ui::widget_builder::WidgetBuilder;
-pub use crate::ui::children::WidgetChildren;
-pub use crate::ui::context::WidgetContext;
 
-// ── 兼容性重导出（从 graphics/platform 层透传） ──
-pub use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
+// Platform types are used directly by WidgetEvent — re-export from base.
 pub use crate::base::{KeyCode, MouseButton};
 
 // ── 状态管理 ──
@@ -27,7 +25,7 @@ pub use crate::ui::render_context::RenderContext;
 
 // ── 动画 ──
 pub use crate::ui::animation::core::Animation;
-pub use crate::ui::animation::driver::{AnimationCallback, AnimationDriver, AnimValue};
+pub use crate::ui::animation::driver::{AnimValue, AnimationCallback, AnimationDriver};
 pub use crate::ui::animation::easing::{Animatable, Easing};
 
 // ── 管理器 ──
@@ -53,10 +51,10 @@ pub use crate::ui::widgets::tag::{Tag, TagColor};
 // ── Phase 2: 中等组件 ──
 pub use crate::ui::widgets::collapse::{Collapse, CollapsePanel};
 pub use crate::ui::widgets::radio::Radio;
+pub use crate::ui::widgets::rate::Rate;
 pub use crate::ui::widgets::segmented::Segmented;
 pub use crate::ui::widgets::slider::Slider;
 pub use crate::ui::widgets::tooltip::{Tooltip, TooltipPlacement};
-pub use crate::ui::widgets::rate::Rate;
 
 // ── Phase 3: 复杂组件 ──
 pub use crate::ui::widgets::dropdown::Dropdown;
@@ -68,15 +66,14 @@ pub use crate::ui::widgets::table::{Table, TableColumn, TableRow};
 
 // ── 已有组件 ──
 pub use crate::ui::widgets::avatar::Avatar;
-pub use crate::ui::widgets::chart::{BarChart, BarData, LineChart, LineData, PieChart, PieData};
-pub use crate::ui::widgets::icon::Icon;
-pub use crate::ui::widgets::checkbox::Checkbox;
-pub use crate::ui::widgets::switch::Switch;
 pub use crate::ui::widgets::button::{Button, ButtonSize, ButtonVariant};
 pub use crate::ui::widgets::card::Card;
+pub use crate::ui::widgets::chart::{BarChart, BarData, LineChart, LineData, PieChart, PieData};
+pub use crate::ui::widgets::checkbox::Checkbox;
 pub use crate::ui::widgets::container::Container;
 pub use crate::ui::widgets::divider::{Divider, DividerDirection, DividerOrientation};
 pub use crate::ui::widgets::grid::Grid;
+pub use crate::ui::widgets::icon::Icon;
 pub use crate::ui::widgets::input::{Input, InputSize};
 pub use crate::ui::widgets::label::Label;
 pub use crate::ui::widgets::modal::Modal;
@@ -84,4 +81,5 @@ pub use crate::ui::widgets::nav::{NavGroup, NavItem, Navigation, SharedActive};
 pub use crate::ui::widgets::progress::{ProgressBar, ProgressMode};
 pub use crate::ui::widgets::scroll_view::{ScrollDirection, ScrollView};
 pub use crate::ui::widgets::space::{Space, SpaceSize};
+pub use crate::ui::widgets::switch::Switch;
 pub use crate::ui::widgets::tabs::{Tab, TabPosition, Tabs};

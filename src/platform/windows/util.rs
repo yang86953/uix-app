@@ -186,47 +186,187 @@ pub fn windows_diag(code: crate::diag::Errc, context: &str) -> crate::diag::Erro
     crate::diag::Error::new(code, msg)
 }
 
-/// Return the full path to the system default UI font (Segoe UI), or the first
-/// available fallback font file under the Windows Fonts directory.
+/// 通过 Windows API 查询系统当前默认 UI 字体的族名称。
 ///
-/// On all modern Windows editions (Vista+) the default UI font is "Segoe UI".
-/// We try the known filenames in order — `segoeui.ttf` (Win8+), then fall back
-/// to `arial.ttf` / `tahoma.ttf` / `micross.ttf` if none of the above exist.
+/// 使用 `SystemParametersInfoW(SPI_GETNONCLIENTMETRICS)` 获取
+/// `NONCLIENTMETRICSW.lfMessageFont.lfFaceName`，该值反映用户
+/// 在系统设置中选择的默认字体（更换后自动生效）。
 ///
-/// Returns `None` if no font file could be found (extremely unlikely).
-pub fn system_default_font_path() -> Option<String> {
+/// 返回如 "Segoe UI"、"Microsoft YaHei"、"Microsoft Sans Serif" 等。
+pub fn get_system_default_ui_font_name() -> Option<String> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SystemParametersInfoW, NONCLIENTMETRICSW, SPI_GETNONCLIENTMETRICS,
+    };
+
     unsafe {
-        // 1. Get Windows directory
-        let mut win_dir = vec![0u16; 260];
-        let len = GetWindowsDirectoryW(win_dir.as_mut_ptr(), win_dir.len() as u32);
-        if len == 0 || len as usize > win_dir.len() {
-            return None;
-        }
-        win_dir.truncate(len as usize);
+        let mut ncm = NONCLIENTMETRICSW::default();
+        ncm.cbSize = std::mem::size_of::<NONCLIENTMETRICSW>() as u32;
 
-        // 2. Build Fonts directory path prefix: <Windows>\Fonts\
-        let windows_path = to_utf8(&win_dir);
-        let fonts_dir = format!(r"{}\Fonts\", windows_path);
+        // SystemParametersInfoW 可能因结构体大小版本差异而失败
+        // 这里先尝试标准大小，若失败则尝试旧版大小
+        let ok = SystemParametersInfoW(
+            SPI_GETNONCLIENTMETRICS,
+            ncm.cbSize,
+            Some(&mut ncm as *mut _ as *mut _),
+            Default::default(),
+        )
+        .is_ok();
 
-        // 3. Try font candidates in priority order
-        let candidates = [
-            "segoeui.ttf",  // Win8+ Segoe UI Regular (default since Windows 8)
-            "segoeuib.ttf", // Segoe UI Bold (fallback variant)
-            "arial.ttf",    // Universal fallback present on all Windows
-            "tahoma.ttf",   // Present on Win2000/XP/Vista/7
-            "micross.ttf",  // Microsoft Sans Serif
-        ];
-
-        for fname in &candidates {
-            let full = format!("{}{}", fonts_dir, fname);
-            let wide = to_wide(&full);
-            // Check file existence via GetFileAttributesW
-            let attrs = GetFileAttributesW(wide.as_ptr());
-            if attrs != 0xFFFFFFFF {
-                return Some(full);
+        if !ok {
+            // 部分旧系统或 DPI 虚拟化环境下 cbSize 需使用旧版大小
+            ncm.cbSize = 504; // Vista+ x64 的已知大小
+            if SystemParametersInfoW(
+                SPI_GETNONCLIENTMETRICS,
+                ncm.cbSize,
+                Some(&mut ncm as *mut _ as *mut _),
+                Default::default(),
+            )
+            .is_err()
+            {
+                return None;
             }
         }
 
-        None
+        // lfMessageFont.lfFaceName 是 null 结尾的 UTF-16 字符串
+        let face_name: &[u16] = &ncm.lfMessageFont.lfFaceName;
+        let len = face_name
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(face_name.len());
+        if len == 0 {
+            return None;
+        }
+        Some(to_utf8(&face_name[..len]))
     }
+}
+
+/// 将字体族名称映射到 Windows Fonts 目录中的文件名。
+///
+/// 该映射覆盖常见的 Windows 系统字体。对于未覆盖的字体名称返回 `None`，
+/// 调用方应使用候选列表的默认优先级。
+fn family_name_to_filename(family: &str) -> Option<&'static str> {
+    let lower = family.to_lowercase();
+    // 去除 " UI" 后缀（如 "Microsoft YaHei UI" → "Microsoft YaHei"）
+    let lower = lower.trim_end_matches(" ui");
+    match lower {
+        "segoe ui" => Some("segoeui.ttf"),
+        "microsoft yahei" => Some("msyh.ttc"),
+        "microsoft jhenghei" => Some("msjh.ttc"),
+        "simsun" | "nscimas" => Some("simsun.ttc"),
+        "microsoft sans serif" => Some("micross.ttf"),
+        "tahoma" => Some("tahoma.ttf"),
+        "arial" => Some("arial.ttf"),
+        "simfang" | "fangsong" => Some("simfang.ttf"),
+        "simkai" | "kaiti" => Some("simkai.ttf"),
+        "simhei" => Some("simhei.ttf"),
+        "simli" => Some("simli.ttf"),
+        "simyou" => Some("simyou.ttf"),
+        "ms gothic" | "ms pgothic" | "ms ui gothic" => Some("msgothic.ttc"),
+        _ => None,
+    }
+}
+
+/// 返回系统默认 UI 字体 + 少量关键回退字体的路径。
+///
+/// 返回最精简的字体列表（通常 1-2 个），避免启动时扫描所有字体文件。
+/// 第一个是通过 `SystemParametersInfoW` 查询到的系统当前默认 UI 字体，
+/// 后续是一个通用 CJK 回退字体（仅当主字体不是 CJK 字体时）。
+/// 当用户更换系统默认字体后，下次启动时会自动跟随。
+///
+/// Returns `Vec::new()` 如果没有找到任何字体文件（极低概率）。
+pub fn system_default_font_paths() -> Vec<String> {
+    unsafe {
+        // 1. 获取 Windows 目录
+        let mut win_dir = vec![0u16; 260];
+        let len = GetWindowsDirectoryW(win_dir.as_mut_ptr(), win_dir.len() as u32);
+        if len == 0 || len as usize > win_dir.len() {
+            return Vec::new();
+        }
+        win_dir.truncate(len as usize);
+        let windows_path = to_utf8(&win_dir);
+        let fonts_dir = format!(r"{}\Fonts\", windows_path);
+
+        // 2. 查询系统默认 UI 字体名称
+        let sys_font_name = get_system_default_ui_font_name();
+        if let Some(ref name) = sys_font_name {
+            crate::diag::log::info_fn(format!("System default UI font: {}", name));
+        }
+
+        let mut results: Vec<String> = Vec::with_capacity(2);
+
+        // 3. 尝试加载系统默认 UI 字体
+        if let Some(ref name) = sys_font_name {
+            if let Some(filename) = family_name_to_filename(name) {
+                let full = format!("{}{}", fonts_dir, filename);
+                let wide = to_wide(&full);
+                if GetFileAttributesW(wide.as_ptr()) != 0xFFFFFFFF {
+                    results.push(full);
+                }
+            }
+        }
+
+        // 4. 如果系统默认字体未找到，尝试经典回退字体
+        if results.is_empty() {
+            let fallbacks = ["segoeui.ttf", "arial.ttf", "tahoma.ttf"];
+            for fname in &fallbacks {
+                let full = format!("{}{}", fonts_dir, fname);
+                let wide = to_wide(&full);
+                if GetFileAttributesW(wide.as_ptr()) != 0xFFFFFFFF {
+                    results.push(full);
+                    break;
+                }
+            }
+        }
+
+        // 5. 仅当主字体是拉丁字体（非 CJK）时，尝试添加一个 CJK 回退
+        //    判断方式：如果系统默认字体名不在已知的 CJK 列表中
+        let is_cjk = sys_font_name.as_deref().map_or(false, |name| {
+            let lower = name.to_lowercase();
+            lower.contains("yahei")      // 微软雅黑
+                || lower.contains("jhenghei")  // 微软正黑体
+                || lower.contains("simsun")    // 宋体
+                || lower.contains("simfang")   // 仿宋
+                || lower.contains("simkai")    // 楷体
+                || lower.contains("simhei")    // 黑体
+                || lower.contains("simli")     // 隶书
+                || lower.contains("simyou")    // 幼圆
+                || lower.contains("mingliu")   // 细明体
+                || lower.contains("ms gothic") // MS Gothic 等日文字体
+                || lower.contains("ms mincho")
+                || lower.contains("yugothic")
+                || lower.contains("yumincho")
+                || lower.contains("malgun")    // 韩文 Malgun Gothic
+                || lower.contains("dotum")
+                || lower.contains("batang")
+        });
+
+        if !is_cjk {
+            // 尝试添加一个通用 CJK 回退字体，按优先级从高到低
+            let cjk_candidates = [
+                "msyh.ttc",    // 微软雅黑（覆盖简繁中文 + 拉丁）
+                "simfang.ttf", // 仿宋（TTF，fontdue 可解析）
+                "simkai.ttf",  // 楷体
+                "simhei.ttf",  // 黑体
+            ];
+            for fname in &cjk_candidates {
+                let full = format!("{}{}", fonts_dir, fname);
+                if results.iter().any(|r| r == &full) {
+                    continue;
+                }
+                let wide = to_wide(&full);
+                if GetFileAttributesW(wide.as_ptr()) != 0xFFFFFFFF {
+                    results.push(full);
+                    break; // 只加一个 CJK 回退
+                }
+            }
+        }
+
+        results
+    }
+}
+
+/// 旧的单字体路径查询接口，保留兼容性。
+/// 返回第一个可用的系统字体路径。
+pub fn system_default_font_path() -> Option<String> {
+    system_default_font_paths().into_iter().next()
 }

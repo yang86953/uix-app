@@ -1,7 +1,7 @@
 //! Radio widget — 单选组，支持 horizontal/vertical、disabled、hover。
 
-use crate::define_widget;
 use crate::base::{Point, Rect, Size};
+use crate::define_widget;
 use crate::graphics::{GraphicsEngine, Radius};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
@@ -85,8 +85,6 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let _primary = ctx.tokens().color_primary();
-        let _text_color = ctx.tokens().color_text();
         let cy = frame.y + self.item_h * 0.5;
 
         match self.direction {
@@ -113,38 +111,68 @@ impl Radio {
     fn option_at(&self, px: f32, py: f32) -> Option<usize> {
         match self.direction {
             RadioDirection::Horizontal => {
-                if py < 0.0 || py > self.item_h { return None; }
+                if py < 0.0 || py > self.item_h {
+                    return None;
+                }
                 let mut cum_x = 0.0f32;
                 for (i, opt) in self.options.iter().enumerate() {
                     let w = opt.len() as f32 * 9.0 + 30.0;
-                    if px >= cum_x && px <= cum_x + w { return Some(i); }
+                    if px >= cum_x && px <= cum_x + w {
+                        return Some(i);
+                    }
                     cum_x += w;
                 }
                 None
             }
             RadioDirection::Vertical => {
                 let idx = (py / self.item_h) as usize;
-                if idx < self.options.len() && py >= 0.0 { Some(idx) } else { None }
+                if idx < self.options.len() && py >= 0.0 {
+                    Some(idx)
+                } else {
+                    None
+                }
             }
         }
     }
 
-    fn render_radio_item(&self, ctx: &mut RenderContext, i: usize, opt: &str, x: f32, cy: f32, _seg_w: f32) {
+    fn render_radio_item(
+        &self,
+        ctx: &mut RenderContext,
+        i: usize,
+        opt: &str,
+        x: f32,
+        cy: f32,
+        _seg_w: f32,
+    ) {
         let r = 6.0;
         let dot_r = 3.5;
         let selected = i == self.selected;
         let hovered = self.hovered_idx == Some(i);
 
         let (ring_color, dot_color, text_c) = if self.disabled {
-            (ctx.tokens().color_border_secondary(),
-             ctx.tokens().color_border_secondary(),
-             ctx.tokens().color_text_quaternary())
+            (
+                ctx.tokens().color_border_secondary(),
+                ctx.tokens().color_border_secondary(),
+                ctx.tokens().color_text_quaternary(),
+            )
         } else if selected {
-            (ctx.tokens().color_primary(), ctx.tokens().color_primary(), ctx.tokens().color_text())
+            (
+                ctx.tokens().color_primary(),
+                ctx.tokens().color_primary(),
+                ctx.tokens().color_text(),
+            )
         } else if hovered {
-            (ctx.tokens().color_primary_hover(), ctx.tokens().color_primary_hover(), ctx.tokens().color_text())
+            (
+                ctx.tokens().color_primary_hover(),
+                ctx.tokens().color_primary_hover(),
+                ctx.tokens().color_text(),
+            )
         } else {
-            (ctx.tokens().color_border(), ctx.tokens().color_border(), ctx.tokens().color_text())
+            (
+                ctx.tokens().color_border(),
+                ctx.tokens().color_border(),
+                ctx.tokens().color_text(),
+            )
         };
 
         // 外圈
@@ -159,23 +187,41 @@ impl Radio {
     }
 }
 
-impl Default for Radio { fn default() -> Self { Self::new() } }
+impl Default for Radio {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Radio {
     pub fn new() -> Self {
         Self {
-            options: Vec::new(), selected: 0, disabled: false,
-            direction: RadioDirection::Horizontal, item_h: 24.0,
-            hovered_idx: None, focused: false, on_change: None,
+            options: Vec::new(),
+            selected: 0,
+            disabled: false,
+            direction: RadioDirection::Horizontal,
+            item_h: 24.0,
+            hovered_idx: None,
+            focused: false,
+            on_change: None,
         }
     }
     pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
         self.options = opts.into_iter().map(|s| s.into()).collect();
         self
     }
-    pub fn selected(mut self, idx: usize) -> Self { self.selected = idx; self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn vertical(mut self) -> Self { self.direction = RadioDirection::Vertical; self }
+    pub fn selected(mut self, idx: usize) -> Self {
+        self.selected = idx;
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn vertical(mut self) -> Self {
+        self.direction = RadioDirection::Vertical;
+        self
+    }
     pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

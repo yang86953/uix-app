@@ -52,13 +52,10 @@ impl FrameResources {
         fill: u32,
     ) -> &mut [u32] {
         let len = (width * height) as usize;
-        self.textures
-            .entry(id)
-            .or_insert_with(|| vec![fill; len])
-            .resize(len, fill);
+        let vec = self.textures.entry(id).or_insert_with(|| vec![fill; len]);
+        vec.resize(len, fill);
         self.texture_meta.insert(id, (width, height));
-        self.textures.get_mut(&id)
-            .expect("frame_graph: texture was just inserted via or_insert_with").as_mut_slice()
+        vec.as_mut_slice()
     }
 
     /// 获取 Texture 像素切片（只读）。
@@ -78,9 +75,7 @@ impl FrameResources {
 
     /// 分配或替换 Buffer 数据。返回可变引用。
     pub fn allocate_buffer(&mut self, id: ResourceId, size: usize, fill: u8) -> &mut [u8] {
-        self.buffers.entry(id).or_insert_with(|| vec![fill; size]);
-        let buf = self.buffers.get_mut(&id)
-            .expect("frame_graph: buffer was just inserted via or_insert_with");
+        let buf = self.buffers.entry(id).or_insert_with(|| vec![fill; size]);
         buf.resize(size, fill);
         buf.as_mut_slice()
     }
@@ -105,7 +100,8 @@ pub type PassFn = Box<dyn FnMut(&mut PassContext) -> Result<()>>;
 
 /// 外部渲染回调 —— 用于 execute_with()，在编译后由调用者提供渲染函数。
 /// 避免了 PassFn 的 'static 要求，可以捕获非 'static 引用。
-pub type RenderCallback<'a> = dyn FnMut(PassId, &mut dyn GraphicsEngine, &mut FrameResources) -> Result<()> + 'a;
+pub type RenderCallback<'a> =
+    dyn FnMut(PassId, &mut dyn GraphicsEngine, &mut FrameResources) -> Result<()> + 'a;
 
 // ════════════════════════════════════════════════════════════════════════════
 // PassNode —— 帧图中的 Pass 节点

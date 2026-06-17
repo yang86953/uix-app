@@ -8,6 +8,7 @@ pub mod blur;
 pub mod color;
 pub mod engine;
 pub mod flattener;
+pub mod font_service;
 pub mod frame_graph;
 pub mod layer;
 pub mod layout;

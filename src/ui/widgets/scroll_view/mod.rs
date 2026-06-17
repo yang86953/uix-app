@@ -9,12 +9,12 @@ pub use scrollbar::*;
 
 use std::cell::Cell;
 
-use crate::define_widget;
+use self::scrollbar::{ScrollBar, ScrollbarOrientation};
 use crate::base::{Rect, Size};
+use crate::define_widget;
 use crate::ui::children::WidgetChildren;
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, Widget, WidgetCore, WidgetEvent, WidgetId, WidgetTree};
-use self::scrollbar::{ScrollBar, ScrollbarOrientation};
 
 /// Scroll direction for a ScrollView.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,6 +224,9 @@ define_widget! {
         self.velocity_y *= damp;
         if self.velocity_y.abs() < threshold { self.velocity_y = 0.0; }
 
+        // content_bounds 已在 layout() Phase 3 中由 layout_children 正确计算，
+        // 此处不再覆写：确保面板展开后 Phase 3 的总内容尺寸直接生效。
+
         if self.scroll_x < 0.0 { self.scroll_x = 0.0; self.velocity_x = 0.0; }
         let max_x = self.max_scroll_x();
         if self.scroll_x > max_x { self.scroll_x = max_x; self.velocity_x = 0.0; }
@@ -279,7 +282,6 @@ define_widget! {
         let mut max_bottom = frame.y;
         let origin_x = frame.x - self.scroll_x;
         let origin_y = frame.y - self.scroll_y;
-
         for &cid in children {
             let pref = tree
                 .get(cid)
@@ -289,12 +291,16 @@ define_widget! {
             // fill the viewport so the child can use flex/Stretch
             // for its own children.
             let w = if pref.w <= 0.0 { frame.w } else { pref.w };
-            let h = if pref.h <= 0.0 {
-                // 未指定高度时优先用已存在的 frame 高度（Phase 2 可能已扩展）
-                let current = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
-                frame.h.max(current)
+            // 高度取 preferred_size 和当前实际 frame 高度的较大值，
+            // 确保 Phase 2（底部向上扩展）后的尺寸正确反映到 content_bounds。
+            let current_h = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
+            let h = if pref.h > 0.0 {
+                // 有 preferred_size 时取 pref 和实际扩展后的较大值
+                pref.h.max(current_h).max(frame.h)
+            } else if current_h > 0.0 {
+                current_h.max(frame.h)
             } else {
-                pref.h
+                frame.h
             };
             let r = Rect::new(origin_x, origin_y, w, h);
             result.push((cid, r));
@@ -431,8 +437,12 @@ impl ScrollView {
 
     // ── Runtime accessors ──
 
-    pub fn scroll_x(&self) -> f32 { self.scroll_x }
-    pub fn scroll_y(&self) -> f32 { self.scroll_y }
+    pub fn scroll_x(&self) -> f32 {
+        self.scroll_x
+    }
+    pub fn scroll_y(&self) -> f32 {
+        self.scroll_y
+    }
     pub fn set_scroll_x(&mut self, x: f32) {
         let v = x.max(0.0);
         self.scroll_x = v;
@@ -460,7 +470,10 @@ impl ScrollView {
     pub fn max_scroll_x(&self) -> f32 {
         match self.content_bounds.get() {
             Some(cs) => {
-                let view_w = self.last_frame.get().map(|f| f.w)
+                let view_w = self
+                    .last_frame
+                    .get()
+                    .map(|f| f.w)
                     .unwrap_or(self.fixed_width.unwrap_or(300.0));
                 (cs.w - view_w).max(0.0)
             }
@@ -472,7 +485,10 @@ impl ScrollView {
     pub fn max_scroll_y(&self) -> f32 {
         match self.content_bounds.get() {
             Some(cs) => {
-                let view_h = self.last_frame.get().map(|f| f.h)
+                let view_h = self
+                    .last_frame
+                    .get()
+                    .map(|f| f.h)
                     .unwrap_or(self.fixed_height.unwrap_or(200.0));
                 (cs.h - view_h).max(0.0)
             }
@@ -491,8 +507,8 @@ impl Default for ScrollView {
 mod tests {
     use super::*;
     use crate::base::Size;
-    use crate::ui::widget::{Widget, WidgetId, WidgetTree, WidgetCore};
     use crate::base::{Point, Rect};
+    use crate::ui::widget::{Widget, WidgetCore, WidgetId, WidgetTree};
 
     /// A simple fixed-size widget for testing.
     struct FixedWidget {
@@ -614,8 +630,10 @@ mod tests {
 
     #[test]
     fn scrollview_child_builder() {
-        let sv = ScrollView::new(ScrollDirection::Vertical)
-            .child(FixedWidget { size: Size::new(100.0, 200.0), id: 0 });
+        let sv = ScrollView::new(ScrollDirection::Vertical).child(FixedWidget {
+            size: Size::new(100.0, 200.0),
+            id: 0,
+        });
         assert!(sv.children.is_set());
         assert_eq!(sv.children.len(), 1);
         let children = sv.children.take();
@@ -630,16 +648,27 @@ mod tests {
 
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(scrollview));
-        let _child_id = tree.add_child(root_id, Box::new(FixedWidget {
-            size: Size::new(200.0, 600.0), id: 1,
-        }));
+        let _child_id = tree.add_child(
+            root_id,
+            Box::new(FixedWidget {
+                size: Size::new(200.0, 600.0),
+                id: 1,
+            }),
+        );
 
         tree.layout();
 
         let frame = tree.get(root_id).map(|n| n.frame()).unwrap_or(Rect::zero());
-        let children = tree.get(root_id).map(|n| n.children().to_vec()).unwrap_or_default();
+        let children = tree
+            .get(root_id)
+            .map(|n| n.children().to_vec())
+            .unwrap_or_default();
 
-        let result = tree.get(root_id).unwrap().inner().layout_children(frame, &children, &tree);
+        let result = tree
+            .get(root_id)
+            .unwrap()
+            .inner()
+            .layout_children(frame, &children, &tree);
         if let Some((_, rect)) = result.first() {
             // Child should be offset by -scroll_y = -50 from the viewport origin
             assert_eq!(rect.x, frame.x);

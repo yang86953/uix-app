@@ -6,7 +6,7 @@
 //! Use a `FreeTypeBackend` (future) for complete format coverage.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::diag::{Errc, Error};
 use crate::graphics::text_backend::{
@@ -27,7 +27,7 @@ struct GlyphCacheKey {
 struct CachedGlyph {
     width: usize,
     height: usize,
-    coverage: Vec<u8>,
+    coverage: Arc<Vec<u8>>,
 }
 
 /// Internal slot for a loaded font.
@@ -46,12 +46,17 @@ struct FontSlot {
 ///
 /// 内置 glyph 位图缓存（LRU），避免每帧重复调用 fontdue `rasterize_indexed`。
 /// 缓存按 font_index 分桶，unload_font 时自动清理对应条目。
+///
+/// 支持字体回退链：`fallback_indices` 中的字体在主字体缺少字形时被依次尝试。
+/// fontdue 的 `Layout::append` 原生支持多字体回退。
 pub struct FontdueBackend {
     fonts: Vec<FontSlot>,
     /// (font_index → map_of_key_to_cached_glyph)
     glyph_cache: Mutex<HashMap<usize, HashMap<GlyphCacheKey, CachedGlyph>>>,
     /// 每个 font 缓存上限，超过时清空该 font 的缓存
     max_cache_per_font: usize,
+    /// 字体回退链：主字体中缺失的字形将依次在这些字体中查找
+    fallback_indices: Vec<usize>,
 }
 
 impl std::fmt::Debug for FontdueBackend {
@@ -80,20 +85,28 @@ impl FontdueBackend {
             fonts: Vec::new(),
             glyph_cache: Mutex::new(HashMap::new()),
             max_cache_per_font: 512,
+            fallback_indices: Vec::new(),
         }
     }
 
     /// Run the fontdue Layout engine, returning positioned glyphs that share
     /// the same coordinate system (top-left origin, positive Y down).
+    ///
+    /// `fonts` 是多字体回退链，fontdue 会自动从第一个字体中查找字形，
+    /// 如果缺失则依次尝试后续字体。
     fn run_layout(
-        font: &fontdue::Font,
+        fonts: &[&fontdue::Font],
         text: &str,
         opts: &TextLayoutOptions,
         pos_x: f32,
         pos_y: f32,
     ) -> Layout<()> {
+        if fonts.is_empty() {
+            return Layout::new(CoordinateSystem::PositiveYDown);
+        }
         let fs = opts.font_size.max(1.0);
-        let new_line_size = font
+        // 使用第一个字体的行高度量（主字体决定排版基线）
+        let new_line_size = fonts[0]
             .horizontal_line_metrics(fs)
             .map(|m| m.new_line_size)
             .unwrap_or(fs * 1.3);
@@ -143,7 +156,7 @@ impl FontdueBackend {
             wrap_style: wrap,
             wrap_hard_breaks: true,
         });
-        layout.append(&[font], &TextStyle::new(text, fs, 0));
+        layout.append(fonts, &TextStyle::new(text, fs, 0));
         layout
     }
 }
@@ -172,13 +185,10 @@ impl TextBackend for FontdueBackend {
             // This prevents handle reuse from silently pointing to a different font.
             self.fonts[idx] = FontSlot {
                 handle: FontHandle::new(u32::MAX),
-                font: fontdue::Font::from_bytes(
-                    &[] as &[u8],
-                    fontdue::FontSettings::default(),
-                )
-                .unwrap_or_else(|_| {
-                    panic!("fontdue_backend: failed to create placeholder font")
-                }),
+                font: fontdue::Font::from_bytes(&[] as &[u8], fontdue::FontSettings::default())
+                    .unwrap_or_else(|_| {
+                        panic!("fontdue_backend: failed to create placeholder font")
+                    }),
                 raw_data: Vec::new(),
             };
         }
@@ -191,20 +201,27 @@ impl TextBackend for FontdueBackend {
 
     fn has_glyph(&self, font: &FontHandle, ch: char) -> bool {
         let idx = font.0 as usize;
-        match self.fonts.get(idx) {
-            Some(slot) if slot.handle.0 != u32::MAX => {
-                slot.font.lookup_glyph_index(ch) > 0
+        // 检查主字体
+        if let Some(slot) = self.fonts.get(idx) {
+            if slot.handle.0 != u32::MAX && slot.font.lookup_glyph_index(ch) > 0 {
+                return true;
             }
-            _ => false,
         }
+        // 依次检查回退字体
+        for &fi in &self.fallback_indices {
+            if fi == idx {
+                continue;
+            }
+            if let Some(slot) = self.fonts.get(fi) {
+                if slot.handle.0 != u32::MAX && slot.font.lookup_glyph_index(ch) > 0 {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
-    fn layout_text(
-        &self,
-        font: &FontHandle,
-        text: &str,
-        opts: &TextLayoutOptions,
-    ) -> TextLayout {
+    fn layout_text(&self, font: &FontHandle, text: &str, opts: &TextLayoutOptions) -> TextLayout {
         let idx = font.0 as usize;
         let data = match self.fonts.get(idx) {
             Some(d) => d,
@@ -218,16 +235,47 @@ impl TextBackend for FontdueBackend {
             }
         };
 
-        let layout = Self::run_layout(&data.font, text, opts, 0.0, 0.0);
+        // 构建字体回退链：主字体 + 回退字体列表
+        let mut all_fonts: Vec<&fontdue::Font> =
+            Vec::with_capacity(1 + self.fallback_indices.len());
+        all_fonts.push(&data.font);
+        for &fi in &self.fallback_indices {
+            if fi != idx {
+                if let Some(slot) = self.fonts.get(fi) {
+                    if slot.handle.0 != u32::MAX {
+                        all_fonts.push(&slot.font);
+                    }
+                }
+            }
+        }
+
+        // 构建 font_hash → all_fonts 索引的映射，用于布局后识别 glyph 来自哪个字体
+        let hash_to_font_idx: std::collections::HashMap<u64, usize> = all_fonts
+            .iter()
+            .enumerate()
+            .map(|(i, &f)| (f.file_hash() as u64, i))
+            .collect();
+
+        let layout = Self::run_layout(&all_fonts, text, opts, 0.0, 0.0);
         let gp = layout.glyphs();
         let glyphs: Vec<PositionedGlyph> = gp
             .iter()
-            .map(|g| PositionedGlyph {
+            .map(|g| {
+                // 将字体索引编码到 glyph_id 高位字节中，以便光栅化时路由到正确的回退字体
+                // 编码格式：高位字节 = all_fonts 中的索引，低位 = 字形索引
+                let fi = hash_to_font_idx
+                    .get(&(g.key.font_hash as u64))
+                    .copied()
+                    .unwrap_or(0) as u32;
+                let gi = u32::from(g.key.glyph_index);
+                let encoded = if fi == 0 { gi } else { (fi << 24) | gi };
+                PositionedGlyph {
                     x: g.x,
                     y: g.y,
                     width: g.width as f32,
                     height: g.height as f32,
-                    glyph_id: u32::from(g.key.glyph_index),
+                    glyph_id: encoded,
+                }
             })
             .collect();
 
@@ -271,25 +319,35 @@ impl TextBackend for FontdueBackend {
         }
     }
 
-    fn rasterize_glyph(
-        &self,
-        font: &FontHandle,
-        glyph_id: u32,
-        pixel_size: f32,
-    ) -> GlyphRaster {
-        let idx = font.0 as usize;
+    fn rasterize_glyph(&self, font: &FontHandle, glyph_id: u32, pixel_size: f32) -> GlyphRaster {
+        // 从 glyph_id 高位字节解码回退字体索引
+        // 编码格式：高位字节 = all_fonts 中的索引，低位 = glyph index
+        let fb_offset = (glyph_id >> 24) as u8;
+        let actual_glyph_id = (glyph_id & 0x00FFFFFF) as u16;
+
+        let idx = if fb_offset == 0 {
+            font.0 as usize // 主字体
+        } else {
+            let fi = (fb_offset as usize).wrapping_sub(1);
+            if fi < self.fallback_indices.len() {
+                self.fallback_indices[fi]
+            } else {
+                font.0 as usize // 回退索引无效，兜底到主字体
+            }
+        };
+
         let data = match self.fonts.get(idx) {
             Some(d) => d,
             None => {
                 return GlyphRaster {
                     width: 0,
                     height: 0,
-                    coverage: Vec::new(),
+                    coverage: Arc::new(Vec::new()),
                 };
             }
         };
 
-        // Glyph 位图缓存：pixel_size 取整后做 key
+        // Glyph 位图缓存：pixel_size 取整后做 key，包含编码后的 glyph_id 以保证唯一性
         let ps_int = pixel_size.round() as u32;
         if ps_int > 0 {
             let key = GlyphCacheKey {
@@ -302,16 +360,17 @@ impl TextBackend for FontdueBackend {
                     return GlyphRaster {
                         width: cached.width,
                         height: cached.height,
-                        coverage: cached.coverage.clone(),
+                        coverage: Arc::clone(&cached.coverage),
                     };
                 }
-                // 缓存未命中：光栅化并存入
-                let glyph_index = (glyph_id as u16).min(data.font.glyph_count() - 1);
+                // 缓存未命中：使用解码后的 actual_glyph_id 光栅化
+                let glyph_index = actual_glyph_id.min(data.font.glyph_count() - 1);
                 let (metrics, coverage) = data.font.rasterize_indexed(glyph_index, pixel_size);
+                let coverage = Arc::new(coverage);
                 let entry = CachedGlyph {
                     width: metrics.width,
                     height: metrics.height,
-                    coverage: coverage.clone(),
+                    coverage: Arc::clone(&coverage),
                 };
                 // 缓存超限时清空该 font 的缓存（简单 FIFO 淘汰）
                 if font_cache.len() >= self.max_cache_per_font {
@@ -327,20 +386,24 @@ impl TextBackend for FontdueBackend {
         }
 
         // 兜底：缓存不可用时直接光栅化
-        let glyph_index = (glyph_id as u16).min(data.font.glyph_count() - 1);
+        let glyph_index = actual_glyph_id.min(data.font.glyph_count() - 1);
         let (metrics, coverage) = data.font.rasterize_indexed(glyph_index, pixel_size);
         GlyphRaster {
             width: metrics.width,
             height: metrics.height,
-            coverage,
+            coverage: Arc::new(coverage),
         }
     }
 
-    fn horizontal_line_metrics(
-        &self,
-        font: &FontHandle,
-        pixel_size: f32,
-    ) -> Option<LineMetrics> {
+    fn set_fallback_fonts(&mut self, fallback_handles: &[FontHandle]) {
+        self.fallback_indices = fallback_handles
+            .iter()
+            .map(|h| h.0 as usize)
+            .filter(|&idx| idx < self.fonts.len() && self.fonts[idx].handle.0 != u32::MAX)
+            .collect();
+    }
+
+    fn horizontal_line_metrics(&self, font: &FontHandle, pixel_size: f32) -> Option<LineMetrics> {
         let idx = font.0 as usize;
         let data = self.fonts.get(idx)?;
         data.font

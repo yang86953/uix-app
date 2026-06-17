@@ -3,7 +3,22 @@
 // ============================================================================
 
 use super::platform::WindowsPlatform;
+use crate::diag::Error;
 use crate::platform::*;
+
+// ════════════════════════════════════════════════════════════════════════════
+// IPresenter — 像素呈现（委托给内部 presenter 字段）
+// ════════════════════════════════════════════════════════════════════════════
+
+impl IPresenter for WindowsPlatform {
+    fn present(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
+        self.presenter.present(pixels, width, height)
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.presenter.resize(width, height)
+    }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // INativeHandle — 原生窗口句柄

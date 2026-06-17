@@ -6,12 +6,12 @@
 //! 3. 按 x 排序活跃边，配对填充
 //! 4. 支持 NonZero 和 EvenOdd 填充规则
 
-use crate::base::{Point, Rect};
 use super::path::FillRule;
+use crate::base::{Point, Rect};
 
 /// 一条扫描线边。
 #[derive(Debug, Clone, Copy)]
-struct Edge {
+pub struct Edge {
     /// 当前扫描线的 x 坐标（随 y 递增更新）。
     x: f32,
     /// y 每增加 1 时 x 的变化量。
@@ -51,10 +51,13 @@ fn make_edge(p0: Point, p1: Point) -> Edge {
 pub fn fill_polygons(
     polys: &[Vec<Point>],
     pixels: &mut [u32],
-    width: i32, height: i32,
+    width: i32,
+    height: i32,
     clip: Rect,
     color: u32,
     fill_rule: FillRule,
+    global_edges: &mut Vec<(i32, Edge)>,
+    active_edges: &mut Vec<Edge>,
 ) {
     if color & 0xFF000000 == 0 || polys.is_empty() {
         return;
@@ -69,7 +72,7 @@ pub fn fill_polygons(
     }
 
     // 1. 构建全局边表（GET）
-    let mut global_edges: Vec<(i32, Edge)> = Vec::new();
+    global_edges.clear();
 
     for poly in polys {
         if poly.len() < 2 {
@@ -97,13 +100,12 @@ pub fn fill_polygons(
     // 按 ymin 排序
     global_edges.sort_by_key(|e| e.0);
 
-    let y_start = global_edges.first()
-        .expect("rasterizer: global_edges should have at least one edge after sort")
-        .0.max(clip_y0);
+    // global_edges 非空（上面 is_empty 已返回），直接索引安全
+    let y_start = global_edges[0].0.max(clip_y0);
     let y_end = clip_y1;
 
     // 2. 逐行扫描
-    let mut active_edges: Vec<Edge> = Vec::new();
+    active_edges.clear();
     let mut edge_idx = 0;
 
     for y in y_start..y_end {
@@ -112,8 +114,7 @@ pub fn fill_polygons(
         // 添加新边到 AET
         while edge_idx < global_edges.len() && global_edges[edge_idx].0 <= y {
             let mut e = global_edges[edge_idx].1;
-            // 将 x 调整到当前扫描线
-            let _dy = yf - (yf - 0.5); // 近似调整到像素中心
+            // 将 x 调整到当前扫描线中心
             e.x += e.dxdy * (yf - (yf - 0.5).floor() - 0.5);
             active_edges.push(e);
             edge_idx += 1;
@@ -130,7 +131,7 @@ pub fn fill_polygons(
         active_edges.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
 
         // 更新每条边的 x
-        for e in &mut active_edges {
+        for e in active_edges.iter_mut() {
             e.x += e.dxdy;
         }
 

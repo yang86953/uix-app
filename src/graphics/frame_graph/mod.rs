@@ -66,9 +66,6 @@ pub struct FrameGraph {
     current_versions: HashMap<ResourceId, Version>,
     /// 帧级资源数据存储。
     resources: FrameResources,
-    #[allow(dead_code)]
-    /// 自增 Pass 计数器。
-    next_pass_id: u32,
 }
 
 impl FrameGraph {
@@ -79,7 +76,6 @@ impl FrameGraph {
             compiler: Compiler::new(),
             current_versions: HashMap::new(),
             resources: FrameResources::new(),
-            next_pass_id: 0,
         }
     }
 

@@ -1,8 +1,8 @@
 //! Button widget — Ant Design style button with variants, sizes, and states.
 
+use crate::base::{Point, Rect, Size};
 use crate::define_widget;
 use crate::graphics::{Color, GraphicsEngine};
-use crate::base::{Point, Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::style::Style;
 use crate::ui::widget::{EventResult, WidgetEvent, WidgetTree};
@@ -10,24 +10,42 @@ use crate::ui::widget::{EventResult, WidgetEvent, WidgetTree};
 /// Button style variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ButtonVariant {
-    Primary, Default, Dashed, Text, Link,
+    Primary,
+    Default,
+    Dashed,
+    Text,
+    Link,
 }
 
 /// Button size matching Ant Design.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ButtonSize {
-    Small, Middle, Large,
+    Small,
+    Middle,
+    Large,
 }
 
 impl ButtonSize {
     pub fn height(&self) -> f32 {
-        match self { Self::Small => 24.0, Self::Middle => 32.0, Self::Large => 40.0 }
+        match self {
+            Self::Small => 24.0,
+            Self::Middle => 32.0,
+            Self::Large => 40.0,
+        }
     }
     pub fn font_size(&self) -> f32 {
-        match self { Self::Small => 14.0, Self::Middle => 14.0, Self::Large => 16.0 }
+        match self {
+            Self::Small => 14.0,
+            Self::Middle => 14.0,
+            Self::Large => 16.0,
+        }
     }
     pub fn padding_h(&self) -> f32 {
-        match self { Self::Small => 7.0, Self::Middle => 15.0, Self::Large => 15.0 }
+        match self {
+            Self::Small => 7.0,
+            Self::Middle => 15.0,
+            Self::Large => 15.0,
+        }
     }
 }
 
@@ -37,9 +55,7 @@ define_widget! {
         text: String,
         variant: ButtonVariant,
         btn_size: ButtonSize,
-        #[allow(dead_code)] block: bool,
         disabled: bool,
-        #[allow(dead_code)] loading: bool,
         hovered: bool,
         pressed: bool,
         anim_progress: f32,
@@ -147,35 +163,60 @@ impl Button {
 
         let (bg, border, text_color, bw) = if self.disabled {
             match self.variant {
-                ButtonVariant::Primary => (Some(t.color_primary_border()), t.color_border(),
-                    t.color_text_quaternary(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(),
-                    t.color_text_quaternary(), 0.0),
+                ButtonVariant::Primary => (
+                    Some(t.color_primary_border()),
+                    t.color_border(),
+                    t.color_text_quaternary(),
+                    1.0,
+                ),
+                ButtonVariant::Text | ButtonVariant::Link => {
+                    (None, Color::transparent(), t.color_text_quaternary(), 0.0)
+                }
                 _ => (None, t.color_border(), t.color_text_quaternary(), 1.0),
             }
         } else if self.pressed {
             match self.variant {
-                ButtonVariant::Primary => (Some(t.color_primary_active()), t.color_primary_active(),
-                    Color::white(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(),
-                    t.color_primary_active(), 0.0),
-                _ => (None, t.color_primary_active(), t.color_primary_active(), 1.0),
+                ButtonVariant::Primary => (
+                    Some(t.color_primary_active()),
+                    t.color_primary_active(),
+                    Color::white(),
+                    1.0,
+                ),
+                ButtonVariant::Text | ButtonVariant::Link => {
+                    (None, Color::transparent(), t.color_primary_active(), 0.0)
+                }
+                _ => (
+                    None,
+                    t.color_primary_active(),
+                    t.color_primary_active(),
+                    1.0,
+                ),
             }
         } else if self.hovered {
             match self.variant {
-                ButtonVariant::Primary => (Some(t.color_primary_hover()), t.color_primary_hover(),
-                    Color::white(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(),
-                    t.color_primary_hover(), 0.0),
+                ButtonVariant::Primary => (
+                    Some(t.color_primary_hover()),
+                    t.color_primary_hover(),
+                    Color::white(),
+                    1.0,
+                ),
+                ButtonVariant::Text | ButtonVariant::Link => {
+                    (None, Color::transparent(), t.color_primary_hover(), 0.0)
+                }
                 _ => (None, t.color_primary(), t.color_primary(), 1.0),
             }
         } else {
             match self.variant {
-                ButtonVariant::Primary => (Some(t.color_primary()), t.color_primary(),
-                    Color::white(), 1.0),
+                ButtonVariant::Primary => (
+                    Some(t.color_primary()),
+                    t.color_primary(),
+                    Color::white(),
+                    1.0,
+                ),
                 ButtonVariant::Dashed => (None, t.color_border(), t.color_text(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(),
-                    t.color_primary(), 0.0),
+                ButtonVariant::Text | ButtonVariant::Link => {
+                    (None, Color::transparent(), t.color_primary(), 0.0)
+                }
                 _ => (None, t.color_border(), t.color_text(), 1.0),
             }
         };
@@ -186,7 +227,11 @@ impl Button {
             border_width: bw,
             border_radius: t.border_radius(),
             padding: crate::base::EdgeInsets::new(
-                self.btn_size.padding_h(), 0.0, self.btn_size.padding_h(), 0.0),
+                self.btn_size.padding_h(),
+                0.0,
+                self.btn_size.padding_h(),
+                0.0,
+            ),
             color: text_color,
             font_size,
         }
@@ -197,21 +242,42 @@ impl Button {
             text: text.into(),
             variant: ButtonVariant::Default,
             btn_size: ButtonSize::Middle,
-            block: false, disabled: false, loading: false,
-            hovered: false, pressed: false, anim_progress: 0.0,
+            disabled: false,
+            hovered: false,
+            pressed: false,
+            anim_progress: 0.0,
             click_pos: None,
             on_click: None,
         }
     }
-    pub fn variant(mut self, v: ButtonVariant) -> Self { self.variant = v; self }
-    pub fn size(mut self, s: ButtonSize) -> Self { self.btn_size = s; self }
-    pub fn primary(mut self) -> Self { self.variant = ButtonVariant::Primary; self }
-    pub fn dashed(mut self) -> Self { self.variant = ButtonVariant::Dashed; self }
-    pub fn text(mut self) -> Self { self.variant = ButtonVariant::Text; self }
-    pub fn link(mut self) -> Self { self.variant = ButtonVariant::Link; self }
-    pub fn block(mut self) -> Self { self.block = true; self }
-    pub fn loading(mut self) -> Self { self.loading = true; self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
+    pub fn variant(mut self, v: ButtonVariant) -> Self {
+        self.variant = v;
+        self
+    }
+    pub fn size(mut self, s: ButtonSize) -> Self {
+        self.btn_size = s;
+        self
+    }
+    pub fn primary(mut self) -> Self {
+        self.variant = ButtonVariant::Primary;
+        self
+    }
+    pub fn dashed(mut self) -> Self {
+        self.variant = ButtonVariant::Dashed;
+        self
+    }
+    pub fn text(mut self) -> Self {
+        self.variant = ButtonVariant::Text;
+        self
+    }
+    pub fn link(mut self) -> Self {
+        self.variant = ButtonVariant::Link;
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
     pub fn on_click<F: FnMut() + 'static>(mut self, f: F) -> Self {
         self.on_click = Some(Box::new(f));
         self

@@ -2,11 +2,11 @@
 //!
 //! Provides consistent spacing for a row or column of child widgets.
 
+use crate::base::{Rect, Size};
 use crate::define_widget;
 use crate::graphics::{
     compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
-use crate::base::{Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{Widget, WidgetCore, WidgetId, WidgetTree};
@@ -123,16 +123,38 @@ impl Space {
         self
     }
 
-    pub fn direction(mut self, d: FlexDirection) -> Self { self.direction = d; self }
-    pub fn size(mut self, s: SpaceSize) -> Self { self.space_size = s; self }
-    pub fn wrap(mut self) -> Self { self.wrap = true; self }
-    pub fn justify(mut self, j: JustifyContent) -> Self { self.justify = j; self }
-    pub fn align(mut self, a: AlignItems) -> Self { self.align = a; self }
-    pub fn width(mut self, w: f32) -> Self { self.fixed_width = Some(w); self }
-    pub fn height(mut self, h: f32) -> Self { self.fixed_height = Some(h); self }
-    pub fn vertical(mut self) -> Self { self.direction = FlexDirection::Column; self }
+    pub fn direction(mut self, d: FlexDirection) -> Self {
+        self.direction = d;
+        self
+    }
+    pub fn size(mut self, s: SpaceSize) -> Self {
+        self.space_size = s;
+        self
+    }
+    pub fn justify(mut self, j: JustifyContent) -> Self {
+        self.justify = j;
+        self
+    }
+    pub fn align(mut self, a: AlignItems) -> Self {
+        self.align = a;
+        self
+    }
+    pub fn width(mut self, w: f32) -> Self {
+        self.fixed_width = Some(w);
+        self
+    }
+    pub fn height(mut self, h: f32) -> Self {
+        self.fixed_height = Some(h);
+        self
+    }
+    pub fn vertical(mut self) -> Self {
+        self.direction = FlexDirection::Column;
+        self
+    }
 }
 
 impl Default for Space {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

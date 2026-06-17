@@ -18,8 +18,8 @@
 //!   handles offscreen target switching via pixel ownership transfer, and
 //!   implements GraphicsEngine by delegating to all three.
 
-use crate::graphics::{BlendMode};
-use crate::base::{Rect};
+use crate::base::Rect;
+use crate::graphics::BlendMode;
 use crate::graphics::{ImageHandle, Transform};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -72,7 +72,7 @@ mod content;
 mod core;
 mod engine;
 mod font;
-mod fontdue_backend;
+pub(crate) mod fontdue_backend;
 mod graphics_impl;
 mod pixels;
 mod rect;
@@ -88,3 +88,4 @@ mod tests;
 // ════════════════════════════════════════════════════════════════════════════
 
 pub use engine::SoftwareEngine;
+pub use fontdue_backend::FontdueBackend;

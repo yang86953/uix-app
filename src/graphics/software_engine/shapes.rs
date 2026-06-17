@@ -1,8 +1,8 @@
 use super::core::RenderTarget;
-use crate::graphics::Color;
 use crate::base::{Point, Rect};
-use crate::graphics::rasterizer;
 use crate::graphics::path::FillRule;
+use crate::graphics::rasterizer;
+use crate::graphics::Color;
 
 impl RenderTarget {
     /// Fill a circle with radial alpha gradient: full color.a at center → 0 at edge.
@@ -20,7 +20,9 @@ impl RenderTarget {
                     let dx = px as f32 + 0.5 - cx;
                     let dy = py as f32 + 0.5 - cy;
                     let dist2 = dx * dx + dy * dy;
-                    if dist2 >= outer2 { continue; }
+                    if dist2 >= outer2 {
+                        continue;
+                    }
                     let dist = dist2.sqrt();
                     let radial = 1.0 - (dist / r).min(1.0);
                     let coverage = Self::sdf_to_coverage(dist - r);
@@ -36,7 +38,8 @@ impl RenderTarget {
             if let Some(cr) = self.intersect_clip(&bounds) {
                 for py in (cr.y as i32)..((cr.y + cr.h) as i32) {
                     for px in (cr.x as i32)..((cr.x + cr.w) as i32) {
-                        if let Some((ux, uy)) = self.apply_inverse(px as f32 + 0.5, py as f32 + 0.5) {
+                        if let Some((ux, uy)) = self.apply_inverse(px as f32 + 0.5, py as f32 + 0.5)
+                        {
                             let dx = ux - cx;
                             let dy = uy - cy;
                             let dist = (dx * dx + dy * dy).sqrt();
@@ -56,7 +59,8 @@ impl RenderTarget {
     /// Fill a circular sector (pie slice). Angles in radians. 0 = 3 o'clock. CCW sweep.
     pub fn fill_sector(
         &mut self,
-        cx: f32, cy: f32,
+        cx: f32,
+        cy: f32,
         r: f32,
         start_angle: f32,
         end_angle: f32,
@@ -69,8 +73,11 @@ impl RenderTarget {
         let ea = norm(end_angle);
         let in_sector = |angle: f32| -> bool {
             let a = norm(angle);
-            if sa <= ea { a >= sa && a <= ea }
-            else { a >= sa || a <= ea }
+            if sa <= ea {
+                a >= sa && a <= ea
+            } else {
+                a >= sa || a <= ea
+            }
         };
         let outer2 = (r + 1.0) * (r + 1.0);
         if Self::is_identity(&self.transform) {
@@ -83,11 +90,17 @@ impl RenderTarget {
                     let dx = px as f32 + 0.5 - cx;
                     let dy = py as f32 + 0.5 - cy;
                     let dist2 = dx * dx + dy * dy;
-                    if dist2 >= outer2 { continue; }
+                    if dist2 >= outer2 {
+                        continue;
+                    }
                     let angle = dy.atan2(dx);
-                    if !in_sector(angle) { continue; }
+                    if !in_sector(angle) {
+                        continue;
+                    }
                     let coverage = Self::sdf_to_coverage(dist2.sqrt() - r);
-                    if coverage > 0.0 { self.put_pixel_aa(px, py, c, coverage); }
+                    if coverage > 0.0 {
+                        self.put_pixel_aa(px, py, c, coverage);
+                    }
                 }
             }
         } else {
@@ -96,15 +109,22 @@ impl RenderTarget {
             if let Some(cr) = self.intersect_clip(&bounds) {
                 for py in (cr.y as i32)..((cr.y + cr.h) as i32) {
                     for px in (cr.x as i32)..((cr.x + cr.w) as i32) {
-                        if let Some((ux, uy)) = self.apply_inverse(px as f32 + 0.5, py as f32 + 0.5) {
+                        if let Some((ux, uy)) = self.apply_inverse(px as f32 + 0.5, py as f32 + 0.5)
+                        {
                             let dx = ux - cx;
                             let dy = uy - cy;
                             let dist = (dx * dx + dy * dy).sqrt();
-                            if dist >= r { continue; }
+                            if dist >= r {
+                                continue;
+                            }
                             let angle = dy.atan2(dx);
-                            if !in_sector(angle) { continue; }
+                            if !in_sector(angle) {
+                                continue;
+                            }
                             let coverage = Self::sdf_to_coverage(dist - r);
-                            if coverage > 0.0 { self.put_pixel_aa(px, py, c, coverage); }
+                            if coverage > 0.0 {
+                                self.put_pixel_aa(px, py, c, coverage);
+                            }
                         }
                     }
                 }
@@ -132,7 +152,9 @@ impl RenderTarget {
                         self.put_pixel_aa(px, py, c, 1.0);
                         continue;
                     }
-                    if dist2 >= outer2 { continue; }
+                    if dist2 >= outer2 {
+                        continue;
+                    }
                     let dist = dist2.sqrt();
                     let coverage = Self::sdf_to_coverage(dist - r);
                     if coverage > 0.0 {
@@ -146,7 +168,8 @@ impl RenderTarget {
             if let Some(cr) = self.intersect_clip(&bounds) {
                 for py in (cr.y as i32)..((cr.y + cr.h) as i32) {
                     for px in (cr.x as i32)..((cr.x + cr.w) as i32) {
-                        if let Some((ux, uy)) = self.apply_inverse(px as f32 + 0.5, py as f32 + 0.5) {
+                        if let Some((ux, uy)) = self.apply_inverse(px as f32 + 0.5, py as f32 + 0.5)
+                        {
                             let dx = ux - cx;
                             let dy = uy - cy;
                             let dist = (dx * dx + dy * dy).sqrt();
@@ -188,12 +211,18 @@ impl RenderTarget {
         let c = self.apply_opacity(Self::premul(color));
         let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
         let (rx, ry) = (rect.w / 2.0, rect.h / 2.0);
-        if rx <= 0.0 || ry <= 0.0 { return; }
+        if rx <= 0.0 || ry <= 0.0 {
+            return;
+        }
         let inv_rx2 = 1.0 / (rx * rx);
         let inv_ry2 = 1.0 / (ry * ry);
         let expand = 1.0;
-        let expanded = Rect::new(rect.x - expand, rect.y - expand,
-            rect.w + expand * 2.0, rect.h + expand * 2.0);
+        let expanded = Rect::new(
+            rect.x - expand,
+            rect.y - expand,
+            rect.w + expand * 2.0,
+            rect.h + expand * 2.0,
+        );
         if let Some(cr) = self.intersect_clip(&expanded) {
             let x0 = cr.x as i32;
             let y0 = cr.y as i32;
@@ -206,8 +235,13 @@ impl RenderTarget {
                     let tx = dx * dx * inv_rx2;
                     let ty = dy * dy * inv_ry2;
                     let v = tx + ty;
-                    if v >= 1.15 { continue; }
-                    if v <= 0.85 { self.put_pixel_aa(px, py, c, 1.0); continue; }
+                    if v >= 1.15 {
+                        continue;
+                    }
+                    if v <= 0.85 {
+                        self.put_pixel_aa(px, py, c, 1.0);
+                        continue;
+                    }
                     let grad_mag = 2.0 * (tx * inv_rx2 + ty * inv_ry2).sqrt();
                     let sd = (v - 1.0) / grad_mag.max(1e-12);
                     let coverage = Self::sdf_to_coverage(sd);
@@ -241,8 +275,12 @@ impl RenderTarget {
         }
 
         let expand = half_lw + 1.0;
-        let bb = Rect::new(x1.min(x2) - expand, y1.min(y2) - expand,
-            (x1 - x2).abs() + expand * 2.0, (y1 - y2).abs() + expand * 2.0);
+        let bb = Rect::new(
+            x1.min(x2) - expand,
+            y1.min(y2) - expand,
+            (x1 - x2).abs() + expand * 2.0,
+            (y1 - y2).abs() + expand * 2.0,
+        );
         if let Some(cr) = self.intersect_clip(&bb) {
             let x0 = cr.x as i32;
             let y0 = cr.y as i32;
@@ -273,7 +311,19 @@ impl RenderTarget {
         let w = self.width();
         let h = self.height();
         if let Some(cr) = self.intersect_clip(&clip) {
-            rasterizer::fill_polygons(polys, self.pixel_buffer_mut(), w, h, cr, color, fill_rule);
+            let mut global_edges = Vec::new();
+            let mut active_edges = Vec::new();
+            rasterizer::fill_polygons(
+                polys,
+                self.pixel_buffer_mut(),
+                w,
+                h,
+                cr,
+                color,
+                fill_rule,
+                &mut global_edges,
+                &mut active_edges,
+            );
         }
     }
 }

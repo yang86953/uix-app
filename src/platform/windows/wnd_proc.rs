@@ -17,8 +17,8 @@ use super::bindings::{CREATESTRUCTW, POINT};
 use super::consts::*;
 use super::ffi::*;
 use super::platform::WindowsPlatform;
-use crate::platform::event::*;
 use crate::base::*;
+use crate::platform::event::*;
 
 use std::ptr;
 
@@ -174,7 +174,8 @@ impl WindowsPlatform {
                 }
                 let pos = Point::new(client_pt.x as f32, client_pt.y as f32);
                 let delta = (Self::hiword_usize(wparam) as i16) as i32;
-                let delta_y = delta as f32 / 120.0;
+                // 取反：Windows 正 delta = 滚轮向上，框架约定正值为向下滚动
+                let delta_y = -(delta as f32) / 120.0;
                 let mods = Self::get_modifier_state();
                 self.push_event(UiEvent::mouse_wheel(pos, 0.0, delta_y, mods));
                 0

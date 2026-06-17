@@ -14,7 +14,6 @@ pub mod state;
 pub mod style;
 pub mod theme;
 pub mod widget;
-pub mod widget_builder;
 pub mod widgets;
 
 mod api;

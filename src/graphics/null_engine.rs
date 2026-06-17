@@ -1,9 +1,12 @@
 //! NullEngine — 用于测试/演示的 GraphicsEngine 桩实现。
 //! 所有渲染操作均为空操作；字体/图片加载返回 NotImplemented。
 
+use crate::base::{Rect, Size};
 use crate::diag::{info_fn, Errc, Error};
-use crate::graphics::{BlendMode, Color, DirtyRegion, FontHandle, GradientDirection, GraphicsEngine, ImageHandle, Radius, TextLayoutOptions, Transform};
-use crate::base::{Point, Rect, Size};
+use crate::graphics::{
+    BlendMode, Color, DirtyRegion, GradientDirection, GraphicsEngine, ImageHandle, Radius,
+    Transform,
+};
 
 /// A GraphicsEngine that does nothing — useful as a compile-time stub
 /// or for testing code that depends on `dyn GraphicsEngine`.
@@ -35,6 +38,9 @@ impl Default for NullEngine {
 }
 
 impl GraphicsEngine for NullEngine {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
     fn initialize(&mut self, w: i32, h: i32) -> Result<(), Error> {
         self.width = w;
         self.height = h;
@@ -125,22 +131,14 @@ impl GraphicsEngine for NullEngine {
     ) {
     }
 
-    fn load_font(&mut self, _data: &[u8], _s: f32) -> Result<&mut FontHandle, Error> {
-        Err(Error::new(Errc::NotImplemented, "NullEngine"))
-    }
-    fn unload_font(&mut self, _f: &FontHandle) {}
-
-    fn measure_text(&self, _f: &FontHandle, _t: &str, _o: &TextLayoutOptions) -> Size {
-        Size::new(0.0, 0.0)
-    }
-
-    fn draw_text(
+    fn draw_glyph_raster(
         &mut self,
-        _f: &FontHandle,
-        _t: &str,
-        _p: Point,
-        _c: Color,
-        _o: &TextLayoutOptions,
+        _x: i32,
+        _y: i32,
+        _coverage: &[u8],
+        _width: usize,
+        _height: usize,
+        _color: Color,
     ) {
     }
 

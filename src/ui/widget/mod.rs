@@ -1,8 +1,5 @@
 use crate::base::{Point, Rect, Size};
 
-// Re-export layout types for backward compatibility
-pub use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
-
 // Platform types are used directly by WidgetEvent - no conversion needed.
 pub use crate::base::{KeyCode, MouseButton};
 
@@ -43,13 +40,19 @@ pub trait AsAny {
 }
 
 impl<T: 'static> AsAny for T {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Widget trait — 核心行为抽象。纯行为，不含树元数据。
 pub trait Widget: AsAny {
-    fn build(&self) -> Vec<Box<dyn Widget>> { vec![] }
+    fn build(&self) -> Vec<Box<dyn Widget>> {
+        vec![]
+    }
 
     fn on_init(&mut self) {}
     fn on_mount(&mut self) {}
@@ -60,13 +63,19 @@ pub trait Widget: AsAny {
     fn on_update(&mut self, _dt: f32) {}
 
     /// 是否需要持续更新/渲染帧（如动画）。
-    fn needs_continuous_update(&self) -> bool { false }
+    fn needs_continuous_update(&self) -> bool {
+        false
+    }
 
     /// 返回需要重新渲染的区域（动画边界可能超出 frame）。
-    fn dirty_rect(&self, frame: Rect) -> Rect { frame }
+    fn dirty_rect(&self, frame: Rect) -> Rect {
+        frame
+    }
 
     /// 返回像素缓冲滚动偏移量（如 ScrollView）。
-    fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> { None }
+    fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
+        None
+    }
 
     /// 返回首选尺寸用于布局。
     fn preferred_size(&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
@@ -87,16 +96,25 @@ pub trait Widget: AsAny {
         _frame: Rect,
         _ctx: &mut crate::ui::render_context::RenderContext,
         _tree: &WidgetTree,
-    ) {}
+    ) {
+    }
 
-    fn flex_grow(&self) -> f32 { 0.0 }
-    fn flex_shrink(&self) -> f32 { 1.0 }
+    fn flex_grow(&self) -> f32 {
+        0.0
+    }
+    fn flex_shrink(&self) -> f32 {
+        1.0
+    }
 
     /// 返回子 widget 的裁剪矩形（如 ScrollView 视口）。
-    fn children_clip(&self, _frame: Rect) -> Option<Rect> { None }
+    fn children_clip(&self, _frame: Rect) -> Option<Rect> {
+        None
+    }
 
     /// 是否是重绘边界（RepaintBoundary）。
-    fn is_repaint_boundary(&self) -> bool { false }
+    fn is_repaint_boundary(&self) -> bool {
+        false
+    }
 
     /// 计算子布局。返回 (child_id, rect) 对。
     fn layout_children(
@@ -121,10 +139,18 @@ pub struct WidgetNode {
 
 impl WidgetNode {
     pub fn new(widget: Box<dyn Widget>, children: Vec<WidgetNode>) -> Self {
-        Self { widget, children, z_index: 0 }
+        Self {
+            widget,
+            children,
+            z_index: 0,
+        }
     }
     pub fn leaf(widget: Box<dyn Widget>) -> Self {
-        Self { widget, children: vec![], z_index: 0 }
+        Self {
+            widget,
+            children: vec![],
+            z_index: 0,
+        }
     }
     pub fn z_index(mut self, z: i32) -> Self {
         self.z_index = z;
@@ -144,7 +170,9 @@ impl<T: Widget + 'static> IntoWidgetNode for T {
 }
 
 impl IntoWidgetNode for WidgetNode {
-    fn into_node(self) -> WidgetNode { self }
+    fn into_node(self) -> WidgetNode {
+        self
+    }
 }
 
 /// Core widget tree metadata — 由 BoxedWidget 管理，widget 不直接接触。
@@ -185,35 +213,77 @@ pub struct BoxedWidget {
 impl BoxedWidget {
     pub fn new(inner: Box<dyn Widget>) -> Self {
         Self {
-            inner, id: 0, parent: None, children: Vec::new(),
-            frame: Rect::zero(), visible: true, is_dirty: true,
-            widget_opacity: 1.0, z: 0,
+            inner,
+            id: 0,
+            parent: None,
+            children: Vec::new(),
+            frame: Rect::zero(),
+            visible: true,
+            is_dirty: true,
+            widget_opacity: 1.0,
+            z: 0,
         }
     }
-    pub fn inner(&self) -> &dyn Widget { &*self.inner }
-    pub fn inner_mut(&mut self) -> &mut dyn Widget { &mut *self.inner }
+    pub fn inner(&self) -> &dyn Widget {
+        &*self.inner
+    }
+    pub fn inner_mut(&mut self) -> &mut dyn Widget {
+        &mut *self.inner
+    }
     pub fn preferred_size(&self, engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
         self.inner.preferred_size(engine)
     }
 }
 
 impl WidgetCore for BoxedWidget {
-    fn id(&self) -> WidgetId { self.id }
-    fn set_id(&mut self, id: WidgetId) { self.id = id; }
-    fn parent(&self) -> Option<WidgetId> { self.parent }
-    fn set_parent(&mut self, id: Option<WidgetId>) { self.parent = id; }
-    fn children(&self) -> &[WidgetId] { &self.children }
-    fn children_mut(&mut self) -> &mut Vec<WidgetId> { &mut self.children }
-    fn frame(&self) -> Rect { self.frame }
-    fn set_frame(&mut self, rect: Rect) { self.frame = rect; }
-    fn visible(&self) -> bool { self.visible }
-    fn set_visible(&mut self, v: bool) { self.visible = v; }
-    fn dirty(&self) -> bool { self.is_dirty }
-    fn set_dirty(&mut self, v: bool) { self.is_dirty = v; }
-    fn opacity(&self) -> f32 { self.widget_opacity }
-    fn set_opacity(&mut self, v: f32) { self.widget_opacity = v; }
-    fn z_index(&self) -> i32 { self.z }
-    fn set_z_index(&mut self, v: i32) { self.z = v; }
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+    fn set_id(&mut self, id: WidgetId) {
+        self.id = id;
+    }
+    fn parent(&self) -> Option<WidgetId> {
+        self.parent
+    }
+    fn set_parent(&mut self, id: Option<WidgetId>) {
+        self.parent = id;
+    }
+    fn children(&self) -> &[WidgetId] {
+        &self.children
+    }
+    fn children_mut(&mut self) -> &mut Vec<WidgetId> {
+        &mut self.children
+    }
+    fn frame(&self) -> Rect {
+        self.frame
+    }
+    fn set_frame(&mut self, rect: Rect) {
+        self.frame = rect;
+    }
+    fn visible(&self) -> bool {
+        self.visible
+    }
+    fn set_visible(&mut self, v: bool) {
+        self.visible = v;
+    }
+    fn dirty(&self) -> bool {
+        self.is_dirty
+    }
+    fn set_dirty(&mut self, v: bool) {
+        self.is_dirty = v;
+    }
+    fn opacity(&self) -> f32 {
+        self.widget_opacity
+    }
+    fn set_opacity(&mut self, v: f32) {
+        self.widget_opacity = v;
+    }
+    fn z_index(&self) -> i32 {
+        self.z
+    }
+    fn set_z_index(&mut self, v: i32) {
+        self.z = v;
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════

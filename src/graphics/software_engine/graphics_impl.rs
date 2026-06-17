@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 
 use super::engine::SoftwareEngine;
-use crate::base::{Point, Rect, Size};
+use crate::base::{Rect, Size};
 use crate::diag::Error;
 use crate::graphics::{
-    BlendMode, Color, DirtyRegion, FontHandle, GraphicsEngine, ImageHandle, Radius,
-    RenderOutcome, TextLayoutOptions,
+    BlendMode, Color, DirtyRegion, FontHandle, GraphicsEngine, ImageHandle, Radius, RenderOutcome,
+    TextLayoutOptions,
 };
 use crate::graphics::{GradientDirection, Transform};
 use crate::ui::render_context::RenderContext;
@@ -17,13 +17,16 @@ use crate::ui::widget::WidgetTree;
 // ════════════════════════════════════════════════════════════════════════════
 
 impl GraphicsEngine for SoftwareEngine {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.main_width = width;
         self.main_height = height;
         self.rt.initialize(width, height);
         self.active_target = super::engine::ActiveTarget::Main;
-        // 自动加载系统默认字体
-        self.load_default_system_font(14.0);
+        // 自动加载系统默认字体（委托给独立的 FontService）
+        self.font_service.load_default_system_font(14.0);
         Ok(())
     }
 
@@ -135,13 +138,15 @@ impl GraphicsEngine for SoftwareEngine {
 
     fn fill_sector(
         &mut self,
-        cx: f32, cy: f32,
+        cx: f32,
+        cy: f32,
         r: f32,
         start_angle: f32,
         end_angle: f32,
         color: Color,
     ) {
-        self.rt.fill_sector(cx, cy, r, start_angle, end_angle, color);
+        self.rt
+            .fill_sector(cx, cy, r, start_angle, end_angle, color);
     }
 
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32) {
@@ -190,22 +195,39 @@ impl GraphicsEngine for SoftwareEngine {
         if let Some(&pre_parent) = saved_stack.first() {
             *self.rt.clip_rect_mut() = pre_parent;
         }
-        self.rt
-            .draw_box_shadow_ambient(rect, blur_radius, offset_x, offset_y, color, corner_radius);
+        self.rt.draw_box_shadow_ambient(
+            rect,
+            blur_radius,
+            offset_x,
+            offset_y,
+            color,
+            corner_radius,
+        );
         *self.rt.clip_rect_mut() = saved_rect;
         *self.rt.clip_stack_mut() = saved_stack;
     }
 
     // ── 路径 ──
 
-    fn fill_path(&mut self, path: &crate::graphics::path::Path, color: Color, fill_rule: crate::graphics::path::FillRule) {
+    fn fill_path(
+        &mut self,
+        path: &crate::graphics::path::Path,
+        color: Color,
+        fill_rule: crate::graphics::path::FillRule,
+    ) {
         let c = self.rt.apply_opacity(color.premultiplied());
         let polys = crate::graphics::flattener::flatten(path.segments(), 0.25);
         let clip = self.rt.clip_rect();
-        self.rt.fill_polygons_with_opacity(&polys, clip, c, fill_rule);
+        self.rt
+            .fill_polygons_with_opacity(&polys, clip, c, fill_rule);
     }
 
-    fn stroke_path(&mut self, path: &crate::graphics::path::Path, color: Color, options: &crate::graphics::stroker::StrokeOptions) {
+    fn stroke_path(
+        &mut self,
+        path: &crate::graphics::path::Path,
+        color: Color,
+        options: &crate::graphics::stroker::StrokeOptions,
+    ) {
         let stroked = crate::graphics::stroker::stroke_path(path, options);
         self.fill_path(&stroked, color, crate::graphics::path::FillRule::NonZero);
     }
@@ -242,8 +264,12 @@ impl GraphicsEngine for SoftwareEngine {
     // ── 图片 ──
 
     fn load_image(&mut self, data: &[u8]) -> Result<&mut ImageHandle, Error> {
-        let img = image::load_from_memory(data)
-            .map_err(|e| Error::new(crate::diag::Errc::FormatError, format!("cannot decode image: {}", e)))?;
+        let img = image::load_from_memory(data).map_err(|e| {
+            Error::new(
+                crate::diag::Errc::FormatError,
+                format!("cannot decode image: {}", e),
+            )
+        })?;
         let rgba = img.to_rgba8();
         let (w, h) = rgba.dimensions();
         let pixels: Vec<u32> = rgba
@@ -344,8 +370,11 @@ impl GraphicsEngine for SoftwareEngine {
     ) -> RenderOutcome {
         // ── 脏状态判断 ────────────────────────────────────────────
         let dirty = tree.dirty_region();
-        let need_render = first_frame || !self.rendered_first
-            || dirty.full_frame || dirty.clear_required || keep_polling;
+        let need_render = first_frame
+            || !self.rendered_first
+            || dirty.full_frame
+            || dirty.clear_required
+            || keep_polling;
 
         if !need_render {
             return RenderOutcome::Idle;
@@ -360,13 +389,18 @@ impl GraphicsEngine for SoftwareEngine {
 
         let scroll_deltas = tree.drain_scroll_deltas();
 
-        let damage: Option<(i32, i32, i32, i32)> =
-            if region.full_frame || !scroll_deltas.is_empty() {
-                None
-            } else {
-                let bounds = region.bounds();
-                Some((bounds.x as i32, bounds.y as i32, bounds.w as i32, bounds.h as i32))
-            };
+        let damage: Option<(i32, i32, i32, i32)> = if region.full_frame || !scroll_deltas.is_empty()
+        {
+            None
+        } else {
+            let bounds = region.bounds();
+            Some((
+                bounds.x as i32,
+                bounds.y as i32,
+                bounds.w as i32,
+                bounds.h as i32,
+            ))
+        };
 
         // ── 滚动偏移（先于清理，避免滚动携带清除后的透明像素） ──
         for &(viewport, dx, dy) in &scroll_deltas {
@@ -384,13 +418,13 @@ impl GraphicsEngine for SoftwareEngine {
         }
         self.layer_tree.update_dirty(tree);
 
+        // SAFETY: font_service 字段与 engine 使用的字段（rt/assets）物理分离。
+        // 先取 font_service 的裸指针，再创建 engine 引用，避免 Rust 的借用检查器
+        // 将 &mut self（作为 engine）视为占用了所有字段。
+        let fs_ptr = &self.font_service as *const crate::graphics::font_service::FontService;
         let theme_ref = theme.borrow();
         let tokens = theme_ref.tokens();
-        let mut rctx = RenderContext::new(
-            self,
-            FontHandle::default(),
-            tokens,
-        );
+        let mut rctx = RenderContext::new(self, FontHandle::default(), unsafe { &*fs_ptr }, tokens);
         tree.render_geometry(&mut rctx);
         drop(rctx);
         drop(theme_ref);
@@ -409,11 +443,8 @@ impl GraphicsEngine for SoftwareEngine {
         GraphicsEngine::begin_frame(self, &overlay_region);
         let theme_ref = theme.borrow();
         let tokens = theme_ref.tokens();
-        let mut rctx = RenderContext::new(
-            self,
-            FontHandle::default(),
-            tokens,
-        );
+        let fs_ptr = &self.font_service as *const crate::graphics::font_service::FontService;
+        let mut rctx = RenderContext::new(self, FontHandle::default(), unsafe { &*fs_ptr }, tokens);
         tree.render_overlays(&mut rctx);
         drop(rctx);
         drop(theme_ref);
@@ -426,90 +457,44 @@ impl GraphicsEngine for SoftwareEngine {
         RenderOutcome::Present(damage)
     }
 
-    // ── 字体 ──
-
-    fn load_font(&mut self, data: &[u8], _size: f32) -> Result<&mut FontHandle, Error> {
-        let handle = self.text_backend.load_font(data)?;
-        self.loaded_font_handle = handle;
-        Ok(&mut self.loaded_font_handle)
-    }
-
-    fn unload_font(&mut self, font: &FontHandle) {
-        self.text_backend.unload_font(font);
-    }
-
-    fn set_font_family(&mut self, family: &str) {
-        self.primary_family = family.to_string();
-        self.user_family_set = true;
-    }
+    // ── 文本测量（布局阶段辅助，委托给 FontService）──
 
     fn measure_text(&self, font: &FontHandle, text: &str, opts: &TextLayoutOptions) -> Size {
-        self.measure_with_font(font, text, opts)
+        let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts.clone());
+        self.font_service.measure_text(font, text, &backend_opts)
     }
 
-    fn draw_text(
+    // ── 字形绘制（渲染器唯一需要的字体方法）──
+
+    fn draw_glyph_raster(
         &mut self,
-        font: &FontHandle,
-        text: &str,
-        pos: Point,
+        x: i32,
+        y: i32,
+        coverage: &[u8],
+        width: usize,
+        height: usize,
         color: Color,
-        opts: &TextLayoutOptions,
     ) {
-        self.render_text_segment(font, text, pos, color, opts);
-    }
-
-    fn hit_test_text(
-        &self,
-        font: &FontHandle,
-        text: &str,
-        opts: &TextLayoutOptions,
-        point: Point,
-    ) -> Option<usize> {
-        if text.is_empty() { return None; }
-        let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts.clone());
-        if self.text_backend.is_valid(font) {
-            let layout = self.text_backend.layout_text(font, text, &backend_opts);
-            // 按行查找
-            for li in &layout.lines {
-                if point.y >= li.y && point.y < li.y + li.height {
-                    let end = li.glyph_start + li.glyph_count;
-                    let glyphs = &layout.glyphs[li.glyph_start..end.min(layout.glyphs.len())];
-                    if glyphs.is_empty() {
-                        return Some(li.glyph_start);
-                    }
-                    for (i, g) in glyphs.iter().enumerate() {
-                        if point.x < g.x + g.width * 0.5 {
-                            return Some(li.glyph_start + i);
-                        }
-                    }
-                    return Some(li.glyph_start + glyphs.len() - 1);
+        let premul = self
+            .rt
+            .apply_opacity(crate::graphics::software_engine::core::RenderTarget::premul(color));
+        let c = premul;
+        for row in 0..height {
+            let sy = y + row as i32;
+            for col in 0..width {
+                let cov = coverage[row * width + col];
+                if cov == 0 {
+                    continue;
                 }
-            }
-            if let Some(last) = layout.lines.last() {
-                return Some(last.glyph_start + last.glyph_count);
-            }
-        }
-        Some(0)
-    }
-
-    fn text_cursor_x(
-        &self,
-        font: &FontHandle,
-        text: &str,
-        opts: &TextLayoutOptions,
-        char_index: usize,
-    ) -> f32 {
-        if text.is_empty() { return 0.0; }
-        let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts.clone());
-        if self.text_backend.is_valid(font) {
-            let layout = self.text_backend.layout_text(font, text, &backend_opts);
-            if char_index < layout.glyphs.len() {
-                return layout.glyphs[char_index].x;
-            }
-            if let Some(last) = layout.glyphs.last() {
-                return last.x + last.width.max(0.0);
+                let cov_u32 = cov as u32;
+                let alpha = (c >> 24) & 0xFF;
+                let blended_alpha = (alpha * cov_u32 / 255).min(255);
+                let r = ((c >> 16) & 0xFF) * cov_u32 / 255;
+                let g = ((c >> 8) & 0xFF) * cov_u32 / 255;
+                let b = (c & 0xFF) * cov_u32 / 255;
+                let pixel = (blended_alpha << 24) | (r << 16) | (g << 8) | b;
+                self.rt.put_pixel_raw(x + col as i32, sy, pixel);
             }
         }
-        0.0
     }
 }

@@ -4,9 +4,8 @@ use std::f32;
 pub mod flex;
 pub mod grid;
 
-// Re-export main functions for backward compatibility
-pub use flex::compute_flex_layout;
-pub use grid::compute_grid_layout;
+// 子模块布局函数统一通过 graphics::api 暴露
+// 外部代码通过 graphics::layout::flex::compute_flex_layout 或 graphics::api 引用
 
 // ── Shared enums ──
 

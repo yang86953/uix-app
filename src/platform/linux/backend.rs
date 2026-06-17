@@ -16,19 +16,22 @@ use crate::platform::*;
 // ════════════════════════════════════════════════════════════════════════════
 // Backend — window management interface for X11 / Wayland
 //
-// Super-traits delegate the bulk of the interface. The Backend trait only
-// adds the 4 subsystem accessors that differ per backend.
+// Super-traits delegate the bulk of the interface. Backend subertraits
+// (ICursor, IKeyboard, IDisplay, IClipboard) allow direct upcasting from
+// &mut dyn Backend without separate accessor methods.
 // ════════════════════════════════════════════════════════════════════════════
 
 pub(crate) trait Backend:
-    IWindowManager + IWindowProperties + IEventLoop + INativeHandle + IPresenter
+    IWindowManager
+    + IWindowProperties
+    + IEventLoop
+    + INativeHandle
+    + IPresenter
+    + ICursor
+    + IKeyboard
+    + IDisplay
+    + IClipboard
 {
-    // ── 后端特有的子系统 ───────────────────────────────────────────
-    fn cursor(&mut self) -> &mut dyn ICursor;
-    fn keyboard(&self) -> &dyn IKeyboard;
-    fn display(&self) -> &dyn IDisplay;
-    fn clipboard(&mut self) -> &mut dyn IClipboard;
-
     // ── 像素呈现 ─────────────────────────────────────────────────
     /// Present a BGRA pixel buffer to the native window.
     /// `pixels` is a slice of u32 in ARGB8888 format (0xAARRGGBB),

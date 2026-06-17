@@ -9,12 +9,12 @@ pub enum RenderOutcome {
 
 use std::cell::RefCell;
 
+use crate::base::{Rect, Size};
 use crate::diag::Error;
 use crate::graphics::types::*;
 use crate::graphics::{Color, DirtyRegion};
-use crate::base::{Point, Rect, Size};
-use crate::ui::widget::WidgetTree;
 use crate::ui::theme::Theme;
+use crate::ui::widget::WidgetTree;
 
 /// GraphicsEngine — abstract 2D rendering interface.
 ///
@@ -22,6 +22,8 @@ use crate::ui::theme::Theme;
 /// File I/O is the caller's responsibility (pass `&[u8]` for assets).
 /// Presentation is handled externally (e.g. `GdiPresenter`).
 pub trait GraphicsEngine: 'static {
+    /// 用于向下转型到具体引擎类型。
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
     // Lifetime
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error>;
     fn shutdown(&mut self);
@@ -57,7 +59,8 @@ pub trait GraphicsEngine: 'static {
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32);
     fn fill_sector(
         &mut self,
-        cx: f32, cy: f32,
+        cx: f32,
+        cy: f32,
         radius: f32,
         start_angle: f32,
         end_angle: f32,
@@ -89,8 +92,20 @@ pub trait GraphicsEngine: 'static {
     );
 
     // Path — 任意形状渲染
-    fn fill_path(&mut self, _path: &crate::graphics::path::Path, _color: Color, _fill_rule: crate::graphics::path::FillRule) {}
-    fn stroke_path(&mut self, _path: &crate::graphics::path::Path, _color: Color, _options: &crate::graphics::stroker::StrokeOptions) {}
+    fn fill_path(
+        &mut self,
+        _path: &crate::graphics::path::Path,
+        _color: Color,
+        _fill_rule: crate::graphics::path::FillRule,
+    ) {
+    }
+    fn stroke_path(
+        &mut self,
+        _path: &crate::graphics::path::Path,
+        _color: Color,
+        _options: &crate::graphics::stroker::StrokeOptions,
+    ) {
+    }
 
     // Gradients
     fn fill_linear_gradient(
@@ -110,42 +125,30 @@ pub trait GraphicsEngine: 'static {
         outer_color: Color,
     );
 
-    // Text — caller responsible for reading file bytes
-    fn load_font(&mut self, data: &[u8], size: f32) -> Result<&mut FontHandle, Error>;
-    fn unload_font(&mut self, font: &FontHandle);
-    fn set_font_family(&mut self, _family: &str) {}
-    fn measure_text(&self, font: &FontHandle, text: &str, opts: &TextLayoutOptions) -> Size;
-    fn draw_text(
+    // Text —
+    // - Layout / font-loading / glyph-rasterization: FontService (standalone, renderer-independent)
+    // - Glyph pixel drawing: draw_glyph_raster (engine must implement)
+    // - Text measurement (for layout only): measure_text (default returns zero)
+
+    /// 测量文本尺寸（仅用于布局阶段辅助计算首选尺寸）。
+    /// 渲染阶段的文本布局和绘制由 `FontService` + `draw_glyph_raster` 完成。
+    /// 引擎只需要实现 `draw_glyph_raster`，此方法有默认实现。
+    fn measure_text(&self, _font: &FontHandle, _text: &str, _opts: &TextLayoutOptions) -> Size {
+        Size::zero()
+    }
+
+    /// 绘制一个已光栅化的字形（coverage bitmap）。
+    /// `x`, `y` 是目标位置的像素坐标，`color` 是预乘 ARGB 颜色。
+    /// `coverage` 是 `width * height` 的逐像素覆盖值数组（0-255）。
+    fn draw_glyph_raster(
         &mut self,
-        font: &FontHandle,
-        text: &str,
-        pos: Point,
+        x: i32,
+        y: i32,
+        coverage: &[u8],
+        width: usize,
+        height: usize,
         color: Color,
-        opts: &TextLayoutOptions,
     );
-    /// 命中测试：给定文本布局后的像素位置，返回字符索引。
-    /// 返回 `None` 表示点击在文本区域外。
-    fn hit_test_text(
-        &self,
-        font: &FontHandle,
-        text: &str,
-        opts: &TextLayoutOptions,
-        point: Point,
-    ) -> Option<usize> {
-        let _ = (font, text, opts, point);
-        None
-    }
-    /// 获取指定字符索引的光标 x 位置（用于绘制光标/选中范围）。
-    fn text_cursor_x(
-        &self,
-        font: &FontHandle,
-        text: &str,
-        opts: &TextLayoutOptions,
-        char_index: usize,
-    ) -> f32 {
-        let _ = (font, text, opts, char_index);
-        0.0
-    }
 
     // Images — caller responsible for reading file bytes
     fn load_image(&mut self, data: &[u8]) -> Result<&mut ImageHandle, Error>;

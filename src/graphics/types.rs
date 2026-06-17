@@ -211,7 +211,7 @@ impl Default for DirtyRegion {
 }
 
 /// Text layout options.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextLayoutOptions {
     pub max_width: f32,
     pub max_height: f32,

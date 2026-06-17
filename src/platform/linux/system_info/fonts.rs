@@ -16,7 +16,9 @@ fn try_cff2_alt_family(pattern: &str) -> Option<String> {
     if !fam_output.status.success() {
         return None;
     }
-    let family = String::from_utf8_lossy(&fam_output.stdout).trim().to_string();
+    let family = String::from_utf8_lossy(&fam_output.stdout)
+        .trim()
+        .to_string();
     if family.is_empty() || family == "(null)" {
         return None;
     }
@@ -28,7 +30,9 @@ fn try_cff2_alt_family(pattern: &str) -> Option<String> {
     if !alt_output.status.success() {
         return None;
     }
-    let alt = String::from_utf8_lossy(&alt_output.stdout).trim().to_string();
+    let alt = String::from_utf8_lossy(&alt_output.stdout)
+        .trim()
+        .to_string();
     if alt.is_empty() || alt == "(null)" {
         return None;
     }
@@ -71,7 +75,10 @@ fn probe_fc_match_with_data(pattern: &str) -> Option<(String, Vec<u8>)> {
                 .or_else(|_| std::env::var("LC_ALL"))
                 .unwrap_or_default();
             // 中文 locale → 先试 CJK 字体
-            let found = if locale.starts_with("zh") || locale.starts_with("ja") || locale.starts_with("ko") {
+            let found = if locale.starts_with("zh")
+                || locale.starts_with("ja")
+                || locale.starts_with("ko")
+            {
                 probe_font_path_via_fc_match("sans-serif:scalable=true:lang=zh")
                     .or_else(|| probe_font_path_via_fc_match("sans-serif:scalable=true:lang=en"))
             } else {
@@ -106,12 +113,6 @@ fn probe_fc_match_with_data(pattern: &str) -> Option<(String, Vec<u8>)> {
 
 pub(crate) fn probe_font_path_via_fc_match(pattern: &str) -> Option<String> {
     probe_fc_match_with_data(pattern).map(|(p, _)| p)
-}
-
-/// 查询并预读取字体数据（避免引擎二次读取同一文件）。
-#[allow(dead_code)]
-pub(crate) fn probe_font_path_with_data(pattern: &str) -> Option<(String, Vec<u8>)> {
-    probe_fc_match_with_data(pattern)
 }
 
 /// 快速检测字体文件是否为 CFF2 可变字体（fontdue 不支持 CFF2 glyph 格式）。
@@ -159,22 +160,6 @@ fn is_cff2_variable_font(path: &str) -> bool {
     }
     // 子字体 SFNT 版本为 OTTO → CFF2 可变字体
     &sfnt == b"OTTO"
-}
-
-/// 用 fontconfig 查询适合 CJK 的字体路径（用于后备字体快速加载）。
-#[allow(dead_code)]
-pub fn probe_cjk_font_path() -> Option<String> {
-    for pattern in &[
-        "sans-serif:lang=zh:scalable=true",
-        "sans-serif:lang=zh",
-        "serif:lang=zh:scalable=true",
-    ] {
-        let p = probe_font_path_via_fc_match(pattern);
-        if p.is_some() {
-            return p;
-        }
-    }
-    None
 }
 
 /// 在 Linux 上用 fontconfig 查询系统默认字体路径（独立函数，引擎可直接调用）。

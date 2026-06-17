@@ -1,9 +1,9 @@
 //! Label widget — displays text.
 
-use crate::graphics::{FontHandle, GraphicsEngine, TextLayoutOptions};
 use crate::base::{Rect, Size};
-use crate::ui::render_context::RenderContext;
 use crate::define_widget;
+use crate::graphics::{FontHandle, GraphicsEngine, TextLayoutOptions};
+use crate::ui::render_context::RenderContext;
 use crate::ui::widget::WidgetTree;
 
 define_widget! {
@@ -19,7 +19,6 @@ define_widget! {
         if let (Some(w), Some(h)) = (self.fixed_width, self.fixed_height) {
             Size::new(w, h)
         } else {
-            // 使用 TTF 度量计算实际尺寸，回退到位图字体
             if let Some(eng) = engine {
                 let opts = TextLayoutOptions {
                     max_width: f32::MAX,
@@ -35,7 +34,7 @@ define_widget! {
                     return Size::new(sz.w + 4.0, sz.h.max(self.font_size + 4.0));
                 }
             }
-            // Fallback: bitmap font estimate
+            // Fallback: estimate
             let len = self.text.len() as f32;
             Size::new(len * 6.0 + 4.0, self.font_size + 4.0)
         }

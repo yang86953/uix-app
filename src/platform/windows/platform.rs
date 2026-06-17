@@ -23,6 +23,7 @@
 //
 // ============================================================================
 
+use crate::platform::event::UiEvent;
 use crate::platform::presenter::NullPresenter;
 use crate::platform::windows::clipboard::WindowsClipboard;
 use crate::platform::windows::console::WindowsConsole;

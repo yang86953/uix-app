@@ -1,6 +1,6 @@
 use super::*;
-use crate::graphics::{Color, Transform};
 use crate::base::Rect;
+use crate::graphics::{Color, Transform};
 
 // ════════════════════════════════════════════════════════════════════════════
 // RenderTarget — holds all mutable render state
@@ -44,22 +44,42 @@ impl RenderTarget {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl RenderTarget {
-    pub fn pixels(&self) -> &[u32] { &self.pixels }
-    pub fn pixel_buffer(&self) -> &[u32] { &self.pixels }
-    pub fn pixel_buffer_mut(&mut self) -> &mut [u32] { &mut self.pixels }
+    pub fn pixels(&self) -> &[u32] {
+        &self.pixels
+    }
+    pub fn pixel_buffer(&self) -> &[u32] {
+        &self.pixels
+    }
+    pub fn pixel_buffer_mut(&mut self) -> &mut [u32] {
+        &mut self.pixels
+    }
     pub fn pixel_bytes(&self) -> &[u8] {
         crate::graphics::software_engine::core::slice_u32_as_u8(&self.pixels)
     }
-    pub fn width(&self) -> i32 { self.width }
-    pub fn height(&self) -> i32 { self.height }
-    pub fn opacity_val(&self) -> f32 { self.opacity }
+    pub fn width(&self) -> i32 {
+        self.width
+    }
+    pub fn height(&self) -> i32 {
+        self.height
+    }
+    pub fn opacity_val(&self) -> f32 {
+        self.opacity
+    }
     pub fn set_supersample_level(&mut self, level: u8) {
         self.supersample_level = level.min(8);
     }
-    pub fn supersample_level(&self) -> u8 { self.supersample_level }
-    pub fn clip_rect(&self) -> Rect { self.clip_rect }
-    pub fn clip_rect_mut(&mut self) -> &mut Rect { &mut self.clip_rect }
-    pub fn clip_stack_mut(&mut self) -> &mut Vec<Rect> { &mut self.clip_stack }
+    pub fn supersample_level(&self) -> u8 {
+        self.supersample_level
+    }
+    pub fn clip_rect(&self) -> Rect {
+        self.clip_rect
+    }
+    pub fn clip_rect_mut(&mut self) -> &mut Rect {
+        &mut self.clip_rect
+    }
+    pub fn clip_stack_mut(&mut self) -> &mut Vec<Rect> {
+        &mut self.clip_stack
+    }
 
     pub fn initialize(&mut self, width: i32, height: i32) {
         self.width = width;
@@ -88,18 +108,28 @@ impl RenderTarget {
 
 impl RenderTarget {
     pub fn is_identity(t: &Transform) -> bool {
-        t.m[0] == 1.0 && t.m[1] == 0.0 && t.m[2] == 0.0
-            && t.m[3] == 0.0 && t.m[4] == 1.0 && t.m[5] == 0.0
+        t.m[0] == 1.0
+            && t.m[1] == 0.0
+            && t.m[2] == 0.0
+            && t.m[3] == 0.0
+            && t.m[4] == 1.0
+            && t.m[5] == 0.0
     }
 
     fn compute_inverse(t: &Transform) -> Option<[f64; 6]> {
         let [a, b, tx, c, d, ty] = t.m.map(|v| v as f64);
         let det = a * d - b * c;
-        if det.abs() < 1e-12 { return None; }
+        if det.abs() < 1e-12 {
+            return None;
+        }
         let inv = 1.0 / det;
         Some([
-            inv * d, inv * (-b), inv * (b * ty - d * tx),
-            inv * (-c), inv * a, inv * (c * tx - a * ty),
+            inv * d,
+            inv * (-b),
+            inv * (b * ty - d * tx),
+            inv * (-c),
+            inv * a,
+            inv * (c * tx - a * ty),
         ])
     }
 
@@ -302,19 +332,6 @@ impl RenderTarget {
         }
     }
 
-    #[allow(dead_code)]
-    fn intersect_ranges(&self, r: &Rect) -> Option<(i32, i32, i32, i32)> {
-        let x0 = (r.x.max(self.clip_rect.x)) as i32;
-        let y0 = (r.y.max(self.clip_rect.y)) as i32;
-        let x1 = ((r.x + r.w).min(self.clip_rect.x + self.clip_rect.w)) as i32;
-        let y1 = ((r.y + r.h).min(self.clip_rect.y + self.clip_rect.h)) as i32;
-        if x0 < x1 && y0 < y1 {
-            Some((x0, y0, x1, y1))
-        } else {
-            None
-        }
-    }
-
     pub fn clear_all(&mut self) {
         self.pixels.fill(0x00000000);
     }
@@ -338,7 +355,9 @@ impl RenderTarget {
     }
 
     pub fn pop_clip_rect(&mut self) {
-        self.clip_rect = self.clip_stack.pop()
+        self.clip_rect = self
+            .clip_stack
+            .pop()
             .unwrap_or_else(|| Rect::new(0.0, 0.0, self.width as f32, self.height as f32));
     }
 

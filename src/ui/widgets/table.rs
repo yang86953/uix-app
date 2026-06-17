@@ -42,7 +42,6 @@ define_widget! {
         let header_bg = ctx.tokens().color_fill_tertiary();
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
-        let _text_secondary = ctx.tokens().color_text_secondary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         let mut y = frame.y;
 

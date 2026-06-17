@@ -236,16 +236,16 @@ impl Platform for LinuxPlatform {
         self.backend.as_mut()
     }
     fn clipboard(&mut self) -> &mut dyn IClipboard {
-        self.backend.clipboard()
+        &mut *self.backend
     }
     fn cursor(&mut self) -> &mut dyn ICursor {
-        self.backend.cursor()
+        &mut *self.backend
     }
     fn display(&self) -> &dyn IDisplay {
-        self.backend.display()
+        &*self.backend
     }
     fn keyboard(&self) -> &dyn IKeyboard {
-        self.backend.keyboard()
+        &*self.backend
     }
     fn file_dialog(&mut self) -> &mut dyn IFileDialog {
         &mut self.file_dialog_subsys

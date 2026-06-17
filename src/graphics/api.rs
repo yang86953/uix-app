@@ -6,10 +6,10 @@
 // ============================================================================
 
 // ── 基础图形类型 ──
-pub use crate::graphics::color::{Color, colors};
+pub use crate::graphics::color::{colors, Color};
 pub use crate::graphics::types::{
-    BlendMode, DirtyRegion, FontHandle, GradientDirection, HAlign, ImageHandle,
-    Radius, TextLayoutOptions, Transform, VAlign,
+    BlendMode, DirtyRegion, FontHandle, GradientDirection, HAlign, ImageHandle, Radius,
+    TextLayoutOptions, Transform, VAlign,
 };
 
 // ── 渲染引擎 Trait ──
@@ -22,15 +22,14 @@ pub use crate::graphics::null_engine::NullEngine;
 pub use crate::graphics::software_engine::SoftwareEngine;
 
 // ── Flexbox 布局 ──
+pub use crate::graphics::layout::flex::compute_flex_layout;
 pub use crate::graphics::layout::{
     AlignItems, FlexChild, FlexDirection, FlexInput, FlexOutput, JustifyContent,
-    compute_flex_layout,
 };
 
 // ── Grid 布局 ──
-pub use crate::graphics::layout::{
-    GridChild, GridInput, GridOutput, GridTrack, compute_grid_layout,
-};
+pub use crate::graphics::layout::grid::compute_grid_layout;
+pub use crate::graphics::layout::{GridChild, GridInput, GridOutput, GridTrack};
 
 // ── 字体文本后端（仅 trait 和布局类型） ──
 pub use crate::graphics::text_backend::{
@@ -46,8 +45,7 @@ pub use crate::graphics::rasterizer::fill_polygons;
 pub use crate::graphics::stroker::{stroke_path, StrokeOptions};
 
 // ── 帧图（Frame Graph） ──
-pub use crate::graphics::frame_graph::FrameGraph;
 pub use crate::graphics::frame_graph::compile::{CompiledGraph, Compiler};
 pub use crate::graphics::frame_graph::pass::{FrameResources, PassBuilder, PassContext, PassNode};
 pub use crate::graphics::frame_graph::resource::{PassId, ResourceRegistry};
-
+pub use crate::graphics::frame_graph::FrameGraph;
