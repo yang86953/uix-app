@@ -47,6 +47,26 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
     // Phase 2: distribute flex-grow
     let total_base: f32 = base_main_sizes.iter().sum();
     let gaps = input.gap * (count as f32 - 1.0);
+    let overflow = total_base + gaps - container_main;
+
+    if overflow > 0.0 {
+        // Shrink phase: 按 flex_shrink 比例压缩溢出的子节点
+        let total_shrink_weight: f32 = base_main_sizes.iter()
+            .zip(input.children.iter())
+            .map(|(&sz, ch)| ch.flex_shrink * sz)
+            .sum();
+        if total_shrink_weight > 0.0 {
+            let mut shrunk = 0.0f32;
+            for (i, base) in base_main_sizes.iter_mut().enumerate().take(count) {
+                if *base <= 0.0 { continue; }
+                let weight = input.children[i].flex_shrink * *base / total_shrink_weight;
+                let reduction = (overflow * weight).min(*base - 1.0); // 至少保留1px
+                *base -= reduction;
+                shrunk += reduction;
+            }
+        }
+    }
+    let total_base: f32 = base_main_sizes.iter().sum();
     let mut remaining = (container_main - total_base - gaps).max(0.0);
 
     if total_flex_grow > 0.0 && remaining > 0.0 {
@@ -115,9 +135,11 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
     }
 
     let (total_w, total_h) = if is_row {
-        (cursor.max(0.0) + input.padding.horizontal(), container_cross + input.padding.vertical())
+        let max_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
+        (cursor.max(0.0) + input.padding.horizontal(), (max_cross + input.padding.vertical()).max(container_cross))
     } else {
-        (container_main + input.padding.horizontal(), cursor.max(0.0) + input.padding.vertical())
+        let max_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
+        ((max_cross + input.padding.horizontal()).max(container_cross), cursor.max(0.0) + input.padding.vertical())
     };
 
     FlexOutput { child_rects, total_size: Size::new(total_w, total_h) }

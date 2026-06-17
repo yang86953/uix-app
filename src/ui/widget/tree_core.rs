@@ -266,7 +266,7 @@ impl WidgetTree {
                 if children.is_empty() {
                     continue;
                 }
-                // Viewport 类容器（如 ScrollView）本身不扩展，但需更新内部 bounds
+                // Viewport 类容器（如 ScrollView）本身不扩展，content_bounds 更新在 Phase 3 进行
                 let is_viewport = node.inner().children_clip(node.frame()).is_some();
                 if is_viewport {
                     continue;
@@ -278,10 +278,6 @@ impl WidgetTree {
                 for &cid in &children {
                     if let Some(child) = self.get(cid) {
                         if child.visible()
-                            || self
-                                .get(cid)
-                                .map(|c| c.children().is_empty())
-                                .unwrap_or(true)
                         {
                             let cf = child.frame();
                             let child_bottom = cf.y + cf.h;
@@ -289,7 +285,9 @@ impl WidgetTree {
                             let rel_bottom = (cf.y - node_frame.y) + cf.h;
                             // 只在子节点延伸到可见区域时才触发扩展
                             // 防止滚动到视口上方时(cf.y+cf.h<=0)的无限膨胀循环
-                            if child_bottom > 0.0 && rel_bottom > node_frame.h {
+                            // 只考虑子节点底部还延伸到父容器下方的情况
+                            let child_extends_below_parent = cf.y + cf.h > node_frame.y;
+                            if child_bottom > 0.0 && child_extends_below_parent && rel_bottom > node_frame.h {
                                 max_bottom = max_bottom.max(child_bottom);
                             }
                         }
@@ -381,7 +379,7 @@ impl WidgetTree {
             for &id in &rev_order {
                 let is_viewport = self.get(id)
                     .map(|n| n.inner().children_clip(n.frame()).is_some())
-                    .unwrap_or(true);
+                    .unwrap_or(false);
                 if is_viewport { continue; }
                 let children: Vec<WidgetId> = match self.get(id) {
                     Some(n) if !n.children().is_empty() => n.children().to_vec(),
@@ -389,9 +387,9 @@ impl WidgetTree {
                 };
 
                 // 先按当前 frame 重新布局子节点（兄弟组件靠拢/张开）
-                let frame = self.get(id).unwrap().frame();
+                let Some(frame) = self.get(id).map(|n| n.frame()) else { continue; };
                 let positions: Vec<(WidgetId, Rect)> = {
-                    let node = self.get(id).unwrap();
+                    let Some(node) = self.get(id) else { continue; };
                     node.inner().layout_children(frame, &children, self)
                 };
                 for (child_id, rect) in positions {
@@ -407,7 +405,7 @@ impl WidgetTree {
                 }
 
                 // 检查容器是否需要收缩
-                let node_frame = self.get(id).unwrap().frame();
+                let Some(node_frame) = self.get(id).map(|n| n.frame()) else { continue; };
                 let mut max_child_bottom = f32::MIN;
                 let mut has_visible = false;
                 for &cid in &children {
@@ -431,7 +429,7 @@ impl WidgetTree {
                 let min_h = self.get(id)
                     .map(|n| n.preferred_size(None).h)
                     .unwrap_or(0.0)
-                    .max(node_frame.h * 0.1); // 至少保留10%当前高度
+                    .max(node_frame.h * 0.01); // 至少保留1%当前高度
                 let effective_needed = needed_h.max(min_h);
                 if node_frame.h - effective_needed > 5.0 {
                     log::debug!(

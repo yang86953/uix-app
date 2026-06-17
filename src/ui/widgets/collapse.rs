@@ -33,10 +33,10 @@ define_widget! {
         for p in &self.panels {
             h += 36.0; // header
             if p.expanded {
-                h += p.content.len() as f32 * 0.4 * 14.0 + 16.0; // content estimate
+                h += p.content.len() as f32 * 1.0 * 14.0 + 16.0; // content estimate
             }
         }
-        Size::new(300.0, h)
+        Size::new(0.0, h)
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {

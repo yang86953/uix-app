@@ -82,12 +82,25 @@ define_widget! {
             })
             .collect();
 
+        let flex_children: Vec<FlexChild> = children
+            .iter()
+            .map(|&cid| {
+                let w = tree.get(cid);
+                FlexChild {
+                    flex_grow: w.map(|c| c.inner().flex_grow()).unwrap_or(0.0),
+                    // 禁止子节点收缩——Phase 2 负责扩展容器适应内容
+                    flex_shrink: 0.0,
+                    ..FlexChild::default()
+                }
+            })
+            .collect();
+
         let input = FlexInput {
             direction: self.direction,
             gap: self.space_size.value(),
             padding: crate::base::EdgeInsets::zero(),
             container: frame,
-            children: vec![FlexChild::default(); children.len()],
+            children: flex_children,
             child_sizes,
             justify_content: self.justify,
             align_items: self.align,

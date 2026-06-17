@@ -494,7 +494,7 @@ impl ScrollView {
                     .unwrap_or(self.fixed_width.unwrap_or(300.0));
                 (cs.w - view_w).max(0.0)
             }
-            None => f32::MAX,
+            None => 0.0,
         }
     }
 
