@@ -351,7 +351,86 @@ impl WidgetTree {
                 let _ = node.inner().layout_children(frame, &children, self);
             }
         }
+        // Phase 4: 收缩过大的容器（面板折叠等场景）
+        self.layout_shrink();
+        // 收缩后重新更新 viewport content_bounds
+        for &id in &self.traverse() {
+            if let Some(node) = self.get(id) {
+                if node.inner().children_clip(node.frame()).is_none() { continue; }
+                let frame = node.frame();
+                let children = node.children().to_vec();
+                if children.is_empty() { continue; }
+                let _ = node.inner().layout_children(frame, &children, self);
+            }
+        }
         log::debug!("[Layout] layout() done");
+    }
+
+    /// Phase 4: 收缩过大的容器。与 Phase 2 相反——当子节点高度
+    /// 显著小于容器当前高度，且子节点延伸到可见区域时，收缩容器。
+    fn layout_shrink(&mut self) {
+        for _pass in 0..2 {
+            let mut any_shrunk = false;
+            let rev_order: Vec<WidgetId> = self.traverse().into_iter().rev().collect();
+            for &id in &rev_order {
+                let node = match self.get(id) { Some(n) => n, None => continue };
+                let children: Vec<WidgetId> = node.children().to_vec();
+                if children.is_empty() { continue; }
+                if node.inner().children_clip(node.frame()).is_some() { continue; }
+
+                let node_frame = node.frame();
+                // 取可见子节点在可见区域内的最大底部
+                let mut max_child_bottom = f32::MIN;
+                let mut has_visible = false;
+                for &cid in &children {
+                    if let Some(child) = self.get(cid) {
+                        if child.visible()
+                            || self.get(cid).map(|c| c.children().is_empty()).unwrap_or(true)
+                        {
+                            let cf = child.frame();
+                            let child_bottom = cf.y + cf.h;
+                            if child_bottom > 0.0 {
+                                max_child_bottom = max_child_bottom.max(child_bottom);
+                                has_visible = true;
+                            }
+                        }
+                    }
+                }
+                if !has_visible { continue; }
+
+                let needed_h = max_child_bottom - node_frame.y;
+                let shrink_by = node_frame.h - needed_h;
+                if shrink_by > 5.0 {
+                    log::debug!(
+                        "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0}",
+                        id, shrink_by, node_frame.h, needed_h,
+                    );
+                    let old_frame = node.frame();
+                    if let Some(node_mut) = self.get_mut(id) {
+                        node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, needed_h));
+                        self.mark_dirty_rect(id, old_frame);
+                        self.mark_dirty(id);
+                    }
+                    let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, needed_h);
+                    let new_positions = self
+                        .get(id)
+                        .map(|n| n.inner().layout_children(new_frame, &children, self))
+                        .unwrap_or_default();
+                    for (child_id, rect) in new_positions {
+                        if let Some(child) = self.get_mut(child_id) {
+                            let old = child.frame();
+                            if old != rect {
+                                child.set_frame(rect);
+                                self.mark_dirty_rect(child_id, old);
+                                self.mark_dirty(child_id);
+                            }
+                        }
+                    }
+                    any_shrunk = true;
+                }
+            }
+            if !any_shrunk { break; }
+        }
     }
 
     pub fn update(&mut self, dt: f32) -> bool {
