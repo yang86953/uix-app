@@ -307,8 +307,8 @@ define_widget! {
             // 确保 Phase 2（底部向上扩展）后的尺寸正确反映到 content_bounds。
             let current_h = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
             let h = if pref.h > 0.0 {
-                // 有 preferred_size 时取 pref 和实际扩展后的较大值
-                pref.h.max(current_h).max(frame.h)
+                // 有清晰 preferred_size 时直接用 pref.h
+                pref.h.max(frame.h)
             } else if current_h > 0.0 {
                 current_h.max(frame.h)
             } else {
