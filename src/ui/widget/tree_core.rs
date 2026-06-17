@@ -292,6 +292,10 @@ impl WidgetTree {
 
                 let new_h = max_bottom - node_frame.y;
                 if new_h > node_frame.h + 0.5 {
+                    log::debug!(
+                        "[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
+                        id, node_frame.h, new_h, max_bottom,
+                    );
                     let old_frame = node.frame();
                     if let Some(node_mut) = self.get_mut(id) {
                         node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, new_h));
@@ -333,10 +337,15 @@ impl WidgetTree {
                 if children.is_empty() {
                     continue;
                 }
+                log::debug!(
+                    "[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
+                    id, frame.x, frame.y, frame.w, frame.h, children.len(),
+                );
                 // 仅触发 content_bounds 副作用，丢弃返回的 child rects
                 let _ = node.inner().layout_children(frame, &children, self);
             }
         }
+        log::debug!("[Layout] layout() done");
     }
 
     pub fn update(&mut self, dt: f32) -> bool {

@@ -46,12 +46,18 @@ define_widget! {
             for i in 0..panel_count {
                 let header_h = 36.0f32;
                 if pos.y >= cy && pos.y <= cy + header_h {
+                    let new_state = !self.panels[i].expanded;
+                    let name = self.panels[i].header.clone();
                     if self.accordion {
                         for p in &mut self.panels {
                             p.expanded = false;
                         }
                     }
-                    self.panels[i].expanded = !self.panels[i].expanded;
+                    self.panels[i].expanded = new_state;
+                    log::debug!(
+                        "[Collapse] 面板 \"{}\" 切换 expanded: {} → {}",
+                        name, !new_state, new_state
+                    );
                     return EventResult::Handled;
                 }
                 cy += header_h;

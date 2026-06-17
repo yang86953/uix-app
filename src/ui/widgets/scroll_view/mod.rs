@@ -216,6 +216,9 @@ define_widget! {
         let damp = 1.0 - (8.0 * dt).min(0.95); // ~8s⁻¹ friction
         let threshold = 1.0; // snap when velocity is negligible
 
+        let before_x = self.scroll_x;
+        let before_y = self.scroll_y;
+
         self.scroll_x += self.velocity_x * dt;
         self.velocity_x *= damp;
         if self.velocity_x.abs() < threshold { self.velocity_x = 0.0; }
@@ -232,7 +235,16 @@ define_widget! {
         if self.scroll_x > max_x { self.scroll_x = max_x; self.velocity_x = 0.0; }
         if self.scroll_y < 0.0 { self.scroll_y = 0.0; self.velocity_y = 0.0; }
         let max_y = self.max_scroll_y();
-        if self.scroll_y > max_y { self.scroll_y = max_y; self.velocity_y = 0.0; }
+        let clamped_y = self.scroll_y > max_y;
+        if clamped_y { self.scroll_y = max_y; self.velocity_y = 0.0; }
+
+        log::debug!(
+            "[ScrollView] on_update: scroll_y {:.0}→{:.0} max_y={:.0} content=({:.0},{:.0}) clamped={}",
+            before_y, self.scroll_y, max_y,
+            self.content_bounds.get().map(|s| s.h).unwrap_or(-1.0),
+            self.last_frame.get().map(|f| f.h).unwrap_or(-1.0),
+            clamped_y,
+        );
     }
 
     needs_continuous_update => (&self) -> bool {
@@ -311,7 +323,16 @@ define_widget! {
         // Store content bounds for scrollbar calculation
         let content_w = (max_right - origin_x).max(frame.w);
         let content_h = (max_bottom - origin_y).max(frame.h);
+        let old = self.content_bounds.get();
         self.content_bounds.set(Some(Size::new(content_w, content_h)));
+        log::debug!(
+            "[ScrollView] layout_children: view=({:.0},{:.0}) origin_y={:.0} max_bottom={:.0} \
+             content=({:.0},{:.0}) scroll=({:.0},{:.0}) old=({:.0},{:.0})",
+            frame.w, frame.h, origin_y, max_bottom,
+            content_w, content_h, self.scroll_x, self.scroll_y,
+            old.map(|s| s.w).unwrap_or(-1.0),
+            old.map(|s| s.h).unwrap_or(-1.0),
+        );
 
         result
     }
@@ -506,9 +527,11 @@ impl Default for ScrollView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::base::Size;
-    use crate::base::{Point, Rect};
-    use crate::ui::widget::{Widget, WidgetCore, WidgetId, WidgetTree};
+    use crate::base::{Point, Rect, Size};
+    use crate::graphics::{AlignItems, FlexDirection};
+    use crate::ui::render_context::RenderContext;
+    use crate::ui::widget::EventResult;
+    use crate::ui::widgets::{Collapse, CollapsePanel, Container, Space};
 
     /// A simple fixed-size widget for testing.
     struct FixedWidget {
@@ -696,5 +719,119 @@ mod tests {
             button: crate::ui::widget::MouseButton::Left,
         });
         assert_eq!(result, EventResult::NotHandled);
+    }
+
+    /// 测试：ScrollView 内子节点 expand 后 content_bounds/max_scroll 更新
+    #[test]
+    fn scrollview_expand_child_updates_content_bounds() {
+        struct GrowWidget {
+            size: std::cell::Cell<f32>,
+        }
+        impl Widget for GrowWidget {
+            fn preferred_size(&self, _: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
+                Size::new(300.0, self.size.get())
+            }
+            fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
+                if matches!(event, WidgetEvent::MouseDown { .. }) {
+                    self.size.set(self.size.get() * 2.0);
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
+        }
+
+        let mut tree = WidgetTree::new();
+        let sv_id = tree.set_root(Box::new(
+            ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
+        ));
+        let child_id = tree.add_child(sv_id, Box::new(GrowWidget { size: std::cell::Cell::new(100.0) }));
+
+        // 初始布局：子节点100 < 视口200
+        tree.layout();
+        let max_y = |tree: &WidgetTree| -> f32 {
+            let sv = tree.get(sv_id).unwrap();
+            let sv_ref: &ScrollView = sv.inner().as_any().downcast_ref().unwrap();
+            sv_ref.max_scroll_y()
+        };
+
+        assert_eq!(max_y(&tree), 0.0, "初始内容<视口");
+
+        // 展开1：100→200, 刚好等于视口
+        tree.dispatch_event(&WidgetEvent::MouseDown {
+            pos: Point::new(50.0, 10.0),
+            button: crate::ui::widget::MouseButton::Left,
+        });
+        tree.layout();
+        assert_eq!(max_y(&tree), 0.0, "展开到200=视口200");
+
+        // 展开2：200→400, 内容>视口
+        tree.dispatch_event(&WidgetEvent::MouseDown {
+            pos: Point::new(50.0, 10.0),
+            button: crate::ui::widget::MouseButton::Left,
+        });
+        tree.layout();
+        let max = max_y(&tree);
+        assert!(
+            (max - 200.0).abs() < 1.0,
+            "展开到400>视口200，max_scroll_y应为200, 实际{max}"
+        );
+    }
+
+    /// 测试：Collapse 展开后 ScrollView 的 max_scroll_y 正确更新
+    #[test]
+    fn collapse_expand_updates_scrollview_content_bounds() {
+        use crate::ui::widget::WidgetTree;
+        // 构造与 wrap_page 类似的结构：
+        // ScrollView(300x200) -> Container(300x0,Column) -> Space(300x140,Column,Stretch) -> Collapse
+        // Container 需要用 WidgetNode / tree.add_child 添加子节点
+        let mut tree = WidgetTree::new();
+        let sv_id = tree.set_root(Box::new(
+            ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
+        ));
+        let container_id = tree.add_child(sv_id, Box::new(
+            Container::new().size(300.0, 0.0).dir(FlexDirection::Column),
+        ));
+        let space_id = tree.add_child(container_id, Box::new(
+            Space::new()
+                .width(300.0)
+                .height(140.0)
+                .direction(FlexDirection::Column)
+                .align(AlignItems::Stretch),
+        ));
+        tree.add_child(space_id, Box::new(
+            Collapse::new().panels(vec![
+                CollapsePanel::new("面板A", "面板A长内容，用于测试展开后的滚动范围。"),
+                CollapsePanel::new("面板B", "面板B内容，较长一些。"),
+                CollapsePanel::new("面板C", "面板C短内容。"),
+            ]),
+        ));
+
+        tree.layout();
+        let max_before = tree.get(sv_id)
+            .and_then(|n| n.inner().as_any().downcast_ref::<ScrollView>().map(|sv| sv.max_scroll_y()))
+            .unwrap();
+        assert_eq!(max_before, 0.0, "面板未展开时内容应不超过视口");
+        println!("Before click max_scroll_y: {max_before}");
+
+        // 点击展开第二个面板
+        // Collapse 每个 header 36px, 点击 y=45 应在第二个面板 header 区域
+        tree.dispatch_event(&WidgetEvent::MouseDown {
+            pos: Point::new(50.0, 45.0), // 面板B的header区域
+            button: crate::ui::widget::MouseButton::Left,
+        });
+        tree.layout();
+        let max_after = tree
+            .get(sv_id)
+            .and_then(|n| n.inner().as_any().downcast_ref::<ScrollView>().map(|sv| sv.max_scroll_y()))
+            .unwrap();
+        println!("After click max_scroll_y: {max_after}");
+
+        // 展开后 max_scroll_y 应增大
+        assert!(
+            max_after > max_before,
+            "面板展开后 max_scroll_y 应增大 (before={max_before}, after={max_after})"
+        );
     }
 }

@@ -388,6 +388,10 @@ impl GraphicsEngine for SoftwareEngine {
         };
 
         let scroll_deltas = tree.drain_scroll_deltas();
+        for &(vp, dx, dy) in &scroll_deltas {
+            log::debug!("[Render] scroll_region vp=({:.0},{:.0},{:.0},{:.0}) delta=({:.0},{:.0})",
+                vp.x, vp.y, vp.w, vp.h, dx, dy);
+        }
 
         let damage: Option<(i32, i32, i32, i32)> = if region.full_frame || !scroll_deltas.is_empty()
         {
@@ -409,6 +413,7 @@ impl GraphicsEngine for SoftwareEngine {
 
         // ── Pass 1: Clear + Geometry ───────────────────────────
         GraphicsEngine::begin_frame(self, &region);
+        log::debug!("[Render] 2nd layout start");
         tree.layout();
 
         // LayerTree 构建与更新
