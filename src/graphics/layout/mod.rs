@@ -47,7 +47,7 @@ pub enum AlignItems {
 pub struct FlexChild {
     pub flex_grow: f32,
     pub flex_shrink: f32,
-    pub flex_basis: f32,
+    pub flex_basis: Option<f32>,
     pub align_self: Option<AlignItems>,
     pub min_size: Size,
     pub max_size: Size,
@@ -58,7 +58,7 @@ impl Default for FlexChild {
         Self {
             flex_grow: 0.0,
             flex_shrink: 1.0,
-            flex_basis: f32::NEG_INFINITY,
+            flex_basis: None,
             align_self: None,
             min_size: Size::zero(),
             max_size: Size::infinite(),

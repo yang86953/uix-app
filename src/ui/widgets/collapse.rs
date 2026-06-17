@@ -96,6 +96,12 @@ define_widget! {
         }
     }
 
+    // NOTE(布局): dirty_rect 目前返回所有面板最大展开时的全量区域（frame），
+    // 而不是仅返回变化区域（delta）。因为 collapse 无法可靠追踪哪个面板的
+    // expanded 状态在上帧到本帧之间发生了变化（on_event 中修改 expanded 时
+    // 未保存旧状态），返回全量可确保展开/折叠时残留像素被清除。
+    // 优化方向：在 on_event 中记录 changed_panel index，dirty_rect 仅返回
+    // 该 header + 内容区域的变化部分。
     // 始终包含最大展开高度，确保 expanded 切换时残留像素被清除
     dirty_rect => (&self, frame: Rect) -> Rect {
         let mut h = self.panels.len() as f32 * 36.0;

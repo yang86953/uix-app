@@ -176,6 +176,12 @@ impl Widget for ContainerWidget {
         }
     }
 
+    // NOTE(布局): ContainerWidget.layout_children 与 Container.layout_children
+    // 不完全相同——ContainerWidget 使用 FlexChild::default()（所有子节点 flex_grow=0,
+    // flex_shrink=1, flex_basis=None），不从子 Widget 读取 flex_grow/flex_shrink。
+    // 而 Container 会通过 tree.get(cid).inner().flex_grow() 逐个读取子节点属性。
+    // 因此保留独立实现而非委托给 Container，避免破坏 ContainerWidget 的简化语义。
+    // 如需统一，可将 ContainerWidget 改为存储 Container 实例并委托。
     fn layout_children(
         &self,
         frame: Rect,

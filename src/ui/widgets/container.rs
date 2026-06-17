@@ -26,6 +26,10 @@ define_widget! {
         pub flex_shrink: f32,
     }
 
+    // NOTE(布局): preferred_size 签名仅为 (&self, _engine: Option<&dyn GraphicsEngine>) -> Size，
+    // 无法访问 WidgetTree，因此无法遍历子节点估算内容尺寸。
+    // 当无 fixed_width/fixed_height 时返回 (0,0)，由父容器 flex 布局分配实际空间。
+    // 如需精确的 preferred_size 内容估算，需修改 define_widget! 宏以传入 tree 引用。
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
         Size::new(
             self.fixed_width.unwrap_or(0.0),

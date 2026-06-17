@@ -36,9 +36,10 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
     for i in 0..count {
         let child = &input.children[i];
         let child_size = input.child_sizes[i];
-        let basis = if child.flex_basis.is_finite() && child.flex_basis >= 0.0 {
-            child.flex_basis
-        } else if is_row { child_size.w } else { child_size.h };
+        let basis = match child.flex_basis {
+            Some(v) if v >= 0.0 => v,
+            _ => if is_row { child_size.w } else { child_size.h },
+        };
         base_main_sizes[i] = basis;
         cross_sizes[i] = cross_size(&child_size);
         total_flex_grow += child.flex_grow;

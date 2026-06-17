@@ -290,10 +290,12 @@ define_widget! {
         }
 
         // Compute child positions offset by scroll, and track content bounds
+        // Children are stacked vertically (沿主轴依次排列) so they don't overlap.
         let mut max_right = frame.x;
         let mut max_bottom = frame.y;
         let origin_x = frame.x - self.scroll_x;
         let origin_y = frame.y - self.scroll_y;
+        let mut cursor_y = 0.0f32;
         for &cid in children {
             let pref = tree
                 .get(cid)
@@ -314,10 +316,11 @@ define_widget! {
             } else {
                 frame.h
             };
-            let r = Rect::new(origin_x, origin_y, w, h);
+            let r = Rect::new(origin_x, origin_y + cursor_y, w, h);
             result.push((cid, r));
             max_right = max_right.max(r.x + r.w);
             max_bottom = max_bottom.max(r.y + r.h);
+            cursor_y += h;
         }
 
         // Store content bounds for scrollbar calculation
