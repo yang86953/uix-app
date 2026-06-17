@@ -235,15 +235,15 @@ define_widget! {
         if self.scroll_x > max_x { self.scroll_x = max_x; self.velocity_x = 0.0; }
         if self.scroll_y < 0.0 { self.scroll_y = 0.0; self.velocity_y = 0.0; }
         let max_y = self.max_scroll_y();
-        let clamped_y = self.scroll_y > max_y;
-        if clamped_y { self.scroll_y = max_y; self.velocity_y = 0.0; }
+        let clamped = self.scroll_y > max_y;
+        if clamped { self.scroll_y = max_y; self.velocity_y = 0.0; }
 
         log::debug!(
             "[ScrollView] on_update: scroll_y {:.0}→{:.0} max_y={:.0} content=({:.0},{:.0}) clamped={}",
             before_y, self.scroll_y, max_y,
             self.content_bounds.get().map(|s| s.h).unwrap_or(-1.0),
             self.last_frame.get().map(|f| f.h).unwrap_or(-1.0),
-            clamped_y,
+            clamped,
         );
     }
 
@@ -323,15 +323,11 @@ define_widget! {
         // Store content bounds for scrollbar calculation
         let content_w = (max_right - origin_x).max(frame.w);
         let content_h = (max_bottom - origin_y).max(frame.h);
-        let old = self.content_bounds.get();
         self.content_bounds.set(Some(Size::new(content_w, content_h)));
         log::debug!(
-            "[ScrollView] layout_children: view=({:.0},{:.0}) origin_y={:.0} max_bottom={:.0} \
-             content=({:.0},{:.0}) scroll=({:.0},{:.0}) old=({:.0},{:.0})",
-            frame.w, frame.h, origin_y, max_bottom,
+            "[ScrollView] layout_children: view=({:.0},{:.0}) origin_y={:.0} content=({:.0},{:.0}) scroll=({:.0},{:.0})",
+            frame.w, frame.h, origin_y,
             content_w, content_h, self.scroll_x, self.scroll_y,
-            old.map(|s| s.w).unwrap_or(-1.0),
-            old.map(|s| s.h).unwrap_or(-1.0),
         );
 
         result

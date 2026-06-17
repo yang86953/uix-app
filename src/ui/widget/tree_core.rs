@@ -273,7 +273,7 @@ impl WidgetTree {
                 }
 
                 let node_frame = node.frame();
-                // 取所有可见子节点的最大下边界
+                // 取所有可见子节点的最大下边界（相对父容器）
                 let mut max_bottom = node_frame.y + node_frame.h;
                 for &cid in &children {
                     if let Some(child) = self.get(cid) {
@@ -284,8 +284,11 @@ impl WidgetTree {
                                 .unwrap_or(true)
                         {
                             let cf = child.frame();
-                            let child_bottom = cf.y + cf.h;
-                            max_bottom = max_bottom.max(child_bottom);
+                            // 子节点底部相对于父容器顶部
+                            let rel_bottom = (cf.y - node_frame.y) + cf.h;
+                            if rel_bottom > node_frame.h {
+                                max_bottom = max_bottom.max(cf.y + cf.h);
+                            }
                         }
                     }
                 }
