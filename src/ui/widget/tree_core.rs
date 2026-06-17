@@ -427,12 +427,18 @@ impl WidgetTree {
                 if !has_visible { continue; }
 
                 let needed_h = max_child_bottom - node_frame.y;
-                if node_frame.h - needed_h > 5.0 {
+                // 不收缩到低于容器的 preferred_size
+                let min_h = self.get(id)
+                    .map(|n| n.preferred_size(None).h)
+                    .unwrap_or(0.0)
+                    .max(node_frame.h * 0.1); // 至少保留10%当前高度
+                let effective_needed = needed_h.max(min_h);
+                if node_frame.h - effective_needed > 5.0 {
                     log::debug!(
-                        "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0}",
-                        id, node_frame.h - needed_h, node_frame.h, needed_h,
+                        "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (min={:.0})",
+                        id, node_frame.h - effective_needed, node_frame.h, effective_needed, min_h,
                     );
-                    ops.push(ShrinkOp { id, needed_h });
+                    ops.push(ShrinkOp { id, needed_h: effective_needed });
                 }
             }
             // Phase B: 执行收缩
