@@ -453,6 +453,7 @@ impl WidgetTree {
                         .map(|n| n.children().to_vec())
                         .unwrap_or_default();
                     let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h);
+                    // 收缩后重新布局子节点
                     let new_positions = self.get(op.id)
                         .map(|n| n.inner().layout_children(new_frame, &children, self))
                         .unwrap_or_default();
@@ -463,6 +464,28 @@ impl WidgetTree {
                                 child.set_frame(rect);
                                 self.mark_dirty_rect(child_id, old);
                                 self.mark_dirty(child_id);
+                            }
+                        }
+                    }
+                    // 重新布局父容器，让兄弟组件靠拢
+                    if let Some(pid) = self.get(op.id).and_then(|n| n.parent()) {
+                        let parent_frame = self.get(pid).map(|n| n.frame()).unwrap_or_default();
+                        let parent_children: Vec<WidgetId> = self.get(pid)
+                            .map(|n| n.children().to_vec())
+                            .unwrap_or_default();
+                        if !parent_children.is_empty() {
+                            let parent_positions = self.get(pid)
+                                .map(|n| n.inner().layout_children(parent_frame, &parent_children, self))
+                                .unwrap_or_default();
+                            for (child_id, rect) in parent_positions {
+                                if let Some(child) = self.get_mut(child_id) {
+                                    let old = child.frame();
+                                    if old != rect {
+                                        child.set_frame(rect);
+                                        self.mark_dirty_rect(child_id, old);
+                                        self.mark_dirty(child_id);
+                                    }
+                                }
                             }
                         }
                     }
