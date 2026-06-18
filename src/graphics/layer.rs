@@ -146,6 +146,21 @@ impl LayerTree {
         }
     }
 
+    /// 渲染 overlay 层（post_render，绘制在所有内容之上）。
+    /// 替代旧的 tree_render.rs 中的 post_render_pass 路径。
+    pub fn render_overlays(
+        &self,
+        engine: &mut dyn GraphicsEngine,
+        tree: &WidgetTree,
+        tokens: &dyn TokenProvider,
+        font: FontHandle,
+    ) {
+        let mut rctx = RenderContext::new(engine, font, tokens);
+        if let Some(ref root) = self.root {
+            Self::render_overlay_node(root, &mut rctx, tree);
+        }
+    }
+
     pub fn invalidate(&mut self) {
         if let Some(ref mut root) = self.root {
             root.mark_dirty();
@@ -404,6 +419,57 @@ impl LayerTree {
             if let Some(_) = clip {
                 ctx.engine().pop_clip_rect();
             }
+            ctx.restore();
+        }
+    }
+
+    // ── Overlay 渲染（替代旧的 tree_render.rs post_render_pass 路径）──
+
+    /// 递归渲染 overlay 节点（post_render）。
+    /// 替代旧路径中 WidgetTree::post_render_pass。
+    fn render_overlay_node(node: &LayerNode, ctx: &mut RenderContext, tree: &WidgetTree) {
+        match node {
+            LayerNode::Picture { widget_id, .. } => {
+                // Picture 内容已在离屏缓冲中缓存，overlay 直接画在主缓冲
+                Self::render_widget_post(*widget_id, ctx, tree);
+            }
+            LayerNode::ClipRect {
+                widget_id,
+                rect,
+                children,
+            } => {
+                Self::render_widget_post(*widget_id, ctx, tree);
+                ctx.engine().push_clip_rect(*rect);
+                let mut sorted: Vec<&LayerNode> = children.iter().collect();
+                sorted.sort_by_key(|child| Self::layer_node_z_index(child, tree));
+                for child in sorted {
+                    Self::render_overlay_node(child, ctx, tree);
+                }
+                ctx.engine().pop_clip_rect();
+            }
+            LayerNode::Direct {
+                widget_id,
+                children,
+            } => {
+                Self::render_widget_post(*widget_id, ctx, tree);
+                let mut sorted: Vec<&LayerNode> = children.iter().collect();
+                sorted.sort_by_key(|child| Self::layer_node_z_index(child, tree));
+                for child in sorted {
+                    Self::render_overlay_node(child, ctx, tree);
+                }
+            }
+        }
+    }
+
+    /// 仅渲染 widget 的 overlay（post_render）。
+    fn render_widget_post(id: WidgetId, ctx: &mut RenderContext, tree: &WidgetTree) {
+        if let Some(node) = tree.get(id) {
+            if !node.visible() {
+                return;
+            }
+            let frame = node.frame();
+            ctx.save();
+            node.inner().post_render(frame, ctx, tree);
             ctx.restore();
         }
     }

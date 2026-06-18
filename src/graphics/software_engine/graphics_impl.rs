@@ -446,9 +446,7 @@ impl GraphicsEngine for SoftwareEngine {
         GraphicsEngine::begin_frame(self, &overlay_region);
         let theme_ref = theme.borrow();
         let tokens = theme_ref.tokens();
-        let mut rctx = RenderContext::new(self, lt_font, tokens);
-        tree.render_overlays(&mut rctx);
-        drop(rctx);
+        layer_tree.render_overlays(self, tree, tokens, lt_font);
         drop(theme_ref);
         GraphicsEngine::end_frame(self, &overlay_region);
 
