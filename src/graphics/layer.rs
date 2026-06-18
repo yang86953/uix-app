@@ -4,6 +4,11 @@
 //! 到独立离屏缓冲后缓存。干净时直接 blit 到主缓冲。
 //! 非 RepaintBoundary 的 widget 通过 `Direct` 节点直接渲染到父级画布。
 //! `ClipRect` 节点用于裁剪子节点内容。
+//!
+//! # 性能设计
+//! - 子节点在 build 时按 z_index 预排序，渲染时零排序开销（#97）
+//! - Picture 离屏创建失败时启用 retry_count 退避机制（#97）
+//! - Picture 支持 children，实现嵌套 RepaintBoundary（#96）
 
 use crate::base::{Point, Rect};
 use crate::graphics::engine::GraphicsEngine;
@@ -13,14 +18,21 @@ use crate::ui::render_context::RenderContext;
 use crate::ui::theme::TokenProvider;
 use crate::ui::widget::{WidgetCore, WidgetId, WidgetTree};
 
+/// 离屏创建失败的最大重试次数（超过后跳过直到下一次 rebuild）。
+const MAX_OFFSCREEN_RETRY: u8 = 3;
+
 /// 图层节点。
 pub enum LayerNode {
     /// 图片图层：缓存 RepaintBoundary 子树的栅格结果。
+    /// 包含 children 以支持嵌套 RepaintBoundary（#96）。
     Picture {
         widget_id: WidgetId,
         bounds: Rect,
         is_dirty: bool,
         offscreen_handle: Option<ImageHandle>,
+        children: Vec<LayerNode>,
+        /// 离屏创建连续失败计数，rebuild 时重置为 0。
+        retry_count: u8,
     },
     /// 裁剪图层：将子图层内容限制在矩形区域内。
     ClipRect {
@@ -43,12 +55,16 @@ impl std::fmt::Debug for LayerNode {
                 bounds,
                 is_dirty,
                 offscreen_handle,
+                children,
+                retry_count,
             } => f
                 .debug_struct("PictureLayer")
                 .field("widget_id", widget_id)
                 .field("bounds", bounds)
                 .field("is_dirty", is_dirty)
                 .field("has_offscreen", &offscreen_handle.is_some())
+                .field("children_count", &children.len())
+                .field("retry_count", retry_count)
                 .finish(),
             LayerNode::ClipRect {
                 widget_id,
@@ -75,7 +91,16 @@ impl std::fmt::Debug for LayerNode {
 impl LayerNode {
     fn mark_dirty(&mut self) {
         match self {
-            LayerNode::Picture { is_dirty, .. } => *is_dirty = true,
+            LayerNode::Picture {
+                is_dirty,
+                children,
+                ..
+            } => {
+                *is_dirty = true;
+                for child in children.iter_mut() {
+                    child.mark_dirty();
+                }
+            }
             LayerNode::ClipRect { children, .. }
             | LayerNode::Direct { children, .. } => {
                 for child in children.iter_mut() {
@@ -84,9 +109,19 @@ impl LayerNode {
             }
         }
     }
+
     fn mark_clean(&mut self) {
         match self {
-            LayerNode::Picture { is_dirty, .. } => *is_dirty = false,
+            LayerNode::Picture {
+                is_dirty,
+                children,
+                ..
+            } => {
+                *is_dirty = false;
+                for child in children.iter_mut() {
+                    child.mark_clean();
+                }
+            }
             LayerNode::ClipRect { children, .. }
             | LayerNode::Direct { children, .. } => {
                 for child in children.iter_mut() {
@@ -95,9 +130,21 @@ impl LayerNode {
             }
         }
     }
+
+    /// 获取该节点对应的 widget_id。
+    fn widget_id(&self) -> WidgetId {
+        match self {
+            LayerNode::Picture { widget_id, .. }
+            | LayerNode::ClipRect { widget_id, .. }
+            | LayerNode::Direct { widget_id, .. } => *widget_id,
+        }
+    }
+
 }
 
 /// 图层树 —— 从 WidgetTree 构建的可缓存合成栈。
+///
+/// 子节点在 build 时按 z_index 预排序，渲染时直接遍历无需额外排序。
 pub struct LayerTree {
     root: Option<LayerNode>,
 }
@@ -118,9 +165,9 @@ impl LayerTree {
     /// 从 WidgetTree 构建图层树。
     /// 生成所有可见 widget 的 LayerNode（无遗漏）。
     /// 自动复用已缓存离屏缓冲——按 widget_id 匹配旧 Picture 节点。
+    /// 子节点按 z_index 预排序，渲染时无需再排序（#97）。
     pub fn build(&mut self, tree: &WidgetTree) {
         // 收集旧 Picture 节点的离屏缓冲（按 widget_id 索引）
-        // 旧缓存：widget_id → (bounds, offscreen_handle)
         let mut old_cache: std::collections::HashMap<
             WidgetId,
             (Rect, Option<ImageHandle>),
@@ -142,7 +189,7 @@ impl LayerTree {
     }
 
     /// 渲染图层树。
-    /// FontService 通过 engine.font_service() 获取，避免 engine 和 font_service 的借用冲突。
+    /// 子节点已在 build 时预排序，渲染时直接遍历。
     pub fn render(
         &mut self,
         engine: &mut dyn GraphicsEngine,
@@ -177,66 +224,15 @@ impl LayerTree {
             root.mark_dirty();
         }
     }
+
     pub fn is_ready(&self) -> bool {
         self.root.is_some()
     }
 
     // ── 内部 ──
 
-    /// 构建单个 widget 的 LayerNode。
-    /// 所有可见 widget 都会生成节点（不跳过任何不可见的 widget）。
-    fn build_node(tree: &WidgetTree, id: WidgetId, parent_origin: Point) -> Option<LayerNode> {
-        let node = tree.get(id)?;
-        if !node.visible() {
-            return None;
-        }
-        let frame = node.frame();
-        let origin = Point::new(parent_origin.x + frame.x, parent_origin.y + frame.y);
-
-        if node.inner().is_repaint_boundary() {
-            // RepaintBoundary -> 离屏缓存
-            Some(LayerNode::Picture {
-                widget_id: id,
-                bounds: Rect::new(origin.x, origin.y, frame.w, frame.h),
-                is_dirty: true,
-                offscreen_handle: None,
-            })
-        } else if let Some(clip) = node.inner().children_clip(frame) {
-            // 有子节点裁剪 -> ClipRect
-            let adj = Rect::new(
-                parent_origin.x + clip.x,
-                parent_origin.y + clip.y,
-                clip.w,
-                clip.h,
-            );
-            let children = Self::build_children(tree, id, origin);
-            Some(LayerNode::ClipRect {
-                widget_id: id,
-                rect: adj,
-                children,
-            })
-        } else {
-            // 其他 widget -> Direct（直接渲染到父级画布）
-            let children = Self::build_children(tree, id, origin);
-            Some(LayerNode::Direct {
-                widget_id: id,
-                children,
-            })
-        }
-    }
-
-    fn build_children(tree: &WidgetTree, id: WidgetId, origin: Point) -> Vec<LayerNode> {
-        let node = match tree.get(id) {
-            Some(n) => n,
-            None => return vec![],
-        };
-        node.children()
-            .iter()
-            .filter_map(|&cid| Self::build_node(tree, cid, origin))
-            .collect()
-    }
-
     /// 从旧 LayerTree 中收集所有 Picture 节点的离屏缓冲句柄。
+    /// 同时重置 retry_count 为 0（rebuild 意味着新的尝试机会）。
     fn collect_picture_handles(
         node: &LayerNode,
         cache: &mut std::collections::HashMap<
@@ -286,11 +282,14 @@ impl LayerTree {
                     None
                 }
             });
+            let children = Self::build_children_cached(tree, id, origin, cache);
             Some(LayerNode::Picture {
                 widget_id: id,
                 bounds,
                 is_dirty: offscreen_handle.is_none(),
                 offscreen_handle,
+                children,
+                retry_count: 0,
             })
         } else if let Some(clip) = node.inner().children_clip(frame) {
             let adj = Rect::new(
@@ -314,6 +313,7 @@ impl LayerTree {
         }
     }
 
+    /// 带缓存复用的子节点构建，按 z_index 预排序（#97：排序缓存）。
     fn build_children_cached(
         tree: &WidgetTree,
         id: WidgetId,
@@ -324,10 +324,18 @@ impl LayerTree {
             Some(n) => n,
             None => return vec![],
         };
-        node.children()
+        let mut children: Vec<LayerNode> = node
+            .children()
             .iter()
             .filter_map(|&cid| Self::build_node_cached(tree, cid, origin, cache))
-            .collect()
+            .collect();
+        // 预排序：render 时无需再排序
+        children.sort_by_key(|child| {
+            tree.get(child.widget_id())
+                .map(|n| n.z_index())
+                .unwrap_or(0)
+        });
+        children
     }
 
     fn update_dirty_node(node: &mut LayerNode, tree: &WidgetTree) {
@@ -347,16 +355,8 @@ impl LayerTree {
         }
     }
 
-    /// 获取 LayerNode 对应 widget 的 z_index（用于排序）。
-    fn layer_node_z_index(node: &LayerNode, tree: &WidgetTree) -> i32 {
-        let wid = match node {
-            LayerNode::Picture { widget_id, .. }
-            | LayerNode::ClipRect { widget_id, .. }
-            | LayerNode::Direct { widget_id, .. } => *widget_id,
-        };
-        tree.get(wid).map(|n| n.z_index()).unwrap_or(0)
-    }
-
+    /// 递归渲染单个节点。
+    /// 子节点已在 build 时预排序，直接遍历无需再次排序。
     fn render_node(node: &mut LayerNode, ctx: &mut RenderContext, tree: &WidgetTree) {
         match node {
             LayerNode::Picture {
@@ -364,6 +364,8 @@ impl LayerTree {
                 bounds,
                 is_dirty,
                 offscreen_handle,
+                children,
+                retry_count,
             } => {
                 let w = bounds.w.ceil() as i32;
                 let h = bounds.h.ceil() as i32;
@@ -376,10 +378,12 @@ impl LayerTree {
                         *widget_id,
                         bounds,
                         offscreen_handle,
+                        children,
                         ctx,
                         tree,
                         w,
                         h,
+                        retry_count,
                     );
                 } else if let Some(handle) = offscreen_handle {
                     let src = Rect::new(0.0, 0.0, w as f32, h as f32);
@@ -396,8 +400,7 @@ impl LayerTree {
                 Self::render_widget_self(*widget_id, ctx, tree);
                 let r = *rect;
                 ctx.engine().push_clip_rect(r);
-                // 子节点按 z_index 排序后递归渲染
-                children.sort_by_key(|child| Self::layer_node_z_index(child, tree));
+                // 子节点已预排序，直接遍历
                 for child in children.iter_mut() {
                     Self::render_node(child, ctx, tree);
                 }
@@ -426,6 +429,7 @@ impl LayerTree {
     }
 
     /// 渲染 widget 自身及其子节点（直接遍历 children LayerNodes）。
+    /// 子节点已预排序，直接遍历无需再次排序。
     fn render_widget_and_children(
         id: WidgetId,
         children: &mut [LayerNode],
@@ -439,45 +443,101 @@ impl LayerTree {
             let frame = node.frame();
             ctx.save();
             node.inner().render(frame, ctx, tree);
-            // Direct 节点只用于无 children_clip 的 widget，所以这里不需要 clip children
-            if !children.is_empty() {
-                children.sort_by_key(|child| Self::layer_node_z_index(child, tree));
-                for child in children.iter_mut() {
-                    Self::render_node(child, ctx, tree);
+            // Direct 节点只用于无 children_clip 的 widget，不需要 clip children
+            // 子节点已预排序，直接遍历
+            for child in children.iter_mut() {
+                Self::render_node(child, ctx, tree);
+            }
+            ctx.restore();
+        }
+    }
+
+    /// 离屏创建失败时，回退到在主缓冲直接渲染 widget 及其子树。
+    /// 不使用 LayerNode children，而是通过 WidgetTree 直接遍历。
+    fn render_widget_and_children_direct(
+        widget_id: WidgetId,
+        ctx: &mut RenderContext,
+        tree: &WidgetTree,
+    ) {
+        if let Some(node) = tree.get(widget_id) {
+            if !node.visible() {
+                return;
+            }
+            let frame = node.frame();
+            ctx.save();
+            node.inner().render(frame, ctx, tree);
+            // 直接遍历 WidgetTree 的子节点（跳过 LayerNode 层级）
+            for &child_id in node.children() {
+                if let Some(child) = tree.get(child_id) {
+                    if child.visible() {
+                        let child_frame = child.frame();
+                        let abs_frame = Rect::new(
+                            frame.x + child_frame.x,
+                            frame.y + child_frame.y,
+                            child_frame.w,
+                            child_frame.h,
+                        );
+                        ctx.save();
+                        child.inner().render(abs_frame, ctx, tree);
+                        ctx.restore();
+                    }
                 }
             }
             ctx.restore();
         }
     }
 
+    /// 渲染脏 Picture 节点：离屏光栅化子节点后再 blit 到主缓冲。
+    /// #97：离屏创建失败时递增 retry_count，超过阈值后跳过渲染。
     fn render_picture_dirty(
         widget_id: WidgetId,
         bounds: &Rect,
         offscreen_handle: &mut Option<ImageHandle>,
+        children: &mut [LayerNode],
         ctx: &mut RenderContext,
         tree: &WidgetTree,
         w: i32,
         h: i32,
+        retry_count: &mut u8,
     ) {
+        // 尝试创建或复用离屏缓冲
         let needs_new = offscreen_handle.is_none();
         if needs_new {
-            if let Ok(h) = ctx.engine().create_offscreen(w, h) {
-                *offscreen_handle = Some(*h);
-            } else {
-                // 离屏创建失败，直接渲染到主缓冲
-                Self::render_widget_and_children_direct(widget_id, ctx, tree);
+            if *retry_count >= MAX_OFFSCREEN_RETRY {
+                log::warn!(
+                    "[LayerTree] 离屏创建连续失败 {} 次 ({}x{}), 跳过渲染",
+                    *retry_count,
+                    w,
+                    h,
+                );
                 return;
             }
+            match ctx.engine().create_offscreen(w, h) {
+                Ok(h) => {
+                    *offscreen_handle = Some(*h);
+                    *retry_count = 0;
+                }
+                Err(e) => {
+                    *retry_count += 1;
+                    log::warn!(
+                        "[LayerTree] 离屏创建失败 ({}x{}), retry={}, err={:?}, 回退到主缓冲渲染",
+                        w,
+                        h,
+                        *retry_count,
+                        e,
+                    );
+                    Self::render_widget_and_children_direct(widget_id, ctx, tree);
+                    return;
+                }
+            }
         }
+
         if let Some(handle) = offscreen_handle.as_mut() {
-            // 保存主缓冲的引擎状态（opacity、transform、clip 等），
-            // 确保离屏渲染从干净的默认状态开始，避免状态泄漏。
             ctx.engine().save();
             ctx.engine().set_opacity(1.0);
             ctx.engine().reset_transform();
 
             ctx.engine().begin_offscreen(handle);
-            // 离屏缓冲重置状态：裁剪到画布、清除为透明
             ctx.engine()
                 .push_clip_rect(Rect::new(0.0, 0.0, w as f32, h as f32));
             ctx.engine().fill_rect(
@@ -485,97 +545,47 @@ impl LayerTree {
                 crate::graphics::Color::from_rgba(0, 0, 0, 0),
                 None,
             );
-            Self::render_widget_and_children_direct(widget_id, ctx, tree);
+            // 使用 LayerNode 子节点递归渲染（支持嵌套 Picture #96）
+            Self::render_widget_self(widget_id, ctx, tree);
+            for child in children.iter_mut() {
+                Self::render_node(child, ctx, tree);
+            }
             ctx.engine().pop_clip_rect();
             ctx.engine().end_offscreen();
 
-            // 恢复主缓冲的引擎状态
             ctx.engine().restore();
 
-            // 立即将离屏渲染结果回写到主缓冲，避免延迟一帧
+            // 立即将离屏渲染结果回写到主缓冲
             let src = Rect::new(0.0, 0.0, w as f32, h as f32);
             ctx.engine().draw_image(handle, src, *bounds);
         }
     }
 
-    /// 直接渲染 widget 及其全部子孙（不使用 LayerNode，而是遍历 WidgetTree）。
-    /// 只在 Picture 节点的离屏渲染中使用。
-    fn render_widget_and_children_direct(
-        id: WidgetId,
+    /// 递归渲染 overlay 层（post_render 回调）。
+    fn render_overlay_node(
+        node: &LayerNode,
         ctx: &mut RenderContext,
         tree: &WidgetTree,
     ) {
-        if let Some(node) = tree.get(id) {
-            if !node.visible() {
-                return;
+        let widget_id = node.widget_id();
+        // 调用 widget 的 post_render
+        if let Some(widget_node) = tree.get(widget_id) {
+            if widget_node.visible() {
+                let frame = widget_node.frame();
+                ctx.save();
+                widget_node.inner().post_render(frame, ctx, tree);
+                ctx.restore();
             }
-            let frame = node.frame();
-            ctx.save();
-            node.inner().render(frame, ctx, tree);
-            let clip = node.inner().children_clip(frame);
-            if let Some(rect) = clip {
-                ctx.engine().push_clip_rect(rect);
-            }
-            let mut sorted: Vec<WidgetId> = node.children().to_vec();
-            sorted.sort_by_key(|&cid| tree.get(cid).map_or(0, |c| c.z_index()));
-            for &child_id in &sorted {
-                Self::render_widget_and_children_direct(child_id, ctx, tree);
-            }
-            if let Some(_) = clip {
-                ctx.engine().pop_clip_rect();
-            }
-            ctx.restore();
         }
-    }
-
-    // ── Overlay 渲染（替代旧的 tree_render.rs post_render_pass 路径）──
-
-    /// 递归渲染 overlay 节点（post_render）。
-    /// 替代旧路径中 WidgetTree::post_render_pass。
-    fn render_overlay_node(node: &LayerNode, ctx: &mut RenderContext, tree: &WidgetTree) {
+        // 递归子节点
         match node {
-            LayerNode::Picture { widget_id, .. } => {
-                // Picture 内容已在离屏缓冲中缓存，overlay 直接画在主缓冲
-                Self::render_widget_post(*widget_id, ctx, tree);
-            }
-            LayerNode::ClipRect {
-                widget_id,
-                rect,
-                children,
-            } => {
-                Self::render_widget_post(*widget_id, ctx, tree);
-                ctx.engine().push_clip_rect(*rect);
-                let mut sorted: Vec<&LayerNode> = children.iter().collect();
-                sorted.sort_by_key(|child| Self::layer_node_z_index(child, tree));
-                for child in sorted {
-                    Self::render_overlay_node(child, ctx, tree);
-                }
-                ctx.engine().pop_clip_rect();
-            }
-            LayerNode::Direct {
-                widget_id,
-                children,
-            } => {
-                Self::render_widget_post(*widget_id, ctx, tree);
-                let mut sorted: Vec<&LayerNode> = children.iter().collect();
-                sorted.sort_by_key(|child| Self::layer_node_z_index(child, tree));
-                for child in sorted {
+            LayerNode::Picture { children, .. }
+            | LayerNode::ClipRect { children, .. }
+            | LayerNode::Direct { children, .. } => {
+                for child in children {
                     Self::render_overlay_node(child, ctx, tree);
                 }
             }
-        }
-    }
-
-    /// 仅渲染 widget 的 overlay（post_render）。
-    fn render_widget_post(id: WidgetId, ctx: &mut RenderContext, tree: &WidgetTree) {
-        if let Some(node) = tree.get(id) {
-            if !node.visible() {
-                return;
-            }
-            let frame = node.frame();
-            ctx.save();
-            node.inner().post_render(frame, ctx, tree);
-            ctx.restore();
         }
     }
 }
