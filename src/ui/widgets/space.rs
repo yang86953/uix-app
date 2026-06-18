@@ -37,7 +37,6 @@ define_widget! {
         children: WidgetChildren,
         direction: FlexDirection,
         space_size: SpaceSize,
-        #[allow(dead_code)]
         wrap: bool,
         justify: JustifyContent,
         align: AlignItems,
@@ -51,6 +50,8 @@ define_widget! {
             self.fixed_height.unwrap_or(0.0),
         )
     }
+
+    flex_shrink => (&self) -> f32 { 0.0 }
 
     render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {
         // Space itself is invisible; children are rendered by the tree.
@@ -95,9 +96,10 @@ define_widget! {
             })
             .collect();
 
-        let input = FlexInput {
-            direction: self.direction,
-            gap: self.space_size.value(),
+            let input = FlexInput {
+                direction: self.direction,
+                wrap: self.wrap,
+                gap: self.space_size.value(),
             padding: crate::base::EdgeInsets::zero(),
             container: frame,
             children: flex_children,
@@ -166,6 +168,10 @@ impl Space {
     }
     pub fn vertical(mut self) -> Self {
         self.direction = FlexDirection::Column;
+        self
+    }
+    pub fn wrap(mut self, v: bool) -> Self {
+        self.wrap = v;
         self
     }
 }

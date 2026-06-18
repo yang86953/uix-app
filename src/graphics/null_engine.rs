@@ -3,11 +3,14 @@
 
 use crate::base::{Rect, Size};
 use crate::diag::{info_fn, Errc, Error};
+use crate::graphics::font_service::FontService;
 use crate::graphics::{
     BlendMode, Color, DirtyRegion, GradientDirection, GraphicsEngine, ImageHandle, Radius,
     Transform,
 };
 
+/// A GraphicsEngine that does nothing — useful as a compile-time stub
+/// or for testing code that depends on `dyn GraphicsEngine`.
 /// A GraphicsEngine that does nothing — useful as a compile-time stub
 /// or for testing code that depends on `dyn GraphicsEngine`.
 pub struct NullEngine {
@@ -17,6 +20,7 @@ pub struct NullEngine {
     #[allow(dead_code)]
     transform: Transform,
     blend_mode: BlendMode,
+    font_service: FontService,
 }
 
 impl NullEngine {
@@ -27,6 +31,7 @@ impl NullEngine {
             opacity: 1.0,
             transform: Transform::identity(),
             blend_mode: BlendMode::Alpha,
+            font_service: FontService::new(),
         }
     }
 }
@@ -174,9 +179,14 @@ impl GraphicsEngine for NullEngine {
         0
     }
 
+    fn font_service(&self) -> &FontService {
+        &self.font_service
+    }
+
     fn render_frame(
         &mut self,
         _tree: &mut crate::ui::widget::WidgetTree,
+        _layer_tree: &mut crate::graphics::layer::LayerTree,
         _theme: &std::cell::RefCell<crate::ui::theme::Theme>,
         _first_frame: bool,
         _keep_polling: bool,

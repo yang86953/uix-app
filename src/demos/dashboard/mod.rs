@@ -119,8 +119,10 @@ pub fn wrap_page(_tk: &DesignTokens, content: Vec<WidgetNode>) -> WidgetNode {
             Box::new(
                 Container::new()
                     .size(iw(), 0.0)
+                    .bg(uix::graphics::Color::from_rgba(200, 255, 200, 80))
                     .dir(FlexDirection::Column)
                     .gap(GAP)
+                    .border(uix::graphics::Color::from_rgba(0, 200, 0, 200), 2.0)
                     .pad(EdgeInsets::new(8.0, 4.0, 16.0, 10.0)),
             ),
             content,

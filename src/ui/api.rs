@@ -42,11 +42,17 @@ pub use crate::ui::theme::{
 
 // ── Phase 1: 简单组件 ──
 pub use crate::ui::widgets::alert::{Alert, AlertType};
+pub use crate::ui::widgets::autocomplete::AutoComplete;
 pub use crate::ui::widgets::badge::Badge;
 pub use crate::ui::widgets::breadcrumb::{Breadcrumb, BreadcrumbItem};
 pub use crate::ui::widgets::empty::Empty;
+pub use crate::ui::widgets::image::Image;
+pub use crate::ui::widgets::message::{Message, MessageItem, MessageType};
+pub use crate::ui::widgets::notification::{Notification, NotificationItem, NotificationType};
+pub use crate::ui::widgets::result::{Result, ResultType};
 pub use crate::ui::widgets::spin::{Spin, SpinSize};
 pub use crate::ui::widgets::tag::{Tag, TagColor};
+pub use crate::ui::widgets::typography::{Typography, TypographyType};
 
 // ── Phase 2: 中等组件 ──
 pub use crate::ui::widgets::collapse::{Collapse, CollapsePanel};
@@ -58,24 +64,36 @@ pub use crate::ui::widgets::tooltip::{Tooltip, TooltipPlacement};
 
 // ── Phase 3: 复杂组件 ──
 pub use crate::ui::widgets::dropdown::Dropdown;
+pub use crate::ui::widgets::form::{Form, FormItem, ValidateStatus};
+pub use crate::ui::widgets::menu::{Menu, MenuItem, MenuMode};
+pub use crate::ui::widgets::pagination::Pagination;
 pub use crate::ui::widgets::popconfirm::Popconfirm;
 pub use crate::ui::widgets::popover::Popover;
 pub use crate::ui::widgets::select::Select;
 pub use crate::ui::widgets::skeleton::{Skeleton, SkeletonShape};
+pub use crate::ui::widgets::steps::{Step, StepStatus, Steps};
 pub use crate::ui::widgets::table::{Table, TableColumn, TableRow};
+pub use crate::ui::widgets::tree::{Tree, TreeNode};
+pub use crate::ui::widgets::tree_select::TreeSelect;
 
 // ── 已有组件 ──
+pub use crate::ui::widgets::tree_select::Anchor;
 pub use crate::ui::widgets::avatar::Avatar;
 pub use crate::ui::widgets::button::{Button, ButtonSize, ButtonVariant};
+pub use crate::ui::widgets::calendar::{Calendar, DatePicker};
 pub use crate::ui::widgets::card::Card;
 pub use crate::ui::widgets::chart::{BarChart, BarData, LineChart, LineData, PieChart, PieData};
 pub use crate::ui::widgets::checkbox::Checkbox;
 pub use crate::ui::widgets::container::Container;
+pub use crate::ui::widgets::descriptions::{Descriptions, DescriptionsItem};
 pub use crate::ui::widgets::divider::{Divider, DividerDirection, DividerOrientation};
+pub use crate::ui::widgets::drawer::{Drawer, DrawerPlacement};
+pub use crate::ui::widgets::float_button::{BackTop, FloatButton};
 pub use crate::ui::widgets::grid::Grid;
 pub use crate::ui::widgets::icon::Icon;
 pub use crate::ui::widgets::input::{Input, InputSize};
 pub use crate::ui::widgets::label::Label;
+pub use crate::ui::widgets::list::{List, ListSize};
 pub use crate::ui::widgets::modal::Modal;
 pub use crate::ui::widgets::nav::{NavGroup, NavItem, Navigation, SharedActive};
 pub use crate::ui::widgets::progress::{ProgressBar, ProgressMode};
@@ -83,3 +101,6 @@ pub use crate::ui::widgets::scroll_view::{ScrollDirection, ScrollView};
 pub use crate::ui::widgets::space::{Space, SpaceSize};
 pub use crate::ui::widgets::switch::Switch;
 pub use crate::ui::widgets::tabs::{Tab, TabPosition, Tabs};
+pub use crate::ui::widgets::timeline::{Timeline, TimelineItem};
+pub use crate::ui::widgets::misc::{Layout, QRCode, Transfer, TransferItem, Upload, Watermark};
+pub use crate::ui::widgets::color_picker::{Cascader, ColorPicker, Mentions};

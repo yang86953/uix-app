@@ -33,7 +33,7 @@ define_widget! {
         for p in &self.panels {
             h += 36.0; // header
             if p.expanded {
-                h += p.content.len() as f32 * 1.0 * 14.0 + 16.0; // content estimate
+                h += p.content.len() as f32 * 0.4 * 14.0 + 16.0; // content estimate, 与 render 保持一致
             }
         }
         Size::new(0.0, h)

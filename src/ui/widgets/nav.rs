@@ -279,7 +279,6 @@ impl Navigation {
         use crate::ui::widgets::{Container, Divider, Label};
 
         let item_h = 36.0;
-        let items_len = self.items.len();
         let mut children: Vec<crate::ui::widget::WidgetNode> = Vec::new();
 
         // Title
@@ -303,17 +302,10 @@ impl Navigation {
             children.push(nav_item.into_node());
         }
 
-        // Spacer
-        let spacer_h = if self.show_version {
-            self.height - 52.0 - 1.0 - (items_len as f32 * item_h) - 24.0
-        } else {
-            self.height - 52.0 - 1.0 - (items_len as f32 * item_h)
-        };
-        if spacer_h > 0.0 {
-            children.push(
-                Container::new().size(self.width, spacer_h).into_node(),
-            );
-        }
+        // Spacer — flex_grow(1.0) 自动填充剩余空间，适配窗口高度
+        children.push(
+            Container::new().size(self.width, 0.0).flex_grow(1.0).into_node(),
+        );
 
         // Version label
         if self.show_version {
@@ -325,9 +317,9 @@ impl Navigation {
 
         crate::ui::widget::WidgetNode::new(
             Box::new(Container::new()
-                .size(self.width, self.height)
                 .bg(tokens.color_bg_elevated())
-                .dir(crate::graphics::FlexDirection::Column)),
+                .dir(crate::graphics::FlexDirection::Column)
+                .size(self.width, self.height)),
             children,
         )
     }

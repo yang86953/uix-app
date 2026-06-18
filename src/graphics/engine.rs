@@ -11,6 +11,8 @@ use std::cell::RefCell;
 
 use crate::base::{Rect, Size};
 use crate::diag::Error;
+use crate::graphics::font_service::FontService;
+use crate::graphics::layer::LayerTree;
 use crate::graphics::types::*;
 use crate::graphics::{Color, DirtyRegion};
 use crate::ui::theme::Theme;
@@ -166,17 +168,23 @@ pub trait GraphicsEngine: 'static {
     fn pixels(&self) -> &[u32];
     fn width(&self) -> i32;
     fn height(&self) -> i32;
-    // Supersample control for software renderer (0 = adaptive/default).
+    /// Supersample control for software renderer (0 = adaptive/default).
     fn set_supersample_level(&mut self, _level: u8) {}
     fn supersample_level(&self) -> u8 {
         0
     }
+
+    /// 返回引擎持有的字体服务引用（供 LayerTree 等组件使用）。
+    fn font_service(&self) -> &FontService;
 
     /// 执行一帧的完整渲染循环。
     ///
     /// 引擎内部处理：dirty_region 读取、FrameGraph Pass 编排、
     /// begin_frame/end_frame、scroll_region、布局计算、
     /// render_geometry + render_overlays 遍历、reset_dirty。
+    ///
+    /// `layer_tree` 由调用者（Window）持有并传入，引擎不管理其生命周期。
+    /// 这样避免了引擎内部同时可变借用自身和 layer_tree 的借用冲突。
     ///
     /// 返回值：
     /// - `RenderOutcome::Idle` — 零帧开销，未渲染
@@ -185,6 +193,7 @@ pub trait GraphicsEngine: 'static {
     fn render_frame(
         &mut self,
         tree: &mut WidgetTree,
+        layer_tree: &mut LayerTree,
         theme: &RefCell<Theme>,
         first_frame: bool,
         keep_polling: bool,

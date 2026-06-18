@@ -103,7 +103,7 @@ pub trait Widget: AsAny {
         0.0
     }
     fn flex_shrink(&self) -> f32 {
-        1.0
+        0.0
     }
 
     /// 返回子 widget 的裁剪矩形（如 ScrollView 视口）。

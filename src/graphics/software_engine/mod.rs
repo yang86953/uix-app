@@ -76,7 +76,7 @@ pub(crate) mod fontdue_backend;
 mod graphics_impl;
 mod pixels;
 mod rect;
-mod render;
+// mod render;  // 已弃用 —— paint_layer_tree 不再需要
 mod sdf;
 mod shadow;
 mod shapes;

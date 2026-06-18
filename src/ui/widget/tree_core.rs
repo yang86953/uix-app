@@ -13,6 +13,9 @@ pub struct WidgetTree {
     pub(crate) dirty_region: DirtyRegion,
     pub(crate) mouse_down_target: Option<WidgetId>,
     pub(crate) scroll_deltas: Vec<(Rect, f32, f32)>,
+    /// 树结构版本号，结构变更时递增（add_child / remove / set_root）。
+    /// 引擎可用此判断 LayerTree 是否需要重建。
+    pub(crate) tree_version: u64,
 }
 
 impl Default for WidgetTree {
@@ -27,6 +30,7 @@ impl Default for WidgetTree {
             dirty_region: DirtyRegion::full(),
             mouse_down_target: None,
             scroll_deltas: Vec::new(),
+            tree_version: 0,
         }
     }
 }
@@ -34,6 +38,11 @@ impl Default for WidgetTree {
 impl WidgetTree {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 返回当前树结构版本号。结构变更（add_child / remove / set_root）时递增。
+    pub fn tree_version(&self) -> u64 {
+        self.tree_version
     }
 
     pub fn alloc_id(&mut self) -> WidgetId {
@@ -71,6 +80,7 @@ impl WidgetTree {
     }
 
     pub fn set_root(&mut self, widget: Box<dyn Widget>) -> WidgetId {
+        self.tree_version += 1;
         let children = widget.build();
         let id = self.alloc_id();
         let mut boxed = BoxedWidget::new(widget);
@@ -153,6 +163,7 @@ impl WidgetTree {
     }
 
     pub fn add_child(&mut self, parent_id: WidgetId, child: Box<dyn Widget>) -> WidgetId {
+        self.tree_version += 1;
         let children = child.build();
         let child_id = self.alloc_id();
         let mut boxed = BoxedWidget::new(child);
@@ -172,6 +183,7 @@ impl WidgetTree {
     }
 
     pub fn remove(&mut self, id: WidgetId) {
+        self.tree_version += 1;
         let parent_id = self
             .nodes
             .get(id)

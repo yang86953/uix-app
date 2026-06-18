@@ -2,8 +2,10 @@
 //! title, body, hover feedback, and configurable border radius.
 
 use crate::define_widget;
-use crate::graphics::{Color, Radius};
-use crate::base::{Point, Rect, Size};
+use crate::graphics::{
+    compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, Color, Radius,
+};
+use crate::base::{EdgeInsets, Point, Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};
@@ -111,32 +113,56 @@ define_widget! {
     layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        let mut result = Vec::new();
-        if children.is_empty() { return result; }
+        if children.is_empty() { return Vec::new(); }
 
+        // 标题区域占用顶部空间，剩余部分作为 flex column 容器
         let title_offset = if self.title.is_some() { 56.0 } else { self.padding };
         let inner = Rect::new(
             frame.x + self.padding, frame.y + title_offset,
             (frame.w - self.padding * 2.0).max(0.0),
             (frame.h - title_offset - self.padding).max(0.0),
         );
-        if inner.w <= 0.0 || inner.h <= 0.0 { return result; }
+        if inner.w <= 0.0 || inner.h <= 0.0 { return Vec::new(); }
 
-        let mut cursor_y = inner.y;
-        for &cid in children {
-            let pref = tree.get(cid).map(|c| c.preferred_size(None)).unwrap_or_else(Size::zero);
-            let ch = if pref.h > 0.0 { pref.h.min(inner.h) } else { inner.h / children.len() as f32 };
-            result.push((cid, Rect::new(inner.x, cursor_y, inner.w, ch)));
-            cursor_y += ch;
-        }
-        if !result.is_empty() {
-            let last = result.len() - 1;
-            let last_rect = &mut result[last].1;
-            if last_rect.y + last_rect.h < inner.y + inner.h {
-                last_rect.h = inner.y + inner.h - last_rect.y;
-            }
-        }
-        result
+        let child_sizes: Vec<Size> = children
+            .iter()
+            .map(|&cid| {
+                tree.get(cid)
+                    .map(|c| c.preferred_size(None))
+                    .unwrap_or_default()
+            })
+            .collect();
+
+        let flex_children: Vec<FlexChild> = children
+            .iter()
+            .map(|&cid| {
+                let w = tree.get(cid);
+                FlexChild {
+                    flex_grow: w.map(|c| c.inner().flex_grow()).unwrap_or(0.0),
+                    flex_shrink: w.map(|c| c.inner().flex_shrink()).unwrap_or(0.0),
+                    ..FlexChild::default()
+                }
+            })
+            .collect();
+
+        let input = FlexInput {
+            direction: FlexDirection::Column,
+            gap: 0.0,
+            padding: EdgeInsets::zero(),
+            container: inner,
+            children: flex_children,
+            child_sizes,
+            justify_content: JustifyContent::Start,
+            align_items: AlignItems::Stretch,
+            ..FlexInput::default()
+        };
+
+        let output = compute_flex_layout(&input);
+        children
+            .iter()
+            .zip(output.child_rects)
+            .map(|(&cid, rect)| (cid, rect))
+            .collect()
     }
 }
 

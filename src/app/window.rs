@@ -9,6 +9,7 @@
 
 use std::cell::Cell;
 
+use crate::graphics::layer::LayerTree;
 use crate::graphics::{GraphicsEngine, RenderOutcome};
 use crate::platform::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::Platform;
@@ -93,7 +94,8 @@ impl Window {
         let mut rendered_first_frame = false;
         let mut last_frame = Instant::now();
         let mut keep_polling = false;
-        const FRAME_TIME: f32 = 1.0 / 60.0;
+        const FRAME_TIME: f32 = 1.0 / 120.0;
+        let mut layer_tree = LayerTree::new();
 
         let collect = |ev: &UiEvent| {
             match ev.type_ {
@@ -145,14 +147,13 @@ impl Window {
             let now = Instant::now();
             let dt = (now - last_frame).as_secs_f32().min(0.05);
             last_frame = now;
-            // 事件处理后先重新 layout，确保 content_bounds / max_scroll 正确
-            // 再让 on_update 做滚动钳制，否则展开面板后无法滚动到底。
-            tree.layout();
+            // 先 update（推动画、收集 dirty_rect/scroll_delta），再 layout 应用最新位置
             keep_polling = tree.update(dt) || woke;
+            tree.layout();
 
             on_frame(tree, engine);
 
-            match engine.render_frame(tree, theme, !rendered_first_frame, keep_polling) {
+            match engine.render_frame(tree, &mut layer_tree, theme, !rendered_first_frame, keep_polling) {
                 RenderOutcome::Present(damage) => {
                     let dirty = if rendered_first_frame { damage } else { None };
                     if !rendered_first_frame {

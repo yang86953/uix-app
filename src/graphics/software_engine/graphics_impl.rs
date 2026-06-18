@@ -3,6 +3,8 @@ use std::cell::RefCell;
 use super::engine::SoftwareEngine;
 use crate::base::{Rect, Size};
 use crate::diag::Error;
+use crate::graphics::font_service::FontService;
+use crate::graphics::layer::LayerTree;
 use crate::graphics::{
     BlendMode, Color, DirtyRegion, FontHandle, GraphicsEngine, ImageHandle, Radius, RenderOutcome,
     TextLayoutOptions,
@@ -168,12 +170,14 @@ impl GraphicsEngine for SoftwareEngine {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
-        // 阴影需要溢出父级 clip（如 ScrollView 视口），但必须限制在
-        // begin_frame 的脏区域内，避免像素叠加拖影。
+        // 阴影需要溢出子 clip（如 ScrollView 视口内滚动内容），但必须限制在
+        // 父 clip 范围内，避免越界绘制到相邻容器。
         let saved_rect = self.rt.clip_rect;
         let saved_stack = std::mem::take(self.rt.clip_stack_mut());
-        if let Some(&pre_parent) = saved_stack.first() {
-            *self.rt.clip_rect_mut() = pre_parent;
+        // saved_stack.last() 是 push 当前 clip 之前保存的父 clip，
+        // 比 saved_stack.first()（最外层）更精确。
+        if let Some(&parent_clip) = saved_stack.last() {
+            *self.rt.clip_rect_mut() = parent_clip;
         }
         self.rt
             .draw_box_shadow(rect, blur_radius, offset_x, offset_y, color, corner_radius);
@@ -192,8 +196,8 @@ impl GraphicsEngine for SoftwareEngine {
     ) {
         let saved_rect = self.rt.clip_rect;
         let saved_stack = std::mem::take(self.rt.clip_stack_mut());
-        if let Some(&pre_parent) = saved_stack.first() {
-            *self.rt.clip_rect_mut() = pre_parent;
+        if let Some(&parent_clip) = saved_stack.last() {
+            *self.rt.clip_rect_mut() = parent_clip;
         }
         self.rt.draw_box_shadow_ambient(
             rect,
@@ -361,9 +365,15 @@ impl GraphicsEngine for SoftwareEngine {
 
     // ── 渲染帧 ──
 
+    /// 返回引擎持有的字体服务引用（供 LayerTree 等组件使用）。
+    fn font_service(&self) -> &FontService {
+        &self.font_service
+    }
+
     fn render_frame(
         &mut self,
         tree: &mut WidgetTree,
+        layer_tree: &mut LayerTree,
         theme: &RefCell<Theme>,
         first_frame: bool,
         keep_polling: bool,
@@ -393,8 +403,7 @@ impl GraphicsEngine for SoftwareEngine {
                 vp.x, vp.y, vp.w, vp.h, dx, dy);
         }
 
-        let damage: Option<(i32, i32, i32, i32)> = if region.full_frame || !scroll_deltas.is_empty()
-        {
+        let damage: Option<(i32, i32, i32, i32)> = if region.full_frame {
             None
         } else {
             let bounds = region.bounds();
@@ -411,34 +420,23 @@ impl GraphicsEngine for SoftwareEngine {
             GraphicsEngine::scroll_region(self, viewport, dx, dy);
         }
 
-        // ── Pass 1: Clear + Geometry ───────────────────────────
+        // ── Pass 1: Clear + LayerTree 渲染（唯一渲染路径）──────
         GraphicsEngine::begin_frame(self, &region);
-        log::debug!("[Render] 2nd layout start");
-        tree.layout();
 
-        // LayerTree 构建与更新
-        if self.layer_tree_stale {
-            self.layer_tree.build(tree);
-            self.layer_tree_stale = false;
-        }
-        self.layer_tree.update_dirty(tree);
+          // LayerTree 构建：检测 widget 树结构变化
+          let cur_version = tree.tree_version();
+          if self.last_tree_version != cur_version {
+              layer_tree.build(tree);
+              self.last_tree_version = cur_version;
+          }
+          layer_tree.update_dirty(tree);
 
-        // SAFETY: font_service 字段与 engine 使用的字段（rt/assets）物理分离。
-        // 先取 font_service 的裸指针，再创建 engine 引用，避免 Rust 的借用检查器
-        // 将 &mut self（作为 engine）视为占用了所有字段。
-        let fs_ptr = &self.font_service as *const crate::graphics::font_service::FontService;
-        let theme_ref = theme.borrow();
-        let tokens = theme_ref.tokens();
-        let mut rctx = RenderContext::new(self, FontHandle::default(), unsafe { &*fs_ptr }, tokens);
-        tree.render_geometry(&mut rctx);
-        drop(rctx);
-        drop(theme_ref);
-
-        // LayerTree 渲染：委托给本引擎独立方法避免借用冲突
+        // LayerTree 渲染（唯一渲染路径，替代旧版 tree.render_geometry）
         let lt_tokens;
         let lt_ref = theme.borrow();
         lt_tokens = lt_ref.tokens();
-        self.paint_layer_tree(tree, lt_tokens);
+        let lt_font = self.font_service.loaded_font_handle;
+        layer_tree.render(self, tree, lt_tokens, lt_font);
         drop(lt_ref);
 
         GraphicsEngine::end_frame(self, &region);
@@ -448,12 +446,11 @@ impl GraphicsEngine for SoftwareEngine {
         GraphicsEngine::begin_frame(self, &overlay_region);
         let theme_ref = theme.borrow();
         let tokens = theme_ref.tokens();
-        let fs_ptr = &self.font_service as *const crate::graphics::font_service::FontService;
-        let mut rctx = RenderContext::new(self, FontHandle::default(), unsafe { &*fs_ptr }, tokens);
+        let mut rctx = RenderContext::new(self, lt_font, tokens);
         tree.render_overlays(&mut rctx);
         drop(rctx);
         drop(theme_ref);
-        GraphicsEngine::end_frame(self, &region);
+        GraphicsEngine::end_frame(self, &overlay_region);
 
         // ── 完成：reset dirty ───────────────────────────────────
         tree.reset_dirty();

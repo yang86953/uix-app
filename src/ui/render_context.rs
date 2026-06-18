@@ -25,7 +25,6 @@ use crate::ui::theme::TokenProvider;
 pub struct RenderContext<'a> {
     engine: &'a mut dyn GraphicsEngine,
     font: FontHandle,
-    font_service: &'a FontService,
     max_text_width: f32,
     tokens: &'a dyn TokenProvider,
 }
@@ -34,18 +33,15 @@ impl<'a> RenderContext<'a> {
     /// Create a new render context.
     ///
     /// `tokens` should carry the active theme's token provider (e.g. from Theme).
-    /// When not needed for testing, `DesignTokens::antd_light()` can be passed.
-    /// `font_service` provides text layout and glyph rasterization.
+    /// FontService 从 engine 获取，不再作为独立参数传入。
     pub fn new(
         engine: &'a mut dyn GraphicsEngine,
         font: FontHandle,
-        font_service: &'a FontService,
         tokens: &'a dyn TokenProvider,
     ) -> Self {
         Self {
             engine,
             font,
-            font_service,
             max_text_width: f32::MAX,
             tokens,
         }
@@ -60,9 +56,9 @@ impl<'a> RenderContext<'a> {
         self.engine
     }
 
-    /// 返回 FontService 引用，供需要直接操作字体的场景使用。
-    pub fn font_service(&self) -> &FontService {
-        self.font_service
+    /// 返回 FontService 引用（通过 engine 获取），供需要直接操作字体的场景使用。
+    pub fn font_service(&mut self) -> &FontService {
+        self.engine.font_service()
     }
 
     pub fn draw_box_shadow(
@@ -172,9 +168,10 @@ impl<'a> RenderContext<'a> {
             font_size,
         };
         let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts);
+        let fh = self.font;
         let layout = self
-            .font_service
-            .layout_text(&self.font, text, &backend_opts);
+            .font_service()
+            .layout_text(&fh, text, &backend_opts);
         self.blit_glyph_layout(&layout, pos, color, font_size);
     }
 
@@ -197,9 +194,10 @@ impl<'a> RenderContext<'a> {
             font_size,
         };
         let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts);
+        let fh = self.font;
         let layout = self
-            .font_service
-            .layout_text(&self.font, text, &backend_opts);
+            .font_service()
+            .layout_text(&fh, text, &backend_opts);
         self.blit_glyph_layout(&layout, Point::new(x, rect.y), color, font_size);
     }
 
@@ -218,9 +216,10 @@ impl<'a> RenderContext<'a> {
             font_size,
         };
         let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts);
+        let fh = self.font;
         let layout = self
-            .font_service
-            .layout_text(&self.font, text, &backend_opts);
+            .font_service()
+            .layout_text(&fh, text, &backend_opts);
         self.blit_glyph_layout(&layout, Point::new(rect.x, rect.y), color, font_size);
     }
 
@@ -246,9 +245,10 @@ impl<'a> RenderContext<'a> {
         };
 
         for gp in &layout.glyphs {
+            let fh = self.font;
             let raster = self
-                .font_service
-                .rasterize_glyph(&self.font, gp.glyph_id, fs);
+                .font_service()
+                .rasterize_glyph(&fh, gp.glyph_id, fs);
             if raster.width == 0 || raster.height == 0 {
                 continue;
             }
@@ -267,7 +267,7 @@ impl<'a> RenderContext<'a> {
 
     // ── 文本测量（委托给 FontService）──
 
-    pub fn measure_text(&self, text: &str, font_size: f32) -> Size {
+    pub fn measure_text(&mut self, text: &str, font_size: f32) -> Size {
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
             max_height: 0.0,
@@ -278,12 +278,13 @@ impl<'a> RenderContext<'a> {
             font_size,
         };
         let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts);
-        self.font_service
-            .measure_text(&self.font, text, &backend_opts)
+        let fh = self.font;
+        self.font_service()
+            .measure_text(&fh, text, &backend_opts)
     }
 
     /// Measure text with word wrap enabled at the given max width.
-    pub fn measure_text_wrapped(&self, text: &str, font_size: f32, max_width: f32) -> Size {
+    pub fn measure_text_wrapped(&mut self, text: &str, font_size: f32, max_width: f32) -> Size {
         let opts = TextLayoutOptions {
             max_width,
             max_height: 0.0,
@@ -294,12 +295,13 @@ impl<'a> RenderContext<'a> {
             font_size,
         };
         let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts);
-        self.font_service
-            .measure_text(&self.font, text, &backend_opts)
+        let fh = self.font;
+        self.font_service()
+            .measure_text(&fh, text, &backend_opts)
     }
 
     /// 命中测试：返回点击位置对应的字符索引。
-    pub fn hit_test(&self, text: &str, font_size: f32, point: Point) -> Option<usize> {
+    pub fn hit_test(&mut self, text: &str, font_size: f32, point: Point) -> Option<usize> {
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
             max_height: 0.0,
@@ -310,12 +312,13 @@ impl<'a> RenderContext<'a> {
             font_size,
         };
         let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts);
-        self.font_service
-            .hit_test_text(&self.font, text, &backend_opts, point)
+        let fh = self.font;
+        self.font_service()
+            .hit_test_text(&fh, text, &backend_opts, point)
     }
 
     /// 获取指定字符的光标 x 位置（相对文本起始点）。
-    pub fn cursor_x(&self, text: &str, font_size: f32, char_index: usize) -> f32 {
+    pub fn cursor_x(&mut self, text: &str, font_size: f32, char_index: usize) -> f32 {
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
             max_height: 0.0,
@@ -326,8 +329,9 @@ impl<'a> RenderContext<'a> {
             font_size,
         };
         let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts);
-        self.font_service
-            .text_cursor_x(&self.font, text, &backend_opts, char_index)
+        let fh = self.font;
+        self.font_service()
+            .text_cursor_x(&fh, text, &backend_opts, char_index)
     }
 
     // ── 其他绘制操作 ──
