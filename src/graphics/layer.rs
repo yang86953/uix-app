@@ -117,10 +117,21 @@ impl LayerTree {
 
     /// 从 WidgetTree 构建图层树。
     /// 生成所有可见 widget 的 LayerNode（无遗漏）。
+    /// 自动复用已缓存离屏缓冲——按 widget_id 匹配旧 Picture 节点。
     pub fn build(&mut self, tree: &WidgetTree) {
-        self.root = tree
-            .root_id()
-            .and_then(|root_id| Self::build_node(tree, root_id, Point::zero()));
+        // 收集旧 Picture 节点的离屏缓冲（按 widget_id 索引）
+        // 旧缓存：widget_id → (bounds, offscreen_handle)
+        let mut old_cache: std::collections::HashMap<
+            WidgetId,
+            (Rect, Option<ImageHandle>),
+        > = std::collections::HashMap::new();
+        if let Some(ref root) = self.root {
+            Self::collect_picture_handles(root, &mut old_cache);
+        }
+
+        self.root = tree.root_id().and_then(|root_id| {
+            Self::build_node_cached(tree, root_id, Point::zero(), &old_cache)
+        });
     }
 
     /// 增量更新脏状态。
@@ -222,6 +233,100 @@ impl LayerTree {
         node.children()
             .iter()
             .filter_map(|&cid| Self::build_node(tree, cid, origin))
+            .collect()
+    }
+
+    /// 从旧 LayerTree 中收集所有 Picture 节点的离屏缓冲句柄。
+    fn collect_picture_handles(
+        node: &LayerNode,
+        cache: &mut std::collections::HashMap<
+            WidgetId,
+            (Rect, Option<ImageHandle>),
+        >,
+    ) {
+        match node {
+            LayerNode::Picture {
+                widget_id,
+                bounds,
+                offscreen_handle,
+                ..
+            } => {
+                cache.insert(*widget_id, (*bounds, *offscreen_handle));
+            }
+            LayerNode::ClipRect { children, .. } | LayerNode::Direct { children, .. } => {
+                for child in children {
+                    Self::collect_picture_handles(child, cache);
+                }
+            }
+        }
+    }
+
+    /// 带缓存复用的 build_node。
+    /// 如果旧缓存中有相同 widget_id 且 bounds 未变的 Picture，复用其离屏句柄。
+    fn build_node_cached(
+        tree: &WidgetTree,
+        id: WidgetId,
+        parent_origin: Point,
+        cache: &std::collections::HashMap<WidgetId, (Rect, Option<ImageHandle>)>,
+    ) -> Option<LayerNode> {
+        let node = tree.get(id)?;
+        if !node.visible() {
+            return None;
+        }
+        let frame = node.frame();
+        let origin = Point::new(parent_origin.x + frame.x, parent_origin.y + frame.y);
+
+        if node.inner().is_repaint_boundary() {
+            let bounds = Rect::new(origin.x, origin.y, frame.w, frame.h);
+            // 检查旧缓存：如果 bounds 相同，复用离屏句柄
+            let offscreen_handle = cache.get(&id).and_then(|(old_bounds, old_handle)| {
+                if *old_bounds == bounds {
+                    *old_handle
+                } else {
+                    None
+                }
+            });
+            Some(LayerNode::Picture {
+                widget_id: id,
+                bounds,
+                is_dirty: offscreen_handle.is_none(),
+                offscreen_handle,
+            })
+        } else if let Some(clip) = node.inner().children_clip(frame) {
+            let adj = Rect::new(
+                parent_origin.x + clip.x,
+                parent_origin.y + clip.y,
+                clip.w,
+                clip.h,
+            );
+            let children = Self::build_children_cached(tree, id, origin, cache);
+            Some(LayerNode::ClipRect {
+                widget_id: id,
+                rect: adj,
+                children,
+            })
+        } else {
+            let children = Self::build_children_cached(tree, id, origin, cache);
+            Some(LayerNode::Direct {
+                widget_id: id,
+                children,
+            })
+        }
+    }
+
+    fn build_children_cached(
+        tree: &WidgetTree,
+        id: WidgetId,
+        origin: Point,
+        cache: &std::collections::HashMap<WidgetId, (Rect, Option<ImageHandle>)>,
+    ) -> Vec<LayerNode> {
+        let node = match tree.get(id) {
+            Some(n) => n,
+            None => return vec![],
+        };
+        node.children()
+            .iter()
+            .filter_map(|&cid| Self::build_node_cached(tree, cid, origin, cache))
             .collect()
     }
 
