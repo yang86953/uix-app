@@ -25,7 +25,7 @@ pub fn init_logger() {
 
 // ── 核心类型 ──────────────────────────────────────────────────────────────
 
-pub fn demo_core_types() -> Result<(), Error> {
+pub fn demo_core_types() {
     println!("\n╔══ 核心类型 ═══╗");
     let pt = Point::new(10.0, 20.0);
     println!("  Point(10,20) → ({},{})", pt.x, pt.y);
@@ -53,12 +53,11 @@ pub fn demo_core_types() -> Result<(), Error> {
     );
     let c = colors::PRIMARY;
     println!("  Primary: {} (RGBA:{:08X})", c, c.to_rgba());
-    Ok(())
 }
 
 // ── 错误处理 ──────────────────────────────────────────────────────────────
 
-pub fn demo_errors() -> Result<(), Error> {
+pub fn demo_errors() {
     println!("\n╔══ 错误处理 ═══╗");
     println!("  Ok: {:?}", Ok::<i32, Error>(42));
     let e1 = Error::invalid_arg("bad input");
@@ -75,7 +74,6 @@ pub fn demo_errors() -> Result<(), Error> {
     let chained = Error::new(Errc::WriteFailure, "write failed").with_cause(root);
     println!("  Chained: {}", chained);
     println!("  root_cause: {}", chained.root_cause());
-    Ok(())
 }
 
 // ── 响应式状态 ────────────────────────────────────────────────────────────
@@ -266,16 +264,17 @@ pub fn demo_theme() {
 
 // ── 图形引擎 ──────────────────────────────────────────────────────────────
 
-pub fn demo_graphics_engine() {
+pub fn demo_graphics_engine() -> Result<(), Error> {
     println!("\n╔══ 图形引擎 ═══╗");
     let mut e = graphics::NullEngine::new();
-    let _ = e.initialize(800, 600);
+    e.initialize(800, 600)?;
     e.fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
     e.shutdown();
     let mut boxed: Box<dyn GraphicsEngine> = Box::new(graphics::NullEngine::new());
-    let _ = boxed.initialize(640, 480);
+    boxed.initialize(640, 480)?;
     println!("  Box<dyn GraphicsEngine> width={}", boxed.width());
     boxed.shutdown();
+    Ok(())
 }
 
 // ── 依赖注入容器 ──────────────────────────────────────────────────────────
@@ -302,15 +301,15 @@ pub fn run_all_cli() -> Result<(), Error> {
     println!("\n  ╔══════════════════════════════════╗");
     println!("  ║   UIX 框架 — CLI 演示         ║");
     println!("  ╚══════════════════════════════════╝");
-    demo_core_types()?;
-    demo_errors()?;
+    demo_core_types();
+    demo_errors();
     demo_state();
     demo_flex();
     demo_settings()?;
     demo_middleware();
     demo_file_service()?;
     demo_theme();
-    demo_graphics_engine();
+    demo_graphics_engine()?;
     demo_di_container();
     println!("\n  ╔══════════════════════════════════╗");
     println!("  ║   全部演示完成！                  ║");

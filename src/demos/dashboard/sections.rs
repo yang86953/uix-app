@@ -8,15 +8,15 @@ use uix::ui::{
     Select, Skeleton, SkeletonShape, Slider, Spin, Switch, Table, TableColumn, Tag, TagColor,
     Tooltip, TooltipPlacement, Space, SpaceSize, Popover, Popconfirm,
 };
-use super::{iw, sub, row, col, stat_card, wrap_page};
+use super::{INNER_W, sub, row, col, stat_card, wrap_page};
 
 // ── Page 0: Dashboard ──
 
 pub fn page_dashboard(tk: &DesignTokens) -> WidgetNode {
     let mut out = Vec::new();
-    out.push(Space::new().size(SpaceSize::Small).width(iw()).height(12.0).into_node());
+    out.push(Space::new().size(SpaceSize::Small).width(INNER_W).height(12.0).into_node());
     out.push(sub(tk, "概览 — 统计卡片").into_node());
-    out.push(Space::new().size(SpaceSize::Small).width(iw()).height(110.0)
+    out.push(Space::new().size(SpaceSize::Small).width(INNER_W).height(110.0)
         .direction(FlexDirection::Row).align(AlignItems::Stretch)
         .child(stat_card(tk, "Total Users", "12,834", tk.color_primary, 2))
         .child(stat_card(tk, "Revenue", "$8,291", tk.color_success, 1))
@@ -30,7 +30,7 @@ pub fn page_dashboard(tk: &DesignTokens) -> WidgetNode {
 
 pub fn page_typography(tk: &DesignTokens) -> WidgetNode {
     let mut out = Vec::new();
-    out.push(Space::new().size(SpaceSize::Small).width(iw()).height(12.0).into_node());
+    out.push(Space::new().size(SpaceSize::Small).width(INNER_W).height(12.0).into_node());
     out.push(sub(tk, "字体大小").into_node());
     out.push(row(36.0)
         .child(Label::new("12px 小号").color(tk.color_text).font_size(12.0))
@@ -59,7 +59,7 @@ pub fn page_typography(tk: &DesignTokens) -> WidgetNode {
 
 pub fn page_buttons(tk: &DesignTokens) -> WidgetNode {
     let mut out = Vec::new();
-    out.push(Space::new().size(SpaceSize::Small).width(iw()).height(12.0).into_node());
+    out.push(Space::new().size(SpaceSize::Small).width(INNER_W).height(12.0).into_node());
     out.push(sub(tk, "5 种变体 × 3 种尺寸").into_node());
     for (label, h, sz) in [("Small", 28.0, ButtonSize::Small), ("Middle", 36.0, ButtonSize::Middle), ("Large", 44.0, ButtonSize::Large)] {
         out.push(sub(tk, label).into_node());
@@ -83,7 +83,7 @@ pub fn page_buttons(tk: &DesignTokens) -> WidgetNode {
 
 pub fn page_inputs(tk: &DesignTokens) -> WidgetNode {
     let mut out = Vec::new();
-    out.push(Space::new().size(SpaceSize::Small).width(iw()).height(12.0).into_node());
+    out.push(Space::new().size(SpaceSize::Small).width(INNER_W).height(12.0).into_node());
     out.push(sub(tk, "输入框 — 3 种尺寸").into_node());
     out.push(row(28.0)
         .child(Input::new("小型...").size(InputSize::Small))
@@ -140,11 +140,11 @@ pub fn page_inputs(tk: &DesignTokens) -> WidgetNode {
 
 pub fn page_data_display(tk: &DesignTokens) -> WidgetNode {
     let mut out = Vec::new();
-    out.push(Space::new().size(SpaceSize::Small).width(iw()).height(12.0).into_node());
+    out.push(Space::new().size(SpaceSize::Small).width(INNER_W).height(12.0).into_node());
 
-    let c4 = (iw() - 24.0) / 4.0;
+    let c4 = (INNER_W - 24.0) / 4.0;
     out.push(sub(tk, "卡片 — 阴影层级 0 ~ 3").into_node());
-    out.push(Space::new().size(SpaceSize::Middle).width(iw()).height(130.0)
+    out.push(Space::new().size(SpaceSize::Middle).width(INNER_W).height(130.0)
         .direction(FlexDirection::Row).align(AlignItems::Stretch)
         .child(Card::new().title("Elevation 0").elevation(0).bordered(true).size(c4, 120.0)
             .child(Label::new("有边框，无阴影").color(tk.color_text_tertiary).font_size(12.0)))
@@ -158,15 +158,15 @@ pub fn page_data_display(tk: &DesignTokens) -> WidgetNode {
 
     out.push(sub(tk, "卡片 — 悬停与空状态").into_node());
     out.push(row(100.0).align(AlignItems::Stretch)
-        .child(Card::new().title("Hoverable Card").elevation(1).hoverable().size((iw() - 10.0) / 2.0, 90.0)
+        .child(Card::new().title("Hoverable Card").elevation(1).hoverable().size((INNER_W - 10.0) / 2.0, 90.0)
             .child(Label::new("悬停变亮").color(tk.color_text_tertiary).font_size(12.0)))
-        .child(Card::new().title("Empty List").elevation(1).size((iw() - 10.0) / 2.0, 90.0)
+        .child(Card::new().title("Empty List").elevation(1).size((INNER_W - 10.0) / 2.0, 90.0)
             .child(Label::new("暂无数据").color(tk.color_text_quaternary).font_size(14.0)))
         .into_node());
 
     out.push(sub(tk, "柱状图 — 月活跃用户").into_node());
     out.push(BarChart::new()
-        .width(iw()).height(180.0).show_value(true)
+        .width(INNER_W).height(180.0).show_value(true)
         .data(vec![
             BarData::new("Jan", 420.0, tk.color_primary),
             BarData::new("Feb", 380.0, tk.color_primary),
@@ -179,7 +179,7 @@ pub fn page_data_display(tk: &DesignTokens) -> WidgetNode {
         ]).into_node());
 
     out.push(sub(tk, "饼图 — 浏览器市场份额").into_node());
-    out.push(uix::tree! { Container::new().size(iw(), 220.0).dir(FlexDirection::Row) => [
+    out.push(uix::tree! { Container::new().size(INNER_W, 220.0).dir(FlexDirection::Row) => [
         PieChart::new().size(180.0).data(vec![
             PieData::new("Chrome",  65.0, tk.color_primary),
             PieData::new("Firefox", 15.0, tk.color_success),
@@ -199,7 +199,7 @@ pub fn page_data_display(tk: &DesignTokens) -> WidgetNode {
 
     out.push(sub(tk, "折线图 — CPU 温度").into_node());
     out.push(LineChart::new()
-        .width(iw()).height(160.0).line_color(tk.color_error)
+        .width(INNER_W).height(160.0).line_color(tk.color_error)
         .show_dots(true).show_grid(true).line_width(2.0)
         .data(vec![
             LineData::new("00:00", 42.0), LineData::new("01:00", 44.0),
@@ -287,10 +287,10 @@ pub fn page_data_display(tk: &DesignTokens) -> WidgetNode {
 
 pub fn page_feedback(tk: &DesignTokens) -> WidgetNode {
     let mut out = Vec::new();
-    out.push(Space::new().size(SpaceSize::Small).width(iw()).height(12.0).into_node());
+    out.push(Space::new().size(SpaceSize::Small).width(INNER_W).height(12.0).into_node());
 
     out.push(sub(tk, "Alert — 4 types").into_node());
-    out.push(Space::new().size(SpaceSize::Small).width(iw()).height(120.0)
+    out.push(Space::new().size(SpaceSize::Small).width(INNER_W).height(120.0)
         .direction(FlexDirection::Column)
         .child(Alert::new("Success: Operation completed").type_(AlertType::Success))
         .child(Alert::new("Info: This is an information message").type_(AlertType::Info))
@@ -299,7 +299,7 @@ pub fn page_feedback(tk: &DesignTokens) -> WidgetNode {
         .into_node());
 
     out.push(sub(tk, "Alert — with description").into_node());
-    out.push(Space::new().size(SpaceSize::Small).width(iw()).height(90.0)
+    out.push(Space::new().size(SpaceSize::Small).width(INNER_W).height(90.0)
         .direction(FlexDirection::Column)
         .child(Alert::new("Update available").description("Version 2.0.0 is ready to install").type_(AlertType::Info).closable())
         .child(Alert::new("Connection lost").description("Attempting to reconnect...").type_(AlertType::Warning))
@@ -337,11 +337,11 @@ pub fn page_feedback(tk: &DesignTokens) -> WidgetNode {
         .into_node());
 
     out.push(sub(tk, "模态对话框").into_node());
-    out.push(uix::tree! { Container::new().size(iw(), 60.0).bg(tk.color_bg_elevated)
+    out.push(uix::tree! { Container::new().size(INNER_W, 60.0).bg(tk.color_bg_elevated)
         .rounded(tk.border_radius_lg).dir(FlexDirection::Row).pad(uix::base::EdgeInsets::uniform(12.0)) => [
         Icon::new("layout").size(24.0),
         Container::new().size(12.0, 0.0),
-        uix::tree! { Container::new().size(iw() - 80.0, 36.0).dir(FlexDirection::Column) => [
+        uix::tree! { Container::new().size(INNER_W - 80.0, 36.0).dir(FlexDirection::Column) => [
             Label::new("Modal::new(\"Title\").show()").color(tk.color_text).font_size(14.0),
             Label::new("Use .open() / .close() at runtime.").color(tk.color_text_tertiary).font_size(12.0),
         ]},

@@ -5,16 +5,18 @@
 //! 运行：`cargo run --bin uix-demo`
 
 pub mod more_pages;
+pub mod pages_extra;
 pub mod sections;
 pub mod widgets;
 
+use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
 use uix::app::{map_ui_event, App};
 use uix::base::KeyCode;
 use uix::base::{EdgeInsets, Rect};
 use uix::graphics::Color;
-use uix::graphics::{AlignItems, FlexDirection};
+use uix::graphics::{AlignItems, FlexDirection, GraphicsEngine};
 use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
 use uix::tree;
 use uix::ui::theme::{DesignTokens, DynTokens, Theme};
@@ -25,7 +27,8 @@ use uix::ui::{
     SharedActive, Space, SpaceSize,
 };
 
-use more_pages::{page_breadcrumb, page_colors, page_custom, page_layout, page_nav, page_tabs};
+use more_pages::{page_breadcrumb, page_nav, page_tabs};
+use pages_extra::{page_colors, page_custom, page_layout};
 use sections::{
     page_buttons, page_dashboard, page_data_display, page_feedback, page_inputs, page_typography,
 };
@@ -36,16 +39,17 @@ use widgets::ThemeToggle;
 const INIT_W: i32 = 1200;
 const INIT_H: i32 = 800;
 /// 侧边栏固定宽度。
-const SB: f32 = 200.0;
-
-/// 内容区宽度参考值（基于窗口初始宽度，用于组件首次构建时的尺寸参考）。
-pub fn cw() -> f32 {
-    INIT_W as f32 - SB
-}
+const SIDEBAR_W: f32 = 200.0;
+/// 内容区参考宽度（窗口初始宽度 - 侧边栏宽度）。
+pub const CONTENT_W: f32 = (INIT_W as f32) - SIDEBAR_W;
+/// 内容区水平内边距预留（左右合计，用于组件首次构建时的尺寸参考）。
+const CONTENT_PAD_H: f32 = 40.0;
 /// 内容区内边距后的可用宽度（用于组件首次构建时的尺寸参考）。
-pub fn iw() -> f32 {
-    cw() - 40.0
-}
+pub const INNER_W: f32 = CONTENT_W - CONTENT_PAD_H;
+/// 统计卡片之间的间距。
+const STAT_CARD_GAP: f32 = 8.0;
+/// 统计卡片行高。
+const STAT_CARD_H: f32 = 100.0;
 
 /// 每页的标题信息（图标名, 标签文本）。
 pub const PAGE_TITLES: &[(&str, &str)] = &[
@@ -81,7 +85,7 @@ pub fn sub(tk: &DesignTokens, text: &str) -> Label {
 pub fn row(h: f32) -> Space {
     Space::new()
         .size(SpaceSize::Small)
-        .width(iw())
+        .width(INNER_W)
         .height(h)
         .direction(FlexDirection::Row)
         .align(AlignItems::Center)
@@ -89,7 +93,7 @@ pub fn row(h: f32) -> Space {
 pub fn col(h: f32) -> Space {
     Space::new()
         .size(SpaceSize::Small)
-        .width(iw())
+        .width(INNER_W)
         .height(h)
         .direction(FlexDirection::Column)
         .align(AlignItems::Stretch)
@@ -97,12 +101,12 @@ pub fn col(h: f32) -> Space {
 
 /// 统计卡片
 pub fn stat_card(tk: &DesignTokens, title: &str, value: &str, color: Color, elev: u8) -> Card {
-    let w = (iw() - 24.0) / 4.0;
+    let card_w = (INNER_W - STAT_CARD_GAP * 3.0) / 4.0;
     Card::new()
         .title(title)
         .elevation(elev)
         .hoverable()
-        .size(w, 100.0)
+        .size(card_w, STAT_CARD_H)
         .child(Label::new(value).color(color).font_size(26.0))
         .child(
             Label::new(title)
@@ -127,7 +131,7 @@ pub fn wrap_page(content: Vec<WidgetNode>) -> WidgetNode {
         vec![WidgetNode::new(
             Box::new(
                 Container::new()
-                    .size(iw(), 0.0)
+                    .size(INNER_W, 0.0)
                     .dir(FlexDirection::Column)
                     .gap(GAP)
                     .pad(EdgeInsets::new(8.0, 4.0, 16.0, 10.0)),
@@ -162,6 +166,32 @@ fn build_page(page_index: usize, tk: &DesignTokens) -> WidgetNode {
 // UI 组装
 // ════════════════════════════════════════════════════════════════════════════
 
+/// 根据当前状态重建 widget tree，同步 nav_active 和 ThemeToggle 状态。
+///
+/// 返回新的 `SharedActive`（调用方需要将其写入 nav_active 变量）。
+fn rebuild_tree(
+    tree: &mut WidgetTree,
+    eng: &mut dyn GraphicsEngine,
+    dyn_tokens: &DynTokens,
+    dark_mode: &Cell<bool>,
+    page_index: usize,
+) -> SharedActive {
+    let tk = dyn_tokens.snapshot();
+    let (new_root, new_active) = build_demo_tree(&tk, page_index);
+    tree.build(new_root);
+    // 重建后恢复 root frame 为实际窗口尺寸
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
+    }
+    tree.layout();
+    // 同步 ThemeToggle 状态到重建后的树
+    tree.find_by_type_and_modify::<ThemeToggle>(|w| {
+        w.dark.set(dark_mode.get());
+    });
+    tree.mark_full_frame_dirty();
+    new_active
+}
+
 /// 构建完整的 demo widget tree（侧边栏 + 内容区 + 页面标题）。
 ///
 /// 页面标题固定在内容区顶部（ScrollView 外部），不受滚动影响。
@@ -180,7 +210,7 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
         .item(" 主题色", "palette")
         .item(" 自定义", "settings")
         .active_index(active_page)
-        .width(SB);
+        .width(SIDEBAR_W);
     let nav_active = nav.active().clone();
     let nav_node = nav.build(tk);
     // 页面标题固定在 ScrollView 外部
@@ -227,17 +257,14 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
 pub fn run_gui_demo() {
     let tk = DesignTokens::antd_light();
     let (root_node, nav_active) = build_demo_tree(&tk, 0);
-    let nav_active: Rc<std::cell::RefCell<uix::ui::widgets::nav::SharedActive>> =
-        Rc::new(std::cell::RefCell::new(nav_active));
     let mut tree = WidgetTree::new();
     tree.build(root_node);
 
-    // 记录上一次激活索引，变化时重建页面
-    let prev_active = std::cell::Cell::new(0usize);
+    // 统一的应用运行时状态
+    let state = DemoState::new(nav_active);
 
     // 使用 DynTokens 实现运行时主题切换
     let dyn_tokens = Arc::new(DynTokens::new(DesignTokens::antd_light()));
-    let dark_mode = std::cell::Cell::new(false);
     let mut app = App::new();
     app.title("UIX — 组件库");
 
@@ -246,16 +273,9 @@ pub fn run_gui_demo() {
         None => return,
     };
 
-    // 加载 Lucide 图标字体（通过 downcast 访问 FontService）
+    // 加载 Lucide 图标字体（通过 GraphicsEngine trait 的 load_font 方法）
     if let Ok(ttf) = std::fs::read("assets/fonts/lucide.ttf") {
-        if let Some(sw) = engine
-            .as_any_mut()
-            .downcast_mut::<uix::graphics::software_engine::SoftwareEngine>()
-        {
-            init_lucide_font(&ttf, &mut sw.font_service);
-        } else {
-            log::warn!("Engine is not SoftwareEngine — Lucide font not loaded");
-        }
+        init_lucide_font(&ttf, &mut *engine);
     } else {
         log::warn!("Lucide font not found at assets/fonts/lucide.ttf — icons will be blank");
     }
@@ -284,47 +304,95 @@ pub fn run_gui_demo() {
             tree.find_by_type_and_modify::<ThemeToggle>(|w| {
                 new_dark = w.dark.get();
             });
-            if new_dark != dark_mode.get() {
-                dark_mode.set(new_dark);
+            if new_dark != state.dark_mode.get() {
+                state.dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
-                let new_tk = dyn_tokens.snapshot();
-                let (new_root, new_active) = build_demo_tree(&new_tk, prev_active.get());
-                *nav_active.borrow_mut() = new_active;
-                tree.build(new_root);
-                // 重建后恢复 root frame 为实际窗口尺寸
-                if let Some(root) = tree.root_mut() {
-                    root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
-                }
-                tree.layout();
-                // 同步新树中 ThemeToggle 的状态
-                tree.find_by_type_and_modify::<ThemeToggle>(|w| {
-                    w.dark.set(dark_mode.get());
-                });
-                tree.mark_full_frame_dirty();
+                let new_active = rebuild_tree(
+                    tree, eng, &dyn_tokens, &state.dark_mode, state.prev_active.get(),
+                );
+                *state.nav_active.borrow_mut() = new_active;
             }
 
             // ── 导航切换 → 重建内容页 ──
-            let active = nav_active.borrow().get();
-            if active != prev_active.get() {
-                prev_active.set(active);
-                let tk = dyn_tokens.snapshot();
-                let (new_root, new_active) = build_demo_tree(&tk, active);
-                *nav_active.borrow_mut() = new_active;
-                tree.build(new_root);
-                // 重建后恢复 root frame 为实际窗口尺寸
-                if let Some(root) = tree.root_mut() {
-                    root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
-                }
-                tree.layout();
-                // 同步 ThemeToggle 状态到重建后的树
-                tree.find_by_type_and_modify::<ThemeToggle>(|w| {
-                    w.dark.set(dark_mode.get());
-                });
-                tree.mark_full_frame_dirty();
+            let active = state.nav_active.borrow().get();
+            if active != state.prev_active.get() {
+                state.prev_active.set(active);
+                let new_active = rebuild_tree(
+                    tree, eng, &dyn_tokens, &state.dark_mode, active,
+                );
+                *state.nav_active.borrow_mut() = new_active;
             }
         },
     );
     
     engine.shutdown();
     std::process::exit(exit_code);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 运行时状态
+// ════════════════════════════════════════════════════════════════════════════
+
+/// Demo 应用的运行时状态集合。
+///
+/// 将分散的 `Cell`/`RefCell` 统一到单一结构体中，
+/// 替代原先散落在 `run_gui_demo` 中的 4 个独立状态变量。
+struct DemoState {
+    /// 上一次激活的页面索引（检测导航变化）。
+    prev_active: Cell<usize>,
+    /// 当前是否为暗色模式。
+    dark_mode: Cell<bool>,
+    /// 导航栏的共享激活状态引用。
+    nav_active: Rc<std::cell::RefCell<SharedActive>>,
+}
+
+impl DemoState {
+    fn new(nav_active: SharedActive) -> Self {
+        Self {
+            prev_active: Cell::new(0),
+            dark_mode: Cell::new(false),
+            nav_active: Rc::new(std::cell::RefCell::new(nav_active)),
+        }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 测试
+// ════════════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 验证布局常量的计算一致性。
+    #[test]
+    fn test_layout_constants() {
+        // CONTENT_W = INIT_W - SIDEBAR_W = 1200 - 200 = 1000
+        assert_eq!(CONTENT_W, 1000.0);
+        // INNER_W = CONTENT_W - CONTENT_PAD_H = 1000 - 40 = 960
+        assert_eq!(INNER_W, 960.0);
+    }
+
+    /// 验证统计卡片宽度计算正确（4 列 + 3 个间隙）。
+    #[test]
+    fn test_stat_card_width_calculation() {
+        let expected_w = (INNER_W - STAT_CARD_GAP * 3.0) / 4.0;
+        // 960 - 24 = 936, / 4 = 234
+        assert_eq!(expected_w, 234.0);
+    }
+
+    /// 验证 PAGE_TITLES 的索引安全性。
+    #[test]
+    fn test_page_titles_len() {
+        assert_eq!(PAGE_TITLES.len(), 12);
+    }
+
+    /// 验证所有页面索引在 build_page 中都有对应分支。
+    #[test]
+    fn test_build_page_all_indices() {
+        let tk = DesignTokens::antd_light();
+        for i in 0..PAGE_TITLES.len() {
+            let _node = build_page(i, &tk);
+        }
+    }
 }

@@ -365,6 +365,10 @@ impl GraphicsEngine for SoftwareEngine {
 
     // ── 渲染帧 ──
 
+    fn load_font(&mut self, data: &[u8]) -> Result<FontHandle, Error> {
+        self.font_service.load_font(data)
+    }
+
     /// 返回引擎持有的字体服务引用（供 LayerTree 等组件使用）。
     fn font_service(&self) -> &FontService {
         &self.font_service

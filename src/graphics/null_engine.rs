@@ -5,8 +5,8 @@ use crate::base::{Rect, Size};
 use crate::diag::{info_fn, Errc, Error};
 use crate::graphics::font_service::FontService;
 use crate::graphics::{
-    BlendMode, Color, DirtyRegion, GradientDirection, GraphicsEngine, ImageHandle, Radius,
-    Transform,
+    BlendMode, Color, DirtyRegion, FontHandle, GradientDirection, GraphicsEngine, ImageHandle,
+    Radius, Transform,
 };
 
 /// A GraphicsEngine that does nothing — useful as a compile-time stub
@@ -177,6 +177,10 @@ impl GraphicsEngine for NullEngine {
     fn set_supersample_level(&mut self, _level: u8) {}
     fn supersample_level(&self) -> u8 {
         0
+    }
+
+    fn load_font(&mut self, data: &[u8]) -> Result<FontHandle, Error> {
+        self.font_service.load_font(data)
     }
 
     fn font_service(&self) -> &FontService {

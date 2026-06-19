@@ -14,7 +14,7 @@ use crate::diag::Error;
 use crate::graphics::font_service::FontService;
 use crate::graphics::layer::LayerTree;
 use crate::graphics::types::*;
-use crate::graphics::{Color, DirtyRegion};
+use crate::graphics::{Color, DirtyRegion, FontHandle};
 use crate::ui::theme::Theme;
 use crate::ui::widget::WidgetTree;
 
@@ -172,6 +172,16 @@ pub trait GraphicsEngine: 'static {
     fn set_supersample_level(&mut self, _level: u8) {}
     fn supersample_level(&self) -> u8 {
         0
+    }
+
+    /// 加载字体数据到引擎的字体服务中。
+    ///
+    /// 返回一个不透明的 `FontHandle`，后续文本操作可通过此句柄引用该字体。
+    /// 这是 `font_service().load_font()` 的 trait 层封装，避免调用方
+    /// 通过 downcast 直接访问内部 FontService。
+    fn load_font(&mut self, _data: &[u8]) -> Result<FontHandle, Error> {
+        // 默认实现返回未实现错误 —— 具体引擎应覆盖此方法
+        Err(Error::not_implemented("load_font"))
     }
 
     /// 返回引擎持有的字体服务引用（供 LayerTree 等组件使用）。
