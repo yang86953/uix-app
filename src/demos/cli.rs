@@ -1,7 +1,5 @@
 //! CLI 演示 — 从命令行运行所有主要 UIX 子系统的功能演示。
 
-#![allow(dead_code)]
-
 use std::cell::Cell;
 use uix::diag::log::{info_fn, Level, Logger};
 use uix::diag::{Errc, Error};
@@ -19,6 +17,7 @@ use uix::ui::Theme;
 
 // ── Logger ────────────────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 pub fn init_logger() {
     Logger::instance().set_level(Level::Info);
     info_fn("演示日志初始化完成");

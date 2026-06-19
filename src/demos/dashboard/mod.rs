@@ -117,7 +117,7 @@ pub fn stat_card(tk: &DesignTokens, title: &str, value: &str, color: Color, elev
 
 /// 把内容列表包装进 ScrollView（不含 page_title，title 由 build_demo_tree 在外部添加）
 /// 末尾添加 flex-grow 占位容器，确保页面内容占满 ScrollView 可视高度。
-pub fn wrap_page(_tk: &DesignTokens, content: Vec<WidgetNode>) -> WidgetNode {
+pub fn wrap_page(content: Vec<WidgetNode>) -> WidgetNode {
     const GAP: f32 = 8.0;
     let mut children = content;
     // 末尾占位：flex-grow 占满 Column 剩余空间，短页面底部不空
@@ -128,10 +128,8 @@ pub fn wrap_page(_tk: &DesignTokens, content: Vec<WidgetNode>) -> WidgetNode {
             Box::new(
                 Container::new()
                     .size(iw(), 0.0)
-                    .bg(uix::graphics::Color::from_rgba(200, 255, 200, 80))
                     .dir(FlexDirection::Column)
                     .gap(GAP)
-                    .border(uix::graphics::Color::from_rgba(0, 200, 0, 200), 2.0)
                     .pad(EdgeInsets::new(8.0, 4.0, 16.0, 10.0)),
             ),
             children,
@@ -290,7 +288,7 @@ pub fn run_gui_demo() {
                 dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
                 let new_tk = dyn_tokens.snapshot();
-                let (new_root, new_active) = build_demo_tree(&new_tk, 0);
+                let (new_root, new_active) = build_demo_tree(&new_tk, prev_active.get());
                 *nav_active.borrow_mut() = new_active;
                 tree.build(new_root);
                 // 重建后恢复 root frame 为实际窗口尺寸
@@ -326,7 +324,7 @@ pub fn run_gui_demo() {
             }
         },
     );
-
+    
     engine.shutdown();
     std::process::exit(exit_code);
 }

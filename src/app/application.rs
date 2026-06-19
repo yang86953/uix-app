@@ -289,7 +289,7 @@ impl App {
             height,
             map_event,
             on_exit,
-            |_, _| {},
+            |_, _, _| {},
         );
         engine.shutdown();
         exit_code
@@ -309,7 +309,7 @@ impl App {
     where
         M: Fn(&UiEvent) -> Option<WidgetEvent>,
         X: Fn(&UiEvent) -> bool,
-        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine),
+        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn crate::platform::Platform),
     {
         // 使用 App 的 theme 字段创建运行时动态主题
         let theme_cell = RefCell::new(self.theme.clone());
@@ -340,7 +340,7 @@ impl App {
     where
         M: Fn(&UiEvent) -> Option<WidgetEvent>,
         X: Fn(&UiEvent) -> bool,
-        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine),
+        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn crate::platform::Platform),
     {
         if self.window.is_none() {
             self.create_window("", width, height);

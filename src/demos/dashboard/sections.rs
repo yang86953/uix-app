@@ -23,7 +23,7 @@ pub fn page_dashboard(tk: &DesignTokens) -> WidgetNode {
         .child(stat_card(tk, "Orders", "1,289", tk.color_warning, 1))
         .child(stat_card(tk, "Growth", "12.5%", tk.color_info, 1))
         .into_node());
-    wrap_page(tk, out)
+    wrap_page(out)
 }
 
 // ── Page 1: Typography ──
@@ -52,7 +52,7 @@ pub fn page_typography(tk: &DesignTokens) -> WidgetNode {
         .child(Label::new("Error").color(tk.color_error).font_size(14.0))
         .child(Label::new("Info").color(tk.color_info).font_size(14.0))
         .into_node());
-    wrap_page(tk, out)
+    wrap_page(out)
 }
 
 // ── Page 2: Buttons ──
@@ -76,7 +76,7 @@ pub fn page_buttons(tk: &DesignTokens) -> WidgetNode {
         .child(Button::new("保存").primary().size(ButtonSize::Middle))
         .child(Button::new("取消").size(ButtonSize::Middle))
         .into_node());
-    wrap_page(tk, out)
+    wrap_page(out)
 }
 
 // ── Page 3: Inputs & Selection ──
@@ -133,7 +133,7 @@ pub fn page_inputs(tk: &DesignTokens) -> WidgetNode {
         .child(Rate::new().count(7).value(5))
         .child(Rate::new().value(2).allow_half())
         .into_node());
-    wrap_page(tk, out)
+    wrap_page(out)
 }
 
 // ── Page 4: Data Display ──
@@ -280,7 +280,7 @@ pub fn page_data_display(tk: &DesignTokens) -> WidgetNode {
                 vec!["Diana".to_string(), "31".to_string(), "Guangzhou".to_string(), "Design".to_string()],
             ]))
         .into_node());
-    wrap_page(tk, out)
+    wrap_page(out)
 }
 
 // ── Page 5: Feedback ──
@@ -346,5 +346,5 @@ pub fn page_feedback(tk: &DesignTokens) -> WidgetNode {
             Label::new("Use .open() / .close() at runtime.").color(tk.color_text_tertiary).font_size(12.0),
         ]},
     ]}.into_node());
-    wrap_page(tk, out)
+    wrap_page(out)
 }
