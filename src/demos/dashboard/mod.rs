@@ -31,12 +31,18 @@ use sections::{
 };
 use widgets::ThemeToggle;
 
-const GW: i32 = 1100;
-const GH: i32 = 740;
-const SB: f32 = 200.0; // sidebar width
+/// 窗口初始尺寸（引擎缓冲和窗口创建时的参考值，非硬编码给 widget 布局）。
+/// widget 布局由 flex-grow/stretch 等布局系统决定，不使用这些常量。
+const INIT_W: i32 = 1200;
+const INIT_H: i32 = 800;
+/// 侧边栏固定宽度。
+const SB: f32 = 200.0;
+
+/// 内容区宽度参考值（基于窗口初始宽度，用于组件首次构建时的尺寸参考）。
 pub fn cw() -> f32 {
-    GW as f32 - SB
+    INIT_W as f32 - SB
 }
+/// 内容区内边距后的可用宽度（用于组件首次构建时的尺寸参考）。
 pub fn iw() -> f32 {
     cw() - 40.0
 }
@@ -176,8 +182,7 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
         .item(" 主题色", "palette")
         .item(" 自定义", "settings")
         .active_index(active_page)
-        .width(SB)
-        .height(GH as f32);
+        .width(SB);
     let nav_active = nav.active().clone();
     let nav_node = nav.build(tk);
     // 页面标题固定在 ScrollView 外部
@@ -211,7 +216,8 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
     );
 
     let root = tree! {
-        Container::new().size(GW as f32, GH as f32).bg(tk.color_bg_layout).dir(FlexDirection::Row) => [
+        // Root 不使用固定 size()，由 flex_grow(1.0) 填满引擎缓冲
+        Container::new().flex_grow(1.0).bg(tk.color_bg_layout).dir(FlexDirection::Row) => [
             nav_node,
             content_container,
         ]
@@ -237,7 +243,7 @@ pub fn run_gui_demo() {
     let mut app = App::new();
     app.title("UIX — 组件库");
 
-    let mut engine = match app.take_engine(GW, GH) {
+    let mut engine = match app.take_engine(INIT_W, INIT_H) {
         Some(e) => e,
         None => return,
     };
@@ -262,8 +268,8 @@ pub fn run_gui_demo() {
     let exit_code = app.run_widget_with_tokens(
         &mut *engine,
         &mut tree,
-        GW,
-        GH,
+        INIT_W,
+        INIT_H,
         tc_ref,
         map_ui_event,
         |ev: &UiEvent| -> bool {
