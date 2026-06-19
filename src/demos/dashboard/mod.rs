@@ -110,9 +110,12 @@ pub fn stat_card(tk: &DesignTokens, title: &str, value: &str, color: Color, elev
 // ── 页面包装工具 ──
 
 /// 把内容列表包装进 ScrollView（不含 page_title，title 由 build_demo_tree 在外部添加）
-/// Container 高度由 Phase 2 底部向上传播自动扩展，无需预计算。
+/// 末尾添加 flex-grow 占位容器，确保页面内容占满 ScrollView 可视高度。
 pub fn wrap_page(_tk: &DesignTokens, content: Vec<WidgetNode>) -> WidgetNode {
     const GAP: f32 = 8.0;
+    let mut children = content;
+    // 末尾占位：flex-grow 占满 Column 剩余空间，短页面底部不空
+    children.push(Container::new().flex_grow(1.0).into_node());
     WidgetNode::new(
         Box::new(ScrollView::new(ScrollDirection::Both).flex_grow(1.0)),
         vec![WidgetNode::new(
@@ -125,7 +128,7 @@ pub fn wrap_page(_tk: &DesignTokens, content: Vec<WidgetNode>) -> WidgetNode {
                     .border(uix::graphics::Color::from_rgba(0, 200, 0, 200), 2.0)
                     .pad(EdgeInsets::new(8.0, 4.0, 16.0, 10.0)),
             ),
-            content,
+            children,
         )],
     )
 }
@@ -271,7 +274,7 @@ pub fn run_gui_demo() {
             }
             false
         },
-        move |tree, eng| {
+        move |tree, eng, _platform| {
             // ── 主题切换 ──
             let mut new_dark = false;
             tree.find_by_type_and_modify::<ThemeToggle>(|w| {
