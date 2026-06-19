@@ -9,6 +9,7 @@
 
 use std::cell::Cell;
 
+use crate::base::Rect;
 use crate::graphics::layer::LayerTree;
 use crate::graphics::{GraphicsEngine, RenderOutcome};
 use crate::platform::event::{UiEvent, UiEventPayload, UiEventType};
@@ -16,7 +17,7 @@ use crate::platform::Platform;
 use std::cell::RefCell;
 
 use crate::ui::theme::Theme;
-use crate::ui::widget::{WidgetEvent, WidgetTree};
+use crate::ui::widget::{WidgetCore, WidgetEvent, WidgetTree};
 use std::time::Instant;
 
 /// Event-driven application window.
@@ -85,7 +86,7 @@ impl Window {
     where
         M: Fn(&UiEvent) -> Option<WidgetEvent>,
         X: Fn(&UiEvent) -> bool,
-        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine),
+        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
     {
         self.running = true;
         let running_flag = Cell::new(true);
@@ -151,7 +152,30 @@ impl Window {
             keep_polling = tree.update(dt) || woke;
             tree.layout();
 
-            on_frame(tree, engine);
+            // 确保 root frame 始终填充引擎缓冲（兜底修复#100）
+            // 初始创建时 WM_SIZE 的 Resize 事件已设置 root frame 为窗口客户区尺寸，
+            // 此检查在 on_frame 树重建后也生效，确保重建后 root 填满引擎缓冲。
+            let need_relayout = tree.root_id().and_then(|rid| tree.get(rid)).map_or(false, |root| {
+                let engine_w = engine.width() as f32;
+                let engine_h = engine.height() as f32;
+                let rf = root.frame();
+                (rf.w - engine_w).abs() > 0.5 || (rf.h - engine_h).abs() > 0.5
+            });
+            if need_relayout {
+                if let Some(rid) = tree.root_id() {
+                    if let Some(root_mut) = tree.get_mut(rid) {
+                        root_mut.set_frame(Rect::new(
+                            0.0, 0.0,
+                            engine.width() as f32,
+                            engine.height() as f32,
+                        ));
+                    }
+                }
+                tree.mark_full_frame_dirty();
+                tree.layout();
+            }
+
+            on_frame(tree, engine, self.platform.as_mut());
 
             match engine.render_frame(tree, &mut layer_tree, theme, !rendered_first_frame, keep_polling) {
                 RenderOutcome::Present(damage) => {
