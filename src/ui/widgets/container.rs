@@ -168,6 +168,16 @@ impl Container {
         self.fixed_height = Some(h);
         self
     }
+    /// 便捷方法：单独设置宽度（用于 `ui!` 宏）。
+    pub fn w(mut self, v: f32) -> Self {
+        self.fixed_width = Some(v);
+        self
+    }
+    /// 便捷方法：单独设置高度（用于 `ui!` 宏）。
+    pub fn h(mut self, v: f32) -> Self {
+        self.fixed_height = Some(v);
+        self
+    }
     pub fn flex_grow(mut self, v: f32) -> Self {
         self.flex_grow = v;
         self

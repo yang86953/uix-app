@@ -18,3 +18,6 @@ pub mod widgets;
 
 mod api;
 pub use api::*;
+
+// 重新导出 proc-macro `ui!`
+pub use uix_macros::ui;

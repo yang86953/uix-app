@@ -635,10 +635,20 @@ dependencies = [
  "log",
  "rand",
  "serde_json",
+ "uix-macros",
  "unicode-linebreak",
  "wayland-client",
  "wayland-protocols",
  "windows",
+]
+
+[[package]]
+name = "uix-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

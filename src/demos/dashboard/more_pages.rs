@@ -13,22 +13,25 @@ use uix::ui::{
 // ── Page 6: Navigation ──
 
 pub fn page_nav(tk: &DesignTokens) -> WidgetNode {
+    use uix::ui;
     PageBuilder::new(tk)
         .gap()
         .section("Dropdown — 下拉菜单")
         .push(row(36.0).child(Dropdown::new("Actions").items(vec!["Edit", "Copy", "Delete", "Export"])))
         .section("侧边栏预览 (Navigation::build)")
-        .push(uix::tree! { Container::new().size(INNER_W, 200.0).bg(tk.color_bg_elevated)
-            .rounded(tk.border_radius_lg).dir(FlexDirection::Row)
-            .pad(uix::base::EdgeInsets::uniform(8.0)) => [
-            uix::tree! { Container::new().size(160.0, 180.0).dir(FlexDirection::Column) => [
-                Label::new("  Dashboard").color(tk.color_primary).font_size(13.0),
-                Space::new().size(SpaceSize::Small).width(160.0).height(24.0),
-                Label::new("  Settings").color(tk.color_text_secondary).font_size(13.0),
-                Space::new().size(SpaceSize::Small).width(160.0).height(24.0),
-                Label::new("  About").color(tk.color_text_secondary).font_size(13.0),
-            ]},
-        ]})
+        .push(ui! {
+            Container(bg: tk.color_bg_elevated, rounded: tk.border_radius_lg,
+                      dir: FlexDirection::Row, pad: uix::base::EdgeInsets::uniform(8.0),
+                      w: INNER_W, h: 200.0) {
+                Container(dir: FlexDirection::Column, w: 160.0, h: 180.0) {
+                    Label("  Dashboard", color: tk.color_primary, font_size: 13.0),
+                    Space(size: SpaceSize::Small, width: 160.0, height: 24.0),
+                    Label("  Settings", color: tk.color_text_secondary, font_size: 13.0),
+                    Space(size: SpaceSize::Small, width: 160.0, height: 24.0),
+                    Label("  About", color: tk.color_text_secondary, font_size: 13.0),
+                }
+            }
+        })
         .build()
 }
 

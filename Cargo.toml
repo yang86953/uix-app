@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
+uix-macros = { path = "uix-macros" }
 chrono = "0.4.45"
 bitflags = "2.13.0"
 rand = "0.10.1"
