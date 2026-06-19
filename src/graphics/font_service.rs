@@ -54,7 +54,9 @@ impl FontService {
     /// 加载字体数据，返回字体句柄。
     pub fn load_font(&mut self, data: &[u8]) -> Result<FontHandle, Error> {
         let handle = self.text_backend.load_font(data)?;
-        self.loaded_font_handle = handle;
+        // 注意：不更新 loaded_font_handle。loaded_font_handle 只由
+        // load_default_system_font() 设置为主字体句柄。图标字体等辅助字体
+        // 应通过 load_font() 加载但不应覆盖主字体句柄。
         Ok(handle)
     }
 
@@ -127,9 +129,10 @@ impl FontService {
                             if let Some(handle) = self.load_raw_font(data, size) {
                                 if !primary_loaded {
                                     primary_loaded = true;
+                                    self.loaded_font_handle = handle;
                                     crate::diag::log::info_fn(format!(
-                                        "Loaded system default font: {}",
-                                        path
+                                        "Loaded system default font: {} (handle={:?})",
+                                        path, handle
                                     ));
                                 } else {
                                     crate::diag::log::info_fn(format!(
