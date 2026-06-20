@@ -46,6 +46,7 @@ define_widget! {
             WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
             WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
             WidgetEvent::MouseDown { .. } => {
+                eprintln!("[TRACE:L1] NavItem[{}] MouseDown -> active_shared.set({})", self.index, self.index);
                 self.active_shared.set(self.index);
                 EventResult::Handled
             }

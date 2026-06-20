@@ -285,22 +285,28 @@ impl WaylandBackend {
         height: i32,
         dirty_rect: Option<(i32, i32, i32, i32)>,
     ) {
+        let _ppt0 = std::time::Instant::now();
+
         // Create/resize both buffers when dimensions change.
         if width != self.width
             || height != self.height
             || self.shm_buffers[0].is_none()
             || self.shm_buffers[1].is_none()
         {
+            eprintln!("[TIMING] create_shm_buffer start...");
+            let _t0 = std::time::Instant::now();
             self.width = width;
             self.height = height;
-            for buf in self.shm_buffers.iter_mut() {
+            for (i, buf) in self.shm_buffers.iter_mut().enumerate() {
                 if let Ok(new_buf) = Self::create_shm_buffer(&self._shm, width, height) {
                     *buf = Some(new_buf);
+                    eprintln!("[TIMING]   buffer[{}] created in {:.1}s", i, _t0.elapsed().as_secs_f32());
                 } else {
                     log::warn!("Wayland: SHM buffer {}x{} failed", width, height);
                     return;
                 }
             }
+            eprintln!("[TIMING] shm buffers done in {:.1}s", _t0.elapsed().as_secs_f32());
         }
 
         // Write to the buffer the compositor is NOT reading.
@@ -315,21 +321,23 @@ impl WaylandBackend {
             log::warn!("Wayland: write_pixels failed: {}", e);
             return;
         }
+        eprintln!("[TIMING]   write_pixels done in {:.1}s", _ppt0.elapsed().as_secs_f32());
 
         let surface = match self.surface.as_ref() {
             Some(s) => s,
             None => return,
         };
 
-        // Ensure persistent input region covers the full window area.
-        // Must be kept alive to avoid destroying it mid-frame (compositors may
-        // drop pending pointer events when the region object is destroyed).
-        if self.input_region.is_none() || self.width != width || self.height != height {
+        // 总是在 present_pixels 中创建新的输入区域并重新设置，
+        // 确保 compositor 在每次 buffer commit 时都能正确识别输入区域。
+        // 这是必要的因为有些 compositor 在首次 commit 没有 buffer 时
+        // 会丢弃提前设置的输入区域。
+        {
             let region = self._compositor.create_region();
             region.add(0, 0, width, height);
+            surface.set_input_region(Some(&region));
             self.input_region = Some(region);
         }
-        surface.set_input_region(self.input_region.as_ref().map(|r| &***r));
 
         surface.attach(Some(&shm.buffer), 0, 0);
         match dirty_rect {
@@ -341,6 +349,7 @@ impl WaylandBackend {
             }
         }
         surface.commit();
+        eprintln!("[TIMING] commit done, total={:.1}s", _ppt0.elapsed().as_secs_f32());
         self.active_buffer = write_idx;
 
         if !self.shown {
@@ -521,14 +530,16 @@ impl WaylandBackend {
                                     };
                                     let click_pos =
                                         pos.lock().map(|lp| lp.position).unwrap_or_default();
-                                    log::debug!(
-                                        "wl_pointer::Button({:?}, {:?}) at ({}, {})",
+                                    eprintln!(
+                                        "[TRACE:L4] wl_pointer::Button({:?}, {:?}) at ({:.1}, {:.1})",
                                         state, btn, click_pos.x, click_pos.y
                                     );
                                     if state == wl_pointer::ButtonState::Pressed {
                                         q.push_back(UiEvent::mouse_down(click_pos, btn));
+                                        eprintln!("[TRACE:L4]   -> UiEvent::mouse_down pushed");
                                     } else {
                                         q.push_back(UiEvent::mouse_up(click_pos, btn));
+                                        eprintln!("[TRACE:L4]   -> UiEvent::mouse_up pushed");
                                     }
                                 }
                                 wl_pointer::Event::Axis { axis, value, .. } => {
@@ -651,9 +662,15 @@ impl WaylandBackend {
         // Set window geometry so the compositor knows the input region
         xdg_surface.set_window_geometry(0, 0, width, height);
 
-        // Input region is set persistently in present_pixels on the first frame.
-        // At this point we leave it unset; the compositor will deliver pointer
-        // events once a buffer is committed with a valid input region.
+        // 在首次 commit 之前设置输入区域。虽然此时没有 buffer，但后续
+        // wl_pointer 代理创建时会检查 surface 的输入区域状态。提前设置确保
+        // compositor 在 get_pointer() 之后立即能发送 wl_pointer.enter。
+        {
+            let region = self._compositor.create_region();
+            region.add(0, 0, width, height);
+            surface.set_input_region(Some(&region));
+            self.input_region = Some(region);
+        }
 
         // First commit triggers xdg_surface.configure
         surface.commit();
@@ -885,6 +902,10 @@ impl IEventLoop for WaylandBackend {
             return false;
         }
         let mut q = self.events.lock().unwrap_or_else(|e| e.into_inner());
+        let count = q.len();
+        if count > 0 {
+            eprintln!("[TRACE:L4] poll_event: draining {} events", count);
+        }
         while let Some(event) = q.pop_front() {
             if !callback(&event) {
                 return false;

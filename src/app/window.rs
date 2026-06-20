@@ -130,16 +130,19 @@ impl Window {
         let collect = |ev: &UiEvent| {
             match ev.type_ {
                 UiEventType::WindowClose => {
+                    eprintln!("[TRACE:L3] collect: WindowClose -> exit");
                     running_flag.set(false);
                     return false;
                 }
                 _ => {
                     if on_exit(ev) {
+                        eprintln!("[TRACE:L3] collect: on_exit -> exit");
                         running_flag.set(false);
                         return false;
                     }
                 }
             }
+            eprintln!("[TRACE:L3] collect: {:?} pos={:?}", ev.type_, match &ev.payload { crate::platform::event::UiEventPayload::MouseButton(d) => Some(d.pos), _ => None });
             pending_events.borrow_mut().push(ev.clone());
             true
         };
@@ -162,8 +165,20 @@ impl Window {
             }
 
             // ═══════════════════════════════════════════════════════════
-            // [DBG] 打印帧号用于调试
+            // [TIMING] 帧耗时统计
             // ═══════════════════════════════════════════════════════════
+            let _frame_t0 = std::time::Instant::now();
+            let mut _last_tmark = _frame_t0;
+            macro_rules! _tmark {
+                ($label:expr) => {{
+                    let elapsed = _frame_t0.elapsed();
+                    let since_last = _last_tmark.elapsed();
+                    if elapsed.as_secs_f32() > 0.1 {
+                        eprintln!("[TIMING+] {}: total={:.1}s  step={:.1}s", $label, elapsed.as_secs_f32(), since_last.as_secs_f32());
+                    }
+                    _last_tmark = std::time::Instant::now();
+                }};
+            }
             {
                 use std::sync::atomic::{AtomicU64, Ordering};
                 static FRAME: AtomicU64 = AtomicU64::new(0);
@@ -179,6 +194,7 @@ impl Window {
             //      记录窗口状态变更（widget 树可监听 WidgetEvent 获取通知）
             //    - 其余事件通过 map_event 映射后分发给 widget 树
             // ═══════════════════════════════════════════════════════════
+            _tmark!("events");
             for ev in pending_events.borrow_mut().drain(..) {
                     if let UiEventType::WindowResize = ev.type_ {
                     if let UiEventPayload::Resize(ref d) = ev.payload {
@@ -200,7 +216,9 @@ impl Window {
                     }
                 }
                 if let Some(we) = map_event(&ev) {
+                    eprintln!("[TRACE:L3] dispatch: {:?}", we);
                     tree.dispatch_event(&we);
+                    eprintln!("[TRACE:L3] dispatch done");
                 }
             }
             eprintln!("[DBG]   events done");
@@ -269,6 +287,8 @@ impl Window {
                 || dirty_region.full_frame
                 || dirty_region.clear_required
                 || keep_polling;
+
+            _tmark!("pre-render");
 
             let outcome = if !need_render {
                 RenderOutcome::Idle
@@ -381,6 +401,7 @@ impl Window {
                     RenderOutcome::Present(damage)
                 }
             };
+            _tmark!("render-complete");
             eprintln!("[DBG]   render outcome done");
 
             // ── 呈现 ──
