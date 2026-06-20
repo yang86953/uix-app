@@ -144,7 +144,12 @@ impl App {
         } else {
             title
         };
-        window.create(t, width, height);
+        if !window.create(t, width, height) {
+            return Err(crate::diag::Error::new(
+                crate::diag::Errc::WindowCreationFailed,
+                "create_window: platform create_window failed",
+            ));
+        }
         self.window = Some(window);
         Ok(self)
     }
@@ -350,7 +355,10 @@ impl App {
         F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn crate::platform::Platform),
     {
         if self.window.is_none() {
-            self.create_window("", width, height);
+            if let Err(e) = self.create_window("", width, height) {
+                log::error!("App::run_widget_with_tokens: {}", e.short_what());
+                return 1;
+            }
         }
 
         match self.window.as_mut() {
@@ -374,6 +382,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
     match ev.type_ {
         UiEventType::MouseDown => {
             if let UiEventPayload::MouseButton(ref d) = ev.payload {
+                log::debug!("map_ui_event: MouseDown pos=({}, {}) btn={:?}", d.pos.x, d.pos.y, d.btn);
                 Some(WidgetEvent::MouseDown {
                     pos: d.pos,
                     button: d.btn,

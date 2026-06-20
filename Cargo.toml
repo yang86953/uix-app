@@ -33,7 +33,7 @@ features = [
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 libc = "0.2.186"
 wayland-client = { version = "=0.29.5", features = ["dlopen"] }
-wayland-protocols = { version = "=0.29.5", features = ["client"] }
+wayland-protocols = { version = "=0.29.5", features = ["client", "unstable_protocols"] }
 
 [[bin]]
 name = "uix-demo"

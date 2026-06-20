@@ -315,6 +315,7 @@ fn rebuild_tree(
         w.dark.set(dark_mode);
     });
     tree.mark_full_frame_dirty();
+
     new_active
 }
 

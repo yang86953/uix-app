@@ -93,6 +93,7 @@ impl Window {
     }
     pub fn close(&mut self) {
         self.running = false;
+        self.platform.destroy_window();
     }
     pub fn is_running(&self) -> bool {
         self.running
@@ -146,7 +147,9 @@ impl Window {
         while running_flag.get() {
             let mut woke = false;
             if first_frame || keep_polling {
-                self.platform.poll_event(&collect);
+                if !self.platform.poll_event(&collect) {
+                    break;
+                }
                 first_frame = false;
             } else {
                 let alive = self.platform.wait_event(&collect);
@@ -159,13 +162,25 @@ impl Window {
             }
 
             // ═══════════════════════════════════════════════════════════
+            // [DBG] 打印帧号用于调试
+            // ═══════════════════════════════════════════════════════════
+            {
+                use std::sync::atomic::{AtomicU64, Ordering};
+                static FRAME: AtomicU64 = AtomicU64::new(0);
+                let n = FRAME.fetch_add(1, Ordering::Relaxed);
+                eprintln!("[DBG] === Frame {} start, pending={} ===", n, pending_events.borrow().len());
+            }
+
+            // ═══════════════════════════════════════════════════════════
             // 1. 事件处理
             //    - WindowResize 驱动 engine.resize()（引擎缓冲须先于布局更新）
             //      这是 Window 层的正当编排职责，不是层混叠
+            //    - WindowMaximize/Minimize/Restore 调用对应平台方法并
+            //      记录窗口状态变更（widget 树可监听 WidgetEvent 获取通知）
             //    - 其余事件通过 map_event 映射后分发给 widget 树
             // ═══════════════════════════════════════════════════════════
             for ev in pending_events.borrow_mut().drain(..) {
-                if let UiEventType::WindowResize = ev.type_ {
+                    if let UiEventType::WindowResize = ev.type_ {
                     if let UiEventPayload::Resize(ref d) = ev.payload {
                         if d.width > 0 && d.height > 0 {
                             engine.resize(d.width, d.height);
@@ -188,6 +203,7 @@ impl Window {
                     tree.dispatch_event(&we);
                 }
             }
+            eprintln!("[DBG]   events done");
 
             // ═══════════════════════════════════════════════════════════
             // 2. 动画推进 + 布局
@@ -196,8 +212,19 @@ impl Window {
             let now = Instant::now();
             let dt = (now - last_frame).as_secs_f32().min(0.05);
             last_frame = now;
+            let t0 = Instant::now();
             keep_polling = tree.update(dt) || woke;
+            let t1 = Instant::now();
+            if t1 - t0 > std::time::Duration::from_millis(100) {
+                log::warn!("EventLoop: tree.update took {}ms", (t1 - t0).as_millis());
+            }
+            eprintln!("[DBG]   update done");
             tree.layout();
+            let t2 = Instant::now();
+            if t2 - t1 > std::time::Duration::from_millis(100) {
+                log::warn!("EventLoop: tree.layout took {}ms", (t2 - t1).as_millis());
+            }
+            eprintln!("[DBG]   layout done");
 
             // ═══════════════════════════════════════════════════════════
             // 3. 引擎尺寸 ↔ root frame 同步保障
@@ -223,9 +250,17 @@ impl Window {
                 tree.mark_full_frame_dirty();
                 tree.layout();
             }
+            eprintln!("[DBG]   relayout check done");
 
+            let t_frame = Instant::now();
             on_frame(tree, engine, self.platform.as_mut());
+            eprintln!("[DBG]   on_frame done");
+            let t3 = Instant::now();
+            if t3 - t_frame > std::time::Duration::from_millis(100) {
+                log::warn!("EventLoop: on_frame took {}ms", (t3 - t_frame).as_millis());
+            }
 
+            eprintln!("[DBG]   pre-render check");
             // ── FrameGraph 驱动渲染（替代 engine.render_frame） ────
             let dirty_region = tree.dirty_region();
             let first_render = !rendered_first_frame;
@@ -307,6 +342,7 @@ impl Window {
                     for &pid in &plan.execution_order {
                         if pid == geom_pid {
                             // ── Pass 1: Geometry ──
+                            let t_render = Instant::now();
                             engine.begin_frame(&region);
                             let lt_ref = theme.borrow();
                             let tokens = lt_ref.tokens();
@@ -314,8 +350,12 @@ impl Window {
                             layer_tree.render(engine, tree, tokens, lt_font);
                             drop(lt_ref);
                             engine.end_frame(&region);
+                            if t_render.elapsed() > std::time::Duration::from_millis(100) {
+                                log::warn!("EventLoop: Geometry pass took {}ms", t_render.elapsed().as_millis());
+                            }
                         } else if pid == over_pid {
                             // ── Pass 2: Overlay ──
+                            let t_over = Instant::now();
                             let overlay_region = DirtyRegion::empty();
                             engine.begin_frame(&overlay_region);
                             let theme_ref = theme.borrow();
@@ -324,6 +364,9 @@ impl Window {
                             layer_tree.render_overlays(engine, tree, tokens, lt_font, self.debug_mode.get());
                             drop(theme_ref);
                             engine.end_frame(&overlay_region);
+                            if t_over.elapsed() > std::time::Duration::from_millis(100) {
+                                log::warn!("EventLoop: Overlay pass took {}ms", t_over.elapsed().as_millis());
+                            }
                         }
                     }
 
@@ -334,13 +377,16 @@ impl Window {
 
                     tree.reset_dirty();
                     self.rendered_first = true;
+                    eprintln!("[DBG]   render → Present");
                     RenderOutcome::Present(damage)
                 }
             };
+            eprintln!("[DBG]   render outcome done");
 
             // ── 呈现 ──
             match outcome {
                 RenderOutcome::Present(damage) => {
+                    let t_present = Instant::now();
                     let dirty = if rendered_first_frame { damage } else { None };
                     if !rendered_first_frame {
                         let _ = self.platform.present(
@@ -357,9 +403,14 @@ impl Window {
                         dirty,
                     );
                     rendered_first_frame = true;
+                    if t_present.elapsed() > std::time::Duration::from_millis(100) {
+                        log::warn!("EventLoop: present took {}ms", t_present.elapsed().as_millis());
+                    }
                 }
                 RenderOutcome::Idle => {}
             }
+
+            log::debug!("EventLoop: iteration end, dt={:.1}ms", last_frame.elapsed().as_secs_f32() * 1000.0);
 
             if keep_polling {
                 let frame_elapsed = last_frame.elapsed().as_secs_f32();

@@ -28,6 +28,10 @@ impl WindowsPlatform {
         match msg {
             WM_CLOSE => {
                 self.push_event(UiEvent::close());
+                unsafe {
+                    DestroyWindow(self.hwnd);
+                }
+                self.hwnd = ptr::null_mut();
                 0
             }
             WM_DESTROY => {

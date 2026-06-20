@@ -83,8 +83,17 @@ impl WidgetTree {
         id
     }
 
+    /// 重置所有指向旧 widget ID 的交互状态（树重建时使用）。
+    fn reset_interaction_state(&mut self) {
+        self.focused_widget = None;
+        self.hovered_widget = None;
+        self.mouse_down_target = None;
+        self.scroll_deltas.clear();
+    }
+
     pub fn set_root(&mut self, widget: Box<dyn Widget>) -> WidgetId {
         self.tree_version += 1;
+        self.reset_interaction_state();
         let children = widget.build();
         let id = self.alloc_id();
         let mut boxed = BoxedWidget::new(widget);

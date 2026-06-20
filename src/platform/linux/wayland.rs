@@ -18,13 +18,17 @@ use std::sync::{Arc, Mutex};
 use wayland_client::{
     protocol::{
         wl_buffer, wl_compositor, wl_data_device, wl_data_device_manager, wl_data_source,
-        wl_keyboard, wl_pointer, wl_seat, wl_shm, wl_shm_pool, wl_surface,
+        wl_keyboard, wl_pointer, wl_region, wl_seat, wl_shm, wl_shm_pool, wl_surface,
     },
     Display, EventQueue, GlobalManager, Main,
 };
 use wayland_protocols::misc::server_decoration::client::{
     org_kde_kwin_server_decoration::{Mode, OrgKdeKwinServerDecoration},
     org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager,
+};
+use wayland_protocols::unstable::xdg_decoration::v1::client::{
+    zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+    zxdg_toplevel_decoration_v1::{Mode as XdgDecoMode, ZxdgToplevelDecorationV1},
 };
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
@@ -104,17 +108,29 @@ pub struct WaylandBackend {
     // Server-side decoration (title bar with min/max/close)
     decoration_manager: Option<Main<OrgKdeKwinServerDecorationManager>>,
     decoration: Option<Main<OrgKdeKwinServerDecoration>>,
+    // xdg-decoration fallback (for GNOME/wlroots compositors)
+    xdg_decoration_manager: Option<Main<ZxdgDecorationManagerV1>>,
+    xdg_toplevel_decoration: Option<Main<ZxdgToplevelDecorationV1>>,
 
     // SHM double buffers — always compose into the buffer that the
     // compositor is NOT currently displaying, eliminating contention.
     shm_buffers: [Option<ShmBuffer>; 2],
     active_buffer: usize,
 
+    // Seat handle (must be kept alive for children pointer/keyboard/data_device to work)
+    seat: Option<Main<wl_seat::WlSeat>>,
+    // Pointer and keyboard proxy handles (must be kept alive for events to arrive)
+    pointer: Arc<Mutex<Option<Main<wl_pointer::WlPointer>>>>,
+    keyboard: Arc<Mutex<Option<Main<wl_keyboard::WlKeyboard>>>>,
+
     // Last pointer position (for Button events that lack position)
     last_pointer: Arc<Mutex<LastPointerState>>,
 
     // Currently pressed keys (for IKeyboard::is_down)
     keys_down: Arc<Mutex<HashSet<KeyCode>>>,
+
+    // Persistent input region (must stay alive between frames)
+    input_region: Option<Main<wl_region::WlRegion>>,
 
     // Data device (clipboard via wayland protocol)
     data_device_manager: Option<Main<wl_data_device_manager::WlDataDeviceManager>>,
@@ -191,11 +207,17 @@ impl WaylandBackend {
             fullscreen: Arc::new(Mutex::new(false)),
             decoration_manager: None,
             decoration: None,
+            xdg_decoration_manager: None,
+            xdg_toplevel_decoration: None,
             shm_buffers: [None, None],
             active_buffer: 0,
             events,
+            seat: None,
+            pointer: Arc::new(Mutex::new(None)),
+            keyboard: Arc::new(Mutex::new(None)),
             last_pointer,
             keys_down: Arc::new(Mutex::new(HashSet::new())),
+            input_region: None,
             data_device_manager,
             data_device: None,
             clipboard_text,
@@ -208,8 +230,16 @@ impl WaylandBackend {
     /// `poll()` to check if any data is available on the Wayland socket.
     /// Only calls the blocking `dispatch()` when data is actually ready,
     /// so the function never blocks waiting for events.
-    fn try_dispatch(&mut self) {
-        let _ = self.display.flush();
+    /// Returns false if the connection has encountered a fatal error.
+    fn try_dispatch(&mut self) -> bool {
+        if self.closed {
+            return false;
+        }
+        if let Err(e) = self.display.flush() {
+            log::error!("Wayland flush error: {:?}", e);
+            self.closed = true;
+            return false;
+        }
         let fd = self.display.get_connection_fd();
         let mut pfd = pollfd {
             fd,
@@ -218,10 +248,15 @@ impl WaylandBackend {
         };
         let ret = unsafe { poll(&mut pfd as *mut pollfd, 1, 0) };
         if ret > 0 && (pfd.revents & POLLIN) != 0 {
-            let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
+            if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
+                log::error!("Wayland dispatch error: {}", e);
+                self.closed = true;
+                return false;
+            }
         }
         // After dispatching, check if clipboard data is available via pipe
         self.read_clipboard_pipe();
+        true
     }
 
     /// Read clipboard data from the pipe set up by the Selection event handler.
@@ -286,8 +321,17 @@ impl WaylandBackend {
             None => return,
         };
 
+        // Ensure persistent input region covers the full window area.
+        // Must be kept alive to avoid destroying it mid-frame (compositors may
+        // drop pending pointer events when the region object is destroyed).
+        if self.input_region.is_none() || self.width != width || self.height != height {
+            let region = self._compositor.create_region();
+            region.add(0, 0, width, height);
+            self.input_region = Some(region);
+        }
+        surface.set_input_region(self.input_region.as_ref().map(|r| &***r));
+
         surface.attach(Some(&shm.buffer), 0, 0);
-        // 局部 damage：仅标记实际发生变化的区域，减少合成器工作量
         match dirty_rect {
             Some((x, y, w, h)) if w > 0 && h > 0 => {
                 surface.damage_buffer(x, y, w, h);
@@ -324,9 +368,6 @@ impl WaylandBackend {
         toplevel.set_title(title.to_string());
         toplevel.set_app_id("uix-app".to_string());
 
-        // xdg_surface configure → ack_configure
-        // 注意：xdg_surface.configure 不代表窗口尺寸变化，
-        // 只是协议要求的确认信号。实际尺寸由 xdg_toplevel.configure 携带。
         xdg_surface.quick_assign(move |xs, event, _| {
             if let xdg_surface::Event::Configure { serial } = event {
                 xs.ack_configure(serial);
@@ -340,6 +381,7 @@ impl WaylandBackend {
         toplevel.quick_assign(move |_, event, _| {
             match event {
                 xdg_toplevel::Event::Close => {
+                    log::debug!("xdg_toplevel::Close received");
                     let _ = toplevel_events
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
@@ -349,35 +391,46 @@ impl WaylandBackend {
                     width: w,
                     height: h,
                     states,
-                } => {
-                    // Parse xdg_toplevel_state from wl_array of u32:
-                    //   1 = maximized, 2 = fullscreen
+                    } => {
                     let is_maximized = states
                         .chunks_exact(4)
                         .any(|c| c.len() == 4 && u32::from_ne_bytes([c[0], c[1], c[2], c[3]]) == 1);
                     let is_fullscreen = states
                         .chunks_exact(4)
                         .any(|c| c.len() == 4 && u32::from_ne_bytes([c[0], c[1], c[2], c[3]]) == 2);
+                    let was_maximized = maximized_state.lock().map(|m| *m).unwrap_or(false);
                     if let Ok(mut m) = maximized_state.lock() {
                         *m = is_maximized;
                     }
                     if let Ok(mut f) = fullscreen_state.lock() {
                         *f = is_fullscreen;
                     }
+                    log::debug!(
+                        "xdg_toplevel::Configure w={} h={} max={} full={}",
+                        w, h, is_maximized, is_fullscreen
+                    );
                     if w > 0 && h > 0 {
                         let _ = toplevel_events
                             .lock()
                             .unwrap_or_else(|e| e.into_inner())
                             .push_back(UiEvent::resize(w, h));
-                    } else if is_maximized {
-                        // Compositor wants us maximized without giving
-                        // explicit dimensions. Push WindowMaximize 事件
-                        // 让 widget 树感知状态变化，引擎尺寸保持上次已知值。
+                    }
+                    if is_maximized && !was_maximized {
+                        log::debug!("WindowMaximize event pushed");
                         let _ = toplevel_events
                             .lock()
                             .unwrap_or_else(|e| e.into_inner())
                             .push_back(UiEvent {
                                 type_: UiEventType::WindowMaximize,
+                                payload: UiEventPayload::None,
+                            });
+                    } else if !is_maximized && was_maximized {
+                        log::debug!("WindowRestore event pushed");
+                        let _ = toplevel_events
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .push_back(UiEvent {
+                                type_: UiEventType::WindowRestore,
                                 payload: UiEventPayload::None,
                             });
                     }
@@ -387,7 +440,7 @@ impl WaylandBackend {
         });
 
         // Seat: pointer + keyboard
-        if let Ok(seat) = self._globals.instantiate_exact::<wl_seat::WlSeat>(7) {
+        if let Ok(seat) = self._globals.instantiate_exact::<wl_seat::WlSeat>(1) {
             // Set up data device (clipboard) if the manager is available
             if let Some(ref sdm) = self.data_device_manager {
                 let dev = sdm.get_data_device(&seat);
@@ -417,8 +470,13 @@ impl WaylandBackend {
             let ptr_events = self.events.clone();
             let ptr_pos = last_pointer.clone();
             let keys_down = self.keys_down.clone();
+            let wl_pointer_handle = self.pointer.clone();
+            let wl_keyboard_handle = self.keyboard.clone();
             seat.quick_assign(move |seat, event, _| {
                 if let wl_seat::Event::Capabilities { capabilities } = event {
+                    log::debug!("wl_seat::Capabilities: pointer={}, keyboard={}",
+                        capabilities.contains(wayland_client::protocol::wl_seat::Capability::Pointer),
+                        capabilities.contains(wayland_client::protocol::wl_seat::Capability::Keyboard));
                     use wayland_client::protocol::wl_seat::Capability;
                     if capabilities.contains(Capability::Pointer) {
                         let ev = ptr_events.clone();
@@ -431,18 +489,28 @@ impl WaylandBackend {
                                     surface_x,
                                     surface_y,
                                     ..
-                                }
-                                | wl_pointer::Event::Motion {
-                                    surface_x,
-                                    surface_y,
-                                    ..
                                 } => {
+                                    log::debug!("wl_pointer::Enter({}, {})", surface_x, surface_y);
                                     let p = Point::new(surface_x as f32, surface_y as f32);
-                                    // Track last position for button events
                                     if let Ok(mut lp) = pos.lock() {
                                         lp.position = p;
                                     }
                                     q.push_back(UiEvent::mouse_move(p));
+                                }
+                                wl_pointer::Event::Motion {
+                                    surface_x,
+                                    surface_y,
+                                    ..
+                                } => {
+                                    log::debug!("wl_pointer::Motion({}, {})", surface_x, surface_y);
+                                    let p = Point::new(surface_x as f32, surface_y as f32);
+                                    if let Ok(mut lp) = pos.lock() {
+                                        lp.position = p;
+                                    }
+                                    q.push_back(UiEvent::mouse_move(p));
+                                }
+                                wl_pointer::Event::Leave { .. } => {
+                                    log::debug!("wl_pointer::Leave");
                                 }
                                 wl_pointer::Event::Button { button, state, .. } => {
                                     let btn = match button {
@@ -451,9 +519,12 @@ impl WaylandBackend {
                                         0x112 => MouseButton::Middle,
                                         _ => MouseButton::None,
                                     };
-                                    // Use tracked position instead of Point::default()
                                     let click_pos =
                                         pos.lock().map(|lp| lp.position).unwrap_or_default();
+                                    log::debug!(
+                                        "wl_pointer::Button({:?}, {:?}) at ({}, {})",
+                                        state, btn, click_pos.x, click_pos.y
+                                    );
                                     if state == wl_pointer::ButtonState::Pressed {
                                         q.push_back(UiEvent::mouse_down(click_pos, btn));
                                     } else {
@@ -482,6 +553,13 @@ impl WaylandBackend {
                                 _ => {}
                             }
                         });
+                        if let Ok(mut p) = wl_pointer_handle.lock() {
+                            *p = Some(ptr);
+                        }
+                    } else {
+                        if let Ok(mut p) = wl_pointer_handle.lock() {
+                            *p = None;
+                        }
                     }
                     if capabilities.contains(Capability::Keyboard) {
                         let ev = ptr_events.clone();
@@ -527,28 +605,55 @@ impl WaylandBackend {
                                 _ => {}
                             }
                         });
+                        if let Ok(mut k) = wl_keyboard_handle.lock() {
+                            *k = Some(kbd);
+                        }
+                    } else {
+                        if let Ok(mut k) = wl_keyboard_handle.lock() {
+                            *k = None;
+                        }
                     }
                 }
             });
+            self.seat = Some(seat);
         }
 
-        // Request server-side decorations (title bar) via KDE protocol
-        match self
+        // Request window decorations: KDE protocol first, xdg-decoration fallback
+        let got_decorations = self
             ._globals
             .instantiate_exact::<OrgKdeKwinServerDecorationManager>(1)
-        {
-            Ok(dm) => {
+            .map(|dm| {
                 let deco = dm.create(&surface);
                 deco.request_mode(Mode::Server);
                 self.decoration_manager = Some(dm);
                 self.decoration = Some(deco);
-            }
-            Err(_) => {
-                log::warn!(
-                    "Wayland: no server_decoration_manager (running on non-KDE compositor?)"
-                );
-            }
+                true
+            })
+            .unwrap_or(false);
+        if !got_decorations {
+            // Try xdg-decoration protocol (GNOME / wlroots compositors)
+            self._globals
+                .instantiate_exact::<ZxdgDecorationManagerV1>(1)
+                .map(|dm| {
+                    let deco = dm.get_toplevel_decoration(&*toplevel);
+                    deco.set_mode(XdgDecoMode::ServerSide);
+                    self.xdg_decoration_manager = Some(dm);
+                    self.xdg_toplevel_decoration = Some(deco);
+                    log::info!("Wayland: using xdg-decoration (server-side)");
+                })
+                .unwrap_or_else(|_| {
+                    log::warn!(
+                        "Wayland: no decoration protocol available (running on compositor without SSD support?)"
+                    );
+                });
         }
+
+        // Set window geometry so the compositor knows the input region
+        xdg_surface.set_window_geometry(0, 0, width, height);
+
+        // Input region is set persistently in present_pixels on the first frame.
+        // At this point we leave it unset; the compositor will deliver pointer
+        // events once a buffer is committed with a valid input region.
 
         // First commit triggers xdg_surface.configure
         surface.commit();
@@ -561,8 +666,6 @@ impl WaylandBackend {
         let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
 
         // Commit without buffer to acknowledge the configure
-        // Surface will become visible only on first present_pixels() call,
-        // which provides the real UI content — no white flash at startup.
         if let Some(ref s) = self.surface {
             s.commit();
         }
@@ -571,8 +674,6 @@ impl WaylandBackend {
         Ok(())
     }
 
-    /// Create an SHM buffer with solid white fill.
-    /// Owns the backing temp file via RAII to prevent fd leak.
     fn create_shm_buffer(
         shm: &Main<wl_shm::WlShm>,
         width: i32,
@@ -581,9 +682,8 @@ impl WaylandBackend {
         let stride = width * 4;
         let size = (stride * height) as usize;
 
-        // Create a temp file for shared memory
         let tmp_path = std::env::temp_dir().join(format!("uix-shm-{}", std::process::id()));
-        let file = std::fs::OpenOptions::new()
+        let mut file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -591,27 +691,33 @@ impl WaylandBackend {
             .open(&tmp_path)
             .map_err(|e| format!("shm temp file create: {}", e))?;
 
-        // Allocate space
+        // 先分配文件空间（稀疏文件，按需分配）。
         file.set_len(size as u64).ok();
 
-        // Fill with white pixels (ARGB8888)
-        use std::io::Write;
-        let pixel = 0xFF_FF_FF_FFu32.to_ne_bytes();
-        // Use a BufWriter for performance
-        let mut writer = std::io::BufWriter::new(&file);
-        for _ in 0..(width * height) {
-            if writer.write_all(&pixel).is_err() {
-                break;
+        // 用单个大块写入填充白色，避免逐像素循环。
+        // 1200×800 = 960,000 像素 → 3.84MB。用 64KB chunk 分块写入。
+        {
+            use std::io::Write;
+            const CHUNK_PIXELS: usize = 16384; // 64KB
+            let chunk: Vec<u8> = vec![0xFFu8; CHUNK_PIXELS * 4];
+            let mut written = 0usize;
+            while written < size {
+                let remaining = size - written;
+                let to_write = remaining.min(chunk.len());
+                if let Err(e) = file.write_all(&chunk[..to_write]) {
+                    // 写文件失败不致命，实际像素由 write_pixels 写入。
+                    log::warn!("Wayland: shm init write failed: {}", e);
+                    break;
+                }
+                written += to_write;
             }
+            let _ = file.flush();
         }
-        writer.flush().ok();
-        drop(writer);
 
         let raw_fd = file.as_raw_fd();
         let pool = shm.create_pool(raw_fd, size as i32);
         let buffer = pool.create_buffer(0, width, height, stride, wl_shm::Format::Argb8888);
 
-        // Clean up temp file (the fd stays open via `file`)
         let _ = std::fs::remove_file(&tmp_path);
 
         Ok(ShmBuffer {
@@ -634,11 +740,17 @@ impl IWindowManager for WaylandBackend {
     fn destroy_window(&mut self) {
         self.decoration = None;
         self.decoration_manager = None;
+        self.xdg_toplevel_decoration = None;
+        self.xdg_decoration_manager = None;
+        self.input_region = None;
         self.shm_buffers = [None, None];
         self.toplevel = None;
         self.xdg_surface = None;
         self.surface = None;
         self.shown = false;
+        self.seat = None;
+        *self.pointer.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.keyboard.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
     fn set_title(&mut self, title: &str) {
         if let Some(ref t) = self.toplevel {
@@ -664,12 +776,9 @@ impl IWindowManager for WaylandBackend {
     fn is_visible(&self) -> bool {
         self.shown
     }
-    fn center_on_screen(&mut self) { /* Wayland compositor controls placement */
-    }
-    fn raise(&mut self) { /* Wayland compositor controls stacking */
-    }
-    fn lower(&mut self) { /* Wayland compositor controls stacking */
-    }
+    fn center_on_screen(&mut self) {}
+    fn raise(&mut self) {}
+    fn lower(&mut self) {}
     fn set_window_icon(&mut self, _: &str) {
         log::warn!("Wayland: set_window_icon not implemented");
     }
@@ -696,6 +805,8 @@ impl IWindowProperties for WaylandBackend {
         if let Some(ref xs) = self.xdg_surface {
             xs.set_window_geometry(0, 0, w, h);
         }
+        // Input region will be recreated in present_pixels on next frame.
+        self.input_region = None;
     }
     fn set_minimum_size(&mut self, w: i32, h: i32) {
         if let Some(ref t) = self.toplevel {
@@ -708,12 +819,10 @@ impl IWindowProperties for WaylandBackend {
         }
     }
     fn position(&self) -> Point {
-        Point::default() /* Wayland: no absolute position */
+        Point::default()
     }
-    fn set_position(&mut self, _: i32, _: i32) { /* Wayland: compositor-controlled */
-    }
-    fn set_resizable(&mut self, _: bool) { /* Wayland: xdg-shell handles this */
-    }
+    fn set_position(&mut self, _: i32, _: i32) {}
+    fn set_resizable(&mut self, _: bool) {}
     fn is_maximized(&self) -> bool {
         self.maximized.lock().map(|m| *m).unwrap_or(false)
     }
@@ -772,7 +881,9 @@ impl IWindowProperties for WaylandBackend {
 
 impl IEventLoop for WaylandBackend {
     fn poll_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
-        self.try_dispatch();
+        if !self.try_dispatch() {
+            return false;
+        }
         let mut q = self.events.lock().unwrap_or_else(|e| e.into_inner());
         while let Some(event) = q.pop_front() {
             if !callback(&event) {
@@ -787,6 +898,9 @@ impl IEventLoop for WaylandBackend {
     }
 
     fn wait_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
+        if self.closed {
+            return false;
+        }
         {
             let q = self.events.lock().unwrap_or_else(|e| e.into_inner());
             if !q.is_empty() {
@@ -794,7 +908,19 @@ impl IEventLoop for WaylandBackend {
                 return IEventLoop::poll_event(self, callback);
             }
         }
-        let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
+        if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
+            log::error!("Wayland wait_event dispatch error: {}", e);
+            self.closed = true;
+            return false;
+        }
+        // Immediately flush pending requests (especially ack_configure).
+        // Also commit the current buffer (without a new attach) so the
+        // compositor receives both ack + commit in the same round-trip.
+        // Some compositors withhold pointer events until ack+commit complete.
+        if let Some(ref s) = self.surface {
+            s.commit();
+        }
+        let _ = self.display.flush();
         IEventLoop::poll_event(self, callback)
     }
 }
@@ -812,11 +938,7 @@ impl INativeHandle for WaylandBackend {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Backend trait impl — delegates to trait impls + inline stubs for Wayland
-// ════════════════════════════════════════════════════════════════════════════
-
-// ════════════════════════════════════════════════════════════════════════════
-// IPresenter impl — WordPress 的呈现通过 backend 自身的 SHM buffer 完成
+// IPresenter impl
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IPresenter for WaylandBackend {
@@ -832,19 +954,16 @@ impl IPresenter for WaylandBackend {
     }
 
     fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
-        // SHM buffer 在 present() 中按需重建，无需提前 resize
         Ok(())
     }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 子 trait 实现（LinuxPlatform 通过 self.backend 直接委托）
+// 子 trait 实现
 // ════════════════════════════════════════════════════════════════════════════
 
 impl ICursor for WaylandBackend {
     fn set_cursor(&mut self, cursor: CursorType) {
-        // Full cursor theme support requires wayland-cursor crate.
-        // The compositor may draw the default cursor.
         let name = match cursor {
             CursorType::Arrow => "default",
             CursorType::IBeam => "text",
@@ -859,26 +978,18 @@ impl ICursor for WaylandBackend {
             CursorType::NotAllowed => "not-allowed",
             CursorType::Custom => "default",
         };
-        log::trace!("Wayland: set_cursor({}) requested — requires wl_cursor_theme crate for full support", name);
+        log::trace!("Wayland: set_cursor({}) requested", name);
     }
     fn show_cursor(&mut self, visible: bool) {
-        // Wayland 合成器控制光标可见性，客户端无法强制隐藏/显示
         log::debug!("Wayland: show_cursor({}) — compositor-controlled", visible);
     }
     fn cursor_position(&self) -> Point {
         Point::default()
     }
-    fn set_cursor_position(&mut self, _: i32, _: i32) {
-        // Wayland 不支持客户端设置光标位置
-    }
-    fn confine_cursor(&mut self, _: bool) {
-        // Requires wp_pointer_constraints protocol
-    }
-    fn capture_mouse(&mut self) {
-        // Wayland 不支持强制抓取
-    }
-    fn release_mouse(&mut self) {
-    }
+    fn set_cursor_position(&mut self, _: i32, _: i32) {}
+    fn confine_cursor(&mut self, _: bool) {}
+    fn capture_mouse(&mut self) {}
+    fn release_mouse(&mut self) {}
 }
 
 impl IKeyboard for WaylandBackend {
@@ -925,7 +1036,6 @@ impl IClipboard for WaylandBackend {
         if let Ok(mut o) = self.owns_clipboard.lock() {
             *o = true;
         }
-        // Advertise clipboard content via Wayland data device if available
         if let Some(ref dm) = self.data_device_manager {
             if let Some(ref dd) = self.data_device {
                 let source = dm.create_data_source();
@@ -939,12 +1049,9 @@ impl IClipboard for WaylandBackend {
                             use std::io::Write;
                             let _ = (&file).write_all(bytes);
                             let _ = (&file).flush();
-                            // fd closed by dropping `file`
                         }
                     }
                 });
-                // Set the selection (serial from last user interaction would be ideal,
-                // but wayland-client 0.29 may not provide it easily)
                 dd.set_selection(Some(&source), 0);
             }
         }
@@ -1032,7 +1139,6 @@ fn linux_keycode_to_keycode(code: u32) -> KeyCode {
         109 => KeyCode::PageDown,
         110 => KeyCode::Insert,
         111 => KeyCode::Delete,
-        // 小键盘（映射到主行数字 KeyCode，keycode_to_char 自动支持）
         71 => KeyCode::Num7,
         72 => KeyCode::Num8,
         73 => KeyCode::Num9,
@@ -1048,7 +1154,6 @@ fn linux_keycode_to_keycode(code: u32) -> KeyCode {
     }
 }
 
-/// Map KeyCode to ASCII printable character (US keyboard layout).
 fn keycode_to_char(code: KeyCode, shift: bool) -> Option<String> {
     use KeyCode::*;
     let ch = match (code, shift) {
