@@ -1,0 +1,539 @@
+use super::*;
+
+/// Compute flex layout from input constraints.
+///
+/// Pure function with no side effects. Handles all justify-content modes,
+/// cross-axis alignment via AlignItems and per-child align_self,
+/// flex-grow/shrink distribution, flex-basis, min_size/max_size constraints,
+/// and multi-line wrapping.
+pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
+    let inner = Rect {
+        x: input.container.x + input.padding.left,
+        y: input.container.y + input.padding.top,
+        w: (input.container.w - input.padding.horizontal()).max(0.0),
+        h: (input.container.h - input.padding.vertical()).max(0.0),
+    };
+
+    let count = input.children.len().min(input.child_sizes.len());
+    if count == 0 {
+        return FlexOutput { child_rects: Vec::new(), total_size: Size::new(inner.w, inner.h) };
+    }
+
+    let is_row = matches!(input.direction, FlexDirection::Row | FlexDirection::RowReverse);
+    let is_reverse = matches!(input.direction, FlexDirection::RowReverse | FlexDirection::ColumnReverse);
+
+    let main_size = |s: &Size| if is_row { s.w } else { s.h };
+    let cross_size = |s: &Size| if is_row { s.h } else { s.w };
+
+    let container_main = main_size(&Size::new(inner.w, inner.h));
+    let container_cross = cross_size(&Size::new(inner.w, inner.h));
+
+    // Phase 1: determine flex basis and cross sizes
+    let mut base_main_sizes = vec![0.0f32; count];
+    let mut cross_sizes = vec![0.0f32; count];
+    let mut total_flex_grow = 0.0f32;
+
+    for i in 0..count {
+        let child = &input.children[i];
+        let child_size = input.child_sizes[i];
+        let basis = match child.flex_basis {
+            Some(v) if v >= 0.0 => v,
+            _ => main_size(&child_size),
+        };
+        base_main_sizes[i] = basis;
+        cross_sizes[i] = cross_size(&child_size);
+        total_flex_grow += child.flex_grow;
+    }
+
+    if input.wrap {
+        compute_wrapped(input, &inner, is_row, is_reverse, container_main, container_cross,
+            &mut base_main_sizes, &mut cross_sizes, total_flex_grow)
+    } else {
+        compute_single_line(input, &inner, is_row, is_reverse, container_main, container_cross,
+            &mut base_main_sizes, &mut cross_sizes, total_flex_grow)
+    }
+}
+
+fn clamp_sizes(
+    base: &mut [f32], cross: &mut [f32],
+    children: &[FlexChild], is_row: bool,
+) {
+    for i in 0..base.len() {
+        let child = &children[i];
+        let sz = make_size_from(is_row, base[i], cross[i]);
+
+        let clamped = Size::new(
+            sz.w.max(child.min_size.w).min(child.max_size.w),
+            sz.h.max(child.min_size.h).min(child.max_size.h),
+        );
+
+        let new_main = if is_row { clamped.w } else { clamped.h };
+        let new_cross = if is_row { clamped.h } else { clamped.w };
+
+        if (base[i] - new_main).abs() > 0.001 || (cross[i] - new_cross).abs() > 0.001 {
+            base[i] = new_main;
+            cross[i] = new_cross;
+        }
+    }
+}
+
+fn make_size_from(is_row: bool, main: f32, cross: f32) -> Size {
+    if is_row { Size::new(main, cross) } else { Size::new(cross, main) }
+}
+
+fn distribute_flex_grow(
+    base: &mut [f32], remaining: f32,
+    children: &[FlexChild], total_flex_grow: f32,
+) {
+    if total_flex_grow > 0.0 && remaining > 0.0 {
+        for i in 0..base.len() {
+            base[i] += remaining * (children[i].flex_grow / total_flex_grow);
+        }
+    }
+}
+
+fn distribute_shrink(
+    base: &mut [f32], overflow: f32,
+    children: &[FlexChild],
+) {
+    let total_shrink_weight: f32 = base.iter()
+        .zip(children.iter())
+        .map(|(&sz, ch)| ch.flex_shrink * sz)
+        .sum();
+    if total_shrink_weight > 0.0 {
+        for (i, b) in base.iter_mut().enumerate() {
+            if *b <= 0.0 { continue; }
+            let weight = children[i].flex_shrink * *b / total_shrink_weight;
+            let reduction = (overflow * weight).min(*b);
+            *b -= reduction;
+        }
+    }
+}
+
+fn compute_justify(
+    remaining: f32, count: usize, gap: f32,
+    justify: JustifyContent, is_reverse: bool,
+) -> (f32, f32) {
+    if remaining > 0.0 {
+        let new_gap = match justify {
+            JustifyContent::SpaceBetween => {
+                if count <= 1 { gap } else { gap + remaining / (count - 1) as f32 }
+            }
+            JustifyContent::SpaceAround => gap + remaining / count as f32,
+            JustifyContent::SpaceEvenly => gap + remaining / (count + 1) as f32,
+            _ => gap,
+        };
+        let offset = if is_reverse { remaining }
+        else {
+            match justify {
+                JustifyContent::Center => remaining * 0.5,
+                JustifyContent::End => remaining,
+                JustifyContent::SpaceAround => remaining * 0.5 / count as f32,
+                JustifyContent::SpaceEvenly => remaining / (count + 1) as f32,
+                _ => 0.0,
+            }
+        };
+        (new_gap, offset)
+    } else {
+        let offset = match justify {
+            JustifyContent::Center => remaining * 0.5,
+            JustifyContent::End => remaining,
+            _ => 0.0,
+        };
+        (gap, offset)
+    }
+}
+
+/// Single-line (no wrap) flex layout.
+fn compute_single_line(
+    input: &FlexInput,
+    inner: &Rect, is_row: bool, is_reverse: bool,
+    container_main: f32, container_cross: f32,
+    base_main_sizes: &mut [f32], cross_sizes: &mut [f32],
+    total_flex_grow: f32,
+) -> FlexOutput {
+    let count = base_main_sizes.len();
+
+    // Phase 2: distribute flex-grow/shrink
+    let total_base: f32 = base_main_sizes.iter().sum();
+    let gaps = input.gap * (count as f32 - 1.0);
+    let overflow = total_base + gaps - container_main;
+
+    if overflow > 0.0 {
+        distribute_shrink(base_main_sizes, overflow, &input.children);
+    }
+    let total_base: f32 = base_main_sizes.iter().sum();
+    let mut remaining = (container_main - total_base - gaps).max(0.0);
+    distribute_flex_grow(base_main_sizes, remaining, &input.children, total_flex_grow);
+
+    // Apply Stretch justify-content: distribute remaining space as growth
+    let total_after: f32 = base_main_sizes.iter().sum();
+    remaining = (container_main - total_after - gaps).max(0.0);
+    if input.justify_content == JustifyContent::Stretch && remaining > 0.0 {
+        let extra = remaining / count as f32;
+        for b in base_main_sizes.iter_mut() {
+            *b += extra;
+        }
+    }
+
+    // Clamp to min/max
+    clamp_sizes(base_main_sizes, cross_sizes, &input.children, is_row);
+
+    // Phase 3: justify-content positioning
+    let total_after = base_main_sizes.iter().sum::<f32>();
+    remaining = (container_main - total_after - gaps).max(0.0);
+    let (effective_gap, start_offset) = compute_justify(
+        remaining, count, input.gap, input.justify_content, is_reverse,
+    );
+
+    // Phase 4: position children
+    let mut child_rects = Vec::with_capacity(count);
+    let mut cursor = if is_reverse { container_main - start_offset - total_after - gaps }
+                     else { start_offset };
+
+    for i in 0..count {
+        let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
+        let child_cross_size = if cross_align == AlignItems::Stretch { container_cross } else { cross_sizes[i] };
+
+        let cross_offset = match cross_align {
+            AlignItems::Start => 0.0,
+            AlignItems::Center => (container_cross - child_cross_size) / 2.0,
+            AlignItems::End => container_cross - child_cross_size,
+            AlignItems::Stretch => 0.0,
+        };
+
+        let (cx, cy) = if is_row { (inner.x + cursor, inner.y + cross_offset) }
+                       else { (inner.x + cross_offset, inner.y + cursor) };
+        let (cw, ch) = if is_row { (base_main_sizes[i], child_cross_size) }
+                       else { (child_cross_size, base_main_sizes[i]) };
+
+        child_rects.push(Rect::new(cx, cy, cw, ch));
+        cursor += if is_reverse { -(base_main_sizes[i] + effective_gap) }
+                  else { base_main_sizes[i] + effective_gap };
+    }
+
+    let (total_w, total_h) = if is_row {
+        let max_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
+        (cursor.abs().max(0.0) + input.padding.horizontal(),
+         (max_cross + input.padding.vertical()).max(container_cross))
+    } else {
+        let max_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
+        ((max_cross + input.padding.horizontal()).max(container_cross),
+         cursor.abs().max(0.0) + input.padding.vertical())
+    };
+
+    FlexOutput { child_rects, total_size: Size::new(total_w, total_h) }
+}
+
+/// Multi-line (wrapping) flex layout.
+fn compute_wrapped(
+    input: &FlexInput,
+    inner: &Rect, is_row: bool, is_reverse: bool,
+    container_main: f32, container_cross: f32,
+    base_main_sizes: &mut [f32], cross_sizes: &mut [f32],
+    _total_flex_grow: f32,
+) -> FlexOutput {
+    let count = base_main_sizes.len();
+
+    // Build lines: each line is a range of child indices
+    struct Line { start: usize, end: usize }
+    let mut lines: Vec<Line> = Vec::new();
+    let mut line_start = 0usize;
+    let mut line_main = 0.0f32;
+
+    for i in 0..count {
+        let child_main = base_main_sizes[i];
+        let item_gap = if i > line_start { input.gap } else { 0.0 };
+
+        if line_main + item_gap + child_main > container_main && line_main > 0.0 {
+            lines.push(Line { start: line_start, end: i });
+            line_start = i;
+            line_main = child_main;
+        } else {
+            line_main += item_gap + child_main;
+        }
+    }
+    if line_start < count {
+        lines.push(Line { start: line_start, end: count });
+    }
+
+    if lines.is_empty() {
+        return FlexOutput { child_rects: Vec::new(), total_size: Size::new(inner.w, inner.h) };
+    }
+
+    // Track cross-axis position for each line
+    let line_gap = input.gap;
+    let mut line_cross_positions = Vec::with_capacity(lines.len());
+    let mut line_max_cross = Vec::with_capacity(lines.len());
+    let mut cursor_cross = 0.0f32;
+
+    for line in &lines {
+        let line_count = line.end - line.start;
+        let line_base: f32 = base_main_sizes[line.start..line.end].iter().sum();
+        let line_gaps = input.gap * (line_count as f32 - 1.0).max(0.0);
+        let overflow = line_base + line_gaps - container_main;
+
+        // Shrink within line
+        if overflow > 0.0 {
+            distribute_shrink(
+                &mut base_main_sizes[line.start..line.end],
+                overflow,
+                &input.children[line.start..line.end],
+            );
+        }
+
+        // Grow within line
+        let remaining = (container_main - base_main_sizes[line.start..line.end].iter().sum::<f32>() - line_gaps).max(0.0);
+        let line_grow: f32 = input.children[line.start..line.end].iter().map(|c| c.flex_grow).sum();
+        distribute_flex_grow(
+            &mut base_main_sizes[line.start..line.end],
+            remaining,
+            &input.children[line.start..line.end],
+            line_grow,
+        );
+
+        // Apply Stretch
+        let total_after: f32 = base_main_sizes[line.start..line.end].iter().sum();
+        let remaining2 = (container_main - total_after - line_gaps).max(0.0);
+        if input.justify_content == JustifyContent::Stretch && remaining2 > 0.0 {
+            let extra = remaining2 / line_count as f32;
+            for b in base_main_sizes[line.start..line.end].iter_mut() {
+                *b += extra;
+            }
+        }
+
+        // Compute cross size for this line
+        let max_cross = cross_sizes[line.start..line.end].iter().cloned().fold(0.0, f32::max);
+        line_cross_positions.push(cursor_cross);
+        line_max_cross.push(max_cross);
+        cursor_cross += max_cross + line_gap;
+    }
+
+    // Clamp to min/max (across all children)
+    clamp_sizes(base_main_sizes, cross_sizes, &input.children, is_row);
+
+    // Position children line by line
+    let mut child_rects = vec![Rect::zero(); count];
+
+    // Determine total cross size and alignment
+    let total_cross = if is_row {
+        cursor_cross - line_gap  // last line_gap is extra
+    } else {
+        // For column wrap, the cross axis is width
+        let max_line = line_max_cross.iter().cloned().fold(0.0, f32::max);
+        max_line
+    };
+    let total_cross = total_cross.max(0.0);
+    let cross_align = input.align_items;
+    let cross_start_offset = match cross_align {
+        AlignItems::Center => (container_cross - total_cross) * 0.5,
+        AlignItems::End => (container_cross - total_cross).max(0.0),
+        _ => 0.0,
+    };
+
+    for (li, line) in lines.iter().enumerate() {
+        let line_count = line.end - line.start;
+        let line_gaps_total = input.gap * (line_count as f32 - 1.0).max(0.0);
+        let total_line_main: f32 = base_main_sizes[line.start..line.end].iter().sum();
+        let remaining = (container_main - total_line_main - line_gaps_total).max(0.0);
+        let (effective_gap, start_offset) = compute_justify(
+            remaining, line_count, input.gap, input.justify_content, is_reverse,
+        );
+
+        let mut cursor_main = if is_reverse { container_main - start_offset - total_line_main - line_gaps_total }
+                              else { start_offset };
+
+        let line_cross_base = line_cross_positions[li] + cross_start_offset;
+
+        for i in line.start..line.end {
+            let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
+            let child_cross_size = if cross_align == AlignItems::Stretch {
+                line_max_cross[li]
+            } else {
+                cross_sizes[i]
+            };
+
+            let cross_offset = match cross_align {
+                AlignItems::Start => 0.0,
+                AlignItems::Center => (line_max_cross[li] - child_cross_size) / 2.0,
+                AlignItems::End => line_max_cross[li] - child_cross_size,
+                AlignItems::Stretch => 0.0,
+            };
+
+            let (cx, cy) = if is_row {
+                (inner.x + cursor_main, inner.y + line_cross_base + cross_offset)
+            } else {
+                (inner.x + line_cross_base + cross_offset, inner.y + cursor_main)
+            };
+            let (cw, ch) = if is_row {
+                (base_main_sizes[i], child_cross_size)
+            } else {
+                (child_cross_size, base_main_sizes[i])
+            };
+
+            child_rects[i] = Rect::new(cx, cy, cw, ch);
+            cursor_main += if is_reverse { -(base_main_sizes[i] + effective_gap) }
+                          else { base_main_sizes[i] + effective_gap };
+        }
+    }
+
+    // Total size
+    let (total_w, total_h) = if is_row {
+        let max_cross = if lines.len() > 1 {
+            line_cross_positions.last().zip(line_max_cross.last())
+                .map(|(&p, &s)| p + s)
+                .unwrap_or(0.0)
+        } else {
+            cross_sizes.iter().cloned().fold(0.0, f32::max)
+        };
+        (container_main.max(0.0) + input.padding.horizontal(),
+         (max_cross + input.padding.vertical()).max(container_cross))
+    } else {
+        let max_cross = if lines.len() > 1 {
+            line_cross_positions.last().zip(line_max_cross.last())
+                .map(|(&p, &s)| p + s)
+                .unwrap_or(0.0)
+        } else {
+            cross_sizes.iter().cloned().fold(0.0, f32::max)
+        };
+        ((max_cross + input.padding.horizontal()).max(container_cross),
+         container_main.max(0.0) + input.padding.vertical())
+    };
+
+    FlexOutput { child_rects, total_size: Size::new(total_w, total_h) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_input(c: Rect, sizes: Vec<Size>, dir: FlexDirection, j: JustifyContent, a: AlignItems) -> FlexInput {
+        FlexInput {
+            direction: dir, container: c,
+            children: vec![FlexChild::default(); sizes.len()],
+            child_sizes: sizes, justify_content: j, align_items: a,
+            ..FlexInput::default()
+        }
+    }
+
+    #[test] fn row_start_top() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(80.0,40.0),Size::new(120.0,60.0)],
+            FlexDirection::Row, JustifyContent::Start, AlignItems::Start));
+        assert_eq!(o.child_rects[0], Rect::new(0.0,0.0,80.0,40.0));
+        assert_eq!(o.child_rects[1], Rect::new(80.0,0.0,120.0,60.0));
+    }
+    #[test] fn row_center_center() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(80.0,40.0),Size::new(80.0,40.0)],
+            FlexDirection::Row, JustifyContent::Center, AlignItems::Center));
+        assert_eq!(o.child_rects[0], Rect::new(70.0,30.0,80.0,40.0));
+        assert_eq!(o.child_rects[1], Rect::new(150.0,30.0,80.0,40.0));
+    }
+    #[test] fn row_space_between() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(60.0,40.0),Size::new(60.0,40.0),Size::new(60.0,40.0)],
+            FlexDirection::Row, JustifyContent::SpaceBetween, AlignItems::Start));
+        assert_eq!(o.child_rects[0].x, 0.0); assert_eq!(o.child_rects[1].x, 120.0); assert_eq!(o.child_rects[2].x, 240.0);
+    }
+    #[test] fn column_stretch() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,200.0,300.0),
+            vec![Size::new(100.0,50.0),Size::new(100.0,80.0)],
+            FlexDirection::Column, JustifyContent::Start, AlignItems::Stretch));
+        assert_eq!(o.child_rects[0], Rect::new(0.0,0.0,200.0,50.0));
+        assert_eq!(o.child_rects[1], Rect::new(0.0,50.0,200.0,80.0));
+    }
+    #[test] fn row_with_gap() {
+        let o = compute_flex_layout(&FlexInput {
+            direction: FlexDirection::Row, gap: 10.0, container: Rect::new(0.0,0.0,200.0,100.0),
+            children: vec![FlexChild::default();2],
+            child_sizes: vec![Size::new(50.0,40.0),Size::new(50.0,40.0)], ..FlexInput::default()
+        });
+        assert_eq!(o.child_rects[0], Rect::new(0.0,0.0,50.0,100.0));
+        assert_eq!(o.child_rects[1], Rect::new(60.0,0.0,50.0,100.0));
+    }
+    #[test] fn flex_grow_distribution() {
+        let mut i = make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(50.0,40.0),Size::new(50.0,40.0)],
+            FlexDirection::Row, JustifyContent::Start, AlignItems::Start);
+        i.children[0].flex_grow = 1.0; i.children[1].flex_grow = 1.0;
+        assert_eq!(compute_flex_layout(&i).child_rects[0].w, 150.0);
+    }
+    #[test] fn empty_children() { assert!(compute_flex_layout(&make_input(Rect::new(0.0,0.0,300.0,100.0),
+        vec![], FlexDirection::Row, JustifyContent::Start, AlignItems::Start)).child_rects.is_empty()); }
+    #[test] fn row_space_around() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(60.0,40.0),Size::new(60.0,40.0)],
+            FlexDirection::Row, JustifyContent::SpaceAround, AlignItems::Start));
+        assert!((o.child_rects[0].x - 45.0).abs() < 1.0);
+        assert!((o.child_rects[1].x - 195.0).abs() < 1.0);
+    }
+    #[test] fn row_space_evenly() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(60.0,40.0),Size::new(60.0,40.0)],
+            FlexDirection::Row, JustifyContent::SpaceEvenly, AlignItems::Start));
+        assert!((o.child_rects[0].x - 60.0).abs() < 1.0);
+        assert!((o.child_rects[1].x - 180.0).abs() < 1.0);
+    }
+    #[test] fn row_end() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(80.0,40.0),Size::new(80.0,40.0)],
+            FlexDirection::Row, JustifyContent::End, AlignItems::Start));
+        assert_eq!(o.child_rects[0].x, 140.0); assert_eq!(o.child_rects[1].x, 220.0);
+    }
+    #[test] fn row_reverse_basic() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(80.0,40.0),Size::new(80.0,40.0)],
+            FlexDirection::RowReverse, JustifyContent::Start, AlignItems::Start));
+        assert!(o.child_rects[0].x > o.child_rects[1].x);
+    }
+    #[test] fn column_reverse_basic() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,200.0,300.0),
+            vec![Size::new(100.0,50.0),Size::new(100.0,80.0)],
+            FlexDirection::ColumnReverse, JustifyContent::Start, AlignItems::Start));
+        assert!(o.child_rects[0].y > o.child_rects[1].y);
+    }
+    #[test] fn min_size_constraint() {
+        let mut i = make_input(Rect::new(0.0,0.0,100.0,100.0),
+            vec![Size::new(20.0,20.0)],
+            FlexDirection::Row, JustifyContent::Start, AlignItems::Start);
+        i.children[0].min_size = Size::new(60.0, 0.0);
+        let o = compute_flex_layout(&i);
+        assert!((o.child_rects[0].w - 60.0).abs() < 0.001);
+    }
+    #[test] fn max_size_constraint() {
+        let mut i = make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(200.0,20.0)],
+            FlexDirection::Row, JustifyContent::Start, AlignItems::Start);
+        i.children[0].max_size = Size::new(100.0, 0.0);
+        let o = compute_flex_layout(&i);
+        assert!((o.child_rects[0].w - 100.0).abs() < 0.001);
+    }
+    #[test] fn justify_stretch_in_flex() {
+        let o = compute_flex_layout(&make_input(Rect::new(0.0,0.0,300.0,100.0),
+            vec![Size::new(80.0,40.0),Size::new(80.0,40.0)],
+            FlexDirection::Row, JustifyContent::Stretch, AlignItems::Start));
+        // Stretch distributes remaining 140px equally: each gets 70px more
+        assert!((o.child_rects[0].w - 150.0).abs() < 1.0);
+        assert!((o.child_rects[1].w - 150.0).abs() < 1.0);
+    }
+    #[test] fn row_wrap_basic() {
+        // 3 children of 60px each in 150px container: line1[0,1], line2[2]
+        let o = compute_flex_layout(&FlexInput {
+            direction: FlexDirection::Row, wrap: true,
+            container: Rect::new(0.0,0.0,150.0,100.0),
+            children: vec![FlexChild::default(); 3],
+            child_sizes: vec![Size::new(60.0,30.0), Size::new(60.0,30.0), Size::new(60.0,30.0)],
+            gap: 10.0,
+            ..FlexInput::default()
+        });
+        // 60+10+60=130 ≤ 150: line1 holds [0,1]; 60 ≤ 150: line2 holds [2]
+        assert_eq!(o.child_rects.len(), 3);
+        assert_eq!(o.child_rects[0].x, 0.0);
+        assert_eq!(o.child_rects[0].y, 0.0);
+        assert_eq!(o.child_rects[1].x, 70.0);
+        assert_eq!(o.child_rects[1].y, 0.0);
+        assert_eq!(o.child_rects[2].x, 0.0);
+        assert!(o.child_rects[2].y > 0.0);
+    }
+}

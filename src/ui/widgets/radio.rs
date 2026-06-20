@@ -59,7 +59,7 @@ define_widget! {
             WidgetEvent::HoverLeave => { self.hovered_idx = None; EventResult::Handled }
             WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
             WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key } => {
+            WidgetEvent::KeyDown { key, .. } => {
             match key {
                 KeyCode::Right | KeyCode::Down => {
                     let next = self.selected + 1;
@@ -183,7 +183,8 @@ impl Radio {
         if selected {
             ctx.fill_circle(x + r + 1.0, cy, dot_r, dot_color);
         }
-        ctx.draw_text(opt, Point::new(x + 20.0, cy - 6.0), text_c, 13.0);
+        // 使用 em-box 高度（font_size）垂直居中，而非字体度量高度
+        ctx.draw_text(opt, Point::new(x + 20.0, cy - 13.0 * 0.5), text_c, 13.0);
     }
 }
 

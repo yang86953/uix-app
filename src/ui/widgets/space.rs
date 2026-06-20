@@ -4,7 +4,7 @@
 
 use crate::base::{Rect, Size};
 use crate::define_widget;
-use crate::graphics::{
+use crate::ui::{
     compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
 use crate::ui::children::WidgetChildren;
@@ -42,6 +42,7 @@ define_widget! {
         align: AlignItems,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
+        flex_grow_val: f32,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
@@ -50,6 +51,8 @@ define_widget! {
             self.fixed_height.unwrap_or(0.0),
         )
     }
+
+    flex_grow => (&self) -> f32 { self.flex_grow_val }
 
     flex_shrink => (&self) -> f32 { 0.0 }
 
@@ -129,6 +132,7 @@ impl Space {
             align: AlignItems::Center,
             fixed_width: None,
             fixed_height: None,
+            flex_grow_val: 0.0,
         }
     }
 
@@ -164,6 +168,12 @@ impl Space {
     }
     pub fn height(mut self, h: f32) -> Self {
         self.fixed_height = Some(h);
+        self
+    }
+    /// 设置 flex-grow 值，使 Space 在 flex 布局中填充剩余空间。
+    /// 用于响应式布局替代固定宽度。
+    pub fn flex_grow(mut self, v: f32) -> Self {
+        self.flex_grow_val = v;
         self
     }
     pub fn vertical(mut self) -> Self {

@@ -10,7 +10,7 @@
 #![cfg(all(unix, not(target_os = "macos")))]
 
 pub(crate) mod backend;
-pub mod clipboard;
+pub(crate) mod clipboard;
 pub mod console;
 pub mod file_dialog;
 pub mod filesystem;
@@ -21,7 +21,6 @@ pub mod text_input;
 pub mod timer;
 pub(crate) mod wayland;
 
-pub use clipboard::*;
 pub use console::*;
 pub use file_dialog::*;
 pub use filesystem::*;

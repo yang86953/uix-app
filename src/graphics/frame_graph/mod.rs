@@ -57,7 +57,6 @@ use crate::diag::Result;
 ///
 /// 持有资源注册表、Pass 节点列表和编译器状态。
 /// 每次渲染循环调用 `compile()` → `execute()`。
-#[allow(dead_code)]
 pub struct FrameGraph {
     registry: ResourceRegistry,
     passes: Vec<PassNode>,
@@ -130,21 +129,21 @@ impl FrameGraph {
 
     // ── Pass 管理 ──────────────────────────────────────────────────
 
-    /// 添加一个 Pass 到帧图。
+    /// 添加一个 Pass 到帧图。返回该 Pass 的 PassId。
     ///
     /// `build` 参数接收一个 `PassBuilder`，通过链式调用配置依赖和函数。
     ///
     /// # 示例
     ///
     /// ```ignore
-    /// fg.add_pass("Clear", |b| {
-    ///     b.writes(&[color]).execute_with(|ctx| {
+    /// let pid = fg.add_pass("Clear", |b| {
+    ///     b.writes(&[color]).execute_with(Box::new(|ctx| {
     ///         ctx.engine.begin_frame(&DirtyRegion::full());
     ///         Ok(())
-    ///     })
+    ///     }))
     /// });
     /// ```
-    pub fn add_pass<F>(&mut self, name: &str, build: F)
+    pub fn add_pass<F>(&mut self, name: &str, build: F) -> PassId
     where
         F: FnOnce(PassBuilder) -> PassBuilder,
     {
@@ -152,6 +151,7 @@ impl FrameGraph {
         let builder = PassBuilder::new(id, name);
         let node = build(builder).build();
         self.passes.push(node);
+        id
     }
 
     /// 显式添加一个已构建的 PassNode。
@@ -187,23 +187,15 @@ impl FrameGraph {
         engine: &mut dyn crate::graphics::GraphicsEngine,
         plan: &CompiledGraph,
     ) -> Result<()> {
-        // 将 PassId 到 PassNode 的快速查找建立
-        let pass_map: HashMap<PassId, usize> = self
-            .passes
-            .iter()
-            .enumerate()
-            .map(|(i, p)| (p.id, i))
-            .collect();
-
-        // 按顺序执行
+        // 按顺序执行（Pass 数通常 < 10，线性查找比 HashMap 更快）
         for &pid in &plan.execution_order {
-            let idx = pass_map.get(&pid).ok_or_else(|| {
+            let idx = self.passes.iter().position(|p| p.id == pid).ok_or_else(|| {
                 crate::diag::Error::new(
                     crate::diag::Errc::InvalidState,
                     format!("FrameGraph::execute: unknown PassId {:?}", pid),
                 )
             })?;
-            let pass = &mut self.passes[*idx];
+            let pass = &mut self.passes[idx];
 
             // 构造 Pass 上下文
             let mut ctx = PassContext {
@@ -244,21 +236,13 @@ impl FrameGraph {
         plan: &CompiledGraph,
         render_fn: &mut dyn FnMut(PassId, &mut dyn crate::graphics::GraphicsEngine, &mut FrameResources) -> Result<()>,
     ) -> Result<()> {
-        // 将 PassId 到 PassNode 的快速查找建立
-        let pass_map: HashMap<PassId, usize> = self
-            .passes
-            .iter()
-            .enumerate()
-            .map(|(i, p)| (p.id, i))
-            .collect();
-
-        // 按顺序执行
+        // 按顺序执行（Pass 数通常 < 10，线性查找比 HashMap 更快）
         for &pid in &plan.execution_order {
             // 调用外部渲染回调（取代 PassNode::execute）
             render_fn(pid, engine, &mut self.resources)?;
 
             // 写入资源版本提升
-            if let Some(&idx) = pass_map.get(&pid) {
+            if let Some(idx) = self.passes.iter().position(|p| p.id == pid) {
                 for &res in &self.passes[idx].writes {
                     let new_ver = self.registry.bump_version(res, pid);
                     self.current_versions.insert(res, new_ver);

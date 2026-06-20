@@ -108,6 +108,10 @@ fn build_offset_outline(
         add_cap(builder, p0, nx, ny, half_w, options.cap, true);
     }
 
+    // 上一个法线（用于 join 计算）
+    let mut prev_nx: f32 = 0.0;
+    let mut prev_ny: f32 = 0.0;
+
     for i in 0..poly.len().saturating_sub(1) {
         let p0 = poly[i];
         let p1 = poly[i + 1];
@@ -124,11 +128,13 @@ fn build_offset_outline(
 
         if i == 0 {
             builder.move_to(ox0, oy0);
-        } else {
-            // join
-            add_join(builder, ox0, oy0, options.join, options.miter_limit);
+        } else if (prev_nx - nx).abs() > 0.0001 || (prev_ny - ny).abs() > 0.0001 {
+            add_join(builder, p0.x, p0.y, prev_nx, prev_ny, nx, ny, half_w, options);
         }
         builder.line_to(ox1, oy1);
+
+        prev_nx = nx;
+        prev_ny = ny;
     }
 
     // 最后一个点后处理 cap
@@ -180,22 +186,66 @@ fn add_cap(
 }
 
 /// 添加线段连接。
+///
+/// 将当前路径位置（上一段的偏移终点）连接到下一段的偏移起点，
+/// 根据 join 类型可能经过中间点（miter 交点或圆弧）。
 fn add_join(
-    _builder: &mut PathBuilder,
-    _x: f32, _y: f32,
-    join: LineJoin,
-    _miter_limit: f32,
+    builder: &mut PathBuilder,
+    vx: f32, vy: f32,         // 顶点位置（poly[i]）
+    pn_x: f32, pn_y: f32,     // 上一段的法线方向
+    cn_x: f32, cn_y: f32,     // 当前段的法线方向
+    half_w: f32,
+    options: &StrokeOptions,
 ) {
-    match join {
+    let off2x = vx + cn_x * half_w;
+    let off2y = vy + cn_y * half_w;
+
+    match options.join {
         LineJoin::Bevel => {
-            // 直接用直线连接（已由 line_to 完成）
+            builder.line_to(off2x, off2y);
         }
         LineJoin::Miter => {
-            // 用直线连接（简化版，不处理尖角限制）
+            // 两条偏移线的方向 = 原线段方向（法线逆时针旋转 90°）
+            let sdx1 = pn_y;
+            let sdy1 = -pn_x;
+            let sdx2 = cn_y;
+            let sdy2 = -cn_x;
+            let off1x = vx + pn_x * half_w;
+            let off1y = vy + pn_y * half_w;
+
+            // 直线交点：off1 + t * sdir1 = off2 + u * sdir2
+            let denom = sdx1 * sdy2 - sdy1 * sdx2;
+            if denom.abs() > 0.0001 {
+                let t = ((off2x - off1x) * sdy2 - (off2y - off1y) * sdx2) / denom;
+                // t > 0 表示交点在偏移线的正向（外扩方向）
+                if t > 0.0 {
+                    let mx = off1x + t * sdx1;
+                    let my = off1y + t * sdy1;
+                    let miter_len = ((mx - vx).powi(2) + (my - vy).powi(2)).sqrt();
+                    if miter_len <= half_w * options.miter_limit {
+                        builder.line_to(mx, my);
+                    }
+                }
+            }
+            builder.line_to(off2x, off2y);
         }
         LineJoin::Round => {
-            // 圆角用弧线近似
-            // 简化：不实现圆角 join
+            let angle_from = pn_y.atan2(pn_x);
+            let angle_to = cn_y.atan2(cn_x);
+            let mut da = angle_to - angle_from;
+            // 取最短弧方向
+            if da > std::f32::consts::PI {
+                da -= std::f32::consts::TAU;
+            } else if da < -std::f32::consts::PI {
+                da += std::f32::consts::TAU;
+            }
+            let steps = 8;
+            for i in 1..steps {
+                let t = i as f32 / steps as f32;
+                let angle = angle_from + da * t;
+                builder.line_to(vx + angle.cos() * half_w, vy + angle.sin() * half_w);
+            }
+            builder.line_to(off2x, off2y);
         }
     }
 }

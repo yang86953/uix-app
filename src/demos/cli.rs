@@ -4,9 +4,10 @@ use std::cell::Cell;
 use uix::diag::log::{info_fn, Level, Logger};
 use uix::diag::{Errc, Error};
 use uix::base::{EdgeInsets, Point, Rect, Size};
-use uix::graphics::{
-    self, colors, compute_flex_layout, AlignItems as GAlign, FlexChild,
-    FlexDirection as GDir, FlexInput, GraphicsEngine, JustifyContent as GJustify,
+use uix::graphics::{self, colors, GraphicsEngine};
+use uix::ui::layout::{
+    self as flex_layout, AlignItems as GAlign, FlexChild, FlexDirection as GDir,
+    FlexInput, JustifyContent as GJustify,
 };
 use uix::services::{
     FileService, LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline,
@@ -108,7 +109,7 @@ pub fn demo_state() {
 
 pub fn demo_flex() {
     println!("\n╔══ Flex 布局 ═══╗");
-    let out = compute_flex_layout(&FlexInput {
+    let out = flex_layout::flex::compute_flex_layout(&FlexInput {
         direction: GDir::Row,
         gap: 8.0,
         padding: EdgeInsets::uniform(16.0),

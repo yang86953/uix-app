@@ -1,7 +1,8 @@
 //! Grid widget — CSS Grid-like layout container.
 
 use crate::define_widget;
-use crate::graphics::{compute_grid_layout, AlignItems, Color, GridChild, GridInput, GridTrack, JustifyContent, Radius};
+use crate::graphics::{Color, Radius};
+use crate::ui::{compute_grid_layout, AlignItems, GridChild, GridInput, GridTrack, JustifyContent};
 use crate::base::{EdgeInsets, Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{WidgetId, WidgetTree};
@@ -43,7 +44,16 @@ define_widget! {
         -> Vec<(WidgetId, Rect)>
     {
         let mut result = Vec::new();
-        if self.columns.is_empty() || self.rows.is_empty() || children.is_empty() { return result; }
+        if self.columns.is_empty() || children.is_empty() { return result; }
+
+        // 自动计算行数：如果 rows 未设置，根据子节点数和列数推算
+        let rows: Vec<GridTrack> = if self.rows.is_empty() {
+            let n_cols = self.columns.len();
+            let n_rows = (children.len() + n_cols - 1) / n_cols; // ceil division
+            vec![GridTrack::Auto; n_rows.max(1)]
+        } else {
+            self.rows.clone()
+        };
 
         let grid_children: Vec<GridChild> = children.iter().map(|&cid| {
             GridChild { preferred_size: tree.get(cid).map(|c| c.preferred_size(None)).unwrap_or_default(), ..Default::default() }
@@ -52,7 +62,7 @@ define_widget! {
         let output = compute_grid_layout(&GridInput {
             container: frame,
             columns: self.columns.clone(),
-            rows: self.rows.clone(),
+            rows,
             col_gap: self.col_gap,
             row_gap: self.row_gap,
             padding: self.padding,

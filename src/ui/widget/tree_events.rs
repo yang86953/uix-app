@@ -60,8 +60,8 @@ impl WidgetTree {
                 if let Some(t) = new_hover { self.dispatch_to(t, event) }
                 else { EventResult::NotHandled }
             }
-            WidgetEvent::MouseWheel { .. } => {
-                let target = self.hovered_widget.or(self.root_id);
+            WidgetEvent::MouseWheel { pos, .. } => {
+                let target = self.hit_test(*pos).or(self.hovered_widget).or(self.root_id);
                 if let Some(t) = target { self.mark_dirty(t); self.dispatch_to(t, event) }
                 else { EventResult::NotHandled }
             }
@@ -74,6 +74,25 @@ impl WidgetTree {
                 else { EventResult::NotHandled }
             }
             WidgetEvent::HoverEnter | WidgetEvent::HoverLeave => EventResult::NotHandled,
+            // 窗口状态变化事件 → 统一分发给 root，让应用层处理
+            WidgetEvent::WindowMaximize
+            | WidgetEvent::WindowMinimize
+            | WidgetEvent::WindowRestore
+            | WidgetEvent::WindowFocus
+            | WidgetEvent::WindowBlur => {
+                if let Some(root) = self.root_id { self.dispatch_to(root, event) }
+                else { EventResult::NotHandled }
+            }
+            WidgetEvent::Timer { .. } => {
+                // 定时器事件分发给 root
+                if let Some(root) = self.root_id { self.dispatch_to(root, event) }
+                else { EventResult::NotHandled }
+            }
+            WidgetEvent::FileDrop { .. } => {
+                // 文件拖放分发给 root
+                if let Some(root) = self.root_id { self.dispatch_to(root, event) }
+                else { EventResult::NotHandled }
+            }
             WidgetEvent::Resize { width, height } => {
                 if let Some(root) = self.root_id {
                     if *width > 0.0 && *height > 0.0 {
@@ -81,6 +100,10 @@ impl WidgetTree {
                             root_mut.set_frame(Rect::new(0.0, 0.0, *width, *height));
                             self.mark_dirty(root);
                         }
+                        // 递增 tree_version 使 LayerTree 重建
+                        // LayerTree 缓存了 ClipRect（如 ScrollView 的裁剪矩形），
+                        // 不重建则子节点位置更新了但裁剪区还是旧尺寸 → 内容被裁剪。
+                        self.tree_version += 1;
                     }
                     self.dispatch_to(root, event)
                 } else { EventResult::NotHandled }
@@ -106,10 +129,18 @@ impl WidgetTree {
 
     fn translate_mouse_event(event: &WidgetEvent, frame: Rect) -> WidgetEvent {
         match *event {
-            WidgetEvent::MouseDown { pos, button } =>
-                WidgetEvent::MouseDown { pos: Point::new(pos.x - frame.x, pos.y - frame.y), button },
-            WidgetEvent::MouseUp { pos, button } =>
-                WidgetEvent::MouseUp { pos: Point::new(pos.x - frame.x, pos.y - frame.y), button },
+            WidgetEvent::MouseDown { pos, button, mods } =>
+                WidgetEvent::MouseDown {
+                    pos: Point::new(pos.x - frame.x, pos.y - frame.y),
+                    button,
+                    mods,
+                },
+            WidgetEvent::MouseUp { pos, button, mods } =>
+                WidgetEvent::MouseUp {
+                    pos: Point::new(pos.x - frame.x, pos.y - frame.y),
+                    button,
+                    mods,
+                },
             WidgetEvent::MouseMove { pos } =>
                 WidgetEvent::MouseMove { pos: Point::new(pos.x - frame.x, pos.y - frame.y) },
             ref other => other.clone(),

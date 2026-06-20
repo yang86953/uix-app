@@ -8,19 +8,17 @@ use crate::platform::event::*;
 use crate::platform::types::{CursorType, DisplayInfo};
 use crate::platform::*;
 
-use crate::platform::linux::backend::Backend;
-use crate::platform::linux::clipboard::{ClipboardState, LinuxClipboard};
-
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fs::File;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 
 use libc::{poll, pollfd, POLLIN};
 use std::sync::{Arc, Mutex};
 
 use wayland_client::{
     protocol::{
-        wl_buffer, wl_compositor, wl_keyboard, wl_pointer, wl_seat, wl_shm, wl_shm_pool, wl_surface,
+        wl_buffer, wl_compositor, wl_data_device, wl_data_device_manager, wl_data_source,
+        wl_keyboard, wl_pointer, wl_seat, wl_shm, wl_shm_pool, wl_surface,
     },
     Display, EventQueue, GlobalManager, Main,
 };
@@ -115,11 +113,24 @@ pub struct WaylandBackend {
     // Last pointer position (for Button events that lack position)
     last_pointer: Arc<Mutex<LastPointerState>>,
 
-    // Backend subsystems
-    clipboard: LinuxClipboard,
+    // Currently pressed keys (for IKeyboard::is_down)
+    keys_down: Arc<Mutex<HashSet<KeyCode>>>,
+
+    // Data device (clipboard via wayland protocol)
+    data_device_manager: Option<Main<wl_data_device_manager::WlDataDeviceManager>>,
+    data_device: Option<Main<wayland_client::protocol::wl_data_device::WlDataDevice>>,
+
+    // Clipboard state
+    clipboard_text: Arc<Mutex<String>>,
+    owns_clipboard: Arc<Mutex<bool>>,
+    clipboard_read_fd: Arc<Mutex<Option<RawFd>>>,
 }
 
 impl WaylandBackend {
+    pub fn event_queue_handle(&self) -> Arc<Mutex<VecDeque<UiEvent>>> {
+        self.events.clone()
+    }
+
     pub fn new() -> Result<Self, String> {
         let display =
             Display::connect_to_env().map_err(|e| format!("Wayland connect failed: {}", e))?;
@@ -151,9 +162,15 @@ impl WaylandBackend {
         });
 
         let events: Arc<Mutex<VecDeque<UiEvent>>> = Arc::new(Mutex::new(VecDeque::new()));
-        let clipboard = LinuxClipboard::new(Arc::new(Mutex::new(ClipboardState::new())));
+        let clipboard_text: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let owns_clipboard: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+        let clipboard_read_fd: Arc<Mutex<Option<RawFd>>> = Arc::new(Mutex::new(None));
         let last_pointer: Arc<Mutex<LastPointerState>> =
             Arc::new(Mutex::new(LastPointerState::default()));
+
+        // Optional: wl_data_device_manager (clipboard)
+        let data_device_manager =
+            globals.instantiate_exact::<wl_data_device_manager::WlDataDeviceManager>(3).ok();
 
         Ok(Self {
             display,
@@ -178,8 +195,12 @@ impl WaylandBackend {
             active_buffer: 0,
             events,
             last_pointer,
-
-            clipboard,
+            keys_down: Arc::new(Mutex::new(HashSet::new())),
+            data_device_manager,
+            data_device: None,
+            clipboard_text,
+            owns_clipboard,
+            clipboard_read_fd,
         })
     }
 
@@ -198,6 +219,27 @@ impl WaylandBackend {
         let ret = unsafe { poll(&mut pfd as *mut pollfd, 1, 0) };
         if ret > 0 && (pfd.revents & POLLIN) != 0 {
             let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
+        }
+        // After dispatching, check if clipboard data is available via pipe
+        self.read_clipboard_pipe();
+    }
+
+    /// Read clipboard data from the pipe set up by the Selection event handler.
+    fn read_clipboard_pipe(&mut self) {
+        let fd = {
+            let mut f = self.clipboard_read_fd.lock().unwrap_or_else(|e| e.into_inner());
+            f.take()
+        };
+        if let Some(fd) = fd {
+            use std::io::Read;
+            let mut buf = Vec::new();
+            let mut file = unsafe { File::from_raw_fd(fd) };
+            if file.read_to_end(&mut buf).is_ok() {
+                if let Ok(mut text) = self.clipboard_text.lock() {
+                    *text = String::from_utf8_lossy(&buf).to_string();
+                }
+            }
+            // fd closed by dropping `file`
         }
     }
 
@@ -282,15 +324,12 @@ impl WaylandBackend {
         toplevel.set_title(title.to_string());
         toplevel.set_app_id("uix-app".to_string());
 
-        // xdg_surface configure → ack_configure + mark configured
-        let cfg_events = events.clone();
+        // xdg_surface configure → ack_configure
+        // 注意：xdg_surface.configure 不代表窗口尺寸变化，
+        // 只是协议要求的确认信号。实际尺寸由 xdg_toplevel.configure 携带。
         xdg_surface.quick_assign(move |xs, event, _| {
             if let xdg_surface::Event::Configure { serial } = event {
                 xs.ack_configure(serial);
-                let _ = cfg_events
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .push_back(UiEvent::resize(0, 0));
             }
         });
 
@@ -332,12 +371,15 @@ impl WaylandBackend {
                             .push_back(UiEvent::resize(w, h));
                     } else if is_maximized {
                         // Compositor wants us maximized without giving
-                        // explicit dimensions.  Push a no-op resize so
-                        // the widget tree knows the state changed.
+                        // explicit dimensions. Push WindowMaximize 事件
+                        // 让 widget 树感知状态变化，引擎尺寸保持上次已知值。
                         let _ = toplevel_events
                             .lock()
                             .unwrap_or_else(|e| e.into_inner())
-                            .push_back(UiEvent::resize(0, 0));
+                            .push_back(UiEvent {
+                                type_: UiEventType::WindowMaximize,
+                                payload: UiEventPayload::None,
+                            });
                     }
                 }
                 _ => {}
@@ -346,8 +388,35 @@ impl WaylandBackend {
 
         // Seat: pointer + keyboard
         if let Ok(seat) = self._globals.instantiate_exact::<wl_seat::WlSeat>(7) {
+            // Set up data device (clipboard) if the manager is available
+            if let Some(ref sdm) = self.data_device_manager {
+                let dev = sdm.get_data_device(&seat);
+                let crfd = self.clipboard_read_fd.clone();
+                dev.quick_assign(move |_, event, _| {
+                    match event {
+                        wl_data_device::Event::DataOffer { .. } => {}
+                        wl_data_device::Event::Selection { id } => {
+                            if let Some(offer) = id {
+                                let mut fds = [0i32; 2];
+                                let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
+                                if ret == 0 {
+                                    let read_fd = fds[0];
+                                    offer.receive("text/plain;charset=utf-8".to_string(), fds[1]);
+                                    if let Ok(mut rf) = crfd.lock() {
+                                        *rf = Some(read_fd);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+                self.data_device = Some(dev);
+            }
+
             let ptr_events = self.events.clone();
             let ptr_pos = last_pointer.clone();
+            let keys_down = self.keys_down.clone();
             seat.quick_assign(move |seat, event, _| {
                 if let wl_seat::Event::Capabilities { capabilities } = event {
                     use wayland_client::protocol::wl_seat::Capability;
@@ -392,17 +461,18 @@ impl WaylandBackend {
                                     }
                                 }
                                 wl_pointer::Event::Axis { axis, value, .. } => {
-                                    // Natural scrolling: content follows the
-                                    // scroll direction.  Wheel down → content
-                                    // down, wheel up → content up.
                                     let (dx, dy) = match axis {
                                         wl_pointer::Axis::VerticalScroll => (0.0, value),
                                         wl_pointer::Axis::HorizontalScroll => (value, 0.0),
                                         _ => (0.0, 0.0),
                                     };
                                     if dx != 0.0 || dy != 0.0 {
+                                        let scroll_pos = pos
+                                            .lock()
+                                            .map(|lp| lp.position)
+                                            .unwrap_or_default();
                                         q.push_back(UiEvent::mouse_wheel(
-                                            Point::default(),
+                                            scroll_pos,
                                             dx as f32,
                                             dy as f32,
                                             KeyMod::NONE,
@@ -415,6 +485,7 @@ impl WaylandBackend {
                     }
                     if capabilities.contains(Capability::Keyboard) {
                         let ev = ptr_events.clone();
+                        let kd = keys_down.clone();
                         let mods = Arc::new(Mutex::new(KeyMod::NONE));
                         let kbd = seat.get_keyboard();
                         kbd.quick_assign(move |_, event, _| {
@@ -422,30 +493,35 @@ impl WaylandBackend {
                                 wl_keyboard::Event::Key { key, state, .. } => {
                                     let code = linux_keycode_to_keycode(key);
                                     let mut q = ev.lock().unwrap_or_else(|e| e.into_inner());
-                                    let shift_down = mods
+                                    let current_mods = mods
                                         .lock()
-                                        .map(|m| m.intersects(KeyMod::SHIFT))
-                                        .unwrap_or(false);
+                                        .map(|m| *m)
+                                        .unwrap_or(KeyMod::NONE);
+                                    let shift_down = current_mods.intersects(KeyMod::SHIFT);
+                                    if let Ok(mut kd) = kd.lock() {
+                                        if state == wl_keyboard::KeyState::Pressed {
+                                            kd.insert(code);
+                                        } else {
+                                            kd.remove(&code);
+                                        }
+                                    }
                                     if state == wl_keyboard::KeyState::Pressed {
-                                        q.push_back(UiEvent::key_down(code, KeyMod::NONE));
-                                        // 生成 KeyPress 文本字符（可打印字符才有）
-                                        // 使用已映射的 KeyCode 而非原始 evdev 码，
-                                        // 确保与 linux_keycode_to_keycode 映射一致。
+                                        q.push_back(UiEvent::key_down(code, current_mods));
                                         if let Some(text) = keycode_to_char(code, shift_down) {
                                             q.push_back(UiEvent::key_press(text));
                                         }
                                     } else {
-                                        q.push_back(UiEvent::key_up(code, KeyMod::NONE));
+                                        q.push_back(UiEvent::key_up(code, current_mods));
                                     }
                                 }
-                                wl_keyboard::Event::Modifiers { mods_depressed, .. } => {
+                                wl_keyboard::Event::Modifiers { mods_depressed, mods_latched, mods_locked, .. } => {
                                     if let Ok(mut m) = mods.lock() {
-                                        const SHIFT_MASK: u32 = 1; // wl_keyboard modifier bit 0
-                                        *m = if (mods_depressed & SHIFT_MASK) != 0 {
-                                            KeyMod::SHIFT
-                                        } else {
-                                            KeyMod::NONE
-                                        };
+                                        let combined = mods_depressed | mods_latched | mods_locked;
+                                        *m = KeyMod::NONE;
+                                        if combined & 1 != 0 { *m |= KeyMod::SHIFT; }
+                                        if combined & 4 != 0 { *m |= KeyMod::CTRL; }
+                                        if combined & 8 != 0 { *m |= KeyMod::ALT; }
+                                        if combined & 16 != 0 { *m |= KeyMod::SUPER; }
                                     }
                                 }
                                 _ => {}
@@ -744,8 +820,14 @@ impl INativeHandle for WaylandBackend {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IPresenter for WaylandBackend {
-    fn present(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
-        self.present_pixels(pixels, width, height, None);
+    fn present(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        dirty_rect: Option<(i32, i32, i32, i32)>,
+    ) -> Result<(), Error> {
+        self.present_pixels(pixels, width, height, dirty_rect);
         Ok(())
     }
 
@@ -755,37 +837,53 @@ impl IPresenter for WaylandBackend {
     }
 }
 
-impl Backend for WaylandBackend {
-    fn present_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        dirty_rect: Option<(i32, i32, i32, i32)>,
-    ) {
-        self.present_pixels(pixels, width, height, dirty_rect);
-    }
-}
-
 // ════════════════════════════════════════════════════════════════════════════
-// Backend 子 trait 的直接实现（供 LinuxPlatform 通过 &mut dyn Backend 上转型使用）
+// 子 trait 实现（LinuxPlatform 通过 self.backend 直接委托）
 // ════════════════════════════════════════════════════════════════════════════
 
 impl ICursor for WaylandBackend {
-    fn set_cursor(&mut self, _: CursorType) {}
-    fn show_cursor(&mut self, _: bool) {}
+    fn set_cursor(&mut self, cursor: CursorType) {
+        // Full cursor theme support requires wayland-cursor crate.
+        // The compositor may draw the default cursor.
+        let name = match cursor {
+            CursorType::Arrow => "default",
+            CursorType::IBeam => "text",
+            CursorType::Crosshair => "crosshair",
+            CursorType::Hand => "pointer",
+            CursorType::ResizeH => "ew-resize",
+            CursorType::ResizeV => "ns-resize",
+            CursorType::ResizeNE => "ne-resize",
+            CursorType::ResizeNW => "nw-resize",
+            CursorType::Move => "move",
+            CursorType::Wait => "wait",
+            CursorType::NotAllowed => "not-allowed",
+            CursorType::Custom => "default",
+        };
+        log::trace!("Wayland: set_cursor({}) requested — requires wl_cursor_theme crate for full support", name);
+    }
+    fn show_cursor(&mut self, visible: bool) {
+        // Wayland 合成器控制光标可见性，客户端无法强制隐藏/显示
+        log::debug!("Wayland: show_cursor({}) — compositor-controlled", visible);
+    }
     fn cursor_position(&self) -> Point {
         Point::default()
     }
-    fn set_cursor_position(&mut self, _: i32, _: i32) {}
-    fn confine_cursor(&mut self, _: bool) {}
-    fn capture_mouse(&mut self) {}
-    fn release_mouse(&mut self) {}
+    fn set_cursor_position(&mut self, _: i32, _: i32) {
+        // Wayland 不支持客户端设置光标位置
+    }
+    fn confine_cursor(&mut self, _: bool) {
+        // Requires wp_pointer_constraints protocol
+    }
+    fn capture_mouse(&mut self) {
+        // Wayland 不支持强制抓取
+    }
+    fn release_mouse(&mut self) {
+    }
 }
 
 impl IKeyboard for WaylandBackend {
-    fn is_down(&self, _: KeyCode) -> bool {
-        false
+    fn is_down(&self, key: KeyCode) -> bool {
+        self.keys_down.lock().map(|k| k.contains(&key)).unwrap_or(false)
     }
     fn idle_ms(&self) -> u32 {
         0
@@ -818,13 +916,41 @@ impl IDisplay for WaylandBackend {
 
 impl IClipboard for WaylandBackend {
     fn text(&self) -> String {
-        self.clipboard.text()
+        self.clipboard_text.lock().map(|t| t.clone()).unwrap_or_default()
     }
     fn set_text(&mut self, text: &str) {
-        self.clipboard.set_text(text);
+        if let Ok(mut t) = self.clipboard_text.lock() {
+            *t = text.to_string();
+        }
+        if let Ok(mut o) = self.owns_clipboard.lock() {
+            *o = true;
+        }
+        // Advertise clipboard content via Wayland data device if available
+        if let Some(ref dm) = self.data_device_manager {
+            if let Some(ref dd) = self.data_device {
+                let source = dm.create_data_source();
+                source.offer("text/plain;charset=utf-8".to_string());
+                let ct = self.clipboard_text.clone();
+                source.quick_assign(move |_, event, _| {
+                    if let wl_data_source::Event::Send { mime_type: _, fd } = event {
+                        if let Ok(text) = ct.lock() {
+                            let bytes = text.as_bytes();
+                            let file = unsafe { File::from_raw_fd(fd) };
+                            use std::io::Write;
+                            let _ = (&file).write_all(bytes);
+                            let _ = (&file).flush();
+                            // fd closed by dropping `file`
+                        }
+                    }
+                });
+                // Set the selection (serial from last user interaction would be ideal,
+                // but wayland-client 0.29 may not provide it easily)
+                dd.set_selection(Some(&source), 0);
+            }
+        }
     }
     fn has_text(&self) -> bool {
-        self.clipboard.has_text()
+        self.clipboard_text.lock().map(|t| !t.is_empty()).unwrap_or(false)
     }
 }
 
@@ -923,262 +1049,46 @@ fn linux_keycode_to_keycode(code: u32) -> KeyCode {
 }
 
 /// Map KeyCode to ASCII printable character (US keyboard layout).
-/// Returns `None` for non-printable keys (modifiers, function keys, etc.).
 fn keycode_to_char(code: KeyCode, shift: bool) -> Option<String> {
-    let ch = match code {
-        KeyCode::A => {
-            if shift {
-                'A'
-            } else {
-                'a'
-            }
-        }
-        KeyCode::B => {
-            if shift {
-                'B'
-            } else {
-                'b'
-            }
-        }
-        KeyCode::C => {
-            if shift {
-                'C'
-            } else {
-                'c'
-            }
-        }
-        KeyCode::D => {
-            if shift {
-                'D'
-            } else {
-                'd'
-            }
-        }
-        KeyCode::E => {
-            if shift {
-                'E'
-            } else {
-                'e'
-            }
-        }
-        KeyCode::F => {
-            if shift {
-                'F'
-            } else {
-                'f'
-            }
-        }
-        KeyCode::G => {
-            if shift {
-                'G'
-            } else {
-                'g'
-            }
-        }
-        KeyCode::H => {
-            if shift {
-                'H'
-            } else {
-                'h'
-            }
-        }
-        KeyCode::I => {
-            if shift {
-                'I'
-            } else {
-                'i'
-            }
-        }
-        KeyCode::J => {
-            if shift {
-                'J'
-            } else {
-                'j'
-            }
-        }
-        KeyCode::K => {
-            if shift {
-                'K'
-            } else {
-                'k'
-            }
-        }
-        KeyCode::L => {
-            if shift {
-                'L'
-            } else {
-                'l'
-            }
-        }
-        KeyCode::M => {
-            if shift {
-                'M'
-            } else {
-                'm'
-            }
-        }
-        KeyCode::N => {
-            if shift {
-                'N'
-            } else {
-                'n'
-            }
-        }
-        KeyCode::O => {
-            if shift {
-                'O'
-            } else {
-                'o'
-            }
-        }
-        KeyCode::P => {
-            if shift {
-                'P'
-            } else {
-                'p'
-            }
-        }
-        KeyCode::Q => {
-            if shift {
-                'Q'
-            } else {
-                'q'
-            }
-        }
-        KeyCode::R => {
-            if shift {
-                'R'
-            } else {
-                'r'
-            }
-        }
-        KeyCode::S => {
-            if shift {
-                'S'
-            } else {
-                's'
-            }
-        }
-        KeyCode::T => {
-            if shift {
-                'T'
-            } else {
-                't'
-            }
-        }
-        KeyCode::U => {
-            if shift {
-                'U'
-            } else {
-                'u'
-            }
-        }
-        KeyCode::V => {
-            if shift {
-                'V'
-            } else {
-                'v'
-            }
-        }
-        KeyCode::W => {
-            if shift {
-                'W'
-            } else {
-                'w'
-            }
-        }
-        KeyCode::X => {
-            if shift {
-                'X'
-            } else {
-                'x'
-            }
-        }
-        KeyCode::Y => {
-            if shift {
-                'Y'
-            } else {
-                'y'
-            }
-        }
-        KeyCode::Z => {
-            if shift {
-                'Z'
-            } else {
-                'z'
-            }
-        }
-        KeyCode::Num1 => {
-            if shift {
-                '!'
-            } else {
-                '1'
-            }
-        }
-        KeyCode::Num2 => {
-            if shift {
-                '@'
-            } else {
-                '2'
-            }
-        }
-        KeyCode::Num3 => {
-            if shift {
-                '#'
-            } else {
-                '3'
-            }
-        }
-        KeyCode::Num4 => {
-            if shift {
-                '$'
-            } else {
-                '4'
-            }
-        }
-        KeyCode::Num5 => {
-            if shift {
-                '%'
-            } else {
-                '5'
-            }
-        }
-        KeyCode::Num6 => {
-            if shift {
-                '^'
-            } else {
-                '6'
-            }
-        }
-        KeyCode::Num7 => {
-            if shift {
-                '&'
-            } else {
-                '7'
-            }
-        }
-        KeyCode::Num8 => {
-            if shift {
-                '*'
-            } else {
-                '8'
-            }
-        }
-        KeyCode::Num9 => {
-            if shift {
-                '('
-            } else {
-                '9'
-            }
-        }
-        KeyCode::Num0 => {
-            if shift {
-                ')'
-            } else {
-                '0'
-            }
-        }
-        KeyCode::Space => ' ',
+    use KeyCode::*;
+    let ch = match (code, shift) {
+        (A, false) => 'a', (A, true) => 'A',
+        (B, false) => 'b', (B, true) => 'B',
+        (C, false) => 'c', (C, true) => 'C',
+        (D, false) => 'd', (D, true) => 'D',
+        (E, false) => 'e', (E, true) => 'E',
+        (F, false) => 'f', (F, true) => 'F',
+        (G, false) => 'g', (G, true) => 'G',
+        (H, false) => 'h', (H, true) => 'H',
+        (I, false) => 'i', (I, true) => 'I',
+        (J, false) => 'j', (J, true) => 'J',
+        (K, false) => 'k', (K, true) => 'K',
+        (L, false) => 'l', (L, true) => 'L',
+        (M, false) => 'm', (M, true) => 'M',
+        (N, false) => 'n', (N, true) => 'N',
+        (O, false) => 'o', (O, true) => 'O',
+        (P, false) => 'p', (P, true) => 'P',
+        (Q, false) => 'q', (Q, true) => 'Q',
+        (R, false) => 'r', (R, true) => 'R',
+        (S, false) => 's', (S, true) => 'S',
+        (T, false) => 't', (T, true) => 'T',
+        (U, false) => 'u', (U, true) => 'U',
+        (V, false) => 'v', (V, true) => 'V',
+        (W, false) => 'w', (W, true) => 'W',
+        (X, false) => 'x', (X, true) => 'X',
+        (Y, false) => 'y', (Y, true) => 'Y',
+        (Z, false) => 'z', (Z, true) => 'Z',
+        (Num1, false) => '1', (Num1, true) => '!',
+        (Num2, false) => '2', (Num2, true) => '@',
+        (Num3, false) => '3', (Num3, true) => '#',
+        (Num4, false) => '4', (Num4, true) => '$',
+        (Num5, false) => '5', (Num5, true) => '%',
+        (Num6, false) => '6', (Num6, true) => '^',
+        (Num7, false) => '7', (Num7, true) => '&',
+        (Num8, false) => '8', (Num8, true) => '*',
+        (Num9, false) => '9', (Num9, true) => '(',
+        (Num0, false) => '0', (Num0, true) => ')',
+        (Space, _) => ' ',
         _ => return None,
     };
     Some(ch.to_string())

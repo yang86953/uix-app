@@ -56,12 +56,10 @@ impl RenderTarget {
                 let abs_d = -ddx;
                 for y in vy..vy + vh {
                     let base = (y * stride) as usize;
-                    let dst = base + (vx + abs_d) as usize;
                     let src = base + vx as usize;
+                    let dst = base + (vx + abs_d) as usize;
                     let count = (vw - abs_d) as usize;
-                    for i in (0..count).rev() {
-                        self.pixels[dst + i] = self.pixels[src + i];
-                    }
+                    self.pixels.copy_within(src..src + count, dst);
                 }
             }
         }

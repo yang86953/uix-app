@@ -44,6 +44,15 @@ impl Rect {
     pub const fn new(x: f32, y: f32, w: f32, h: f32) -> Self { Self { x, y, w, h } }
     pub const fn zero() -> Self { Self { x: 0.0, y: 0.0, w: 0.0, h: 0.0 } }
 
+    pub fn inset(&self, p: EdgeInsets) -> Self {
+        Self {
+            x: self.x + p.left,
+            y: self.y + p.top,
+            w: (self.w - p.left - p.right).max(0.0),
+            h: (self.h - p.top - p.bottom).max(0.0),
+        }
+    }
+
     pub fn contains(&self, p: Point) -> bool {
         p.x >= self.x && p.x <= self.x + self.w && p.y >= self.y && p.y <= self.y + self.h
     }

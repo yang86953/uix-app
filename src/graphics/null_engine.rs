@@ -11,8 +11,6 @@ use crate::graphics::{
 
 /// A GraphicsEngine that does nothing — useful as a compile-time stub
 /// or for testing code that depends on `dyn GraphicsEngine`.
-/// A GraphicsEngine that does nothing — useful as a compile-time stub
-/// or for testing code that depends on `dyn GraphicsEngine`.
 pub struct NullEngine {
     width: i32,
     height: i32,
@@ -147,7 +145,12 @@ impl GraphicsEngine for NullEngine {
     ) {
     }
 
-    fn load_image(&mut self, _data: &[u8]) -> Result<&mut ImageHandle, Error> {
+    fn load_image(
+        &mut self,
+        _pixels: Vec<u32>,
+        _width: i32,
+        _height: i32,
+    ) -> Result<&mut ImageHandle, Error> {
         Err(Error::new(Errc::NotImplemented, "NullEngine"))
     }
     fn unload_image(&mut self, _i: &ImageHandle) {}

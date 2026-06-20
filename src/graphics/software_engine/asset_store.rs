@@ -10,7 +10,9 @@ use crate::graphics::ImageHandle;
 pub struct AssetStore {
     bitmap_font: BitmapFont,
     image_slots: Vec<ImageSlot>,
+    image_free: Vec<u32>,
     offscreen_slots: Vec<OffscreenSlot>,
+    offscreen_free: Vec<u32>,
 }
 
 impl Default for AssetStore {
@@ -24,13 +26,17 @@ impl AssetStore {
         Self {
             bitmap_font: BitmapFont::new(),
             image_slots: Vec::new(),
+            image_free: Vec::new(),
             offscreen_slots: Vec::new(),
+            offscreen_free: Vec::new(),
         }
     }
 
     pub fn shutdown(&mut self) {
         self.image_slots.clear();
+        self.image_free.clear();
         self.offscreen_slots.clear();
+        self.offscreen_free.clear();
     }
 
     pub fn bitmap_font(&self) -> &BitmapFont {
@@ -39,13 +45,34 @@ impl AssetStore {
 
     // ── 图片 ──
 
-    pub fn load_image(&mut self, pixels: Vec<u32>, w: i32, h: i32) -> &mut ImageHandle {
-        let idx = self.image_slots.len() as u32;
-        self.image_slots.push(ImageSlot {
-            handle: ImageHandle::new(idx, HandleKind::Image),
-            data: ImageData { pixels, w, h },
-        });
+    /// 分配一个新的图片插槽。返回可变句柄引用。
+    pub fn alloc_image_slot(
+        &mut self,
+        pixels: Vec<u32>,
+        w: i32,
+        h: i32,
+    ) -> &mut ImageHandle {
+        let idx = if let Some(free) = self.image_free.pop() {
+            // 复用空闲插槽
+            self.image_slots[free as usize] = ImageSlot {
+                handle: ImageHandle::new(free, HandleKind::Image),
+                data: ImageData { pixels, w, h },
+            };
+            free
+        } else {
+            let idx = self.image_slots.len() as u32;
+            self.image_slots.push(ImageSlot {
+                handle: ImageHandle::new(idx, HandleKind::Image),
+                data: ImageData { pixels, w, h },
+            });
+            idx
+        };
         &mut self.image_slots[idx as usize].handle
+    }
+
+    /// 兼容旧 API 的 load_image（委托给 alloc_image_slot）。
+    pub fn load_image(&mut self, pixels: Vec<u32>, w: i32, h: i32) -> &mut ImageHandle {
+        self.alloc_image_slot(pixels, w, h)
     }
 
     pub(crate) fn find_image(&self, handle: &ImageHandle) -> Option<(&[u32], i32, i32)> {
@@ -56,6 +83,19 @@ impl AssetStore {
         self.image_slots
             .get(idx)
             .map(|s| (s.data.pixels.as_slice(), s.data.w, s.data.h))
+    }
+
+    /// 移除图片（释放内存，插槽可复用）。
+    pub fn remove_image(&mut self, handle: &ImageHandle) {
+        if handle.kind != HandleKind::Image {
+            return;
+        }
+        let idx = handle.index as usize;
+        if idx < self.image_slots.len() {
+            self.image_slots[idx].data.pixels.clear();
+            self.image_slots[idx].data.pixels.shrink_to_fit();
+            self.image_free.push(handle.index);
+        }
     }
 
     pub(crate) fn find_any_size(&self, handle: &ImageHandle) -> Option<(i32, i32)> {
@@ -80,8 +120,9 @@ impl AssetStore {
                 format!("invalid offscreen size: {}x{}", w, h),
             ));
         }
+        // 用 0 初始化（透明），渲染层会正确覆盖。避免无意义的预填充。
         let idx = self.offscreen_slots.len() as u32;
-        let pixels = vec![0xFF000000; (w * h) as usize];
+        let pixels = vec![0x00000000; (w * h) as usize];
         self.offscreen_slots.push(OffscreenSlot {
             handle: ImageHandle::new(idx, HandleKind::Offscreen),
             data: OffscreenData { pixels, w, h },
@@ -106,16 +147,48 @@ impl AssetStore {
         Some(handle.index as usize)
     }
 
-    pub fn take_offscreen_pixels(&mut self, idx: usize) -> (Vec<u32>, i32, i32) {
-        let slot = &mut self.offscreen_slots[idx];
-        let w = slot.data.w;
-        let h = slot.data.h;
-        let pixels = std::mem::take(&mut slot.data.pixels);
-        (pixels, w, h)
+    /// 移除离屏缓冲（释放内存，插槽可复用）。
+    pub fn remove_offscreen(&mut self, handle: &ImageHandle) {
+        if handle.kind != HandleKind::Offscreen {
+            return;
+        }
+        let idx = handle.index as usize;
+        if idx < self.offscreen_slots.len() {
+            self.offscreen_slots[idx].data.pixels.clear();
+            self.offscreen_slots[idx].data.pixels.shrink_to_fit();
+            self.offscreen_free.push(handle.index);
+        }
     }
 
-    pub fn return_offscreen_pixels(&mut self, idx: usize, pixels: Vec<u32>) {
-        self.offscreen_slots[idx].data.pixels = pixels;
+    /// 返回图片插槽的总字节数。
+    pub fn image_bytes(&self) -> usize {
+        self.image_slots.iter().map(|s| s.data.pixels.capacity() * 4).sum()
+    }
+    /// 返回离屏插槽的总字节数。
+    pub fn offscreen_bytes(&self) -> usize {
+        self.offscreen_slots.iter().map(|s| s.data.pixels.capacity() * 4).sum()
+    }
+    /// 返回离屏插槽数量。
+    pub fn offscreen_count(&self) -> usize {
+        self.offscreen_slots.len()
+    }
+    /// 返回图片插槽数量。
+    pub fn image_count(&self) -> usize {
+        self.image_slots.len()
+    }
+
+    /// 交换离屏槽与外部像素缓冲（零拷贝，代替旧 take/return 模式）。
+    pub fn swap_offscreen_pixels(
+        &mut self,
+        idx: usize,
+        pixels: &mut Vec<u32>,
+        w: &mut i32,
+        h: &mut i32,
+    ) {
+        let slot = &mut self.offscreen_slots[idx];
+        std::mem::swap(pixels, &mut slot.data.pixels);
+        std::mem::swap(w, &mut slot.data.w);
+        std::mem::swap(h, &mut slot.data.h);
     }
 }
 
@@ -174,22 +247,34 @@ mod tests {
     #[test]
     fn create_offscreen_initial_black() {
         let mut store = AssetStore::new();
-        let _ = store.create_offscreen(2, 2).expect("offscreen ok");
-        let (data, _w, _h) = store.take_offscreen_pixels(0);
-        assert!(data.iter().all(|&p| p == 0xFF000000));
+        let _h = store.create_offscreen(2, 2).expect("offscreen ok");
+        let h = ImageHandle::new(0, HandleKind::Offscreen);
+        let (data, _w, _h) = store.find_offscreen(&h).unwrap();
+        assert!(data.iter().all(|&p| p == 0x00000000));
     }
 
     #[test]
-    fn offscreen_take_and_return_cycle() {
+    fn offscreen_swap_cycle() {
         let mut store = AssetStore::new();
         let _ = store.create_offscreen(2, 2).expect("offscreen ok");
-        let (pixels, w, h) = store.take_offscreen_pixels(0);
+        // 模拟 RenderTarget 的数据
+        let mut pixels = vec![0xFFFF0000u32; 16]; // 4x4 全红
+        let mut w = 4i32;
+        let mut h = 4i32;
+        // swap offscreen ↔ pixels
+        store.swap_offscreen_pixels(0, &mut pixels, &mut w, &mut h);
+        // pixels 现在有 offscreen 数据（全黑），且 w/h 变成 2x2
+        assert!(pixels.iter().all(|&p| p == 0x00000000));
         assert_eq!((w, h), (2, 2));
-        assert_eq!(pixels.len(), 4);
-        let new_pixels = vec![0xFFFFFFFF; 4];
-        store.return_offscreen_pixels(0, new_pixels);
-        let (returned, _, _) = store.take_offscreen_pixels(0);
-        assert_eq!(returned[0], 0xFFFFFFFF);
+        // offscreen 槽有原数据（全红 4x4）
+        let off_h = ImageHandle::new(0, HandleKind::Offscreen);
+        let (data, dw, dh) = store.find_offscreen(&off_h).unwrap();
+        assert!(data.iter().all(|&p| p == 0xFFFF0000));
+        assert_eq!((dw, dh), (4, 4));
+        // swap 回来
+        store.swap_offscreen_pixels(0, &mut pixels, &mut w, &mut h);
+        assert_eq!(pixels[0], 0xFFFF0000);
+        assert_eq!((w, h), (4, 4));
     }
 
     #[test]

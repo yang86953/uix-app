@@ -1,7 +1,7 @@
 use crate::base::{Point, Rect, Size};
 
 // Platform types are used directly by WidgetEvent - no conversion needed.
-pub use crate::base::{KeyCode, MouseButton};
+pub use crate::base::{KeyCode, KeyMod, MouseButton};
 
 /// Event result enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,18 +14,28 @@ pub enum EventResult {
 /// Widget event types.
 #[derive(Debug, Clone)]
 pub enum WidgetEvent {
-    MouseDown { pos: Point, button: MouseButton },
-    MouseUp { pos: Point, button: MouseButton },
+    MouseDown { pos: Point, button: MouseButton, mods: KeyMod },
+    MouseUp { pos: Point, button: MouseButton, mods: KeyMod },
     MouseMove { pos: Point },
-    MouseWheel { delta: Point },
-    KeyDown { key: KeyCode },
-    KeyUp { key: KeyCode },
+    MouseWheel { pos: Point, delta: Point },
+    KeyDown { key: KeyCode, mods: KeyMod },
+    KeyUp { key: KeyCode, mods: KeyMod },
     KeyPress { text: String },
     FocusIn,
     FocusOut,
     HoverEnter,
     HoverLeave,
     Resize { width: f32, height: f32 },
+    /// 窗口状态变化
+    WindowMaximize,
+    WindowMinimize,
+    WindowRestore,
+    WindowFocus,
+    WindowBlur,
+    /// 定时器触发
+    Timer { id: u32 },
+    /// 文件拖放
+    FileDrop { files: Vec<String>, position: Point },
 }
 
 /// Widget tree node ID.
@@ -131,10 +141,16 @@ pub trait Widget: AsAny {
 // ── WidgetNode — 可组合 widget 节点 ──────────────────────────────
 
 /// 可组合 widget 节点，支持声明式树构建。
+///
+/// `key` 字段与 React `key` prop 类似：在树重建时，`WidgetTree::build_node`
+/// 按 `(key, parent_id)` 匹配旧节点，复用其 `widget_id`。
+/// 这样 LayerTree 的 Picture 缓存（按 widget_id 索引）可以跨重建保持命中。
 pub struct WidgetNode {
     pub widget: Box<dyn Widget>,
     pub children: Vec<WidgetNode>,
     pub z_index: i32,
+    /// 稳定标识符，树重建时用于匹配旧节点。同一层级下必须唯一。
+    pub key: Option<Box<str>>,
 }
 
 impl WidgetNode {
@@ -143,13 +159,20 @@ impl WidgetNode {
             widget,
             children,
             z_index: 0,
+            key: None,
         }
+    }
+    /// 设置稳定 key，树重建时保持该节点的 widget_id 不变。
+    pub fn key(mut self, k: &str) -> Self {
+        self.key = Some(k.into());
+        self
     }
     pub fn leaf(widget: Box<dyn Widget>) -> Self {
         Self {
             widget,
             children: vec![],
             z_index: 0,
+            key: None,
         }
     }
     pub fn z_index(mut self, z: i32) -> Self {

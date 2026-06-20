@@ -45,7 +45,7 @@ define_widget! {
             WidgetEvent::HoverLeave => { self.hovered_idx = None; EventResult::Handled }
             WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
             WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key } => {
+            WidgetEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Right | KeyCode::Down => {
                         let mut next = self.selected + 1;

@@ -1,12 +1,12 @@
 use super::widgets::{BounceBall, Counter, PulseRing};
 use super::{INNER_W, PageBuilder, row};
-use uix::graphics::{AlignItems, FlexDirection};
+use uix::ui::layout::{AlignItems, FlexDirection};
 use uix::ui::theme::DesignTokens;
 use uix::ui::widget::WidgetNode;
 use uix::ui::{
-    Button, ButtonSize, Collapse, CollapsePanel, Container, Divider,
-    Grid, IntoWidgetNode, Label, MenuMode, ResultType, Segmented,
-    Space, SpaceSize, StepStatus,
+    Button, ButtonSize, Carousel, Collapse, CollapsePanel, Container, Divider,
+    Grid, Icon, IntoWidgetNode, Label, MenuMode, ResultType, Segmented,
+    Space, SpaceSize, Splitter, StepStatus,
 };
 
 // ── Page 9: Layout ──
@@ -32,7 +32,7 @@ pub fn page_layout(tk: &DesignTokens) -> WidgetNode {
         ]})
         .section("网格 — 自定义 (1fr 2fr)")
         .push(uix::tree! { Grid::new()
-            .columns(vec![uix::graphics::GridTrack::Fr(1.0), uix::graphics::GridTrack::Fr(2.0)])
+            .columns(vec![uix::ui::GridTrack::Fr(1.0), uix::ui::GridTrack::Fr(2.0)])
             .gap(8.0).pad(uix::base::EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
             uix::tree! { Container::new().size(100.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
                 [Label::new("1fr").color(tk.color_primary).font_size(13.0)]},
@@ -129,6 +129,27 @@ pub fn page_colors(tk: &DesignTokens) -> WidgetNode {
 pub fn page_custom(tk: &DesignTokens) -> WidgetNode {
     PageBuilder::new(tk)
         .gap()
+        .section("图标 (Icon) — 使用 Lucide 字体")
+        .push(
+            Space::new().size(SpaceSize::Small).width(INNER_W).height(140.0)
+                .direction(FlexDirection::Row).wrap(true).align(AlignItems::Start)
+                .child(Icon::new("search").size(16.0)).child(Label::new(" search").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("home").size(16.0)).child(Label::new(" home").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("settings").size(16.0)).child(Label::new(" settings").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("user").size(16.0)).child(Label::new(" user").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("menu").size(16.0)).child(Label::new(" menu").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("check").size(16.0)).child(Label::new(" check").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("star").size(16.0)).child(Label::new(" star").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("heart").size(16.0)).child(Label::new(" heart").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("bell").size(16.0)).child(Label::new(" bell").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("mail").size(16.0)).child(Label::new(" mail").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("clock").size(16.0)).child(Label::new(" clock").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("calendar").size(16.0)).child(Label::new(" calendar").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("moon").size(16.0)).child(Label::new(" moon").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("sun").size(16.0)).child(Label::new(" sun").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("edit").size(16.0)).child(Label::new(" edit").color(tk.color_text_secondary).font_size(11.0))
+                .child(Icon::new("tag").size(16.0)).child(Label::new(" tag").color(tk.color_text_secondary).font_size(11.0)),
+        )
         .section("计数器 — 点击递增")
         .push(Counter { count: 0 })
         .section("PulseRing — 呼吸脉冲动画")
@@ -216,6 +237,18 @@ pub fn page_custom(tk: &DesignTokens) -> WidgetNode {
             .pad(uix::base::EdgeInsets::uniform(4.0)) => [
             uix::ui::Calendar::new().cell_size(30.0).into_node(),
         ]})
+        .section("轮播图 (Carousel)")
+        .push(
+            Carousel::new()
+                .autoplay(3.0)
+                .show_dots(true)
+                .show_arrows(true),
+        )
+        .section("分割面板 (Splitter)")
+        .push(
+            Space::new().size(SpaceSize::Custom(200.0)).height(200.0)
+                .child(Splitter::new().panels(3).vertical(false)),
+        )
         .section("List — 列表")
         .push(uix::tree! { Container::new().size(INNER_W, 100.0).dir(FlexDirection::Column)
             .pad(uix::base::EdgeInsets::uniform(4.0)) => [

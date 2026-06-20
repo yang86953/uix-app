@@ -57,7 +57,8 @@ define_widget! {
             ctx.fill_rect(box_r, transparent, None);
         }
 
-        ctx.draw_text(&self.label, Point::new(box_x + box_size + 6.0, frame.y + 3.0), text_c, 13.0);
+        let label_rect = Rect::new(box_x + box_size + 6.0, frame.y, frame.w - box_x - box_size - 6.0, frame.h);
+        ctx.text_center(&self.label, label_rect, text_c, 13.0);
     }
 }
 

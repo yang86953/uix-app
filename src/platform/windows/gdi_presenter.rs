@@ -210,7 +210,13 @@ impl GdiPresenter {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IPresenter for GdiPresenter {
-    fn present(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
+    fn present(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        _dirty_rect: Option<(i32, i32, i32, i32)>,
+    ) -> Result<(), Error> {
         // Auto-resize if dimensions changed
         if (width != self.width || height != self.height) && self.resize(width, height).is_err() {
             log::debug!(

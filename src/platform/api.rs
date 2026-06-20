@@ -139,8 +139,15 @@ pub trait ISystemInfo {
 // ════════════════════════════════════════════════════════════════════════════
 
 pub trait IPresenter {
-    /// 将 ARGB 像素缓冲区呈现到窗口
-    fn present(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<(), Error>;
+    /// 将 ARGB 像素缓冲区呈现到窗口。
+    /// `dirty_rect` 为局部更新区域 `(x, y, w, h)`，`None` 表示全帧。
+    fn present(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        dirty_rect: Option<(i32, i32, i32, i32)>,
+    ) -> Result<(), Error>;
     /// 窗口尺寸变化时重建中间资源
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
 }
@@ -221,15 +228,6 @@ pub trait Platform:
     + INativeHandle
     + IPresenter
 {
-    /// Present a pixel buffer with optional dirty rect（局部更新）
-    fn present_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        dirty_rect: Option<(i32, i32, i32, i32)>,
-    );
-
     /// 返回像素呈现器引用
     fn presenter(&mut self) -> &mut dyn IPresenter;
 

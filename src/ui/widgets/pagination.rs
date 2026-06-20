@@ -70,11 +70,11 @@ define_widget! {
         let mut x = frame.x;
         let y = frame.y + (frame.h - item_h) * 0.5;
         let range = self.visible_range(total_pages, cur);
-
         // 上一页
         let prev_disabled = cur <= 1;
         let prev_c = if prev_disabled { text_sec } else { text };
-        ctx.draw_text("‹", Point::new(x + item_w * 0.5 - 5.0, y + 5.0), prev_c, 16.0);
+        let prev_y = ctx.visual_center_y(Rect::new(x, y, item_w, item_h), 16.0);
+        ctx.draw_text("‹", Point::new(x + item_w * 0.5 - 5.0, prev_y), prev_c, 16.0);
         x += item_w + gap;
 
         // 页码按钮
@@ -83,11 +83,13 @@ define_widget! {
             let btn_rect = Rect::new(x, y, item_w, item_h);
             if active {
                 ctx.fill_rect(btn_rect, primary, Some(radius));
-                ctx.draw_text(&p.to_string(), Point::new(x + item_w * 0.5 - 5.0, y + 5.0), white, 13.0);
+                let py = ctx.visual_center_y(btn_rect, 13.0);
+                ctx.draw_text(&p.to_string(), Point::new(x + item_w * 0.5 - 5.0, py), white, 13.0);
             } else {
                 ctx.fill_rect(btn_rect, bg, Some(radius));
                 ctx.stroke_rect(btn_rect, border, 1.0, Some(radius));
-                ctx.draw_text(&p.to_string(), Point::new(x + item_w * 0.5 - 5.0, y + 5.0), text, 13.0);
+                let py = ctx.visual_center_y(btn_rect, 13.0);
+                ctx.draw_text(&p.to_string(), Point::new(x + item_w * 0.5 - 5.0, py), text, 13.0);
             }
             x += item_w + gap;
         }
@@ -95,11 +97,14 @@ define_widget! {
         // 下一页
         let next_disabled = cur >= total_pages;
         let next_c = if next_disabled { text_sec } else { text };
-        ctx.draw_text("›", Point::new(x + item_w * 0.5 - 5.0, y + 5.0), next_c, 16.0);
+        let next_y = ctx.visual_center_y(Rect::new(x, y, item_w, item_h), 16.0);
+        ctx.draw_text("›", Point::new(x + item_w * 0.5 - 5.0, next_y), next_c, 16.0);
 
         // 总条数（右侧）
         if self.show_total {
-            ctx.draw_text(&format!("共 {} 条", self.total), Point::new(x + item_w + 12.0, y + 5.0), text_sec, 12.0);
+            let total_rect = Rect::new(x + item_w + 12.0, y, 160.0, item_h);
+            let total_y = ctx.visual_center_y(total_rect, 12.0);
+            ctx.draw_text(&format!("共 {} 条", self.total), Point::new(x + item_w + 12.0, total_y), text_sec, 12.0);
         }
     }
 }

@@ -89,23 +89,22 @@ define_widget! {
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseWheel { delta } => {
+            WidgetEvent::MouseWheel { delta, .. } => {
                 let mut handled = false;
                 let view = self.last_frame.get();
-                // Acceleration (pixels/s per wheel unit) scales with
-                // viewport so the flick feel is consistent everywhere.
+                // 加速度（每滚轮单位增加的像素/秒速度）：
+                // 比例因子 0.25 约 = 每次滚轮移动视口 5% 的距离（经阻尼衰减后），
+                // 比之前的 0.08(1%) 大幅提升响应感。
                 if self.direction.can_scroll_y() && delta.y != 0.0 {
                     let view_h = view.map(|f| f.h)
                         .unwrap_or(self.fixed_height.unwrap_or(200.0));
-                    let accel = view_h * 0.08;
-                    self.velocity_y += delta.y * accel;
+                    self.velocity_y += delta.y * view_h * 0.25;
                     handled = true;
                 }
                 if self.direction.can_scroll_x() && delta.x != 0.0 {
                     let view_w = view.map(|f| f.w)
                         .unwrap_or(self.fixed_width.unwrap_or(300.0));
-                    let accel = view_w * 0.08;
-                    self.velocity_x += delta.x * accel;
+                    self.velocity_x += delta.x * view_w * 0.25;
                     handled = true;
                 }
                 if handled { EventResult::Handled } else { EventResult::NotHandled }
@@ -211,13 +210,11 @@ define_widget! {
         self.prev_scroll_x = self.scroll_x;
         self.prev_scroll_y = self.scroll_y;
 
-        // Momentum physics: position follows velocity, velocity decays
-        // via friction.  This gives natural flick-and-decelerate feel.
-        let damp = 1.0 - (8.0 * dt).min(0.95); // ~8s⁻¹ friction
-        let threshold = 1.0; // snap when velocity is negligible
-
-        let before_x = self.scroll_x;
-        let before_y = self.scroll_y;
+        // 动量物理：速度经指数衰减后积分到位置。
+        // 使用 exp(-k⋅dt) 而非线性近似 (1-k⋅dt) 确保帧率无关。
+        const DAMPING_K: f32 = 5.0;          // 衰减率（s⁻¹），越小滑动尾越长
+        let damp = (-DAMPING_K * dt).exp();
+        let threshold = 0.5;                  // 速度低于此值时归零（<1px 不可见）
 
         self.scroll_x += self.velocity_x * dt;
         self.velocity_x *= damp;
@@ -227,24 +224,25 @@ define_widget! {
         self.velocity_y *= damp;
         if self.velocity_y.abs() < threshold { self.velocity_y = 0.0; }
 
-        // content_bounds 已在 layout() Phase 3 中由 layout_children 正确计算，
-        // 此处不再覆写：确保面板展开后 Phase 3 的总内容尺寸直接生效。
-
-        if self.scroll_x < 0.0 { self.scroll_x = 0.0; self.velocity_x = 0.0; }
+        // 边界 clamping：带软停止（velocity 急刹而非硬切）
+        if self.scroll_x < 0.0 {
+            self.scroll_x = 0.0;
+            self.velocity_x = 0.0;
+        }
         let max_x = self.max_scroll_x();
-        if self.scroll_x > max_x { self.scroll_x = max_x; self.velocity_x = 0.0; }
-        if self.scroll_y < 0.0 { self.scroll_y = 0.0; self.velocity_y = 0.0; }
+        if self.scroll_x > max_x {
+            self.scroll_x = max_x;
+            self.velocity_x = 0.0;
+        }
+        if self.scroll_y < 0.0 {
+            self.scroll_y = 0.0;
+            self.velocity_y = 0.0;
+        }
         let max_y = self.max_scroll_y();
-        let clamped = self.scroll_y > max_y;
-        if clamped { self.scroll_y = max_y; self.velocity_y = 0.0; }
-
-        log::debug!(
-            "[ScrollView] on_update: scroll_y {:.0}→{:.0} max_y={:.0} content=({:.0},{:.0}) clamped={}",
-            before_y, self.scroll_y, max_y,
-            self.content_bounds.get().map(|s| s.h).unwrap_or(-1.0),
-            self.last_frame.get().map(|f| f.h).unwrap_or(-1.0),
-            clamped,
-        );
+        if self.scroll_y > max_y {
+            self.scroll_y = max_y;
+            self.velocity_y = 0.0;
+        }
     }
 
     needs_continuous_update => (&self) -> bool {
@@ -308,11 +306,13 @@ define_widget! {
             // 高度取 preferred_size 和当前实际 frame 高度的较大值，
             // 确保 Phase 2（底部向上扩展）后的尺寸正确反映到 content_bounds。
             let current_h = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
+            // 子节点高度优先用 preferred_size 或当前实际高度，
+            // 不再强制 ≥ 视口高度(frame.h)，避免与 Phase 4 收缩形成振荡循环。
+            // 仅在无任何尺寸信息时回退到视口高度。
             let h = if pref.h > 0.0 {
-                // 有清晰 preferred_size 时直接用 pref.h
-                pref.h.max(frame.h)
+                pref.h
             } else if current_h > 0.0 {
-                current_h.max(frame.h)
+                current_h
             } else {
                 frame.h
             };
@@ -527,7 +527,7 @@ impl Default for ScrollView {
 mod tests {
     use super::*;
     use crate::base::{Point, Rect, Size};
-    use crate::graphics::{AlignItems, FlexDirection};
+    use crate::ui::{AlignItems, FlexDirection};
     use crate::ui::render_context::RenderContext;
     use crate::ui::widget::EventResult;
     use crate::ui::widgets::{Collapse, CollapsePanel, Container, Space};
@@ -573,10 +573,11 @@ mod tests {
         assert_eq!(sv.scroll_y, 60.0);
 
         let result = sv.on_event(&WidgetEvent::MouseWheel {
+            pos: Point::default(),
             delta: Point::new(0.0, 1.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_y, 16.0);
+        assert_eq!(sv.velocity_y, 50.0);
     }
 
     #[test]
@@ -585,10 +586,11 @@ mod tests {
         assert_eq!(sv.scroll_y, 0.0);
 
         let result = sv.on_event(&WidgetEvent::MouseWheel {
+            pos: Point::default(),
             delta: Point::new(0.0, -1.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_y, -16.0);
+        assert_eq!(sv.velocity_y, -50.0);
     }
 
     #[test]
@@ -597,10 +599,11 @@ mod tests {
         assert_eq!(sv.scroll_x, 0.0);
 
         let result = sv.on_event(&WidgetEvent::MouseWheel {
+            pos: Point::default(),
             delta: Point::new(-1.0, 0.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_x, -24.0);
+        assert_eq!(sv.velocity_x, -75.0);
     }
 
     #[test]
@@ -608,11 +611,12 @@ mod tests {
         let mut sv = ScrollView::new(ScrollDirection::Both);
 
         let result = sv.on_event(&WidgetEvent::MouseWheel {
+            pos: Point::default(),
             delta: Point::new(-1.0, -2.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_x, -24.0);
-        assert_eq!(sv.velocity_y, -32.0);
+        assert_eq!(sv.velocity_x, -75.0);
+        assert_eq!(sv.velocity_y, -100.0);
     }
 
     #[test]
@@ -621,10 +625,11 @@ mod tests {
         sv.scroll_y = 10.0;
 
         let result = sv.on_event(&WidgetEvent::MouseWheel {
+            pos: Point::default(),
             delta: Point::new(0.0, 1.0),
         });
         assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_y, 16.0);
+        assert_eq!(sv.velocity_y, 50.0);
     }
 
     #[test]
@@ -716,6 +721,7 @@ mod tests {
         let result = sv.on_event(&WidgetEvent::MouseDown {
             pos: Point::new(10.0, 10.0),
             button: crate::ui::widget::MouseButton::Left,
+            mods: crate::base::KeyMod::NONE,
         });
         assert_eq!(result, EventResult::NotHandled);
     }
@@ -761,6 +767,7 @@ mod tests {
         tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 10.0),
             button: crate::ui::widget::MouseButton::Left,
+            mods: crate::base::KeyMod::NONE,
         });
         tree.layout();
         assert_eq!(max_y(&tree), 0.0, "展开到200=视口200");
@@ -769,6 +776,7 @@ mod tests {
         tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 10.0),
             button: crate::ui::widget::MouseButton::Left,
+            mods: crate::base::KeyMod::NONE,
         });
         tree.layout();
         let max = max_y(&tree);
@@ -819,6 +827,7 @@ mod tests {
         tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 45.0), // 面板B的header区域
             button: crate::ui::widget::MouseButton::Left,
+            mods: crate::base::KeyMod::NONE,
         });
         tree.layout();
         let max_after = tree

@@ -28,11 +28,9 @@ impl Default for LinuxTextInput {
 
 impl ITextInput for LinuxTextInput {
     fn start(&mut self) {
-        // XIM integration would open an input method connection here.
-        // For now, basic keyboard input works without XIM.
+        log::warn!("Linux: text_input (IME) not implemented — no zwp_text_input_v3 protocol");
     }
 
     fn stop(&mut self) {
-        // Close the input method context.
     }
 }

@@ -2,8 +2,9 @@
 //! title, body, hover feedback, and configurable border radius.
 
 use crate::define_widget;
-use crate::graphics::{
-    compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, Color, Radius,
+use crate::graphics::{Color, Radius};
+use crate::ui::{
+    compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
 use crate::base::{EdgeInsets, Point, Rect, Size};
 use crate::ui::children::WidgetChildren;
@@ -22,11 +23,14 @@ define_widget! {
         fixed_height: Option<f32>,
         padding: f32,
         elevation: u8,
+        flex_grow_val: f32,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
         Size::new(self.fixed_width.unwrap_or(200.0), self.fixed_height.unwrap_or(0.0))
     }
+
+    flex_grow => (&self) -> f32 { self.flex_grow_val }
 
     build => (&self) -> Vec<Box<dyn Widget>> {
         self.children.take()
@@ -84,7 +88,9 @@ define_widget! {
 
         // Title
         if let Some(ref title) = self.title {
-            ctx.draw_text(title, Point::new(frame.x + self.padding, frame.y + 12.0), text, 15.0);
+            let title_rect = Rect::new(frame.x + self.padding, frame.y, frame.w - self.padding * 2.0, 44.0);
+            let title_y = ctx.visual_center_y(title_rect, 15.0);
+            ctx.draw_text(title, Point::new(frame.x + self.padding, title_y), text, 15.0);
             let sep_y = frame.y + 44.0 + 4.0;
             ctx.fill_rect(Rect::new(frame.x + self.padding, sep_y, frame.w - self.padding * 2.0, 1.0), border_secondary, None);
         }
@@ -255,6 +261,7 @@ impl Card {
             fixed_height: None,
             padding: 16.0,
             elevation: 1,
+            flex_grow_val: 0.0,
         }
     }
 
@@ -264,6 +271,7 @@ impl Card {
     pub fn size(mut self, w: f32, h: f32) -> Self { self.fixed_width = Some(w); self.fixed_height = Some(h); self }
     pub fn padding(mut self, p: f32) -> Self { self.padding = p; self }
     pub fn elevation(mut self, e: u8) -> Self { self.elevation = e.min(3); self }
+    pub fn flex_grow(mut self, v: f32) -> Self { self.flex_grow_val = v; self }
     pub fn child(self, w: impl Widget + 'static) -> Self {
         self.children.add(w);
         self

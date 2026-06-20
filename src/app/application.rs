@@ -129,8 +129,15 @@ impl App {
     // ── 窗口生命周期 ──────────────────────────────────────────────
 
     /// 创建主窗口。用 `self.window_title` 作为标题。
-    pub fn create_window(&mut self, title: &str, width: i32, height: i32) -> &mut Self {
-        let platform = create_platform();
+    ///
+    /// 返回 `Err` 如果平台初始化失败。
+    pub fn create_window(
+        &mut self,
+        title: &str,
+        width: i32,
+        height: i32,
+    ) -> Result<&mut Self, crate::diag::Error> {
+        let platform = create_platform()?;
         let mut window = Window::new(platform);
         let t = if title.is_empty() {
             &self.window_title
@@ -139,7 +146,7 @@ impl App {
         };
         window.create(t, width, height);
         self.window = Some(window);
-        self
+        Ok(self)
     }
 
     // ── CLI ───────────────────────────────────────────────────────
@@ -370,6 +377,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 Some(WidgetEvent::MouseDown {
                     pos: d.pos,
                     button: d.btn,
+                    mods: d.mods,
                 })
             } else {
                 None
@@ -380,6 +388,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 Some(WidgetEvent::MouseUp {
                     pos: d.pos,
                     button: d.btn,
+                    mods: d.mods,
                 })
             } else {
                 None
@@ -395,6 +404,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
         UiEventType::MouseWheel => {
             if let UiEventPayload::MouseWheel(ref d) = ev.payload {
                 Some(WidgetEvent::MouseWheel {
+                    pos: d.pos,
                     delta: crate::base::Point::new(d.delta_x, d.delta_y),
                 })
             } else {
@@ -403,14 +413,14 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
         }
         UiEventType::KeyDown => {
             if let UiEventPayload::Key(ref d) = ev.payload {
-                Some(WidgetEvent::KeyDown { key: d.key })
+                Some(WidgetEvent::KeyDown { key: d.key, mods: d.mods })
             } else {
                 None
             }
         }
         UiEventType::KeyUp => {
             if let UiEventPayload::Key(ref d) = ev.payload {
-                Some(WidgetEvent::KeyUp { key: d.key })
+                Some(WidgetEvent::KeyUp { key: d.key, mods: d.mods })
             } else {
                 None
             }
@@ -429,6 +439,38 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 Some(WidgetEvent::Resize {
                     width: d.width as f32,
                     height: d.height as f32,
+                })
+            } else {
+                None
+            }
+        }
+        UiEventType::WindowMaximize => {
+            Some(WidgetEvent::WindowMaximize)
+        }
+        UiEventType::WindowMinimize => {
+            Some(WidgetEvent::WindowMinimize)
+        }
+        UiEventType::WindowRestore => {
+            Some(WidgetEvent::WindowRestore)
+        }
+        UiEventType::WindowFocus => {
+            Some(WidgetEvent::WindowFocus)
+        }
+        UiEventType::WindowBlur => {
+            Some(WidgetEvent::WindowBlur)
+        }
+        UiEventType::Timer => {
+            if let UiEventPayload::Timer(ref d) = ev.payload {
+                Some(WidgetEvent::Timer { id: d.timer_id })
+            } else {
+                None
+            }
+        }
+        UiEventType::FileDrop => {
+            if let UiEventPayload::FileDrop(ref d) = ev.payload {
+                Some(WidgetEvent::FileDrop {
+                    files: d.files.clone(),
+                    position: d.position,
                 })
             } else {
                 None

@@ -38,7 +38,6 @@ impl GraphicsEngine for SoftwareEngine {
         self.main_width = 0;
         self.main_height = 0;
         self.active_target = super::engine::ActiveTarget::Main;
-        self.saved_pixels.clear();
     }
 
     fn resize(&mut self, width: i32, height: i32) {
@@ -59,6 +58,7 @@ impl GraphicsEngine for SoftwareEngine {
         if dirty.full_frame {
             self.rt.clear_all();
             *self.rt.clip_rect_mut() = Rect::new(0.0, 0.0, tw as f32, th as f32);
+            self.rt.sync_clip_int();
         } else if dirty.clear_required && !dirty.rects().is_empty() {
             // 逐矩形清除：只清理实际脏区域，而非合并的 bounds
             let bounds = dirty.bounds();
@@ -78,13 +78,16 @@ impl GraphicsEngine for SoftwareEngine {
                 (bounds.w).min(tw as f32 - bounds.x.max(0.0)),
                 (bounds.h).min(th as f32 - bounds.y.max(0.0)),
             );
+            self.rt.sync_clip_int();
         } else {
             *self.rt.clip_rect_mut() = Rect::new(0.0, 0.0, tw as f32, th as f32);
+            self.rt.sync_clip_int();
         }
     }
 
     fn end_frame(&mut self, _dirty: &DirtyRegion) {
         *self.rt.clip_rect_mut() = self.pre_frame_clip;
+        self.rt.sync_clip_int();
         self.rt.clip_stack_mut().clear();
     }
 
@@ -170,19 +173,11 @@ impl GraphicsEngine for SoftwareEngine {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
-        // 阴影需要溢出子 clip（如 ScrollView 视口内滚动内容），但必须限制在
-        // 父 clip 范围内，避免越界绘制到相邻容器。
-        let saved_rect = self.rt.clip_rect;
-        let saved_stack = std::mem::take(self.rt.clip_stack_mut());
-        // saved_stack.last() 是 push 当前 clip 之前保存的父 clip，
-        // 比 saved_stack.first()（最外层）更精确。
-        if let Some(&parent_clip) = saved_stack.last() {
-            *self.rt.clip_rect_mut() = parent_clip;
-        }
+        // 阴影在当前 clip 区域内绘制，不绕过子 clip。
+        // 这样 ScrollView 视口内的 Card 阴影会被视口裁剪（正确行为），
+        // 而非 ScrollView 容器内的阴影可以自然溢出到容器外。
         self.rt
             .draw_box_shadow(rect, blur_radius, offset_x, offset_y, color, corner_radius);
-        *self.rt.clip_rect_mut() = saved_rect;
-        *self.rt.clip_stack_mut() = saved_stack;
     }
 
     fn draw_box_shadow_ambient(
@@ -194,11 +189,7 @@ impl GraphicsEngine for SoftwareEngine {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
-        let saved_rect = self.rt.clip_rect;
-        let saved_stack = std::mem::take(self.rt.clip_stack_mut());
-        if let Some(&parent_clip) = saved_stack.last() {
-            *self.rt.clip_rect_mut() = parent_clip;
-        }
+        // 同 draw_box_shadow，在当前 clip 区域内绘制，不绕过子 clip。
         self.rt.draw_box_shadow_ambient(
             rect,
             blur_radius,
@@ -207,8 +198,6 @@ impl GraphicsEngine for SoftwareEngine {
             color,
             corner_radius,
         );
-        *self.rt.clip_rect_mut() = saved_rect;
-        *self.rt.clip_stack_mut() = saved_stack;
     }
 
     // ── 路径 ──
@@ -267,29 +256,24 @@ impl GraphicsEngine for SoftwareEngine {
 
     // ── 图片 ──
 
-    fn load_image(&mut self, data: &[u8]) -> Result<&mut ImageHandle, Error> {
-        let img = image::load_from_memory(data).map_err(|e| {
-            Error::new(
-                crate::diag::Errc::FormatError,
-                format!("cannot decode image: {}", e),
-            )
-        })?;
-        let rgba = img.to_rgba8();
-        let (w, h) = rgba.dimensions();
-        let pixels: Vec<u32> = rgba
-            .chunks_exact(4)
-            .map(|p| {
-                let a = p[3] as u32;
-                let r = (p[0] as u32 * a / 255).min(255);
-                let g = (p[1] as u32 * a / 255).min(255);
-                let b = (p[2] as u32 * a / 255).min(255);
-                (a << 24) | (r << 16) | (g << 8) | b
-            })
-            .collect();
-        Ok(self.assets.load_image(pixels, w as i32, h as i32))
+    fn load_image(
+        &mut self,
+        pixels: Vec<u32>,
+        width: i32,
+        height: i32,
+    ) -> Result<&mut ImageHandle, Error> {
+        if width <= 0 || height <= 0 || pixels.len() < (width * height) as usize {
+            return Err(Error::new(
+                crate::diag::Errc::InvalidArgument,
+                format!("load_image: invalid size {}x{} / {} pixels", width, height, pixels.len()),
+            ));
+        }
+        Ok(self.assets.load_image(pixels, width, height))
     }
 
-    fn unload_image(&mut self, _image: &ImageHandle) {}
+    fn unload_image(&mut self, image: &ImageHandle) {
+        self.assets.remove_image(image);
+    }
 
     fn image_size(&self, image: &ImageHandle) -> Size {
         if let Some((w, h)) = self.assets.find_any_size(image) {
@@ -321,26 +305,39 @@ impl GraphicsEngine for SoftwareEngine {
         self.assets.create_offscreen(w, h)
     }
 
-    fn destroy_offscreen(&mut self, _offscreen: &ImageHandle) {}
+    fn destroy_offscreen(&mut self, offscreen: &ImageHandle) {
+        self.assets.remove_offscreen(offscreen);
+    }
 
     fn begin_offscreen(&mut self, offscreen: &ImageHandle) {
         if let Some(idx) = self.assets.offscreen_slot_index(offscreen) {
-            self.saved_pixels = self.rt.take_pixels();
-            let (pixels, w, h) = self.assets.take_offscreen_pixels(idx);
-            self.rt.set_pixels(pixels, w, h);
+            // 直接交换像素缓冲（零拷贝），离屏槽临时保存主缓冲内容。
+            let (mut w, mut h) = (0i32, 0i32);
+            self.assets.swap_offscreen_pixels(
+                idx,
+                &mut self.rt.pixels,
+                &mut self.rt.width,
+                &mut self.rt.height,
+            );
+            self.rt.sync_clip_int();
+            self.main_width = w;
+            self.main_height = h;
             self.active_target = super::engine::ActiveTarget::Offscreen(idx);
         }
     }
 
     fn end_offscreen(&mut self) {
         if let super::engine::ActiveTarget::Offscreen(idx) = self.active_target {
-            let pixels = self.rt.take_pixels();
-            self.assets.return_offscreen_pixels(idx, pixels);
-            self.rt.set_pixels(
-                std::mem::take(&mut self.saved_pixels),
-                self.main_width,
-                self.main_height,
+            let (mut w, mut h) = (self.main_width, self.main_height);
+            self.assets.swap_offscreen_pixels(
+                idx,
+                &mut self.rt.pixels,
+                &mut self.rt.width,
+                &mut self.rt.height,
             );
+            self.rt.sync_clip_int();
+            self.main_width = w;
+            self.main_height = h;
             self.active_target = super::engine::ActiveTarget::Main;
         }
     }
@@ -431,6 +428,8 @@ impl GraphicsEngine for SoftwareEngine {
           let cur_version = tree.tree_version();
           if self.last_tree_version != cur_version {
               layer_tree.build(tree);
+              // 释放未被新树复用的旧离屏缓冲（防止内存泄漏）
+              layer_tree.sweep_orphaned_offscreens(self);
               self.last_tree_version = cur_version;
           }
           layer_tree.update_dirty(tree);
@@ -450,7 +449,7 @@ impl GraphicsEngine for SoftwareEngine {
         GraphicsEngine::begin_frame(self, &overlay_region);
         let theme_ref = theme.borrow();
         let tokens = theme_ref.tokens();
-        layer_tree.render_overlays(self, tree, tokens, lt_font);
+        layer_tree.render_overlays(self, tree, tokens, lt_font, false);
         drop(theme_ref);
         GraphicsEngine::end_frame(self, &overlay_region);
 
@@ -483,22 +482,107 @@ impl GraphicsEngine for SoftwareEngine {
             .rt
             .apply_opacity(crate::graphics::software_engine::core::RenderTarget::premul(color));
         let c = premul;
+        let w = self.rt.width;
+        let h = self.rt.height;
+        let stride = w as usize;
+        let (cx0, cy0, cx1, cy1) = self.rt.clip_int;
+        let c_bounds = (cx0.max(0), cy0.max(0), cx1.min(w), cy1.min(h));
+
+        let src_a = (c >> 24) & 0xFF;
+        if src_a == 0 {
+            return;
+        }
+        let src_r = (c >> 16) & 0xFF;
+        let src_g = (c >> 8) & 0xFF;
+        let src_b = c & 0xFF;
+
         for row in 0..height {
             let sy = y + row as i32;
+            if sy < c_bounds.1 || sy >= c_bounds.3 {
+                continue;
+            }
+            let row_start = row * width;
+            let row_offset = sy as usize * stride;
+
             for col in 0..width {
-                let cov = coverage[row * width + col];
+                let cov = coverage[row_start + col];
                 if cov == 0 {
                     continue;
                 }
+                let sx = x + col as i32;
+                if sx < c_bounds.0 || sx >= c_bounds.2 {
+                    continue;
+                }
+                let idx = row_offset + sx as usize;
                 let cov_u32 = cov as u32;
-                let alpha = (c >> 24) & 0xFF;
-                let blended_alpha = (alpha * cov_u32 / 255).min(255);
-                let r = ((c >> 16) & 0xFF) * cov_u32 / 255;
-                let g = ((c >> 8) & 0xFF) * cov_u32 / 255;
-                let b = (c & 0xFF) * cov_u32 / 255;
-                let pixel = (blended_alpha << 24) | (r << 16) | (g << 8) | b;
-                self.rt.put_pixel_raw(x + col as i32, sy, pixel);
+
+                // 直接内联 alpha 混合，避免函数调用开销
+                let blended_a = (src_a * cov_u32 / 255).min(255);
+                if blended_a == 0 {
+                    continue;
+                }
+                let blended_r = (src_r * cov_u32 / 255).min(255);
+                let blended_g = (src_g * cov_u32 / 255).min(255);
+                let blended_b = (src_b * cov_u32 / 255).min(255);
+
+                let dst = self.rt.pixels[idx];
+                let dst_a = (dst >> 24) & 0xFF;
+                if dst_a == 0 {
+                    // 透明背景：直接写入（最常见的 glyph 渲染场景）
+                    self.rt.pixels[idx] = (blended_a << 24) | (blended_r << 16) | (blended_g << 8) | blended_b;
+                } else {
+                    // 有内容的背景：正确 alpha 混合
+                    let out_a = blended_a + dst_a - (blended_a * dst_a / 255);
+                    let out_r = blended_r + ((dst >> 16) & 0xFF) * (255 - blended_a) / 255;
+                    let out_g = blended_g + ((dst >> 8) & 0xFF) * (255 - blended_a) / 255;
+                    let out_b = blended_b + (dst & 0xFF) * (255 - blended_a) / 255;
+                    self.rt.pixels[idx] = (out_a.min(255) << 24)
+                        | (out_r.min(255) << 16)
+                        | (out_g.min(255) << 8)
+                        | out_b.min(255);
+                }
             }
         }
+    }
+
+    fn diagnose_memory(&self) {
+        let pixel_buf = self.rt.pixel_buffer_bytes();
+        let offscreen = self.assets.offscreen_bytes();
+        let images = self.assets.image_bytes();
+        let clip_s = self.rt.clip_stack_bytes();
+        let state_s = self.rt.state_stack_bytes();
+        let font_mem = self.font_service.memory_usage();
+        let total = pixel_buf + offscreen + images + clip_s + state_s + font_mem;
+
+        // Windows 进程实际内存
+        #[cfg(windows)]
+        let (ws, priv_bytes) = crate::platform::windows::system_info::get_process_memory();
+        #[cfg(not(windows))]
+        let (ws, priv_bytes) = (0, 0);
+
+        log::info!("=== Engine 内存诊断 ===");
+        log::info!("  Engine 已知内存:  {:>7} KB ({:.1} MB)",
+            total / 1024, total as f64 / 1_048_576.0);
+        if ws > 0 {
+            let gap = ws - total;
+            log::info!("  Windows 工作集:    {:>7} KB ({:.1} MB)",
+                ws / 1024, ws as f64 / 1_048_576.0);
+            log::info!("  Windows 私有字节:  {:>7} KB ({:.1} MB)",
+                priv_bytes / 1024, priv_bytes as f64 / 1_048_576.0);
+            log::info!("  ────────────────────────────────────");
+            log::info!("  差距(WS - 已知):  {:>7} KB ({:.1} MB)",
+                gap / 1024, gap as f64 / 1_048_576.0);
+            log::info!("  其中: DIB ~3.8MB, fontdue 解析临时分配 ~50MB");
+            log::info!("        Rust 堆分配器缓存 ~剩余");
+        }
+        log::info!("");
+        log::info!("  明细: 像素={}KB 离屏={}KB 图片={}KB 字体={}KB",
+            pixel_buf / 1024, offscreen / 1024, images / 1024, font_mem / 1024);
+    }
+
+    fn memory_usage(&self) -> usize {
+        self.rt.pixel_buffer_bytes()
+            + self.assets.offscreen_bytes()
+            + self.assets.image_bytes()
     }
 }

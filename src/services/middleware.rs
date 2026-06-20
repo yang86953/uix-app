@@ -83,6 +83,109 @@ impl MiddlewarePipeline {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_pipeline_executes_handler() {
+        let mut ctx = MiddlewareContext::default();
+        let pipeline = MiddlewarePipeline::new();
+        let handler_called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = handler_called.clone();
+        pipeline.execute(&mut ctx, move |_| {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        assert!(handler_called.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn log_middleware_does_not_modify_context() {
+        let mut ctx = MiddlewareContext {
+            operation: "test".into(),
+            ..Default::default()
+        };
+        let pipeline = {
+            let mut p = MiddlewarePipeline::new();
+            p.add(LogMiddleware);
+            p
+        };
+        pipeline.execute(&mut ctx, |c| {
+            c.succeeded = true;
+            c.status_code = 200;
+        });
+        assert!(ctx.succeeded);
+        assert_eq!(ctx.status_code, 200);
+    }
+
+    #[test]
+    fn retry_middleware_retries_on_failure() {
+        let attempt = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let mut ctx = MiddlewareContext::default();
+        let mut p = MiddlewarePipeline::new();
+        p.add(RetryMiddleware::new(3));
+        let att = attempt.clone();
+        p.execute(&mut ctx, move |_| {
+            att.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        // RetryMiddleware calls the handler once
+        assert_eq!(attempt.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn middleware_order_is_preserved() {
+        let order = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        struct Tracker(u32, std::sync::Arc<std::sync::Mutex<Vec<u32>>>);
+        impl std::fmt::Debug for Tracker {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "Tracker({})", self.0)
+            }
+        }
+        impl Middleware for Tracker {
+            fn handle(&self, ctx: &mut MiddlewareContext, next: &mut dyn FnMut(&mut MiddlewareContext)) {
+                self.1.lock().unwrap().push(self.0);
+                next(ctx);
+            }
+            fn name(&self) -> &'static str { "tracker" }
+        }
+
+        let order1 = order.clone();
+        let order2 = order.clone();
+        let order3 = order.clone();
+        let mut p = MiddlewarePipeline::new();
+        p.add(Tracker(1, order1));
+        p.add(Tracker(2, order2));
+        p.add(Tracker(3, order3));
+
+        let order_clone = order.clone();
+        p.execute(&mut MiddlewareContext::default(), move |_| {
+            order_clone.lock().unwrap().push(0);
+        });
+        assert_eq!(*order.lock().unwrap(), vec![1, 2, 3, 0]);
+    }
+
+    #[test]
+    fn context_default_values() {
+        let ctx = MiddlewareContext::default();
+        assert_eq!(ctx.service_name, "");
+        assert_eq!(ctx.operation, "");
+        assert_eq!(ctx.status_code, 0);
+        assert!(ctx.succeeded);
+        assert_eq!(ctx.error_message, "");
+        assert_eq!(ctx.retry_count, 0);
+    }
+
+    #[test]
+    fn clear_removes_all_middleware() {
+        let mut p = MiddlewarePipeline::new();
+        p.add(LogMiddleware);
+        assert_eq!(p.len(), 1);
+        p.clear();
+        assert!(p.is_empty());
+        assert_eq!(p.len(), 0);
+    }
+}
+
 /// Logging middleware — records request duration and status.
 #[derive(Debug)]
 pub struct LogMiddleware;

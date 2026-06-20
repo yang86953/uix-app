@@ -48,7 +48,7 @@ define_widget! {
             }
             WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
             WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key } => {
+            WidgetEvent::KeyDown { key, .. } => {
                 match key {
                     crate::ui::widget::KeyCode::Down if self.open => {
                         self.selected_idx = (self.selected_idx + 1).min(self.filtered.len().saturating_sub(1));
@@ -84,7 +84,8 @@ define_widget! {
         ctx.stroke_rect(input_rect, bc, if self.focus { 2.0 } else { 1.0 }, r);
         let display = if self.value.is_empty() { &self.placeholder } else { &self.value };
         let disp_c = if self.value.is_empty() { text_sec } else { text };
-        ctx.draw_text(display, Point::new(frame.x + 10.0, frame.y + 8.0), disp_c, 13.0);
+        let draw_y = ctx.visual_center_y(input_rect, 13.0);
+        ctx.draw_text(display, Point::new(frame.x + 10.0, draw_y), disp_c, 13.0);
 
         // 下拉选项
         if self.open && !self.filtered.is_empty() {
@@ -96,10 +97,12 @@ define_widget! {
             ctx.stroke_rect(menu_rect, border, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
             for (i, opt) in self.filtered.iter().enumerate() {
                 let opt_y = frame.y + 32.0 + i as f32 * 28.0;
+                let item_rect = Rect::new(frame.x, opt_y, frame.w, 28.0);
                 if i == self.selected_idx {
-                    ctx.fill_rect(Rect::new(frame.x, opt_y, frame.w, 28.0), fill, None);
+                    ctx.fill_rect(item_rect, fill, None);
                 }
-                ctx.draw_text(opt, Point::new(frame.x + 10.0, opt_y + 6.0), text, 13.0);
+                let py = ctx.visual_center_y(item_rect, 13.0);
+                ctx.draw_text(opt, Point::new(frame.x + 10.0, py), text, 13.0);
             }
         }
     }

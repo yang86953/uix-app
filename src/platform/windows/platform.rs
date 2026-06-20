@@ -76,6 +76,9 @@ pub struct WindowsPlatform {
     // ── 事件队列（窗口过程写入，事件循环读取）───────────────────
     pub(crate) event_queue: VecDeque<UiEvent>,
 
+    // ── 单次定时器追踪（来自 timer_subsys，WM_TIMER 触发后自动清理）─
+    pub(crate) single_shot_timers: Arc<std::sync::Mutex<std::collections::HashSet<u32>>>,
+
     // ── 像素呈现器（默认 NullPresenter，窗口创建后替换为 GdiPresenter）─
     pub(crate) presenter: Box<dyn IPresenter>,
 
@@ -99,6 +102,8 @@ pub struct WindowsPlatform {
 
 impl WindowsPlatform {
     pub fn new() -> Self {
+        let timer_subsys = WindowsTimer::new();
+        let single_shot = timer_subsys.non_repeating_set();
         Self {
             hwnd: ptr::null_mut(),
             hinstance: ptr::null_mut(),
@@ -122,6 +127,7 @@ impl WindowsPlatform {
             file_drop_enabled: false,
             text_input_active: false,
             event_queue: VecDeque::new(),
+            single_shot_timers: single_shot,
             presenter: Box::new(NullPresenter::new()),
             clipboard_subsys: WindowsClipboard::new(),
             cursor_subsys: WindowsCursor::new(),
@@ -129,7 +135,7 @@ impl WindowsPlatform {
             file_dialog_subsys: WindowsFileDialog::new(),
             keyboard_subsys: WindowsKeyboard::new(),
             text_input_subsys: WindowsTextInput::new(),
-            timer_subsys: WindowsTimer::new(),
+            timer_subsys,
             notification_subsys: WindowsNotification::new(),
             console_subsys: WindowsConsole::new(),
             file_system_subsys: WindowsFileSystem::new(),

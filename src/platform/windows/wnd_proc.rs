@@ -66,6 +66,9 @@ impl WindowsPlatform {
                             type_: UiEventType::WindowMaximize,
                             payload: UiEventPayload::None,
                         });
+                        // 最大化时窗口尺寸已变，必须推送 resize 事件
+                        // 否则引擎和 widget 树不知道新尺寸，内部组件无法响应式变化
+                        self.push_event(UiEvent::resize(w, h));
                     }
                     SIZE_RESTORED => {
                         let was_min = self.minimized;
@@ -182,7 +185,15 @@ impl WindowsPlatform {
             }
 
             WM_TIMER => {
-                self.push_event(UiEvent::timer(wparam as u32));
+                let timer_id = wparam as u32;
+                if let Ok(mut set) = self.single_shot_timers.lock() {
+                    if set.remove(&timer_id) {
+                        unsafe {
+                            KillTimer(self.hwnd, timer_id);
+                        }
+                    }
+                }
+                self.push_event(UiEvent::timer(timer_id));
                 0
             }
 

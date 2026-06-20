@@ -38,13 +38,16 @@ define_widget! {
         ctx.fill_rect(Rect::new(frame.x + 2.0, frame.y + 4.0, 3.0, frame.h - 8.0), border, Some(Radius::uniform(1.5)));
 
         let text_x = frame.x + 14.0;
-        ctx.draw_text(&self.message, crate::base::Point::new(text_x, frame.y + 8.0), fg, 14.0);
+        let msg_y = ctx.visual_center_y(frame, 14.0);
+        ctx.draw_text(&self.message, crate::base::Point::new(text_x, msg_y), fg, 14.0);
         if !self.description.is_empty() {
-            ctx.draw_text(&self.description, crate::base::Point::new(text_x, frame.y + 26.0), ctx.tokens().color_text_secondary(), 12.0);
+            let desc_rect = Rect::new(frame.x, frame.y + frame.h * 0.5, frame.w, frame.h * 0.5);
+            let desc_y = ctx.visual_center_y(desc_rect, 12.0);
+            ctx.draw_text(&self.description, crate::base::Point::new(text_x, desc_y), ctx.tokens().color_text_secondary(), 12.0);
         }
         if self.closable {
             let cx = frame.x + frame.w - 18.0;
-            let cy = frame.y + frame.h * 0.5 - 5.0;
+            let cy = ctx.visual_center_y(frame, 14.0);
             ctx.draw_text("✕", crate::base::Point::new(cx, cy), ctx.tokens().color_text_quaternary(), 14.0);
         }
     }

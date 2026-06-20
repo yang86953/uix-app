@@ -63,7 +63,7 @@ define_widget! {
             WidgetEvent::HoverLeave => { self.hover_value = 0; EventResult::Handled }
             WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
             WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key } => {
+            WidgetEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Right | KeyCode::Up => {
                         let max_val = if self.half { self.count * 2 } else { self.count };

@@ -1,4 +1,4 @@
-//! QRCode, Transfer, Upload, Watermark, Layout 组件。
+//! QRCode, Transfer, Upload, Watermark 组件。
 //! Ant Design 5 补充实现。
 
 use crate::base::{Point, Rect, Size};
@@ -270,34 +270,4 @@ impl Watermark {
     pub fn opacity(mut self, o: f32) -> Self { self.opacity = o; self }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Layout
-// ════════════════════════════════════════════════════════════════════════════
 
-/// Layout — 布局容器（Header/Footer/Sider/Content 语义包装）。
-///
-/// 提供 flex row/column 布局的语义化别名，便于表达页面结构。
-pub struct Layout;
-
-impl Layout {
-    pub fn header() -> crate::ui::widgets::Container {
-        let mut c = crate::ui::widgets::Container::new();
-        c.flex_grow = 0.0;
-        c
-    }
-    pub fn sider() -> crate::ui::widgets::Container {
-        let mut c = crate::ui::widgets::Container::new();
-        c.flex_grow = 0.0;
-        c
-    }
-    pub fn content() -> crate::ui::widgets::Container {
-        let mut c = crate::ui::widgets::Container::new();
-        c.flex_grow = 1.0;
-        c
-    }
-    pub fn footer() -> crate::ui::widgets::Container {
-        let mut c = crate::ui::widgets::Container::new();
-        c.flex_grow = 0.0;
-        c
-    }
-}

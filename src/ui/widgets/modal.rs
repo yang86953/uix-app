@@ -31,7 +31,7 @@ define_widget! {
                 if self.mask_closable && (pos.x < 0.0 || pos.y < 0.0) { self.close(); return EventResult::Handled; }
                 EventResult::Handled
             }
-            WidgetEvent::KeyDown { key } => {
+            WidgetEvent::KeyDown { key, .. } => {
                 if *key == crate::ui::widget::KeyCode::Escape && self.closable { self.close(); return EventResult::Handled; }
                 EventResult::Handled
             }

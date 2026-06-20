@@ -23,7 +23,7 @@ define_widget! {
                 let opts = TextLayoutOptions {
                     max_width: f32::MAX,
                     max_height: 0.0,
-                    line_height: self.font_size + 2.0,
+                    line_height: self.font_size * 1.5,
                     word_wrap: false,
                     h_align: crate::graphics::HAlign::Left,
                     v_align: crate::graphics::VAlign::Top,
@@ -31,12 +31,12 @@ define_widget! {
                 };
                 let sz = eng.measure_text(&FontHandle::default(), &self.text, &opts);
                 if sz.w > 0.0 && sz.h > 0.0 {
-                    return Size::new(sz.w + 4.0, sz.h.max(self.font_size + 4.0));
+                    return Size::new(sz.w, sz.h.max(self.font_size * 1.5));
                 }
             }
             // Fallback: estimate
             let len = self.text.len() as f32;
-            Size::new(len * 6.0 + 4.0, self.font_size + 4.0)
+            Size::new(len * 7.0, self.font_size * 1.5)
         }
     }
 

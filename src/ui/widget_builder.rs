@@ -1,5 +1,5 @@
-use crate::graphics::{compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
-use crate::graphics::{Color};
+use crate::graphics::Color;
+use crate::ui::{compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use crate::base::{EdgeInsets, Rect, Size};
 use crate::ui::widget::{Widget, WidgetId, WidgetTree};
 

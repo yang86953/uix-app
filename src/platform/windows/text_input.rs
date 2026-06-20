@@ -30,11 +30,17 @@ impl Default for WindowsTextInput {
 
 impl ITextInput for WindowsTextInput {
     fn start(&mut self) {
+        if self.hwnd.is_null() {
+            return;
+        }
         unsafe {
             ImmAssociateContextEx(self.hwnd, ptr::null_mut(), IACE_DEFAULT);
         }
     }
     fn stop(&mut self) {
+        if self.hwnd.is_null() {
+            return;
+        }
         unsafe {
             ImmAssociateContextEx(self.hwnd, ptr::null_mut(), 0);
         }

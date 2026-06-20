@@ -2,29 +2,16 @@
 // platform/linux/timer.rs — Linux timer implementation (ITimer)
 // ============================================================================
 //
-// Uses std::sync::mpsc + std::thread::spawn for timer dispatching.
-// Timers fire UiEvent::timer events through the platform's event queue.
-// The platform must route these back to the main event queue.
-//
-// NOTE: This implementation stores a sender handle. The timers are
-// dispatched via a channel. The main event loop must check this channel
-// and push the events into its own UiEvent queue.
+// Pushes UiEvent::timer events directly into the Wayland backend's shared
+// event queue, so timer events are processed by the main event loop.
 // ============================================================================
 
+use crate::platform::event::UiEvent;
 use crate::platform::ITimer;
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-
-// ════════════════════════════════════════════════════════════════════════════
-// Timer message
-// ════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Clone, Copy)]
-pub struct TimerFired {
-    pub id: u32,
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // LinuxTimer
@@ -33,7 +20,7 @@ pub struct TimerFired {
 pub struct LinuxTimer {
     next_id: u32,
     active: Arc<Mutex<HashMap<u32, TimerState>>>,
-    tx: Sender<TimerFired>,
+    event_queue: Arc<Mutex<std::collections::VecDeque<UiEvent>>>,
 }
 
 struct TimerState {
@@ -41,11 +28,11 @@ struct TimerState {
 }
 
 impl LinuxTimer {
-    pub fn new(tx: Sender<TimerFired>) -> Self {
+    pub fn new(event_queue: Arc<Mutex<std::collections::VecDeque<UiEvent>>>) -> Self {
         Self {
             next_id: 1,
             active: Arc::new(Mutex::new(HashMap::new())),
-            tx,
+            event_queue,
         }
     }
 }
@@ -55,7 +42,7 @@ impl ITimer for LinuxTimer {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
 
-        let tx = self.tx.clone();
+        let eq = self.event_queue.clone();
         let active = self.active.clone();
         let (stopper, stopped) = mpsc::channel::<()>();
 
@@ -63,29 +50,24 @@ impl ITimer for LinuxTimer {
             .name(format!("uix-timer-{}", id))
             .spawn(move || {
                 loop {
-                    // Wait for either the interval or a stop signal
                     let start = std::time::Instant::now();
                     if stopped.recv_timeout(std::time::Duration::from_millis(interval_ms as u64))
                         .is_ok()
                     {
-                        // Received stop signal
                         break;
                     }
-                    // Timer fired
-                    if tx.send(TimerFired { id }).is_err() {
-                        // Receiver dropped
-                        break;
+                    // Push timer event directly into the shared event queue
+                    if let Ok(mut q) = eq.lock() {
+                        q.push_back(UiEvent::timer(id));
                     }
                     if !repeating {
                         break;
                     }
-                    // Adjust for time spent in send
                     let elapsed = start.elapsed();
                     if elapsed.as_millis() as u32 >= interval_ms {
                         continue;
                     }
                 }
-                // Clean up on exit
                 if let Ok(mut map) = active.lock() {
                     map.remove(&id);
                 }

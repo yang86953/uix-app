@@ -69,10 +69,10 @@ pub(crate) struct OffscreenSlot {
 
 mod asset_store;
 mod content;
-mod core;
+pub(crate) mod ab_glyph_backend;
+pub(crate) mod core;
 mod engine;
 mod font;
-pub(crate) mod fontdue_backend;
 mod graphics_impl;
 mod pixels;
 mod rect;
@@ -87,5 +87,5 @@ mod tests;
 // 公开 re-exports
 // ════════════════════════════════════════════════════════════════════════════
 
+pub use ab_glyph_backend::AbGlyphBackend;
 pub use engine::SoftwareEngine;
-pub use fontdue_backend::FontdueBackend;

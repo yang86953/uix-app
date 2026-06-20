@@ -35,6 +35,9 @@ pub use text_manager::*;
 pub struct WidgetManagers {
     pub state: StateManager,
     pub style: StyleManager,
+    // NOTE: 已废弃 — layout 管理职能已移至纯函数 compute_flex_layout / compute_grid_layout，
+    // 以及 tree_core::layout() 的 4 阶段编排中。未来如需恢复需重新设计。
+    #[allow(dead_code)]
     pub layout: LayoutManager,
     pub text: TextManager,
     pub image: ImageManager,

@@ -16,6 +16,9 @@ pub struct WidgetTree {
     /// 树结构版本号，结构变更时递增（add_child / remove / set_root）。
     /// 引擎可用此判断 LayerTree 是否需要重建。
     pub(crate) tree_version: u64,
+    /// 缓存的先序遍历结果（内部可变性，仅用作性能缓存）。
+    /// 当 `cached_traversal_version != tree_version` 时失效重建。
+    cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
 }
 
 impl Default for WidgetTree {
@@ -31,6 +34,7 @@ impl Default for WidgetTree {
             mouse_down_target: None,
             scroll_deltas: Vec::new(),
             tree_version: 0,
+            cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
         }
     }
 }
@@ -204,21 +208,30 @@ impl WidgetTree {
         }
     }
 
+    /// 返回树中所有节点的先序遍历顺序。
+    ///
+    /// 内部使用缓存：当树结构未变化时克隆缓存结果（O(n) memcpy），
+    /// 避免每帧多次完整遍历 + Vec 分配的开销。
     pub fn traverse(&self) -> Vec<WidgetId> {
-        let mut result = Vec::new();
-        if let Some(root_id) = self.root_id {
-            self.traverse_internal(root_id, &mut result);
-        }
-        result
-    }
-
-    fn traverse_internal(&self, id: WidgetId, result: &mut Vec<WidgetId>) {
-        result.push(id);
-        if let Some(node) = self.get(id) {
-            for child_id in node.children().iter() {
-                self.traverse_internal(*child_id, result);
+        let mut cache = self.cached_traversal.borrow_mut();
+        let (ref mut ids, ref mut ver) = *cache;
+        if *ver != self.tree_version {
+            ids.clear();
+            if let Some(root_id) = self.root_id {
+                // 迭代遍历（避免递归过深时的栈溢出）
+                let mut stack = vec![root_id];
+                while let Some(current) = stack.pop() {
+                    ids.push(current);
+                    if let Some(node) = self.get(current) {
+                        for child_id in node.children().iter().rev() {
+                            stack.push(*child_id);
+                        }
+                    }
+                }
             }
+            *ver = self.tree_version;
         }
+        ids.clone()
     }
 
     pub fn layout(&mut self) {
@@ -393,6 +406,14 @@ impl WidgetTree {
                     .map(|n| n.inner().children_clip(n.frame()).is_some())
                     .unwrap_or(false);
                 if is_viewport { continue; }
+                // 不收缩父容器是 viewport（如 ScrollView）的子节点，
+                // 避免与 ScrollView::layout_children 的尺寸设定形成振荡。
+                let parent_is_viewport = self.get(id)
+                    .and_then(|n| n.parent())
+                    .and_then(|pid| self.get(pid))
+                    .map(|p| p.inner().children_clip(p.frame()).is_some())
+                    .unwrap_or(false);
+                if parent_is_viewport { continue; }
                 let children: Vec<WidgetId> = match self.get(id) {
                     Some(n) if !n.children().is_empty() => n.children().to_vec(),
                     _ => continue,
@@ -544,10 +565,28 @@ impl WidgetTree {
 
     // ── WidgetNode tree building ──
 
+    /// 从根节点构建整棵树。总是分配新的 widget_id。
     pub fn build(&mut self, node: WidgetNode) -> WidgetId {
         self.build_node(node, None)
     }
 
+    /// 替换指定节点的所有子节点为新子树。
+    /// 父节点 widget_id 不变（保持 LayerTree 缓存），子节点分配新 ID。
+    /// 适合页面切换等局部更新的场景。
+    pub fn set_children(&mut self, parent_id: WidgetId, children: Vec<WidgetNode>) {
+        let old_children: Vec<WidgetId> = self.get(parent_id)
+            .map(|n| n.children().to_vec())
+            .unwrap_or_default();
+        for &cid in &old_children {
+            self.remove(cid);
+        }
+        self.tree_version += 1;
+        for child in children {
+            self.build_node(child, Some(parent_id));
+        }
+    }
+
+    /// 递归构建节点及其子树。
     fn build_node(&mut self, node: WidgetNode, parent: Option<WidgetId>) -> WidgetId {
         let id = match parent {
             Some(p) => self.add_child(p, node.widget),
@@ -561,12 +600,26 @@ impl WidgetTree {
         }
         id
     }
+
+    /// 收缩 nodes Vec 的容量以适应当前活跃节点数。
+    /// 删除节点后调用可释放空闲插槽占用的内存。
+    pub fn shrink_to_fit(&mut self) {
+        self.nodes.shrink_to_fit();
+    }
+
+    /// 释放 tree 内部所有 Vec 的额外容量。
+    pub fn shrink_all(&mut self) {
+        self.nodes.shrink_to_fit();
+        self.free_ids.shrink_to_fit();
+        self.scroll_deltas.shrink_to_fit();
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::base::Point;
+    use crate::base::KeyMod;
     use std::cell::RefCell;
 
     struct SpyWidget {
@@ -736,6 +789,7 @@ mod tests {
             tree.dispatch_event(&WidgetEvent::MouseDown {
                 pos: Point::new(40.0, 20.0),
                 button: MouseButton::Left,
+                mods: KeyMod::NONE,
             }),
             EventResult::Handled
         );
@@ -749,6 +803,7 @@ mod tests {
         tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(300.0, 300.0),
             button: MouseButton::Left,
+            mods: KeyMod::NONE,
         });
     }
 
@@ -760,10 +815,12 @@ mod tests {
         tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 50.0),
             button: MouseButton::Left,
+            mods: KeyMod::NONE,
         });
         assert_eq!(
             tree.dispatch_event(&WidgetEvent::KeyDown {
-                key: KeyCode::Enter
+                key: KeyCode::Enter,
+                mods: KeyMod::NONE,
             }),
             EventResult::Handled
         );
@@ -809,7 +866,7 @@ mod tests {
         let root = tree.set_root(Box::new(
             crate::ui::widgets::Container::new()
                 .size(200.0, 200.0)
-                .dir(crate::graphics::FlexDirection::Column),
+                .dir(crate::ui::FlexDirection::Column),
         ));
         let n0 = tree.add_child(
             root,
@@ -840,18 +897,21 @@ mod tests {
         let result = tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 54.0),
             button: crate::base::MouseButton::Left,
+            mods: KeyMod::NONE,
         });
         assert_eq!(result, EventResult::Handled);
         assert_eq!(active.get(), 1);
         let result = tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 18.0),
             button: crate::base::MouseButton::Left,
+            mods: KeyMod::NONE,
         });
         assert_eq!(result, EventResult::Handled);
         assert_eq!(active.get(), 0);
         let result = tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 150.0),
             button: crate::base::MouseButton::Left,
+            mods: KeyMod::NONE,
         });
         assert_eq!(result, EventResult::NotHandled);
         assert_eq!(active.get(), 0);

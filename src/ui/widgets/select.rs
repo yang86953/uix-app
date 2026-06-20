@@ -72,7 +72,7 @@ define_widget! {
             WidgetEvent::HoverLeave => { self.hovered = false; self.hovered_option = None; EventResult::Handled }
             WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
             WidgetEvent::FocusOut => { self.focused = false; self.open = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key } => {
+            WidgetEvent::KeyDown { key, .. } => {
             match key {
                 KeyCode::Down => {
                     if self.open {
@@ -147,11 +147,14 @@ define_widget! {
             (display_text, text_color)
         };
 
-        ctx.draw_text(disp, Point::new(frame.x + 10.0, frame.y + 8.0), color, 13.0);
+        let box_rect_v = Rect::new(frame.x, frame.y, frame.w, 32.0);
+        let draw_y = ctx.visual_center_y(box_rect_v, 13.0);
+        ctx.draw_text(disp, Point::new(frame.x + 10.0, draw_y), color, 13.0);
 
         // 下拉箭头
         let arrow = if self.open { "▲" } else { "▼" };
-        ctx.draw_text(arrow, Point::new(frame.x + frame.w - 18.0, frame.y + 8.0), text_secondary, 10.0);
+        let arrow_y = ctx.visual_center_y(box_rect_v, 10.0);
+        ctx.draw_text(arrow, Point::new(frame.x + frame.w - 18.0, arrow_y), text_secondary, 10.0);
     }
 
     // ── Post-render: 下拉列表（浮在布局上方，不影响定位）──
@@ -181,7 +184,8 @@ define_widget! {
             }
 
             let tc = if is_selected { primary } else { text_color };
-            ctx.draw_text(opt, Point::new(frame.x + 10.0, item_y + 6.0), tc, 13.0);
+            let draw_y = ctx.visual_center_y(item_rect, 13.0);
+            ctx.draw_text(opt, Point::new(frame.x + 10.0, draw_y), tc, 13.0);
         }
     }
 

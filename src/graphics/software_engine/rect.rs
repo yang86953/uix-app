@@ -74,16 +74,17 @@ impl RenderTarget {
         let is_sharp = rad.tl == 0.0 && rad.tr == 0.0 && rad.bl == 0.0 && rad.br == 0.0;
 
         if is_sharp {
-            if let Some(cr) = self.intersect_clip(&rect) {
-                if cr.x.fract() == 0.0
-                    && cr.y.fract() == 0.0
-                    && (cr.x + cr.w).fract() == 0.0
-                    && (cr.y + cr.h).fract() == 0.0
-                {
-                    self.fill_rect_raw(cr.x as i32, cr.y as i32, cr.w as i32, cr.h as i32, c);
-                    return;
-                }
+            // 整数坐标取整后走 fill_rect_raw（clip 由 fill_span 内部通过 clip_int 处理）
+            let x0 = (rect.x + 0.5).floor() as i32;
+            let y0 = (rect.y + 0.5).floor() as i32;
+            let x1 = ((rect.x + rect.w) + 0.5).floor() as i32;
+            let y1 = ((rect.y + rect.h) + 0.5).floor() as i32;
+            let cw = x1 - x0;
+            let ch = y1 - y0;
+            if cw > 0 && ch > 0 {
+                self.fill_rect_raw(x0, y0, cw, ch, c);
             }
+            return;
         }
 
         let expand = 1.0;

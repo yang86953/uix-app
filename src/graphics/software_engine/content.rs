@@ -19,21 +19,13 @@ impl RenderTarget {
                 for px in x0..x1 {
                     let ux = px as f32 + 0.5;
                     let uy = py as f32 + 0.5;
-                    let cov_x = if ux >= rect.x && ux <= rect.x + rect.w - 1.0 {
-                        1.0
-                    } else if ux < rect.x {
-                        (ux + 0.5 - rect.x).clamp(0.0, 1.0)
-                    } else {
-                        (rect.x + rect.w - (ux - 0.5)).clamp(0.0, 1.0)
-                    };
-                    let cov_y = if uy >= rect.y && uy <= rect.y + rect.h - 1.0 {
-                        1.0
-                    } else if uy < rect.y {
-                        (uy + 0.5 - rect.y).clamp(0.0, 1.0)
-                    } else {
-                        (rect.y + rect.h - (uy - 0.5)).clamp(0.0, 1.0)
-                    };
-                    let cover = cov_x.min(cov_y).clamp(0.0, 1.0);
+                    let pixel_left = ux - 0.5;
+                    let pixel_right = ux + 0.5;
+                    let pixel_top = uy - 0.5;
+                    let pixel_bottom = uy + 0.5;
+                    let over_x = (pixel_right.min(rect.x + rect.w) - pixel_left.max(rect.x)).max(0.0);
+                    let over_y = (pixel_bottom.min(rect.y + rect.h) - pixel_top.max(rect.y)).max(0.0);
+                    let cover = over_x.min(over_y).min(1.0);
                     if cover <= 0.0 {
                         continue;
                     }

@@ -66,35 +66,4 @@ impl TreeSelect {
 }
 impl Default for TreeSelect { fn default() -> Self { Self::new() } }
 
-/// Anchor — 锚点组件，页面内快速定位。
-define_widget! {
-    pub struct Anchor {
-        items: Vec<(String, String)>, // (title, anchor_id)
-        affix: bool,
-    }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
-        Size::new(160.0, self.items.len() as f32 * 28.0)
-    }
-
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let primary = ctx.tokens().color_primary();
-        let text = ctx.tokens().color_text();
-        let text_sec = ctx.tokens().color_text_secondary();
-        for (i, (title, _id)) in self.items.iter().enumerate() {
-            let y = frame.y + i as f32 * 28.0;
-            ctx.draw_text(title, Point::new(frame.x + 12.0, y + 5.0), if i == 0 { primary } else { text_sec }, 13.0);
-            if i == 0 {
-                ctx.fill_rect(Rect::new(frame.x, y, 3.0, 28.0), primary, None);
-            }
-        }
-    }
-}
-impl Anchor {
-    pub fn new() -> Self { Self { items: Vec::new(), affix: true } }
-    pub fn items(mut self, items: Vec<(&str, &str)>) -> Self {
-        self.items = items.into_iter().map(|(t, i)| (t.to_string(), i.to_string())).collect(); self
-    }
-    pub fn add(mut self, title: &str, id: &str) -> Self { self.items.push((title.to_string(), id.to_string())); self }
-}
-impl Default for Anchor { fn default() -> Self { Self::new() } }

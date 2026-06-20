@@ -39,3 +39,86 @@ impl Container {
         self.singletons.remove(&TypeId::of::<T>());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_container_is_empty() {
+        let c = Container::new();
+        assert!(!c.has::<String>());
+        assert!(!c.has::<i32>());
+    }
+
+    #[test]
+    fn singleton_register_and_resolve() {
+        let mut c = Container::new();
+        c.singleton("hello".to_string());
+        c.singleton(42i32);
+
+        assert!(c.has::<String>());
+        assert!(c.has::<i32>());
+
+        assert_eq!(c.resolve::<String>(), Some(&"hello".to_string()));
+        assert_eq!(c.resolve::<i32>(), Some(&42i32));
+    }
+
+    #[test]
+    fn resolve_mut_allows_modification() {
+        let mut c = Container::new();
+        c.singleton(10i32);
+
+        let val = c.resolve_mut::<i32>();
+        assert!(val.is_some());
+        *val.unwrap() = 20;
+
+        assert_eq!(c.resolve::<i32>(), Some(&20i32));
+    }
+
+    #[test]
+    fn resolve_nonexistent_returns_none() {
+        let c = Container::new();
+        assert!(c.resolve::<String>().is_none());
+        assert!(c.resolve::<f64>().is_none());
+    }
+
+    #[test]
+    fn remove_clears_singleton() {
+        let mut c = Container::new();
+        c.singleton(42i32);
+        assert!(c.has::<i32>());
+        c.remove::<i32>();
+        assert!(!c.has::<i32>());
+    }
+
+    #[test]
+    fn multiple_singletons_independent() {
+        let mut c = Container::new();
+        c.singleton(1i32);
+        c.singleton(2.0f64);
+        c.singleton("text".to_string());
+
+        assert_eq!(c.resolve::<i32>(), Some(&1i32));
+        assert_eq!(c.resolve::<f64>(), Some(&2.0f64));
+        assert_eq!(c.resolve::<String>(), Some(&"text".to_string()));
+
+        c.remove::<i32>();
+        assert!(c.resolve::<i32>().is_none());
+        assert!(c.resolve::<f64>().is_some());
+        assert!(c.resolve::<String>().is_some());
+    }
+
+    #[test]
+    fn singleton_clone_trait() {
+        let mut c = Container::new();
+        c.singleton(vec![1, 2, 3]);
+        assert_eq!(c.resolve::<Vec<i32>>(), Some(&vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn default_container_is_empty() {
+        let c: Container = Default::default();
+        assert!(!c.has::<i32>());
+    }
+}

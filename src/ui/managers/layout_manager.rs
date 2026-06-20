@@ -1,6 +1,6 @@
 use crate::base::EdgeInsets;
 use crate::base::Size;
-use crate::graphics::{AlignItems, FlexDirection, JustifyContent};
+use crate::ui::{AlignItems, FlexDirection, JustifyContent};
 
 /// Manages layout constraints and flex properties for a widget.
 #[derive(Clone)]

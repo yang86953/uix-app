@@ -232,6 +232,21 @@ struct SYSTEM_INFO {
 }
 
 #[repr(C)]
+#[repr(C)]
+struct PROCESS_MEMORY_COUNTERS {
+    cb: u32,
+    PageFaultCount: u32,
+    PeakWorkingSetSize: usize,
+    WorkingSetSize: usize,
+    QuotaPeakPagedPoolUsage: usize,
+    QuotaPagedPoolUsage: usize,
+    QuotaPeakNonPagedPoolUsage: usize,
+    QuotaNonPagedPoolUsage: usize,
+    PagefileUsage: usize,
+    PeakPagefileUsage: usize,
+    PrivateUsage: usize,
+}
+
 struct MEMORYSTATUSEX {
     dwLength: u32,
     dwMemoryLoad: u32,
@@ -271,4 +286,37 @@ extern "system" {
 #[link(name = "advapi32")]
 extern "system" {
     fn GetUserNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
+}
+
+#[link(name = "psapi")]
+extern "system" {
+    fn GetProcessMemoryInfo(
+        hProcess: *mut std::ffi::c_void,
+        ppmem_counters: *mut PROCESS_MEMORY_COUNTERS,
+        cb: u32,
+    ) -> i32;
+}
+
+/// 获取当前进程的内存使用统计（工作集字节, 私有字节）。
+pub fn get_process_memory() -> (usize, usize) {
+    unsafe {
+        let mut pmc = std::mem::MaybeUninit::<PROCESS_MEMORY_COUNTERS>::zeroed();
+        let h_process = GetCurrentProcess();
+        let ret = GetProcessMemoryInfo(
+            h_process,
+            pmc.as_mut_ptr(),
+            std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        );
+        if ret != 0 {
+            let pmc = pmc.assume_init();
+            (pmc.WorkingSetSize, pmc.PrivateUsage)
+        } else {
+            (0, 0)
+        }
+    }
+}
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetCurrentProcess() -> *mut std::ffi::c_void;
 }

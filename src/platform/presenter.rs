@@ -30,7 +30,13 @@ impl Default for NullPresenter {
 }
 
 impl IPresenter for NullPresenter {
-    fn present(&mut self, _pixels: &[u32], _width: i32, _height: i32) -> Result<(), Error> {
+    fn present(
+        &mut self,
+        _pixels: &[u32],
+        _width: i32,
+        _height: i32,
+        _dirty_rect: Option<(i32, i32, i32, i32)>,
+    ) -> Result<(), Error> {
         Ok(())
     }
 

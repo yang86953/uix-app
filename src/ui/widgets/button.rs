@@ -110,7 +110,8 @@ define_widget! {
         let style = self.compute_style(ctx);
 
         ctx.apply_style(btn_frame, &style);
-        ctx.text_center(&self.text, btn_frame, style.color, style.font_size);
+        let content_rect = btn_frame.inset(style.padding);
+        ctx.text_center(&self.text, content_rect, style.color, style.font_size);
     }
 
     // ── Post-render: ripple overlay (separate from UI render) ──────────

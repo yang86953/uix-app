@@ -43,8 +43,8 @@ define_widget! {
         ctx.text_center(&self.text, text_frame, fg, self.font_size);
         if self.closable {
             let cx = frame.x + frame.w - 14.0;
-            let cy = frame.y + frame.h * 0.5;
-            ctx.draw_text("✕", crate::base::Point::new(cx, cy - 6.0), fg, 10.0);
+            let cy = ctx.visual_center_y(frame, 10.0);
+            ctx.draw_text("✕", crate::base::Point::new(cx, cy), fg, 10.0);
         }
     }
 }

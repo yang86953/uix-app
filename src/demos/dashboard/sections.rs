@@ -1,33 +1,17 @@
 use uix::ui::theme::DesignTokens;
 use uix::ui::widget::WidgetNode;
-use uix::graphics::{AlignItems, FlexDirection};
+use uix::ui::layout::{AlignItems, FlexDirection};
 use uix::ui::{
     Alert, AlertType, Avatar, Badge, BarChart, BarData, Button, ButtonSize, Card,
-    Checkbox, Container, Empty, Icon, Input, InputSize, IntoWidgetNode,
-    Label, LineChart, LineData, PieChart, PieData, ProgressBar, Radio, Rate,
+    Cascader, CascaderOption, Checkbox, Container, DatePicker, DateValue, Empty, Icon,
+    Input, InputNumber, InputSize, IntoWidgetNode,
+    Label, LineChart, LineData, Mentions, PieChart, PieData, ProgressBar, Radio, Rate,
     Select, Skeleton, SkeletonShape, Slider, Spin, Switch, Table, TableColumn, Tag, TagColor,
-    Tooltip, TooltipPlacement, Space, SpaceSize, Popover, Popconfirm,
+    TimePicker, TimeValue, Tooltip, TooltipPlacement, Space, SpaceSize, Popover, Popconfirm,
 };
-use super::{INNER_W, PageBuilder, section_title, row, col, stat_card};
+use super::{INNER_W, PageBuilder, section_title, row, col};
 
-// ── Page 0: Dashboard ──
-
-pub fn page_dashboard(tk: &DesignTokens) -> WidgetNode {
-    PageBuilder::new(tk)
-        .gap()
-        .section("概览 — 统计卡片")
-        .push(
-            Space::new().size(SpaceSize::Small).width(INNER_W).height(110.0)
-                .direction(FlexDirection::Row).align(AlignItems::Stretch)
-                .child(stat_card(tk, "Total Users", "12,834", tk.color_primary, 2))
-                .child(stat_card(tk, "Revenue", "$8,291", tk.color_success, 1))
-                .child(stat_card(tk, "Orders", "1,289", tk.color_warning, 1))
-                .child(stat_card(tk, "Growth", "12.5%", tk.color_info, 1)),
-        )
-        .build()
-}
-
-// ── Page 1: Typography ──
+// ── Page 0: Typography ──
 
 pub fn page_typography(tk: &DesignTokens) -> WidgetNode {
     PageBuilder::new(tk)
@@ -59,7 +43,7 @@ pub fn page_typography(tk: &DesignTokens) -> WidgetNode {
         .build()
 }
 
-// ── Page 2: Buttons ──
+// ── Page 1: Buttons ──
 
 pub fn page_buttons(tk: &DesignTokens) -> WidgetNode {
     let mut page = PageBuilder::new(tk).gap().section("5 种变体 × 3 种尺寸");
@@ -90,9 +74,18 @@ pub fn page_buttons(tk: &DesignTokens) -> WidgetNode {
         .build()
 }
 
-// ── Page 3: Inputs & Selection ──
+// ── Page 2: Inputs ──
 
 pub fn page_inputs(tk: &DesignTokens) -> WidgetNode {
+    let city_options = vec![
+        CascaderOption::new("北京", "beijing").children(vec![
+            CascaderOption::new("海淀", "haidian"), CascaderOption::new("朝阳", "chaoyang"),
+        ]),
+        CascaderOption::new("上海", "shanghai").children(vec![
+            CascaderOption::new("浦东", "pudong"), CascaderOption::new("徐汇", "xuhui"),
+        ]),
+    ];
+
     PageBuilder::new(tk)
         .gap()
         .section("输入框 — 3 种尺寸")
@@ -102,11 +95,21 @@ pub fn page_inputs(tk: &DesignTokens) -> WidgetNode {
                 .child(Input::new("中型...").size(InputSize::Middle))
                 .child(Input::new("大型...").size(InputSize::Large)),
         )
-        .section("表单行 — 输入框 + 按钮")
+        .section("数字输入 (InputNumber)")
         .push(
-            row(40.0)
-                .child(Input::new("输入邮箱...").size(InputSize::Middle))
-                .child(Button::new("订阅").primary().size(ButtonSize::Middle)),
+            row(36.0)
+                .child(InputNumber::new("数量").min(0.0).max(100.0).step(1.0))
+                .child(InputNumber::new("价格").min(0.0).max(999.0).step(0.5)),
+        )
+        .section("提及 (Mentions)")
+        .push(
+            row(36.0)
+                .child(Mentions::new("输入 @ 提及").options(vec!["Alice", "Bob", "Charlie"])),
+        )
+        .section("级联 (Cascader)")
+        .push(
+            row(36.0)
+                .child(Cascader::new(city_options, "选择地区")),
         )
         .section("Switch")
         .push(
@@ -122,19 +125,31 @@ pub fn page_inputs(tk: &DesignTokens) -> WidgetNode {
                 .child(Checkbox::new("Option B"))
                 .child(Checkbox::new("Option C").disabled(true)),
         )
-        .section("Radio — 单选组")
+        .section("Radio")
         .push(row(32.0).child(Radio::new().options(vec!["Apple", "Banana", "Cherry"]).selected(1)))
-        .section("Select — 下拉选择")
-        .push(row(36.0).child(Select::new().options(vec!["Option 1", "Option 2", "Option 3", "Option 4"]).selected(2)))
-        .section("Slider — 滑块")
+        .section("Select")
+        .push(row(36.0).child(Select::new().options(vec!["Option 1", "Option 2", "Option 3"]).selected(2)))
+        .section("Slider")
         .push(row(30.0).child(Slider::new().range(0.0, 100.0).step(5.0).value(42.0)))
-        .section("Rate — 评分")
+        .section("Rate")
         .push(
             row(30.0)
                 .child(Rate::new().value(3))
                 .child(Rate::new().count(7).value(5))
                 .child(Rate::new().value(2).allow_half()),
         )
+        .build()
+}
+
+// ── Page 3: Date & Time ──
+
+pub fn page_date_picker(tk: &DesignTokens) -> WidgetNode {
+    PageBuilder::new(tk)
+        .gap()
+        .section("日期选择 (DatePicker)")
+        .push(row(36.0).child(DatePicker::new("选择日期").value(DateValue::new(2026, 6, 20))))
+        .section("时间选择 (TimePicker)")
+        .push(row(36.0).child(TimePicker::new("选择时间").value(TimeValue::new(14, 30))))
         .build()
 }
 
@@ -207,84 +222,19 @@ pub fn page_data_display(tk: &DesignTokens) -> WidgetNode {
                 .data(vec![
                     LineData::new("00:00", 42.0), LineData::new("01:00", 44.0),
                     LineData::new("02:00", 41.0), LineData::new("03:00", 48.0),
-                    LineData::new("04:00", 55.0), LineData::new("05:00", 53.0),
-                    LineData::new("06:00", 51.0), LineData::new("07:00", 49.0),
+                    LineData::new("04:00", 46.0), LineData::new("05:00", 43.0),
+                    LineData::new("06:00", 52.0), LineData::new("07:00", 58.0),
+                    LineData::new("08:00", 63.0), LineData::new("09:00", 67.0),
                 ]),
         )
-        .section("ProgressBar")
-        .push({
-            let mut pg = col(0.0); // 高度由内容决定
-            for (pct, lbl) in [(0.25, "25%"), (0.50, "50%"), (0.75, "75%"), (1.00, "100%")] {
-                pg = pg
-                    .child(Label::new(lbl).color(tk.color_text_tertiary).font_size(11.0))
-                    .child(ProgressBar::new().progress(pct).track_color(tk.color_fill_tertiary));
-            }
-            pg.child(ProgressBar::new().indeterminate())
-                .height(0.0) // auto-height
-        })
-        .section("Avatar")
+        .section("标签 — Tag")
         .push(
-            row(44.0)
-                .child(Avatar::new("A").bg(tk.color_primary_bg).text_color(tk.color_primary))
-                .child(Avatar::new("B").bg(tk.color_success_bg).text_color(tk.color_success))
-                .child(Avatar::new("C").bg(tk.color_warning_bg).text_color(tk.color_warning))
-                .child(Avatar::new("D").bg(tk.color_error_bg).text_color(tk.color_error))
-                .child(Avatar::new("U").bg(tk.color_primary_bg).text_color(tk.color_primary).size(48.0)),
-        )
-        .section("Icons — Lucide")
-        .push(
-            row(36.0)
-                .child(Icon::new("search").size(18.0))
-                .child(Icon::new("home").size(18.0))
-                .child(Icon::new("settings").size(18.0))
-                .child(Icon::new("user").size(18.0))
-                .child(Icon::new("menu").size(18.0))
-                .child(Icon::new("bell").size(18.0))
-                .child(Icon::new("heart").size(18.0))
-                .child(Icon::new("star").size(18.0))
-                .child(Icon::new("github").size(18.0)),
-        )
-        .section("Tag — 彩色标签")
-        .push(
-            row(32.0)
-                .child(Tag::new("Default").color(TagColor::Default))
-                .child(Tag::new("Success").color(TagColor::Success))
-                .child(Tag::new("Info").color(TagColor::Info))
-                .child(Tag::new("Warning").color(TagColor::Warning))
-                .child(Tag::new("Error").color(TagColor::Error))
-                .child(Tag::new("Closable").color(TagColor::Info).closable()),
-        )
-        .section("Badge")
-        .push(
-            row(32.0)
-                .child(Badge::new().count(5))
-                .child(Badge::new().count(23))
-                .child(Badge::new().count(100).max(99))
-                .child(Badge::new().dot()),
-        )
-        .section("Skeleton — 骨架屏")
-        .push(
-            row(40.0)
-                .child(Skeleton::new().shape(SkeletonShape::Rect).size(200.0, 16.0))
-                .child(Skeleton::new().shape(SkeletonShape::Circle).size(32.0, 32.0))
-                .child(Skeleton::new().shape(SkeletonShape::Text).size(120.0, 24.0)),
-        )
-        .section("Table — 4 columns")
-        .push(
-            row(160.0)
-                .child(Table::new()
-                    .columns(vec![
-                        TableColumn::new("Name", 100.0),
-                        TableColumn::new("Age", 60.0),
-                        TableColumn::new("City", 100.0),
-                        TableColumn::new("Role", 80.0),
-                    ])
-                    .rows(vec![
-                        vec!["Alice".into(), "28".into(), "Beijing".into(), "Dev".into()],
-                        vec!["Bob".into(), "35".into(), "Shanghai".into(), "PM".into()],
-                        vec!["Charlie".into(), "42".into(), "Shenzhen".into(), "QA".into()],
-                        vec!["Diana".into(), "31".into(), "Guangzhou".into(), "Design".into()],
-                    ])),
+            row(28.0)
+                .child(Tag::new("Default"))
+                .child(Tag::new("成功").color(TagColor::Success))
+                .child(Tag::new("警告").color(TagColor::Warning))
+                .child(Tag::new("错误").color(TagColor::Error))
+                .child(Tag::new("进行中").color(TagColor::Info)),
         )
         .build()
 }
@@ -294,62 +244,30 @@ pub fn page_data_display(tk: &DesignTokens) -> WidgetNode {
 pub fn page_feedback(tk: &DesignTokens) -> WidgetNode {
     PageBuilder::new(tk)
         .gap()
-        .section("Alert — 4 types")
+        .section("Alert — 提示条")
+        .push(Alert::new("成功: 操作已完成").type_(AlertType::Success))
+        .push(Alert::new("信息: 这是一个提示").type_(AlertType::Info))
+        .push(Alert::new("警告: 请注意").type_(AlertType::Warning))
+        .push(Alert::new("错误: 操作失败").type_(AlertType::Error))
+        .section("Spin — 加载中")
+        .push(row(36.0).child(Spin::new().small())
+            .child(Spin::new())
+            .child(Spin::new().large()))
+        .section("ProgressBar — 进度条")
+        .push(row(20.0).child(ProgressBar::new().progress(45.0)))
+        .push(row(20.0).child(ProgressBar::new().progress(78.0)
+            .stroke_color(tk.color_success)))
+        .section("Skeleton — 骨架屏")
         .push(
-            Space::new().size(SpaceSize::Small).width(INNER_W).height(120.0)
+            Space::new().size(SpaceSize::Small).width(INNER_W).height(80.0)
                 .direction(FlexDirection::Column)
-                .child(Alert::new("Success: Operation completed").type_(AlertType::Success))
-                .child(Alert::new("Info: This is an information message").type_(AlertType::Info))
-                .child(Alert::new("Warning: Check your input").type_(AlertType::Warning))
-                .child(Alert::new("Error: Something went wrong").type_(AlertType::Error)),
+                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W, 16.0))
+                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W * 0.7, 16.0))
+                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W * 0.9, 16.0)),
         )
-        .section("Alert — with description")
+        .section("空状态 (Empty)")
         .push(
-            Space::new().size(SpaceSize::Small).width(INNER_W).height(90.0)
-                .direction(FlexDirection::Column)
-                .child(Alert::new("Update available").description("Version 2.0.0 is ready to install").type_(AlertType::Info).closable())
-                .child(Alert::new("Connection lost").description("Attempting to reconnect...").type_(AlertType::Warning)),
+            Empty::new().description("暂无数据").description("请稍后再试或添加新内容"),
         )
-        .section("Popover / Popconfirm")
-        .push(
-            row(36.0)
-                .child(Popover::new("This is popover content.").title("Popover Title"))
-                .child(Popconfirm::new().title("Delete this item?")),
-        )
-        .section("Tooltip — 4 placements")
-        .push(
-            row(40.0)
-                .child(Tooltip::new("这是提示文字").placement(TooltipPlacement::Top))
-                .child(Tooltip::new("底部提示").placement(TooltipPlacement::Bottom))
-                .child(Tooltip::new("左侧提示").placement(TooltipPlacement::Left))
-                .child(Tooltip::new("右侧提示").placement(TooltipPlacement::Right)),
-        )
-        .section("Spin — 加载动画")
-        .push(
-            row(40.0)
-                .child(Spin::new().small())
-                .child(Spin::new())
-                .child(Spin::new().large())
-                .child(Spin::new().color(tk.color_success))
-                .child(Spin::new().color(tk.color_warning))
-                .child(Spin::new().color(tk.color_error)),
-        )
-        .section("Empty — 空状态")
-        .push(
-            row(120.0)
-                .child(Empty::new())
-                .child(Empty::new().description("No search results").icon("search"))
-                .child(Empty::new().description("No messages").icon("mail")),
-        )
-        .section("模态对话框")
-        .push(uix::tree! { Container::new().size(INNER_W, 60.0).bg(tk.color_bg_elevated)
-            .rounded(tk.border_radius_lg).dir(FlexDirection::Row).pad(uix::base::EdgeInsets::uniform(12.0)) => [
-            Icon::new("layout").size(24.0),
-            Container::new().size(12.0, 0.0),
-            uix::tree! { Container::new().size(INNER_W - 80.0, 36.0).dir(FlexDirection::Column) => [
-                Label::new("Modal::new(\"Title\").show()").color(tk.color_text).font_size(14.0),
-                Label::new("Use .open() / .close() at runtime.").color(tk.color_text_tertiary).font_size(12.0),
-            ]},
-        ]})
         .build()
 }

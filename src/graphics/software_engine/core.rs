@@ -11,6 +11,9 @@ pub struct RenderTarget {
     pub(crate) width: i32,
     pub(crate) height: i32,
     pub(crate) clip_rect: Rect,
+    /// 预计算的整数裁剪边界（左、上、右、下），避免每次像素操作重复 float→int 转换。
+    /// 每次 clip_rect 变化时由 sync_clip_int() 更新。
+    pub(crate) clip_int: (i32, i32, i32, i32),
     clip_stack: Vec<Rect>,
     pub(crate) opacity: f32,
     pub(crate) transform: Transform,
@@ -28,6 +31,7 @@ impl RenderTarget {
             width: 0,
             height: 0,
             clip_rect: Rect::new(0.0, 0.0, f32::MAX, f32::MAX),
+            clip_int: (i32::MIN, i32::MIN, i32::MAX, i32::MAX),
             clip_stack: Vec::new(),
             opacity: 1.0,
             transform: Transform::identity(),
@@ -77,15 +81,48 @@ impl RenderTarget {
     pub fn clip_rect_mut(&mut self) -> &mut Rect {
         &mut self.clip_rect
     }
+    /// 在 clip_rect 修改后调用，同步更新预计算整数边界。
+    pub fn sync_clip_int(&mut self) {
+        self.clip_int = (
+            self.clip_rect.x.ceil() as i32,
+            self.clip_rect.y.ceil() as i32,
+            (self.clip_rect.x + self.clip_rect.w).floor() as i32,
+            (self.clip_rect.y + self.clip_rect.h).floor() as i32,
+        );
+    }
+    /// 返回状态栈的字节容量。
+    pub fn state_stack_bytes(&self) -> usize {
+        self.state_stack.capacity() * std::mem::size_of::<RenderState>()
+    }
+    /// 返回裁剪栈的字节容量。
+    pub fn clip_stack_bytes(&self) -> usize {
+        self.clip_stack.capacity() * std::mem::size_of::<Rect>()
+    }
+    /// 返回像素缓冲总字节数。
+    pub fn pixel_buffer_bytes(&self) -> usize {
+        self.pixels.capacity() * 4
+    }
     pub fn clip_stack_mut(&mut self) -> &mut Vec<Rect> {
         &mut self.clip_stack
     }
 
+    /// 最大像素缓冲尺寸（单方向超过此值视为异常，触发日志警告）。
+    const MAX_PIXEL_DIM: i32 = 16384;
+
     pub fn initialize(&mut self, width: i32, height: i32) {
-        self.width = width;
-        self.height = height;
-        self.pixels = vec![0x00000000; (width * height) as usize];
-        self.clip_rect = Rect::new(0.0, 0.0, width as f32, height as f32);
+        let w = width.clamp(1, Self::MAX_PIXEL_DIM);
+        let h = height.clamp(1, Self::MAX_PIXEL_DIM);
+        if w != width || h != height {
+            log::warn!(
+                "RenderTarget::initialize: 尺寸 {}x{} 超出上限 {}，已裁剪为 {}x{}",
+                width, height, Self::MAX_PIXEL_DIM, w, h,
+            );
+        }
+        self.width = w;
+        self.height = h;
+        self.pixels = vec![0x00000000; (w * h) as usize];
+        self.clip_rect = Rect::new(0.0, 0.0, w as f32, h as f32);
+        self.sync_clip_int();
         self.clip_stack.clear();
         self.state_stack.clear();
         self.invert = Self::compute_inverse(&self.transform);
@@ -99,6 +136,14 @@ impl RenderTarget {
         self.width = w;
         self.height = h;
         self.pixels = pixels;
+    }
+
+    /// 与外部像素缓冲直接交换（避免拷贝）。
+    /// 同时交换 width/height。返回旧的 (pixels, w, h)。
+    pub fn swap_pixels(&mut self, pixels: &mut Vec<u32>, w: &mut i32, h: &mut i32) {
+        std::mem::swap(&mut self.pixels, pixels);
+        std::mem::swap(&mut self.width, w);
+        std::mem::swap(&mut self.height, h);
     }
 }
 
@@ -165,11 +210,8 @@ impl RenderTarget {
 
 impl RenderTarget {
     pub fn put_pixel_aa(&mut self, x: i32, y: i32, premul_color: u32, coverage: f32) {
-        // Respect clip rect using integer bounds (avoid float precision issues)
-        let cx0 = self.clip_rect.x as i32;
-        let cy0 = self.clip_rect.y as i32;
-        let cx1 = (self.clip_rect.x + self.clip_rect.w).ceil() as i32;
-        let cy1 = (self.clip_rect.y + self.clip_rect.h).ceil() as i32;
+        // 使用预计算的整数裁剪边界（避免每次 float→int 转换）
+        let (cx0, cy0, cx1, cy1) = self.clip_int;
         if x < cx0 || y < cy0 || x >= cx1 || y >= cy1 {
             return;
         }
@@ -231,15 +273,9 @@ impl RenderTarget {
     pub fn put_pixel_raw(&mut self, x: i32, y: i32, color: u32) {
         let w = self.width;
         let h = self.height;
-        if x < 0 || x >= w || y < 0 || y >= h {
-            return;
-        }
-        // Respect clip rect using integer bounds (avoid float precision issues)
-        let cx0 = self.clip_rect.x as i32;
-        let cy0 = self.clip_rect.y as i32;
-        let cx1 = (self.clip_rect.x + self.clip_rect.w).ceil() as i32;
-        let cy1 = (self.clip_rect.y + self.clip_rect.h).ceil() as i32;
-        if x < cx0 || y < cy0 || x >= cx1 || y >= cy1 {
+        // 使用预计算的整数裁剪边界 + 缓冲边界一次检查
+        let (cx0, cy0, cx1, cy1) = self.clip_int;
+        if x < cx0.max(0) || y < cy0.max(0) || x >= cx1.min(w) || y >= cy1.min(h) {
             return;
         }
         let idx = (y * w + x) as usize;
@@ -274,13 +310,10 @@ impl RenderTarget {
         // 快速路径：不透明填充直接用 slice::fill 替代逐像素 put_pixel_raw。
         // 当 alpha=255 时，混合结果 = 源色，slice::fill 语义等价。
         if (color >> 24) == 0xFF {
-            // 裁剪到裁剪矩形 + 边界（clip_rect 保证在 buffer 范围内）
-            let tw = self.width as i32;
-            let th = self.height as i32;
-            let cx0 = self.clip_rect.x as i32;
-            let cy0 = self.clip_rect.y as i32;
-            let cx1 = (self.clip_rect.x + self.clip_rect.w).ceil() as i32;
-            let cy1 = (self.clip_rect.y + self.clip_rect.h).ceil() as i32;
+            // 使用预计算整数裁剪边界
+            let tw = self.width;
+            let th = self.height;
+            let (cx0, cy0, cx1, cy1) = self.clip_int;
             let x0 = x.max(cx0).max(0);
             let x1 = (x + w).min(cx1).min(tw);
             if y >= cy0.max(0) && y < cy1.min(th) && x0 < x1 {
@@ -352,6 +385,7 @@ impl RenderTarget {
         let r = (rect.x + rect.w).min(cur.x + cur.w);
         let b = (rect.y + rect.h).min(cur.y + cur.h);
         self.clip_rect = Rect::new(x, y, (r - x).max(0.0), (b - y).max(0.0));
+        self.sync_clip_int();
     }
 
     pub fn pop_clip_rect(&mut self) {
@@ -359,6 +393,7 @@ impl RenderTarget {
             .clip_stack
             .pop()
             .unwrap_or_else(|| Rect::new(0.0, 0.0, self.width as f32, self.height as f32));
+        self.sync_clip_int();
     }
 
     pub fn set_opacity(&mut self, opacity: f32) {
@@ -377,6 +412,7 @@ impl RenderTarget {
     pub fn restore(&mut self) {
         if let Some(state) = self.state_stack.pop() {
             self.clip_rect = state.clip_rect;
+            self.sync_clip_int();
             self.opacity = state.opacity;
             self.transform = state.transform;
             self.invert = Self::compute_inverse(&state.transform);

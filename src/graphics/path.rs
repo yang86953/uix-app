@@ -75,8 +75,8 @@ impl Path {
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
         for seg in &self.segments {
-            let pts = seg.points();
-            for &p in pts {
+            let pts = seg.all_points();
+            for p in &pts {
                 min_x = min_x.min(p.x);
                 min_y = min_y.min(p.y);
                 max_x = max_x.max(p.x);
@@ -97,17 +97,12 @@ impl PathSegment {
         match self {
             PathSegment::MoveTo(p) => std::slice::from_ref(p),
             PathSegment::LineTo(p) => std::slice::from_ref(p),
-            PathSegment::QuadTo(c, e) => {
-                // 返回两个点的切片（用数组暂存）
-                // 简化为 Vec 返回会分配，但路径构建次数少，可接受
-                // 实际用数组避免分配
-                const EMPTY: &[Point] = &[];
-                let _ = c;
-                let _ = e;
-                EMPTY // 实际实现需要返回 &[Point]，简化起见改为额外方法
+            PathSegment::QuadTo(_, _) => {
+                // 请使用 all_points() 获取曲线控制点
+                &[]
             }
-            PathSegment::CubicTo(c1, c2, e) => {
-                let _ = c1; let _ = c2; let _ = e;
+            PathSegment::CubicTo(_, _, _) => {
+                // 请使用 all_points() 获取曲线控制点
                 &[]
             }
             PathSegment::Close => &[],

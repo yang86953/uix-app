@@ -2,6 +2,9 @@
 
 A modular, cross-platform native UI framework for Rust with a composition-over-inheritance architecture. Supports **Linux (Wayland)** and **Windows (Win32)**.
 
+> **Current status**: ~80% complete — core architecture stable, 54+ widgets, full software renderer.
+> See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
+
 ## Design Principles
 
 - **Trait-based composition** — Platform, Widget, GraphicsEngine as injectable traits
@@ -11,6 +14,19 @@ A modular, cross-platform native UI framework for Rust with a composition-over-i
 - **Reactive state management** — `State<T>` / `Computed<T>` with dependency tracking
 - **DI container** — Type-erased service registry for dependency injection
 - **Diagnostics-first** — Structured logging, retry policies, circuit breaker, error collection
+
+## Quick Start
+
+```bash
+# Run the GUI demo (Ant Design 5 dashboard)
+cargo run --bin uix-demo
+
+# Run the CLI demo (subsystem feature showcase)
+cargo run --bin uix-demo -- --cli
+
+# Run tests
+cargo test
+```
 
 ## Architecture
 
@@ -33,52 +49,73 @@ A modular, cross-platform native UI framework for Rust with a composition-over-i
 └──────────────────────────────────────────────┘
 ```
 
-## Quick Start
+### Layer Responsibilities
 
-```bash
-# Run the GUI demo (Wayland on Linux, Win32 on Windows)
-cargo run --bin uix-demo
-
-# Run the CLI demo
-cargo run --bin uix-demo -- --cli
-```
+| Layer | Responsibility |
+|-------|---------------|
+| **6 — App** | Entry point, window lifecycle, CLI routing, DI container |
+| **5 — UI** | Widget tree, layout (Flexbox/Grid), theme, animation, state mgmt |
+| **4 — Graphics** | 2D rendering engine, FrameGraph, SoftwareEngine, font service |
+| **3 — Platform** | OS abstraction: window, events, clipboard, file dialog, console |
+| **2 — Services** | File I/O, settings persistence, middleware pipeline |
+| **1 — Diagnostics** | Error types, structured logging, recovery policies, collectors |
+| **0 — Base** | Foundation types: Point, Rect, Size, EdgeInsets, Color |
 
 ## Platform Support
 
 | Platform | Backend | Status |
 |----------|---------|--------|
-| Linux (Wayland) | `wayland-client` 0.29 | ✅ Working (SHM buffer rendering) |
-| Windows | Win32 API via `windows` crate | ✅ Working (GDI DIB presentation) |
+| Windows | Win32 API via `windows` crate | ✅ Complete (GDI DIB presentation) |
+| Linux | Wayland via `wayland-client` 0.29 | ✅ Working (SHM buffer) |
 | macOS | - | ❌ Not yet supported |
 
-## Module Layout
+## Widget Library (54+ Components)
 
-| Module | Path | Description |
-|--------|------|-------------|
-| `uix::app` | `src/app/` | App lifecycle, Window, CLI, DI container |
-| `uix::base` | `src/base/` | Foundation geometry (Point, Rect, Size, EdgeInsets) |
-| `uix::graphics` | `src/graphics/` | GraphicsEngine trait, SoftwareEngine, layout, types |
-| `uix::platform` | `src/platform/` | Platform abstraction, Win32 + Wayland backends |
-| `uix::ui` | `src/ui/` | Widget tree, 11 widget types, theme, animation, managers |
-| `uix::services` | `src/services/` | File service, settings, middleware pipeline |
-| `uix::diag` | `src/diag/` | Error types, structured logging, recovery, collector |
+### Basic ($\checkmark$ 10)
+`Button` `Card` `Container` `Divider` `Icon` `Image` `Label` `Space` `Spin` `Typography`
 
-## Widget Library
+### Form ($\checkmark$ 10)
+`AutoComplete` `Checkbox` `ColorPicker` `Dropdown` `Form` `Input` `Radio` `Rate` `Select` `Segmented` `Slider` `Switch`
 
-- **Button** — Primary, Default, Dashed, Text, Link, Disabled variants
-- **Card** — Elevation levels, hoverable, custom children
-- **Container** — Flexbox container with direction, justify, align, padding, gap
-- **Divider** — Horizontal/vertical, with text label
-- **Grid** — Multi-column grid layout
-- **Input** — Text input with placeholder, sizes
-- **Label** — Text label with color and font size
-- **Modal** — Overlay dialog with backdrop
-- **Progress** — Progress bar with percentage
-- **Space** — Spacing component with configurable gap
-- **Tabs** — Tab-based content switching
+### Navigation ($\checkmark$ 8)
+`Breadcrumb` `Menu` `Nav` `Pagination` `Steps` `Tabs` `Timeline` `Tree` `TreeSelect`
 
-## State Management
+### Data Display ($\checkmark$ 14)
+`Avatar` `Calendar` `Chart`(Bar, Line, Pie) `Descriptions` `Grid` `List` `Progress` `Result` `Skeleton` `Table` `Tag` `Empty`
 
+### Feedback ($\checkmark$ 7)
+`Alert` `Drawer` `Message` `Modal` `Notification` `Popconfirm` `Popover` `Tooltip`
+
+### Others ($\checkmark$ 5)
+`Collapse` `FloatButton` `ScrollView` `Badge` `Misc`
+
+## Core Features
+
+### 🎨 Declarative UI with `ui!` Macro
+```rust
+use uix::ui;
+
+let node = ui! {
+    <Container direction=Row gap=8.0>
+        <Button variant="primary" on_click={|| println!("clicked")}>Click</Button>
+        <Label color=#666>Description</Label>
+    </Container>
+};
+```
+
+### 📐 Flexbox + Grid Layout
+```rust
+let result = compute_flex_layout(&FlexInput {
+    direction: FlexDirection::Row,
+    gap: 8.0,
+    padding: EdgeInsets::uniform(16.0),
+    container: Rect::new(0.0, 0.0, 400.0, 300.0),
+    children: vec![FlexChild { flex_grow: 1.0, .. }, FlexChild { flex_grow: 2.0, .. }],
+    ..Default::default()
+});
+```
+
+### 🔄 Reactive State
 ```rust
 let count = State::new(0);
 count.watch(|v| println!("count = {}", v));
@@ -87,11 +124,79 @@ count.set(1);
 let sum = Computed::new(|| a.get() + b.get());
 ```
 
-## Theming
-
-UIX ships with Ant Design 5 design tokens (light and dark themes):
-
+### 🎯 Theme System (Ant Design 5)
 ```rust
-let tokens = DesignTokens::antd_light();
-// or DesignTokens::antd_dark()
+let light = DesignTokens::antd_light();
+let dark = DesignTokens::antd_dark();
+
+// Runtime theme switching via DynTokens
+let dyn_tokens = Arc::new(DynTokens::new(light));
+dyn_tokens.set_mode(true); // switch to dark
 ```
+
+### 📦 DI Container
+```rust
+let mut container = Container::new();
+container.singleton(database_pool);
+container.singleton(config);
+
+let pool = container.resolve::<DatabasePool>();
+```
+
+## Project Structure
+
+```
+uix-app/
+├── src/
+│   ├── app/          # Application layer
+│   ├── base/         # Foundation types
+│   ├── diag/         # Diagnostics (error, log, recovery)
+│   ├── graphics/     # Graphics engine + layout
+│   ├── platform/     # OS abstraction (windows/, linux/)
+│   ├── services/     # Business services
+│   ├── ui/           # Widget framework
+│   │   ├── layout/   # Flexbox + Grid engine
+│   │   ├── managers/ # 10-manager system
+│   │   ├── theme/    # Design token system
+│   │   └── widgets/  # 54+ components
+│   ├── demos/        # GUI + CLI demos
+│   ├── lib.rs        # Crate root
+│   └── main.rs       # Binary entry
+├── uix-macros/       # proc-macro crate (ui! macro)
+├── tests/            # Integration tests
+├── assets/           # Fonts, resources
+└── Cargo.toml
+```
+
+## Testing
+
+```bash
+# Run all tests
+cargo test
+
+# Run specific module tests
+cargo test ui::layout
+cargo test graphics::types
+```
+
+Current test count: **257 unit tests** + 13 doc-tests (all passing).
+
+## Building
+
+```bash
+# Debug build
+cargo build
+
+# Release build
+cargo build --release
+```
+
+## Contributing
+
+See [AGENTS.md](AGENTS.md) for project rules and conventions.
+
+Key guidelines:
+- `#![deny(clippy::unwrap_used)]` — no unwrap/expect in production code
+- Each Rust file ≤ 400 lines
+- Chinese comments for internal documentation
+- CodeGraph for code analysis before refactoring

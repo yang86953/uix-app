@@ -134,3 +134,107 @@ impl Style {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::base::EdgeInsets;
+
+    #[test]
+    fn default_style_values() {
+        let s = Style::default();
+        assert_eq!(s.background, None);
+        assert_eq!(s.border_color, None);
+        assert_eq!(s.border_width, 0.0);
+        assert_eq!(s.border_radius, 0.0);
+        assert_eq!(s.padding, EdgeInsets::zero());
+        assert_eq!(s.color, Color::black());
+        assert_eq!(s.font_size, 14.0);
+    }
+
+    #[test]
+    fn button_default_preset() {
+        let s = Style::button_default();
+        assert_eq!(s.background, None);
+        assert!(s.border_color.is_some());
+        assert_eq!(s.border_width, 1.0);
+        assert_eq!(s.border_radius, 6.0);
+        assert_eq!(s.font_size, 14.0);
+        assert_eq!(s.padding, EdgeInsets::new(15.0, 0.0, 15.0, 0.0));
+    }
+
+    #[test]
+    fn button_primary_preset() {
+        let s = Style::button_primary();
+        assert_eq!(s.background, Some(Color::from_rgba(22, 119, 255, 255)));
+        assert_eq!(s.color, Color::white());
+        assert_eq!(s.border_width, 1.0);
+        assert_eq!(s.border_radius, 6.0);
+    }
+
+    #[test]
+    fn label_preset() {
+        let s = Style::label();
+        assert_eq!(s.background, None);
+        assert_eq!(s.font_size, 12.0);
+        assert_eq!(s.padding, EdgeInsets::new(2.0, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn with_bg_changes_background() {
+        let s = Style::default().with_bg(Color::red());
+        assert_eq!(s.background, Some(Color::red()));
+    }
+
+    #[test]
+    fn with_color_changes_color() {
+        let s = Style::default().with_color(Color::blue());
+        assert_eq!(s.color, Color::blue());
+    }
+
+    #[test]
+    fn with_font_size_changes_size() {
+        let s = Style::default().with_font_size(18.0);
+        assert_eq!(s.font_size, 18.0);
+    }
+
+    #[test]
+    fn with_padding_changes_padding() {
+        let p = EdgeInsets::new(5.0, 10.0, 5.0, 10.0);
+        let s = Style::default().with_padding(p);
+        assert_eq!(s.padding, p);
+    }
+
+    #[test]
+    fn chained_modifications() {
+        let s = Style::default()
+            .with_bg(Color::from_rgba(0, 0, 0, 255))
+            .with_color(Color::white())
+            .with_font_size(16.0)
+            .with_padding(EdgeInsets::uniform(8.0));
+        assert_eq!(s.background, Some(Color::from_rgba(0, 0, 0, 255)));
+        assert_eq!(s.color, Color::white());
+        assert_eq!(s.font_size, 16.0);
+        assert_eq!(s.padding, EdgeInsets::uniform(8.0));
+    }
+
+    #[test]
+    fn style_clone_equality() {
+        let s1 = Style::button_primary();
+        let s2 = s1.clone();
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn style_debug_format() {
+        let s = Style::default();
+        let debug = format!("{:?}", s);
+        assert!(debug.contains("background"));
+        assert!(debug.contains("font_size"));
+    }
+
+    #[test]
+    fn new_is_same_as_default() {
+        assert_eq!(Style::new(), Style::default());
+    }
+}

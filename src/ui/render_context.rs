@@ -27,6 +27,8 @@ pub struct RenderContext<'a> {
     font: FontHandle,
     max_text_width: f32,
     tokens: &'a dyn TokenProvider,
+    /// 调试模式开关：开启时在 overlay 层绘制调试边框和信息。
+    debug_mode: bool,
 }
 
 impl<'a> RenderContext<'a> {
@@ -44,7 +46,18 @@ impl<'a> RenderContext<'a> {
             font,
             max_text_width: f32::MAX,
             tokens,
+            debug_mode: false,
         }
+    }
+
+    /// 设置调试模式。开启时在 overlay 层绘制调试边框和信息。
+    pub fn set_debug_mode(&mut self, mode: bool) {
+        self.debug_mode = mode;
+    }
+
+    /// 是否处于调试模式。
+    pub fn debug_mode(&self) -> bool {
+        self.debug_mode
     }
 
     /// Access the active design token provider.
@@ -151,9 +164,24 @@ impl<'a> RenderContext<'a> {
         self.max_text_width = width;
     }
 
+    /// 计算文字视觉中心与 rect 中心对齐时的 y 位置。
+    ///
+    /// 文字在布局中 y=0 处开始，视觉上从 y - ascent 延伸到 y + descent，
+    /// 视觉中心在 y - (ascent - descent) * 0.5 处。
+    /// 令该值与 rect 中心对齐，得：
+    ///   y = rect.y + (rect.h + ascent - descent) * 0.5
+    pub fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 {
+        let fs = font_size.max(1.0);
+        let fh = self.font;
+        match self.font_service().horizontal_line_metrics(&fh, fs) {
+            Some(m) => rect.y + (rect.h + m.ascent - m.descent) * 0.5,
+            None => rect.y + rect.h * 0.5,
+        }
+    }
+
     // ── 文本绘制（委托给 FontService 布局/光栅化，引擎只绘制像素）──
 
-    /// 绘制文本（左对齐，顶部对齐）。
+    /// 绘制文本（左对齐，顶部对齐）。标准行高 = font_size × 1.5。
     pub fn draw_text(&mut self, text: &str, pos: Point, color: Color, font_size: f32) {
         if text.is_empty() {
             return;
@@ -161,7 +189,7 @@ impl<'a> RenderContext<'a> {
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
             max_height: 0.0,
-            line_height: font_size + 2.0,
+            line_height: font_size * 1.5,
             word_wrap: false,
             h_align: crate::graphics::HAlign::Left,
             v_align: crate::graphics::VAlign::Top,
@@ -175,22 +203,49 @@ impl<'a> RenderContext<'a> {
         self.blit_glyph_layout(&layout, pos, color, font_size);
     }
 
-    /// 在 rect 内居中绘制文本（水平+竖直居中）。
+    /// 基于基线绘制文本（四线三格法对齐）。
+    ///
+    /// 四线三格对应的字体度量：
+    /// - 顶线（Top）     = baseline - ascent
+    /// - 上基线（Mean）  = baseline - x_height（小写字母 x 顶部）
+    /// - 基线（Baseline）= baseline_y（参数）
+    /// - 下基线（Bottom）= baseline + descent
+    ///
+    /// `pos.x` 为文字左边缘 x 坐标，`baseline_y` 为基线 y 坐标。
+    pub fn draw_text_baseline(
+        &mut self,
+        text: &str,
+        x: f32,
+        baseline_y: f32,
+        color: Color,
+        font_size: f32,
+    ) {
+        if text.is_empty() {
+            return;
+        }
+        let fs = font_size.max(1.0);
+        let fh = self.font; // FontHandle 是 Copy 的
+        let metrics = self.font_service().horizontal_line_metrics(&fh, fs);
+        let ascent = metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
+        // 文字顶部 = 基线 - ascent
+        let top_y = baseline_y - ascent;
+        self.draw_text(text, Point::new(x, top_y), color, fs);
+    }
+
+    /// 在 rect 内居中绘制文本。水平用文本框宽度居中；垂直用字体度量
+    /// (ascent + descent) 计算视觉中心，使文字视觉中位线与 rect 中心对齐。
     pub fn text_center(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
         if text.is_empty() {
             return;
         }
-        // 水平居中
-        let text_w = self.measure_text(text, font_size).w.min(rect.w);
-        let x = rect.x + (rect.w - text_w) * 0.5;
-        // 竖直居中：fontdue 在 max_height 框内用 Middle 对齐
+        let cnt = rect.x + rect.w * 0.5;
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
-            max_height: rect.h,
-            line_height: font_size + 2.0,
+            max_height: 0.0,
+            line_height: font_size * 1.5,
             word_wrap: false,
             h_align: HAlign::Left,
-            v_align: VAlign::Middle,
+            v_align: VAlign::Top,
             font_size,
         };
         let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts);
@@ -198,10 +253,36 @@ impl<'a> RenderContext<'a> {
         let layout = self
             .font_service()
             .layout_text(&fh, text, &backend_opts);
-        self.blit_glyph_layout(&layout, Point::new(x, rect.y), color, font_size);
+        let x = cnt - layout.width * 0.5;
+        let y = self.visual_center_y(rect, font_size);
+        self.blit_glyph_layout(&layout, Point::new(x, y), color, font_size);
     }
 
-    /// Draw text with word wrap enabled within the given rect.
+    /// 左对齐、垂直居中的文本绘制。
+    pub fn draw_text_in_frame(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
+        if text.is_empty() {
+            return;
+        }
+        let opts = TextLayoutOptions {
+            max_width: rect.w.max(1.0),
+            max_height: 0.0,
+            line_height: font_size * 1.5,
+            word_wrap: false,
+            h_align: HAlign::Left,
+            v_align: VAlign::Top,
+            font_size,
+        };
+        let backend_opts = crate::graphics::text_backend::TextLayoutOptions::from(opts);
+        let fh = self.font;
+        let layout = self
+            .font_service()
+            .layout_text(&fh, text, &backend_opts);
+        let x = rect.x;
+        let y = self.visual_center_y(rect, font_size);
+        self.blit_glyph_layout(&layout, Point::new(x, y), color, font_size);
+    }
+
+    /// Draw text with word wrap enabled within the given rect。标准行高 = font_size × 1.5。
     pub fn draw_text_wrapped(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
         if text.is_empty() {
             return;
@@ -209,7 +290,7 @@ impl<'a> RenderContext<'a> {
         let opts = TextLayoutOptions {
             max_width: rect.w.max(1.0),
             max_height: rect.h.max(0.0),
-            line_height: font_size + 2.0,
+            line_height: font_size * 1.5,
             word_wrap: true,
             h_align: crate::graphics::HAlign::Left,
             v_align: crate::graphics::VAlign::Top,
@@ -232,28 +313,21 @@ impl<'a> RenderContext<'a> {
         font_size: f32,
     ) {
         let fs = font_size.max(1.0);
-        let is_top = true; // layout 使用 Top 或 Middle 对齐
-        let y_off = if is_top && !layout.glyphs.is_empty() {
-            layout
-                .glyphs
-                .iter()
-                .map(|g| g.y)
-                .fold(f32::MAX, f32::min)
-                .min(0.0) as i32
-        } else {
-            0
-        };
 
+        // layout 中的 glyph 位置已由 text_backend 正确计算（包含 v_align 偏移），
+        // 直接按 pos 偏移绘制即可，无需额外 y_off 修正。
         for gp in &layout.glyphs {
-            let fh = self.font;
+            // 优先使用 glyph 自带的 font handle（支持多字体回退），
+            // 当 font 为默认值 (u32::MAX) 时回退到上下文当前字体
+            let fh = if gp.font.0 != u32::MAX { gp.font } else { self.font };
             let raster = self
                 .font_service()
                 .rasterize_glyph(&fh, gp.glyph_id, fs);
             if raster.width == 0 || raster.height == 0 {
                 continue;
             }
-            let gx = (pos.x + gp.x) as i32;
-            let gy = (pos.y + gp.y) as i32 - y_off;
+            let gx = (pos.x + gp.x + raster.bearing_x) as i32;
+            let gy = (pos.y + gp.y + raster.bearing_y) as i32;
             self.engine.draw_glyph_raster(
                 gx,
                 gy,
@@ -271,7 +345,7 @@ impl<'a> RenderContext<'a> {
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
             max_height: 0.0,
-            line_height: font_size + 2.0,
+            line_height: font_size * 1.5,
             word_wrap: false,
             h_align: crate::graphics::HAlign::Left,
             v_align: crate::graphics::VAlign::Top,
@@ -288,7 +362,7 @@ impl<'a> RenderContext<'a> {
         let opts = TextLayoutOptions {
             max_width,
             max_height: 0.0,
-            line_height: font_size + 2.0,
+            line_height: font_size * 1.5,
             word_wrap: true,
             h_align: crate::graphics::HAlign::Left,
             v_align: crate::graphics::VAlign::Top,
@@ -305,7 +379,7 @@ impl<'a> RenderContext<'a> {
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
             max_height: 0.0,
-            line_height: font_size + 2.0,
+            line_height: font_size * 1.5,
             word_wrap: false,
             h_align: crate::graphics::HAlign::Left,
             v_align: crate::graphics::VAlign::Top,
@@ -322,7 +396,7 @@ impl<'a> RenderContext<'a> {
         let opts = TextLayoutOptions {
             max_width: self.max_text_width,
             max_height: 0.0,
-            line_height: font_size + 2.0,
+            line_height: font_size * 1.5,
             word_wrap: false,
             h_align: crate::graphics::HAlign::Left,
             v_align: crate::graphics::VAlign::Top,
@@ -332,6 +406,73 @@ impl<'a> RenderContext<'a> {
         let fh = self.font;
         self.font_service()
             .text_cursor_x(&fh, text, &backend_opts, char_index)
+    }
+
+    // ── 调试模式绘制 ──
+
+    /// 调试颜色调色板：按 widget 深度层级循环使用。
+    const DEBUG_COLORS: [Color; 8] = [
+        Color::from_rgba(220, 60, 60, 200),    // 红
+        Color::from_rgba(60, 140, 220, 200),   // 蓝
+        Color::from_rgba(60, 180, 80, 200),    // 绿
+        Color::from_rgba(220, 160, 40, 200),   // 橙
+        Color::from_rgba(160, 60, 220, 200),   // 紫
+        Color::from_rgba(220, 80, 140, 200),   // 粉
+        Color::from_rgba(40, 200, 200, 200),   // 青
+        Color::from_rgba(180, 180, 60, 200),   // 黄
+    ];
+
+    /// 绘制 widget 调试边框（仅在调试模式下生效）。
+    /// `depth` 为 widget 在树中的深度，用于循环选择调试颜色。
+    pub fn draw_debug_border(&mut self, rect: Rect, depth: usize) {
+        if !self.debug_mode {
+            return;
+        }
+        let color = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
+        self.engine.stroke_rect(rect, color, 1.0, None);
+    }
+
+    /// 在 widget 左上角显示调试标签（ID + 深度），仅在调试模式下生效。
+    pub fn draw_debug_label(&mut self, widget_id: usize, depth: usize, rect: Rect) {
+        if !self.debug_mode {
+            return;
+        }
+        let color = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
+        let label = format!("#{} d{}", widget_id, depth);
+        // 半透明背景衬底
+        let label_w = label.len() as f32 * 5.5 + 4.0;
+        let label_h = 11.0;
+        self.engine.fill_rect(
+            Rect::new(rect.x, rect.y, label_w, label_h),
+            Color::from_rgba(0, 0, 0, 180),
+            None,
+        );
+        self.draw_text(&label, Point::new(rect.x + 2.0, rect.y), color, 9.0);
+    }
+
+    /// 在 widget 下方显示 frame 坐标和尺寸，仅在调试模式下生效。
+    pub fn draw_debug_frame_info(&mut self, widget_id: usize, rect: Rect) {
+        if !self.debug_mode {
+            return;
+        }
+        let info = format!(
+            "#{} ({:.0},{:.0}) {:.0}×{:.0}",
+            widget_id, rect.x, rect.y, rect.w, rect.h
+        );
+        let info_w = info.len() as f32 * 5.5 + 4.0;
+        let info_h = 10.0;
+        let info_y = rect.y + rect.h;
+        self.engine.fill_rect(
+            Rect::new(rect.x, info_y, info_w, info_h),
+            Color::from_rgba(0, 0, 0, 160),
+            None,
+        );
+        self.draw_text(
+            &info,
+            Point::new(rect.x + 2.0, info_y),
+            Color::from_rgba(200, 200, 200, 220),
+            8.0,
+        );
     }
 
     // ── 其他绘制操作 ──

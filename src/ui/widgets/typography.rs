@@ -36,29 +36,42 @@ define_widget! {
         color_override: Option<Color>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
         let (fs, _fw) = self.compute_font_style();
+        // 优先使用引擎精确测量文本宽度
+        if let Some(eng) = engine {
+            let opts = crate::graphics::TextLayoutOptions {
+                max_width: f32::MAX,
+                max_height: 0.0,
+                line_height: fs * 1.5,
+                word_wrap: false,
+                h_align: crate::graphics::HAlign::Left,
+                v_align: crate::graphics::VAlign::Top,
+                font_size: fs,
+            };
+            let sz = eng.measure_text(&crate::graphics::FontHandle::default(), &self.content, &opts);
+            if sz.w > 0.0 && sz.h > 0.0 {
+                return Size::new(sz.w, sz.h.max(fs * 1.5));
+            }
+        }
+        // 回退估算
         let w = self.content.len() as f32 * fs * 0.6;
         let h = fs * 1.5;
         Size::new(w, h)
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let (fs, fw) = self.compute_font_style();
+        let (fs, _fw) = self.compute_font_style();
         let text_c = self.color_override.unwrap_or_else(|| {
             if self.disabled { ctx.tokens().color_text_quaternary() } else { ctx.tokens().color_text() }
         });
-        let mut text = &self.content[..];
-        let mut prefix = String::new();
-        let mut suffix = String::new();
-        if self.mark { prefix.push_str("█"); suffix.push_str("█"); }
-        if self.code { prefix.push_str("`"); suffix.push_str("`"); }
-        if self.delete { prefix.push_str("~~"); suffix.push_str("~~"); }
-        if self.underline { prefix.push_str("_"); suffix.push_str("_"); }
-        let display = format!("{prefix}{text}{suffix}");
 
-        let y = frame.y + (frame.h - fs) * 0.5;
-        ctx.draw_text(&display, crate::base::Point::new(frame.x + 4.0, y), text_c, fs);
+        // 文本框对齐：将文本布局为完整的框（TextLayout），
+        // 用框的完整尺寸（width × height）进行对齐。
+        ctx.draw_text_in_frame(&self.content, frame, text_c, fs);
+
+        // TODO: strong/italic/mark/code/underline/delete 等样式需在渲染层面实现
+        // 当前用字符串符号模拟，后续应改为 inline 样式渲染
     }
 }
 

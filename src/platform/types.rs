@@ -108,16 +108,4 @@ pub struct OsInfo {
     pub is_64bit: bool,
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// 通知（notification 子系统）
-// ════════════════════════════════════════════════════════════════════════════
 
-/// 通知等级
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum NotificationLevel {
-    Info = 0,
-    Success,
-    Warning,
-    Error,
-}

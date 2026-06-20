@@ -1,15 +1,17 @@
+//! UIX Layout — 纯函数式 Flexbox 和 Grid 布局引擎。
+//!
+//! 与 Web CSS Flexbox/Grid 行为一致，无副作用，无渲染依赖。
+//! 输入布局约束，输出子节点位置。
+
 use crate::base::{EdgeInsets, Rect, Size};
 use std::f32;
 
 pub mod flex;
 pub mod grid;
 
-// 子模块布局函数统一通过 graphics::api 暴露
-// 外部代码通过 graphics::layout::flex::compute_flex_layout 或 graphics::api 引用
-
 // ── Shared enums ──
 
-/// Flex container direction.
+/// Flex container direction。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlexDirection {
     #[default]
@@ -19,7 +21,7 @@ pub enum FlexDirection {
     ColumnReverse,
 }
 
-/// Main-axis alignment.
+/// Main-axis alignment。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum JustifyContent {
     #[default]
@@ -32,7 +34,7 @@ pub enum JustifyContent {
     Stretch,
 }
 
-/// Cross-axis alignment.
+/// Cross-axis alignment。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlignItems {
     Start,
@@ -42,7 +44,7 @@ pub enum AlignItems {
     Stretch,
 }
 
-/// Individual child flex properties.
+/// Individual child flex properties。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FlexChild {
     pub flex_grow: f32,
@@ -66,7 +68,7 @@ impl Default for FlexChild {
     }
 }
 
-/// Input to the flex layout computation.
+/// Input to the flex layout computation。
 #[derive(Debug, Clone)]
 pub struct FlexInput {
     pub direction: FlexDirection,
@@ -96,7 +98,7 @@ impl Default for FlexInput {
     }
 }
 
-/// Output from the flex layout computation.
+/// Output from the flex layout computation。
 #[derive(Debug, Clone)]
 pub struct FlexOutput {
     pub child_rects: Vec<Rect>,
@@ -105,7 +107,7 @@ pub struct FlexOutput {
 
 // ── Grid types ──
 
-/// A single grid track (column or row) sizing.
+/// A single grid track (column or row) sizing。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GridTrack {
     Px(f32),
@@ -113,7 +115,7 @@ pub enum GridTrack {
     Auto,
 }
 
-/// A child in a grid, with optional column/row span.
+/// A child in a grid, with optional column/row span。
 #[derive(Debug, Clone)]
 pub struct GridChild {
     pub cell: usize,
@@ -130,7 +132,7 @@ impl Default for GridChild {
     }
 }
 
-/// Input to the grid layout computation.
+/// Input to the grid layout computation。
 #[derive(Debug, Clone)]
 pub struct GridInput {
     pub container: Rect,
@@ -155,7 +157,7 @@ impl Default for GridInput {
     }
 }
 
-/// Output from the grid layout computation.
+/// Output from the grid layout computation。
 #[derive(Debug, Clone)]
 pub struct GridOutput {
     pub child_rects: Vec<Rect>,

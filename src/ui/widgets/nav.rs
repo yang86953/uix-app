@@ -89,7 +89,12 @@ define_widget! {
         if !self.icon.is_empty() {
             let icon_x = cursor_x + 10.0;
             let icon_str = crate::ui::widgets::icon::icon_char(&self.icon);
-            ctx.text_center(icon_str, Rect::new(icon_x, frame.y, 0.0, self.fixed_height), text_color, 14.0);
+            let saved_font = *ctx.font();
+            if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
+                ctx.set_font(fh);
+            }
+            ctx.text_center(icon_str, Rect::new(icon_x, frame.y, 20.0, self.fixed_height), text_color, 14.0);
+            ctx.set_font(saved_font);
             cursor_x += 28.0;
         } else {
             cursor_x += if active { 12.0 } else { 15.0 };
@@ -318,7 +323,7 @@ impl Navigation {
         crate::ui::widget::WidgetNode::new(
             Box::new(Container::new()
                 .bg(tokens.color_bg_elevated())
-                .dir(crate::graphics::FlexDirection::Column)
+                .dir(crate::ui::FlexDirection::Column)
                 .size(self.width, self.height)),
             children,
         )

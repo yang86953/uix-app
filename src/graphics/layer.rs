@@ -10,7 +10,7 @@
 //! - Picture 离屏创建失败时启用 retry_count 退避机制（#97）
 //! - Picture 支持 children，实现嵌套 RepaintBoundary（#96）
 
-use crate::base::{Point, Rect};
+use crate::base::Rect;
 use crate::graphics::engine::GraphicsEngine;
 use crate::graphics::types::ImageHandle;
 use crate::graphics::FontHandle;
@@ -147,6 +147,8 @@ impl LayerNode {
 /// 子节点在 build 时按 z_index 预排序，渲染时直接遍历无需额外排序。
 pub struct LayerTree {
     root: Option<LayerNode>,
+    /// build 后未复用的旧离屏句柄（等待 sweep 释放）。
+    orphaned_handles: Vec<ImageHandle>,
 }
 
 impl std::fmt::Debug for LayerTree {
@@ -159,13 +161,19 @@ impl std::fmt::Debug for LayerTree {
 
 impl LayerTree {
     pub fn new() -> Self {
-        Self { root: None }
+        Self {
+            root: None,
+            orphaned_handles: Vec::new(),
+        }
     }
 
     /// 从 WidgetTree 构建图层树。
     /// 生成所有可见 widget 的 LayerNode（无遗漏）。
     /// 自动复用已缓存离屏缓冲——按 widget_id 匹配旧 Picture 节点。
     /// 子节点按 z_index 预排序，渲染时无需再排序（#97）。
+    ///
+    /// 注意：build 后未复用的旧离屏缓冲句柄暂存在 `orphaned_handles` 中，
+    /// 调用者需在合适的时机调用 `sweep_orphaned_offscreens` 释放。
     pub fn build(&mut self, tree: &WidgetTree) {
         // 收集旧 Picture 节点的离屏缓冲（按 widget_id 索引）
         let mut old_cache: std::collections::HashMap<
@@ -177,8 +185,24 @@ impl LayerTree {
         }
 
         self.root = tree.root_id().and_then(|root_id| {
-            Self::build_node_cached(tree, root_id, Point::zero(), &old_cache)
+            Self::build_node_cached(tree, root_id, &old_cache)
         });
+
+        // 收集未复用的旧句柄（需要在引擎上下文中释放）
+        self.orphaned_handles.clear();
+        for (_, (_, handle_opt)) in old_cache {
+            if let Some(h) = handle_opt {
+                self.orphaned_handles.push(h);
+            }
+        }
+    }
+
+    /// 释放 build 后未复用的旧离屏缓冲。
+    /// 必须在 build 之后、下一帧渲染之前调用。
+    pub fn sweep_orphaned_offscreens(&mut self, engine: &mut dyn GraphicsEngine) {
+        for handle in self.orphaned_handles.drain(..) {
+            engine.destroy_offscreen(&handle);
+        }
     }
 
     /// 增量更新脏状态。
@@ -206,16 +230,20 @@ impl LayerTree {
 
     /// 渲染 overlay 层（post_render，绘制在所有内容之上）。
     /// 替代旧的 tree_render.rs 中的 post_render_pass 路径。
+    ///
+    /// 当 `debug_mode` 为 true 时，额外绘制调试边框、标签和坐标信息。
     pub fn render_overlays(
         &self,
         engine: &mut dyn GraphicsEngine,
         tree: &WidgetTree,
         tokens: &dyn TokenProvider,
         font: FontHandle,
+        debug_mode: bool,
     ) {
         let mut rctx = RenderContext::new(engine, font, tokens);
+        rctx.set_debug_mode(debug_mode);
         if let Some(ref root) = self.root {
-            Self::render_overlay_node(root, &mut rctx, tree);
+            Self::render_overlay_node(root, &mut rctx, tree, 0);
         }
     }
 
@@ -259,10 +287,12 @@ impl LayerTree {
 
     /// 带缓存复用的 build_node。
     /// 如果旧缓存中有相同 widget_id 且 bounds 未变的 Picture，复用其离屏句柄。
+    ///
+    /// 注意：`frame` 是绝对坐标（由 layout 阶段设置），以下所有位置计算直接使用 `frame` 的坐标，
+    /// 不再累加父级偏移。
     fn build_node_cached(
         tree: &WidgetTree,
         id: WidgetId,
-        parent_origin: Point,
         cache: &std::collections::HashMap<WidgetId, (Rect, Option<ImageHandle>)>,
     ) -> Option<LayerNode> {
         let node = tree.get(id)?;
@@ -270,10 +300,10 @@ impl LayerTree {
             return None;
         }
         let frame = node.frame();
-        let origin = Point::new(parent_origin.x + frame.x, parent_origin.y + frame.y);
 
         if node.inner().is_repaint_boundary() {
-            let bounds = Rect::new(origin.x, origin.y, frame.w, frame.h);
+            // frame 是绝对坐标，直接用作 bounds
+            let bounds = frame;
             // 检查旧缓存：如果 bounds 相同，复用离屏句柄
             let offscreen_handle = cache.get(&id).and_then(|(old_bounds, old_handle)| {
                 if *old_bounds == bounds {
@@ -282,30 +312,26 @@ impl LayerTree {
                     None
                 }
             });
-            let children = Self::build_children_cached(tree, id, origin, cache);
+            let children = Self::build_children_cached(tree, id, cache);
             Some(LayerNode::Picture {
                 widget_id: id,
                 bounds,
-                is_dirty: offscreen_handle.is_none(),
+                is_dirty: offscreen_handle.is_none() || node.dirty(),
                 offscreen_handle,
                 children,
                 retry_count: 0,
             })
         } else if let Some(clip) = node.inner().children_clip(frame) {
-            let adj = Rect::new(
-                parent_origin.x + clip.x,
-                parent_origin.y + clip.y,
-                clip.w,
-                clip.h,
-            );
-            let children = Self::build_children_cached(tree, id, origin, cache);
+            // clip 由 children_clip 基于 frame（绝对坐标）计算，直接使用
+            let adj = Rect::new(clip.x, clip.y, clip.w, clip.h);
+            let children = Self::build_children_cached(tree, id, cache);
             Some(LayerNode::ClipRect {
                 widget_id: id,
                 rect: adj,
                 children,
             })
         } else {
-            let children = Self::build_children_cached(tree, id, origin, cache);
+            let children = Self::build_children_cached(tree, id, cache);
             Some(LayerNode::Direct {
                 widget_id: id,
                 children,
@@ -317,7 +343,6 @@ impl LayerTree {
     fn build_children_cached(
         tree: &WidgetTree,
         id: WidgetId,
-        origin: Point,
         cache: &std::collections::HashMap<WidgetId, (Rect, Option<ImageHandle>)>,
     ) -> Vec<LayerNode> {
         let node = match tree.get(id) {
@@ -327,7 +352,7 @@ impl LayerTree {
         let mut children: Vec<LayerNode> = node
             .children()
             .iter()
-            .filter_map(|&cid| Self::build_node_cached(tree, cid, origin, cache))
+            .filter_map(|&cid| Self::build_node_cached(tree, cid, cache))
             .collect();
         // 预排序：render 时无需再排序
         children.sort_by_key(|child| {
@@ -561,11 +586,12 @@ impl LayerTree {
         }
     }
 
-    /// 递归渲染 overlay 层（post_render 回调）。
+    /// 递归渲染 overlay 层（post_render 回调 + 调试覆盖）。
     fn render_overlay_node(
         node: &LayerNode,
         ctx: &mut RenderContext,
         tree: &WidgetTree,
+        depth: usize,
     ) {
         let widget_id = node.widget_id();
         // 调用 widget 的 post_render
@@ -575,15 +601,22 @@ impl LayerTree {
                 ctx.save();
                 widget_node.inner().post_render(frame, ctx, tree);
                 ctx.restore();
+
+                // 调试模式：绘制边框、标签和坐标信息
+                if ctx.debug_mode() {
+                    ctx.draw_debug_border(frame, depth);
+                    ctx.draw_debug_label(widget_id, depth, frame);
+                    ctx.draw_debug_frame_info(widget_id, frame);
+                }
             }
         }
-        // 递归子节点
+        // 递归子节点（深度 + 1）
         match node {
             LayerNode::Picture { children, .. }
             | LayerNode::ClipRect { children, .. }
             | LayerNode::Direct { children, .. } => {
                 for child in children {
-                    Self::render_overlay_node(child, ctx, tree);
+                    Self::render_overlay_node(child, ctx, tree, depth + 1);
                 }
             }
         }

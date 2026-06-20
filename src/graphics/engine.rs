@@ -152,8 +152,9 @@ pub trait GraphicsEngine: 'static {
         color: Color,
     );
 
-    // Images — caller responsible for reading file bytes
-    fn load_image(&mut self, data: &[u8]) -> Result<&mut ImageHandle, Error>;
+    /// 加载已解码的像素数据到引擎。调用方负责解码（如使用 image crate）。
+    /// `pixels` 是 BGRA 32bit premultiplied 像素数组。
+    fn load_image(&mut self, pixels: Vec<u32>, width: i32, height: i32) -> Result<&mut ImageHandle, Error>;
     fn unload_image(&mut self, image: &ImageHandle);
     fn image_size(&self, image: &ImageHandle) -> Size;
     fn draw_image(&mut self, image: &ImageHandle, src: Rect, dst: Rect);
@@ -173,6 +174,10 @@ pub trait GraphicsEngine: 'static {
     fn supersample_level(&self) -> u8 {
         0
     }
+
+    /// 打印内存诊断信息到日志（默认空实现，引擎可覆盖）。
+    fn diagnose_memory(&self) {}
+    fn memory_usage(&self) -> usize { 0 }
 
     /// 加载字体数据到引擎的字体服务中。
     ///

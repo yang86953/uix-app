@@ -21,15 +21,8 @@ pub use crate::graphics::null_engine::NullEngine;
 // ── SoftwareEngine ──
 pub use crate::graphics::software_engine::SoftwareEngine;
 
-// ── Flexbox 布局 ──
-pub use crate::graphics::layout::flex::compute_flex_layout;
-pub use crate::graphics::layout::{
-    AlignItems, FlexChild, FlexDirection, FlexInput, FlexOutput, JustifyContent,
-};
-
-// ── Grid 布局 ──
-pub use crate::graphics::layout::grid::compute_grid_layout;
-pub use crate::graphics::layout::{GridChild, GridInput, GridOutput, GridTrack};
+// 布局引擎（Flexbox + Grid）已迁移至 ui::layout
+// FlexDirection, AlignItems, JustifyContent 等类型及计算函数改从 ui::layout 导入
 
 // ── 字体文本后端（仅 trait 和布局类型） ──
 pub use crate::graphics::text_backend::{

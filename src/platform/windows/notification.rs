@@ -51,6 +51,9 @@ impl Default for WindowsNotification {
 
 impl INotification for WindowsNotification {
     fn show(&mut self, title: &str, message: &str) {
+        if self.hwnd.is_null() {
+            return;
+        }
         unsafe {
             let wide_title = to_wide(title);
             let wide_msg = to_wide(message);

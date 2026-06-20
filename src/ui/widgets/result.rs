@@ -48,21 +48,24 @@ define_widget! {
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.4;
 
-        // 大图标
+        // 大图标（使用 em-box 高度精确居中）
         match self.type_ {
             ResultType::NotFound | ResultType::Forbidden | ResultType::ServerError => {
-                ctx.draw_text(icon, Point::new(cx - 28.0, cy - 50.0), icon_color, 48.0);
+                let icon_w = ctx.measure_text(icon, 48.0).w;
+                ctx.draw_text(icon, Point::new(cx - icon_w * 0.5, cy - 50.0 - 48.0 * 0.5), icon_color, 48.0);
             }
             _ => {
                 ctx.fill_circle(cx, cy - 30.0, 32.0, icon_color);
-                ctx.draw_text(icon, Point::new(cx - 10.0, cy - 42.0), Color::white(), 24.0);
+                let icon_w = ctx.measure_text(icon, 24.0).w;
+                ctx.draw_text(icon, Point::new(cx - icon_w * 0.5, cy - 42.0 - 24.0 * 0.5), Color::white(), 24.0);
             }
         }
 
-        // 标题
-        ctx.draw_text(main_title, Point::new(cx - main_title.len() as f32 * 5.0, cy + 10.0), text, 20.0);
+        // 标题（使用精确测量水平居中，em-box 高度垂直定位）
+        let title_w = ctx.measure_text(main_title, 20.0).w;
+        ctx.draw_text(main_title, Point::new(cx - title_w * 0.5, cy + 10.0), text, 20.0);
 
-        // 副标题
+        // 副标题（使用精确测量水平居中）
         let sub = if self.subtitle.is_empty() {
             match self.type_ {
                 ResultType::NotFound => "请检查您访问的地址是否正确",
@@ -72,7 +75,8 @@ define_widget! {
             }
         } else { &self.subtitle };
         if !sub.is_empty() {
-            ctx.draw_text(sub, Point::new(cx - sub.len() as f32 * 3.5, cy + 40.0), text_sec, 13.0);
+            let sub_w = ctx.measure_text(sub, 13.0).w;
+            ctx.draw_text(sub, Point::new(cx - sub_w * 0.5, cy + 40.0), text_sec, 13.0);
         }
     }
 }

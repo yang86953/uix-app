@@ -199,9 +199,11 @@ impl Compiler {
             }
 
             // 写入冲突检测：RAW / WAW
+            // 注意：跳过自环（同一 Pass 同时读写同一资源），
+            // 例如 Overlay Pass reads+writes main_color 是合法操作，不应产生依赖边。
             for &res in &pass.writes {
                 match resource_state.get(&res) {
-                    Some(&AccessState::WrittenBy(writer)) => {
+                    Some(&AccessState::WrittenBy(writer)) if writer != pass.id => {
                         edges.push(Edge {
                             from: writer,
                             to: pass.id,
@@ -209,7 +211,7 @@ impl Compiler {
                             resource: res,
                         });
                     }
-                    Some(&AccessState::ReadBy(reader)) => {
+                    Some(&AccessState::ReadBy(reader)) if reader != pass.id => {
                         edges.push(Edge {
                             from: reader,
                             to: pass.id,

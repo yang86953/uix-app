@@ -1,21 +1,29 @@
 //! Container widget — flexbox layout container with background/border.
 
 use crate::define_widget;
-use crate::graphics::{
-    compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent, Radius,
+use crate::graphics::{Color, Radius};
+use crate::ui::{
+    compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
-use crate::graphics::{Color};
 use crate::base::{EdgeInsets, Rect, Size};
 use crate::ui::render_context::RenderContext;
 use crate::ui::widget::{WidgetCore, WidgetId, WidgetTree};
 
 define_widget! {
+    /// Container — flexbox 布局容器，带背景/边框/圆角。
+    ///
+    /// 盒模型（与 Web CSS 一致）：
+    /// - margin：外边距，布局时占用空间
+    /// - border：边框，影响布局尺寸
+    /// - padding：内边距，子内容在其内部排列
+    /// - 默认方向为 Column（垂直堆叠，类似 Web block 流式布局）
     pub struct Container {
         pub bg_color: Option<Color>,
         pub border_color: Option<Color>,
         pub border_width: f32,
         pub border_radius: f32,
         pub padding: EdgeInsets,
+        pub margin: EdgeInsets,
         pub gap: f32,
         pub direction: FlexDirection,
         pub justify: JustifyContent,
@@ -31,9 +39,14 @@ define_widget! {
     // 当无 fixed_width/fixed_height 时返回 (0,0)，由父容器 flex 布局分配实际空间。
     // 如需精确的 preferred_size 内容估算，需修改 define_widget! 宏以传入 tree 引用。
     preferred_size => (&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
+        // preferred_size 包含 margin + border（Web 盒模型中 margin/border 占用空间）
+        let mh = self.margin.horizontal();
+        let mv = self.margin.vertical();
+        let bh = self.border_width * 2.0;
+        let bv = self.border_width * 2.0;
         Size::new(
-            self.fixed_width.unwrap_or(0.0),
-            self.fixed_height.unwrap_or(0.0),
+            self.fixed_width.map(|w| w + mh + bh).unwrap_or(0.0),
+            self.fixed_height.map(|h| h + mv + bv).unwrap_or(0.0),
         )
     }
 
@@ -66,6 +79,26 @@ define_widget! {
     {
         if children.is_empty() { return Vec::new(); }
 
+        // 内容区域 = frame - margin - border - padding（Web 盒模型）
+        let mh = self.margin.horizontal();
+        let mv = self.margin.vertical();
+        let bh = self.border_width * 2.0;
+        let bv = self.border_width * 2.0;
+        let inner = Rect::new(
+            frame.x + self.margin.left + self.border_width,
+            frame.y + self.margin.top + self.border_width,
+            (frame.w - mh - bh - self.padding.horizontal()).max(0.0),
+            (frame.h - mv - bv - self.padding.vertical()).max(0.0),
+        );
+
+        // 传递给 flex 布局的内容容器（不含 border/padding）
+        let flex_container = Rect::new(
+            inner.x + self.padding.left,
+            inner.y + self.padding.top,
+            inner.w,
+            inner.h,
+        );
+
         let child_sizes: Vec<Size> = children
             .iter()
             .map(|&cid| {
@@ -95,8 +128,8 @@ define_widget! {
         let input = FlexInput {
             direction: self.direction,
             gap: self.gap,
-            padding: self.padding,
-            container: frame,
+            padding: EdgeInsets::zero(),  // padding 已算入 flex_container
+            container: flex_container,
             children: flex_children,
             child_sizes,
             justify_content: self.justify,
@@ -127,6 +160,7 @@ impl Container {
             border_width: 0.0,
             border_radius: 0.0,
             padding: EdgeInsets::zero(),
+            margin: EdgeInsets::zero(),
             gap: 0.0,
             direction: FlexDirection::Row,
             justify: JustifyContent::Start,
@@ -140,6 +174,11 @@ impl Container {
 
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
+        self
+    }
+    /// 设置外边距（Web 盒模型，布局时占用空间）。
+    pub fn margin(mut self, m: EdgeInsets) -> Self {
+        self.margin = m;
         self
     }
     pub fn border(mut self, c: Color, w: f32) -> Self {

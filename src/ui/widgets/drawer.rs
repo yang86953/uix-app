@@ -68,7 +68,7 @@ define_widget! {
                 }
             }
         }
-        if let WidgetEvent::KeyDown { key } = event {
+        if let WidgetEvent::KeyDown { key, .. } = event {
             if *key == crate::ui::widget::KeyCode::Escape && self.closable {
                 self.visible = false; return EventResult::Handled;
             }

@@ -1,5 +1,7 @@
 //! Input widget — Ant Design style text input with placeholder, focus, and states.
 
+use std::cell::Cell;
+
 use crate::define_widget;
 use crate::graphics::{Color, GraphicsEngine, Radius};
 use crate::base::{Rect, Size};
@@ -27,6 +29,11 @@ define_widget! {
         disabled: bool,
         focused: bool,
         hovered: bool,
+        /// 光标位置（字符索引，不是字节偏移）。
+        cursor_char: usize,
+        /// 水平滚动偏移（像素），文字超出输入框时平滑左移。
+        /// 水平滚动偏移（像素），文字超出输入框时平滑左移。使用 Cell 以在 &self 渲染中修改。
+        scroll_offset_x: Cell<f32>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -42,15 +49,61 @@ define_widget! {
             WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
             WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
             WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key } => {
+            WidgetEvent::KeyDown { key, .. } => {
                 match key {
-                    KeyCode::Backspace => { self.value.pop(); EventResult::Handled }
+                    KeyCode::Backspace => {
+                        if self.cursor_char > 0 {
+                            let byte_pos = self.value.char_indices()
+                                .nth(self.cursor_char - 1)
+                                .map(|(i, _)| i)
+                                .unwrap_or(0);
+                            self.value.remove(byte_pos);
+                            self.cursor_char -= 1;
+                            EventResult::Handled
+                        } else {
+                            EventResult::NotHandled
+                        }
+                    }
+                    KeyCode::Left => {
+                        if self.cursor_char > 0 {
+                            self.cursor_char -= 1;
+                        }
+                        EventResult::Handled
+                    }
+                    KeyCode::Right => {
+                        let len = self.value.chars().count();
+                        if self.cursor_char < len {
+                            self.cursor_char += 1;
+                        }
+                        EventResult::Handled
+                    }
+                    KeyCode::Home => {
+                        self.cursor_char = 0;
+                        EventResult::Handled
+                    }
+                    KeyCode::End => {
+                        self.cursor_char = self.value.chars().count();
+                        EventResult::Handled
+                    }
                     KeyCode::Enter => EventResult::Handled,
                     _ => EventResult::NotHandled,
                 }
             }
             WidgetEvent::KeyPress { text } => {
-                self.value.push_str(text);
+                // 只接受可打印字符：Windows WM_CHAR 会把退格(0x08)、回车(0x0D)等
+                // 控制字符也作为 KeyPress 发送，直接拼入 value 会破坏输入状态。
+                if text.chars().any(|c| c.is_control()) {
+                    return EventResult::NotHandled;
+                }
+                // 在光标位置插入字符（而非追加到末尾）
+                for ch in text.chars() {
+                    let byte_pos = self.value.char_indices()
+                        .nth(self.cursor_char)
+                        .map(|(i, _)| i)
+                        .unwrap_or(self.value.len());
+                    self.value.insert(byte_pos, ch);
+                    self.cursor_char += 1;
+                }
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
@@ -93,24 +146,58 @@ define_widget! {
         if text_area.w > 0.0 {
             ctx.engine().push_clip_rect(text_area);
         }
+        if text_area.w > 0.0 {
+            ctx.engine().push_clip_rect(text_area);
+        }
+
+        // 计算光标前的文本宽度（用于滚动定位和光标绘制）
+        let cursor_byte_pos = self.value.char_indices()
+            .nth(self.cursor_char)
+            .map(|(i, _)| i)
+            .unwrap_or(self.value.len());
+        let text_before = &self.value[..cursor_byte_pos];
+        let text_before_w = if !text_before.is_empty() {
+            ctx.measure_text(text_before, 14.0).w
+        } else { 0.0 };
+
+        // 自适应滚动：保持光标在可视区域内
+        let text_area_w = input_frame.w - pad * 2.0;
+        let right_margin = 10.0;
+        let left_margin = 0.0;
+        let mut scroll_off = self.scroll_offset_x.get();
+        if text_before_w - scroll_off > text_area_w - right_margin {
+            // 光标超出右边界 → 右滚
+            scroll_off = text_before_w - text_area_w + right_margin;
+        }
+        if text_before_w - scroll_off < left_margin {
+            // 光标超出左边界 → 左滚
+            scroll_off = text_before_w;
+        }
+        // 滚动不超出文本总宽度
+        let total_text_w = if !self.value.is_empty() {
+            ctx.measure_text(&self.value, 14.0).w
+        } else { 0.0 };
+        scroll_off = scroll_off.min(total_text_w - 1.0).max(0.0);
+        self.scroll_offset_x.set(scroll_off);
+
+        // 绘制文本（应用滚动偏移），垂直使用 font metrics 居中
+        let scroll_off = self.scroll_offset_x.get();
         if !display_text.is_empty() {
-            // 左对齐绘制输入文本
-            let draw_x = input_frame.x + pad;
-            let draw_y = input_frame.y + (input_frame.h - 14.0) * 0.5;
+            let draw_x = input_frame.x + pad - scroll_off;
+            let text_rect = Rect::new(input_frame.x + pad, input_frame.y, text_area_w, input_frame.h);
+            let draw_y = ctx.visual_center_y(text_rect, 14.0);
             ctx.draw_text(display_text,
                 crate::base::Point::new(draw_x, draw_y),
                 text_color, 14.0);
         }
+
         if text_area.w > 0.0 {
             ctx.engine().pop_clip_rect();
         }
+
         if self.focused {
-            // 使用实际渲染文本宽度定位光标
-            let text_w = if !self.value.is_empty() {
-                ctx.measure_text(&self.value, 14.0).w
-            } else { 0.0 };
-            // 光标不超出输入框可见区域
-            let cursor_x = (input_frame.x + pad + text_w).min(input_frame.x + input_frame.w - pad - 1.5);
+            // 光标位置（应用滚动偏移）
+            let cursor_x = input_frame.x + pad + text_before_w - scroll_off;
             ctx.fill_rect(Rect::new(cursor_x, input_frame.y + 4.0, 1.5, input_frame.h - 8.0), primary, None);
         }
     }
@@ -122,12 +209,25 @@ impl Input {
             value: String::new(),
             placeholder: placeholder.into(),
             input_size: InputSize::Middle,
-            disabled: false, focused: false, hovered: false,
+            disabled: false,
+            focused: false,
+            hovered: false,
+            cursor_char: 0,
+            scroll_offset_x: Cell::new(0.0),
         }
     }
-    pub fn with_value(mut self, value: impl Into<String>) -> Self { self.value = value.into(); self }
+    pub fn with_value(mut self, value: impl Into<String>) -> Self {
+        self.value = value.into();
+        self.cursor_char = self.value.chars().count();
+        self.scroll_offset_x.set(0.0);
+        self
+    }
     pub fn size(mut self, s: InputSize) -> Self { self.input_size = s; self }
     pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
     pub fn value(&self) -> &str { &self.value }
-    pub fn set_value(&mut self, v: impl Into<String>) { self.value = v.into(); }
+    pub fn set_value(&mut self, v: impl Into<String>) {
+        self.value = v.into();
+        self.cursor_char = self.value.chars().count();
+        self.scroll_offset_x.set(0.0);
+    }
 }

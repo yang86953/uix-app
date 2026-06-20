@@ -27,20 +27,20 @@ pub mod presenter;
 
 /// 创建当前平台对应的 Platform 实例。
 ///
-/// # Panics
-/// 如果平台初始化失败（如 Linux 下无 Wayland 会话），会 panic。
+/// 返回 `Err` 如果平台初始化失败（如 Linux 下无 Wayland 会话）。
 #[cfg(windows)]
-pub fn create_platform() -> Box<dyn Platform> {
-    Box::new(crate::platform::windows::platform::WindowsPlatform::new())
+pub fn create_platform() -> Result<Box<dyn Platform>, crate::diag::Error> {
+    Ok(Box::new(crate::platform::windows::platform::WindowsPlatform::new()))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-pub fn create_platform() -> Box<dyn Platform> {
-    Box::new(crate::platform::linux::platform::LinuxPlatform::new())
+pub fn create_platform() -> Result<Box<dyn Platform>, crate::diag::Error> {
+    let platform = crate::platform::linux::platform::LinuxPlatform::new()?;
+    Ok(Box::new(platform))
 }
 
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
-pub fn create_platform() -> Box<dyn Platform> {
+pub fn create_platform() -> Result<Box<dyn Platform>, crate::diag::Error> {
     compile_error!("Unsupported platform: only Windows and Linux are supported");
 }
 

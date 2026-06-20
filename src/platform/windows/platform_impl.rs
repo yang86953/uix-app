@@ -11,8 +11,14 @@ use crate::platform::*;
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IPresenter for WindowsPlatform {
-    fn present(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
-        self.presenter.present(pixels, width, height)
+    fn present(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        dirty_rect: Option<(i32, i32, i32, i32)>,
+    ) -> Result<(), Error> {
+        self.presenter.present(pixels, width, height, dirty_rect)
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -35,15 +41,6 @@ impl INativeHandle for WindowsPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for WindowsPlatform {
-    fn present_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        _dirty_rect: Option<(i32, i32, i32, i32)>,
-    ) {
-        let _ = self.presenter.present(pixels, width, height);
-    }
     fn presenter(&mut self) -> &mut dyn IPresenter {
         self.presenter.as_mut()
     }

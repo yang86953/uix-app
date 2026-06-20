@@ -139,8 +139,32 @@ impl IFileDialog for WindowsFileDialog {
         }
     }
 
-    fn open_folder(&mut self, _title: &str) -> String {
-        String::new()
+    fn open_folder(&mut self, title: &str) -> String {
+        let wide_title = to_wide(title);
+        let mut buf = [0u16; 4096];
+        unsafe {
+            let mut bi = BROWSEINFOW {
+                hwndOwner: self.hwnd,
+                pidlRoot: ptr::null_mut(),
+                pszDisplayName: buf.as_mut_ptr(),
+                lpszTitle: wide_title.as_ptr(),
+                ulFlags: BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE,
+                lpfn: None,
+                lParam: 0,
+                iImage: 0,
+            };
+            let pidl = SHBrowseForFolderW(&mut bi);
+            if pidl.is_null() {
+                return String::new();
+            }
+            let result = SHGetPathFromIDListW(pidl, buf.as_mut_ptr());
+            CoTaskMemFree(pidl as *mut std::ffi::c_void);
+            if result != 0 {
+                to_utf8(&buf)
+            } else {
+                String::new()
+            }
+        }
     }
 }
 
@@ -184,4 +208,32 @@ const OFN_OVERWRITEPROMPT: u32 = 0x00000002;
 extern "system" {
     fn GetOpenFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
     fn GetSaveFileNameW(lpofn: *mut OPENFILENAMEW) -> i32;
+}
+
+// ── Folder picker FFI ──
+
+#[repr(C)]
+struct BROWSEINFOW {
+    hwndOwner: *mut std::ffi::c_void,
+    pidlRoot: *mut std::ffi::c_void,
+    pszDisplayName: *mut u16,
+    lpszTitle: *const u16,
+    ulFlags: u32,
+    lpfn: Option<unsafe extern "system" fn(*mut BROWSEINFOW, *mut std::ffi::c_void) -> i32>,
+    lParam: isize,
+    iImage: i32,
+}
+
+const BIF_RETURNONLYFSDIRS: u32 = 0x0001;
+const BIF_NEWDIALOGSTYLE: u32 = 0x0040;
+
+#[link(name = "shell32")]
+extern "system" {
+    fn SHBrowseForFolderW(lpbi: *mut BROWSEINFOW) -> *mut std::ffi::c_void;
+    fn SHGetPathFromIDListW(pidl: *mut std::ffi::c_void, pszPath: *mut u16) -> i32;
+}
+
+#[link(name = "ole32")]
+extern "system" {
+    fn CoTaskMemFree(pv: *mut std::ffi::c_void);
 }

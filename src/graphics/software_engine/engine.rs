@@ -22,8 +22,7 @@ pub struct SoftwareEngine {
     pub(crate) active_target: ActiveTarget,
     pub(crate) main_width: i32,
     pub(crate) main_height: i32,
-    pub(crate) saved_pixels: Vec<u32>,
-      pub(crate) pre_frame_clip: crate::base::Rect,
+    pub(crate) pre_frame_clip: crate::base::Rect,
     /// 首帧已渲染标志（用于脏区域回退为全帧清理）
     pub(crate) rendered_first: bool,
     /// 上次渲染时的 WidgetTree 版本号，用于检测结构变更。
@@ -47,7 +46,6 @@ impl SoftwareEngine {
               active_target: ActiveTarget::Main,
               main_width: 0,
               main_height: 0,
-              saved_pixels: Vec::new(),
               pre_frame_clip: crate::base::Rect::new(0.0, 0.0, f32::MAX, f32::MAX),
               rendered_first: false,
               last_tree_version: 0,
@@ -81,4 +79,6 @@ impl SoftwareEngine {
     pub fn set_supersample_level(&mut self, level: u8) {
         self.rt.set_supersample_level(level);
     }
+
+
 }

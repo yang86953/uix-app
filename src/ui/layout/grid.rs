@@ -28,19 +28,27 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         let mut sizes = vec![0.0f32; tracks.len()];
         let mut used = 0.0f32;
         let mut total_fr = 0.0f32;
+        let mut auto_count = 0usize;
 
         for (i, track) in tracks.iter().enumerate() {
             match track {
                 GridTrack::Px(px) => { sizes[i] = *px; used += px; }
                 GridTrack::Fr(fr) => { total_fr += fr; }
-                GridTrack::Auto => { sizes[i] = 0.0; }
+                GridTrack::Auto => { auto_count += 1; }
             }
         }
 
         let remaining = (available - total_gap - used).max(0.0);
         if total_fr > 0.0 && remaining > 0.0 {
+            let fr_unit = remaining / total_fr;
             for (i, track) in tracks.iter().enumerate() {
-                if let GridTrack::Fr(fr) = track { sizes[i] = remaining * fr / total_fr; }
+                if let GridTrack::Fr(fr) = track { sizes[i] = fr_unit * fr; }
+            }
+        } else if auto_count > 0 && remaining > 0.0 {
+            // Auto tracks equally share remaining space (like 1fr each)
+            let auto_size = remaining / auto_count as f32;
+            for (i, track) in tracks.iter().enumerate() {
+                if matches!(track, GridTrack::Auto) { sizes[i] = auto_size; }
             }
         }
         sizes

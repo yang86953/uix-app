@@ -28,6 +28,9 @@ pub struct PositionedGlyph {
     pub height: f32,
     /// Glyph index in the font's internal glyph table.
     pub glyph_id: u32,
+    /// Font handle this glyph belongs to (for multi-font layout with fallback).
+    /// 默认值 FontHandle::new(u32::MAX) 表示使用调用方上下文字体。
+    pub font: crate::graphics::FontHandle,
 }
 
 /// 一行文本的布局信息：包含该行所有 glyph 和行边界。
@@ -72,6 +75,12 @@ pub struct GlyphRaster {
     /// Per-pixel α coverage values (0 = transparent, 255 = opaque).
     /// Row-major order, `width * height` elements.
     pub coverage: Arc<Vec<u8>>,
+    /// X bearing (left side bearing) — offset from glyph origin to bitmap
+    /// left edge, in pixels. Positive = bitmap starts to the right of origin.
+    pub bearing_x: f32,
+    /// Y bearing (top side bearing) — offset from glyph origin to bitmap
+    /// top edge, in pixels. Negative = bitmap starts above the baseline.
+    pub bearing_y: f32,
 }
 
 /// Horizontal line metrics for a font at a given pixel size.
@@ -164,4 +173,10 @@ pub trait TextBackend: std::fmt::Debug + Send + Sync {
     /// `fallback_handles` 中的句柄必须已通过 `load_font` 加载到同一个后端。
     /// 默认实现为空操作（无回退）。
     fn set_fallback_fonts(&mut self, _fallback_handles: &[FontHandle]) {}
+
+    /// 清空字形位图缓存（释放内存）。默认实现为空操作。
+    fn clear_cache(&mut self) {}
+
+    /// 返回后端的近似内存使用量（字节）。默认返回 0。
+    fn memory_usage(&self) -> usize { 0 }
 }

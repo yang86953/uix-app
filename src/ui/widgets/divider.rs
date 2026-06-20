@@ -27,7 +27,7 @@ define_widget! {
         text: Option<String>,
         orientation: DividerOrientation,
         direction: DividerDirection,
-        color: Option<Color>,
+        pub color: Option<Color>,
         text_size: f32,
     }
 
