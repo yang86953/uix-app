@@ -1,8 +1,11 @@
+#![cfg(windows)]
+use super::ffi::*;
+
+
 // ============================================================================
 // uix-platform/src/windows/clipboard.rs — Windows clipboard (IClipboard)
 // ============================================================================
 
-#![cfg(windows)]
 
 use crate::platform::windows::util::to_utf8;
 use crate::platform::windows::util::to_wide;
@@ -101,19 +104,6 @@ const CF_TEXT: u32 = 1;
 const GMEM_MOVEABLE: u32 = 0x0002;
 const GMEM_ZEROINIT: u32 = 0x0040;
 
-#[link(name = "user32")]
-unsafe extern "system" {
-    unsafe fn OpenClipboard(hwnd: *mut std::ffi::c_void) -> i32;
-    unsafe fn CloseClipboard() -> i32;
-    unsafe fn EmptyClipboard() -> i32;
-    unsafe fn GetClipboardData(uFormat: u32) -> *mut std::ffi::c_void;
-    unsafe fn SetClipboardData(uFormat: u32, hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
-    unsafe fn GetPriorityClipboardFormat(paFormatPriorityList: *const u32, cFormats: i32) -> i32;
-}
 
-#[link(name = "kernel32")]
-unsafe extern "system" {
-    unsafe fn GlobalAlloc(uFlags: u32, dwBytes: usize) -> *mut std::ffi::c_void;
-    unsafe fn GlobalLock(hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
-    unsafe fn GlobalUnlock(hMem: *mut std::ffi::c_void) -> i32;
-}
+
+

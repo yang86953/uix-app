@@ -184,6 +184,6 @@ pub trait GraphicsEngine: 'static {
         Err(Error::not_implemented("load_font"))
     }
 
-    /// 返回引擎持有的字体服务引用（供 LayerTree 等组件使用）。
+    /// 返回引擎持有的字体服务引用（供 UI 层 LayerTree 等组件使用）。
     fn font_service(&self) -> &FontService;
 }

@@ -15,7 +15,7 @@ use std::time::Instant;
 use crate::base::Rect;
 use crate::graphics::frame_graph::resource::ResourceId;
 use crate::graphics::frame_graph::FrameGraph;
-use crate::graphics::layer::LayerTree;
+use crate::ui::layer::LayerTree;
 use crate::graphics::{DirtyRegion, GraphicsEngine, RenderOutcome};
 use crate::platform::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::platform::Platform;

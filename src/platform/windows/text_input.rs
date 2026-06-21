@@ -1,8 +1,10 @@
+#![cfg(windows)]
+use super::ffi::*;
+
+
 // ============================================================================
 // uix-platform/src/windows/text_input.rs — Windows IME text input (ITextInput)
 // ============================================================================
-
-#![cfg(windows)]
 
 use crate::platform::ITextInput;
 use std::ptr;
@@ -49,11 +51,3 @@ impl ITextInput for WindowsTextInput {
 
 const IACE_DEFAULT: u32 = 0x0010;
 
-#[link(name = "imm32")]
-extern "system" {
-    fn ImmAssociateContextEx(
-        hwnd: *mut std::ffi::c_void,
-        hKL: *mut std::ffi::c_void,
-        dwFlags: u32,
-    ) -> i32;
-}
