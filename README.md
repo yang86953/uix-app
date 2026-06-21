@@ -177,9 +177,10 @@ cargo test
 # Run specific module tests
 cargo test ui::layout
 cargo test graphics::types
+cargo test ui::state  # 响应式状态测试
 ```
 
-Current test count: **257 unit tests** + 13 doc-tests (all passing).
+Current test count: **266 unit tests** + 16 doc-tests (all passing).
 
 ## Building
 
@@ -190,6 +191,17 @@ cargo build
 # Release build
 cargo build --release
 ```
+
+## Planned Improvements
+
+### 🔜 近期
+- **Workspace crates** — 拆分为 `uix-core`、`uix-diag`、`uix-graphics`、`uix-platform`、`uix-ui`、`uix-services`、`uix-app` 独立 crate，编译期强制层边界
+- **Widget trait 拆分** — 将 15 方法的 `Widget` trait 拆为 `WidgetRender`、`WidgetLayout`、`WidgetEvent`、`WidgetLifecycle` 子 trait
+
+### 🔮 中长期
+- **GPU 渲染后端** — Direct2D / Vulkan 支持
+- **macOS 支持** — 通过 AppKit 桥接
+- **平台 FFI 迁移** — 完全替换本地 `extern` 声明为 `windows` crate
 
 ## Contributing
 
