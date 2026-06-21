@@ -7,7 +7,7 @@ use uix::ui::theme::DesignTokens;
 use uix::ui::widget::WidgetNode;
 use uix::ui::{
     Anchor, AnchorItem, Breadcrumb, BreadcrumbItem, Button, ButtonSize, Container, Dropdown,
-    Label, Space, SpaceSize, TabPosition, Tabs,
+    Label, SpaceSize, TabPosition, Tabs,
 };
 use uix::base::EdgeInsets;
 

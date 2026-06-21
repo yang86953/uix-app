@@ -180,7 +180,7 @@ impl App {
                 Some(window) => {
                     let running = Arc::clone(&self.running);
                     window.run(move |platform| {
-                        platform.wait_event(&|event: &UiEvent| match event.type_ {
+                        platform.event_loop().wait_event(&|event: &UiEvent| match event.type_ {
                             UiEventType::WindowClose => {
                                 running.store(false, Ordering::SeqCst);
                                 false

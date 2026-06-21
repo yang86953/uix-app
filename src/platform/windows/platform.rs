@@ -28,6 +28,7 @@ use crate::platform::presenter::NullPresenter;
 use crate::platform::windows::clipboard::WindowsClipboard;
 use crate::platform::windows::console::WindowsConsole;
 use crate::platform::windows::cursor::WindowsCursor;
+use std::sync::Arc;
 use crate::platform::windows::display::WindowsDisplay;
 use crate::platform::windows::file_dialog::WindowsFileDialog;
 use crate::platform::windows::filesystem::WindowsFileSystem;

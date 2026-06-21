@@ -41,6 +41,18 @@ impl INativeHandle for WindowsPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for WindowsPlatform {
+    fn window_manager(&mut self) -> &mut dyn IWindowManager {
+        self
+    }
+    fn window_properties(&self) -> &dyn IWindowProperties {
+        self
+    }
+    fn event_loop(&mut self) -> &mut dyn IEventLoop {
+        self
+    }
+    fn native_handle(&self) -> &dyn INativeHandle {
+        self
+    }
     fn presenter(&mut self) -> &mut dyn IPresenter {
         self.presenter.as_mut()
     }

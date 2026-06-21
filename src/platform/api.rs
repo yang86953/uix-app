@@ -216,23 +216,21 @@ pub trait INativeHandle {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Platform — 聚合接口
+// Platform — 聚合接口（组合模式）
 //
-// 继承所有子 trait，平台实现只需 impl Platform，即同时满足所有子 trait。
+// 所有子系统统一通过访问器方法暴露，不使用 trait 继承。
+// 平台实现方通过组合持有各子系统 struct，在访问器中返回对应引用。
 // ════════════════════════════════════════════════════════════════════════════
 
-pub trait Platform:
-    IWindowManager
-    + IWindowProperties
-    + IEventLoop
-    + INativeHandle
-    + IPresenter
-{
-    /// 返回像素呈现器引用
+pub trait Platform {
+    // ── 核心窗口访问器（组合模式）─────────────────────────────────
+    fn window_manager(&mut self) -> &mut dyn IWindowManager;
+    fn window_properties(&self) -> &dyn IWindowProperties;
+    fn event_loop(&mut self) -> &mut dyn IEventLoop;
+    fn native_handle(&self) -> &dyn INativeHandle;
     fn presenter(&mut self) -> &mut dyn IPresenter;
 
     // ── 子系统访问器（组合模式）────────────────────────────────────
-
     fn clipboard(&mut self) -> &mut dyn IClipboard;
     fn cursor(&mut self) -> &mut dyn ICursor;
     fn display(&self) -> &dyn IDisplay;

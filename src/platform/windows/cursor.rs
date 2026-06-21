@@ -138,21 +138,16 @@ const IDC_SIZENS: u16 = 32645;
 const IDC_SIZEWE: u16 = 32644;
 const IDC_SIZENWSE: u16 = 32642;
 const IDC_SIZENESW: u16 = 32643;
+use super::ffi::{LoadCursorW, SetCursor, SetCapture, ReleaseCapture};
+
 const TRUE: i32 = 1;
 const FALSE: i32 = 0;
 
 #[link(name = "user32")]
 extern "system" {
-    fn LoadCursorW(
-        hInstance: *mut std::ffi::c_void,
-        lpCursorName: *const u16,
-    ) -> *mut std::ffi::c_void;
-    fn SetCursor(hCursor: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     fn ShowCursor(bShow: i32) -> i32;
     fn GetCursorPos(lpPoint: *mut POINT) -> i32;
     fn SetCursorPos(x: i32, y: i32) -> i32;
     fn ClipCursor(lpRect: *const RECT) -> i32;
-    fn SetCapture(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
-    fn ReleaseCapture() -> i32;
     fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
 }

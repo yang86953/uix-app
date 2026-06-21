@@ -1,9 +1,10 @@
-use crate::graphics::{Color};
 use crate::base::{EdgeInsets};
+use crate::graphics::{Color};
 
-/// Visual style properties for a widget.
+/// 预留给将来按需扩展的 widget 样式预设。
+/// 当前未集成到 widget 系统中。如需使用，请直接使用 `ui::style::Style`。
 #[derive(Debug, Clone, PartialEq)]
-pub struct Style {
+pub struct WidgetStylePreset {
     pub bg_color: Option<Color>,
     pub text_color: Option<Color>,
     pub border_color: Option<Color>,
@@ -18,7 +19,7 @@ pub struct Style {
     pub shadow_offset_y: f32,
 }
 
-impl Default for Style {
+impl Default for WidgetStylePreset {
     fn default() -> Self {
         Self {
             bg_color: None,
@@ -38,16 +39,17 @@ impl Default for Style {
 }
 
 /// Manages widget Style — properties separate from layout.
+/// 备注：当前未集成到 widget 系统中，保留为将来扩展预留。
 #[derive(Default, Clone)]
 pub struct StyleManager {
-    style: Style,
+    style: WidgetStylePreset,
 }
 
 impl StyleManager {
     pub fn new() -> Self { Self::default() }
 
-    pub fn style(&self) -> &Style { &self.style }
-    pub fn style_mut(&mut self) -> &mut Style { &mut self.style }
+    pub fn style(&self) -> &WidgetStylePreset { &self.style }
+    pub fn style_mut(&mut self) -> &mut WidgetStylePreset { &mut self.style }
 
     pub fn set_bg(&mut self, color: Color) { self.style.bg_color = Some(color); }
     pub fn bg(&self) -> Option<Color> { self.style.bg_color }

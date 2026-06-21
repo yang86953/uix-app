@@ -189,15 +189,4 @@ impl GraphicsEngine for NullEngine {
     fn font_service(&self) -> &FontService {
         &self.font_service
     }
-
-    fn render_frame(
-        &mut self,
-        _tree: &mut crate::ui::widget::WidgetTree,
-        _layer_tree: &mut crate::graphics::layer::LayerTree,
-        _theme: &std::cell::RefCell<crate::ui::theme::Theme>,
-        _first_frame: bool,
-        _keep_polling: bool,
-    ) -> crate::graphics::RenderOutcome {
-        crate::graphics::RenderOutcome::Idle
-    }
 }

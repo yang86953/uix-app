@@ -9,7 +9,6 @@
 
 #![cfg(all(unix, not(target_os = "macos")))]
 
-pub(crate) mod backend;
 pub(crate) mod clipboard;
 pub mod console;
 pub mod file_dialog;

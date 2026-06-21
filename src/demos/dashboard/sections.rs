@@ -2,14 +2,14 @@ use uix::ui::theme::DesignTokens;
 use uix::ui::widget::WidgetNode;
 use uix::ui::layout::{AlignItems, FlexDirection};
 use uix::ui::{
-    Alert, AlertType, Avatar, Badge, BarChart, BarData, Button, ButtonSize, Card,
-    Cascader, CascaderOption, Checkbox, Container, DatePicker, DateValue, Empty, Icon,
+    Alert, AlertType, BarChart, BarData, Button, ButtonSize, Card,
+    Cascader, CascaderOption, Checkbox, Container, DatePicker, DateValue, Empty,
     Input, InputNumber, InputSize, IntoWidgetNode,
     Label, LineChart, LineData, Mentions, PieChart, PieData, ProgressBar, Radio, Rate,
-    Select, Skeleton, SkeletonShape, Slider, Spin, Switch, Table, TableColumn, Tag, TagColor,
-    TimePicker, TimeValue, Tooltip, TooltipPlacement, Space, SpaceSize, Popover, Popconfirm,
+    Select, Skeleton, SkeletonShape, Slider, Spin, Switch, Tag, TagColor,
+    TimePicker, TimeValue, Space, SpaceSize,
 };
-use super::{INNER_W, PageBuilder, section_title, row, col};
+use super::{INNER_W, PageBuilder, section_title, row};
 
 // ── Page 0: Typography ──
 

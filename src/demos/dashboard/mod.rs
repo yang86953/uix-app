@@ -140,6 +140,8 @@ pub fn row(h: f32) -> Space {
 }
 
 /// 标准列容器（Column 方向，拉伸对齐，宽度由父容器 Stretch 自动拉伸）。
+/// 当前未被 demo 页面使用，保留以备将来扩展。
+#[allow(dead_code)]
 pub fn col(h: f32) -> Space {
     Space::new()
         .size(SpaceSize::Small)
@@ -304,10 +306,9 @@ fn rebuild_tree(
     dark_mode: bool,
     page_index: usize,
 ) -> SharedActive {
-    eprintln!("[TRACE:L2] rebuild_tree: page={} dark={}", page_index, dark_mode);
+    log::debug!("rebuild_tree: page={} dark={}", page_index, dark_mode);
     let tk = dyn_tokens.snapshot();
     let (new_root, new_active) = build_demo_tree(&tk, page_index);
-    eprintln!("[TRACE:L2]   build_demo_tree done, new_active.get()={}", new_active.get());
     tree.build(new_root);
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
@@ -317,7 +318,6 @@ fn rebuild_tree(
         w.dark.set(dark_mode);
     });
     tree.mark_full_frame_dirty();
-    eprintln!("[TRACE:L2]   rebuild complete");
     new_active
 }
 
@@ -355,24 +355,21 @@ fn run_event_loop(
             tree.find_by_type_and_modify::<ThemeToggle>(|w| new_dark = w.dark.get());
 
             if new_dark != state.dark_mode.get() {
-                eprintln!("[TRACE:L2] on_frame: THEME CHANGE dark={}", new_dark);
+                log::debug!("on_frame: THEME CHANGE dark={}", new_dark);
                 state.dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
                 let a = rebuild_tree(tree, eng, &dyn_tokens, new_dark, state.prev_active.get());
                 *state.nav_active.borrow_mut() = a;
-                eprintln!("[TRACE:L2] on_frame: theme done, nav_active={}", state.nav_active.borrow().get());
                 return;
             }
 
             // ── 导航切换 → 重建整棵树 ──
             let active = state.nav_active.borrow().get();
-            eprintln!("[TRACE:L2] on_frame: nav_active={} prev_active={}", active, state.prev_active.get());
             if active != state.prev_active.get() {
-                eprintln!("[TRACE:L2] on_frame: NAV CHANGE {} -> {}", state.prev_active.get(), active);
+                log::debug!("on_frame: NAV CHANGE {} -> {}", state.prev_active.get(), active);
                 state.prev_active.set(active);
                 let a = rebuild_tree(tree, eng, &dyn_tokens, state.dark_mode.get(), active);
                 *state.nav_active.borrow_mut() = a;
-                eprintln!("[TRACE:L2] on_frame: nav done");
             }
         },
     )

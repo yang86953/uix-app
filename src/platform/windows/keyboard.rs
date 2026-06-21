@@ -114,13 +114,14 @@ const VK_END: u32 = 0x23;
 const VK_PRIOR: u32 = 0x21;
 const VK_NEXT: u32 = 0x22;
 
+use super::ffi::GetAsyncKeyState;
+
 fn is_key_down(vk: u32) -> bool {
     unsafe { GetAsyncKeyState(vk as i32) < 0 }
 }
 
 #[link(name = "user32")]
 extern "system" {
-    fn GetAsyncKeyState(vKey: i32) -> i16;
     fn GetLastInputInfo(plii: *mut LASTINPUTINFO) -> i32;
     fn GetTickCount() -> u32;
     fn GetDoubleClickTime() -> u32;

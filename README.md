@@ -197,6 +197,6 @@ See [AGENTS.md](AGENTS.md) for project rules and conventions.
 
 Key guidelines:
 - `#![deny(clippy::unwrap_used)]` — no unwrap/expect in production code
-- Each Rust file ≤ 400 lines
+- Each Rust file ≤ 900 lines
 - Chinese comments for internal documentation
 - CodeGraph for code analysis before refactoring

@@ -4,6 +4,7 @@
 
 #![cfg(windows)]
 
+use super::ffi::{KillTimer, SetTimer};
 use crate::platform::ITimer;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -64,15 +65,4 @@ impl ITimer for WindowsTimer {
             KillTimer(self.hwnd, id);
         }
     }
-}
-
-#[link(name = "user32")]
-extern "system" {
-    fn SetTimer(
-        hwnd: *mut std::ffi::c_void,
-        nIDEvent: u32,
-        uElapse: u32,
-        lpTimerFunc: Option<unsafe extern "system" fn()>,
-    ) -> usize;
-    fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 }

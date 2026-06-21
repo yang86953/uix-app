@@ -260,111 +260,138 @@ impl WidgetTree {
             }
         }
 
-        // Phase 1: Top-down — 父容器根据 preferred_size 为子节点分配位置
-        let order = self.traverse();
-        for &id in &order {
-            let positions: Vec<(WidgetId, Rect)> = {
-                let node = match self.get(id) {
-                    Some(n) => n,
-                    None => continue,
-                };
-                let frame = node.frame();
-                let children: Vec<WidgetId> = node.children().to_vec();
-                if children.is_empty() {
-                    continue;
-                }
-                node.inner().layout_children(frame, &children, self)
-            };
-            for (child_id, rect) in positions {
-                if let Some(child) = self.get_mut(child_id) {
-                    let old = child.frame();
-                    if old != rect {
-                        child.set_frame(rect);
-                        self.mark_dirty_rect(child_id, old);
-                        self.mark_dirty(child_id);
+        // ════════════════════════════════════════════════════════════════
+        // 收敛循环：自上而下布局 → [扩展 ↔ 收缩] → viewport
+        // Phase 2（扩展）和 Phase 4（收缩）交替运行直至稳定，
+        // 防止两个阶段的尺寸调整形成逐帧振荡。
+        // ════════════════════════════════════════════════════════════════
+        for _converge_pass in 0..5 {
+            let mut any_change = false;
+
+            // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
+            let order = self.traverse();
+            for &id in &order {
+                let positions: Vec<(WidgetId, Rect)> = {
+                    let node = match self.get(id) {
+                        Some(n) => n,
+                        None => continue,
+                    };
+                    let frame = node.frame();
+                    let children: Vec<WidgetId> = node.children().to_vec();
+                    if children.is_empty() {
+                        continue;
                     }
-                }
-            }
-        }
-
-        // Phase 2: Bottom-up — 容器根据内容自动扩展高度，逐层向上传播
-        for _pass in 0..3 {
-            let mut any_resized = false;
-            let rev_order: Vec<WidgetId> = self.traverse().into_iter().rev().collect();
-            for &id in &rev_order {
-                let node = match self.get(id) {
-                    Some(n) => n,
-                    None => continue,
+                    node.inner().layout_children(frame, &children, self)
                 };
-                let children: Vec<WidgetId> = node.children().to_vec();
-                if children.is_empty() {
-                    continue;
-                }
-                // Viewport 类容器（如 ScrollView）本身不扩展，content_bounds 更新在 Phase 3 进行
-                let is_viewport = node.inner().children_clip(node.frame()).is_some();
-                if is_viewport {
-                    continue;
-                }
-
-                let node_frame = node.frame();
-                // 取所有可见子节点的最大下边界（相对父容器）
-                let mut max_bottom = node_frame.y + node_frame.h;
-                for &cid in &children {
-                    if let Some(child) = self.get(cid) {
-                        if child.visible()
-                        {
-                            let cf = child.frame();
-                            let child_bottom = cf.y + cf.h;
-                            // 子节点底部相对于父容器顶部
-                            let rel_bottom = (cf.y - node_frame.y) + cf.h;
-                            // 只在子节点延伸到可见区域时才触发扩展
-                            // 防止滚动到视口上方时(cf.y+cf.h<=0)的无限膨胀循环
-                            // 只考虑子节点底部还延伸到父容器下方的情况
-                            let child_extends_below_parent = cf.y + cf.h > node_frame.y;
-                            if child_bottom > 0.0 && child_extends_below_parent && rel_bottom > node_frame.h {
-                                max_bottom = max_bottom.max(child_bottom);
-                            }
+                for (child_id, rect) in positions {
+                    if let Some(child) = self.get_mut(child_id) {
+                        let old = child.frame();
+                        if old != rect {
+                            child.set_frame(rect);
+                            self.mark_dirty_rect(child_id, old);
+                            self.mark_dirty(child_id);
                         }
                     }
                 }
+            }
 
-                let new_h = max_bottom - node_frame.y;
-                if new_h > node_frame.h + 0.5 {
-                    log::debug!(
-                        "[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
-                        id, node_frame.h, new_h, max_bottom,
-                    );
-                    let old_frame = node.frame();
-                    if let Some(node_mut) = self.get_mut(id) {
-                        node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, new_h));
-                        self.mark_dirty_rect(id, old_frame);
-                        self.mark_dirty(id);
-                    }
-                    // 容器扩展后，重新布局子节点
-                    let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, new_h);
-                    let new_positions = self
-                        .get(id)
-                        .map(|n| n.inner().layout_children(new_frame, &children, self))
-                        .unwrap_or_default();
-                    for (child_id, rect) in new_positions {
-                        if let Some(child) = self.get_mut(child_id) {
-                            let old = child.frame();
-                            if old != rect {
-                                child.set_frame(rect);
-                                self.mark_dirty_rect(child_id, old);
-                                self.mark_dirty(child_id);
-                            }
-                        }
-                    }
-                    any_resized = true;
+            // 内循环：交替扩展和收缩直到稳定
+            for _inner_pass in 0..3 {
+                let expanded = self.layout_expand();
+                let shrunk = self.layout_shrink();
+                if expanded || shrunk {
+                    any_change = true;
+                }
+                if !expanded && !shrunk {
+                    break;
                 }
             }
-            if !any_resized {
+
+            // Phase 3: 更新 viewport 容器的 content_bounds
+            self.layout_viewports();
+
+            if !any_change {
                 break;
             }
         }
 
-        // Phase 3: 仅更新 viewport 容器的 content_bounds，不移动子节点
+        // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
+        self.layout_viewports();
+        log::debug!("[Layout] layout() done");
+    }
+
+    /// 自下而上扩展：当子节点底部超出容器底部时，扩展容器高度。
+    /// 后序遍历确保子节点先扩展、父节点后扩展。
+    /// 返回是否有任何容器被扩展。
+    fn layout_expand(&mut self) -> bool {
+        let mut any_resized = false;
+        let rev_order: Vec<WidgetId> = self.traverse().into_iter().rev().collect();
+        for &id in &rev_order {
+            let (children, is_viewport, node_frame) = match self.get(id) {
+                Some(n) if !n.children().is_empty() => {
+                    (n.children().to_vec(), n.inner().children_clip(n.frame()).is_some(), n.frame())
+                }
+                _ => continue,
+            };
+            // Viewport 容器（ScrollView）不扩展，content_bounds 在 layout_viewports 中更新
+            if is_viewport {
+                continue;
+            }
+
+            // 取所有可见子节点的最大下边界
+            let mut max_bottom = node_frame.y + node_frame.h;
+            for &cid in &children {
+                if let Some(child) = self.get(cid) {
+                    if child.visible() {
+                        let cf = child.frame();
+                        let child_bottom = cf.y + cf.h;
+                        let rel_bottom = (cf.y - node_frame.y) + cf.h;
+                        // 只考虑延伸到可见区域的子节点（防止滚动到视口上方时无限膨胀）
+                        let child_extends_below_parent = cf.y + cf.h > node_frame.y;
+                        if child_bottom > 0.0 && child_extends_below_parent && rel_bottom > node_frame.h {
+                            max_bottom = max_bottom.max(child_bottom);
+                        }
+                    }
+                }
+            }
+
+            let new_h = max_bottom - node_frame.y;
+            if new_h > node_frame.h + 0.5 {
+                log::debug!(
+                    "[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
+                    id, node_frame.h, new_h, max_bottom,
+                );
+                let old_frame = node_frame;
+                if let Some(node_mut) = self.get_mut(id) {
+                    node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, new_h));
+                    self.mark_dirty_rect(id, old_frame);
+                    self.mark_dirty(id);
+                }
+                // 容器扩展后，重新布局子节点
+                let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, new_h);
+                let new_positions = self
+                    .get(id)
+                    .map(|n| n.inner().layout_children(new_frame, &children, self))
+                    .unwrap_or_default();
+                for (child_id, rect) in new_positions {
+                    if let Some(child) = self.get_mut(child_id) {
+                        let old = child.frame();
+                        if old != rect {
+                            child.set_frame(rect);
+                            self.mark_dirty_rect(child_id, old);
+                            self.mark_dirty(child_id);
+                        }
+                    }
+                }
+                any_resized = true;
+            }
+        }
+        any_resized
+    }
+
+    /// 更新所有 viewport 容器的 content_bounds。
+    /// 只触发 content_bounds 副作用，不移动子节点位置。
+    fn layout_viewports(&mut self) {
         for &id in &self.traverse() {
             if let Some(node) = self.get(id) {
                 if node.inner().children_clip(node.frame()).is_none() {
@@ -383,27 +410,15 @@ impl WidgetTree {
                 let _ = node.inner().layout_children(frame, &children, self);
             }
         }
-        // Phase 4: 收缩过大的容器（面板折叠等场景）
-        self.layout_shrink();
-        // 收缩后重新更新 viewport content_bounds
-        for &id in &self.traverse() {
-            if let Some(node) = self.get(id) {
-                if node.inner().children_clip(node.frame()).is_none() { continue; }
-                let frame = node.frame();
-                let children = node.children().to_vec();
-                if children.is_empty() { continue; }
-                let _ = node.inner().layout_children(frame, &children, self);
-            }
-        }
-        log::debug!("[Layout] layout() done");
     }
 
-    /// Phase 4: 收缩过大的容器。与 Phase 2 相反——当子节点高度
+    /// 收缩过大的容器。与 layout_expand 相反——当子节点高度
     /// 显著小于容器当前高度，且子节点延伸到可见区域时，收缩容器。
     /// 每轮先重新布局子节点（确保兄弟组件靠拢），再检查是否需要收缩。
-    fn layout_shrink(&mut self) {
+    /// 返回是否有任何容器被收缩。
+    fn layout_shrink(&mut self) -> bool {
+        let mut any_changed = false;
         for _pass in 0..3 {
-            let mut any_changed = false;
             let rev_order: Vec<WidgetId> = self.traverse().into_iter().rev().collect();
             // Phase A: 收集需要收缩的容器
             #[derive(Clone)]
@@ -423,6 +438,22 @@ impl WidgetTree {
                     .map(|p| p.inner().children_clip(p.frame()).is_some())
                     .unwrap_or(false);
                 if parent_is_viewport { continue; }
+                // 也不收缩祖先链上任一节点是 viewport 的容器（深层嵌套保护）
+                let mut ancestor_is_viewport = false;
+                let mut cur = self.get(id).and_then(|n| n.parent());
+                while let Some(pid) = cur {
+                    if let Some(p) = self.get(pid) {
+                        if p.inner().children_clip(p.frame()).is_some() {
+                            ancestor_is_viewport = true;
+                            break;
+                        }
+                        cur = p.parent();
+                    } else {
+                        break;
+                    }
+                }
+                if ancestor_is_viewport { continue; }
+
                 let children: Vec<WidgetId> = match self.get(id) {
                     Some(n) if !n.children().is_empty() => n.children().to_vec(),
                     _ => continue,
@@ -466,16 +497,18 @@ impl WidgetTree {
                 if !has_visible { continue; }
 
                 let needed_h = max_child_bottom - node_frame.y;
-                // 不收缩到低于容器的 preferred_size
-                let min_h = self.get(id)
+                // ⭐ 最小高度取子节点实际内容和 preferred_size 的较大值。
+                // 设此下限可防止收缩到子节点内容以下，从而避免与
+                // layout_expand（Phase 2）形成振荡循环。
+                let pref_h = self.get(id)
                     .map(|n| n.preferred_size(None).h)
-                    .unwrap_or(0.0)
-                    .max(node_frame.h * 0.01); // 至少保留1%当前高度
-                let effective_needed = needed_h.max(min_h);
+                    .unwrap_or(0.0);
+                let min_h = needed_h.max(pref_h).max(node_frame.h * 0.01);
+                let effective_needed = min_h;
                 if node_frame.h - effective_needed > 5.0 {
                     log::debug!(
-                        "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (min={:.0})",
-                        id, node_frame.h - effective_needed, node_frame.h, effective_needed, min_h,
+                        "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0})",
+                        id, node_frame.h - effective_needed, node_frame.h, effective_needed, needed_h, pref_h,
                     );
                     ops.push(ShrinkOp { id, needed_h: effective_needed });
                 }
@@ -533,6 +566,7 @@ impl WidgetTree {
             }
             if !any_changed { break; }
         }
+        any_changed
     }
 
     pub fn update(&mut self, dt: f32) -> bool {

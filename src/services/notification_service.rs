@@ -9,8 +9,17 @@
 //   4. 支持通知级别：Info / Success / Warning / Error
 // ============================================================================
 
-use crate::platform::types::NotificationLevel;
 use std::collections::VecDeque;
+
+/// 通知级别。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum NotificationLevel {
+    Info = 0,
+    Success = 1,
+    Warning = 2,
+    Error = 3,
+}
 
 /// A single notification entry displayed as a Toast in the UI.
 #[derive(Debug, Clone)]

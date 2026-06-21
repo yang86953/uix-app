@@ -168,6 +168,15 @@ extern "system" {
 
     pub(super) fn GetDC(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(super) fn ReleaseDC(hwnd: *mut std::ffi::c_void, hdc: *mut std::ffi::c_void) -> i32;
+
+    pub(super) fn SetTimer(
+        hwnd: *mut std::ffi::c_void,
+        nIDEvent: u32,
+        uElapse: u32,
+        lpTimerFunc: Option<unsafe extern "system" fn()>,
+    ) -> usize;
+
+    pub(super) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

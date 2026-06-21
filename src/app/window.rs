@@ -72,13 +72,13 @@ impl Window {
     }
 
     pub fn create(&mut self, title: &str, width: i32, height: i32) -> bool {
-        if let Err(e) = self.platform.create_window(title, width, height) {
+        if let Err(e) = self.platform.window_manager().create_window(title, width, height) {
             log::error!("Window::create: platform failed: {}", e.short_what());
             return false;
         }
-        self.platform.center_on_screen();
-        self.platform.show();
-        self.platform.raise();
+        self.platform.window_manager().center_on_screen();
+        self.platform.window_manager().show();
+        self.platform.window_manager().raise();
         log::info!(
             "Window created and shown ({}x{}, title='{}')",
             width,
@@ -89,11 +89,11 @@ impl Window {
     }
 
     pub fn show(&mut self) {
-        self.platform.show();
+        self.platform.window_manager().show();
     }
     pub fn close(&mut self) {
         self.running = false;
-        self.platform.destroy_window();
+        self.platform.window_manager().destroy_window();
     }
     pub fn is_running(&self) -> bool {
         self.running
@@ -130,19 +130,19 @@ impl Window {
         let collect = |ev: &UiEvent| {
             match ev.type_ {
                 UiEventType::WindowClose => {
-                    eprintln!("[TRACE:L3] collect: WindowClose -> exit");
+                    log::debug!("collect: WindowClose -> exit");
                     running_flag.set(false);
                     return false;
                 }
                 _ => {
                     if on_exit(ev) {
-                        eprintln!("[TRACE:L3] collect: on_exit -> exit");
+                        log::debug!("collect: on_exit -> exit");
                         running_flag.set(false);
                         return false;
                     }
                 }
             }
-            eprintln!("[TRACE:L3] collect: {:?} pos={:?}", ev.type_, match &ev.payload { crate::platform::event::UiEventPayload::MouseButton(d) => Some(d.pos), _ => None });
+            log::trace!("collect: {:?}", ev.type_);
             pending_events.borrow_mut().push(ev.clone());
             true
         };
@@ -150,16 +150,16 @@ impl Window {
         while running_flag.get() {
             let mut woke = false;
             if first_frame || keep_polling {
-                if !self.platform.poll_event(&collect) {
+                if !self.platform.event_loop().poll_event(&collect) {
                     break;
                 }
                 first_frame = false;
             } else {
-                let alive = self.platform.wait_event(&collect);
+                let alive = self.platform.event_loop().wait_event(&collect);
                 if !alive {
                     break;
                 }
-                self.platform.poll_event(&collect);
+                self.platform.event_loop().poll_event(&collect);
                 last_frame = Instant::now();
                 woke = true;
             }
@@ -167,23 +167,24 @@ impl Window {
             // ═══════════════════════════════════════════════════════════
             // [TIMING] 帧耗时统计
             // ═══════════════════════════════════════════════════════════
+            #[cfg(debug_assertions)]
             let _frame_t0 = std::time::Instant::now();
+            #[cfg(debug_assertions)]
             let mut _last_tmark = _frame_t0;
+            #[cfg(debug_assertions)]
             macro_rules! _tmark {
                 ($label:expr) => {{
                     let elapsed = _frame_t0.elapsed();
                     let since_last = _last_tmark.elapsed();
                     if elapsed.as_secs_f32() > 0.1 {
-                        eprintln!("[TIMING+] {}: total={:.1}s  step={:.1}s", $label, elapsed.as_secs_f32(), since_last.as_secs_f32());
+                        log::debug!("[TIMING] {}: total={:.1}s  step={:.1}s", $label, elapsed.as_secs_f32(), since_last.as_secs_f32());
                     }
                     _last_tmark = std::time::Instant::now();
                 }};
             }
-            {
-                use std::sync::atomic::{AtomicU64, Ordering};
-                static FRAME: AtomicU64 = AtomicU64::new(0);
-                let n = FRAME.fetch_add(1, Ordering::Relaxed);
-                eprintln!("[DBG] === Frame {} start, pending={} ===", n, pending_events.borrow().len());
+            #[cfg(not(debug_assertions))]
+            macro_rules! _tmark {
+                ($label:expr) => {{}};
             }
 
             // ═══════════════════════════════════════════════════════════
@@ -216,12 +217,10 @@ impl Window {
                     }
                 }
                 if let Some(we) = map_event(&ev) {
-                    eprintln!("[TRACE:L3] dispatch: {:?}", we);
+                    log::trace!("dispatch: {:?}", we);
                     tree.dispatch_event(&we);
-                    eprintln!("[TRACE:L3] dispatch done");
                 }
             }
-            eprintln!("[DBG]   events done");
 
             // ═══════════════════════════════════════════════════════════
             // 2. 动画推进 + 布局
@@ -236,13 +235,11 @@ impl Window {
             if t1 - t0 > std::time::Duration::from_millis(100) {
                 log::warn!("EventLoop: tree.update took {}ms", (t1 - t0).as_millis());
             }
-            eprintln!("[DBG]   update done");
             tree.layout();
             let t2 = Instant::now();
             if t2 - t1 > std::time::Duration::from_millis(100) {
                 log::warn!("EventLoop: tree.layout took {}ms", (t2 - t1).as_millis());
             }
-            eprintln!("[DBG]   layout done");
 
             // ═══════════════════════════════════════════════════════════
             // 3. 引擎尺寸 ↔ root frame 同步保障
@@ -267,18 +264,16 @@ impl Window {
                 }
                 tree.mark_full_frame_dirty();
                 tree.layout();
+                // 递增 tree_version 触发 LayerTree 重建，确保 Picture 节点使用新 bounds
+                tree.tree_version += 1;
             }
-            eprintln!("[DBG]   relayout check done");
 
             let t_frame = Instant::now();
             on_frame(tree, engine, self.platform.as_mut());
-            eprintln!("[DBG]   on_frame done");
             let t3 = Instant::now();
             if t3 - t_frame > std::time::Duration::from_millis(100) {
                 log::warn!("EventLoop: on_frame took {}ms", (t3 - t_frame).as_millis());
             }
-
-            eprintln!("[DBG]   pre-render check");
             // ── FrameGraph 驱动渲染（替代 engine.render_frame） ────
             let dirty_region = tree.dirty_region();
             let first_render = !rendered_first_frame;
@@ -397,27 +392,16 @@ impl Window {
 
                     tree.reset_dirty();
                     self.rendered_first = true;
-                    eprintln!("[DBG]   render → Present");
                     RenderOutcome::Present(damage)
                 }
             };
-            _tmark!("render-complete");
-            eprintln!("[DBG]   render outcome done");
 
             // ── 呈现 ──
             match outcome {
                 RenderOutcome::Present(damage) => {
                     let t_present = Instant::now();
                     let dirty = if rendered_first_frame { damage } else { None };
-                    if !rendered_first_frame {
-                        let _ = self.platform.present(
-                            engine.pixels(),
-                            engine.width(),
-                            engine.height(),
-                            None,
-                        );
-                    }
-                    let _ = self.platform.present(
+                    let _ = self.platform.presenter().present(
                         engine.pixels(),
                         engine.width(),
                         engine.height(),
@@ -455,8 +439,8 @@ impl Window {
         self.running = true;
         log::info!(
             "Window event loop started ({}x{})",
-            self.platform.width(),
-            self.platform.height()
+            self.platform.window_properties().width(),
+            self.platform.window_properties().height()
         );
         while self.running {
             if !frame_fn(self.platform.as_mut()) {
@@ -472,7 +456,7 @@ impl Window {
 impl Drop for Window {
     fn drop(&mut self) {
         if self.running {
-            self.platform.destroy_window();
+            self.platform.window_manager().destroy_window();
         }
         self.running = false;
     }

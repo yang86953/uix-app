@@ -12,20 +12,15 @@ use crate::platform::api::IPresenter;
 // NullPresenter — 空操作实现
 // ════════════════════════════════════════════════════════════════════════════
 
-/// A no-op presenter that discards all pixels.
+/// 空操作呈现器（丢弃所有像素）。
 ///
 /// 用于初始化阶段（窗口尚未创建）或测试场景。
+#[derive(Default)]
 pub struct NullPresenter;
 
 impl NullPresenter {
     pub fn new() -> Self {
         Self
-    }
-}
-
-impl Default for NullPresenter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

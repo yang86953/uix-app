@@ -1,9 +1,16 @@
 //! Layer Tree —— 受 Flutter/Chrome/gogpu/ui 启发的合成树。
 //!
-//! 每个 `RepaintBoundary` widget 对应一个 `PictureLayer`，其子树光栅化
-//! 到独立离屏缓冲后缓存。干净时直接 blit 到主缓冲。
-//! 非 RepaintBoundary 的 widget 通过 `Direct` 节点直接渲染到父级画布。
-//! `ClipRect` 节点用于裁剪子节点内容。
+//! 职责边界：
+//!   LayerTree 是 Graphics 层与 UI 层之间的**桥接模块**：
+//!   - 读取 WidgetTree 结构 → 构建可缓存的图层树（build）
+//!   - 遍历图层树 → 通过 RenderContext 下发渲染指令到 GraphicsEngine
+//!   - 管理 Picture 节点的离屏缓冲生命周期
+//!
+//! 设计说明：
+//!   LayerTree 位于 Graphics 层，但引用 UI 层的 WidgetTree 和 RenderContext。
+//!   这是一个有意的桥接设计：LayerTree 是 Graphics 对 UI 结构的"只读消费者"，
+//!   不修改 WidgetTree，也不持有 UI 状态。若未来拆分 crate，
+//!   可将 LayerTree 提取到独立的 bridge crate 中。
 //!
 //! # 性能设计
 //! - 子节点在 build 时按 z_index 预排序，渲染时零排序开销（#97）
@@ -368,9 +375,14 @@ impl LayerTree {
             LayerNode::Picture {
                 widget_id,
                 is_dirty,
+                children,
                 ..
             } => {
                 *is_dirty = tree.get(*widget_id).map(|n| n.dirty()).unwrap_or(true);
+                // 递归更新子节点脏状态，支持嵌套 RepaintBoundary（#96）
+                for child in children.iter_mut() {
+                    Self::update_dirty_node(child, tree);
+                }
             }
             LayerNode::ClipRect { children, .. } | LayerNode::Direct { children, .. } => {
                 for child in children.iter_mut() {
@@ -478,7 +490,11 @@ impl LayerTree {
     }
 
     /// 离屏创建失败时，回退到在主缓冲直接渲染 widget 及其子树。
-    /// 不使用 LayerNode children，而是通过 WidgetTree 直接遍历。
+    /// 不使用 LayerNode children，而是通过 WidgetTree 递归遍历整个子树。
+    ///
+    /// 注意：widget 的 frame 是绝对坐标（由 layout 阶段设置），
+    /// 子节点 frame 也是绝对坐标，因此直接使用子节点的 frame 即可，
+    /// 无需也不能累加父级偏移。
     fn render_widget_and_children_direct(
         widget_id: WidgetId,
         ctx: &mut RenderContext,
@@ -491,22 +507,10 @@ impl LayerTree {
             let frame = node.frame();
             ctx.save();
             node.inner().render(frame, ctx, tree);
-            // 直接遍历 WidgetTree 的子节点（跳过 LayerNode 层级）
+            // 递归遍历 WidgetTree 子节点（跳过 LayerNode 层级），
+            // 确保整棵子树都能被渲染，不遗漏深层嵌套的 widget。
             for &child_id in node.children() {
-                if let Some(child) = tree.get(child_id) {
-                    if child.visible() {
-                        let child_frame = child.frame();
-                        let abs_frame = Rect::new(
-                            frame.x + child_frame.x,
-                            frame.y + child_frame.y,
-                            child_frame.w,
-                            child_frame.h,
-                        );
-                        ctx.save();
-                        child.inner().render(abs_frame, ctx, tree);
-                        ctx.restore();
-                    }
-                }
+                Self::render_widget_and_children_direct(child_id, ctx, tree);
             }
             ctx.restore();
         }

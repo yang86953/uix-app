@@ -9,4 +9,5 @@ pub use crate::services::file_service::FileService;
 pub use crate::services::middleware::{
     LogMiddleware, Middleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
 };
+pub use crate::services::notification_service::NotificationLevel;
 pub use crate::services::settings::SettingsService;

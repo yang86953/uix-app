@@ -1,18 +1,12 @@
-use std::cell::RefCell;
-
 use super::engine::SoftwareEngine;
 use crate::base::{Rect, Size};
 use crate::diag::Error;
 use crate::graphics::font_service::FontService;
-use crate::graphics::layer::LayerTree;
 use crate::graphics::{
-    BlendMode, Color, DirtyRegion, FontHandle, GraphicsEngine, ImageHandle, Radius, RenderOutcome,
+    BlendMode, Color, DirtyRegion, FontHandle, GraphicsEngine, ImageHandle, Radius,
     TextLayoutOptions,
 };
 use crate::graphics::{GradientDirection, Transform};
-use crate::ui::render_context::RenderContext;
-use crate::ui::theme::Theme;
-use crate::ui::widget::WidgetTree;
 
 // ════════════════════════════════════════════════════════════════════════════
 // GraphicsEngine trait — 核心图形方法
@@ -369,95 +363,6 @@ impl GraphicsEngine for SoftwareEngine {
     /// 返回引擎持有的字体服务引用（供 LayerTree 等组件使用）。
     fn font_service(&self) -> &FontService {
         &self.font_service
-    }
-
-    fn render_frame(
-        &mut self,
-        tree: &mut WidgetTree,
-        layer_tree: &mut LayerTree,
-        theme: &RefCell<Theme>,
-        first_frame: bool,
-        keep_polling: bool,
-    ) -> RenderOutcome {
-        // ── 脏状态判断 ────────────────────────────────────────────
-        let dirty = tree.dirty_region();
-        let need_render = first_frame
-            || !self.rendered_first
-            || dirty.full_frame
-            || dirty.clear_required
-            || keep_polling;
-
-        if !need_render {
-            return RenderOutcome::Idle;
-        }
-
-        // ── 脏区域 → clip + 平台损伤矩形 ──────────────────────
-        let region = if !self.rendered_first || tree.dirty_region().full_frame {
-            DirtyRegion::full()
-        } else {
-            tree.dirty_region().clone()
-        };
-
-        let scroll_deltas = tree.drain_scroll_deltas();
-        for &(vp, dx, dy) in &scroll_deltas {
-            log::debug!("[Render] scroll_region vp=({:.0},{:.0},{:.0},{:.0}) delta=({:.0},{:.0})",
-                vp.x, vp.y, vp.w, vp.h, dx, dy);
-        }
-
-        let damage: Option<(i32, i32, i32, i32)> = if region.full_frame {
-            None
-        } else {
-            let bounds = region.bounds();
-            Some((
-                bounds.x as i32,
-                bounds.y as i32,
-                bounds.w as i32,
-                bounds.h as i32,
-            ))
-        };
-
-        // ── 滚动偏移（先于清理，避免滚动携带清除后的透明像素） ──
-        for &(viewport, dx, dy) in &scroll_deltas {
-            GraphicsEngine::scroll_region(self, viewport, dx, dy);
-        }
-
-        // ── Pass 1: Clear + LayerTree 渲染（唯一渲染路径）──────
-        GraphicsEngine::begin_frame(self, &region);
-
-          // LayerTree 构建：检测 widget 树结构变化
-          let cur_version = tree.tree_version();
-          if self.last_tree_version != cur_version {
-              layer_tree.build(tree);
-              // 释放未被新树复用的旧离屏缓冲（防止内存泄漏）
-              layer_tree.sweep_orphaned_offscreens(self);
-              self.last_tree_version = cur_version;
-          }
-          layer_tree.update_dirty(tree);
-
-        // LayerTree 渲染（唯一渲染路径，替代旧版 tree.render_geometry）
-        let lt_tokens;
-        let lt_ref = theme.borrow();
-        lt_tokens = lt_ref.tokens();
-        let lt_font = self.font_service.loaded_font_handle;
-        layer_tree.render(self, tree, lt_tokens, lt_font);
-        drop(lt_ref);
-
-        GraphicsEngine::end_frame(self, &region);
-
-        // ── Pass 2: Overlay ─────────────────────────────────────
-        let overlay_region = DirtyRegion::empty();
-        GraphicsEngine::begin_frame(self, &overlay_region);
-        let theme_ref = theme.borrow();
-        let tokens = theme_ref.tokens();
-        layer_tree.render_overlays(self, tree, tokens, lt_font, false);
-        drop(theme_ref);
-        GraphicsEngine::end_frame(self, &overlay_region);
-
-        // ── 完成：reset dirty ───────────────────────────────────
-        tree.reset_dirty();
-        self.rendered_first = true;
-
-        RenderOutcome::Present(damage)
     }
 
     // ── 文本测量（布局阶段辅助，委托给 FontService）──

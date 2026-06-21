@@ -123,11 +123,9 @@ const WM_APP_NOTIFY: u32 = 0x8000;
 const IDI_APPLICATION: u16 = 32512;
 
 #[link(name = "shell32")]
+#[link(name = "shell32")]
 extern "system" {
     fn Shell_NotifyIconW(dwMessage: u32, lpdata: *mut NOTIFYICONDATAW) -> i32;
 }
-#[link(name = "user32")]
-extern "system" {
-    fn LoadIconW(hInstance: *mut std::ffi::c_void, lpIconName: *const u16)
-        -> *mut std::ffi::c_void;
-}
+
+use super::ffi::LoadIconW;

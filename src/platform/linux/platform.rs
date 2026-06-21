@@ -1,17 +1,10 @@
 // ============================================================================
-// platform/linux/platform.rs — Linux Platform facade (Wayland only)
-// ============================================================================
+// platform/linux/platform.rs — Linux Platform 统一实现（组合模式）
 //
-// Uses native Wayland via wayland-client. Directly owns WaylandBackend
-// and implements all Platform subtraits by delegation.
-//
-// Owned shared subsystems: console, file_system, system_info, file_dialog,
-//                          notification, text_input, timer
-// Backend-owned:          window management, cursor, keyboard, display,
-//                         clipboard, rendering
+// LinuxPlatform 通过组合持有 WaylandBackend 和各子系统 struct。
+// 所有子 trait 的访问统一通过 Platform 的访问器方法委托。
 // ============================================================================
 
-use crate::base::Point;
 use crate::diag::Error;
 use crate::platform::event::*;
 use crate::platform::*;
@@ -26,14 +19,16 @@ use crate::platform::linux::timer::LinuxTimer;
 use crate::platform::linux::wayland::WaylandBackend;
 
 // ════════════════════════════════════════════════════════════════════════════
-// LinuxPlatform — Wayland-only facade
+// LinuxPlatform — Wayland 平台实现
+//
+// 统一通过组合持有各子系统，Platform 访问器委托给对应的子系统。
 // ════════════════════════════════════════════════════════════════════════════
 
 pub struct LinuxPlatform {
-    // ── Wayland 后端（窗口管理 + 呈现 + 光标/键盘/显示/剪贴板）──────
+    // ── Wayland 后端（窗口管理 + 呈现 + 光标/键盘/显示/剪贴板 + 事件循环）─
     backend: WaylandBackend,
 
-    // ── 共享子系统─────────────────────────────────────────────────
+    // ── 独立子系统（各自独立 struct，非 Wayland 协议相关）─────────
     console_subsys: LinuxConsole,
     file_dialog_subsys: LinuxFileDialog,
     file_system_subsys: LinuxFileSystem,
@@ -78,162 +73,41 @@ impl LinuxPlatform {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// IWindowManager — 委托给 backend
-// ════════════════════════════════════════════════════════════════════════════
-
-impl IWindowManager for LinuxPlatform {
-    fn create_window(&mut self, title: &str, width: i32, height: i32) -> Result<(), Error> {
-        log::info!("Creating window via Wayland ({}x{})", width, height);
-        self.backend.create_window(title, width, height)
-    }
-    fn destroy_window(&mut self) { self.backend.destroy_window(); }
-    fn set_title(&mut self, title: &str) { self.backend.set_title(title); }
-    fn show(&mut self) { self.backend.show(); }
-    fn hide(&mut self) { self.backend.hide(); }
-    fn is_visible(&self) -> bool { self.backend.is_visible() }
-    fn center_on_screen(&mut self) { self.backend.center_on_screen(); }
-    fn raise(&mut self) { self.backend.raise(); }
-    fn lower(&mut self) { self.backend.lower(); }
-    fn set_window_icon(&mut self, icon_path: &str) { self.backend.set_window_icon(icon_path); }
-    fn flash_window(&mut self) { self.backend.flash_window(); }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// IWindowProperties — 委托给 backend
-// ════════════════════════════════════════════════════════════════════════════
-
-impl IWindowProperties for LinuxPlatform {
-    fn width(&self) -> i32 { self.backend.width() }
-    fn height(&self) -> i32 { self.backend.height() }
-    fn set_size(&mut self, w: i32, h: i32) { self.backend.set_size(w, h); }
-    fn set_minimum_size(&mut self, w: i32, h: i32) { self.backend.set_minimum_size(w, h); }
-    fn set_maximum_size(&mut self, w: i32, h: i32) { self.backend.set_maximum_size(w, h); }
-    fn position(&self) -> Point { self.backend.position() }
-    fn set_position(&mut self, x: i32, y: i32) { self.backend.set_position(x, y); }
-    fn set_resizable(&mut self, r: bool) { self.backend.set_resizable(r); }
-    fn is_maximized(&self) -> bool { self.backend.is_maximized() }
-    fn is_minimized(&self) -> bool { self.backend.is_minimized() }
-    fn maximize(&mut self) { self.backend.maximize(); }
-    fn minimize(&mut self) { self.backend.minimize(); }
-    fn restore(&mut self) { self.backend.restore(); }
-    fn set_borderless(&mut self, v: bool) { self.backend.set_borderless(v); }
-    fn set_fullscreen(&mut self, v: bool) { self.backend.set_fullscreen(v); }
-    fn is_fullscreen(&self) -> bool { self.backend.is_fullscreen() }
-    fn set_always_on_top(&mut self, v: bool) { self.backend.set_always_on_top(v); }
-    fn set_window_opacity(&mut self, v: f32) { self.backend.set_window_opacity(v); }
-    fn start_text_input(&mut self) { self.backend.start_text_input(); }
-    fn stop_text_input(&mut self) { self.backend.stop_text_input(); }
-    fn enable_file_drop(&mut self, v: bool) { self.backend.enable_file_drop(v); }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// IEventLoop — 委托给 backend
-// ════════════════════════════════════════════════════════════════════════════
-
-impl IEventLoop for LinuxPlatform {
-    fn poll_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
-        self.backend.poll_event(callback)
-    }
-    fn wait_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
-        self.backend.wait_event(callback)
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// INativeHandle — 委托给 backend
-// ════════════════════════════════════════════════════════════════════════════
-
-impl INativeHandle for LinuxPlatform {
-    fn native_window(&self) -> *mut std::ffi::c_void {
-        self.backend.native_window()
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// IPresenter — 委托给 backend
-// ════════════════════════════════════════════════════════════════════════════
-
-impl IPresenter for LinuxPlatform {
-    fn present(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        dirty_rect: Option<(i32, i32, i32, i32)>,
-    ) -> Result<(), Error> {
-        self.backend.present(pixels, width, height, dirty_rect)
-    }
-    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.backend.resize(width, height)
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// ICursor — 委托给 backend
-// ════════════════════════════════════════════════════════════════════════════
-
-impl ICursor for LinuxPlatform {
-    fn set_cursor(&mut self, cursor: crate::platform::types::CursorType) {
-        self.backend.set_cursor(cursor);
-    }
-    fn show_cursor(&mut self, visible: bool) { self.backend.show_cursor(visible); }
-    fn cursor_position(&self) -> Point { self.backend.cursor_position() }
-    fn set_cursor_position(&mut self, x: i32, y: i32) { self.backend.set_cursor_position(x, y); }
-    fn confine_cursor(&mut self, confine: bool) { self.backend.confine_cursor(confine); }
-    fn capture_mouse(&mut self) { self.backend.capture_mouse(); }
-    fn release_mouse(&mut self) { self.backend.release_mouse(); }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// IKeyboard — 委托给 backend
-// ════════════════════════════════════════════════════════════════════════════
-
-impl IKeyboard for LinuxPlatform {
-    fn is_down(&self, key: crate::base::KeyCode) -> bool { self.backend.is_down(key) }
-    fn idle_ms(&self) -> u32 { self.backend.idle_ms() }
-    fn double_click_ms(&self) -> u32 { self.backend.double_click_ms() }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// IDisplay — 委托给 backend
-// ════════════════════════════════════════════════════════════════════════════
-
-impl IDisplay for LinuxPlatform {
-    fn dpi_scale(&self) -> f32 { self.backend.dpi_scale() }
-    fn is_dark_mode(&self) -> bool { self.backend.is_dark_mode() }
-    fn count(&self) -> i32 { self.backend.count() }
-    fn info(&self, index: i32) -> crate::platform::types::DisplayInfo { self.backend.info(index) }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// IClipboard — 委托给 backend
-// ════════════════════════════════════════════════════════════════════════════
-
-impl IClipboard for LinuxPlatform {
-    fn text(&self) -> String { self.backend.text() }
-    fn set_text(&mut self, text: &str) { self.backend.set_text(text); }
-    fn has_text(&self) -> bool { self.backend.has_text() }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Platform — 组合接口
+// Platform — 统一访问器
+//
+// 所有子系统通过访问器暴露，不直接实现子 trait。
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for LinuxPlatform {
-    fn presenter(&mut self) -> &mut dyn IPresenter {
-        self
+    // ── 核心窗口访问器 ─────────────────────────────────────────────
+    fn window_manager(&mut self) -> &mut dyn IWindowManager {
+        &mut self.backend
     }
+    fn window_properties(&self) -> &dyn IWindowProperties {
+        &self.backend
+    }
+    fn event_loop(&mut self) -> &mut dyn IEventLoop {
+        &mut self.backend
+    }
+    fn native_handle(&self) -> &dyn INativeHandle {
+        &self.backend
+    }
+    fn presenter(&mut self) -> &mut dyn IPresenter {
+        &mut self.backend
+    }
+
+    // ── 子系统访问器 ──────────────────────────────────────────────
     fn clipboard(&mut self) -> &mut dyn IClipboard {
-        self
+        &mut self.backend
     }
     fn cursor(&mut self) -> &mut dyn ICursor {
-        self
+        &mut self.backend
     }
     fn display(&self) -> &dyn IDisplay {
-        self
+        &self.backend
     }
     fn keyboard(&self) -> &dyn IKeyboard {
-        self
+        &self.backend
     }
     fn file_dialog(&mut self) -> &mut dyn IFileDialog {
         &mut self.file_dialog_subsys
@@ -259,7 +133,7 @@ impl Platform for LinuxPlatform {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Drop
+// Drop — 清理资源
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Drop for LinuxPlatform {

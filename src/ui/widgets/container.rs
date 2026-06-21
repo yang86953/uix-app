@@ -102,12 +102,9 @@ define_widget! {
         let child_sizes: Vec<Size> = children
             .iter()
             .map(|&cid| {
-                let pref = tree.get(cid)
-                    .map(|c| c.preferred_size(None))
-                    .unwrap_or_default();
-                let actual_h = tree.get(cid)
-                    .map(|c| c.frame().h)
-                    .unwrap_or(0.0);
+                let node = tree.get(cid);
+                let pref = node.map(|c| c.preferred_size(None)).unwrap_or_default();
+                let actual_h = node.map(|c| c.frame().h).unwrap_or(0.0);
                 // 子节点 frame 可能已被 Phase 2 扩展，取较大值
                 Size::new(pref.w, pref.h.max(actual_h))
             })
