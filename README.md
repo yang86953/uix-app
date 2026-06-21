@@ -115,13 +115,34 @@ let result = compute_flex_layout(&FlexInput {
 });
 ```
 
-### 🔄 Reactive State
+### 🔄 Reactive State with Auto-Tracking
 ```rust
 let count = State::new(0);
 count.watch(|v| println!("count = {}", v));
 count.set(1);
 
-let sum = Computed::new(|| a.get() + b.get());
+// Computed 自动追踪依赖
+let a = State::new(1);
+let b = State::new(2);
+let sum = Computed::new(move || a.get() + b.get());
+a.set(10);
+assert_eq!(sum.get(), 12);  // 自动重新计算
+
+// Effect — 响应式副作用
+let eff = Effect::new(|| println!("count = {}", count.get()));
+count.set(42);  // eff.tick() 返回 true
+```
+
+### 🧩 Widget Trait Composition
+Widget 行为拆分为四个维度，可按需使用：
+```rust
+fn render_only(w: &impl WidgetRender, ctx: &mut RenderContext) {
+    w.render(w.frame(), ctx, tree);
+}
+fn get_layout(w: &impl WidgetLayout) -> f32 {
+    w.preferred_size(None).h
+}
+// 子 trait 通过 blanket impl 从 Widget 自动派生
 ```
 
 ### 🎯 Theme System (Ant Design 5)
@@ -196,7 +217,6 @@ cargo build --release
 
 ### 🔜 近期
 - **Workspace crates** — 拆分为 `uix-core`、`uix-diag`、`uix-graphics`、`uix-platform`、`uix-ui`、`uix-services`、`uix-app` 独立 crate，编译期强制层边界
-- **Widget trait 拆分** — 将 15 方法的 `Widget` trait 拆为 `WidgetRender`、`WidgetLayout`、`WidgetEvent`、`WidgetLifecycle` 子 trait
 
 ### 🔮 中长期
 - **GPU 渲染后端** — Direct2D / Vulkan 支持
