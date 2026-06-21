@@ -30,36 +30,41 @@ cargo test
 
 ## Architecture
 
+UIX 采用 7 层架构 + workspace crates 编译期保障。
+
+### Workspace Crates
+
 ```
-┌──────────────────────────────────────────────┐
-│                   Application                 │
-│  (App lifecycle, Window event loop, CLI/DI)   │
-├──────────────────────────────────────────────┤
-│                      UI                       │
-│  (Widget tree, layout, render, state, theme)  │
-├───────────────────┬──────────────────────────┤
-│     Graphics      │        Platform           │
-│  (SoftwareEngine, │  (Win32 / Wayland, input, │
-│   frame graph,    │   clipboard, display,     │
-│   layout engine)  │   file dialog, timer...)  │
-├───────────────────┴──────────────────────────┤
-│              Services + Diagnostics           │
-│  (File, Settings, Middleware / Error, Log,    │
-│   Recovery, Collector)                       │
-└──────────────────────────────────────────────┘
+uix workspace             编译期边界
+├── uix-core/   (L0)     基础类型，零依赖
+├── uix-diag/   (L1)     诊断，仅依赖 core
+├── uix-macros/           proc-macro 独立
+├── uix/        (L2-L6)  主 crate
+│   ├── services/ (L2)   文件/设置/中间件/通知
+│   ├── platform/ (L3)   Win32 / Wayland
+│   ├── graphics/ (L4)   渲染引擎 + LayerTree 桥接
+│   ├── ui/       (L5)   Widget 框架
+│   └── app/      (L6)   应用入口
+└── demo/               演示二进制
 ```
 
-### Layer Responsibilities
+### 层依赖
 
-| Layer | Responsibility |
-|-------|---------------|
-| **6 — App** | Entry point, window lifecycle, CLI routing, DI container |
-| **5 — UI** | Widget tree, layout (Flexbox/Grid), theme, animation, state mgmt |
-| **4 — Graphics** | 2D rendering engine, FrameGraph, SoftwareEngine, font service |
-| **3 — Platform** | OS abstraction: window, events, clipboard, file dialog, console |
-| **2 — Services** | File I/O, settings persistence, middleware pipeline |
-| **1 — Diagnostics** | Error types, structured logging, recovery policies, collectors |
-| **0 — Base** | Foundation types: Point, Rect, Size, EdgeInsets, Color |
+```
+L6  App  ──→ UI ──→ Graphics ──→ Diag ──→ Core
+                 ↘ Platform  ──→ Diag ──→ Core
+                    Services ──→ Diag ──→ Core
+```
+
+| 层 | crate | 职责 | 依赖 |
+|-----|-------|------|------|
+| **6 — App** | `uix` | 入口、窗口、CLI、DI | 所有下层 |
+| **5 — UI** | `uix` | Widget 树、布局、主题、状态 | Graphics, Core |
+| **4 — Graphics** | `uix` | 渲染引擎、LayerTree | Diag, Core |
+| **3 — Platform** | `uix` | Win32/Wayland 抽象 | Diag, Core |
+| **2 — Services** | `uix` | 文件、设置、中间件、通知 | Diag, Core |
+| **1 — Diagnostics** | `uix-diag` | 错误、日志、恢复 | Core |
+| **0 — Core** | `uix-core` | Point、Rect、Color 等 | 无 |
 
 ## Platform Support
 
@@ -215,10 +220,8 @@ cargo build --release
 
 ## Planned Improvements
 
-### 🔜 近期
-- **Workspace crates** — 拆分为 `uix-core`、`uix-diag`、`uix-graphics`、`uix-platform`、`uix-ui`、`uix-services`、`uix-app` 独立 crate，编译期强制层边界
-
 ### 🔮 中长期
+- **进一步 crate 拆分** — 待解决 graphics ↔ ui 循环依赖后，将 platform/graphics/ui/app 拆为独立 crate
 - **GPU 渲染后端** — Direct2D / Vulkan 支持
 - **macOS 支持** — 通过 AppKit 桥接
 - **平台 FFI 迁移** — 完全替换本地 `extern` 声明为 `windows` crate
