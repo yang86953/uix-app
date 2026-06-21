@@ -139,38 +139,28 @@ macro_rules! tree {
 #[macro_export]
 macro_rules! define_widget {
     (
-        // ── Struct definition ──
         $(#[$struct_meta:meta])*
         $vis:vis struct $name:ident {
             $($field:tt)*
         }
 
-        // ── Optional constructor ──
         $(@ new $(-> $new_ret:ty)? $new_body:block)?
 
-        // ── Zero or more Widget trait methods ──
-        // Each: method_name => (params) -> ReturnType? { body }
-        // Note: `()` brackets are necessary because `$($params:tt)*`
-        // would greedily consume any delimiter (|, ->, etc.)
         $(
             $method:ident => ( $($params:tt)* ) $(-> $ret:ty)? $body:block
         )*
     ) => {
-        // ── Generated struct ──
         $(#[$struct_meta])*
         $vis struct $name {
             $($field)*
         }
 
-        // ── Generated constructor ──
         $(
             impl $name {
-                /// Create a new instance.
                 pub fn new() $(-> $new_ret)? $new_body
             }
         )?
 
-        // ── Generated Widget impl ──
         impl $crate::ui::widget::Widget for $name {
             $(
                 fn $method( $($params)* ) $(-> $ret)? $body

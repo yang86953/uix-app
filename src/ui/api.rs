@@ -9,8 +9,8 @@
 pub use crate::ui::children::WidgetChildren;
 pub use crate::ui::context::WidgetContext;
 pub use crate::ui::widget::{
-    AsAny, BoxedWidget, EventResult, IntoWidgetNode, Widget, WidgetCore, WidgetEvent, WidgetId,
-    WidgetNode, WidgetTree,
+    AsAny, BoxedWidget, EventResult, IntoWidgetNode, Widget, WidgetCore, WidgetEvent, WidgetEventHandler,
+    WidgetId, WidgetLayout, WidgetLifecycle, WidgetNode, WidgetRender, WidgetTree,
 };
 
 // Platform types are used directly by WidgetEvent — re-export from base.

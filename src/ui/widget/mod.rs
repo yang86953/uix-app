@@ -58,49 +58,45 @@ impl<T: 'static> AsAny for T {
     }
 }
 
-/// Widget trait — 核心行为抽象。纯行为，不含树元数据。
-pub trait Widget: AsAny {
-    fn build(&self) -> Vec<Box<dyn Widget>> {
-        vec![]
-    }
+// ════════════════════════════════════════════════════════════════════════════
+// 拆分 Trait — 按维度细分 Widget 行为
+//
+// 设计说明：
+//   Widget trait 保持完整不变，子 trait 通过 blanket impl 从 Widget 自动实现。
+//   这样现有代码（define_widget! + impl Widget）无需任何改动，
+//   同时新代码可以使用细粒度 trait 约束（如 `fn render_only(x: &impl WidgetRender)`）。
+// ════════════════════════════════════════════════════════════════════════════
 
-    fn on_init(&mut self) {}
-    fn on_mount(&mut self) {}
-    fn on_unmount(&mut self) {}
-    fn on_event(&mut self, _event: &WidgetEvent) -> EventResult {
-        EventResult::NotHandled
-    }
-    fn on_update(&mut self, _dt: f32) {}
-
-    /// 是否需要持续更新/渲染帧（如动画）。
-    fn needs_continuous_update(&self) -> bool {
-        false
-    }
-
-    /// 返回需要重新渲染的区域（动画边界可能超出 frame）。
-    fn dirty_rect(&self, frame: Rect) -> Rect {
-        frame
-    }
-
-    /// 返回像素缓冲滚动偏移量（如 ScrollView）。
-    fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
-        None
-    }
-
-    /// 返回首选尺寸用于布局。
+/// 布局行为：尺寸、弹性、子节点排列。
+pub trait WidgetLayout {
     fn preferred_size(&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
         Size::zero()
     }
+    fn flex_grow(&self) -> f32 {
+        0.0
+    }
+    fn flex_shrink(&self) -> f32 {
+        0.0
+    }
+    fn layout_children(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+    ) -> Vec<(WidgetId, Rect)> {
+        let _ = (frame, children, tree);
+        Vec::new()
+    }
+}
 
-    /// 渲染本组件到 render context。在孩子之前调用。
+/// 渲染行为：绘制、覆盖层、脏区域。
+pub trait WidgetRender {
     fn render(
         &self,
         frame: Rect,
         ctx: &mut crate::ui::render_context::RenderContext,
         tree: &WidgetTree,
     );
-
-    /// 在孩子之后渲染覆盖层（滚动条、涟漪等）。
     fn post_render(
         &self,
         _frame: Rect,
@@ -108,25 +104,101 @@ pub trait Widget: AsAny {
         _tree: &WidgetTree,
     ) {
     }
+    fn dirty_rect(&self, frame: Rect) -> Rect {
+        frame
+    }
+    fn is_repaint_boundary(&self) -> bool {
+        false
+    }
+}
 
+/// 事件行为：输入事件处理、持续更新、滚动偏移。
+pub trait WidgetEventHandler {
+    fn on_event(&mut self, _event: &WidgetEvent) -> EventResult {
+        EventResult::NotHandled
+    }
+    fn needs_continuous_update(&self) -> bool {
+        false
+    }
+    fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
+        None
+    }
+}
+
+/// 生命周期行为：初始化、挂载、卸载、更新。
+pub trait WidgetLifecycle {
+    fn on_init(&mut self) {}
+    fn on_mount(&mut self) {}
+    fn on_unmount(&mut self) {}
+    fn on_update(&mut self, _dt: f32) {}
+}
+
+// ── Blanket impls ────────────────────────────────────────────────────
+// 任何 `Widget` 自动获得子 trait 实现。
+// WidgetRender::render() 通过 Widget trait 委托，其余子 trait 使用默认方法。
+impl<T: Widget + ?Sized> WidgetLayout for T {}
+impl<T: Widget + ?Sized> WidgetRender for T {
+    fn render(
+        &self,
+        frame: crate::base::Rect,
+        ctx: &mut crate::ui::render_context::RenderContext,
+        tree: &WidgetTree,
+    ) {
+        Widget::render(self, frame, ctx, tree)
+    }
+}
+impl<T: Widget + ?Sized> WidgetEventHandler for T {}
+impl<T: Widget + ?Sized> WidgetLifecycle for T {}
+
+/// Widget trait — 核心行为抽象。
+pub trait Widget: AsAny {
+    fn build(&self) -> Vec<Box<dyn Widget>> {
+        vec![]
+    }
+    fn on_init(&mut self) {}
+    fn on_mount(&mut self) {}
+    fn on_unmount(&mut self) {}
+    fn on_event(&mut self, _event: &WidgetEvent) -> EventResult {
+        EventResult::NotHandled
+    }
+    fn on_update(&mut self, _dt: f32) {}
+    fn needs_continuous_update(&self) -> bool {
+        false
+    }
+    fn dirty_rect(&self, frame: Rect) -> Rect {
+        frame
+    }
+    fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
+        None
+    }
+    fn preferred_size(&self, _engine: Option<&dyn crate::graphics::GraphicsEngine>) -> Size {
+        Size::zero()
+    }
+    fn render(
+        &self,
+        frame: Rect,
+        ctx: &mut crate::ui::render_context::RenderContext,
+        tree: &WidgetTree,
+    );
+    fn post_render(
+        &self,
+        _frame: Rect,
+        _ctx: &mut crate::ui::render_context::RenderContext,
+        _tree: &WidgetTree,
+    ) {
+    }
     fn flex_grow(&self) -> f32 {
         0.0
     }
     fn flex_shrink(&self) -> f32 {
         0.0
     }
-
-    /// 返回子 widget 的裁剪矩形（如 ScrollView 视口）。
     fn children_clip(&self, _frame: Rect) -> Option<Rect> {
         None
     }
-
-    /// 是否是重绘边界（RepaintBoundary）。
     fn is_repaint_boundary(&self) -> bool {
         false
     }
-
-    /// 计算子布局。返回 (child_id, rect) 对。
     fn layout_children(
         &self,
         frame: Rect,
