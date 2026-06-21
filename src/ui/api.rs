@@ -17,7 +17,7 @@ pub use crate::ui::widget::{
 pub use crate::base::{KeyCode, MouseButton};
 
 // ── 状态管理 ──
-pub use crate::ui::state::{Computed, State};
+pub use crate::ui::state::{Computed, Effect, State};
 pub use crate::ui::style::Style;
 
 // ── 渲染上下文 ──
