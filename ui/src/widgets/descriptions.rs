@@ -1,0 +1,98 @@
+//! Descriptions widget — 描述列表，Ant Design 风格。
+//!
+//! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
+
+use uix_core::{Point, Rect, Size};
+use crate::define_widget;
+use uix_graphics::{Color, Radius};
+use crate::render_context::RenderContext;
+use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+
+/// 单个描述项。
+#[derive(Debug, Clone)]
+pub struct DescriptionsItem {
+    pub label: String,
+    pub value: String,
+    pub span: usize,
+}
+
+/// Descriptions — 描述列表。
+define_widget! {
+    pub struct Descriptions {
+        title: String,
+        items: Vec<DescriptionsItem>,
+        bordered: bool,
+        column: usize,
+        label_width: f32,
+    }
+
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+        let rows = self.items.len().div_ceil(self.column).max(1);
+        let title_h = if self.title.is_empty() { 0.0 } else { 32.0 };
+        Size::new(600.0, title_h + rows as f32 * 36.0)
+    }
+
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let bg = ctx.tokens().color_bg_container();
+        let border = ctx.tokens().color_border_secondary();
+        let text = ctx.tokens().color_text();
+        let text_sec = ctx.tokens().color_text_secondary();
+        let fill = ctx.tokens().color_fill_quaternary();
+        let r = Radius::uniform(ctx.tokens().border_radius());
+        let mut y = frame.y;
+        let col_w = frame.w / self.column as f32;
+        let item_h = 36.0;
+
+        // 标题
+        if !self.title.is_empty() {
+            ctx.draw_text(&self.title, Point::new(frame.x + 12.0, y + 6.0), text, 15.0);
+            y += 32.0;
+        }
+
+        // 主体背景
+        if self.bordered {
+            ctx.fill_rect(Rect::new(frame.x, y, frame.w, self.items.len().div_ceil(self.column) as f32 * item_h), bg, Some(r));
+            ctx.stroke_rect(Rect::new(frame.x, y, frame.w, self.items.len().div_ceil(self.column) as f32 * item_h), border, 1.0, Some(r));
+        }
+
+        // 逐行渲染
+        for (i, item) in self.items.iter().enumerate() {
+            let col = i % self.column;
+            let row = i / self.column;
+            let item_x = frame.x + col as f32 * col_w;
+            let item_y = y + row as f32 * item_h;
+            let item_w = item.span as f32 * col_w;
+
+            if self.bordered {
+                ctx.fill_rect(Rect::new(item_x, item_y, self.label_width, item_h), fill, None);
+                ctx.stroke_rect(Rect::new(item_x, item_y, item_w, item_h), border, 1.0, None);
+                ctx.draw_text(&item.label, Point::new(item_x + 8.0, item_y + 9.0), text_sec, 13.0);
+                ctx.draw_text(&item.value, Point::new(item_x + self.label_width + 8.0, item_y + 9.0), text, 13.0);
+            } else {
+                // 非 bordered: label 居左，value 紧跟
+                ctx.draw_text(&item.label, Point::new(item_x + 8.0, item_y + 9.0), text_sec, 13.0);
+                let val_x = item_x + self.label_width;
+                ctx.draw_text(&item.value, Point::new(val_x, item_y + 9.0), text, 13.0);
+            }
+        }
+    }
+}
+
+impl Descriptions {
+    pub fn new() -> Self {
+        Self { title: String::new(), items: Vec::new(), bordered: false, column: 3, label_width: 100.0 }
+    }
+    pub fn title(mut self, t: &str) -> Self { self.title = t.to_string(); self }
+    pub fn items(mut self, items: Vec<DescriptionsItem>) -> Self { self.items = items; self }
+    pub fn add(mut self, item: DescriptionsItem) -> Self { self.items.push(item); self }
+    pub fn bordered(mut self, v: bool) -> Self { self.bordered = v; self }
+    pub fn column(mut self, v: usize) -> Self { self.column = v; self }
+    pub fn label_width(mut self, w: f32) -> Self { self.label_width = w; self }
+}
+
+impl Default for Descriptions { fn default() -> Self { Self::new() } }
+
+impl DescriptionsItem {
+    pub fn new(label: &str, value: &str) -> Self { Self { label: label.to_string(), value: value.to_string(), span: 1 } }
+    pub fn span(mut self, s: usize) -> Self { self.span = s; self }
+}

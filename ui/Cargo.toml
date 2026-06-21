@@ -1,0 +1,12 @@
+[package]
+name = "uix-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+uix-core = { path = "../core" }
+uix-diag = { path = "../diag" }
+uix-graphics = { path = "../graphics" }
+uix-macros = { path = "../uix-macros" }
+log = { workspace = true }

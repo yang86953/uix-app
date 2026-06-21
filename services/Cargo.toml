@@ -1,0 +1,12 @@
+[package]
+name = "uix-services"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+uix-core = { path = "../core" }
+uix-diag = { path = "../diag" }
+uix-platform = { path = "../platform" }
+serde_json = { workspace = true }
+log = { workspace = true }

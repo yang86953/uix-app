@@ -1,0 +1,15 @@
+[package]
+name = "uix-diag"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+uix-core = { path = "../core" }
+chrono = { workspace = true }
+rand = { workspace = true }
+log = { workspace = true }
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

@@ -1,3 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "core",
+    "diag",
+    "uix-macros",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+log = "0.4"
+chrono = "0.4.45"
+bitflags = "2.13.0"
+rand = "0.10.1"
+serde_json = "1.0.150"
+ab_glyph = "0.2.28"
+unicode-linebreak = "0.1.5"
+
 [package]
 name = "uix"
 version = "0.1.0"
@@ -5,14 +27,16 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
+uix-core = { path = "core" }
+uix-diag = { path = "diag" }
 uix-macros = { path = "uix-macros" }
-chrono = "0.4.45"
-bitflags = "2.13.0"
-rand = "0.10.1"
-log = "0.4"
-serde_json = "1.0.150"
-ab_glyph = "0.2.28"
-unicode-linebreak = "0.1.5"
+chrono = { workspace = true }
+bitflags = { workspace = true }
+rand = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }
+ab_glyph = { workspace = true }
+unicode-linebreak = { workspace = true }
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62.2"
@@ -35,6 +59,13 @@ libc = "0.2.186"
 wayland-client = { version = "=0.29.5", features = ["dlopen"] }
 wayland-protocols = { version = "=0.29.5", features = ["client", "unstable_protocols"] }
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "uix-demo"
 path = "src/main.rs"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

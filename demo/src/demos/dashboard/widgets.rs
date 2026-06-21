@@ -1,0 +1,137 @@
+use uix::base::{Point, Rect, Size};
+use uix::graphics::{Color, GraphicsEngine};
+use uix::ui::render_context::RenderContext;
+use uix::ui::widget::WidgetTree;
+use uix::ui::widget::{EventResult, WidgetEvent};
+use uix::{define_widget};
+
+// ── Counter — 自定义 widget 示例 ──
+
+define_widget! {
+    pub struct Counter { pub count: u32 }
+    @new -> Self { Self { count: 0 } }
+
+    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size { Size::new(120.0, 36.0) }
+
+    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+        match event { WidgetEvent::MouseDown { .. } => { self.count += 1; EventResult::Handled } _ => EventResult::NotHandled }
+    }
+
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let bg = ctx.tokens().color_primary_bg();
+        let color = ctx.tokens().color_primary();
+        ctx.fill_rect(frame, bg, None);
+        ctx.draw_text(&format!("Count: {}", self.count), Point::new(frame.x + 8.0, frame.y + 8.0), color, 14.0);
+    }
+}
+
+// ── PulseRing — 脉冲动画 ──
+
+define_widget! {
+    pub struct PulseRing {
+        pub time: f32,
+    }
+    @new -> Self { Self { time: 0.0 } }
+
+    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
+        Size::new(48.0, 48.0)
+    }
+
+    on_update => (&mut self, dt: f32) {
+        self.time += dt;
+        if self.time > std::f32::consts::TAU { self.time -= std::f32::consts::TAU; }
+    }
+
+    needs_continuous_update => (&self) -> bool { true }
+
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let cx = frame.x + frame.w * 0.5;
+        let cy = frame.y + frame.h * 0.5;
+        let phase = (self.time * 1.5).sin() * 0.5 + 0.5; // 0..1
+        let r = 6.0 + phase * 16.0;
+        let alpha = (1.0 - phase * 0.6) * 255.0;
+        let base = ctx.tokens().color_primary();
+        let c = Color::from_rgba(base.r, base.g, base.b, alpha as u8);
+        let eng = ctx.engine();
+        eng.stroke_circle(cx, cy, r, c, 3.0);
+        if r > 10.0 {
+            eng.fill_circle(cx, cy, r * 0.3, c);
+        }
+    }
+}
+
+// ── BounceBall — 弹跳动画 ──
+
+define_widget! {
+    pub struct BounceBall {
+        pub time: f32,
+    }
+    @new -> Self { Self { time: 0.0 } }
+
+    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
+        Size::new(200.0, 60.0)
+    }
+
+    on_update => (&mut self, dt: f32) {
+        self.time += dt;
+        if self.time > 2.0 { self.time -= 2.0; }
+    }
+
+    needs_continuous_update => (&self) -> bool { true }
+
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let t = self.time / 2.0; // 0..1
+        // 弹跳：快速上升，慢速下降
+        let bounce = if t < 0.5 {
+            1.0 - (t * 2.0).powf(2.0)  // 快速上升
+        } else {
+            ((t - 0.5) * 2.0 - 1.0).powf(2.0) * -1.0 + 1.0  // 慢速下降
+        };
+        let cy = frame.y + frame.h - 10.0 - bounce * 40.0;
+        let cx = frame.x + frame.w * 0.5;
+        let primary = ctx.tokens().color_primary();
+        // 影子（根据高度变化大小和透明度）
+        let shadow_alpha = (0.3 + bounce * 0.5 * 0.7) * 255.0;
+        let shadow_r = 6.0 + bounce * 8.0;
+        let shadow_c = Color::from_rgba(0, 0, 0, shadow_alpha as u8);
+        ctx.fill_circle(cx, frame.y + frame.h - 6.0, shadow_r, shadow_c);
+        ctx.engine().fill_circle(cx, cy, 10.0, primary);
+    }
+}
+
+// ── ThemeToggle — 暗色/亮色切换按钮 ──
+
+define_widget! {
+    /// 主题切换按钮（暗色 ↔ 亮色）。
+    pub struct ThemeToggle {
+        pub dark: std::cell::Cell<bool>,
+    }
+
+    @new -> Self { Self { dark: std::cell::Cell::new(false) } }
+
+    preferred_size => (&self, _eng: Option<&dyn GraphicsEngine>) -> Size {
+        Size::new(32.0, 32.0)
+    }
+
+    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+        if let WidgetEvent::MouseDown { .. } = event {
+            let new = !self.dark.get();
+            self.dark.set(new);
+            EventResult::Handled
+        } else {
+            EventResult::NotHandled
+        }
+    }
+
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let icon = if self.dark.get() { "sun" } else { "moon" };
+        let icon_str = uix::ui::widgets::icon::icon_char(icon);
+        let text_color = ctx.tokens().color_text();
+        let saved = *ctx.font();
+        if let Some(fh) = uix::ui::widgets::icon::lucide_handle() {
+            ctx.set_font(fh);
+        }
+        ctx.text_center(icon_str, frame, text_color, 18.0);
+        ctx.set_font(saved);
+    }
+}
