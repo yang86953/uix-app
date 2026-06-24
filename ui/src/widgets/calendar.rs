@@ -95,9 +95,12 @@ define_widget! {
 
         // 标题行
         let title = format!("{}年{}月", cur_year, cur_month);
-        ctx.draw_text(&title, Point::new(x + cs * 3.0 - 24.0, y + 10.0), text, 15.0);
-        ctx.draw_text("◀", Point::new(x + 10.0, y + 10.0), primary, 14.0);
-        ctx.draw_text("▶", Point::new(x + cs * 7.0 - 28.0, y + 10.0), primary, 14.0);
+        let header_rect = Rect::new(x, y, cs * 7.0, 40.0);
+        let arrow_y = ctx.visual_center_y(header_rect, 14.0);
+        let title_y = ctx.visual_center_y(header_rect, 15.0);
+        ctx.draw_text(&title, Point::new(x + cs * 3.0 - 24.0, title_y), text, 15.0);
+        ctx.draw_text("◀", Point::new(x + 10.0, arrow_y), primary, 14.0);
+        ctx.draw_text("▶", Point::new(x + cs * 7.0 - 28.0, arrow_y), primary, 14.0);
 
         // 星期行
         let weekdays = ["一","二","三","四","五","六","日"];
@@ -121,7 +124,8 @@ define_widget! {
             if is_sel {
                 ctx.fill_rect(cell_rect, primary, Some(Radius::uniform(4.0)));
             }
-            ctx.draw_text(&d.to_string(), Point::new(cx + cs * 0.5 - 6.0, cy + 5.0), tc, 13.0);
+            let cell_text_y = ctx.visual_center_y(cell_rect, 13.0);
+            ctx.draw_text(&d.to_string(), Point::new(cx + cs * 0.5 - 6.0, cell_text_y), tc, 13.0);
             if row > 0 || col > 0 {
                 ctx.stroke_rect(cell_rect, border, 0.5, None);
             }

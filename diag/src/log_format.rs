@@ -117,6 +117,16 @@ pub struct ConsoleSink {
 impl ConsoleSink {
     pub fn new(_use_color: bool) -> Self {
         Self {
+            level: RwLock::new(Level::Warn),
+        }
+    }
+    pub fn new_with_level(_use_color: bool, level: Level) -> Self {
+        Self {
+            level: RwLock::new(level),
+        }
+    }
+    pub fn new_trace(_use_color: bool) -> Self {
+        Self {
             level: RwLock::new(Level::Trace),
         }
     }
@@ -163,7 +173,7 @@ impl FileSink {
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
         Ok(Self {
             path,
-            level: RwLock::new(Level::Trace),
+            level: RwLock::new(Level::Info),
             max_size: 0,
             file: Mutex::new(file),
         })

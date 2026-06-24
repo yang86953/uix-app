@@ -33,10 +33,7 @@ define_widget! {
 
         if !self.text.is_empty() {
             let font_size = self.size * 0.45;
-            let sz = ctx.measure_text(&self.text, font_size);
-            let tx = cx - sz.w * 0.5;
-            let ty = cy - sz.h * 0.5;
-            ctx.draw_text(&self.text, Point::new(tx, ty), tc, font_size);
+            ctx.text_center(&self.text, frame, tc, font_size);
         }
     }
 }

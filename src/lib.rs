@@ -9,11 +9,13 @@
 pub use uix_core as base;
 pub use uix_diag as diag;
 
-pub mod app;
-pub mod graphics;
-pub mod platform;
-pub mod services;
-pub mod ui;
+pub use uix_app as app;
+pub use uix_graphics as graphics;
+pub use uix_platform as platform;
+pub use uix_services as services;
+pub use uix_ui as ui;
 
-// 重新导出 proc-macro，用户可通过 `use uix::ui;` 直接使用
+// 重新导出 macros
 pub use uix_macros::ui;
+pub use uix_ui::define_widget;
+pub use uix_ui::tree;

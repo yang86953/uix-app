@@ -19,8 +19,8 @@ define_widget! {
         focused: bool,
         hovered: bool,
         disabled: bool,
-        /// 文本缓存（输入过程中暂存）
         text_buffer: String,
+        on_change: Option<Box<dyn FnMut(f64) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -43,15 +43,21 @@ define_widget! {
                     KeyCode::Up => {
                         self.value = (self.value + self.step).min(self.max);
                         self.text_buffer = self.value.to_string();
+                        if let Some(ref mut cb) = self.on_change { cb(self.value); }
                         EventResult::Handled
                     }
                     KeyCode::Down => {
                         self.value = (self.value - self.step).max(self.min);
                         self.text_buffer = self.value.to_string();
+                        if let Some(ref mut cb) = self.on_change { cb(self.value); }
                         EventResult::Handled
                     }
                     KeyCode::Enter => {
+                        let old = self.value;
                         self.commit_buffer();
+                        if (self.value - old).abs() > f64::EPSILON {
+                            if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                        }
                         EventResult::Handled
                     }
                     KeyCode::Backspace => {
@@ -65,7 +71,6 @@ define_widget! {
                 if text.chars().any(|c| c.is_control()) {
                     return EventResult::NotHandled;
                 }
-                // 只允许数字、负号、小数点
                 for ch in text.chars() {
                     if ch.is_ascii_digit() || ch == '-' || ch == '.' {
                         self.text_buffer.push(ch);
@@ -79,8 +84,8 @@ define_widget! {
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let input_frame = Rect::new(frame.x, frame.y, frame.w - 32.0, frame.h);
-        let btn_w = 16.0;
         let primary = ctx.tokens().color_primary();
+        let primary_hover = ctx.tokens().color_primary_hover();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
         let text_tertiary = ctx.tokens().color_text_tertiary();
@@ -89,20 +94,19 @@ define_widget! {
         let border_radius_sm = ctx.tokens().border_radius_sm();
         let radius = Some(Radius::uniform(border_radius_sm));
 
-        // 输入框
+        let border_c = if self.focused { primary } else if self.hovered { primary_hover } else { border_color };
+        let border_w = if self.focused { 2.0 } else { 1.0 };
+
         ctx.fill_rect(input_frame, Color::white(), radius);
-        ctx.stroke_rect(input_frame, if self.focused { primary } else { border_color },
-            if self.focused { 2.0 } else { 1.0 }, radius);
+        ctx.stroke_rect(input_frame, border_c, border_w, radius);
 
         let display = if self.focused && !self.text_buffer.is_empty() {
             &self.text_buffer
         } else if self.value != 0.0 {
-            // 显示值
             ""
         } else { &self.placeholder };
 
         let show = if !self.focused && self.value != 0.0 {
-            // 格式化显示
             let s = if self.value == self.value.trunc() {
                 format!("{}", self.value as i64)
             } else {
@@ -118,7 +122,6 @@ define_widget! {
             Point::new(input_frame.x + 12.0, draw_y),
             if self.focused || self.value != 0.0 { text_color } else { text_tertiary }, 14.0);
 
-        // 步进按钮
         let btn_area = Rect::new(frame.x + frame.w - 32.0, frame.y, 32.0, frame.h);
         ctx.fill_rect(btn_area, bg_elevated, None);
 
@@ -143,6 +146,7 @@ impl InputNumber {
             hovered: false,
             disabled: false,
             text_buffer: String::new(),
+            on_change: None,
         }
     }
 
@@ -151,6 +155,10 @@ impl InputNumber {
     pub fn max(mut self, v: f64) -> Self { self.max = v; self.value = self.value.min(v); self }
     pub fn step(mut self, v: f64) -> Self { self.step = v; self }
     pub fn get_value(&self) -> f64 { self.value }
+    pub fn on_change<F: FnMut(f64) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
 
     fn commit_buffer(&mut self) {
         if let Ok(v) = self.text_buffer.parse::<f64>() {

@@ -11,16 +11,67 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     );
 
     let n_cols = input.columns.len();
-    let n_rows = input.rows.len();
-
-    if n_cols == 0 || n_rows == 0 || input.children.is_empty() {
+    if n_cols == 0 || input.children.is_empty() {
         return GridOutput {
             child_rects: Vec::new(), col_positions: Vec::new(),
             row_positions: Vec::new(), total_size: Size::new(inner.w, inner.h),
         };
     }
 
-    // Resolve track sizes
+    // ── Phase 1: auto-place children, create implicit rows as needed ──
+    let init_rows = input.rows.len().max(1);
+    let mut occupied = vec![false; n_cols * init_rows];
+    let mut assignments = Vec::with_capacity(input.children.len());
+    let mut next_cell = 0;
+
+    for (ci, child) in input.children.iter().enumerate() {
+        let (start_cell, col, row) = if child.cell > 0 {
+            let cell = child.cell;
+            let min_rows = (cell / n_cols) + (child.row_span as usize);
+            let cur_rows = occupied.len() / n_cols;
+            if min_rows > cur_rows {
+                occupied.resize(n_cols * min_rows, false);
+            }
+            (cell, cell % n_cols, cell / n_cols)
+        } else {
+            while next_cell < occupied.len() && occupied[next_cell] {
+                next_cell += 1;
+            }
+            // 确保有足够行容纳 row_span（与手动 cell 指定路径的 min_rows 逻辑一致）
+            let needed_rows = (next_cell / n_cols) + child.row_span as usize;
+            let cur_rows = occupied.len() / n_cols;
+            if needed_rows > cur_rows {
+                occupied.resize(n_cols * needed_rows, false);
+            }
+            let cell = next_cell;
+            (cell, cell % n_cols, cell / n_cols)
+        };
+
+        let total_rows = occupied.len() / n_cols;
+        let span_cols = (child.col_span as usize).min(n_cols - col);
+        let span_rows = (child.row_span as usize).min(total_rows - row);
+
+        for r in 0..span_rows {
+            for c in 0..span_cols {
+                occupied[(row + r) * n_cols + (col + c)] = true;
+            }
+        }
+
+        assignments.push(CellAssignment {
+            child_idx: ci, col, row,
+            col_span: span_cols as u32,
+            row_span: span_rows as u32,
+        });
+        next_cell = start_cell + span_cols;
+    }
+
+    let n_rows = occupied.len() / n_cols;
+
+    // ── Phase 2: build full rows (explicit + implicit auto) ──
+    let mut rows = input.rows.clone();
+    rows.resize(n_rows, GridTrack::Auto);
+
+    // ── Phase 3: resolve track sizes ──
     let total_col_gap = input.col_gap * (n_cols.saturating_sub(1)) as f32;
     let total_row_gap = input.row_gap * (n_rows.saturating_sub(1)) as f32;
 
@@ -30,81 +81,57 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         let mut total_fr = 0.0f32;
         let mut auto_count = 0usize;
 
-        for (i, track) in tracks.iter().enumerate() {
+        for track in tracks.iter() {
             match track {
-                GridTrack::Px(px) => { sizes[i] = *px; used += px; }
+                GridTrack::Px(px) => { used += px; }
                 GridTrack::Fr(fr) => { total_fr += fr; }
                 GridTrack::Auto => { auto_count += 1; }
             }
         }
 
         let remaining = (available - total_gap - used).max(0.0);
-        if total_fr > 0.0 && remaining > 0.0 {
-            let fr_unit = remaining / total_fr;
+        let total_flexible = total_fr + auto_count as f32;
+        if total_flexible > 0.0 && remaining > 0.0 {
+            let unit = remaining / total_flexible;
             for (i, track) in tracks.iter().enumerate() {
-                if let GridTrack::Fr(fr) = track { sizes[i] = fr_unit * fr; }
+                match track {
+                    GridTrack::Px(px) => sizes[i] = *px,
+                    GridTrack::Fr(fr) => sizes[i] = unit * fr,
+                    GridTrack::Auto => sizes[i] = unit,
+                }
             }
-        } else if auto_count > 0 && remaining > 0.0 {
-            // Auto tracks equally share remaining space (like 1fr each)
-            let auto_size = remaining / auto_count as f32;
+        } else {
             for (i, track) in tracks.iter().enumerate() {
-                if matches!(track, GridTrack::Auto) { sizes[i] = auto_size; }
+                if let GridTrack::Px(px) = track { sizes[i] = *px; }
             }
         }
         sizes
     };
 
     let col_sizes = resolve_tracks(&input.columns, inner.w, total_col_gap);
-    let row_sizes = resolve_tracks(&input.rows, inner.h, total_row_gap);
+    let row_sizes = resolve_tracks(&rows, inner.h, total_row_gap);
 
-    // Build cell positions
+    // ── Phase 4: build cell positions ──
     let mut col_positions: Vec<(f32, f32)> = Vec::with_capacity(n_cols);
     let mut cx = inner.x;
-    for (i, &cw) in col_sizes.iter().enumerate().take(n_cols) {
-        col_positions.push((cx, cw));
-        cx += cw;
+    for i in 0..n_cols {
+        col_positions.push((cx, col_sizes[i]));
+        cx += col_sizes[i];
         if i < n_cols - 1 { cx += input.col_gap; }
     }
 
     let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(n_rows);
     let mut cy = inner.y;
-    for (i, &rh) in row_sizes.iter().enumerate().take(n_rows) {
-        row_positions.push((cy, rh));
-        cy += rh;
+    for i in 0..n_rows {
+        row_positions.push((cy, row_sizes[i]));
+        cy += row_sizes[i];
         if i < n_rows - 1 { cy += input.row_gap; }
     }
 
     let total_w = col_positions.last().map(|(x,w)| x + w - inner.x).unwrap_or(0.0) + input.padding.horizontal();
     let total_h = row_positions.last().map(|(y,h)| y + h - inner.y).unwrap_or(0.0) + input.padding.vertical();
 
-    // Place children
-    struct CellAssignment { child_idx: usize, col: usize, row: usize, col_span: u32, row_span: u32 }
-    let mut assignments = Vec::with_capacity(input.children.len());
-    let mut occupied = vec![false; n_cols * n_rows];
-    let mut next_cell = 0usize;
-
-    for (ci, child) in input.children.iter().enumerate() {
-        let start_cell = if child.cell > 0 && child.cell < occupied.len() { child.cell }
-                         else {
-                             while next_cell < occupied.len() && occupied[next_cell] { next_cell += 1; }
-                             next_cell
-                         };
-        if start_cell >= occupied.len() { break; }
-        let col = start_cell % n_cols;
-        let row = start_cell / n_cols;
-
-        let span_cols = (child.col_span as usize).min(n_cols - col);
-        let span_rows = (child.row_span as usize).min(n_rows - row);
-        for r in 0..span_rows { for c in 0..span_cols {
-            let idx = (row + r) * n_cols + (col + c);
-            if idx < occupied.len() { occupied[idx] = true; }
-        }}
-
-        assignments.push(CellAssignment { child_idx: ci, col, row, col_span: span_cols as u32, row_span: span_rows as u32 });
-        next_cell = start_cell + span_cols;
-    }
-
-    // Compute child rects
+    // ── Phase 5: compute child rects ──
     let mut child_rects = vec![Rect::zero(); input.children.len()];
 
     for assignment in &assignments {
@@ -140,6 +167,10 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     }
 
     GridOutput { child_rects, col_positions, row_positions, total_size: Size::new(total_w, total_h) }
+}
+
+struct CellAssignment {
+    child_idx: usize, col: usize, row: usize, col_span: u32, row_span: u32,
 }
 
 #[cfg(test)]
@@ -188,5 +219,41 @@ mod grid_tests {
     #[test] fn grid_empty() {
         let o = compute_grid_layout(&GridInput::default());
         assert!(o.child_rects.is_empty());
+    }
+    #[test] fn grid_fr_auto_mixed() {
+        let o = compute_grid_layout(&GridInput {
+            container: Rect::new(0.0,0.0,300.0,100.0),
+            columns: vec![GridTrack::Fr(1.0), GridTrack::Auto],
+            rows: vec![GridTrack::Px(100.0)],
+            align_items: AlignItems::Stretch, justify_items: JustifyContent::Stretch,
+            children: vec![
+                GridChild { preferred_size: Size::new(50.0, 50.0), ..Default::default() },
+                GridChild { preferred_size: Size::new(50.0, 50.0), ..Default::default() },
+            ],
+            ..Default::default()
+        });
+        // Fr(1) + Auto = 2 flexible units, 300/2 = 150 each
+        assert!((o.child_rects[0].w - 150.0).abs() < 1.0);
+        assert!((o.child_rects[1].w - 150.0).abs() < 1.0);
+    }
+    #[test] fn grid_implicit_rows() {
+        let o = compute_grid_layout(&GridInput {
+            container: Rect::new(0.0,0.0,200.0,200.0),
+            columns: vec![GridTrack::Px(100.0), GridTrack::Px(100.0)],
+            rows: vec![GridTrack::Px(100.0)], // 1 explicit row
+            col_gap: 0.0, row_gap: 0.0,
+            align_items: AlignItems::Stretch, justify_items: JustifyContent::Stretch,
+            children: vec![
+                GridChild { cell: 0, ..Default::default() }, // row 0, col 0
+                GridChild { cell: 1, ..Default::default() }, // row 0, col 1
+                GridChild { cell: 2, ..Default::default() }, // row 1, col 0 — implicit row
+                GridChild { cell: 3, ..Default::default() }, // row 1, col 1 — implicit row
+            ],
+            ..Default::default()
+        });
+        assert_eq!(o.child_rects.len(), 4);
+        assert_eq!(o.row_positions.len(), 2); // 1 explicit + 1 implicit
+        assert_eq!(o.child_rects[2], Rect::new(0.0, 100.0, 100.0, 100.0));
+        assert_eq!(o.child_rects[3], Rect::new(100.0, 100.0, 100.0, 100.0));
     }
 }

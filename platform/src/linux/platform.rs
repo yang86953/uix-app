@@ -1,12 +1,18 @@
 // ============================================================================
-// platform/linux/platform.rs — Linux Platform 统一实现（组合模式）
+// platform/linux/platform.rs — LinuxPlatform（OsEventSource + Platform 实现）
 //
-// LinuxPlatform 通过组合持有 WaylandBackend 和各子系统 struct。
-// 所有子 trait 的访问统一通过 Platform 的访问器方法委托。
+// LinuxPlatform 通过组合持有 WaylandBackend 和各子系统。
+// 实现 OsEventSource（获得 IEventLoop 的 blanket impl）。
+// Platform trait 访问器委托给对应的子系统。
 // ============================================================================
 
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
+
 use uix_diag::Error;
-use crate::event::*;
+use crate::core::{WindowState, OsEventSource};
+use crate::event::UiEvent;
 use crate::*;
 
 use crate::linux::console::LinuxConsole;
@@ -14,27 +20,26 @@ use crate::linux::file_dialog::LinuxFileDialog;
 use crate::linux::filesystem::LinuxFileSystem;
 use crate::linux::notification::LinuxNotification;
 use crate::linux::system_info::LinuxSystemInfo;
-use crate::linux::text_input::LinuxTextInput;
 use crate::linux::timer::LinuxTimer;
 use crate::linux::wayland::WaylandBackend;
 
 // ════════════════════════════════════════════════════════════════════════════
-// LinuxPlatform — Wayland 平台实现
-//
-// 统一通过组合持有各子系统，Platform 访问器委托给对应的子系统。
+// LinuxPlatform
 // ════════════════════════════════════════════════════════════════════════════
 
 pub struct LinuxPlatform {
-    // ── Wayland 后端（窗口管理 + 呈现 + 光标/键盘/显示/剪贴板 + 事件循环）─
+    // ── 共享窗口状态（与 PlatformWindowCore 共享）─────────
+    window: Rc<RefCell<WindowState>>,
+
+    // ── Wayland 后端（连接管理 + 事件分发 + 输入/显示/剪贴板）─
     backend: WaylandBackend,
 
-    // ── 独立子系统（各自独立 struct，非 Wayland 协议相关）─────────
+    // ── 独立子系统 ──────────────────────────────────────────
     console_subsys: LinuxConsole,
     file_dialog_subsys: LinuxFileDialog,
     file_system_subsys: LinuxFileSystem,
     notification_subsys: LinuxNotification,
     system_info_subsys: LinuxSystemInfo,
-    text_input_subsys: LinuxTextInput,
     timer_subsys: LinuxTimer,
 }
 
@@ -60,43 +65,59 @@ impl LinuxPlatform {
         let timer_eq = backend.event_queue_handle();
 
         Ok(Self {
+            window: Rc::new(RefCell::new(WindowState::default())),
             backend,
             console_subsys: LinuxConsole::new(),
             file_dialog_subsys: LinuxFileDialog::new(),
             file_system_subsys: LinuxFileSystem::new(),
             notification_subsys: LinuxNotification::new(),
             system_info_subsys: LinuxSystemInfo::new(),
-            text_input_subsys: LinuxTextInput::new(),
             timer_subsys: LinuxTimer::new(timer_eq),
         })
     }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// OsEventSource — 事件分发（委托给 WaylandBackend）
+//
+// 通过实现了 OsEventSource，LinuxPlatform 自动获得 IEventLoop（blanket impl）。
+// ════════════════════════════════════════════════════════════════════════════
+
+impl OsEventSource for LinuxPlatform {
+    fn dispatch_pending(&mut self) -> bool {
+        self.backend.try_dispatch()
+    }
+
+    fn dispatch_blocking(&mut self) -> bool {
+        self.backend.dispatch_blocking()
+    }
+
+    fn dispatch_timeout(&mut self, timeout: Duration) -> bool {
+        self.backend.dispatch_timeout(timeout)
+    }
+
+    fn next_event(&mut self) -> Option<UiEvent> {
+        self.backend.next_event()
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // Platform — 统一访问器
 //
-// 所有子系统通过访问器暴露，不直接实现子 trait。
+// 核心变更：event_loop() 返回 self（由 OsEventSource blanket impl 提供 IEventLoop），
+// 而非委托给 WaylandBackend。
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for LinuxPlatform {
-    // ── 核心窗口访问器 ─────────────────────────────────────────────
     fn window_manager(&mut self) -> &mut dyn IWindowManager {
         &mut self.backend
     }
-    fn window_properties(&self) -> &dyn IWindowProperties {
-        &self.backend
-    }
+
     fn event_loop(&mut self) -> &mut dyn IEventLoop {
-        &mut self.backend
-    }
-    fn native_handle(&self) -> &dyn INativeHandle {
-        &self.backend
-    }
-    fn presenter(&mut self) -> &mut dyn IPresenter {
-        &mut self.backend
+        self
     }
 
-    // ── 子系统访问器 ──────────────────────────────────────────────
+    // ── 子系统访问器 ──────────────────────────────────────────
     fn clipboard(&mut self) -> &mut dyn IClipboard {
         &mut self.backend
     }
@@ -113,7 +134,7 @@ impl Platform for LinuxPlatform {
         &mut self.file_dialog_subsys
     }
     fn text_input(&mut self) -> &mut dyn ITextInput {
-        &mut self.text_input_subsys
+        &mut self.backend
     }
     fn timer(&mut self) -> &mut dyn ITimer {
         &mut self.timer_subsys
@@ -133,11 +154,11 @@ impl Platform for LinuxPlatform {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Drop — 清理资源
+// Drop
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Drop for LinuxPlatform {
     fn drop(&mut self) {
-        self.backend.destroy_window();
+        // WaylandBackend 的连接由 Rust 所有权自动管理
     }
 }

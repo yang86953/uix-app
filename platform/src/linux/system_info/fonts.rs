@@ -111,7 +111,7 @@ fn probe_fc_match_with_data(pattern: &str) -> Option<(String, Vec<u8>)> {
     Some((path, data))
 }
 
-pub(crate) fn probe_font_path_via_fc_match(pattern: &str) -> Option<String> {
+pub fn probe_font_path_via_fc_match(pattern: &str) -> Option<String> {
     probe_fc_match_with_data(pattern).map(|(p, _)| p)
 }
 
@@ -249,4 +249,25 @@ fn probe_desktop_font() -> Option<String> {
     }
 
     None
+}
+
+/// 探测系统上支持中文（CJK）的字体路径。
+///
+/// 优先用 `:lang=zh` 找含中日韩统一表意文字的字形回退字体。
+/// 适用于主字体不含中文时需要找回退字体的场景。
+pub fn probe_cjk_font() -> Option<String> {
+    // 第 1 优先：明确带 scalable 限制的匹配
+    let path = probe_font_path_via_fc_match(":lang=zh:scalable=true");
+    if path.is_some() {
+        return path;
+    }
+
+    // 第 2 优先：sans-serif + lang=zh
+    let path = probe_font_path_via_fc_match("sans-serif:lang=zh:scalable=true");
+    if path.is_some() {
+        return path;
+    }
+
+    // 第 3 优先：任何 serif + lang=zh
+    probe_font_path_via_fc_match("serif:lang=zh:scalable=true")
 }

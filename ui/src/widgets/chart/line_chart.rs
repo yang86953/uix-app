@@ -2,7 +2,7 @@
 
 use crate::define_widget;
 use uix_graphics::Color;
-use uix_core::{Rect, Size};
+use uix_core::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
@@ -48,30 +48,44 @@ define_widget! {
         let r_max = if self.max_value > 0.0 { self.max_value } else { data_max };
         let range = (r_max - r_min).max(1.0);
 
-        let c_h = (frame.h - 16.0 - 4.0).max(1.0);
-        let step = if n > 1 { frame.w / (n - 1) as f32 } else { frame.w };
-
         let tokens = ctx.tokens();
         let lc = self.line_color.unwrap_or(tokens.color_text());
         let lbc = tokens.color_text_secondary();
         let ac = tokens.color_border();
         let bg = tokens.color_bg_container();
+        let text_c = tokens.color_text();
 
-        let map_y = |v: f32| frame.y + c_h - ((v - r_min) / range) * c_h;
+        let y_label_w = 36.0;
+        let x_label_h = 14.0;
+        let chart_x = frame.x + y_label_w;
+        let chart_w = (frame.w - y_label_w).max(1.0);
+        let chart_h = (frame.h - x_label_h).max(1.0);
+        let chart_y = frame.y;
+
+        let map_y = |v: f32| chart_y + chart_h - ((v - r_min) / range) * chart_h;
+
+        let step = if n > 1 { chart_w / (n - 1) as f32 } else { chart_w };
 
         if self.show_grid {
-            let gl = 4.max((c_h / 30.0) as usize);
+            let gl = 4.max((chart_h / 30.0) as usize);
             for i in 0..gl {
                 let t = (i as f32 + 1.0) / gl as f32;
-                ctx.fill_rect(Rect::new(frame.x, frame.y + c_h * (1.0 - t), frame.w, 1.0), ac, None);
+                let gy = chart_y + chart_h * (1.0 - t);
+                ctx.fill_rect(Rect::new(chart_x, gy, chart_w, 0.5), ac, None);
+                let val = r_min + range * t;
+                let label = if val == val.trunc() { format!("{:.0}", val) } else { format!("{:.1}", val) };
+                let y_label_rect = Rect::new(frame.x, gy - 6.0, y_label_w - 2.0, 12.0);
+                let yly = ctx.visual_center_y(y_label_rect, 9.0);
+                let lsz = ctx.measure_text(&label, 9.0);
+                ctx.draw_text(&label, Point::new(chart_x - lsz.w - 4.0, yly), lbc, 9.0);
             }
         }
 
         let bl = map_y(r_min);
-        ctx.fill_rect(Rect::new(frame.x, bl, frame.w, 1.0), ac, None);
+        ctx.fill_rect(Rect::new(chart_x, bl, chart_w, 1.0), ac, None);
 
         let pts: Vec<uix_core::Point> = self.data.iter().enumerate().map(|(i, d)|
-            uix_core::Point::new(frame.x + i as f32 * step, map_y(d.value))
+            uix_core::Point::new(chart_x + i as f32 * step, map_y(d.value))
         ).collect();
 
         let lw = self.line_width.max(1.0);
@@ -91,10 +105,12 @@ define_widget! {
         }
 
         for (i, d) in self.data.iter().enumerate() {
-            let x = frame.x + i as f32 * step;
+            let x = chart_x + i as f32 * step;
             let sz = ctx.measure_text(&d.label, 10.0);
-            let lx = (x - sz.w * 0.5).max(frame.x).min(frame.x + frame.w - sz.w);
-            ctx.draw_text(&d.label, uix_core::Point::new(lx, bl + 4.0), lbc, 10.0);
+            let lx = (x - sz.w * 0.5).max(chart_x).min(chart_x + chart_w - sz.w);
+            let label_rect = Rect::new(lx, bl + 2.0, sz.w, x_label_h - 2.0);
+            let ly = ctx.visual_center_y(label_rect, 10.0);
+            ctx.draw_text(&d.label, uix_core::Point::new(lx, ly), lbc, 10.0);
         }
     }
 }

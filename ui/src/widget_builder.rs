@@ -57,7 +57,15 @@ impl Widget for ContainerWidget {
     ) -> Vec<(WidgetId, Rect)> {
         if children.is_empty() { return Vec::new(); }
 
-        let child_sizes: Vec<Size> = children
+        // 过滤不可见子节点：不可见的 widget 不参与布局，不占空间
+        let visible_children: Vec<WidgetId> = children.iter().copied()
+            .filter(|&cid| tree.get(cid).map(|n| n.visible()).unwrap_or(false))
+            .collect();
+        if visible_children.is_empty() {
+            return Vec::new();
+        }
+
+        let child_sizes: Vec<Size> = visible_children
             .iter()
             .map(|&cid| {
                 tree.get(cid)
@@ -66,7 +74,7 @@ impl Widget for ContainerWidget {
             })
             .collect();
 
-        let flex_children: Vec<FlexChild> = children
+        let flex_children: Vec<FlexChild> = visible_children
             .iter()
             .map(|&cid| {
                 let w = tree.get(cid);
@@ -87,12 +95,12 @@ impl Widget for ContainerWidget {
             children: flex_children,
             child_sizes,
             justify_content: self.justify,
-            align_items: AlignItems::Stretch,
+            align_items: self.align,
             ..FlexInput::default()
         };
 
         let output = compute_flex_layout(&input);
-        children
+        visible_children
             .iter()
             .zip(output.child_rects)
             .map(|(&cid, rect)| (cid, rect))

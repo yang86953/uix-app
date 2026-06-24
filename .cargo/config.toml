@@ -1,0 +1,6 @@
+# UIX 项目快捷命令
+#   cargo demo  → 运行 GUI 演示
+#   cargo demo -- --cli  → 运行 CLI 演示
+
+[alias]
+demo = "run --package uix-demo"

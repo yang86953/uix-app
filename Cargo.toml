@@ -4,6 +4,12 @@ members = [
     "core",
     "diag",
     "uix-macros",
+    "app",
+    "demo",
+    "graphics",
+    "platform",
+    "services",
+    "ui",
 ]
 
 [workspace.package]
@@ -14,11 +20,17 @@ license = "MIT"
 [workspace.dependencies]
 log = "0.4"
 chrono = "0.4.45"
+glow = "0.16"
+khronos-egl = { version = "6", features = ["static"] }
 bitflags = "2.13.0"
 rand = "0.10.1"
 serde_json = "1.0.150"
 ab_glyph = "0.2.28"
 unicode-linebreak = "0.1.5"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
 
 [package]
 name = "uix"
@@ -30,6 +42,11 @@ license = "MIT"
 uix-core = { path = "core" }
 uix-diag = { path = "diag" }
 uix-macros = { path = "uix-macros" }
+uix-app = { path = "app" }
+uix-graphics = { path = "graphics" }
+uix-platform = { path = "platform" }
+uix-services = { path = "services" }
+uix-ui = { path = "ui" }
 chrono = { workspace = true }
 bitflags = { workspace = true }
 rand = { workspace = true }
@@ -62,10 +79,5 @@ wayland-protocols = { version = "=0.29.5", features = ["client", "unstable_proto
 [lib]
 path = "src/lib.rs"
 
-[[bin]]
-name = "uix-demo"
-path = "src/main.rs"
-
-[lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
+[lints]
+workspace = true

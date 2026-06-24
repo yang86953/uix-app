@@ -12,13 +12,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 /// 通知类型。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum NotificationType {
-    Success,
-    Info,
-    Warning,
-    Error,
-}
+/// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
+pub use uix_core::StatusLevel as NotificationType;
 
 /// 单条通知数据。
 #[derive(Debug, Clone)]
@@ -96,16 +91,19 @@ define_widget! {
             // 左侧强调条
             ctx.fill_rect(Rect::new(start_x, y + 6.0, 3.0, notif_h - 12.0), accent, Some(Radius::uniform(1.5)));
             // 图标
-            ctx.draw_text(icon, Point::new(start_x + 16.0, y + 8.0), accent, 16.0);
+            let icon_y = ctx.visual_center_y(notif_rect, 16.0);
+            ctx.draw_text(icon, Point::new(start_x + 16.0, icon_y), accent, 16.0);
             // 标题
-            ctx.draw_text(&item.title, Point::new(start_x + 42.0, y + 8.0), text, 14.0);
+            let title_y = ctx.visual_center_y(notif_rect, 14.0);
+            ctx.draw_text(&item.title, Point::new(start_x + 42.0, title_y), text, 14.0);
             // 描述
             if !item.description.is_empty() {
                 ctx.draw_text(&item.description, Point::new(start_x + 42.0, y + 28.0), text_sec, 12.0);
             }
             // 关闭
             if item.closable {
-                ctx.draw_text("✕", Point::new(start_x + notif_w - 22.0, y + 8.0), text_sec, 12.0);
+                let close_y = ctx.visual_center_y(notif_rect, 12.0);
+                ctx.draw_text("✕", Point::new(start_x + notif_w - 22.0, close_y), text_sec, 12.0);
             }
             y += notif_h + 12.0;
         }

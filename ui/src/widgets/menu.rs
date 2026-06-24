@@ -4,9 +4,9 @@
 
 use uix_core::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
+use uix_graphics::{Radius};
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
 use std::cell::Cell;
 
 /// 菜单方向。
@@ -32,7 +32,9 @@ define_widget! {
         active_key: String,
         mode: MenuMode,
         hovered_idx: Cell<usize>,
+        focused: bool,
         item_h: f32,
+        on_change: Option<Box<dyn FnMut(String) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -48,34 +50,113 @@ define_widget! {
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
-            let idx = match self.mode {
-                MenuMode::Horizontal => {
-                    let mut cx = 0.0f32;
-                    let mut found = None;
-                    for (i, item) in self.items.iter().enumerate() {
-                        let iw = item.label.len() as f32 * 8.0 + 32.0;
-                        if pos.x >= cx && pos.x < cx + iw && !item.disabled {
-                            found = Some(i); break;
+        match event {
+            WidgetEvent::MouseDown { pos, .. } => {
+                let idx = self.item_at(pos.x, pos.y);
+                if let Some(i) = idx {
+                    if !self.items[i].disabled {
+                        let old_key = self.active_key.clone();
+                        self.active_key = self.items[i].key.clone();
+                        self.hovered_idx.set(i);
+                        if self.active_key != old_key {
+                            if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
                         }
-                        cx += iw;
+                        return EventResult::Handled;
                     }
-                    found
                 }
-                MenuMode::Vertical => {
-                    let idx = (pos.y / self.item_h) as usize;
-                    if idx < self.items.len() && !self.items[idx].disabled { Some(idx) } else { None }
-                }
-            };
-            if let Some(i) = idx {
-                self.active_key = self.items[i].key.clone();
-                return EventResult::Handled;
+                EventResult::NotHandled
             }
+            WidgetEvent::MouseMove { pos } => {
+                let idx = self.item_at(pos.x, pos.y);
+                if let Some(i) = idx {
+                    self.hovered_idx.set(i);
+                }
+                EventResult::Handled
+            }
+            WidgetEvent::HoverLeave => {
+                self.hovered_idx.set(usize::MAX);
+                EventResult::NotHandled
+            }
+            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
+            WidgetEvent::KeyDown { key, .. } => {
+                let cur_idx = self.item_index_of_key(&self.active_key).unwrap_or(0);
+                match key {
+                    KeyCode::Right => {
+                        if self.mode == MenuMode::Horizontal {
+                            let mut next = cur_idx + 1;
+                            while next < self.items.len() && self.items[next].disabled {
+                                next += 1;
+                            }
+                            if next < self.items.len() {
+                                self.active_key = self.items[next].key.clone();
+                                if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                            }
+                        } else {
+                            if let Some(i) = self.first_non_disabled() {
+                                self.active_key = self.items[i].key.clone();
+                                if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                            }
+                        }
+                        EventResult::Handled
+                    }
+                    KeyCode::Left => {
+                        if self.mode == MenuMode::Horizontal {
+                            if cur_idx > 0 {
+                                let mut prev = cur_idx - 1;
+                                loop {
+                                    if !self.items[prev].disabled {
+                                        self.active_key = self.items[prev].key.clone();
+                                        if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                                        break;
+                                    }
+                                    if prev == 0 { break; }
+                                    prev -= 1;
+                                }
+                            }
+                        }
+                        EventResult::Handled
+                    }
+                    KeyCode::Down => {
+                        if self.mode == MenuMode::Vertical {
+                            let mut next = cur_idx + 1;
+                            while next < self.items.len() && self.items[next].disabled {
+                                next += 1;
+                            }
+                            if next < self.items.len() {
+                                self.active_key = self.items[next].key.clone();
+                                if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                            }
+                        } else {
+                            if let Some(i) = self.first_non_disabled() {
+                                self.active_key = self.items[i].key.clone();
+                                if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                            }
+                        }
+                        EventResult::Handled
+                    }
+                    KeyCode::Up => {
+                        if self.mode == MenuMode::Vertical {
+                            if cur_idx > 0 {
+                                let mut prev = cur_idx - 1;
+                                loop {
+                                    if !self.items[prev].disabled {
+                                        self.active_key = self.items[prev].key.clone();
+                                        if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                                        break;
+                                    }
+                                    if prev == 0 { break; }
+                                    prev -= 1;
+                                }
+                            }
+                        }
+                        EventResult::Handled
+                    }
+                    _ => EventResult::NotHandled,
+                }
+            }
+            _ => EventResult::NotHandled,
         }
-        if let WidgetEvent::HoverLeave = event {
-            self.hovered_idx.set(usize::MAX);
-        }
-        EventResult::NotHandled
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
@@ -94,7 +175,7 @@ define_widget! {
                     let iw = item.label.len() as f32 * 8.0 + 32.0;
                     let item_rect = Rect::new(cx, frame.y, iw, self.item_h);
                     let is_active = item.key == *active_key;
-                    let is_hover = i == hovered && i < self.items.len();
+                    let is_hover = i == hovered && hovered < self.items.len();
                     let item_c = if item.disabled { text_sec } else if is_active { primary } else { text };
                     if is_active || is_hover {
                         ctx.fill_rect(item_rect, fill, Some(r));
@@ -102,7 +183,9 @@ define_widget! {
                     if is_active {
                         ctx.fill_rect(Rect::new(cx + 8.0, frame.y + self.item_h - 2.0, iw - 16.0, 2.0), primary, None);
                     }
-                    ctx.draw_text(&item.label, Point::new(cx + 12.0, frame.y + 6.0), item_c, 14.0);
+                    let item_rect = Rect::new(cx, frame.y, iw, self.item_h);
+                    let text_y = ctx.visual_center_y(item_rect, 14.0);
+                    ctx.draw_text(&item.label, Point::new(cx + 12.0, text_y), item_c, 14.0);
                     cx += iw;
                 }
             }
@@ -110,19 +193,69 @@ define_widget! {
                 for (i, item) in self.items.iter().enumerate() {
                     let item_rect = Rect::new(frame.x, frame.y + i as f32 * self.item_h, frame.w, self.item_h);
                     let is_active = item.key == *active_key;
-                    let is_hover = i == hovered && i < self.items.len();
+                    let is_hover = i == hovered && hovered < self.items.len();
                     let item_c = if item.disabled { text_sec } else if is_active { primary } else { text };
                     if is_active || is_hover {
                         ctx.fill_rect(item_rect, fill, Some(r));
                     }
+                    let item_y = frame.y + i as f32 * self.item_h;
+                    let item_rect = Rect::new(frame.x, item_y, frame.w, self.item_h);
+                    let text_y = ctx.visual_center_y(item_rect, 14.0);
                     if !item.icon.is_empty() {
-                        ctx.draw_text(&item.icon, Point::new(frame.x + 12.0, frame.y + i as f32 * self.item_h + 6.0), item_c, 14.0);
+                        let icon_str = crate::widgets::icon::icon_char(&item.icon);
+                        let saved = *ctx.font();
+                        if let Some(fh) = crate::widgets::icon::lucide_handle() {
+                            ctx.set_font(fh);
+                        }
+                        ctx.draw_text(icon_str, Point::new(frame.x + 12.0, text_y), item_c, 14.0);
+                        ctx.set_font(saved);
                     }
                     let label_x = frame.x + if item.icon.is_empty() { 16.0 } else { 36.0 };
-                    ctx.draw_text(&item.label, Point::new(label_x, frame.y + i as f32 * self.item_h + 6.0), item_c, 14.0);
+                    ctx.draw_text(&item.label, Point::new(label_x, text_y), item_c, 14.0);
                 }
             }
         }
+
+        if self.focused {
+            ctx.stroke_rect(frame, primary, 1.5, Some(r));
+        }
+    }
+}
+
+impl Menu {
+    fn item_at(&self, px: f32, py: f32) -> Option<usize> {
+        match self.mode {
+            MenuMode::Horizontal => {
+                if py < 0.0 || py > self.item_h {
+                    return None;
+                }
+                let mut cx = 0.0f32;
+                for (i, item) in self.items.iter().enumerate() {
+                    let iw = item.label.len() as f32 * 8.0 + 32.0;
+                    if px >= cx && px < cx + iw {
+                        return Some(i);
+                    }
+                    cx += iw;
+                }
+                None
+            }
+            MenuMode::Vertical => {
+                let idx = (py / self.item_h) as usize;
+                if idx < self.items.len() && py >= 0.0 {
+                    Some(idx)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn item_index_of_key(&self, key: &str) -> Option<usize> {
+        self.items.iter().position(|item| item.key == key)
+    }
+
+    fn first_non_disabled(&self) -> Option<usize> {
+        self.items.iter().position(|item| !item.disabled)
     }
 }
 
@@ -133,7 +266,9 @@ impl Menu {
             active_key: String::new(),
             mode: MenuMode::Horizontal,
             hovered_idx: Cell::new(usize::MAX),
+            focused: false,
             item_h: 32.0,
+            on_change: None,
         }
     }
     pub fn items(mut self, items: Vec<MenuItem>) -> Self { self.items = items; self }
@@ -143,4 +278,8 @@ impl Menu {
     pub fn get_active_key(&self) -> &str { &self.active_key }
     pub fn set_active_key(&mut self, key: &str) { self.active_key = key.to_string(); }
     pub fn item_height(mut self, h: f32) -> Self { self.item_h = h; self }
+    pub fn on_change<F: FnMut(String) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
 }

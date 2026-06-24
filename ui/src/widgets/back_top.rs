@@ -42,7 +42,7 @@ define_widget! {
         ctx.fill_circle(cx, cy, r, primary);
         ctx.fill_circle(cx, cy, r - 2.0, bg_elevated);
         // ↑ 箭头
-        ctx.draw_text("↑", Point::new(cx - 5.0, cy - 7.0), primary, 14.0);
+        ctx.text_center("↑", frame, primary, 14.0);
     }
 }
 

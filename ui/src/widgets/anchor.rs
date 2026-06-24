@@ -78,7 +78,8 @@ define_widget! {
             }
 
             let label_x = frame.x + 16.0;
-            let label_y = y + (36.0 - 14.0) * 0.5;
+            let row_rect = Rect::new(frame.x, y, frame.w, 36.0);
+            let label_y = ctx.visual_center_y(row_rect, 14.0);
             ctx.draw_text(&item.label, Point::new(label_x, label_y), color, 14.0);
         }
     }

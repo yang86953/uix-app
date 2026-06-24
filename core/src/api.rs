@@ -7,3 +7,18 @@
 
 pub use crate::geometry::{EdgeInsets, Point, Rect, Size};
 pub use crate::types::*;
+
+// ── 布局 ──
+pub use crate::layout::{AlignItems, FlexDirection, JustifyContent};
+
+// ── 视觉 ──
+pub use crate::visual::{BlendMode, GradientDirection, HAlign, Radius, VAlign};
+
+// ── 状态 ──
+pub use crate::status::{ControlSize, ScrollDirection, StatusLevel};
+
+// ── 事件 ──
+pub use crate::event::EventResult;
+
+// ── 错误 ──
+pub use crate::error::{Errc, ErrorSeverity};

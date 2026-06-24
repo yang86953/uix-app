@@ -57,7 +57,7 @@ define_widget! {
                         DividerOrientation::Center => frame.x + (frame.w - text_w) * 0.5,
                         DividerOrientation::Right => frame.x + frame.w - text_w - 32.0,
                     };
-                    let text_y = center_y - text_h * 0.5;
+                    let text_y = ctx.visual_center_y(frame, self.text_size);
 
                     let left_end = text_x - 8.0;
                     if left_end > frame.x {
@@ -71,12 +71,13 @@ define_widget! {
                         ctx.fill_rect(Rect::new(right_start, center_y, frame.x + frame.w - right_start, 1.0), line_color, None);
                     }
                 } else {
-                    ctx.fill_rect(Rect::new(frame.x, center_y, frame.w, 1.0), line_color, None);
+                    // 无文本时直接填满整个 frame，避免 center 偏移导致的半像素不可见问题
+                    ctx.fill_rect(Rect::new(frame.x, frame.y, frame.w, frame.h), line_color, None);
                 }
             }
             DividerDirection::Vertical => {
-                let center_x = frame.x + frame.w * 0.5;
-                ctx.fill_rect(Rect::new(center_x, frame.y, 1.0, frame.h), line_color, None);
+                // 垂直分割线同样直接填满 frame
+                ctx.fill_rect(Rect::new(frame.x, frame.y, frame.w, frame.h), line_color, None);
             }
         }
     }

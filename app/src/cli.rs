@@ -38,13 +38,16 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Register a command.
     pub fn command(&mut self, name: &str, handler: CommandHandler, description: &str) -> &mut Self {
         self.commands.insert(name.to_string(), handler);
         if !description.is_empty() {
-            self.descriptions.insert(name.to_string(), description.to_string());
+            self.descriptions
+                .insert(name.to_string(), description.to_string());
         }
         self
     }
@@ -140,8 +143,12 @@ impl Cli {
         println!("  {:<20} Show this help message", "help");
     }
 
-    pub fn program_name(&self) -> &str { &self.program_name }
-    pub fn commands(&self) -> &HashMap<String, CommandHandler> { &self.commands }
+    pub fn program_name(&self) -> &str {
+        &self.program_name
+    }
+    pub fn commands(&self) -> &HashMap<String, CommandHandler> {
+        &self.commands
+    }
 }
 
 #[cfg(test)]
@@ -259,7 +266,9 @@ mod tests {
 
     #[test]
     fn run_unknown_command_returns_1() {
-        fn handler(_: &CliArgs) -> i32 { 0 }
+        fn handler(_: &CliArgs) -> i32 {
+            0
+        }
         let mut cli = Cli::new();
         cli.command("build", handler, "");
         let code = cli.run(&["prog".to_string(), "unknown".to_string()]);
@@ -268,7 +277,9 @@ mod tests {
 
     #[test]
     fn run_help_command_returns_0() {
-        fn handler(_: &CliArgs) -> i32 { 42 }
+        fn handler(_: &CliArgs) -> i32 {
+            42
+        }
         let mut cli = Cli::new();
         cli.command("build", handler, "Build");
         let code = cli.run(&["prog".to_string(), "help".to_string()]);
@@ -277,8 +288,12 @@ mod tests {
 
     #[test]
     fn default_handler_invoked_on_unknown() {
-        fn default(_: &CliArgs) -> i32 { 99 }
-        fn handler(_: &CliArgs) -> i32 { 0 }
+        fn default(_: &CliArgs) -> i32 {
+            99
+        }
+        fn handler(_: &CliArgs) -> i32 {
+            0
+        }
         let mut cli = Cli::new();
         cli.command("build", handler, "");
         cli.default_command(default);
@@ -310,7 +325,10 @@ mod tests {
 
         assert!(cli.descriptions.contains_key("build"));
         assert!(cli.descriptions.contains_key("test"));
-        assert_eq!(cli.descriptions.get("build").unwrap(), "Compile the project");
+        assert_eq!(
+            cli.descriptions.get("build").unwrap(),
+            "Compile the project"
+        );
     }
 
     #[test]

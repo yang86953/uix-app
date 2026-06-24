@@ -4,7 +4,7 @@
 //! v1.17.0 (ISC license, 1981 icons).  The parent app is responsible for
 //! loading `assets/fonts/lucide.ttf` into the engine via `load_font`.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use uix_core::{Rect, Size};
 use crate::define_widget;
@@ -13,7 +13,8 @@ use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。
-static LUCIDE_FONT: OnceLock<Mutex<Option<FontHandle>>> = OnceLock::new();
+/// FontHandle 为 Copy 类型，无需 Mutex 保护——OnceLock 本身保证线程安全初始化。
+static LUCIDE_FONT: OnceLock<FontHandle> = OnceLock::new();
 
 /// 在 app 初始化时加载 Lucide TTF 字体，并注册全局句柄。
 ///
@@ -23,7 +24,7 @@ pub fn init_lucide_font(data: &[u8], engine: &mut dyn GraphicsEngine) {
     match engine.load_font(data) {
         Ok(fh) => {
             uix_diag::log::info_fn(&format!("Lucide font loaded, handle={:?}", fh));
-            let _ = LUCIDE_FONT.set(Mutex::new(Some(fh)));
+            let _ = LUCIDE_FONT.set(fh);
         }
         Err(e) => {
             uix_diag::log::warn_fn(&format!("Failed to load Lucide font: {}", e.short_what()));
@@ -33,9 +34,7 @@ pub fn init_lucide_font(data: &[u8], engine: &mut dyn GraphicsEngine) {
 
 /// 获取 Lucide 字体句柄（若已加载）。
 pub fn lucide_handle() -> Option<FontHandle> {
-    LUCIDE_FONT
-        .get()
-        .and_then(|m| m.lock().ok().and_then(|g| *g))
+    LUCIDE_FONT.get().copied()
 }
 
 /// Map icon name → Lucide PUA codepoint character.
@@ -187,13 +186,21 @@ define_widget! {
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let icon_str = icon_char(&self.name);
         let color = ctx.tokens().color_text();
-        // 尝试使用 Lucide 字体渲染图标；无字体时 fallback 到默认字体
         let saved = *ctx.font();
+        let has_lucide = lucide_handle().is_some();
         if let Some(fh) = lucide_handle() {
             ctx.set_font(fh);
         }
-        ctx.text_center(icon_str, frame, color, self.size * 0.8);
+        ctx.text_center(icon_str, frame, color, self.size * 0.85);
         ctx.set_font(saved);
+
+        if !has_lucide {
+            let fallback = ctx.measure_text(icon_str, self.size * 0.85);
+            if fallback.w < 1.0 {
+                let label = &self.name[..self.name.len().min(2)];
+                ctx.text_center(label, frame, color, self.size * 0.55);
+            }
+        }
     }
 }
 

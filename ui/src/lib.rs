@@ -2,8 +2,10 @@
 
 pub mod animation;
 pub mod children;
+pub mod clipboard;
 pub mod context;
 pub mod layout;
+pub mod layer;
 pub mod macros;
 pub mod managers;
 pub mod render_context;

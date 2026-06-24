@@ -98,9 +98,10 @@ define_widget! {
             let text_color = if is_active { primary } else { text_secondary };
             let tw = ctx.measure_text(&tab.label, 14.0).w + pad * 2.0;
 
-            let tab_text_y = tab_bar_y + (tab_bar_h - 14.0) * 0.5;
+            let tab_rect = Rect::new(cursor_x, tab_bar_y, tw, tab_bar_h);
+            let tab_text_y = ctx.visual_center_y(tab_rect, 14.0);
             ctx.draw_text(&tab.label,
-                Point::new(cursor_x + pad * 0.5, tab_text_y.max(tab_bar_y)),
+                Point::new(cursor_x + pad * 0.5, tab_text_y),
                 text_color, 14.0);
 
             if is_active {

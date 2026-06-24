@@ -9,16 +9,15 @@ use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 
 /// 列表尺寸。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ListSize {
-    Small,
-    Default,
-    Large,
-}
+/// （已统一为 uix_core::ControlSize，保留别名以兼容旧代码。）
+pub use uix_core::ControlSize as ListSize;
 
-impl ListSize {
-    pub fn item_height(&self) -> f32 {
-        match self { Self::Small => 32.0, Self::Default => 40.0, Self::Large => 48.0 }
+/// List 尺寸对应的行高。
+pub fn list_item_height(size: ListSize) -> f32 {
+    match size {
+        ListSize::Small => 32.0,
+        ListSize::Medium => 40.0,
+        ListSize::Large => 48.0,
     }
 }
 
@@ -33,7 +32,7 @@ define_widget! {
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
-        let h = self.items.len() as f32 * self.list_size.item_height()
+        let h = self.items.len() as f32 * list_item_height(self.list_size)
             + if self.header.is_empty() { 0.0 } else { 40.0 }
             + if self.footer.is_empty() { 0.0 } else { 40.0 };
         Size::new(400.0, h.max(100.0))
@@ -44,7 +43,7 @@ define_widget! {
         let border = ctx.tokens().color_border_secondary();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
-        let item_h = self.list_size.item_height();
+        let item_h = list_item_height(self.list_size);
         let r = Radius::uniform(ctx.tokens().border_radius());
         let mut y = frame.y;
 
@@ -56,14 +55,18 @@ define_widget! {
 
         // Header
         if !self.header.is_empty() {
-            ctx.draw_text(&self.header, Point::new(frame.x + 16.0, y + 10.0), text_sec, 13.0);
+            let header_rect = Rect::new(frame.x, y, frame.w, item_h);
+            let hy = ctx.visual_center_y(header_rect, 13.0);
+            ctx.draw_text(&self.header, Point::new(frame.x + 16.0, hy), text_sec, 13.0);
             ctx.fill_rect(Rect::new(frame.x, y + item_h, frame.w, 1.0), border, None);
             y += item_h;
         }
 
         // Items
         for (i, item) in self.items.iter().enumerate() {
-            ctx.draw_text(item, Point::new(frame.x + 16.0, y + 10.0), text, 14.0);
+            let item_rect = Rect::new(frame.x, y, frame.w, item_h);
+            let iy = ctx.visual_center_y(item_rect, 14.0);
+            ctx.draw_text(item, Point::new(frame.x + 16.0, iy), text, 14.0);
             if i < self.items.len() - 1 {
                 ctx.fill_rect(Rect::new(frame.x + 16.0, y + item_h - 1.0, frame.w - 32.0, 1.0), border, None);
             }
@@ -75,14 +78,16 @@ define_widget! {
             if !self.items.is_empty() {
                 ctx.fill_rect(Rect::new(frame.x, y, frame.w, 1.0), border, None);
             }
-            ctx.draw_text(&self.footer, Point::new(frame.x + 16.0, y + 10.0), text_sec, 13.0);
+            let footer_rect = Rect::new(frame.x, y, frame.w, item_h);
+            let fy = ctx.visual_center_y(footer_rect, 13.0);
+            ctx.draw_text(&self.footer, Point::new(frame.x + 16.0, fy), text_sec, 13.0);
         }
     }
 }
 
 impl List {
     pub fn new() -> Self {
-        Self { header: String::new(), footer: String::new(), bordered: true, list_size: ListSize::Default, items: Vec::new() }
+        Self { header: String::new(), footer: String::new(), bordered: true, list_size: ListSize::Medium, items: Vec::new() }
     }
     pub fn items(mut self, items: Vec<impl Into<String>>) -> Self {
         self.items = items.into_iter().map(|s| s.into()).collect(); self

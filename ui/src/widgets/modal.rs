@@ -58,11 +58,13 @@ define_widget! {
         let title_h = 56.0;
         let footer_h = if self.footer_visible { 56.0 } else { 0.0 };
 
-        ctx.draw_text(&self.title, Point::new(frame.x + 24.0, frame.y + 16.0), text_color, 16.0);
+        let title_rect = Rect::new(frame.x, frame.y, frame.w, title_h);
+        let ty = ctx.visual_center_y(title_rect, 16.0);
+        ctx.draw_text(&self.title, Point::new(frame.x + 24.0, ty), text_color, 16.0);
         ctx.fill_rect(Rect::new(frame.x, frame.y + title_h, frame.w, 1.0), border_secondary, None);
 
         if self.closable {
-            ctx.draw_text("✕", Point::new(frame.x + frame.w - 36.0, frame.y + 16.0), text_secondary, 16.0);
+            ctx.draw_text("✕", Point::new(frame.x + frame.w - 36.0, ty), text_secondary, 16.0);
         }
         if self.footer_visible {
             ctx.fill_rect(Rect::new(frame.x, frame.y + frame.h - footer_h, frame.w, 1.0), border_secondary, None);

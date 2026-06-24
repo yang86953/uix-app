@@ -39,7 +39,7 @@ pub use crate::animation::easing::{Animatable, Easing};
 // ── 管理器 ──
 pub use crate::managers::{
     AnimationManager, DragEventResult, DragManager, EventManager, FocusManager, ImageManager,
-    InteractionManager, LayoutManager, StateManager, StyleManager, TextManager, WidgetManagers,
+    InteractionManager, StateManager, StyleManager, TextManager, WidgetManagers,
 };
 
 // ── 主题 ──
@@ -113,6 +113,7 @@ pub use crate::widgets::progress::{ProgressBar, ProgressMode};
 pub use crate::widgets::scroll_view::{ScrollDirection, ScrollView};
 pub use crate::widgets::space::{Space, SpaceSize};
 pub use crate::widgets::switch::Switch;
+pub use crate::widgets::theme_toggle::ThemeToggle;
 pub use crate::widgets::tabs::{Tab, TabPosition, Tabs};
 pub use crate::widgets::timeline::{Timeline, TimelineItem};
 pub use crate::widgets::cascader::{Cascader, CascaderOption};

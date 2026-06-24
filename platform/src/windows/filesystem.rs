@@ -1,0 +1,225 @@
+// ============================================================================
+// uix-platform/src/windows/filesystem.rs — Windows filesystem impl (IFileSystem)
+// ============================================================================
+
+#![cfg(windows)]
+#![allow(clippy::upper_case_acronyms)]
+
+use uix_diag::{Errc, Error};
+use crate::windows::util::to_utf8;
+use crate::types::SpecialDir;
+use crate::IFileSystem;
+use std::ptr;
+
+// ════════════════════════════════════════════════════════════════════════════
+// WindowsFileSystem
+// ════════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone)]
+pub struct WindowsFileSystem;
+
+impl WindowsFileSystem {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for WindowsFileSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl IFileSystem for WindowsFileSystem {
+    fn get_special_dir(&self, dir: SpecialDir) -> String {
+        match dir {
+            SpecialDir::Temp => get_temp_dir(),
+            SpecialDir::Current => get_current_dir(),
+            SpecialDir::Executable => get_executable_dir(),
+            _ => {
+                // Use SHGetKnownFolderPath for known folders
+                let guid = match dir {
+                    SpecialDir::Home => FOLDERID_PROFILE,
+                    SpecialDir::AppData => FOLDERID_ROAMING_APP_DATA,
+                    SpecialDir::LocalAppData => FOLDERID_LOCAL_APP_DATA,
+                    SpecialDir::Documents => FOLDERID_DOCUMENTS,
+                    SpecialDir::Desktop => FOLDERID_DESKTOP,
+                    SpecialDir::Downloads => FOLDERID_DOWNLOADS,
+                    _ => return String::new(),
+                };
+                get_known_folder_path(&guid)
+            }
+        }
+    }
+
+    fn executable_path(&self) -> String {
+        get_executable_path()
+    }
+
+    fn executable_dir(&self) -> String {
+        get_executable_dir()
+    }
+
+    fn read_file(&self, path: &str) -> Result<Vec<u8>, Error> {
+        std::fs::read(path).map_err(|e| {
+            Error::new(
+                Errc::FileNotFound,
+                format!("cannot read file '{}': {}", path, e),
+            )
+        })
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 内部实现函数
+// ════════════════════════════════════════════════════════════════════════════
+
+fn get_temp_dir() -> String {
+    unsafe {
+        let mut buf = [0u16; MAX_PATH + 1];
+        let len = GetTempPathW(MAX_PATH as u32, buf.as_mut_ptr());
+        if len > 0 {
+            to_utf8(&buf[..len as usize])
+        } else {
+            String::new()
+        }
+    }
+}
+
+fn get_current_dir() -> String {
+    unsafe {
+        let mut buf = [0u16; MAX_PATH + 1];
+        let len = GetCurrentDirectoryW(MAX_PATH as u32, buf.as_mut_ptr());
+        if len > 0 {
+            to_utf8(&buf[..len as usize])
+        } else {
+            String::new()
+        }
+    }
+}
+
+fn get_executable_path() -> String {
+    unsafe {
+        let mut buf = [0u16; MAX_PATH + 1];
+        let len = GetModuleFileNameW(ptr::null_mut(), buf.as_mut_ptr(), MAX_PATH as u32);
+        if len > 0 {
+            to_utf8(&buf[..len as usize])
+        } else {
+            String::new()
+        }
+    }
+}
+
+fn get_executable_dir() -> String {
+    let path = get_executable_path();
+    if let Some(pos) = path.rfind('\\') {
+        path[..pos].to_string()
+    } else {
+        path
+    }
+}
+
+fn get_known_folder_path(guid: &GUID) -> String {
+    unsafe {
+        let mut path_ptr: *mut u16 = ptr::null_mut();
+        let hr = SHGetKnownFolderPath(guid as *const GUID, 0, ptr::null_mut(), &mut path_ptr);
+        if hr >= 0 && !path_ptr.is_null() {
+            let mut len = 0;
+            while *path_ptr.add(len) != 0 {
+                len += 1;
+            }
+            let result = to_utf8(std::slice::from_raw_parts(path_ptr, len));
+            CoTaskMemFree(path_ptr as *mut std::ffi::c_void);
+            result
+        } else {
+            String::new()
+        }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// GUID definition (for SHGetKnownFolderPath)
+// ════════════════════════════════════════════════════════════════════════════
+
+#[repr(C)]
+struct GUID {
+    data1: u32,
+    data2: u16,
+    data3: u16,
+    data4: [u8; 8],
+}
+
+// Known folder GUIDs
+const FOLDERID_PROFILE: GUID = GUID {
+    data1: 0x5E6C858F,
+    data2: 0x0E22,
+    data3: 0x4760,
+    data4: [0x9A, 0xFE, 0xEA, 0x33, 0x17, 0xB6, 0x73, 0x73],
+};
+
+const FOLDERID_ROAMING_APP_DATA: GUID = GUID {
+    data1: 0x3EB685DB,
+    data2: 0x65F9,
+    data3: 0x4CF6,
+    data4: [0xA0, 0x3A, 0xE3, 0xEF, 0x65, 0x72, 0x9F, 0x3D],
+};
+
+const FOLDERID_LOCAL_APP_DATA: GUID = GUID {
+    data1: 0xF1B32785,
+    data2: 0x6FBA,
+    data3: 0x4FCF,
+    data4: [0x9D, 0x55, 0x7B, 0x8E, 0x7F, 0x15, 0x70, 0x91],
+};
+
+const FOLDERID_DOCUMENTS: GUID = GUID {
+    data1: 0xFDD39AD0,
+    data2: 0x238F,
+    data3: 0x46AF,
+    data4: [0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7],
+};
+
+const FOLDERID_DESKTOP: GUID = GUID {
+    data1: 0xB4BFCC3A,
+    data2: 0xDB2C,
+    data3: 0x424C,
+    data4: [0xB0, 0x29, 0x7F, 0xE9, 0x9A, 0x87, 0xC6, 0x41],
+};
+
+const FOLDERID_DOWNLOADS: GUID = GUID {
+    data1: 0x374DE290,
+    data2: 0x123F,
+    data3: 0x4565,
+    data4: [0x91, 0x64, 0x39, 0xC4, 0x92, 0x5E, 0x46, 0x7B],
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// Constants
+// ════════════════════════════════════════════════════════════════════════════
+
+const MAX_PATH: usize = 260;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Raw FFI
+// ════════════════════════════════════════════════════════════════════════════
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetTempPathW(nBufferLength: u32, lpBuffer: *mut u16) -> u32;
+    fn GetModuleFileNameW(hModule: *mut std::ffi::c_void, lpFilename: *mut u16, nSize: u32) -> u32;
+    fn GetCurrentDirectoryW(nBufferLength: u32, lpBuffer: *mut u16) -> u32;
+}
+
+#[link(name = "ole32")]
+extern "system" {
+    fn CoTaskMemFree(pv: *mut std::ffi::c_void);
+}
+
+#[link(name = "shell32")]
+extern "system" {
+    fn SHGetKnownFolderPath(
+        rfid: *const GUID,
+        dwFlags: u32,
+        hToken: *mut std::ffi::c_void,
+        ppszPath: *mut *mut u16,
+    ) -> i32;
+}

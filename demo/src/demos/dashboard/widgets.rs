@@ -44,6 +44,14 @@ define_widget! {
 
     needs_continuous_update => (&self) -> bool { true }
 
+    // 只返回脉冲圆实际覆盖的区域，避免清除整个 frame 导致四角白线
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        let cx = frame.x + frame.w * 0.5;
+        let cy = frame.y + frame.h * 0.5;
+        let max_r = 24.0; // 最大脉冲半径 ≈ 6 + 16 + 3(stroke)
+        Rect::new(cx - max_r, cy - max_r, max_r * 2.0, max_r * 2.0)
+    }
+
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.5;
@@ -79,6 +87,15 @@ define_widget! {
 
     needs_continuous_update => (&self) -> bool { true }
 
+    // 只返回球 + 阴影的边界框，避免清除整个 frame
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        let cx = frame.x + frame.w * 0.5;
+        let ball_top = frame.y + frame.h - 50.0; // 球最高位置（约 bottom-50）
+        let ball_bot = frame.y + frame.h - 10.0 + 10.0; // 球最低位置 + 半径
+        let max_r = 14.0; // 球半径 10 + 阴影半径 ~14
+        Rect::new(cx - max_r, ball_top - max_r, max_r * 2.0, ball_bot - ball_top + max_r * 2.0)
+    }
+
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let t = self.time / 2.0; // 0..1
         // 弹跳：快速上升，慢速下降
@@ -99,39 +116,4 @@ define_widget! {
     }
 }
 
-// ── ThemeToggle — 暗色/亮色切换按钮 ──
 
-define_widget! {
-    /// 主题切换按钮（暗色 ↔ 亮色）。
-    pub struct ThemeToggle {
-        pub dark: std::cell::Cell<bool>,
-    }
-
-    @new -> Self { Self { dark: std::cell::Cell::new(false) } }
-
-    preferred_size => (&self, _eng: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(32.0, 32.0)
-    }
-
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { .. } = event {
-            let new = !self.dark.get();
-            self.dark.set(new);
-            EventResult::Handled
-        } else {
-            EventResult::NotHandled
-        }
-    }
-
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let icon = if self.dark.get() { "sun" } else { "moon" };
-        let icon_str = uix::ui::widgets::icon::icon_char(icon);
-        let text_color = ctx.tokens().color_text();
-        let saved = *ctx.font();
-        if let Some(fh) = uix::ui::widgets::icon::lucide_handle() {
-            ctx.set_font(fh);
-        }
-        ctx.text_center(icon_str, frame, text_color, 18.0);
-        ctx.set_font(saved);
-    }
-}

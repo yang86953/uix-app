@@ -17,24 +17,8 @@ use crate::render_context::RenderContext;
 use crate::widget::{EventResult, Widget, WidgetCore, WidgetEvent, WidgetId, WidgetTree};
 
 /// Scroll direction for a ScrollView.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScrollDirection {
-    /// Scroll vertically only.
-    Vertical,
-    /// Scroll horizontally only.
-    Horizontal,
-    /// Scroll in both directions.
-    Both,
-}
-
-impl ScrollDirection {
-    pub fn can_scroll_x(&self) -> bool {
-        matches!(self, Self::Horizontal | Self::Both)
-    }
-    pub fn can_scroll_y(&self) -> bool {
-        matches!(self, Self::Vertical | Self::Both)
-    }
-}
+/// （已统一为 uix_core::ScrollDirection。）
+pub use uix_core::ScrollDirection;
 
 define_widget! {
     /// A scrollable viewport that clips its children and supports mouse-wheel
@@ -336,29 +320,29 @@ define_widget! {
         result
     }
 
-    // ── 像素缓冲滚动：dirty_rect 只返回新增 strip ──
-    // 与 scroll_region 使用相同的 dy.round() 语义对齐，
-    // 确保缓冲偏移量和脏区域一致。
+    // ── 像素缓冲滚动：dirty_rect 返回新增 strip + 1px 重叠 ──
+    // scroll_region 用 dy/dx.round() 做整数偏移，dirty_rect 用同样的 round 算新增区域。
+    // +1px 重叠确保 scrolled 内容与新绘制 strip 之间无 1px 间隙（否则会露出透明黑线）。
     dirty_rect => (&self, frame: Rect) -> Rect {
         let dx = self.scroll_x - self.prev_scroll_x;
         let dy = self.scroll_y - self.prev_scroll_y;
         let int_dy = dy.round();
         let int_dx = dx.round();
         let strip = if int_dy > 0.0 {
-            // 向下滚动：新增 strip 在底部
-            let strip_h = int_dy.min(frame.h);
+            // 向下滚动：新增 strip 在底部 + 1px 向上重叠
+            let strip_h = (int_dy + 1.0).min(frame.h);
             Rect::new(frame.x, frame.y + frame.h - strip_h, frame.w, strip_h)
         } else if int_dy < 0.0 {
-            // 向上滚动：新增 strip 在顶部
-            let strip_h = (-int_dy).min(frame.h);
+            // 向上滚动：新增 strip 在顶部 + 1px 向下重叠
+            let strip_h = ((-int_dy) + 1.0).min(frame.h);
             Rect::new(frame.x, frame.y, frame.w, strip_h)
         } else if int_dx > 0.0 {
-            // 向右滚动：新增 strip 在右侧
-            let strip_w = int_dx.min(frame.w);
+            // 向右滚动：新增 strip 在右侧 + 1px 向左重叠
+            let strip_w = (int_dx + 1.0).min(frame.w);
             Rect::new(frame.x + frame.w - strip_w, frame.y, strip_w, frame.h)
         } else if int_dx < 0.0 {
-            // 向左滚动：新增 strip 在左侧
-            let strip_w = (-int_dx).min(frame.w);
+            // 向左滚动：新增 strip 在左侧 + 1px 向右重叠
+            let strip_w = ((-int_dx) + 1.0).min(frame.w);
             Rect::new(frame.x, frame.y, strip_w, frame.h)
         } else {
             frame

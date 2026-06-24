@@ -184,7 +184,9 @@ impl Radio {
             ctx.fill_circle(x + r + 1.0, cy, dot_r, dot_color);
         }
         // 使用 em-box 高度（font_size）垂直居中，而非字体度量高度
-        ctx.draw_text(opt, Point::new(x + 20.0, cy - 13.0 * 0.5), text_c, 13.0);
+        let row_rect = Rect::new(x, cy - self.item_h * 0.5, _seg_w, self.item_h);
+        let text_y = ctx.visual_center_y(row_rect, 13.0);
+        ctx.draw_text(opt, Point::new(x + 20.0, text_y), text_c, 13.0);
     }
 }
 

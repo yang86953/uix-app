@@ -141,17 +141,21 @@ define_widget! {
         ctx.draw_text(&format!("源 ({}项)", self.source.len()), Point::new(frame.x + 8.0, frame.y + 6.0), text_sec, 12.0);
         for (i, item) in self.source.iter().enumerate() {
             let y = frame.y + 24.0 + i as f32 * item_h;
-            if item.selected { ctx.fill_rect(Rect::new(frame.x, y, half, item_h), fill, None); }
-            ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(frame.x + 8.0, y + 5.0), text, 12.0);
-            ctx.draw_text(&item.title, Point::new(frame.x + 26.0, y + 5.0), text, 13.0);
+            let row_rect = Rect::new(frame.x, y, half, item_h);
+            let row_y = ctx.visual_center_y(row_rect, 13.0);
+            if item.selected { ctx.fill_rect(row_rect, fill, None); }
+            ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(frame.x + 8.0, row_y), text, 12.0);
+            ctx.draw_text(&item.title, Point::new(frame.x + 26.0, row_y), text, 13.0);
         }
 
         // 中间按钮
         let btn_y = frame.y + frame.h * 0.5 - 20.0;
-        ctx.fill_rect(Rect::new(frame.x + half + 8.0, btn_y, 44.0, 20.0), primary, Some(Radius::uniform(3.0)));
-        ctx.draw_text("→", Point::new(frame.x + half + 24.0, btn_y + 2.0), Color::white(), 14.0);
-        ctx.fill_rect(Rect::new(frame.x + half + 8.0, btn_y + 24.0, 44.0, 20.0), border, Some(Radius::uniform(3.0)));
-        ctx.draw_text("←", Point::new(frame.x + half + 24.0, btn_y + 26.0), text, 14.0);
+        let rbtn_rect = Rect::new(frame.x + half + 8.0, btn_y, 44.0, 20.0);
+        let lbtn_rect = Rect::new(frame.x + half + 8.0, btn_y + 24.0, 44.0, 20.0);
+        ctx.fill_rect(rbtn_rect, primary, Some(Radius::uniform(3.0)));
+        ctx.text_center("→", rbtn_rect, Color::white(), 14.0);
+        ctx.fill_rect(lbtn_rect, border, Some(Radius::uniform(3.0)));
+        ctx.text_center("←", lbtn_rect, text, 14.0);
 
         // 右侧面板
         let right_x = frame.x + half + 60.0;
@@ -161,9 +165,11 @@ define_widget! {
         ctx.draw_text(&format!("目标 ({}项)", self.target.len()), Point::new(right_x + 8.0, frame.y + 6.0), text_sec, 12.0);
         for (i, item) in self.target.iter().enumerate() {
             let y = frame.y + 24.0 + i as f32 * item_h;
-            if item.selected { ctx.fill_rect(Rect::new(right_x, y, half, item_h), fill, None); }
-            ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(right_x + 8.0, y + 5.0), text, 12.0);
-            ctx.draw_text(&item.title, Point::new(right_x + 26.0, y + 5.0), text, 13.0);
+            let row_rect = Rect::new(right_x, y, half, item_h);
+            let row_y = ctx.visual_center_y(row_rect, 13.0);
+            if item.selected { ctx.fill_rect(row_rect, fill, None); }
+            ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(right_x + 8.0, row_y), text, 12.0);
+            ctx.draw_text(&item.title, Point::new(right_x + 26.0, row_y), text, 13.0);
         }
     }
 }

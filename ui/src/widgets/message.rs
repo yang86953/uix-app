@@ -12,13 +12,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 /// 消息类型。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum MessageType {
-    Success,
-    Info,
-    Warning,
-    Error,
-}
+/// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
+pub use uix_core::StatusLevel as MessageType;
 
 /// 单条消息数据。
 #[derive(Debug, Clone)]
@@ -108,12 +103,15 @@ define_widget! {
             ctx.fill_rect(msg_rect, bg, radius);
             // 左侧强调色条
             ctx.fill_rect(Rect::new(start_x, y + 4.0, 3.0, 32.0), accent, Some(uix_graphics::Radius::uniform(1.5)));
-            ctx.draw_text(icon, uix_core::Point::new(start_x + 14.0, y + 11.0), accent, 14.0);
+            let icon_y = ctx.visual_center_y(msg_rect, 14.0);
+            ctx.draw_text(icon, uix_core::Point::new(start_x + 14.0, icon_y), accent, 14.0);
             // 修复：存储 text_x 避免冲突
             let text_x = start_x + 36.0;
-            ctx.draw_text(&item.content, uix_core::Point::new(text_x, y + 12.0), text_c, 13.0);
+            let content_y = ctx.visual_center_y(msg_rect, 13.0);
+            ctx.draw_text(&item.content, uix_core::Point::new(text_x, content_y), text_c, 13.0);
             if item.closable {
-                ctx.draw_text("✕", uix_core::Point::new(start_x + msg_w - 22.0, y + 12.0), ctx.tokens().color_text_quaternary(), 12.0);
+                let close_y = ctx.visual_center_y(msg_rect, 12.0);
+                ctx.draw_text("✕", uix_core::Point::new(start_x + msg_w - 22.0, close_y), ctx.tokens().color_text_quaternary(), 12.0);
             }
             y += 48.0;
         }
@@ -130,22 +128,28 @@ impl Message {
         }
     }
 
+    const MSG_DURATION_SUCCESS: u64 = 3000;
+    const MSG_DURATION_INFO: u64 = 3000;
+    const MSG_DURATION_WARNING: u64 = 4000;
+    const MSG_DURATION_ERROR: u64 = 5000;
+    const MSG_HEIGHT_PER_ITEM: f32 = 48.0;
+
     /// 添加一条消息到队列。
     pub fn add(&self, item: MessageItem) {
         let mut q = self.queue.borrow_mut();
         q.push(item);
-        self.remaining.borrow_mut().push(q.last().map(|i| i.duration_ms).unwrap_or(3000));
-        self.msg_height.set(q.len() as f32 * 48.0);
+        self.remaining.borrow_mut().push(q.last().map(|i| i.duration_ms).unwrap_or(Self::MSG_DURATION_INFO));
+        self.msg_height.set(q.len() as f32 * Self::MSG_HEIGHT_PER_ITEM);
     }
 
     /// 便捷方法：成功消息。
-    pub fn success(&self, content: &str) { self.add(MessageItem { type_: MessageType::Success, content: content.into(), duration_ms: 3000, closable: true }); }
+    pub fn success(&self, content: &str) { self.add(MessageItem { type_: MessageType::Success, content: content.into(), duration_ms: Self::MSG_DURATION_SUCCESS, closable: true }); }
     /// 便捷方法：信息消息。
-    pub fn info(&self, content: &str) { self.add(MessageItem { type_: MessageType::Info, content: content.into(), duration_ms: 3000, closable: true }); }
+    pub fn info(&self, content: &str) { self.add(MessageItem { type_: MessageType::Info, content: content.into(), duration_ms: Self::MSG_DURATION_INFO, closable: true }); }
     /// 便捷方法：警告消息。
-    pub fn warning(&self, content: &str) { self.add(MessageItem { type_: MessageType::Warning, content: content.into(), duration_ms: 4000, closable: true }); }
+    pub fn warning(&self, content: &str) { self.add(MessageItem { type_: MessageType::Warning, content: content.into(), duration_ms: Self::MSG_DURATION_WARNING, closable: true }); }
     /// 便捷方法：错误消息。
-    pub fn error(&self, content: &str) { self.add(MessageItem { type_: MessageType::Error, content: content.into(), duration_ms: 5000, closable: true }); }
+    pub fn error(&self, content: &str) { self.add(MessageItem { type_: MessageType::Error, content: content.into(), duration_ms: Self::MSG_DURATION_ERROR, closable: true }); }
     /// 获取队列引用（供外部管理）。
     pub fn queue(&self) -> Rc<RefCell<Vec<MessageItem>>> { self.queue.clone() }
 }

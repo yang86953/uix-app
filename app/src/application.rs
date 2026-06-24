@@ -234,15 +234,20 @@ impl App {
     // ── Widget 渲染循环（框架处理全部样板代码）──────────────────────
 
     /// 根据 `render_strategy` 创建引擎。
+    ///
+    /// - `Cpu`    → 自动创建 `SoftwareEngine`
+    /// - `Gpu`    → 需通过 `.engine(Box::new(GpuEngine::new(ctx, w, h)))` 传入
+    /// - `Hybrid` → 同上，传入混合引擎实现
     fn build_engine(
         strategy: RenderStrategy,
         width: i32,
         height: i32,
+        system_info: &dyn uix_platform::ISystemInfo,
     ) -> Option<Box<dyn GraphicsEngine>> {
         match strategy {
             RenderStrategy::Cpu => {
                 let mut engine = SoftwareEngine::new();
-                match engine.initialize(width, height) {
+                match engine.initialize(width, height, system_info) {
                     Ok(_) => {
                         log::info!("App: SoftwareEngine (CPU) initialized");
                         Some(Box::new(engine))
@@ -264,12 +269,12 @@ impl App {
     }
 
     /// 取出或创建引擎。
-    pub fn take_engine(&mut self, width: i32, height: i32) -> Option<Box<dyn GraphicsEngine>> {
+    pub fn take_engine(&mut self, width: i32, height: i32, system_info: &dyn uix_platform::ISystemInfo) -> Option<Box<dyn GraphicsEngine>> {
         if let Some(engine) = self.custom_engine.take() {
             log::info!("App: using custom engine ({:?})", self.render_strategy);
             Some(engine)
         } else {
-            Self::build_engine(self.render_strategy, width, height)
+            Self::build_engine(self.render_strategy, width, height, system_info)
         }
     }
 
@@ -289,7 +294,15 @@ impl App {
         M: Fn(&UiEvent) -> Option<WidgetEvent>,
         X: Fn(&UiEvent) -> bool,
     {
-        let mut engine = match self.take_engine(width, height) {
+        let platform = match uix_platform::create_platform() {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("App::run_widget: platform creation failed: {}", e.short_what());
+                return 1;
+            }
+        };
+        let system_info = platform.system_info();
+        let mut engine = match self.take_engine(width, height, system_info) {
             Some(e) => e,
             None => return 1,
         };

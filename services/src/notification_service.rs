@@ -12,14 +12,8 @@
 use std::collections::VecDeque;
 
 /// 通知级别。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum NotificationLevel {
-    Info = 0,
-    Success = 1,
-    Warning = 2,
-    Error = 3,
-}
+/// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
+pub use uix_core::StatusLevel as NotificationLevel;
 
 /// A single notification entry displayed as a Toast in the UI.
 #[derive(Debug, Clone)]
@@ -92,24 +86,29 @@ impl NotificationService {
 
     // ── Core API ─────────────────────────────────────────────────────────
 
+    const DURATION_INFO: u32 = 4000;
+    const DURATION_SUCCESS: u32 = 4000;
+    const DURATION_WARNING: u32 = 5000;
+    const DURATION_ERROR: u32 = 6000;
+
     /// Send a notification with default options (Info, 4s).
     pub fn info(&mut self, title: &str, message: &str) {
-        self.notify(title, message, NotificationLevel::Info, 4000);
+        self.notify(title, message, NotificationLevel::Info, Self::DURATION_INFO);
     }
 
     /// Send a success notification.
     pub fn success(&mut self, title: &str, message: &str) {
-        self.notify(title, message, NotificationLevel::Success, 4000);
+        self.notify(title, message, NotificationLevel::Success, Self::DURATION_SUCCESS);
     }
 
     /// Send a warning notification.
     pub fn warning(&mut self, title: &str, message: &str) {
-        self.notify(title, message, NotificationLevel::Warning, 5000);
+        self.notify(title, message, NotificationLevel::Warning, Self::DURATION_WARNING);
     }
 
     /// Send an error notification.
     pub fn error(&mut self, title: &str, message: &str) {
-        self.notify(title, message, NotificationLevel::Error, 6000);
+        self.notify(title, message, NotificationLevel::Error, Self::DURATION_ERROR);
     }
 
     /// Send a notification with full control.

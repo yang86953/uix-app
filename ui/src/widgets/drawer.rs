@@ -105,12 +105,13 @@ define_widget! {
         };
         ctx.fill_rect(drawer_rect, bg, corner);
         ctx.stroke_rect(drawer_rect, border, 1.0, corner);
-        // 标题
-        ctx.draw_text(&self.title, Point::new(drawer_x + 24.0, drawer_y + 14.0), text, 16.0);
+        let header_rect = Rect::new(drawer_x, drawer_y, drawer_w, 48.0);
+        let ty = ctx.visual_center_y(header_rect, 16.0);
+        ctx.draw_text(&self.title, Point::new(drawer_x + 24.0, ty), text, 16.0);
         // 关闭按钮
         if self.closable {
             let close_x = drawer_x + drawer_w - 36.0;
-            ctx.draw_text("✕", Point::new(close_x, drawer_y + 14.0), text_sec, 16.0);
+            ctx.draw_text("✕", Point::new(close_x, ty), text_sec, 16.0);
         }
         // 标题分割线
         ctx.fill_rect(Rect::new(drawer_x, drawer_y + 48.0, drawer_w, 1.0), border, None);

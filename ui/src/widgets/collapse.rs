@@ -84,8 +84,10 @@ define_widget! {
             ctx.stroke_rect(header_rect, border, 1.0, r);
             // 展开指示符
             let arrow = if p.expanded { "▼" } else { "▶" };
-            ctx.draw_text(arrow, uix_core::Point::new(frame.x + 10.0, y + 10.0), text_secondary, 12.0);
-            ctx.draw_text(&p.header, uix_core::Point::new(frame.x + 28.0, y + 9.0), text_color, 14.0);
+            let arrow_y = ctx.visual_center_y(header_rect, 12.0);
+            ctx.draw_text(arrow, uix_core::Point::new(frame.x + 10.0, arrow_y), text_secondary, 12.0);
+            let header_y = ctx.visual_center_y(header_rect, 14.0);
+            ctx.draw_text(&p.header, uix_core::Point::new(frame.x + 28.0, header_y), text_color, 14.0);
             y += 36.0;
 
             if p.expanded {

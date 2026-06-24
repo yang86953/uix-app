@@ -57,7 +57,9 @@ define_widget! {
             ctx.stroke_rect(pop_rect, border, 1.0, r);
 
             if !self.title.is_empty() {
-                ctx.draw_text(&self.title, uix_core::Point::new(px + 12.0, py + 10.0), text_color, 14.0);
+                let title_rect = Rect::new(px, py, pop_w, 32.0);
+            let title_y = ctx.visual_center_y(title_rect, 14.0);
+            ctx.draw_text(&self.title, uix_core::Point::new(px + 12.0, title_y), text_color, 14.0);
                 ctx.fill_rect(Rect::new(px + 12.0, py + 32.0, pop_w - 24.0, 1.0), border, None);
             }
             let content_y = py + if self.title.is_empty() { 12.0 } else { 40.0 };

@@ -9,4 +9,8 @@ uix-core = { path = "../core" }
 uix-diag = { path = "../diag" }
 uix-graphics = { path = "../graphics" }
 uix-macros = { path = "../uix-macros" }
+uix-platform = { path = "../platform" }
 log = { workspace = true }
+
+[lints]
+workspace = true

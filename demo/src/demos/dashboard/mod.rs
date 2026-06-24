@@ -2,8 +2,6 @@
 //!
 //! 运行：`cargo run --bin uix-demo`
 pub mod more_pages;
-
-pub mod pages_extra;
 pub mod sections;
 pub mod widgets;
 
@@ -17,19 +15,19 @@ use uix::ui::layout::{AlignItems, FlexDirection};
 use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
 use uix::tree;
 use uix::ui::theme::{DesignTokens, DynTokens, Theme};
-use uix::ui::widget::{WidgetCore, WidgetNode, WidgetTree};
+use uix::ui::widget::{WidgetCore, WidgetId, WidgetNode, WidgetTree};
 use uix::ui::widgets::icon::init_lucide_font;
 use uix::ui::{
     Container, Icon, IntoWidgetNode, Label, Navigation, ScrollDirection,
     ScrollView, SharedActive, Space, SpaceSize,
 };
 
-use more_pages::{page_nav, page_tabs};
-use pages_extra::{page_colors, page_custom, page_layout};
+use more_pages::{page_charts, page_other};
 use sections::{
-    page_buttons, page_data_display, page_date_picker, page_feedback, page_inputs, page_typography,
+    page_general, page_layout, page_nav,
+    page_input, page_data, page_feedback,
 };
-use widgets::ThemeToggle;
+use uix::ui::ThemeToggle;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 布局常量
@@ -44,11 +42,14 @@ pub const INNER_W: f32 = CONTENT_W - CONTENT_PAD_H;
 
 
 pub const PAGE_TITLES: &[(&str, &str)] = &[
-    ("type", " 排版"), ("square", " 按钮"),
-    ("edit", " 输入"), ("calendar", " 日期"),
-    ("table", " 数据展示"), ("alert-circle", " 反馈"),
-    ("menu", " 导航"), ("layout", " 标签页"),
-    ("grid", " 布局"), ("palette", " 主题色"), ("settings", " 自定义"),
+    ("type", " 通用"),
+    ("layout", " 布局"),
+    ("menu", " 导航"),
+    ("edit", " 输入"),
+    ("table", " 数据展示"),
+    ("alert-circle", " 反馈"),
+    ("bar-chart", " 图表"),
+    ("settings", " 其他"),
 ];
 
 
@@ -98,19 +99,20 @@ impl<'a> PageBuilder<'a> {
     }
 
     /// 构建最终页面（包装 ScrollView + flex-grow 占位）。
-    /// 内部容器使用 flex_grow(1.0) 而非固定 INNER_W，实现响应式自适应。
+    /// 内部容器使用 overflow_content 禁止收缩，ScrollView 负责滚动。
     pub fn build(self) -> WidgetNode {
         let mut children = self.items;
         children.push(Container::new().flex_grow(1.0).into_node());
         WidgetNode::new(
-            Box::new(ScrollView::new(ScrollDirection::Both).flex_grow(1.0)),
+            Box::new(ScrollView::new(ScrollDirection::Vertical).flex_grow(1.0)),
             vec![WidgetNode::new(
                 Box::new(
                     Container::new()
                         .flex_grow(1.0)
                         .dir(FlexDirection::Column)
                         .gap(8.0)
-                        .pad(EdgeInsets::new(8.0, 4.0, 16.0, 10.0)),
+                        .pad(EdgeInsets::new(20.0, 4.0, 20.0, 10.0))
+                        .overflow_content(),
                 ),
                 children,
             )],
@@ -160,7 +162,7 @@ fn space_h(h: f32) -> WidgetNode {
 
 /// 页面标题行（图标 + 标签）。
 pub fn page_title(tk: &DesignTokens, icon: &str, label: &str) -> WidgetNode {
-    tree! { Container::new().dir(FlexDirection::Row) => [
+    tree! { Container::new().dir(FlexDirection::Row).h(30.0).pad(EdgeInsets::new(0.0, 4.0, 0.0, 0.0)) => [
         Icon::new(icon).size(22.0),
         Container::new().size(8.0, 0.0),
         Label::new(label).color(tk.color_text).font_size(22.0),
@@ -173,7 +175,7 @@ pub fn page_title(tk: &DesignTokens, icon: &str, label: &str) -> WidgetNode {
 
 /// 构建顶部标题栏（"UIX 组件库" + ThemeToggle + 版本号）。
 fn build_header_bar(tk: &DesignTokens) -> WidgetNode {
-    tree! { Container::new().bg(tk.color_bg_elevated).dir(FlexDirection::Row)
+    tree! { Container::new().bg(tk.color_bg_container).dir(FlexDirection::Row)
         .size(0.0, 44.0) => [
         Label::new("  UIX 组件库").color(tk.color_text)
             .font_size(16.0).size(400.0, 44.0),
@@ -191,18 +193,15 @@ fn build_header_bar(tk: &DesignTokens) -> WidgetNode {
 
 fn build_page(page_index: usize, tk: &DesignTokens) -> WidgetNode {
     match page_index {
-        0 => page_typography(tk),
-        1 => page_buttons(tk),
-        2 => page_inputs(tk),
-        3 => page_date_picker(tk),
-        4 => page_data_display(tk),
+        0 => page_general(tk),
+        1 => page_layout(tk),
+        2 => page_nav(tk),
+        3 => page_input(tk),
+        4 => page_data(tk),
         5 => page_feedback(tk),
-        6 => page_nav(tk),
-        7 => page_tabs(tk),
-        8 => page_layout(tk),
-        9 => page_colors(tk),
-        10 => page_custom(tk),
-        _ => page_typography(tk),
+        6 => page_charts(tk),
+        7 => page_other(tk),
+        _ => page_general(tk),
     }
 }
 
@@ -210,8 +209,8 @@ fn build_page(page_index: usize, tk: &DesignTokens) -> WidgetNode {
 // 树构建 — 基础框架 + 页面内容分步构建
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 构建完整的 demo widget tree（侧边栏 + 内容区 + 页面标题）。
-/// 每次导航切换或主题变更时重建整棵树，确保 NavItem 的 SharedActive 连接正确。
+/// 构建完整的 demo widget tree——所有页面共存于同一棵树中，
+/// 通过 `set_visible` 切换显示，无需重建。
 ///
 /// 树结构：
 /// ```
@@ -223,31 +222,57 @@ fn build_page(page_index: usize, tk: &DesignTokens) -> WidgetNode {
 /// │   ├── Spacer
 /// │   └── Version label
 /// └── content_container (Column, flex-grow, bg_container)
-///     ├── header_bar (Row, 44px) — "UIX 组件库" + ThemeToggle + 版本号
-///     ├── title_node — 当前页面标题（图标 + 标签）
-///     └── page_content — ScrollView 包裹的页面内容
+///     ├── header_bar (Row, 44px)
+///     └── page_panel (Container, flex-grow, Column)
+///         ├── page_0 (Container, flex-grow, visible=active==0, Column)
+///         │   ├── title_node
+///         │   └── ScrollView(...)
+///         ├── page_1 (Container, flex-grow, visible=active==1, Column)
+///         │   ├── title_node
+///         │   └── ScrollView(...)
+///         └── ...
 /// ```
-fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, SharedActive) {
+/// 返回 `(root_node, nav_active, page_ids)`。
+fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, SharedActive, Vec<WidgetId>) {
     let nav = Navigation::new("UIX 组件")
-        .item(" 排版", "type")
-        .item(" 按钮", "square")
+        .item(" 通用", "type")
+        .item(" 布局", "layout")
+        .item(" 导航", "menu")
         .item(" 输入", "edit")
-        .item(" 日期", "calendar")
         .item(" 数据展示", "table")
         .item(" 反馈", "alert-circle")
-        .item(" 导航", "menu")
-        .item(" 标签页", "layout")
-        .item(" 布局", "grid")
-        .item(" 主题色", "palette")
-        .item(" 自定义", "settings")
+        .item(" 图表", "bar-chart")
+        .item(" 其他", "settings")
         .active_index(active_page)
         .width(SIDEBAR_W);
     let nav_active = nav.active().clone();
     let nav_node = nav.build(tk);
 
-    let (icon, label) = PAGE_TITLES[active_page.min(PAGE_TITLES.len() - 1)];
-    let title_node = page_title(tk, icon, label);
-    let page_content = build_page(active_page, tk);
+    // 为每页构建独立的页面容器（标题 + 内容），全部添加到 page_panel
+    let mut page_nodes = Vec::new();
+    let mut page_ids = Vec::new();
+    for i in 0..PAGE_TITLES.len() {
+        let (icon, label) = PAGE_TITLES[i];
+        let title_node = page_title(tk, icon, label);
+        let page_content = build_page(i, tk);
+        page_nodes.push(WidgetNode::new(
+            Box::new(
+                Container::new()
+                    .dir(FlexDirection::Column)
+                    .flex_grow(1.0)
+                    // 只在初始设置可见性；widget 创建后通过 tree 操作切换
+            ),
+            vec![title_node, page_content],
+        ));
+        // WidgetId 在树构建后才能得到，这里先占位
+        page_ids.push(0);
+    }
+
+    // page_panel 是页面容器的父节点，不可见子节点不参与布局（见 Container::layout_children）
+    let page_panel = WidgetNode::new(
+        Box::new(Container::new().dir(FlexDirection::Column).flex_grow(1.0)),
+        page_nodes,
+    );
 
     let content_container = WidgetNode::new(
         Box::new(
@@ -258,8 +283,7 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
         ),
         vec![
             build_header_bar(tk),
-            title_node,
-            page_content,
+            page_panel,
         ],
     );
 
@@ -269,7 +293,7 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
             content_container,
         ]
     };
-    (root, nav_active)
+    (root, nav_active, page_ids)
 }
 
 
@@ -282,14 +306,17 @@ struct DemoState {
     prev_active: Cell<usize>,
     dark_mode: Cell<bool>,
     nav_active: Rc<std::cell::RefCell<SharedActive>>,
+    /// 每页在树中的根容器 WidgetId（用于切换可见性）
+    page_ids: std::cell::RefCell<Vec<WidgetId>>,
 }
 
 impl DemoState {
-    fn new(nav_active: SharedActive) -> Self {
+    fn new(nav_active: SharedActive, page_ids: Vec<WidgetId>) -> Self {
         Self {
             prev_active: Cell::new(0),
             dark_mode: Cell::new(false),
             nav_active: Rc::new(std::cell::RefCell::new(nav_active)),
+            page_ids: std::cell::RefCell::new(page_ids),
         }
     }
 }
@@ -298,24 +325,57 @@ impl DemoState {
 // GUI 入口
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 重建整棵 widget 树，保持主题/导航/页面同步。
-fn rebuild_tree(
+// ── 页面切换（可见性切换，不重建树）──
+
+/// 切换到指定页面：隐藏旧页面，显示新页面。
+fn switch_page(tree: &mut WidgetTree, state: &DemoState, active: usize) {
+    let prev = state.prev_active.get();
+    if prev == active {
+        return;
+    }
+    log::debug!("switch_page: {} -> {}", prev, active);
+    state.prev_active.set(active);
+
+    let ids = state.page_ids.borrow();
+    // 隐藏旧页面
+    if prev < ids.len() {
+        tree.set_visible(ids[prev], false);
+    }
+    // 显示新页面
+    if active < ids.len() {
+        tree.set_visible(ids[active], true);
+    }
+    // 重新布局 + 全场脏标记
+    tree.layout();
+    tree.mark_full_frame_dirty();
+}
+
+/// 主题切换：重建整棵树（主题 token 全局变化，无法增量更新）。
+fn rebuild_for_theme(
     tree: &mut WidgetTree,
     eng: &mut dyn GraphicsEngine,
     dyn_tokens: &DynTokens,
-    dark_mode: bool,
-    page_index: usize,
+    state: &DemoState,
 ) -> SharedActive {
-    log::debug!("rebuild_tree: page={} dark={}", page_index, dark_mode);
+    log::debug!("rebuild_for_theme: dark={}", state.dark_mode.get());
     let tk = dyn_tokens.snapshot();
-    let (new_root, new_active) = build_demo_tree(&tk, page_index);
+    let active = state.prev_active.get();
+    let (new_root, new_active, new_page_ids) = build_demo_tree(&tk, active);
     tree.build(new_root);
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
     }
+    // 更新 state 中的 page_ids
+    *state.page_ids.borrow_mut() = new_page_ids.clone();
+    // 隐藏所有非活跃页面（build_demo_tree 默认全部可见，须在此修正）
+    for (i, &id) in new_page_ids.iter().enumerate() {
+        if i != active {
+            tree.set_visible(id, false);
+        }
+    }
     tree.layout();
     tree.find_by_type_and_modify::<ThemeToggle>(|w| {
-        w.dark.set(dark_mode);
+        w.dark.set(state.dark_mode.get());
     });
     tree.mark_full_frame_dirty();
     new_active
@@ -350,7 +410,7 @@ fn run_event_loop(
         map_ui_event,
         on_exit,
         move |tree, eng, _platform| {
-            // ── 主题切换 → 重建整棵树 ──
+            // ── 主题切换 → 重建整棵树（token 全局变化）──
             let mut new_dark = false;
             tree.find_by_type_and_modify::<ThemeToggle>(|w| new_dark = w.dark.get());
 
@@ -358,55 +418,118 @@ fn run_event_loop(
                 log::debug!("on_frame: THEME CHANGE dark={}", new_dark);
                 state.dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
-                let a = rebuild_tree(tree, eng, &dyn_tokens, new_dark, state.prev_active.get());
+                let tk = dyn_tokens.snapshot();
+                eng.set_clear_color(tk.color_bg_container);
+                let a = rebuild_for_theme(tree, eng, &dyn_tokens, &state);
                 *state.nav_active.borrow_mut() = a;
                 return;
             }
 
-            // ── 导航切换 → 重建整棵树 ──
+            // ── 导航切换 → 仅切页面可见性（树不变）──
             let active = state.nav_active.borrow().get();
             if active != state.prev_active.get() {
-                log::debug!("on_frame: NAV CHANGE {} -> {}", state.prev_active.get(), active);
-                state.prev_active.set(active);
-                let a = rebuild_tree(tree, eng, &dyn_tokens, state.dark_mode.get(), active);
-                *state.nav_active.borrow_mut() = a;
+                switch_page(tree, &state, active);
             }
         },
     )
 }
 
 /// 运行 GUI 演示的主入口。
+/// 支持 --gpu 参数切换到 GPU 渲染引擎。
 pub fn run_gui_demo() {
+    let use_gpu = std::env::args().any(|a| a == "--gpu");
     let tk = DesignTokens::antd_light();
 
-    // 构建完整 demo 树（导航栏 + 标题栏 + 第 0 页内容）
-    let (root_node, nav_active) = build_demo_tree(&tk, 0);
+    // 构建包含所有 8 页的完整 demo 树
+    let (root_node, nav_active, _) = build_demo_tree(&tk, 0);
     let mut tree = WidgetTree::new();
     tree.build(root_node);
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
     }
+
+    // 构建后获取所有页面容器的真实 WidgetId
+    // 树结构：root → content_container → page_panel → [page_0, page_1, ..., page_N]
+    let page_ids: Vec<WidgetId> = tree.root_id()
+        .and_then(|root| tree.get(root))
+        .map(|r| r.children().to_vec())          // [nav, content_container]
+        .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
+        .map(|cc| cc.children().to_vec())         // [header_bar, page_panel]
+        .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
+        .map(|pp| pp.children().to_vec())         // [page_0..page_N]
+        .unwrap_or_default();
+
+    // 初始：仅第 0 页可见
+    for (i, &id) in page_ids.iter().enumerate() {
+        if i != 0 {
+            tree.set_visible(id, false);
+        }
+    }
     tree.layout();
     tree.mark_full_frame_dirty();
 
-    let state = DemoState::new(nav_active);
+    let bg_color = tk.color_bg_container;
+    let state = DemoState::new(nav_active, page_ids);
     let dyn_tokens = Arc::new(DynTokens::new(tk));
     let theme_cell = std::cell::RefCell::new(Theme::from_arc(dyn_tokens.clone()));
 
     let mut app = App::new();
     app.title("UIX — 组件库");
 
-    let Some(mut engine) = app.take_engine(INIT_W, INIT_H) else {
+    // 创建窗口（GPU模式需要先创建以获取 wl_surface）
+    if let Err(e) = app.create_window("UIX — 组件库", INIT_W, INIT_H) {
+        log::error!("create_window: {}", e.short_what());
         return;
-    };
+    }
+
+    let mut engine_opt: Option<Box<dyn uix_graphics::GraphicsEngine>> = None;
+
+    if use_gpu {
+        let surface_ptr = app.window()
+            .and_then(|w| w.window_box().as_ref())
+            .map(|w| w.native_surface_ptr())
+            .unwrap_or(std::ptr::null_mut());
+        if surface_ptr.is_null() {
+            log::error!("GPU: 无法获取 surface 指针");
+            return;
+        }
+        match uix_platform::create_gpu_context(surface_ptr, INIT_W, INIT_H) {
+            Ok(ctx) => match uix_graphics::GpuEngine::new(ctx, INIT_W, INIT_H) {
+                Ok(e) => {
+                    log::info!("GPU: GpuEngine 就绪");
+                    engine_opt = Some(Box::new(e));
+                }
+                Err(e) => { log::error!("GPU: {}", e.short_what()); return; }
+            },
+            Err(e) => {
+                log::warn!("GPU: 上下文创建失败({}), 回退CPU", e.short_what());
+            }
+        }
+    }
+
+    let mut engine: Box<dyn uix_graphics::GraphicsEngine> = engine_opt.unwrap_or_else(|| {
+        let temp_platform = uix_platform::create_platform()
+            .unwrap_or_else(|e| { log::error!("{}", e.short_what()); std::process::exit(1) });
+        app.take_engine(INIT_W, INIT_H, temp_platform.system_info()).unwrap_or_else(|| {
+            log::error!("CPU引擎创建失败"); std::process::exit(1)
+        })
+    });
+
+    // 后续照旧
     if let Ok(ttf) = std::fs::read("assets/fonts/lucide.ttf") {
         init_lucide_font(&ttf, &mut *engine);
     } else {
         log::warn!("Lucide font not found — icons will be blank");
     }
 
-    // 首帧后打印内存诊断
-    engine.diagnose_memory();
+    // 设置脏区域清除色为主题容器背景色，避免黑线/白线
+    engine.set_clear_color(bg_color);
+
+    let w = match app.window() {
+        Some(win) => win,
+        None => { log::error!("Window not available"); return; }
+    };
+    engine.diagnose_memory(w.platform().system_info());
 
     let exit_code = run_event_loop(&mut app, &mut engine, &mut tree, state, dyn_tokens, &theme_cell);
     engine.shutdown();
@@ -429,7 +552,7 @@ mod tests {
 
     #[test]
     fn page_titles_and_build() {
-        assert_eq!(PAGE_TITLES.len(), 11);
+        assert_eq!(PAGE_TITLES.len(), 8);
         let tk = DesignTokens::antd_light();
         for i in 0..PAGE_TITLES.len() {
             let _node = build_page(i, &tk);

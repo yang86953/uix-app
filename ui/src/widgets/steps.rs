@@ -99,7 +99,9 @@ define_widget! {
                 ctx.engine().stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
                 // 步骤编号/图标
                 let num = if step.status == StepStatus::Finish { "✓" } else { &(i + 1).to_string() };
-                ctx.draw_text(num, Point::new(cx - 5.0, circle_y - 7.0), text_c, 14.0);
+                let circle_rect = Rect::new(cx - circle_r, circle_y - circle_r, circle_r * 2.0, circle_r * 2.0);
+                let step_y = ctx.visual_center_y(circle_rect, 14.0);
+                ctx.draw_text(num, Point::new(cx - 5.0, step_y), text_c, 14.0);
                 // 标题
                 let title_c = if i <= self.current.get() { text } else { text_sec };
                 ctx.draw_text(&step.title, Point::new(cx - step.title.len() as f32 * 4.0, circle_y + circle_r + 6.0), title_c, 13.0);

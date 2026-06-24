@@ -6,7 +6,7 @@ use uix_core::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
 
 const PRESET_COLORS: &[u32] = &[
     0xF52222, 0xFA541C, 0xFA8C16, 0xFADB14, 0x52C41A, 0x13C2C2, 0x1677FF, 0x2F54EB,
@@ -20,6 +20,10 @@ define_widget! {
         value: Color,
         open: bool,
         preset_colors: Vec<Color>,
+        hovered: bool,
+        hovered_idx: Option<usize>,
+        focused: bool,
+        on_change: Option<Box<dyn FnMut(Color) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -27,38 +31,91 @@ define_widget! {
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
-            if pos.y >= 0.0 && pos.y <= 32.0 {
-                self.open = !self.open; return EventResult::Handled;
+        match event {
+            WidgetEvent::MouseDown { pos, .. } => {
+                if pos.y >= 0.0 && pos.y <= 32.0 {
+                    self.open = !self.open;
+                    self.focused = true;
+                    return EventResult::Handled;
+                }
+                if self.open && pos.y > 32.0 {
+                    let cols = 8;
+                    let cell = 24.0;
+                    let pad = 8.0;
+                    let panel_x = pos.x;
+                    let panel_y = pos.y - 40.0;
+                    let panel_w = cols as f32 * cell + pad * 2.0;
+                    if panel_x >= 0.0 && panel_x < panel_w && panel_y >= pad {
+                        let rows = (self.preset_colors.len() + cols - 1) / cols;
+                        let panel_h = rows as f32 * cell + pad * 2.0;
+                        let ci = ((panel_x - pad) / cell) as usize;
+                        let ri = ((panel_y - pad) / cell) as usize;
+                        if panel_y >= 0.0 && panel_y <= panel_h {
+                            let idx = ri * cols + ci;
+                            if idx < self.preset_colors.len() {
+                                self.value = self.preset_colors[idx];
+                                self.open = false;
+                                if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                                return EventResult::Handled;
+                            }
+                        }
+                    }
+                    self.open = false;
+                    return EventResult::Handled;
+                }
+                EventResult::NotHandled
             }
-            if self.open && pos.y > 32.0 {
-                let cols = 8;
-                let cell = 24.0;
-                let pad = 8.0;
-                let panel_x = pos.x - 0.0; // 相对面板
-                let panel_y = pos.y - 40.0;
-                if panel_x >= pad && panel_y >= pad {
+            WidgetEvent::MouseMove { pos } => {
+                if self.open && pos.y > 36.0 {
+                    let cols = 8;
+                    let cell = 24.0;
+                    let pad = 8.0;
+                    let panel_x = pos.x;
+                    let panel_y = pos.y - 40.0;
                     let ci = ((panel_x - pad) / cell) as usize;
                     let ri = ((panel_y - pad) / cell) as usize;
                     let idx = ri * cols + ci;
-                    if idx < self.preset_colors.len() {
-                        self.value = self.preset_colors[idx];
-                        self.open = false;
-                        return EventResult::Handled;
+                    if idx < self.preset_colors.len() && panel_x >= pad && panel_y >= pad {
+                        self.hovered_idx = Some(idx);
+                    } else {
+                        self.hovered_idx = None;
                     }
+                } else {
+                    self.hovered = pos.y >= 0.0 && pos.y <= 32.0;
+                    self.hovered_idx = None;
                 }
-                self.open = false;
+                EventResult::Handled
             }
+            WidgetEvent::HoverLeave => { self.hovered = false; self.hovered_idx = None; EventResult::Handled }
+            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            WidgetEvent::FocusOut => { self.open = false; self.focused = false; EventResult::Handled }
+            WidgetEvent::KeyDown { key, .. } => {
+                if *key == KeyCode::Escape {
+                    if self.open { self.open = false; return EventResult::Handled; }
+                }
+                if *key == KeyCode::Space || *key == KeyCode::Enter {
+                    self.open = !self.open;
+                    self.focused = true;
+                    return EventResult::Handled;
+                }
+                EventResult::NotHandled
+            }
+            _ => EventResult::NotHandled,
         }
-        EventResult::NotHandled
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let border = ctx.tokens().color_border();
+        let primary = ctx.tokens().color_primary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         let swatch = Rect::new(frame.x, frame.y + 4.0, 24.0, 24.0);
         ctx.fill_rect(swatch, self.value, r);
-        ctx.stroke_rect(swatch, border, 1.0, r);
+        let border_c = if self.hovered || self.focused { primary } else { border };
+        ctx.stroke_rect(swatch, border_c, 1.5, r);
+
+        if self.focused {
+            ctx.stroke_rect(Rect::new(frame.x - 1.0, frame.y + 3.0, 26.0, 26.0), primary, 1.0, None);
+        }
 
         if self.open {
             let cols = 8;
@@ -71,13 +128,18 @@ define_widget! {
             let panel_y = frame.y + 36.0;
             let bg = ctx.tokens().color_bg_elevated();
             let panel_rect = Rect::new(panel_x, panel_y, panel_w, panel_h);
-            ctx.fill_rect(panel_rect, bg, Some(Radius::uniform(ctx.tokens().border_radius())));
-            ctx.stroke_rect(panel_rect, border, 1.0, Some(Radius::uniform(ctx.tokens().border_radius())));
+            let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius()));
+            ctx.fill_rect(panel_rect, bg, panel_radius);
+            ctx.stroke_rect(panel_rect, border, 1.0, panel_radius);
 
             for (i, c) in self.preset_colors.iter().enumerate() {
                 let cx = panel_x + pad + (i % cols) as f32 * cell;
                 let cy = panel_y + pad + (i / cols) as f32 * cell;
-                ctx.fill_rect(Rect::new(cx + 1.0, cy + 1.0, cell - 2.0, cell - 2.0), *c, Some(Radius::uniform(2.0)));
+                let cell_rect = Rect::new(cx + 1.0, cy + 1.0, cell - 2.0, cell - 2.0);
+                ctx.fill_rect(cell_rect, *c, Some(Radius::uniform(2.0)));
+                if self.hovered_idx == Some(i) {
+                    ctx.stroke_rect(cell_rect, Color::white(), 1.5, Some(Radius::uniform(2.0)));
+                }
             }
         }
     }
@@ -90,10 +152,18 @@ impl ColorPicker {
             preset_colors: PRESET_COLORS.iter().map(|&c| Color::from_rgba(
                 ((c >> 16) & 0xFF) as u8, ((c >> 8) & 0xFF) as u8, (c & 0xFF) as u8, 255
             )).collect(),
+            hovered: false,
+            hovered_idx: None,
+            focused: false,
+            on_change: None,
         }
     }
     pub fn value(&self) -> Color { self.value }
     pub fn set_value(&mut self, v: Color) { self.value = v; }
+    pub fn on_change<F: FnMut(Color) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
 }
 
 /// Cascader — 级联选择（简化版）。
@@ -126,9 +196,11 @@ define_widget! {
         ctx.fill_rect(input_rect, bg, r);
         ctx.stroke_rect(input_rect, border, 1.0, r);
         let display = if self.value.is_empty() { &self.placeholder } else { &self.value };
-        ctx.draw_text(display, Point::new(frame.x + 10.0, frame.y + 8.0),
+        let draw_y = ctx.visual_center_y(input_rect, 13.0);
+        ctx.draw_text(display, Point::new(frame.x + 10.0, draw_y),
             if self.value.is_empty() { text_sec } else { text }, 13.0);
-        ctx.draw_text("▼", Point::new(frame.x + frame.w - 18.0, frame.y + 8.0), text_sec, 10.0);
+        let arrow_y = ctx.visual_center_y(input_rect, 10.0);
+        ctx.draw_text("▼", Point::new(frame.x + frame.w - 18.0, arrow_y), text_sec, 10.0);
     }
 }
 impl Cascader {
@@ -172,7 +244,8 @@ define_widget! {
         ctx.fill_rect(input_rect, bg, r);
         ctx.stroke_rect(input_rect, border, 1.0, r);
         let display = if self.value.is_empty() { &self.placeholder } else { &self.value };
-        ctx.draw_text(display, Point::new(frame.x + 10.0, frame.y + 8.0),
+        let draw_y = ctx.visual_center_y(input_rect, 13.0);
+        ctx.draw_text(display, Point::new(frame.x + 10.0, draw_y),
             if self.value.is_empty() { text_sec } else { text }, 13.0);
         if self.open && !self.options.is_empty() {
             let bg_elev = ctx.tokens().color_bg_elevated();
@@ -181,7 +254,10 @@ define_widget! {
             ctx.fill_rect(menu_rect, bg_elev, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
             ctx.stroke_rect(menu_rect, border, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
             for (i, opt) in self.options.iter().enumerate() {
-                ctx.draw_text(opt, Point::new(frame.x + 10.0, frame.y + 36.0 + i as f32 * 28.0), text, 13.0);
+                let opt_y = frame.y + 32.0 + i as f32 * 28.0;
+                let opt_rect = Rect::new(frame.x, opt_y, frame.w, 28.0);
+                let text_y = ctx.visual_center_y(opt_rect, 13.0);
+                ctx.draw_text(opt, Point::new(frame.x + 10.0, text_y), text, 13.0);
             }
         }
     }

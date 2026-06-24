@@ -2,7 +2,7 @@
 
 use crate::define_widget;
 use uix_graphics::Color;
-use uix_core::{Rect, Size};
+use uix_core::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
@@ -43,23 +43,39 @@ define_widget! {
             else { self.data.iter().map(|d| d.value).fold(0.0_f32, f32::max) };
         if max_val <= 0.0 { return; }
 
-        let gap = 4.0;
-        let label_h = 16.0;
-        let value_h = if self.show_value { 14.0 } else { 0.0 };
-        let chart_area_h = (frame.h - label_h - value_h - 4.0).max(1.0);
-        let bar_w = ((frame.w - gap) / n as f32 - gap).max(4.0);
-
-        let br = if self.bar_radius > 0.0 { Some(uix_graphics::Radius::uniform(self.bar_radius)) } else { None };
         let tokens = ctx.tokens();
         let text_c = tokens.color_text();
         let label_c = tokens.color_text_secondary();
         let axis_c = tokens.color_border();
 
+        let gap = 4.0;
+        let y_label_w = 36.0;
+        let label_h = 14.0;
+        let value_h = if self.show_value { 14.0 } else { 0.0 };
+        let chart_x = frame.x + y_label_w;
+        let chart_w = (frame.w - y_label_w).max(1.0);
+        let chart_area_h = (frame.h - label_h - value_h - 4.0).max(1.0);
+        let bar_w = ((chart_w - gap) / n as f32 - gap).max(4.0);
+
+        let br = if self.bar_radius > 0.0 { Some(uix_graphics::Radius::uniform(self.bar_radius)) } else { None };
         let baseline = frame.y + chart_area_h;
-        ctx.fill_rect(Rect::new(frame.x, baseline, frame.w, 1.0), axis_c, None);
+        ctx.fill_rect(Rect::new(chart_x, baseline, chart_w, 1.0), axis_c, None);
+
+        let gl = 4.max((chart_area_h / 30.0) as usize);
+        for i in 0..gl {
+            let t = (i as f32 + 1.0) / gl as f32;
+            let gy = frame.y + chart_area_h * (1.0 - t);
+            ctx.fill_rect(Rect::new(chart_x, gy, chart_w, 0.5), axis_c, None);
+            let val = max_val * t;
+            let label = if val == val.trunc() { format!("{:.0}", val) } else { format!("{:.1}", val) };
+            let y_label_rect = Rect::new(frame.x, gy - 6.0, y_label_w - 2.0, 12.0);
+            let yly = ctx.visual_center_y(y_label_rect, 9.0);
+            let lsz = ctx.measure_text(&label, 9.0);
+            ctx.draw_text(&label, Point::new(chart_x - lsz.w - 4.0, yly), label_c, 9.0);
+        }
 
         for (i, bar) in self.data.iter().enumerate() {
-            let bx = frame.x + gap + i as f32 * (bar_w + gap);
+            let bx = chart_x + gap + i as f32 * (bar_w + gap);
             let bh = (bar.value / max_val) * chart_area_h;
             let by = baseline - bh;
             ctx.fill_rect(Rect::new(bx, by, bar_w, bh), bar.color, br);
@@ -67,10 +83,15 @@ define_widget! {
             if self.show_value && bh > 10.0 {
                 let s = if bar.value == bar.value.trunc() { format!("{:.0}", bar.value) } else { format!("{:.1}", bar.value) };
                 let sz = ctx.measure_text(&s, 10.0);
-                ctx.draw_text(&s, uix_core::Point::new(bx + (bar_w - sz.w) * 0.5, by - sz.h - 2.0), text_c, 10.0);
+                let val_rect = Rect::new(bx, by - sz.h - 4.0, bar_w, sz.h + 2.0);
+                let vy = ctx.visual_center_y(val_rect, 10.0);
+                ctx.draw_text(&s, uix_core::Point::new(bx + (bar_w - sz.w) * 0.5, vy), text_c, 10.0);
             }
             let sz = ctx.measure_text(&bar.label, 10.0);
-            ctx.draw_text(&bar.label, uix_core::Point::new(bx + (bar_w - sz.w) * 0.5, baseline + 4.0), label_c, 10.0);
+            let lx = bx + (bar_w - sz.w) * 0.5;
+            let label_rect = Rect::new(lx, baseline + 2.0, sz.w, label_h - 2.0);
+            let ly = ctx.visual_center_y(label_rect, 10.0);
+            ctx.draw_text(&bar.label, uix_core::Point::new(lx, ly), label_c, 10.0);
         }
     }
 }

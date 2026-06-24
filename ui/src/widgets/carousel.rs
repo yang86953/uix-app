@@ -3,6 +3,7 @@
 //! 支持自动播放、指示器、切换动画（滑动/淡入淡出）。
 
 use std::cell::Cell;
+use std::time::Instant;
 
 use uix_core::{Point, Rect, Size};
 use crate::define_widget;
@@ -19,8 +20,8 @@ define_widget! {
         current: Cell<usize>,
         /// 自动播放间隔（秒），0 表示不自动
         autoplay_interval: f32,
-        /// 累积时间
-        elapsed: Cell<f32>,
+        /// 上次切换时间（实际时间戳，不依赖帧dt）
+        last_switch: Cell<Option<Instant>>,
         /// 是否显示指示器圆点
         show_dots: bool,
         /// 是否显示箭头
@@ -87,19 +88,33 @@ define_widget! {
         }
     }
 
-    on_update => (&mut self, dt: f32) {
+    on_update => (&mut self, _dt: f32) {
         if self.autoplay_interval > 0.0 && self.children.len() > 1 {
-            let new_elapsed = self.elapsed.get() + dt;
-            if new_elapsed >= self.autoplay_interval {
+            let now = Instant::now();
+            let should_switch = match self.last_switch.get() {
+                Some(last) => now.duration_since(last).as_secs_f32() >= self.autoplay_interval,
+                None => true, // 首次立即记录时间，不切换
+            };
+            if should_switch {
+                self.last_switch.set(Some(now));
                 self.current.set((self.current.get() + 1) % self.children.len());
-                self.elapsed.set(0.0);
-            } else {
-                self.elapsed.set(new_elapsed);
+                self.animating.set(true);
+                self.anim_progress.set(0.0);
+            }
+        }
+        // 切换动画推进
+        if self.animating.get() {
+            self.anim_progress.set((self.anim_progress.get() + _dt * 2.0).min(1.0));
+            if self.anim_progress.get() >= 1.0 {
+                self.animating.set(false);
             }
         }
     }
 
-    needs_continuous_update => (&self) -> bool { self.autoplay_interval > 0.0 }
+    needs_continuous_update => (&self) -> bool {
+        // 只在自动轮播且正处过渡动画中才持续更新
+        self.autoplay_interval > 0.0 && self.animating.get()
+    }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
@@ -117,14 +132,14 @@ define_widget! {
 
         // 当前 slide 编号文字（代替实际子节点渲染）
         let text = format!("Slide {}", idx + 1);
-        ctx.draw_text(&text, Point::new(frame.x + frame.w * 0.5 - 20.0, frame.y + frame.h * 0.5 - 7.0),
-            ctx.tokens().color_text(), 14.0);
+        ctx.text_center(&text, frame, ctx.tokens().color_text(), 14.0);
 
         // 箭头
         if self.show_arrows && count > 1 {
-            ctx.draw_text("◀", Point::new(frame.x + 10.0, frame.y + frame.h * 0.5 - 7.0),
+            let arrow_y = ctx.visual_center_y(frame, 14.0);
+            ctx.draw_text("◀", Point::new(frame.x + 10.0, arrow_y),
                 ctx.tokens().color_text(), 14.0);
-            ctx.draw_text("▶", Point::new(frame.x + frame.w - 22.0, frame.y + frame.h * 0.5 - 7.0),
+            ctx.draw_text("▶", Point::new(frame.x + frame.w - 22.0, arrow_y),
                 ctx.tokens().color_text(), 14.0);
         }
 
@@ -161,7 +176,7 @@ impl Carousel {
             children: WidgetChildren::new(),
             current: Cell::new(0),
             autoplay_interval: 3.0,
-            elapsed: Cell::new(0.0),
+            last_switch: Cell::new(None),
             show_dots: true,
             show_arrows: true,
             anim_progress: Cell::new(0.0),

@@ -7,8 +7,8 @@ use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
 /// 警示类型。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AlertType { Success, Info, Warning, Error }
+/// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
+pub use uix_core::StatusLevel as AlertType;
 
 define_widget! {
     /// Alert — 带类型颜色的警示条。

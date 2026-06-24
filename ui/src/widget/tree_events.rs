@@ -57,6 +57,12 @@ impl WidgetTree {
                     }
                     self.hovered_widget = new_hover;
                 }
+                // 拖拽期间同时分发 MouseMove 给 mouse_down_target
+                // （支持文字选中、滑动条拖拽等跨边界操作）
+                if let Some(drag_target) = self.mouse_down_target {
+                    self.mark_dirty(drag_target);
+                    let _ = self.dispatch_to(drag_target, event);
+                }
                 if let Some(t) = new_hover { self.dispatch_to(t, event) }
                 else { EventResult::NotHandled }
             }

@@ -45,7 +45,9 @@ define_widget! {
 
         // 标题
         if !self.title.is_empty() {
-            ctx.draw_text(&self.title, Point::new(frame.x + 12.0, y + 6.0), text, 15.0);
+            let title_rect = Rect::new(frame.x, y, frame.w, 32.0);
+            let ty = ctx.visual_center_y(title_rect, 15.0);
+            ctx.draw_text(&self.title, Point::new(frame.x + 12.0, ty), text, 15.0);
             y += 32.0;
         }
 
@@ -63,16 +65,17 @@ define_widget! {
             let item_y = y + row as f32 * item_h;
             let item_w = item.span as f32 * col_w;
 
+            let row_rect = Rect::new(item_x, item_y, item_w, item_h);
+            let row_y = ctx.visual_center_y(row_rect, 13.0);
             if self.bordered {
                 ctx.fill_rect(Rect::new(item_x, item_y, self.label_width, item_h), fill, None);
                 ctx.stroke_rect(Rect::new(item_x, item_y, item_w, item_h), border, 1.0, None);
-                ctx.draw_text(&item.label, Point::new(item_x + 8.0, item_y + 9.0), text_sec, 13.0);
-                ctx.draw_text(&item.value, Point::new(item_x + self.label_width + 8.0, item_y + 9.0), text, 13.0);
+                ctx.draw_text(&item.label, Point::new(item_x + 8.0, row_y), text_sec, 13.0);
+                ctx.draw_text(&item.value, Point::new(item_x + self.label_width + 8.0, row_y), text, 13.0);
             } else {
-                // 非 bordered: label 居左，value 紧跟
-                ctx.draw_text(&item.label, Point::new(item_x + 8.0, item_y + 9.0), text_sec, 13.0);
+                ctx.draw_text(&item.label, Point::new(item_x + 8.0, row_y), text_sec, 13.0);
                 let val_x = item_x + self.label_width;
-                ctx.draw_text(&item.value, Point::new(val_x, item_y + 9.0), text, 13.0);
+                ctx.draw_text(&item.value, Point::new(val_x, row_y), text, 13.0);
             }
         }
     }

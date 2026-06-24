@@ -48,7 +48,7 @@ define_widget! {
         // 阴影
         ctx.draw_box_shadow(btn_rect, 8.0, 0.0, 4.0, Color::from_rgba(0, 0, 0, 40), Some(r));
         ctx.fill_rect(btn_rect, bg, Some(r));
-        ctx.draw_text(&self.icon, Point::new(cx - 7.0, cy - 8.0), white, 16.0);
+        ctx.text_center(&self.icon, btn_rect, white, 16.0);
         // Badge
         if self.badge_count > 0 {
             let badge = if self.badge_count > 99 { "99+" } else { &self.badge_count.to_string() };

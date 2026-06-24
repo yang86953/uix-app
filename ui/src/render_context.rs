@@ -166,15 +166,15 @@ impl<'a> RenderContext<'a> {
 
     /// 计算文字视觉中心与 rect 中心对齐时的 y 位置。
     ///
-    /// 文字在布局中 y=0 处开始，视觉上从 y - ascent 延伸到 y + descent，
-    /// 视觉中心在 y - (ascent - descent) * 0.5 处。
+    /// 文字在布局中 y=0 处开始，glyph 通过 `pos.y + gp.y + bearing_y` 渲染，
+    /// 视觉上从 y 延伸到 y + (ascent + descent)，视觉中心在 y + (ascent + descent) * 0.5 处。
     /// 令该值与 rect 中心对齐，得：
-    ///   y = rect.y + (rect.h + ascent - descent) * 0.5
+    ///   y = rect.y + (rect.h - ascent - descent) * 0.5
     pub fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 {
         let fs = font_size.max(1.0);
         let fh = self.font;
         match self.font_service().horizontal_line_metrics(&fh, fs) {
-            Some(m) => rect.y + (rect.h + m.ascent - m.descent) * 0.5,
+            Some(m) => rect.y + (rect.h - m.ascent - m.descent) * 0.5,
             None => rect.y + rect.h * 0.5,
         }
     }
@@ -305,7 +305,7 @@ impl<'a> RenderContext<'a> {
     }
 
     /// 将 glyph layout 绘制到引擎上。
-    fn blit_glyph_layout(
+    pub(crate) fn blit_glyph_layout(
         &mut self,
         layout: &uix_graphics::text_backend::TextLayout,
         pos: Point,
@@ -337,6 +337,88 @@ impl<'a> RenderContext<'a> {
                 color,
             );
         }
+    }
+
+    // ── 文本选中渲染 ──
+
+    /// 获取选中文本的矩形区域列表（用于绘制选中背景）。
+    /// `pos` 为文字绘制起点（与 `draw_text` 的 `pos` 一致）。
+    /// `start..end` 为待选中的字符索引范围。
+    pub fn selection_rects(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        pos: Point,
+        start: usize,
+        end: usize,
+    ) -> Vec<Rect> {
+        if text.is_empty() || start >= end {
+            return Vec::new();
+        }
+        let opts = TextLayoutOptions {
+            max_width: self.max_text_width,
+            max_height: 0.0,
+            line_height: font_size * 1.5,
+            word_wrap: false,
+            h_align: HAlign::Left,
+            v_align: VAlign::Top,
+            font_size,
+        };
+        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+        let fh = self.font;
+        let layout = self
+            .font_service()
+            .layout_text(&fh, text, &backend_opts);
+        if layout.glyphs.is_empty() {
+            return Vec::new();
+        }
+        let end = end.min(layout.glyphs.len());
+        let start = start.min(end);
+
+        // 文字实际视觉高度（ascent + descent），而非行间距 (line.height)
+        let visual_h = self.font_service()
+            .horizontal_line_metrics(&fh, font_size)
+            .map(|m| m.ascent + m.descent)
+            .unwrap_or(font_size * 1.2);
+
+        let mut rects = Vec::new();
+        for line in &layout.lines {
+            let gs = line.glyph_start;
+            let gc = line.glyph_count;
+            let ge = gs + gc;
+            // 只处理与选中范围有交集的行的字形
+            let sel_start = start.max(gs);
+            let sel_end = end.min(ge);
+            if sel_start >= sel_end {
+                continue;
+            }
+            let glyphs = &layout.glyphs[sel_start..sel_end];
+            let x0 = pos.x + glyphs[0].x;
+            let last = glyphs[glyphs.len() - 1];
+            let x1 = pos.x + last.x + last.width.max(0.0);
+            let y0 = pos.y + line.y;
+            rects.push(Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h));
+        }
+        rects
+    }
+
+    /// 绘制文本选中背景 + 文本。便捷方法，等同于先 fill rects 再 draw_text。
+    pub fn draw_text_with_selection(
+        &mut self,
+        text: &str,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+        selection: Option<(usize, usize)>,
+        selection_bg: Color,
+    ) {
+        if let Some((s, e)) = selection {
+            let rects = self.selection_rects(text, font_size, pos, s, e);
+            for r in rects {
+                self.fill_rect(r, selection_bg, None);
+            }
+        }
+        self.draw_text(text, pos, color, font_size);
     }
 
     // ── 文本测量（委托给 FontService）──
@@ -424,43 +506,45 @@ impl<'a> RenderContext<'a> {
 
     /// 绘制 widget 调试边框（仅在调试模式下生效）。
     /// `depth` 为 widget 在树中的深度，用于循环选择调试颜色。
-    pub fn draw_debug_border(&mut self, rect: Rect, depth: usize) {
+    /// `hovered` 指示该 widget 是否位于光标链上：悬浮时边框加粗亮色，否则极淡。
+    pub fn draw_debug_border(&mut self, rect: Rect, depth: usize, hovered: bool) {
         if !self.debug_mode {
             return;
         }
-        let color = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
-        self.engine.stroke_rect(rect, color, 1.0, None);
+        let base = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
+        let color = if hovered {
+            base
+        } else {
+            Color::from_rgba(base.r, base.g, base.b, 30)
+        };
+        self.engine.stroke_rect(rect, color, if hovered { 1.5 } else { 0.5 }, None);
     }
 
-    /// 在 widget 左上角显示调试标签（ID + 深度），仅在调试模式下生效。
+    /// 在 widget 左上角显示调试标签（ID + 深度），仅在调试模式下对悬浮链 widget 绘制。
     pub fn draw_debug_label(&mut self, widget_id: usize, depth: usize, rect: Rect) {
-        if !self.debug_mode {
-            return;
-        }
         let color = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
         let label = format!("#{} d{}", widget_id, depth);
-        // 半透明背景衬底
-        let label_w = label.len() as f32 * 5.5 + 4.0;
-        let label_h = 11.0;
+        let font_size = 12.0;
+        let label_w = label.len() as f32 * 7.0 + 6.0;
+        let label_h = 16.0;
         self.engine.fill_rect(
             Rect::new(rect.x, rect.y, label_w, label_h),
             Color::from_rgba(0, 0, 0, 180),
             None,
         );
-        self.draw_text(&label, Point::new(rect.x + 2.0, rect.y), color, 9.0);
+        // 补偿 bearing_y（约 -0.75*font_size），使文字顶与背景顶对齐
+        self.draw_text(&label, Point::new(rect.x + 2.0, rect.y + font_size * 0.75), color, font_size);
     }
 
-    /// 在 widget 下方显示 frame 坐标和尺寸，仅在调试模式下生效。
+    /// 在 widget 下方显示 frame 坐标和尺寸，仅在调试模式下对悬浮链 widget 绘制。
     pub fn draw_debug_frame_info(&mut self, widget_id: usize, rect: Rect) {
-        if !self.debug_mode {
-            return;
-        }
         let info = format!(
             "#{} ({:.0},{:.0}) {:.0}×{:.0}",
             widget_id, rect.x, rect.y, rect.w, rect.h
         );
-        let info_w = info.len() as f32 * 5.5 + 4.0;
-        let info_h = 10.0;
+        let font_size = 11.0;
+        let info_w = info.len() as f32 * 6.5 + 6.0;
+        let info_h = 15.0;
         let info_y = rect.y + rect.h;
         self.engine.fill_rect(
             Rect::new(rect.x, info_y, info_w, info_h),
@@ -469,9 +553,9 @@ impl<'a> RenderContext<'a> {
         );
         self.draw_text(
             &info,
-            Point::new(rect.x + 2.0, info_y),
+            Point::new(rect.x + 2.0, info_y + font_size * 0.75),
             Color::from_rgba(200, 200, 200, 220),
-            8.0,
+            font_size,
         );
     }
 

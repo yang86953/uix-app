@@ -13,7 +13,7 @@
 // ============================================================================
 
 mod fonts;
-pub(crate) use fonts::*;
+pub use fonts::*;
 
 use crate::types::{MemoryInfo, OsInfo};
 use crate::ISystemInfo;
@@ -73,6 +73,21 @@ impl ISystemInfo for LinuxSystemInfo {
     fn default_font_path(&self) -> Option<String> {
         probe_font_path_via_fc_match("sans-serif:scalable=true")
             .or_else(|| probe_font_path_via_fc_match("sans-serif"))
+    }
+
+    fn default_font_paths(&self) -> Vec<String> {
+        match probe_system_default_font() {
+            Some(p) => vec![p],
+            None => vec![],
+        }
+    }
+
+    fn probe_cjk_font_path(&self) -> Option<String> {
+        probe_cjk_font()
+    }
+
+    fn probe_family_font_path(&self, family: &str) -> Option<String> {
+        probe_font_path_via_fc_match(family)
     }
 }
 
@@ -169,6 +184,8 @@ fn probe_memory_info() -> MemoryInfo {
     MemoryInfo {
         total_bytes: total * 1024, // /proc/meminfo reports in kB
         available_bytes: available * 1024,
+        process_working_set: 0,
+        process_private_bytes: 0,
     }
 }
 

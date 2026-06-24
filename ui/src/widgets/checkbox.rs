@@ -4,13 +4,16 @@ use crate::define_widget;
 use uix_graphics::Color;
 use uix_core::{Point, Rect, Size};
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
 
 define_widget! {
     pub struct Checkbox {
         checked: bool,
         disabled: bool,
         label: String,
+        hovered: bool,
+        focused: bool,
+        on_change: Option<Box<dyn FnMut(bool) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -19,24 +22,39 @@ define_widget! {
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+        if self.disabled { return EventResult::NotHandled; }
         match event {
-            WidgetEvent::MouseDown { .. } if !self.disabled => {
+            WidgetEvent::MouseDown { .. } => {
                 self.checked = !self.checked;
+                self.focused = true;
+                if let Some(ref mut cb) = self.on_change { cb(self.checked); }
                 EventResult::Handled
+            }
+            WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
+            WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
+            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
+            WidgetEvent::KeyDown { key, .. } => {
+                if *key == KeyCode::Space || *key == KeyCode::Enter {
+                    self.checked = !self.checked;
+                    if let Some(ref mut cb) = self.on_change { cb(self.checked); }
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             _ => EventResult::NotHandled
         }
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        // 预先提取所有颜色值，避免 ctx.tokens() 与 ctx.engine() 的借用冲突
         let primary = ctx.tokens().color_primary();
+        let primary_hover = ctx.tokens().color_primary_hover();
         let primary_border = ctx.tokens().color_primary_border();
         let border_c = ctx.tokens().color_border();
         let border_sec = ctx.tokens().color_border_secondary();
         let text_c = if self.disabled { ctx.tokens().color_text_quaternary() } else { ctx.tokens().color_text() };
         let white = Color::white();
-        let transparent = Color::transparent();
 
         let box_size = 16.0;
         let box_x = frame.x;
@@ -45,16 +63,19 @@ define_widget! {
         let corner = Some(uix_graphics::Radius::uniform(3.0));
 
         if self.checked {
-            let bg = if self.disabled { primary_border } else { primary };
+            let bg = if self.disabled { primary_border } else if self.hovered { primary_hover } else { primary };
             ctx.fill_rect(box_r, bg, corner);
             let cx = box_x + box_size * 0.5;
             let cy = box_y + box_size * 0.5;
             ctx.engine().draw_line(cx - 4.0, cy, cx - 1.0, cy + 3.0, white, 2.0);
             ctx.engine().draw_line(cx - 1.0, cy + 3.0, cx + 4.0, cy - 2.0, white, 2.0);
         } else {
-            let border = if self.disabled { border_sec } else { border_c };
+            let border = if self.disabled { border_sec } else if self.hovered { primary_hover } else { border_c };
             ctx.stroke_rect(box_r, border, 1.5, corner);
-            ctx.fill_rect(box_r, transparent, None);
+        }
+
+        if self.focused {
+            ctx.stroke_rect(Rect::new(box_x - 1.0, box_y - 1.0, box_size + 2.0, box_size + 2.0), primary, 1.5, Some(uix_graphics::Radius::uniform(4.0)));
         }
 
         let label_rect = Rect::new(box_x + box_size + 6.0, frame.y, frame.w - box_x - box_size - 6.0, frame.h);
@@ -66,9 +87,16 @@ impl Default for Checkbox { fn default() -> Self { Self::new("") } }
 
 impl Checkbox {
     pub fn new(label: impl Into<String>) -> Self {
-        Self { checked: false, disabled: false, label: label.into() }
+        Self {
+            checked: false, disabled: false, label: label.into(),
+            hovered: false, focused: false, on_change: None,
+        }
     }
     pub fn checked(mut self, v: bool) -> Self { self.checked = v; self }
     pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
     pub fn is_checked(&self) -> bool { self.checked }
+    pub fn on_change<F: FnMut(bool) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
 }

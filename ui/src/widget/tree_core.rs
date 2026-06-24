@@ -15,7 +15,7 @@ pub struct WidgetTree {
     pub(crate) scroll_deltas: Vec<(Rect, f32, f32)>,
     /// 树结构版本号，结构变更时递增（add_child / remove / set_root）。
     /// 引擎可用此判断 LayerTree 是否需要重建。
-    pub(crate) tree_version: u64,
+    pub tree_version: u64,
     /// 缓存的先序遍历结果（内部可变性，仅用作性能缓存）。
     /// 当 `cached_traversal_version != tree_version` 时失效重建。
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
@@ -91,9 +91,19 @@ impl WidgetTree {
         self.scroll_deltas.clear();
     }
 
+    /// 设置根节点（全量重建）。
+    ///
+    /// 每次调用会**彻底清空旧树**，ID 空间从 0 重新开始分配。
+    /// 这意味着同一棵 widget 树（相同构建顺序）每次重建后拿到相同的 ID。
     pub fn set_root(&mut self, widget: Box<dyn Widget>) -> WidgetId {
-        self.tree_version += 1;
+        // 硬重置：清空旧树，ID 空间归零，free_ids 废弃
+        self.nodes.clear();
+        self.free_ids.clear();
+        self.next_id = 0;
+        self.root_id = None;
         self.reset_interaction_state();
+        self.tree_version += 1;
+
         let children = widget.build();
         let id = self.alloc_id();
         let mut boxed = BoxedWidget::new(widget);
@@ -217,6 +227,29 @@ impl WidgetTree {
         }
     }
 
+    /// 设置节点可见性并递增 tree_version。
+    ///
+    /// 可见性变化会改变 LayerTree 结构（不可见节点被排除），
+    /// 因此必须通知渲染管线在下帧重建 LayerTree。
+    pub fn set_visible(&mut self, id: WidgetId, visible: bool) {
+        // 递归设置节点及其所有后代的可见性
+        let mut stack = vec![id];
+        while let Some(current) = stack.pop() {
+            let children: Vec<WidgetId> = self.get(current)
+                .map(|n| n.children().to_vec())
+                .unwrap_or_default();
+            if let Some(n) = self.get_mut(current) {
+                if n.visible() != visible {
+                    n.set_visible(visible);
+                    self.tree_version += 1;
+                }
+            }
+            for child in children {
+                stack.push(child);
+            }
+        }
+    }
+
     /// 返回树中所有节点的先序遍历顺序。
     ///
     /// 内部使用缓存：当树结构未变化时克隆缓存结果（O(n) memcpy），
@@ -326,6 +359,8 @@ impl WidgetTree {
     fn layout_expand(&mut self) -> bool {
         let mut any_resized = false;
         let rev_order: Vec<WidgetId> = self.traverse().into_iter().rev().collect();
+        // 收集本趟中被扩展过的子节点，用于触发其父容器重排
+        let mut resized_children = std::collections::HashSet::new();
         for &id in &rev_order {
             let (children, is_viewport, node_frame) = match self.get(id) {
                 Some(n) if !n.children().is_empty() => {
@@ -337,6 +372,9 @@ impl WidgetTree {
             if is_viewport {
                 continue;
             }
+
+            // 检查是否有直接子节点在本趟中被扩展过
+            let has_resized_child = children.iter().any(|cid| resized_children.contains(cid));
 
             // 取所有可见子节点的最大下边界
             let mut max_bottom = node_frame.y + node_frame.h;
@@ -356,22 +394,35 @@ impl WidgetTree {
             }
 
             let new_h = max_bottom - node_frame.y;
-            if new_h > node_frame.h + 0.5 {
-                log::debug!(
-                    "[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
-                    id, node_frame.h, new_h, max_bottom,
-                );
+            let needs_relayout = new_h > node_frame.h + 0.5 || has_resized_child;
+            if needs_relayout {
                 let old_frame = node_frame;
-                if let Some(node_mut) = self.get_mut(id) {
-                    node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, new_h));
-                    self.mark_dirty_rect(id, old_frame);
-                    self.mark_dirty(id);
+                let effective_h = new_h.max(node_frame.h);
+                if effective_h > node_frame.h + 0.5 {
+                    log::debug!(
+                        "[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
+                        id, node_frame.h, effective_h, max_bottom,
+                    );
+                    if let Some(node_mut) = self.get_mut(id) {
+                        node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, effective_h));
+                        self.mark_dirty_rect(id, old_frame);
+                        self.mark_dirty(id);
+                    }
+                } else if has_resized_child {
+                    log::debug!(
+                        "[Layout] Phase 2: id={} re-layout siblings (child resized, frame_h={:.0})",
+                        id, node_frame.h,
+                    );
                 }
-                // 容器扩展后，重新布局子节点
-                let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, new_h);
+                // 重新布局子节点（容器扩展后 or 子节点被扩展过）
+                let relayout_frame = if effective_h > node_frame.h + 0.5 {
+                    Rect::new(old_frame.x, old_frame.y, old_frame.w, effective_h)
+                } else {
+                    old_frame
+                };
                 let new_positions = self
                     .get(id)
-                    .map(|n| n.inner().layout_children(new_frame, &children, self))
+                    .map(|n| n.inner().layout_children(relayout_frame, &children, self))
                     .unwrap_or_default();
                 for (child_id, rect) in new_positions {
                     if let Some(child) = self.get_mut(child_id) {
@@ -384,6 +435,7 @@ impl WidgetTree {
                     }
                 }
                 any_resized = true;
+                resized_children.insert(id);
             }
         }
         any_resized
@@ -438,21 +490,9 @@ impl WidgetTree {
                     .map(|p| p.inner().children_clip(p.frame()).is_some())
                     .unwrap_or(false);
                 if parent_is_viewport { continue; }
-                // 也不收缩祖先链上任一节点是 viewport 的容器（深层嵌套保护）
-                let mut ancestor_is_viewport = false;
-                let mut cur = self.get(id).and_then(|n| n.parent());
-                while let Some(pid) = cur {
-                    if let Some(p) = self.get(pid) {
-                        if p.inner().children_clip(p.frame()).is_some() {
-                            ancestor_is_viewport = true;
-                            break;
-                        }
-                        cur = p.parent();
-                    } else {
-                        break;
-                    }
-                }
-                if ancestor_is_viewport { continue; }
+                // 仅跳过 viewport 的直接子节点；深层子节点允许收缩，
+                // 这样 ScrollView 内部的组件缩小后容器能正确收缩。
+                // layout_viewports（Phase 3）会在收缩后更新 content_bounds。
 
                 let children: Vec<WidgetId> = match self.get(id) {
                     Some(n) if !n.children().is_empty() => n.children().to_vec(),
@@ -505,7 +545,7 @@ impl WidgetTree {
                     .unwrap_or(0.0);
                 let min_h = needed_h.max(pref_h).max(node_frame.h * 0.01);
                 let effective_needed = min_h;
-                if node_frame.h - effective_needed > 5.0 {
+                if node_frame.h - effective_needed > 0.5 {
                     log::debug!(
                         "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0})",
                         id, node_frame.h - effective_needed, node_frame.h, effective_needed, needed_h, pref_h,
@@ -573,6 +613,10 @@ impl WidgetTree {
         let order = self.traverse();
         let mut any_animating = false;
         for &id in &order {
+            // 跳过不可见节点，避免隐藏页面的动画组件拖累全局帧率
+            if !self.get(id).map(|n| n.visible()).unwrap_or(false) {
+                continue;
+            }
             let was_animating = self
                 .get(id)
                 .map(|n| n.inner().needs_continuous_update())
@@ -584,6 +628,10 @@ impl WidgetTree {
                 .get(id)
                 .map(|node| {
                     let is_still = node.inner().needs_continuous_update();
+                    if is_still {
+                        log::info!("[Anim] id={} still animating", node.id());
+                        any_animating = true;
+                    }
                     let dirty = if was_animating || is_still {
                         any_animating = any_animating || is_still;
                         node.inner().dirty_rect(node.frame())

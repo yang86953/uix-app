@@ -10,3 +10,6 @@ uix-diag = { path = "../diag" }
 uix-platform = { path = "../platform" }
 serde_json = { workspace = true }
 log = { workspace = true }
+
+[lints]
+workspace = true

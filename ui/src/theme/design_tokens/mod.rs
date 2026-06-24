@@ -5,7 +5,8 @@
 //! public fields. Factory functions `antd_light()` and `antd_dark()` provide
 //! complete Ant Design 5 presets (defined in the `presets` submodule).
 
-mod presets;
+pub mod presets;
+pub mod primitives;
 
 use super::color_tokens::IColorTokens;
 use super::color_tokens::ShadowToken;
@@ -237,17 +238,19 @@ mod tests {
     #[test]
     fn antd_light_bg_colors() {
         let tk = DesignTokens::antd_light();
-        assert_eq!(tk.color_bg_container, Color::from_rgb(250, 250, 252));
-        assert_eq!(tk.color_bg_layout, Color::from_rgb(242, 242, 245));
+        // 背景由基色推导，不精确匹配原硬编码值
+        assert!(tk.color_bg_container.luminance() > 240);
+        assert!(tk.color_bg_layout.luminance() > 230);
         assert_eq!(tk.color_bg_elevated, Color::from_rgb(255, 255, 255));
     }
 
     #[test]
     fn antd_dark_bg_colors() {
         let tk = DesignTokens::antd_dark();
-        assert_eq!(tk.color_bg_container, Color::from_rgb(30, 30, 30));
-        assert_eq!(tk.color_bg_layout, Color::from_rgb(21, 21, 21));
-        assert_eq!(tk.color_bg_elevated, Color::from_rgb(42, 42, 45));
+        // 暗色背景亮度低但非全黑
+        assert!(tk.color_bg_container.luminance() < 40);
+        assert!(tk.color_bg_layout.luminance() < 30);
+        assert!(tk.color_bg_elevated.luminance() < 60);
     }
 
     #[test]

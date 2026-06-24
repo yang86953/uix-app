@@ -63,7 +63,8 @@ define_widget! {
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
         // 触发文字
-        ctx.draw_text("Delete", uix_core::Point::new(frame.x + 20.0, frame.y + 6.0),
+        let trigger_y = ctx.visual_center_y(frame, 13.0);
+        ctx.draw_text("Delete", uix_core::Point::new(frame.x + 20.0, trigger_y),
             ctx.tokens().color_error(), 13.0);
 
         if self.visible {

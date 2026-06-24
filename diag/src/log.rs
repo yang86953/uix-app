@@ -65,7 +65,7 @@ impl Logger {
         LOGGER.get_or_init(|| {
             let logger = Logger {
                 inner: RwLock::new(LoggerInner { sinks: Vec::new() }),
-                level: RwLock::new(Level::Trace),
+                level: RwLock::new(Level::Warn),
                 sequence: AtomicU64::new(0),
             };
             // Default sink: console

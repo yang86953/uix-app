@@ -87,21 +87,31 @@ define_widget! {
 
             // 展开/折叠箭头
             let arrow_x = frame.x + indent;
+            let row_rect = Rect::new(frame.x, y, frame.w, 28.0);
+            let row_y = ctx.visual_center_y(row_rect, 10.0);
             if node.has_children {
                 let arrow = if node.expanded { "▼" } else { "▶" };
-                ctx.draw_text(arrow, Point::new(arrow_x + 4.0, y + 5.0), text_sec, 10.0);
+                ctx.draw_text(arrow, Point::new(arrow_x + 4.0, row_y), text_sec, 10.0);
             }
 
             // 图标
             let mut cursor = frame.x + indent + 20.0;
             if !node.icon.is_empty() {
-                ctx.draw_text(&node.icon, Point::new(cursor, y + 5.0), text_sec, 12.0);
+                let icon_str = crate::widgets::icon::icon_char(&node.icon);
+                let saved = *ctx.font();
+                if let Some(fh) = crate::widgets::icon::lucide_handle() {
+                    ctx.set_font(fh);
+                }
+                let icon_y = ctx.visual_center_y(row_rect, 12.0);
+                ctx.draw_text(icon_str, Point::new(cursor, icon_y), text_sec, 12.0);
+                ctx.set_font(saved);
                 cursor += 20.0;
             }
 
             // 标题
             let tc = if node.disabled { text_sec } else if is_selected { primary } else { text };
-            ctx.draw_text(&node.title, Point::new(cursor, y + 5.0), tc, 13.0);
+            let title_y = ctx.visual_center_y(row_rect, 13.0);
+            ctx.draw_text(&node.title, Point::new(cursor, title_y), tc, 13.0);
         }
     }
 }

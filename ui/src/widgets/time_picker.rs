@@ -1,6 +1,6 @@
 //! TimePicker 时间选择器 — 选择时:分。
 //!
-//! 弹出面板含小时/分钟滚动选择。
+//! 弹出面板含小时/分钟滚动选择，支持 hover 高亮、键盘导航。
 
 use std::cell::Cell;
 
@@ -29,20 +29,17 @@ impl TimeValue {
 define_widget! {
     /// TimePicker — 时间选择器。
     pub struct TimePicker {
-        /// 当前选中时间
-        value: TimeValue,
-        /// 占位文本
+        value: Cell<TimeValue>,
         placeholder: String,
-        /// 是否展开弹出
-        open: bool,
-        /// 焦点
+        open: Cell<bool>,
         focused: bool,
-        /// 悬停小时索引
-        hover_hour: usize,
-        /// 悬停分钟索引
-        hover_minute: usize,
-        /// 当前 frame
+        hover_hour: Cell<usize>,
+        hover_minute: Cell<usize>,
+        /// 小时滚动偏移（行号）
+        scroll_hour: Cell<f32>,
+        scroll_min: Cell<f32>,
         last_frame: Cell<Option<Rect>>,
+        on_change: Option<Box<dyn FnMut(TimeValue) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -53,38 +50,103 @@ define_widget! {
         match event {
             WidgetEvent::MouseDown { pos, .. } => {
                 self.focused = true;
-                if !self.open {
-                    self.open = true;
-                    self.hover_hour = self.value.hour as usize;
-                    self.hover_minute = self.value.minute as usize;
+                if !self.open.get() {
+                    self.open.set(true);
+                    let val = self.value.get();
+                    self.hover_hour.set(val.hour as usize);
+                    self.hover_minute.set(val.minute as usize);
                     return EventResult::Handled;
                 }
-                // 点击弹出层中的选项
+
                 if let Some(frame) = self.last_frame.get() {
                     let popup_y = frame.y + frame.h + 2.0;
+                    let rel_x = pos.x - frame.x;
                     let rel_y = pos.y - popup_y;
+
                     if rel_y >= 0.0 && rel_y < 200.0 {
-                        let col = if pos.x - frame.x < frame.w * 0.5 { 0 } else { 1 };
-                        let item_idx = (rel_y / 32.0) as usize;
-                        if col == 0 && item_idx < 24 {
-                            self.hover_hour = item_idx;
-                            self.value = TimeValue::new(item_idx as u32, self.value.minute);
-                        } else if col == 1 && item_idx < 12 {
-                            let minute = item_idx as u32 * 5;
-                            self.hover_minute = item_idx;
-                            self.value = TimeValue::new(self.value.hour, minute);
+                        let col_w = frame.w * 0.5;
+                        if rel_x < col_w {
+                            let item_h = 32.0;
+                            let idx = ((rel_y + self.scroll_hour.get()) / item_h) as usize;
+                            if idx < 24 {
+                                self.hover_hour.set(idx);
+                                let val = self.value.get();
+                                let new_val = TimeValue::new(idx as u32, val.minute);
+                                self.value.set(new_val);
+                                self.open.set(false);
+                                if let Some(ref mut cb) = self.on_change { cb(new_val); }
+                                return EventResult::Handled;
+                            }
+                        } else {
+                            let item_h = 32.0;
+                            let idx = ((rel_y + self.scroll_min.get()) / item_h) as usize;
+                            if idx < 12 {
+                                let minute = idx * 5;
+                                self.hover_minute.set(idx);
+                                let val = self.value.get();
+                                let new_val = TimeValue::new(val.hour, minute as u32);
+                                self.value.set(new_val);
+                                self.open.set(false);
+                                if let Some(ref mut cb) = self.on_change { cb(new_val); }
+                                return EventResult::Handled;
+                            }
                         }
-                        // 点击确认
-                        self.open = false;
-                        return EventResult::Handled;
                     }
                 }
                 EventResult::Handled
             }
-            WidgetEvent::FocusOut => { self.focused = false; self.open = false; EventResult::Handled }
+            WidgetEvent::MouseMove { pos } => {
+                if self.open.get() {
+                    if let Some(frame) = self.last_frame.get() {
+                        let popup_y = frame.y + frame.h + 2.0;
+                        let rel_x = pos.x - frame.x;
+                        let rel_y = pos.y - popup_y;
+
+                        if rel_y >= 0.0 && rel_y < 200.0 {
+                            let col_w = frame.w * 0.5;
+                            let item_h = 32.0;
+                            if rel_x < col_w {
+                                let idx = ((rel_y + self.scroll_hour.get()) / item_h) as usize;
+                                if idx < 24 {
+                                    self.hover_hour.set(idx);
+                                }
+                            } else {
+                                let idx = ((rel_y + self.scroll_min.get()) / item_h) as usize;
+                                if idx < 12 {
+                                    self.hover_minute.set(idx);
+                                }
+                            }
+                            return EventResult::Handled;
+                        }
+                    }
+                }
+                EventResult::NotHandled
+            }
+            WidgetEvent::HoverLeave => EventResult::NotHandled,
+            WidgetEvent::FocusOut => { self.focused = false; self.open.set(false); EventResult::Handled }
             WidgetEvent::KeyDown { key, .. } => {
-                if *key == KeyCode::Escape { self.open = false; EventResult::Handled }
-                else { EventResult::NotHandled }
+                if self.open.get() {
+                    match key {
+                        KeyCode::Escape => { self.open.set(false); }
+                        KeyCode::Up => {
+                            let hrs = self.scroll_hour.get();
+                            self.scroll_hour.set((hrs - 32.0).max(0.0));
+                        }
+                        KeyCode::Down => {
+                            let hrs = self.scroll_hour.get();
+                            self.scroll_hour.set((hrs + 32.0).min((24 * 32) as f32 - 200.0).max(0.0));
+                        }
+                        _ => {}
+                    }
+                } else {
+                    if *key == KeyCode::Space || *key == KeyCode::Enter {
+                        self.open.set(true);
+                        let val = self.value.get();
+                        self.hover_hour.set(val.hour as usize);
+                        self.hover_minute.set(val.minute as usize);
+                    }
+                }
+                EventResult::Handled
             }
             _ => EventResult::NotHandled,
         }
@@ -98,61 +160,71 @@ define_widget! {
         let text_secondary = ctx.tokens().color_text_secondary();
         let text_tertiary = ctx.tokens().color_text_tertiary();
         let bg_elevated = ctx.tokens().color_bg_elevated();
+        let primary_bg = ctx.tokens().color_primary_bg();
         let border_radius_sm = ctx.tokens().border_radius_sm();
         let radius = Some(uix_graphics::Radius::uniform(border_radius_sm));
 
-        // 输入框
-        let is_default = self.value == TimeValue::default();
+        let val = self.value.get();
+        let is_default = val == TimeValue::default();
         ctx.fill_rect(frame, Color::white(), radius);
         ctx.stroke_rect(frame, if self.focused { primary } else { border_color },
             if self.focused { 2.0 } else { 1.0 }, radius);
 
-        let display = if is_default { &self.placeholder } else { "" };
-        let display_val = if is_default { "" } else { "HH:MM" };
-        let show = if is_default { display } else { &self.value.format() };
-        ctx.draw_text(show,
-            Point::new(frame.x + 12.0, frame.y + (frame.h - 14.0) * 0.5),
-            if is_default { text_tertiary } else { text_color }, 14.0);
+        let input_text_y = ctx.visual_center_y(frame, 14.0);
+        if is_default {
+            ctx.draw_text(&self.placeholder,
+                Point::new(frame.x + 12.0, input_text_y),
+                text_tertiary, 14.0);
+        } else {
+            let formatted = val.format();
+            ctx.draw_text(&formatted,
+                Point::new(frame.x + 12.0, input_text_y),
+                text_color, 14.0);
+        }
 
-        // 时钟图标
-        ctx.draw_text("🕐", Point::new(frame.x + frame.w - 24.0, frame.y + (frame.h - 14.0) * 0.5),
+        let icon_y = ctx.visual_center_y(frame, 12.0);
+        ctx.draw_text("🕐", Point::new(frame.x + frame.w - 24.0, icon_y),
             text_secondary, 12.0);
 
-        // 弹出层
-        if self.open {
+        if self.open.get() {
             let popup = Rect::new(frame.x, frame.y + frame.h + 2.0, frame.w, 200.0);
             ctx.fill_rect(popup, bg_elevated, radius);
             ctx.stroke_rect(popup, border_color, 1.0, radius);
 
             let col_w = popup.w * 0.5;
             let item_h = 32.0;
+            let hover_h = self.hover_hour.get();
+            let hover_m = self.hover_minute.get();
 
-            // 小时列
+            let hour_scroll = self.scroll_hour.get();
+            let min_scroll = self.scroll_min.get();
+
             for i in 0..24 {
-                let y = popup.y + i as f32 * item_h;
-                if y + item_h > popup.y + popup.h { break; }
-                let is_hover = i == self.hover_hour;
+                let y = popup.y + i as f32 * item_h - hour_scroll;
+                if y + item_h <= popup.y || y >= popup.y + popup.h { continue; }
+                let is_hover = i == hover_h;
                 if is_hover {
-                    ctx.fill_rect(Rect::new(popup.x, y, col_w, item_h),
-                        ctx.tokens().color_primary_bg(), None);
+                    ctx.fill_rect(Rect::new(popup.x, y, col_w, item_h), primary_bg, None);
                 }
+                let item_rect = Rect::new(popup.x, y, col_w, item_h);
+                let text_y = ctx.visual_center_y(item_rect, 14.0);
                 ctx.draw_text(&format!("{:02}", i),
-                    Point::new(popup.x + 16.0, y + (item_h - 14.0) * 0.5),
+                    Point::new(popup.x + 16.0, text_y),
                     if is_hover { primary } else { text_color }, 14.0);
             }
 
-            // 分钟列（每 5 分钟一跳）
             for i in 0..12 {
-                let y = popup.y + i as f32 * item_h;
-                if y + item_h > popup.y + popup.h { break; }
+                let y = popup.y + i as f32 * item_h - min_scroll;
+                if y + item_h <= popup.y || y >= popup.y + popup.h { continue; }
                 let minute = i * 5;
-                let is_hover = i == self.hover_minute;
+                let is_hover = i == hover_m;
                 if is_hover {
-                    ctx.fill_rect(Rect::new(popup.x + col_w, y, col_w, item_h),
-                        ctx.tokens().color_primary_bg(), None);
+                    ctx.fill_rect(Rect::new(popup.x + col_w, y, col_w, item_h), primary_bg, None);
                 }
+                let item_rect = Rect::new(popup.x + col_w, y, col_w, item_h);
+                let text_y = ctx.visual_center_y(item_rect, 14.0);
                 ctx.draw_text(&format!("{:02}", minute),
-                    Point::new(popup.x + col_w + 16.0, y + (item_h - 14.0) * 0.5),
+                    Point::new(popup.x + col_w + 16.0, text_y),
                     if is_hover { primary } else { text_color }, 14.0);
             }
         }
@@ -162,17 +234,24 @@ define_widget! {
 impl TimePicker {
     pub fn new(placeholder: impl Into<String>) -> Self {
         Self {
-            value: TimeValue::new(0, 0),
+            value: Cell::new(TimeValue::new(0, 0)),
             placeholder: placeholder.into(),
-            open: false,
+            open: Cell::new(false),
             focused: false,
-            hover_hour: 0,
-            hover_minute: 0,
+            hover_hour: Cell::new(0),
+            hover_minute: Cell::new(0),
+            scroll_hour: Cell::new(0.0),
+            scroll_min: Cell::new(0.0),
             last_frame: Cell::new(None),
+            on_change: None,
         }
     }
 
-    pub fn value(mut self, v: TimeValue) -> Self { self.value = v; self }
-    pub fn selected(&self) -> TimeValue { self.value }
-    pub fn set_value(&mut self, v: TimeValue) { self.value = v; }
+    pub fn value(mut self, v: TimeValue) -> Self { self.value.set(v); self }
+    pub fn selected(&self) -> TimeValue { self.value.get() }
+    pub fn set_value(&mut self, v: TimeValue) { self.value.set(v); }
+    pub fn on_change<F: FnMut(TimeValue) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
 }

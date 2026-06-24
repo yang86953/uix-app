@@ -49,9 +49,11 @@ define_widget! {
         ctx.fill_rect(input_rect, bg, r);
         ctx.stroke_rect(input_rect, bc, if self.open { 2.0 } else { 1.0 }, r);
         let display = if self.value.is_empty() { &self.placeholder } else { &self.value };
-        ctx.draw_text(display, Point::new(frame.x + 10.0, frame.y + 8.0),
+        let input_y = ctx.visual_center_y(input_rect, 13.0);
+        ctx.draw_text(display, Point::new(frame.x + 10.0, input_y),
             if self.value.is_empty() { text_sec } else { text }, 13.0);
-        ctx.draw_text(if self.open { "▲" } else { "▼" }, Point::new(frame.x + frame.w - 18.0, frame.y + 8.0), text_sec, 10.0);
+        let arrow_y = ctx.visual_center_y(input_rect, 10.0);
+        ctx.draw_text(if self.open { "▲" } else { "▼" }, Point::new(frame.x + frame.w - 18.0, arrow_y), text_sec, 10.0);
         if self.open {
             ctx.draw_text("(树形面板 - 选择节点)", Point::new(frame.x, frame.y + 40.0), text_sec, 11.0);
         }

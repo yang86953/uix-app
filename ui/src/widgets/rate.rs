@@ -98,7 +98,8 @@ define_widget! {
 
         for i in 0..self.count {
             let sx = frame.x + i as f32 * 24.0;
-            let sy = frame.y + 2.0;
+            let star_rect = Rect::new(sx, frame.y, 24.0, 24.0);
+            let sy = ctx.visual_center_y(star_rect, 18.0);
             let filled = if self.half {
                 display_val >= i * 2 + 2
             } else {
