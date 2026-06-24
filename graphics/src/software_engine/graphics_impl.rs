@@ -6,6 +6,7 @@ use crate::{
     BlendMode, Color, DirtyRegion, FontHandle, GraphicsEngine, ImageHandle, Radius,
     TextLayoutOptions,
 };
+use crate::frame::{self, ClearOp};
 use crate::{GradientDirection, Transform};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -43,48 +44,54 @@ impl GraphicsEngine for SoftwareEngine {
     // ── 帧控制 ──
 
     fn begin_frame(&mut self, dirty: &DirtyRegion) {
-        self.pre_frame_clip = self.rt.clip_rect();
-        self.rt.clip_stack_mut().clear();
-        let tw = self.rt.width();
-        let th = self.rt.height();
-
-        if dirty.full_frame {
-            self.rt.clear_all_with(self.clear_color);
-            *self.rt.clip_rect_mut() = Rect::new(0.0, 0.0, tw as f32, th as f32);
-            self.rt.sync_clip_int();
-        } else if dirty.clear_required && !dirty.rects().is_empty() {
-            // 逐矩形清除：使用与 fill_rect 相同的四舍五入取整（+0.5 → floor），
-            // 避免截断取整（as i32）与四舍五入之间的 1px 差异导致黑线或溢出。
-            let bounds = dirty.bounds();
-            for &r in dirty.rects() {
-                let x0 = (r.x + 0.5).floor().max(0.0) as i32;
-                let y0 = (r.y + 0.5).floor().max(0.0) as i32;
-                let x1 = ((r.x + r.w) + 0.5).floor().max(0.0) as i32;
-                let y1 = ((r.y + r.h) + 0.5).floor().max(0.0) as i32;
-                let w = (x1 - x0).min(tw - x0).max(0);
-                let h = (y1 - y0).min(th - y0).max(0);
-                if w > 0 && h > 0 {
-                    self.rt.clear_region_with(x0, y0, w, h, self.clear_color);
+        self.pre_frame_clip = frame::frame_begin_clip(
+            dirty,
+            self.rt.width(),
+            self.rt.height(),
+            |rect| {
+                let old = self.rt.clip_rect();
+                self.rt.clip_stack_mut().clear();
+                *self.rt.clip_rect_mut() = rect;
+                self.rt.sync_clip_int();
+                old
+            },
+        );
+        frame::frame_begin_clear(dirty, self.clear_color, self.rt.width(), self.rt.height(), |op| {
+            match op {
+                ClearOp::All(color) => {
+                    self.rt.clear_all_with(super::core::RenderTarget::premul(color));
+                }
+                ClearOp::Rect(x, y, w, h, color) => {
+                    self.rt.clear_region_with(x, y, w, h, super::core::RenderTarget::premul(color));
                 }
             }
-            // Clip 使用原 bounds（不扩展），与 clear 区域取整一致，不会溢出相邻 widget
-            *self.rt.clip_rect_mut() = Rect::new(
-                bounds.x.max(0.0),
-                bounds.y.max(0.0),
-                (bounds.w).min(tw as f32 - bounds.x.max(0.0)),
-                (bounds.h).min(th as f32 - bounds.y.max(0.0)),
-            );
-            self.rt.sync_clip_int();
-        } else {
-            *self.rt.clip_rect_mut() = Rect::new(0.0, 0.0, tw as f32, th as f32);
-            self.rt.sync_clip_int();
-        }
+        });
     }
 
     fn end_frame(&mut self, _dirty: &DirtyRegion) {
-        *self.rt.clip_rect_mut() = self.pre_frame_clip;
-        self.rt.sync_clip_int();
+        frame::frame_end(self.pre_frame_clip, |rect| {
+            *self.rt.clip_rect_mut() = rect;
+            self.rt.sync_clip_int();
+            self.rt.clip_stack_mut().clear();
+        });
+    }
+
+    // ── 表面操作原语 ──
+
+    fn clear_surface(&mut self, color: Color) {
+        self.rt.clear_all_with(super::core::RenderTarget::premul(color));
+    }
+
+    fn clear_surface_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
+        self.rt.clear_region_with(x, y, w, h, super::core::RenderTarget::premul(color));
+    }
+
+    fn reset_clip_state(&mut self, rect: Rect) -> Rect {
+        let old = self.rt.clip_rect();
         self.rt.clip_stack_mut().clear();
+        *self.rt.clip_rect_mut() = rect;
+        self.rt.sync_clip_int();
+        old
     }
 
     fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32) {
@@ -453,7 +460,7 @@ impl GraphicsEngine for SoftwareEngine {
     }
 
     fn set_clear_color(&mut self, color: Color) {
-        self.clear_color = crate::software_engine::core::RenderTarget::premul(color);
+        self.clear_color = color;
     }
 
     fn diagnose_memory(&self, system_info: &dyn uix_platform::ISystemInfo) {

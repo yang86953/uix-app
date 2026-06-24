@@ -13,6 +13,7 @@ use uix_diag::Error;
 use uix_platform::api::IGraphicsContext;
 
 use crate::font_service::FontService;
+use crate::frame::{self, ClearOp};
 use crate::{
     BlendMode, Color, DirtyRegion, FontHandle, GradientDirection, GraphicsEngine,
     ImageHandle, Radius, TextLayoutOptions, Transform,
@@ -118,7 +119,11 @@ pub struct GpuEngine {
     instances: Vec<RectInstance>,
     opacity: f32, blend_mode: BlendMode,
     clip_stack: Vec<Rect>, current_clip: Rect,
-    frame_begun: bool, clear_color: Color,
+    frame_begun: bool,
+    /// 脏区域清除时使用的背景色（默认透明黑）
+    clear_color: Color,
+    /// 帧开始前的基础裁剪矩形（`end_frame` 时恢复）
+    pre_frame_clip: Rect,
     glyph_atlas: Option<GlyphAtlas>,
     images: Vec<GpuImage>,
     offscreens: Vec<GpuFbo>,
@@ -150,7 +155,9 @@ impl GpuEngine {
             quad_vbo: qvbo, instance_vbo: ivbo, vao,
             instances: Vec::with_capacity(4096), opacity: 1.0, blend_mode: BlendMode::Alpha,
             clip_stack: Vec::new(), current_clip: Rect::new(0.,0.,w as f32,h as f32),
-            frame_begun: false, clear_color: Color::transparent(),
+            frame_begun: false,
+            clear_color: Color::transparent(),
+            pre_frame_clip: Rect::new(0., 0., w as f32, h as f32),
             glyph_atlas: None, images: Vec::new(), offscreens: Vec::new(),
             current_offscreen: None, font_service: FontService::new(),
             readback: RefCell::new(Vec::new()),
@@ -324,55 +331,112 @@ impl GraphicsEngine for GpuEngine {
         self.gpu_ctx.resize(w,h); unsafe{self.gl.viewport(0,0,w,h);}
     }
     fn begin_frame(&mut self, d: &DirtyRegion) {
-        self.gpu_ctx.make_current(); self.frame_begun=true; self.instances.clear();
-        if d.full_frame {
-            let c=self.clear_color;
-            unsafe{self.gl.clear_color(c.r as f32/255.,c.g as f32/255.,c.b as f32/255.,c.a as f32/255.);}
-            unsafe{self.gl.clear(glow::COLOR_BUFFER_BIT);}
-        }
+        self.gpu_ctx.make_current();
+        self.frame_begun = true;
+        self.instances.clear();
+        self.pre_frame_clip = frame::frame_begin_clip(
+            d,
+            self.width,
+            self.height,
+            |rect| {
+                let old = self.current_clip;
+                self.clip_stack.clear();
+                self.current_clip = rect;
+                old
+            },
+        );
+        frame::frame_begin_clear(d, self.clear_color, self.width, self.height, |op| match op {
+            ClearOp::All(color) => unsafe {
+                set_gl_clear_color(&self.gl, color);
+                self.gl.clear(glow::COLOR_BUFFER_BIT);
+            },
+            ClearOp::Rect(x, y, cw, ch, color) => {
+                if cw <= 0 || ch <= 0 { return; }
+                unsafe {
+                    set_gl_clear_color(&self.gl, color);
+                    self.gl.enable(glow::SCISSOR_TEST);
+                    self.gl.scissor(x, y, cw, ch);
+                    self.gl.clear(glow::COLOR_BUFFER_BIT);
+                    self.gl.disable(glow::SCISSOR_TEST);
+                }
+            }
+        });
     }
     fn end_frame(&mut self, d: &DirtyRegion) {
         self.flush();
         unsafe { self.gl.flush(); }
-        let sz=(self.width*self.height) as usize;
-        let mut rb=self.readback.borrow_mut();
-        if rb.len() != sz { rb.resize(sz,0); }
+        let sz = (self.width * self.height) as usize;
+        let mut rb = self.readback.borrow_mut();
+        if rb.len() != sz { rb.resize(sz, 0); }
         if d.full_frame {
             unsafe {
-                let bytes: &mut [u8] = std::slice::from_raw_parts_mut(rb.as_mut_ptr() as *mut u8, sz*4);
-                self.gl.read_pixels(0,0,self.width,self.height, glow::BGRA, glow::UNSIGNED_BYTE,
-                    glow::PixelPackData::Slice(Some(bytes)));
+                let bytes: &mut [u8] =
+                    std::slice::from_raw_parts_mut(rb.as_mut_ptr() as *mut u8, sz * 4);
+                self.gl.read_pixels(
+                    0, 0, self.width, self.height, glow::BGRA, glow::UNSIGNED_BYTE,
+                    glow::PixelPackData::Slice(Some(bytes)),
+                );
             }
         } else {
             let bounds = d.bounds();
             if bounds.w > 0.0 && bounds.h > 0.0 {
-            let bx = bounds.x as i32;
-            let by = bounds.y as i32;
-            let bw = (bounds.w as i32).min(self.width - bx);
-            let bh = (bounds.h as i32).min(self.height - by);
-            if bw > 0 && bh > 0 {
-                let mut row_buf = vec![0u32; bw as usize];
-                unsafe {
-                    for row in 0..bh {
-                        self.gl.read_pixels(
-                            bx, by + row, bw, 1,
-                            glow::BGRA, glow::UNSIGNED_BYTE,
-                            glow::PixelPackData::Slice(Some(
-                                std::slice::from_raw_parts_mut(
-                                    row_buf.as_mut_ptr() as *mut u8,
-                                    bw as usize * 4,
-                                )
-                            )),
-                        );
-                        let dst_start = ((by + row) * self.width + bx) as usize;
-                        let copy_len = row_buf.len().min(rb.len().saturating_sub(dst_start));
-                        rb[dst_start..dst_start + copy_len].copy_from_slice(&row_buf[..copy_len]);
+                let bx = bounds.x as i32;
+                let by = bounds.y as i32;
+                let bw = (bounds.w as i32).min(self.width - bx);
+                let bh = (bounds.h as i32).min(self.height - by);
+                if bw > 0 && bh > 0 {
+                    let mut row_buf = vec![0u32; bw as usize];
+                    unsafe {
+                        for row in 0..bh {
+                            self.gl.read_pixels(
+                                bx, by + row, bw, 1,
+                                glow::BGRA, glow::UNSIGNED_BYTE,
+                                glow::PixelPackData::Slice(Some(
+                                    std::slice::from_raw_parts_mut(
+                                        row_buf.as_mut_ptr() as *mut u8,
+                                        bw as usize * 4,
+                                    ),
+                                )),
+                            );
+                            let dst_start = ((by + row) * self.width + bx) as usize;
+                            let copy_len = row_buf.len().min(rb.len().saturating_sub(dst_start));
+                            rb[dst_start..dst_start + copy_len]
+                                .copy_from_slice(&row_buf[..copy_len]);
+                        }
                     }
                 }
             }
         }
+        frame::frame_end(self.pre_frame_clip, |rect| {
+            self.current_clip = rect;
+            self.clip_stack.clear();
+        });
+        self.frame_begun = false;
+    }
+
+    fn clear_surface(&mut self, color: Color) {
+        unsafe {
+            set_gl_clear_color(&self.gl, color);
+            self.gl.clear(glow::COLOR_BUFFER_BIT);
         }
-        self.frame_begun=false;
+    }
+
+    fn clear_surface_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
+        if w <= 0 || h <= 0 { return; }
+        unsafe {
+            set_gl_clear_color(&self.gl, color);
+            self.gl.enable(glow::SCISSOR_TEST);
+            self.gl.scissor(x, y, w, h);
+            self.gl.clear(glow::COLOR_BUFFER_BIT);
+            self.gl.disable(glow::SCISSOR_TEST);
+        }
+    }
+
+    fn reset_clip_state(&mut self, rect: Rect) -> Rect {
+        let old = self.current_clip;
+        self.clip_stack.clear();
+        self.current_clip = rect;
+        old
     }
 
     fn scroll_region(&mut self, vp: Rect, dx: f32, dy: f32) {
@@ -402,6 +466,10 @@ impl GraphicsEngine for GpuEngine {
             BlendMode::SrcOver=>(glow::ONE,glow::ONE_MINUS_SRC_ALPHA),
             BlendMode::Additive=>(glow::SRC_ALPHA,glow::ONE), };
         unsafe{self.gl.blend_func(s,d);}
+    }
+
+    fn set_clear_color(&mut self, color: Color) {
+        self.clear_color = color;
     }
 
     fn fill_rect(&mut self, r: Rect, c: Color, rad: Option<Radius>) { self.push_simple(r,c,rad); }
@@ -595,6 +663,16 @@ impl GraphicsEngine for GpuEngine {
     fn height(&self) -> i32 { self.height }
     fn load_font(&mut self, data: &[u8]) -> Result<FontHandle, Error> { self.font_service.load_font(data) }
     fn font_service(&self) -> &FontService { &self.font_service }
+}
+
+/// Color → OpenGL 归一化浮点清除色。
+unsafe fn set_gl_clear_color(gl: &glow::Context, color: Color) {
+    gl.clear_color(
+        color.r as f32 / 255.0,
+        color.g as f32 / 255.0,
+        color.b as f32 / 255.0,
+        color.a as f32 / 255.0,
+    );
 }
 
 impl Drop for GpuEngine { fn drop(&mut self) { self.shutdown(); } }

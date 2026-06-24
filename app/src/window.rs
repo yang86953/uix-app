@@ -171,7 +171,7 @@ impl Window {
         let mut last_frame = Instant::now();
         let mut keep_polling = false;
         let mut idle_count: u32 = 0;
-        let mut window_focused = true;
+        let mut window_visible = true;
         let mut layer_tree = LayerTree::new();
 
         let collect = |ev: &UiEvent| {
@@ -271,6 +271,12 @@ impl Window {
                     if let Some(ref mut w) = self.window {
                         w.resize_notify(restore_w, restore_h);
                     }
+                    window_visible = true;
+                    log::debug!("[Visible] 窗口恢复可见");
+                }
+                if let UiEventType::WindowMinimize = ev.type_ {
+                    window_visible = false;
+                    log::debug!("[Visible] 窗口最小化，暂停渲染");
                 }
                 if let UiEventType::MouseMove = ev.type_ {
                     if let UiEventPayload::MouseMove(ref data) = ev.payload {
@@ -287,15 +293,6 @@ impl Window {
                             continue;
                         }
                     }
-                }
-                // 窗口焦点跟踪
-                if let UiEventType::WindowFocus = ev.type_ {
-                    window_focused = true;
-                    log::debug!("[Focus] 窗口获得焦点");
-                }
-                if let UiEventType::WindowBlur = ev.type_ {
-                    window_focused = false;
-                    log::debug!("[Focus] 窗口失去焦点");
                 }
                 if let Some(we) = map_event(&ev) {
                     log::trace!("dispatch: {:?}", we);
@@ -320,8 +317,8 @@ impl Window {
             }
 
             // 仅在有事件、持续更新、或首帧时才 layout/on_frame。
-            // 窗口失焦时也跳过。
-            let needs_work = window_focused && (had_events || keep_polling || idle_count == 0);
+            // 窗口最小化/隐藏时跳过。
+            let needs_work = window_visible && (had_events || keep_polling || idle_count == 0);
             if needs_work {
                 tree.layout();
                 let t2 = Instant::now();
@@ -360,8 +357,8 @@ impl Window {
 
             let dirty_region = tree.dirty_region();
             let first_render = !rendered_first_frame;
-            // 窗口失焦时暂停一切渲染和动画，节省 GPU/CPU
-            let need_render = window_focused && (
+            // 窗口最小化/隐藏时暂停渲染和动画
+            let need_render = window_visible && (
                 first_render
                 || !self.rendered_first
                 || !dirty_region.is_empty()
@@ -455,7 +452,7 @@ impl Window {
                             let lt_ref = theme.borrow();
                             let tokens = lt_ref.tokens();
                             let lt_font = engine.font_service().loaded_font_handle;
-                            layer_tree.render(engine, tree, tokens, lt_font, &region);
+                            layer_tree.render(engine, tree, tokens, lt_font);
                             drop(lt_ref);
                             engine.end_frame(&region);
                             if t_render.elapsed() > std::time::Duration::from_millis(100) {

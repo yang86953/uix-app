@@ -9,6 +9,7 @@ pub mod color;
 pub mod engine;
 pub mod flattener;
 pub mod font_service;
+pub mod frame;
 pub mod frame_graph;
 pub mod gpu_engine;
 pub mod null_engine;

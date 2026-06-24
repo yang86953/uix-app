@@ -65,6 +65,10 @@ impl GraphicsEngine for NullEngine {
     fn end_frame(&mut self, _d: &DirtyRegion) {}
     fn scroll_region(&mut self, _viewport: Rect, _dx: f32, _dy: f32) {}
 
+    fn clear_surface(&mut self, _color: Color) {}
+    fn clear_surface_rect(&mut self, _x: i32, _y: i32, _w: i32, _h: i32, _color: Color) {}
+    fn reset_clip_state(&mut self, _rect: Rect) -> Rect { Rect::zero() }
+
     fn push_clip_rect(&mut self, _r: Rect) {}
     fn pop_clip_rect(&mut self) {}
 

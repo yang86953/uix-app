@@ -1,9 +1,11 @@
 use super::asset_store::AssetStore;
 use super::core::RenderTarget;
 use crate::font_service::FontService;
+use crate::Color;
+use uix_core::Rect;
 
 // ════════════════════════════════════════════════════════════════════════════
-// SoftwareEngine — 组合 AssetStore + RenderTarget
+// SoftwareEngine — 组合 AssetStore + RenderTarget + FrameManager
 // ════════════════════════════════════════════════════════════════════════════
 
 /// 当前活跃的渲染目标（主缓冲或离屏缓冲）。
@@ -22,13 +24,14 @@ pub struct SoftwareEngine {
     pub(crate) active_target: ActiveTarget,
     pub(crate) main_width: i32,
     pub(crate) main_height: i32,
-    pub(crate) pre_frame_clip: uix_core::Rect,
+    /// 帧开始前的基础裁剪矩形（`end_frame` 时恢复）
+    pub(crate) pre_frame_clip: Rect,
 
     /// 独立的字体服务，不与渲染器绑定
     pub font_service: FontService,
 
     /// 脏区域清除时使用的背景色（默认透明黑，上层可设为主题背景色）
-    pub clear_color: u32,
+    pub clear_color: Color,
 }
 
 impl Default for SoftwareEngine {
@@ -44,12 +47,12 @@ impl SoftwareEngine {
               rt: RenderTarget::new(),
               assets: AssetStore::new(),
               active_target: ActiveTarget::Main,
-              clear_color: 0x00000000,
               main_width: 0,
               main_height: 0,
-              pre_frame_clip: uix_core::Rect::new(0.0, 0.0, f32::MAX, f32::MAX),
+              pre_frame_clip: Rect::new(0.0, 0.0, f32::MAX, f32::MAX),
 
               font_service: FontService::new(),
+              clear_color: Color::from_rgba(0, 0, 0, 0),
           }
     }
 

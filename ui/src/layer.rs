@@ -223,18 +223,16 @@ impl LayerTree {
 
     /// 渲染图层树。
     /// 子节点已在 build 时预排序，渲染时直接遍历。
-    /// `dirty_region` 用于跳过与脏区无交集的 widget 渲染，减少无效绘制。
     pub fn render(
         &mut self,
         engine: &mut dyn GraphicsEngine,
         tree: &WidgetTree,
         tokens: &dyn TokenProvider,
         font: FontHandle,
-        dirty_region: &DirtyRegion,
     ) {
         let mut rctx = RenderContext::new(engine, font, tokens);
         if let Some(ref mut root) = self.root {
-            Self::render_node(root, &mut rctx, tree, dirty_region);
+            Self::render_node(root, &mut rctx, tree);
             root.mark_clean();
         }
     }
@@ -428,13 +426,7 @@ impl LayerTree {
 
     /// 递归渲染单个节点。
     /// 子节点已在 build 时预排序，直接遍历无需再次排序。
-    /// `dirty_region` 用于跳过与脏区无交集的非 Picture 节点渲染。
-    fn render_node(
-        node: &mut LayerNode,
-        ctx: &mut RenderContext,
-        tree: &WidgetTree,
-        dirty_region: &DirtyRegion,
-    ) {
+    fn render_node(node: &mut LayerNode, ctx: &mut RenderContext, tree: &WidgetTree) {
         match node {
             LayerNode::Picture {
                 widget_id,
@@ -452,8 +444,7 @@ impl LayerTree {
 
                 if *is_dirty || offscreen_handle.is_none() {
                     Self::render_picture_dirty(
-                        *widget_id, bounds, offscreen_handle, children, ctx, tree, w, h,
-                        retry_count, dirty_region,
+                        *widget_id, bounds, offscreen_handle, children, ctx, tree, w, h, retry_count,
                     );
                 } else if let Some(handle) = offscreen_handle {
                     let src = Rect::new(0.0, 0.0, w as f32, h as f32);
@@ -466,13 +457,11 @@ impl LayerTree {
                 rect,
                 children,
             } => {
-                if Self::should_render_widget(*widget_id, tree, dirty_region) {
-                    Self::render_widget_self(*widget_id, ctx, tree);
-                }
+                Self::render_widget_self(*widget_id, ctx, tree);
                 let r = *rect;
                 ctx.engine().push_clip_rect(r);
                 for child in children.iter_mut() {
-                    Self::render_node(child, ctx, tree, dirty_region);
+                    Self::render_node(child, ctx, tree);
                 }
                 ctx.engine().pop_clip_rect();
             }
@@ -480,24 +469,9 @@ impl LayerTree {
                 widget_id,
                 children,
             } => {
-                Self::render_widget_and_children(*widget_id, children, ctx, tree, dirty_region);
+                Self::render_widget_and_children(*widget_id, children, ctx, tree);
             }
         }
-    }
-
-    /// 判断 widget 是否应该被渲染：frame 与脏区域有交集，或 widget 自身标记为脏。
-    /// 全帧脏区域时始终返回 true。
-    fn should_render_widget(id: WidgetId, tree: &WidgetTree, dirty_region: &DirtyRegion) -> bool {
-        if dirty_region.full_frame {
-            return true;
-        }
-        if dirty_region.is_empty() {
-            return false;
-        }
-        if let Some(node) = tree.get(id) {
-            return node.dirty() || dirty_region.intersects(node.frame());
-        }
-        false
     }
 
     /// 仅渲染 widget 自身的视觉效果（不处理子节点）。
@@ -515,13 +489,11 @@ impl LayerTree {
 
     /// 渲染 widget 自身及其子节点（直接遍历 children LayerNodes）。
     /// 子节点已预排序，直接遍历无需再次排序。
-    /// 当 widget 自身 frame 与脏区无交集且未标记为脏时，跳过自身渲染但仍递归子节点。
     fn render_widget_and_children(
         id: WidgetId,
         children: &mut [LayerNode],
         ctx: &mut RenderContext,
         tree: &WidgetTree,
-        dirty_region: &DirtyRegion,
     ) {
         if let Some(node) = tree.get(id) {
             if !node.visible() {
@@ -529,13 +501,11 @@ impl LayerTree {
             }
             let frame = node.frame();
             ctx.save();
-            if Self::should_render_widget(id, tree, dirty_region) {
-                node.inner().render(frame, ctx, tree);
-            }
+            node.inner().render(frame, ctx, tree);
             // Direct 节点只用于无 children_clip 的 widget，不需要 clip children
             // 子节点已预排序，直接遍历
             for child in children.iter_mut() {
-                Self::render_node(child, ctx, tree, dirty_region);
+                Self::render_node(child, ctx, tree);
             }
             ctx.restore();
         }
@@ -580,7 +550,6 @@ impl LayerTree {
         w: i32,
         h: i32,
         retry_count: &mut u8,
-        dirty_region: &DirtyRegion,
     ) {
         // 尝试创建或复用离屏缓冲
         let needs_new = offscreen_handle.is_none();
@@ -630,7 +599,7 @@ impl LayerTree {
             // 使用 LayerNode 子节点递归渲染（支持嵌套 Picture #96）
             Self::render_widget_self(widget_id, ctx, tree);
             for child in children.iter_mut() {
-                Self::render_node(child, ctx, tree, dirty_region);
+                Self::render_node(child, ctx, tree);
             }
             ctx.engine().pop_clip_rect();
             ctx.engine().end_offscreen();

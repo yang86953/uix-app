@@ -174,6 +174,35 @@ pub trait GraphicsEngine: 'static {
     /// 默认透明黑（0x00000000），上层应设为主题背景色以避免黑线。
     fn set_clear_color(&mut self, _color: Color) {}
 
+    // ── 表面操作原语（FrameManager 使用）──────────────────────────────
+
+    /// 清除整个绘制表面——直接覆写像素，无视裁剪/混合/透明度。
+    fn clear_surface(&mut self, color: Color) {
+        self.save();
+        self.set_opacity(1.0);
+        self.reset_transform();
+        let w = self.width() as f32;
+        let h = self.height() as f32;
+        self.fill_rect(Rect::new(0.0, 0.0, w, h), color, None);
+        self.restore();
+    }
+
+    /// 清除指定矩形区域——直接覆写像素。
+    fn clear_surface_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
+        self.save();
+        self.set_opacity(1.0);
+        self.reset_transform();
+        self.fill_rect(
+            Rect::new(x as f32, y as f32, w as f32, h as f32),
+            color,
+            None,
+        );
+        self.restore();
+    }
+
+    /// 重置裁剪状态：清空裁剪栈，设置基础裁剪矩形，返回之前的裁剪矩形。
+    fn reset_clip_state(&mut self, rect: Rect) -> Rect;
+
     /// 打印内存诊断信息到日志（默认空实现，引擎可覆盖）。
     fn diagnose_memory(&self, _system_info: &dyn uix_platform::ISystemInfo) {}
     fn memory_usage(&self) -> usize { 0 }
