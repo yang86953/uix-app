@@ -1,6 +1,3 @@
-//! QRCode, Transfer, Upload, Watermark 组件。
-//! Ant Design 5 补充实现。
-
 use uix_core::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
@@ -11,11 +8,11 @@ use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 // QRCode
 // ════════════════════════════════════════════════════════════════════════════
 
-/// QRCode — 二维码显示（简化：绘制棋盘格占位，实际需集成二维码库）。
 define_widget! {
     pub struct QRCode {
         value: String,
         size: f32,
+        error_level: u8,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -23,42 +20,55 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let loc = crate::locale::use_locale();
         let bg = Color::white();
         let fg = Color::black();
         let r = Some(Radius::uniform(ctx.tokens().border_radius()));
         ctx.fill_rect(frame, bg, r);
-        let cells = 21; // 简化 QR 网格
+
+        // 根据 value 生成确定性伪随机 QR 矩阵（非真实编码）
+        let cells = if self.error_level > 0 { 25 } else { 21 };
         let cell_s = frame.w / cells as f32;
+        let seed: u64 = self.value.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+
         for y in 0..cells {
             for x in 0..cells {
-                let is_pattern = (x < 7 && y < 7)
-                    || (x >= cells - 7 && y < 7)
-                    || (x < 7 && y >= cells - 7);
-                let is_filled = if is_pattern {
-                    !((x == 0 || x == 6 || y == 0 || y == 6) && is_pattern && !(x >= 2 && x <= 4 && y >= 2 && y <= 4))
+                let is_finder = (x < 7 && y < 7) || (x >= cells - 7 && y < 7) || (x < 7 && y >= cells - 7);
+                let is_filled = if is_finder {
+                    let in_pattern = (x <= 1 || x >= 5) && (y <= 1 || y >= 5);
+                    let is_center = x >= 2 && x <= 4 && y >= 2 && y <= 4;
+                    (in_pattern && !is_center) || (is_center && !in_pattern)
+                } else if (x >= cells - 8 || x <= 7) && y == 6 {
+                    // 时序模式
+                    x % 2 == 0
+                } else if x == 6 && (y >= cells - 8 || y <= 7) {
+                    y % 2 == 0
                 } else {
-                    (x * 7 + y * 13 + x * y * 3) % 5 == 0
+                    // 数据区域：基于 seed 的确定性随机
+                    let idx = (y * cells + x) as u64;
+                    let hash = seed.wrapping_mul(idx + 1).wrapping_add(idx.wrapping_mul(idx + 3));
+                    (hash % 3) != 0
                 };
                 if is_filled {
                     ctx.fill_rect(Rect::new(frame.x + x as f32 * cell_s, frame.y + y as f32 * cell_s, cell_s, cell_s), fg, None);
                 }
             }
         }
-        // 中心标记
-        ctx.fill_rect(Rect::new(frame.x + frame.w * 0.4, frame.y + frame.h * 0.4, frame.w * 0.2, frame.h * 0.2), bg, Some(Radius::uniform(3.0)));
-        ctx.draw_text("UIX", Point::new(frame.x + frame.w * 0.4 + 4.0, frame.y + frame.h * 0.43), fg, 9.0);
+        // 中心 UIX 标记
+        ctx.fill_rect(Rect::new(frame.x + frame.w * 0.38, frame.y + frame.h * 0.38, frame.w * 0.24, frame.h * 0.24), bg, Some(Radius::uniform(4.0)));
+        ctx.draw_text(loc.qrcode_logo, Point::new(frame.x + frame.w * 0.42, frame.y + frame.h * 0.44), fg, 11.0);
     }
 }
 impl QRCode {
-    pub fn new(value: &str) -> Self { Self { value: value.to_string(), size: 160.0 } }
+    pub fn new(value: &str) -> Self { Self { value: value.to_string(), size: 160.0, error_level: 1 } }
     pub fn size(mut self, s: f32) -> Self { self.size = s; self }
+    pub fn error_level(mut self, lv: u8) -> Self { self.error_level = lv; self }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // Transfer
 // ════════════════════════════════════════════════════════════════════════════
 
-/// TransferItem — 穿梭框项目。
 #[derive(Debug, Clone)]
 pub struct TransferItem {
     pub key: String,
@@ -66,7 +76,6 @@ pub struct TransferItem {
     pub selected: bool,
 }
 
-/// Transfer — 穿梭框（双栏选择）。
 define_widget! {
     pub struct Transfer {
         source: Vec<TransferItem>,
@@ -86,22 +95,16 @@ define_widget! {
                 if idx < self.source.len() { self.source[idx].selected = !self.source[idx].selected; }
             } else if pos.x > half + 60.0 {
                 let idx = (pos.y / item_h) as usize;
-                let target_start = half + 60.0;
-                let idx2 = (pos.y / item_h) as usize;
-                if idx2 < self.target.len() { self.target[idx2].selected = !self.target[idx2].selected; }
+                if idx < self.target.len() { self.target[idx].selected = !self.target[idx].selected; }
             } else {
-                // 中间按钮区域
                 if pos.y >= 80.0 && pos.y < 100.0 {
-                    // 向右移动选中
                     let mut i = 0;
                     while i < self.source.len() {
                         if self.source[i].selected {
                             let mut item = self.source.remove(i);
                             item.selected = false;
                             self.target.push(item);
-                        } else {
-                            i += 1;
-                        }
+                        } else { i += 1; }
                     }
                     return EventResult::Handled;
                 }
@@ -112,9 +115,7 @@ define_widget! {
                             let mut item = self.target.remove(i);
                             item.selected = false;
                             self.source.push(item);
-                        } else {
-                            i += 1;
-                        }
+                        } else { i += 1; }
                     }
                     return EventResult::Handled;
                 }
@@ -133,12 +134,11 @@ define_widget! {
         let half = 220.0;
         let item_h = 28.0;
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
-
-        // 左侧面板
         let left_rect = Rect::new(frame.x, frame.y, half, frame.h);
         ctx.fill_rect(left_rect, bg, r);
         ctx.stroke_rect(left_rect, border, 1.0, r);
-        ctx.draw_text(&format!("源 ({}项)", self.source.len()), Point::new(frame.x + 8.0, frame.y + 6.0), text_sec, 12.0);
+        let loc = crate::locale::use_locale();
+        ctx.draw_text(&format!("{} ({}项)", loc.transfer_source, self.source.len()), Point::new(frame.x + 8.0, frame.y + 6.0), text_sec, 12.0);
         for (i, item) in self.source.iter().enumerate() {
             let y = frame.y + 24.0 + i as f32 * item_h;
             let row_rect = Rect::new(frame.x, y, half, item_h);
@@ -147,8 +147,6 @@ define_widget! {
             ctx.draw_text(if item.selected { "☑" } else { "☐" }, Point::new(frame.x + 8.0, row_y), text, 12.0);
             ctx.draw_text(&item.title, Point::new(frame.x + 26.0, row_y), text, 13.0);
         }
-
-        // 中间按钮
         let btn_y = frame.y + frame.h * 0.5 - 20.0;
         let rbtn_rect = Rect::new(frame.x + half + 8.0, btn_y, 44.0, 20.0);
         let lbtn_rect = Rect::new(frame.x + half + 8.0, btn_y + 24.0, 44.0, 20.0);
@@ -156,13 +154,11 @@ define_widget! {
         ctx.text_center("→", rbtn_rect, Color::white(), 14.0);
         ctx.fill_rect(lbtn_rect, border, Some(Radius::uniform(3.0)));
         ctx.text_center("←", lbtn_rect, text, 14.0);
-
-        // 右侧面板
         let right_x = frame.x + half + 60.0;
         let right_rect = Rect::new(right_x, frame.y, half, frame.h);
         ctx.fill_rect(right_rect, bg, r);
         ctx.stroke_rect(right_rect, border, 1.0, r);
-        ctx.draw_text(&format!("目标 ({}项)", self.target.len()), Point::new(right_x + 8.0, frame.y + 6.0), text_sec, 12.0);
+        ctx.draw_text(&format!("{} ({}项)", loc.transfer_target, self.target.len()), Point::new(right_x + 8.0, frame.y + 6.0), text_sec, 12.0);
         for (i, item) in self.target.iter().enumerate() {
             let y = frame.y + 24.0 + i as f32 * item_h;
             let row_rect = Rect::new(right_x, y, half, item_h);
@@ -184,18 +180,46 @@ impl Default for Transfer { fn default() -> Self { Self::new() } }
 // Upload
 // ════════════════════════════════════════════════════════════════════════════
 
-/// Upload — 上传组件（简化版，点击触发选择 + 文件列表展示）。
+/// 上传文件项。
+#[derive(Debug, Clone)]
+pub struct UploadFile {
+    pub name: String,
+    pub size: u64,
+    pub progress: f32,
+    pub status: UploadStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum UploadStatus { Pending, Uploading, Done, Error }
+pub type UploadCallback = Box<dyn FnMut(&str, UploadStatus)>;
+
 define_widget! {
     pub struct Upload {
         accept: String,
         multiple: bool,
-        file_list: Vec<String>,
+        file_list: Vec<UploadFile>,
         drag: bool,
+        drag_hover: bool,
+        max_count: usize,
+        on_change: Option<UploadCallback>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
-        let h = if self.file_list.is_empty() { 100.0 } else { 100.0 + self.file_list.len() as f32 * 28.0 };
-        Size::new(300.0, h)
+        let list_h = self.file_list.len() as f32 * 32.0;
+        Size::new(300.0, 100.0 + list_h)
+    }
+
+    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+        match event {
+            WidgetEvent::MouseDown { .. } => {
+                self.add_file(&format!("upload_{}.txt", self.file_list.len() + 1));
+                if let Some(ref mut cb) = self.on_change {
+                    cb("upload", UploadStatus::Pending);
+                }
+                EventResult::Handled
+            }
+            _ => EventResult::NotHandled,
+        }
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
@@ -204,32 +228,68 @@ define_widget! {
         let text_sec = ctx.tokens().color_text_quaternary();
         let text = ctx.tokens().color_text();
         let primary = ctx.tokens().color_primary();
+        let error = ctx.tokens().color_error();
+        let success = ctx.tokens().color_success();
         let r = Some(Radius::uniform(ctx.tokens().border_radius()));
         let upload_rect = Rect::new(frame.x, frame.y, frame.w, 100.0);
         ctx.fill_rect(upload_rect, bg, r);
-        ctx.stroke_rect(upload_rect, border, if self.drag { 2.0 } else { 1.0 }, r);
-        if self.drag {
-            ctx.stroke_rect(Rect::new(frame.x + 4.0, frame.y + 4.0, frame.w - 8.0, 92.0),
-                primary, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
+
+        let drag_border = if self.drag_hover { primary } else { border };
+        ctx.stroke_rect(upload_rect, drag_border, if self.drag && self.drag_hover { 2.0 } else { 1.0 }, r);
+        if self.drag && self.drag_hover {
+            ctx.stroke_rect(Rect::new(frame.x + 4.0, frame.y + 4.0, frame.w - 8.0, 92.0), primary, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
         }
         ctx.draw_text("📁", Point::new(frame.x + frame.w * 0.5 - 12.0, frame.y + 24.0), text_sec, 24.0);
-        ctx.draw_text("点击或拖拽上传", Point::new(frame.x + frame.w * 0.5 - 48.0, frame.y + 60.0), text_sec, 13.0);
-        ctx.draw_text(&format!("支持: {}", self.accept), Point::new(frame.x + frame.w * 0.5 - 36.0, frame.y + 78.0), text_sec, 10.0);
+        let loc = crate::locale::use_locale();
+        ctx.draw_text(loc.upload_drag, Point::new(frame.x + frame.w * 0.5 - 48.0, frame.y + 60.0), text_sec, 13.0);
+        if !self.accept.is_empty() && self.accept != "*" {
+            let suffix = format!("{}: {}", loc.filter_title, self.accept);
+            ctx.draw_text(&suffix, Point::new(frame.x + frame.w * 0.5 - 36.0, frame.y + 78.0), text_sec, 10.0);
+        }
 
-        // 文件列表
         for (i, f) in self.file_list.iter().enumerate() {
-            let y = frame.y + 104.0 + i as f32 * 28.0;
+            let y = frame.y + 104.0 + i as f32 * 32.0;
+            let status_color = match f.status {
+                UploadStatus::Error => error,
+                UploadStatus::Done => success,
+                UploadStatus::Uploading => primary,
+                UploadStatus::Pending => text_sec,
+            };
             ctx.draw_text("📄", Point::new(frame.x + 8.0, y + 4.0), text_sec, 14.0);
-            ctx.draw_text(f, Point::new(frame.x + 28.0, y + 5.0), text, 13.0);
+            ctx.draw_text(&f.name, Point::new(frame.x + 28.0, y + 5.0), text, 12.0);
+            if f.status == UploadStatus::Uploading {
+                let bar_w = frame.w - 40.0;
+                let bar_rect = Rect::new(frame.x + 10.0, y + 20.0, bar_w * f.progress, 4.0);
+                ctx.fill_rect(bar_rect, primary, None);
+            }
+            let status_str: &str = match f.status {
+                UploadStatus::Done => "✓",
+                UploadStatus::Error => "✗",
+                UploadStatus::Pending => "⏳",
+                UploadStatus::Uploading => "↻",
+            };
+            ctx.draw_text(status_str, Point::new(frame.x + frame.w - 20.0, y + 5.0), status_color, 12.0);
         }
     }
 }
 impl Upload {
-    pub fn new() -> Self { Self { accept: "*".into(), multiple: false, file_list: Vec::new(), drag: false } }
+    pub fn new() -> Self { Self { accept: "*".into(), multiple: false, file_list: Vec::new(), drag: true, drag_hover: false, max_count: 10, on_change: None } }
     pub fn accept(mut self, a: &str) -> Self { self.accept = a.to_string(); self }
     pub fn multiple(mut self, v: bool) -> Self { self.multiple = v; self }
     pub fn drag(mut self, v: bool) -> Self { self.drag = v; self }
-    pub fn add_file(&mut self, name: &str) { self.file_list.push(name.to_string()); }
+    pub fn max_count(mut self, n: usize) -> Self { self.max_count = n; self }
+    pub fn on_change<F: FnMut(&str, UploadStatus) + 'static>(mut self, f: F) -> Self { self.on_change = Some(Box::new(f)); self }
+    pub fn add_file(&mut self, name: &str) {
+        if self.file_list.len() >= self.max_count { return; }
+        self.file_list.push(UploadFile { name: name.to_string(), size: 0, progress: 0.0, status: UploadStatus::Pending });
+    }
+    pub fn update_progress(&mut self, idx: usize, progress: f32) {
+        if idx < self.file_list.len() { self.file_list[idx].progress = progress; self.file_list[idx].status = UploadStatus::Uploading; }
+    }
+    pub fn complete_file(&mut self, idx: usize, success: bool) {
+        if idx < self.file_list.len() { self.file_list[idx].status = if success { UploadStatus::Done } else { UploadStatus::Error }; }
+    }
+    pub fn file_count(&self) -> usize { self.file_list.len() }
 }
 impl Default for Upload { fn default() -> Self { Self::new() } }
 
@@ -237,7 +297,6 @@ impl Default for Upload { fn default() -> Self { Self::new() } }
 // Watermark
 // ════════════════════════════════════════════════════════════════════════════
 
-/// Watermark — 水印组件。
 define_widget! {
     pub struct Watermark {
         text: String,
@@ -245,6 +304,10 @@ define_widget! {
         font_size: f32,
         opacity: f32,
         rotate: f32,
+        gap_x: f32,
+        gap_y: f32,
+        x_offset: f32,
+        y_offset: f32,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -255,25 +318,48 @@ define_widget! {
 
     post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         if self.text.is_empty() { return; }
-        let step_x = 200.0;
-        let step_y = 160.0;
         let mut c = self.color;
         c.a = (self.opacity * 255.0) as u8;
-        let text_w = self.text.len() as f32 * self.font_size * 0.6;
-        for y in (0..(frame.h as i32)).step_by(step_y as usize) {
-            for x in (0..(frame.w as i32)).step_by(step_x as usize) {
-                ctx.draw_text(&self.text, Point::new(x as f32 + (y as f32 * 0.3) % step_x, y as f32), c, self.font_size);
+        let step_x = self.gap_x;
+        let step_y = self.gap_y;
+        let angle_rad = self.rotate * std::f32::consts::PI / 180.0;
+        let cos_a = angle_rad.cos();
+        let sin_a = angle_rad.sin();
+
+        let fw = frame.w as i32;
+        let fh = frame.h as i32;
+        let sx = step_x as i32;
+        let sy = step_y as i32;
+
+        for gy in 0..(fh / sy.max(1) + 2) {
+            for gx in 0..(fw / sx.max(1) + 2) {
+                let base_x = gx as f32 * step_x + self.x_offset;
+                let base_y = gy as f32 * step_y + self.y_offset;
+                // 旋转偏移
+                let half = self.text.len() as f32 * self.font_size * 0.3;
+                let rx = (base_x - half) * cos_a - (base_y - half) * sin_a + half;
+                let ry = (base_x - half) * sin_a + (base_y - half) * cos_a + half;
+                ctx.draw_text(&self.text, Point::new(rx, ry), c, self.font_size);
             }
         }
+    }
+
+    dirty_rect => (&self, _frame: Rect) -> Rect {
+        Rect::new(-10000.0, -10000.0, 20000.0, 20000.0)
     }
 }
 impl Watermark {
     pub fn new(text: &str) -> Self {
-        Self { text: text.to_string(), color: Color::from_rgba(0, 0, 0, 255), font_size: 14.0, opacity: 0.15, rotate: -22.0 }
+        Self {
+            text: text.to_string(), color: Color::from_rgba(0, 0, 0, 255),
+            font_size: 14.0, opacity: 0.15, rotate: -22.0,
+            gap_x: 200.0, gap_y: 160.0, x_offset: 0.0, y_offset: 0.0,
+        }
     }
     pub fn color(mut self, c: Color) -> Self { self.color = c; self }
     pub fn font_size(mut self, s: f32) -> Self { self.font_size = s; self }
     pub fn opacity(mut self, o: f32) -> Self { self.opacity = o; self }
+    pub fn rotate(mut self, r: f32) -> Self { self.rotate = r; self }
+    pub fn gap(mut self, x: f32, y: f32) -> Self { self.gap_x = x; self.gap_y = y; self }
+    pub fn offset(mut self, x: f32, y: f32) -> Self { self.x_offset = x; self.y_offset = y; self }
 }
-
-

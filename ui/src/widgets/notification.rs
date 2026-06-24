@@ -15,6 +15,15 @@ use std::rc::Rc;
 /// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
 pub use uix_core::StatusLevel as NotificationType;
 
+/// 通知弹出位置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NotifPlacement {
+    TopRight,
+    TopLeft,
+    BottomRight,
+    BottomLeft,
+}
+
 /// 单条通知数据。
 #[derive(Debug, Clone)]
 pub struct NotificationItem {
@@ -30,6 +39,7 @@ define_widget! {
     pub struct Notification {
         queue: Rc<RefCell<Vec<NotificationItem>>>,
         remaining: Rc<RefCell<Vec<u64>>>,
+        placement: NotifPlacement,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -66,8 +76,14 @@ define_widget! {
         let queue = self.queue.borrow();
         if queue.is_empty() { return; }
         let notif_w = 384.0;
-        let start_x = frame.w - notif_w - 24.0;
-        let mut y = 12.0;
+        let start_x = match self.placement {
+            NotifPlacement::TopRight | NotifPlacement::BottomRight => frame.w - notif_w - 24.0,
+            NotifPlacement::TopLeft | NotifPlacement::BottomLeft => 24.0,
+        };
+        let mut y = match self.placement {
+            NotifPlacement::TopRight | NotifPlacement::TopLeft => 12.0,
+            NotifPlacement::BottomRight | NotifPlacement::BottomLeft => frame.h - 12.0,
+        };
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border_secondary();
         let text = ctx.tokens().color_text();
@@ -112,8 +128,10 @@ define_widget! {
 
 impl Notification {
     pub fn new() -> Self {
-        Self { queue: Rc::new(RefCell::new(Vec::new())), remaining: Rc::new(RefCell::new(Vec::new())) }
+        Self { queue: Rc::new(RefCell::new(Vec::new())), remaining: Rc::new(RefCell::new(Vec::new())), placement: NotifPlacement::TopRight }
     }
+
+    pub fn placement(mut self, p: NotifPlacement) -> Self { self.placement = p; self }
 
     pub fn add(&self, item: NotificationItem) {
         self.queue.borrow_mut().push(item);

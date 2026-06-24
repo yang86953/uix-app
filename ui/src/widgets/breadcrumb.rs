@@ -39,6 +39,7 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let loc = crate::locale::use_locale();
         let text_secondary = ctx.tokens().color_text_secondary();
         let text_color = ctx.tokens().color_text();
         let mut x = frame.x;
@@ -50,7 +51,7 @@ define_widget! {
             x += item_w;
             if i < self.items.len() - 1 {
                 let sep_w = self.separator.len() as f32 * 8.0 + 8.0;
-                ctx.text_center(&self.separator, Rect::new(x, frame.y, sep_w, h), text_secondary, 12.0);
+                ctx.text_center(loc.breadcrumb_separator, Rect::new(x, frame.y, sep_w, h), text_secondary, 12.0);
                 x += sep_w;
             }
         }

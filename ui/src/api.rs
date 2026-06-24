@@ -16,6 +16,21 @@ pub use crate::widget::{
 // Platform types are used directly by WidgetEvent — re-export from base.
 pub use uix_core::{KeyCode, MouseButton};
 
+// ── 配置提供 ──
+pub use crate::config_provider::{
+    ComponentConfig, ComponentOverrides, ConfigProvider, FormLayout, use_config, with_config,
+};
+pub use crate::config_provider::{ButtonOverrides, InputOverrides, SelectOverrides, FormOverrides};
+
+// ── 焦点锁定 ──
+pub use crate::focus_trap::FocusTrap;
+
+// ── 国际化 ──
+pub use crate::locale::{en_us, zh_cn, Locale, LocaleProvider, use_locale, with_locale};
+
+// ── 虚拟滚动 ──
+pub use crate::virtual_scroll::VirtualScroll;
+
 // ── 状态管理 ──
 pub use crate::state::{Computed, Effect, State};
 pub use crate::style::Style;
@@ -35,6 +50,9 @@ pub use crate::layout::{
 pub use crate::animation::core::Animation;
 pub use crate::animation::driver::{AnimValue, AnimationCallback, AnimationDriver};
 pub use crate::animation::easing::{Animatable, Easing};
+pub use crate::animation::transition::{
+    presets, SlideDirection, Transition, TransitionPlayer,
+};
 
 // ── 管理器 ──
 pub use crate::managers::{

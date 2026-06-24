@@ -24,6 +24,7 @@ define_widget! {
         padding: f32,
         elevation: u8,
         flex_grow_val: f32,
+        actions: Vec<String>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -93,6 +94,24 @@ define_widget! {
             ctx.draw_text(title, Point::new(frame.x + self.padding, title_y), text, 15.0);
             let sep_y = frame.y + 44.0 + 4.0;
             ctx.fill_rect(Rect::new(frame.x + self.padding, sep_y, frame.w - self.padding * 2.0, 1.0), border_secondary, None);
+        }
+
+        // Actions
+        if !self.actions.is_empty() {
+            let action_h = 40.0;
+            let action_y = frame.y + frame.h - action_h;
+            ctx.fill_rect(Rect::new(frame.x, action_y, frame.w, action_h), bg_container, None);
+            ctx.stroke_rect(Rect::new(frame.x, action_y, frame.w, action_h), border_secondary, 1.0, None);
+            let btn_w = frame.w / self.actions.len() as f32;
+            for (i, action) in self.actions.iter().enumerate() {
+                let btn_rect = Rect::new(frame.x + i as f32 * btn_w, action_y, btn_w, action_h);
+                let ay = ctx.visual_center_y(btn_rect, 13.0);
+                let text_w = ctx.measure_text(action, 13.0).w;
+                ctx.draw_text(action, Point::new(btn_rect.x + (btn_w - text_w) * 0.5, ay), primary, 13.0);
+                if i < self.actions.len() - 1 {
+                    ctx.fill_rect(Rect::new(btn_rect.x + btn_w - 1.0, action_y + 8.0, 1.0, action_h - 16.0), border_secondary, None);
+                }
+            }
         }
     }
 
@@ -262,6 +281,7 @@ impl Card {
             padding: 16.0,
             elevation: 1,
             flex_grow_val: 0.0,
+            actions: Vec::new(),
         }
     }
 
@@ -272,6 +292,10 @@ impl Card {
     pub fn padding(mut self, p: f32) -> Self { self.padding = p; self }
     pub fn elevation(mut self, e: u8) -> Self { self.elevation = e.min(3); self }
     pub fn flex_grow(mut self, v: f32) -> Self { self.flex_grow_val = v; self }
+    pub fn actions(mut self, list: Vec<impl Into<String>>) -> Self {
+        self.actions = list.into_iter().map(|s| s.into()).collect();
+        self
+    }
     pub fn child(self, w: impl Widget + 'static) -> Self {
         self.children.add(w);
         self

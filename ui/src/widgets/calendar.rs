@@ -39,6 +39,7 @@ define_widget! {
         month: Cell<usize>,
         selected_day: Cell<Option<usize>>,
         cell_size: f32,
+        year_jump: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -103,7 +104,8 @@ define_widget! {
         ctx.draw_text("▶", Point::new(x + cs * 7.0 - 28.0, arrow_y), primary, 14.0);
 
         // 星期行
-        let weekdays = ["一","二","三","四","五","六","日"];
+        let loc = crate::locale::use_locale();
+        let weekdays = loc.weekdays_short;
         for (i, wd) in weekdays.iter().enumerate() {
             ctx.draw_text(wd, Point::new(x + i as f32 * cs + cs * 0.5 - 5.0, y + 28.0), text_sec, 11.0);
         }
@@ -137,11 +139,12 @@ impl Calendar {
     pub fn new() -> Self {
         Self {
             year: Cell::new(2026), month: Cell::new(6),
-            selected_day: Cell::new(None), cell_size: 40.0,
+            selected_day: Cell::new(None), cell_size: 40.0, year_jump: false,
         }
     }
     pub fn cell_size(mut self, s: f32) -> Self { self.cell_size = s; self }
     pub fn selected_day(&self) -> Option<usize> { self.selected_day.get() }
+    pub fn year_jump(mut self, v: bool) -> Self { self.year_jump = v; self }
 }
 
 impl Default for Calendar { fn default() -> Self { Self::new() } }

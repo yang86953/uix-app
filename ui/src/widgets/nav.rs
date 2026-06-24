@@ -224,6 +224,7 @@ impl Navigation {
     }
 
     pub fn build(self, tokens: &dyn crate::theme::TokenProvider) -> crate::widget::WidgetNode {
+        let loc = crate::locale::use_locale();
         use crate::widget::IntoWidgetNode;
         use crate::widgets::{Container, Divider, Label};
 
@@ -254,7 +255,7 @@ impl Navigation {
 
         if self.show_version {
             children.push(
-                Label::new("UIX v0.1.0 — Rust Native").color(tokens.color_text_quaternary())
+                Label::new(loc.nav_version).color(tokens.color_text_quaternary())
                     .font_size(11.0).size(self.width, 24.0).into_node(),
             );
         }

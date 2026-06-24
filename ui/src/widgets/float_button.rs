@@ -36,6 +36,7 @@ define_widget! {
     render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
 
     post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let loc = crate::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         let white = Color::white();
@@ -51,7 +52,7 @@ define_widget! {
         ctx.text_center(&self.icon, btn_rect, white, 16.0);
         // Badge
         if self.badge_count > 0 {
-            let badge = if self.badge_count > 99 { "99+" } else { &self.badge_count.to_string() };
+            let badge = if self.badge_count > 99 { loc.float_badge_overflow } else { &self.badge_count.to_string() };
             ctx.fill_circle(cx + self.size * 0.3, cy - self.size * 0.3, 10.0, ctx.tokens().color_error());
             ctx.draw_text(badge, Point::new(cx + self.size * 0.3 - 7.0, cy - self.size * 0.3 - 7.0), white, 10.0);
         }

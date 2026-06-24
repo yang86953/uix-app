@@ -15,6 +15,14 @@ use std::rc::Rc;
 /// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
 pub use uix_core::StatusLevel as MessageType;
 
+/// 消息弹出位置。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MessagePlacement {
+    Top,
+    TopLeft,
+    TopRight,
+}
+
 /// 单条消息数据。
 #[derive(Debug, Clone)]
 pub struct MessageItem {
@@ -35,6 +43,7 @@ define_widget! {
         /// 每条消息的剩余毫秒数（用于自动消失）
         remaining: Rc<RefCell<Vec<u64>>>,
         msg_height: Cell<f32>,
+        placement: MessagePlacement,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -81,7 +90,11 @@ define_widget! {
         if queue.is_empty() { return; }
         let cw = frame.w;
         let msg_w = (380.0f32).min(cw - 40.0);
-        let start_x = (cw - msg_w) * 0.5;
+        let start_x = match self.placement {
+            MessagePlacement::Top => (cw - msg_w) * 0.5,
+            MessagePlacement::TopLeft => 12.0,
+            MessagePlacement::TopRight => cw - msg_w - 12.0,
+        };
         let mut y = 12.0;
         let radius = Some(uix_graphics::Radius::uniform(ctx.tokens().border_radius_lg()));
         let shadow = ctx.tokens().box_shadow();
@@ -125,8 +138,12 @@ impl Message {
             queue: Rc::new(RefCell::new(Vec::new())),
             remaining: Rc::new(RefCell::new(Vec::new())),
             msg_height: Cell::new(0.0),
+            placement: MessagePlacement::Top,
         }
     }
+
+    pub fn placement(mut self, p: MessagePlacement) -> Self { self.placement = p; self }
+
 
     const MSG_DURATION_SUCCESS: u64 = 3000;
     const MSG_DURATION_INFO: u64 = 3000;

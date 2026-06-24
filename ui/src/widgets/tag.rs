@@ -12,13 +12,18 @@ pub enum TagColor {
     Default, Success, Info, Warning, Error,
 }
 
+use crate::widget::{EventResult, WidgetEvent};
+
 define_widget! {
-    /// Tag — 彩色标签，可关闭。
     pub struct Tag {
         text: String,
         color: TagColor,
         closable: bool,
         font_size: f32,
+        custom_color: Option<Color>,
+        checkable: bool,
+        checked: bool,
+        on_close: Option<Box<dyn FnMut() + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -28,12 +33,16 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let (bg, fg) = match self.color {
-            TagColor::Default => (ctx.tokens().color_fill_tertiary(), ctx.tokens().color_text()),
-            TagColor::Success => (ctx.tokens().color_success_bg(), ctx.tokens().color_success()),
-            TagColor::Info    => (ctx.tokens().color_info_bg(), ctx.tokens().color_info()),
-            TagColor::Warning => (ctx.tokens().color_warning_bg(), ctx.tokens().color_warning()),
-            TagColor::Error   => (ctx.tokens().color_error_bg(), ctx.tokens().color_error()),
+        let (bg, fg) = if let Some(cc) = self.custom_color {
+            (cc, Color::white())
+        } else {
+            match self.color {
+                TagColor::Default => (ctx.tokens().color_fill_tertiary(), ctx.tokens().color_text()),
+                TagColor::Success => (ctx.tokens().color_success_bg(), ctx.tokens().color_success()),
+                TagColor::Info    => (ctx.tokens().color_info_bg(), ctx.tokens().color_info()),
+                TagColor::Warning => (ctx.tokens().color_warning_bg(), ctx.tokens().color_warning()),
+                TagColor::Error   => (ctx.tokens().color_error_bg(), ctx.tokens().color_error()),
+            }
         };
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         ctx.fill_rect(frame, bg, r);
@@ -53,9 +62,14 @@ impl Default for Tag { fn default() -> Self { Self::new("") } }
 
 impl Tag {
     pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into(), color: TagColor::Default, closable: false, font_size: 12.0 }
+        Self { text: text.into(), color: TagColor::Default, closable: false, font_size: 12.0, custom_color: None, checkable: false, checked: false, on_close: None }
     }
     pub fn color(mut self, c: TagColor) -> Self { self.color = c; self }
+    pub fn custom_color(mut self, c: Color) -> Self { self.custom_color = Some(c); self }
     pub fn closable(mut self) -> Self { self.closable = true; self }
+    pub fn checkable(mut self, v: bool) -> Self { self.checkable = v; self }
+    pub fn on_close<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_close = Some(Box::new(f)); self }
     pub fn font_size(mut self, s: f32) -> Self { self.font_size = s; self }
 }
+
+use uix_graphics::Color;

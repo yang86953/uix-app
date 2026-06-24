@@ -10,6 +10,7 @@ define_widget! {
     pub struct Empty {
         description: String,
         icon_name: String,
+        image: String,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -17,11 +18,27 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let desc = if self.description.is_empty() { "No data" } else { &self.description };
+        let loc = crate::locale::use_locale();
+        let desc = if self.description.is_empty() { loc.empty_description } else { &self.description };
         let text_secondary = ctx.tokens().color_text_quaternary();
+        let text_tertiary = ctx.tokens().color_text_tertiary();
+
+        // image preset
+        if !self.image.is_empty() {
+            let icon_str = match self.image.as_str() {
+                "default" => "📦",
+                "search" => "🔍",
+                "file" => "📄",
+                "folder" => "📁",
+                "network" => "🌐",
+                _ => "📦",
+            };
+            let icon_frame = Rect::new(frame.x, frame.y + 4.0, frame.w, frame.h * 0.4);
+            ctx.text_center(icon_str, icon_frame, text_tertiary, 36.0);
+        }
 
         // 图标（25% 高度位置）
-        if !self.icon_name.is_empty() {
+        if !self.icon_name.is_empty() && self.image.is_empty() {
             let icon_str = crate::widgets::icon::icon_char(&self.icon_name);
             let saved = *ctx.font();
             if let Some(fh) = crate::widgets::icon::lucide_handle() {
@@ -41,8 +58,9 @@ impl Default for Empty { fn default() -> Self { Self::new() } }
 
 impl Empty {
     pub fn new() -> Self {
-        Self { description: String::new(), icon_name: String::new() }
+        Self { description: String::new(), icon_name: String::new(), image: String::new() }
     }
     pub fn description(mut self, d: impl Into<String>) -> Self { self.description = d.into(); self }
     pub fn icon(mut self, name: impl Into<String>) -> Self { self.icon_name = name.into(); self }
+    pub fn image(mut self, name: impl Into<String>) -> Self { self.image = name.into(); self }
 }

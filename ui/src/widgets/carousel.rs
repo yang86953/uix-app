@@ -130,10 +130,6 @@ define_widget! {
         // 背景
         ctx.fill_rect(frame, bg, None);
 
-        // 当前 slide 编号文字（代替实际子节点渲染）
-        let text = format!("Slide {}", idx + 1);
-        ctx.text_center(&text, frame, ctx.tokens().color_text(), 14.0);
-
         // 箭头
         if self.show_arrows && count > 1 {
             let arrow_y = ctx.visual_center_y(frame, 14.0);

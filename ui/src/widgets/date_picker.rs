@@ -230,7 +230,8 @@ define_widget! {
             ctx.draw_text("▶", Point::new(popup.x + popup.w * 0.5 + 30.0, arrow_y),
                 text_secondary, 12.0);
 
-            let weekdays = ["一", "二", "三", "四", "五", "六", "日"];
+            let loc = crate::locale::use_locale();
+            let weekdays = loc.weekdays_short;
             for (i, &w) in weekdays.iter().enumerate() {
                 let x = popup.x + 8.0 + i as f32 * cell_w;
                 ctx.draw_text(w, Point::new(x + cell_w * 0.3, popup.y + 34.0), text_tertiary, 10.0);

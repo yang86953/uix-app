@@ -33,6 +33,7 @@ define_widget! {
         steps: Vec<Step>,
         current: Cell<usize>,
         direction: bool, // true=horizontal, false=vertical
+        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -50,6 +51,7 @@ define_widget! {
                 let idx = (pos.x / step_w) as usize;
                 if idx < self.steps.len() {
                     self.current.set(idx);
+                    if let Some(ref mut cb) = self.on_change { cb(idx); }
                     return EventResult::Handled;
                 }
             }
@@ -113,13 +115,17 @@ define_widget! {
 impl Steps {
     pub fn new(steps: Vec<Step>) -> Self {
         let current = Cell::new(0);
-        Self { steps, current, direction: true }
+        Self { steps, current, direction: true, on_change: None }
     }
     pub fn current(mut self, v: usize) -> Self { self.current.set(v); self }
     pub fn get_current(&self) -> usize { self.current.get() }
     pub fn set_current(&self, v: usize) { self.current.set(v); }
     pub fn horizontal(mut self) -> Self { self.direction = true; self }
     pub fn step_count(&self) -> usize { self.steps.len() }
+    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
 }
 
 impl Step {

@@ -2,7 +2,7 @@
 //!
 //! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
 
-use uix_core::{Point, Rect, Size};
+use uix_core::{ControlSize, Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
@@ -24,12 +24,18 @@ define_widget! {
         bordered: bool,
         column: usize,
         label_width: f32,
+        size: ControlSize,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
         let rows = self.items.len().div_ceil(self.column).max(1);
         let title_h = if self.title.is_empty() { 0.0 } else { 32.0 };
-        Size::new(600.0, title_h + rows as f32 * 36.0)
+        let item_h = match self.size {
+            ControlSize::Small => 28.0,
+            ControlSize::Medium => 36.0,
+            ControlSize::Large => 44.0,
+        };
+        Size::new(600.0, title_h + rows as f32 * item_h)
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
@@ -41,7 +47,11 @@ define_widget! {
         let r = Radius::uniform(ctx.tokens().border_radius());
         let mut y = frame.y;
         let col_w = frame.w / self.column as f32;
-        let item_h = 36.0;
+        let item_h = match self.size {
+            ControlSize::Small => 28.0,
+            ControlSize::Medium => 36.0,
+            ControlSize::Large => 44.0,
+        };
 
         // 标题
         if !self.title.is_empty() {
@@ -83,7 +93,7 @@ define_widget! {
 
 impl Descriptions {
     pub fn new() -> Self {
-        Self { title: String::new(), items: Vec::new(), bordered: false, column: 3, label_width: 100.0 }
+        Self { title: String::new(), items: Vec::new(), bordered: false, column: 3, label_width: 100.0, size: ControlSize::Medium }
     }
     pub fn title(mut self, t: &str) -> Self { self.title = t.to_string(); self }
     pub fn items(mut self, items: Vec<DescriptionsItem>) -> Self { self.items = items; self }
@@ -91,6 +101,7 @@ impl Descriptions {
     pub fn bordered(mut self, v: bool) -> Self { self.bordered = v; self }
     pub fn column(mut self, v: usize) -> Self { self.column = v; self }
     pub fn label_width(mut self, w: f32) -> Self { self.label_width = w; self }
+    pub fn size(mut self, s: ControlSize) -> Self { self.size = s; self }
 }
 
 impl Default for Descriptions { fn default() -> Self { Self::new() } }

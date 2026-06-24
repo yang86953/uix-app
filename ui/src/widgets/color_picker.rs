@@ -204,7 +204,7 @@ define_widget! {
     }
 }
 impl Cascader {
-    pub fn new() -> Self { Self { placeholder: "请选择".into(), value: String::new(), open: false } }
+    pub fn new() -> Self { Self { placeholder: crate::locale::use_locale().cascader_placeholder.to_string(), value: String::new(), open: false } }
     pub fn placeholder(mut self, p: &str) -> Self { self.placeholder = p.to_string(); self }
 }
 impl Default for Cascader { fn default() -> Self { Self::new() } }

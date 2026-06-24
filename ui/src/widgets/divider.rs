@@ -29,6 +29,7 @@ define_widget! {
         direction: DividerDirection,
         pub color: Option<Color>,
         text_size: f32,
+        dashed: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -43,6 +44,26 @@ define_widget! {
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let line_color = self.color.unwrap_or(ctx.tokens().color_border_secondary());
         let text_secondary = ctx.tokens().color_text_secondary();
+
+        let draw_line = |ctx: &mut RenderContext, x: f32, y: f32, w: f32, h: f32, color: Color| {
+            if !self.dashed {
+                ctx.fill_rect(Rect::new(x, y, w, h), color, None);
+            } else {
+                let seg_len: f32 = 6.0;
+                let gap_len: f32 = 4.0;
+                let mut dx = 0.0;
+                let is_h = h <= w;
+                while dx < (if is_h { w } else { h }) {
+                    let seg = seg_len.min(if is_h { w - dx } else { h - dx });
+                    if is_h {
+                        ctx.fill_rect(Rect::new(x + dx, y, seg, h), color, None);
+                    } else {
+                        ctx.fill_rect(Rect::new(x, y + dx, w, seg), color, None);
+                    }
+                    dx += seg + gap_len;
+                }
+            }
+        };
 
         match self.direction {
             DividerDirection::Horizontal => {
@@ -61,23 +82,21 @@ define_widget! {
 
                     let left_end = text_x - 8.0;
                     if left_end > frame.x {
-                        ctx.fill_rect(Rect::new(frame.x, center_y, left_end - frame.x, 1.0), line_color, None);
+                        draw_line(ctx, frame.x, center_y, left_end - frame.x, 1.0, line_color);
                     }
 
                     ctx.draw_text(text, Point::new(text_x, text_y), text_secondary, self.text_size);
 
                     let right_start = text_x + text_w;
                     if right_start < frame.x + frame.w {
-                        ctx.fill_rect(Rect::new(right_start, center_y, frame.x + frame.w - right_start, 1.0), line_color, None);
+                        draw_line(ctx, right_start, center_y, frame.x + frame.w - right_start, 1.0, line_color);
                     }
                 } else {
-                    // 无文本时直接填满整个 frame，避免 center 偏移导致的半像素不可见问题
-                    ctx.fill_rect(Rect::new(frame.x, frame.y, frame.w, frame.h), line_color, None);
+                    draw_line(ctx, frame.x, frame.y, frame.w, frame.h, line_color);
                 }
             }
             DividerDirection::Vertical => {
-                // 垂直分割线同样直接填满 frame
-                ctx.fill_rect(Rect::new(frame.x, frame.y, frame.w, frame.h), line_color, None);
+                draw_line(ctx, frame.x, frame.y, frame.w, frame.h, line_color);
             }
         }
     }
@@ -97,6 +116,7 @@ impl Divider {
             direction: DividerDirection::Horizontal,
             color: None,
             text_size: 14.0,
+            dashed: false,
         }
     }
 
@@ -114,6 +134,10 @@ impl Divider {
     }
     pub fn color(mut self, c: Color) -> Self {
         self.color = Some(c);
+        self
+    }
+    pub fn dashed(mut self) -> Self {
+        self.dashed = true;
         self
     }
 }

@@ -18,6 +18,8 @@ define_widget! {
         show_size_changer: bool,
         show_total: bool,
         size: f32, // item size
+        page_size_options: Vec<usize>,
+        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -35,24 +37,26 @@ define_widget! {
             let mut x = pos.x;
             // 上一页
             let mut btn_x = 0.0;
-            if x >= btn_x && x < btn_x + item_w { cur = cur.saturating_sub(1).max(1); self.current.set(cur); return EventResult::Handled; }
+            if x >= btn_x && x < btn_x + item_w { cur = cur.saturating_sub(1).max(1); self.current.set(cur); if let Some(ref mut cb) = self.on_change { cb(cur); } return EventResult::Handled; }
             btn_x += item_w + gap;
             // 页码按钮（最多 7 个）
             let range = self.visible_range(total_pages, cur);
             for &p in &range {
                 if x >= btn_x && x < btn_x + item_w {
                     self.current.set(p);
+                    if let Some(ref mut cb) = self.on_change { cb(p); }
                     return EventResult::Handled;
                 }
                 btn_x += item_w + gap;
             }
             // 下一页
-            if x >= btn_x && x < btn_x + item_w { cur = (cur + 1).min(total_pages); self.current.set(cur); return EventResult::Handled; }
+            if x >= btn_x && x < btn_x + item_w { cur = (cur + 1).min(total_pages); self.current.set(cur); if let Some(ref mut cb) = self.on_change { cb(cur); } return EventResult::Handled; }
         }
         EventResult::NotHandled
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let loc = crate::locale::use_locale();
         let total_pages = self.total.div_ceil(self.page_size);
         if total_pages <= 1 { return; }
         let cur = self.current.get();
@@ -74,7 +78,7 @@ define_widget! {
         let prev_disabled = cur <= 1;
         let prev_c = if prev_disabled { text_sec } else { text };
         let prev_y = ctx.visual_center_y(Rect::new(x, y, item_w, item_h), 16.0);
-        ctx.draw_text("‹", Point::new(x + item_w * 0.5 - 5.0, prev_y), prev_c, 16.0);
+        ctx.draw_text(loc.pagination_prev_symbol, Point::new(x + item_w * 0.5 - 5.0, prev_y), prev_c, 16.0);
         x += item_w + gap;
 
         // 页码按钮
@@ -98,13 +102,23 @@ define_widget! {
         let next_disabled = cur >= total_pages;
         let next_c = if next_disabled { text_sec } else { text };
         let next_y = ctx.visual_center_y(Rect::new(x, y, item_w, item_h), 16.0);
-        ctx.draw_text("›", Point::new(x + item_w * 0.5 - 5.0, next_y), next_c, 16.0);
+        ctx.draw_text(loc.pagination_next_symbol, Point::new(x + item_w * 0.5 - 5.0, next_y), next_c, 16.0);
 
         // 总条数（右侧）
         if self.show_total {
             let total_rect = Rect::new(x + item_w + 12.0, y, 160.0, item_h);
             let total_y = ctx.visual_center_y(total_rect, 12.0);
             ctx.draw_text(&format!("共 {} 条", self.total), Point::new(x + item_w + 12.0, total_y), text_sec, 12.0);
+        }
+
+        // 尺寸切换
+        if self.show_size_changer && !self.page_size_options.is_empty() {
+            let changer_x = x + item_w + if self.show_total { 120.0 } else { 12.0 };
+            let changer_text = format!("{} 条/页", self.page_size);
+            let changer_rect = Rect::new(changer_x, y, 80.0, item_h);
+            ctx.stroke_rect(changer_rect, border, 1.0, Some(radius));
+            let cy = ctx.visual_center_y(changer_rect, 12.0);
+            ctx.draw_text(&changer_text, Point::new(changer_x + 6.0, cy), text, 12.0);
         }
     }
 }
@@ -117,6 +131,8 @@ impl Pagination {
             show_size_changer: false,
             show_total: true,
             size: 28.0,
+            page_size_options: Vec::new(),
+            on_change: None,
         }
     }
     pub fn current(mut self, v: usize) -> Self { self.current.set(v); self }
@@ -126,6 +142,12 @@ impl Pagination {
     pub fn item_size(mut self, v: f32) -> Self { self.size = v; self }
     pub fn set_current(&self, v: usize) { self.current.set(v); }
     pub fn total_pages(&self) -> usize { self.total.div_ceil(self.page_size) }
+    pub fn show_size_changer(mut self, v: bool) -> Self { self.show_size_changer = v; self }
+    pub fn page_size_options(mut self, opts: Vec<usize>) -> Self { self.page_size_options = opts; self }
+    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
 
     /// 计算可见页码范围（含省略号逻辑，最多 7 个按钮）。
     fn visible_range(&self, total_pages: usize, cur: usize) -> Vec<usize> {

@@ -253,10 +253,16 @@ define_widget! {
     post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         // Scrollbar overlay drawn on top of children.
         if self.scrollbar_v.show || self.scrollbar_h.show {
-            if self.direction.can_scroll_y() {
+            // 用背景色先清空轨道区域，防止子节点脏时在未清除的半透明 overlay 像素上叠加导致变黑
+            let bg = ctx.tokens().color_bg_container();
+            if self.scrollbar_v.show && self.direction.can_scroll_y() {
+                let tr = self.scrollbar_v.track_rect_abs(frame);
+                ctx.fill_rect(tr, bg, None);
                 self.scrollbar_v.render(frame, ctx, self.scroll_y, self.max_scroll_y());
             }
-            if self.direction.can_scroll_x() {
+            if self.scrollbar_h.show && self.direction.can_scroll_x() {
+                let tr = self.scrollbar_h.track_rect_abs(frame);
+                ctx.fill_rect(tr, bg, None);
                 self.scrollbar_h.render(frame, ctx, self.scroll_x, self.max_scroll_x());
             }
         }
@@ -323,6 +329,7 @@ define_widget! {
     // ── 像素缓冲滚动：dirty_rect 返回新增 strip + 1px 重叠 ──
     // scroll_region 用 dy/dx.round() 做整数偏移，dirty_rect 用同样的 round 算新增区域。
     // +1px 重叠确保 scrolled 内容与新绘制 strip 之间无 1px 间隙（否则会露出透明黑线）。
+    // 包含垂直滚动条轨道区域，确保 scroll_region 移动的半透明轨道像素被清空重绘。
     dirty_rect => (&self, frame: Rect) -> Rect {
         let dx = self.scroll_x - self.prev_scroll_x;
         let dy = self.scroll_y - self.prev_scroll_y;

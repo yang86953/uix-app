@@ -6,6 +6,13 @@ use uix_core::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
+/// Progress display type.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ProgressType {
+    Line,
+    Circle,
+}
+
 /// Progress mode.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProgressMode {
@@ -25,9 +32,14 @@ define_widget! {
         height: f32,
         width: f32,
         round: bool,
+        progress_type: ProgressType,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+        if self.progress_type == ProgressType::Circle {
+            let d = self.width.max(self.height);
+            return Size::new(d, d);
+        }
         Size::new(self.width, self.height)
     }
 
@@ -46,6 +58,34 @@ define_widget! {
 
         let track_c = self.track_color.unwrap_or(tokens.color_fill_tertiary());
         let stroke_c = self.stroke_color.unwrap_or(tokens.color_primary());
+
+        if self.progress_type == ProgressType::Circle {
+            let cx = frame.x + frame.w * 0.5;
+            let cy = frame.y + frame.h * 0.5;
+            let r = frame.w.min(frame.h) * 0.4;
+            let track_width = 8.0;
+
+            ctx.fill_circle(cx, cy, r, track_c);
+            ctx.fill_circle(cx, cy, r - track_width, ctx.tokens().color_bg_container());
+
+            if let ProgressMode::Determinate(p) = self.mode {
+                let start_angle = -std::f32::consts::FRAC_PI_2;
+                let end_angle = start_angle + std::f32::consts::TAU * p;
+                let segments = 64;
+                for i in 0..segments {
+                    let a1 = start_angle + (end_angle - start_angle) * i as f32 / segments as f32;
+                    let a2 = start_angle + (end_angle - start_angle) * (i + 1) as f32 / segments as f32;
+                    let inner_r = r - track_width * 0.5;
+                    let x1 = cx + a1.cos() * inner_r;
+                    let y1 = cy + a1.sin() * inner_r;
+                    let x2 = cx + a2.cos() * inner_r;
+                    let y2 = cy + a2.sin() * inner_r;
+                    ctx.engine().draw_line(x1, y1, x2, y2, stroke_c, track_width);
+                }
+            }
+            return;
+        }
+
         let radius = if self.round {
             Some(Radius::uniform(frame.h * 0.5))
         } else {
@@ -89,6 +129,7 @@ impl ProgressBar {
             height: 8.0,
             width: 200.0,
             round: true,
+            progress_type: ProgressType::Line,
         }
     }
 
@@ -126,6 +167,11 @@ impl ProgressBar {
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.width = w;
         self.height = h;
+        self
+    }
+
+    pub fn circle(mut self) -> Self {
+        self.progress_type = ProgressType::Circle;
         self
     }
 }

@@ -23,6 +23,7 @@ define_widget! {
         offset_top: f32,
         /// 背景色
         bg_color: Option<Color>,
+        on_click: Option<Box<dyn FnMut(usize) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -39,7 +40,7 @@ define_widget! {
                 let idx = (pos.y / 36.0) as usize;
                 if idx < self.items.len() {
                     self.active_index = idx;
-                    // 触发滚动：外部通过 on_link_click 回调或 tree 遍历处理
+                    if let Some(ref mut cb) = self.on_click { cb(idx); }
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -109,6 +110,7 @@ impl Anchor {
             anchor_positions: vec![0.0; count],
             offset_top: 0.0,
             bg_color: None,
+            on_click: None,
         }
     }
 
@@ -131,6 +133,10 @@ impl Anchor {
 
     pub fn set_offset_top(mut self, v: f32) -> Self { self.offset_top = v; self }
     pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
+    pub fn on_click<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
+        self.on_click = Some(Box::new(f));
+        self
+    }
 
     pub fn active_index(&self) -> usize { self.active_index }
     pub fn active_href(&self) -> &str {

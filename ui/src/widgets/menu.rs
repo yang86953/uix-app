@@ -35,6 +35,7 @@ define_widget! {
         focused: bool,
         item_h: f32,
         on_change: Option<Box<dyn FnMut(String) + 'static>>,
+        on_click: Option<Box<dyn FnMut(usize) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -58,6 +59,7 @@ define_widget! {
                         let old_key = self.active_key.clone();
                         self.active_key = self.items[i].key.clone();
                         self.hovered_idx.set(i);
+                        if let Some(ref mut cb) = self.on_click { cb(i); }
                         if self.active_key != old_key {
                             if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
                         }
@@ -269,6 +271,7 @@ impl Menu {
             focused: false,
             item_h: 32.0,
             on_change: None,
+            on_click: None,
         }
     }
     pub fn items(mut self, items: Vec<MenuItem>) -> Self { self.items = items; self }
@@ -280,6 +283,10 @@ impl Menu {
     pub fn item_height(mut self, h: f32) -> Self { self.item_h = h; self }
     pub fn on_change<F: FnMut(String) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
+        self
+    }
+    pub fn on_click<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
+        self.on_click = Some(Box::new(f));
         self
     }
 }

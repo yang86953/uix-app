@@ -22,10 +22,12 @@
 pub mod core;
 pub mod driver;
 pub mod easing;
+pub mod transition;
 
 pub use core::*;
 pub use driver::*;
 pub use easing::*;
+pub use transition::*;
 
 // Re-export Animatable for convenience
 pub use easing::Animatable;

@@ -26,6 +26,7 @@ define_widget! {
     pub struct Collapse {
         panels: Vec<CollapsePanel>,
         accordion: bool,
+        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -54,6 +55,7 @@ define_widget! {
                         }
                     }
                     self.panels[i].expanded = new_state;
+                    if let Some(ref mut cb) = self.on_change { cb(i); }
                     log::debug!(
                         "[Collapse] 面板 \"{}\" 切换 expanded: {} → {}",
                         name, !new_state, new_state
@@ -118,8 +120,12 @@ impl Default for Collapse { fn default() -> Self { Self::new() } }
 
 impl Collapse {
     pub fn new() -> Self {
-        Self { panels: Vec::new(), accordion: false }
+        Self { panels: Vec::new(), accordion: false, on_change: None }
     }
     pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self { self.panels = ps; self }
     pub fn accordion(mut self) -> Self { self.accordion = true; self }
+    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
 }

@@ -30,6 +30,7 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let loc = crate::locale::use_locale();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let border = ctx.tokens().color_border_secondary();
@@ -63,7 +64,7 @@ define_widget! {
         if self.pending {
             let y = frame.y + items.len() as f32 * 60.0;
             ctx.engine().stroke_circle(line_x, y + 15.0, dot_r, border, 2.0);
-            ctx.draw_text("...", Point::new(content_x, y + 5.0), text_sec, 14.0);
+            ctx.draw_text(loc.timeline_pending, Point::new(content_x, y + 5.0), text_sec, 14.0);
         }
     }
 }

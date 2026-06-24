@@ -6,7 +6,7 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use uix_core::{Rect, Size};
+use uix_core::{Point, Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
 use uix_graphics::Color;
@@ -35,6 +35,7 @@ define_widget! {
         delete: bool,
         strong: bool,
         italic: bool,
+        copyable: bool,
         color_override: Option<Color>,
         glyph_xs: RefCell<Vec<f32>>,
         /// 每行的 (相对 y, 字形数量)，用于 y 轴命中测试。
@@ -206,6 +207,14 @@ define_widget! {
             // 绘制文本（使用同一布局）
             ctx.blit_glyph_layout(&layout, abs_pos, text_c, fs);
         }
+
+        // copyable 图标
+        if self.copyable {
+            let copy_icon = "📋";
+            let copy_x = frame.x + frame.w - 22.0;
+            let copy_y = ctx.visual_center_y(frame, 14.0);
+            ctx.draw_text(copy_icon, Point::new(copy_x, copy_y), ctx.tokens().color_text_quaternary(), 14.0);
+        }
     }
 }
 
@@ -216,7 +225,7 @@ impl Typography {
             type_,
             disabled: false,
             mark: false, code: false, underline: false, delete: false,
-            strong: false, italic: false,
+            strong: false, italic: false, copyable: false,
             color_override: None,
             glyph_xs: RefCell::new(Vec::new()),
             line_info: RefCell::new(Vec::new()),
@@ -246,6 +255,7 @@ impl Typography {
     pub fn strong(mut self) -> Self { self.strong = true; self }
     pub fn italic(mut self) -> Self { self.italic = true; self }
     pub fn color(mut self, c: Color) -> Self { self.color_override = Some(c); self }
+    pub fn copyable(mut self, v: bool) -> Self { self.copyable = v; self }
 
     pub fn selected_text(&self) -> Option<String> {
         self.selection.get().map(|(s, e)| self.slice_range(s, e))

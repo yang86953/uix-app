@@ -50,10 +50,17 @@ define_widget! {
     pub struct Sider {
         width: f32,
         bg_color: Option<Color>,
+        collapsible: bool,
+        collapsed: bool,
+        collapsed_width: f32,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(self.width, 0.0)
+        if self.collapsed {
+            Size::new(self.collapsed_width, 0.0)
+        } else {
+            Size::new(self.width, 0.0)
+        }
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
@@ -112,8 +119,11 @@ impl Header {
 }
 
 impl Sider {
-    pub fn new(width: f32) -> Self { Self { width, bg_color: None } }
+    pub fn new(width: f32) -> Self { Self { width, bg_color: None, collapsible: false, collapsed: false, collapsed_width: 80.0 } }
     pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
+    pub fn collapsible(mut self, v: bool) -> Self { self.collapsible = v; self }
+    pub fn collapsed(mut self, v: bool) -> Self { self.collapsed = v; self }
+    pub fn collapsed_width(mut self, w: f32) -> Self { self.collapsed_width = w; self }
 }
 
 impl Content {

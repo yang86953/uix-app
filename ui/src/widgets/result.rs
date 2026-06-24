@@ -27,6 +27,7 @@ define_widget! {
         type_: ResultType,
         title: String,
         subtitle: String,
+        extra_text: String,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -36,14 +37,15 @@ define_widget! {
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
+        let loc = crate::locale::use_locale();
         let (icon, icon_color, main_title) = match self.type_ {
-            ResultType::Success => ("✓", ctx.tokens().color_success(), if self.title.is_empty() { "操作成功" } else { &self.title }),
-            ResultType::Error   => ("✗", ctx.tokens().color_error(), if self.title.is_empty() { "操作失败" } else { &self.title }),
-            ResultType::Info    => ("ℹ", ctx.tokens().color_info(), if self.title.is_empty() { "提示信息" } else { &self.title }),
-            ResultType::Warning => ("⚠", ctx.tokens().color_warning(), if self.title.is_empty() { "警告" } else { &self.title }),
-            ResultType::NotFound => ("404", ctx.tokens().color_text_quaternary(), if self.title.is_empty() { "页面不存在" } else { &self.title }),
-            ResultType::Forbidden => ("403", ctx.tokens().color_warning(), if self.title.is_empty() { "无权限访问" } else { &self.title }),
-            ResultType::ServerError => ("500", ctx.tokens().color_error(), if self.title.is_empty() { "服务器错误" } else { &self.title }),
+            ResultType::Success => ("✓", ctx.tokens().color_success(), if self.title.is_empty() { loc.result_success } else { &self.title }),
+            ResultType::Error   => ("✗", ctx.tokens().color_error(), if self.title.is_empty() { loc.result_error } else { &self.title }),
+            ResultType::Info    => ("ℹ", ctx.tokens().color_info(), if self.title.is_empty() { loc.result_info } else { &self.title }),
+            ResultType::Warning => ("⚠", ctx.tokens().color_warning(), if self.title.is_empty() { loc.result_warning } else { &self.title }),
+            ResultType::NotFound => ("404", ctx.tokens().color_text_quaternary(), if self.title.is_empty() { loc.result_404 } else { &self.title }),
+            ResultType::Forbidden => ("403", ctx.tokens().color_warning(), if self.title.is_empty() { loc.result_403 } else { &self.title }),
+            ResultType::ServerError => ("500", ctx.tokens().color_error(), if self.title.is_empty() { loc.result_500 } else { &self.title }),
         };
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.4;
@@ -68,9 +70,9 @@ define_widget! {
         // 副标题（使用精确测量水平居中）
         let sub = if self.subtitle.is_empty() {
             match self.type_ {
-                ResultType::NotFound => "请检查您访问的地址是否正确",
-                ResultType::Forbidden => "请联系管理员获取权限",
-                ResultType::ServerError => "请稍后重试",
+                ResultType::NotFound => loc.result_404_desc,
+                ResultType::Forbidden => loc.result_403_desc,
+                ResultType::ServerError => loc.result_500_desc,
                 _ => "",
             }
         } else { &self.subtitle };
@@ -78,15 +80,27 @@ define_widget! {
             let sub_w = ctx.measure_text(sub, 13.0).w;
             ctx.draw_text(sub, Point::new(cx - sub_w * 0.5, cy + 40.0), text_sec, 13.0);
         }
+
+        // 额外按钮文字
+        if !self.extra_text.is_empty() {
+            let btn_w = ctx.measure_text(&self.extra_text, 14.0).w + 32.0;
+            let btn_x = cx - btn_w * 0.5;
+            let btn_y = cy + 70.0;
+            let btn_rect = Rect::new(btn_x, btn_y, btn_w, 36.0);
+            ctx.fill_rect(btn_rect, ctx.tokens().color_primary(), Some(uix_graphics::Radius::uniform(6.0)));
+            let btn_text_y = ctx.visual_center_y(btn_rect, 14.0);
+            ctx.draw_text(&self.extra_text, Point::new(btn_x + 16.0, btn_text_y), Color::white(), 14.0);
+        }
     }
 }
 
 impl Result {
     pub fn new(type_: ResultType) -> Self {
-        Self { type_, title: String::new(), subtitle: String::new() }
+        Self { type_, title: String::new(), subtitle: String::new(), extra_text: String::new() }
     }
     pub fn title(mut self, t: &str) -> Self { self.title = t.to_string(); self }
     pub fn subtitle(mut self, s: &str) -> Self { self.subtitle = s.to_string(); self }
+    pub fn extra_text(mut self, t: impl Into<String>) -> Self { self.extra_text = t.into(); self }
 }
 
 impl Default for Result {

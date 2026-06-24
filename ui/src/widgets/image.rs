@@ -18,6 +18,7 @@ define_widget! {
         height: f32,
         radius: f32,
         preview: bool,
+        preview_src: String,
         loaded: bool,
         error: bool,
     }
@@ -48,6 +49,16 @@ define_widget! {
             ctx.fill_rect(frame, fill, r);
         }
 
+        // 预览图标叠加
+        if self.preview && self.loaded {
+            let preview_icon = "🔍";
+            let icon_size = 20.0;
+            let icon_x = frame.x + frame.w - icon_size - 8.0;
+            let icon_y = frame.y + 8.0;
+            ctx.fill_circle(icon_x + icon_size * 0.5, icon_y + icon_size * 0.5, icon_size * 0.5, Color::from_rgba(0, 0, 0, 120));
+            ctx.draw_text(preview_icon, Point::new(icon_x + 2.0, icon_y + 2.0), Color::white(), 14.0);
+        }
+
         // 描述文字（底部）
         if !self.alt.is_empty() && self.loaded {
             ctx.draw_text(&self.alt, Point::new(frame.x + 4.0, frame.y + frame.h + 4.0), text_sec, 11.0);
@@ -60,7 +71,7 @@ impl Image {
         Self {
             src: src.to_string(), alt: String::new(), fallback: String::new(),
             width: w, height: h, radius: 6.0,
-            preview: true, loaded: false, error: false,
+            preview: true, preview_src: String::new(), loaded: false, error: false,
         }
     }
     pub fn alt(mut self, a: &str) -> Self { self.alt = a.to_string(); self }

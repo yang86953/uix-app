@@ -88,6 +88,7 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let loc = crate::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -107,7 +108,7 @@ define_widget! {
             ctx.draw_text(&self.placeholder, Point::new(frame.x + 12.0, draw_y),
                 text_tertiary, 14.0);
         } else {
-            let display_text = self.selected.labels.join(" / ");
+            let display_text = self.selected.labels.join(&loc.cascader_separator);
             ctx.draw_text(&display_text, Point::new(frame.x + 12.0, draw_y),
                 text_color, 14.0);
         }
@@ -152,7 +153,7 @@ define_widget! {
                         if opt.disabled { text_tertiary } else { text_color }, 14.0);
 
                     if has_children {
-                        ctx.draw_text("›",
+                        ctx.draw_text(loc.cascader_arrow,
                             Point::new(popup.x + popup.w - 16.0, y + (item_h - 14.0) * 0.5),
                             text_secondary, 14.0);
                     }

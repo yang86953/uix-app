@@ -29,12 +29,14 @@ define_widget! {
         bordered: bool,
         list_size: ListSize,
         items: Vec<String>,
+        load_more_text: String,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
         let h = self.items.len() as f32 * list_item_height(self.list_size)
             + if self.header.is_empty() { 0.0 } else { 40.0 }
-            + if self.footer.is_empty() { 0.0 } else { 40.0 };
+            + if self.footer.is_empty() { 0.0 } else { 40.0 }
+            + if self.load_more_text.is_empty() { 0.0 } else { 40.0 };
         Size::new(400.0, h.max(100.0))
     }
 
@@ -81,13 +83,24 @@ define_widget! {
             let footer_rect = Rect::new(frame.x, y, frame.w, item_h);
             let fy = ctx.visual_center_y(footer_rect, 13.0);
             ctx.draw_text(&self.footer, Point::new(frame.x + 16.0, fy), text_sec, 13.0);
+            y += item_h;
+        }
+
+        // Load more
+        if !self.load_more_text.is_empty() {
+            let load_rect = Rect::new(frame.x, y, frame.w, 40.0);
+            let ly = ctx.visual_center_y(load_rect, 14.0);
+            ctx.fill_rect(load_rect, bg, None);
+            ctx.stroke_rect(load_rect, border, 1.0, Some(r));
+            let text_w = ctx.measure_text(&self.load_more_text, 14.0).w;
+            ctx.draw_text(&self.load_more_text, Point::new(frame.x + (frame.w - text_w) * 0.5, ly), ctx.tokens().color_primary(), 14.0);
         }
     }
 }
 
 impl List {
     pub fn new() -> Self {
-        Self { header: String::new(), footer: String::new(), bordered: true, list_size: ListSize::Medium, items: Vec::new() }
+        Self { header: String::new(), footer: String::new(), bordered: true, list_size: ListSize::Medium, items: Vec::new(), load_more_text: String::new() }
     }
     pub fn items(mut self, items: Vec<impl Into<String>>) -> Self {
         self.items = items.into_iter().map(|s| s.into()).collect(); self
@@ -96,6 +109,7 @@ impl List {
     pub fn footer(mut self, f: &str) -> Self { self.footer = f.to_string(); self }
     pub fn bordered(mut self, v: bool) -> Self { self.bordered = v; self }
     pub fn size(mut self, s: ListSize) -> Self { self.list_size = s; self }
+    pub fn load_more(mut self, text: impl Into<String>) -> Self { self.load_more_text = text.into(); self }
 }
 
 impl Default for List { fn default() -> Self { Self::new() } }

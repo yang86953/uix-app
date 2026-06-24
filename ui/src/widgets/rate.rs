@@ -17,6 +17,7 @@ define_widget! {
         hover_value: usize,
         focused: bool,
         on_change: Option<Box<dyn FnMut(usize) + 'static>>,
+        character: String,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -92,6 +93,7 @@ define_widget! {
         let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let text_quaternary = ctx.tokens().color_text_quaternary();
         let bg = ctx.tokens().color_bg_container();
+        let ch = if self.character.is_empty() { "★" } else { &self.character };
 
         // hover 预览值优先于选中值
         let display_val = if self.hover_value > 0 { self.hover_value } else { self.value };
@@ -114,11 +116,11 @@ define_widget! {
                 fill_tertiary
             };
 
-            ctx.draw_text("★", Point::new(sx + 2.0, sy), star_color, 18.0);
+            ctx.draw_text(ch, Point::new(sx + 2.0, sy), star_color, 18.0);
 
             // 半星支持：左半填充
             if self.half && display_val == i * 2 + 1 {
-                ctx.draw_text("★", Point::new(sx + 2.0, sy), star_color, 18.0);
+                ctx.draw_text(ch, Point::new(sx + 2.0, sy), star_color, 18.0);
                 ctx.fill_rect(Rect::new(sx + 14.0, sy, 10.0, 18.0), bg, None);
             }
         }
@@ -132,7 +134,7 @@ impl Rate {
         Self {
             count: 5, value: 0, half: false, disabled: false,
             clearable: false, hover_value: 0, focused: false,
-            on_change: None,
+            on_change: None, character: String::new(),
         }
     }
     pub fn count(mut self, n: usize) -> Self { self.count = n; self }
@@ -144,4 +146,5 @@ impl Rate {
         self.on_change = Some(Box::new(f));
         self
     }
+    pub fn character(mut self, c: impl Into<String>) -> Self { self.character = c.into(); self }
 }
