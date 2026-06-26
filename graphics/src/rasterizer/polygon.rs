@@ -134,7 +134,7 @@ pub fn fill_polygons(
 
         // 配对填充（NonZero / EvenOdd）
         let stride = width;
-        let row_offset = (y * stride) as usize;
+        let _row_offset = (y * stride) as usize;
 
         match fill_rule {
             FillRule::NonZero => {

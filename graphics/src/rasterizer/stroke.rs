@@ -8,7 +8,7 @@ use crate::stroker::StrokeOptions;
 use crate::types::Radius;
 
 use super::{
-    color_to_premul, fill_rect_raw, put_pixel_aa, rect_to_pixels,
+    color_to_premul, fill_rect_raw, put_pixel_aa,
     rounded_rect_sdf, line_segment_sdf, sdf_to_coverage, clip_to_int, intersect_rect,
 };
 use super::fill;
@@ -74,7 +74,7 @@ pub fn stroke_rect(
 
 /// 纯函数：描边圆形。
 pub fn stroke_circle(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
+    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
     clip: Rect, opacity: f32,
     cx: f32, cy: f32, r: f32, color: Color, line_width: f32,
 ) {

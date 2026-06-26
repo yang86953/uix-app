@@ -134,6 +134,7 @@ pub struct FontService {
     /// 统一字形缓存。
     glyph_cache: GlyphCache,
     /// BitmapFont 实例（5x7 位图回退字体）。
+    #[allow(dead_code)]
     bitmap_font: BitmapFont,
 }
 
@@ -653,7 +654,9 @@ impl FontService {
             y: f32,           // 行顶部 y
             height: f32,      // 行高
             width: f32,       // 行总宽度
+            #[allow(dead_code)]
             glyph_start: usize,
+            #[allow(dead_code)]
             glyph_count: usize,
         }
 

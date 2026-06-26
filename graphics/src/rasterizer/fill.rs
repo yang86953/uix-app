@@ -9,13 +9,13 @@ use crate::path::{FillRule, Path};
 use crate::types::Radius;
 
 use super::{
-    color_to_premul, fill_rect_raw, fill_span, put_pixel_aa, rect_to_pixels,
+    color_to_premul, fill_rect_raw, put_pixel_aa, rect_to_pixels,
     rounded_rect_sdf, sdf_to_coverage, clip_to_int, intersect_rect,
 };
 
 /// 纯函数：填充矩形，可选圆角。
 pub fn fill_rect(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
+    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
     clip: Rect, opacity: f32,
     rect: Rect, color: Color, radius: Option<Radius>,
 ) {
@@ -81,7 +81,7 @@ pub fn fill_rect(
 
 /// 纯函数：填充圆形。
 pub fn fill_circle(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
+    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
     clip: Rect, opacity: f32,
     cx: f32, cy: f32, r: f32, color: Color,
 ) {
@@ -118,7 +118,7 @@ pub fn fill_circle(
 
 /// 纯函数：填充椭圆。
 pub fn fill_ellipse(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
+    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
     clip: Rect, opacity: f32,
     rect: Rect, color: Color,
 ) {
@@ -161,7 +161,7 @@ pub fn fill_ellipse(
 
 /// 纯函数：填充扇形。
 pub fn fill_sector(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
+    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
     clip: Rect, opacity: f32,
     cx: f32, cy: f32, r: f32,
     start_angle: f32, end_angle: f32,

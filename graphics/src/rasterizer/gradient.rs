@@ -9,7 +9,7 @@ use super::{color_to_premul, put_pixel_aa, intersect_rect, clip_to_int};
 
 /// 纯函数：线性渐变填充。
 pub fn fill_linear_gradient(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
+    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
     clip: Rect, opacity: f32,
     rect: Rect, color_a: Color, color_b: Color, dir: GradientDirection,
 ) {
@@ -49,7 +49,7 @@ pub fn fill_linear_gradient(
 
 /// 纯函数：径向渐变填充。
 pub fn fill_radial_gradient(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
+    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
     clip: Rect, opacity: f32,
     cx: f32, cy: f32, inner_r: f32, outer_r: f32,
     inner_color: Color, outer_color: Color,

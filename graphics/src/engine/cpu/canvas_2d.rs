@@ -15,7 +15,7 @@ use crate::types::{BlendMode, GradientDirection, Radius, Transform};
 
 /// 渲染状态快照（用于 save/restore）。
 #[derive(Clone)]
-struct StateSnapshot {
+pub(crate) struct StateSnapshot {
     pub(crate) clip_rect: Rect,
     pub(crate) clip_int: (i32, i32, i32, i32),
     pub(crate) opacity: f32,

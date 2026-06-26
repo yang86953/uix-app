@@ -1,9 +1,11 @@
 //! 图形引擎编排——生命周期 + 帧控制 + Canvas 入口。
 
+use uix_core::Rect;
 use uix_diag::Error;
 
 use super::{Canvas2D, Canvas3D, UpdateStrategy};
 use crate::engine::RenderOutcome;
+use crate::ImageHandle;
 
 /// 图形引擎 trait。
 ///
@@ -36,6 +38,31 @@ pub trait GraphicsEngine: 'static {
     ///
     /// SoftwareEngine 返回 NotSupported 错误。
     fn canvas_3d(&mut self) -> &mut dyn Canvas3D;
+
+    // ── 离屏缓冲管理（可选，默认空操作） ──
+
+    /// 创建离屏渲染表面，返回句柄。
+    /// SoftwareEngine 正经实现，GpuEngine 返回 None。
+    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
+        let _ = (width, height);
+        None
+    }
+
+    /// 销毁离屏渲染表面。
+    fn destroy_offscreen(&mut self, handle: ImageHandle) {
+        let _ = handle;
+    }
+
+    /// 获取离屏表面的 Canvas2D 引用（用于渲染到离屏）。
+    fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
+        let _ = handle;
+        None
+    }
+
+    /// 将离屏表面 blit 到主表面。
+    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
+        let _ = (handle, dst_rect);
+    }
 
     // ── 可选诊断 ──
 

@@ -209,10 +209,10 @@ impl LayerTree {
 
     /// 释放 build 后未复用的旧离屏缓冲。
     /// 必须在 build 之后、下一帧渲染之前调用。
-    pub fn sweep_orphaned_offscreens(&mut self, _engine: &mut dyn GraphicsEngine) {
-        // TODO(v2): offscreen destroy API 在新的 GraphicsEngine trait 中不存在。
-        // 需要重新设计离屏缓冲生命周期管理。
-        self.orphaned_handles.clear();
+    pub fn sweep_orphaned_offscreens(&mut self, engine: &mut dyn GraphicsEngine) {
+        for handle in self.orphaned_handles.drain(..) {
+            engine.destroy_offscreen(handle);
+        }
     }
 
     /// 增量更新脏状态。

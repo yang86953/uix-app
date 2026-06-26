@@ -33,7 +33,7 @@ pub fn draw_box_shadow_ambient(
 }
 
 fn _draw_box_shadow_impl(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
+    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
     clip: Rect, opacity: f32,
     rect: Rect, blur_radius: f32, offset_x: f32, offset_y: f32,
     shadow_color: Color, corner_radius: Option<Radius>, ambient: bool,

@@ -4,7 +4,7 @@
 
 use std::cell::RefCell;
 use glow::HasContext as _;
-use uix_core::{Rect, Size};
+
 use uix_diag::Error;
 use uix_platform::api::IGraphicsContext;
 use crate::engine::cpu::noop_canvas_2d::NoopCanvas2D;

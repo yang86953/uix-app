@@ -11,7 +11,7 @@ use super::{clip_to_int, put_pixel};
 /// `src_rect` — 源图像中要截取的矩形区域。
 /// `dst_rect` — 目标区域。
 pub fn blit_image(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
+    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
     clip: Rect, opacity: f32,
     src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect,
 ) {

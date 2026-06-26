@@ -363,8 +363,7 @@ mod tests {
     #[test]
     fn image_handle_default() {
         let h = ImageHandle::default();
-        assert_eq!(h.index, 0);
-        assert_eq!(h.kind, HandleKind::Image);
+        assert_eq!(h.0, 0);
     }
 
     #[test]
@@ -424,34 +423,9 @@ impl Default for TextLayoutOptions {
     }
 }
 
-/// Handle kind discriminator for resource pool lookup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HandleKind {
-    Image,
-    Offscreen,
-}
-
-/// Opaque handle for image/offscreen resources.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ImageHandle {
-    pub(crate) index: u32,
-    pub(crate) kind: HandleKind,
-}
-
-impl ImageHandle {
-    pub(crate) const fn new(index: u32, kind: HandleKind) -> Self {
-        Self { index, kind }
-    }
-}
-
-impl Default for ImageHandle {
-    fn default() -> Self {
-        Self {
-            index: 0,
-            kind: HandleKind::Image,
-        }
-    }
-}
+/// Opaque handle for engine-managed resources (offscreen buffers, etc.).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ImageHandle(pub u32);
 
 /// Opaque handle for font references.
 /// Contains a font index for engine lookup (replacing pointer-identity matching).
