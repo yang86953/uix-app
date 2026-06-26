@@ -46,23 +46,8 @@ define_widget! {
         draw_pos: Cell<uix_core::Point>,
     }
 
-    preferred_size => (&self, engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
         let (fs, _fw) = self.compute_font_style();
-        if let Some(eng) = engine {
-            let opts = uix_graphics::TextLayoutOptions {
-                max_width: f32::MAX,
-                max_height: 0.0,
-                line_height: fs * 1.5,
-                word_wrap: false,
-                h_align: uix_graphics::HAlign::Left,
-                v_align: uix_graphics::VAlign::Top,
-                font_size: fs,
-            };
-            let sz = eng.measure_text(&uix_graphics::FontHandle::default(), &self.content, &opts);
-            if sz.w > 0.0 && sz.h > 0.0 {
-                return Size::new(sz.w, sz.h.max(fs * 1.5));
-            }
-        }
         let w = self.content.len() as f32 * fs * 0.6;
         let h = fs * 1.5;
         Size::new(w, h)

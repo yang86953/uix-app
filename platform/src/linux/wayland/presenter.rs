@@ -10,7 +10,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
 
 use wayland_client::protocol::{
-    wl_buffer, wl_callback, wl_compositor, wl_shm, wl_shm_pool, wl_surface,
+    wl_callback, wl_compositor, wl_shm, wl_surface,
 };
 use wayland_client::Main;
 use uix_diag::Error;
@@ -61,7 +61,7 @@ impl WaylandPresenter {
         height: i32,
         dirty_rect: Option<(i32, i32, i32, i32)>,
     ) {
-        use wayland_client::protocol::wl_shm as wl_shm_proto;
+        
 
         let needs_resize = width != self.width
             || height != self.height

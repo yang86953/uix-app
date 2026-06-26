@@ -361,13 +361,11 @@ fn rebuild_for_theme(
     // 先更新内存中的 tokens，供后续 snapshot 和渲染使用
     dyn_tokens.set_mode(state.dark_mode.get());
     let tk = dyn_tokens.snapshot();
-    // 清除色与根容器背景（color_bg_layout）一致
-    eng.set_clear_color(tk.color_bg_layout);
     let active = state.prev_active.get();
     let (new_root, new_active, _) = build_demo_tree(&tk, active);
     tree.build(new_root);
     if let Some(root) = tree.root_mut() {
-        root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
+        root.set_frame(Rect::new(0.0, 0.0, eng.canvas_2d().width() as f32, eng.canvas_2d().height() as f32));
     }
     // 树构建后通过遍历获取每页容器的真实 WidgetId
     let page_ids: Vec<WidgetId> = tree.root_id()
@@ -430,8 +428,6 @@ fn run_event_loop(
                 log::debug!("on_frame: THEME CHANGE dark={}", new_dark);
                 state.dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
-                let tk = dyn_tokens.snapshot();
-                eng.set_clear_color(tk.color_bg_container);
                 let a = rebuild_for_theme(tree, eng, &dyn_tokens, &state);
                 *state.nav_active.borrow_mut() = a;
                 return;
@@ -480,7 +476,6 @@ pub fn run_gui_demo() {
     tree.layout();
     tree.mark_full_frame_dirty();
 
-    let bg_color = tk.color_bg_container;
     let state = DemoState::new(nav_active, page_ids);
     let dyn_tokens = Arc::new(DynTokens::new(tk));
     let theme_cell = std::cell::RefCell::new(Theme::from_arc(dyn_tokens.clone()));
@@ -506,13 +501,11 @@ pub fn run_gui_demo() {
             return;
         }
         match uix_platform::create_gpu_context(surface_ptr, INIT_W, INIT_H) {
-            Ok(ctx) => match uix_graphics::GpuEngine::new(ctx, INIT_W, INIT_H) {
-                Ok(e) => {
-                    log::info!("GPU: GpuEngine 就绪");
-                    engine_opt = Some(Box::new(e));
-                }
-                Err(e) => { log::error!("GPU: {}", e.short_what()); return; }
-            },
+            Ok(ctx) => {
+                let e = uix_graphics::GpuEngine::new(ctx);
+                log::info!("GPU: GpuEngine 就绪");
+                engine_opt = Some(Box::new(e));
+            }
             Err(e) => {
                 log::warn!("GPU: 上下文创建失败({}), 回退CPU", e.short_what());
             }
@@ -529,19 +522,10 @@ pub fn run_gui_demo() {
 
     // 后续照旧
     if let Ok(ttf) = std::fs::read("assets/fonts/lucide.ttf") {
-        init_lucide_font(&ttf, &mut *engine);
+        init_lucide_font(&ttf, &mut app.font_service);
     } else {
         log::warn!("Lucide font not found — icons will be blank");
     }
-
-    // 设置脏区域清除色为主题容器背景色，避免黑线/白线
-    engine.set_clear_color(bg_color);
-
-    let w = match app.window() {
-        Some(win) => win,
-        None => { log::error!("Window not available"); return; }
-    };
-    engine.diagnose_memory(w.platform().system_info());
 
     let exit_code = run_event_loop(&mut app, &mut engine, &mut tree, state, dyn_tokens, &theme_cell);
     engine.shutdown();

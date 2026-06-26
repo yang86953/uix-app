@@ -9,7 +9,7 @@
 pub use crate::children::WidgetChildren;
 pub use crate::context::WidgetContext;
 pub use crate::widget::{
-    AsAny, BoxedWidget, EventResult, IntoWidgetNode, Widget, WidgetCore, WidgetEvent, WidgetEventHandler,
+    BoxedWidget, EventResult, IntoWidgetNode, Widget, WidgetCore, WidgetEvent, WidgetEventHandler,
     WidgetId, WidgetLayout, WidgetLifecycle, WidgetNode, WidgetRender, WidgetTree,
 };
 
@@ -38,12 +38,16 @@ pub use crate::style::Style;
 // ── 渲染上下文 ──
 pub use crate::render_context::RenderContext;
 
-// ── 布局引擎（Flexbox + Grid）──
+// ── 布局引擎（统一底层布局系统）──
 pub use crate::layout::flex::compute_flex_layout;
 pub use crate::layout::grid::compute_grid_layout;
 pub use crate::layout::{
     AlignItems, FlexChild, FlexDirection, FlexInput, FlexOutput, GridChild, GridInput, GridOutput,
     GridTrack, JustifyContent,
+};
+// 新的统一布局引擎组件（推荐使用）
+pub use crate::layout::engine::{
+    BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutEngine, LayoutOutput, child_from_tree,
 };
 
 // ── 动画 ──

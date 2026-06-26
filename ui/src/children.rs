@@ -94,6 +94,8 @@ mod tests {
 
     struct Dummy;
     impl Widget for Dummy {
+        fn as_any(&self) -> &dyn std::any::Any { self }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
         fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
         fn preferred_size(&self, _: Option<&dyn uix_graphics::GraphicsEngine>) -> Size { Size::zero() }
     }

@@ -142,7 +142,7 @@ impl FontService {
     pub fn new() -> Self {
         Self {
             text_backend: Box::new(
-                crate::software_engine::ab_glyph_backend::AbGlyphBackend::new(),
+                crate::text_backends::ab_glyph::AbGlyphBackend::new(),
             ),
             registry: Vec::new(),
             primary_family: "sans-serif".into(),

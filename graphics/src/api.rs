@@ -26,7 +26,7 @@ pub use crate::null_engine::NullEngine;
 pub use crate::gpu_engine::GpuEngine;
 
 // ── SoftwareEngine ──
-pub use crate::software_engine::SoftwareEngine;
+pub use crate::engine::cpu::software::SoftwareEngine;
 
 // 布局引擎（Flexbox + Grid）已迁移至 ui::layout
 // FlexDirection, AlignItems, JustifyContent 等类型及计算函数改从 ui::layout 导入

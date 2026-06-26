@@ -267,16 +267,13 @@ pub fn demo_theme() {
 
 pub fn demo_graphics_engine() -> Result<(), Error> {
     println!("\n╔══ 图形引擎 ═══╗");
-    let platform = uix_platform::create_platform()
-        .map_err(|e| Error::new(uix_diag::Errc::PlatformError, e.short_what().to_string()))?;
-    let system_info = platform.system_info();
     let mut e = graphics::NullEngine::new();
-    e.initialize(800, 600, system_info)?;
-    e.fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
+    e.initialize(800, 600)?;
+    e.canvas_2d().fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
     e.shutdown();
     let mut boxed: Box<dyn GraphicsEngine> = Box::new(graphics::NullEngine::new());
-    boxed.initialize(640, 480, system_info)?;
-    println!("  Box<dyn GraphicsEngine> width={}", boxed.width());
+    boxed.initialize(640, 480)?;
+    println!("  Box<dyn GraphicsEngine> width={}", boxed.canvas_2d().width());
     boxed.shutdown();
     Ok(())
 }

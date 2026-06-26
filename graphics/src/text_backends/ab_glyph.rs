@@ -86,9 +86,6 @@ impl TextBackend for AbGlyphBackend {
                 if prev != GlyphId(0) { cx += sf.kern(prev, gid); }
             }
 
-            // gp.y = 基线位置（cy），而非字体盒顶部（cy - asc）。
-            // 渲染时 blit_glyph_layout 做 pos.y + gp.y + bearing_y，
-            // bearing_y ≈ -ascent，与 cy=asc 抵消后视觉文字从 pos.y 开始。
             let glyph_top = cy;
             out.push(PositionedGlyph { x: cx, y: glyph_top, width: adv, height: font_h, glyph_id: gid.0 as u32, font: *font });
 

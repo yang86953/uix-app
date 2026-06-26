@@ -7,3 +7,4 @@ pub mod canvas_2d;
 pub mod noop_canvas_2d;
 pub mod noop_canvas_3d;
 pub mod pixel_surface;
+pub mod software;

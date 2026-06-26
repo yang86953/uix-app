@@ -6,8 +6,10 @@
 //! 3. 按 x 排序活跃边，配对填充
 //! 4. 支持 NonZero 和 EvenOdd 填充规则
 
-use super::path::FillRule;
+use crate::path::FillRule;
 use uix_core::{Point, Rect};
+
+use super::fill_span;
 
 /// 一条扫描线边。
 #[derive(Debug, Clone, Copy)]
@@ -131,8 +133,8 @@ pub fn fill_polygons(
         active_edges.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
 
         // 配对填充（NonZero / EvenOdd）
-        let stride = width as usize;
-        let row_offset = y as usize * stride;
+        let stride = width;
+        let row_offset = (y * stride) as usize;
 
         match fill_rule {
             FillRule::NonZero => {
@@ -148,7 +150,10 @@ pub fn fill_polygons(
                             let sx = span_start.max(clip_x0);
                             let ex = span_end.min(clip_x1);
                             if sx < ex {
-                                fill_span(pixels, row_offset, sx, ex, color);
+                                fill_span(
+                                    pixels, stride, sx, ex, y as i32,
+                                    clip_x0, clip_y0, clip_x1, clip_y1, color,
+                                );
                             }
                             i = j + 1;
                             break;
@@ -168,7 +173,10 @@ pub fn fill_polygons(
                     let sx = span_start.max(clip_x0);
                     let ex = span_end.min(clip_x1);
                     if sx < ex {
-                        fill_span(pixels, row_offset, sx, ex, color);
+                        fill_span(
+                            pixels, stride, sx, ex, y as i32,
+                            clip_x0, clip_y0, clip_x1, clip_y1, color,
+                        );
                     }
                     i += 2;
                 }
@@ -178,41 +186,6 @@ pub fn fill_polygons(
         // 更新每条边的 x 为下一扫描线做准备
         for e in active_edges.iter_mut() {
             e.x += e.dxdy;
-        }
-    }
-}
-
-/// 在单行上填充一个水平区间。
-///
-/// 对不透明颜色使用 slice::fill（内部用 memset），比逐像素循环快 10x+。
-#[inline(always)]
-fn fill_span(pixels: &mut [u32], row_offset: usize, x0: i32, x1: i32, color: u32) {
-    let start = row_offset + x0 as usize;
-    let len = (x1 - x0) as usize;
-    if (color >> 24) == 0xFF {
-        // 不透明：直接 memset 整段
-        pixels[start..start + len].fill(color);
-    } else {
-        // 透明/半透明：逐像素 alpha 混合（color 是预乘 BGRA）
-        for pixel in pixels[start..start + len].iter_mut() {
-            let src_a = (color >> 24) & 0xFF;
-            if src_a == 0 {
-                continue;
-            }
-            let dst = *pixel;
-            if src_a == 0xFF || dst == 0 {
-                *pixel = color;
-                continue;
-            }
-            let dst_a = (dst >> 24) & 0xFF;
-            let out_a = src_a + dst_a - (src_a * dst_a / 255);
-            let out_r = ((color >> 16) & 0xFF) + (((dst >> 16) & 0xFF) * (255 - src_a) / 255);
-            let out_g = ((color >> 8) & 0xFF) + (((dst >> 8) & 0xFF) * (255 - src_a) / 255);
-            let out_b = (color & 0xFF) + ((dst & 0xFF) * (255 - src_a) / 255);
-            *pixel = (out_a.min(255) << 24)
-                | (out_r.min(255) << 16)
-                | (out_g.min(255) << 8)
-                | out_b.min(255);
         }
     }
 }

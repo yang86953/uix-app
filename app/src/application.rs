@@ -1,6 +1,7 @@
 use crate::cli::Cli;
 use crate::di::Container;
 use crate::window::Window;
+use uix_graphics::font_service::FontService;
 use uix_graphics::{GraphicsEngine, SoftwareEngine};
 use uix_platform::create_platform;
 use uix_platform::event::{UiEvent, UiEventPayload, UiEventType};
@@ -55,6 +56,8 @@ pub struct App {
     render_strategy: RenderStrategy,
     /// 自定义渲染引擎（可选，默认使用 SoftwareEngine）
     custom_engine: Option<Box<dyn GraphicsEngine>>,
+    /// 字体服务（由应用层独立管理，不归引擎所有）
+    pub font_service: FontService,
     /// 应用主题（默认 Ant Design 亮色）
     pub theme: Theme,
 }
@@ -71,6 +74,7 @@ impl Default for App {
             window_title: "UIX App".to_string(),
             render_strategy: RenderStrategy::Cpu,
             custom_engine: None,
+            font_service: FontService::new(),
             theme: Theme::antd_light(),
         }
     }
@@ -376,7 +380,7 @@ impl App {
 
         match self.window.as_mut() {
             Some(window) => {
-                window.run_widget_loop(tree, engine, theme, map_event, on_exit, on_frame)
+                window.run_widget_loop(tree, engine, &self.font_service, theme, map_event, on_exit, on_frame)
             }
             None => {
                 log::error!("App::run_widget_with_tokens: window creation failed");

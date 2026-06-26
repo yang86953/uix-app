@@ -9,6 +9,7 @@ use std::sync::OnceLock;
 use uix_core::{Rect, Size};
 use crate::define_widget;
 use uix_graphics::{FontHandle, GraphicsEngine};
+use uix_graphics::font_service::FontService;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
@@ -18,10 +19,10 @@ static LUCIDE_FONT: OnceLock<FontHandle> = OnceLock::new();
 
 /// 在 app 初始化时加载 Lucide TTF 字体，并注册全局句柄。
 ///
-/// 通过 `GraphicsEngine::load_font()` 加载字体数据，无需调用方
-/// 关心底层引擎实现。应在 app 初始化时、engine.initialize() 之后调用。
-pub fn init_lucide_font(data: &[u8], engine: &mut dyn GraphicsEngine) {
-    match engine.load_font(data) {
+/// 直接通过 `FontService::load_font()` 加载字体数据。
+/// 应在 app 初始化时、FontService 创建之后调用。
+pub fn init_lucide_font(data: &[u8], font_service: &mut FontService) {
+    match font_service.load_font(data) {
         Ok(fh) => {
             uix_diag::log::info_fn(&format!("Lucide font loaded, handle={:?}", fh));
             let _ = LUCIDE_FONT.set(fh);

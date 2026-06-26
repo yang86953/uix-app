@@ -15,7 +15,6 @@ use wayland_client::Main;
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 use wayland_protocols::misc::server_decoration::client::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration;
 use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::XdgActivationV1;
-use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_token_v1::XdgActivationTokenV1;
 use wayland_protocols::unstable::xdg_decoration::v1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
 
 use crate::core::WindowOps;

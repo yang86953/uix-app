@@ -64,7 +64,7 @@ impl WaylandBackend {
         let repeat_delay = self.repeat_delay.clone();
         let held_key_info = self.held_key_info.clone();
         let last_repeat_time = self.last_repeat_time.clone();
-                    let kbd = seat.get_keyboard();
+                    let _kbd = seat.get_keyboard();
 
         seat.quick_assign(move |seat, event, _| {
             if let wl_seat::Event::Capabilities { capabilities } = event {

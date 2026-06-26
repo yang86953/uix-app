@@ -143,6 +143,7 @@ impl Window {
         &mut self,
         tree: &mut WidgetTree,
         engine: &mut dyn GraphicsEngine,
+        font_service: &uix_graphics::font_service::FontService,
         theme: &RefCell<Theme>,
         map_event: M,
         on_exit: X,
@@ -479,8 +480,8 @@ impl Window {
                             engine.begin_frame(uix_graphics::UpdateStrategy::FullRedraw);
                             let lt_ref = theme.borrow();
                             let tokens = lt_ref.tokens();
-                            let lt_font = engine.font_service().loaded_font_handle;
-                            /* TODO(v2): pass font_service */ // layer_tree.render(engine, tree, tokens, lt_font, &engine.font_service());
+                            let lt_font = font_service.loaded_font_handle;
+                            layer_tree.render(engine, tree, tokens, lt_font, font_service);
                             drop(lt_ref);
                             engine.end_frame();
                             if t_render.elapsed() > std::time::Duration::from_millis(100) {
@@ -492,9 +493,9 @@ impl Window {
                             engine.begin_frame(uix_graphics::UpdateStrategy::FullRedraw);
                             let theme_ref = theme.borrow();
                             let tokens = theme_ref.tokens();
-                            let lt_font = engine.font_service().loaded_font_handle;
+                            let lt_font = font_service.loaded_font_handle;
                             let hover_pos = if self.debug_mode.get() { Some(self.cursor_pos.get()) } else { None };
-                            /* TODO(v2) */ // layer_tree.render_overlays(engine, tree, tokens, lt_font, &engine.font_service(), self.debug_mode.get(), hover_pos, &region);
+                            layer_tree.render_overlays(engine, tree, tokens, lt_font, font_service, self.debug_mode.get(), hover_pos, &region);
                             drop(theme_ref);
                             engine.end_frame();
                             if t_over.elapsed() > std::time::Duration::from_millis(100) {

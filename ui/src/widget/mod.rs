@@ -41,22 +41,11 @@ pub enum WidgetEvent {
 /// Widget tree node ID.
 pub type WidgetId = usize;
 
-// ── AsAny — 安全下转型支持 ────────────────────────────────────────
-
-/// 安全下转型:从 `&dyn Widget` 向下转型到具体类型。
-pub trait AsAny {
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
-
-impl<T: 'static> AsAny for T {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
+// ── AsAny — 安全下转型支持（内联到 Widget trait） ────────────────
+//
+// as_any / as_any_mut 已从独立的 AsAny trait 移到 Widget trait 中，
+// 消除 trait 继承。define_widget! 宏自动生成实现，手动 impl Widget
+// 需要显式实现这两个方法。
 
 // ════════════════════════════════════════════════════════════════════════════
 // 拆分 Trait — 按维度细分 Widget 行为
@@ -151,7 +140,11 @@ impl<T: Widget + ?Sized> WidgetEventHandler for T {}
 impl<T: Widget + ?Sized> WidgetLifecycle for T {}
 
 /// Widget trait — 核心行为抽象。
-pub trait Widget: AsAny {
+pub trait Widget {
+    /// 安全下转型：从 `&dyn Widget` 向下转型到具体类型。
+    fn as_any(&self) -> &dyn std::any::Any;
+    /// 安全下转型（可变）：从 `&mut dyn Widget` 向下转型到具体类型。
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
     /// 返回当前 widget 的内部可见性。与 BoxedWidget::visible 协同，
     /// 渲染管线通过 `BoxedWidget::visible() && self.visible()` 判断是否渲染。
     fn visible(&self) -> bool {

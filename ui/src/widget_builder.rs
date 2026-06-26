@@ -25,6 +25,8 @@ pub struct WidgetBuilder {
 }
 
 impl Widget for ContainerWidget {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
     fn preferred_size(&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
         let w = self.width.unwrap_or(0.0);
         let h = self.height.unwrap_or(0.0);

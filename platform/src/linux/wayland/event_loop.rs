@@ -18,7 +18,7 @@ use libc::{poll, pollfd, POLLIN};
 use uix_core::KeyMod;
 use crate::event::UiEvent;
 
-use super::keycode::{keycode_to_char, linux_keycode_to_keycode};
+use super::keycode::keycode_to_char;
 use super::WaylandBackend;
 
 impl WaylandBackend {

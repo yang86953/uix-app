@@ -31,25 +31,10 @@ define_widget! {
         style: Option<Style>,
     }
 
-    preferred_size => (&self, engine: Option<&dyn GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         if let (Some(w), Some(h)) = (self.fixed_width, self.fixed_height) {
             Size::new(w, h)
         } else {
-            if let Some(eng) = engine {
-                let opts = TextLayoutOptions {
-                    max_width: f32::MAX,
-                    max_height: 0.0,
-                    line_height: self.font_size * 1.5,
-                    word_wrap: false,
-                    h_align: uix_graphics::HAlign::Left,
-                    v_align: uix_graphics::VAlign::Top,
-                    font_size: self.font_size,
-                };
-                let sz = eng.measure_text(&FontHandle::default(), &self.text, &opts);
-                if sz.w > 0.0 && sz.h > 0.0 {
-                    return Size::new(sz.w, sz.h.max(self.font_size * 1.5));
-                }
-            }
             let len = self.text.len() as f32;
             Size::new(len * 7.0, self.font_size * 1.5)
         }

@@ -28,15 +28,14 @@ use crate::event::*;
 use self::shm_buffer::ShmBuffer;
 
 use std::collections::{HashSet, VecDeque};
-use std::fs::File;
 use std::os::unix::io::RawFd;
 
 use std::sync::{Arc, Mutex};
 
 use wayland_client::{
     protocol::{
-        wl_buffer, wl_compositor, wl_data_device_manager, wl_keyboard,
-        wl_output, wl_pointer, wl_region, wl_seat, wl_shm, wl_shm_pool, wl_surface,
+        wl_compositor, wl_data_device_manager, wl_keyboard,
+        wl_output, wl_pointer, wl_region, wl_seat, wl_shm, wl_surface,
     },
     Display, EventQueue, GlobalManager, Main,
 };
