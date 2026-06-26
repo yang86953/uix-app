@@ -152,6 +152,11 @@ impl<T: Widget + ?Sized> WidgetLifecycle for T {}
 
 /// Widget trait — 核心行为抽象。
 pub trait Widget: AsAny {
+    /// 返回当前 widget 的内部可见性。与 BoxedWidget::visible 协同，
+    /// 渲染管线通过 `BoxedWidget::visible() && self.visible()` 判断是否渲染。
+    fn visible(&self) -> bool {
+        true
+    }
     fn build(&self) -> Vec<Box<dyn Widget>> {
         vec![]
     }
@@ -186,6 +191,11 @@ pub trait Widget: AsAny {
         _ctx: &mut crate::render_context::RenderContext,
         _tree: &WidgetTree,
     ) {
+    }
+    /// 返回用于 hit-test 的命中区域。默认等于实际 frame，
+    /// overlay 模式可覆盖为窗口尺寸，使 (0,0,0,0) 的 widget 也能被命中。
+    fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
+        actual_frame
     }
     fn flex_grow(&self) -> f32 {
         0.0

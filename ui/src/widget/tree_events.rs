@@ -18,7 +18,10 @@ impl WidgetTree {
         for &child_id in &sorted {
             if let Some(hit) = self.hit_test_internal(child_id, pos) { return Some(hit); }
         }
-        if node.frame().contains(pos) { Some(id) } else { None }
+        // 使用 widget 的 hit_test_frame 代替原始 frame，支持 overlay 模式
+        let actual_frame = node.frame();
+        let hit_frame = node.inner().hit_test_frame(actual_frame);
+        if hit_frame.contains(pos) { Some(id) } else { None }
     }
 
     pub fn dispatch_event(&mut self, event: &WidgetEvent) -> EventResult {
@@ -29,7 +32,12 @@ impl WidgetTree {
                 if let Some(t) = target {
                     self.mark_dirty(t);
                     let result = self.dispatch_to(t, event);
-                    if result == EventResult::Handled { self.set_focus(Some(t)); }
+                    if result == EventResult::Handled {
+                        self.set_focus(Some(t));
+                    } else {
+                        // 点击不处理事件的 widget → 取消焦点
+                        self.set_focus(None);
+                    }
                     result
                 } else { self.set_focus(None); EventResult::NotHandled }
             }

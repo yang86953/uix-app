@@ -14,6 +14,8 @@ use wayland_client::protocol::{wl_compositor, wl_region, wl_shm, wl_surface};
 use wayland_client::Main;
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 use wayland_protocols::misc::server_decoration::client::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration;
+use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::XdgActivationV1;
+use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_token_v1::XdgActivationTokenV1;
 use wayland_protocols::unstable::xdg_decoration::v1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
 
 use crate::core::WindowOps;
@@ -36,6 +38,10 @@ pub(crate) struct WaylandWindowOps {
     pub(crate) kde_decoration: Option<Main<OrgKdeKwinServerDecoration>>,
     /// xdg-decoration 装饰对象（需维持生命周期以避免装饰被撤销）
     pub(crate) xdg_decoration: Option<Main<ZxdgToplevelDecorationV1>>,
+    /// 显示器信息，用于计算居中位置
+    pub(crate) outputs: Arc<Mutex<Vec<super::output::RawOutput>>>,
+    /// xdg_activation 协议，用于请求窗口激活（raise）
+    pub(crate) xdg_activation: Option<Main<XdgActivationV1>>,
 }
 
 impl WaylandWindowOps {
@@ -57,6 +63,8 @@ impl WaylandWindowOps {
         compositor: Main<wl_compositor::WlCompositor>,
         shm: Main<wl_shm::WlShm>,
         events: Arc<Mutex<VecDeque<UiEvent>>>,
+        outputs: Arc<Mutex<Vec<super::output::RawOutput>>>,
+        xdg_activation: Option<Main<XdgActivationV1>>,
     ) -> Self {
         Self {
             surface: None,
@@ -68,6 +76,8 @@ impl WaylandWindowOps {
             events,
             kde_decoration: None,
             xdg_decoration: None,
+            outputs,
+            xdg_activation,
         }
     }
 
@@ -221,11 +231,36 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_center_on_screen(&mut self) {
-        unimpl("os_center_on_screen"); // Wayland compositor 自行决定窗口位置
+        // Wayland 不支持客户端设置窗口位置，compositor 自行决定放置。
+        // 但我们可以读取显示器几何信息，供调试和日志参考。
+        let outputs = self.outputs.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(primary) = outputs.iter().find(|o| o.is_primary).or_else(|| outputs.first())
+        {
+            let cx = primary.x + primary.width / 2;
+            let cy = primary.y + primary.height / 2;
+            log::info!(
+                "窗口居中计算完成: 显示器 {}x{} @({},{}), 中心 ({},{})",
+                primary.width, primary.height, primary.x, primary.y, cx, cy,
+            );
+        } else {
+            log::info!("窗口居中: 未检测到显示器信息，由 compositor 自行放置");
+        }
     }
 
     fn os_raise(&mut self) {
-        unimpl("os_raise"); // Wayland 不支持程序化窗口层级
+        // 通过 xdg_activation_v1 请求窗口激活（提升聚焦）。
+        // 注意：此协议需要异步 done 事件获取 token 字符串，在同步上下文中
+        // 无法等待；携带空 token 的 activate 请求部分 compositor 仍会处理。
+        if let (Some(xa), Some(surface)) = (self.xdg_activation.as_ref(), self.surface.as_ref()) {
+            let token = xa.get_activation_token();
+            token.set_surface(surface);
+            token.set_app_id("belldandy".to_string());
+            token.commit();
+            xa.activate(String::new(), surface);
+            log::info!("已请求窗口激活 (xdg_activation_v1)");
+        } else {
+            log::info!("请求窗口提升: xdg_activation_v1 不可用，由 compositor 自行决定");
+        }
     }
 
     fn os_lower(&mut self) {

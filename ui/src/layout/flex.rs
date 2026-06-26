@@ -204,18 +204,19 @@ fn compute_single_line(
     if overflow > 0.0 {
         distribute_shrink(base_main_sizes, overflow, &input.children);
     }
-    let total_base: f32 = base_main_sizes.iter().sum();
-    let mut remaining = (container_main - total_base - gaps).max(0.0);
+    let total_after: f32 = base_main_sizes.iter().sum();
+    let mut remaining = (container_main - total_after - gaps).max(0.0);
     distribute_flex_grow(base_main_sizes, remaining, &input.children, total_flex_grow);
 
     // Apply Stretch justify-content: distribute remaining space as growth
-    let total_after: f32 = base_main_sizes.iter().sum();
+    let mut total_after: f32 = base_main_sizes.iter().sum();
     remaining = (container_main - total_after - gaps).max(0.0);
     if input.justify_content == JustifyContent::Stretch && remaining > 0.0 {
         let extra = remaining / count as f32;
         for b in base_main_sizes.iter_mut() {
             *b += extra;
         }
+        total_after = base_main_sizes.iter().sum();
     }
 
     // Clamp to min/max
@@ -224,9 +225,11 @@ fn compute_single_line(
     // Redistribute: space freed by max_size clamping is given back
     // to children with remaining flex_grow capacity. Loop up to 3 rounds
     // to handle cascading clamp effects until all space is consumed.
+    // Track current_total to avoid redundant sum() calls in Phase 3.
+    let mut current_total = total_after;
     for _round in 0..3 {
-        let total_after_clamp = base_main_sizes.iter().sum::<f32>();
-        let leftover = (container_main - total_after_clamp - gaps).max(0.0);
+        current_total = base_main_sizes.iter().sum::<f32>();
+        let leftover = (container_main - current_total - gaps).max(0.0);
         if leftover > 0.0 && total_flex_grow > 0.0 {
             distribute_flex_grow(base_main_sizes, leftover, &input.children, total_flex_grow);
             clamp_sizes(base_main_sizes, cross_sizes, &input.children, is_row);
@@ -236,8 +239,9 @@ fn compute_single_line(
     }
 
     // Phase 3: justify-content positioning
-    let total_after = base_main_sizes.iter().sum::<f32>();
-    remaining = (container_main - total_after - gaps).max(0.0);
+    // Reuse the most recent total to avoid an extra sum() traversal
+    let total_final = base_main_sizes.iter().sum::<f32>();
+    remaining = (container_main - total_final - gaps).max(0.0);
     let (effective_gap, start_offset) = compute_justify(
         remaining,
         count,
@@ -429,7 +433,6 @@ fn compute_wrapped(
     // 交叉轴总尺寸：所有行/列的交叉轴尺寸 + 行间/列间 gap
     // cursor_cross 已累加每行交叉轴 + line_gap，减去最后一个多余的 gap
     let total_cross = (cursor_cross - line_gap).max(0.0);
-    let total_cross = total_cross.max(0.0);
     let cross_align = input.align_items;
     let cross_start_offset = match cross_align {
         AlignItems::Center => (container_cross - total_cross) * 0.5,

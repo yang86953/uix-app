@@ -111,13 +111,28 @@ impl<'a> RenderContext<'a> {
         self.engine.fill_rect(rect, color, radius);
     }
 
-    /// 应用 Style 到矩形区域（背景 + 边框）。
+    /// 应用 Style 到矩形区域（背景 + 边框 + 阴影 + 透明度）。
     pub fn apply_style(&mut self, rect: Rect, style: &Style) {
         let r = if style.border_radius > 0.0 {
             Some(Radius::uniform(style.border_radius))
         } else {
             None
         };
+        // 盒阴影在背景之前绘制（背后发光/立体感）
+        if style.shadow_blur > 0.0 && style.shadow_color.a > 0 {
+            self.draw_box_shadow(
+                rect,
+                style.shadow_blur,
+                style.shadow_offset_x,
+                style.shadow_offset_y,
+                style.shadow_color,
+                r,
+            );
+        }
+        // 透明度
+        if style.opacity < 1.0 {
+            self.engine().set_opacity(style.opacity);
+        }
         if let Some(bg) = style.background {
             self.fill_rect(rect, bg, r);
         }
@@ -125,6 +140,10 @@ impl<'a> RenderContext<'a> {
             if let Some(bc) = style.border_color {
                 self.stroke_rect(rect, bc, style.border_width, r);
             }
+        }
+        // 恢复透明度
+        if style.opacity < 1.0 {
+            self.engine().set_opacity(1.0);
         }
     }
 

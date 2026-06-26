@@ -489,6 +489,9 @@ impl LayerTree {
 
     /// 渲染 widget 自身及其子节点（直接遍历 children LayerNodes）。
     /// 子节点已预排序，直接遍历无需再次排序。
+    /// 注意：先渲染 widget 自身（由其 render() 自行判断内部可见性），
+    /// 再通过 inner().visible() 决定是否渲染子节点。这样模态框等组件
+    /// 的 render() 可以控制自身绘制，同时阻止子节点在隐藏时渲染。
     fn render_widget_and_children(
         id: WidgetId,
         children: &mut [LayerNode],
@@ -502,10 +505,13 @@ impl LayerTree {
             let frame = node.frame();
             ctx.save();
             node.inner().render(frame, ctx, tree);
-            // Direct 节点只用于无 children_clip 的 widget，不需要 clip children
-            // 子节点已预排序，直接遍历
-            for child in children.iter_mut() {
-                Self::render_node(child, ctx, tree);
+            // 仅在 widget 内部可见时才渲染子节点。
+            // 支持 Modal 等组件：内部 visible 为 false 时 render() 已返回，
+            // 同时阻止子节点在隐藏位渲染（子节点 frame 可能仍在屏幕内）。
+            if node.inner().visible() {
+                for child in children.iter_mut() {
+                    Self::render_node(child, ctx, tree);
+                }
             }
             ctx.restore();
         }
@@ -529,10 +535,11 @@ impl LayerTree {
             let frame = node.frame();
             ctx.save();
             node.inner().render(frame, ctx, tree);
-            // 递归遍历 WidgetTree 子节点（跳过 LayerNode 层级），
-            // 确保整棵子树都能被渲染，不遗漏深层嵌套的 widget。
-            for &child_id in node.children() {
-                Self::render_widget_and_children_direct(child_id, ctx, tree);
+            // 仅在 widget 内部可见时才递归渲染子节点
+            if node.inner().visible() {
+                for &child_id in node.children() {
+                    Self::render_widget_and_children_direct(child_id, ctx, tree);
+                }
             }
             ctx.restore();
         }

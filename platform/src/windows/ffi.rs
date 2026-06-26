@@ -22,27 +22,13 @@ extern "system" {
     // ── 控制台 ──
     pub(super) fn GetStdHandle(nStdHandle: u32) -> *mut std::ffi::c_void;
     pub(super) fn SetConsoleTextAttribute(hConsoleOutput: *mut std::ffi::c_void, wAttributes: u16) -> i32;
-    pub(super) fn WriteConsoleA(
-        hConsoleOutput: *mut std::ffi::c_void,
-        lpBuffer: *const u8,
-        nNumberOfCharsToWrite: u32,
-        lpNumberOfCharsWritten: *mut u32,
-        lpReserved: *mut std::ffi::c_void,
-    ) -> i32;
-    pub(super) fn GetConsoleScreenBufferInfo(
-        hConsoleOutput: *mut std::ffi::c_void,
-        lpConsoleScreenBufferInfo: *mut std::ffi::c_void,
-    ) -> i32;
-    pub(super) fn SetConsoleCursorInfo(
-        hConsoleOutput: *mut std::ffi::c_void,
-        lpConsoleCursorInfo: *const std::ffi::c_void,
-    ) -> i32;
+    // WriteConsoleA, GetConsoleScreenBufferInfo, SetConsoleCursorInfo
+    // 已在 console.rs 中声明（使用具体类型，避免 *mut c_void 签名冲突）
     pub(super) fn SetConsoleTitleW(lpConsoleTitle: *const u16) -> i32;
 
     // ── 系统信息 ──
-    pub(super) fn RtlGetVersion(lpVersionInformation: *mut std::ffi::c_void) -> i32;
-    pub(super) fn GetNativeSystemInfo(lpSystemInfo: *mut std::ffi::c_void);
-    pub(super) fn GlobalMemoryStatusEx(lpBuffer: *mut std::ffi::c_void) -> i32;
+    // RtlGetVersion, GetNativeSystemInfo, GlobalMemoryStatusEx
+    // 已在 system_info.rs 中声明（使用具体类型）
     pub(super) fn GetComputerNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
     pub(super) fn GetTickCount64() -> u64;
     pub(super) fn GetUserNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
@@ -60,34 +46,9 @@ extern "system" {
     pub(super) fn GetWindowsDirectoryW(lpBuffer: *mut u16, uSize: u32) -> u32;
 
     // ── 字符串/错误 ──
-    pub(super) fn WideCharToMultiByte(
-        CodePage: u32,
-        dwFlags: u32,
-        lpWideCharStr: *const u16,
-        cchWideChar: u32,
-        lpMultiByteStr: *mut u8,
-        cbMultiByte: u32,
-        lpDefaultChar: *const u8,
-        lpUsedDefaultChar: *mut i32,
-    ) -> i32;
-    pub(super) fn MultiByteToWideChar(
-        CodePage: u32,
-        dwFlags: u32,
-        lpMultiByteStr: *const u8,
-        cbMultiByte: u32,
-        lpWideCharStr: *mut u16,
-        cchWideChar: u32,
-    ) -> i32;
+    // WideCharToMultiByte, MultiByteToWideChar, FormatMessageW
+    // 已在 util.rs 中声明（使用具体类型）
     pub(super) fn GetLastError() -> u32;
-    pub(super) fn FormatMessageW(
-        dwFlags: u32,
-        lpSource: *const std::ffi::c_void,
-        dwMessageId: u32,
-        dwLanguageId: u32,
-        lpBuffer: *mut u16,
-        nSize: u32,
-        Arguments: *mut u8,
-    ) -> u32;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -172,7 +133,7 @@ extern "system" {
     pub(super) fn GetPriorityClipboardFormat(paFormatPriorityList: *const u32, cFormats: i32) -> i32;
 
     // ── 键盘 ──
-    pub(super) fn GetLastInputInfo(plii: *mut std::ffi::c_void) -> i32;
+    // GetLastInputInfo 已在 keyboard.rs 中声明（使用具体类型）
     pub(super) fn GetDoubleClickTime() -> u32;
 }
 
@@ -183,14 +144,7 @@ extern "system" {
 #[link(name = "gdi32")]
 extern "system" {
     pub(super) fn GetDeviceCaps(hdc: *mut std::ffi::c_void, nIndex: i32) -> i32;
-    pub(super) fn CreateDIBSection(
-        hdc: *mut std::ffi::c_void,
-        pbmi: *const std::ffi::c_void,
-        usage: u32,
-        ppvBits: *mut *mut std::ffi::c_void,
-        hSection: *mut std::ffi::c_void,
-        offset: u32,
-    ) -> *mut std::ffi::c_void;
+    // CreateDIBSection 已在 gdi_presenter.rs 中声明（使用具体 BITMAPINFO 类型）
     pub(super) fn SelectObject(hdc: *mut std::ffi::c_void, h: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(super) fn DeleteObject(h: *mut std::ffi::c_void) -> i32;
     pub(super) fn DeleteDC(hdc: *mut std::ffi::c_void) -> i32;
@@ -219,14 +173,9 @@ extern "system" {
 
 #[link(name = "shell32")]
 extern "system" {
-    pub(super) fn Shell_NotifyIconW(dwMessage: u32, lpdata: *mut std::ffi::c_void) -> i32;
-    pub(super) fn SHGetKnownFolderPath(
-        rfid: *const std::ffi::c_void,
-        dwFlags: u32,
-        hToken: *mut std::ffi::c_void,
-        ppszPath: *mut *mut u16,
-    ) -> i32;
-    pub(super) fn SHBrowseForFolderW(lpbi: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    // Shell_NotifyIconW 已在 notification.rs 中声明（使用具体 NOTIFYICONDATAW 类型）
+    // SHGetKnownFolderPath 已在 filesystem.rs 中声明（使用具体 GUID 类型）
+    // SHBrowseForFolderW 已在 file_dialog.rs 中声明（使用具体 BROWSEINFOW 类型）
     pub(super) fn SHGetPathFromIDListW(pidl: *mut std::ffi::c_void, pszPath: *mut u16) -> i32;
 }
 
@@ -236,8 +185,7 @@ extern "system" {
 
 #[link(name = "comdlg32")]
 extern "system" {
-    pub(super) fn GetOpenFileNameW(lpofn: *mut std::ffi::c_void) -> i32;
-    pub(super) fn GetSaveFileNameW(lpofn: *mut std::ffi::c_void) -> i32;
+    // GetOpenFileNameW, GetSaveFileNameW 已在 file_dialog.rs 中声明（使用具体 OPENFILENAMEW 类型）
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -247,6 +195,39 @@ extern "system" {
 #[link(name = "ole32")]
 extern "system" {
     pub(super) fn CoTaskMemFree(pv: *mut std::ffi::c_void);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// advapi32 — 注册表
+// ════════════════════════════════════════════════════════════════════════════
+
+/// HKEY_CURRENT_USER 伪句柄（0x80000001 零扩展到指针宽度）
+pub(super) fn hkey_current_user() -> *mut std::ffi::c_void {
+    0x8000_0001usize as *mut std::ffi::c_void
+}
+
+pub const KEY_READ: u32 = 0x20019;
+pub const REG_DWORD: u32 = 4;
+pub const ERROR_SUCCESS: i32 = 0;
+
+#[link(name = "advapi32")]
+extern "system" {
+    pub(super) fn RegOpenKeyExW(
+        hKey: *mut std::ffi::c_void,
+        lpSubKey: *const u16,
+        ulOptions: u32,
+        samDesired: u32,
+        phkResult: *mut *mut std::ffi::c_void,
+    ) -> i32;
+    pub(super) fn RegQueryValueExW(
+        hKey: *mut std::ffi::c_void,
+        lpValueName: *const u16,
+        lpReserved: *mut u32,
+        lpType: *mut u32,
+        lpData: *mut u8,
+        lpcbData: *mut u32,
+    ) -> i32;
+    pub(super) fn RegCloseKey(hKey: *mut std::ffi::c_void) -> i32;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -260,10 +241,6 @@ extern "system" {
         himc: *mut std::ffi::c_void,
         dwFlags: u32,
     ) -> i32;
-    pub(super) fn ImmGetContext(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
-    pub(super) fn ImmReleaseContext(hwnd: *mut std::ffi::c_void, himc: *mut std::ffi::c_void) -> i32;
-    pub(super) fn ImmSetCompositionWindow(
-        himc: *mut std::ffi::c_void,
-        lpCompForm: *mut std::ffi::c_void,
-    ) -> i32;
+    // ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow
+    // 已在 ime.rs 中声明（使用具体类型）
 }

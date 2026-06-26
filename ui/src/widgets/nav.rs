@@ -28,6 +28,7 @@ define_widget! {
         fixed_height: f32,
         index: usize,
         active_shared: SharedActive,
+        compact: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -56,6 +57,38 @@ define_widget! {
         let bg_elevated = ctx.tokens().color_bg_elevated();
 
         let item_frame = Rect::new(frame.x, frame.y, self.fixed_width, self.fixed_height);
+
+        // —— Compact 模式：纯图标按钮，无文字标签，无指示条 ——
+        if self.compact {
+            let (bg, text_color) = if active {
+                (primary_bg, primary)
+            } else if self.hovered {
+                (fill_tertiary, text)
+            } else {
+                (bg_elevated, text_secondary)
+            };
+            ctx.fill_rect(item_frame, bg, None);
+
+            let display = if !self.icon.is_empty() {
+                crate::widgets::icon::icon_char(&self.icon)
+            } else if !self.label.is_empty() {
+                // 取 label 的第一个字符作为图标展示
+                &self.label[..self.label.char_indices().nth(1).map(|(i, _)| i).unwrap_or(self.label.len())]
+            } else {
+                ""
+            };
+            let saved_font = *ctx.font();
+            if !self.icon.is_empty() {
+                if let Some(fh) = crate::widgets::icon::lucide_handle() {
+                    ctx.set_font(fh);
+                }
+            }
+            ctx.text_center(display, item_frame, text_color, 18.0);
+            ctx.set_font(saved_font);
+            return;
+        }
+
+        // —— 标准模式 ——
         let indicator_w = 3.0;
 
         let (bg, text_color) = if active {
@@ -104,6 +137,7 @@ impl NavItem {
             fixed_height: 36.0,
             index,
             active_shared,
+            compact: false,
         }
     }
 
@@ -119,6 +153,12 @@ impl NavItem {
 
     pub fn height(mut self, h: f32) -> Self {
         self.fixed_height = h;
+        self
+    }
+
+    /// 紧凑模式：纯图标按钮，不显示文字标签和指示条，高度自动设为宽度（正方形）。
+    pub fn compact(mut self, val: bool) -> Self {
+        self.compact = val;
         self
     }
 }
@@ -175,6 +215,8 @@ pub struct Navigation {
     width: f32,
     height: f32,
     show_version: bool,
+    show_title: bool,
+    compact_items: bool,
 }
 
 impl Navigation {
@@ -186,6 +228,8 @@ impl Navigation {
             width: 200.0,
             height: 720.0,
             show_version: true,
+            show_title: true,
+            compact_items: false,
         }
     }
 
@@ -223,29 +267,46 @@ impl Navigation {
         self
     }
 
+    /// 是否显示标题栏（默认 true）。紧凑导航栏可设为 false。
+    pub fn show_title(mut self, show: bool) -> Self {
+        self.show_title = show;
+        self
+    }
+
+    /// 紧凑模式：所有项变为纯图标按钮，无文字标签，高度自动设为宽度。
+    pub fn compact(mut self, val: bool) -> Self {
+        self.compact_items = val;
+        self
+    }
+
     pub fn build(self, tokens: &dyn crate::theme::TokenProvider) -> crate::widget::WidgetNode {
         let loc = crate::locale::use_locale();
         use crate::widget::IntoWidgetNode;
         use crate::widgets::{Container, Divider, Label};
 
-        let item_h = 36.0;
+        let item_h = if self.compact_items { self.width } else { 36.0 };
         let mut children: Vec<crate::widget::WidgetNode> = Vec::new();
 
-        children.push(
-            Label::new(&self.title).color(tokens.color_primary())
-                .font_size(20.0)
-                .size(self.width, 52.0)
-                .into_node(),
-        );
+        if self.show_title {
+            children.push(
+                Label::new(&self.title).color(tokens.color_primary())
+                    .font_size(20.0)
+                    .size(self.width, 52.0)
+                    .into_node(),
+            );
 
-        children.push(
-            Divider::new().color(tokens.color_border_secondary()).into_node(),
-        );
+            children.push(
+                Divider::new().color(tokens.color_border_secondary()).into_node(),
+            );
+        }
 
         for item in self.items {
             let mut nav_item = item;
             nav_item.fixed_width = self.width;
             nav_item.fixed_height = item_h;
+            if self.compact_items {
+                nav_item.compact = true;
+            }
             children.push(nav_item.into_node());
         }
 

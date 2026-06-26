@@ -79,6 +79,7 @@ pub use crate::widgets::result::{Result, ResultType};
 pub use crate::widgets::spin::{Spin, SpinSize};
 pub use crate::widgets::tag::{Tag, TagColor};
 pub use crate::widgets::typography::{Typography, TypographyType};
+pub use crate::widgets::rich_text::{RichText, RichTextSegment, RichTextStyle, layout_rich_text_segments, parse_rich_text};
 
 // ── Phase 2: 中等组件 ──
 pub use crate::widgets::collapse::{Collapse, CollapsePanel};
@@ -129,6 +130,7 @@ pub use crate::widgets::modal::Modal;
 pub use crate::widgets::nav::{NavGroup, NavItem, Navigation, SharedActive};
 pub use crate::widgets::progress::{ProgressBar, ProgressMode};
 pub use crate::widgets::scroll_view::{ScrollDirection, ScrollView};
+pub use crate::widgets::selectable_list::{SelectableList, SelectableItem};
 pub use crate::widgets::space::{Space, SpaceSize};
 pub use crate::widgets::switch::Switch;
 pub use crate::widgets::theme_toggle::ThemeToggle;

@@ -81,3 +81,22 @@ pub mod windows;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod linux;
+
+// ── 系统信息便捷函数 ───────────────────────────────────────────
+
+/// 探测系统可用空闲内存（字节），不需要完整的 Platform 实例。
+/// 供大脑初始化等早期阶段使用。
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn available_memory_bytes() -> u64 {
+    linux::system_info::LinuxSystemInfo::new().memory_info().available_bytes
+}
+
+#[cfg(windows)]
+pub fn available_memory_bytes() -> u64 {
+    windows::system_info::WindowsSystemInfo::new().memory_info().available_bytes
+}
+
+#[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
+pub fn available_memory_bytes() -> u64 {
+    512 * 1024 * 1024 // 回退：512 MB
+}

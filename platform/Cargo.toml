@@ -28,7 +28,7 @@ features = [
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 libc = "0.2.186"
 wayland-client = { version = "=0.29.5", features = ["dlopen"] }
-wayland-protocols = { version = "=0.29.5", features = ["client", "unstable_protocols"] }
+wayland-protocols = { version = "=0.29.5", features = ["client", "unstable_protocols", "staging_protocols"] }
 glow = { workspace = true }
 khronos-egl = { workspace = true }
 

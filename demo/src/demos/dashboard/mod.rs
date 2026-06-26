@@ -358,17 +358,29 @@ fn rebuild_for_theme(
     state: &DemoState,
 ) -> SharedActive {
     log::debug!("rebuild_for_theme: dark={}", state.dark_mode.get());
+    // 先更新内存中的 tokens，供后续 snapshot 和渲染使用
+    dyn_tokens.set_mode(state.dark_mode.get());
     let tk = dyn_tokens.snapshot();
+    // 清除色与根容器背景（color_bg_layout）一致
+    eng.set_clear_color(tk.color_bg_layout);
     let active = state.prev_active.get();
-    let (new_root, new_active, new_page_ids) = build_demo_tree(&tk, active);
+    let (new_root, new_active, _) = build_demo_tree(&tk, active);
     tree.build(new_root);
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, eng.width() as f32, eng.height() as f32));
     }
-    // 更新 state 中的 page_ids
-    *state.page_ids.borrow_mut() = new_page_ids.clone();
-    // 隐藏所有非活跃页面（build_demo_tree 默认全部可见，须在此修正）
-    for (i, &id) in new_page_ids.iter().enumerate() {
+    // 树构建后通过遍历获取每页容器的真实 WidgetId
+    let page_ids: Vec<WidgetId> = tree.root_id()
+        .and_then(|root| tree.get(root))
+        .map(|r| r.children().to_vec())
+        .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
+        .map(|cc| cc.children().to_vec())
+        .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
+        .map(|pp| pp.children().to_vec())
+        .unwrap_or_default();
+    *state.page_ids.borrow_mut() = page_ids.clone();
+    // 隐藏所有非活跃页面（build_demo_tree 默认全部可见）
+    for (i, &id) in page_ids.iter().enumerate() {
         if i != active {
             tree.set_visible(id, false);
         }

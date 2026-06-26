@@ -32,9 +32,12 @@ define_widget! {
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
         let mut h = 0.0f32;
         for p in &self.panels {
-            h += 36.0; // header
+            h += 36.0; // header 高度（14px 字体 + padding）
             if p.expanded {
-                h += p.content.len() as f32 * 0.4 * 14.0 + 16.0; // content estimate, 与 render 保持一致
+                // 内容高度 = 行数 × 行高（12px × 1.5）+ 上下 padding（8+8）
+                // 与 render 中 draw_text(12.0) 保持一致，不再使用虚构字符宽度估算。
+                let line_count = p.content.lines().count().max(1) as f32;
+                h += line_count * 12.0 * 1.5 + 16.0;
             }
         }
         Size::new(0.0, h)
@@ -64,7 +67,8 @@ define_widget! {
                 }
                 cy += header_h;
                 if self.panels[i].expanded {
-                    cy += self.panels[i].content.len() as f32 * 0.4 * 14.0 + 16.0;
+                    let lc = self.panels[i].content.lines().count().max(1) as f32;
+                    cy += lc * 12.0 * 1.5 + 16.0;
                 }
             }
         }
@@ -95,7 +99,8 @@ define_widget! {
             if p.expanded {
                 let content_y = y + 8.0;
                 ctx.draw_text(&p.content, uix_core::Point::new(frame.x + 16.0, content_y), text_secondary, 12.0);
-                y += p.content.len() as f32 * 0.4 * 14.0 + 16.0;
+                let lc = p.content.lines().count().max(1) as f32;
+                y += lc * 12.0 * 1.5 + 16.0;
             }
         }
     }
@@ -110,7 +115,8 @@ define_widget! {
     dirty_rect => (&self, frame: Rect) -> Rect {
         let mut h = self.panels.len() as f32 * 36.0;
         for p in &self.panels {
-            h += p.content.len() as f32 * 0.4 * 14.0 + 16.0;
+            let lc = p.content.lines().count().max(1) as f32;
+            h += lc * 12.0 * 1.5 + 16.0;
         }
         Rect::new(frame.x, frame.y, frame.w, h)
     }

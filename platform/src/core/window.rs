@@ -90,7 +90,7 @@ pub trait WindowOps {
 /// 报告未实现的窗口操作。
 /// 某些平台（如 Wayland）不支持程序化窗口定位/层级，这属于预期行为。
 pub fn unimpl(method: &str) {
-    log::warn!("WindowOps::{} 未实现！该平台不支持此窗口操作。", method);
+    log::debug!("WindowOps::{} 未实现！该平台不支持此窗口操作。", method);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

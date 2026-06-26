@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use uix_core::{Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
+use crate::style::Style;
 use uix_graphics::{FontHandle, GraphicsEngine, TextLayoutOptions};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
@@ -26,6 +27,8 @@ define_widget! {
         sel_dragging: Cell<bool>,
         /// 上次渲染时的文本 draw_pos（用于事件命中测试）。
         draw_pos: Cell<uix_core::Point>,
+        /// 统一样式覆盖（优先于 color/font_size 独立字段）。
+        style: Option<Style>,
     }
 
     preferred_size => (&self, engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -112,8 +115,14 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let c = self.color.unwrap_or_else(|| ctx.tokens().color_text());
-        let fs = self.font_size;
+        // 统一样式优先：style.color > self.color > theme default
+        let c = self.style.as_ref()
+            .map(|s| s.color)
+            .or(self.color)
+            .unwrap_or_else(|| ctx.tokens().color_text());
+        let fs = self.style.as_ref()
+            .map(|s| s.font_size)
+            .unwrap_or(self.font_size);
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = TextLayoutOptions {
@@ -208,7 +217,14 @@ impl Label {
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
             draw_pos: Cell::new(uix_core::Point::new(0.0, 0.0)),
+            style: None,
         }
+    }
+
+    /// 设置统一样式（覆盖文字颜色/字号等视觉属性）。
+    pub fn style(mut self, s: Style) -> Self {
+        self.style = Some(s);
+        self
     }
 
     pub fn color(mut self, c: uix_graphics::Color) -> Self {

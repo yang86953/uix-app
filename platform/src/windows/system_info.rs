@@ -259,6 +259,7 @@ struct PROCESS_MEMORY_COUNTERS {
     PrivateUsage: usize,
 }
 
+#[repr(C)]
 struct MEMORYSTATUSEX {
     dwLength: u32,
     dwMemoryLoad: u32,

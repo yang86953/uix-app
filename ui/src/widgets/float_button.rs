@@ -78,10 +78,10 @@ impl FloatButton {
 
 impl Default for FloatButton { fn default() -> Self { Self::new("+") } }
 
-/// BackTop — 回到顶部按钮（FloatButton 的便捷封装）。
-pub struct BackTop;
+/// FloatButtonBackTop — 回到顶部按钮（FloatButton 的便捷封装）。
+pub struct FloatButtonBackTop;
 
-impl BackTop {
+impl FloatButtonBackTop {
     pub fn new() -> FloatButton {
         FloatButton::new("↑").tooltip("回到顶部").position(0.0, 0.0)
     }

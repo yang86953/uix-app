@@ -41,6 +41,7 @@ use wayland_client::{
     Display, EventQueue, GlobalManager, Main,
 };
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
+use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::XdgActivationV1;
 use wayland_protocols::unstable::text_input::v3::client::{
     zwp_text_input_manager_v3::ZwpTextInputManagerV3,
     zwp_text_input_v3::ZwpTextInputV3,
@@ -127,7 +128,10 @@ pub struct WaylandBackend {
     // ── 文本输入（IME）──────────────────────────────────────────
     pub(crate) text_input_manager: Option<Main<ZwpTextInputManagerV3>>,
     pub(crate) text_input: Option<Main<ZwpTextInputV3>>,
-    pub(crate) text_input_enabled: bool,
+    pub(crate) text_input_enabled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+
+    // ── xdg_activation（窗口提升/聚焦）────────────────────────
+    pub(crate) _xdg_activation: Option<Main<XdgActivationV1>>,
 }
 
 impl WaylandBackend {
@@ -165,6 +169,11 @@ impl WaylandBackend {
         let text_input_manager_cell: Arc<Mutex<Option<Main<ZwpTextInputManagerV3>>>> =
             Arc::new(Mutex::new(None));
         let tim_for_cb = text_input_manager_cell.clone();
+
+        // xdg_activation 绑定
+        let xdg_activation_cell: Arc<Mutex<Option<Main<XdgActivationV1>>>> =
+            Arc::new(Mutex::new(None));
+        let xa_for_cb = xdg_activation_cell.clone();
 
         // ── 手动回调绑定所有全局（避免 global_filter! 宏的高阶生命周期问题）──
         let globals = GlobalManager::new_with_cb(
@@ -256,6 +265,11 @@ impl WaylandBackend {
                                     registry.bind(version.min(1), id);
                                 *tim_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
                             }
+                            "xdg_activation_v1" => {
+                                let proxy: Main<XdgActivationV1> =
+                                    registry.bind(version.min(1), id);
+                                *xa_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
+                            }
                             _ => {}
                         }
                     }
@@ -316,6 +330,9 @@ impl WaylandBackend {
 
         let text_input_manager = text_input_manager_cell.lock().unwrap_or_else(|e| e.into_inner()).take();
 
+        // 提取 xdg_activation（先求值再用于 struct init，避免 MutexGuard 生命周期问题）
+        let xdg_activation = xdg_activation_cell.lock().unwrap_or_else(|e| e.into_inner()).take();
+
         Ok(Self {
             display,
             event_queue,
@@ -355,7 +372,8 @@ impl WaylandBackend {
             _wl_outputs,
             text_input_manager,
             text_input: None,
-            text_input_enabled: false,
+            text_input_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            _xdg_activation: xdg_activation,
         })
     }
 }

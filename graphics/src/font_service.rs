@@ -231,7 +231,7 @@ impl FontService {
     }
 
     /// 从文件路径加载字体，注册时会记录路径信息。
-    pub fn load_font_from_path(&mut self, path: &str, size: f32) -> Option<FontHandle> {
+    pub fn load_font_from_path(&mut self, path: &str, _size: f32) -> Option<FontHandle> {
         let data = std::fs::read(path).ok()?;
         let handle = self.text_backend.load_font(&data).ok()?;
         let idx = handle.0 as usize;

@@ -68,6 +68,13 @@ define_widget! {
             ctx.fill_rect(frame, bg, None);
         }
     }
+
+    layout_children => (&self, frame: Rect, children: &[crate::widget::WidgetId], _tree: &WidgetTree)
+        -> Vec<(crate::widget::WidgetId, Rect)>
+    {
+        // Sider 作为布局容器，将其 frame 直接传递给所有子节点
+        children.iter().map(|&cid| (cid, frame)).collect()
+    }
 }
 
 define_widget! {
@@ -86,6 +93,13 @@ define_widget! {
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
         }
+    }
+
+    layout_children => (&self, frame: Rect, children: &[crate::widget::WidgetId], _tree: &WidgetTree)
+        -> Vec<(crate::widget::WidgetId, Rect)>
+    {
+        // Content 作为布局容器，将其 frame 直接传递给所有子节点
+        children.iter().map(|&cid| (cid, frame)).collect()
     }
 }
 

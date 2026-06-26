@@ -23,6 +23,7 @@ mod wrapper;
 
 pub use color_tokens::*;
 pub use design_tokens::*;
+pub use design_tokens::primitives::ThemePrimitives;
 pub use spacing_tokens::*;
 pub use typography_tokens::*;
 pub use wrapper::*;

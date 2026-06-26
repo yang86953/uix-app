@@ -24,7 +24,14 @@ pub struct Size {
 }
 
 impl Size {
-    pub const fn new(w: f32, h: f32) -> Self { Self { w, h } }
+    /// Create a new Size with NaN-safe clamping: NaN values become 0.0.
+    /// Negative values are preserved (caller uses `.max(0.0)` if needed).
+    pub fn new(w: f32, h: f32) -> Self {
+        Self {
+            w: if w.is_nan() { 0.0 } else { w },
+            h: if h.is_nan() { 0.0 } else { h },
+        }
+    }
     pub const fn zero() -> Self { Self { w: 0.0, h: 0.0 } }
     pub const fn infinite() -> Self { Self { w: f32::MAX, h: f32::MAX } }
 }
@@ -41,7 +48,15 @@ pub struct Rect {
 }
 
 impl Rect {
-    pub const fn new(x: f32, y: f32, w: f32, h: f32) -> Self { Self { x, y, w, h } }
+    /// Create a new Rect with NaN-safe clamping: NaN values become 0.0.
+    pub fn new(x: f32, y: f32, w: f32, h: f32) -> Self {
+        Self {
+            x: if x.is_nan() { 0.0 } else { x },
+            y: if y.is_nan() { 0.0 } else { y },
+            w: if w.is_nan() { 0.0 } else { w },
+            h: if h.is_nan() { 0.0 } else { h },
+        }
+    }
     pub const fn zero() -> Self { Self { x: 0.0, y: 0.0, w: 0.0, h: 0.0 } }
 
     pub fn inset(&self, p: EdgeInsets) -> Self {

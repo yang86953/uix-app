@@ -90,7 +90,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             inner.value = value;
             inner.generation += 1;
             snapshot = inner.value.clone();
-            watchers = inner.watchers.iter().map(|w| Arc::clone(w)).collect();
+            watchers = inner.watchers.clone();
         }
         for watcher in &watchers {
             watcher(&snapshot);
@@ -108,7 +108,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             f(&mut inner.value);
             inner.generation += 1;
             snapshot = inner.value.clone();
-            watchers = inner.watchers.iter().map(|w| Arc::clone(w)).collect();
+            watchers = inner.watchers.clone();
         }
         for watcher in &watchers {
             watcher(&snapshot);

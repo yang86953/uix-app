@@ -1,8 +1,8 @@
 use uix_core::{Point, Rect, Size};
 use crate::define_widget;
+use crate::style::Style;
 use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;
-use crate::style::Style;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 
 /// Button style variant.
@@ -41,6 +41,8 @@ define_widget! {
         danger: bool,
         block: bool,
         ghost: bool,
+        /// 用户自定义样式（完全覆盖 compute_style 的计算结果）。
+        custom_style: Option<Style>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -168,6 +170,11 @@ define_widget! {
 
 impl Button {
     fn compute_style(&self, ctx: &RenderContext) -> Style {
+        // 用户自定义样式优先——完全覆盖计算结果，由用户全权控制
+        if let Some(ref cs) = self.custom_style {
+            return cs.clone();
+        }
+
         let t = ctx.tokens();
         let font_size = button_font_size(self.btn_size);
 
@@ -218,6 +225,7 @@ impl Button {
             padding: uix_core::EdgeInsets::new(button_padding_h(self.btn_size), 0.0, button_padding_h(self.btn_size), 0.0),
             color: text_color,
             font_size,
+            ..Style::default()
         }
     }
 
@@ -226,7 +234,15 @@ impl Button {
             text: text.into(), variant: ButtonVariant::Default, btn_size: ButtonSize::Medium,
             disabled: false, hovered: false, pressed: false, anim_progress: 0.0, click_pos: None,
             on_click: None, loading: false, icon: String::new(), danger: false, block: false, ghost: false,
+            custom_style: None,
         }
+    }
+
+    /// 设置用户自定义样式（完全覆盖内置的 variant/state 计算）。
+    /// 设置后，primary()/danger()/size() 等视觉方法不再生效。
+    pub fn style(mut self, s: Style) -> Self {
+        self.custom_style = Some(s);
+        self
     }
     pub fn variant(mut self, v: ButtonVariant) -> Self { self.variant = v; self }
     pub fn size(mut self, s: ButtonSize) -> Self { self.btn_size = s; self }

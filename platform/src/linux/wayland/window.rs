@@ -27,6 +27,8 @@ impl IWindowManager for WaylandBackend {
             self._compositor.clone(),
             self._shm.clone(),
             self.events.clone(),
+            self.outputs.clone(),
+            self._xdg_activation.clone(),
         );
 
         ops.init(

@@ -38,7 +38,7 @@ impl LinuxTimer {
             .spawn(move || {
                 let mut entries: Vec<(Instant, u32, u32, bool)> = Vec::new();
                 loop {
-                    let interval = if entries.is_empty() {
+                    if entries.is_empty() {
                         // 无活跃定时器，无限阻塞等待新指令
                         match cmd_rx.recv() {
                             Ok(cmd) => {
@@ -58,29 +58,30 @@ impl LinuxTimer {
                             Err(_) => break,
                         }
                         continue;
+                    }
+
+                    // 有定时器时计算等待时间
+                    let now = Instant::now();
+                    let next = entries.iter().map(|e| e.0).min().unwrap_or(now);
+                    let wait = if next > now {
+                        next - now
                     } else {
-                        let now = Instant::now();
-                        let next = entries.iter().map(|e| e.0).min().unwrap_or(now);
-                        let wait = if next > now {
-                            next - now
-                        } else {
-                            std::time::Duration::ZERO
-                        };
-                        if let Ok(cmd) = cmd_rx.recv_timeout(wait) {
-                            match cmd {
-                                Cmd::Shutdown => break,
-                                Cmd::Register { id, interval_ms, repeating } => {
-                                    entries.push((Instant::now() + std::time::Duration::from_millis(interval_ms as u64), id, interval_ms, repeating));
-                                }
-                                Cmd::Clear { id } => {
-                                    entries.retain(|e| e.1 != id);
-                                    if let Ok(mut map) = active_clone.lock() {
-                                        map.remove(&id);
-                                    }
+                        std::time::Duration::ZERO
+                    };
+                    if let Ok(cmd) = cmd_rx.recv_timeout(wait) {
+                        match cmd {
+                            Cmd::Shutdown => break,
+                            Cmd::Register { id, interval_ms, repeating } => {
+                                entries.push((Instant::now() + std::time::Duration::from_millis(interval_ms as u64), id, interval_ms, repeating));
+                            }
+                            Cmd::Clear { id } => {
+                                entries.retain(|e| e.1 != id);
+                                if let Ok(mut map) = active_clone.lock() {
+                                    map.remove(&id);
                                 }
                             }
-                            continue;
                         }
+                        continue;
                     }
 
                     // 触发所有到期的定时器

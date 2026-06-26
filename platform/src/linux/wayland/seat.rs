@@ -64,6 +64,7 @@ impl WaylandBackend {
         let repeat_delay = self.repeat_delay.clone();
         let held_key_info = self.held_key_info.clone();
         let last_repeat_time = self.last_repeat_time.clone();
+                    let kbd = seat.get_keyboard();
 
         seat.quick_assign(move |seat, event, _| {
             if let wl_seat::Event::Capabilities { capabilities } = event {
@@ -143,10 +144,13 @@ impl WaylandBackend {
                                         // compositor 侧重复，由客户端自行处理
                                         return;
                                     }
+                                    // 记录按住的键，用于客户端侧重复
                                     if let Ok(mut kd) = kd.lock() {
                                         kd.insert(code);
                                     }
                                     q.push_back(UiEvent::key_down(code, current_mods));
+                                    // 始终从物理键盘生成字符事件（即使 IME 激活）
+                                    // IME 通过 CommitString 额外提交文本（如中文），两者互补
                                     if let Some(text) = keycode_to_char(code, shift_down) {
                                         q.push_back(UiEvent::key_press(text));
                                     }

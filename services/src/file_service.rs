@@ -3,7 +3,6 @@ use uix_diag::Result;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
 
 /// File I/O service providing read/write operations with proper error handling.
 #[derive(Debug, Clone, Copy)]
@@ -83,6 +82,7 @@ impl FileService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     static TEST_COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -186,7 +186,6 @@ mod tests {
     fn file_service_is_clone_and_copy() {
         let fs1 = FileService::new();
         let fs2 = fs1;
-        let fs3 = fs2;
-        drop(fs3);
+        let _fs3 = fs2;
     }
 }

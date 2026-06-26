@@ -110,6 +110,8 @@ impl Errc {
             "protocol"
         } else if v < 500 {
             "concurrency"
+        } else if v < 1000 {
+            "platform"
         } else if v >= 1000 {
             "application"
         } else {

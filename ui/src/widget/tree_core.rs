@@ -297,8 +297,10 @@ impl WidgetTree {
         // 收敛循环：自上而下布局 → [扩展 ↔ 收缩] → viewport
         // Phase 2（扩展）和 Phase 4（收缩）交替运行直至稳定，
         // 防止两个阶段的尺寸调整形成逐帧振荡。
+        // 上限提升至 10 次，应对深层嵌套（Container→Container→Widget）场景。
         // ════════════════════════════════════════════════════════════════
-        for _converge_pass in 0..5 {
+        let max_passes = 10;
+        for _converge_pass in 0..max_passes {
             let mut any_change = false;
 
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
@@ -328,10 +330,13 @@ impl WidgetTree {
                 }
             }
 
+            // 预计算逆序遍历顺序，供 Phase 2/4 复用（避免每次 inner pass 重复 clone）
+            let rev_order: Vec<WidgetId> = order.iter().rev().copied().collect();
+
             // 内循环：交替扩展和收缩直到稳定
             for _inner_pass in 0..3 {
-                let expanded = self.layout_expand();
-                let shrunk = self.layout_shrink();
+                let expanded = self.layout_expand(&rev_order);
+                let shrunk = self.layout_shrink(&rev_order);
                 if expanded || shrunk {
                     any_change = true;
                 }
@@ -356,12 +361,11 @@ impl WidgetTree {
     /// 自下而上扩展：当子节点底部超出容器底部时，扩展容器高度。
     /// 后序遍历确保子节点先扩展、父节点后扩展。
     /// 返回是否有任何容器被扩展。
-    fn layout_expand(&mut self) -> bool {
+    fn layout_expand(&mut self, rev_order: &[WidgetId]) -> bool {
         let mut any_resized = false;
-        let rev_order: Vec<WidgetId> = self.traverse().into_iter().rev().collect();
         // 收集本趟中被扩展过的子节点，用于触发其父容器重排
         let mut resized_children = std::collections::HashSet::new();
-        for &id in &rev_order {
+        for &id in rev_order {
             let (children, is_viewport, node_frame) = match self.get(id) {
                 Some(n) if !n.children().is_empty() => {
                     (n.children().to_vec(), n.inner().children_clip(n.frame()).is_some(), n.frame())
@@ -464,34 +468,44 @@ impl WidgetTree {
         }
     }
 
+    /// 检查节点是否有 viewport 祖先（如 ScrollView）。
+    /// 递归遍历祖先链，不限于直接父节点。
+    /// 用于 layout_shrink 中避免收缩 viewport 内部节点，防止与 ScrollView 尺寸设定形成振荡。
+    fn has_viewport_ancestor(&self, id: WidgetId) -> bool {
+        let mut current = id;
+        while let Some(pid) = self.get(current).and_then(|n| n.parent()) {
+            if self.get(pid)
+                .map(|p| p.inner().children_clip(p.frame()).is_some())
+                .unwrap_or(false)
+            {
+                return true;
+            }
+            current = pid;
+        }
+        false
+    }
+
     /// 收缩过大的容器。与 layout_expand 相反——当子节点高度
     /// 显著小于容器当前高度，且子节点延伸到可见区域时，收缩容器。
     /// 每轮先重新布局子节点（确保兄弟组件靠拢），再检查是否需要收缩。
     /// 返回是否有任何容器被收缩。
-    fn layout_shrink(&mut self) -> bool {
+    fn layout_shrink(&mut self, rev_order: &[WidgetId]) -> bool {
         let mut any_changed = false;
         for _pass in 0..3 {
-            let rev_order: Vec<WidgetId> = self.traverse().into_iter().rev().collect();
             // Phase A: 收集需要收缩的容器
             #[derive(Clone)]
             struct ShrinkOp { id: WidgetId, needed_h: f32 }
             let mut ops: Vec<ShrinkOp> = Vec::new();
 
-            for &id in &rev_order {
+            for &id in rev_order {
                 let is_viewport = self.get(id)
                     .map(|n| n.inner().children_clip(n.frame()).is_some())
                     .unwrap_or(false);
                 if is_viewport { continue; }
-                // 不收缩父容器是 viewport（如 ScrollView）的子节点，
+                // 不收缩祖先链中有 viewport（如 ScrollView）的节点，
                 // 避免与 ScrollView::layout_children 的尺寸设定形成振荡。
-                let parent_is_viewport = self.get(id)
-                    .and_then(|n| n.parent())
-                    .and_then(|pid| self.get(pid))
-                    .map(|p| p.inner().children_clip(p.frame()).is_some())
-                    .unwrap_or(false);
-                if parent_is_viewport { continue; }
-                // 仅跳过 viewport 的直接子节点；深层子节点允许收缩，
-                // 这样 ScrollView 内部的组件缩小后容器能正确收缩。
+                // 递归检查所有祖先，不限于直接父节点（修复 Container→Input 嵌套场景）。
+                if self.has_viewport_ancestor(id) { continue; }
                 // layout_viewports（Phase 3）会在收缩后更新 content_bounds。
 
                 let children: Vec<WidgetId> = match self.get(id) {
@@ -540,10 +554,12 @@ impl WidgetTree {
                 // ⭐ 最小高度取子节点实际内容和 preferred_size 的较大值。
                 // 设此下限可防止收缩到子节点内容以下，从而避免与
                 // layout_expand（Phase 2）形成振荡循环。
+                // 使用 1.0 像素绝对最小值而非比例值（如 0.01 * h），
+                // 后者在高 DPI 场景下可能过大（2000px * 0.01 = 20px 虚高）。
                 let pref_h = self.get(id)
                     .map(|n| n.preferred_size(None).h)
                     .unwrap_or(0.0);
-                let min_h = needed_h.max(pref_h).max(node_frame.h * 0.01);
+                let min_h = needed_h.max(pref_h).max(1.0);
                 let effective_needed = min_h;
                 if node_frame.h - effective_needed > 0.5 {
                     log::debug!(
@@ -692,17 +708,32 @@ impl WidgetTree {
         id
     }
 
-    /// 收缩 nodes Vec 的容量以适应当前活跃节点数。
-    /// 删除节点后调用可释放空闲插槽占用的内存。
-    pub fn shrink_to_fit(&mut self) {
-        self.nodes.shrink_to_fit();
+    /// 按类型查找 widget 并设置焦点（用于 tree.build 后恢复焦点）。
+    ///
+    /// 遍历当前树查找指定类型的 widget，若找到则设置为聚焦状态。
+    /// `focused_widget` 用于键盘事件路由，`Input::set_focused` 控制光标显示。
+    pub fn focus_by_type<T: Widget + 'static>(&mut self) -> Option<WidgetId> {
+        let id = self.find_by_type::<T>()?;
+        self.focused_widget = Some(id);
+        // 对于 Input 类型，同步设置其内部 focused 状态
+        if let Some(node) = self.get_mut(id) {
+            if let Some(input) = node.inner_mut().as_any_mut()
+                .downcast_mut::<crate::widgets::Input>()
+            {
+                input.set_focused(true);
+            }
+        }
+        Some(id)
     }
 
-    /// 释放 tree 内部所有 Vec 的额外容量。
-    pub fn shrink_all(&mut self) {
-        self.nodes.shrink_to_fit();
-        self.free_ids.shrink_to_fit();
-        self.scroll_deltas.shrink_to_fit();
+    /// 检查指定类型的 widget 当前是否处于聚焦状态
+    ///
+    /// 用于 tree.build 前判断是否需要重建后恢复焦点。
+    pub fn is_focused_type<T: Widget + 'static>(&self) -> bool {
+        self.focused_widget
+            .and_then(|id| self.get(id))
+            .map(|node| node.inner().as_any().downcast_ref::<T>().is_some())
+            .unwrap_or(false)
     }
 }
 

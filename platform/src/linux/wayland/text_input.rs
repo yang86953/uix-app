@@ -5,6 +5,7 @@
 // 当 IME 提交文本时，将 UiEvent::key_press 推入事件队列。
 // ============================================================================
 
+use std::sync::atomic::Ordering;
 use wayland_protocols::unstable::text_input::v3::client::zwp_text_input_v3;
 
 use crate::event::UiEvent;
@@ -57,7 +58,7 @@ impl ITextInput for WaylandBackend {
         ti.enable();
         ti.commit();
         self.text_input = Some(ti);
-        self.text_input_enabled = true;
+        self.text_input_enabled.store(true, Ordering::SeqCst);
     }
 
     fn stop(&mut self) {
@@ -66,6 +67,6 @@ impl ITextInput for WaylandBackend {
             ti.commit();
         }
         self.text_input = None;
-        self.text_input_enabled = false;
+        self.text_input_enabled.store(false, Ordering::SeqCst);
     }
 }

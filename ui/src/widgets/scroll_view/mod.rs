@@ -798,10 +798,13 @@ mod tests {
                 .direction(FlexDirection::Column)
                 .align(AlignItems::Stretch),
         ));
+        // 面板B 内容足够长（7行），展开后总高度 > 200px 视口
+        // 3个 header (36px) + 展开内容 (7*18+16=142) = 250 > 200
+        let long_content = "行1\n行2\n行3\n行4\n行5\n行6\n行7";
         tree.add_child(space_id, Box::new(
             Collapse::new().panels(vec![
-                CollapsePanel::new("面板A", "面板A长内容，用于测试展开后的滚动范围。"),
-                CollapsePanel::new("面板B", "面板B内容，较长一些。"),
+                CollapsePanel::new("面板A", "面板A短内容。"),
+                CollapsePanel::new("面板B", long_content),
                 CollapsePanel::new("面板C", "面板C短内容。"),
             ]),
         ));

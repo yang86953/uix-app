@@ -315,7 +315,8 @@ impl GraphicsEngine for SoftwareEngine {
     fn begin_offscreen(&mut self, offscreen: &ImageHandle) {
         if let Some(idx) = self.assets.offscreen_slot_index(offscreen) {
             // 直接交换像素缓冲（零拷贝），离屏槽临时保存主缓冲内容。
-            let (mut w, mut h) = (0i32, 0i32);
+            let w = self.main_width;
+            let h = self.main_height;
             self.assets.swap_offscreen_pixels(
                 idx,
                 &mut self.rt.pixels,
@@ -331,7 +332,7 @@ impl GraphicsEngine for SoftwareEngine {
 
     fn end_offscreen(&mut self) {
         if let super::engine::ActiveTarget::Offscreen(idx) = self.active_target {
-            let (mut w, mut h) = (self.main_width, self.main_height);
+            let (w, h) = (self.main_width, self.main_height);
             self.assets.swap_offscreen_pixels(
                 idx,
                 &mut self.rt.pixels,

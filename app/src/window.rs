@@ -11,7 +11,7 @@
 
 use std::cell::Cell;
 use std::cell::RefCell;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use uix_core::{Point, Rect};
 use uix_graphics::frame_graph::resource::ResourceId;
@@ -195,6 +195,10 @@ impl Window {
         };
 
         while running_flag.get() {
+            // ── 启用输入法（IME）支持 ──
+            // Wayland: 通过 zwp_text_input_v3 协议激活输入法
+            self.platform.text_input().start();
+
             // ── 事件收集 ──
             if keep_polling {
                 // 动画帧：阻塞等待（Linux: frame callback; Windows: MsgWait 超时）
@@ -313,7 +317,7 @@ impl Window {
             keep_polling = tree.update(dt);
             let t1 = Instant::now();
             if t1 - t0 > std::time::Duration::from_millis(100) {
-                log::warn!("EventLoop: tree.update took {}ms", (t1 - t0).as_millis());
+                log::debug!("EventLoop: tree.update took {}ms", (t1 - t0).as_millis());
             }
 
             // 仅在有事件、持续更新、或首帧时才 layout/on_frame。
@@ -323,7 +327,7 @@ impl Window {
                 tree.layout();
                 let t2 = Instant::now();
             if t2 - t1 > std::time::Duration::from_millis(100) {
-                log::warn!("EventLoop: tree.layout took {}ms", (t2 - t1).as_millis());
+                log::debug!("EventLoop: tree.layout took {}ms", (t2 - t1).as_millis());
             }
 
             let need_relayout = tree.root_id().and_then(|rid| tree.get(rid)).map_or(false, |root| {
@@ -351,7 +355,31 @@ impl Window {
             on_frame(tree, engine, self.platform.as_mut());
             let t3 = Instant::now();
             if t3 - t_frame > std::time::Duration::from_millis(100) {
-                log::warn!("EventLoop: on_frame took {}ms", (t3 - t_frame).as_millis());
+                log::debug!("EventLoop: on_frame took {}ms", (t3 - t_frame).as_millis());
+            }
+
+            // ⭐ on_frame 回调可能执行了 tree.build()（如 belldandy 的消息重建），
+            // 这会重置 root frame 为 (0,0,0,0)。因此需要在 on_frame 之后
+            // 再次检查 root frame 是否匹配窗口尺寸，若不匹配则重新设置并 layout。
+            let need_relayout_after = tree.root_id().and_then(|rid| tree.get(rid)).map_or(false, |root| {
+                let engine_w = engine.width() as f32;
+                let engine_h = engine.height() as f32;
+                let rf = root.frame();
+                (rf.w - engine_w).abs() > 0.5 || (rf.h - engine_h).abs() > 0.5
+            });
+            if need_relayout_after {
+                if let Some(rid) = tree.root_id() {
+                    if let Some(root_mut) = tree.get_mut(rid) {
+                        root_mut.set_frame(Rect::new(
+                            0.0, 0.0,
+                            engine.width() as f32,
+                            engine.height() as f32,
+                        ));
+                    }
+                }
+                tree.mark_full_frame_dirty();
+                tree.layout();
+                tree.tree_version += 1;
             }
             } // needs_work
 
@@ -456,7 +484,7 @@ impl Window {
                             drop(lt_ref);
                             engine.end_frame(&region);
                             if t_render.elapsed() > std::time::Duration::from_millis(100) {
-                                log::warn!("EventLoop: Geometry pass took {}ms", t_render.elapsed().as_millis());
+                                log::debug!("EventLoop: Geometry pass took {}ms", t_render.elapsed().as_millis());
                             }
                         } else if pid == over_pid {
                             let t_over = Instant::now();
@@ -470,7 +498,7 @@ impl Window {
                             drop(theme_ref);
                             engine.end_frame(&overlay_region);
                             if t_over.elapsed() > std::time::Duration::from_millis(100) {
-                                log::warn!("EventLoop: Overlay pass took {}ms", t_over.elapsed().as_millis());
+                                log::debug!("EventLoop: Overlay pass took {}ms", t_over.elapsed().as_millis());
                             }
                         }
                     }
@@ -502,7 +530,7 @@ impl Window {
                     }
                     rendered_first_frame = true;
                     if t_present.elapsed() > std::time::Duration::from_millis(100) {
-                        log::warn!("EventLoop: present took {}ms", t_present.elapsed().as_millis());
+                        log::debug!("EventLoop: present took {}ms", t_present.elapsed().as_millis());
                     }
                 }
                 RenderOutcome::Idle => {

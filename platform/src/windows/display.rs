@@ -5,6 +5,7 @@
 #![cfg(windows)]
 
 use super::ffi::*;
+use super::util::to_wide;
 use uix_core::Rect;
 use crate::types::DisplayInfo;
 use crate::IDisplay;
@@ -15,6 +16,45 @@ pub struct WindowsDisplay;
 impl WindowsDisplay {
     pub fn new() -> Self {
         Self
+    }
+
+    /// 读取 Windows 注册表检测系统深色/浅色模式
+    fn detect_os_theme() -> bool {
+        unsafe {
+            let sub_key = to_wide(
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"
+            );
+            let value_name = to_wide("AppsUseLightTheme");
+            let mut hkey: *mut std::ffi::c_void = ptr::null_mut();
+
+            let ret = RegOpenKeyExW(
+                hkey_current_user(),
+                sub_key.as_ptr(),
+                0,
+                KEY_READ,
+                &mut hkey,
+            );
+            if ret != ERROR_SUCCESS || hkey.is_null() {
+                return false;
+            }
+
+            let mut data: u32 = 0;
+            let mut data_size: u32 = std::mem::size_of::<u32>() as u32;
+            let mut data_type: u32 = 0;
+
+            let ret = RegQueryValueExW(
+                hkey,
+                value_name.as_ptr(),
+                ptr::null_mut(),
+                &mut data_type,
+                &mut data as *mut u32 as *mut u8,
+                &mut data_size,
+            );
+
+            RegCloseKey(hkey);
+
+            ret == ERROR_SUCCESS && data_type == REG_DWORD && data == 0
+        }
     }
 }
 
@@ -38,7 +78,7 @@ impl IDisplay for WindowsDisplay {
     }
 
     fn is_dark_mode(&self) -> bool {
-        false
+        Self::detect_os_theme()
     }
 
     fn count(&self) -> i32 {
