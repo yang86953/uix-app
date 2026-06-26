@@ -12,7 +12,6 @@ pub enum TagColor {
     Default, Success, Info, Warning, Error,
 }
 
-use crate::widget::{EventResult, WidgetEvent};
 
 define_widget! {
     pub struct Tag {

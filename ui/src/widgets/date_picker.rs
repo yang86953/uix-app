@@ -283,7 +283,7 @@ impl DatePicker {
         }
     }
 
-    pub fn value(mut self, v: DateValue) -> Self { self.value.set(v); self }
+    pub fn value(self, v: DateValue) -> Self { self.value.set(v); self }
     pub fn selected(&self) -> DateValue { self.value.get() }
     pub fn set_value(&mut self, v: DateValue) { self.value.set(v); }
     pub fn on_change<F: FnMut(DateValue) + 'static>(mut self, f: F) -> Self {

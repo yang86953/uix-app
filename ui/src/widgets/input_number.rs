@@ -30,7 +30,7 @@ define_widget! {
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            WidgetEvent::MouseDown { pos: _, .. } => {
                 self.focused = true;
                 self.text_buffer = self.value.to_string();
                 EventResult::Handled

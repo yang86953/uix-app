@@ -126,7 +126,7 @@ impl Popover {
     pub fn trigger(mut self, t: PopoverTrigger) -> Self { self.trigger = t; self }
     pub fn arrow(mut self, v: bool) -> Self { self.arrow = v; self }
 
-    fn popup_rect(&self, fw: f32, fh: f32) -> Rect {
+    fn popup_rect(&self, _fw: f32, _fh: f32) -> Rect {
         let (pw, ph) = (220.0, 100.0);
         let (px, py) = (0.0, -ph - 8.0);
         Rect::new(px, py, pw, ph)

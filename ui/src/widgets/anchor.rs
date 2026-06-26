@@ -58,7 +58,7 @@ define_widget! {
             ctx.fill_rect(frame, bg, None);
         }
         let primary = ctx.tokens().color_primary();
-        let text_color = ctx.tokens().color_text();
+        let _text_color = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
         let border_color = ctx.tokens().color_border_secondary();
 

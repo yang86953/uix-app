@@ -54,7 +54,7 @@ define_widget! {
             let a = (d.value / total) * std::f32::consts::TAU;
             let ea = sa + a;
             let ma = sa + a * 0.5;
-            let eng = ctx.engine();
+            let eng = ctx.canvas_2d();
             eng.fill_sector(cx, cy, chart_r, sa, ea, d.color);
             eng.draw_line(cx, cy, cx + chart_r * sa.cos(), cy + chart_r * sa.sin(), text_c, 1.0);
 
@@ -79,12 +79,12 @@ define_widget! {
             sa = ea;
         }
         {
-            let eng = ctx.engine();
+            let eng = ctx.canvas_2d();
             eng.draw_line(cx, cy, cx + chart_r * sa.cos(), cy + chart_r * sa.sin(), text_c, 1.0);
         }
         if self.hole_radius > 0.0 {
             let hr = chart_r * self.hole_radius;
-            let eng = ctx.engine();
+            let eng = ctx.canvas_2d();
             eng.fill_circle(cx, cy, hr, bg_c);
             eng.stroke_circle(cx, cy, hr, axis_c, 1.0);
 

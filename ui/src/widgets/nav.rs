@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use crate::define_widget;
 use uix_graphics::Radius;
-use uix_core::{Point, Rect, Size};
+use uix_core::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 

@@ -1,8 +1,8 @@
 //! BackTop 回到顶部 — 滚动超过阈值时显示返回顶部按钮。
 
-use uix_core::{Point, Rect, Size};
+use uix_core::{Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine, Radius};
+use uix_graphics::GraphicsEngine;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 

@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 
 use crate::clipboard;
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine, Radius};
+use uix_graphics::{GraphicsEngine, Radius};
 use uix_core::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
@@ -296,7 +296,7 @@ impl Input {
 
         let text_area = Rect::new(inner_frame.x + PAD, inner_frame.y + 6.0,
             (inner_frame.w - PAD * 2.0).max(20.0), (inner_frame.h - 12.0).max(20.0));
-        ctx.engine().push_clip_rect(text_area);
+        ctx.canvas_2d().push_clip(text_area);
 
         let display_text = if self.value.is_empty() && !self.focused { &self.placeholder } else { &self.value };
         let disp_color = if self.value.is_empty() && !self.focused { text_tertiary } else { text_color };
@@ -371,7 +371,7 @@ impl Input {
             ctx.fill_rect(Rect::new(text_area.x, text_area.y + 2.0, 1.5, line_h - 4.0), primary, None);
         }
 
-        ctx.engine().pop_clip_rect();
+        ctx.canvas_2d().pop_clip();
     }
 }
 
@@ -460,7 +460,7 @@ impl Input {
         let text_area_w = (inner_frame.w - PAD * 2.0 - prefix_w - right_extra).max(20.0);
         if text_area_w <= 0.0 { return; }
         let text_area = Rect::new(text_area_x, inner_frame.y, text_area_w, inner_frame.h);
-        ctx.engine().push_clip_rect(text_area);
+        ctx.canvas_2d().push_clip(text_area);
 
         let mut scroll_off = self.scroll_offset_x.get();
         let total_text_w = if !self.value.is_empty() { ctx.measure_text(&self.value, FONT_SIZE).w } else { 0.0 };
@@ -522,7 +522,7 @@ impl Input {
             ctx.blit_glyph_layout(&layout, abs_pos, disp_color, FONT_SIZE);
         }
 
-        ctx.engine().pop_clip_rect();
+        ctx.canvas_2d().pop_clip();
 
         if self.focused && self.selection.get().is_none() {
             let cursor_x = text_area_x + text_before_w - scroll_off;

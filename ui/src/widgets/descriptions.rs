@@ -4,9 +4,9 @@
 
 use uix_core::{ControlSize, Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
+use uix_graphics::Radius;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use crate::widget::WidgetTree;
 
 /// 单个描述项。
 #[derive(Debug, Clone)]

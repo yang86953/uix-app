@@ -10,24 +10,19 @@ use uix_core::{Point, Rect, Size};
 use uix_graphics::font_service::FontService;
 use uix_graphics::path::{FillRule, Path};
 use uix_graphics::stroker::StrokeOptions;
+use uix_graphics::traits::Canvas2D;
 use uix_graphics::{Color, FontHandle, GraphicsEngine, HAlign, Radius, VAlign};
 use uix_graphics::{GradientDirection, TextLayoutOptions};
 use crate::style::Style;
 use crate::theme::TokenProvider;
 
-/// RenderContext wraps a GraphicsEngine reference, a FontService reference,
-/// and a TokenProvider, providing widget-level drawing and token access.
-///
-/// Widgets **must not** call `DesignTokens::antd_light()` directly —
-/// use `ctx.tokens()` to get the active token provider.
-///
-/// FontService 是与渲染器无关的独立字体系统。渲染器无需实现字体逻辑。
+/// RenderContext wraps a Canvas2D, FontService, and TokenProvider.
 pub struct RenderContext<'a> {
-    engine: &'a mut dyn GraphicsEngine,
+    canvas_2d: &'a mut dyn Canvas2D,
     font: FontHandle,
+    font_service: &'a FontService,
     max_text_width: f32,
     tokens: &'a dyn TokenProvider,
-    /// 调试模式开关：开启时在 overlay 层绘制调试边框和信息。
     debug_mode: bool,
 }
 
@@ -37,13 +32,15 @@ impl<'a> RenderContext<'a> {
     /// `tokens` should carry the active theme's token provider (e.g. from Theme).
     /// FontService 从 engine 获取，不再作为独立参数传入。
     pub fn new(
-        engine: &'a mut dyn GraphicsEngine,
+        canvas_2d: &'a mut dyn Canvas2D,
         font: FontHandle,
+        font_service: &'a FontService,
         tokens: &'a dyn TokenProvider,
     ) -> Self {
         Self {
-            engine,
+            canvas_2d,
             font,
+            font_service,
             max_text_width: f32::MAX,
             tokens,
             debug_mode: false,
@@ -65,13 +62,14 @@ impl<'a> RenderContext<'a> {
         self.tokens
     }
 
-    pub fn engine(&mut self) -> &mut dyn GraphicsEngine {
-        self.engine
+    /// 返回 Canvas2D 的可变引用。
+    pub fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        self.canvas_2d
     }
 
-    /// 返回 FontService 引用（通过 engine 获取），供需要直接操作字体的场景使用。
+    /// 返回 FontService 引用，供需要直接操作字体的场景使用。
     pub fn font_service(&mut self) -> &FontService {
-        self.engine.font_service()
+        self.font_service
     }
 
     pub fn draw_box_shadow(
@@ -83,7 +81,7 @@ impl<'a> RenderContext<'a> {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
-        self.engine
+        self.canvas_2d
             .draw_box_shadow(rect, blur_radius, offset_x, offset_y, color, corner_radius);
     }
 
@@ -97,7 +95,7 @@ impl<'a> RenderContext<'a> {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
-        self.engine.draw_box_shadow_ambient(
+        self.canvas_2d.draw_box_shadow_ambient(
             rect,
             blur_radius,
             offset_x,
@@ -108,7 +106,7 @@ impl<'a> RenderContext<'a> {
     }
 
     pub fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
-        self.engine.fill_rect(rect, color, radius);
+        self.canvas_2d.fill_rect(rect, color, radius);
     }
 
     /// 应用 Style 到矩形区域（背景 + 边框 + 阴影 + 透明度）。
@@ -131,7 +129,7 @@ impl<'a> RenderContext<'a> {
         }
         // 透明度
         if style.opacity < 1.0 {
-            self.engine().set_opacity(style.opacity);
+            self.canvas_2d.set_opacity(style.opacity);
         }
         if let Some(bg) = style.background {
             self.fill_rect(rect, bg, r);
@@ -143,7 +141,7 @@ impl<'a> RenderContext<'a> {
         }
         // 恢复透明度
         if style.opacity < 1.0 {
-            self.engine().set_opacity(1.0);
+            self.canvas_2d.set_opacity(1.0);
         }
     }
 
@@ -154,19 +152,19 @@ impl<'a> RenderContext<'a> {
         line_width: f32,
         radius: Option<Radius>,
     ) {
-        self.engine.stroke_rect(rect, color, line_width, radius);
+        self.canvas_2d.stroke_rect(rect, color, line_width, radius);
     }
 
     pub fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
-        self.engine.fill_circle(cx, cy, r, color);
+        self.canvas_2d.fill_circle(cx, cy, r, color);
     }
 
     pub fn save(&mut self) {
-        self.engine.save();
+        self.canvas_2d.save();
     }
 
     pub fn restore(&mut self) {
-        self.engine.restore();
+        self.canvas_2d.restore();
     }
 
     /// 临时替换字体句柄（用于 Icon widget 切换到图标字体渲染）。
@@ -347,7 +345,7 @@ impl<'a> RenderContext<'a> {
             }
             let gx = (pos.x + gp.x + raster.bearing_x) as i32;
             let gy = (pos.y + gp.y + raster.bearing_y) as i32;
-            self.engine.draw_glyph_raster(
+            self.canvas_2d.blit_glyph(
                 gx,
                 gy,
                 &raster.coverage,
@@ -536,7 +534,7 @@ impl<'a> RenderContext<'a> {
         } else {
             Color::from_rgba(base.r, base.g, base.b, 30)
         };
-        self.engine.stroke_rect(rect, color, if hovered { 1.5 } else { 0.5 }, None);
+        self.canvas_2d.stroke_rect(rect, color, if hovered { 1.5 } else { 0.5 }, None);
     }
 
     /// 在 widget 左上角显示调试标签（ID + 深度），仅在调试模式下对悬浮链 widget 绘制。
@@ -546,7 +544,7 @@ impl<'a> RenderContext<'a> {
         let font_size = 12.0;
         let label_w = label.len() as f32 * 7.0 + 6.0;
         let label_h = 16.0;
-        self.engine.fill_rect(
+        self.canvas_2d.fill_rect(
             Rect::new(rect.x, rect.y, label_w, label_h),
             Color::from_rgba(0, 0, 0, 180),
             None,
@@ -565,7 +563,7 @@ impl<'a> RenderContext<'a> {
         let info_w = info.len() as f32 * 6.5 + 6.0;
         let info_h = 15.0;
         let info_y = rect.y + rect.h;
-        self.engine.fill_rect(
+        self.canvas_2d.fill_rect(
             Rect::new(rect.x, info_y, info_w, info_h),
             Color::from_rgba(0, 0, 0, 160),
             None,
@@ -580,12 +578,12 @@ impl<'a> RenderContext<'a> {
 
     // ── 其他绘制操作 ──
 
-    pub fn set_supersample_level(&mut self, level: u8) {
-        self.engine.set_supersample_level(level);
+    pub fn set_supersample_level(&mut self, _level: u8) {
+        // Canvas2D 不支持超采样（v2 重构后移除）
     }
 
     pub fn supersample_level(&self) -> u8 {
-        self.engine.supersample_level()
+        0
     }
 
     pub fn fill_linear_gradient(
@@ -595,7 +593,7 @@ impl<'a> RenderContext<'a> {
         cb: Color,
         dir: GradientDirection,
     ) {
-        self.engine.fill_linear_gradient(rect, ca, cb, dir);
+        self.canvas_2d.fill_linear_gradient(rect, ca, cb, dir);
     }
 
     pub fn fill_radial_gradient(
@@ -607,16 +605,16 @@ impl<'a> RenderContext<'a> {
         ic: Color,
         oc: Color,
     ) {
-        self.engine.fill_radial_gradient(cx, cy, ir, or, ic, oc);
+        self.canvas_2d.fill_radial_gradient(cx, cy, ir, or, ic, oc);
     }
 
     /// 用任意路径填充。
     pub fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
-        self.engine.fill_path(path, color, fill_rule);
+        self.canvas_2d.fill_path(path, color, fill_rule);
     }
 
     /// 用任意路径描边。
     pub fn stroke_path(&mut self, path: &Path, color: Color, options: &StrokeOptions) {
-        self.engine.stroke_path(path, color, options);
+        self.canvas_2d.stroke_path(path, color, options);
     }
 }

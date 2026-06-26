@@ -4,9 +4,9 @@
 
 use uix_core::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
+use uix_graphics::Color;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use crate::widget::WidgetTree;
 
 /// 时间线节点。
 #[derive(Debug, Clone)]
@@ -51,7 +51,7 @@ define_widget! {
             // 节点圆点
             let dot_color = item.color;
             ctx.fill_circle(line_x, y + 15.0, dot_r, dot_color);
-            ctx.engine().stroke_circle(line_x, y + 15.0, dot_r, Color::white(), 2.0);
+            ctx.canvas_2d().stroke_circle(line_x, y + 15.0, dot_r, Color::white(), 2.0);
             // 标签
             ctx.draw_text(&item.label, Point::new(content_x, y + 5.0), text, 14.0);
             // 描述
@@ -63,7 +63,7 @@ define_widget! {
         // Pending 节点
         if self.pending {
             let y = frame.y + items.len() as f32 * 60.0;
-            ctx.engine().stroke_circle(line_x, y + 15.0, dot_r, border, 2.0);
+            ctx.canvas_2d().stroke_circle(line_x, y + 15.0, dot_r, border, 2.0);
             ctx.draw_text(loc.timeline_pending, Point::new(content_x, y + 5.0), text_sec, 14.0);
         }
     }

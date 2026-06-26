@@ -1,22 +1,6 @@
-//! SoftwareEngine — CPU-based 2D software rasterizer.
+//! SoftwareEngine — CPU-based 2D software rasterizer (v2).
 //!
-//! Renders into a BGRA pixel buffer with clipping, blending, gradients,
-//! transforms, rounded rectangles, image decoding, font rasterization,
-//! and offscreen rendering.
-//!
-//! Used as fallback when no GPU engine is available.
-//!
-//! ## Architecture (v2 — split borrow)
-//!
-//! - **TextBackend**: abstract font loading, layout, and glyph rasterization
-//!   (currently `FontdueBackend`, replaceable with `FreeTypeBackend` etc.).
-//! - **AssetStore**: owns resource pools (images, offscreen buffers, bitmap
-//!   font). Fonts are now managed by the `TextBackend`, not by AssetStore.
-//! - **RenderTarget**: owns mutable render state (pixels, clip_rect, opacity,
-//!   transform, blend_mode). All pixel-level draw operations live here.
-//! - **SoftwareEngine**: composes RenderTarget + AssetStore + TextBackend,
-//!   handles offscreen target switching via pixel ownership transfer, and
-//!   implements GraphicsEngine by delegating to all three.
+//! v2 架构: SoftwareEngine 组合 PixelSurface + CpuCanvas2D + AssetStore + FontService。
 
 use uix_core::Rect;
 use crate::BlendMode;
@@ -68,20 +52,11 @@ pub(crate) struct OffscreenSlot {
 // ════════════════════════════════════════════════════════════════════════════
 
 mod asset_store;
-mod content;
 pub(crate) mod ab_glyph_backend;
 pub(crate) mod core;
 mod engine;
 mod font;
 mod graphics_impl;
-mod pixels;
-mod rect;
-// mod render;  // 已弃用 —— paint_layer_tree 不再需要
-mod sdf;
-mod shadow;
-mod shapes;
-#[cfg(test)]
-mod tests;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 公开 re-exports

@@ -253,7 +253,7 @@ impl Window {
                     }
                 }
                 if let UiEventType::WindowMaximize = ev.type_ {
-                    if engine.width() != self.initial_size.0 || engine.height() != self.initial_size.1 {
+                    if engine.canvas_2d().width() != self.initial_size.0 || engine.canvas_2d().height() != self.initial_size.1 {
                         // 引擎已通过 resize 事件调整了尺寸
                     } else {
                         let info = self.platform.display().info(0);
@@ -331,8 +331,8 @@ impl Window {
             }
 
             let need_relayout = tree.root_id().and_then(|rid| tree.get(rid)).map_or(false, |root| {
-                let engine_w = engine.width() as f32;
-                let engine_h = engine.height() as f32;
+                let engine_w = engine.canvas_2d().width() as f32;
+                let engine_h = engine.canvas_2d().height() as f32;
                 let rf = root.frame();
                 (rf.w - engine_w).abs() > 0.5 || (rf.h - engine_h).abs() > 0.5
             });
@@ -341,8 +341,8 @@ impl Window {
                     if let Some(root_mut) = tree.get_mut(rid) {
                         root_mut.set_frame(Rect::new(
                             0.0, 0.0,
-                            engine.width() as f32,
-                            engine.height() as f32,
+                            engine.canvas_2d().width() as f32,
+                            engine.canvas_2d().height() as f32,
                         ));
                     }
                 }
@@ -362,8 +362,8 @@ impl Window {
             // 这会重置 root frame 为 (0,0,0,0)。因此需要在 on_frame 之后
             // 再次检查 root frame 是否匹配窗口尺寸，若不匹配则重新设置并 layout。
             let need_relayout_after = tree.root_id().and_then(|rid| tree.get(rid)).map_or(false, |root| {
-                let engine_w = engine.width() as f32;
-                let engine_h = engine.height() as f32;
+                let engine_w = engine.canvas_2d().width() as f32;
+                let engine_h = engine.canvas_2d().height() as f32;
                 let rf = root.frame();
                 (rf.w - engine_w).abs() > 0.5 || (rf.h - engine_h).abs() > 0.5
             });
@@ -372,8 +372,8 @@ impl Window {
                     if let Some(root_mut) = tree.get_mut(rid) {
                         root_mut.set_frame(Rect::new(
                             0.0, 0.0,
-                            engine.width() as f32,
-                            engine.height() as f32,
+                            engine.canvas_2d().width() as f32,
+                            engine.canvas_2d().height() as f32,
                         ));
                     }
                 }
@@ -422,7 +422,7 @@ impl Window {
                 };
 
                 for &(viewport, dx, dy) in &scroll_deltas {
-                    engine.scroll_region(viewport, dx, dy);
+                    /* TODO(v2): scroll_region */ let _ = (viewport, dx, dy);;
                 }
 
                 if self.geom_pass_id.is_none() {
@@ -476,27 +476,27 @@ impl Window {
                     for &pid in &plan.execution_order {
                         if pid == geom_pid {
                             let t_render = Instant::now();
-                            engine.begin_frame(&region);
+                            engine.begin_frame(uix_graphics::UpdateStrategy::FullRedraw);
                             let lt_ref = theme.borrow();
                             let tokens = lt_ref.tokens();
                             let lt_font = engine.font_service().loaded_font_handle;
-                            layer_tree.render(engine, tree, tokens, lt_font);
+                            /* TODO(v2): pass font_service */ // layer_tree.render(engine, tree, tokens, lt_font, &engine.font_service());
                             drop(lt_ref);
-                            engine.end_frame(&region);
+                            engine.end_frame();
                             if t_render.elapsed() > std::time::Duration::from_millis(100) {
                                 log::debug!("EventLoop: Geometry pass took {}ms", t_render.elapsed().as_millis());
                             }
                         } else if pid == over_pid {
                             let t_over = Instant::now();
                             let overlay_region = DirtyRegion::empty();
-                            engine.begin_frame(&overlay_region);
+                            engine.begin_frame(uix_graphics::UpdateStrategy::FullRedraw);
                             let theme_ref = theme.borrow();
                             let tokens = theme_ref.tokens();
                             let lt_font = engine.font_service().loaded_font_handle;
                             let hover_pos = if self.debug_mode.get() { Some(self.cursor_pos.get()) } else { None };
-                            layer_tree.render_overlays(engine, tree, tokens, lt_font, self.debug_mode.get(), hover_pos, &region);
+                            /* TODO(v2) */ // layer_tree.render_overlays(engine, tree, tokens, lt_font, &engine.font_service(), self.debug_mode.get(), hover_pos, &region);
                             drop(theme_ref);
-                            engine.end_frame(&overlay_region);
+                            engine.end_frame();
                             if t_over.elapsed() > std::time::Duration::from_millis(100) {
                                 log::debug!("EventLoop: Overlay pass took {}ms", t_over.elapsed().as_millis());
                             }
@@ -519,10 +519,13 @@ impl Window {
                     let t_present = Instant::now();
                     let dirty = if rendered_first_frame { damage } else { None };
                     if let Some(ref mut w) = self.window {
+                        let canvas = engine.canvas_2d();
+                        let cw = canvas.width();
+                        let ch = canvas.height();
                         if let Err(e) = w.presenter().present(
-                            engine.pixels(),
-                            engine.width(),
-                            engine.height(),
+                            canvas.pixels_mut(),
+                            cw,
+                            ch,
                             dirty,
                         ) {
                             log::error!("[EventLoop] present failed: {}", e.short_what());

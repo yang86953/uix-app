@@ -7,7 +7,7 @@ use uix_core::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::Color;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use crate::widget::WidgetTree;
 
 /// 结果类型。
 #[derive(Debug, Clone, Copy, PartialEq)]

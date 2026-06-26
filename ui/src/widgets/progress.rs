@@ -80,7 +80,7 @@ define_widget! {
                     let y1 = cy + a1.sin() * inner_r;
                     let x2 = cx + a2.cos() * inner_r;
                     let y2 = cy + a2.sin() * inner_r;
-                    ctx.engine().draw_line(x1, y1, x2, y2, stroke_c, track_width);
+                    ctx.canvas_2d().draw_line(x1, y1, x2, y2, stroke_c, track_width);
                 }
             }
             return;

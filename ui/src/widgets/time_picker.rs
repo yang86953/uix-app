@@ -247,7 +247,7 @@ impl TimePicker {
         }
     }
 
-    pub fn value(mut self, v: TimeValue) -> Self { self.value.set(v); self }
+    pub fn value(self, v: TimeValue) -> Self { self.value.set(v); self }
     pub fn selected(&self) -> TimeValue { self.value.get() }
     pub fn set_value(&mut self, v: TimeValue) { self.value.set(v); }
     pub fn on_change<F: FnMut(TimeValue) + 'static>(mut self, f: F) -> Self {

@@ -46,7 +46,7 @@ impl ThemeToggle {
         Self { dark: Cell::new(false) }
     }
 
-    pub fn dark(mut self, dark: bool) -> Self {
+    pub fn dark(self, dark: bool) -> Self {
         self.dark.set(dark);
         self
     }

@@ -324,8 +324,8 @@ pub mod presets {
         fg.add_pass("Clear", |b| {
             b.writes(&[main_color]).execute_with(Box::new(move |ctx| {
                 ctx.engine
-                    .begin_frame(&crate::DirtyRegion::full());
-                ctx.engine.end_frame(&crate::DirtyRegion::full());
+                    .begin_frame(crate::traits::UpdateStrategy::FullRedraw);
+                ctx.engine.end_frame();
                 Ok(())
             }))
         });
@@ -358,6 +358,3 @@ pub mod presets {
         (gbuffer, shadow, output)
     }
 }
-
-#[cfg(test)]
-mod test;

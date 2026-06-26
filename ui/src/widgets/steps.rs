@@ -5,7 +5,7 @@
 
 use uix_core::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
+use uix_graphics::Color;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 use std::cell::Cell;
@@ -61,7 +61,7 @@ define_widget! {
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
-        let success = ctx.tokens().color_success();
+        let _success = ctx.tokens().color_success();
         let error = ctx.tokens().color_error();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
@@ -98,7 +98,7 @@ define_widget! {
                 if bg_c.a > 0 {
                     ctx.fill_circle(cx, circle_y, circle_r, bg_c);
                 }
-                ctx.engine().stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
+                ctx.canvas_2d().stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
                 // 步骤编号/图标
                 let num = if step.status == StepStatus::Finish { "✓" } else { &(i + 1).to_string() };
                 let circle_rect = Rect::new(cx - circle_r, circle_y - circle_r, circle_r * 2.0, circle_r * 2.0);
@@ -117,7 +117,7 @@ impl Steps {
         let current = Cell::new(0);
         Self { steps, current, direction: true, on_change: None }
     }
-    pub fn current(mut self, v: usize) -> Self { self.current.set(v); self }
+    pub fn current(self, v: usize) -> Self { self.current.set(v); self }
     pub fn get_current(&self) -> usize { self.current.get() }
     pub fn set_current(&self, v: usize) { self.current.set(v); }
     pub fn horizontal(mut self) -> Self { self.direction = true; self }

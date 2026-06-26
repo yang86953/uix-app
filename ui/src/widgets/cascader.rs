@@ -61,7 +61,7 @@ define_widget! {
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            WidgetEvent::MouseDown { pos: _, .. } => {
                 // 点击输入框切换弹出
                 self.focused = true;
                 if !self.open {

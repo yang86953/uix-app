@@ -20,7 +20,8 @@
 use std::collections::HashSet;
 use uix_core::{Point, Rect};
 use uix_graphics::DirtyRegion;
-use uix_graphics::engine::GraphicsEngine;
+use uix_graphics::GraphicsEngine;
+use uix_graphics::font_service::FontService;
 use uix_graphics::types::ImageHandle;
 use uix_graphics::FontHandle;
 use crate::render_context::RenderContext;
@@ -208,10 +209,10 @@ impl LayerTree {
 
     /// 释放 build 后未复用的旧离屏缓冲。
     /// 必须在 build 之后、下一帧渲染之前调用。
-    pub fn sweep_orphaned_offscreens(&mut self, engine: &mut dyn GraphicsEngine) {
-        for handle in self.orphaned_handles.drain(..) {
-            engine.destroy_offscreen(&handle);
-        }
+    pub fn sweep_orphaned_offscreens(&mut self, _engine: &mut dyn GraphicsEngine) {
+        // TODO(v2): offscreen destroy API 在新的 GraphicsEngine trait 中不存在。
+        // 需要重新设计离屏缓冲生命周期管理。
+        self.orphaned_handles.clear();
     }
 
     /// 增量更新脏状态。
@@ -229,8 +230,9 @@ impl LayerTree {
         tree: &WidgetTree,
         tokens: &dyn TokenProvider,
         font: FontHandle,
+        font_service: &FontService,
     ) {
-        let mut rctx = RenderContext::new(engine, font, tokens);
+        let mut rctx = RenderContext::new(engine.canvas_2d(), font, font_service, tokens);
         if let Some(ref mut root) = self.root {
             Self::render_node(root, &mut rctx, tree);
             root.mark_clean();
@@ -257,11 +259,12 @@ impl LayerTree {
         tree: &WidgetTree,
         tokens: &dyn TokenProvider,
         font: FontHandle,
+        font_service: &FontService,
         debug_mode: bool,
         hover_pos: Option<Point>,
         dirty_region: &DirtyRegion,
     ) {
-        let mut rctx = RenderContext::new(engine, font, tokens);
+        let mut rctx = RenderContext::new(engine.canvas_2d(), font, font_service, tokens);
         rctx.set_debug_mode(debug_mode);
 
         // 预计算悬浮链：光标所在 widget + 所有父节点
@@ -447,9 +450,10 @@ impl LayerTree {
                         *widget_id, bounds, offscreen_handle, children, ctx, tree, w, h, retry_count,
                     );
                 } else if let Some(handle) = offscreen_handle {
-                    let src = Rect::new(0.0, 0.0, w as f32, h as f32);
-                    let dst = Rect::new(bounds.x, bounds.y, w as f32, h as f32);
-                    ctx.engine().draw_image(handle, src, dst);
+                    // TODO(v2): blit_image 需要像素数据，待重建 ImageManager
+                    // let src = Rect::new(0.0, 0.0, w as f32, h as f32);
+                    // let dst = Rect::new(bounds.x, bounds.y, w as f32, h as f32);
+                    // ctx.canvas_2d().blit_image(handle, src, dst);
                 }
             }
             LayerNode::ClipRect {
@@ -459,11 +463,11 @@ impl LayerTree {
             } => {
                 Self::render_widget_self(*widget_id, ctx, tree);
                 let r = *rect;
-                ctx.engine().push_clip_rect(r);
+                ctx.canvas_2d().push_clip(r);
                 for child in children.iter_mut() {
                     Self::render_node(child, ctx, tree);
                 }
-                ctx.engine().pop_clip_rect();
+                ctx.canvas_2d().pop_clip();
             }
             LayerNode::Direct {
                 widget_id,
@@ -570,53 +574,12 @@ impl LayerTree {
                 );
                 return;
             }
-            match ctx.engine().create_offscreen(w, h) {
-                Ok(h) => {
-                    *offscreen_handle = Some(*h);
-                    *retry_count = 0;
-                }
-                Err(e) => {
-                    *retry_count += 1;
-                    log::warn!(
-                        "[LayerTree] 离屏创建失败 ({}x{}), retry={}, err={:?}, 回退到主缓冲渲染",
-                        w,
-                        h,
-                        *retry_count,
-                        e,
-                    );
-                    Self::render_widget_and_children_direct(widget_id, ctx, tree);
-                    return;
-                }
-            }
+            // TODO(v2): offscreen API 重新设计中。
+            // Picture 离屏渲染暂时回退到主缓冲直接渲染。
+            Self::render_widget_and_children_direct(widget_id, ctx, tree);
         }
 
-        if let Some(handle) = offscreen_handle.as_mut() {
-            ctx.engine().save();
-            ctx.engine().set_opacity(1.0);
-            ctx.engine().reset_transform();
-
-            ctx.engine().begin_offscreen(handle);
-            ctx.engine()
-                .push_clip_rect(Rect::new(0.0, 0.0, w as f32, h as f32));
-            ctx.engine().fill_rect(
-                Rect::new(0.0, 0.0, w as f32, h as f32),
-                uix_graphics::Color::from_rgba(0, 0, 0, 0),
-                None,
-            );
-            // 使用 LayerNode 子节点递归渲染（支持嵌套 Picture #96）
-            Self::render_widget_self(widget_id, ctx, tree);
-            for child in children.iter_mut() {
-                Self::render_node(child, ctx, tree);
-            }
-            ctx.engine().pop_clip_rect();
-            ctx.engine().end_offscreen();
-
-            ctx.engine().restore();
-
-            // 立即将离屏渲染结果回写到主缓冲
-            let src = Rect::new(0.0, 0.0, w as f32, h as f32);
-            ctx.engine().draw_image(handle, src, *bounds);
-        }
+        // TODO(v2): 离屏渲染回写代码待 redesign
     }
 
     /// 递归渲染 overlay 层（post_render 回调 + 调试覆盖）。
@@ -686,11 +649,11 @@ impl LayerTree {
                 }
             }
             LayerNode::ClipRect { rect, children, .. } => {
-                ctx.engine().push_clip_rect(*rect);
+                ctx.canvas_2d().push_clip(*rect);
                 for child in children {
                     Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region);
                 }
-                ctx.engine().pop_clip_rect();
+                ctx.canvas_2d().pop_clip();
             }
         }
     }

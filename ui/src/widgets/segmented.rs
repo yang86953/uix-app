@@ -114,7 +114,7 @@ define_widget! {
             // 分隔线（非选中项之间）
             if i > 0 && i != self.selected && i - 1 != self.selected && !seg_disabled {
                 let divider_color = ctx.tokens().color_border_secondary();
-                ctx.engine().draw_line(x, frame.y + 6.0, x, frame.y + 26.0, divider_color, 1.0);
+                ctx.canvas_2d().draw_line(x, frame.y + 6.0, x, frame.y + 26.0, divider_color, 1.0);
             }
 
             x += seg_w;

@@ -1,5 +1,8 @@
 use super::asset_store::AssetStore;
 use super::core::RenderTarget;
+use crate::engine::cpu::canvas_2d::CpuCanvas2D;
+use crate::engine::cpu::noop_canvas_3d::NoopCanvas3D;
+use crate::engine::cpu::pixel_surface::PixelSurface;
 use crate::font_service::FontService;
 use crate::Color;
 use uix_core::Rect;
@@ -32,6 +35,11 @@ pub struct SoftwareEngine {
 
     /// 脏区域清除时使用的背景色（默认透明黑，上层可设为主题背景色）
     pub clear_color: Color,
+
+    /// 新 2D 绘制上下文（v2 重构）
+    pub(crate) canvas_2d: CpuCanvas2D,
+    /// 新 3D 绘制上下文（Noop）
+    pub(crate) canvas_3d: NoopCanvas3D,
 }
 
 impl Default for SoftwareEngine {
@@ -53,6 +61,9 @@ impl SoftwareEngine {
 
               font_service: FontService::new(),
               clear_color: Color::from_rgba(0, 0, 0, 0),
+
+              canvas_2d: CpuCanvas2D::new(PixelSurface::new(1, 1)),
+              canvas_3d: NoopCanvas3D,
           }
     }
 
@@ -65,23 +76,4 @@ impl SoftwareEngine {
         self.font_service = self.font_service.with_text_backend(backend);
         self
     }
-
-    // ── 像素缓冲访问 ──
-
-    pub fn pixel_buffer(&self) -> &[u32] {
-        self.rt.pixel_buffer()
-    }
-    pub fn pixel_buffer_mut(&mut self) -> &mut [u32] {
-        self.rt.pixel_buffer_mut()
-    }
-    pub fn pixel_bytes(&self) -> &[u8] {
-        self.rt.pixel_bytes()
-    }
-
-    /// Set supersample level for software render target (0 = adaptive default).
-    pub fn set_supersample_level(&mut self, level: u8) {
-        self.rt.set_supersample_level(level);
-    }
-
-
 }

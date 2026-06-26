@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use uix_core::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine};
+use uix_graphics::GraphicsEngine;
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};
@@ -124,7 +124,7 @@ define_widget! {
         let idx = self.current.get();
         let bg = ctx.tokens().color_bg_container();
         let primary = ctx.tokens().color_primary();
-        let border_color = ctx.tokens().color_border();
+        let _border_color = ctx.tokens().color_border();
         let dot_color = ctx.tokens().color_text_quaternary();
 
         // 背景

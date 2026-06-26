@@ -4,9 +4,9 @@
 
 use uix_core::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
+use uix_graphics::Radius;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use crate::widget::WidgetTree;
 
 /// 列表尺寸。
 /// （已统一为 uix_core::ControlSize，保留别名以兼容旧代码。）

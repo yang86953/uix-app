@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use crate::define_widget;
-use crate::animation::transition::{presets, Transition, TransitionPlayer};
+use crate::animation::transition::{presets, TransitionPlayer};
 use uix_core::{ControlSize, Point, Rect, Size};
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
@@ -12,7 +12,7 @@ use crate::widget::{EventResult, WidgetCore, WidgetEvent, WidgetTree};
 /// 两种模式：
 /// - 普通模式（默认）：preferred_size 返回实际尺寸，参与父容器 flex 布局。
 /// - 覆盖层模式（`.overlay(true)`）：preferred_size 始终返回 (0,0)，不参与 flex 布局，
-///   render 时通过 `ctx.engine().width()/height()` 获取窗口尺寸居中弹窗。
+///   render 时通过 `ctx.canvas_2d().width()/height()` 获取窗口尺寸居中弹窗。
 ///   适合放在 Column/Row 末尾作全屏覆盖层，不挤压主内容。
 define_widget! {
     pub struct Modal {
@@ -141,8 +141,8 @@ define_widget! {
 
         // 确定弹窗位置：覆盖层模式使用窗口尺寸居中，否则使用 frame 中心
         let (cx, cy, sw, sh) = if self.overlay {
-            let win_w = ctx.engine().width() as f32;
-            let win_h = ctx.engine().height() as f32;
+            let win_w = ctx.canvas_2d().width() as f32;
+            let win_h = ctx.canvas_2d().height() as f32;
             // 缓存窗口尺寸供 layout_children / on_event 使用
             self.last_win_w.set(win_w);
             self.last_win_h.set(win_h);
@@ -151,7 +151,7 @@ define_widget! {
             (_frame.x + _frame.w / 2.0, _frame.y + _frame.h / 2.0, _frame.w * scale, _frame.h * scale)
         };
 
-        ctx.engine().set_opacity(opacity);
+        ctx.canvas_2d().set_opacity(opacity);
 
         // 遮罩：从弹窗中心向四周扩展足够大覆盖全屏
         let mask_size = 2000.0;
@@ -181,7 +181,7 @@ define_widget! {
             ctx.fill_rect(Rect::new(scaled_frame.x, scaled_frame.y + scaled_frame.h - footer_h, scaled_frame.w, 1.0), border_secondary, None);
         }
 
-        ctx.engine().set_opacity(1.0);
+        ctx.canvas_2d().set_opacity(1.0);
     }
 
     layout_children => (&self, _frame: Rect, children: &[crate::widget::WidgetId], tree: &WidgetTree)

@@ -531,6 +531,8 @@ mod tests {
     }
 
     impl Widget for FixedWidget {
+        fn as_any(&self) -> &dyn std::any::Any { self }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
         fn preferred_size(&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
             self.size
         }
@@ -724,6 +726,8 @@ mod tests {
             size: std::cell::Cell<f32>,
         }
         impl Widget for GrowWidget {
+            fn as_any(&self) -> &dyn std::any::Any { self }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
             fn preferred_size(&self, _: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
                 Size::new(300.0, self.size.get())
             }

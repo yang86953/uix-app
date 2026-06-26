@@ -53,7 +53,7 @@ define_widget! {
         let lbc = tokens.color_text_secondary();
         let ac = tokens.color_border();
         let bg = tokens.color_bg_container();
-        let text_c = tokens.color_text();
+        let _text_c = tokens.color_text();
 
         let y_label_w = 36.0;
         let x_label_h = 14.0;
@@ -93,7 +93,7 @@ define_widget! {
         for s in 0..n - 1 {
             for o in -half..=half {
                 let o = o as f32;
-                ctx.engine().draw_line(pts[s].x, pts[s].y + o, pts[s + 1].x, pts[s + 1].y + o, lc, 1.0);
+                ctx.canvas_2d().draw_line(pts[s].x, pts[s].y + o, pts[s + 1].x, pts[s + 1].y + o, lc, 1.0);
             }
         }
 

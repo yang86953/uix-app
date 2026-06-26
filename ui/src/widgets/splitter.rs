@@ -6,7 +6,7 @@ use std::cell::Cell;
 
 use uix_core::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine};
+use uix_graphics::GraphicsEngine;
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};
@@ -102,7 +102,7 @@ define_widget! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[WidgetId], _tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
         let mut result = Vec::new();

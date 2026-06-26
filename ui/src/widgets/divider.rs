@@ -71,7 +71,7 @@ define_widget! {
 
                 if let Some(ref text) = self.text {
                     let text_w = text.len() as f32 * 7.5 + 8.0;
-                    let text_h = self.text_size;
+                    let _text_h = self.text_size;
 
                     let text_x = match self.orientation {
                         DividerOrientation::Left => frame.x + 32.0,

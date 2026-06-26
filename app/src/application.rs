@@ -247,7 +247,7 @@ impl App {
         match strategy {
             RenderStrategy::Cpu => {
                 let mut engine = SoftwareEngine::new();
-                match engine.initialize(width, height, system_info) {
+                match engine.initialize(width, height) {
                     Ok(_) => {
                         log::info!("App: SoftwareEngine (CPU) initialized");
                         Some(Box::new(engine))

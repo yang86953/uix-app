@@ -138,7 +138,7 @@ impl Popconfirm {
     pub fn on_confirm<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_confirm = Some(Box::new(f)); self }
     pub fn on_cancel<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_cancel = Some(Box::new(f)); self }
 
-    fn popup_pos(&self, pw: f32, ph: f32) -> (f32, f32) {
+    fn popup_pos(&self, _pw: f32, ph: f32) -> (f32, f32) {
         let gap = if self.arrow { 10.0 } else { 4.0 };
         match self.placement {
             PopconfirmPlacement::Top | PopconfirmPlacement::TopLeft | PopconfirmPlacement::TopRight => (0.0, -ph - gap),
@@ -147,7 +147,7 @@ impl Popconfirm {
     }
 }
 
-fn draw_popconfirm_arrow(ctx: &mut RenderContext, trigger: Rect, popup: Rect, placement: PopconfirmPlacement, color: Color) {
+fn draw_popconfirm_arrow(ctx: &mut RenderContext, _trigger: Rect, popup: Rect, placement: PopconfirmPlacement, color: Color) {
     let arrow_sz = 6.0;
     let (x1, y1, x2, y2, x3, y3) = match placement {
         PopconfirmPlacement::Top | PopconfirmPlacement::TopLeft | PopconfirmPlacement::TopRight => {

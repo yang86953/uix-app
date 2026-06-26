@@ -254,7 +254,7 @@ impl Select {
         }
     }
 
-    fn option_index(&self, group_label: &str, opt: &str) -> usize {
+    fn option_index(&self, _group_label: &str, opt: &str) -> usize {
         self.all_options().iter().position(|&s| s == opt).unwrap_or(0)
     }
 }

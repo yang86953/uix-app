@@ -85,8 +85,8 @@ define_widget! {
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_quaternary();
         let border = ctx.tokens().color_border_secondary();
-        let fill = ctx.tokens().color_fill_tertiary();
-        let bg = ctx.tokens().color_bg_container();
+        let _fill = ctx.tokens().color_fill_tertiary();
+        let _bg = ctx.tokens().color_bg_container();
         let cs = self.cell_size;
         let y = frame.y;
         let x = frame.x;

@@ -2,7 +2,8 @@
 
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
-use crate::{compute_grid_layout, AlignItems, GridChild, GridInput, GridTrack, JustifyContent};
+use crate::{AlignItems, GridTrack, JustifyContent};
+use crate::layout::engine::{GridLayout, LayoutChild, LayoutEngine, child_from_tree};
 use uix_core::{EdgeInsets, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{WidgetId, WidgetTree};
@@ -43,38 +44,38 @@ define_widget! {
     layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
-        let mut result = Vec::new();
-        if self.columns.is_empty() || children.is_empty() { return result; }
+        if self.columns.is_empty() || children.is_empty() { return Vec::new(); }
 
-        // 自动计算行数：如果 rows 未设置，根据子节点数和列数推算
-        let rows: Vec<GridTrack> = if self.rows.is_empty() {
-            let n_cols = self.columns.len();
-            let n_rows = (children.len() + n_cols - 1) / n_cols; // ceil division
-            vec![GridTrack::Auto; n_rows.max(1)]
-        } else {
-            self.rows.clone()
-        };
+        // 构建统一子节点信息
+        let layout_children: Vec<LayoutChild> = children
+            .iter()
+            .map(|&cid| child_from_tree(cid, tree))
+            .collect();
 
-        let grid_children: Vec<GridChild> = children.iter().map(|&cid| {
-            GridChild { preferred_size: tree.get(cid).map(|c| c.preferred_size(None)).unwrap_or_default(), ..Default::default() }
-        }).collect();
-
-        let output = compute_grid_layout(&GridInput {
-            container: frame,
+        // 委托给统一的 GridLayout 布局引擎
+        let engine = GridLayout {
             columns: self.columns.clone(),
-            rows,
+            rows: self.rows.clone(),
             col_gap: self.col_gap,
             row_gap: self.row_gap,
-            padding: self.padding,
-            children: grid_children,
             align_items: self.align_items,
             justify_items: self.justify_items,
-        });
+        };
 
-        for (i, &cid) in children.iter().enumerate() {
-            if i < output.child_rects.len() { result.push((cid, output.child_rects[i])); }
-        }
-        result
+        // 内容区域（Grid 无 margin/border，仅扣除 padding）
+        let content_rect = Rect::new(
+            frame.x + self.padding.left,
+            frame.y + self.padding.top,
+            (frame.w - self.padding.horizontal()).max(0.0),
+            (frame.h - self.padding.vertical()).max(0.0),
+        );
+
+        let output = engine.layout(content_rect, &layout_children);
+
+        children.iter()
+            .zip(output.positions)
+            .map(|(&cid, rect)| (cid, rect))
+            .collect()
     }
 }
 

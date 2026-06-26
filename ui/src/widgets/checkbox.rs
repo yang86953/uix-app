@@ -2,7 +2,7 @@
 
 use crate::define_widget;
 use uix_graphics::Color;
-use uix_core::{Point, Rect, Size};
+use uix_core::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
 
@@ -67,8 +67,8 @@ define_widget! {
             ctx.fill_rect(box_r, bg, corner);
             let cx = box_x + box_size * 0.5;
             let cy = box_y + box_size * 0.5;
-            ctx.engine().draw_line(cx - 4.0, cy, cx - 1.0, cy + 3.0, white, 2.0);
-            ctx.engine().draw_line(cx - 1.0, cy + 3.0, cx + 4.0, cy - 2.0, white, 2.0);
+            ctx.canvas_2d().draw_line(cx - 4.0, cy, cx - 1.0, cy + 3.0, white, 2.0);
+            ctx.canvas_2d().draw_line(cx - 1.0, cy + 3.0, cx + 4.0, cy - 2.0, white, 2.0);
         } else {
             let border = if self.disabled { border_sec } else if self.hovered { primary_hover } else { border_c };
             ctx.stroke_rect(box_r, border, 1.5, corner);

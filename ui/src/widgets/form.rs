@@ -1,8 +1,8 @@
-use uix_core::{EdgeInsets, Point, Rect, Size};
+use uix_core::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
+use uix_graphics::Color;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use crate::widget::WidgetTree;
 use std::collections::HashMap;
 
 /// 校验状态。

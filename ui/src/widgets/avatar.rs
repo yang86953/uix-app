@@ -2,7 +2,7 @@
 
 use crate::define_widget;
 use uix_graphics::Color;
-use uix_core::{Point, Rect, Size};
+use uix_core::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 

@@ -34,7 +34,7 @@ define_widget! {
             let mut cur = self.current.get();
             let item_w = self.size;
             let gap = 4.0;
-            let mut x = pos.x;
+            let x = pos.x;
             // 上一页
             let mut btn_x = 0.0;
             if x >= btn_x && x < btn_x + item_w { cur = cur.saturating_sub(1).max(1); self.current.set(cur); if let Some(ref mut cb) = self.on_change { cb(cur); } return EventResult::Handled; }
@@ -135,7 +135,7 @@ impl Pagination {
             on_change: None,
         }
     }
-    pub fn current(mut self, v: usize) -> Self { self.current.set(v); self }
+    pub fn current(self, v: usize) -> Self { self.current.set(v); self }
     pub fn get_current(&self) -> usize { self.current.get() }
     pub fn page_size(mut self, v: usize) -> Self { self.page_size = v; self }
     pub fn show_total(mut self, v: bool) -> Self { self.show_total = v; self }

@@ -6,7 +6,7 @@ use uix_core::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use crate::widget::WidgetTree;
 
 /// Image — 图片显示组件。
 define_widget! {

@@ -1,5 +1,5 @@
 use crate::define_widget;
-use crate::animation::transition::{presets, Transition, TransitionPlayer, SlideDirection};
+use crate::animation::transition::{presets, TransitionPlayer, SlideDirection};
 use uix_core::{ControlSize, Point, Rect, Size};
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
@@ -98,7 +98,7 @@ define_widget! {
         let opacity = self.transition_player.as_ref().map_or(1.0, |tp| tp.opacity_progress);
         let offset = self.transition_player.as_ref().map_or(Point::zero(), |tp| tp.offset);
 
-        ctx.engine().set_opacity(opacity);
+        ctx.canvas_2d().set_opacity(opacity);
 
         if self.mask {
             ctx.fill_rect(Rect::new(-2000.0, -2000.0, 4000.0, 4000.0),
@@ -149,7 +149,7 @@ define_widget! {
             ctx.text_center(loc.drawer_ok, Rect::new(drawer_x + drawer_w - 100.0, footer_y + 14.0, 80.0, 28.0), Color::white(), 13.0);
         }
 
-        ctx.engine().set_opacity(1.0);
+        ctx.canvas_2d().set_opacity(1.0);
     }
 
     layout_children => (&self, frame: Rect, children: &[crate::widget::WidgetId], _tree: &WidgetTree)

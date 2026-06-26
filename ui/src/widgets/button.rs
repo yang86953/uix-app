@@ -115,9 +115,9 @@ define_widget! {
 
         // text
         if !self.text.is_empty() {
-            let tw = if self.icon.is_empty() { content_rect.w } else { content_rect.w - (cursor - content_rect.x) };
+            let _tw = if self.icon.is_empty() { content_rect.w } else { content_rect.w - (cursor - content_rect.x) };
             let tx = if self.icon.is_empty() { content_rect.x } else { cursor };
-            let text_center = content_rect.w / 2.0 - self.text.len() as f32 * 3.5;
+            let _text_center = content_rect.w / 2.0 - self.text.len() as f32 * 3.5;
             if self.icon.is_empty() && !self.loading {
                 ctx.text_center(&self.text, content_rect, style.color, style.font_size);
             } else {
@@ -129,7 +129,7 @@ define_widget! {
 
     post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         if self.anim_progress <= 0.0 || self.anim_progress >= 1.0 { return; }
-        let style = self.compute_style(ctx);
+        let _style = self.compute_style(ctx);
         let page_bg = ctx.tokens().color_bg_container();
         let base = match self.variant {
             ButtonVariant::Primary => ctx.tokens().color_primary().mix(&Color::black(), 0.3),
@@ -201,7 +201,7 @@ impl Button {
                 _ => (None, if self.danger { t.color_error() } else { t.color_primary() }, c, 1.0),
             }
         } else {
-                let normal_border = if self.danger { t.color_error() } else { t.color_primary() };
+                let _normal_border = if self.danger { t.color_error() } else { t.color_primary() };
                 let normal_text = if self.danger { t.color_error() } else { t.color_primary() };
             match self.variant {
                 ButtonVariant::Primary => {

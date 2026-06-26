@@ -13,7 +13,11 @@ pub use crate::types::{
 };
 
 // ── 渲染引擎 Trait ──
-pub use crate::engine::{GraphicsEngine, RenderOutcome};
+pub use crate::traits::GraphicsEngine;
+pub use crate::engine::RenderOutcome;
+
+// ── 渲染策略 ──
+pub use crate::traits::{Canvas2D, Canvas3D, RenderingBackend, UpdateStrategy};
 
 // ── 空实现引擎 ──
 pub use crate::null_engine::NullEngine;

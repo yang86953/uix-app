@@ -60,7 +60,7 @@ define_widget! {
         let alpha = (1.0 - phase * 0.6) * 255.0;
         let base = ctx.tokens().color_primary();
         let c = Color::from_rgba(base.r, base.g, base.b, alpha as u8);
-        let eng = ctx.engine();
+        let eng = ctx.canvas_2d();
         eng.stroke_circle(cx, cy, r, c, 3.0);
         if r > 10.0 {
             eng.fill_circle(cx, cy, r * 0.3, c);
@@ -112,7 +112,7 @@ define_widget! {
         let shadow_r = 6.0 + bounce * 8.0;
         let shadow_c = Color::from_rgba(0, 0, 0, shadow_alpha as u8);
         ctx.fill_circle(cx, frame.y + frame.h - 6.0, shadow_r, shadow_c);
-        ctx.engine().fill_circle(cx, cy, 10.0, primary);
+        ctx.canvas_2d().fill_circle(cx, cy, 10.0, primary);
     }
 }
 

@@ -4,8 +4,9 @@ use std::cell::Cell;
 
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
-use crate::{
-    compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
+use crate::{AlignItems, FlexDirection, JustifyContent};
+use crate::layout::engine::{
+    BoxModel, FlexLayout, LayoutChild, LayoutEngine, child_from_tree,
 };
 use crate::style::Style;
 use uix_core::{EdgeInsets, Rect, Size};
@@ -108,29 +109,16 @@ define_widget! {
     {
         if children.is_empty() { return Vec::new(); }
 
-        // 内容区域 = frame - margin - border - padding（Web 盒模型）
-        let mh = self.margin.horizontal();
-        let mv = self.margin.vertical();
-        let bh = self.border_width * 2.0;
-        let bv = self.border_width * 2.0;
-        let inner = Rect::new(
-            frame.x + self.margin.left + self.border_width,
-            frame.y + self.margin.top + self.border_width,
-            (frame.w - mh - bh - self.padding.horizontal()).max(0.0),
-            (frame.h - mv - bv - self.padding.vertical()).max(0.0),
-        );
-
-        // 传递给 flex 布局的内容容器（不含 border/padding）
-        let flex_container = Rect::new(
-            inner.x + self.padding.left,
-            inner.y + self.padding.top,
-            inner.w,
-            inner.h,
-        );
+        // 统一的盒模型计算（使用底层 BoxModel）
+        let box_model = BoxModel {
+            margin: self.margin,
+            border_width: self.border_width,
+            padding: self.padding,
+        };
+        let content_rect = box_model.content_rect(frame);
+        if content_rect.w <= 0.0 || content_rect.h <= 0.0 { return Vec::new(); }
 
         // 过滤不可见子节点：不可见的 widget 不参与布局，不占空间
-        // 注意：tree.get(cid) 返回 None 时（节点尚未完全就绪），
-        // 使用 unwrap_or(true) 假设可见（安全侧），避免静默过滤掉正在构建中的子节点。
         let visible_children: Vec<WidgetId> = children.iter().copied()
             .filter(|&cid| {
                 let visible = tree.get(cid)
@@ -142,56 +130,34 @@ define_widget! {
                 visible
             })
             .collect();
-        if visible_children.is_empty() {
-            return Vec::new();
-        }
+        if visible_children.is_empty() { return Vec::new(); }
 
-        // overflow_content 模式：使用简单流式堆叠，不压缩，不使用 flex 分配
-        // 类似 Web CSS block 流式布局 — 子节点按自然尺寸依次排列
-        if self.overflow_content {
-            return self.layout_overflow(&flex_container, &visible_children, tree);
-        }
-
-        // 合并为单次遍历：同时构建 child_sizes 和 flex_children
-        let (child_sizes, flex_children): (Vec<Size>, Vec<FlexChild>) = visible_children
+        // 构建统一子节点信息（使用底层 child_from_tree）
+        let layout_children: Vec<LayoutChild> = visible_children
             .iter()
-            .map(|&cid| {
-                let node = tree.get(cid);
-                let pref = node.map(|c| c.preferred_size(None)).unwrap_or_default();
-                let h = if pref.h > 0.0 { pref.h } else { node.map(|c| c.frame().h).unwrap_or(0.0) };
-                let size = Size::new(pref.w, h);
-                let flex = FlexChild {
-                    flex_grow: node.map(|c| c.inner().flex_grow()).unwrap_or(0.0),
-                    flex_shrink: node.map(|c| c.inner().flex_shrink()).unwrap_or(1.0),
-                    ..FlexChild::default()
-                };
-                (size, flex)
-            })
-            .unzip();
+            .map(|&cid| child_from_tree(cid, tree))
+            .collect();
 
-        let input = FlexInput {
+        // 委托给统一的 FlexLayout 布局引擎
+        let engine = FlexLayout {
             direction: self.direction,
             gap: self.gap,
-            padding: EdgeInsets::zero(),  // padding 已算入 flex_container
-            container: flex_container,
-            children: flex_children,
-            child_sizes,
-            justify_content: self.justify,
-            align_items: self.align,
-            ..FlexInput::default()
+            justify: self.justify,
+            align: self.align,
+            wrap: false,
+            overflow_content: self.overflow_content,
         };
+        let output = engine.layout(content_rect, &layout_children);
 
-        let output = compute_flex_layout(&input);
-
-        // 缓存子节点内容尺寸（不含 padding/margin/border），
-        // 供 preferred_size 在无 fixed_width 时使用。
-        let content_w = output.total_size.w.max(0.0);
-        let content_h = output.total_size.h.max(0.0);
-        self.cached_content_size.set(Size::new(content_w, content_h));
+        // 缓存子节点内容尺寸，供 preferred_size 在无 fixed_width 时使用
+        self.cached_content_size.set(Size::new(
+            output.total_size.w.max(0.0),
+            output.total_size.h.max(0.0),
+        ));
 
         visible_children
             .iter()
-            .zip(output.child_rects)
+            .zip(output.positions)
             .map(|(&cid, rect)| (cid, rect))
             .collect()
     }
@@ -318,99 +284,5 @@ impl Container {
         self
     }
 
-    /// 简单流式堆叠布局（用于 overflow_content 模式）。
-    /// 类似 Web CSS block 流式布局，子节点按自然尺寸依次排列，不压缩、
-    /// 不分配剩余空间。仅支持 Column/Row 方向 + Start/Center/End/Stretch
-    /// 交叉轴对齐。
-    fn layout_overflow(
-        &self,
-        container: &Rect,
-        children: &[WidgetId],
-        tree: &WidgetTree,
-    ) -> Vec<(WidgetId, Rect)> {
-        let is_row = matches!(self.direction, FlexDirection::Row | FlexDirection::RowReverse);
-        let is_reverse = matches!(self.direction, FlexDirection::RowReverse | FlexDirection::ColumnReverse);
-        let count = children.len();
-        let mut result = Vec::with_capacity(count);
-
-        // 收集子节点尺寸：取 preferred_size 与当前实际 frame 的最大值，
-        // 确保 Phase 2 扩展后的尺寸被正确使用，避免 siblings 重叠。
-        let child_heights: Vec<f32> = children
-            .iter()
-            .map(|&cid| {
-                let node = tree.get(cid);
-                let pref = node.map(|c| c.preferred_size(None)).unwrap_or_default();
-                let current = node.map(|c| c.frame().h).unwrap_or(0.0);
-                if pref.h > 0.0 { pref.h.max(current) } else { current }
-            })
-            .collect();
-
-        let child_widths: Vec<f32> = children
-            .iter()
-            .map(|&cid| {
-                let node = tree.get(cid);
-                let pref = node.map(|c| c.preferred_size(None)).unwrap_or_default();
-                let current = node.map(|c| c.frame().w).unwrap_or(0.0);
-                if pref.w > 0.0 { pref.w.max(current) } else { current.max(container.w) }
-            })
-            .collect();
-
-        let container_main = if is_row { container.w } else { container.h };
-        let container_cross = if is_row { container.h } else { container.w };
-        let gap = self.gap;
-        let total_gaps = gap * (count as f32 - 1.0).max(0.0);
-
-        // 计算主轴方向子节点尺寸总和
-        let main_sizes: Vec<f32> = if is_row {
-            child_widths.clone()
-        } else {
-            child_heights.clone()
-        };
-
-        // 流式堆叠：沿主轴依次排列
-        let mut cursor = 0.0f32;
-        if is_reverse {
-            let total_main: f32 = main_sizes.iter().sum::<f32>() + total_gaps;
-            cursor = container_main - total_main;
-        }
-
-        for i in 0..count {
-            let main_size = main_sizes[i];
-            let cross_size = if is_row { child_heights[i] } else { child_widths[i] };
-
-            let child_cross_size = if self.align == AlignItems::Stretch {
-                container_cross
-            } else {
-                cross_size
-            };
-
-            let cross_offset = match self.align {
-                AlignItems::Start => 0.0,
-                AlignItems::Center => (container_cross - child_cross_size) / 2.0,
-                AlignItems::End => container_cross - child_cross_size,
-                AlignItems::Stretch => 0.0,
-            };
-
-            let (cx, cy) = if is_row {
-                (container.x + cursor, container.y + cross_offset)
-            } else {
-                (container.x + cross_offset, container.y + cursor)
-            };
-            let (cw, ch) = if is_row {
-                (main_size, child_cross_size)
-            } else {
-                (child_cross_size, main_size)
-            };
-
-            result.push((children[i], Rect::new(cx, cy, cw, ch)));
-
-            if is_reverse {
-                cursor -= main_size + gap;
-            } else {
-                cursor += main_size + gap;
-            }
-        }
-
-        result
-    }
 }
+

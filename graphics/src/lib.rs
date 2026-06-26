@@ -18,6 +18,7 @@ pub mod rasterizer;
 pub mod software_engine;
 pub mod stroker;
 pub mod text_backend;
+pub mod traits;
 pub mod types;
 
 mod api;

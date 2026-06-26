@@ -227,7 +227,7 @@ define_widget! {
         // ── 列表项 ──
         let sy = self.scroll_y.get();
         let list_clip = Rect::new(frame.x, y, frame.w, frame.h - y - 28.0);
-        ctx.engine().push_clip_rect(list_clip);
+        ctx.canvas_2d().push_clip(list_clip);
 
         for i in 0..self.items.len() {
             let iy = y + i as f32 * (self.item_height + 2.0) + sy;
@@ -270,7 +270,7 @@ define_widget! {
             }
         }
 
-        ctx.engine().pop_clip_rect();
+        ctx.canvas_2d().pop_clip();
 
         // ── Footer ──
         if !self.footer_text.is_empty() {
