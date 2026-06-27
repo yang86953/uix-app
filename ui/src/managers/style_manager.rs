@@ -1,4 +1,4 @@
-use uix_core::{EdgeInsets};
+use uix_platform::{EdgeInsets};
 use uix_graphics::{Color};
 
 /// 预留给将来按需扩展的 widget 样式预设。

@@ -3,7 +3,7 @@
 //! 用于展示操作结果（成功/错误/警告/信息/404/403/500），
 //! 包含图标、标题、副标题、额外操作区域。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::Color;
 use crate::render_context::RenderContext;

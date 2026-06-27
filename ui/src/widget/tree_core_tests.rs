@@ -3,18 +3,18 @@
 //! 从 `tree_core.rs` 拆分出来以遵守 900 行文件限制。
 
 use super::*;
-use uix_core::Point;
-use uix_core::KeyMod;
+use uix_platform::Point;
+use uix_platform::KeyMod;
 use std::cell::RefCell;
 
 struct SpyWidget {
-    size: uix_core::Size,
+    size: uix_platform::Size,
     last_event: RefCell<Option<WidgetEvent>>,
 }
 impl SpyWidget {
     fn new(w: f32, h: f32) -> Self {
         Self {
-            size: uix_core::Size::new(w, h),
+            size: uix_platform::Size::new(w, h),
             last_event: RefCell::new(None),
         }
     }
@@ -25,7 +25,7 @@ impl Widget for SpyWidget {
     fn preferred_size(
         &self,
         _: Option<&dyn uix_graphics::GraphicsEngine>,
-    ) -> uix_core::Size {
+    ) -> uix_platform::Size {
         self.size
     }
     fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
@@ -42,13 +42,13 @@ impl Widget for SpyWidget {
 }
 
 struct PassThroughContainer {
-    size: uix_core::Size,
+    size: uix_platform::Size,
     children: RefCell<Vec<Box<dyn Widget>>>,
 }
 impl PassThroughContainer {
     fn new(w: f32, h: f32, children: Vec<Box<dyn Widget>>) -> Self {
         Self {
-            size: uix_core::Size::new(w, h),
+            size: uix_platform::Size::new(w, h),
             children: RefCell::new(children),
         }
     }
@@ -62,7 +62,7 @@ impl Widget for PassThroughContainer {
     fn preferred_size(
         &self,
         _: Option<&dyn uix_graphics::GraphicsEngine>,
-    ) -> uix_core::Size {
+    ) -> uix_platform::Size {
         self.size
     }
     fn on_event(&mut self, _: &WidgetEvent) -> EventResult {
@@ -285,21 +285,21 @@ fn nav_item_click_updates_shared_active() {
     assert_eq!(active.get(), 0);
     let result = tree.dispatch_event(&WidgetEvent::MouseDown {
         pos: Point::new(50.0, 54.0),
-        button: uix_core::MouseButton::Left,
+        button: uix_platform::MouseButton::Left,
         mods: KeyMod::NONE,
     });
     assert_eq!(result, EventResult::Handled);
     assert_eq!(active.get(), 1);
     let result = tree.dispatch_event(&WidgetEvent::MouseDown {
         pos: Point::new(50.0, 18.0),
-        button: uix_core::MouseButton::Left,
+        button: uix_platform::MouseButton::Left,
         mods: KeyMod::NONE,
     });
     assert_eq!(result, EventResult::Handled);
     assert_eq!(active.get(), 0);
     let result = tree.dispatch_event(&WidgetEvent::MouseDown {
         pos: Point::new(50.0, 150.0),
-        button: uix_core::MouseButton::Left,
+        button: uix_platform::MouseButton::Left,
         mods: KeyMod::NONE,
     });
     assert_eq!(result, EventResult::NotHandled);

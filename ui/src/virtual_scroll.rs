@@ -5,7 +5,7 @@
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetNode, WidgetTree};
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 
 define_widget! {
     pub struct VirtualScroll {

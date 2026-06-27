@@ -12,8 +12,8 @@
 use std::collections::VecDeque;
 
 /// 通知级别。
-/// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
-pub use uix_core::StatusLevel as NotificationLevel;
+/// （已统一为 uix_platform::StatusLevel，保留别名以兼容旧代码。）
+pub use uix_platform::StatusLevel as NotificationLevel;
 
 /// A single notification entry displayed as a Toast in the UI.
 #[derive(Debug, Clone)]
@@ -77,6 +77,11 @@ impl NotificationService {
     pub fn max_visible(mut self, n: usize) -> Self {
         self.max_visible = n.max(1);
         self
+    }
+
+    /// Update the maximum number of visible toasts in-place.
+    pub fn set_max_visible(&mut self, n: usize) {
+        self.max_visible = n.max(1);
     }
 
     /// Register a callback invoked whenever the toast queue changes.
@@ -216,34 +221,3 @@ impl NotificationService {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_notify_adds_toast() {
-        let mut svc = NotificationService::new();
-        let id = svc.notify("Test", "Message", NotificationLevel::Info, 4000);
-        assert!(svc.has_active());
-        assert_eq!(svc.visible_toasts().len(), 1);
-        assert_eq!(svc.visible_toasts()[0].id, id);
-    }
-
-    #[test]
-    fn test_dismiss_removes_toast() {
-        let mut svc = NotificationService::new();
-        let id = svc.notify("Test", "Message", NotificationLevel::Info, 4000);
-        svc.dismiss(id);
-        assert!(!svc.has_active());
-    }
-
-    #[test]
-    fn test_max_visible_trims() {
-        let mut svc = NotificationService::new();
-        svc.max_visible = 3;
-        for i in 0..5 {
-            svc.notify(&format!("Title {}", i), "Msg", NotificationLevel::Info, 4000);
-        }
-        assert_eq!(svc.visible_toasts().len(), 3);
-    }
-}

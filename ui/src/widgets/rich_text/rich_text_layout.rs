@@ -3,7 +3,7 @@
 //! 提供字符级文本布局、断行、字形缓存等功能。
 //! 从 `rich_text.rs` 拆分出来以遵守 900 行文件限制。
 
-use uix_core::Rect;
+use uix_platform::Rect;
 use uix_graphics::font_service::FontService;
 use uix_graphics::text_backend::TextLayoutOptions;
 use uix_graphics::{Color, FontHandle};

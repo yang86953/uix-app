@@ -1,9 +1,11 @@
 //! 矢量描边纯函数——矩形描边/圆形描边/路径描边/直线。
 
-use uix_core::Rect;
+use uix_platform::Rect;
 
 use crate::color::Color;
+use crate::flattener;
 use crate::path::Path;
+use crate::rasterizer::polygon;
 use crate::stroker::StrokeOptions;
 use crate::types::Radius;
 
@@ -101,14 +103,24 @@ pub fn stroke_circle(
     }
 }
 
-/// 纯函数：描边路径（暂未实现）。
+/// 纯函数：描边路径（stroker 转填充 → polygon fill）。
 pub fn stroke_path(
     pixels: &mut [u32], surface_w: i32, surface_h: i32,
-    _clip: Rect, _opacity: f32,
-    _path: &Path, _color: Color, _opts: &StrokeOptions,
+    clip: Rect, opacity: f32,
+    path: &Path, color: Color, opts: &StrokeOptions,
 ) {
-    let _ = (pixels, surface_w, surface_h);
-    // TODO: path stroke via stroker + fill
+    if path.is_empty() { return; }
+    let c = color_to_premul(color.r, color.g, color.b, color.a, opacity);
+    let stroked = crate::stroker::stroke_path(path, opts);
+    if stroked.is_empty() { return; }
+    let polys = flattener::flatten(stroked.segments(), 0.25);
+    let mut global_edges = Vec::new();
+    let mut active_edges = Vec::new();
+    polygon::fill_polygons(
+        &polys, pixels, surface_w, surface_h,
+        clip, c, crate::path::FillRule::NonZero,
+        &mut global_edges, &mut active_edges,
+    );
 }
 
 /// 纯函数：画直线。

@@ -1,7 +1,7 @@
 //! 图形引擎编排——生命周期 + 帧控制 + Canvas 入口。
 
-use uix_core::Rect;
-use uix_diag::Error;
+use uix_platform::Rect;
+use uix_platform::Error;
 
 use super::{Canvas2D, Canvas3D, UpdateStrategy};
 use crate::engine::RenderOutcome;

@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use uix_core::{Point, Size};
-use uix_diag::Error;
+use uix_platform::{Point, Size};
+use uix_platform::Error;
 use crate::bitmap_font::BitmapFont;
 use crate::text_backend::{
     self as tb, GlyphRaster, TextBackend, TextLayout, TextLayoutOptions,
@@ -42,7 +42,7 @@ struct FontSlot {
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 struct GlyphCacheKey {
     font_idx: u32,
-    glyph_id: u16,
+    glyph_id: u32,
     pixel_size: u32,
 }
 
@@ -136,6 +136,13 @@ pub struct FontService {
     /// BitmapFont 实例（5x7 位图回退字体）。
     #[allow(dead_code)]
     bitmap_font: BitmapFont,
+}
+
+/// 布局辅助：按字体分割的文本段（追踪字节偏移）。
+struct FontSegment {
+    byte_start: usize,
+    byte_end: usize,
+    font: FontHandle,
 }
 
 impl FontService {
@@ -352,10 +359,10 @@ impl FontService {
             if let Some(path) = fallback_paths.first() {
                 if let Ok(data) = std::fs::read(path) {
                     if self.load_raw_font(data, size).is_some() {
-                        uix_diag::log::info_fn(format!(
+                        log::info!(
                             "Configured font '{}' not found, fallback: {}",
                             self.primary_family, path
-                        ));
+                        );
                         return;
                     }
                 }
@@ -389,24 +396,24 @@ impl FontService {
                                 if !primary_loaded {
                                     primary_loaded = true;
                                     self.loaded_font_handle = handle;
-                                    uix_diag::log::info_fn(format!(
+                                    log::info!(
                                         "Loaded system default font: {} (handle={:?})",
                                         path, handle
-                                    ));
+                                    );
                                 } else {
-                                    uix_diag::log::info_fn(format!(
+                                    log::info!(
                                         "Loaded fallback font: {}",
                                         path
-                                    ));
+                                    );
                                     self.fallback_handles.push(handle);
                                 }
                             }
                         }
                         Err(e) => {
-                            uix_diag::log::info_fn(format!(
+                            log::info!(
                                 "Failed to read font file {}: {}",
                                 path, e
-                            ));
+                            );
                         }
                     }
                 }
@@ -421,7 +428,7 @@ impl FontService {
                 }
             }
         }
-        uix_diag::log::info_fn("No primary font, using bitmap fallback");
+        log::info!("{}", "No primary font, using bitmap fallback");
     }
 
     /// 加载 CJK 回退字体（通过平台层探测）。
@@ -433,7 +440,7 @@ impl FontService {
                 && self.text_backend.has_glyph(&self.loaded_font_handle, ch)
         });
         if primary_has_cjk {
-            uix_diag::log::info_fn(
+            log::info!(
                 "Primary font already supports CJK, skipping CJK fallback load"
             );
             return;
@@ -447,28 +454,28 @@ impl FontService {
                         if let Some(handle) = self.load_raw_font(data, size) {
                             if !self.fallback_handles.iter().any(|h| h.0 == handle.0) {
                                 self.fallback_handles.push(handle);
-                                uix_diag::log::info_fn(format!(
+                                log::info!(
                                     "Loaded CJK fallback font: {}",
                                     path
-                                ));
+                                );
                             }
                         } else {
-                            uix_diag::log::info_fn(format!(
+                            log::info!(
                                 "CJK font '{}' found but failed to load (incompatible format)",
                                 path
-                            ));
+                            );
                         }
                     }
                     Err(e) => {
-                        uix_diag::log::info_fn(format!(
+                        log::info!(
                             "Failed to read CJK font file {}: {}",
                             path, e
-                        ));
+                        );
                     }
                 }
             }
             None => {
-                uix_diag::log::info_fn(
+                log::info!(
                     "No CJK fallback font found via platform"
                 );
             }
@@ -485,10 +492,10 @@ impl FontService {
                         self.registry[idx].face.family = family.to_owned();
                         self.registry[idx].face.path = Some(p.clone());
                     }
-                    uix_diag::log::info_fn(format!(
+                    log::info!(
                         "Loaded family font '{}': {}",
                         family, p
-                    ));
+                    );
                     return Some(());
                 }
             }
@@ -545,6 +552,143 @@ impl FontService {
         }
     }
 
+    // ── 布局辅助：按字体分割文本（追踪字节偏移，避免 String 分配）──
+
+    /// 第 1 遍：将文本按字体分割为段，追踪字节偏移。
+    fn segment_text(&self, font: &FontHandle, text: &str) -> Vec<FontSegment> {
+        let mut segments: Vec<FontSegment> = Vec::new();
+        let mut seg_start = 0usize;
+        let mut seg_font = *font;
+
+        for (byte_i, ch) in text.char_indices() {
+            if ch == '\n' {
+                if byte_i > seg_start {
+                    segments.push(FontSegment { byte_start: seg_start, byte_end: byte_i, font: seg_font });
+                }
+                segments.push(FontSegment { byte_start: byte_i, byte_end: byte_i + ch.len_utf8(), font: *font });
+                seg_start = byte_i + ch.len_utf8();
+                seg_font = *font;
+                continue;
+            }
+
+            let best = self.find_font_for_char(font, ch);
+            let use_font = best.unwrap_or(*font);
+
+            if use_font.0 != seg_font.0 {
+                if byte_i > seg_start {
+                    segments.push(FontSegment { byte_start: seg_start, byte_end: byte_i, font: seg_font });
+                }
+                seg_start = byte_i;
+                seg_font = use_font;
+            }
+        }
+
+        if seg_start < text.len() {
+            segments.push(FontSegment { byte_start: seg_start, byte_end: text.len(), font: seg_font });
+        }
+
+        segments
+    }
+
+    /// 第 2 遍：逐段布局 → 按行拼接。
+    fn layout_segments(
+        &self,
+        segments: &[FontSegment],
+        text: &str,
+        seg_opts: &TextLayoutOptions,
+        fs: f32,
+        line_h: f32,
+        primary_ascent: f32,
+        do_wrap: bool,
+        max_w: f32,
+    ) -> (Vec<tb::PositionedGlyph>, Vec<tb::LineInfo>) {
+        #[derive(Default)]
+        struct LineAccum {
+            glyphs: Vec<tb::PositionedGlyph>,
+            y: f32,
+            height: f32,
+            width: f32,
+        }
+
+        let mut lines: Vec<LineAccum> = Vec::new();
+        let mut line = LineAccum::default();
+        let mut cx = 0.0f32;
+        let mut cy = 0.0f32;
+
+        for seg in segments {
+            if seg.byte_start >= seg.byte_end {
+                continue;
+            }
+
+            if text.as_bytes()[seg.byte_start] == b'\n' {
+                if !line.glyphs.is_empty() || lines.is_empty() {
+                    line.width = cx.max(line.width);
+                    line.height = line_h;
+                    line.y = cy;
+                    lines.push(line);
+                }
+                line = LineAccum::default();
+                cx = 0.0;
+                cy += line_h;
+                continue;
+            }
+
+            let seg_metrics = self.text_backend.horizontal_line_metrics(&seg.font, fs);
+            let seg_ascent = seg_metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
+
+            // 用 &str 切片代替 String 分配
+            let seg_text = &text[seg.byte_start..seg.byte_end];
+            let seg_layout = self.text_backend.layout_text(&seg.font, seg_text, seg_opts);
+            let seg_width = seg_layout.width;
+
+            if do_wrap && cx > 0.0 && cx + seg_width > max_w {
+                line.width = cx.max(line.width);
+                line.height = line_h;
+                line.y = cy;
+                lines.push(line);
+                line = LineAccum::default();
+                cx = 0.0;
+                cy += line_h;
+            }
+
+            let baseline_offset = primary_ascent - seg_ascent;
+
+            for mut g in seg_layout.glyphs {
+                g.x += cx;
+                g.y += cy + baseline_offset;
+                g.font = seg.font;
+                line.glyphs.push(g);
+            }
+
+            cx += seg_width;
+        }
+
+        if !line.glyphs.is_empty() || lines.is_empty() {
+            line.width = cx.max(line.width);
+            line.height = line_h;
+            line.y = cy;
+            lines.push(line);
+        }
+
+        let mut all_glyphs = Vec::new();
+        let mut line_infos = Vec::new();
+        for l in &lines {
+            let gs = all_glyphs.len();
+            all_glyphs.extend_from_slice(&l.glyphs);
+            line_infos.push(tb::LineInfo {
+                y: l.y,
+                height: l.height,
+                width: l.width,
+                start_char: 0,
+                end_char: 0,
+                glyph_start: gs,
+                glyph_count: l.glyphs.len(),
+            });
+        }
+
+        (all_glyphs, line_infos)
+    }
+
     /// 布局文本，返回定位后的字形（含自动多字体回退）。
     ///
     /// - 逐行内分段：连续相同字体的字符组成一段，每段调用后端 layout_text。
@@ -568,196 +712,26 @@ impl FontService {
         }
 
         let fs = opts.font_size.max(1.0);
-        let line_h = if opts.line_height > 0.0 {
-            opts.line_height
-        } else {
-            fs * 1.5
-        };
+        let line_h = if opts.line_height > 0.0 { opts.line_height } else { fs * 1.5 };
         let has_max_w = opts.max_width.is_finite() && opts.max_width > 0.0;
         let do_wrap = has_max_w && opts.word_wrap;
         let max_w = if has_max_w { opts.max_width } else { f32::MAX };
 
-        // 主字体行度量（作为整行基线参考）
         let primary_metrics = self.text_backend.horizontal_line_metrics(font, fs);
-        let primary_ascent = primary_metrics
-            .map(|m| m.ascent)
-            .unwrap_or(fs * 0.8);
+        let primary_ascent = primary_metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
 
-        // 无换行的后端选项（段内不自动换行，由 FontService 控制）
         let seg_opts = TextLayoutOptions {
             max_width: f32::MAX,
             ..opts.clone()
         };
 
-        let chars: Vec<char> = text.chars().collect();
+        let segments = self.segment_text(font, text);
+        let (all_glyphs, line_infos) = self.layout_segments(
+            &segments, text, &seg_opts, fs, line_h, primary_ascent, do_wrap, max_w,
+        );
 
-        // ── 第 1 遍：分割为字体段 ──
-        // FontSegment: (start, end, font)
-        struct FontSegment {
-            start: usize,
-            end: usize,
-            font: FontHandle,
-        }
-        let mut segments: Vec<FontSegment> = Vec::new();
-        let mut seg_start = 0usize;
-        let mut seg_font = *font;
-
-        for (i, &ch) in chars.iter().enumerate() {
-            if ch == '\n' {
-                // 换行符结束一段
-                if i > seg_start {
-                    segments.push(FontSegment {
-                        start: seg_start,
-                        end: i,
-                        font: seg_font,
-                    });
-                }
-                segments.push(FontSegment {
-                    start: i,
-                    end: i + 1,
-                    font: *font, // '\n' 用主字体
-                });
-                seg_start = i + 1;
-                seg_font = *font;
-                continue;
-            }
-
-            let best = self.find_font_for_char(font, ch);
-            let use_font = best.unwrap_or(*font);
-
-            if use_font.0 != seg_font.0 {
-                // 字体切换
-                if i > seg_start {
-                    segments.push(FontSegment {
-                        start: seg_start,
-                        end: i,
-                        font: seg_font,
-                    });
-                }
-                seg_start = i;
-                seg_font = use_font;
-            }
-        }
-        // 最后一段
-        if seg_start < chars.len() {
-            segments.push(FontSegment {
-                start: seg_start,
-                end: chars.len(),
-                font: seg_font,
-            });
-        }
-
-        // ── 第 2 遍：逐段布局 → 按行拼接 ──
-        #[derive(Default)]
-        struct LineAccum {
-            glyphs: Vec<tb::PositionedGlyph>,
-            y: f32,           // 行顶部 y
-            height: f32,      // 行高
-            width: f32,       // 行总宽度
-            #[allow(dead_code)]
-            glyph_start: usize,
-            #[allow(dead_code)]
-            glyph_count: usize,
-        }
-
-        let mut lines: Vec<LineAccum> = Vec::new();
-        let mut line = LineAccum::default();
-        let mut cx = 0.0f32;
-        let mut cy = 0.0f32; // 当前行顶部
-
-        for seg in &segments {
-            if seg.start >= seg.end {
-                continue;
-            }
-
-            if chars[seg.start] == '\n' {
-                // 换行符：结束当前行
-                if !line.glyphs.is_empty() || lines.is_empty() {
-                    line.width = cx.max(line.width);
-                    line.height = line_h;
-                    line.y = cy;
-                    lines.push(line);
-                }
-                line = LineAccum::default();
-                cx = 0.0;
-                cy += line_h;
-                continue;
-            }
-
-            // 获取段字体 ascent（用于基线对齐）
-            let seg_metrics = self
-                .text_backend
-                .horizontal_line_metrics(&seg.font, fs);
-            let seg_ascent = seg_metrics
-                .map(|m| m.ascent)
-                .unwrap_or(fs * 0.8);
-
-            // 段文本
-            let seg_text: String = chars[seg.start..seg.end].iter().collect();
-
-            // 布局段（无段内换行，由 FontService 控制）
-            let seg_layout = self
-                .text_backend
-                .layout_text(&seg.font, &seg_text, &seg_opts);
-
-            // 计算段宽度
-            let seg_width = seg_layout.width;
-
-            // word_wrap：如果当前行已有内容且加入此段超宽，换行
-            if do_wrap && cx > 0.0 && cx + seg_width > max_w {
-                // 结束当前行
-                line.width = cx.max(line.width);
-                line.height = line_h;
-                line.y = cy;
-                lines.push(line);
-                line = LineAccum::default();
-                cx = 0.0;
-                cy += line_h;
-            }
-
-            // 基线对齐偏移：段字体基线对齐到主字体基线
-            let baseline_offset = primary_ascent - seg_ascent;
-
-            // 将段内 glyph 合并到当前行
-            for mut g in seg_layout.glyphs {
-                g.x += cx; // 段内 x → 行内 x
-                g.y += cy + baseline_offset; // 段内 y → 行内 y（基线对齐）
-                g.font = seg.font;
-                line.glyphs.push(g);
-            }
-
-            cx += seg_width;
-        }
-
-        // 最后一行
-        if !line.glyphs.is_empty() || lines.is_empty() {
-            line.width = cx.max(line.width);
-            line.height = line_h;
-            line.y = cy;
-            lines.push(line);
-        }
-
-        // ── 第 3 遍：构建 TextLayout ──
-        let mut all_glyphs = Vec::new();
-        let mut line_infos = Vec::new();
-        let mut total_height = 0.0f32;
-        let mut max_line_width = 0.0f32;
-
-        for l in &lines {
-            let gs = all_glyphs.len();
-            all_glyphs.extend_from_slice(&l.glyphs);
-            line_infos.push(tb::LineInfo {
-                y: l.y,
-                height: l.height,
-                width: l.width,
-                start_char: 0,   // 由调用方填充
-                end_char: 0,
-                glyph_start: gs,
-                glyph_count: l.glyphs.len(),
-            });
-            total_height = l.y + l.height;
-            max_line_width = max_line_width.max(l.width);
-        }
+        let total_height = line_infos.last().map_or(0.0, |l| l.y + l.height);
+        let max_line_width = line_infos.iter().fold(0.0f32, |m, l| m.max(l.width));
 
         TextLayout {
             glyphs: all_glyphs,
@@ -789,7 +763,7 @@ impl FontService {
         let ps = pixel_size.round() as u32;
         let key = GlyphCacheKey {
             font_idx: font.0,
-            glyph_id: glyph_id as u16,
+            glyph_id,
             pixel_size: ps,
         };
 

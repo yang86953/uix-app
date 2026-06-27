@@ -5,7 +5,7 @@
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 
-use uix_diag::{Errc, Error};
+use crate::{Errc, Error};
 use crate::windows::util::to_utf8;
 use crate::types::SpecialDir;
 use crate::IFileSystem;

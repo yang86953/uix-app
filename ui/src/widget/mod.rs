@@ -1,7 +1,7 @@
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 
 // Platform types are used directly by WidgetEvent - no conversion needed.
-pub use uix_core::{KeyCode, KeyMod, MouseButton};
+pub use uix_platform::{KeyCode, KeyMod, MouseButton};
 
 /// Event result enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +129,7 @@ impl<T: Widget + ?Sized> WidgetLayout for T {}
 impl<T: Widget + ?Sized> WidgetRender for T {
     fn render(
         &self,
-        frame: uix_core::Rect,
+        frame: uix_platform::Rect,
         ctx: &mut crate::render_context::RenderContext,
         tree: &WidgetTree,
     ) {

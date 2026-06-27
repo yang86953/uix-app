@@ -3,7 +3,7 @@
 //! 支持横向步骤条，步骤状态（wait/process/finish/error），
 //! 自定义当前步骤，可点击切换。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::Color;
 use crate::render_context::RenderContext;

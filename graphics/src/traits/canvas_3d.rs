@@ -3,7 +3,7 @@
 //! 当前 SoftwareEngine 返回 NotSupported 错误。
 //! 未来 GpuEngine 在 wgpu/OpenGL 后端正经实现。
 
-use uix_diag::Error;
+use uix_platform::Error;
 
 // ═══════════════════════════════════════════
 // 占位类型（后续实现时填充）

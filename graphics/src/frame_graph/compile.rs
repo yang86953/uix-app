@@ -97,15 +97,12 @@ struct Edge {
 pub struct Compiler {
     /// 记录每个 Pass 上次执行时其输入资源版本快照。
     last_input_versions: HashMap<(PassId, ResourceId), Version>,
-    /// 记录每个资源上次被消费时其版本快照（用于输出未被消费检测）。
-    last_output_versions: HashMap<(PassId, ResourceId), Version>,
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Self {
             last_input_versions: HashMap::new(),
-            last_output_versions: HashMap::new(),
         }
     }
 
@@ -257,11 +254,6 @@ impl Compiler {
             for &res in &pass.reads {
                 if let Some(&v) = current_versions.get(&res) {
                     self.last_input_versions.insert((pass.id, res), v);
-                }
-            }
-            for &res in &pass.writes {
-                if let Some(&v) = current_versions.get(&res) {
-                    self.last_output_versions.insert((pass.id, res), v);
                 }
             }
         }

@@ -3,7 +3,7 @@
 //! Used by [`ScrollView`](super::ScrollView) to render draggable scrollbar
 //! tracks and thumbs. Each axis gets its own [`ScrollBar`] instance.
 
-use uix_core::{Point, Rect};
+use uix_platform::{Point, Rect};
 use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 

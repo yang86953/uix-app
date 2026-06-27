@@ -1,8 +1,8 @@
 // ============================================================================
-// uix-platform/src/log.rs — Core logging: Level, Logger, and free functions
+// services/src/log.rs — Core logging: Level, Logger, and free functions
 // ============================================================================
 
-use crate::error::Error;
+use uix_platform::Error;
 use chrono::Local;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};

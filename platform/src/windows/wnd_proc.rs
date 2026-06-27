@@ -8,7 +8,7 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
-use uix_core::*;
+use crate::*;
 use crate::event::*;
 
 use super::bindings::*;

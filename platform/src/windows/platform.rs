@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use crate::core::{WindowState, OsEventSource, PlatformWindowCore};
 use crate::event::UiEvent;
 use crate::*;
-use uix_diag::{Errc, Error};
+use crate::{Errc, Error};
 
 use super::clipboard::WindowsClipboard;
 use super::console::WindowsConsole;

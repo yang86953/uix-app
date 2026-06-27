@@ -181,9 +181,9 @@ pub fn get_last_error_string() -> String {
 }
 
 /// Create a diagnostic error from the last Windows error.
-pub fn windows_diag(code: uix_diag::Errc, context: &str) -> uix_diag::Error {
+pub fn windows_diag(code: crate::Errc, context: &str) -> crate::Error {
     let msg = format!("{}: {}", context, get_last_error_string());
-    uix_diag::Error::new(code, msg)
+    crate::Error::new(code, msg)
 }
 
 /// 通过 Windows API 查询系统当前默认 UI 字体的族名称。
@@ -289,7 +289,7 @@ pub fn system_default_font_paths() -> Vec<String> {
         // 2. 查询系统默认 UI 字体名称
         let sys_font_name = get_system_default_ui_font_name();
         if let Some(ref name) = sys_font_name {
-            uix_diag::log::info_fn(format!("System default UI font: {}", name));
+            log::info!("System default UI font: {}", name);
         }
 
         let mut results: Vec<String> = Vec::with_capacity(2);

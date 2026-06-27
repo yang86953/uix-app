@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use libc::{poll, pollfd, POLLIN};
 
-use uix_core::KeyMod;
+use crate::KeyMod;
 use crate::event::UiEvent;
 
 use super::keycode::keycode_to_char;

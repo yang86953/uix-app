@@ -14,7 +14,7 @@ pub use crate::widget::{
 };
 
 // Platform types are used directly by WidgetEvent — re-export from base.
-pub use uix_core::{KeyCode, MouseButton};
+pub use uix_platform::{KeyCode, MouseButton};
 
 // ── 配置提供 ──
 pub use crate::config_provider::{

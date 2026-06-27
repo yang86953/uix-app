@@ -1,9 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "core",
-    "diag",
-    "uix-macros",
     "app",
     "demo",
     "graphics",
@@ -39,9 +36,6 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-uix-core = { path = "core" }
-uix-diag = { path = "diag" }
-uix-macros = { path = "uix-macros" }
 uix-app = { path = "app" }
 uix-graphics = { path = "graphics" }
 uix-platform = { path = "platform" }

@@ -2,7 +2,7 @@
 //!
 //! 垂直时间轴展示事件序列，支持节点颜色、标签、描述。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::Color;
 use crate::render_context::RenderContext;

@@ -2,7 +2,7 @@
 //!
 //! 支持页码切换、上一页/下一页、快速跳转（省略号）、pageSize 切换。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;

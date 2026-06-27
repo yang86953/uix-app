@@ -5,7 +5,7 @@
 //!
 //! 盒模型计算也统一在此层，所有容器组件通过 BoxModel 获得一致的内框计算。
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
 use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
@@ -19,16 +19,16 @@ use super::grid::compute_grid_layout;
 /// 与 Web CSS 盒模型一致：frame → 扣除 margin → 扣除 border → 扣除 padding → 内容区域。
 #[derive(Debug, Clone, Copy)]
 pub struct BoxModel {
-    pub margin: uix_core::EdgeInsets,
+    pub margin: uix_platform::EdgeInsets,
     pub border_width: f32,
-    pub padding: uix_core::EdgeInsets,
+    pub padding: uix_platform::EdgeInsets,
 }
 
 impl BoxModel {
     pub const ZERO: Self = Self {
-        margin: uix_core::EdgeInsets::zero(),
+        margin: uix_platform::EdgeInsets::zero(),
         border_width: 0.0,
-        padding: uix_core::EdgeInsets::zero(),
+        padding: uix_platform::EdgeInsets::zero(),
     };
 
     /// 从 frame 计算内框（扣除 margin + border + padding）。
@@ -195,7 +195,7 @@ impl LayoutEngine for FlexLayout {
         let input = FlexInput {
             direction: self.direction,
             gap: self.gap,
-            padding: uix_core::EdgeInsets::zero(),
+            padding: uix_platform::EdgeInsets::zero(),
             container: content_rect,
             children: flex_children,
             child_sizes,
@@ -357,7 +357,7 @@ impl LayoutEngine for GridLayout {
             rows,
             col_gap: self.col_gap,
             row_gap: self.row_gap,
-            padding: uix_core::EdgeInsets::zero(),
+            padding: uix_platform::EdgeInsets::zero(),
             children: grid_children,
             align_items: self.align_items,
             justify_items: self.justify_items,

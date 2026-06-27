@@ -13,4 +13,4 @@ pub mod services;
 pub mod ui;
 
 // 重新导出 proc-macro，用户可通过 `use uix::ui;` 直接使用
-pub use uix_macros::ui;
+pub use uix_ui::ui;

@@ -9,7 +9,7 @@ use crate::layout::engine::{
     BoxModel, FlexLayout, LayoutChild, LayoutEngine, child_from_tree,
 };
 use crate::style::Style;
-use uix_core::{EdgeInsets, Rect, Size};
+use uix_platform::{EdgeInsets, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
 

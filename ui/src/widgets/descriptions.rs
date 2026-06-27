@@ -2,7 +2,7 @@
 //!
 //! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
 
-use uix_core::{ControlSize, Point, Rect, Size};
+use uix_platform::{ControlSize, Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::Radius;
 use crate::render_context::RenderContext;

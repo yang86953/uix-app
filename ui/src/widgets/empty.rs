@@ -1,7 +1,7 @@
 //! Empty widget — 空状态占位（图标 + 描述居中）。
 
 use crate::define_widget;
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 

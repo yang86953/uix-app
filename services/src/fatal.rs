@@ -1,14 +1,14 @@
 // ============================================================================
-// uix-diag/src/fatal.rs — Crash dump, abort handler, panic integration
+// services/src/fatal.rs — Crash dump, abort handler, panic integration
 // ============================================================================
 
 use crate::collector::Collector;
-use crate::error::{Errc, Error, ErrorSeverity};
 use crate::log::Logger;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::sync::Once;
+use uix_platform::*;
 
 static FATAL_INSTALLED: Once = Once::new();
 
@@ -78,7 +78,10 @@ pub fn dump_crash_report() {
 {}
 ╚══════════════════════════════════════════════════╝
 ",
-        snapshot.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+        {
+            let dt: chrono::DateTime<chrono::Utc> = snapshot.timestamp.into();
+            dt.format("%Y-%m-%d %H:%M:%S UTC")
+        },
         snapshot.total_collected,
         snapshot.stored_count,
         snapshot

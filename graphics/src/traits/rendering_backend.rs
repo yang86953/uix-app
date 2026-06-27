@@ -2,7 +2,7 @@
 //!
 //! 新后端只需实现 6 个方法。
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 
 use crate::Color;
 

@@ -1,7 +1,7 @@
 //! Rate widget — 星级评分，支持半星、hover 预览、disabled、clearable。
 
 use crate::define_widget;
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use uix_graphics::GraphicsEngine;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};

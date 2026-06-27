@@ -1,5 +1,5 @@
 use crate::define_widget;
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use uix_graphics::{GraphicsEngine, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};

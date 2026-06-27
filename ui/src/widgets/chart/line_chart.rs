@@ -2,7 +2,7 @@
 
 use crate::define_widget;
 use uix_graphics::Color;
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
@@ -84,8 +84,8 @@ define_widget! {
         let bl = map_y(r_min);
         ctx.fill_rect(Rect::new(chart_x, bl, chart_w, 1.0), ac, None);
 
-        let pts: Vec<uix_core::Point> = self.data.iter().enumerate().map(|(i, d)|
-            uix_core::Point::new(chart_x + i as f32 * step, map_y(d.value))
+        let pts: Vec<uix_platform::Point> = self.data.iter().enumerate().map(|(i, d)|
+            uix_platform::Point::new(chart_x + i as f32 * step, map_y(d.value))
         ).collect();
 
         let lw = self.line_width.max(1.0);
@@ -110,7 +110,7 @@ define_widget! {
             let lx = (x - sz.w * 0.5).max(chart_x).min(chart_x + chart_w - sz.w);
             let label_rect = Rect::new(lx, bl + 2.0, sz.w, x_label_h - 2.0);
             let ly = ctx.visual_center_y(label_rect, 10.0);
-            ctx.draw_text(&d.label, uix_core::Point::new(lx, ly), lbc, 10.0);
+            ctx.draw_text(&d.label, uix_platform::Point::new(lx, ly), lbc, 10.0);
         }
     }
 }

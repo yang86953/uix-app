@@ -1,4 +1,4 @@
-use uix_core::Point;
+use uix_platform::Point;
 use crate::widget::{EventResult, WidgetEvent};
 
 /// Callback types for user interactions.

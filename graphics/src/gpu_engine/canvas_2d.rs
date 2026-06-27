@@ -1,23 +1,19 @@
-//! GpuCanvas2D — GPU 加速的 Canvas2D 实现。
-//!
-//! 覆盖关键绘制方法（fill_rect / blit_image）用 OpenGL shader 加速，
-//! 其他方法暂时覆盖为 log::warn + 空操作（避免调用默认实现触发 panic）。
-//!
-//! 渲染状态栈（save/restore/clip/opacity/blend/transform）用软件实现。
+//! GpuCanvas2D — GPU 加速的 Canvas2D 实现，未实现的方法用软件回退。
 
 use glow::HasContext as _;
-use uix_core::Rect;
+use uix_platform::Rect;
 
 use crate::color::Color;
+use crate::engine::cpu::canvas_2d::CpuCanvas2D;
+use crate::engine::cpu::pixel_surface::PixelSurface;
 use crate::path::{FillRule, Path};
+use crate::rasterizer::core as rast;
 use crate::stroker::StrokeOptions;
 use crate::traits::Canvas2D;
 use crate::types::{BlendMode, GradientDirection, Radius, Transform};
 
 /// GPU 2D 绘制上下文。
 pub struct GpuCanvas2D {
-    /// 底层 GL 上下文的原始指针。
-    /// GpuCanvas2D 总是由 GpuEngine 拥有，其生命周期由 GpuEngine 保证。
     gl_ptr: *const glow::Context,
 
     // ── 渲染状态 ──
@@ -32,14 +28,22 @@ pub struct GpuCanvas2D {
     rect_vao: glow::VertexArray,
     rect_vbo: glow::Buffer,
     rect_program: glow::Program,
-
-    // Uniform locations
     u_viewport_loc: Option<glow::UniformLocation>,
     u_rect_loc: Option<glow::UniformLocation>,
     u_color_loc: Option<glow::UniformLocation>,
     u_radius_loc: Option<glow::UniformLocation>,
 
-    // ── 表面尺寸（用于 viewport uniform） ──
+    // ── 软件回退（未实现 GPU 路径的方法走 CPU 渲染 + 上传）──
+    soft_fallback: CpuCanvas2D,
+    fallback_texture: glow::Texture,
+    #[allow(dead_code)]
+    tex_program: glow::Program,
+    #[allow(dead_code)]
+    u_tex_viewport_loc: Option<glow::UniformLocation>,
+    #[allow(dead_code)]
+    u_tex_sampler_loc: Option<glow::UniformLocation>,
+
+    // ── 表面尺寸 ──
     surface_w: i32,
     surface_h: i32,
 }
@@ -52,13 +56,34 @@ struct StateSnapshot {
     blend_mode: BlendMode,
 }
 
+const TEX_VERT: &str = r#"#version 300 es
+precision highp float;
+in vec2 a_pos;
+in vec2 a_uv;
+out vec2 v_uv;
+void main() {
+    gl_Position = vec4(a_pos, 0.0, 1.0);
+    v_uv = a_uv;
+}
+"#;
+
+const TEX_FRAG: &str = r#"#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform float u_opacity;
+out vec4 fragColor;
+void main() {
+    vec4 c = texture(u_tex, v_uv);
+    fragColor = vec4(c.rgb, c.a * u_opacity);
+}
+"#;
+
 impl GpuCanvas2D {
-    /// 获取底层 GL 上下文引用。
     fn gl(&self) -> &glow::Context {
         unsafe { &*self.gl_ptr }
     }
 
-    /// 创建 GPU Canvas2D，编译着色器并初始化 OpenGL 管线。
     pub fn new(gl: &glow::Context, width: i32, height: i32) -> Self {
         let rect_program = unsafe { Self::compile_rect_shader(gl) };
         let (rect_vao, rect_vbo) = unsafe { Self::create_rect_geom(gl) };
@@ -67,6 +92,9 @@ impl GpuCanvas2D {
         let u_rect_loc = unsafe { gl.get_uniform_location(rect_program, "u_rect") };
         let u_color_loc = unsafe { gl.get_uniform_location(rect_program, "u_color") };
         let u_radius_loc = unsafe { gl.get_uniform_location(rect_program, "u_radius") };
+
+        let (tex_program, u_tex_viewport_loc, u_tex_sampler_loc) = unsafe { Self::compile_tex_shader(gl) };
+        let fallback_texture = unsafe { Self::create_fallback_texture(gl, width, height) };
 
         Self {
             gl_ptr: gl as *const glow::Context,
@@ -83,43 +111,39 @@ impl GpuCanvas2D {
             u_rect_loc,
             u_color_loc,
             u_radius_loc,
+            soft_fallback: CpuCanvas2D::new(PixelSurface::new(width.max(1), height.max(1))),
+            fallback_texture,
+            tex_program,
+            u_tex_viewport_loc,
+            u_tex_sampler_loc,
             surface_w: width,
             surface_h: height,
         }
     }
 
-    /// 编译矩形渲染着色器。
     unsafe fn compile_rect_shader(gl: &glow::Context) -> glow::Program {
         let vs = gl.create_shader(glow::VERTEX_SHADER).unwrap();
         gl.shader_source(vs, crate::gpu_engine::RECT_VERT);
         gl.compile_shader(vs);
-
         let fs = gl.create_shader(glow::FRAGMENT_SHADER).unwrap();
         gl.shader_source(fs, crate::gpu_engine::RECT_FRAG);
         gl.compile_shader(fs);
-
         let program = gl.create_program().unwrap();
         gl.attach_shader(program, vs);
         gl.attach_shader(program, fs);
         gl.link_program(program);
-
         gl.delete_shader(vs);
         gl.delete_shader(fs);
-
         program
     }
 
-    /// 创建单位 quad 几何体（两个三角形，6 顶点）。
     unsafe fn create_rect_geom(gl: &glow::Context) -> (glow::VertexArray, glow::Buffer) {
         let vao = gl.create_vertex_array().unwrap();
         let vbo = gl.create_buffer().unwrap();
-
-        // 单位 quad: (0,0) → (1,1)
         let vertices: [f32; 12] = [
             0.0, 0.0,  1.0, 0.0,  0.0, 1.0,
             0.0, 1.0,  1.0, 0.0,  1.0, 1.0,
         ];
-
         gl.bind_vertex_array(Some(vao));
         gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
         let data_bytes = std::slice::from_raw_parts(
@@ -127,161 +151,222 @@ impl GpuCanvas2D {
             vertices.len() * 4,
         );
         gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, data_bytes, glow::STATIC_DRAW);
-
-        // a_pos: vec2
         gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, 8, 0);
         gl.enable_vertex_attrib_array(0);
-
         gl.bind_vertex_array(None);
         (vao, vbo)
     }
 
-    /// 设置表面尺寸（在 resize 时调用）。
+    unsafe fn create_fallback_texture(gl: &glow::Context, w: i32, h: i32) -> glow::Texture {
+        let tex = gl.create_texture().unwrap();
+        gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+        gl.tex_image_2d(
+            glow::TEXTURE_2D, 0,
+            glow::RGBA as i32,
+            w.max(1), h.max(1),
+            0,
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            glow::PixelUnpackData::Slice(None),
+        );
+        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+        gl.bind_texture(glow::TEXTURE_2D, None);
+        tex
+    }
+
+    unsafe fn compile_tex_shader(gl: &glow::Context) -> (glow::Program, Option<glow::UniformLocation>, Option<glow::UniformLocation>) {
+        let vs = gl.create_shader(glow::VERTEX_SHADER).unwrap();
+        gl.shader_source(vs, TEX_VERT);
+        gl.compile_shader(vs);
+        let fs = gl.create_shader(glow::FRAGMENT_SHADER).unwrap();
+        gl.shader_source(fs, TEX_FRAG);
+        gl.compile_shader(fs);
+        let program = gl.create_program().unwrap();
+        gl.attach_shader(program, vs);
+        gl.attach_shader(program, fs);
+        gl.link_program(program);
+        gl.delete_shader(vs);
+        gl.delete_shader(fs);
+        let u_vp = gl.get_uniform_location(program, "u_viewport");
+        let u_tex = gl.get_uniform_location(program, "u_tex");
+        (program, u_vp, u_tex)
+    }
+
+    /// 上传软件回退像素到 GL 纹理并绘制全屏（在 end_frame 被调用）。
+    pub unsafe fn flush_fallback(&mut self) {
+        let (ptr, len) = {
+            let p = self.soft_fallback.pixels_mut();
+            (p.as_ptr() as *const u8, p.len())
+        };
+        self.gl().bind_texture(glow::TEXTURE_2D, Some(self.fallback_texture));
+        self.gl().tex_sub_image_2d(
+            glow::TEXTURE_2D, 0,
+            0, 0,
+            self.surface_w.max(1), self.surface_h.max(1),
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            glow::PixelUnpackData::Slice(Some(std::slice::from_raw_parts(ptr, len * 4))),
+        );
+    }
+
     pub fn resize(&mut self, width: i32, height: i32) {
         self.surface_w = width;
         self.surface_h = height;
         self.clip_rect = Rect::new(0.0, 0.0, width as f32, height as f32);
+        self.soft_fallback = CpuCanvas2D::new(PixelSurface::new(width.max(1), height.max(1)));
+        unsafe {
+            self.gl().delete_texture(self.fallback_texture);
+            self.fallback_texture = Self::create_fallback_texture(self.gl(), width, height);
+        }
     }
 
-    /// 将 Clip 矩形转化为整数边界。
     fn clip_int(&self) -> (i32, i32, i32, i32) {
-        (
-            (self.clip_rect.x + 0.5).floor() as i32,
-            (self.clip_rect.y + 0.5).floor() as i32,
-            (self.clip_rect.x + self.clip_rect.w + 0.5).floor() as i32,
-            (self.clip_rect.y + self.clip_rect.h + 0.5).floor() as i32,
-        )
+        rast::clip_to_int(&self.clip_rect)
     }
 
-    /// 在 GPU 上绘制一个填充矩形。
     unsafe fn draw_rect_gpu(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
         let (cx0, cy0, cx1, cy1) = self.clip_int();
         if rect.x + rect.w <= cx0 as f32 || rect.y + rect.h <= cy0 as f32
             || rect.x >= cx1 as f32 || rect.y >= cy1 as f32
         {
-            return; // 完全在裁剪区域外
+            return;
         }
-
         let r = match radius {
             Some(r) => [r.tl, r.tr, r.br, r.bl],
             None => [0.0; 4],
         };
-
-        // Color → normalized float [0..1]
         let cf = [
             color.r as f32 / 255.0,
             color.g as f32 / 255.0,
             color.b as f32 / 255.0,
             color.a as f32 / 255.0,
         ];
-
         self.gl().use_program(Some(self.rect_program));
-
-        // uniforms
         self.gl().uniform_2_f32(self.u_viewport_loc.as_ref(), self.surface_w as f32, self.surface_h as f32);
         self.gl().uniform_4_f32(self.u_rect_loc.as_ref(), rect.x, rect.y, rect.w, rect.h);
         self.gl().uniform_4_f32(self.u_color_loc.as_ref(), cf[0], cf[1], cf[2], cf[3] * self.opacity);
         self.gl().uniform_4_f32(self.u_radius_loc.as_ref(), r[0], r[1], r[2], r[3]);
-
-        // 绘制 6 个顶点（2 三角形）
         self.gl().bind_vertex_array(Some(self.rect_vao));
         self.gl().draw_arrays(glow::TRIANGLES, 0, 6);
         self.gl().bind_vertex_array(None);
     }
 
-    /// 预乘 RGBA 颜色（用于 SrcOver 混合）。
-    fn premul(r: u8, g: u8, b: u8, a: u8) -> u32 {
-        let a = a as u32;
-        if a == 255 {
-            return (a << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
-        }
-        let r = (r as u32 * a / 255).min(255);
-        let g = (g as u32 * a / 255).min(255);
-        let b = (b as u32 * a / 255).min(255);
-        (a << 24) | (r << 16) | (g << 8) | b
+    fn sync_fallback_state(&mut self) {
+        self.soft_fallback.set_transform(self.transform);
+        self.soft_fallback.set_opacity(self.opacity);
+        self.soft_fallback.set_blend_mode(self.blend_mode);
     }
 }
 
 impl Canvas2D for GpuCanvas2D {
-    // ═══════════════════════════════════════════
-    // 矢量填充 — GPU 加速
-    // ═══════════════════════════════════════════
-
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
         unsafe { self.draw_rect_gpu(rect, color, radius); }
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
-        // GPU 圆角矩形近似圆形
         let rect = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
         unsafe { self.draw_rect_gpu(rect, color, Some(Radius::uniform(r))); }
     }
 
-    fn fill_ellipse(&mut self, _rect: Rect, _color: Color) {
-        log::warn!("[GpuCanvas2D] fill_ellipse 暂未实现");
+    // ── 未实现 GPU 路径 → 软件回退 ──
+
+    fn fill_ellipse(&mut self, rect: Rect, color: Color) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.fill_ellipse(rect, color);
+        self.soft_fallback.pop_clip();
     }
 
-    fn fill_sector(&mut self, _cx: f32, _cy: f32, _r: f32, _sa: f32, _ea: f32, _color: Color) {
-        log::warn!("[GpuCanvas2D] fill_sector 暂未实现");
+    fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, sa: f32, ea: f32, color: Color) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.fill_sector(cx, cy, r, sa, ea, color);
+        self.soft_fallback.pop_clip();
     }
 
-    fn fill_path(&mut self, _path: &Path, _color: Color, _fill_rule: FillRule) {
-        log::warn!("[GpuCanvas2D] fill_path 暂未实现");
+    fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.fill_path(path, color, fill_rule);
+        self.soft_fallback.pop_clip();
     }
 
-    // ═══════════════════════════════════════════
-    // 矢量描边 — 暂未实现
-    // ═══════════════════════════════════════════
-
-    fn stroke_rect(&mut self, _rect: Rect, _color: Color, _lw: f32, _radius: Option<Radius>) {
-        log::warn!("[GpuCanvas2D] stroke_rect 暂未实现");
-    }
-    fn stroke_circle(&mut self, _cx: f32, _cy: f32, _r: f32, _color: Color, _lw: f32) {
-        log::warn!("[GpuCanvas2D] stroke_circle 暂未实现");
-    }
-    fn stroke_path(&mut self, _path: &Path, _color: Color, _opts: &StrokeOptions) {
-        log::warn!("[GpuCanvas2D] stroke_path 暂未实现");
-    }
-    fn draw_line(&mut self, _x1: f32, _y1: f32, _x2: f32, _y2: f32, _color: Color, _w: f32) {
-        log::warn!("[GpuCanvas2D] draw_line 暂未实现");
+    fn stroke_rect(&mut self, rect: Rect, color: Color, lw: f32, radius: Option<Radius>) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.stroke_rect(rect, color, lw, radius);
+        self.soft_fallback.pop_clip();
     }
 
-    // ═══════════════════════════════════════════
-    // 渐变 — 暂未实现
-    // ═══════════════════════════════════════════
-
-    fn fill_linear_gradient(&mut self, _r: Rect, _ca: Color, _cb: Color, _dir: GradientDirection) {
-        log::warn!("[GpuCanvas2D] fill_linear_gradient 暂未实现");
-    }
-    fn fill_radial_gradient(&mut self, _cx: f32, _cy: f32, _ir: f32, _or: f32, _ic: Color, _oc: Color) {
-        log::warn!("[GpuCanvas2D] fill_radial_gradient 暂未实现");
+    fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, lw: f32) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.stroke_circle(cx, cy, r, color, lw);
+        self.soft_fallback.pop_clip();
     }
 
-    // ═══════════════════════════════════════════
-    // 阴影 — 暂未实现
-    // ═══════════════════════════════════════════
-
-    fn draw_box_shadow(&mut self, _r: Rect, _blur: f32, _ox: f32, _oy: f32, _c: Color, _rad: Option<Radius>) {
-        log::warn!("[GpuCanvas2D] draw_box_shadow 暂未实现");
-    }
-    fn draw_box_shadow_ambient(&mut self, _r: Rect, _blur: f32, _ox: f32, _oy: f32, _c: Color, _rad: Option<Radius>) {
-        log::warn!("[GpuCanvas2D] draw_box_shadow_ambient 暂未实现");
+    fn stroke_path(&mut self, path: &Path, color: Color, opts: &StrokeOptions) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.stroke_path(path, color, opts);
+        self.soft_fallback.pop_clip();
     }
 
-    // ═══════════════════════════════════════════
-    // 图像/字形 — 暂未实现
-    // ═══════════════════════════════════════════
-
-    fn blit_image(&mut self, _src: &[u32], _src_w: i32, _src_rect: Rect, _dst_rect: Rect) {
-        log::warn!("[GpuCanvas2D] blit_image 暂未实现");
-    }
-    fn blit_glyph(&mut self, _x: i32, _y: i32, _coverage: &[u8], _w: usize, _h: usize, _color: Color) {
-        log::warn!("[GpuCanvas2D] blit_glyph 暂未实现");
+    fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, w: f32) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.draw_line(x1, y1, x2, y2, color, w);
+        self.soft_fallback.pop_clip();
     }
 
-    // ═══════════════════════════════════════════
-    // 渲染状态栈
-    // ═══════════════════════════════════════════
+    fn fill_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.fill_linear_gradient(rect, ca, cb, dir);
+        self.soft_fallback.pop_clip();
+    }
+
+    fn fill_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.fill_radial_gradient(cx, cy, ir, or, ic, oc);
+        self.soft_fallback.pop_clip();
+    }
+
+    fn draw_box_shadow(&mut self, rect: Rect, blur: f32, ox: f32, oy: f32, color: Color, rad: Option<Radius>) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.draw_box_shadow(rect, blur, ox, oy, color, rad);
+        self.soft_fallback.pop_clip();
+    }
+
+    fn draw_box_shadow_ambient(&mut self, rect: Rect, blur: f32, ox: f32, oy: f32, color: Color, rad: Option<Radius>) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.draw_box_shadow_ambient(rect, blur, ox, oy, color, rad);
+        self.soft_fallback.pop_clip();
+    }
+
+    fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.blit_image(src, src_w, src_rect, dst_rect);
+        self.soft_fallback.pop_clip();
+    }
+
+    fn blit_glyph(&mut self, x: i32, y: i32, coverage: &[u8], w: usize, h: usize, color: Color) {
+        self.sync_fallback_state();
+        self.soft_fallback.push_clip(self.clip_rect);
+        self.soft_fallback.blit_glyph(x, y, coverage, w, h, color);
+        self.soft_fallback.pop_clip();
+    }
+
+    fn push_clip_path(&mut self, path: &Path) {
+        self.soft_fallback.push_clip_path(path);
+    }
+
+    // ── 渲染状态栈 ──
 
     fn save(&mut self) {
         self.state_stack.push(StateSnapshot {
@@ -366,20 +451,12 @@ impl Canvas2D for GpuCanvas2D {
         }
     }
 
-    fn push_clip_path(&mut self, _path: &Path) {
-        log::warn!("[GpuCanvas2D] push_clip_path 暂未实现");
-    }
-
-    // ═══════════════════════════════════════════
-    // 像素访问（GPU 引擎不可用，返回空切片）
-    // ═══════════════════════════════════════════
-
     fn pixels_mut(&mut self) -> &mut [u32] {
-        &mut []
+        self.soft_fallback.pixels_mut()
     }
 
-    fn surface_size(&self) -> uix_core::Size {
-        uix_core::Size::new(self.surface_w as f32, self.surface_h as f32)
+    fn surface_size(&self) -> uix_platform::Size {
+        uix_platform::Size::new(self.surface_w as f32, self.surface_h as f32)
     }
 
     fn current_clip(&self) -> Rect {

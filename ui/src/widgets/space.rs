@@ -2,7 +2,7 @@
 //!
 //! Provides consistent spacing for a row or column of child widgets.
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::define_widget;
 use crate::{
     compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
@@ -103,7 +103,7 @@ define_widget! {
                 direction: self.direction,
                 wrap: self.wrap,
                 gap: self.space_size.value(),
-            padding: uix_core::EdgeInsets::zero(),
+            padding: uix_platform::EdgeInsets::zero(),
             container: frame,
             children: flex_children,
             child_sizes,

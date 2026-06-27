@@ -1,6 +1,6 @@
 use uix_graphics::Color;
 use crate::{compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
-use uix_core::{EdgeInsets, Rect, Size};
+use uix_platform::{EdgeInsets, Rect, Size};
 use crate::widget::{Widget, WidgetId, WidgetTree};
 
 /// Builder for constructing widget trees declaratively.

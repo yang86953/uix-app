@@ -1,5 +1,5 @@
 use super::*;
-use uix_core::Rect;
+use uix_platform::Rect;
 use uix_graphics::DirtyRegion;
 
 /// Widget tree — 管理 BoxedWidget 节点树。

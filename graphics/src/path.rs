@@ -2,7 +2,7 @@
 //!
 //! 参考 tiny-skia::PathBuilder 设计，保持接口简洁。
 
-use uix_core::Point;
+use uix_platform::Point;
 
 /// 填充规则。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,19 +92,13 @@ impl Path {
 }
 
 impl PathSegment {
-    /// 返回该段涉及的所有点（不含 MoveTo 的终点，仅含几何点）。
+    /// 返回该段涉及的所有端点（不含控制点，曲线请用 all_points）。
     pub fn points(&self) -> &[Point] {
         match self {
             PathSegment::MoveTo(p) => std::slice::from_ref(p),
             PathSegment::LineTo(p) => std::slice::from_ref(p),
-            PathSegment::QuadTo(_, _) => {
-                // 请使用 all_points() 获取曲线控制点
-                &[]
-            }
-            PathSegment::CubicTo(_, _, _) => {
-                // 请使用 all_points() 获取曲线控制点
-                &[]
-            }
+            PathSegment::QuadTo(_, _) => &[],
+            PathSegment::CubicTo(_, _, _) => &[],
             PathSegment::Close => &[],
         }
     }
@@ -121,7 +115,7 @@ impl PathSegment {
     }
 }
 
-use uix_core::Rect;
+use uix_platform::Rect;
 
 /// 路径构建器。调用 move_to / line_to / quad_to / cubic_to / close 构建路径。
 ///
@@ -216,38 +210,5 @@ impl PathBuilder {
 impl Default for PathBuilder {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_simple_rect_path() {
-        let mut pb = PathBuilder::new();
-        pb.move_to(0.0, 0.0)
-            .line_to(100.0, 0.0)
-            .line_to(100.0, 100.0)
-            .line_to(0.0, 100.0)
-            .close();
-        let path = pb.build();
-        assert_eq!(path.segments().len(), 5);
-        assert!(!path.is_empty());
-    }
-
-    #[test]
-    fn test_bounds() {
-        let mut pb = PathBuilder::new();
-        pb.move_to(10.0, 20.0)
-            .line_to(110.0, 20.0)
-            .line_to(110.0, 80.0)
-            .close();
-        let path = pb.build();
-        let bounds = path.bounds().unwrap();
-        assert!((bounds.x - 10.0).abs() < 0.001);
-        assert!((bounds.y - 20.0).abs() < 0.001);
-        assert!((bounds.w - 100.0).abs() < 0.001);
-        assert!((bounds.h - 60.0).abs() < 0.001);
     }
 }

@@ -10,7 +10,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use uix_diag::{Error, Errc};
+use crate::{Error, Errc};
 
 use crate::api::IGraphicsContext;
 

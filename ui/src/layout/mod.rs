@@ -3,7 +3,7 @@
 //! 与 Web CSS Flexbox/Grid 行为一致，无副作用，无渲染依赖。
 //! 输入布局约束，输出子节点位置。
 
-use uix_core::{EdgeInsets, Rect, Size};
+use uix_platform::{EdgeInsets, Rect, Size};
 use std::f32;
 
 pub mod flex;

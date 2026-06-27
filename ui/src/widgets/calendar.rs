@@ -2,7 +2,7 @@
 //!
 //! 月视图展示日期，支持选中日期、月份切换。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;

@@ -2,7 +2,7 @@
 //!
 //! 与 ScrollView 配合使用：监听滚动位置，自动高亮当前锚点。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;

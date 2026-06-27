@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use uix_diag::Error;
+use uix_platform::Error;
 use crate::{FontHandle, HAlign, VAlign};
 
 /// A single glyph positioned by text layout.

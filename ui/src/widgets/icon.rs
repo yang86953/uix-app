@@ -6,7 +6,7 @@
 
 use std::sync::OnceLock;
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::define_widget;
 use uix_graphics::{FontHandle, GraphicsEngine};
 use uix_graphics::font_service::FontService;
@@ -24,11 +24,11 @@ static LUCIDE_FONT: OnceLock<FontHandle> = OnceLock::new();
 pub fn init_lucide_font(data: &[u8], font_service: &mut FontService) {
     match font_service.load_font(data) {
         Ok(fh) => {
-            uix_diag::log::info_fn(&format!("Lucide font loaded, handle={:?}", fh));
+            log::info!("Lucide font loaded, handle={:?}", fh);
             let _ = LUCIDE_FONT.set(fh);
         }
         Err(e) => {
-            uix_diag::log::warn_fn(&format!("Failed to load Lucide font: {}", e.short_what()));
+            log::warn!("Failed to load Lucide font: {}", e.short_what());
         }
     }
 }

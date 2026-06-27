@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
 use crate::style::Style;
@@ -26,7 +26,7 @@ define_widget! {
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
         /// 上次渲染时的文本 draw_pos（用于事件命中测试）。
-        draw_pos: Cell<uix_core::Point>,
+        draw_pos: Cell<uix_platform::Point>,
         /// 统一样式覆盖（优先于 color/font_size 独立字段）。
         style: Option<Style>,
     }
@@ -126,9 +126,9 @@ define_widget! {
         // 居中绘制位置（frame-relative，用于 on_event 命中测试）
         let x = frame.w * 0.5 - layout.width * 0.5;
         let y = ctx.visual_center_y(frame, fs) - frame.y;
-        let draw_pos = uix_core::Point::new(x, y);
+        let draw_pos = uix_platform::Point::new(x, y);
         self.draw_pos.set(draw_pos);
-        let abs_pos = uix_core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
+        let abs_pos = uix_platform::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
 
         if !self.text.is_empty() {
             // 缓存 glyph x 位置
@@ -201,7 +201,7 @@ impl Label {
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
-            draw_pos: Cell::new(uix_core::Point::new(0.0, 0.0)),
+            draw_pos: Cell::new(uix_platform::Point::new(0.0, 0.0)),
             style: None,
         }
     }

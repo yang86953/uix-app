@@ -1,7 +1,7 @@
 //! Collapse widget — 折叠面板。
 
 use crate::define_widget;
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
@@ -91,14 +91,14 @@ define_widget! {
             // 展开指示符
             let arrow = if p.expanded { "▼" } else { "▶" };
             let arrow_y = ctx.visual_center_y(header_rect, 12.0);
-            ctx.draw_text(arrow, uix_core::Point::new(frame.x + 10.0, arrow_y), text_secondary, 12.0);
+            ctx.draw_text(arrow, uix_platform::Point::new(frame.x + 10.0, arrow_y), text_secondary, 12.0);
             let header_y = ctx.visual_center_y(header_rect, 14.0);
-            ctx.draw_text(&p.header, uix_core::Point::new(frame.x + 28.0, header_y), text_color, 14.0);
+            ctx.draw_text(&p.header, uix_platform::Point::new(frame.x + 28.0, header_y), text_color, 14.0);
             y += 36.0;
 
             if p.expanded {
                 let content_y = y + 8.0;
-                ctx.draw_text(&p.content, uix_core::Point::new(frame.x + 16.0, content_y), text_secondary, 12.0);
+                ctx.draw_text(&p.content, uix_platform::Point::new(frame.x + 16.0, content_y), text_secondary, 12.0);
                 let lc = p.content.lines().count().max(1) as f32;
                 y += lc * 12.0 * 1.5 + 16.0;
             }

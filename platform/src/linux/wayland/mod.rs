@@ -22,7 +22,7 @@ pub(crate) mod window;
 pub(crate) mod window_ops;
 
 // ── 依赖 ────────────────────────────────────────────────────────
-use uix_core::{KeyCode, KeyMod, Point};
+use crate::{KeyCode, KeyMod, Point};
 use crate::event::*;
 
 use self::shm_buffer::ShmBuffer;

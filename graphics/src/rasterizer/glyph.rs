@@ -1,6 +1,6 @@
 //! 字形混合纯函数——将 coverage 位图与颜色混合到像素缓冲。
 
-use uix_core::Rect;
+use uix_platform::Rect;
 
 use crate::color::Color;
 

@@ -6,7 +6,7 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
 use uix_graphics::Color;
@@ -43,7 +43,7 @@ define_widget! {
         selection: Cell<Option<(usize, usize)>>,
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
-        draw_pos: Cell<uix_core::Point>,
+        draw_pos: Cell<uix_platform::Point>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -134,9 +134,9 @@ define_widget! {
 
         let x = 0.0;
         let y = ctx.visual_center_y(frame, fs) - frame.y;
-        let draw_pos = uix_core::Point::new(x, y);
+        let draw_pos = uix_platform::Point::new(x, y);
         self.draw_pos.set(draw_pos);
-        let abs_pos = uix_core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
+        let abs_pos = uix_platform::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
 
         if !self.content.is_empty() {
             // 缓存 glyph x 位置
@@ -217,7 +217,7 @@ impl Typography {
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
-            draw_pos: Cell::new(uix_core::Point::new(0.0, 0.0)),
+            draw_pos: Cell::new(uix_platform::Point::new(0.0, 0.0)),
         }
     }
     pub fn heading(content: &str, level: u8) -> Self {

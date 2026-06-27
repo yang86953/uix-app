@@ -6,7 +6,7 @@ use uix_graphics::{Color, Radius};
 use crate::{
     compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
-use uix_core::{EdgeInsets, Point, Rect, Size};
+use uix_platform::{EdgeInsets, Point, Rect, Size};
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};

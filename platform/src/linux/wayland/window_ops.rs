@@ -93,7 +93,7 @@ impl WaylandWindowOps {
         height: i32,
         maximized: Arc<Mutex<bool>>,
         fullscreen: Arc<Mutex<bool>>,
-    ) -> Result<(), uix_diag::Error> {
+    ) -> Result<(), crate::Error> {
         use wayland_protocols::misc::server_decoration::client::{
             org_kde_kwin_server_decoration::Mode,
             org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager,

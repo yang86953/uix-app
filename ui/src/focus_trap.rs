@@ -1,7 +1,7 @@
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetId, WidgetTree};
-use uix_core::{KeyCode, KeyMod, Rect, Size};
+use uix_platform::{KeyCode, KeyMod, Rect, Size};
 use std::collections::HashSet;
 
 define_widget! {

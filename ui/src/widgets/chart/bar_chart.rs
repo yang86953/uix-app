@@ -2,7 +2,7 @@
 
 use crate::define_widget;
 use uix_graphics::Color;
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
@@ -85,13 +85,13 @@ define_widget! {
                 let sz = ctx.measure_text(&s, 10.0);
                 let val_rect = Rect::new(bx, by - sz.h - 4.0, bar_w, sz.h + 2.0);
                 let vy = ctx.visual_center_y(val_rect, 10.0);
-                ctx.draw_text(&s, uix_core::Point::new(bx + (bar_w - sz.w) * 0.5, vy), text_c, 10.0);
+                ctx.draw_text(&s, uix_platform::Point::new(bx + (bar_w - sz.w) * 0.5, vy), text_c, 10.0);
             }
             let sz = ctx.measure_text(&bar.label, 10.0);
             let lx = bx + (bar_w - sz.w) * 0.5;
             let label_rect = Rect::new(lx, baseline + 2.0, sz.w, label_h - 2.0);
             let ly = ctx.visual_center_y(label_rect, 10.0);
-            ctx.draw_text(&bar.label, uix_core::Point::new(lx, ly), label_c, 10.0);
+            ctx.draw_text(&bar.label, uix_platform::Point::new(lx, ly), label_c, 10.0);
         }
     }
 }

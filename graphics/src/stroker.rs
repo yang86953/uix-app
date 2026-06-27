@@ -3,7 +3,7 @@
 //! 算法：沿路径两侧偏移半个线宽，生成闭合填充区域。
 //! 支持 LineCap::Butt/Round/Square、LineJoin::Miter/Bevel。
 
-use uix_core::Point;
+use uix_platform::Point;
 use super::path::{LineCap, LineJoin, Path, PathBuilder, PathSegment};
 use super::flattener;
 

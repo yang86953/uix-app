@@ -140,7 +140,7 @@ impl App {
         title: &str,
         width: i32,
         height: i32,
-    ) -> Result<&mut Self, uix_diag::Error> {
+    ) -> Result<&mut Self, uix_platform::Error> {
         let platform = create_platform()?;
         let mut window = Window::new(platform);
         let t = if title.is_empty() {
@@ -149,8 +149,8 @@ impl App {
             title
         };
         if !window.create(t, width, height) {
-            return Err(uix_diag::Error::new(
-                uix_diag::Errc::WindowCreationFailed,
+            return Err(uix_platform::Error::new(
+                uix_platform::Errc::WindowCreationFailed,
                 "create_window: platform create_window failed",
             ));
         }
@@ -431,7 +431,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
             if let UiEventPayload::MouseWheel(ref d) = ev.payload {
                 Some(WidgetEvent::MouseWheel {
                     pos: d.pos,
-                    delta: uix_core::Point::new(d.delta_x, d.delta_y),
+                    delta: uix_platform::Point::new(d.delta_x, d.delta_y),
                 })
             } else {
                 None

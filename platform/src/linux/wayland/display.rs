@@ -46,7 +46,7 @@ impl IDisplay for WaylandBackend {
             .unwrap_or_else(|| {
                 // 回退：虚拟 1080p 显示器
                 DisplayInfo {
-                    bounds: uix_core::Rect::new(0.0, 0.0, 1920.0, 1080.0),
+                    bounds: crate::Rect::new(0.0, 0.0, 1920.0, 1080.0),
                     dpi_scale: 1.0,
                     is_primary: index == 0,
                 }

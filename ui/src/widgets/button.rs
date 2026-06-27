@@ -1,4 +1,4 @@
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use crate::style::Style;
 use uix_graphics::{Color, GraphicsEngine};
@@ -11,7 +11,7 @@ pub enum ButtonVariant {
     Primary, Default, Dashed, Text, Link,
 }
 
-pub use uix_core::ControlSize as ButtonSize;
+pub use uix_platform::ControlSize as ButtonSize;
 
 pub fn button_height(size: ButtonSize) -> f32 {
     match size { ButtonSize::Small => 24.0, ButtonSize::Medium => 32.0, ButtonSize::Large => 40.0 }
@@ -222,7 +222,7 @@ impl Button {
             border_color: if bw > 0.0 { Some(border) } else { None },
             border_width: bw,
             border_radius: t.border_radius(),
-            padding: uix_core::EdgeInsets::new(button_padding_h(self.btn_size), 0.0, button_padding_h(self.btn_size), 0.0),
+            padding: uix_platform::EdgeInsets::new(button_padding_h(self.btn_size), 0.0, button_padding_h(self.btn_size), 0.0),
             color: text_color,
             font_size,
             ..Style::default()

@@ -4,6 +4,7 @@
 //! 实现新的 GraphicsEngine trait。
 
 pub mod canvas_2d;
+pub mod canvas_2d_helpers;
 pub mod noop_canvas_2d;
 pub mod noop_canvas_3d;
 pub mod pixel_surface;

@@ -2,7 +2,7 @@
 //!
 //! 实现 RenderingBackend，供 CpuCanvas2D 底层使用。
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 
 use crate::color::Color;
 use crate::traits::RenderingBackend;
@@ -90,9 +90,8 @@ impl PixelSurface {
     }
 
     /// 像素复制（memmove 语义，允许源与目标重叠）。
-    /// 用于 scroll_region 实现。
+    /// `pixels` 参数必须与 self.pixels 指向同一缓冲（由 &self 限制）。
     pub fn copy_region(&self, src_rect: Rect, dst_x: i32, dst_y: i32, pixels: &mut Vec<u32>) {
-        // 注意：需要 dst pixels，因为可能重叠（memmove → 需要临时缓冲或从后向前复制）
         if src_rect.w <= 0.0 || src_rect.h <= 0.0 {
             return;
         }
@@ -104,7 +103,6 @@ impl PixelSurface {
         let surf_w = self.width;
         let surf_h = self.height;
 
-        // 裁剪到表面边界
         let clip_x0 = src_x.max(0).max(-dst_x);
         let clip_y0 = src_y.max(0).max(-dst_y);
         let clip_x1 = (src_x + copy_w).min(surf_w).min(surf_w - dst_x);
@@ -116,8 +114,6 @@ impl PixelSurface {
 
         let row_len = (clip_x1 - clip_x0) as usize;
 
-        // memmove：如果 dst_y < src_y（向上移动），从前往后复制；
-        // 如果 dst_y > src_y（向下移动），从后往前复制。
         if dst_y <= src_y {
             for row in clip_y0..clip_y1 {
                 let src_idx = (row * surf_w + clip_x0) as usize;

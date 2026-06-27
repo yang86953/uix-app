@@ -4,7 +4,7 @@ use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::{AlignItems, GridTrack, JustifyContent};
 use crate::layout::engine::{GridLayout, LayoutChild, LayoutEngine, child_from_tree};
-use uix_core::{EdgeInsets, Rect, Size};
+use uix_platform::{EdgeInsets, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{WidgetId, WidgetTree};
 

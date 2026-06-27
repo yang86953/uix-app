@@ -2,7 +2,7 @@
 //!
 //! 预设色板选择，点击触发弹出面板。
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;

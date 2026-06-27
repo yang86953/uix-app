@@ -7,8 +7,8 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
-use uix_core::*;
-use uix_diag::{Errc, Error};
+use crate::*;
+use crate::{Errc, Error};
 use crate::event::*;
 
 use super::bindings::*;

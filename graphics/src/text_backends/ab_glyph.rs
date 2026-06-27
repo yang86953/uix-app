@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use ab_glyph::*;
-use uix_diag::{Errc, Error};
+use uix_platform::{Errc, Error};
 use crate::text_backend::*;
 use crate::FontHandle;
 
@@ -106,10 +106,11 @@ impl TextBackend for AbGlyphBackend {
         for g in out.iter_mut() { g.y += v_off; }
 
         let tw = out.iter().fold(0.0f32, |m, g| (g.x + g.width).max(m));
+        let n_glyphs = out.len();
         TextLayout {
             glyphs: out,
             lines: vec![LineInfo { y: 0.0, height: max_h.max(text_h), width: tw,
-                start_char: 0, end_char: text.len(), glyph_start: 0, glyph_count: 0 }],
+                start_char: 0, end_char: text.len(), glyph_start: 0, glyph_count: n_glyphs }],
             width: tw, height: max_h.max(text_h),
         }
     }

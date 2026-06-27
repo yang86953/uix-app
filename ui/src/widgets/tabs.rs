@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use crate::define_widget;
 use uix_graphics::{Radius};
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 

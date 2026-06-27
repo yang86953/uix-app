@@ -2,15 +2,15 @@
 //!
 //! 支持列表项渲染、header/footer、bordered、size 等选项。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
 /// 列表尺寸。
-/// （已统一为 uix_core::ControlSize，保留别名以兼容旧代码。）
-pub use uix_core::ControlSize as ListSize;
+/// （已统一为 uix_platform::ControlSize，保留别名以兼容旧代码。）
+pub use uix_platform::ControlSize as ListSize;
 
 /// List 尺寸对应的行高。
 pub fn list_item_height(size: ListSize) -> f32 {

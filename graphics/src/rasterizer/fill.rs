@@ -2,10 +2,12 @@
 //!
 //! 所有函数不持状态，只接受像素缓冲、裁剪、参数，直接写入像素。
 
-use uix_core::Rect;
+use uix_platform::Rect;
 
 use crate::color::Color;
+use crate::flattener;
 use crate::path::{FillRule, Path};
+use crate::rasterizer::polygon;
 use crate::types::Radius;
 
 use super::{
@@ -200,13 +202,19 @@ pub fn fill_sector(
     }
 }
 
-/// 纯函数：填充闭合路径（暂未实现，委托 polygon fill）。
+/// 纯函数：填充闭合路径（展平 → polygon fill）。
 pub fn fill_path(
     pixels: &mut [u32], surface_w: i32, surface_h: i32,
     clip: Rect, opacity: f32,
-    _path: &Path, color: Color, fill_rule: FillRule,
+    path: &Path, color: Color, fill_rule: FillRule,
 ) {
+    if path.is_empty() { return; }
     let c = color_to_premul(color.r, color.g, color.b, color.a, opacity);
-    // TODO: Path flatten + polygon fill
-    let _ = (pixels, surface_w, surface_h, clip, c, fill_rule);
+    let polys = flattener::flatten(path.segments(), 0.25);
+    let mut global_edges = Vec::new();
+    let mut active_edges = Vec::new();
+    polygon::fill_polygons(
+        &polys, pixels, surface_w, surface_h,
+        clip, c, fill_rule, &mut global_edges, &mut active_edges,
+    );
 }

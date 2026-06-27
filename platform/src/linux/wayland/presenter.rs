@@ -13,7 +13,7 @@ use wayland_client::protocol::{
     wl_callback, wl_compositor, wl_shm, wl_surface,
 };
 use wayland_client::Main;
-use uix_diag::Error;
+use crate::Error;
 
 use crate::api::IPresenter;
 

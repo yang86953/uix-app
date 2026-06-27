@@ -1,6 +1,6 @@
 //! 帧更新策略 — 决定本帧如何清除和绘制。
 
-use uix_core::Rect;
+use uix_platform::Rect;
 
 /// 帧更新策略。
 #[derive(Debug, Clone)]

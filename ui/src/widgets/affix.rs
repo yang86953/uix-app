@@ -2,7 +2,7 @@
 //!
 //! 监听滚动位置变化，当 scroll_y > offset_top 时固定。
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::define_widget;
 use uix_graphics::GraphicsEngine;
 use crate::render_context::RenderContext;

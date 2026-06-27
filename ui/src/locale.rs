@@ -183,7 +183,7 @@ pub fn with_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 
 /// LocaleProvider — 为子树注入国际化文案。
 define_widget! {

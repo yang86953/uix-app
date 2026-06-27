@@ -1,6 +1,6 @@
 //! 渐变填充纯函数——线性渐变、径向渐变。
 
-use uix_core::Rect;
+use uix_platform::Rect;
 
 use crate::color::Color;
 use crate::types::GradientDirection;

@@ -1,5 +1,5 @@
 // ============================================================================
-// uix-platform/src/log_format.rs — Log record, sink trait, and built-in sinks
+// services/src/log_format.rs — Log record, sink trait, and built-in sinks
 // ============================================================================
 
 use chrono::{DateTime, Local};
@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::{Mutex, RwLock};
 
 // ════════════════════════════════════════════════════════════════════════════
-// 日志级别 (re-exported; definition lives in log.rs for core module coherence)
+// 日志级别 (re-exported; definition lives in log.rs)
 // ════════════════════════════════════════════════════════════════════════════
 
 use crate::log::Level;

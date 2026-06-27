@@ -17,7 +17,10 @@ pub use api::*;
 // ── 共享类型与事件 ──────────────────────────────────────────────
 pub mod event;
 
-// ── 平台专属类型 ─────────────────────────────────────────────
+// ── 共享基础类型（几何、错误、状态、输入）───────────────
+pub mod geometry;
+pub mod error;
+pub mod status;
 pub mod types;
 
 // ── 像素呈现 ───────────────────────────────────────────────────
@@ -32,18 +35,18 @@ pub mod core;
 ///
 /// 返回 `Err` 如果平台初始化失败（如 Linux 下无 Wayland 会话）。
 #[cfg(windows)]
-pub fn create_platform() -> Result<Box<dyn Platform>, uix_diag::Error> {
+pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     Ok(Box::new(crate::windows::platform::WindowsPlatform::new()))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-pub fn create_platform() -> Result<Box<dyn Platform>, uix_diag::Error> {
+pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     let platform = crate::linux::platform::LinuxPlatform::new()?;
     Ok(Box::new(platform))
 }
 
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
-pub fn create_platform() -> Result<Box<dyn Platform>, uix_diag::Error> {
+pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     compile_error!("Unsupported platform: only Windows and Linux are supported");
 }
 
@@ -58,7 +61,7 @@ pub fn create_gpu_context(
     native_surface: *mut std::ffi::c_void,
     width: i32,
     height: i32,
-) -> Result<Box<dyn IGraphicsContext>, uix_diag::Error> {
+) -> Result<Box<dyn IGraphicsContext>, Error> {
     let egl = crate::linux::gpu::egl::EglContext::new(native_surface, width, height)?;
     Ok(Box::new(egl))
 }
@@ -68,9 +71,9 @@ pub fn create_gpu_context(
     _native_surface: *mut std::ffi::c_void,
     _width: i32,
     _height: i32,
-) -> Result<Box<dyn IGraphicsContext>, uix_diag::Error> {
-    Err(uix_diag::Error::new(
-        uix_diag::Errc::PlatformError,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    Err(Error::new(
+        Errc::PlatformError,
         "GPU rendering is not supported on this platform".to_string(),
     ))
 }

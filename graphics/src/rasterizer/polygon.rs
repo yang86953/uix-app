@@ -7,7 +7,7 @@
 //! 4. 支持 NonZero 和 EvenOdd 填充规则
 
 use crate::path::FillRule;
-use uix_core::{Point, Rect};
+use uix_platform::{Point, Rect};
 
 use super::fill_span;
 

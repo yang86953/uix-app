@@ -4,7 +4,7 @@
 //! GPU 后端按需覆盖某些方法来走 shader 加速路径。
 //! 渲染状态方法（save/restore/clip/opacity/transform/blend/pixels/size）必须自行实现。
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 
 use crate::color::Color;
 use crate::path::{FillRule, Path};

@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use wayland_client::protocol::{wl_data_device, wl_keyboard, wl_pointer, wl_seat};
 
-use uix_core::{KeyMod, MouseButton, Point};
+use crate::{KeyMod, MouseButton, Point};
 use crate::event::*;
 use crate::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
 

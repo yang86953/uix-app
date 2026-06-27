@@ -20,7 +20,7 @@
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
 use uix_graphics::font_service::FontService;

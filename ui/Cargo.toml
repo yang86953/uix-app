@@ -5,10 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-uix-core = { path = "../core" }
-uix-diag = { path = "../diag" }
 uix-graphics = { path = "../graphics" }
-uix-macros = { path = "../uix-macros" }
+uix-macros = { path = "macros" }
 uix-platform = { path = "../platform" }
 log = { workspace = true }
 

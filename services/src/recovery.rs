@@ -1,13 +1,11 @@
 // ============================================================================
-// uix-diag/src/recovery.rs — Recovery execution logic
+// services/src/recovery.rs — Recovery execution logic
 // ============================================================================
 
-use crate::error::*;
-use crate::result::*;
+use std::time::Duration;
+use uix_platform::*;
 
 pub use crate::recovery_policy::*;
-
-use std::time::Duration;
 
 // ════════════════════════════════════════════════════════════════════════════
 // RecoveryHandler

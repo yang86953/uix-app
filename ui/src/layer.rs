@@ -18,7 +18,7 @@
 //! - Picture 支持 children，实现嵌套 RepaintBoundary（#96）
 
 use std::collections::HashSet;
-use uix_core::{Point, Rect};
+use uix_platform::{Point, Rect};
 use uix_graphics::DirtyRegion;
 use uix_graphics::GraphicsEngine;
 use uix_graphics::font_service::FontService;

@@ -1,6 +1,6 @@
 //! 图像混合纯函数——将 src 像素区域缩放绘制到 dst 区域。
 
-use uix_core::Rect;
+use uix_platform::Rect;
 
 use super::{clip_to_int, put_pixel};
 
@@ -30,47 +30,28 @@ pub fn blit_image(
     let dw = dst_rect.w as i32;
     let dh = dst_rect.h as i32;
     let (cx0, cy0, cx1, cy1) = clip_to_int(&clip);
+    let scaled = dw != sw || dh != sh;
 
-    if opacity >= 1.0 - 1e-6 {
-        if dw == sw && dh == sh {
-            for row in 0..sh {
-                for col in 0..sw {
-                    let src_idx = ((sy + row) * src_w + (sx + col)) as usize;
-                    if src_idx >= src.len() { continue; }
-                    put_pixel(pixels, surface_w, dx + col, dy + row, cx0, cy0, cx1, cy1, src[src_idx]);
-                }
-            }
-        } else {
-            for row in 0..dh {
-                for col in 0..dw {
-                    let src_x = sx + (col * sw / dw);
-                    let src_y = sy + (row * sh / dh);
-                    let src_idx = (src_y * src_w + src_x) as usize;
-                    if src_idx >= src.len() { continue; }
-                    put_pixel(pixels, surface_w, dx + col, dy + row, cx0, cy0, cx1, cy1, src[src_idx]);
-                }
-            }
-        }
-    } else {
-        if dw == sw && dh == sh {
-            for row in 0..sh {
-                for col in 0..sw {
-                    let src_idx = ((sy + row) * src_w + (sx + col)) as usize;
-                    if src_idx >= src.len() { continue; }
-                    let p = super::apply_opacity(src[src_idx], opacity);
+    for row in 0..dh.max(sh) {
+        for col in 0..dw.max(sw) {
+            let (src_x, src_y) = if scaled {
+                (sx + (col * sw / dw), sy + (row * sh / dh))
+            } else {
+                (sx + col, sy + row)
+            };
+            let src_idx = (src_y * src_w + src_x) as usize;
+            if src_idx >= src.len() { continue; }
+            let p = if opacity < 1.0 - 1e-6 {
+                super::apply_opacity(src[src_idx], opacity)
+            } else {
+                src[src_idx]
+            };
+            if scaled {
+                if row < dh && col < dw {
                     put_pixel(pixels, surface_w, dx + col, dy + row, cx0, cy0, cx1, cy1, p);
                 }
-            }
-        } else {
-            for row in 0..dh {
-                for col in 0..dw {
-                    let src_x = sx + (col * sw / dw);
-                    let src_y = sy + (row * sh / dh);
-                    let src_idx = (src_y * src_w + src_x) as usize;
-                    if src_idx >= src.len() { continue; }
-                    let p = super::apply_opacity(src[src_idx], opacity);
-                    put_pixel(pixels, surface_w, dx + col, dy + row, cx0, cy0, cx1, cy1, p);
-                }
+            } else if row < sh && col < sw {
+                put_pixel(pixels, surface_w, dx + col, dy + row, cx0, cy0, cx1, cy1, p);
             }
         }
     }

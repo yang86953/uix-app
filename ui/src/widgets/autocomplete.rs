@@ -2,7 +2,7 @@
 //!
 //! 输入时弹出匹配选项列表，支持键盘导航选择。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::Radius;
 use crate::render_context::RenderContext;

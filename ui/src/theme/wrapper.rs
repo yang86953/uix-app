@@ -15,7 +15,7 @@ use super::design_tokens::DesignTokens;
 use super::spacing_tokens::{IBoxShadowTokens, ISpacingTokens};
 use super::typography_tokens::ITypographyTokens;
 use crate::style::Style;
-use uix_core::EdgeInsets;
+use uix_platform::EdgeInsets;
 
 // ════════════════════════════════════════════════════════════════════════════
 // TokenProvider — supertrait 聚合全部子 trait

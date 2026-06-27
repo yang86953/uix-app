@@ -11,7 +11,7 @@
 #![allow(nonstandard_style)]
 
 use super::ffi::{GetDC, ReleaseDC};
-use uix_diag::{Errc, Error};
+use crate::{Errc, Error};
 use crate::api::IPresenter;
 
 // ── Windows FFI declarations ────────────────────────────────────────────────

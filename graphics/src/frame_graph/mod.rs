@@ -47,7 +47,7 @@ use compile::{CompiledGraph, Compiler};
 use pass::{FrameResources, PassBuilder, PassContext, PassNode};
 use resource::{PassId, ResourceId, ResourceKind, ResourceRegistry, Version};
 
-use uix_diag::Result;
+use uix_platform::Result;
 
 // ════════════════════════════════════════════════════════════════════════════
 // FrameGraph —— 帧图主结构
@@ -60,6 +60,7 @@ use uix_diag::Result;
 pub struct FrameGraph {
     registry: ResourceRegistry,
     passes: Vec<PassNode>,
+    pass_index: HashMap<PassId, usize>,
     compiler: Compiler,
     /// 当前帧开始时的资源版本快照（由外部更新）。
     current_versions: HashMap<ResourceId, Version>,
@@ -72,6 +73,7 @@ impl FrameGraph {
         Self {
             registry: ResourceRegistry::new(),
             passes: Vec::new(),
+            pass_index: HashMap::new(),
             compiler: Compiler::new(),
             current_versions: HashMap::new(),
             resources: FrameResources::new(),
@@ -150,12 +152,14 @@ impl FrameGraph {
         let id = self.registry.allocate_pass_id();
         let builder = PassBuilder::new(id, name);
         let node = build(builder).build();
+        self.pass_index.insert(id, self.passes.len());
         self.passes.push(node);
         id
     }
 
     /// 显式添加一个已构建的 PassNode。
     pub fn add_pass_node(&mut self, node: PassNode) {
+        self.pass_index.insert(node.id, self.passes.len());
         self.passes.push(node);
     }
 
@@ -187,11 +191,10 @@ impl FrameGraph {
         engine: &mut dyn crate::GraphicsEngine,
         plan: &CompiledGraph,
     ) -> Result<()> {
-        // 按顺序执行（Pass 数通常 < 10，线性查找比 HashMap 更快）
         for &pid in &plan.execution_order {
-            let idx = self.passes.iter().position(|p| p.id == pid).ok_or_else(|| {
-                uix_diag::Error::new(
-                    uix_diag::Errc::InvalidState,
+            let idx = self.pass_index.get(&pid).copied().ok_or_else(|| {
+                uix_platform::Error::new(
+                    uix_platform::Errc::InvalidState,
                     format!("FrameGraph::execute: unknown PassId {:?}", pid),
                 )
             })?;
@@ -236,13 +239,12 @@ impl FrameGraph {
         plan: &CompiledGraph,
         render_fn: &mut dyn FnMut(PassId, &mut dyn crate::GraphicsEngine, &mut FrameResources) -> Result<()>,
     ) -> Result<()> {
-        // 按顺序执行（Pass 数通常 < 10，线性查找比 HashMap 更快）
         for &pid in &plan.execution_order {
             // 调用外部渲染回调（取代 PassNode::execute）
             render_fn(pid, engine, &mut self.resources)?;
 
             // 写入资源版本提升
-            if let Some(idx) = self.passes.iter().position(|p| p.id == pid) {
+            if let Some(&idx) = self.pass_index.get(&pid) {
                 for &res in &self.passes[idx].writes {
                     let new_ver = self.registry.bump_version(res, pid);
                     self.current_versions.insert(res, new_ver);
@@ -264,9 +266,9 @@ impl FrameGraph {
     }
 
     /// 清空 Pass 列表（保留资源注册表和版本历史）。
-    /// 用于在每帧重新构建 Pass 时保持资源版本追踪连续性。
     pub fn clear_passes(&mut self) {
         self.passes.clear();
+        self.pass_index.clear();
     }
 
     /// 重置帧图状态（清空所有 Pass 和版本历史）。

@@ -1,6 +1,6 @@
 //! Radio widget — 单选组，支持 horizontal/vertical、disabled、hover。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{GraphicsEngine, Radius};
 use crate::render_context::RenderContext;

@@ -1,13 +1,11 @@
 // ============================================================================
-// uix-diag/src/recovery_policy.rs — Retry policies, circuit breaker, fallback
+// services/src/recovery_policy.rs — Retry policies, circuit breaker, fallback
 // ============================================================================
-
-use crate::error::*;
-use crate::result::*;
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
+use uix_platform::*;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Type aliases
@@ -230,7 +228,7 @@ impl From<u64> for CircuitState {
 // ════════════════════════════════════════════════════════════════════════════
 
 pub struct CircuitBreaker {
-    state: AtomicU64, // stored as CircuitState
+    state: AtomicU64,
     failure_count: AtomicUsize,
     success_count: AtomicUsize,
     rejected_count: AtomicUsize,

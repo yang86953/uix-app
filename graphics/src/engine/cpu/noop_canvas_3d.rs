@@ -2,7 +2,7 @@
 //!
 //! 用于 SoftwareEngine，因为 CPU 渲染器不提供 3D 能力。
 
-use uix_diag::Error;
+use uix_platform::Error;
 
 use crate::traits::{
     BufferHandle, Camera, Canvas3D, Light, ShaderHandle, ShaderSource, TexFormat,

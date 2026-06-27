@@ -10,15 +10,15 @@ pub use scrollbar::*;
 use std::cell::Cell;
 
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::define_widget;
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, Widget, WidgetCore, WidgetEvent, WidgetId, WidgetTree};
 
 /// Scroll direction for a ScrollView.
-/// （已统一为 uix_core::ScrollDirection。）
-pub use uix_core::ScrollDirection;
+/// （已统一为 uix_platform::ScrollDirection。）
+pub use uix_platform::ScrollDirection;
 
 define_widget! {
     /// A scrollable viewport that clips its children and supports mouse-wheel
@@ -36,15 +36,15 @@ define_widget! {
     /// content outside the viewport is masked out.
     pub struct ScrollView {
         children: WidgetChildren,
-        scroll_x: f32,
-        scroll_y: f32,
+        pub scroll_x: f32,
+        pub scroll_y: f32,
         /// 前一帧的 scroll 位置（用于计算滚动 delta 做 pixel buffer memmove）
-        prev_scroll_x: f32,
-        prev_scroll_y: f32,
+        pub prev_scroll_x: f32,
+        pub prev_scroll_y: f32,
         /// Velocity-based momentum scrolling: velocity accumulates on
         /// wheel events and decays via friction in on_update.
-        velocity_x: f32,
-        velocity_y: f32,
+        pub velocity_x: f32,
+        pub velocity_y: f32,
         direction: ScrollDirection,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
@@ -517,7 +517,7 @@ impl Default for ScrollView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uix_core::{Point, Rect, Size};
+    use uix_platform::{Point, Rect, Size};
     use crate::{AlignItems, FlexDirection};
     use crate::render_context::RenderContext;
     use crate::widget::EventResult;
@@ -545,85 +545,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn scrollview_default_size() {
-        let sv = ScrollView::new(ScrollDirection::Vertical);
-        let ps = sv.preferred_size(None);
-        assert_eq!(ps, Size::new(300.0, 200.0));
-    }
 
-    #[test]
-    fn scrollview_custom_size() {
-        let sv = ScrollView::new(ScrollDirection::Both).size(400.0, 300.0);
-        let ps = sv.preferred_size(None);
-        assert_eq!(ps, Size::new(400.0, 300.0));
-    }
-
-    #[test]
-    fn scrollview_mouse_wheel_vertical_up() {
-        let mut sv = ScrollView::new(ScrollDirection::Vertical);
-        sv.scroll_y = 60.0;
-        assert_eq!(sv.scroll_y, 60.0);
-
-        let result = sv.on_event(&WidgetEvent::MouseWheel {
-            pos: Point::default(),
-            delta: Point::new(0.0, 1.0),
-        });
-        assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_y, 50.0);
-    }
-
-    #[test]
-    fn scrollview_mouse_wheel_scrolls_down() {
-        let mut sv = ScrollView::new(ScrollDirection::Vertical);
-        assert_eq!(sv.scroll_y, 0.0);
-
-        let result = sv.on_event(&WidgetEvent::MouseWheel {
-            pos: Point::default(),
-            delta: Point::new(0.0, -1.0),
-        });
-        assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_y, -50.0);
-    }
-
-    #[test]
-    fn scrollview_mouse_wheel_horizontal() {
-        let mut sv = ScrollView::new(ScrollDirection::Horizontal);
-        assert_eq!(sv.scroll_x, 0.0);
-
-        let result = sv.on_event(&WidgetEvent::MouseWheel {
-            pos: Point::default(),
-            delta: Point::new(-1.0, 0.0),
-        });
-        assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_x, -75.0);
-    }
-
-    #[test]
-    fn scrollview_mouse_wheel_both() {
-        let mut sv = ScrollView::new(ScrollDirection::Both);
-
-        let result = sv.on_event(&WidgetEvent::MouseWheel {
-            pos: Point::default(),
-            delta: Point::new(-1.0, -2.0),
-        });
-        assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_x, -75.0);
-        assert_eq!(sv.velocity_y, -100.0);
-    }
-
-    #[test]
-    fn scrollview_scroll_clamped_to_zero() {
-        let mut sv = ScrollView::new(ScrollDirection::Vertical);
-        sv.scroll_y = 10.0;
-
-        let result = sv.on_event(&WidgetEvent::MouseWheel {
-            pos: Point::default(),
-            delta: Point::new(0.0, 1.0),
-        });
-        assert_eq!(result, EventResult::Handled);
-        assert_eq!(sv.velocity_y, 50.0);
-    }
 
     #[test]
     fn scrollview_scroll_to() {
@@ -714,7 +636,7 @@ mod tests {
         let result = sv.on_event(&WidgetEvent::MouseDown {
             pos: Point::new(10.0, 10.0),
             button: crate::widget::MouseButton::Left,
-            mods: uix_core::KeyMod::NONE,
+            mods: uix_platform::KeyMod::NONE,
         });
         assert_eq!(result, EventResult::NotHandled);
     }
@@ -762,7 +684,7 @@ mod tests {
         tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 10.0),
             button: crate::widget::MouseButton::Left,
-            mods: uix_core::KeyMod::NONE,
+            mods: uix_platform::KeyMod::NONE,
         });
         tree.layout();
         assert_eq!(max_y(&tree), 0.0, "展开到200=视口200");
@@ -771,7 +693,7 @@ mod tests {
         tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 10.0),
             button: crate::widget::MouseButton::Left,
-            mods: uix_core::KeyMod::NONE,
+            mods: uix_platform::KeyMod::NONE,
         });
         tree.layout();
         let max = max_y(&tree);
@@ -825,7 +747,7 @@ mod tests {
         tree.dispatch_event(&WidgetEvent::MouseDown {
             pos: Point::new(50.0, 45.0), // 面板B的header区域
             button: crate::widget::MouseButton::Left,
-            mods: uix_core::KeyMod::NONE,
+            mods: uix_platform::KeyMod::NONE,
         });
         tree.layout();
         let max_after = tree

@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use uix_diag::Error;
+use crate::Error;
 use crate::core::{WindowState, OsEventSource};
 use crate::event::UiEvent;
 use crate::*;
@@ -56,7 +56,7 @@ impl LinuxPlatform {
             }
             Err(e) => {
                 return Err(Error::new(
-                    uix_diag::Errc::PlatformError,
+                    crate::Errc::PlatformError,
                     format!("Wayland backend failed: {}", e),
                 ));
             }

@@ -205,7 +205,7 @@ impl Animatable for Color {
     }
 }
 
-impl Animatable for uix_core::Rect {
+impl Animatable for uix_platform::Rect {
     fn lerp(from: Self, to: Self, t: f64) -> Self {
         let t = t as f32;
         Self {
@@ -224,7 +224,7 @@ impl Animatable for uix_core::Rect {
     }
 }
 
-impl Animatable for uix_core::Point {
+impl Animatable for uix_platform::Point {
     fn lerp(from: Self, to: Self, t: f64) -> Self {
         let t = t as f32;
         Self {
@@ -239,62 +239,3 @@ impl Animatable for uix_core::Point {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use uix_graphics::Color;
-
-    #[test]
-    fn easing_linear_maps_one_to_one() {
-        let e = Easing::Linear;
-        assert!((e.sample(0.0) - 0.0).abs() < 1e-6);
-        assert!((e.sample(0.5) - 0.5).abs() < 1e-6);
-        assert!((e.sample(1.0) - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn easing_quad_in_out_symmetric() {
-        let e = Easing::QuadInOut;
-        let mid = e.sample(0.5);
-        assert!((mid - 0.5).abs() < 0.01); // 中点约 0.5
-        assert!((e.sample(0.25) - (1.0 - e.sample(0.75))).abs() < 1e-6);
-    }
-
-    #[test]
-    fn easing_antd_default_in_range() {
-        let e = Easing::antd_default();
-        assert!((e.sample(0.0) - 0.0).abs() < 1e-6);
-        assert!((e.sample(1.0) - 1.0).abs() < 1e-6);
-        // 默认缓动 cubic-bezier(0.25, 0.1, 0.25, 1) 是缓入缓出风格
-        // 单调递增
-        assert!(e.sample(0.3) < e.sample(0.5));
-        assert!(e.sample(0.5) < e.sample(0.7));
-    }
-
-    #[test]
-    fn animatable_lerp_f32() {
-        let v = f32::lerp(0.0, 100.0, 0.5);
-        assert!((v - 50.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn animatable_lerp_color() {
-        let a = Color::from_rgb(0, 0, 0);
-        let b = Color::from_rgb(255, 255, 255);
-        let mid = Color::lerp(a, b, 0.5);
-        assert_eq!(mid.r, 128);
-        assert_eq!(mid.g, 128);
-        assert_eq!(mid.b, 128);
-    }
-
-    #[test]
-    fn animatable_lerp_rect() {
-        let a = uix_core::Rect::new(0.0, 0.0, 100.0, 100.0);
-        let b = uix_core::Rect::new(10.0, 20.0, 200.0, 300.0);
-        let mid = uix_core::Rect::lerp(a, b, 0.5);
-        assert!((mid.x - 5.0).abs() < 1e-6);
-        assert!((mid.y - 10.0).abs() < 1e-6);
-        assert!((mid.w - 150.0).abs() < 1e-6);
-        assert!((mid.h - 200.0).abs() < 1e-6);
-    }
-}

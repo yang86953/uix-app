@@ -2,7 +2,7 @@
 //!
 //! 组合使用构建标准页面布局。
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;

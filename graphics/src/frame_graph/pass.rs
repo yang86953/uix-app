@@ -4,7 +4,7 @@
 //! 并持有可执行的渲染函数。编译器据此进行拓扑排序与自动裁剪。
 
 use super::resource::{PassId, ResourceId};
-use uix_diag::Result;
+use uix_platform::Result;
 
 use super::super::GraphicsEngine;
 
@@ -20,7 +20,7 @@ use super::super::GraphicsEngine;
 pub struct PassContext<'a> {
     pub engine: &'a mut dyn GraphicsEngine,
     pub resources: &'a mut FrameResources,
-    pub dirty_rect: Option<uix_core::Rect>,
+    pub dirty_rect: Option<uix_platform::Rect>,
 }
 
 // ════════════════════════════════════════════════════════════════════════════

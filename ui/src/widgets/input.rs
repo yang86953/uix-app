@@ -9,11 +9,11 @@ use std::cell::{Cell, RefCell};
 use crate::clipboard;
 use crate::define_widget;
 use uix_graphics::{GraphicsEngine, Radius};
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
 
-pub use uix_core::ControlSize as InputSize;
+pub use uix_platform::ControlSize as InputSize;
 
 pub fn input_height(size: InputSize) -> f32 {
     match size { InputSize::Small => 24.0, InputSize::Medium => 32.0, InputSize::Large => 40.0 }

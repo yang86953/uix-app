@@ -6,7 +6,7 @@
 
 use super::ffi::*;
 use super::util::to_wide;
-use uix_core::Rect;
+use crate::Rect;
 use crate::types::DisplayInfo;
 use crate::IDisplay;
 use std::ptr;

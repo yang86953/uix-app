@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use uix_diag::Error;
+use crate::Error;
 use crate::core::{WindowState, PlatformWindowCore};
 use crate::*;
 

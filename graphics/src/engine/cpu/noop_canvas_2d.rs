@@ -1,7 +1,7 @@
 //! NoopCanvas2D — Canvas2D 的空实现。
 //! 所有绘制操作都是空操作，用于 NullEngine。
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::color::Color;
 use crate::path::{FillRule, Path};
 use crate::stroker::StrokeOptions;

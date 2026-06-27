@@ -2,7 +2,7 @@
 //!
 //! 支持占位图、fallback、描述、圆角。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;

@@ -13,7 +13,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use uix_core::Point;
+use crate::Point;
 use crate::{
     api::{IGraphicsContext, INativeHandle, IWindowProperties, IPresenter, PlatformWindow},
     core::state::WindowState,

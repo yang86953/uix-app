@@ -4,8 +4,8 @@
 //! 实现新 GraphicsEngine trait。
 //! 帧生命周期逻辑（清除策略/裁剪管理）在此直接内联，不再依赖 frame.rs。
 
-use uix_core::Rect;
-use uix_diag::Error;
+use uix_platform::Rect;
+use uix_platform::Error;
 
 use crate::color::Color;
 use crate::engine::cpu::canvas_2d::CpuCanvas2D;
@@ -84,6 +84,17 @@ impl GraphicsEngine for SoftwareEngine {
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         let w = self.main_width;
         let h = self.main_height;
+
+        // 无变化时返回 Idle 跳过渲染
+        if !strategy.should_clear() {
+            match &strategy {
+                UpdateStrategy::DirtyRects(rects) if rects.is_empty() => {
+                    return RenderOutcome::Idle;
+                }
+                _ => {}
+            }
+        }
+
         let fw = w as f32;
         let fh = h as f32;
         let full = Rect::new(0.0, 0.0, fw, fh);
@@ -97,7 +108,6 @@ impl GraphicsEngine for SoftwareEngine {
                 if rects.is_empty() {
                     self.canvas_2d.push_clip(full);
                 } else {
-                    // 计算所有脏矩形的外接矩形作为裁剪区域
                     let mut bounds = rects[0];
                     for r in &rects[1..] {
                         bounds = bounds.union(r);
@@ -132,7 +142,6 @@ impl GraphicsEngine for SoftwareEngine {
                         }
                     }
                 }
-                // Overlay 策略：不清除，直接覆盖绘制
                 UpdateStrategy::Overlay(_) => {}
             }
         }

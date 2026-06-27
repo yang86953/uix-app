@@ -2,7 +2,7 @@
 //!
 //! 基于 Input 交互模式，增加触发字符检测和建议弹出。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;

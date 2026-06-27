@@ -1,5 +1,5 @@
 use crate::collector::Collector;
-use crate::error::Error;
+use uix_platform::Error;
 
 // ════════════════════════════════════════════════════════════════════════════
 // ScopedCollector — 作用域收集器

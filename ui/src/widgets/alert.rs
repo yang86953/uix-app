@@ -1,14 +1,14 @@
 //! Alert widget — 警示条，支持类型、图标、关闭。
 
 use crate::define_widget;
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
 /// 警示类型。
-/// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
-pub use uix_core::StatusLevel as AlertType;
+/// （已统一为 uix_platform::StatusLevel，保留别名以兼容旧代码。）
+pub use uix_platform::StatusLevel as AlertType;
 
 define_widget! {
     /// Alert — 带类型颜色的警示条。
@@ -39,16 +39,16 @@ define_widget! {
 
         let text_x = frame.x + 14.0;
         let msg_y = ctx.visual_center_y(frame, 14.0);
-        ctx.draw_text(&self.message, uix_core::Point::new(text_x, msg_y), fg, 14.0);
+        ctx.draw_text(&self.message, uix_platform::Point::new(text_x, msg_y), fg, 14.0);
         if !self.description.is_empty() {
             let desc_rect = Rect::new(frame.x, frame.y + frame.h * 0.5, frame.w, frame.h * 0.5);
             let desc_y = ctx.visual_center_y(desc_rect, 12.0);
-            ctx.draw_text(&self.description, uix_core::Point::new(text_x, desc_y), ctx.tokens().color_text_secondary(), 12.0);
+            ctx.draw_text(&self.description, uix_platform::Point::new(text_x, desc_y), ctx.tokens().color_text_secondary(), 12.0);
         }
         if self.closable {
             let cx = frame.x + frame.w - 18.0;
             let cy = ctx.visual_center_y(frame, 14.0);
-            ctx.draw_text("✕", uix_core::Point::new(cx, cy), ctx.tokens().color_text_quaternary(), 14.0);
+            ctx.draw_text("✕", uix_platform::Point::new(cx, cy), ctx.tokens().color_text_quaternary(), 14.0);
         }
     }
 }

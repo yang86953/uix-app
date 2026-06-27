@@ -4,7 +4,7 @@
 //! Tooltip（渐隐渐现）、Collapse（展开/折叠）等场景。
 
 use crate::animation::core::Animation;
-use uix_core::Point;
+use uix_platform::Point;
 
 /// 过渡动画方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

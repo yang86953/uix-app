@@ -2,7 +2,7 @@
 //!
 //! 参考 tiny-skia 的路径展平算法。容差 0.25 像素。
 
-use uix_core::Point;
+use uix_platform::Point;
 use super::path::PathSegment;
 
 /// 展平后的线段序列：（起点, 终点）。
@@ -148,36 +148,4 @@ fn is_cubic_flat(p0: Point, p1: Point, p2: Point, p3: Point, tol_sq: f32) -> boo
     let d1 = (cross1 * cross1) / len_sq;
     let d2 = (cross2 * cross2) / len_sq;
     d1.max(d2) < tol_sq
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_flatten_rect() {
-        let segs = [
-            PathSegment::MoveTo(Point::new(0.0, 0.0)),
-            PathSegment::LineTo(Point::new(100.0, 0.0)),
-            PathSegment::LineTo(Point::new(100.0, 100.0)),
-            PathSegment::LineTo(Point::new(0.0, 100.0)),
-            PathSegment::Close,
-        ];
-        let polys = flatten(&segs, 0.5);
-        assert!(!polys.is_empty());
-        // 矩形展平后应该就是 5 个点（含回到起点）
-        assert!(!polys[0].is_empty());
-    }
-
-    #[test]
-    fn test_flatten_quad() {
-        let segs = [
-            PathSegment::MoveTo(Point::new(0.0, 0.0)),
-            PathSegment::QuadTo(Point::new(50.0, 100.0), Point::new(100.0, 0.0)),
-        ];
-        let polys = flatten(&segs, 0.25);
-        assert!(!polys.is_empty());
-        // 曲线展平后应该多于 2 个点（直线段模拟曲线）
-        assert!(polys[0].len() > 2);
-    }
 }

@@ -5,9 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-uix-core = { path = "../core" }
-uix-diag = { path = "../diag" }
 log = { workspace = true }
+bitflags = { workspace = true }
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62.2"

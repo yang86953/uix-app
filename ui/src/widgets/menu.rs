@@ -2,7 +2,7 @@
 //!
 //! 支持水平或垂直布局，子菜单项、hover 高亮、active 选中态。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Radius};
 use crate::render_context::RenderContext;

@@ -13,7 +13,7 @@ use std::cell::Cell;
 use std::cell::RefCell;
 use std::time::Instant;
 
-use uix_core::{Point, Rect};
+use uix_platform::{Point, Rect};
 use uix_graphics::frame_graph::resource::ResourceId;
 use uix_graphics::frame_graph::FrameGraph;
 use uix_ui::layer::LayerTree;
@@ -289,7 +289,7 @@ impl Window {
                     }
                 }
                 if let UiEventType::KeyDown = ev.type_ {
-                    use uix_core::KeyCode;
+                    use uix_platform::KeyCode;
                     if let UiEventPayload::Key(ref data) = ev.payload {
                         if data.key == KeyCode::F12 {
                             let new_val = !self.debug_mode.get();

@@ -1,7 +1,7 @@
 //! Spin widget — 加载中旋转动画指示器。
 
 use crate::define_widget;
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use uix_graphics::Color;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
@@ -71,7 +71,7 @@ define_widget! {
             if !self.tip.is_empty() {
                 let tip_y = sp_cy + d * 0.5 + 8.0;
                 let tip_w = ctx.measure_text(&self.tip, 13.0).w;
-                ctx.draw_text(&self.tip, uix_core::Point::new(cx - tip_w * 0.5, tip_y), ctx.tokens().color_text_secondary(), 13.0);
+                ctx.draw_text(&self.tip, uix_platform::Point::new(cx - tip_w * 0.5, tip_y), ctx.tokens().color_text_secondary(), 13.0);
             }
             return;
         }

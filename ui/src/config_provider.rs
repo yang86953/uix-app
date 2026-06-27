@@ -1,5 +1,5 @@
 use crate::theme::Theme;
-use uix_core::ControlSize;
+use uix_platform::ControlSize;
 use std::cell::RefCell;
 
 /// 组件全局默认配置。
@@ -90,7 +90,7 @@ pub fn with_config<T>(config: &ComponentConfig, f: impl FnOnce() -> T) -> T {
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 
 define_widget! {
     /// ConfigProvider — 为子树注入全局组件默认配置。

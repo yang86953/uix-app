@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use uix_diag::{Error, Errc};
-use uix_diag::Result;
+use uix_platform::{Error, Errc, Result};
 
 /// Key-value settings service with JSON persistence.
 #[derive(Debug, Clone)]

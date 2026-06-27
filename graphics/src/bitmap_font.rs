@@ -2,7 +2,7 @@
 //! Each character is defined as 5 bytes (one per column), bits 0-6 are rows.
 
 use crate::TextLayoutOptions;
-use uix_core::{Point, Size};
+use uix_platform::{Point, Size};
 
 /// A monospace bitmap font (5x7 pixels per character).
 pub struct BitmapFont {

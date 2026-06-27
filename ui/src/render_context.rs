@@ -6,7 +6,7 @@
 //!
 //! 文本操作委托给 `FontService`（独立于渲染器），引擎只负责 `draw_glyph_raster`。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use uix_graphics::font_service::FontService;
 use uix_graphics::path::{FillRule, Path};
 use uix_graphics::stroker::StrokeOptions;
@@ -588,7 +588,7 @@ impl<'a> RenderContext<'a> {
 
     pub fn fill_linear_gradient(
         &mut self,
-        rect: uix_core::Rect,
+        rect: uix_platform::Rect,
         ca: Color,
         cb: Color,
         dir: GradientDirection,

@@ -1,7 +1,7 @@
 //! Skeleton widget — 骨架屏加载占位（带动画闪烁）。
 
 use crate::define_widget;
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use uix_graphics::Color;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;

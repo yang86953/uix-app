@@ -1,6 +1,6 @@
 use crate::define_widget;
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use uix_graphics::{Color, Radius, PathBuilder, FillRule};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};

@@ -38,7 +38,7 @@ UIX 采用 7 层架构 + workspace crates 编译期保障。
 uix workspace             编译期边界
 ├── uix-core/   (L0)     基础类型，零依赖
 ├── uix-diag/   (L1)     诊断，仅依赖 core
-├── uix-macros/           proc-macro 独立
+├── ui/macros/           proc-macro (ui! macro)
 ├── uix/        (L2-L6)  主 crate
 │   ├── services/ (L2)   文件/设置/中间件/通知
 │   ├── platform/ (L3)   Win32 / Wayland
@@ -188,7 +188,7 @@ uix-app/
 │   ├── demos/        # GUI + CLI demos
 │   ├── lib.rs        # Crate root
 │   └── main.rs       # Binary entry
-├── uix-macros/       # proc-macro crate (ui! macro)
+├── ui/macros/       # proc-macro crate (ui! macro) 内嵌于 ui
 ├── tests/            # Integration tests
 ├── assets/           # Fonts, resources
 └── Cargo.toml

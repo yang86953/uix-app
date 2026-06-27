@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 use glow::HasContext as _;
 
-use uix_diag::Error;
+use uix_platform::Error;
 use uix_platform::api::IGraphicsContext;
 use crate::engine::cpu::noop_canvas_3d::NoopCanvas3D;
 use crate::traits::{Canvas2D, Canvas3D, GraphicsEngine, UpdateStrategy};
@@ -44,8 +44,34 @@ impl GpuEngine {
         }
     }
 
+    /// 返回像素缓冲的克隆（每次调用分配，仅用于读回）。
     pub fn pixels(&self) -> Vec<u32> {
         self.readback.borrow().clone()
+    }
+
+    /// 返回像素缓冲的引用（避免分配）。
+    pub fn pixels_ref(&self) -> std::cell::Ref<'_, Vec<u32>> {
+        self.readback.borrow()
+    }
+
+    /// 从 GL 前端缓冲读回像素数据（填充 readback）。
+    pub fn read_pixels(&self) {
+        let mut rb = self.readback.borrow_mut();
+        let len = (self.width * self.height * 4) as usize;
+        if rb.len() < len {
+            rb.resize(len, 0);
+        }
+        unsafe {
+            self.gl.read_pixels(
+                0, 0,
+                self.width, self.height,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelPackData::Slice(Some(
+                    std::slice::from_raw_parts_mut(rb.as_mut_ptr() as *mut u8, len),
+                )),
+            );
+        }
     }
 }
 

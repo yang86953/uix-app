@@ -1,4 +1,4 @@
-use uix_core::Point;
+use uix_platform::Point;
 
 /// Result of a drag target operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

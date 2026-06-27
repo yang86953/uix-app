@@ -1,6 +1,6 @@
 use crate::define_widget;
 use crate::animation::transition::{presets, TransitionPlayer, SlideDirection};
-use uix_core::{ControlSize, Point, Rect, Size};
+use uix_platform::{ControlSize, Point, Rect, Size};
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};

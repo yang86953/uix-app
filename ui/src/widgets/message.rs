@@ -3,7 +3,7 @@
 //! 与 Alert 不同，Message 浮动在所有内容之上，支持 success/info/warning/error
 //! 四类状态，可配置持续时长，支持手动关闭。通过静态队列管理多消息叠加。
 
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
@@ -11,8 +11,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 /// 消息类型。
-/// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
-pub use uix_core::StatusLevel as MessageType;
+/// （已统一为 uix_platform::StatusLevel，保留别名以兼容旧代码。）
+pub use uix_platform::StatusLevel as MessageType;
 
 /// 消息弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -116,14 +116,14 @@ define_widget! {
             // 左侧强调色条
             ctx.fill_rect(Rect::new(start_x, y + 4.0, 3.0, 32.0), accent, Some(uix_graphics::Radius::uniform(1.5)));
             let icon_y = ctx.visual_center_y(msg_rect, 14.0);
-            ctx.draw_text(icon, uix_core::Point::new(start_x + 14.0, icon_y), accent, 14.0);
+            ctx.draw_text(icon, uix_platform::Point::new(start_x + 14.0, icon_y), accent, 14.0);
             // 修复：存储 text_x 避免冲突
             let text_x = start_x + 36.0;
             let content_y = ctx.visual_center_y(msg_rect, 13.0);
-            ctx.draw_text(&item.content, uix_core::Point::new(text_x, content_y), text_c, 13.0);
+            ctx.draw_text(&item.content, uix_platform::Point::new(text_x, content_y), text_c, 13.0);
             if item.closable {
                 let close_y = ctx.visual_center_y(msg_rect, 12.0);
-                ctx.draw_text("✕", uix_core::Point::new(start_x + msg_w - 22.0, close_y), ctx.tokens().color_text_quaternary(), 12.0);
+                ctx.draw_text("✕", uix_platform::Point::new(start_x + msg_w - 22.0, close_y), ctx.tokens().color_text_quaternary(), 12.0);
             }
             y += 48.0;
         }

@@ -1,14 +1,14 @@
 // ============================================================================
-// uix-diag/src/collector.rs — Thread-safe error collection and aggregation
+// services/src/collector/mod.rs — Thread-safe error collection and aggregation
 // ============================================================================
 
-use crate::error::*;
 use crate::log::*;
-use chrono::{DateTime, Utc};
+use std::time::SystemTime;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
+use uix_platform::*;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 收集器配置
@@ -39,7 +39,7 @@ impl Default for CollectorConfig {
 
 #[derive(Debug, Clone)]
 pub struct CollectorSnapshot {
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: SystemTime,
     pub total_collected: usize,
     pub stored_count: usize,
     pub errors: Vec<Error>,
@@ -65,7 +65,9 @@ impl CollectorSnapshot {
 
 impl fmt::Display for CollectorSnapshot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let ts = self.timestamp.format("%H:%M:%S");
+        // Use chrono for timestamp formatting; SystemTime→chrono conversion infallible
+        let ts: chrono::DateTime<chrono::Utc> = self.timestamp.into();
+        let ts = ts.format("%H:%M:%S");
         writeln!(f, "Collector snapshot @ {}", ts)?;
         writeln!(f, "  Total collected: {}", self.total_collected)?;
         writeln!(f, "  Stored: {}", self.stored_count)?;
@@ -182,12 +184,12 @@ impl Collector {
         self.total_collected.fetch_add(1, Ordering::Relaxed);
 
         // Severity-based auto-log & routing
-        if inner.config.auto_log || severity >= crate::error::ErrorSeverity::Error {
+        if inner.config.auto_log || severity >= ErrorSeverity::Error {
             let level = match severity {
-                crate::error::ErrorSeverity::Info => Level::Info,
-                crate::error::ErrorSeverity::Warning => Level::Warn,
-                crate::error::ErrorSeverity::Error => Level::Error,
-                crate::error::ErrorSeverity::Fatal => Level::Fatal,
+                ErrorSeverity::Info => Level::Info,
+                ErrorSeverity::Warning => Level::Warn,
+                ErrorSeverity::Error => Level::Error,
+                ErrorSeverity::Fatal => Level::Fatal,
             };
             let err_copy = inner.errors.back().cloned();
             drop(inner);
@@ -277,7 +279,7 @@ impl Collector {
             .collect()
     }
 
-    pub fn errors_in_window(&self, since: DateTime<Utc>, until: DateTime<Utc>) -> Vec<Error> {
+    pub fn errors_in_window(&self, since: SystemTime, until: SystemTime) -> Vec<Error> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         inner
             .errors
@@ -323,7 +325,7 @@ impl Collector {
     pub fn snapshot(&self) -> CollectorSnapshot {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         CollectorSnapshot {
-            timestamp: Utc::now(),
+            timestamp: SystemTime::now(),
             total_collected: self.total_collected.load(Ordering::Relaxed),
             stored_count: inner.errors.len(),
             errors: inner.errors.iter().rev().cloned().collect(),
@@ -341,7 +343,7 @@ impl Collector {
         inner.errors.retain(|e| e.code() != code);
     }
 
-    pub fn clear_before(&self, tp: DateTime<Utc>) {
+    pub fn clear_before(&self, tp: SystemTime) {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.errors.retain(|e| e.timestamp() >= tp);
     }
@@ -375,7 +377,7 @@ impl Collector {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// ScopedCollector — 作用域收集器 (split to scoped.rs for ≤400 lines)
+// ScopedCollector
 // ════════════════════════════════════════════════════════════════════════════
 
 mod scoped;

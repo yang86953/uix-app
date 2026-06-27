@@ -12,8 +12,10 @@
 //   - IWindowProperties：窗口属性查询/修改（PlatformWindow 的子组件）
 // ============================================================================
 
-use uix_core::*;
-use uix_diag::Error;
+pub use crate::error::*;
+pub use crate::geometry::*;
+pub use crate::status::*;
+pub use crate::types::{KeyCode, KeyMod, MouseButton};
 use crate::event::*;
 use crate::types::*;
 

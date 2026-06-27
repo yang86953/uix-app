@@ -2,7 +2,7 @@
 //!
 //! 固定在屏幕角落的圆形按钮，支持图标、tooltip、badge 等。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;

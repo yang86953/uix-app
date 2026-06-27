@@ -2,7 +2,7 @@
 // platform/linux/filesystem.rs — Linux filesystem implementation (IFileSystem)
 // ============================================================================
 
-use uix_diag::{Errc, Error};
+use crate::{Errc, Error};
 use crate::types::SpecialDir;
 use crate::IFileSystem;
 

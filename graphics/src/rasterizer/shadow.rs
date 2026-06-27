@@ -1,6 +1,6 @@
 //! 阴影绘制纯函数——盒阴影（定向+环境）。
 
-use uix_core::Rect;
+use uix_platform::Rect;
 
 use crate::color::Color;
 use crate::types::Radius;

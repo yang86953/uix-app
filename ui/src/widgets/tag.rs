@@ -1,7 +1,7 @@
 //! Tag widget — 彩色标签/徽标，支持关闭按钮。
 
 use crate::define_widget;
-use uix_core::{Rect, Size};
+use uix_platform::{Rect, Size};
 use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
@@ -52,7 +52,7 @@ define_widget! {
         if self.closable {
             let cx = frame.x + frame.w - 14.0;
             let cy = ctx.visual_center_y(frame, 10.0);
-            ctx.draw_text("✕", uix_core::Point::new(cx, cy), fg, 10.0);
+            ctx.draw_text("✕", uix_platform::Point::new(cx, cy), fg, 10.0);
         }
     }
 }

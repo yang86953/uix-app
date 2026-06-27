@@ -5,7 +5,7 @@
 // EGL 帧缓冲，present() 时调用 eglSwapBuffers 实现零拷贝呈现。
 // ============================================================================
 
-use uix_diag::Error;
+use crate::Error;
 use crate::api::{IGraphicsContext, IPresenter};
 
 pub struct GpuPresenter {

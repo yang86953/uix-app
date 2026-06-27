@@ -44,12 +44,3 @@ fn fat_ptr_from_parts<T: ?Sized>(data: usize, vtable: usize) -> *mut T {
     unsafe { FatPtr::<T> { parts: (data, vtable) }.wide }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn copy_when_no_handler_is_noop() {
-        copy_to_clipboard("test");
-    }
-}

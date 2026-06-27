@@ -3,7 +3,7 @@
 //! 与 Message 不同，Notification 从屏幕右上角弹出，更持久的通知展示，
 //! 支持标题、描述、类型图标、自动关闭。通过静态队列管理。
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
@@ -12,8 +12,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 /// 通知类型。
-/// （已统一为 uix_core::StatusLevel，保留别名以兼容旧代码。）
-pub use uix_core::StatusLevel as NotificationType;
+/// （已统一为 uix_platform::StatusLevel，保留别名以兼容旧代码。）
+pub use uix_platform::StatusLevel as NotificationType;
 
 /// 通知弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]

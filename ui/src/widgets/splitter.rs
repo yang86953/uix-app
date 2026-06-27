@@ -4,7 +4,7 @@
 
 use std::cell::Cell;
 
-use uix_core::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use uix_graphics::GraphicsEngine;
 use crate::children::WidgetChildren;
