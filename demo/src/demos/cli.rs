@@ -1,17 +1,18 @@
 //! CLI 演示 — 从命令行运行所有主要 UIX 子系统的功能演示。
 
 use std::cell::Cell;
-use uix::diag::log::{info_fn, Level, Logger};
-use uix::diag::{Errc, Error};
-use uix::base::{EdgeInsets, Point, Rect, Size};
+use uix::platform::{EdgeInsets, Point, Rect, Size};
+use uix::platform::log::{info_fn, Level, Logger};
+use uix::platform::{Errc, Error};
 use uix::graphics::{self, colors, GraphicsEngine};
-use uix::ui::layout::{
-    self as flex_layout, AlignItems as GAlign, FlexChild, FlexDirection as GDir,
-    FlexInput, JustifyContent as GJustify,
+use uix::platform::file_service::FileService;
+use uix::platform::settings::SettingsService;
+use uix::platform::diagnostic::{
+    LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
 };
-use uix::services::{
-    FileService, LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline,
-    RetryMiddleware, SettingsService,
+use uix::ui::layout::{
+    self as flex_layout, AlignItems as GAlign, FlexChild, FlexDirection as GDir, FlexInput,
+    JustifyContent as GJustify,
 };
 use uix::ui::state::{Computed, State};
 use uix::ui::Theme;
@@ -72,7 +73,7 @@ pub fn demo_errors() {
         e3.is(Errc::InvalidState)
     );
     let root = Error::new(Errc::IoError, "disk full");
-    let chained = Error::new(Errc::WriteFailure, "write failed").with_cause(root);
+    let chained = Error::new(Errc::WriteFailure, "write failed").with_source(root);
     println!("  Chained: {}", chained);
     println!("  root_cause: {}", chained.root_cause());
 }
@@ -269,11 +270,15 @@ pub fn demo_graphics_engine() -> Result<(), Error> {
     println!("\n╔══ 图形引擎 ═══╗");
     let mut e = graphics::NullEngine::new();
     e.initialize(800, 600)?;
-    e.canvas_2d().fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
+    e.canvas_2d()
+        .fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
     e.shutdown();
     let mut boxed: Box<dyn GraphicsEngine> = Box::new(graphics::NullEngine::new());
     boxed.initialize(640, 480)?;
-    println!("  Box<dyn GraphicsEngine> width={}", boxed.canvas_2d().width());
+    println!(
+        "  Box<dyn GraphicsEngine> width={}",
+        boxed.canvas_2d().width()
+    );
     boxed.shutdown();
     Ok(())
 }

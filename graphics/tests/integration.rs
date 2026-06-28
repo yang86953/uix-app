@@ -1,14 +1,14 @@
 //! uix-graphics crate 集成测试。
 
-use uix::graphics::blur::gaussian_blur;
-use uix::graphics::color::Color;
-use uix::graphics::flattener::flatten;
-use uix::graphics::path::PathBuilder;
-use uix::graphics::types::{
+use uix_graphics::blur::gaussian_blur;
+use uix_graphics::color::Color;
+use uix_graphics::flattener::flatten;
+use uix_graphics::path::PathBuilder;
+use uix_graphics::types::{
     BlendMode, DirtyRegion, FontHandle, HAlign, ImageHandle, Radius, TextLayoutOptions,
     Transform, VAlign,
 };
-use uix::platform::geometry::{Point, Rect, Size};
+use uix_platform::geometry::{Point, Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // color 测试
@@ -77,7 +77,7 @@ fn test_blur_small() {
 // flattener 测试
 // ════════════════════════════════════════════════════════════════════════════
 
-use uix::graphics::path::PathSegment;
+use uix_graphics::path::PathSegment;
 
 #[test]
 fn test_flatten_rect() {

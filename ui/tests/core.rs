@@ -1,13 +1,13 @@
 //! uix-ui 核心模块集成测试（state, style, clipboard, children）。
 
-use uix::ui::state::{State, Computed, Effect};
-use uix::ui::style::{Style, StyleVariant};
-use uix::ui::clipboard::copy_to_clipboard;
-use uix::ui::children::WidgetChildren;
-use uix::ui::widget::{Widget, WidgetTree};
-use uix::ui::render_context::RenderContext;
-use uix::platform::geometry::{EdgeInsets, Rect, Size};
-use uix::graphics::color::Color;
+use uix_ui::state::{State, Computed, Effect};
+use uix_ui::style::{Style, StyleVariant};
+use uix_ui::clipboard::copy_to_clipboard;
+use uix_ui::children::WidgetChildren;
+use uix_ui::widget::{Widget, WidgetTree};
+use uix_ui::render_context::RenderContext;
+use uix_platform::geometry::{EdgeInsets, Rect, Size};
+use uix_graphics::color::Color;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::Arc;
 

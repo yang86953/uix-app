@@ -1,4 +1,4 @@
-use uix::base::{Point, Rect, Size};
+use uix::platform::{Point, Rect, Size};
 use uix::graphics::{Color, GraphicsEngine};
 use uix::ui::render_context::RenderContext;
 use uix::ui::widget::WidgetTree;

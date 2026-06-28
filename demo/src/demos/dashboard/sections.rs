@@ -1,7 +1,7 @@
 //! 组件展示页面（通用 ~ 反馈）
 //! 分类：通用、布局、导航、输入、数据展示、反馈
 
-use uix::base::EdgeInsets;
+use uix::platform::EdgeInsets;
 use uix::graphics::Color;
 use uix::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use uix::ui::theme::DesignTokens;

@@ -1,6 +1,6 @@
 //! 组件展示页面（图表、其他）
 
-use uix::base::EdgeInsets;
+use uix::platform::EdgeInsets;
 use uix::ui::layout::{AlignItems, FlexDirection};
 use uix::ui::theme::DesignTokens;
 use uix::ui::widget::WidgetNode;

@@ -9,7 +9,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
 use uix::app::{map_ui_event, App};
-use uix::base::{EdgeInsets, KeyCode, Rect};
+use uix::platform::{EdgeInsets, KeyCode, Rect};
 use uix::graphics::GraphicsEngine;
 use uix::ui::layout::{AlignItems, FlexDirection};
 use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
@@ -333,7 +333,7 @@ fn switch_page(tree: &mut WidgetTree, state: &DemoState, active: usize) {
     if prev == active {
         return;
     }
-    log::debug!("switch_page: {} -> {}", prev, active);
+    uix_platform::log::debug_fn(format!("switch_page: {} -> {}", prev, active));
     state.prev_active.set(active);
 
     let ids = state.page_ids.borrow();
@@ -357,7 +357,7 @@ fn rebuild_for_theme(
     dyn_tokens: &DynTokens,
     state: &DemoState,
 ) -> SharedActive {
-    log::debug!("rebuild_for_theme: dark={}", state.dark_mode.get());
+    uix_platform::log::debug_fn(format!("rebuild_for_theme: dark={}", state.dark_mode.get()));
     // 先更新内存中的 tokens，供后续 snapshot 和渲染使用
     dyn_tokens.set_mode(state.dark_mode.get());
     let tk = dyn_tokens.snapshot();
@@ -425,7 +425,7 @@ fn run_event_loop(
             tree.find_by_type_and_modify::<ThemeToggle>(|w| new_dark = w.dark.get());
 
             if new_dark != state.dark_mode.get() {
-                log::debug!("on_frame: THEME CHANGE dark={}", new_dark);
+                uix_platform::log::debug_fn(format!("on_frame: THEME CHANGE dark={}", new_dark));
                 state.dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
                 let a = rebuild_for_theme(tree, eng, &dyn_tokens, &state);
@@ -485,7 +485,7 @@ pub fn run_gui_demo() {
 
     // 创建窗口（GPU模式需要先创建以获取 wl_surface）
     if let Err(e) = app.create_window("UIX — 组件库", INIT_W, INIT_H) {
-        log::error!("create_window: {}", e.short_what());
+        uix_platform::log::error_fn(format!("create_window: {}", e.short_what()));
         return;
     }
 
@@ -497,26 +497,26 @@ pub fn run_gui_demo() {
             .map(|w| w.native_surface_ptr())
             .unwrap_or(std::ptr::null_mut());
         if surface_ptr.is_null() {
-            log::error!("GPU: 无法获取 surface 指针");
+            uix_platform::log::error_fn("GPU: 无法获取 surface 指针");
             return;
         }
         match uix_platform::create_gpu_context(surface_ptr, INIT_W, INIT_H) {
             Ok(ctx) => {
                 let e = uix_graphics::GpuEngine::new(ctx);
-                log::info!("GPU: GpuEngine 就绪");
+                uix_platform::log::info_fn("GPU: GpuEngine 就绪");
                 engine_opt = Some(Box::new(e));
             }
             Err(e) => {
-                log::warn!("GPU: 上下文创建失败({}), 回退CPU", e.short_what());
+                uix_platform::log::warn_fn(format!("GPU: 上下文创建失败({}), 回退CPU", e.short_what()));
             }
         }
     }
 
     let mut engine: Box<dyn uix_graphics::GraphicsEngine> = engine_opt.unwrap_or_else(|| {
         let temp_platform = uix_platform::create_platform()
-            .unwrap_or_else(|e| { log::error!("{}", e.short_what()); std::process::exit(1) });
+            .unwrap_or_else(|e| { uix_platform::log::error_fn(format!("{}", e.short_what())); std::process::exit(1) });
         app.take_engine(INIT_W, INIT_H, temp_platform.system_info()).unwrap_or_else(|| {
-            log::error!("CPU引擎创建失败"); std::process::exit(1)
+            uix_platform::log::error_fn("CPU引擎创建失败"); std::process::exit(1)
         })
     });
 
@@ -524,7 +524,7 @@ pub fn run_gui_demo() {
     if let Ok(ttf) = std::fs::read("assets/fonts/lucide.ttf") {
         init_lucide_font(&ttf, &mut app.font_service);
     } else {
-        log::warn!("Lucide font not found — icons will be blank");
+        uix_platform::log::warn_fn("Lucide font not found — icons will be blank");
     }
 
     let exit_code = run_event_loop(&mut app, &mut engine, &mut tree, state, dyn_tokens, &theme_cell);

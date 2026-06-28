@@ -5,7 +5,6 @@ members = [
     "demo",
     "graphics",
     "platform",
-    "services",
     "ui",
 ]
 
@@ -15,15 +14,9 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-log = "0.4.33"
-chrono = "0.4.45"
 glow = "0.17.0"
 khronos-egl = { version = "6", features = ["static"] }
-bitflags = "2.13.0"
-rand = "0.10.1"
-serde_json = "1.0.150"
 ab_glyph = "0.2.32"
-unicode-linebreak = "0.1.5"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"
@@ -39,15 +32,7 @@ license = "MIT"
 uix-app = { path = "app" }
 uix-graphics = { path = "graphics" }
 uix-platform = { path = "platform" }
-uix-services = { path = "services" }
 uix-ui = { path = "ui" }
-chrono = { workspace = true }
-bitflags = { workspace = true }
-rand = { workspace = true }
-log = { workspace = true }
-serde_json = { workspace = true }
-ab_glyph = { workspace = true }
-unicode-linebreak = { workspace = true }
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62.2"

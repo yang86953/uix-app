@@ -1,7 +1,7 @@
 //! uix-app crate 集成测试。
 
-use uix::app::cli::{Cli, CliArgs};
-use uix::app::di::Container;
+use uix_app::cli::{Cli, CliArgs};
+use uix_app::di::Container;
 
 // ════════════════════════════════════════════════════════════════════════════
 // cli 测试
@@ -172,7 +172,6 @@ fn command_description_stored() {
     let mut cli = Cli::new();
     cli.command("build", |_| 0, "Compile the project");
     cli.command("test", |_| 0, "Run tests");
-    // Verify commands are registered by running them
     let code1 = cli.run(&["prog".to_string(), "build".to_string()]);
     let code2 = cli.run(&["prog".to_string(), "test".to_string()]);
     assert_eq!(code1, 0);

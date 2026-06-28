@@ -1,6 +1,6 @@
-//! uix-platform crate 集成测试。
+//! uix-platform crate 集成测试（geometry 模块）。
 
-use uix::platform::geometry::{Point, Rect, Size};
+use uix_platform::geometry::{Point, Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // geometry 测试

@@ -1,52 +1,53 @@
 // ============================================================================
-// services/notification_service.rs — 消息通知服务
-// ============================================================================
+// platform/notification.rs — 消息通知服务
 //
 // 职责：
 //   1. 包装平台 INotification（系统通知）
 //   2. 管理应用内通知队列（Toast 数据源）
 //   3. 提供回调注册，通知 UI 层刷新
 //   4. 支持通知级别：Info / Success / Warning / Error
+//
+// 原位于 services crate，迁入 platform 层以消除服务层。
 // ============================================================================
 
 use std::collections::VecDeque;
+use crate::StatusLevel;
 
-/// 通知级别。
-/// （已统一为 uix_platform::StatusLevel，保留别名以兼容旧代码。）
-pub use uix_platform::StatusLevel as NotificationLevel;
+/// 通知级别（统一使用 uix_platform::StatusLevel）。
+pub use crate::StatusLevel as NotificationLevel;
 
-/// A single notification entry displayed as a Toast in the UI.
+/// 单条通知条目，作为 Toast 组件的数据源。
 #[derive(Debug, Clone)]
 pub struct ToastEntry {
     pub id: u64,
     pub title: String,
     pub message: String,
-    pub level: NotificationLevel,
-    /// Duration in ms. 0 = manual dismiss. None = use default.
+    pub level: StatusLevel,
+    /// 持续时间（毫秒）。0 = 手动关闭。None = 使用默认值。
     pub duration_ms: u32,
-    /// Whether the toast is currently visible (not yet dismissed).
+    /// 是否当前可见（未被关闭）。
     pub visible: bool,
-    /// When the toast was created (Instant::now ticks).
+    /// 创建时间戳。
     pub created_at: std::time::Instant,
 }
 
-/// Notification service — manages platform notifications and in-app toasts.
+/// 通知服务 — 管理系统通知和应用内 Toast。
 ///
-/// Usage via DI:
+/// 通过 DI 注入使用：
 /// ```ignore
-/// let svc = NotificationService::new();
-/// svc.notify("Hello", "World", NotificationLevel::Info, 4000);
+/// let mut svc = NotificationService::new();
+/// svc.notify("Hello", "World", StatusLevel::Info, 4000);
 /// ```
 pub struct NotificationService {
-    /// Platform notification implementation (optional — may be None in headless mode).
-    platform_notifier: Option<Box<dyn uix_platform::INotification>>,
-    /// In-app toast queue (displayed as Toast widgets).
+    /// 平台通知实现（可选 — headless 模式下为 None）。
+    platform_notifier: Option<Box<dyn crate::INotification>>,
+    /// 应用内 Toast 队列。
     toasts: VecDeque<ToastEntry>,
-    /// Maximum number of visible toasts at once.
+    /// 同时可见的最大 Toast 数。
     max_visible: usize,
-    /// Auto-incrementing ID counter.
+    /// 自增 ID 计数器。
     next_id: u64,
-    /// Optional callback: invoked when the toast queue changes (UI refresh).
+    /// 可选回调：Toast 队列变化时触发（UI 刷新）。
     on_change: Option<Box<dyn Fn() + Send>>,
 }
 
@@ -67,72 +68,72 @@ impl NotificationService {
         Self::default()
     }
 
-    /// Attach a platform notification backend (e.g. from Platform trait).
-    pub fn with_platform(mut self, notifier: Box<dyn uix_platform::INotification>) -> Self {
+    /// 附加平台通知后端（如 Platform trait 提供）。
+    pub fn with_platform(mut self, notifier: Box<dyn crate::INotification>) -> Self {
         self.platform_notifier = Some(notifier);
         self
     }
 
-    /// Set the maximum number of simultaneously visible toasts.
+    /// 设置同时可见的最大 Toast 数。
     pub fn max_visible(mut self, n: usize) -> Self {
         self.max_visible = n.max(1);
         self
     }
 
-    /// Update the maximum number of visible toasts in-place.
+    /// 更新同时可见的最大 Toast 数（原地）。
     pub fn set_max_visible(&mut self, n: usize) {
         self.max_visible = n.max(1);
     }
 
-    /// Register a callback invoked whenever the toast queue changes.
+    /// 注册 Toast 队列变化时的回调。
     pub fn on_change(&mut self, cb: Box<dyn Fn() + Send>) {
         self.on_change = Some(cb);
     }
 
-    // ── Core API ─────────────────────────────────────────────────────────
+    // ── 核心 API ─────────────────────────────────────────────────────────
 
     const DURATION_INFO: u32 = 4000;
     const DURATION_SUCCESS: u32 = 4000;
     const DURATION_WARNING: u32 = 5000;
     const DURATION_ERROR: u32 = 6000;
 
-    /// Send a notification with default options (Info, 4s).
+    /// 发送默认通知（Info, 4s）。
     pub fn info(&mut self, title: &str, message: &str) {
-        self.notify(title, message, NotificationLevel::Info, Self::DURATION_INFO);
+        self.notify(title, message, StatusLevel::Info, Self::DURATION_INFO);
     }
 
-    /// Send a success notification.
+    /// 发送成功通知。
     pub fn success(&mut self, title: &str, message: &str) {
-        self.notify(title, message, NotificationLevel::Success, Self::DURATION_SUCCESS);
+        self.notify(title, message, StatusLevel::Success, Self::DURATION_SUCCESS);
     }
 
-    /// Send a warning notification.
+    /// 发送警告通知。
     pub fn warning(&mut self, title: &str, message: &str) {
-        self.notify(title, message, NotificationLevel::Warning, Self::DURATION_WARNING);
+        self.notify(title, message, StatusLevel::Warning, Self::DURATION_WARNING);
     }
 
-    /// Send an error notification.
+    /// 发送错误通知。
     pub fn error(&mut self, title: &str, message: &str) {
-        self.notify(title, message, NotificationLevel::Error, Self::DURATION_ERROR);
+        self.notify(title, message, StatusLevel::Error, Self::DURATION_ERROR);
     }
 
-    /// Send a notification with full control.
+    /// 发送通知（完整控制）。
     pub fn notify(
         &mut self,
         title: &str,
         message: &str,
-        level: NotificationLevel,
+        level: StatusLevel,
         duration_ms: u32,
     ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
 
-        // 1. Send platform notification (system-level toast/balloon)
+        // 1. 发送平台通知（系统级弹窗/气球提示）
         if let Some(ref mut pn) = self.platform_notifier {
             pn.show(title, message);
         }
 
-        // 2. Enqueue in-app toast
+        // 2. 入队应用内 Toast
         let entry = ToastEntry {
             id,
             title: title.to_string(),
@@ -145,22 +146,17 @@ impl NotificationService {
         self.toasts.push_back(entry);
         self.trim_excess();
 
-        // 3. Notify UI layer
+        // 3. 通知 UI 层
         if let Some(ref cb) = self.on_change {
             cb();
         }
 
-        log::info!(
-            "[Notification] {:?}: {} — {}",
-            level,
-            title,
-            message
-        );
+        crate::log::info_fn(format!("[Notification] {:?}: {} — {}", level, title, message));
 
         id
     }
 
-    /// Dismiss a specific toast by ID.
+    /// 关闭指定 ID 的 Toast。
     pub fn dismiss(&mut self, id: u64) {
         if let Some(pos) = self.toasts.iter().position(|t| t.id == id && t.visible) {
             self.toasts[pos].visible = false;
@@ -170,7 +166,7 @@ impl NotificationService {
         }
     }
 
-    /// Dismiss all visible toasts.
+    /// 关闭所有可见 Toast。
     pub fn dismiss_all(&mut self) {
         for toast in &mut self.toasts {
             toast.visible = false;
@@ -180,7 +176,7 @@ impl NotificationService {
         }
     }
 
-    /// Remove expired toasts (duration exceeded) and return updated visible list.
+    /// 移除过期 Toast（超时自动清理），返回当前可见列表。
     pub fn update(&mut self) -> Vec<ToastEntry> {
         let now = std::time::Instant::now();
         self.toasts.retain(|t| {
@@ -195,21 +191,17 @@ impl NotificationService {
         self.toasts.iter().cloned().collect()
     }
 
-    /// Get currently visible toasts.
+    /// 获取当前可见的 Toast 列表。
     pub fn visible_toasts(&self) -> Vec<ToastEntry> {
-        self.toasts
-            .iter()
-            .filter(|t| t.visible)
-            .cloned()
-            .collect()
+        self.toasts.iter().filter(|t| t.visible).cloned().collect()
     }
 
-    /// Check if there are any active toasts.
+    /// 检查是否有活跃的 Toast。
     pub fn has_active(&self) -> bool {
         self.toasts.iter().any(|t| t.visible)
     }
 
-    /// Remove the oldest toasts if exceeding max_visible.
+    /// 移除超出 max_visible 的最旧 Toast。
     fn trim_excess(&mut self) {
         let visible_count = self.toasts.iter().filter(|t| t.visible).count();
         let excess = visible_count.saturating_sub(self.max_visible);
@@ -221,3 +213,38 @@ impl NotificationService {
     }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 测试
+// ════════════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_notify_adds_toast() {
+        let mut svc = NotificationService::new();
+        let id = svc.notify("Test", "Message", StatusLevel::Info, 4000);
+        assert!(svc.has_active());
+        assert_eq!(svc.visible_toasts().len(), 1);
+        assert_eq!(svc.visible_toasts()[0].id, id);
+    }
+
+    #[test]
+    fn test_dismiss_removes_toast() {
+        let mut svc = NotificationService::new();
+        let id = svc.notify("Test", "Message", StatusLevel::Info, 4000);
+        svc.dismiss(id);
+        assert!(!svc.has_active());
+    }
+
+    #[test]
+    fn test_max_visible_trims() {
+        let mut svc = NotificationService::new();
+        svc.set_max_visible(3);
+        for i in 0..5 {
+            svc.notify(&format!("Title {}", i), "Msg", StatusLevel::Info, 4000);
+        }
+        assert_eq!(svc.visible_toasts().len(), 3);
+    }
+}

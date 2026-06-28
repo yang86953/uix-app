@@ -1,10 +1,10 @@
 //! uix-ui layout 模块集成测试。
 
-use uix::ui::{compute_flex_layout, compute_grid_layout};
-use uix::ui::layout::{
+use uix_ui::{compute_flex_layout, compute_grid_layout};
+use uix_ui::layout::{
     AlignItems, FlexChild, FlexDirection, FlexInput, GridChild, GridInput, GridTrack, JustifyContent,
 };
-use uix::platform::geometry::{Rect, Size};
+use uix_platform::geometry::{Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // flex 测试

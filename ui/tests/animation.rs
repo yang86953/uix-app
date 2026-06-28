@@ -1,8 +1,8 @@
 //! uix-ui animation 模块集成测试。
 
-use uix::ui::animation::{Animation, Animatable, Easing};
-use uix::graphics::color::Color;
-use uix::platform::geometry::Rect;
+use uix_ui::animation::{Animation, Animatable, Easing};
+use uix_graphics::color::Color;
+use uix_platform::geometry::Rect;
 
 // ════════════════════════════════════════════════════════════════════════════
 // animation::core 测试

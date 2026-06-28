@@ -1,7 +1,7 @@
 //! uix-ui theme 模块集成测试。
 
-use uix::ui::theme::{DesignTokens, IBoxShadowTokens, ShadowToken, TokenProvider};
-use uix::graphics::color::Color;
+use uix_ui::theme::{DesignTokens, IBoxShadowTokens, ShadowToken, TokenProvider};
+use uix_graphics::color::Color;
 
 // ════════════════════════════════════════════════════════════════════════════
 // design_tokens 测试

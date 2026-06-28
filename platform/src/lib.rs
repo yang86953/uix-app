@@ -1,33 +1,59 @@
 // ============================================================================
-// platform/mod.rs — 平台层模块入口
+// platform/lib.rs — 平台层模块入口
 //
 // 平台层架构：
-//   api.rs       — 统一 API 契约：所有 trait 定义
+//   geometry.rs  — 几何类型（Point/Size/Rect/EdgeInsets）
+//   error.rs     — 错误码与 Error 结构体
 //   event.rs     — 事件类型（UiEvent 及其载荷）
-//   presenter.rs — NullPresenter（空操作实现）
-//   system_info.rs — 系统信息查询工具函数（probe_system_default_font）
+//   log/         — 日志基础设施（+ Logger/Sink 高级日志）
+//   presenter.rs — 像素呈现器（IPresenter/IGraphicsContext/NullPresenter）
+//   types/       — 平台层数据类型与 API trait（key/input/console/display/system/status）
+//   shared/      — 跨平台共享实现 + 窗口/事件 API trait（event_loop/window/platform）
+//   diagnostic/  — 诊断系统（错误收集/崩溃处理/恢复策略/时间戳/中间件）
 //   linux/       — Linux（Wayland）平台实现
 //   windows/     — Windows 平台实现
 // ============================================================================
 
-// ── 核心 API 契约 ──────────────────────────────────────────────
-pub mod api;
-pub use api::*;
-
-// ── 共享类型与事件 ──────────────────────────────────────────────
-pub mod event;
-
-// ── 共享基础类型（几何、错误、状态、输入）───────────────
+// ── 共享基础类型 ──────────────────────────────────────────────
 pub mod geometry;
 pub mod error;
-pub mod status;
-pub mod types;
 
-// ── 像素呈现 ───────────────────────────────────────────────────
+// ── 事件类型 ───────────────────────────────────────────────────
+pub mod event;
+
+// ── 日志基础设施 ──────────────────────────────────────────────
+pub mod log;
+
+// ── 像素呈现器与 API trait ────────────────────────────────────
 pub mod presenter;
 
-// ── 跨平台共享核心（状态/事件循环/窗口实现）────────────────
-pub mod core;
+// ── 平台层数据类型与 API trait ────────────────────────────────
+pub mod types;
+
+// ── 跨平台共享实现与窗口/事件 API trait ──────────────────────
+pub mod shared;
+
+// ── 诊断系统（跨层使用）────────────────────────────────────
+pub mod diagnostic;
+
+// ── 业务服务（原 services crate，迁入 platform 层）────────────
+pub mod file_service;
+pub mod notification;
+pub mod settings;
+
+// ── 平台实现 ───────────────────────────────────────────────────
+#[cfg(windows)]
+pub mod windows;
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub mod linux;
+
+// ── 便利重导出（各领域 trait/类型流向 crate 根）────────────
+pub use error::*;
+pub use geometry::*;
+pub use presenter::*;
+pub use shared::*;
+pub use types::*;
 
 // ── 平台工厂 ───────────────────────────────────────────────────
 
@@ -77,13 +103,6 @@ pub fn create_gpu_context(
         "GPU rendering is not supported on this platform".to_string(),
     ))
 }
-
-// ── 平台实现 ───────────────────────────────────────────────────
-#[cfg(windows)]
-pub mod windows;
-
-#[cfg(all(unix, not(target_os = "macos")))]
-pub mod linux;
 
 // ── 系统信息便捷函数 ───────────────────────────────────────────
 
