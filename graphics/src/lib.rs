@@ -21,7 +21,11 @@ pub mod traits;
 pub mod types;
 
 // ── 空间坐标系统 ──
-pub use crate::spatial::{Mat4, Vec2, Vec3, Vec4};
+pub use crate::spatial::{
+    AABB3D, IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit, PhysicalUnitExt,
+    Quad2D, Ray3D, SpatialContext, Vec2, Vec3, Vec4,
+};
+pub use crate::spatial::unit::AngleExt;
 
 // ── 基础图形类型 ──
 pub use crate::color::{colors, Color};

@@ -329,20 +329,24 @@ impl Mat4 {
             && (self.0[15] - 1.0).abs() < 1e-6
     }
 
-    /// 当前矩阵是否仅包含 2D 变换。
+    /// 当前矩阵是否仅包含 2D 变换（不影响 x/y 渲染的 z 轴操作允许存在）。
     ///
-    /// 检查 z 轴相关分量是否为单位变换：
-    /// - 第 2 行（z 轴旋转）：接近 (0, 0, 1, 0)
-    /// - 第 2 列（z 轴影响其他轴）：接近 (0, 0, 1, 0)
+    /// 检查 z 轴相关分量是否会将 z 值泄露到 x/y 中：
+    /// - m[2]  (col2 row0): z → x 的影响（旋转/缩放 z 到 x）
+    /// - m[6]  (col2 row1): z → y 的影响
+    /// - m[8]  (col0 row2): x → z 的影响（不影响 x/y 渲染，但标识 3D 旋转存在）
+    /// - m[9]  (col1 row2): y → z 的影响
+    /// - m[14] (col3 row2): w → z 的影响（平移 z）
+    ///
+    /// 不检查 m[10] (z→z) 和 m[11] (w→z)：
+    /// z 轴自身的缩放/平移不影响 x/y 屏幕位置。
     #[inline(always)]
     pub fn is_2d_only(&self) -> bool {
-        (self.0[2]).abs() < 1e-6
-            && (self.0[6]).abs() < 1e-6
-            && (self.0[8]).abs() < 1e-6
-            && (self.0[9]).abs() < 1e-6
-            && (self.0[10] - 1.0).abs() < 1e-6
-            && (self.0[11]).abs() < 1e-6
-            && (self.0[14]).abs() < 1e-6
+        (self.0[2]).abs() < 1e-6   // z not affecting x
+            && (self.0[6]).abs() < 1e-6   // z not affecting y
+            && (self.0[8]).abs() < 1e-6   // x not affecting z (no x rotation)
+            && (self.0[9]).abs() < 1e-6   // y not affecting z (no y rotation)
+            && (self.0[14]).abs() < 1e-6  // no z-affecting translation
     }
 
     /// 提取 2D 仿射分量（如果矩阵是 2D only）。
