@@ -11,7 +11,7 @@
 use uix_platform::{Point, Rect, Size};
 use uix_graphics::font_service::FontService;
 use uix_graphics::path::{FillRule, Path};
-use uix_graphics::spatial::{Orientation, SpatialContext};
+use uix_graphics::spatial::{AABB3D, Orientation, PhysicalUnit, SpatialContext, Vec3};
 use uix_graphics::stroker::StrokeOptions;
 use uix_graphics::traits::Canvas2D;
 use uix_graphics::{Color, FontHandle, Radius};
@@ -207,6 +207,48 @@ impl<'a> RenderContext<'a> {
         };
         uix_graphics::text_backend::TextLayoutOptions::from(opts)
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 3D 空间感知的文字绘制（通过 ctx.spatial() 投影）
+    // ════════════════════════════════════════════════════════════════════
+
+    /// 在 3D 空间中绘制文本。
+    ///
+    /// `pos` 为 3D 空间坐标，自动经过 MVP 投影到屏幕。
+    /// `font_size` 支持物理单位（`12.pt()`、`5.mm()`）。
+    pub fn draw_text_spatial(&mut self, text: &str, pos: Vec3, color: Color, font_size: PhysicalUnit) {
+        if text.is_empty() { return; }
+        let (sx, sy) = self.spatial.project(&pos);
+        let fs = font_size.to_dip(self.spatial.dpi());
+        self.draw_text(text, Point::new(sx, sy), color, fs);
+    }
+
+    /// 在 3D 空间中的矩形区域内居中绘制文本。
+    ///
+    /// `box_3d` 为 3D 空间中的 AABB，投影到屏幕后居中绘制。
+    pub fn text_center_spatial(&mut self, text: &str, box_3d: AABB3D, color: Color, font_size: PhysicalUnit) {
+        if text.is_empty() { return; }
+        let fs = font_size.to_dip(self.spatial.dpi());
+
+        // 测量文本宽度
+        let backend_opts = self.text_opts(fs, self.max_text_width, 0.0, false, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
+        let fh = self.font;
+        let layout = self.font_service.layout_text(&fh, text, &backend_opts);
+
+        // 投影 AABB 到屏幕
+        let quad = self.spatial.project_aabb(&box_3d);
+        let bounds = quad.bounds();
+
+        // 居中
+        let x = bounds.x + (bounds.w - layout.width) * 0.5;
+        let y = bounds.y + (bounds.h - fs * 1.5) * 0.5;
+
+        self.blit_glyph_layout(&layout, Point::new(x, y), color, fs);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // 2D 文本绘制（零成本路径）
+    // ════════════════════════════════════════════════════════════════════
 
     /// 绘制文本（左对齐，顶部对齐）。
     pub fn draw_text(&mut self, text: &str, pos: Point, color: Color, font_size: f32) {

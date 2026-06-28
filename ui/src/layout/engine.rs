@@ -7,6 +7,7 @@
 
 use uix_platform::{Rect, Size};
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
+use crate::AABB3D;
 use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
 use super::flex::compute_flex_layout;
@@ -114,6 +115,45 @@ pub trait LayoutEngine {
 pub struct LayoutOutput {
     pub positions: Vec<Rect>,
     pub total_size: Size,
+}
+
+/// 3D 感知的布局输出：子节点位置（含 z 深度） + 内容总尺寸。
+///
+/// `z` 用于 3D 空间中的深度排序和透视变换。
+/// 默认 z=0。
+#[derive(Debug, Clone)]
+pub struct LayoutOutput3D {
+    pub positions: Vec<Rect>,
+    pub z_values: Vec<f32>,
+    pub total_size: Size,
+}
+
+impl LayoutOutput3D {
+    /// 从 LayoutOutput + z 值创建。
+    pub fn from_2d(output: &LayoutOutput, z: f32) -> Self {
+        let count = output.positions.len();
+        Self {
+            positions: output.positions.clone(),
+            z_values: vec![z; count],
+            total_size: output.total_size,
+        }
+    }
+
+    /// 每个子节点独立 z 值。
+    pub fn from_2d_zipped(output: &LayoutOutput, z_values: Vec<f32>) -> Self {
+        Self {
+            positions: output.positions.clone(),
+            z_values,
+            total_size: output.total_size,
+        }
+    }
+
+    /// 转换为 AABB3D 列表（所有盒子 d=0）。
+    pub fn to_aabbs(&self) -> Vec<AABB3D> {
+        self.positions.iter().zip(self.z_values.iter()).map(|(r, z)| {
+            AABB3D::from_rect_z(r.x, r.y, r.w, r.h, *z, 0.0)
+        }).collect()
+    }
 }
 
 // ── FlexBox 布局引擎 ───────────────────────────────────────────────
