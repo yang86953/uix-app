@@ -177,8 +177,8 @@ impl WidgetTree {
 
     pub fn set_root_with_children(
         &mut self,
-        widget: Box<dyn Widget>,
-        children: Vec<Box<dyn Widget>>,
+        widget: Box<dyn WidgetComponent>,
+        children: Vec<Box<dyn WidgetComponent>>,
     ) -> WidgetId {
         let id = self.set_root(widget);
         for child in children {
@@ -190,8 +190,8 @@ impl WidgetTree {
     pub fn add_child_with_children(
         &mut self,
         parent_id: WidgetId,
-        widget: Box<dyn Widget>,
-        children: Vec<Box<dyn Widget>>,
+        widget: Box<dyn WidgetComponent>,
+        children: Vec<Box<dyn WidgetComponent>>,
     ) -> WidgetId {
         let id = self.add_child(parent_id, widget);
         for child in children {
@@ -212,7 +212,7 @@ impl WidgetTree {
     ///
     /// 每次调用会**彻底清空旧树**，ID 空间从 0 重新开始分配。
     /// 这意味着同一棵 widget 树（相同构建顺序）每次重建后拿到相同的 ID。
-    pub fn set_root(&mut self, widget: Box<dyn Widget>) -> WidgetId {
+    pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> WidgetId {
         // 硬重置：清空旧树，ID 空间归零，free_ids 废弃
         self.nodes.clear();
         self.free_ids.clear();
@@ -252,10 +252,10 @@ impl WidgetTree {
             .and_then(|n| n.as_mut())
     }
 
-    pub fn find_by_type<T: Widget + 'static>(&self) -> Option<WidgetId> {
+    pub fn find_by_type<T: WidgetComponent + 'static>(&self) -> Option<WidgetId> {
         for id in self.traverse() {
             if let Some(node) = self.get(id) {
-                if node.inner().as_any().downcast_ref::<T>().is_some() {
+                if node.component().as_any().downcast_ref::<T>().is_some() {
                     return Some(id);
                 }
             }
@@ -263,11 +263,11 @@ impl WidgetTree {
         None
     }
 
-    pub fn find_all_by_type<T: Widget + 'static>(&self) -> Vec<(WidgetId, &T)> {
+    pub fn find_all_by_type<T: WidgetComponent + 'static>(&self) -> Vec<(WidgetId, &T)> {
         let mut results = Vec::new();
         for id in self.traverse() {
             if let Some(node) = self.get(id) {
-                if let Some(w) = node.inner().as_any().downcast_ref::<T>() {
+                if let Some(w) = node.component().as_any().downcast_ref::<T>() {
                     results.push((id, w));
                 }
             }
@@ -275,13 +275,13 @@ impl WidgetTree {
         results
     }
 
-    pub fn find_by_type_and_modify<T: Widget + 'static>(
+    pub fn find_by_type_and_modify<T: WidgetComponent + 'static>(
         &mut self,
         f: impl FnOnce(&mut T),
     ) -> Option<WidgetId> {
         let id = self.find_by_type::<T>()?;
         if let Some(node) = self.get_mut(id) {
-            if let Some(w) = node.inner_mut().as_any_mut().downcast_mut::<T>() {
+            if let Some(w) = node.component_mut().as_any_mut().downcast_mut::<T>() {
                 f(w);
             }
         }
@@ -302,7 +302,7 @@ impl WidgetTree {
         self
     }
 
-    pub fn add_child(&mut self, parent_id: WidgetId, child: Box<dyn Widget>) -> WidgetId {
+    pub fn add_child(&mut self, parent_id: WidgetId, child: Box<dyn WidgetComponent>) -> WidgetId {
         self.tree_version += 1;
         let children = child.build();
         let child_id = self.alloc_id();
@@ -513,7 +513,7 @@ impl WidgetTree {
                     if children.is_empty() {
                         continue;
                     }
-                    node.inner().layout_children(frame, &children, self)
+                    node.component().layout_children(frame, &children, self)
                 };
                 for (child_id, rect) in positions {
                     if let Some(child) = self.get_mut(child_id) {
@@ -563,7 +563,7 @@ impl WidgetTree {
         for &id in rev_order {
             let (children, is_viewport, node_frame) = match self.get(id) {
                 Some(n) if !n.children().is_empty() => {
-                    (n.children().to_vec(), n.inner().children_clip(n.frame()).is_some(), n.frame())
+                    (n.children().to_vec(), n.component().children_clip(n.frame()).is_some(), n.frame())
                 }
                 _ => continue,
             };
@@ -615,7 +615,7 @@ impl WidgetTree {
                 };
                 let new_positions = self
                     .get(id)
-                    .map(|n| n.inner().layout_children(relayout_frame, &children, self))
+                    .map(|n| n.component().layout_children(relayout_frame, &children, self))
                     .unwrap_or_default();
                 for (child_id, rect) in new_positions {
                     if let Some(child) = self.get_mut(child_id) {
@@ -637,7 +637,7 @@ impl WidgetTree {
     fn layout_viewports(&mut self) {
         for &id in &self.dirty_traverse() {
             if let Some(node) = self.get(id) {
-                if node.inner().children_clip(node.frame()).is_none() {
+                if node.component().children_clip(node.frame()).is_none() {
                     continue;
                 }
                 let frame = node.frame();
@@ -648,7 +648,7 @@ impl WidgetTree {
                 uix_platform::log::debug_fn(format!("[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
                     id, frame.x, frame.y, frame.w, frame.h, children.len(),));
                 // 仅触发 content_bounds 副作用，丢弃返回的 child rects
-                let _ = node.inner().layout_children(frame, &children, self);
+                let _ = node.component().layout_children(frame, &children, self);
             }
         }
     }
@@ -660,7 +660,7 @@ impl WidgetTree {
         let mut current = id;
         while let Some(pid) = self.get(current).and_then(|n| n.parent()) {
             if self.get(pid)
-                .map(|p| p.inner().children_clip(p.frame()).is_some())
+                .map(|p| p.component().children_clip(p.frame()).is_some())
                 .unwrap_or(false)
             {
                 return true;
@@ -684,7 +684,7 @@ impl WidgetTree {
 
             for &id in rev_order {
                 let is_viewport = self.get(id)
-                    .map(|n| n.inner().children_clip(n.frame()).is_some())
+                    .map(|n| n.component().children_clip(n.frame()).is_some())
                     .unwrap_or(false);
                 if is_viewport { continue; }
                 // 不收缩祖先链中有 viewport（如 ScrollView）的节点，
@@ -702,7 +702,7 @@ impl WidgetTree {
                 let Some(frame) = self.get(id).map(|n| n.frame()) else { continue; };
                 let positions: Vec<(WidgetId, Rect)> = {
                     let Some(node) = self.get(id) else { continue; };
-                    node.inner().layout_children(frame, &children, self)
+                    node.component().layout_children(frame, &children, self)
                 };
                 for (child_id, rect) in positions {
                     if let Some(child) = self.get_mut(child_id) {
@@ -762,7 +762,7 @@ impl WidgetTree {
                     let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h);
                     // 收缩后重新布局子节点
                     let new_positions = self.get(op.id)
-                        .map(|n| n.inner().layout_children(new_frame, &children, self))
+                        .map(|n| n.component().layout_children(new_frame, &children, self))
                         .unwrap_or_default();
                     for (child_id, rect) in new_positions {
                         if let Some(child) = self.get_mut(child_id) {
@@ -780,7 +780,7 @@ impl WidgetTree {
                             .unwrap_or_default();
                         if !parent_children.is_empty() {
                             let parent_positions = self.get(pid)
-                                .map(|n| n.inner().layout_children(parent_frame, &parent_children, self))
+                                .map(|n| n.component().layout_children(parent_frame, &parent_children, self))
                                 .unwrap_or_default();
                             for (child_id, rect) in parent_positions {
                                 if let Some(child) = self.get_mut(child_id) {
@@ -810,7 +810,7 @@ impl WidgetTree {
             }
             let was_animating = self
                 .get(id)
-                .map(|n| n.inner().needs_continuous_update())
+                .map(|n| n.component().needs_continuous_update())
                 .unwrap_or(false);
 
             // ── 动画帧快照：on_update 前记录旧绘制区域 ──
@@ -818,30 +818,30 @@ impl WidgetTree {
             // 比 frame() 更精确——frame 不变但阴影效果变化时也能追踪。
             // 只对动画 widget 生效，非动画 widget 零开销。
             let old_dirty_rect = if was_animating {
-                self.get(id).map(|n| n.inner().dirty_rect(n.frame()))
+                self.get(id).map(|n| n.component().dirty_rect(n.frame()))
             } else {
                 None
             };
 
             if let Some(node) = self.get_mut(id) {
-                node.inner_mut().on_update(dt);
+                node.component_mut().on_update(dt);
             }
 
             let (rect, scroll, new_frame) = self
                 .get(id)
                 .map(|node| {
-                    let is_still = node.inner().needs_continuous_update();
+                    let is_still = node.component().needs_continuous_update();
                     if is_still {
                         uix_platform::log::info_fn(format!("[Anim] id={} still animating", node.id()));
                         any_animating = true;
                     }
                     let dirty = if was_animating || is_still {
                         any_animating = any_animating || is_still;
-                        node.inner().dirty_rect(node.frame())
+                        node.component().dirty_rect(node.frame())
                     } else {
                         Rect::zero()
                     };
-                    (dirty, node.inner().scroll_delta(node.frame()), node.frame())
+                    (dirty, node.component().scroll_delta(node.frame()), node.frame())
                 })
                 .unwrap_or_default();
 
@@ -911,12 +911,12 @@ impl WidgetTree {
     ///
     /// 遍历当前树查找指定类型的 widget，若找到则设置为聚焦状态。
     /// `focused_widget` 用于键盘事件路由，`Input::set_focused` 控制光标显示。
-    pub fn focus_by_type<T: Widget + 'static>(&mut self) -> Option<WidgetId> {
+    pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<WidgetId> {
         let id = self.find_by_type::<T>()?;
         self.focused_widget = Some(id);
         // 对于 Input 类型，同步设置其内部 focused 状态
         if let Some(node) = self.get_mut(id) {
-            if let Some(input) = node.inner_mut().as_any_mut()
+            if let Some(input) = node.component_mut().as_any_mut()
                 .downcast_mut::<crate::widgets::Input>()
             {
                 input.set_focused(true);
@@ -928,10 +928,10 @@ impl WidgetTree {
     /// 检查指定类型的 widget 当前是否处于聚焦状态
     ///
     /// 用于 tree.build 前判断是否需要重建后恢复焦点。
-    pub fn is_focused_type<T: Widget + 'static>(&self) -> bool {
+    pub fn is_focused_type<T: WidgetComponent + 'static>(&self) -> bool {
         self.focused_widget
             .and_then(|id| self.get(id))
-            .map(|node| node.inner().as_any().downcast_ref::<T>().is_some())
+            .map(|node| node.component().as_any().downcast_ref::<T>().is_some())
             .unwrap_or(false)
     }
 }

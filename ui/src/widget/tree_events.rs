@@ -31,7 +31,7 @@ impl WidgetTree {
             }
         }
         let frame = node.frame();
-        if node.inner().hit_test_3d(ray, spatial, frame) {
+        if node.component().hit_test_3d(ray, spatial, frame) {
             Some(id)
         } else {
             None
@@ -52,7 +52,7 @@ impl WidgetTree {
         }
         // 使用 widget 的 hit_test_frame 代替原始 frame，支持 overlay 模式
         let actual_frame = node.frame();
-        let hit_frame = node.inner().hit_test_frame(actual_frame);
+        let hit_frame = node.component().hit_test_frame(actual_frame);
         if hit_frame.contains(pos) { Some(id) } else { None }
     }
 
@@ -163,7 +163,7 @@ impl WidgetTree {
             let node = match self.get_mut(id) { Some(n) => n, None => return EventResult::NotHandled };
             let frame = node.frame();
             let translated = Self::translate_mouse_event(event, frame);
-            let result = node.inner_mut().on_event(&translated);
+            let result = node.component_mut().on_event(&translated);
             match result {
                 EventResult::Handled => return EventResult::Handled,
                 EventResult::Bubbled => { current = node.parent(); }

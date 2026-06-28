@@ -9,7 +9,7 @@ pub use uix_macros::ui;
 pub use crate::children::WidgetChildren;
 pub use crate::context::WidgetContext;
 pub use crate::widget::{
-    BoxedWidget, EventResult, WidgetCore, WidgetEvent,
+    BoxedWidget, EventResult, WidgetCapabilities, WidgetComponent, WidgetCore, WidgetEvent,
     WidgetId, WidgetNode, WidgetTree,
 };
 

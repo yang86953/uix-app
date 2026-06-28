@@ -13,25 +13,55 @@ use crate::theme::ShadowToken;
 use crate::style::Style;
 
 // ════════════════════════════════════════════════════════════════════════════
-// Widget 组件体系
+// Widget 组件体系（无上帝接口，每个能力是独立 trait）
 // ════════════════════════════════════════════════════════════════════════════
 
+/// 能力位标记。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WidgetCapabilities(u8);
+
+impl WidgetCapabilities {
+    pub const LAYOUT: u8   = 0b0001;
+    pub const RENDER: u8   = 0b0010;
+    pub const EVENT: u8    = 0b0100;
+    pub const LIFECYCLE: u8 = 0b1000;
+
+    pub const fn new() -> Self { Self(0) }
+    pub const fn from_bits(bits: u8) -> Self { Self(bits) }
+    pub fn insert(&mut self, cap: u8) { self.0 |= cap; }
+    pub fn contains(&self, cap: u8) -> bool { self.0 & cap != 0 }
+    pub fn bits(&self) -> u8 { self.0 }
+}
+
+/// 组件核心标识 — 所有 widget 必须实现。
+pub trait WidgetComponent: Send + 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    /// 返回此 widget 实现了哪些能力。
+    fn capabilities(&self) -> WidgetCapabilities;
+    /// 返回当前 widget 的内部可见性。
+    fn visible(&self) -> bool { true }
+    fn build(&self) -> Vec<Box<dyn WidgetComponent>> { vec![] }
+
+    // ── 可选能力上转型（宏自动生成） ──
+    fn as_layout(&self) -> Option<&dyn WidgetLayout> { None }
+    fn as_render(&self) -> Option<&dyn WidgetRender> { None }
+    fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> { None }
+    fn as_event(&self) -> Option<&dyn WidgetEventHandler> { None }
+    fn as_event_mut(&mut self) -> Option<&mut dyn WidgetEventHandler> { None }
+    fn as_lifecycle(&self) -> Option<&dyn WidgetLifecycle> { None }
+    fn as_lifecycle_mut(&mut self) -> Option<&mut dyn WidgetLifecycle> { None }
+}
+
 /// 布局行为：尺寸、弹性、子节点排列。
-pub trait WidgetLayout {
+pub trait WidgetLayout: WidgetComponent {
     fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         Size::zero()
     }
-    fn flex_grow(&self) -> f32 {
-        0.0
-    }
-    fn flex_shrink(&self) -> f32 {
-        0.0
-    }
+    fn flex_grow(&self) -> f32 { 0.0 }
+    fn flex_shrink(&self) -> f32 { 0.0 }
     fn layout_children(
-        &self,
-        frame: Rect,
-        children: &[WidgetId],
-        tree: &WidgetTree,
+        &self, frame: Rect, children: &[WidgetId], tree: &WidgetTree,
     ) -> Vec<(WidgetId, Rect)> {
         let _ = (frame, children, tree);
         Vec::new()
@@ -39,164 +69,40 @@ pub trait WidgetLayout {
 }
 
 /// 渲染行为：绘制、覆盖层、脏区域。
-pub trait WidgetRender {
-    fn render(
-        &self,
-        frame: Rect,
-        ctx: &mut RenderContext,
-        tree: &WidgetTree,
-    );
-    fn post_render(
-        &self,
-        _frame: Rect,
-        _ctx: &mut RenderContext,
-        _tree: &WidgetTree,
-    ) {
-    }
-
-    fn draw_margin(&self) -> f32 {
-        0.0
-    }
-
+pub trait WidgetRender: WidgetComponent {
+    fn render(&self, frame: Rect, ctx: &mut RenderContext, tree: &WidgetTree);
+    fn post_render(&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
+    fn draw_margin(&self) -> f32 { 0.0 }
     fn dirty_rect(&self, frame: Rect) -> Rect {
         let m = self.draw_margin();
         if m > 0.0 {
             Rect::new(frame.x - m, frame.y - m, frame.w + m * 2.0, frame.h + m * 2.0)
-        } else {
-            frame
-        }
+        } else { frame }
     }
-    fn is_repaint_boundary(&self) -> bool {
-        false
-    }
+    fn is_repaint_boundary(&self) -> bool { false }
+    fn children_clip(&self, _frame: Rect) -> Option<Rect> { None }
 }
 
-/// 事件行为：输入事件处理、持续更新、滚动偏移。
-pub trait WidgetEventHandler {
-    fn on_event(&mut self, _event: &WidgetEvent) -> EventResult {
-        EventResult::NotHandled
-    }
-    fn needs_continuous_update(&self) -> bool {
-        false
-    }
-    fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
-        None
-    }
-}
-
-/// 生命周期行为：初始化、挂载、卸载、更新。
-pub trait WidgetLifecycle {
-    fn on_init(&mut self) {}
-    fn on_mount(&mut self) {}
-    fn on_unmount(&mut self) {}
-    fn on_update(&mut self, _dt: f32) {}
-}
-
-// ── Blanket impls ────────────────────────────────────────────────────
-// 任何 `Widget` 自动获得子 trait 实现。
-impl<T: Widget + ?Sized> WidgetLayout for T {}
-impl<T: Widget + ?Sized> WidgetRender for T {
-    fn render(
-        &self,
-        frame: Rect,
-        ctx: &mut RenderContext,
-        tree: &WidgetTree,
-    ) {
-        Widget::render(self, frame, ctx, tree)
-    }
-}
-impl<T: Widget + ?Sized> WidgetEventHandler for T {}
-impl<T: Widget + ?Sized> WidgetLifecycle for T {}
-
-/// Widget trait — 核心行为抽象。
-pub trait Widget {
-    /// 安全下转型：从 `&dyn Widget` 向下转型到具体类型。
-    fn as_any(&self) -> &dyn Any;
-    /// 安全下转型（可变）：从 `&mut dyn Widget` 向下转型到具体类型。
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-    /// 返回当前 widget 的内部可见性。
-    fn visible(&self) -> bool {
-        true
-    }
-    fn build(&self) -> Vec<Box<dyn Widget>> {
-        vec![]
-    }
-    fn on_init(&mut self) {}
-    fn on_mount(&mut self) {}
-    fn on_unmount(&mut self) {}
-    fn on_event(&mut self, _event: &WidgetEvent) -> EventResult {
-        EventResult::NotHandled
-    }
-    fn on_update(&mut self, _dt: f32) {}
-    fn needs_continuous_update(&self) -> bool {
-        false
-    }
-    fn dirty_rect(&self, frame: Rect) -> Rect {
-        frame
-    }
-    fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
-        None
-    }
-    fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::zero()
-    }
-    fn render(
-        &self,
-        frame: Rect,
-        ctx: &mut RenderContext,
-        tree: &WidgetTree,
-    );
-    fn post_render(
-        &self,
-        _frame: Rect,
-        _ctx: &mut RenderContext,
-        _tree: &WidgetTree,
-    ) {
-    }
-    /// 返回用于 hit-test 的命中区域。
-    fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
-        actual_frame
-    }
-
-    /// 3D 命中测试：判断射线是否命中本 widget。
-    fn hit_test_3d(
-        &self,
-        ray: &Ray3D,
-        spatial: &SpatialContext,
-        frame: Rect,
-    ) -> bool {
+/// 事件行为：输入事件处理、持续更新、滚动偏移、命中测试。
+pub trait WidgetEventHandler: WidgetComponent {
+    fn on_event(&mut self, _event: &WidgetEvent) -> EventResult { EventResult::NotHandled }
+    fn needs_continuous_update(&self) -> bool { false }
+    fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> { None }
+    fn hit_test_frame(&self, actual_frame: Rect) -> Rect { actual_frame }
+    fn hit_test_3d(&self, ray: &Ray3D, spatial: &SpatialContext, frame: Rect) -> bool {
         if let Some(hit_point) = ray.intersect_z0() {
-            let local_x = hit_point.x;
-            let local_y = hit_point.y;
-            local_x >= frame.x
-                && local_x <= frame.x + frame.w
-                && local_y >= frame.y
-                && local_y <= frame.y + frame.h
-        } else {
-            false
-        }
+            hit_point.x >= frame.x && hit_point.x <= frame.x + frame.w
+                && hit_point.y >= frame.y && hit_point.y <= frame.y + frame.h
+        } else { false }
     }
-    fn flex_grow(&self) -> f32 {
-        0.0
-    }
-    fn flex_shrink(&self) -> f32 {
-        0.0
-    }
-    fn children_clip(&self, _frame: Rect) -> Option<Rect> {
-        None
-    }
-    fn is_repaint_boundary(&self) -> bool {
-        false
-    }
-    fn layout_children(
-        &self,
-        frame: Rect,
-        children: &[WidgetId],
-        tree: &WidgetTree,
-    ) -> Vec<(WidgetId, Rect)> {
-        let _ = (frame, children, tree);
-        Vec::new()
-    }
+}
+
+/// 生命周期行为。
+pub trait WidgetLifecycle: WidgetComponent {
+    fn on_init(&mut self) {}
+    fn on_mount(&mut self) {}
+    fn on_unmount(&mut self) {}
+    fn on_update(&mut self, _dt: f32) {}
 }
 
 /// 转换为 WidgetNode 的 trait。
@@ -204,7 +110,7 @@ pub trait IntoWidgetNode {
     fn into_node(self) -> WidgetNode;
 }
 
-impl<T: Widget + 'static> IntoWidgetNode for T {
+impl<T: WidgetComponent + 'static> IntoWidgetNode for T {
     fn into_node(self) -> WidgetNode {
         WidgetNode::leaf(Box::new(self))
     }
