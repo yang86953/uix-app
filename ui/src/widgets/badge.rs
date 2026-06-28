@@ -1,6 +1,11 @@
+//! Badge — 徽章组件。
+//!
+//! 支持物理单位：`offset()` 接受 mm/cm/pt，自动适配 DPI。
+
 use crate::define_widget;
 use uix_platform::{Rect, Size};
 use uix_graphics::{Color, Radius};
+use uix_graphics::spatial::PhysicalUnit;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
@@ -17,8 +22,13 @@ define_widget! {
         status: Option<BadgeStatus>,
         show_zero: bool,
         text: String,
+
+        // ── 2D 偏移（f32 像素，向后兼容）──
         offset_x: f32,
         offset_y: f32,
+
+        // ── 物理单位偏移（优先级高于 offset_x/y）──
+        offset_unit: Option<(PhysicalUnit, PhysicalUnit)>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -37,7 +47,14 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        let actual_frame = Rect::new(frame.x + self.offset_x, frame.y + self.offset_y, frame.w, frame.h);
+        // 计算实际偏移：物理单位优先
+        let (off_x, off_y) = if let Some((ux, uy)) = self.offset_unit {
+            let dpi = ctx.spatial().dpi();
+            (ux.to_dip(dpi), uy.to_dip(dpi))
+        } else {
+            (self.offset_x, self.offset_y)
+        };
+        let actual_frame = Rect::new(frame.x + off_x, frame.y + off_y, frame.w, frame.h);
 
         if let Some(status) = self.status {
             let sc = match status {
@@ -77,7 +94,11 @@ impl Default for Badge { fn default() -> Self { Self::new() } }
 
 impl Badge {
     pub fn new() -> Self {
-        Self { count: 0, max: 99, dot: false, color: None, _size: 16.0, status: None, show_zero: false, text: String::new(), offset_x: 0.0, offset_y: 0.0 }
+        Self {
+            count: 0, max: 99, dot: false, color: None, _size: 16.0,
+            status: None, show_zero: false, text: String::new(),
+            offset_x: 0.0, offset_y: 0.0, offset_unit: None,
+        }
     }
     pub fn count(mut self, n: i32) -> Self { self.count = n; self }
     pub fn max(mut self, n: i32) -> Self { self.max = n; self }
@@ -86,5 +107,14 @@ impl Badge {
     pub fn status(mut self, s: BadgeStatus) -> Self { self.status = Some(s); self }
     pub fn show_zero(mut self, v: bool) -> Self { self.show_zero = v; self }
     pub fn text(mut self, t: &str) -> Self { self.text = t.to_string(); self }
+
+    /// 像素偏移（向后兼容）。
     pub fn offset(mut self, x: f32, y: f32) -> Self { self.offset_x = x; self.offset_y = y; self }
+
+    /// 物理单位偏移（优先级高于 `offset()`）。
+    /// 自动适配 DPI：`10.mm()` 在不同屏幕上物理尺寸一致。
+    pub fn offset_unit(mut self, x: PhysicalUnit, y: PhysicalUnit) -> Self {
+        self.offset_unit = Some((x, y));
+        self
+    }
 }

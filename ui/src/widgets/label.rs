@@ -7,6 +7,7 @@ use uix_platform::{Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
 use crate::style::Style;
+use uix_graphics::spatial::PhysicalUnit;
 use uix_graphics::{GraphicsEngine, TextLayoutOptions};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
@@ -15,6 +16,8 @@ define_widget! {
     pub struct Label {
         pub text: String,
         pub font_size: f32,
+        /// 物理单位字号（可选，优先级高于 font_size）。
+        pub font_size_unit: Option<PhysicalUnit>,
         pub color: Option<uix_graphics::Color>,
         pub fixed_width: Option<f32>,
         pub fixed_height: Option<f32>,
@@ -105,9 +108,14 @@ define_widget! {
             .map(|s| s.color)
             .or(self.color)
             .unwrap_or_else(|| ctx.tokens().color_text());
-        let fs = self.style.as_ref()
-            .map(|s| s.font_size)
-            .unwrap_or(self.font_size);
+        // 分辨率：物理单位优先 > style > self.font_size
+        let fs = if let Some(unit) = self.font_size_unit {
+            unit.to_dip(ctx.spatial().dpi())
+        } else {
+            self.style.as_ref()
+                .map(|s| s.font_size)
+                .unwrap_or(self.font_size)
+        };
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
         let opts = TextLayoutOptions {
@@ -193,6 +201,7 @@ impl Label {
         Self {
             text: t,
             font_size: 12.0,
+            font_size_unit: None,
             color: None,
             fixed_width: None,
             fixed_height: None,
@@ -219,6 +228,14 @@ impl Label {
 
     pub fn font_size(mut self, s: f32) -> Self {
         self.font_size = s;
+        self.font_size_unit = None;
+        self
+    }
+
+    /// 设置物理单位字号（优先级高于 `font_size()`）。
+    /// 自动适配 DPI：`12.pt()` 在不同屏幕上物理尺寸一致。
+    pub fn font_size_unit(mut self, unit: PhysicalUnit) -> Self {
+        self.font_size_unit = Some(unit);
         self
     }
 
