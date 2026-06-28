@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use uix_platform::{Rect, Size};
 use crate::define_widget;
-use uix_graphics::{FontHandle, GraphicsEngine};
+use uix_graphics::FontHandle;
 use uix_graphics::font_service::FontService;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;

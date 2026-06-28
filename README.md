@@ -3,7 +3,7 @@
 A modular, cross-platform native UI framework for Rust with a composition-over-inheritance architecture. Supports **Linux (Wayland)** and **Windows (Win32)**.
 
 > **Current status**: ~80% complete — core architecture stable, 54+ widgets, full software renderer.
-> See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
+> See [docs/graphics-engine-redesign.md](docs/graphics-engine-redesign.md) for detailed design documentation.
 
 ## Design Principles
 
@@ -30,41 +30,41 @@ cargo test
 
 ## Architecture
 
-UIX 采用 7 层架构 + workspace crates 编译期保障。
+UIX 采用 5 workspace crate 编译期隔离 + proc-macro crate 的模块化架构。
 
 ### Workspace Crates
 
 ```
-uix workspace             编译期边界
-├── uix-core/   (L0)     基础类型，零依赖
-├── uix-diag/   (L1)     诊断，仅依赖 core
-├── ui/macros/           proc-macro (ui! macro)
-├── uix/        (L2-L6)  主 crate
-│   ├── services/ (L2)   文件/设置/中间件/通知
-│   ├── platform/ (L3)   Win32 / Wayland
-│   ├── graphics/ (L4)   渲染引擎 + LayerTree 桥接
-│   ├── ui/       (L5)   Widget 框架
-│   └── app/      (L6)   应用入口
-└── demo/               演示二进制
+uix workspace                   编译期边界
+├── platform/ (uix-platform)   OS 抽象层 — Win32 / Wayland / 文件服务 / 通知 / 设置
+├── graphics/ (uix-graphics)   2D 渲染引擎 + 帧图 + 路径 + 字体 + 布局类型
+├── ui/        (uix-ui)        Widget 框架 — 54+ 组件 + 主题 + 动画 + 状态管理
+├── ui/macros/ (uix-macros)    proc-macro (ui! / define_widget! / tree!)
+├── app/       (uix-app)       应用入口 — 窗口生命周期 + CLI + DI
+├── uix        (根 crate)      聚合重导出层（pub use uix_app / uix_graphics / …）
+└── demo                       演示二进制
 ```
 
 ### 层依赖
 
 ```
-L6  App  ──→ UI ──→ Graphics ──→ Diag ──→ Core
-                 ↘ Platform  ──→ Diag ──→ Core
-                    Services ──→ Diag ──→ Core
+app  uix  ──→ ui ──→ graphics ──→ platform
+  │  ├──→ platform (factory: create_platform / create_gpu_context)
+  │  ├──→ graphics (RenderContext, LayerTree 依赖 GraphicsEngine)
+  │  └──→ app      (Window → Platform, Cli, Container)
+
+ui/macros 编译期 proc-macro，无运行时依赖。
 ```
 
-| 层 | crate | 职责 | 依赖 |
-|-----|-------|------|------|
-| **6 — App** | `uix` | 入口、窗口、CLI、DI | 所有下层 |
-| **5 — UI** | `uix` | Widget 树、布局、主题、状态 | Graphics, Core |
-| **4 — Graphics** | `uix` | 渲染引擎、LayerTree | Diag, Core |
-| **3 — Platform** | `uix` | Win32/Wayland 抽象 | Diag, Core |
-| **2 — Services** | `uix` | 文件、设置、中间件、通知 | Diag, Core |
-| **1 — Diagnostics** | `uix-diag` | 错误、日志、恢复 | Core |
-| **0 — Core** | `uix-core` | Point、Rect、Color 等 | 无 |
+### 各 Crate 职责
+
+| Crate | 职责 | 主要导出 |
+|-------|------|----------|
+| **uix-platform** | OS 抽象：Win32/Wayland 窗口、事件、文件、日志、通知、设置 | `Platform`, `PlatformWindow`, `Error`, `EventBus`, `Point/Size/Rect`, 子系统 trait 簇 |
+| **uix-graphics** | 2D 渲染：软件引擎 + GPU 引擎 + 帧图 + 路径 + 字体/文本 + 颜色 | `GraphicsEngine`, `Color`, `Canvas2D`, `FrameGraph`, `Path`, `TextBackend` |
+| **uix-ui** | Widget 框架：54+ 组件 + Flexbox/Grid 布局 + 主题 + 动画 + 响应式状态 | `Widget`, `State`/`Computed`/`Effect`, `Animation`, `Theme`, 全部组件 |
+| **uix-app** | 应用入口：窗口管理 + CLI 解析 + DI 容器 | `App`, `Window`, `Cli`, `Container` |
+| **uix（根）** | 聚合重导出，用户 `use uix::*` 即可使用全部 | `app`, `graphics`, `platform`, `ui` |
 
 ## Platform Support
 
@@ -172,26 +172,40 @@ let pool = container.resolve::<DatabasePool>();
 ## Project Structure
 
 ```
-uix-app/
-├── src/
-│   ├── app/          # Application layer
-│   ├── base/         # Foundation types
-│   ├── diag/         # Diagnostics (error, log, recovery)
-│   ├── graphics/     # Graphics engine + layout
-│   ├── platform/     # OS abstraction (windows/, linux/)
-│   ├── services/     # Business services
-│   ├── ui/           # Widget framework
-│   │   ├── layout/   # Flexbox + Grid engine
-│   │   ├── managers/ # 10-manager system
-│   │   ├── theme/    # Design token system
-│   │   └── widgets/  # 54+ components
-│   ├── demos/        # GUI + CLI demos
-│   ├── lib.rs        # Crate root
-│   └── main.rs       # Binary entry
-├── ui/macros/       # proc-macro crate (ui! macro) 内嵌于 ui
-├── tests/            # Integration tests
-├── assets/           # Fonts, resources
-└── Cargo.toml
+uix-app/                        # workspace 根（Cargo.toml）
+├── lib.rs                      # crate 根入口 — 聚合重导出
+├── src/lib.rs                  # crate 源（pub use uix_* as *）
+├── platform/                   # uix-platform crate
+│   ├── src/                    # error, geometry, event, event_bus, log,
+│   │                           # presenter, types, shared, diagnostic,
+│   │                           # file_service, notification, settings
+│   │                           # windows/ (Win32), linux/ (Wayland)
+│   └── tests/geometry.rs
+├── graphics/                   # uix-graphics crate
+│   ├── src/                    # engine/, frame_graph/, gpu_engine/,
+│   │                           # rasterizer/, text_backends/, traits/
+│   │                           # api, bitmap_font, blur, color, flattener,
+│   │                           # font_service, null_engine, path, stroker,
+│   │                           # text_backend, types
+│   └── tests/integration.rs
+├── ui/                         # uix-ui crate
+│   ├── src/                    # animation/, layout/, managers/, theme/,
+│   │   │                       # widget/, widgets/ (54+ components)
+│   │   │                       # api, children, clipboard, config_provider,
+│   │   │                       # context, focus_trap, layer, locale, macros,
+│   │   │                       # render_context, render_loop, state, style,
+│   │   │                       # virtual_scroll, widget_builder
+│   ├── macros/                 # uix-macros proc-macro crate (ui! macro)
+│   └── tests/                  # animation, core, layout, theme, widgets
+├── app/                        # uix-app crate
+│   ├── src/                    # application, cli, di, window, api
+│   └── tests/cli_and_di.rs
+├── demo/                       # 演示二进制
+│   └── src/main.rs
+├── assets/fonts/               # 字体资源（lucide.ttf）
+├── docs/                       # 设计文档
+├── AGENTS.md                   # 项目规则
+└── README.md                   # 本文件
 ```
 
 ## Testing
@@ -206,7 +220,7 @@ cargo test graphics::types
 cargo test ui::state  # 响应式状态测试
 ```
 
-Current test count: **266 unit tests** + 16 doc-tests (all passing).
+Current test count: **223 unit tests** + 16 doc-tests (all passing on Linux/Wayland; on Windows 部分平台相关测试略少).
 
 ## Building
 
@@ -221,10 +235,10 @@ cargo build --release
 ## Planned Improvements
 
 ### 🔮 中长期
-- **进一步 crate 拆分** — 待解决 graphics ↔ ui 循环依赖后，将 platform/graphics/ui/app 拆为独立 crate
 - **GPU 渲染后端** — Direct2D / Vulkan 支持
 - **macOS 支持** — 通过 AppKit 桥接
 - **平台 FFI 迁移** — 完全替换本地 `extern` 声明为 `windows` crate
+- **文档生成** — 基于代码分析自动生成 API 引用文档
 
 ## Contributing
 

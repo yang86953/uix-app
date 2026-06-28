@@ -21,6 +21,9 @@ pub mod error;
 // ── 事件类型 ───────────────────────────────────────────────────
 pub mod event;
 
+// ── 事件订阅/发布总线 ─────────────────────────────────────────
+pub mod event_bus;
+
 // ── 日志基础设施 ──────────────────────────────────────────────
 pub mod log;
 
@@ -50,6 +53,7 @@ pub mod linux;
 
 // ── 便利重导出（各领域 trait/类型流向 crate 根）────────────
 pub use error::*;
+pub use event_bus::*;
 pub use geometry::*;
 pub use presenter::*;
 pub use shared::*;

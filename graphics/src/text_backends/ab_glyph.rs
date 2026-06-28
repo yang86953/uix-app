@@ -82,8 +82,7 @@ impl TextBackend for AbGlyphBackend {
             let adv = sf.h_advance(gid);
 
             if max_w && cx > 0.0 && cx + adv > opts.max_width {
-                cx = 0.0; cy += line_h; prev = GlyphId(0);
-                if prev != GlyphId(0) { cx += sf.kern(prev, gid); }
+                cx = 0.0; cy += line_h;
             }
 
             let glyph_top = cy;

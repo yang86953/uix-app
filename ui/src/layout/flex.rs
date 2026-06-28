@@ -225,10 +225,8 @@ fn compute_single_line(
     // Redistribute: space freed by max_size clamping is given back
     // to children with remaining flex_grow capacity. Loop up to 3 rounds
     // to handle cascading clamp effects until all space is consumed.
-    // Track current_total to avoid redundant sum() calls in Phase 3.
-    let mut current_total = total_after;
     for _round in 0..3 {
-        current_total = base_main_sizes.iter().sum::<f32>();
+        let current_total = base_main_sizes.iter().sum::<f32>();
         let leftover = (container_main - current_total - gaps).max(0.0);
         if leftover > 0.0 && total_flex_grow > 0.0 {
             distribute_flex_grow(base_main_sizes, leftover, &input.children, total_flex_grow);

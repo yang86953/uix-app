@@ -16,7 +16,7 @@ pub struct DescriptionsItem {
     pub span: usize,
 }
 
-/// Descriptions — 描述列表。
+// Descriptions — 描述列表。
 define_widget! {
     pub struct Descriptions {
         title: String,

@@ -7,8 +7,7 @@ use glow::HasContext as _;
 
 use uix_platform::Error;
 use uix_platform::IGraphicsContext;
-use crate::engine::cpu::noop_canvas_3d::NoopCanvas3D;
-use crate::traits::{Canvas2D, Canvas3D, GraphicsEngine, UpdateStrategy};
+use crate::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 use crate::engine::RenderOutcome;
 
 pub use shaders::*;
@@ -17,22 +16,23 @@ mod shaders;
 mod canvas_2d;
 
 pub struct GpuEngine {
-    pub gl: glow::Context,
+    /// 堆分配的 glow::Context，确保 GpuCanvas2D 中的 gl_ptr 不受 move 影响。
+    pub gl: Box<glow::Context>,
     pub gpu_ctx: Box<dyn IGraphicsContext>,
     pub width: i32,
     pub height: i32,
     pub(crate) readback: RefCell<Vec<u32>>,
     canvas_2d: GpuCanvas2D,
-    canvas_3d: NoopCanvas3D,
 }
 
 impl GpuEngine {
     pub fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Self {
-        let gl = unsafe {
+        // Box::new 将 Context 分配在堆上，地址固定。
+        // GpuCanvas2D 中的 gl_ptr 指向此堆地址，不受 Self move 影响。
+        let gl = Box::new(unsafe {
             glow::Context::from_loader_function(|s| gpu_ctx.get_proc_address(s).unwrap_or(std::ptr::null()))
-        };
-        // 先创建 canvas_2d，再移动 gl 到 self.gl
-        let canvas_2d = GpuCanvas2D::new(&gl, 1, 1);
+        });
+        let canvas_2d = GpuCanvas2D::new(&*gl, 1, 1);
         Self {
             gl,
             gpu_ctx,
@@ -40,7 +40,6 @@ impl GpuEngine {
             height: 0,
             readback: RefCell::new(Vec::new()),
             canvas_2d,
-            canvas_3d: NoopCanvas3D,
         }
     }
 
@@ -123,9 +122,5 @@ impl GraphicsEngine for GpuEngine {
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         &mut self.canvas_2d
-    }
-
-    fn canvas_3d(&mut self) -> &mut dyn Canvas3D {
-        &mut self.canvas_3d
     }
 }

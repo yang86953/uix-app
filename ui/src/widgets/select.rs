@@ -32,7 +32,6 @@ define_widget! {
         on_change_multi: Option<Box<dyn FnMut(Vec<usize>) + 'static>>,
         multiple: bool,
         search: bool,
-        search_text: String,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -271,7 +270,7 @@ impl Select {
             open: false, disabled: false, hovered: false, focused: false,
             placeholder: String::new(), hovered_option: None,
             on_change: None, on_change_multi: None,
-            multiple: false, search: false, search_text: String::new(),
+            multiple: false, search: false,
         }
     }
     pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {

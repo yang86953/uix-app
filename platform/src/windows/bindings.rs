@@ -80,18 +80,4 @@ pub(super) struct CREATESTRUCTW {
     pub dwExStyle: u32,
 }
 
-#[repr(C)]
-pub(super) struct FLASHWINFO {
-    pub cbSize: u32,
-    pub hwnd: *mut std::ffi::c_void,
-    pub dwFlags: u32,
-    pub uCount: u32,
-    pub dwTimeout: u32,
-}
 
-// ════════════════════════════════════════════════════════════════════════════
-// FLASHWINFO 常量
-// ════════════════════════════════════════════════════════════════════════════
-
-pub(super) const FLASHW_ALL: u32 = 0x0003;
-pub(super) const FLASHW_TIMERNOFG: u32 = 0x000C;

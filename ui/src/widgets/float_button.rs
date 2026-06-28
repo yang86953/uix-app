@@ -8,7 +8,7 @@ use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 
-/// FloatButton — 浮动操作按钮。
+// FloatButton — 浮动操作按钮。
 define_widget! {
     pub struct FloatButton {
         icon: String,

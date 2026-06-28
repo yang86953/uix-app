@@ -9,10 +9,6 @@ use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 use std::cell::Cell;
 
-// 简化日期结构
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct SimpleDate { year: i32, month: usize, day: usize }
-
 fn days_in_month(year: i32, month: usize) -> usize {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
@@ -32,7 +28,7 @@ fn first_weekday(year: i32, month: usize) -> usize {
     (w + 6) % 7 // 转成周一为0
 }
 
-/// Calendar — 日历组件。
+// Calendar — 日历组件。
 define_widget! {
     pub struct Calendar {
         year: Cell<i32>,

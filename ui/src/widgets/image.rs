@@ -8,17 +8,15 @@ use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 
-/// Image — 图片显示组件。
+// Image — 图片显示组件。
 define_widget! {
     pub struct Image {
-        src: String,
         alt: String,
         fallback: String,
         width: f32,
         height: f32,
         radius: f32,
         preview: bool,
-        preview_src: String,
         loaded: bool,
         error: bool,
     }
@@ -67,11 +65,11 @@ define_widget! {
 }
 
 impl Image {
-    pub fn new(src: &str, w: f32, h: f32) -> Self {
+    pub fn new(w: f32, h: f32) -> Self {
         Self {
-            src: src.to_string(), alt: String::new(), fallback: String::new(),
+            alt: String::new(), fallback: String::new(),
             width: w, height: h, radius: 6.0,
-            preview: true, preview_src: String::new(), loaded: false, error: false,
+            preview: true, loaded: false, error: false,
         }
     }
     pub fn alt(mut self, a: &str) -> Self { self.alt = a.to_string(); self }

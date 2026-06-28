@@ -43,6 +43,7 @@ use super::util::to_wide;
 pub struct WindowsPlatform {
     pub(crate) window: Rc<RefCell<WindowState>>,
     pub(crate) event_queue: VecDeque<UiEvent>,
+    pub(crate) event_bus: EventBus,
     pub(crate) hwnd: *mut std::ffi::c_void,
     pub(crate) hinstance: *mut std::ffi::c_void,
     pub(crate) class_atom: u16,
@@ -80,6 +81,7 @@ impl WindowsPlatform {
             text_input_subsys: WindowsTextInput::new(),
             timer_subsys,
             notification_subsys: WindowsNotification::new(),
+            event_bus: EventBus::new(),
             console_subsys: WindowsConsole::new(),
             system_info_subsys: WindowsSystemInfo::new(),
         }
@@ -219,6 +221,7 @@ impl IWindowManager for WindowsPlatform {
 impl Platform for WindowsPlatform {
     fn window_manager(&mut self) -> &mut dyn IWindowManager { self }
     fn event_loop(&mut self) -> &mut dyn IEventLoop { self }
+    fn event_bus(&mut self) -> &mut EventBus { &mut self.event_bus }
     fn clipboard(&mut self) -> &mut dyn IClipboard { &mut self.clipboard_subsys }
     fn cursor(&mut self) -> &mut dyn ICursor { &mut self.cursor_subsys }
     fn display(&self) -> &dyn IDisplay { &self.display_subsys }

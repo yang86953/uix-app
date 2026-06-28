@@ -449,7 +449,7 @@ impl LayerTree {
                     Self::render_picture_dirty(
                         *widget_id, bounds, offscreen_handle, children, ctx, tree, w, h, retry_count,
                     );
-                } else if let Some(handle) = offscreen_handle {
+                } else if offscreen_handle.is_some() {
                     // TODO(v2): blit_image 需要像素数据，待重建 ImageManager
                     // let src = Rect::new(0.0, 0.0, w as f32, h as f32);
                     // let dst = Rect::new(bounds.x, bounds.y, w as f32, h as f32);
@@ -553,9 +553,9 @@ impl LayerTree {
     /// #97：离屏创建失败时递增 retry_count，超过阈值后跳过渲染。
     fn render_picture_dirty(
         widget_id: WidgetId,
-        bounds: &Rect,
+        _bounds: &Rect,
         offscreen_handle: &mut Option<ImageHandle>,
-        children: &mut [LayerNode],
+        _children: &mut [LayerNode],
         ctx: &mut RenderContext,
         tree: &WidgetTree,
         w: i32,

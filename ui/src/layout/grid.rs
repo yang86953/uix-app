@@ -13,8 +13,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     let n_cols = input.columns.len();
     if n_cols == 0 || input.children.is_empty() {
         return GridOutput {
-            child_rects: Vec::new(), col_positions: Vec::new(),
-            row_positions: Vec::new(), total_size: Size::new(inner.w, inner.h),
+            child_rects: Vec::new(), total_size: Size::new(inner.w, inner.h),
         };
     }
 
@@ -113,6 +112,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
 
     // ── Phase 4: build cell positions ──
     let mut col_positions: Vec<(f32, f32)> = Vec::with_capacity(n_cols);
+
     let mut cx = inner.x;
     for i in 0..n_cols {
         col_positions.push((cx, col_sizes[i]));
@@ -166,7 +166,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         child_rects[assignment.child_idx] = Rect::new(child_x, child_y, child_w, child_h);
     }
 
-    GridOutput { child_rects, col_positions, row_positions, total_size: Size::new(total_w, total_h) }
+    GridOutput { child_rects, total_size: Size::new(total_w, total_h) }
 }
 
 struct CellAssignment {

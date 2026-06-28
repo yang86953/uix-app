@@ -7,13 +7,13 @@ use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetCore, WidgetEvent, WidgetTree};
 
-/// Modal — 模态对话框。
-///
-/// 两种模式：
-/// - 普通模式（默认）：preferred_size 返回实际尺寸，参与父容器 flex 布局。
-/// - 覆盖层模式（`.overlay(true)`）：preferred_size 始终返回 (0,0)，不参与 flex 布局，
-///   render 时通过 `ctx.canvas_2d().width()/height()` 获取窗口尺寸居中弹窗。
-///   适合放在 Column/Row 末尾作全屏覆盖层，不挤压主内容。
+// Modal — 模态对话框。
+//
+// 两种模式：
+// - 普通模式（默认）：preferred_size 返回实际尺寸，参与父容器 flex 布局。
+// - 覆盖层模式（`.overlay(true)`）：preferred_size 始终返回 (0,0)，不参与 flex 布局，
+//   render 时通过 `ctx.canvas_2d().width()/height()` 获取窗口尺寸居中弹窗。
+//   适合放在 Column/Row 末尾作全屏覆盖层，不挤压主内容。
 define_widget! {
     pub struct Modal {
         title: String,

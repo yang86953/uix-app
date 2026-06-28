@@ -259,6 +259,20 @@ impl GpuCanvas2D {
     }
 }
 
+// ── Drop 实现：释放 GL 资源 ──
+
+impl Drop for GpuCanvas2D {
+    fn drop(&mut self) {
+        unsafe {
+            self.gl().delete_vertex_array(self.rect_vao);
+            self.gl().delete_buffer(self.rect_vbo);
+            self.gl().delete_program(self.rect_program);
+            self.gl().delete_program(self.tex_program);
+            self.gl().delete_texture(self.fallback_texture);
+        }
+    }
+}
+
 impl Canvas2D for GpuCanvas2D {
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
         unsafe { self.draw_rect_gpu(rect, color, radius); }
@@ -362,8 +376,13 @@ impl Canvas2D for GpuCanvas2D {
         self.soft_fallback.pop_clip();
     }
 
-    fn push_clip_path(&mut self, path: &Path) {
-        self.soft_fallback.push_clip_path(path);
+    fn push_clip_path(&mut self, _path: &Path) {
+        // TODO: 路径裁剪尚未实现。
+        // CpuCanvas2D 中的实现也是空操作，Gpu 路径不受影响。
+        // 未来实现时需：
+        //   1. push clip_stack 记录当前 clip_rect
+        //   2. 用 path 的 bounding box 更新 clip_rect
+        //   3. 同步 GL scissor test
     }
 
     // ── 渲染状态栈 ──

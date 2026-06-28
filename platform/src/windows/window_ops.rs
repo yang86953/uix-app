@@ -22,10 +22,7 @@ impl WindowsWindowOps {
         Self { hwnd }
     }
 
-    /// 获取 HWND（供内部使用）。
-    pub(crate) fn hwnd(&self) -> *mut std::ffi::c_void {
-        self.hwnd
-    }
+
 }
 
 // ════════════════════════════════════════════════════════════════════════════

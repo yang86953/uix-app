@@ -31,10 +31,10 @@ pub struct MessageItem {
     pub closable: bool,
 }
 
-/// Message — 全局消息提示容器。
-///
-/// 作为 WidgetTree 根级别的浮动层注册，通过静态队列接收消息。
-/// 每条消息显示为顶部居中的横幅，自动排列避免重叠。
+// Message — 全局消息提示容器。
+//
+// 作为 WidgetTree 根级别的浮动层注册，通过静态队列接收消息。
+// 每条消息显示为顶部居中的横幅，自动排列避免重叠。
 define_widget! {
     /// Message 容器 — 持有消息队列，在 post_render 中绘制浮层。
     pub struct Message {

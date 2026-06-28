@@ -49,7 +49,7 @@ pub struct FieldDef {
     pub message: String,
 }
 
-/// FormItem — 单个表单项。
+// FormItem — 单个表单项。
 define_widget! {
     pub struct FormItem {
         label: String,
@@ -201,7 +201,7 @@ impl FormItem {
 pub type FormFinishCallback = Box<dyn FnMut(HashMap<String, String>)>;
 pub type FormFinishFailedCallback = Box<dyn FnMut(HashMap<String, ValidationResult>)>;
 
-/// Form — 表单容器。
+// Form — 表单容器。
 define_widget! {
     pub struct Form {
         label_width: f32,

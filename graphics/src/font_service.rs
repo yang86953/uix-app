@@ -9,11 +9,10 @@ use std::sync::{Arc, Mutex};
 
 use uix_platform::{Point, Size};
 use uix_platform::Error;
-use crate::bitmap_font::BitmapFont;
 use crate::text_backend::{
     self as tb, GlyphRaster, TextBackend, TextLayout, TextLayoutOptions,
 };
-use crate::FontHandle;
+use crate::{FontHandle, HAlign};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 字体元数据
@@ -133,9 +132,6 @@ pub struct FontService {
     fallback_handles: Vec<FontHandle>,
     /// 统一字形缓存。
     glyph_cache: GlyphCache,
-    /// BitmapFont 实例（5x7 位图回退字体）。
-    #[allow(dead_code)]
-    bitmap_font: BitmapFont,
 }
 
 /// 布局辅助：按字体分割的文本段（追踪字节偏移）。
@@ -158,7 +154,6 @@ impl FontService {
             loaded_font_handle: FontHandle::new(0),
             fallback_handles: Vec::new(),
             glyph_cache: GlyphCache::new(),
-            bitmap_font: BitmapFont::new(),
         }
     }
 
@@ -581,6 +576,7 @@ impl FontService {
         primary_ascent: f32,
         do_wrap: bool,
         max_w: f32,
+        h_align: HAlign,
     ) -> (Vec<tb::PositionedGlyph>, Vec<tb::LineInfo>) {
         #[derive(Default)]
         struct LineAccum {
@@ -588,12 +584,15 @@ impl FontService {
             y: f32,
             height: f32,
             width: f32,
+            char_start: usize,
+            char_end: usize,
         }
 
         let mut lines: Vec<LineAccum> = Vec::new();
         let mut line = LineAccum::default();
         let mut cx = 0.0f32;
         let mut cy = 0.0f32;
+        let mut char_idx = 0usize;
 
         for seg in segments {
             if seg.byte_start >= seg.byte_end {
@@ -605,11 +604,13 @@ impl FontService {
                     line.width = cx.max(line.width);
                     line.height = line_h;
                     line.y = cy;
+                    line.char_end = char_idx;
                     lines.push(line);
                 }
                 line = LineAccum::default();
                 cx = 0.0;
                 cy += line_h;
+                char_idx += 1;
                 continue;
             }
 
@@ -620,15 +621,21 @@ impl FontService {
             let seg_text = &text[seg.byte_start..seg.byte_end];
             let seg_layout = self.text_backend.layout_text(&seg.font, seg_text, seg_opts);
             let seg_width = seg_layout.width;
+            let seg_char_count = seg_text.chars().count();
 
             if do_wrap && cx > 0.0 && cx + seg_width > max_w {
                 line.width = cx.max(line.width);
                 line.height = line_h;
                 line.y = cy;
+                line.char_end = char_idx;
                 lines.push(line);
                 line = LineAccum::default();
                 cx = 0.0;
                 cy += line_h;
+            }
+
+            if line.glyphs.is_empty() {
+                line.char_start = char_idx;
             }
 
             let baseline_offset = primary_ascent - seg_ascent;
@@ -641,26 +648,44 @@ impl FontService {
             }
 
             cx += seg_width;
+            char_idx += seg_char_count;
         }
 
         if !line.glyphs.is_empty() || lines.is_empty() {
             line.width = cx.max(line.width);
             line.height = line_h;
             line.y = cy;
+            line.char_end = char_idx;
             lines.push(line);
         }
+
+        // 水平对齐：以 max_width（如果有限）或最大行宽度为容器
+        let container_w = if max_w.is_finite() && max_w > 0.0 {
+            max_w
+        } else {
+            lines.iter().fold(0.0f32, |m, l| m.max(l.width))
+        };
 
         let mut all_glyphs = Vec::new();
         let mut line_infos = Vec::new();
         for l in &lines {
             let gs = all_glyphs.len();
-            all_glyphs.extend_from_slice(&l.glyphs);
+            let align_off = match h_align {
+                HAlign::Left => 0.0,
+                HAlign::Center => (container_w - l.width) * 0.5,
+                HAlign::Right => (container_w - l.width).max(0.0),
+            };
+            for g in &l.glyphs {
+                let mut shifted = *g;
+                shifted.x += align_off;
+                all_glyphs.push(shifted);
+            }
             line_infos.push(tb::LineInfo {
                 y: l.y,
                 height: l.height,
                 width: l.width,
-                start_char: 0,
-                end_char: 0,
+                start_char: l.char_start,
+                end_char: l.char_end,
                 glyph_start: gs,
                 glyph_count: l.glyphs.len(),
             });
@@ -669,13 +694,14 @@ impl FontService {
         (all_glyphs, line_infos)
     }
 
-    /// 布局文本，返回定位后的字形（含自动多字体回退）。
+    /// 布局文本，返回定位后的字形（含自动多字体回退和水平对齐）。
     ///
     /// - 逐行内分段：连续相同字体的字符组成一段，每段调用后端 layout_text。
     /// - 段间 x 坐标累积：同一行内后一段的 glyph.x += 前一段总宽度。
     /// - 垂直基线对齐：不同字体段共享同一行基线，用段 ascent 修正 y 偏移。
     /// - 换行：`\n` 强制换行；word_wrap 开启时按 max_width 自动换行（段级精度）。
-    /// - LineInfo：按实际行构建，每行包含正确的起止 glyph 索引、宽度和高度。
+    /// - LineInfo：按实际行构建，每行包含正确的起止字符偏移、glyph 索引、宽度和高度。
+    /// - 水平对齐：根据 opts.h_align（Left/Center/Right）在容器宽度内对齐各行。
     pub fn layout_text(
         &self,
         font: &FontHandle,
@@ -707,7 +733,7 @@ impl FontService {
 
         let segments = self.segment_text(font, text);
         let (all_glyphs, line_infos) = self.layout_segments(
-            &segments, text, &seg_opts, fs, line_h, primary_ascent, do_wrap, max_w,
+            &segments, text, &seg_opts, fs, line_h, primary_ascent, do_wrap, max_w, opts.h_align,
         );
 
         let total_height = line_infos.last().map_or(0.0, |l| l.y + l.height);

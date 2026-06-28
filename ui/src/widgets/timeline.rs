@@ -16,7 +16,7 @@ pub struct TimelineItem {
     pub description: String,
 }
 
-/// Timeline — 时间线组件。
+// Timeline — 时间线组件。
 define_widget! {
     pub struct Timeline {
         items: Vec<TimelineItem>,

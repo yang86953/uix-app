@@ -1,5 +1,5 @@
 use uix_graphics::Color;
-use crate::{compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
+use crate::layout::{flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use uix_platform::{EdgeInsets, Rect, Size};
 use crate::widget::{Widget, WidgetId, WidgetTree};
 
@@ -14,10 +14,7 @@ pub struct WidgetBuilder {
     bg_color: Option<Color>,
     width: Option<f32>,
     height: Option<f32>,
-    #[allow(dead_code)]
-    min_width: Option<f32>,
-    #[allow(dead_code)]
-    min_height: Option<f32>,
+
     flex_grow: f32,
     flex_shrink: f32,
     visible: bool,

@@ -31,8 +31,6 @@ define_widget! {
         selected_index: usize,
         /// 焦点状态
         focused: bool,
-        /// 输入框在当前帧的 frame（用于弹出定位）
-        frame: Option<Rect>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -177,7 +175,6 @@ impl Mentions {
             search_text: String::new(),
             selected_index: 0,
             focused: false,
-            frame: None,
         }
     }
 

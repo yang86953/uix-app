@@ -21,7 +21,7 @@ pub enum ResultType {
     ServerError,// 500
 }
 
-/// Result — 结果页组件。
+// Result — 结果页组件。
 define_widget! {
     pub struct Result {
         type_: ResultType,

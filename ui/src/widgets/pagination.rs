@@ -9,7 +9,7 @@ use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 use std::cell::Cell;
 
-/// Pagination — 分页器。
+// Pagination — 分页器。
 define_widget! {
     pub struct Pagination {
         total: usize,

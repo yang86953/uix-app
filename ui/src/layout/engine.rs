@@ -194,6 +194,7 @@ impl LayoutEngine for FlexLayout {
 
         let input = FlexInput {
             direction: self.direction,
+            wrap: self.wrap,
             gap: self.gap,
             padding: uix_platform::EdgeInsets::zero(),
             container: content_rect,

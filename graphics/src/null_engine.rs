@@ -3,21 +3,18 @@
 
 use uix_platform::Error;
 use crate::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-use crate::engine::cpu::noop_canvas_3d::NoopCanvas3D;
-use crate::traits::{Canvas2D, Canvas3D, GraphicsEngine, UpdateStrategy};
+use crate::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 use crate::engine::RenderOutcome;
 
 /// 空图形引擎——不做任何渲染。
 pub struct NullEngine {
     canvas_2d: NoopCanvas2D,
-    canvas_3d: NoopCanvas3D,
 }
 
 impl NullEngine {
     pub fn new() -> Self {
         Self {
             canvas_2d: NoopCanvas2D,
-            canvas_3d: NoopCanvas3D,
         }
     }
 }
@@ -47,9 +44,5 @@ impl GraphicsEngine for NullEngine {
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         &mut self.canvas_2d
-    }
-
-    fn canvas_3d(&mut self) -> &mut dyn Canvas3D {
-        &mut self.canvas_3d
     }
 }

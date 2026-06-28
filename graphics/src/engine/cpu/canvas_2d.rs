@@ -147,11 +147,6 @@ impl CpuCanvas2D {
         rast::apply_opacity(c, self.opacity)
     }
 
-    /// Static version: apply an explicit opacity factor to a premultiplied color.
-    pub(crate) fn apply_opacity_with(opacity: f32, color: u32) -> u32 {
-        rast::apply_opacity(color, opacity)
-    }
-
     // ── 像素操作 ──
 
     pub(crate) fn put_pixel_raw(&mut self, x: i32, y: i32, color: u32) {
@@ -282,12 +277,6 @@ impl CpuCanvas2D {
     }
     pub(crate) fn sdf_to_coverage(sd: f32) -> f32 {
         rast::sdf_to_coverage(sd)
-    }
-    pub(crate) fn shadow_coverage(sd: f32, blur: f32) -> f32 {
-        rast::shadow_coverage(sd, blur)
-    }
-    pub(crate) fn shadow_coverage_ambient(sd: f32, blur: f32) -> f32 {
-        rast::shadow_coverage_ambient(sd, blur)
     }
 }
 

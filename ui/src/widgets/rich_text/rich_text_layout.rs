@@ -7,7 +7,7 @@ use uix_platform::Rect;
 use uix_graphics::font_service::FontService;
 use uix_graphics::text_backend::TextLayoutOptions;
 use uix_graphics::{Color, FontHandle};
-use super::{RichTextSegment, RichTextStyle};
+use super::RichTextSegment;
 
 // ══════════════════════════════════════════════════════════════════
 // 布局类型

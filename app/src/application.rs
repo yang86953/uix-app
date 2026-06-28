@@ -1,16 +1,26 @@
+// ============================================================================
+// app/application.rs — 应用配置入口
+//
+// 职责边界（app 层只负责应用配置）：
+//   - 应用模式（GUI / CLI）
+//   - 窗口配置（标题、尺寸）
+//   - CLI 命令注册与执行
+//   - DI 容器注册
+//   - 提供窗口访问（供 ui 层驱动渲染）
+//
+// 超出边界的（应在 ui 层）：
+//   - 渲染引擎创建/管理
+//   - 渲染策略选择
+//   - 字体服务管理
+//   - 主题管理
+//   - 渲染循环驱动
+// ============================================================================
+
 use crate::cli::Cli;
 use crate::di::Container;
 use crate::window::Window;
-use uix_graphics::font_service::FontService;
-use uix_graphics::{GraphicsEngine, SoftwareEngine};
 use uix_platform::create_platform;
 use uix_platform::event::{UiEvent, UiEventPayload, UiEventType};
-use std::cell::RefCell;
-
-use uix_ui::theme::Theme;
-use uix_ui::widget::{WidgetEvent, WidgetTree};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -23,25 +33,8 @@ pub enum AppMode {
     CLI,
 }
 
-/// 渲染策略 — 用户层选择，引擎层实现。
-///
-/// 在 `App` 层定义切换点，具体渲染方案由 `GraphicsEngine` 实现决定：
-/// - `Cpu`    → `SoftwareEngine`（纯 CPU 光栅化）
-/// - `Gpu`    → 纯 GPU 引擎（如 Direct2D / Vulkan）
-/// - `Hybrid` → CPU + GPU 协作（如 CPU 布局 + GPU 绘制）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RenderStrategy {
-    /// 纯 CPU 软件渲染（默认）
-    #[default]
-    Cpu,
-    /// 纯 GPU 加速渲染
-    Gpu,
-    /// CPU + GPU 混合协作
-    Hybrid,
-}
-
 // ════════════════════════════════════════════════════════════════════════════
-// App — 应用入口
+// App — 应用配置入口
 // ════════════════════════════════════════════════════════════════════════════
 
 pub struct App {
@@ -49,17 +42,9 @@ pub struct App {
     window: Option<Window>,
     cli: Option<Cli>,
     container: Container,
-    running: Arc<AtomicBool>,
     exit_code: i32,
     window_title: String,
-    /// 渲染策略（默认 Cpu）
-    render_strategy: RenderStrategy,
-    /// 自定义渲染引擎（可选，默认使用 SoftwareEngine）
-    custom_engine: Option<Box<dyn GraphicsEngine>>,
-    /// 字体服务（由应用层独立管理，不归引擎所有）
-    pub font_service: FontService,
-    /// 应用主题（默认 Ant Design 亮色）
-    pub theme: Theme,
+    window_size: (i32, i32),
 }
 
 impl Default for App {
@@ -69,13 +54,9 @@ impl Default for App {
             window: None,
             cli: None,
             container: Container::new(),
-            running: Arc::new(AtomicBool::new(false)),
             exit_code: 0,
             window_title: "UIX App".to_string(),
-            render_strategy: RenderStrategy::Cpu,
-            custom_engine: None,
-            font_service: FontService::new(),
-            theme: Theme::antd_light(),
+            window_size: (800, 600),
         }
     }
 }
@@ -93,24 +74,9 @@ impl App {
         self
     }
 
-    /// 设置渲染策略。
-    ///
-    /// - `Cpu`    → `SoftwareEngine`（纯 CPU，默认）
-    /// - `Gpu`    → 需要先 `.engine(...)` 传入 GPU 引擎
-    /// - `Hybrid` → 需要先 `.engine(...)` 传入混合引擎
-    pub fn render_strategy(&mut self, s: RenderStrategy) -> &mut Self {
-        self.render_strategy = s;
-        self
-    }
-
-    /// 设置自定义渲染引擎。
-    ///
-    /// 根据 `render_strategy` 传入对应的引擎实现：
-    /// - `Cpu`    → 无需调用此方法，默认用 `SoftwareEngine`
-    /// - `Gpu`    → 传入 GPU 引擎（如 `GpuEngine`）
-    /// - `Hybrid` → 传入混合引擎（如 `HybridEngine`）
-    pub fn engine(&mut self, engine: Box<dyn GraphicsEngine>) -> &mut Self {
-        self.custom_engine = Some(engine);
+    /// 设置窗口初始尺寸。
+    pub fn size(&mut self, width: i32, height: i32) -> &mut Self {
+        self.window_size = (width, height);
         self
     }
 
@@ -120,35 +86,57 @@ impl App {
         self
     }
 
+    /// 注册 CLI 命令。
+    pub fn cli(&mut self, cli: Cli) -> &mut Self {
+        self.cli = Some(cli);
+        self
+    }
+
+    /// 获取 DI 容器。
+    pub fn container(&mut self) -> &mut Container {
+        &mut self.container
+    }
+
+    /// 注册全局单例。
+    pub fn singleton<T: 'static + Send + Clone>(&mut self, instance: T) -> &mut Self {
+        self.container.singleton(instance);
+        self
+    }
+
     // ── 查询方法 ──────────────────────────────────────────────────
 
     pub fn current_mode(&self) -> AppMode {
         self.mode
     }
 
-    pub fn current_strategy(&self) -> RenderStrategy {
-        self.render_strategy
+    pub fn window_title(&self) -> &str {
+        &self.window_title
+    }
+
+    pub fn window_size(&self) -> (i32, i32) {
+        self.window_size
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        self.exit_code
+    }
+
+    pub fn window(&self) -> Option<&Window> {
+        self.window.as_ref()
+    }
+
+    pub fn window_mut(&mut self) -> Option<&mut Window> {
+        self.window.as_mut()
     }
 
     // ── 窗口生命周期 ──────────────────────────────────────────────
 
-    /// 创建主窗口。用 `self.window_title` 作为标题。
-    ///
-    /// 返回 `Err` 如果平台初始化失败。
-    pub fn create_window(
-        &mut self,
-        title: &str,
-        width: i32,
-        height: i32,
-    ) -> Result<&mut Self, uix_platform::Error> {
+    /// 创建主窗口。
+    pub fn create_window(&mut self) -> Result<&mut Self, uix_platform::Error> {
         let platform = create_platform()?;
         let mut window = Window::new(platform);
-        let t = if title.is_empty() {
-            &self.window_title
-        } else {
-            title
-        };
-        if !window.create(t, width, height) {
+        let (w, h) = self.window_size;
+        if !window.create(&self.window_title, w, h) {
             return Err(uix_platform::Error::new(
                 uix_platform::Errc::WindowCreationFailed,
                 "create_window: platform create_window failed",
@@ -158,37 +146,15 @@ impl App {
         Ok(self)
     }
 
-    // ── CLI ───────────────────────────────────────────────────────
-
-    pub fn cli(&mut self, cli: Cli) -> &mut Self {
-        self.cli = Some(cli);
-        self
-    }
-
-    pub fn container(&mut self) -> &mut Container {
-        &mut self.container
-    }
-
-    pub fn singleton<T: 'static + Send + Clone>(&mut self, instance: T) -> &mut Self {
-        self.container.singleton(instance);
-        self
-    }
-
     // ── 运行 ──────────────────────────────────────────────────────
 
     pub fn run(&mut self) -> i32 {
-        self.running.store(true, Ordering::SeqCst);
-
         match self.mode {
             AppMode::GUI => match self.window.as_mut() {
                 Some(window) => {
-                    let running = Arc::clone(&self.running);
-                    window.run(move |platform| {
-                        platform.event_loop().wait_event(&|event: &UiEvent| match event.type_ {
-                            UiEventType::WindowClose => {
-                                running.store(false, Ordering::SeqCst);
-                                false
-                            }
+                    window.run(|platform| {
+                        platform.event_loop().wait_event(&|event| match event.type_ {
+                            uix_platform::event::UiEventType::WindowClose => false,
                             _ => true,
                         })
                     });
@@ -213,177 +179,8 @@ impl App {
 
     pub fn quit(&mut self, exit_code: i32) {
         self.exit_code = exit_code;
-        self.running.store(false, Ordering::SeqCst);
         if let Some(ref mut window) = self.window {
             window.close();
-        }
-    }
-
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-
-    pub fn exit_code(&self) -> i32 {
-        self.exit_code
-    }
-
-    pub fn window(&self) -> Option<&Window> {
-        self.window.as_ref()
-    }
-
-    pub fn window_mut(&mut self) -> Option<&mut Window> {
-        self.window.as_mut()
-    }
-
-    // ── Widget 渲染循环（框架处理全部样板代码）──────────────────────
-
-    /// 根据 `render_strategy` 创建引擎。
-    ///
-    /// - `Cpu`    → 自动创建 `SoftwareEngine`
-    /// - `Gpu`    → 需通过 `.engine(Box::new(GpuEngine::new(ctx, w, h)))` 传入
-    /// - `Hybrid` → 同上，传入混合引擎实现
-    fn build_engine(
-        strategy: RenderStrategy,
-        width: i32,
-        height: i32,
-        system_info: &dyn uix_platform::ISystemInfo,
-    ) -> Option<Box<dyn GraphicsEngine>> {
-        match strategy {
-            RenderStrategy::Cpu => {
-                let mut engine = SoftwareEngine::new();
-                match engine.initialize(width, height) {
-                    Ok(_) => {
-                        uix_platform::log::info_fn("App: SoftwareEngine (CPU) initialized");
-                        Some(Box::new(engine))
-                    }
-                    Err(e) => {
-                        uix_platform::log::error_fn(format!("App: SoftwareEngine init failed: {}", e.short_what()));
-                        None
-                    }
-                }
-            }
-            RenderStrategy::Gpu | RenderStrategy::Hybrid => {
-                uix_platform::log::error_fn(format!("App: {:?} strategy requires passing a custom engine via `.engine(...)`",
-                    strategy));
-                None
-            }
-        }
-    }
-
-    /// 取出或创建引擎。
-    pub fn take_engine(&mut self, width: i32, height: i32, system_info: &dyn uix_platform::ISystemInfo) -> Option<Box<dyn GraphicsEngine>> {
-        if let Some(engine) = self.custom_engine.take() {
-            uix_platform::log::info_fn(format!("App: using custom engine ({:?})", self.render_strategy));
-            Some(engine)
-        } else {
-            Self::build_engine(self.render_strategy, width, height, system_info)
-        }
-    }
-
-    /// 用默认策略运行 widget 渲染循环。
-    ///
-    /// `Cpu` 策略自动创建 `SoftwareEngine`。
-    /// `Gpu` / `Hybrid` 策略需要先用 `.engine(...)` 传入自定义引擎。
-    pub fn run_widget<M, X>(
-        &mut self,
-        tree: &mut WidgetTree,
-        width: i32,
-        height: i32,
-        map_event: M,
-        on_exit: X,
-    ) -> i32
-    where
-        M: Fn(&UiEvent) -> Option<WidgetEvent>,
-        X: Fn(&UiEvent) -> bool,
-    {
-        let platform = match uix_platform::create_platform() {
-            Ok(p) => p,
-            Err(e) => {
-                uix_platform::log::error_fn(format!("App::run_widget: platform creation failed: {}", e.short_what()));
-                return 1;
-            }
-        };
-        let system_info = platform.system_info();
-        let mut engine = match self.take_engine(width, height, system_info) {
-            Some(e) => e,
-            None => return 1,
-        };
-
-        let exit_code = self.run_widget_with(
-            &mut *engine,
-            tree,
-            width,
-            height,
-            map_event,
-            on_exit,
-            |_, _, _| {},
-        );
-        engine.shutdown();
-        exit_code
-    }
-
-    /// 用指定引擎运行 widget 渲染循环（App 不接管引擎生命周期）。
-    pub fn run_widget_with<M, X, F>(
-        &mut self,
-        engine: &mut dyn GraphicsEngine,
-        tree: &mut WidgetTree,
-        width: i32,
-        height: i32,
-        map_event: M,
-        on_exit: X,
-        on_frame: F,
-    ) -> i32
-    where
-        M: Fn(&UiEvent) -> Option<WidgetEvent>,
-        X: Fn(&UiEvent) -> bool,
-        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn uix_platform::Platform),
-    {
-        // 使用 App 的 theme 字段创建运行时动态主题
-        let theme_cell = RefCell::new(self.theme.clone());
-        self.run_widget_with_tokens(
-            engine,
-            tree,
-            width,
-            height,
-            &theme_cell,
-            map_event,
-            on_exit,
-            on_frame,
-        )
-    }
-
-    /// 与 `run_widget_with` 相同，但允许自定义 tokens（用于暗色/亮色切换）。
-    pub fn run_widget_with_tokens<M, X, F>(
-        &mut self,
-        engine: &mut dyn GraphicsEngine,
-        tree: &mut WidgetTree,
-        width: i32,
-        height: i32,
-        theme: &RefCell<Theme>,
-        map_event: M,
-        on_exit: X,
-        on_frame: F,
-    ) -> i32
-    where
-        M: Fn(&UiEvent) -> Option<WidgetEvent>,
-        X: Fn(&UiEvent) -> bool,
-        F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn uix_platform::Platform),
-    {
-        if self.window.is_none() {
-            if let Err(e) = self.create_window("", width, height) {
-                uix_platform::log::error_fn(format!("App::run_widget_with_tokens: {}", e.short_what()));
-                return 1;
-            }
-        }
-
-        match self.window.as_mut() {
-            Some(window) => {
-                window.run_widget_loop(tree, engine, &self.font_service, theme, map_event, on_exit, on_frame)
-            }
-            None => {
-                uix_platform::log::error_fn("App::run_widget_with_tokens: window creation failed");
-                1
-            }
         }
     }
 }
@@ -393,12 +190,11 @@ impl App {
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Default UiEvent → WidgetEvent mapper for most apps。
-pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
+pub fn map_ui_event(ev: &UiEvent) -> Option<uix_ui::widget::WidgetEvent> {
     match ev.type_ {
         UiEventType::MouseDown => {
             if let UiEventPayload::MouseButton(ref d) = ev.payload {
-                uix_platform::log::debug_fn(format!("map_ui_event: MouseDown pos=({}, {}) btn={:?}", d.pos.x, d.pos.y, d.btn));
-                Some(WidgetEvent::MouseDown {
+                Some(uix_ui::widget::WidgetEvent::MouseDown {
                     pos: d.pos,
                     button: d.btn,
                     mods: d.mods,
@@ -409,7 +205,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
         }
         UiEventType::MouseUp => {
             if let UiEventPayload::MouseButton(ref d) = ev.payload {
-                Some(WidgetEvent::MouseUp {
+                Some(uix_ui::widget::WidgetEvent::MouseUp {
                     pos: d.pos,
                     button: d.btn,
                     mods: d.mods,
@@ -420,14 +216,14 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
         }
         UiEventType::MouseMove => {
             if let UiEventPayload::MouseMove(ref d) = ev.payload {
-                Some(WidgetEvent::MouseMove { pos: d.pos })
+                Some(uix_ui::widget::WidgetEvent::MouseMove { pos: d.pos })
             } else {
                 None
             }
         }
         UiEventType::MouseWheel => {
             if let UiEventPayload::MouseWheel(ref d) = ev.payload {
-                Some(WidgetEvent::MouseWheel {
+                Some(uix_ui::widget::WidgetEvent::MouseWheel {
                     pos: d.pos,
                     delta: uix_platform::Point::new(d.delta_x, d.delta_y),
                 })
@@ -437,30 +233,28 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
         }
         UiEventType::KeyDown => {
             if let UiEventPayload::Key(ref d) = ev.payload {
-                Some(WidgetEvent::KeyDown { key: d.key, mods: d.mods })
+                Some(uix_ui::widget::WidgetEvent::KeyDown { key: d.key, mods: d.mods })
             } else {
                 None
             }
         }
         UiEventType::KeyUp => {
             if let UiEventPayload::Key(ref d) = ev.payload {
-                Some(WidgetEvent::KeyUp { key: d.key, mods: d.mods })
+                Some(uix_ui::widget::WidgetEvent::KeyUp { key: d.key, mods: d.mods })
             } else {
                 None
             }
         }
         UiEventType::KeyPress => {
             if let UiEventPayload::KeyPress(ref d) = ev.payload {
-                Some(WidgetEvent::KeyPress {
-                    text: d.text.clone(),
-                })
+                Some(uix_ui::widget::WidgetEvent::KeyPress { text: d.text.clone() })
             } else {
                 None
             }
         }
         UiEventType::WindowResize => {
             if let UiEventPayload::Resize(ref d) = ev.payload {
-                Some(WidgetEvent::Resize {
+                Some(uix_ui::widget::WidgetEvent::Resize {
                     width: d.width as f32,
                     height: d.height as f32,
                 })
@@ -468,31 +262,21 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 None
             }
         }
-        UiEventType::WindowMaximize => {
-            Some(WidgetEvent::WindowMaximize)
-        }
-        UiEventType::WindowMinimize => {
-            Some(WidgetEvent::WindowMinimize)
-        }
-        UiEventType::WindowRestore => {
-            Some(WidgetEvent::WindowRestore)
-        }
-        UiEventType::WindowFocus => {
-            Some(WidgetEvent::WindowFocus)
-        }
-        UiEventType::WindowBlur => {
-            Some(WidgetEvent::WindowBlur)
-        }
+        UiEventType::WindowMaximize => Some(uix_ui::widget::WidgetEvent::WindowMaximize),
+        UiEventType::WindowMinimize => Some(uix_ui::widget::WidgetEvent::WindowMinimize),
+        UiEventType::WindowRestore => Some(uix_ui::widget::WidgetEvent::WindowRestore),
+        UiEventType::WindowFocus => Some(uix_ui::widget::WidgetEvent::WindowFocus),
+        UiEventType::WindowBlur => Some(uix_ui::widget::WidgetEvent::WindowBlur),
         UiEventType::Timer => {
             if let UiEventPayload::Timer(ref d) = ev.payload {
-                Some(WidgetEvent::Timer { id: d.timer_id })
+                Some(uix_ui::widget::WidgetEvent::Timer { id: d.timer_id })
             } else {
                 None
             }
         }
         UiEventType::FileDrop => {
             if let UiEventPayload::FileDrop(ref d) = ev.payload {
-                Some(WidgetEvent::FileDrop {
+                Some(uix_ui::widget::WidgetEvent::FileDrop {
                     files: d.files.clone(),
                     position: d.position,
                 })

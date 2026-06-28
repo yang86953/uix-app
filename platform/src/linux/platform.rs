@@ -34,6 +34,9 @@ pub struct LinuxPlatform {
     // ── Wayland 后端（连接管理 + 事件分发 + 输入/显示/剪贴板）─
     backend: WaylandBackend,
 
+    // ── 事件总线（其他层通过订阅接收事件）───────────────────
+    event_bus: EventBus,
+
     // ── 独立子系统 ──────────────────────────────────────────
     console_subsys: LinuxConsole,
     file_dialog_subsys: LinuxFileDialog,
@@ -72,6 +75,7 @@ impl LinuxPlatform {
             file_system_subsys: LinuxFileSystem::new(),
             notification_subsys: LinuxNotification::new(),
             system_info_subsys: LinuxSystemInfo::new(),
+            event_bus: EventBus::new(),
             timer_subsys: LinuxTimer::new(timer_eq),
         })
     }
@@ -115,6 +119,10 @@ impl Platform for LinuxPlatform {
 
     fn event_loop(&mut self) -> &mut dyn IEventLoop {
         self
+    }
+
+    fn event_bus(&mut self) -> &mut EventBus {
+        &mut self.event_bus
     }
 
     // ── 子系统访问器 ──────────────────────────────────────────

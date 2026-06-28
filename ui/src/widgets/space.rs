@@ -4,8 +4,8 @@
 
 use uix_platform::{Rect, Size};
 use crate::define_widget;
-use crate::{
-    compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
+use crate::layout::{
+    flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;

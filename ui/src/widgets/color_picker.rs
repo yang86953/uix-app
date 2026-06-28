@@ -14,7 +14,7 @@ const PRESET_COLORS: &[u32] = &[
     0xF0F0F0, 0xD9D9D9, 0xBFBFBF, 0x8C8C8C, 0x434343, 0x262626, 0x1F1F1F, 0x141414,
 ];
 
-/// ColorPicker — 颜色选择器。
+// ColorPicker — 颜色选择器。
 define_widget! {
     pub struct ColorPicker {
         value: Color,

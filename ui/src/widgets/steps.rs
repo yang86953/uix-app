@@ -27,7 +27,7 @@ pub struct Step {
     pub status: StepStatus,
 }
 
-/// Steps — 步骤条组件。
+// Steps — 步骤条组件。
 define_widget! {
     pub struct Steps {
         steps: Vec<Step>,

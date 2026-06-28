@@ -8,7 +8,7 @@ use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 
-/// AutoComplete — 自动完成输入框。
+// AutoComplete — 自动完成输入框。
 define_widget! {
     pub struct AutoComplete {
         placeholder: String,

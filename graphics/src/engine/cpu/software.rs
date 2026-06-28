@@ -1,7 +1,7 @@
 //! SoftwareEngine — CPU 软件渲染引擎。
 //!
-//! 组合 PixelSurface + CpuCanvas2D + NoopCanvas3D，
-//! 实现新 GraphicsEngine trait。
+//! 组合 PixelSurface + CpuCanvas2D,
+//! 实现 GraphicsEngine trait。
 //! 帧生命周期逻辑（清除策略/裁剪管理）在此直接内联，不再依赖 frame.rs。
 
 use uix_platform::Rect;
@@ -9,16 +9,14 @@ use uix_platform::Error;
 
 use crate::color::Color;
 use crate::engine::cpu::canvas_2d::CpuCanvas2D;
-use crate::engine::cpu::noop_canvas_3d::NoopCanvas3D;
 use crate::engine::cpu::pixel_surface::PixelSurface;
 use crate::engine::RenderOutcome;
 use crate::rasterizer::image::blit_image;
-use crate::traits::{Canvas2D, Canvas3D, GraphicsEngine, UpdateStrategy};
+use crate::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 use crate::ImageHandle;
 
 /// CPU 软件渲染引擎。
 ///
-/// 组合 PixelSurface + CpuCanvas2D + NoopCanvas3D。
 /// 不持有资源管理器——字体/图片/字形归 UI 层。
 pub struct SoftwareEngine {
     pub(crate) main_width: i32,
@@ -29,8 +27,6 @@ pub struct SoftwareEngine {
 
     /// 2D 绘制上下文（v2 架构）。
     pub(crate) canvas_2d: CpuCanvas2D,
-    /// 3D 绘制上下文（Noop）。
-    pub(crate) canvas_3d: NoopCanvas3D,
 
     /// 离屏渲染表面列表（索引 = ImageHandle.0）。
     offscreens: Vec<Option<CpuCanvas2D>>,
@@ -54,7 +50,6 @@ impl SoftwareEngine {
             main_height: 0,
             clear_color: Color::from_rgba(0, 0, 0, 0),
             canvas_2d: CpuCanvas2D::new(PixelSurface::new(w, h)),
-            canvas_3d: NoopCanvas3D,
             offscreens: Vec::new(),
             next_offscreen_id: 0,
         }
@@ -157,10 +152,6 @@ impl GraphicsEngine for SoftwareEngine {
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         &mut self.canvas_2d
-    }
-
-    fn canvas_3d(&mut self) -> &mut dyn Canvas3D {
-        &mut self.canvas_3d
     }
 
     // ── 离屏缓冲管理 ──

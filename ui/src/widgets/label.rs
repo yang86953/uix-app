@@ -7,7 +7,7 @@ use uix_platform::{Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
 use crate::style::Style;
-use uix_graphics::{FontHandle, GraphicsEngine, TextLayoutOptions};
+use uix_graphics::{GraphicsEngine, TextLayoutOptions};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
 

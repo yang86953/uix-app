@@ -3,8 +3,8 @@
 
 use crate::define_widget;
 use uix_graphics::{Color, Radius};
-use crate::{
-    compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
+use crate::layout::{
+    flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
 use uix_platform::{EdgeInsets, Point, Rect, Size};
 use crate::children::WidgetChildren;

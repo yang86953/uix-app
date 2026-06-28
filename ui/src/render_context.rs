@@ -11,7 +11,7 @@ use uix_graphics::font_service::FontService;
 use uix_graphics::path::{FillRule, Path};
 use uix_graphics::stroker::StrokeOptions;
 use uix_graphics::traits::Canvas2D;
-use uix_graphics::{Color, FontHandle, GraphicsEngine, HAlign, Radius, VAlign};
+use uix_graphics::{Color, FontHandle, Radius};
 use uix_graphics::{GradientDirection, TextLayoutOptions};
 use crate::style::Style;
 use crate::theme::TokenProvider;
@@ -48,6 +48,28 @@ impl<'a> RenderContext<'a> {
     }
 
     /// 设置调试模式。开启时在 overlay 层绘制调试边框和信息。
+    /// 创建文本布局选项（消除重复的 TextLayoutOptions 样板代码）。
+    fn text_opts(
+        &self,
+        font_size: f32,
+        max_width: f32,
+        max_height: f32,
+        word_wrap: bool,
+        h_align: uix_graphics::HAlign,
+        v_align: uix_graphics::VAlign,
+    ) -> uix_graphics::text_backend::TextLayoutOptions {
+        let opts = TextLayoutOptions {
+            max_width,
+            max_height,
+            line_height: font_size * 1.5,
+            word_wrap,
+            h_align,
+            v_align,
+            font_size,
+        };
+        uix_graphics::text_backend::TextLayoutOptions::from(opts)
+    }
+
     pub fn set_debug_mode(&mut self, mode: bool) {
         self.debug_mode = mode;
     }
@@ -72,6 +94,9 @@ impl<'a> RenderContext<'a> {
         self.font_service
     }
 
+    /// 绘制盒子阴影（定向光阴影，较紧凑）。
+    /// - blur_radius: 模糊半径
+    /// - offset_x/offset_y: 阴影偏移
     pub fn draw_box_shadow(
         &mut self,
         rect: Rect,
@@ -177,6 +202,8 @@ impl<'a> RenderContext<'a> {
         &self.font
     }
 
+    /// 设置文本绘制最大宽度。影响后续所有文本绘制/测量操作。
+    /// 默认值为 `f32::MAX`（不限制宽度）。
     pub fn set_max_text_width(&mut self, width: f32) {
         self.max_text_width = width;
     }
@@ -203,16 +230,7 @@ impl<'a> RenderContext<'a> {
         if text.is_empty() {
             return;
         }
-        let opts = TextLayoutOptions {
-            max_width: self.max_text_width,
-            max_height: 0.0,
-            line_height: font_size * 1.5,
-            word_wrap: false,
-            h_align: uix_graphics::HAlign::Left,
-            v_align: uix_graphics::VAlign::Top,
-            font_size,
-        };
-        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
         let fh = self.font;
         let layout = self
             .font_service()
@@ -256,16 +274,7 @@ impl<'a> RenderContext<'a> {
             return;
         }
         let cnt = rect.x + rect.w * 0.5;
-        let opts = TextLayoutOptions {
-            max_width: self.max_text_width,
-            max_height: 0.0,
-            line_height: font_size * 1.5,
-            word_wrap: false,
-            h_align: HAlign::Left,
-            v_align: VAlign::Top,
-            font_size,
-        };
-        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
         let fh = self.font;
         let layout = self
             .font_service()
@@ -280,16 +289,7 @@ impl<'a> RenderContext<'a> {
         if text.is_empty() {
             return;
         }
-        let opts = TextLayoutOptions {
-            max_width: rect.w.max(1.0),
-            max_height: 0.0,
-            line_height: font_size * 1.5,
-            word_wrap: false,
-            h_align: HAlign::Left,
-            v_align: VAlign::Top,
-            font_size,
-        };
-        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+        let backend_opts = self.text_opts(font_size, rect.w.max(1.0), 0.0, false, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
         let fh = self.font;
         let layout = self
             .font_service()
@@ -304,16 +304,7 @@ impl<'a> RenderContext<'a> {
         if text.is_empty() {
             return;
         }
-        let opts = TextLayoutOptions {
-            max_width: rect.w.max(1.0),
-            max_height: rect.h.max(0.0),
-            line_height: font_size * 1.5,
-            word_wrap: true,
-            h_align: uix_graphics::HAlign::Left,
-            v_align: uix_graphics::VAlign::Top,
-            font_size,
-        };
-        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+        let backend_opts = self.text_opts(font_size, rect.w.max(1.0), rect.h.max(0.0), true, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
         let fh = self.font;
         let layout = self
             .font_service()
@@ -372,16 +363,7 @@ impl<'a> RenderContext<'a> {
         if text.is_empty() || start >= end {
             return Vec::new();
         }
-        let opts = TextLayoutOptions {
-            max_width: self.max_text_width,
-            max_height: 0.0,
-            line_height: font_size * 1.5,
-            word_wrap: false,
-            h_align: HAlign::Left,
-            v_align: VAlign::Top,
-            font_size,
-        };
-        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
         let fh = self.font;
         let layout = self
             .font_service()
@@ -440,68 +422,34 @@ impl<'a> RenderContext<'a> {
 
     // ── 文本测量（委托给 FontService）──
 
+    /// 测量文本尺寸（不换行）。返回文本在指定字号下的宽高。
     pub fn measure_text(&mut self, text: &str, font_size: f32) -> Size {
-        let opts = TextLayoutOptions {
-            max_width: self.max_text_width,
-            max_height: 0.0,
-            line_height: font_size * 1.5,
-            word_wrap: false,
-            h_align: uix_graphics::HAlign::Left,
-            v_align: uix_graphics::VAlign::Top,
-            font_size,
-        };
-        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
         let fh = self.font;
         self.font_service()
             .measure_text(&fh, text, &backend_opts)
     }
 
-    /// Measure text with word wrap enabled at the given max width.
+    /// 测量文本尺寸（换行模式）。在指定最大宽度和字号下返回文本宽高。
     pub fn measure_text_wrapped(&mut self, text: &str, font_size: f32, max_width: f32) -> Size {
-        let opts = TextLayoutOptions {
-            max_width,
-            max_height: 0.0,
-            line_height: font_size * 1.5,
-            word_wrap: true,
-            h_align: uix_graphics::HAlign::Left,
-            v_align: uix_graphics::VAlign::Top,
-            font_size,
-        };
-        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+        let backend_opts = self.text_opts(font_size, max_width, 0.0, true, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
         let fh = self.font;
         self.font_service()
             .measure_text(&fh, text, &backend_opts)
     }
 
-    /// 命中测试：返回点击位置对应的字符索引。
-    pub fn hit_test(&mut self, text: &str, font_size: f32, point: Point) -> Option<usize> {
-        let opts = TextLayoutOptions {
-            max_width: self.max_text_width,
-            max_height: 0.0,
-            line_height: font_size * 1.5,
-            word_wrap: false,
-            h_align: uix_graphics::HAlign::Left,
-            v_align: uix_graphics::VAlign::Top,
-            font_size,
-        };
-        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+    /// 文本命中测试：返回点击位置对应的字符索引。
+    /// 注意与 WidgetTree::hit_test（widget 树命中测试）区分。
+    pub fn text_hit_test(&mut self, text: &str, font_size: f32, point: Point) -> Option<usize> {
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
         let fh = self.font;
         self.font_service()
             .hit_test_text(&fh, text, &backend_opts, point)
     }
 
     /// 获取指定字符的光标 x 位置（相对文本起始点）。
-    pub fn cursor_x(&mut self, text: &str, font_size: f32, char_index: usize) -> f32 {
-        let opts = TextLayoutOptions {
-            max_width: self.max_text_width,
-            max_height: 0.0,
-            line_height: font_size * 1.5,
-            word_wrap: false,
-            h_align: uix_graphics::HAlign::Left,
-            v_align: uix_graphics::VAlign::Top,
-            font_size,
-        };
-        let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
+    pub fn text_cursor_x(&mut self, text: &str, font_size: f32, char_index: usize) -> f32 {
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, uix_graphics::HAlign::Left, uix_graphics::VAlign::Top);
         let fh = self.font;
         self.font_service()
             .text_cursor_x(&fh, text, &backend_opts, char_index)
@@ -578,14 +526,7 @@ impl<'a> RenderContext<'a> {
 
     // ── 其他绘制操作 ──
 
-    pub fn set_supersample_level(&mut self, _level: u8) {
-        // Canvas2D 不支持超采样（v2 重构后移除）
-    }
-
-    pub fn supersample_level(&self) -> u8 {
-        0
-    }
-
+    /// 绘制线性渐变填充。
     pub fn fill_linear_gradient(
         &mut self,
         rect: uix_platform::Rect,
@@ -596,6 +537,7 @@ impl<'a> RenderContext<'a> {
         self.canvas_2d.fill_linear_gradient(rect, ca, cb, dir);
     }
 
+    /// 绘制径向渐变填充。
     pub fn fill_radial_gradient(
         &mut self,
         cx: f32,

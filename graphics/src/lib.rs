@@ -1,7 +1,6 @@
 #![deny(clippy::unwrap_used)]
 #![deny(clippy::expect_used)]
-//! UIX Graphics — 2D graphics engine abstraction, Flexbox layout engine, and foundation types.
-//! Layers 0+3+4: Foundation types + Graphics + Layout
+//! UIX Graphics — 2D graphics engine abstraction and foundation types.
 
 pub mod bitmap_font;
 pub mod blur;
@@ -20,5 +19,38 @@ pub mod text_backends;
 pub mod traits;
 pub mod types;
 
-mod api;
-pub use api::*;
+// ── 基础图形类型 ──
+pub use crate::color::{colors, Color};
+pub use crate::types::{
+    BlendMode, DirtyRegion, FontHandle, GradientDirection, HAlign, ImageHandle, Radius,
+    TextLayoutOptions, Transform, VAlign,
+};
+
+// ── 渲染引擎 ──
+pub use crate::traits::GraphicsEngine;
+pub use crate::engine::RenderOutcome;
+pub use crate::traits::{Canvas2D, RenderingBackend, UpdateStrategy};
+
+// ── 引擎实现 ──
+pub use crate::null_engine::NullEngine;
+pub use crate::gpu_engine::GpuEngine;
+pub use crate::engine::cpu::software::SoftwareEngine;
+
+// ── 字体文本后端 ──
+pub use crate::text_backend::{
+    GlyphRaster, LineMetrics, PositionedGlyph, TextBackend, TextLayout,
+};
+
+// ── Bitmap 字体 ──
+pub use crate::bitmap_font::BitmapFont;
+
+// ── 路径系统 ──
+pub use crate::path::{FillRule, LineCap, LineJoin, Path, PathBuilder, PathSegment};
+pub use crate::rasterizer::fill_polygons;
+pub use crate::stroker::{stroke_path, StrokeOptions};
+
+// ── 帧图 ──
+pub use crate::frame_graph::compile::{CompiledGraph, Compiler};
+pub use crate::frame_graph::pass::{FrameResources, PassBuilder, PassContext, PassNode};
+pub use crate::frame_graph::resource::{PassId, ResourceRegistry};
+pub use crate::frame_graph::FrameGraph;

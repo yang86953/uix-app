@@ -10,10 +10,8 @@ use uix::platform::settings::SettingsService;
 use uix::platform::diagnostic::{
     LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
 };
-use uix::ui::layout::{
-    self as flex_layout, AlignItems as GAlign, FlexChild, FlexDirection as GDir, FlexInput,
-    JustifyContent as GJustify,
-};
+use uix::ui::layout::{AlignItems, JustifyContent};
+use uix::ui::layout::engine::{FlexLayout, LayoutChild, LayoutEngine};
 use uix::ui::state::{Computed, State};
 use uix::ui::Theme;
 
@@ -110,36 +108,30 @@ pub fn demo_state() {
 
 pub fn demo_flex() {
     println!("\n╔══ Flex 布局 ═══╗");
-    let out = flex_layout::flex::compute_flex_layout(&FlexInput {
-        direction: GDir::Row,
-        gap: 8.0,
-        padding: EdgeInsets::uniform(16.0),
-        container: Rect::new(0.0, 0.0, 400.0, 300.0),
-        children: vec![
-            FlexChild {
-                flex_grow: 1.0,
-                ..Default::default()
-            },
-            FlexChild {
-                flex_grow: 2.0,
-                ..Default::default()
-            },
-            FlexChild {
-                flex_grow: 1.0,
-                ..Default::default()
-            },
-        ],
-        child_sizes: vec![
-            Size::new(60.0, 200.0),
-            Size::new(100.0, 200.0),
-            Size::new(60.0, 200.0),
-        ],
-        justify_content: GJustify::Center,
-        align_items: GAlign::Center,
-        ..Default::default()
-    });
+    // 使用新的公共 LayoutEngine API
+    let flex = FlexLayout::row()
+        .with_gap(8.0)
+        .with_justify(JustifyContent::Center)
+        .with_align(AlignItems::Center);
+
+    let children = vec![
+        LayoutChild::new(0, Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
+        LayoutChild::new(1, Size::new(100.0, 200.0)).with_flex(2.0, 1.0),
+        LayoutChild::new(2, Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
+    ];
+
+    let container = Rect::new(0.0, 0.0, 400.0, 300.0);
+    let padding = EdgeInsets::uniform(16.0);
+    let content_rect = Rect::new(
+        container.x + padding.left,
+        container.y + padding.top,
+        (container.w - padding.horizontal()).max(0.0),
+        (container.h - padding.vertical()).max(0.0),
+    );
+
+    let out = flex.layout(content_rect, &children);
     println!("  Row flex(1,2,1) in 400x300 pad=16 gap=8:");
-    for (i, r) in out.child_rects.iter().enumerate() {
+    for (i, r) in out.positions.iter().enumerate() {
         println!(
             "    [{}] x={:.0} y={:.0} w={:.0} h={:.0}",
             i, r.x, r.y, r.w, r.h

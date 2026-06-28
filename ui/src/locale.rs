@@ -185,9 +185,10 @@ use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 use uix_platform::{Rect, Size};
 
-/// LocaleProvider — 为子树注入国际化文案。
+// LocaleProvider — 为子树注入国际化文案。
 define_widget! {
     pub struct LocaleProvider {
+        #[allow(dead_code)]
         locale: Locale,
     }
 

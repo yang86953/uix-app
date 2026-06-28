@@ -34,7 +34,7 @@ pub struct NotificationItem {
     pub closable: bool,
 }
 
-/// Notification — 通知提醒框容器。
+// Notification — 通知提醒框容器。
 define_widget! {
     pub struct Notification {
         queue: Rc<RefCell<Vec<NotificationItem>>>,

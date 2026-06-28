@@ -21,7 +21,7 @@ pub fn list_item_height(size: ListSize) -> f32 {
     }
 }
 
-/// List — 列表组件。
+// List — 列表组件。
 define_widget! {
     pub struct List {
         header: String,

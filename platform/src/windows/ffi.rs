@@ -9,7 +9,7 @@
 #![cfg(windows)]
 #![allow(nonstandard_style)]
 
-use super::bindings::{FLASHWINFO, MSG, POINT, RECT, WNDCLASSEXW};
+use super::bindings::{MSG, POINT, RECT, WNDCLASSEXW};
 
 // ════════════════════════════════════════════════════════════════════════════
 // kernel32
@@ -19,36 +19,10 @@ use super::bindings::{FLASHWINFO, MSG, POINT, RECT, WNDCLASSEXW};
 extern "system" {
     pub(super) fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
 
-    // ── 控制台 ──
-    pub(super) fn GetStdHandle(nStdHandle: u32) -> *mut std::ffi::c_void;
-    pub(super) fn SetConsoleTextAttribute(hConsoleOutput: *mut std::ffi::c_void, wAttributes: u16) -> i32;
-    // WriteConsoleA, GetConsoleScreenBufferInfo, SetConsoleCursorInfo
-    // 已在 console.rs 中声明（使用具体类型，避免 *mut c_void 签名冲突）
-    pub(super) fn SetConsoleTitleW(lpConsoleTitle: *const u16) -> i32;
-
-    // ── 系统信息 ──
-    // RtlGetVersion, GetNativeSystemInfo, GlobalMemoryStatusEx
-    // 已在 system_info.rs 中声明（使用具体类型）
-    pub(super) fn GetComputerNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
-    pub(super) fn GetTickCount64() -> u64;
-    pub(super) fn GetUserNameW(lpBuffer: *mut u16, nSize: *mut u32) -> i32;
-    pub(super) fn GetCurrentProcess() -> *mut std::ffi::c_void;
-    pub(super) fn GetTickCount() -> u32;
     pub(super) fn GlobalAlloc(uFlags: u32, dwBytes: usize) -> *mut std::ffi::c_void;
     pub(super) fn GlobalLock(hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(super) fn GlobalUnlock(hMem: *mut std::ffi::c_void) -> i32;
 
-    // ── 文件/路径 ──
-    pub(super) fn GetTempPathW(nBufferLength: u32, lpBuffer: *mut u16) -> u32;
-    pub(super) fn GetModuleFileNameW(hModule: *mut std::ffi::c_void, lpFilename: *mut u16, nSize: u32) -> u32;
-    pub(super) fn GetCurrentDirectoryW(nBufferLength: u32, lpBuffer: *mut u16) -> u32;
-    pub(super) fn GetFileAttributesW(lpFileName: *const u16) -> u32;
-    pub(super) fn GetWindowsDirectoryW(lpBuffer: *mut u16, uSize: u32) -> u32;
-
-    // ── 字符串/错误 ──
-    // WideCharToMultiByte, MultiByteToWideChar, FormatMessageW
-    // 已在 util.rs 中声明（使用具体类型）
-    pub(super) fn GetLastError() -> u32;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -75,7 +49,6 @@ extern "system" {
     pub(super) fn DestroyWindow(hwnd: *mut std::ffi::c_void) -> i32;
     pub(super) fn AdjustWindowRectEx(lpRect: *mut RECT, dwStyle: u32, bMenu: i32, dwExStyle: u32) -> i32;
     pub(super) fn DefWindowProcW(hwnd: *mut std::ffi::c_void, msg: u32, wparam: usize, lparam: isize) -> isize;
-    pub(super) fn GetMessageW(lpMsg: *mut MSG, hwnd: *mut std::ffi::c_void, wMsgFilterMin: u32, wMsgFilterMax: u32) -> i32;
     pub(super) fn PeekMessageW(lpMsg: *mut MSG, hwnd: *mut std::ffi::c_void, wMsgFilterMin: u32, wMsgFilterMax: u32, wRemoveMsg: u32) -> i32;
     /// 等待消息或超时。返回 WAIT_TIMEOUT 表示超时，WAIT_FAILED 表示失败。
     pub(super) fn MsgWaitForMultipleObjects(
@@ -96,16 +69,13 @@ extern "system" {
     pub(super) fn SetWindowLongPtrW(hwnd: *mut std::ffi::c_void, nIndex: i32, dwNewLong: isize) -> isize;
     pub(super) fn GetWindowLongPtrW(hwnd: *mut std::ffi::c_void, nIndex: i32) -> isize;
     pub(super) fn SetLayeredWindowAttributes(hwnd: *mut std::ffi::c_void, crKey: u32, bAlpha: u8, dwFlags: u32) -> i32;
-    pub(super) fn FlashWindowEx(pfwi: *mut FLASHWINFO) -> i32;
     pub(super) fn GetSystemMetrics(nIndex: i32) -> i32;
     pub(super) fn LoadIconW(hInstance: *mut std::ffi::c_void, lpIconName: *const u16) -> *mut std::ffi::c_void;
-    pub(super) fn LoadImageW(hInst: *mut std::ffi::c_void, name: *const u16, typ: u32, cx: i32, cy: i32, fuLoad: u32) -> *mut std::ffi::c_void;
     pub(super) fn LoadCursorW(hInstance: *mut std::ffi::c_void, lpCursorName: *const u16) -> *mut std::ffi::c_void;
     pub(super) fn SetCursor(hCursor: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(super) fn SetCapture(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(super) fn ReleaseCapture() -> i32;
     pub(super) fn ScreenToClient(hwnd: *mut std::ffi::c_void, lpPoint: *mut POINT) -> i32;
-    pub(super) fn SendMessageW(hwnd: *mut std::ffi::c_void, msg: u32, wparam: usize, lparam: isize) -> isize;
     pub(super) fn GetAsyncKeyState(vKey: i32) -> i16;
     pub(super) fn DragAcceptFiles(hwnd: *mut std::ffi::c_void, fAccept: i32);
     pub(super) fn DragQueryFileW(hdrop: *mut std::ffi::c_void, iFile: u32, lpszFile: *mut u16, cch: u32) -> u32;
@@ -116,11 +86,6 @@ extern "system" {
     pub(super) fn SetTimer(hwnd: *mut std::ffi::c_void, nIDEvent: u32, uElapse: u32, lpTimerFunc: Option<unsafe extern "system" fn()>) -> usize;
     pub(super) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 
-    // ── 光标 ──
-    pub(super) fn ShowCursor(bShow: i32) -> i32;
-    pub(super) fn GetCursorPos(lpPoint: *mut POINT) -> i32;
-    pub(super) fn SetCursorPos(x: i32, y: i32) -> i32;
-    pub(super) fn ClipCursor(lpRect: *const RECT) -> i32;
     pub(super) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
 
     // ── 剪贴板 ──
@@ -129,12 +94,10 @@ extern "system" {
     pub(super) fn GetClipboardData(uFormat: u32) -> *mut std::ffi::c_void;
     pub(super) fn SetClipboardData(uFormat: u32, hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(super) fn EmptyClipboard() -> i32;
-    pub(super) fn IsClipboardFormatAvailable(uFormat: u32) -> i32;
     pub(super) fn GetPriorityClipboardFormat(paFormatPriorityList: *const u32, cFormats: i32) -> i32;
 
     // ── 键盘 ──
     // GetLastInputInfo 已在 keyboard.rs 中声明（使用具体类型）
-    pub(super) fn GetDoubleClickTime() -> u32;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -145,57 +108,13 @@ extern "system" {
 extern "system" {
     pub(super) fn GetDeviceCaps(hdc: *mut std::ffi::c_void, nIndex: i32) -> i32;
     // CreateDIBSection 已在 gdi_presenter.rs 中声明（使用具体 BITMAPINFO 类型）
-    pub(super) fn SelectObject(hdc: *mut std::ffi::c_void, h: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
-    pub(super) fn DeleteObject(h: *mut std::ffi::c_void) -> i32;
-    pub(super) fn DeleteDC(hdc: *mut std::ffi::c_void) -> i32;
-    pub(super) fn BitBlt(
-        hdc: *mut std::ffi::c_void,
-        x: i32, y: i32, cx: i32, cy: i32,
-        hdcSrc: *mut std::ffi::c_void,
-        x1: i32, y1: i32,
-        rop: u32,
-    ) -> i32;
-    pub(super) fn CreateCompatibleDC(hdc: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
-    pub(super) fn GetDIBits(
-        hdc: *mut std::ffi::c_void,
-        hbm: *mut std::ffi::c_void,
-        start: u32,
-        cLines: u32,
-        lpvBits: *mut std::ffi::c_void,
-        lpbmi: *mut std::ffi::c_void,
-        usage: u32,
-    ) -> i32;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// shell32
+// shell32（函数在各子系统文件中声明，避免参数类型冲突）
+// comdlg32（函数在 file_dialog.rs 中声明）
+// ole32（函数在 file_dialog.rs 和 filesystem.rs 中声明）
 // ════════════════════════════════════════════════════════════════════════════
-
-#[link(name = "shell32")]
-extern "system" {
-    // Shell_NotifyIconW 已在 notification.rs 中声明（使用具体 NOTIFYICONDATAW 类型）
-    // SHGetKnownFolderPath 已在 filesystem.rs 中声明（使用具体 GUID 类型）
-    // SHBrowseForFolderW 已在 file_dialog.rs 中声明（使用具体 BROWSEINFOW 类型）
-    pub(super) fn SHGetPathFromIDListW(pidl: *mut std::ffi::c_void, pszPath: *mut u16) -> i32;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// comdlg32
-// ════════════════════════════════════════════════════════════════════════════
-
-#[link(name = "comdlg32")]
-extern "system" {
-    // GetOpenFileNameW, GetSaveFileNameW 已在 file_dialog.rs 中声明（使用具体 OPENFILENAMEW 类型）
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// ole32
-// ════════════════════════════════════════════════════════════════════════════
-
-#[link(name = "ole32")]
-extern "system" {
-    pub(super) fn CoTaskMemFree(pv: *mut std::ffi::c_void);
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // advapi32 — 注册表

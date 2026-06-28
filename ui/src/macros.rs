@@ -95,22 +95,34 @@ macro_rules! tree {
 ///
 /// # Method reference
 ///
-/// | Macro name    | Widget trait method     | Framework access                  |
-/// |---------------|-------------------------|-----------------------------------|
-/// | `@new`        | Constructor             | —                                 |
-/// | `preferred_size` | `fn preferred_size` | `&self, engine`                   |
-/// | `on_event`    | `fn on_event`           | `&mut self, event: &WidgetEvent`  |
-/// | `render`      | `fn render`            | `&self, frame, ctx, tree`         |
-/// | `on_mount`    | `fn on_mount`           | `&mut self`                       |
-/// | `on_unmount`  | `fn on_unmount`         | `&mut self`                       |
-/// | `on_update`   | `fn on_update`          | `&mut self, dt: f32`              |
-/// | `build`       | `fn build`             | `&self` → children                |
+/// | 宏段          | 对应 Widget trait 方法    | 参数                              |
+/// |---------------|---------------------------|-----------------------------------|
+/// | `@new`        | 无参构造器                | 仅 `-> Self`，不支持参数          |
+/// | `preferred_size` | `fn preferred_size`   | `(&self, engine)`                 |
+/// | `on_event`    | `fn on_event`             | `(&mut self, event: &WidgetEvent)` |
+/// | `render`      | `fn render`              | `(&self, frame, ctx, tree)`       |
+/// | `post_render` | `fn post_render`         | `(&self, frame, ctx, tree)`       |
+/// | `on_mount`    | `fn on_mount`            | `(&mut self)`                     |
+/// | `on_unmount`  | `fn on_unmount`          | `(&mut self)`                     |
+/// | `on_update`   | `fn on_update`           | `(&mut self, dt: f32)`            |
+/// | `build`       | `fn build`               | `(&self) -> Vec<Box<dyn Widget>>` |
+/// | `visible`     | `fn visible`             | `(&self) -> bool`                 |
+/// | `needs_continuous_update` | `fn needs_continuous_update` | `(&self) -> bool`     |
+/// | `hit_test_frame` | `fn hit_test_frame`   | `(&self, actual_frame) -> Rect`   |
+/// | `children_clip` | `fn children_clip`     | `(&self, frame) -> Option<Rect>`  |
+/// | `is_repaint_boundary` | `fn is_repaint_boundary` | `(&self) -> bool`         |
 ///
-/// # Examples
+/// # 构造器说明
+///
+/// `@new` 仅生成**无参** `pub fn new() -> Self`。
+/// 若 widget 需要带参构造器（如 `Button::new("Click")`），
+/// 请在宏外手动添加 `impl WidgetName { ... }` 块。
+///
+/// # 示例
 ///
 /// ```ignore
 /// define_widget! {
-///     /// A click counter button.
+///     /// 一个点击计数的按钮。
 ///     pub Counter {
 ///         count: u32,
 ///     }

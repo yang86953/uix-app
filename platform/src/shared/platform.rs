@@ -6,7 +6,7 @@
 // ============================================================================
 
 use crate::{
-    IWindowManager, IEventLoop, IClipboard, ICursor, IDisplay,
+    EventBus, IWindowManager, IEventLoop, IClipboard, ICursor, IDisplay,
     IFileDialog, IKeyboard, ITextInput, ITimer, INotification,
     IConsole, IFileSystem, ISystemInfo,
 };
@@ -21,6 +21,10 @@ pub trait Platform {
 
     // ── 事件循环（平台共享）─────────────────────────────────
     fn event_loop(&mut self) -> &mut dyn IEventLoop;
+
+    // ── 事件总线（平台共享）─────────────────────────────────
+    /// 返回平台层的事件总线，其他层通过订阅接收事件。
+    fn event_bus(&mut self) -> &mut EventBus;
 
     // ── 子系统访问器（平台共享）─────────────────────────────
     fn clipboard(&mut self) -> &mut dyn IClipboard;

@@ -23,8 +23,7 @@ use std::sync::{Arc, Mutex};
 use uix_platform::{Point, Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
-use uix_graphics::font_service::FontService;
-use uix_graphics::{Color, GraphicsEngine, Radius, TextLayoutOptions};
+use uix_graphics::{Color, GraphicsEngine, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
 

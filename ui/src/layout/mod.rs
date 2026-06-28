@@ -1,13 +1,16 @@
-//! UIX Layout — 纯函数式 Flexbox 和 Grid 布局引擎。
+//! UIX Layout — Flexbox 和 Grid 布局引擎。
 //!
-//! 与 Web CSS Flexbox/Grid 行为一致，无副作用，无渲染依赖。
-//! 输入布局约束，输出子节点位置。
+//! 布局入口是 [`LayoutEngine`] trait 及其实现 [`FlexLayout`] / [`GridLayout`]。
+//!
+//! 推荐用法：容器 widget 组合 `FlexLayout` 或 `GridLayout`，
+//! 在 `layout_children` 中调用 `LayoutEngine::layout()` 获取子节点位置。
 
 use uix_platform::{EdgeInsets, Rect, Size};
 use std::f32;
 
-pub mod flex;
-pub mod grid;
+// 内部模块（仅同 crate 内部使用，不对外公开）
+pub(crate) mod flex;
+pub(crate) mod grid;
 pub mod engine;
 
 // 重新导出统一布局引擎的核心类型
@@ -15,7 +18,7 @@ pub use engine::{
     BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutEngine, LayoutOutput, child_from_tree,
 };
 
-// ── Shared enums ──
+// ── 枚举类型（新旧引擎共用）──
 
 /// Flex container direction。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -50,9 +53,11 @@ pub enum AlignItems {
     Stretch,
 }
 
-/// Individual child flex properties。
+// ── 旧版布局类型（pub(crate)，仅内部兼容使用，不对外暴露）──
+
+/// 单个 flex 子项的弹性属性。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FlexChild {
+pub(crate) struct FlexChild {
     pub flex_grow: f32,
     pub flex_shrink: f32,
     pub flex_basis: Option<f32>,
@@ -74,9 +79,9 @@ impl Default for FlexChild {
     }
 }
 
-/// Input to the flex layout computation。
+/// 旧版 flex 布局输入（内部兼容）。
 #[derive(Debug, Clone)]
-pub struct FlexInput {
+pub(crate) struct FlexInput {
     pub direction: FlexDirection,
     pub wrap: bool,
     pub gap: f32,
@@ -104,16 +109,16 @@ impl Default for FlexInput {
     }
 }
 
-/// Output from the flex layout computation。
+/// 旧版 flex 布局输出（内部兼容）。
 #[derive(Debug, Clone)]
-pub struct FlexOutput {
+pub(crate) struct FlexOutput {
     pub child_rects: Vec<Rect>,
     pub total_size: Size,
 }
 
-// ── Grid types ──
+// ── Grid 内部类型 ──
 
-/// A single grid track (column or row) sizing。
+/// Grid track（列/行尺寸定义），公开供 widget 使用。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GridTrack {
     Px(f32),
@@ -121,9 +126,9 @@ pub enum GridTrack {
     Auto,
 }
 
-/// A child in a grid, with optional column/row span。
+/// 旧版 grid 布局子项（内部兼容）。
 #[derive(Debug, Clone)]
-pub struct GridChild {
+pub(crate) struct GridChild {
     pub cell: usize,
     pub col_span: u32,
     pub row_span: u32,
@@ -138,9 +143,9 @@ impl Default for GridChild {
     }
 }
 
-/// Input to the grid layout computation。
+/// 旧版 grid 布局输入（内部兼容）。
 #[derive(Debug, Clone)]
-pub struct GridInput {
+pub(crate) struct GridInput {
     pub container: Rect,
     pub columns: Vec<GridTrack>,
     pub rows: Vec<GridTrack>,
@@ -163,11 +168,9 @@ impl Default for GridInput {
     }
 }
 
-/// Output from the grid layout computation。
+/// 旧版 grid 布局输出（内部兼容）。
 #[derive(Debug, Clone)]
-pub struct GridOutput {
+pub(crate) struct GridOutput {
     pub child_rects: Vec<Rect>,
-    pub col_positions: Vec<(f32, f32)>,
-    pub row_positions: Vec<(f32, f32)>,
     pub total_size: Size,
 }

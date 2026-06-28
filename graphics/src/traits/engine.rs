@@ -3,13 +3,13 @@
 use uix_platform::Rect;
 use uix_platform::Error;
 
-use super::{Canvas2D, Canvas3D, UpdateStrategy};
+use super::{Canvas2D, UpdateStrategy};
 use crate::engine::RenderOutcome;
 use crate::ImageHandle;
 
 /// 图形引擎 trait。
 ///
-/// 组合 RenderingBackend + Canvas2D + Canvas3D，
+/// 组合 RenderingBackend + Canvas2D，
 /// 只负责生命周期、帧控制、提供绘制能力入口。
 ///
 /// 字体/文字/图片资源管理归 UI 层，引擎只接收已光栅化的像素数据。
@@ -33,11 +33,6 @@ pub trait GraphicsEngine: 'static {
 
     /// 获取 2D 绘制上下文。
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
-
-    /// 获取 3D 绘制上下文。
-    ///
-    /// SoftwareEngine 返回 NotSupported 错误。
-    fn canvas_3d(&mut self) -> &mut dyn Canvas3D;
 
     // ── 离屏缓冲管理（可选，默认空操作） ──
 

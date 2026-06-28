@@ -29,16 +29,11 @@ pub(crate) const WM_MOUSEWHEEL: u32 = 0x020A;
 pub(crate) const WM_TIMER: u32 = 0x0113;
 pub(crate) const WM_DROPFILES: u32 = 0x0233;
 pub(crate) const WM_SETCURSOR: u32 = 0x0020;
-pub(crate) const WM_SETICON: u32 = 0x0080;
-
 pub(crate) const SIZE_RESTORED: usize = 0;
 pub(crate) const SIZE_MINIMIZED: usize = 1;
 pub(crate) const SIZE_MAXIMIZED: usize = 2;
 
 pub(crate) const HTCLIENT: u32 = 1;
-
-pub(crate) const ICON_BIG: usize = 1;
-pub(crate) const ICON_SMALL: usize = 0;
 
 pub(crate) const SW_HIDE: i32 = 0;
 pub(crate) const SW_SHOWNORMAL: i32 = 1;
@@ -85,11 +80,6 @@ pub(crate) const COLOR_APPWORKSPACE: u32 = 1;
 
 pub(crate) const SM_CXSCREEN: i32 = 0;
 pub(crate) const SM_CYSCREEN: i32 = 1;
-
-pub(crate) const LR_LOADFROMFILE: u32 = 0x0010;
-pub(crate) const LR_DEFAULTSIZE: u32 = 0x0040;
-
-pub(crate) const IMAGE_ICON: u32 = 1;
 
 pub(crate) const IDC_ARROW: u16 = 32512;
 

@@ -51,8 +51,6 @@ define_widget! {
         placeholder: String,
         /// 焦点
         focused: bool,
-        /// 输入框 frame（用于弹出定位）
-        frame: Option<Rect>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -173,7 +171,6 @@ impl Cascader {
             open: false,
             placeholder: placeholder.into(),
             focused: false,
-            frame: None,
         }
     }
 

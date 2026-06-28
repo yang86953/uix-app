@@ -25,7 +25,7 @@ pub struct MenuItem {
     pub disabled: bool,
 }
 
-/// Menu — 导航菜单组件。
+// Menu — 导航菜单组件。
 define_widget! {
     pub struct Menu {
         items: Vec<MenuItem>,

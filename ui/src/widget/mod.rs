@@ -391,5 +391,4 @@ impl WidgetCore for BoxedWidget {
 mod tree_core;
 mod tree_dirty;
 mod tree_events;
-mod tree_render;
 pub use tree_core::WidgetTree;

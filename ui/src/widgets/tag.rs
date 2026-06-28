@@ -21,7 +21,6 @@ define_widget! {
         font_size: f32,
         custom_color: Option<Color>,
         checkable: bool,
-        checked: bool,
         on_close: Option<Box<dyn FnMut() + 'static>>,
     }
 
@@ -61,7 +60,7 @@ impl Default for Tag { fn default() -> Self { Self::new("") } }
 
 impl Tag {
     pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into(), color: TagColor::Default, closable: false, font_size: 12.0, custom_color: None, checkable: false, checked: false, on_close: None }
+        Self { text: text.into(), color: TagColor::Default, closable: false, font_size: 12.0, custom_color: None, checkable: false, on_close: None }
     }
     pub fn color(mut self, c: TagColor) -> Self { self.color = c; self }
     pub fn custom_color(mut self, c: Color) -> Self { self.custom_color = Some(c); self }
