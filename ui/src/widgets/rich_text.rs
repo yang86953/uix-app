@@ -23,6 +23,7 @@ use std::sync::{Arc, Mutex};
 use uix_platform::{Point, Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
+use uix_graphics::spatial::PhysicalUnit;
 use uix_graphics::{Color, GraphicsEngine, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
@@ -133,8 +134,10 @@ define_widget! {
         /// 富文本段列表
         pub segments: Vec<RichTextSegment>,
 
-        /// 默认字体大小
+        /// 默认字体大小（像素）
         pub default_font_size: f32,
+        /// 默认字体大小（物理单位，可选，优先级高于 default_font_size）
+        pub default_font_size_unit: Option<PhysicalUnit>,
 
         /// 默认文字颜色
         pub default_color: Color,
@@ -173,6 +176,7 @@ define_widget! {
         Self {
             segments: Vec::new(),
             default_font_size: 14.0,
+            default_font_size_unit: None,
             default_color: Color::from_rgb(200, 200, 200),
             layout_lines: RefCell::new(Vec::new()),
             layout_height: Cell::new(0.0),
@@ -200,8 +204,10 @@ define_widget! {
         };
 
         if self.layout_dirty.get() || self.layout_height.get() <= 0.0 {
+            let dpi = _engine.map(|e| e.dpi()).unwrap_or(96.0);
+            let fs = self.resolved_font_size_px(dpi);
             let (_, total_h, max_w) = layout_rich_text(
-                &self.segments, est_width, self.default_font_size, self.default_color,
+                &self.segments, est_width, fs, self.default_color,
             );
             self.layout_height.set(total_h);
             self.content_width.set(max_w);
@@ -314,8 +320,9 @@ define_widget! {
 
         let (layout_lines, _total_h, _max_line_w) = if need_relayout {
             let font = *ctx.font();
+            let fs = self.resolved_font_size_px(ctx.spatial().dpi());
             let (lines, h, w) = layout_rich_text_real(
-                &self.segments, max_w, self.default_font_size, self.default_color,
+                &self.segments, max_w, fs, self.default_color,
                 ctx.font_service(), &font,
             );
             let mut lines = lines;
@@ -444,6 +451,14 @@ define_widget! {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl RichText {
+    /// 获取解析后的默认字体大小（像素）。
+    /// 如果设置了物理单位，通过 DPI 转换。
+    pub fn resolved_font_size_px(&self, dpi: f32) -> f32 {
+        self.default_font_size_unit
+            .map(|u| u.to_dip(dpi))
+            .unwrap_or(self.default_font_size)
+    }
+
     /// 设置富文本内容
     pub fn content(mut self, segments: Vec<RichTextSegment>) -> Self {
         self.segments = segments;
@@ -454,6 +469,14 @@ impl RichText {
     /// 设置默认字体大小
     pub fn font_size(mut self, size: f32) -> Self {
         self.default_font_size = size;
+        self.default_font_size_unit = None;
+        self.layout_dirty.set(true);
+        self
+    }
+
+    /// 设置物理单位默认字体大小（优先级高于 `font_size()`）
+    pub fn font_size_unit(mut self, unit: PhysicalUnit) -> Self {
+        self.default_font_size_unit = Some(unit);
         self.layout_dirty.set(true);
         self
     }

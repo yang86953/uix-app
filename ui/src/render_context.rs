@@ -593,3 +593,17 @@ impl<'a> RenderContext<'a> {
         self.draw_text(&info, Point::new(rect.x + 2.0, info_y + font_size * 0.75), Color::from_rgba(200, 200, 200, 220), font_size);
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// 全局辅助函数
+// ════════════════════════════════════════════════════════════════════════════
+
+/// 解析字号：如果指定了物理单位则通过当前 DPI 转换，否则返回 base。
+///
+/// widget render 中的标准用法：
+/// ```ignore
+/// let fs = resolve_font_size(self.font_size, self.font_size_unit, ctx.spatial().dpi());
+/// ```
+pub fn resolve_font_size(base: f32, unit: Option<PhysicalUnit>, dpi: f32) -> f32 {
+    unit.map(|u| u.to_dip(dpi)).unwrap_or(base)
+}
