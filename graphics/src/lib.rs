@@ -13,11 +13,15 @@ pub mod gpu_engine;
 pub mod null_engine;
 pub mod path;
 pub mod rasterizer;
+pub mod spatial;
 pub mod stroker;
 pub mod text_backend;
 pub mod text_backends;
 pub mod traits;
 pub mod types;
+
+// ── 空间坐标系统 ──
+pub use crate::spatial::{Mat4, Vec2, Vec3, Vec4};
 
 // ── 基础图形类型 ──
 pub use crate::color::{colors, Color};
