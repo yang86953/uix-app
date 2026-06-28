@@ -7,6 +7,7 @@
 
 pub mod aabb3d;
 pub mod context;
+pub mod dirty_region;
 pub mod mat4;
 pub mod physical_box;
 pub mod platform_adapter;
@@ -17,6 +18,7 @@ pub mod vec3;
 
 pub use aabb3d::AABB3D;
 pub use context::SpatialContext;
+pub use dirty_region::DirtyRegion3D;
 pub use mat4::Mat4;
 pub use physical_box::{IntoAABB3D, PhysicalBox};
 pub use platform_adapter::Orientation;

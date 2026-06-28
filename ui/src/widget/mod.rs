@@ -190,6 +190,35 @@ pub trait Widget {
     fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
         actual_frame
     }
+
+    /// 3D 命中测试：判断射线是否命中本 widget。
+    ///
+    /// 默认实现：将射线经逆变换转到局部空间，检测是否在 frame 内。
+    /// 对于 3D 变换后的 widget（如旋转/透视），应覆盖此方法。
+    /// `frame` 为 widget 在布局空间中的原始 frame（未变换）。
+    ///
+    /// 返回 `true` 表示射线命中本 widget。
+    fn hit_test_3d(
+        &self,
+        ray: &uix_graphics::spatial::Ray3D,
+        spatial: &uix_graphics::spatial::SpatialContext,
+        frame: Rect,
+    ) -> bool {
+        // 默认尝试 z=0 平面相交
+        if let Some(hit_point) = ray.intersect_z0() {
+            // z=0 交点在局部空间中的坐标
+            let local_x = hit_point.x;
+            let local_y = hit_point.y;
+            // 当前 frame 布局系统算出的位置（布局空间）
+            // 在纯 2D 场景下，frame 的坐标就是屏幕坐标
+            local_x >= frame.x
+                && local_x <= frame.x + frame.w
+                && local_y >= frame.y
+                && local_y <= frame.y + frame.h
+        } else {
+            false
+        }
+    }
     fn flex_grow(&self) -> f32 {
         0.0
     }

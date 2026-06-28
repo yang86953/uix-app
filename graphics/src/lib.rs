@@ -22,8 +22,8 @@ pub mod types;
 
 // ── 空间坐标系统 ──
 pub use crate::spatial::{
-    AABB3D, IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit, PhysicalUnitExt,
-    Quad2D, Ray3D, SpatialContext, Vec2, Vec3, Vec4,
+    AABB3D, DirtyRegion3D, IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit,
+    PhysicalUnitExt, Quad2D, Ray3D, SpatialContext, Vec2, Vec3, Vec4,
 };
 pub use crate::spatial::unit::AngleExt;
 

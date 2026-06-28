@@ -2,8 +2,40 @@ use super::tree_core::WidgetTree;
 use super::*;
 
 impl WidgetTree {
+    /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
     pub fn hit_test(&self, pos: Point) -> Option<WidgetId> {
         self.root_id.and_then(|root| self.hit_test_internal(root, pos))
+    }
+
+    /// 3D 命中测试：根据 3D 射线找到最深的 widget。
+    ///
+    /// `spatial` 为当前空间上下文（用于逆变换）。
+    /// 使用 Widget::hit_test_3d 方法，支持 3D 变换后的 widget。
+    pub fn hit_test_3d(&self, ray: &uix_graphics::spatial::Ray3D, spatial: &uix_graphics::spatial::SpatialContext) -> Option<WidgetId> {
+        self.root_id.and_then(|root| self.hit_test_3d_internal(root, ray, spatial))
+    }
+
+    /// 3D 命中测试内部递归。
+    fn hit_test_3d_internal(&self, id: WidgetId, ray: &uix_graphics::spatial::Ray3D, spatial: &uix_graphics::spatial::SpatialContext) -> Option<WidgetId> {
+        let node = self.get(id)?;
+        if !node.visible() { return None; }
+        let mut sorted: Vec<WidgetId> = node.children().to_vec();
+        sorted.sort_by(|&a, &b| {
+            let za = self.get(a).map_or(0, |c| c.z_index());
+            let zb = self.get(b).map_or(0, |c| c.z_index());
+            zb.cmp(&za)
+        });
+        for &child_id in &sorted {
+            if let Some(hit) = self.hit_test_3d_internal(child_id, ray, spatial) {
+                return Some(hit);
+            }
+        }
+        let frame = node.frame();
+        if node.inner().hit_test_3d(ray, spatial, frame) {
+            Some(id)
+        } else {
+            None
+        }
     }
 
     fn hit_test_internal(&self, id: WidgetId, pos: Point) -> Option<WidgetId> {
