@@ -34,6 +34,23 @@ pub trait GraphicsEngine: 'static {
     /// 获取 2D 绘制上下文。
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
 
+    // ── 空间坐标系统信息 ──
+
+    /// 当前 DPI。
+    fn dpi(&self) -> f32 {
+        96.0
+    }
+
+    /// 设备像素比。
+    fn device_pixel_ratio(&self) -> f32 {
+        1.0
+    }
+
+    /// 平台坐标方向。
+    fn orientation(&self) -> crate::spatial::Orientation {
+        crate::spatial::Orientation::YDown
+    }
+
     // ── 离屏缓冲管理（可选，默认空操作） ──
 
     /// 创建离屏渲染表面，返回句柄。

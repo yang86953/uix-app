@@ -80,6 +80,18 @@ impl CpuCanvas2D {
         &mut self.surface
     }
 
+    /// 设置内部 2D 变换（仅供 GPU 回退路径调用）。
+    pub fn set_transform(&mut self, t: Transform) {
+        self.transform = t;
+        self.invert = Self::compute_inverse(&t);
+    }
+
+    /// 重置内部 2D 变换。
+    pub fn reset_transform(&mut self) {
+        self.transform = Transform::identity();
+        self.invert = Self::compute_inverse(&Transform::identity());
+    }
+
     // ── 变换工具 ──
 
     pub(crate) fn is_identity(t: &Transform) -> bool {
@@ -731,15 +743,7 @@ impl Canvas2D for CpuCanvas2D {
         self.opacity
     }
 
-    fn set_transform(&mut self, t: Transform) {
-        self.transform = t;
-        self.invert = Self::compute_inverse(&t);
-    }
 
-    fn reset_transform(&mut self) {
-        self.transform = Transform::identity();
-        self.invert = Self::compute_inverse(&Transform::identity());
-    }
 
     fn set_blend_mode(&mut self, mode: BlendMode) {
         self.blend_mode = mode;

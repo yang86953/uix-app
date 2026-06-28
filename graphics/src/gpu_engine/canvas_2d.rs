@@ -446,13 +446,7 @@ impl Canvas2D for GpuCanvas2D {
         self.opacity
     }
 
-    fn set_transform(&mut self, t: Transform) {
-        self.transform = t;
-    }
 
-    fn reset_transform(&mut self) {
-        self.transform = Transform::identity();
-    }
 
     fn set_blend_mode(&mut self, mode: BlendMode) {
         self.blend_mode = mode;

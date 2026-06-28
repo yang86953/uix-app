@@ -10,7 +10,7 @@ use crate::color::Color;
 use crate::path::{FillRule, Path};
 use crate::rasterizer;
 use crate::stroker::StrokeOptions;
-use crate::types::{BlendMode, GradientDirection, Radius, Transform};
+use crate::types::{BlendMode, GradientDirection, Radius};
 
 /// 2D 绘制能力接口。
 ///
@@ -269,11 +269,7 @@ pub trait Canvas2D {
     /// 获取当前全局透明度。
     fn opacity(&self) -> f32;
 
-    /// 设置 2D 仿射变换。
-    fn set_transform(&mut self, t: Transform);
 
-    /// 重置为恒等变换。
-    fn reset_transform(&mut self);
 
     // ═══════════════════════════════════════════
     // 混合模式

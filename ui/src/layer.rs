@@ -232,7 +232,15 @@ impl LayerTree {
         font: FontHandle,
         font_service: &FontService,
     ) {
-        let mut rctx = RenderContext::new(engine.canvas_2d(), font, font_service, tokens);
+        let dpi = engine.dpi();
+        let dpr = engine.device_pixel_ratio();
+        let orientation = engine.orientation();
+        let surface_w = engine.canvas_2d().width();
+        let surface_h = engine.canvas_2d().height();
+        let mut rctx = RenderContext::new(
+            engine.canvas_2d(), font, font_service, tokens,
+            dpi, dpr, orientation, surface_w, surface_h,
+        );
         if let Some(ref mut root) = self.root {
             Self::render_node(root, &mut rctx, tree);
             root.mark_clean();
@@ -264,7 +272,15 @@ impl LayerTree {
         hover_pos: Option<Point>,
         dirty_region: &DirtyRegion,
     ) {
-        let mut rctx = RenderContext::new(engine.canvas_2d(), font, font_service, tokens);
+        let dpi = engine.dpi();
+        let dpr = engine.device_pixel_ratio();
+        let orientation = engine.orientation();
+        let surface_w = engine.canvas_2d().width();
+        let surface_h = engine.canvas_2d().height();
+        let mut rctx = RenderContext::new(
+            engine.canvas_2d(), font, font_service, tokens,
+            dpi, dpr, orientation, surface_w, surface_h,
+        );
         rctx.set_debug_mode(debug_mode);
 
         // 预计算悬浮链：光标所在 widget + 所有父节点

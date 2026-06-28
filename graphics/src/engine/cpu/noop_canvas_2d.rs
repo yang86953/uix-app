@@ -6,7 +6,7 @@ use crate::color::Color;
 use crate::path::{FillRule, Path};
 use crate::stroker::StrokeOptions;
 use crate::traits::Canvas2D;
-use crate::types::{BlendMode, GradientDirection, Radius, Transform};
+use crate::types::{BlendMode, GradientDirection, Radius};
 
 /// Canvas2D 空实现。
 pub struct NoopCanvas2D;
@@ -33,8 +33,7 @@ impl Canvas2D for NoopCanvas2D {
     fn pop_clip(&mut self) {}
     fn set_opacity(&mut self, _: f32) {}
     fn opacity(&self) -> f32 { 1.0 }
-    fn set_transform(&mut self, _: Transform) {}
-    fn reset_transform(&mut self) {}
+
     fn set_blend_mode(&mut self, _: BlendMode) {}
     fn push_clip_path(&mut self, _: &Path) {}
     fn pixels_mut(&mut self) -> &mut [u32] { &mut [] }
