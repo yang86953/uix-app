@@ -2,6 +2,118 @@ use super::*;
 use uix_platform::Rect;
 use uix_graphics::DirtyRegion;
 
+/// 脏状态管理器 —— 集中管理脏区域和滚动数据。
+///
+/// 保证 reset() 时不会遗漏任何需要清理的脏状态。
+pub struct DirtyState {
+    pub(crate) region: DirtyRegion,
+    pub(crate) scroll_deltas: Vec<(Rect, f32, f32)>,
+}
+
+impl DirtyState {
+    pub fn new() -> Self {
+        Self {
+            region: DirtyRegion::full(),
+            scroll_deltas: Vec::new(),
+        }
+    }
+
+    /// 重置所有脏状态。
+    pub fn reset(&mut self) {
+        self.region.reset();
+        self.scroll_deltas.clear();
+    }
+}
+
+impl Default for DirtyState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// BitSet 脏节点标记 —— 用 trailing_zeros 跳过零位，
+/// 遍历复杂度与脏节点数成正比，与总节点数无关。
+pub struct DirtyNodes {
+    words: Vec<u64>,
+}
+
+impl DirtyNodes {
+    pub fn new() -> Self {
+        Self { words: Vec::new() }
+    }
+
+    /// 标记节点为脏。自动扩容 bitset。
+    pub fn insert(&mut self, id: WidgetId) {
+        let idx = id / 64;
+        let bit = 1 << (id % 64);
+        if idx >= self.words.len() {
+            self.words.resize(idx + 1, 0);
+        }
+        self.words[idx] |= bit;
+    }
+
+    /// 清零所有脏标记（O(n/64)，SIMD 友好）。
+    pub fn clear(&mut self) {
+        self.words.iter_mut().for_each(|w| *w = 0);
+    }
+
+    /// 是否有任何脏节点。
+    pub fn is_empty(&self) -> bool {
+        self.words.iter().all(|&w| w == 0)
+    }
+
+    /// 判断节点是否在 bitset 中。
+    pub fn contains(&self, id: WidgetId) -> bool {
+        let idx = id / 64;
+        let bit = 1 << (id % 64);
+        self.words.get(idx).map_or(false, |w| w & bit != 0)
+    }
+
+    /// 遍历所有脏节点 —— 只迭代被置位的 bit，跳过零。
+    pub fn iter_dirty(&self) -> DirtyIter<'_> {
+        DirtyIter {
+            words: &self.words,
+            word_idx: 0,
+            current_word: self.words.first().copied().unwrap_or(0),
+        }
+    }
+}
+
+impl Default for DirtyNodes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// DirtyNodes 的迭代器 —— 每次调用 next() 跳过 64 个干净节点。
+pub struct DirtyIter<'a> {
+    words: &'a [u64],
+    word_idx: usize,
+    current_word: u64,
+}
+
+impl Iterator for DirtyIter<'_> {
+    type Item = WidgetId;
+
+    fn next(&mut self) -> Option<WidgetId> {
+        loop {
+            if self.current_word != 0 {
+                // trailing_zeros: 一条 CPU 指令找到最低位脏节点
+                let t = self.current_word.trailing_zeros();
+                let id = self.word_idx * 64 + t as usize;
+                // blsr: 清除最低位 (x86 BMI1 指令)
+                self.current_word &= self.current_word - 1;
+                return Some(id);
+            }
+            self.word_idx += 1;
+            if self.word_idx >= self.words.len() {
+                return None;
+            }
+            self.current_word = self.words[self.word_idx];
+        }
+    }
+}
+
 /// Widget tree — 管理 BoxedWidget 节点树。
 pub struct WidgetTree {
     pub(crate) nodes: Vec<Option<BoxedWidget>>,
@@ -10,9 +122,13 @@ pub struct WidgetTree {
     pub(crate) root_id: Option<WidgetId>,
     pub(crate) focused_widget: Option<WidgetId>,
     pub(crate) hovered_widget: Option<WidgetId>,
-    pub(crate) dirty_region: DirtyRegion,
+    pub(crate) dirty: DirtyState,
+    pub(crate) dirty_nodes: DirtyNodes,
+    /// 子树脏汇总（终极方案：向上传播的脏标记）。
+    /// subtree_dirty.contains(id) = true 表示 id 的子树中有脏节点。
+    /// 用于遍历时跳过整棵干净子树。
+    pub(crate) subtree_dirty: DirtyNodes,
     pub(crate) mouse_down_target: Option<WidgetId>,
-    pub(crate) scroll_deltas: Vec<(Rect, f32, f32)>,
     /// 树结构版本号，结构变更时递增（add_child / remove / set_root）。
     /// 引擎可用此判断 LayerTree 是否需要重建。
     pub tree_version: u64,
@@ -30,9 +146,10 @@ impl Default for WidgetTree {
             root_id: None,
             focused_widget: None,
             hovered_widget: None,
-            dirty_region: DirtyRegion::full(),
+            dirty: DirtyState::new(),
+            dirty_nodes: DirtyNodes::new(),
+            subtree_dirty: DirtyNodes::new(),
             mouse_down_target: None,
-            scroll_deltas: Vec::new(),
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
         }
@@ -88,7 +205,7 @@ impl WidgetTree {
         self.focused_widget = None;
         self.hovered_widget = None;
         self.mouse_down_target = None;
-        self.scroll_deltas.clear();
+        self.dirty.scroll_deltas.clear();
     }
 
     /// 设置根节点（全量重建）。
@@ -202,11 +319,19 @@ impl WidgetTree {
         for child in children {
             self.add_child(child_id, child);
         }
+
+        // 终极方案：向父链传播子树脏标记（新节点需要加入脏子树遍历）
+        self.propagate_subtree_dirty(parent_id);
+
         child_id
     }
 
     pub fn remove(&mut self, id: WidgetId) {
         self.tree_version += 1;
+
+        // 在移除前标记旧 frame 为脏，确保该区域被重绘（清除视觉残留）
+        let old_frame = self.get(id).map(|n| n.frame()).filter(|f| f.w > 0.0 && f.h > 0.0);
+
         let parent_id = self
             .nodes
             .get(id)
@@ -225,6 +350,15 @@ impl WidgetTree {
                 parent.children_mut().retain(|&c| c != id);
             }
         }
+
+        if let Some(frame) = old_frame {
+            self.dirty.region.add_rect(frame);
+        }
+
+        // 终极方案：向父链传播子树脏标记（结构变化影响父布局）
+        if let Some(pid) = parent_id {
+            self.propagate_subtree_dirty(pid);
+        }
     }
 
     /// 设置节点可见性并递增 tree_version。
@@ -238,16 +372,61 @@ impl WidgetTree {
             let children: Vec<WidgetId> = self.get(current)
                 .map(|n| n.children().to_vec())
                 .unwrap_or_default();
+
+            // 先记录 visible 是否变化（get_mut 的借用释放后再标记 dirty）
+            let mut changed = false;
             if let Some(n) = self.get_mut(current) {
                 if n.visible() != visible {
                     n.set_visible(visible);
                     self.tree_version += 1;
+                    changed = true;
                 }
             }
+
+            // get_mut 的借用已释放，可安全访问 dirty.region
+            if changed {
+                if let Some(frame) = self.get(current).map(|n| n.frame()) {
+                    if frame.w > 0.0 && frame.h > 0.0 {
+                        self.dirty.region.add_rect(frame);
+                    }
+                }
+            }
+
             for child in children {
                 stack.push(child);
             }
         }
+
+        // 终极方案：向父链传播子树脏标记（可见性变化影响父布局）
+        self.propagate_subtree_dirty(id);
+    }
+
+    /// 返回脏子树中所有节点的先序遍历顺序。
+    ///
+    /// 当 full_frame 时回退到全树 traverse()（初始帧 / 显式全帧标记）。
+    /// 其余情况只遍历 subtree_dirty 标记的子树，跳过整棵干净区域。
+    /// 遍历复杂度 O(m)，m = 脏子树节点数（通常 << n）。
+    pub fn dirty_traverse(&self) -> Vec<WidgetId> {
+        if self.dirty.region.full_frame {
+            // 全帧脏 → 回退全树遍历（初始帧 / mark_full_frame_dirty）
+            return self.traverse();
+        }
+        let mut result = Vec::new();
+        if let Some(root_id) = self.root_id {
+            let mut stack = vec![root_id];
+            while let Some(current) = stack.pop() {
+                result.push(current);
+                if let Some(node) = self.get(current) {
+                    for &child_id in node.children().iter().rev() {
+                        // 子树干净 → 整棵跳过
+                        if self.subtree_dirty.contains(child_id) || self.dirty_nodes.contains(child_id) {
+                            stack.push(child_id);
+                        }
+                    }
+                }
+            }
+        }
+        result
     }
 
     /// 返回树中所有节点的先序遍历顺序。
@@ -274,6 +453,24 @@ impl WidgetTree {
             *ver = self.tree_version;
         }
         ids.clone()
+    }
+
+    /// 设置 widget 的 frame 并自动标记旧区域为脏。
+    /// 封装了 set_frame + mark_dirty_rect(old) + mark_dirty 的三重模式。
+    pub fn set_frame_dirty(&mut self, id: WidgetId, new_frame: Rect) {
+        let old = match self.get(id) {
+            Some(w) => {
+                let old = w.frame();
+                if old == new_frame { return; }
+                old
+            }
+            None => return,
+        };
+        if let Some(w) = self.get_mut(id) {
+            w.set_frame(new_frame);
+        }
+        self.mark_dirty_rect(id, old);
+        self.mark_dirty(id);
     }
 
     pub fn layout(&mut self) {
@@ -304,7 +501,7 @@ impl WidgetTree {
             let mut any_change = false;
 
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
-            let order = self.traverse();
+            let order = self.dirty_traverse();
             for &id in &order {
                 let positions: Vec<(WidgetId, Rect)> = {
                     let node = match self.get(id) {
@@ -322,9 +519,7 @@ impl WidgetTree {
                     if let Some(child) = self.get_mut(child_id) {
                         let old = child.frame();
                         if old != rect {
-                            child.set_frame(rect);
-                            self.mark_dirty_rect(child_id, old);
-                            self.mark_dirty(child_id);
+                            self.set_frame_dirty(child_id, rect);
                         }
                     }
                 }
@@ -405,10 +600,8 @@ impl WidgetTree {
                 if effective_h > node_frame.h + 0.5 {
                     uix_platform::log::debug_fn(format!("[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
                         id, node_frame.h, effective_h, max_bottom,));
-                    if let Some(node_mut) = self.get_mut(id) {
-                        node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, effective_h));
-                        self.mark_dirty_rect(id, old_frame);
-                        self.mark_dirty(id);
+                    if let Some(_node_mut) = self.get_mut(id) {
+                        self.set_frame_dirty(id, Rect::new(old_frame.x, old_frame.y, old_frame.w, effective_h));
                     }
                 } else if has_resized_child {
                     uix_platform::log::debug_fn(format!("[Layout] Phase 2: id={} re-layout siblings (child resized, frame_h={:.0})",
@@ -428,9 +621,7 @@ impl WidgetTree {
                     if let Some(child) = self.get_mut(child_id) {
                         let old = child.frame();
                         if old != rect {
-                            child.set_frame(rect);
-                            self.mark_dirty_rect(child_id, old);
-                            self.mark_dirty(child_id);
+                            self.set_frame_dirty(child_id, rect);
                         }
                     }
                 }
@@ -444,7 +635,7 @@ impl WidgetTree {
     /// 更新所有 viewport 容器的 content_bounds。
     /// 只触发 content_bounds 副作用，不移动子节点位置。
     fn layout_viewports(&mut self) {
-        for &id in &self.traverse() {
+        for &id in &self.dirty_traverse() {
             if let Some(node) = self.get(id) {
                 if node.inner().children_clip(node.frame()).is_none() {
                     continue;
@@ -517,9 +708,7 @@ impl WidgetTree {
                     if let Some(child) = self.get_mut(child_id) {
                         let old = child.frame();
                         if old != rect {
-                            child.set_frame(rect);
-                            self.mark_dirty_rect(child_id, old);
-                            self.mark_dirty(child_id);
+                            self.set_frame_dirty(child_id, rect);
                             any_changed = true;
                         }
                     }
@@ -564,10 +753,8 @@ impl WidgetTree {
             // Phase B: 执行收缩
             for op in &ops {
                 if let Some(old_frame) = self.get(op.id).map(|n| n.frame()) {
-                    if let Some(node_mut) = self.get_mut(op.id) {
-                        node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h));
-                        self.mark_dirty_rect(op.id, old_frame);
-                        self.mark_dirty(op.id);
+                    if let Some(_node_mut) = self.get_mut(op.id) {
+                        self.set_frame_dirty(op.id, Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h));
                     }
                     let children: Vec<WidgetId> = self.get(op.id)
                         .map(|n| n.children().to_vec())
@@ -581,9 +768,7 @@ impl WidgetTree {
                         if let Some(child) = self.get_mut(child_id) {
                             let old = child.frame();
                             if old != rect {
-                                child.set_frame(rect);
-                                self.mark_dirty_rect(child_id, old);
-                                self.mark_dirty(child_id);
+                                self.set_frame_dirty(child_id, rect);
                             }
                         }
                     }
@@ -601,9 +786,7 @@ impl WidgetTree {
                                 if let Some(child) = self.get_mut(child_id) {
                                     let old = child.frame();
                                     if old != rect {
-                                        child.set_frame(rect);
-                                        self.mark_dirty_rect(child_id, old);
-                                        self.mark_dirty(child_id);
+                                        self.set_frame_dirty(child_id, rect);
                                     }
                                 }
                             }
@@ -618,7 +801,7 @@ impl WidgetTree {
     }
 
     pub fn update(&mut self, dt: f32) -> bool {
-        let order = self.traverse();
+        let order = self.dirty_traverse();
         let mut any_animating = false;
         for &id in &order {
             // 跳过不可见节点，避免隐藏页面的动画组件拖累全局帧率
@@ -629,10 +812,22 @@ impl WidgetTree {
                 .get(id)
                 .map(|n| n.inner().needs_continuous_update())
                 .unwrap_or(false);
+
+            // ── 动画帧快照：on_update 前记录旧绘制区域 ──
+            // dirty_rect() 返回 widget 的实际绘制区域（含阴影等扩展），
+            // 比 frame() 更精确——frame 不变但阴影效果变化时也能追踪。
+            // 只对动画 widget 生效，非动画 widget 零开销。
+            let old_dirty_rect = if was_animating {
+                self.get(id).map(|n| n.inner().dirty_rect(n.frame()))
+            } else {
+                None
+            };
+
             if let Some(node) = self.get_mut(id) {
                 node.inner_mut().on_update(dt);
             }
-            let (rect, scroll) = self
+
+            let (rect, scroll, new_frame) = self
                 .get(id)
                 .map(|node| {
                     let is_still = node.inner().needs_continuous_update();
@@ -646,16 +841,28 @@ impl WidgetTree {
                     } else {
                         Rect::zero()
                     };
-                    (dirty, node.inner().scroll_delta(node.frame()))
+                    (dirty, node.inner().scroll_delta(node.frame()), node.frame())
                 })
                 .unwrap_or_default();
+
+            // ── 动画帧变化追踪：标记旧绘制区域为脏 ──
+            // 当 widget 的 dirty_rect 变化（包括 frame 移动、阴影变化等），
+            // 旧绘制区域必须被清除，否则产生视觉残留。
+            if let Some(old) = old_dirty_rect {
+                if old != rect && old.w > 0.0 && old.h > 0.0 {
+                    self.dirty.region.add_rect(old);
+                    if let Some(node) = self.get_mut(id) {
+                        node.set_dirty(true);
+                    }
+                }
+            }
+
             if rect.w > 0.0 || rect.h > 0.0 {
                 self.mark_dirty_rect(id, rect);
             }
             if let Some((dx, dy)) = scroll {
                 if dx != 0.0 || dy != 0.0 {
-                    let frame = self.get(id).map(|n| n.frame()).unwrap_or_default();
-                    self.scroll_deltas.push((frame, dx, dy));
+                    self.dirty.scroll_deltas.push((new_frame, dx, dy));
                 }
             }
         }

@@ -4,28 +4,12 @@
 // OsEventSource trait：平台只需实现 3 个必须方法 + 1 个可选方法，
 // 自动获得 IEventLoop（poll_event / wait_event / wait_timeout）。
 //
-// 必须实现：
-//   dispatch_pending() — 非阻塞分发 OS 事件
-//   dispatch_blocking() — 阻塞等待 OS 事件
-//   next_event()       — 弹出下一个 UI 事件
-//
-// 可选覆盖：
-//   dispatch_timeout() — 默认用 poll + sleep 实现
+// 公开接口 IEventLoop 已迁移至 crate::api::traits。
 // ============================================================================
 
 use std::time::Duration;
-use crate::event::UiEvent;
-
-// ════════════════════════════════════════════════════════════════════════════
-// IEventLoop — 事件循环 API 契约
-// ════════════════════════════════════════════════════════════════════════════
-
-pub trait IEventLoop {
-    fn poll_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool;
-    fn wait_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool;
-    /// Block until an event arrives or the timeout expires.
-    fn wait_timeout(&mut self, timeout: Duration, callback: &dyn Fn(&UiEvent) -> bool) -> bool;
-}
+use crate::api::traits::IEventLoop;
+use crate::api::types::UiEvent;
 
 // ════════════════════════════════════════════════════════════════════════════
 // OsEventSource — 平台事件源
@@ -79,11 +63,9 @@ impl<T: OsEventSource> IEventLoop for T {
     }
 
     fn wait_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
-        // 先非阻塞分发 + 排空已有事件
         if !self.poll_event(callback) {
             return false;
         }
-        // 无事件时阻塞等待
         if !self.dispatch_blocking() {
             return false;
         }

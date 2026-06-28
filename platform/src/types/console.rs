@@ -1,23 +1,11 @@
 // ============================================================================
-// platform/types/console.rs — 终端 API 契约与类型
+// platform/types/console.rs — 终端类型
+//
+// IConsole trait 已迁移至 crate::api::traits。
 // ============================================================================
 
 // ════════════════════════════════════════════════════════════════════════════
-// IConsole — 终端控制台
-// ════════════════════════════════════════════════════════════════════════════
-
-pub trait IConsole {
-    fn write(&mut self, text: &str);
-    fn write_line(&mut self, text: &str);
-    fn set_color(&mut self, color: ConsoleColor);
-    fn reset_color(&mut self);
-    fn show_terminal_cursor(&mut self, visible: bool);
-    fn set_terminal_title(&mut self, title: &str);
-    fn capabilities(&self) -> TerminalCapabilities;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 终端颜色 / 能力（console 子系统）
+// 终端颜色 / 能力
 // ════════════════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

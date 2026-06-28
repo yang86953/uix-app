@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use ab_glyph::*;
 use uix_platform::{Errc, Error};
+use crate::api::traits::TextBackend;
 use crate::text_backend::*;
 use crate::FontHandle;
 

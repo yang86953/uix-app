@@ -28,9 +28,6 @@ use crate::render_context::RenderContext;
 use crate::theme::TokenProvider;
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
 
-/// 离屏创建失败的最大重试次数（超过后跳过直到下一次 rebuild）。
-const MAX_OFFSCREEN_RETRY: u8 = 3;
-
 /// 图层节点。
 pub enum LayerNode {
     /// 图片图层：缓存 RepaintBoundary 子树的栅格结果。
@@ -224,6 +221,9 @@ impl LayerTree {
 
     /// 渲染图层树。
     /// 子节点已在 build 时预排序，渲染时直接遍历。
+    /// 每个节点做空间+脏状态双剪枝：
+    /// - frame 与 dirty_region 无交集且 widget 不脏 → 跳过 render_self
+    /// - Picture is_dirty=false → 跳过整棵子树
     pub fn render(
         &mut self,
         engine: &mut dyn GraphicsEngine,
@@ -232,6 +232,7 @@ impl LayerTree {
         font: FontHandle,
         font_service: &FontService,
     ) {
+        let dirty_region = tree.dirty_region();
         let dpi = engine.dpi();
         let dpr = engine.device_pixel_ratio();
         let orientation = engine.orientation();
@@ -242,7 +243,7 @@ impl LayerTree {
             dpi, dpr, orientation, surface_w, surface_h,
         );
         if let Some(ref mut root) = self.root {
-            Self::render_node(root, &mut rctx, tree);
+            Self::render_node(root, &mut rctx, tree, dirty_region);
             root.mark_clean();
         }
     }
@@ -421,7 +422,12 @@ impl LayerTree {
         children
     }
 
-    fn update_dirty_node(node: &mut LayerNode, tree: &WidgetTree) {
+    /// 递归更新脏状态。返回 true 表示该节点或其子树有脏节点。
+    ///
+    /// 关键语义：子节点脏 → 父 Picture 必须重新栅格化。
+    /// 这是离屏缓存一致性的核心保证——没有这个传播，
+    /// Picture 子树的动画变化会被缓存的旧内容覆盖，产生视觉残留。
+    fn update_dirty_node(node: &mut LayerNode, tree: &WidgetTree) -> bool {
         match node {
             LayerNode::Picture {
                 widget_id,
@@ -429,23 +435,28 @@ impl LayerTree {
                 children,
                 ..
             } => {
-                *is_dirty = tree.get(*widget_id).map(|n| n.dirty()).unwrap_or(true);
-                // 递归更新子节点脏状态，支持嵌套 RepaintBoundary（#96）
-                for child in children.iter_mut() {
-                    Self::update_dirty_node(child, tree);
-                }
+                // Picture 自身脏标记 + 子节点传播的脏标记
+                let self_dirty = tree.get(*widget_id).map(|n| n.dirty()).unwrap_or(true);
+                let child_dirty = children.iter_mut()
+                    .any(|child| Self::update_dirty_node(child, tree));
+                *is_dirty = self_dirty || child_dirty;
+                *is_dirty
             }
-            LayerNode::ClipRect { children, .. } | LayerNode::Direct { children, .. } => {
-                for child in children.iter_mut() {
-                    Self::update_dirty_node(child, tree);
-                }
+            LayerNode::ClipRect { widget_id, children, .. }
+            | LayerNode::Direct { widget_id, children, .. } => {
+                // 检查自身 dirty + 子节点传播的脏标记
+                let self_dirty = tree.get(*widget_id).map(|n| n.dirty()).unwrap_or(true);
+                let child_dirty = children.iter_mut()
+                    .any(|child| Self::update_dirty_node(child, tree));
+                self_dirty || child_dirty
             }
         }
     }
 
     /// 递归渲染单个节点。
     /// 子节点已在 build 时预排序，直接遍历无需再次排序。
-    fn render_node(node: &mut LayerNode, ctx: &mut RenderContext, tree: &WidgetTree) {
+    /// 终极方案：空间+脏状态双剪枝。
+    fn render_node(node: &mut LayerNode, ctx: &mut RenderContext, tree: &WidgetTree, dirty_region: &DirtyRegion) {
         match node {
             LayerNode::Picture {
                 widget_id,
@@ -463,7 +474,7 @@ impl LayerTree {
 
                 if *is_dirty || offscreen_handle.is_none() {
                     Self::render_picture_dirty(
-                        *widget_id, bounds, offscreen_handle, children, ctx, tree, w, h, retry_count,
+                        *widget_id, bounds, offscreen_handle, children, ctx, tree, w, h, retry_count, dirty_region,
                     );
                 } else if offscreen_handle.is_some() {
                     // TODO(v2): blit_image 需要像素数据，待重建 ImageManager
@@ -477,11 +488,17 @@ impl LayerTree {
                 rect,
                 children,
             } => {
-                Self::render_widget_self(*widget_id, ctx, tree);
+                // 空间+脏状态剪枝：widget 不脏且 frame 与 dirty_region 无交集 → 跳过 render_self
+                let needs_render = tree.get(*widget_id)
+                    .map(|n| n.dirty() || dirty_region.intersects(n.frame()))
+                    .unwrap_or(true);
+                if needs_render {
+                    Self::render_widget_self(*widget_id, ctx, tree);
+                }
                 let r = *rect;
                 ctx.canvas_2d().push_clip(r);
                 for child in children.iter_mut() {
-                    Self::render_node(child, ctx, tree);
+                    Self::render_node(child, ctx, tree, dirty_region);
                 }
                 ctx.canvas_2d().pop_clip();
             }
@@ -489,7 +506,7 @@ impl LayerTree {
                 widget_id,
                 children,
             } => {
-                Self::render_widget_and_children(*widget_id, children, ctx, tree);
+                Self::render_widget_and_children(*widget_id, children, ctx, tree, dirty_region);
             }
         }
     }
@@ -509,6 +526,7 @@ impl LayerTree {
 
     /// 渲染 widget 自身及其子节点（直接遍历 children LayerNodes）。
     /// 子节点已预排序，直接遍历无需再次排序。
+    /// 终极方案：入口做空间+脏状态双剪枝。
     /// 注意：先渲染 widget 自身（由其 render() 自行判断内部可见性），
     /// 再通过 inner().visible() 决定是否渲染子节点。这样模态框等组件
     /// 的 render() 可以控制自身绘制，同时阻止子节点在隐藏时渲染。
@@ -517,23 +535,33 @@ impl LayerTree {
         children: &mut [LayerNode],
         ctx: &mut RenderContext,
         tree: &WidgetTree,
+        dirty_region: &DirtyRegion,
     ) {
         if let Some(node) = tree.get(id) {
             if !node.visible() {
                 return;
             }
             let frame = node.frame();
-            ctx.save();
-            node.inner().render(frame, ctx, tree);
+            // 空间+脏状态剪枝：widget 不脏且 frame 与 dirty_region 无交集 → 跳过 render_self
+            let need_self_render = node.dirty() || dirty_region.intersects(frame);
+
+            if need_self_render {
+                ctx.save();
+                node.inner().render(frame, ctx, tree);
+            }
+
             // 仅在 widget 内部可见时才渲染子节点。
             // 支持 Modal 等组件：内部 visible 为 false 时 render() 已返回，
             // 同时阻止子节点在隐藏位渲染（子节点 frame 可能仍在屏幕内）。
             if node.inner().visible() {
                 for child in children.iter_mut() {
-                    Self::render_node(child, ctx, tree);
+                    Self::render_node(child, ctx, tree, dirty_region);
                 }
             }
-            ctx.restore();
+
+            if need_self_render {
+                ctx.restore();
+            }
         }
     }
 
@@ -565,35 +593,21 @@ impl LayerTree {
         }
     }
 
-    /// 渲染脏 Picture 节点：离屏光栅化子节点后再 blit 到主缓冲。
-    /// #97：离屏创建失败时递增 retry_count，超过阈值后跳过渲染。
+    /// 渲染脏 Picture 节点。
+    /// 离屏 API 待重建（TODO v2），当前始终回退到主缓冲直接渲染子树。
     fn render_picture_dirty(
         widget_id: WidgetId,
         _bounds: &Rect,
-        offscreen_handle: &mut Option<ImageHandle>,
+        _offscreen_handle: &mut Option<ImageHandle>,
         _children: &mut [LayerNode],
         ctx: &mut RenderContext,
         tree: &WidgetTree,
-        w: i32,
-        h: i32,
-        retry_count: &mut u8,
+        _w: i32,
+        _h: i32,
+        _retry_count: &mut u8,
+        _dirty_region: &DirtyRegion,
     ) {
-        // 尝试创建或复用离屏缓冲
-        let needs_new = offscreen_handle.is_none();
-        if needs_new {
-            if *retry_count >= MAX_OFFSCREEN_RETRY {
-                uix_platform::log::warn_fn(format!("[LayerTree] 离屏创建连续失败 {} 次 ({}x{}), 跳过渲染",
-                    *retry_count,
-                    w,
-                    h,));
-                return;
-            }
-            // TODO(v2): offscreen API 重新设计中。
-            // Picture 离屏渲染暂时回退到主缓冲直接渲染。
-            Self::render_widget_and_children_direct(widget_id, ctx, tree);
-        }
-
-        // TODO(v2): 离屏渲染回写代码待 redesign
+        Self::render_widget_and_children_direct(widget_id, ctx, tree);
     }
 
     /// 递归渲染 overlay 层（post_render 回调 + 调试覆盖）。
@@ -619,8 +633,10 @@ impl LayerTree {
         } else if let Some(widget_node) = tree.get(widget_id) {
             if widget_node.visible() {
                 let frame = widget_node.frame();
-                // 如果 frame 与脏区域有交集，说明内容可能变化，需重绘 overlay
-                dirty_region.intersects(frame)
+                // 使用 dirty_rect（含 draw_margin 扩展）而非 raw frame
+                // 确保阴影等扩展区域的 overlay 内容被正确重绘
+                let draw_area = widget_node.inner().dirty_rect(frame);
+                dirty_region.intersects(draw_area)
             } else {
                 false
             }

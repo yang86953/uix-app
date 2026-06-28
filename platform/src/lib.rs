@@ -14,6 +14,9 @@
 //   windows/     — Windows 平台实现
 // ============================================================================
 
+// ── 稳定公开 API ─────────────────────────────────────────────
+pub mod api;
+
 // ── 共享基础类型 ──────────────────────────────────────────────
 pub mod geometry;
 pub mod error;
@@ -51,13 +54,8 @@ pub mod windows;
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod linux;
 
-// ── 便利重导出（各领域 trait/类型流向 crate 根）────────────
-pub use error::*;
-pub use event_bus::*;
-pub use geometry::*;
-pub use presenter::*;
-pub use shared::*;
-pub use types::*;
+// ── 便利重导出（统一通过 api 模块）─────────────────────────
+pub use api::*;
 
 // ── 平台工厂 ───────────────────────────────────────────────────
 

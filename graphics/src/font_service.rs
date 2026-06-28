@@ -10,8 +10,9 @@ use std::sync::{Arc, Mutex};
 use uix_platform::{Point, Size};
 use uix_platform::Error;
 use crate::text_backend::{
-    self as tb, GlyphRaster, TextBackend, TextLayout, TextLayoutOptions,
+    self as tb, GlyphRaster, TextLayout, TextLayoutOptions,
 };
+use crate::api::traits::TextBackend;
 use crate::{FontHandle, HAlign};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -415,7 +416,28 @@ impl FontService {
                 }
             }
         }
-        uix_platform::log::info_fn(format!("{}", "No primary font, using bitmap fallback"));
+
+        // 第 4 步：最后的兜底——随机扫描一个可用字体
+        uix_platform::log::info_fn("No primary font found via platform, scanning for fallback...");
+        if let Some(path) = system_info.scan_fallback_font_path() {
+            if let Ok(data) = std::fs::read(&path) {
+                if let Some(handle) = self.load_raw_font(data, size) {
+                    self.loaded_font_handle = handle;
+                    let idx = handle.0 as usize;
+                    if idx < self.registry.len() {
+                        self.registry[idx].face.family = self.primary_family.clone();
+                        self.registry[idx].face.path = Some(path.clone());
+                    }
+                    uix_platform::log::info_fn(format!(
+                        "Loaded fallback font (random scan): {} (handle={:?})",
+                        path, handle
+                    ));
+                    return;
+                }
+            }
+        }
+
+        uix_platform::log::info_fn("No primary font found, using bitmap fallback");
     }
 
     /// 加载 CJK 回退字体（通过平台层探测）。
@@ -478,10 +500,55 @@ impl FontService {
         None
     }
 
+    /// 从 TTC（TrueType Collection）数据中提取第一个 TTF 子字体。
+    /// TTC 文件结构："ttcf" + 版本(4B) + 字体数量(4B) + offset表。
+    fn extract_first_ttf_from_ttc(data: &[u8]) -> Option<Vec<u8>> {
+        if data.len() < 12 || &data[0..4] != b"ttcf" {
+            return None;
+        }
+        // TTC header: tag(4) + version(4) + num_fonts(4) + offsets(num_fonts*4)
+        let num_fonts = u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize;
+        if num_fonts == 0 || data.len() < 12 + num_fonts * 4 {
+            return None;
+        }
+        // 取第一个子字体的 offset
+        let offset = u32::from_be_bytes([data[12], data[13], data[14], data[15]]) as usize;
+        if offset >= data.len() {
+            return None;
+        }
+        // TTC 中第一个子字体结束于第二个子字体的 offset（或文件末尾）
+        let next_offset = if num_fonts > 1 {
+            u32::from_be_bytes([data[16], data[17], data[18], data[19]]) as usize
+        } else {
+            data.len()
+        };
+        if next_offset > data.len() || offset >= next_offset {
+            return None;
+        }
+        Some(data[offset..next_offset].to_vec())
+    }
+
     /// 直接加载原始字体数据。
     /// 使用 text_backend 进行验证和加载，无需额外解析。
+    /// 自动处理 TTC 格式：如果 text_backend 无法解析数据且数据是 TTC，
+    /// 则尝试提取第一个 TTF 子字体后重试。
     fn load_raw_font(&mut self, data: Vec<u8>, size: f32) -> Option<FontHandle> {
-        let handle = self.text_backend.load_font(&data).ok()?;
+        // 第 1 次尝试：直接加载原始数据
+        let mut result = self.try_load_raw_font_data(&data, size);
+
+        // 第 2 次尝试：如果失败且是 TTC 格式，提取第一个 TTF 子字体
+        if result.is_none() && data.len() >= 4 && &data[0..4] == b"ttcf" {
+            if let Some(ttf_data) = Self::extract_first_ttf_from_ttc(&data) {
+                result = self.try_load_raw_font_data(&ttf_data, size);
+            }
+        }
+
+        result
+    }
+
+    /// 尝试用 text_backend 加载字体数据并验证字形可光栅化。
+    fn try_load_raw_font_data(&mut self, data: &[u8], size: f32) -> Option<FontHandle> {
+        let handle = self.text_backend.load_font(data).ok()?;
         let raster = self.text_backend.rasterize_glyph(&handle, 65, size);
         if raster.width == 0 || raster.height == 0 {
             self.text_backend.unload_font(&handle);

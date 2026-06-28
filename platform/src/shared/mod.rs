@@ -7,12 +7,9 @@
 pub mod state;
 pub mod event_loop;
 pub mod window;
-pub mod platform;
 
 pub use state::WindowState;
-pub use event_loop::{OsEventSource, IEventLoop};
+pub use event_loop::OsEventSource;
 pub use window::{
     PlatformWindowCore, WindowOps, unimpl,
-    IWindowProperties, INativeHandle, IWindowManager, PlatformWindow,
 };
-pub use platform::Platform;

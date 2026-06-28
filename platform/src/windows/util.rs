@@ -305,16 +305,19 @@ pub fn system_default_font_paths() -> Vec<String> {
             }
         }
 
-        // 4. 如果系统默认字体未找到，尝试经典回退字体
-        if results.is_empty() {
-            let fallbacks = ["segoeui.ttf", "arial.ttf", "tahoma.ttf"];
-            for fname in &fallbacks {
-                let full = format!("{}{}", fonts_dir, fname);
-                let wide = to_wide(&full);
-                if GetFileAttributesW(wide.as_ptr()) != 0xFFFFFFFF {
-                    results.push(full);
-                    break;
-                }
+        // 4. 尝试经典 TTF 回退字体。
+        //    即使系统默认字体已找到也添加 TTF 回退，因为有些后端
+        //    （如 ab_glyph::FontVec）不支持 TTC 格式，需要 TTF 作为保障。
+        let fallbacks = ["segoeui.ttf", "arial.ttf", "tahoma.ttf"];
+        for fname in &fallbacks {
+            let full = format!("{}{}", fonts_dir, fname);
+            if results.iter().any(|r| r == &full) {
+                continue;
+            }
+            let wide = to_wide(&full);
+            if GetFileAttributesW(wide.as_ptr()) != 0xFFFFFFFF {
+                results.push(full);
+                break;
             }
         }
 
@@ -369,4 +372,179 @@ pub fn system_default_font_paths() -> Vec<String> {
 /// 返回第一个可用的系统字体路径。
 pub fn system_default_font_path() -> Option<String> {
     system_default_font_paths().into_iter().next()
+}
+
+/// 通过字体族名称在 Windows 上查找字体文件路径。
+///
+/// 查找顺序：
+/// 1. 从预定义的 family→filename 映射中查找
+/// 2. 扫描 Fonts 目录，尝试按文件名匹配
+/// 3. 如果都没有找到，返回 None
+pub fn probe_family_font_path(family: &str) -> Option<String> {
+    unsafe {
+        let mut win_dir = vec![0u16; 260];
+        let len = GetWindowsDirectoryW(win_dir.as_mut_ptr(), win_dir.len() as u32);
+        if len == 0 || len as usize > win_dir.len() {
+            return None;
+        }
+        win_dir.truncate(len as usize);
+        let windows_path = to_utf8(&win_dir);
+        let fonts_dir = format!(r"{}\Fonts\", windows_path);
+
+        // 1. 尝试预定义的 family→filename 映射
+        if let Some(filename) = family_name_to_filename(family) {
+            let full = format!("{}{}", fonts_dir, filename);
+            let wide = to_wide(&full);
+            if GetFileAttributesW(wide.as_ptr()) != 0xFFFFFFFF {
+                return Some(full);
+            }
+        }
+
+        // 2. 扫描 Fonts 目录，按文件名包含 family 名称模糊匹配
+        let scan_pattern = format!(r"{}\Fonts\*.*", windows_path);
+        let wide_pattern = to_wide(&scan_pattern);
+        let family_lower = family.to_lowercase();
+
+        let mut find_data = std::mem::zeroed::<WIN32_FIND_DATAW>();
+        let handle = FindFirstFileW(wide_pattern.as_ptr(), &mut find_data);
+        if handle != INVALID_HANDLE_VALUE {
+            loop {
+                let file_name = to_utf8(&find_data.cFileName);
+                if file_name != "." && file_name != ".." {
+                    let name_lower = file_name.to_lowercase();
+                    // 检查扩展名
+                    let is_font = name_lower.ends_with(".ttf")
+                        || name_lower.ends_with(".ttc")
+                        || name_lower.ends_with(".otf");
+                    if is_font {
+                        // 尝试文件名包含 family 名称（去扩展名后）
+                        let stem = std::path::Path::new(&file_name)
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        // 将家族名中的空格和连字符去除后匹配
+                        let clean_family: String = family_lower
+                            .chars()
+                            .filter(|c| c.is_alphanumeric())
+                            .collect();
+                        let clean_stem: String = stem
+                            .chars()
+                            .filter(|c| c.is_alphanumeric())
+                            .collect();
+                        if clean_stem.contains(&clean_family)
+                            || clean_family.contains(&clean_stem)
+                        {
+                            let full = format!("{}{}", fonts_dir, file_name);
+                            // 验证文件可读
+                            let wide_full = to_wide(&full);
+                            if GetFileAttributesW(wide_full.as_ptr()) != 0xFFFFFFFF {
+                                FindClose(handle);
+                                return Some(full);
+                            }
+                        }
+                    }
+                }
+                if FindNextFileW(handle, &mut find_data) == 0 {
+                    break;
+                }
+            }
+            FindClose(handle);
+        }
+
+        None
+    }
+}
+
+/// 在 Windows Fonts 目录中扫描并返回一个随机可用的 TTF 字体路径。
+/// 这是最后的兜底方案——当用户配置字体和系统默认字体都不可用时，
+/// 随便找一个能用的。优先选择不含 "bold" "italic" "black" "light" 的常规字体。
+pub fn scan_random_font_path() -> Option<String> {
+    unsafe {
+        let mut win_dir = vec![0u16; 260];
+        let len = GetWindowsDirectoryW(win_dir.as_mut_ptr(), win_dir.len() as u32);
+        if len == 0 || len as usize > win_dir.len() {
+            return None;
+        }
+        win_dir.truncate(len as usize);
+        let windows_path = to_utf8(&win_dir);
+
+        let scan_pattern = format!(r"{}\Fonts\*.*", windows_path);
+        let wide_pattern = to_wide(&scan_pattern);
+
+        let mut candidates: Vec<String> = Vec::new();
+        let mut find_data = std::mem::zeroed::<WIN32_FIND_DATAW>();
+        let handle = FindFirstFileW(wide_pattern.as_ptr(), &mut find_data);
+        if handle == INVALID_HANDLE_VALUE {
+            return None;
+        }
+
+        loop {
+            let file_name = to_utf8(&find_data.cFileName);
+            if file_name != "." && file_name != ".." {
+                let name_lower = file_name.to_lowercase();
+                // 仅选择 TTF（不选 TTC，兼容性最好）
+                if name_lower.ends_with(".ttf") {
+                    let full = format!(r"{}\Fonts\{}", windows_path, file_name);
+                    candidates.push(full);
+                }
+            }
+            if FindNextFileW(handle, &mut find_data) == 0 {
+                break;
+            }
+        }
+        FindClose(handle);
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        // 优先选择常规字体（不含 bold/italic/black/light 的）
+        let bad_keywords = ["bold", "italic", "black", "light", "thin", "medium", "semibold", "extrabold"];
+        for c in &candidates {
+            let lower = c.to_lowercase();
+            if !bad_keywords.iter().any(|k| lower.contains(k)) {
+                return Some(c.clone());
+            }
+        }
+
+        // 如果没有常规字体，返回第一个
+        Some(candidates[0].clone())
+    }
+}
+
+// ── FFI 声明 ──
+
+extern "system" {
+    fn FindFirstFileW(
+        lpFileName: *const u16,
+        lpFindFileData: *mut WIN32_FIND_DATAW,
+    ) -> isize;
+    fn FindNextFileW(
+        hFindFile: isize,
+        lpFindFileData: *mut WIN32_FIND_DATAW,
+    ) -> i32;
+    fn FindClose(hFindFile: isize) -> i32;
+}
+
+const INVALID_HANDLE_VALUE: isize = -1;
+
+#[repr(C)]
+struct WIN32_FIND_DATAW {
+    dwFileAttributes: u32,
+    ftCreationTime: FILETIME,
+    ftLastAccessTime: FILETIME,
+    ftLastWriteTime: FILETIME,
+    nFileSizeHigh: u32,
+    nFileSizeLow: u32,
+    dwReserved0: u32,
+    dwReserved1: u32,
+    cFileName: [u16; 260],
+    cAlternateFileName: [u16; 14],
+}
+
+#[repr(C)]
+struct FILETIME {
+    dwLowDateTime: u32,
+    dwHighDateTime: u32,
 }

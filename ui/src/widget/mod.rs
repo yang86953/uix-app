@@ -93,8 +93,25 @@ pub trait WidgetRender {
         _tree: &WidgetTree,
     ) {
     }
+
+    /// 绘制时需要的额外边距（阴影/外发光等超出 frame 的效果）。
+    /// 框架自动将其纳入 dirty_rect 和动画帧快照追踪，
+    /// 确保扩展区域的旧内容在变化时被正确清理。
+    /// widget 如需要精确控制 dirty_rect 可覆盖 dirty_rect()。
+    fn draw_margin(&self) -> f32 {
+        0.0
+    }
+
+    /// 返回 widget 需要重绘的完整区域。
+    /// 默认返回 frame + draw_margin() 扩展区域，
+    /// widget 可覆盖此方法返回精确区域以优化性能。
     fn dirty_rect(&self, frame: Rect) -> Rect {
-        frame
+        let m = self.draw_margin();
+        if m > 0.0 {
+            Rect::new(frame.x - m, frame.y - m, frame.w + m * 2.0, frame.h + m * 2.0)
+        } else {
+            frame
+        }
     }
     fn is_repaint_boundary(&self) -> bool {
         false

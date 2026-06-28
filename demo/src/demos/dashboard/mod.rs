@@ -495,6 +495,11 @@ pub fn run_gui_demo() {
         uix_platform::log::warn_fn("Lucide font not found — icons will be blank");
     }
 
+    // 加载系统默认字体作为主文本字体（必须在 Lucide 之后，
+    // 因为 Lucide 会占用 FontHandle(0)，而 load_default_system_font
+    // 会设置 loaded_font_handle 为真正的文字字体）。
+    font_service.load_default_system_font(14.0, platform.system_info());
+
     // ── 运行事件循环 ────────────────────────────────────────────
     let debug_mode = Cell::new(false);
     let cursor_pos = Cell::new(Point::new(0.0, 0.0));

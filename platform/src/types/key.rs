@@ -1,18 +1,8 @@
 // ============================================================================
-// platform/types/key.rs — 按键码、修饰键与键盘状态查询
+// platform/types/key.rs — 按键码、修饰键
 //
-// 跨层共享（平台输入 → UI 事件）。
+// IKeyboard trait 已迁移至 crate::api::traits。
 // ============================================================================
-
-// ════════════════════════════════════════════════════════════════════════════
-// IKeyboard — 键盘状态查询
-// ════════════════════════════════════════════════════════════════════════════
-
-pub trait IKeyboard {
-    fn is_down(&self, key: KeyCode) -> bool;
-    fn idle_ms(&self) -> u32;
-    fn double_click_ms(&self) -> u32;
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // 按键码 — 跨层共享（平台输入 → UI 事件）
@@ -36,9 +26,6 @@ pub enum KeyCode {
 // 修饰键掩码 — 跨层共享
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 修饰键掩码 — 跨层共享。
-///
-/// 手动实现位标志，替代 bitflags crate。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KeyMod(u32);
 
@@ -50,12 +37,10 @@ impl KeyMod {
     pub const ALT: Self   = Self(1 << 2);
     pub const SUPER: Self = Self(1 << 3);
 
-    /// 检查是否包含指定标志的所有位。
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 
-    /// 检查是否包含指定标志的任意位。
     pub const fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }

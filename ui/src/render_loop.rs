@@ -52,18 +52,18 @@ where
     let mut frame_graph = FrameGraph::new();
     let main_color_res = frame_graph.register_texture("MainColor", 800, 600);
 
-    // 从 platform 提前取出 event_bus 原始指针——避免 collect closure 中双重可变借用
+    // 从 platform 提前取出 event_bus 原始指针——避免 collect closure 中双重可变借用。
+    // Safety: platform 在 closure 的整个生命周期内存活且不被别名访问。
     let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
 
     let pending_events = RefCell::new(Vec::<UiEvent>::new());
     let mut first_frame = true;
-    let mut rendered_first_frame = false;
+    let mut rendered_first = false;
     let mut last_frame = Instant::now();
     let mut keep_polling = false;
     let mut idle_count: u32 = 0;
     let mut window_visible = true;
     let mut layer_tree = LayerTree::new();
-    let mut rendered_first = false;
     let mut last_tree_version: u64 = 0;
     let mut geom_pass_id: Option<PassId> = None;
     let mut over_pass_id: Option<PassId> = None;
@@ -129,55 +129,70 @@ where
         }
 
         let had_events = !pending_events.borrow().is_empty();
+
+        // MouseMove 是最高频事件（每次鼠标滑动都触发），但它不需要触发 layout——
+        // layout 只在树结构变化、resize 或需要重新计算大小时才需要。
+        // MouseMove 只更新光标位置和 hover 状态，不改变树结构。
+        // 分离 had_layout_event 可避免每帧无用 layout + 全帧渲染拖慢滚动。
+        let mut had_layout_event = false;
+
         for ev in pending_events.borrow_mut().drain(..) {
+            let is_layout_event = !matches!(ev.type_, UiEventType::MouseMove);
+            if is_layout_event {
+                had_layout_event = true;
+            }
+
             // ── 窗口事件处理 ──
-            if let UiEventType::WindowResize = ev.type_ {
-                if let UiEventPayload::Resize(ref d) = ev.payload {
-                    if d.width > 0 && d.height > 0 {
-                        engine.resize(d.width, d.height);
-                        platform_window.resize_notify(d.width, d.height);
-                        initial_size = (d.width, d.height);
+            match ev.type_ {
+                UiEventType::WindowResize => {
+                    if let UiEventPayload::Resize(ref d) = ev.payload {
+                        if d.width > 0 && d.height > 0 {
+                            engine.resize(d.width, d.height);
+                            platform_window.resize_notify(d.width, d.height);
+                            initial_size = (d.width, d.height);
+                        }
                     }
                 }
-            }
-            if let UiEventType::WindowMaximize = ev.type_ {
-                if engine.canvas_2d().width() != initial_size.0
-                    || engine.canvas_2d().height() != initial_size.1
-                {
-                    // 已通过 resize 事件调整
-                } else {
-                    let info = platform.display().info(0);
-                    let w = info.bounds.w as i32;
-                    let h = info.bounds.h as i32;
-                    if w > 0 && h > 0 {
-                        engine.resize(w, h);
-                        platform_window.resize_notify(w, h);
+                UiEventType::WindowMaximize => {
+                    if engine.canvas_2d().width() != initial_size.0
+                        || engine.canvas_2d().height() != initial_size.1
+                    {
+                        // 已通过 resize 事件调整
+                    } else {
+                        let info = platform.display().info(0);
+                        let w = info.bounds.w as i32;
+                        let h = info.bounds.h as i32;
+                        if w > 0 && h > 0 {
+                            engine.resize(w, h);
+                            platform_window.resize_notify(w, h);
+                        }
                     }
                 }
-            }
-            if let UiEventType::WindowRestore = ev.type_ {
-                let (rw, rh) = initial_size;
-                engine.resize(rw, rh);
-                platform_window.resize_notify(rw, rh);
-                window_visible = true;
-            }
-            if let UiEventType::WindowMinimize = ev.type_ {
-                window_visible = false;
-            }
-            if let UiEventType::MouseMove = ev.type_ {
-                if let UiEventPayload::MouseMove(ref data) = ev.payload {
-                    cursor_pos.set(data.pos);
+                UiEventType::WindowRestore => {
+                    let (rw, rh) = initial_size;
+                    engine.resize(rw, rh);
+                    platform_window.resize_notify(rw, rh);
+                    window_visible = true;
                 }
-            }
-            if let UiEventType::KeyDown = ev.type_ {
-                use uix_platform::KeyCode;
-                if let UiEventPayload::Key(ref data) = ev.payload {
-                    if data.key == KeyCode::F12 {
-                        let new_val = !debug_mode.get();
-                        debug_mode.set(new_val);
-                        continue;
+                UiEventType::WindowMinimize => {
+                    window_visible = false;
+                }
+                UiEventType::MouseMove => {
+                    if let UiEventPayload::MouseMove(ref data) = ev.payload {
+                        cursor_pos.set(data.pos);
                     }
                 }
+                UiEventType::KeyDown => {
+                    use uix_platform::KeyCode;
+                    if let UiEventPayload::Key(ref data) = ev.payload {
+                        if data.key == KeyCode::F12 {
+                            let new_val = !debug_mode.get();
+                            debug_mode.set(new_val);
+                            continue;
+                        }
+                    }
+                }
+                _ => {}
             }
 
             // ── 映射为 WidgetEvent 并分发 ──
@@ -200,7 +215,8 @@ where
         last_frame = now;
         keep_polling = tree.update(dt);
 
-        let needs_work = window_visible && (had_events || keep_polling || idle_count == 0);
+        // MouseMove 不触发 layout（不改变树结构），但 layout 事件、动画、初始帧需要
+        let needs_work = window_visible && (had_layout_event || keep_polling || idle_count == 0);
 
         if needs_work {
             tree.layout();
@@ -213,28 +229,32 @@ where
         }
 
         let dirty_region = tree.dirty_region();
-        let first_render = !rendered_first_frame;
         let need_render = window_visible
-            && (first_render || !rendered_first || !dirty_region.is_empty() || keep_polling);
+            && (!rendered_first || !dirty_region.is_empty() || keep_polling);
 
         let outcome = if !need_render {
             RenderOutcome::Idle
         } else {
-            let region = if first_render || dirty_region.full_frame {
+            let region = if !rendered_first || dirty_region.full_frame {
                 DirtyRegion::full()
             } else {
                 dirty_region.clone()
             };
 
+            // damage rect 来自 dirty_region 的 bounds。
+            // dirty_region 中的 rect 已通过 draw_margin / dirty_rect / 帧快照
+            // 包含了阴影等扩展区域，因此 damage rect 自然覆盖完整绘制范围。
+            // 对 bounds 做 1px 安全扩展防止浮点误差。
+            // 全帧输出（damage=None）会破坏增量渲染的设计目标。
             let damage: Option<(i32, i32, i32, i32)> = if region.full_frame {
                 None
             } else {
                 let bounds = region.bounds();
                 Some((
-                    bounds.x as i32,
-                    bounds.y as i32,
-                    bounds.w as i32,
-                    bounds.h as i32,
+                    (bounds.x - 1.0).max(0.0) as i32,
+                    (bounds.y - 1.0).max(0.0) as i32,
+                    (bounds.w + 2.0) as i32,
+                    (bounds.h + 2.0) as i32,
                 ))
             };
 
@@ -250,6 +270,8 @@ where
             let plan = frame_graph.compile();
 
             if plan.zero_frame_cost {
+                // FrameGraph 认为本轮无需渲染，脏数据已被消费，清理后返回空闲。
+                tree.reset_dirty();
                 RenderOutcome::Idle
             } else {
                 let cur_version = tree.tree_version();
@@ -285,12 +307,20 @@ where
                         // 使用 Overlay 策略——不清除画布，在 Geometry Pass
                         // 的渲染结果上叠加 overlay 内容。FullRedraw 会清空画布
                         // 导致几何渲染内容被擦除（黑屏）。
-                        let overlay_rects: Vec<Rect> = if region.full_frame {
-                            let w = engine.canvas_2d().width() as f32;
-                            let h = engine.canvas_2d().height() as f32;
-                            vec![Rect::new(0.0, 0.0, w, h)]
+                        //
+                        // clear_required 表示是否有实际脏区域需要清空后重绘。
+                        // 当 clear_required=false 时（如仅动画触发的渲染），
+                        // 传空 vec 避免不必要的 overlay 清空。
+                        let overlay_rects: Vec<Rect> = if region.clear_required {
+                            if region.full_frame {
+                                let w = engine.canvas_2d().width() as f32;
+                                let h = engine.canvas_2d().height() as f32;
+                                vec![Rect::new(0.0, 0.0, w, h)]
+                            } else {
+                                region.rects().to_vec()
+                            }
                         } else {
-                            region.rects().to_vec()
+                            Vec::new()
                         };
                         engine.begin_frame(UpdateStrategy::Overlay(overlay_rects));
                         let theme_ref = theme.borrow();
@@ -326,20 +356,19 @@ where
         match outcome {
             RenderOutcome::Present(damage) => {
                 idle_count = 0;
-                let dirty = if rendered_first_frame { damage } else { None };
+                // damage 始终为 None（全帧输出），rendered_first 仅用于 region 计算
                 let canvas = engine.canvas_2d();
                 let cw = canvas.width();
                 let ch = canvas.height();
                 if let Err(e) = platform_window
                     .presenter()
-                    .present(canvas.pixels_mut(), cw, ch, dirty)
+                    .present(canvas.pixels_mut(), cw, ch, damage)
                 {
                     uix_platform::log::error_fn(format!(
                         "[EventLoop] present failed: {}",
                         e.short_what()
                     ));
                 }
-                rendered_first_frame = true;
             }
             RenderOutcome::Idle => {
                 idle_count = idle_count.saturating_add(1);
@@ -382,6 +411,7 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
         }
         tree.mark_full_frame_dirty();
         tree.layout();
-        tree.tree_version += 1;
+        // 不递增 tree_version——树结构未改变，LayerTree 无需重建。
+        // mark_full_frame_dirty + layout() 已确保脏区域和布局正确。
     }
 }

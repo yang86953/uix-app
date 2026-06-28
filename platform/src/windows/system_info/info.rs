@@ -62,6 +62,14 @@ impl ISystemInfo for WindowsSystemInfo {
         crate::windows::util::system_default_font_paths()
     }
 
+    fn probe_family_font_path(&self, family: &str) -> Option<String> {
+        crate::windows::util::probe_family_font_path(family)
+    }
+
+    fn scan_fallback_font_path(&self) -> Option<String> {
+        crate::windows::util::scan_random_font_path()
+    }
+
     fn process_memory(&self) -> (usize, usize) {
         get_process_memory()
     }

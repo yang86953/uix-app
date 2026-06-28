@@ -7,7 +7,7 @@
 
 use uix_platform::{Rect, Size};
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
-use crate::AABB3D;
+use uix_graphics::spatial::AABB3D;
 use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
 use super::flex::compute_flex_layout;

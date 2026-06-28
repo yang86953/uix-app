@@ -5,123 +5,31 @@
 //   WindowOps trait         — 平台只需实现 6 个必须方法，其余 20 个有合理默认
 //   PlatformWindowCore<O>   — 与 WindowOps 组合，自动获得 PlatformWindow +
 //                             IWindowProperties + INativeHandle 的完整实现
-//   窗口 API trait 定义     — IWindowProperties / INativeHandle / IWindowManager
-//                             / PlatformWindow 也在此定义
+//
+// 公开接口（IWindowProperties / INativeHandle / IWindowManager / PlatformWindow）
+// 已迁移至 crate::api::traits。
 // ============================================================================
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::error::Error;
-use crate::geometry::Point;
-use crate::presenter::{IPresenter, IGraphicsContext};
+use crate::api::traits::{
+    IGraphicsContext, INativeHandle, IPresenter, IWindowProperties, PlatformWindow,
+};
 use crate::shared::state::WindowState;
-
-// ════════════════════════════════════════════════════════════════════════════
-// IWindowProperties — 窗口属性查询与修改（PlatformWindow 的子组件）
-// ════════════════════════════════════════════════════════════════════════════
-
-pub trait IWindowProperties {
-    fn width(&self) -> i32;
-    fn height(&self) -> i32;
-    fn set_size(&mut self, w: i32, h: i32);
-    fn set_minimum_size(&mut self, w: i32, h: i32);
-    fn set_maximum_size(&mut self, w: i32, h: i32);
-    fn position(&self) -> Point;
-    fn set_position(&mut self, x: i32, y: i32);
-    fn set_resizable(&mut self, resizable: bool);
-    fn is_maximized(&self) -> bool;
-    fn is_minimized(&self) -> bool;
-    fn maximize(&mut self);
-    fn minimize(&mut self);
-    fn restore(&mut self);
-    fn set_borderless(&mut self, borderless: bool);
-    fn set_fullscreen(&mut self, fullscreen: bool);
-    fn is_fullscreen(&self) -> bool;
-    fn set_always_on_top(&mut self, on: bool);
-    fn set_window_opacity(&mut self, opacity: f32);
-    fn start_text_input(&mut self);
-    fn stop_text_input(&mut self);
-    fn enable_file_drop(&mut self, enable: bool);
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// INativeHandle — 原生窗口句柄（每个窗口独立）
-// ════════════════════════════════════════════════════════════════════════════
-
-pub trait INativeHandle {
-    fn native_window(&self) -> *mut std::ffi::c_void;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// IWindowManager — 窗口工厂（平台共享，创建 PlatformWindow）
-// ════════════════════════════════════════════════════════════════════════════
-
-pub trait IWindowManager {
-    /// 创建一个新窗口，返回窗口级操作句柄。
-    fn create_window(&mut self, title: &str, width: i32, height: i32) -> Result<Box<dyn PlatformWindow>, Error>;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// PlatformWindow — 单窗口操作接口（多窗口架构核心）
-//
-// 每个窗口是一个独立的 trait object，封装：
-//   - 窗口生命周期（show/hide/close）
-//   - 窗口外观（title/icon/flash）
-//   - 窗口属性（IWindowProperties 子组件）
-//   - 像素呈现（IPresenter 子组件）
-//   - 原生句柄（INativeHandle 子组件）
-//
-// 共享资源（事件循环、剪贴板等）通过 Platform trait 访问。
-// ════════════════════════════════════════════════════════════════════════════
-
-pub trait PlatformWindow {
-    // ── 窗口生命周期 ──────────────────────────────────────────
-    fn show(&mut self);
-    fn hide(&mut self);
-    fn close(&mut self);
-    fn is_visible(&self) -> bool;
-
-    // ── 窗口外观 ──────────────────────────────────────────────
-    fn set_title(&mut self, title: &str);
-    fn center_on_screen(&mut self);
-    fn raise(&mut self);
-    fn lower(&mut self);
-    fn set_window_icon(&mut self, icon_path: &str);
-    fn flash_window(&mut self);
-
-    // ── 几何通知 ──────────────────────────────────────────────
-    /// 通知窗口尺寸已变化（用于同步平台资源如 SHM 缓冲）。
-    fn resize_notify(&mut self, width: i32, height: i32);
-
-    // ── 子组件访问 ────────────────────────────────────────────
-    fn properties(&self) -> &dyn IWindowProperties;
-    fn properties_mut(&mut self) -> &mut dyn IWindowProperties;
-    fn presenter(&mut self) -> &mut dyn IPresenter;
-    fn native_handle(&self) -> &dyn INativeHandle;
-
-    /// GPU 图形上下文。仅 GPU/Hybrid 模式可用，CPU 模式返回 `None`。
-    fn graphics_context(&mut self) -> Option<&mut dyn IGraphicsContext> { None }
-
-    /// Wayland wl_surface 原始指针（供 EGL 初始化）。非 Wayland 平台返回 null。
-    fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
-        std::ptr::null_mut()
-    }
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowOps — 平台特有的窗口操作
 //
 // 必须实现（6 个）：os_show, os_hide, os_close, os_set_title, os_set_size, native_handle
-// 其余 20 个有合理默认实现（运行时输出 ERROR 日志表示不支持）。
+// 其余 20 个有合理默认实现（运行时输出 WARN 日志表示不支持）。
 //
 // 与 PlatformWindowCore<O> 组合使用，自动获得 PlatformWindow +
 // IWindowProperties + INativeHandle 三个 trait 的完整实现。
 // ════════════════════════════════════════════════════════════════════════════
 
 pub trait WindowOps {
-    // ── 必须实现（无默认，编译期强制）───────────────────
-
+    // ── 必须实现（无默认，编译期强制）────────────────────────────
     fn os_show(&mut self);
     fn os_hide(&mut self);
     fn os_close(&mut self);
@@ -130,7 +38,6 @@ pub trait WindowOps {
     fn native_handle(&self) -> *mut std::ffi::c_void;
 
     // ── 窗口外观 ─────────────────────────────────────────
-
     fn os_center_on_screen(&mut self) { unimpl("os_center_on_screen"); }
     fn os_raise(&mut self) { unimpl("os_raise"); }
     fn os_lower(&mut self) { unimpl("os_lower"); }
@@ -138,13 +45,11 @@ pub trait WindowOps {
     fn os_flash(&mut self) { unimpl("os_flash"); }
 
     // ── 尺寸约束 ─────────────────────────────────────────
-
     fn os_set_min_size(&mut self, _w: i32, _h: i32) { unimpl("os_set_min_size"); }
     fn os_set_max_size(&mut self, _w: i32, _h: i32) { unimpl("os_set_max_size"); }
     fn os_set_position(&mut self, _x: i32, _y: i32) { unimpl("os_set_position"); }
 
     // ── 窗口状态 ─────────────────────────────────────────
-
     fn os_set_resizable(&mut self, _r: bool) { unimpl("os_set_resizable"); }
     fn os_maximize(&mut self) { unimpl("os_maximize"); }
     fn os_minimize(&mut self) { unimpl("os_minimize"); }
@@ -155,14 +60,11 @@ pub trait WindowOps {
     fn os_set_opacity(&mut self, _o: f32) { unimpl("os_set_opacity"); }
 
     // ── 特性开关 ─────────────────────────────────────────
-
     fn os_start_text_input(&mut self) { unimpl("os_start_text_input"); }
     fn os_stop_text_input(&mut self) { unimpl("os_stop_text_input"); }
     fn os_enable_file_drop(&mut self, _e: bool) { unimpl("os_enable_file_drop"); }
 
     // ── 几何通知 ─────────────────────────────────────────
-
-    /// 窗口尺寸变化通知。
     fn os_resize_notify(&mut self, _w: i32, _h: i32) {}
 
     /// Wayland wl_surface C 指针（EGL 初始化用）。非 Wayland 返回 null。
@@ -306,8 +208,8 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
     fn set_minimum_size(&mut self, w: i32, h: i32) { self.ops.os_set_min_size(w, h); }
     fn set_maximum_size(&mut self, w: i32, h: i32) { self.ops.os_set_max_size(w, h); }
 
-    fn position(&self) -> Point {
-        Point::new(
+    fn position(&self) -> crate::api::types::Point {
+        crate::api::types::Point::new(
             state_read!(self.state, pos_x) as f32,
             state_read!(self.state, pos_y) as f32,
         )
