@@ -195,7 +195,7 @@ impl App {
                     0
                 }
                 None => {
-                    log::error!("App::run: no window created for GUI mode");
+                    uix_platform::log::error_fn("App::run: no window created for GUI mode");
                     1
                 }
             },
@@ -204,7 +204,7 @@ impl App {
                     let args = std::env::args().collect::<Vec<_>>();
                     self.exit_code = cli.run(&args);
                 } else {
-                    log::info!("Running in CLI mode (no commands registered)");
+                    uix_platform::log::info_fn("Running in CLI mode (no commands registered)");
                 }
                 self.exit_code
             }
@@ -253,20 +253,18 @@ impl App {
                 let mut engine = SoftwareEngine::new();
                 match engine.initialize(width, height) {
                     Ok(_) => {
-                        log::info!("App: SoftwareEngine (CPU) initialized");
+                        uix_platform::log::info_fn("App: SoftwareEngine (CPU) initialized");
                         Some(Box::new(engine))
                     }
                     Err(e) => {
-                        log::error!("App: SoftwareEngine init failed: {}", e.short_what());
+                        uix_platform::log::error_fn(format!("App: SoftwareEngine init failed: {}", e.short_what()));
                         None
                     }
                 }
             }
             RenderStrategy::Gpu | RenderStrategy::Hybrid => {
-                log::error!(
-                    "App: {:?} strategy requires passing a custom engine via `.engine(...)`",
-                    strategy
-                );
+                uix_platform::log::error_fn(format!("App: {:?} strategy requires passing a custom engine via `.engine(...)`",
+                    strategy));
                 None
             }
         }
@@ -275,7 +273,7 @@ impl App {
     /// 取出或创建引擎。
     pub fn take_engine(&mut self, width: i32, height: i32, system_info: &dyn uix_platform::ISystemInfo) -> Option<Box<dyn GraphicsEngine>> {
         if let Some(engine) = self.custom_engine.take() {
-            log::info!("App: using custom engine ({:?})", self.render_strategy);
+            uix_platform::log::info_fn(format!("App: using custom engine ({:?})", self.render_strategy));
             Some(engine)
         } else {
             Self::build_engine(self.render_strategy, width, height, system_info)
@@ -301,7 +299,7 @@ impl App {
         let platform = match uix_platform::create_platform() {
             Ok(p) => p,
             Err(e) => {
-                log::error!("App::run_widget: platform creation failed: {}", e.short_what());
+                uix_platform::log::error_fn(format!("App::run_widget: platform creation failed: {}", e.short_what()));
                 return 1;
             }
         };
@@ -373,7 +371,7 @@ impl App {
     {
         if self.window.is_none() {
             if let Err(e) = self.create_window("", width, height) {
-                log::error!("App::run_widget_with_tokens: {}", e.short_what());
+                uix_platform::log::error_fn(format!("App::run_widget_with_tokens: {}", e.short_what()));
                 return 1;
             }
         }
@@ -383,7 +381,7 @@ impl App {
                 window.run_widget_loop(tree, engine, &self.font_service, theme, map_event, on_exit, on_frame)
             }
             None => {
-                log::error!("App::run_widget_with_tokens: window creation failed");
+                uix_platform::log::error_fn("App::run_widget_with_tokens: window creation failed");
                 1
             }
         }
@@ -399,7 +397,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
     match ev.type_ {
         UiEventType::MouseDown => {
             if let UiEventPayload::MouseButton(ref d) = ev.payload {
-                log::debug!("map_ui_event: MouseDown pos=({}, {}) btn={:?}", d.pos.x, d.pos.y, d.btn);
+                uix_platform::log::debug_fn(format!("map_ui_event: MouseDown pos=({}, {}) btn={:?}", d.pos.x, d.pos.y, d.btn));
                 Some(WidgetEvent::MouseDown {
                     pos: d.pos,
                     button: d.btn,

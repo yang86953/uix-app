@@ -76,7 +76,7 @@ impl Cli {
             return handler(&args);
         }
 
-        log::error!("Unknown command: {}", args.command);
+        uix_platform::log::error_fn(format!("Unknown command: {}", args.command));
         self.print_help();
         1
     }

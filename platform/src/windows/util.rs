@@ -289,7 +289,7 @@ pub fn system_default_font_paths() -> Vec<String> {
         // 2. 查询系统默认 UI 字体名称
         let sys_font_name = get_system_default_ui_font_name();
         if let Some(ref name) = sys_font_name {
-            log::info!("System default UI font: {}", name);
+            crate::log::info_fn(format!("System default UI font: {}", name));
         }
 
         let mut results: Vec<String> = Vec::with_capacity(2);

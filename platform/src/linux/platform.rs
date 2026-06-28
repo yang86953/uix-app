@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use crate::Error;
-use crate::core::{WindowState, OsEventSource};
+use crate::shared::{WindowState, OsEventSource};
 use crate::event::UiEvent;
 use crate::*;
 
@@ -51,7 +51,7 @@ impl LinuxPlatform {
     pub fn new() -> Result<Self, Error> {
         let backend = match WaylandBackend::new() {
             Ok(wl) => {
-                log::info!("Wayland backend initialized");
+                crate::log::info_fn("Wayland backend initialized");
                 wl
             }
             Err(e) => {

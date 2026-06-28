@@ -1,5 +1,5 @@
 // ============================================================================
-// platform/core/event_loop.rs — 事件循环共享实现
+// platform/shared/event_loop.rs — 事件循环共享实现
 //
 // OsEventSource trait：平台只需实现 3 个必须方法 + 1 个可选方法，
 // 自动获得 IEventLoop（poll_event / wait_event / wait_timeout）。
@@ -15,7 +15,21 @@
 
 use std::time::Duration;
 use crate::event::UiEvent;
-use crate::IEventLoop;
+
+// ════════════════════════════════════════════════════════════════════════════
+// IEventLoop — 事件循环 API 契约
+// ════════════════════════════════════════════════════════════════════════════
+
+pub trait IEventLoop {
+    fn poll_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool;
+    fn wait_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool;
+    /// Block until an event arrives or the timeout expires.
+    fn wait_timeout(&mut self, timeout: Duration, callback: &dyn Fn(&UiEvent) -> bool) -> bool;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// OsEventSource — 平台事件源
+// ════════════════════════════════════════════════════════════════════════════
 
 /// 平台事件源：平台特有的事件分发操作。
 ///

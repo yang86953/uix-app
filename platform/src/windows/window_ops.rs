@@ -7,7 +7,7 @@
 
 #![cfg(windows)]
 
-use crate::core::WindowOps;
+use crate::shared::WindowOps;
 
 /// Windows 平台窗口操作句柄。
 ///

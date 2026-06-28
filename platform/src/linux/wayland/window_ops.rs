@@ -17,8 +17,8 @@ use wayland_protocols::misc::server_decoration::client::org_kde_kwin_server_deco
 use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::XdgActivationV1;
 use wayland_protocols::unstable::xdg_decoration::v1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
 
-use crate::core::WindowOps;
-use crate::core::unimpl;
+use crate::shared::WindowOps;
+use crate::shared::unimpl;
 use crate::event::UiEvent;
 
 /// Wayland 平台窗口操作句柄。
@@ -158,7 +158,7 @@ impl WaylandWindowOps {
                 let d = dm.create(&surface);
                 d.request_mode(Mode::Server);
                 self.kde_decoration = Some(d);
-                log::info!("[Wayland] KDE server-side decoration requested");
+                crate::log::info_fn("[Wayland] KDE server-side decoration requested");
                 true
             })
             .unwrap_or(false);
@@ -169,9 +169,9 @@ impl WaylandWindowOps {
                 let d = dm.get_toplevel_decoration(&tl);
                 d.set_mode(XdgDecoMode::ServerSide);
                 self.xdg_decoration = Some(d);
-                log::info!("[Wayland] xdg-decoration ServerSide mode requested");
+                crate::log::info_fn("[Wayland] xdg-decoration ServerSide mode requested");
             } else {
-                log::warn!("[Wayland] 无可用的窗口装饰协议，窗口可能无标题栏");
+                crate::log::warn_fn("[Wayland] 无可用的窗口装饰协议，窗口可能无标题栏");
             }
         }
 
@@ -237,12 +237,12 @@ impl WindowOps for WaylandWindowOps {
         {
             let cx = primary.x + primary.width / 2;
             let cy = primary.y + primary.height / 2;
-            log::info!(
+            crate::log::info_fn(format!(
                 "窗口居中计算完成: 显示器 {}x{} @({},{}), 中心 ({},{})",
                 primary.width, primary.height, primary.x, primary.y, cx, cy,
-            );
+            ));
         } else {
-            log::info!("窗口居中: 未检测到显示器信息，由 compositor 自行放置");
+            crate::log::info_fn("窗口居中: 未检测到显示器信息，由 compositor 自行放置");
         }
     }
 
@@ -256,9 +256,9 @@ impl WindowOps for WaylandWindowOps {
             token.set_app_id("belldandy".to_string());
             token.commit();
             xa.activate(String::new(), surface);
-            log::info!("已请求窗口激活 (xdg_activation_v1)");
+            crate::log::info_fn("已请求窗口激活 (xdg_activation_v1)");
         } else {
-            log::info!("请求窗口提升: xdg_activation_v1 不可用，由 compositor 自行决定");
+            crate::log::info_fn("请求窗口提升: xdg_activation_v1 不可用，由 compositor 自行决定");
         }
     }
 

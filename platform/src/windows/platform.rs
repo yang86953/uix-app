@@ -13,7 +13,7 @@ use std::collections::{VecDeque, HashSet};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crate::core::{WindowState, OsEventSource, PlatformWindowCore};
+use crate::shared::{WindowState, OsEventSource, PlatformWindowCore};
 use crate::event::UiEvent;
 use crate::*;
 use crate::{Errc, Error};
@@ -30,7 +30,7 @@ use super::system_info::WindowsSystemInfo;
 use super::text_input::WindowsTextInput;
 use super::timer::WindowsTimer;
 use super::window_ops::WindowsWindowOps;
-use super::gdi_presenter::GdiPresenter;
+use super::gpu::GdiPresenter;
 use super::bindings::*;
 use super::consts::*;
 use super::ffi::*;
@@ -200,7 +200,7 @@ impl IWindowManager for WindowsPlatform {
             let presenter: Box<dyn IPresenter> = match GdiPresenter::new(hwnd, width, height) {
                 Ok(p) => Box::new(p),
                 Err(e) => {
-                    log::warn!("GdiPresenter failed ({}), using null", e.short_what());
+                    crate::log::warn_fn(format!("GdiPresenter failed ({}), using null", e.short_what()));
                     Box::new(crate::presenter::NullPresenter::new())
                 }
             };

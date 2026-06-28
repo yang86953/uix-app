@@ -235,6 +235,6 @@ impl GraphicsEngine for SoftwareEngine {
     }
 
     fn diagnose_memory(&self) {
-        log::info!("SoftwareEngine memory: {} bytes", self.memory_usage());
+        uix_platform::log::info_fn(format!("SoftwareEngine memory: {} bytes", self.memory_usage()));
     }
 }

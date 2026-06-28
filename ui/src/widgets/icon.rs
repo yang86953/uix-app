@@ -24,11 +24,11 @@ static LUCIDE_FONT: OnceLock<FontHandle> = OnceLock::new();
 pub fn init_lucide_font(data: &[u8], font_service: &mut FontService) {
     match font_service.load_font(data) {
         Ok(fh) => {
-            log::info!("Lucide font loaded, handle={:?}", fh);
+            uix_platform::log::info_fn(format!("Lucide font loaded, handle={:?}", fh));
             let _ = LUCIDE_FONT.set(fh);
         }
         Err(e) => {
-            log::warn!("Failed to load Lucide font: {}", e.short_what());
+            uix_platform::log::warn_fn(format!("Failed to load Lucide font: {}", e.short_what()));
         }
     }
 }

@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use glow::HasContext as _;
 
 use uix_platform::Error;
-use uix_platform::api::IGraphicsContext;
+use uix_platform::IGraphicsContext;
 use crate::engine::cpu::noop_canvas_3d::NoopCanvas3D;
 use crate::traits::{Canvas2D, Canvas3D, GraphicsEngine, UpdateStrategy};
 use crate::engine::RenderOutcome;

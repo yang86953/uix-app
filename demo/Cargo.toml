@@ -10,7 +10,6 @@ uix-graphics = { path = "../graphics" }
 uix-platform = { path = "../platform" }
 uix-ui = { path = "../ui" }
 uix-app = { path = "../app" }
-log = { workspace = true }
 
 [lints]
 workspace = true

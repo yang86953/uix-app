@@ -2,5 +2,8 @@
 #   cargo demo  → 运行 GUI 演示
 #   cargo demo -- --cli  → 运行 CLI 演示
 
+[build]
+target-dir = "/home/yang86/temp"
+
 [alias]
 demo = "run --package uix-demo"

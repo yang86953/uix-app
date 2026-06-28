@@ -24,10 +24,10 @@ impl ICursor for WaylandBackend {
             CursorType::NotAllowed => "not-allowed",
             CursorType::Custom => "default",
         };
-        log::trace!("Wayland: set_cursor({}) requested", name);
+        crate::log::trace_fn(format!("Wayland: set_cursor({}) requested", name));
     }
     fn show_cursor(&mut self, visible: bool) {
-        log::debug!("Wayland: show_cursor({}) — compositor-controlled", visible);
+        crate::log::debug_fn(format!("Wayland: show_cursor({}) — compositor-controlled", visible));
     }
     fn cursor_position(&self) -> Point {
         Point::default()

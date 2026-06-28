@@ -1,10 +1,13 @@
 // ============================================================================
 // platform/windows/mod.rs — Windows 平台实现入口
 //
-// 新架构：
+// 架构：
 //   platform.rs    — WindowsPlatform（OsEventSource + IWindowManager + Platform + wnd_proc）
 //   window_ops.rs  — WindowsWindowOps（实现 WindowOps trait）
-//   各子系统保持独立文件。
+//   gpu/           — GDI 像素呈现
+//   system_info/   — 系统信息
+//   infra/         — FFI 绑定、常量、工具函数（bindings/consts/ffi/helpers/util）
+//   其余文件为各子系统实现。
 // ============================================================================
 
 #![cfg(windows)]
@@ -19,7 +22,7 @@ pub mod display;
 pub mod ffi;
 pub mod file_dialog;
 pub mod filesystem;
-pub mod gdi_presenter;
+pub mod gpu;
 pub mod helpers;
 pub mod keyboard;
 pub mod notification;
@@ -37,7 +40,7 @@ pub use cursor::*;
 pub use display::*;
 pub use file_dialog::*;
 pub use filesystem::*;
-pub use gdi_presenter::*;
+pub use gpu::*;
 pub use keyboard::*;
 pub use notification::*;
 pub use platform::*;

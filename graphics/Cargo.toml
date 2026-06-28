@@ -7,8 +7,6 @@ license.workspace = true
 [dependencies]
 uix-platform = { path = "../platform" }
 ab_glyph = { workspace = true }
-unicode-linebreak = { workspace = true }
-log = { workspace = true }
 glow = { workspace = true }
 
 [lints]

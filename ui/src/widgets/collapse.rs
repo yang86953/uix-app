@@ -59,10 +59,8 @@ define_widget! {
                     }
                     self.panels[i].expanded = new_state;
                     if let Some(ref mut cb) = self.on_change { cb(i); }
-                    log::debug!(
-                        "[Collapse] 面板 \"{}\" 切换 expanded: {} → {}",
-                        name, !new_state, new_state
-                    );
+                    uix_platform::log::debug_fn(format!("[Collapse] 面板 \"{}\" 切换 expanded: {} → {}",
+                        name, !new_state, new_state));
                     return EventResult::Handled;
                 }
                 cy += header_h;

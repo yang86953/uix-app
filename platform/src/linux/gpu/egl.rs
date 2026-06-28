@@ -12,7 +12,7 @@ use std::ptr;
 
 use crate::{Error, Errc};
 
-use crate::api::IGraphicsContext;
+use crate::IGraphicsContext;
 
 // ════════════════════════════════════════════════════════════════════════════
 // wl_egl_window FFI（wayland-egl 客户端库，Linux 系统自带）
@@ -91,7 +91,7 @@ impl EglContext {
         let (major, minor) = egl.initialize(display).map_err(|e| {
             Error::new(Errc::PlatformError, format!("EglContext: eglInitialize 失败: {e:?}"))
         })?;
-        log::info!("EglContext: EGL {major}.{minor}");
+        crate::log::info_fn("EglContext: EGL {major}.{minor}");
 
         // 3. 绑定 API 到 OpenGL ES
         egl.bind_api(egl::OPENGL_ES_API).map_err(|e| {
@@ -144,11 +144,11 @@ impl EglContext {
             ];
             match egl.create_context(display, config, None, &ctx3_attribs) {
                 Ok(ctx) => {
-                    log::info!("EglContext: GLES 3.0 上下文创建成功");
+                    crate::log::info_fn("EglContext: GLES 3.0 上下文创建成功");
                     ctx
                 }
                 Err(_) => {
-                    log::warn!("EglContext: GLES 3.0 不可用，降级到 2.0");
+                    crate::log::warn_fn("EglContext: GLES 3.0 不可用，降级到 2.0");
                     let ctx2_attribs = [
                         egl::CONTEXT_CLIENT_VERSION, 2,
                         egl::NONE,

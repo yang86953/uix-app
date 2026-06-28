@@ -125,7 +125,7 @@ define_widget! {
                     .map(|n| n.visible())
                     .unwrap_or(true);
                 if !visible {
-                    log::debug!("[Container::layout_children] child {} is invisible, skipping", cid);
+                    uix_platform::log::debug_fn(format!("[Container::layout_children] child {} is invisible, skipping", cid));
                 }
                 visible
             })

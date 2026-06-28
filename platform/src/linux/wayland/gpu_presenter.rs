@@ -6,7 +6,7 @@
 // ============================================================================
 
 use crate::Error;
-use crate::api::{IGraphicsContext, IPresenter};
+use crate::{IGraphicsContext, IPresenter};
 
 pub struct GpuPresenter {
     gpu_ctx: Box<dyn IGraphicsContext>,

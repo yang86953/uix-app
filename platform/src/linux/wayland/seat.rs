@@ -27,7 +27,7 @@ impl WaylandBackend {
         let seat = match self._globals.instantiate_exact::<wl_seat::WlSeat>(5) {
             Ok(s) => s,
             Err(_) => {
-                log::warn!("Wayland: no wl_seat available, input unavailable");
+                crate::log::warn_fn("Wayland: no wl_seat available, input unavailable");
                 return;
             }
         };

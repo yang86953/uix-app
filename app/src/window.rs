@@ -60,7 +60,7 @@ impl Window {
         let main_color = fg.register_texture("MainColor", 800, 600);
         let debug_mode = std::env::var("UIX_DEBUG").is_ok();
         if debug_mode {
-            log::info!("[Debug] UIX_DEBUG 环境变量已设置，调试模式默认开启");
+            uix_platform::log::info_fn("[Debug] UIX_DEBUG 环境变量已设置，调试模式默认开启");
         }
         Self {
             platform,
@@ -99,15 +99,13 @@ impl Window {
                 w.center_on_screen();
                 w.show();
                 w.raise();
-                log::info!(
-                    "Window created and shown ({}x{}, title='{}')",
-                    width, height, title
-                );
+                uix_platform::log::info_fn(format!("Window created and shown ({}x{}, title='{}')",
+                    width, height, title));
                 self.window = Some(w);
                 true
             }
             Err(e) => {
-                log::error!("Window::create: platform failed: {}", e.short_what());
+                uix_platform::log::error_fn(format!("Window::create: platform failed: {}", e.short_what()));
                 false
             }
         }
@@ -127,7 +125,7 @@ impl Window {
     /// 设置调试模式。
     pub fn set_debug_mode(&self, mode: bool) {
         self.debug_mode.set(mode);
-        log::info!("[Debug] 调试模式 {}", if mode { "开启" } else { "关闭" });
+        uix_platform::log::info_fn(format!("[Debug] 调试模式 {}", if mode { "开启" } else { "关闭" }));
     }
 
     /// 查询当前是否处于调试模式。
@@ -178,19 +176,19 @@ impl Window {
         let collect = |ev: &UiEvent| {
             match ev.type_ {
                 UiEventType::WindowClose => {
-                    log::debug!("collect: WindowClose -> exit");
+                    uix_platform::log::debug_fn("collect: WindowClose -> exit");
                     running_flag.set(false);
                     return false;
                 }
                 _ => {
                     if on_exit(ev) {
-                        log::debug!("collect: on_exit -> exit");
+                        uix_platform::log::debug_fn("collect: on_exit -> exit");
                         running_flag.set(false);
                         return false;
                     }
                 }
             }
-            log::trace!("collect: {:?}", ev.type_);
+            uix_platform::log::trace_fn(format!("collect: {:?}", ev.type_));
             pending_events.borrow_mut().push(ev.clone());
             true
         };
@@ -229,7 +227,7 @@ impl Window {
                     let elapsed = _frame_t0.elapsed();
                     let since_last = _last_tmark.elapsed();
                     if since_last.as_secs_f32() > 0.1 {
-                        log::debug!("[TIMING] {}: total={:.1}s  step={:.1}s", $label, elapsed.as_secs_f32(), since_last.as_secs_f32());
+                        uix_platform::log::debug_fn(format!("[TIMING] {}: total={:.1}s  step={:.1}s", $label, elapsed.as_secs_f32(), since_last.as_secs_f32()));
                     }
                     _last_tmark = std::time::Instant::now();
                 }};
@@ -242,7 +240,7 @@ impl Window {
             _tmark!("events");
             let had_events = !pending_events.borrow().is_empty();
             for ev in pending_events.borrow_mut().drain(..) {
-                log::trace!("[EventLoop] process ev={:?}", ev.type_);
+                uix_platform::log::trace_fn(format!("[EventLoop] process ev={:?}", ev.type_));
                 if let UiEventType::WindowResize = ev.type_ {
                     if let UiEventPayload::Resize(ref d) = ev.payload {
                         if d.width > 0 && d.height > 0 {
@@ -261,7 +259,7 @@ impl Window {
                         let w = info.bounds.w as i32;
                         let h = info.bounds.h as i32;
                         if w > 0 && h > 0 {
-                            log::debug!("[Window] Maximize fallback resize to {}x{}", w, h);
+                            uix_platform::log::debug_fn(format!("[Window] Maximize fallback resize to {}x{}", w, h));
                             engine.resize(w, h);
                             if let Some(ref mut win_ref) = self.window {
                                 win_ref.resize_notify(w, h);
@@ -271,17 +269,17 @@ impl Window {
                 }
                 if let UiEventType::WindowRestore = ev.type_ {
                     let (restore_w, restore_h) = self.initial_size;
-                    log::debug!("[Window] Restore resize to {}x{}", restore_w, restore_h);
+                    uix_platform::log::debug_fn(format!("[Window] Restore resize to {}x{}", restore_w, restore_h));
                     engine.resize(restore_w, restore_h);
                     if let Some(ref mut w) = self.window {
                         w.resize_notify(restore_w, restore_h);
                     }
                     window_visible = true;
-                    log::debug!("[Visible] 窗口恢复可见");
+                    uix_platform::log::debug_fn("[Visible] 窗口恢复可见");
                 }
                 if let UiEventType::WindowMinimize = ev.type_ {
                     window_visible = false;
-                    log::debug!("[Visible] 窗口最小化，暂停渲染");
+                    uix_platform::log::debug_fn("[Visible] 窗口最小化，暂停渲染");
                 }
                 if let UiEventType::MouseMove = ev.type_ {
                     if let UiEventPayload::MouseMove(ref data) = ev.payload {
@@ -294,13 +292,13 @@ impl Window {
                         if data.key == KeyCode::F12 {
                             let new_val = !self.debug_mode.get();
                             self.debug_mode.set(new_val);
-                            log::info!("[Debug] 调试模式 {}", if new_val { "开启" } else { "关闭" });
+                            uix_platform::log::info_fn(format!("[Debug] 调试模式 {}", if new_val { "开启" } else { "关闭" }));
                             continue;
                         }
                     }
                 }
                 if let Some(we) = map_event(&ev) {
-                    log::trace!("dispatch: {:?}", we);
+                    uix_platform::log::trace_fn(format!("dispatch: {:?}", we));
                     tree.dispatch_event(&we);
                 }
             }
@@ -318,7 +316,7 @@ impl Window {
             keep_polling = tree.update(dt);
             let t1 = Instant::now();
             if t1 - t0 > std::time::Duration::from_millis(100) {
-                log::debug!("EventLoop: tree.update took {}ms", (t1 - t0).as_millis());
+                uix_platform::log::debug_fn(format!("EventLoop: tree.update took {}ms", (t1 - t0).as_millis()));
             }
 
             // 仅在有事件、持续更新、或首帧时才 layout/on_frame。
@@ -328,7 +326,7 @@ impl Window {
                 tree.layout();
                 let t2 = Instant::now();
             if t2 - t1 > std::time::Duration::from_millis(100) {
-                log::debug!("EventLoop: tree.layout took {}ms", (t2 - t1).as_millis());
+                uix_platform::log::debug_fn(format!("EventLoop: tree.layout took {}ms", (t2 - t1).as_millis()));
             }
 
             let need_relayout = tree.root_id().and_then(|rid| tree.get(rid)).map_or(false, |root| {
@@ -356,7 +354,7 @@ impl Window {
             on_frame(tree, engine, self.platform.as_mut());
             let t3 = Instant::now();
             if t3 - t_frame > std::time::Duration::from_millis(100) {
-                log::debug!("EventLoop: on_frame took {}ms", (t3 - t_frame).as_millis());
+                uix_platform::log::debug_fn(format!("EventLoop: on_frame took {}ms", (t3 - t_frame).as_millis()));
             }
 
             // ⭐ on_frame 回调可能执行了 tree.build()（如 belldandy 的消息重建），
@@ -396,10 +394,10 @@ impl Window {
 
             _tmark!("pre-render");
 
-            log::debug!("[EventLoop] need_render={} first_render={} rendered_first={} full_frame={} clear={} keep_polling={} ev_count={}",
+            uix_platform::log::debug_fn(format!("[EventLoop] need_render={} first_render={} rendered_first={} full_frame={} clear={} keep_polling={} ev_count={}",
                 need_render, first_render, rendered_first_frame,
                 dirty_region.full_frame, dirty_region.clear_required, keep_polling,
-                pending_events.borrow().len());
+                pending_events.borrow().len()));
 
             let outcome = if !need_render {
                 RenderOutcome::Idle
@@ -440,14 +438,14 @@ impl Window {
                 let geom_pid = match self.geom_pass_id {
                     Some(id) => id,
                     None => {
-                        log::error!("[EventLoop] geom_pass_id not initialized");
+                        uix_platform::log::error_fn("[EventLoop] geom_pass_id not initialized");
                         return 1;
                     }
                 };
                 let over_pid = match self.over_pass_id {
                     Some(id) => id,
                     None => {
-                        log::error!("[EventLoop] over_pass_id not initialized");
+                        uix_platform::log::error_fn("[EventLoop] over_pass_id not initialized");
                         return 1;
                     }
                 };
@@ -485,7 +483,7 @@ impl Window {
                             drop(lt_ref);
                             engine.end_frame();
                             if t_render.elapsed() > std::time::Duration::from_millis(100) {
-                                log::debug!("EventLoop: Geometry pass took {}ms", t_render.elapsed().as_millis());
+                                uix_platform::log::debug_fn(format!("EventLoop: Geometry pass took {}ms", t_render.elapsed().as_millis()));
                             }
                         } else if pid == over_pid {
                             let t_over = Instant::now();
@@ -499,7 +497,7 @@ impl Window {
                             drop(theme_ref);
                             engine.end_frame();
                             if t_over.elapsed() > std::time::Duration::from_millis(100) {
-                                log::debug!("EventLoop: Overlay pass took {}ms", t_over.elapsed().as_millis());
+                                uix_platform::log::debug_fn(format!("EventLoop: Overlay pass took {}ms", t_over.elapsed().as_millis()));
                             }
                         }
                     }
@@ -529,12 +527,12 @@ impl Window {
                             ch,
                             dirty,
                         ) {
-                            log::error!("[EventLoop] present failed: {}", e.short_what());
+                            uix_platform::log::error_fn(format!("[EventLoop] present failed: {}", e.short_what()));
                         }
                     }
                     rendered_first_frame = true;
                     if t_present.elapsed() > std::time::Duration::from_millis(100) {
-                        log::debug!("EventLoop: present took {}ms", t_present.elapsed().as_millis());
+                        uix_platform::log::debug_fn(format!("EventLoop: present took {}ms", t_present.elapsed().as_millis()));
                     }
                 }
                 RenderOutcome::Idle => {
@@ -542,7 +540,7 @@ impl Window {
                 }
             }
 
-            log::debug!("EventLoop: iteration end, dt={:.1}ms", last_frame.elapsed().as_secs_f32() * 1000.0);
+            uix_platform::log::debug_fn(format!("EventLoop: iteration end, dt={:.1}ms", last_frame.elapsed().as_secs_f32() * 1000.0));
 
             // 动画帧由平台帧节奏驱动（Linux: compositor frame callback; Windows: MsgWait 超时）
             if keep_polling {
@@ -552,7 +550,7 @@ impl Window {
         }
 
         self.running = false;
-        log::info!("Widget event loop ended");
+        uix_platform::log::info_fn("Widget event loop ended");
         self.exit_code
     }
 
@@ -562,11 +560,9 @@ impl Window {
     {
         self.running = true;
         if let Some(ref w) = self.window {
-            log::info!(
-                "Window event loop started ({}x{})",
+            uix_platform::log::info_fn(format!("Window event loop started ({}x{})",
                 w.properties().width(),
-                w.properties().height()
-            );
+                w.properties().height()));
         }
         while self.running {
             if !frame_fn(self.platform.as_mut()) {
@@ -574,7 +570,7 @@ impl Window {
             }
         }
         self.running = false;
-        log::info!("Window event loop ended");
+        uix_platform::log::info_fn("Window event loop ended");
         self.exit_code
     }
 }

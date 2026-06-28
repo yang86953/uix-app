@@ -566,12 +566,10 @@ impl LayerTree {
         let needs_new = offscreen_handle.is_none();
         if needs_new {
             if *retry_count >= MAX_OFFSCREEN_RETRY {
-                log::warn!(
-                    "[LayerTree] 离屏创建连续失败 {} 次 ({}x{}), 跳过渲染",
+                uix_platform::log::warn_fn(format!("[LayerTree] 离屏创建连续失败 {} 次 ({}x{}), 跳过渲染",
                     *retry_count,
                     w,
-                    h,
-                );
+                    h,));
                 return;
             }
             // TODO(v2): offscreen API 重新设计中。

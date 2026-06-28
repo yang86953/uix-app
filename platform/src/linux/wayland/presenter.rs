@@ -15,7 +15,7 @@ use wayland_client::protocol::{
 use wayland_client::Main;
 use crate::Error;
 
-use crate::api::IPresenter;
+use crate::IPresenter;
 
 use super::shm_buffer::ShmBuffer;
 
@@ -74,7 +74,7 @@ impl WaylandPresenter {
                 match self.create_shm_buffer(width, height, i) {
                     Ok(b) => *buf = Some(b),
                     Err(e) => {
-                        log::warn!("Wayland SHM[{}] fail: {}", i, e);
+                        crate::log::warn_fn(format!("Wayland SHM[{}] fail: {}", i, e));
                         return;
                     }
                 }

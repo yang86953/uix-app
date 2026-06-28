@@ -359,10 +359,8 @@ impl FontService {
             if let Some(path) = fallback_paths.first() {
                 if let Ok(data) = std::fs::read(path) {
                     if self.load_raw_font(data, size).is_some() {
-                        log::info!(
-                            "Configured font '{}' not found, fallback: {}",
-                            self.primary_family, path
-                        );
+                        uix_platform::log::info_fn(format!("Configured font '{}' not found, fallback: {}",
+                            self.primary_family, path));
                         return;
                     }
                 }
@@ -396,24 +394,18 @@ impl FontService {
                                 if !primary_loaded {
                                     primary_loaded = true;
                                     self.loaded_font_handle = handle;
-                                    log::info!(
-                                        "Loaded system default font: {} (handle={:?})",
-                                        path, handle
-                                    );
+                                    uix_platform::log::info_fn(format!("Loaded system default font: {} (handle={:?})",
+                                        path, handle));
                                 } else {
-                                    log::info!(
-                                        "Loaded fallback font: {}",
-                                        path
-                                    );
+                                    uix_platform::log::info_fn(format!("Loaded fallback font: {}",
+                                        path));
                                     self.fallback_handles.push(handle);
                                 }
                             }
                         }
                         Err(e) => {
-                            log::info!(
-                                "Failed to read font file {}: {}",
-                                path, e
-                            );
+                            uix_platform::log::info_fn(format!("Failed to read font file {}: {}",
+                                path, e));
                         }
                     }
                 }
@@ -428,7 +420,7 @@ impl FontService {
                 }
             }
         }
-        log::info!("{}", "No primary font, using bitmap fallback");
+        uix_platform::log::info_fn(format!("{}", "No primary font, using bitmap fallback"));
     }
 
     /// 加载 CJK 回退字体（通过平台层探测）。
@@ -440,9 +432,7 @@ impl FontService {
                 && self.text_backend.has_glyph(&self.loaded_font_handle, ch)
         });
         if primary_has_cjk {
-            log::info!(
-                "Primary font already supports CJK, skipping CJK fallback load"
-            );
+            uix_platform::log::info_fn("Primary font already supports CJK, skipping CJK fallback load");
             return;
         }
 
@@ -454,30 +444,22 @@ impl FontService {
                         if let Some(handle) = self.load_raw_font(data, size) {
                             if !self.fallback_handles.iter().any(|h| h.0 == handle.0) {
                                 self.fallback_handles.push(handle);
-                                log::info!(
-                                    "Loaded CJK fallback font: {}",
-                                    path
-                                );
+                                uix_platform::log::info_fn(format!("Loaded CJK fallback font: {}",
+                                    path));
                             }
                         } else {
-                            log::info!(
-                                "CJK font '{}' found but failed to load (incompatible format)",
-                                path
-                            );
+                            uix_platform::log::info_fn(format!("CJK font '{}' found but failed to load (incompatible format)",
+                                path));
                         }
                     }
                     Err(e) => {
-                        log::info!(
-                            "Failed to read CJK font file {}: {}",
-                            path, e
-                        );
+                        uix_platform::log::info_fn(format!("Failed to read CJK font file {}: {}",
+                            path, e));
                     }
                 }
             }
             None => {
-                log::info!(
-                    "No CJK fallback font found via platform"
-                );
+                uix_platform::log::info_fn("No CJK fallback font found via platform");
             }
         }
     }
@@ -492,10 +474,8 @@ impl FontService {
                         self.registry[idx].face.family = family.to_owned();
                         self.registry[idx].face.path = Some(p.clone());
                     }
-                    log::info!(
-                        "Loaded family font '{}': {}",
-                        family, p
-                    );
+                    uix_platform::log::info_fn(format!("Loaded family font '{}': {}",
+                        family, p));
                     return Some(());
                 }
             }

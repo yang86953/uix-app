@@ -22,7 +22,7 @@ impl ITextInput for WaylandBackend {
         let seat = match self.seat.as_ref() {
             Some(s) => s,
             None => {
-                log::warn!("Wayland text_input: no seat available, IME not activated");
+                crate::log::warn_fn("Wayland text_input: no seat available, IME not activated");
                 return;
             }
         };
@@ -30,9 +30,7 @@ impl ITextInput for WaylandBackend {
         let manager = match self.text_input_manager.as_ref() {
             Some(m) => m,
             None => {
-                log::warn!(
-                    "Wayland text_input: no zwp_text_input_manager_v3, compositor may not support IME"
-                );
+                crate::log::warn_fn("Wayland text_input: no zwp_text_input_manager_v3, compositor may not support IME");
                 return;
             }
         };

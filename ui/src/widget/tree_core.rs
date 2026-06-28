@@ -355,7 +355,7 @@ impl WidgetTree {
 
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
         self.layout_viewports();
-        log::debug!("[Layout] layout() done");
+        uix_platform::log::debug_fn("[Layout] layout() done");
     }
 
     /// 自下而上扩展：当子节点底部超出容器底部时，扩展容器高度。
@@ -403,20 +403,16 @@ impl WidgetTree {
                 let old_frame = node_frame;
                 let effective_h = new_h.max(node_frame.h);
                 if effective_h > node_frame.h + 0.5 {
-                    log::debug!(
-                        "[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
-                        id, node_frame.h, effective_h, max_bottom,
-                    );
+                    uix_platform::log::debug_fn(format!("[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
+                        id, node_frame.h, effective_h, max_bottom,));
                     if let Some(node_mut) = self.get_mut(id) {
                         node_mut.set_frame(Rect::new(old_frame.x, old_frame.y, old_frame.w, effective_h));
                         self.mark_dirty_rect(id, old_frame);
                         self.mark_dirty(id);
                     }
                 } else if has_resized_child {
-                    log::debug!(
-                        "[Layout] Phase 2: id={} re-layout siblings (child resized, frame_h={:.0})",
-                        id, node_frame.h,
-                    );
+                    uix_platform::log::debug_fn(format!("[Layout] Phase 2: id={} re-layout siblings (child resized, frame_h={:.0})",
+                        id, node_frame.h,));
                 }
                 // 重新布局子节点（容器扩展后 or 子节点被扩展过）
                 let relayout_frame = if effective_h > node_frame.h + 0.5 {
@@ -458,10 +454,8 @@ impl WidgetTree {
                 if children.is_empty() {
                     continue;
                 }
-                log::debug!(
-                    "[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
-                    id, frame.x, frame.y, frame.w, frame.h, children.len(),
-                );
+                uix_platform::log::debug_fn(format!("[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
+                    id, frame.x, frame.y, frame.w, frame.h, children.len(),));
                 // 仅触发 content_bounds 副作用，丢弃返回的 child rects
                 let _ = node.inner().layout_children(frame, &children, self);
             }
@@ -562,10 +556,8 @@ impl WidgetTree {
                 let min_h = needed_h.max(pref_h).max(1.0);
                 let effective_needed = min_h;
                 if node_frame.h - effective_needed > 0.5 {
-                    log::debug!(
-                        "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0})",
-                        id, node_frame.h - effective_needed, node_frame.h, effective_needed, needed_h, pref_h,
-                    );
+                    uix_platform::log::debug_fn(format!("[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0})",
+                        id, node_frame.h - effective_needed, node_frame.h, effective_needed, needed_h, pref_h,));
                     ops.push(ShrinkOp { id, needed_h: effective_needed });
                 }
             }
@@ -645,7 +637,7 @@ impl WidgetTree {
                 .map(|node| {
                     let is_still = node.inner().needs_continuous_update();
                     if is_still {
-                        log::info!("[Anim] id={} still animating", node.id());
+                        uix_platform::log::info_fn(format!("[Anim] id={} still animating", node.id()));
                         any_animating = true;
                     }
                     let dirty = if was_animating || is_still {

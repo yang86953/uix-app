@@ -29,7 +29,7 @@ impl WaylandBackend {
             return false;
         }
         if let Err(e) = self.event_queue.dispatch_pending(&mut (), |_, _, _| {}) {
-            log::error!("Wayland dispatch_pending error: {}", e);
+            crate::log::error_fn(format!("Wayland dispatch_pending error: {}", e));
             self.closed = true;
             return false;
         }
@@ -39,7 +39,7 @@ impl WaylandBackend {
         if ret > 0 && (pfd.revents & POLLIN) != 0 {
             let _ = self.display.flush();
             if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
-                log::error!("Wayland dispatch error: {}", e);
+                crate::log::error_fn(format!("Wayland dispatch error: {}", e));
                 self.closed = true;
                 return false;
             }
@@ -75,7 +75,7 @@ impl WaylandBackend {
         // 无按键按住：传统阻塞 dispatch
         let _ = self.display.flush();
         if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
-            log::error!("Wayland dispatch_blocking error: {}", e);
+            crate::log::error_fn(format!("Wayland dispatch_blocking error: {}", e));
             self.closed = true;
             return false;
         }
@@ -96,7 +96,7 @@ impl WaylandBackend {
         let ret = unsafe { poll(&mut pfd, 1, timeout_ms) };
         if ret > 0 && (pfd.revents & POLLIN) != 0 {
             if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
-                log::error!("Wayland dispatch_timeout dispatch error: {}", e);
+                crate::log::error_fn(format!("Wayland dispatch_timeout dispatch error: {}", e));
                 self.closed = true;
                 return false;
             }

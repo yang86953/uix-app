@@ -317,11 +317,9 @@ define_widget! {
         let content_w = (max_right - origin_x).max(frame.w);
         let content_h = (max_bottom - origin_y).max(frame.h);
         self.content_bounds.set(Some(Size::new(content_w, content_h)));
-        log::debug!(
-            "[ScrollView] layout_children: view=({:.0},{:.0}) origin_y={:.0} content=({:.0},{:.0}) scroll=({:.0},{:.0})",
+        uix_platform::log::debug_fn(format!("[ScrollView] layout_children: view=({:.0},{:.0}) origin_y={:.0} content=({:.0},{:.0}) scroll=({:.0},{:.0})",
             frame.w, frame.h, origin_y,
-            content_w, content_h, self.scroll_x, self.scroll_y,
-        );
+            content_w, content_h, self.scroll_x, self.scroll_y,));
 
         result
     }

@@ -8,7 +8,6 @@ license.workspace = true
 uix-graphics = { path = "../graphics" }
 uix-macros = { path = "macros" }
 uix-platform = { path = "../platform" }
-log = { workspace = true }
 
 [lints]
 workspace = true
