@@ -37,6 +37,11 @@
 //! - [`widgets`] — 内置组件库（Button、Input、Modal 等 60+）
 //! - [`layout`] — Flexbox + Grid 布局引擎
 //! - [`render_context`] — 渲染上下文（文本/图形/主题令牌）
+//! - [`spatial`] — 空间坐标系统（`SpatialContext`、物理单位、3D 变换）
+//!   通过 `ctx.spatial()` 访问，支持：
+//!   - 物理单位：`10.mm()`, `5.cm()`, `12.pt()`
+//!   - 3D 变换：`translate()`, `rotate_z()`, `scale()`
+//!   - 透视投影：`set_perspective()`, `set_camera_look_at()`
 //! - [`state`] — 响应式状态管理（State/Computed/Effect）
 //! - [`theme`] — 设计令牌系统
 //! - [`animation`] — 动画与过渡系统
@@ -98,6 +103,13 @@ pub use crate::virtual_scroll::VirtualScroll;
 // ── 状态管理 ──
 pub use crate::state::{Computed, Effect, State};
 pub use crate::style::Style;
+
+// ── 空间坐标系统（来自 uix-graphics） ──
+pub use uix_graphics::spatial::{
+    AABB3D, DirtyRegion3D, IntoAABB3D, Mat4, Orientation, PhysicalBox,
+    PhysicalUnit, PhysicalUnitExt, Quad2D, Ray3D, SpatialContext, Vec2, Vec3, Vec4,
+};
+pub use uix_graphics::spatial::unit::AngleExt;
 
 // ── 渲染上下文 ──
 pub use crate::render_context::RenderContext;
