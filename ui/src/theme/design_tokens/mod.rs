@@ -8,12 +8,11 @@
 pub mod presets;
 pub mod primitives;
 
-use super::color_tokens::IColorTokens;
 use super::color_tokens::ShadowToken;
-use super::spacing_tokens::{IBoxShadowTokens, ISpacingTokens};
-use super::wrapper::TokenProvider;
-use super::typography_tokens::ITypographyTokens;
 use uix_graphics::Color;
+use crate::api::traits::{
+    IColorTokens, IBoxShadowTokens, ISpacingTokens, ITypographyTokens, TokenProvider,
+};
 
 #[derive(Debug, Clone)]
 pub struct DesignTokens {

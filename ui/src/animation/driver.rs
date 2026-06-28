@@ -1,7 +1,7 @@
 //! AnimationDriver — 动画驱动引擎，管理所有活跃动画实例。
 
 use crate::animation::core::Animation;
-use crate::animation::easing::Animatable;
+use crate::api::Animatable;
 
 /// 动画完成回调。
 pub type AnimationCallback<T> = Box<dyn FnOnce(T) + Send + 'static>;

@@ -279,7 +279,7 @@ impl Navigation {
         self
     }
 
-    pub fn build(self, tokens: &dyn crate::theme::TokenProvider) -> crate::widget::WidgetNode {
+    pub fn build(self, tokens: &dyn crate::api::traits::TokenProvider) -> crate::widget::WidgetNode {
         let loc = crate::locale::use_locale();
         use crate::widget::IntoWidgetNode;
         use crate::widgets::{Container, Divider, Label};

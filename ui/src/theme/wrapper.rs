@@ -10,85 +10,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
 
 use uix_graphics::Color;
-use super::color_tokens::{IColorTokens, ShadowToken};
+use super::color_tokens::ShadowToken;
+use crate::api::traits::{IColorTokens, ITypographyTokens, ISpacingTokens, IBoxShadowTokens, TokenProvider};
 use super::design_tokens::DesignTokens;
-use super::spacing_tokens::{IBoxShadowTokens, ISpacingTokens};
-use super::typography_tokens::ITypographyTokens;
-use crate::style::Style;
-use uix_platform::EdgeInsets;
 
 // ════════════════════════════════════════════════════════════════════════════
 // TokenProvider — supertrait 聚合全部子 trait
 // ════════════════════════════════════════════════════════════════════════════
 
-/// Abstract design token provider — full Ant Design 5 token surface.
-///
-/// Aggregates domain-specific sub-traits via supertrait bounds.
-/// Implement this trait (or implement all sub-traits separately) to inject
-/// a custom design system. All color and shadow methods require explicit
-/// implementation; typography, spacing, motion, and breakpoint methods
-/// provide Ant Design 5 light mode defaults.
-pub trait TokenProvider:
-    IColorTokens + ITypographyTokens + ISpacingTokens + IBoxShadowTokens + Send + Sync
-{
-    /// Whether the active theme is dark mode.
-    fn is_dark(&self) -> bool {
-        false
-    }
-
-    // ── 默认样式构造器（从主题 token 推导 widget 默认外观）──
-
-    /// 获取容器默认样式。
-    fn style_container(&self) -> Style {
-        Style {
-            background: None,
-            border_color: None,
-            border_width: 0.0,
-            border_radius: self.border_radius(),
-            color: self.color_text(),
-            font_size: self.font_size(),
-            ..Style::default()
-        }
-    }
-
-    /// 获取标签默认样式。
-    fn style_label(&self) -> Style {
-        Style {
-            color: self.color_text(),
-            font_size: self.font_size(),
-            padding: EdgeInsets::new(2.0, 0.0, 0.0, 0.0),
-            ..Style::default()
-        }
-    }
-
-    /// 获取默认按钮样式（Default 变体）。
-    fn style_button_default(&self) -> Style {
-        Style {
-            background: None,
-            border_color: Some(self.color_border()),
-            border_width: 1.0,
-            border_radius: self.border_radius(),
-            padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
-            color: self.color_text(),
-            font_size: self.font_size(),
-            ..Style::default()
-        }
-    }
-
-    /// 获取主按钮样式（Primary 变体）。
-    fn style_button_primary(&self) -> Style {
-        Style {
-            background: Some(self.color_primary()),
-            border_color: Some(self.color_primary()),
-            border_width: 1.0,
-            border_radius: self.border_radius(),
-            padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
-            color: self.color_white(),
-            font_size: self.font_size(),
-            ..Style::default()
-        }
-    }
-}
+// TokenProvider trait 定义已迁移至 api/traits.rs
 
 // ════════════════════════════════════════════════════════════════════════════
 // Theme

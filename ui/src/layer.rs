@@ -25,7 +25,7 @@ use uix_graphics::font_service::FontService;
 use uix_graphics::types::ImageHandle;
 use uix_graphics::FontHandle;
 use crate::render_context::RenderContext;
-use crate::theme::TokenProvider;
+use crate::api::traits::TokenProvider;
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
 
 /// 图层节点。

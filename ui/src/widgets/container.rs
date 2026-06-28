@@ -6,8 +6,9 @@ use crate::define_widget;
 use uix_graphics::{Color, Radius};
 use crate::{AlignItems, FlexDirection, JustifyContent};
 use crate::layout::engine::{
-    BoxModel, FlexLayout, LayoutChild, LayoutEngine, child_from_tree,
+    BoxModel, FlexLayout, LayoutChild, child_from_tree,
 };
+use crate::api::traits::LayoutEngine;
 use crate::style::Style;
 use uix_platform::{EdgeInsets, Rect, Size};
 use crate::render_context::RenderContext;

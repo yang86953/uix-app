@@ -29,5 +29,4 @@ pub use driver::*;
 pub use easing::*;
 pub use transition::*;
 
-// Re-export Animatable for convenience
-pub use easing::Animatable;
+// Animatable trait 已迁移至 api/traits.rs，通过 api 模块统一导出

@@ -1,6 +1,6 @@
 //! Animation — 通用动画实例，支持任意 `Animatable` 类型。
 
-use crate::animation::easing::{Animatable, Easing};
+use crate::api::{Animatable, Easing};
 
 // ════════════════════════════════════════════════════════════════════════════
 // Animation<T>

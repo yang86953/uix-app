@@ -1,6 +1,7 @@
 //! Easing — 缓动曲线，支持 antd 5 主题令牌中的 cubic-bezier 以及经典预设。
 
 use uix_graphics::Color;
+use crate::api::traits::Animatable;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Easing 曲线
@@ -155,18 +156,7 @@ fn cubic_bezier_dx(x1: f64, x2: f64, t: f64) -> f64 {
     3.0 * u * u * x1 + 6.0 * u * t * (x2 - x1) + 3.0 * t * t * (1.0 - x2)
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Animatable — 可插值类型
-// ════════════════════════════════════════════════════════════════════════════
-
-/// 可在线性空间中进行插值的类型。
-pub trait Animatable: Clone + Copy + Send + 'static {
-    /// 按系数 `t ∈ [0,1]` 在 `from` 和 `to` 之间插值。
-    fn lerp(from: Self, to: Self, t: f64) -> Self;
-
-    /// 从 `from` 到 `to` 的差值向量（用于弹簧等物理动画）。
-    fn delta(from: Self, to: Self) -> f64;
-}
+// Animatable trait 定义已迁移至 api/traits.rs，以下是类型实现
 
 impl Animatable for f32 {
     fn lerp(from: Self, to: Self, t: f64) -> Self {

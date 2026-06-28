@@ -9,9 +9,8 @@ pub use uix_macros::ui;
 pub use crate::children::WidgetChildren;
 pub use crate::context::WidgetContext;
 pub use crate::widget::{
-    BoxedWidget, EventResult, IntoWidgetNode, Widget, WidgetCore, WidgetEvent,
-    WidgetEventHandler, WidgetId, WidgetLayout, WidgetLifecycle, WidgetNode, WidgetRender,
-    WidgetTree,
+    BoxedWidget, EventResult, WidgetCore, WidgetEvent,
+    WidgetId, WidgetNode, WidgetTree,
 };
 
 // ── 配置提供 ──
@@ -31,21 +30,27 @@ pub use crate::virtual_scroll::VirtualScroll;
 
 // ── 状态管理 ──
 pub use crate::state::{Computed, Effect, State};
-pub use crate::style::Style;
+pub use crate::style::{Style, StyleVariant};
+
+// ── 剪贴板 ──
+pub use crate::clipboard::copy_to_clipboard;
+
+// ── 平台基础类型 ──
+pub use uix_platform::{KeyCode, KeyMod, MouseButton};
 
 // ── 渲染上下文 ──
 pub use crate::render_context::RenderContext;
 
 // ── 布局引擎 ──
 pub use crate::layout::engine::{
-    BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutEngine, LayoutOutput, child_from_tree,
+    BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutOutput, child_from_tree,
 };
 pub use crate::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 
 // ── 动画 ──
 pub use crate::animation::core::Animation;
 pub use crate::animation::driver::{AnimValue, AnimationCallback, AnimationDriver};
-pub use crate::animation::easing::{Animatable, Easing};
+pub use crate::animation::easing::Easing;
 pub use crate::animation::transition::{
     presets, SlideDirection, Transition, TransitionPlayer,
 };
@@ -58,8 +63,8 @@ pub use crate::managers::{
 
 // ── 主题 ──
 pub use crate::theme::{
-    DesignTokens, IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens,
-    ShadowToken, Theme, TokenProvider,
+    DesignTokens,
+    ShadowToken, Theme,
 };
 
 // ── 所有组件 ──

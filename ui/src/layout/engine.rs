@@ -98,17 +98,8 @@ impl LayoutChild {
 
 // ── 布局引擎 trait ─────────────────────────────────────────────────
 
-/// 统一布局引擎 trait — Flex 和 Grid 的公共抽象。
-///
-/// 调用者负责盒模型计算（通过 BoxModel::content_rect），
-/// 引擎在给定的内容区域内排列子节点。
-pub trait LayoutEngine {
-    /// 在内容区域内计算子节点位置。
-    ///
-    /// `content_rect` 是已扣除 margin/border/padding 的内部区域。
-    /// 返回的子节点坐标相对于 `content_rect`。
-    fn layout(&self, content_rect: Rect, children: &[LayoutChild]) -> LayoutOutput;
-}
+// LayoutEngine trait 定义已迁移至 api/traits.rs
+use crate::api::traits::LayoutEngine;
 
 /// 布局引擎的输出：子节点位置 + 内容总尺寸。
 #[derive(Debug, Clone)]

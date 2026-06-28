@@ -1,4 +1,5 @@
-use crate::theme::{DesignTokens, Theme, TokenProvider};
+use crate::theme::{DesignTokens, Theme};
+use crate::api::traits::TokenProvider;
 use std::sync::Arc;
 
 /// Aggregated system references injected into the widget tree.

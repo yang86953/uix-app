@@ -24,6 +24,6 @@ mod wrapper;
 pub use color_tokens::*;
 pub use design_tokens::*;
 pub use design_tokens::primitives::ThemePrimitives;
-pub use spacing_tokens::*;
-pub use typography_tokens::*;
+// 注：ISpacingTokens / IBoxShadowTokens / ITypographyTokens 已迁移至 api/traits.rs
+// spacing_tokens 和 typography_tokens 模块保留作为模块结构文档
 pub use wrapper::*;

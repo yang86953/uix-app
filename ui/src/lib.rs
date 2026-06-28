@@ -67,6 +67,8 @@ pub mod macros;
 pub mod managers;
 pub mod render_context;
 pub mod render_loop;
+pub mod text_render;
+pub mod debug_render;
 pub mod state;
 pub mod style;
 pub mod theme;

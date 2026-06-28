@@ -15,8 +15,9 @@ pub mod engine;
 
 // 重新导出统一布局引擎的核心类型
 pub use engine::{
-    BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutEngine, LayoutOutput, child_from_tree,
+    BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutOutput, child_from_tree,
 };
+pub use crate::api::traits::LayoutEngine;
 
 // ── 枚举类型（新旧引擎共用）──
 

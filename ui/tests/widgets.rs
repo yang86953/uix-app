@@ -5,14 +5,12 @@ use std::rc::Rc;
 use uix_graphics::GraphicsEngine;
 use uix_platform::geometry::{Point, Rect, Size};
 use uix_platform::ScrollDirection;
-use uix_ui::layout::{AlignItems, FlexDirection};
-use uix_ui::widget::{
+use uix_ui::api::{AlignItems, FlexDirection};
+use uix_ui::api::{
     EventResult, KeyCode, KeyMod, MouseButton, Widget, WidgetCore, WidgetEvent, WidgetId, WidgetTree,
 };
-use uix_ui::render_context::RenderContext;
-use uix_ui::widgets::scroll_view::ScrollView;
-use uix_ui::widgets::nav::{NavItem, SharedActive};
-use uix_ui::widgets::Container;
+use uix_ui::api::RenderContext;
+use uix_ui::api::{ScrollView, NavItem, SharedActive, Container};
 
 // ════════════════════════════════════════════════════════════════════════════
 // ScrollView 测试

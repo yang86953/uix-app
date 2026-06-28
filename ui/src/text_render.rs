@@ -1,0 +1,402 @@
+//! TextRenderService — 文本渲染服务。
+//!
+//! 封装 FontService 的文本布局、光栅化、测量和命中测试。
+//! 由 RenderContext 组合持有，通过委托方法对外暴露。
+
+use uix_platform::{Point, Rect, Size};
+use uix_graphics::font_service::FontService;
+use uix_graphics::spatial::{AABB3D, PhysicalUnit, SpatialContext, Vec3};
+use uix_graphics::traits::Canvas2D;
+use uix_graphics::{Color, FontHandle, HAlign, VAlign};
+use uix_graphics::text_backend::TextLayoutOptions;
+
+/// 文本渲染服务 — 字体管理、文本布局、glyph 光栅化。
+pub struct TextRenderService<'a> {
+    pub font: FontHandle,
+    pub font_service: &'a FontService,
+    pub max_text_width: f32,
+}
+
+impl<'a> TextRenderService<'a> {
+    pub fn new(font: FontHandle, font_service: &'a FontService, max_text_width: f32) -> Self {
+        Self { font, font_service, max_text_width }
+    }
+
+    /// 更新字体句柄。
+    pub fn set_font(&mut self, font: FontHandle) {
+        self.font = font;
+    }
+
+    /// 设置文本绘制最大宽度。
+    pub fn set_max_text_width(&mut self, width: f32) {
+        self.max_text_width = width;
+    }
+
+    // ── 内部辅助 ──
+
+    fn text_opts(
+        &self,
+        font_size: f32,
+        max_width: f32,
+        max_height: f32,
+        word_wrap: bool,
+        h_align: HAlign,
+        v_align: VAlign,
+    ) -> TextLayoutOptions {
+        TextLayoutOptions {
+            max_width,
+            max_height,
+            line_height: font_size * 1.5,
+            word_wrap,
+            h_align,
+            v_align,
+            font_size,
+        }
+    }
+
+    fn blit_glyph_layout(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        layout: &uix_graphics::text_backend::TextLayout,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+    ) {
+        let fs = font_size.max(1.0);
+        for gp in &layout.glyphs {
+            let fh = if gp.font.0 != u32::MAX { gp.font } else { self.font };
+            let raster = self
+                .font_service
+                .rasterize_glyph(&fh, gp.glyph_id, fs);
+            if raster.width == 0 || raster.height == 0 {
+                continue;
+            }
+            let gx = (pos.x + gp.x + raster.bearing_x) as i32;
+            let gy = (pos.y + gp.y + raster.bearing_y) as i32;
+            canvas.blit_glyph(gx, gy, &raster.coverage, raster.width, raster.height, color);
+        }
+    }
+
+    /// 公开的 glyph 绘制入口（供 RenderContext 委托）。
+    pub fn blit_to(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        layout: &uix_graphics::text_backend::TextLayout,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+    ) {
+        self.blit_glyph_layout(canvas, layout, pos, color, font_size);
+    }
+
+    // ── 2D 文本绘制 ──
+
+    /// 绘制文本（左对齐，顶部对齐）。
+    pub fn draw_text(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+    ) {
+        if text.is_empty() {
+            return;
+        }
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
+        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        self.blit_glyph_layout(canvas, &layout, pos, color, font_size);
+    }
+
+    /// 基于基线绘制文本。
+    pub fn draw_text_baseline(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        x: f32,
+        baseline_y: f32,
+        color: Color,
+        font_size: f32,
+    ) {
+        if text.is_empty() {
+            return;
+        }
+        let fs = font_size.max(1.0);
+        let metrics = self.font_service.horizontal_line_metrics(&self.font, fs);
+        let ascent = metrics.map(|m| m.ascent).unwrap_or(fs * 0.8);
+        let top_y = baseline_y - ascent;
+        self.draw_text(canvas, text, Point::new(x, top_y), color, fs);
+    }
+
+    /// 在矩形内居中绘制文本。
+    pub fn text_center(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        rect: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        if text.is_empty() {
+            return;
+        }
+        let cnt = rect.x + rect.w * 0.5;
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
+        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        let x = cnt - layout.width * 0.5;
+        let y = self.visual_center_y(rect, font_size);
+        self.blit_glyph_layout(canvas, &layout, Point::new(x, y), color, font_size);
+    }
+
+    /// 左对齐、垂直居中的文本绘制。
+    pub fn draw_text_in_frame(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        rect: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        if text.is_empty() {
+            return;
+        }
+        let backend_opts = self.text_opts(font_size, rect.w.max(1.0), 0.0, false, HAlign::Left, VAlign::Top);
+        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        let x = rect.x;
+        let y = self.visual_center_y(rect, font_size);
+        self.blit_glyph_layout(canvas, &layout, Point::new(x, y), color, font_size);
+    }
+
+    /// 在矩形内绘制自动换行文本。
+    pub fn draw_text_wrapped(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        rect: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
+        if text.is_empty() {
+            return;
+        }
+        let backend_opts = self.text_opts(font_size, rect.w.max(1.0), rect.h.max(0.0), true, HAlign::Left, VAlign::Top);
+        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        self.blit_glyph_layout(canvas, &layout, Point::new(rect.x, rect.y), color, font_size);
+    }
+
+    /// 绘制文本选中背景 + 文本。
+    pub fn draw_text_with_selection(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+        selection: Option<(usize, usize)>,
+        selection_bg: Color,
+    ) {
+        if let Some((s, e)) = selection {
+            let rects = self.selection_rects(canvas, text, font_size, pos, s, e);
+            for r in rects {
+                canvas.fill_rect(r, selection_bg, None);
+            }
+        }
+        self.draw_text(canvas, text, pos, color, font_size);
+    }
+
+    // ── 3D 空间文本 ──
+
+    /// 在 3D 空间中绘制文本。
+    pub fn draw_text_spatial(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        spatial: &SpatialContext,
+        text: &str,
+        pos: Vec3,
+        color: Color,
+        font_size: PhysicalUnit,
+    ) {
+        if text.is_empty() { return; }
+        let (sx, sy) = spatial.project(&pos);
+        let fs = font_size.to_dip(spatial.dpi());
+        self.draw_text(canvas, text, Point::new(sx, sy), color, fs);
+    }
+
+    /// 在 3D 空间中的矩形区域内居中绘制文本。
+    pub fn text_center_spatial(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        spatial: &SpatialContext,
+        text: &str,
+        box_3d: AABB3D,
+        color: Color,
+        font_size: PhysicalUnit,
+    ) {
+        if text.is_empty() { return; }
+        let fs = font_size.to_dip(spatial.dpi());
+        let backend_opts = self.text_opts(fs, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
+        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        let quad = spatial.project_aabb(&box_3d);
+        let bounds = quad.bounds();
+        let x = bounds.x + (bounds.w - layout.width) * 0.5;
+        let y = bounds.y + (bounds.h - fs * 1.5) * 0.5;
+        self.blit_glyph_layout(canvas, &layout, Point::new(x, y), color, fs);
+    }
+
+    // ── 文本选中 ──
+
+    /// 获取选中文本的矩形区域列表。
+    pub fn selection_rects(
+        &mut self,
+        _canvas: &mut dyn Canvas2D,
+        text: &str,
+        font_size: f32,
+        pos: Point,
+        start: usize,
+        end: usize,
+    ) -> Vec<Rect> {
+        if text.is_empty() || start >= end {
+            return Vec::new();
+        }
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
+        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        if layout.glyphs.is_empty() {
+            return Vec::new();
+        }
+        let end = end.min(layout.glyphs.len());
+        let start = start.min(end);
+        let visual_h = self.font_service
+            .horizontal_line_metrics(&self.font, font_size)
+            .map(|m| m.ascent + m.descent)
+            .unwrap_or(font_size * 1.2);
+        let mut rects = Vec::new();
+        for line in &layout.lines {
+            let gs = line.glyph_start;
+            let gc = line.glyph_count;
+            let ge = gs + gc;
+            let sel_start = start.max(gs);
+            let sel_end = end.min(ge);
+            if sel_start >= sel_end { continue; }
+            let glyphs = &layout.glyphs[sel_start..sel_end];
+            let x0 = pos.x + glyphs[0].x;
+            let last = glyphs[glyphs.len() - 1];
+            let x1 = pos.x + last.x + last.width.max(0.0);
+            let y0 = pos.y + line.y;
+            rects.push(Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h));
+        }
+        rects
+    }
+
+    // ── 文本测量 ──
+
+    /// 测量文本尺寸（不换行）。
+    pub fn measure_text(&mut self, text: &str, font_size: f32) -> Size {
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
+        self.font_service.measure_text(&self.font, text, &backend_opts)
+    }
+
+    /// 测量文本尺寸（换行模式）。
+    pub fn measure_text_wrapped(&mut self, text: &str, font_size: f32, max_width: f32) -> Size {
+        let backend_opts = self.text_opts(font_size, max_width, 0.0, true, HAlign::Left, VAlign::Top);
+        self.font_service.measure_text(&self.font, text, &backend_opts)
+    }
+
+    /// 文本命中测试。
+    pub fn text_hit_test(&mut self, text: &str, font_size: f32, point: Point) -> Option<usize> {
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
+        self.font_service.hit_test_text(&self.font, text, &backend_opts, point)
+    }
+
+    /// 获取指定字符的光标 x 位置。
+    pub fn text_cursor_x(&mut self, text: &str, font_size: f32, char_index: usize) -> f32 {
+        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
+        self.font_service.text_cursor_x(&self.font, text, &backend_opts, char_index)
+    }
+
+    // ── 辅助 ──
+
+    /// 计算文字视觉中心与 rect 中心对齐时的 y 位置。
+    pub fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 {
+        let fs = font_size.max(1.0);
+        match self.font_service.horizontal_line_metrics(&self.font, fs) {
+            Some(m) => rect.y + (rect.h - m.ascent - m.descent) * 0.5,
+            None => rect.y + rect.h * 0.5,
+        }
+    }
+
+    /// 获取当前字体句柄。
+    pub fn font(&self) -> &FontHandle {
+        &self.font
+    }
+}
+
+// ── TextRenderer trait 实现 ────────────────────────────────────────
+
+impl<'a> crate::api::traits::TextRenderer for TextRenderService<'a> {
+    fn set_font(&mut self, font: FontHandle) { self.set_font(font); }
+    fn set_max_text_width(&mut self, width: f32) { self.set_max_text_width(width); }
+    fn font(&self) -> &FontHandle { self.font() }
+    fn font_service(&mut self) -> &FontService { self.font_service }
+
+    fn draw_text(&mut self, canvas: &mut dyn Canvas2D, text: &str, pos: Point, color: Color, font_size: f32) {
+        self.draw_text(canvas, text, pos, color, font_size);
+    }
+    fn draw_text_baseline(&mut self, canvas: &mut dyn Canvas2D, text: &str, x: f32, baseline_y: f32, color: Color, font_size: f32) {
+        self.draw_text_baseline(canvas, text, x, baseline_y, color, font_size);
+    }
+    fn text_center(&mut self, canvas: &mut dyn Canvas2D, text: &str, rect: Rect, color: Color, font_size: f32) {
+        self.text_center(canvas, text, rect, color, font_size);
+    }
+    fn draw_text_in_frame(&mut self, canvas: &mut dyn Canvas2D, text: &str, rect: Rect, color: Color, font_size: f32) {
+        self.draw_text_in_frame(canvas, text, rect, color, font_size);
+    }
+    fn draw_text_wrapped(&mut self, canvas: &mut dyn Canvas2D, text: &str, rect: Rect, color: Color, font_size: f32) {
+        self.draw_text_wrapped(canvas, text, rect, color, font_size);
+    }
+
+    fn draw_text_with_selection(
+        &mut self, canvas: &mut dyn Canvas2D, text: &str, pos: Point, color: Color,
+        font_size: f32, selection: Option<(usize, usize)>, selection_bg: Color,
+    ) {
+        self.draw_text_with_selection(canvas, text, pos, color, font_size, selection, selection_bg);
+    }
+    fn selection_rects(
+        &mut self, canvas: &mut dyn Canvas2D, text: &str, font_size: f32,
+        pos: Point, start: usize, end: usize,
+    ) -> Vec<Rect> {
+        self.selection_rects(canvas, text, font_size, pos, start, end)
+    }
+
+    fn measure_text(&mut self, text: &str, font_size: f32) -> Size { self.measure_text(text, font_size) }
+    fn measure_text_wrapped(&mut self, text: &str, font_size: f32, max_width: f32) -> Size {
+        self.measure_text_wrapped(text, font_size, max_width)
+    }
+    fn text_hit_test(&mut self, text: &str, font_size: f32, point: Point) -> Option<usize> {
+        self.text_hit_test(text, font_size, point)
+    }
+    fn text_cursor_x(&mut self, text: &str, font_size: f32, char_index: usize) -> f32 {
+        self.text_cursor_x(text, font_size, char_index)
+    }
+    fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 { self.visual_center_y(rect, font_size) }
+
+    fn draw_text_spatial(
+        &mut self, canvas: &mut dyn Canvas2D, spatial: &SpatialContext,
+        text: &str, pos: Vec3, color: Color, font_size: PhysicalUnit,
+    ) {
+        self.draw_text_spatial(canvas, spatial, text, pos, color, font_size);
+    }
+    fn text_center_spatial(
+        &mut self, canvas: &mut dyn Canvas2D, spatial: &SpatialContext,
+        text: &str, box_3d: AABB3D, color: Color, font_size: PhysicalUnit,
+    ) {
+        self.text_center_spatial(canvas, spatial, text, box_3d, color, font_size);
+    }
+
+    fn blit_to(
+        &mut self, canvas: &mut dyn Canvas2D,
+        layout: &uix_graphics::text_backend::TextLayout,
+        pos: Point, color: Color, font_size: f32,
+    ) {
+        self.blit_to(canvas, layout, pos, color, font_size);
+    }
+}
