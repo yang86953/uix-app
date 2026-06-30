@@ -31,7 +31,7 @@ impl WidgetTree {
         };
         if !is_valid { return; }
         let (frame, dirty) = self.get(id).map(|node| {
-            (node.frame(), node.inner().dirty_rect(node.frame()))
+            (node.frame(), node.dirty_rect(node.frame()))
         }).unwrap_or_default();
         if dirty.w > 0.0 && dirty.h > 0.0 { self.dirty.region.add_rect(dirty); }
         else if frame.w > 0.0 && frame.h > 0.0 { self.dirty.region.add_rect(frame); }

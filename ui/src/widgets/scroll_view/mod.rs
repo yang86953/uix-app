@@ -14,7 +14,7 @@ use uix_platform::{Rect, Size};
 use crate::define_widget;
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, Widget, WidgetCore, WidgetEvent, WidgetId, WidgetTree};
+use crate::widget::{EventResult, WidgetCore, WidgetEvent, WidgetComponent, WidgetId, WidgetTree};
 
 /// Scroll direction for a ScrollView.
 /// （已统一为 uix_platform::ScrollDirection。）
@@ -67,7 +67,7 @@ define_widget! {
         )
     }
 
-    build => (&self) -> Vec<Box<dyn Widget>> {
+    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
         self.children.take()
     }
 
@@ -401,12 +401,12 @@ impl ScrollView {
 
     // ── Builder methods ──
 
-    pub fn child(self, w: impl Widget + 'static) -> Self {
+    pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
         self.children.add(w);
         self
     }
 
-    pub fn children(self, widgets: Vec<Box<dyn Widget>>) -> Self {
+    pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
         self.children.set_all(widgets);
         self
     }
@@ -607,7 +607,7 @@ mod tests {
         let result = tree
             .get(root_id)
             .unwrap()
-            .inner()
+            .component()
             .layout_children(frame, &children, &tree);
         if let Some((_, rect)) = result.first() {
             // Child should be offset by -scroll_y = -50 from the viewport origin
@@ -672,7 +672,7 @@ mod tests {
         tree.layout();
         let max_y = |tree: &WidgetTree| -> f32 {
             let sv = tree.get(sv_id).unwrap();
-            let sv_ref: &ScrollView = sv.inner().as_any().downcast_ref().unwrap();
+            let sv_ref: &ScrollView = sv.component().as_any().downcast_ref().unwrap();
             sv_ref.max_scroll_y()
         };
 
@@ -735,7 +735,7 @@ mod tests {
 
         tree.layout();
         let max_before = tree.get(sv_id)
-            .and_then(|n| n.inner().as_any().downcast_ref::<ScrollView>().map(|sv| sv.max_scroll_y()))
+            .and_then(|n| n.component().as_any().downcast_ref::<ScrollView>().map(|sv| sv.max_scroll_y()))
             .unwrap();
         assert_eq!(max_before, 0.0, "面板未展开时内容应不超过视口");
         println!("Before click max_scroll_y: {max_before}");
@@ -750,7 +750,7 @@ mod tests {
         tree.layout();
         let max_after = tree
             .get(sv_id)
-            .and_then(|n| n.inner().as_any().downcast_ref::<ScrollView>().map(|sv| sv.max_scroll_y()))
+            .and_then(|n| n.component().as_any().downcast_ref::<ScrollView>().map(|sv| sv.max_scroll_y()))
             .unwrap();
         println!("After click max_scroll_y: {max_after}");
 

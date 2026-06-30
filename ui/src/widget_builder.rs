@@ -1,11 +1,11 @@
 use uix_graphics::Color;
 use crate::layout::{flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use uix_platform::{EdgeInsets, Rect, Size};
-use crate::widget::{Widget, WidgetId, WidgetTree};
+use crate::widget::{WidgetComponent, WidgetId, WidgetTree};
 
 /// Builder for constructing widget trees declaratively.
 pub struct WidgetBuilder {
-    children: Vec<Box<dyn Widget>>,
+    children: Vec<Box<dyn WidgetComponent>>,
     direction: FlexDirection,
     justify: JustifyContent,
     align: AlignItems,
@@ -78,8 +78,8 @@ impl Widget for ContainerWidget {
             .map(|&cid| {
                 let w = tree.get(cid);
                 FlexChild {
-                    flex_grow: w.map(|c| c.inner().flex_grow()).unwrap_or(0.0),
-                    flex_shrink: w.map(|c| c.inner().flex_shrink()).unwrap_or(0.0),
+                    flex_grow: w.and_then(|c| c.as_layout()).map(|l| l.flex_grow()).unwrap_or(0.0),
+                    flex_shrink: w.and_then(|c| c.as_layout()).map(|l| l.flex_shrink()).unwrap_or(0.0),
                     ..FlexChild::default()
                 }
             })

@@ -62,12 +62,21 @@ impl BoxModel {
 /// 统一子节点布局信息，Flex 和 Grid 引擎共用。
 ///
 /// grid_* 字段仅在 Grid 引擎中使用（Flex 引擎忽略）。
+///
+/// # Margin 参与布局
+///
+/// `margin` 占用了主轴和交叉轴的空间。布局引擎计算子节点位置时：
+/// - 主轴方向：子节点的占位 = preferred_size.main + margin.main_axis_sum
+/// - 分配 frame 时：子节点起始位置 = cursor + margin.start (主轴方向)
+/// - 分配 frame 时：交叉轴起始位置 = cross_offset + margin.cross_start
 #[derive(Debug, Clone)]
 pub struct LayoutChild {
     pub id: WidgetId,
     pub preferred_size: Size,
     pub flex_grow: f32,
     pub flex_shrink: f32,
+    /// 外边距——参与布局计算，推开兄弟节点
+    pub margin: uix_platform::EdgeInsets,
     /// Grid: 起始单元格索引
     pub grid_cell: usize,
     /// Grid: 列跨度
@@ -83,6 +92,7 @@ impl LayoutChild {
             preferred_size,
             flex_grow: 0.0,
             flex_shrink: 1.0,
+            margin: uix_platform::EdgeInsets::zero(),
             grid_cell: 0,
             grid_col_span: 1,
             grid_row_span: 1,
@@ -93,6 +103,32 @@ impl LayoutChild {
         self.flex_grow = grow;
         self.flex_shrink = shrink;
         self
+    }
+
+    /// 主轴方向的外边距总和（用于布局占位计算）。
+    pub fn margin_main(&self, direction: FlexDirection) -> f32 {
+        match direction {
+            FlexDirection::Row | FlexDirection::RowReverse => self.margin.left + self.margin.right,
+            FlexDirection::Column | FlexDirection::ColumnReverse => self.margin.top + self.margin.bottom,
+        }
+    }
+
+    /// 起点方向的外边距（用于布局时设置子节点起始位置）。
+    pub fn margin_start(&self, direction: FlexDirection) -> f32 {
+        match direction {
+            FlexDirection::Row => self.margin.left,
+            FlexDirection::RowReverse => self.margin.right,
+            FlexDirection::Column => self.margin.top,
+            FlexDirection::ColumnReverse => self.margin.bottom,
+        }
+    }
+
+    /// 交叉轴起始方向的外边距。
+    pub fn margin_cross_start(&self, direction: FlexDirection) -> f32 {
+        match direction {
+            FlexDirection::Row | FlexDirection::RowReverse => self.margin.top,
+            FlexDirection::Column | FlexDirection::ColumnReverse => self.margin.left,
+        }
     }
 }
 
@@ -412,14 +448,15 @@ pub fn child_from_tree(cid: WidgetId, tree: &WidgetTree) -> LayoutChild {
         node.map(|c| c.frame().h).unwrap_or(0.0)
     };
 
-    let grow = node.map(|c| c.inner().flex_grow()).unwrap_or(0.0);
-    let shrink = node.map(|c| c.inner().flex_shrink()).unwrap_or(1.0);
+    let grow = node.and_then(|c| c.as_layout()).map(|l| l.flex_grow()).unwrap_or(0.0);
+    let shrink = node.and_then(|c| c.as_layout()).map(|l| l.flex_shrink()).unwrap_or(1.0);
 
     LayoutChild {
         id: cid,
         preferred_size: Size::new(pref.w, h),
         flex_grow: grow,
         flex_shrink: shrink,
+        margin: uix_platform::EdgeInsets::zero(),
         grid_cell: 0,
         grid_col_span: 1,
         grid_row_span: 1,

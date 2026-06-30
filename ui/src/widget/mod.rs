@@ -1,5 +1,7 @@
-use uix_platform::{Point, Rect, Size};
+use uix_platform::{Point, Rect, Size, EdgeInsets};
 pub use uix_platform::{KeyCode, KeyMod, MouseButton};
+use uix_graphics::spatial::{Ray3D, SpatialContext};
+use uix_graphics::GraphicsEngine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventResult { Handled, NotHandled, Bubbled }
@@ -82,9 +84,112 @@ impl BoxedWidget {
     pub fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> { self.component.as_render_mut() }
     pub fn as_event(&self) -> Option<&dyn WidgetEventHandler> { self.component.as_event() }
     pub fn as_event_mut(&mut self) -> Option<&mut dyn WidgetEventHandler> { self.component.as_event_mut() }
-    pub fn as_lifecycle(&self) -> Option<&dyn WidgetLifecycle> { self.component.as_lifecycle() }
-    pub fn as_lifecycle_mut(&mut self) -> Option<&mut dyn WidgetLifecycle> { self.component.as_lifecycle_mut() }
-    pub fn as_layout(&self) -> Option<&dyn WidgetLayout> { self.component.as_layout() }
+    pub fn as_layout(&self) -> Option<&dyn WidgetLayout> {
+        self.component.as_layout()
+    }
+
+    pub fn as_lifecycle(&self) -> Option<&dyn WidgetLifecycle> {
+        self.component.as_lifecycle()
+    }
+
+    pub fn as_lifecycle_mut(&mut self) -> Option<&mut dyn WidgetLifecycle> {
+        self.component.as_lifecycle_mut()
+    }
+
+    // ═══ 便捷分发方法 ═══
+
+    pub fn preferred_size(&self, engine: Option<&dyn GraphicsEngine>) -> Size {
+        self.component()
+            .as_layout()
+            .map(|l| l.preferred_size(engine))
+            .unwrap_or_default()
+    }
+    pub fn flex_grow(&self) -> f32 {
+        self.component()
+            .as_layout()
+            .map(|l| l.flex_grow())
+            .unwrap_or(0.0)
+    }
+    pub fn flex_shrink(&self) -> f32 {
+        self.component()
+            .as_layout()
+            .map(|l| l.flex_shrink())
+            .unwrap_or(0.0)
+    }
+    pub fn layout_children(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+    ) -> Vec<(WidgetId, Rect)> {
+        self.component()
+            .as_layout()
+            .map(|l| l.layout_children(frame, children, tree))
+            .unwrap_or_default()
+    }
+    pub fn children_clip(&self, frame: Rect) -> Option<Rect> {
+        self.component()
+            .as_render()
+            .and_then(|r| r.children_clip(frame))
+    }
+    pub fn dirty_rect(&self, frame: Rect) -> Rect {
+        self.component()
+            .as_render()
+            .map(|r| r.dirty_rect(frame))
+            .unwrap_or(frame)
+    }
+    pub fn needs_continuous_update(&self) -> bool {
+        self.component()
+            .as_event()
+            .map(|e| e.needs_continuous_update())
+            .unwrap_or(false)
+    }
+    pub fn scroll_delta(&self, frame: Rect) -> Option<(f32, f32)> {
+        self.component()
+            .as_event()
+            .and_then(|e| e.scroll_delta(frame))
+    }
+    pub fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
+        self.component()
+            .as_event()
+            .map(|e| e.hit_test_frame(actual_frame))
+            .unwrap_or(actual_frame)
+    }
+    pub fn hit_test_3d(
+        &self,
+        ray: &Ray3D,
+        spatial: &SpatialContext,
+        frame: Rect,
+    ) -> bool {
+        self.component()
+            .as_event()
+            .map(|e| e.hit_test_3d(ray, spatial, frame))
+            .unwrap_or(false)
+    }
+    pub fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
+        self.component_mut()
+            .as_event_mut()
+            .map(|e| e.on_event(event))
+            .unwrap_or(EventResult::NotHandled)
+    }
+    pub fn on_update(&mut self, dt: f32) {
+        if let Some(l) = self.component_mut().as_lifecycle_mut() {
+            l.on_update(dt);
+        }
+    }
+    pub fn render(&self, frame: Rect, ctx: &mut crate::render_context::RenderContext, tree: &WidgetTree) {
+        if let Some(r) = self.component().as_render() {
+            r.render(frame, ctx, tree);
+        }
+    }
+    pub fn post_render(&self, frame: Rect, ctx: &mut crate::render_context::RenderContext, tree: &WidgetTree) {
+        if let Some(r) = self.component().as_render() {
+            r.post_render(frame, ctx, tree);
+        }
+    }
+    pub fn is_repaint_boundary(&self) -> bool {
+        self.component().as_render().map(|r| r.is_repaint_boundary()).unwrap_or(false)
+    }
 }
 
 impl WidgetCore for BoxedWidget {

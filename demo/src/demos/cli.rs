@@ -11,7 +11,7 @@ use uix::platform::diagnostic::{
     LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
 };
 use uix::ui::layout::{AlignItems, JustifyContent};
-use uix::ui::layout::engine::{FlexLayout, LayoutChild, LayoutEngine};
+use uix::ui::layout::{FlexLayout, LayoutChild, LayoutEngine};
 use uix::ui::state::{Computed, State};
 use uix::ui::Theme;
 

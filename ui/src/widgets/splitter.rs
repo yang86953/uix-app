@@ -9,7 +9,7 @@ use crate::define_widget;
 use uix_graphics::GraphicsEngine;
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};
+use crate::widget::{EventResult, WidgetEvent, WidgetComponent, WidgetId, WidgetTree};
 
 define_widget! {
     /// Splitter — 可拖拽分割面板容器。
@@ -37,7 +37,7 @@ define_widget! {
 
     flex_grow => (&self) -> f32 { 1.0 }
 
-    build => (&self) -> Vec<Box<dyn Widget>> {
+    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
         self.children.take()
     }
 

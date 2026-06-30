@@ -513,7 +513,7 @@ impl WidgetTree {
                     if children.is_empty() {
                         continue;
                     }
-                    node.component().layout_children(frame, &children, self)
+                    node.layout_children(frame, &children, self)
                 };
                 for (child_id, rect) in positions {
                     if let Some(child) = self.get_mut(child_id) {
@@ -563,7 +563,7 @@ impl WidgetTree {
         for &id in rev_order {
             let (children, is_viewport, node_frame) = match self.get(id) {
                 Some(n) if !n.children().is_empty() => {
-                    (n.children().to_vec(), n.component().children_clip(n.frame()).is_some(), n.frame())
+                    (n.children().to_vec(), n.children_clip(n.frame()).is_some(), n.frame())
                 }
                 _ => continue,
             };
@@ -615,7 +615,7 @@ impl WidgetTree {
                 };
                 let new_positions = self
                     .get(id)
-                    .map(|n| n.component().layout_children(relayout_frame, &children, self))
+                    .map(|n| n.layout_children(relayout_frame, &children, self))
                     .unwrap_or_default();
                 for (child_id, rect) in new_positions {
                     if let Some(child) = self.get_mut(child_id) {
@@ -637,7 +637,7 @@ impl WidgetTree {
     fn layout_viewports(&mut self) {
         for &id in &self.dirty_traverse() {
             if let Some(node) = self.get(id) {
-                if node.component().children_clip(node.frame()).is_none() {
+                if node.children_clip(node.frame()).is_none() {
                     continue;
                 }
                 let frame = node.frame();
@@ -648,7 +648,7 @@ impl WidgetTree {
                 uix_platform::log::debug_fn(format!("[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
                     id, frame.x, frame.y, frame.w, frame.h, children.len(),));
                 // 仅触发 content_bounds 副作用，丢弃返回的 child rects
-                let _ = node.component().layout_children(frame, &children, self);
+                let _ = node.layout_children(frame, &children, self);
             }
         }
     }
@@ -660,7 +660,7 @@ impl WidgetTree {
         let mut current = id;
         while let Some(pid) = self.get(current).and_then(|n| n.parent()) {
             if self.get(pid)
-                .map(|p| p.component().children_clip(p.frame()).is_some())
+                .map(|p| p.children_clip(p.frame()).is_some())
                 .unwrap_or(false)
             {
                 return true;
@@ -684,7 +684,7 @@ impl WidgetTree {
 
             for &id in rev_order {
                 let is_viewport = self.get(id)
-                    .map(|n| n.component().children_clip(n.frame()).is_some())
+                    .map(|n| n.children_clip(n.frame()).is_some())
                     .unwrap_or(false);
                 if is_viewport { continue; }
                 // 不收缩祖先链中有 viewport（如 ScrollView）的节点，
@@ -702,7 +702,7 @@ impl WidgetTree {
                 let Some(frame) = self.get(id).map(|n| n.frame()) else { continue; };
                 let positions: Vec<(WidgetId, Rect)> = {
                     let Some(node) = self.get(id) else { continue; };
-                    node.component().layout_children(frame, &children, self)
+                    node.layout_children(frame, &children, self)
                 };
                 for (child_id, rect) in positions {
                     if let Some(child) = self.get_mut(child_id) {
@@ -762,7 +762,7 @@ impl WidgetTree {
                     let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h);
                     // 收缩后重新布局子节点
                     let new_positions = self.get(op.id)
-                        .map(|n| n.component().layout_children(new_frame, &children, self))
+                        .map(|n| n.layout_children(new_frame, &children, self))
                         .unwrap_or_default();
                     for (child_id, rect) in new_positions {
                         if let Some(child) = self.get_mut(child_id) {
@@ -780,7 +780,7 @@ impl WidgetTree {
                             .unwrap_or_default();
                         if !parent_children.is_empty() {
                             let parent_positions = self.get(pid)
-                                .map(|n| n.component().layout_children(parent_frame, &parent_children, self))
+                                .map(|n| n.layout_children(parent_frame, &parent_children, self))
                                 .unwrap_or_default();
                             for (child_id, rect) in parent_positions {
                                 if let Some(child) = self.get_mut(child_id) {
@@ -810,7 +810,7 @@ impl WidgetTree {
             }
             let was_animating = self
                 .get(id)
-                .map(|n| n.component().needs_continuous_update())
+                .map(|n| n.needs_continuous_update())
                 .unwrap_or(false);
 
             // ── 动画帧快照：on_update 前记录旧绘制区域 ──
@@ -818,30 +818,30 @@ impl WidgetTree {
             // 比 frame() 更精确——frame 不变但阴影效果变化时也能追踪。
             // 只对动画 widget 生效，非动画 widget 零开销。
             let old_dirty_rect = if was_animating {
-                self.get(id).map(|n| n.component().dirty_rect(n.frame()))
+                self.get(id).map(|n| n.dirty_rect(n.frame()))
             } else {
                 None
             };
 
             if let Some(node) = self.get_mut(id) {
-                node.component_mut().on_update(dt);
+                node.on_update(dt);
             }
 
             let (rect, scroll, new_frame) = self
                 .get(id)
                 .map(|node| {
-                    let is_still = node.component().needs_continuous_update();
+                    let is_still = node.needs_continuous_update();
                     if is_still {
                         uix_platform::log::info_fn(format!("[Anim] id={} still animating", node.id()));
                         any_animating = true;
                     }
                     let dirty = if was_animating || is_still {
                         any_animating = any_animating || is_still;
-                        node.component().dirty_rect(node.frame())
+                        node.dirty_rect(node.frame())
                     } else {
                         Rect::zero()
                     };
-                    (dirty, node.component().scroll_delta(node.frame()), node.frame())
+                    (dirty, node.scroll_delta(node.frame()), node.frame())
                 })
                 .unwrap_or_default();
 

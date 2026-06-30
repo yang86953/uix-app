@@ -9,117 +9,81 @@ use crate::layout::engine::{
     BoxModel, FlexLayout, LayoutChild, child_from_tree,
 };
 use crate::api::traits::LayoutEngine;
-use crate::style::Style;
+use crate::style::{Style, DisplayMode, BoxShadowDef};
 use uix_platform::{EdgeInsets, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
 
 define_widget! {
-    /// Container — flexbox 布局容器，带背景/边框/圆角。
+    /// Container — flexbox 布局容器，带背景/边框/圆角/阴影。
+    ///
+    /// 所有视觉效果统一通过 `style: Style` 配置。布局引擎从 `style.margin`
+    /// 读取外边距参与盒模型计算。方向默认 Column（垂直堆叠）。
     ///
     /// 盒模型（与 Web CSS 一致）：
-    /// - margin：外边距，布局时占用空间
-    /// - border：边框，影响布局尺寸
+    /// - margin：外边距，布局时占用空间，推开兄弟节点
     /// - padding：内边距，子内容在其内部排列
-    /// - 默认方向为 Column（垂直堆叠，类似 Web block 流式布局）
+    /// - border + border_radius：边框与圆角
+    /// - background：背景色（支持 hover/active 状态色）
+    /// - box_shadow：盒阴影/辉光
     pub struct Container {
-        pub bg_color: Option<Color>,
-        pub border_color: Option<Color>,
-        pub border_width: f32,
-        pub border_radius: f32,
-        pub padding: EdgeInsets,
-        pub margin: EdgeInsets,
-        pub gap: f32,
-        pub direction: FlexDirection,
-        pub justify: JustifyContent,
-        pub align: AlignItems,
-        pub fixed_width: Option<f32>,
-        pub fixed_height: Option<f32>,
-        pub flex_grow: f32,
-        pub flex_shrink: f32,
-        /// 允许内容溢出容器主轴方向（跳过 flex-shrink，总尺寸反映实际内容）
-        pub overflow_content: bool,
-        /// 盒阴影 / 辉光（霓虹科幻效果）
-        pub box_shadow_color: Option<Color>,
-        /// 模糊半径（越大越散）
-        pub box_shadow_blur: f32,
-        /// 水平偏移
-        pub box_shadow_offset_x: f32,
-        /// 垂直偏移
-        pub box_shadow_offset_y: f32,
-        /// 统一样式覆盖（优先于 bg_color/border_color/box_shadow 等独立字段）
-        pub style: Option<Style>,
+        /// 统一样式（所有视觉属性的唯一来源）
+        pub style: Style,
         /// 缓存子节点内容尺寸（layout_children 后更新），
-        /// 使 preferred_size 在无 fixed_width 时能基于子节点内容估算宽度。
-        /// 使用 Cell 实现内部可变性，preferred_size(&self) 可直接读取。
+        /// 使 preferred_size 在无固定尺寸时能基于子节点内容估算宽度。
         cached_content_size: Cell<Size>,
     }
 
-    // preferred_size 包含 margin + border（Web 盒模型中 margin/border 占用空间）。
-    // 当 fixed_width 为 None 时，使用 layout_children 缓存的子节点内容宽度，
-    // 使父容器 flex 布局能基于实际内容分配空间（修复 Container 包裹单子时的宽度错误）。
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
-        let mh = self.margin.horizontal();
-        let mv = self.margin.vertical();
-        let bh = self.border_width * 2.0;
-        let bv = self.border_width * 2.0;
+        let mh = self.style.margin.horizontal();
+        let mv = self.style.margin.vertical();
+        let bh = self.style.border_width * 2.0;
+        let bv = self.style.border_width * 2.0;
         let cached = self.cached_content_size.get();
-        let effective_w = self.fixed_width
-            .unwrap_or_else(|| if cached.w > 0.0 { cached.w + self.padding.horizontal() } else { 0.0 });
+        let effective_w = self.style.width
+            .unwrap_or_else(|| if cached.w > 0.0 { cached.w + self.style.padding.horizontal() } else { 0.0 });
         Size::new(
             effective_w + mh + bh,
-            self.fixed_height.map(|h| h + mv + bv).unwrap_or(0.0),
+            self.style.height.map(|h| h + mv + bv).unwrap_or(0.0),
         )
     }
 
-    flex_grow => (&self) -> f32 { self.flex_grow }
+    flex_grow => (&self) -> f32 { self.style.flex_grow }
 
-    flex_shrink => (&self) -> f32 { self.flex_shrink }
+    flex_shrink => (&self) -> f32 { self.style.flex_shrink }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         // Visual area excludes margin (margin is transparent per CSS box model)
+        let s = &self.style;
         let visual = Rect::new(
-            frame.x + self.margin.left,
-            frame.y + self.margin.top,
-            (frame.w - self.margin.horizontal()).max(0.0),
-            (frame.h - self.margin.vertical()).max(0.0),
+            frame.x + s.margin.left,
+            frame.y + s.margin.top,
+            (frame.w - s.margin.horizontal()).max(0.0),
+            (frame.h - s.margin.vertical()).max(0.0),
         );
         if visual.w <= 0.0 || visual.h <= 0.0 { return; }
 
-        // 统一样式优先（使用 ctx.apply_style 统一渲染背景/边框/阴影）
-        if let Some(ref s) = self.style {
-            ctx.apply_style(visual, s);
-        } else {
-            // 回退：独立字段渲染（保持向后兼容）
-            if let Some(sc) = self.box_shadow_color {
-                let r = if self.border_radius > 0.0 { Some(Radius::uniform(self.border_radius)) } else { None };
-                ctx.draw_box_shadow(visual, self.box_shadow_blur, self.box_shadow_offset_x, self.box_shadow_offset_y, sc, r);
-            }
-            if let Some(c) = self.bg_color {
-                let r = if self.border_radius > 0.0 { Some(Radius::uniform(self.border_radius)) } else { None };
-                ctx.fill_rect(visual, c, r);
-            }
-            if let Some(c) = self.border_color {
-                let r = if self.border_radius > 0.0 { Some(Radius::uniform(self.border_radius)) } else { None };
-                ctx.stroke_rect(visual, c, self.border_width, r);
-            }
-        }
+        // 统一样式——绘制背景/边框/阴影/透明度
+        ctx.apply_style(visual, s);
     }
+
     layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
         -> Vec<(WidgetId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
 
-        // 统一的盒模型计算（使用底层 BoxModel）
+        let s = &self.style;
+
+        // 统一的盒模型计算
         let box_model = BoxModel {
-            margin: self.margin,
-            border_width: self.border_width,
-            padding: self.padding,
+            margin: s.margin,
+            border_width: s.border_width,
+            padding: s.padding,
         };
         let content_rect = box_model.content_rect(frame);
         if content_rect.w <= 0.0 || content_rect.h <= 0.0 { return Vec::new(); }
 
-        // 过滤不可见子节点：不可见的 widget 不参与布局，不占空间
+        // 过滤不可见子节点
         let visible_children: Vec<WidgetId> = children.iter().copied()
             .filter(|&cid| {
                 let visible = tree.get(cid)
@@ -133,7 +97,7 @@ define_widget! {
             .collect();
         if visible_children.is_empty() { return Vec::new(); }
 
-        // 构建统一子节点信息（使用底层 child_from_tree）
+        // 构建统一子节点信息
         let layout_children: Vec<LayoutChild> = visible_children
             .iter()
             .map(|&cid| child_from_tree(cid, tree))
@@ -141,16 +105,17 @@ define_widget! {
 
         // 委托给统一的 FlexLayout 布局引擎
         let engine = FlexLayout {
-            direction: self.direction,
-            gap: self.gap,
-            justify: self.justify,
-            align: self.align,
-            wrap: false,
-            overflow_content: self.overflow_content,
+            direction: convert_flex_direction(s.flex_direction),
+            gap: s.gap,
+            justify: convert_justify(s.justify_content),
+            align: convert_align(s.align_items),
+            wrap: s.flex_wrap,
+            overflow_content: !s.display.eq(&DisplayMode::None)
+                && s.display != DisplayMode::Grid,
         };
         let output = engine.layout(content_rect, &layout_children);
 
-        // 缓存子节点内容尺寸，供 preferred_size 在无 fixed_width 时使用
+        // 缓存子节点内容尺寸
         self.cached_content_size.set(Size::new(
             output.total_size.w.max(0.0),
             output.total_size.h.max(0.0),
@@ -164,6 +129,39 @@ define_widget! {
     }
 }
 
+/// 将 style::FlexDirection 转换为 layout::FlexDirection
+fn convert_flex_direction(d: crate::style::FlexDirection) -> FlexDirection {
+    match d {
+        crate::style::FlexDirection::Row => FlexDirection::Row,
+        crate::style::FlexDirection::Column => FlexDirection::Column,
+        crate::style::FlexDirection::RowReverse => FlexDirection::RowReverse,
+        crate::style::FlexDirection::ColumnReverse => FlexDirection::ColumnReverse,
+    }
+}
+
+/// 将 style::JustifyContent 转换为 layout::JustifyContent
+fn convert_justify(j: crate::style::JustifyContent) -> JustifyContent {
+    match j {
+        crate::style::JustifyContent::Start => JustifyContent::Start,
+        crate::style::JustifyContent::Center => JustifyContent::Center,
+        crate::style::JustifyContent::End => JustifyContent::End,
+        crate::style::JustifyContent::SpaceBetween => JustifyContent::SpaceBetween,
+        crate::style::JustifyContent::SpaceAround => JustifyContent::SpaceAround,
+        crate::style::JustifyContent::SpaceEvenly => JustifyContent::SpaceEvenly,
+        crate::style::JustifyContent::Stretch => JustifyContent::Stretch,
+    }
+}
+
+/// 将 style::AlignItems 转换为 layout::AlignItems
+fn convert_align(a: crate::style::AlignItems) -> AlignItems {
+    match a {
+        crate::style::AlignItems::Start => AlignItems::Start,
+        crate::style::AlignItems::Center => AlignItems::Center,
+        crate::style::AlignItems::End => AlignItems::End,
+        crate::style::AlignItems::Stretch => AlignItems::Stretch,
+    }
+}
+
 impl Default for Container {
     fn default() -> Self {
         Self::new()
@@ -173,117 +171,183 @@ impl Default for Container {
 impl Container {
     pub fn new() -> Self {
         Self {
-            bg_color: None,
-            border_color: None,
-            border_width: 0.0,
-            border_radius: 0.0,
-            padding: EdgeInsets::zero(),
-            margin: EdgeInsets::zero(),
-            gap: 0.0,
-            direction: FlexDirection::Column,
-            justify: JustifyContent::Start,
-            align: AlignItems::Stretch,
-            fixed_width: None,
-            fixed_height: None,
-            flex_grow: 0.0,
-            flex_shrink: 1.0,
-            overflow_content: false,
-            box_shadow_color: None,
-            box_shadow_blur: 0.0,
-            box_shadow_offset_x: 0.0,
-            box_shadow_offset_y: 0.0,
-            style: None,
+            style: Style::container(),
             cached_content_size: Cell::new(Size::zero()),
         }
     }
 
-    /// 设置统一样式（覆盖背景/边框/阴影/文字颜色等所有视觉属性）。
-    /// 设置后，bg/border/box_shadow 等独立字段不再生效。
+    // ═══════════════════════════════════════════════════
+    // 统一样式设置
+    // ═══════════════════════════════════════════════════
+
+    /// 批量设置 Style（替换所有现有值）。
     pub fn style(mut self, s: Style) -> Self {
-        self.style = Some(s);
+        self.style = s;
         self
     }
 
+    /// 应用另一个 Style（非零/非默认值覆盖当前值）。
+    pub fn apply_style(mut self, s: Style) -> Self {
+        self.style = self.style.apply(s);
+        self
+    }
+
+    // ═══════════════════════════════════════════════════
+    // CSS 风格链式方法
+    // ═══════════════════════════════════════════════════
+
+    /// 设置背景色（`bg` 别名）。
     pub fn bg(mut self, c: Color) -> Self {
-        self.bg_color = Some(c);
+        self.style.background = Some(c);
         self
     }
-    /// 设置外边距（Web 盒模型，布局时占用空间）。
+
+    /// 设置外边距。
     pub fn margin(mut self, m: EdgeInsets) -> Self {
-        self.margin = m;
+        self.style.margin = m;
         self
     }
-    pub fn border(mut self, c: Color, w: f32) -> Self {
-        self.border_color = Some(c);
-        self.border_width = w;
+
+    /// 设置内边距（`p` 别名）。
+    pub fn padding(mut self, p: EdgeInsets) -> Self {
+        self.style.padding = p;
         self
     }
+
+    /// 设置内边距（简写）。
+    pub fn p(mut self, p: EdgeInsets) -> Self {
+        self.style.padding = p;
+        self
+    }
+
+    /// 设置边框。
+    pub fn border(mut self, color: Color, width: f32) -> Self {
+        self.style.border_color = Some(color);
+        self.style.border_width = width;
+        self
+    }
+
+    /// 设置圆角。
     pub fn rounded(mut self, r: f32) -> Self {
-        self.border_radius = r;
+        self.style.border_radius = r;
         self
     }
-    pub fn pad(mut self, p: EdgeInsets) -> Self {
-        self.padding = p;
-        self
-    }
-    pub fn gap(mut self, g: f32) -> Self {
-        self.gap = g;
-        self
-    }
-    pub fn dir(mut self, d: FlexDirection) -> Self {
-        self.direction = d;
-        self
-    }
-    pub fn align(mut self, a: AlignItems) -> Self {
-        self.align = a;
-        self
-    }
-    pub fn justify(mut self, j: JustifyContent) -> Self {
-        self.justify = j;
-        self
-    }
-    pub fn size(mut self, w: f32, h: f32) -> Self {
-        self.fixed_width = Some(w);
-        self.fixed_height = Some(h);
-        self
-    }
-    /// 便捷方法：单独设置宽度（用于 `ui!` 宏）。
+
+    /// 设置固定宽度。
     pub fn w(mut self, v: f32) -> Self {
-        self.fixed_width = Some(v);
+        self.style.width = Some(v);
         self
     }
-    /// 便捷方法：单独设置高度（用于 `ui!` 宏）。
+
+    /// 设置固定高度。
     pub fn h(mut self, v: f32) -> Self {
-        self.fixed_height = Some(v);
+        self.style.height = Some(v);
         self
     }
+
+    /// 同时设置宽高。
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.style.width = Some(w);
+        self.style.height = Some(h);
+        self
+    }
+
+    /// 设置文字颜色。
+    pub fn color(mut self, c: Color) -> Self {
+        self.style.color = c;
+        self
+    }
+
+    /// 设置字号。
+    pub fn fs(mut self, s: f32) -> Self {
+        self.style.font_size = s;
+        self
+    }
+
+    /// 设置显示模式（Flex / None）。
+    pub fn display(mut self, d: DisplayMode) -> Self {
+        self.style.display = d;
+        self
+    }
+
+    /// 设置 flex 方向。
+    pub fn direction(mut self, d: crate::style::FlexDirection) -> Self {
+        self.style.flex_direction = d;
+        self
+    }
+
+    /// 设置子项间距。
+    pub fn gap(mut self, g: f32) -> Self {
+        self.style.gap = g;
+        self
+    }
+
+    /// 设置主轴对齐。
+    pub fn justify(mut self, j: crate::style::JustifyContent) -> Self {
+        self.style.justify_content = j;
+        self
+    }
+
+    /// 设置交叉轴对齐。
+    pub fn align(mut self, a: crate::style::AlignItems) -> Self {
+        self.style.align_items = a;
+        self
+    }
+
+    /// 设置 flex-grow。
     pub fn flex_grow(mut self, v: f32) -> Self {
-        self.flex_grow = v;
+        self.style.flex_grow = v;
         self
     }
+
+    /// 设置 flex-shrink。
     pub fn flex_shrink(mut self, v: f32) -> Self {
-        self.flex_shrink = v;
+        self.style.flex_shrink = v;
         self
     }
+
+    /// 设置透明度。
+    pub fn opacity(mut self, o: f32) -> Self {
+        self.style.opacity = o;
+        self
+    }
+
+    /// 设置盒阴影/辉光。
+    pub fn shadow(mut self, s: BoxShadowDef) -> Self {
+        self.style.box_shadow = Some(s);
+        self
+    }
+
+    /// 设置可见性。
+    pub fn visible(mut self, v: bool) -> Self {
+        self.style.visible = v;
+        self
+    }
+
+    // ═══════════════════════════════════════════════════
+    // 兼容旧 API（委托到 style）
+    // ═══════════════════════════════════════════════════
+
+    /// 便捷方法：单独设置内边距（旧 API 兼容）。
+    pub fn pad(mut self, p: EdgeInsets) -> Self {
+        self.style.padding = p;
+        self
+    }
+
+    /// 便捷方法：设置 flex 方向（旧 API 兼容）。
+    pub fn dir(mut self, d: FlexDirection) -> Self {
+        self.style.flex_direction = match d {
+            FlexDirection::Row => crate::style::FlexDirection::Row,
+            FlexDirection::Column => crate::style::FlexDirection::Column,
+            FlexDirection::RowReverse => crate::style::FlexDirection::RowReverse,
+            FlexDirection::ColumnReverse => crate::style::FlexDirection::ColumnReverse,
+        };
+        self
+    }
+
     /// 允许内容溢出（跳过 flex-shrink，用于可滚动容器）。
     pub fn overflow_content(mut self) -> Self {
-        self.overflow_content = true;
+        self.style.flex_wrap = true;
         self
     }
-
-    /// 设置盒阴影/辉光效果（用于霓虹科幻视觉风格）。
-    pub fn box_shadow(mut self, color: Color, blur: f32) -> Self {
-        self.box_shadow_color = Some(color);
-        self.box_shadow_blur = blur;
-        self
-    }
-
-    /// 设置盒阴影偏移量（默认无偏移，配合 box_shadow 使用）。
-    pub fn box_shadow_offset(mut self, x: f32, y: f32) -> Self {
-        self.box_shadow_offset_x = x;
-        self.box_shadow_offset_y = y;
-        self
-    }
-
 }
-

@@ -41,8 +41,9 @@ define_widget! {
         danger: bool,
         block: bool,
         ghost: bool,
-        /// 用户自定义样式（完全覆盖 compute_style 的计算结果）。
-        custom_style: Option<Style>,
+        /// 用户自定义基础样式——作为 compute_style 的基底，variant/state 在其上覆盖。
+        /// 用户可通过 builder 方法设置具体属性：`.bg()`, `.color()`, `.fs()` 等。
+        style: Style,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -170,16 +171,20 @@ define_widget! {
 
 impl Button {
     fn compute_style(&self, ctx: &RenderContext) -> Style {
-        // 用户自定义样式优先——完全覆盖计算结果，由用户全权控制
-        if let Some(ref cs) = self.custom_style {
-            return cs.clone();
-        }
-
+        // 策略：以 self.style 为基底，variant/state 仅覆盖颜色相关的属性
         let t = ctx.tokens();
         let font_size = button_font_size(self.btn_size);
 
+        // 1. 从 self.style 开始（用户自定义属性在此）
+        let mut s = self.style.clone();
+        s.font_size = font_size;
+        s.padding = uix_platform::EdgeInsets::new(
+            button_padding_h(self.btn_size), 0.0,
+            button_padding_h(self.btn_size), 0.0,
+        );
+        s.border_radius = t.border_radius();
 
-
+        // 2. 根据 variant + state 计算颜色
         let (bg, border, text_color, bw) = if self.disabled {
             match self.variant {
                 ButtonVariant::Primary => (Some(t.color_primary_border()), t.color_border(), t.color_text_quaternary(), 1.0),
@@ -201,8 +206,7 @@ impl Button {
                 _ => (None, if self.danger { t.color_error() } else { t.color_primary() }, c, 1.0),
             }
         } else {
-                let _normal_border = if self.danger { t.color_error() } else { t.color_primary() };
-                let normal_text = if self.danger { t.color_error() } else { t.color_primary() };
+            let normal_text = if self.danger { t.color_error() } else { t.color_primary() };
             match self.variant {
                 ButtonVariant::Primary => {
                     let bg_color = if self.danger { t.color_error() } else { t.color_primary() };
@@ -217,16 +221,13 @@ impl Button {
             }
         };
 
-        Style {
-            background: bg,
-            border_color: if bw > 0.0 { Some(border) } else { None },
-            border_width: bw,
-            border_radius: t.border_radius(),
-            padding: uix_platform::EdgeInsets::new(button_padding_h(self.btn_size), 0.0, button_padding_h(self.btn_size), 0.0),
-            color: text_color,
-            font_size,
-            ..Style::default()
-        }
+        // 3. variant/state 颜色覆盖（仅覆盖用户未显式设置的属性）
+        if s.background.is_none() { s.background = bg; }
+        if s.border_color.is_none() { s.border_color = if bw > 0.0 { Some(border) } else { None }; }
+        s.border_width = bw;
+        // color 和 font_size 由 self.style 决定，variant 不覆盖
+
+        s
     }
 
     pub fn new(text: impl Into<String>) -> Self {
@@ -234,16 +235,89 @@ impl Button {
             text: text.into(), variant: ButtonVariant::Default, btn_size: ButtonSize::Medium,
             disabled: false, hovered: false, pressed: false, anim_progress: 0.0, click_pos: None,
             on_click: None, loading: false, icon: String::new(), danger: false, block: false, ghost: false,
-            custom_style: None,
+            style: Style::default(),
         }
     }
 
-    /// 设置用户自定义样式（完全覆盖内置的 variant/state 计算）。
-    /// 设置后，primary()/danger()/size() 等视觉方法不再生效。
+    // ══════════════════════════════════════════════════════
+    // 统一样式设置
+    // ══════════════════════════════════════════════════════
+
+    /// 设置用户自定义样式（作为 compute_style 的基底）。
     pub fn style(mut self, s: Style) -> Self {
-        self.custom_style = Some(s);
+        self.style = s;
         self
     }
+
+    // ══════════════════════════════════════════════════════
+    // CSS 风格链式方法
+    // ══════════════════════════════════════════════════════
+
+    /// 设置背景色。
+    pub fn bg(mut self, c: Color) -> Self {
+        self.style.background = Some(c);
+        self
+    }
+
+    /// 设置文字颜色。
+    pub fn color(mut self, c: Color) -> Self {
+        self.style.color = c;
+        self
+    }
+
+    /// 设置字号。
+    pub fn fs(mut self, s: f32) -> Self {
+        self.style.font_size = s;
+        self
+    }
+
+    /// 设置外边距。
+    pub fn margin(mut self, m: uix_platform::EdgeInsets) -> Self {
+        self.style.margin = m;
+        self
+    }
+
+    /// 设置内边距。
+    pub fn padding(mut self, p: uix_platform::EdgeInsets) -> Self {
+        self.style.padding = p;
+        self
+    }
+
+    /// 设置圆角。
+    pub fn rounded(mut self, r: f32) -> Self {
+        self.style.border_radius = r;
+        self
+    }
+
+    /// 设置边框。
+    pub fn border(mut self, c: Color, w: f32) -> Self {
+        self.style.border_color = Some(c);
+        self.style.border_width = w;
+        self
+    }
+
+    /// 设置固定宽度。
+    pub fn w(mut self, v: f32) -> Self {
+        self.style.width = Some(v);
+        self
+    }
+
+    /// 设置固定高度。
+    pub fn h(mut self, v: f32) -> Self {
+        self.style.height = Some(v);
+        self
+    }
+
+    /// 设置透明度。
+    pub fn opacity(mut self, o: f32) -> Self {
+        self.style.opacity = o;
+        self
+    }
+
+    // ══════════════════════════════════════════════════════
+    // 行为属性
+    // ══════════════════════════════════════════════════════
+
     pub fn variant(mut self, v: ButtonVariant) -> Self { self.variant = v; self }
     pub fn size(mut self, s: ButtonSize) -> Self { self.btn_size = s; self }
     pub fn primary(mut self) -> Self { self.variant = ButtonVariant::Primary; self }

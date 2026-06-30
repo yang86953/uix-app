@@ -308,8 +308,8 @@ impl<'a> RenderContext<'a> {
         } else {
             None
         };
-        if style.shadow_blur > 0.0 && style.shadow_color.a > 0 {
-            self.draw_box_shadow(rect, style.shadow_blur, style.shadow_offset_x, style.shadow_offset_y, style.shadow_color, r);
+        if let Some(shadow) = style.box_shadow.as_ref() {
+            self.draw_box_shadow(rect, shadow.blur, shadow.offset_x, shadow.offset_y, shadow.color, r);
         }
         if style.opacity < 1.0 {
             self.spatial.canvas_2d().set_opacity(style.opacity);

@@ -34,7 +34,7 @@ impl WidgetCapabilities {
 }
 
 /// 组件核心标识 — 所有 widget 必须实现。
-pub trait WidgetComponent: Send + 'static {
+pub trait WidgetComponent: 'static {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     /// 返回此 widget 实现了哪些能力。

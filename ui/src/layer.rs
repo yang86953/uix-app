@@ -360,7 +360,7 @@ impl LayerTree {
         }
         let frame = node.frame();
 
-        if node.inner().is_repaint_boundary() {
+        if node.is_repaint_boundary() {
             // frame 是绝对坐标，直接用作 bounds
             let bounds = frame;
             // 检查旧缓存：如果 bounds 相同，复用离屏句柄
@@ -380,7 +380,7 @@ impl LayerTree {
                 children,
                 retry_count: 0,
             })
-        } else if let Some(clip) = node.inner().children_clip(frame) {
+        } else if let Some(clip) = node.children_clip(frame) {
             // clip 由 children_clip 基于 frame（绝对坐标）计算，直接使用
             let adj = Rect::new(clip.x, clip.y, clip.w, clip.h);
             let children = Self::build_children_cached(tree, id, cache);
@@ -519,7 +519,7 @@ impl LayerTree {
             }
             let frame = node.frame();
             ctx.save();
-            node.inner().render(frame, ctx, tree);
+            node.render(frame, ctx, tree);
             ctx.restore();
         }
     }
@@ -547,13 +547,13 @@ impl LayerTree {
 
             if need_self_render {
                 ctx.save();
-                node.inner().render(frame, ctx, tree);
+                node.render(frame, ctx, tree);
             }
 
             // 仅在 widget 内部可见时才渲染子节点。
             // 支持 Modal 等组件：内部 visible 为 false 时 render() 已返回，
             // 同时阻止子节点在隐藏位渲染（子节点 frame 可能仍在屏幕内）。
-            if node.inner().visible() {
+            if node.visible() {
                 for child in children.iter_mut() {
                     Self::render_node(child, ctx, tree, dirty_region);
                 }
@@ -582,9 +582,9 @@ impl LayerTree {
             }
             let frame = node.frame();
             ctx.save();
-            node.inner().render(frame, ctx, tree);
+            node.render(frame, ctx, tree);
             // 仅在 widget 内部可见时才递归渲染子节点
-            if node.inner().visible() {
+            if node.visible() {
                 for &child_id in node.children() {
                     Self::render_widget_and_children_direct(child_id, ctx, tree);
                 }
@@ -635,7 +635,7 @@ impl LayerTree {
                 let frame = widget_node.frame();
                 // 使用 dirty_rect（含 draw_margin 扩展）而非 raw frame
                 // 确保阴影等扩展区域的 overlay 内容被正确重绘
-                let draw_area = widget_node.inner().dirty_rect(frame);
+                let draw_area = widget_node.dirty_rect(frame);
                 dirty_region.intersects(draw_area)
             } else {
                 false
@@ -650,7 +650,7 @@ impl LayerTree {
                 if widget_node.visible() {
                     let frame = widget_node.frame();
                     ctx.save();
-                    widget_node.inner().post_render(frame, ctx, tree);
+                    widget_node.post_render(frame, ctx, tree);
                     ctx.restore();
                 }
             }

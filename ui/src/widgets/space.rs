@@ -9,7 +9,7 @@ use crate::layout::{
 };
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
-use crate::widget::{Widget, WidgetCore, WidgetId, WidgetTree};
+use crate::widget::{WidgetCore, WidgetComponent, WidgetId, WidgetTree};
 
 /// Predefined space sizes matching Ant Design.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -60,7 +60,7 @@ define_widget! {
         // Space itself is invisible; children are rendered by the tree.
     }
 
-    build => (&self) -> Vec<Box<dyn Widget>> {
+    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
         self.children.take()
     }
 
@@ -91,7 +91,7 @@ define_widget! {
             .map(|&cid| {
                 let w = tree.get(cid);
                 FlexChild {
-                    flex_grow: w.map(|c| c.inner().flex_grow()).unwrap_or(0.0),
+                    flex_grow: w.and_then(|c| c.as_layout()).map(|l| l.flex_grow()).unwrap_or(0.0),
                     // 禁止子节点收缩——Phase 2 负责扩展容器适应内容
                     flex_shrink: 0.0,
                     ..FlexChild::default()
@@ -136,12 +136,12 @@ impl Space {
         }
     }
 
-    pub fn child(self, w: impl Widget + 'static) -> Self {
+    pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
         self.children.add(w);
         self
     }
 
-    pub fn children(self, widgets: Vec<Box<dyn Widget>>) -> Self {
+    pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
         self.children.set_all(widgets);
         self
     }

@@ -9,7 +9,7 @@ use crate::layout::{
 use uix_platform::{EdgeInsets, Point, Rect, Size};
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, Widget, WidgetEvent, WidgetId, WidgetTree};
+use crate::widget::{EventResult, WidgetEvent, WidgetComponent, WidgetId, WidgetTree};
 
 define_widget! {
     /// Card widget with shadow elevation, hover highlight, and content padding.
@@ -33,7 +33,7 @@ define_widget! {
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }
 
-    build => (&self) -> Vec<Box<dyn Widget>> {
+    build => (&self) -> Vec<Box<dyn WidgetComponent>> {
         self.children.take()
     }
 
@@ -163,8 +163,8 @@ define_widget! {
             .map(|&cid| {
                 let w = tree.get(cid);
                 FlexChild {
-                    flex_grow: w.map(|c| c.inner().flex_grow()).unwrap_or(0.0),
-                    flex_shrink: w.map(|c| c.inner().flex_shrink()).unwrap_or(0.0),
+                    flex_grow: w.and_then(|c| c.as_layout()).map(|l| l.flex_grow()).unwrap_or(0.0),
+                    flex_shrink: w.and_then(|c| c.as_layout()).map(|l| l.flex_shrink()).unwrap_or(0.0),
                     ..FlexChild::default()
                 }
             })
@@ -296,11 +296,11 @@ impl Card {
         self.actions = list.into_iter().map(|s| s.into()).collect();
         self
     }
-    pub fn child(self, w: impl Widget + 'static) -> Self {
+    pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
         self.children.add(w);
         self
     }
-    pub fn children(self, widgets: Vec<Box<dyn Widget>>) -> Self {
+    pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
         self.children.set_all(widgets);
         self
     }
