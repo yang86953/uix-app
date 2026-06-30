@@ -1,4 +1,4 @@
-use uix_platform::{Point, Rect, Size, EdgeInsets};
+use uix_platform::{Point, Rect, Size};
 pub use uix_platform::{KeyCode, KeyMod, MouseButton};
 use uix_graphics::spatial::{Ray3D, SpatialContext};
 use uix_graphics::GraphicsEngine;

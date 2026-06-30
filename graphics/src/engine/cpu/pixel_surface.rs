@@ -91,7 +91,7 @@ impl PixelSurface {
 
     /// 像素复制（memmove 语义，允许源与目标重叠）。
     /// `pixels` 参数必须与 self.pixels 指向同一缓冲（由 &self 限制）。
-    pub fn copy_region(&self, src_rect: Rect, dst_x: i32, dst_y: i32, pixels: &mut Vec<u32>) {
+    pub fn copy_region(&self, src_rect: Rect, dst_x: i32, dst_y: i32, pixels: &mut [u32]) {
         if src_rect.w <= 0.0 || src_rect.h <= 0.0 {
             return;
         }

@@ -90,7 +90,7 @@ define_widget! {
                 let item_y = list_y + i as f32 * 28.0;
                 let item_rect = Rect::new(frame.x, item_y, frame.w, 28.0);
                 let indent = *depth as f32 * 20.0 + 8.0;
-                let is_hovered = self.hovered_option.as_ref().map_or(false, |h| h == key);
+                let is_hovered = self.hovered_option.as_ref() == Some(key);
                 let is_selected = *key == self.value_key;
 
                 if is_hovered || is_selected {

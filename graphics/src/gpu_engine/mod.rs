@@ -32,7 +32,7 @@ impl GpuEngine {
         let gl = Box::new(unsafe {
             glow::Context::from_loader_function(|s| gpu_ctx.get_proc_address(s).unwrap_or(std::ptr::null()))
         });
-        let canvas_2d = GpuCanvas2D::new(&*gl, 1, 1);
+        let canvas_2d = GpuCanvas2D::new(&gl, 1, 1);
         Self {
             gl,
             gpu_ctx,

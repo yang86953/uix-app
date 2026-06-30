@@ -106,7 +106,7 @@ define_widget! {
             ctx.draw_text(&self.placeholder, Point::new(frame.x + 12.0, draw_y),
                 text_tertiary, 14.0);
         } else {
-            let display_text = self.selected.labels.join(&loc.cascader_separator);
+            let display_text = self.selected.labels.join(loc.cascader_separator);
             ctx.draw_text(&display_text, Point::new(frame.x + 12.0, draw_y),
                 text_color, 14.0);
         }

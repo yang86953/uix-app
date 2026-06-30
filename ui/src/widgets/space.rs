@@ -109,7 +109,6 @@ define_widget! {
             child_sizes,
             justify_content: self.justify,
             align_items: self.align,
-            ..FlexInput::default()
         };
 
         let output = compute_flex_layout(&input);

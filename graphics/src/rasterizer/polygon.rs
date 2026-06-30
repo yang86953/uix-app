@@ -151,7 +151,7 @@ pub fn fill_polygons(
                             let ex = span_end.min(clip_x1);
                             if sx < ex {
                                 fill_span(
-                                    pixels, stride, sx, ex, y as i32,
+                                    pixels, stride, sx, ex, y,
                                     clip_x0, clip_y0, clip_x1, clip_y1, color,
                                 );
                             }
@@ -174,7 +174,7 @@ pub fn fill_polygons(
                     let ex = span_end.min(clip_x1);
                     if sx < ex {
                         fill_span(
-                            pixels, stride, sx, ex, y as i32,
+                            pixels, stride, sx, ex, y,
                             clip_x0, clip_y0, clip_x1, clip_y1, color,
                         );
                     }

@@ -341,7 +341,7 @@ impl Input {
             // 选中高亮
             if let Some((sel_s, sel_e)) = self.selection.get() {
                 if sel_s < sel_e && sel_s < line_end && sel_e > line_start {
-                    let sel_in_line_start = if sel_s > line_start { sel_s - line_start } else { 0 };
+                    let sel_in_line_start = sel_s.saturating_sub(line_start);
                     let sel_in_line_end = if sel_e < line_end { sel_e - line_start } else { line.chars().count() };
                     // 估算选中区域的 x 位置
                     let before_sel: String = line.chars().take(sel_in_line_start).collect();
@@ -595,7 +595,7 @@ impl Input {
             // 跳到前一个单词
             let chars: Vec<char> = self.value.chars().collect();
             let mut pos = self.cursor_char.min(chars.len());
-            if pos > 0 { pos -= 1; }
+            pos = pos.saturating_sub(1);
             while pos > 0 && chars[pos] == ' ' { pos -= 1; }
             while pos > 0 && chars[pos - 1] != ' ' { pos -= 1; }
             self.cursor_char = pos;

@@ -246,6 +246,12 @@ define_widget! {
     }
 }
 
+impl Default for Form {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Form {
     pub fn new() -> Self {
         Self {
@@ -339,10 +345,7 @@ impl Form {
                 }
             }
             if let Some(ref validator_fn) = rule.validator {
-                match validator_fn(&field.value) {
-                    Err(msg) => return ValidationResult { status: ValidateStatus::Error, message: msg },
-                    _ => {}
-                }
+                if let Err(msg) = validator_fn(&field.value) { return ValidationResult { status: ValidateStatus::Error, message: msg } }
             }
         }
         ValidationResult { status: ValidateStatus::None, message: String::new() }
@@ -368,9 +371,9 @@ fn simple_pattern_match(value: &str, pattern: &str) -> bool {
             star_vi = Some(vi);
             star_pi = Some(pi);
             pi += 1;
-        } else if let Some(sv) = star_vi {
+        } else if let (Some(sv), Some(sp)) = (star_vi, star_pi) {
             vi = sv + 1;
-            pi = star_pi.unwrap() + 1;
+            pi = sp + 1;
             star_vi = Some(vi);
         } else {
             return false;

@@ -126,6 +126,12 @@ define_widget! {
     }
 }
 
+impl Default for Notification {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Notification {
     pub fn new() -> Self {
         Self { queue: Rc::new(RefCell::new(Vec::new())), remaining: Rc::new(RefCell::new(Vec::new())), placement: NotifPlacement::TopRight }

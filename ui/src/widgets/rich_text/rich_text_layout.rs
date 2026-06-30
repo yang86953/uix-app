@@ -55,7 +55,7 @@ fn char_width(fs: f32, ch: char) -> f32 {
         'm' | 'M' | 'W' | 'w' => fs * 0.7,
         'i' | 'I' | 'l' | '1' | '.' | ',' | ':' | ';' | '\'' => fs * 0.3,
         c if is_cjk(c) => fs * 1.0,
-        c if c >= '\u{3000}' && c <= '\u{303f}' => fs * 0.9,
+        c if ('\u{3000}'..='\u{303f}').contains(&c) => fs * 0.9,
         _ => fs * 0.55,
     }
 }
@@ -190,7 +190,7 @@ fn layout_text_content(
     current_x: &mut f32,
     max_line_w: &mut f32,
 ) {
-    let shared_url: Option<std::sync::Arc<str>> = link_url.map(|u| std::sync::Arc::from(u));
+    let shared_url: Option<std::sync::Arc<str>> = link_url.map(std::sync::Arc::from);
     let tokens: Vec<&str> = content.split_inclusive(' ').collect();
 
     for token in &tokens {
@@ -291,7 +291,7 @@ fn real_char_advances(
         h_align: uix_graphics::HAlign::Left,
         v_align: uix_graphics::VAlign::Top,
     };
-    let layout = font_service.layout_text(font, text, &uix_graphics::text_backend::TextLayoutOptions::from(opts));
+    let layout = font_service.layout_text(font, text, &opts);
     let chars: Vec<char> = text.chars().collect();
     let mut advances = Vec::with_capacity(chars.len());
     for (i, _) in chars.iter().enumerate() {
@@ -406,7 +406,7 @@ fn layout_text_content_real(
 ) {
     let advances = real_char_advances(font_service, font, content, fs);
     let chars: Vec<char> = content.chars().collect();
-    let shared_url: Option<std::sync::Arc<str>> = link_url.map(|u| std::sync::Arc::from(u));
+    let shared_url: Option<std::sync::Arc<str>> = link_url.map(std::sync::Arc::from);
 
     let mut start = 0usize;
     let total = chars.len();

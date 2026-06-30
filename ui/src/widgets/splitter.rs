@@ -110,7 +110,7 @@ define_widget! {
         if n == 0 { return result; }
 
         let total = if self.vertical { frame.h } else { frame.w };
-        let handle_total = self.handle_size * (n - 1).max(0) as f32;
+        let handle_total = self.handle_size * (n - 1) as f32;
         let content_total = total - handle_total;
         let mut pos = if self.vertical { frame.y } else { frame.x };
 
@@ -125,6 +125,12 @@ define_widget! {
             pos += size + self.handle_size;
         }
         result
+    }
+}
+
+impl Default for Splitter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

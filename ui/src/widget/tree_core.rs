@@ -58,6 +58,7 @@ impl DirtyNodes {
     }
 
     /// 是否有任何脏节点。
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.words.iter().all(|&w| w == 0)
     }
@@ -66,7 +67,7 @@ impl DirtyNodes {
     pub fn contains(&self, id: WidgetId) -> bool {
         let idx = id / 64;
         let bit = 1 << (id % 64);
-        self.words.get(idx).map_or(false, |w| w & bit != 0)
+        self.words.get(idx).is_some_and(|w| w & bit != 0)
     }
 
     /// 遍历所有脏节点 —— 只迭代被置位的 bit，跳过零。

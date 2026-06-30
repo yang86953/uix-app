@@ -99,6 +99,12 @@ pub struct Compiler {
     last_input_versions: HashMap<(PassId, ResourceId), Version>,
 }
 
+impl Default for Compiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Compiler {
     pub fn new() -> Self {
         Self {
@@ -155,7 +161,7 @@ impl Compiler {
 
             let output_unconsumed = pass.writes.iter().all(|&res| {
                 // 如果没有后续 Pass 读取该资源，则输出未被消费。
-                !consumers.get(&res).map_or(false, |consumers| {
+                !consumers.get(&res).is_some_and(|consumers| {
                     consumers
                         .iter()
                         .any(|&pid| pid != pass.id && !culled.contains(&pid))
@@ -181,16 +187,13 @@ impl Compiler {
         for pass in &alive_passes {
             // 读取冲突检测：如果前一个操作是写入，需要 RAW 屏障
             for &res in &pass.reads {
-                match resource_state.get(&res) {
-                    Some(&AccessState::WrittenBy(writer)) => {
-                        edges.push(Edge {
-                            from: writer,
-                            to: pass.id,
-                            reason: BarrierKind::ReadAfterWrite,
-                            resource: res,
-                        });
-                    }
-                    _ => {}
+                if let Some(&AccessState::WrittenBy(writer)) = resource_state.get(&res) {
+                    edges.push(Edge {
+                        from: writer,
+                        to: pass.id,
+                        reason: BarrierKind::ReadAfterWrite,
+                        resource: res,
+                    });
                 }
                 resource_state.insert(res, AccessState::ReadBy(pass.id));
             }

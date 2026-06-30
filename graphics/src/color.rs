@@ -36,7 +36,7 @@ impl Color {
 
     /// Linear interpolation toward white. factor=0 → self, factor=1 → white.
     pub fn lighten(&self, factor: f32) -> Self {
-        let f = factor.max(0.0).min(1.0);
+        let f = factor.clamp(0.0, 1.0);
         Self::from_rgb(
             (self.r as f32 + (255.0 - self.r as f32) * f) as u8,
             (self.g as f32 + (255.0 - self.g as f32) * f) as u8,
@@ -46,7 +46,7 @@ impl Color {
 
     /// Linear interpolation toward black. factor=0 → self, factor=1 → black.
     pub fn darken(&self, factor: f32) -> Self {
-        let f = factor.max(0.0).min(1.0);
+        let f = factor.clamp(0.0, 1.0);
         Self::from_rgb(
             (self.r as f32 * (1.0 - f)) as u8,
             (self.g as f32 * (1.0 - f)) as u8,
@@ -56,7 +56,7 @@ impl Color {
 
     /// Mix two colors. t=0 → self, t=1 → other.
     pub fn mix(&self, other: &Self, t: f32) -> Self {
-        let t = t.max(0.0).min(1.0);
+        let t = t.clamp(0.0, 1.0);
         let inv = 1.0 - t;
         Self::from_rgba(
             (self.r as f32 * inv + other.r as f32 * t) as u8,

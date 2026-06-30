@@ -48,11 +48,11 @@ impl TextBackend for AbGlyphBackend {
     }
 
     fn is_valid(&self, h: &FontHandle) -> bool {
-        self.idx(h).map_or(false, |i| self.fonts[i].handle.0 != u32::MAX)
+        self.idx(h).is_some_and(|i| self.fonts[i].handle.0 != u32::MAX)
     }
 
     fn has_glyph(&self, font: &FontHandle, ch: char) -> bool {
-        self.idx(font).map_or(false, |i| self.fonts[i].font.glyph_id(ch) != GlyphId(0))
+        self.idx(font).is_some_and(|i| self.fonts[i].font.glyph_id(ch) != GlyphId(0))
     }
 
     fn layout_text(&self, font: &FontHandle, text: &str, opts: &TextLayoutOptions) -> TextLayout {

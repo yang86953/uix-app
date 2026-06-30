@@ -48,6 +48,12 @@ define_widget! {
     }
 }
 
+impl Default for VirtualScroll {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VirtualScroll {
     pub fn new() -> Self {
         Self {

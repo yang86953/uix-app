@@ -122,6 +122,12 @@ define_widget! {
 }
 
 // 构造方法
+impl Default for Layout {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Layout {
     pub fn new() -> Self { Self { bg_color: None } }
     pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
@@ -138,6 +144,12 @@ impl Sider {
     pub fn collapsible(mut self, v: bool) -> Self { self.collapsible = v; self }
     pub fn collapsed(mut self, v: bool) -> Self { self.collapsed = v; self }
     pub fn collapsed_width(mut self, w: f32) -> Self { self.collapsed_width = w; self }
+}
+
+impl Default for Content {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Content {

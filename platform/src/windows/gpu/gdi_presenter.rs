@@ -167,6 +167,7 @@ pub struct GdiPresenter {
 }
 
 impl GdiPresenter {
+    #[allow(clippy::missing_safety_doc)]
     pub unsafe fn new(hwnd: *mut std::ffi::c_void, w: i32, h: i32) -> Result<Self, Error> {
         if w <= 0 || h <= 0 {
             return Err(Error::new(

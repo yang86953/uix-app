@@ -15,6 +15,8 @@ use crate::define_widget;
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetCore, WidgetEvent, WidgetComponent, WidgetId, WidgetTree};
+#[cfg(test)]
+use crate::widget::{WidgetCapabilities, WidgetLayout, WidgetRender, WidgetEventHandler};
 
 /// Scroll direction for a ScrollView.
 /// （已统一为 uix_platform::ScrollDirection。）
@@ -102,19 +104,17 @@ define_widget! {
                     return EventResult::NotHandled;
                 }
                 // Vertical scrollbar thumb
-                if self.direction.can_scroll_y() && self.max_scroll_y() > 0.0 {
-                    if self.scrollbar_v.hit_test_thumb(frame, *pos, self.scroll_y, self.max_scroll_y()) {
+                if self.direction.can_scroll_y() && self.max_scroll_y() > 0.0
+                    && self.scrollbar_v.hit_test_thumb(frame, *pos, self.scroll_y, self.max_scroll_y()) {
                         self.scrollbar_v.dragging = true;
                         return EventResult::Handled;
                     }
-                }
                 // Horizontal scrollbar thumb
-                if self.direction.can_scroll_x() && self.max_scroll_x() > 0.0 {
-                    if self.scrollbar_h.hit_test_thumb(frame, *pos, self.scroll_x, self.max_scroll_x()) {
+                if self.direction.can_scroll_x() && self.max_scroll_x() > 0.0
+                    && self.scrollbar_h.hit_test_thumb(frame, *pos, self.scroll_x, self.max_scroll_x()) {
                         self.scrollbar_h.dragging = true;
                         return EventResult::Handled;
                     }
-                }
                 EventResult::NotHandled
             }
             WidgetEvent::MouseMove { pos } => {
@@ -528,12 +528,21 @@ mod tests {
         id: WidgetId,
     }
 
-    impl Widget for FixedWidget {
+    impl WidgetComponent for FixedWidget {
         fn as_any(&self) -> &dyn std::any::Any { self }
         fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+        fn capabilities(&self) -> WidgetCapabilities {
+            WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
+        }
+        crate::wc_upcast!(FixedWidget; WidgetLayout);
+        crate::wc_upcast!(FixedWidget; WidgetRender);
+    }
+    impl WidgetLayout for FixedWidget {
         fn preferred_size(&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
             self.size
         }
+    }
+    impl WidgetRender for FixedWidget {
         fn render(
             &self,
             _frame: Rect,
@@ -607,7 +616,6 @@ mod tests {
         let result = tree
             .get(root_id)
             .unwrap()
-            .component()
             .layout_children(frame, &children, &tree);
         if let Some((_, rect)) = result.first() {
             // Child should be offset by -scroll_y = -50 from the viewport origin
@@ -645,12 +653,27 @@ mod tests {
         struct GrowWidget {
             size: std::cell::Cell<f32>,
         }
-        impl Widget for GrowWidget {
+        impl WidgetComponent for GrowWidget {
             fn as_any(&self) -> &dyn std::any::Any { self }
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+            fn capabilities(&self) -> WidgetCapabilities {
+                WidgetCapabilities::from_bits(
+                    WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+                )
+            }
+            crate::wc_upcast!(GrowWidget; WidgetLayout);
+            crate::wc_upcast!(GrowWidget; WidgetRender);
+            crate::wc_upcast!(GrowWidget; WidgetEventHandler);
+        }
+        impl WidgetLayout for GrowWidget {
             fn preferred_size(&self, _: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
                 Size::new(300.0, self.size.get())
             }
+        }
+        impl WidgetRender for GrowWidget {
+            fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
+        }
+        impl WidgetEventHandler for GrowWidget {
             fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
                 if matches!(event, WidgetEvent::MouseDown { .. }) {
                     self.size.set(self.size.get() * 2.0);
@@ -659,7 +682,6 @@ mod tests {
                     EventResult::NotHandled
                 }
             }
-            fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
         }
 
         let mut tree = WidgetTree::new();

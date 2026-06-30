@@ -53,6 +53,12 @@ define_widget! {
     on_update => (&mut self, _dt: f32) {}
 }
 
+impl Default for FocusTrap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FocusTrap {
     pub fn new() -> Self {
         Self {

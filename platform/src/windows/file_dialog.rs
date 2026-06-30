@@ -158,7 +158,7 @@ impl IFileDialog for WindowsFileDialog {
                 return String::new();
             }
             let result = SHGetPathFromIDListW(pidl, buf.as_mut_ptr());
-            CoTaskMemFree(pidl as *mut std::ffi::c_void);
+            CoTaskMemFree(pidl);
             if result != 0 {
                 to_utf8(&buf)
             } else {

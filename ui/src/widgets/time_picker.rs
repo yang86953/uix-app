@@ -63,7 +63,7 @@ define_widget! {
                     let rel_x = pos.x - frame.x;
                     let rel_y = pos.y - popup_y;
 
-                    if rel_y >= 0.0 && rel_y < 200.0 {
+                    if (0.0..200.0).contains(&rel_y) {
                         let col_w = frame.w * 0.5;
                         if rel_x < col_w {
                             let item_h = 32.0;
@@ -102,7 +102,7 @@ define_widget! {
                         let rel_x = pos.x - frame.x;
                         let rel_y = pos.y - popup_y;
 
-                        if rel_y >= 0.0 && rel_y < 200.0 {
+                        if (0.0..200.0).contains(&rel_y) {
                             let col_w = frame.w * 0.5;
                             let item_h = 32.0;
                             if rel_x < col_w {

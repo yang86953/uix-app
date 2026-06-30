@@ -269,7 +269,6 @@ impl LayoutEngine for FlexLayout {
             child_sizes,
             justify_content: self.justify,
             align_items: self.align,
-            ..FlexInput::default()
         };
 
         let output = compute_flex_layout(&input);
@@ -402,7 +401,7 @@ impl LayoutEngine for GridLayout {
         // 自动计算行数
         let rows: Vec<GridTrack> = if self.rows.is_empty() {
             let n_cols = self.columns.len();
-            let n_rows = (children.len() + n_cols - 1) / n_cols;
+            let n_rows = children.len().div_ceil(n_cols);
             vec![GridTrack::Auto; n_rows.max(1)]
         } else {
             self.rows.clone()

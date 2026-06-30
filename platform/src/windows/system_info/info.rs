@@ -251,8 +251,7 @@ struct SYSTEM_INFO {
     wProcessorRevision: u16,
 }
 
-#[repr(C)]
-#[repr(C)]
+    #[repr(C)]
 struct PROCESS_MEMORY_COUNTERS {
     cb: u32,
     PageFaultCount: u32,

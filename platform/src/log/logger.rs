@@ -60,7 +60,7 @@ impl Logger {
             // 默认输出：控制台
             logger.add_sink(Arc::new(super::sink::ConsoleSink::new(true)));
             // 注册为 platform 全局日志处理器
-            let _ = crate::log::set_handler(Box::new(LoggerHandler));
+            crate::log::set_handler(Box::new(LoggerHandler));
             logger
         })
     }

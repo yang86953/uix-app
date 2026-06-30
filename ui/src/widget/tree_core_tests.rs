@@ -19,19 +19,27 @@ impl SpyWidget {
         }
     }
 }
-impl Widget for SpyWidget {
+impl WidgetComponent for SpyWidget {
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(
+            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+        )
+    }
+    crate::wc_upcast!(SpyWidget; WidgetLayout);
+    crate::wc_upcast!(SpyWidget; WidgetRender);
+    crate::wc_upcast!(SpyWidget; WidgetEventHandler);
+}
+impl WidgetLayout for SpyWidget {
     fn preferred_size(
         &self,
         _: Option<&dyn uix_graphics::GraphicsEngine>,
     ) -> uix_platform::Size {
         self.size
     }
-    fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
-        *self.last_event.borrow_mut() = Some(event.clone());
-        EventResult::Handled
-    }
+}
+impl WidgetRender for SpyWidget {
     fn render(
         &self,
         _: Rect,
@@ -40,40 +48,60 @@ impl Widget for SpyWidget {
     ) {
     }
 }
+impl WidgetEventHandler for SpyWidget {
+    fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
+        *self.last_event.borrow_mut() = Some(event.clone());
+        EventResult::Handled
+    }
+}
 
 struct PassThroughContainer {
     size: uix_platform::Size,
-    children: RefCell<Vec<Box<dyn Widget>>>,
+    children: RefCell<Vec<Box<dyn WidgetComponent>>>,
 }
 impl PassThroughContainer {
-    fn new(w: f32, h: f32, children: Vec<Box<dyn Widget>>) -> Self {
+    fn new(w: f32, h: f32, children: Vec<Box<dyn WidgetComponent>>) -> Self {
         Self {
             size: uix_platform::Size::new(w, h),
             children: RefCell::new(children),
         }
     }
 }
-impl Widget for PassThroughContainer {
+impl WidgetComponent for PassThroughContainer {
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
-    fn build(&self) -> Vec<Box<dyn Widget>> {
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(
+            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+        )
+    }
+    fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
         std::mem::take(&mut *self.children.borrow_mut())
     }
+    crate::wc_upcast!(PassThroughContainer; WidgetLayout);
+    crate::wc_upcast!(PassThroughContainer; WidgetRender);
+    crate::wc_upcast!(PassThroughContainer; WidgetEventHandler);
+}
+impl WidgetLayout for PassThroughContainer {
     fn preferred_size(
         &self,
         _: Option<&dyn uix_graphics::GraphicsEngine>,
     ) -> uix_platform::Size {
         self.size
     }
-    fn on_event(&mut self, _: &WidgetEvent) -> EventResult {
-        EventResult::NotHandled
-    }
+}
+impl WidgetRender for PassThroughContainer {
     fn render(
         &self,
         _: Rect,
         _: &mut crate::render_context::RenderContext,
         _: &WidgetTree,
     ) {
+    }
+}
+impl WidgetEventHandler for PassThroughContainer {
+    fn on_event(&mut self, _: &WidgetEvent) -> EventResult {
+        EventResult::NotHandled
     }
 }
 

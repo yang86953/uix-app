@@ -33,10 +33,10 @@ define_widget! {
 
         for y in 0..cells {
             for x in 0..cells {
-                let is_finder = (x < 7 && y < 7) || (x >= cells - 7 && y < 7) || (x < 7 && y >= cells - 7);
+                let is_finder = (x >= cells - 7 || x < 7) && y < 7 || (x < 7 && y >= cells - 7);
                 let is_filled = if is_finder {
                     let in_pattern = (x <= 1 || x >= 5) && (y <= 1 || y >= 5);
-                    let is_center = x >= 2 && x <= 4 && y >= 2 && y <= 4;
+                    let is_center = (2..=4).contains(&x) && (2..=4).contains(&y);
                     (in_pattern && !is_center) || (is_center && !in_pattern)
                 } else if (x >= cells - 8 || x <= 7) && y == 6 {
                     // 时序模式
@@ -47,7 +47,7 @@ define_widget! {
                     // 数据区域：基于 seed 的确定性随机
                     let idx = (y * cells + x) as u64;
                     let hash = seed.wrapping_mul(idx + 1).wrapping_add(idx.wrapping_mul(idx + 3));
-                    (hash % 3) != 0
+                    !hash.is_multiple_of(3)
                 };
                 if is_filled {
                     ctx.fill_rect(Rect::new(frame.x + x as f32 * cell_s, frame.y + y as f32 * cell_s, cell_s, cell_s), fg, None);

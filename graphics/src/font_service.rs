@@ -101,8 +101,7 @@ impl GlyphCache {
         self.inner
             .lock()
             .map(|map| {
-                map.iter()
-                    .map(|(_, r)| std::mem::size_of::<GlyphCacheKey>() + r.width * r.height)
+                map.values().map(|r| std::mem::size_of::<GlyphCacheKey>() + r.width * r.height)
                     .sum()
             })
             .unwrap_or(0)

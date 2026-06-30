@@ -201,7 +201,7 @@ define_widget! {
             let is_checked = self.checked_rows.contains(&actual_ri);
             let is_expanded = expanded == Some(actual_ri);
 
-            let row_bg = if is_selected { sel_bg } else if is_hovered { hover_bg } else if actual_ri % 2 == 0 { bg } else { ctx.tokens().color_bg_container() };
+            let row_bg = if is_selected { sel_bg } else if is_hovered { hover_bg } else if actual_ri.is_multiple_of(2) { bg } else { ctx.tokens().color_bg_container() };
             let row_rect = Rect::new(frame.x, y, frame.w, self.row_h);
             ctx.fill_rect(row_rect, row_bg, None);
 

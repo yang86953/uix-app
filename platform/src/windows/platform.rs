@@ -61,6 +61,12 @@ pub struct WindowsPlatform {
     pub(crate) single_shot_timers: Arc<Mutex<HashSet<u32>>>,
 }
 
+impl Default for WindowsPlatform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WindowsPlatform {
     pub fn new() -> Self {
         let timer_subsys = WindowsTimer::new();

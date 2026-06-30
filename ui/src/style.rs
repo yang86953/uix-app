@@ -374,6 +374,7 @@ pub mod edge_insets {
 /// 使用方式：widget 在 `render` 中根据自身状态（hovered/pressed/disabled）
 /// 从 variant 中取色，回退到 Style 基础色。
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub struct StyleVariant {
     /// 正常状态基础样式
     pub normal: Style,
@@ -385,16 +386,6 @@ pub struct StyleVariant {
     pub disabled: Option<Style>,
 }
 
-impl Default for StyleVariant {
-    fn default() -> Self {
-        Self {
-            normal: Style::default(),
-            hover: None,
-            active: None,
-            disabled: None,
-        }
-    }
-}
 
 impl StyleVariant {
     pub fn new(base: Style) -> Self {

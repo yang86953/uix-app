@@ -57,6 +57,7 @@ impl PhysicalBox {
 /// 允许 `fill_rect` 等方法同时接受 `Rect`（向后兼容）、`AABB3D`、`PhysicalBox`。
 pub trait IntoAABB3D {
     /// 转换为 AABB3D（以 dip 为单位）。
+    #[allow(clippy::wrong_self_convention)]
     fn into_aabb(&self, dpi: f32, dpr: f32) -> AABB3D;
 }
 

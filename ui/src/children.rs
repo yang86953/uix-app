@@ -25,7 +25,6 @@
 //! ```
 
 use std::cell::RefCell;
-use crate::widget::{WidgetCore, WidgetId, WidgetTree, WidgetNode};
 use crate::widget::WidgetComponent;
 
 /// Stores child widgets during builder construction and releases them
@@ -83,5 +82,8 @@ impl WidgetChildren {
     /// Return the number of stored children (0 if not yet set).
     pub fn len(&self) -> usize {
         self.inner.borrow().as_ref().map_or(0, |v| v.len())
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }

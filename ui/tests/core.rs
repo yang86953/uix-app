@@ -4,7 +4,7 @@ use uix_ui::api::{State, Computed, Effect};
 use uix_ui::api::{Style, StyleVariant};
 use uix_ui::api::copy_to_clipboard;
 use uix_ui::api::WidgetChildren;
-use uix_ui::api::Widget;
+use uix_ui::api::{WidgetCapabilities, WidgetComponent, WidgetRender};
 use uix_ui::api::WidgetTree;
 use uix_ui::api::RenderContext;
 use uix_platform::geometry::{EdgeInsets, Rect, Size};
@@ -169,7 +169,7 @@ fn default_style_values() {
     assert_eq!(s.color, Color::black());
     assert_eq!(s.font_size, 14.0);
     assert_eq!(s.opacity, 1.0);
-    assert!(s.shadow_blur == 0.0);
+    assert!(s.box_shadow.is_none());
 }
 
 #[test]
@@ -193,11 +193,11 @@ fn button_primary_preset() {
 }
 
 #[test]
-fn label_preset() {
-    let s = Style::label();
+fn default_font_size() {
+    let s = Style::default();
     assert_eq!(s.background, None);
-    assert_eq!(s.font_size, 12.0);
-    assert_eq!(s.padding, EdgeInsets::new(2.0, 0.0, 0.0, 0.0));
+    assert_eq!(s.font_size, 14.0);
+    assert_eq!(s.padding, EdgeInsets::zero());
 }
 
 #[test]
@@ -240,13 +240,13 @@ fn chained_modifications() {
         .with_font_size(16.0)
         .with_padding(EdgeInsets::uniform(8.0))
         .with_rounded(4.0)
-        .with_shadow(Color::from_rgba(0, 0, 0, 128), 8.0);
+        .with_shadow(uix_ui::style::BoxShadowDef::new(Color::from_rgba(0, 0, 0, 128), 8.0, 0.0, 0.0));
     assert_eq!(s.background, Some(Color::from_rgba(0, 0, 0, 255)));
     assert_eq!(s.color, Color::white());
     assert_eq!(s.font_size, 16.0);
     assert_eq!(s.padding, EdgeInsets::uniform(8.0));
     assert_eq!(s.border_radius, 4.0);
-    assert_eq!(s.shadow_blur, 8.0);
+    assert!(s.box_shadow.is_some());
 }
 
 #[test]
@@ -289,10 +289,11 @@ fn with_border_sets_both() {
 }
 
 #[test]
-fn with_shadow_sets_color_and_blur() {
-    let s = Style::default().with_shadow(Color::from_rgba(0, 0, 0, 100), 10.0);
-    assert_eq!(s.shadow_blur, 10.0);
-    assert_eq!(s.shadow_color, Color::from_rgba(0, 0, 0, 100));
+fn with_shadow_sets_box_shadow() {
+    use uix_ui::style::BoxShadowDef;
+    let shadow = BoxShadowDef::new(Color::from_rgba(0, 0, 0, 100), 10.0, 0.0, 0.0);
+    let s = Style::default().with_shadow(shadow);
+    assert_eq!(s.box_shadow, Some(shadow));
 }
 
 #[test]
@@ -343,9 +344,15 @@ fn style_variant_fallback() {
 // ── 用于 children 测试的本地 dummy widget ──
 
 struct DummyWidget;
-impl Widget for DummyWidget {
+impl WidgetComponent for DummyWidget {
     fn as_any(&self) -> &dyn std::any::Any { self }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::RENDER)
+    }
+    uix_ui::wc_upcast!(DummyWidget; WidgetRender);
+}
+impl WidgetRender for DummyWidget {
     fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
 }
 

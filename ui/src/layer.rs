@@ -254,8 +254,8 @@ impl LayerTree {
     /// 当 `debug_mode` 为 true 时：
     /// - 所有 widget 绘制极淡彩色边框（alpha=30）
     /// - 光标下的 widget 及其父链绘制高亮边框 + ID/深度标签 + 坐标信息
-    /// `hover_pos` 为当前光标位置，用于调试模式的悬浮高亮。
-    /// 渲染 overlay 层（post_render 回调 + 调试覆盖）。
+    ///   `hover_pos` 为当前光标位置，用于调试模式的悬浮高亮。
+    ///   渲染 overlay 层（post_render 回调 + 调试覆盖）。
     ///
     /// `dirty_region` 用于跳过脏区域之外 widget 的 `post_render` 调用——
     /// 当 widget 的 frame 与 dirty_region 无交集时，其 overlay 内容未变化，
@@ -661,7 +661,7 @@ impl LayerTree {
             if let Some(widget_node) = tree.get(widget_id) {
                 if widget_node.visible() {
                     let frame = widget_node.frame();
-                    let hovered = hovered_chain.as_ref().map_or(false, |c| c.contains(&widget_id));
+                    let hovered = hovered_chain.as_ref().is_some_and(|c| c.contains(&widget_id));
                     ctx.draw_debug_border(frame, depth, hovered);
                     if hovered {
                         ctx.draw_debug_frame_info(widget_id, frame);

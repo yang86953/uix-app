@@ -5,9 +5,11 @@
 
 /// 坐标方向。
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum Orientation {
     /// y 轴向下（屏幕坐标，Windows 默认）。
     /// 原点在左上角，y 增加向下。
+    #[default]
     YDown,
     /// y 轴向上（数学坐标，Wayland/macOS Core Graphics 默认）。
     /// 原点在左下角，y 增加向上。
@@ -54,11 +56,6 @@ impl Orientation {
     }
 }
 
-impl Default for Orientation {
-    fn default() -> Self {
-        Self::YDown
-    }
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 

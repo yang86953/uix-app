@@ -89,7 +89,7 @@ pub trait WidgetEventHandler: WidgetComponent {
     fn needs_continuous_update(&self) -> bool { false }
     fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> { None }
     fn hit_test_frame(&self, actual_frame: Rect) -> Rect { actual_frame }
-    fn hit_test_3d(&self, ray: &Ray3D, spatial: &SpatialContext, frame: Rect) -> bool {
+    fn hit_test_3d(&self, ray: &Ray3D, _spatial: &SpatialContext, frame: Rect) -> bool {
         if let Some(hit_point) = ray.intersect_z0() {
             hit_point.x >= frame.x && hit_point.x <= frame.x + frame.w
                 && hit_point.y >= frame.y && hit_point.y <= frame.y + frame.h

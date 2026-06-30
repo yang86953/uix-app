@@ -392,7 +392,7 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
     let need_sync = tree
         .root_id()
         .and_then(|rid| tree.get(rid))
-        .map_or(false, |root| {
+        .is_some_and(|root| {
             let ew = engine.canvas_2d().width() as f32;
             let eh = engine.canvas_2d().height() as f32;
             let rf = root.frame();

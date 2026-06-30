@@ -166,6 +166,12 @@ define_widget! {
     }
 }
 
+impl Default for Carousel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Carousel {
     pub fn new() -> Self {
         Self {

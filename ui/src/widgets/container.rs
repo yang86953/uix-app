@@ -3,7 +3,7 @@
 use std::cell::Cell;
 
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
+use uix_graphics::Color;
 use crate::{AlignItems, FlexDirection, JustifyContent};
 use crate::layout::engine::{
     BoxModel, FlexLayout, LayoutChild, child_from_tree,

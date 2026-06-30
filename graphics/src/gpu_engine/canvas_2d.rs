@@ -121,6 +121,7 @@ impl GpuCanvas2D {
         }
     }
 
+    #[allow(clippy::unwrap_used)]
     unsafe fn compile_rect_shader(gl: &glow::Context) -> glow::Program {
         let vs = gl.create_shader(glow::VERTEX_SHADER).unwrap();
         gl.shader_source(vs, crate::gpu_engine::RECT_VERT);
@@ -137,6 +138,7 @@ impl GpuCanvas2D {
         program
     }
 
+    #[allow(clippy::unwrap_used)]
     unsafe fn create_rect_geom(gl: &glow::Context) -> (glow::VertexArray, glow::Buffer) {
         let vao = gl.create_vertex_array().unwrap();
         let vbo = gl.create_buffer().unwrap();
@@ -157,6 +159,7 @@ impl GpuCanvas2D {
         (vao, vbo)
     }
 
+    #[allow(clippy::unwrap_used)]
     unsafe fn create_fallback_texture(gl: &glow::Context, w: i32, h: i32) -> glow::Texture {
         let tex = gl.create_texture().unwrap();
         gl.bind_texture(glow::TEXTURE_2D, Some(tex));
@@ -175,6 +178,7 @@ impl GpuCanvas2D {
         tex
     }
 
+    #[allow(clippy::unwrap_used)]
     unsafe fn compile_tex_shader(gl: &glow::Context) -> (glow::Program, Option<glow::UniformLocation>, Option<glow::UniformLocation>) {
         let vs = gl.create_shader(glow::VERTEX_SHADER).unwrap();
         gl.shader_source(vs, TEX_VERT);
@@ -194,6 +198,7 @@ impl GpuCanvas2D {
     }
 
     /// 上传软件回退像素到 GL 纹理并绘制全屏（在 end_frame 被调用）。
+    #[allow(clippy::missing_safety_doc)]
     pub unsafe fn flush_fallback(&mut self) {
         let (ptr, len) = {
             let p = self.soft_fallback.pixels_mut();
@@ -439,7 +444,7 @@ impl Canvas2D for GpuCanvas2D {
     }
 
     fn set_opacity(&mut self, opacity: f32) {
-        self.opacity = opacity.max(0.0).min(1.0);
+        self.opacity = opacity.clamp(0.0, 1.0);
     }
 
     fn opacity(&self) -> f32 {

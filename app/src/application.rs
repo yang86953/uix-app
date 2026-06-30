@@ -153,10 +153,7 @@ impl App {
             AppMode::GUI => match self.window.as_mut() {
                 Some(window) => {
                     window.run(|platform| {
-                        platform.event_loop().wait_event(&|event| match event.type_ {
-                            uix_platform::event::UiEventType::WindowClose => false,
-                            _ => true,
-                        })
+                        platform.event_loop().wait_event(&|event| !matches!(event.type_, uix_platform::event::UiEventType::WindowClose))
                     });
                     0
                 }

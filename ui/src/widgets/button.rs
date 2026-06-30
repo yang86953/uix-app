@@ -85,7 +85,7 @@ define_widget! {
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let btn_h = button_height(self.btn_size).min(frame.h);
-        let btn_frame = Rect::new(frame.x, frame.y, if self.block { frame.w } else { frame.w }, btn_h);
+        let btn_frame = Rect::new(frame.x, frame.y, frame.w, btn_h);
         let style = self.compute_style(ctx);
 
         ctx.apply_style(btn_frame, &style);
@@ -185,7 +185,7 @@ impl Button {
         s.border_radius = t.border_radius();
 
         // 2. 根据 variant + state 计算颜色
-        let (bg, border, text_color, bw) = if self.disabled {
+        let (bg, border, _text_color, bw) = if self.disabled {
             match self.variant {
                 ButtonVariant::Primary => (Some(t.color_primary_border()), t.color_border(), t.color_text_quaternary(), 1.0),
                 ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(), t.color_text_quaternary(), 0.0),

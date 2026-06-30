@@ -39,10 +39,10 @@ pub fn blit_glyph(
             let cov = coverage[row * width + col];
             if cov == 0 { continue; }
             // Modulate by coverage
-            let alpha = ((premul >> 24) & 0xFF) as u32 * cov as u32 / 255;
-            let r = ((premul >> 16) & 0xFF) as u32 * cov as u32 / 255;
-            let g = ((premul >> 8) & 0xFF) as u32 * cov as u32 / 255;
-            let b = (premul & 0xFF) as u32 * cov as u32 / 255;
+            let alpha = ((premul >> 24) & 0xFF) * cov as u32 / 255;
+            let r = ((premul >> 16) & 0xFF) * cov as u32 / 255;
+            let g = ((premul >> 8) & 0xFF) * cov as u32 / 255;
+            let b = (premul & 0xFF) * cov as u32 / 255;
             let final_color = (alpha.min(255) << 24) | (r.min(255) << 16) | (g.min(255) << 8) | b.min(255);
             put_pixel(pixels, surface_w, px, py, cx0, cy0, cx1, cy1, final_color);
         }

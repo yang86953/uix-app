@@ -130,6 +130,12 @@ define_widget! {
     }
 }
 
+impl Default for Message {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Message {
     /// 创建新的 Message 容器（通常在根 WidgetTree 中注册一个）。
     pub fn new() -> Self {

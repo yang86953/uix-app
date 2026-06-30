@@ -46,7 +46,7 @@ define_widget! {
                     let panel_y = pos.y - 40.0;
                     let panel_w = cols as f32 * cell + pad * 2.0;
                     if panel_x >= 0.0 && panel_x < panel_w && panel_y >= pad {
-                        let rows = (self.preset_colors.len() + cols - 1) / cols;
+                        let rows = self.preset_colors.len().div_ceil(cols);
                         let panel_h = rows as f32 * cell + pad * 2.0;
                         let ci = ((panel_x - pad) / cell) as usize;
                         let ri = ((panel_y - pad) / cell) as usize;
@@ -90,9 +90,8 @@ define_widget! {
             WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
             WidgetEvent::FocusOut => { self.open = false; self.focused = false; EventResult::Handled }
             WidgetEvent::KeyDown { key, .. } => {
-                if *key == KeyCode::Escape {
-                    if self.open { self.open = false; return EventResult::Handled; }
-                }
+                if *key == KeyCode::Escape
+                    && self.open { self.open = false; return EventResult::Handled; }
                 if *key == KeyCode::Space || *key == KeyCode::Enter {
                     self.open = !self.open;
                     self.focused = true;
@@ -122,7 +121,7 @@ define_widget! {
             let cell = 24.0;
             let pad = 8.0;
             let panel_w = cols as f32 * cell + pad * 2.0;
-            let rows = (self.preset_colors.len() + cols - 1) / cols;
+            let rows = self.preset_colors.len().div_ceil(cols);
             let panel_h = rows as f32 * cell + pad * 2.0;
             let panel_x = frame.x;
             let panel_y = frame.y + 36.0;

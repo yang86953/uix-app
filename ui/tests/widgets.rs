@@ -7,7 +7,8 @@ use uix_platform::geometry::{Point, Rect, Size};
 use uix_platform::ScrollDirection;
 use uix_ui::api::{AlignItems, FlexDirection};
 use uix_ui::api::{
-    EventResult, KeyCode, KeyMod, MouseButton, Widget, WidgetCore, WidgetEvent, WidgetId, WidgetTree,
+    EventResult, KeyCode, KeyMod, MouseButton, WidgetCapabilities, WidgetComponent, WidgetCore,
+    WidgetEvent, WidgetEventHandler, WidgetId, WidgetLayout, WidgetLifecycle, WidgetRender, WidgetTree,
 };
 use uix_ui::api::RenderContext;
 use uix_ui::api::{ScrollView, NavItem, SharedActive, Container};
@@ -110,30 +111,38 @@ impl SpyWidget {
     }
 }
 
-impl Widget for SpyWidget {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+impl WidgetComponent for SpyWidget {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(
+            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+        )
     }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-    fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size {
-        self.size
-    }
+    uix_ui::wc_upcast!(SpyWidget; WidgetLayout);
+    uix_ui::wc_upcast!(SpyWidget; WidgetRender);
+    uix_ui::wc_upcast!(SpyWidget; WidgetEventHandler);
+}
+impl WidgetLayout for SpyWidget {
+    fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size { self.size }
+}
+impl WidgetRender for SpyWidget {
+    fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
+}
+impl WidgetEventHandler for SpyWidget {
     fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
         *self.last_event.borrow_mut() = Some(event.clone());
         EventResult::Handled
     }
-    fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
 }
 
 struct PassThroughContainer {
     size: Size,
-    children: RefCell<Vec<Box<dyn Widget>>>,
+    children: RefCell<Vec<Box<dyn WidgetComponent>>>,
 }
 
 impl PassThroughContainer {
-    fn new(w: f32, h: f32, children: Vec<Box<dyn Widget>>) -> Self {
+    fn new(w: f32, h: f32, children: Vec<Box<dyn WidgetComponent>>) -> Self {
         Self {
             size: Size::new(w, h),
             children: RefCell::new(children),
@@ -141,23 +150,29 @@ impl PassThroughContainer {
     }
 }
 
-impl Widget for PassThroughContainer {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+impl WidgetComponent for PassThroughContainer {
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(
+            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+        )
     }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-    fn build(&self) -> Vec<Box<dyn Widget>> {
+    fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
         std::mem::take(&mut *self.children.borrow_mut())
     }
-    fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size {
-        self.size
-    }
-    fn on_event(&mut self, _: &WidgetEvent) -> EventResult {
-        EventResult::NotHandled
-    }
+    uix_ui::wc_upcast!(PassThroughContainer; WidgetLayout);
+    uix_ui::wc_upcast!(PassThroughContainer; WidgetRender);
+    uix_ui::wc_upcast!(PassThroughContainer; WidgetEventHandler);
+}
+impl WidgetLayout for PassThroughContainer {
+    fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size { self.size }
+}
+impl WidgetRender for PassThroughContainer {
     fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
+}
+impl WidgetEventHandler for PassThroughContainer {
+    fn on_event(&mut self, _: &WidgetEvent) -> EventResult { EventResult::NotHandled }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -11,8 +11,8 @@ use std::cell::Cell;
 use uix_platform::IClipboard;
 
 thread_local! {
-    static DATA: Cell<usize> = Cell::new(0);
-    static VTABLE: Cell<usize> = Cell::new(0);
+    static DATA: Cell<usize> = const { Cell::new(0) };
+    static VTABLE: Cell<usize> = const { Cell::new(0) };
 }
 
 /// 注入剪贴板指针的拆分部分（断开 borrow provenance）。

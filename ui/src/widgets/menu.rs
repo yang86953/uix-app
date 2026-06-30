@@ -103,8 +103,8 @@ define_widget! {
                         EventResult::Handled
                     }
                     KeyCode::Left => {
-                        if self.mode == MenuMode::Horizontal {
-                            if cur_idx > 0 {
+                        if self.mode == MenuMode::Horizontal
+                            && cur_idx > 0 {
                                 let mut prev = cur_idx - 1;
                                 loop {
                                     if !self.items[prev].disabled {
@@ -116,7 +116,6 @@ define_widget! {
                                     prev -= 1;
                                 }
                             }
-                        }
                         EventResult::Handled
                     }
                     KeyCode::Down => {
@@ -138,8 +137,8 @@ define_widget! {
                         EventResult::Handled
                     }
                     KeyCode::Up => {
-                        if self.mode == MenuMode::Vertical {
-                            if cur_idx > 0 {
+                        if self.mode == MenuMode::Vertical
+                            && cur_idx > 0 {
                                 let mut prev = cur_idx - 1;
                                 loop {
                                     if !self.items[prev].disabled {
@@ -151,7 +150,6 @@ define_widget! {
                                     prev -= 1;
                                 }
                             }
-                        }
                         EventResult::Handled
                     }
                     _ => EventResult::NotHandled,
@@ -258,6 +256,12 @@ impl Menu {
 
     fn first_non_disabled(&self) -> Option<usize> {
         self.items.iter().position(|item| !item.disabled)
+    }
+}
+
+impl Default for Menu {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

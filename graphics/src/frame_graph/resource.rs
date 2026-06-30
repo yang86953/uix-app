@@ -81,6 +81,12 @@ pub struct ResourceRegistry {
     next_pass_id: u32,
 }
 
+impl Default for ResourceRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResourceRegistry {
     pub fn new() -> Self {
         Self {

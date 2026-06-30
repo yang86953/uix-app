@@ -95,11 +95,10 @@ impl EventBus {
                 Some(et) => et == event.type_,
                 None => true, // 通配符订阅匹配所有
             };
-            if matches {
-                if !(entry.handler)(event) {
+            if matches
+                && !(entry.handler)(event) {
                     return false;
                 }
-            }
         }
         true
     }

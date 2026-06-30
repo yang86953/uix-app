@@ -173,8 +173,6 @@ pub fn page_title(tk: &DesignTokens, icon: &str, label: &str) -> WidgetNode {
 }
 
 /// 统计卡片（flex-grow 响应式宽度，适合放在 Row Space 中均匀分布）。
-
-
 /// 构建顶部标题栏（"UIX 组件库" + ThemeToggle + 版本号）。
 fn build_header_bar(tk: &DesignTokens) -> WidgetNode {
     tree! { Container::new().bg(tk.color_bg_container).dir(FlexDirection::Row)
@@ -253,8 +251,7 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
     // 为每页构建独立的页面容器（标题 + 内容），全部添加到 page_panel
     let mut page_nodes = Vec::new();
     let mut page_ids = Vec::new();
-    for i in 0..PAGE_TITLES.len() {
-        let (icon, label) = PAGE_TITLES[i];
+    for (i, &(icon, label)) in PAGE_TITLES.iter().enumerate() {
         let title_node = page_title(tk, icon, label);
         let page_content = build_page(i, tk);
         page_nodes.push(WidgetNode::new(
@@ -473,7 +470,6 @@ pub fn run_gui_demo() {
                 let mut se = SoftwareEngine::new();
                 se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
                     uix_platform::log::error_fn(format!("CPU引擎初始化失败: {}", e.short_what()));
-                    return;
                 });
                 engine = Box::new(se);
             }
@@ -482,7 +478,6 @@ pub fn run_gui_demo() {
         let mut se = SoftwareEngine::new();
         se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
             uix_platform::log::error_fn(format!("CPU引擎初始化失败: {}", e.short_what()));
-            return;
         });
         engine = Box::new(se);
     }

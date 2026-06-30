@@ -7,15 +7,14 @@ use uix::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use uix::ui::theme::DesignTokens;
 use uix::ui::widget::WidgetNode;
 use uix::ui::{
-    Alert, AlertType, Anchor, AnchorItem, AutoComplete, BarChart, BarData,
+    Alert, AlertType, Anchor, AnchorItem, AutoComplete,
     Breadcrumb, BreadcrumbItem, Button, ButtonSize, Calendar, Card,
     Cascader, CascaderOption, Checkbox, Collapse, CollapsePanel,
     Container, DatePicker, DateValue, Descriptions, DescriptionsItem,
     Divider, Dropdown, Empty,
-    Input, InputNumber, InputSize, IntoWidgetNode, Label, LineChart, LineData,
-    List, Menu, MenuItem, MenuMode, Mentions, Pagination, PieChart, PieData,
-    ProgressBar, Radio, Rate, Result, ResultType,
-    ScrollDirection, ScrollView, Segmented, Select, Skeleton, SkeletonShape,
+    Input, InputNumber, InputSize, IntoWidgetNode, Label,
+    List, Menu, MenuItem, MenuMode, Mentions, Pagination,
+    ProgressBar, Radio, Rate, Result, ResultType, Segmented, Select, Skeleton, SkeletonShape,
     Slider, Space, SpaceSize, Spin, Splitter, Step, Steps, StepStatus,
     Switch, TabPosition, Tabs, Tag, TagColor, Timeline, TimelineItem,
     TimePicker, TimeValue, Tree, TreeNode, GridTrack,
@@ -25,7 +24,7 @@ use uix::ui::{
 use uix::tree;
 use uix::ui::Icon;
 
-use super::{INNER_W, PageBuilder, row, section_title};
+use super::{INNER_W, PageBuilder, row};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Page 0: 通用 (General) — Button, Typography, Tag, Icon

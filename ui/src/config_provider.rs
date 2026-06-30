@@ -111,6 +111,12 @@ define_widget! {
     }
 }
 
+impl Default for ConfigProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfigProvider {
     pub fn new() -> Self {
         Self {

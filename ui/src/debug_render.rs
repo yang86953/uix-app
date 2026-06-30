@@ -63,9 +63,9 @@ impl DebugRenderService {
         rect: Rect,
     ) {
         if !self.debug_mode { return; }
-        let color = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
+        let _color = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
         let label = format!("#{} d{}", widget_id, depth);
-        let font_size = 12.0;
+        let _font_size = 12.0;
         let label_w = label.len() as f32 * 7.0 + 6.0;
         let label_h = 16.0;
         canvas.fill_rect(Rect::new(rect.x, rect.y, label_w, label_h), Color::from_rgba(0, 0, 0, 180), None);
@@ -81,7 +81,7 @@ impl DebugRenderService {
     ) {
         if !self.debug_mode { return; }
         let info = format!("#{} ({:.0},{:.0}) {:.0}×{:.0}", widget_id, rect.x, rect.y, rect.w, rect.h);
-        let font_size = 11.0;
+        let _font_size = 11.0;
         let info_w = info.len() as f32 * 6.5 + 6.0;
         let info_h = 15.0;
         let info_y = rect.y + rect.h;

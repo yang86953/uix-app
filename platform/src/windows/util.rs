@@ -199,8 +199,10 @@ pub fn get_system_default_ui_font_name() -> Option<String> {
     };
 
     unsafe {
-        let mut ncm = NONCLIENTMETRICSW::default();
-        ncm.cbSize = std::mem::size_of::<NONCLIENTMETRICSW>() as u32;
+        let mut ncm = NONCLIENTMETRICSW {
+            cbSize: std::mem::size_of::<NONCLIENTMETRICSW>() as u32,
+            ..NONCLIENTMETRICSW::default()
+        };
 
         // SystemParametersInfoW 可能因结构体大小版本差异而失败
         // 这里先尝试标准大小，若失败则尝试旧版大小
@@ -323,7 +325,7 @@ pub fn system_default_font_paths() -> Vec<String> {
 
         // 5. 仅当主字体是拉丁字体（非 CJK）时，尝试添加一个 CJK 回退
         //    判断方式：如果系统默认字体名不在已知的 CJK 列表中
-        let is_cjk = sys_font_name.as_deref().map_or(false, |name| {
+        let is_cjk = sys_font_name.as_deref().is_some_and(|name| {
             let lower = name.to_lowercase();
             lower.contains("yahei")      // 微软雅黑
                 || lower.contains("jhenghei")  // 微软正黑体
@@ -544,6 +546,7 @@ struct WIN32_FIND_DATAW {
 }
 
 #[repr(C)]
+#[allow(clippy::upper_case_acronyms)]
 struct FILETIME {
     dwLowDateTime: u32,
     dwHighDateTime: u32,

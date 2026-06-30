@@ -102,7 +102,7 @@ define_widget! {
         let bounce = if t < 0.5 {
             1.0 - (t * 2.0).powf(2.0)  // 快速上升
         } else {
-            ((t - 0.5) * 2.0 - 1.0).powf(2.0) * -1.0 + 1.0  // 慢速下降
+            -((t - 0.5) * 2.0 - 1.0).powf(2.0) + 1.0  // 慢速下降
         };
         let cy = frame.y + frame.h - 10.0 - bounce * 40.0;
         let cx = frame.x + frame.w * 0.5;

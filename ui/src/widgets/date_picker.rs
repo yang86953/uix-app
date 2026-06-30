@@ -21,7 +21,7 @@ pub struct DateValue {
 impl DateValue {
     pub fn new(year: i32, month: usize, day: usize) -> Self {
         let d = day.min(days_in_month(year, month));
-        Self { year, month: month.max(1).min(12), day: d.max(1) }
+        Self { year, month: month.clamp(1, 12), day: d.max(1) }
     }
     pub fn format(&self) -> String {
         format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)

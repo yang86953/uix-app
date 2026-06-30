@@ -1,16 +1,14 @@
 //! 组件展示页面（图表、其他）
 
 use uix::platform::EdgeInsets;
-use uix::ui::layout::{AlignItems, FlexDirection};
+use uix::ui::layout::FlexDirection;
 use uix::ui::theme::DesignTokens;
 use uix::ui::widget::WidgetNode;
 use uix::ui::{
-    Button, ButtonSize, Container, Icon, IntoWidgetNode, Label,
-    BarChart, BarData, LineChart, LineData, PieChart, PieData,
-    Space, SpaceSize, Form, FormItem, ColorPicker,
+    Container, IntoWidgetNode, Label,
+    BarChart, BarData, LineChart, LineData, PieChart, PieData, Form, ColorPicker,
 };
 use uix::tree;
-use uix::ui::Grid;
 
 use super::widgets::{BounceBall, Counter, PulseRing};
 use super::{INNER_W, PageBuilder, row};

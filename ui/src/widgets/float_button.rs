@@ -82,6 +82,7 @@ impl Default for FloatButton { fn default() -> Self { Self::new("+") } }
 pub struct FloatButtonBackTop;
 
 impl FloatButtonBackTop {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new() -> FloatButton {
         FloatButton::new("↑").tooltip("回到顶部").position(0.0, 0.0)
     }

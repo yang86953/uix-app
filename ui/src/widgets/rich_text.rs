@@ -60,6 +60,7 @@ pub enum RichTextSegment {
 ///
 /// 所有字段可选，未设置的字段会继承默认样式。
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct RichTextStyle {
     /// 粗体
     pub bold: bool,
@@ -77,19 +78,6 @@ pub struct RichTextStyle {
     pub bg_color: Option<Color>,
 }
 
-impl Default for RichTextStyle {
-    fn default() -> Self {
-        Self {
-            bold: false,
-            italic: false,
-            underline: false,
-            strikethrough: false,
-            font_size: None,
-            color: None,
-            bg_color: None,
-        }
-    }
-}
 
 impl RichTextStyle {
     /// 以当前样式为基础，叠加另一个样式的非 None 字段
@@ -540,7 +528,7 @@ impl RichText {
             let seg_start = offset;
             let seg_end = offset + seg_len;
             if seg_end > start && seg_start < end {
-                let local_start = if start > seg_start { start - seg_start } else { 0 };
+                let local_start = start.saturating_sub(seg_start);
                 let local_end = if end < seg_end { end - seg_start } else { seg_len };
                 let chars: Vec<char> = match segment {
                     RichTextSegment::NewLine => vec!['\n'],

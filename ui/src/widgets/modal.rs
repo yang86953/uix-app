@@ -125,7 +125,7 @@ define_widget! {
     }
 
     needs_continuous_update => (&self) -> bool {
-        self.transition_player.as_ref().map_or(false, |tp| !tp.finished)
+        self.transition_player.as_ref().is_some_and(|tp| !tp.finished)
     }
 
     render => (&self, _frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {

@@ -46,6 +46,12 @@ define_widget! {
     }
 }
 
+impl Default for BackTop {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BackTop {
     pub fn new() -> Self {
         Self { visibility_height: 400.0, visible: false }

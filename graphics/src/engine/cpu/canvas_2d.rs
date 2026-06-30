@@ -736,7 +736,7 @@ impl Canvas2D for CpuCanvas2D {
     }
 
     fn set_opacity(&mut self, opacity: f32) {
-        self.opacity = opacity.max(0.0).min(1.0);
+        self.opacity = opacity.clamp(0.0, 1.0);
     }
 
     fn opacity(&self) -> f32 {
