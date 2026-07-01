@@ -804,7 +804,10 @@ impl WidgetTree {
     }
 
     pub fn update(&mut self, dt: f64) -> bool {
-        let order = self.dirty_traverse();
+        // ⚠️  使用 traverse() 而非 dirty_traverse()：动画节点在 reset_dirty()
+        // 清除脏标记后不会被 dirty_traverse 遍历到，导致 on_update 不再被调用，
+        // 动画冻结在第 1 帧。全树遍历确保所有动画节点每帧都能收到 on_update 推进。
+        let order = self.traverse();
         let mut any_animating = false;
         for &id in &order {
             // 跳过不可见节点，避免隐藏页面的动画组件拖累全局帧率

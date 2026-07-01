@@ -139,11 +139,15 @@ macro_rules! define_widget {
                 c
             }
             $(
-                // build 是 WidgetComponent 自身方法
                 $crate::__define_widget_build_method!($method; ($($params)*) $(-> $ret)? $body);
-                // upcasts: 每个 trait 只由主方法生成一次
-                $crate::__define_widget_upcast_method!($method; $name);
             )*
+
+            // ═══ 无条件上转型 — grouped trait impl 始终存在（render/preferred_size 必定义，
+            // Lifecycle/EventHandler 各方法均有默认实现），因此所有上转型始终有效 ═══
+            $crate::wc_upcast!($name; WidgetLayout);
+            $crate::wc_upcast!($name; WidgetRender);
+            $crate::wc_upcast!($name; WidgetEventHandler);
+            $crate::wc_upcast!($name; WidgetLifecycle);
         }
 
         // ═══ 生成 grouped trait impl 块 ═══
