@@ -233,6 +233,10 @@ where
             // 但 FrameGraph culling 可能因版本追踪将 Pass 裁剪掉，
             // 导致画面停留在重建前的帧。强制刷新确保重建生效。
             if tree.tree_version() != before_version {
+                // ⚠️  重建后必须重新 layout：set_root 只设置了根节点的 frame，
+                // 所有子节点的 frame 为 Rect::zero()，不 layout 则组件位置混乱。
+                // sync_root_frame_to_engine 之后调用 layout 确保根 frame 已正确同步到画布。
+                tree.layout();
                 tree.mark_full_frame_dirty();
             }
         }
@@ -276,6 +280,12 @@ where
                 over_pass_id = Some(oid);
             }
 
+            // 动画持续时，通知 FrameGraph 资源有变化，防止 pass 被裁剪
+            // 导致 overlay 层（post_render 绘制波纹）被跳过。
+            if keep_polling {
+                frame_graph.mark_resource_dirty(main_color_res);
+            }
+
             let plan = frame_graph.compile();
 
             if plan.zero_frame_cost {
@@ -305,9 +315,26 @@ where
 
                 for &pid in &plan.execution_order {
                     if Some(pid) == geom_pass_id {
-                        engine.begin_frame(UpdateStrategy::FullRedraw);
-                        // 确保所有 widget 都被渲染（无论 dirty 状态）
-                        tree.mark_full_frame_dirty();
+                        // ── 应用滚动增量（像素移动优化）──
+                        // 在 begin_frame 之前 drain scroll_deltas 并移动像素，
+                        // 这样渲染循环只需重绘 strip 区域，无需全帧重绘。
+                        let scroll_deltas = tree.drain_scroll_deltas();
+                        if !scroll_deltas.is_empty() {
+                            let canvas = engine.canvas_2d();
+                            for &(frame, dx, dy) in &scroll_deltas {
+                                canvas.scroll_region(frame, dx, dy);
+                            }
+                        }
+
+                        // 选择更新策略：首次帧或全帧脏时用 FullRedraw，
+                        // 增量帧用 DirtyRects（只清除并重绘脏区域）
+                        let strategy = if !rendered_first || region.full_frame {
+                            UpdateStrategy::FullRedraw
+                        } else {
+                            UpdateStrategy::DirtyRects(region.rects().to_vec())
+                        };
+                        engine.begin_frame(strategy);
+
                         let lt_ref = theme.borrow();
                         let tokens = lt_ref.tokens();
                         let lt_font = font_service.loaded_font_handle;

@@ -768,4 +768,27 @@ impl Canvas2D for CpuCanvas2D {
     fn current_clip(&self) -> Rect {
         self.clip_rect
     }
+
+    // ═══════════════════════════════════════════
+    // 像素移动（滚动优化）
+    // ═══════════════════════════════════════════
+
+    fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32) {
+        let int_dx = dx.round() as i32;
+        let int_dy = dy.round() as i32;
+        if int_dx == 0 && int_dy == 0 { return; }
+
+        // 源区域：viewport 偏移 (-dx, -dy) 的内容是滚动后应该出现在 viewport 中的像素
+        let src = Rect::new(
+            viewport.x - dx,
+            viewport.y - dy,
+            viewport.w,
+            viewport.h,
+        );
+        let dst_x = viewport.x as i32;
+        let dst_y = viewport.y as i32;
+
+        use crate::traits::RenderingBackend;
+        RenderingBackend::copy_region(&mut self.surface, src, dst_x, dst_y);
+    }
 }
