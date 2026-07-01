@@ -1,6 +1,8 @@
 use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use crate::style::Style;
+use crate::animation::core::Animation;
+use crate::api::Easing;
 use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
@@ -33,8 +35,9 @@ define_widget! {
         disabled: bool,
         hovered: bool,
         pressed: bool,
-        anim_progress: f32,
         click_pos: Option<Point>,
+        /// 点击波纹动画（0→1，历时 0.4s）。
+        ripple_anim: Option<Animation<f32>>,
         on_click: Option<Box<dyn FnMut() + 'static>>,
         loading: bool,
         icon: String,
@@ -60,7 +63,11 @@ define_widget! {
         if self.disabled || self.loading { return EventResult::NotHandled; }
         match event {
             WidgetEvent::MouseDown { pos, .. } => {
-                self.pressed = true; self.click_pos = Some(*pos); self.anim_progress = 0.001;
+                self.pressed = true;
+                self.click_pos = Some(*pos);
+                self.ripple_anim = Some(
+                    Animation::new(0.0, 1.0, 0.4).with_easing(Easing::antd_default()),
+                );
                 EventResult::Handled
             }
             WidgetEvent::MouseUp { .. } => {
@@ -75,13 +82,15 @@ define_widget! {
     }
 
     on_update => (&mut self, dt: f64) {
-        if self.anim_progress > 0.0 {
-            self.anim_progress += dt as f32 / 0.4;
-            if self.anim_progress >= 1.0 { self.anim_progress = 0.0; }
+        if let Some(ref mut anim) = self.ripple_anim {
+            anim.update(dt);
+            if anim.is_finished() {
+                self.ripple_anim = None;
+            }
         }
     }
 
-    needs_continuous_update => (&self) -> bool { self.anim_progress > 0.0 }
+    needs_continuous_update => (&self) -> bool { self.ripple_anim.is_some() }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let btn_h = button_height(self.btn_size).min(frame.h);
@@ -129,7 +138,8 @@ define_widget! {
     }
 
     post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        if self.anim_progress <= 0.0 || self.anim_progress >= 1.0 { return; }
+        let Some(ref anim) = self.ripple_anim else { return; };
+        let progress = anim.current_value();
         let _style = self.compute_style(ctx);
         let page_bg = ctx.tokens().color_bg_container();
         let base = match self.variant {
@@ -144,21 +154,22 @@ define_widget! {
             .map(|p| (frame.x + p.x, frame.y + p.y))
             .unwrap_or((frame.x + frame.w / 2.0, frame.y + frame.h / 2.0));
         let max_r = (frame.w.max(frame.h)) * 0.7;
-        let r_radius = max_r * self.anim_progress;
-        let alpha = (60.0 * (1.0 - self.anim_progress)).max(0.0) as u8;
+        let r_radius = max_r * progress;
+        let alpha = (60.0 * (1.0 - progress)).max(0.0) as u8;
         if alpha > 0 { ctx.fill_circle(cx, cy, r_radius, Color::from_rgba(r, g, b, alpha)); }
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
         let btn_h = button_height(self.btn_size).min(frame.h);
-        if self.anim_progress <= 0.0 || self.anim_progress >= 1.0 {
+        let Some(ref anim) = self.ripple_anim else {
             return Rect::new(frame.x, frame.y, frame.w, btn_h);
-        }
+        };
+        let progress = anim.current_value();
         let (cx, cy) = self.click_pos
             .map(|p| (frame.x + p.x, frame.y + p.y))
             .unwrap_or((frame.x + frame.w / 2.0, frame.y + frame.h / 2.0));
         let max_r = (frame.w.max(btn_h)) * 0.7;
-        let r = max_r * self.anim_progress;
+        let r = max_r * progress;
         let ripple_rect = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
         let btn_frame = Rect::new(frame.x, frame.y, frame.w, btn_h);
         let left = btn_frame.x.min(ripple_rect.x);
@@ -233,7 +244,8 @@ impl Button {
     pub fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(), variant: ButtonVariant::Default, btn_size: ButtonSize::Medium,
-            disabled: false, hovered: false, pressed: false, anim_progress: 0.0, click_pos: None,
+            disabled: false, hovered: false, pressed: false, click_pos: None,
+            ripple_anim: None,
             on_click: None, loading: false, icon: String::new(), danger: false, block: false, ghost: false,
             style: Style::default(),
         }
