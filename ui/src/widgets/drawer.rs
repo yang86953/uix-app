@@ -28,6 +28,7 @@ define_widget! {
         on_close: Option<Box<dyn FnMut() + 'static>>,
         transition_player: Option<TransitionPlayer>,
         prev_visible: bool,
+        closing: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -42,7 +43,7 @@ define_widget! {
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if !self.visible { return EventResult::NotHandled; }
+        if !self.visible || self.closing { return EventResult::NotHandled; }
         if let WidgetEvent::MouseDown { pos, .. } = event {
             if self.mask_closable {
                 let outside = match self.placement {
@@ -51,24 +52,24 @@ define_widget! {
                     DrawerPlacement::Top   => pos.y >= self.height,
                     DrawerPlacement::Bottom => pos.y < 0.0,
                 };
-                if outside { self.do_close(); return EventResult::Handled; }
+                if outside { self.close(); return EventResult::Handled; }
             }
             if self.closable {
                 let cx = self.width - 36.0;
                 if pos.x >= cx - 12.0 && pos.x <= cx + 12.0 && pos.y >= 8.0 && pos.y <= 32.0 {
-                    self.do_close(); return EventResult::Handled;
+                    self.close(); return EventResult::Handled;
                 }
             }
         }
         if let WidgetEvent::KeyDown { key, .. } = event {
             if *key == crate::widget::KeyCode::Escape && self.closable {
-                self.do_close(); return EventResult::Handled;
+                self.close(); return EventResult::Handled;
             }
         }
         EventResult::Handled
     }
 
-    on_update => (&mut self, dt: f32) {
+    on_update => (&mut self, dt: f64) {
         if self.visible != self.prev_visible {
             self.prev_visible = self.visible;
             let dir = match self.placement {
@@ -79,12 +80,25 @@ define_widget! {
             };
             if self.visible {
                 self.transition_player = Some(TransitionPlayer::new(presets::drawer_enter(dir)));
+                self.closing = false;
             } else {
                 self.transition_player = Some(TransitionPlayer::new(presets::drawer_exit(dir)));
+                self.closing = true;
             }
         }
-        if let Some(ref mut tp) = self.transition_player {
-            tp.update(dt as f64);
+        // 推进动画，用 map 避免借用冲突
+        let finished = self.transition_player.as_mut()
+            .map(|tp| { tp.update(dt); tp.finished })
+            .unwrap_or(false);
+        if finished {
+            if self.closing {
+                // 退场动画结束 → 真正隐藏
+                self.visible = false;
+                self.prev_visible = false;
+                self.closing = false;
+            }
+            // 进场/退场动画结束 → 清除播放器
+            self.transition_player = None;
         }
     }
 
@@ -155,7 +169,7 @@ define_widget! {
     layout_children => (&self, frame: Rect, children: &[crate::widget::WidgetId], _tree: &WidgetTree)
         -> Vec<(crate::widget::WidgetId, Rect)>
     {
-        if !self.visible || children.is_empty() { return Vec::new(); }
+        if (!self.visible && !self.closing) || children.is_empty() { return Vec::new(); }
         let (drawer_x, drawer_y, drawer_w, drawer_h) = match self.placement {
             DrawerPlacement::Right => (frame.x, frame.y, self.width, frame.h),
             DrawerPlacement::Left  => (frame.x, frame.y, self.width, frame.h),
@@ -184,12 +198,8 @@ impl Drawer {
             on_close: None,
             transition_player: None,
             prev_visible: false,
+            closing: false,
         }
-    }
-
-    fn do_close(&mut self) {
-        self.visible = false;
-        if let Some(ref mut cb) = self.on_close { cb(); }
     }
 
     pub fn visible(mut self, v: bool) -> Self { self.visible = v; self.prev_visible = !v; self }
@@ -212,7 +222,34 @@ impl Drawer {
     pub fn extra(mut self, t: impl Into<String>) -> Self { self.extra = t.into(); self }
     pub fn on_close<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_close = Some(Box::new(f)); self }
     pub fn is_visible(&self) -> bool { self.visible }
-    pub fn open(&mut self) { self.prev_visible = self.visible; self.visible = true; }
-    pub fn close(&mut self) { self.do_close(); }
-    pub fn set_visible(&mut self, v: bool) { self.prev_visible = self.visible; self.visible = v; if !v && self.on_close.is_some() { /* on_close already called in do_close */ } }
+    /// 打开抽屉（触发进场动画）。
+    pub fn open(&mut self) {
+        if self.closing {
+            // 退场动画进行中 → 取消退场，直接显示
+            self.closing = false;
+            self.transition_player = None;
+            self.visible = true;
+            self.prev_visible = true;
+        } else if !self.visible {
+            self.visible = true;
+            // prev_visible 保持 false，on_update 检测到变化后创建进场 TP
+        }
+    }
+    /// 关闭抽屉（触发退场动画，动画结束后自动隐藏）。
+    pub fn close(&mut self) {
+        if !self.visible || self.closing { return; }
+        // 启动退场动画，保持 visible=true 直到动画结束
+        self.transition_player = Some(TransitionPlayer::new(presets::drawer_exit(
+            match self.placement {
+                DrawerPlacement::Right => SlideDirection::Right,
+                DrawerPlacement::Left => SlideDirection::Left,
+                DrawerPlacement::Top => SlideDirection::Up,
+                DrawerPlacement::Bottom => SlideDirection::Down,
+            },
+        )));
+        self.closing = true;
+        // 触发回调
+        if let Some(ref mut cb) = self.on_close { cb(); }
+    }
+    pub fn set_visible(&mut self, v: bool) { self.prev_visible = self.visible; self.visible = v; }
 }

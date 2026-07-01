@@ -74,9 +74,9 @@ define_widget! {
         }
     }
 
-    on_update => (&mut self, dt: f32) {
+    on_update => (&mut self, dt: f64) {
         if self.anim_progress > 0.0 {
-            self.anim_progress += dt / 0.4;
+            self.anim_progress += dt as f32 / 0.4;
             if self.anim_progress >= 1.0 { self.anim_progress = 0.0; }
         }
     }

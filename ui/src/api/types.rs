@@ -49,7 +49,6 @@ pub use crate::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 
 // ── 动画 ──
 pub use crate::animation::core::Animation;
-pub use crate::animation::driver::{AnimValue, AnimationCallback, AnimationDriver};
 pub use crate::animation::easing::Easing;
 pub use crate::animation::transition::{
     presets, SlideDirection, Transition, TransitionPlayer,
@@ -57,7 +56,7 @@ pub use crate::animation::transition::{
 
 // ── 管理器 ──
 pub use crate::managers::{
-    AnimationManager, DragEventResult, DragManager, EventManager, FocusManager, ImageManager,
+    DragEventResult, DragManager, EventManager, FocusManager, ImageManager,
     InteractionManager, StateManager, StyleManager, TextManager, WidgetManagers,
 };
 

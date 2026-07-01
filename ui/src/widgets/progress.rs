@@ -43,9 +43,9 @@ define_widget! {
         Size::new(self.width, self.height)
     }
 
-    on_update => (&mut self, dt: f32) {
+    on_update => (&mut self, dt: f64) {
         if matches!(self.mode, ProgressMode::Indeterminate) {
-            self.progress = (self.progress + dt * 0.5) % 1.0;
+            self.progress = (self.progress + dt as f32 * 0.5) % 1.0;
         }
     }
 

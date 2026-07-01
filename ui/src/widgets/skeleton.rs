@@ -23,8 +23,8 @@ define_widget! {
         Size::new(self.w, self.h)
     }
 
-    on_update => (&mut self, dt: f32) {
-        self.phase = (self.phase + dt * 1.5) % 1.0;
+    on_update => (&mut self, dt: f64) {
+        self.phase = (self.phase + dt as f32 * 1.5) % 1.0;
     }
 
     needs_continuous_update => (&self) -> bool { true }

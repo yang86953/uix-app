@@ -65,8 +65,8 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    on_update => (&mut self, dt: f32) {
-        self.timer += dt;
+    on_update => (&mut self, dt: f64) {
+        self.timer += dt as f32;
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {

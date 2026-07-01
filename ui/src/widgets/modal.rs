@@ -35,13 +35,16 @@ define_widget! {
         /// 覆盖层模式下缓存的窗口尺寸（render 时用 Cell 更新，layout_children/on_event 时读取）
         last_win_w: Cell<f32>,
         last_win_h: Cell<f32>,
+        /// 退场动画进行中（visible 保持 true，动画结束后自动设 false）。
+        closing: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
         if self.overlay {
             // 覆盖层模式：不参与父容器 flex 布局
             Size::zero()
-        } else if self.visible {
+        } else if self.visible || self.closing {
+            // 退场动画期间保持布局空间
             Size::new(self.width, self.height)
         } else {
             Size::zero()
@@ -61,7 +64,7 @@ define_widget! {
     }
 
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if !self.visible { return EventResult::NotHandled; }
+        if !self.visible || self.closing { return EventResult::NotHandled; }
         match event {
             WidgetEvent::MouseDown { pos, .. } => {
                 if self.overlay {
@@ -75,24 +78,20 @@ define_widget! {
                     let close_rect = Rect::new(dlg_x + dw - 48.0, dlg_y, 48.0, 48.0);
                     if self.closable && close_rect.contains(*pos) {
                         self.close();
-                        if let Some(ref mut cb) = self.on_cancel { cb(); }
                         return EventResult::Handled;
                     }
                     if self.mask_closable && !dlg_rect.contains(*pos) {
                         self.close();
-                        if let Some(ref mut cb) = self.on_cancel { cb(); }
                         return EventResult::Handled;
                     }
                 } else {
                     let close_rect = Rect::new(self.width - 48.0, 0.0, 48.0, 48.0);
                     if self.closable && close_rect.contains(*pos) {
                         self.close();
-                        if let Some(ref mut cb) = self.on_cancel { cb(); }
                         return EventResult::Handled;
                     }
                     if self.mask_closable && (pos.x < 0.0 || pos.y < 0.0) {
                         self.close();
-                        if let Some(ref mut cb) = self.on_cancel { cb(); }
                         return EventResult::Handled;
                     }
                 }
@@ -101,7 +100,6 @@ define_widget! {
             WidgetEvent::KeyDown { key, .. } => {
                 if *key == crate::widget::KeyCode::Escape && self.closable {
                     self.close();
-                    if let Some(ref mut cb) = self.on_cancel { cb(); }
                     return EventResult::Handled;
                 }
                 EventResult::Handled
@@ -110,17 +108,32 @@ define_widget! {
         }
     }
 
-    on_update => (&mut self, dt: f32) {
+    on_update => (&mut self, dt: f64) {
         if self.visible != self.prev_visible {
             self.prev_visible = self.visible;
             if self.visible {
+                // 进场：创建进场动画
                 self.transition_player = Some(TransitionPlayer::new(presets::modal_enter()));
+                self.closing = false;
             } else {
+                // 退场（外部直接 set_visible(false) 时触发）
                 self.transition_player = Some(TransitionPlayer::new(presets::modal_exit()));
+                self.closing = true;
             }
         }
-        if let Some(ref mut tp) = self.transition_player {
-            tp.update(dt as f64);
+        // 推进动画，用 map 避免借用冲突
+        let finished = self.transition_player.as_mut()
+            .map(|tp| { tp.update(dt); tp.finished })
+            .unwrap_or(false);
+        if finished {
+            if self.closing {
+                // 退场动画结束 → 真正隐藏
+                self.visible = false;
+                self.prev_visible = false;
+                self.closing = false;
+            }
+            // 进场/退场动画结束 → 清除播放器
+            self.transition_player = None;
         }
     }
 
@@ -129,7 +142,8 @@ define_widget! {
     }
 
     render => (&self, _frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        if !self.visible { return; }
+        // 完全隐藏 → 不渲染
+        if !self.visible && self.transition_player.is_none() { return; }
         let opacity = self.transition_player.as_ref().map_or(1.0, |tp| tp.opacity_progress);
         let scale = self.transition_player.as_ref().map_or(1.0, |tp| tp.scale);
 
@@ -235,6 +249,7 @@ impl Modal {
             overlay: false,
             last_win_w: Cell::new(0.0),
             last_win_h: Cell::new(0.0),
+            closing: false,
         }
     }
 
@@ -265,9 +280,31 @@ impl Modal {
     pub fn set_visible_no_anim(&mut self, v: bool) {
         self.visible = v;
         self.prev_visible = v;
-        self.transition_player = None; // ⭐ 清除残留的过渡动画，避免旧动画 opacity/scale 影响新状态
+        self.closing = false;
+        self.transition_player = None;
     }
-    pub fn open(&mut self) { self.set_visible(true); }
-    pub fn close(&mut self) { self.set_visible(false); }
+    /// 打开弹窗（触发进场动画）。
+    pub fn open(&mut self) {
+        if self.closing {
+            // 退场动画进行中 → 取消退场，直接显示
+            self.closing = false;
+            self.transition_player = None;
+            self.visible = true;
+            self.prev_visible = true;
+        } else if !self.visible {
+            // 完全隐藏 → 正常打开
+            self.visible = true;
+            // prev_visible 保持 false，on_update 检测到变化后创建进场 TP
+        }
+    }
+    /// 关闭弹窗（触发退场动画，动画结束后自动隐藏）。
+    pub fn close(&mut self) {
+        if !self.visible || self.closing { return; }
+        // 启动退场动画，保持 visible=true 直到动画结束
+        self.transition_player = Some(TransitionPlayer::new(presets::modal_exit()));
+        self.closing = true;
+        // 触发回调
+        if let Some(ref mut cb) = self.on_cancel { cb(); }
+    }
     pub fn confirm(&mut self) { if let Some(ref mut cb) = self.on_ok { cb(); } self.close(); }
 }

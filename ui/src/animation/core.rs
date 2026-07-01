@@ -81,6 +81,28 @@ impl<T: Animatable> Animation<T> {
         }
     }
 
+    /// 暂停动画。
+    pub fn pause(&mut self) {
+        self.running = false;
+    }
+
+    /// 继续动画。
+    pub fn resume(&mut self) {
+        self.running = true;
+    }
+
+    /// 停止动画并跳到结束位置。
+    pub fn stop(&mut self) {
+        self.elapsed = self.duration;
+        self.running = false;
+    }
+
+    /// 重置动画回到起始位置。
+    pub fn reset(&mut self) {
+        self.elapsed = 0.0;
+        self.running = true;
+    }
+
     /// 反转动画（交换 from/to 并重置 elapsed）。
     pub fn reverse(&mut self) {
         std::mem::swap(&mut self.from, &mut self.to);

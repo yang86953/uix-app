@@ -172,7 +172,7 @@ impl BoxedWidget {
             .map(|e| e.on_event(event))
             .unwrap_or(EventResult::NotHandled)
     }
-    pub fn on_update(&mut self, dt: f32) {
+    pub fn on_update(&mut self, dt: f64) {
         if let Some(l) = self.component_mut().as_lifecycle_mut() {
             l.on_update(dt);
         }

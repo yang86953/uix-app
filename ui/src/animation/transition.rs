@@ -231,7 +231,10 @@ impl TransitionPlayer {
         if let Some(ref mut anim) = self.scale_anim {
             self.scale = anim.update(dt);
         }
-        if self.opacity_anim.is_finished() {
+        let opacity_done = self.opacity_anim.is_finished();
+        let offset_done = self.offset_anim.as_ref().map_or(true, |a| a.is_finished());
+        let scale_done = self.scale_anim.as_ref().map_or(true, |a| a.is_finished());
+        if opacity_done && offset_done && scale_done {
             self.finished = true;
             self.opacity_progress = if self.transition.is_enter() { 1.0 } else { 0.0 };
             self.offset = Point::new(0.0, 0.0);

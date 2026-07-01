@@ -37,8 +37,8 @@ define_widget! {
         Size::new(48.0, 48.0)
     }
 
-    on_update => (&mut self, dt: f32) {
-        self.time += dt;
+    on_update => (&mut self, dt: f64) {
+        self.time += dt as f32;
         if self.time > std::f32::consts::TAU { self.time -= std::f32::consts::TAU; }
     }
 
@@ -80,8 +80,8 @@ define_widget! {
         Size::new(200.0, 60.0)
     }
 
-    on_update => (&mut self, dt: f32) {
-        self.time += dt;
+    on_update => (&mut self, dt: f64) {
+        self.time += dt as f32;
         if self.time > 2.0 { self.time -= 2.0; }
     }
 

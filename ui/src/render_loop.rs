@@ -211,7 +211,7 @@ where
 
         // ── 帧推进 ──
         let now = Instant::now();
-        let dt = (now - last_frame).as_secs_f32().min(0.05);
+        let dt = (now - last_frame).as_secs_f64().min(0.05);
         last_frame = now;
         keep_polling = tree.update(dt);
 
@@ -219,6 +219,7 @@ where
         let needs_work = window_visible && (had_layout_event || keep_polling || idle_count == 0);
 
         if needs_work {
+            let before_version = tree.tree_version();
             tree.layout();
 
             // 根 frame 与引擎画布尺寸同步（on_frame 前后均需检查，
@@ -226,6 +227,14 @@ where
             sync_root_frame_to_engine(tree, engine);
             on_frame(tree, engine, platform);
             sync_root_frame_to_engine(tree, engine);
+
+            // on_frame 可能重建整棵树（主题切换），此时必须强制全帧渲染。
+            // 重建后 mark_full_frame_dirty 已设置全帧脏区域，
+            // 但 FrameGraph culling 可能因版本追踪将 Pass 裁剪掉，
+            // 导致画面停留在重建前的帧。强制刷新确保重建生效。
+            if tree.tree_version() != before_version {
+                tree.mark_full_frame_dirty();
+            }
         }
 
         let dirty_region = tree.dirty_region();
@@ -297,6 +306,8 @@ where
                 for &pid in &plan.execution_order {
                     if Some(pid) == geom_pass_id {
                         engine.begin_frame(UpdateStrategy::FullRedraw);
+                        // 确保所有 widget 都被渲染（无论 dirty 状态）
+                        tree.mark_full_frame_dirty();
                         let lt_ref = theme.borrow();
                         let tokens = lt_ref.tokens();
                         let lt_font = font_service.loaded_font_handle;

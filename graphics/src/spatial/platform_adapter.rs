@@ -17,24 +17,6 @@ pub enum Orientation {
 }
 
 impl Orientation {
-    /// 检测当前平台的坐标方向。
-    pub fn detect() -> Self {
-        #[cfg(target_os = "windows")]
-        {
-            Orientation::YDown
-        }
-        #[cfg(target_os = "linux")]
-        {
-            // Wayland 使用 y-up
-            Orientation::YUp
-        }
-        #[cfg(target_os = "macos")]
-        {
-            // macOS Core Graphics 使用 y-up
-            Orientation::YUp
-        }
-    }
-
     /// 将屏幕坐标（y-down）转换为平台原生坐标。
     ///
     /// `screen_height`：表面高度（像素），用于 y-up 平台的翻转。
@@ -88,8 +70,4 @@ mod tests {
         assert!((sy - 300.0).abs() < 1e-10);
     }
 
-    #[test]
-    fn detect_does_not_panic() {
-        let _ = Orientation::detect();
-    }
 }

@@ -88,12 +88,12 @@ define_widget! {
         }
     }
 
-    on_update => (&mut self, _dt: f32) {
+    on_update => (&mut self, dt: f64) {
         if self.autoplay_interval > 0.0 && self.children.len() > 1 {
             let now = Instant::now();
             let should_switch = match self.last_switch.get() {
                 Some(last) => now.duration_since(last).as_secs_f32() >= self.autoplay_interval,
-                None => true, // 首次立即记录时间，不切换
+                None => true,
             };
             if should_switch {
                 self.last_switch.set(Some(now));
@@ -102,9 +102,8 @@ define_widget! {
                 self.anim_progress.set(0.0);
             }
         }
-        // 切换动画推进
         if self.animating.get() {
-            self.anim_progress.set((self.anim_progress.get() + _dt * 2.0).min(1.0));
+            self.anim_progress.set((self.anim_progress.get() + dt as f32 * 2.0).min(1.0));
             if self.anim_progress.get() >= 1.0 {
                 self.animating.set(false);
             }

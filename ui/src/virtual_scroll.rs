@@ -43,7 +43,7 @@ define_widget! {
         self.needs_rebuild
     }
 
-    on_update => (&mut self, _dt: f32) {
+    on_update => (&mut self, _dt: f64) {
         self.needs_rebuild = false;
     }
 }

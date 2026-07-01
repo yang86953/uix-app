@@ -379,13 +379,15 @@ impl WidgetTree {
             if let Some(n) = self.get_mut(current) {
                 if n.visible() != visible {
                     n.set_visible(visible);
+                    n.set_dirty(true);
                     self.tree_version += 1;
                     changed = true;
                 }
             }
 
-            // get_mut 的借用已释放，可安全访问 dirty.region
+            // get_mut 的借用已释放，可安全访问 dirty.region 和 dirty_nodes
             if changed {
+                self.dirty_nodes.insert(current);
                 if let Some(frame) = self.get(current).map(|n| n.frame()) {
                     if frame.w > 0.0 && frame.h > 0.0 {
                         self.dirty.region.add_rect(frame);
@@ -801,7 +803,7 @@ impl WidgetTree {
         any_changed
     }
 
-    pub fn update(&mut self, dt: f32) -> bool {
+    pub fn update(&mut self, dt: f64) -> bool {
         let order = self.dirty_traverse();
         let mut any_animating = false;
         for &id in &order {
@@ -818,6 +820,7 @@ impl WidgetTree {
             // dirty_rect() 返回 widget 的实际绘制区域（含阴影等扩展），
             // 比 frame() 更精确——frame 不变但阴影效果变化时也能追踪。
             // 只对动画 widget 生效，非动画 widget 零开销。
+            // 同时对刚启动动画的 widget 也做快照，确保旧帧被正确清除。
             let old_dirty_rect = if was_animating {
                 self.get(id).map(|n| n.dirty_rect(n.frame()))
             } else {
@@ -828,7 +831,7 @@ impl WidgetTree {
                 node.on_update(dt);
             }
 
-            let (rect, scroll, new_frame) = self
+            let (rect, scroll, new_frame, just_started) = self
                 .get(id)
                 .map(|node| {
                     let is_still = node.needs_continuous_update();
@@ -842,9 +845,22 @@ impl WidgetTree {
                     } else {
                         Rect::zero()
                     };
-                    (dirty, node.scroll_delta(node.frame()), node.frame())
+                    (dirty, node.scroll_delta(node.frame()), node.frame(), is_still && !was_animating)
                 })
                 .unwrap_or_default();
+
+            // ── 刚启动动画的 widget：也对其旧帧做脏标记 ──
+            // 避免首次 on_update 后旧绘制区域未被清除导致视觉残留。
+            if just_started && old_dirty_rect.is_none() {
+                if let Some(old) = self.get(id).map(|n| n.dirty_rect(n.frame())) {
+                    if old != rect && old.w > 0.0 && old.h > 0.0 {
+                        self.dirty.region.add_rect(old);
+                        if let Some(node) = self.get_mut(id) {
+                            node.set_dirty(true);
+                        }
+                    }
+                }
+            }
 
             // ── 动画帧变化追踪：标记旧绘制区域为脏 ──
             // 当 widget 的 dirty_rect 变化（包括 frame 移动、阴影变化等），

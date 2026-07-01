@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-mod animation_manager;
 mod drag_manager;
 mod event_manager;
 mod focus_manager;
@@ -13,7 +12,6 @@ mod state_manager;
 mod style_manager;
 mod text_manager;
 
-pub use animation_manager::AnimationManager;
 pub use drag_manager::*;
 pub use event_manager::*;
 pub use focus_manager::*;
@@ -36,7 +34,6 @@ pub struct WidgetManagers {
     pub text: TextManager,
     pub image: ImageManager,
     pub interaction: InteractionManager,
-    pub animation: AnimationManager,
     pub focus: FocusManager,
     pub drag: DragManager,
     pub event: EventManager,

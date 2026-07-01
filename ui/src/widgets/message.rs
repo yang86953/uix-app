@@ -50,7 +50,7 @@ define_widget! {
         Size::zero()
     }
 
-    on_update => (&mut self, dt: f32) {
+    on_update => (&mut self, dt: f64) {
         let dt_ms = (dt * 1000.0) as u64;
         let mut changed = false;
         let mut i = 0;

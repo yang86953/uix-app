@@ -189,22 +189,20 @@ define_widget! {
         }
     }
 
-    on_update => (&mut self, dt: f32) {
-        // 保存前一帧的 scroll 位置（像素缓冲滚动计算 delta 使用）
+    on_update => (&mut self, dt: f64) {
+        let dt32 = dt as f32;
         self.prev_scroll_x = self.scroll_x;
         self.prev_scroll_y = self.scroll_y;
 
-        // 动量物理：速度经指数衰减后积分到位置。
-        // 使用 exp(-k⋅dt) 而非线性近似 (1-k⋅dt) 确保帧率无关。
-        const DAMPING_K: f32 = 5.0;          // 衰减率（s⁻¹），越小滑动尾越长
-        let damp = (-DAMPING_K * dt).exp();
-        let threshold = 0.5;                  // 速度低于此值时归零（<1px 不可见）
+        const DAMPING_K: f32 = 5.0;
+        let damp = (-DAMPING_K * dt32).exp();
+        let threshold = 0.5;
 
-        self.scroll_x += self.velocity_x * dt;
+        self.scroll_x += self.velocity_x * dt32;
         self.velocity_x *= damp;
         if self.velocity_x.abs() < threshold { self.velocity_x = 0.0; }
 
-        self.scroll_y += self.velocity_y * dt;
+        self.scroll_y += self.velocity_y * dt32;
         self.velocity_y *= damp;
         if self.velocity_y.abs() < threshold { self.velocity_y = 0.0; }
 

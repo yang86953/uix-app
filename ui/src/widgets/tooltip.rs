@@ -56,9 +56,9 @@ define_widget! {
         }
     }
 
-    on_update => (&mut self, dt: f32) {
+    on_update => (&mut self, dt: f64) {
         if self.visible && self.trigger == TriggerMode::Hover {
-            self.timer += dt;
+            self.timer += dt as f32;
         }
     }
 

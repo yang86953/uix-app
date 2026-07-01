@@ -102,7 +102,7 @@ pub trait WidgetLifecycle: WidgetComponent {
     fn on_init(&mut self) {}
     fn on_mount(&mut self) {}
     fn on_unmount(&mut self) {}
-    fn on_update(&mut self, _dt: f32) {}
+    fn on_update(&mut self, _dt: f64) {}
 }
 
 /// 转换为 WidgetNode 的 trait。

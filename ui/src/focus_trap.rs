@@ -50,7 +50,7 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    on_update => (&mut self, _dt: f32) {}
+    on_update => (&mut self, _dt: f64) {}
 }
 
 impl Default for FocusTrap {

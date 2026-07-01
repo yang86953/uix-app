@@ -110,8 +110,7 @@ define_widget! {
             justify: convert_justify(s.justify_content),
             align: convert_align(s.align_items),
             wrap: s.flex_wrap,
-            overflow_content: !s.display.eq(&DisplayMode::None)
-                && s.display != DisplayMode::Grid,
+            overflow_content: s.flex_wrap,
         };
         let output = engine.layout(content_rect, &layout_children);
 

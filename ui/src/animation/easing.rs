@@ -125,17 +125,35 @@ impl Default for Easing {
 
 // ── Cubic Bezier 采样 ──────────────────────────────────────────────
 
-/// 使用二分法求解三次贝塞尔曲线 `t` 对应的 `x` 值，再求 `y`。
+/// 使用牛顿法（8 次迭代）+ 二分法回退求解三次贝塞尔曲线 `t` 对应的 `x` 值，再求 `y`。
 fn sample_cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64, t: f64) -> f64 {
-    // 牛顿法 / 二分法求 t 使得 B(t).x = progress
     let mut guess = t;
+    let mut converged = true;
     for _ in 0..8 {
         let x = cubic_bezier_x(x1, x2, guess);
         let dx = cubic_bezier_dx(x1, x2, guess);
         if dx.abs() < 1e-12 {
+            converged = false;
             break;
         }
-        guess -= (x - t) / dx;
+        let step = (x - t) / dx;
+        guess -= step;
+        if step.abs() < 1e-10 {
+            break;
+        }
+    }
+    if !converged || guess < 0.0 || guess > 1.0 {
+        // 二分法回退
+        let mut lo = 0.0;
+        let mut hi = 1.0;
+        for _ in 0..12 {
+            guess = (lo + hi) * 0.5;
+            let x = cubic_bezier_x(x1, x2, guess);
+            if (x - t).abs() < 1e-10 {
+                break;
+            }
+            if x < t { lo = guess; } else { hi = guess; }
+        }
     }
     guess = guess.clamp(0.0, 1.0);
     cubic_bezier_y(y1, y2, guess)

@@ -32,8 +32,8 @@ define_widget! {
         }
     }
 
-    on_update => (&mut self, dt: f32) {
-        self.phase = (self.phase + dt * 0.8) % 1.0;
+    on_update => (&mut self, dt: f64) {
+        self.phase = (self.phase + dt as f32 * 0.8) % 1.0;
     }
 
     needs_continuous_update => (&self) -> bool { true }
