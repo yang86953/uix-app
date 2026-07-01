@@ -42,6 +42,8 @@ define_widget! {
         }
     }
 
+    visible => (&self) -> bool { self.visible }
+
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
         if !self.visible || self.closing { return EventResult::NotHandled; }
         if let WidgetEvent::MouseDown { pos, .. } = event {
