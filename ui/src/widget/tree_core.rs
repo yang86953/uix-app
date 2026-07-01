@@ -887,16 +887,25 @@ impl WidgetTree {
             }
         }
 
-        // ── 可见性同步：组件级 visible 变化（如 Modal/Drawer 退场动画结束）→ 同步到树级 visible ──
-        // on_update 中组件可能修改了 self.visible（组件级），但树级 BoxedWidget.visible
-        // 未更新。这里检测差异并调用 set_visible 同步，确保 LayerTree 正确排除已隐藏的子树。
+        // ── 可见性同步：组件级 visible 变化 → 同步到树级 visible ──
+        // on_update 中组件可能修改了 self.visible（组件级字段），但树级 BoxedWidget.visible
+        // 未更新。这里检测差异并同步，确保 LayerTree 正确排除已隐藏的子树。
+        //
+        // ⚠️  只同步 on_update 实际执行过的节点（即 update 前 visible=true 的节点）。
+        // 不可见节点（tree.set_visible(false) 隐藏的页面等）的 on_update 被上方
+        // `!visible() 跳过` 逻辑跳过，其 component().visible() 始终为默认 true，
+        // 与 tree 级的 visible=false 必然不匹配。若盲目同步会把隐藏的页面重新显示。
+        // 参考：上述 for 循环中 `if !self.get(id).map(|n| n.visible()).unwrap_or(false) { continue; }`。
         let mut sync_list: Vec<(WidgetId, bool)> = Vec::new();
         for &id in &order {
             if let Some(node) = self.get(id) {
                 let comp_visible = node.component().visible();
-                if node.visible() != comp_visible {
+                if node.visible() != comp_visible && node.visible() {
+                    // update 前 visible=true → on_update 被调用了 → 组件可能修改了 visible
                     sync_list.push((id, comp_visible));
                 }
+                // update 前 visible=false → on_update 被跳过 → 组件的 visible 不可能
+                // 在这轮 update 中变化。差异仅来自树级 set_visible()，不反向同步。
             }
         }
         for (id, v) in sync_list {
