@@ -242,8 +242,9 @@ impl LayerTree {
             engine.canvas_2d(), font, font_service, tokens,
             dpi, dpr, orientation, surface_w, surface_h,
         );
+        let dirty_bounds = dirty_region.bounds();
         if let Some(ref mut root) = self.root {
-            Self::render_node(root, &mut rctx, tree, dirty_region);
+            Self::render_node(root, &mut rctx, tree, dirty_region, dirty_bounds);
             root.mark_clean();
         }
     }
@@ -301,8 +302,9 @@ impl LayerTree {
             None
         };
 
+        let dirty_bounds = dirty_region.bounds();
         if let Some(ref root) = self.root {
-            Self::render_overlay_node(root, &mut rctx, tree, 0, &hovered_chain, debug_mode, dirty_region);
+            Self::render_overlay_node(root, &mut rctx, tree, 0, &hovered_chain, debug_mode, dirty_region, dirty_bounds);
         }
     }
 
@@ -456,7 +458,8 @@ impl LayerTree {
     /// 递归渲染单个节点。
     /// 子节点已在 build 时预排序，直接遍历无需再次排序。
     /// 终极方案：空间+脏状态双剪枝。
-    fn render_node(node: &mut LayerNode, ctx: &mut RenderContext, tree: &WidgetTree, dirty_region: &DirtyRegion) {
+    /// `dirty_bounds` 是所有脏矩形的外接包围盒，用于捕捉脏矩形间隙中的组件。
+    fn render_node(node: &mut LayerNode, ctx: &mut RenderContext, tree: &WidgetTree, dirty_region: &DirtyRegion, dirty_bounds: Rect) {
         match node {
             LayerNode::Picture {
                 widget_id,
@@ -474,7 +477,7 @@ impl LayerTree {
 
                 if *is_dirty || offscreen_handle.is_none() {
                     Self::render_picture_dirty(
-                        *widget_id, bounds, offscreen_handle, children, ctx, tree, w, h, retry_count, dirty_region,
+                        *widget_id, bounds, offscreen_handle, children, ctx, tree, w, h, retry_count, dirty_region, dirty_bounds,
                     );
                 } else if offscreen_handle.is_some() {
                     // TODO(v2): blit_image 需要像素数据，待重建 ImageManager
@@ -488,9 +491,11 @@ impl LayerTree {
                 rect,
                 children,
             } => {
-                // 空间+脏状态剪枝：widget 不脏且 frame 与 dirty_region 无交集 → 跳过 render_self
+                // 空间+脏状态双剪枝 + dirty_bounds 间隙修正：
+                // widget 不脏且 frame 既不在 dirty_region 也不在 dirty_bounds → 跳过 render_self
+                let in_bounds = dirty_bounds.intersect(&tree.get(*widget_id).map(|n| n.frame()).unwrap_or_default()).is_some();
                 let needs_render = tree.get(*widget_id)
-                    .map(|n| n.dirty() || dirty_region.intersects(n.frame()))
+                    .map(|n| n.dirty() || dirty_region.intersects(n.frame()) || in_bounds)
                     .unwrap_or(true);
                 if needs_render {
                     Self::render_widget_self(*widget_id, ctx, tree);
@@ -498,7 +503,7 @@ impl LayerTree {
                 let r = *rect;
                 ctx.canvas_2d().push_clip(r);
                 for child in children.iter_mut() {
-                    Self::render_node(child, ctx, tree, dirty_region);
+                    Self::render_node(child, ctx, tree, dirty_region, dirty_bounds);
                 }
                 ctx.canvas_2d().pop_clip();
             }
@@ -506,7 +511,7 @@ impl LayerTree {
                 widget_id,
                 children,
             } => {
-                Self::render_widget_and_children(*widget_id, children, ctx, tree, dirty_region);
+                Self::render_widget_and_children(*widget_id, children, ctx, tree, dirty_region, dirty_bounds);
             }
         }
     }
@@ -526,7 +531,12 @@ impl LayerTree {
 
     /// 渲染 widget 自身及其子节点（直接遍历 children LayerNodes）。
     /// 子节点已预排序，直接遍历无需再次排序。
-    /// 终极方案：入口做空间+脏状态双剪枝。
+    /// 终极方案：入口做空间+脏状态双剪枝 + dirty_bounds 间隙修正。
+    ///
+    /// `dirty_bounds` 是所有脏矩形的外接包围盒。当 parent 在 dirty_bounds
+    /// 区域内渲染背景时，会覆盖非脏子节点的像素。通过 dirty_bounds 检查确保
+    /// 这些「间隙区」的子节点也被重新渲染。
+    ///
     /// 注意：先渲染 widget 自身（由其 render() 自行判断内部可见性），
     /// 再通过 inner().visible() 决定是否渲染子节点。这样模态框等组件
     /// 的 render() 可以控制自身绘制，同时阻止子节点在隐藏时渲染。
@@ -536,14 +546,17 @@ impl LayerTree {
         ctx: &mut RenderContext,
         tree: &WidgetTree,
         dirty_region: &DirtyRegion,
+        dirty_bounds: Rect,
     ) {
         if let Some(node) = tree.get(id) {
             if !node.visible() {
                 return;
             }
             let frame = node.frame();
-            // 空间+脏状态剪枝：widget 不脏且 frame 与 dirty_region 无交集 → 跳过 render_self
-            let need_self_render = node.dirty() || dirty_region.intersects(frame);
+            // 空间+脏状态双剪枝 + dirty_bounds 间隙修正：
+            // widget 不脏且 frame 既不在 dirty_region 也不在 dirty_bounds → 跳过 render_self
+            let in_bounds = dirty_bounds.intersect(&frame).is_some();
+            let need_self_render = node.dirty() || dirty_region.intersects(frame) || in_bounds;
 
             if need_self_render {
                 ctx.save();
@@ -555,7 +568,7 @@ impl LayerTree {
             // 同时阻止子节点在隐藏位渲染（子节点 frame 可能仍在屏幕内）。
             if node.visible() {
                 for child in children.iter_mut() {
-                    Self::render_node(child, ctx, tree, dirty_region);
+                    Self::render_node(child, ctx, tree, dirty_region, dirty_bounds);
                 }
             }
 
@@ -606,6 +619,7 @@ impl LayerTree {
         _h: i32,
         _retry_count: &mut u8,
         _dirty_region: &DirtyRegion,
+        _dirty_bounds: Rect,
     ) {
         Self::render_widget_and_children_direct(widget_id, ctx, tree);
     }
@@ -623,6 +637,7 @@ impl LayerTree {
         hovered_chain: &Option<HashSet<WidgetId>>,
         debug_mode: bool,
         dirty_region: &DirtyRegion,
+        dirty_bounds: Rect,
     ) {
         let widget_id = node.widget_id();
 
@@ -636,7 +651,8 @@ impl LayerTree {
                 // 使用 dirty_rect（含 draw_margin 扩展）而非 raw frame
                 // 确保阴影等扩展区域的 overlay 内容被正确重绘
                 let draw_area = widget_node.dirty_rect(frame);
-                dirty_region.intersects(draw_area)
+                // dirty_bounds 间隙修正：parent 在脏包围盒内重绘会覆盖 overlay 内容
+                dirty_region.intersects(draw_area) || dirty_bounds.intersect(&draw_area).is_some()
             } else {
                 false
             }
@@ -675,13 +691,13 @@ impl LayerTree {
             LayerNode::Picture { children, .. }
             | LayerNode::Direct { children, .. } => {
                 for child in children {
-                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region);
+                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds);
                 }
             }
             LayerNode::ClipRect { rect, children, .. } => {
                 ctx.canvas_2d().push_clip(*rect);
                 for child in children {
-                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region);
+                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds);
                 }
                 ctx.canvas_2d().pop_clip();
             }

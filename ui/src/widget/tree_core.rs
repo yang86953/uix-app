@@ -886,6 +886,23 @@ impl WidgetTree {
                 }
             }
         }
+
+        // ── 可见性同步：组件级 visible 变化（如 Modal/Drawer 退场动画结束）→ 同步到树级 visible ──
+        // on_update 中组件可能修改了 self.visible（组件级），但树级 BoxedWidget.visible
+        // 未更新。这里检测差异并调用 set_visible 同步，确保 LayerTree 正确排除已隐藏的子树。
+        let mut sync_list: Vec<(WidgetId, bool)> = Vec::new();
+        for &id in &order {
+            if let Some(node) = self.get(id) {
+                let comp_visible = node.component().visible();
+                if node.visible() != comp_visible {
+                    sync_list.push((id, comp_visible));
+                }
+            }
+        }
+        for (id, v) in sync_list {
+            self.set_visible(id, v);
+        }
+
         any_animating
     }
 

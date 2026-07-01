@@ -43,6 +43,9 @@ macro_rules! __define_widget_build_method {
     (build; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn build($($p)*) -> $ret $body
     };
+    (visible; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn visible($($p)*) -> $ret $body
+    };
     ($other:ident; $($rest:tt)*) => {};
 }
 
