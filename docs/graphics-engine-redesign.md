@@ -167,6 +167,17 @@ pub trait Canvas2D {
     fn pixels_mut(&mut self) -> &mut [u32];
     fn surface_size(&self) -> Size;
     fn current_clip(&self) -> Rect;
+
+    // ═══════════════════════════════════════════
+    // 像素移动（滚动优化）
+    // ═══════════════════════════════════════════
+
+    /// 在画布上移动一个矩形区域内的像素（scroll/pan 优化）。
+    /// 将 viewport 区域内的像素从 `(viewport.x-dx, viewport.y-dy)` 复制到
+    /// `(viewport.x, viewport.y)`，避免全帧重绘。
+    /// 调用者只需重绘新暴露的 strip 区域（与滚动方向相反的一侧）。
+    /// 默认空操作，CPU 后端通过 RenderingBackend::copy_region 实现。
+    fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32) {}
 }
 ```
 
@@ -183,7 +194,8 @@ pub trait Canvas2D {
 | 混合模式 | 1 |
 | 非矩形裁剪 | 1 |
 | 像素访问 | 3 |
-| **合计** | **28** |
+| 像素移动（滚动优化） | 1 |
+| **合计** | **29** |
 
 ### 2.4 Canvas3D — 3D 渲染接口（先留接口）
 
@@ -341,6 +353,8 @@ impl GraphicsEngine for NullEngine { /* 全空操作 */ }
 | 帧闲置检测 | `end_frame` 检测 Canvas 无调用 → Idle，不调 `present` | CPU/GPU 休眠 |
 | 精确脏区 | `begin_frame(DirtyRects)` 只清除变化区域 | 减少像素写入 |
 | 增量叠加 | `begin_frame(Overlay)` 不调用 clear | 零清除开销 |
-| 区域复制 | `RenderingBackend.copy_region` 列表滚动 90% 像素免重绘 | 极大减少光栅化 |
+| 区域复制 | `Canvas2D.scroll_region` → `RenderingBackend.copy_region` | 极大减少光栅化 |
+| 管线剪枝 | `FrameGraph` 输入未变+输出无消费→跳过 Pass | 零 Pass 开销 |
+| 动画快照 | `old_dirty_rect` 记录动画前后变化→脏区域精确 | 减少残留像素清除 |
 | 裁剪跳过 | Canvas 内部，在 clip 外的绘制调用 → 空操作 | 零绘制开销 |
 | 后台休眠 | 交平台层（无交互时停渲染循环） | 零功耗 |

@@ -13,6 +13,49 @@
 //!
 //! 外部层可通过 `platform.event_bus().subscribe(...)` 直接订阅事件，
 //! 无需侵入 render loop。
+//!
+//! # 增量渲染管线
+//!
+//! 每帧渲染遵循「只在变动处绘制」原则：
+//!
+//! ```text
+//! tree.update(dt)
+//!   ├─ on_update() 推进动画/滚动
+//!   ├─ dirty_rect() 计算变化区域 → 加入 dirty_region
+//!   ├─ scroll_delta() 收集滚动增量 → dirty.scroll_deltas
+//!   └─ 返回 keep_polling（有动画/滚动进行中）
+//!       ↓
+//! tree.layout() —— 仅 dirty_traverse 遍历脏子树
+//!       ↓
+//! Geometry Pass:
+//!   ├─ drain_scroll_deltas() → canvas.scroll_region() 移动已有像素
+//!   ├─ begin_frame(DirtyRects) — 只清除脏区域
+//!   ├─ layer_tree.render() — 裁剪到脏区域，只绘制相交 widget
+//!   └─ end_frame()
+//!       ↓
+//! Overlay Pass:
+//!   ├─ begin_frame(Overlay) — 不清除，叠加绘制
+//!   └─ layer_tree.render_overlays() — 仅脏区域内 post_render
+//!       ↓
+//! tree.reset_dirty() → 准备下一帧
+//! ```
+//!
+//! # 滚动优化（像素移动）
+//!
+//! ScrollView 滚动时不触发全帧重绘：
+//! 1. `scroll_delta` 返回帧间偏移量 (dx, dy)
+//! 2. `drain_scroll_deltas` 在 begin_frame 前消费这些偏移
+//! 3. `canvas.scroll_region(viewport, dx, dy)` memmove 像素缓冲
+//! 4. `dirty_rect` 只返回新暴露的 strip 区域
+//! 5. `DirtyRects(strip)` 只清除并重绘 strip
+//! 6. 视口内非 strip 区域的内容通过像素移动保留，无需重绘
+//!
+//! # FrameGraph 裁剪
+//!
+//! FrameGraph 追踪资源版本号。当输入未变化且输出无消费时，
+//! Pass 被自动裁剪（culled），`zero_frame_cost = true` 跳过整帧渲染。
+//! 动画/滚动持续时 `mark_resource_dirty` 通知 FrameGraph 资源有变化，
+//! 防止 Pass 被误裁剪。
 
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
