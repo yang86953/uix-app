@@ -258,8 +258,14 @@ where
         last_frame = now;
         keep_polling = tree.update(dt);
 
-        // MouseMove 不触发 layout（不改变树结构），但 layout 事件、动画、初始帧需要
-        let needs_work = window_visible && (had_layout_event || keep_polling || idle_count == 0);
+        // 仅在以下情况触发 layout：
+        // - 有布局事件（resize/点击/键盘等，排除 MouseMove）
+        // - 有动画/滚动运行（keep_polling）
+        // - 首帧（尚未 rendered_first）
+        // MouseMove 不改变树结构，无需 layout；
+        // 其带来的 hover 视觉变化通过 mark_dirty() 直接设置脏矩形，
+        // 由下方的 need_render 独立处理渲染。
+        let needs_work = window_visible && (had_layout_event || keep_polling || !rendered_first);
 
         if needs_work {
             let before_version = tree.tree_version();
@@ -323,11 +329,11 @@ where
                 over_pass_id = Some(oid);
             }
 
-            // 动画持续时，通知 FrameGraph 资源有变化，防止 pass 被裁剪
-            // 导致 overlay 层（post_render 绘制波纹）被跳过。
-            if keep_polling {
-                frame_graph.mark_resource_dirty(main_color_res);
-            }
+            // 通知 FrameGraph 资源有变化，防止 pass 被裁剪。
+            // 必须同时覆盖动画（keep_polling）和脏区域（鼠标/键盘事件导致的 hover 变化等）
+            // 两个场景，否则 FrameGraph 认为资源版本未变而裁剪 Pass，
+            // 导致脏区域的视觉更新（hover 高亮、ripple、焦点框等）丢失。
+            frame_graph.mark_resource_dirty(main_color_res);
 
             let plan = frame_graph.compile();
 
