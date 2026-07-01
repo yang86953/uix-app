@@ -2,7 +2,8 @@
 
 A modular, cross-platform native UI framework for Rust with a composition-over-inheritance architecture. Supports **Linux (Wayland)** and **Windows (Win32)**.
 
-> **Current status**: ~80% complete — core architecture stable, 54+ widgets, full software renderer.
+> **Current status**: ~85% complete — core architecture stable, 54+ widgets, full software renderer.
+> Recent: Incremental rendering pipeline — pixels-only scroll (`scroll_region`), dirty-rect-only redraw (`DirtyRects`), FrameGraph pass culling.
 > See [docs/graphics-engine-redesign.md](docs/graphics-engine-redesign.md) for detailed design documentation.
 
 ## Design Principles
@@ -10,6 +11,7 @@ A modular, cross-platform native UI framework for Rust with a composition-over-i
 - **Trait-based composition** — Platform, Widget, GraphicsEngine as injectable traits
 - **Composition over inheritance** — No base classes, no trait hierarchies simulating OOP
 - **Owned widget tree** — Two-phase construction with explicit lifecycle
+- **Incremental rendering** — Only redraw what changed: dirty-rect culling, pixel-scroll (`scroll_region`), FrameGraph pass culling
 - **Pure software rendering** — CPU-based 2D rasterizer with SDF text, shadows, gradients
 - **Reactive state management** — `State<T>` / `Computed<T>` with dependency tracking
 - **DI container** — Type-erased service registry for dependency injection
@@ -138,6 +140,28 @@ let eff = Effect::new(|| println!("count = {}", count.get()));
 count.set(42);  // eff.tick() 返回 true
 ```
 
+### 🎯 Incremental Rendering — 只在变动处绘制
+
+ScrollView 滚动时无需全帧重绘：
+
+```
+wheel → velocity → on_update → dirty_rect(strip) + scroll_delta(dx,dy)
+  ↓
+drain_scroll_deltas → canvas.scroll_region(viewport, dx, dy)  // memmove 现有像素
+  ↓
+begin_frame(DirtyRects)  // 只清除 strip，不清全帧
+  ↓
+render()  // clip 到 strip，只重绘新暴露区域
+```
+
+| 机制 | 效果 |
+|------|------|
+| `Canvas2D::scroll_region` | 像素级 memmove，O(偏移量×视口宽)，非 O(全帧) |
+| `UpdateStrategy::DirtyRects` | 只清除变化区域，不清全帧 |
+| `Widget::dirty_rect` | 每个 widget 精确计算自身变化区域 |
+| `FrameGraph` culling | 输入未变+输出无消费→跳过 Pass，`zero_frame_cost` 休眠 |
+| `old_dirty_rect` 动画快照 | 动画前后脏区域对比，无视觉残留 |
+
 ### 🧩 Widget Trait Composition
 Widget 行为拆分为四个维度，可按需使用：
 ```rust
@@ -220,7 +244,7 @@ cargo test graphics::types
 cargo test ui::state  # 响应式状态测试
 ```
 
-Current test count: **223 unit tests** + 16 doc-tests (all passing on Linux/Wayland; on Windows 部分平台相关测试略少).
+Current test count: **332 unit tests** across 6 crates (all passing on Linux/Wayland; Windows 部分平台相关测试略少).
 
 ## Building
 
