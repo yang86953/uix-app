@@ -20,6 +20,8 @@ pub(crate) struct StateSnapshot {
     pub(crate) clip_rect: Rect,
     pub(crate) clip_int: (i32, i32, i32, i32),
     pub(crate) opacity: f32,
+    pub(crate) offset_x: f32,
+    pub(crate) offset_y: f32,
     pub(crate) transform: Transform,
     pub(crate) invert: Option<[f64; 6]>,
     pub(crate) blend_mode: BlendMode,
@@ -40,6 +42,10 @@ pub struct CpuCanvas2D {
 
     /// 全局透明度。
     pub(crate) opacity: f32,
+
+    /// 像素偏移量（画布平移，在 transform 之前应用）。
+    pub(crate) offset_x: f32,
+    pub(crate) offset_y: f32,
 
     /// 当前 2D 仿射变换。
     pub(crate) transform: Transform,
@@ -63,6 +69,8 @@ impl CpuCanvas2D {
             clip_int: (0, 0, w, h),
             clip_stack: Vec::new(),
             opacity: 1.0,
+            offset_x: 0.0,
+            offset_y: 0.0,
             transform: Transform::identity(),
             invert: Self::compute_inverse(&Transform::identity()),
             blend_mode: BlendMode::default(),
@@ -294,10 +302,27 @@ impl CpuCanvas2D {
 
 impl Canvas2D for CpuCanvas2D {
     // ═══════════════════════════════════════════
+    // 画布偏移
+    // ═══════════════════════════════════════════
+
+    fn offset(&self) -> (f32, f32) {
+        (self.offset_x, self.offset_y)
+    }
+
+    fn set_offset(&mut self, dx: f32, dy: f32) {
+        self.offset_x = dx;
+        self.offset_y = dy;
+    }
+
+    // ═══════════════════════════════════════════
     // 矢量填充
     // ═══════════════════════════════════════════
 
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let rect = if ox != 0.0 || oy != 0.0 {
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
+        } else { rect };
         let c = self.apply_opacity(Self::premul(color));
         let has_transform = !Self::is_identity(&self.transform);
 
@@ -407,6 +432,8 @@ impl Canvas2D for CpuCanvas2D {
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let (cx, cy) = if ox != 0.0 || oy != 0.0 { (cx + ox, cy + oy) } else { (cx, cy) };
         let c = self.apply_opacity(Self::premul(color));
         let expand = r + 1.0;
         let inner = (r - 1.0).max(0.0);
@@ -459,6 +486,10 @@ impl Canvas2D for CpuCanvas2D {
     }
 
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let rect = if ox != 0.0 || oy != 0.0 {
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
+        } else { rect };
         let c = self.apply_opacity(Self::premul(color));
         let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
         let (rx, ry) = (rect.w / 2.0, rect.h / 2.0);
@@ -513,6 +544,8 @@ impl Canvas2D for CpuCanvas2D {
         end_angle: f32,
         color: Color,
     ) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let (cx, cy) = if ox != 0.0 || oy != 0.0 { (cx + ox, cy + oy) } else { (cx, cy) };
         let c = self.apply_opacity(Self::premul(color));
         let expand = r + 1.0;
         let norm = |a: f32| a.rem_euclid(std::f32::consts::TAU);
@@ -580,6 +613,8 @@ impl Canvas2D for CpuCanvas2D {
     }
 
     fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let path = if ox != 0.0 || oy != 0.0 { &path.translated(ox, oy) } else { path };
         let c = self.apply_opacity(Self::premul(color));
         let polys = crate::flattener::flatten(path.segments(), 0.25);
         let mut global_edges = Vec::new();
@@ -599,11 +634,17 @@ impl Canvas2D for CpuCanvas2D {
     // ═══════════════════════════════════════════
 
     fn stroke_rect(&mut self, rect: Rect, color: Color, line_width: f32, radius: Option<Radius>) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let rect = if ox != 0.0 || oy != 0.0 {
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
+        } else { rect };
         let lw = line_width.max(0.0);
         self._stroke_rect_impl(rect, color, lw, radius.unwrap_or_default())
     }
 
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let (cx, cy) = if ox != 0.0 || oy != 0.0 { (cx + ox, cy + oy) } else { (cx, cy) };
         let lw = line_width.max(0.0);
         let c = self.apply_opacity(Self::premul(color));
         let expand = r + lw * 0.5 + 1.0;
@@ -627,6 +668,8 @@ impl Canvas2D for CpuCanvas2D {
     }
 
     fn stroke_path(&mut self, path: &Path, color: Color, opts: &StrokeOptions) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let path = if ox != 0.0 || oy != 0.0 { &path.translated(ox, oy) } else { path };
         let c = self.apply_opacity(Self::premul(color));
         let stroked = crate::stroker::stroke_path(path, opts);
         if stroked.is_empty() { return; }
@@ -644,6 +687,11 @@ impl Canvas2D for CpuCanvas2D {
     }
 
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        // Offset input coordinates, then clear offset so internal fill_rect calls don't double-apply
+        let (x1, y1, x2, y2) = (x1 + ox, y1 + oy, x2 + ox, y2 + oy);
+        self.offset_x = 0.0;
+        self.offset_y = 0.0;
         let c = self.apply_opacity(Self::premul(color));
         let half_lw = width.max(0.0) * 0.5;
 
@@ -653,6 +701,8 @@ impl Canvas2D for CpuCanvas2D {
             let w = width;
             let h = (y1 - y2).abs();
             self.fill_rect(Rect::new(x, y, w, h), color, None);
+            self.offset_x = ox;
+            self.offset_y = oy;
             return;
         }
         if (y1 - y2).abs() < 1e-6 {
@@ -661,6 +711,8 @@ impl Canvas2D for CpuCanvas2D {
             let w = (x1 - x2).abs();
             let h = width;
             self.fill_rect(Rect::new(x, y, w, h), color, None);
+            self.offset_x = ox;
+            self.offset_y = oy;
             return;
         }
 
@@ -688,6 +740,9 @@ impl Canvas2D for CpuCanvas2D {
                 }
             }
         }
+        // Restore offset
+        self.offset_x = ox;
+        self.offset_y = oy;
     }
 
     // ═══════════════════════════════════════════
@@ -700,6 +755,8 @@ impl Canvas2D for CpuCanvas2D {
             clip_rect: self.clip_rect,
             clip_int: self.clip_int,
             opacity: self.opacity,
+            offset_x: self.offset_x,
+            offset_y: self.offset_y,
             transform: self.transform,
             invert: self.invert,
             blend_mode: self.blend_mode,
@@ -711,6 +768,8 @@ impl Canvas2D for CpuCanvas2D {
             self.clip_rect = snap.clip_rect;
             self.clip_int = snap.clip_int;
             self.opacity = snap.opacity;
+            self.offset_x = snap.offset_x;
+            self.offset_y = snap.offset_y;
             self.transform = snap.transform;
             self.invert = snap.invert;
             self.blend_mode = snap.blend_mode;

@@ -88,6 +88,8 @@ pub trait WidgetEventHandler: WidgetComponent {
     fn on_event(&mut self, _event: &WidgetEvent) -> EventResult { EventResult::NotHandled }
     fn needs_continuous_update(&self) -> bool { false }
     fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> { None }
+    /// 帧间滚动偏移（用于 scroll_region 像素移动优化）。
+    fn scroll_delta_for_dirty(&self) -> Option<(f32, f32)> { None }
     fn hit_test_frame(&self, actual_frame: Rect) -> Rect { actual_frame }
     fn hit_test_3d(&self, ray: &Ray3D, _spatial: &SpatialContext, frame: Rect) -> bool {
         if let Some(hit_point) = ray.intersect_z0() {

@@ -27,6 +27,7 @@ use uix_graphics::FontHandle;
 use crate::render_context::RenderContext;
 use crate::api::traits::TokenProvider;
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
+use crate::widgets::scroll_view::ScrollView;
 
 /// 图层节点。
 pub enum LayerNode {
@@ -502,8 +503,16 @@ impl LayerTree {
                 }
                 let r = *rect;
                 ctx.canvas_2d().push_clip(r);
+                // 应用画布偏移（ScrollView 的滚动平移）使子节点在内容坐标下绘制
+                let scroll_off = Self::get_scroll_offset(tree, *widget_id);
+                if let Some((sx, sy)) = scroll_off {
+                    ctx.canvas_2d().translate(-sx, -sy);
+                }
                 for child in children.iter_mut() {
                     Self::render_node(child, ctx, tree, dirty_region, dirty_bounds);
+                }
+                if let Some((sx, sy)) = scroll_off {
+                    ctx.canvas_2d().translate(sx, sy);
                 }
                 ctx.canvas_2d().pop_clip();
             }
@@ -694,14 +703,37 @@ impl LayerTree {
                     Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds);
                 }
             }
-            LayerNode::ClipRect { rect, children, .. } => {
+            LayerNode::ClipRect { widget_id, rect, children, .. } => {
                 ctx.canvas_2d().push_clip(*rect);
+                // 应用画布偏移（ScrollView 滚动平移）使子节点 overlay 在内容坐标下绘制
+                let scroll_off = Self::get_scroll_offset(tree, *widget_id);
+                if let Some((sx, sy)) = scroll_off {
+                    ctx.canvas_2d().translate(-sx, -sy);
+                }
                 for child in children {
                     Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds);
+                }
+                if let Some((sx, sy)) = scroll_off {
+                    ctx.canvas_2d().translate(sx, sy);
                 }
                 ctx.canvas_2d().pop_clip();
             }
         }
+    }
+
+    /// 检查 widget 是否有 ScrollView 的滚动偏移。
+    /// 通过 downcast 检测 ScrollView 组件，获取其 scroll_x/scroll_y。
+    fn get_scroll_offset(tree: &WidgetTree, widget_id: WidgetId) -> Option<(f32, f32)> {
+        tree.get(widget_id).and_then(|node| {
+            let comp = node.component();
+            let sv = comp.as_any().downcast_ref::<ScrollView>()?;
+            // 只在有实际偏移时返回，避免空 translate
+            if sv.scroll_x().abs() > 0.5 || sv.scroll_y().abs() > 0.5 {
+                Some((sv.scroll_x(), sv.scroll_y()))
+            } else {
+                None
+            }
+        })
     }
 }
 

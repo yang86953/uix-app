@@ -2,26 +2,27 @@ use super::*;
 use uix_platform::Rect;
 use uix_graphics::DirtyRegion;
 
-/// 脏状态管理器 —— 集中管理脏区域和滚动数据。
+/// 脏状态管理器 —— 集中管理脏区域。
 ///
 /// 保证 reset() 时不会遗漏任何需要清理的脏状态。
 pub struct DirtyState {
     pub(crate) region: DirtyRegion,
-    pub(crate) scroll_deltas: Vec<(Rect, f32, f32)>,
+    /// 滚动偏移（用于 scroll_region 像素移动优化）。
+    pub(crate) scroll_region_move: Option<(Rect, f32, f32)>,
 }
 
 impl DirtyState {
     pub fn new() -> Self {
         Self {
             region: DirtyRegion::full(),
-            scroll_deltas: Vec::new(),
+            scroll_region_move: None,
         }
     }
 
     /// 重置所有脏状态。
     pub fn reset(&mut self) {
         self.region.reset();
-        self.scroll_deltas.clear();
+        self.scroll_region_move = None;
     }
 }
 
@@ -206,7 +207,7 @@ impl WidgetTree {
         self.focused_widget = None;
         self.hovered_widget = None;
         self.mouse_down_target = None;
-        self.dirty.scroll_deltas.clear();
+
     }
 
     /// 设置根节点（全量重建）。
@@ -834,7 +835,7 @@ impl WidgetTree {
                 node.on_update(dt);
             }
 
-            let (rect, scroll, new_frame, just_started) = self
+            let (rect, just_started) = self
                 .get(id)
                 .map(|node| {
                     let is_still = node.needs_continuous_update();
@@ -848,7 +849,7 @@ impl WidgetTree {
                     } else {
                         Rect::zero()
                     };
-                    (dirty, node.scroll_delta(node.frame()), node.frame(), is_still && !was_animating)
+                    (dirty, is_still && !was_animating)
                 })
                 .unwrap_or_default();
 
@@ -880,9 +881,12 @@ impl WidgetTree {
             if rect.w > 0.0 || rect.h > 0.0 {
                 self.mark_dirty_rect(id, rect);
             }
-            if let Some((dx, dy)) = scroll {
-                if dx != 0.0 || dy != 0.0 {
-                    self.dirty.scroll_deltas.push((new_frame, dx, dy));
+            // 收集 scroll_delta_for_dirty 用于 scroll_region 像素移动
+            if let Some((dx, dy)) = self.get(id).and_then(|n| n.scroll_delta_for_dirty()) {
+                if (dx.abs() > 0.5 || dy.abs() > 0.5) && self.dirty.scroll_region_move.is_none() {
+                    if let Some(frame) = self.get(id).map(|n| n.frame()) {
+                        self.dirty.scroll_region_move = Some((frame, dx, dy));
+                    }
                 }
             }
         }

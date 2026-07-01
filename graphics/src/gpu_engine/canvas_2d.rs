@@ -20,6 +20,8 @@ pub struct GpuCanvas2D {
     clip_rect: Rect,
     clip_stack: Vec<Rect>,
     opacity: f32,
+    offset_x: f32,
+    offset_y: f32,
     transform: Transform,
     blend_mode: BlendMode,
     state_stack: Vec<StateSnapshot>,
@@ -52,6 +54,8 @@ pub struct GpuCanvas2D {
 struct StateSnapshot {
     clip_rect: Rect,
     opacity: f32,
+    offset_x: f32,
+    offset_y: f32,
     transform: Transform,
     blend_mode: BlendMode,
 }
@@ -101,6 +105,8 @@ impl GpuCanvas2D {
             clip_rect: Rect::new(0.0, 0.0, width as f32, height as f32),
             clip_stack: Vec::new(),
             opacity: 1.0,
+            offset_x: 0.0,
+            offset_y: 0.0,
             transform: Transform::identity(),
             blend_mode: BlendMode::default(),
             state_stack: Vec::new(),
@@ -261,6 +267,7 @@ impl GpuCanvas2D {
         self.soft_fallback.set_transform(self.transform);
         self.soft_fallback.set_opacity(self.opacity);
         self.soft_fallback.set_blend_mode(self.blend_mode);
+        self.soft_fallback.set_offset(self.offset_x, self.offset_y);
     }
 }
 
@@ -279,12 +286,26 @@ impl Drop for GpuCanvas2D {
 }
 
 impl Canvas2D for GpuCanvas2D {
+    fn offset(&self) -> (f32, f32) {
+        (self.offset_x, self.offset_y)
+    }
+
+    fn set_offset(&mut self, dx: f32, dy: f32) {
+        self.offset_x = dx;
+        self.offset_y = dy;
+    }
+
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let rect = if ox != 0.0 || oy != 0.0 {
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
+        } else { rect };
         unsafe { self.draw_rect_gpu(rect, color, radius); }
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
-        let rect = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
+        let (ox, oy) = (self.offset_x, self.offset_y);
+        let rect = Rect::new(cx - r + ox, cy - r + oy, r * 2.0, r * 2.0);
         unsafe { self.draw_rect_gpu(rect, color, Some(Radius::uniform(r))); }
     }
 
@@ -396,6 +417,8 @@ impl Canvas2D for GpuCanvas2D {
         self.state_stack.push(StateSnapshot {
             clip_rect: self.clip_rect,
             opacity: self.opacity,
+            offset_x: self.offset_x,
+            offset_y: self.offset_y,
             transform: self.transform,
             blend_mode: self.blend_mode,
         });
@@ -405,6 +428,8 @@ impl Canvas2D for GpuCanvas2D {
         if let Some(state) = self.state_stack.pop() {
             self.clip_rect = state.clip_rect;
             self.opacity = state.opacity;
+            self.offset_x = state.offset_x;
+            self.offset_y = state.offset_y;
             self.transform = state.transform;
             self.blend_mode = state.blend_mode;
         }

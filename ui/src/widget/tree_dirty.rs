@@ -69,10 +69,6 @@ impl WidgetTree {
         }
     }
 
-    pub fn drain_scroll_deltas(&mut self) -> Vec<(Rect, f32, f32)> {
-        std::mem::take(&mut self.dirty.scroll_deltas)
-    }
-
     /// 重置脏状态。只遍历脏节点清除 is_dirty，而非全量 traverse。
     /// 遍历复杂度与脏节点数成正比，与总节点数无关。
     pub fn reset_dirty(&mut self) {
@@ -85,6 +81,11 @@ impl WidgetTree {
         }
         self.dirty_nodes.clear();
         self.subtree_dirty.clear();
+    }
+
+    /// 获取滚动偏移（用于 scroll_region 像素移动）。
+    pub fn drain_scroll_region_move(&mut self) -> Option<(Rect, f32, f32)> {
+        self.dirty.scroll_region_move.take()
     }
 
     pub fn mark_full_frame_dirty(&mut self) {

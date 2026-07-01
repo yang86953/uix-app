@@ -55,6 +55,25 @@ pub struct Path {
 }
 
 impl Path {
+    /// 返回平移后的新路径（所有坐标 +dx, +dy）。
+    pub fn translated(&self, dx: f32, dy: f32) -> Self {
+        let segments = self.segments.iter().map(|seg| match seg {
+            PathSegment::MoveTo(p) => PathSegment::MoveTo(Point::new(p.x + dx, p.y + dy)),
+            PathSegment::LineTo(p) => PathSegment::LineTo(Point::new(p.x + dx, p.y + dy)),
+            PathSegment::QuadTo(c, e) => PathSegment::QuadTo(
+                Point::new(c.x + dx, c.y + dy),
+                Point::new(e.x + dx, e.y + dy),
+            ),
+            PathSegment::CubicTo(c1, c2, e) => PathSegment::CubicTo(
+                Point::new(c1.x + dx, c1.y + dy),
+                Point::new(c2.x + dx, c2.y + dy),
+                Point::new(e.x + dx, e.y + dy),
+            ),
+            PathSegment::Close => PathSegment::Close,
+        }).collect();
+        Path { segments }
+    }
+
     /// 遍历路径段。
     pub fn segments(&self) -> &[PathSegment] {
         &self.segments

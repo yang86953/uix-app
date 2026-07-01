@@ -14,42 +14,63 @@ use crate::types::{BlendMode, GradientDirection, Radius};
 
 /// 2D 绘制能力接口。
 ///
-/// 矢量填充、描边、渐变、阴影、图像/字形混合、渲染状态栈。
+/// 矢量填充、描边、渐变、阴影、图像/字形混合、渲染状态栈、画布偏移。
 pub trait Canvas2D {
+    // ═══════════════════════════════════════════
+    // 画布偏移（像素空间平移）
+    // ═══════════════════════════════════════════
+
+    /// 当前像素偏移量（影响所有绘制操作的坐标）。
+    /// 默认实现返回 (0.0, 0.0)。
+    fn offset(&self) -> (f32, f32) { (0.0, 0.0) }
+
+    /// 设置像素偏移量。
+    /// 默认实现忽略。实现者应保存并应用 offset。
+    fn set_offset(&mut self, dx: f32, dy: f32) { let _ = (dx, dy); }
+
+    /// 累加像素偏移。
+    fn translate(&mut self, dx: f32, dy: f32) {
+        let (ox, oy) = self.offset();
+        self.set_offset(ox + dx, oy + dy);
+    }
+
     // ═══════════════════════════════════════════
     // 矢量填充（均有默认实现）
     // ═══════════════════════════════════════════
 
     /// 填充矩形，可选圆角。
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::fill::fill_rect(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            rect, color, radius,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), color, radius,
         );
     }
 
     /// 填充圆形。
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::fill::fill_circle(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            cx, cy, r, color,
+            cx + ox, cy + oy, r, color,
         );
     }
 
     /// 填充椭圆。
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::fill::fill_ellipse(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            rect, color,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), color,
         );
     }
 
@@ -63,23 +84,31 @@ pub trait Canvas2D {
         end_angle: f32,
         color: Color,
     ) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::fill::fill_sector(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            cx, cy, r, start_angle, end_angle, color,
+            cx + ox, cy + oy, r, start_angle, end_angle, color,
         );
     }
 
     /// 填充闭合路径。
     fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
+        let (ox, oy) = self.offset();
+        let path = if ox != 0.0 || oy != 0.0 {
+            // 路径所有坐标偏移
+            std::borrow::Cow::Owned(path.translated(ox, oy))
+        } else {
+            std::borrow::Cow::Borrowed(path)
+        };
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::fill::fill_path(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            path, color, fill_rule,
+            &path, color, fill_rule,
         );
     }
 
@@ -89,45 +118,54 @@ pub trait Canvas2D {
 
     /// 描边矩形，可选圆角。
     fn stroke_rect(&mut self, rect: Rect, color: Color, line_width: f32, radius: Option<Radius>) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::stroke::stroke_rect(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            rect, color, line_width, radius,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), color, line_width, radius,
         );
     }
 
     /// 描边圆形。
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::stroke::stroke_circle(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            cx, cy, r, color, line_width,
+            cx + ox, cy + oy, r, color, line_width,
         );
     }
 
     /// 描边路径。
     fn stroke_path(&mut self, path: &Path, color: Color, opts: &StrokeOptions) {
+        let (ox, oy) = self.offset();
+        let path = if ox != 0.0 || oy != 0.0 {
+            std::borrow::Cow::Owned(path.translated(ox, oy))
+        } else {
+            std::borrow::Cow::Borrowed(path)
+        };
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::stroke::stroke_path(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            path, color, opts,
+            &path, color, opts,
         );
     }
 
     /// 画直线。
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::stroke::draw_line(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            x1, y1, x2, y2, color, width,
+            x1 + ox, y1 + oy, x2 + ox, y2 + oy, color, width,
         );
     }
 
@@ -143,12 +181,13 @@ pub trait Canvas2D {
         color_b: Color,
         dir: GradientDirection,
     ) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::gradient::fill_linear_gradient(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            rect, color_a, color_b, dir,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), color_a, color_b, dir,
         );
     }
 
@@ -162,12 +201,13 @@ pub trait Canvas2D {
         inner_color: Color,
         outer_color: Color,
     ) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::gradient::fill_radial_gradient(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            cx, cy, inner_r, outer_r, inner_color, outer_color,
+            cx + ox, cy + oy, inner_r, outer_r, inner_color, outer_color,
         );
     }
 
@@ -185,12 +225,14 @@ pub trait Canvas2D {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::shadow::draw_box_shadow(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            rect, blur_radius, offset_x, offset_y, color, corner_radius,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h),
+            blur_radius, offset_x, offset_y, color, corner_radius,
         );
     }
 
@@ -204,12 +246,14 @@ pub trait Canvas2D {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::shadow::draw_box_shadow_ambient(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            rect, blur_radius, offset_x, offset_y, color, corner_radius,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h),
+            blur_radius, offset_x, offset_y, color, corner_radius,
         );
     }
 
@@ -219,12 +263,14 @@ pub trait Canvas2D {
 
     /// 将 src 矩形区域缩放绘制到 dst 矩形区域。
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::image::blit_image(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            src, src_w, src_rect, dst_rect,
+            src, src_w, src_rect,
+            Rect::new(dst_rect.x + ox, dst_rect.y + oy, dst_rect.w, dst_rect.h),
         );
     }
 
@@ -238,12 +284,14 @@ pub trait Canvas2D {
         height: usize,
         color: Color,
     ) {
+        let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
         rasterizer::glyph::blit_glyph(
             pixels, size.w as i32, size.h as i32,
             clip, opacity,
-            x, y, coverage, width, height, color,
+            (x as f32 + ox) as i32, (y as f32 + oy) as i32,
+            coverage, width, height, color,
         );
     }
 
@@ -251,7 +299,7 @@ pub trait Canvas2D {
     // 渲染状态栈（必须自行实现）
     // ═══════════════════════════════════════════
 
-    /// 保存当前渲染状态（裁剪、透明度、变换、混合模式）。
+    /// 保存当前渲染状态（裁剪、透明度、偏移、变换、混合模式）。
     fn save(&mut self);
 
     /// 恢复上一次保存的渲染状态。

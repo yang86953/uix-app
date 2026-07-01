@@ -65,6 +65,7 @@ macro_rules! __define_widget_upcast_method {
     (on_event; $T:ty) => { $crate::wc_upcast!($T; WidgetEventHandler); };
     (needs_continuous_update; $T:ty) => {};
     (scroll_delta; $T:ty) => {};
+    (scroll_delta_for_dirty; $T:ty) => {};
     (hit_test_frame; $T:ty) => {};
     (on_init; $T:ty) => { $crate::wc_upcast!($T; WidgetLifecycle); };
     (on_mount; $T:ty) => {};
@@ -132,7 +133,7 @@ macro_rules! define_widget {
                             c.insert($crate::api::traits::WidgetCapabilities::LAYOUT),
                         "render" | "post_render" | "dirty_rect" | "children_clip" | "draw_margin" =>
                             c.insert($crate::api::traits::WidgetCapabilities::RENDER),
-                        "on_event" | "needs_continuous_update" | "scroll_delta" | "hit_test_frame" =>
+                        "on_event" | "needs_continuous_update" | "scroll_delta" | "scroll_delta_for_dirty" | "hit_test_frame" =>
                             c.insert($crate::api::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_mount" | "on_unmount" | "on_update" =>
                             c.insert($crate::api::traits::WidgetCapabilities::LIFECYCLE),
@@ -174,7 +175,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             WidgetEventHandler,
             $name,
-            [on_event needs_continuous_update scroll_delta hit_test_frame],
+            [on_event needs_continuous_update scroll_delta scroll_delta_for_dirty hit_test_frame],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -236,6 +237,9 @@ macro_rules! __define_widget_method_builder {
     };
     (scroll_delta; WidgetEventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta($($p)*) -> $ret $body
+    };
+    (scroll_delta_for_dirty; WidgetEventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn scroll_delta_for_dirty($($p)*) -> $ret $body
     };
     (hit_test_frame; WidgetEventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn hit_test_frame($($p)*) -> $ret $body
@@ -299,6 +303,9 @@ macro_rules! __match_trait_method {
     };
     (WidgetEventHandler, scroll_delta, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta($($p)*) -> $ret $body
+    };
+    (WidgetEventHandler, scroll_delta_for_dirty, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn scroll_delta_for_dirty($($p)*) -> $ret $body
     };
     (WidgetEventHandler, hit_test_frame, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn hit_test_frame($($p)*) -> $ret $body

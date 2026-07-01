@@ -40,9 +40,6 @@ define_widget! {
         children: WidgetChildren,
         pub scroll_x: f32,
         pub scroll_y: f32,
-        /// 前一帧的 scroll 位置（用于计算滚动 delta 做 pixel buffer memmove）
-        pub prev_scroll_x: f32,
-        pub prev_scroll_y: f32,
         /// Velocity-based momentum scrolling: velocity accumulates on
         /// wheel events and decays via friction in on_update.
         pub velocity_x: f32,
@@ -53,6 +50,9 @@ define_widget! {
         flex_grow_val: f32,
         flex_shrink_val: f32,
         content_bounds: Cell<Option<Size>>,
+        /// 帧间滚动增量（用于 dirty_rect strip 计算）。
+        /// on_update 中计算，dirty_rect 中读取。
+        scroll_delta_strip: Cell<(f32, f32)>,
         scrollbar_v: ScrollBar,
         scrollbar_h: ScrollBar,
         last_frame: Cell<Option<Rect>>,
@@ -191,8 +191,10 @@ define_widget! {
 
     on_update => (&mut self, dt: f64) {
         let dt32 = dt as f32;
-        self.prev_scroll_x = self.scroll_x;
-        self.prev_scroll_y = self.scroll_y;
+
+        // 记录帧间滚动增量给 dirty_rect 做 strip 计算
+        let old_x = self.scroll_x;
+        let old_y = self.scroll_y;
 
         const DAMPING_K: f32 = 5.0;
         let damp = (-DAMPING_K * dt32).exp();
@@ -205,6 +207,9 @@ define_widget! {
         self.scroll_y += self.velocity_y * dt32;
         self.velocity_y *= damp;
         if self.velocity_y.abs() < threshold { self.velocity_y = 0.0; }
+
+        // 记录 delta 供 dirty_rect 使用
+        self.scroll_delta_strip.set((self.scroll_x - old_x, self.scroll_y - old_y));
 
         // 边界 clamping：带软停止（velocity 急刹而非硬切）
         if self.scroll_x < 0.0 {
@@ -236,8 +241,23 @@ define_widget! {
             || self.velocity_y.abs() > 0.5
     }
 
+    // 帧间滚动增量，用于 render_loop 的 scroll_region 像素移动
+    scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
+        let delta = self.scroll_delta_strip.get();
+        if delta.0.abs() > 0.5 || delta.1.abs() > 0.5 {
+            Some(delta)
+        } else {
+            None
+        }
+    }
+
     children_clip => (&self, frame: Rect) -> Option<Rect> {
         Some(frame)
+    }
+
+    // 滚动时只返回 strip 区域，避免全视口重绘。其余像素由 Canvas2D offset 保留。
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        self.scroll_strip_dirty_rect(frame)
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
@@ -275,12 +295,11 @@ define_widget! {
             return result;
         }
 
-        // Compute child positions offset by scroll, and track content bounds
-        // Children are stacked vertically (沿主轴依次排列) so they don't overlap.
+        // Track content bounds. Children are placed at natural coordinates
+        // (no scroll offset). Scroll offset is applied as canvas translate
+        // during rendering via LayerTree.
         let mut max_right = frame.x;
         let mut max_bottom = frame.y;
-        let origin_x = frame.x - self.scroll_x;
-        let origin_y = frame.y - self.scroll_y;
         let mut cursor_y = 0.0f32;
         for &cid in children {
             let pref = tree
@@ -304,7 +323,7 @@ define_widget! {
             } else {
                 frame.h
             };
-            let r = Rect::new(origin_x, origin_y + cursor_y, w, h);
+            let r = Rect::new(frame.x, frame.y + cursor_y, w, h);
             result.push((cid, r));
             max_right = max_right.max(r.x + r.w);
             max_bottom = max_bottom.max(r.y + r.h);
@@ -312,64 +331,14 @@ define_widget! {
         }
 
         // Store content bounds for scrollbar calculation
-        let content_w = (max_right - origin_x).max(frame.w);
-        let content_h = (max_bottom - origin_y).max(frame.h);
+        let content_w = (max_right - frame.x).max(frame.w);
+        let content_h = (max_bottom - frame.y).max(frame.h);
         self.content_bounds.set(Some(Size::new(content_w, content_h)));
-        uix_platform::log::debug_fn(format!("[ScrollView] layout_children: view=({:.0},{:.0}) origin_y={:.0} content=({:.0},{:.0}) scroll=({:.0},{:.0})",
-            frame.w, frame.h, origin_y,
+        uix_platform::log::debug_fn(format!("[ScrollView] layout_children: view=({:.0},{:.0}) content=({:.0},{:.0}) scroll=({:.0},{:.0})",
+            frame.w, frame.h,
             content_w, content_h, self.scroll_x, self.scroll_y,));
 
         result
-    }
-
-    // ── 像素缓冲滚动：dirty_rect 返回新增 strip + 1px 重叠 ──
-    // scroll_region 用 dy/dx.round() 做整数偏移，dirty_rect 用同样的 round 算新增区域。
-    // +1px 重叠确保 scrolled 内容与新绘制 strip 之间无 1px 间隙（否则会露出透明黑线）。
-    // 包含垂直滚动条轨道区域，确保 scroll_region 移动的半透明轨道像素被清空重绘。
-    dirty_rect => (&self, frame: Rect) -> Rect {
-        let dx = self.scroll_x - self.prev_scroll_x;
-        let dy = self.scroll_y - self.prev_scroll_y;
-        let int_dy = dy.round();
-        let int_dx = dx.round();
-        let strip = if int_dy > 0.0 {
-            // 向下滚动：新增 strip 在底部 + 1px 向上重叠
-            let strip_h = (int_dy + 1.0).min(frame.h);
-            Rect::new(frame.x, frame.y + frame.h - strip_h, frame.w, strip_h)
-        } else if int_dy < 0.0 {
-            // 向上滚动：新增 strip 在顶部 + 1px 向下重叠
-            let strip_h = ((-int_dy) + 1.0).min(frame.h);
-            Rect::new(frame.x, frame.y, frame.w, strip_h)
-        } else if int_dx > 0.0 {
-            // 向右滚动：新增 strip 在右侧 + 1px 向左重叠
-            let strip_w = (int_dx + 1.0).min(frame.w);
-            Rect::new(frame.x + frame.w - strip_w, frame.y, strip_w, frame.h)
-        } else if int_dx < 0.0 {
-            // 向左滚动：新增 strip 在左侧 + 1px 向右重叠
-            let strip_w = ((-int_dx) + 1.0).min(frame.w);
-            Rect::new(frame.x, frame.y, strip_w, frame.h)
-        } else {
-            frame
-        };
-        // 包含滚动条轨道区域，确保 scroll_region 移动的半透明轨道像素被清空重绘
-        let track = Rect::new(
-            frame.x + frame.w - 8.0,
-            frame.y,
-            8.0,
-            frame.h,
-        );
-        strip.union(&track)
-    }
-
-    scroll_delta => (&self, _frame: Rect) -> Option<(f32, f32)> {
-        let dx = self.scroll_x - self.prev_scroll_x;
-        let dy = self.scroll_y - self.prev_scroll_y;
-        let int_dx = dx.round();
-        let int_dy = dy.round();
-        if int_dx != 0.0 || int_dy != 0.0 {
-            Some((int_dx, int_dy))
-        } else {
-            None
-        }
     }
 }
 
@@ -381,8 +350,6 @@ impl ScrollView {
             children: WidgetChildren::new(),
             scroll_x: 0.0,
             scroll_y: 0.0,
-            prev_scroll_x: 0.0,
-            prev_scroll_y: 0.0,
             velocity_x: 0.0,
             velocity_y: 0.0,
             direction,
@@ -391,6 +358,7 @@ impl ScrollView {
             flex_grow_val: 0.0,
             flex_shrink_val: 1.0,
             content_bounds: Cell::new(None),
+            scroll_delta_strip: Cell::new((0.0, 0.0)),
             scrollbar_v: ScrollBar::new(ScrollbarOrientation::Vertical),
             scrollbar_h: ScrollBar::new(ScrollbarOrientation::Horizontal),
             last_frame: Cell::new(None),
@@ -440,6 +408,30 @@ impl ScrollView {
         self.velocity_x = 0.0;
         self.velocity_y = 0.0;
         self
+    }
+
+    // ── Dirty rect（strip 优化）──
+
+    fn scroll_strip_dirty_rect(&self, frame: Rect) -> Rect {
+        let (dx, dy) = self.scroll_delta_strip.get();
+        let int_dy = dy.round();
+        let int_dx = dx.round();
+        let strip = if int_dy > 0.0 {
+            let strip_h = (int_dy + 1.0).min(frame.h);
+            Rect::new(frame.x, frame.y + frame.h - strip_h, frame.w, strip_h)
+        } else if int_dy < 0.0 {
+            let strip_h = ((-int_dy) + 1.0).min(frame.h);
+            Rect::new(frame.x, frame.y, frame.w, strip_h)
+        } else if int_dx > 0.0 {
+            let strip_w = (int_dx + 1.0).min(frame.w);
+            Rect::new(frame.x + frame.w - strip_w, frame.y, strip_w, frame.h)
+        } else if int_dx < 0.0 {
+            let strip_w = ((-int_dx) + 1.0).min(frame.w);
+            Rect::new(frame.x, frame.y, strip_w, frame.h)
+        } else {
+            frame
+        };
+        strip
     }
 
     // ── Runtime accessors ──
@@ -616,9 +608,9 @@ mod tests {
             .unwrap()
             .layout_children(frame, &children, &tree);
         if let Some((_, rect)) = result.first() {
-            // Child should be offset by -scroll_y = -50 from the viewport origin
+            // Child placed at natural coordinates (scroll offset is applied as canvas translate)
             assert_eq!(rect.x, frame.x);
-            assert_eq!(rect.y, frame.y - 50.0);
+            assert_eq!(rect.y, frame.y);
         } else {
             panic!("Expected at least one child rect");
         }

@@ -364,15 +364,11 @@ where
 
                 for &pid in &plan.execution_order {
                     if Some(pid) == geom_pass_id {
-                        // ── 应用滚动增量（像素移动优化）──
-                        // 在 begin_frame 之前 drain scroll_deltas 并移动像素，
-                        // 这样渲染循环只需重绘 strip 区域，无需全帧重绘。
-                        let scroll_deltas = tree.drain_scroll_deltas();
-                        if !scroll_deltas.is_empty() {
+                        // ── 滚动偏移像素移动（scroll_region memmove）──
+                        // 在 begin_frame 之前移动已有像素，避免全帧重绘。
+                        if let Some((frame, dx, dy)) = tree.drain_scroll_region_move() {
                             let canvas = engine.canvas_2d();
-                            for &(frame, dx, dy) in &scroll_deltas {
-                                canvas.scroll_region(frame, dx, dy);
-                            }
+                            canvas.scroll_region(frame, dx, dy);
                         }
 
                         // 选择更新策略：首次帧或全帧脏时用 FullRedraw，

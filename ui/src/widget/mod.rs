@@ -149,6 +149,11 @@ impl BoxedWidget {
             .as_event()
             .and_then(|e| e.scroll_delta(frame))
     }
+    pub fn scroll_delta_for_dirty(&self) -> Option<(f32, f32)> {
+        self.component()
+            .as_event()
+            .and_then(|e| e.scroll_delta_for_dirty())
+    }
     pub fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
         self.component()
             .as_event()
