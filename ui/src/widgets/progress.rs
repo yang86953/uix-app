@@ -1,6 +1,8 @@
 //! ProgressBar widget — deterministic and indeterminate progress indicators.
 
 use crate::define_widget;
+use crate::animation::core::Animation;
+use crate::api::Easing;
 use uix_graphics::{Color, Radius};
 use uix_platform::{Rect, Size};
 use crate::render_context::RenderContext;
@@ -33,6 +35,8 @@ define_widget! {
         width: f32,
         round: bool,
         progress_type: ProgressType,
+        /// 不确定进度动画（0→1 循环，周期 2s）
+        indet_anim: Option<Animation<f32>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -44,13 +48,17 @@ define_widget! {
     }
 
     on_update => (&mut self, dt: f64) {
-        if matches!(self.mode, ProgressMode::Indeterminate) {
-            self.progress = (self.progress + dt as f32 * 0.5) % 1.0;
+        if let Some(ref mut anim) = self.indet_anim {
+            anim.update(dt);
+            if anim.is_finished() {
+                // 循环：重置到起点
+                *anim = Animation::new(0.0, 1.0, 2.0).with_easing(Easing::Linear);
+            }
         }
     }
 
     needs_continuous_update => (&self) -> bool {
-        matches!(self.mode, ProgressMode::Indeterminate)
+        self.indet_anim.is_some()
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
@@ -104,8 +112,9 @@ define_widget! {
                 }
             }
             ProgressMode::Indeterminate => {
+                let p = self.indet_anim.as_ref().map(|a| a.current_value()).unwrap_or(0.0);
                 let bar_w = frame.w * 0.3;
-                let bar_x = frame.x + (self.progress * (frame.w - bar_w));
+                let bar_x = frame.x + (p * (frame.w - bar_w));
                 let bar_rect = Rect::new(bar_x, frame.y, bar_w, frame.h);
                 ctx.fill_rect(bar_rect, stroke_c, radius);
             }
@@ -130,17 +139,22 @@ impl ProgressBar {
             width: 200.0,
             round: true,
             progress_type: ProgressType::Line,
+            indet_anim: None,
         }
     }
 
     pub fn progress(mut self, p: f32) -> Self {
         self.progress = p.clamp(0.0, 1.0);
         self.mode = ProgressMode::Determinate(self.progress);
+        self.indet_anim = None;
         self
     }
 
     pub fn indeterminate(mut self) -> Self {
         self.mode = ProgressMode::Indeterminate;
+        self.indet_anim = Some(
+            Animation::new(0.0, 1.0, 2.0).with_easing(Easing::Linear),
+        );
         self
     }
 

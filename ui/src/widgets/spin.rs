@@ -1,6 +1,8 @@
 //! Spin widget — 加载中旋转动画指示器。
 
 use crate::define_widget;
+use crate::animation::core::Animation;
+use crate::api::Easing;
 use uix_platform::{Rect, Size};
 use uix_graphics::Color;
 use crate::render_context::RenderContext;
@@ -14,8 +16,8 @@ define_widget! {
     /// Spin — 旋转加载动画。
     pub struct Spin {
         size: SpinSize,
-        /// 动画相位 [0, 1)
-        phase: f32,
+        /// 旋转动画（0→1 循环，周期 ≈1.25s）
+        anim: Option<Animation<f32>>,
         color: Option<Color>,
         spinning: bool,
         tip: String,
@@ -33,13 +35,19 @@ define_widget! {
     }
 
     on_update => (&mut self, dt: f64) {
-        self.phase = (self.phase + dt as f32 * 0.8) % 1.0;
+        if let Some(ref mut anim) = self.anim {
+            anim.update(dt);
+            if anim.is_finished() {
+                anim.reset();
+            }
+        }
     }
 
     needs_continuous_update => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         if !self.spinning && !self.wrapper_mode { return; }
+        let phase = self.anim.as_ref().map(|a| a.current_value()).unwrap_or(0.0);
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.5;
         let r = frame.w.min(frame.h) * 0.35;
@@ -55,10 +63,10 @@ define_widget! {
             let sp_r = d * 0.35;
             let dot_r = sp_r * 0.18;
             for i in 0..8 {
-                let angle = i as f32 * std::f32::consts::TAU / 8.0 + self.phase * std::f32::consts::TAU;
+                let angle = i as f32 * std::f32::consts::TAU / 8.0 + phase * std::f32::consts::TAU;
                 let dx = angle.cos() * sp_r;
                 let dy = angle.sin() * sp_r;
-                let opacity = 0.15 + ((i as f32 / 8.0 + self.phase).fract() * 0.85);
+                let opacity = 0.15 + ((i as f32 / 8.0 + phase).fract() * 0.85);
                 let dot_color = Color::from_rgba(
                     (c.r as f32 * opacity) as u8,
                     (c.g as f32 * opacity) as u8,
@@ -79,10 +87,10 @@ define_widget! {
         // 画 8 个点，绕圆排列，根据相位控制透明度
         let dot_r = r * 0.18;
         for i in 0..8 {
-            let angle = i as f32 * std::f32::consts::TAU / 8.0 + self.phase * std::f32::consts::TAU;
+            let angle = i as f32 * std::f32::consts::TAU / 8.0 + phase * std::f32::consts::TAU;
             let dx = angle.cos() * r;
             let dy = angle.sin() * r;
-            let opacity = 0.15 + ((i as f32 / 8.0 + self.phase).fract() * 0.85);
+            let opacity = 0.15 + ((i as f32 / 8.0 + phase).fract() * 0.85);
             let dot_color = Color::from_rgba(
                 (c.r as f32 * opacity) as u8,
                 (c.g as f32 * opacity) as u8,
@@ -108,7 +116,11 @@ impl Default for Spin { fn default() -> Self { Self::new() } }
 
 impl Spin {
     pub fn new() -> Self {
-        Self { size: SpinSize::Default, phase: 0.0, color: None, spinning: true, tip: String::new(), wrapper_mode: false }
+        Self {
+            size: SpinSize::Default,
+            anim: Some(Animation::new(0.0, 1.0, 1.25).with_easing(Easing::Linear)),
+            color: None, spinning: true, tip: String::new(), wrapper_mode: false,
+        }
     }
     pub fn small(mut self) -> Self { self.size = SpinSize::Small; self }
     pub fn large(mut self) -> Self { self.size = SpinSize::Large; self }

@@ -7,6 +7,8 @@ use std::time::Instant;
 
 use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
+use crate::animation::core::Animation;
+use crate::api::Easing;
 use uix_graphics::GraphicsEngine;
 use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
@@ -26,10 +28,8 @@ define_widget! {
         show_dots: bool,
         /// 是否显示箭头
         show_arrows: bool,
-        /// 动画进度 (0~1)
-        anim_progress: Cell<f32>,
-        /// 是否正在切换
-        animating: Cell<bool>,
+        /// 切换动画（0→1，历时 0.5s）
+        anim: Option<Animation<f32>>,
         /// 当前 frame（hit-test 用）
         last_frame: Cell<Option<Rect>>,
     }
@@ -98,21 +98,21 @@ define_widget! {
             if should_switch {
                 self.last_switch.set(Some(now));
                 self.current.set((self.current.get() + 1) % self.children.len());
-                self.animating.set(true);
-                self.anim_progress.set(0.0);
+                self.anim = Some(
+                    Animation::new(0.0, 1.0, 0.5).with_easing(Easing::Linear),
+                );
             }
         }
-        if self.animating.get() {
-            self.anim_progress.set((self.anim_progress.get() + dt as f32 * 2.0).min(1.0));
-            if self.anim_progress.get() >= 1.0 {
-                self.animating.set(false);
+        if let Some(ref mut a) = self.anim {
+            a.update(dt);
+            if a.is_finished() {
+                self.anim = None;
             }
         }
     }
 
     needs_continuous_update => (&self) -> bool {
-        // 只在自动轮播且正处过渡动画中才持续更新
-        self.autoplay_interval > 0.0 && self.animating.get()
+        self.anim.is_some()
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
@@ -180,8 +180,7 @@ impl Carousel {
             last_switch: Cell::new(None),
             show_dots: true,
             show_arrows: true,
-            anim_progress: Cell::new(0.0),
-            animating: Cell::new(false),
+            anim: None,
             last_frame: Cell::new(None),
         }
     }
