@@ -236,6 +236,11 @@ pub trait GraphicsEngine: 'static {
     fn destroy_offscreen(&mut self, handle: ImageHandle) { let _ = handle; }
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> { let _ = handle; None }
     fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) { let _ = (handle, dst_rect); }
+    /// 从离屏缓冲的 src_rect 区域 blit 到主画布的 dst_rect。
+    /// 默认委托到 blit_offscreen（全源 blit）。
+    fn blit_offscreen_src(&mut self, _handle: &ImageHandle, _src_rect: Rect, _dst_rect: Rect) {
+        // 默认实现：直接 blit 全离屏画面到 dst
+    }
 
     fn memory_usage(&self) -> usize { 0 }
     fn diagnose_memory(&self) {}

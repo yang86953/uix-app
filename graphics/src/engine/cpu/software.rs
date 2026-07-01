@@ -198,19 +198,13 @@ impl GraphicsEngine for SoftwareEngine {
         }
         if let Some(ref offscreen_canvas) = self.offscreens[idx] {
             let surf = offscreen_canvas.surface();
-            let src_pixels = surf.pixels();
-            let src_w = surf.width();
-            let src_rect = Rect::new(0.0, 0.0, src_w as f32, surf.height() as f32);
-            let size = self.canvas_2d.width();
-            let h = self.canvas_2d.height();
-            let clip = self.canvas_2d.current_clip();
-            let opacity = self.canvas_2d.opacity();
-            blit_image(
-                self.canvas_2d.pixels_mut(), size, h,
-                clip, opacity,
-                src_pixels, src_w, src_rect, dst_rect,
-            );
+            let src_rect = Rect::new(0.0, 0.0, surf.width() as f32, surf.height() as f32);
+            SoftwareEngine::blit_offscreen_impl(self, handle, src_rect, dst_rect);
         }
+    }
+
+    fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
+        SoftwareEngine::blit_offscreen_impl(self, handle, src_rect, dst_rect);
     }
 
     fn memory_usage(&self) -> usize {
@@ -227,5 +221,29 @@ impl GraphicsEngine for SoftwareEngine {
 
     fn diagnose_memory(&self) {
         uix_platform::log::info_fn(format!("SoftwareEngine memory: {} bytes", self.memory_usage()));
+    }
+}
+
+impl SoftwareEngine {
+    /// 离屏 blit 内部实现（带源矩形）。
+    fn blit_offscreen_impl(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
+        let idx = handle.0 as usize;
+        if idx >= self.offscreens.len() {
+            return;
+        }
+        if let Some(ref offscreen_canvas) = self.offscreens[idx] {
+            let surf = offscreen_canvas.surface();
+            let src_pixels = surf.pixels();
+            let src_w = surf.width();
+            let size = self.canvas_2d.width();
+            let h = self.canvas_2d.height();
+            let clip = self.canvas_2d.current_clip();
+            let opacity = self.canvas_2d.opacity();
+            blit_image(
+                self.canvas_2d.pixels_mut(), size, h,
+                clip, opacity,
+                src_pixels, src_w, src_rect, dst_rect,
+            );
+        }
     }
 }
