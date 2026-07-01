@@ -344,8 +344,11 @@ define_widget! {
         }
     }
 
-    dirty_rect => (&self, _frame: Rect) -> Rect {
-        Rect::new(-10000.0, -10000.0, 20000.0, 20000.0)
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        // Watermark 通过 post_render 在全帧范围绘制水印，
+        // dirty_rect 返回实际 frame 区域（通常是全屏），
+        // 禁止返回硬编码巨型区域（原 -10000~20000）避免脏区域爆炸。
+        frame
     }
 }
 impl Watermark {

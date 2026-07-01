@@ -43,7 +43,9 @@ define_widget! {
         }
     }
 
-    needs_continuous_update => (&self) -> bool { true }
+    needs_continuous_update => (&self) -> bool {
+        self.spinning
+    }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         if !self.spinning && !self.wrapper_mode { return; }
