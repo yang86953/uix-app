@@ -3,7 +3,7 @@
 //! 组合 PixelSurface + CpuCanvas2D，实现 GraphicsEngine trait。
 
 pub mod canvas_2d;
-pub mod canvas_2d_helpers;
 pub mod noop_canvas_2d;
 pub mod pixel_surface;
+pub mod raster_renderer;
 pub mod software;

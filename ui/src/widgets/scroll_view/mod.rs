@@ -192,7 +192,7 @@ define_widget! {
     on_update => (&mut self, dt: f64) {
         let dt32 = dt as f32;
 
-        // 记录帧间滚动增量给 dirty_rect 做 strip 计算
+        // 记录 clamping 前的 scroll 位置，用于计算 clamping 后的真实 delta
         let old_x = self.scroll_x;
         let old_y = self.scroll_y;
 
@@ -207,9 +207,6 @@ define_widget! {
         self.scroll_y += self.velocity_y * dt32;
         self.velocity_y *= damp;
         if self.velocity_y.abs() < threshold { self.velocity_y = 0.0; }
-
-        // 记录 delta 供 dirty_rect 使用
-        self.scroll_delta_strip.set((self.scroll_x - old_x, self.scroll_y - old_y));
 
         // 边界 clamping：带软停止（velocity 急刹而非硬切）
         if self.scroll_x < 0.0 {
@@ -230,6 +227,11 @@ define_widget! {
             self.scroll_y = max_y;
             self.velocity_y = 0.0;
         }
+
+        // ⚠️ 必须在 clamping 之后计算 delta，否则当内容不超出视口
+        // （max_scroll=0）时，scroll_y 会被 clamp 回 0，但 delta 已经
+        // 记录了虚假偏移，导致 scroll_region 错误移动像素 + 虚假 strip 重绘。
+        self.scroll_delta_strip.set((self.scroll_x - old_x, self.scroll_y - old_y));
     }
 
     needs_continuous_update => (&self) -> bool {

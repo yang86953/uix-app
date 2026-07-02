@@ -245,7 +245,7 @@ impl LayerTree {
         );
         let dirty_bounds = dirty_region.bounds();
         if let Some(ref mut root) = self.root {
-            Self::render_node(root, &mut rctx, tree, dirty_region, dirty_bounds);
+            Self::render_node(root, &mut rctx, tree, dirty_region, dirty_bounds, false);
             root.mark_clean();
         }
     }
@@ -460,7 +460,10 @@ impl LayerTree {
     /// 子节点已在 build 时预排序，直接遍历无需再次排序。
     /// 终极方案：空间+脏状态双剪枝。
     /// `dirty_bounds` 是所有脏矩形的外接包围盒，用于捕捉脏矩形间隙中的组件。
-    fn render_node(node: &mut LayerNode, ctx: &mut RenderContext, tree: &WidgetTree, dirty_region: &DirtyRegion, dirty_bounds: Rect) {
+    /// `force_render`：为 true 时跳过子节点的脏检查，强制渲染所有子节点。
+    /// 滚动容器（ScrollView）需要 force_render，因为子节点 frame 在 content 坐标系，
+    /// 而 dirty_region 在 viewport 坐标系，直接交叉检测会导致子节点被错误跳过。
+    fn render_node(node: &mut LayerNode, ctx: &mut RenderContext, tree: &WidgetTree, dirty_region: &DirtyRegion, dirty_bounds: Rect, force_render: bool) {
         match node {
             LayerNode::Picture {
                 widget_id,
@@ -508,8 +511,12 @@ impl LayerTree {
                 if let Some((sx, sy)) = scroll_off {
                     ctx.canvas_2d().translate(-sx, -sy);
                 }
+                // 滚动时强制渲染所有子节点：子节点 frame 在 content 坐标系，
+                // dirty_region 在 viewport 坐标系，坐标不匹配会导致子节点被跳过。
+                // clip rect 已限制实际像素写入范围，不会产生多余绘制。
+                let child_force = scroll_off.is_some() || force_render;
                 for child in children.iter_mut() {
-                    Self::render_node(child, ctx, tree, dirty_region, dirty_bounds);
+                    Self::render_node(child, ctx, tree, dirty_region, dirty_bounds, child_force);
                 }
                 if let Some((sx, sy)) = scroll_off {
                     ctx.canvas_2d().translate(sx, sy);
@@ -520,7 +527,7 @@ impl LayerTree {
                 widget_id,
                 children,
             } => {
-                Self::render_widget_and_children(*widget_id, children, ctx, tree, dirty_region, dirty_bounds);
+                Self::render_widget_and_children(*widget_id, children, ctx, tree, dirty_region, dirty_bounds, force_render);
             }
         }
     }
@@ -546,6 +553,9 @@ impl LayerTree {
     /// 区域内渲染背景时，会覆盖非脏子节点的像素。通过 dirty_bounds 检查确保
     /// 这些「间隙区」的子节点也被重新渲染。
     ///
+    /// `force_render`：为 true 时跳过脏检查，强制渲染所有子节点。
+    /// 用于滚动容器——子节点 frame 在 content 坐标系，dirty_region 在 viewport 坐标系。
+    ///
     /// 注意：先渲染 widget 自身（由其 render() 自行判断内部可见性），
     /// 再通过 inner().visible() 决定是否渲染子节点。这样模态框等组件
     /// 的 render() 可以控制自身绘制，同时阻止子节点在隐藏时渲染。
@@ -556,6 +566,7 @@ impl LayerTree {
         tree: &WidgetTree,
         dirty_region: &DirtyRegion,
         dirty_bounds: Rect,
+        force_render: bool,
     ) {
         if let Some(node) = tree.get(id) {
             if !node.visible() {
@@ -565,7 +576,10 @@ impl LayerTree {
             // 空间+脏状态双剪枝 + dirty_bounds 间隙修正：
             // widget 不脏且 frame 既不在 dirty_region 也不在 dirty_bounds → 跳过 render_self
             let in_bounds = dirty_bounds.intersect(&frame).is_some();
-            let need_self_render = node.dirty() || dirty_region.intersects(frame) || in_bounds;
+            let need_self_render = force_render
+                || node.dirty()
+                || dirty_region.intersects(frame)
+                || in_bounds;
 
             if need_self_render {
                 ctx.save();
@@ -577,7 +591,7 @@ impl LayerTree {
             // 同时阻止子节点在隐藏位渲染（子节点 frame 可能仍在屏幕内）。
             if node.visible() {
                 for child in children.iter_mut() {
-                    Self::render_node(child, ctx, tree, dirty_region, dirty_bounds);
+                    Self::render_node(child, ctx, tree, dirty_region, dirty_bounds, force_render);
                 }
             }
 
