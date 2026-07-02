@@ -403,7 +403,14 @@ where
                                 let h = engine.canvas_2d().height() as f32;
                                 vec![Rect::new(0.0, 0.0, w, h)]
                             } else {
-                                region.rects().to_vec()
+                                let mut rects = region.rects().to_vec();
+                                // 滚动时将 ScrollView 视口帧纳入 overlay 区域，
+                                // 否则 Overlay clip 限制在 strip 内，
+                                // 导致滚动条等视口内非 strip 的 overlay 内容被截掉。
+                                if let Some((frame, _, _)) = scroll_move {
+                                    rects.push(frame);
+                                }
+                                rects
                             }
                         } else {
                             Vec::new()
