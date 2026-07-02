@@ -303,23 +303,6 @@ where
                 dirty_region.clone()
             };
 
-            // damage rect 来自 dirty_region 的 bounds。
-            // dirty_region 中的 rect 已通过 draw_margin / dirty_rect / 帧快照
-            // 包含了阴影等扩展区域，因此 damage rect 自然覆盖完整绘制范围。
-            // 对 bounds 做 1px 安全扩展防止浮点误差。
-            // 全帧输出（damage=None）会破坏增量渲染的设计目标。
-            let damage: Option<(i32, i32, i32, i32)> = if region.full_frame {
-                None
-            } else {
-                let bounds = region.bounds();
-                Some((
-                    (bounds.x - 1.0).max(0.0) as i32,
-                    (bounds.y - 1.0).max(0.0) as i32,
-                    (bounds.w + 2.0) as i32,
-                    (bounds.h + 2.0) as i32,
-                ))
-            };
-
             if geom_pass_id.is_none() {
                 let gid = frame_graph.add_pass("Geometry", |b| b.writes(&[main_color_res]));
                 let oid = frame_graph.add_pass("Overlay", |b| {
@@ -350,6 +333,33 @@ where
                 }
                 layer_tree.update_dirty(tree);
 
+                // ── 滚动偏移像素移动（提前执行，确保 present 前像素已移位）──
+                // scroll_region memmove 修改了视口内全部像素（非仅 strip），
+                // 必须在 present 前将变化提交到 DIB/窗口，否则非 strip 区域
+                // 残留旧帧像素，导致滚动画面撕裂。
+                let scroll_move = tree.drain_scroll_region_move();
+                if let Some((frame, dx, dy)) = scroll_move {
+                    engine.canvas_2d().scroll_region(frame, dx, dy);
+                }
+
+                // damage rect：滚动时将 ScrollView 视口纳入 damage，
+                // 确保 present 提交 memmove 引起的全视口像素变化。
+                let damage: Option<(i32, i32, i32, i32)> = if region.full_frame {
+                    None
+                } else {
+                    let bounds = if let Some((frame, _, _)) = scroll_move {
+                        region.bounds().union(&frame)
+                    } else {
+                        region.bounds()
+                    };
+                    Some((
+                        (bounds.x - 1.0).max(0.0) as i32,
+                        (bounds.y - 1.0).max(0.0) as i32,
+                        (bounds.w + 2.0) as i32,
+                        (bounds.h + 2.0) as i32,
+                    ))
+                };
+
                 let pass_info: std::collections::HashMap<_, _> = frame_graph
                     .passes()
                     .iter()
@@ -364,13 +374,6 @@ where
 
                 for &pid in &plan.execution_order {
                     if Some(pid) == geom_pass_id {
-                        // ── 滚动偏移像素移动（scroll_region memmove）──
-                        // 在 begin_frame 之前移动已有像素，避免全帧重绘。
-                        if let Some((frame, dx, dy)) = tree.drain_scroll_region_move() {
-                            let canvas = engine.canvas_2d();
-                            canvas.scroll_region(frame, dx, dy);
-                        }
-
                         // 选择更新策略：首次帧或全帧脏时用 FullRedraw，
                         // 增量帧用 DirtyRects（只清除并重绘脏区域）
                         let strategy = if !rendered_first || region.full_frame {
