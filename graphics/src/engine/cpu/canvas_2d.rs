@@ -167,7 +167,14 @@ impl Canvas2D for CpuCanvas2D {
         // dx/dy 是滚动偏移增量（scroll 增加量）。
         // 当 scroll 增加 dy>0 时，内容向上移动，像素应从 viewport.y+dy 复制到 viewport.y。
         // 源矩形 = viewport + delta（从旧位置读取像素）。
-        let src = Rect::new(viewport.x + dx, viewport.y + dy, viewport.w, viewport.h);
+        // 必须用 round() 取整，与 dirty_rect 的 strip 计算保持一致，
+        // 否则截断(as i32)与取整(round)的差异导致边界 1px 错位→撕裂。
+        let src = Rect::new(
+            viewport.x + dx.round(),
+            viewport.y + dy.round(),
+            viewport.w,
+            viewport.h,
+        );
         RenderingBackend::copy_region(&mut self.surface, src, viewport.x as i32, viewport.y as i32);
     }
 }
