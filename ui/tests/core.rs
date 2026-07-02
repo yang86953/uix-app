@@ -7,7 +7,7 @@ use uix_ui::api::WidgetChildren;
 use uix_ui::api::{WidgetCapabilities, WidgetComponent, WidgetRender};
 use uix_ui::api::WidgetTree;
 use uix_ui::api::RenderContext;
-use uix_platform::geometry::{EdgeInsets, Rect, Size};
+use uix_platform::geometry::{EdgeInsets, Rect};
 use uix_graphics::color::Color;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::Arc;

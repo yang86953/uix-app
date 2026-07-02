@@ -57,6 +57,9 @@ define_widget! {
         let menu_y = frame.y + 32.0;
         let menu_h = self.items.len() as f32 * 30.0;
         let menu_rect = Rect::new(frame.x, menu_y, frame.w, menu_h);
+        // 绘制浮层阴影
+        let shadow = ctx.tokens().box_shadow_secondary();
+        ctx.draw_box_shadow(menu_rect, shadow.layer_1.2, shadow.layer_1.0, shadow.layer_1.1, shadow.layer_1.3, r);
         ctx.fill_rect(menu_rect, bg, r);
         ctx.stroke_rect(menu_rect, border, 1.0, r);
 
@@ -70,7 +73,10 @@ define_widget! {
         // 始终包含菜单区域，确保 open 切换时残留像素被清除
         let menu_h = self.items.len() as f32 * 30.0;
         let menu = Rect::new(frame.x, frame.y + 32.0, frame.w, menu_h);
-        frame.union(&menu)
+        let expanded = frame.union(&menu);
+        // 扩展脏区域覆盖阴影边界（blur + 安全边距）
+        let expand = 8.0;
+        Rect::new(expanded.x - expand, expanded.y - expand, expanded.w + expand * 2.0, expanded.h + expand * 2.0)
     }
 }
 

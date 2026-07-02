@@ -680,7 +680,7 @@ mod tests {
         let sv_id = tree.set_root(Box::new(
             ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
         ));
-        let child_id = tree.add_child(sv_id, Box::new(GrowWidget { size: std::cell::Cell::new(100.0) }));
+        let _child_id = tree.add_child(sv_id, Box::new(GrowWidget { size: std::cell::Cell::new(100.0) }));
 
         // 初始布局：子节点100 < 视口200
         tree.layout();

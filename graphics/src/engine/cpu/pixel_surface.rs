@@ -103,10 +103,10 @@ impl PixelSurface {
         let surf_w = self.width;
         let surf_h = self.height;
 
-        let clip_x0 = src_x.max(0).max(-dst_x);
-        let clip_y0 = src_y.max(0).max(-dst_y);
-        let clip_x1 = (src_x + copy_w).min(surf_w).min(surf_w - dst_x);
-        let clip_y1 = (src_y + copy_h).min(surf_h).min(surf_h - dst_y);
+        let clip_x0 = src_x.max(0).max(src_x - dst_x);
+        let clip_y0 = src_y.max(0).max(src_y - dst_y);
+        let clip_x1 = (src_x + copy_w).min(surf_w).min(surf_w + src_x - dst_x);
+        let clip_y1 = (src_y + copy_h).min(surf_h).min(surf_h + src_y - dst_y);
 
         if clip_x0 >= clip_x1 || clip_y0 >= clip_y1 {
             return;
@@ -171,10 +171,10 @@ impl RenderingBackend for PixelSurface {
         let surf_w = self.width;
         let surf_h = self.height;
 
-        let clip_x0 = src_x.max(0).max(-dst_x);
-        let clip_y0 = src_y.max(0).max(-dst_y);
-        let clip_x1 = (src_x + copy_w).min(surf_w).min(surf_w - dst_x);
-        let clip_y1 = (src_y + copy_h).min(surf_h).min(surf_h - dst_y);
+        let clip_x0 = src_x.max(0).max(src_x - dst_x);
+        let clip_y0 = src_y.max(0).max(src_y - dst_y);
+        let clip_x1 = (src_x + copy_w).min(surf_w).min(surf_w + src_x - dst_x);
+        let clip_y1 = (src_y + copy_h).min(surf_h).min(surf_h + src_y - dst_y);
 
         if clip_x0 >= clip_x1 || clip_y0 >= clip_y1 {
             return;

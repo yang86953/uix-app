@@ -75,7 +75,7 @@ define_widget! {
         let gap = 12.0;
         let pad = 16.0;
         let mut positions = Vec::with_capacity(self.tabs.len());
-        let mut cursor_x = frame.x + pad;
+        let mut cursor_x = pad;
         for tab in &self.tabs {
             positions.push(cursor_x);
             let tw = ctx.measure_text(&tab.label, 14.0).w + pad * 2.0;
@@ -101,7 +101,7 @@ define_widget! {
             let tab_rect = Rect::new(cursor_x, tab_bar_y, tw, tab_bar_h);
             let tab_text_y = ctx.visual_center_y(tab_rect, 14.0);
             ctx.draw_text(&tab.label,
-                Point::new(cursor_x + pad * 0.5, tab_text_y),
+                Point::new(cursor_x + pad, tab_text_y),
                 text_color, 14.0);
 
             if is_active {

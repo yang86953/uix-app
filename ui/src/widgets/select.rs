@@ -179,6 +179,9 @@ define_widget! {
         let list_y = frame.y + 32.0;
         let list_h = flat_labels.len() as f32 * 28.0;
         let list_rect = Rect::new(frame.x, list_y, frame.w, list_h);
+        // 绘制浮层阴影
+        let shadow = ctx.tokens().box_shadow_secondary();
+        ctx.draw_box_shadow(list_rect, shadow.layer_1.2, shadow.layer_1.0, shadow.layer_1.1, shadow.layer_1.3, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
         ctx.fill_rect(list_rect, bg, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
         ctx.stroke_rect(list_rect, border, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
 
@@ -209,7 +212,10 @@ define_widget! {
         let flat: Vec<String> = self.flat_labels();
         let list_h = flat.len() as f32 * 28.0;
         let list = Rect::new(frame.x, frame.y + 32.0, frame.w, list_h);
-        frame.union(&list)
+        let expanded = frame.union(&list);
+        // 扩展脏区域覆盖阴影边界
+        let expand = 8.0;
+        Rect::new(expanded.x - expand, expanded.y - expand, expanded.w + expand * 2.0, expanded.h + expand * 2.0)
     }
 }
 
