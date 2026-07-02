@@ -305,7 +305,7 @@ impl LayerTree {
 
         let dirty_bounds = dirty_region.bounds();
         if let Some(ref root) = self.root {
-            Self::render_overlay_node(root, &mut rctx, tree, 0, &hovered_chain, debug_mode, dirty_region, dirty_bounds);
+            Self::render_overlay_node(root, &mut rctx, tree, 0, &hovered_chain, debug_mode, dirty_region, dirty_bounds, false);
         }
     }
 
@@ -652,6 +652,11 @@ impl LayerTree {
     /// 当 `debug_mode` 为 false 时，跳过与 `dirty_region` 无交集的 widget
     /// 的 `post_render` 调用，因为其 overlay 内容未发生变化。
     /// 子树始终递归（子节点可能位于脏区域内）。
+    ///
+    /// `force_overlay`：为 true 时跳过脏检查，强制渲染所有子节点的 overlay。
+    /// 用于滚动容器——子节点 frame 在 content 坐标系，dirty_region 在 viewport 坐标系，
+    /// 坐标不匹配会导致脏检查失效（漏渲或错渲）。clip 已限制实际像素写入范围，
+    /// 不会产生多余绘制。
     fn render_overlay_node(
         node: &LayerNode,
         ctx: &mut RenderContext,
@@ -661,11 +666,12 @@ impl LayerTree {
         debug_mode: bool,
         dirty_region: &DirtyRegion,
         dirty_bounds: Rect,
+        force_overlay: bool,
     ) {
         let widget_id = node.widget_id();
 
         // 判断此 widget 是否需要重新绘制 overlay
-        let needs_overlay = if debug_mode {
+        let needs_overlay = force_overlay || if debug_mode {
             // 调试模式下始终绘制边框，不跳过
             true
         } else if let Some(widget_node) = tree.get(widget_id) {
@@ -714,7 +720,7 @@ impl LayerTree {
             LayerNode::Picture { children, .. }
             | LayerNode::Direct { children, .. } => {
                 for child in children {
-                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds);
+                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds, force_overlay);
                 }
             }
             LayerNode::ClipRect { widget_id, rect, children, .. } => {
@@ -724,8 +730,12 @@ impl LayerTree {
                 if let Some((sx, sy)) = scroll_off {
                     ctx.canvas_2d().translate(-sx, -sy);
                 }
+                // 滚动时强制渲染所有子节点 overlay：子节点 frame 在 content 坐标系，
+                // dirty_region 在 viewport 坐标系，坐标不匹配导致脏检查不可靠。
+                // clip 已限制实际像素写入范围，不会产生多余绘制。
+                let child_force = scroll_off.is_some() || force_overlay;
                 for child in children {
-                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds);
+                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds, child_force);
                 }
                 if let Some((sx, sy)) = scroll_off {
                     ctx.canvas_2d().translate(sx, sy);
