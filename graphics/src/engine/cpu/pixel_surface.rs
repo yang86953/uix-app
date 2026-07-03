@@ -36,6 +36,11 @@ impl PixelSurface {
         self.clear_color = color;
     }
 
+    /// 当前清除颜色。
+    pub fn clear_color(&self) -> Color {
+        self.clear_color
+    }
+
     /// 获取表面宽度。
     pub fn width(&self) -> i32 {
         self.width
