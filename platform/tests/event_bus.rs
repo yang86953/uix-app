@@ -200,6 +200,210 @@ fn clear_empty_bus_does_nothing() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 一次性订阅
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn subscribe_once_triggers_and_auto_removes() {
+    let mut bus = EventBus::new();
+    let call_count = Rc::new(Cell::new(0u32));
+    let c = call_count.clone();
+
+    bus.subscribe_once(UiEventType::MouseDown, move |_| {
+        c.set(c.get() + 1);
+        true
+    });
+
+    // 第一次发布：触发，自动移除
+    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    assert_eq!(call_count.get(), 1);
+
+    // 第二次发布：不再触发
+    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    assert_eq!(call_count.get(), 1);
+}
+
+#[test]
+fn subscribe_once_only_fires_for_matching_type() {
+    let mut bus = EventBus::new();
+    let call_count = Rc::new(Cell::new(0u32));
+    let c = call_count.clone();
+
+    bus.subscribe_once(UiEventType::KeyDown, move |_| {
+        c.set(c.get() + 1);
+        true
+    });
+
+    // 不匹配的事件：不触发，不移除
+    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    assert_eq!(call_count.get(), 0);
+
+    // 匹配的事件：触发并移除
+    bus.publish(&UiEvent::key_down(KeyCode::Enter, KeyMod::NONE));
+    assert_eq!(call_count.get(), 1);
+}
+
+#[test]
+fn subscribe_all_once_triggers_for_any_event() {
+    let mut bus = EventBus::new();
+    let call_count = Rc::new(Cell::new(0u32));
+    let c = call_count.clone();
+
+    bus.subscribe_all_once(move |_| {
+        c.set(c.get() + 1);
+        true
+    });
+
+    // 首次任意事件触发并移除
+    bus.publish(&UiEvent::close());
+    assert_eq!(call_count.get(), 1);
+
+    // 后续不触发
+    bus.publish(&UiEvent::close());
+    assert_eq!(call_count.get(), 1);
+}
+
+#[test]
+fn subscribe_once_handler_returning_false_stops_propagation() {
+    let mut bus = EventBus::new();
+    let handler2_called = Rc::new(Cell::new(false));
+    let h2 = handler2_called.clone();
+
+    bus.subscribe_once(UiEventType::MouseDown, |_| false);
+    bus.subscribe(UiEventType::MouseDown, move |_| {
+        h2.set(true);
+        true
+    });
+
+    let result = bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    assert!(!result, "publish should return false");
+    // 一次性返回 false 后，第二个 handler 不被调用
+    assert!(!handler2_called.get());
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 优先级订阅
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn higher_priority_runs_first() {
+    let mut bus = EventBus::new();
+    let order = Rc::new(Cell::new(Vec::<u32>::new()));
+    let o1 = order.clone();
+    let o2 = order.clone();
+    let o3 = order.clone();
+
+    bus.subscribe_with_priority(UiEventType::MouseDown, 0, move |_| {
+        let mut v = o1.take();
+        v.push(1);
+        o1.set(v);
+        true
+    });
+    bus.subscribe_with_priority(UiEventType::MouseDown, 10, move |_| {
+        let mut v = o2.take();
+        v.push(2);
+        o2.set(v);
+        true
+    });
+    bus.subscribe_with_priority(UiEventType::MouseDown, -5, move |_| {
+        let mut v = o3.take();
+        v.push(3);
+        o3.set(v);
+        true
+    });
+
+    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+
+    let v = order.take();
+    // 优先级 10 > 0 > -5
+    assert_eq!(v, vec![2, 1, 3], "should execute in priority order: 10, 0, -5");
+}
+
+#[test]
+fn same_priority_keeps_registration_order() {
+    let mut bus = EventBus::new();
+    let order = Rc::new(Cell::new(Vec::<u32>::new()));
+    let o1 = order.clone();
+    let o2 = order.clone();
+    let o3 = order.clone();
+
+    bus.subscribe_with_priority(UiEventType::MouseDown, 0, move |_| {
+        let mut v = o1.take();
+        v.push(1);
+        o1.set(v);
+        true
+    });
+    bus.subscribe_with_priority(UiEventType::MouseDown, 0, move |_| {
+        let mut v = o2.take();
+        v.push(2);
+        o2.set(v);
+        true
+    });
+    bus.subscribe_with_priority(UiEventType::MouseDown, 0, move |_| {
+        let mut v = o3.take();
+        v.push(3);
+        o3.set(v);
+        true
+    });
+
+    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+
+    let v = order.take();
+    assert_eq!(v, vec![1, 2, 3], "same priority should keep registration order");
+}
+
+#[test]
+fn high_priority_once_fires_before_low_priority() {
+    let mut bus = EventBus::new();
+    let order = Rc::new(Cell::new(Vec::<u32>::new()));
+    let o1 = order.clone();
+    let o2 = order.clone();
+
+    // 高优先级 + 一次性
+    bus.subscribe_once_with_priority(UiEventType::MouseDown, 100, move |_| {
+        let mut v = o1.take();
+        v.push(1);
+        o1.set(v);
+        true
+    });
+    // 低优先级
+    bus.subscribe_with_priority(UiEventType::MouseDown, -100, move |_| {
+        let mut v = o2.take();
+        v.push(2);
+        o2.set(v);
+        true
+    });
+
+    // 第一次：两者都触发
+    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    let v = order.take();
+    assert_eq!(v, vec![1, 2], "high priority once should fire first");
+
+    // 第二次：只剩低优先级（一次性已移除）
+    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    let v = order.take();
+    assert_eq!(v, vec![2], "only low priority should remain");
+}
+
+#[test]
+fn subscribe_all_with_priority_works() {
+    let mut bus = EventBus::new();
+    let count = Rc::new(Cell::new(0u32));
+    let c = count.clone();
+
+    bus.subscribe_all_with_priority(50, move |_| {
+        c.set(c.get() + 1);
+        true
+    });
+
+    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    assert_eq!(count.get(), 1);
+
+    bus.publish(&UiEvent::key_down(KeyCode::Enter, KeyMod::NONE));
+    assert_eq!(count.get(), 2);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // 订阅计数
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -240,4 +444,15 @@ fn subscriber_count_multiple_subscriptions() {
         bus.subscribe(UiEventType::MouseDown, |_| true);
     }
     assert_eq!(bus.subscriber_count(), 5);
+}
+
+#[test]
+fn subscribe_once_removed_from_count() {
+    let mut bus = EventBus::new();
+    bus.subscribe_once(UiEventType::MouseDown, |_| true);
+    assert_eq!(bus.subscriber_count(), 1);
+    bus.publish(&UiEvent::close()); // 不匹配，不移除
+    assert_eq!(bus.subscriber_count(), 1);
+    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left)); // 匹配，触发并移除
+    assert_eq!(bus.subscriber_count(), 0);
 }
