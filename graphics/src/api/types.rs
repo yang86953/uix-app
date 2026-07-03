@@ -39,7 +39,7 @@ pub use crate::backend::{BackendCapabilities, BackendKind, DamageRegion, RenderB
 pub use crate::engine::cpu::software::SoftwareEngine;
 pub use crate::gpu_engine::GpuEngine;
 pub use crate::null_engine::NullEngine;
-pub use crate::pipeline::RenderSession;
+pub use crate::pipeline::{InvalidationSource, RenderMetrics, RenderSession};
 
 // ── 其他 ──
 pub use crate::bitmap_font::BitmapFont;

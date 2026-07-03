@@ -528,6 +528,7 @@ pub fn run_gui_demo() {
         &theme_cell,
         &debug_mode,
         &cursor_pos,
+        None,
         map_ui_event,
         |ev| {
             matches!(

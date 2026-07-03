@@ -4,6 +4,7 @@
 //! 由 RenderContext 组合持有。
 
 use crate::api::traits::DebugRenderer;
+use uix_graphics::pipeline::{InvalidationSource, RenderMetrics};
 use uix_graphics::traits::Canvas2D;
 use uix_graphics::Color;
 use uix_platform::Rect;
@@ -97,6 +98,82 @@ impl DebugRenderService {
             None,
         );
         // draw_text 由 RenderContext 委托，此处由 RenderContext 调用 debug service 后自行绘制
+    }
+
+    /// Debug overlay：右上角显示度量计数与 invalidation 来源。
+    pub fn draw_telemetry_hud(
+        &self,
+        canvas: &mut dyn Canvas2D,
+        metrics: &RenderMetrics,
+        surface_w: i32,
+    ) {
+        if !self.debug_mode {
+            return;
+        }
+        let panel_w = 220.0;
+        let panel_h = 88.0;
+        let x = surface_w as f32 - panel_w - 6.0;
+        canvas.fill_rect(
+            Rect::new(x, 6.0, panel_w, panel_h),
+            Color::from_rgba(0, 0, 0, 200),
+            None,
+        );
+        let source = metrics.last_invalidation;
+        let indicator = match source {
+            InvalidationSource::None => Color::from_rgba(80, 80, 80, 255),
+            InvalidationSource::FirstFrame => Color::from_rgba(220, 180, 40, 255),
+            InvalidationSource::DirtyRegion => Color::from_rgba(60, 180, 80, 255),
+            InvalidationSource::AnimationPolling => Color::from_rgba(60, 140, 220, 255),
+            InvalidationSource::LayoutEvent => Color::from_rgba(220, 80, 140, 255),
+            InvalidationSource::FrameGraphCull => Color::from_rgba(160, 60, 220, 255),
+        };
+        canvas.fill_rect(Rect::new(x + 6.0, 10.0, 10.0, 10.0), indicator, None);
+        // 条形指示各计数相对量级（无字体时仍可见趋势）
+        let bar_max_w = panel_w - 20.0;
+        let scale = |v: u64| -> f32 {
+            let f = v as f32;
+            (f * 12.0).min(bar_max_w)
+        };
+        let bar_y = 26.0;
+        let bar_h = 4.0;
+        let colors = [
+            Color::from_rgba(100, 200, 100, 255),
+            Color::from_rgba(100, 160, 220, 255),
+            Color::from_rgba(220, 160, 60, 255),
+            Color::from_rgba(180, 180, 180, 255),
+        ];
+        let values = [
+            metrics.layout_calls,
+            metrics.paint_calls,
+            metrics.present_calls,
+            metrics.idle_frames,
+        ];
+        for (i, (&v, &c)) in values.iter().zip(colors.iter()).enumerate() {
+            let y = bar_y + i as f32 * 14.0;
+            canvas.fill_rect(
+                Rect::new(x + 10.0, y, scale(v).max(if v > 0 { 2.0 } else { 0.0 }), bar_h),
+                c,
+                None,
+            );
+        }
+        // invalidation 来源标签区（细线编码字符长度）
+        let label_len = source.label().len() as f32;
+        canvas.fill_rect(
+            Rect::new(x + 22.0, 10.0, label_len * 3.0, 10.0),
+            Color::from_rgba(255, 255, 255, 120),
+            None,
+        );
+    }
+
+    /// 返回 HUD 文本行（供 RenderContext 绘制标签）。
+    pub fn telemetry_hud_lines(metrics: &RenderMetrics) -> [String; 5] {
+        [
+            format!("inv: {}", metrics.last_invalidation.label()),
+            format!("layout: {}", metrics.layout_calls),
+            format!("paint: {}", metrics.paint_calls),
+            format!("present: {}", metrics.present_calls),
+            format!("idle: {}", metrics.idle_frames),
+        ]
     }
 }
 

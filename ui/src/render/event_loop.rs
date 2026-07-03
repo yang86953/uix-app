@@ -62,11 +62,14 @@ use std::time::Instant;
 
 use uix_graphics::frame_graph::resource::{PassId, ResourceId};
 use uix_graphics::frame_graph::FrameGraph;
-use uix_graphics::{DirtyRegion, GraphicsEngine, RenderOutcome, UpdateStrategy};
+use uix_graphics::pipeline::{InvalidationSource, RenderMetrics};
+use uix_graphics::{Color, DirtyRegion, GraphicsEngine, RenderOutcome, UpdateStrategy};
 use uix_platform::event::{UiEvent, UiEventPayload, UiEventType};
 use uix_platform::{Platform, PlatformWindow, Point, Rect};
 
 use crate::clipboard;
+use super::debug::DebugRenderService;
+use super::text::TextRenderService;
 use crate::layer::LayerTree;
 use crate::theme::Theme;
 use crate::widget::{WidgetCore, WidgetEvent, WidgetTree};
@@ -83,6 +86,7 @@ pub fn run_widget_loop<M, X, F>(
     theme: &RefCell<Theme>,
     debug_mode: &Cell<bool>,
     cursor_pos: &Cell<Point>,
+    metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
     on_exit: X,
     on_frame: F,
@@ -269,6 +273,7 @@ where
         if needs_work {
             let before_version = tree.tree_version();
             tree.layout();
+            record_layout(metrics);
 
             // 根 frame 与引擎画布尺寸同步（on_frame 前后均需检查，
             // 因为 on_frame 可能改变树结构导致根 frame 失配）
@@ -285,6 +290,7 @@ where
                 // 所有子节点的 frame 为 Rect::zero()，不 layout 则组件位置混乱。
                 // sync_root_frame_to_engine 之后调用 layout 确保根 frame 已正确同步到画布。
                 tree.layout();
+                record_layout(metrics);
                 tree.mark_full_frame_dirty();
             }
         }
@@ -294,8 +300,15 @@ where
             window_visible && (!rendered_first || !dirty_region.is_empty() || keep_polling);
         let engine_capabilities = engine.capabilities();
 
-        let outcome = if !need_render {
-            RenderOutcome::Idle
+        let inv_source = classify_invalidation(
+            rendered_first,
+            keep_polling,
+            had_layout_event,
+            &dirty_region,
+        );
+
+        let (outcome, outcome_source) = if !need_render {
+            (RenderOutcome::Idle, InvalidationSource::None)
         } else {
             let region = if !rendered_first
                 || dirty_region.full_frame
@@ -326,7 +339,7 @@ where
             if plan.zero_frame_cost {
                 // FrameGraph 认为本轮无需渲染，脏数据已被消费，清理后返回空闲。
                 tree.reset_dirty();
-                RenderOutcome::Idle
+                (RenderOutcome::Idle, InvalidationSource::FrameGraphCull)
             } else {
                 let cur_version = tree.tree_version();
                 if last_tree_version != cur_version {
@@ -390,6 +403,7 @@ where
                         let tokens = lt_ref.tokens();
                         let lt_font = font_service.loaded_font_handle;
                         layer_tree.render(engine, tree, tokens, lt_font, font_service);
+                        record_paint(metrics);
                         drop(lt_ref);
                         engine.end_frame();
                     } else if Some(pid) == over_pass_id {
@@ -439,6 +453,30 @@ where
                         );
                         drop(theme_ref);
                         engine.end_frame();
+                        if debug_mode.get() {
+                            if let Some(m) = metrics {
+                                let canvas = engine.canvas_2d();
+                                let sw = canvas.width();
+                                let hud = DebugRenderService::new(true);
+                                hud.draw_telemetry_hud(canvas, &m.get(), sw);
+                                let lines = DebugRenderService::telemetry_hud_lines(&m.get());
+                                let mut text_svc = TextRenderService::new(
+                                    lt_font,
+                                    font_service,
+                                    300.0,
+                                );
+                                let panel_x = sw as f32 - 214.0;
+                                for (i, line) in lines.iter().enumerate() {
+                                    text_svc.draw_text(
+                                        canvas,
+                                        line,
+                                        Point::new(panel_x, 12.0 + i as f32 * 14.0),
+                                        Color::from_rgba(220, 220, 220, 255),
+                                        11.0,
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -448,12 +486,13 @@ where
 
                 tree.reset_dirty();
                 rendered_first = true;
-                RenderOutcome::Present(damage)
+                (RenderOutcome::Present(damage), inv_source)
             }
         };
 
         match outcome {
             RenderOutcome::Present(damage) => {
+                record_present(metrics, outcome_source);
                 idle_count = 0;
                 if engine_capabilities.uses_external_presenter() {
                     let canvas = engine.canvas_2d();
@@ -472,6 +511,7 @@ where
                 }
             }
             RenderOutcome::Idle => {
+                record_idle(metrics, outcome_source);
                 idle_count = idle_count.saturating_add(1);
             }
         }
@@ -485,6 +525,59 @@ where
     }
 
     0
+}
+
+fn classify_invalidation(
+    rendered_first: bool,
+    keep_polling: bool,
+    had_layout_event: bool,
+    dirty_region: &DirtyRegion,
+) -> InvalidationSource {
+    if !rendered_first {
+        return InvalidationSource::FirstFrame;
+    }
+    if keep_polling && dirty_region.is_empty() {
+        return InvalidationSource::AnimationPolling;
+    }
+    if !dirty_region.is_empty() {
+        return InvalidationSource::DirtyRegion;
+    }
+    if had_layout_event {
+        return InvalidationSource::LayoutEvent;
+    }
+    InvalidationSource::None
+}
+
+fn record_layout(metrics: Option<&Cell<RenderMetrics>>) {
+    if let Some(m) = metrics {
+        let mut stats = m.get();
+        stats.record_layout();
+        m.set(stats);
+    }
+}
+
+fn record_paint(metrics: Option<&Cell<RenderMetrics>>) {
+    if let Some(m) = metrics {
+        let mut stats = m.get();
+        stats.record_paint();
+        m.set(stats);
+    }
+}
+
+fn record_present(metrics: Option<&Cell<RenderMetrics>>, source: InvalidationSource) {
+    if let Some(m) = metrics {
+        let mut stats = m.get();
+        stats.record_present(source);
+        m.set(stats);
+    }
+}
+
+fn record_idle(metrics: Option<&Cell<RenderMetrics>>, source: InvalidationSource) {
+    if let Some(m) = metrics {
+        let mut stats = m.get();
+        stats.record_idle_with_source(source);
+        m.set(stats);
+    }
 }
 
 /// 检查并同步根 widget 的 frame 到引擎画布尺寸。
@@ -521,7 +614,42 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
 mod tests {
     use super::*;
     use crate::widgets::container::Container;
+    use std::cell::Cell;
+    use uix_graphics::pipeline::{InvalidationSource, RenderMetrics};
+    use uix_graphics::types::DirtyRegion;
     use uix_graphics::NullEngine;
+
+    #[test]
+    fn classify_invalidation_first_frame() {
+        let region = DirtyRegion::default();
+        assert_eq!(
+            classify_invalidation(false, false, false, &region),
+            InvalidationSource::FirstFrame
+        );
+    }
+
+    #[test]
+    fn classify_invalidation_dirty_region() {
+        let mut region = DirtyRegion::default();
+        region.add_rect(Rect::new(0.0, 0.0, 10.0, 10.0));
+        assert_eq!(
+            classify_invalidation(true, false, false, &region),
+            InvalidationSource::DirtyRegion
+        );
+    }
+
+    #[test]
+    fn metrics_recording_helpers() {
+        let m = Cell::new(RenderMetrics::default());
+        record_layout(Some(&m));
+        record_paint(Some(&m));
+        record_present(Some(&m), InvalidationSource::FirstFrame);
+        let stats = m.get();
+        assert_eq!(stats.layout_calls, 1);
+        assert_eq!(stats.paint_calls, 1);
+        assert_eq!(stats.present_calls, 1);
+        assert_eq!(stats.last_invalidation, InvalidationSource::FirstFrame);
+    }
 
     /// sync_root_frame_to_engine 当根 frame 不匹配时自动同步（缩小）到引擎画布尺寸
     #[test]
