@@ -508,3 +508,41 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
         // mark_full_frame_dirty + layout() 已确保脏区域和布局正确。
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uix_graphics::NullEngine;
+    use crate::widgets::container::Container;
+
+    /// sync_root_frame_to_engine 当根 frame 不匹配时自动同步到引擎画布尺寸
+    #[test]
+    fn sync_root_frame_mismatch() {
+        let mut tree = WidgetTree::new();
+        let rid = tree.set_root(Box::new(Container::new()));
+        // 设置根 frame 为 800x600
+        if let Some(root) = tree.get_mut(rid) {
+            root.set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+        }
+        let mut engine = NullEngine::new();
+        // NullEngine 的 canvas_2d() 返回 NoopCanvas2D，surface_size() 为 (0,0)
+        sync_root_frame_to_engine(&mut tree, &mut engine);
+        let root = tree.get(rid).unwrap();
+        // 同步后根 frame 应与引擎画布尺寸一致（0,0,0,0）
+        assert_eq!(root.frame(), Rect::new(0.0, 0.0, 0.0, 0.0));
+    }
+
+    /// sync_root_frame_to_engine 当尺寸匹配时不触发改变
+    #[test]
+    fn sync_root_frame_already_matched() {
+        let mut tree = WidgetTree::new();
+        tree.set_root(Box::new(Container::new()));
+        // 根 frame 已是 (0,0,0,0)，与 NullEngine 的 canvas (0,0) 匹配
+        let mut engine = NullEngine::new();
+        sync_root_frame_to_engine(&mut tree, &mut engine);
+        if let Some(rid) = tree.root_id() {
+            let root = tree.get(rid).unwrap();
+            assert_eq!(root.frame(), Rect::new(0.0, 0.0, 0.0, 0.0));
+        }
+    }
+}

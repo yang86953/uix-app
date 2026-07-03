@@ -863,13 +863,13 @@ mod tests {
         let normal = Style::default().with_bg(Color::red());
         let hover = Style::default().with_bg(Color::green());
         let active = Style::default().with_bg(Color::blue());
-        let disabled = Style::default().with_bg(Color::gray());
+        let disabled = Style::default().with_bg(Color::from_rgb(128, 128, 128));
         let v = StyleVariant::new(normal.clone())
             .hover(hover)
             .active(active)
             .disabled(disabled);
         // 优先级：disabled > active > hover > normal
-        assert_eq!(v.resolve(false, false, true).background, Some(Color::gray()));
+        assert_eq!(v.resolve(false, false, true).background, Some(Color::from_rgb(128, 128, 128)));
         assert_eq!(v.resolve(false, true, false).background, Some(Color::blue()));
         assert_eq!(v.resolve(true, false, false).background, Some(Color::green()));
         assert_eq!(v.resolve(false, false, false).background, Some(Color::red()));
@@ -891,7 +891,7 @@ mod tests {
         let normal = Style::default().with_bg(Color::red());
         let hover = Style::default().with_bg(Color::green());
         let active = Style::default().with_bg(Color::blue());
-        let disabled = Style::default().with_bg(Color::gray());
+        let disabled = Style::default().with_bg(Color::from_rgb(128, 128, 128));
         let v = StyleVariant::new(normal)
             .hover(hover.clone())
             .active(active.clone())
@@ -939,7 +939,7 @@ mod tests {
             bg: Color::red(),
             color: Color::white(),
             rounded: 6,
-            margin: 8,
+            margin: EdgeInsets::uniform(8.0),
         };
         assert_eq!(s.background, Some(Color::red()));
         assert_eq!(s.color, Color::white());
@@ -954,38 +954,34 @@ mod tests {
     }
 
     #[test]
-    fn style_macro_all_aliases() {
+    fn style_macro_aliases_bare() {
         let s = crate::style! {
             bg: Color::blue(),
-            background_hover: Color::light_blue(),
-            background_active: Color::dark_blue(),
+            background_hover: Color::from_rgb(173, 216, 255),
+            background_active: Color::from_rgb(0, 0, 139),
             fs: 16,
             opacity: 0.8,
             visible: true,
             w: 100,
             h: 50,
-            padding: 4,
-            border: [Color::red(), 2],
-            direction: Row,
+            padding: EdgeInsets::uniform(4.0),
+            direction: FlexDirection::Row,
             wrap: true,
-            justify: Center,
-            align: Center,
+            justify: JustifyContent::Center,
+            align: AlignItems::Center,
             gap: 8,
             grow: 1,
             shrink: 0,
-            shadow: [Color::black(), 4, 2, 2],
         };
         assert_eq!(s.background, Some(Color::blue()));
-        assert_eq!(s.background_hover, Some(Color::light_blue()));
-        assert_eq!(s.background_active, Some(Color::dark_blue()));
+        assert_eq!(s.background_hover, Some(Color::from_rgb(173, 216, 255)));
+        assert_eq!(s.background_active, Some(Color::from_rgb(0, 0, 139)));
         assert_eq!(s.font_size, 16.0);
         assert_eq!(s.opacity, 0.8);
         assert!(s.visible);
         assert_eq!(s.width, Some(100.0));
         assert_eq!(s.height, Some(50.0));
         assert_eq!(s.padding, EdgeInsets::uniform(4.0));
-        assert_eq!(s.border_color, Some(Color::red()));
-        assert_eq!(s.border_width, 2.0);
         assert_eq!(s.flex_direction, FlexDirection::Row);
         assert!(s.flex_wrap);
         assert_eq!(s.justify_content, JustifyContent::Center);
@@ -993,6 +989,17 @@ mod tests {
         assert_eq!(s.gap, 8.0);
         assert_eq!(s.flex_grow, 1.0);
         assert_eq!(s.flex_shrink, 0.0);
+    }
+
+    #[test]
+    fn style_macro_border_and_shadow() {
+        // border 和 shadow 使用 bracket 语法时需全部为 bracket 条目
+        let s = crate::style! {
+            border: [Color::red(), 2],
+            shadow: [Color::black(), 4, 2, 2],
+        };
+        assert_eq!(s.border_color, Some(Color::red()));
+        assert_eq!(s.border_width, 2.0);
         assert_eq!(s.box_shadow, Some(BoxShadowDef::new(Color::black(), 4.0, 2.0, 2.0)));
     }
 
