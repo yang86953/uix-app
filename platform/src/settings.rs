@@ -5,10 +5,10 @@
 // 原位于 services crate，迁入 platform 层以消除服务层。
 // ============================================================================
 
+use crate::{Errc, Error, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use crate::{Error, Errc, Result};
 
 // ── 极简 JSON 读写（仅支持扁平 HashMap<String, String>） ────────────────
 
@@ -17,7 +17,10 @@ use crate::{Error, Errc, Result};
 fn parse_json_flat(input: &str) -> Result<HashMap<String, String>> {
     let input = input.trim();
     if !input.starts_with('{') || !input.ends_with('}') {
-        return Err(Error::new(Errc::FormatError, "settings: expected JSON object"));
+        return Err(Error::new(
+            Errc::FormatError,
+            "settings: expected JSON object",
+        ));
     }
     let inner = input[1..input.len() - 1].trim();
     if inner.is_empty() {
@@ -30,17 +33,28 @@ fn parse_json_flat(input: &str) -> Result<HashMap<String, String>> {
 
     while pos < bytes.len() {
         // 跳过空白
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() { pos += 1; }
-        if pos >= bytes.len() { break; }
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos >= bytes.len() {
+            break;
+        }
 
         // 解析 key（双引号字符串）
         if bytes[pos] != b'"' {
-            return Err(Error::new(Errc::FormatError, "settings: expected key string"));
+            return Err(Error::new(
+                Errc::FormatError,
+                "settings: expected key string",
+            ));
         }
         pos += 1;
         let key_start = pos;
         while pos < bytes.len() && bytes[pos] != b'"' {
-            if bytes[pos] == b'\\' { pos += 2; } else { pos += 1; }
+            if bytes[pos] == b'\\' {
+                pos += 2;
+            } else {
+                pos += 1;
+            }
         }
         if pos >= bytes.len() {
             return Err(Error::new(Errc::FormatError, "settings: unterminated key"));
@@ -49,24 +63,38 @@ fn parse_json_flat(input: &str) -> Result<HashMap<String, String>> {
         pos += 1;
 
         // 跳过空白和 ':'
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() { pos += 1; }
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
         if pos >= bytes.len() || bytes[pos] != b':' {
             return Err(Error::new(Errc::FormatError, "settings: expected ':'"));
         }
         pos += 1;
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() { pos += 1; }
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
 
         // 解析 value（必须是双引号字符串）
         if pos >= bytes.len() || bytes[pos] != b'"' {
-            return Err(Error::new(Errc::FormatError, "settings: expected value string"));
+            return Err(Error::new(
+                Errc::FormatError,
+                "settings: expected value string",
+            ));
         }
         pos += 1;
         let val_start = pos;
         while pos < bytes.len() && bytes[pos] != b'"' {
-            if bytes[pos] == b'\\' { pos += 2; } else { pos += 1; }
+            if bytes[pos] == b'\\' {
+                pos += 2;
+            } else {
+                pos += 1;
+            }
         }
         if pos >= bytes.len() {
-            return Err(Error::new(Errc::FormatError, "settings: unterminated value"));
+            return Err(Error::new(
+                Errc::FormatError,
+                "settings: unterminated value",
+            ));
         }
         let val = unescape_json_str(&inner[val_start..pos]);
         pos += 1;
@@ -74,8 +102,12 @@ fn parse_json_flat(input: &str) -> Result<HashMap<String, String>> {
         map.insert(key, val);
 
         // 跳过空白和可选的 ','
-        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() { pos += 1; }
-        if pos < bytes.len() && bytes[pos] == b',' { pos += 1; }
+        while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+            pos += 1;
+        }
+        if pos < bytes.len() && bytes[pos] == b',' {
+            pos += 1;
+        }
     }
 
     Ok(map)
@@ -96,7 +128,10 @@ fn unescape_json_str(s: &str) -> String {
                 Some('n') => out.push('\n'),
                 Some('r') => out.push('\r'),
                 Some('t') => out.push('\t'),
-                Some(c) => { out.push('\\'); out.push(c); }
+                Some(c) => {
+                    out.push('\\');
+                    out.push(c);
+                }
                 None => out.push('\\'),
             }
         } else {
@@ -134,7 +169,9 @@ fn serialize_json_flat(map: &HashMap<String, String>) -> String {
     out.push_str("{\n");
     let mut first = true;
     for (k, v) in map {
-        if !first { out.push_str(",\n"); }
+        if !first {
+            out.push_str(",\n");
+        }
         first = false;
         out.push_str("  \"");
         out.push_str(&escape_json_str(k));
@@ -155,7 +192,9 @@ pub struct SettingsService {
 }
 
 impl SettingsService {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// 从 JSON 文件加载设置。
     pub fn load(&mut self, path: &str) -> Result<()> {
@@ -178,7 +217,9 @@ impl SettingsService {
 
     /// 保存设置到 JSON 文件。
     pub fn save(&mut self) -> Result<()> {
-        let path = self.path.as_deref()
+        let path = self
+            .path
+            .as_deref()
             .ok_or_else(|| Error::new(Errc::InvalidState, "no settings path set"))?;
         let json = serialize_json_flat(&self.values);
         fs::write(path, &json)?;
@@ -213,9 +254,15 @@ impl SettingsService {
         self.dirty = true;
     }
 
-    pub fn all(&self) -> &HashMap<String, String> { &self.values }
-    pub fn dirty(&self) -> bool { self.dirty }
-    pub fn count(&self) -> usize { self.values.len() }
+    pub fn all(&self) -> &HashMap<String, String> {
+        &self.values
+    }
+    pub fn dirty(&self) -> bool {
+        self.dirty
+    }
+    pub fn count(&self) -> usize {
+        self.values.len()
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

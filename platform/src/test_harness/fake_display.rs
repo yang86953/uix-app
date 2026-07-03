@@ -1,9 +1,9 @@
 //! Fake 显示 — 完全可配置的显示信息。所有字段通过 Cell 支持 &self 访问。
 
-use std::cell::Cell;
 use crate::api::traits::IDisplay;
 use crate::geometry::Rect;
 use crate::types::DisplayInfo;
+use std::cell::Cell;
 
 #[derive(Debug)]
 pub struct FakeDisplay {
@@ -44,9 +44,7 @@ impl FakeDisplay {
     /// 生成 DisplayInfo（基于当前配置）
     pub fn make_info(&self, index: i32) -> DisplayInfo {
         DisplayInfo {
-            bounds: Rect::new(
-                index as f32 * 1920.0, 0.0, 1920.0, 1080.0,
-            ),
+            bounds: Rect::new(index as f32 * 1920.0, 0.0, 1920.0, 1080.0),
             dpi_scale: self.dpi_scale.get(),
             is_primary: index == 0,
         }

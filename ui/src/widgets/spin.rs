@@ -1,16 +1,20 @@
 //! Spin widget — 加载中旋转动画指示器。
 
-use crate::define_widget;
 use crate::animation::core::Animation;
 use crate::api::Easing;
-use uix_platform::{Rect, Size};
-use uix_graphics::Color;
+use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Color;
+use uix_platform::{Rect, Size};
 
 /// Spin 尺寸。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SpinSize { Small, Default, Large }
+pub enum SpinSize {
+    Small,
+    Default,
+    Large,
+}
 
 define_widget! {
     /// Spin — 旋转加载动画。
@@ -114,20 +118,45 @@ impl Spin {
     }
 }
 
-impl Default for Spin { fn default() -> Self { Self::new() } }
+impl Default for Spin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Spin {
     pub fn new() -> Self {
         Self {
             size: SpinSize::Default,
             anim: Some(Animation::new(0.0, 1.0, 1.25).with_easing(Easing::Linear)),
-            color: None, spinning: true, tip: String::new(), wrapper_mode: false,
+            color: None,
+            spinning: true,
+            tip: String::new(),
+            wrapper_mode: false,
         }
     }
-    pub fn small(mut self) -> Self { self.size = SpinSize::Small; self }
-    pub fn large(mut self) -> Self { self.size = SpinSize::Large; self }
-    pub fn color(mut self, c: Color) -> Self { self.color = Some(c); self }
-    pub fn spinning(mut self, v: bool) -> Self { self.spinning = v; self }
-    pub fn tip(mut self, t: impl Into<String>) -> Self { self.tip = t.into(); self }
-    pub fn wrapper_mode(mut self) -> Self { self.wrapper_mode = true; self }
+    pub fn small(mut self) -> Self {
+        self.size = SpinSize::Small;
+        self
+    }
+    pub fn large(mut self) -> Self {
+        self.size = SpinSize::Large;
+        self
+    }
+    pub fn color(mut self, c: Color) -> Self {
+        self.color = Some(c);
+        self
+    }
+    pub fn spinning(mut self, v: bool) -> Self {
+        self.spinning = v;
+        self
+    }
+    pub fn tip(mut self, t: impl Into<String>) -> Self {
+        self.tip = t.into();
+        self
+    }
+    pub fn wrapper_mode(mut self) -> Self {
+        self.wrapper_mode = true;
+        self
+    }
 }

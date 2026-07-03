@@ -4,15 +4,15 @@
 // 线程安全的错误收集、聚合、快照，支持去重、回调、自动日志。
 // ============================================================================
 
-use std::time::SystemTime;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
+use std::time::SystemTime;
 
-use crate::error::{Error, Errc, ErrorSeverity};
-use crate::log::{Level, Logger};
 use crate::diagnostic::Timestamp;
+use crate::error::{Errc, Error, ErrorSeverity};
+use crate::log::{Level, Logger};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 收集器配置
@@ -126,13 +126,19 @@ impl Collector {
     }
 
     pub fn get_config(&self) -> CollectorConfig {
-        self.inner.read().unwrap_or_else(|e| e.into_inner()).config.clone()
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .config
+            .clone()
     }
 
     pub fn set_max_errors(&self, max: usize) {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.config.max_errors = max;
-        while inner.errors.len() > max { inner.errors.pop_front(); }
+        while inner.errors.len() > max {
+            inner.errors.pop_front();
+        }
     }
 
     pub fn set_auto_log(&self, enabled: bool, level: Level) {
@@ -142,7 +148,11 @@ impl Collector {
     }
 
     pub fn set_deduplicate(&self, enabled: bool) {
-        self.inner.write().unwrap_or_else(|e| e.into_inner()).config.deduplicate = enabled;
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .config
+            .deduplicate = enabled;
     }
 
     pub fn collect(&self, err: Error) -> usize {
@@ -150,8 +160,8 @@ impl Collector {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
 
         if inner.config.deduplicate {
-            use std::hash::{Hash, Hasher};
             use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
             let mut hasher = DefaultHasher::new();
             err.hash(&mut hasher);
             let h = hasher.finish();
@@ -198,7 +208,11 @@ impl Collector {
     }
 
     pub fn collect_fn<F>(&self, f: F) -> usize
-    where F: FnOnce() -> Error { self.collect(f()) }
+    where
+        F: FnOnce() -> Error,
+    {
+        self.collect(f())
+    }
 
     pub fn report(&self, code: Errc, message: impl Into<String>) -> usize {
         self.collect(Error::new(code, message))
@@ -209,7 +223,9 @@ impl Collector {
     }
 
     pub fn on_collect<F>(&self, callback: F) -> u64
-    where F: Fn(&Error) + Send + Sync + 'static {
+    where
+        F: Fn(&Error) + Send + Sync + 'static,
+    {
         let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         let id = inner.next_callback_id;
         inner.next_callback_id += 1;
@@ -218,15 +234,31 @@ impl Collector {
     }
 
     pub fn remove_callback(&self, token: u64) -> bool {
-        self.inner.write().unwrap_or_else(|e| e.into_inner()).callbacks.remove(&token).is_some()
+        self.inner
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .callbacks
+            .remove(&token)
+            .is_some()
     }
 
-    pub fn total_collected(&self) -> usize { self.total_collected.load(Ordering::Relaxed) }
+    pub fn total_collected(&self) -> usize {
+        self.total_collected.load(Ordering::Relaxed)
+    }
     pub fn stored_count(&self) -> usize {
-        self.inner.read().unwrap_or_else(|e| e.into_inner()).errors.len()
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .errors
+            .len()
     }
     pub fn has_errors(&self) -> bool {
-        !self.inner.read().unwrap_or_else(|e| e.into_inner()).errors.is_empty()
+        !self
+            .inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .errors
+            .is_empty()
     }
 
     pub fn errors(&self) -> Vec<Error> {
@@ -236,33 +268,55 @@ impl Collector {
 
     pub fn errors_by_code(&self, code: Errc) -> Vec<Error> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        inner.errors.iter().rev().filter(|e| e.code() == code).cloned().collect()
+        inner
+            .errors
+            .iter()
+            .rev()
+            .filter(|e| e.code() == code)
+            .cloned()
+            .collect()
     }
 
     pub fn errors_in_window(&self, since: SystemTime, until: SystemTime) -> Vec<Error> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        inner.errors.iter().rev()
+        inner
+            .errors
+            .iter()
+            .rev()
             .filter(|e| e.timestamp() >= since && e.timestamp() <= until)
-            .cloned().collect()
+            .cloned()
+            .collect()
     }
 
     pub fn errors_if<F>(&self, predicate: F) -> Vec<Error>
-    where F: Fn(&Error) -> bool {
+    where
+        F: Fn(&Error) -> bool,
+    {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
-        inner.errors.iter().rev().filter(|e| predicate(e)).cloned().collect()
+        inner
+            .errors
+            .iter()
+            .rev()
+            .filter(|e| predicate(e))
+            .cloned()
+            .collect()
     }
 
     pub fn count_by_code(&self) -> HashMap<Errc, usize> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let mut counts = HashMap::new();
-        for err in &inner.errors { *counts.entry(err.code()).or_insert(0) += 1; }
+        for err in &inner.errors {
+            *counts.entry(err.code()).or_insert(0) += 1;
+        }
         counts
     }
 
     pub fn count_by_category(&self) -> HashMap<&'static str, usize> {
         let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let mut counts = HashMap::new();
-        for err in &inner.errors { *counts.entry(err.code().category()).or_insert(0) += 1; }
+        for err in &inner.errors {
+            *counts.entry(err.code().category()).or_insert(0) += 1;
+        }
         counts
     }
 
@@ -292,7 +346,9 @@ impl Collector {
         inner.errors.retain(|e| e.timestamp() >= tp);
     }
 
-    pub fn dump(&self) -> String { self.snapshot().to_string() }
+    pub fn dump(&self) -> String {
+        self.snapshot().to_string()
+    }
 
     pub fn summary(&self) -> String {
         let total = self.total_collected.load(Ordering::Relaxed);
@@ -301,12 +357,16 @@ impl Collector {
         let mut result = format!("{} errors collected ({} stored)", total, stored);
         if !inner.errors.is_empty() {
             let mut top_codes = HashMap::new();
-            for err in &inner.errors { *top_codes.entry(err.code()).or_insert(0) += 1; }
+            for err in &inner.errors {
+                *top_codes.entry(err.code()).or_insert(0) += 1;
+            }
             result.push_str(", top: ");
             let mut sorted: Vec<_> = top_codes.into_iter().collect();
             sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
             for (i, (code, count)) in sorted.iter().take(3).enumerate() {
-                if i > 0 { result.push_str(", "); }
+                if i > 0 {
+                    result.push_str(", ");
+                }
                 result.push_str(&format!("{}={}", code, count));
             }
         }
@@ -325,22 +385,35 @@ pub struct ScopedCollector {
 
 impl ScopedCollector {
     pub fn new(collector: &'static Collector) -> Self {
-        Self { collector, pending: Vec::new() }
+        Self {
+            collector,
+            pending: Vec::new(),
+        }
     }
 
-    pub fn collect(&mut self, err: Error) { self.pending.push(err); }
+    pub fn collect(&mut self, err: Error) {
+        self.pending.push(err);
+    }
 
     pub fn flush(&mut self) {
-        for err in self.pending.drain(..) { self.collector.collect(err); }
+        for err in self.pending.drain(..) {
+            self.collector.collect(err);
+        }
     }
 
-    pub fn discard(&mut self) { self.pending.clear(); }
+    pub fn discard(&mut self) {
+        self.pending.clear();
+    }
 }
 
 impl Drop for ScopedCollector {
-    fn drop(&mut self) { self.flush(); }
+    fn drop(&mut self) {
+        self.flush();
+    }
 }
 
 impl Default for ScopedCollector {
-    fn default() -> Self { Self::new(Collector::instance()) }
+    fn default() -> Self {
+        Self::new(Collector::instance())
+    }
 }

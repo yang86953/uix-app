@@ -2,11 +2,11 @@
 //!
 //! 所有读取方法通过 `&self` 访问，使用 `RefCell` 追踪调用历史。
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 use crate::api::traits::IFileSystem;
 use crate::types::SpecialDir;
-use crate::{Error, Errc, Result};
+use crate::{Errc, Error, Result};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct FakeFileSystemState {
@@ -31,7 +31,10 @@ impl Default for FakeFileSystemState {
                 (SpecialDir::Home, "/home/user".to_string()),
                 (SpecialDir::Temp, "/tmp".to_string()),
                 (SpecialDir::AppData, "/home/user/.config".to_string()),
-                (SpecialDir::LocalAppData, "/home/user/.local/share".to_string()),
+                (
+                    SpecialDir::LocalAppData,
+                    "/home/user/.local/share".to_string(),
+                ),
             ],
             executable_path: "/usr/bin/uix-app".to_string(),
             executable_dir: "/usr/bin".to_string(),
@@ -75,7 +78,9 @@ impl FakeFileSystem {
     }
 
     fn get_special_dir_impl(&self, dir: SpecialDir) -> String {
-        self.state.special_dirs.iter()
+        self.state
+            .special_dirs
+            .iter()
             .find(|(d, _)| *d == dir)
             .map(|(_, p)| p.clone())
             .unwrap_or_default()
@@ -101,8 +106,10 @@ impl IFileSystem for FakeFileSystem {
 
     fn read_file(&self, path: &str) -> Result<Vec<u8>> {
         self.read_calls.borrow_mut().push(path.to_string());
-        self.state.files.get(path).cloned().ok_or_else(|| {
-            Error::new(Errc::NotFound, format!("fake file not found: {}", path))
-        })
+        self.state
+            .files
+            .get(path)
+            .cloned()
+            .ok_or_else(|| Error::new(Errc::NotFound, format!("fake file not found: {}", path)))
     }
 }

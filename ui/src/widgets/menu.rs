@@ -2,12 +2,12 @@
 //!
 //! 支持水平或垂直布局，子菜单项、hover 高亮、active 选中态。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
 use std::cell::Cell;
+use uix_graphics::Radius;
+use uix_platform::{Point, Rect, Size};
 
 /// 菜单方向。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -277,13 +277,32 @@ impl Menu {
             on_click: None,
         }
     }
-    pub fn items(mut self, items: Vec<MenuItem>) -> Self { self.items = items; self }
-    pub fn add_item(mut self, item: MenuItem) -> Self { self.items.push(item); self }
-    pub fn mode(mut self, m: MenuMode) -> Self { self.mode = m; self }
-    pub fn active_key(mut self, key: &str) -> Self { self.active_key = key.to_string(); self }
-    pub fn get_active_key(&self) -> &str { &self.active_key }
-    pub fn set_active_key(&mut self, key: &str) { self.active_key = key.to_string(); }
-    pub fn item_height(mut self, h: f32) -> Self { self.item_h = h; self }
+    pub fn items(mut self, items: Vec<MenuItem>) -> Self {
+        self.items = items;
+        self
+    }
+    pub fn add_item(mut self, item: MenuItem) -> Self {
+        self.items.push(item);
+        self
+    }
+    pub fn mode(mut self, m: MenuMode) -> Self {
+        self.mode = m;
+        self
+    }
+    pub fn active_key(mut self, key: &str) -> Self {
+        self.active_key = key.to_string();
+        self
+    }
+    pub fn get_active_key(&self) -> &str {
+        &self.active_key
+    }
+    pub fn set_active_key(&mut self, key: &str) {
+        self.active_key = key.to_string();
+    }
+    pub fn item_height(mut self, h: f32) -> Self {
+        self.item_h = h;
+        self
+    }
     pub fn on_change<F: FnMut(String) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

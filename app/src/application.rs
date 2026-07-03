@@ -153,7 +153,9 @@ impl App {
             AppMode::GUI => match self.window.as_mut() {
                 Some(window) => {
                     window.run(|platform| {
-                        platform.event_loop().wait_event(&|event| !matches!(event.type_, uix_platform::event::UiEventType::WindowClose))
+                        platform.event_loop().wait_event(&|event| {
+                            !matches!(event.type_, uix_platform::event::UiEventType::WindowClose)
+                        })
                     });
                     0
                 }
@@ -213,7 +215,10 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<uix_ui::widget::WidgetEvent> {
         }
         UiEventType::MouseMove => {
             if let UiEventPayload::MouseMove(ref d) = ev.payload {
-                Some(uix_ui::widget::WidgetEvent::MouseMove { pos: d.pos, mods: d.mods })
+                Some(uix_ui::widget::WidgetEvent::MouseMove {
+                    pos: d.pos,
+                    mods: d.mods,
+                })
             } else {
                 None
             }
@@ -230,21 +235,29 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<uix_ui::widget::WidgetEvent> {
         }
         UiEventType::KeyDown => {
             if let UiEventPayload::Key(ref d) = ev.payload {
-                Some(uix_ui::widget::WidgetEvent::KeyDown { key: d.key, mods: d.mods })
+                Some(uix_ui::widget::WidgetEvent::KeyDown {
+                    key: d.key,
+                    mods: d.mods,
+                })
             } else {
                 None
             }
         }
         UiEventType::KeyUp => {
             if let UiEventPayload::Key(ref d) = ev.payload {
-                Some(uix_ui::widget::WidgetEvent::KeyUp { key: d.key, mods: d.mods })
+                Some(uix_ui::widget::WidgetEvent::KeyUp {
+                    key: d.key,
+                    mods: d.mods,
+                })
             } else {
                 None
             }
         }
         UiEventType::KeyPress => {
             if let UiEventPayload::KeyPress(ref d) = ev.payload {
-                Some(uix_ui::widget::WidgetEvent::KeyPress { text: d.text.clone() })
+                Some(uix_ui::widget::WidgetEvent::KeyPress {
+                    text: d.text.clone(),
+                })
             } else {
                 None
             }

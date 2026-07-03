@@ -1,10 +1,10 @@
 //! LineChart — line chart with grid lines and data point markers.
 
 use crate::define_widget;
-use uix_graphics::Color;
-use uix_platform::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Color;
+use uix_platform::{Point, Rect, Size};
 
 #[derive(Debug, Clone)]
 pub struct LineData {
@@ -14,7 +14,10 @@ pub struct LineData {
 
 impl LineData {
     pub fn new(label: impl Into<String>, value: f32) -> Self {
-        Self { label: label.into(), value }
+        Self {
+            label: label.into(),
+            value,
+        }
     }
 }
 
@@ -115,22 +118,60 @@ define_widget! {
     }
 }
 
-impl Default for LineChart { fn default() -> Self { Self::new() } }
+impl Default for LineChart {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl LineChart {
     pub fn new() -> Self {
         Self {
-            data: Vec::new(), fixed_width: 0.0, fixed_height: 200.0, line_color: None,
-            max_value: 0.0, auto_min: false, show_grid: true, show_dots: true,
-            line_width: 2.0, dot_radius: 3.0,
+            data: Vec::new(),
+            fixed_width: 0.0,
+            fixed_height: 200.0,
+            line_color: None,
+            max_value: 0.0,
+            auto_min: false,
+            show_grid: true,
+            show_dots: true,
+            line_width: 2.0,
+            dot_radius: 3.0,
         }
     }
-    pub fn data(mut self, d: Vec<LineData>) -> Self { self.data = d; self }
-    pub fn width(mut self, w: f32) -> Self { self.fixed_width = w; self }
-    pub fn height(mut self, h: f32) -> Self { self.fixed_height = h; self }
-    pub fn line_color(mut self, c: Color) -> Self { self.line_color = Some(c); self }
-    pub fn max_value(mut self, v: f32) -> Self { self.max_value = v; self }
-    pub fn auto_min(mut self, v: bool) -> Self { self.auto_min = v; self }
-    pub fn show_grid(mut self, v: bool) -> Self { self.show_grid = v; self }
-    pub fn show_dots(mut self, v: bool) -> Self { self.show_dots = v; self }
-    pub fn line_width(mut self, w: f32) -> Self { self.line_width = w; self }
+    pub fn data(mut self, d: Vec<LineData>) -> Self {
+        self.data = d;
+        self
+    }
+    pub fn width(mut self, w: f32) -> Self {
+        self.fixed_width = w;
+        self
+    }
+    pub fn height(mut self, h: f32) -> Self {
+        self.fixed_height = h;
+        self
+    }
+    pub fn line_color(mut self, c: Color) -> Self {
+        self.line_color = Some(c);
+        self
+    }
+    pub fn max_value(mut self, v: f32) -> Self {
+        self.max_value = v;
+        self
+    }
+    pub fn auto_min(mut self, v: bool) -> Self {
+        self.auto_min = v;
+        self
+    }
+    pub fn show_grid(mut self, v: bool) -> Self {
+        self.show_grid = v;
+        self
+    }
+    pub fn show_dots(mut self, v: bool) -> Self {
+        self.show_dots = v;
+        self
+    }
+    pub fn line_width(mut self, w: f32) -> Self {
+        self.line_width = w;
+        self
+    }
 }

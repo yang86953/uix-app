@@ -5,21 +5,25 @@
 // 原位于 services crate，迁入 platform 层以消除服务层。
 // ============================================================================
 
+use crate::{Error, Result};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use crate::{Error, Result};
 
 /// 文件 I/O 服务，提供带统一错误处理的读写操作。
 #[derive(Debug, Clone, Copy)]
 pub struct FileService;
 
 impl Default for FileService {
-    fn default() -> Self { Self }
+    fn default() -> Self {
+        Self
+    }
 }
 
 impl FileService {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 
     /// 读取文件全部内容为字符串。
     pub fn read_to_string(&self, path: &str) -> Result<String> {
@@ -29,8 +33,7 @@ impl FileService {
 
     /// 读取文件全部内容为字节数组。
     pub fn read_bytes(&self, path: &str) -> Result<Vec<u8>> {
-        fs::read(path)
-            .map_err(|e| Error::io_error(format!("failed to read '{}': {}", path, e)))
+        fs::read(path).map_err(|e| Error::io_error(format!("failed to read '{}': {}", path, e)))
     }
 
     /// 将字符串写入文件（自动创建父目录）。

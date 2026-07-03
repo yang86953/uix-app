@@ -1,13 +1,13 @@
 //! Grid widget — CSS Grid-like layout container.
 
-use crate::define_widget;
-use uix_graphics::{Color, Radius};
-use crate::layout::{AlignItems, GridTrack, JustifyContent};
-use crate::layout::engine::{GridLayout, LayoutChild, child_from_tree};
 use crate::api::traits::LayoutEngine;
-use uix_platform::{EdgeInsets, Rect, Size};
+use crate::define_widget;
+use crate::layout::engine::{child_from_tree, GridLayout, LayoutChild};
+use crate::layout::{AlignItems, GridTrack, JustifyContent};
 use crate::render_context::RenderContext;
 use crate::widget::{WidgetId, WidgetTree};
+use uix_graphics::{Color, Radius};
+use uix_platform::{EdgeInsets, Rect, Size};
 
 define_widget! {
     /// Grid container widget.
@@ -81,38 +81,90 @@ define_widget! {
 }
 
 impl Default for Grid {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Grid {
     pub fn new() -> Self {
         Self {
-            columns: Vec::new(), rows: Vec::new(),
-            col_gap: 0.0, row_gap: 0.0,
+            columns: Vec::new(),
+            rows: Vec::new(),
+            col_gap: 0.0,
+            row_gap: 0.0,
             padding: EdgeInsets::zero(),
-            bg_color: None, border_color: None, border_width: 0.0, border_radius: 0.0,
-            align_items: AlignItems::Stretch, justify_items: JustifyContent::Start,
-            fixed_width: None, fixed_height: None,
+            bg_color: None,
+            border_color: None,
+            border_width: 0.0,
+            border_radius: 0.0,
+            align_items: AlignItems::Stretch,
+            justify_items: JustifyContent::Start,
+            fixed_width: None,
+            fixed_height: None,
         }
     }
 
-    pub fn columns(mut self, cols: Vec<GridTrack>) -> Self { self.columns = cols; self }
-    pub fn rows(mut self, rows: Vec<GridTrack>) -> Self { self.rows = rows; self }
-    pub fn col_gap(mut self, gap: f32) -> Self { self.col_gap = gap; self }
-    pub fn row_gap(mut self, gap: f32) -> Self { self.row_gap = gap; self }
-    pub fn gap(mut self, g: f32) -> Self { self.col_gap = g; self.row_gap = g; self }
-    pub fn pad(mut self, p: EdgeInsets) -> Self { self.padding = p; self }
-    pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
-    pub fn border(mut self, c: Color, w: f32) -> Self { self.border_color = Some(c); self.border_width = w; self }
-    pub fn rounded(mut self, r: f32) -> Self { self.border_radius = r; self }
-    pub fn size(mut self, w: f32, h: f32) -> Self { self.fixed_width = Some(w); self.fixed_height = Some(h); self }
-    pub fn align(mut self, a: AlignItems) -> Self { self.align_items = a; self }
-    pub fn justify(mut self, j: JustifyContent) -> Self { self.justify_items = j; self }
+    pub fn columns(mut self, cols: Vec<GridTrack>) -> Self {
+        self.columns = cols;
+        self
+    }
+    pub fn rows(mut self, rows: Vec<GridTrack>) -> Self {
+        self.rows = rows;
+        self
+    }
+    pub fn col_gap(mut self, gap: f32) -> Self {
+        self.col_gap = gap;
+        self
+    }
+    pub fn row_gap(mut self, gap: f32) -> Self {
+        self.row_gap = gap;
+        self
+    }
+    pub fn gap(mut self, g: f32) -> Self {
+        self.col_gap = g;
+        self.row_gap = g;
+        self
+    }
+    pub fn pad(mut self, p: EdgeInsets) -> Self {
+        self.padding = p;
+        self
+    }
+    pub fn bg(mut self, c: Color) -> Self {
+        self.bg_color = Some(c);
+        self
+    }
+    pub fn border(mut self, c: Color, w: f32) -> Self {
+        self.border_color = Some(c);
+        self.border_width = w;
+        self
+    }
+    pub fn rounded(mut self, r: f32) -> Self {
+        self.border_radius = r;
+        self
+    }
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.fixed_width = Some(w);
+        self.fixed_height = Some(h);
+        self
+    }
+    pub fn align(mut self, a: AlignItems) -> Self {
+        self.align_items = a;
+        self
+    }
+    pub fn justify(mut self, j: JustifyContent) -> Self {
+        self.justify_items = j;
+        self
+    }
 
     pub fn two_columns() -> Self {
         Self::new().columns(vec![GridTrack::Fr(1.0), GridTrack::Fr(1.0)])
     }
     pub fn three_columns() -> Self {
-        Self::new().columns(vec![GridTrack::Fr(1.0), GridTrack::Fr(1.0), GridTrack::Fr(1.0)])
+        Self::new().columns(vec![
+            GridTrack::Fr(1.0),
+            GridTrack::Fr(1.0),
+            GridTrack::Fr(1.0),
+        ])
     }
 }

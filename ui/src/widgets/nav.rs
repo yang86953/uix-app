@@ -10,10 +10,10 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::define_widget;
-use uix_graphics::Radius;
-use uix_platform::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::Radius;
+use uix_platform::{Rect, Size};
 
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。
 pub type SharedActive = Rc<Cell<usize>>;
@@ -279,7 +279,10 @@ impl Navigation {
         self
     }
 
-    pub fn build(self, tokens: &dyn crate::api::traits::TokenProvider) -> crate::widget::WidgetNode {
+    pub fn build(
+        self,
+        tokens: &dyn crate::api::traits::TokenProvider,
+    ) -> crate::widget::WidgetNode {
         let loc = crate::locale::use_locale();
         use crate::widget::IntoWidgetNode;
         use crate::widgets::{Container, Divider, Label};
@@ -289,14 +292,17 @@ impl Navigation {
 
         if self.show_title {
             children.push(
-                Label::new(&self.title).color(tokens.color_primary())
+                Label::new(&self.title)
+                    .color(tokens.color_primary())
                     .font_size(20.0)
                     .size(self.width, 52.0)
                     .into_node(),
             );
 
             children.push(
-                Divider::new().color(tokens.color_border_secondary()).into_node(),
+                Divider::new()
+                    .color(tokens.color_border_secondary())
+                    .into_node(),
             );
         }
 
@@ -311,21 +317,29 @@ impl Navigation {
         }
 
         children.push(
-            Container::new().size(self.width, 0.0).flex_grow(1.0).into_node(),
+            Container::new()
+                .size(self.width, 0.0)
+                .flex_grow(1.0)
+                .into_node(),
         );
 
         if self.show_version {
             children.push(
-                Label::new(loc.nav_version).color(tokens.color_text_quaternary())
-                    .font_size(11.0).size(self.width, 24.0).into_node(),
+                Label::new(loc.nav_version)
+                    .color(tokens.color_text_quaternary())
+                    .font_size(11.0)
+                    .size(self.width, 24.0)
+                    .into_node(),
             );
         }
 
         crate::widget::WidgetNode::new(
-            Box::new(Container::new()
-                .bg(tokens.color_bg_container())
-                .dir(crate::FlexDirection::Column)
-                .size(self.width, self.height)),
+            Box::new(
+                Container::new()
+                    .bg(tokens.color_bg_container())
+                    .dir(crate::FlexDirection::Column)
+                    .size(self.width, self.height),
+            ),
             children,
         )
     }

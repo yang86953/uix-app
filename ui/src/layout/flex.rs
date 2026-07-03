@@ -536,4 +536,3 @@ fn compute_wrapped(
         total_size: Size::new(total_w, total_h),
     }
 }
-

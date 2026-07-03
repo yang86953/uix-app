@@ -1,5 +1,5 @@
-use uix_platform::Point;
 use crate::widget::{EventResult, WidgetEvent};
+use uix_platform::Point;
 
 /// Callback types for user interactions.
 pub type ClickCallback = Box<dyn FnMut(&Point)>;
@@ -23,7 +23,9 @@ pub struct InteractionManager {
 }
 
 impl InteractionManager {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn set_on_click<F: FnMut(&Point) + 'static>(&mut self, f: F) {
         self.on_click = Some(Box::new(f));
@@ -37,8 +39,12 @@ impl InteractionManager {
         self.on_submit = Some(Box::new(f));
     }
 
-    pub fn hovered(&self) -> bool { self.hovered }
-    pub fn pressed(&self) -> bool { self.pressed }
+    pub fn hovered(&self) -> bool {
+        self.hovered
+    }
+    pub fn pressed(&self) -> bool {
+        self.pressed
+    }
 
     /// 处理事件。`widget_size` 为 widget 的 (宽度, 高度)，
     /// 用于验证 MouseUp 是否在 widget 范围内触发 click。
@@ -52,11 +58,15 @@ impl InteractionManager {
             WidgetEvent::MouseUp { pos, .. } => {
                 self.pressed = false;
                 // 仅在按下和松开都在 widget 范围内才触发 click
-                let within_bounds = pos.x >= 0.0 && pos.y >= 0.0
-                    && pos.x <= widget_size.0 && pos.y <= widget_size.1;
-                let started_inside = self.press_pos
-                    .map(|p| p.x >= 0.0 && p.y >= 0.0
-                        && p.x <= widget_size.0 && p.y <= widget_size.1)
+                let within_bounds = pos.x >= 0.0
+                    && pos.y >= 0.0
+                    && pos.x <= widget_size.0
+                    && pos.y <= widget_size.1;
+                let started_inside = self
+                    .press_pos
+                    .map(|p| {
+                        p.x >= 0.0 && p.y >= 0.0 && p.x <= widget_size.0 && p.y <= widget_size.1
+                    })
                     .unwrap_or(false);
                 if within_bounds && started_inside {
                     if let Some(ref mut cb) = self.on_click {

@@ -6,9 +6,9 @@
 
 use super::ffi::*;
 use super::util::to_wide;
-use crate::Rect;
 use crate::types::DisplayInfo;
 use crate::IDisplay;
+use crate::Rect;
 use std::ptr;
 
 pub struct WindowsDisplay;
@@ -21,9 +21,8 @@ impl WindowsDisplay {
     /// 读取 Windows 注册表检测系统深色/浅色模式
     fn detect_os_theme() -> bool {
         unsafe {
-            let sub_key = to_wide(
-                "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"
-            );
+            let sub_key =
+                to_wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
             let value_name = to_wide("AppsUseLightTheme");
             let mut hkey: *mut std::ffi::c_void = ptr::null_mut();
 

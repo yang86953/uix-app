@@ -10,7 +10,6 @@ pub struct ImageManager {
     tint_color: Option<uix_graphics::Color>,
 }
 
-
 impl ImageManager {
     pub fn new() -> Self {
         Self::default()

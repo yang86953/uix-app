@@ -1,11 +1,11 @@
 //! Tabs widget — Ant Design style tab bar with content panels.
 
-use std::cell::RefCell;
 use crate::define_widget;
-use uix_graphics::{Radius};
-use uix_platform::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use std::cell::RefCell;
+use uix_graphics::Radius;
+use uix_platform::{Point, Rect, Size};
 
 /// A single tab definition.
 #[derive(Clone)]
@@ -143,25 +143,46 @@ define_widget! {
 }
 
 impl Default for Tabs {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Tabs {
     pub fn new() -> Self {
         Self {
-            tabs: Vec::new(), active_index: 0,
-            position: TabPosition::Top, tab_height: 40.0,
-            fixed_width: None, fixed_height: None,
+            tabs: Vec::new(),
+            active_index: 0,
+            position: TabPosition::Top,
+            tab_height: 40.0,
+            fixed_width: None,
+            fixed_height: None,
             tab_x_positions: RefCell::new(Vec::new()),
         }
     }
 
     pub fn tab(mut self, label: &str, key: &str) -> Self {
-        self.tabs.push(Tab { label: label.to_string(), key: key.to_string() });
+        self.tabs.push(Tab {
+            label: label.to_string(),
+            key: key.to_string(),
+        });
         self
     }
-    pub fn tabs(mut self, tabs: Vec<Tab>) -> Self { self.tabs = tabs; self }
-    pub fn active(mut self, index: usize) -> Self { self.active_index = index.min(self.tabs.len().saturating_sub(1)); self }
-    pub fn position(mut self, pos: TabPosition) -> Self { self.position = pos; self }
-    pub fn size(mut self, w: f32, h: f32) -> Self { self.fixed_width = Some(w); self.fixed_height = Some(h); self }
+    pub fn tabs(mut self, tabs: Vec<Tab>) -> Self {
+        self.tabs = tabs;
+        self
+    }
+    pub fn active(mut self, index: usize) -> Self {
+        self.active_index = index.min(self.tabs.len().saturating_sub(1));
+        self
+    }
+    pub fn position(mut self, pos: TabPosition) -> Self {
+        self.position = pos;
+        self
+    }
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.fixed_width = Some(w);
+        self.fixed_height = Some(h);
+        self
+    }
 }

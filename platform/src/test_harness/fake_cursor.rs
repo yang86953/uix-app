@@ -46,7 +46,9 @@ pub struct FakeCursor {
 
 impl FakeCursor {
     pub fn new() -> Self {
-        Self { state: FakeCursorState::default() }
+        Self {
+            state: FakeCursorState::default(),
+        }
     }
 
     pub fn clear_history(&mut self) {

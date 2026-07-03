@@ -1,7 +1,6 @@
 #![cfg(windows)]
 use super::ffi::*;
 
-
 // ============================================================================
 // uix-platform/src/windows/text_input.rs — Windows IME text input (ITextInput)
 // ============================================================================
@@ -50,4 +49,3 @@ impl ITextInput for WindowsTextInput {
 }
 
 const IACE_DEFAULT: u32 = 0x0010;
-

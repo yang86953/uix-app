@@ -18,19 +18,33 @@ macro_rules! tree {
 #[doc(hidden)]
 macro_rules! wc_upcast {
     ($T:ty; WidgetRender) => {
-        fn as_render(&self) -> Option<&dyn $crate::api::traits::WidgetRender> { Some(self) }
-        fn as_render_mut(&mut self) -> Option<&mut dyn $crate::api::traits::WidgetRender> { Some(self) }
+        fn as_render(&self) -> Option<&dyn $crate::api::traits::WidgetRender> {
+            Some(self)
+        }
+        fn as_render_mut(&mut self) -> Option<&mut dyn $crate::api::traits::WidgetRender> {
+            Some(self)
+        }
     };
     ($T:ty; WidgetEventHandler) => {
-        fn as_event(&self) -> Option<&dyn $crate::api::traits::WidgetEventHandler> { Some(self) }
-        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::api::traits::WidgetEventHandler> { Some(self) }
+        fn as_event(&self) -> Option<&dyn $crate::api::traits::WidgetEventHandler> {
+            Some(self)
+        }
+        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::api::traits::WidgetEventHandler> {
+            Some(self)
+        }
     };
     ($T:ty; WidgetLifecycle) => {
-        fn as_lifecycle(&self) -> Option<&dyn $crate::api::traits::WidgetLifecycle> { Some(self) }
-        fn as_lifecycle_mut(&mut self) -> Option<&mut dyn $crate::api::traits::WidgetLifecycle> { Some(self) }
+        fn as_lifecycle(&self) -> Option<&dyn $crate::api::traits::WidgetLifecycle> {
+            Some(self)
+        }
+        fn as_lifecycle_mut(&mut self) -> Option<&mut dyn $crate::api::traits::WidgetLifecycle> {
+            Some(self)
+        }
     };
     ($T:ty; WidgetLayout) => {
-        fn as_layout(&self) -> Option<&dyn $crate::api::traits::WidgetLayout> { Some(self) }
+        fn as_layout(&self) -> Option<&dyn $crate::api::traits::WidgetLayout> {
+            Some(self)
+        }
     };
 }
 

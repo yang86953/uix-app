@@ -15,3 +15,11 @@ pub use uix_ui as ui;
 pub use uix_ui::ui;
 pub use uix_ui::define_widget;
 pub use uix_ui::tree;
+
+// ── 简化 API（用户可通过 `use uix::view::*` 使用）──
+pub use uix_ui::view;
+pub use uix_ui::App;
+pub use uix_ui::StyleExt;
+pub use uix_ui::Ui;
+pub use uix_ui::View;
+pub use uix_ui::ViewNode;

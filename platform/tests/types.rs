@@ -1,12 +1,11 @@
 //! types — 平台层数据类型测试（枚举 / 结构体 / 默认值）。
 
-use uix_platform::types::{
-    ConsoleColor, ControlSize, CursorType, DisplayInfo, KeyCode, KeyMod,
-    MemoryInfo, MouseButton, OsInfo, ScrollDirection, SpecialDir, StatusLevel,
-    TerminalCapabilities,
-};
-use uix_platform::presenter::NullPresenter;
 use uix_platform::api::traits::IPresenter;
+use uix_platform::presenter::NullPresenter;
+use uix_platform::types::{
+    ConsoleColor, ControlSize, CursorType, DisplayInfo, KeyCode, KeyMod, MemoryInfo, MouseButton,
+    OsInfo, ScrollDirection, SpecialDir, StatusLevel, TerminalCapabilities,
+};
 
 #[test]
 fn console_color_default_value() {
@@ -27,7 +26,11 @@ fn console_color_debug_and_clone() {
 
 #[test]
 fn terminal_capabilities_construction() {
-    let tc = TerminalCapabilities { has_color: true, has_raw_mode: false, has_cursor_control: true };
+    let tc = TerminalCapabilities {
+        has_color: true,
+        has_raw_mode: false,
+        has_cursor_control: true,
+    };
     assert!(tc.has_color);
     assert!(!tc.has_raw_mode);
     assert!(tc.has_cursor_control);
@@ -66,10 +69,18 @@ fn mouse_button_variants() {
 #[test]
 fn cursor_type_has_all_variants() {
     let variants = [
-        CursorType::Arrow, CursorType::IBeam, CursorType::Crosshair,
-        CursorType::Hand, CursorType::ResizeH, CursorType::ResizeV,
-        CursorType::ResizeNE, CursorType::ResizeNW, CursorType::Move,
-        CursorType::Wait, CursorType::NotAllowed, CursorType::Custom,
+        CursorType::Arrow,
+        CursorType::IBeam,
+        CursorType::Crosshair,
+        CursorType::Hand,
+        CursorType::ResizeH,
+        CursorType::ResizeV,
+        CursorType::ResizeNE,
+        CursorType::ResizeNW,
+        CursorType::Move,
+        CursorType::Wait,
+        CursorType::NotAllowed,
+        CursorType::Custom,
     ];
     assert_eq!(variants.len(), 12);
 }

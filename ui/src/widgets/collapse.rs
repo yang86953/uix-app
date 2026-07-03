@@ -1,10 +1,10 @@
 //! Collapse widget — 折叠面板。
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::Radius;
+use uix_platform::{Rect, Size};
 
 /// 单个折叠面板。
 #[derive(Debug, Clone)]
@@ -16,9 +16,16 @@ pub struct CollapsePanel {
 
 impl CollapsePanel {
     pub fn new(header: impl Into<String>, content: impl Into<String>) -> Self {
-        Self { header: header.into(), content: content.into(), expanded: false }
+        Self {
+            header: header.into(),
+            content: content.into(),
+            expanded: false,
+        }
     }
-    pub fn expanded(mut self) -> Self { self.expanded = true; self }
+    pub fn expanded(mut self) -> Self {
+        self.expanded = true;
+        self
+    }
 }
 
 define_widget! {
@@ -120,14 +127,28 @@ define_widget! {
     }
 }
 
-impl Default for Collapse { fn default() -> Self { Self::new() } }
+impl Default for Collapse {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Collapse {
     pub fn new() -> Self {
-        Self { panels: Vec::new(), accordion: false, on_change: None }
+        Self {
+            panels: Vec::new(),
+            accordion: false,
+            on_change: None,
+        }
     }
-    pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self { self.panels = ps; self }
-    pub fn accordion(mut self) -> Self { self.accordion = true; self }
+    pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self {
+        self.panels = ps;
+        self
+    }
+    pub fn accordion(mut self) -> Self {
+        self.accordion = true;
+        self
+    }
     pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

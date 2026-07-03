@@ -1,9 +1,9 @@
 //! Empty widget — 空状态占位（图标 + 描述居中）。
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_platform::{Rect, Size};
 
 define_widget! {
     /// Empty — 空状态展示。
@@ -54,13 +54,30 @@ define_widget! {
     }
 }
 
-impl Default for Empty { fn default() -> Self { Self::new() } }
+impl Default for Empty {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Empty {
     pub fn new() -> Self {
-        Self { description: String::new(), icon_name: String::new(), image: String::new() }
+        Self {
+            description: String::new(),
+            icon_name: String::new(),
+            image: String::new(),
+        }
     }
-    pub fn description(mut self, d: impl Into<String>) -> Self { self.description = d.into(); self }
-    pub fn icon(mut self, name: impl Into<String>) -> Self { self.icon_name = name.into(); self }
-    pub fn image(mut self, name: impl Into<String>) -> Self { self.image = name.into(); self }
+    pub fn description(mut self, d: impl Into<String>) -> Self {
+        self.description = d.into();
+        self
+    }
+    pub fn icon(mut self, name: impl Into<String>) -> Self {
+        self.icon_name = name.into();
+        self
+    }
+    pub fn image(mut self, name: impl Into<String>) -> Self {
+        self.image = name.into();
+        self
+    }
 }

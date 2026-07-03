@@ -1,9 +1,9 @@
 //! Fake 键盘 — 可手动设置按键状态，支持 &self 访问。
 
-use std::cell::Cell;
-use std::collections::HashSet;
 use crate::api::traits::IKeyboard;
 use crate::types::KeyCode;
+use std::cell::Cell;
+use std::collections::HashSet;
 
 #[derive(Debug)]
 pub struct FakeKeyboard {

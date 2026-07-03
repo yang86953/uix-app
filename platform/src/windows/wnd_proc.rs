@@ -8,8 +8,8 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
-use crate::*;
 use crate::event::*;
+use crate::*;
 
 use super::bindings::*;
 use super::consts::*;
@@ -54,12 +54,16 @@ impl WindowsPlatform {
         match msg {
             WM_CLOSE => {
                 self.push_event(UiEvent::close());
-                unsafe { DestroyWindow(self.hwnd); }
+                unsafe {
+                    DestroyWindow(self.hwnd);
+                }
                 self.hwnd = std::ptr::null_mut();
                 0
             }
             WM_DESTROY => {
-                unsafe { PostQuitMessage(0); }
+                unsafe {
+                    PostQuitMessage(0);
+                }
                 0
             }
             WM_SIZE => {
@@ -107,13 +111,22 @@ impl WindowsPlatform {
                 for action in actions {
                     match action {
                         SizeAction::Minimized => {
-                            self.push_event(UiEvent { type_: UiEventType::WindowMinimize, payload: UiEventPayload::None });
+                            self.push_event(UiEvent {
+                                type_: UiEventType::WindowMinimize,
+                                payload: UiEventPayload::None,
+                            });
                         }
                         SizeAction::Maximized => {
-                            self.push_event(UiEvent { type_: UiEventType::WindowMaximize, payload: UiEventPayload::None });
+                            self.push_event(UiEvent {
+                                type_: UiEventType::WindowMaximize,
+                                payload: UiEventPayload::None,
+                            });
                         }
                         SizeAction::Restored => {
-                            self.push_event(UiEvent { type_: UiEventType::WindowRestore, payload: UiEventPayload::None });
+                            self.push_event(UiEvent {
+                                type_: UiEventType::WindowRestore,
+                                payload: UiEventPayload::None,
+                            });
                         }
                         SizeAction::Resized => {
                             self.push_event(UiEvent::resize(w, h));
@@ -129,11 +142,17 @@ impl WindowsPlatform {
                 0
             }
             WM_SETFOCUS => {
-                self.push_event(UiEvent { type_: UiEventType::WindowFocus, payload: UiEventPayload::None });
+                self.push_event(UiEvent {
+                    type_: UiEventType::WindowFocus,
+                    payload: UiEventPayload::None,
+                });
                 0
             }
             WM_KILLFOCUS => {
-                self.push_event(UiEvent { type_: UiEventType::WindowBlur, payload: UiEventPayload::None });
+                self.push_event(UiEvent {
+                    type_: UiEventType::WindowBlur,
+                    payload: UiEventPayload::None,
+                });
                 0
             }
             WM_KEYDOWN | WM_SYSKEYDOWN => {
@@ -154,21 +173,44 @@ impl WindowsPlatform {
                 }
                 0
             }
-            WM_LBUTTONDOWN => { self.handle_mouse_down(lparam, MouseButton::Left); 0 }
-            WM_LBUTTONUP   => { self.handle_mouse_up(lparam, MouseButton::Left); 0 }
-            WM_RBUTTONDOWN => { self.handle_mouse_down(lparam, MouseButton::Right); 0 }
-            WM_RBUTTONUP   => { self.handle_mouse_up(lparam, MouseButton::Right); 0 }
-            WM_MBUTTONDOWN => { self.handle_mouse_down(lparam, MouseButton::Middle); 0 }
-            WM_MBUTTONUP   => { self.handle_mouse_up(lparam, MouseButton::Middle); 0 }
+            WM_LBUTTONDOWN => {
+                self.handle_mouse_down(lparam, MouseButton::Left);
+                0
+            }
+            WM_LBUTTONUP => {
+                self.handle_mouse_up(lparam, MouseButton::Left);
+                0
+            }
+            WM_RBUTTONDOWN => {
+                self.handle_mouse_down(lparam, MouseButton::Right);
+                0
+            }
+            WM_RBUTTONUP => {
+                self.handle_mouse_up(lparam, MouseButton::Right);
+                0
+            }
+            WM_MBUTTONDOWN => {
+                self.handle_mouse_down(lparam, MouseButton::Middle);
+                0
+            }
+            WM_MBUTTONUP => {
+                self.handle_mouse_up(lparam, MouseButton::Middle);
+                0
+            }
             WM_MOUSEMOVE => {
                 let pos = self.mouse_pos_from_lparam(lparam);
                 self.push_event(UiEvent::mouse_move(pos));
                 0
             }
             WM_MOUSEWHEEL => {
-                let screen_pt = POINT { x: Self::loword(lparam) as i32, y: Self::hiword(lparam) as i32 };
+                let screen_pt = POINT {
+                    x: Self::loword(lparam) as i32,
+                    y: Self::hiword(lparam) as i32,
+                };
                 let mut client_pt = screen_pt;
-                unsafe { ScreenToClient(self.hwnd, &mut client_pt); }
+                unsafe {
+                    ScreenToClient(self.hwnd, &mut client_pt);
+                }
                 let pos = Point::new(client_pt.x as f32, client_pt.y as f32);
                 let delta = (Self::hiword_usize(wparam) as i16) as i32;
                 let delta_y = -(delta as f32) / 120.0;
@@ -180,7 +222,9 @@ impl WindowsPlatform {
                 let timer_id = wparam as u32;
                 if let Ok(mut set) = self.single_shot_timers.lock() {
                     if set.remove(&timer_id) {
-                        unsafe { KillTimer(self.hwnd, timer_id); }
+                        unsafe {
+                            KillTimer(self.hwnd, timer_id);
+                        }
                     }
                 }
                 self.push_event(UiEvent::timer(timer_id));

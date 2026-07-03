@@ -150,4 +150,3 @@ impl Cli {
         &self.commands
     }
 }
-

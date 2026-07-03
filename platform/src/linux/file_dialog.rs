@@ -72,7 +72,14 @@ fn use_kde() -> bool {
 
 fn zenity_open_file(title: &str, filters: &str) -> Vec<String> {
     let mut cmd = std::process::Command::new("zenity");
-    cmd.args(["--file-selection", "--title", title, "--multiple", "--separator", "\n"]);
+    cmd.args([
+        "--file-selection",
+        "--title",
+        title,
+        "--multiple",
+        "--separator",
+        "\n",
+    ]);
 
     if !filters.is_empty() {
         for part in filters.split(';') {
@@ -101,7 +108,13 @@ fn zenity_open_file(title: &str, filters: &str) -> Vec<String> {
 
 fn zenity_save_file(title: &str, filters: &str) -> String {
     let mut cmd = std::process::Command::new("zenity");
-    cmd.args(["--file-selection", "--title", title, "--save", "--confirm-overwrite"]);
+    cmd.args([
+        "--file-selection",
+        "--title",
+        title,
+        "--save",
+        "--confirm-overwrite",
+    ]);
 
     if !filters.is_empty() {
         for part in filters.split(';') {
@@ -127,7 +140,8 @@ fn zenity_save_file(title: &str, filters: &str) -> String {
 fn zenity_open_folder(title: &str) -> String {
     let output = match std::process::Command::new("zenity")
         .args(["--file-selection", "--title", title, "--directory"])
-        .output() {
+        .output()
+    {
         Ok(o) => o,
         Err(_) => return String::new(),
     };
@@ -145,7 +159,8 @@ fn zenity_open_folder(title: &str) -> String {
 fn kde_open_file(title: &str, filters: &str) -> Vec<String> {
     let output = match std::process::Command::new("kdialog")
         .args(["--title", title, "--getopenfilename", ".", filters])
-        .output() {
+        .output()
+    {
         Ok(o) => o,
         Err(_) => return Vec::new(),
     };
@@ -163,7 +178,8 @@ fn kde_open_file(title: &str, filters: &str) -> Vec<String> {
 fn kde_save_file(title: &str, filters: &str) -> String {
     let output = match std::process::Command::new("kdialog")
         .args(["--title", title, "--getsavefilename", ".", filters])
-        .output() {
+        .output()
+    {
         Ok(o) => o,
         Err(_) => return String::new(),
     };
@@ -177,7 +193,8 @@ fn kde_save_file(title: &str, filters: &str) -> String {
 fn kde_open_folder(title: &str) -> String {
     let output = match std::process::Command::new("kdialog")
         .args(["--title", title, "--getexistingdirectory", "."])
-        .output() {
+        .output()
+    {
         Ok(o) => o,
         Err(_) => return String::new(),
     };

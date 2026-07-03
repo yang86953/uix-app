@@ -1,22 +1,34 @@
 use crate::define_widget;
 
-use uix_platform::{Point, Rect, Size};
-use uix_graphics::{Color, Radius, PathBuilder, FillRule};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, FillRule, PathBuilder, Radius};
+use uix_platform::{Point, Rect, Size};
 
 /// Popover 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PopoverPlacement {
-    Top, TopLeft, TopRight,
-    Bottom, BottomLeft, BottomRight,
-    Left, LeftTop, LeftBottom,
-    Right, RightTop, RightBottom,
+    Top,
+    TopLeft,
+    TopRight,
+    Bottom,
+    BottomLeft,
+    BottomRight,
+    Left,
+    LeftTop,
+    LeftBottom,
+    Right,
+    RightTop,
+    RightBottom,
 }
 
 /// 触发方式。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PopoverTrigger { Click, Hover, Focus }
+pub enum PopoverTrigger {
+    Click,
+    Hover,
+    Focus,
+}
 
 define_widget! {
     pub struct Popover {
@@ -109,22 +121,40 @@ define_widget! {
     }
 }
 
-impl Default for Popover { fn default() -> Self { Self::new("") } }
+impl Default for Popover {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
 
 impl Popover {
     pub fn new(content: impl Into<String>) -> Self {
         Self {
-            title: String::new(), content: content.into(), visible: false,
+            title: String::new(),
+            content: content.into(),
+            visible: false,
             placement: PopoverPlacement::Top,
             trigger: PopoverTrigger::Click,
             arrow: true,
             timer: 0.0,
         }
     }
-    pub fn title(mut self, t: impl Into<String>) -> Self { self.title = t.into(); self }
-    pub fn placement(mut self, p: PopoverPlacement) -> Self { self.placement = p; self }
-    pub fn trigger(mut self, t: PopoverTrigger) -> Self { self.trigger = t; self }
-    pub fn arrow(mut self, v: bool) -> Self { self.arrow = v; self }
+    pub fn title(mut self, t: impl Into<String>) -> Self {
+        self.title = t.into();
+        self
+    }
+    pub fn placement(mut self, p: PopoverPlacement) -> Self {
+        self.placement = p;
+        self
+    }
+    pub fn trigger(mut self, t: PopoverTrigger) -> Self {
+        self.trigger = t;
+        self
+    }
+    pub fn arrow(mut self, v: bool) -> Self {
+        self.arrow = v;
+        self
+    }
 
     fn popup_rect(&self, _fw: f32, _fh: f32) -> Rect {
         let (pw, ph) = (220.0, 100.0);
@@ -144,31 +174,67 @@ impl Popover {
             PopoverPlacement::Left => (frame.x - pw - gap, frame.y + frame.h * 0.5 - ph * 0.5),
             PopoverPlacement::LeftTop => (frame.x - pw - gap, frame.y),
             PopoverPlacement::LeftBottom => (frame.x - pw - gap, frame.y + frame.h - ph),
-            PopoverPlacement::Right => (frame.x + frame.w + gap, frame.y + frame.h * 0.5 - ph * 0.5),
+            PopoverPlacement::Right => {
+                (frame.x + frame.w + gap, frame.y + frame.h * 0.5 - ph * 0.5)
+            }
             PopoverPlacement::RightTop => (frame.x + frame.w + gap, frame.y),
             PopoverPlacement::RightBottom => (frame.x + frame.w + gap, frame.y + frame.h - ph),
         }
     }
 }
 
-fn draw_popover_arrow(ctx: &mut RenderContext, _trigger: Rect, popup: Rect, placement: PopoverPlacement, color: Color) {
+fn draw_popover_arrow(
+    ctx: &mut RenderContext,
+    _trigger: Rect,
+    popup: Rect,
+    placement: PopoverPlacement,
+    color: Color,
+) {
     let arrow_sz = 8.0;
     let (x1, y1, x2, y2, x3, y3) = match placement {
         PopoverPlacement::Top | PopoverPlacement::TopLeft | PopoverPlacement::TopRight => {
             let cx = popup.x + popup.w / 2.0;
-            (cx - arrow_sz, popup.y + popup.h, cx + arrow_sz, popup.y + popup.h, cx, popup.y + popup.h + arrow_sz)
+            (
+                cx - arrow_sz,
+                popup.y + popup.h,
+                cx + arrow_sz,
+                popup.y + popup.h,
+                cx,
+                popup.y + popup.h + arrow_sz,
+            )
         }
         PopoverPlacement::Bottom | PopoverPlacement::BottomLeft | PopoverPlacement::BottomRight => {
             let cx = popup.x + popup.w / 2.0;
-            (cx - arrow_sz, popup.y, cx + arrow_sz, popup.y, cx, popup.y - arrow_sz)
+            (
+                cx - arrow_sz,
+                popup.y,
+                cx + arrow_sz,
+                popup.y,
+                cx,
+                popup.y - arrow_sz,
+            )
         }
         PopoverPlacement::Left | PopoverPlacement::LeftTop | PopoverPlacement::LeftBottom => {
             let cy = popup.y + popup.h / 2.0;
-            (popup.x + popup.w, cy - arrow_sz, popup.x + popup.w, cy + arrow_sz, popup.x + popup.w + arrow_sz, cy)
+            (
+                popup.x + popup.w,
+                cy - arrow_sz,
+                popup.x + popup.w,
+                cy + arrow_sz,
+                popup.x + popup.w + arrow_sz,
+                cy,
+            )
         }
         PopoverPlacement::Right | PopoverPlacement::RightTop | PopoverPlacement::RightBottom => {
             let cy = popup.y + popup.h / 2.0;
-            (popup.x, cy - arrow_sz, popup.x, cy + arrow_sz, popup.x - arrow_sz, cy)
+            (
+                popup.x,
+                cy - arrow_sz,
+                popup.x,
+                cy + arrow_sz,
+                popup.x - arrow_sz,
+                cy,
+            )
         }
     };
     let mut pb = PathBuilder::new();

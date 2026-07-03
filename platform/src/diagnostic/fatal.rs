@@ -9,9 +9,9 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Once;
 
-use crate::error::{Error, Errc, ErrorSeverity};
 use crate::diagnostic::collector::Collector;
 use crate::diagnostic::Timestamp;
+use crate::error::{Errc, Error, ErrorSeverity};
 use crate::log::{Level, Logger};
 
 static FATAL_INSTALLED: Once = Once::new();
@@ -30,18 +30,14 @@ pub fn install_fatal_handler() {
                 "unknown panic payload".to_string()
             };
 
-            let loc_file = info.location().map(|l| l.file().to_string())
+            let loc_file = info
+                .location()
+                .map(|l| l.file().to_string())
                 .unwrap_or_else(|| "unknown".to_string());
             let loc_line = info.location().map(|l| l.line()).unwrap_or(0);
             let panic_msg = format!("PANIC at {}:{}: {}", loc_file, loc_line, msg_str);
 
-            Logger::instance().log(
-                Level::Fatal,
-                panic_msg.clone(),
-                "<panic>",
-                0,
-                Vec::new(),
-            );
+            Logger::instance().log(Level::Fatal, panic_msg.clone(), "<panic>", 0, Vec::new());
 
             Collector::instance().collect(Error::fatal(Errc::Unknown, panic_msg.clone()));
 

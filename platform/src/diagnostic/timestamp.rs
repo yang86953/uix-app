@@ -117,7 +117,10 @@ mod tests {
     #[test]
     fn test_now() {
         let ts = Timestamp::now();
-        assert!(ts.as_millis() > 946684800_000, "timestamp should be after 2000");
+        assert!(
+            ts.as_millis() > 946684800_000,
+            "timestamp should be after 2000"
+        );
     }
 
     #[test]

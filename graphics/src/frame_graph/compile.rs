@@ -231,7 +231,9 @@ impl Compiler {
             Some(order) => order,
             None => {
                 // 出现循环依赖 —— 降级为按注册顺序执行所有活跃 Pass。
-                uix_platform::log::warn_fn("FrameGraph: circular dependency detected, falling back to registration order");
+                uix_platform::log::warn_fn(
+                    "FrameGraph: circular dependency detected, falling back to registration order",
+                );
                 alive_passes.iter().map(|p| p.id).collect()
             }
         };

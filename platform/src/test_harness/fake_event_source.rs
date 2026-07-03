@@ -3,9 +3,9 @@
 //! 实现 `OsEventSource`，通过 blanket impl 自动获得 `IEventLoop`。
 //! 支持注入事件序列、追踪已处理事件、模拟退出信号。
 
-use std::collections::VecDeque;
 use crate::event::UiEvent;
 use crate::shared::OsEventSource;
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone)]
 pub struct FakeEventSourceState {
@@ -34,7 +34,9 @@ pub struct FakeEventSource {
 
 impl FakeEventSource {
     pub fn new() -> Self {
-        Self { state: FakeEventSourceState::default() }
+        Self {
+            state: FakeEventSourceState::default(),
+        }
     }
 
     /// 注入一个事件到队列末尾

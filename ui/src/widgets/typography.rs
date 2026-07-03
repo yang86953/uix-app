@@ -6,12 +6,12 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use uix_platform::{Point, Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
-use uix_graphics::Color;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
+use uix_graphics::Color;
+use uix_platform::{Point, Rect, Size};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypographyType {
@@ -215,8 +215,13 @@ impl Typography {
             content: content.to_string(),
             type_,
             disabled: false,
-            mark: false, code: false, underline: false, delete: false,
-            strong: false, italic: false, copyable: false,
+            mark: false,
+            code: false,
+            underline: false,
+            delete: false,
+            strong: false,
+            italic: false,
+            copyable: false,
             color_override: None,
             glyph_xs: RefCell::new(Vec::new()),
             line_info: RefCell::new(Vec::new()),
@@ -236,17 +241,48 @@ impl Typography {
         };
         Self::new(content, type_)
     }
-    pub fn paragraph(content: &str) -> Self { Self::new(content, TypographyType::Paragraph) }
-    pub fn text(content: &str) -> Self { Self::new(content, TypographyType::Text) }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn mark(mut self) -> Self { self.mark = true; self }
-    pub fn code(mut self) -> Self { self.code = true; self }
-    pub fn underline(mut self) -> Self { self.underline = true; self }
-    pub fn delete(mut self) -> Self { self.delete = true; self }
-    pub fn strong(mut self) -> Self { self.strong = true; self }
-    pub fn italic(mut self) -> Self { self.italic = true; self }
-    pub fn color(mut self, c: Color) -> Self { self.color_override = Some(c); self }
-    pub fn copyable(mut self, v: bool) -> Self { self.copyable = v; self }
+    pub fn paragraph(content: &str) -> Self {
+        Self::new(content, TypographyType::Paragraph)
+    }
+    pub fn text(content: &str) -> Self {
+        Self::new(content, TypographyType::Text)
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn mark(mut self) -> Self {
+        self.mark = true;
+        self
+    }
+    pub fn code(mut self) -> Self {
+        self.code = true;
+        self
+    }
+    pub fn underline(mut self) -> Self {
+        self.underline = true;
+        self
+    }
+    pub fn delete(mut self) -> Self {
+        self.delete = true;
+        self
+    }
+    pub fn strong(mut self) -> Self {
+        self.strong = true;
+        self
+    }
+    pub fn italic(mut self) -> Self {
+        self.italic = true;
+        self
+    }
+    pub fn color(mut self, c: Color) -> Self {
+        self.color_override = Some(c);
+        self
+    }
+    pub fn copyable(mut self, v: bool) -> Self {
+        self.copyable = v;
+        self
+    }
 
     pub fn selected_text(&self) -> Option<String> {
         self.selection.get().map(|(s, e)| self.slice_range(s, e))
@@ -267,17 +303,23 @@ impl Typography {
     fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
         let xs = self.glyph_xs.borrow();
         let li = self.line_info.borrow();
-        if xs.is_empty() { return 0; }
+        if xs.is_empty() {
+            return 0;
+        }
         if li.is_empty() {
             for (i, &gx) in xs.iter().enumerate() {
-                if text_x < gx { return i; }
+                if text_x < gx {
+                    return i;
+                }
             }
             return xs.len();
         }
         // 将 text_y 钳制到有效行区间，点击在文本上/下方时落在首/末行
         let mut target_y = text_y;
         let first_ly = li.first().map(|(ly, _)| *ly).unwrap_or(0.0);
-        if target_y < first_ly { target_y = first_ly; }
+        if target_y < first_ly {
+            target_y = first_ly;
+        }
         // 根据 y 坐标找到所在行
         let mut global_off = 0usize;
         let mut line_gc = 0usize;
@@ -292,14 +334,19 @@ impl Typography {
         // 在所在行内按 x 查找
         let end = (global_off + line_gc).min(xs.len());
         for i in global_off..end {
-            if text_x < xs[i] { return i; }
+            if text_x < xs[i] {
+                return i;
+            }
         }
         end
     }
 
     fn set_selection_range(&self, a: usize, b: usize) {
-        if a == b { self.selection.set(None); }
-        else { self.selection.set(Some((a.min(b), a.max(b)))); }
+        if a == b {
+            self.selection.set(None);
+        } else {
+            self.selection.set(Some((a.min(b), a.max(b))));
+        }
     }
 
     fn slice_range(&self, start_char: usize, end_char: usize) -> String {

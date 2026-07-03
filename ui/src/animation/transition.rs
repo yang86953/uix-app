@@ -43,12 +43,18 @@ pub enum Transition {
 impl Transition {
     /// 是否为进场动画。
     pub fn is_enter(&self) -> bool {
-        matches!(self, Self::FadeIn { .. } | Self::SlideIn { .. } | Self::ZoomIn { .. })
+        matches!(
+            self,
+            Self::FadeIn { .. } | Self::SlideIn { .. } | Self::ZoomIn { .. }
+        )
     }
 
     /// 是否为退场动画。
     pub fn is_exit(&self) -> bool {
-        matches!(self, Self::FadeOut { .. } | Self::SlideOut { .. } | Self::ZoomOut { .. })
+        matches!(
+            self,
+            Self::FadeOut { .. } | Self::SlideOut { .. } | Self::ZoomOut { .. }
+        )
     }
 
     /// 获取动画持续时间。
@@ -78,25 +84,37 @@ impl Transition {
     /// 创建位移动画（用于 SlideIn/SlideOut）。
     pub fn offset_animation(&self) -> Option<Animation<Point>> {
         match self {
-            Self::SlideIn { direction, distance, duration } => {
+            Self::SlideIn {
+                direction,
+                distance,
+                duration,
+            } => {
                 let offset = match direction {
                     SlideDirection::Up => Point::new(0.0, *distance),
                     SlideDirection::Down => Point::new(0.0, -*distance),
                     SlideDirection::Left => Point::new(*distance, 0.0),
                     SlideDirection::Right => Point::new(-*distance, 0.0),
                 };
-                Some(Animation::new(offset, Point::new(0.0, 0.0), *duration)
-                    .with_easing(crate::animation::easing::Easing::antd_out()))
+                Some(
+                    Animation::new(offset, Point::new(0.0, 0.0), *duration)
+                        .with_easing(crate::animation::easing::Easing::antd_out()),
+                )
             }
-            Self::SlideOut { direction, distance, duration } => {
+            Self::SlideOut {
+                direction,
+                distance,
+                duration,
+            } => {
                 let offset = match direction {
                     SlideDirection::Up => Point::new(0.0, -*distance),
                     SlideDirection::Down => Point::new(0.0, *distance),
                     SlideDirection::Left => Point::new(-*distance, 0.0),
                     SlideDirection::Right => Point::new(*distance, 0.0),
                 };
-                Some(Animation::new(Point::new(0.0, 0.0), offset, *duration)
-                    .with_easing(crate::animation::easing::Easing::antd_in()))
+                Some(
+                    Animation::new(Point::new(0.0, 0.0), offset, *duration)
+                        .with_easing(crate::animation::easing::Easing::antd_in()),
+                )
             }
             _ => None,
         }
@@ -105,14 +123,14 @@ impl Transition {
     /// 创建缩放动画（用于 ZoomIn/ZoomOut）。
     pub fn scale_animation(&self) -> Option<Animation<f32>> {
         match self {
-            Self::ZoomIn { duration } => {
-                Some(Animation::new(0.8, 1.0, *duration)
-                    .with_easing(crate::animation::easing::Easing::antd_default()))
-            }
-            Self::ZoomOut { duration } => {
-                Some(Animation::new(1.0, 0.8, *duration)
-                    .with_easing(crate::animation::easing::Easing::antd_default()))
-            }
+            Self::ZoomIn { duration } => Some(
+                Animation::new(0.8, 1.0, *duration)
+                    .with_easing(crate::animation::easing::Easing::antd_default()),
+            ),
+            Self::ZoomOut { duration } => Some(
+                Animation::new(1.0, 0.8, *duration)
+                    .with_easing(crate::animation::easing::Easing::antd_default()),
+            ),
             _ => None,
         }
     }
@@ -140,12 +158,20 @@ pub mod presets {
 
     /// Drawer 滑入。
     pub fn drawer_enter(direction: SlideDirection) -> Transition {
-        Transition::SlideIn { direction, distance: 180.0, duration: 0.25 }
+        Transition::SlideIn {
+            direction,
+            distance: 180.0,
+            duration: 0.25,
+        }
     }
 
     /// Drawer 滑出。
     pub fn drawer_exit(direction: SlideDirection) -> Transition {
-        Transition::SlideOut { direction, distance: 180.0, duration: 0.2 }
+        Transition::SlideOut {
+            direction,
+            distance: 180.0,
+            duration: 0.2,
+        }
     }
 
     /// Tooltip 渐隐渐现。

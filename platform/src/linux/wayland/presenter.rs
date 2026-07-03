@@ -9,11 +9,9 @@ use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use std::os::unix::io::AsRawFd;
 
-use wayland_client::protocol::{
-    wl_callback, wl_compositor, wl_shm, wl_surface,
-};
-use wayland_client::Main;
 use crate::Error;
+use wayland_client::protocol::{wl_callback, wl_compositor, wl_shm, wl_surface};
+use wayland_client::Main;
 
 use crate::IPresenter;
 
@@ -61,8 +59,6 @@ impl WaylandPresenter {
         height: i32,
         dirty_rect: Option<(i32, i32, i32, i32)>,
     ) {
-        
-
         let needs_resize = width != self.width
             || height != self.height
             || self.shm_buffers[0].is_none()
@@ -91,9 +87,7 @@ impl WaylandPresenter {
         };
 
         let byte_len = pixels.len().min(shm.size / 4) * 4;
-        let bytes = unsafe {
-            std::slice::from_raw_parts(pixels.as_ptr() as *const u8, byte_len)
-        };
+        let bytes = unsafe { std::slice::from_raw_parts(pixels.as_ptr() as *const u8, byte_len) };
 
         if shm.file.seek(SeekFrom::Start(0)).is_err() {
             return;
@@ -133,11 +127,8 @@ impl WaylandPresenter {
 
         let stride = width * 4;
         let size = (stride * height) as usize;
-        let tmp = std::env::temp_dir().join(format!(
-            "uix-shm-{}-{}",
-            std::process::id(),
-            buffer_index
-        ));
+        let tmp =
+            std::env::temp_dir().join(format!("uix-shm-{}-{}", std::process::id(), buffer_index));
 
         let mut f = File::options()
             .read(true)

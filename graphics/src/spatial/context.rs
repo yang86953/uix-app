@@ -11,8 +11,8 @@
 //! 文字渲染由 RenderContext 通过 SpatialContext::project 获取位置后自行处理。
 
 use super::aabb3d::AABB3D;
-use super::physical_box::IntoAABB3D;
 use super::mat4::Mat4;
+use super::physical_box::IntoAABB3D;
 use super::platform_adapter::Orientation;
 use super::quad2d::{Quad2D, Vec2};
 use super::ray3d::Ray3D;
@@ -179,7 +179,15 @@ impl<'a> SpatialContext<'a> {
     }
 
     /// 设置正交投影。
-    pub fn set_orthographic(&mut self, left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) {
+    pub fn set_orthographic(
+        &mut self,
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        near: f32,
+        far: f32,
+    ) {
         self.projection_matrix = Mat4::orthographic(left, right, bottom, top, near, far);
     }
 
@@ -295,7 +303,12 @@ impl<'a> SpatialContext<'a> {
     ///
     /// - 纯 2D 场景（正交 + 无 3D 旋转）：走优化路径，无矩阵乘法
     /// - 3D 场景：走完整投影路径
-    pub fn fill_rect(&mut self, rect: impl IntoAABB3D, color: Color, radius: Option<crate::Radius>) {
+    pub fn fill_rect(
+        &mut self,
+        rect: impl IntoAABB3D,
+        color: Color,
+        radius: Option<crate::Radius>,
+    ) {
         let aabb = rect.into_aabb(self.dpi, self.device_pixel_ratio);
         let mvp = self.mvp_matrix();
 
@@ -310,7 +323,12 @@ impl<'a> SpatialContext<'a> {
             let pw = (x2 - x1).abs() * self.device_pixel_ratio;
             let ph = (y2 - y1).abs() * self.device_pixel_ratio;
             self.canvas.fill_rect(
-                uix_platform::Rect::new(lx * self.device_pixel_ratio, ly * self.device_pixel_ratio, pw, ph),
+                uix_platform::Rect::new(
+                    lx * self.device_pixel_ratio,
+                    ly * self.device_pixel_ratio,
+                    pw,
+                    ph,
+                ),
                 color,
                 radius,
             );
@@ -389,7 +407,9 @@ impl<'a> SpatialContext<'a> {
     /// 当前矩阵是否为 2D only。
     #[inline(always)]
     pub fn is_2d_only(&self) -> bool {
-        self.current_matrix.is_2d_only() && self.view_matrix.is_2d_only() && self.projection_matrix.is_orthographic()
+        self.current_matrix.is_2d_only()
+            && self.view_matrix.is_2d_only()
+            && self.projection_matrix.is_orthographic()
     }
 
     /// 当前是否为透视投影。
@@ -413,8 +433,8 @@ impl<'a> SpatialContext<'a> {
 mod tests {
     use super::*;
     use crate::null_engine::NullEngine;
-    use crate::traits::GraphicsEngine;
     use crate::spatial::PhysicalUnitExt;
+    use crate::traits::GraphicsEngine;
 
     fn make_context(surface_w: i32, surface_h: i32) -> SpatialContext<'static> {
         let mut engine = NullEngine::new();
@@ -424,7 +444,14 @@ mod tests {
         // 但实际使用中 canvas 的引用不能超过 engine 的生命周期
         // 这里为了测试用 unsafe
         let canvas_ref: &'static mut dyn Canvas2D = unsafe { std::mem::transmute(canvas) };
-        SpatialContext::new(canvas_ref, 96.0, 1.0, Orientation::YDown, surface_w, surface_h)
+        SpatialContext::new(
+            canvas_ref,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            surface_w,
+            surface_h,
+        )
     }
 
     #[test]
@@ -649,6 +676,10 @@ mod tests {
     #[test]
     fn fill_circle_does_not_panic() {
         let mut ctx = make_context(800, 600);
-        ctx.fill_circle(Vec3::new(100.0, 200.0, 0.0), 10.0.px(), Color::from_rgb(0, 0, 255));
+        ctx.fill_circle(
+            Vec3::new(100.0, 200.0, 0.0),
+            10.0.px(),
+            Color::from_rgb(0, 0, 255),
+        );
     }
 }

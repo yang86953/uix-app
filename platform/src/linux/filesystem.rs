@@ -2,9 +2,9 @@
 // platform/linux/filesystem.rs — Linux filesystem implementation (IFileSystem)
 // ============================================================================
 
-use crate::{Errc, Error};
 use crate::types::SpecialDir;
 use crate::IFileSystem;
+use crate::{Errc, Error};
 
 // ════════════════════════════════════════════════════════════════════════════
 // LinuxFileSystem
@@ -62,8 +62,7 @@ impl IFileSystem for LinuxFileSystem {
                     String::new()
                 } else {
                     // Respect freedesktop.org XDG_DESKTOP_DIR
-                    Self::xdg_user_dir("DESKTOP")
-                        .unwrap_or_else(|| format!("{}/Desktop", home))
+                    Self::xdg_user_dir("DESKTOP").unwrap_or_else(|| format!("{}/Desktop", home))
                 }
             }
             SpecialDir::Downloads => {
@@ -71,8 +70,7 @@ impl IFileSystem for LinuxFileSystem {
                 if home.is_empty() {
                     String::new()
                 } else {
-                    Self::xdg_user_dir("DOWNLOAD")
-                        .unwrap_or_else(|| format!("{}/Downloads", home))
+                    Self::xdg_user_dir("DOWNLOAD").unwrap_or_else(|| format!("{}/Downloads", home))
                 }
             }
             SpecialDir::Current => std::env::current_dir()

@@ -5,18 +5,24 @@
 
 // ── 错误类型 ──
 pub use crate::error::{
-    Error, ErrorSeverity, Errc, Result, ResultErrorExt, ResultExt,
-    collect_errors, collect_values, make_error, to_std_error_code, try_invoke,
+    collect_errors, collect_values, make_error, to_std_error_code, try_invoke, Errc, Error,
+    ErrorSeverity, Result, ResultErrorExt, ResultExt,
 };
 
 // ── 几何类型 ──
 pub use crate::geometry::{EdgeInsets, Point, Rect, Size};
 
 // ── 事件类型 ──
-pub use crate::event::{KeyEventData, MouseButtonEventData, MouseMoveEventData, MouseWheelData, ResizeData, UiEvent, UiEventPayload, UiEventType};
+pub use crate::event::{
+    KeyEventData, MouseButtonEventData, MouseMoveEventData, MouseWheelData, ResizeData, UiEvent,
+    UiEventPayload, UiEventType,
+};
 
 // ── 事件总线 ──
 pub use crate::event_bus::{EventBus, EventHandler};
 
 // ── 按键与输入 ──
-pub use crate::types::{ConsoleColor, ControlSize, CursorType, DisplayInfo, KeyCode, KeyMod, MemoryInfo, MouseButton, OsInfo, ScrollDirection, SpecialDir, StatusLevel, TerminalCapabilities};
+pub use crate::types::{
+    ConsoleColor, ControlSize, CursorType, DisplayInfo, KeyCode, KeyMod, MemoryInfo, MouseButton,
+    OsInfo, ScrollDirection, SpecialDir, StatusLevel, TerminalCapabilities,
+};

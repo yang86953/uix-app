@@ -6,12 +6,12 @@
 
 use std::sync::OnceLock;
 
-use uix_platform::{Rect, Size};
 use crate::define_widget;
-use uix_graphics::FontHandle;
-use uix_graphics::font_service::FontService;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::font_service::FontService;
+use uix_graphics::FontHandle;
+use uix_platform::{Rect, Size};
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。
 /// FontHandle 为 Copy 类型，无需 Mutex 保护——OnceLock 本身保证线程安全初始化。

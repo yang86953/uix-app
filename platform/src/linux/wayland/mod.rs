@@ -22,8 +22,8 @@ pub(crate) mod window;
 pub(crate) mod window_ops;
 
 // ── 依赖 ────────────────────────────────────────────────────────
-use crate::{KeyCode, KeyMod, Point};
 use crate::event::*;
+use crate::{KeyCode, KeyMod, Point};
 
 use self::shm_buffer::ShmBuffer;
 
@@ -34,17 +34,16 @@ use std::sync::{Arc, Mutex};
 
 use wayland_client::{
     protocol::{
-        wl_compositor, wl_data_device_manager, wl_keyboard,
-        wl_output, wl_pointer, wl_region, wl_seat, wl_shm, wl_surface,
+        wl_compositor, wl_data_device_manager, wl_keyboard, wl_output, wl_pointer, wl_region,
+        wl_seat, wl_shm, wl_surface,
     },
     Display, EventQueue, GlobalManager, Main,
 };
-use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::XdgActivationV1;
 use wayland_protocols::unstable::text_input::v3::client::{
-    zwp_text_input_manager_v3::ZwpTextInputManagerV3,
-    zwp_text_input_v3::ZwpTextInputV3,
+    zwp_text_input_manager_v3::ZwpTextInputManagerV3, zwp_text_input_v3::ZwpTextInputV3,
 };
+use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
 // ════════════════════════════════════════════════════════════════════════════
 // ShmBuffer — RAII 包装：SHM 池 + 缓冲区 + 后备文件
@@ -175,106 +174,103 @@ impl WaylandBackend {
         let xa_for_cb = xdg_activation_cell.clone();
 
         // ── 手动回调绑定所有全局（避免 global_filter! 宏的高阶生命周期问题）──
-        let globals = GlobalManager::new_with_cb(
-            &attached,
-            {
-                let compositor_for_cb = compositor_cell.clone();
-                let wm_base_for_cb = wm_base_cell.clone();
-                let shm_for_cb = shm_cell.clone();
-                let outputs_for_cb = outputs.clone();
-                let wl_output_handles_for_cb = wl_output_handles.clone();
-                let is_first_for_cb = is_first_output.clone();
-                move |event: wayland_client::GlobalEvent,
-                      registry: wayland_client::Attached<
-                          wayland_client::protocol::wl_registry::WlRegistry,
-                      >,
-                      _ddata: wayland_client::DispatchData<'_>| {
-                    use wayland_client::GlobalEvent;
-                    if let GlobalEvent::New {
-                        id,
-                        interface,
-                        version,
-                    } = event
-                    {
-                        match interface.as_str() {
-                            "wl_compositor" => {
-                                let proxy: Main<wl_compositor::WlCompositor> =
-                                    registry.bind(version.min(4), id);
-                                *compositor_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
-                            }
-                            "xdg_wm_base" => {
-                                let proxy: Main<xdg_wm_base::XdgWmBase> =
-                                    registry.bind(version.min(1), id);
-                                *wm_base_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
-                            }
-                            "wl_shm" => {
-                                let proxy: Main<wl_shm::WlShm> =
-                                    registry.bind(version.min(1), id);
-                                *shm_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
-                            }
-                            "wl_output" => {
-                                let out_list = outputs_for_cb.clone();
-                                let first_flag = is_first_for_cb.clone();
-                                let mut handles = wl_output_handles_for_cb.lock().unwrap_or_else(|e| e.into_inner());
-                                let idx = handles.len();
-                                let proxy: Main<wl_output::WlOutput> =
-                                    registry.bind(version.min(2), id);
-                                proxy.quick_assign(move |_, event, _| {
-                                    let mut list =
-                                        out_list.lock().unwrap_or_else(|e| e.into_inner());
-                                    while list.len() <= idx {
-                                        list.push(output::RawOutput::default());
-                                    }
-                                    let entry = &mut list[idx];
-                                    match event {
-                                        wl_output::Event::Geometry { x, y, .. } => {
-                                            entry.x = x;
-                                            entry.y = y;
-                                        }
-                                        wl_output::Event::Mode {
-                                            flags,
-                                            width,
-                                            height,
-                                            ..
-                                        } => {
-                                            const WL_OUTPUT_MODE_CURRENT: u32 = 0x1;
-                                            if (flags.to_raw() & WL_OUTPUT_MODE_CURRENT) != 0 {
-                                                entry.width = width;
-                                                entry.height = height;
-                                            }
-                                        }
-                                        wl_output::Event::Scale { factor } => {
-                                            entry.scale = factor;
-                                        }
-                                        wl_output::Event::Done => {
-                                            if let Ok(mut first) = first_flag.lock() {
-                                                if *first {
-                                                    *first = false;
-                                                    entry.is_primary = true;
-                                                }
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                });
-                                handles.push(proxy);
-                            }
-                            "zwp_text_input_manager_v3" => {
-                                let proxy: Main<ZwpTextInputManagerV3> =
-                                    registry.bind(version.min(1), id);
-                                *tim_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
-                            }
-                            "xdg_activation_v1" => {
-                                let proxy: Main<XdgActivationV1> =
-                                    registry.bind(version.min(1), id);
-                                *xa_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
-                            }
-                            _ => {}
+        let globals = GlobalManager::new_with_cb(&attached, {
+            let compositor_for_cb = compositor_cell.clone();
+            let wm_base_for_cb = wm_base_cell.clone();
+            let shm_for_cb = shm_cell.clone();
+            let outputs_for_cb = outputs.clone();
+            let wl_output_handles_for_cb = wl_output_handles.clone();
+            let is_first_for_cb = is_first_output.clone();
+            move |event: wayland_client::GlobalEvent,
+                  registry: wayland_client::Attached<
+                wayland_client::protocol::wl_registry::WlRegistry,
+            >,
+                  _ddata: wayland_client::DispatchData<'_>| {
+                use wayland_client::GlobalEvent;
+                if let GlobalEvent::New {
+                    id,
+                    interface,
+                    version,
+                } = event
+                {
+                    match interface.as_str() {
+                        "wl_compositor" => {
+                            let proxy: Main<wl_compositor::WlCompositor> =
+                                registry.bind(version.min(4), id);
+                            *compositor_for_cb.lock().unwrap_or_else(|e| e.into_inner()) =
+                                Some(proxy);
                         }
+                        "xdg_wm_base" => {
+                            let proxy: Main<xdg_wm_base::XdgWmBase> =
+                                registry.bind(version.min(1), id);
+                            *wm_base_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
+                        }
+                        "wl_shm" => {
+                            let proxy: Main<wl_shm::WlShm> = registry.bind(version.min(1), id);
+                            *shm_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
+                        }
+                        "wl_output" => {
+                            let out_list = outputs_for_cb.clone();
+                            let first_flag = is_first_for_cb.clone();
+                            let mut handles = wl_output_handles_for_cb
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner());
+                            let idx = handles.len();
+                            let proxy: Main<wl_output::WlOutput> =
+                                registry.bind(version.min(2), id);
+                            proxy.quick_assign(move |_, event, _| {
+                                let mut list = out_list.lock().unwrap_or_else(|e| e.into_inner());
+                                while list.len() <= idx {
+                                    list.push(output::RawOutput::default());
+                                }
+                                let entry = &mut list[idx];
+                                match event {
+                                    wl_output::Event::Geometry { x, y, .. } => {
+                                        entry.x = x;
+                                        entry.y = y;
+                                    }
+                                    wl_output::Event::Mode {
+                                        flags,
+                                        width,
+                                        height,
+                                        ..
+                                    } => {
+                                        const WL_OUTPUT_MODE_CURRENT: u32 = 0x1;
+                                        if (flags.to_raw() & WL_OUTPUT_MODE_CURRENT) != 0 {
+                                            entry.width = width;
+                                            entry.height = height;
+                                        }
+                                    }
+                                    wl_output::Event::Scale { factor } => {
+                                        entry.scale = factor;
+                                    }
+                                    wl_output::Event::Done => {
+                                        if let Ok(mut first) = first_flag.lock() {
+                                            if *first {
+                                                *first = false;
+                                                entry.is_primary = true;
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            });
+                            handles.push(proxy);
+                        }
+                        "zwp_text_input_manager_v3" => {
+                            let proxy: Main<ZwpTextInputManagerV3> =
+                                registry.bind(version.min(1), id);
+                            *tim_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
+                        }
+                        "xdg_activation_v1" => {
+                            let proxy: Main<XdgActivationV1> = registry.bind(version.min(1), id);
+                            *xa_for_cb.lock().unwrap_or_else(|e| e.into_inner()) = Some(proxy);
+                        }
+                        _ => {}
                     }
                 }
-            },
-        );
+            }
+        });
 
         // ── 初始 roundtrip：接收所有全局广告事件 ──────────────────
         event_queue
@@ -283,15 +279,18 @@ impl WaylandBackend {
 
         // ── 提取单例对象 ──────────────────────────────────────────
         let _compositor = compositor_cell
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .take()
             .ok_or("no wl_compositor".to_string())?;
         let _wm_base = wm_base_cell
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .take()
             .ok_or("no xdg_wm_base (need xdg-shell)".to_string())?;
         let _shm = shm_cell
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .take()
             .ok_or("no wl_shm".to_string())?;
 
@@ -324,13 +323,20 @@ impl WaylandBackend {
         // 我们需要手动使用 instantiate_exact。
         // 但实际上 GlobalManager::new_with_cb 仍会跟踪所有全局，
         // 所以 instantiate_exact 仍然可用。
-        let data_device_manager =
-            globals.instantiate_exact::<wl_data_device_manager::WlDataDeviceManager>(3).ok();
+        let data_device_manager = globals
+            .instantiate_exact::<wl_data_device_manager::WlDataDeviceManager>(3)
+            .ok();
 
-        let text_input_manager = text_input_manager_cell.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let text_input_manager = text_input_manager_cell
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
 
         // 提取 xdg_activation（先求值再用于 struct init，避免 MutexGuard 生命周期问题）
-        let xdg_activation = xdg_activation_cell.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let xdg_activation = xdg_activation_cell
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
 
         Ok(Self {
             display,

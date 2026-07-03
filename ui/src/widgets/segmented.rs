@@ -1,10 +1,10 @@
 //! Segmented widget — 分段选择器，支持 disabled/hover/keyboard/focus。
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
-use uix_graphics::{GraphicsEngine, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::{GraphicsEngine, Radius};
+use uix_platform::{Rect, Size};
 
 define_widget! {
     /// Segmented — 水平分段选择器。
@@ -132,7 +132,9 @@ impl Segmented {
         let mut cum_x = 0.0f32;
         for (i, opt) in self.options.iter().enumerate() {
             let seg_w = opt.len() as f32 * 9.0 + 24.0;
-            if px >= cum_x && px <= cum_x + seg_w { return Some(i); }
+            if px >= cum_x && px <= cum_x + seg_w {
+                return Some(i);
+            }
             cum_x += seg_w;
         }
         None
@@ -143,22 +145,36 @@ impl Segmented {
     }
 }
 
-impl Default for Segmented { fn default() -> Self { Self::new() } }
+impl Default for Segmented {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Segmented {
     pub fn new() -> Self {
         Self {
-            options: Vec::new(), selected: 0, disabled: false,
-            disabled_options: Vec::new(), hovered_idx: None,
-            focused: false, on_change: None,
+            options: Vec::new(),
+            selected: 0,
+            disabled: false,
+            disabled_options: Vec::new(),
+            hovered_idx: None,
+            focused: false,
+            on_change: None,
         }
     }
     pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
         self.options = opts.into_iter().map(|s| s.into()).collect();
         self
     }
-    pub fn selected(mut self, idx: usize) -> Self { self.selected = idx; self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
+    pub fn selected(mut self, idx: usize) -> Self {
+        self.selected = idx;
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
     pub fn disable_option(mut self, idx: usize) -> Self {
         while self.disabled_options.len() <= idx {
             self.disabled_options.push(false);

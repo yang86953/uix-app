@@ -1,16 +1,16 @@
 //! uix-ui 核心模块集成测试（state, style, clipboard, children）。
 
-use uix_ui::api::{State, Computed, Effect};
-use uix_ui::api::{Style, StyleVariant};
-use uix_ui::api::copy_to_clipboard;
-use uix_ui::api::WidgetChildren;
-use uix_ui::api::{WidgetCapabilities, WidgetComponent, WidgetRender};
-use uix_ui::api::WidgetTree;
-use uix_ui::api::RenderContext;
-use uix_platform::geometry::{EdgeInsets, Rect};
-use uix_graphics::color::Color;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::Arc;
+use uix_graphics::color::Color;
+use uix_platform::geometry::{EdgeInsets, Rect};
+use uix_ui::api::copy_to_clipboard;
+use uix_ui::api::RenderContext;
+use uix_ui::api::WidgetChildren;
+use uix_ui::api::WidgetTree;
+use uix_ui::api::{Computed, Effect, State};
+use uix_ui::api::{Style, StyleVariant};
+use uix_ui::api::{WidgetCapabilities, WidgetComponent, WidgetRender};
 
 // ════════════════════════════════════════════════════════════════════════════
 // clipboard 测试
@@ -240,7 +240,12 @@ fn chained_modifications() {
         .with_font_size(16.0)
         .with_padding(EdgeInsets::uniform(8.0))
         .with_rounded(4.0)
-        .with_shadow(uix_ui::style::BoxShadowDef::new(Color::from_rgba(0, 0, 0, 128), 8.0, 0.0, 0.0));
+        .with_shadow(uix_ui::style::BoxShadowDef::new(
+            Color::from_rgba(0, 0, 0, 128),
+            8.0,
+            0.0,
+            0.0,
+        ));
     assert_eq!(s.background, Some(Color::from_rgba(0, 0, 0, 255)));
     assert_eq!(s.color, Color::white());
     assert_eq!(s.font_size, 16.0);
@@ -309,7 +314,10 @@ fn style_variant_resolves_hover() {
     let hover_s = Style::default().with_bg(Color::blue());
     let v = StyleVariant::new(normal.clone()).hover(hover_s);
     assert_eq!(v.resolve(false, false, false).background, normal.background);
-    assert_eq!(v.resolve(true, false, false).background, Some(Color::blue()));
+    assert_eq!(
+        v.resolve(true, false, false).background,
+        Some(Color::blue())
+    );
 }
 
 #[test]
@@ -325,7 +333,10 @@ fn style_variant_resolves_disabled() {
     let normal = Style::default().with_bg(Color::from_rgb(128, 128, 128));
     let disabled_s = Style::default().with_bg(Color::from_rgb(64, 64, 64));
     let v = StyleVariant::new(normal).disabled(disabled_s);
-    assert_eq!(v.resolve(false, false, true).background, Some(Color::from_rgb(64, 64, 64)));
+    assert_eq!(
+        v.resolve(false, false, true).background,
+        Some(Color::from_rgb(64, 64, 64))
+    );
 }
 
 #[test]
@@ -345,8 +356,12 @@ fn style_variant_fallback() {
 
 struct DummyWidget;
 impl WidgetComponent for DummyWidget {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
     fn capabilities(&self) -> WidgetCapabilities {
         WidgetCapabilities::from_bits(WidgetCapabilities::RENDER)
     }

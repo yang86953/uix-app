@@ -1,11 +1,11 @@
 use std::cell::Cell;
 
-use crate::define_widget;
 use crate::animation::transition::{presets, TransitionPlayer};
-use uix_platform::{ControlSize, Point, Rect, Size};
-use uix_graphics::{Color, Radius};
+use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetCore, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, Radius};
+use uix_platform::{ControlSize, Point, Rect, Size};
 
 // Modal — 模态对话框。
 //
@@ -239,11 +239,16 @@ impl Modal {
     pub fn new(title: &str) -> Self {
         Self {
             title: title.to_string(),
-            visible: false, width: 520.0, height: 300.0,
+            visible: false,
+            width: 520.0,
+            height: 300.0,
             modal_size: ControlSize::Medium,
-            closable: true, mask_closable: true, footer_visible: true,
+            closable: true,
+            mask_closable: true,
+            footer_visible: true,
             centered: true,
-            on_ok: None, on_cancel: None,
+            on_ok: None,
+            on_cancel: None,
             transition_player: None,
             prev_visible: false,
             overlay: false,
@@ -253,29 +258,76 @@ impl Modal {
         }
     }
 
-    pub fn visible(mut self, v: bool) -> Self { self.visible = v; self.prev_visible = v; self }
-    pub fn show(mut self) -> Self { self.visible = true; self.prev_visible = false; self }
-    pub fn size(mut self, w: f32, h: f32) -> Self { self.width = w; self.height = h; self }
+    pub fn visible(mut self, v: bool) -> Self {
+        self.visible = v;
+        self.prev_visible = v;
+        self
+    }
+    pub fn show(mut self) -> Self {
+        self.visible = true;
+        self.prev_visible = false;
+        self
+    }
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.width = w;
+        self.height = h;
+        self
+    }
     pub fn modal_size(mut self, s: ControlSize) -> Self {
         self.modal_size = s;
         match s {
-            ControlSize::Small => { self.width = 400.0; self.height = 200.0; }
-            ControlSize::Medium => { self.width = 520.0; self.height = 300.0; }
-            ControlSize::Large => { self.width = 720.0; self.height = 400.0; }
+            ControlSize::Small => {
+                self.width = 400.0;
+                self.height = 200.0;
+            }
+            ControlSize::Medium => {
+                self.width = 520.0;
+                self.height = 300.0;
+            }
+            ControlSize::Large => {
+                self.width = 720.0;
+                self.height = 400.0;
+            }
         }
         self
     }
-    pub fn closable(mut self, v: bool) -> Self { self.closable = v; self }
-    pub fn mask_closable(mut self, v: bool) -> Self { self.mask_closable = v; self }
-    pub fn footer_visible(mut self, v: bool) -> Self { self.footer_visible = v; self }
-    pub fn centered(mut self, v: bool) -> Self { self.centered = v; self }
+    pub fn closable(mut self, v: bool) -> Self {
+        self.closable = v;
+        self
+    }
+    pub fn mask_closable(mut self, v: bool) -> Self {
+        self.mask_closable = v;
+        self
+    }
+    pub fn footer_visible(mut self, v: bool) -> Self {
+        self.footer_visible = v;
+        self
+    }
+    pub fn centered(mut self, v: bool) -> Self {
+        self.centered = v;
+        self
+    }
     /// 设为覆盖层模式：preferred_size 返回 (0,0)，render 使用窗口尺寸居中。
     /// 适合放在 flex 容器末尾作全屏弹窗叠加层，不挤压主内容。
-    pub fn overlay(mut self, v: bool) -> Self { self.overlay = v; self }
-    pub fn on_ok<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_ok = Some(Box::new(f)); self }
-    pub fn on_cancel<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_cancel = Some(Box::new(f)); self }
-    pub fn is_visible(&self) -> bool { self.visible }
-    pub fn set_visible(&mut self, v: bool) { self.prev_visible = self.visible; self.visible = v; }
+    pub fn overlay(mut self, v: bool) -> Self {
+        self.overlay = v;
+        self
+    }
+    pub fn on_ok<F: FnMut() + 'static>(mut self, f: F) -> Self {
+        self.on_ok = Some(Box::new(f));
+        self
+    }
+    pub fn on_cancel<F: FnMut() + 'static>(mut self, f: F) -> Self {
+        self.on_cancel = Some(Box::new(f));
+        self
+    }
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
+    pub fn set_visible(&mut self, v: bool) {
+        self.prev_visible = self.visible;
+        self.visible = v;
+    }
     /// 设置可见性但不触发过渡动画（用于状态同步等场景，避免延迟一帧启动动画导致闪烁）
     pub fn set_visible_no_anim(&mut self, v: bool) {
         self.visible = v;
@@ -299,12 +351,21 @@ impl Modal {
     }
     /// 关闭弹窗（触发退场动画，动画结束后自动隐藏）。
     pub fn close(&mut self) {
-        if !self.visible || self.closing { return; }
+        if !self.visible || self.closing {
+            return;
+        }
         // 启动退场动画，保持 visible=true 直到动画结束
         self.transition_player = Some(TransitionPlayer::new(presets::modal_exit()));
         self.closing = true;
         // 触发回调
-        if let Some(ref mut cb) = self.on_cancel { cb(); }
+        if let Some(ref mut cb) = self.on_cancel {
+            cb();
+        }
     }
-    pub fn confirm(&mut self) { if let Some(ref mut cb) = self.on_ok { cb(); } self.close(); }
+    pub fn confirm(&mut self) {
+        if let Some(ref mut cb) = self.on_ok {
+            cb();
+        }
+        self.close();
+    }
 }

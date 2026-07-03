@@ -3,10 +3,10 @@
 //! 提供 widget 调试边框、标签和 frame 信息的绘制。
 //! 由 RenderContext 组合持有。
 
-use uix_platform::Rect;
+use crate::api::traits::DebugRenderer;
 use uix_graphics::traits::Canvas2D;
 use uix_graphics::Color;
-use crate::api::traits::DebugRenderer;
+use uix_platform::Rect;
 
 /// 调试渲染服务。
 pub struct DebugRenderService {
@@ -62,30 +62,40 @@ impl DebugRenderService {
         depth: usize,
         rect: Rect,
     ) {
-        if !self.debug_mode { return; }
+        if !self.debug_mode {
+            return;
+        }
         let _color = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
         let label = format!("#{} d{}", widget_id, depth);
         let _font_size = 12.0;
         let label_w = label.len() as f32 * 7.0 + 6.0;
         let label_h = 16.0;
-        canvas.fill_rect(Rect::new(rect.x, rect.y, label_w, label_h), Color::from_rgba(0, 0, 0, 180), None);
+        canvas.fill_rect(
+            Rect::new(rect.x, rect.y, label_w, label_h),
+            Color::from_rgba(0, 0, 0, 180),
+            None,
+        );
         // draw_text 由 RenderContext 委托，此处由 RenderContext 调用 debug service 后自行绘制
     }
 
     /// 在 widget 下方显示 frame 坐标和尺寸。
-    pub fn draw_debug_frame_info(
-        &self,
-        canvas: &mut dyn Canvas2D,
-        widget_id: usize,
-        rect: Rect,
-    ) {
-        if !self.debug_mode { return; }
-        let info = format!("#{} ({:.0},{:.0}) {:.0}×{:.0}", widget_id, rect.x, rect.y, rect.w, rect.h);
+    pub fn draw_debug_frame_info(&self, canvas: &mut dyn Canvas2D, widget_id: usize, rect: Rect) {
+        if !self.debug_mode {
+            return;
+        }
+        let info = format!(
+            "#{} ({:.0},{:.0}) {:.0}×{:.0}",
+            widget_id, rect.x, rect.y, rect.w, rect.h
+        );
         let _font_size = 11.0;
         let info_w = info.len() as f32 * 6.5 + 6.0;
         let info_h = 15.0;
         let info_y = rect.y + rect.h;
-        canvas.fill_rect(Rect::new(rect.x, info_y, info_w, info_h), Color::from_rgba(0, 0, 0, 160), None);
+        canvas.fill_rect(
+            Rect::new(rect.x, info_y, info_w, info_h),
+            Color::from_rgba(0, 0, 0, 160),
+            None,
+        );
         // draw_text 由 RenderContext 委托，此处由 RenderContext 调用 debug service 后自行绘制
     }
 }
@@ -93,9 +103,19 @@ impl DebugRenderService {
 // ── DebugRenderer trait 实现 ────────────────────────────────────
 
 impl DebugRenderer for DebugRenderService {
-    fn set_debug_mode(&mut self, mode: bool) { self.set_debug_mode(mode); }
-    fn debug_mode(&self) -> bool { self.debug_mode }
-    fn draw_debug_border(&self, canvas: &mut dyn Canvas2D, rect: Rect, depth: usize, hovered: bool) {
+    fn set_debug_mode(&mut self, mode: bool) {
+        self.set_debug_mode(mode);
+    }
+    fn debug_mode(&self) -> bool {
+        self.debug_mode
+    }
+    fn draw_debug_border(
+        &self,
+        canvas: &mut dyn Canvas2D,
+        rect: Rect,
+        depth: usize,
+        hovered: bool,
+    ) {
         self.draw_debug_border(canvas, rect, depth, hovered);
     }
 }
@@ -156,7 +176,12 @@ mod tests {
         let mut canvas = NoopCanvas2D;
         // 所有深度都应正常工作
         for depth in 0..16 {
-            d.draw_debug_border(&mut canvas, Rect::new(0.0, 0.0, 100.0, 50.0), depth, depth == 0);
+            d.draw_debug_border(
+                &mut canvas,
+                Rect::new(0.0, 0.0, 100.0, 50.0),
+                depth,
+                depth == 0,
+            );
         }
     }
 

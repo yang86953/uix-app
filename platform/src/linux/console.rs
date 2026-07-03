@@ -15,13 +15,13 @@ use crate::IConsole;
 // ════════════════════════════════════════════════════════════════════════════
 
 const COLORS: [&str; 7] = [
-    "\x1b[0m",   // Default -> reset
-    "\x1b[90m",  // Trace   -> bright black (gray)
-    "\x1b[0m",   // Debug   -> default
-    "\x1b[32m",  // Info    -> green
-    "\x1b[33m",  // Warn    -> yellow
-    "\x1b[31m",  // Error   -> red
-    "\x1b[91m",  // Fatal   -> bright red
+    "\x1b[0m",  // Default -> reset
+    "\x1b[90m", // Trace   -> bright black (gray)
+    "\x1b[0m",  // Debug   -> default
+    "\x1b[32m", // Info    -> green
+    "\x1b[33m", // Warn    -> yellow
+    "\x1b[31m", // Error   -> red
+    "\x1b[91m", // Fatal   -> bright red
 ];
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -101,7 +101,7 @@ impl TermEnv {
         let has_color = Self::check_color(&term);
         TerminalCapabilities {
             has_color,
-            has_raw_mode: false, // raw mode handled at a higher layer
+            has_raw_mode: false,      // raw mode handled at a higher layer
             has_cursor_control: true, // most modern terminals support this
         }
     }

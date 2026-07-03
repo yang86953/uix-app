@@ -13,7 +13,10 @@ use std::cell::Cell;
 
 use uix_platform::geometry::Point;
 use uix_platform::test_harness::FakePlatform;
-use uix_platform::{IClipboard, IDisplay, IEventLoop, IWindowManager, MouseButton, Platform, UiEvent, UiEventPayload, UiEventType};
+use uix_platform::{
+    IClipboard, IDisplay, IEventLoop, IWindowManager, MouseButton, Platform, UiEvent,
+    UiEventPayload, UiEventType,
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 辅助函数
@@ -99,8 +102,10 @@ fn inject_mouse_down_through_event_source() {
     let mut pf = FakePlatform::new();
 
     // 注入 MouseDown 事件到 FakeEventSource
-    pf.event_source
-        .inject(UiEvent::mouse_down(Point::new(100.0, 200.0), MouseButton::Left));
+    pf.event_source.inject(UiEvent::mouse_down(
+        Point::new(100.0, 200.0),
+        MouseButton::Left,
+    ));
 
     // 通过 IEventLoop::poll_event 消费事件
     let called = Cell::new(false);
@@ -120,15 +125,16 @@ fn inject_mouse_down_through_event_source() {
 fn inject_multiple_events_processed_in_order() {
     let mut pf = FakePlatform::new();
 
-    pf.event_source
-        .inject(UiEvent::mouse_down(Point::new(10.0, 20.0), MouseButton::Left));
+    pf.event_source.inject(UiEvent::mouse_down(
+        Point::new(10.0, 20.0),
+        MouseButton::Left,
+    ));
     pf.event_source
         .inject(UiEvent::mouse_up(Point::new(10.0, 20.0), MouseButton::Left));
     pf.event_source
         .inject(UiEvent::mouse_move(Point::new(30.0, 40.0)));
 
-    let events: std::cell::RefCell<Vec<UiEventType>> =
-        std::cell::RefCell::new(Vec::new());
+    let events: std::cell::RefCell<Vec<UiEventType>> = std::cell::RefCell::new(Vec::new());
 
     // poll_event 消费所有待处理事件
     pf.event_loop().poll_event(&|ev| {
@@ -156,7 +162,10 @@ fn inject_close_event_triggers_callback_return_false() {
         false
     });
 
-    assert!(!result, "poll_event should return false when callback returns false");
+    assert!(
+        !result,
+        "poll_event should return false when callback returns false"
+    );
     assert!(called.get());
 }
 

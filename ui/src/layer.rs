@@ -17,17 +17,17 @@
 //! - Picture 离屏创建失败时启用 retry_count 退避机制（#97）
 //! - Picture 支持 children，实现嵌套 RepaintBoundary（#96）
 
-use std::collections::HashSet;
-use uix_platform::{Point, Rect};
-use uix_graphics::DirtyRegion;
-use uix_graphics::GraphicsEngine;
-use uix_graphics::font_service::FontService;
-use uix_graphics::types::ImageHandle;
-use uix_graphics::FontHandle;
-use crate::render_context::RenderContext;
 use crate::api::traits::TokenProvider;
+use crate::render_context::RenderContext;
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
 use crate::widgets::scroll_view::ScrollView;
+use std::collections::HashSet;
+use uix_graphics::font_service::FontService;
+use uix_graphics::types::ImageHandle;
+use uix_graphics::DirtyRegion;
+use uix_graphics::FontHandle;
+use uix_graphics::GraphicsEngine;
+use uix_platform::{Point, Rect};
 
 /// 图层节点。
 pub enum LayerNode {
@@ -100,17 +100,14 @@ impl LayerNode {
     fn mark_dirty(&mut self) {
         match self {
             LayerNode::Picture {
-                is_dirty,
-                children,
-                ..
+                is_dirty, children, ..
             } => {
                 *is_dirty = true;
                 for child in children.iter_mut() {
                     child.mark_dirty();
                 }
             }
-            LayerNode::ClipRect { children, .. }
-            | LayerNode::Direct { children, .. } => {
+            LayerNode::ClipRect { children, .. } | LayerNode::Direct { children, .. } => {
                 for child in children.iter_mut() {
                     child.mark_dirty();
                 }
@@ -121,17 +118,14 @@ impl LayerNode {
     fn mark_clean(&mut self) {
         match self {
             LayerNode::Picture {
-                is_dirty,
-                children,
-                ..
+                is_dirty, children, ..
             } => {
                 *is_dirty = false;
                 for child in children.iter_mut() {
                     child.mark_clean();
                 }
             }
-            LayerNode::ClipRect { children, .. }
-            | LayerNode::Direct { children, .. } => {
+            LayerNode::ClipRect { children, .. } | LayerNode::Direct { children, .. } => {
                 for child in children.iter_mut() {
                     child.mark_clean();
                 }
@@ -147,7 +141,6 @@ impl LayerNode {
             | LayerNode::Direct { widget_id, .. } => *widget_id,
         }
     }
-
 }
 
 /// 图层树 —— 从 WidgetTree 构建的可缓存合成栈。
@@ -184,17 +177,15 @@ impl LayerTree {
     /// 调用者需在合适的时机调用 `sweep_orphaned_offscreens` 释放。
     pub fn build(&mut self, tree: &WidgetTree) {
         // 收集旧 Picture 节点的离屏缓冲（按 widget_id 索引）
-        let mut old_cache: std::collections::HashMap<
-            WidgetId,
-            (Rect, Option<ImageHandle>),
-        > = std::collections::HashMap::new();
+        let mut old_cache: std::collections::HashMap<WidgetId, (Rect, Option<ImageHandle>)> =
+            std::collections::HashMap::new();
         if let Some(ref root) = self.root {
             Self::collect_picture_handles(root, &mut old_cache);
         }
 
-        self.root = tree.root_id().and_then(|root_id| {
-            Self::build_node_cached(tree, root_id, &old_cache)
-        });
+        self.root = tree
+            .root_id()
+            .and_then(|root_id| Self::build_node_cached(tree, root_id, &old_cache));
 
         // 收集未复用的旧句柄（需要在引擎上下文中释放）
         self.orphaned_handles.clear();
@@ -240,8 +231,15 @@ impl LayerTree {
         let surface_w = engine.canvas_2d().width();
         let surface_h = engine.canvas_2d().height();
         let mut rctx = RenderContext::new(
-            engine.canvas_2d(), font, font_service, tokens,
-            dpi, dpr, orientation, surface_w, surface_h,
+            engine.canvas_2d(),
+            font,
+            font_service,
+            tokens,
+            dpi,
+            dpr,
+            orientation,
+            surface_w,
+            surface_h,
         );
         let dirty_bounds = dirty_region.bounds();
         if let Some(ref mut root) = self.root {
@@ -281,8 +279,15 @@ impl LayerTree {
         let surface_w = engine.canvas_2d().width();
         let surface_h = engine.canvas_2d().height();
         let mut rctx = RenderContext::new(
-            engine.canvas_2d(), font, font_service, tokens,
-            dpi, dpr, orientation, surface_w, surface_h,
+            engine.canvas_2d(),
+            font,
+            font_service,
+            tokens,
+            dpi,
+            dpr,
+            orientation,
+            surface_w,
+            surface_h,
         );
         rctx.set_debug_mode(debug_mode);
 
@@ -305,7 +310,17 @@ impl LayerTree {
 
         let dirty_bounds = dirty_region.bounds();
         if let Some(ref root) = self.root {
-            Self::render_overlay_node(root, &mut rctx, tree, 0, &hovered_chain, debug_mode, dirty_region, dirty_bounds, false);
+            Self::render_overlay_node(
+                root,
+                &mut rctx,
+                tree,
+                0,
+                &hovered_chain,
+                debug_mode,
+                dirty_region,
+                dirty_bounds,
+                false,
+            );
         }
 
         // 焦点环：在聚焦 widget 周围绘制 2px 轮廓
@@ -337,10 +352,7 @@ impl LayerTree {
     /// 同时重置 retry_count 为 0（rebuild 意味着新的尝试机会）。
     fn collect_picture_handles(
         node: &LayerNode,
-        cache: &mut std::collections::HashMap<
-            WidgetId,
-            (Rect, Option<ImageHandle>),
-        >,
+        cache: &mut std::collections::HashMap<WidgetId, (Rect, Option<ImageHandle>)>,
     ) {
         match node {
             LayerNode::Picture {
@@ -452,16 +464,26 @@ impl LayerTree {
             } => {
                 // Picture 自身脏标记 + 子节点传播的脏标记
                 let self_dirty = tree.get(*widget_id).map(|n| n.dirty()).unwrap_or(true);
-                let child_dirty = children.iter_mut()
+                let child_dirty = children
+                    .iter_mut()
                     .any(|child| Self::update_dirty_node(child, tree));
                 *is_dirty = self_dirty || child_dirty;
                 *is_dirty
             }
-            LayerNode::ClipRect { widget_id, children, .. }
-            | LayerNode::Direct { widget_id, children, .. } => {
+            LayerNode::ClipRect {
+                widget_id,
+                children,
+                ..
+            }
+            | LayerNode::Direct {
+                widget_id,
+                children,
+                ..
+            } => {
                 // 检查自身 dirty + 子节点传播的脏标记
                 let self_dirty = tree.get(*widget_id).map(|n| n.dirty()).unwrap_or(true);
-                let child_dirty = children.iter_mut()
+                let child_dirty = children
+                    .iter_mut()
                     .any(|child| Self::update_dirty_node(child, tree));
                 self_dirty || child_dirty
             }
@@ -475,7 +497,14 @@ impl LayerTree {
     /// `force_render`：为 true 时跳过子节点的脏检查，强制渲染所有子节点。
     /// 滚动容器（ScrollView）需要 force_render，因为子节点 frame 在 content 坐标系，
     /// 而 dirty_region 在 viewport 坐标系，直接交叉检测会导致子节点被错误跳过。
-    fn render_node(node: &mut LayerNode, ctx: &mut RenderContext, tree: &WidgetTree, dirty_region: &DirtyRegion, dirty_bounds: Rect, force_render: bool) {
+    fn render_node(
+        node: &mut LayerNode,
+        ctx: &mut RenderContext,
+        tree: &WidgetTree,
+        dirty_region: &DirtyRegion,
+        dirty_bounds: Rect,
+        force_render: bool,
+    ) {
         match node {
             LayerNode::Picture {
                 widget_id,
@@ -493,7 +522,17 @@ impl LayerTree {
 
                 if *is_dirty || offscreen_handle.is_none() {
                     Self::render_picture_dirty(
-                        *widget_id, bounds, offscreen_handle, children, ctx, tree, w, h, retry_count, dirty_region, dirty_bounds,
+                        *widget_id,
+                        bounds,
+                        offscreen_handle,
+                        children,
+                        ctx,
+                        tree,
+                        w,
+                        h,
+                        retry_count,
+                        dirty_region,
+                        dirty_bounds,
                     );
                 } else if offscreen_handle.is_some() {
                     // TODO(v2): blit_image 需要像素数据，待重建 ImageManager
@@ -509,8 +548,11 @@ impl LayerTree {
             } => {
                 // 空间+脏状态双剪枝 + dirty_bounds 间隙修正：
                 // widget 不脏且 frame 既不在 dirty_region 也不在 dirty_bounds → 跳过 render_self
-                let in_bounds = dirty_bounds.intersect(&tree.get(*widget_id).map(|n| n.frame()).unwrap_or_default()).is_some();
-                let needs_render = tree.get(*widget_id)
+                let in_bounds = dirty_bounds
+                    .intersect(&tree.get(*widget_id).map(|n| n.frame()).unwrap_or_default())
+                    .is_some();
+                let needs_render = tree
+                    .get(*widget_id)
                     .map(|n| n.dirty() || dirty_region.intersects(n.frame()) || in_bounds)
                     .unwrap_or(true);
                 if needs_render {
@@ -539,7 +581,15 @@ impl LayerTree {
                 widget_id,
                 children,
             } => {
-                Self::render_widget_and_children(*widget_id, children, ctx, tree, dirty_region, dirty_bounds, force_render);
+                Self::render_widget_and_children(
+                    *widget_id,
+                    children,
+                    ctx,
+                    tree,
+                    dirty_region,
+                    dirty_bounds,
+                    force_render,
+                );
             }
         }
     }
@@ -588,10 +638,8 @@ impl LayerTree {
             // 空间+脏状态双剪枝 + dirty_bounds 间隙修正：
             // widget 不脏且 frame 既不在 dirty_region 也不在 dirty_bounds → 跳过 render_self
             let in_bounds = dirty_bounds.intersect(&frame).is_some();
-            let need_self_render = force_render
-                || node.dirty()
-                || dirty_region.intersects(frame)
-                || in_bounds;
+            let need_self_render =
+                force_render || node.dirty() || dirty_region.intersects(frame) || in_bounds;
 
             if need_self_render {
                 ctx.save();
@@ -683,23 +731,25 @@ impl LayerTree {
         let widget_id = node.widget_id();
 
         // 判断此 widget 是否需要重新绘制 overlay
-        let needs_overlay = force_overlay || if debug_mode {
-            // 调试模式下始终绘制边框，不跳过
-            true
-        } else if let Some(widget_node) = tree.get(widget_id) {
-            if widget_node.visible() {
-                let frame = widget_node.frame();
-                // 使用 dirty_rect（含 draw_margin 扩展）而非 raw frame
-                // 确保阴影等扩展区域的 overlay 内容被正确重绘
-                let draw_area = widget_node.dirty_rect(frame);
-                // dirty_bounds 间隙修正：parent 在脏包围盒内重绘会覆盖 overlay 内容
-                dirty_region.intersects(draw_area) || dirty_bounds.intersect(&draw_area).is_some()
+        let needs_overlay = force_overlay
+            || if debug_mode {
+                // 调试模式下始终绘制边框，不跳过
+                true
+            } else if let Some(widget_node) = tree.get(widget_id) {
+                if widget_node.visible() {
+                    let frame = widget_node.frame();
+                    // 使用 dirty_rect（含 draw_margin 扩展）而非 raw frame
+                    // 确保阴影等扩展区域的 overlay 内容被正确重绘
+                    let draw_area = widget_node.dirty_rect(frame);
+                    // dirty_bounds 间隙修正：parent 在脏包围盒内重绘会覆盖 overlay 内容
+                    dirty_region.intersects(draw_area)
+                        || dirty_bounds.intersect(&draw_area).is_some()
+                } else {
+                    false
+                }
             } else {
                 false
-            }
-        } else {
-            false
-        };
+            };
 
         // 调用 widget 的 post_render（仅当需要时）
         if needs_overlay {
@@ -718,7 +768,9 @@ impl LayerTree {
             if let Some(widget_node) = tree.get(widget_id) {
                 if widget_node.visible() {
                     let frame = widget_node.frame();
-                    let hovered = hovered_chain.as_ref().is_some_and(|c| c.contains(&widget_id));
+                    let hovered = hovered_chain
+                        .as_ref()
+                        .is_some_and(|c| c.contains(&widget_id));
                     ctx.draw_debug_border(frame, depth, hovered);
                     if hovered {
                         ctx.draw_debug_frame_info(widget_id, frame);
@@ -729,13 +781,27 @@ impl LayerTree {
 
         // 递归子节点（深度 + 1）
         match node {
-            LayerNode::Picture { children, .. }
-            | LayerNode::Direct { children, .. } => {
+            LayerNode::Picture { children, .. } | LayerNode::Direct { children, .. } => {
                 for child in children {
-                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds, force_overlay);
+                    Self::render_overlay_node(
+                        child,
+                        ctx,
+                        tree,
+                        depth + 1,
+                        hovered_chain,
+                        debug_mode,
+                        dirty_region,
+                        dirty_bounds,
+                        force_overlay,
+                    );
                 }
             }
-            LayerNode::ClipRect { widget_id, rect, children, .. } => {
+            LayerNode::ClipRect {
+                widget_id,
+                rect,
+                children,
+                ..
+            } => {
                 ctx.canvas_2d().push_clip(*rect);
                 // 应用画布偏移（ScrollView 滚动平移）使子节点 overlay 在内容坐标下绘制
                 let scroll_off = Self::get_scroll_offset(tree, *widget_id);
@@ -747,7 +813,17 @@ impl LayerTree {
                 // clip 已限制实际像素写入范围，不会产生多余绘制。
                 let child_force = scroll_off.is_some() || force_overlay;
                 for child in children {
-                    Self::render_overlay_node(child, ctx, tree, depth + 1, hovered_chain, debug_mode, dirty_region, dirty_bounds, child_force);
+                    Self::render_overlay_node(
+                        child,
+                        ctx,
+                        tree,
+                        depth + 1,
+                        hovered_chain,
+                        debug_mode,
+                        dirty_region,
+                        dirty_bounds,
+                        child_force,
+                    );
                 }
                 if let Some((sx, sy)) = scroll_off {
                     ctx.canvas_2d().translate(sx, sy);
@@ -816,35 +892,59 @@ mod tests {
 
     impl Dummy {
         fn new(w: f32, h: f32) -> Self {
-            Self { size: Size::new(w, h), is_repaint: false, clip: None }
+            Self {
+                size: Size::new(w, h),
+                is_repaint: false,
+                clip: None,
+            }
         }
         fn repaint(w: f32, h: f32) -> Self {
-            Self { size: Size::new(w, h), is_repaint: true, clip: None }
+            Self {
+                size: Size::new(w, h),
+                is_repaint: true,
+                clip: None,
+            }
         }
         fn clipped(w: f32, h: f32, clip_rect: Rect) -> Self {
-            Self { size: Size::new(w, h), is_repaint: false, clip: Some(clip_rect) }
+            Self {
+                size: Size::new(w, h),
+                is_repaint: false,
+                clip: Some(clip_rect),
+            }
         }
     }
 
     impl WidgetComponent for Dummy {
-        fn as_any(&self) -> &dyn std::any::Any { self }
-        fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
         fn capabilities(&self) -> WidgetCapabilities {
             WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
         }
-        fn visible(&self) -> bool { true }
+        fn visible(&self) -> bool {
+            true
+        }
         wc_upcast!(Dummy; WidgetRender);
         wc_upcast!(Dummy; WidgetLayout);
     }
 
     impl WidgetLayout for Dummy {
-        fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size { self.size }
+        fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size {
+            self.size
+        }
     }
 
     impl WidgetRender for Dummy {
         fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
-        fn is_repaint_boundary(&self) -> bool { self.is_repaint }
-        fn children_clip(&self, _: Rect) -> Option<Rect> { self.clip }
+        fn is_repaint_boundary(&self) -> bool {
+            self.is_repaint
+        }
+        fn children_clip(&self, _: Rect) -> Option<Rect> {
+            self.clip
+        }
     }
 
     struct ContainerWidget {
@@ -854,13 +954,20 @@ mod tests {
 
     impl ContainerWidget {
         fn new(w: f32, h: f32) -> Self {
-            Self { size: Size::new(w, h), children: std::cell::RefCell::new(Vec::new()) }
+            Self {
+                size: Size::new(w, h),
+                children: std::cell::RefCell::new(Vec::new()),
+            }
         }
     }
 
     impl WidgetComponent for ContainerWidget {
-        fn as_any(&self) -> &dyn std::any::Any { self }
-        fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
         fn capabilities(&self) -> WidgetCapabilities {
             WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
         }
@@ -872,7 +979,9 @@ mod tests {
     }
 
     impl WidgetLayout for ContainerWidget {
-        fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size { self.size }
+        fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size {
+            self.size
+        }
     }
 
     impl WidgetRender for ContainerWidget {
@@ -891,7 +1000,8 @@ mod tests {
 
     /// 创建带子节点的 WidgetTree。
     fn tree_with_children(
-        parent: Dummy, parent_frame: Rect,
+        parent: Dummy,
+        parent_frame: Rect,
         children: Vec<(Dummy, Rect)>,
     ) -> WidgetTree {
         let mut tree = WidgetTree::new();
@@ -946,12 +1056,22 @@ mod tests {
 
     #[test]
     fn build_creates_picture_node_for_repaint_boundary() {
-        let tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(10.0, 20.0, 100.0, 50.0));
+        let tree = single_tree(
+            Dummy::repaint(100.0, 50.0),
+            Rect::new(10.0, 20.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree);
         let root = lt.root_node().unwrap();
         match root {
-            LayerNode::Picture { bounds, is_dirty, offscreen_handle, children, retry_count, .. } => {
+            LayerNode::Picture {
+                bounds,
+                is_dirty,
+                offscreen_handle,
+                children,
+                retry_count,
+                ..
+            } => {
                 assert!(children.is_empty());
                 assert!(*is_dirty);
                 assert!(offscreen_handle.is_none());
@@ -964,7 +1084,10 @@ mod tests {
 
     #[test]
     fn build_picture_is_dirty_when_no_cache() {
-        let tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let tree = single_tree(
+            Dummy::repaint(100.0, 50.0),
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree);
         let root = lt.root_node().unwrap();
@@ -977,7 +1100,10 @@ mod tests {
     #[test]
     fn build_creates_clip_rect_node() {
         let clip = Rect::new(5.0, 5.0, 90.0, 40.0);
-        let tree = single_tree(Dummy::clipped(100.0, 50.0, clip), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let tree = single_tree(
+            Dummy::clipped(100.0, 50.0, clip),
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree);
         let root = lt.root_node().unwrap();
@@ -993,7 +1119,8 @@ mod tests {
     #[test]
     fn build_nested_structure() {
         let tree = tree_with_children(
-            Dummy::new(200.0, 200.0), Rect::new(0.0, 0.0, 200.0, 200.0),
+            Dummy::new(200.0, 200.0),
+            Rect::new(0.0, 0.0, 200.0, 200.0),
             vec![
                 (Dummy::new(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0)),
                 (Dummy::repaint(80.0, 30.0), Rect::new(0.0, 50.0, 80.0, 30.0)),
@@ -1024,7 +1151,8 @@ mod tests {
     #[test]
     fn build_skips_invisible_widgets() {
         let mut tree = tree_with_children(
-            Dummy::new(200.0, 200.0), Rect::new(0.0, 0.0, 200.0, 200.0),
+            Dummy::new(200.0, 200.0),
+            Rect::new(0.0, 0.0, 200.0, 200.0),
             vec![
                 (Dummy::new(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0)),
                 (Dummy::new(80.0, 30.0), Rect::new(0.0, 50.0, 80.0, 30.0)),
@@ -1052,7 +1180,8 @@ mod tests {
     fn build_z_index_sorts_children() {
         let frame = Rect::new(0.0, 0.0, 200.0, 200.0);
         let mut tree = tree_with_children(
-            Dummy::new(200.0, 200.0), frame,
+            Dummy::new(200.0, 200.0),
+            frame,
             vec![
                 (Dummy::new(50.0, 50.0), Rect::new(0.0, 0.0, 50.0, 50.0)),
                 (Dummy::new(50.0, 50.0), Rect::new(50.0, 0.0, 50.0, 50.0)),
@@ -1080,13 +1209,19 @@ mod tests {
     #[test]
     fn rebuild_reuses_offscreen_handle() {
         // 先 build 一个带 Picture 的树，注入 handle 后 rebuild，验证 bounds 不变时复用
-        let tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let tree = single_tree(
+            Dummy::repaint(100.0, 50.0),
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree);
         // 注入 offscreen handle（模拟已渲染）
         if let Some(ref mut root) = lt.root {
             match root {
-                LayerNode::Picture { ref mut offscreen_handle, .. } => {
+                LayerNode::Picture {
+                    ref mut offscreen_handle,
+                    ..
+                } => {
                     *offscreen_handle = Some(ImageHandle(42));
                 }
                 _ => {}
@@ -1097,7 +1232,9 @@ mod tests {
         // 新 root 应持有 offscreen handle
         let new_root = lt.root_node().unwrap();
         match new_root {
-            LayerNode::Picture { offscreen_handle, .. } => {
+            LayerNode::Picture {
+                offscreen_handle, ..
+            } => {
                 assert_eq!(*offscreen_handle, Some(ImageHandle(42)));
             }
             _ => panic!("期望 Picture"),
@@ -1107,14 +1244,20 @@ mod tests {
     #[test]
     fn rebuild_collects_orphaned_handles() {
         // 先 build 一个带 Picture 的树
-        let tree1 = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let tree1 = single_tree(
+            Dummy::repaint(100.0, 50.0),
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree1);
 
         // 手动注入一个 offscreen handle 到旧 Picture（模拟已渲染过的状态）
         if let Some(ref mut root) = lt.root {
             match root {
-                LayerNode::Picture { ref mut offscreen_handle, .. } => {
+                LayerNode::Picture {
+                    ref mut offscreen_handle,
+                    ..
+                } => {
                     *offscreen_handle = Some(ImageHandle(42));
                 }
                 _ => {}
@@ -1122,7 +1265,10 @@ mod tests {
         }
 
         // 第二次 build 时，旧 handle 应进入 orphaned_handles
-        let tree2 = single_tree(Dummy::repaint(200.0, 100.0), Rect::new(0.0, 0.0, 200.0, 100.0));
+        let tree2 = single_tree(
+            Dummy::repaint(200.0, 100.0),
+            Rect::new(0.0, 0.0, 200.0, 100.0),
+        );
         lt.build(&tree2); // bounds 改变 → 旧 handle 无法复用 → 进入孤儿列表
 
         assert!(lt.orphaned_handles().contains(&ImageHandle(42)));
@@ -1139,7 +1285,10 @@ mod tests {
 
     #[test]
     fn invalidate_marks_picture_dirty() {
-        let tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let tree = single_tree(
+            Dummy::repaint(100.0, 50.0),
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree);
 
@@ -1165,12 +1314,14 @@ mod tests {
     #[test]
     fn invalidate_propagates_to_children() {
         let mut tree = WidgetTree::new();
-        let root_id = tree.set_root(Box::new(
-            ContainerWidget::new(200.0, 200.0),
-        ));
-        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        let root_id = tree.set_root(Box::new(ContainerWidget::new(200.0, 200.0)));
+        tree.get_mut(root_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
         let child_id = tree.add_child(root_id, Box::new(Dummy::repaint(100.0, 50.0)));
-        tree.get_mut(child_id).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+        tree.get_mut(child_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
 
         let mut lt = LayerTree::new();
         lt.build(&tree);
@@ -1199,7 +1350,10 @@ mod tests {
 
     #[test]
     fn update_dirty_marks_picture_clean_when_widget_clean() {
-        let mut tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut tree = single_tree(
+            Dummy::repaint(100.0, 50.0),
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree);
 
@@ -1225,9 +1379,13 @@ mod tests {
     fn update_dirty_propagates_child_dirty_to_picture() {
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(Dummy::repaint(300.0, 300.0)));
-        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+        tree.get_mut(root_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
         let child_id = tree.add_child(root_id, Box::new(Dummy::new(100.0, 50.0)));
-        tree.get_mut(child_id).unwrap().set_frame(Rect::new(10.0, 10.0, 100.0, 50.0));
+        tree.get_mut(child_id)
+            .unwrap()
+            .set_frame(Rect::new(10.0, 10.0, 100.0, 50.0));
 
         let mut lt = LayerTree::new();
         lt.build(&tree);
@@ -1240,7 +1398,9 @@ mod tests {
 
         if let Some(ref root) = lt.root {
             match root {
-                LayerNode::Picture { is_dirty, children, .. } => {
+                LayerNode::Picture {
+                    is_dirty, children, ..
+                } => {
                     // 子节点 dirty → 父 Picture 应被标记 dirty
                     assert!(*is_dirty, "子节点 dirty 应传播到父 Picture");
                     // 子节点应为 Direct
@@ -1253,7 +1413,10 @@ mod tests {
 
     #[test]
     fn update_dirty_marks_picture_dirty_when_widget_dirty() {
-        let mut tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut tree = single_tree(
+            Dummy::repaint(100.0, 50.0),
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree);
 
@@ -1280,10 +1443,12 @@ mod tests {
     fn build_with_repaint_boundary_has_no_children_in_picture() {
         // Picture 节点的 children 应包含结构化的 LayerNode，不是空的
         let tree = tree_with_children(
-            Dummy::new(200.0, 200.0), Rect::new(0.0, 0.0, 200.0, 200.0),
-            vec![
-                (Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0)),
-            ],
+            Dummy::new(200.0, 200.0),
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+            vec![(
+                Dummy::repaint(100.0, 50.0),
+                Rect::new(0.0, 0.0, 100.0, 50.0),
+            )],
         );
         let mut lt = LayerTree::new();
         lt.build(&tree);
@@ -1293,8 +1458,14 @@ mod tests {
             LayerNode::Direct { children, .. } => {
                 assert_eq!(children.len(), 1);
                 match &children[0] {
-                    LayerNode::Picture { children: pic_children, .. } => {
-                        assert!(pic_children.is_empty(), "Picture 不应有子节点（当前子树下无更多子节点）");
+                    LayerNode::Picture {
+                        children: pic_children,
+                        ..
+                    } => {
+                        assert!(
+                            pic_children.is_empty(),
+                            "Picture 不应有子节点（当前子树下无更多子节点）"
+                        );
                     }
                     other => panic!("期望 Picture，得到 {other:?}"),
                 }
@@ -1331,7 +1502,10 @@ mod tests {
         assert!(lt.is_ready());
 
         // 第二次 build 不同的树
-        let tree2 = single_tree(Dummy::repaint(200.0, 100.0), Rect::new(0.0, 0.0, 200.0, 100.0));
+        let tree2 = single_tree(
+            Dummy::repaint(200.0, 100.0),
+            Rect::new(0.0, 0.0, 200.0, 100.0),
+        );
         lt.build(&tree2);
         assert!(lt.is_ready());
 
@@ -1411,12 +1585,18 @@ mod tests {
     fn build_z_index_ordered_correctly() {
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(Dummy::new(200.0, 200.0)));
-        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        tree.get_mut(root_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
         let child_a = tree.add_child(root_id, Box::new(Dummy::new(50.0, 50.0)));
-        tree.get_mut(child_a).unwrap().set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
+        tree.get_mut(child_a)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
         tree.get_mut(child_a).unwrap().set_z_index(10);
         let child_b = tree.add_child(root_id, Box::new(Dummy::new(50.0, 50.0)));
-        tree.get_mut(child_b).unwrap().set_frame(Rect::new(50.0, 0.0, 50.0, 50.0));
+        tree.get_mut(child_b)
+            .unwrap()
+            .set_frame(Rect::new(50.0, 0.0, 50.0, 50.0));
         tree.get_mut(child_b).unwrap().set_z_index(1);
 
         let mut lt = LayerTree::new();
@@ -1438,11 +1618,17 @@ mod tests {
     fn build_z_index_equal_indices_preserve_insertion_order() {
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(Dummy::new(200.0, 200.0)));
-        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        tree.get_mut(root_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
         let child_a = tree.add_child(root_id, Box::new(Dummy::new(50.0, 50.0)));
-        tree.get_mut(child_a).unwrap().set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
+        tree.get_mut(child_a)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
         let child_b = tree.add_child(root_id, Box::new(Dummy::new(50.0, 50.0)));
-        tree.get_mut(child_b).unwrap().set_frame(Rect::new(50.0, 0.0, 50.0, 50.0));
+        tree.get_mut(child_b)
+            .unwrap()
+            .set_frame(Rect::new(50.0, 0.0, 50.0, 50.0));
         // 都使用默认 z=0，排序是稳定的（插入顺序保留）
 
         let mut lt = LayerTree::new();
@@ -1460,13 +1646,20 @@ mod tests {
 
     #[test]
     fn rebuild_with_clean_widget_and_offscreen_is_clean() {
-        let mut tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut tree = single_tree(
+            Dummy::repaint(100.0, 50.0),
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree);
 
         // 注入 offscreen handle
         if let Some(ref mut root) = lt.root {
-            if let LayerNode::Picture { ref mut offscreen_handle, .. } = root {
+            if let LayerNode::Picture {
+                ref mut offscreen_handle,
+                ..
+            } = root
+            {
                 *offscreen_handle = Some(ImageHandle(42));
             }
         }
@@ -1480,9 +1673,16 @@ mod tests {
 
         let root = lt.root_node().unwrap();
         match root {
-            LayerNode::Picture { is_dirty, offscreen_handle, .. } => {
+            LayerNode::Picture {
+                is_dirty,
+                offscreen_handle,
+                ..
+            } => {
                 assert!(offscreen_handle.is_some());
-                assert!(!*is_dirty, "offscreen 存在且 widget clean → Picture 应为 clean");
+                assert!(
+                    !*is_dirty,
+                    "offscreen 存在且 widget clean → Picture 应为 clean"
+                );
             }
             _ => panic!("期望 Picture"),
         }
@@ -1493,11 +1693,24 @@ mod tests {
         // 三层：Direct → ClipRect → Picture
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(Dummy::new(400.0, 400.0)));
-        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
-        let clip_id = tree.add_child(root_id, Box::new(Dummy::clipped(200.0, 200.0, Rect::new(0.0, 0.0, 200.0, 200.0))));
-        tree.get_mut(clip_id).unwrap().set_frame(Rect::new(50.0, 50.0, 200.0, 200.0));
+        tree.get_mut(root_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
+        let clip_id = tree.add_child(
+            root_id,
+            Box::new(Dummy::clipped(
+                200.0,
+                200.0,
+                Rect::new(0.0, 0.0, 200.0, 200.0),
+            )),
+        );
+        tree.get_mut(clip_id)
+            .unwrap()
+            .set_frame(Rect::new(50.0, 50.0, 200.0, 200.0));
         let pic_id = tree.add_child(clip_id, Box::new(Dummy::repaint(100.0, 100.0)));
-        tree.get_mut(pic_id).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+        tree.get_mut(pic_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
         let mut lt = LayerTree::new();
         lt.build(&tree);
@@ -1507,7 +1720,10 @@ mod tests {
             LayerNode::Direct { children, .. } => {
                 assert_eq!(children.len(), 1);
                 match &children[0] {
-                    LayerNode::ClipRect { children: clip_children, .. } => {
+                    LayerNode::ClipRect {
+                        children: clip_children,
+                        ..
+                    } => {
                         assert_eq!(clip_children.len(), 1);
                         match &clip_children[0] {
                             LayerNode::Picture { .. } => {}
@@ -1525,7 +1741,9 @@ mod tests {
     fn build_skips_invisible_root() {
         let mut tree = WidgetTree::new();
         let id = tree.set_root(Box::new(Dummy::new(100.0, 50.0)));
-        tree.get_mut(id).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+        tree.get_mut(id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
         tree.get_mut(id).unwrap().set_visible(false);
 
         let mut lt = LayerTree::new();
@@ -1556,7 +1774,9 @@ mod tests {
         assert!(lt.is_ready());
         let root = lt.root_node().unwrap();
         match root {
-            LayerNode::Picture { bounds, is_dirty, .. } => {
+            LayerNode::Picture {
+                bounds, is_dirty, ..
+            } => {
                 assert_eq!(*bounds, Rect::new(0.0, 0.0, 0.0, 0.0));
                 assert!(*is_dirty);
             }
@@ -1568,11 +1788,24 @@ mod tests {
     fn update_dirty_clip_rect_no_panic() {
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(Dummy::new(400.0, 400.0)));
-        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
-        let clip_id = tree.add_child(root_id, Box::new(Dummy::clipped(200.0, 200.0, Rect::new(0.0, 0.0, 200.0, 200.0))));
-        tree.get_mut(clip_id).unwrap().set_frame(Rect::new(50.0, 50.0, 200.0, 200.0));
+        tree.get_mut(root_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
+        let clip_id = tree.add_child(
+            root_id,
+            Box::new(Dummy::clipped(
+                200.0,
+                200.0,
+                Rect::new(0.0, 0.0, 200.0, 200.0),
+            )),
+        );
+        tree.get_mut(clip_id)
+            .unwrap()
+            .set_frame(Rect::new(50.0, 50.0, 200.0, 200.0));
         let child_id = tree.add_child(clip_id, Box::new(Dummy::new(100.0, 50.0)));
-        tree.get_mut(child_id).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+        tree.get_mut(child_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
 
         let mut lt = LayerTree::new();
         lt.build(&tree);
@@ -1584,7 +1817,10 @@ mod tests {
 
     #[test]
     fn build_negative_frame_positions() {
-        let tree = single_tree(Dummy::new(100.0, 50.0), Rect::new(-50.0, -20.0, 100.0, 50.0));
+        let tree = single_tree(
+            Dummy::new(100.0, 50.0),
+            Rect::new(-50.0, -20.0, 100.0, 50.0),
+        );
         let mut lt = LayerTree::new();
         lt.build(&tree);
         assert!(lt.is_ready());
@@ -1600,11 +1836,17 @@ mod tests {
         // 有两个 Picture 子节点的树
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(Dummy::new(400.0, 400.0)));
-        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
+        tree.get_mut(root_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
         let pic1 = tree.add_child(root_id, Box::new(Dummy::repaint(100.0, 50.0)));
-        tree.get_mut(pic1).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+        tree.get_mut(pic1)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
         let pic2 = tree.add_child(root_id, Box::new(Dummy::repaint(100.0, 50.0)));
-        tree.get_mut(pic2).unwrap().set_frame(Rect::new(100.0, 0.0, 100.0, 50.0));
+        tree.get_mut(pic2)
+            .unwrap()
+            .set_frame(Rect::new(100.0, 0.0, 100.0, 50.0));
 
         let mut lt = LayerTree::new();
         lt.build(&tree);
@@ -1612,10 +1854,18 @@ mod tests {
         fn inject_handles(lt: &mut LayerTree, h1: ImageHandle, h2: ImageHandle) {
             if let Some(ref mut root) = lt.root {
                 if let LayerNode::Direct { children, .. } = root {
-                    if let LayerNode::Picture { ref mut offscreen_handle, .. } = &mut children[0] {
+                    if let LayerNode::Picture {
+                        ref mut offscreen_handle,
+                        ..
+                    } = &mut children[0]
+                    {
                         *offscreen_handle = Some(h1);
                     }
-                    if let LayerNode::Picture { ref mut offscreen_handle, .. } = &mut children[1] {
+                    if let LayerNode::Picture {
+                        ref mut offscreen_handle,
+                        ..
+                    } = &mut children[1]
+                    {
                         *offscreen_handle = Some(h2);
                     }
                 }
@@ -1625,7 +1875,9 @@ mod tests {
         assert!(lt.orphaned_handles().is_empty());
 
         // 改变 bounds → 两个 handle 都变成孤儿
-        tree.get_mut(pic1).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+        tree.get_mut(pic1)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
         lt.build(&tree);
         assert!(lt.orphaned_handles().contains(&ImageHandle(10)));
         assert!(lt.orphaned_handles().contains(&ImageHandle(20)));

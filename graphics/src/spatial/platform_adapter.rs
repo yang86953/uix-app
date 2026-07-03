@@ -4,8 +4,7 @@
 //! 平台适配层自动处理 y-up 平台的坐标翻转。
 
 /// 坐标方向。
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Orientation {
     /// y 轴向下（屏幕坐标，Windows 默认）。
     /// 原点在左上角，y 增加向下。
@@ -38,7 +37,6 @@ impl Orientation {
     }
 }
 
-
 // ════════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
@@ -69,5 +67,4 @@ mod tests {
         assert!((sx - 150.0).abs() < 1e-10);
         assert!((sy - 300.0).abs() < 1e-10);
     }
-
 }

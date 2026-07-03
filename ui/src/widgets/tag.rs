@@ -1,17 +1,20 @@
 //! Tag widget — 彩色标签/徽标，支持关闭按钮。
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Radius;
+use uix_platform::{Rect, Size};
 
 /// 预设标签类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TagColor {
-    Default, Success, Info, Warning, Error,
+    Default,
+    Success,
+    Info,
+    Warning,
+    Error,
 }
-
 
 define_widget! {
     pub struct Tag {
@@ -56,18 +59,48 @@ define_widget! {
     }
 }
 
-impl Default for Tag { fn default() -> Self { Self::new("") } }
+impl Default for Tag {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
 
 impl Tag {
     pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into(), color: TagColor::Default, closable: false, font_size: 12.0, custom_color: None, checkable: false, on_close: None }
+        Self {
+            text: text.into(),
+            color: TagColor::Default,
+            closable: false,
+            font_size: 12.0,
+            custom_color: None,
+            checkable: false,
+            on_close: None,
+        }
     }
-    pub fn color(mut self, c: TagColor) -> Self { self.color = c; self }
-    pub fn custom_color(mut self, c: Color) -> Self { self.custom_color = Some(c); self }
-    pub fn closable(mut self) -> Self { self.closable = true; self }
-    pub fn checkable(mut self, v: bool) -> Self { self.checkable = v; self }
-    pub fn on_close<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_close = Some(Box::new(f)); self }
-    pub fn font_size(mut self, s: f32) -> Self { self.font_size = s; self }
+    pub fn color(mut self, c: TagColor) -> Self {
+        self.color = c;
+        self
+    }
+    pub fn custom_color(mut self, c: Color) -> Self {
+        self.custom_color = Some(c);
+        self
+    }
+    pub fn closable(mut self) -> Self {
+        self.closable = true;
+        self
+    }
+    pub fn checkable(mut self, v: bool) -> Self {
+        self.checkable = v;
+        self
+    }
+    pub fn on_close<F: FnMut() + 'static>(mut self, f: F) -> Self {
+        self.on_close = Some(Box::new(f));
+        self
+    }
+    pub fn font_size(mut self, s: f32) -> Self {
+        self.font_size = s;
+        self
+    }
 }
 
 use uix_graphics::Color;

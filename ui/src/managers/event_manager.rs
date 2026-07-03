@@ -1,4 +1,4 @@
-use crate::widget::{WidgetEvent, WidgetEventKind, EventResult};
+use crate::widget::{EventResult, WidgetEvent, WidgetEventKind};
 
 /// 事件管理器默认优先级（中间值）。
 pub const EM_PRIORITY_DEFAULT: i32 = 0;

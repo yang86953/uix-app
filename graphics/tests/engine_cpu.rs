@@ -2,9 +2,9 @@
 //! 覆盖 PixelSurface、RasterRenderer、CpuCanvas2D、SoftwareEngine、NullEngine。
 
 use uix_graphics::color::Color;
+use uix_graphics::engine::cpu::canvas_2d::CpuCanvas2D;
 use uix_graphics::engine::cpu::pixel_surface::PixelSurface;
 use uix_graphics::engine::cpu::raster_renderer::RasterRenderer;
-use uix_graphics::engine::cpu::canvas_2d::CpuCanvas2D;
 use uix_graphics::engine::cpu::software::SoftwareEngine;
 use uix_graphics::null_engine::NullEngine;
 use uix_graphics::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
@@ -198,7 +198,14 @@ fn raster_renderer_offset_affects_set_get() {
 fn raster_renderer_fill_rect_no_transform() {
     let rr = RasterRenderer::new(10, 10);
     let mut pixels = vec![0u32; 100];
-    rr.fill_rect(&mut pixels, 10, 10, Rect::new(0.0, 0.0, 5.0, 5.0), Color::from_rgba(255, 0, 0, 255), None);
+    rr.fill_rect(
+        &mut pixels,
+        10,
+        10,
+        Rect::new(0.0, 0.0, 5.0, 5.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
 
     // 前 5x5 像素应为红色
     for y in 0..5 {
@@ -217,7 +224,14 @@ fn raster_renderer_fill_rect_respects_clip() {
     let mut rr = RasterRenderer::new(10, 10);
     rr.push_clip(Rect::new(2.0, 2.0, 4.0, 4.0));
     let mut pixels = vec![0u32; 100];
-    rr.fill_rect(&mut pixels, 10, 10, Rect::new(0.0, 0.0, 10.0, 10.0), Color::from_rgba(0, 255, 0, 255), None);
+    rr.fill_rect(
+        &mut pixels,
+        10,
+        10,
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+        Color::from_rgba(0, 255, 0, 255),
+        None,
+    );
 
     // 只有裁剪区域内被填充
     assert_eq!(pixels[0], 0x00000000);
@@ -233,7 +247,15 @@ fn raster_renderer_stroke_rect_fast_path() {
     let rr = RasterRenderer::new(10, 10);
     let mut pixels = vec![0u32; 100];
     // 1px 描边
-    rr.stroke_rect(&mut pixels, 10, 10, Rect::new(0.0, 0.0, 10.0, 10.0), Color::from_rgba(255, 255, 255, 255), 1.0, None);
+    rr.stroke_rect(
+        &mut pixels,
+        10,
+        10,
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+        Color::from_rgba(255, 255, 255, 255),
+        1.0,
+        None,
+    );
 
     // 边框像素应为白色
     assert_eq!(pixels[0], 0xFFFFFFFF);
@@ -249,7 +271,17 @@ fn raster_renderer_stroke_rect_fast_path() {
 fn raster_renderer_draw_line_horizontal() {
     let rr = RasterRenderer::new(10, 10);
     let mut pixels = vec![0u32; 100];
-    rr.draw_line(&mut pixels, 10, 10, 0.0, 5.0, 9.0, 5.0, Color::from_rgba(255, 255, 255, 255), 1.0);
+    rr.draw_line(
+        &mut pixels,
+        10,
+        10,
+        0.0,
+        5.0,
+        9.0,
+        5.0,
+        Color::from_rgba(255, 255, 255, 255),
+        1.0,
+    );
 
     // 水平线 y=5, lw=1, fill_rect_raw 覆盖 (0,4)-(9,5)
     assert_eq!(pixels[4 * 10 + 5], 0xFFFFFFFF);
@@ -274,7 +306,11 @@ fn cpu_canvas_2d_new_has_correct_size() {
 fn cpu_canvas_2d_fill_rect_changes_pixels() {
     let surf = PixelSurface::new(10, 10);
     let mut canvas = CpuCanvas2D::new(surf);
-    canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::from_rgba(255, 0, 0, 255), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 5.0, 5.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
 
     let pixels = canvas.surface().pixels();
     assert_eq!(pixels[0], 0xFF0000FF);
@@ -316,7 +352,11 @@ fn cpu_canvas_2d_opacity_affects_rendering() {
     let surf = PixelSurface::new(10, 10);
     let mut canvas = CpuCanvas2D::new(surf);
     canvas.set_opacity(0.5);
-    canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::from_rgba(255, 0, 0, 255), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 5.0, 5.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
 
     let pixels = canvas.surface().pixels();
     // 半透明度混合结果应与完全不透明不同
@@ -331,7 +371,11 @@ fn cpu_canvas_2d_translate_shifts_output() {
     let surf = PixelSurface::new(20, 20);
     let mut canvas = CpuCanvas2D::new(surf);
     canvas.translate(5.0, 5.0);
-    canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::from_rgba(255, 0, 0, 255), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 5.0, 5.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
 
     let pixels = canvas.surface().pixels();
     // 偏移后，颜色应在 (5,5) 处而不在 (0,0)
@@ -376,7 +420,14 @@ fn cpu_canvas_2d_scroll_region_zero_delta_noop() {
 fn cpu_canvas_2d_fill_sector_pixels() {
     let surf = PixelSurface::new(20, 20);
     let mut canvas = CpuCanvas2D::new(surf);
-    canvas.fill_sector(10.0, 10.0, 5.0, 0.0, std::f32::consts::PI, Color::from_rgba(255, 0, 0, 255));
+    canvas.fill_sector(
+        10.0,
+        10.0,
+        5.0,
+        0.0,
+        std::f32::consts::PI,
+        Color::from_rgba(255, 0, 0, 255),
+    );
     let pixels = canvas.surface().pixels();
     // 圆心应在扇形范围内（像素格式 AABBGGRR，R 在最低字节）
     let center = pixels[10 * 20 + 10];
@@ -388,7 +439,14 @@ fn cpu_canvas_2d_fill_sector_pixels() {
 fn cpu_canvas_2d_draw_box_shadow_changes_pixels() {
     let surf = PixelSurface::new(20, 20);
     let mut canvas = CpuCanvas2D::new(surf);
-    canvas.draw_box_shadow(Rect::new(5.0, 5.0, 10.0, 10.0), 1.0, 3.0, 3.0, Color::from_rgba(0, 0, 0, 128), None);
+    canvas.draw_box_shadow(
+        Rect::new(5.0, 5.0, 10.0, 10.0),
+        1.0,
+        3.0,
+        3.0,
+        Color::from_rgba(0, 0, 0, 128),
+        None,
+    );
     let pixels = canvas.surface().pixels();
     // 阴影偏移后应在 (8,8) 附近有像素
     let pixel = pixels[8 * 20 + 8];
@@ -400,7 +458,14 @@ fn cpu_canvas_2d_draw_box_shadow_changes_pixels() {
 fn cpu_canvas_2d_draw_box_shadow_ambient_changes_pixels() {
     let surf = PixelSurface::new(20, 20);
     let mut canvas = CpuCanvas2D::new(surf);
-    canvas.draw_box_shadow_ambient(Rect::new(5.0, 5.0, 10.0, 10.0), 2.0, 0.0, 0.0, Color::from_rgba(0, 0, 0, 128), None);
+    canvas.draw_box_shadow_ambient(
+        Rect::new(5.0, 5.0, 10.0, 10.0),
+        2.0,
+        0.0,
+        0.0,
+        Color::from_rgba(0, 0, 0, 128),
+        None,
+    );
     let pixels = canvas.surface().pixels();
     // 环境阴影应在盒子附近有像素
     let pixel = pixels[10 * 20 + 10];
@@ -413,7 +478,11 @@ fn cpu_canvas_2d_set_blend_mode_no_panic() {
     let surf = PixelSurface::new(10, 10);
     let mut canvas = CpuCanvas2D::new(surf);
     canvas.set_blend_mode(uix_graphics::types::BlendMode::Alpha);
-    canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::from_rgba(255, 0, 0, 255), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 5.0, 5.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
     let pixels = canvas.surface().pixels();
     // set_blend_mode 后填充应正常工作
     assert_eq!(pixels[0], 0xFF0000FF);
@@ -432,7 +501,11 @@ fn cpu_canvas_2d_push_clip_path_no_panic() {
         .build();
     // 路径裁剪当前为空操作，确保不 panic
     canvas.push_clip_path(&path);
-    canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::from_rgba(0, 255, 0, 255), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 5.0, 5.0),
+        Color::from_rgba(0, 255, 0, 255),
+        None,
+    );
     let pixels = canvas.surface().pixels();
     assert_eq!(pixels[0], 0xFF00FF00);
 }
@@ -462,7 +535,10 @@ fn software_engine_begin_frame_full_redraw() {
     let mut engine = SoftwareEngine::new();
     engine.initialize(10, 10).unwrap();
     let result = engine.begin_frame(UpdateStrategy::FullRedraw);
-    assert!(matches!(result, uix_graphics::engine::RenderOutcome::Present(_)));
+    assert!(matches!(
+        result,
+        uix_graphics::engine::RenderOutcome::Present(_)
+    ));
     engine.end_frame();
 }
 
@@ -470,8 +546,13 @@ fn software_engine_begin_frame_full_redraw() {
 fn software_engine_begin_frame_overlay() {
     let mut engine = SoftwareEngine::new();
     engine.initialize(10, 10).unwrap();
-    let result = engine.begin_frame(UpdateStrategy::Overlay(vec![Rect::new(0.0, 0.0, 10.0, 10.0)]));
-    assert!(matches!(result, uix_graphics::engine::RenderOutcome::Present(_)));
+    let result = engine.begin_frame(UpdateStrategy::Overlay(vec![Rect::new(
+        0.0, 0.0, 10.0, 10.0,
+    )]));
+    assert!(matches!(
+        result,
+        uix_graphics::engine::RenderOutcome::Present(_)
+    ));
     engine.end_frame();
 }
 
@@ -498,7 +579,11 @@ fn software_engine_canvas_2d_mut_ref() {
     let mut engine = SoftwareEngine::new();
     engine.initialize(50, 50).unwrap();
     let canvas = engine.canvas_2d();
-    canvas.fill_rect(Rect::new(0.0, 0.0, 10.0, 10.0), Color::from_rgba(0, 255, 0, 255), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+        Color::from_rgba(0, 255, 0, 255),
+        None,
+    );
 }
 
 #[test]
@@ -512,7 +597,10 @@ fn software_engine_create_offscreen() {
 
     let offscreen_canvas = engine.offscreen_canvas(&handle);
     assert!(offscreen_canvas.is_some());
-    assert_eq!(offscreen_canvas.unwrap().surface_size(), Size::new(50.0, 50.0));
+    assert_eq!(
+        offscreen_canvas.unwrap().surface_size(),
+        Size::new(50.0, 50.0)
+    );
 }
 
 #[test]
@@ -553,7 +641,11 @@ fn software_engine_blit_offscreen() {
 
     // 在离屏上绘制
     let offscreen = engine.offscreen_canvas(&handle).unwrap();
-    offscreen.fill_rect(Rect::new(0.0, 0.0, 10.0, 10.0), Color::from_rgba(255, 0, 0, 255), None);
+    offscreen.fill_rect(
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
 
     // blit 到主表面
     engine.blit_offscreen(&handle, Rect::new(0.0, 0.0, 10.0, 10.0));
@@ -573,16 +665,28 @@ fn software_engine_blit_offscreen_src_basic() {
     let handle = engine.create_offscreen(20, 20).unwrap();
     // 在离屏上绘制红色
     let offscreen = engine.offscreen_canvas(&handle).unwrap();
-    offscreen.fill_rect(Rect::new(0.0, 0.0, 10.0, 10.0), Color::from_rgba(255, 0, 0, 255), None);
+    offscreen.fill_rect(
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
     // 使用 blit_offscreen_src 只 blit 离屏的 (0,0,10,10) 到主画布 (0,0,10,10)
-    engine.blit_offscreen_src(&handle, Rect::new(0.0, 0.0, 10.0, 10.0), Rect::new(0.0, 0.0, 10.0, 10.0));
+    engine.blit_offscreen_src(
+        &handle,
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+    );
 }
 
 #[test]
 fn software_engine_blit_offscreen_src_invalid_handle_noop() {
     let mut engine = SoftwareEngine::new();
     engine.initialize(100, 100).unwrap();
-    engine.blit_offscreen_src(&ImageHandle(999), Rect::new(0.0, 0.0, 10.0, 10.0), Rect::new(0.0, 0.0, 10.0, 10.0));
+    engine.blit_offscreen_src(
+        &ImageHandle(999),
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+        Rect::new(0.0, 0.0, 10.0, 10.0),
+    );
 }
 
 #[test]
@@ -625,7 +729,10 @@ fn software_engine_device_pixel_ratio_default() {
 #[test]
 fn software_engine_orientation_default() {
     let engine = SoftwareEngine::new();
-    assert_eq!(engine.orientation(), uix_graphics::spatial::Orientation::YDown);
+    assert_eq!(
+        engine.orientation(),
+        uix_graphics::spatial::Orientation::YDown
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -681,7 +788,11 @@ fn null_engine_shutdown() {
 fn null_engine_canvas_2d_ops_noop() {
     let mut engine = NullEngine::new();
     let canvas = engine.canvas_2d();
-    canvas.fill_rect(Rect::new(0.0, 0.0, 100.0, 100.0), Color::from_rgba(255, 0, 0, 255), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 100.0, 100.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
     canvas.save();
     canvas.restore();
     canvas.push_clip(Rect::new(0.0, 0.0, 50.0, 50.0));

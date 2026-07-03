@@ -1,10 +1,10 @@
 //! Avatar — circular avatar with initials/text.
 
 use crate::define_widget;
-use uix_graphics::Color;
-use uix_platform::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Color;
+use uix_platform::{Rect, Size};
 
 define_widget! {
     pub struct Avatar {
@@ -43,15 +43,41 @@ define_widget! {
     }
 }
 
-impl Default for Avatar { fn default() -> Self { Self::new("") } }
+impl Default for Avatar {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
 
 impl Avatar {
     pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into(), size: 32.0, bg_color: None, text_color: None, square: false, src: String::new() }
+        Self {
+            text: text.into(),
+            size: 32.0,
+            bg_color: None,
+            text_color: None,
+            square: false,
+            src: String::new(),
+        }
     }
-    pub fn size(mut self, s: f32) -> Self { self.size = s; self }
-    pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
-    pub fn text_color(mut self, c: Color) -> Self { self.text_color = Some(c); self }
-    pub fn square(mut self, v: bool) -> Self { self.square = v; self }
-    pub fn src(mut self, s: &str) -> Self { self.src = s.to_string(); self }
+    pub fn size(mut self, s: f32) -> Self {
+        self.size = s;
+        self
+    }
+    pub fn bg(mut self, c: Color) -> Self {
+        self.bg_color = Some(c);
+        self
+    }
+    pub fn text_color(mut self, c: Color) -> Self {
+        self.text_color = Some(c);
+        self
+    }
+    pub fn square(mut self, v: bool) -> Self {
+        self.square = v;
+        self
+    }
+    pub fn src(mut self, s: &str) -> Self {
+        self.src = s.to_string();
+        self
+    }
 }

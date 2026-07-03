@@ -2,11 +2,11 @@
 //!
 //! 固定在屏幕角落的圆形按钮，支持图标、tooltip、badge 等。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, Radius};
+use uix_platform::{Point, Rect, Size};
 
 // FloatButton — 浮动操作按钮。
 define_widget! {
@@ -66,17 +66,39 @@ define_widget! {
 impl FloatButton {
     pub fn new(icon: &str) -> Self {
         Self {
-            icon: icon.to_string(), tooltip: String::new(), badge_count: 0,
-            size: 40.0, x: 0.0, y: 0.0, hovered: false,
+            icon: icon.to_string(),
+            tooltip: String::new(),
+            badge_count: 0,
+            size: 40.0,
+            x: 0.0,
+            y: 0.0,
+            hovered: false,
         }
     }
-    pub fn position(mut self, x: f32, y: f32) -> Self { self.x = x; self.y = y; self }
-    pub fn tooltip(mut self, t: &str) -> Self { self.tooltip = t.to_string(); self }
-    pub fn badge(mut self, count: i32) -> Self { self.badge_count = count; self }
-    pub fn size(mut self, s: f32) -> Self { self.size = s; self }
+    pub fn position(mut self, x: f32, y: f32) -> Self {
+        self.x = x;
+        self.y = y;
+        self
+    }
+    pub fn tooltip(mut self, t: &str) -> Self {
+        self.tooltip = t.to_string();
+        self
+    }
+    pub fn badge(mut self, count: i32) -> Self {
+        self.badge_count = count;
+        self
+    }
+    pub fn size(mut self, s: f32) -> Self {
+        self.size = s;
+        self
+    }
 }
 
-impl Default for FloatButton { fn default() -> Self { Self::new("+") } }
+impl Default for FloatButton {
+    fn default() -> Self {
+        Self::new("+")
+    }
+}
 
 /// FloatButtonBackTop — 回到顶部按钮（FloatButton 的便捷封装）。
 pub struct FloatButtonBackTop;

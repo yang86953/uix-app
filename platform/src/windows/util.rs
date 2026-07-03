@@ -430,12 +430,9 @@ pub fn probe_family_font_path(family: &str) -> Option<String> {
                             .chars()
                             .filter(|c| c.is_alphanumeric())
                             .collect();
-                        let clean_stem: String = stem
-                            .chars()
-                            .filter(|c| c.is_alphanumeric())
-                            .collect();
-                        if clean_stem.contains(&clean_family)
-                            || clean_family.contains(&clean_stem)
+                        let clean_stem: String =
+                            stem.chars().filter(|c| c.is_alphanumeric()).collect();
+                        if clean_stem.contains(&clean_family) || clean_family.contains(&clean_stem)
                         {
                             let full = format!("{}{}", fonts_dir, file_name);
                             // 验证文件可读
@@ -502,7 +499,16 @@ pub fn scan_random_font_path() -> Option<String> {
         }
 
         // 优先选择常规字体（不含 bold/italic/black/light 的）
-        let bad_keywords = ["bold", "italic", "black", "light", "thin", "medium", "semibold", "extrabold"];
+        let bad_keywords = [
+            "bold",
+            "italic",
+            "black",
+            "light",
+            "thin",
+            "medium",
+            "semibold",
+            "extrabold",
+        ];
         for c in &candidates {
             let lower = c.to_lowercase();
             if !bad_keywords.iter().any(|k| lower.contains(k)) {
@@ -518,14 +524,8 @@ pub fn scan_random_font_path() -> Option<String> {
 // ── FFI 声明 ──
 
 extern "system" {
-    fn FindFirstFileW(
-        lpFileName: *const u16,
-        lpFindFileData: *mut WIN32_FIND_DATAW,
-    ) -> isize;
-    fn FindNextFileW(
-        hFindFile: isize,
-        lpFindFileData: *mut WIN32_FIND_DATAW,
-    ) -> i32;
+    fn FindFirstFileW(lpFileName: *const u16, lpFindFileData: *mut WIN32_FIND_DATAW) -> isize;
+    fn FindNextFileW(hFindFile: isize, lpFindFileData: *mut WIN32_FIND_DATAW) -> i32;
     fn FindClose(hFindFile: isize) -> i32;
 }
 
@@ -602,9 +602,15 @@ mod tests {
     fn family_name_to_filename_known_families() {
         // "Segoe UI" 因 trim_end_matches(" ui") 被裁剪为 "segoe" 而无法匹配
         assert_eq!(family_name_to_filename("Microsoft YaHei"), Some("msyh.ttc"));
-        assert_eq!(family_name_to_filename("Microsoft JhengHei"), Some("msjh.ttc"));
+        assert_eq!(
+            family_name_to_filename("Microsoft JhengHei"),
+            Some("msjh.ttc")
+        );
         assert_eq!(family_name_to_filename("SimSun"), Some("simsun.ttc"));
-        assert_eq!(family_name_to_filename("Microsoft Sans Serif"), Some("micross.ttf"));
+        assert_eq!(
+            family_name_to_filename("Microsoft Sans Serif"),
+            Some("micross.ttf")
+        );
         assert_eq!(family_name_to_filename("Tahoma"), Some("tahoma.ttf"));
         assert_eq!(family_name_to_filename("Arial"), Some("arial.ttf"));
         assert_eq!(family_name_to_filename("SimFang"), Some("simfang.ttf"));
@@ -614,7 +620,10 @@ mod tests {
         assert_eq!(family_name_to_filename("SimYou"), Some("simyou.ttf"));
         assert_eq!(family_name_to_filename("MS Gothic"), Some("msgothic.ttc"));
         assert_eq!(family_name_to_filename("MS PGothic"), Some("msgothic.ttc"));
-        assert_eq!(family_name_to_filename("MS UI Gothic"), Some("msgothic.ttc"));
+        assert_eq!(
+            family_name_to_filename("MS UI Gothic"),
+            Some("msgothic.ttc")
+        );
     }
 
     #[test]
@@ -626,8 +635,14 @@ mod tests {
 
     #[test]
     fn family_name_to_filename_ui_suffix_stripped() {
-        assert_eq!(family_name_to_filename("Microsoft YaHei UI"), Some("msyh.ttc"));
-        assert_eq!(family_name_to_filename("Microsoft JhengHei UI"), Some("msjh.ttc"));
+        assert_eq!(
+            family_name_to_filename("Microsoft YaHei UI"),
+            Some("msyh.ttc")
+        );
+        assert_eq!(
+            family_name_to_filename("Microsoft JhengHei UI"),
+            Some("msjh.ttc")
+        );
     }
 
     #[test]

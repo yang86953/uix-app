@@ -21,44 +21,55 @@ impl WindowsWindowOps {
     pub(crate) fn new(hwnd: *mut std::ffi::c_void) -> Self {
         Self { hwnd }
     }
-
-
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowOps 实现
 // ════════════════════════════════════════════════════════════════════════════
 
-use super::ffi::*;
 use super::consts::*;
+use super::ffi::*;
 
 impl WindowOps for WindowsWindowOps {
     // ── 窗口生命周期 ──────────────────────────────────────
 
     fn os_show(&mut self) {
-        unsafe { ShowWindow(self.hwnd, SW_SHOWNORMAL); }
+        unsafe {
+            ShowWindow(self.hwnd, SW_SHOWNORMAL);
+        }
     }
 
     fn os_hide(&mut self) {
-        unsafe { ShowWindow(self.hwnd, SW_HIDE); }
+        unsafe {
+            ShowWindow(self.hwnd, SW_HIDE);
+        }
     }
 
     fn os_close(&mut self) {
-        unsafe { DestroyWindow(self.hwnd); }
+        unsafe {
+            DestroyWindow(self.hwnd);
+        }
     }
 
     // ── 窗口外观 ──────────────────────────────────────────
 
     fn os_set_title(&mut self, title: &str) {
         let wide = super::util::to_wide(title);
-        unsafe { SetWindowTextW(self.hwnd, wide.as_ptr()); }
+        unsafe {
+            SetWindowTextW(self.hwnd, wide.as_ptr());
+        }
     }
 
     fn os_center_on_screen(&mut self) {
         unsafe {
             let sw = GetSystemMetrics(SM_CXSCREEN);
             let sh = GetSystemMetrics(SM_CYSCREEN);
-            let mut rect = super::bindings::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+            let mut rect = super::bindings::RECT {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            };
             if GetWindowRect(self.hwnd, &mut rect) != 0 {
                 let w = rect.right - rect.left;
                 let h = rect.bottom - rect.top;
@@ -67,7 +78,10 @@ impl WindowOps for WindowsWindowOps {
                 SetWindowPos(
                     self.hwnd,
                     std::ptr::null_mut(),
-                    x, y, 0, 0,
+                    x,
+                    y,
+                    0,
+                    0,
                     SWP_NOSIZE | SWP_NOZORDER,
                 );
             }
@@ -79,7 +93,10 @@ impl WindowOps for WindowsWindowOps {
             SetWindowPos(
                 self.hwnd,
                 HWND_TOP as *mut std::ffi::c_void,
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
             );
         }
@@ -90,7 +107,10 @@ impl WindowOps for WindowsWindowOps {
             SetWindowPos(
                 self.hwnd,
                 HWND_BOTTOM as *mut std::ffi::c_void,
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 SWP_NOMOVE | SWP_NOSIZE,
             );
         }
@@ -103,7 +123,10 @@ impl WindowOps for WindowsWindowOps {
             SetWindowPos(
                 self.hwnd,
                 std::ptr::null_mut(),
-                0, 0, w, h,
+                0,
+                0,
+                w,
+                h,
                 SWP_NOMOVE | SWP_NOZORDER,
             );
         }
@@ -122,7 +145,10 @@ impl WindowOps for WindowsWindowOps {
             SetWindowPos(
                 self.hwnd,
                 std::ptr::null_mut(),
-                x, y, 0, 0,
+                x,
+                y,
+                0,
+                0,
                 SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
             );
         }
@@ -142,22 +168,31 @@ impl WindowOps for WindowsWindowOps {
             SetWindowPos(
                 self.hwnd,
                 std::ptr::null_mut(),
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
             );
         }
     }
 
     fn os_maximize(&mut self) {
-        unsafe { ShowWindow(self.hwnd, SW_MAXIMIZE); }
+        unsafe {
+            ShowWindow(self.hwnd, SW_MAXIMIZE);
+        }
     }
 
     fn os_minimize(&mut self) {
-        unsafe { ShowWindow(self.hwnd, SW_MINIMIZE); }
+        unsafe {
+            ShowWindow(self.hwnd, SW_MINIMIZE);
+        }
     }
 
     fn os_restore(&mut self) {
-        unsafe { ShowWindow(self.hwnd, SW_RESTORE); }
+        unsafe {
+            ShowWindow(self.hwnd, SW_RESTORE);
+        }
     }
 
     fn os_set_borderless(&mut self, borderless: bool) {
@@ -172,7 +207,10 @@ impl WindowOps for WindowsWindowOps {
             SetWindowPos(
                 self.hwnd,
                 std::ptr::null_mut(),
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
             );
         }
@@ -187,7 +225,10 @@ impl WindowOps for WindowsWindowOps {
                 SetWindowPos(
                     self.hwnd,
                     HWND_TOPMOST as *mut std::ffi::c_void,
-                    0, 0, sw, sh,
+                    0,
+                    0,
+                    sw,
+                    sh,
                     SWP_FRAMECHANGED,
                 );
             }
@@ -199,7 +240,10 @@ impl WindowOps for WindowsWindowOps {
                 SetWindowPos(
                     self.hwnd,
                     HWND_NOTOPMOST as *mut std::ffi::c_void,
-                    0, 0, 0, 0,
+                    0,
+                    0,
+                    0,
+                    0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
                 );
             }
@@ -212,7 +256,10 @@ impl WindowOps for WindowsWindowOps {
             SetWindowPos(
                 self.hwnd,
                 pos as *mut std::ffi::c_void,
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 SWP_NOMOVE | SWP_NOSIZE,
             );
         }
@@ -251,5 +298,5 @@ impl WindowOps for WindowsWindowOps {
     }
 }
 
-use super::consts::TRUE;
 use super::consts::FALSE;
+use super::consts::TRUE;

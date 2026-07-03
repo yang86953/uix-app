@@ -11,8 +11,8 @@
 #![allow(nonstandard_style)]
 
 use crate::windows::ffi::{GetDC, ReleaseDC};
-use crate::{Errc, Error};
 use crate::IPresenter;
+use crate::{Errc, Error};
 
 // ── Windows FFI declarations ────────────────────────────────────────────────
 
@@ -211,11 +211,7 @@ impl GdiPresenter {
             if hdc.is_null() {
                 return;
             }
-            BitBlt(
-                hdc, x, y, w, h,
-                self.dib.hdc_mem, x, y,
-                SRCCOPY,
-            );
+            BitBlt(hdc, x, y, w, h, self.dib.hdc_mem, x, y, SRCCOPY);
             ReleaseDC(self.hwnd, hdc);
         }
     }
@@ -237,10 +233,7 @@ impl IPresenter for GdiPresenter {
         if (width != self.width || height != self.height) && self.resize(width, height).is_err() {
             crate::log::debug_fn(format!(
                 "GdiPresenter: resize to {}x{} failed, fallback to {}x{}",
-                width,
-                height,
-                self.width,
-                self.height
+                width, height, self.width, self.height
             ));
         }
         unsafe {
@@ -251,8 +244,12 @@ impl IPresenter for GdiPresenter {
                 ));
             }
             if let Some((dx, dy, dw, dh)) = dirty_rect {
-                if dx >= 0 && dy >= 0 && dw > 0 && dh > 0
-                    && dx + dw <= self.width && dy + dh <= self.height
+                if dx >= 0
+                    && dy >= 0
+                    && dw > 0
+                    && dh > 0
+                    && dx + dw <= self.width
+                    && dy + dh <= self.height
                 {
                     let src_row_start = (dy * self.width + dx) as usize;
                     let dst_row_start = src_row_start;

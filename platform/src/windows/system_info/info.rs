@@ -6,8 +6,8 @@
 #![allow(nonstandard_style)]
 #![allow(clippy::upper_case_acronyms)]
 
-use crate::windows::util::to_utf8;
 use crate::types::{MemoryInfo, OsInfo};
+use crate::windows::util::to_utf8;
 use crate::ISystemInfo;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -251,7 +251,7 @@ struct SYSTEM_INFO {
     wProcessorRevision: u16,
 }
 
-    #[repr(C)]
+#[repr(C)]
 struct PROCESS_MEMORY_COUNTERS {
     cb: u32,
     PageFaultCount: u32,

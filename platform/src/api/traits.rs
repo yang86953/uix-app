@@ -6,8 +6,8 @@
 //! 外部使用者只依赖此处的接口签名，不依赖内部实现。
 
 use super::types::{
-    ConsoleColor, CursorType, DisplayInfo, Error, EventBus, KeyCode, MemoryInfo,
-    OsInfo, Point, Result, SpecialDir, TerminalCapabilities, UiEvent,
+    ConsoleColor, CursorType, DisplayInfo, Error, EventBus, KeyCode, MemoryInfo, OsInfo, Point,
+    Result, SpecialDir, TerminalCapabilities, UiEvent,
 };
 
 // ════════════════════════════════════════════════════════════════════════════

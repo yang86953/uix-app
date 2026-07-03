@@ -57,20 +57,24 @@ pub struct Path {
 impl Path {
     /// 返回平移后的新路径（所有坐标 +dx, +dy）。
     pub fn translated(&self, dx: f32, dy: f32) -> Self {
-        let segments = self.segments.iter().map(|seg| match seg {
-            PathSegment::MoveTo(p) => PathSegment::MoveTo(Point::new(p.x + dx, p.y + dy)),
-            PathSegment::LineTo(p) => PathSegment::LineTo(Point::new(p.x + dx, p.y + dy)),
-            PathSegment::QuadTo(c, e) => PathSegment::QuadTo(
-                Point::new(c.x + dx, c.y + dy),
-                Point::new(e.x + dx, e.y + dy),
-            ),
-            PathSegment::CubicTo(c1, c2, e) => PathSegment::CubicTo(
-                Point::new(c1.x + dx, c1.y + dy),
-                Point::new(c2.x + dx, c2.y + dy),
-                Point::new(e.x + dx, e.y + dy),
-            ),
-            PathSegment::Close => PathSegment::Close,
-        }).collect();
+        let segments = self
+            .segments
+            .iter()
+            .map(|seg| match seg {
+                PathSegment::MoveTo(p) => PathSegment::MoveTo(Point::new(p.x + dx, p.y + dy)),
+                PathSegment::LineTo(p) => PathSegment::LineTo(Point::new(p.x + dx, p.y + dy)),
+                PathSegment::QuadTo(c, e) => PathSegment::QuadTo(
+                    Point::new(c.x + dx, c.y + dy),
+                    Point::new(e.x + dx, e.y + dy),
+                ),
+                PathSegment::CubicTo(c1, c2, e) => PathSegment::CubicTo(
+                    Point::new(c1.x + dx, c1.y + dy),
+                    Point::new(c2.x + dx, c2.y + dy),
+                    Point::new(e.x + dx, e.y + dy),
+                ),
+                PathSegment::Close => PathSegment::Close,
+            })
+            .collect();
         Path { segments }
     }
 
@@ -194,9 +198,12 @@ impl PathBuilder {
     /// 三次贝塞尔曲线到目标点，c1/c2 为控制点。
     pub fn cubic_to(
         &mut self,
-        c1x: f32, c1y: f32,
-        c2x: f32, c2y: f32,
-        x: f32, y: f32,
+        c1x: f32,
+        c1y: f32,
+        c2x: f32,
+        c2y: f32,
+        x: f32,
+        y: f32,
     ) -> &mut Self {
         let c1 = Point::new(c1x, c1y);
         let c2 = Point::new(c2x, c2y);

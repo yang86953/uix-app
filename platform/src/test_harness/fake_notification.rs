@@ -15,7 +15,9 @@ pub struct FakeNotificationState {
 
 impl Default for FakeNotificationState {
     fn default() -> Self {
-        Self { history: Vec::new() }
+        Self {
+            history: Vec::new(),
+        }
     }
 }
 
@@ -26,7 +28,9 @@ pub struct FakeNotification {
 
 impl FakeNotification {
     pub fn new() -> Self {
-        Self { state: FakeNotificationState::default() }
+        Self {
+            state: FakeNotificationState::default(),
+        }
     }
 
     /// 通知历史条数
@@ -41,7 +45,11 @@ impl FakeNotification {
 
     /// 按标题查找通知
     pub fn find_by_title(&self, title: &str) -> Vec<&NotificationRecord> {
-        self.state.history.iter().filter(|r| r.title == title).collect()
+        self.state
+            .history
+            .iter()
+            .filter(|r| r.title == title)
+            .collect()
     }
 
     pub fn clear(&mut self) {

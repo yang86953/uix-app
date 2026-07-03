@@ -5,8 +5,8 @@
 // 绑定和收集逻辑已内联到 mod.rs 的 WaylandBackend::new() 中。
 // ============================================================================
 
-use crate::Rect;
 use crate::types::DisplayInfo;
+use crate::Rect;
 
 /// 通过 wl_output 事件收集的单显示器信息。
 #[derive(Debug, Clone)]

@@ -31,7 +31,9 @@ pub fn copy_to_clipboard(text: &str) {
         VTABLE.with(|vtable| {
             let v = vtable.get();
             let ptr = fat_ptr_from_parts::<dyn IClipboard>(d, v);
-            unsafe { (*ptr).set_text(text); }
+            unsafe {
+                (*ptr).set_text(text);
+            }
         });
     });
 }
@@ -41,6 +43,10 @@ fn fat_ptr_from_parts<T: ?Sized>(data: usize, vtable: usize) -> *mut T {
         wide: *mut T,
         parts: (usize, usize),
     }
-    unsafe { FatPtr::<T> { parts: (data, vtable) }.wide }
+    unsafe {
+        FatPtr::<T> {
+            parts: (data, vtable),
+        }
+        .wide
+    }
 }
-

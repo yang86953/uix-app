@@ -15,8 +15,14 @@ use std::time::Instant;
 
 /// 定时器控制指令
 enum Cmd {
-    Register { id: u32, interval_ms: u32, repeating: bool },
-    Clear { id: u32 },
+    Register {
+        id: u32,
+        interval_ms: u32,
+        repeating: bool,
+    },
+    Clear {
+        id: u32,
+    },
     Shutdown,
 }
 
@@ -41,20 +47,28 @@ impl LinuxTimer {
                     if entries.is_empty() {
                         // 无活跃定时器，无限阻塞等待新指令
                         match cmd_rx.recv() {
-                            Ok(cmd) => {
-                                match cmd {
-                                    Cmd::Shutdown => break,
-                                    Cmd::Register { id, interval_ms, repeating } => {
-                                        entries.push((Instant::now() + std::time::Duration::from_millis(interval_ms as u64), id, interval_ms, repeating));
-                                    }
-                                    Cmd::Clear { id } => {
-                                        entries.retain(|e| e.1 != id);
-                                        if let Ok(mut map) = active_clone.lock() {
-                                            map.remove(&id);
-                                        }
+                            Ok(cmd) => match cmd {
+                                Cmd::Shutdown => break,
+                                Cmd::Register {
+                                    id,
+                                    interval_ms,
+                                    repeating,
+                                } => {
+                                    entries.push((
+                                        Instant::now()
+                                            + std::time::Duration::from_millis(interval_ms as u64),
+                                        id,
+                                        interval_ms,
+                                        repeating,
+                                    ));
+                                }
+                                Cmd::Clear { id } => {
+                                    entries.retain(|e| e.1 != id);
+                                    if let Ok(mut map) = active_clone.lock() {
+                                        map.remove(&id);
                                     }
                                 }
-                            }
+                            },
                             Err(_) => break,
                         }
                         continue;
@@ -71,8 +85,18 @@ impl LinuxTimer {
                     if let Ok(cmd) = cmd_rx.recv_timeout(wait) {
                         match cmd {
                             Cmd::Shutdown => break,
-                            Cmd::Register { id, interval_ms, repeating } => {
-                                entries.push((Instant::now() + std::time::Duration::from_millis(interval_ms as u64), id, interval_ms, repeating));
+                            Cmd::Register {
+                                id,
+                                interval_ms,
+                                repeating,
+                            } => {
+                                entries.push((
+                                    Instant::now()
+                                        + std::time::Duration::from_millis(interval_ms as u64),
+                                    id,
+                                    interval_ms,
+                                    repeating,
+                                ));
                             }
                             Cmd::Clear { id } => {
                                 entries.retain(|e| e.1 != id);
@@ -100,8 +124,11 @@ impl LinuxTimer {
                         }
                         if repeating {
                             entries.push((
-                                Instant::now() + std::time::Duration::from_millis(interval_ms as u64),
-                                id, interval_ms, true,
+                                Instant::now()
+                                    + std::time::Duration::from_millis(interval_ms as u64),
+                                id,
+                                interval_ms,
+                                true,
                             ));
                         } else {
                             if let Ok(mut map) = active_clone.lock() {
@@ -128,7 +155,11 @@ impl ITimer for LinuxTimer {
         if let Ok(mut map) = self.active.lock() {
             map.insert(id, interval_ms);
         }
-        let _ = self.cmd_tx.send(Cmd::Register { id, interval_ms, repeating });
+        let _ = self.cmd_tx.send(Cmd::Register {
+            id,
+            interval_ms,
+            repeating,
+        });
         id
     }
 

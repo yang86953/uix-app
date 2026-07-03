@@ -1,8 +1,8 @@
 //! uix-ui theme 模块集成测试。
 
+use uix_graphics::color::Color;
 use uix_ui::api::traits::{IBoxShadowTokens, TokenProvider};
 use uix_ui::api::{DesignTokens, ShadowToken};
-use uix_graphics::color::Color;
 
 // ════════════════════════════════════════════════════════════════════════════
 // design_tokens 测试
@@ -79,7 +79,10 @@ fn semantic_colors_dark() {
 #[test]
 fn typography_tokens_light() {
     let tk = DesignTokens::antd_light();
-    assert_eq!(tk.font_family, "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial");
+    assert_eq!(
+        tk.font_family,
+        "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial"
+    );
     assert_eq!(tk.font_size, 14.0);
     assert_eq!(tk.font_size_heading_1, 38.0);
     assert_eq!(tk.font_weight_regular, 400.0);

@@ -236,11 +236,7 @@ impl Error {
     }
 
     /// 创建一个指定严重度的错误。
-    pub fn with_severity(
-        code: Errc,
-        message: impl Into<String>,
-        severity: ErrorSeverity,
-    ) -> Self {
+    pub fn with_severity(code: Errc, message: impl Into<String>, severity: ErrorSeverity) -> Self {
         Self {
             code,
             message: message.into(),
@@ -642,12 +638,16 @@ where
 }
 
 /// 从迭代器中收集所有成功值。
-pub fn collect_values<T, E>(results: impl IntoIterator<Item = std::result::Result<T, E>>) -> Vec<T> {
+pub fn collect_values<T, E>(
+    results: impl IntoIterator<Item = std::result::Result<T, E>>,
+) -> Vec<T> {
     results.into_iter().filter_map(|r| r.ok()).collect()
 }
 
 /// 从迭代器中收集所有错误。
-pub fn collect_errors<T, E>(results: impl IntoIterator<Item = std::result::Result<T, E>>) -> Vec<E> {
+pub fn collect_errors<T, E>(
+    results: impl IntoIterator<Item = std::result::Result<T, E>>,
+) -> Vec<E> {
     results.into_iter().filter_map(|r| r.err()).collect()
 }
 

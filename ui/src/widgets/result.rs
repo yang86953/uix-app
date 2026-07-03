@@ -3,11 +3,11 @@
 //! 用于展示操作结果（成功/错误/警告/信息/404/403/500），
 //! 包含图标、标题、副标题、额外操作区域。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::Color;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Color;
+use uix_platform::{Point, Rect, Size};
 
 /// 结果类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -16,9 +16,9 @@ pub enum ResultType {
     Error,
     Info,
     Warning,
-    NotFound,   // 404
-    Forbidden,  // 403
-    ServerError,// 500
+    NotFound,    // 404
+    Forbidden,   // 403
+    ServerError, // 500
 }
 
 // Result — 结果页组件。
@@ -96,13 +96,29 @@ define_widget! {
 
 impl Result {
     pub fn new(type_: ResultType) -> Self {
-        Self { type_, title: String::new(), subtitle: String::new(), extra_text: String::new() }
+        Self {
+            type_,
+            title: String::new(),
+            subtitle: String::new(),
+            extra_text: String::new(),
+        }
     }
-    pub fn title(mut self, t: &str) -> Self { self.title = t.to_string(); self }
-    pub fn subtitle(mut self, s: &str) -> Self { self.subtitle = s.to_string(); self }
-    pub fn extra_text(mut self, t: impl Into<String>) -> Self { self.extra_text = t.into(); self }
+    pub fn title(mut self, t: &str) -> Self {
+        self.title = t.to_string();
+        self
+    }
+    pub fn subtitle(mut self, s: &str) -> Self {
+        self.subtitle = s.to_string();
+        self
+    }
+    pub fn extra_text(mut self, t: impl Into<String>) -> Self {
+        self.extra_text = t.into();
+        self
+    }
 }
 
 impl Default for Result {
-    fn default() -> Self { Self::new(ResultType::Info) }
+    fn default() -> Self {
+        Self::new(ResultType::Info)
+    }
 }

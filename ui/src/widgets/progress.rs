@@ -1,12 +1,12 @@
 //! ProgressBar widget — deterministic and indeterminate progress indicators.
 
-use crate::define_widget;
 use crate::animation::core::Animation;
 use crate::api::Easing;
-use uix_graphics::{Color, Radius};
-use uix_platform::{Rect, Size};
+use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::{Color, Radius};
+use uix_platform::{Rect, Size};
 
 /// Progress display type.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -152,9 +152,7 @@ impl ProgressBar {
 
     pub fn indeterminate(mut self) -> Self {
         self.mode = ProgressMode::Indeterminate;
-        self.indet_anim = Some(
-            Animation::new(0.0, 1.0, 2.0).with_easing(Easing::Linear),
-        );
+        self.indet_anim = Some(Animation::new(0.0, 1.0, 2.0).with_easing(Easing::Linear));
         self
     }
 

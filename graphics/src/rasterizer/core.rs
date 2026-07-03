@@ -21,8 +21,16 @@ pub fn premul(c: u32) -> u32 {
 
 /// 合成 α 通道（SrcOver）。
 #[inline]
-pub fn blend_srcover(src_a: u32, dst_a: u32, src_r: u32, src_g: u32, src_b: u32,
-                     dst_r: u32, dst_g: u32, dst_b: u32) -> u32 {
+pub fn blend_srcover(
+    src_a: u32,
+    dst_a: u32,
+    src_r: u32,
+    src_g: u32,
+    src_b: u32,
+    dst_r: u32,
+    dst_g: u32,
+    dst_b: u32,
+) -> u32 {
     let out_a = src_a + dst_a - (src_a * dst_a / 255);
     if out_a == 0 {
         return 0;
@@ -30,10 +38,7 @@ pub fn blend_srcover(src_a: u32, dst_a: u32, src_r: u32, src_g: u32, src_b: u32,
     let out_r = src_r + (dst_r * (255 - src_a) / 255);
     let out_g = src_g + (dst_g * (255 - src_a) / 255);
     let out_b = src_b + (dst_b * (255 - src_a) / 255);
-    (out_a.min(255) << 24)
-        | (out_r.min(255) << 16)
-        | (out_g.min(255) << 8)
-        | out_b.min(255)
+    (out_a.min(255) << 24) | (out_r.min(255) << 16) | (out_g.min(255) << 8) | out_b.min(255)
 }
 
 /// 对 premul 颜色应用透明度系数。
@@ -68,9 +73,17 @@ pub fn color_to_premul(r: u8, g: u8, b: u8, a: u8, opacity: f32) -> u32 {
 
 /// 向像素缓冲写入一个像素（SrcOver 混合，考虑裁剪）。
 #[inline]
-pub fn put_pixel(pixels: &mut [u32], stride: i32, x: i32, y: i32,
-                 clip_x0: i32, clip_y0: i32, clip_x1: i32, clip_y1: i32,
-                 color: u32) {
+pub fn put_pixel(
+    pixels: &mut [u32],
+    stride: i32,
+    x: i32,
+    y: i32,
+    clip_x0: i32,
+    clip_y0: i32,
+    clip_x1: i32,
+    clip_y1: i32,
+    color: u32,
+) {
     if x < clip_x0 || y < clip_y0 || x >= clip_x1 || y >= clip_y1 {
         return;
     }
@@ -89,31 +102,65 @@ pub fn put_pixel(pixels: &mut [u32], stride: i32, x: i32, y: i32,
         return;
     }
     let out = blend_srcover(
-        src_a, dst_a,
-        (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF,
-        (dst >> 16) & 0xFF, (dst >> 8) & 0xFF, dst & 0xFF,
+        src_a,
+        dst_a,
+        (color >> 16) & 0xFF,
+        (color >> 8) & 0xFF,
+        color & 0xFF,
+        (dst >> 16) & 0xFF,
+        (dst >> 8) & 0xFF,
+        dst & 0xFF,
     );
     pixels[idx] = out;
 }
 
 /// `put_pixel` 别名（向下兼容）。
 #[inline]
-pub fn put_pixel_raw(pixels: &mut [u32], stride: i32, x: i32, y: i32,
-                     clip_x0: i32, clip_y0: i32, clip_x1: i32, clip_y1: i32,
-                     color: u32) {
-    put_pixel(pixels, stride, x, y, clip_x0, clip_y0, clip_x1, clip_y1, color);
+pub fn put_pixel_raw(
+    pixels: &mut [u32],
+    stride: i32,
+    x: i32,
+    y: i32,
+    clip_x0: i32,
+    clip_y0: i32,
+    clip_x1: i32,
+    clip_y1: i32,
+    color: u32,
+) {
+    put_pixel(
+        pixels, stride, x, y, clip_x0, clip_y0, clip_x1, clip_y1, color,
+    );
 }
 
 /// 写入一个带抗锯齿覆盖率的像素。
 #[inline]
-pub fn put_pixel_aa(pixels: &mut [u32], stride: i32, x: i32, y: i32,
-                    clip_x0: i32, clip_y0: i32, clip_x1: i32, clip_y1: i32,
-                    premul_color: u32, coverage: f32) {
+pub fn put_pixel_aa(
+    pixels: &mut [u32],
+    stride: i32,
+    x: i32,
+    y: i32,
+    clip_x0: i32,
+    clip_y0: i32,
+    clip_x1: i32,
+    clip_y1: i32,
+    premul_color: u32,
+    coverage: f32,
+) {
     if x < clip_x0 || y < clip_y0 || x >= clip_x1 || y >= clip_y1 {
         return;
     }
     if coverage >= 1.0 - 1e-6 {
-        put_pixel(pixels, stride, x, y, clip_x0, clip_y0, clip_x1, clip_y1, premul_color);
+        put_pixel(
+            pixels,
+            stride,
+            x,
+            y,
+            clip_x0,
+            clip_y0,
+            clip_x1,
+            clip_y1,
+            premul_color,
+        );
         return;
     }
     if coverage <= 0.0 {
@@ -152,9 +199,18 @@ pub fn put_pixel_aa(pixels: &mut [u32], stride: i32, x: i32, y: i32,
 
 /// 填充一整行上的连续区间，针对不透明颜色优化。
 #[inline]
-pub fn fill_span(pixels: &mut [u32], stride: i32, x0: i32, x1: i32, y: i32,
-                 clip_x0: i32, clip_y0: i32, clip_x1: i32, clip_y1: i32,
-                 color: u32) {
+pub fn fill_span(
+    pixels: &mut [u32],
+    stride: i32,
+    x0: i32,
+    x1: i32,
+    y: i32,
+    clip_x0: i32,
+    clip_y0: i32,
+    clip_x1: i32,
+    clip_y1: i32,
+    color: u32,
+) {
     let x_start = x0.max(clip_x0);
     let x_end = x1.min(clip_x1);
     if y < clip_y0 || y >= clip_y1 || x_start >= x_end {
@@ -168,18 +224,41 @@ pub fn fill_span(pixels: &mut [u32], stride: i32, x0: i32, x1: i32, y: i32,
         }
     } else {
         for x in x_start..x_end {
-            put_pixel(pixels, stride, x, y, clip_x0, clip_y0, clip_x1, clip_y1, color);
+            put_pixel(
+                pixels, stride, x, y, clip_x0, clip_y0, clip_x1, clip_y1, color,
+            );
         }
     }
 }
 
 /// 填充矩形区域。
 #[inline]
-pub fn fill_rect_raw(pixels: &mut [u32], stride: i32, x: i32, y: i32, w: i32, h: i32,
-                     clip_x0: i32, clip_y0: i32, clip_x1: i32, clip_y1: i32,
-                     color: u32) {
+pub fn fill_rect_raw(
+    pixels: &mut [u32],
+    stride: i32,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    clip_x0: i32,
+    clip_y0: i32,
+    clip_x1: i32,
+    clip_y1: i32,
+    color: u32,
+) {
     for dy in 0..h {
-        fill_span(pixels, stride, x, x + w, y + dy, clip_x0, clip_y0, clip_x1, clip_y1, color);
+        fill_span(
+            pixels,
+            stride,
+            x,
+            x + w,
+            y + dy,
+            clip_x0,
+            clip_y0,
+            clip_x1,
+            clip_y1,
+            color,
+        );
     }
 }
 
@@ -239,9 +318,17 @@ pub fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {
     let py = uy - cy;
 
     let cr = if px < 0.0 {
-        if py < 0.0 { rad.tl } else { rad.bl }
+        if py < 0.0 {
+            rad.tl
+        } else {
+            rad.bl
+        }
     } else {
-        if py < 0.0 { rad.tr } else { rad.br }
+        if py < 0.0 {
+            rad.tr
+        } else {
+            rad.br
+        }
     };
 
     let qx = px.abs() - half_w + cr;

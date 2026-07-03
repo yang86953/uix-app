@@ -15,15 +15,15 @@ pub use crate::widget::{
 
 // ── 配置提供 ──
 pub use crate::config_provider::{
-    ButtonOverrides, ComponentConfig, ComponentOverrides, ConfigProvider, FormLayout,
-    FormOverrides, InputOverrides, SelectOverrides, use_config, with_config,
+    use_config, with_config, ButtonOverrides, ComponentConfig, ComponentOverrides, ConfigProvider,
+    FormLayout, FormOverrides, InputOverrides, SelectOverrides,
 };
 
 // ── 焦点锁定 ──
 pub use crate::focus_trap::FocusTrap;
 
 // ── 国际化 ──
-pub use crate::locale::{en_us, zh_cn, Locale, LocaleProvider, use_locale, with_locale};
+pub use crate::locale::{en_us, use_locale, with_locale, zh_cn, Locale, LocaleProvider};
 
 // ── 虚拟滚动 ──
 pub use crate::virtual_scroll::VirtualScroll;
@@ -43,28 +43,23 @@ pub use crate::render_context::RenderContext;
 
 // ── 布局引擎 ──
 pub use crate::layout::engine::{
-    BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutOutput, child_from_tree,
+    child_from_tree, BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutOutput,
 };
 pub use crate::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 
 // ── 动画 ──
 pub use crate::animation::core::Animation;
 pub use crate::animation::easing::Easing;
-pub use crate::animation::transition::{
-    presets, SlideDirection, Transition, TransitionPlayer,
-};
+pub use crate::animation::transition::{presets, SlideDirection, Transition, TransitionPlayer};
 
 // ── 管理器 ──
 pub use crate::managers::{
-    DragEventResult, DragManager, EventManager, FocusManager, ImageManager,
-    InteractionManager, StateManager, StyleManager, TextManager, WidgetManagers,
+    DragEventResult, DragManager, EventManager, FocusManager, ImageManager, InteractionManager,
+    StateManager, StyleManager, TextManager, WidgetManagers,
 };
 
 // ── 主题 ──
-pub use crate::theme::{
-    DesignTokens,
-    ShadowToken, Theme,
-};
+pub use crate::theme::{DesignTokens, ShadowToken, Theme};
 
 // ── 所有组件 ──
 pub use crate::widgets::affix::Affix;
@@ -115,11 +110,13 @@ pub use crate::widgets::progress::{ProgressBar, ProgressMode};
 pub use crate::widgets::radio::Radio;
 pub use crate::widgets::rate::Rate;
 pub use crate::widgets::result::{Result, ResultType};
-pub use crate::widgets::rich_text::{RichText, RichTextSegment, RichTextStyle, layout_rich_text_segments, parse_rich_text};
+pub use crate::widgets::rich_text::{
+    layout_rich_text_segments, parse_rich_text, RichText, RichTextSegment, RichTextStyle,
+};
 pub use crate::widgets::scroll_view::{ScrollDirection, ScrollView};
 pub use crate::widgets::segmented::Segmented;
 pub use crate::widgets::select::Select;
-pub use crate::widgets::selectable_list::{SelectableList, SelectableItem};
+pub use crate::widgets::selectable_list::{SelectableItem, SelectableList};
 pub use crate::widgets::skeleton::{Skeleton, SkeletonShape};
 pub use crate::widgets::slider::Slider;
 pub use crate::widgets::space::{Space, SpaceSize};

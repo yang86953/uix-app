@@ -13,6 +13,27 @@ thread_local! {
         RefCell::new(None);
 }
 
+// 当前 View 的脏标记回调——State::new 创建时自动读取并绑定。
+thread_local! {
+    static CURRENT_VIEW_DIRTY_FN: RefCell<Option<Arc<dyn Fn() + Send + Sync>>> =
+        RefCell::new(None);
+}
+
+/// 设置当前 View 的脏标记回调。此回调会被新创建的 `State` 自动绑定。
+/// 由 ViewAdapter 内部调用，用户不需要直接使用。
+pub fn set_current_view_dirty_fn<F: Fn() + Send + Sync + 'static>(f: F) {
+    CURRENT_VIEW_DIRTY_FN.with(|dirty| {
+        *dirty.borrow_mut() = Some(Arc::new(f));
+    });
+}
+
+/// 清除当前 View 的脏标记回调。
+pub fn clear_current_view_dirty_fn() {
+    CURRENT_VIEW_DIRTY_FN.with(|dirty| {
+        *dirty.borrow_mut() = None;
+    });
+}
+
 /// 在当前线程启用依赖追踪，执行闭包后返回收集到的依赖 generation 检查器列表。
 fn collect_deps<F, R>(f: F) -> (R, Vec<Box<dyn Fn() -> u64 + Send + Sync>>)
 where
@@ -41,8 +62,14 @@ where
 
 /// A reactive state value that notifies watchers on change.
 /// Thread-safe: Send + Sync when T is Send + Sync.
+///
+/// 支持自动脏标记：当通过 `set()` / `update()` 修改值时，自动调用注册的脏标记回调，
+/// 通知 WidgetTree 重新渲染所属 View。脏标记回调由 ViewAdapter 在 ViewNode 展开时自动绑定，
+/// 用户不需要手动调用 `mark_dirty`。
 pub struct State<T> {
     inner: Arc<RwLock<StateInner<T>>>,
+    /// 脏标记回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
+    dirty_fn: Arc<std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>>,
 }
 
 struct StateInner<T> {
@@ -54,12 +81,33 @@ struct StateInner<T> {
 
 impl<T: Clone + Send + Sync + 'static> State<T> {
     pub fn new(value: T) -> Self {
+        // 自动从线程局部上下文绑定脏标记回调
+        let dirty_fn: Arc<std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>> =
+            Arc::new(std::sync::Mutex::new(None));
+        CURRENT_VIEW_DIRTY_FN.with(|dirty| {
+            let borrowed = dirty.borrow();
+            if let Some(ref f) = *borrowed {
+                let cb = f.clone();
+                if let Ok(mut guard) = dirty_fn.lock() {
+                    *guard = Some(Box::new(move || cb()));
+                }
+            }
+        });
         Self {
             inner: Arc::new(RwLock::new(StateInner {
                 value,
                 generation: 0,
                 watchers: Vec::new(),
             })),
+            dirty_fn,
+        }
+    }
+
+    /// 设置脏标记回调。此回调在值变更时（`set` / `update`）自动调用。
+    /// 由 ViewAdapter 内部使用，用户不需要调用此方法。
+    pub fn set_dirty_fn<F: Fn() + Send + Sync + 'static>(&self, f: F) {
+        if let Ok(mut guard) = self.dirty_fn.lock() {
+            *guard = Some(Box::new(f));
         }
     }
 
@@ -95,6 +143,12 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         for watcher in &watchers {
             watcher(&snapshot);
         }
+        // 自动脏标记：调用注册的回调通知 WidgetTree 重绘
+        if let Ok(guard) = self.dirty_fn.lock() {
+            if let Some(ref f) = *guard {
+                f();
+            }
+        }
     }
 
     pub fn update<F>(&self, f: F)
@@ -112,6 +166,12 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         }
         for watcher in &watchers {
             watcher(&snapshot);
+        }
+        // 自动脏标记：调用注册的回调通知 WidgetTree 重绘
+        if let Ok(guard) = self.dirty_fn.lock() {
+            if let Some(ref f) = *guard {
+                f();
+            }
         }
     }
 
@@ -135,6 +195,7 @@ impl<T: Clone + Send + Sync + 'static> Clone for State<T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            dirty_fn: self.dirty_fn.clone(),
         }
     }
 }
@@ -303,4 +364,3 @@ impl Effect {
 // ════════════════════════════════════════════════════════════════════════════
 // 测试
 // ════════════════════════════════════════════════════════════════════════════
-

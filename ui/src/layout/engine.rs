@@ -5,13 +5,13 @@
 //!
 //! 盒模型计算也统一在此层，所有容器组件通过 BoxModel 获得一致的内框计算。
 
-use uix_platform::{Rect, Size};
-use crate::widget::{WidgetCore, WidgetId, WidgetTree};
-use uix_graphics::spatial::AABB3D;
-use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
-use super::{GridChild, GridInput, GridTrack};
 use super::flex::compute_flex_layout;
 use super::grid::compute_grid_layout;
+use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
+use super::{GridChild, GridInput, GridTrack};
+use crate::widget::{WidgetCore, WidgetId, WidgetTree};
+use uix_graphics::spatial::AABB3D;
+use uix_platform::{Rect, Size};
 
 // ── 统一盒模型 ────────────────────────────────────────────────────
 
@@ -109,7 +109,9 @@ impl LayoutChild {
     pub fn margin_main(&self, direction: FlexDirection) -> f32 {
         match direction {
             FlexDirection::Row | FlexDirection::RowReverse => self.margin.left + self.margin.right,
-            FlexDirection::Column | FlexDirection::ColumnReverse => self.margin.top + self.margin.bottom,
+            FlexDirection::Column | FlexDirection::ColumnReverse => {
+                self.margin.top + self.margin.bottom
+            }
         }
     }
 
@@ -177,9 +179,11 @@ impl LayoutOutput3D {
 
     /// 转换为 AABB3D 列表（所有盒子 d=0）。
     pub fn to_aabbs(&self) -> Vec<AABB3D> {
-        self.positions.iter().zip(self.z_values.iter()).map(|(r, z)| {
-            AABB3D::from_rect_z(r.x, r.y, r.w, r.h, *z, 0.0)
-        }).collect()
+        self.positions
+            .iter()
+            .zip(self.z_values.iter())
+            .map(|(r, z)| AABB3D::from_rect_z(r.x, r.y, r.w, r.h, *z, 0.0))
+            .collect()
     }
 }
 
@@ -219,17 +223,34 @@ impl FlexLayout {
 
     /// 便捷构造：水平排列。
     pub fn row() -> Self {
-        Self { direction: FlexDirection::Row, ..Self::new() }
+        Self {
+            direction: FlexDirection::Row,
+            ..Self::new()
+        }
     }
 
-    pub fn with_direction(mut self, d: FlexDirection) -> Self { self.direction = d; self }
-    pub fn with_gap(mut self, g: f32) -> Self { self.gap = g; self }
-    pub fn with_justify(mut self, j: JustifyContent) -> Self { self.justify = j; self }
-    pub fn with_align(mut self, a: AlignItems) -> Self { self.align = a; self }
+    pub fn with_direction(mut self, d: FlexDirection) -> Self {
+        self.direction = d;
+        self
+    }
+    pub fn with_gap(mut self, g: f32) -> Self {
+        self.gap = g;
+        self
+    }
+    pub fn with_justify(mut self, j: JustifyContent) -> Self {
+        self.justify = j;
+        self
+    }
+    pub fn with_align(mut self, a: AlignItems) -> Self {
+        self.align = a;
+        self
+    }
 }
 
 impl Default for FlexLayout {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LayoutEngine for FlexLayout {
@@ -247,11 +268,10 @@ impl LayoutEngine for FlexLayout {
         }
 
         // 标准 FlexBox 模式
-        let child_sizes: Vec<Size> = children.iter()
-            .map(|c| c.preferred_size)
-            .collect();
+        let child_sizes: Vec<Size> = children.iter().map(|c| c.preferred_size).collect();
 
-        let flex_children: Vec<FlexChild> = children.iter()
+        let flex_children: Vec<FlexChild> = children
+            .iter()
             .map(|c| FlexChild {
                 flex_grow: c.flex_grow,
                 flex_shrink: c.flex_shrink,
@@ -281,18 +301,41 @@ impl LayoutEngine for FlexLayout {
 }
 
 /// 溢出模式：流式堆叠（不压缩，不分配剩余空间）。
-fn overflow_layout(engine: &FlexLayout, content_rect: Rect, children: &[LayoutChild]) -> LayoutOutput {
-    let is_row = matches!(engine.direction, FlexDirection::Row | FlexDirection::RowReverse);
-    let is_reverse = matches!(engine.direction, FlexDirection::RowReverse | FlexDirection::ColumnReverse);
+fn overflow_layout(
+    engine: &FlexLayout,
+    content_rect: Rect,
+    children: &[LayoutChild],
+) -> LayoutOutput {
+    let is_row = matches!(
+        engine.direction,
+        FlexDirection::Row | FlexDirection::RowReverse
+    );
+    let is_reverse = matches!(
+        engine.direction,
+        FlexDirection::RowReverse | FlexDirection::ColumnReverse
+    );
     let count = children.len();
     let gap = engine.gap;
 
-    let container_main = if is_row { content_rect.w } else { content_rect.h };
-    let container_cross = if is_row { content_rect.h } else { content_rect.w };
+    let container_main = if is_row {
+        content_rect.w
+    } else {
+        content_rect.h
+    };
+    let container_cross = if is_row {
+        content_rect.h
+    } else {
+        content_rect.w
+    };
 
-    let main_sizes: Vec<f32> = children.iter()
+    let main_sizes: Vec<f32> = children
+        .iter()
         .map(|c| {
-            let pref = if is_row { c.preferred_size.w } else { c.preferred_size.h };
+            let pref = if is_row {
+                c.preferred_size.w
+            } else {
+                c.preferred_size.h
+            };
             pref.max(0.0)
         })
         .collect();
@@ -304,7 +347,11 @@ fn overflow_layout(engine: &FlexLayout, content_rect: Rect, children: &[LayoutCh
         Size::new(container_cross, total_main)
     };
 
-    let mut cursor = if is_reverse { container_main - total_main } else { 0.0 };
+    let mut cursor = if is_reverse {
+        container_main - total_main
+    } else {
+        0.0
+    };
     let mut positions = Vec::with_capacity(count);
 
     for i in 0..count {
@@ -329,9 +376,19 @@ fn overflow_layout(engine: &FlexLayout, content_rect: Rect, children: &[LayoutCh
         };
 
         let (x, y, w, h) = if is_row {
-            (content_rect.x + cursor, content_rect.y + cross_offset, main, child_cross)
+            (
+                content_rect.x + cursor,
+                content_rect.y + cross_offset,
+                main,
+                child_cross,
+            )
         } else {
-            (content_rect.x + cross_offset, content_rect.y + cursor, child_cross, main)
+            (
+                content_rect.x + cross_offset,
+                content_rect.y + cursor,
+                child_cross,
+                main,
+            )
         };
 
         positions.push(Rect::new(x, y, w, h));
@@ -343,7 +400,10 @@ fn overflow_layout(engine: &FlexLayout, content_rect: Rect, children: &[LayoutCh
         }
     }
 
-    LayoutOutput { positions, total_size }
+    LayoutOutput {
+        positions,
+        total_size,
+    }
 }
 
 // ── Grid 布局引擎 ─────────────────────────────────────────────────
@@ -374,19 +434,33 @@ impl GridLayout {
         }
     }
 
-    pub fn with_columns(mut self, cols: Vec<GridTrack>) -> Self { self.columns = cols; self }
-    pub fn with_rows(mut self, rows: Vec<GridTrack>) -> Self { self.rows = rows; self }
+    pub fn with_columns(mut self, cols: Vec<GridTrack>) -> Self {
+        self.columns = cols;
+        self
+    }
+    pub fn with_rows(mut self, rows: Vec<GridTrack>) -> Self {
+        self.rows = rows;
+        self
+    }
     pub fn with_gap(mut self, col_gap: f32, row_gap: f32) -> Self {
         self.col_gap = col_gap;
         self.row_gap = row_gap;
         self
     }
-    pub fn with_align(mut self, a: AlignItems) -> Self { self.align_items = a; self }
-    pub fn with_justify(mut self, j: JustifyContent) -> Self { self.justify_items = j; self }
+    pub fn with_align(mut self, a: AlignItems) -> Self {
+        self.align_items = a;
+        self
+    }
+    pub fn with_justify(mut self, j: JustifyContent) -> Self {
+        self.justify_items = j;
+        self
+    }
 }
 
 impl Default for GridLayout {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LayoutEngine for GridLayout {
@@ -407,7 +481,8 @@ impl LayoutEngine for GridLayout {
             self.rows.clone()
         };
 
-        let grid_children: Vec<GridChild> = children.iter()
+        let grid_children: Vec<GridChild> = children
+            .iter()
             .map(|c| GridChild {
                 cell: c.grid_cell,
                 col_span: c.grid_col_span,
@@ -443,12 +518,20 @@ impl LayoutEngine for GridLayout {
 pub fn child_from_tree(cid: WidgetId, tree: &WidgetTree) -> LayoutChild {
     let node = tree.get(cid);
     let pref = node.map(|c| c.preferred_size(None)).unwrap_or_default();
-    let h = if pref.h > 0.0 { pref.h } else {
+    let h = if pref.h > 0.0 {
+        pref.h
+    } else {
         node.map(|c| c.frame().h).unwrap_or(0.0)
     };
 
-    let grow = node.and_then(|c| c.as_layout()).map(|l| l.flex_grow()).unwrap_or(0.0);
-    let shrink = node.and_then(|c| c.as_layout()).map(|l| l.flex_shrink()).unwrap_or(1.0);
+    let grow = node
+        .and_then(|c| c.as_layout())
+        .map(|l| l.flex_grow())
+        .unwrap_or(0.0);
+    let shrink = node
+        .and_then(|c| c.as_layout())
+        .map(|l| l.flex_shrink())
+        .unwrap_or(1.0);
 
     LayoutChild {
         id: cid,

@@ -4,12 +4,12 @@
 
 use std::cell::Cell;
 
-use uix_platform::{Point, Rect, Size};
-use crate::define_widget;
-use uix_graphics::GraphicsEngine;
 use crate::children::WidgetChildren;
+use crate::define_widget;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetComponent, WidgetId, WidgetTree};
+use crate::widget::{EventResult, WidgetComponent, WidgetEvent, WidgetId, WidgetTree};
+use uix_graphics::GraphicsEngine;
+use uix_platform::{Point, Rect, Size};
 
 define_widget! {
     /// Splitter — 可拖拽分割面板容器。
@@ -154,19 +154,28 @@ impl Splitter {
         self
     }
 
-    pub fn vertical(mut self, v: bool) -> Self { self.vertical = v; self }
+    pub fn vertical(mut self, v: bool) -> Self {
+        self.vertical = v;
+        self
+    }
     pub fn min_size(mut self, index: usize, size: f32) -> Self {
-        if index < self.min_sizes.len() { self.min_sizes[index] = size; }
+        if index < self.min_sizes.len() {
+            self.min_sizes[index] = size;
+        }
         self
     }
 
     fn hit_test_handle(&self, frame: Rect, pos: Point) -> Option<usize> {
         let n = self.ratios.len();
-        if n <= 1 { return None; }
+        if n <= 1 {
+            return None;
+        }
         let total = if self.vertical { frame.h } else { frame.w };
         let handle_total = self.handle_size * (n - 1) as f32;
         let content_total = total - handle_total;
-        if content_total <= 0.0 { return None; }
+        if content_total <= 0.0 {
+            return None;
+        }
 
         let mut cursor = 0.0;
         for i in 0..n - 1 {
@@ -176,7 +185,9 @@ impl Splitter {
             } else {
                 pos.x >= frame.x + cursor && pos.x <= frame.x + cursor + self.handle_size
             };
-            if hit { return Some(i); }
+            if hit {
+                return Some(i);
+            }
             cursor += self.handle_size;
         }
         None
@@ -184,14 +195,24 @@ impl Splitter {
 
     fn update_ratios(&mut self, frame: Rect, idx: usize, pos: Point) {
         let n = self.ratios.len();
-        if idx >= n - 1 { return; }
+        if idx >= n - 1 {
+            return;
+        }
         let total = if self.vertical { frame.h } else { frame.w };
         let handle_total = self.handle_size * (n - 1) as f32;
         let content_total = total - handle_total;
-        if content_total <= 0.0 { return; }
+        if content_total <= 0.0 {
+            return;
+        }
 
-        let raw_pos = if self.vertical { pos.y - frame.y } else { pos.x - frame.x };
-        let adjusted = (raw_pos - idx as f32 * self.handle_size).max(0.0).min(content_total);
+        let raw_pos = if self.vertical {
+            pos.y - frame.y
+        } else {
+            pos.x - frame.x
+        };
+        let adjusted = (raw_pos - idx as f32 * self.handle_size)
+            .max(0.0)
+            .min(content_total);
         let old_left = self.ratios[..=idx].iter().sum::<f32>() * content_total;
         let delta = adjusted - old_left;
         let left = self.ratios[idx] * content_total + delta;

@@ -2,14 +2,14 @@
 
 #![cfg(feature = "test-harness")]
 
-use uix_platform::test_harness::FakePlatform;
+use std::cell::Cell;
 use uix_platform::api::traits::*;
 use uix_platform::api::types::*;
-use uix_platform::shared::OsEventSource;
-use std::cell::Cell;
 use uix_platform::event::UiEvent;
-use uix_platform::types::KeyCode;
 use uix_platform::geometry::Point;
+use uix_platform::shared::OsEventSource;
+use uix_platform::test_harness::FakePlatform;
+use uix_platform::types::KeyCode;
 
 // ════════════════════════════════════════════════════════════════════════════
 // FakeClipboard
@@ -46,8 +46,12 @@ fn console_write_line() {
 #[test]
 fn console_color() {
     let mut pf = FakePlatform::new();
-    pf.console.set_color(uix_platform::types::ConsoleColor::Warn);
-    assert_eq!(pf.console.last_color(), Some(uix_platform::types::ConsoleColor::Warn));
+    pf.console
+        .set_color(uix_platform::types::ConsoleColor::Warn);
+    assert_eq!(
+        pf.console.last_color(),
+        Some(uix_platform::types::ConsoleColor::Warn)
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -87,7 +91,8 @@ fn inject_and_dispatch_event() {
 #[test]
 fn file_dialog_mock_result() {
     let mut pf = FakePlatform::new();
-    pf.file_dialog.mock_open_result(vec!["/path/to/file.txt".to_string()]);
+    pf.file_dialog
+        .mock_open_result(vec!["/path/to/file.txt".to_string()]);
     let files = pf.file_dialog.open("Open", "*.txt");
     assert_eq!(files, vec!["/path/to/file.txt"]);
     assert_eq!(pf.file_dialog.state.open_calls.len(), 1);
@@ -226,7 +231,9 @@ fn fake_display_configure() {
 #[test]
 fn fake_presenter_tracks_calls() {
     let mut pf = FakePlatform::new();
-    pf.presenter.present(&[0xFF0000; 100], 10, 10, None).unwrap();
+    pf.presenter
+        .present(&[0xFF0000; 100], 10, 10, None)
+        .unwrap();
     assert_eq!(pf.presenter.present_count(), 1);
 }
 
@@ -591,11 +598,8 @@ fn event_source_clear() {
 #[test]
 fn event_source_inject_all() {
     let mut pf = FakePlatform::new();
-    pf.event_source.inject_all(vec![
-        UiEvent::close(),
-        UiEvent::close(),
-        UiEvent::close(),
-    ]);
+    pf.event_source
+        .inject_all(vec![UiEvent::close(), UiEvent::close(), UiEvent::close()]);
     assert_eq!(pf.event_source.pending_count(), 3);
 }
 
@@ -635,8 +639,12 @@ fn file_system_add_file_creates_parent_dir() {
 #[test]
 fn file_system_special_dir_customizable() {
     let mut pf = FakePlatform::new();
-    pf.file_system.set_special_dir(SpecialDir::Home, "/custom/home");
-    assert_eq!(pf.file_system.get_special_dir(SpecialDir::Home), "/custom/home");
+    pf.file_system
+        .set_special_dir(SpecialDir::Home, "/custom/home");
+    assert_eq!(
+        pf.file_system.get_special_dir(SpecialDir::Home),
+        "/custom/home"
+    );
 }
 
 #[test]
@@ -779,7 +787,10 @@ fn window_create_with_gpu() {
 #[test]
 fn window_lifecycle_via_manager() {
     let mut pf = FakePlatform::new();
-    let mut win = pf.window_manager.create_window("lifecycle", 800, 600).unwrap();
+    let mut win = pf
+        .window_manager
+        .create_window("lifecycle", 800, 600)
+        .unwrap();
     assert!(!win.is_visible());
     win.show();
     assert!(win.is_visible());
@@ -856,7 +867,10 @@ fn window_position() {
 #[test]
 fn window_presenter_access() {
     let mut pf = FakePlatform::new();
-    let mut win = pf.window_manager.create_window("present", 100, 100).unwrap();
+    let mut win = pf
+        .window_manager
+        .create_window("present", 100, 100)
+        .unwrap();
     let p = win.presenter();
     p.present(&[0xFF; 100], 10, 10, None).unwrap();
     // 通过 Platform trait 也可以访问 presenter
@@ -983,7 +997,9 @@ fn presenter_empty_pixels() {
 #[test]
 fn presenter_dirty_rect() {
     let mut pf = FakePlatform::new();
-    pf.presenter.present(&[0xFF; 100], 10, 10, Some((2, 3, 6, 7))).unwrap();
+    pf.presenter
+        .present(&[0xFF; 100], 10, 10, Some((2, 3, 6, 7)))
+        .unwrap();
     let call = &pf.presenter.state.present_calls[0];
     assert_eq!(call.dirty_rect, Some((2, 3, 6, 7)));
 }
@@ -1044,7 +1060,10 @@ fn timer_multiple_repeating() {
     let fired = pf.timer.advance(std::time::Duration::from_millis(60));
     assert!(fired.contains(&id_r), "repeating should fire");
     assert!(!fired.contains(&id_s), "single should not fire yet");
-    assert!(pf.timer.is_pending(id_r), "repeating reset and still pending");
+    assert!(
+        pf.timer.is_pending(id_r),
+        "repeating reset and still pending"
+    );
     assert!(pf.timer.is_pending(id_s), "single still pending");
     assert_eq!(pf.timer.pending_count(), 2);
 

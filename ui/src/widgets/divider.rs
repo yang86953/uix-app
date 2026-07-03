@@ -1,10 +1,10 @@
 //! Divider widget — Ant Design style horizontal/vertical divider with optional text.
 
-use uix_graphics::{Color};
-use uix_platform::{Point, Rect, Size};
-use crate::render_context::RenderContext;
 use crate::define_widget;
+use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Color;
+use uix_platform::{Point, Rect, Size};
 
 /// Divider orientation for text placement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,17 +1,27 @@
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::Color;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 use std::collections::HashMap;
+use uix_graphics::Color;
+use uix_platform::{Point, Rect, Size};
 
 /// 校验状态。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ValidateStatus { None, Success, Warning, Error, Validating }
+pub enum ValidateStatus {
+    None,
+    Success,
+    Warning,
+    Error,
+    Validating,
+}
 
 /// 表单布局模式。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FormLayout { Horizontal, Vertical, Inline }
+pub enum FormLayout {
+    Horizontal,
+    Vertical,
+    Inline,
+}
 
 /// 校验规则。
 pub struct ValidationRule {
@@ -25,11 +35,30 @@ pub struct ValidationRule {
 
 impl ValidationRule {
     pub fn required(msg: &str) -> Self {
-        Self { required: true, message: msg.to_string(), min: None, max: None, pattern: None, validator: None }
+        Self {
+            required: true,
+            message: msg.to_string(),
+            min: None,
+            max: None,
+            pattern: None,
+            validator: None,
+        }
     }
-    pub fn min(mut self, v: f64, msg: &str) -> Self { self.min = Some(v); self.message = msg.to_string(); self }
-    pub fn max(mut self, v: f64, msg: &str) -> Self { self.max = Some(v); self.message = msg.to_string(); self }
-    pub fn pattern(mut self, p: &str, msg: &str) -> Self { self.pattern = Some(p.to_string()); self.message = msg.to_string(); self }
+    pub fn min(mut self, v: f64, msg: &str) -> Self {
+        self.min = Some(v);
+        self.message = msg.to_string();
+        self
+    }
+    pub fn max(mut self, v: f64, msg: &str) -> Self {
+        self.max = Some(v);
+        self.message = msg.to_string();
+        self
+    }
+    pub fn pattern(mut self, p: &str, msg: &str) -> Self {
+        self.pattern = Some(p.to_string());
+        self.message = msg.to_string();
+        self
+    }
 }
 
 /// 校验结果。
@@ -182,19 +211,45 @@ define_widget! {
 impl FormItem {
     pub fn new(label: &str) -> Self {
         Self {
-            label: label.to_string(), name: String::new(),
-            required: false, status: ValidateStatus::None,
-            help: String::new(), label_width: 80.0, layout: FormLayout::Horizontal,
+            label: label.to_string(),
+            name: String::new(),
+            required: false,
+            status: ValidateStatus::None,
+            help: String::new(),
+            label_width: 80.0,
+            layout: FormLayout::Horizontal,
         }
     }
-    pub fn name(mut self, n: impl Into<String>) -> Self { self.name = n.into(); self }
-    pub fn required(mut self, v: bool) -> Self { self.required = v; self }
-    pub fn status(mut self, s: ValidateStatus) -> Self { self.status = s; self }
-    pub fn help(mut self, h: &str) -> Self { self.help = h.to_string(); self }
-    pub fn label_width(mut self, w: f32) -> Self { self.label_width = w; self }
-    pub fn layout(mut self, l: FormLayout) -> Self { self.layout = l; self }
-    pub fn get_status(&self) -> ValidateStatus { self.status }
-    pub fn set_status(&mut self, s: ValidateStatus) { self.status = s; }
+    pub fn name(mut self, n: impl Into<String>) -> Self {
+        self.name = n.into();
+        self
+    }
+    pub fn required(mut self, v: bool) -> Self {
+        self.required = v;
+        self
+    }
+    pub fn status(mut self, s: ValidateStatus) -> Self {
+        self.status = s;
+        self
+    }
+    pub fn help(mut self, h: &str) -> Self {
+        self.help = h.to_string();
+        self
+    }
+    pub fn label_width(mut self, w: f32) -> Self {
+        self.label_width = w;
+        self
+    }
+    pub fn layout(mut self, l: FormLayout) -> Self {
+        self.layout = l;
+        self
+    }
+    pub fn get_status(&self) -> ValidateStatus {
+        self.status
+    }
+    pub fn set_status(&mut self, s: ValidateStatus) {
+        self.status = s;
+    }
 }
 
 /// Form 校验回调。
@@ -255,18 +310,36 @@ impl Default for Form {
 impl Form {
     pub fn new() -> Self {
         Self {
-            label_width: 80.0, gap: 8.0, layout: FormLayout::Horizontal,
-            fields: HashMap::new(), on_finish: None, on_finish_failed: None,
+            label_width: 80.0,
+            gap: 8.0,
+            layout: FormLayout::Horizontal,
+            fields: HashMap::new(),
+            on_finish: None,
+            on_finish_failed: None,
         }
     }
-    pub fn label_width(mut self, w: f32) -> Self { self.label_width = w; self }
-    pub fn gap(mut self, g: f32) -> Self { self.gap = g; self }
-    pub fn layout(mut self, l: FormLayout) -> Self { self.layout = l; self }
-    pub fn on_finish<F: FnMut(HashMap<String, String>) + 'static>(mut self, f: F) -> Self {
-        self.on_finish = Some(Box::new(f)); self
+    pub fn label_width(mut self, w: f32) -> Self {
+        self.label_width = w;
+        self
     }
-    pub fn on_finish_failed<F: FnMut(HashMap<String, ValidationResult>) + 'static>(mut self, f: F) -> Self {
-        self.on_finish_failed = Some(Box::new(f)); self
+    pub fn gap(mut self, g: f32) -> Self {
+        self.gap = g;
+        self
+    }
+    pub fn layout(mut self, l: FormLayout) -> Self {
+        self.layout = l;
+        self
+    }
+    pub fn on_finish<F: FnMut(HashMap<String, String>) + 'static>(mut self, f: F) -> Self {
+        self.on_finish = Some(Box::new(f));
+        self
+    }
+    pub fn on_finish_failed<F: FnMut(HashMap<String, ValidationResult>) + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
+        self.on_finish_failed = Some(Box::new(f));
+        self
     }
 
     /// 设置字段值。
@@ -289,7 +362,9 @@ impl Form {
         let mut all_valid = true;
         let mut errors = HashMap::new();
         let mut values = HashMap::new();
-        let field_results: Vec<(String, ValidationResult, String)> = self.fields.iter()
+        let field_results: Vec<(String, ValidationResult, String)> = self
+            .fields
+            .iter()
             .map(|(name, field)| {
                 let result = Self::validate_field(field);
                 (name.clone(), result, field.value.clone())
@@ -309,9 +384,13 @@ impl Form {
         }
 
         if all_valid {
-            if let Some(ref mut cb) = self.on_finish { cb(values); }
+            if let Some(ref mut cb) = self.on_finish {
+                cb(values);
+            }
         } else {
-            if let Some(ref mut cb) = self.on_finish_failed { cb(errors); }
+            if let Some(ref mut cb) = self.on_finish_failed {
+                cb(errors);
+            }
         }
         all_valid
     }
@@ -319,19 +398,28 @@ impl Form {
     fn validate_field(field: &FieldDef) -> ValidationResult {
         for rule in &field.rules {
             if rule.required && field.value.is_empty() {
-                return ValidationResult { status: ValidateStatus::Error, message: rule.message.clone() };
+                return ValidationResult {
+                    status: ValidateStatus::Error,
+                    message: rule.message.clone(),
+                };
             }
             if let Some(min) = rule.min {
                 if let Ok(v) = field.value.parse::<f64>() {
                     if v < min {
-                        return ValidationResult { status: ValidateStatus::Error, message: rule.message.clone() };
+                        return ValidationResult {
+                            status: ValidateStatus::Error,
+                            message: rule.message.clone(),
+                        };
                     }
                 }
             }
             if let Some(max) = rule.max {
                 if let Ok(v) = field.value.parse::<f64>() {
                     if v > max {
-                        return ValidationResult { status: ValidateStatus::Error, message: rule.message.clone() };
+                        return ValidationResult {
+                            status: ValidateStatus::Error,
+                            message: rule.message.clone(),
+                        };
                     }
                 }
             }
@@ -340,15 +428,26 @@ impl Form {
                     // 简单通配符匹配（* 任意字符，? 单字符）
                     let matched = simple_pattern_match(&field.value, pattern);
                     if !matched {
-                        return ValidationResult { status: ValidateStatus::Error, message: rule.message.clone() };
+                        return ValidationResult {
+                            status: ValidateStatus::Error,
+                            message: rule.message.clone(),
+                        };
                     }
                 }
             }
             if let Some(ref validator_fn) = rule.validator {
-                if let Err(msg) = validator_fn(&field.value) { return ValidationResult { status: ValidateStatus::Error, message: msg } }
+                if let Err(msg) = validator_fn(&field.value) {
+                    return ValidationResult {
+                        status: ValidateStatus::Error,
+                        message: msg,
+                    };
+                }
             }
         }
-        ValidationResult { status: ValidateStatus::None, message: String::new() }
+        ValidationResult {
+            status: ValidateStatus::None,
+            message: String::new(),
+        }
     }
 }
 
@@ -366,7 +465,8 @@ fn simple_pattern_match(value: &str, pattern: &str) -> bool {
 
     while vi < v_chars.len() {
         if pi < p_chars.len() && (p_chars[pi] == v_chars[vi] || p_chars[pi] == '?') {
-            vi += 1; pi += 1;
+            vi += 1;
+            pi += 1;
         } else if pi < p_chars.len() && p_chars[pi] == '*' {
             star_vi = Some(vi);
             star_pi = Some(pi);
@@ -379,6 +479,8 @@ fn simple_pattern_match(value: &str, pattern: &str) -> bool {
             return false;
         }
     }
-    while pi < p_chars.len() && p_chars[pi] == '*' { pi += 1; }
+    while pi < p_chars.len() && p_chars[pi] == '*' {
+        pi += 1;
+    }
     pi >= p_chars.len()
 }

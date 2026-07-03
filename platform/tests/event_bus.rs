@@ -1,11 +1,11 @@
 //! uix-platform crate 集成测试（event_bus 模块）。
 
-use uix_platform::event_bus::EventBus;
-use uix_platform::event::{UiEvent, UiEventType};
-use uix_platform::geometry::Point;
-use uix_platform::types::{KeyCode, KeyMod, MouseButton};
 use std::cell::Cell;
 use std::rc::Rc;
+use uix_platform::event::{UiEvent, UiEventType};
+use uix_platform::event_bus::EventBus;
+use uix_platform::geometry::Point;
+use uix_platform::types::{KeyCode, KeyMod, MouseButton};
 
 // ════════════════════════════════════════════════════════════════════════════
 // EventBus 基础测试
@@ -64,7 +64,10 @@ fn subscribe_all_handler_called_for_all_types() {
         c.set(c.get() + 1);
         true
     });
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     bus.publish(&UiEvent::key_down(KeyCode::Enter, KeyMod::NONE));
     bus.publish(&UiEvent::close());
     assert_eq!(count.get(), 3);
@@ -75,7 +78,10 @@ fn publish_returns_true_when_all_handlers_return_true() {
     let mut bus = EventBus::new();
     bus.subscribe(UiEventType::MouseDown, |_| true);
     bus.subscribe(UiEventType::MouseDown, |_| true);
-    let result = bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    let result = bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     assert!(result);
 }
 
@@ -83,7 +89,10 @@ fn publish_returns_true_when_all_handlers_return_true() {
 fn publish_returns_false_when_handler_stops() {
     let mut bus = EventBus::new();
     bus.subscribe(UiEventType::MouseDown, |_| false);
-    let result = bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    let result = bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     assert!(!result);
 }
 
@@ -149,7 +158,10 @@ fn unsubscribe_handler_no_longer_called() {
         true
     });
     bus.unsubscribe(id);
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     assert!(!called.get());
 }
 
@@ -215,11 +227,17 @@ fn subscribe_once_triggers_and_auto_removes() {
     });
 
     // 第一次发布：触发，自动移除
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     assert_eq!(call_count.get(), 1);
 
     // 第二次发布：不再触发
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     assert_eq!(call_count.get(), 1);
 }
 
@@ -235,7 +253,10 @@ fn subscribe_once_only_fires_for_matching_type() {
     });
 
     // 不匹配的事件：不触发，不移除
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     assert_eq!(call_count.get(), 0);
 
     // 匹配的事件：触发并移除
@@ -275,7 +296,10 @@ fn subscribe_once_handler_returning_false_stops_propagation() {
         true
     });
 
-    let result = bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    let result = bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     assert!(!result, "publish should return false");
     // 一次性返回 false 后，第二个 handler 不被调用
     assert!(!handler2_called.get());
@@ -312,11 +336,18 @@ fn higher_priority_runs_first() {
         true
     });
 
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
 
     let v = order.take();
     // 优先级 10 > 0 > -5
-    assert_eq!(v, vec![2, 1, 3], "should execute in priority order: 10, 0, -5");
+    assert_eq!(
+        v,
+        vec![2, 1, 3],
+        "should execute in priority order: 10, 0, -5"
+    );
 }
 
 #[test]
@@ -346,10 +377,17 @@ fn same_priority_keeps_registration_order() {
         true
     });
 
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
 
     let v = order.take();
-    assert_eq!(v, vec![1, 2, 3], "same priority should keep registration order");
+    assert_eq!(
+        v,
+        vec![1, 2, 3],
+        "same priority should keep registration order"
+    );
 }
 
 #[test]
@@ -375,12 +413,18 @@ fn high_priority_once_fires_before_low_priority() {
     });
 
     // 第一次：两者都触发
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     let v = order.take();
     assert_eq!(v, vec![1, 2], "high priority once should fire first");
 
     // 第二次：只剩低优先级（一次性已移除）
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     let v = order.take();
     assert_eq!(v, vec![2], "only low priority should remain");
 }
@@ -396,7 +440,10 @@ fn subscribe_all_with_priority_works() {
         true
     });
 
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
     assert_eq!(count.get(), 1);
 
     bus.publish(&UiEvent::key_down(KeyCode::Enter, KeyMod::NONE));
@@ -453,6 +500,9 @@ fn subscribe_once_removed_from_count() {
     assert_eq!(bus.subscriber_count(), 1);
     bus.publish(&UiEvent::close()); // 不匹配，不移除
     assert_eq!(bus.subscriber_count(), 1);
-    bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left)); // 匹配，触发并移除
+    bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    )); // 匹配，触发并移除
     assert_eq!(bus.subscriber_count(), 0);
 }

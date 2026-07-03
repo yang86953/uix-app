@@ -3,11 +3,11 @@
 //! 提供字符级文本布局、断行、字形缓存等功能。
 //! 从 `rich_text.rs` 拆分出来以遵守 900 行文件限制。
 
-use uix_platform::Rect;
+use super::RichTextSegment;
 use uix_graphics::font_service::FontService;
 use uix_graphics::text_backend::TextLayoutOptions;
 use uix_graphics::{Color, FontHandle};
-use super::RichTextSegment;
+use uix_platform::Rect;
 
 // ══════════════════════════════════════════════════════════════════
 // 布局类型
@@ -88,7 +88,11 @@ pub(crate) fn flush_line(
 ) {
     let y = lines.last().map(|l| l.y + l.height).unwrap_or(0.0);
     let g = std::mem::take(glyphs);
-    lines.push(LayoutLine { y, height: line_height.max(1.0), glyphs: g });
+    lines.push(LayoutLine {
+        y,
+        height: line_height.max(1.0),
+        glyphs: g,
+    });
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -128,10 +132,19 @@ pub(crate) fn layout_rich_text(
                 current_line_h = current_line_h.max(seg_line_h);
 
                 layout_text_content(
-                    content, fs, color, bg, false, None,
-                    seg_idx, max_width, seg_line_h,
-                    &mut lines, &mut current_line_glyphs,
-                    &mut current_x, &mut max_line_w,
+                    content,
+                    fs,
+                    color,
+                    bg,
+                    false,
+                    None,
+                    seg_idx,
+                    max_width,
+                    seg_line_h,
+                    &mut lines,
+                    &mut current_line_glyphs,
+                    &mut current_x,
+                    &mut max_line_w,
                 );
             }
             RichTextSegment::Code { content } => {
@@ -142,10 +155,19 @@ pub(crate) fn layout_rich_text(
                 current_line_h = current_line_h.max(seg_line_h);
 
                 layout_text_content(
-                    content, fs, color, Some(bg), false, None,
-                    seg_idx, max_width, seg_line_h,
-                    &mut lines, &mut current_line_glyphs,
-                    &mut current_x, &mut max_line_w,
+                    content,
+                    fs,
+                    color,
+                    Some(bg),
+                    false,
+                    None,
+                    seg_idx,
+                    max_width,
+                    seg_line_h,
+                    &mut lines,
+                    &mut current_line_glyphs,
+                    &mut current_x,
+                    &mut max_line_w,
                 );
             }
             RichTextSegment::Link { content, url } => {
@@ -155,10 +177,19 @@ pub(crate) fn layout_rich_text(
                 current_line_h = current_line_h.max(seg_line_h);
 
                 layout_text_content(
-                    content, fs, color, None, true, Some(url.as_str()),
-                    seg_idx, max_width, seg_line_h,
-                    &mut lines, &mut current_line_glyphs,
-                    &mut current_x, &mut max_line_w,
+                    content,
+                    fs,
+                    color,
+                    None,
+                    true,
+                    Some(url.as_str()),
+                    seg_idx,
+                    max_width,
+                    seg_line_h,
+                    &mut lines,
+                    &mut current_line_glyphs,
+                    &mut current_x,
+                    &mut max_line_w,
                 );
             }
         }
@@ -169,7 +200,10 @@ pub(crate) fn layout_rich_text(
         flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
     }
 
-    let total_height = lines.last().map(|l| l.y + l.height).unwrap_or(default_line_h);
+    let total_height = lines
+        .last()
+        .map(|l| l.y + l.height)
+        .unwrap_or(default_line_h);
     (lines, total_height, max_line_w)
 }
 
@@ -337,11 +371,21 @@ pub(crate) fn layout_rich_text_real(
                 current_line_h = current_line_h.max(seg_line_h);
 
                 layout_text_content_real(
-                    content, fs, color, bg, false, None,
-                    seg_idx, max_width, seg_line_h,
-                    &mut lines, &mut current_line_glyphs,
-                    &mut current_x, &mut max_line_w,
-                    font_service, font,
+                    content,
+                    fs,
+                    color,
+                    bg,
+                    false,
+                    None,
+                    seg_idx,
+                    max_width,
+                    seg_line_h,
+                    &mut lines,
+                    &mut current_line_glyphs,
+                    &mut current_x,
+                    &mut max_line_w,
+                    font_service,
+                    font,
                 );
             }
             RichTextSegment::Code { content } => {
@@ -352,11 +396,21 @@ pub(crate) fn layout_rich_text_real(
                 current_line_h = current_line_h.max(seg_line_h);
 
                 layout_text_content_real(
-                    content, fs, color, Some(bg), false, None,
-                    seg_idx, max_width, seg_line_h,
-                    &mut lines, &mut current_line_glyphs,
-                    &mut current_x, &mut max_line_w,
-                    font_service, font,
+                    content,
+                    fs,
+                    color,
+                    Some(bg),
+                    false,
+                    None,
+                    seg_idx,
+                    max_width,
+                    seg_line_h,
+                    &mut lines,
+                    &mut current_line_glyphs,
+                    &mut current_x,
+                    &mut max_line_w,
+                    font_service,
+                    font,
                 );
             }
             RichTextSegment::Link { content, url } => {
@@ -366,11 +420,21 @@ pub(crate) fn layout_rich_text_real(
                 current_line_h = current_line_h.max(seg_line_h);
 
                 layout_text_content_real(
-                    content, fs, color, None, true, Some(url.as_str()),
-                    seg_idx, max_width, seg_line_h,
-                    &mut lines, &mut current_line_glyphs,
-                    &mut current_x, &mut max_line_w,
-                    font_service, font,
+                    content,
+                    fs,
+                    color,
+                    None,
+                    true,
+                    Some(url.as_str()),
+                    seg_idx,
+                    max_width,
+                    seg_line_h,
+                    &mut lines,
+                    &mut current_line_glyphs,
+                    &mut current_x,
+                    &mut max_line_w,
+                    font_service,
+                    font,
                 );
             }
         }
@@ -381,7 +445,10 @@ pub(crate) fn layout_rich_text_real(
         flush_line(&mut lines, &mut current_line_glyphs, current_line_h);
     }
 
-    let total_height = lines.last().map(|l| l.y + l.height).unwrap_or(default_line_h);
+    let total_height = lines
+        .last()
+        .map(|l| l.y + l.height)
+        .unwrap_or(default_line_h);
     (lines, total_height, max_line_w)
 }
 

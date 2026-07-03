@@ -2,11 +2,11 @@
 //!
 //! 组合使用构建标准页面布局。
 
-use uix_platform::{Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::{Color, GraphicsEngine};
+use uix_platform::{Rect, Size};
 
 define_widget! {
     /// Layout — 页面布局容器（flex 列）。
@@ -129,21 +129,54 @@ impl Default for Layout {
 }
 
 impl Layout {
-    pub fn new() -> Self { Self { bg_color: None } }
-    pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
+    pub fn new() -> Self {
+        Self { bg_color: None }
+    }
+    pub fn bg(mut self, c: Color) -> Self {
+        self.bg_color = Some(c);
+        self
+    }
 }
 
 impl Header {
-    pub fn new(height: f32) -> Self { Self { height, bg_color: None } }
-    pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
+    pub fn new(height: f32) -> Self {
+        Self {
+            height,
+            bg_color: None,
+        }
+    }
+    pub fn bg(mut self, c: Color) -> Self {
+        self.bg_color = Some(c);
+        self
+    }
 }
 
 impl Sider {
-    pub fn new(width: f32) -> Self { Self { width, bg_color: None, collapsible: false, collapsed: false, collapsed_width: 80.0 } }
-    pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
-    pub fn collapsible(mut self, v: bool) -> Self { self.collapsible = v; self }
-    pub fn collapsed(mut self, v: bool) -> Self { self.collapsed = v; self }
-    pub fn collapsed_width(mut self, w: f32) -> Self { self.collapsed_width = w; self }
+    pub fn new(width: f32) -> Self {
+        Self {
+            width,
+            bg_color: None,
+            collapsible: false,
+            collapsed: false,
+            collapsed_width: 80.0,
+        }
+    }
+    pub fn bg(mut self, c: Color) -> Self {
+        self.bg_color = Some(c);
+        self
+    }
+    pub fn collapsible(mut self, v: bool) -> Self {
+        self.collapsible = v;
+        self
+    }
+    pub fn collapsed(mut self, v: bool) -> Self {
+        self.collapsed = v;
+        self
+    }
+    pub fn collapsed_width(mut self, w: f32) -> Self {
+        self.collapsed_width = w;
+        self
+    }
 }
 
 impl Default for Content {
@@ -153,11 +186,24 @@ impl Default for Content {
 }
 
 impl Content {
-    pub fn new() -> Self { Self { bg_color: None } }
-    pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
+    pub fn new() -> Self {
+        Self { bg_color: None }
+    }
+    pub fn bg(mut self, c: Color) -> Self {
+        self.bg_color = Some(c);
+        self
+    }
 }
 
 impl Footer {
-    pub fn new(height: f32) -> Self { Self { height, bg_color: None } }
-    pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
+    pub fn new(height: f32) -> Self {
+        Self {
+            height,
+            bg_color: None,
+        }
+    }
+    pub fn bg(mut self, c: Color) -> Self {
+        self.bg_color = Some(c);
+        self
+    }
 }

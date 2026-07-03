@@ -1,11 +1,9 @@
 #![cfg(windows)]
 use super::ffi::*;
 
-
 // ============================================================================
 // uix-platform/src/windows/clipboard.rs — Windows clipboard (IClipboard)
 // ============================================================================
-
 
 use crate::windows::util::to_utf8;
 use crate::windows::util::to_wide;
@@ -103,7 +101,3 @@ const CF_UNICODETEXT: u32 = 13;
 const CF_TEXT: u32 = 1;
 const GMEM_MOVEABLE: u32 = 0x0002;
 const GMEM_ZEROINIT: u32 = 0x0040;
-
-
-
-

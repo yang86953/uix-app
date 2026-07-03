@@ -50,7 +50,9 @@ pub struct FakeConsole {
 
 impl FakeConsole {
     pub fn new() -> Self {
-        Self { state: FakeConsoleState::default() }
+        Self {
+            state: FakeConsoleState::default(),
+        }
     }
 
     /// 最后一行输出

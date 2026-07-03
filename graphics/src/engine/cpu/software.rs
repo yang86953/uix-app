@@ -4,8 +4,8 @@
 //! 实现 GraphicsEngine trait。
 //! 帧生命周期逻辑（清除策略/裁剪管理）在此直接内联，不再依赖 frame.rs。
 
-use uix_platform::Rect;
 use uix_platform::Error;
+use uix_platform::Rect;
 
 use crate::color::Color;
 use crate::engine::cpu::canvas_2d::CpuCanvas2D;
@@ -210,17 +210,24 @@ impl GraphicsEngine for SoftwareEngine {
     fn memory_usage(&self) -> usize {
         let main = self.canvas_2d.surface();
         let main_bytes = (main.width() * main.height() * 4) as usize;
-        let offscreen_bytes: usize = self.offscreens.iter().filter_map(|o| {
-            o.as_ref().map(|c| {
-                let s = c.surface();
-                (s.width() * s.height() * 4) as usize
+        let offscreen_bytes: usize = self
+            .offscreens
+            .iter()
+            .filter_map(|o| {
+                o.as_ref().map(|c| {
+                    let s = c.surface();
+                    (s.width() * s.height() * 4) as usize
+                })
             })
-        }).sum();
+            .sum();
         main_bytes + offscreen_bytes
     }
 
     fn diagnose_memory(&self) {
-        uix_platform::log::info_fn(format!("SoftwareEngine memory: {} bytes", self.memory_usage()));
+        uix_platform::log::info_fn(format!(
+            "SoftwareEngine memory: {} bytes",
+            self.memory_usage()
+        ));
     }
 }
 
@@ -240,9 +247,15 @@ impl SoftwareEngine {
             let clip = self.canvas_2d.current_clip();
             let opacity = self.canvas_2d.opacity();
             blit_image(
-                self.canvas_2d.pixels_mut(), size, h,
-                clip, opacity,
-                src_pixels, src_w, src_rect, dst_rect,
+                self.canvas_2d.pixels_mut(),
+                size,
+                h,
+                clip,
+                opacity,
+                src_pixels,
+                src_w,
+                src_rect,
+                dst_rect,
             );
         }
     }

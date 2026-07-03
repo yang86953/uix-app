@@ -1,30 +1,46 @@
-use uix_platform::{KeyCode, Point, Rect, Size};
-use crate::define_widget;
-use crate::style::Style;
 use crate::animation::core::Animation;
 use crate::api::Easing;
-use uix_graphics::{Color, GraphicsEngine};
+use crate::define_widget;
 use crate::render_context::RenderContext;
+use crate::style::Style;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, GraphicsEngine};
+use uix_platform::{KeyCode, Point, Rect, Size};
 
 /// Button style variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ButtonVariant {
-    Primary, Default, Dashed, Text, Link,
+    Primary,
+    Default,
+    Dashed,
+    Text,
+    Link,
 }
 
 pub use uix_platform::ControlSize as ButtonSize;
 
 pub fn button_height(size: ButtonSize) -> f32 {
-    match size { ButtonSize::Small => 24.0, ButtonSize::Medium => 32.0, ButtonSize::Large => 40.0 }
+    match size {
+        ButtonSize::Small => 24.0,
+        ButtonSize::Medium => 32.0,
+        ButtonSize::Large => 40.0,
+    }
 }
 
 pub fn button_font_size(size: ButtonSize) -> f32 {
-    match size { ButtonSize::Small => 14.0, ButtonSize::Medium => 14.0, ButtonSize::Large => 16.0 }
+    match size {
+        ButtonSize::Small => 14.0,
+        ButtonSize::Medium => 14.0,
+        ButtonSize::Large => 16.0,
+    }
 }
 
 pub fn button_padding_h(size: ButtonSize) -> f32 {
-    match size { ButtonSize::Small => 7.0, ButtonSize::Medium => 15.0, ButtonSize::Large => 15.0 }
+    match size {
+        ButtonSize::Small => 7.0,
+        ButtonSize::Medium => 15.0,
+        ButtonSize::Large => 15.0,
+    }
 }
 
 define_widget! {
@@ -200,51 +216,109 @@ impl Button {
         let mut s = self.style.clone();
         s.font_size = font_size;
         s.padding = uix_platform::EdgeInsets::new(
-            button_padding_h(self.btn_size), 0.0,
-            button_padding_h(self.btn_size), 0.0,
+            button_padding_h(self.btn_size),
+            0.0,
+            button_padding_h(self.btn_size),
+            0.0,
         );
         s.border_radius = t.border_radius();
 
         // 2. 根据 variant + state 计算颜色
         let (bg, border, _text_color, bw) = if self.disabled {
             match self.variant {
-                ButtonVariant::Primary => (Some(t.color_primary_border()), t.color_border(), t.color_text_quaternary(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(), t.color_text_quaternary(), 0.0),
+                ButtonVariant::Primary => (
+                    Some(t.color_primary_border()),
+                    t.color_border(),
+                    t.color_text_quaternary(),
+                    1.0,
+                ),
+                ButtonVariant::Text | ButtonVariant::Link => {
+                    (None, Color::transparent(), t.color_text_quaternary(), 0.0)
+                }
                 _ => (None, t.color_border(), t.color_text_quaternary(), 1.0),
             }
         } else if self.pressed {
-            let c = if self.danger { t.color_error() } else { t.color_primary() };
+            let c = if self.danger {
+                t.color_error()
+            } else {
+                t.color_primary()
+            };
             match self.variant {
                 ButtonVariant::Primary => (Some(c), c, Color::white(), 1.0),
                 ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(), c, 0.0),
                 _ => (None, c, c, 1.0),
             }
         } else if self.hovered {
-            let c = if self.danger { t.color_error() } else { t.color_primary_hover() };
+            let c = if self.danger {
+                t.color_error()
+            } else {
+                t.color_primary_hover()
+            };
             match self.variant {
                 ButtonVariant::Primary => (Some(c), c, Color::white(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (Some(t.color_fill_tertiary()), Color::transparent(), c, 0.0),
-                _ => (Some(t.color_fill_tertiary()), if self.danger { t.color_error() } else { t.color_primary() }, c, 1.0),
+                ButtonVariant::Text | ButtonVariant::Link => {
+                    (Some(t.color_fill_tertiary()), Color::transparent(), c, 0.0)
+                }
+                _ => (
+                    Some(t.color_fill_tertiary()),
+                    if self.danger {
+                        t.color_error()
+                    } else {
+                        t.color_primary()
+                    },
+                    c,
+                    1.0,
+                ),
             }
         } else {
-            let normal_text = if self.danger { t.color_error() } else { t.color_primary() };
+            let normal_text = if self.danger {
+                t.color_error()
+            } else {
+                t.color_primary()
+            };
             match self.variant {
                 ButtonVariant::Primary => {
-                    let bg_color = if self.danger { t.color_error() } else { t.color_primary() };
+                    let bg_color = if self.danger {
+                        t.color_error()
+                    } else {
+                        t.color_primary()
+                    };
                     (Some(bg_color), bg_color, Color::white(), 1.0)
                 }
                 ButtonVariant::Dashed => (None, t.color_border(), t.color_text(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(), normal_text, 0.0),
+                ButtonVariant::Text | ButtonVariant::Link => {
+                    (None, Color::transparent(), normal_text, 0.0)
+                }
                 _ => {
-                    if self.ghost { (None, if self.danger { t.color_error() } else { t.color_primary() }, if self.danger { t.color_error() } else { t.color_primary() }, 1.0) }
-                    else { (None, t.color_border(), t.color_text(), 1.0) }
+                    if self.ghost {
+                        (
+                            None,
+                            if self.danger {
+                                t.color_error()
+                            } else {
+                                t.color_primary()
+                            },
+                            if self.danger {
+                                t.color_error()
+                            } else {
+                                t.color_primary()
+                            },
+                            1.0,
+                        )
+                    } else {
+                        (None, t.color_border(), t.color_text(), 1.0)
+                    }
                 }
             }
         };
 
         // 3. variant/state 颜色覆盖（仅覆盖用户未显式设置的属性）
-        if s.background.is_none() { s.background = bg; }
-        if s.border_color.is_none() { s.border_color = if bw > 0.0 { Some(border) } else { None }; }
+        if s.background.is_none() {
+            s.background = bg;
+        }
+        if s.border_color.is_none() {
+            s.border_color = if bw > 0.0 { Some(border) } else { None };
+        }
         s.border_width = bw;
         // color 和 font_size 由 self.style 决定，variant 不覆盖
 
@@ -253,10 +327,20 @@ impl Button {
 
     pub fn new(text: impl Into<String>) -> Self {
         Self {
-            text: text.into(), variant: ButtonVariant::Default, btn_size: ButtonSize::Medium,
-            disabled: false, hovered: false, pressed: false, click_pos: None,
+            text: text.into(),
+            variant: ButtonVariant::Default,
+            btn_size: ButtonSize::Medium,
+            disabled: false,
+            hovered: false,
+            pressed: false,
+            click_pos: None,
             ripple_anim: None,
-            on_click: None, loading: false, icon: String::new(), danger: false, block: false, ghost: false,
+            on_click: None,
+            loading: false,
+            icon: String::new(),
+            danger: false,
+            block: false,
+            ghost: false,
             style: Style::default(),
         }
     }
@@ -340,17 +424,56 @@ impl Button {
     // 行为属性
     // ══════════════════════════════════════════════════════
 
-    pub fn variant(mut self, v: ButtonVariant) -> Self { self.variant = v; self }
-    pub fn size(mut self, s: ButtonSize) -> Self { self.btn_size = s; self }
-    pub fn primary(mut self) -> Self { self.variant = ButtonVariant::Primary; self }
-    pub fn dashed(mut self) -> Self { self.variant = ButtonVariant::Dashed; self }
-    pub fn text(mut self) -> Self { self.variant = ButtonVariant::Text; self }
-    pub fn link(mut self) -> Self { self.variant = ButtonVariant::Link; self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn on_click<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_click = Some(Box::new(f)); self }
-    pub fn loading(mut self, v: bool) -> Self { self.loading = v; self }
-    pub fn icon(mut self, i: &str) -> Self { self.icon = i.to_string(); self }
-    pub fn danger(mut self, v: bool) -> Self { self.danger = v; self }
-    pub fn block(mut self, v: bool) -> Self { self.block = v; self }
-    pub fn ghost(mut self, v: bool) -> Self { self.ghost = v; self }
+    pub fn variant(mut self, v: ButtonVariant) -> Self {
+        self.variant = v;
+        self
+    }
+    pub fn size(mut self, s: ButtonSize) -> Self {
+        self.btn_size = s;
+        self
+    }
+    pub fn primary(mut self) -> Self {
+        self.variant = ButtonVariant::Primary;
+        self
+    }
+    pub fn dashed(mut self) -> Self {
+        self.variant = ButtonVariant::Dashed;
+        self
+    }
+    pub fn text(mut self) -> Self {
+        self.variant = ButtonVariant::Text;
+        self
+    }
+    pub fn link(mut self) -> Self {
+        self.variant = ButtonVariant::Link;
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn on_click<F: FnMut() + 'static>(mut self, f: F) -> Self {
+        self.on_click = Some(Box::new(f));
+        self
+    }
+    pub fn loading(mut self, v: bool) -> Self {
+        self.loading = v;
+        self
+    }
+    pub fn icon(mut self, i: &str) -> Self {
+        self.icon = i.to_string();
+        self
+    }
+    pub fn danger(mut self, v: bool) -> Self {
+        self.danger = v;
+        self
+    }
+    pub fn block(mut self, v: bool) -> Self {
+        self.block = v;
+        self
+    }
+    pub fn ghost(mut self, v: bool) -> Self {
+        self.ghost = v;
+        self
+    }
 }

@@ -1,6 +1,6 @@
 use crate::state::State;
-use std::collections::HashMap;
 use std::any::Any;
+use std::collections::HashMap;
 
 /// Manages widget-local state values.
 #[derive(Default)]
@@ -9,10 +9,13 @@ pub struct StateManager {
 }
 
 impl StateManager {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn get_state<T: Clone + Send + Sync + 'static>(&self, key: &str) -> Option<State<T>> {
-        self.states.get(key)
+        self.states
+            .get(key)
             .and_then(|any| any.downcast_ref::<State<T>>())
             .cloned()
     }
@@ -21,7 +24,10 @@ impl StateManager {
         self.states.insert(key.to_string(), Box::new(state));
     }
 
-    pub fn ensure_state<T: Clone + Default + Send + Sync + 'static>(&mut self, key: &str) -> State<T> {
+    pub fn ensure_state<T: Clone + Default + Send + Sync + 'static>(
+        &mut self,
+        key: &str,
+    ) -> State<T> {
         let key_str = key.to_string();
         if let Some(existing) = self.states.get(&key_str) {
             if let Some(state) = existing.downcast_ref::<State<T>>() {

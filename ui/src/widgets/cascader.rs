@@ -2,11 +2,11 @@
 //!
 //! 支持多级选项、搜索过滤、选中回显。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, GraphicsEngine};
+use uix_platform::{Point, Rect, Size};
 
 /// 级联选项
 #[derive(Debug, Clone)]
@@ -19,12 +19,21 @@ pub struct CascaderOption {
 
 impl CascaderOption {
     pub fn new(label: impl Into<String>, value: impl Into<String>) -> Self {
-        Self { label: label.into(), value: value.into(), children: vec![], disabled: false }
+        Self {
+            label: label.into(),
+            value: value.into(),
+            children: vec![],
+            disabled: false,
+        }
     }
     pub fn children(mut self, children: Vec<CascaderOption>) -> Self {
-        self.children = children; self
+        self.children = children;
+        self
     }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
 }
 
 /// 选中的级联路径项
@@ -167,7 +176,10 @@ impl Cascader {
     pub fn new(options: Vec<CascaderOption>, placeholder: impl Into<String>) -> Self {
         Self {
             options: options.clone(),
-            selected: CascaderValue { labels: vec![], values: vec![] },
+            selected: CascaderValue {
+                labels: vec![],
+                values: vec![],
+            },
             current_levels: vec![options],
             level_indices: vec![0],
             open: false,
@@ -183,12 +195,16 @@ impl Cascader {
 
     /// 点击某选项时触发（由外部或 MouseDown 处理）
     pub fn select_option(&mut self, level: usize, index: usize) {
-        if level >= self.current_levels.len() { return; }
+        if level >= self.current_levels.len() {
+            return;
+        }
         let opt = match self.current_levels[level].get(index) {
             Some(o) => o.clone(),
             None => return,
         };
-        if opt.disabled { return; }
+        if opt.disabled {
+            return;
+        }
 
         // 截断到当前层级
         self.level_indices.truncate(level);
@@ -215,6 +231,11 @@ impl Cascader {
         }
     }
 
-    pub fn selected(&self) -> &CascaderValue { &self.selected }
-    pub fn placeholder(mut self, p: impl Into<String>) -> Self { self.placeholder = p.into(); self }
+    pub fn selected(&self) -> &CascaderValue {
+        &self.selected
+    }
+    pub fn placeholder(mut self, p: impl Into<String>) -> Self {
+        self.placeholder = p.into();
+        self
+    }
 }

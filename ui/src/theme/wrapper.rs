@@ -5,14 +5,16 @@
 //! with the `is_dark()` mode query. `Theme` wraps an `Arc<dyn TokenProvider>`
 //! for runtime-polymorphic token injection.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::sync::RwLock;
 
-use uix_graphics::Color;
 use super::color_tokens::ShadowToken;
-use crate::api::traits::{IColorTokens, ITypographyTokens, ISpacingTokens, IBoxShadowTokens, TokenProvider};
 use super::design_tokens::DesignTokens;
+use crate::api::traits::{
+    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, TokenProvider,
+};
+use uix_graphics::Color;
 
 // ════════════════════════════════════════════════════════════════════════════
 // TokenProvider — supertrait 聚合全部子 trait
@@ -102,7 +104,10 @@ pub struct DynTokens {
 impl DynTokens {
     /// 创建新的 DynTokens，初始使用指定的 DesignTokens。
     pub fn new(tokens: DesignTokens) -> Self {
-        Self { inner: RwLock::new(tokens), auto_follow: AtomicBool::new(false) }
+        Self {
+            inner: RwLock::new(tokens),
+            auto_follow: AtomicBool::new(false),
+        }
     }
 
     /// 切换到亮色模式。
@@ -122,7 +127,11 @@ impl DynTokens {
     /// 根据 `dark` 参数切换模式（true=暗色，false=亮色）。
     pub fn set_mode(&self, dark: bool) {
         self.auto_follow.store(false, Ordering::Relaxed);
-        let new = if dark { DesignTokens::antd_dark() } else { DesignTokens::antd_light() };
+        let new = if dark {
+            DesignTokens::antd_dark()
+        } else {
+            DesignTokens::antd_light()
+        };
         *self.inner.write().unwrap_or_else(|e| e.into_inner()) = new;
     }
 
@@ -186,8 +195,7 @@ impl DynTokens {
             let mut last_known_dark = is_dark_fn();
 
             // 初始同步：设置与系统一致
-            let current_dark = this.inner.read()
-                .unwrap_or_else(|e| e.into_inner()).is_dark;
+            let current_dark = this.inner.read().unwrap_or_else(|e| e.into_inner()).is_dark;
             if current_dark != last_known_dark {
                 this.set_mode(last_known_dark);
             }
@@ -227,47 +235,129 @@ macro_rules! read_copy {
 }
 
 impl IColorTokens for DynTokens {
-    fn color_primary(&self) -> Color { read_copy!(self, color_primary) }
-    fn color_primary_hover(&self) -> Color { read_copy!(self, color_primary_hover) }
-    fn color_primary_active(&self) -> Color { read_copy!(self, color_primary_active) }
-    fn color_primary_bg(&self) -> Color { read_copy!(self, color_primary_bg) }
-    fn color_primary_border(&self) -> Color { read_copy!(self, color_primary_border) }
-    fn color_bg_container(&self) -> Color { read_copy!(self, color_bg_container) }
-    fn color_bg_elevated(&self) -> Color { read_copy!(self, color_bg_elevated) }
-    fn color_bg_raised(&self) -> Color { read_copy!(self, color_bg_raised) }
-    fn color_bg_overlay(&self) -> Color { read_copy!(self, color_bg_overlay) }
-    fn color_bg_layout(&self) -> Color { read_copy!(self, color_bg_layout) }
-    fn color_bg_spotlight(&self) -> Color { read_copy!(self, color_bg_spotlight) }
-    fn color_bg_mask(&self) -> Color { read_copy!(self, color_bg_mask) }
-    fn color_border(&self) -> Color { read_copy!(self, color_border) }
-    fn color_border_secondary(&self) -> Color { read_copy!(self, color_border_secondary) }
-    fn color_fill(&self) -> Color { read_copy!(self, color_fill) }
-    fn color_fill_secondary(&self) -> Color { read_copy!(self, color_fill_secondary) }
-    fn color_fill_tertiary(&self) -> Color { read_copy!(self, color_fill_tertiary) }
-    fn color_fill_quaternary(&self) -> Color { read_copy!(self, color_fill_quaternary) }
-    fn color_text(&self) -> Color { read_copy!(self, color_text) }
-    fn color_text_secondary(&self) -> Color { read_copy!(self, color_text_secondary) }
-    fn color_text_tertiary(&self) -> Color { read_copy!(self, color_text_tertiary) }
-    fn color_text_quaternary(&self) -> Color { read_copy!(self, color_text_quaternary) }
-    fn color_white(&self) -> Color { read_copy!(self, color_white) }
-    fn color_black(&self) -> Color { read_copy!(self, color_black) }
-    fn color_shadow(&self) -> Color { read_copy!(self, color_shadow) }
-    fn color_shadow_secondary(&self) -> Color { read_copy!(self, color_shadow_secondary) }
-    fn color_success(&self) -> Color { read_copy!(self, color_success) }
-    fn color_success_bg(&self) -> Color { read_copy!(self, color_success_bg) }
-    fn color_success_border(&self) -> Color { read_copy!(self, color_success_border) }
-    fn color_warning(&self) -> Color { read_copy!(self, color_warning) }
-    fn color_warning_bg(&self) -> Color { read_copy!(self, color_warning_bg) }
-    fn color_warning_border(&self) -> Color { read_copy!(self, color_warning_border) }
-    fn color_error(&self) -> Color { read_copy!(self, color_error) }
-    fn color_error_bg(&self) -> Color { read_copy!(self, color_error_bg) }
-    fn color_error_border(&self) -> Color { read_copy!(self, color_error_border) }
-    fn color_info(&self) -> Color { read_copy!(self, color_info) }
-    fn color_info_bg(&self) -> Color { read_copy!(self, color_info_bg) }
-    fn color_info_border(&self) -> Color { read_copy!(self, color_info_border) }
-    fn color_link(&self) -> Color { read_copy!(self, color_link) }
-    fn color_link_hover(&self) -> Color { read_copy!(self, color_link_hover) }
-    fn color_link_active(&self) -> Color { read_copy!(self, color_link_active) }
+    fn color_primary(&self) -> Color {
+        read_copy!(self, color_primary)
+    }
+    fn color_primary_hover(&self) -> Color {
+        read_copy!(self, color_primary_hover)
+    }
+    fn color_primary_active(&self) -> Color {
+        read_copy!(self, color_primary_active)
+    }
+    fn color_primary_bg(&self) -> Color {
+        read_copy!(self, color_primary_bg)
+    }
+    fn color_primary_border(&self) -> Color {
+        read_copy!(self, color_primary_border)
+    }
+    fn color_bg_container(&self) -> Color {
+        read_copy!(self, color_bg_container)
+    }
+    fn color_bg_elevated(&self) -> Color {
+        read_copy!(self, color_bg_elevated)
+    }
+    fn color_bg_raised(&self) -> Color {
+        read_copy!(self, color_bg_raised)
+    }
+    fn color_bg_overlay(&self) -> Color {
+        read_copy!(self, color_bg_overlay)
+    }
+    fn color_bg_layout(&self) -> Color {
+        read_copy!(self, color_bg_layout)
+    }
+    fn color_bg_spotlight(&self) -> Color {
+        read_copy!(self, color_bg_spotlight)
+    }
+    fn color_bg_mask(&self) -> Color {
+        read_copy!(self, color_bg_mask)
+    }
+    fn color_border(&self) -> Color {
+        read_copy!(self, color_border)
+    }
+    fn color_border_secondary(&self) -> Color {
+        read_copy!(self, color_border_secondary)
+    }
+    fn color_fill(&self) -> Color {
+        read_copy!(self, color_fill)
+    }
+    fn color_fill_secondary(&self) -> Color {
+        read_copy!(self, color_fill_secondary)
+    }
+    fn color_fill_tertiary(&self) -> Color {
+        read_copy!(self, color_fill_tertiary)
+    }
+    fn color_fill_quaternary(&self) -> Color {
+        read_copy!(self, color_fill_quaternary)
+    }
+    fn color_text(&self) -> Color {
+        read_copy!(self, color_text)
+    }
+    fn color_text_secondary(&self) -> Color {
+        read_copy!(self, color_text_secondary)
+    }
+    fn color_text_tertiary(&self) -> Color {
+        read_copy!(self, color_text_tertiary)
+    }
+    fn color_text_quaternary(&self) -> Color {
+        read_copy!(self, color_text_quaternary)
+    }
+    fn color_white(&self) -> Color {
+        read_copy!(self, color_white)
+    }
+    fn color_black(&self) -> Color {
+        read_copy!(self, color_black)
+    }
+    fn color_shadow(&self) -> Color {
+        read_copy!(self, color_shadow)
+    }
+    fn color_shadow_secondary(&self) -> Color {
+        read_copy!(self, color_shadow_secondary)
+    }
+    fn color_success(&self) -> Color {
+        read_copy!(self, color_success)
+    }
+    fn color_success_bg(&self) -> Color {
+        read_copy!(self, color_success_bg)
+    }
+    fn color_success_border(&self) -> Color {
+        read_copy!(self, color_success_border)
+    }
+    fn color_warning(&self) -> Color {
+        read_copy!(self, color_warning)
+    }
+    fn color_warning_bg(&self) -> Color {
+        read_copy!(self, color_warning_bg)
+    }
+    fn color_warning_border(&self) -> Color {
+        read_copy!(self, color_warning_border)
+    }
+    fn color_error(&self) -> Color {
+        read_copy!(self, color_error)
+    }
+    fn color_error_bg(&self) -> Color {
+        read_copy!(self, color_error_bg)
+    }
+    fn color_error_border(&self) -> Color {
+        read_copy!(self, color_error_border)
+    }
+    fn color_info(&self) -> Color {
+        read_copy!(self, color_info)
+    }
+    fn color_info_bg(&self) -> Color {
+        read_copy!(self, color_info_bg)
+    }
+    fn color_info_border(&self) -> Color {
+        read_copy!(self, color_info_border)
+    }
+    fn color_link(&self) -> Color {
+        read_copy!(self, color_link)
+    }
+    fn color_link_hover(&self) -> Color {
+        read_copy!(self, color_link_hover)
+    }
+    fn color_link_active(&self) -> Color {
+        read_copy!(self, color_link_active)
+    }
 }
 
 impl ITypographyTokens for DynTokens {
@@ -275,42 +365,106 @@ impl ITypographyTokens for DynTokens {
     fn font_family(&self) -> &str {
         "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial"
     }
-    fn font_size_sm(&self) -> f32 { read_copy!(self, font_size_sm) }
-    fn font_size(&self) -> f32 { read_copy!(self, font_size) }
-    fn font_size_lg(&self) -> f32 { read_copy!(self, font_size_lg) }
-    fn font_size_xl(&self) -> f32 { read_copy!(self, font_size_xl) }
-    fn font_size_heading_1(&self) -> f32 { read_copy!(self, font_size_heading_1) }
-    fn font_size_heading_2(&self) -> f32 { read_copy!(self, font_size_heading_2) }
-    fn font_size_heading_3(&self) -> f32 { read_copy!(self, font_size_heading_3) }
-    fn font_size_heading_4(&self) -> f32 { read_copy!(self, font_size_heading_4) }
-    fn font_size_heading_5(&self) -> f32 { read_copy!(self, font_size_heading_5) }
-    fn font_weight_regular(&self) -> f32 { read_copy!(self, font_weight_regular) }
-    fn font_weight_medium(&self) -> f32 { read_copy!(self, font_weight_medium) }
-    fn font_weight_semibold(&self) -> f32 { read_copy!(self, font_weight_semibold) }
-    fn font_weight_bold(&self) -> f32 { read_copy!(self, font_weight_bold) }
-    fn line_height(&self) -> f32 { read_copy!(self, line_height) }
+    fn font_size_sm(&self) -> f32 {
+        read_copy!(self, font_size_sm)
+    }
+    fn font_size(&self) -> f32 {
+        read_copy!(self, font_size)
+    }
+    fn font_size_lg(&self) -> f32 {
+        read_copy!(self, font_size_lg)
+    }
+    fn font_size_xl(&self) -> f32 {
+        read_copy!(self, font_size_xl)
+    }
+    fn font_size_heading_1(&self) -> f32 {
+        read_copy!(self, font_size_heading_1)
+    }
+    fn font_size_heading_2(&self) -> f32 {
+        read_copy!(self, font_size_heading_2)
+    }
+    fn font_size_heading_3(&self) -> f32 {
+        read_copy!(self, font_size_heading_3)
+    }
+    fn font_size_heading_4(&self) -> f32 {
+        read_copy!(self, font_size_heading_4)
+    }
+    fn font_size_heading_5(&self) -> f32 {
+        read_copy!(self, font_size_heading_5)
+    }
+    fn font_weight_regular(&self) -> f32 {
+        read_copy!(self, font_weight_regular)
+    }
+    fn font_weight_medium(&self) -> f32 {
+        read_copy!(self, font_weight_medium)
+    }
+    fn font_weight_semibold(&self) -> f32 {
+        read_copy!(self, font_weight_semibold)
+    }
+    fn font_weight_bold(&self) -> f32 {
+        read_copy!(self, font_weight_bold)
+    }
+    fn line_height(&self) -> f32 {
+        read_copy!(self, line_height)
+    }
 }
 
 impl ISpacingTokens for DynTokens {
-    fn padding_xss(&self) -> f32 { read_copy!(self, padding_xss) }
-    fn padding_xs(&self) -> f32 { read_copy!(self, padding_xs) }
-    fn padding_sm(&self) -> f32 { read_copy!(self, padding_sm) }
-    fn padding(&self) -> f32 { read_copy!(self, padding) }
-    fn padding_md(&self) -> f32 { read_copy!(self, padding_md) }
-    fn padding_lg(&self) -> f32 { read_copy!(self, padding_lg) }
-    fn padding_xl(&self) -> f32 { read_copy!(self, padding_xl) }
-    fn border_radius(&self) -> f32 { read_copy!(self, border_radius) }
-    fn border_radius_sm(&self) -> f32 { read_copy!(self, border_radius_sm) }
-    fn border_radius_lg(&self) -> f32 { read_copy!(self, border_radius_lg) }
-    fn border_radius_xl(&self) -> f32 { read_copy!(self, border_radius_xl) }
-    fn border_radius_round(&self) -> f32 { read_copy!(self, border_radius_round) }
-    fn control_height_sm(&self) -> f32 { read_copy!(self, control_height_sm) }
-    fn control_height(&self) -> f32 { read_copy!(self, control_height) }
-    fn control_height_lg(&self) -> f32 { read_copy!(self, control_height_lg) }
+    fn padding_xss(&self) -> f32 {
+        read_copy!(self, padding_xss)
+    }
+    fn padding_xs(&self) -> f32 {
+        read_copy!(self, padding_xs)
+    }
+    fn padding_sm(&self) -> f32 {
+        read_copy!(self, padding_sm)
+    }
+    fn padding(&self) -> f32 {
+        read_copy!(self, padding)
+    }
+    fn padding_md(&self) -> f32 {
+        read_copy!(self, padding_md)
+    }
+    fn padding_lg(&self) -> f32 {
+        read_copy!(self, padding_lg)
+    }
+    fn padding_xl(&self) -> f32 {
+        read_copy!(self, padding_xl)
+    }
+    fn border_radius(&self) -> f32 {
+        read_copy!(self, border_radius)
+    }
+    fn border_radius_sm(&self) -> f32 {
+        read_copy!(self, border_radius_sm)
+    }
+    fn border_radius_lg(&self) -> f32 {
+        read_copy!(self, border_radius_lg)
+    }
+    fn border_radius_xl(&self) -> f32 {
+        read_copy!(self, border_radius_xl)
+    }
+    fn border_radius_round(&self) -> f32 {
+        read_copy!(self, border_radius_round)
+    }
+    fn control_height_sm(&self) -> f32 {
+        read_copy!(self, control_height_sm)
+    }
+    fn control_height(&self) -> f32 {
+        read_copy!(self, control_height)
+    }
+    fn control_height_lg(&self) -> f32 {
+        read_copy!(self, control_height_lg)
+    }
     // motion & screen 字段在 antd_light/dark 中值相同，也使用 RwLock
-    fn motion_duration_fast(&self) -> f32 { read_copy!(self, motion_duration_fast) }
-    fn motion_duration_mid(&self) -> f32 { read_copy!(self, motion_duration_mid) }
-    fn motion_duration_slow(&self) -> f32 { read_copy!(self, motion_duration_slow) }
+    fn motion_duration_fast(&self) -> f32 {
+        read_copy!(self, motion_duration_fast)
+    }
+    fn motion_duration_mid(&self) -> f32 {
+        read_copy!(self, motion_duration_mid)
+    }
+    fn motion_duration_slow(&self) -> f32 {
+        read_copy!(self, motion_duration_slow)
+    }
     fn motion_easing_default(&self) -> &str {
         // antd_light 和 antd_dark 值相同
         "cubic-bezier(0.25, 0.1, 0.25, 1)"
@@ -324,17 +478,33 @@ impl ISpacingTokens for DynTokens {
     fn motion_easing_in_out(&self) -> &str {
         "cubic-bezier(0.42, 0, 0.58, 1)"
     }
-    fn screen_xs(&self) -> f32 { read_copy!(self, screen_xs) }
-    fn screen_sm(&self) -> f32 { read_copy!(self, screen_sm) }
-    fn screen_md(&self) -> f32 { read_copy!(self, screen_md) }
-    fn screen_lg(&self) -> f32 { read_copy!(self, screen_lg) }
-    fn screen_xl(&self) -> f32 { read_copy!(self, screen_xl) }
-    fn screen_xxl(&self) -> f32 { read_copy!(self, screen_xxl) }
+    fn screen_xs(&self) -> f32 {
+        read_copy!(self, screen_xs)
+    }
+    fn screen_sm(&self) -> f32 {
+        read_copy!(self, screen_sm)
+    }
+    fn screen_md(&self) -> f32 {
+        read_copy!(self, screen_md)
+    }
+    fn screen_lg(&self) -> f32 {
+        read_copy!(self, screen_lg)
+    }
+    fn screen_xl(&self) -> f32 {
+        read_copy!(self, screen_xl)
+    }
+    fn screen_xxl(&self) -> f32 {
+        read_copy!(self, screen_xxl)
+    }
 }
 
 impl IBoxShadowTokens for DynTokens {
-    fn box_shadow(&self) -> ShadowToken { read_copy!(self, box_shadow) }
-    fn box_shadow_secondary(&self) -> ShadowToken { read_copy!(self, box_shadow_secondary) }
+    fn box_shadow(&self) -> ShadowToken {
+        read_copy!(self, box_shadow)
+    }
+    fn box_shadow_secondary(&self) -> ShadowToken {
+        read_copy!(self, box_shadow_secondary)
+    }
 }
 
 impl TokenProvider for DynTokens {

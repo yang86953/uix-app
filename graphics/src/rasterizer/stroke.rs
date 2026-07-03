@@ -9,27 +9,39 @@ use crate::rasterizer::polygon;
 use crate::stroker::StrokeOptions;
 use crate::types::Radius;
 
-use super::{
-    color_to_premul, fill_rect_raw, put_pixel_aa,
-    rounded_rect_sdf, line_segment_sdf, sdf_to_coverage, clip_to_int, intersect_rect,
-};
 use super::fill;
+use super::{
+    clip_to_int, color_to_premul, fill_rect_raw, intersect_rect, line_segment_sdf, put_pixel_aa,
+    rounded_rect_sdf, sdf_to_coverage,
+};
 
 /// 纯函数：描边矩形，可选圆角。
 pub fn stroke_rect(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
-    clip: Rect, opacity: f32,
-    rect: Rect, color: Color, line_width: f32, radius: Option<Radius>,
+    pixels: &mut [u32],
+    surface_w: i32,
+    surface_h: i32,
+    clip: Rect,
+    opacity: f32,
+    rect: Rect,
+    color: Color,
+    line_width: f32,
+    radius: Option<Radius>,
 ) {
     let lw = line_width.max(0.0);
     let rad = radius.unwrap_or_default();
     let c = color_to_premul(color.r, color.g, color.b, color.a, opacity);
 
     // 快速路径：整数坐标、1px 描边、无圆角
-    if rad.tl == 0.0 && rad.tr == 0.0 && rad.bl == 0.0 && rad.br == 0.0
-        && rect.x.fract() == 0.0 && rect.y.fract() == 0.0
-        && rect.w.fract() == 0.0 && rect.h.fract() == 0.0
-        && lw == 1.0 && lw.fract() == 0.0
+    if rad.tl == 0.0
+        && rad.tr == 0.0
+        && rad.bl == 0.0
+        && rad.br == 0.0
+        && rect.x.fract() == 0.0
+        && rect.y.fract() == 0.0
+        && rect.w.fract() == 0.0
+        && rect.h.fract() == 0.0
+        && lw == 1.0
+        && lw.fract() == 0.0
     {
         let x0 = rect.x as i32;
         let y0 = rect.y as i32;
@@ -37,23 +49,65 @@ pub fn stroke_rect(
         let h = rect.h as i32;
         let iw = lw as i32;
         if iw * 2 >= w || iw * 2 >= h {
-            fill_rect_raw(pixels, surface_w, x0, y0, w, h, 0, 0, surface_w, surface_h, c);
+            fill_rect_raw(
+                pixels, surface_w, x0, y0, w, h, 0, 0, surface_w, surface_h, c,
+            );
             return;
         }
         let inner_h = h - iw * 2;
         let (cx0, cy0, cx1, cy1) = clip_to_int(&clip);
         fill_rect_raw(pixels, surface_w, x0, y0, w, iw, cx0, cy0, cx1, cy1, c);
-        fill_rect_raw(pixels, surface_w, x0, y0 + h - iw, w, iw, cx0, cy0, cx1, cy1, c);
-        fill_rect_raw(pixels, surface_w, x0, y0 + iw, iw, inner_h, cx0, cy0, cx1, cy1, c);
-        fill_rect_raw(pixels, surface_w, x0 + w - iw, y0 + iw, iw, inner_h, cx0, cy0, cx1, cy1, c);
+        fill_rect_raw(
+            pixels,
+            surface_w,
+            x0,
+            y0 + h - iw,
+            w,
+            iw,
+            cx0,
+            cy0,
+            cx1,
+            cy1,
+            c,
+        );
+        fill_rect_raw(
+            pixels,
+            surface_w,
+            x0,
+            y0 + iw,
+            iw,
+            inner_h,
+            cx0,
+            cy0,
+            cx1,
+            cy1,
+            c,
+        );
+        fill_rect_raw(
+            pixels,
+            surface_w,
+            x0 + w - iw,
+            y0 + iw,
+            iw,
+            inner_h,
+            cx0,
+            cy0,
+            cx1,
+            cy1,
+            c,
+        );
         return;
     }
 
     // SDF 描边
     let h = lw * 0.5;
     let expand = h + 1.0;
-    let expanded = Rect::new(rect.x - expand, rect.y - expand,
-        rect.w + expand * 2.0, rect.h + expand * 2.0);
+    let expanded = Rect::new(
+        rect.x - expand,
+        rect.y - expand,
+        rect.w + expand * 2.0,
+        rect.h + expand * 2.0,
+    );
     if let Some(cr) = intersect_rect(&expanded, &clip) {
         let x0 = cr.x as i32;
         let y0 = cr.y as i32;
@@ -76,9 +130,16 @@ pub fn stroke_rect(
 
 /// 纯函数：描边圆形。
 pub fn stroke_circle(
-    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
-    clip: Rect, opacity: f32,
-    cx: f32, cy: f32, r: f32, color: Color, line_width: f32,
+    pixels: &mut [u32],
+    surface_w: i32,
+    _surface_h: i32,
+    clip: Rect,
+    opacity: f32,
+    cx: f32,
+    cy: f32,
+    r: f32,
+    color: Color,
+    line_width: f32,
 ) {
     let lw = line_width.max(0.0);
     let c = color_to_premul(color.r, color.g, color.b, color.a, opacity);
@@ -105,30 +166,52 @@ pub fn stroke_circle(
 
 /// 纯函数：描边路径（stroker 转填充 → polygon fill）。
 pub fn stroke_path(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
-    clip: Rect, opacity: f32,
-    path: &Path, color: Color, opts: &StrokeOptions,
+    pixels: &mut [u32],
+    surface_w: i32,
+    surface_h: i32,
+    clip: Rect,
+    opacity: f32,
+    path: &Path,
+    color: Color,
+    opts: &StrokeOptions,
 ) {
-    if path.is_empty() { return; }
+    if path.is_empty() {
+        return;
+    }
     let c = color_to_premul(color.r, color.g, color.b, color.a, opacity);
     let stroked = crate::stroker::stroke_path(path, opts);
-    if stroked.is_empty() { return; }
+    if stroked.is_empty() {
+        return;
+    }
     let polys = flattener::flatten(stroked.segments(), 0.25);
     let mut global_edges = Vec::new();
     let mut active_edges = Vec::new();
     polygon::fill_polygons(
-        &polys, pixels, surface_w, surface_h,
-        clip, c, crate::path::FillRule::NonZero,
-        &mut global_edges, &mut active_edges,
+        &polys,
+        pixels,
+        surface_w,
+        surface_h,
+        clip,
+        c,
+        crate::path::FillRule::NonZero,
+        &mut global_edges,
+        &mut active_edges,
     );
 }
 
 /// 纯函数：画直线。
 pub fn draw_line(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
-    clip: Rect, opacity: f32,
-    x1: f32, y1: f32, x2: f32, y2: f32,
-    color: Color, width: f32,
+    pixels: &mut [u32],
+    surface_w: i32,
+    surface_h: i32,
+    clip: Rect,
+    opacity: f32,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    color: Color,
+    width: f32,
 ) {
     let c = color_to_premul(color.r, color.g, color.b, color.a, opacity);
     let half_lw = width.max(0.0) * 0.5;

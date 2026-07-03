@@ -13,16 +13,20 @@
 //   middleware.rs      — 中间件管道
 // ============================================================================
 
-pub mod timestamp;
 pub mod collector;
 pub mod fatal;
-pub mod recovery_policy;
-pub mod recovery;
 pub mod middleware;
+pub mod recovery;
+pub mod recovery_policy;
+pub mod timestamp;
 
-pub use timestamp::Timestamp;
 pub use collector::{Collector, CollectorConfig, CollectorSnapshot, ScopedCollector};
-pub use fatal::{install_fatal_handler, dump_crash_report, fatal_abort, abort_if_fatal, collect_or_abort};
+pub use fatal::{
+    abort_if_fatal, collect_or_abort, dump_crash_report, fatal_abort, install_fatal_handler,
+};
+pub use middleware::{
+    LogMiddleware, Middleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
+};
+pub use recovery::{retry, with_recovery, with_recovery_typed, RecoveryHandler};
 pub use recovery_policy::*;
-pub use recovery::{RecoveryHandler, with_recovery, with_recovery_typed, retry};
-pub use middleware::{Middleware, MiddlewareContext, MiddlewarePipeline, LogMiddleware, RetryMiddleware};
+pub use timestamp::Timestamp;

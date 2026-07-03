@@ -4,11 +4,11 @@
 
 use std::cell::Cell;
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, GraphicsEngine};
+use uix_platform::{Point, Rect, Size};
 
 // 日期结构（复用 Calendar 中的日期逻辑）
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -21,13 +21,21 @@ pub struct DateValue {
 impl DateValue {
     pub fn new(year: i32, month: usize, day: usize) -> Self {
         let d = day.min(days_in_month(year, month));
-        Self { year, month: month.clamp(1, 12), day: d.max(1) }
+        Self {
+            year,
+            month: month.clamp(1, 12),
+            day: d.max(1),
+        }
     }
     pub fn format(&self) -> String {
         format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
     }
     pub fn today() -> Self {
-        Self { year: 2026, month: 6, day: 20 }
+        Self {
+            year: 2026,
+            month: 6,
+            day: 20,
+        }
     }
 }
 
@@ -35,14 +43,24 @@ fn days_in_month(year: i32, month: usize) -> usize {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 => if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 { 29 } else { 28 },
+        2 => {
+            if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 {
+                29
+            } else {
+                28
+            }
+        }
         _ => 30,
     }
 }
 
 fn first_weekday(year: i32, month: usize) -> usize {
     let m = if month <= 2 { month + 12 } else { month };
-    let y = if month <= 2 { (year - 1) as usize } else { year as usize };
+    let y = if month <= 2 {
+        (year - 1) as usize
+    } else {
+        year as usize
+    };
     let c = y / 100;
     let y_mod = y % 100;
     let w = (1usize + (13 * (m + 1)) / 5 + y_mod + y_mod / 4 + c / 4).wrapping_sub(2 * c) % 7;
@@ -285,9 +303,16 @@ impl DatePicker {
         }
     }
 
-    pub fn value(self, v: DateValue) -> Self { self.value.set(v); self }
-    pub fn selected(&self) -> DateValue { self.value.get() }
-    pub fn set_value(&mut self, v: DateValue) { self.value.set(v); }
+    pub fn value(self, v: DateValue) -> Self {
+        self.value.set(v);
+        self
+    }
+    pub fn selected(&self) -> DateValue {
+        self.value.get()
+    }
+    pub fn set_value(&mut self, v: DateValue) {
+        self.value.set(v);
+    }
     pub fn on_change<F: FnMut(DateValue) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self
@@ -295,8 +320,16 @@ impl DatePicker {
 }
 
 fn next_month(y: i32, m: usize) -> (i32, usize) {
-    if m >= 12 { (y + 1, 1) } else { (y, m + 1) }
+    if m >= 12 {
+        (y + 1, 1)
+    } else {
+        (y, m + 1)
+    }
 }
 fn prev_month(y: i32, m: usize) -> (i32, usize) {
-    if m <= 1 { (y - 1, 12) } else { (y, m - 1) }
+    if m <= 1 {
+        (y - 1, 12)
+    } else {
+        (y, m - 1)
+    }
 }

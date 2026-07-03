@@ -1,13 +1,17 @@
 use crate::define_widget;
-use uix_platform::{Point, Rect, Size};
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 use std::cell::Cell;
+use uix_graphics::Radius;
+use uix_platform::{Point, Rect, Size};
 
 /// 排序方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SortDirection { None, Asc, Desc }
+pub enum SortDirection {
+    None,
+    Asc,
+    Desc,
+}
 
 /// 表格列定义。
 #[derive(Debug, Clone)]
@@ -22,10 +26,23 @@ pub struct TableColumn {
 
 impl TableColumn {
     pub fn new(title: impl Into<String>, width: f32) -> Self {
-        Self { title: title.into(), width, sortable: false, sort_direction: SortDirection::None, filterable: false, filters: Vec::new() }
+        Self {
+            title: title.into(),
+            width,
+            sortable: false,
+            sort_direction: SortDirection::None,
+            filterable: false,
+            filters: Vec::new(),
+        }
     }
-    pub fn sortable(mut self, v: bool) -> Self { self.sortable = v; self }
-    pub fn filterable(mut self, v: bool) -> Self { self.filterable = v; self }
+    pub fn sortable(mut self, v: bool) -> Self {
+        self.sortable = v;
+        self
+    }
+    pub fn filterable(mut self, v: bool) -> Self {
+        self.filterable = v;
+        self
+    }
 }
 
 /// 表格行数据。
@@ -241,31 +258,69 @@ define_widget! {
     }
 }
 
-impl Default for Table { fn default() -> Self { Self::new() } }
+impl Default for Table {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Table {
     pub fn new() -> Self {
         Self {
-            columns: Vec::new(), rows: Vec::new(), row_h: 28.0, header_h: 32.0,
-            selected_row: Cell::new(None), hover_row: Cell::new(None),
-            checked_rows: Vec::new(), expanded_row: Cell::new(None), expand_height: 60.0,
-            expand_renderer: None, empty_text: String::new(),
-            current_page: Cell::new(0), page_size: 20, on_change: None,
+            columns: Vec::new(),
+            rows: Vec::new(),
+            row_h: 28.0,
+            header_h: 32.0,
+            selected_row: Cell::new(None),
+            hover_row: Cell::new(None),
+            checked_rows: Vec::new(),
+            expanded_row: Cell::new(None),
+            expand_height: 60.0,
+            expand_renderer: None,
+            empty_text: String::new(),
+            current_page: Cell::new(0),
+            page_size: 20,
+            on_change: None,
         }
     }
-    pub fn columns(mut self, cols: Vec<TableColumn>) -> Self { self.columns = cols; self }
-    pub fn rows(mut self, rows: Vec<TableRow>) -> Self { self.rows = rows; self }
-    pub fn row_height(mut self, h: f32) -> Self { self.row_h = h; self }
-    pub fn selected_row(&self) -> Option<usize> { self.selected_row.get() }
-    pub fn set_selected_row(&self, row: Option<usize>) { self.selected_row.set(row); }
-    pub fn checked_rows(&self) -> &[usize] { &self.checked_rows }
-    pub fn empty_text(mut self, t: impl Into<String>) -> Self { self.empty_text = t.into(); self }
-    pub fn expandable(mut self, height: f32, renderer: impl Fn(usize, &mut RenderContext, Rect) + 'static) -> Self {
+    pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {
+        self.columns = cols;
+        self
+    }
+    pub fn rows(mut self, rows: Vec<TableRow>) -> Self {
+        self.rows = rows;
+        self
+    }
+    pub fn row_height(mut self, h: f32) -> Self {
+        self.row_h = h;
+        self
+    }
+    pub fn selected_row(&self) -> Option<usize> {
+        self.selected_row.get()
+    }
+    pub fn set_selected_row(&self, row: Option<usize>) {
+        self.selected_row.set(row);
+    }
+    pub fn checked_rows(&self) -> &[usize] {
+        &self.checked_rows
+    }
+    pub fn empty_text(mut self, t: impl Into<String>) -> Self {
+        self.empty_text = t.into();
+        self
+    }
+    pub fn expandable(
+        mut self,
+        height: f32,
+        renderer: impl Fn(usize, &mut RenderContext, Rect) + 'static,
+    ) -> Self {
         self.expand_height = height;
         self.expand_renderer = Some(Box::new(renderer));
         self
     }
-    pub fn page_size(mut self, n: usize) -> Self { self.page_size = n; self }
+    pub fn page_size(mut self, n: usize) -> Self {
+        self.page_size = n;
+        self
+    }
     pub fn on_change<F: FnMut(TableChange) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

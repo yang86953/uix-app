@@ -5,9 +5,9 @@
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 
-use crate::Point;
 use crate::types::CursorType;
 use crate::ICursor;
+use crate::Point;
 use std::ptr;
 
 pub struct WindowsCursor {
@@ -138,7 +138,7 @@ const IDC_SIZENS: u16 = 32645;
 const IDC_SIZEWE: u16 = 32644;
 const IDC_SIZENWSE: u16 = 32642;
 const IDC_SIZENESW: u16 = 32643;
-use super::ffi::{LoadCursorW, SetCursor, SetCapture, ReleaseCapture};
+use super::ffi::{LoadCursorW, ReleaseCapture, SetCapture, SetCursor};
 
 const TRUE: i32 = 1;
 const FALSE: i32 = 0;

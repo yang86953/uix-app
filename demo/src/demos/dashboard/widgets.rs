@@ -1,9 +1,9 @@
-use uix::platform::{Point, Rect, Size};
+use uix::define_widget;
 use uix::graphics::{Color, GraphicsEngine};
+use uix::platform::{Point, Rect, Size};
 use uix::ui::render_context::RenderContext;
 use uix::ui::widget::WidgetTree;
 use uix::ui::widget::{EventResult, WidgetEvent};
-use uix::{define_widget};
 
 // ── Counter — 自定义 widget 示例 ──
 
@@ -115,5 +115,3 @@ define_widget! {
         ctx.canvas_2d().fill_circle(cx, cy, 10.0, primary);
     }
 }
-
-

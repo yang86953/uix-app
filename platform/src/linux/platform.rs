@@ -10,9 +10,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use crate::Error;
-use crate::shared::{WindowState, OsEventSource};
 use crate::event::UiEvent;
+use crate::shared::{OsEventSource, WindowState};
+use crate::Error;
 use crate::*;
 
 use crate::linux::console::LinuxConsole;

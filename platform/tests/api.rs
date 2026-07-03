@@ -7,12 +7,12 @@
 
 #![cfg(feature = "test-harness")]
 
+use std::rc::Rc;
 use uix_platform::api::traits::*;
 use uix_platform::api::types::*;
 use uix_platform::event::UiEvent;
 use uix_platform::geometry::Point;
 use uix_platform::test_harness::FakePlatform;
-use std::rc::Rc;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Platform trait — 所有访问器方法可用
@@ -51,7 +51,9 @@ fn presenter_default_empty() {
 #[test]
 fn presenter_present_stores_pixels() {
     let mut pf = FakePlatform::new();
-    pf.presenter.present(&[0xFF0000, 0x00FF00], 2, 1, None).unwrap();
+    pf.presenter
+        .present(&[0xFF0000, 0x00FF00], 2, 1, None)
+        .unwrap();
     assert_eq!(pf.presenter.present_count(), 1);
     assert_eq!(pf.presenter.state.last_pixels.len(), 2);
 }
@@ -222,7 +224,8 @@ fn console_title() {
 #[test]
 fn file_dialog_open_mock() {
     let mut pf = FakePlatform::new();
-    pf.file_dialog.mock_open_result(vec!["/path/a.txt".into(), "/path/b.txt".into()]);
+    pf.file_dialog
+        .mock_open_result(vec!["/path/a.txt".into(), "/path/b.txt".into()]);
     let files = pf.file_dialog.open("Open", "*.txt");
     assert_eq!(files, vec!["/path/a.txt", "/path/b.txt"]);
     assert_eq!(pf.file_dialog.state.open_calls[0].0, "Open");
@@ -267,7 +270,10 @@ fn file_system_tracks_reads() {
 #[test]
 fn file_system_special_dirs() {
     let pf = FakePlatform::new();
-    assert_eq!(pf.file_system.get_special_dir(SpecialDir::Home), "/home/user");
+    assert_eq!(
+        pf.file_system.get_special_dir(SpecialDir::Home),
+        "/home/user"
+    );
     assert_eq!(pf.file_system.get_special_dir(SpecialDir::Temp), "/tmp");
 }
 
@@ -420,7 +426,10 @@ fn window_create_and_show() {
 #[test]
 fn window_properties() {
     let mut pf = FakePlatform::new();
-    let mut win = pf.window_manager.create_window("prop-test", 800, 600).unwrap();
+    let mut win = pf
+        .window_manager
+        .create_window("prop-test", 800, 600)
+        .unwrap();
     assert_eq!(win.properties().width(), 800);
     win.properties_mut().set_size(1024, 768);
     assert_eq!(win.properties().width(), 1024);
@@ -438,7 +447,10 @@ fn window_title() {
 #[test]
 fn window_close() {
     let mut pf = FakePlatform::new();
-    let mut win = pf.window_manager.create_window("close-test", 100, 100).unwrap();
+    let mut win = pf
+        .window_manager
+        .create_window("close-test", 100, 100)
+        .unwrap();
     win.show();
     assert!(win.is_visible());
     win.close();
@@ -494,7 +506,8 @@ fn types_available() {
 fn prelude_via_star_import() {
     use uix_platform::api::*;
     let _p = Point::new(0.0, 0.0);
-    let _err: uix_platform::error::Error = uix_platform::error::Error::new(uix_platform::error::Errc::None, "");
+    let _err: uix_platform::error::Error =
+        uix_platform::error::Error::new(uix_platform::error::Errc::None, "");
     let _ev = UiEvent::close();
     let _bus = uix_platform::event_bus::EventBus::new();
     let _kc = KeyCode::Enter;
@@ -532,10 +545,11 @@ fn platform_event_bus_integration() {
 
     let called = Rc::new(std::cell::Cell::new(false));
     let c = called.clone();
-    pf.event_bus.subscribe(
-        uix_platform::event::UiEventType::MouseDown,
-        move |_| { c.set(true); true },
-    );
+    pf.event_bus
+        .subscribe(uix_platform::event::UiEventType::MouseDown, move |_| {
+            c.set(true);
+            true
+        });
 
     pf.event_bus.publish(&UiEvent::mouse_down(
         Point::new(10.0, 10.0),
@@ -552,10 +566,11 @@ fn platform_event_bus_via_trait() {
     {
         let c = called.clone();
         let p: &mut dyn Platform = &mut pf;
-        p.event_bus().subscribe(
-            uix_platform::event::UiEventType::MouseDown,
-            move |_| { c.set(true); true },
-        );
+        p.event_bus()
+            .subscribe(uix_platform::event::UiEventType::MouseDown, move |_| {
+                c.set(true);
+                true
+            });
     }
     // 通过具体引用来 publish
     pf.event_bus.publish(&UiEvent::mouse_down(
@@ -597,10 +612,12 @@ fn platform_file_system_and_dialog_interaction() {
     let mut pf = FakePlatform::new();
 
     // 预设文件系统中有文件
-    pf.file_system.add_file("/data/config.json", b"{\"key\": \"value\"}".to_vec());
+    pf.file_system
+        .add_file("/data/config.json", b"{\"key\": \"value\"}".to_vec());
 
     // 预设文件对话框返回该路径
-    pf.file_dialog.mock_open_result(vec!["/data/config.json".to_string()]);
+    pf.file_dialog
+        .mock_open_result(vec!["/data/config.json".to_string()]);
 
     // 测试流程：打开对话框 → 读取文件
     let files = pf.file_dialog.open("Open Config", "*.json");
@@ -667,7 +684,10 @@ fn platform_system_info_default_font() {
 fn platform_window_creation_through_trait() {
     let mut pf = FakePlatform::new();
     let p: &mut dyn Platform = &mut pf;
-    let mut win = p.window_manager().create_window("trait-win", 640, 480).unwrap();
+    let mut win = p
+        .window_manager()
+        .create_window("trait-win", 640, 480)
+        .unwrap();
     win.show();
     assert!(win.is_visible());
     assert_eq!(pf.window_manager.create_calls.len(), 1);
@@ -680,11 +700,10 @@ fn platform_event_loop_multiple_types() {
     let mut pf = FakePlatform::new();
 
     pf.event_source.inject(UiEvent::close());
-    pf.event_source.inject(UiEvent::key_down(KeyCode::Escape, KeyMod::NONE));
-    pf.event_source.inject(UiEvent::mouse_down(
-        Point::new(0.0, 0.0),
-        MouseButton::Left,
-    ));
+    pf.event_source
+        .inject(UiEvent::key_down(KeyCode::Escape, KeyMod::NONE));
+    pf.event_source
+        .inject(UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
 
     let types = Cell::new(Vec::new());
     pf.event_loop().poll_event(&|ev| {

@@ -3,7 +3,9 @@ use super::*;
 use uix_graphics::DirtyRegion;
 
 impl WidgetTree {
-    pub fn dirty_region(&self) -> &DirtyRegion { &self.dirty.region }
+    pub fn dirty_region(&self) -> &DirtyRegion {
+        &self.dirty.region
+    }
 
     /// 从指定节点向上传播脏标记到所有祖先。
     /// 既更新 `subtree_dirty`（布局遍历用），
@@ -36,14 +38,22 @@ impl WidgetTree {
                 node.set_dirty(true);
                 self.dirty_nodes.insert(id);
                 true
-            } else { false }
+            } else {
+                false
+            }
         };
-        if !is_valid { return; }
-        let (frame, dirty) = self.get(id).map(|node| {
-            (node.frame(), node.dirty_rect(node.frame()))
-        }).unwrap_or_default();
-        if dirty.w > 0.0 && dirty.h > 0.0 { self.dirty.region.add_rect(dirty); }
-        else if frame.w > 0.0 && frame.h > 0.0 { self.dirty.region.add_rect(frame); }
+        if !is_valid {
+            return;
+        }
+        let (frame, dirty) = self
+            .get(id)
+            .map(|node| (node.frame(), node.dirty_rect(node.frame())))
+            .unwrap_or_default();
+        if dirty.w > 0.0 && dirty.h > 0.0 {
+            self.dirty.region.add_rect(dirty);
+        } else if frame.w > 0.0 && frame.h > 0.0 {
+            self.dirty.region.add_rect(frame);
+        }
 
         // 终极方案：向上传播子树脏标记
         self.propagate_subtree_dirty(id);
@@ -54,7 +64,9 @@ impl WidgetTree {
             node.set_dirty(true);
             self.dirty_nodes.insert(id);
         }
-        if rect.w > 0.0 && rect.h > 0.0 { self.dirty.region.add_rect(rect); }
+        if rect.w > 0.0 && rect.h > 0.0 {
+            self.dirty.region.add_rect(rect);
+        }
 
         // 终极方案：向上传播子树脏标记
         self.propagate_subtree_dirty(id);
@@ -64,17 +76,23 @@ impl WidgetTree {
         let ids: Vec<WidgetId> = {
             let mut result = vec![id];
             if let Some(node) = self.get(id) {
-                for &child_id in node.children() { self.collect_subtree(child_id, &mut result); }
+                for &child_id in node.children() {
+                    self.collect_subtree(child_id, &mut result);
+                }
             }
             result
         };
-        for id in ids { self.mark_dirty(id); }
+        for id in ids {
+            self.mark_dirty(id);
+        }
     }
 
     fn collect_subtree(&self, id: WidgetId, result: &mut Vec<WidgetId>) {
         result.push(id);
         if let Some(node) = self.get(id) {
-            for &child_id in node.children() { self.collect_subtree(child_id, result); }
+            for &child_id in node.children() {
+                self.collect_subtree(child_id, result);
+            }
         }
     }
 
@@ -102,7 +120,9 @@ impl WidgetTree {
         for id in self.traverse() {
             self.dirty_nodes.insert(id);
             self.subtree_dirty.insert(id);
-            if let Some(node) = self.get_mut(id) { node.set_dirty(true); }
+            if let Some(node) = self.get_mut(id) {
+                node.set_dirty(true);
+            }
         }
     }
 }

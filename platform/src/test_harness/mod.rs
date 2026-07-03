@@ -53,7 +53,7 @@ pub use fake_presenter::FakePresenter;
 pub use fake_system_info::FakeSystemInfo;
 pub use fake_text_input::FakeTextInput;
 pub use fake_timer::FakeTimer;
-pub use fake_window::{FakeWindow, FakeWindowManager, FakeWindowProperties, FakeNativeHandle};
+pub use fake_window::{FakeNativeHandle, FakeWindow, FakeWindowManager, FakeWindowProperties};
 
 use std::time::Duration;
 

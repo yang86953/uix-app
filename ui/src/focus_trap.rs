@@ -1,8 +1,8 @@
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetId, WidgetTree};
-use uix_platform::{KeyCode, KeyMod, Rect, Size};
 use std::collections::HashSet;
+use uix_platform::{KeyCode, KeyMod, Rect, Size};
 
 define_widget! {
     /// FocusTrap — 将键盘 Tab/Shift+Tab 焦点限制在子树内。

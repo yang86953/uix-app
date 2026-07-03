@@ -3,14 +3,20 @@
 //! 支持物理单位：`offset()` 接受 mm/cm/pt，自动适配 DPI。
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
-use uix_graphics::{Color, Radius};
-use uix_graphics::spatial::PhysicalUnit;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::spatial::PhysicalUnit;
+use uix_graphics::{Color, Radius};
+use uix_platform::{Rect, Size};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum BadgeStatus { Success, Processing, Default, Error, Warning }
+pub enum BadgeStatus {
+    Success,
+    Processing,
+    Default,
+    Error,
+    Warning,
+}
 
 define_widget! {
     pub struct Badge {
@@ -90,26 +96,64 @@ define_widget! {
     }
 }
 
-impl Default for Badge { fn default() -> Self { Self::new() } }
+impl Default for Badge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Badge {
     pub fn new() -> Self {
         Self {
-            count: 0, max: 99, dot: false, color: None, _size: 16.0,
-            status: None, show_zero: false, text: String::new(),
-            offset_x: 0.0, offset_y: 0.0, offset_unit: None,
+            count: 0,
+            max: 99,
+            dot: false,
+            color: None,
+            _size: 16.0,
+            status: None,
+            show_zero: false,
+            text: String::new(),
+            offset_x: 0.0,
+            offset_y: 0.0,
+            offset_unit: None,
         }
     }
-    pub fn count(mut self, n: i32) -> Self { self.count = n; self }
-    pub fn max(mut self, n: i32) -> Self { self.max = n; self }
-    pub fn dot(mut self) -> Self { self.dot = true; self.count = 1; self }
-    pub fn color(mut self, c: Color) -> Self { self.color = Some(c); self }
-    pub fn status(mut self, s: BadgeStatus) -> Self { self.status = Some(s); self }
-    pub fn show_zero(mut self, v: bool) -> Self { self.show_zero = v; self }
-    pub fn text(mut self, t: &str) -> Self { self.text = t.to_string(); self }
+    pub fn count(mut self, n: i32) -> Self {
+        self.count = n;
+        self
+    }
+    pub fn max(mut self, n: i32) -> Self {
+        self.max = n;
+        self
+    }
+    pub fn dot(mut self) -> Self {
+        self.dot = true;
+        self.count = 1;
+        self
+    }
+    pub fn color(mut self, c: Color) -> Self {
+        self.color = Some(c);
+        self
+    }
+    pub fn status(mut self, s: BadgeStatus) -> Self {
+        self.status = Some(s);
+        self
+    }
+    pub fn show_zero(mut self, v: bool) -> Self {
+        self.show_zero = v;
+        self
+    }
+    pub fn text(mut self, t: &str) -> Self {
+        self.text = t.to_string();
+        self
+    }
 
     /// 像素偏移（向后兼容）。
-    pub fn offset(mut self, x: f32, y: f32) -> Self { self.offset_x = x; self.offset_y = y; self }
+    pub fn offset(mut self, x: f32, y: f32) -> Self {
+        self.offset_x = x;
+        self.offset_y = y;
+        self
+    }
 
     /// 物理单位偏移（优先级高于 `offset()`）。
     /// 自动适配 DPI：`10.mm()` 在不同屏幕上物理尺寸一致。

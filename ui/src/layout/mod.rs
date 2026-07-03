@@ -5,19 +5,17 @@
 //! 推荐用法：容器 widget 组合 `FlexLayout` 或 `GridLayout`，
 //! 在 `layout_children` 中调用 `LayoutEngine::layout()` 获取子节点位置。
 
-use uix_platform::{EdgeInsets, Rect, Size};
 use std::f32;
+use uix_platform::{EdgeInsets, Rect, Size};
 
 // 内部模块（仅同 crate 内部使用，不对外公开）
+pub mod engine;
 pub(crate) mod flex;
 pub(crate) mod grid;
-pub mod engine;
 
 // 重新导出统一布局引擎的核心类型
-pub use engine::{
-    BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutOutput, child_from_tree,
-};
 pub use crate::api::traits::LayoutEngine;
+pub use engine::{child_from_tree, BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutOutput};
 
 // ── 枚举类型（新旧引擎共用）──
 
@@ -140,7 +138,14 @@ pub(crate) struct GridChild {
 
 impl Default for GridChild {
     fn default() -> Self {
-        Self { cell: 0, col_span: 1, row_span: 1, preferred_size: Size::zero(), align: None, justify: None }
+        Self {
+            cell: 0,
+            col_span: 1,
+            row_span: 1,
+            preferred_size: Size::zero(),
+            align: None,
+            justify: None,
+        }
     }
 }
 
@@ -161,9 +166,14 @@ pub(crate) struct GridInput {
 impl Default for GridInput {
     fn default() -> Self {
         Self {
-            container: Rect::zero(), columns: Vec::new(), rows: Vec::new(),
-            col_gap: 0.0, row_gap: 0.0, padding: EdgeInsets::zero(),
-            children: Vec::new(), align_items: AlignItems::Stretch,
+            container: Rect::zero(),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            col_gap: 0.0,
+            row_gap: 0.0,
+            padding: EdgeInsets::zero(),
+            children: Vec::new(),
+            align_items: AlignItems::Stretch,
             justify_items: JustifyContent::Start,
         }
     }

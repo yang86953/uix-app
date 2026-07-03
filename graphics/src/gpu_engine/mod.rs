@@ -2,18 +2,18 @@
 // graphics/gpu_engine/mod.rs — GPU 渲染引擎（GLES 3.0）
 // ============================================================================
 
-use std::cell::RefCell;
 use glow::HasContext as _;
+use std::cell::RefCell;
 
+use crate::engine::RenderOutcome;
+use crate::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 use uix_platform::Error;
 use uix_platform::IGraphicsContext;
-use crate::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
-use crate::engine::RenderOutcome;
 
-pub use shaders::*;
 pub use canvas_2d::GpuCanvas2D;
-mod shaders;
+pub use shaders::*;
 mod canvas_2d;
+mod shaders;
 
 pub struct GpuEngine {
     /// 堆分配的 glow::Context，确保 GpuCanvas2D 中的 gl_ptr 不受 move 影响。
@@ -30,7 +30,9 @@ impl GpuEngine {
         // Box::new 将 Context 分配在堆上，地址固定。
         // GpuCanvas2D 中的 gl_ptr 指向此堆地址，不受 Self move 影响。
         let gl = Box::new(unsafe {
-            glow::Context::from_loader_function(|s| gpu_ctx.get_proc_address(s).unwrap_or(std::ptr::null()))
+            glow::Context::from_loader_function(|s| {
+                gpu_ctx.get_proc_address(s).unwrap_or(std::ptr::null())
+            })
         });
         let canvas_2d = GpuCanvas2D::new(&gl, 1, 1);
         Self {
@@ -62,13 +64,16 @@ impl GpuEngine {
         }
         unsafe {
             self.gl.read_pixels(
-                0, 0,
-                self.width, self.height,
+                0,
+                0,
+                self.width,
+                self.height,
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
-                glow::PixelPackData::Slice(Some(
-                    std::slice::from_raw_parts_mut(rb.as_mut_ptr() as *mut u8, len),
-                )),
+                glow::PixelPackData::Slice(Some(std::slice::from_raw_parts_mut(
+                    rb.as_mut_ptr() as *mut u8,
+                    len,
+                ))),
             );
         }
     }
@@ -82,7 +87,8 @@ impl GraphicsEngine for GpuEngine {
         unsafe {
             self.gl.viewport(0, 0, w, h);
             self.gl.enable(glow::BLEND);
-            self.gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+            self.gl
+                .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
         }
         Ok(())
     }

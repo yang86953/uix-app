@@ -2,9 +2,9 @@
 // platform/linux/wayland/cursor.rs — ICursor impl for WaylandBackend
 // ============================================================================
 
-use crate::Point;
 use crate::types::CursorType;
 use crate::ICursor;
+use crate::Point;
 
 use super::WaylandBackend;
 
@@ -27,7 +27,10 @@ impl ICursor for WaylandBackend {
         crate::log::trace_fn(format!("Wayland: set_cursor({}) requested", name));
     }
     fn show_cursor(&mut self, visible: bool) {
-        crate::log::debug_fn(format!("Wayland: show_cursor({}) — compositor-controlled", visible));
+        crate::log::debug_fn(format!(
+            "Wayland: show_cursor({}) — compositor-controlled",
+            visible
+        ));
     }
     fn cursor_position(&self) -> Point {
         Point::default()

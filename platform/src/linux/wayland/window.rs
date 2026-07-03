@@ -7,8 +7,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::shared::{PlatformWindowCore, WindowState};
 use crate::Error;
-use crate::shared::{WindowState, PlatformWindowCore};
 use crate::*;
 
 use super::window_ops::WaylandWindowOps;

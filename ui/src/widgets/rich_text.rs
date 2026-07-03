@@ -20,13 +20,13 @@
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
-use uix_platform::{Point, Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
-use uix_graphics::spatial::PhysicalUnit;
-use uix_graphics::{Color, GraphicsEngine, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
+use uix_graphics::spatial::PhysicalUnit;
+use uix_graphics::{Color, GraphicsEngine, Radius};
+use uix_platform::{Point, Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 数据类型
@@ -44,14 +44,9 @@ pub enum RichTextSegment {
         style: RichTextStyle,
     },
     /// 内联代码（等宽字体 + 深色背景 + 圆角）
-    Code {
-        content: String,
-    },
+    Code { content: String },
     /// 可点击链接（自动带下划线和交互色）
-    Link {
-        content: String,
-        url: String,
-    },
+    Link { content: String, url: String },
     /// 强制换行
     NewLine,
 }
@@ -59,8 +54,7 @@ pub enum RichTextSegment {
 /// 文本样式
 ///
 /// 所有字段可选，未设置的字段会继承默认样式。
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct RichTextStyle {
     /// 粗体
     pub bold: bool,
@@ -77,7 +71,6 @@ pub struct RichTextStyle {
     /// 背景色（仅文本段，非整个行）
     pub bg_color: Option<Color>,
 }
-
 
 impl RichTextStyle {
     /// 以当前样式为基础，叠加另一个样式的非 None 字段
@@ -485,7 +478,9 @@ impl RichText {
 
     /// 获取选中的文本
     pub fn selected_text(&self) -> Option<String> {
-        self.selection.get().map(|(s, e)| self.extract_text_range(s, e))
+        self.selection
+            .get()
+            .map(|(s, e)| self.extract_text_range(s, e))
     }
 
     /// 获取待复制的代码内容（由主循环调用）
@@ -498,7 +493,9 @@ impl RichText {
     fn char_at_pos(&self, pos: Point, lines: &[LayoutLine]) -> usize {
         for line in lines {
             // 精确匹配当前行
-            if pos.y < line.y || pos.y >= line.y + line.height { continue; }
+            if pos.y < line.y || pos.y >= line.y + line.height {
+                continue;
+            }
             for glyph in &line.glyphs {
                 let gx = glyph.x;
                 if pos.x < gx + glyph.width * 0.5 {
@@ -510,11 +507,17 @@ impl RichText {
             }
         }
         // 点在行间空白区域：找到最近的行
-        if lines.is_empty() { return 0; }
+        if lines.is_empty() {
+            return 0;
+        }
         let mut best_line = 0;
         let mut best_dist = f32::MAX;
         for (i, line) in lines.iter().enumerate() {
-            let closest_y = if pos.y < line.y { line.y } else { line.y + line.height };
+            let closest_y = if pos.y < line.y {
+                line.y
+            } else {
+                line.y + line.height
+            };
             let dist = (pos.y - closest_y).abs();
             if dist < best_dist {
                 best_dist = dist;
@@ -522,7 +525,9 @@ impl RichText {
             }
         }
         // 返回最近行的末尾字符索引
-        lines[best_line].glyphs.last()
+        lines[best_line]
+            .glyphs
+            .last()
             .map(|g| g.global_char_idx + if pos.x > g.x + g.width * 0.5 { 1 } else { 0 })
             .unwrap_or(0)
     }
@@ -549,7 +554,11 @@ impl RichText {
             let seg_end = offset + seg_len;
             if seg_end > start && seg_start < end {
                 let local_start = start.saturating_sub(seg_start);
-                let local_end = if end < seg_end { end - seg_start } else { seg_len };
+                let local_end = if end < seg_end {
+                    end - seg_start
+                } else {
+                    seg_len
+                };
                 let chars: Vec<char> = match segment {
                     RichTextSegment::NewLine => vec!['\n'],
                     RichTextSegment::Text { content, .. } => content.chars().collect(),
@@ -579,13 +588,17 @@ pub fn layout_rich_text_segments(
     default_font_size: f32,
     default_color: Color,
 ) -> (f32, usize, f32) {
-    let (_, total_h, max_w) = layout_rich_text(segments, max_width, default_font_size, default_color);
-    let char_count: usize = segments.iter().map(|s| match s {
-        RichTextSegment::NewLine => 1,
-        RichTextSegment::Text { content, .. } => content.chars().count(),
-        RichTextSegment::Code { content } => content.chars().count(),
-        RichTextSegment::Link { content, .. } => content.chars().count(),
-    }).sum();
+    let (_, total_h, max_w) =
+        layout_rich_text(segments, max_width, default_font_size, default_color);
+    let char_count: usize = segments
+        .iter()
+        .map(|s| match s {
+            RichTextSegment::NewLine => 1,
+            RichTextSegment::Text { content, .. } => content.chars().count(),
+            RichTextSegment::Code { content } => content.chars().count(),
+            RichTextSegment::Link { content, .. } => content.chars().count(),
+        })
+        .sum();
     (total_h, char_count, max_w)
 }
 

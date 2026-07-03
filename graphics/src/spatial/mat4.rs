@@ -31,10 +31,7 @@ impl Mat4 {
     #[inline(always)]
     pub const fn identity() -> Self {
         Self([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
     }
 
@@ -53,12 +50,10 @@ impl Mat4 {
     /// 是否为 identity（精确比较）
     #[inline(always)]
     pub fn is_identity(&self) -> bool {
-        self.0 == [
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]
+        self.0
+            == [
+                1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -69,10 +64,7 @@ impl Mat4 {
     #[inline(always)]
     pub fn translate(x: f32, y: f32, z: f32) -> Self {
         Self([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            x,   y,   z,   1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, x, y, z, 1.0,
         ])
     }
 
@@ -81,10 +73,7 @@ impl Mat4 {
     pub fn rotate_x(angle: f32) -> Self {
         let (s, c) = angle.sin_cos();
         Self([
-            1.0, 0.0, 0.0, 0.0,
-            0.0,   c,   s, 0.0,
-            0.0,  -s,   c, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, c, s, 0.0, 0.0, -s, c, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
     }
 
@@ -93,10 +82,7 @@ impl Mat4 {
     pub fn rotate_y(angle: f32) -> Self {
         let (s, c) = angle.sin_cos();
         Self([
-              c, 0.0,  -s, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-              s, 0.0,   c, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
     }
 
@@ -105,10 +91,7 @@ impl Mat4 {
     pub fn rotate_z(angle: f32) -> Self {
         let (s, c) = angle.sin_cos();
         Self([
-              c,   s, 0.0, 0.0,
-             -s,   c, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            c, s, 0.0, 0.0, -s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
     }
 
@@ -118,10 +101,22 @@ impl Mat4 {
         let t = 1.0 - c;
         let (x, y, z) = (axis.x, axis.y, axis.z);
         Self([
-            t*x*x + c,    t*x*y + z*s,  t*x*z - y*s,  0.0,
-            t*x*y - z*s,  t*y*y + c,    t*y*z + x*s,  0.0,
-            t*x*z + y*s,  t*y*z - x*s,  t*z*z + c,    0.0,
-            0.0,          0.0,          0.0,          1.0,
+            t * x * x + c,
+            t * x * y + z * s,
+            t * x * z - y * s,
+            0.0,
+            t * x * y - z * s,
+            t * y * y + c,
+            t * y * z + x * s,
+            0.0,
+            t * x * z + y * s,
+            t * y * z - x * s,
+            t * z * z + c,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
         ])
     }
 
@@ -129,10 +124,7 @@ impl Mat4 {
     #[inline(always)]
     pub fn scale(x: f32, y: f32, z: f32) -> Self {
         Self([
-            x,   0.0, 0.0, 0.0,
-            0.0, y,   0.0, 0.0,
-            0.0, 0.0, z,   0.0,
-            0.0, 0.0, 0.0, 1.0,
+            x, 0.0, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, z, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
     }
 
@@ -152,10 +144,22 @@ impl Mat4 {
         let f = 1.0 / (fov_y * 0.5).tan();
         let range_inv = 1.0 / (near - far);
         Self([
-            f / aspect, 0.0, 0.0, 0.0,
-            0.0,        f,   0.0, 0.0,
-            0.0, 0.0, (near + far) * range_inv, -1.0,
-            0.0, 0.0, near * far * 2.0 * range_inv, 0.0,
+            f / aspect,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            f,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            (near + far) * range_inv,
+            -1.0,
+            0.0,
+            0.0,
+            near * far * 2.0 * range_inv,
+            0.0,
         ])
     }
 
@@ -168,10 +172,22 @@ impl Mat4 {
         let tmb = top - bottom;
         let fmn = far - near;
         Self([
-            2.0 / rml, 0.0, 0.0, 0.0,
-            0.0, 2.0 / tmb, 0.0, 0.0,
-            0.0, 0.0, -2.0 / fmn, 0.0,
-            -(right + left) / rml, -(top + bottom) / tmb, -(far + near) / fmn, 1.0,
+            2.0 / rml,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0 / tmb,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -2.0 / fmn,
+            0.0,
+            -(right + left) / rml,
+            -(top + bottom) / tmb,
+            -(far + near) / fmn,
+            1.0,
         ])
     }
 
@@ -196,10 +212,22 @@ impl Mat4 {
         let s = f.cross(&up).normalized();
         let u = s.cross(&f);
         Self([
-             s.x,  u.x, -f.x, 0.0,
-             s.y,  u.y, -f.y, 0.0,
-             s.z,  u.z, -f.z, 0.0,
-            -s.dot(&eye), -u.dot(&eye), f.dot(&eye), 1.0,
+            s.x,
+            u.x,
+            -f.x,
+            0.0,
+            s.y,
+            u.y,
+            -f.y,
+            0.0,
+            s.z,
+            u.z,
+            -f.z,
+            0.0,
+            -s.dot(&eye),
+            -u.dot(&eye),
+            f.dot(&eye),
+            1.0,
         ])
     }
 
@@ -216,8 +244,7 @@ impl Mat4 {
         let mut r = [0.0f32; 16];
         for col in 0..4 {
             for row in 0..4 {
-                r[col * 4 + row] =
-                    a[row] * b[col * 4]
+                r[col * 4 + row] = a[row] * b[col * 4]
                     + a[4 + row] * b[col * 4 + 1]
                     + a[2 * 4 + row] * b[col * 4 + 2]
                     + a[3 * 4 + row] * b[col * 4 + 3];
@@ -231,8 +258,8 @@ impl Mat4 {
     pub fn transform_vec4(&self, v: &Vec4) -> Vec4 {
         let m = &self.0;
         Vec4::new(
-            m[0] * v.x + m[4] * v.y + m[8]  * v.z + m[12] * v.w,
-            m[1] * v.x + m[5] * v.y + m[9]  * v.z + m[13] * v.w,
+            m[0] * v.x + m[4] * v.y + m[8] * v.z + m[12] * v.w,
+            m[1] * v.x + m[5] * v.y + m[9] * v.z + m[13] * v.w,
             m[2] * v.x + m[6] * v.y + m[10] * v.z + m[14] * v.w,
             m[3] * v.x + m[7] * v.y + m[11] * v.z + m[15] * v.w,
         )
@@ -267,11 +294,11 @@ impl Mat4 {
         let s4 = m[1] * m[7] - m[3] * m[5];
         let s5 = m[2] * m[7] - m[3] * m[6];
 
-        let c0 = m[8]  * m[13] - m[9]  * m[12];
-        let c1 = m[8]  * m[14] - m[10] * m[12];
-        let c2 = m[8]  * m[15] - m[11] * m[12];
-        let c3 = m[9]  * m[14] - m[10] * m[13];
-        let c4 = m[9]  * m[15] - m[11] * m[13];
+        let c0 = m[8] * m[13] - m[9] * m[12];
+        let c1 = m[8] * m[14] - m[10] * m[12];
+        let c2 = m[8] * m[15] - m[11] * m[12];
+        let c3 = m[9] * m[14] - m[10] * m[13];
+        let c4 = m[9] * m[15] - m[11] * m[13];
         let c5 = m[10] * m[15] - m[11] * m[14];
 
         let det = s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
@@ -281,25 +308,22 @@ impl Mat4 {
         let inv_det = 1.0 / det;
 
         Some(Self([
-            ( m[5] * c5 - m[6] * c4 + m[7] * c3) * inv_det,
+            (m[5] * c5 - m[6] * c4 + m[7] * c3) * inv_det,
             (-m[1] * c5 + m[2] * c4 - m[3] * c3) * inv_det,
-            ( m[13] * s5 - m[14] * s4 + m[15] * s3) * inv_det,
-            (-m[9]  * s5 + m[10] * s4 - m[11] * s3) * inv_det,
-
+            (m[13] * s5 - m[14] * s4 + m[15] * s3) * inv_det,
+            (-m[9] * s5 + m[10] * s4 - m[11] * s3) * inv_det,
             (-m[4] * c5 + m[6] * c2 - m[7] * c1) * inv_det,
-            ( m[0] * c5 - m[2] * c2 + m[3] * c1) * inv_det,
+            (m[0] * c5 - m[2] * c2 + m[3] * c1) * inv_det,
             (-m[12] * s5 + m[14] * s2 - m[15] * s1) * inv_det,
-            ( m[8]  * s5 - m[10] * s2 + m[11] * s1) * inv_det,
-
-            ( m[4] * c4 - m[5] * c2 + m[7] * c0) * inv_det,
+            (m[8] * s5 - m[10] * s2 + m[11] * s1) * inv_det,
+            (m[4] * c4 - m[5] * c2 + m[7] * c0) * inv_det,
             (-m[0] * c4 + m[1] * c2 - m[3] * c0) * inv_det,
-            ( m[12] * s4 - m[13] * s2 + m[15] * s0) * inv_det,
-            (-m[8]  * s4 + m[9]  * s2 - m[11] * s0) * inv_det,
-
+            (m[12] * s4 - m[13] * s2 + m[15] * s0) * inv_det,
+            (-m[8] * s4 + m[9] * s2 - m[11] * s0) * inv_det,
             (-m[4] * c3 + m[5] * c1 - m[6] * c0) * inv_det,
-            ( m[0] * c3 - m[1] * c1 + m[2] * c0) * inv_det,
+            (m[0] * c3 - m[1] * c1 + m[2] * c0) * inv_det,
             (-m[12] * s3 + m[13] * s1 - m[14] * s0) * inv_det,
-            ( m[8]  * s3 - m[9]  * s1 + m[10] * s0) * inv_det,
+            (m[8] * s3 - m[9] * s1 + m[10] * s0) * inv_det,
         ]))
     }
 
@@ -307,10 +331,8 @@ impl Mat4 {
     pub fn transpose(&self) -> Self {
         let m = &self.0;
         Self([
-            m[0], m[4], m[8],  m[12],
-            m[1], m[5], m[9],  m[13],
-            m[2], m[6], m[10], m[14],
-            m[3], m[7], m[11], m[15],
+            m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14], m[3], m[7],
+            m[11], m[15],
         ])
     }
 
@@ -324,9 +346,7 @@ impl Mat4 {
     /// 正交投影 = (0, 0, 0, 1)，透视投影 = (0, 0, -1, 0) 或类似。
     #[inline(always)]
     pub fn is_orthographic(&self) -> bool {
-        (self.0[3]).abs() < 1e-6
-            && (self.0[7]).abs() < 1e-6
-            && (self.0[15] - 1.0).abs() < 1e-6
+        (self.0[3]).abs() < 1e-6 && (self.0[7]).abs() < 1e-6 && (self.0[15] - 1.0).abs() < 1e-6
     }
 
     /// 当前矩阵是否仅包含 2D 变换（不影响 x/y 渲染的 z 轴操作允许存在）。
@@ -346,7 +366,7 @@ impl Mat4 {
             && (self.0[6]).abs() < 1e-6   // z not affecting y
             && (self.0[8]).abs() < 1e-6   // x not affecting z (no x rotation)
             && (self.0[9]).abs() < 1e-6   // y not affecting z (no y rotation)
-            && (self.0[14]).abs() < 1e-6  // no z-affecting translation
+            && (self.0[14]).abs() < 1e-6 // no z-affecting translation
     }
 
     /// 提取 2D 仿射分量（如果矩阵是 2D only）。
@@ -358,7 +378,9 @@ impl Mat4 {
     /// ```
     pub fn to_affine_2d(&self) -> Option<(f32, f32, f32, f32, f32, f32)> {
         if self.is_2d_only() {
-            Some((self.0[0], self.0[1], self.0[12], self.0[4], self.0[5], self.0[13]))
+            Some((
+                self.0[0], self.0[1], self.0[12], self.0[4], self.0[5], self.0[13],
+            ))
         } else {
             None
         }
@@ -401,10 +423,8 @@ impl Mul for Mat4 {
 impl From<crate::Transform> for Mat4 {
     fn from(t: crate::Transform) -> Self {
         Self([
-            t.m[0], t.m[3], 0.0, 0.0,
-            t.m[1], t.m[4], 0.0, 0.0,
-            0.0,    0.0,    1.0, 0.0,
-            t.m[2], t.m[5], 0.0, 1.0,
+            t.m[0], t.m[3], 0.0, 0.0, t.m[1], t.m[4], 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, t.m[2], t.m[5],
+            0.0, 1.0,
         ])
     }
 }
@@ -482,7 +502,11 @@ mod tests {
         let result = r.transform_point(&p);
         assert!((result.x).abs() < 1e-6, "x should be 0, got {}", result.x);
         assert!((result.y).abs() < 1e-6, "y should be 0, got {}", result.y);
-        assert!((result.z - 1.0).abs() < 1e-6, "z should be 1, got {}", result.z);
+        assert!(
+            (result.z - 1.0).abs() < 1e-6,
+            "z should be 1, got {}",
+            result.z
+        );
     }
 
     #[test]
@@ -492,7 +516,11 @@ mod tests {
         let result = r.transform_point(&p);
         assert!((result.x).abs() < 1e-6, "x should be 0, got {}", result.x);
         assert!((result.y).abs() < 1e-6, "y should be 0, got {}", result.y);
-        assert!((result.z + 1.0).abs() < 1e-6, "z should be -1, got {}", result.z);
+        assert!(
+            (result.z + 1.0).abs() < 1e-6,
+            "z should be -1, got {}",
+            result.z
+        );
     }
 
     #[test]
@@ -501,7 +529,11 @@ mod tests {
         let p = Vec3::new(1.0, 0.0, 0.0);
         let result = r.transform_point(&p);
         assert!((result.x).abs() < 1e-6, "x should be 0, got {}", result.x);
-        assert!((result.y - 1.0).abs() < 1e-6, "y should be 1, got {}", result.y);
+        assert!(
+            (result.y - 1.0).abs() < 1e-6,
+            "y should be 1, got {}",
+            result.y
+        );
     }
 
     // ── 缩放 ──
@@ -688,7 +720,12 @@ mod tests {
         for &p in &points {
             let transformed = t.transform_point(&p);
             let restored = inv.transform_point(&transformed);
-            assert!((restored - p).length() < 1e-5, "p: {:?} restored: {:?}", p, restored);
+            assert!(
+                (restored - p).length() < 1e-5,
+                "p: {:?} restored: {:?}",
+                p,
+                restored
+            );
         }
     }
 }

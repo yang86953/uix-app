@@ -1,9 +1,8 @@
 //! uix-platform crate 集成测试（event 模块）。
 
 use uix_platform::event::{
-    FileDropData, KeyEventData, KeyPressData, MouseButtonEventData,
-    MouseMoveEventData, MouseWheelData, ResizeData, TimerEventData,
-    UiEvent, UiEventPayload, UiEventType,
+    FileDropData, KeyEventData, KeyPressData, MouseButtonEventData, MouseMoveEventData,
+    MouseWheelData, ResizeData, TimerEventData, UiEvent, UiEventPayload, UiEventType,
 };
 use uix_platform::geometry::Point;
 use uix_platform::types::{KeyCode, KeyMod, MouseButton};

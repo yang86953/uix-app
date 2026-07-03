@@ -2,11 +2,11 @@
 //!
 //! 垂直时间轴展示事件序列，支持节点颜色、标签、描述。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::Color;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Color;
+use uix_platform::{Point, Rect, Size};
 
 /// 时间线节点。
 #[derive(Debug, Clone)]
@@ -70,23 +70,57 @@ define_widget! {
 }
 
 impl Timeline {
-    pub fn new() -> Self { Self { items: Vec::new(), pending: false, reverse: false } }
-    pub fn items(mut self, items: Vec<TimelineItem>) -> Self { self.items = items; self }
-    pub fn add(mut self, item: TimelineItem) -> Self { self.items.push(item); self }
-    pub fn pending(mut self, v: bool) -> Self { self.pending = v; self }
-    pub fn reverse(mut self, v: bool) -> Self { self.reverse = v; self }
+    pub fn new() -> Self {
+        Self {
+            items: Vec::new(),
+            pending: false,
+            reverse: false,
+        }
+    }
+    pub fn items(mut self, items: Vec<TimelineItem>) -> Self {
+        self.items = items;
+        self
+    }
+    pub fn add(mut self, item: TimelineItem) -> Self {
+        self.items.push(item);
+        self
+    }
+    pub fn pending(mut self, v: bool) -> Self {
+        self.pending = v;
+        self
+    }
+    pub fn reverse(mut self, v: bool) -> Self {
+        self.reverse = v;
+        self
+    }
 }
 
-impl Default for Timeline { fn default() -> Self { Self::new() } }
+impl Default for Timeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl TimelineItem {
     pub fn new(label: &str) -> Self {
-        Self { color: Color::from_rgba(22, 119, 255, 255), label: label.to_string(), description: String::new() }
+        Self {
+            color: Color::from_rgba(22, 119, 255, 255),
+            label: label.to_string(),
+            description: String::new(),
+        }
     }
-    pub fn description(mut self, d: &str) -> Self { self.description = d.to_string(); self }
-    pub fn color(mut self, c: Color) -> Self { self.color = c; self }
+    pub fn description(mut self, d: &str) -> Self {
+        self.description = d.to_string();
+        self
+    }
+    pub fn color(mut self, c: Color) -> Self {
+        self.color = c;
+        self
+    }
 }
 
 impl Default for TimelineItem {
-    fn default() -> Self { Self::new("") }
+    fn default() -> Self {
+        Self::new("")
+    }
 }

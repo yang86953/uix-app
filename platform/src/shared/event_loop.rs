@@ -7,9 +7,9 @@
 // 公开接口 IEventLoop 已迁移至 crate::api::traits。
 // ============================================================================
 
-use std::time::Duration;
 use crate::api::traits::IEventLoop;
 use crate::api::types::UiEvent;
+use std::time::Duration;
 
 // ════════════════════════════════════════════════════════════════════════════
 // OsEventSource — 平台事件源
@@ -77,11 +77,7 @@ impl<T: OsEventSource> IEventLoop for T {
         true
     }
 
-    fn wait_timeout(
-        &mut self,
-        timeout: Duration,
-        callback: &dyn Fn(&UiEvent) -> bool,
-    ) -> bool {
+    fn wait_timeout(&mut self, timeout: Duration, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
         if !self.dispatch_timeout(timeout) {
             return false;
         }

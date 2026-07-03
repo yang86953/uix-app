@@ -1,8 +1,8 @@
 use super::*;
 use crate::managers::EventManager;
-use uix_platform::{KeyMod, MouseButton, Point, Rect};
-use uix_graphics::DirtyRegion;
 use std::collections::HashMap;
+use uix_graphics::DirtyRegion;
+use uix_platform::{KeyMod, MouseButton, Point, Rect};
 
 /// 拖拽手势状态，用于从原始鼠标事件组合 DragStart/DragMove/DragEnd。
 /// 当 MouseDown 后 MouseMove 超出 5px 阈值时自动识别为拖拽。
@@ -264,7 +264,6 @@ impl WidgetTree {
         self.focused_widget = None;
         self.hovered_widget = None;
         self.mouse_down_target = None;
-
     }
 
     /// 设置根节点（全量重建）。
@@ -389,7 +388,10 @@ impl WidgetTree {
         self.tree_version += 1;
 
         // 在移除前标记旧 frame 为脏，确保该区域被重绘（清除视觉残留）
-        let old_frame = self.get(id).map(|n| n.frame()).filter(|f| f.w > 0.0 && f.h > 0.0);
+        let old_frame = self
+            .get(id)
+            .map(|n| n.frame())
+            .filter(|f| f.w > 0.0 && f.h > 0.0);
 
         let parent_id = self
             .nodes
@@ -428,7 +430,8 @@ impl WidgetTree {
         // 递归设置节点及其所有后代的可见性
         let mut stack = vec![id];
         while let Some(current) = stack.pop() {
-            let children: Vec<WidgetId> = self.get(current)
+            let children: Vec<WidgetId> = self
+                .get(current)
                 .map(|n| n.children().to_vec())
                 .unwrap_or_default();
 
@@ -480,7 +483,9 @@ impl WidgetTree {
                 if let Some(node) = self.get(current) {
                     for &child_id in node.children().iter().rev() {
                         // 子树干净 → 整棵跳过
-                        if self.subtree_dirty.contains(child_id) || self.dirty_nodes.contains(child_id) {
+                        if self.subtree_dirty.contains(child_id)
+                            || self.dirty_nodes.contains(child_id)
+                        {
                             stack.push(child_id);
                         }
                     }
@@ -522,7 +527,9 @@ impl WidgetTree {
         let old = match self.get(id) {
             Some(w) => {
                 let old = w.frame();
-                if old == new_frame { return; }
+                if old == new_frame {
+                    return;
+                }
                 old
             }
             None => return,
@@ -623,9 +630,11 @@ impl WidgetTree {
         let mut resized_children = std::collections::HashSet::new();
         for &id in rev_order {
             let (children, is_viewport, node_frame) = match self.get(id) {
-                Some(n) if !n.children().is_empty() => {
-                    (n.children().to_vec(), n.children_clip(n.frame()).is_some(), n.frame())
-                }
+                Some(n) if !n.children().is_empty() => (
+                    n.children().to_vec(),
+                    n.children_clip(n.frame()).is_some(),
+                    n.frame(),
+                ),
                 _ => continue,
             };
             // Viewport 容器（ScrollView）不扩展，content_bounds 在 layout_viewports 中更新
@@ -646,7 +655,10 @@ impl WidgetTree {
                         let rel_bottom = (cf.y - node_frame.y) + cf.h;
                         // 只考虑延伸到可见区域的子节点（防止滚动到视口上方时无限膨胀）
                         let child_extends_below_parent = cf.y + cf.h > node_frame.y;
-                        if child_bottom > 0.0 && child_extends_below_parent && rel_bottom > node_frame.h {
+                        if child_bottom > 0.0
+                            && child_extends_below_parent
+                            && rel_bottom > node_frame.h
+                        {
                             max_bottom = max_bottom.max(child_bottom);
                         }
                     }
@@ -659,14 +671,21 @@ impl WidgetTree {
                 let old_frame = node_frame;
                 let effective_h = new_h.max(node_frame.h);
                 if effective_h > node_frame.h + 0.5 {
-                    uix_platform::log::debug_fn(format!("[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
-                        id, node_frame.h, effective_h, max_bottom,));
+                    uix_platform::log::debug_fn(format!(
+                        "[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
+                        id, node_frame.h, effective_h, max_bottom,
+                    ));
                     if let Some(_node_mut) = self.get_mut(id) {
-                        self.set_frame_dirty(id, Rect::new(old_frame.x, old_frame.y, old_frame.w, effective_h));
+                        self.set_frame_dirty(
+                            id,
+                            Rect::new(old_frame.x, old_frame.y, old_frame.w, effective_h),
+                        );
                     }
                 } else if has_resized_child {
-                    uix_platform::log::debug_fn(format!("[Layout] Phase 2: id={} re-layout siblings (child resized, frame_h={:.0})",
-                        id, node_frame.h,));
+                    uix_platform::log::debug_fn(format!(
+                        "[Layout] Phase 2: id={} re-layout siblings (child resized, frame_h={:.0})",
+                        id, node_frame.h,
+                    ));
                 }
                 // 重新布局子节点（容器扩展后 or 子节点被扩展过）
                 let relayout_frame = if effective_h > node_frame.h + 0.5 {
@@ -706,8 +725,15 @@ impl WidgetTree {
                 if children.is_empty() {
                     continue;
                 }
-                uix_platform::log::debug_fn(format!("[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
-                    id, frame.x, frame.y, frame.w, frame.h, children.len(),));
+                uix_platform::log::debug_fn(format!(
+                    "[Layout] Phase 3: viewport id={} frame=({:.0},{:.0},{:.0},{:.0}) {} children",
+                    id,
+                    frame.x,
+                    frame.y,
+                    frame.w,
+                    frame.h,
+                    children.len(),
+                ));
                 // 仅触发 content_bounds 副作用，丢弃返回的 child rects
                 let _ = node.layout_children(frame, &children, self);
             }
@@ -720,7 +746,8 @@ impl WidgetTree {
     fn has_viewport_ancestor(&self, id: WidgetId) -> bool {
         let mut current = id;
         while let Some(pid) = self.get(current).and_then(|n| n.parent()) {
-            if self.get(pid)
+            if self
+                .get(pid)
                 .map(|p| p.children_clip(p.frame()).is_some())
                 .unwrap_or(false)
             {
@@ -740,18 +767,26 @@ impl WidgetTree {
         for _pass in 0..3 {
             // Phase A: 收集需要收缩的容器
             #[derive(Clone)]
-            struct ShrinkOp { id: WidgetId, needed_h: f32 }
+            struct ShrinkOp {
+                id: WidgetId,
+                needed_h: f32,
+            }
             let mut ops: Vec<ShrinkOp> = Vec::new();
 
             for &id in rev_order {
-                let is_viewport = self.get(id)
+                let is_viewport = self
+                    .get(id)
                     .map(|n| n.children_clip(n.frame()).is_some())
                     .unwrap_or(false);
-                if is_viewport { continue; }
+                if is_viewport {
+                    continue;
+                }
                 // 不收缩祖先链中有 viewport（如 ScrollView）的节点，
                 // 避免与 ScrollView::layout_children 的尺寸设定形成振荡。
                 // 递归检查所有祖先，不限于直接父节点（修复 Container→Input 嵌套场景）。
-                if self.has_viewport_ancestor(id) { continue; }
+                if self.has_viewport_ancestor(id) {
+                    continue;
+                }
                 // layout_viewports（Phase 3）会在收缩后更新 content_bounds。
 
                 let children: Vec<WidgetId> = match self.get(id) {
@@ -760,9 +795,13 @@ impl WidgetTree {
                 };
 
                 // 先按当前 frame 重新布局子节点（兄弟组件靠拢/张开）
-                let Some(frame) = self.get(id).map(|n| n.frame()) else { continue; };
+                let Some(frame) = self.get(id).map(|n| n.frame()) else {
+                    continue;
+                };
                 let positions: Vec<(WidgetId, Rect)> = {
-                    let Some(node) = self.get(id) else { continue; };
+                    let Some(node) = self.get(id) else {
+                        continue;
+                    };
                     node.layout_children(frame, &children, self)
                 };
                 for (child_id, rect) in positions {
@@ -776,13 +815,14 @@ impl WidgetTree {
                 }
 
                 // 检查容器是否需要收缩
-                let Some(node_frame) = self.get(id).map(|n| n.frame()) else { continue; };
+                let Some(node_frame) = self.get(id).map(|n| n.frame()) else {
+                    continue;
+                };
                 let mut max_child_bottom = f32::MIN;
                 let mut has_visible = false;
                 for &cid in &children {
                     if let Some(child) = self.get(cid) {
-                        if child.visible()
-                        {
+                        if child.visible() {
                             let cf = child.frame();
                             let child_bottom = cf.y + cf.h;
                             if child_bottom > 0.0 {
@@ -792,7 +832,9 @@ impl WidgetTree {
                         }
                     }
                 }
-                if !has_visible { continue; }
+                if !has_visible {
+                    continue;
+                }
 
                 let needed_h = max_child_bottom - node_frame.y;
                 // ⭐ 最小高度取子节点实际内容和 preferred_size 的较大值。
@@ -800,7 +842,8 @@ impl WidgetTree {
                 // layout_expand（Phase 2）形成振荡循环。
                 // 使用 1.0 像素绝对最小值而非比例值（如 0.01 * h），
                 // 后者在高 DPI 场景下可能过大（2000px * 0.01 = 20px 虚高）。
-                let pref_h = self.get(id)
+                let pref_h = self
+                    .get(id)
                     .map(|n| n.preferred_size(None).h)
                     .unwrap_or(0.0);
                 let min_h = needed_h.max(pref_h).max(1.0);
@@ -808,21 +851,29 @@ impl WidgetTree {
                 if node_frame.h - effective_needed > 0.5 {
                     uix_platform::log::debug_fn(format!("[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0})",
                         id, node_frame.h - effective_needed, node_frame.h, effective_needed, needed_h, pref_h,));
-                    ops.push(ShrinkOp { id, needed_h: effective_needed });
+                    ops.push(ShrinkOp {
+                        id,
+                        needed_h: effective_needed,
+                    });
                 }
             }
             // Phase B: 执行收缩
             for op in &ops {
                 if let Some(old_frame) = self.get(op.id).map(|n| n.frame()) {
                     if let Some(_node_mut) = self.get_mut(op.id) {
-                        self.set_frame_dirty(op.id, Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h));
+                        self.set_frame_dirty(
+                            op.id,
+                            Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h),
+                        );
                     }
-                    let children: Vec<WidgetId> = self.get(op.id)
+                    let children: Vec<WidgetId> = self
+                        .get(op.id)
                         .map(|n| n.children().to_vec())
                         .unwrap_or_default();
                     let new_frame = Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h);
                     // 收缩后重新布局子节点
-                    let new_positions = self.get(op.id)
+                    let new_positions = self
+                        .get(op.id)
                         .map(|n| n.layout_children(new_frame, &children, self))
                         .unwrap_or_default();
                     for (child_id, rect) in new_positions {
@@ -836,11 +887,13 @@ impl WidgetTree {
                     // 重新布局父容器，让兄弟组件靠拢
                     if let Some(pid) = self.get(op.id).and_then(|n| n.parent()) {
                         let parent_frame = self.get(pid).map(|n| n.frame()).unwrap_or_default();
-                        let parent_children: Vec<WidgetId> = self.get(pid)
+                        let parent_children: Vec<WidgetId> = self
+                            .get(pid)
                             .map(|n| n.children().to_vec())
                             .unwrap_or_default();
                         if !parent_children.is_empty() {
-                            let parent_positions = self.get(pid)
+                            let parent_positions = self
+                                .get(pid)
                                 .map(|n| n.layout_children(parent_frame, &parent_children, self))
                                 .unwrap_or_default();
                             for (child_id, rect) in parent_positions {
@@ -856,7 +909,9 @@ impl WidgetTree {
                     any_changed = true;
                 }
             }
-            if !any_changed { break; }
+            if !any_changed {
+                break;
+            }
         }
         any_changed
     }
@@ -897,7 +952,10 @@ impl WidgetTree {
                 .map(|node| {
                     let is_still = node.needs_continuous_update();
                     if is_still {
-                        uix_platform::log::info_fn(format!("[Anim] id={} still animating", node.id()));
+                        uix_platform::log::info_fn(format!(
+                            "[Anim] id={} still animating",
+                            node.id()
+                        ));
                         any_animating = true;
                     }
                     let dirty = if was_animating || is_still {
@@ -986,7 +1044,8 @@ impl WidgetTree {
     /// 父节点 widget_id 不变（保持 LayerTree 缓存），子节点分配新 ID。
     /// 适合页面切换等局部更新的场景。
     pub fn set_children(&mut self, parent_id: WidgetId, children: Vec<WidgetNode>) {
-        let old_children: Vec<WidgetId> = self.get(parent_id)
+        let old_children: Vec<WidgetId> = self
+            .get(parent_id)
             .map(|n| n.children().to_vec())
             .unwrap_or_default();
         for &cid in &old_children {
@@ -1007,7 +1066,11 @@ impl WidgetTree {
         if let Some(n) = self.get_mut(id) {
             n.set_z_index(node.z_index);
             // 优先使用 WidgetNode 的 tab_index，否则使用组件默认值
-            let ti = if node.tab_idx != 0 { node.tab_idx } else { n.component().tab_index() };
+            let ti = if node.tab_idx != 0 {
+                node.tab_idx
+            } else {
+                n.component().tab_index()
+            };
             n.set_tab_index(ti);
         }
         for child in node.children {
@@ -1025,7 +1088,9 @@ impl WidgetTree {
         self.focused_widget = Some(id);
         // 对于 Input 类型，同步设置其内部 focused 状态
         if let Some(node) = self.get_mut(id) {
-            if let Some(input) = node.component_mut().as_any_mut()
+            if let Some(input) = node
+                .component_mut()
+                .as_any_mut()
                 .downcast_mut::<crate::widgets::Input>()
             {
                 input.set_focused(true);

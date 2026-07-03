@@ -3,13 +3,13 @@
 //! 与 Message 不同，Notification 从屏幕右上角弹出，更持久的通知展示，
 //! 支持标题、描述、类型图标、自动关闭。通过静态队列管理。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 use std::cell::RefCell;
 use std::rc::Rc;
+use uix_graphics::{Color, Radius};
+use uix_platform::{Point, Rect, Size};
 
 /// 通知类型。
 /// （已统一为 uix_platform::StatusLevel，保留别名以兼容旧代码。）
@@ -134,22 +134,51 @@ impl Default for Notification {
 
 impl Notification {
     pub fn new() -> Self {
-        Self { queue: Rc::new(RefCell::new(Vec::new())), remaining: Rc::new(RefCell::new(Vec::new())), placement: NotifPlacement::TopRight }
+        Self {
+            queue: Rc::new(RefCell::new(Vec::new())),
+            remaining: Rc::new(RefCell::new(Vec::new())),
+            placement: NotifPlacement::TopRight,
+        }
     }
 
-    pub fn placement(mut self, p: NotifPlacement) -> Self { self.placement = p; self }
+    pub fn placement(mut self, p: NotifPlacement) -> Self {
+        self.placement = p;
+        self
+    }
 
     pub fn add(&self, item: NotificationItem) {
         self.queue.borrow_mut().push(item);
-        self.remaining.borrow_mut().push(self.queue.borrow().last().map(|i| i.duration_ms).unwrap_or(4500));
+        self.remaining.borrow_mut().push(
+            self.queue
+                .borrow()
+                .last()
+                .map(|i| i.duration_ms)
+                .unwrap_or(4500),
+        );
     }
 
     pub fn open(&self, title: &str, desc: &str, type_: NotificationType) {
-        self.add(NotificationItem { type_, title: title.to_string(), description: desc.to_string(), duration_ms: 4500, closable: true });
+        self.add(NotificationItem {
+            type_,
+            title: title.to_string(),
+            description: desc.to_string(),
+            duration_ms: 4500,
+            closable: true,
+        });
     }
-    pub fn success(&self, title: &str, desc: &str) { self.open(title, desc, NotificationType::Success); }
-    pub fn info(&self, title: &str, desc: &str) { self.open(title, desc, NotificationType::Info); }
-    pub fn warning(&self, title: &str, desc: &str) { self.open(title, desc, NotificationType::Warning); }
-    pub fn error(&self, title: &str, desc: &str) { self.open(title, desc, NotificationType::Error); }
-    pub fn queue(&self) -> Rc<RefCell<Vec<NotificationItem>>> { self.queue.clone() }
+    pub fn success(&self, title: &str, desc: &str) {
+        self.open(title, desc, NotificationType::Success);
+    }
+    pub fn info(&self, title: &str, desc: &str) {
+        self.open(title, desc, NotificationType::Info);
+    }
+    pub fn warning(&self, title: &str, desc: &str) {
+        self.open(title, desc, NotificationType::Warning);
+    }
+    pub fn error(&self, title: &str, desc: &str) {
+        self.open(title, desc, NotificationType::Error);
+    }
+    pub fn queue(&self) -> Rc<RefCell<Vec<NotificationItem>>> {
+        self.queue.clone()
+    }
 }

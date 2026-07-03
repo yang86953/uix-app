@@ -10,8 +10,8 @@
 // 原位于 services crate，迁入 platform 层以消除服务层。
 // ============================================================================
 
-use std::collections::VecDeque;
 use crate::StatusLevel;
+use std::collections::VecDeque;
 
 /// 通知级别（统一使用 uix_platform::StatusLevel）。
 pub use crate::StatusLevel as NotificationLevel;
@@ -151,7 +151,10 @@ impl NotificationService {
             cb();
         }
 
-        crate::log::info_fn(format!("[Notification] {:?}: {} — {}", level, title, message));
+        crate::log::info_fn(format!(
+            "[Notification] {:?}: {} — {}",
+            level, title, message
+        ));
 
         id
     }
@@ -180,7 +183,9 @@ impl NotificationService {
     pub fn update(&mut self) -> Vec<ToastEntry> {
         let now = std::time::Instant::now();
         self.toasts.retain(|t| {
-            if t.duration_ms > 0 && now.duration_since(t.created_at).as_millis() as u32 >= t.duration_ms {
+            if t.duration_ms > 0
+                && now.duration_since(t.created_at).as_millis() as u32 >= t.duration_ms
+            {
                 return false;
             }
             true
@@ -224,8 +229,8 @@ impl NotificationService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     // ════════════════════════════════════════════════════════════════════
     // 基础 notify / dismiss
@@ -252,7 +257,11 @@ mod tests {
     fn test_notify_sets_correct_fields() {
         let mut svc = NotificationService::new();
         let id = svc.notify("Title", "Msg", StatusLevel::Warning, 5000);
-        let toast = svc.visible_toasts().into_iter().find(|t| t.id == id).unwrap();
+        let toast = svc
+            .visible_toasts()
+            .into_iter()
+            .find(|t| t.id == id)
+            .unwrap();
         assert_eq!(toast.title, "Title");
         assert_eq!(toast.message, "Msg");
         assert_eq!(toast.level, StatusLevel::Warning);
@@ -401,7 +410,7 @@ mod tests {
     #[test]
     fn test_update_removes_expired() {
         let mut svc = NotificationService::new();
-        svc.notify("Short", "x", StatusLevel::Info, 1);   // 1ms 后过期
+        svc.notify("Short", "x", StatusLevel::Info, 1); // 1ms 后过期
         svc.notify("Long", "y", StatusLevel::Info, 60000); // 60s
         std::thread::sleep(std::time::Duration::from_millis(5));
         let visible = svc.update();
@@ -446,7 +455,9 @@ mod tests {
         let mut svc = NotificationService::new();
         let called = Arc::new(AtomicBool::new(false));
         let c = called.clone();
-        svc.on_change(Box::new(move || { c.store(true, Ordering::SeqCst); }));
+        svc.on_change(Box::new(move || {
+            c.store(true, Ordering::SeqCst);
+        }));
         svc.notify("A", "", StatusLevel::Info, 4000);
         assert!(called.load(Ordering::SeqCst));
     }
@@ -456,7 +467,9 @@ mod tests {
         let mut svc = NotificationService::new();
         let count = Arc::new(AtomicUsize::new(0));
         let c = count.clone();
-        svc.on_change(Box::new(move || { c.fetch_add(1, Ordering::SeqCst); }));
+        svc.on_change(Box::new(move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        }));
         let id = svc.notify("A", "", StatusLevel::Info, 4000);
         svc.dismiss(id);
         assert_eq!(count.load(Ordering::SeqCst), 2); // notify + dismiss
@@ -467,7 +480,9 @@ mod tests {
         let mut svc = NotificationService::new();
         let called = Arc::new(AtomicBool::new(false));
         let c = called.clone();
-        svc.on_change(Box::new(move || { c.store(true, Ordering::SeqCst); }));
+        svc.on_change(Box::new(move || {
+            c.store(true, Ordering::SeqCst);
+        }));
         svc.notify("A", "", StatusLevel::Info, 4000);
         called.store(false, Ordering::SeqCst); // reset
         svc.dismiss_all();
@@ -479,7 +494,9 @@ mod tests {
         let mut svc = NotificationService::new();
         let called = Arc::new(AtomicBool::new(false));
         let c = called.clone();
-        svc.on_change(Box::new(move || { c.store(true, Ordering::SeqCst); }));
+        svc.on_change(Box::new(move || {
+            c.store(true, Ordering::SeqCst);
+        }));
         svc.dismiss_all(); // 空队列，不应触发
         assert!(!called.load(Ordering::SeqCst));
     }
@@ -531,7 +548,9 @@ mod tests {
             }
         }
         let called = Arc::new(AtomicBool::new(false));
-        let notifier = SpyNotifier { called: called.clone() };
+        let notifier = SpyNotifier {
+            called: called.clone(),
+        };
         let mut svc = NotificationService::new()
             .with_platform(Box::new(notifier))
             .max_visible(5);

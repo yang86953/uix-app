@@ -4,13 +4,12 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use uix_platform::diagnostic::{
-    CircuitBreaker, CircuitState, Collector, CollectorConfig, CollectorSnapshot,
-    ExponentialBackoffRetryPolicy, FilteredRetryPolicy, FixedRetryPolicy,
-    LogMiddleware, Middleware, MiddlewareContext, MiddlewarePipeline, RecoveryAction,
-    RecoveryHandler, RetryMiddleware, RetryPolicy, ScopedCollector,
-    retry, with_recovery, with_recovery_typed,
+    retry, with_recovery, with_recovery_typed, CircuitBreaker, CircuitState, Collector,
+    CollectorConfig, CollectorSnapshot, ExponentialBackoffRetryPolicy, FilteredRetryPolicy,
+    FixedRetryPolicy, LogMiddleware, Middleware, MiddlewareContext, MiddlewarePipeline,
+    RecoveryAction, RecoveryHandler, RetryMiddleware, RetryPolicy, ScopedCollector,
 };
-use uix_platform::error::{Error, Errc};
+use uix_platform::error::{Errc, Error};
 
 #[test]
 fn collector_config_default() {
@@ -519,14 +518,18 @@ fn retry_fail_exhausted() {
 #[test]
 fn retry_success_eventually() {
     let attempt = AtomicI32::new(0);
-    let result = retry(3, || {
-        let n = attempt.fetch_add(1, Ordering::SeqCst);
-        if n < 2 {
-            Err(Error::new(Errc::None, "retry"))
-        } else {
-            Ok(())
-        }
-    }, 0);
+    let result = retry(
+        3,
+        || {
+            let n = attempt.fetch_add(1, Ordering::SeqCst);
+            if n < 2 {
+                Err(Error::new(Errc::None, "retry"))
+            } else {
+                Ok(())
+            }
+        },
+        0,
+    );
     assert!(result.is_ok());
 }
 
@@ -698,9 +701,15 @@ fn fatal_sequential() {
     let crash_path = std::path::Path::new("uix_crash.log");
     let _ = std::fs::remove_file(crash_path);
     uix_platform::diagnostic::dump_crash_report();
-    assert!(crash_path.exists(), "uix_crash.log should exist after dump_crash_report");
+    assert!(
+        crash_path.exists(),
+        "uix_crash.log should exist after dump_crash_report"
+    );
     let content = std::fs::read_to_string(crash_path).unwrap_or_default();
-    assert!(content.contains("UIX CRASH REPORT"), "should contain report header");
+    assert!(
+        content.contains("UIX CRASH REPORT"),
+        "should contain report header"
+    );
     assert!(content.contains("Timestamp"), "should contain timestamp");
     let _ = std::fs::remove_file(crash_path);
 
@@ -711,10 +720,11 @@ fn fatal_sequential() {
 
     // ── collect_or_abort 非 fatal 只收集 ──
     let before_fatal = c.total_collected();
-    uix_platform::diagnostic::collect_or_abort(
-        Error::warn(Errc::Timeout, "collect only"),
+    uix_platform::diagnostic::collect_or_abort(Error::warn(Errc::Timeout, "collect only"));
+    assert!(
+        c.total_collected() > before_fatal,
+        "collect_or_abort should collect the error"
     );
-    assert!(c.total_collected() > before_fatal, "collect_or_abort should collect the error");
 
     // ── install_fatal_handler 能安全调用（Once 保护） ──
     uix_platform::diagnostic::install_fatal_handler();
@@ -734,16 +744,22 @@ fn fatal_abort_if_fatal_severity_info() {
 fn fatal_abort_if_fatal_severity_warning() {
     let err = Error::warn(Errc::NotFound, "warning");
     let result = uix_platform::diagnostic::abort_if_fatal(err);
-    assert_eq!(result.severity(), uix_platform::error::ErrorSeverity::Warning);
+    assert_eq!(
+        result.severity(),
+        uix_platform::error::ErrorSeverity::Warning
+    );
 }
 
 #[test]
 fn fatal_collect_or_abort_collects_specific_error() {
     let c = Collector::instance();
     let _before2 = c.total_collected();
-    uix_platform::diagnostic::collect_or_abort(
-        Error::invalid_arg("collected_by_collect_or_abort_test"),
-    );
+    uix_platform::diagnostic::collect_or_abort(Error::invalid_arg(
+        "collected_by_collect_or_abort_test",
+    ));
     let found = c.errors_if(|e| e.message().contains("collected_by_collect_or_abort_test"));
-    assert!(!found.is_empty(), "collect_or_abort should have collected the error");
+    assert!(
+        !found.is_empty(),
+        "collect_or_abort should have collected the error"
+    );
 }

@@ -43,7 +43,9 @@ pub struct FakePresenter {
 
 impl FakePresenter {
     pub fn new() -> Self {
-        Self { state: FakePresenterState::default() }
+        Self {
+            state: FakePresenterState::default(),
+        }
     }
 
     pub fn present_count(&self) -> usize {

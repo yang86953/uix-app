@@ -3,10 +3,10 @@
 //! 从 `tree_core.rs` 拆分出来以遵守 900 行文件限制。
 
 use super::*;
-use uix_platform::Point;
-use uix_platform::KeyMod;
 use std::cell::RefCell;
 use std::rc::Rc;
+use uix_platform::KeyMod;
+use uix_platform::Point;
 
 struct SpyWidget {
     size: uix_platform::Size,
@@ -21,11 +21,15 @@ impl SpyWidget {
     }
 }
 impl WidgetComponent for SpyWidget {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
     fn capabilities(&self) -> WidgetCapabilities {
         WidgetCapabilities::from_bits(
-            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT,
         )
     }
     crate::wc_upcast!(SpyWidget; WidgetLayout);
@@ -33,21 +37,12 @@ impl WidgetComponent for SpyWidget {
     crate::wc_upcast!(SpyWidget; WidgetEventHandler);
 }
 impl WidgetLayout for SpyWidget {
-    fn preferred_size(
-        &self,
-        _: Option<&dyn uix_graphics::GraphicsEngine>,
-    ) -> uix_platform::Size {
+    fn preferred_size(&self, _: Option<&dyn uix_graphics::GraphicsEngine>) -> uix_platform::Size {
         self.size
     }
 }
 impl WidgetRender for SpyWidget {
-    fn render(
-        &self,
-        _: Rect,
-        _: &mut crate::render_context::RenderContext,
-        _: &WidgetTree,
-    ) {
-    }
+    fn render(&self, _: Rect, _: &mut crate::render_context::RenderContext, _: &WidgetTree) {}
 }
 impl WidgetEventHandler for SpyWidget {
     fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
@@ -69,11 +64,15 @@ impl PassThroughContainer {
     }
 }
 impl WidgetComponent for PassThroughContainer {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
     fn capabilities(&self) -> WidgetCapabilities {
         WidgetCapabilities::from_bits(
-            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT,
         )
     }
     fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
@@ -84,21 +83,12 @@ impl WidgetComponent for PassThroughContainer {
     crate::wc_upcast!(PassThroughContainer; WidgetEventHandler);
 }
 impl WidgetLayout for PassThroughContainer {
-    fn preferred_size(
-        &self,
-        _: Option<&dyn uix_graphics::GraphicsEngine>,
-    ) -> uix_platform::Size {
+    fn preferred_size(&self, _: Option<&dyn uix_graphics::GraphicsEngine>) -> uix_platform::Size {
         self.size
     }
 }
 impl WidgetRender for PassThroughContainer {
-    fn render(
-        &self,
-        _: Rect,
-        _: &mut crate::render_context::RenderContext,
-        _: &WidgetTree,
-    ) {
-    }
+    fn render(&self, _: Rect, _: &mut crate::render_context::RenderContext, _: &WidgetTree) {}
 }
 impl WidgetEventHandler for PassThroughContainer {
     fn on_event(&mut self, _: &WidgetEvent) -> EventResult {
@@ -286,11 +276,20 @@ fn capture_phase_root_handles_before_child() {
     // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
     // SpyWidget 的 on_event 返回 Handled，所以 root 捕获后子节点收不到。
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
-    let container = tree.add_child(root_id, Box::new(PassThroughContainer::new(300.0, 300.0, vec![])));
+    let container = tree.add_child(
+        root_id,
+        Box::new(PassThroughContainer::new(300.0, 300.0, vec![])),
+    );
     let child = tree.add_child(container, Box::new(SpyWidget::new(100.0, 100.0)));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
-    tree.get_mut(container).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
-    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(container)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
     // 点击在 child 区域内
     let result = tree.dispatch_event(&WidgetEvent::MouseDown {
@@ -314,8 +313,12 @@ fn capture_phase_not_intercepted_proceeds_to_bubble() {
     // PassThroughContainer 返回 NotHandled，不拦截
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
     // 点击在 child 区域内
     let result = tree.dispatch_event(&WidgetEvent::MouseDown {
@@ -335,11 +338,20 @@ fn capture_phase_mouse_wheel_intercepted() {
     let mut tree = WidgetTree::new();
     // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
-    let container = tree.add_child(root_id, Box::new(PassThroughContainer::new(300.0, 300.0, vec![])));
+    let container = tree.add_child(
+        root_id,
+        Box::new(PassThroughContainer::new(300.0, 300.0, vec![])),
+    );
     let child = tree.add_child(container, Box::new(SpyWidget::new(100.0, 100.0)));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
-    tree.get_mut(container).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
-    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(container)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
     let result = tree.dispatch_event(&WidgetEvent::MouseWheel {
         pos: Point::new(50.0, 50.0),
@@ -354,9 +366,14 @@ fn capture_phase_key_down_intercepted() {
     let mut tree = WidgetTree::new();
     // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
-    let container = tree.add_child(root_id, Box::new(PassThroughContainer::new(300.0, 300.0, vec![])));
+    let container = tree.add_child(
+        root_id,
+        Box::new(PassThroughContainer::new(300.0, 300.0, vec![])),
+    );
     let _child = tree.add_child(container, Box::new(SpyWidget::new(100.0, 100.0)));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
 
     // 先设焦点（直接设置 focused_widget 字段，但它是 pub(crate) 的）
     // 或者通过 dispatch MouseDown 设焦点
@@ -383,7 +400,9 @@ fn capture_phase_key_down_intercepted() {
 fn event_manager_catches_mouse_down() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
 
     let handled = Rc::new(RefCell::new(false));
     let h = handled.clone();
@@ -398,7 +417,10 @@ fn event_manager_catches_mouse_down() {
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
-    assert!(*handled.borrow(), "EventManager handler should have been called");
+    assert!(
+        *handled.borrow(),
+        "EventManager handler should have been called"
+    );
 }
 
 /// EventManager 的 on_kind 只处理匹配的事件类型。
@@ -406,7 +428,9 @@ fn event_manager_catches_mouse_down() {
 fn event_manager_on_kind_filters() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
 
     let mouse_down_count = Rc::new(RefCell::new(0u32));
     let md = mouse_down_count.clone();
@@ -430,14 +454,22 @@ fn event_manager_on_kind_filters() {
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
-    assert_eq!(*mouse_down_count.borrow(), 1, "MouseDown handler should fire");
+    assert_eq!(
+        *mouse_down_count.borrow(),
+        1,
+        "MouseDown handler should fire"
+    );
     assert_eq!(*key_count.borrow(), 0, "KeyDown handler should NOT fire");
 
     tree.dispatch_event(&WidgetEvent::KeyDown {
         key: KeyCode::Enter,
         mods: KeyMod::NONE,
     });
-    assert_eq!(*mouse_down_count.borrow(), 1, "MouseDown handler should NOT fire again");
+    assert_eq!(
+        *mouse_down_count.borrow(),
+        1,
+        "MouseDown handler should NOT fire again"
+    );
     assert_eq!(*key_count.borrow(), 1, "KeyDown handler should fire");
 }
 
@@ -446,7 +478,9 @@ fn event_manager_on_kind_filters() {
 fn event_manager_priority_order() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
 
     let order = Rc::new(RefCell::new(Vec::<u32>::new()));
     let o1 = order.clone();
@@ -486,9 +520,16 @@ fn event_manager_handled_stops_bubble_to_parent() {
     // 树：PassThroughContainer(root) → PassThroughContainer(child)
     // 两者 on_event 都返回 NotHandled
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    let child = tree.add_child(root_id, Box::new(PassThroughContainer::new(100.0, 100.0, vec![])));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+    let child = tree.add_child(
+        root_id,
+        Box::new(PassThroughContainer::new(100.0, 100.0, vec![])),
+    );
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
     let parent_em_called = Rc::new(RefCell::new(false));
     let pc = parent_em_called.clone();
@@ -496,9 +537,7 @@ fn event_manager_handled_stops_bubble_to_parent() {
     // child 的 EventManager 返回 Handled，阻止冒泡到 parent
     {
         let em = tree.event_manager_for(child);
-        em.add_handler(move |_| {
-            EventResult::Handled
-        });
+        em.add_handler(move |_| EventResult::Handled);
     }
     // parent 的 EventManager：不应被执行（因为 child 的 EventManager 已 Handled）
     {
@@ -519,7 +558,10 @@ fn event_manager_handled_stops_bubble_to_parent() {
     // 所以结果是 Handled
     assert_eq!(result, EventResult::Handled);
     // parent 的 EventManager 不应被调用
-    assert!(!*parent_em_called.borrow(), "parent EventManager should NOT be called when child EventManager handled");
+    assert!(
+        !*parent_em_called.borrow(),
+        "parent EventManager should NOT be called when child EventManager handled"
+    );
 }
 
 /// EventManager 在 widget on_event 之后、冒泡之前执行。
@@ -528,7 +570,9 @@ fn event_manager_runs_after_on_event() {
     let mut tree = WidgetTree::new();
     // 使用 PassThroughContainer（on_event 返回 NotHandled）
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
 
     let order = Rc::new(RefCell::new(Vec::<String>::new()));
     let o1 = order.clone();
@@ -542,8 +586,13 @@ fn event_manager_runs_after_on_event() {
         });
     }
     // 在根节点再挂一个子 widget，确保事件经过它
-    let child = tree.add_child(root_id, Box::new(PassThroughContainer::new(50.0, 50.0, vec![])));
-    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
+    let child = tree.add_child(
+        root_id,
+        Box::new(PassThroughContainer::new(50.0, 50.0, vec![])),
+    );
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
 
     tree.dispatch_event(&WidgetEvent::MouseDown {
         pos: Point::new(25.0, 25.0),
@@ -567,7 +616,10 @@ fn collect_focusable_empty_by_default() {
     tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
     tree.layout();
     let focusable = tree.collect_focusable();
-    assert!(focusable.is_empty(), "no tab_index set → no focusable widgets");
+    assert!(
+        focusable.is_empty(),
+        "no tab_index set → no focusable widgets"
+    );
 }
 
 /// 设置 tab_index > 0 的 widget 可被收集。
@@ -599,7 +651,11 @@ fn collect_focusable_sorted_by_tab_index() {
     tree.get_mut(btn_c).unwrap().set_tab_index(2);
     tree.layout();
     let focusable = tree.collect_focusable();
-    assert_eq!(focusable, vec![btn_b, btn_c, btn_a], "sorted by tab_index ascending");
+    assert_eq!(
+        focusable,
+        vec![btn_b, btn_c, btn_a],
+        "sorted by tab_index ascending"
+    );
 }
 
 /// Tab 键聚焦到下一个可聚焦 widget。
@@ -663,7 +719,11 @@ fn tab_wraps_around_to_first() {
         mods: KeyMod::NONE,
     });
     assert_eq!(result, EventResult::Handled);
-    assert_eq!(tree.focused_widget, Some(btn1), "Tab at last should wrap to first");
+    assert_eq!(
+        tree.focused_widget,
+        Some(btn1),
+        "Tab at last should wrap to first"
+    );
 }
 
 /// 无可聚焦 widget 时，Tab 不产生焦点变化。
@@ -676,7 +736,11 @@ fn tab_no_focusable_does_nothing() {
         key: KeyCode::Tab,
         mods: KeyMod::NONE,
     });
-    assert_eq!(result, EventResult::NotHandled, "Tab with no focusable should be NotHandled");
+    assert_eq!(
+        result,
+        EventResult::NotHandled,
+        "Tab with no focusable should be NotHandled"
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -689,8 +753,12 @@ fn drag_gesture_threshold_not_exceeded() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
     // MouseDown
     tree.dispatch_event(&WidgetEvent::MouseDown {
@@ -704,8 +772,14 @@ fn drag_gesture_threshold_not_exceeded() {
         mods: KeyMod::NONE,
     });
     // 拖拽未激活
-    assert!(!tree.drag_gesture.active, "drag should not start below threshold");
-    assert!(tree.drag_gesture.potential, "still potential after small move");
+    assert!(
+        !tree.drag_gesture.active,
+        "drag should not start below threshold"
+    );
+    assert!(
+        tree.drag_gesture.potential,
+        "still potential after small move"
+    );
 }
 
 /// MouseDown + 大幅度 MouseMove 触发 DragStart 和 DragMove。
@@ -714,8 +788,12 @@ fn drag_gesture_triggers_drag_start() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
     // MouseDown
     tree.dispatch_event(&WidgetEvent::MouseDown {
@@ -729,8 +807,14 @@ fn drag_gesture_triggers_drag_start() {
         mods: KeyMod::NONE,
     });
     // 拖拽应激活
-    assert!(tree.drag_gesture.active, "drag should be active after threshold exceeded");
-    assert!(!tree.drag_gesture.potential, "no longer potential after drag start");
+    assert!(
+        tree.drag_gesture.active,
+        "drag should be active after threshold exceeded"
+    );
+    assert!(
+        !tree.drag_gesture.potential,
+        "no longer potential after drag start"
+    );
 }
 
 /// MouseUp 在拖拽激活后发射 DragEnd。
@@ -739,8 +823,12 @@ fn drag_gesture_mouse_up_emits_drag_end() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
-    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
     tree.dispatch_event(&WidgetEvent::MouseDown {
         pos: Point::new(50.0, 50.0),
@@ -759,7 +847,10 @@ fn drag_gesture_mouse_up_emits_drag_end() {
         mods: KeyMod::NONE,
     });
     // MouseUp 后拖拽应重置
-    assert!(!tree.drag_gesture.active, "drag should be reset after MouseUp");
+    assert!(
+        !tree.drag_gesture.active,
+        "drag should be reset after MouseUp"
+    );
     assert!(!tree.drag_gesture.potential);
 }
 

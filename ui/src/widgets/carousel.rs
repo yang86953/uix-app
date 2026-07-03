@@ -5,14 +5,14 @@
 use std::cell::Cell;
 use std::time::Instant;
 
-use uix_platform::{Point, Rect, Size};
-use crate::define_widget;
 use crate::animation::core::Animation;
 use crate::api::Easing;
-use uix_graphics::GraphicsEngine;
 use crate::children::WidgetChildren;
+use crate::define_widget;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetComponent, WidgetId, WidgetTree};
+use crate::widget::{EventResult, WidgetComponent, WidgetEvent, WidgetId, WidgetTree};
+use uix_graphics::GraphicsEngine;
+use uix_platform::{Point, Rect, Size};
 
 define_widget! {
     /// Carousel — 轮播图组件。
@@ -185,12 +185,23 @@ impl Carousel {
         }
     }
 
-    pub fn autoplay(mut self, interval: f32) -> Self { self.autoplay_interval = interval; self }
-    pub fn show_dots(mut self, v: bool) -> Self { self.show_dots = v; self }
-    pub fn show_arrows(mut self, v: bool) -> Self { self.show_arrows = v; self }
+    pub fn autoplay(mut self, interval: f32) -> Self {
+        self.autoplay_interval = interval;
+        self
+    }
+    pub fn show_dots(mut self, v: bool) -> Self {
+        self.show_dots = v;
+        self
+    }
+    pub fn show_arrows(mut self, v: bool) -> Self {
+        self.show_arrows = v;
+        self
+    }
 
     /// 当前展示的子节点索引（供外部渲染使用）
-    pub fn current_index(&self) -> usize { self.current.get() }
+    pub fn current_index(&self) -> usize {
+        self.current.get()
+    }
 }
 
 // 用于 hit-test 的 frame 存储

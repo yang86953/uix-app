@@ -15,10 +15,10 @@
 //! 所有组件不再保有 `bg_color`/`border_color`/`padding` 等独立字段，
 //! 统一使用 `style: Style`。布局引擎从 `style.margin` 读取外边距参与盒模型计算。
 
-use uix_platform::EdgeInsets;
 use uix_graphics::Color;
+use uix_platform::EdgeInsets;
 // Re-export layout enums so crate::style::FlexDirection etc. work
-pub use crate::layout::{FlexDirection, JustifyContent, AlignItems};
+pub use crate::layout::{AlignItems, FlexDirection, JustifyContent};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 盒阴影
@@ -35,7 +35,12 @@ pub struct BoxShadowDef {
 
 impl BoxShadowDef {
     pub const fn new(color: Color, blur: f32, offset_x: f32, offset_y: f32) -> Self {
-        Self { color, blur, offset_x, offset_y }
+        Self {
+            color,
+            blur,
+            offset_x,
+            offset_y,
+        }
     }
 }
 
@@ -241,9 +246,13 @@ impl Style {
 
     /// 根据 hover/pressed 状态返回当前背景色（优先返回状态色，fallback 到 background）。
     pub fn effective_bg(&self, hovered: bool, pressed: bool) -> Option<Color> {
-        if pressed { self.background_active.or(self.background) }
-        else if hovered { self.background_hover.or(self.background) }
-        else { self.background }
+        if pressed {
+            self.background_active.or(self.background)
+        } else if hovered {
+            self.background_hover.or(self.background)
+        } else {
+            self.background
+        }
     }
 
     // ── 链式 Builder 方法 ──────────────────────────────────
@@ -279,71 +288,186 @@ impl Style {
 
     /// 应用另一个 Style 到自身（非 None 字段覆盖，None 字段保留原值）。
     pub fn apply(mut self, other: Self) -> Self {
-        if other.margin != EdgeInsets::zero() { self.margin = other.margin; }
-        if other.padding != EdgeInsets::zero() { self.padding = other.padding; }
-        if other.border_color.is_some() { self.border_color = other.border_color; }
-        if other.border_width != 0.0 { self.border_width = other.border_width; }
-        if other.border_radius != 0.0 { self.border_radius = other.border_radius; }
-        if other.width.is_some() { self.width = other.width; }
-        if other.height.is_some() { self.height = other.height; }
-        if other.display != DisplayMode::default() { self.display = other.display; }
-        if other.flex_direction != FlexDirection::default() { self.flex_direction = other.flex_direction; }
-        if other.flex_wrap { self.flex_wrap = other.flex_wrap; }
-        if other.justify_content != JustifyContent::default() { self.justify_content = other.justify_content; }
-        if other.align_items != AlignItems::default() { self.align_items = other.align_items; }
-        if other.gap != 0.0 { self.gap = other.gap; }
-        if other.flex_grow != 0.0 { self.flex_grow = other.flex_grow; }
-        if other.flex_shrink != 1.0 { self.flex_shrink = other.flex_shrink; }
-        if other.align_self.is_some() { self.align_self = other.align_self; }
-        if other.background.is_some() { self.background = other.background; }
-        if other.background_hover.is_some() { self.background_hover = other.background_hover; }
-        if other.background_active.is_some() { self.background_active = other.background_active; }
-        if other.color != Color::black() { self.color = other.color; }
-        if other.font_size != 14.0 { self.font_size = other.font_size; }
-        if other.opacity != 1.0 { self.opacity = other.opacity; }
-        if other.box_shadow.is_some() { self.box_shadow = other.box_shadow; }
-        if !other.visible { self.visible = other.visible; }
+        if other.margin != EdgeInsets::zero() {
+            self.margin = other.margin;
+        }
+        if other.padding != EdgeInsets::zero() {
+            self.padding = other.padding;
+        }
+        if other.border_color.is_some() {
+            self.border_color = other.border_color;
+        }
+        if other.border_width != 0.0 {
+            self.border_width = other.border_width;
+        }
+        if other.border_radius != 0.0 {
+            self.border_radius = other.border_radius;
+        }
+        if other.width.is_some() {
+            self.width = other.width;
+        }
+        if other.height.is_some() {
+            self.height = other.height;
+        }
+        if other.display != DisplayMode::default() {
+            self.display = other.display;
+        }
+        if other.flex_direction != FlexDirection::default() {
+            self.flex_direction = other.flex_direction;
+        }
+        if other.flex_wrap {
+            self.flex_wrap = other.flex_wrap;
+        }
+        if other.justify_content != JustifyContent::default() {
+            self.justify_content = other.justify_content;
+        }
+        if other.align_items != AlignItems::default() {
+            self.align_items = other.align_items;
+        }
+        if other.gap != 0.0 {
+            self.gap = other.gap;
+        }
+        if other.flex_grow != 0.0 {
+            self.flex_grow = other.flex_grow;
+        }
+        if other.flex_shrink != 1.0 {
+            self.flex_shrink = other.flex_shrink;
+        }
+        if other.align_self.is_some() {
+            self.align_self = other.align_self;
+        }
+        if other.background.is_some() {
+            self.background = other.background;
+        }
+        if other.background_hover.is_some() {
+            self.background_hover = other.background_hover;
+        }
+        if other.background_active.is_some() {
+            self.background_active = other.background_active;
+        }
+        if other.color != Color::black() {
+            self.color = other.color;
+        }
+        if other.font_size != 14.0 {
+            self.font_size = other.font_size;
+        }
+        if other.opacity != 1.0 {
+            self.opacity = other.opacity;
+        }
+        if other.box_shadow.is_some() {
+            self.box_shadow = other.box_shadow;
+        }
+        if !other.visible {
+            self.visible = other.visible;
+        }
         self
     }
 
     // ── 盒模型链式方法 ──
 
-    pub fn with_margin(mut self, m: EdgeInsets) -> Self { self.margin = m; self }
-    pub fn with_padding(mut self, p: EdgeInsets) -> Self { self.padding = p; self }
+    pub fn with_margin(mut self, m: EdgeInsets) -> Self {
+        self.margin = m;
+        self
+    }
+    pub fn with_padding(mut self, p: EdgeInsets) -> Self {
+        self.padding = p;
+        self
+    }
     pub fn with_border(mut self, color: Color, width: f32) -> Self {
         self.border_color = Some(color);
         self.border_width = width;
         self
     }
-    pub fn with_rounded(mut self, r: f32) -> Self { self.border_radius = r; self }
+    pub fn with_rounded(mut self, r: f32) -> Self {
+        self.border_radius = r;
+        self
+    }
 
     // ── 尺寸链式方法 ──
 
-    pub fn with_width(mut self, w: f32) -> Self { self.width = Some(w); self }
-    pub fn with_height(mut self, h: f32) -> Self { self.height = Some(h); self }
-    pub fn with_size(mut self, w: f32, h: f32) -> Self { self.width = Some(w); self.height = Some(h); self }
+    pub fn with_width(mut self, w: f32) -> Self {
+        self.width = Some(w);
+        self
+    }
+    pub fn with_height(mut self, h: f32) -> Self {
+        self.height = Some(h);
+        self
+    }
+    pub fn with_size(mut self, w: f32, h: f32) -> Self {
+        self.width = Some(w);
+        self.height = Some(h);
+        self
+    }
 
     // ── 布局链式方法 ──
 
-    pub fn with_display(mut self, d: DisplayMode) -> Self { self.display = d; self }
-    pub fn with_direction(mut self, d: FlexDirection) -> Self { self.flex_direction = d; self }
-    pub fn with_wrap(mut self, w: bool) -> Self { self.flex_wrap = w; self }
-    pub fn with_justify(mut self, j: JustifyContent) -> Self { self.justify_content = j; self }
-    pub fn with_align(mut self, a: AlignItems) -> Self { self.align_items = a; self }
-    pub fn with_gap(mut self, g: f32) -> Self { self.gap = g; self }
-    pub fn with_grow(mut self, g: f32) -> Self { self.flex_grow = g; self }
-    pub fn with_shrink(mut self, s: f32) -> Self { self.flex_shrink = s; self }
+    pub fn with_display(mut self, d: DisplayMode) -> Self {
+        self.display = d;
+        self
+    }
+    pub fn with_direction(mut self, d: FlexDirection) -> Self {
+        self.flex_direction = d;
+        self
+    }
+    pub fn with_wrap(mut self, w: bool) -> Self {
+        self.flex_wrap = w;
+        self
+    }
+    pub fn with_justify(mut self, j: JustifyContent) -> Self {
+        self.justify_content = j;
+        self
+    }
+    pub fn with_align(mut self, a: AlignItems) -> Self {
+        self.align_items = a;
+        self
+    }
+    pub fn with_gap(mut self, g: f32) -> Self {
+        self.gap = g;
+        self
+    }
+    pub fn with_grow(mut self, g: f32) -> Self {
+        self.flex_grow = g;
+        self
+    }
+    pub fn with_shrink(mut self, s: f32) -> Self {
+        self.flex_shrink = s;
+        self
+    }
 
     // ── 视觉链式方法 ──
 
-    pub fn with_bg(mut self, c: Color) -> Self { self.background = Some(c); self }
-    pub fn with_bg_hover(mut self, c: Color) -> Self { self.background_hover = Some(c); self }
-    pub fn with_bg_active(mut self, c: Color) -> Self { self.background_active = Some(c); self }
-    pub fn with_color(mut self, c: Color) -> Self { self.color = c; self }
-    pub fn with_font_size(mut self, s: f32) -> Self { self.font_size = s; self }
-    pub fn with_opacity(mut self, o: f32) -> Self { self.opacity = o; self }
-    pub fn with_shadow(mut self, shadow: BoxShadowDef) -> Self { self.box_shadow = Some(shadow); self }
-    pub fn with_visible(mut self, v: bool) -> Self { self.visible = v; self }
+    pub fn with_bg(mut self, c: Color) -> Self {
+        self.background = Some(c);
+        self
+    }
+    pub fn with_bg_hover(mut self, c: Color) -> Self {
+        self.background_hover = Some(c);
+        self
+    }
+    pub fn with_bg_active(mut self, c: Color) -> Self {
+        self.background_active = Some(c);
+        self
+    }
+    pub fn with_color(mut self, c: Color) -> Self {
+        self.color = c;
+        self
+    }
+    pub fn with_font_size(mut self, s: f32) -> Self {
+        self.font_size = s;
+        self
+    }
+    pub fn with_opacity(mut self, o: f32) -> Self {
+        self.opacity = o;
+        self
+    }
+    pub fn with_shadow(mut self, shadow: BoxShadowDef) -> Self {
+        self.box_shadow = Some(shadow);
+        self
+    }
+    pub fn with_visible(mut self, v: bool) -> Self {
+        self.visible = v;
+        self
+    }
 }
 
 /// 外边距/内边距快捷构造（不实现 From 以避免孤儿规则冲突）。
@@ -351,7 +475,9 @@ pub mod edge_insets {
     use uix_platform::EdgeInsets;
 
     /// 四边均匀外边距。
-    pub fn all(v: f32) -> EdgeInsets { EdgeInsets::uniform(v) }
+    pub fn all(v: f32) -> EdgeInsets {
+        EdgeInsets::uniform(v)
+    }
 
     /// 垂直/水平外边距：`[top_bottom, left_right]`。
     pub fn symmetric(vertical: f32, horizontal: f32) -> EdgeInsets {
@@ -373,8 +499,7 @@ pub mod edge_insets {
 ///
 /// 使用方式：widget 在 `render` 中根据自身状态（hovered/pressed/disabled）
 /// 从 variant 中取色，回退到 Style 基础色。
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct StyleVariant {
     /// 正常状态基础样式
     pub normal: Style,
@@ -386,25 +511,41 @@ pub struct StyleVariant {
     pub disabled: Option<Style>,
 }
 
-
 impl StyleVariant {
     pub fn new(base: Style) -> Self {
-        Self { normal: base, ..Self::default() }
+        Self {
+            normal: base,
+            ..Self::default()
+        }
     }
 
     /// 链式设置悬停样式。
-    pub fn hover(mut self, s: Style) -> Self { self.hover = Some(s); self }
+    pub fn hover(mut self, s: Style) -> Self {
+        self.hover = Some(s);
+        self
+    }
     /// 链式设置按下样式。
-    pub fn active(mut self, s: Style) -> Self { self.active = Some(s); self }
+    pub fn active(mut self, s: Style) -> Self {
+        self.active = Some(s);
+        self
+    }
     /// 链式设置禁用样式。
-    pub fn disabled(mut self, s: Style) -> Self { self.disabled = Some(s); self }
+    pub fn disabled(mut self, s: Style) -> Self {
+        self.disabled = Some(s);
+        self
+    }
 
     /// 根据 widget 状态获取当前有效的 Style。
     pub fn resolve(&self, hovered: bool, pressed: bool, disabled: bool) -> &Style {
-        if disabled { self.disabled.as_ref().unwrap_or(&self.normal) }
-        else if pressed { self.active.as_ref().unwrap_or(&self.normal) }
-        else if hovered { self.hover.as_ref().unwrap_or(&self.normal) }
-        else { &self.normal }
+        if disabled {
+            self.disabled.as_ref().unwrap_or(&self.normal)
+        } else if pressed {
+            self.active.as_ref().unwrap_or(&self.normal)
+        } else if hovered {
+            self.hover.as_ref().unwrap_or(&self.normal)
+        } else {
+            &self.normal
+        }
     }
 }
 
@@ -564,8 +705,8 @@ pub fn uniform_insets(v: f32) -> EdgeInsets {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uix_platform::EdgeInsets;
     use uix_graphics::Color;
+    use uix_platform::EdgeInsets;
 
     // ── 默认值 / 构造器 ────────────────────────────────────
 
@@ -622,7 +763,7 @@ mod tests {
         let s = Style::column();
         assert_eq!(s.display, DisplayMode::Flex);
         assert_eq!(s.flex_direction, FlexDirection::default()); // Column
-        // 其余字段应与 default 一致
+                                                                // 其余字段应与 default 一致
         let mut expected = Style::default();
         expected.display = DisplayMode::Flex;
         assert_eq!(s, expected);
@@ -666,37 +807,65 @@ mod tests {
 
     #[test]
     fn effective_bg_pressed_returns_active() {
-        let s = Style { background: Some(Color::red()), background_hover: Some(Color::green()), background_active: Some(Color::blue()), ..Style::default() };
+        let s = Style {
+            background: Some(Color::red()),
+            background_hover: Some(Color::green()),
+            background_active: Some(Color::blue()),
+            ..Style::default()
+        };
         assert_eq!(s.effective_bg(true, true), Some(Color::blue()));
     }
 
     #[test]
     fn effective_bg_pressed_fallback_to_background() {
-        let s = Style { background: Some(Color::red()), background_hover: None, background_active: None, ..Style::default() };
+        let s = Style {
+            background: Some(Color::red()),
+            background_hover: None,
+            background_active: None,
+            ..Style::default()
+        };
         assert_eq!(s.effective_bg(false, true), Some(Color::red()));
     }
 
     #[test]
     fn effective_bg_hovered_returns_hover() {
-        let s = Style { background: Some(Color::red()), background_hover: Some(Color::green()), background_active: None, ..Style::default() };
+        let s = Style {
+            background: Some(Color::red()),
+            background_hover: Some(Color::green()),
+            background_active: None,
+            ..Style::default()
+        };
         assert_eq!(s.effective_bg(true, false), Some(Color::green()));
     }
 
     #[test]
     fn effective_bg_hovered_no_hover_fallback() {
-        let s = Style { background: Some(Color::red()), background_hover: None, background_active: None, ..Style::default() };
+        let s = Style {
+            background: Some(Color::red()),
+            background_hover: None,
+            background_active: None,
+            ..Style::default()
+        };
         assert_eq!(s.effective_bg(true, false), Some(Color::red()));
     }
 
     #[test]
     fn effective_bg_normal_returns_background() {
-        let s = Style { background: Some(Color::red()), ..Style::default() };
+        let s = Style {
+            background: Some(Color::red()),
+            ..Style::default()
+        };
         assert_eq!(s.effective_bg(false, false), Some(Color::red()));
     }
 
     #[test]
     fn effective_bg_all_none_returns_none() {
-        let s = Style { background: None, background_hover: None, background_active: None, ..Style::default() };
+        let s = Style {
+            background: None,
+            background_hover: None,
+            background_active: None,
+            ..Style::default()
+        };
         assert_eq!(s.effective_bg(true, true), None);
         assert_eq!(s.effective_bg(true, false), None);
         assert_eq!(s.effective_bg(false, false), None);
@@ -737,7 +906,7 @@ mod tests {
         assert_eq!(s.border_color, Some(Color::red()));
         assert_eq!(s.border_width, 2.0);
         assert_eq!(s.border_radius, 6.0);
-        assert_eq!(s.width, Some(200.0));  // with_size overrides with_width
+        assert_eq!(s.width, Some(200.0)); // with_size overrides with_width
         assert_eq!(s.height, Some(100.0));
         assert_eq!(s.display, DisplayMode::None);
         assert_eq!(s.flex_direction, FlexDirection::Column);
@@ -753,7 +922,10 @@ mod tests {
         assert_eq!(s.color, Color::white());
         assert_eq!(s.font_size, 16.0);
         assert_eq!(s.opacity, 0.5);
-        assert_eq!(s.box_shadow, Some(BoxShadowDef::new(Color::black(), 4.0, 2.0, 2.0)));
+        assert_eq!(
+            s.box_shadow,
+            Some(BoxShadowDef::new(Color::black(), 4.0, 2.0, 2.0))
+        );
         assert!(!s.visible);
     }
 
@@ -811,7 +983,7 @@ mod tests {
         // patch 中 gap=0.0 不会覆盖（因为 gap 默认是 0.0，不触发覆盖）
         let patch = Style {
             margin: EdgeInsets::zero(), // 不会被 apply，因为等于 zero()
-            gap: 0.0,                     // 不会覆盖
+            gap: 0.0,                   // 不会覆盖
             ..Style::default()
         };
         let result = base.apply(patch);
@@ -827,9 +999,7 @@ mod tests {
         let original = Style::default()
             .with_bg(Color::red())
             .with_color(Color::white());
-        let replacement = Style::default()
-            .with_bg(Color::blue())
-            .with_font_size(20.0);
+        let replacement = Style::default().with_bg(Color::blue()).with_font_size(20.0);
         let result = original.with_style(replacement);
         // 所有字段应全部替换
         assert_eq!(result.background, Some(Color::blue()));
@@ -871,10 +1041,22 @@ mod tests {
             .active(active)
             .disabled(disabled);
         // 优先级：disabled > active > hover > normal
-        assert_eq!(v.resolve(false, false, true).background, Some(Color::from_rgb(128, 128, 128)));
-        assert_eq!(v.resolve(false, true, false).background, Some(Color::blue()));
-        assert_eq!(v.resolve(true, false, false).background, Some(Color::green()));
-        assert_eq!(v.resolve(false, false, false).background, Some(Color::red()));
+        assert_eq!(
+            v.resolve(false, false, true).background,
+            Some(Color::from_rgb(128, 128, 128))
+        );
+        assert_eq!(
+            v.resolve(false, true, false).background,
+            Some(Color::blue())
+        );
+        assert_eq!(
+            v.resolve(true, false, false).background,
+            Some(Color::green())
+        );
+        assert_eq!(
+            v.resolve(false, false, false).background,
+            Some(Color::red())
+        );
     }
 
     #[test]
@@ -1002,7 +1184,10 @@ mod tests {
         };
         assert_eq!(s.border_color, Some(Color::red()));
         assert_eq!(s.border_width, 2.0);
-        assert_eq!(s.box_shadow, Some(BoxShadowDef::new(Color::black(), 4.0, 2.0, 2.0)));
+        assert_eq!(
+            s.box_shadow,
+            Some(BoxShadowDef::new(Color::black(), 4.0, 2.0, 2.0))
+        );
     }
 
     #[test]
@@ -1011,4 +1196,3 @@ mod tests {
         assert_eq!(insets, EdgeInsets::uniform(12.0));
     }
 }
-

@@ -2,11 +2,11 @@
 //!
 //! 支持占位图、fallback、描述、圆角。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::{Color, Radius};
+use uix_platform::{Point, Rect, Size};
 
 // Image — 图片显示组件。
 define_widget! {
@@ -67,17 +67,40 @@ define_widget! {
 impl Image {
     pub fn new(w: f32, h: f32) -> Self {
         Self {
-            alt: String::new(), fallback: String::new(),
-            width: w, height: h, radius: 6.0,
-            preview: true, loaded: false, error: false,
+            alt: String::new(),
+            fallback: String::new(),
+            width: w,
+            height: h,
+            radius: 6.0,
+            preview: true,
+            loaded: false,
+            error: false,
         }
     }
-    pub fn alt(mut self, a: &str) -> Self { self.alt = a.to_string(); self }
-    pub fn fallback(mut self, f: &str) -> Self { self.fallback = f.to_string(); self }
-    pub fn radius(mut self, r: f32) -> Self { self.radius = r; self }
-    pub fn preview(mut self, v: bool) -> Self { self.preview = v; self }
+    pub fn alt(mut self, a: &str) -> Self {
+        self.alt = a.to_string();
+        self
+    }
+    pub fn fallback(mut self, f: &str) -> Self {
+        self.fallback = f.to_string();
+        self
+    }
+    pub fn radius(mut self, r: f32) -> Self {
+        self.radius = r;
+        self
+    }
+    pub fn preview(mut self, v: bool) -> Self {
+        self.preview = v;
+        self
+    }
     /// 标记为加载成功（由外部加载后调用）。
-    pub fn mark_loaded(&mut self) { self.loaded = true; self.error = false; }
+    pub fn mark_loaded(&mut self) {
+        self.loaded = true;
+        self.error = false;
+    }
     /// 标记为加载失败。
-    pub fn mark_error(&mut self) { self.loaded = true; self.error = true; }
+    pub fn mark_error(&mut self) {
+        self.loaded = true;
+        self.error = true;
+    }
 }

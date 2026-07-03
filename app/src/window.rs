@@ -73,7 +73,11 @@ impl Window {
     /// 创建平台窗口，存储 PlatformWindow 句柄。
     pub fn create(&mut self, title: &str, width: i32, height: i32) -> bool {
         self.initial_size = (width, height);
-        match self.platform.window_manager().create_window(title, width, height) {
+        match self
+            .platform
+            .window_manager()
+            .create_window(title, width, height)
+        {
             Ok(mut w) => {
                 w.center_on_screen();
                 w.show();

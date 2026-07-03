@@ -9,8 +9,8 @@
 //   logger.rs — Logger 单例（高级日志，自动注册为全局处理器）
 // ============================================================================
 
-pub mod sink;
 pub mod logger;
+pub mod sink;
 
 use std::fmt;
 use std::sync::OnceLock;
@@ -105,7 +105,8 @@ impl LogHandler for DefaultHandler {
         if (level as u8) < (self.level as u8) {
             return;
         }
-        let filename = file.rsplit_once('/')
+        let filename = file
+            .rsplit_once('/')
             .or_else(|| file.rsplit_once('\\'))
             .map(|(_, name)| name)
             .unwrap_or(file);
@@ -134,7 +135,9 @@ pub fn set_handler(handler: Box<dyn LogHandler>) {
 
 /// 获取当前日志处理器。默认使用 DefaultHandler（stderr 输出）。
 fn handler() -> &'static dyn LogHandler {
-    GLOBAL_HANDLER.get_or_init(|| Box::new(DefaultHandler::new(Level::Warn))).as_ref()
+    GLOBAL_HANDLER
+        .get_or_init(|| Box::new(DefaultHandler::new(Level::Warn)))
+        .as_ref()
 }
 
 /// 设置日志级别（委托给当前处理器）。
@@ -198,5 +201,5 @@ pub fn log_error(error: &crate::Error, level: Level) {
 }
 
 // ── 便利重导出 ─────────────────────────────────────────────────
-pub use sink::{CallbackSink, ConsoleSink, FileSink, Record, Sink};
 pub use logger::Logger;
+pub use sink::{CallbackSink, ConsoleSink, FileSink, Record, Sink};

@@ -1,14 +1,17 @@
+use crate::animation::transition::{presets, SlideDirection, TransitionPlayer};
 use crate::define_widget;
-use crate::animation::transition::{presets, TransitionPlayer, SlideDirection};
-use uix_platform::{ControlSize, Point, Rect, Size};
-use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, Radius};
+use uix_platform::{ControlSize, Point, Rect, Size};
 
 /// 抽屉滑出方向。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DrawerPlacement {
-    Right, Left, Top, Bottom,
+    Right,
+    Left,
+    Top,
+    Bottom,
 }
 
 define_widget! {
@@ -191,10 +194,13 @@ impl Drawer {
         Self {
             title: title.to_string(),
             visible: false,
-            width: 378.0, height: 300.0,
+            width: 378.0,
+            height: 300.0,
             drawer_size: ControlSize::Medium,
             placement: DrawerPlacement::Right,
-            closable: true, mask_closable: true, mask: true,
+            closable: true,
+            mask_closable: true,
+            mask: true,
             footer_visible: false,
             extra: String::new(),
             on_close: None,
@@ -204,26 +210,70 @@ impl Drawer {
         }
     }
 
-    pub fn visible(mut self, v: bool) -> Self { self.visible = v; self.prev_visible = !v; self }
-    pub fn show(mut self) -> Self { self.visible = true; self.prev_visible = false; self }
-    pub fn size(mut self, w: f32, h: f32) -> Self { self.width = w; self.height = h; self }
+    pub fn visible(mut self, v: bool) -> Self {
+        self.visible = v;
+        self.prev_visible = !v;
+        self
+    }
+    pub fn show(mut self) -> Self {
+        self.visible = true;
+        self.prev_visible = false;
+        self
+    }
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.width = w;
+        self.height = h;
+        self
+    }
     pub fn drawer_size(mut self, s: ControlSize) -> Self {
         self.drawer_size = s;
         match s {
-            ControlSize::Small => { self.width = 300.0; self.height = 200.0; }
-            ControlSize::Medium => { self.width = 378.0; self.height = 300.0; }
-            ControlSize::Large => { self.width = 600.0; self.height = 450.0; }
+            ControlSize::Small => {
+                self.width = 300.0;
+                self.height = 200.0;
+            }
+            ControlSize::Medium => {
+                self.width = 378.0;
+                self.height = 300.0;
+            }
+            ControlSize::Large => {
+                self.width = 600.0;
+                self.height = 450.0;
+            }
         }
         self
     }
-    pub fn placement(mut self, p: DrawerPlacement) -> Self { self.placement = p; self }
-    pub fn closable(mut self, v: bool) -> Self { self.closable = v; self }
-    pub fn mask_closable(mut self, v: bool) -> Self { self.mask_closable = v; self }
-    pub fn mask(mut self, v: bool) -> Self { self.mask = v; self }
-    pub fn footer_visible(mut self, v: bool) -> Self { self.footer_visible = v; self }
-    pub fn extra(mut self, t: impl Into<String>) -> Self { self.extra = t.into(); self }
-    pub fn on_close<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_close = Some(Box::new(f)); self }
-    pub fn is_visible(&self) -> bool { self.visible }
+    pub fn placement(mut self, p: DrawerPlacement) -> Self {
+        self.placement = p;
+        self
+    }
+    pub fn closable(mut self, v: bool) -> Self {
+        self.closable = v;
+        self
+    }
+    pub fn mask_closable(mut self, v: bool) -> Self {
+        self.mask_closable = v;
+        self
+    }
+    pub fn mask(mut self, v: bool) -> Self {
+        self.mask = v;
+        self
+    }
+    pub fn footer_visible(mut self, v: bool) -> Self {
+        self.footer_visible = v;
+        self
+    }
+    pub fn extra(mut self, t: impl Into<String>) -> Self {
+        self.extra = t.into();
+        self
+    }
+    pub fn on_close<F: FnMut() + 'static>(mut self, f: F) -> Self {
+        self.on_close = Some(Box::new(f));
+        self
+    }
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
     /// 打开抽屉（触发进场动画）。
     pub fn open(&mut self) {
         if self.closing {
@@ -239,7 +289,9 @@ impl Drawer {
     }
     /// 关闭抽屉（触发退场动画，动画结束后自动隐藏）。
     pub fn close(&mut self) {
-        if !self.visible || self.closing { return; }
+        if !self.visible || self.closing {
+            return;
+        }
         // 启动退场动画，保持 visible=true 直到动画结束
         self.transition_player = Some(TransitionPlayer::new(presets::drawer_exit(
             match self.placement {
@@ -251,7 +303,12 @@ impl Drawer {
         )));
         self.closing = true;
         // 触发回调
-        if let Some(ref mut cb) = self.on_close { cb(); }
+        if let Some(ref mut cb) = self.on_close {
+            cb();
+        }
     }
-    pub fn set_visible(&mut self, v: bool) { self.prev_visible = self.visible; self.visible = v; }
+    pub fn set_visible(&mut self, v: bool) {
+        self.prev_visible = self.visible;
+        self.visible = v;
+    }
 }

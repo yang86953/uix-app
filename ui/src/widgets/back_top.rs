@@ -1,10 +1,10 @@
 //! BackTop 回到顶部 — 滚动超过阈值时显示返回顶部按钮。
 
-use uix_platform::{Rect, Size};
 use crate::define_widget;
-use uix_graphics::GraphicsEngine;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::GraphicsEngine;
+use uix_platform::{Rect, Size};
 
 define_widget! {
     /// BackTop — 回到顶部按钮。
@@ -54,7 +54,10 @@ impl Default for BackTop {
 
 impl BackTop {
     pub fn new() -> Self {
-        Self { visibility_height: 400.0, visible: false }
+        Self {
+            visibility_height: 400.0,
+            visible: false,
+        }
     }
 
     /// 由外部 ScrollView 或 on_update 调用，传入当前 scroll_y
@@ -62,6 +65,11 @@ impl BackTop {
         self.visible = scroll_y > self.visibility_height;
     }
 
-    pub fn visibility_height(mut self, v: f32) -> Self { self.visibility_height = v; self }
-    pub fn is_visible(&self) -> bool { self.visible }
+    pub fn visibility_height(mut self, v: f32) -> Self {
+        self.visibility_height = v;
+        self
+    }
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
 }

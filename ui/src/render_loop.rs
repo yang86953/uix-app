@@ -159,10 +159,9 @@ where
             first_frame = false;
         } else {
             if idle_count > 3 {
-                platform.event_loop().wait_timeout(
-                    std::time::Duration::from_millis(100),
-                    &collect,
-                );
+                platform
+                    .event_loop()
+                    .wait_timeout(std::time::Duration::from_millis(100), &collect);
             } else {
                 if !platform.event_loop().wait_event(&collect) {
                     break;
@@ -291,8 +290,8 @@ where
         }
 
         let dirty_region = tree.dirty_region();
-        let need_render = window_visible
-            && (!rendered_first || !dirty_region.is_empty() || keep_polling);
+        let need_render =
+            window_visible && (!rendered_first || !dirty_region.is_empty() || keep_polling);
 
         let outcome = if !need_render {
             RenderOutcome::Idle
@@ -419,8 +418,11 @@ where
                         let theme_ref = theme.borrow();
                         let tokens = theme_ref.tokens();
                         let lt_font = font_service.loaded_font_handle;
-                        let hover_pos =
-                            if debug_mode.get() { Some(cursor_pos.get()) } else { None };
+                        let hover_pos = if debug_mode.get() {
+                            Some(cursor_pos.get())
+                        } else {
+                            None
+                        };
                         layer_tree.render_overlays(
                             engine,
                             tree,
@@ -453,9 +455,10 @@ where
                 let canvas = engine.canvas_2d();
                 let cw = canvas.width();
                 let ch = canvas.height();
-                if let Err(e) = platform_window
-                    .presenter()
-                    .present(canvas.pixels_mut(), cw, ch, damage)
+                if let Err(e) =
+                    platform_window
+                        .presenter()
+                        .present(canvas.pixels_mut(), cw, ch, damage)
                 {
                     uix_platform::log::error_fn(format!(
                         "[EventLoop] present failed: {}",
@@ -512,8 +515,8 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uix_graphics::NullEngine;
     use crate::widgets::container::Container;
+    use uix_graphics::NullEngine;
 
     /// sync_root_frame_to_engine 当根 frame 不匹配时自动同步（缩小）到引擎画布尺寸
     #[test]

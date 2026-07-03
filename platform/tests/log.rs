@@ -2,10 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
-use uix_platform::log::{
-    self, CallbackSink, ConsoleSink, FileSink, Level, Logger, Record, Sink,
-};
 use uix_platform::diagnostic::Timestamp;
+use uix_platform::log::{self, CallbackSink, ConsoleSink, FileSink, Level, Logger, Record, Sink};
 
 fn ts_from_millis(ms: u64) -> Timestamp {
     Timestamp::from_system_time(UNIX_EPOCH + Duration::from_millis(ms))
@@ -236,9 +234,24 @@ fn logger_sequential() {
         c.lock().unwrap_or_else(|e| e.into_inner()).push(rec.level);
     })));
     logger.set_level(Level::Warn);
-    logger.log(Level::Info, "should not appear".into(), "test.rs", 1, Vec::new());
-    assert!(captured.lock().unwrap_or_else(|e| e.into_inner()).is_empty());
-    logger.log(Level::Error, "should appear".into(), "test.rs", 2, Vec::new());
+    logger.log(
+        Level::Info,
+        "should not appear".into(),
+        "test.rs",
+        1,
+        Vec::new(),
+    );
+    assert!(captured
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_empty());
+    logger.log(
+        Level::Error,
+        "should appear".into(),
+        "test.rs",
+        2,
+        Vec::new(),
+    );
     assert_eq!(captured.lock().unwrap_or_else(|e| e.into_inner()).len(), 1);
 
     // ── convenience methods ──
@@ -246,7 +259,9 @@ fn logger_sequential() {
     let captured2 = Arc::new(Mutex::new(Vec::new()));
     let c2 = captured2.clone();
     logger.add_sink(Arc::new(CallbackSink::new(move |rec: &Record| {
-        c2.lock().unwrap_or_else(|e| e.into_inner()).push((rec.level, rec.message.clone()));
+        c2.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push((rec.level, rec.message.clone()));
     })));
     logger.set_level(Level::Trace);
     logger.trace("trace msg".into(), "t.rs", 1);
@@ -261,12 +276,22 @@ fn logger_sequential() {
         assert!(msgs.len() >= 6, "expected >=6 logs, got {}", msgs.len());
         // 验证自己的 6 条日志都存在且顺序正确
         let own_levels: Vec<Level> = vec![
-            Level::Trace, Level::Debug, Level::Info,
-            Level::Warn, Level::Error, Level::Fatal,
+            Level::Trace,
+            Level::Debug,
+            Level::Info,
+            Level::Warn,
+            Level::Error,
+            Level::Fatal,
         ];
-        let own_msgs: Vec<&(Level, String)> = msgs.iter().filter(|(_, msg)| {
-            matches!(msg.as_str(), "trace msg"|"debug msg"|"info msg"|"warn msg"|"error msg"|"fatal msg")
-        }).collect();
+        let own_msgs: Vec<&(Level, String)> = msgs
+            .iter()
+            .filter(|(_, msg)| {
+                matches!(
+                    msg.as_str(),
+                    "trace msg" | "debug msg" | "info msg" | "warn msg" | "error msg" | "fatal msg"
+                )
+            })
+            .collect();
         assert_eq!(own_msgs.len(), 6, "should find exactly 6 own messages");
         for (i, m) in own_msgs.iter().enumerate() {
             assert_eq!(m.0, own_levels[i], "own message {} level mismatch", i);

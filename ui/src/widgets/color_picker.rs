@@ -2,16 +2,16 @@
 //!
 //! 预设色板选择，点击触发弹出面板。
 
-use uix_platform::{Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, Radius};
+use uix_platform::{Rect, Size};
 
 const PRESET_COLORS: &[u32] = &[
-    0xF52222, 0xFA541C, 0xFA8C16, 0xFADB14, 0x52C41A, 0x13C2C2, 0x1677FF, 0x2F54EB,
-    0x722ED1, 0xEB2F96, 0xFF85C0, 0xFFEC3D, 0x95DE64, 0x5CDBD3, 0x85A5FF, 0xB37FEB,
-    0xF0F0F0, 0xD9D9D9, 0xBFBFBF, 0x8C8C8C, 0x434343, 0x262626, 0x1F1F1F, 0x141414,
+    0xF52222, 0xFA541C, 0xFA8C16, 0xFADB14, 0x52C41A, 0x13C2C2, 0x1677FF, 0x2F54EB, 0x722ED1,
+    0xEB2F96, 0xFF85C0, 0xFFEC3D, 0x95DE64, 0x5CDBD3, 0x85A5FF, 0xB37FEB, 0xF0F0F0, 0xD9D9D9,
+    0xBFBFBF, 0x8C8C8C, 0x434343, 0x262626, 0x1F1F1F, 0x141414,
 ];
 
 // ColorPicker — 颜色选择器。
@@ -150,17 +150,29 @@ impl ColorPicker {
         Self {
             value,
             open: false,
-            preset_colors: PRESET_COLORS.iter().map(|&c| Color::from_rgba(
-                ((c >> 16) & 0xFF) as u8, ((c >> 8) & 0xFF) as u8, (c & 0xFF) as u8, 255
-            )).collect(),
+            preset_colors: PRESET_COLORS
+                .iter()
+                .map(|&c| {
+                    Color::from_rgba(
+                        ((c >> 16) & 0xFF) as u8,
+                        ((c >> 8) & 0xFF) as u8,
+                        (c & 0xFF) as u8,
+                        255,
+                    )
+                })
+                .collect(),
             hovered: false,
             hovered_idx: None,
             focused: false,
             on_change: None,
         }
     }
-    pub fn value(&self) -> Color { self.value }
-    pub fn set_value(&mut self, v: Color) { self.value = v; }
+    pub fn value(&self) -> Color {
+        self.value
+    }
+    pub fn set_value(&mut self, v: Color) {
+        self.value = v;
+    }
     pub fn on_change<F: FnMut(Color) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

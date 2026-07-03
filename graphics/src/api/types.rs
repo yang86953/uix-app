@@ -19,16 +19,14 @@ pub use crate::path::{FillRule, LineCap, LineJoin, Path, PathBuilder, PathSegmen
 pub use crate::stroker::StrokeOptions;
 
 // ── 字体文本 ──
-pub use crate::text_backend::{
-    GlyphRaster, LineInfo, LineMetrics, PositionedGlyph, TextLayout,
-};
+pub use crate::text_backend::{GlyphRaster, LineInfo, LineMetrics, PositionedGlyph, TextLayout};
 
 // ── 空间坐标系统 ──
-pub use crate::spatial::{
-    AABB3D, DirtyRegion3D, IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit,
-    PhysicalUnitExt, Quad2D, Ray3D, SpatialContext, Vec2, Vec3, Vec4,
-};
 pub use crate::spatial::unit::AngleExt;
+pub use crate::spatial::{
+    DirtyRegion3D, IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit, PhysicalUnitExt,
+    Quad2D, Ray3D, SpatialContext, Vec2, Vec3, Vec4, AABB3D,
+};
 
 // ── 帧图 ──
 pub use crate::frame_graph::compile::{CompiledGraph, Compiler};
@@ -37,9 +35,9 @@ pub use crate::frame_graph::resource::{PassId, ResourceRegistry};
 pub use crate::frame_graph::FrameGraph;
 
 // ── 引擎实现 ──
-pub use crate::null_engine::NullEngine;
-pub use crate::gpu_engine::GpuEngine;
 pub use crate::engine::cpu::software::SoftwareEngine;
+pub use crate::gpu_engine::GpuEngine;
+pub use crate::null_engine::NullEngine;
 
 // ── 其他 ──
 pub use crate::bitmap_font::BitmapFont;

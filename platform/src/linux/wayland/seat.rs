@@ -10,9 +10,9 @@ use std::sync::{Arc, Mutex};
 
 use wayland_client::protocol::{wl_data_device, wl_keyboard, wl_pointer, wl_seat};
 
-use crate::{KeyMod, MouseButton, Point};
 use crate::event::*;
 use crate::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
+use crate::{KeyMod, MouseButton, Point};
 
 use super::WaylandBackend;
 
@@ -64,7 +64,7 @@ impl WaylandBackend {
         let repeat_delay = self.repeat_delay.clone();
         let held_key_info = self.held_key_info.clone();
         let last_repeat_time = self.last_repeat_time.clone();
-                    let _kbd = seat.get_keyboard();
+        let _kbd = seat.get_keyboard();
 
         seat.quick_assign(move |seat, event, _| {
             if let wl_seat::Event::Capabilities { capabilities } = event {
@@ -76,14 +76,26 @@ impl WaylandBackend {
                     ptr.quick_assign(move |_, event, _| {
                         let mut q = ev.lock().unwrap_or_else(|e| e.into_inner());
                         match event {
-                            wl_pointer::Event::Enter { surface_x, surface_y, .. } => {
+                            wl_pointer::Event::Enter {
+                                surface_x,
+                                surface_y,
+                                ..
+                            } => {
                                 let p = Point::new(surface_x as f32, surface_y as f32);
-                                if let Ok(mut lp) = pos.lock() { lp.position = p; }
+                                if let Ok(mut lp) = pos.lock() {
+                                    lp.position = p;
+                                }
                                 q.push_back(UiEvent::mouse_move(p));
                             }
-                            wl_pointer::Event::Motion { surface_x, surface_y, .. } => {
+                            wl_pointer::Event::Motion {
+                                surface_x,
+                                surface_y,
+                                ..
+                            } => {
                                 let p = Point::new(surface_x as f32, surface_y as f32);
-                                if let Ok(mut lp) = pos.lock() { lp.position = p; }
+                                if let Ok(mut lp) = pos.lock() {
+                                    lp.position = p;
+                                }
                                 q.push_back(UiEvent::mouse_move(p));
                             }
                             wl_pointer::Event::Leave { .. } => {}
@@ -94,7 +106,8 @@ impl WaylandBackend {
                                     0x112 => MouseButton::Middle,
                                     _ => MouseButton::None,
                                 };
-                                let click_pos = pos.lock().map(|lp| lp.position).unwrap_or_default();
+                                let click_pos =
+                                    pos.lock().map(|lp| lp.position).unwrap_or_default();
                                 if state == wl_pointer::ButtonState::Pressed {
                                     q.push_back(UiEvent::mouse_down(click_pos, btn));
                                 } else {
@@ -108,16 +121,26 @@ impl WaylandBackend {
                                     _ => (0.0, 0.0),
                                 };
                                 if dx != 0.0 || dy != 0.0 {
-                                    let scroll_pos = pos.lock().map(|lp| lp.position).unwrap_or_default();
-                                    q.push_back(UiEvent::mouse_wheel(scroll_pos, dx as f32, dy as f32, KeyMod::NONE));
+                                    let scroll_pos =
+                                        pos.lock().map(|lp| lp.position).unwrap_or_default();
+                                    q.push_back(UiEvent::mouse_wheel(
+                                        scroll_pos,
+                                        dx as f32,
+                                        dy as f32,
+                                        KeyMod::NONE,
+                                    ));
                                 }
                             }
                             _ => {}
                         }
                     });
-                    if let Ok(mut p) = wl_pointer_handle.lock() { *p = Some(ptr); }
+                    if let Ok(mut p) = wl_pointer_handle.lock() {
+                        *p = Some(ptr);
+                    }
                 } else {
-                    if let Ok(mut p) = wl_pointer_handle.lock() { *p = None; }
+                    if let Ok(mut p) = wl_pointer_handle.lock() {
+                        *p = None;
+                    }
                 }
                 if capabilities.contains(Capability::Keyboard) {
                     let ev = ptr_events.clone();
@@ -138,8 +161,10 @@ impl WaylandBackend {
                                 if state == wl_keyboard::KeyState::Pressed {
                                     // 去重：若已启用客户端侧重复且该键已被按下，
                                     // 跳过 compositor 发送的重复 Key 事件，避免双重重复
-                                    let client_repeat_enabled = *repeat_rate.lock().unwrap_or_else(|e| e.into_inner()) > 0;
-                                    let already_down = kd.lock().map(|ks| ks.contains(&code)).unwrap_or(false);
+                                    let client_repeat_enabled =
+                                        *repeat_rate.lock().unwrap_or_else(|e| e.into_inner()) > 0;
+                                    let already_down =
+                                        kd.lock().map(|ks| ks.contains(&code)).unwrap_or(false);
                                     if client_repeat_enabled && already_down {
                                         // compositor 侧重复，由客户端自行处理
                                         return;
@@ -156,7 +181,12 @@ impl WaylandBackend {
                                     }
                                     // 记录按住的键，用于客户端侧重复
                                     if let Ok(mut hki) = held_key_info.lock() {
-                                        *hki = Some((key, code, current_mods, std::time::Instant::now()));
+                                        *hki = Some((
+                                            key,
+                                            code,
+                                            current_mods,
+                                            std::time::Instant::now(),
+                                        ));
                                     }
                                     if let Ok(mut lrt) = last_repeat_time.lock() {
                                         *lrt = None;
@@ -175,14 +205,27 @@ impl WaylandBackend {
                                     }
                                 }
                             }
-                            wl_keyboard::Event::Modifiers { mods_depressed, mods_latched, mods_locked, .. } => {
+                            wl_keyboard::Event::Modifiers {
+                                mods_depressed,
+                                mods_latched,
+                                mods_locked,
+                                ..
+                            } => {
                                 if let Ok(mut m) = mods.lock() {
                                     let combined = mods_depressed | mods_latched | mods_locked;
                                     *m = KeyMod::NONE;
-                                    if combined & 1 != 0 { *m |= KeyMod::SHIFT; }
-                                    if combined & 4 != 0 { *m |= KeyMod::CTRL; }
-                                    if combined & 8 != 0 { *m |= KeyMod::ALT; }
-                                    if combined & 16 != 0 { *m |= KeyMod::SUPER; }
+                                    if combined & 1 != 0 {
+                                        *m |= KeyMod::SHIFT;
+                                    }
+                                    if combined & 4 != 0 {
+                                        *m |= KeyMod::CTRL;
+                                    }
+                                    if combined & 8 != 0 {
+                                        *m |= KeyMod::ALT;
+                                    }
+                                    if combined & 16 != 0 {
+                                        *m |= KeyMod::SUPER;
+                                    }
                                 }
                                 // 修饰键变化时重置重复状态
                                 if let Ok(mut hki) = held_key_info.lock() {
@@ -203,9 +246,13 @@ impl WaylandBackend {
                             _ => {}
                         }
                     });
-                    if let Ok(mut k) = wl_keyboard_handle.lock() { *k = Some(kbd); }
+                    if let Ok(mut k) = wl_keyboard_handle.lock() {
+                        *k = Some(kbd);
+                    }
                 } else {
-                    if let Ok(mut k) = wl_keyboard_handle.lock() { *k = None; }
+                    if let Ok(mut k) = wl_keyboard_handle.lock() {
+                        *k = None;
+                    }
                 }
             }
         });
@@ -216,7 +263,9 @@ impl WaylandBackend {
         let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
         for _ in 0..5 {
             let has_pointer = self.pointer.lock().map(|p| p.is_some()).unwrap_or(false);
-            if has_pointer { break; }
+            if has_pointer {
+                break;
+            }
             let _ = self.display.flush();
             let _ = self.event_queue.dispatch(&mut (), |_, _, _| {});
         }

@@ -1,8 +1,8 @@
 //! Fake 图形上下文 — 空操作实现，记录调用。
 
-use std::cell::Cell;
 use crate::api::traits::IGraphicsContext;
 use crate::error::Result;
+use std::cell::Cell;
 
 #[derive(Debug, Clone)]
 pub struct FakeGraphicsContextState {
@@ -34,11 +34,15 @@ pub struct FakeGraphicsContext {
 
 impl FakeGraphicsContext {
     pub fn new() -> Self {
-        Self { state: FakeGraphicsContextState::new(0, 0) }
+        Self {
+            state: FakeGraphicsContextState::new(0, 0),
+        }
     }
 
     pub fn with_size(width: i32, height: i32) -> Self {
-        Self { state: FakeGraphicsContextState::new(width, height) }
+        Self {
+            state: FakeGraphicsContextState::new(width, height),
+        }
     }
 }
 

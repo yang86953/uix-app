@@ -1,15 +1,15 @@
 //! Card widget — Ant Design style container with elevation, shadow, optional
 //! title, body, hover feedback, and configurable border radius.
 
+use crate::children::WidgetChildren;
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
 use crate::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
-use uix_platform::{EdgeInsets, Point, Rect, Size};
-use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetEvent, WidgetComponent, WidgetId, WidgetTree};
+use crate::widget::{EventResult, WidgetComponent, WidgetEvent, WidgetId, WidgetTree};
+use uix_graphics::{Color, Radius};
+use uix_platform::{EdgeInsets, Point, Rect, Size};
 
 define_widget! {
     /// Card widget with shadow elevation, hover highlight, and content padding.
@@ -202,7 +202,9 @@ define_widget! {
 /// increases naturally: the contact shadow grows slightly, while the ambient
 /// and glow layers expand significantly.
 fn draw_elevation_shadow(ctx: &mut RenderContext, frame: Rect, elevation: u8) {
-    if elevation == 0 { return; }
+    if elevation == 0 {
+        return;
+    }
     let shadow = ctx.tokens().box_shadow();
     let corner_radius = Some(Radius::uniform(ctx.tokens().border_radius_lg()));
 
@@ -215,10 +217,7 @@ fn draw_elevation_shadow(ctx: &mut RenderContext, frame: Rect, elevation: u8) {
         _ => return,
     };
 
-    let boost = |c: Color| Color::from_rgba(
-        c.r, c.g, c.b,
-        (c.a as f32 * alpha_b).min(255.0) as u8,
-    );
+    let boost = |c: Color| Color::from_rgba(c.r, c.g, c.b, (c.a as f32 * alpha_b).min(255.0) as u8);
 
     // ── Layer 1: Contact shadow ──
     // Directional (y-down), tight blur, sharp smoothstep falloff.
@@ -226,9 +225,9 @@ fn draw_elevation_shadow(ctx: &mut RenderContext, frame: Rect, elevation: u8) {
     if bl1 > 0.0 && col1.a > 0 {
         ctx.draw_box_shadow(
             frame,
-            bl1 * dir_s,                // blur
-            ox1,                         // x-offset (0 = centered contact)
-            oy1 * dir_s * 1.5,          // y-offset (emphasise downward)
+            bl1 * dir_s,       // blur
+            ox1,               // x-offset (0 = centered contact)
+            oy1 * dir_s * 1.5, // y-offset (emphasise downward)
             boost(col1),
             corner_radius,
         );
@@ -241,9 +240,9 @@ fn draw_elevation_shadow(ctx: &mut RenderContext, frame: Rect, elevation: u8) {
     if bl2 > 0.0 && col2.a > 0 {
         ctx.draw_box_shadow_ambient(
             frame,
-            bl2 * amb_s,                // larger blur = wider ambient
-            ox2 * 0.3,                  // slight x-spread
-            oy2 * amb_s * 0.6,          // moderate y-offset
+            bl2 * amb_s,       // larger blur = wider ambient
+            ox2 * 0.3,         // slight x-spread
+            oy2 * amb_s * 0.6, // moderate y-offset
             boost(col2),
             corner_radius,
         );
@@ -256,8 +255,9 @@ fn draw_elevation_shadow(ctx: &mut RenderContext, frame: Rect, elevation: u8) {
     if bl3 > 0.0 && col3.a > 0 {
         ctx.draw_box_shadow_ambient(
             frame,
-            bl3 * glow_s,               // very wide blur
-            0.0, 0.0,                   // no offset — uniform
+            bl3 * glow_s, // very wide blur
+            0.0,
+            0.0, // no offset — uniform
             boost(col3),
             corner_radius,
         );
@@ -265,7 +265,9 @@ fn draw_elevation_shadow(ctx: &mut RenderContext, frame: Rect, elevation: u8) {
 }
 
 impl Default for Card {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Card {
@@ -285,13 +287,35 @@ impl Card {
         }
     }
 
-    pub fn title(mut self, t: &str) -> Self { self.title = Some(t.to_string()); self }
-    pub fn bordered(mut self, v: bool) -> Self { self.bordered = v; self }
-    pub fn hoverable(mut self) -> Self { self.hoverable = true; self }
-    pub fn size(mut self, w: f32, h: f32) -> Self { self.fixed_width = Some(w); self.fixed_height = Some(h); self }
-    pub fn padding(mut self, p: f32) -> Self { self.padding = p; self }
-    pub fn elevation(mut self, e: u8) -> Self { self.elevation = e.min(3); self }
-    pub fn flex_grow(mut self, v: f32) -> Self { self.flex_grow_val = v; self }
+    pub fn title(mut self, t: &str) -> Self {
+        self.title = Some(t.to_string());
+        self
+    }
+    pub fn bordered(mut self, v: bool) -> Self {
+        self.bordered = v;
+        self
+    }
+    pub fn hoverable(mut self) -> Self {
+        self.hoverable = true;
+        self
+    }
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.fixed_width = Some(w);
+        self.fixed_height = Some(h);
+        self
+    }
+    pub fn padding(mut self, p: f32) -> Self {
+        self.padding = p;
+        self
+    }
+    pub fn elevation(mut self, e: u8) -> Self {
+        self.elevation = e.min(3);
+        self
+    }
+    pub fn flex_grow(mut self, v: f32) -> Self {
+        self.flex_grow_val = v;
+        self
+    }
     pub fn actions(mut self, list: Vec<impl Into<String>>) -> Self {
         self.actions = list.into_iter().map(|s| s.into()).collect();
         self

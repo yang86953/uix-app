@@ -7,13 +7,11 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use uix_platform::{Point, Size};
-use uix_platform::Error;
-use crate::text_backend::{
-    self as tb, GlyphRaster, TextLayout, TextLayoutOptions,
-};
 use crate::api::traits::TextBackend;
+use crate::text_backend::{self as tb, GlyphRaster, TextLayout, TextLayoutOptions};
 use crate::{FontHandle, HAlign};
+use uix_platform::Error;
+use uix_platform::{Point, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 字体元数据
@@ -101,7 +99,8 @@ impl GlyphCache {
         self.inner
             .lock()
             .map(|map| {
-                map.values().map(|r| std::mem::size_of::<GlyphCacheKey>() + r.width * r.height)
+                map.values()
+                    .map(|r| std::mem::size_of::<GlyphCacheKey>() + r.width * r.height)
                     .sum()
             })
             .unwrap_or(0)
@@ -145,9 +144,7 @@ impl FontService {
     /// 创建新的字体服务实例（ab_glyph 后端）。
     pub fn new() -> Self {
         Self {
-            text_backend: Box::new(
-                crate::text_backends::ab_glyph::AbGlyphBackend::new(),
-            ),
+            text_backend: Box::new(crate::text_backends::ab_glyph::AbGlyphBackend::new()),
             registry: Vec::new(),
             primary_family: "sans-serif".into(),
             user_family_set: false,
@@ -342,7 +339,11 @@ impl FontService {
     /// 加载系统默认字体（自动检测平台）。
     /// 第一个成功加载的字体作为主字体，其余作为回退链。
     /// 始终在注册表中记录 family 信息。
-    pub fn load_default_system_font(&mut self, size: f32, system_info: &dyn uix_platform::ISystemInfo) {
+    pub fn load_default_system_font(
+        &mut self,
+        size: f32,
+        system_info: &dyn uix_platform::ISystemInfo,
+    ) {
         if self.user_family_set {
             let family = self.primary_family.clone();
             let found = self.load_family_font(&family, size, system_info);
@@ -354,8 +355,10 @@ impl FontService {
             if let Some(path) = fallback_paths.first() {
                 if let Ok(data) = std::fs::read(path) {
                     if self.load_raw_font(data, size).is_some() {
-                        uix_platform::log::info_fn(format!("Configured font '{}' not found, fallback: {}",
-                            self.primary_family, path));
+                        uix_platform::log::info_fn(format!(
+                            "Configured font '{}' not found, fallback: {}",
+                            self.primary_family, path
+                        ));
                         return;
                     }
                 }
@@ -381,26 +384,31 @@ impl FontService {
                                         self.registry[idx].face.family =
                                             self.primary_family.clone();
                                     } else {
-                                        self.registry[idx].face.family =
-                                            fallback_name.to_owned();
+                                        self.registry[idx].face.family = fallback_name.to_owned();
                                     }
                                 }
 
                                 if !primary_loaded {
                                     primary_loaded = true;
                                     self.loaded_font_handle = handle;
-                                    uix_platform::log::info_fn(format!("Loaded system default font: {} (handle={:?})",
-                                        path, handle));
+                                    uix_platform::log::info_fn(format!(
+                                        "Loaded system default font: {} (handle={:?})",
+                                        path, handle
+                                    ));
                                 } else {
-                                    uix_platform::log::info_fn(format!("Loaded fallback font: {}",
-                                        path));
+                                    uix_platform::log::info_fn(format!(
+                                        "Loaded fallback font: {}",
+                                        path
+                                    ));
                                     self.fallback_handles.push(handle);
                                 }
                             }
                         }
                         Err(e) => {
-                            uix_platform::log::info_fn(format!("Failed to read font file {}: {}",
-                                path, e));
+                            uix_platform::log::info_fn(format!(
+                                "Failed to read font file {}: {}",
+                                path, e
+                            ));
                         }
                     }
                 }
@@ -448,32 +456,38 @@ impl FontService {
                 && self.text_backend.has_glyph(&self.loaded_font_handle, ch)
         });
         if primary_has_cjk {
-            uix_platform::log::info_fn("Primary font already supports CJK, skipping CJK fallback load");
+            uix_platform::log::info_fn(
+                "Primary font already supports CJK, skipping CJK fallback load",
+            );
             return;
         }
 
         let cjk_path = system_info.probe_cjk_font_path();
         match cjk_path {
-            Some(path) => {
-                match std::fs::read(&path) {
-                    Ok(data) => {
-                        if let Some(handle) = self.load_raw_font(data, size) {
-                            if !self.fallback_handles.iter().any(|h| h.0 == handle.0) {
-                                self.fallback_handles.push(handle);
-                                uix_platform::log::info_fn(format!("Loaded CJK fallback font: {}",
-                                    path));
-                            }
-                        } else {
-                            uix_platform::log::info_fn(format!("CJK font '{}' found but failed to load (incompatible format)",
-                                path));
+            Some(path) => match std::fs::read(&path) {
+                Ok(data) => {
+                    if let Some(handle) = self.load_raw_font(data, size) {
+                        if !self.fallback_handles.iter().any(|h| h.0 == handle.0) {
+                            self.fallback_handles.push(handle);
+                            uix_platform::log::info_fn(format!(
+                                "Loaded CJK fallback font: {}",
+                                path
+                            ));
                         }
-                    }
-                    Err(e) => {
-                        uix_platform::log::info_fn(format!("Failed to read CJK font file {}: {}",
-                            path, e));
+                    } else {
+                        uix_platform::log::info_fn(format!(
+                            "CJK font '{}' found but failed to load (incompatible format)",
+                            path
+                        ));
                     }
                 }
-            }
+                Err(e) => {
+                    uix_platform::log::info_fn(format!(
+                        "Failed to read CJK font file {}: {}",
+                        path, e
+                    ));
+                }
+            },
             None => {
                 uix_platform::log::info_fn("No CJK fallback font found via platform");
             }
@@ -481,7 +495,12 @@ impl FontService {
     }
 
     /// 通过平台层按字体族名称查找并加载字体。
-    fn load_family_font(&mut self, family: &str, size: f32, system_info: &dyn uix_platform::ISystemInfo) -> Option<()> {
+    fn load_family_font(
+        &mut self,
+        family: &str,
+        size: f32,
+        system_info: &dyn uix_platform::ISystemInfo,
+    ) -> Option<()> {
         if let Some(p) = system_info.probe_family_font_path(family) {
             if let Ok(data) = std::fs::read(&p) {
                 if self.load_raw_font(data, size).is_some() {
@@ -490,8 +509,7 @@ impl FontService {
                         self.registry[idx].face.family = family.to_owned();
                         self.registry[idx].face.path = Some(p.clone());
                     }
-                    uix_platform::log::info_fn(format!("Loaded family font '{}': {}",
-                        family, p));
+                    uix_platform::log::info_fn(format!("Loaded family font '{}': {}", family, p));
                     return Some(());
                 }
             }
@@ -604,9 +622,17 @@ impl FontService {
         for (byte_i, ch) in text.char_indices() {
             if ch == '\n' {
                 if byte_i > seg_start {
-                    segments.push(FontSegment { byte_start: seg_start, byte_end: byte_i, font: seg_font });
+                    segments.push(FontSegment {
+                        byte_start: seg_start,
+                        byte_end: byte_i,
+                        font: seg_font,
+                    });
                 }
-                segments.push(FontSegment { byte_start: byte_i, byte_end: byte_i + ch.len_utf8(), font: *font });
+                segments.push(FontSegment {
+                    byte_start: byte_i,
+                    byte_end: byte_i + ch.len_utf8(),
+                    font: *font,
+                });
                 seg_start = byte_i + ch.len_utf8();
                 seg_font = *font;
                 continue;
@@ -617,7 +643,11 @@ impl FontService {
 
             if use_font.0 != seg_font.0 {
                 if byte_i > seg_start {
-                    segments.push(FontSegment { byte_start: seg_start, byte_end: byte_i, font: seg_font });
+                    segments.push(FontSegment {
+                        byte_start: seg_start,
+                        byte_end: byte_i,
+                        font: seg_font,
+                    });
                 }
                 seg_start = byte_i;
                 seg_font = use_font;
@@ -625,7 +655,11 @@ impl FontService {
         }
 
         if seg_start < text.len() {
-            segments.push(FontSegment { byte_start: seg_start, byte_end: text.len(), font: seg_font });
+            segments.push(FontSegment {
+                byte_start: seg_start,
+                byte_end: text.len(),
+                font: seg_font,
+            });
         }
 
         segments
@@ -784,7 +818,11 @@ impl FontService {
         }
 
         let fs = opts.font_size.max(1.0);
-        let line_h = if opts.line_height > 0.0 { opts.line_height } else { fs * 1.5 };
+        let line_h = if opts.line_height > 0.0 {
+            opts.line_height
+        } else {
+            fs * 1.5
+        };
         let has_max_w = opts.max_width.is_finite() && opts.max_width > 0.0;
         let do_wrap = has_max_w && opts.word_wrap;
         let max_w = if has_max_w { opts.max_width } else { f32::MAX };
@@ -799,7 +837,15 @@ impl FontService {
 
         let segments = self.segment_text(font, text);
         let (all_glyphs, line_infos) = self.layout_segments(
-            &segments, text, &seg_opts, fs, line_h, primary_ascent, do_wrap, max_w, opts.h_align,
+            &segments,
+            text,
+            &seg_opts,
+            fs,
+            line_h,
+            primary_ascent,
+            do_wrap,
+            max_w,
+            opts.h_align,
         );
 
         let total_height = line_infos.last().map_or(0.0, |l| l.y + l.height);
@@ -851,17 +897,22 @@ impl FontService {
         }
 
         // 从后端光栅化
-        let raster = self.text_backend.rasterize_glyph(font, glyph_id, pixel_size);
+        let raster = self
+            .text_backend
+            .rasterize_glyph(font, glyph_id, pixel_size);
 
         // 写入缓存
         if ps > 0 && raster.width > 0 && raster.height > 0 {
-            self.glyph_cache.insert(key, CachedRaster {
-                width: raster.width,
-                height: raster.height,
-                coverage: Arc::clone(&raster.coverage),
-                bearing_x: raster.bearing_x,
-                bearing_y: raster.bearing_y,
-            });
+            self.glyph_cache.insert(
+                key,
+                CachedRaster {
+                    width: raster.width,
+                    height: raster.height,
+                    coverage: Arc::clone(&raster.coverage),
+                    bearing_x: raster.bearing_x,
+                    bearing_y: raster.bearing_y,
+                },
+            );
         }
 
         raster
@@ -919,10 +970,7 @@ impl FontService {
         if char_index < layout.glyphs.len() {
             return layout.glyphs[char_index].x;
         }
-        layout
-            .glyphs
-            .last()
-            .map_or(0.0, |g| g.x + g.width.max(0.0))
+        layout.glyphs.last().map_or(0.0, |g| g.x + g.width.max(0.0))
     }
 
     /// 获取水平行度量。

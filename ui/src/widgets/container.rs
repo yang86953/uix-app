@@ -2,17 +2,15 @@
 
 use std::cell::Cell;
 
-use crate::define_widget;
-use uix_graphics::Color;
-use crate::{AlignItems, FlexDirection, JustifyContent};
-use crate::layout::engine::{
-    BoxModel, FlexLayout, LayoutChild, child_from_tree,
-};
 use crate::api::traits::LayoutEngine;
-use crate::style::{Style, DisplayMode, BoxShadowDef};
-use uix_platform::{EdgeInsets, Rect, Size};
+use crate::define_widget;
+use crate::layout::engine::{child_from_tree, BoxModel, FlexLayout, LayoutChild};
 use crate::render_context::RenderContext;
+use crate::style::{BoxShadowDef, DisplayMode, Style};
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
+use crate::{AlignItems, FlexDirection, JustifyContent};
+use uix_graphics::Color;
+use uix_platform::{EdgeInsets, Rect, Size};
 
 define_widget! {
     /// Container — flexbox 布局容器，带背景/边框/圆角/阴影。

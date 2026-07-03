@@ -2,11 +2,11 @@
 //!
 //! 支持列表项渲染、header/footer、bordered、size 等选项。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Radius;
+use uix_platform::{Point, Rect, Size};
 
 /// 列表尺寸。
 /// （已统一为 uix_platform::ControlSize，保留别名以兼容旧代码。）
@@ -100,16 +100,43 @@ define_widget! {
 
 impl List {
     pub fn new() -> Self {
-        Self { header: String::new(), footer: String::new(), bordered: true, list_size: ListSize::Medium, items: Vec::new(), load_more_text: String::new() }
+        Self {
+            header: String::new(),
+            footer: String::new(),
+            bordered: true,
+            list_size: ListSize::Medium,
+            items: Vec::new(),
+            load_more_text: String::new(),
+        }
     }
     pub fn items(mut self, items: Vec<impl Into<String>>) -> Self {
-        self.items = items.into_iter().map(|s| s.into()).collect(); self
+        self.items = items.into_iter().map(|s| s.into()).collect();
+        self
     }
-    pub fn header(mut self, h: &str) -> Self { self.header = h.to_string(); self }
-    pub fn footer(mut self, f: &str) -> Self { self.footer = f.to_string(); self }
-    pub fn bordered(mut self, v: bool) -> Self { self.bordered = v; self }
-    pub fn size(mut self, s: ListSize) -> Self { self.list_size = s; self }
-    pub fn load_more(mut self, text: impl Into<String>) -> Self { self.load_more_text = text.into(); self }
+    pub fn header(mut self, h: &str) -> Self {
+        self.header = h.to_string();
+        self
+    }
+    pub fn footer(mut self, f: &str) -> Self {
+        self.footer = f.to_string();
+        self
+    }
+    pub fn bordered(mut self, v: bool) -> Self {
+        self.bordered = v;
+        self
+    }
+    pub fn size(mut self, s: ListSize) -> Self {
+        self.list_size = s;
+        self
+    }
+    pub fn load_more(mut self, text: impl Into<String>) -> Self {
+        self.load_more_text = text.into();
+        self
+    }
 }
 
-impl Default for List { fn default() -> Self { Self::new() } }
+impl Default for List {
+    fn default() -> Self {
+        Self::new()
+    }
+}

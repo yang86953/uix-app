@@ -97,7 +97,8 @@ impl GpuCanvas2D {
         let u_color_loc = unsafe { gl.get_uniform_location(rect_program, "u_color") };
         let u_radius_loc = unsafe { gl.get_uniform_location(rect_program, "u_radius") };
 
-        let (tex_program, u_tex_viewport_loc, u_tex_sampler_loc) = unsafe { Self::compile_tex_shader(gl) };
+        let (tex_program, u_tex_viewport_loc, u_tex_sampler_loc) =
+            unsafe { Self::compile_tex_shader(gl) };
         let fallback_texture = unsafe { Self::create_fallback_texture(gl, width, height) };
 
         Self {
@@ -148,16 +149,11 @@ impl GpuCanvas2D {
     unsafe fn create_rect_geom(gl: &glow::Context) -> (glow::VertexArray, glow::Buffer) {
         let vao = gl.create_vertex_array().unwrap();
         let vbo = gl.create_buffer().unwrap();
-        let vertices: [f32; 12] = [
-            0.0, 0.0,  1.0, 0.0,  0.0, 1.0,
-            0.0, 1.0,  1.0, 0.0,  1.0, 1.0,
-        ];
+        let vertices: [f32; 12] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
         gl.bind_vertex_array(Some(vao));
         gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-        let data_bytes = std::slice::from_raw_parts(
-            vertices.as_ptr() as *const u8,
-            vertices.len() * 4,
-        );
+        let data_bytes =
+            std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * 4);
         gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, data_bytes, glow::STATIC_DRAW);
         gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, 8, 0);
         gl.enable_vertex_attrib_array(0);
@@ -170,22 +166,38 @@ impl GpuCanvas2D {
         let tex = gl.create_texture().unwrap();
         gl.bind_texture(glow::TEXTURE_2D, Some(tex));
         gl.tex_image_2d(
-            glow::TEXTURE_2D, 0,
+            glow::TEXTURE_2D,
+            0,
             glow::RGBA as i32,
-            w.max(1), h.max(1),
+            w.max(1),
+            h.max(1),
             0,
             glow::RGBA,
             glow::UNSIGNED_BYTE,
             glow::PixelUnpackData::Slice(None),
         );
-        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_MIN_FILTER,
+            glow::NEAREST as i32,
+        );
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_MAG_FILTER,
+            glow::NEAREST as i32,
+        );
         gl.bind_texture(glow::TEXTURE_2D, None);
         tex
     }
 
     #[allow(clippy::unwrap_used)]
-    unsafe fn compile_tex_shader(gl: &glow::Context) -> (glow::Program, Option<glow::UniformLocation>, Option<glow::UniformLocation>) {
+    unsafe fn compile_tex_shader(
+        gl: &glow::Context,
+    ) -> (
+        glow::Program,
+        Option<glow::UniformLocation>,
+        Option<glow::UniformLocation>,
+    ) {
         let vs = gl.create_shader(glow::VERTEX_SHADER).unwrap();
         gl.shader_source(vs, TEX_VERT);
         gl.compile_shader(vs);
@@ -210,11 +222,15 @@ impl GpuCanvas2D {
             let p = self.soft_fallback.pixels_mut();
             (p.as_ptr() as *const u8, p.len())
         };
-        self.gl().bind_texture(glow::TEXTURE_2D, Some(self.fallback_texture));
+        self.gl()
+            .bind_texture(glow::TEXTURE_2D, Some(self.fallback_texture));
         self.gl().tex_sub_image_2d(
-            glow::TEXTURE_2D, 0,
-            0, 0,
-            self.surface_w.max(1), self.surface_h.max(1),
+            glow::TEXTURE_2D,
+            0,
+            0,
+            0,
+            self.surface_w.max(1),
+            self.surface_h.max(1),
             glow::RGBA,
             glow::UNSIGNED_BYTE,
             glow::PixelUnpackData::Slice(Some(std::slice::from_raw_parts(ptr, len * 4))),
@@ -238,8 +254,10 @@ impl GpuCanvas2D {
 
     unsafe fn draw_rect_gpu(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
         let (cx0, cy0, cx1, cy1) = self.clip_int();
-        if rect.x + rect.w <= cx0 as f32 || rect.y + rect.h <= cy0 as f32
-            || rect.x >= cx1 as f32 || rect.y >= cy1 as f32
+        if rect.x + rect.w <= cx0 as f32
+            || rect.y + rect.h <= cy0 as f32
+            || rect.x >= cx1 as f32
+            || rect.y >= cy1 as f32
         {
             return;
         }
@@ -254,10 +272,22 @@ impl GpuCanvas2D {
             color.a as f32 / 255.0,
         ];
         self.gl().use_program(Some(self.rect_program));
-        self.gl().uniform_2_f32(self.u_viewport_loc.as_ref(), self.surface_w as f32, self.surface_h as f32);
-        self.gl().uniform_4_f32(self.u_rect_loc.as_ref(), rect.x, rect.y, rect.w, rect.h);
-        self.gl().uniform_4_f32(self.u_color_loc.as_ref(), cf[0], cf[1], cf[2], cf[3] * self.opacity);
-        self.gl().uniform_4_f32(self.u_radius_loc.as_ref(), r[0], r[1], r[2], r[3]);
+        self.gl().uniform_2_f32(
+            self.u_viewport_loc.as_ref(),
+            self.surface_w as f32,
+            self.surface_h as f32,
+        );
+        self.gl()
+            .uniform_4_f32(self.u_rect_loc.as_ref(), rect.x, rect.y, rect.w, rect.h);
+        self.gl().uniform_4_f32(
+            self.u_color_loc.as_ref(),
+            cf[0],
+            cf[1],
+            cf[2],
+            cf[3] * self.opacity,
+        );
+        self.gl()
+            .uniform_4_f32(self.u_radius_loc.as_ref(), r[0], r[1], r[2], r[3]);
         self.gl().bind_vertex_array(Some(self.rect_vao));
         self.gl().draw_arrays(glow::TRIANGLES, 0, 6);
         self.gl().bind_vertex_array(None);
@@ -299,14 +329,20 @@ impl Canvas2D for GpuCanvas2D {
         let (ox, oy) = (self.offset_x, self.offset_y);
         let rect = if ox != 0.0 || oy != 0.0 {
             Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
-        } else { rect };
-        unsafe { self.draw_rect_gpu(rect, color, radius); }
+        } else {
+            rect
+        };
+        unsafe {
+            self.draw_rect_gpu(rect, color, radius);
+        }
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
         let (ox, oy) = (self.offset_x, self.offset_y);
         let rect = Rect::new(cx - r + ox, cy - r + oy, r * 2.0, r * 2.0);
-        unsafe { self.draw_rect_gpu(rect, color, Some(Radius::uniform(r))); }
+        unsafe {
+            self.draw_rect_gpu(rect, color, Some(Radius::uniform(r)));
+        }
     }
 
     // ── 未实现 GPU 路径 → 软件回退 ──
@@ -370,28 +406,48 @@ impl Canvas2D for GpuCanvas2D {
     fn fill_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
         self.sync_fallback_state();
         self.soft_fallback.push_clip(self.clip_rect);
-        self.soft_fallback.fill_radial_gradient(cx, cy, ir, or, ic, oc);
+        self.soft_fallback
+            .fill_radial_gradient(cx, cy, ir, or, ic, oc);
         self.soft_fallback.pop_clip();
     }
 
-    fn draw_box_shadow(&mut self, rect: Rect, blur: f32, ox: f32, oy: f32, color: Color, rad: Option<Radius>) {
+    fn draw_box_shadow(
+        &mut self,
+        rect: Rect,
+        blur: f32,
+        ox: f32,
+        oy: f32,
+        color: Color,
+        rad: Option<Radius>,
+    ) {
         self.sync_fallback_state();
         self.soft_fallback.push_clip(self.clip_rect);
-        self.soft_fallback.draw_box_shadow(rect, blur, ox, oy, color, rad);
+        self.soft_fallback
+            .draw_box_shadow(rect, blur, ox, oy, color, rad);
         self.soft_fallback.pop_clip();
     }
 
-    fn draw_box_shadow_ambient(&mut self, rect: Rect, blur: f32, ox: f32, oy: f32, color: Color, rad: Option<Radius>) {
+    fn draw_box_shadow_ambient(
+        &mut self,
+        rect: Rect,
+        blur: f32,
+        ox: f32,
+        oy: f32,
+        color: Color,
+        rad: Option<Radius>,
+    ) {
         self.sync_fallback_state();
         self.soft_fallback.push_clip(self.clip_rect);
-        self.soft_fallback.draw_box_shadow_ambient(rect, blur, ox, oy, color, rad);
+        self.soft_fallback
+            .draw_box_shadow_ambient(rect, blur, ox, oy, color, rad);
         self.soft_fallback.pop_clip();
     }
 
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
         self.sync_fallback_state();
         self.soft_fallback.push_clip(self.clip_rect);
-        self.soft_fallback.blit_image(src, src_w, src_rect, dst_rect);
+        self.soft_fallback
+            .blit_image(src, src_w, src_rect, dst_rect);
         self.soft_fallback.pop_clip();
     }
 
@@ -450,7 +506,9 @@ impl Canvas2D for GpuCanvas2D {
             }
         } else {
             self.clip_rect = Rect::zero();
-            unsafe { self.gl().scissor(0, 0, 0, 0); }
+            unsafe {
+                self.gl().scissor(0, 0, 0, 0);
+            }
         }
     }
 
@@ -476,15 +534,14 @@ impl Canvas2D for GpuCanvas2D {
         self.opacity
     }
 
-
-
     fn set_blend_mode(&mut self, mode: BlendMode) {
         self.blend_mode = mode;
         unsafe {
             match mode {
                 BlendMode::Alpha | BlendMode::SrcOver => {
                     self.gl().enable(glow::BLEND);
-                    self.gl().blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+                    self.gl()
+                        .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
                 }
                 BlendMode::Additive => {
                     self.gl().enable(glow::BLEND);

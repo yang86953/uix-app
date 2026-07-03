@@ -5,21 +5,34 @@ use crate::widgets::scroll_view::ScrollView;
 impl WidgetTree {
     /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
     pub fn hit_test(&self, pos: Point) -> Option<WidgetId> {
-        self.root_id.and_then(|root| self.hit_test_internal(root, pos))
+        self.root_id
+            .and_then(|root| self.hit_test_internal(root, pos))
     }
 
     /// 3D 命中测试：根据 3D 射线找到最深的 widget。
     ///
     /// `spatial` 为当前空间上下文（用于逆变换）。
     /// 使用 Widget::hit_test_3d 方法，支持 3D 变换后的 widget。
-    pub fn hit_test_3d(&self, ray: &uix_graphics::spatial::Ray3D, spatial: &uix_graphics::spatial::SpatialContext) -> Option<WidgetId> {
-        self.root_id.and_then(|root| self.hit_test_3d_internal(root, ray, spatial))
+    pub fn hit_test_3d(
+        &self,
+        ray: &uix_graphics::spatial::Ray3D,
+        spatial: &uix_graphics::spatial::SpatialContext,
+    ) -> Option<WidgetId> {
+        self.root_id
+            .and_then(|root| self.hit_test_3d_internal(root, ray, spatial))
     }
 
     /// 3D 命中测试内部递归。
-    fn hit_test_3d_internal(&self, id: WidgetId, ray: &uix_graphics::spatial::Ray3D, spatial: &uix_graphics::spatial::SpatialContext) -> Option<WidgetId> {
+    fn hit_test_3d_internal(
+        &self,
+        id: WidgetId,
+        ray: &uix_graphics::spatial::Ray3D,
+        spatial: &uix_graphics::spatial::SpatialContext,
+    ) -> Option<WidgetId> {
         let node = self.get(id)?;
-        if !node.visible() { return None; }
+        if !node.visible() {
+            return None;
+        }
         let mut sorted: Vec<WidgetId> = node.children().to_vec();
         sorted.sort_by(|&a, &b| {
             let za = self.get(a).map_or(0, |c| c.z_index());
@@ -54,7 +67,9 @@ impl WidgetTree {
 
     fn hit_test_internal(&self, id: WidgetId, pos: Point) -> Option<WidgetId> {
         let node = self.get(id)?;
-        if !node.visible() { return None; }
+        if !node.visible() {
+            return None;
+        }
 
         // 如果当前节点是 ScrollView，对其子节点做 scroll offset 补偿。
         // ScrollView 的子节点按自然坐标布局，但渲染时通过 canvas translate(-sx, -sy) 偏移。
@@ -72,12 +87,18 @@ impl WidgetTree {
             zb.cmp(&za)
         });
         for &child_id in &sorted {
-            if let Some(hit) = self.hit_test_internal(child_id, child_pos) { return Some(hit); }
+            if let Some(hit) = self.hit_test_internal(child_id, child_pos) {
+                return Some(hit);
+            }
         }
         // 使用 widget 的 hit_test_frame 代替原始 frame，支持 overlay 模式
         let actual_frame = node.frame();
         let hit_frame = node.hit_test_frame(actual_frame);
-        if hit_frame.contains(pos) { Some(id) } else { None }
+        if hit_frame.contains(pos) {
+            Some(id)
+        } else {
+            None
+        }
     }
 
     pub fn dispatch_event(&mut self, event: &WidgetEvent) -> EventResult {
@@ -106,7 +127,10 @@ impl WidgetTree {
                         self.set_focus(None);
                     }
                     result
-                } else { self.set_focus(None); EventResult::NotHandled }
+                } else {
+                    self.set_focus(None);
+                    EventResult::NotHandled
+                }
             }
             WidgetEvent::MouseUp { pos, button, mods } => {
                 let hold = self.mouse_down_target;
@@ -115,7 +139,9 @@ impl WidgetTree {
                     if let Some(target) = self.drag_gesture.target {
                         self.mark_dirty(target);
                         let drag_end = WidgetEvent::DragEnd {
-                            pos: *pos, button: *button, mods: *mods,
+                            pos: *pos,
+                            button: *button,
+                            mods: *mods,
                         };
                         let _ = self.dispatch_to(target, &drag_end);
                     }
@@ -133,7 +159,10 @@ impl WidgetTree {
                     result = self.dispatch_to(t, event);
                 }
                 if let Some(t) = hold {
-                    if Some(t) != hit { self.mark_dirty(t); let _ = self.dispatch_to(t, event); }
+                    if Some(t) != hit {
+                        self.mark_dirty(t);
+                        let _ = self.dispatch_to(t, event);
+                    }
                 }
                 result
             }
@@ -167,7 +196,9 @@ impl WidgetTree {
                             pos.y - self.drag_gesture.last_pos.y,
                         );
                         let drag_move = WidgetEvent::DragMove {
-                            pos: *pos, delta, mods: *mods,
+                            pos: *pos,
+                            delta,
+                            mods: *mods,
                         };
                         let _ = self.dispatch_to(target, &drag_move);
                     }
@@ -194,8 +225,11 @@ impl WidgetTree {
                     self.mark_dirty(drag_target);
                     let _ = self.dispatch_to(drag_target, event);
                 }
-                if let Some(t) = new_hover { self.dispatch_to(t, event) }
-                else { EventResult::NotHandled }
+                if let Some(t) = new_hover {
+                    self.dispatch_to(t, event)
+                } else {
+                    EventResult::NotHandled
+                }
             }
             WidgetEvent::MouseWheel { pos, .. } => {
                 let target = self.hit_test(*pos).or(self.hovered_widget).or(self.root_id);
@@ -206,8 +240,9 @@ impl WidgetTree {
                         return EventResult::Handled;
                     }
                     self.dispatch_to(t, event)
+                } else {
+                    EventResult::NotHandled
                 }
-                else { EventResult::NotHandled }
             }
             WidgetEvent::KeyDown { key, mods } => {
                 // Tab 键焦点导航（在捕获和冒泡之前处理）
@@ -227,8 +262,9 @@ impl WidgetTree {
                         return EventResult::Handled;
                     }
                     self.dispatch_to(t, event)
+                } else {
+                    EventResult::NotHandled
                 }
-                else { EventResult::NotHandled }
             }
             WidgetEvent::KeyUp { .. } => {
                 if let Some(t) = self.focused_widget {
@@ -238,16 +274,24 @@ impl WidgetTree {
                         return EventResult::Handled;
                     }
                     self.dispatch_to(t, event)
+                } else {
+                    EventResult::NotHandled
                 }
-                else { EventResult::NotHandled }
             }
             WidgetEvent::KeyPress { .. } => {
-                if let Some(t) = self.focused_widget { self.mark_dirty(t); self.dispatch_to(t, event) }
-                else { EventResult::NotHandled }
+                if let Some(t) = self.focused_widget {
+                    self.mark_dirty(t);
+                    self.dispatch_to(t, event)
+                } else {
+                    EventResult::NotHandled
+                }
             }
             WidgetEvent::FocusIn | WidgetEvent::FocusOut => {
-                if let Some(t) = self.focused_widget { self.dispatch_to(t, event) }
-                else { EventResult::NotHandled }
+                if let Some(t) = self.focused_widget {
+                    self.dispatch_to(t, event)
+                } else {
+                    EventResult::NotHandled
+                }
             }
             WidgetEvent::HoverEnter | WidgetEvent::HoverLeave => EventResult::NotHandled,
             // 窗口状态变化事件 → 统一分发给 root，让应用层处理
@@ -256,18 +300,27 @@ impl WidgetTree {
             | WidgetEvent::WindowRestore
             | WidgetEvent::WindowFocus
             | WidgetEvent::WindowBlur => {
-                if let Some(root) = self.root_id { self.dispatch_to(root, event) }
-                else { EventResult::NotHandled }
+                if let Some(root) = self.root_id {
+                    self.dispatch_to(root, event)
+                } else {
+                    EventResult::NotHandled
+                }
             }
             WidgetEvent::Timer { .. } => {
                 // 定时器事件分发给 root
-                if let Some(root) = self.root_id { self.dispatch_to(root, event) }
-                else { EventResult::NotHandled }
+                if let Some(root) = self.root_id {
+                    self.dispatch_to(root, event)
+                } else {
+                    EventResult::NotHandled
+                }
             }
             WidgetEvent::FileDrop { .. } => {
                 // 文件拖放分发给 root
-                if let Some(root) = self.root_id { self.dispatch_to(root, event) }
-                else { EventResult::NotHandled }
+                if let Some(root) = self.root_id {
+                    self.dispatch_to(root, event)
+                } else {
+                    EventResult::NotHandled
+                }
             }
             // 拖拽组合事件：由 dispatch_event 内部合成并直接 dispatch_to，
             // 不会从外部传入 dispatch_event。
@@ -287,7 +340,9 @@ impl WidgetTree {
                         self.tree_version += 1;
                     }
                     self.dispatch_to(root, event)
-                } else { EventResult::NotHandled }
+                } else {
+                    EventResult::NotHandled
+                }
             }
         }
     }
@@ -306,18 +361,30 @@ impl WidgetTree {
             }
             current = self.get(id).and_then(|n| n.parent());
         }
-        if found { Some((sx, sy)) } else { None }
+        if found {
+            Some((sx, sy))
+        } else {
+            None
+        }
     }
 
     /// 在 MouseDown/MouseUp/MouseMove 事件位置上增加偏移量。
     fn add_offset_to_event(event: WidgetEvent, sx: f32, sy: f32) -> WidgetEvent {
         match event {
-            WidgetEvent::MouseDown { pos, button, mods } =>
-                WidgetEvent::MouseDown { pos: Point::new(pos.x + sx, pos.y + sy), button, mods },
-            WidgetEvent::MouseUp { pos, button, mods } =>
-                WidgetEvent::MouseUp { pos: Point::new(pos.x + sx, pos.y + sy), button, mods },
-            WidgetEvent::MouseMove { pos, mods } =>
-                WidgetEvent::MouseMove { pos: Point::new(pos.x + sx, pos.y + sy), mods },
+            WidgetEvent::MouseDown { pos, button, mods } => WidgetEvent::MouseDown {
+                pos: Point::new(pos.x + sx, pos.y + sy),
+                button,
+                mods,
+            },
+            WidgetEvent::MouseUp { pos, button, mods } => WidgetEvent::MouseUp {
+                pos: Point::new(pos.x + sx, pos.y + sy),
+                button,
+                mods,
+            },
+            WidgetEvent::MouseMove { pos, mods } => WidgetEvent::MouseMove {
+                pos: Point::new(pos.x + sx, pos.y + sy),
+                mods,
+            },
             other => other,
         }
     }
@@ -395,26 +462,28 @@ impl WidgetTree {
 
     fn translate_mouse_event(event: &WidgetEvent, frame: Rect) -> WidgetEvent {
         match *event {
-            WidgetEvent::MouseDown { pos, button, mods } =>
-                WidgetEvent::MouseDown {
-                    pos: Point::new(pos.x - frame.x, pos.y - frame.y),
-                    button,
-                    mods,
-                },
-            WidgetEvent::MouseUp { pos, button, mods } =>
-                WidgetEvent::MouseUp {
-                    pos: Point::new(pos.x - frame.x, pos.y - frame.y),
-                    button,
-                    mods,
-                },
-            WidgetEvent::MouseMove { pos, mods } =>
-                WidgetEvent::MouseMove { pos: Point::new(pos.x - frame.x, pos.y - frame.y), mods },
+            WidgetEvent::MouseDown { pos, button, mods } => WidgetEvent::MouseDown {
+                pos: Point::new(pos.x - frame.x, pos.y - frame.y),
+                button,
+                mods,
+            },
+            WidgetEvent::MouseUp { pos, button, mods } => WidgetEvent::MouseUp {
+                pos: Point::new(pos.x - frame.x, pos.y - frame.y),
+                button,
+                mods,
+            },
+            WidgetEvent::MouseMove { pos, mods } => WidgetEvent::MouseMove {
+                pos: Point::new(pos.x - frame.x, pos.y - frame.y),
+                mods,
+            },
             ref other => other.clone(),
         }
     }
 
     fn set_focus(&mut self, new_focus: Option<WidgetId>) {
-        if new_focus == self.focused_widget { return; }
+        if new_focus == self.focused_widget {
+            return;
+        }
         if let Some(old) = self.focused_widget {
             self.mark_dirty(old);
             let _ = self.dispatch_to(old, &WidgetEvent::FocusOut);

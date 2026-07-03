@@ -4,15 +4,15 @@
 
 #![cfg(feature = "test-harness")]
 
-use uix_platform::api::traits::*;
-use uix_platform::shared::{OsEventSource, PlatformWindowCore, WindowOps, WindowState};
-use uix_platform::test_harness::{FakePlatform, FakeEventSource, FakeGraphicsContext};
-use uix_platform::event::{UiEvent, UiEventType};
-use uix_platform::presenter::NullPresenter;
-use uix_platform::geometry::Point;
-use uix_platform::types::{KeyCode, KeyMod, MouseButton};
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
+use uix_platform::api::traits::*;
+use uix_platform::event::{UiEvent, UiEventType};
+use uix_platform::geometry::Point;
+use uix_platform::presenter::NullPresenter;
+use uix_platform::shared::{OsEventSource, PlatformWindowCore, WindowOps, WindowState};
+use uix_platform::test_harness::{FakeEventSource, FakeGraphicsContext, FakePlatform};
+use uix_platform::types::{KeyCode, KeyMod, MouseButton};
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowState — 纯状态机逻辑
@@ -46,7 +46,11 @@ fn window_state_with_size() {
 
 #[test]
 fn window_state_position() {
-    let state = WindowState { pos_x: 50, pos_y: 100, ..WindowState::default() };
+    let state = WindowState {
+        pos_x: 50,
+        pos_y: 100,
+        ..WindowState::default()
+    };
     let pos = state.position();
     assert_eq!(pos.x, 50.0);
     assert_eq!(pos.y, 100.0);
@@ -74,12 +78,24 @@ struct MinimalOps {
 }
 
 impl WindowOps for MinimalOps {
-    fn os_show(&mut self) { self.show_called = true; }
-    fn os_hide(&mut self) { self.hide_called = true; }
-    fn os_close(&mut self) { self.close_called = true; }
-    fn os_set_title(&mut self, title: &str) { self.last_title = Some(title.to_string()); }
-    fn os_set_size(&mut self, w: i32, h: i32) { self.last_size = Some((w, h)); }
-    fn native_handle(&self) -> *mut std::ffi::c_void { self.handle }
+    fn os_show(&mut self) {
+        self.show_called = true;
+    }
+    fn os_hide(&mut self) {
+        self.hide_called = true;
+    }
+    fn os_close(&mut self) {
+        self.close_called = true;
+    }
+    fn os_set_title(&mut self, title: &str) {
+        self.last_title = Some(title.to_string());
+    }
+    fn os_set_size(&mut self, w: i32, h: i32) {
+        self.last_size = Some((w, h));
+    }
+    fn native_handle(&self) -> *mut std::ffi::c_void {
+        self.handle
+    }
 }
 
 fn make_minimal_ops() -> MinimalOps {
@@ -425,7 +441,10 @@ fn os_event_source_poll_dispatch_pending() {
     source.inject(UiEvent::close());
 
     let called = Cell::new(false);
-    let result = source.poll_event(&|_| { called.set(true); true });
+    let result = source.poll_event(&|_| {
+        called.set(true);
+        true
+    });
     assert!(result);
     assert!(called.get());
 }
@@ -459,7 +478,10 @@ fn os_event_source_wait_event() {
     let mut source = FakeEventSource::new();
     source.inject(UiEvent::key_down(KeyCode::A, KeyMod::NONE));
     let called = Cell::new(false);
-    let result = source.wait_event(&|_| { called.set(true); true });
+    let result = source.wait_event(&|_| {
+        called.set(true);
+        true
+    });
     assert!(result);
     assert!(called.get());
 }
@@ -471,7 +493,10 @@ fn os_event_source_wait_timeout() {
     let mut source = FakeEventSource::new();
     source.inject(UiEvent::close());
     let called = Cell::new(false);
-    let result = source.wait_timeout(Duration::from_millis(10), &|_| { called.set(true); true });
+    let result = source.wait_timeout(Duration::from_millis(10), &|_| {
+        called.set(true);
+        true
+    });
     assert!(result);
     assert!(called.get());
 }
@@ -480,8 +505,14 @@ fn os_event_source_wait_timeout() {
 fn os_event_source_next_event_fifo() {
     let mut source = FakeEventSource::new();
     source.inject(UiEvent::close());
-    source.inject(UiEvent::mouse_down(Point::new(0.0, 0.0), uix_platform::types::MouseButton::Left));
-    assert_eq!(source.next_event().unwrap().type_, uix_platform::event::UiEventType::WindowClose);
+    source.inject(UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        uix_platform::types::MouseButton::Left,
+    ));
+    assert_eq!(
+        source.next_event().unwrap().type_,
+        uix_platform::event::UiEventType::WindowClose
+    );
     assert_eq!(
         source.next_event().unwrap().type_,
         uix_platform::event::UiEventType::MouseDown
@@ -529,8 +560,8 @@ fn fake_platform_poll_returns_false_on_exit() {
 
 #[test]
 fn event_bus_works_independently_of_event_loop() {
-    use std::rc::Rc;
     use std::cell::Cell;
+    use std::rc::Rc;
 
     // EventBus 不依赖事件循环，可以直接发布事件
     // 这是应用层推荐模式：事件循环通过 callback 桥接到 EventBus
@@ -551,8 +582,12 @@ fn event_bus_works_independently_of_event_loop() {
     });
 
     // 直接通过 EventBus 发布事件（不经过事件循环）
-    pf.event_bus.publish(&UiEvent::key_down(KeyCode::Enter, KeyMod::NONE));
-    pf.event_bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
+    pf.event_bus
+        .publish(&UiEvent::key_down(KeyCode::Enter, KeyMod::NONE));
+    pf.event_bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
 
     assert!(key_seen.get());
     assert!(mouse_seen.get());
@@ -560,8 +595,8 @@ fn event_bus_works_independently_of_event_loop() {
 
 #[test]
 fn event_bus_works_through_subscribe_all() {
-    use std::rc::Rc;
     use std::cell::Cell;
+    use std::rc::Rc;
 
     let mut pf = FakePlatform::new();
 
@@ -573,8 +608,12 @@ fn event_bus_works_through_subscribe_all() {
     });
 
     pf.event_bus.publish(&UiEvent::close());
-    pf.event_bus.publish(&UiEvent::mouse_down(Point::new(0.0, 0.0), MouseButton::Left));
-    pf.event_bus.publish(&UiEvent::key_down(KeyCode::A, KeyMod::NONE));
+    pf.event_bus.publish(&UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
+    pf.event_bus
+        .publish(&UiEvent::key_down(KeyCode::A, KeyMod::NONE));
 
     assert_eq!(all_count.get(), 3);
 }

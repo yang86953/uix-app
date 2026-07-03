@@ -146,12 +146,7 @@ impl RenderingBackend for PixelSurface {
     fn clear_rect(&mut self, rect: Rect, color: Color) {
         let saved = self.clear_color;
         self.clear_color = color;
-        self.clear_rect_raw(
-            rect.x as i32,
-            rect.y as i32,
-            rect.w as i32,
-            rect.h as i32,
-        );
+        self.clear_rect_raw(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
         self.clear_color = saved;
     }
 

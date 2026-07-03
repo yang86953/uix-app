@@ -1,9 +1,9 @@
 //! uix-graphics Frame Graph 集成测试。
 //! 覆盖资源注册、Pass 声明、编译裁剪、执行编排。
 
-use uix_graphics::frame_graph::FrameGraph;
 use uix_graphics::frame_graph::pass::PassNode;
 use uix_graphics::frame_graph::resource::{PassId, ResourceId, Version};
+use uix_graphics::frame_graph::FrameGraph;
 use uix_graphics::null_engine::NullEngine;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -94,8 +94,12 @@ fn add_pass_returns_valid_id() {
 fn add_multiple_passes() {
     let mut fg = FrameGraph::new();
     let color = fg.register_texture("color", 100, 100);
-    let _p1 = fg.add_pass("Pass1", |b| b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
-    let _p2 = fg.add_pass("Pass2", |b| b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
+    let _p1 = fg.add_pass("Pass1", |b| {
+        b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
+    let _p2 = fg.add_pass("Pass2", |b| {
+        b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
     assert_eq!(fg.passes().len(), 2);
 }
 
@@ -146,8 +150,12 @@ fn compile_pass_chain_with_dirty() {
     let mut fg = FrameGraph::new();
     let color = fg.register_texture("color", 100, 100);
     fg.mark_resource_dirty(color);
-    fg.add_pass("Write", |b| b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
-    fg.add_pass("Read", |b| b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
+    fg.add_pass("Write", |b| {
+        b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
+    fg.add_pass("Read", |b| {
+        b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
     let plan = fg.compile();
     // Write 写入 color，Read 读取 color → Write 不被裁剪，Read 也不被裁剪
     // （因为 Write 的输入是 dirty）
@@ -190,8 +198,12 @@ fn compile_generates_barrier_for_raw() {
     let mut fg = FrameGraph::new();
     let color = fg.register_texture("color", 100, 100);
     fg.mark_resource_dirty(color);
-    fg.add_pass("Writer", |b| b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
-    fg.add_pass("Reader", |b| b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
+    fg.add_pass("Writer", |b| {
+        b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
+    fg.add_pass("Reader", |b| {
+        b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
     let plan = fg.compile();
     // two passes alive → execution_order has 2
     assert_eq!(plan.execution_order.len(), 2);
@@ -249,8 +261,12 @@ fn execute_with_callback() {
     let color = fg.register_texture("color", 100, 100);
     fg.mark_resource_dirty(color);
     // write pass + 下游 read pass 确保 write 不被裁剪
-    fg.add_pass("Write", |b| b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
-    fg.add_pass("Read", |b| b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
+    fg.add_pass("Write", |b| {
+        b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
+    fg.add_pass("Read", |b| {
+        b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
     let plan = fg.compile();
 
     let mut call_count = 0;
@@ -268,7 +284,9 @@ fn compile_and_execute() {
     let mut engine = NullEngine::new();
     let color = fg.register_texture("color", 100, 100);
     fg.mark_resource_dirty(color);
-    fg.add_pass("Test", |b| b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
+    fg.add_pass("Test", |b| {
+        b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
     let result = fg.compile_and_execute(&mut engine);
     assert!(result.is_ok());
 }
@@ -281,7 +299,9 @@ fn compile_and_execute() {
 fn clear_passes_retains_resources() {
     let mut fg = FrameGraph::new();
     let color = fg.register_texture("color", 100, 100);
-    fg.add_pass("Clear", |b| b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
+    fg.add_pass("Clear", |b| {
+        b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
     fg.clear_passes();
     assert!(fg.passes().is_empty());
     // 资源仍然存在
@@ -292,7 +312,9 @@ fn clear_passes_retains_resources() {
 fn reset_clears_everything() {
     let mut fg = FrameGraph::new();
     let color = fg.register_texture("color", 100, 100);
-    fg.add_pass("Clear", |b| b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
+    fg.add_pass("Clear", |b| {
+        b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
     fg.reset();
     assert!(fg.passes().is_empty());
 }
@@ -307,8 +329,12 @@ fn culled_and_executed_counts() {
     let color = fg.register_texture("color", 100, 100);
     fg.mark_resource_dirty(color);
     // write + read 链，write 不被裁剪，read 因 input 未变被裁剪
-    fg.add_pass("Write", |b| b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
-    fg.add_pass("ReadUnchanged", |b| b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(()))));
+    fg.add_pass("Write", |b| {
+        b.writes(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
+    fg.add_pass("ReadUnchanged", |b| {
+        b.reads(&[color]).execute_with(Box::new(|_ctx| Ok(())))
+    });
 
     let plan = fg.compile();
     // ReadUnchanged 无法在第一次编译时被裁剪（input_unchanged=false，无历史记录）

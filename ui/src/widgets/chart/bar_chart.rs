@@ -1,10 +1,10 @@
 //! BarChart — vertical bar chart with auto-scaling and value labels.
 
 use crate::define_widget;
-use uix_graphics::Color;
-use uix_platform::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Color;
+use uix_platform::{Point, Rect, Size};
 
 #[derive(Debug, Clone)]
 pub struct BarData {
@@ -15,7 +15,11 @@ pub struct BarData {
 
 impl BarData {
     pub fn new(label: impl Into<String>, value: f32, color: Color) -> Self {
-        Self { label: label.into(), value, color }
+        Self {
+            label: label.into(),
+            value,
+            color,
+        }
     }
 }
 
@@ -96,15 +100,44 @@ define_widget! {
     }
 }
 
-impl Default for BarChart { fn default() -> Self { Self::new() } }
+impl Default for BarChart {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl BarChart {
     pub fn new() -> Self {
-        Self { data: Vec::new(), fixed_width: 0.0, fixed_height: 200.0, max_value: 0.0, show_value: true, bar_radius: 2.0 }
+        Self {
+            data: Vec::new(),
+            fixed_width: 0.0,
+            fixed_height: 200.0,
+            max_value: 0.0,
+            show_value: true,
+            bar_radius: 2.0,
+        }
     }
-    pub fn data(mut self, d: Vec<BarData>) -> Self { self.data = d; self }
-    pub fn width(mut self, w: f32) -> Self { self.fixed_width = w; self }
-    pub fn height(mut self, h: f32) -> Self { self.fixed_height = h; self }
-    pub fn max_value(mut self, v: f32) -> Self { self.max_value = v; self }
-    pub fn show_value(mut self, v: bool) -> Self { self.show_value = v; self }
-    pub fn bar_radius(mut self, r: f32) -> Self { self.bar_radius = r; self }
+    pub fn data(mut self, d: Vec<BarData>) -> Self {
+        self.data = d;
+        self
+    }
+    pub fn width(mut self, w: f32) -> Self {
+        self.fixed_width = w;
+        self
+    }
+    pub fn height(mut self, h: f32) -> Self {
+        self.fixed_height = h;
+        self
+    }
+    pub fn max_value(mut self, v: f32) -> Self {
+        self.max_value = v;
+        self
+    }
+    pub fn show_value(mut self, v: bool) -> Self {
+        self.show_value = v;
+        self
+    }
+    pub fn bar_radius(mut self, r: f32) -> Self {
+        self.bar_radius = r;
+        self
+    }
 }

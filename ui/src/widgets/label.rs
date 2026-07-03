@@ -3,14 +3,14 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use uix_platform::{Rect, Size};
 use crate::clipboard;
 use crate::define_widget;
+use crate::render_context::RenderContext;
 use crate::style::Style;
+use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
 use uix_graphics::spatial::PhysicalUnit;
 use uix_graphics::{GraphicsEngine, TextLayoutOptions};
-use crate::render_context::RenderContext;
-use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
+use uix_platform::{Rect, Size};
 
 define_widget! {
     pub struct Label {
@@ -252,17 +252,23 @@ impl Label {
     fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
         let xs = self.glyph_xs.borrow();
         let li = self.line_info.borrow();
-        if xs.is_empty() { return 0; }
+        if xs.is_empty() {
+            return 0;
+        }
         if li.is_empty() {
             for (i, &gx) in xs.iter().enumerate() {
-                if text_x < gx { return i; }
+                if text_x < gx {
+                    return i;
+                }
             }
             return xs.len();
         }
         // 将 text_y 钳制到有效行区间，点击在文本上/下方时落在首/末行
         let mut target_y = text_y;
         let first_ly = li.first().map(|(ly, _)| *ly).unwrap_or(0.0);
-        if target_y < first_ly { target_y = first_ly; }
+        if target_y < first_ly {
+            target_y = first_ly;
+        }
         // 根据 y 坐标找到所在行
         let mut global_off = 0usize;
         let mut line_gc = 0usize;
@@ -277,14 +283,19 @@ impl Label {
         // 在所在行内按 x 查找
         let end = (global_off + line_gc).min(xs.len());
         for i in global_off..end {
-            if text_x < xs[i] { return i; }
+            if text_x < xs[i] {
+                return i;
+            }
         }
         end
     }
 
     fn set_selection_range(&self, a: usize, b: usize) {
-        if a == b { self.selection.set(None); }
-        else { self.selection.set(Some((a.min(b), a.max(b)))); }
+        if a == b {
+            self.selection.set(None);
+        } else {
+            self.selection.set(Some((a.min(b), a.max(b))));
+        }
     }
 
     fn slice_range(&self, start_char: usize, end_char: usize) -> String {

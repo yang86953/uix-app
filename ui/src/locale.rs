@@ -121,46 +121,115 @@ macro_rules! zh { () => { Locale {
     qrcode_logo: "UIX",
 } } }
 
-macro_rules! en { () => { Locale {
-    empty_data: "No data", no_data: "No data", placeholder: "Please select",
-    ok_text: "OK", cancel_text: "Cancel", delete_text: "Delete", menu_text: "Menu",
-    weekdays_short: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
-    weekdays_long: ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
-    months_short: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
-    months_long: ["January","February","March","April","May","June","July","August","September","October","November","December"],
-    year_format: "{0}", month_format: "{0}", month_year_format: "{} {}", date_format: "{:04}-{:02}-{:02}",
-    today: "Today", now: "Now", date_select: "Select date", time_select: "Select time",
-    time_format: "{:02}:{:02}", breadcrumb_separator: "/", cascader_separator: " / ",
-    cascader_arrow: "›", cascader_placeholder: "Please select",
-    drawer_ok: "OK", empty_description: "No data",
-    float_badge_overflow: "99+", float_backtop: "Back to top",
-    nav_version: "UIX v0.1.0",
-    items_per_page: "/ page", jump_to: "Go to", page: "",
-    prev_page: "Prev", next_page: "Next",
-    pagination_prev_symbol: "‹", pagination_next_symbol: "›",
-    pagination_total: "Total {0} items", pagination_items_per_page: "{0} / page",
-    popconfirm_ok: "OK", popconfirm_cancel: "Cancel", popconfirm_title: "Are you sure?",
-    result_success: "Success", result_error: "Error", result_info: "Info", result_warning: "Warning",
-    result_404: "Not Found", result_403: "Forbidden", result_500: "Server Error",
-    result_404_desc: "The page you visited does not exist", result_403_desc: "You do not have permission", result_500_desc: "Please try again later",
-    select_optgroup_format: "[{0}]",
-    filter_title: "Filter", filter_confirm: "OK", filter_reset: "Reset",
-    table_sort_asc: " ▲", table_sort_desc: " ▼", table_sort_unsorted: " ⇅",
-    timeline_pending: "...",
-    transfer_source: "Source", transfer_target: "Target",
-    tree_select_placeholder: "Please select",
-    upload_click: "Click to upload", upload_drag: "Click or drag to upload",
-    qrcode_logo: "UIX",
-} } }
+macro_rules! en {
+    () => {
+        Locale {
+            empty_data: "No data",
+            no_data: "No data",
+            placeholder: "Please select",
+            ok_text: "OK",
+            cancel_text: "Cancel",
+            delete_text: "Delete",
+            menu_text: "Menu",
+            weekdays_short: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            weekdays_long: [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ],
+            months_short: [
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+            ],
+            months_long: [
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
+            ],
+            year_format: "{0}",
+            month_format: "{0}",
+            month_year_format: "{} {}",
+            date_format: "{:04}-{:02}-{:02}",
+            today: "Today",
+            now: "Now",
+            date_select: "Select date",
+            time_select: "Select time",
+            time_format: "{:02}:{:02}",
+            breadcrumb_separator: "/",
+            cascader_separator: " / ",
+            cascader_arrow: "›",
+            cascader_placeholder: "Please select",
+            drawer_ok: "OK",
+            empty_description: "No data",
+            float_badge_overflow: "99+",
+            float_backtop: "Back to top",
+            nav_version: "UIX v0.1.0",
+            items_per_page: "/ page",
+            jump_to: "Go to",
+            page: "",
+            prev_page: "Prev",
+            next_page: "Next",
+            pagination_prev_symbol: "‹",
+            pagination_next_symbol: "›",
+            pagination_total: "Total {0} items",
+            pagination_items_per_page: "{0} / page",
+            popconfirm_ok: "OK",
+            popconfirm_cancel: "Cancel",
+            popconfirm_title: "Are you sure?",
+            result_success: "Success",
+            result_error: "Error",
+            result_info: "Info",
+            result_warning: "Warning",
+            result_404: "Not Found",
+            result_403: "Forbidden",
+            result_500: "Server Error",
+            result_404_desc: "The page you visited does not exist",
+            result_403_desc: "You do not have permission",
+            result_500_desc: "Please try again later",
+            select_optgroup_format: "[{0}]",
+            filter_title: "Filter",
+            filter_confirm: "OK",
+            filter_reset: "Reset",
+            table_sort_asc: " ▲",
+            table_sort_desc: " ▼",
+            table_sort_unsorted: " ⇅",
+            timeline_pending: "...",
+            transfer_source: "Source",
+            transfer_target: "Target",
+            tree_select_placeholder: "Please select",
+            upload_click: "Click to upload",
+            upload_drag: "Click or drag to upload",
+            qrcode_logo: "UIX",
+        }
+    };
+}
 
 /// 中文（简体）预设。
-pub fn zh_cn() -> Locale { zh!() }
+pub fn zh_cn() -> Locale {
+    zh!()
+}
 
 /// 英文预设。
-pub fn en_us() -> Locale { en!() }
+pub fn en_us() -> Locale {
+    en!()
+}
 
 impl Default for Locale {
-    fn default() -> Self { zh_cn() }
+    fn default() -> Self {
+        zh_cn()
+    }
 }
 
 thread_local! {
@@ -176,7 +245,9 @@ pub fn use_locale() -> Locale {
 pub fn with_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
     LOCALE_STACK.with(|stack| stack.borrow_mut().push(locale.clone()));
     let result = f();
-    LOCALE_STACK.with(|stack| { stack.borrow_mut().pop(); });
+    LOCALE_STACK.with(|stack| {
+        stack.borrow_mut().pop();
+    });
     result
 }
 
@@ -204,9 +275,15 @@ define_widget! {
 }
 
 impl LocaleProvider {
-    pub fn new(locale: Locale) -> Self { Self { locale } }
-    pub fn zh_cn() -> Self { Self { locale: zh_cn() } }
-    pub fn en_us() -> Self { Self { locale: en_us() } }
+    pub fn new(locale: Locale) -> Self {
+        Self { locale }
+    }
+    pub fn zh_cn() -> Self {
+        Self { locale: zh_cn() }
+    }
+    pub fn en_us() -> Self {
+        Self { locale: en_us() }
+    }
 
     pub fn wrap(self, node: crate::widget::WidgetNode) -> crate::widget::WidgetNode {
         crate::widget::WidgetNode::new(Box::new(self), vec![node])

@@ -1,16 +1,25 @@
 use crate::define_widget;
-use ::uix_platform::{Rect, Size};
-use ::uix_graphics::{Color, Radius, PathBuilder, FillRule};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use ::uix_graphics::{Color, FillRule, PathBuilder, Radius};
+use ::uix_platform::{Rect, Size};
 
 /// Tooltip 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TooltipPlacement { Top, Bottom, Left, Right }
+pub enum TooltipPlacement {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
 
 /// Tooltip 触发方式。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TriggerMode { Hover, Click, Focus }
+pub enum TriggerMode {
+    Hover,
+    Click,
+    Focus,
+}
 
 define_widget! {
     pub struct Tooltip {
@@ -118,7 +127,15 @@ define_widget! {
 }
 
 /// 绘制三角形箭头。
-fn draw_arrow(ctx: &mut RenderContext, x: f32, y: f32, w: f32, h: f32, dir: TooltipPlacement, color: Color) {
+fn draw_arrow(
+    ctx: &mut RenderContext,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    dir: TooltipPlacement,
+    color: Color,
+) {
     let (x1, y1, x2, y2, x3, y3) = match dir {
         TooltipPlacement::Top => (x, y, x + w, y, x + w / 2.0, y + h),
         TooltipPlacement::Bottom => (x, y + h, x + w, y + h, x + w / 2.0, y),
@@ -133,7 +150,11 @@ fn draw_arrow(ctx: &mut RenderContext, x: f32, y: f32, w: f32, h: f32, dir: Tool
     ctx.fill_path(&pb.build(), color, FillRule::NonZero);
 }
 
-impl Default for Tooltip { fn default() -> Self { Self::new("") } }
+impl Default for Tooltip {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
 
 impl Tooltip {
     pub fn new(text: impl Into<String>) -> Self {
@@ -148,9 +169,24 @@ impl Tooltip {
             arrow: true,
         }
     }
-    pub fn placement(mut self, p: TooltipPlacement) -> Self { self.placement = p; self }
-    pub fn trigger(mut self, t: TriggerMode) -> Self { self.trigger = t; self }
-    pub fn bg_color(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
-    pub fn text_color(mut self, c: Color) -> Self { self.text_color = Some(c); self }
-    pub fn arrow(mut self, v: bool) -> Self { self.arrow = v; self }
+    pub fn placement(mut self, p: TooltipPlacement) -> Self {
+        self.placement = p;
+        self
+    }
+    pub fn trigger(mut self, t: TriggerMode) -> Self {
+        self.trigger = t;
+        self
+    }
+    pub fn bg_color(mut self, c: Color) -> Self {
+        self.bg_color = Some(c);
+        self
+    }
+    pub fn text_color(mut self, c: Color) -> Self {
+        self.text_color = Some(c);
+        self
+    }
+    pub fn arrow(mut self, v: bool) -> Self {
+        self.arrow = v;
+        self
+    }
 }

@@ -174,9 +174,14 @@ fn draw_colored_out_of_range_char() {
     let font = BitmapFont::new();
     let mut count = 0usize;
     // 0x00 不在 ASCII 32-126 范围内
-    font.draw_colored("\x00\x01\x1F", Point::new(0.0, 0.0), 0xFFFFFFFF, |_x, _y, _c| {
-        count += 1;
-    });
+    font.draw_colored(
+        "\x00\x01\x1F",
+        Point::new(0.0, 0.0),
+        0xFFFFFFFF,
+        |_x, _y, _c| {
+            count += 1;
+        },
+    );
     // 不可见字符应跳过，不绘制任何像素
     assert_eq!(count, 0);
 }

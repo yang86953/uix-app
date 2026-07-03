@@ -10,12 +10,13 @@
 //! }
 //! ```
 //!
-//! 展开为 `uix::ui::widget::WidgetNode` 树，使用构建器链式调用：
+//! 展开为 UI crate 的 `widget::WidgetNode` 树，使用构建器链式调用：
 //! - `Name("text")` → `Name::new("text")`
 //! - `prop: value` → `.prop(value)`
 //! - `{ children }` → `vec![...]`
 
 use proc_macro::TokenStream;
+use proc_macro_crate::{crate_name, FoundCrate};
 use quote::quote;
 use syn::{
     braced, parenthesized,
@@ -129,21 +130,44 @@ impl Parse for UiInput {
 // 代码生成
 // ════════════════════════════════════════════════════════════════════════════
 
+fn crate_path(found: FoundCrate, self_path: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    match found {
+        FoundCrate::Itself => self_path,
+        FoundCrate::Name(name) => {
+            let ident = proc_macro2::Ident::new(&name, proc_macro2::Span::call_site());
+            quote! { ::#ident }
+        }
+    }
+}
+
+fn ui_crate_path() -> proc_macro2::TokenStream {
+    if let Ok(found) = crate_name("uix-ui") {
+        return crate_path(found, quote! { ::uix_ui });
+    }
+
+    if let Ok(found) = crate_name("uix") {
+        let root = crate_path(found, quote! { ::uix });
+        return quote! { #root::ui };
+    }
+
+    quote! { ::uix::ui }
+}
+
 impl WidgetNode {
     /// 生成该 widget 节点的 Rust 代码。
-    fn expand(&self) -> proc_macro2::TokenStream {
-        let new_call = self.expand_constructor();
+    fn expand(&self, ui_path: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+        let new_call = self.expand_constructor(ui_path);
 
         if self.children.is_empty() {
             // Leaf widget
             quote! {
-                uix::ui::widget::WidgetNode::leaf(::std::boxed::Box::new(#new_call))
+                #ui_path::widget::WidgetNode::leaf(::std::boxed::Box::new(#new_call))
             }
         } else {
             // Parent widget with children
-            let child_nodes: Vec<_> = self.children.iter().map(|c| c.expand()).collect();
+            let child_nodes: Vec<_> = self.children.iter().map(|c| c.expand(ui_path)).collect();
             quote! {
-                uix::ui::widget::WidgetNode::new(
+                #ui_path::widget::WidgetNode::new(
                     ::std::boxed::Box::new(#new_call),
                     ::std::vec![#(#child_nodes),*],
                 )
@@ -152,7 +176,7 @@ impl WidgetNode {
     }
 
     /// 生成构造函数调用链：`Name::new(arg0).prop1(val1).prop2(val2)`
-    fn expand_constructor(&self) -> proc_macro2::TokenStream {
+    fn expand_constructor(&self, ui_path: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
         let name = &self.name;
         let mut positional_args = Vec::new();
         let mut named_args = Vec::new();
@@ -172,11 +196,11 @@ impl WidgetNode {
 
         if positional_args.is_empty() {
             quote! {
-                uix::ui::#name::new() #(#named_args)*
+                #ui_path::#name::new() #(#named_args)*
             }
         } else {
             quote! {
-                uix::ui::#name::new(#(#positional_args),*) #(#named_args)*
+                #ui_path::#name::new(#(#positional_args),*) #(#named_args)*
             }
         }
     }
@@ -215,6 +239,7 @@ impl WidgetNode {
 #[proc_macro]
 pub fn ui(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as UiInput);
-    let expanded = input.root.expand();
+    let ui_path = ui_crate_path();
+    let expanded = input.root.expand(&ui_path);
     TokenStream::from(expanded)
 }

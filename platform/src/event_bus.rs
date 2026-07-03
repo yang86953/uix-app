@@ -127,11 +127,7 @@ impl EventBus {
     }
 
     /// 按优先级订阅所有事件。
-    pub fn subscribe_all_with_priority<F>(
-        &mut self,
-        priority: i32,
-        handler: F,
-    ) -> usize
+    pub fn subscribe_all_with_priority<F>(&mut self, priority: i32, handler: F) -> usize
     where
         F: FnMut(&UiEvent) -> bool + 'static,
     {

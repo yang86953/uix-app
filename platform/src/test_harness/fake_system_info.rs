@@ -1,8 +1,8 @@
 //! Fake 系统信息 — 完全可配置，支持 &self 访问。
 
-use std::cell::Cell;
 use crate::api::traits::ISystemInfo;
 use crate::types::{MemoryInfo, OsInfo};
+use std::cell::Cell;
 
 #[derive(Debug)]
 pub struct FakeSystemInfo {
@@ -87,7 +87,12 @@ impl ISystemInfo for FakeSystemInfo {
     }
 
     fn default_font_path(&self) -> Option<String> {
-        self.default_font_calls.set(self.default_font_calls.get() + 1);
-        if self.default_font.is_empty() { None } else { Some(self.default_font.clone()) }
+        self.default_font_calls
+            .set(self.default_font_calls.get() + 1);
+        if self.default_font.is_empty() {
+            None
+        } else {
+            Some(self.default_font.clone())
+        }
     }
 }

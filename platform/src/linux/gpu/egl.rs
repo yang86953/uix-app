@@ -10,7 +10,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use crate::{Error, Errc};
+use crate::{Errc, Error};
 
 use crate::IGraphicsContext;
 
@@ -28,21 +28,11 @@ struct WlEglWindow {
 /// 它在编译期通过 #[link] 与系统 libwayland-egl.so 链接。
 #[link(name = "wayland-egl")]
 extern "C" {
-    fn wl_egl_window_create(
-        surface: *mut c_void,
-        width: i32,
-        height: i32,
-    ) -> *mut WlEglWindow;
+    fn wl_egl_window_create(surface: *mut c_void, width: i32, height: i32) -> *mut WlEglWindow;
 
     fn wl_egl_window_destroy(window: *mut WlEglWindow);
 
-    fn wl_egl_window_resize(
-        window: *mut WlEglWindow,
-        width: i32,
-        height: i32,
-        dx: i32,
-        dy: i32,
-    );
+    fn wl_egl_window_resize(window: *mut WlEglWindow, width: i32, height: i32, dx: i32, dy: i32);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -71,75 +61,98 @@ impl EglContext {
     ///
     /// `native_surface` 必须是 `*mut wl_surface`（Wayland surface 的 C 指针）。
     /// 优先尝试 GLES 3.0，失败时降级到 GLES 2.0。
-    pub fn new(
-        native_surface: *mut c_void,
-        width: i32,
-        height: i32,
-    ) -> Result<Self, Error> {
+    pub fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self, Error> {
         use khronos_egl as egl;
 
         let egl = egl::Instance::new(egl::Static);
 
         // 1. 获取 display —— Wayland 下传入 display 连接指针
-        let display = unsafe {
-            egl.get_display(native_surface as egl::NativeDisplayType)
-        }.ok_or_else(|| {
-            Error::new(Errc::PlatformError, "EglContext: eglGetDisplay 返回 NO_DISPLAY")
-        })?;
+        let display = unsafe { egl.get_display(native_surface as egl::NativeDisplayType) }
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::PlatformError,
+                    "EglContext: eglGetDisplay 返回 NO_DISPLAY",
+                )
+            })?;
 
         // 2. 初始化 EGL
         let (major, minor) = egl.initialize(display).map_err(|e| {
-            Error::new(Errc::PlatformError, format!("EglContext: eglInitialize 失败: {e:?}"))
+            Error::new(
+                Errc::PlatformError,
+                format!("EglContext: eglInitialize 失败: {e:?}"),
+            )
         })?;
         crate::log::info_fn("EglContext: EGL {major}.{minor}");
 
         // 3. 绑定 API 到 OpenGL ES
         egl.bind_api(egl::OPENGL_ES_API).map_err(|e| {
-            Error::new(Errc::PlatformError, format!("EglContext: eglBindAPI 失败: {e:?}"))
+            Error::new(
+                Errc::PlatformError,
+                format!("EglContext: eglBindAPI 失败: {e:?}"),
+            )
         })?;
 
         // 4. 选择配置：RGBA 8888, depth 24, stencil 8, GLES 3
         let config_attribs = [
-            egl::SURFACE_TYPE, egl::WINDOW_BIT,
-            egl::RENDERABLE_TYPE, egl::OPENGL_ES3_BIT,
-            egl::RED_SIZE, 8,
-            egl::GREEN_SIZE, 8,
-            egl::BLUE_SIZE, 8,
-            egl::ALPHA_SIZE, 8,
-            egl::DEPTH_SIZE, 24,
-            egl::STENCIL_SIZE, 8,
+            egl::SURFACE_TYPE,
+            egl::WINDOW_BIT,
+            egl::RENDERABLE_TYPE,
+            egl::OPENGL_ES3_BIT,
+            egl::RED_SIZE,
+            8,
+            egl::GREEN_SIZE,
+            8,
+            egl::BLUE_SIZE,
+            8,
+            egl::ALPHA_SIZE,
+            8,
+            egl::DEPTH_SIZE,
+            24,
+            egl::STENCIL_SIZE,
+            8,
             egl::NONE,
         ];
 
-        let config = egl.choose_first_config(display, &config_attribs)
+        let config = egl
+            .choose_first_config(display, &config_attribs)
             .map_err(|e| {
-                Error::new(Errc::PlatformError, format!("EglContext: choose_config 失败: {e:?}"))
+                Error::new(
+                    Errc::PlatformError,
+                    format!("EglContext: choose_config 失败: {e:?}"),
+                )
             })?
-            .ok_or_else(|| {
-                Error::new(Errc::PlatformError, "EglContext: 无可用 EGL 配置")
-            })?;
+            .ok_or_else(|| Error::new(Errc::PlatformError, "EglContext: 无可用 EGL 配置"))?;
 
         // 5. 创建 wl_egl_window（Wayland 原生窗口封装）
-        let egl_window = unsafe {
-            wl_egl_window_create(native_surface, width, height)
-        };
+        let egl_window = unsafe { wl_egl_window_create(native_surface, width, height) };
         if egl_window.is_null() {
-            return Err(Error::new(Errc::PlatformError, "EglContext: wl_egl_window_create 返回 null"));
+            return Err(Error::new(
+                Errc::PlatformError,
+                "EglContext: wl_egl_window_create 返回 null",
+            ));
         }
 
         // 6. 创建 EGL surface
         let surface = unsafe {
             egl.create_window_surface(display, config, egl_window as egl::NativeWindowType, None)
-        }.map_err(|e| {
-            unsafe { wl_egl_window_destroy(egl_window); }
-            Error::new(Errc::PlatformError, format!("EglContext: eglCreateWindowSurface 失败: {e:?}"))
+        }
+        .map_err(|e| {
+            unsafe {
+                wl_egl_window_destroy(egl_window);
+            }
+            Error::new(
+                Errc::PlatformError,
+                format!("EglContext: eglCreateWindowSurface 失败: {e:?}"),
+            )
         })?;
 
         // 7. 创建 GLES 上下文（优先 3.0，降级 2.0）
         let context = {
             let ctx3_attribs = [
-                egl::CONTEXT_MAJOR_VERSION, 3,
-                egl::CONTEXT_MINOR_VERSION, 0,
+                egl::CONTEXT_MAJOR_VERSION,
+                3,
+                egl::CONTEXT_MINOR_VERSION,
+                0,
                 egl::NONE,
             ];
             match egl.create_context(display, config, None, &ctx3_attribs) {
@@ -149,17 +162,17 @@ impl EglContext {
                 }
                 Err(_) => {
                     crate::log::warn_fn("EglContext: GLES 3.0 不可用，降级到 2.0");
-                    let ctx2_attribs = [
-                        egl::CONTEXT_CLIENT_VERSION, 2,
-                        egl::NONE,
-                    ];
+                    let ctx2_attribs = [egl::CONTEXT_CLIENT_VERSION, 2, egl::NONE];
                     egl.create_context(display, config, None, &ctx2_attribs)
                         .map_err(|e| {
                             unsafe {
                                 let _ = egl.destroy_surface(display, surface);
                                 wl_egl_window_destroy(egl_window);
                             }
-                            Error::new(Errc::PlatformError, format!("EglContext: GLES 2.0 上下文也失败: {e:?}"))
+                            Error::new(
+                                Errc::PlatformError,
+                                format!("EglContext: GLES 2.0 上下文也失败: {e:?}"),
+                            )
                         })?
                 }
             }
@@ -173,7 +186,10 @@ impl EglContext {
                     let _ = egl.destroy_surface(display, surface);
                     wl_egl_window_destroy(egl_window);
                 }
-                Error::new(Errc::PlatformError, format!("EglContext: eglMakeCurrent 失败: {e:?}"))
+                Error::new(
+                    Errc::PlatformError,
+                    format!("EglContext: eglMakeCurrent 失败: {e:?}"),
+                )
             })?;
 
         Ok(Self {
@@ -235,7 +251,9 @@ impl IGraphicsContext for EglContext {
         let _ = self.egl.destroy_context(self.display, self.context);
         let _ = self.egl.destroy_surface(self.display, self.surface);
         if !self.egl_window.is_null() {
-            unsafe { wl_egl_window_destroy(self.egl_window); }
+            unsafe {
+                wl_egl_window_destroy(self.egl_window);
+            }
             self.egl_window = ptr::null_mut();
         }
     }
@@ -255,7 +273,8 @@ impl IGraphicsContext for EglContext {
     }
 
     fn get_proc_address(&self, name: &str) -> Option<*const std::ffi::c_void> {
-        self.egl.get_proc_address(name)
+        self.egl
+            .get_proc_address(name)
             .map(|f| f as *const std::ffi::c_void)
     }
 }

@@ -2,8 +2,8 @@
 //!
 //! 参考 tiny-skia 的路径展平算法。容差 0.25 像素。
 
-use uix_platform::Point;
 use super::path::PathSegment;
+use uix_platform::Point;
 
 /// 展平后的线段序列：（起点, 终点）。
 /// 连续的线段构成一个子路径，Close 表示回到子路径起点。
@@ -97,11 +97,7 @@ fn flatten_quad(out: &mut Vec<Point>, p0: Point, p1: Point, p2: Point, tol_sq: f
 }
 
 /// 将三次贝塞尔曲线细分为直线段。
-fn flatten_cubic(
-    out: &mut Vec<Point>,
-    p0: Point, p1: Point, p2: Point, p3: Point,
-    tol_sq: f32,
-) {
+fn flatten_cubic(out: &mut Vec<Point>, p0: Point, p1: Point, p2: Point, p3: Point, tol_sq: f32) {
     if is_cubic_flat(p0, p1, p2, p3, tol_sq) {
         out.push(p3);
         return;

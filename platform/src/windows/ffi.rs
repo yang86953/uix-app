@@ -47,9 +47,25 @@ extern "system" {
         lpParam: *mut std::ffi::c_void,
     ) -> *mut std::ffi::c_void;
     pub(super) fn DestroyWindow(hwnd: *mut std::ffi::c_void) -> i32;
-    pub(super) fn AdjustWindowRectEx(lpRect: *mut RECT, dwStyle: u32, bMenu: i32, dwExStyle: u32) -> i32;
-    pub(super) fn DefWindowProcW(hwnd: *mut std::ffi::c_void, msg: u32, wparam: usize, lparam: isize) -> isize;
-    pub(super) fn PeekMessageW(lpMsg: *mut MSG, hwnd: *mut std::ffi::c_void, wMsgFilterMin: u32, wMsgFilterMax: u32, wRemoveMsg: u32) -> i32;
+    pub(super) fn AdjustWindowRectEx(
+        lpRect: *mut RECT,
+        dwStyle: u32,
+        bMenu: i32,
+        dwExStyle: u32,
+    ) -> i32;
+    pub(super) fn DefWindowProcW(
+        hwnd: *mut std::ffi::c_void,
+        msg: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> isize;
+    pub(super) fn PeekMessageW(
+        lpMsg: *mut MSG,
+        hwnd: *mut std::ffi::c_void,
+        wMsgFilterMin: u32,
+        wMsgFilterMax: u32,
+        wRemoveMsg: u32,
+    ) -> i32;
     /// 等待消息或超时。返回 WAIT_TIMEOUT 表示超时，WAIT_FAILED 表示失败。
     pub(super) fn MsgWaitForMultipleObjects(
         nCount: u32,
@@ -63,27 +79,60 @@ extern "system" {
     pub(super) fn PostQuitMessage(nExitCode: i32);
     pub(super) fn ShowWindow(hwnd: *mut std::ffi::c_void, nCmdShow: i32) -> i32;
     pub(super) fn SetWindowTextW(hwnd: *mut std::ffi::c_void, lpString: *const u16) -> i32;
-    pub(super) fn SetWindowPos(hwnd: *mut std::ffi::c_void, hWndInsertAfter: *mut std::ffi::c_void, x: i32, y: i32, cx: i32, cy: i32, uFlags: u32) -> i32;
+    pub(super) fn SetWindowPos(
+        hwnd: *mut std::ffi::c_void,
+        hWndInsertAfter: *mut std::ffi::c_void,
+        x: i32,
+        y: i32,
+        cx: i32,
+        cy: i32,
+        uFlags: u32,
+    ) -> i32;
     pub(super) fn SetWindowLongW(hwnd: *mut std::ffi::c_void, nIndex: i32, dwNewLong: i32) -> i32;
     pub(super) fn GetWindowLongW(hwnd: *mut std::ffi::c_void, nIndex: i32) -> i32;
-    pub(super) fn SetWindowLongPtrW(hwnd: *mut std::ffi::c_void, nIndex: i32, dwNewLong: isize) -> isize;
+    pub(super) fn SetWindowLongPtrW(
+        hwnd: *mut std::ffi::c_void,
+        nIndex: i32,
+        dwNewLong: isize,
+    ) -> isize;
     pub(super) fn GetWindowLongPtrW(hwnd: *mut std::ffi::c_void, nIndex: i32) -> isize;
-    pub(super) fn SetLayeredWindowAttributes(hwnd: *mut std::ffi::c_void, crKey: u32, bAlpha: u8, dwFlags: u32) -> i32;
+    pub(super) fn SetLayeredWindowAttributes(
+        hwnd: *mut std::ffi::c_void,
+        crKey: u32,
+        bAlpha: u8,
+        dwFlags: u32,
+    ) -> i32;
     pub(super) fn GetSystemMetrics(nIndex: i32) -> i32;
-    pub(super) fn LoadIconW(hInstance: *mut std::ffi::c_void, lpIconName: *const u16) -> *mut std::ffi::c_void;
-    pub(super) fn LoadCursorW(hInstance: *mut std::ffi::c_void, lpCursorName: *const u16) -> *mut std::ffi::c_void;
+    pub(super) fn LoadIconW(
+        hInstance: *mut std::ffi::c_void,
+        lpIconName: *const u16,
+    ) -> *mut std::ffi::c_void;
+    pub(super) fn LoadCursorW(
+        hInstance: *mut std::ffi::c_void,
+        lpCursorName: *const u16,
+    ) -> *mut std::ffi::c_void;
     pub(super) fn SetCursor(hCursor: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(super) fn SetCapture(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(super) fn ReleaseCapture() -> i32;
     pub(super) fn ScreenToClient(hwnd: *mut std::ffi::c_void, lpPoint: *mut POINT) -> i32;
     pub(super) fn GetAsyncKeyState(vKey: i32) -> i16;
     pub(super) fn DragAcceptFiles(hwnd: *mut std::ffi::c_void, fAccept: i32);
-    pub(super) fn DragQueryFileW(hdrop: *mut std::ffi::c_void, iFile: u32, lpszFile: *mut u16, cch: u32) -> u32;
+    pub(super) fn DragQueryFileW(
+        hdrop: *mut std::ffi::c_void,
+        iFile: u32,
+        lpszFile: *mut u16,
+        cch: u32,
+    ) -> u32;
     pub(super) fn DragQueryPoint(hdrop: *mut std::ffi::c_void, lppt: *mut POINT) -> i32;
     pub(super) fn DragFinish(hdrop: *mut std::ffi::c_void);
     pub(super) fn GetDC(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     pub(super) fn ReleaseDC(hwnd: *mut std::ffi::c_void, hdc: *mut std::ffi::c_void) -> i32;
-    pub(super) fn SetTimer(hwnd: *mut std::ffi::c_void, nIDEvent: u32, uElapse: u32, lpTimerFunc: Option<unsafe extern "system" fn()>) -> usize;
+    pub(super) fn SetTimer(
+        hwnd: *mut std::ffi::c_void,
+        nIDEvent: u32,
+        uElapse: u32,
+        lpTimerFunc: Option<unsafe extern "system" fn()>,
+    ) -> usize;
     pub(super) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 
     pub(super) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
@@ -92,9 +141,15 @@ extern "system" {
     pub(super) fn OpenClipboard(hwnd: *mut std::ffi::c_void) -> i32;
     pub(super) fn CloseClipboard() -> i32;
     pub(super) fn GetClipboardData(uFormat: u32) -> *mut std::ffi::c_void;
-    pub(super) fn SetClipboardData(uFormat: u32, hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    pub(super) fn SetClipboardData(
+        uFormat: u32,
+        hMem: *mut std::ffi::c_void,
+    ) -> *mut std::ffi::c_void;
     pub(super) fn EmptyClipboard() -> i32;
-    pub(super) fn GetPriorityClipboardFormat(paFormatPriorityList: *const u32, cFormats: i32) -> i32;
+    pub(super) fn GetPriorityClipboardFormat(
+        paFormatPriorityList: *const u32,
+        cFormats: i32,
+    ) -> i32;
 
     // ── 键盘 ──
     // GetLastInputInfo 已在 keyboard.rs 中声明（使用具体类型）

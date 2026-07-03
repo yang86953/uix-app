@@ -9,32 +9,32 @@
 #![allow(non_snake_case)]
 
 use std::cell::RefCell;
-use std::collections::{VecDeque, HashSet};
+use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crate::shared::{WindowState, OsEventSource, PlatformWindowCore};
 use crate::event::UiEvent;
+use crate::shared::{OsEventSource, PlatformWindowCore, WindowState};
 use crate::*;
 use crate::{Errc, Error};
 
+use super::bindings::*;
 use super::clipboard::WindowsClipboard;
 use super::console::WindowsConsole;
+use super::consts::*;
 use super::cursor::WindowsCursor;
 use super::display::WindowsDisplay;
+use super::ffi::*;
 use super::file_dialog::WindowsFileDialog;
 use super::filesystem::WindowsFileSystem;
+use super::gpu::GdiPresenter;
 use super::keyboard::WindowsKeyboard;
 use super::notification::WindowsNotification;
 use super::system_info::WindowsSystemInfo;
 use super::text_input::WindowsTextInput;
 use super::timer::WindowsTimer;
-use super::window_ops::WindowsWindowOps;
-use super::gpu::GdiPresenter;
-use super::bindings::*;
-use super::consts::*;
-use super::ffi::*;
 use super::util::to_wide;
+use super::window_ops::WindowsWindowOps;
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsPlatform
@@ -103,7 +103,9 @@ impl OsEventSource for WindowsPlatform {
         unsafe {
             let mut msg = MSG::default();
             while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
-                if msg.message == WM_QUIT { return false; }
+                if msg.message == WM_QUIT {
+                    return false;
+                }
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
@@ -119,18 +121,20 @@ impl OsEventSource for WindowsPlatform {
                 // 先非阻塞检查是否有待处理消息
                 let mut msg = MSG::default();
                 if PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
-                    if msg.message == WM_QUIT { return false; }
+                    if msg.message == WM_QUIT {
+                        return false;
+                    }
                     TranslateMessage(&msg);
                     DispatchMessageW(&msg);
                     return true;
                 }
                 // 无消息——等待消息或超时（16ms 帧间隔）
                 let result = MsgWaitForMultipleObjects(
-                    0,                      // 不等待任何内核对象
+                    0, // 不等待任何内核对象
                     std::ptr::null(),
-                    0,                      // fWaitAll = FALSE
-                    16,                     // 16ms 超时 ≈ 60fps
-                    QS_ALLINPUT,            // 任何输入消息都能唤醒
+                    0,           // fWaitAll = FALSE
+                    16,          // 16ms 超时 ≈ 60fps
+                    QS_ALLINPUT, // 任何输入消息都能唤醒
                 );
                 if result == WAIT_TIMEOUT {
                     // 超时：无事件，但返回以继续帧循环
@@ -142,11 +146,15 @@ impl OsEventSource for WindowsPlatform {
     }
 
     fn dispatch_timeout(&mut self, timeout: std::time::Duration) -> bool {
-        if !self.dispatch_pending() { return false; }
+        if !self.dispatch_pending() {
+            return false;
+        }
         unsafe {
             let mut msg = MSG::default();
             if PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
-                if msg.message == WM_QUIT { return false; }
+                if msg.message == WM_QUIT {
+                    return false;
+                }
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             } else {
@@ -167,7 +175,10 @@ impl OsEventSource for WindowsPlatform {
 
 impl IWindowManager for WindowsPlatform {
     fn create_window(
-        &mut self, title: &str, width: i32, height: i32,
+        &mut self,
+        title: &str,
+        width: i32,
+        height: i32,
     ) -> Result<Box<dyn PlatformWindow>, Error> {
         if self.class_atom == 0 {
             self.register_class()?;
@@ -182,19 +193,35 @@ impl IWindowManager for WindowsPlatform {
         let style = WS_OVERLAPPEDWINDOW;
 
         unsafe {
-            let mut rect = RECT { left: 0, top: 0, right: width, bottom: height };
+            let mut rect = RECT {
+                left: 0,
+                top: 0,
+                right: width,
+                bottom: height,
+            };
             AdjustWindowRectEx(&mut rect, style, FALSE, WS_EX_APPWINDOW);
             let win_w = rect.right - rect.left;
             let win_h = rect.bottom - rect.top;
 
             let hwnd = CreateWindowExW(
-                WS_EX_APPWINDOW, class_name.as_ptr(), wide_title.as_ptr(),
-                style, CW_USEDEFAULT, CW_USEDEFAULT, win_w, win_h,
-                std::ptr::null_mut(), std::ptr::null_mut(), self.hinstance,
+                WS_EX_APPWINDOW,
+                class_name.as_ptr(),
+                wide_title.as_ptr(),
+                style,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                win_w,
+                win_h,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                self.hinstance,
                 self as *mut WindowsPlatform as *mut std::ffi::c_void,
             );
             if hwnd.is_null() {
-                return Err(Error::new(Errc::WindowCreationFailed, "CreateWindowExW returned null"));
+                return Err(Error::new(
+                    Errc::WindowCreationFailed,
+                    "CreateWindowExW returned null",
+                ));
             }
             self.hwnd = hwnd;
 
@@ -208,7 +235,10 @@ impl IWindowManager for WindowsPlatform {
             let presenter: Box<dyn IPresenter> = match GdiPresenter::new(hwnd, width, height) {
                 Ok(p) => Box::new(p),
                 Err(e) => {
-                    crate::log::warn_fn(format!("GdiPresenter failed ({}), using null", e.short_what()));
+                    crate::log::warn_fn(format!(
+                        "GdiPresenter failed ({}), using null",
+                        e.short_what()
+                    ));
                     Box::new(crate::presenter::NullPresenter::new())
                 }
             };
@@ -225,20 +255,48 @@ impl IWindowManager for WindowsPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Platform for WindowsPlatform {
-    fn window_manager(&mut self) -> &mut dyn IWindowManager { self }
-    fn event_loop(&mut self) -> &mut dyn IEventLoop { self }
-    fn event_bus(&mut self) -> &mut EventBus { &mut self.event_bus }
-    fn clipboard(&mut self) -> &mut dyn IClipboard { &mut self.clipboard_subsys }
-    fn cursor(&mut self) -> &mut dyn ICursor { &mut self.cursor_subsys }
-    fn display(&self) -> &dyn IDisplay { &self.display_subsys }
-    fn file_dialog(&mut self) -> &mut dyn IFileDialog { &mut self.file_dialog_subsys }
-    fn keyboard(&self) -> &dyn IKeyboard { &self.keyboard_subsys }
-    fn text_input(&mut self) -> &mut dyn ITextInput { &mut self.text_input_subsys }
-    fn timer(&mut self) -> &mut dyn ITimer { &mut self.timer_subsys }
-    fn notification(&mut self) -> &mut dyn INotification { &mut self.notification_subsys }
-    fn console(&mut self) -> &mut dyn IConsole { &mut self.console_subsys }
-    fn file_system(&self) -> &dyn IFileSystem { &self.file_system_subsys }
-    fn system_info(&self) -> &dyn ISystemInfo { &self.system_info_subsys }
+    fn window_manager(&mut self) -> &mut dyn IWindowManager {
+        self
+    }
+    fn event_loop(&mut self) -> &mut dyn IEventLoop {
+        self
+    }
+    fn event_bus(&mut self) -> &mut EventBus {
+        &mut self.event_bus
+    }
+    fn clipboard(&mut self) -> &mut dyn IClipboard {
+        &mut self.clipboard_subsys
+    }
+    fn cursor(&mut self) -> &mut dyn ICursor {
+        &mut self.cursor_subsys
+    }
+    fn display(&self) -> &dyn IDisplay {
+        &self.display_subsys
+    }
+    fn file_dialog(&mut self) -> &mut dyn IFileDialog {
+        &mut self.file_dialog_subsys
+    }
+    fn keyboard(&self) -> &dyn IKeyboard {
+        &self.keyboard_subsys
+    }
+    fn text_input(&mut self) -> &mut dyn ITextInput {
+        &mut self.text_input_subsys
+    }
+    fn timer(&mut self) -> &mut dyn ITimer {
+        &mut self.timer_subsys
+    }
+    fn notification(&mut self) -> &mut dyn INotification {
+        &mut self.notification_subsys
+    }
+    fn console(&mut self) -> &mut dyn IConsole {
+        &mut self.console_subsys
+    }
+    fn file_system(&self) -> &dyn IFileSystem {
+        &self.file_system_subsys
+    }
+    fn system_info(&self) -> &dyn ISystemInfo {
+        &self.system_info_subsys
+    }
 }
 
 impl Drop for WindowsPlatform {

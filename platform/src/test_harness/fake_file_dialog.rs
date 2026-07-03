@@ -38,7 +38,9 @@ pub struct FakeFileDialog {
 
 impl FakeFileDialog {
     pub fn new() -> Self {
-        Self { state: FakeFileDialogState::default() }
+        Self {
+            state: FakeFileDialogState::default(),
+        }
     }
 
     /// 设置 `open` 返回的文件路径列表
@@ -65,12 +67,16 @@ impl FakeFileDialog {
 
 impl IFileDialog for FakeFileDialog {
     fn open(&mut self, title: &str, filters: &str) -> Vec<String> {
-        self.state.open_calls.push((title.to_string(), filters.to_string()));
+        self.state
+            .open_calls
+            .push((title.to_string(), filters.to_string()));
         self.state.open_result.clone()
     }
 
     fn save(&mut self, title: &str, filters: &str) -> String {
-        self.state.save_calls.push((title.to_string(), filters.to_string()));
+        self.state
+            .save_calls
+            .push((title.to_string(), filters.to_string()));
         self.state.save_result.clone()
     }
 

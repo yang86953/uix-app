@@ -1,15 +1,15 @@
 //! CLI 演示 — 从命令行运行所有主要 UIX 子系统的功能演示。
 
 use std::cell::Cell;
-use uix::platform::{EdgeInsets, Point, Rect, Size};
-use uix::platform::log::{info_fn, Level, Logger};
-use uix::platform::{Errc, Error};
 use uix::graphics::{self, colors, GraphicsEngine};
-use uix::platform::file_service::FileService;
-use uix::platform::settings::SettingsService;
 use uix::platform::diagnostic::{
     LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
 };
+use uix::platform::file_service::FileService;
+use uix::platform::log::{info_fn, Level, Logger};
+use uix::platform::settings::SettingsService;
+use uix::platform::{EdgeInsets, Point, Rect, Size};
+use uix::platform::{Errc, Error};
 use uix::ui::layout::{AlignItems, JustifyContent};
 use uix::ui::layout::{FlexLayout, LayoutChild, LayoutEngine};
 use uix::ui::state::{Computed, State};

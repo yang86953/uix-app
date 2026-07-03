@@ -1,7 +1,7 @@
 //! Easing — 缓动曲线，支持 antd 5 主题令牌中的 cubic-bezier 以及经典预设。
 
-use uix_graphics::Color;
 use crate::api::traits::Animatable;
+use uix_graphics::Color;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Easing 曲线
@@ -152,7 +152,11 @@ fn sample_cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64, t: f64) -> f64 {
             if (x - t).abs() < 1e-10 {
                 break;
             }
-            if x < t { lo = guess; } else { hi = guess; }
+            if x < t {
+                lo = guess;
+            } else {
+                hi = guess;
+            }
         }
     }
     guess = guess.clamp(0.0, 1.0);
@@ -246,4 +250,3 @@ impl Animatable for uix_platform::Point {
         (dx * dx + dy * dy).sqrt()
     }
 }
-

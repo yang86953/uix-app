@@ -1,14 +1,18 @@
 use crate::define_widget;
-use uix_platform::{Point, Rect, Size};
-use uix_graphics::{Color, Radius, PathBuilder, FillRule};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, FillRule, PathBuilder, Radius};
+use uix_platform::{Point, Rect, Size};
 
 /// Popconfirm 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PopconfirmPlacement {
-    Top, TopLeft, TopRight,
-    Bottom, BottomLeft, BottomRight,
+    Top,
+    TopLeft,
+    TopRight,
+    Bottom,
+    BottomLeft,
+    BottomRight,
 }
 
 define_widget! {
@@ -113,7 +117,11 @@ define_widget! {
     }
 }
 
-impl Default for Popconfirm { fn default() -> Self { Self::new() } }
+impl Default for Popconfirm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Popconfirm {
     pub fn new() -> Self {
@@ -129,34 +137,84 @@ impl Popconfirm {
             on_cancel: None,
         }
     }
-    pub fn title(mut self, t: impl Into<String>) -> Self { self.title = t.into(); self }
-    pub fn confirm_text(mut self, t: impl Into<String>) -> Self { self.confirm_text = t.into(); self }
-    pub fn cancel_text(mut self, t: impl Into<String>) -> Self { self.cancel_text = t.into(); self }
-    pub fn placement(mut self, p: PopconfirmPlacement) -> Self { self.placement = p; self }
-    pub fn arrow(mut self, v: bool) -> Self { self.arrow = v; self }
-    pub fn icon(mut self, v: bool) -> Self { self.icon = v; self }
-    pub fn on_confirm<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_confirm = Some(Box::new(f)); self }
-    pub fn on_cancel<F: FnMut() + 'static>(mut self, f: F) -> Self { self.on_cancel = Some(Box::new(f)); self }
+    pub fn title(mut self, t: impl Into<String>) -> Self {
+        self.title = t.into();
+        self
+    }
+    pub fn confirm_text(mut self, t: impl Into<String>) -> Self {
+        self.confirm_text = t.into();
+        self
+    }
+    pub fn cancel_text(mut self, t: impl Into<String>) -> Self {
+        self.cancel_text = t.into();
+        self
+    }
+    pub fn placement(mut self, p: PopconfirmPlacement) -> Self {
+        self.placement = p;
+        self
+    }
+    pub fn arrow(mut self, v: bool) -> Self {
+        self.arrow = v;
+        self
+    }
+    pub fn icon(mut self, v: bool) -> Self {
+        self.icon = v;
+        self
+    }
+    pub fn on_confirm<F: FnMut() + 'static>(mut self, f: F) -> Self {
+        self.on_confirm = Some(Box::new(f));
+        self
+    }
+    pub fn on_cancel<F: FnMut() + 'static>(mut self, f: F) -> Self {
+        self.on_cancel = Some(Box::new(f));
+        self
+    }
 
     fn popup_pos(&self, _pw: f32, ph: f32) -> (f32, f32) {
         let gap = if self.arrow { 10.0 } else { 4.0 };
         match self.placement {
-            PopconfirmPlacement::Top | PopconfirmPlacement::TopLeft | PopconfirmPlacement::TopRight => (0.0, -ph - gap),
-            PopconfirmPlacement::Bottom | PopconfirmPlacement::BottomLeft | PopconfirmPlacement::BottomRight => (0.0, 28.0 + gap),
+            PopconfirmPlacement::Top
+            | PopconfirmPlacement::TopLeft
+            | PopconfirmPlacement::TopRight => (0.0, -ph - gap),
+            PopconfirmPlacement::Bottom
+            | PopconfirmPlacement::BottomLeft
+            | PopconfirmPlacement::BottomRight => (0.0, 28.0 + gap),
         }
     }
 }
 
-fn draw_popconfirm_arrow(ctx: &mut RenderContext, _trigger: Rect, popup: Rect, placement: PopconfirmPlacement, color: Color) {
+fn draw_popconfirm_arrow(
+    ctx: &mut RenderContext,
+    _trigger: Rect,
+    popup: Rect,
+    placement: PopconfirmPlacement,
+    color: Color,
+) {
     let arrow_sz = 6.0;
     let (x1, y1, x2, y2, x3, y3) = match placement {
         PopconfirmPlacement::Top | PopconfirmPlacement::TopLeft | PopconfirmPlacement::TopRight => {
             let cx = popup.x + popup.w / 2.0;
-            (cx - arrow_sz, popup.y + popup.h, cx + arrow_sz, popup.y + popup.h, cx, popup.y + popup.h + arrow_sz)
+            (
+                cx - arrow_sz,
+                popup.y + popup.h,
+                cx + arrow_sz,
+                popup.y + popup.h,
+                cx,
+                popup.y + popup.h + arrow_sz,
+            )
         }
-        PopconfirmPlacement::Bottom | PopconfirmPlacement::BottomLeft | PopconfirmPlacement::BottomRight => {
+        PopconfirmPlacement::Bottom
+        | PopconfirmPlacement::BottomLeft
+        | PopconfirmPlacement::BottomRight => {
             let cx = popup.x + popup.w / 2.0;
-            (cx - arrow_sz, popup.y, cx + arrow_sz, popup.y, cx, popup.y - arrow_sz)
+            (
+                cx - arrow_sz,
+                popup.y,
+                cx + arrow_sz,
+                popup.y,
+                cx,
+                popup.y - arrow_sz,
+            )
         }
     };
     let mut pb = PathBuilder::new();

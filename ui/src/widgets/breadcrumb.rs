@@ -1,9 +1,9 @@
 //! Breadcrumb widget — 面包屑导航路径。
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_platform::{Rect, Size};
 
 /// 面包屑的一项。
 #[derive(Debug, Clone)]
@@ -14,9 +14,15 @@ pub struct BreadcrumbItem {
 
 impl BreadcrumbItem {
     pub fn new(title: impl Into<String>) -> Self {
-        Self { title: title.into(), active: false }
+        Self {
+            title: title.into(),
+            active: false,
+        }
     }
-    pub fn active(mut self) -> Self { self.active = true; self }
+    pub fn active(mut self) -> Self {
+        self.active = true;
+        self
+    }
 }
 
 define_widget! {
@@ -58,13 +64,29 @@ define_widget! {
     }
 }
 
-impl Default for Breadcrumb { fn default() -> Self { Self::new() } }
+impl Default for Breadcrumb {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Breadcrumb {
     pub fn new() -> Self {
-        Self { items: Vec::new(), separator: "/".to_string() }
+        Self {
+            items: Vec::new(),
+            separator: "/".to_string(),
+        }
     }
-    pub fn item(mut self, item: BreadcrumbItem) -> Self { self.items.push(item); self }
-    pub fn items(mut self, items: Vec<BreadcrumbItem>) -> Self { self.items = items; self }
-    pub fn separator(mut self, s: impl Into<String>) -> Self { self.separator = s.into(); self }
+    pub fn item(mut self, item: BreadcrumbItem) -> Self {
+        self.items.push(item);
+        self
+    }
+    pub fn items(mut self, items: Vec<BreadcrumbItem>) -> Self {
+        self.items = items;
+        self
+    }
+    pub fn separator(mut self, s: impl Into<String>) -> Self {
+        self.separator = s.into();
+        self
+    }
 }

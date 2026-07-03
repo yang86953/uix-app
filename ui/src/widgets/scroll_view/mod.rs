@@ -10,13 +10,13 @@ pub use scrollbar::*;
 use std::cell::Cell;
 
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
-use uix_platform::{Rect, Size};
-use crate::define_widget;
 use crate::children::WidgetChildren;
+use crate::define_widget;
 use crate::render_context::RenderContext;
-use crate::widget::{EventResult, WidgetCore, WidgetEvent, WidgetComponent, WidgetId, WidgetTree};
+use crate::widget::{EventResult, WidgetComponent, WidgetCore, WidgetEvent, WidgetId, WidgetTree};
 #[cfg(test)]
-use crate::widget::{WidgetCapabilities, WidgetLayout, WidgetRender, WidgetEventHandler};
+use crate::widget::{WidgetCapabilities, WidgetEventHandler, WidgetLayout, WidgetRender};
+use uix_platform::{Rect, Size};
 
 /// Scroll direction for a ScrollView.
 /// （已统一为 uix_platform::ScrollDirection。）
@@ -507,11 +507,11 @@ impl Default for ScrollView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uix_platform::{Point, Rect, Size};
-    use crate::{AlignItems, FlexDirection};
     use crate::render_context::RenderContext;
     use crate::widget::EventResult;
     use crate::widgets::{Collapse, CollapsePanel, Container, Space};
+    use crate::{AlignItems, FlexDirection};
+    use uix_platform::{Point, Rect, Size};
 
     /// A simple fixed-size widget for testing.
     struct FixedWidget {
@@ -521,8 +521,12 @@ mod tests {
     }
 
     impl WidgetComponent for FixedWidget {
-        fn as_any(&self) -> &dyn std::any::Any { self }
-        fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
         fn capabilities(&self) -> WidgetCapabilities {
             WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
         }
@@ -543,8 +547,6 @@ mod tests {
         ) {
         }
     }
-
-
 
     #[test]
     fn scrollview_scroll_to() {
@@ -646,11 +648,17 @@ mod tests {
             size: std::cell::Cell<f32>,
         }
         impl WidgetComponent for GrowWidget {
-            fn as_any(&self) -> &dyn std::any::Any { self }
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
             fn capabilities(&self) -> WidgetCapabilities {
                 WidgetCapabilities::from_bits(
-                    WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+                    WidgetCapabilities::LAYOUT
+                        | WidgetCapabilities::RENDER
+                        | WidgetCapabilities::EVENT,
                 )
             }
             crate::wc_upcast!(GrowWidget; WidgetLayout);
@@ -680,7 +688,12 @@ mod tests {
         let sv_id = tree.set_root(Box::new(
             ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
         ));
-        let _child_id = tree.add_child(sv_id, Box::new(GrowWidget { size: std::cell::Cell::new(100.0) }));
+        let _child_id = tree.add_child(
+            sv_id,
+            Box::new(GrowWidget {
+                size: std::cell::Cell::new(100.0),
+            }),
+        );
 
         // 初始布局：子节点100 < 视口200
         tree.layout();
@@ -726,30 +739,41 @@ mod tests {
         let sv_id = tree.set_root(Box::new(
             ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
         ));
-        let container_id = tree.add_child(sv_id, Box::new(
-            Container::new().size(300.0, 0.0).dir(FlexDirection::Column),
-        ));
-        let space_id = tree.add_child(container_id, Box::new(
-            Space::new()
-                .width(300.0)
-                .height(140.0)
-                .direction(FlexDirection::Column)
-                .align(AlignItems::Stretch),
-        ));
+        let container_id = tree.add_child(
+            sv_id,
+            Box::new(Container::new().size(300.0, 0.0).dir(FlexDirection::Column)),
+        );
+        let space_id = tree.add_child(
+            container_id,
+            Box::new(
+                Space::new()
+                    .width(300.0)
+                    .height(140.0)
+                    .direction(FlexDirection::Column)
+                    .align(AlignItems::Stretch),
+            ),
+        );
         // 面板B 内容足够长（7行），展开后总高度 > 200px 视口
         // 3个 header (36px) + 展开内容 (7*18+16=142) = 250 > 200
         let long_content = "行1\n行2\n行3\n行4\n行5\n行6\n行7";
-        tree.add_child(space_id, Box::new(
-            Collapse::new().panels(vec![
+        tree.add_child(
+            space_id,
+            Box::new(Collapse::new().panels(vec![
                 CollapsePanel::new("面板A", "面板A短内容。"),
                 CollapsePanel::new("面板B", long_content),
                 CollapsePanel::new("面板C", "面板C短内容。"),
-            ]),
-        ));
+            ])),
+        );
 
         tree.layout();
-        let max_before = tree.get(sv_id)
-            .and_then(|n| n.component().as_any().downcast_ref::<ScrollView>().map(|sv| sv.max_scroll_y()))
+        let max_before = tree
+            .get(sv_id)
+            .and_then(|n| {
+                n.component()
+                    .as_any()
+                    .downcast_ref::<ScrollView>()
+                    .map(|sv| sv.max_scroll_y())
+            })
             .unwrap();
         assert_eq!(max_before, 0.0, "面板未展开时内容应不超过视口");
         println!("Before click max_scroll_y: {max_before}");
@@ -764,7 +788,12 @@ mod tests {
         tree.layout();
         let max_after = tree
             .get(sv_id)
-            .and_then(|n| n.component().as_any().downcast_ref::<ScrollView>().map(|sv| sv.max_scroll_y()))
+            .and_then(|n| {
+                n.component()
+                    .as_any()
+                    .downcast_ref::<ScrollView>()
+                    .map(|sv| sv.max_scroll_y())
+            })
             .unwrap();
         println!("After click max_scroll_y: {max_after}");
 

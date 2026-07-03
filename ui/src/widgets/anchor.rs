@@ -2,11 +2,11 @@
 //!
 //! 与 ScrollView 配合使用：监听滚动位置，自动高亮当前锚点。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, GraphicsEngine};
+use uix_platform::{Point, Rect, Size};
 
 define_widget! {
     /// Anchor — 锚点导航条。
@@ -97,7 +97,10 @@ pub struct AnchorItem {
 
 impl AnchorItem {
     pub fn new(label: impl Into<String>, href: impl Into<String>) -> Self {
-        Self { label: label.into(), href: href.into() }
+        Self {
+            label: label.into(),
+            href: href.into(),
+        }
     }
 }
 
@@ -131,16 +134,29 @@ impl Anchor {
         self.active_index = idx;
     }
 
-    pub fn set_offset_top(mut self, v: f32) -> Self { self.offset_top = v; self }
-    pub fn bg(mut self, c: Color) -> Self { self.bg_color = Some(c); self }
+    pub fn set_offset_top(mut self, v: f32) -> Self {
+        self.offset_top = v;
+        self
+    }
+    pub fn bg(mut self, c: Color) -> Self {
+        self.bg_color = Some(c);
+        self
+    }
     pub fn on_click<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
         self.on_click = Some(Box::new(f));
         self
     }
 
-    pub fn active_index(&self) -> usize { self.active_index }
-    pub fn active_href(&self) -> &str {
-        self.items.get(self.active_index).map(|i| i.href.as_str()).unwrap_or("")
+    pub fn active_index(&self) -> usize {
+        self.active_index
     }
-    pub fn items(&self) -> &[AnchorItem] { &self.items }
+    pub fn active_href(&self) -> &str {
+        self.items
+            .get(self.active_index)
+            .map(|i| i.href.as_str())
+            .unwrap_or("")
+    }
+    pub fn items(&self) -> &[AnchorItem] {
+        &self.items
+    }
 }

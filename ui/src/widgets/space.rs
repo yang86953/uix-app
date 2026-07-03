@@ -2,14 +2,14 @@
 //!
 //! Provides consistent spacing for a row or column of child widgets.
 
-use uix_platform::{Rect, Size};
+use crate::children::WidgetChildren;
 use crate::define_widget;
 use crate::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
-use crate::children::WidgetChildren;
 use crate::render_context::RenderContext;
-use crate::widget::{WidgetCore, WidgetComponent, WidgetId, WidgetTree};
+use crate::widget::{WidgetComponent, WidgetCore, WidgetId, WidgetTree};
+use uix_platform::{Rect, Size};
 
 /// Predefined space sizes matching Ant Design.
 #[derive(Debug, Clone, Copy, PartialEq)]

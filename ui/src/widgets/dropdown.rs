@@ -1,10 +1,10 @@
 //! Dropdown widget — 下拉菜单。
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::Radius;
+use uix_platform::{Rect, Size};
 
 define_widget! {
     /// Dropdown — 点击触发的下拉菜单。
@@ -90,11 +90,19 @@ define_widget! {
     }
 }
 
-impl Default for Dropdown { fn default() -> Self { Self::new("Menu") } }
+impl Default for Dropdown {
+    fn default() -> Self {
+        Self::new("Menu")
+    }
+}
 
 impl Dropdown {
     pub fn new(label: impl Into<String>) -> Self {
-        Self { label: label.into(), items: Vec::new(), open: false }
+        Self {
+            label: label.into(),
+            items: Vec::new(),
+            open: false,
+        }
     }
     pub fn items(mut self, items: Vec<impl Into<String>>) -> Self {
         self.items = items.into_iter().map(|s| s.into()).collect();

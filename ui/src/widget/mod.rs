@@ -1,45 +1,112 @@
-use uix_platform::{Point, Rect, Size};
 pub use uix_platform::{KeyCode, KeyMod, MouseButton};
+use uix_platform::{Point, Rect, Size};
 
 /// WidgetEvent 的种类区分（无载荷），用于事件管理器按类型过滤。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WidgetEventKind {
-    MouseDown, MouseUp, MouseMove, MouseWheel,
-    KeyDown, KeyUp, KeyPress,
-    FocusIn, FocusOut, HoverEnter, HoverLeave,
+    MouseDown,
+    MouseUp,
+    MouseMove,
+    MouseWheel,
+    KeyDown,
+    KeyUp,
+    KeyPress,
+    FocusIn,
+    FocusOut,
+    HoverEnter,
+    HoverLeave,
     Resize,
-    WindowMaximize, WindowMinimize, WindowRestore, WindowFocus, WindowBlur,
+    WindowMaximize,
+    WindowMinimize,
+    WindowRestore,
+    WindowFocus,
+    WindowBlur,
     Timer,
     FileDrop,
     /// 组合事件：拖拽
-    DragStart, DragMove, DragEnd,
+    DragStart,
+    DragMove,
+    DragEnd,
 }
 use uix_graphics::spatial::{Ray3D, SpatialContext};
 use uix_graphics::GraphicsEngine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EventResult { Handled, NotHandled, Bubbled }
+pub enum EventResult {
+    Handled,
+    NotHandled,
+    Bubbled,
+}
 
 #[derive(Debug, Clone)]
 pub enum WidgetEvent {
-    MouseDown { pos: Point, button: MouseButton, mods: KeyMod },
-    MouseUp { pos: Point, button: MouseButton, mods: KeyMod },
-    MouseMove { pos: Point, mods: KeyMod },
-    MouseWheel { pos: Point, delta: Point },
-    KeyDown { key: KeyCode, mods: KeyMod },
-    KeyUp { key: KeyCode, mods: KeyMod },
-    KeyPress { text: String },
-    FocusIn, FocusOut, HoverEnter, HoverLeave,
-    Resize { width: f32, height: f32 },
-    WindowMaximize, WindowMinimize, WindowRestore, WindowFocus, WindowBlur,
-    Timer { id: u32 },
-    FileDrop { files: Vec<String>, position: Point },
+    MouseDown {
+        pos: Point,
+        button: MouseButton,
+        mods: KeyMod,
+    },
+    MouseUp {
+        pos: Point,
+        button: MouseButton,
+        mods: KeyMod,
+    },
+    MouseMove {
+        pos: Point,
+        mods: KeyMod,
+    },
+    MouseWheel {
+        pos: Point,
+        delta: Point,
+    },
+    KeyDown {
+        key: KeyCode,
+        mods: KeyMod,
+    },
+    KeyUp {
+        key: KeyCode,
+        mods: KeyMod,
+    },
+    KeyPress {
+        text: String,
+    },
+    FocusIn,
+    FocusOut,
+    HoverEnter,
+    HoverLeave,
+    Resize {
+        width: f32,
+        height: f32,
+    },
+    WindowMaximize,
+    WindowMinimize,
+    WindowRestore,
+    WindowFocus,
+    WindowBlur,
+    Timer {
+        id: u32,
+    },
+    FileDrop {
+        files: Vec<String>,
+        position: Point,
+    },
     /// 组合事件：拖拽开始（MouseDown + MouseMove 超出阈值后触发）
-    DragStart { pos: Point, button: MouseButton, mods: KeyMod },
+    DragStart {
+        pos: Point,
+        button: MouseButton,
+        mods: KeyMod,
+    },
     /// 组合事件：拖拽移动
-    DragMove { pos: Point, delta: Point, mods: KeyMod },
+    DragMove {
+        pos: Point,
+        delta: Point,
+        mods: KeyMod,
+    },
     /// 组合事件：拖拽结束
-    DragEnd { pos: Point, button: MouseButton, mods: KeyMod },
+    DragEnd {
+        pos: Point,
+        button: MouseButton,
+        mods: KeyMod,
+    },
 }
 
 impl WidgetEvent {
@@ -76,8 +143,8 @@ pub type WidgetId = usize;
 
 // 重新导出 api 中的 trait 定义
 pub use crate::api::traits::{
-    WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender,
-    WidgetEventHandler, WidgetLifecycle, IntoWidgetNode,
+    IntoWidgetNode, WidgetCapabilities, WidgetComponent, WidgetEventHandler, WidgetLayout,
+    WidgetLifecycle, WidgetRender,
 };
 
 pub struct WidgetNode {
@@ -90,35 +157,71 @@ pub struct WidgetNode {
 
 impl WidgetNode {
     pub fn new(widget: Box<dyn WidgetComponent>, children: Vec<WidgetNode>) -> Self {
-        Self { widget, children, z_index: 0, key: None, tab_idx: 0 }
+        Self {
+            widget,
+            children,
+            z_index: 0,
+            key: None,
+            tab_idx: 0,
+        }
     }
-    pub fn key(mut self, k: &str) -> Self { self.key = Some(k.into()); self }
+    pub fn key(mut self, k: &str) -> Self {
+        self.key = Some(k.into());
+        self
+    }
     pub fn leaf(widget: Box<dyn WidgetComponent>) -> Self {
-        Self { widget, children: vec![], z_index: 0, key: None, tab_idx: 0 }
+        Self {
+            widget,
+            children: vec![],
+            z_index: 0,
+            key: None,
+            tab_idx: 0,
+        }
     }
-    pub fn z_index(mut self, z: i32) -> Self { self.z_index = z; self }
+    pub fn z_index(mut self, z: i32) -> Self {
+        self.z_index = z;
+        self
+    }
     /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
-    pub fn tab_index(mut self, idx: i32) -> Self { self.tab_idx = idx; self }
+    pub fn tab_index(mut self, idx: i32) -> Self {
+        self.tab_idx = idx;
+        self
+    }
 }
 
 pub trait WidgetCore {
-    fn id(&self) -> WidgetId; fn set_id(&mut self, id: WidgetId);
-    fn parent(&self) -> Option<WidgetId>; fn set_parent(&mut self, id: Option<WidgetId>);
-    fn children(&self) -> &[WidgetId]; fn children_mut(&mut self) -> &mut Vec<WidgetId>;
-    fn frame(&self) -> Rect; fn set_frame(&mut self, rect: Rect);
-    fn visible(&self) -> bool; fn set_visible(&mut self, v: bool);
-    fn dirty(&self) -> bool; fn set_dirty(&mut self, v: bool);
-    fn opacity(&self) -> f32; fn set_opacity(&mut self, v: f32);
-    fn z_index(&self) -> i32; fn set_z_index(&mut self, v: i32);
+    fn id(&self) -> WidgetId;
+    fn set_id(&mut self, id: WidgetId);
+    fn parent(&self) -> Option<WidgetId>;
+    fn set_parent(&mut self, id: Option<WidgetId>);
+    fn children(&self) -> &[WidgetId];
+    fn children_mut(&mut self) -> &mut Vec<WidgetId>;
+    fn frame(&self) -> Rect;
+    fn set_frame(&mut self, rect: Rect);
+    fn visible(&self) -> bool;
+    fn set_visible(&mut self, v: bool);
+    fn dirty(&self) -> bool;
+    fn set_dirty(&mut self, v: bool);
+    fn opacity(&self) -> f32;
+    fn set_opacity(&mut self, v: f32);
+    fn z_index(&self) -> i32;
+    fn set_z_index(&mut self, v: i32);
     /// Tab 键导航顺序索引。0 = 不可通过 Tab 导航获取焦点，> 0 = 可聚焦。
-    fn tab_index(&self) -> i32; fn set_tab_index(&mut self, v: i32);
+    fn tab_index(&self) -> i32;
+    fn set_tab_index(&mut self, v: i32);
 }
 
 pub struct BoxedWidget {
     component: Box<dyn WidgetComponent>,
     caps: WidgetCapabilities,
-    id: WidgetId, parent: Option<WidgetId>, children: Vec<WidgetId>,
-    frame: Rect, visible: bool, is_dirty: bool, widget_opacity: f32, z: i32,
+    id: WidgetId,
+    parent: Option<WidgetId>,
+    children: Vec<WidgetId>,
+    frame: Rect,
+    visible: bool,
+    is_dirty: bool,
+    widget_opacity: f32,
+    z: i32,
     /// Tab 键导航顺序（0=不可通过 Tab 导航聚焦）。
     tab_idx: i32,
 }
@@ -127,21 +230,41 @@ impl BoxedWidget {
     pub fn new(component: Box<dyn WidgetComponent>) -> Self {
         let caps = component.capabilities();
         Self {
-            component, caps,
-            id: 0, parent: None, children: Vec::new(),
-            frame: Rect::zero(), visible: true, is_dirty: true,
-            widget_opacity: 1.0, z: 0,
+            component,
+            caps,
+            id: 0,
+            parent: None,
+            children: Vec::new(),
+            frame: Rect::zero(),
+            visible: true,
+            is_dirty: true,
+            widget_opacity: 1.0,
+            z: 0,
             tab_idx: 0,
         }
     }
-    pub fn component(&self) -> &dyn WidgetComponent { &*self.component }
-    pub fn component_mut(&mut self) -> &mut dyn WidgetComponent { &mut *self.component }
-    pub fn capabilities(&self) -> WidgetCapabilities { self.caps }
+    pub fn component(&self) -> &dyn WidgetComponent {
+        &*self.component
+    }
+    pub fn component_mut(&mut self) -> &mut dyn WidgetComponent {
+        &mut *self.component
+    }
+    pub fn capabilities(&self) -> WidgetCapabilities {
+        self.caps
+    }
 
-    pub fn as_render(&self) -> Option<&dyn WidgetRender> { self.component.as_render() }
-    pub fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> { self.component.as_render_mut() }
-    pub fn as_event(&self) -> Option<&dyn WidgetEventHandler> { self.component.as_event() }
-    pub fn as_event_mut(&mut self) -> Option<&mut dyn WidgetEventHandler> { self.component.as_event_mut() }
+    pub fn as_render(&self) -> Option<&dyn WidgetRender> {
+        self.component.as_render()
+    }
+    pub fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> {
+        self.component.as_render_mut()
+    }
+    pub fn as_event(&self) -> Option<&dyn WidgetEventHandler> {
+        self.component.as_event()
+    }
+    pub fn as_event_mut(&mut self) -> Option<&mut dyn WidgetEventHandler> {
+        self.component.as_event_mut()
+    }
     pub fn as_layout(&self) -> Option<&dyn WidgetLayout> {
         self.component.as_layout()
     }
@@ -218,12 +341,7 @@ impl BoxedWidget {
             .map(|e| e.hit_test_frame(actual_frame))
             .unwrap_or(actual_frame)
     }
-    pub fn hit_test_3d(
-        &self,
-        ray: &Ray3D,
-        spatial: &SpatialContext,
-        frame: Rect,
-    ) -> bool {
+    pub fn hit_test_3d(&self, ray: &Ray3D, spatial: &SpatialContext, frame: Rect) -> bool {
         self.component()
             .as_event()
             .map(|e| e.hit_test_3d(ray, spatial, frame))
@@ -236,8 +354,7 @@ impl BoxedWidget {
             .unwrap_or(EventResult::NotHandled)
     }
     pub fn is_focusable(&self) -> bool {
-        self.tab_idx > 0 && self.visible &&
-            self.component.as_event().is_some()
+        self.tab_idx > 0 && self.visible && self.component.as_event().is_some()
     }
 
     pub fn on_update(&mut self, dt: f64) {
@@ -245,31 +362,89 @@ impl BoxedWidget {
             l.on_update(dt);
         }
     }
-    pub fn render(&self, frame: Rect, ctx: &mut crate::render_context::RenderContext, tree: &WidgetTree) {
+    pub fn render(
+        &self,
+        frame: Rect,
+        ctx: &mut crate::render_context::RenderContext,
+        tree: &WidgetTree,
+    ) {
         if let Some(r) = self.component().as_render() {
             r.render(frame, ctx, tree);
         }
     }
-    pub fn post_render(&self, frame: Rect, ctx: &mut crate::render_context::RenderContext, tree: &WidgetTree) {
+    pub fn post_render(
+        &self,
+        frame: Rect,
+        ctx: &mut crate::render_context::RenderContext,
+        tree: &WidgetTree,
+    ) {
         if let Some(r) = self.component().as_render() {
             r.post_render(frame, ctx, tree);
         }
     }
     pub fn is_repaint_boundary(&self) -> bool {
-        self.component().as_render().map(|r| r.is_repaint_boundary()).unwrap_or(false)
+        self.component()
+            .as_render()
+            .map(|r| r.is_repaint_boundary())
+            .unwrap_or(false)
     }
 }
 
 impl WidgetCore for BoxedWidget {
-    fn id(&self) -> WidgetId { self.id } fn set_id(&mut self, id: WidgetId) { self.id = id; }
-    fn parent(&self) -> Option<WidgetId> { self.parent } fn set_parent(&mut self, id: Option<WidgetId>) { self.parent = id; }
-    fn children(&self) -> &[WidgetId] { &self.children } fn children_mut(&mut self) -> &mut Vec<WidgetId> { &mut self.children }
-    fn frame(&self) -> Rect { self.frame } fn set_frame(&mut self, rect: Rect) { self.frame = rect; }
-    fn visible(&self) -> bool { self.visible } fn set_visible(&mut self, v: bool) { self.visible = v; }
-    fn dirty(&self) -> bool { self.is_dirty } fn set_dirty(&mut self, v: bool) { self.is_dirty = v; }
-    fn opacity(&self) -> f32 { self.widget_opacity } fn set_opacity(&mut self, v: f32) { self.widget_opacity = v; }
-    fn z_index(&self) -> i32 { self.z } fn set_z_index(&mut self, v: i32) { self.z = v; }
-    fn tab_index(&self) -> i32 { self.tab_idx } fn set_tab_index(&mut self, v: i32) { self.tab_idx = v; }
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+    fn set_id(&mut self, id: WidgetId) {
+        self.id = id;
+    }
+    fn parent(&self) -> Option<WidgetId> {
+        self.parent
+    }
+    fn set_parent(&mut self, id: Option<WidgetId>) {
+        self.parent = id;
+    }
+    fn children(&self) -> &[WidgetId] {
+        &self.children
+    }
+    fn children_mut(&mut self) -> &mut Vec<WidgetId> {
+        &mut self.children
+    }
+    fn frame(&self) -> Rect {
+        self.frame
+    }
+    fn set_frame(&mut self, rect: Rect) {
+        self.frame = rect;
+    }
+    fn visible(&self) -> bool {
+        self.visible
+    }
+    fn set_visible(&mut self, v: bool) {
+        self.visible = v;
+    }
+    fn dirty(&self) -> bool {
+        self.is_dirty
+    }
+    fn set_dirty(&mut self, v: bool) {
+        self.is_dirty = v;
+    }
+    fn opacity(&self) -> f32 {
+        self.widget_opacity
+    }
+    fn set_opacity(&mut self, v: f32) {
+        self.widget_opacity = v;
+    }
+    fn z_index(&self) -> i32 {
+        self.z
+    }
+    fn set_z_index(&mut self, v: i32) {
+        self.z = v;
+    }
+    fn tab_index(&self) -> i32 {
+        self.tab_idx
+    }
+    fn set_tab_index(&mut self, v: i32) {
+        self.tab_idx = v;
+    }
 }
 
 mod tree_core;

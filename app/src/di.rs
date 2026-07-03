@@ -8,11 +8,14 @@ pub struct Container {
 }
 
 impl Container {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Register a singleton instance.
     pub fn singleton<T: Any + Send + Clone>(&mut self, instance: T) {
-        self.singletons.insert(TypeId::of::<T>(), Box::new(instance));
+        self.singletons
+            .insert(TypeId::of::<T>(), Box::new(instance));
     }
 
     /// Resolve a service by type.
@@ -39,4 +42,3 @@ impl Container {
         self.singletons.remove(&TypeId::of::<T>());
     }
 }
-

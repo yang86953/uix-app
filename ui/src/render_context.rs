@@ -8,18 +8,18 @@
 //! - **2D 零成本路径**：`ctx.fill_rect(rect, color, radius)` → 直接委托 Canvas2D
 //! - **3D 空间路径**：`ctx.spatial().fill_rect(box_3d, color, radius)` → 经 SpatialContext 投影
 
-use uix_platform::{Point, Rect, Size};
+use crate::api::traits::TokenProvider;
+use crate::debug_render::DebugRenderService;
+use crate::style::Style;
+use crate::text_render::TextRenderService;
 use uix_graphics::font_service::FontService;
 use uix_graphics::path::{FillRule, Path};
-use uix_graphics::spatial::{AABB3D, Orientation, PhysicalUnit, SpatialContext, Vec3};
+use uix_graphics::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use uix_graphics::stroker::StrokeOptions;
 use uix_graphics::traits::Canvas2D;
-use uix_graphics::{Color, FontHandle, Radius};
 use uix_graphics::GradientDirection;
-use crate::style::Style;
-use crate::api::traits::TokenProvider;
-use crate::text_render::TextRenderService;
-use crate::debug_render::DebugRenderService;
+use uix_graphics::{Color, FontHandle, Radius};
+use uix_platform::{Point, Rect, Size};
 
 /// 渲染上下文。
 pub struct RenderContext<'a> {
@@ -104,8 +104,18 @@ impl<'a> RenderContext<'a> {
 
     /// 填充扇形。
     #[inline(always)]
-    pub fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, start_angle: f32, end_angle: f32, color: Color) {
-        self.spatial.canvas_2d().fill_sector(cx, cy, r, start_angle, end_angle, color);
+    pub fn fill_sector(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        r: f32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+    ) {
+        self.spatial
+            .canvas_2d()
+            .fill_sector(cx, cy, r, start_angle, end_angle, color);
     }
 
     /// 填充路径。
@@ -116,14 +126,24 @@ impl<'a> RenderContext<'a> {
 
     /// 描边矩形。
     #[inline(always)]
-    pub fn stroke_rect(&mut self, rect: Rect, color: Color, line_width: f32, radius: Option<Radius>) {
-        self.spatial.canvas_2d().stroke_rect(rect, color, line_width, radius);
+    pub fn stroke_rect(
+        &mut self,
+        rect: Rect,
+        color: Color,
+        line_width: f32,
+        radius: Option<Radius>,
+    ) {
+        self.spatial
+            .canvas_2d()
+            .stroke_rect(rect, color, line_width, radius);
     }
 
     /// 描边圆形。
     #[inline(always)]
     pub fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32) {
-        self.spatial.canvas_2d().stroke_circle(cx, cy, r, color, line_width);
+        self.spatial
+            .canvas_2d()
+            .stroke_circle(cx, cy, r, color, line_width);
     }
 
     /// 描边路径。
@@ -135,35 +155,90 @@ impl<'a> RenderContext<'a> {
     /// 画直线。
     #[inline(always)]
     pub fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
-        self.spatial.canvas_2d().draw_line(x1, y1, x2, y2, color, width);
+        self.spatial
+            .canvas_2d()
+            .draw_line(x1, y1, x2, y2, color, width);
     }
 
     // ── 渐变 ──
 
     /// 线性渐变填充。
     #[inline(always)]
-    pub fn fill_linear_gradient(&mut self, rect: Rect, color_a: Color, color_b: Color, dir: GradientDirection) {
-        self.spatial.canvas_2d().fill_linear_gradient(rect, color_a, color_b, dir);
+    pub fn fill_linear_gradient(
+        &mut self,
+        rect: Rect,
+        color_a: Color,
+        color_b: Color,
+        dir: GradientDirection,
+    ) {
+        self.spatial
+            .canvas_2d()
+            .fill_linear_gradient(rect, color_a, color_b, dir);
     }
 
     /// 径向渐变填充。
     #[inline(always)]
-    pub fn fill_radial_gradient(&mut self, cx: f32, cy: f32, inner_r: f32, outer_r: f32, inner_color: Color, outer_color: Color) {
-        self.spatial.canvas_2d().fill_radial_gradient(cx, cy, inner_r, outer_r, inner_color, outer_color);
+    pub fn fill_radial_gradient(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        inner_r: f32,
+        outer_r: f32,
+        inner_color: Color,
+        outer_color: Color,
+    ) {
+        self.spatial.canvas_2d().fill_radial_gradient(
+            cx,
+            cy,
+            inner_r,
+            outer_r,
+            inner_color,
+            outer_color,
+        );
     }
 
     // ── 阴影 ──
 
     /// 绘制盒阴影（定向光阴影）。
     #[inline(always)]
-    pub fn draw_box_shadow(&mut self, rect: Rect, blur_radius: f32, offset_x: f32, offset_y: f32, color: Color, corner_radius: Option<Radius>) {
-        self.spatial.canvas_2d().draw_box_shadow(rect, blur_radius, offset_x, offset_y, color, corner_radius);
+    pub fn draw_box_shadow(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    ) {
+        self.spatial.canvas_2d().draw_box_shadow(
+            rect,
+            blur_radius,
+            offset_x,
+            offset_y,
+            color,
+            corner_radius,
+        );
     }
 
     /// 绘制环境阴影。
     #[inline(always)]
-    pub fn draw_box_shadow_ambient(&mut self, rect: Rect, blur_radius: f32, offset_x: f32, offset_y: f32, color: Color, corner_radius: Option<Radius>) {
-        self.spatial.canvas_2d().draw_box_shadow_ambient(rect, blur_radius, offset_x, offset_y, color, corner_radius);
+    pub fn draw_box_shadow_ambient(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    ) {
+        self.spatial.canvas_2d().draw_box_shadow_ambient(
+            rect,
+            blur_radius,
+            offset_x,
+            offset_y,
+            color,
+            corner_radius,
+        );
     }
 
     // ── 渲染状态 ──
@@ -185,17 +260,34 @@ impl<'a> RenderContext<'a> {
     // ════════════════════════════════════════════════════════════════════
 
     /// 在 3D 空间中绘制文本。
-    pub fn draw_text_spatial(&mut self, text: &str, pos: Vec3, color: Color, font_size: PhysicalUnit) {
-        if text.is_empty() { return; }
+    pub fn draw_text_spatial(
+        &mut self,
+        text: &str,
+        pos: Vec3,
+        color: Color,
+        font_size: PhysicalUnit,
+    ) {
+        if text.is_empty() {
+            return;
+        }
         let (sx, sy) = self.spatial.project(&pos);
         let fs = font_size.to_dip(self.spatial.dpi());
         let canvas = self.spatial.canvas_2d();
-        self.text.draw_text(canvas, text, Point::new(sx, sy), color, fs);
+        self.text
+            .draw_text(canvas, text, Point::new(sx, sy), color, fs);
     }
 
     /// 在 3D 空间中的矩形区域内居中绘制文本。
-    pub fn text_center_spatial(&mut self, text: &str, box_3d: AABB3D, color: Color, font_size: PhysicalUnit) {
-        if text.is_empty() { return; }
+    pub fn text_center_spatial(
+        &mut self,
+        text: &str,
+        box_3d: AABB3D,
+        color: Color,
+        font_size: PhysicalUnit,
+    ) {
+        if text.is_empty() {
+            return;
+        }
         let fs = font_size.to_dip(self.spatial.dpi());
         let quad = self.spatial.project_aabb(&box_3d);
         let bounds = quad.bounds();
@@ -203,32 +295,51 @@ impl<'a> RenderContext<'a> {
         let x = bounds.x + (bounds.w - sz.w) * 0.5;
         let y = bounds.y + (bounds.h - fs * 1.5) * 0.5;
         let canvas = self.spatial.canvas_2d();
-        self.text.draw_text(canvas, text, Point::new(x, y), color, fs);
+        self.text
+            .draw_text(canvas, text, Point::new(x, y), color, fs);
     }
 
     /// 绘制文本（左对齐，顶部对齐）。
     pub fn draw_text(&mut self, text: &str, pos: Point, color: Color, font_size: f32) {
-        self.text.draw_text(self.spatial.canvas_2d(), text, pos, color, font_size);
+        self.text
+            .draw_text(self.spatial.canvas_2d(), text, pos, color, font_size);
     }
 
     /// 基于基线绘制文本。
-    pub fn draw_text_baseline(&mut self, text: &str, x: f32, baseline_y: f32, color: Color, font_size: f32) {
-        self.text.draw_text_baseline(self.spatial.canvas_2d(), text, x, baseline_y, color, font_size);
+    pub fn draw_text_baseline(
+        &mut self,
+        text: &str,
+        x: f32,
+        baseline_y: f32,
+        color: Color,
+        font_size: f32,
+    ) {
+        self.text.draw_text_baseline(
+            self.spatial.canvas_2d(),
+            text,
+            x,
+            baseline_y,
+            color,
+            font_size,
+        );
     }
 
     /// 在矩形内居中绘制文本。
     pub fn text_center(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
-        self.text.text_center(self.spatial.canvas_2d(), text, rect, color, font_size);
+        self.text
+            .text_center(self.spatial.canvas_2d(), text, rect, color, font_size);
     }
 
     /// 左对齐、垂直居中的文本绘制。
     pub fn draw_text_in_frame(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
-        self.text.draw_text_in_frame(self.spatial.canvas_2d(), text, rect, color, font_size);
+        self.text
+            .draw_text_in_frame(self.spatial.canvas_2d(), text, rect, color, font_size);
     }
 
     /// 在矩形内绘制自动换行文本。
     pub fn draw_text_wrapped(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
-        self.text.draw_text_wrapped(self.spatial.canvas_2d(), text, rect, color, font_size);
+        self.text
+            .draw_text_wrapped(self.spatial.canvas_2d(), text, rect, color, font_size);
     }
 
     /// 绘制文本选中背景 + 文本。
@@ -242,7 +353,13 @@ impl<'a> RenderContext<'a> {
         selection_bg: Color,
     ) {
         self.text.draw_text_with_selection(
-            self.spatial.canvas_2d(), text, pos, color, font_size, selection, selection_bg,
+            self.spatial.canvas_2d(),
+            text,
+            pos,
+            color,
+            font_size,
+            selection,
+            selection_bg,
         );
     }
 
@@ -255,7 +372,8 @@ impl<'a> RenderContext<'a> {
         start: usize,
         end: usize,
     ) -> Vec<Rect> {
-        self.text.selection_rects(self.spatial.canvas_2d(), text, font_size, pos, start, end)
+        self.text
+            .selection_rects(self.spatial.canvas_2d(), text, font_size, pos, start, end)
     }
 
     /// 测量文本尺寸（不换行）。
@@ -296,7 +414,8 @@ impl<'a> RenderContext<'a> {
         color: Color,
         font_size: f32,
     ) {
-        self.text.blit_to(self.spatial.canvas_2d(), layout, pos, color, font_size);
+        self.text
+            .blit_to(self.spatial.canvas_2d(), layout, pos, color, font_size);
     }
 
     // ── 辅助 ──
@@ -309,7 +428,14 @@ impl<'a> RenderContext<'a> {
             None
         };
         if let Some(shadow) = style.box_shadow.as_ref() {
-            self.draw_box_shadow(rect, shadow.blur, shadow.offset_x, shadow.offset_y, shadow.color, r);
+            self.draw_box_shadow(
+                rect,
+                shadow.blur,
+                shadow.offset_x,
+                shadow.offset_y,
+                shadow.color,
+                r,
+            );
         }
         if style.opacity < 1.0 {
             self.spatial.canvas_2d().set_opacity(style.opacity);
@@ -379,33 +505,60 @@ impl<'a> RenderContext<'a> {
 
     /// 绘制 widget 调试边框。
     pub fn draw_debug_border(&mut self, rect: Rect, depth: usize, hovered: bool) {
-        self.debug.draw_debug_border(self.spatial.canvas_2d(), rect, depth, hovered);
+        self.debug
+            .draw_debug_border(self.spatial.canvas_2d(), rect, depth, hovered);
     }
 
     /// 在 widget 左上角显示调试标签。
     pub fn draw_debug_label(&mut self, widget_id: usize, depth: usize, rect: Rect) {
-        if !self.debug.debug_mode { return; }
-        let color = DebugRenderService::DEBUG_COLORS[depth % DebugRenderService::DEBUG_COLORS.len()];
+        if !self.debug.debug_mode {
+            return;
+        }
+        let color =
+            DebugRenderService::DEBUG_COLORS[depth % DebugRenderService::DEBUG_COLORS.len()];
         let label = format!("#{} d{}", widget_id, depth);
         let font_size = 12.0;
         let label_w = label.len() as f32 * 7.0 + 6.0;
         let label_h = 16.0;
         let canvas = self.spatial.canvas_2d();
-        canvas.fill_rect(Rect::new(rect.x, rect.y, label_w, label_h), Color::from_rgba(0, 0, 0, 180), None);
-        self.draw_text(&label, Point::new(rect.x + 2.0, rect.y + font_size * 0.75), color, font_size);
+        canvas.fill_rect(
+            Rect::new(rect.x, rect.y, label_w, label_h),
+            Color::from_rgba(0, 0, 0, 180),
+            None,
+        );
+        self.draw_text(
+            &label,
+            Point::new(rect.x + 2.0, rect.y + font_size * 0.75),
+            color,
+            font_size,
+        );
     }
 
     /// 在 widget 下方显示 frame 坐标和尺寸。
     pub fn draw_debug_frame_info(&mut self, widget_id: usize, rect: Rect) {
-        if !self.debug.debug_mode { return; }
-        let info = format!("#{} ({:.0},{:.0}) {:.0}×{:.0}", widget_id, rect.x, rect.y, rect.w, rect.h);
+        if !self.debug.debug_mode {
+            return;
+        }
+        let info = format!(
+            "#{} ({:.0},{:.0}) {:.0}×{:.0}",
+            widget_id, rect.x, rect.y, rect.w, rect.h
+        );
         let font_size = 11.0;
         let info_w = info.len() as f32 * 6.5 + 6.0;
         let info_h = 15.0;
         let info_y = rect.y + rect.h;
         let canvas = self.spatial.canvas_2d();
-        canvas.fill_rect(Rect::new(rect.x, info_y, info_w, info_h), Color::from_rgba(0, 0, 0, 160), None);
-        self.draw_text(&info, Point::new(rect.x + 2.0, info_y + font_size * 0.75), Color::from_rgba(200, 200, 200, 220), font_size);
+        canvas.fill_rect(
+            Rect::new(rect.x, info_y, info_w, info_h),
+            Color::from_rgba(0, 0, 0, 160),
+            None,
+        );
+        self.draw_text(
+            &info,
+            Point::new(rect.x + 2.0, info_y + font_size * 0.75),
+            Color::from_rgba(200, 200, 200, 220),
+            font_size,
+        );
     }
 }
 

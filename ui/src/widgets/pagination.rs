@@ -2,12 +2,12 @@
 //!
 //! 支持页码切换、上一页/下一页、快速跳转（省略号）、pageSize 切换。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 use std::cell::Cell;
+use uix_graphics::{Color, Radius};
+use uix_platform::{Point, Rect, Size};
 
 // Pagination — 分页器。
 define_widget! {
@@ -125,7 +125,8 @@ define_widget! {
 impl Pagination {
     pub fn new(total: usize, page_size: usize) -> Self {
         Self {
-            total, page_size,
+            total,
+            page_size,
             current: Cell::new(1),
             show_size_changer: false,
             show_total: true,
@@ -134,15 +135,39 @@ impl Pagination {
             on_change: None,
         }
     }
-    pub fn current(self, v: usize) -> Self { self.current.set(v); self }
-    pub fn get_current(&self) -> usize { self.current.get() }
-    pub fn page_size(mut self, v: usize) -> Self { self.page_size = v; self }
-    pub fn show_total(mut self, v: bool) -> Self { self.show_total = v; self }
-    pub fn item_size(mut self, v: f32) -> Self { self.size = v; self }
-    pub fn set_current(&self, v: usize) { self.current.set(v); }
-    pub fn total_pages(&self) -> usize { self.total.div_ceil(self.page_size) }
-    pub fn show_size_changer(mut self, v: bool) -> Self { self.show_size_changer = v; self }
-    pub fn page_size_options(mut self, opts: Vec<usize>) -> Self { self.page_size_options = opts; self }
+    pub fn current(self, v: usize) -> Self {
+        self.current.set(v);
+        self
+    }
+    pub fn get_current(&self) -> usize {
+        self.current.get()
+    }
+    pub fn page_size(mut self, v: usize) -> Self {
+        self.page_size = v;
+        self
+    }
+    pub fn show_total(mut self, v: bool) -> Self {
+        self.show_total = v;
+        self
+    }
+    pub fn item_size(mut self, v: f32) -> Self {
+        self.size = v;
+        self
+    }
+    pub fn set_current(&self, v: usize) {
+        self.current.set(v);
+    }
+    pub fn total_pages(&self) -> usize {
+        self.total.div_ceil(self.page_size)
+    }
+    pub fn show_size_changer(mut self, v: bool) -> Self {
+        self.show_size_changer = v;
+        self
+    }
+    pub fn page_size_options(mut self, opts: Vec<usize>) -> Self {
+        self.page_size_options = opts;
+        self
+    }
     pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self
@@ -155,11 +180,17 @@ impl Pagination {
         }
         let mut pages = Vec::new();
         pages.push(1);
-        if cur > 3 { pages.push(0); } // 省略号用 0 表示
+        if cur > 3 {
+            pages.push(0);
+        } // 省略号用 0 表示
         let start = (cur.saturating_sub(1)).max(2);
         let end = (cur + 1).min(total_pages - 1);
-        for p in start..=end { pages.push(p); }
-        if cur < total_pages - 2 { pages.push(0); }
+        for p in start..=end {
+            pages.push(p);
+        }
+        if cur < total_pages - 2 {
+            pages.push(0);
+        }
         pages.push(total_pages);
         pages
     }

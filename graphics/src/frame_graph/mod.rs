@@ -237,7 +237,11 @@ impl FrameGraph {
         &mut self,
         engine: &mut dyn crate::GraphicsEngine,
         plan: &CompiledGraph,
-        render_fn: &mut dyn FnMut(PassId, &mut dyn crate::GraphicsEngine, &mut FrameResources) -> Result<()>,
+        render_fn: &mut dyn FnMut(
+            PassId,
+            &mut dyn crate::GraphicsEngine,
+            &mut FrameResources,
+        ) -> Result<()>,
     ) -> Result<()> {
         for &pid in &plan.execution_order {
             // 调用外部渲染回调（取代 PassNode::execute）

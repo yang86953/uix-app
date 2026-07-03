@@ -1,10 +1,10 @@
 //! uix-platform crate 集成测试（error 模块）。
 
-use uix_platform::error::{
-    collect_errors, collect_values, try_invoke, Error, ErrorSeverity, Errc,
-    ResultErrorExt, ResultExt, ResultVoidExt, make_error,
-};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use uix_platform::error::{
+    collect_errors, collect_values, make_error, try_invoke, Errc, Error, ErrorSeverity,
+    ResultErrorExt, ResultExt, ResultVoidExt,
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 构造与访问器
@@ -443,7 +443,10 @@ fn errc_to_io_kind_invalid_argument() {
 
 #[test]
 fn errc_to_io_kind_not_found() {
-    assert_eq!(Errc::NotFound.to_io_kind(), Some(std::io::ErrorKind::NotFound));
+    assert_eq!(
+        Errc::NotFound.to_io_kind(),
+        Some(std::io::ErrorKind::NotFound)
+    );
     assert_eq!(
         Errc::FileNotFound.to_io_kind(),
         Some(std::io::ErrorKind::NotFound)
@@ -464,7 +467,10 @@ fn errc_to_io_kind_permission_denied() {
 
 #[test]
 fn errc_to_io_kind_timeout() {
-    assert_eq!(Errc::Timeout.to_io_kind(), Some(std::io::ErrorKind::TimedOut));
+    assert_eq!(
+        Errc::Timeout.to_io_kind(),
+        Some(std::io::ErrorKind::TimedOut)
+    );
     assert_eq!(
         Errc::ConnectionTimeout.to_io_kind(),
         Some(std::io::ErrorKind::TimedOut)
@@ -537,7 +543,10 @@ fn errc_display() {
     assert_eq!(format!("{}", Errc::NotFound), "not_found");
     assert_eq!(format!("{}", Errc::InvalidArgument), "invalid_argument");
     assert_eq!(format!("{}", Errc::IoError), "io_error");
-    assert_eq!(format!("{}", Errc::WindowCreationFailed), "window_creation_failed");
+    assert_eq!(
+        format!("{}", Errc::WindowCreationFailed),
+        "window_creation_failed"
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════════════

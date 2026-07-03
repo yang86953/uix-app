@@ -6,50 +6,106 @@ use crate::color::Color;
 use crate::types::Radius;
 
 use super::{
-    color_to_premul, put_pixel_aa,
-    rounded_rect_sdf, sdf_to_coverage,
+    clip_to_int, color_to_premul, intersect_rect, put_pixel_aa, rounded_rect_sdf, sdf_to_coverage,
     shadow_coverage, shadow_coverage_ambient,
-    intersect_rect, clip_to_int,
 };
 
 /// 纯函数：绘制盒阴影。
 pub fn draw_box_shadow(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
-    clip: Rect, opacity: f32,
-    rect: Rect, blur: f32, ox: f32, oy: f32,
-    color: Color, corner_radius: Option<Radius>,
+    pixels: &mut [u32],
+    surface_w: i32,
+    surface_h: i32,
+    clip: Rect,
+    opacity: f32,
+    rect: Rect,
+    blur: f32,
+    ox: f32,
+    oy: f32,
+    color: Color,
+    corner_radius: Option<Radius>,
 ) {
-    _draw_box_shadow_impl(pixels, surface_w, surface_h, clip, opacity, rect, blur, ox, oy, color, corner_radius, false)
+    _draw_box_shadow_impl(
+        pixels,
+        surface_w,
+        surface_h,
+        clip,
+        opacity,
+        rect,
+        blur,
+        ox,
+        oy,
+        color,
+        corner_radius,
+        false,
+    )
 }
 
 /// 纯函数：绘制环境阴影（更柔和的弥散）。
 pub fn draw_box_shadow_ambient(
-    pixels: &mut [u32], surface_w: i32, surface_h: i32,
-    clip: Rect, opacity: f32,
-    rect: Rect, blur: f32, ox: f32, oy: f32,
-    color: Color, corner_radius: Option<Radius>,
+    pixels: &mut [u32],
+    surface_w: i32,
+    surface_h: i32,
+    clip: Rect,
+    opacity: f32,
+    rect: Rect,
+    blur: f32,
+    ox: f32,
+    oy: f32,
+    color: Color,
+    corner_radius: Option<Radius>,
 ) {
-    _draw_box_shadow_impl(pixels, surface_w, surface_h, clip, opacity, rect, blur, ox, oy, color, corner_radius, true)
+    _draw_box_shadow_impl(
+        pixels,
+        surface_w,
+        surface_h,
+        clip,
+        opacity,
+        rect,
+        blur,
+        ox,
+        oy,
+        color,
+        corner_radius,
+        true,
+    )
 }
 
 fn _draw_box_shadow_impl(
-    pixels: &mut [u32], surface_w: i32, _surface_h: i32,
-    clip: Rect, opacity: f32,
-    rect: Rect, blur_radius: f32, offset_x: f32, offset_y: f32,
-    shadow_color: Color, corner_radius: Option<Radius>, ambient: bool,
+    pixels: &mut [u32],
+    surface_w: i32,
+    _surface_h: i32,
+    clip: Rect,
+    opacity: f32,
+    rect: Rect,
+    blur_radius: f32,
+    offset_x: f32,
+    offset_y: f32,
+    shadow_color: Color,
+    corner_radius: Option<Radius>,
+    ambient: bool,
 ) {
     let rad = corner_radius.unwrap_or_default();
     let blur = blur_radius.max(0.0);
 
-    if shadow_color.a == 0 { return; }
+    if shadow_color.a == 0 {
+        return;
+    }
 
-    let c = color_to_premul(shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a, opacity);
+    let c = color_to_premul(
+        shadow_color.r,
+        shadow_color.g,
+        shadow_color.b,
+        shadow_color.a,
+        opacity,
+    );
     let shadow_rect = Rect::new(rect.x + offset_x, rect.y + offset_y, rect.w, rect.h);
 
     let expand = blur + 1.0;
     let bounds = Rect::new(
-        shadow_rect.x - expand, shadow_rect.y - expand,
-        shadow_rect.w + expand * 2.0, shadow_rect.h + expand * 2.0,
+        shadow_rect.x - expand,
+        shadow_rect.y - expand,
+        shadow_rect.w + expand * 2.0,
+        shadow_rect.h + expand * 2.0,
     );
 
     let use_blur = blur > 0.5;
@@ -61,7 +117,9 @@ fn _draw_box_shadow_impl(
         let y1 = (cr.y + cr.h) as i32;
         let (cx0, cy0, cx1, cy1) = clip_to_int(&clip);
 
-        if x0 >= x1 || y0 >= y1 { return; }
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
 
         for py in y0..y1 {
             for px in x0..x1 {
@@ -69,8 +127,11 @@ fn _draw_box_shadow_impl(
                 let uy = py as f32 + 0.5;
                 let sd = rounded_rect_sdf(ux, uy, &shadow_rect, &rad);
                 let coverage = if use_blur {
-                    if ambient { shadow_coverage_ambient(sd, blur) }
-                    else { shadow_coverage(sd, blur) }
+                    if ambient {
+                        shadow_coverage_ambient(sd, blur)
+                    } else {
+                        shadow_coverage(sd, blur)
+                    }
                 } else {
                     sdf_to_coverage(sd)
                 };

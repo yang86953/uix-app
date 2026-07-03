@@ -1,9 +1,9 @@
-use uix_platform::{Point, Rect, Size};
+use super::tree::TreeNode;
 use crate::define_widget;
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
-use super::tree::TreeNode;
+use uix_graphics::Radius;
+use uix_platform::{Point, Rect, Size};
 
 define_widget! {
     pub struct TreeSelect {
@@ -135,14 +135,36 @@ impl TreeSelect {
 
     pub fn new() -> Self {
         Self {
-            placeholder: "Please select".into(), value: String::new(), value_key: String::new(),
-            nodes: Vec::new(), open: false, hovered_option: None, on_change: None,
+            placeholder: "Please select".into(),
+            value: String::new(),
+            value_key: String::new(),
+            nodes: Vec::new(),
+            open: false,
+            hovered_option: None,
+            on_change: None,
         }
     }
-    pub fn placeholder(mut self, p: &str) -> Self { self.placeholder = p.to_string(); self }
-    pub fn nodes(mut self, n: Vec<TreeNode>) -> Self { self.nodes = n; self }
-    pub fn value(&self) -> &str { &self.value }
-    pub fn value_key(&self) -> &str { &self.value_key }
-    pub fn on_change<F: FnMut(String, String) + 'static>(mut self, f: F) -> Self { self.on_change = Some(Box::new(f)); self }
+    pub fn placeholder(mut self, p: &str) -> Self {
+        self.placeholder = p.to_string();
+        self
+    }
+    pub fn nodes(mut self, n: Vec<TreeNode>) -> Self {
+        self.nodes = n;
+        self
+    }
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+    pub fn value_key(&self) -> &str {
+        &self.value_key
+    }
+    pub fn on_change<F: FnMut(String, String) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
 }
-impl Default for TreeSelect { fn default() -> Self { Self::new() } }
+impl Default for TreeSelect {
+    fn default() -> Self {
+        Self::new()
+    }
+}

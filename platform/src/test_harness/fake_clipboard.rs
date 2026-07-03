@@ -1,7 +1,7 @@
 //! Fake 剪贴板 — 内存实现 + 操作记录。
 
-use std::cell::Cell;
 use crate::api::traits::IClipboard;
+use std::cell::Cell;
 
 /// 剪贴板状态（公开字段，测试可直接读取断言）
 #[derive(Debug, Clone)]
@@ -16,7 +16,11 @@ pub struct FakeClipboardState {
 
 impl Default for FakeClipboardState {
     fn default() -> Self {
-        Self { text: String::new(), set_text_calls: Vec::new(), has_text_calls: Cell::new(0) }
+        Self {
+            text: String::new(),
+            set_text_calls: Vec::new(),
+            has_text_calls: Cell::new(0),
+        }
     }
 }
 
@@ -28,7 +32,9 @@ pub struct FakeClipboard {
 
 impl FakeClipboard {
     pub fn new() -> Self {
-        Self { state: FakeClipboardState::default() }
+        Self {
+            state: FakeClipboardState::default(),
+        }
     }
 
     /// 最后一次 `set_text` 的内容
@@ -54,7 +60,9 @@ impl IClipboard for FakeClipboard {
     }
 
     fn has_text(&self) -> bool {
-        self.state.has_text_calls.set(self.state.has_text_calls.get() + 1);
+        self.state
+            .has_text_calls
+            .set(self.state.has_text_calls.get() + 1);
         !self.state.text.is_empty()
     }
 }

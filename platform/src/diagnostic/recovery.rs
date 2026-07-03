@@ -2,8 +2,8 @@
 // platform/src/diagnostic/recovery.rs — 恢复执行逻辑
 // ============================================================================
 
-use std::time::Duration;
 use crate::error::Error;
+use std::time::Duration;
 
 pub use crate::diagnostic::recovery_policy::*;
 
@@ -25,28 +25,40 @@ pub struct RecoveryHandler {
 
 impl RecoveryHandler {
     pub fn new(policy: Box<dyn RetryPolicy>) -> Self {
-        Self { policy, fallback: None, on_retry: None }
+        Self {
+            policy,
+            fallback: None,
+            on_retry: None,
+        }
     }
 
     pub fn set_fallback<F>(&mut self, fb: F)
-    where F: Fn(&Error) -> Result<(), Error> + Send + Sync + 'static {
+    where
+        F: Fn(&Error) -> Result<(), Error> + Send + Sync + 'static,
+    {
         self.fallback = Some(Box::new(fb));
     }
 
     pub fn set_on_retry<F>(&mut self, cb: F)
-    where F: Fn(&Error, usize) + Send + Sync + 'static {
+    where
+        F: Fn(&Error, usize) + Send + Sync + 'static,
+    {
         self.on_retry = Some(Box::new(cb));
     }
 
     pub fn execute<F>(&self, operation: F) -> Result<(), Error>
-    where F: Fn() -> Result<(), Error> {
+    where
+        F: Fn() -> Result<(), Error>,
+    {
         let mut last_error;
         let mut attempt = 0;
 
         loop {
             match operation() {
                 Ok(v) => return Ok(v),
-                Err(e) => { last_error = e; }
+                Err(e) => {
+                    last_error = e;
+                }
             }
 
             if let Some(ref cb) = self.on_retry {
@@ -94,7 +106,11 @@ pub fn retry(
     delay_between_ms: u64,
 ) -> Result<(), Error> {
     let policy = FixedRetryPolicy::new(
-        if max_attempts > 0 { max_attempts - 1 } else { 0 },
+        if max_attempts > 0 {
+            max_attempts - 1
+        } else {
+            0
+        },
         delay_between_ms,
     );
     let handler = RecoveryHandler::new(Box::new(policy));
@@ -116,10 +132,14 @@ pub fn with_recovery_typed<T>(
     loop {
         match operation() {
             Ok(v) => return Ok(v),
-            Err(e) => { last_error = e; }
+            Err(e) => {
+                last_error = e;
+            }
         }
 
-        if !policy.should_retry(attempt, &last_error) { break; }
+        if !policy.should_retry(attempt, &last_error) {
+            break;
+        }
 
         let d = policy.delay(attempt);
         if d > Duration::from_millis(0) {

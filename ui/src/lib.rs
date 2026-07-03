@@ -54,6 +54,8 @@
 //! use uix::ui::layout::engine::{FlexLayout, LayoutEngine, LayoutChild};
 //! ```
 
+extern crate self as uix_ui;
+
 pub mod animation;
 pub mod children;
 pub mod clipboard;
@@ -83,3 +85,8 @@ pub mod view;
 pub mod api;
 
 pub use api::*;
+
+// ── 简化 API 便利重导出 ──
+pub use view::adapter::ViewAdapter;
+pub use view::app::App;
+pub use view::{StyleExt, Ui, View, ViewNode};

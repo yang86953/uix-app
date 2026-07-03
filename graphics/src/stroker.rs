@@ -3,9 +3,9 @@
 //! 算法：沿路径两侧偏移半个线宽，生成闭合填充区域。
 //! 支持 LineCap::Butt/Round/Square、LineJoin::Miter/Bevel。
 
-use uix_platform::Point;
-use super::path::{LineCap, LineJoin, Path, PathBuilder, PathSegment};
 use super::flattener;
+use super::path::{LineCap, LineJoin, Path, PathBuilder, PathSegment};
+use uix_platform::Point;
 
 /// 描边参数。
 #[derive(Debug, Clone, Copy)]
@@ -33,13 +33,17 @@ impl Default for StrokeOptions {
 pub fn stroke_path(path: &Path, options: &StrokeOptions) -> Path {
     let half_w = options.width * 0.5;
     if half_w < 0.0001 {
-        return Path { segments: Vec::new() };
+        return Path {
+            segments: Vec::new(),
+        };
     }
 
     // 展平路径为线段
     let polys = flattener::flatten(path.segments(), 0.25);
     if polys.is_empty() {
-        return Path { segments: Vec::new() };
+        return Path {
+            segments: Vec::new(),
+        };
     }
 
     let mut builder = PathBuilder::new();
@@ -70,8 +74,12 @@ pub fn stroke_path(path: &Path, options: &StrokeOptions) -> Path {
             let inner = inner_builder.build();
             for seg in inner.segments() {
                 match *seg {
-                    PathSegment::MoveTo(p) => { builder.move_to(p.x, p.y); }
-                    PathSegment::LineTo(p) => { builder.line_to(p.x, p.y); }
+                    PathSegment::MoveTo(p) => {
+                        builder.move_to(p.x, p.y);
+                    }
+                    PathSegment::LineTo(p) => {
+                        builder.line_to(p.x, p.y);
+                    }
                     _ => {}
                 }
             }
@@ -129,7 +137,9 @@ fn build_offset_outline(
         if i == 0 {
             builder.move_to(ox0, oy0);
         } else if (prev_nx - nx).abs() > 0.0001 || (prev_ny - ny).abs() > 0.0001 {
-            add_join(builder, p0.x, p0.y, prev_nx, prev_ny, nx, ny, half_w, options);
+            add_join(
+                builder, p0.x, p0.y, prev_nx, prev_ny, nx, ny, half_w, options,
+            );
         }
         builder.line_to(ox1, oy1);
 
@@ -154,7 +164,8 @@ fn build_offset_outline(
 fn add_cap(
     builder: &mut PathBuilder,
     p: Point,
-    nx: f32, ny: f32,
+    nx: f32,
+    ny: f32,
     half_w: f32,
     cap: LineCap,
     _is_start: bool,
@@ -191,9 +202,12 @@ fn add_cap(
 /// 根据 join 类型可能经过中间点（miter 交点或圆弧）。
 fn add_join(
     builder: &mut PathBuilder,
-    vx: f32, vy: f32,         // 顶点位置（poly[i]）
-    pn_x: f32, pn_y: f32,     // 上一段的法线方向
-    cn_x: f32, cn_y: f32,     // 当前段的法线方向
+    vx: f32,
+    vy: f32, // 顶点位置（poly[i]）
+    pn_x: f32,
+    pn_y: f32, // 上一段的法线方向
+    cn_x: f32,
+    cn_y: f32, // 当前段的法线方向
     half_w: f32,
     options: &StrokeOptions,
 ) {

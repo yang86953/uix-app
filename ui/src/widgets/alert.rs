@@ -1,10 +1,10 @@
 //! Alert widget — 警示条，支持类型、图标、关闭。
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Radius;
+use uix_platform::{Rect, Size};
 
 /// 警示类型。
 /// （已统一为 uix_platform::StatusLevel，保留别名以兼容旧代码。）
@@ -53,7 +53,11 @@ define_widget! {
     }
 }
 
-impl Default for Alert { fn default() -> Self { Self::new("") } }
+impl Default for Alert {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
 
 impl Alert {
     pub fn new(message: impl Into<String>) -> Self {
@@ -65,7 +69,16 @@ impl Alert {
             _show_icon: true,
         }
     }
-    pub fn description(mut self, d: impl Into<String>) -> Self { self.description = d.into(); self }
-    pub fn type_(mut self, t: AlertType) -> Self { self.type_ = t; self }
-    pub fn closable(mut self) -> Self { self.closable = true; self }
+    pub fn description(mut self, d: impl Into<String>) -> Self {
+        self.description = d.into();
+        self
+    }
+    pub fn type_(mut self, t: AlertType) -> Self {
+        self.type_ = t;
+        self
+    }
+    pub fn closable(mut self) -> Self {
+        self.closable = true;
+        self
+    }
 }

@@ -2,11 +2,11 @@
 //!
 //! 输入时弹出匹配选项列表，支持键盘导航选择。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::Radius;
+use uix_platform::{Point, Rect, Size};
 
 // AutoComplete — 自动完成输入框。
 define_widget! {
@@ -111,24 +111,47 @@ define_widget! {
 impl AutoComplete {
     pub fn new() -> Self {
         Self {
-            placeholder: String::new(), value: String::new(), options: Vec::new(),
-            filtered: Vec::new(), open: false, focus: false, hovered: false, selected_idx: 0,
+            placeholder: String::new(),
+            value: String::new(),
+            options: Vec::new(),
+            filtered: Vec::new(),
+            open: false,
+            focus: false,
+            hovered: false,
+            selected_idx: 0,
         }
     }
-    pub fn placeholder(mut self, p: &str) -> Self { self.placeholder = p.to_string(); self }
-    pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
-        self.options = opts.into_iter().map(|s| s.into()).collect(); self
+    pub fn placeholder(mut self, p: &str) -> Self {
+        self.placeholder = p.to_string();
+        self
     }
-    pub fn value(&self) -> &str { &self.value }
-    pub fn set_value(&mut self, v: &str) { self.value = v.to_string(); }
+    pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
+        self.options = opts.into_iter().map(|s| s.into()).collect();
+        self
+    }
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+    pub fn set_value(&mut self, v: &str) {
+        self.value = v.to_string();
+    }
     fn filter(&mut self) {
         if self.value.is_empty() {
             self.filtered = self.options.clone();
         } else {
-            self.filtered = self.options.iter().filter(|o| o.contains(&self.value)).cloned().collect();
+            self.filtered = self
+                .options
+                .iter()
+                .filter(|o| o.contains(&self.value))
+                .cloned()
+                .collect();
         }
         self.selected_idx = 0;
     }
 }
 
-impl Default for AutoComplete { fn default() -> Self { Self::new() } }
+impl Default for AutoComplete {
+    fn default() -> Self {
+        Self::new()
+    }
+}

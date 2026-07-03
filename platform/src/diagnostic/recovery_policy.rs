@@ -4,10 +4,10 @@
 // 重试策略、断路器、回退策略。
 // ============================================================================
 
+use crate::error::{Errc, Error};
 use std::fmt;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
-use crate::error::{Error, Errc};
 
 // ════════════════════════════════════════════════════════════════════════════
 // RetryPolicy trait
@@ -30,11 +30,18 @@ pub struct FixedRetryPolicy {
 
 impl FixedRetryPolicy {
     pub fn new(max_retries: usize, delay_ms: u64) -> Self {
-        Self { max_retries, delay_ms }
+        Self {
+            max_retries,
+            delay_ms,
+        }
     }
 
-    pub fn set_max_retries(&mut self, n: usize) { self.max_retries = n; }
-    pub fn max_retries(&self) -> usize { self.max_retries }
+    pub fn set_max_retries(&mut self, n: usize) {
+        self.max_retries = n;
+    }
+    pub fn max_retries(&self) -> usize {
+        self.max_retries
+    }
 }
 
 impl RetryPolicy for FixedRetryPolicy {
@@ -47,7 +54,10 @@ impl RetryPolicy for FixedRetryPolicy {
     }
 
     fn describe(&self) -> String {
-        format!("fixed_retry(max={}, delay={}ms)", self.max_retries, self.delay_ms)
+        format!(
+            "fixed_retry(max={}, delay={}ms)",
+            self.max_retries, self.delay_ms
+        )
     }
 }
 
@@ -100,7 +110,13 @@ impl ExponentialBackoffRetryPolicy {
         multiplier: f64,
         jitter_factor: f64,
     ) -> Self {
-        Self { max_retries, initial_delay_ms, max_delay_ms, multiplier, jitter_factor }
+        Self {
+            max_retries,
+            initial_delay_ms,
+            max_delay_ms,
+            multiplier,
+            jitter_factor,
+        }
     }
 }
 
@@ -144,8 +160,11 @@ impl RetryPolicy for ExponentialBackoffRetryPolicy {
     fn describe(&self) -> String {
         format!(
             "exponential_backoff(max={}, init={}ms, max_delay={}ms, mult={}, jitter={})",
-            self.max_retries, self.initial_delay_ms,
-            self.max_delay_ms, self.multiplier, self.jitter_factor
+            self.max_retries,
+            self.initial_delay_ms,
+            self.max_delay_ms,
+            self.multiplier,
+            self.jitter_factor
         )
     }
 }
@@ -167,11 +186,15 @@ impl FilteredRetryPolicy {
 
 impl RetryPolicy for FilteredRetryPolicy {
     fn should_retry(&self, attempt: usize, last_error: &Error) -> bool {
-        if !self.codes.contains(&last_error.code()) { return false; }
+        if !self.codes.contains(&last_error.code()) {
+            return false;
+        }
         self.inner.should_retry(attempt, last_error)
     }
 
-    fn delay(&self, attempt: usize) -> Duration { self.inner.delay(attempt) }
+    fn delay(&self, attempt: usize) -> Duration {
+        self.inner.delay(attempt)
+    }
 
     fn describe(&self) -> String {
         format!("filtered({})", self.inner.describe())
@@ -259,7 +282,9 @@ impl CircuitBreaker {
         raw.into()
     }
 
-    pub fn state(&self) -> CircuitState { self.load_state() }
+    pub fn state(&self) -> CircuitState {
+        self.load_state()
+    }
 
     pub fn try_call(&self) -> bool {
         match self.load_state() {
@@ -277,7 +302,8 @@ impl CircuitBreaker {
         let _ = self.state.compare_exchange(
             CircuitState::HalfOpen as u64,
             CircuitState::Closed as u64,
-            Ordering::AcqRel, Ordering::Relaxed,
+            Ordering::AcqRel,
+            Ordering::Relaxed,
         );
         self.failure_count.store(0, Ordering::Relaxed);
     }
@@ -290,30 +316,43 @@ impl CircuitBreaker {
             .as_millis() as u64;
         self.last_failure_time.store(now, Ordering::Relaxed);
         if fails >= self.threshold.load(Ordering::Relaxed) {
-            self.state.store(CircuitState::Open as u64, Ordering::Release);
+            self.state
+                .store(CircuitState::Open as u64, Ordering::Release);
         }
     }
 
     pub fn reset(&self) {
-        self.state.store(CircuitState::Closed as u64, Ordering::Release);
+        self.state
+            .store(CircuitState::Closed as u64, Ordering::Release);
         self.failure_count.store(0, Ordering::Relaxed);
         self.rejected_count.store(0, Ordering::Relaxed);
         self.last_failure_time.store(0, Ordering::Relaxed);
     }
 
-    pub fn set_threshold(&self, failures: usize) { self.threshold.store(failures, Ordering::Relaxed); }
-    pub fn threshold(&self) -> usize { self.threshold.load(Ordering::Relaxed) }
+    pub fn set_threshold(&self, failures: usize) {
+        self.threshold.store(failures, Ordering::Relaxed);
+    }
+    pub fn threshold(&self) -> usize {
+        self.threshold.load(Ordering::Relaxed)
+    }
 
     pub fn set_recovery_timeout(&self, timeout: Duration) {
-        self.recovery_timeout_ms.store(timeout.as_millis() as u64, Ordering::Relaxed);
+        self.recovery_timeout_ms
+            .store(timeout.as_millis() as u64, Ordering::Relaxed);
     }
     pub fn recovery_timeout(&self) -> Duration {
         Duration::from_millis(self.recovery_timeout_ms.load(Ordering::Relaxed))
     }
 
-    pub fn failure_count(&self) -> usize { self.failure_count.load(Ordering::Relaxed) }
-    pub fn success_count(&self) -> usize { self.success_count.load(Ordering::Relaxed) }
-    pub fn rejected_count(&self) -> usize { self.rejected_count.load(Ordering::Relaxed) }
+    pub fn failure_count(&self) -> usize {
+        self.failure_count.load(Ordering::Relaxed)
+    }
+    pub fn success_count(&self) -> usize {
+        self.success_count.load(Ordering::Relaxed)
+    }
+    pub fn rejected_count(&self) -> usize {
+        self.rejected_count.load(Ordering::Relaxed)
+    }
 
     pub fn describe(&self) -> String {
         format!(

@@ -5,11 +5,11 @@
 
 use std::cell::Cell;
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, GraphicsEngine, Radius};
+use uix_platform::{Point, Rect, Size};
 
 /// 列表项数据
 #[derive(Debug, Clone)]
@@ -24,9 +24,16 @@ pub struct SelectableItem {
 
 impl SelectableItem {
     pub fn new(id: impl Into<String>, text: impl Into<String>) -> Self {
-        Self { id: id.into(), text: text.into(), icon: None }
+        Self {
+            id: id.into(),
+            text: text.into(),
+            icon: None,
+        }
     }
-    pub fn icon(mut self, icon: &str) -> Self { self.icon = Some(icon.to_string()); self }
+    pub fn icon(mut self, icon: &str) -> Self {
+        self.icon = Some(icon.to_string());
+        self
+    }
 }
 
 define_widget! {

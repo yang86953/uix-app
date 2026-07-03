@@ -1,6 +1,6 @@
 use crate::theme::Theme;
-use uix_platform::ControlSize;
 use std::cell::RefCell;
+use uix_platform::ControlSize;
 
 /// 组件全局默认配置。
 #[derive(Clone)]
@@ -70,9 +70,7 @@ thread_local! {
 
 /// 获取当前生效的组件配置。
 pub fn use_config() -> ComponentConfig {
-    CONFIG_STACK.with(|stack| {
-        stack.borrow().last().cloned().unwrap_or_default()
-    })
+    CONFIG_STACK.with(|stack| stack.borrow().last().cloned().unwrap_or_default())
 }
 
 /// 在作用域内使用指定配置执行闭包。

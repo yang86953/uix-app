@@ -1,8 +1,8 @@
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, Radius};
+use uix_platform::{Point, Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // QRCode
@@ -60,9 +60,21 @@ define_widget! {
     }
 }
 impl QRCode {
-    pub fn new(value: &str) -> Self { Self { value: value.to_string(), size: 160.0, error_level: 1 } }
-    pub fn size(mut self, s: f32) -> Self { self.size = s; self }
-    pub fn error_level(mut self, lv: u8) -> Self { self.error_level = lv; self }
+    pub fn new(value: &str) -> Self {
+        Self {
+            value: value.to_string(),
+            size: 160.0,
+            error_level: 1,
+        }
+    }
+    pub fn size(mut self, s: f32) -> Self {
+        self.size = s;
+        self
+    }
+    pub fn error_level(mut self, lv: u8) -> Self {
+        self.error_level = lv;
+        self
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -170,11 +182,26 @@ define_widget! {
     }
 }
 impl Transfer {
-    pub fn new() -> Self { Self { source: Vec::new(), target: Vec::new() } }
-    pub fn source(mut self, items: Vec<TransferItem>) -> Self { self.source = items; self }
-    pub fn target(mut self, items: Vec<TransferItem>) -> Self { self.target = items; self }
+    pub fn new() -> Self {
+        Self {
+            source: Vec::new(),
+            target: Vec::new(),
+        }
+    }
+    pub fn source(mut self, items: Vec<TransferItem>) -> Self {
+        self.source = items;
+        self
+    }
+    pub fn target(mut self, items: Vec<TransferItem>) -> Self {
+        self.target = items;
+        self
+    }
 }
-impl Default for Transfer { fn default() -> Self { Self::new() } }
+impl Default for Transfer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Upload
@@ -190,7 +217,12 @@ pub struct UploadFile {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum UploadStatus { Pending, Uploading, Done, Error }
+pub enum UploadStatus {
+    Pending,
+    Uploading,
+    Done,
+    Error,
+}
 pub type UploadCallback = Box<dyn FnMut(&str, UploadStatus)>;
 
 define_widget! {
@@ -273,25 +305,72 @@ define_widget! {
     }
 }
 impl Upload {
-    pub fn new() -> Self { Self { accept: "*".into(), multiple: false, file_list: Vec::new(), drag: true, drag_hover: false, max_count: 10, on_change: None } }
-    pub fn accept(mut self, a: &str) -> Self { self.accept = a.to_string(); self }
-    pub fn multiple(mut self, v: bool) -> Self { self.multiple = v; self }
-    pub fn drag(mut self, v: bool) -> Self { self.drag = v; self }
-    pub fn max_count(mut self, n: usize) -> Self { self.max_count = n; self }
-    pub fn on_change<F: FnMut(&str, UploadStatus) + 'static>(mut self, f: F) -> Self { self.on_change = Some(Box::new(f)); self }
+    pub fn new() -> Self {
+        Self {
+            accept: "*".into(),
+            multiple: false,
+            file_list: Vec::new(),
+            drag: true,
+            drag_hover: false,
+            max_count: 10,
+            on_change: None,
+        }
+    }
+    pub fn accept(mut self, a: &str) -> Self {
+        self.accept = a.to_string();
+        self
+    }
+    pub fn multiple(mut self, v: bool) -> Self {
+        self.multiple = v;
+        self
+    }
+    pub fn drag(mut self, v: bool) -> Self {
+        self.drag = v;
+        self
+    }
+    pub fn max_count(mut self, n: usize) -> Self {
+        self.max_count = n;
+        self
+    }
+    pub fn on_change<F: FnMut(&str, UploadStatus) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
     pub fn add_file(&mut self, name: &str) {
-        if self.file_list.len() >= self.max_count { return; }
-        self.file_list.push(UploadFile { name: name.to_string(), size: 0, progress: 0.0, status: UploadStatus::Pending });
+        if self.file_list.len() >= self.max_count {
+            return;
+        }
+        self.file_list.push(UploadFile {
+            name: name.to_string(),
+            size: 0,
+            progress: 0.0,
+            status: UploadStatus::Pending,
+        });
     }
     pub fn update_progress(&mut self, idx: usize, progress: f32) {
-        if idx < self.file_list.len() { self.file_list[idx].progress = progress; self.file_list[idx].status = UploadStatus::Uploading; }
+        if idx < self.file_list.len() {
+            self.file_list[idx].progress = progress;
+            self.file_list[idx].status = UploadStatus::Uploading;
+        }
     }
     pub fn complete_file(&mut self, idx: usize, success: bool) {
-        if idx < self.file_list.len() { self.file_list[idx].status = if success { UploadStatus::Done } else { UploadStatus::Error }; }
+        if idx < self.file_list.len() {
+            self.file_list[idx].status = if success {
+                UploadStatus::Done
+            } else {
+                UploadStatus::Error
+            };
+        }
     }
-    pub fn file_count(&self) -> usize { self.file_list.len() }
+    pub fn file_count(&self) -> usize {
+        self.file_list.len()
+    }
 }
-impl Default for Upload { fn default() -> Self { Self::new() } }
+impl Default for Upload {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Watermark
@@ -354,15 +433,41 @@ define_widget! {
 impl Watermark {
     pub fn new(text: &str) -> Self {
         Self {
-            text: text.to_string(), color: Color::from_rgba(0, 0, 0, 255),
-            font_size: 14.0, opacity: 0.15, rotate: -22.0,
-            gap_x: 200.0, gap_y: 160.0, x_offset: 0.0, y_offset: 0.0,
+            text: text.to_string(),
+            color: Color::from_rgba(0, 0, 0, 255),
+            font_size: 14.0,
+            opacity: 0.15,
+            rotate: -22.0,
+            gap_x: 200.0,
+            gap_y: 160.0,
+            x_offset: 0.0,
+            y_offset: 0.0,
         }
     }
-    pub fn color(mut self, c: Color) -> Self { self.color = c; self }
-    pub fn font_size(mut self, s: f32) -> Self { self.font_size = s; self }
-    pub fn opacity(mut self, o: f32) -> Self { self.opacity = o; self }
-    pub fn rotate(mut self, r: f32) -> Self { self.rotate = r; self }
-    pub fn gap(mut self, x: f32, y: f32) -> Self { self.gap_x = x; self.gap_y = y; self }
-    pub fn offset(mut self, x: f32, y: f32) -> Self { self.x_offset = x; self.y_offset = y; self }
+    pub fn color(mut self, c: Color) -> Self {
+        self.color = c;
+        self
+    }
+    pub fn font_size(mut self, s: f32) -> Self {
+        self.font_size = s;
+        self
+    }
+    pub fn opacity(mut self, o: f32) -> Self {
+        self.opacity = o;
+        self
+    }
+    pub fn rotate(mut self, r: f32) -> Self {
+        self.rotate = r;
+        self
+    }
+    pub fn gap(mut self, x: f32, y: f32) -> Self {
+        self.gap_x = x;
+        self.gap_y = y;
+        self
+    }
+    pub fn offset(mut self, x: f32, y: f32) -> Self {
+        self.x_offset = x;
+        self.y_offset = y;
+        self
+    }
 }

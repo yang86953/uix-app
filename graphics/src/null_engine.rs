@@ -1,10 +1,10 @@
 //! NullEngine — 用于测试/演示的 GraphicsEngine 桩实现。
 //! 所有渲染操作均为空操作。
 
-use uix_platform::Error;
 use crate::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-use crate::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 use crate::engine::RenderOutcome;
+use crate::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use uix_platform::Error;
 
 /// 空图形引擎——不做任何渲染。
 pub struct NullEngine {

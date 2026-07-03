@@ -88,11 +88,23 @@ impl ThemePrimitives {
             color_primary_border: p.primary.mix(&w, 0.55),
 
             // ── 中性背景 ──
-            color_bg_container: if is_dark { p.bg.lighten(0.04) } else { p.bg.mix(&w, 0.55) },
+            color_bg_container: if is_dark {
+                p.bg.lighten(0.04)
+            } else {
+                p.bg.mix(&w, 0.55)
+            },
             color_bg_elevated: if is_dark { p.bg.lighten(0.12) } else { w },
-            color_bg_raised: if is_dark { p.bg.lighten(0.08) } else { p.bg.mix(&w, 0.35) },
+            color_bg_raised: if is_dark {
+                p.bg.lighten(0.08)
+            } else {
+                p.bg.mix(&w, 0.35)
+            },
             color_bg_overlay: if is_dark { p.bg.lighten(0.18) } else { w },
-            color_bg_layout: if is_dark { p.bg.darken(0.03) } else { p.bg.mix(&w, 0.2) },
+            color_bg_layout: if is_dark {
+                p.bg.darken(0.03)
+            } else {
+                p.bg.mix(&w, 0.2)
+            },
             color_bg_spotlight: b,
             color_bg_mask: if is_dark {
                 Color::from_rgba(0, 0, 0, 166)

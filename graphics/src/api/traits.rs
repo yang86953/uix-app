@@ -32,7 +32,10 @@ impl UpdateStrategy {
     }
 
     pub fn should_clear(&self) -> bool {
-        matches!(self, UpdateStrategy::FullRedraw | UpdateStrategy::DirtyRects(_))
+        matches!(
+            self,
+            UpdateStrategy::FullRedraw | UpdateStrategy::DirtyRects(_)
+        )
     }
 }
 
@@ -57,7 +60,9 @@ pub trait Canvas2D {
     // ── 画布偏移（像素空间平移）──
 
     /// 当前像素偏移量（影响所有绘制操作的坐标）。
-    fn offset(&self) -> (f32, f32) { (0.0, 0.0) }
+    fn offset(&self) -> (f32, f32) {
+        (0.0, 0.0)
+    }
 
     /// 设置像素偏移量。
     fn set_offset(&mut self, _dx: f32, _dy: f32) {}
@@ -73,32 +78,92 @@ pub trait Canvas2D {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::fill::fill_rect(pixels, size.w as i32, size.h as i32, clip, opacity, Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), color, radius);
+        crate::rasterizer::fill::fill_rect(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h),
+            color,
+            radius,
+        );
     }
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::fill::fill_circle(pixels, size.w as i32, size.h as i32, clip, opacity, cx + ox, cy + oy, r, color);
+        crate::rasterizer::fill::fill_circle(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            cx + ox,
+            cy + oy,
+            r,
+            color,
+        );
     }
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::fill::fill_ellipse(pixels, size.w as i32, size.h as i32, clip, opacity, Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), color);
+        crate::rasterizer::fill::fill_ellipse(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h),
+            color,
+        );
     }
-    fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, start_angle: f32, end_angle: f32, color: Color) {
+    fn fill_sector(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        r: f32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+    ) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::fill::fill_sector(pixels, size.w as i32, size.h as i32, clip, opacity, cx + ox, cy + oy, r, start_angle, end_angle, color);
+        crate::rasterizer::fill::fill_sector(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            cx + ox,
+            cy + oy,
+            r,
+            start_angle,
+            end_angle,
+            color,
+        );
     }
     fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
         let (ox, oy) = self.offset();
-        let path = if ox != 0.0 || oy != 0.0 { std::borrow::Cow::Owned(path.translated(ox, oy)) } else { std::borrow::Cow::Borrowed(path) };
+        let path = if ox != 0.0 || oy != 0.0 {
+            std::borrow::Cow::Owned(path.translated(ox, oy))
+        } else {
+            std::borrow::Cow::Borrowed(path)
+        };
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::fill::fill_path(pixels, size.w as i32, size.h as i32, clip, opacity, &path, color, fill_rule);
+        crate::rasterizer::fill::fill_path(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            &path,
+            color,
+            fill_rule,
+        );
     }
 
     // ── 矢量描边（均有默认实现）──
@@ -106,54 +171,176 @@ pub trait Canvas2D {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::stroke::stroke_rect(pixels, size.w as i32, size.h as i32, clip, opacity, Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), color, line_width, radius);
+        crate::rasterizer::stroke::stroke_rect(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h),
+            color,
+            line_width,
+            radius,
+        );
     }
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::stroke::stroke_circle(pixels, size.w as i32, size.h as i32, clip, opacity, cx + ox, cy + oy, r, color, line_width);
+        crate::rasterizer::stroke::stroke_circle(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            cx + ox,
+            cy + oy,
+            r,
+            color,
+            line_width,
+        );
     }
     fn stroke_path(&mut self, path: &Path, color: Color, opts: &StrokeOptions) {
         let (ox, oy) = self.offset();
-        let path = if ox != 0.0 || oy != 0.0 { std::borrow::Cow::Owned(path.translated(ox, oy)) } else { std::borrow::Cow::Borrowed(path) };
+        let path = if ox != 0.0 || oy != 0.0 {
+            std::borrow::Cow::Owned(path.translated(ox, oy))
+        } else {
+            std::borrow::Cow::Borrowed(path)
+        };
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::stroke::stroke_path(pixels, size.w as i32, size.h as i32, clip, opacity, &path, color, opts);
+        crate::rasterizer::stroke::stroke_path(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            &path,
+            color,
+            opts,
+        );
     }
     fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::stroke::draw_line(pixels, size.w as i32, size.h as i32, clip, opacity, x1 + ox, y1 + oy, x2 + ox, y2 + oy, color, width);
+        crate::rasterizer::stroke::draw_line(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            x1 + ox,
+            y1 + oy,
+            x2 + ox,
+            y2 + oy,
+            color,
+            width,
+        );
     }
 
     // ── 渐变（均有默认实现）──
-    fn fill_linear_gradient(&mut self, rect: Rect, color_a: Color, color_b: Color, dir: GradientDirection) {
+    fn fill_linear_gradient(
+        &mut self,
+        rect: Rect,
+        color_a: Color,
+        color_b: Color,
+        dir: GradientDirection,
+    ) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::gradient::fill_linear_gradient(pixels, size.w as i32, size.h as i32, clip, opacity, Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), color_a, color_b, dir);
+        crate::rasterizer::gradient::fill_linear_gradient(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h),
+            color_a,
+            color_b,
+            dir,
+        );
     }
-    fn fill_radial_gradient(&mut self, cx: f32, cy: f32, inner_r: f32, outer_r: f32, inner_color: Color, outer_color: Color) {
+    fn fill_radial_gradient(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        inner_r: f32,
+        outer_r: f32,
+        inner_color: Color,
+        outer_color: Color,
+    ) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::gradient::fill_radial_gradient(pixels, size.w as i32, size.h as i32, clip, opacity, cx + ox, cy + oy, inner_r, outer_r, inner_color, outer_color);
+        crate::rasterizer::gradient::fill_radial_gradient(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            cx + ox,
+            cy + oy,
+            inner_r,
+            outer_r,
+            inner_color,
+            outer_color,
+        );
     }
 
     // ── 阴影（均有默认实现）──
-    fn draw_box_shadow(&mut self, rect: Rect, blur_radius: f32, offset_x: f32, offset_y: f32, color: Color, corner_radius: Option<Radius>) {
+    fn draw_box_shadow(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    ) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::shadow::draw_box_shadow(pixels, size.w as i32, size.h as i32, clip, opacity, Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), blur_radius, offset_x, offset_y, color, corner_radius);
+        crate::rasterizer::shadow::draw_box_shadow(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h),
+            blur_radius,
+            offset_x,
+            offset_y,
+            color,
+            corner_radius,
+        );
     }
-    fn draw_box_shadow_ambient(&mut self, rect: Rect, blur_radius: f32, offset_x: f32, offset_y: f32, color: Color, corner_radius: Option<Radius>) {
+    fn draw_box_shadow_ambient(
+        &mut self,
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    ) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::shadow::draw_box_shadow_ambient(pixels, size.w as i32, size.h as i32, clip, opacity, Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h), blur_radius, offset_x, offset_y, color, corner_radius);
+        crate::rasterizer::shadow::draw_box_shadow_ambient(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h),
+            blur_radius,
+            offset_x,
+            offset_y,
+            color,
+            corner_radius,
+        );
     }
 
     // ── 图像/字形混合（均有默认实现）──
@@ -161,13 +348,43 @@ pub trait Canvas2D {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::image::blit_image(pixels, size.w as i32, size.h as i32, clip, opacity, src, src_w, src_rect, Rect::new(dst_rect.x + ox, dst_rect.y + oy, dst_rect.w, dst_rect.h));
+        crate::rasterizer::image::blit_image(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            src,
+            src_w,
+            src_rect,
+            Rect::new(dst_rect.x + ox, dst_rect.y + oy, dst_rect.w, dst_rect.h),
+        );
     }
-    fn blit_glyph(&mut self, x: i32, y: i32, coverage: &[u8], width: usize, height: usize, color: Color) {
+    fn blit_glyph(
+        &mut self,
+        x: i32,
+        y: i32,
+        coverage: &[u8],
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
         let (ox, oy) = self.offset();
         let (size, clip, opacity) = (self.surface_size(), self.current_clip(), self.opacity());
         let pixels = self.pixels_mut();
-        crate::rasterizer::glyph::blit_glyph(pixels, size.w as i32, size.h as i32, clip, opacity, (x as f32 + ox) as i32, (y as f32 + oy) as i32, coverage, width, height, color);
+        crate::rasterizer::glyph::blit_glyph(
+            pixels,
+            size.w as i32,
+            size.h as i32,
+            clip,
+            opacity,
+            (x as f32 + ox) as i32,
+            (y as f32 + oy) as i32,
+            coverage,
+            width,
+            height,
+            color,
+        );
     }
 
     // ── 渲染状态栈（必须自行实现）──
@@ -183,8 +400,12 @@ pub trait Canvas2D {
     // ── 像素访问（必须自行实现）──
     fn pixels_mut(&mut self) -> &mut [u32];
     fn surface_size(&self) -> Size;
-    fn width(&self) -> i32 { self.surface_size().w as i32 }
-    fn height(&self) -> i32 { self.surface_size().h as i32 }
+    fn width(&self) -> i32 {
+        self.surface_size().w as i32
+    }
+    fn height(&self) -> i32 {
+        self.surface_size().h as i32
+    }
     fn current_clip(&self) -> Rect;
 
     // ── 像素移动（滚动优化）──
@@ -210,10 +431,14 @@ pub trait TextBackend: std::fmt::Debug + Send + Sync {
     fn rasterize_glyph(&self, font: &FontHandle, glyph_id: u32, pixel_size: f32) -> GlyphRaster;
     fn horizontal_line_metrics(&self, font: &FontHandle, pixel_size: f32) -> Option<LineMetrics>;
 
-    fn font_data(&self, _font: &FontHandle) -> Option<Vec<u8>> { None }
+    fn font_data(&self, _font: &FontHandle) -> Option<Vec<u8>> {
+        None
+    }
     fn set_fallback_fonts(&mut self, _fallback_handles: &[FontHandle]) {}
     fn clear_cache(&mut self) {}
-    fn memory_usage(&self) -> usize { 0 }
+    fn memory_usage(&self) -> usize {
+        0
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -228,21 +453,39 @@ pub trait GraphicsEngine: 'static {
     fn end_frame(&mut self) -> RenderOutcome;
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
 
-    fn dpi(&self) -> f32 { 96.0 }
-    fn device_pixel_ratio(&self) -> f32 { 1.0 }
-    fn orientation(&self) -> crate::spatial::Orientation { crate::spatial::Orientation::YDown }
+    fn dpi(&self) -> f32 {
+        96.0
+    }
+    fn device_pixel_ratio(&self) -> f32 {
+        1.0
+    }
+    fn orientation(&self) -> crate::spatial::Orientation {
+        crate::spatial::Orientation::YDown
+    }
 
-    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> { let _ = (width, height); None }
-    fn destroy_offscreen(&mut self, handle: ImageHandle) { let _ = handle; }
-    fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> { let _ = handle; None }
-    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) { let _ = (handle, dst_rect); }
+    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
+        let _ = (width, height);
+        None
+    }
+    fn destroy_offscreen(&mut self, handle: ImageHandle) {
+        let _ = handle;
+    }
+    fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
+        let _ = handle;
+        None
+    }
+    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
+        let _ = (handle, dst_rect);
+    }
     /// 从离屏缓冲的 src_rect 区域 blit 到主画布的 dst_rect。
     /// 默认委托到 blit_offscreen（全源 blit）。
     fn blit_offscreen_src(&mut self, _handle: &ImageHandle, _src_rect: Rect, _dst_rect: Rect) {
         // 默认实现：直接 blit 全离屏画面到 dst
     }
 
-    fn memory_usage(&self) -> usize { 0 }
+    fn memory_usage(&self) -> usize {
+        0
+    }
     fn diagnose_memory(&self) {}
 }
 

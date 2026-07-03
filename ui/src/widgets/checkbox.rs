@@ -1,10 +1,10 @@
 //! Checkbox — checkbox with label, checked/unchecked state.
 
 use crate::define_widget;
-use uix_graphics::Color;
-use uix_platform::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::Color;
+use uix_platform::{Rect, Size};
 
 define_widget! {
     pub struct Checkbox {
@@ -85,18 +85,34 @@ define_widget! {
     }
 }
 
-impl Default for Checkbox { fn default() -> Self { Self::new("") } }
+impl Default for Checkbox {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
 
 impl Checkbox {
     pub fn new(label: impl Into<String>) -> Self {
         Self {
-            checked: false, disabled: false, label: label.into(),
-            hovered: false, focused: false, on_change: None,
+            checked: false,
+            disabled: false,
+            label: label.into(),
+            hovered: false,
+            focused: false,
+            on_change: None,
         }
     }
-    pub fn checked(mut self, v: bool) -> Self { self.checked = v; self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn is_checked(&self) -> bool { self.checked }
+    pub fn checked(mut self, v: bool) -> Self {
+        self.checked = v;
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn is_checked(&self) -> bool {
+        self.checked
+    }
     pub fn on_change<F: FnMut(bool) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

@@ -2,11 +2,11 @@
 //!
 //! 支持 min/max/step、键盘上下箭头、+/- 按钮。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, GraphicsEngine, Radius};
+use uix_platform::{Point, Rect, Size};
 
 define_widget! {
     /// InputNumber — 数字输入框。
@@ -150,11 +150,27 @@ impl InputNumber {
         }
     }
 
-    pub fn value(mut self, v: f64) -> Self { self.value = v.clamp(self.min, self.max); self }
-    pub fn min(mut self, v: f64) -> Self { self.min = v; self.value = self.value.max(v); self }
-    pub fn max(mut self, v: f64) -> Self { self.max = v; self.value = self.value.min(v); self }
-    pub fn step(mut self, v: f64) -> Self { self.step = v; self }
-    pub fn get_value(&self) -> f64 { self.value }
+    pub fn value(mut self, v: f64) -> Self {
+        self.value = v.clamp(self.min, self.max);
+        self
+    }
+    pub fn min(mut self, v: f64) -> Self {
+        self.min = v;
+        self.value = self.value.max(v);
+        self
+    }
+    pub fn max(mut self, v: f64) -> Self {
+        self.max = v;
+        self.value = self.value.min(v);
+        self
+    }
+    pub fn step(mut self, v: f64) -> Self {
+        self.step = v;
+        self
+    }
+    pub fn get_value(&self) -> f64 {
+        self.value
+    }
     pub fn on_change<F: FnMut(f64) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

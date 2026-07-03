@@ -3,9 +3,9 @@
 //! Used by [`ScrollView`](super::ScrollView) to render draggable scrollbar
 //! tracks and thumbs. Each axis gets its own [`ScrollBar`] instance.
 
-use uix_platform::{Point, Rect};
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
+use uix_graphics::Radius;
+use uix_platform::{Point, Rect};
 
 /// Which axis this scrollbar controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,12 +77,7 @@ impl ScrollBar {
     // ── Thumb geometry ──────────────────────────────────────────────────────
 
     /// Thumb rectangle in **absolute** coordinates (for rendering).
-    pub fn thumb_rect_abs(
-        &self,
-        abs_frame: Rect,
-        scroll: f32,
-        max_scroll: f32,
-    ) -> Option<Rect> {
+    pub fn thumb_rect_abs(&self, abs_frame: Rect, scroll: f32, max_scroll: f32) -> Option<Rect> {
         if max_scroll <= 0.0 {
             return None;
         }
@@ -95,12 +90,7 @@ impl ScrollBar {
     }
 
     /// Thumb rectangle in **relative** coordinates (for hit-testing).
-    pub fn thumb_rect_rel(
-        &self,
-        frame: Rect,
-        scroll: f32,
-        max_scroll: f32,
-    ) -> Option<Rect> {
+    pub fn thumb_rect_rel(&self, frame: Rect, scroll: f32, max_scroll: f32) -> Option<Rect> {
         if max_scroll <= 0.0 {
             return None;
         }
@@ -161,7 +151,13 @@ impl ScrollBar {
     ///
     /// `axis_pos` is the mouse coordinate along the scroll axis
     /// (e.g. `pos.y` for vertical, `pos.x` for horizontal).
-    pub fn scroll_from_drag(&self, frame: Rect, axis_pos: f32, scroll: f32, max_scroll: f32) -> f32 {
+    pub fn scroll_from_drag(
+        &self,
+        frame: Rect,
+        axis_pos: f32,
+        scroll: f32,
+        max_scroll: f32,
+    ) -> f32 {
         if max_scroll <= 0.0 {
             return scroll;
         }

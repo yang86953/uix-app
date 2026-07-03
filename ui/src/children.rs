@@ -24,8 +24,8 @@
 //! pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self { self.children.set_all(self, widgets) }
 //! ```
 
-use std::cell::RefCell;
 use crate::widget::WidgetComponent;
+use std::cell::RefCell;
 
 /// Stores child widgets during builder construction and releases them
 /// on demand (typically from `WidgetComponent::build()`).

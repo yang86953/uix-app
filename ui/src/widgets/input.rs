@@ -8,15 +8,19 @@ use std::cell::{Cell, RefCell};
 
 use crate::clipboard;
 use crate::define_widget;
-use uix_graphics::{GraphicsEngine, Radius};
-use uix_platform::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
+use uix_graphics::{GraphicsEngine, Radius};
+use uix_platform::{Point, Rect, Size};
 
 pub use uix_platform::ControlSize as InputSize;
 
 pub fn input_height(size: InputSize) -> f32 {
-    match size { InputSize::Small => 24.0, InputSize::Medium => 32.0, InputSize::Large => 40.0 }
+    match size {
+        InputSize::Small => 24.0,
+        InputSize::Medium => 32.0,
+        InputSize::Large => 40.0,
+    }
 }
 
 const PAD: f32 = 12.0;
@@ -294,14 +298,31 @@ impl Input {
 
         let radius = Some(Radius::uniform(border_radius_sm));
         ctx.fill_rect(inner_frame, bg, radius);
-        ctx.stroke_rect(inner_frame, border, if self.focused { 2.0 } else { 1.0 }, radius);
+        ctx.stroke_rect(
+            inner_frame,
+            border,
+            if self.focused { 2.0 } else { 1.0 },
+            radius,
+        );
 
-        let text_area = Rect::new(inner_frame.x + PAD, inner_frame.y + 6.0,
-            (inner_frame.w - PAD * 2.0).max(20.0), (inner_frame.h - 12.0).max(20.0));
+        let text_area = Rect::new(
+            inner_frame.x + PAD,
+            inner_frame.y + 6.0,
+            (inner_frame.w - PAD * 2.0).max(20.0),
+            (inner_frame.h - 12.0).max(20.0),
+        );
         ctx.canvas_2d().push_clip(text_area);
 
-        let display_text = if self.value.is_empty() && !self.focused { &self.placeholder } else { &self.value };
-        let disp_color = if self.value.is_empty() && !self.focused { text_tertiary } else { text_color };
+        let display_text = if self.value.is_empty() && !self.focused {
+            &self.placeholder
+        } else {
+            &self.value
+        };
+        let disp_color = if self.value.is_empty() && !self.focused {
+            text_tertiary
+        } else {
+            text_color
+        };
 
         let lines: Vec<&str> = if display_text == &self.placeholder {
             vec![self.placeholder.as_str()]
@@ -344,18 +365,34 @@ impl Input {
             if let Some((sel_s, sel_e)) = self.selection.get() {
                 if sel_s < sel_e && sel_s < line_end && sel_e > line_start {
                     let sel_in_line_start = sel_s.saturating_sub(line_start);
-                    let sel_in_line_end = if sel_e < line_end { sel_e - line_start } else { line.chars().count() };
+                    let sel_in_line_end = if sel_e < line_end {
+                        sel_e - line_start
+                    } else {
+                        line.chars().count()
+                    };
                     // 估算选中区域的 x 位置
                     let before_sel: String = line.chars().take(sel_in_line_start).collect();
-                    let sel_text: String = line.chars().skip(sel_in_line_start).take(sel_in_line_end - sel_in_line_start).collect();
+                    let sel_text: String = line
+                        .chars()
+                        .skip(sel_in_line_start)
+                        .take(sel_in_line_end - sel_in_line_start)
+                        .collect();
                     let x0 = text_area.x + ctx.measure_text(&before_sel, FONT_SIZE).w;
                     let sel_w = ctx.measure_text(&sel_text, FONT_SIZE).w;
-                    ctx.fill_rect(Rect::new(x0, y, sel_w, line_h),
-                        primary.with_alpha(64), None);
+                    ctx.fill_rect(
+                        Rect::new(x0, y, sel_w, line_h),
+                        primary.with_alpha(64),
+                        None,
+                    );
                 }
             }
 
-            ctx.draw_text(line, Point::new(text_area.x, y + 2.0), disp_color, FONT_SIZE);
+            ctx.draw_text(
+                line,
+                Point::new(text_area.x, y + 2.0),
+                disp_color,
+                FONT_SIZE,
+            );
 
             // 光标（在当前行且 focused）
             if self.focused && self.selection.get().is_none() && li == cursor_line {
@@ -370,7 +407,11 @@ impl Input {
 
         // 如果没有任何行且 focused，在顶部画光标
         if self.focused && lines.is_empty() {
-            ctx.fill_rect(Rect::new(text_area.x, text_area.y + 2.0, 1.5, line_h - 4.0), primary, None);
+            ctx.fill_rect(
+                Rect::new(text_area.x, text_area.y + 2.0, 1.5, line_h - 4.0),
+                primary,
+                None,
+            );
         }
 
         ctx.canvas_2d().pop_clip();
@@ -396,27 +437,67 @@ impl Input {
         let border_radius_sm = ctx.tokens().border_radius_sm();
         let text_sec = ctx.tokens().color_text_secondary();
 
-        let addon_left_w = if self.addon_before.is_empty() { 0.0 } else { self.addon_before.len() as f32 * 8.0 + 16.0 };
-        let addon_right_w = if self.addon_after.is_empty() { 0.0 } else { self.addon_after.len() as f32 * 8.0 + 16.0 };
+        let addon_left_w = if self.addon_before.is_empty() {
+            0.0
+        } else {
+            self.addon_before.len() as f32 * 8.0 + 16.0
+        };
+        let addon_right_w = if self.addon_after.is_empty() {
+            0.0
+        } else {
+            self.addon_after.len() as f32 * 8.0 + 16.0
+        };
 
         if !self.addon_before.is_empty() {
             let addon_rect = Rect::new(input_frame.x, input_frame.y, addon_left_w, input_frame.h);
-            ctx.fill_rect(addon_rect, fill_tertiary, Some(Radius::uniform(border_radius_sm)));
+            ctx.fill_rect(
+                addon_rect,
+                fill_tertiary,
+                Some(Radius::uniform(border_radius_sm)),
+            );
             let ay = ctx.visual_center_y(addon_rect, 13.0);
-            ctx.draw_text(&self.addon_before, Point::new(addon_rect.x + 8.0, ay), text_sec, 13.0);
+            ctx.draw_text(
+                &self.addon_before,
+                Point::new(addon_rect.x + 8.0, ay),
+                text_sec,
+                13.0,
+            );
         }
         if !self.addon_after.is_empty() {
-            let addon_rect = Rect::new(input_frame.x + input_frame.w - addon_right_w, input_frame.y, addon_right_w, input_frame.h);
-            ctx.fill_rect(addon_rect, fill_tertiary, Some(Radius::uniform(border_radius_sm)));
+            let addon_rect = Rect::new(
+                input_frame.x + input_frame.w - addon_right_w,
+                input_frame.y,
+                addon_right_w,
+                input_frame.h,
+            );
+            ctx.fill_rect(
+                addon_rect,
+                fill_tertiary,
+                Some(Radius::uniform(border_radius_sm)),
+            );
             let ay = ctx.visual_center_y(addon_rect, 13.0);
-            ctx.draw_text(&self.addon_after, Point::new(addon_rect.x + 8.0, ay), text_sec, 13.0);
+            ctx.draw_text(
+                &self.addon_after,
+                Point::new(addon_rect.x + 8.0, ay),
+                text_sec,
+                13.0,
+            );
         }
 
-        let inner_frame = Rect::new(input_frame.x + addon_left_w, input_frame.y, input_frame.w - addon_left_w - addon_right_w, input_frame.h);
+        let inner_frame = Rect::new(
+            input_frame.x + addon_left_w,
+            input_frame.y,
+            input_frame.w - addon_left_w - addon_right_w,
+            input_frame.h,
+        );
 
         let prefix_w = if self.prefix.is_empty() { 0.0 } else { 20.0 };
         let suffix_w = if self.suffix.is_empty() { 0.0 } else { 20.0 };
-        let clear_w = if self.clearable && !self.value.is_empty() { 20.0 } else { 0.0 };
+        let clear_w = if self.clearable && !self.value.is_empty() {
+            20.0
+        } else {
+            0.0
+        };
         let pwd_w = if self.password { 24.0 } else { 0.0 };
         let search_w = if self.search { 24.0 } else { 0.0 };
         let right_extra = suffix_w + clear_w + pwd_w + search_w;
@@ -426,21 +507,36 @@ impl Input {
         } else if self.focused {
             (ctx.tokens().color_bg_elevated(), primary, text_color_token)
         } else if self.hovered {
-            (ctx.tokens().color_bg_elevated(), primary_hover, text_color_token)
+            (
+                ctx.tokens().color_bg_elevated(),
+                primary_hover,
+                text_color_token,
+            )
         } else {
-            (ctx.tokens().color_bg_container(), border_color, text_color_token)
+            (
+                ctx.tokens().color_bg_container(),
+                border_color,
+                text_color_token,
+            )
         };
 
         let radius = Some(Radius::uniform(border_radius_sm));
         ctx.fill_rect(inner_frame, bg, radius);
-        ctx.stroke_rect(inner_frame, border, if self.focused { 2.0 } else { 1.0 }, radius);
+        ctx.stroke_rect(
+            inner_frame,
+            border,
+            if self.focused { 2.0 } else { 1.0 },
+            radius,
+        );
 
         if !self.prefix.is_empty() {
             let px = inner_frame.x + 6.0;
             let py = ctx.visual_center_y(inner_frame, 12.0);
             let icon_str = crate::widgets::icon::icon_char(&self.prefix);
             let saved = *ctx.font();
-            if let Some(fh) = crate::widgets::icon::lucide_handle() { ctx.set_font(fh); }
+            if let Some(fh) = crate::widgets::icon::lucide_handle() {
+                ctx.set_font(fh);
+            }
             ctx.draw_text(icon_str, Point::new(px, py), text_sec, 12.0);
             ctx.set_font(saved);
         }
@@ -450,32 +546,59 @@ impl Input {
             let sy = ctx.visual_center_y(inner_frame, 12.0);
             let icon_str = crate::widgets::icon::icon_char(&self.suffix);
             let saved = *ctx.font();
-            if let Some(fh) = crate::widgets::icon::lucide_handle() { ctx.set_font(fh); }
+            if let Some(fh) = crate::widgets::icon::lucide_handle() {
+                ctx.set_font(fh);
+            }
             ctx.draw_text(icon_str, Point::new(sx, sy), text_sec, 12.0);
             ctx.set_font(saved);
         }
 
-        let display_text = if self.value.is_empty() { &self.placeholder } else { &self.value };
-        let disp_color = if self.value.is_empty() && !self.focused { text_tertiary } else { text_color };
+        let display_text = if self.value.is_empty() {
+            &self.placeholder
+        } else {
+            &self.value
+        };
+        let disp_color = if self.value.is_empty() && !self.focused {
+            text_tertiary
+        } else {
+            text_color
+        };
 
         let text_area_x = inner_frame.x + PAD + prefix_w;
         let text_area_w = (inner_frame.w - PAD * 2.0 - prefix_w - right_extra).max(20.0);
-        if text_area_w <= 0.0 { return; }
+        if text_area_w <= 0.0 {
+            return;
+        }
         let text_area = Rect::new(text_area_x, inner_frame.y, text_area_w, inner_frame.h);
         ctx.canvas_2d().push_clip(text_area);
 
         let mut scroll_off = self.scroll_offset_x.get();
-        let total_text_w = if !self.value.is_empty() { ctx.measure_text(&self.value, FONT_SIZE).w } else { 0.0 };
+        let total_text_w = if !self.value.is_empty() {
+            ctx.measure_text(&self.value, FONT_SIZE).w
+        } else {
+            0.0
+        };
 
-        let cursor_byte_pos = self.value.char_indices().nth(self.cursor_char).map(|(i, _)| i).unwrap_or(self.value.len());
+        let cursor_byte_pos = self
+            .value
+            .char_indices()
+            .nth(self.cursor_char)
+            .map(|(i, _)| i)
+            .unwrap_or(self.value.len());
         let text_before = &self.value[..cursor_byte_pos];
-        let text_before_w = if !text_before.is_empty() { ctx.measure_text(text_before, FONT_SIZE).w } else { 0.0 };
+        let text_before_w = if !text_before.is_empty() {
+            ctx.measure_text(text_before, FONT_SIZE).w
+        } else {
+            0.0
+        };
 
         let right_margin = 10.0;
         if text_before_w - scroll_off > text_area_w - right_margin {
             scroll_off = text_before_w - text_area_w + right_margin;
         }
-        if text_before_w - scroll_off < 0.0 { scroll_off = text_before_w; }
+        if text_before_w - scroll_off < 0.0 {
+            scroll_off = text_before_w;
+        }
         scroll_off = scroll_off.min(total_text_w - 1.0).max(0.0);
         self.scroll_offset_x.set(scroll_off);
 
@@ -484,25 +607,36 @@ impl Input {
 
         if !display_text.is_empty() {
             let opts = uix_graphics::TextLayoutOptions {
-                max_width: f32::MAX, max_height: 0.0, line_height: FONT_SIZE * 1.5,
-                word_wrap: false, h_align: uix_graphics::HAlign::Left,
-                v_align: uix_graphics::VAlign::Top, font_size: FONT_SIZE,
+                max_width: f32::MAX,
+                max_height: 0.0,
+                line_height: FONT_SIZE * 1.5,
+                word_wrap: false,
+                h_align: uix_graphics::HAlign::Left,
+                v_align: uix_graphics::VAlign::Top,
+                font_size: FONT_SIZE,
             };
             let backend_opts = uix_graphics::text_backend::TextLayoutOptions::from(opts);
             let fh = *ctx.font();
-            let layout = ctx.font_service().layout_text(&fh, display_text, &backend_opts);
+            let layout = ctx
+                .font_service()
+                .layout_text(&fh, display_text, &backend_opts);
 
             let abs_pos = Point::new(draw_x, draw_y);
             {
                 let mut xs = self.glyph_xs.borrow_mut();
                 xs.clear();
-                for g in &layout.glyphs { xs.push(g.x); }
+                for g in &layout.glyphs {
+                    xs.push(g.x);
+                }
             }
             if !self.value.is_empty() {
                 if let Some((sel_s, sel_e)) = self.selection.get() {
                     if sel_s < sel_e {
-                        let visual_h = ctx.font_service().horizontal_line_metrics(&fh, FONT_SIZE)
-                            .map(|m| m.ascent + m.descent).unwrap_or(FONT_SIZE * 1.2);
+                        let visual_h = ctx
+                            .font_service()
+                            .horizontal_line_metrics(&fh, FONT_SIZE)
+                            .map(|m| m.ascent + m.descent)
+                            .unwrap_or(FONT_SIZE * 1.2);
                         let end = sel_e.min(layout.glyphs.len());
                         let start = sel_s.min(end);
                         for line in &layout.lines {
@@ -511,12 +645,18 @@ impl Input {
                             let ge = gs + gc;
                             let ls = start.max(gs);
                             let le = end.min(ge);
-                            if ls >= le { continue; }
+                            if ls >= le {
+                                continue;
+                            }
                             let glyphs = &layout.glyphs[ls..le];
                             let x0 = abs_pos.x + glyphs[0].x;
                             let last = glyphs[glyphs.len() - 1];
                             let x1 = abs_pos.x + last.x + last.width.max(0.0);
-                            ctx.fill_rect(Rect::new(x0, abs_pos.y + line.y, (x1 - x0).max(0.0), visual_h), primary.with_alpha(64), None);
+                            ctx.fill_rect(
+                                Rect::new(x0, abs_pos.y + line.y, (x1 - x0).max(0.0), visual_h),
+                                primary.with_alpha(64),
+                                None,
+                            );
                         }
                     }
                 }
@@ -528,7 +668,11 @@ impl Input {
 
         if self.focused && self.selection.get().is_none() {
             let cursor_x = text_area_x + text_before_w - scroll_off;
-            ctx.fill_rect(Rect::new(cursor_x, inner_frame.y + 4.0, 1.5, inner_frame.h - 8.0), primary, None);
+            ctx.fill_rect(
+                Rect::new(cursor_x, inner_frame.y + 4.0, 1.5, inner_frame.h - 8.0),
+                primary,
+                None,
+            );
         }
 
         if self.clearable && !self.value.is_empty() && self.focused {
@@ -540,7 +684,12 @@ impl Input {
         if self.password {
             let px = inner_frame.x + inner_frame.w - pwd_w;
             let py = ctx.visual_center_y(inner_frame, 12.0);
-            ctx.draw_text(if self.password_visible { "◎" } else { "◉" }, Point::new(px, py), text_sec, 14.0);
+            ctx.draw_text(
+                if self.password_visible { "◎" } else { "◉" },
+                Point::new(px, py),
+                text_sec,
+                14.0,
+            );
         }
 
         if self.search {
@@ -558,36 +707,106 @@ impl Input {
 impl Input {
     pub fn new(placeholder: impl Into<String>) -> Self {
         Self {
-            value: String::new(), placeholder: placeholder.into(),
-            input_size: InputSize::Medium, disabled: false, focused: false, hovered: false,
-            cursor_char: 0, scroll_offset_x: Cell::new(0.0), scroll_line: Cell::new(0),
+            value: String::new(),
+            placeholder: placeholder.into(),
+            input_size: InputSize::Medium,
+            disabled: false,
+            focused: false,
+            hovered: false,
+            cursor_char: 0,
+            scroll_offset_x: Cell::new(0.0),
+            scroll_line: Cell::new(0),
             glyph_xs: RefCell::new(Vec::new()),
-            selection: Cell::new(None), sel_anchor: Cell::new(0), sel_dragging: Cell::new(false),
-            prefix: String::new(), suffix: String::new(), addon_before: String::new(), addon_after: String::new(),
-            password: false, password_visible: false, clearable: false, search: false,
-            textarea: false, textarea_rows: 3, on_change: None, on_submit: None,
+            selection: Cell::new(None),
+            sel_anchor: Cell::new(0),
+            sel_dragging: Cell::new(false),
+            prefix: String::new(),
+            suffix: String::new(),
+            addon_before: String::new(),
+            addon_after: String::new(),
+            password: false,
+            password_visible: false,
+            clearable: false,
+            search: false,
+            textarea: false,
+            textarea_rows: 3,
+            on_change: None,
+            on_submit: None,
         }
     }
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
-        self.value = value.into(); self.cursor_char = self.value.chars().count(); self.scroll_offset_x.set(0.0); self
+        self.value = value.into();
+        self.cursor_char = self.value.chars().count();
+        self.scroll_offset_x.set(0.0);
+        self
     }
-    pub fn size(mut self, s: InputSize) -> Self { self.input_size = s; self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn value(&self) -> &str { &self.value }
-    pub fn set_value(&mut self, v: impl Into<String>) { self.value = v.into(); self.cursor_char = self.value.chars().count(); self.scroll_offset_x.set(0.0); self.scroll_line.set(0); self.selection.set(None); }
+    pub fn size(mut self, s: InputSize) -> Self {
+        self.input_size = s;
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+    pub fn set_value(&mut self, v: impl Into<String>) {
+        self.value = v.into();
+        self.cursor_char = self.value.chars().count();
+        self.scroll_offset_x.set(0.0);
+        self.scroll_line.set(0);
+        self.selection.set(None);
+    }
     /// 设置输入框的聚焦状态（供 tree.build 后恢复焦点用）
-    pub fn set_focused(&mut self, v: bool) { self.focused = v; }
-    pub fn prefix(mut self, s: &str) -> Self { self.prefix = s.to_string(); self }
-    pub fn suffix(mut self, s: &str) -> Self { self.suffix = s.to_string(); self }
-    pub fn addon_before(mut self, s: &str) -> Self { self.addon_before = s.to_string(); self }
-    pub fn addon_after(mut self, s: &str) -> Self { self.addon_after = s.to_string(); self }
-    pub fn password(mut self, v: bool) -> Self { self.password = v; self }
-    pub fn clearable(mut self, v: bool) -> Self { self.clearable = v; self }
-    pub fn search(mut self, v: bool) -> Self { self.search = v; self }
-    pub fn textarea(mut self, v: bool) -> Self { self.textarea = v; self.textarea_rows = if v { 3 } else { 0 }; self }
-    pub fn textarea_rows(mut self, n: usize) -> Self { self.textarea_rows = n; self }
-    pub fn on_change<F: FnMut(&str) + 'static>(mut self, f: F) -> Self { self.on_change = Some(Box::new(f)); self }
-    pub fn on_submit<F: FnMut(&str) + 'static>(mut self, f: F) -> Self { self.on_submit = Some(Box::new(f)); self }
+    pub fn set_focused(&mut self, v: bool) {
+        self.focused = v;
+    }
+    pub fn prefix(mut self, s: &str) -> Self {
+        self.prefix = s.to_string();
+        self
+    }
+    pub fn suffix(mut self, s: &str) -> Self {
+        self.suffix = s.to_string();
+        self
+    }
+    pub fn addon_before(mut self, s: &str) -> Self {
+        self.addon_before = s.to_string();
+        self
+    }
+    pub fn addon_after(mut self, s: &str) -> Self {
+        self.addon_after = s.to_string();
+        self
+    }
+    pub fn password(mut self, v: bool) -> Self {
+        self.password = v;
+        self
+    }
+    pub fn clearable(mut self, v: bool) -> Self {
+        self.clearable = v;
+        self
+    }
+    pub fn search(mut self, v: bool) -> Self {
+        self.search = v;
+        self
+    }
+    pub fn textarea(mut self, v: bool) -> Self {
+        self.textarea = v;
+        self.textarea_rows = if v { 3 } else { 0 };
+        self
+    }
+    pub fn textarea_rows(mut self, n: usize) -> Self {
+        self.textarea_rows = n;
+        self
+    }
+    pub fn on_change<F: FnMut(&str) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
+    pub fn on_submit<F: FnMut(&str) + 'static>(mut self, f: F) -> Self {
+        self.on_submit = Some(Box::new(f));
+        self
+    }
 
     // ── 内部：光标移动 ──
 
@@ -598,11 +817,17 @@ impl Input {
             let chars: Vec<char> = self.value.chars().collect();
             let mut pos = self.cursor_char.min(chars.len());
             pos = pos.saturating_sub(1);
-            while pos > 0 && chars[pos] == ' ' { pos -= 1; }
-            while pos > 0 && chars[pos - 1] != ' ' { pos -= 1; }
+            while pos > 0 && chars[pos] == ' ' {
+                pos -= 1;
+            }
+            while pos > 0 && chars[pos - 1] != ' ' {
+                pos -= 1;
+            }
             self.cursor_char = pos;
         } else {
-            if self.cursor_char > 0 { self.cursor_char -= 1; }
+            if self.cursor_char > 0 {
+                self.cursor_char -= 1;
+            }
         }
         self.sel_anchor.set(self.cursor_char);
     }
@@ -613,18 +838,26 @@ impl Input {
         if ctrl {
             let chars: Vec<char> = self.value.chars().collect();
             let mut pos = self.cursor_char.min(chars.len());
-            while pos < len && chars[pos] == ' ' { pos += 1; }
-            while pos < len && chars[pos] != ' ' { pos += 1; }
+            while pos < len && chars[pos] == ' ' {
+                pos += 1;
+            }
+            while pos < len && chars[pos] != ' ' {
+                pos += 1;
+            }
             self.cursor_char = pos;
         } else {
-            if self.cursor_char < len { self.cursor_char += 1; }
+            if self.cursor_char < len {
+                self.cursor_char += 1;
+            }
         }
         self.sel_anchor.set(self.cursor_char);
     }
 
     fn move_cursor_up(&mut self) {
         let (line, col) = self.cursor_line_col();
-        if line == 0 { return; }
+        if line == 0 {
+            return;
+        }
         let lines: Vec<&str> = self.value.lines().collect();
         let prev_line = lines[line - 1];
         let col = col.min(prev_line.chars().count());
@@ -638,7 +871,9 @@ impl Input {
     fn move_cursor_down(&mut self) {
         let (line, col) = self.cursor_line_col();
         let lines: Vec<&str> = self.value.lines().collect();
-        if line + 1 >= lines.len() { return; }
+        if line + 1 >= lines.len() {
+            return;
+        }
         let next_line = lines[line + 1];
         let col = col.min(next_line.chars().count());
         let prev_chars: usize = lines[..line + 1].iter().map(|s| s.chars().count()).sum();
@@ -659,19 +894,33 @@ impl Input {
             }
             remaining -= line_len + 1; // +1 for the newline
         }
-        (lines.len().saturating_sub(1), lines.last().map(|l| l.chars().count()).unwrap_or(0))
+        (
+            lines.len().saturating_sub(1),
+            lines.last().map(|l| l.chars().count()).unwrap_or(0),
+        )
     }
 
     fn insert_at_cursor(&mut self, ch: char) {
-        let byte_pos = self.value.char_indices().nth(self.cursor_char).map(|(i, _)| i).unwrap_or(self.value.len());
+        let byte_pos = self
+            .value
+            .char_indices()
+            .nth(self.cursor_char)
+            .map(|(i, _)| i)
+            .unwrap_or(self.value.len());
         self.value.insert(byte_pos, ch);
         self.cursor_char += 1;
     }
 
     fn char_at_x(&self, text_x: f32) -> usize {
         let xs = self.glyph_xs.borrow();
-        if xs.is_empty() { return 0; }
-        for (i, &gx) in xs.iter().enumerate() { if text_x < gx { return i; } }
+        if xs.is_empty() {
+            return 0;
+        }
+        for (i, &gx) in xs.iter().enumerate() {
+            if text_x < gx {
+                return i;
+            }
+        }
         xs.len()
     }
 
@@ -689,21 +938,28 @@ impl Input {
     }
 
     fn set_selection_range(&self, a: usize, b: usize) {
-        if a == b { self.selection.set(None); } else { self.selection.set(Some((a.min(b), a.max(b)))); }
+        if a == b {
+            self.selection.set(None);
+        } else {
+            self.selection.set(Some((a.min(b), a.max(b))));
+        }
     }
     fn slice_range(&self, start_char: usize, end_char: usize) -> String {
         let chars: Vec<char> = self.value.chars().collect();
-        let e = end_char.min(chars.len()); let s = start_char.min(e);
+        let e = end_char.min(chars.len());
+        let s = start_char.min(e);
         chars[s..e].iter().collect()
     }
     fn delete_selection(&mut self) {
         if let Some((s, e)) = self.selection.get() {
             let chars: Vec<char> = self.value.chars().collect();
-            let es = e.min(chars.len()); let ss = s.min(es);
+            let es = e.min(chars.len());
+            let ss = s.min(es);
             let byte_s = chars[..ss].iter().map(|c| c.len_utf8()).sum::<usize>();
             let byte_e = byte_s + chars[ss..es].iter().map(|c| c.len_utf8()).sum::<usize>();
             self.value.replace_range(byte_s..byte_e, "");
-            self.cursor_char = ss; self.selection.set(None);
+            self.cursor_char = ss;
+            self.selection.set(None);
         }
     }
 }

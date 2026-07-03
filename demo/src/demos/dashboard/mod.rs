@@ -9,26 +9,23 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
 use uix::app::map_ui_event;
-use uix::platform::{create_platform, EdgeInsets, KeyCode, Platform, Point, Rect};
 use uix::graphics::{GraphicsEngine, SoftwareEngine};
-use uix_graphics::font_service::FontService;
+use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
+use uix::platform::{create_platform, EdgeInsets, KeyCode, Platform, Point, Rect};
+use uix::tree;
 use uix::ui::layout::{AlignItems, FlexDirection};
 use uix::ui::render_loop::run_widget_loop;
 use uix::ui::theme::{DesignTokens, DynTokens, Theme};
 use uix::ui::widget::{WidgetCore, WidgetId, WidgetNode, WidgetTree};
-use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
-use uix::tree;
 use uix::ui::widgets::icon::init_lucide_font;
 use uix::ui::{
-    Container, Icon, IntoWidgetNode, Label, Navigation, ScrollDirection,
-    ScrollView, SharedActive, Space, SpaceSize,
+    Container, Icon, IntoWidgetNode, Label, Navigation, ScrollDirection, ScrollView, SharedActive,
+    Space, SpaceSize,
 };
+use uix_graphics::font_service::FontService;
 
 use more_pages::{page_charts, page_other};
-use sections::{
-    page_general, page_layout, page_nav,
-    page_input, page_data, page_feedback,
-};
+use sections::{page_data, page_feedback, page_general, page_input, page_layout, page_nav};
 use uix::ui::ThemeToggle;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -42,7 +39,6 @@ pub const CONTENT_W: f32 = (INIT_W as f32) - SIDEBAR_W;
 const CONTENT_PAD_H: f32 = 40.0;
 pub const INNER_W: f32 = CONTENT_W - CONTENT_PAD_H;
 
-
 pub const PAGE_TITLES: &[(&str, &str)] = &[
     ("type", " 通用"),
     ("layout", " 布局"),
@@ -53,10 +49,6 @@ pub const PAGE_TITLES: &[(&str, &str)] = &[
     ("bar-chart", " 图表"),
     ("settings", " 其他"),
 ];
-
-
-
-
 
 // ════════════════════════════════════════════════════════════════════════════
 // PageBuilder — 声明式页面构建器
@@ -79,7 +71,10 @@ pub struct PageBuilder<'a> {
 
 impl<'a> PageBuilder<'a> {
     pub fn new(tk: &'a DesignTokens) -> Self {
-        Self { tk, items: Vec::new() }
+        Self {
+            tk,
+            items: Vec::new(),
+        }
     }
 
     /// 添加标准顶部间距（12px 占位 Space）。
@@ -156,10 +151,7 @@ pub fn col(h: f32) -> Space {
 
 /// 固定高度水平占位 Space（宽度由父容器 Stretch 自动拉伸）。
 fn space_h(h: f32) -> WidgetNode {
-    Space::new()
-        .size(SpaceSize::Small)
-        .height(h)
-        .into_node()
+    Space::new().size(SpaceSize::Small).height(h).into_node()
 }
 
 /// 页面标题行（图标 + 标签）。
@@ -233,7 +225,10 @@ fn build_page(page_index: usize, tk: &DesignTokens) -> WidgetNode {
 ///         └── ...
 /// ```
 /// 返回 `(root_node, nav_active, page_ids)`。
-fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, SharedActive, Vec<WidgetId>) {
+fn build_demo_tree(
+    tk: &DesignTokens,
+    active_page: usize,
+) -> (WidgetNode, SharedActive, Vec<WidgetId>) {
     let nav = Navigation::new("UIX 组件")
         .item(" 通用", "type")
         .item(" 布局", "layout")
@@ -256,10 +251,7 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
         let page_content = build_page(i, tk);
         page_nodes.push(WidgetNode::new(
             Box::new(
-                Container::new()
-                    .dir(FlexDirection::Column)
-                    .flex_grow(1.0)
-                    // 只在初始设置可见性；widget 创建后通过 tree 操作切换
+                Container::new().dir(FlexDirection::Column).flex_grow(1.0), // 只在初始设置可见性；widget 创建后通过 tree 操作切换
             ),
             vec![title_node, page_content],
         ));
@@ -280,10 +272,7 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
                 .dir(FlexDirection::Column)
                 .flex_grow(1.0),
         ),
-        vec![
-            build_header_bar(tk),
-            page_panel,
-        ],
+        vec![build_header_bar(tk), page_panel],
     );
 
     let root = tree! {
@@ -294,8 +283,6 @@ fn build_demo_tree(tk: &DesignTokens, active_page: usize) -> (WidgetNode, Shared
     };
     (root, nav_active, page_ids)
 }
-
-
 
 // ════════════════════════════════════════════════════════════════════════════
 // 运行时状态
@@ -363,10 +350,16 @@ fn rebuild_for_theme(
     let (new_root, new_active, _) = build_demo_tree(&tk, active);
     tree.build(new_root);
     if let Some(root) = tree.root_mut() {
-        root.set_frame(Rect::new(0.0, 0.0, eng.canvas_2d().width() as f32, eng.canvas_2d().height() as f32));
+        root.set_frame(Rect::new(
+            0.0,
+            0.0,
+            eng.canvas_2d().width() as f32,
+            eng.canvas_2d().height() as f32,
+        ));
     }
     // 树构建后通过遍历获取每页容器的真实 WidgetId
-    let page_ids: Vec<WidgetId> = tree.root_id()
+    let page_ids: Vec<WidgetId> = tree
+        .root_id()
         .and_then(|root| tree.get(root))
         .map(|r| r.children().to_vec())
         .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
@@ -405,13 +398,14 @@ pub fn run_gui_demo() {
 
     // 构建后获取所有页面容器的真实 WidgetId
     // 树结构：root → content_container → page_panel → [page_0, page_1, ..., page_N]
-    let page_ids: Vec<WidgetId> = tree.root_id()
+    let page_ids: Vec<WidgetId> = tree
+        .root_id()
         .and_then(|root| tree.get(root))
-        .map(|r| r.children().to_vec())          // [nav, content_container]
+        .map(|r| r.children().to_vec()) // [nav, content_container]
         .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
-        .map(|cc| cc.children().to_vec())         // [header_bar, page_panel]
+        .map(|cc| cc.children().to_vec()) // [header_bar, page_panel]
         .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
-        .map(|pp| pp.children().to_vec())         // [page_0..page_N]
+        .map(|pp| pp.children().to_vec()) // [page_0..page_N]
         .unwrap_or_default();
 
     // 初始：仅第 0 页可见
@@ -436,15 +430,17 @@ pub fn run_gui_demo() {
         }
     };
 
-    let mut platform_window = match platform.window_manager()
-        .create_window("UIX — 组件库", INIT_W, INIT_H)
-    {
-        Ok(w) => w,
-        Err(e) => {
-            uix_platform::log::error_fn(format!("create_window: {}", e.short_what()));
-            return;
-        }
-    };
+    let mut platform_window =
+        match platform
+            .window_manager()
+            .create_window("UIX — 组件库", INIT_W, INIT_H)
+        {
+            Ok(w) => w,
+            Err(e) => {
+                uix_platform::log::error_fn(format!("create_window: {}", e.short_what()));
+                return;
+            }
+        };
     platform_window.center_on_screen();
     platform_window.show();
     platform_window.raise();
@@ -465,7 +461,10 @@ pub fn run_gui_demo() {
                 engine = Box::new(e);
             }
             Err(e) => {
-                uix_platform::log::warn_fn(format!("GPU: 上下文创建失败({}), 回退CPU", e.short_what()));
+                uix_platform::log::warn_fn(format!(
+                    "GPU: 上下文创建失败({}), 回退CPU",
+                    e.short_what()
+                ));
                 let mut se = SoftwareEngine::new();
                 se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
                     uix_platform::log::error_fn(format!("CPU引擎初始化失败: {}", e.short_what()));

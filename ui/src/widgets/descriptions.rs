@@ -2,11 +2,11 @@
 //!
 //! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
 
-use uix_platform::{ControlSize, Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::Radius;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Radius;
+use uix_platform::{ControlSize, Point, Rect, Size};
 
 /// 单个描述项。
 #[derive(Debug, Clone)]
@@ -93,20 +93,61 @@ define_widget! {
 
 impl Descriptions {
     pub fn new() -> Self {
-        Self { title: String::new(), items: Vec::new(), bordered: false, column: 3, label_width: 100.0, size: ControlSize::Medium }
+        Self {
+            title: String::new(),
+            items: Vec::new(),
+            bordered: false,
+            column: 3,
+            label_width: 100.0,
+            size: ControlSize::Medium,
+        }
     }
-    pub fn title(mut self, t: &str) -> Self { self.title = t.to_string(); self }
-    pub fn items(mut self, items: Vec<DescriptionsItem>) -> Self { self.items = items; self }
-    pub fn add(mut self, item: DescriptionsItem) -> Self { self.items.push(item); self }
-    pub fn bordered(mut self, v: bool) -> Self { self.bordered = v; self }
-    pub fn column(mut self, v: usize) -> Self { self.column = v; self }
-    pub fn label_width(mut self, w: f32) -> Self { self.label_width = w; self }
-    pub fn size(mut self, s: ControlSize) -> Self { self.size = s; self }
+    pub fn title(mut self, t: &str) -> Self {
+        self.title = t.to_string();
+        self
+    }
+    pub fn items(mut self, items: Vec<DescriptionsItem>) -> Self {
+        self.items = items;
+        self
+    }
+    pub fn add(mut self, item: DescriptionsItem) -> Self {
+        self.items.push(item);
+        self
+    }
+    pub fn bordered(mut self, v: bool) -> Self {
+        self.bordered = v;
+        self
+    }
+    pub fn column(mut self, v: usize) -> Self {
+        self.column = v;
+        self
+    }
+    pub fn label_width(mut self, w: f32) -> Self {
+        self.label_width = w;
+        self
+    }
+    pub fn size(mut self, s: ControlSize) -> Self {
+        self.size = s;
+        self
+    }
 }
 
-impl Default for Descriptions { fn default() -> Self { Self::new() } }
+impl Default for Descriptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl DescriptionsItem {
-    pub fn new(label: &str, value: &str) -> Self { Self { label: label.to_string(), value: value.to_string(), span: 1 } }
-    pub fn span(mut self, s: usize) -> Self { self.span = s; self }
+    pub fn new(label: &str, value: &str) -> Self {
+        Self {
+            label: label.to_string(),
+            value: value.to_string(),
+            span: 1,
+        }
+    }
+    pub fn span(mut self, s: usize) -> Self {
+        self.span = s;
+        self
+    }
 }

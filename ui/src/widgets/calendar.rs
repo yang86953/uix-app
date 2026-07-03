@@ -2,18 +2,24 @@
 //!
 //! 月视图展示日期，支持选中日期、月份切换。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 use std::cell::Cell;
+use uix_graphics::{Color, Radius};
+use uix_platform::{Point, Rect, Size};
 
 fn days_in_month(year: i32, month: usize) -> usize {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 => if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 { 29 } else { 28 },
+        2 => {
+            if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 {
+                29
+            } else {
+                28
+            }
+        }
         _ => 30,
     }
 }
@@ -21,7 +27,11 @@ fn days_in_month(year: i32, month: usize) -> usize {
 fn first_weekday(year: i32, month: usize) -> usize {
     // Zeller 公式简化 (0=Sun, 1=Mon, ..., 6=Sat)
     let m = if month <= 2 { month + 12 } else { month };
-    let y = if month <= 2 { (year - 1) as usize } else { year as usize };
+    let y = if month <= 2 {
+        (year - 1) as usize
+    } else {
+        year as usize
+    };
     let c = y / 100;
     let y_mod = y % 100;
     let w = (1usize + (13 * (m + 1)) / 5 + y_mod + y_mod / 4 + c / 4).wrapping_sub(2 * c) % 7;
@@ -134,15 +144,28 @@ define_widget! {
 impl Calendar {
     pub fn new() -> Self {
         Self {
-            year: Cell::new(2026), month: Cell::new(6),
-            selected_day: Cell::new(None), cell_size: 40.0, year_jump: false,
+            year: Cell::new(2026),
+            month: Cell::new(6),
+            selected_day: Cell::new(None),
+            cell_size: 40.0,
+            year_jump: false,
         }
     }
-    pub fn cell_size(mut self, s: f32) -> Self { self.cell_size = s; self }
-    pub fn selected_day(&self) -> Option<usize> { self.selected_day.get() }
-    pub fn year_jump(mut self, v: bool) -> Self { self.year_jump = v; self }
+    pub fn cell_size(mut self, s: f32) -> Self {
+        self.cell_size = s;
+        self
+    }
+    pub fn selected_day(&self) -> Option<usize> {
+        self.selected_day.get()
+    }
+    pub fn year_jump(mut self, v: bool) -> Self {
+        self.year_jump = v;
+        self
+    }
 }
 
-impl Default for Calendar { fn default() -> Self { Self::new() } }
-
-
+impl Default for Calendar {
+    fn default() -> Self {
+        Self::new()
+    }
+}

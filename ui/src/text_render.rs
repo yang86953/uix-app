@@ -3,12 +3,12 @@
 //! 封装 FontService 的文本布局、光栅化、测量和命中测试。
 //! 由 RenderContext 组合持有，通过委托方法对外暴露。
 
-use uix_platform::{Point, Rect, Size};
 use uix_graphics::font_service::FontService;
-use uix_graphics::spatial::{AABB3D, PhysicalUnit, SpatialContext, Vec3};
+use uix_graphics::spatial::{PhysicalUnit, SpatialContext, Vec3, AABB3D};
+use uix_graphics::text_backend::TextLayoutOptions;
 use uix_graphics::traits::Canvas2D;
 use uix_graphics::{Color, FontHandle, HAlign, VAlign};
-use uix_graphics::text_backend::TextLayoutOptions;
+use uix_platform::{Point, Rect, Size};
 
 /// 文本渲染服务 — 字体管理、文本布局、glyph 光栅化。
 pub struct TextRenderService<'a> {
@@ -19,7 +19,11 @@ pub struct TextRenderService<'a> {
 
 impl<'a> TextRenderService<'a> {
     pub fn new(font: FontHandle, font_service: &'a FontService, max_text_width: f32) -> Self {
-        Self { font, font_service, max_text_width }
+        Self {
+            font,
+            font_service,
+            max_text_width,
+        }
     }
 
     /// 更新字体句柄。
@@ -64,10 +68,12 @@ impl<'a> TextRenderService<'a> {
     ) {
         let fs = font_size.max(1.0);
         for gp in &layout.glyphs {
-            let fh = if gp.font.0 != u32::MAX { gp.font } else { self.font };
-            let raster = self
-                .font_service
-                .rasterize_glyph(&fh, gp.glyph_id, fs);
+            let fh = if gp.font.0 != u32::MAX {
+                gp.font
+            } else {
+                self.font
+            };
+            let raster = self.font_service.rasterize_glyph(&fh, gp.glyph_id, fs);
             if raster.width == 0 || raster.height == 0 {
                 continue;
             }
@@ -103,8 +109,17 @@ impl<'a> TextRenderService<'a> {
         if text.is_empty() {
             return;
         }
-        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
-        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        let backend_opts = self.text_opts(
+            font_size,
+            self.max_text_width,
+            0.0,
+            false,
+            HAlign::Left,
+            VAlign::Top,
+        );
+        let layout = self
+            .font_service
+            .layout_text(&self.font, text, &backend_opts);
         self.blit_glyph_layout(canvas, &layout, pos, color, font_size);
     }
 
@@ -141,8 +156,17 @@ impl<'a> TextRenderService<'a> {
             return;
         }
         let cnt = rect.x + rect.w * 0.5;
-        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
-        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        let backend_opts = self.text_opts(
+            font_size,
+            self.max_text_width,
+            0.0,
+            false,
+            HAlign::Left,
+            VAlign::Top,
+        );
+        let layout = self
+            .font_service
+            .layout_text(&self.font, text, &backend_opts);
         let x = cnt - layout.width * 0.5;
         let y = self.visual_center_y(rect, font_size);
         self.blit_glyph_layout(canvas, &layout, Point::new(x, y), color, font_size);
@@ -160,8 +184,17 @@ impl<'a> TextRenderService<'a> {
         if text.is_empty() {
             return;
         }
-        let backend_opts = self.text_opts(font_size, rect.w.max(1.0), 0.0, false, HAlign::Left, VAlign::Top);
-        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        let backend_opts = self.text_opts(
+            font_size,
+            rect.w.max(1.0),
+            0.0,
+            false,
+            HAlign::Left,
+            VAlign::Top,
+        );
+        let layout = self
+            .font_service
+            .layout_text(&self.font, text, &backend_opts);
         let x = rect.x;
         let y = self.visual_center_y(rect, font_size);
         self.blit_glyph_layout(canvas, &layout, Point::new(x, y), color, font_size);
@@ -179,9 +212,24 @@ impl<'a> TextRenderService<'a> {
         if text.is_empty() {
             return;
         }
-        let backend_opts = self.text_opts(font_size, rect.w.max(1.0), rect.h.max(0.0), true, HAlign::Left, VAlign::Top);
-        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
-        self.blit_glyph_layout(canvas, &layout, Point::new(rect.x, rect.y), color, font_size);
+        let backend_opts = self.text_opts(
+            font_size,
+            rect.w.max(1.0),
+            rect.h.max(0.0),
+            true,
+            HAlign::Left,
+            VAlign::Top,
+        );
+        let layout = self
+            .font_service
+            .layout_text(&self.font, text, &backend_opts);
+        self.blit_glyph_layout(
+            canvas,
+            &layout,
+            Point::new(rect.x, rect.y),
+            color,
+            font_size,
+        );
     }
 
     /// 绘制文本选中背景 + 文本。
@@ -216,7 +264,9 @@ impl<'a> TextRenderService<'a> {
         color: Color,
         font_size: PhysicalUnit,
     ) {
-        if text.is_empty() { return; }
+        if text.is_empty() {
+            return;
+        }
         let (sx, sy) = spatial.project(&pos);
         let fs = font_size.to_dip(spatial.dpi());
         self.draw_text(canvas, text, Point::new(sx, sy), color, fs);
@@ -232,10 +282,21 @@ impl<'a> TextRenderService<'a> {
         color: Color,
         font_size: PhysicalUnit,
     ) {
-        if text.is_empty() { return; }
+        if text.is_empty() {
+            return;
+        }
         let fs = font_size.to_dip(spatial.dpi());
-        let backend_opts = self.text_opts(fs, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
-        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        let backend_opts = self.text_opts(
+            fs,
+            self.max_text_width,
+            0.0,
+            false,
+            HAlign::Left,
+            VAlign::Top,
+        );
+        let layout = self
+            .font_service
+            .layout_text(&self.font, text, &backend_opts);
         let quad = spatial.project_aabb(&box_3d);
         let bounds = quad.bounds();
         let x = bounds.x + (bounds.w - layout.width) * 0.5;
@@ -258,14 +319,24 @@ impl<'a> TextRenderService<'a> {
         if text.is_empty() || start >= end {
             return Vec::new();
         }
-        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
-        let layout = self.font_service.layout_text(&self.font, text, &backend_opts);
+        let backend_opts = self.text_opts(
+            font_size,
+            self.max_text_width,
+            0.0,
+            false,
+            HAlign::Left,
+            VAlign::Top,
+        );
+        let layout = self
+            .font_service
+            .layout_text(&self.font, text, &backend_opts);
         if layout.glyphs.is_empty() {
             return Vec::new();
         }
         let end = end.min(layout.glyphs.len());
         let start = start.min(end);
-        let visual_h = self.font_service
+        let visual_h = self
+            .font_service
             .horizontal_line_metrics(&self.font, font_size)
             .map(|m| m.ascent + m.descent)
             .unwrap_or(font_size * 1.2);
@@ -276,7 +347,9 @@ impl<'a> TextRenderService<'a> {
             let ge = gs + gc;
             let sel_start = start.max(gs);
             let sel_end = end.min(ge);
-            if sel_start >= sel_end { continue; }
+            if sel_start >= sel_end {
+                continue;
+            }
             let glyphs = &layout.glyphs[sel_start..sel_end];
             let x0 = pos.x + glyphs[0].x;
             let last = glyphs[glyphs.len() - 1];
@@ -291,26 +364,52 @@ impl<'a> TextRenderService<'a> {
 
     /// 测量文本尺寸（不换行）。
     pub fn measure_text(&mut self, text: &str, font_size: f32) -> Size {
-        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
-        self.font_service.measure_text(&self.font, text, &backend_opts)
+        let backend_opts = self.text_opts(
+            font_size,
+            self.max_text_width,
+            0.0,
+            false,
+            HAlign::Left,
+            VAlign::Top,
+        );
+        self.font_service
+            .measure_text(&self.font, text, &backend_opts)
     }
 
     /// 测量文本尺寸（换行模式）。
     pub fn measure_text_wrapped(&mut self, text: &str, font_size: f32, max_width: f32) -> Size {
-        let backend_opts = self.text_opts(font_size, max_width, 0.0, true, HAlign::Left, VAlign::Top);
-        self.font_service.measure_text(&self.font, text, &backend_opts)
+        let backend_opts =
+            self.text_opts(font_size, max_width, 0.0, true, HAlign::Left, VAlign::Top);
+        self.font_service
+            .measure_text(&self.font, text, &backend_opts)
     }
 
     /// 文本命中测试。
     pub fn text_hit_test(&mut self, text: &str, font_size: f32, point: Point) -> Option<usize> {
-        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
-        self.font_service.hit_test_text(&self.font, text, &backend_opts, point)
+        let backend_opts = self.text_opts(
+            font_size,
+            self.max_text_width,
+            0.0,
+            false,
+            HAlign::Left,
+            VAlign::Top,
+        );
+        self.font_service
+            .hit_test_text(&self.font, text, &backend_opts, point)
     }
 
     /// 获取指定字符的光标 x 位置。
     pub fn text_cursor_x(&mut self, text: &str, font_size: f32, char_index: usize) -> f32 {
-        let backend_opts = self.text_opts(font_size, self.max_text_width, 0.0, false, HAlign::Left, VAlign::Top);
-        self.font_service.text_cursor_x(&self.font, text, &backend_opts, char_index)
+        let backend_opts = self.text_opts(
+            font_size,
+            self.max_text_width,
+            0.0,
+            false,
+            HAlign::Left,
+            VAlign::Top,
+        );
+        self.font_service
+            .text_cursor_x(&self.font, text, &backend_opts, char_index)
     }
 
     // ── 辅助 ──
@@ -389,7 +488,13 @@ mod tests {
         let fs = FontService::new();
         let mut trs = TextRenderService::new(FontHandle::default(), &fs, 500.0);
         let mut canvas = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-        trs.text_center(&mut canvas, "", Rect::new(0.0, 0.0, 100.0, 50.0), Color::black(), 14.0);
+        trs.text_center(
+            &mut canvas,
+            "",
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+            Color::black(),
+            14.0,
+        );
     }
 
     #[test]
@@ -397,7 +502,13 @@ mod tests {
         let fs = FontService::new();
         let mut trs = TextRenderService::new(FontHandle::default(), &fs, 500.0);
         let mut canvas = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-        trs.draw_text_in_frame(&mut canvas, "", Rect::new(0.0, 0.0, 100.0, 50.0), Color::black(), 14.0);
+        trs.draw_text_in_frame(
+            &mut canvas,
+            "",
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+            Color::black(),
+            14.0,
+        );
     }
 
     #[test]
@@ -405,7 +516,13 @@ mod tests {
         let fs = FontService::new();
         let mut trs = TextRenderService::new(FontHandle::default(), &fs, 500.0);
         let mut canvas = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-        trs.draw_text_wrapped(&mut canvas, "", Rect::new(0.0, 0.0, 100.0, 50.0), Color::black(), 14.0);
+        trs.draw_text_wrapped(
+            &mut canvas,
+            "",
+            Rect::new(0.0, 0.0, 100.0, 50.0),
+            Color::black(),
+            14.0,
+        );
     }
 
     #[test]
@@ -442,7 +559,15 @@ mod tests {
         let mut trs = TextRenderService::new(FontHandle::default(), &fs, 500.0);
         let mut canvas = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
         // selection=None 时只绘制文本
-        trs.draw_text_with_selection(&mut canvas, "", Point::new(0.0, 0.0), Color::black(), 14.0, None, Color::blue());
+        trs.draw_text_with_selection(
+            &mut canvas,
+            "",
+            Point::new(0.0, 0.0),
+            Color::black(),
+            14.0,
+            None,
+            Color::blue(),
+        );
     }
 
     #[test]
@@ -459,10 +584,22 @@ mod tests {
         let mut trs = TextRenderService::new(FontHandle::default(), &fs, 500.0);
         let mut canvas_s = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
         let spatial = uix_graphics::spatial::SpatialContext::new(
-            &mut canvas_s, 96.0, 1.0, uix_graphics::spatial::Orientation::YDown, 800, 600,
+            &mut canvas_s,
+            96.0,
+            1.0,
+            uix_graphics::spatial::Orientation::YDown,
+            800,
+            600,
         );
         let mut canvas = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-        trs.draw_text_spatial(&mut canvas, &spatial, "", Vec3::zero(), Color::black(), PhysicalUnit::Px(14.0));
+        trs.draw_text_spatial(
+            &mut canvas,
+            &spatial,
+            "",
+            Vec3::zero(),
+            Color::black(),
+            PhysicalUnit::Px(14.0),
+        );
     }
 
     #[test]
@@ -471,10 +608,22 @@ mod tests {
         let mut trs = TextRenderService::new(FontHandle::default(), &fs, 500.0);
         let mut canvas_s = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
         let spatial = uix_graphics::spatial::SpatialContext::new(
-            &mut canvas_s, 96.0, 1.0, uix_graphics::spatial::Orientation::YDown, 800, 600,
+            &mut canvas_s,
+            96.0,
+            1.0,
+            uix_graphics::spatial::Orientation::YDown,
+            800,
+            600,
         );
         let mut canvas = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-        trs.text_center_spatial(&mut canvas, &spatial, "", AABB3D::new(Vec3::zero(), Vec3::new(100.0, 50.0, 0.0)), Color::black(), PhysicalUnit::Px(14.0));
+        trs.text_center_spatial(
+            &mut canvas,
+            &spatial,
+            "",
+            AABB3D::new(Vec3::zero(), Vec3::new(100.0, 50.0, 0.0)),
+            Color::black(),
+            PhysicalUnit::Px(14.0),
+        );
     }
 
     #[test]
@@ -534,7 +683,15 @@ mod tests {
         let mut trs = TextRenderService::new(FontHandle::default(), &fs, 500.0);
         let mut canvas = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
         // 空 selection 应只绘制文本
-        trs.draw_text_with_selection(&mut canvas, "text", Point::new(0.0, 0.0), Color::black(), 14.0, None, Color::blue());
+        trs.draw_text_with_selection(
+            &mut canvas,
+            "text",
+            Point::new(0.0, 0.0),
+            Color::black(),
+            14.0,
+            None,
+            Color::blue(),
+        );
     }
 
     #[test]
@@ -543,7 +700,15 @@ mod tests {
         let mut trs = TextRenderService::new(FontHandle::default(), &fs, 500.0);
         let mut canvas = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
         // selection(0,0) 是空范围 → 跳过背景矩形
-        trs.draw_text_with_selection(&mut canvas, "text", Point::new(0.0, 0.0), Color::black(), 14.0, Some((0, 0)), Color::blue());
+        trs.draw_text_with_selection(
+            &mut canvas,
+            "text",
+            Point::new(0.0, 0.0),
+            Color::black(),
+            14.0,
+            Some((0, 0)),
+            Color::blue(),
+        );
     }
 
     #[test]
@@ -552,47 +717,115 @@ mod tests {
         let fs = FontService::new();
         let mut trs = TextRenderService::new(FontHandle::default(), &fs, 500.0);
         let mut canvas = uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-        let layout = TextLayout { width: 0.0, height: 0.0, lines: vec![], glyphs: vec![] };
-        trs.blit_to(&mut canvas, &layout, Point::new(0.0, 0.0), Color::black(), 14.0);
+        let layout = TextLayout {
+            width: 0.0,
+            height: 0.0,
+            lines: vec![],
+            glyphs: vec![],
+        };
+        trs.blit_to(
+            &mut canvas,
+            &layout,
+            Point::new(0.0, 0.0),
+            Color::black(),
+            14.0,
+        );
     }
 }
 
 impl<'a> crate::api::traits::TextRenderer for TextRenderService<'a> {
-    fn set_font(&mut self, font: FontHandle) { self.set_font(font); }
-    fn set_max_text_width(&mut self, width: f32) { self.set_max_text_width(width); }
-    fn font(&self) -> &FontHandle { self.font() }
-    fn font_service(&mut self) -> &FontService { self.font_service }
+    fn set_font(&mut self, font: FontHandle) {
+        self.set_font(font);
+    }
+    fn set_max_text_width(&mut self, width: f32) {
+        self.set_max_text_width(width);
+    }
+    fn font(&self) -> &FontHandle {
+        self.font()
+    }
+    fn font_service(&mut self) -> &FontService {
+        self.font_service
+    }
 
-    fn draw_text(&mut self, canvas: &mut dyn Canvas2D, text: &str, pos: Point, color: Color, font_size: f32) {
+    fn draw_text(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+    ) {
         self.draw_text(canvas, text, pos, color, font_size);
     }
-    fn draw_text_baseline(&mut self, canvas: &mut dyn Canvas2D, text: &str, x: f32, baseline_y: f32, color: Color, font_size: f32) {
+    fn draw_text_baseline(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        x: f32,
+        baseline_y: f32,
+        color: Color,
+        font_size: f32,
+    ) {
         self.draw_text_baseline(canvas, text, x, baseline_y, color, font_size);
     }
-    fn text_center(&mut self, canvas: &mut dyn Canvas2D, text: &str, rect: Rect, color: Color, font_size: f32) {
+    fn text_center(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        rect: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
         self.text_center(canvas, text, rect, color, font_size);
     }
-    fn draw_text_in_frame(&mut self, canvas: &mut dyn Canvas2D, text: &str, rect: Rect, color: Color, font_size: f32) {
+    fn draw_text_in_frame(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        rect: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
         self.draw_text_in_frame(canvas, text, rect, color, font_size);
     }
-    fn draw_text_wrapped(&mut self, canvas: &mut dyn Canvas2D, text: &str, rect: Rect, color: Color, font_size: f32) {
+    fn draw_text_wrapped(
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        rect: Rect,
+        color: Color,
+        font_size: f32,
+    ) {
         self.draw_text_wrapped(canvas, text, rect, color, font_size);
     }
 
     fn draw_text_with_selection(
-        &mut self, canvas: &mut dyn Canvas2D, text: &str, pos: Point, color: Color,
-        font_size: f32, selection: Option<(usize, usize)>, selection_bg: Color,
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+        selection: Option<(usize, usize)>,
+        selection_bg: Color,
     ) {
         self.draw_text_with_selection(canvas, text, pos, color, font_size, selection, selection_bg);
     }
     fn selection_rects(
-        &mut self, canvas: &mut dyn Canvas2D, text: &str, font_size: f32,
-        pos: Point, start: usize, end: usize,
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        text: &str,
+        font_size: f32,
+        pos: Point,
+        start: usize,
+        end: usize,
     ) -> Vec<Rect> {
         self.selection_rects(canvas, text, font_size, pos, start, end)
     }
 
-    fn measure_text(&mut self, text: &str, font_size: f32) -> Size { self.measure_text(text, font_size) }
+    fn measure_text(&mut self, text: &str, font_size: f32) -> Size {
+        self.measure_text(text, font_size)
+    }
     fn measure_text_wrapped(&mut self, text: &str, font_size: f32, max_width: f32) -> Size {
         self.measure_text_wrapped(text, font_size, max_width)
     }
@@ -602,25 +835,40 @@ impl<'a> crate::api::traits::TextRenderer for TextRenderService<'a> {
     fn text_cursor_x(&mut self, text: &str, font_size: f32, char_index: usize) -> f32 {
         self.text_cursor_x(text, font_size, char_index)
     }
-    fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 { self.visual_center_y(rect, font_size) }
+    fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 {
+        self.visual_center_y(rect, font_size)
+    }
 
     fn draw_text_spatial(
-        &mut self, canvas: &mut dyn Canvas2D, spatial: &SpatialContext,
-        text: &str, pos: Vec3, color: Color, font_size: PhysicalUnit,
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        spatial: &SpatialContext,
+        text: &str,
+        pos: Vec3,
+        color: Color,
+        font_size: PhysicalUnit,
     ) {
         self.draw_text_spatial(canvas, spatial, text, pos, color, font_size);
     }
     fn text_center_spatial(
-        &mut self, canvas: &mut dyn Canvas2D, spatial: &SpatialContext,
-        text: &str, box_3d: AABB3D, color: Color, font_size: PhysicalUnit,
+        &mut self,
+        canvas: &mut dyn Canvas2D,
+        spatial: &SpatialContext,
+        text: &str,
+        box_3d: AABB3D,
+        color: Color,
+        font_size: PhysicalUnit,
     ) {
         self.text_center_spatial(canvas, spatial, text, box_3d, color, font_size);
     }
 
     fn blit_to(
-        &mut self, canvas: &mut dyn Canvas2D,
+        &mut self,
+        canvas: &mut dyn Canvas2D,
         layout: &uix_graphics::text_backend::TextLayout,
-        pos: Point, color: Color, font_size: f32,
+        pos: Point,
+        color: Color,
+        font_size: f32,
     ) {
         self.blit_to(canvas, layout, pos, color, font_size);
     }

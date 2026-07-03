@@ -1,8 +1,8 @@
 use crate::define_widget;
-use uix_platform::{Point, Rect, Size};
-use uix_graphics::{GraphicsEngine, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::{GraphicsEngine, Radius};
+use uix_platform::{Point, Rect, Size};
 
 /// 选项组。
 #[derive(Debug, Clone)]
@@ -12,8 +12,16 @@ pub struct OptGroup {
 }
 
 impl OptGroup {
-    pub fn new(label: &str) -> Self { Self { label: label.to_string(), options: Vec::new() } }
-    pub fn add(mut self, opt: &str) -> Self { self.options.push(opt.to_string()); self }
+    pub fn new(label: &str) -> Self {
+        Self {
+            label: label.to_string(),
+            options: Vec::new(),
+        }
+    }
+    pub fn add(mut self, opt: &str) -> Self {
+        self.options.push(opt.to_string());
+        self
+    }
 }
 
 define_widget! {
@@ -222,20 +230,44 @@ define_widget! {
 }
 
 impl Select {
-    fn render_option(&self, frame: Rect, list_y: f32, idx: usize, label: &str, opt_idx: usize, ctx: &mut RenderContext, text_color: Color, primary: Color, fill_tertiary: Color) {
+    fn render_option(
+        &self,
+        frame: Rect,
+        list_y: f32,
+        idx: usize,
+        label: &str,
+        opt_idx: usize,
+        ctx: &mut RenderContext,
+        text_color: Color,
+        primary: Color,
+        fill_tertiary: Color,
+    ) {
         let item_y = list_y + idx as f32 * 28.0;
         let item_rect = Rect::new(frame.x, item_y, frame.w, 28.0);
         let is_hovered = self.hovered_option == Some(idx);
-        let is_selected = if self.multiple { self.selected_multi.contains(&opt_idx) } else { opt_idx == self.selected };
+        let is_selected = if self.multiple {
+            self.selected_multi.contains(&opt_idx)
+        } else {
+            opt_idx == self.selected
+        };
         if is_hovered || is_selected {
-            let highlight = if is_hovered { fill_tertiary } else { ctx.tokens().color_primary_bg() };
+            let highlight = if is_hovered {
+                fill_tertiary
+            } else {
+                ctx.tokens().color_primary_bg()
+            };
             ctx.fill_rect(item_rect, highlight, None);
         }
         let tc = if is_selected { primary } else { text_color };
         let draw_y = ctx.visual_center_y(item_rect, 13.0);
         if self.multiple {
             let check = if is_selected { "☑ " } else { "☐ " };
-            ctx.draw_text(&format!("{}{}", check, label), Point::new(frame.x + 10.0, draw_y), tc, 13.0);
+            ctx.draw_text(
+                &format!("{}{}", check, label),
+                Point::new(frame.x + 10.0, draw_y),
+                tc,
+                13.0,
+            );
         } else {
             ctx.draw_text(label, Point::new(frame.x + 10.0, draw_y), tc, 13.0);
         }
@@ -243,7 +275,10 @@ impl Select {
 
     fn all_options(&self) -> Vec<&str> {
         if !self.optgroups.is_empty() {
-            self.optgroups.iter().flat_map(|g| g.options.iter().map(|s| s.as_str())).collect()
+            self.optgroups
+                .iter()
+                .flat_map(|g| g.options.iter().map(|s| s.as_str()))
+                .collect()
         } else {
             self.options.iter().map(|s| s.as_str()).collect()
         }
@@ -251,45 +286,88 @@ impl Select {
 
     fn flat_labels(&self) -> Vec<String> {
         if !self.optgroups.is_empty() {
-            self.optgroups.iter().flat_map(|g| {
-                let mut v = vec![format!("[{}]", g.label)];
-                v.extend(g.options.clone());
-                v
-            }).collect()
+            self.optgroups
+                .iter()
+                .flat_map(|g| {
+                    let mut v = vec![format!("[{}]", g.label)];
+                    v.extend(g.options.clone());
+                    v
+                })
+                .collect()
         } else {
             self.options.clone()
         }
     }
 
     fn option_index(&self, _group_label: &str, opt: &str) -> usize {
-        self.all_options().iter().position(|&s| s == opt).unwrap_or(0)
+        self.all_options()
+            .iter()
+            .position(|&s| s == opt)
+            .unwrap_or(0)
     }
 }
 
 use uix_graphics::Color;
 
-impl Default for Select { fn default() -> Self { Self::new() } }
+impl Default for Select {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Select {
     pub fn new() -> Self {
         Self {
-            options: Vec::new(), optgroups: Vec::new(),
-            selected: 0, selected_multi: Vec::new(),
-            open: false, disabled: false, hovered: false, focused: false,
-            placeholder: String::new(), hovered_option: None,
-            on_change: None, on_change_multi: None,
-            multiple: false, search: false,
+            options: Vec::new(),
+            optgroups: Vec::new(),
+            selected: 0,
+            selected_multi: Vec::new(),
+            open: false,
+            disabled: false,
+            hovered: false,
+            focused: false,
+            placeholder: String::new(),
+            hovered_option: None,
+            on_change: None,
+            on_change_multi: None,
+            multiple: false,
+            search: false,
         }
     }
     pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
-        self.options = opts.into_iter().map(|s| s.into()).collect(); self
+        self.options = opts.into_iter().map(|s| s.into()).collect();
+        self
     }
-    pub fn optgroups(mut self, groups: Vec<OptGroup>) -> Self { self.optgroups = groups; self }
-    pub fn selected(mut self, idx: usize) -> Self { self.selected = idx; self }
-    pub fn placeholder(mut self, p: impl Into<String>) -> Self { self.placeholder = p.into(); self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn multiple(mut self, v: bool) -> Self { self.multiple = v; self }
-    pub fn search(mut self, v: bool) -> Self { self.search = v; self }
-    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self { self.on_change = Some(Box::new(f)); self }
-    pub fn on_change_multi<F: FnMut(Vec<usize>) + 'static>(mut self, f: F) -> Self { self.on_change_multi = Some(Box::new(f)); self }
+    pub fn optgroups(mut self, groups: Vec<OptGroup>) -> Self {
+        self.optgroups = groups;
+        self
+    }
+    pub fn selected(mut self, idx: usize) -> Self {
+        self.selected = idx;
+        self
+    }
+    pub fn placeholder(mut self, p: impl Into<String>) -> Self {
+        self.placeholder = p.into();
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn multiple(mut self, v: bool) -> Self {
+        self.multiple = v;
+        self
+    }
+    pub fn search(mut self, v: bool) -> Self {
+        self.search = v;
+        self
+    }
+    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
+        self.on_change = Some(Box::new(f));
+        self
+    }
+    pub fn on_change_multi<F: FnMut(Vec<usize>) + 'static>(mut self, f: F) -> Self {
+        self.on_change_multi = Some(Box::new(f));
+        self
+    }
 }

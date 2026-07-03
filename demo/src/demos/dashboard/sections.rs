@@ -1,30 +1,26 @@
 //! 组件展示页面（通用 ~ 反馈）
 //! 分类：通用、布局、导航、输入、数据展示、反馈
 
-use uix::platform::EdgeInsets;
 use uix::graphics::Color;
+use uix::platform::EdgeInsets;
+use uix::tree;
 use uix::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use uix::ui::theme::DesignTokens;
 use uix::ui::widget::WidgetNode;
-use uix::ui::{
-    Alert, AlertType, Anchor, AnchorItem, AutoComplete,
-    Breadcrumb, BreadcrumbItem, Button, ButtonSize, Calendar, Card,
-    Cascader, CascaderOption, Checkbox, Collapse, CollapsePanel,
-    Container, DatePicker, DateValue, Descriptions, DescriptionsItem,
-    Divider, Dropdown, Empty,
-    Input, InputNumber, InputSize, IntoWidgetNode, Label,
-    List, Menu, MenuItem, MenuMode, Mentions, Pagination,
-    ProgressBar, Radio, Rate, Result, ResultType, Segmented, Select, Skeleton, SkeletonShape,
-    Slider, Space, SpaceSize, Spin, Splitter, Step, Steps, StepStatus,
-    Switch, TabPosition, Tabs, Tag, TagColor, Timeline, TimelineItem,
-    TimePicker, TimeValue, Tree, TreeNode, GridTrack,
-    Typography, Modal, Drawer, Popover, Popconfirm, Tooltip, TooltipPlacement,
-    Badge, Avatar, Image, QRCode, Watermark, Carousel,
-};
-use uix::tree;
 use uix::ui::Icon;
+use uix::ui::{
+    Alert, AlertType, Anchor, AnchorItem, AutoComplete, Avatar, Badge, Breadcrumb, BreadcrumbItem,
+    Button, ButtonSize, Calendar, Card, Carousel, Cascader, CascaderOption, Checkbox, Collapse,
+    CollapsePanel, Container, DatePicker, DateValue, Descriptions, DescriptionsItem, Divider,
+    Drawer, Dropdown, Empty, GridTrack, Image, Input, InputNumber, InputSize, IntoWidgetNode,
+    Label, List, Mentions, Menu, MenuItem, MenuMode, Modal, Pagination, Popconfirm, Popover,
+    ProgressBar, QRCode, Radio, Rate, Result, ResultType, Segmented, Select, Skeleton,
+    SkeletonShape, Slider, Space, SpaceSize, Spin, Splitter, Step, StepStatus, Steps, Switch,
+    TabPosition, Tabs, Tag, TagColor, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip,
+    TooltipPlacement, Tree, TreeNode, Typography, Watermark,
+};
 
-use super::{INNER_W, PageBuilder, row};
+use super::{row, PageBuilder, INNER_W};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Page 0: 通用 (General) — Button, Typography, Tag, Icon
@@ -340,10 +336,12 @@ pub fn page_nav(tk: &DesignTokens) -> WidgetNode {
 pub fn page_input(tk: &DesignTokens) -> WidgetNode {
     let city_options = vec![
         CascaderOption::new("北京", "beijing").children(vec![
-            CascaderOption::new("海淀", "haidian"), CascaderOption::new("朝阳", "chaoyang"),
+            CascaderOption::new("海淀", "haidian"),
+            CascaderOption::new("朝阳", "chaoyang"),
         ]),
         CascaderOption::new("上海", "shanghai").children(vec![
-            CascaderOption::new("浦东", "pudong"), CascaderOption::new("徐汇", "xuhui"),
+            CascaderOption::new("浦东", "pudong"),
+            CascaderOption::new("徐汇", "xuhui"),
         ]),
     ];
     PageBuilder::new(tk)
@@ -363,25 +361,26 @@ pub fn page_input(tk: &DesignTokens) -> WidgetNode {
         )
         .section("选择 Select")
         .push(
-            row(36.0)
-                .child(Select::new().options(vec!["选项 1", "选项 2", "选项 3"]).selected(2)),
+            row(36.0).child(
+                Select::new()
+                    .options(vec!["选项 1", "选项 2", "选项 3"])
+                    .selected(2),
+            ),
         )
         .section("级联 Cascader")
-        .push(
-            row(36.0)
-                .child(Cascader::new(city_options, "选择地区")),
-        )
+        .push(row(36.0).child(Cascader::new(city_options, "选择地区")))
         .section("提及 Mentions")
         .push(
-            row(36.0)
-                .child(Mentions::new("输入 @ 提及").options(vec!["Alice", "Bob", "Charlie"])),
+            row(36.0).child(Mentions::new("输入 @ 提及").options(vec!["Alice", "Bob", "Charlie"])),
         )
         .section("自动补全 AutoComplete")
-        .push(tree! { Container::new().size(INNER_W, 40.0).dir(FlexDirection::Column)
-            .pad(EdgeInsets::uniform(4.0)) => [
-            AutoComplete::new().placeholder("输入城市名称...")
-                .options(vec!["北京", "上海", "广州", "深圳"]).into_node(),
-        ]})
+        .push(
+            tree! { Container::new().size(INNER_W, 40.0).dir(FlexDirection::Column)
+                .pad(EdgeInsets::uniform(4.0)) => [
+                AutoComplete::new().placeholder("输入城市名称...")
+                    .options(vec!["北京", "上海", "广州", "深圳"]).into_node(),
+            ]},
+        )
         .section("开关 Switch")
         .push(
             row(30.0)
@@ -398,14 +397,14 @@ pub fn page_input(tk: &DesignTokens) -> WidgetNode {
         )
         .section("单选框 Radio")
         .push(
-            row(32.0)
-                .child(Radio::new().options(vec!["苹果", "香蕉", "樱桃"]).selected(1)),
+            row(32.0).child(
+                Radio::new()
+                    .options(vec!["苹果", "香蕉", "樱桃"])
+                    .selected(1),
+            ),
         )
         .section("滑块 Slider")
-        .push(
-            row(30.0)
-                .child(Slider::new().range(0.0, 100.0).step(5.0).value(42.0)),
-        )
+        .push(row(30.0).child(Slider::new().range(0.0, 100.0).step(5.0).value(42.0)))
         .section("评分 Rate")
         .push(
             row(30.0)
@@ -414,15 +413,9 @@ pub fn page_input(tk: &DesignTokens) -> WidgetNode {
                 .child(Rate::new().value(2).allow_half()),
         )
         .section("日期选择 DatePicker")
-        .push(
-            row(36.0)
-                .child(DatePicker::new("选择日期").value(DateValue::new(2026, 6, 20))),
-        )
+        .push(row(36.0).child(DatePicker::new("选择日期").value(DateValue::new(2026, 6, 20))))
         .section("时间选择 TimePicker")
-        .push(
-            row(36.0)
-                .child(TimePicker::new("选择时间").value(TimeValue::new(14, 30))),
-        )
+        .push(row(36.0).child(TimePicker::new("选择时间").value(TimeValue::new(14, 30))))
         .build()
 }
 
@@ -434,50 +427,63 @@ pub fn page_data(tk: &DesignTokens) -> WidgetNode {
     PageBuilder::new(tk)
         .gap()
         .section("列表 List")
-        .push(tree! { Container::new().size(INNER_W, 200.0).dir(FlexDirection::Column)
-            .pad(EdgeInsets::uniform(4.0)) => [
-            List::new()
-                .header("用户列表")
-                .items(vec!["Alice - 设计师", "Bob - 开发者", "Carol - 管理者"])
-                .footer("共 3 人")
-                .into_node(),
-        ]})
+        .push(
+            tree! { Container::new().size(INNER_W, 200.0).dir(FlexDirection::Column)
+                .pad(EdgeInsets::uniform(4.0)) => [
+                List::new()
+                    .header("用户列表")
+                    .items(vec!["Alice - 设计师", "Bob - 开发者", "Carol - 管理者"])
+                    .footer("共 3 人")
+                    .into_node(),
+            ]},
+        )
         .section("树形控件 Tree")
-        .push(tree! { Container::new().size(INNER_W, 110.0).dir(FlexDirection::Column)
-            .pad(EdgeInsets::uniform(4.0)) => [
-            Tree::new(vec![
-                TreeNode::new("根节点", "1")
-                    .add(TreeNode::new("子节点 A", "1-1"))
-                    .add(TreeNode::new("子节点 B", "1-2")
-                        .add(TreeNode::new("叶子节点", "1-2-1"))),
-            ]).into_node(),
-        ]})
+        .push(
+            tree! { Container::new().size(INNER_W, 110.0).dir(FlexDirection::Column)
+                .pad(EdgeInsets::uniform(4.0)) => [
+                Tree::new(vec![
+                    TreeNode::new("根节点", "1")
+                        .add(TreeNode::new("子节点 A", "1-1"))
+                        .add(TreeNode::new("子节点 B", "1-2")
+                            .add(TreeNode::new("叶子节点", "1-2-1"))),
+                ]).into_node(),
+            ]},
+        )
         .section("描述列表 Descriptions")
-        .push(tree! { Container::new().size(INNER_W, 100.0).dir(FlexDirection::Column)
-            .pad(EdgeInsets::uniform(4.0)) => [
-            Descriptions::new().title("用户信息")
-                .add(DescriptionsItem::new("姓名", "张三"))
-                .add(DescriptionsItem::new("邮箱", "zhang@ex.com"))
-                .add(DescriptionsItem::new("角色", "管理员"))
-                .column(3).into_node(),
-        ]})
+        .push(
+            tree! { Container::new().size(INNER_W, 100.0).dir(FlexDirection::Column)
+                .pad(EdgeInsets::uniform(4.0)) => [
+                Descriptions::new().title("用户信息")
+                    .add(DescriptionsItem::new("姓名", "张三"))
+                    .add(DescriptionsItem::new("邮箱", "zhang@ex.com"))
+                    .add(DescriptionsItem::new("角色", "管理员"))
+                    .column(3).into_node(),
+            ]},
+        )
         .section("时间线 Timeline")
-        .push(tree! { Container::new().size(INNER_W, 130.0).dir(FlexDirection::Column)
-            .pad(EdgeInsets::uniform(4.0)) => [
-            Timeline::new()
-                .add(TimelineItem::new("创建项目").description("2024-01-15"))
-                .add(TimelineItem::new("完成设计").description("2024-02-20"))
-                .add(TimelineItem::new("部署上线").description("2024-03-10"))
-                .into_node(),
-        ]})
+        .push(
+            tree! { Container::new().size(INNER_W, 130.0).dir(FlexDirection::Column)
+                .pad(EdgeInsets::uniform(4.0)) => [
+                Timeline::new()
+                    .add(TimelineItem::new("创建项目").description("2024-01-15"))
+                    .add(TimelineItem::new("完成设计").description("2024-02-20"))
+                    .add(TimelineItem::new("部署上线").description("2024-03-10"))
+                    .into_node(),
+            ]},
+        )
         .section("日历 Calendar")
-        .push(tree! { Container::new().size(INNER_W, 240.0).dir(FlexDirection::Column)
-            .pad(EdgeInsets::uniform(4.0)) => [
-            Calendar::new().cell_size(30.0).into_node(),
-        ]})
+        .push(
+            tree! { Container::new().size(INNER_W, 240.0).dir(FlexDirection::Column)
+                .pad(EdgeInsets::uniform(4.0)) => [
+                Calendar::new().cell_size(30.0).into_node(),
+            ]},
+        )
         .section("轮播 Carousel")
         .push(
-            Carousel::new().autoplay(3.0).show_dots(true).show_arrows(true),
+            Carousel::new()
+                .autoplay(3.0)
+                .show_dots(true)
+                .show_arrows(true),
         )
         .section("徽标 Badge")
         .push(
@@ -500,21 +506,17 @@ pub fn page_data(tk: &DesignTokens) -> WidgetNode {
                 .child(Image::new(80.0, 60.0).alt("占位图")),
         )
         .section("二维码 QRCode")
-        .push(
-            row(80.0)
-                .child(QRCode::new("https://uix.dev")),
-        )
+        .push(row(80.0).child(QRCode::new("https://uix.dev")))
         .section("水印 Watermark")
-        .push(
-            row(40.0)
-                .child(Watermark::new("UIX")),
-        )
+        .push(row(40.0).child(Watermark::new("UIX")))
         .section("结果页 Result")
-        .push(tree! { Container::new().size(INNER_W, 120.0).dir(FlexDirection::Row).gap(16.0)
-            .pad(EdgeInsets::uniform(4.0)) => [
-            Result::new(ResultType::Success).title("提交成功").into_node(),
-            Result::new(ResultType::Error).title("提交失败").into_node(),
-        ]})
+        .push(
+            tree! { Container::new().size(INNER_W, 120.0).dir(FlexDirection::Row).gap(16.0)
+                .pad(EdgeInsets::uniform(4.0)) => [
+                Result::new(ResultType::Success).title("提交成功").into_node(),
+                Result::new(ResultType::Error).title("提交失败").into_node(),
+            ]},
+        )
         .build()
 }
 
@@ -539,44 +541,47 @@ pub fn page_feedback(tk: &DesignTokens) -> WidgetNode {
         )
         .section("进度条 Progress")
         .push(row(20.0).child(ProgressBar::new().progress(45.0)))
-        .push(row(20.0).child(ProgressBar::new().progress(78.0)
-            .stroke_color(tk.color_success)))
+        .push(
+            row(20.0).child(
+                ProgressBar::new()
+                    .progress(78.0)
+                    .stroke_color(tk.color_success),
+            ),
+        )
         .section("骨架屏 Skeleton")
         .push(
-            Space::new().size(SpaceSize::Small).width(INNER_W).height(80.0)
+            Space::new()
+                .size(SpaceSize::Small)
+                .width(INNER_W)
+                .height(80.0)
                 .direction(FlexDirection::Column)
-                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W, 16.0))
-                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W * 0.7, 16.0))
-                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W * 0.9, 16.0)),
+                .child(
+                    Skeleton::new()
+                        .shape(SkeletonShape::Rect)
+                        .size(INNER_W, 16.0),
+                )
+                .child(
+                    Skeleton::new()
+                        .shape(SkeletonShape::Rect)
+                        .size(INNER_W * 0.7, 16.0),
+                )
+                .child(
+                    Skeleton::new()
+                        .shape(SkeletonShape::Rect)
+                        .size(INNER_W * 0.9, 16.0),
+                ),
         )
         .section("空状态 Empty")
-        .push(
-            Empty::new().description("暂无数据"),
-        )
+        .push(Empty::new().description("暂无数据"))
         .section("模态框 Modal")
-        .push(
-            row(36.0)
-                .child(Modal::new("弹窗标题").closable(true)),
-        )
+        .push(row(36.0).child(Modal::new("弹窗标题").closable(true)))
         .section("抽屉 Drawer")
-        .push(
-            row(36.0)
-                .child(Drawer::new("抽屉标题").closable(true)),
-        )
+        .push(row(36.0).child(Drawer::new("抽屉标题").closable(true)))
         .section("气泡确认 Popconfirm")
-        .push(
-            row(36.0)
-                .child(Popconfirm::new().title("确定删除此项？")),
-        )
+        .push(row(36.0).child(Popconfirm::new().title("确定删除此项？")))
         .section("文字提示 Tooltip")
-        .push(
-            row(36.0)
-                .child(Tooltip::new("鼠标悬停查看提示").placement(TooltipPlacement::Top)),
-        )
+        .push(row(36.0).child(Tooltip::new("鼠标悬停查看提示").placement(TooltipPlacement::Top)))
         .section("气泡卡片 Popover")
-        .push(
-            row(36.0)
-                .child(Popover::new("这是气泡内容.").title("气泡标题")),
-        )
+        .push(row(36.0).child(Popover::new("这是气泡内容.").title("气泡标题")))
         .build()
 }

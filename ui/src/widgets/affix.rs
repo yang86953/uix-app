@@ -2,11 +2,11 @@
 //!
 //! 监听滚动位置变化，当 scroll_y > offset_top 时固定。
 
-use uix_platform::{Rect, Size};
 use crate::define_widget;
-use uix_graphics::GraphicsEngine;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_graphics::GraphicsEngine;
+use uix_platform::{Rect, Size};
 
 define_widget! {
     /// Affix — 固定定位容器。
@@ -66,11 +66,20 @@ impl Affix {
         self.child_height = h;
     }
 
-    pub fn is_affixed(&self) -> bool { self.affixed }
-    pub fn offset_top(mut self, v: f32) -> Self { self.offset_top = v; self }
+    pub fn is_affixed(&self) -> bool {
+        self.affixed
+    }
+    pub fn offset_top(mut self, v: f32) -> Self {
+        self.offset_top = v;
+        self
+    }
 
     /// 计算子组件应放置的位置（固定时返回视口顶部偏移，否则返回原始位置）
     pub fn child_y(&self) -> f32 {
-        if self.affixed { self.offset_top } else { self.original_y - self.scroll_y }
+        if self.affixed {
+            self.offset_top
+        } else {
+            self.original_y - self.scroll_y
+        }
     }
 }

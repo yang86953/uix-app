@@ -2,11 +2,11 @@
 //!
 //! 基于 Input 交互模式，增加触发字符检测和建议弹出。
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, GraphicsEngine};
+use uix_platform::{Point, Rect, Size};
 
 define_widget! {
     /// Mentions — @ 提及输入框。
@@ -184,14 +184,18 @@ impl Mentions {
         self
     }
 
-    pub fn value(&self) -> &str { &self.value }
+    pub fn value(&self) -> &str {
+        &self.value
+    }
 
     fn update_filtered(&mut self) {
         if self.search_text.is_empty() {
             self.filtered = self.options.clone();
         } else {
             let lower = self.search_text.to_lowercase();
-            self.filtered = self.options.iter()
+            self.filtered = self
+                .options
+                .iter()
                 .filter(|o| o.to_lowercase().contains(&lower))
                 .cloned()
                 .collect();

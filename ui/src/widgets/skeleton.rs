@@ -1,16 +1,20 @@
 //! Skeleton widget — 骨架屏加载占位（带动画闪烁）。
 
-use crate::define_widget;
 use crate::animation::core::Animation;
 use crate::api::Easing;
-use uix_platform::{Rect, Size};
-use uix_graphics::Color;
+use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Color;
+use uix_platform::{Rect, Size};
 
 /// 骨架形状。
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SkeletonShape { Rect, Circle, Text }
+pub enum SkeletonShape {
+    Rect,
+    Circle,
+    Text,
+}
 
 define_widget! {
     /// Skeleton — 加载中骨架占位，带动画闪烁效果。
@@ -70,15 +74,28 @@ define_widget! {
     }
 }
 
-impl Default for Skeleton { fn default() -> Self { Self::new() } }
+impl Default for Skeleton {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Skeleton {
     pub fn new() -> Self {
         Self {
-            shape: SkeletonShape::Rect, w: 200.0, h: 16.0,
+            shape: SkeletonShape::Rect,
+            w: 200.0,
+            h: 16.0,
             anim: Some(Animation::new(0.0, 1.0, 0.667).with_easing(Easing::Linear)),
         }
     }
-    pub fn shape(mut self, s: SkeletonShape) -> Self { self.shape = s; self }
-    pub fn size(mut self, w: f32, h: f32) -> Self { self.w = w; self.h = h; self }
+    pub fn shape(mut self, s: SkeletonShape) -> Self {
+        self.shape = s;
+        self
+    }
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.w = w;
+        self.h = h;
+        self
+    }
 }

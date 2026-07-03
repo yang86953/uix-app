@@ -5,16 +5,16 @@
 // lib.rs / api.rs 通过 `crate::types::*` 访问全部类型。
 // ============================================================================
 
-mod key;
-mod input;
 mod console;
 mod display;
-mod system;
+mod input;
+mod key;
 pub mod status;
+mod system;
 
-pub use key::*;
-pub use input::*;
 pub use console::*;
 pub use display::*;
-pub use system::*;
+pub use input::*;
+pub use key::*;
 pub use status::*;
+pub use system::*;

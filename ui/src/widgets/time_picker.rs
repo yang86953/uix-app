@@ -4,11 +4,11 @@
 
 use std::cell::Cell;
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::{Color, GraphicsEngine};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, GraphicsEngine};
+use uix_platform::{Point, Rect, Size};
 
 /// 时间结构
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -19,7 +19,10 @@ pub struct TimeValue {
 
 impl TimeValue {
     pub fn new(hour: u32, minute: u32) -> Self {
-        Self { hour: hour.min(23), minute: minute.min(59) }
+        Self {
+            hour: hour.min(23),
+            minute: minute.min(59),
+        }
     }
     pub fn format(&self) -> String {
         format!("{:02}:{:02}", self.hour, self.minute)
@@ -249,9 +252,16 @@ impl TimePicker {
         }
     }
 
-    pub fn value(self, v: TimeValue) -> Self { self.value.set(v); self }
-    pub fn selected(&self) -> TimeValue { self.value.get() }
-    pub fn set_value(&mut self, v: TimeValue) { self.value.set(v); }
+    pub fn value(self, v: TimeValue) -> Self {
+        self.value.set(v);
+        self
+    }
+    pub fn selected(&self) -> TimeValue {
+        self.value.get()
+    }
+    pub fn set_value(&mut self, v: TimeValue) {
+        self.value.set(v);
+    }
     pub fn on_change<F: FnMut(TimeValue) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

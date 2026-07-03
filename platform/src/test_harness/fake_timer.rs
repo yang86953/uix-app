@@ -3,8 +3,8 @@
 //! 主动推进时间轴，触发到期的定时器回调。
 //! 支持单次和重复定时器，追踪所有 set/clear 操作。
 
-use std::time::Duration;
 use crate::api::traits::ITimer;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct FakeTimerEntry {
@@ -45,7 +45,9 @@ pub struct FakeTimer {
 
 impl FakeTimer {
     pub fn new() -> Self {
-        Self { state: FakeTimerState::default() }
+        Self {
+            state: FakeTimerState::default(),
+        }
     }
 
     /// 推进时间，触发到期的定时器
@@ -90,7 +92,10 @@ impl FakeTimer {
 
     /// 推进到所有定时器到期（用于快速测试）
     pub fn advance_to_idle(&mut self) -> Vec<u32> {
-        let max = self.state.timers.iter()
+        let max = self
+            .state
+            .timers
+            .iter()
             .map(|t| t.interval_ms)
             .max()
             .unwrap_or(0);

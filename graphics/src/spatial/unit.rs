@@ -38,10 +38,10 @@ impl PhysicalUnit {
     pub fn to_dip(&self, dpi: f32) -> f32 {
         match self {
             PhysicalUnit::Px(v) => *v,
-            PhysicalUnit::Mm(v) => v * (dpi / 25.4),       // 1 inch = 25.4 mm
-            PhysicalUnit::Cm(v) => v * (dpi / 2.54),        // 1 inch = 2.54 cm
-            PhysicalUnit::M(v) => v * (dpi / 0.0254),       // 1 inch = 0.0254 m
-            PhysicalUnit::Pt(v) => v * (dpi / 72.0),        // 1 pt = 1/72 inch
+            PhysicalUnit::Mm(v) => v * (dpi / 25.4), // 1 inch = 25.4 mm
+            PhysicalUnit::Cm(v) => v * (dpi / 2.54), // 1 inch = 2.54 cm
+            PhysicalUnit::M(v) => v * (dpi / 0.0254), // 1 inch = 0.0254 m
+            PhysicalUnit::Pt(v) => v * (dpi / 72.0), // 1 pt = 1/72 inch
             PhysicalUnit::Inch(v) => v * dpi,
         }
     }
@@ -113,21 +113,45 @@ pub trait PhysicalUnitExt {
 }
 
 impl PhysicalUnitExt for f32 {
-    fn px(self) -> PhysicalUnit { PhysicalUnit::Px(self) }
-    fn mm(self) -> PhysicalUnit { PhysicalUnit::Mm(self) }
-    fn cm(self) -> PhysicalUnit { PhysicalUnit::Cm(self) }
-    fn m(self) -> PhysicalUnit { PhysicalUnit::M(self) }
-    fn pt(self) -> PhysicalUnit { PhysicalUnit::Pt(self) }
-    fn inch(self) -> PhysicalUnit { PhysicalUnit::Inch(self) }
+    fn px(self) -> PhysicalUnit {
+        PhysicalUnit::Px(self)
+    }
+    fn mm(self) -> PhysicalUnit {
+        PhysicalUnit::Mm(self)
+    }
+    fn cm(self) -> PhysicalUnit {
+        PhysicalUnit::Cm(self)
+    }
+    fn m(self) -> PhysicalUnit {
+        PhysicalUnit::M(self)
+    }
+    fn pt(self) -> PhysicalUnit {
+        PhysicalUnit::Pt(self)
+    }
+    fn inch(self) -> PhysicalUnit {
+        PhysicalUnit::Inch(self)
+    }
 }
 
 impl PhysicalUnitExt for i32 {
-    fn px(self) -> PhysicalUnit { PhysicalUnit::Px(self as f32) }
-    fn mm(self) -> PhysicalUnit { PhysicalUnit::Mm(self as f32) }
-    fn cm(self) -> PhysicalUnit { PhysicalUnit::Cm(self as f32) }
-    fn m(self) -> PhysicalUnit { PhysicalUnit::M(self as f32) }
-    fn pt(self) -> PhysicalUnit { PhysicalUnit::Pt(self as f32) }
-    fn inch(self) -> PhysicalUnit { PhysicalUnit::Inch(self as f32) }
+    fn px(self) -> PhysicalUnit {
+        PhysicalUnit::Px(self as f32)
+    }
+    fn mm(self) -> PhysicalUnit {
+        PhysicalUnit::Mm(self as f32)
+    }
+    fn cm(self) -> PhysicalUnit {
+        PhysicalUnit::Cm(self as f32)
+    }
+    fn m(self) -> PhysicalUnit {
+        PhysicalUnit::M(self as f32)
+    }
+    fn pt(self) -> PhysicalUnit {
+        PhysicalUnit::Pt(self as f32)
+    }
+    fn inch(self) -> PhysicalUnit {
+        PhysicalUnit::Inch(self as f32)
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -148,13 +172,21 @@ pub trait AngleExt {
 }
 
 impl AngleExt for f32 {
-    fn deg(self) -> f32 { self * std::f32::consts::PI / 180.0 }
-    fn rad(self) -> f32 { self }
+    fn deg(self) -> f32 {
+        self * std::f32::consts::PI / 180.0
+    }
+    fn rad(self) -> f32 {
+        self
+    }
 }
 
 impl AngleExt for i32 {
-    fn deg(self) -> f32 { (self as f32) * std::f32::consts::PI / 180.0 }
-    fn rad(self) -> f32 { self as f32 }
+    fn deg(self) -> f32 {
+        (self as f32) * std::f32::consts::PI / 180.0
+    }
+    fn rad(self) -> f32 {
+        self as f32
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

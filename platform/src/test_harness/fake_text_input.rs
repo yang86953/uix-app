@@ -11,7 +11,11 @@ pub struct FakeTextInputState {
 
 impl Default for FakeTextInputState {
     fn default() -> Self {
-        Self { active: false, start_calls: 0, stop_calls: 0 }
+        Self {
+            active: false,
+            start_calls: 0,
+            stop_calls: 0,
+        }
     }
 }
 
@@ -22,7 +26,9 @@ pub struct FakeTextInput {
 
 impl FakeTextInput {
     pub fn new() -> Self {
-        Self { state: FakeTextInputState::default() }
+        Self {
+            state: FakeTextInputState::default(),
+        }
     }
 
     pub fn clear_history(&mut self) {

@@ -3,12 +3,12 @@
 //! 与 Alert 不同，Message 浮动在所有内容之上，支持 success/info/warning/error
 //! 四类状态，可配置持续时长，支持手动关闭。通过静态队列管理多消息叠加。
 
-use uix_platform::{Rect, Size};
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use uix_platform::{Rect, Size};
 
 /// 消息类型。
 /// （已统一为 uix_platform::StatusLevel，保留别名以兼容旧代码。）
@@ -27,7 +27,7 @@ pub enum MessagePlacement {
 pub struct MessageItem {
     pub type_: MessageType,
     pub content: String,
-    pub duration_ms: u64,  // 0 = 不自动消失
+    pub duration_ms: u64, // 0 = 不自动消失
     pub closable: bool,
 }
 
@@ -147,8 +147,10 @@ impl Message {
         }
     }
 
-    pub fn placement(mut self, p: MessagePlacement) -> Self { self.placement = p; self }
-
+    pub fn placement(mut self, p: MessagePlacement) -> Self {
+        self.placement = p;
+        self
+    }
 
     const MSG_DURATION_SUCCESS: u64 = 3000;
     const MSG_DURATION_INFO: u64 = 3000;
@@ -160,18 +162,53 @@ impl Message {
     pub fn add(&self, item: MessageItem) {
         let mut q = self.queue.borrow_mut();
         q.push(item);
-        self.remaining.borrow_mut().push(q.last().map(|i| i.duration_ms).unwrap_or(Self::MSG_DURATION_INFO));
-        self.msg_height.set(q.len() as f32 * Self::MSG_HEIGHT_PER_ITEM);
+        self.remaining.borrow_mut().push(
+            q.last()
+                .map(|i| i.duration_ms)
+                .unwrap_or(Self::MSG_DURATION_INFO),
+        );
+        self.msg_height
+            .set(q.len() as f32 * Self::MSG_HEIGHT_PER_ITEM);
     }
 
     /// 便捷方法：成功消息。
-    pub fn success(&self, content: &str) { self.add(MessageItem { type_: MessageType::Success, content: content.into(), duration_ms: Self::MSG_DURATION_SUCCESS, closable: true }); }
+    pub fn success(&self, content: &str) {
+        self.add(MessageItem {
+            type_: MessageType::Success,
+            content: content.into(),
+            duration_ms: Self::MSG_DURATION_SUCCESS,
+            closable: true,
+        });
+    }
     /// 便捷方法：信息消息。
-    pub fn info(&self, content: &str) { self.add(MessageItem { type_: MessageType::Info, content: content.into(), duration_ms: Self::MSG_DURATION_INFO, closable: true }); }
+    pub fn info(&self, content: &str) {
+        self.add(MessageItem {
+            type_: MessageType::Info,
+            content: content.into(),
+            duration_ms: Self::MSG_DURATION_INFO,
+            closable: true,
+        });
+    }
     /// 便捷方法：警告消息。
-    pub fn warning(&self, content: &str) { self.add(MessageItem { type_: MessageType::Warning, content: content.into(), duration_ms: Self::MSG_DURATION_WARNING, closable: true }); }
+    pub fn warning(&self, content: &str) {
+        self.add(MessageItem {
+            type_: MessageType::Warning,
+            content: content.into(),
+            duration_ms: Self::MSG_DURATION_WARNING,
+            closable: true,
+        });
+    }
     /// 便捷方法：错误消息。
-    pub fn error(&self, content: &str) { self.add(MessageItem { type_: MessageType::Error, content: content.into(), duration_ms: Self::MSG_DURATION_ERROR, closable: true }); }
+    pub fn error(&self, content: &str) {
+        self.add(MessageItem {
+            type_: MessageType::Error,
+            content: content.into(),
+            duration_ms: Self::MSG_DURATION_ERROR,
+            closable: true,
+        });
+    }
     /// 获取队列引用（供外部管理）。
-    pub fn queue(&self) -> Rc<RefCell<Vec<MessageItem>>> { self.queue.clone() }
+    pub fn queue(&self) -> Rc<RefCell<Vec<MessageItem>>> {
+        self.queue.clone()
+    }
 }

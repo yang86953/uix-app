@@ -79,5 +79,3 @@ pub(super) struct CREATESTRUCTW {
     pub lpszClass: *const u16,
     pub dwExStyle: u32,
 }
-
-

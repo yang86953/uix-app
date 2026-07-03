@@ -52,7 +52,9 @@ pub struct MiddlewarePipeline {
 
 impl MiddlewarePipeline {
     pub fn new() -> Self {
-        Self { middlewares: Vec::new() }
+        Self {
+            middlewares: Vec::new(),
+        }
     }
 
     pub fn add<T: Middleware + 'static>(&mut self, mw: T) {
@@ -108,16 +110,20 @@ impl Middleware for LogMiddleware {
         next(ctx);
         let elapsed = start.elapsed();
         if ctx.succeeded {
-            crate::log::info_fn(format!("[OK] {} {} — {}ms",
+            crate::log::info_fn(format!(
+                "[OK] {} {} — {}ms",
                 ctx.service_name,
                 ctx.operation,
-                elapsed.as_millis()));
+                elapsed.as_millis()
+            ));
         } else {
-            crate::log::warn_fn(format!("[FAIL] {} {} — {}ms: {}",
+            crate::log::warn_fn(format!(
+                "[FAIL] {} {} — {}ms: {}",
                 ctx.service_name,
                 ctx.operation,
                 elapsed.as_millis(),
-                ctx.error_message));
+                ctx.error_message
+            ));
         }
     }
 
@@ -156,15 +162,18 @@ impl Middleware for RetryMiddleware {
             }
 
             if attempt >= self.max_retries {
-                crate::log::warn_fn(format!("[RETRY] {} exhausted after {} attempts",
-                    ctx.service_name,
-                    attempt));
+                crate::log::warn_fn(format!(
+                    "[RETRY] {} exhausted after {} attempts",
+                    ctx.service_name, attempt
+                ));
                 return;
             }
 
-            crate::log::debug_fn(format!("[RETRY] {} attempt {} failed, retrying...",
+            crate::log::debug_fn(format!(
+                "[RETRY] {} attempt {} failed, retrying...",
                 ctx.service_name,
-                attempt + 1));
+                attempt + 1
+            ));
         }
     }
 

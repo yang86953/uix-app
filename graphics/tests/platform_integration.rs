@@ -16,13 +16,11 @@ use uix_graphics::engine::cpu::pixel_surface::PixelSurface;
 use uix_graphics::engine::cpu::software::SoftwareEngine;
 use uix_graphics::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 use uix_platform::api::traits::{
-    IGraphicsContext, IWindowManager, IPresenter, IClipboard,
-    PlatformWindow, IDisplay, Platform,
+    IClipboard, IDisplay, IGraphicsContext, IPresenter, IWindowManager, Platform, PlatformWindow,
 };
 use uix_platform::geometry::Rect;
 use uix_platform::test_harness::{
-    FakePlatform, FakeGraphicsContext, FakeWindow,
-    FakeWindowManager, FakePresenter, FakeDisplay,
+    FakeDisplay, FakeGraphicsContext, FakePlatform, FakePresenter, FakeWindow, FakeWindowManager,
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -63,7 +61,7 @@ fn fake_graphics_context_initialize_sets_size_and_flag() {
 fn fake_graphics_context_initialize_overrides_preset() {
     let mut ctx = FakeGraphicsContext::with_size(640, 480);
     ctx.initialize(std::ptr::null_mut(), 800, 600).unwrap();
-    assert_eq!(ctx.width(), 800);  // initialize 覆盖
+    assert_eq!(ctx.width(), 800); // initialize 覆盖
     assert_eq!(ctx.height(), 600);
 }
 
@@ -625,7 +623,11 @@ fn end_to_end_render_rect_to_presenter() {
     let mut canvas = CpuCanvas2D::new(surf);
 
     // 渲染一个红色矩形
-    canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::from_rgba(255, 0, 0, 255), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 5.0, 5.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
 
     // 提取像素
     let pixels = canvas.surface().pixels();
@@ -634,7 +636,9 @@ fn end_to_end_render_rect_to_presenter() {
     // 通过 FakePresenter 呈现
     let mut presenter = FakePresenter::new();
     presenter.resize(10, 10).unwrap();
-    presenter.present(pixels, 10, 10, Some((0, 0, 5, 5))).unwrap();
+    presenter
+        .present(pixels, 10, 10, Some((0, 0, 5, 5)))
+        .unwrap();
 
     // 验证呈现器收到正确的像素数据
     assert_eq!(presenter.state.present_calls.len(), 1);
@@ -644,7 +648,10 @@ fn end_to_end_render_rect_to_presenter() {
     // (5,5) 应在矩形外，仍为透明
     assert_eq!(presenter.state.last_pixels[5 * 10 + 5], 0x00000000);
     // dirty_rect 参数正确传递
-    assert_eq!(presenter.state.present_calls[0].dirty_rect, Some((0, 0, 5, 5)));
+    assert_eq!(
+        presenter.state.present_calls[0].dirty_rect,
+        Some((0, 0, 5, 5))
+    );
 }
 
 /// 端到端：CpuCanvas2D 渲染圆形 → 像素数据 → FakePresenter 验证。
@@ -677,9 +684,9 @@ fn end_to_end_pixel_surface_to_presenter_all_colors() {
 
     // 渲染四个不同颜色的像素
     let colors = [
-        Color::from_rgba(255, 0, 0, 255),    // 红
-        Color::from_rgba(0, 255, 0, 255),    // 绿
-        Color::from_rgba(0, 0, 255, 255),    // 蓝
+        Color::from_rgba(255, 0, 0, 255),     // 红
+        Color::from_rgba(0, 255, 0, 255),     // 绿
+        Color::from_rgba(0, 0, 255, 255),     // 蓝
         Color::from_rgba(255, 255, 255, 255), // 白
     ];
     for (i, color) in colors.iter().enumerate() {
@@ -709,7 +716,11 @@ fn end_to_end_scroll_region_to_presenter() {
     let mut canvas = CpuCanvas2D::new(surf);
 
     // 在顶部绘制白色条带
-    canvas.fill_rect(Rect::new(0.0, 0.0, 10.0, 3.0), Color::from_rgba(255, 255, 255, 255), None);
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 10.0, 3.0),
+        Color::from_rgba(255, 255, 255, 255),
+        None,
+    );
 
     // scroll_region: 向下滚动 4px（内容上移）
     // dy=4: src=(0,4,10,10) → dst=(0,0)
@@ -725,8 +736,10 @@ fn end_to_end_scroll_region_to_presenter() {
 
     // scroll_region(dx=0, dy=4): src=(0,4,10,10) → dst=(0,0)
     // src 起始 y=4 在填充区外（填充 y=0..3），因此 (0,0) 得到透明像素
-    assert_eq!(presenter.state.last_pixels[0], 0x00000000,
-        "scroll dy=4 后 (0,0) 被 src=(0,4) 的透明像素覆盖");
+    assert_eq!(
+        presenter.state.last_pixels[0], 0x00000000,
+        "scroll dy=4 后 (0,0) 被 src=(0,4) 的透明像素覆盖"
+    );
 }
 
 /// 端到端：SoftwareEngine 完整帧生命周期不 panic。
@@ -739,11 +752,21 @@ fn end_to_end_software_engine_frame_no_panic() {
     let result = engine.begin_frame(UpdateStrategy::FullRedraw);
     {
         let canvas = engine.canvas_2d();
-        canvas.fill_rect(Rect::new(0.0, 0.0, 5.0, 5.0), Color::from_rgba(0, 0, 255, 255), None);
+        canvas.fill_rect(
+            Rect::new(0.0, 0.0, 5.0, 5.0),
+            Color::from_rgba(0, 0, 255, 255),
+            None,
+        );
     }
     let result2 = engine.end_frame();
-    assert!(matches!(result, uix_graphics::engine::RenderOutcome::Present(_)));
-    assert!(matches!(result2, uix_graphics::engine::RenderOutcome::Present(_)));
+    assert!(matches!(
+        result,
+        uix_graphics::engine::RenderOutcome::Present(_)
+    ));
+    assert!(matches!(
+        result2,
+        uix_graphics::engine::RenderOutcome::Present(_)
+    ));
 
     // Overlay 帧
     engine.begin_frame(UpdateStrategy::Overlay(vec![Rect::new(2.0, 2.0, 3.0, 3.0)]));
@@ -751,7 +774,10 @@ fn end_to_end_software_engine_frame_no_panic() {
 
     // Overlay 空列表 → Present（当前实现不返回 Idle，推全裁剪 + overlay 不清除）
     let overlay = engine.begin_frame(UpdateStrategy::Overlay(vec![]));
-    assert!(matches!(overlay, uix_graphics::engine::RenderOutcome::Present(_)));
+    assert!(matches!(
+        overlay,
+        uix_graphics::engine::RenderOutcome::Present(_)
+    ));
 }
 
 /// 端到端：SoftwareEngine 离屏缓冲 → blit → 不 panic。
@@ -764,7 +790,11 @@ fn end_to_end_offscreen_blit_no_panic() {
 
     // 在离屏上绘制
     if let Some(canvas) = engine.offscreen_canvas(&offscreen) {
-        canvas.fill_rect(Rect::new(0.0, 0.0, 10.0, 10.0), Color::from_rgba(255, 255, 255, 255), None);
+        canvas.fill_rect(
+            Rect::new(0.0, 0.0, 10.0, 10.0),
+            Color::from_rgba(255, 255, 255, 255),
+            None,
+        );
     }
 
     // blit 到主表面
@@ -816,18 +846,27 @@ fn cross_layer_full_pipeline_via_fake_platform() {
     let mut pf = FakePlatform::new();
 
     // 通过平台创建窗口
-    let mut window = pf.window_manager().create_window("Graphics Test", 30, 30).unwrap();
+    let mut window = pf
+        .window_manager()
+        .create_window("Graphics Test", 30, 30)
+        .unwrap();
     window.show();
 
     // 创建引擎并初始化（匹配窗口尺寸）
     let mut engine = SoftwareEngine::new();
-    engine.initialize(window.properties().width(), window.properties().height()).unwrap();
+    engine
+        .initialize(window.properties().width(), window.properties().height())
+        .unwrap();
 
     // 渲染帧
     engine.begin_frame(UpdateStrategy::FullRedraw);
     {
         let canvas = engine.canvas_2d();
-        canvas.fill_rect(Rect::new(5.0, 5.0, 10.0, 10.0), Color::from_rgba(255, 255, 255, 255), None);
+        canvas.fill_rect(
+            Rect::new(5.0, 5.0, 10.0, 10.0),
+            Color::from_rgba(255, 255, 255, 255),
+            None,
+        );
     }
     engine.end_frame();
 

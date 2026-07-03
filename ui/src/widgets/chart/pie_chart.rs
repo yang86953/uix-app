@@ -1,10 +1,10 @@
 //! PieChart — pie / donut chart with proportional circular sectors.
 
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
-use uix_graphics::Color;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
+use uix_graphics::Color;
+use uix_platform::{Point, Rect, Size};
 
 #[derive(Debug, Clone)]
 pub struct PieData {
@@ -15,7 +15,11 @@ pub struct PieData {
 
 impl PieData {
     pub fn new(label: impl Into<String>, value: f32, color: Color) -> Self {
-        Self { label: label.into(), value, color }
+        Self {
+            label: label.into(),
+            value,
+            color,
+        }
     }
 }
 
@@ -97,10 +101,29 @@ define_widget! {
     }
 }
 
-impl Default for PieChart { fn default() -> Self { Self::new() } }
+impl Default for PieChart {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl PieChart {
-    pub fn new() -> Self { Self { data: Vec::new(), fixed_size: 0.0, hole_radius: 0.0 } }
-    pub fn data(mut self, d: Vec<PieData>) -> Self { self.data = d; self }
-    pub fn size(mut self, s: f32) -> Self { self.fixed_size = s; self }
-    pub fn donut(mut self, r: f32) -> Self { self.hole_radius = r.clamp(0.0, 0.9); self }
+    pub fn new() -> Self {
+        Self {
+            data: Vec::new(),
+            fixed_size: 0.0,
+            hole_radius: 0.0,
+        }
+    }
+    pub fn data(mut self, d: Vec<PieData>) -> Self {
+        self.data = d;
+        self
+    }
+    pub fn size(mut self, s: f32) -> Self {
+        self.fixed_size = s;
+        self
+    }
+    pub fn donut(mut self, r: f32) -> Self {
+        self.hole_radius = r.clamp(0.0, 0.9);
+        self
+    }
 }

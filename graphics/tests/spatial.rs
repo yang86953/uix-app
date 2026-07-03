@@ -1,10 +1,10 @@
 //! uix-graphics 空间坐标系统集成测试。
 //! 补充单元测试，直接从公开 API 测试 SpatialContext、PhysicalUnit 等。
 
-use uix_graphics::null_engine::NullEngine;
 use uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+use uix_graphics::null_engine::NullEngine;
 use uix_graphics::spatial::{
-    AABB3D, Orientation, PhysicalUnit, Vec2, Quad2D, SpatialContext, Vec3,
+    Orientation, PhysicalUnit, Quad2D, SpatialContext, Vec2, Vec3, AABB3D,
 };
 
 // ════════════════════════════════════════════════════════════════════════════

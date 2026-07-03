@@ -38,31 +38,69 @@ pub trait WindowOps {
     fn native_handle(&self) -> *mut std::ffi::c_void;
 
     // ── 窗口外观 ─────────────────────────────────────────
-    fn os_center_on_screen(&mut self) { unimpl("os_center_on_screen"); }
-    fn os_raise(&mut self) { unimpl("os_raise"); }
-    fn os_lower(&mut self) { unimpl("os_lower"); }
-    fn os_set_icon(&mut self, _p: &str) { unimpl("os_set_icon"); }
-    fn os_flash(&mut self) { unimpl("os_flash"); }
+    fn os_center_on_screen(&mut self) {
+        unimpl("os_center_on_screen");
+    }
+    fn os_raise(&mut self) {
+        unimpl("os_raise");
+    }
+    fn os_lower(&mut self) {
+        unimpl("os_lower");
+    }
+    fn os_set_icon(&mut self, _p: &str) {
+        unimpl("os_set_icon");
+    }
+    fn os_flash(&mut self) {
+        unimpl("os_flash");
+    }
 
     // ── 尺寸约束 ─────────────────────────────────────────
-    fn os_set_min_size(&mut self, _w: i32, _h: i32) { unimpl("os_set_min_size"); }
-    fn os_set_max_size(&mut self, _w: i32, _h: i32) { unimpl("os_set_max_size"); }
-    fn os_set_position(&mut self, _x: i32, _y: i32) { unimpl("os_set_position"); }
+    fn os_set_min_size(&mut self, _w: i32, _h: i32) {
+        unimpl("os_set_min_size");
+    }
+    fn os_set_max_size(&mut self, _w: i32, _h: i32) {
+        unimpl("os_set_max_size");
+    }
+    fn os_set_position(&mut self, _x: i32, _y: i32) {
+        unimpl("os_set_position");
+    }
 
     // ── 窗口状态 ─────────────────────────────────────────
-    fn os_set_resizable(&mut self, _r: bool) { unimpl("os_set_resizable"); }
-    fn os_maximize(&mut self) { unimpl("os_maximize"); }
-    fn os_minimize(&mut self) { unimpl("os_minimize"); }
-    fn os_restore(&mut self) { unimpl("os_restore"); }
-    fn os_set_borderless(&mut self, _b: bool) { unimpl("os_set_borderless"); }
-    fn os_set_fullscreen(&mut self, _f: bool) { unimpl("os_set_fullscreen"); }
-    fn os_set_always_on_top(&mut self, _on: bool) { unimpl("os_set_always_on_top"); }
-    fn os_set_opacity(&mut self, _o: f32) { unimpl("os_set_opacity"); }
+    fn os_set_resizable(&mut self, _r: bool) {
+        unimpl("os_set_resizable");
+    }
+    fn os_maximize(&mut self) {
+        unimpl("os_maximize");
+    }
+    fn os_minimize(&mut self) {
+        unimpl("os_minimize");
+    }
+    fn os_restore(&mut self) {
+        unimpl("os_restore");
+    }
+    fn os_set_borderless(&mut self, _b: bool) {
+        unimpl("os_set_borderless");
+    }
+    fn os_set_fullscreen(&mut self, _f: bool) {
+        unimpl("os_set_fullscreen");
+    }
+    fn os_set_always_on_top(&mut self, _on: bool) {
+        unimpl("os_set_always_on_top");
+    }
+    fn os_set_opacity(&mut self, _o: f32) {
+        unimpl("os_set_opacity");
+    }
 
     // ── 特性开关 ─────────────────────────────────────────
-    fn os_start_text_input(&mut self) { unimpl("os_start_text_input"); }
-    fn os_stop_text_input(&mut self) { unimpl("os_stop_text_input"); }
-    fn os_enable_file_drop(&mut self, _e: bool) { unimpl("os_enable_file_drop"); }
+    fn os_start_text_input(&mut self) {
+        unimpl("os_start_text_input");
+    }
+    fn os_stop_text_input(&mut self) {
+        unimpl("os_stop_text_input");
+    }
+    fn os_enable_file_drop(&mut self, _e: bool) {
+        unimpl("os_enable_file_drop");
+    }
 
     // ── 几何通知 ─────────────────────────────────────────
     fn os_resize_notify(&mut self, _w: i32, _h: i32) {}
@@ -75,7 +113,10 @@ pub trait WindowOps {
 
 /// 报告未实现的窗口操作。
 pub fn unimpl(method: &str) {
-    crate::log::debug_fn(format!("WindowOps::{} 未实现！该平台不支持此窗口操作。", method));
+    crate::log::debug_fn(format!(
+        "WindowOps::{} 未实现！该平台不支持此窗口操作。",
+        method
+    ));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -110,7 +151,12 @@ pub struct PlatformWindowCore<O: WindowOps> {
 
 impl<O: WindowOps> PlatformWindowCore<O> {
     pub fn new(state: Rc<RefCell<WindowState>>, ops: O, presenter: Box<dyn IPresenter>) -> Self {
-        Self { state, ops, presenter, gpu_ctx: None }
+        Self {
+            state,
+            ops,
+            presenter,
+            gpu_ctx: None,
+        }
     }
 
     /// 创建带 GPU 上下文的窗口（GPU/Hybrid 渲染模式）。
@@ -120,7 +166,12 @@ impl<O: WindowOps> PlatformWindowCore<O> {
         presenter: Box<dyn IPresenter>,
         gpu_ctx: Box<dyn IGraphicsContext>,
     ) -> Self {
-        Self { state, ops, presenter, gpu_ctx: Some(gpu_ctx) }
+        Self {
+            state,
+            ops,
+            presenter,
+            gpu_ctx: Some(gpu_ctx),
+        }
     }
 
     pub fn state_rc(&self) -> Rc<RefCell<WindowState>> {
@@ -171,13 +222,26 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         state_write!(self.state, height, height);
         self.ops.os_resize_notify(width, height);
         if let Err(e) = self.presenter.resize(width, height) {
-            crate::log::warn_fn(format!("resize_notify: presenter.resize({}, {}) failed: {}", width, height, e.short_what()));
+            crate::log::warn_fn(format!(
+                "resize_notify: presenter.resize({}, {}) failed: {}",
+                width,
+                height,
+                e.short_what()
+            ));
         }
     }
-    fn properties(&self) -> &dyn IWindowProperties { self }
-    fn properties_mut(&mut self) -> &mut dyn IWindowProperties { self }
-    fn presenter(&mut self) -> &mut dyn IPresenter { self.presenter.as_mut() }
-    fn native_handle(&self) -> &dyn INativeHandle { self }
+    fn properties(&self) -> &dyn IWindowProperties {
+        self
+    }
+    fn properties_mut(&mut self) -> &mut dyn IWindowProperties {
+        self
+    }
+    fn presenter(&mut self) -> &mut dyn IPresenter {
+        self.presenter.as_mut()
+    }
+    fn native_handle(&self) -> &dyn INativeHandle {
+        self
+    }
 
     fn graphics_context(&mut self) -> Option<&mut dyn IGraphicsContext> {
         match self.gpu_ctx {
@@ -196,8 +260,12 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
-    fn width(&self) -> i32 { state_read!(self.state, width) }
-    fn height(&self) -> i32 { state_read!(self.state, height) }
+    fn width(&self) -> i32 {
+        state_read!(self.state, width)
+    }
+    fn height(&self) -> i32 {
+        state_read!(self.state, height)
+    }
 
     fn set_size(&mut self, w: i32, h: i32) {
         state_write!(self.state, width, w);
@@ -205,8 +273,12 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         self.ops.os_set_size(w, h);
     }
 
-    fn set_minimum_size(&mut self, w: i32, h: i32) { self.ops.os_set_min_size(w, h); }
-    fn set_maximum_size(&mut self, w: i32, h: i32) { self.ops.os_set_max_size(w, h); }
+    fn set_minimum_size(&mut self, w: i32, h: i32) {
+        self.ops.os_set_min_size(w, h);
+    }
+    fn set_maximum_size(&mut self, w: i32, h: i32) {
+        self.ops.os_set_max_size(w, h);
+    }
 
     fn position(&self) -> crate::api::types::Point {
         crate::api::types::Point::new(
@@ -220,25 +292,66 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         self.ops.os_set_position(x, y);
     }
 
-    fn set_resizable(&mut self, r: bool) { state_write!(self.state, resizable, r); self.ops.os_set_resizable(r); }
-    fn is_maximized(&self) -> bool { state_read!(self.state, maximized) }
-    fn is_minimized(&self) -> bool { state_read!(self.state, minimized) }
-    fn maximize(&mut self) { state_write!(self.state, maximized, true); state_write!(self.state, minimized, false); self.ops.os_maximize(); }
-    fn minimize(&mut self) { state_write!(self.state, minimized, true); state_write!(self.state, maximized, false); self.ops.os_minimize(); }
-    fn restore(&mut self) { state_write!(self.state, maximized, false); state_write!(self.state, minimized, false); self.ops.os_restore(); }
-    fn set_borderless(&mut self, b: bool) { state_write!(self.state, borderless, b); self.ops.os_set_borderless(b); }
+    fn set_resizable(&mut self, r: bool) {
+        state_write!(self.state, resizable, r);
+        self.ops.os_set_resizable(r);
+    }
+    fn is_maximized(&self) -> bool {
+        state_read!(self.state, maximized)
+    }
+    fn is_minimized(&self) -> bool {
+        state_read!(self.state, minimized)
+    }
+    fn maximize(&mut self) {
+        state_write!(self.state, maximized, true);
+        state_write!(self.state, minimized, false);
+        self.ops.os_maximize();
+    }
+    fn minimize(&mut self) {
+        state_write!(self.state, minimized, true);
+        state_write!(self.state, maximized, false);
+        self.ops.os_minimize();
+    }
+    fn restore(&mut self) {
+        state_write!(self.state, maximized, false);
+        state_write!(self.state, minimized, false);
+        self.ops.os_restore();
+    }
+    fn set_borderless(&mut self, b: bool) {
+        state_write!(self.state, borderless, b);
+        self.ops.os_set_borderless(b);
+    }
 
     fn set_fullscreen(&mut self, f: bool) {
-        if f == state_read!(self.state, fullscreen) { return; }
+        if f == state_read!(self.state, fullscreen) {
+            return;
+        }
         state_write!(self.state, fullscreen, f);
         self.ops.os_set_fullscreen(f);
     }
-    fn is_fullscreen(&self) -> bool { state_read!(self.state, fullscreen) }
-    fn set_always_on_top(&mut self, on: bool) { state_write!(self.state, always_on_top, on); self.ops.os_set_always_on_top(on); }
-    fn set_window_opacity(&mut self, opacity: f32) { state_write!(self.state, opacity, opacity); self.ops.os_set_opacity(opacity); }
-    fn start_text_input(&mut self) { state_write!(self.state, text_input_active, true); self.ops.os_start_text_input(); }
-    fn stop_text_input(&mut self) { state_write!(self.state, text_input_active, false); self.ops.os_stop_text_input(); }
-    fn enable_file_drop(&mut self, enable: bool) { state_write!(self.state, file_drop_enabled, enable); self.ops.os_enable_file_drop(enable); }
+    fn is_fullscreen(&self) -> bool {
+        state_read!(self.state, fullscreen)
+    }
+    fn set_always_on_top(&mut self, on: bool) {
+        state_write!(self.state, always_on_top, on);
+        self.ops.os_set_always_on_top(on);
+    }
+    fn set_window_opacity(&mut self, opacity: f32) {
+        state_write!(self.state, opacity, opacity);
+        self.ops.os_set_opacity(opacity);
+    }
+    fn start_text_input(&mut self) {
+        state_write!(self.state, text_input_active, true);
+        self.ops.os_start_text_input();
+    }
+    fn stop_text_input(&mut self) {
+        state_write!(self.state, text_input_active, false);
+        self.ops.os_stop_text_input();
+    }
+    fn enable_file_drop(&mut self, enable: bool) {
+        state_write!(self.state, file_drop_enabled, enable);
+        self.ops.os_enable_file_drop(enable);
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

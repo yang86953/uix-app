@@ -3,12 +3,12 @@
 //! 支持横向步骤条，步骤状态（wait/process/finish/error），
 //! 自定义当前步骤，可点击切换。
 
-use uix_platform::{Rect, Size};
 use crate::define_widget;
-use uix_graphics::Color;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 use std::cell::Cell;
+use uix_graphics::Color;
+use uix_platform::{Rect, Size};
 
 /// 步骤状态。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -128,13 +128,31 @@ define_widget! {
 impl Steps {
     pub fn new(steps: Vec<Step>) -> Self {
         let current = Cell::new(0);
-        Self { steps, current, direction: true, on_change: None, last_frame_and_step_w: Cell::new(None) }
+        Self {
+            steps,
+            current,
+            direction: true,
+            on_change: None,
+            last_frame_and_step_w: Cell::new(None),
+        }
     }
-    pub fn current(self, v: usize) -> Self { self.current.set(v); self }
-    pub fn get_current(&self) -> usize { self.current.get() }
-    pub fn set_current(&self, v: usize) { self.current.set(v); }
-    pub fn horizontal(mut self) -> Self { self.direction = true; self }
-    pub fn step_count(&self) -> usize { self.steps.len() }
+    pub fn current(self, v: usize) -> Self {
+        self.current.set(v);
+        self
+    }
+    pub fn get_current(&self) -> usize {
+        self.current.get()
+    }
+    pub fn set_current(&self, v: usize) {
+        self.current.set(v);
+    }
+    pub fn horizontal(mut self) -> Self {
+        self.direction = true;
+        self
+    }
+    pub fn step_count(&self) -> usize {
+        self.steps.len()
+    }
     pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self
@@ -143,8 +161,18 @@ impl Steps {
 
 impl Step {
     pub fn new(title: &str) -> Self {
-        Self { title: title.to_string(), description: String::new(), status: StepStatus::Wait }
+        Self {
+            title: title.to_string(),
+            description: String::new(),
+            status: StepStatus::Wait,
+        }
     }
-    pub fn description(mut self, d: &str) -> Self { self.description = d.to_string(); self }
-    pub fn status(mut self, s: StepStatus) -> Self { self.status = s; self }
+    pub fn description(mut self, d: &str) -> Self {
+        self.description = d.to_string();
+        self
+    }
+    pub fn status(mut self, s: StepStatus) -> Self {
+        self.status = s;
+        self
+    }
 }

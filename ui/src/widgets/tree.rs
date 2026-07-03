@@ -1,7 +1,7 @@
-use uix_platform::{Point, Rect, Size};
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
+use uix_platform::{Point, Rect, Size};
 
 /// 树节点。
 #[derive(Debug, Clone)]
@@ -171,19 +171,32 @@ define_widget! {
 impl Tree {
     pub fn new(nodes: Vec<TreeNode>) -> Self {
         let mut tree = Self {
-            nodes, flat: Vec::new(), selected_key: String::new(),
-            selected_keys: Vec::new(), expanded_keys: Vec::new(),
-            load_data: None, multiple: false,
+            nodes,
+            flat: Vec::new(),
+            selected_key: String::new(),
+            selected_keys: Vec::new(),
+            expanded_keys: Vec::new(),
+            load_data: None,
+            multiple: false,
         };
         tree.flatten();
         tree
     }
 
-    pub fn selected_key(&self) -> &str { &self.selected_key }
-    pub fn selected_keys(&self) -> &[String] { &self.selected_keys }
-    pub fn set_selected_key(&mut self, key: &str) { self.selected_key = key.to_string(); }
+    pub fn selected_key(&self) -> &str {
+        &self.selected_key
+    }
+    pub fn selected_keys(&self) -> &[String] {
+        &self.selected_keys
+    }
+    pub fn set_selected_key(&mut self, key: &str) {
+        self.selected_key = key.to_string();
+    }
 
-    pub fn multiple(mut self, v: bool) -> Self { self.multiple = v; self }
+    pub fn multiple(mut self, v: bool) -> Self {
+        self.multiple = v;
+        self
+    }
     pub fn load_data<F: FnMut(&str) -> Vec<TreeNode> + 'static>(mut self, f: F) -> Self {
         self.load_data = Some(Box::new(f));
         self
@@ -202,7 +215,9 @@ impl Tree {
 
     fn find_in_nodes<'a>(nodes: &'a mut Vec<TreeNode>, key: &str) -> Option<&'a mut TreeNode> {
         for node in nodes.iter_mut() {
-            if node.key == key { return Some(node); }
+            if node.key == key {
+                return Some(node);
+            }
             if let Some(found) = Self::find_in_nodes(&mut node.children, key) {
                 return Some(found);
             }
@@ -245,15 +260,41 @@ impl Tree {
 impl TreeNode {
     pub fn new(title: &str, key: &str) -> Self {
         Self {
-            title: title.to_string(), key: key.to_string(), icon: String::new(),
-            children: Vec::new(), disabled: false, checkable: false,
-            checked: false, draggable: false, is_leaf: true,
+            title: title.to_string(),
+            key: key.to_string(),
+            icon: String::new(),
+            children: Vec::new(),
+            disabled: false,
+            checkable: false,
+            checked: false,
+            draggable: false,
+            is_leaf: true,
         }
     }
-    pub fn icon(mut self, i: &str) -> Self { self.icon = i.to_string(); self }
-    pub fn children(mut self, c: Vec<TreeNode>) -> Self { self.children = c; self.is_leaf = false; self }
-    pub fn add(mut self, child: TreeNode) -> Self { self.children.push(child); self.is_leaf = false; self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn checkable(mut self, v: bool) -> Self { self.checkable = v; self }
-    pub fn draggable(mut self, v: bool) -> Self { self.draggable = v; self }
+    pub fn icon(mut self, i: &str) -> Self {
+        self.icon = i.to_string();
+        self
+    }
+    pub fn children(mut self, c: Vec<TreeNode>) -> Self {
+        self.children = c;
+        self.is_leaf = false;
+        self
+    }
+    pub fn add(mut self, child: TreeNode) -> Self {
+        self.children.push(child);
+        self.is_leaf = false;
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn checkable(mut self, v: bool) -> Self {
+        self.checkable = v;
+        self
+    }
+    pub fn draggable(mut self, v: bool) -> Self {
+        self.draggable = v;
+        self
+    }
 }

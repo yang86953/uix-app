@@ -137,4 +137,3 @@ impl Animation<f64> {
         Self::new(1.0, 0.0, duration).with_easing(Easing::antd_default())
     }
 }
-

@@ -1,10 +1,10 @@
 //! Rate widget — 星级评分，支持半星、hover 预览、disabled、clearable。
 
 use crate::define_widget;
-use uix_platform::{Point, Rect, Size};
-use uix_graphics::GraphicsEngine;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::GraphicsEngine;
+use uix_platform::{Point, Rect, Size};
 
 define_widget! {
     /// Rate — 星级评分，点击选择分值。
@@ -127,24 +127,52 @@ define_widget! {
     }
 }
 
-impl Default for Rate { fn default() -> Self { Self::new() } }
+impl Default for Rate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Rate {
     pub fn new() -> Self {
         Self {
-            count: 5, value: 0, half: false, disabled: false,
-            clearable: false, hover_value: 0, focused: false,
-            on_change: None, character: String::new(),
+            count: 5,
+            value: 0,
+            half: false,
+            disabled: false,
+            clearable: false,
+            hover_value: 0,
+            focused: false,
+            on_change: None,
+            character: String::new(),
         }
     }
-    pub fn count(mut self, n: usize) -> Self { self.count = n; self }
-    pub fn value(mut self, v: usize) -> Self { self.value = v; self }
-    pub fn allow_half(mut self) -> Self { self.half = true; self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn clearable(mut self) -> Self { self.clearable = true; self }
+    pub fn count(mut self, n: usize) -> Self {
+        self.count = n;
+        self
+    }
+    pub fn value(mut self, v: usize) -> Self {
+        self.value = v;
+        self
+    }
+    pub fn allow_half(mut self) -> Self {
+        self.half = true;
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn clearable(mut self) -> Self {
+        self.clearable = true;
+        self
+    }
     pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self
     }
-    pub fn character(mut self, c: impl Into<String>) -> Self { self.character = c.into(); self }
+    pub fn character(mut self, c: impl Into<String>) -> Self {
+        self.character = c.into();
+        self
+    }
 }

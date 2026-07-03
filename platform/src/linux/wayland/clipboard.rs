@@ -13,7 +13,10 @@ use super::WaylandBackend;
 
 impl IClipboard for WaylandBackend {
     fn text(&self) -> String {
-        self.clipboard_text.lock().map(|t| t.clone()).unwrap_or_default()
+        self.clipboard_text
+            .lock()
+            .map(|t| t.clone())
+            .unwrap_or_default()
     }
     fn set_text(&mut self, text: &str) {
         if let Ok(mut t) = self.clipboard_text.lock() {
@@ -43,6 +46,9 @@ impl IClipboard for WaylandBackend {
         }
     }
     fn has_text(&self) -> bool {
-        self.clipboard_text.lock().map(|t| !t.is_empty()).unwrap_or(false)
+        self.clipboard_text
+            .lock()
+            .map(|t| !t.is_empty())
+            .unwrap_or(false)
     }
 }

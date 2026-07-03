@@ -3,9 +3,9 @@
 //! 使用 `NullEngine`（NoopCanvas2D）测试 RenderContext 的创建和基本操作。
 //! 这些测试不依赖平台层测试框架，可在无 `test-harness` feature 时运行。
 
-use uix_graphics::null_engine::NullEngine;
 use uix_graphics::font_service::FontService;
-use uix_graphics::{Color, FontHandle, GraphicsEngine, Orientation, Radius, GradientDirection};
+use uix_graphics::null_engine::NullEngine;
+use uix_graphics::{Color, FontHandle, GradientDirection, GraphicsEngine, Orientation, Radius};
 use uix_platform::geometry::Rect;
 use uix_ui::api::DesignTokens;
 use uix_ui::api::RenderContext;
@@ -48,8 +48,8 @@ fn render_context_with_gpu_dpr() {
         FontHandle::new(0),
         &font_service,
         &tokens,
-        192.0,  // dpi = 2x
-        2.0,    // device_pixel_ratio
+        192.0, // dpi = 2x
+        2.0,   // device_pixel_ratio
         Orientation::YDown,
         1600,
         1200,

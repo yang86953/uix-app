@@ -1,9 +1,9 @@
 //! Switch — on/off toggle switch.
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_platform::{Rect, Size};
 
 define_widget! {
     pub struct Switch {
@@ -81,19 +81,33 @@ define_widget! {
 }
 
 impl Default for Switch {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Switch {
     pub fn new() -> Self {
         Self {
-            checked: false, disabled: false, size: 22.0,
-            hovered: false, focused: false, on_change: None,
+            checked: false,
+            disabled: false,
+            size: 22.0,
+            hovered: false,
+            focused: false,
+            on_change: None,
         }
     }
-    pub fn checked(mut self, v: bool) -> Self { self.checked = v; self }
-    pub fn disabled(mut self, v: bool) -> Self { self.disabled = v; self }
-    pub fn is_checked(&self) -> bool { self.checked }
+    pub fn checked(mut self, v: bool) -> Self {
+        self.checked = v;
+        self
+    }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+    pub fn is_checked(&self) -> bool {
+        self.checked
+    }
     pub fn on_change<F: FnMut(bool) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

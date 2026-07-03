@@ -14,19 +14,25 @@
 //! ```
 
 use crate::layout::FlexDirection;
-use crate::view::ViewNode;
+use crate::view::{View, ViewNode};
+
+use crate::api::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
+use crate::render_context::RenderContext;
+use crate::widget::WidgetTree;
+use std::any::Any;
+use uix_platform::{Rect, Size};
 
 // ── 基础组合子 ──────────────────────────────────────────────
 
 /// 列容器（Flex 方向为 Column），默认 flex_grow(1.0) 填满父容器高度。
 ///
-/// 接受数组或 Vec 作为子节点，支持混合传入 `ViewNode` 和 `ButtonBuilder`/`InputBuilder`。
-pub fn column<I, N>(children: I) -> ViewNode
+/// 接受数组或 Vec 作为子节点，支持混合传入任意 `View` 实现。
+pub fn column<I>(children: I) -> ViewNode
 where
-    I: IntoIterator<Item = N>,
-    N: Into<ViewNode>,
+    I: IntoIterator,
+    I::Item: View,
 {
-    let children: Vec<ViewNode> = children.into_iter().map(Into::into).collect();
+    let children: Vec<ViewNode> = children.into_iter().map(|v| v.build()).collect();
     ViewNode::new(
         crate::widgets::Container::new()
             .dir(FlexDirection::Column)
@@ -37,22 +43,95 @@ where
 
 /// 行容器（Flex 方向为 Row）。
 ///
-/// 接受数组或 Vec 作为子节点，支持混合传入 `ViewNode` 和 `ButtonBuilder`/`InputBuilder`。
-pub fn row<I, N>(children: I) -> ViewNode
+/// 接受数组或 Vec 作为子节点，支持混合传入任意 `View` 实现。
+pub fn row<I>(children: I) -> ViewNode
 where
-    I: IntoIterator<Item = N>,
-    N: Into<ViewNode>,
+    I: IntoIterator,
+    I::Item: View,
 {
-    let children: Vec<ViewNode> = children.into_iter().map(Into::into).collect();
+    let children: Vec<ViewNode> = children.into_iter().map(|v| v.build()).collect();
     ViewNode::new(
         crate::widgets::Container::new().dir(FlexDirection::Row),
         children,
     )
 }
 
-/// 文本标签。
+/// 文本标签（静态文本）。
 pub fn label(text: impl Into<String>) -> ViewNode {
     ViewNode::leaf(crate::widgets::Label::new(text))
+}
+
+/// 响应式文本标签——每次渲染时调用闭包获取最新文本。
+/// 配合 `State` 使用时，状态变更自动触发重绘，标签文本自动更新。
+///
+/// # 示例
+///
+/// ```ignore
+/// let count = State::new(0);
+/// label(move || format!("计数: {}", count.get()))  // count 变化时自动刷新
+///     .font_size(24.0);
+/// ```
+pub fn dynamic_label<F: Fn() -> String + 'static>(f: F) -> ViewNode {
+    ViewNode::leaf(DynamicLabel::new(f))
+}
+
+/// 响应式标签的内部 Widget 实现。
+struct DynamicLabel {
+    text_fn: Box<dyn Fn() -> String>,
+}
+
+impl DynamicLabel {
+    pub fn new<F: Fn() -> String + 'static>(f: F) -> Self {
+        Self {
+            text_fn: Box::new(f),
+        }
+    }
+}
+
+impl WidgetComponent for DynamicLabel {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+    fn capabilities(&self) -> WidgetCapabilities {
+        let mut c = WidgetCapabilities::new();
+        c.insert(WidgetCapabilities::LAYOUT);
+        c.insert(WidgetCapabilities::RENDER);
+        c
+    }
+    fn as_layout(&self) -> Option<&dyn WidgetLayout> {
+        Some(self)
+    }
+    fn as_render(&self) -> Option<&dyn WidgetRender> {
+        Some(self)
+    }
+    fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> {
+        Some(self)
+    }
+}
+
+impl WidgetLayout for DynamicLabel {
+    fn preferred_size(&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+        let text = (self.text_fn)();
+        let len = text.len() as f32;
+        Size::new(len * 7.0, 18.0)
+    }
+}
+
+impl WidgetRender for DynamicLabel {
+    fn render(&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        let text = (self.text_fn)();
+        if !text.is_empty() {
+            ctx.draw_text(
+                &text,
+                uix_platform::Point::new(frame.x, frame.y),
+                ctx.tokens().color_text(),
+                14.0,
+            );
+        }
+    }
 }
 
 /// 空白占位，通过 `height` 控制垂直间距。
@@ -100,14 +179,13 @@ impl ButtonBuilder {
     }
 }
 
-impl From<ButtonBuilder> for ViewNode {
-    fn from(builder: ButtonBuilder) -> Self {
-        let mut btn = crate::widgets::Button::new(builder.text)
-            .variant(builder.variant);
-        if builder.danger {
+impl View for ButtonBuilder {
+    fn build(self) -> ViewNode {
+        let mut btn = crate::widgets::Button::new(self.text).variant(self.variant);
+        if self.danger {
             btn = btn.danger(true);
         }
-        if let Some(f) = builder.on_click {
+        if let Some(f) = self.on_click {
             btn = btn.on_click(f);
         }
         ViewNode::leaf(btn)
@@ -158,10 +236,10 @@ impl InputBuilder {
     }
 }
 
-impl From<InputBuilder> for ViewNode {
-    fn from(builder: InputBuilder) -> Self {
-        let mut input = crate::widgets::Input::new(builder.placeholder);
-        if let Some(f) = builder.on_change {
+impl View for InputBuilder {
+    fn build(self) -> ViewNode {
+        let mut input = crate::widgets::Input::new(self.placeholder);
+        if let Some(f) = self.on_change {
             input = input.on_change(f);
         }
         ViewNode::leaf(input)

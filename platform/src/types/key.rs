@@ -12,14 +12,73 @@
 #[repr(u32)]
 pub enum KeyCode {
     Unknown = 0,
-    A, B, C, D, E, F, G, H, I, J, K, L, M,
-    N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-    Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
-    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
-    Up, Down, Left, Right,
-    Home, End, PageUp, PageDown,
-    Enter, Escape, Backspace, Delete, Tab, Space, Insert,
-    Shift, Ctrl, Alt, Super,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Num0,
+    Num1,
+    Num2,
+    Num3,
+    Num4,
+    Num5,
+    Num6,
+    Num7,
+    Num8,
+    Num9,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    Up,
+    Down,
+    Left,
+    Right,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Enter,
+    Escape,
+    Backspace,
+    Delete,
+    Tab,
+    Space,
+    Insert,
+    Shift,
+    Ctrl,
+    Alt,
+    Super,
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -31,10 +90,10 @@ pub struct KeyMod(u32);
 
 #[allow(non_upper_case_globals)]
 impl KeyMod {
-    pub const NONE: Self  = Self(0);
+    pub const NONE: Self = Self(0);
     pub const SHIFT: Self = Self(1 << 0);
-    pub const CTRL: Self  = Self(1 << 1);
-    pub const ALT: Self   = Self(1 << 2);
+    pub const CTRL: Self = Self(1 << 1);
+    pub const ALT: Self = Self(1 << 2);
     pub const SUPER: Self = Self(1 << 3);
 
     pub const fn contains(self, other: Self) -> bool {

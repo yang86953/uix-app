@@ -13,7 +13,8 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     let n_cols = input.columns.len();
     if n_cols == 0 || input.children.is_empty() {
         return GridOutput {
-            child_rects: Vec::new(), total_size: Size::new(inner.w, inner.h),
+            child_rects: Vec::new(),
+            total_size: Size::new(inner.w, inner.h),
         };
     }
 
@@ -57,7 +58,9 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         }
 
         assignments.push(CellAssignment {
-            child_idx: ci, col, row,
+            child_idx: ci,
+            col,
+            row,
             col_span: span_cols as u32,
             row_span: span_rows as u32,
         });
@@ -82,9 +85,15 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
 
         for track in tracks.iter() {
             match track {
-                GridTrack::Px(px) => { used += px; }
-                GridTrack::Fr(fr) => { total_fr += fr; }
-                GridTrack::Auto => { auto_count += 1; }
+                GridTrack::Px(px) => {
+                    used += px;
+                }
+                GridTrack::Fr(fr) => {
+                    total_fr += fr;
+                }
+                GridTrack::Auto => {
+                    auto_count += 1;
+                }
             }
         }
 
@@ -101,7 +110,9 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
             }
         } else {
             for (i, track) in tracks.iter().enumerate() {
-                if let GridTrack::Px(px) = track { sizes[i] = *px; }
+                if let GridTrack::Px(px) = track {
+                    sizes[i] = *px;
+                }
             }
         }
         sizes
@@ -117,7 +128,9 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     for i in 0..n_cols {
         col_positions.push((cx, col_sizes[i]));
         cx += col_sizes[i];
-        if i < n_cols - 1 { cx += input.col_gap; }
+        if i < n_cols - 1 {
+            cx += input.col_gap;
+        }
     }
 
     let mut row_positions: Vec<(f32, f32)> = Vec::with_capacity(n_rows);
@@ -125,11 +138,21 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     for i in 0..n_rows {
         row_positions.push((cy, row_sizes[i]));
         cy += row_sizes[i];
-        if i < n_rows - 1 { cy += input.row_gap; }
+        if i < n_rows - 1 {
+            cy += input.row_gap;
+        }
     }
 
-    let total_w = col_positions.last().map(|(x,w)| x + w - inner.x).unwrap_or(0.0) + input.padding.horizontal();
-    let total_h = row_positions.last().map(|(y,h)| y + h - inner.y).unwrap_or(0.0) + input.padding.vertical();
+    let total_w = col_positions
+        .last()
+        .map(|(x, w)| x + w - inner.x)
+        .unwrap_or(0.0)
+        + input.padding.horizontal();
+    let total_h = row_positions
+        .last()
+        .map(|(y, h)| y + h - inner.y)
+        .unwrap_or(0.0)
+        + input.padding.vertical();
 
     // ── Phase 5: compute child rects ──
     let mut child_rects = vec![Rect::zero(); input.children.len()];
@@ -143,14 +166,18 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         for c in 0..assignment.col_span as usize {
             if assignment.col + c < col_positions.len() {
                 cell_w += col_positions[assignment.col + c].1;
-                if c > 0 { cell_w += input.col_gap; }
+                if c > 0 {
+                    cell_w += input.col_gap;
+                }
             }
         }
         let mut cell_h = 0.0f32;
         for r in 0..assignment.row_span as usize {
             if assignment.row + r < row_positions.len() {
                 cell_h += row_positions[assignment.row + r].1;
-                if r > 0 { cell_h += input.row_gap; }
+                if r > 0 {
+                    cell_h += input.row_gap;
+                }
             }
         }
 
@@ -158,18 +185,40 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         let v_align = child.align.unwrap_or(input.align_items);
         let pref = child.preferred_size;
 
-        let child_w = match h_align { JustifyContent::Start => pref.w.min(cell_w), _ => cell_w };
-        let child_h = match v_align { AlignItems::Start => pref.h.min(cell_h), _ => cell_h };
-        let child_x = match h_align { JustifyContent::Start => cell_x, JustifyContent::Center => cell_x+(cell_w-child_w)*0.5, JustifyContent::End => cell_x+cell_w-child_w, _ => cell_x };
-        let child_y = match v_align { AlignItems::Start => cell_y, AlignItems::Center => cell_y+(cell_h-child_h)*0.5, AlignItems::End => cell_y+cell_h-child_h, _ => cell_y };
+        let child_w = match h_align {
+            JustifyContent::Start => pref.w.min(cell_w),
+            _ => cell_w,
+        };
+        let child_h = match v_align {
+            AlignItems::Start => pref.h.min(cell_h),
+            _ => cell_h,
+        };
+        let child_x = match h_align {
+            JustifyContent::Start => cell_x,
+            JustifyContent::Center => cell_x + (cell_w - child_w) * 0.5,
+            JustifyContent::End => cell_x + cell_w - child_w,
+            _ => cell_x,
+        };
+        let child_y = match v_align {
+            AlignItems::Start => cell_y,
+            AlignItems::Center => cell_y + (cell_h - child_h) * 0.5,
+            AlignItems::End => cell_y + cell_h - child_h,
+            _ => cell_y,
+        };
 
         child_rects[assignment.child_idx] = Rect::new(child_x, child_y, child_w, child_h);
     }
 
-    GridOutput { child_rects, total_size: Size::new(total_w, total_h) }
+    GridOutput {
+        child_rects,
+        total_size: Size::new(total_w, total_h),
+    }
 }
 
 struct CellAssignment {
-    child_idx: usize, col: usize, row: usize, col_span: u32, row_span: u32,
+    child_idx: usize,
+    col: usize,
+    row: usize,
+    col_span: u32,
+    row_span: u32,
 }
-

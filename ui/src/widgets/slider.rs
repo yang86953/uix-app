@@ -3,10 +3,10 @@
 use std::cell::Cell;
 
 use crate::define_widget;
-use uix_platform::{Rect, Size};
-use uix_graphics::{Color, Radius};
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use uix_graphics::{Color, Radius};
+use uix_platform::{Rect, Size};
 
 define_widget! {
     /// Slider — 水平滑块，支持拖拽选择值。
@@ -125,26 +125,49 @@ impl Slider {
             self.value = raw.clamp(self.min, self.max);
         }
         if (self.value - prev).abs() > f32::EPSILON {
-            if let Some(ref mut cb) = self.on_change { cb(self.value); }
+            if let Some(ref mut cb) = self.on_change {
+                cb(self.value);
+            }
         }
     }
 }
 
-impl Default for Slider { fn default() -> Self { Self::new() } }
+impl Default for Slider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Slider {
     pub fn new() -> Self {
         Self {
-            min: 0.0, max: 100.0, step: 1.0, value: 30.0,
-            dragging: false, hovered: false, focused: false,
+            min: 0.0,
+            max: 100.0,
+            step: 1.0,
+            value: 30.0,
+            dragging: false,
+            hovered: false,
+            focused: false,
             last_frame: Cell::new(None),
             on_change: None,
         }
     }
-    pub fn range(mut self, min: f32, max: f32) -> Self { self.min = min; self.max = max; self }
-    pub fn step(mut self, s: f32) -> Self { self.step = s; self }
-    pub fn value(mut self, v: f32) -> Self { self.value = v.clamp(self.min, self.max); self }
-    pub fn get_value(&self) -> f32 { self.value }
+    pub fn range(mut self, min: f32, max: f32) -> Self {
+        self.min = min;
+        self.max = max;
+        self
+    }
+    pub fn step(mut self, s: f32) -> Self {
+        self.step = s;
+        self
+    }
+    pub fn value(mut self, v: f32) -> Self {
+        self.value = v.clamp(self.min, self.max);
+        self
+    }
+    pub fn get_value(&self) -> f32 {
+        self.value
+    }
     pub fn on_change<F: FnMut(f32) + 'static>(mut self, f: F) -> Self {
         self.on_change = Some(Box::new(f));
         self

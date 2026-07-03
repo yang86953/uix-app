@@ -9,15 +9,17 @@ use uix_platform::ControlSize;
 use uix_platform::EdgeInsets;
 use uix_platform::ScrollDirection;
 use uix_ui::api::JustifyContent;
+use uix_ui::api::RenderContext;
+use uix_ui::api::Style;
 use uix_ui::api::{AlignItems, FlexDirection};
+use uix_ui::api::{
+    Button, ButtonSize, ButtonVariant, Drawer, DrawerPlacement, Input, InputSize, Modal,
+};
+use uix_ui::api::{Container, NavItem, ScrollView, SharedActive};
 use uix_ui::api::{
     EventResult, KeyCode, KeyMod, MouseButton, WidgetCapabilities, WidgetComponent, WidgetCore,
     WidgetEvent, WidgetEventHandler, WidgetLayout, WidgetLifecycle, WidgetRender, WidgetTree,
 };
-use uix_ui::api::RenderContext;
-use uix_ui::api::{ScrollView, NavItem, SharedActive, Container};
-use uix_ui::api::{Button, ButtonSize, ButtonVariant, Input, InputSize, Modal, Drawer, DrawerPlacement};
-use uix_ui::api::Style;
 use uix_ui::style::{BoxShadowDef, DisplayMode};
 use uix_ui::widgets::{button_font_size, button_height, button_padding_h, input_height};
 
@@ -120,11 +122,15 @@ impl SpyWidget {
 }
 
 impl WidgetComponent for SpyWidget {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
     fn capabilities(&self) -> WidgetCapabilities {
         WidgetCapabilities::from_bits(
-            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT,
         )
     }
     uix_ui::wc_upcast!(SpyWidget; WidgetLayout);
@@ -132,7 +138,9 @@ impl WidgetComponent for SpyWidget {
     uix_ui::wc_upcast!(SpyWidget; WidgetEventHandler);
 }
 impl WidgetLayout for SpyWidget {
-    fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size { self.size }
+    fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size {
+        self.size
+    }
 }
 impl WidgetRender for SpyWidget {
     fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
@@ -159,11 +167,15 @@ impl PassThroughContainer {
 }
 
 impl WidgetComponent for PassThroughContainer {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
     fn capabilities(&self) -> WidgetCapabilities {
         WidgetCapabilities::from_bits(
-            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT
+            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT,
         )
     }
     fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
@@ -174,13 +186,17 @@ impl WidgetComponent for PassThroughContainer {
     uix_ui::wc_upcast!(PassThroughContainer; WidgetEventHandler);
 }
 impl WidgetLayout for PassThroughContainer {
-    fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size { self.size }
+    fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size {
+        self.size
+    }
 }
 impl WidgetRender for PassThroughContainer {
     fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
 }
 impl WidgetEventHandler for PassThroughContainer {
-    fn on_event(&mut self, _: &WidgetEvent) -> EventResult { EventResult::NotHandled }
+    fn on_event(&mut self, _: &WidgetEvent) -> EventResult {
+        EventResult::NotHandled
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -504,7 +520,11 @@ fn button_preferred_size_empty_text() {
 
 #[test]
 fn button_danger_ghost_loading_icon_builders() {
-    let btn = Button::new("test").danger(true).ghost(true).loading(true).icon("search");
+    let btn = Button::new("test")
+        .danger(true)
+        .ghost(true)
+        .loading(true)
+        .icon("search");
     let ps = btn.preferred_size(None);
     // With loading + icon + text, width should be > minimum
     assert!(ps.w >= 32.0);
@@ -579,7 +599,11 @@ fn input_set_value_updates() {
 
 #[test]
 fn input_disabled_size_prefix_suffix_builders() {
-    let mut input = Input::new("").disabled(true).size(InputSize::Small).prefix("🔍").suffix("✕");
+    let mut input = Input::new("")
+        .disabled(true)
+        .size(InputSize::Small)
+        .prefix("🔍")
+        .suffix("✕");
     let result = input.on_event(&WidgetEvent::MouseDown {
         pos: Point::new(5.0, 5.0),
         button: MouseButton::Left,
@@ -699,7 +723,12 @@ fn container_justify_align_flex_grow_opacity() {
 fn container_visible_shadow_display() {
     let c = Container::new()
         .visible(false)
-        .shadow(BoxShadowDef::new(Color::from_rgba(0, 0, 0, 30), 8.0, 0.0, 2.0))
+        .shadow(BoxShadowDef::new(
+            Color::from_rgba(0, 0, 0, 30),
+            8.0,
+            0.0,
+            2.0,
+        ))
         .display(DisplayMode::None);
     let ps = c.preferred_size(None);
     assert_eq!(ps.w, 0.0);
@@ -768,7 +797,10 @@ fn modal_visible_show_size_builders() {
 
 #[test]
 fn modal_closable_mask_closable_footer_visible() {
-    let modal = Modal::new("test").closable(false).mask_closable(false).footer_visible(false);
+    let modal = Modal::new("test")
+        .closable(false)
+        .mask_closable(false)
+        .footer_visible(false);
     assert!(!modal.is_visible());
     let ps = modal.preferred_size(None);
     assert_eq!(ps, Size::zero());
@@ -805,7 +837,9 @@ fn modal_modal_size_small_medium_large() {
 fn modal_on_ok_stores_callback() {
     let called = Rc::new(Cell::new(false));
     let c = called.clone();
-    let mut modal = Modal::new("test").on_ok(move || { c.set(true); });
+    let mut modal = Modal::new("test").on_ok(move || {
+        c.set(true);
+    });
     modal.confirm();
     assert!(called.get());
 }
@@ -814,7 +848,9 @@ fn modal_on_ok_stores_callback() {
 fn modal_on_cancel_stores_callback() {
     let called = Rc::new(Cell::new(false));
     let c = called.clone();
-    let mut modal = Modal::new("test").on_cancel(move || { c.set(true); });
+    let mut modal = Modal::new("test").on_cancel(move || {
+        c.set(true);
+    });
     modal.open();
     modal.close();
     assert!(called.get());
@@ -903,7 +939,10 @@ fn drawer_new_defaults() {
 
 #[test]
 fn drawer_visible_show_size_placement() {
-    let drawer = Drawer::new("test").visible(true).size(500.0, 400.0).placement(DrawerPlacement::Left);
+    let drawer = Drawer::new("test")
+        .visible(true)
+        .size(500.0, 400.0)
+        .placement(DrawerPlacement::Left);
     assert!(drawer.is_visible());
     // Left placement: Size::new(width, 600)
     let ps = drawer.preferred_size(None);
@@ -916,7 +955,10 @@ fn drawer_visible_show_size_placement() {
 
 #[test]
 fn drawer_closable_mask_closable_mask() {
-    let drawer = Drawer::new("test").closable(false).mask_closable(false).mask(false);
+    let drawer = Drawer::new("test")
+        .closable(false)
+        .mask_closable(false)
+        .mask(false);
     assert!(!drawer.is_visible());
 }
 
@@ -989,19 +1031,25 @@ fn drawer_preferred_size_placement_based() {
     assert!((ps.h - 600.0).abs() < 0.001);
 
     // Left: Size::new(width, 600)
-    let drawer = Drawer::new("test").visible(true).placement(DrawerPlacement::Left);
+    let drawer = Drawer::new("test")
+        .visible(true)
+        .placement(DrawerPlacement::Left);
     let ps = drawer.preferred_size(None);
     assert!((ps.w - 378.0).abs() < 0.001);
     assert!((ps.h - 600.0).abs() < 0.001);
 
     // Top: Size::new(400, height)
-    let drawer = Drawer::new("test").visible(true).placement(DrawerPlacement::Top);
+    let drawer = Drawer::new("test")
+        .visible(true)
+        .placement(DrawerPlacement::Top);
     let ps = drawer.preferred_size(None);
     assert!((ps.w - 400.0).abs() < 0.001);
     assert!((ps.h - 300.0).abs() < 0.001);
 
     // Bottom: Size::new(400, height)
-    let drawer = Drawer::new("test").visible(true).placement(DrawerPlacement::Bottom);
+    let drawer = Drawer::new("test")
+        .visible(true)
+        .placement(DrawerPlacement::Bottom);
     let ps = drawer.preferred_size(None);
     assert!((ps.w - 400.0).abs() < 0.001);
     assert!((ps.h - 300.0).abs() < 0.001);

@@ -2,11 +2,11 @@
 //!
 //! 点击切换暗色/亮色主题，通过 Cell<bool> 通知外部代码。
 
-use uix_platform::{Rect, Size};
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
 use std::cell::Cell;
+use uix_platform::{Rect, Size};
 
 define_widget! {
     /// ThemeToggle — 主题切换按钮。
@@ -43,7 +43,9 @@ define_widget! {
 
 impl ThemeToggle {
     pub fn new() -> Self {
-        Self { dark: Cell::new(false) }
+        Self {
+            dark: Cell::new(false),
+        }
     }
 
     pub fn dark(self, dark: bool) -> Self {

@@ -5,10 +5,10 @@
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 
-use crate::{Errc, Error};
-use crate::windows::util::to_utf8;
 use crate::types::SpecialDir;
+use crate::windows::util::to_utf8;
 use crate::IFileSystem;
+use crate::{Errc, Error};
 use std::ptr;
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -10,15 +10,31 @@ pub struct Color {
 }
 
 impl Color {
-    pub const fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self { Self { r, g, b, a } }
-    pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self { Self { r, g, b, a: 255 } }
+    pub const fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self { r, g, b, a }
+    }
+    pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b, a: 255 }
+    }
 
-    pub const fn black() -> Self { Self::from_rgb(0, 0, 0) }
-    pub const fn white() -> Self { Self::from_rgb(255, 255, 255) }
-    pub const fn transparent() -> Self { Self::from_rgba(0, 0, 0, 0) }
-    pub const fn red() -> Self { Self::from_rgb(255, 0, 0) }
-    pub const fn green() -> Self { Self::from_rgb(0, 255, 0) }
-    pub const fn blue() -> Self { Self::from_rgb(0, 0, 255) }
+    pub const fn black() -> Self {
+        Self::from_rgb(0, 0, 0)
+    }
+    pub const fn white() -> Self {
+        Self::from_rgb(255, 255, 255)
+    }
+    pub const fn transparent() -> Self {
+        Self::from_rgba(0, 0, 0, 0)
+    }
+    pub const fn red() -> Self {
+        Self::from_rgb(255, 0, 0)
+    }
+    pub const fn green() -> Self {
+        Self::from_rgb(0, 255, 0)
+    }
+    pub const fn blue() -> Self {
+        Self::from_rgb(0, 0, 255)
+    }
 
     /// Returns the premultiplied RGBA value as u32 (AARRGGBB).
     pub fn premultiplied(&self) -> u32 {
@@ -82,11 +98,55 @@ impl Color {
     }
 }
 
-impl Default for Color { fn default() -> Self { Self::black() } }
+impl Default for Color {
+    fn default() -> Self {
+        Self::black()
+    }
+}
+
+/// 从 hex 字符串（如 `"#ff4d4f"` 或 `"ff4d4f"`）解析颜色。
+/// 支持 6 位 RGB 和 8 位 RGBA 格式。
+fn parse_hex(hex: &str) -> Option<Color> {
+    let s = hex.trim_start_matches('#');
+    if s.len() != 6 && s.len() != 8 {
+        return None;
+    }
+    let val = u32::from_str_radix(s, 16).ok()?;
+    if s.len() == 6 {
+        Some(Color::from_rgb(
+            ((val >> 16) & 0xFF) as u8,
+            ((val >> 8) & 0xFF) as u8,
+            (val & 0xFF) as u8,
+        ))
+    } else {
+        Some(Color::from_rgba(
+            ((val >> 24) & 0xFF) as u8,
+            ((val >> 16) & 0xFF) as u8,
+            ((val >> 8) & 0xFF) as u8,
+            (val & 0xFF) as u8,
+        ))
+    }
+}
+
+impl From<&str> for Color {
+    fn from(s: &str) -> Self {
+        parse_hex(s).unwrap_or_else(Color::black)
+    }
+}
+
+impl From<String> for Color {
+    fn from(s: String) -> Self {
+        Color::from(s.as_str())
+    }
+}
 
 impl fmt::Display for Color {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{:02X}{:02X}{:02X}{:02X}", self.r, self.g, self.b, self.a)
+        write!(
+            f,
+            "#{:02X}{:02X}{:02X}{:02X}",
+            self.r, self.g, self.b, self.a
+        )
     }
 }
 

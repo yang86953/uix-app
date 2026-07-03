@@ -1,8 +1,8 @@
 //! uix-app 应用层集成测试 —— Application / AppMode / map_ui_event
 
-use uix_app::application::{App, AppMode, map_ui_event};
+use uix_app::application::{map_ui_event, App, AppMode};
 use uix_app::cli::{Cli, CliArgs};
-use uix_platform::event::{UiEvent, UiEventType, UiEventPayload};
+use uix_platform::event::{UiEvent, UiEventPayload, UiEventType};
 use uix_platform::geometry::Point;
 use uix_platform::types::{KeyCode, KeyMod, MouseButton};
 use uix_ui::widget::WidgetEvent;

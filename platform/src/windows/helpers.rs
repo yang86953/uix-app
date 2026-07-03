@@ -7,9 +7,9 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
+use crate::event::*;
 use crate::*;
 use crate::{Errc, Error};
-use crate::event::*;
 
 use super::bindings::*;
 use super::consts::*;
@@ -32,7 +32,10 @@ impl WindowsPlatform {
         unsafe {
             let hinstance = GetModuleHandleW(std::ptr::null_mut());
             if hinstance.is_null() {
-                return Err(Error::new(Errc::PlatformError, "register_class: GetModuleHandleW failed"));
+                return Err(Error::new(
+                    Errc::PlatformError,
+                    "register_class: GetModuleHandleW failed",
+                ));
             }
             self.hinstance = hinstance;
 
@@ -53,7 +56,10 @@ impl WindowsPlatform {
 
             let atom = RegisterClassExW(&wc);
             if atom == 0 {
-                return Err(Error::new(Errc::ClassRegistrationFailed, "register_class: RegisterClassExW failed"));
+                return Err(Error::new(
+                    Errc::ClassRegistrationFailed,
+                    "register_class: RegisterClassExW failed",
+                ));
             }
             self.class_atom = atom;
             Ok(())
@@ -69,49 +75,110 @@ impl WindowsPlatform {
     pub(crate) fn get_modifier_state() -> KeyMod {
         let mut mods = KeyMod::NONE;
         unsafe {
-            if GetAsyncKeyState(VK_SHIFT as i32) < 0 { mods |= KeyMod::SHIFT; }
-            if GetAsyncKeyState(VK_CONTROL as i32) < 0 { mods |= KeyMod::CTRL; }
-            if GetAsyncKeyState(VK_MENU as i32) < 0 { mods |= KeyMod::ALT; }
+            if GetAsyncKeyState(VK_SHIFT as i32) < 0 {
+                mods |= KeyMod::SHIFT;
+            }
+            if GetAsyncKeyState(VK_CONTROL as i32) < 0 {
+                mods |= KeyMod::CTRL;
+            }
+            if GetAsyncKeyState(VK_MENU as i32) < 0 {
+                mods |= KeyMod::ALT;
+            }
         }
         mods
     }
 
     pub(crate) fn vk_to_keycode(vk: u32) -> KeyCode {
         const KEYS_AZ: [KeyCode; 26] = [
-            KeyCode::A,KeyCode::B,KeyCode::C,KeyCode::D,KeyCode::E,KeyCode::F,KeyCode::G,
-            KeyCode::H,KeyCode::I,KeyCode::J,KeyCode::K,KeyCode::L,KeyCode::M,KeyCode::N,
-            KeyCode::O,KeyCode::P,KeyCode::Q,KeyCode::R,KeyCode::S,KeyCode::T,KeyCode::U,
-            KeyCode::V,KeyCode::W,KeyCode::X,KeyCode::Y,KeyCode::Z,
+            KeyCode::A,
+            KeyCode::B,
+            KeyCode::C,
+            KeyCode::D,
+            KeyCode::E,
+            KeyCode::F,
+            KeyCode::G,
+            KeyCode::H,
+            KeyCode::I,
+            KeyCode::J,
+            KeyCode::K,
+            KeyCode::L,
+            KeyCode::M,
+            KeyCode::N,
+            KeyCode::O,
+            KeyCode::P,
+            KeyCode::Q,
+            KeyCode::R,
+            KeyCode::S,
+            KeyCode::T,
+            KeyCode::U,
+            KeyCode::V,
+            KeyCode::W,
+            KeyCode::X,
+            KeyCode::Y,
+            KeyCode::Z,
         ];
         const KEYS_NUM: [KeyCode; 10] = [
-            KeyCode::Num0,KeyCode::Num1,KeyCode::Num2,KeyCode::Num3,KeyCode::Num4,
-            KeyCode::Num5,KeyCode::Num6,KeyCode::Num7,KeyCode::Num8,KeyCode::Num9,
+            KeyCode::Num0,
+            KeyCode::Num1,
+            KeyCode::Num2,
+            KeyCode::Num3,
+            KeyCode::Num4,
+            KeyCode::Num5,
+            KeyCode::Num6,
+            KeyCode::Num7,
+            KeyCode::Num8,
+            KeyCode::Num9,
         ];
         const KEYS_FN: [KeyCode; 12] = [
-            KeyCode::F1,KeyCode::F2,KeyCode::F3,KeyCode::F4,KeyCode::F5,KeyCode::F6,
-            KeyCode::F7,KeyCode::F8,KeyCode::F9,KeyCode::F10,KeyCode::F11,KeyCode::F12,
+            KeyCode::F1,
+            KeyCode::F2,
+            KeyCode::F3,
+            KeyCode::F4,
+            KeyCode::F5,
+            KeyCode::F6,
+            KeyCode::F7,
+            KeyCode::F8,
+            KeyCode::F9,
+            KeyCode::F10,
+            KeyCode::F11,
+            KeyCode::F12,
         ];
         match vk {
             0x41..=0x5A => KEYS_AZ[(vk - 0x41) as usize],
             0x30..=0x39 => KEYS_NUM[(vk - 0x30) as usize],
             0x70..=0x7B => KEYS_FN[(vk - 0x70) as usize],
-            VK_LEFT => KeyCode::Left, VK_UP => KeyCode::Up,
-            VK_RIGHT => KeyCode::Right, VK_DOWN => KeyCode::Down,
-            VK_RETURN => KeyCode::Enter, VK_ESCAPE => KeyCode::Escape,
-            VK_BACK => KeyCode::Backspace, VK_DELETE => KeyCode::Delete,
-            VK_TAB => KeyCode::Tab, VK_SPACE => KeyCode::Space,
-            VK_INSERT => KeyCode::Insert, VK_HOME => KeyCode::Home,
-            VK_END => KeyCode::End, VK_PRIOR => KeyCode::PageUp,
+            VK_LEFT => KeyCode::Left,
+            VK_UP => KeyCode::Up,
+            VK_RIGHT => KeyCode::Right,
+            VK_DOWN => KeyCode::Down,
+            VK_RETURN => KeyCode::Enter,
+            VK_ESCAPE => KeyCode::Escape,
+            VK_BACK => KeyCode::Backspace,
+            VK_DELETE => KeyCode::Delete,
+            VK_TAB => KeyCode::Tab,
+            VK_SPACE => KeyCode::Space,
+            VK_INSERT => KeyCode::Insert,
+            VK_HOME => KeyCode::Home,
+            VK_END => KeyCode::End,
+            VK_PRIOR => KeyCode::PageUp,
             VK_NEXT => KeyCode::PageDown,
-            VK_SHIFT => KeyCode::Shift, VK_CONTROL => KeyCode::Ctrl,
-            VK_MENU => KeyCode::Alt, VK_LWIN | VK_RWIN => KeyCode::Super,
+            VK_SHIFT => KeyCode::Shift,
+            VK_CONTROL => KeyCode::Ctrl,
+            VK_MENU => KeyCode::Alt,
+            VK_LWIN | VK_RWIN => KeyCode::Super,
             _ => KeyCode::Unknown,
         }
     }
 
-    pub(crate) fn hiword(value: isize) -> u16 { ((value >> 16) & 0xFFFF) as u16 }
-    pub(crate) fn loword(value: isize) -> u16 { (value & 0xFFFF) as u16 }
-    pub(crate) fn hiword_usize(value: usize) -> u16 { ((value >> 16) & 0xFFFF) as u16 }
+    pub(crate) fn hiword(value: isize) -> u16 {
+        ((value >> 16) & 0xFFFF) as u16
+    }
+    pub(crate) fn loword(value: isize) -> u16 {
+        (value & 0xFFFF) as u16
+    }
+    pub(crate) fn hiword_usize(value: usize) -> u16 {
+        ((value >> 16) & 0xFFFF) as u16
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -133,7 +200,9 @@ impl WindowsPlatform {
             data.mods = mods;
         }
         self.push_event(ev);
-        unsafe { SetCapture(self.hwnd); }
+        unsafe {
+            SetCapture(self.hwnd);
+        }
     }
 
     pub(crate) fn handle_mouse_up(&mut self, lparam: isize, btn: MouseButton) {
@@ -144,7 +213,9 @@ impl WindowsPlatform {
             data.mods = mods;
         }
         self.push_event(ev);
-        unsafe { ReleaseCapture(); }
+        unsafe {
+            ReleaseCapture();
+        }
     }
 
     pub(crate) fn handle_file_drop(&mut self, hdrop: *mut std::ffi::c_void) {

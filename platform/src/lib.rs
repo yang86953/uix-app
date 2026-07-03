@@ -18,8 +18,8 @@
 pub mod api;
 
 // ── 共享基础类型 ──────────────────────────────────────────────
-pub mod geometry;
 pub mod error;
+pub mod geometry;
 
 // ── 事件类型 ───────────────────────────────────────────────────
 pub mod event;
@@ -112,12 +112,16 @@ pub fn create_gpu_context(
 /// 供大脑初始化等早期阶段使用。
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn available_memory_bytes() -> u64 {
-    linux::system_info::LinuxSystemInfo::new().memory_info().available_bytes
+    linux::system_info::LinuxSystemInfo::new()
+        .memory_info()
+        .available_bytes
 }
 
 #[cfg(windows)]
 pub fn available_memory_bytes() -> u64 {
-    windows::system_info::WindowsSystemInfo::new().memory_info().available_bytes
+    windows::system_info::WindowsSystemInfo::new()
+        .memory_info()
+        .available_bytes
 }
 
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]

@@ -5,15 +5,15 @@ use uix_graphics::color::{colors, Color};
 use uix_graphics::flattener::flatten;
 use uix_graphics::path::{FillRule, LineCap, LineJoin, PathBuilder, PathSegment};
 use uix_graphics::rasterizer::core::{
-    premul, blend_srcover, apply_opacity, color_to_premul, put_pixel, put_pixel_aa,
-    fill_span, fill_rect_raw, rect_to_pixels, clip_to_int, intersect_rect,
-    rounded_rect_sdf, line_segment_sdf, sdf_to_coverage, sdf_to_coverage_aa,
-    shadow_coverage, shadow_coverage_ambient,
+    apply_opacity, blend_srcover, clip_to_int, color_to_premul, fill_rect_raw, fill_span,
+    intersect_rect, line_segment_sdf, premul, put_pixel, put_pixel_aa, rect_to_pixels,
+    rounded_rect_sdf, sdf_to_coverage, sdf_to_coverage_aa, shadow_coverage,
+    shadow_coverage_ambient,
 };
 use uix_graphics::stroker::{stroke_path, StrokeOptions};
 use uix_graphics::types::{
-    BlendMode, DirtyRegion, FontHandle, HAlign, ImageHandle, Radius, TextLayoutOptions,
-    Transform, VAlign,
+    BlendMode, DirtyRegion, FontHandle, HAlign, ImageHandle, Radius, TextLayoutOptions, Transform,
+    VAlign,
 };
 use uix_platform::geometry::{Point, Rect};
 
@@ -472,7 +472,10 @@ fn premul_semi_transparent() {
 fn blend_srcover_opaque_src() {
     // src 完全不透明 -> 覆盖 dst
     assert_eq!(blend_srcover(255, 0, 255, 0, 0, 0, 0, 0), 0xFFFF0000);
-    assert_eq!(blend_srcover(255, 255, 255, 255, 255, 128, 128, 128), 0xFFFFFFFF);
+    assert_eq!(
+        blend_srcover(255, 255, 255, 255, 255, 128, 128, 128),
+        0xFFFFFFFF
+    );
 }
 
 #[test]
@@ -489,10 +492,8 @@ fn blend_srcover_semi_transparent() {
     let out_r = 200 + (100 * (255 - 128) / 255);
     let out_g = 100 + (200 * (255 - 128) / 255);
     let out_b = 50 + (50 * (255 - 128) / 255);
-    let expected = (out_a.min(255) << 24)
-        | (out_r.min(255) << 16)
-        | (out_g.min(255) << 8)
-        | out_b.min(255);
+    let expected =
+        (out_a.min(255) << 24) | (out_r.min(255) << 16) | (out_g.min(255) << 8) | out_b.min(255);
     assert_eq!(result, expected);
 }
 
@@ -616,8 +617,8 @@ fn put_pixel_aa_partial_coverage() {
     let _inv = 1.0 - src_a_s / 255.0;
     let out_a = src_a_s;
     let out_r_p = src_r_p;
-    let expected: u32 = ((out_a.round() as u32).min(255) << 24)
-        | ((out_r_p.round() as u32).min(255) << 16);
+    let expected: u32 =
+        ((out_a.round() as u32).min(255) << 24) | ((out_r_p.round() as u32).min(255) << 16);
     assert_eq!(pixels[5], expected);
 }
 
@@ -868,8 +869,7 @@ fn shadow_coverage_ambient_softer_falloff() {
 #[test]
 fn path_quad_to() {
     let mut pb = PathBuilder::new();
-    pb.move_to(0.0, 0.0)
-        .quad_to(50.0, 100.0, 100.0, 0.0);
+    pb.move_to(0.0, 0.0).quad_to(50.0, 100.0, 100.0, 0.0);
     let path = pb.build();
     assert_eq!(path.segments().len(), 2);
     match path.segments()[1] {
@@ -967,7 +967,10 @@ fn path_segment_all_points() {
     assert_eq!(PathSegment::MoveTo(p1).all_points(), vec![p1]);
     assert_eq!(PathSegment::LineTo(p1).all_points(), vec![p1]);
     assert_eq!(PathSegment::QuadTo(p1, p2).all_points(), vec![p1, p2]);
-    assert_eq!(PathSegment::CubicTo(p1, p2, p3).all_points(), vec![p1, p2, p3]);
+    assert_eq!(
+        PathSegment::CubicTo(p1, p2, p3).all_points(),
+        vec![p1, p2, p3]
+    );
     assert!(PathSegment::Close.all_points().is_empty());
 }
 
@@ -1039,10 +1042,12 @@ fn stroke_path_simple() {
 #[test]
 fn stroke_path_zero_width() {
     let mut pb = PathBuilder::new();
-    pb.move_to(10.0, 10.0)
-        .line_to(100.0, 10.0);
+    pb.move_to(10.0, 10.0).line_to(100.0, 10.0);
     let path = pb.build();
-    let options = StrokeOptions { width: 0.0, ..StrokeOptions::default() };
+    let options = StrokeOptions {
+        width: 0.0,
+        ..StrokeOptions::default()
+    };
     let result = stroke_path(&path, &options);
     assert!(result.is_empty());
 }
@@ -1050,10 +1055,12 @@ fn stroke_path_zero_width() {
 #[test]
 fn stroke_path_cap_butt() {
     let mut pb = PathBuilder::new();
-    pb.move_to(10.0, 10.0)
-        .line_to(100.0, 10.0);
+    pb.move_to(10.0, 10.0).line_to(100.0, 10.0);
     let path = pb.build();
-    let options = StrokeOptions { cap: LineCap::Butt, ..StrokeOptions::default() };
+    let options = StrokeOptions {
+        cap: LineCap::Butt,
+        ..StrokeOptions::default()
+    };
     let result = stroke_path(&path, &options);
     assert!(!result.is_empty());
 }
@@ -1061,10 +1068,12 @@ fn stroke_path_cap_butt() {
 #[test]
 fn stroke_path_cap_round() {
     let mut pb = PathBuilder::new();
-    pb.move_to(10.0, 10.0)
-        .line_to(100.0, 10.0);
+    pb.move_to(10.0, 10.0).line_to(100.0, 10.0);
     let path = pb.build();
-    let options = StrokeOptions { cap: LineCap::Round, ..StrokeOptions::default() };
+    let options = StrokeOptions {
+        cap: LineCap::Round,
+        ..StrokeOptions::default()
+    };
     let result = stroke_path(&path, &options);
     assert!(!result.is_empty());
 }
@@ -1072,10 +1081,12 @@ fn stroke_path_cap_round() {
 #[test]
 fn stroke_path_cap_square() {
     let mut pb = PathBuilder::new();
-    pb.move_to(10.0, 10.0)
-        .line_to(100.0, 10.0);
+    pb.move_to(10.0, 10.0).line_to(100.0, 10.0);
     let path = pb.build();
-    let options = StrokeOptions { cap: LineCap::Square, ..StrokeOptions::default() };
+    let options = StrokeOptions {
+        cap: LineCap::Square,
+        ..StrokeOptions::default()
+    };
     let result = stroke_path(&path, &options);
     assert!(!result.is_empty());
 }
@@ -1087,7 +1098,10 @@ fn stroke_path_join_miter() {
         .line_to(100.0, 10.0)
         .line_to(100.0, 100.0);
     let path = pb.build();
-    let options = StrokeOptions { join: LineJoin::Miter, ..StrokeOptions::default() };
+    let options = StrokeOptions {
+        join: LineJoin::Miter,
+        ..StrokeOptions::default()
+    };
     let result = stroke_path(&path, &options);
     assert!(!result.is_empty());
 }
@@ -1099,7 +1113,10 @@ fn stroke_path_join_bevel() {
         .line_to(100.0, 10.0)
         .line_to(100.0, 100.0);
     let path = pb.build();
-    let options = StrokeOptions { join: LineJoin::Bevel, ..StrokeOptions::default() };
+    let options = StrokeOptions {
+        join: LineJoin::Bevel,
+        ..StrokeOptions::default()
+    };
     let result = stroke_path(&path, &options);
     assert!(!result.is_empty());
 }
@@ -1111,7 +1128,10 @@ fn stroke_path_join_round() {
         .line_to(100.0, 10.0)
         .line_to(100.0, 100.0);
     let path = pb.build();
-    let options = StrokeOptions { join: LineJoin::Round, ..StrokeOptions::default() };
+    let options = StrokeOptions {
+        join: LineJoin::Round,
+        ..StrokeOptions::default()
+    };
     let result = stroke_path(&path, &options);
     assert!(!result.is_empty());
 }
