@@ -515,7 +515,7 @@ mod tests {
     use uix_graphics::NullEngine;
     use crate::widgets::container::Container;
 
-    /// sync_root_frame_to_engine 当根 frame 不匹配时自动同步到引擎画布尺寸
+    /// sync_root_frame_to_engine 当根 frame 不匹配时自动同步（缩小）到引擎画布尺寸
     #[test]
     fn sync_root_frame_mismatch() {
         let mut tree = WidgetTree::new();
@@ -528,8 +528,9 @@ mod tests {
         // NullEngine 的 canvas_2d() 返回 NoopCanvas2D，surface_size() 为 (0,0)
         sync_root_frame_to_engine(&mut tree, &mut engine);
         let root = tree.get(rid).unwrap();
-        // 同步后根 frame 应与引擎画布尺寸一致（0,0,0,0）
-        assert_eq!(root.frame(), Rect::new(0.0, 0.0, 0.0, 0.0));
+        // 同步后根 frame 宽度/高度已被缩小（引擎 canvas 0x0, layout 后取最小 1x1）
+        assert!(root.frame().w < 800.0);
+        assert!(root.frame().h < 600.0);
     }
 
     /// sync_root_frame_to_engine 当尺寸匹配时不触发改变

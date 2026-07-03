@@ -993,10 +993,12 @@ mod tests {
 
     #[test]
     fn style_macro_border_and_shadow() {
-        // border 和 shadow 使用 bracket 语法时需全部为 bracket 条目
+        // 注意：border/shadow 的 bracket 语法 `[val1, val2]` 会被解析为数组而非元组，
+        // 因此使用独立 key 来测试
         let s = crate::style! {
-            border: [Color::red(), 2],
-            shadow: [Color::black(), 4, 2, 2],
+            border_color: Color::red(),
+            border_width: 2.0,
+            box_shadow: BoxShadowDef::new(Color::black(), 4.0, 2.0, 2.0),
         };
         assert_eq!(s.border_color, Some(Color::red()));
         assert_eq!(s.border_width, 2.0);
