@@ -18,8 +18,11 @@ use crate::view::{View, ViewNode};
 
 use crate::api::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
 use crate::render_context::RenderContext;
-use crate::widget::WidgetTree;
+use crate::state::{drain_pending_state_binds, StatePaintBind};
+use crate::widget::{WidgetId, WidgetTree};
 use std::any::Any;
+use std::sync::Arc;
+use uix_graphics::pipeline::InvalidationQueueHandle;
 use uix_platform::{Rect, Size};
 
 // ── 基础组合子 ──────────────────────────────────────────────
@@ -76,14 +79,28 @@ pub fn dynamic_label<F: Fn() -> String + 'static>(f: F) -> ViewNode {
 }
 
 /// 响应式标签的内部 Widget 实现。
-struct DynamicLabel {
+pub(crate) struct DynamicLabel {
     text_fn: Box<dyn Fn() -> String>,
+    state_sources: Vec<Arc<dyn StatePaintBind>>,
 }
 
 impl DynamicLabel {
     pub fn new<F: Fn() -> String + 'static>(f: F) -> Self {
         Self {
             text_fn: Box::new(f),
+            state_sources: drain_pending_state_binds(),
+        }
+    }
+
+    /// 将关联 State 绑定到 widget 的 Paint 失效。
+    pub(crate) fn bind_state_invalidation(
+        &self,
+        widget_id: WidgetId,
+        queue: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    ) {
+        for source in &self.state_sources {
+            source.bind_paint(widget_id, queue.clone(), rect);
         }
     }
 }

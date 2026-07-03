@@ -230,7 +230,7 @@ impl LayerTree {
                 root,
                 engine,
                 scene,
-                dirty_region,
+                &dirty_region,
                 &env,
                 surface_w,
                 surface_h,

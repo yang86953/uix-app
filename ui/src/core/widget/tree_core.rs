@@ -1,8 +1,7 @@
 use super::*;
 use crate::managers::EventManager;
 use std::collections::HashMap;
-use uix_graphics::pipeline::{AnimationRegistry, InvalidationQueue};
-use uix_graphics::DirtyRegion;
+use uix_graphics::pipeline::{AnimationRegistry, InvalidationQueueHandle};
 use uix_platform::{KeyMod, MouseButton, Point, Rect};
 
 /// 拖拽手势状态，用于从原始鼠标事件组合 DragStart/DragMove/DragEnd。
@@ -50,120 +49,6 @@ impl DragGestureState {
     }
 }
 
-/// 脏状态管理器 —— 集中管理脏区域。
-///
-/// 保证 reset() 时不会遗漏任何需要清理的脏状态。
-pub struct DirtyState {
-    pub(crate) region: DirtyRegion,
-    /// 滚动偏移（用于 scroll_region 像素移动优化）。
-    pub(crate) scroll_region_move: Option<(Rect, f32, f32)>,
-}
-
-impl DirtyState {
-    pub fn new() -> Self {
-        Self {
-            region: DirtyRegion::full(),
-            scroll_region_move: None,
-        }
-    }
-
-    /// 重置所有脏状态。
-    pub fn reset(&mut self) {
-        self.region.reset();
-        self.scroll_region_move = None;
-    }
-}
-
-impl Default for DirtyState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// BitSet 脏节点标记 —— 用 trailing_zeros 跳过零位，
-/// 遍历复杂度与脏节点数成正比，与总节点数无关。
-pub struct DirtyNodes {
-    words: Vec<u64>,
-}
-
-impl DirtyNodes {
-    pub fn new() -> Self {
-        Self { words: Vec::new() }
-    }
-
-    /// 标记节点为脏。自动扩容 bitset。
-    pub fn insert(&mut self, id: WidgetId) {
-        let idx = id / 64;
-        let bit = 1 << (id % 64);
-        if idx >= self.words.len() {
-            self.words.resize(idx + 1, 0);
-        }
-        self.words[idx] |= bit;
-    }
-
-    /// 清零所有脏标记（O(n/64)，SIMD 友好）。
-    pub fn clear(&mut self) {
-        self.words.iter_mut().for_each(|w| *w = 0);
-    }
-
-    /// 是否有任何脏节点。
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.words.iter().all(|&w| w == 0)
-    }
-
-    /// 判断节点是否在 bitset 中。
-    pub fn contains(&self, id: WidgetId) -> bool {
-        let idx = id / 64;
-        let bit = 1 << (id % 64);
-        self.words.get(idx).is_some_and(|w| w & bit != 0)
-    }
-
-    /// 遍历所有脏节点 —— 只迭代被置位的 bit，跳过零。
-    pub fn iter_dirty(&self) -> DirtyIter<'_> {
-        DirtyIter {
-            words: &self.words,
-            word_idx: 0,
-            current_word: self.words.first().copied().unwrap_or(0),
-        }
-    }
-}
-
-impl Default for DirtyNodes {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// DirtyNodes 的迭代器 —— 每次调用 next() 跳过 64 个干净节点。
-pub struct DirtyIter<'a> {
-    words: &'a [u64],
-    word_idx: usize,
-    current_word: u64,
-}
-
-impl Iterator for DirtyIter<'_> {
-    type Item = WidgetId;
-
-    fn next(&mut self) -> Option<WidgetId> {
-        loop {
-            if self.current_word != 0 {
-                // trailing_zeros: 一条 CPU 指令找到最低位脏节点
-                let t = self.current_word.trailing_zeros();
-                let id = self.word_idx * 64 + t as usize;
-                // blsr: 清除最低位 (x86 BMI1 指令)
-                self.current_word &= self.current_word - 1;
-                return Some(id);
-            }
-            self.word_idx += 1;
-            if self.word_idx >= self.words.len() {
-                return None;
-            }
-            self.current_word = self.words[self.word_idx];
-        }
-    }
-}
-
 /// Widget tree — 管理 BoxedWidget 节点树。
 pub struct WidgetTree {
     pub(crate) nodes: Vec<Option<BoxedWidget>>,
@@ -172,12 +57,8 @@ pub struct WidgetTree {
     pub(crate) root_id: Option<WidgetId>,
     pub(crate) focused_widget: Option<WidgetId>,
     pub(crate) hovered_widget: Option<WidgetId>,
-    pub(crate) dirty: DirtyState,
-    pub(crate) dirty_nodes: DirtyNodes,
-    /// 子树脏汇总（终极方案：向上传播的脏标记）。
-    /// subtree_dirty.contains(id) = true 表示 id 的子树中有脏节点。
-    /// 用于遍历时跳过整棵干净子树。
-    pub(crate) subtree_dirty: DirtyNodes,
+    /// 滚动 memmove 参数（Composite 失效附带，帧内消费）。
+    pub(crate) scroll_region_move: Option<(Rect, f32, f32)>,
     pub(crate) mouse_down_target: Option<WidgetId>,
     /// 树结构版本号，结构变更时递增（add_child / remove / set_root）。
     /// 引擎可用此判断 LayerTree 是否需要重建。
@@ -193,8 +74,8 @@ pub struct WidgetTree {
     /// 拖拽手势状态：跟踪 MouseDown→Move 序列以产生 DragStart/DragMove/DragEnd。
     /// 拖拽阈值 5px，MouseMove 超出此距离才触发拖拽。
     pub(crate) drag_gesture: DragGestureState,
-    /// 渲染失效队列（Phase 2：统一 invalidation 入口）。
-    pub(crate) invalidation: InvalidationQueue,
+    /// 渲染失效队列（Phase 2/6：统一 invalidation 入口）。
+    pub(crate) invalidation: InvalidationQueueHandle,
     /// 动画注册表（Phase 2：仅 tick 活跃动画节点）。
     pub(crate) animation_registry: AnimationRegistry,
 }
@@ -208,15 +89,13 @@ impl Default for WidgetTree {
             root_id: None,
             focused_widget: None,
             hovered_widget: None,
-            dirty: DirtyState::new(),
-            dirty_nodes: DirtyNodes::new(),
-            subtree_dirty: DirtyNodes::new(),
+            scroll_region_move: None,
             mouse_down_target: None,
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
             event_managers: HashMap::new(),
             drag_gesture: DragGestureState::default(),
-            invalidation: InvalidationQueue::new(),
+            invalidation: uix_graphics::pipeline::InvalidationQueue::shared(),
             animation_registry: AnimationRegistry::new(),
         }
     }
@@ -300,7 +179,7 @@ impl WidgetTree {
         for child in children {
             self.add_child(id, child);
         }
-        self.try_register_animation(id);
+        self.push_layout_invalidation(id);
         id
     }
 
@@ -386,8 +265,9 @@ impl WidgetTree {
             self.add_child(child_id, child);
         }
 
-        // 终极方案：向父链传播子树脏标记（新节点需要加入脏子树遍历）
-        self.propagate_subtree_dirty(parent_id);
+        // 结构变化：Layout 失效向上传播
+        self.push_layout_invalidation(parent_id);
+        self.propagate_layout_invalidation(parent_id);
         self.try_register_animation(child_id);
 
         child_id
@@ -422,13 +302,15 @@ impl WidgetTree {
         }
 
         if let Some(frame) = old_frame {
-            self.dirty.region.add_rect(frame);
+            if let Some(pid) = parent_id {
+                self.invalidate_paint_rect(pid, frame);
+            }
         }
         self.animation_registry.unregister(id);
 
-        // 终极方案：向父链传播子树脏标记（结构变化影响父布局）
         if let Some(pid) = parent_id {
-            self.propagate_subtree_dirty(pid);
+            self.push_layout_invalidation(pid);
+            self.propagate_layout_invalidation(pid);
         }
     }
 
@@ -450,20 +332,14 @@ impl WidgetTree {
             if let Some(n) = self.get_mut(current) {
                 if n.visible() != visible {
                     n.set_visible(visible);
-                    n.set_dirty(true);
                     self.tree_version += 1;
                     changed = true;
                 }
             }
 
-            // get_mut 的借用已释放，可安全访问 dirty.region 和 dirty_nodes
             if changed {
-                self.dirty_nodes.insert(current);
-                if let Some(frame) = self.get(current).map(|n| n.frame()) {
-                    if frame.w > 0.0 && frame.h > 0.0 {
-                        self.dirty.region.add_rect(frame);
-                    }
-                }
+                self.invalidate_paint(current);
+                self.push_layout_invalidation(current);
             }
 
             for child in children {
@@ -471,31 +347,52 @@ impl WidgetTree {
             }
         }
 
-        // 终极方案：向父链传播子树脏标记（可见性变化影响父布局）
-        self.propagate_subtree_dirty(id);
+        self.propagate_layout_invalidation(id);
     }
 
-    /// 返回脏子树中所有节点的先序遍历顺序。
+    /// 返回 Layout 失效影响的子树先序遍历顺序。
     ///
-    /// 当 full_frame 时回退到全树 traverse()（初始帧 / 显式全帧标记）。
-    /// 其余情况只遍历 subtree_dirty 标记的子树，跳过整棵干净区域。
-    /// 遍历复杂度 O(m)，m = 脏子树节点数（通常 << n）。
-    pub fn dirty_traverse(&self) -> Vec<WidgetId> {
-        if self.dirty.region.full_frame {
-            // 全帧脏 → 回退全树遍历（初始帧 / mark_full_frame_dirty）
+    /// 全帧或含 Layout 根时遍历对应子树；无 Layout 失效时返回空（跳过 layout）。
+    pub fn layout_traverse(&self) -> Vec<WidgetId> {
+        let inv = self
+            .invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if inv.needs_full_frame() {
             return self.traverse();
         }
+        let layout_roots = inv.layout_roots();
+        drop(inv);
+        if layout_roots.is_empty() {
+            return Vec::new();
+        }
+
+        let mut needed = std::collections::HashSet::new();
+        for &id in &layout_roots {
+            let mut cur = Some(id);
+            while let Some(cid) = cur {
+                needed.insert(cid);
+                cur = self.get(cid).and_then(|n| n.parent());
+            }
+            let mut stack = vec![id];
+            while let Some(nid) = stack.pop() {
+                needed.insert(nid);
+                if let Some(node) = self.get(nid) {
+                    for &c in node.children() {
+                        stack.push(c);
+                    }
+                }
+            }
+        }
+
         let mut result = Vec::new();
         if let Some(root_id) = self.root_id {
             let mut stack = vec![root_id];
             while let Some(current) = stack.pop() {
-                result.push(current);
-                if let Some(node) = self.get(current) {
-                    for &child_id in node.children().iter().rev() {
-                        // 子树干净 → 整棵跳过
-                        if self.subtree_dirty.contains(child_id)
-                            || self.dirty_nodes.contains(child_id)
-                        {
+                if needed.contains(&current) {
+                    result.push(current);
+                    if let Some(node) = self.get(current) {
+                        for &child_id in node.children().iter().rev() {
                             stack.push(child_id);
                         }
                     }
@@ -503,6 +400,12 @@ impl WidgetTree {
             }
         }
         result
+    }
+
+    #[allow(dead_code)]
+    /// 兼容旧名；Phase 6 后 layout 使用 `layout_traverse`。
+    pub fn dirty_traverse(&self) -> Vec<WidgetId> {
+        self.layout_traverse()
     }
 
     /// 返回树中所有节点的先序遍历顺序。
@@ -547,8 +450,10 @@ impl WidgetTree {
         if let Some(w) = self.get_mut(id) {
             w.set_frame(new_frame);
         }
-        self.mark_dirty_rect(id, old);
-        self.mark_dirty(id);
+        self.invalidate_paint_rect(id, old);
+        self.invalidate_paint(id);
+        self.push_layout_invalidation(id);
+        self.propagate_layout_invalidation(id);
     }
 
     pub fn layout(&mut self) {
@@ -568,6 +473,11 @@ impl WidgetTree {
             }
         }
 
+        let order = self.layout_traverse();
+        if order.is_empty() {
+            return;
+        }
+
         // ════════════════════════════════════════════════════════════════
         // 收敛循环：自上而下布局 → [扩展 ↔ 收缩] → viewport
         // Phase 2（扩展）和 Phase 4（收缩）交替运行直至稳定，
@@ -579,7 +489,7 @@ impl WidgetTree {
             let mut any_change = false;
 
             // Phase 1: Top-down — 父容器根据当前 frame 为子节点分配位置
-            let order = self.dirty_traverse();
+            let order = self.layout_traverse();
             for &id in &order {
                 let positions: Vec<(WidgetId, Rect)> = {
                     let node = match self.get(id) {
@@ -628,6 +538,8 @@ impl WidgetTree {
 
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
         self.layout_viewports();
+        // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
+        self.bind_reactive_widget_states();
         uix_platform::log::debug_fn("[Layout] layout() done");
     }
 
@@ -725,7 +637,7 @@ impl WidgetTree {
     /// 更新所有 viewport 容器的 content_bounds。
     /// 只触发 content_bounds 副作用，不移动子节点位置。
     fn layout_viewports(&mut self) {
-        for &id in &self.dirty_traverse() {
+        for &id in &self.layout_traverse() {
             if let Some(node) = self.get(id) {
                 if node.children_clip(node.frame()).is_none() {
                     continue;
@@ -981,14 +893,11 @@ impl WidgetTree {
             }
 
             if let Some((dx, dy)) = self.get(id).and_then(|n| n.scroll_delta_for_dirty()) {
-                if (dx.abs() > 0.5 || dy.abs() > 0.5) && self.dirty.scroll_region_move.is_none() {
+                if (dx.abs() > 0.5 || dy.abs() > 0.5) && self.scroll_region_move.is_none() {
                     if let Some(node) = self.get(id) {
                         let frame = node.frame();
                         let strip = node.dirty_rect(frame);
-                        self.dirty.scroll_region_move = Some((frame, dx, dy));
-                        if strip.w > 0.0 && strip.h > 0.0 {
-                            self.dirty.region.add_rect(strip);
-                        }
+                        self.scroll_region_move = Some((frame, dx, dy));
                         self.push_composite_invalidation(
                             strip,
                             Some(uix_graphics::pipeline::ScrollDelta { dx, dy }),

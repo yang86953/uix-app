@@ -1,4 +1,7 @@
-//! 渲染失效队列 — 所有渲染触发的统一入口（Phase 2）。
+//! 渲染失效队列 — 所有渲染触发的统一入口（Phase 2 / Phase 6）。
+
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use uix_platform::Rect;
 
@@ -6,6 +9,9 @@ use crate::types::DirtyRegion;
 
 /// 节点标识（与 UI 层 WidgetId 对齐，graphics 不依赖 uix-ui）。
 pub type NodeId = usize;
+
+/// 共享失效队列句柄（State 绑定 paint 失效时使用，每棵树一个实例）。
+pub type InvalidationQueueHandle = Arc<Mutex<InvalidationQueue>>;
 
 /// 滚动增量（Composite invalidation 附带）。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,8 +49,28 @@ impl InvalidationQueue {
         Self::default()
     }
 
-    /// 上报失效。
+    /// 创建共享句柄（WidgetTree 持有）。
+    pub fn shared() -> InvalidationQueueHandle {
+        Arc::new(Mutex::new(Self::new()))
+    }
+
+    /// 上报失效；同一节点的 Paint 矩形会合并。
     pub fn push(&mut self, inv: Invalidation) {
+        if let Invalidation::Paint { id, rect } = &inv {
+            if let Some(existing) = self
+                .items
+                .iter_mut()
+                .find(|i| matches!(i, Invalidation::Paint { id: eid, .. } if *eid == *id))
+            {
+                if let Invalidation::Paint {
+                    rect: existing_rect, ..
+                } = existing
+                {
+                    *existing_rect = merge_paint_rect(*existing_rect, *rect);
+                }
+                return;
+            }
+        }
         self.items.push(inv);
     }
 
@@ -67,6 +93,35 @@ impl InvalidationQueue {
                 i,
                 Invalidation::Paint { .. } | Invalidation::Composite { .. }
             )
+        })
+    }
+
+    /// 是否含全帧 Paint（`rect: None`）。
+    pub fn needs_full_frame(&self) -> bool {
+        self.items
+            .iter()
+            .any(|i| matches!(i, Invalidation::Paint { rect: None, .. }))
+    }
+
+    /// 含 Layout 失效的节点 id 集合。
+    pub fn layout_roots(&self) -> HashSet<NodeId> {
+        self.items
+            .iter()
+            .filter_map(|i| match i {
+                Invalidation::Layout(id) => Some(*id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 节点是否有 Paint 失效。
+    pub fn node_needs_paint(&self, id: NodeId) -> bool {
+        if self.needs_full_frame() {
+            return true;
+        }
+        self.items.iter().any(|i| match i {
+            Invalidation::Paint { id: pid, .. } => *pid == id,
+            _ => false,
         })
     }
 
@@ -101,6 +156,32 @@ impl InvalidationQueue {
     pub fn clear(&mut self) {
         self.items.clear();
     }
+}
+
+/// 通过共享句柄推送 Paint 失效（State 绑定用）。
+pub fn invalidate_paint_handle(
+    handle: &InvalidationQueueHandle,
+    id: NodeId,
+    rect: Option<Rect>,
+) {
+    if let Ok(mut q) = handle.lock() {
+        q.push(Invalidation::Paint { id, rect });
+    }
+}
+
+fn merge_paint_rect(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
+    match (a, b) {
+        (None, _) | (_, None) => None,
+        (Some(ra), Some(rb)) => Some(union_rect(ra, rb)),
+    }
+}
+
+fn union_rect(a: Rect, b: Rect) -> Rect {
+    let x1 = a.x.min(b.x);
+    let y1 = a.y.min(b.y);
+    let x2 = (a.x + a.w).max(b.x + b.w);
+    let y2 = (a.y + a.h).max(b.y + b.h);
+    Rect::new(x1, y1, x2 - x1, y2 - y1)
 }
 
 #[cfg(test)]
@@ -146,6 +227,7 @@ mod tests {
         let mut q = InvalidationQueue::new();
         q.push(Invalidation::Paint { id: 0, rect: None });
         assert!(q.dirty_region().full_frame);
+        assert!(q.needs_full_frame());
     }
 
     #[test]
@@ -159,5 +241,35 @@ mod tests {
         let (r, s) = q.scroll_composite().expect("scroll");
         assert_eq!(r, frame);
         assert!((s.dy + 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn merge_same_node_paint_rects() {
+        let mut q = InvalidationQueue::new();
+        q.push(Invalidation::Paint {
+            id: 3,
+            rect: Some(Rect::new(0.0, 0.0, 10.0, 10.0)),
+        });
+        q.push(Invalidation::Paint {
+            id: 3,
+            rect: Some(Rect::new(5.0, 5.0, 10.0, 10.0)),
+        });
+        assert_eq!(q.items.len(), 1);
+        let region = q.dirty_region();
+        assert_eq!(region.rects().len(), 1);
+        let r = region.rects()[0];
+        assert!((r.x - 0.0).abs() < 1e-6);
+        assert!((r.w - 15.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn node_needs_paint_targeted() {
+        let mut q = InvalidationQueue::new();
+        q.push(Invalidation::Paint {
+            id: 7,
+            rect: Some(Rect::new(0.0, 0.0, 5.0, 5.0)),
+        });
+        assert!(q.node_needs_paint(7));
+        assert!(!q.node_needs_paint(8));
     }
 }

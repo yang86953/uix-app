@@ -239,8 +239,8 @@ mod tests {
         fn tree_version(&self) -> u64 {
             0
         }
-        fn dirty_region(&self) -> &DirtyRegion {
-            &self.region
+        fn dirty_region(&self) -> DirtyRegion {
+            self.region.clone()
         }
         fn node_visible(&self, _: crate::pipeline::NodeId) -> bool {
             false

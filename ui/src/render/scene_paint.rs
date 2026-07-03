@@ -17,7 +17,7 @@ impl ScenePaint for WidgetTree {
         self.tree_version()
     }
 
-    fn dirty_region(&self) -> &DirtyRegion {
+    fn dirty_region(&self) -> DirtyRegion {
         self.dirty_region()
     }
 
@@ -30,7 +30,10 @@ impl ScenePaint for WidgetTree {
     }
 
     fn node_dirty(&self, id: NodeId) -> bool {
-        self.get(id).map(|n| n.dirty()).unwrap_or(true)
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .node_needs_paint(id)
     }
 
     fn node_z_index(&self, id: NodeId) -> i32 {

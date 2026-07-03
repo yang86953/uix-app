@@ -108,8 +108,8 @@ impl ScenePaint for BoundaryScene {
         self.tree_version
     }
 
-    fn dirty_region(&self) -> &DirtyRegion {
-        &self.dirty_region
+    fn dirty_region(&self) -> DirtyRegion {
+        self.dirty_region.clone()
     }
 
     fn node_visible(&self, id: NodeId) -> bool {
