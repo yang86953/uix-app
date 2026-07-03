@@ -12,6 +12,7 @@ use uix_platform::api::types::*;
 use uix_platform::event::UiEvent;
 use uix_platform::geometry::Point;
 use uix_platform::test_harness::FakePlatform;
+use std::rc::Rc;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Platform trait — 所有访问器方法可用
@@ -499,4 +500,225 @@ fn prelude_via_star_import() {
     let _kc = KeyCode::Enter;
     // traits available
     let _: &dyn IPresenter = &uix_platform::presenter::NullPresenter;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Platform trait 多子系统交互
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn platform_mut_and_immutable_accessors() {
+    // 验证可变和不可变访问器可以同时工作
+    let mut pf = FakePlatform::new();
+    let p: &mut dyn Platform = &mut pf;
+
+    // 通过可变引用写入
+    p.clipboard().set_text("hello");
+
+    // 通过不可变引用读取（display / keyboard / file_system / system_info）
+    let _dpi = p.display().dpi_scale();
+    let _kc = p.keyboard().double_click_ms();
+    let _home = p.file_system().get_special_dir(SpecialDir::Home);
+    let _cpu = p.system_info().cpu_count();
+
+    // 验证写入的内容
+    assert_eq!(p.clipboard().text(), "hello");
+}
+
+#[test]
+fn platform_event_bus_integration() {
+    // 通过 FakePlatform.event_bus 直接访问
+    let mut pf = FakePlatform::new();
+
+    let called = Rc::new(std::cell::Cell::new(false));
+    let c = called.clone();
+    pf.event_bus.subscribe(
+        uix_platform::event::UiEventType::MouseDown,
+        move |_| { c.set(true); true },
+    );
+
+    pf.event_bus.publish(&UiEvent::mouse_down(
+        Point::new(10.0, 10.0),
+        MouseButton::Left,
+    ));
+
+    assert!(called.get(), "direct event_bus should work");
+}
+
+#[test]
+fn platform_event_bus_via_trait() {
+    let mut pf = FakePlatform::new();
+    let called = Rc::new(std::cell::Cell::new(false));
+    {
+        let c = called.clone();
+        let p: &mut dyn Platform = &mut pf;
+        p.event_bus().subscribe(
+            uix_platform::event::UiEventType::MouseDown,
+            move |_| { c.set(true); true },
+        );
+    }
+    // 通过具体引用来 publish
+    pf.event_bus.publish(&UiEvent::mouse_down(
+        Point::new(10.0, 10.0),
+        MouseButton::Left,
+    ));
+
+    assert!(called.get(), "subscribe via trait, publish via concrete");
+}
+
+#[test]
+fn platform_clipboard_via_trait_has_text() {
+    let mut pf = FakePlatform::new();
+    let p: &mut dyn Platform = &mut pf;
+    assert!(!p.clipboard().has_text());
+    p.clipboard().set_text("data");
+    assert!(p.clipboard().has_text());
+}
+
+#[test]
+fn platform_cursor_full_lifecycle() {
+    let mut pf = FakePlatform::new();
+    {
+        let p: &mut dyn Platform = &mut pf;
+        p.cursor().set_cursor(CursorType::Hand);
+        p.cursor().set_cursor_position(500, 300);
+        p.cursor().confine_cursor(true);
+        p.cursor().capture_mouse();
+        p.cursor().show_cursor(false);
+    }
+    // 通过直接字段验证
+    assert!(!pf.cursor.state.visible);
+    assert_eq!(pf.cursor.state.cursor_type, CursorType::Hand);
+}
+
+#[test]
+fn platform_file_system_and_dialog_interaction() {
+    // 模拟一个常见场景：文件对话框选择一个文件，然后读取它
+    let mut pf = FakePlatform::new();
+
+    // 预设文件系统中有文件
+    pf.file_system.add_file("/data/config.json", b"{\"key\": \"value\"}".to_vec());
+
+    // 预设文件对话框返回该路径
+    pf.file_dialog.mock_open_result(vec!["/data/config.json".to_string()]);
+
+    // 测试流程：打开对话框 → 读取文件
+    let files = pf.file_dialog.open("Open Config", "*.json");
+    assert_eq!(files.len(), 1);
+
+    let content = pf.file_system.read_file(&files[0]).unwrap();
+    assert_eq!(content, b"{\"key\": \"value\"}");
+
+    assert_eq!(pf.file_dialog.state.open_calls.len(), 1);
+    assert_eq!(pf.file_system.read_calls.borrow().len(), 1);
+}
+
+#[test]
+fn platform_console_and_notification() {
+    let mut pf = FakePlatform::new();
+    let p: &mut dyn Platform = &mut pf;
+
+    p.console().write_line("Application started");
+    p.notification().show("Info", "Ready");
+
+    // 通过 Fake 直接断言
+    assert!(pf.console.state.output.contains("Application started"));
+    assert_eq!(pf.notification.count(), 1);
+}
+
+#[test]
+fn platform_timer_multiple_shots() {
+    let mut pf = FakePlatform::new();
+    let p: &mut dyn Platform = &mut pf;
+
+    let id1 = p.timer().set(100, false);
+    let id2 = p.timer().set(200, true);
+
+    p.timer().clear(id1);
+    assert!(!pf.timer.is_pending(id1));
+    assert!(pf.timer.is_pending(id2));
+}
+
+#[test]
+fn platform_text_input_via_trait() {
+    let mut pf = FakePlatform::new();
+
+    {
+        let p: &mut dyn Platform = &mut pf;
+        p.text_input().start();
+    }
+    assert!(pf.text_input.state.active);
+    {
+        let p: &mut dyn Platform = &mut pf;
+        p.text_input().stop();
+    }
+    assert!(!pf.text_input.state.active);
+}
+
+#[test]
+fn platform_system_info_default_font() {
+    let pf = FakePlatform::new();
+    let p: &dyn Platform = &pf;
+    let font = p.system_info().default_font_path();
+    assert!(font.is_some());
+}
+
+#[test]
+fn platform_window_creation_through_trait() {
+    let mut pf = FakePlatform::new();
+    let p: &mut dyn Platform = &mut pf;
+    let mut win = p.window_manager().create_window("trait-win", 640, 480).unwrap();
+    win.show();
+    assert!(win.is_visible());
+    assert_eq!(pf.window_manager.create_calls.len(), 1);
+    assert_eq!(pf.window_manager.create_calls[0].0, "trait-win");
+}
+
+#[test]
+fn platform_event_loop_multiple_types() {
+    use std::cell::Cell;
+    let mut pf = FakePlatform::new();
+
+    pf.event_source.inject(UiEvent::close());
+    pf.event_source.inject(UiEvent::key_down(KeyCode::Escape, KeyMod::NONE));
+    pf.event_source.inject(UiEvent::mouse_down(
+        Point::new(0.0, 0.0),
+        MouseButton::Left,
+    ));
+
+    let types = Cell::new(Vec::new());
+    pf.event_loop().poll_event(&|ev| {
+        let mut t = types.take();
+        t.push(ev.type_);
+        types.set(t);
+        true
+    });
+
+    let recorded = types.take();
+    assert_eq!(recorded.len(), 3);
+    assert_eq!(recorded[0], uix_platform::event::UiEventType::WindowClose);
+    assert_eq!(recorded[1], uix_platform::event::UiEventType::KeyDown);
+    assert_eq!(recorded[2], uix_platform::event::UiEventType::MouseDown);
+}
+
+#[test]
+fn platform_display_info_via_trait() {
+    let pf = FakePlatform::new();
+    let p: &dyn Platform = &pf;
+
+    let info = p.display().info(0);
+    assert!(info.is_primary);
+    assert_eq!(info.dpi_scale, 1.0);
+}
+
+#[test]
+fn platform_fake_platform_ref_equality() {
+    // 验证通过 Platform trait 和直接字段访问操作的是同一个状态
+    let mut pf = FakePlatform::new();
+    {
+        let p: &mut dyn Platform = &mut pf;
+        p.clipboard().set_text("shared");
+    }
+    // 直接读取应该看到同样的值
+    assert_eq!(pf.clipboard.text(), "shared");
 }
