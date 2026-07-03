@@ -153,10 +153,31 @@ impl WidgetTree {
                 }
                 else { EventResult::NotHandled }
             }
-            WidgetEvent::KeyDown { .. } | WidgetEvent::KeyUp { .. } => {
+            WidgetEvent::KeyDown { key, mods } => {
+                // Tab 键焦点导航（在捕获和冒泡之前处理）
+                if *key == KeyCode::Tab {
+                    let forward = !mods.contains(KeyMod::SHIFT);
+                    if let Some(next) = self.focus_next(forward) {
+                        self.set_focus(Some(next));
+                        return EventResult::Handled;
+                    }
+                    return EventResult::NotHandled;
+                }
+
                 if let Some(t) = self.focused_widget {
                     self.mark_dirty(t);
                     // 捕获阶段：root → target，用于全局快捷键
+                    if self.capture_to(t, event) == EventResult::Handled {
+                        return EventResult::Handled;
+                    }
+                    self.dispatch_to(t, event)
+                }
+                else { EventResult::NotHandled }
+            }
+            WidgetEvent::KeyUp { .. } => {
+                if let Some(t) = self.focused_widget {
+                    self.mark_dirty(t);
+                    // 捕获阶段：root → target
                     if self.capture_to(t, event) == EventResult::Handled {
                         return EventResult::Handled;
                     }

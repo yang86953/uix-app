@@ -96,6 +96,8 @@ pub trait WidgetCore {
     fn dirty(&self) -> bool; fn set_dirty(&mut self, v: bool);
     fn opacity(&self) -> f32; fn set_opacity(&mut self, v: f32);
     fn z_index(&self) -> i32; fn set_z_index(&mut self, v: i32);
+    /// Tab 键导航顺序索引。0 = 不可通过 Tab 导航获取焦点，> 0 = 可聚焦。
+    fn tab_index(&self) -> i32; fn set_tab_index(&mut self, v: i32);
 }
 
 pub struct BoxedWidget {
@@ -103,6 +105,8 @@ pub struct BoxedWidget {
     caps: WidgetCapabilities,
     id: WidgetId, parent: Option<WidgetId>, children: Vec<WidgetId>,
     frame: Rect, visible: bool, is_dirty: bool, widget_opacity: f32, z: i32,
+    /// Tab 键导航顺序（0=不可通过 Tab 导航聚焦）。
+    tab_idx: i32,
 }
 
 impl BoxedWidget {
@@ -113,6 +117,7 @@ impl BoxedWidget {
             id: 0, parent: None, children: Vec::new(),
             frame: Rect::zero(), visible: true, is_dirty: true,
             widget_opacity: 1.0, z: 0,
+            tab_idx: 0,
         }
     }
     pub fn component(&self) -> &dyn WidgetComponent { &*self.component }
@@ -216,6 +221,11 @@ impl BoxedWidget {
             .map(|e| e.on_event(event))
             .unwrap_or(EventResult::NotHandled)
     }
+    pub fn is_focusable(&self) -> bool {
+        self.tab_idx > 0 && self.visible &&
+            self.component.as_event().is_some()
+    }
+
     pub fn on_update(&mut self, dt: f64) {
         if let Some(l) = self.component_mut().as_lifecycle_mut() {
             l.on_update(dt);
@@ -245,6 +255,7 @@ impl WidgetCore for BoxedWidget {
     fn dirty(&self) -> bool { self.is_dirty } fn set_dirty(&mut self, v: bool) { self.is_dirty = v; }
     fn opacity(&self) -> f32 { self.widget_opacity } fn set_opacity(&mut self, v: f32) { self.widget_opacity = v; }
     fn z_index(&self) -> i32 { self.z } fn set_z_index(&mut self, v: i32) { self.z = v; }
+    fn tab_index(&self) -> i32 { self.tab_idx } fn set_tab_index(&mut self, v: i32) { self.tab_idx = v; }
 }
 
 mod tree_core;

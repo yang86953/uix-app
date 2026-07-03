@@ -307,6 +307,18 @@ impl LayerTree {
         if let Some(ref root) = self.root {
             Self::render_overlay_node(root, &mut rctx, tree, 0, &hovered_chain, debug_mode, dirty_region, dirty_bounds, false);
         }
+
+        // 焦点环：在聚焦 widget 周围绘制 2px 轮廓
+        if let Some(focused_id) = tree.focused_widget {
+            if let Some(focused_node) = tree.get(focused_id) {
+                if focused_node.visible() && focused_node.is_focusable() {
+                    let frame = focused_node.frame();
+                    // 轮廓颜色使用主题 primary 色
+                    let focus_color = tokens.color_primary();
+                    rctx.canvas_2d().stroke_rect(frame, focus_color, 2.0, None);
+                }
+            }
+        }
     }
 
     pub fn invalidate(&mut self) {

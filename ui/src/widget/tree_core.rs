@@ -1007,6 +1007,49 @@ impl WidgetTree {
     pub fn clear_event_managers(&mut self) {
         self.event_managers.clear();
     }
+
+    // ── Tab 键焦点导航 ─────────────────────────────────────────
+
+    /// 收集所有可聚焦的 widget，按 tab_index 升序排序。
+    /// 不可见、无 EVENT 能力、tab_index <= 0 的 widget 被排除。
+    pub fn collect_focusable(&self) -> Vec<WidgetId> {
+        let mut result: Vec<(i32, WidgetId)> = Vec::new();
+        for id in self.traverse() {
+            if let Some(node) = self.get(id) {
+                if node.is_focusable() {
+                    result.push((node.tab_index(), id));
+                }
+            }
+        }
+        // 按 tab_index 升序排序（小数字先聚焦）
+        result.sort_by_key(|&(idx, _)| idx);
+        result.into_iter().map(|(_, id)| id).collect()
+    }
+
+    /// 查找当前焦点 widget 在可聚焦列表中的位置，返回下一个可聚焦的 ID。
+    /// `forward = true` 表示 Tab（向后），false 表示 Shift+Tab（向前）。
+    pub fn focus_next(&self, forward: bool) -> Option<WidgetId> {
+        let focusable = self.collect_focusable();
+        if focusable.is_empty() {
+            return None;
+        }
+        let current = self.focused_widget;
+        if let Some(cur_id) = current {
+            let pos = focusable.iter().position(|&id| id == cur_id);
+            match pos {
+                Some(p) => {
+                    if forward {
+                        Some(focusable[(p + 1) % focusable.len()])
+                    } else {
+                        Some(focusable[(p + focusable.len() - 1) % focusable.len()])
+                    }
+                }
+                None => Some(focusable[0]), // 当前焦点不在列表中，回到第一个
+            }
+        } else {
+            Some(focusable[0]) // 无焦点，默认聚焦第一个
+        }
+    }
 }
 
 #[cfg(test)]

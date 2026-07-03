@@ -555,6 +555,130 @@ fn event_manager_runs_after_on_event() {
     assert!(!order.borrow().is_empty());
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// 焦点导航测试
+// ════════════════════════════════════════════════════════════════════════
+
+/// 没有 widget 设置 tab_index 时，collect_focusable 返回空。
+#[test]
+fn collect_focusable_empty_by_default() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    tree.layout();
+    let focusable = tree.collect_focusable();
+    assert!(focusable.is_empty(), "no tab_index set → no focusable widgets");
+}
+
+/// 设置 tab_index > 0 的 widget 可被收集。
+#[test]
+fn collect_focusable_returns_widgets_with_tab_index() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let btn1 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    let btn2 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    tree.get_mut(btn1).unwrap().set_tab_index(1);
+    tree.get_mut(btn2).unwrap().set_tab_index(2);
+    tree.layout();
+    let focusable = tree.collect_focusable();
+    assert_eq!(focusable.len(), 2);
+    assert_eq!(focusable[0], btn1, "tab_index=1 first");
+    assert_eq!(focusable[1], btn2, "tab_index=2 second");
+}
+
+/// collect_focusable 按 tab_index 升序排序。
+#[test]
+fn collect_focusable_sorted_by_tab_index() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let btn_a = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0))); // tab_index=3
+    let btn_b = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0))); // tab_index=1
+    let btn_c = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0))); // tab_index=2
+    tree.get_mut(btn_a).unwrap().set_tab_index(3);
+    tree.get_mut(btn_b).unwrap().set_tab_index(1);
+    tree.get_mut(btn_c).unwrap().set_tab_index(2);
+    tree.layout();
+    let focusable = tree.collect_focusable();
+    assert_eq!(focusable, vec![btn_b, btn_c, btn_a], "sorted by tab_index ascending");
+}
+
+/// Tab 键聚焦到下一个可聚焦 widget。
+#[test]
+fn tab_key_focuses_next_widget() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let btn1 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    let btn2 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    let btn3 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    tree.get_mut(btn1).unwrap().set_tab_index(1);
+    tree.get_mut(btn2).unwrap().set_tab_index(2);
+    tree.get_mut(btn3).unwrap().set_tab_index(3);
+    // 设焦点在 btn1
+    tree.focused_widget = Some(btn1);
+
+    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+        key: KeyCode::Tab,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(result, EventResult::Handled, "Tab should be handled");
+    assert_eq!(tree.focused_widget, Some(btn2), "focus should move to btn2");
+}
+
+/// Shift+Tab 聚焦到上一个可聚焦 widget。
+#[test]
+fn shift_tab_focuses_prev_widget() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let btn1 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    let btn2 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    let btn3 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    tree.get_mut(btn1).unwrap().set_tab_index(1);
+    tree.get_mut(btn2).unwrap().set_tab_index(2);
+    tree.get_mut(btn3).unwrap().set_tab_index(3);
+    // 设焦点在 btn2
+    tree.focused_widget = Some(btn2);
+
+    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+        key: KeyCode::Tab,
+        mods: KeyMod::SHIFT,
+    });
+    assert_eq!(result, EventResult::Handled, "Shift+Tab should be handled");
+    assert_eq!(tree.focused_widget, Some(btn1), "focus should move to btn1");
+}
+
+/// Tab 在最后一个 widget 时循环到第一个。
+#[test]
+fn tab_wraps_around_to_first() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let btn1 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    let btn2 = tree.add_child(root, Box::new(SpyWidget::new(50.0, 50.0)));
+    tree.get_mut(btn1).unwrap().set_tab_index(1);
+    tree.get_mut(btn2).unwrap().set_tab_index(2);
+    // 设焦点在 btn2（最后一个）
+    tree.focused_widget = Some(btn2);
+
+    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+        key: KeyCode::Tab,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(result, EventResult::Handled);
+    assert_eq!(tree.focused_widget, Some(btn1), "Tab at last should wrap to first");
+}
+
+/// 无可聚焦 widget 时，Tab 不产生焦点变化。
+#[test]
+fn tab_no_focusable_does_nothing() {
+    let mut tree = WidgetTree::new();
+    tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    tree.layout();
+    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+        key: KeyCode::Tab,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(result, EventResult::NotHandled, "Tab with no focusable should be NotHandled");
+}
+
 fn nav_item_click_updates_shared_active() {
     use crate::widgets::nav::{NavItem, SharedActive};
     use std::cell::Cell;
