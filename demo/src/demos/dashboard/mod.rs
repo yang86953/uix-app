@@ -455,11 +455,33 @@ pub fn run_gui_demo() {
             return;
         }
         match uix_platform::create_gpu_context(surface_ptr, INIT_W, INIT_H) {
-            Ok(ctx) => {
-                let e = uix_graphics::GpuEngine::new(ctx);
-                uix_platform::log::info_fn("GPU: GpuEngine 就绪");
-                engine = Box::new(e);
-            }
+            Ok(ctx) => match uix_graphics::GpuEngine::new(ctx) {
+                Ok(mut e) => {
+                    if let Err(err) = e.initialize(INIT_W, INIT_H) {
+                        uix_platform::log::error_fn(format!(
+                            "GPU引擎初始化失败: {}",
+                            err.short_what()
+                        ));
+                        return;
+                    }
+                    uix_platform::log::info_fn("GPU: GpuEngine 就绪");
+                    engine = Box::new(e);
+                }
+                Err(e) => {
+                    uix_platform::log::warn_fn(format!(
+                        "GPU: GpuEngine 创建失败({}), 回退CPU",
+                        e.short_what()
+                    ));
+                    let mut se = SoftwareEngine::new();
+                    se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
+                        uix_platform::log::error_fn(format!(
+                            "CPU引擎初始化失败: {}",
+                            e.short_what()
+                        ));
+                    });
+                    engine = Box::new(se);
+                }
+            },
             Err(e) => {
                 uix_platform::log::warn_fn(format!(
                     "GPU: 上下文创建失败({}), 回退CPU",

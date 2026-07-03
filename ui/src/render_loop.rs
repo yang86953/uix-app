@@ -292,11 +292,15 @@ where
         let dirty_region = tree.dirty_region();
         let need_render =
             window_visible && (!rendered_first || !dirty_region.is_empty() || keep_polling);
+        let engine_capabilities = engine.capabilities();
 
         let outcome = if !need_render {
             RenderOutcome::Idle
         } else {
-            let region = if !rendered_first || dirty_region.full_frame {
+            let region = if !rendered_first
+                || dirty_region.full_frame
+                || !engine_capabilities.supports_partial_redraw()
+            {
                 DirtyRegion::full()
             } else {
                 dirty_region.clone()
@@ -451,19 +455,20 @@ where
         match outcome {
             RenderOutcome::Present(damage) => {
                 idle_count = 0;
-                // damage 始终为 None（全帧输出），rendered_first 仅用于 region 计算
-                let canvas = engine.canvas_2d();
-                let cw = canvas.width();
-                let ch = canvas.height();
-                if let Err(e) =
-                    platform_window
-                        .presenter()
-                        .present(canvas.pixels_mut(), cw, ch, damage)
-                {
-                    uix_platform::log::error_fn(format!(
-                        "[EventLoop] present failed: {}",
-                        e.short_what()
-                    ));
+                if engine_capabilities.uses_external_presenter() {
+                    let canvas = engine.canvas_2d();
+                    let cw = canvas.width();
+                    let ch = canvas.height();
+                    if let Err(e) =
+                        platform_window
+                            .presenter()
+                            .present(canvas.pixels_mut(), cw, ch, damage)
+                    {
+                        uix_platform::log::error_fn(format!(
+                            "[EventLoop] present failed: {}",
+                            e.short_what()
+                        ));
+                    }
                 }
             }
             RenderOutcome::Idle => {

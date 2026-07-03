@@ -40,6 +40,50 @@ impl UpdateStrategy {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 图形引擎能力
+// ════════════════════════════════════════════════════════════════════════════
+
+/// 帧最终呈现方式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresentationMode {
+    /// 引擎输出 CPU 像素缓冲，由 platform presenter 提交到窗口。
+    ExternalPresenter,
+    /// 引擎内部已完成呈现，例如 GPU 后端自行 swap buffers。
+    EngineManaged,
+}
+
+/// 图形引擎能力声明。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GraphicsCapabilities {
+    pub presentation_mode: PresentationMode,
+    pub partial_redraw: bool,
+}
+
+impl GraphicsCapabilities {
+    pub fn cpu_pixels() -> Self {
+        Self {
+            presentation_mode: PresentationMode::ExternalPresenter,
+            partial_redraw: true,
+        }
+    }
+
+    pub fn engine_managed_full_redraw() -> Self {
+        Self {
+            presentation_mode: PresentationMode::EngineManaged,
+            partial_redraw: false,
+        }
+    }
+
+    pub fn uses_external_presenter(self) -> bool {
+        matches!(self.presentation_mode, PresentationMode::ExternalPresenter)
+    }
+
+    pub fn supports_partial_redraw(self) -> bool {
+        self.partial_redraw
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // 渲染后端
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -452,6 +496,10 @@ pub trait GraphicsEngine: 'static {
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome;
     fn end_frame(&mut self) -> RenderOutcome;
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
+
+    fn capabilities(&self) -> GraphicsCapabilities {
+        GraphicsCapabilities::cpu_pixels()
+    }
 
     fn dpi(&self) -> f32 {
         96.0

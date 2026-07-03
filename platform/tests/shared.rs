@@ -7,12 +7,15 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use uix_platform::api::traits::*;
+use uix_platform::error::Errc;
 use uix_platform::event::{UiEvent, UiEventType};
 use uix_platform::geometry::Point;
 use uix_platform::presenter::NullPresenter;
-use uix_platform::shared::{OsEventSource, PlatformWindowCore, WindowOps, WindowState};
+use uix_platform::shared::{
+    FileSystemCore, OsEventSource, PlatformWindowCore, SpecialDirProvider, WindowOps, WindowState,
+};
 use uix_platform::test_harness::{FakeEventSource, FakeGraphicsContext, FakePlatform};
-use uix_platform::types::{KeyCode, KeyMod, MouseButton};
+use uix_platform::types::{KeyCode, KeyMod, MouseButton, SpecialDir};
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowState — 纯状态机逻辑
@@ -61,6 +64,50 @@ fn window_state_clone() {
     let a = WindowState::with_size(640, 480);
     let b = a.clone();
     assert_eq!(a.width, b.width);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FileSystemCore — 共享文件系统逻辑
+// ════════════════════════════════════════════════════════════════════════════
+
+#[derive(Default)]
+struct TestSpecialDirs;
+
+impl SpecialDirProvider for TestSpecialDirs {
+    fn special_dir(&self, dir: SpecialDir) -> String {
+        match dir {
+            SpecialDir::Home => "/home/test".to_string(),
+            SpecialDir::Temp => "/tmp/test".to_string(),
+            _ => String::new(),
+        }
+    }
+}
+
+#[test]
+fn filesystem_core_delegates_platform_special_dirs() {
+    let fs = FileSystemCore::<TestSpecialDirs>::new();
+
+    assert_eq!(fs.get_special_dir(SpecialDir::Home), "/home/test");
+    assert_eq!(fs.get_special_dir(SpecialDir::Temp), "/tmp/test");
+}
+
+#[test]
+fn filesystem_core_handles_common_dirs() {
+    let fs = FileSystemCore::<TestSpecialDirs>::new();
+
+    assert!(!fs.get_special_dir(SpecialDir::Current).is_empty());
+    assert!(!fs.executable_path().is_empty());
+}
+
+#[test]
+fn filesystem_core_rejects_empty_read_path() {
+    let fs = FileSystemCore::<TestSpecialDirs>::new();
+    let result = fs.read_file("");
+
+    match result {
+        Err(err) => assert_eq!(err.code(), Errc::InvalidArgument),
+        Ok(_) => panic!("empty path should fail"),
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

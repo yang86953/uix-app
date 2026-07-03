@@ -9,21 +9,28 @@ use uix::ui::{App, State};
 
 fn counter_section() -> ViewNode {
     let count = State::new(0);
+    let label_count = count.clone();
+    let increment_count = count.clone();
+    let decrement_count = count.clone();
+    let reset_count = count.clone();
 
     column([
         label("计数器").font_size(20.0).padding(8.0),
         // 响应式 label：每次 count 变更自动触发重绘，文本自动更新
-        dynamic_label(move || format!("当前值: {}", count.get()))
+        dynamic_label(move || format!("当前值: {}", label_count.get()))
             .font_size(28.0)
             .padding(8.0),
         row([
-            button("+1").primary().on_click(move || count += 1),
+            button("+1").primary().on_click(move || {
+                increment_count.set(increment_count.get() + 1);
+            }),
             button("-1").on_click(move || {
-                if count.get() > 0 {
-                    count -= 1;
+                let current = decrement_count.get();
+                if current > 0 {
+                    decrement_count.set(current - 1);
                 }
             }),
-            button("归零").on_click(move || count.set(0)),
+            button("归零").on_click(move || reset_count.set(0)),
         ])
         .gap(8.0),
     ])

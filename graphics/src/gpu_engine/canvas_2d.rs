@@ -1,7 +1,7 @@
 //! GpuCanvas2D — GPU 加速的 Canvas2D 实现，未实现的方法用软件回退。
 
 use glow::HasContext as _;
-use uix_platform::Rect;
+use uix_platform::{Errc, Error, Rect};
 
 use crate::color::Color;
 use crate::engine::cpu::canvas_2d::CpuCanvas2D;
@@ -35,15 +35,9 @@ pub struct GpuCanvas2D {
     u_color_loc: Option<glow::UniformLocation>,
     u_radius_loc: Option<glow::UniformLocation>,
 
-    // ── 软件回退（未实现 GPU 路径的方法走 CPU 渲染 + 上传）──
+    // ── 软件回退（未实现 GPU 路径的方法走 CPU 渲染）──
     soft_fallback: CpuCanvas2D,
     fallback_texture: glow::Texture,
-    #[allow(dead_code)]
-    tex_program: glow::Program,
-    #[allow(dead_code)]
-    u_tex_viewport_loc: Option<glow::UniformLocation>,
-    #[allow(dead_code)]
-    u_tex_sampler_loc: Option<glow::UniformLocation>,
 
     // ── 表面尺寸 ──
     surface_w: i32,
@@ -60,95 +54,84 @@ struct StateSnapshot {
     blend_mode: BlendMode,
 }
 
-const TEX_VERT: &str = r#"#version 300 es
-precision highp float;
-in vec2 a_pos;
-in vec2 a_uv;
-out vec2 v_uv;
-void main() {
-    gl_Position = vec4(a_pos, 0.0, 1.0);
-    v_uv = a_uv;
-}
-"#;
-
-const TEX_FRAG: &str = r#"#version 300 es
-precision highp float;
-in vec2 v_uv;
-uniform sampler2D u_tex;
-uniform float u_opacity;
-out vec4 fragColor;
-void main() {
-    vec4 c = texture(u_tex, v_uv);
-    fragColor = vec4(c.rgb, c.a * u_opacity);
-}
-"#;
-
 impl GpuCanvas2D {
     fn gl(&self) -> &glow::Context {
         unsafe { &*self.gl_ptr }
     }
 
-    pub fn new(gl: &glow::Context, width: i32, height: i32) -> Self {
-        let rect_program = unsafe { Self::compile_rect_shader(gl) };
-        let (rect_vao, rect_vbo) = unsafe { Self::create_rect_geom(gl) };
-
-        let u_viewport_loc = unsafe { gl.get_uniform_location(rect_program, "u_viewport") };
-        let u_rect_loc = unsafe { gl.get_uniform_location(rect_program, "u_rect") };
-        let u_color_loc = unsafe { gl.get_uniform_location(rect_program, "u_color") };
-        let u_radius_loc = unsafe { gl.get_uniform_location(rect_program, "u_radius") };
-
-        let (tex_program, u_tex_viewport_loc, u_tex_sampler_loc) =
-            unsafe { Self::compile_tex_shader(gl) };
-        let fallback_texture = unsafe { Self::create_fallback_texture(gl, width, height) };
-
-        Self {
-            gl_ptr: gl as *const glow::Context,
-            clip_rect: Rect::new(0.0, 0.0, width as f32, height as f32),
-            clip_stack: Vec::new(),
-            opacity: 1.0,
-            offset_x: 0.0,
-            offset_y: 0.0,
-            transform: Transform::identity(),
-            blend_mode: BlendMode::default(),
-            state_stack: Vec::new(),
-            rect_vao,
-            rect_vbo,
-            rect_program,
-            u_viewport_loc,
-            u_rect_loc,
-            u_color_loc,
-            u_radius_loc,
-            soft_fallback: CpuCanvas2D::new(PixelSurface::new(width.max(1), height.max(1))),
-            fallback_texture,
-            tex_program,
-            u_tex_viewport_loc,
-            u_tex_sampler_loc,
-            surface_w: width,
-            surface_h: height,
-        }
+    /// 将 glow 字符串错误转换为统一 Error。
+    fn glow_err(msg: impl Into<String>) -> Error {
+        Error::new(Errc::PlatformError, msg)
     }
 
-    #[allow(clippy::unwrap_used)]
-    unsafe fn compile_rect_shader(gl: &glow::Context) -> glow::Program {
-        let vs = gl.create_shader(glow::VERTEX_SHADER).unwrap();
-        gl.shader_source(vs, crate::gpu_engine::RECT_VERT);
-        gl.compile_shader(vs);
-        let fs = gl.create_shader(glow::FRAGMENT_SHADER).unwrap();
-        gl.shader_source(fs, crate::gpu_engine::RECT_FRAG);
-        gl.compile_shader(fs);
-        let program = gl.create_program().unwrap();
+    /// 编译单个着色器，失败时返回包含 info log 的错误。
+    unsafe fn compile_shader(
+        gl: &glow::Context,
+        stage: u32,
+        source: &str,
+        label: &str,
+    ) -> Result<glow::Shader, Error> {
+        let shader = gl
+            .create_shader(stage)
+            .map_err(|e| Self::glow_err(format!("{label}: create_shader: {e}")))?;
+        gl.shader_source(shader, source);
+        gl.compile_shader(shader);
+        if !gl.get_shader_compile_status(shader) {
+            let log = gl.get_shader_info_log(shader);
+            gl.delete_shader(shader);
+            return Err(Self::glow_err(format!("{label} 编译失败: {log}")));
+        }
+        Ok(shader)
+    }
+
+    /// 链接 program，失败时返回包含 info log 的错误。
+    unsafe fn link_program(
+        gl: &glow::Context,
+        vs: glow::Shader,
+        fs: glow::Shader,
+        label: &str,
+    ) -> Result<glow::Program, Error> {
+        let program = gl
+            .create_program()
+            .map_err(|e| Self::glow_err(format!("{label}: create_program: {e}")))?;
         gl.attach_shader(program, vs);
         gl.attach_shader(program, fs);
         gl.link_program(program);
         gl.delete_shader(vs);
         gl.delete_shader(fs);
-        program
+        if !gl.get_program_link_status(program) {
+            let log = gl.get_program_info_log(program);
+            gl.delete_program(program);
+            return Err(Self::glow_err(format!("{label} 链接失败: {log}")));
+        }
+        Ok(program)
     }
 
-    #[allow(clippy::unwrap_used)]
-    unsafe fn create_rect_geom(gl: &glow::Context) -> (glow::VertexArray, glow::Buffer) {
-        let vao = gl.create_vertex_array().unwrap();
-        let vbo = gl.create_buffer().unwrap();
+    unsafe fn compile_rect_shader(gl: &glow::Context) -> Result<glow::Program, Error> {
+        let vs = Self::compile_shader(
+            gl,
+            glow::VERTEX_SHADER,
+            crate::gpu_engine::RECT_VERT,
+            "RectVS",
+        )?;
+        let fs = Self::compile_shader(
+            gl,
+            glow::FRAGMENT_SHADER,
+            crate::gpu_engine::RECT_FRAG,
+            "RectFS",
+        )?;
+        Self::link_program(gl, vs, fs, "RectProgram")
+    }
+
+    unsafe fn create_rect_geom(
+        gl: &glow::Context,
+    ) -> Result<(glow::VertexArray, glow::Buffer), Error> {
+        let vao = gl
+            .create_vertex_array()
+            .map_err(|e| Self::glow_err(format!("create_vertex_array: {e}")))?;
+        let vbo = gl
+            .create_buffer()
+            .map_err(|e| Self::glow_err(format!("create_buffer: {e}")))?;
         let vertices: [f32; 12] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
         gl.bind_vertex_array(Some(vao));
         gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
@@ -158,12 +141,17 @@ impl GpuCanvas2D {
         gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, 8, 0);
         gl.enable_vertex_attrib_array(0);
         gl.bind_vertex_array(None);
-        (vao, vbo)
+        Ok((vao, vbo))
     }
 
-    #[allow(clippy::unwrap_used)]
-    unsafe fn create_fallback_texture(gl: &glow::Context, w: i32, h: i32) -> glow::Texture {
-        let tex = gl.create_texture().unwrap();
+    unsafe fn create_fallback_texture(
+        gl: &glow::Context,
+        w: i32,
+        h: i32,
+    ) -> Result<glow::Texture, Error> {
+        let tex = gl
+            .create_texture()
+            .map_err(|e| Self::glow_err(format!("create_texture: {e}")))?;
         gl.bind_texture(glow::TEXTURE_2D, Some(tex));
         gl.tex_image_2d(
             glow::TEXTURE_2D,
@@ -187,65 +175,55 @@ impl GpuCanvas2D {
             glow::NEAREST as i32,
         );
         gl.bind_texture(glow::TEXTURE_2D, None);
-        tex
+        Ok(tex)
     }
 
-    #[allow(clippy::unwrap_used)]
-    unsafe fn compile_tex_shader(
-        gl: &glow::Context,
-    ) -> (
-        glow::Program,
-        Option<glow::UniformLocation>,
-        Option<glow::UniformLocation>,
-    ) {
-        let vs = gl.create_shader(glow::VERTEX_SHADER).unwrap();
-        gl.shader_source(vs, TEX_VERT);
-        gl.compile_shader(vs);
-        let fs = gl.create_shader(glow::FRAGMENT_SHADER).unwrap();
-        gl.shader_source(fs, TEX_FRAG);
-        gl.compile_shader(fs);
-        let program = gl.create_program().unwrap();
-        gl.attach_shader(program, vs);
-        gl.attach_shader(program, fs);
-        gl.link_program(program);
-        gl.delete_shader(vs);
-        gl.delete_shader(fs);
-        let u_vp = gl.get_uniform_location(program, "u_viewport");
-        let u_tex = gl.get_uniform_location(program, "u_tex");
-        (program, u_vp, u_tex)
+    pub fn new(gl: &glow::Context, width: i32, height: i32) -> Result<Self, Error> {
+        let rect_program = unsafe { Self::compile_rect_shader(gl)? };
+        let (rect_vao, rect_vbo) = unsafe { Self::create_rect_geom(gl)? };
+
+        let u_viewport_loc = unsafe { gl.get_uniform_location(rect_program, "u_viewport") };
+        let u_rect_loc = unsafe { gl.get_uniform_location(rect_program, "u_rect") };
+        let u_color_loc = unsafe { gl.get_uniform_location(rect_program, "u_color") };
+        let u_radius_loc = unsafe { gl.get_uniform_location(rect_program, "u_radius") };
+
+        let fallback_texture = unsafe { Self::create_fallback_texture(gl, width, height)? };
+
+        Ok(Self {
+            gl_ptr: gl as *const glow::Context,
+            clip_rect: Rect::new(0.0, 0.0, width as f32, height as f32),
+            clip_stack: Vec::new(),
+            opacity: 1.0,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            transform: Transform::identity(),
+            blend_mode: BlendMode::default(),
+            state_stack: Vec::new(),
+            rect_vao,
+            rect_vbo,
+            rect_program,
+            u_viewport_loc,
+            u_rect_loc,
+            u_color_loc,
+            u_radius_loc,
+            soft_fallback: CpuCanvas2D::new(PixelSurface::new(width.max(1), height.max(1))),
+            fallback_texture,
+            surface_w: width,
+            surface_h: height,
+        })
     }
 
-    /// 上传软件回退像素到 GL 纹理并绘制全屏（在 end_frame 被调用）。
-    #[allow(clippy::missing_safety_doc)]
-    pub unsafe fn flush_fallback(&mut self) {
-        let (ptr, len) = {
-            let p = self.soft_fallback.pixels_mut();
-            (p.as_ptr() as *const u8, p.len())
-        };
-        self.gl()
-            .bind_texture(glow::TEXTURE_2D, Some(self.fallback_texture));
-        self.gl().tex_sub_image_2d(
-            glow::TEXTURE_2D,
-            0,
-            0,
-            0,
-            self.surface_w.max(1),
-            self.surface_h.max(1),
-            glow::RGBA,
-            glow::UNSIGNED_BYTE,
-            glow::PixelUnpackData::Slice(Some(std::slice::from_raw_parts(ptr, len * 4))),
-        );
-    }
-
-    pub fn resize(&mut self, width: i32, height: i32) {
+    pub fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.surface_w = width;
         self.surface_h = height;
         self.clip_rect = Rect::new(0.0, 0.0, width as f32, height as f32);
         self.soft_fallback = CpuCanvas2D::new(PixelSurface::new(width.max(1), height.max(1)));
+        let new_tex = unsafe { Self::create_fallback_texture(self.gl(), width, height)? };
         unsafe {
             self.gl().delete_texture(self.fallback_texture);
-            self.fallback_texture = Self::create_fallback_texture(self.gl(), width, height);
         }
+        self.fallback_texture = new_tex;
+        Ok(())
     }
 
     fn clip_int(&self) -> (i32, i32, i32, i32) {
@@ -309,7 +287,6 @@ impl Drop for GpuCanvas2D {
             self.gl().delete_vertex_array(self.rect_vao);
             self.gl().delete_buffer(self.rect_vbo);
             self.gl().delete_program(self.rect_program);
-            self.gl().delete_program(self.tex_program);
             self.gl().delete_texture(self.fallback_texture);
         }
     }

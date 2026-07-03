@@ -1,43 +1,30 @@
 // ============================================================================
-// uix-platform/src/windows/filesystem.rs — Windows filesystem impl (IFileSystem)
+// uix-platform/src/windows/filesystem.rs — Windows 特殊目录解析
 // ============================================================================
 
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 
+use crate::shared::{FileSystemCore, SpecialDirProvider};
 use crate::types::SpecialDir;
 use crate::windows::util::to_utf8;
-use crate::IFileSystem;
-use crate::{Errc, Error};
 use std::ptr;
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsFileSystem
 // ════════════════════════════════════════════════════════════════════════════
 
-#[derive(Debug, Clone)]
-pub struct WindowsFileSystem;
+pub type WindowsFileSystem = FileSystemCore<WindowsSpecialDirs>;
 
-impl WindowsFileSystem {
-    pub fn new() -> Self {
-        Self
-    }
-}
+#[derive(Debug, Clone, Default)]
+pub struct WindowsSpecialDirs;
 
-impl Default for WindowsFileSystem {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl IFileSystem for WindowsFileSystem {
-    fn get_special_dir(&self, dir: SpecialDir) -> String {
+impl SpecialDirProvider for WindowsSpecialDirs {
+    fn special_dir(&self, dir: SpecialDir) -> String {
         match dir {
             SpecialDir::Temp => get_temp_dir(),
-            SpecialDir::Current => get_current_dir(),
-            SpecialDir::Executable => get_executable_dir(),
             _ => {
-                // Use SHGetKnownFolderPath for known folders
+                // 已知目录交给 Shell API，其他公共目录由 FileSystemCore 处理。
                 let guid = match dir {
                     SpecialDir::Home => FOLDERID_PROFILE,
                     SpecialDir::AppData => FOLDERID_ROAMING_APP_DATA,
@@ -50,23 +37,6 @@ impl IFileSystem for WindowsFileSystem {
                 get_known_folder_path(&guid)
             }
         }
-    }
-
-    fn executable_path(&self) -> String {
-        get_executable_path()
-    }
-
-    fn executable_dir(&self) -> String {
-        get_executable_dir()
-    }
-
-    fn read_file(&self, path: &str) -> Result<Vec<u8>, Error> {
-        std::fs::read(path).map_err(|e| {
-            Error::new(
-                Errc::FileNotFound,
-                format!("cannot read file '{}': {}", path, e),
-            )
-        })
     }
 }
 
@@ -83,39 +53,6 @@ fn get_temp_dir() -> String {
         } else {
             String::new()
         }
-    }
-}
-
-fn get_current_dir() -> String {
-    unsafe {
-        let mut buf = [0u16; MAX_PATH + 1];
-        let len = GetCurrentDirectoryW(MAX_PATH as u32, buf.as_mut_ptr());
-        if len > 0 {
-            to_utf8(&buf[..len as usize])
-        } else {
-            String::new()
-        }
-    }
-}
-
-fn get_executable_path() -> String {
-    unsafe {
-        let mut buf = [0u16; MAX_PATH + 1];
-        let len = GetModuleFileNameW(ptr::null_mut(), buf.as_mut_ptr(), MAX_PATH as u32);
-        if len > 0 {
-            to_utf8(&buf[..len as usize])
-        } else {
-            String::new()
-        }
-    }
-}
-
-fn get_executable_dir() -> String {
-    let path = get_executable_path();
-    if let Some(pos) = path.rfind('\\') {
-        path[..pos].to_string()
-    } else {
-        path
     }
 }
 
@@ -138,7 +75,7 @@ fn get_known_folder_path(guid: &GUID) -> String {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// GUID definition (for SHGetKnownFolderPath)
+// SHGetKnownFolderPath 使用的 GUID 定义
 // ════════════════════════════════════════════════════════════════════════════
 
 #[repr(C)]
@@ -149,7 +86,7 @@ struct GUID {
     data4: [u8; 8],
 }
 
-// Known folder GUIDs
+// Windows 已知目录 GUID
 const FOLDERID_PROFILE: GUID = GUID {
     data1: 0x5E6C858F,
     data2: 0x0E22,
@@ -193,20 +130,18 @@ const FOLDERID_DOWNLOADS: GUID = GUID {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// Constants
+// 常量
 // ════════════════════════════════════════════════════════════════════════════
 
 const MAX_PATH: usize = 260;
 
 // ════════════════════════════════════════════════════════════════════════════
-// Raw FFI
+// 原始 FFI
 // ════════════════════════════════════════════════════════════════════════════
 
 #[link(name = "kernel32")]
 extern "system" {
     fn GetTempPathW(nBufferLength: u32, lpBuffer: *mut u16) -> u32;
-    fn GetModuleFileNameW(hModule: *mut std::ffi::c_void, lpFilename: *mut u16, nSize: u32) -> u32;
-    fn GetCurrentDirectoryW(nBufferLength: u32, lpBuffer: *mut u16) -> u32;
 }
 
 #[link(name = "ole32")]

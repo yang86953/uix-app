@@ -6,7 +6,7 @@ use glow::HasContext as _;
 use std::cell::RefCell;
 
 use crate::engine::RenderOutcome;
-use crate::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use crate::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use uix_platform::Error;
 use uix_platform::IGraphicsContext;
 
@@ -26,7 +26,7 @@ pub struct GpuEngine {
 }
 
 impl GpuEngine {
-    pub fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Self {
+    pub fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         // Box::new 将 Context 分配在堆上，地址固定。
         // GpuCanvas2D 中的 gl_ptr 指向此堆地址，不受 Self move 影响。
         let gl = Box::new(unsafe {
@@ -34,15 +34,15 @@ impl GpuEngine {
                 gpu_ctx.get_proc_address(s).unwrap_or(std::ptr::null())
             })
         });
-        let canvas_2d = GpuCanvas2D::new(&gl, 1, 1);
-        Self {
+        let canvas_2d = GpuCanvas2D::new(&gl, 1, 1)?;
+        Ok(Self {
             gl,
             gpu_ctx,
             width: 0,
             height: 0,
             readback: RefCell::new(Vec::new()),
             canvas_2d,
-        }
+        })
     }
 
     /// 返回像素缓冲的克隆（每次调用分配，仅用于读回）。
@@ -83,7 +83,7 @@ impl GraphicsEngine for GpuEngine {
     fn initialize(&mut self, w: i32, h: i32) -> Result<(), Error> {
         self.width = w;
         self.height = h;
-        self.canvas_2d = GpuCanvas2D::new(&self.gl, w, h);
+        self.canvas_2d = GpuCanvas2D::new(&self.gl, w, h)?;
         unsafe {
             self.gl.viewport(0, 0, w, h);
             self.gl.enable(glow::BLEND);
@@ -100,7 +100,9 @@ impl GraphicsEngine for GpuEngine {
     fn resize(&mut self, w: i32, h: i32) {
         self.width = w;
         self.height = h;
-        self.canvas_2d.resize(w, h);
+        if let Err(e) = self.canvas_2d.resize(w, h) {
+            uix_platform::log::error_fn(format!("GpuCanvas2D resize: {}", e.short_what()));
+        }
         self.gpu_ctx.resize(w, h);
         unsafe {
             self.gl.viewport(0, 0, w, h);
@@ -110,7 +112,7 @@ impl GraphicsEngine for GpuEngine {
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         self.gpu_ctx.make_current();
 
-        // 清除
+        // GPU 后端不支持脏矩形增量——统一做全帧清除。
         if strategy.should_clear() {
             unsafe {
                 self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
@@ -128,5 +130,9 @@ impl GraphicsEngine for GpuEngine {
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         &mut self.canvas_2d
+    }
+
+    fn capabilities(&self) -> GraphicsCapabilities {
+        GraphicsCapabilities::engine_managed_full_redraw()
     }
 }
