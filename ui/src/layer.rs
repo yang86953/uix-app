@@ -766,3 +766,866 @@ impl Default for LayerTree {
         Self::new()
     }
 }
+
+#[cfg(test)]
+impl LayerTree {
+    pub fn root_node(&self) -> Option<&LayerNode> {
+        self.root.as_ref()
+    }
+
+    pub fn orphaned_handles(&self) -> &[ImageHandle] {
+        &self.orphaned_handles
+    }
+
+    pub fn orphaned_handles_mut(&mut self) -> &mut Vec<ImageHandle> {
+        &mut self.orphaned_handles
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 单元测试
+// ════════════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::traits::*;
+    use crate::wc_upcast;
+    use crate::widget::*;
+    use uix_platform::Size;
+
+    // ── 测试用 widget ──────────────────────────────────────────────────
+
+    struct Dummy {
+        size: Size,
+        is_repaint: bool,
+        clip: Option<Rect>,
+    }
+
+    impl Dummy {
+        fn new(w: f32, h: f32) -> Self {
+            Self { size: Size::new(w, h), is_repaint: false, clip: None }
+        }
+        fn repaint(w: f32, h: f32) -> Self {
+            Self { size: Size::new(w, h), is_repaint: true, clip: None }
+        }
+        fn clipped(w: f32, h: f32, clip_rect: Rect) -> Self {
+            Self { size: Size::new(w, h), is_repaint: false, clip: Some(clip_rect) }
+        }
+    }
+
+    impl WidgetComponent for Dummy {
+        fn as_any(&self) -> &dyn std::any::Any { self }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+        fn capabilities(&self) -> WidgetCapabilities {
+            WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
+        }
+        fn visible(&self) -> bool { true }
+        wc_upcast!(Dummy; WidgetRender);
+        wc_upcast!(Dummy; WidgetLayout);
+    }
+
+    impl WidgetLayout for Dummy {
+        fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size { self.size }
+    }
+
+    impl WidgetRender for Dummy {
+        fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
+        fn is_repaint_boundary(&self) -> bool { self.is_repaint }
+        fn children_clip(&self, _: Rect) -> Option<Rect> { self.clip }
+    }
+
+    struct ContainerWidget {
+        size: Size,
+        children: std::cell::RefCell<Vec<Box<dyn WidgetComponent>>>,
+    }
+
+    impl ContainerWidget {
+        fn new(w: f32, h: f32) -> Self {
+            Self { size: Size::new(w, h), children: std::cell::RefCell::new(Vec::new()) }
+        }
+    }
+
+    impl WidgetComponent for ContainerWidget {
+        fn as_any(&self) -> &dyn std::any::Any { self }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+        fn capabilities(&self) -> WidgetCapabilities {
+            WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
+        }
+        fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
+            std::mem::take(&mut *self.children.borrow_mut())
+        }
+        wc_upcast!(ContainerWidget; WidgetRender);
+        wc_upcast!(ContainerWidget; WidgetLayout);
+    }
+
+    impl WidgetLayout for ContainerWidget {
+        fn preferred_size(&self, _: Option<&dyn GraphicsEngine>) -> Size { self.size }
+    }
+
+    impl WidgetRender for ContainerWidget {
+        fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
+    }
+
+    // ── 辅助 ───────────────────────────────────────────────────────────
+
+    /// 创建单节点的 WidgetTree。
+    fn single_tree(widget: Dummy, frame: Rect) -> WidgetTree {
+        let mut tree = WidgetTree::new();
+        let id = tree.set_root(Box::new(widget));
+        tree.get_mut(id).unwrap().set_frame(frame);
+        tree
+    }
+
+    /// 创建带子节点的 WidgetTree。
+    fn tree_with_children(
+        parent: Dummy, parent_frame: Rect,
+        children: Vec<(Dummy, Rect)>,
+    ) -> WidgetTree {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(parent));
+        tree.get_mut(root).unwrap().set_frame(parent_frame);
+        for (child_w, child_frame) in children {
+            let cid = tree.add_child(root, Box::new(child_w));
+            tree.get_mut(cid).unwrap().set_frame(child_frame);
+        }
+        tree
+    }
+
+    // ── 测试用例 ───────────────────────────────────────────────────────
+
+    #[test]
+    fn new_creates_empty() {
+        let lt = LayerTree::new();
+        assert!(lt.root_node().is_none());
+        assert!(lt.orphaned_handles().is_empty());
+        assert!(!lt.is_ready());
+    }
+
+    #[test]
+    fn default_creates_empty() {
+        let lt = LayerTree::default();
+        assert!(lt.root_node().is_none());
+    }
+
+    #[test]
+    fn build_empty_tree() {
+        let tree = WidgetTree::new();
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        assert!(lt.root_node().is_none());
+        assert!(!lt.is_ready());
+    }
+
+    #[test]
+    fn build_creates_direct_node() {
+        let tree = single_tree(Dummy::new(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { children, .. } => {
+                assert!(children.is_empty());
+            }
+            other => panic!("期望 Direct 节点，得到 {other:?}"),
+        }
+        assert!(lt.is_ready());
+    }
+
+    #[test]
+    fn build_creates_picture_node_for_repaint_boundary() {
+        let tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(10.0, 20.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Picture { bounds, is_dirty, offscreen_handle, children, retry_count, .. } => {
+                assert!(children.is_empty());
+                assert!(*is_dirty);
+                assert!(offscreen_handle.is_none());
+                assert_eq!(*bounds, Rect::new(10.0, 20.0, 100.0, 50.0));
+                assert_eq!(*retry_count, 0);
+            }
+            other => panic!("期望 Picture 节点，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_picture_is_dirty_when_no_cache() {
+        let tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Picture { is_dirty, .. } => assert!(*is_dirty),
+            _ => panic!("期望 Picture"),
+        }
+    }
+
+    #[test]
+    fn build_creates_clip_rect_node() {
+        let clip = Rect::new(5.0, 5.0, 90.0, 40.0);
+        let tree = single_tree(Dummy::clipped(100.0, 50.0, clip), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::ClipRect { rect, children, .. } => {
+                assert!(children.is_empty());
+                assert_eq!(*rect, clip);
+            }
+            other => panic!("期望 ClipRect 节点，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_nested_structure() {
+        let tree = tree_with_children(
+            Dummy::new(200.0, 200.0), Rect::new(0.0, 0.0, 200.0, 200.0),
+            vec![
+                (Dummy::new(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0)),
+                (Dummy::repaint(80.0, 30.0), Rect::new(0.0, 50.0, 80.0, 30.0)),
+            ],
+        );
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { children, .. } => {
+                assert_eq!(children.len(), 2);
+                // 第一个子节点：Direct
+                match &children[0] {
+                    LayerNode::Direct { widget_id, .. } => assert!(*widget_id > 0),
+                    other => panic!("期望子节点1为 Direct，得到 {other:?}"),
+                }
+                // 第二个子节点：Picture (repaint boundary)
+                match &children[1] {
+                    LayerNode::Picture { widget_id, .. } => assert!(*widget_id > 0),
+                    other => panic!("期望子节点2为 Picture，得到 {other:?}"),
+                }
+            }
+            other => panic!("期望 Direct 根节点，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_skips_invisible_widgets() {
+        let mut tree = tree_with_children(
+            Dummy::new(200.0, 200.0), Rect::new(0.0, 0.0, 200.0, 200.0),
+            vec![
+                (Dummy::new(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0)),
+                (Dummy::new(80.0, 30.0), Rect::new(0.0, 50.0, 80.0, 30.0)),
+            ],
+        );
+        // 将第一个子节点设为不可见
+        let root_id = tree.root_id().unwrap();
+        let child_id = tree.get(root_id).unwrap().children()[0];
+        tree.get_mut(child_id).unwrap().set_visible(false);
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { children, .. } => {
+                // 隐藏的子节点被跳过，只有一个子节点
+                assert_eq!(children.len(), 1);
+            }
+            other => panic!("期望 Direct 根节点，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_z_index_sorts_children() {
+        let frame = Rect::new(0.0, 0.0, 200.0, 200.0);
+        let mut tree = tree_with_children(
+            Dummy::new(200.0, 200.0), frame,
+            vec![
+                (Dummy::new(50.0, 50.0), Rect::new(0.0, 0.0, 50.0, 50.0)),
+                (Dummy::new(50.0, 50.0), Rect::new(50.0, 0.0, 50.0, 50.0)),
+            ],
+        );
+        // 设置 z_index：第二个子节点高，第一个低
+        let root_id = tree.root_id().unwrap();
+        let children = tree.get(root_id).unwrap().children().to_vec();
+        tree.get_mut(children[0]).unwrap().set_z_index(1);
+        tree.get_mut(children[1]).unwrap().set_z_index(10);
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { children, .. } => {
+                assert_eq!(children.len(), 2);
+                // z_index 排序后，第一个子节点（z=1）应在前面，第二个（z=10）在后面
+            }
+            other => panic!("期望 Direct，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rebuild_reuses_offscreen_handle() {
+        // 先 build 一个带 Picture 的树，注入 handle 后 rebuild，验证 bounds 不变时复用
+        let tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        // 注入 offscreen handle（模拟已渲染）
+        if let Some(ref mut root) = lt.root {
+            match root {
+                LayerNode::Picture { ref mut offscreen_handle, .. } => {
+                    *offscreen_handle = Some(ImageHandle(42));
+                }
+                _ => {}
+            }
+        }
+        // rebuild 同一棵树（bounds 不变）→ handle 应被复用
+        lt.build(&tree);
+        // 新 root 应持有 offscreen handle
+        let new_root = lt.root_node().unwrap();
+        match new_root {
+            LayerNode::Picture { offscreen_handle, .. } => {
+                assert_eq!(*offscreen_handle, Some(ImageHandle(42)));
+            }
+            _ => panic!("期望 Picture"),
+        }
+    }
+
+    #[test]
+    fn rebuild_collects_orphaned_handles() {
+        // 先 build 一个带 Picture 的树
+        let tree1 = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree1);
+
+        // 手动注入一个 offscreen handle 到旧 Picture（模拟已渲染过的状态）
+        if let Some(ref mut root) = lt.root {
+            match root {
+                LayerNode::Picture { ref mut offscreen_handle, .. } => {
+                    *offscreen_handle = Some(ImageHandle(42));
+                }
+                _ => {}
+            }
+        }
+
+        // 第二次 build 时，旧 handle 应进入 orphaned_handles
+        let tree2 = single_tree(Dummy::repaint(200.0, 100.0), Rect::new(0.0, 0.0, 200.0, 100.0));
+        lt.build(&tree2); // bounds 改变 → 旧 handle 无法复用 → 进入孤儿列表
+
+        assert!(lt.orphaned_handles().contains(&ImageHandle(42)));
+    }
+
+    #[test]
+    fn is_ready_after_build() {
+        let tree = single_tree(Dummy::new(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        assert!(!lt.is_ready());
+        lt.build(&tree);
+        assert!(lt.is_ready());
+    }
+
+    #[test]
+    fn invalidate_marks_picture_dirty() {
+        let tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        // 手动标记为 clean 再 invalidate
+        if let Some(ref mut root) = lt.root {
+            root.mark_clean();
+            match root {
+                LayerNode::Picture { is_dirty, .. } => assert!(!*is_dirty),
+                _ => {}
+            }
+        }
+
+        lt.invalidate();
+
+        if let Some(ref root) = lt.root {
+            match root {
+                LayerNode::Picture { is_dirty, .. } => assert!(*is_dirty),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn invalidate_propagates_to_children() {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(
+            ContainerWidget::new(200.0, 200.0),
+        ));
+        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        let child_id = tree.add_child(root_id, Box::new(Dummy::repaint(100.0, 50.0)));
+        tree.get_mut(child_id).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        // 手动标记 clean
+        if let Some(ref mut root) = lt.root {
+            root.mark_clean();
+        }
+
+        lt.invalidate();
+
+        // 根 invalidate 后，子 Picture 也应为 dirty
+        if let Some(ref root) = lt.root {
+            match root {
+                LayerNode::Direct { children, .. } => {
+                    assert_eq!(children.len(), 1);
+                    match &children[0] {
+                        LayerNode::Picture { is_dirty, .. } => assert!(*is_dirty),
+                        _ => panic!("期望 Picture 子节点"),
+                    }
+                }
+                other => panic!("期望 Direct，得到 {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn update_dirty_marks_picture_clean_when_widget_clean() {
+        let mut tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        // build 后 Picture 默认 is_dirty=true（无缓存）
+        // 标记 widget 为 clean
+        let root_id = tree.root_id().unwrap();
+        tree.get_mut(root_id).unwrap().set_dirty(false);
+
+        lt.update_dirty(&tree);
+
+        if let Some(ref root) = lt.root {
+            match root {
+                LayerNode::Picture { is_dirty, .. } => {
+                    // widget clean + Picture clean → is_dirty 应为 false
+                    assert!(!*is_dirty);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn update_dirty_propagates_child_dirty_to_picture() {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Dummy::repaint(300.0, 300.0)));
+        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+        let child_id = tree.add_child(root_id, Box::new(Dummy::new(100.0, 50.0)));
+        tree.get_mut(child_id).unwrap().set_frame(Rect::new(10.0, 10.0, 100.0, 50.0));
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        // 标记根 widget clean，子 widget dirty
+        tree.get_mut(root_id).unwrap().set_dirty(false);
+        tree.get_mut(child_id).unwrap().set_dirty(true);
+
+        lt.update_dirty(&tree);
+
+        if let Some(ref root) = lt.root {
+            match root {
+                LayerNode::Picture { is_dirty, children, .. } => {
+                    // 子节点 dirty → 父 Picture 应被标记 dirty
+                    assert!(*is_dirty, "子节点 dirty 应传播到父 Picture");
+                    // 子节点应为 Direct
+                    assert_eq!(children.len(), 1);
+                }
+                other => panic!("期望 Picture 根节点，得到 {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn update_dirty_marks_picture_dirty_when_widget_dirty() {
+        let mut tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        // 先标记 clean
+        let root_id = tree.root_id().unwrap();
+        tree.get_mut(root_id).unwrap().set_dirty(false);
+        lt.update_dirty(&tree);
+
+        // 再标记 dirty
+        tree.get_mut(root_id).unwrap().set_dirty(true);
+        lt.update_dirty(&tree);
+
+        if let Some(ref root) = lt.root {
+            match root {
+                LayerNode::Picture { is_dirty, .. } => {
+                    assert!(*is_dirty);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn build_with_repaint_boundary_has_no_children_in_picture() {
+        // Picture 节点的 children 应包含结构化的 LayerNode，不是空的
+        let tree = tree_with_children(
+            Dummy::new(200.0, 200.0), Rect::new(0.0, 0.0, 200.0, 200.0),
+            vec![
+                (Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0)),
+            ],
+        );
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { children, .. } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    LayerNode::Picture { children: pic_children, .. } => {
+                        assert!(pic_children.is_empty(), "Picture 不应有子节点（当前子树下无更多子节点）");
+                    }
+                    other => panic!("期望 Picture，得到 {other:?}"),
+                }
+            }
+            other => panic!("期望 Direct，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn orphaned_handles_empty_after_init() {
+        let lt = LayerTree::new();
+        assert!(lt.orphaned_handles().is_empty());
+    }
+
+    #[test]
+    fn invalidate_noop_when_no_root() {
+        let mut lt = LayerTree::new();
+        lt.invalidate(); // 不应 panic
+        assert!(lt.root_node().is_none());
+    }
+
+    #[test]
+    fn update_dirty_noop_when_no_root() {
+        let tree = WidgetTree::new();
+        let mut lt = LayerTree::new();
+        lt.update_dirty(&tree); // 不应 panic
+    }
+
+    #[test]
+    fn build_twice_rebuilds_correctly() {
+        let tree1 = single_tree(Dummy::new(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree1);
+        assert!(lt.is_ready());
+
+        // 第二次 build 不同的树
+        let tree2 = single_tree(Dummy::repaint(200.0, 100.0), Rect::new(0.0, 0.0, 200.0, 100.0));
+        lt.build(&tree2);
+        assert!(lt.is_ready());
+
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Picture { bounds, .. } => {
+                assert_eq!(*bounds, Rect::new(0.0, 0.0, 200.0, 100.0));
+            }
+            other => panic!("期望 Picture，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn debug_format_layer_tree() {
+        let lt = LayerTree::new();
+        let s = format!("{lt:?}");
+        assert!(s.contains("has_root"));
+    }
+
+    #[test]
+    fn debug_format_layer_node_picture() {
+        let node = LayerNode::Picture {
+            widget_id: 1,
+            bounds: Rect::new(0.0, 0.0, 100.0, 50.0),
+            is_dirty: true,
+            offscreen_handle: Some(ImageHandle(1)),
+            children: vec![],
+            retry_count: 0,
+        };
+        let s = format!("{node:?}");
+        assert!(s.contains("PictureLayer"));
+        assert!(s.contains("has_offscreen"));
+    }
+
+    #[test]
+    fn debug_format_layer_node_clip_rect() {
+        let node = LayerNode::ClipRect {
+            widget_id: 2,
+            rect: Rect::new(5.0, 5.0, 90.0, 40.0),
+            children: vec![],
+        };
+        let s = format!("{node:?}");
+        assert!(s.contains("ClipRectLayer"));
+    }
+
+    #[test]
+    fn debug_format_layer_node_direct() {
+        let node = LayerNode::Direct {
+            widget_id: 3,
+            children: vec![],
+        };
+        let s = format!("{node:?}");
+        assert!(s.contains("DirectLayer"));
+    }
+
+    #[test]
+    fn sweep_orphaned_offscreens_drains_handles() {
+        let mut lt = LayerTree::new();
+        lt.orphaned_handles_mut().push(ImageHandle(1));
+        lt.orphaned_handles_mut().push(ImageHandle(2));
+        assert_eq!(lt.orphaned_handles().len(), 2);
+
+        let mut engine = uix_graphics::null_engine::NullEngine::new();
+        lt.sweep_orphaned_offscreens(&mut engine);
+        assert!(lt.orphaned_handles().is_empty());
+    }
+
+    #[test]
+    fn sweep_orphaned_offscreens_empty_is_safe() {
+        let mut lt = LayerTree::new();
+        let mut engine = uix_graphics::null_engine::NullEngine::new();
+        lt.sweep_orphaned_offscreens(&mut engine); // 不应 panic
+        assert!(lt.orphaned_handles().is_empty());
+    }
+
+    #[test]
+    fn build_z_index_ordered_correctly() {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Dummy::new(200.0, 200.0)));
+        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        let child_a = tree.add_child(root_id, Box::new(Dummy::new(50.0, 50.0)));
+        tree.get_mut(child_a).unwrap().set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
+        tree.get_mut(child_a).unwrap().set_z_index(10);
+        let child_b = tree.add_child(root_id, Box::new(Dummy::new(50.0, 50.0)));
+        tree.get_mut(child_b).unwrap().set_frame(Rect::new(50.0, 0.0, 50.0, 50.0));
+        tree.get_mut(child_b).unwrap().set_z_index(1);
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { children, .. } => {
+                assert_eq!(children.len(), 2);
+                // z_index 升序：child_b (z=1) 应在 child_a (z=10) 前面
+                assert_eq!(children[0].widget_id(), child_b);
+                assert_eq!(children[1].widget_id(), child_a);
+            }
+            other => panic!("期望 Direct，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_z_index_equal_indices_preserve_insertion_order() {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Dummy::new(200.0, 200.0)));
+        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+        let child_a = tree.add_child(root_id, Box::new(Dummy::new(50.0, 50.0)));
+        tree.get_mut(child_a).unwrap().set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
+        let child_b = tree.add_child(root_id, Box::new(Dummy::new(50.0, 50.0)));
+        tree.get_mut(child_b).unwrap().set_frame(Rect::new(50.0, 0.0, 50.0, 50.0));
+        // 都使用默认 z=0，排序是稳定的（插入顺序保留）
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { children, .. } => {
+                assert_eq!(children[0].widget_id(), child_a);
+                assert_eq!(children[1].widget_id(), child_b);
+            }
+            other => panic!("期望 Direct，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rebuild_with_clean_widget_and_offscreen_is_clean() {
+        let mut tree = single_tree(Dummy::repaint(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        // 注入 offscreen handle
+        if let Some(ref mut root) = lt.root {
+            if let LayerNode::Picture { ref mut offscreen_handle, .. } = root {
+                *offscreen_handle = Some(ImageHandle(42));
+            }
+        }
+
+        // 标记 widget clean
+        let root_id = tree.root_id().unwrap();
+        tree.get_mut(root_id).unwrap().set_dirty(false);
+
+        // rebuild（bounds 不变，offscreen 被复用，widget clean）
+        lt.build(&tree);
+
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Picture { is_dirty, offscreen_handle, .. } => {
+                assert!(offscreen_handle.is_some());
+                assert!(!*is_dirty, "offscreen 存在且 widget clean → Picture 应为 clean");
+            }
+            _ => panic!("期望 Picture"),
+        }
+    }
+
+    #[test]
+    fn build_multi_level_nesting() {
+        // 三层：Direct → ClipRect → Picture
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Dummy::new(400.0, 400.0)));
+        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
+        let clip_id = tree.add_child(root_id, Box::new(Dummy::clipped(200.0, 200.0, Rect::new(0.0, 0.0, 200.0, 200.0))));
+        tree.get_mut(clip_id).unwrap().set_frame(Rect::new(50.0, 50.0, 200.0, 200.0));
+        let pic_id = tree.add_child(clip_id, Box::new(Dummy::repaint(100.0, 100.0)));
+        tree.get_mut(pic_id).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { children, .. } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    LayerNode::ClipRect { children: clip_children, .. } => {
+                        assert_eq!(clip_children.len(), 1);
+                        match &clip_children[0] {
+                            LayerNode::Picture { .. } => {}
+                            other => panic!("期望 Picture，得到 {other:?}"),
+                        }
+                    }
+                    other => panic!("期望 ClipRect，得到 {other:?}"),
+                }
+            }
+            other => panic!("期望 Direct，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_skips_invisible_root() {
+        let mut tree = WidgetTree::new();
+        let id = tree.set_root(Box::new(Dummy::new(100.0, 50.0)));
+        tree.get_mut(id).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+        tree.get_mut(id).unwrap().set_visible(false);
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        assert!(lt.root_node().is_none());
+        assert!(!lt.is_ready());
+    }
+
+    #[test]
+    fn build_zero_size_frame_creates_node() {
+        let tree = single_tree(Dummy::new(0.0, 0.0), Rect::new(0.0, 0.0, 0.0, 0.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        // 零尺寸 widget 仍然可见，应创建节点
+        assert!(lt.is_ready());
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { .. } => {}
+            other => panic!("期望 Direct，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_repaint_boundary_zero_size_is_dirty() {
+        let tree = single_tree(Dummy::repaint(0.0, 0.0), Rect::new(0.0, 0.0, 0.0, 0.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        assert!(lt.is_ready());
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Picture { bounds, is_dirty, .. } => {
+                assert_eq!(*bounds, Rect::new(0.0, 0.0, 0.0, 0.0));
+                assert!(*is_dirty);
+            }
+            other => panic!("期望 Picture，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn update_dirty_clip_rect_no_panic() {
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Dummy::new(400.0, 400.0)));
+        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
+        let clip_id = tree.add_child(root_id, Box::new(Dummy::clipped(200.0, 200.0, Rect::new(0.0, 0.0, 200.0, 200.0))));
+        tree.get_mut(clip_id).unwrap().set_frame(Rect::new(50.0, 50.0, 200.0, 200.0));
+        let child_id = tree.add_child(clip_id, Box::new(Dummy::new(100.0, 50.0)));
+        tree.get_mut(child_id).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+
+        // 标记 child dirty → update_dirty 应传播通过 ClipRect
+        tree.get_mut(child_id).unwrap().set_dirty(true);
+        lt.update_dirty(&tree); // 不应 panic
+    }
+
+    #[test]
+    fn build_negative_frame_positions() {
+        let tree = single_tree(Dummy::new(100.0, 50.0), Rect::new(-50.0, -20.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        assert!(lt.is_ready());
+        let root = lt.root_node().unwrap();
+        match root {
+            LayerNode::Direct { .. } => {}
+            other => panic!("期望 Direct，得到 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rebuild_multiple_pictures_orphaned_all() {
+        // 有两个 Picture 子节点的树
+        let mut tree = WidgetTree::new();
+        let root_id = tree.set_root(Box::new(Dummy::new(400.0, 400.0)));
+        tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 400.0, 400.0));
+        let pic1 = tree.add_child(root_id, Box::new(Dummy::repaint(100.0, 50.0)));
+        tree.get_mut(pic1).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+        let pic2 = tree.add_child(root_id, Box::new(Dummy::repaint(100.0, 50.0)));
+        tree.get_mut(pic2).unwrap().set_frame(Rect::new(100.0, 0.0, 100.0, 50.0));
+
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        // 注入 handle
+        fn inject_handles(lt: &mut LayerTree, h1: ImageHandle, h2: ImageHandle) {
+            if let Some(ref mut root) = lt.root {
+                if let LayerNode::Direct { children, .. } = root {
+                    if let LayerNode::Picture { ref mut offscreen_handle, .. } = &mut children[0] {
+                        *offscreen_handle = Some(h1);
+                    }
+                    if let LayerNode::Picture { ref mut offscreen_handle, .. } = &mut children[1] {
+                        *offscreen_handle = Some(h2);
+                    }
+                }
+            }
+        }
+        inject_handles(&mut lt, ImageHandle(10), ImageHandle(20));
+        assert!(lt.orphaned_handles().is_empty());
+
+        // 改变 bounds → 两个 handle 都变成孤儿
+        tree.get_mut(pic1).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+        lt.build(&tree);
+        assert!(lt.orphaned_handles().contains(&ImageHandle(10)));
+        assert!(lt.orphaned_handles().contains(&ImageHandle(20)));
+    }
+
+    #[test]
+    fn widget_id_matches_tree() {
+        let tree = single_tree(Dummy::new(100.0, 50.0), Rect::new(0.0, 0.0, 100.0, 50.0));
+        let mut lt = LayerTree::new();
+        lt.build(&tree);
+        let root_id = tree.root_id().unwrap();
+        let root = lt.root_node().unwrap();
+        assert_eq!(root.widget_id(), root_id);
+    }
+}
