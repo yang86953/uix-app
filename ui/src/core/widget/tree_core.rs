@@ -982,10 +982,15 @@ impl WidgetTree {
 
             if let Some((dx, dy)) = self.get(id).and_then(|n| n.scroll_delta_for_dirty()) {
                 if (dx.abs() > 0.5 || dy.abs() > 0.5) && self.dirty.scroll_region_move.is_none() {
-                    if let Some(frame) = self.get(id).map(|n| n.frame()) {
+                    if let Some(node) = self.get(id) {
+                        let frame = node.frame();
+                        let strip = node.dirty_rect(frame);
                         self.dirty.scroll_region_move = Some((frame, dx, dy));
+                        if strip.w > 0.0 && strip.h > 0.0 {
+                            self.dirty.region.add_rect(strip);
+                        }
                         self.push_composite_invalidation(
-                            frame,
+                            strip,
                             Some(uix_graphics::pipeline::ScrollDelta { dx, dy }),
                         );
                     }

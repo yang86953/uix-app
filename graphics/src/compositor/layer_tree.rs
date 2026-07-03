@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use uix_platform::{Point, Rect};
 
 use crate::compositor::picture::{blit_picture_cache, rasterize_picture_to_offscreen, LayerRenderEnv};
+use crate::compositor::viewport_transform::{needs_paint, needs_paint_rect};
 use crate::compositor::ScenePaint;
 use crate::font_service::FontService;
 use crate::painting::{PaintContext, ThemeSnapshot};
@@ -216,7 +217,6 @@ impl LayerTree {
         let orientation = engine.orientation();
         let surface_w = engine.canvas_2d().width();
         let surface_h = engine.canvas_2d().height();
-        let dirty_bounds = dirty_region.bounds();
         let env = LayerRenderEnv {
             font,
             font_service,
@@ -231,8 +231,6 @@ impl LayerTree {
                 engine,
                 scene,
                 dirty_region,
-                dirty_bounds,
-                false,
                 &env,
                 surface_w,
                 surface_h,
@@ -321,7 +319,6 @@ impl LayerTree {
             None
         };
 
-        let dirty_bounds = dirty_region.bounds();
         if let Some(ref root) = self.root {
             Self::render_overlay_node(
                 root,
@@ -331,8 +328,6 @@ impl LayerTree {
                 &hovered_chain,
                 debug_mode,
                 dirty_region,
-                dirty_bounds,
-                false,
             );
         }
 
@@ -493,20 +488,12 @@ impl LayerTree {
         }
     }
 
-    /// 递归渲染单个节点。
-    /// 子节点已在 build 时预排序，直接遍历无需再次排序。
-    /// 终极方案：空间+脏状态双剪枝。
-    /// `dirty_bounds` 是所有脏矩形的外接包围盒，用于捕捉脏矩形间隙中的组件。
-    /// `force_render`：为 true 时跳过子节点的脏检查，强制渲染所有子节点。
-    /// 滚动容器（ScrollView）需要 force_render，因为子节点 frame 在 content 坐标系，
-    /// 而 dirty_region 在 viewport 坐标系，直接交叉检测会导致子节点被错误跳过。
+    /// 递归渲染单个节点；脏剪枝使用 viewport 坐标变换（Phase 5）。
     fn render_node(
         node: &mut LayerNode,
         engine: &mut dyn GraphicsEngine,
         scene: &impl ScenePaint,
         dirty_region: &DirtyRegion,
-        dirty_bounds: Rect,
-        force_render: bool,
         env: &LayerRenderEnv<'_>,
         surface_w: i32,
         surface_h: i32,
@@ -526,9 +513,8 @@ impl LayerTree {
                     return;
                 }
 
-                let in_bounds = dirty_bounds.intersect(bounds).is_some();
                 let needs_blit =
-                    force_render || *is_dirty || dirty_region.intersects(*bounds) || in_bounds;
+                    *is_dirty || needs_paint_rect(scene, *widget_id, *bounds, dirty_region);
 
                 if *is_dirty || offscreen_handle.is_none() {
                     rasterize_picture_to_offscreen(
@@ -557,35 +543,26 @@ impl LayerTree {
                 rect,
                 children,
             } => {
-                let widget_frame = scene.node_frame(*widget_id);
-                let in_bounds = dirty_bounds.intersect(&widget_frame).is_some();
-                let needs_render = scene.node_dirty(*widget_id)
-                    || dirty_region.intersects(widget_frame)
-                    || in_bounds;
-                if needs_render {
+                if needs_paint(scene, *widget_id, dirty_region) {
                     let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
                     Self::render_widget_self(*widget_id, &mut ctx, scene);
                 }
                 engine.canvas_2d().push_clip(*rect);
-                let scroll_off = Self::get_scroll_offset(scene, *widget_id);
-                if let Some((sx, sy)) = scroll_off {
+                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
                     engine.canvas_2d().translate(-sx, -sy);
                 }
-                let child_force = scroll_off.is_some() || force_render;
                 for child in children.iter_mut() {
                     Self::render_node(
                         child,
                         engine,
                         scene,
                         dirty_region,
-                        dirty_bounds,
-                        child_force,
                         env,
                         surface_w,
                         surface_h,
                     );
                 }
-                if let Some((sx, sy)) = scroll_off {
+                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
                     engine.canvas_2d().translate(sx, sy);
                 }
                 engine.canvas_2d().pop_clip();
@@ -600,8 +577,6 @@ impl LayerTree {
                     children,
                     scene,
                     dirty_region,
-                    dirty_bounds,
-                    force_render,
                     env,
                     surface_w,
                     surface_h,
@@ -622,27 +597,12 @@ impl LayerTree {
     }
 
     /// 渲染 widget 自身及其子节点（直接遍历 children LayerNodes）。
-    /// 子节点已预排序，直接遍历无需再次排序。
-    /// 终极方案：入口做空间+脏状态双剪枝 + dirty_bounds 间隙修正。
-    ///
-    /// `dirty_bounds` 是所有脏矩形的外接包围盒。当 parent 在 dirty_bounds
-    /// 区域内渲染背景时，会覆盖非脏子节点的像素。通过 dirty_bounds 检查确保
-    /// 这些「间隙区」的子节点也被重新渲染。
-    ///
-    /// `force_render`：为 true 时跳过脏检查，强制渲染所有子节点。
-    /// 用于滚动容器——子节点 frame 在 content 坐标系，dirty_region 在 viewport 坐标系。
-    ///
-    /// 注意：先渲染 widget 自身（由其 render() 自行判断内部可见性），
-    /// 再通过 inner().visible() 决定是否渲染子节点。这样模态框等组件
-    /// 的 render() 可以控制自身绘制，同时阻止子节点在隐藏时渲染。
     fn render_widget_and_children(
         engine: &mut dyn GraphicsEngine,
         id: NodeId,
         children: &mut [LayerNode],
         scene: &impl ScenePaint,
         dirty_region: &DirtyRegion,
-        dirty_bounds: Rect,
-        force_render: bool,
         env: &LayerRenderEnv<'_>,
         surface_w: i32,
         surface_h: i32,
@@ -650,12 +610,8 @@ impl LayerTree {
         if !scene.node_visible(id) {
             return;
         }
-        let frame = scene.node_frame(id);
-        let in_bounds = dirty_bounds.intersect(&frame).is_some();
-        let need_self_render =
-            force_render || scene.node_dirty(id) || dirty_region.intersects(frame) || in_bounds;
-
-        if need_self_render {
+        if needs_paint(scene, id, dirty_region) {
+            let frame = scene.node_frame(id);
             let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
             ctx.save();
             scene.paint(id, frame, &mut ctx);
@@ -669,8 +625,6 @@ impl LayerTree {
                     engine,
                     scene,
                     dirty_region,
-                    dirty_bounds,
-                    force_render,
                     env,
                     surface_w,
                     surface_h,
@@ -688,22 +642,15 @@ impl LayerTree {
         hovered_chain: &Option<HashSet<NodeId>>,
         debug_mode: bool,
         dirty_region: &DirtyRegion,
-        dirty_bounds: Rect,
-        force_overlay: bool,
     ) {
         let widget_id = node.widget_id();
 
-        let needs_overlay = force_overlay
-            || if debug_mode {
-                true
-            } else if scene.node_visible(widget_id) {
+        let needs_overlay = debug_mode
+            || (scene.node_visible(widget_id) && {
                 let frame = scene.node_frame(widget_id);
                 let draw_area = scene.dirty_rect(widget_id, frame);
-                dirty_region.intersects(draw_area)
-                    || dirty_bounds.intersect(&draw_area).is_some()
-            } else {
-                false
-            };
+                needs_paint_rect(scene, widget_id, draw_area, dirty_region)
+            });
 
         if needs_overlay {
             if scene.node_visible(widget_id) {
@@ -738,8 +685,6 @@ impl LayerTree {
                         hovered_chain,
                         debug_mode,
                         dirty_region,
-                        dirty_bounds,
-                        force_overlay,
                     );
                 }
             }
@@ -750,11 +695,9 @@ impl LayerTree {
                 ..
             } => {
                 ctx.canvas_2d().push_clip(*rect);
-                let scroll_off = Self::get_scroll_offset(scene, *widget_id);
-                if let Some((sx, sy)) = scroll_off {
+                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
                     ctx.canvas_2d().translate(-sx, -sy);
                 }
-                let child_force = scroll_off.is_some() || force_overlay;
                 for child in children {
                     Self::render_overlay_node(
                         child,
@@ -764,11 +707,9 @@ impl LayerTree {
                         hovered_chain,
                         debug_mode,
                         dirty_region,
-                        dirty_bounds,
-                        child_force,
                     );
                 }
-                if let Some((sx, sy)) = scroll_off {
+                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
                     ctx.canvas_2d().translate(sx, sy);
                 }
                 ctx.canvas_2d().pop_clip();

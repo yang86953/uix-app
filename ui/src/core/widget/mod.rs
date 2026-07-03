@@ -335,6 +335,11 @@ impl BoxedWidget {
             .as_event()
             .and_then(|e| e.scroll_delta_for_dirty())
     }
+    pub fn viewport_scroll_offset(&self) -> Option<(f32, f32)> {
+        self.component()
+            .as_event()
+            .and_then(|e| e.viewport_scroll_offset())
+    }
     pub fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
         self.component()
             .as_event()

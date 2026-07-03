@@ -150,6 +150,10 @@ pub trait WidgetEventHandler: WidgetComponent {
     fn scroll_delta_for_dirty(&self) -> Option<(f32, f32)> {
         None
     }
+    /// viewport 容器当前 scroll 偏移（content 坐标系）；非 viewport 返回 `None`。
+    fn viewport_scroll_offset(&self) -> Option<(f32, f32)> {
+        None
+    }
     fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
         actual_frame
     }

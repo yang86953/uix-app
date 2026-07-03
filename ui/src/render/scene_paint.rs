@@ -7,7 +7,6 @@ use uix_graphics::types::DirtyRegion;
 use uix_platform::{Point, Rect};
 
 use crate::widget::{WidgetCore, WidgetId, WidgetTree};
-use crate::widgets::scroll_view::ScrollView;
 
 impl ScenePaint for WidgetTree {
     fn root_id(&self) -> Option<NodeId> {
@@ -56,15 +55,7 @@ impl ScenePaint for WidgetTree {
     }
 
     fn scroll_offset(&self, id: NodeId) -> Option<(f32, f32)> {
-        self.get(id).and_then(|node| {
-            let comp = node.component();
-            let sv = comp.as_any().downcast_ref::<ScrollView>()?;
-            if sv.scroll_x().abs() > 0.5 || sv.scroll_y().abs() > 0.5 {
-                Some((sv.scroll_x(), sv.scroll_y()))
-            } else {
-                None
-            }
-        })
+        self.get(id).and_then(|n| n.viewport_scroll_offset())
     }
 
     fn focused_node(&self) -> Option<NodeId> {
