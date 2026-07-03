@@ -46,7 +46,7 @@ define_widget! {
         ghost: bool,
         /// 用户自定义基础样式——作为 compute_style 的基底，variant/state 在其上覆盖。
         /// 用户可通过 builder 方法设置具体属性：`.bg()`, `.color()`, `.fs()` 等。
-        style: Style,
+        pub(crate) style: Style,
     }
 
     tab_index => (&self) -> i32 { 1 }

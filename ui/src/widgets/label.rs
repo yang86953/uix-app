@@ -31,7 +31,7 @@ define_widget! {
         /// 上次渲染时的文本 draw_pos（用于事件命中测试）。
         draw_pos: Cell<uix_platform::Point>,
         /// 统一样式覆盖（优先于 color/font_size 独立字段）。
-        style: Option<Style>,
+        pub(crate) style: Option<Style>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
