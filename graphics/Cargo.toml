@@ -9,5 +9,8 @@ uix-platform = { path = "../platform" }
 ab_glyph = { workspace = true }
 glow = { workspace = true }
 
+[dev-dependencies]
+uix-platform = { path = "../platform", features = ["test-harness"] }
+
 [lints]
 workspace = true
