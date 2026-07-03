@@ -101,8 +101,8 @@ mod tests {
         fn tree_version(&self) -> u64 {
             1
         }
-        fn dirty_region(&self) -> &DirtyRegion {
-            &self.region
+        fn dirty_region(&self) -> DirtyRegion {
+            self.region.clone()
         }
         fn node_visible(&self, _: NodeId) -> bool {
             true
@@ -171,7 +171,7 @@ mod tests {
     fn content_to_viewport_maps_scroll_child_into_visible_strip() {
         let scene = ScrollScene::with_strip_at_viewport_bottom();
         // child y=140, scroll_y=50 → viewport y=90，高度 20 → 与 strip [90,100] 相交
-        assert!(needs_paint(&scene, 2, scene.dirty_region()));
+        assert!(needs_paint(&scene, 2, &scene.dirty_region()));
     }
 
     #[test]
@@ -192,7 +192,7 @@ mod tests {
             &scene,
             2,
             Rect::new(0.0, 10.0, 100.0, 20.0),
-            scene.dirty_region()
+            &scene.dirty_region()
         ));
     }
 }

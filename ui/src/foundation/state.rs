@@ -2,6 +2,9 @@ use std::cell::RefCell;
 use std::fmt;
 use std::sync::{Arc, RwLock};
 
+use uix_graphics::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
+use uix_platform::Rect;
+
 // ── 响应式依赖追踪 ────────────────────────────────────────────
 //
 // 设计：使用 thread_local 追踪当前正在计算的 Computed 所读取的 State。
@@ -17,6 +20,46 @@ thread_local! {
 thread_local! {
     static CURRENT_VIEW_DIRTY_FN: RefCell<Option<Arc<dyn Fn() + Send + Sync>>> =
         RefCell::new(None);
+}
+
+// Phase 6：State 创建时暂存，供 DynamicLabel 等响应式 widget 绑定。
+thread_local! {
+    static PENDING_STATE_BINDS: RefCell<Vec<Arc<dyn StatePaintBind>>> = RefCell::new(Vec::new());
+}
+
+static STATE_CAPTURE_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// 开始捕获 `State::new` 实例（View 构建期间调用）。
+pub fn begin_state_capture() {
+    STATE_CAPTURE_ACTIVE.store(true, std::sync::atomic::Ordering::SeqCst);
+    PENDING_STATE_BINDS.with(|p| p.borrow_mut().clear());
+}
+
+/// 取出并清空当前 pending State 绑定（响应式 widget 构造时调用）。
+pub fn drain_pending_state_binds() -> Vec<Arc<dyn StatePaintBind>> {
+    PENDING_STATE_BINDS.with(|p| std::mem::take(&mut *p.borrow_mut()))
+}
+
+/// State 变更时推送精确 Paint 失效的绑定接口。
+pub trait StatePaintBind: Send + Sync {
+    fn bind_paint(
+        &self,
+        widget_id: usize,
+        queue: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    );
+}
+
+impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
+    fn bind_paint(
+        &self,
+        widget_id: usize,
+        queue: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    ) {
+        self.bind_paint_invalidation(widget_id, queue, rect);
+    }
 }
 
 /// 设置当前 View 的脏标记回调。此回调会被新创建的 `State` 自动绑定。
@@ -70,6 +113,8 @@ pub struct State<T> {
     inner: Arc<RwLock<StateInner<T>>>,
     /// 脏标记回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
     dirty_fn: Arc<std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>>,
+    /// Phase 6：精确 Paint 失效绑定（WidgetId + 队列句柄）。
+    paint_binding: Arc<std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>>,
 }
 
 struct StateInner<T> {
@@ -84,6 +129,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         // 自动从线程局部上下文绑定脏标记回调
         let dirty_fn: Arc<std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>> =
             Arc::new(std::sync::Mutex::new(None));
+        let paint_binding = Arc::new(std::sync::Mutex::new(None));
         CURRENT_VIEW_DIRTY_FN.with(|dirty| {
             let borrowed = dirty.borrow();
             if let Some(ref f) = *borrowed {
@@ -93,13 +139,41 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
                 }
             }
         });
-        Self {
+        let state = Self {
             inner: Arc::new(RwLock::new(StateInner {
                 value,
                 generation: 0,
                 watchers: Vec::new(),
             })),
             dirty_fn,
+            paint_binding,
+        };
+        if STATE_CAPTURE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
+            let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
+            PENDING_STATE_BINDS.with(|p| p.borrow_mut().push(bind));
+        }
+        state
+    }
+
+    /// 绑定精确 Paint 失效：State 变更时向队列推送 `Invalidation::Paint`。
+    pub fn bind_paint_invalidation(
+        &self,
+        widget_id: usize,
+        queue: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    ) {
+        if let Ok(mut guard) = self.paint_binding.lock() {
+            *guard = Some((widget_id, queue.clone(), rect));
+        }
+        let paint_binding = self.paint_binding.clone();
+        if let Ok(mut guard) = self.dirty_fn.lock() {
+            *guard = Some(Box::new(move || {
+                if let Ok(binding) = paint_binding.lock() {
+                    if let Some((id, q, r)) = binding.as_ref() {
+                        invalidate_paint_handle(q, *id, *r);
+                    }
+                }
+            }));
         }
     }
 
@@ -143,12 +217,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         for watcher in &watchers {
             watcher(&snapshot);
         }
-        // 自动脏标记：调用注册的回调通知 WidgetTree 重绘
-        if let Ok(guard) = self.dirty_fn.lock() {
-            if let Some(ref f) = *guard {
-                f();
-            }
-        }
+        Self::fire_invalidation(&self.dirty_fn, &self.paint_binding);
     }
 
     pub fn update<F>(&self, f: F)
@@ -167,8 +236,22 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         for watcher in &watchers {
             watcher(&snapshot);
         }
-        // 自动脏标记：调用注册的回调通知 WidgetTree 重绘
-        if let Ok(guard) = self.dirty_fn.lock() {
+        Self::fire_invalidation(&self.dirty_fn, &self.paint_binding);
+    }
+
+    fn fire_invalidation(
+        dirty_fn: &Arc<std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>>,
+        paint_binding: &Arc<
+            std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>,
+        >,
+    ) {
+        if let Ok(binding) = paint_binding.lock() {
+            if let Some((id, q, r)) = binding.as_ref() {
+                invalidate_paint_handle(q, *id, *r);
+                return;
+            }
+        }
+        if let Ok(guard) = dirty_fn.lock() {
             if let Some(ref f) = *guard {
                 f();
             }
@@ -196,6 +279,7 @@ impl<T: Clone + Send + Sync + 'static> Clone for State<T> {
         Self {
             inner: self.inner.clone(),
             dirty_fn: self.dirty_fn.clone(),
+            paint_binding: self.paint_binding.clone(),
         }
     }
 }

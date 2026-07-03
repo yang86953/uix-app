@@ -183,7 +183,7 @@ where
 
         let needs_work = window_visible && (had_layout_event || !rendered_first);
 
-        if needs_work {
+        if needs_work || tree.invalidation.lock().unwrap_or_else(|e| e.into_inner()).has_layout() {
             let before_version = tree.tree_version();
             tree.layout();
             record_layout(metrics);
@@ -199,7 +199,7 @@ where
             }
         }
 
-        let dirty_region = tree.dirty_region().clone();
+        let dirty_region = tree.dirty_region();
         let need_render = window_visible && (!rendered_first || tree.has_render_work());
         let engine_capabilities = engine.capabilities();
 

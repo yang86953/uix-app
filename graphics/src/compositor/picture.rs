@@ -104,11 +104,12 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
         off_ctx.canvas_2d().translate(-bounds.x, -bounds.y);
         LayerTree::render_widget_self(widget_id, &mut off_ctx, scene);
         if scene.node_visible(widget_id) {
+            let dirty_region = scene.dirty_region();
             render_non_picture_subtree(
                 children,
                 &mut off_ctx,
                 scene,
-                scene.dirty_region(),
+                &dirty_region,
                 env,
             );
         }

@@ -193,6 +193,7 @@ impl App {
     ///
     /// 接受实现了 `View` trait 的类型（所有组合子函数如 `column()`、`button()` 的返回值）。
     pub fn root(mut self, view: impl View) -> Self {
+        crate::state::begin_state_capture();
         let node = view.build();
         self.root = Some(node);
         self

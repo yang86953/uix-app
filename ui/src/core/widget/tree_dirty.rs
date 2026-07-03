@@ -1,16 +1,20 @@
 use super::tree_core::WidgetTree;
 use super::*;
-use uix_graphics::pipeline::{Invalidation, InvalidationQueue, ScrollDelta};
+use uix_graphics::pipeline::{Invalidation, InvalidationQueueHandle, ScrollDelta};
 use uix_graphics::DirtyRegion;
 
 impl WidgetTree {
-    pub fn invalidation(&self) -> &InvalidationQueue {
+    pub fn invalidation(&self) -> &InvalidationQueueHandle {
         &self.invalidation
     }
 
-    /// 是否有待渲染工作（失效队列或脏区域非空）。
+    pub fn invalidation_handle(&self) -> InvalidationQueueHandle {
+        self.invalidation.clone()
+    }
+
+    /// 是否有待渲染工作（失效队列非空）。
     pub fn has_render_work(&self) -> bool {
-        !self.invalidation.is_empty() || !self.dirty.region.is_empty()
+        !self.invalidation.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
     }
 
     /// 是否有进行中的动画/滚动惯性（仅用于事件轮询，不触发 present）。
@@ -20,7 +24,10 @@ impl WidgetTree {
 
     /// 绑定失效队列：初始化并扫描常驻动画节点。
     pub fn bind_invalidation(&mut self) {
-        self.invalidation.clear();
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         self.animation_registry.clear();
         if self.root_id.is_some() {
             for id in self.traverse() {
@@ -39,7 +46,17 @@ impl WidgetTree {
     }
 
     pub(crate) fn push_paint_invalidation(&mut self, id: WidgetId, rect: Option<Rect>) {
-        self.invalidation.push(Invalidation::Paint { id, rect });
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Invalidation::Paint { id, rect });
+    }
+
+    pub(crate) fn push_layout_invalidation(&mut self, id: WidgetId) {
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Invalidation::Layout(id));
     }
 
     pub(crate) fn push_composite_invalidation(
@@ -48,18 +65,20 @@ impl WidgetTree {
         scroll: Option<ScrollDelta>,
     ) {
         self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .push(Invalidation::Composite { rect, scroll });
     }
 
-    pub fn dirty_region(&self) -> &DirtyRegion {
-        &self.dirty.region
+    pub fn dirty_region(&self) -> DirtyRegion {
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .dirty_region()
     }
 
-    /// 从指定节点向上传播脏标记到所有祖先。
-    /// 既更新 `subtree_dirty`（布局遍历用），
-    /// 也设置 `is_dirty` 标志并加入 `dirty_nodes`（渲染用）。
-    /// 这样当事件命中子节点但由父节点处理时，父节点也会被正确重绘。
-    pub(crate) fn propagate_subtree_dirty(&mut self, from: WidgetId) {
+    /// 向上传播 Layout 失效到所有祖先。
+    pub(crate) fn propagate_layout_invalidation(&mut self, from: WidgetId) {
         let parents: Vec<WidgetId> = {
             let mut chain = Vec::new();
             let mut current = self.get(from).and_then(|n| n.parent());
@@ -70,61 +89,48 @@ impl WidgetTree {
             chain
         };
         for pid in parents {
-            self.subtree_dirty.insert(pid);
-            // 同时设置 is_dirty 标志并加入 dirty_nodes，
-            // 确保祖先节点在渲染时被正确识别为脏。
-            if let Some(node) = self.get_mut(pid) {
-                node.set_dirty(true);
-            }
-            self.dirty_nodes.insert(pid);
+            self.push_layout_invalidation(pid);
         }
     }
 
-    pub fn mark_dirty(&mut self, id: WidgetId) {
-        let is_valid = {
-            if let Some(node) = self.get_mut(id) {
-                node.set_dirty(true);
-                self.dirty_nodes.insert(id);
-                true
-            } else {
-                false
-            }
-        };
-        if !is_valid {
+    /// 标记节点 Paint 失效（精确 dirty_rect）。
+    pub fn invalidate_paint(&mut self, id: WidgetId) {
+        if self.get(id).is_none() {
             return;
         }
-        let (frame, dirty) = self
-            .get(id)
-            .map(|node| (node.frame(), node.dirty_rect(node.frame())))
-            .unwrap_or_default();
-        if dirty.w > 0.0 && dirty.h > 0.0 {
-            self.dirty.region.add_rect(dirty);
-            self.push_paint_invalidation(id, Some(dirty));
-        } else if frame.w > 0.0 && frame.h > 0.0 {
-            self.dirty.region.add_rect(frame);
-            self.push_paint_invalidation(id, Some(frame));
+        let rect = self.get(id).map(|node| {
+            let frame = node.frame();
+            let dirty = node.dirty_rect(frame);
+            if dirty.w > 0.0 && dirty.h > 0.0 {
+                dirty
+            } else {
+                frame
+            }
+        });
+        if let Some(r) = rect.filter(|r| r.w > 0.0 && r.h > 0.0) {
+            self.push_paint_invalidation(id, Some(r));
         }
-
         self.try_register_animation(id);
+    }
 
-        // 终极方案：向上传播子树脏标记
-        self.propagate_subtree_dirty(id);
+    /// 标记指定矩形 Paint 失效。
+    pub fn invalidate_paint_rect(&mut self, id: WidgetId, rect: Rect) {
+        if self.get(id).is_none() {
+            return;
+        }
+        if rect.w > 0.0 && rect.h > 0.0 {
+            self.push_paint_invalidation(id, Some(rect));
+        }
+        self.try_register_animation(id);
+    }
+
+    /// 兼容旧 API。
+    pub fn mark_dirty(&mut self, id: WidgetId) {
+        self.invalidate_paint(id);
     }
 
     pub fn mark_dirty_rect(&mut self, id: WidgetId, rect: Rect) {
-        if let Some(node) = self.get_mut(id) {
-            node.set_dirty(true);
-            self.dirty_nodes.insert(id);
-        }
-        if rect.w > 0.0 && rect.h > 0.0 {
-            self.dirty.region.add_rect(rect);
-            self.push_paint_invalidation(id, Some(rect));
-        }
-
-        self.try_register_animation(id);
-
-        // 终极方案：向上传播子树脏标记
-        self.propagate_subtree_dirty(id);
+        self.invalidate_paint_rect(id, rect);
     }
 
     pub fn mark_dirty_subtree(&mut self, id: WidgetId) {
@@ -137,8 +143,8 @@ impl WidgetTree {
             }
             result
         };
-        for id in ids {
-            self.mark_dirty(id);
+        for nid in ids {
+            self.invalidate_paint(nid);
         }
     }
 
@@ -151,34 +157,62 @@ impl WidgetTree {
         }
     }
 
-    /// 重置脏状态。只遍历脏节点清除 is_dirty，而非全量 traverse。
-    /// 遍历复杂度与脏节点数成正比，与总节点数无关。
+    /// 重置脏状态（帧末调用）。
     pub fn reset_dirty(&mut self) {
-        self.dirty.reset();
-        self.invalidation.clear();
-        let ids: Vec<WidgetId> = self.dirty_nodes.iter_dirty().collect();
-        for id in ids {
-            if let Some(node) = self.get_mut(id) {
-                node.set_dirty(false);
-            }
-        }
-        self.dirty_nodes.clear();
-        self.subtree_dirty.clear();
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.scroll_region_move = None;
     }
 
     /// 获取滚动偏移（用于 scroll_region 像素移动）。
     pub fn drain_scroll_region_move(&mut self) -> Option<(Rect, f32, f32)> {
-        self.dirty.scroll_region_move.take()
+        self.scroll_region_move.take()
     }
 
     pub fn mark_full_frame_dirty(&mut self) {
-        self.dirty.region = DirtyRegion::full();
-        self.invalidation.push(Invalidation::Paint { id: 0, rect: None });
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Invalidation::Paint {
+                id: 0,
+                rect: None,
+            });
+        if let Some(root) = self.root_id {
+            self.push_layout_invalidation(root);
+        }
+    }
+
+    /// 绑定响应式 widget（DynamicLabel 等）的 State → Paint 失效。
+    pub fn bind_reactive_widget_states(&mut self) {
+        use crate::view::combinators::DynamicLabel;
+        let handle = self.invalidation_handle();
         for id in self.traverse() {
-            self.dirty_nodes.insert(id);
-            self.subtree_dirty.insert(id);
-            if let Some(node) = self.get_mut(id) {
-                node.set_dirty(true);
+            let type_id = self
+                .get(id)
+                .map(|n| n.component().as_any().type_id())
+                .unwrap_or(std::any::TypeId::of::<()>());
+            if type_id == std::any::TypeId::of::<DynamicLabel>() {
+                let paint_rect = self.get(id).and_then(|n| {
+                    let frame = n.frame();
+                    let dirty = n.dirty_rect(frame);
+                    let r = if dirty.w > 0.0 && dirty.h > 0.0 {
+                        dirty
+                    } else {
+                        frame
+                    };
+                    if r.w > 0.0 && r.h > 0.0 {
+                        Some(r)
+                    } else {
+                        None
+                    }
+                });
+                if let Some(node) = self.get(id) {
+                    if let Some(dl) = node.component().as_any().downcast_ref::<DynamicLabel>() {
+                        dl.bind_state_invalidation(id, handle.clone(), paint_rect);
+                    }
+                }
             }
         }
     }

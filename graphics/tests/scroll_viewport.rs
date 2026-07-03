@@ -46,8 +46,8 @@ impl ScenePaint for ScrollStripScene {
     fn tree_version(&self) -> u64 {
         1
     }
-    fn dirty_region(&self) -> &DirtyRegion {
-        &self.dirty_region
+    fn dirty_region(&self) -> DirtyRegion {
+        self.dirty_region.clone()
     }
     fn node_visible(&self, _: NodeId) -> bool {
         true

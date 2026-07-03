@@ -10,7 +10,7 @@ use crate::types::DirtyRegion;
 pub trait ScenePaint {
     fn root_id(&self) -> Option<NodeId>;
     fn tree_version(&self) -> u64;
-    fn dirty_region(&self) -> &DirtyRegion;
+    fn dirty_region(&self) -> DirtyRegion;
     fn node_visible(&self, id: NodeId) -> bool;
     fn node_frame(&self, id: NodeId) -> Rect;
     fn node_dirty(&self, id: NodeId) -> bool;
