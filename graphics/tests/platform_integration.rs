@@ -548,7 +548,7 @@ fn fake_display_clear_history() {
 /// FakePlatform::new 初始化所有子系统，各自处于默认状态。
 #[test]
 fn fake_platform_new_all_subsystems_initialized() {
-    let mut pf = FakePlatform::new();
+    let pf = FakePlatform::new();
     // 显示
     assert!((pf.display.dpi_scale() - 1.0).abs() < 1e-6);
     assert_eq!(pf.display.count(), 1);
