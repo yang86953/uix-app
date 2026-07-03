@@ -281,6 +281,7 @@ impl App {
             &theme,
             &debug_mode,
             &cursor_pos,
+            None,
             default_map_event,
             |ev| on_exit(ev),
             |_, _, _| {},

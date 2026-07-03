@@ -1,0 +1,113 @@
+//! 渲染度量 — Phase 0 回归基线计数器。
+
+/// 触发本帧渲染的失效来源（Debug overlay 显示用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InvalidationSource {
+    /// 无渲染（0 帧）。
+    #[default]
+    None,
+    /// 首帧必须绘制。
+    FirstFrame,
+    /// WidgetTree 脏区域非空。
+    DirtyRegion,
+    /// 动画/滚动 keep_polling 持续。
+    AnimationPolling,
+    /// 布局相关 OS 事件（resize 等）。
+    LayoutEvent,
+    /// FrameGraph 判定本轮无需绘制。
+    FrameGraphCull,
+}
+
+impl InvalidationSource {
+    /// Debug HUD 短标签。
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "idle",
+            Self::FirstFrame => "first_frame",
+            Self::DirtyRegion => "dirty_region",
+            Self::AnimationPolling => "animation",
+            Self::LayoutEvent => "layout_event",
+            Self::FrameGraphCull => "fg_cull",
+        }
+    }
+}
+
+/// 帧级渲染统计（layout / paint / present / idle）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RenderMetrics {
+    pub layout_calls: u64,
+    pub paint_calls: u64,
+    pub present_calls: u64,
+    pub idle_frames: u64,
+    pub last_invalidation: InvalidationSource,
+}
+
+impl RenderMetrics {
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn record_layout(&mut self) {
+        self.layout_calls += 1;
+    }
+
+    pub fn record_paint(&mut self) {
+        self.paint_calls += 1;
+    }
+
+    pub fn record_present(&mut self, source: InvalidationSource) {
+        self.present_calls += 1;
+        self.last_invalidation = source;
+    }
+
+    pub fn record_idle(&mut self) {
+        self.idle_frames += 1;
+        self.last_invalidation = InvalidationSource::None;
+    }
+
+    pub fn record_idle_with_source(&mut self, source: InvalidationSource) {
+        self.idle_frames += 1;
+        self.last_invalidation = source;
+    }
+
+    pub fn record_frame_graph_cull(&mut self) {
+        self.idle_frames += 1;
+        self.last_invalidation = InvalidationSource::FrameGraphCull;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metrics_default_zero() {
+        let m = RenderMetrics::default();
+        assert_eq!(m.layout_calls, 0);
+        assert_eq!(m.paint_calls, 0);
+        assert_eq!(m.present_calls, 0);
+        assert_eq!(m.idle_frames, 0);
+        assert_eq!(m.last_invalidation, InvalidationSource::None);
+    }
+
+    #[test]
+    fn metrics_accumulates_counters() {
+        let mut m = RenderMetrics::default();
+        m.record_layout();
+        m.record_layout();
+        m.record_paint();
+        m.record_present(InvalidationSource::DirtyRegion);
+        m.record_idle();
+        assert_eq!(m.layout_calls, 2);
+        assert_eq!(m.paint_calls, 1);
+        assert_eq!(m.present_calls, 1);
+        assert_eq!(m.idle_frames, 1);
+        assert_eq!(m.last_invalidation, InvalidationSource::None);
+    }
+
+    #[test]
+    fn invalidation_source_labels() {
+        assert_eq!(InvalidationSource::FirstFrame.label(), "first_frame");
+        assert_eq!(InvalidationSource::AnimationPolling.label(), "animation");
+    }
+}
