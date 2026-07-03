@@ -76,6 +76,9 @@ pub mod virtual_scroll;
 pub mod widget;
 pub mod widgets;
 
+// ── 用户层简化 API（View 体系）──
+pub mod view;
+
 // ── 稳定公开 API ───────────────────────────────────────────────
 pub mod api;
 
