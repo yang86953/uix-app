@@ -35,9 +35,11 @@ pub use crate::frame_graph::resource::{PassId, ResourceRegistry};
 pub use crate::frame_graph::FrameGraph;
 
 // ── 引擎实现 ──
+pub use crate::backend::{BackendCapabilities, BackendKind, DamageRegion, RenderBackend};
 pub use crate::engine::cpu::software::SoftwareEngine;
 pub use crate::gpu_engine::GpuEngine;
 pub use crate::null_engine::NullEngine;
+pub use crate::pipeline::RenderSession;
 
 // ── 其他 ──
 pub use crate::bitmap_font::BitmapFont;

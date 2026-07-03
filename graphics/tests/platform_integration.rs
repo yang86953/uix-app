@@ -772,12 +772,9 @@ fn end_to_end_software_engine_frame_no_panic() {
     engine.begin_frame(UpdateStrategy::Overlay(vec![Rect::new(2.0, 2.0, 3.0, 3.0)]));
     engine.end_frame();
 
-    // Overlay 空列表 → Present（当前实现不返回 Idle，推全裁剪 + overlay 不清除）
+    // Overlay 空列表 → Idle（无 overlay 区域需绘制）
     let overlay = engine.begin_frame(UpdateStrategy::Overlay(vec![]));
-    assert!(matches!(
-        overlay,
-        uix_graphics::engine::RenderOutcome::Present(_)
-    ));
+    assert_eq!(overlay, uix_graphics::engine::RenderOutcome::Idle);
 }
 
 /// 端到端：SoftwareEngine 离屏缓冲 → blit → 不 panic。

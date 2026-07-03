@@ -10,6 +10,7 @@
 //! ```
 
 pub mod api;
+pub mod backend;
 pub mod bitmap_font;
 pub mod blur;
 pub mod color;
@@ -20,6 +21,7 @@ pub mod frame_graph;
 pub mod gpu_engine;
 pub mod null_engine;
 pub mod path;
+pub mod pipeline;
 pub mod rasterizer;
 pub mod spatial;
 pub mod stroker;
