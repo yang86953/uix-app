@@ -264,9 +264,7 @@ impl WidgetTree {
     }
 
     fn dispatch_to(&mut self, target: WidgetId, event: &WidgetEvent) -> EventResult {
-        // 分发前标记目标为脏，确保事件处理函数（on_event）中的状态变更能被渲染管线感知。
-        // 所有事件类型统一在此标记，避免 Timer / FileDrop / Window 等事件类型
-        // 在 dispatch_event 中遗漏 mark_dirty 导致状态变更不渲染的问题。
+        // 分发前标记目标为脏
         self.mark_dirty(target);
 
         let mut current = Some(target);
@@ -275,19 +273,40 @@ impl WidgetTree {
         // 翻译事件后加上该偏移量，使事件坐标与视觉位置一致。
         let scroll_off = self.cumulative_scroll_offset(target);
         while let Some(id) = current {
-            let node = match self.get_mut(id) { Some(n) => n, None => return EventResult::NotHandled };
-            let frame = node.frame();
+            // 先读取 frame（共享借用），传入 translate_mouse_event
+            // 再获取可变引用调用 on_event，确保 &mut self 借用不重叠
+            let frame = match self.get(id) {
+                Some(n) => n.frame(),
+                None => return EventResult::NotHandled,
+            };
             let translated = Self::translate_mouse_event(event, frame);
             let compensated = match scroll_off {
                 Some((sx, sy)) => Self::add_offset_to_event(translated, sx, sy),
                 None => translated,
             };
-            let result = node.on_event(&compensated);
-            match result {
-                EventResult::Handled => return EventResult::Handled,
-                EventResult::Bubbled => { current = node.parent(); }
-                EventResult::NotHandled => { current = node.parent(); }
+
+            // 处理 widget 自身的 on_event
+            let (result, parent_id) = {
+                let node = match self.get_mut(id) {
+                    Some(n) => n,
+                    None => return EventResult::NotHandled,
+                };
+                (node.on_event(&compensated), node.parent())
+            };
+            if result == EventResult::Handled {
+                return EventResult::Handled;
             }
+
+            // 事件管理器：widget 注册的额外 handler 链（在 on_event 之后调用）
+            // node 的 &mut 借用已在上面的块中释放，可安全访问 event_managers
+            if let Some(em) = self.event_managers.get_mut(&id) {
+                if em.dispatch(&compensated) == EventResult::Handled {
+                    return EventResult::Handled;
+                }
+            }
+
+            // Bubbled 或 NotHandled → 继续向父节点传播
+            current = parent_id;
         }
         EventResult::NotHandled
     }

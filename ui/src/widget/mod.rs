@@ -1,5 +1,17 @@
 use uix_platform::{Point, Rect, Size};
 pub use uix_platform::{KeyCode, KeyMod, MouseButton};
+
+/// WidgetEvent 的种类区分（无载荷），用于事件管理器按类型过滤。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WidgetEventKind {
+    MouseDown, MouseUp, MouseMove, MouseWheel,
+    KeyDown, KeyUp, KeyPress,
+    FocusIn, FocusOut, HoverEnter, HoverLeave,
+    Resize,
+    WindowMaximize, WindowMinimize, WindowRestore, WindowFocus, WindowBlur,
+    Timer,
+    FileDrop,
+}
 use uix_graphics::spatial::{Ray3D, SpatialContext};
 use uix_graphics::GraphicsEngine;
 
@@ -20,6 +32,33 @@ pub enum WidgetEvent {
     WindowMaximize, WindowMinimize, WindowRestore, WindowFocus, WindowBlur,
     Timer { id: u32 },
     FileDrop { files: Vec<String>, position: Point },
+}
+
+impl WidgetEvent {
+    /// 返回事件的种类（忽略载荷），用于事件管理器按类型过滤。
+    pub fn kind(&self) -> WidgetEventKind {
+        match self {
+            WidgetEvent::MouseDown { .. } => WidgetEventKind::MouseDown,
+            WidgetEvent::MouseUp { .. } => WidgetEventKind::MouseUp,
+            WidgetEvent::MouseMove { .. } => WidgetEventKind::MouseMove,
+            WidgetEvent::MouseWheel { .. } => WidgetEventKind::MouseWheel,
+            WidgetEvent::KeyDown { .. } => WidgetEventKind::KeyDown,
+            WidgetEvent::KeyUp { .. } => WidgetEventKind::KeyUp,
+            WidgetEvent::KeyPress { .. } => WidgetEventKind::KeyPress,
+            WidgetEvent::FocusIn => WidgetEventKind::FocusIn,
+            WidgetEvent::FocusOut => WidgetEventKind::FocusOut,
+            WidgetEvent::HoverEnter => WidgetEventKind::HoverEnter,
+            WidgetEvent::HoverLeave => WidgetEventKind::HoverLeave,
+            WidgetEvent::Resize { .. } => WidgetEventKind::Resize,
+            WidgetEvent::WindowMaximize => WidgetEventKind::WindowMaximize,
+            WidgetEvent::WindowMinimize => WidgetEventKind::WindowMinimize,
+            WidgetEvent::WindowRestore => WidgetEventKind::WindowRestore,
+            WidgetEvent::WindowFocus => WidgetEventKind::WindowFocus,
+            WidgetEvent::WindowBlur => WidgetEventKind::WindowBlur,
+            WidgetEvent::Timer { .. } => WidgetEventKind::Timer,
+            WidgetEvent::FileDrop { .. } => WidgetEventKind::FileDrop,
+        }
+    }
 }
 
 pub type WidgetId = usize;

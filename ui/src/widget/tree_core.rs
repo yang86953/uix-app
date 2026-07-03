@@ -1,6 +1,8 @@
 use super::*;
+use crate::managers::EventManager;
 use uix_platform::Rect;
 use uix_graphics::DirtyRegion;
+use std::collections::HashMap;
 
 /// 脏状态管理器 —— 集中管理脏区域。
 ///
@@ -137,6 +139,10 @@ pub struct WidgetTree {
     /// 缓存的先序遍历结果（内部可变性，仅用作性能缓存）。
     /// 当 `cached_traversal_version != tree_version` 时失效重建。
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
+
+    /// 每个 widget 的独立事件管理器（按需创建）。
+    /// 在 `dispatch_to` 中，于 `on_event` 之后自动调用。
+    pub(crate) event_managers: HashMap<WidgetId, EventManager>,
 }
 
 impl Default for WidgetTree {
@@ -154,6 +160,7 @@ impl Default for WidgetTree {
             mouse_down_target: None,
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
+            event_managers: HashMap::new(),
         }
     }
 }
@@ -982,6 +989,23 @@ impl WidgetTree {
             .and_then(|id| self.get(id))
             .map(|node| node.component().as_any().downcast_ref::<T>().is_some())
             .unwrap_or(false)
+    }
+
+    // ── 事件管理器 ───────────────────────────────────────────
+
+    /// 获取指定 widget 的事件管理器（不存在则创建）。
+    pub fn event_manager_for(&mut self, id: WidgetId) -> &mut EventManager {
+        self.event_managers.entry(id).or_default()
+    }
+
+    /// 移除指定 widget 的事件管理器。
+    pub fn remove_event_manager(&mut self, id: WidgetId) {
+        self.event_managers.remove(&id);
+    }
+
+    /// 清空所有事件管理器。
+    pub fn clear_event_managers(&mut self) {
+        self.event_managers.clear();
     }
 }
 

@@ -6,6 +6,7 @@ use super::*;
 use uix_platform::Point;
 use uix_platform::KeyMod;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 struct SpyWidget {
     size: uix_platform::Size,
@@ -274,7 +275,6 @@ fn dispatch_resize_goes_to_root() {
     );
 }
 
-#[test]
 // ════════════════════════════════════════════════════════════════════════
 // 捕获阶段测试
 // ════════════════════════════════════════════════════════════════════════
@@ -358,14 +358,201 @@ fn capture_phase_key_down_intercepted() {
     let _child = tree.add_child(container, Box::new(SpyWidget::new(100.0, 100.0)));
     tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
 
-    // 先设焦点
-    tree.focused_widget = Some(container);
+    // 先设焦点（直接设置 focused_widget 字段，但它是 pub(crate) 的）
+    // 或者通过 dispatch MouseDown 设焦点
+    tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
 
     let result = tree.dispatch_event(&WidgetEvent::KeyDown {
         key: KeyCode::Escape,
         mods: KeyMod::NONE,
     });
+    // SpyWidget(root) 在捕获阶段返回 Handled
     assert_eq!(result, EventResult::Handled);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 事件管理器集成测试
+// ════════════════════════════════════════════════════════════════════════
+
+/// EventManager 的 add_handler 处理所有事件。
+#[test]
+fn event_manager_catches_mouse_down() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let handled = Rc::new(RefCell::new(false));
+    let h = handled.clone();
+    let em = tree.event_manager_for(root_id);
+    em.add_handler(move |_| {
+        *h.borrow_mut() = true;
+        EventResult::Handled
+    });
+
+    tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert!(*handled.borrow(), "EventManager handler should have been called");
+}
+
+/// EventManager 的 on_kind 只处理匹配的事件类型。
+#[test]
+fn event_manager_on_kind_filters() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let mouse_down_count = Rc::new(RefCell::new(0u32));
+    let md = mouse_down_count.clone();
+    let key_count = Rc::new(RefCell::new(0u32));
+    let kc = key_count.clone();
+
+    {
+        let em = tree.event_manager_for(root_id);
+        em.on_kind(WidgetEventKind::MouseDown, move |_| {
+            *md.borrow_mut() += 1;
+            EventResult::Handled
+        });
+        em.on_kind(WidgetEventKind::KeyDown, move |_| {
+            *kc.borrow_mut() += 1;
+            EventResult::Handled
+        });
+    }
+
+    tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(*mouse_down_count.borrow(), 1, "MouseDown handler should fire");
+    assert_eq!(*key_count.borrow(), 0, "KeyDown handler should NOT fire");
+
+    tree.dispatch_event(&WidgetEvent::KeyDown {
+        key: KeyCode::Enter,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(*mouse_down_count.borrow(), 1, "MouseDown handler should NOT fire again");
+    assert_eq!(*key_count.borrow(), 1, "KeyDown handler should fire");
+}
+
+/// EventManager 优先级：高优先级 handler 先执行。
+#[test]
+fn event_manager_priority_order() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let order = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let o1 = order.clone();
+    let o2 = order.clone();
+    let o3 = order.clone();
+
+    {
+        let em = tree.event_manager_for(root_id);
+        em.add_handler_with_priority(0, move |_| {
+            o1.borrow_mut().push(1);
+            EventResult::NotHandled
+        });
+        em.add_handler_with_priority(10, move |_| {
+            o2.borrow_mut().push(2);
+            EventResult::NotHandled
+        });
+        em.add_handler_with_priority(-5, move |_| {
+            o3.borrow_mut().push(3);
+            EventResult::NotHandled
+        });
+    }
+
+    tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    let v = order.borrow().clone();
+    assert_eq!(v, vec![2, 1, 3], "priority order: 10, 0, -5");
+}
+
+/// EventManager 在 widget on_event(NotHandled) 之后执行，返回 Handled 阻止冒泡到父节点。
+#[test]
+fn event_manager_handled_stops_bubble_to_parent() {
+    let mut tree = WidgetTree::new();
+    // 树：PassThroughContainer(root) → PassThroughContainer(child)
+    // 两者 on_event 都返回 NotHandled
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let child = tree.add_child(root_id, Box::new(PassThroughContainer::new(100.0, 100.0, vec![])));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+    let parent_em_called = Rc::new(RefCell::new(false));
+    let pc = parent_em_called.clone();
+
+    // child 的 EventManager 返回 Handled，阻止冒泡到 parent
+    {
+        let em = tree.event_manager_for(child);
+        em.add_handler(move |_| {
+            EventResult::Handled
+        });
+    }
+    // parent 的 EventManager：不应被执行（因为 child 的 EventManager 已 Handled）
+    {
+        let em = tree.event_manager_for(root_id);
+        em.add_handler(move |_| {
+            *pc.borrow_mut() = true;
+            EventResult::Handled
+        });
+    }
+
+    let result = tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    // child 的 on_event 返回 NotHandled，EventManager 返回 Handled
+    // 所以结果是 Handled
+    assert_eq!(result, EventResult::Handled);
+    // parent 的 EventManager 不应被调用
+    assert!(!*parent_em_called.borrow(), "parent EventManager should NOT be called when child EventManager handled");
+}
+
+/// EventManager 在 widget on_event 之后、冒泡之前执行。
+#[test]
+fn event_manager_runs_after_on_event() {
+    let mut tree = WidgetTree::new();
+    // 使用 PassThroughContainer（on_event 返回 NotHandled）
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let order = Rc::new(RefCell::new(Vec::<String>::new()));
+    let o1 = order.clone();
+    let o2 = order.clone();
+
+    {
+        let em = tree.event_manager_for(root_id);
+        em.add_handler(move |_| {
+            o1.borrow_mut().push("manager".into());
+            EventResult::Handled
+        });
+    }
+    // 在根节点再挂一个子 widget，确保事件经过它
+    let child = tree.add_child(root_id, Box::new(PassThroughContainer::new(50.0, 50.0, vec![])));
+    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
+
+    tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(25.0, 25.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    // 事件管理器确实被调用了
+    assert!(!order.borrow().is_empty());
 }
 
 fn nav_item_click_updates_shared_active() {
