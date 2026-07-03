@@ -267,6 +267,13 @@ define_widget! {
                 EventResult::Handled
             }
 
+            WidgetEvent::FocusOut => {
+                // 失去焦点时清除文字选中
+                self.selection.set(None);
+                self.sel_dragging.set(false);
+                EventResult::Handled
+            }
+
             WidgetEvent::KeyDown { key, mods } => {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 match key {
@@ -490,6 +497,7 @@ impl RichText {
 
     fn char_at_pos(&self, pos: Point, lines: &[LayoutLine]) -> usize {
         for line in lines {
+            // 精确匹配当前行
             if pos.y < line.y || pos.y >= line.y + line.height { continue; }
             for glyph in &line.glyphs {
                 let gx = glyph.x;
@@ -501,9 +509,21 @@ impl RichText {
                 return last.global_char_idx + 1;
             }
         }
-        lines.last()
-            .and_then(|l| l.glyphs.last())
-            .map(|g| g.global_char_idx + 1)
+        // 点在行间空白区域：找到最近的行
+        if lines.is_empty() { return 0; }
+        let mut best_line = 0;
+        let mut best_dist = f32::MAX;
+        for (i, line) in lines.iter().enumerate() {
+            let closest_y = if pos.y < line.y { line.y } else { line.y + line.height };
+            let dist = (pos.y - closest_y).abs();
+            if dist < best_dist {
+                best_dist = dist;
+                best_line = i;
+            }
+        }
+        // 返回最近行的末尾字符索引
+        lines[best_line].glyphs.last()
+            .map(|g| g.global_char_idx + if pos.x > g.x + g.width * 0.5 { 1 } else { 0 })
             .unwrap_or(0)
     }
 

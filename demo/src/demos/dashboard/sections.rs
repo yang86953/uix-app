@@ -434,7 +434,7 @@ pub fn page_data(tk: &DesignTokens) -> WidgetNode {
     PageBuilder::new(tk)
         .gap()
         .section("列表 List")
-        .push(tree! { Container::new().size(INNER_W, 100.0).dir(FlexDirection::Column)
+        .push(tree! { Container::new().size(INNER_W, 200.0).dir(FlexDirection::Column)
             .pad(EdgeInsets::uniform(4.0)) => [
             List::new()
                 .header("用户列表")

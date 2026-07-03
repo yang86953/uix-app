@@ -87,6 +87,12 @@ define_widget! {
                 }
                 EventResult::Handled
             }
+            WidgetEvent::FocusOut => {
+                // 失去焦点时清除文字选中
+                self.selection.set(None);
+                self.sel_dragging.set(false);
+                EventResult::Handled
+            }
             WidgetEvent::KeyDown { key, mods } => {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 match key {

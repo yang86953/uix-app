@@ -213,8 +213,8 @@ impl Button {
             let c = if self.danger { t.color_error() } else { t.color_primary_hover() };
             match self.variant {
                 ButtonVariant::Primary => (Some(c), c, Color::white(), 1.0),
-                ButtonVariant::Text | ButtonVariant::Link => (None, Color::transparent(), c, 0.0),
-                _ => (None, if self.danger { t.color_error() } else { t.color_primary() }, c, 1.0),
+                ButtonVariant::Text | ButtonVariant::Link => (Some(t.color_fill_tertiary()), Color::transparent(), c, 0.0),
+                _ => (Some(t.color_fill_tertiary()), if self.danger { t.color_error() } else { t.color_primary() }, c, 1.0),
             }
         } else {
             let normal_text = if self.danger { t.color_error() } else { t.color_primary() };

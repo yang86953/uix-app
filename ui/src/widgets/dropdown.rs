@@ -46,6 +46,16 @@ define_widget! {
         ctx.text_center(&self.label, btn_rect, uix_graphics::Color::white(), 13.0);
     }
 
+    // 菜单展开时扩展 hit_test 区域，使浮层中的菜单项可点击
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        if self.open {
+            let menu_h = self.items.len() as f32 * 30.0;
+            Rect::new(frame.x, frame.y, frame.w, 32.0 + menu_h)
+        } else {
+            frame
+        }
+    }
+
     // 菜单作为浮层渲染（不影响布局定位）
     post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         if !self.open { return; }

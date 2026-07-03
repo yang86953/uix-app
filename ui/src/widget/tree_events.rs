@@ -1,5 +1,6 @@
 use super::tree_core::WidgetTree;
 use super::*;
+use crate::widgets::scroll_view::ScrollView;
 
 impl WidgetTree {
     /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
@@ -38,9 +39,32 @@ impl WidgetTree {
         }
     }
 
+    /// 获取 ScrollView 的滚动偏移量（用于 hit_test 补偿）。
+    fn get_scroll_offset(tree: &WidgetTree, id: WidgetId) -> Option<(f32, f32)> {
+        tree.get(id).and_then(|node| {
+            let comp = node.component();
+            let sv = comp.as_any().downcast_ref::<ScrollView>()?;
+            if sv.scroll_x().abs() > 0.5 || sv.scroll_y().abs() > 0.5 {
+                Some((sv.scroll_x(), sv.scroll_y()))
+            } else {
+                None
+            }
+        })
+    }
+
     fn hit_test_internal(&self, id: WidgetId, pos: Point) -> Option<WidgetId> {
         let node = self.get(id)?;
         if !node.visible() { return None; }
+
+        // 如果当前节点是 ScrollView，对其子节点做 scroll offset 补偿。
+        // ScrollView 的子节点按自然坐标布局，但渲染时通过 canvas translate(-sx, -sy) 偏移。
+        // hit_test 必须补偿这个偏移，否则滚动后点击会定位到错误位置。
+        let scroll_off = Self::get_scroll_offset(self, id);
+        let child_pos = match scroll_off {
+            Some((sx, sy)) => Point::new(pos.x + sx, pos.y + sy),
+            None => pos,
+        };
+
         let mut sorted: Vec<WidgetId> = node.children().to_vec();
         sorted.sort_by(|&a, &b| {
             let za = self.get(a).map_or(0, |c| c.z_index());
@@ -48,7 +72,7 @@ impl WidgetTree {
             zb.cmp(&za)
         });
         for &child_id in &sorted {
-            if let Some(hit) = self.hit_test_internal(child_id, pos) { return Some(hit); }
+            if let Some(hit) = self.hit_test_internal(child_id, child_pos) { return Some(hit); }
         }
         // 使用 widget 的 hit_test_frame 代替原始 frame，支持 overlay 模式
         let actual_frame = node.frame();
@@ -157,13 +181,51 @@ impl WidgetTree {
         }
     }
 
+    /// 计算从目标到根路径上所有 ScrollView 的累计滚动偏移。
+    fn cumulative_scroll_offset(&self, target: WidgetId) -> Option<(f32, f32)> {
+        let mut sx = 0.0f32;
+        let mut sy = 0.0f32;
+        let mut found = false;
+        let mut current = Some(target);
+        while let Some(id) = current {
+            if let Some((ox, oy)) = Self::get_scroll_offset(self, id) {
+                sx += ox;
+                sy += oy;
+                found = true;
+            }
+            current = self.get(id).and_then(|n| n.parent());
+        }
+        if found { Some((sx, sy)) } else { None }
+    }
+
+    /// 在 MouseDown/MouseUp/MouseMove 事件位置上增加偏移量。
+    fn add_offset_to_event(event: WidgetEvent, sx: f32, sy: f32) -> WidgetEvent {
+        match event {
+            WidgetEvent::MouseDown { pos, button, mods } =>
+                WidgetEvent::MouseDown { pos: Point::new(pos.x + sx, pos.y + sy), button, mods },
+            WidgetEvent::MouseUp { pos, button, mods } =>
+                WidgetEvent::MouseUp { pos: Point::new(pos.x + sx, pos.y + sy), button, mods },
+            WidgetEvent::MouseMove { pos } =>
+                WidgetEvent::MouseMove { pos: Point::new(pos.x + sx, pos.y + sy) },
+            other => other,
+        }
+    }
+
     fn dispatch_to(&mut self, target: WidgetId, event: &WidgetEvent) -> EventResult {
         let mut current = Some(target);
+        // ScrollView 的子节点框架是自然坐标（未含滚动偏移），
+        // 必须先计算目标路径上所有 ScrollView 的累计偏移量，
+        // 翻译事件后加上该偏移量，使事件坐标与视觉位置一致。
+        let scroll_off = self.cumulative_scroll_offset(target);
         while let Some(id) = current {
             let node = match self.get_mut(id) { Some(n) => n, None => return EventResult::NotHandled };
             let frame = node.frame();
             let translated = Self::translate_mouse_event(event, frame);
-            let result = node.on_event(&translated);
+            let compensated = match scroll_off {
+                Some((sx, sy)) => Self::add_offset_to_event(translated, sx, sy),
+                None => translated,
+            };
+            let result = node.on_event(&compensated);
             match result {
                 EventResult::Handled => return EventResult::Handled,
                 EventResult::Bubbled => { current = node.parent(); }

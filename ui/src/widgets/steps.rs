@@ -3,7 +3,7 @@
 //! 支持横向步骤条，步骤状态（wait/process/finish/error），
 //! 自定义当前步骤，可点击切换。
 
-use uix_platform::{Point, Rect, Size};
+use uix_platform::{Rect, Size};
 use crate::define_widget;
 use uix_graphics::Color;
 use crate::render_context::RenderContext;
@@ -34,6 +34,8 @@ define_widget! {
         current: Cell<usize>,
         direction: bool, // true=horizontal, false=vertical
         on_change: Option<Box<dyn FnMut(usize) + 'static>>,
+        /// 缓存 render 时的 frame 和 step_w，供 on_event 定位点击区域
+        last_frame_and_step_w: Cell<Option<(Rect, f32)>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
@@ -47,12 +49,20 @@ define_widget! {
     on_event => (&mut self, event: &WidgetEvent) -> EventResult {
         if let WidgetEvent::MouseDown { pos, .. } = event {
             if self.direction && !self.steps.is_empty() {
-                let step_w = 600.0 / self.steps.len() as f32;
-                let idx = (pos.x / step_w) as usize;
-                if idx < self.steps.len() {
-                    self.current.set(idx);
-                    if let Some(ref mut cb) = self.on_change { cb(idx); }
-                    return EventResult::Handled;
+                // 使用与 render 相同的 step_w 计算，缓存由 render 设置
+                let count = self.steps.len();
+                if let Some((frame, step_w)) = self.last_frame_and_step_w.get() {
+                    let total_w = step_w * count as f32;
+                    let start_x = (frame.w - total_w) * 0.5;
+                    let rel_x = pos.x - start_x;
+                    if rel_x >= 0.0 {
+                        let idx = (rel_x / step_w) as usize;
+                        if idx < count {
+                            self.current.set(idx);
+                            if let Some(ref mut cb) = self.on_change { cb(idx); }
+                            return EventResult::Handled;
+                        }
+                    }
                 }
             }
         }
@@ -78,6 +88,9 @@ define_widget! {
             let circle_r = 14.0;
             let circle_y = frame.y + 28.0;
 
+            // 缓存 frame 和 step_w 供 on_event 点击定位使用
+            self.last_frame_and_step_w.set(Some((frame, step_w)));
+
             for (i, step) in self.steps.iter().enumerate() {
                 let cx = start_x + i as f32 * step_w + step_w * 0.5;
                 // 连接线（前）
@@ -99,14 +112,14 @@ define_widget! {
                     ctx.fill_circle(cx, circle_y, circle_r, bg_c);
                 }
                 ctx.canvas_2d().stroke_circle(cx, circle_y, circle_r, border_c, 2.0);
-                // 步骤编号/图标
+                // 步骤编号/图标（在圆圈内居中）
                 let num = if step.status == StepStatus::Finish { "✓" } else { &(i + 1).to_string() };
                 let circle_rect = Rect::new(cx - circle_r, circle_y - circle_r, circle_r * 2.0, circle_r * 2.0);
-                let step_y = ctx.visual_center_y(circle_rect, 14.0);
-                ctx.draw_text(num, Point::new(cx - 5.0, step_y), text_c, 14.0);
-                // 标题
+                ctx.text_center(num, circle_rect, text_c, 14.0);
+                // 标题（在圆圈下方居中）
                 let title_c = if i <= self.current.get() { text } else { text_sec };
-                ctx.draw_text(&step.title, Point::new(cx - step.title.len() as f32 * 4.0, circle_y + circle_r + 6.0), title_c, 13.0);
+                let title_rect = Rect::new(cx - step_w * 0.5, circle_y + circle_r + 4.0, step_w, 20.0);
+                ctx.text_center(&step.title, title_rect, title_c, 13.0);
             }
         }
     }
@@ -115,7 +128,7 @@ define_widget! {
 impl Steps {
     pub fn new(steps: Vec<Step>) -> Self {
         let current = Cell::new(0);
-        Self { steps, current, direction: true, on_change: None }
+        Self { steps, current, direction: true, on_change: None, last_frame_and_step_w: Cell::new(None) }
     }
     pub fn current(self, v: usize) -> Self { self.current.set(v); self }
     pub fn get_current(&self) -> usize { self.current.get() }

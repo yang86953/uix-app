@@ -39,10 +39,10 @@ define_widget! {
             let mut btn_x = 0.0;
             if x >= btn_x && x < btn_x + item_w { cur = cur.saturating_sub(1).max(1); self.current.set(cur); if let Some(ref mut cb) = self.on_change { cb(cur); } return EventResult::Handled; }
             btn_x += item_w + gap;
-            // 页码按钮（最多 7 个）
+            // 页码按钮（最多 7 个，p=0 表示省略号，跳过点击）
             let range = self.visible_range(total_pages, cur);
             for &p in &range {
-                if x >= btn_x && x < btn_x + item_w {
+                if p > 0 && x >= btn_x && x < btn_x + item_w {
                     self.current.set(p);
                     if let Some(ref mut cb) = self.on_change { cb(p); }
                     return EventResult::Handled;
@@ -81,19 +81,18 @@ define_widget! {
         ctx.draw_text(loc.pagination_prev_symbol, Point::new(x + item_w * 0.5 - 5.0, prev_y), prev_c, 16.0);
         x += item_w + gap;
 
-        // 页码按钮
+        // 页码按钮（0 表示省略号，显示为 "..."）
         for &p in &range {
+            let label = if p == 0 { "...".to_string() } else { p.to_string() };
             let active = p == cur;
             let btn_rect = Rect::new(x, y, item_w, item_h);
             if active {
                 ctx.fill_rect(btn_rect, primary, Some(radius));
-                let py = ctx.visual_center_y(btn_rect, 13.0);
-                ctx.draw_text(&p.to_string(), Point::new(x + item_w * 0.5 - 5.0, py), white, 13.0);
+                ctx.text_center(&label, btn_rect, white, 13.0);
             } else {
                 ctx.fill_rect(btn_rect, bg, Some(radius));
                 ctx.stroke_rect(btn_rect, border, 1.0, Some(radius));
-                let py = ctx.visual_center_y(btn_rect, 13.0);
-                ctx.draw_text(&p.to_string(), Point::new(x + item_w * 0.5 - 5.0, py), text, 13.0);
+                ctx.text_center(&label, btn_rect, text, 13.0);
             }
             x += item_w + gap;
         }

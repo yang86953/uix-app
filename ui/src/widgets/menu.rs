@@ -183,9 +183,8 @@ define_widget! {
                     if is_active {
                         ctx.fill_rect(Rect::new(cx + 8.0, frame.y + self.item_h - 2.0, iw - 16.0, 2.0), primary, None);
                     }
-                    let item_rect = Rect::new(cx, frame.y, iw, self.item_h);
-                    let text_y = ctx.visual_center_y(item_rect, 14.0);
-                    ctx.draw_text(&item.label, Point::new(cx + 12.0, text_y), item_c, 14.0);
+                    // 文字水平居中：使用 text_center 替代左对齐
+                    ctx.text_center(&item.label, item_rect, item_c, 14.0);
                     cx += iw;
                 }
             }
