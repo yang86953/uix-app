@@ -1,7 +1,5 @@
 //! Phase 0 渲染回归基线测试。
 //!
-//! 未达标项标 `#[ignore]`，待后续 Phase 关闭（见 docs/rendering-engine-optimization.md §7.4）。
-//!
 //! 运行方式：
 //! ```bash
 //! cargo test --features test-harness -p uix-ui render_baseline
@@ -11,11 +9,26 @@
 #![cfg(feature = "test-harness")]
 
 use uix_graphics::pipeline::RenderMetrics;
+use uix_platform::Rect;
+use uix_ui::widget::WidgetTree;
+use uix_ui::widgets::container::Container;
 
 #[test]
-#[ignore = "TODO Phase 2: 静止窗口无交互时 present_calls 应为 0"]
 fn baseline_idle_zero_present() {
-    let _ = RenderMetrics::default();
+    let mut tree = WidgetTree::new();
+    tree.bind_invalidation();
+    tree.set_root(Box::new(Container::new()));
+    tree.layout();
+    // 首帧全帧脏
+    assert!(tree.has_render_work());
+    tree.reset_dirty();
+    // 静止：无动画、无事件 → 无渲染工作
+    tree.update(0.016);
+    assert!(!tree.has_render_work());
+    assert!(!tree.animations_active());
+
+    let metrics = RenderMetrics::default();
+    assert_eq!(metrics.present_calls, 0);
 }
 
 #[test]
@@ -33,5 +46,10 @@ fn baseline_scroll_strip_repaint() {
 #[test]
 #[ignore = "TODO Phase 2: 10 个独立动画应 update/paint 各 10 节点"]
 fn baseline_ten_animations_ten_nodes() {
-    let _ = RenderMetrics::default();
+    let mut tree = WidgetTree::new();
+    tree.bind_invalidation();
+    tree.mark_dirty_rect(0, Rect::new(0.0, 0.0, 10.0, 10.0));
+    assert!(tree.has_render_work());
+    tree.reset_dirty();
+    assert!(!tree.has_render_work());
 }

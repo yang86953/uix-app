@@ -10,11 +10,12 @@ pub enum InvalidationSource {
     FirstFrame,
     /// WidgetTree 脏区域非空。
     DirtyRegion,
-    /// 动画/滚动 keep_polling 持续。
+    /// 动画 tick 产生脏区域（非空时触发 present）。
     AnimationPolling,
     /// 布局相关 OS 事件（resize 等）。
     LayoutEvent,
-    /// FrameGraph 判定本轮无需绘制。
+    /// 已废弃：FrameGraph 已从 UI 路径移除（Phase 2）。
+    #[allow(dead_code)]
     FrameGraphCull,
 }
 
