@@ -28,7 +28,7 @@ define_widget! {
         wrapper_mode: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         if self.wrapper_mode {
             // wrapper mode defers to child; return minimal since children are separate
             Size::new(0.0, 0.0)

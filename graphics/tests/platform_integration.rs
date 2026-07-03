@@ -15,6 +15,7 @@ use uix_graphics::engine::cpu::canvas_2d::CpuCanvas2D;
 use uix_graphics::engine::cpu::pixel_surface::PixelSurface;
 use uix_graphics::engine::cpu::software::SoftwareEngine;
 use uix_graphics::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use uix_platform::PresentDamage;
 use uix_platform::api::traits::{
     IClipboard, IDisplay, IGraphicsContext, IPresenter, IWindowManager, Platform, PlatformWindow,
 };
@@ -196,7 +197,7 @@ fn fake_presenter_present_records_pixels() {
     let mut p = FakePresenter::new();
     p.resize(10, 10).unwrap();
     let pixels = vec![0xFF0000FFu32; 100]; // 红色 ABGR
-    p.present(&pixels, 10, 10, None).unwrap();
+    p.present(&pixels, 10, 10, PresentDamage::Full).unwrap();
 
     assert_eq!(p.state.present_calls.len(), 1);
     assert_eq!(p.state.last_pixels.len(), 100);
@@ -208,19 +209,19 @@ fn fake_presenter_present_records_pixels() {
     assert_eq!(call.width, 10);
     assert_eq!(call.height, 10);
     assert_eq!(call.pixels_len, 100);
-    assert!(call.dirty_rect.is_none());
+    assert!(call.damage.is_full());
 }
 
-/// present 支持 dirty_rect 参数传递。
+/// present 支持 damage 参数传递。
 #[test]
-fn fake_presenter_present_tracks_dirty_rect() {
+fn fake_presenter_present_tracks_damage() {
     let mut p = FakePresenter::new();
     p.resize(20, 20).unwrap();
     let pixels = vec![0u32; 400];
-    p.present(&pixels, 20, 20, Some((5, 5, 10, 10))).unwrap();
+    p.present(&pixels, 20, 20, PresentDamage::single(5, 5, 10, 10)).unwrap();
 
     let call = &p.state.present_calls[0];
-    assert_eq!(call.dirty_rect, Some((5, 5, 10, 10)));
+    assert_eq!(call.damage, PresentDamage::single(5, 5, 10, 10));
 }
 
 /// 多次 present 累积历史，last_pixels 始终为最近一次。
@@ -230,13 +231,13 @@ fn fake_presenter_multiple_presents_accumulate() {
     p.resize(5, 5).unwrap();
 
     let red = vec![0xFF0000FFu32; 25];
-    p.present(&red, 5, 5, None).unwrap();
+    p.present(&red, 5, 5, PresentDamage::Full).unwrap();
 
     let green = vec![0xFF00FF00u32; 25];
-    p.present(&green, 5, 5, None).unwrap();
+    p.present(&green, 5, 5, PresentDamage::Full).unwrap();
 
     let blue = vec![0xFFFF0000u32; 25];
-    p.present(&blue, 5, 5, None).unwrap();
+    p.present(&blue, 5, 5, PresentDamage::Full).unwrap();
 
     assert_eq!(p.state.present_calls.len(), 3);
     // last_pixels 是最后一次
@@ -249,7 +250,7 @@ fn fake_presenter_clear_history_resets() {
     let mut p = FakePresenter::new();
     p.resize(10, 10).unwrap();
     let pixels = vec![0xFFFFFFFFu32; 100];
-    p.present(&pixels, 10, 10, None).unwrap();
+    p.present(&pixels, 10, 10, PresentDamage::Full).unwrap();
     assert!(!p.state.present_calls.is_empty());
     assert!(!p.state.last_pixels.is_empty());
 
@@ -637,7 +638,7 @@ fn end_to_end_render_rect_to_presenter() {
     let mut presenter = FakePresenter::new();
     presenter.resize(10, 10).unwrap();
     presenter
-        .present(pixels, 10, 10, Some((0, 0, 5, 5)))
+        .present(pixels, 10, 10, PresentDamage::single(0, 0, 5, 5))
         .unwrap();
 
     // 验证呈现器收到正确的像素数据
@@ -647,10 +648,10 @@ fn end_to_end_render_rect_to_presenter() {
     assert_eq!(presenter.state.last_pixels[0], 0xFF0000FF);
     // (5,5) 应在矩形外，仍为透明
     assert_eq!(presenter.state.last_pixels[5 * 10 + 5], 0x00000000);
-    // dirty_rect 参数正确传递
+    // damage 参数正确传递
     assert_eq!(
-        presenter.state.present_calls[0].dirty_rect,
-        Some((0, 0, 5, 5))
+        presenter.state.present_calls[0].damage,
+        PresentDamage::single(0, 0, 5, 5)
     );
 }
 
@@ -667,7 +668,7 @@ fn end_to_end_render_circle_to_presenter() {
     let pixels = canvas.surface().pixels();
     let mut presenter = FakePresenter::new();
     presenter.resize(20, 20).unwrap();
-    presenter.present(pixels, 20, 20, None).unwrap();
+    presenter.present(pixels, 20, 20, PresentDamage::Full).unwrap();
 
     // 圆心应为绿色
     let center = presenter.state.last_pixels[10 * 20 + 10];
@@ -700,7 +701,7 @@ fn end_to_end_pixel_surface_to_presenter_all_colors() {
     // 通过 FakePresenter 验证
     let mut presenter = FakePresenter::new();
     presenter.resize(4, 1).unwrap();
-    presenter.present(pixels, 4, 1, None).unwrap();
+    presenter.present(pixels, 4, 1, PresentDamage::Full).unwrap();
 
     // ABGR 格式验证（PixelSurface 内部存储格式）
     assert_eq!(presenter.state.last_pixels[0], 0xFF0000FF, "红色 ABGR");
@@ -732,7 +733,7 @@ fn end_to_end_scroll_region_to_presenter() {
     let pixels = canvas.surface().pixels();
     let mut presenter = FakePresenter::new();
     presenter.resize(10, 10).unwrap();
-    presenter.present(pixels, 10, 10, None).unwrap();
+    presenter.present(pixels, 10, 10, PresentDamage::Full).unwrap();
 
     // scroll_region(dx=0, dy=4): src=(0,4,10,10) → dst=(0,0)
     // src 起始 y=4 在填充区外（填充 y=0..3），因此 (0,0) 得到透明像素

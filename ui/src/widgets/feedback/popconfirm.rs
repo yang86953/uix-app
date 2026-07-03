@@ -28,7 +28,7 @@ define_widget! {
         on_cancel: Option<Box<dyn FnMut() + 'static>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(80.0, 28.0)
     }
 

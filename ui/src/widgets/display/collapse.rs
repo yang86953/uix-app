@@ -36,7 +36,7 @@ define_widget! {
         on_change: Option<Box<dyn FnMut(usize) + 'static>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let mut h = 0.0f32;
         for p in &self.panels {
             h += 36.0; // header 高度（14px 字体 + padding）

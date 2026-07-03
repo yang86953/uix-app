@@ -3,7 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use uix_graphics::Color;
-use uix_graphics::GraphicsEngine;
+use uix_graphics::traits::GraphicsEngine;
 use uix_platform::geometry::{Point, Rect, Size};
 use uix_platform::ControlSize;
 use uix_platform::EdgeInsets;

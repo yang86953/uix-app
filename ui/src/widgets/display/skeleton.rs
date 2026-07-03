@@ -26,7 +26,7 @@ define_widget! {
         anim: Option<Animation<f32>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(self.w, self.h)
     }
 

@@ -15,7 +15,7 @@ define_widget! {
         error_level: u8,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(self.size, self.size)
     }
 
@@ -94,7 +94,7 @@ define_widget! {
         target: Vec<TransferItem>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(500.0, 200.0)
     }
 
@@ -236,7 +236,7 @@ define_widget! {
         on_change: Option<UploadCallback>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let list_h = self.file_list.len() as f32 * 32.0;
         Size::new(300.0, 100.0 + list_h)
     }
@@ -389,13 +389,11 @@ define_widget! {
         y_offset: f32,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::zero()
     }
 
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
-
-    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         if self.text.is_empty() { return; }
         let mut c = self.color;
         c.a = (self.opacity * 255.0) as u8;
@@ -424,7 +422,7 @@ define_widget! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        // Watermark 通过 post_render 在全帧范围绘制水印，
+        // Watermark 通过 render 在全帧范围绘制水印，
         // dirty_rect 返回实际 frame 区域（通常是全屏），
         // 禁止返回硬编码巨型区域（原 -10000~20000）避免脏区域爆炸。
         frame

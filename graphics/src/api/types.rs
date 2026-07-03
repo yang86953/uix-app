@@ -28,12 +28,6 @@ pub use crate::spatial::{
     Quad2D, Ray3D, SpatialContext, Vec2, Vec3, Vec4, AABB3D,
 };
 
-// ── 帧图 ──
-pub use crate::frame_graph::compile::{CompiledGraph, Compiler};
-pub use crate::frame_graph::pass::{FrameResources, PassBuilder, PassContext, PassNode};
-pub use crate::frame_graph::resource::{PassId, ResourceRegistry};
-pub use crate::frame_graph::FrameGraph;
-
 // ── 引擎实现 ──
 pub use crate::backend::{BackendCapabilities, BackendKind, DamageRegion, RenderBackend};
 pub use crate::engine::cpu::software::SoftwareEngine;

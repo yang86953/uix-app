@@ -32,7 +32,7 @@ define_widget! {
         load_more_text: String,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let h = self.items.len() as f32 * list_item_height(self.list_size)
             + if self.header.is_empty() { 0.0 } else { 40.0 }
             + if self.footer.is_empty() { 0.0 } else { 40.0 }

@@ -27,7 +27,7 @@ define_widget! {
         size: ControlSize,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let rows = self.items.len().div_ceil(self.column).max(1);
         let title_h = if self.title.is_empty() { 0.0 } else { 32.0 };
         let item_h = match self.size {

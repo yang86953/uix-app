@@ -46,7 +46,7 @@ define_widget! {
         draw_pos: Cell<uix_platform::Point>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let (fs, _fw) = self.compute_font_style();
         let w = self.content.len() as f32 * fs * 0.6;
         let h = fs * 1.5;

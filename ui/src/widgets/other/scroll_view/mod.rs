@@ -16,6 +16,7 @@ use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetComponent, WidgetCore, WidgetEvent, WidgetId, WidgetTree};
 #[cfg(test)]
 use crate::widget::{WidgetCapabilities, WidgetEventHandler, WidgetLayout, WidgetRender};
+use uix_graphics::painting::PaintPass;
 use uix_platform::{Rect, Size};
 
 /// Scroll direction for a ScrollView.
@@ -62,7 +63,7 @@ define_widget! {
 
     flex_shrink => (&self) -> f32 { self.flex_shrink_val }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(
             self.fixed_width.unwrap_or(300.0),
             self.fixed_height.unwrap_or(200.0),
@@ -269,25 +270,26 @@ define_widget! {
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         // Save frame for scrollbar hit-testing in on_event.
         self.last_frame.set(Some(frame));
-        // Background fill so the viewport is always opaque.
-        let bg = ctx.tokens().color_bg_container();
-        ctx.fill_rect(frame, bg, None);
-    }
 
-    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
-        // Scrollbar overlay drawn on top of children.
-        if self.scrollbar_v.show || self.scrollbar_h.show {
-            // 用背景色先清空轨道区域，防止子节点脏时在未清除的半透明 overlay 像素上叠加导致变黑
+        if ctx.paint_pass() == PaintPass::Content {
+            // Background fill so the viewport is always opaque.
             let bg = ctx.tokens().color_bg_container();
-            if self.scrollbar_v.show && self.direction.can_scroll_y() {
-                let tr = self.scrollbar_v.track_rect_abs(frame);
-                ctx.fill_rect(tr, bg, None);
-                self.scrollbar_v.render(frame, ctx, self.scroll_y, self.max_scroll_y());
-            }
-            if self.scrollbar_h.show && self.direction.can_scroll_x() {
-                let tr = self.scrollbar_h.track_rect_abs(frame);
-                ctx.fill_rect(tr, bg, None);
-                self.scrollbar_h.render(frame, ctx, self.scroll_x, self.max_scroll_x());
+            ctx.fill_rect(frame, bg, None);
+        } else if ctx.paint_pass() == PaintPass::AfterChildren {
+            // Scrollbar overlay drawn on top of children.
+            if self.scrollbar_v.show || self.scrollbar_h.show {
+                // 用背景色先清空轨道区域，防止子节点脏时在未清除的半透明 overlay 像素上叠加导致变黑
+                let bg = ctx.tokens().color_bg_container();
+                if self.scrollbar_v.show && self.direction.can_scroll_y() {
+                    let tr = self.scrollbar_v.track_rect_abs(frame);
+                    ctx.fill_rect(tr, bg, None);
+                    self.scrollbar_v.render(frame, ctx, self.scroll_y, self.max_scroll_y());
+                }
+                if self.scrollbar_h.show && self.direction.can_scroll_x() {
+                    let tr = self.scrollbar_h.track_rect_abs(frame);
+                    ctx.fill_rect(tr, bg, None);
+                    self.scrollbar_h.render(frame, ctx, self.scroll_x, self.max_scroll_x());
+                }
             }
         }
     }
@@ -538,7 +540,7 @@ mod tests {
         crate::wc_upcast!(FixedWidget; WidgetRender);
     }
     impl WidgetLayout for FixedWidget {
-        fn preferred_size(&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+        fn preferred_size(&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
             self.size
         }
     }
@@ -670,7 +672,7 @@ mod tests {
             crate::wc_upcast!(GrowWidget; WidgetEventHandler);
         }
         impl WidgetLayout for GrowWidget {
-            fn preferred_size(&self, _: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+            fn preferred_size(&self, _: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
                 Size::new(300.0, self.size.get())
             }
         }

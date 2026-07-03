@@ -5,7 +5,7 @@
 // ============================================================================
 
 use crate::api::traits::IPresenter;
-use crate::api::types::Error;
+use crate::api::types::{Error, PresentDamage};
 
 // ════════════════════════════════════════════════════════════════════════════
 // NullPresenter — 空操作实现
@@ -29,7 +29,7 @@ impl IPresenter for NullPresenter {
         _pixels: &[u32],
         _width: i32,
         _height: i32,
-        _dirty_rect: Option<(i32, i32, i32, i32)>,
+        _damage: PresentDamage,
     ) -> std::result::Result<(), Error> {
         Ok(())
     }

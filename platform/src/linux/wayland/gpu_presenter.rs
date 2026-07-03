@@ -6,7 +6,7 @@
 // ============================================================================
 
 use crate::Error;
-use crate::{IGraphicsContext, IPresenter};
+use crate::{IGraphicsContext, IPresenter, PresentDamage};
 
 pub struct GpuPresenter {
     gpu_ctx: Box<dyn IGraphicsContext>,
@@ -24,7 +24,7 @@ impl IPresenter for GpuPresenter {
         _pixels: &[u32],
         _width: i32,
         _height: i32,
-        _dirty_rect: Option<(i32, i32, i32, i32)>,
+        _damage: PresentDamage,
     ) -> Result<(), Error> {
         self.gpu_ctx.swap_buffers();
         Ok(())

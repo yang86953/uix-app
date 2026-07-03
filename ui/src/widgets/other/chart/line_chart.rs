@@ -35,7 +35,7 @@ define_widget! {
         dot_radius: f32,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let w = if self.fixed_width > 0.0 { self.fixed_width } else { 300.0 };
         let h = if self.fixed_height > 0.0 { self.fixed_height } else { 200.0 };
         Size::new(w, h)

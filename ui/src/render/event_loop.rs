@@ -6,7 +6,8 @@ use std::time::Instant;
 use uix_graphics::font_service::FontService;
 use uix_graphics::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource, RenderMetrics};
 use uix_graphics::painting::ThemeSnapshot;
-use uix_graphics::{GraphicsEngine, RenderOutcome};
+use uix_graphics::traits::GraphicsEngine;
+use uix_graphics::RenderOutcome;
 use uix_platform::event::{UiEvent, UiEventPayload, UiEventType};
 use uix_platform::{Platform, PlatformWindow, Point, Rect};
 
@@ -247,7 +248,7 @@ where
                     if let Err(e) =
                         platform_window
                             .presenter()
-                            .present(canvas.pixels_mut(), cw, ch, damage)
+                            .present(canvas.pixels_mut(), cw, ch, damage.to_present_damage())
                     {
                         uix_platform::log::error_fn(format!(
                             "[EventLoop] present failed: {}",

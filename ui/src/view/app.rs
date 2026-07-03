@@ -20,7 +20,8 @@ use crate::view::{View, ViewNode};
 use crate::widget::{WidgetCore, WidgetEvent};
 use std::cell::{Cell, RefCell};
 use uix_graphics::font_service::FontService;
-use uix_graphics::{GraphicsEngine, SoftwareEngine};
+use uix_graphics::SoftwareEngine;
+use uix_graphics::traits::GraphicsEngine;
 use uix_platform::event::{UiEvent, UiEventPayload, UiEventType};
 use uix_platform::{create_platform, Point};
 
@@ -241,15 +242,11 @@ impl App {
         platform_window.raise();
 
         // ── 3. 创建图形引擎 ──
-        let mut engine: Box<dyn GraphicsEngine> = {
-            let mut se = SoftwareEngine::new();
-            let init_result = se.initialize(w, h);
-            if init_result.is_err() {
-                uix_platform::log::error_fn("SoftwareEngine 初始化失败");
-                return;
-            }
-            Box::new(se)
-        };
+        let mut engine = SoftwareEngine::new();
+        if engine.initialize(w, h).is_err() {
+            uix_platform::log::error_fn("SoftwareEngine 初始化失败");
+            return;
+        }
 
         // ── 4. 创建字体服务 ──
         let mut font_service = FontService::new();
@@ -276,7 +273,7 @@ impl App {
         run_widget_loop(
             &mut *platform,
             &mut *platform_window,
-            &mut *engine,
+            &mut engine,
             &mut tree,
             &font_service,
             &theme,

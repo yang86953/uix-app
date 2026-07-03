@@ -121,7 +121,6 @@ impl DebugRenderService {
             InvalidationSource::DirtyRegion => Color::from_rgba(60, 180, 80, 255),
             InvalidationSource::AnimationPolling => Color::from_rgba(60, 140, 220, 255),
             InvalidationSource::LayoutEvent => Color::from_rgba(220, 80, 140, 255),
-            InvalidationSource::FrameGraphCull => Color::from_rgba(160, 60, 220, 255),
         };
         canvas.fill_rect(Rect::new(x + 6.0, 10.0, 10.0, 10.0), indicator, None);
         // 条形指示各计数相对量级（无字体时仍可见趋势）

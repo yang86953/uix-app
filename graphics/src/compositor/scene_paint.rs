@@ -26,5 +26,4 @@ pub trait ScenePaint {
     fn hit_test(&self, pos: Point) -> Option<NodeId>;
     fn parent(&self, id: NodeId) -> Option<NodeId>;
     fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>);
-    fn paint_overlay(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>);
 }

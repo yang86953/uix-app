@@ -48,7 +48,7 @@ define_widget! {
         multiple: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let h = self.flat.len() as f32 * 28.0;
         Size::new(200.0, h.max(28.0))
     }

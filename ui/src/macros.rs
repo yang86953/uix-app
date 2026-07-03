@@ -75,7 +75,6 @@ macro_rules! __define_widget_upcast_method {
     (flex_shrink; $T:ty) => {};
     (layout_children; $T:ty) => {};
     (render; $T:ty) => { $crate::wc_upcast!($T; WidgetRender); };
-    (post_render; $T:ty) => {};
     (dirty_rect; $T:ty) => {};
     (children_clip; $T:ty) => {};
     (draw_margin; $T:ty) => {};
@@ -149,7 +148,7 @@ macro_rules! define_widget {
                     match stringify!($method) {
                         "preferred_size" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
                             c.insert($crate::api::traits::WidgetCapabilities::LAYOUT),
-                        "render" | "post_render" | "dirty_rect" | "children_clip" | "draw_margin" =>
+                        "render" | "dirty_rect" | "children_clip" | "draw_margin" =>
                             c.insert($crate::api::traits::WidgetCapabilities::RENDER),
                         "on_event" | "needs_continuous_update" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "hit_test_frame" =>
                             c.insert($crate::api::traits::WidgetCapabilities::EVENT),
@@ -185,7 +184,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             WidgetRender,
             $name,
-            [render post_render dirty_rect children_clip draw_margin],
+            [render dirty_rect children_clip draw_margin],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -233,9 +232,6 @@ macro_rules! __define_widget_method_builder {
     // ── WidgetRender ──
     (render; WidgetRender; ($($p:tt)*) $body:block) => {
         fn render($($p)*) $body
-    };
-    (post_render; WidgetRender; ($($p:tt)*) $body:block) => {
-        fn post_render($($p)*) $body
     };
     (dirty_rect; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn dirty_rect($($p)*) -> $ret $body
@@ -302,9 +298,6 @@ macro_rules! __match_trait_method {
     // ── WidgetRender ──
     (WidgetRender, render, ($($p:tt)*) $body:block) => {
         fn render($($p)*) $body
-    };
-    (WidgetRender, post_render, ($($p:tt)*) $body:block) => {
-        fn post_render($($p)*) $body
     };
     (WidgetRender, dirty_rect, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn dirty_rect($($p)*) -> $ret $body

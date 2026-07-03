@@ -45,7 +45,7 @@ define_widget! {
         flex_grow_val: f32,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(
             self.fixed_width.unwrap_or(0.0),
             self.fixed_height.unwrap_or(0.0),

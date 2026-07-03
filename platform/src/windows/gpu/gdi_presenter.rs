@@ -12,6 +12,7 @@
 
 use crate::windows::ffi::{GetDC, ReleaseDC};
 use crate::IPresenter;
+use crate::PresentDamage;
 use crate::{Errc, Error};
 
 // ── Windows FFI declarations ────────────────────────────────────────────────
@@ -215,6 +216,34 @@ impl GdiPresenter {
             ReleaseDC(self.hwnd, hdc);
         }
     }
+
+    /// 将像素缓冲中的局部区域复制到 DIB。
+    fn copy_partial_rect(&self, pixels: &[u32], dx: i32, dy: i32, dw: i32, dh: i32) {
+        if dx < 0
+            || dy < 0
+            || dw <= 0
+            || dh <= 0
+            || dx + dw > self.width
+            || dy + dh > self.height
+        {
+            return;
+        }
+        unsafe {
+            let src_row_start = (dy * self.width + dx) as usize;
+            let dst_row_start = src_row_start;
+            let row_bytes = dw as usize * 4;
+            for row in 0..dh as usize {
+                let src_offset = src_row_start + row * self.width as usize;
+                let dst_offset = dst_row_start + row * self.width as usize;
+                let src = &pixels[src_offset..src_offset.saturating_add(row_bytes / 4)];
+                let dst = self.dib.bits.add(dst_offset);
+                let copy_len = src.len().min(row_bytes / 4);
+                if copy_len > 0 {
+                    std::ptr::copy_nonoverlapping(src.as_ptr(), dst, copy_len);
+                }
+            }
+        }
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -227,7 +256,7 @@ impl IPresenter for GdiPresenter {
         pixels: &[u32],
         width: i32,
         height: i32,
-        dirty_rect: Option<(i32, i32, i32, i32)>,
+        damage: PresentDamage,
     ) -> Result<(), Error> {
         // Auto-resize if dimensions changed
         if (width != self.width || height != self.height) && self.resize(width, height).is_err() {
@@ -243,30 +272,15 @@ impl IPresenter for GdiPresenter {
                     "GdiPresenter: DIB not initialized",
                 ));
             }
-            if let Some((dx, dy, dw, dh)) = dirty_rect {
-                if dx >= 0
-                    && dy >= 0
-                    && dw > 0
-                    && dh > 0
-                    && dx + dw <= self.width
-                    && dy + dh <= self.height
-                {
-                    let src_row_start = (dy * self.width + dx) as usize;
-                    let dst_row_start = src_row_start;
-                    let row_bytes = dw as usize * 4;
-                    for row in 0..dh as usize {
-                        let src_offset = src_row_start + row * self.width as usize;
-                        let dst_offset = dst_row_start + row * self.width as usize;
-                        let src = &pixels[src_offset..src_offset.saturating_add(row_bytes / 4)];
-                        let dst = self.dib.bits.add(dst_offset);
-                        let copy_len = src.len().min(row_bytes / 4);
-                        if copy_len > 0 {
-                            std::ptr::copy_nonoverlapping(src.as_ptr(), dst, copy_len);
-                        }
+            match damage {
+                PresentDamage::Partial(ref rects) if !rects.is_empty() => {
+                    for &(dx, dy, dw, dh) in rects {
+                        self.copy_partial_rect(pixels, dx, dy, dw, dh);
+                        self.blit_rect(dx, dy, dw, dh);
                     }
-                    self.blit_rect(dx, dy, dw, dh);
                     return Ok(());
                 }
+                PresentDamage::Full | PresentDamage::Partial(_) => {}
             }
             let len = (self.width as usize)
                 .checked_mul(self.height as usize)

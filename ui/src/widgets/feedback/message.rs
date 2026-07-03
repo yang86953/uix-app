@@ -36,7 +36,7 @@ pub struct MessageItem {
 // 作为 WidgetTree 根级别的浮动层注册，通过静态队列接收消息。
 // 每条消息显示为顶部居中的横幅，自动排列避免重叠。
 define_widget! {
-    /// Message 容器 — 持有消息队列，在 post_render 中绘制浮层。
+    /// Message 容器 — 持有消息队列，在 render 中绘制浮层。
     pub struct Message {
         queue: Rc<RefCell<Vec<MessageItem>>>,
         /// 每条消息的剩余毫秒数（用于自动消失）
@@ -45,8 +45,8 @@ define_widget! {
         placement: MessagePlacement,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
-        // Message 不占用布局空间，全在 post_render 中绘制
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
+        // Message 不占用布局空间，全在 render 中绘制
         Size::zero()
     }
 
@@ -81,10 +81,8 @@ define_widget! {
         !self.queue.borrow().is_empty()
     }
 
-    // 消息在 post_render 中作为浮层绘制，不影响布局
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
-
-    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    // 消息在 render 中作为浮层绘制，不影响布局
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let queue = self.queue.borrow();
         if queue.is_empty() { return; }
         let cw = frame.w;

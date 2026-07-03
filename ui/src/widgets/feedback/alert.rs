@@ -20,7 +20,7 @@ define_widget! {
         _show_icon: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let h = 36.0 + if self.description.is_empty() { 0.0 } else { 18.0 };
         Size::new(300.0, h)
     }

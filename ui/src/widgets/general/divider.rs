@@ -32,7 +32,7 @@ define_widget! {
         dashed: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         match self.direction {
             DividerDirection::Horizontal => {
                 if self.text.is_some() { Size::new(0.0, 24.0) } else { Size::new(0.0, 1.0) }

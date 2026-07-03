@@ -1,7 +1,7 @@
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
-use uix_graphics::{GraphicsEngine, Radius};
+use uix_graphics::{traits::GraphicsEngine, Radius};
 use uix_platform::{Point, Rect, Size};
 
 /// 选项组。
@@ -170,9 +170,7 @@ define_widget! {
         let arrow = if self.open { "▲" } else { "▼" };
         let arrow_y = ctx.visual_center_y(box_rect_v, 10.0);
         ctx.draw_text(arrow, Point::new(frame.x + frame.w - 18.0, arrow_y), text_secondary, 10.0);
-    }
 
-    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         if !self.open { return; }
         let all_opts: Vec<&str> = self.all_options();
         let flat_labels: Vec<String> = self.flat_labels();

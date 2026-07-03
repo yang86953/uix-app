@@ -8,7 +8,7 @@
 //   - 提供 platform / platform_window 访问
 //
 // 超出边界的（应在 ui 层）：
-//   - FrameGraph 帧图编排
+//   - RenderPipeline 帧渲染编排
 //   - 渲染循环（begin_frame / end_frame / present）
 //   - Widget 树渲染、LayerTree 管理
 // ============================================================================

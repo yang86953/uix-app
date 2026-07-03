@@ -31,7 +31,7 @@ define_widget! {
         compact: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(self.fixed_width, self.fixed_height)
     }
 

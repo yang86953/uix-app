@@ -48,7 +48,7 @@ define_widget! {
         year_jump: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(self.cell_size * 7.0, self.cell_size * 7.0 + 40.0)
     }
 

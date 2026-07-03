@@ -7,7 +7,7 @@ use crate::color::Color;
 use crate::compositor::viewport_transform::needs_paint;
 use crate::compositor::ScenePaint;
 use crate::font_service::FontService;
-use crate::painting::{PaintContext, ThemeTokens};
+use crate::painting::{DisplayList, PaintContext, ThemeTokens};
 use crate::pipeline::NodeId;
 use crate::spatial::Orientation;
 use crate::traits::GraphicsEngine;
@@ -47,6 +47,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     widget_id: NodeId,
     bounds: &Rect,
     offscreen_handle: &mut Option<ImageHandle>,
+    display_list: &mut Option<DisplayList>,
     children: &mut [LayerNode],
     is_dirty: &mut bool,
     scene: &S,
@@ -81,6 +82,13 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
         })
         .collect();
 
+    let self_dirty = scene.node_dirty(widget_id);
+    let mut fresh_list = if self_dirty || display_list.is_none() {
+        Some(DisplayList::new())
+    } else {
+        None
+    };
+
     {
         let Some(off_canvas) = engine.offscreen_canvas(&handle) else {
             return;
@@ -102,7 +110,13 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             h,
         );
         off_ctx.canvas_2d().translate(-bounds.x, -bounds.y);
-        LayerTree::render_widget_self(widget_id, &mut off_ctx, scene);
+        if let Some(list) = fresh_list.as_mut() {
+            off_ctx.set_recorder(Some(list));
+            LayerTree::render_widget_self(widget_id, &mut off_ctx, scene);
+            off_ctx.set_recorder(None);
+        } else if let Some(cached) = display_list.as_ref() {
+            cached.replay(&mut off_ctx);
+        }
         if scene.node_visible(widget_id) {
             let dirty_region = scene.dirty_region();
             render_non_picture_subtree(
@@ -123,6 +137,10 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             let src = Rect::new(0.0, 0.0, child_bounds.w, child_bounds.h);
             off_ctx.canvas_2d().blit_image(&pixels, pw, src, local);
         }
+    }
+
+    if let Some(list) = fresh_list {
+        *display_list = Some(list);
     }
 
     *is_dirty = false;
@@ -162,6 +180,7 @@ fn prepare_nested_pictures<S: ScenePaint>(
             bounds,
             is_dirty,
             offscreen_handle,
+            display_list,
             children: sub,
             retry_count,
             ..
@@ -175,6 +194,7 @@ fn prepare_nested_pictures<S: ScenePaint>(
                     *widget_id,
                     bounds,
                     offscreen_handle,
+                    display_list,
                     sub,
                     is_dirty,
                     scene,

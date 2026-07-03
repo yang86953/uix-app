@@ -5,7 +5,7 @@
 
 use uix_graphics::font_service::FontService;
 use uix_graphics::null_engine::NullEngine;
-use uix_graphics::{Color, FontHandle, GradientDirection, GraphicsEngine, Orientation, Radius};
+use uix_graphics::{Color, FontHandle, GradientDirection, traits::GraphicsEngine, Orientation, Radius};
 use uix_platform::geometry::Rect;
 use uix_ui::api::DesignTokens;
 use uix_ui::api::RenderContext;

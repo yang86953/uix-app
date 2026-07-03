@@ -37,7 +37,7 @@ define_widget! {
         offset_unit: Option<(PhysicalUnit, PhysicalUnit)>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         if self.dot || self.status.is_some() {
             Size::new(10.0, 10.0)
         } else if self.count > 0 || (self.count == 0 && self.show_zero) {

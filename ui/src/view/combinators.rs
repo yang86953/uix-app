@@ -130,7 +130,7 @@ impl WidgetComponent for DynamicLabel {
 }
 
 impl WidgetLayout for DynamicLabel {
-    fn preferred_size(&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    fn preferred_size(&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let text = (self.text_fn)();
         let len = text.len() as f32;
         Size::new(len * 7.0, 18.0)

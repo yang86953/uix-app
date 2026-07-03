@@ -1,105 +1,55 @@
-//! Phase 4 — RepaintBoundary Picture 离屏缓存集成测试。
+//! Phase 9 — RenderObject DisplayList 缓存集成测试。
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use uix_graphics::compositor::{LayerTree, ScenePaint};
+use uix_graphics::compositor::{RenderObjectTree, ScenePaint};
 use uix_graphics::font_service::FontService;
 use uix_graphics::painting::{
-    PaintContext, ShadowToken, ThemeSnapshot, ThemeTokens, IBoxShadowTokens, IColorTokens,
-    ISpacingTokens, ITypographyTokens,
+    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, PaintContext, ShadowToken,
+    ThemeSnapshot, ThemeTokens,
 };
-use uix_graphics::pipeline::NodeId;
-use uix_graphics::traits::{GraphicsEngine, UpdateStrategy};
+use uix_graphics::pipeline::{FrameRenderInput, FrameRenderer, NodeId};
+use uix_graphics::traits::GraphicsEngine;
 use uix_graphics::types::DirtyRegion;
 use uix_graphics::{Color, FontHandle, SoftwareEngine};
-use uix_platform::Rect;
+use uix_platform::{Point, Rect};
 
 const ROOT: NodeId = 1;
-const BOUNDARY: NodeId = 2;
-const INNER: NodeId = 3;
-const SIBLING: NodeId = 4;
+const LEAF: NodeId = 2;
 
-struct NodeSpec {
-    frame: Rect,
-    repaint_boundary: bool,
-    dirty: bool,
-    color: Color,
-}
-
-struct BoundaryScene {
-    nodes: HashMap<NodeId, NodeSpec>,
-    dirty_region: DirtyRegion,
+struct LeafScene {
     tree_version: u64,
+    dirty_region: DirtyRegion,
+    nodes_dirty: HashMap<NodeId, bool>,
     paint_counts: RefCell<HashMap<NodeId, u32>>,
 }
 
-impl BoundaryScene {
-    fn full_frame_dirty() -> Self {
-        let mut nodes = HashMap::new();
-        nodes.insert(
-            ROOT,
-            NodeSpec {
-                frame: Rect::new(0.0, 0.0, 200.0, 200.0),
-                repaint_boundary: false,
-                dirty: true,
-                color: Color::transparent(),
-            },
-        );
-        nodes.insert(
-            BOUNDARY,
-            NodeSpec {
-                frame: Rect::new(10.0, 10.0, 80.0, 80.0),
-                repaint_boundary: true,
-                dirty: true,
-                color: Color::transparent(),
-            },
-        );
-        nodes.insert(
-            INNER,
-            NodeSpec {
-                frame: Rect::new(20.0, 20.0, 40.0, 40.0),
-                repaint_boundary: false,
-                dirty: true,
-                color: Color::from_rgba(255, 0, 0, 255),
-            },
-        );
-        nodes.insert(
-            SIBLING,
-            NodeSpec {
-                frame: Rect::new(100.0, 10.0, 50.0, 50.0),
-                repaint_boundary: false,
-                dirty: true,
-                color: Color::from_rgba(0, 0, 255, 255),
-            },
-        );
+impl LeafScene {
+    fn first_frame() -> Self {
+        let mut nodes_dirty = HashMap::new();
+        nodes_dirty.insert(ROOT, true);
+        nodes_dirty.insert(LEAF, true);
         Self {
-            nodes,
-            dirty_region: DirtyRegion::full(),
             tree_version: 1,
+            dirty_region: DirtyRegion::full(),
+            nodes_dirty,
             paint_counts: RefCell::new(HashMap::new()),
         }
     }
 
     fn mark_all_clean(&mut self) {
-        for node in self.nodes.values_mut() {
-            node.dirty = false;
+        for dirty in self.nodes_dirty.values_mut() {
+            *dirty = false;
         }
     }
 
-    fn dirty_sibling_only(&mut self) {
-        if let Some(s) = self.nodes.get_mut(&SIBLING) {
-            s.dirty = true;
-        }
-        self.dirty_region = DirtyRegion::area(Rect::new(100.0, 10.0, 50.0, 50.0));
-    }
-
-    fn inner_paint_count(&self) -> u32 {
-        self.paint_counts.borrow().get(&INNER).copied().unwrap_or(0)
+    fn leaf_paint_count(&self) -> u32 {
+        self.paint_counts.borrow().get(&LEAF).copied().unwrap_or(0)
     }
 }
 
-impl ScenePaint for BoundaryScene {
+impl ScenePaint for LeafScene {
     fn root_id(&self) -> Option<NodeId> {
         Some(ROOT)
     }
@@ -113,15 +63,19 @@ impl ScenePaint for BoundaryScene {
     }
 
     fn node_visible(&self, id: NodeId) -> bool {
-        self.nodes.contains_key(&id)
+        id == ROOT || id == LEAF
     }
 
     fn node_frame(&self, id: NodeId) -> Rect {
-        self.nodes.get(&id).map(|n| n.frame).unwrap_or_default()
+        match id {
+            ROOT => Rect::new(0.0, 0.0, 100.0, 100.0),
+            LEAF => Rect::new(10.0, 10.0, 40.0, 40.0),
+            _ => Rect::zero(),
+        }
     }
 
     fn node_dirty(&self, id: NodeId) -> bool {
-        self.nodes.get(&id).is_some_and(|n| n.dirty)
+        self.nodes_dirty.get(&id).copied().unwrap_or(false)
     }
 
     fn node_z_index(&self, id: NodeId) -> i32 {
@@ -129,15 +83,15 @@ impl ScenePaint for BoundaryScene {
     }
 
     fn node_children(&self, id: NodeId) -> &[NodeId] {
-        match id {
-            ROOT => &[BOUNDARY, SIBLING][..],
-            BOUNDARY => &[INNER][..],
-            _ => &[],
+        if id == ROOT {
+            &[LEAF][..]
+        } else {
+            &[]
         }
     }
 
-    fn is_repaint_boundary(&self, id: NodeId) -> bool {
-        self.nodes.get(&id).is_some_and(|n| n.repaint_boundary)
+    fn is_repaint_boundary(&self, _: NodeId) -> bool {
+        false
     }
 
     fn children_clip(&self, _: NodeId, _: Rect) -> Option<Rect> {
@@ -160,24 +114,22 @@ impl ScenePaint for BoundaryScene {
         false
     }
 
-    fn hit_test(&self, _: uix_platform::Point) -> Option<NodeId> {
+    fn hit_test(&self, _: Point) -> Option<NodeId> {
         None
     }
 
     fn parent(&self, id: NodeId) -> Option<NodeId> {
-        match id {
-            INNER => Some(BOUNDARY),
-            BOUNDARY | SIBLING => Some(ROOT),
-            _ => None,
+        if id == LEAF {
+            Some(ROOT)
+        } else {
+            None
         }
     }
 
     fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
         *self.paint_counts.borrow_mut().entry(id).or_insert(0) += 1;
-        if let Some(node) = self.nodes.get(&id) {
-            if node.color.a > 0 {
-                ctx.fill_rect(frame, node.color, None);
-            }
+        if id == LEAF {
+            ctx.fill_rect(frame, Color::from_rgba(255, 0, 0, 255), None);
         }
     }
 }
@@ -273,13 +225,13 @@ impl IColorTokens for MockTokens {
         Color::green()
     }
     fn color_warning(&self) -> Color {
-        Color::from_rgba(255, 255, 0, 255)
+        Color::from_rgb(255, 255, 0)
     }
     fn color_warning_bg(&self) -> Color {
-        Color::from_rgba(255, 255, 0, 255)
+        Color::from_rgb(255, 255, 0)
     }
     fn color_warning_border(&self) -> Color {
-        Color::from_rgba(255, 255, 0, 255)
+        Color::from_rgb(255, 255, 0)
     }
     fn color_error(&self) -> Color {
         Color::red()
@@ -329,68 +281,72 @@ impl ISpacingTokens for MockTokens {}
 
 impl ThemeTokens for MockTokens {}
 
-fn render_scene(engine: &mut SoftwareEngine, tree: &mut LayerTree, scene: &BoundaryScene) {
+#[test]
+fn render_object_tree_sync_indexes_visible_nodes() {
+    let scene = LeafScene::first_frame();
+    let mut tree = RenderObjectTree::new();
+    tree.sync(&scene);
+    assert_eq!(tree.len(), 2);
+    assert!(tree.get(LEAF).is_some());
+}
+
+#[test]
+fn frame_renderer_replays_clean_leaf_via_display_list() {
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(100, 100).unwrap();
+
+    let mut scene = LeafScene::first_frame();
+    let mut renderer = FrameRenderer::new();
     let tokens = MockTokens;
     let theme = ThemeSnapshot::new(&tokens);
     let fs = FontService::new();
-    engine.begin_frame(UpdateStrategy::FullRedraw);
-    tree.render(
-        engine,
-        scene,
-        &theme,
-        FontHandle::default(),
-        &fs,
-        false,
-        None,
-        None,
+    let region = DirtyRegion::full();
+
+    renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &region,
+            tree_version: scene.tree_version(),
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fs,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
     );
-    engine.end_frame();
-}
-
-#[test]
-fn repaint_boundary_outer_change_skips_inner_rasterize() {
-    let mut engine = SoftwareEngine::new();
-    engine.initialize(200, 200).unwrap();
-
-    let mut scene = BoundaryScene::full_frame_dirty();
-    let mut tree = LayerTree::new();
-    tree.build(&scene);
-
-    render_scene(&mut engine, &mut tree, &scene);
-    assert_eq!(scene.inner_paint_count(), 1, "首帧应栅格化 boundary 内部");
+    assert_eq!(scene.leaf_paint_count(), 1);
 
     scene.mark_all_clean();
-    scene.dirty_sibling_only();
-    tree.update_dirty(&scene);
-
-    render_scene(&mut engine, &mut tree, &scene);
+    renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &region,
+            tree_version: scene.tree_version(),
+            scroll_move: None,
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
     assert_eq!(
-        scene.inner_paint_count(),
+        scene.leaf_paint_count(),
         1,
-        "boundary 外 sibling 变更不应触发内部 re-render"
+        "干净 leaf 在整帧 dirty 下应重放 DisplayList 而非再次 paint"
     );
-}
-
-#[test]
-fn repaint_boundary_clean_path_blits_from_offscreen() {
-    let mut engine = SoftwareEngine::new();
-    engine.initialize(200, 200).unwrap();
-
-    let mut scene = BoundaryScene::full_frame_dirty();
-    let mut tree = LayerTree::new();
-    tree.build(&scene);
-    render_scene(&mut engine, &mut tree, &scene);
-
-    scene.mark_all_clean();
-    // 仅标记 boundary 区域需要重绘（模拟父级间隙修正），内部仍 clean
-    scene.dirty_region = DirtyRegion::area(Rect::new(10.0, 10.0, 80.0, 80.0));
-    tree.update_dirty(&scene);
-
-    let before = scene.inner_paint_count();
-    render_scene(&mut engine, &mut tree, &scene);
-    assert_eq!(
-        scene.inner_paint_count(),
-        before,
-        "clean Picture 应 blit 缓存而非重绘内部"
+    assert!(
+        renderer
+            .render_object_tree()
+            .get(LEAF)
+            .and_then(|e| e.display_list.as_ref())
+            .is_some()
     );
 }

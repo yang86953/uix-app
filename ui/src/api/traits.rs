@@ -8,7 +8,8 @@ use crate::style::Style;
 use crate::widget::{EventResult, WidgetEvent, WidgetId, WidgetNode, WidgetTree};
 use std::any::Any;
 use uix_graphics::spatial::{Ray3D, SpatialContext};
-use uix_graphics::{Color, GraphicsEngine};
+use uix_graphics::traits::GraphicsEngine;
+use uix_graphics::Color;
 use uix_platform::{EdgeInsets, Point, Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -110,7 +111,6 @@ pub trait WidgetLayout: WidgetComponent {
 /// 渲染行为：绘制、覆盖层、脏区域。
 pub trait WidgetRender: WidgetComponent {
     fn render(&self, frame: Rect, ctx: &mut RenderContext, tree: &WidgetTree);
-    fn post_render(&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
     fn draw_margin(&self) -> f32 {
         0.0
     }

@@ -34,7 +34,7 @@ define_widget! {
         closing: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         if self.visible {
             match self.placement {
                 DrawerPlacement::Right | DrawerPlacement::Left => Size::new(self.width, 600.0),

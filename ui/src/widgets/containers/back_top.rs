@@ -3,7 +3,7 @@
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
-use uix_graphics::GraphicsEngine;
+use uix_graphics::traits::GraphicsEngine;
 use uix_platform::{Rect, Size};
 
 define_widget! {

@@ -29,7 +29,7 @@ pub enum WidgetEventKind {
     DragEnd,
 }
 use uix_graphics::spatial::{Ray3D, SpatialContext};
-use uix_graphics::GraphicsEngine;
+use uix_graphics::traits::GraphicsEngine;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventResult {
@@ -375,16 +375,6 @@ impl BoxedWidget {
     ) {
         if let Some(r) = self.component().as_render() {
             r.render(frame, ctx, tree);
-        }
-    }
-    pub fn post_render(
-        &self,
-        frame: Rect,
-        ctx: &mut crate::render_context::RenderContext,
-        tree: &WidgetTree,
-    ) {
-        if let Some(r) = self.component().as_render() {
-            r.post_render(frame, ctx, tree);
         }
     }
     pub fn is_repaint_boundary(&self) -> bool {

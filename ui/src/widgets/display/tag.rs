@@ -27,7 +27,7 @@ define_widget! {
         on_close: Option<Box<dyn FnMut() + 'static>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let w = self.text.len() as f32 * (self.font_size * 0.6) + 16.0
             + if self.closable { 20.0 } else { 0.0 };
         Size::new(w, self.font_size + 8.0)

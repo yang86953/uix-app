@@ -30,7 +30,7 @@ define_widget! {
         hole_radius: f32,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let s = if self.fixed_size > 0.0 { self.fixed_size } else { 180.0 };
         Size::new(s, s)
     }

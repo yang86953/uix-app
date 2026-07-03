@@ -18,7 +18,7 @@ define_widget! {
 
 
     tab_index => (&self) -> i32 { 1 }
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let text_w = self.label.len() as f32 * 8.0;
         Size::new(22.0 + text_w, 22.0)
     }
