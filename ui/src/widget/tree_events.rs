@@ -212,6 +212,11 @@ impl WidgetTree {
     }
 
     fn dispatch_to(&mut self, target: WidgetId, event: &WidgetEvent) -> EventResult {
+        // 分发前标记目标为脏，确保事件处理函数（on_event）中的状态变更能被渲染管线感知。
+        // 所有事件类型统一在此标记，避免 Timer / FileDrop / Window 等事件类型
+        // 在 dispatch_event 中遗漏 mark_dirty 导致状态变更不渲染的问题。
+        self.mark_dirty(target);
+
         let mut current = Some(target);
         // ScrollView 的子节点框架是自然坐标（未含滚动偏移），
         // 必须先计算目标路径上所有 ScrollView 的累计偏移量，
