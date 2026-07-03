@@ -275,6 +275,99 @@ fn dispatch_resize_goes_to_root() {
 }
 
 #[test]
+// ════════════════════════════════════════════════════════════════════════
+// 捕获阶段测试
+// ════════════════════════════════════════════════════════════════════════
+
+/// 捕获阶段：根节点在捕获阶段处理事件，阻止其到达子节点。
+#[test]
+fn capture_phase_root_handles_before_child() {
+    let mut tree = WidgetTree::new();
+    // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
+    // SpyWidget 的 on_event 返回 Handled，所以 root 捕获后子节点收不到。
+    let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
+    let container = tree.add_child(root_id, Box::new(PassThroughContainer::new(300.0, 300.0, vec![])));
+    let child = tree.add_child(container, Box::new(SpyWidget::new(100.0, 100.0)));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(container).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+    // 点击在 child 区域内
+    let result = tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    // SpyWidget(root) 在捕获阶段返回 Handled，最终结果应为 Handled
+    assert_eq!(result, EventResult::Handled);
+    // SpyWidget(root) 收到了事件（捕获阶段）
+    // root 不是 focused_widget（target=child 在冒泡阶段才设焦点，但捕获阶段 Handled 阻止了冒泡）
+    // 所以 focused_widget 应为 None（MouseDown 未进入冒泡阶段的 set_focus）
+    assert!(tree.focused_widget.is_none());
+}
+
+/// 捕获阶段不拦截时，事件正常冒泡到目标。
+#[test]
+fn capture_phase_not_intercepted_proceeds_to_bubble() {
+    let mut tree = WidgetTree::new();
+    // 树结构：PassThroughContainer(root) → SpyWidget(child)
+    // PassThroughContainer 返回 NotHandled，不拦截
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+    // 点击在 child 区域内
+    let result = tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    // 捕获阶段无人拦截 → 冒泡阶段 child(SpyWidget) 返回 Handled
+    assert_eq!(result, EventResult::Handled);
+    // 冒泡阶段设置了焦点
+    assert_eq!(tree.focused_widget, Some(child));
+}
+
+/// 捕获阶段：MouseWheel 事件被祖先拦截（如 ScrollView 外层拦截滚动）。
+#[test]
+fn capture_phase_mouse_wheel_intercepted() {
+    let mut tree = WidgetTree::new();
+    // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
+    let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
+    let container = tree.add_child(root_id, Box::new(PassThroughContainer::new(300.0, 300.0, vec![])));
+    let child = tree.add_child(container, Box::new(SpyWidget::new(100.0, 100.0)));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(container).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+    let result = tree.dispatch_event(&WidgetEvent::MouseWheel {
+        pos: Point::new(50.0, 50.0),
+        delta: Point::new(0.0, -10.0),
+    });
+    assert_eq!(result, EventResult::Handled);
+}
+
+/// 捕获阶段：KeyDown 事件被祖先拦截（如全局快捷键）。
+#[test]
+fn capture_phase_key_down_intercepted() {
+    let mut tree = WidgetTree::new();
+    // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
+    let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
+    let container = tree.add_child(root_id, Box::new(PassThroughContainer::new(300.0, 300.0, vec![])));
+    let _child = tree.add_child(container, Box::new(SpyWidget::new(100.0, 100.0)));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+
+    // 先设焦点
+    tree.focused_widget = Some(container);
+
+    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+        key: KeyCode::Escape,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(result, EventResult::Handled);
+}
+
 fn nav_item_click_updates_shared_active() {
     use crate::widgets::nav::{NavItem, SharedActive};
     use std::cell::Cell;
