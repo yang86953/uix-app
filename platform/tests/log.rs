@@ -1,3 +1,5 @@
+//! log — Level / Record / Sink / Logger 测试。
+
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 use uix_platform::log::{

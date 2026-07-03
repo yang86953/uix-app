@@ -1,3 +1,5 @@
+//! types — 平台层数据类型测试（枚举 / 结构体 / 默认值）。
+
 use uix_platform::types::{
     ConsoleColor, ControlSize, CursorType, DisplayInfo, KeyCode, KeyMod,
     MemoryInfo, MouseButton, OsInfo, ScrollDirection, SpecialDir, StatusLevel,

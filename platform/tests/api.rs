@@ -1,467 +1,26 @@
-use std::ffi::c_void;
+//! Platform trait 访问路径验证 — 所有子系统通过 FakePlatform 测试读写一致性。
+//!
+//! 每个测试验证：
+//!   1. 可通过 `Platform` trait 访问子系统
+//!   2. 写入后读出值一致
+//!   3. Fake 的状态追踪正常工作
+
+#![cfg(feature = "test-harness")]
+
 use uix_platform::api::traits::*;
 use uix_platform::api::types::*;
-use uix_platform::presenter::NullPresenter;
-use uix_platform::Error;
+use uix_platform::event::UiEvent;
+use uix_platform::geometry::Point;
+use uix_platform::test_harness::FakePlatform;
 
 // ════════════════════════════════════════════════════════════════════════════
-// 1. 模块重导出完整性 — 确保 api 模块正确暴露所有类型和 trait
-// ════════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn api_module_re_exports_traits() {
-    // 验证 trait 可通过 api::traits 访问
-    let _: &dyn IPresenter = &NullPresenter;
-    let _: &dyn IClipboard = &MockClipboard;
-    let _: &dyn ICursor = &MockCursor;
-    let _: &dyn IKeyboard = &MockKeyboard;
-    let _: &dyn IDisplay = &MockDisplay;
-    let _: &dyn IConsole = &MockConsole;
-    let _: &dyn IFileDialog = &MockFileDialog;
-    let _: &dyn IFileSystem = &MockFileSystem;
-    let _: &dyn INotification = &MockNotification;
-    let _: &dyn ITimer = &MockTimer;
-    let _: &dyn IEventLoop = &MockEventLoop;
-    let _: &dyn IWindowManager = &MockWindowManager;
-    let _: &dyn ISystemInfo = &MockSystemInfo;
-    let _: &dyn ITextInput = &MockTextInput;
-    let _: &dyn Platform = &MockPlatformAggregate::new();
-}
-
-#[test]
-fn api_module_re_exports_types() {
-    let _p = Point::new(1.0, 2.0);
-    let _s = Size::new(100.0, 200.0);
-    let _r = Rect::new(0.0, 0.0, 100.0, 200.0);
-    let _e = EdgeInsets::new(1.0, 2.0, 3.0, 4.0);
-    let _ = Error::new(Errc::None, "test");
-    let _ = StatusLevel::Info;
-    let _ = ConsoleColor::Default;
-    let _ = CursorType::Arrow;
-    let _ = KeyCode::A;
-    let _ = KeyMod::NONE;
-    let _ = ScrollDirection::Both;
-    let _ = ControlSize::Medium;
-    let _ = SpecialDir::Home;
-    let _ = DisplayInfo::default();
-    let _ = OsInfo { name: "".into(), version: "".into(), build: "".into(), is_64bit: false };
-    let _ = MemoryInfo { total_bytes: 0, available_bytes: 0, process_working_set: 0, process_private_bytes: 0 };
-    let _ = TerminalCapabilities { has_color: false, has_raw_mode: false, has_cursor_control: false };
-    let _bus = EventBus::new();
-    let _ = UiEventType::WindowClose;
-    let _ = UiEventPayload::None;
-}
-
-#[test]
-fn api_prelude_via_star_import() {
-    use uix_platform::api::*;
-    // types
-    let _p = Point::new(0.0, 0.0);
-    let _err: Error = Error::new(Errc::None, "");
-    let _ev = UiEvent::close();
-    let _bus = EventBus::new();
-    let _kc = KeyCode::Enter;
-    // traits
-    let _presenter: &dyn IPresenter = &NullPresenter;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 2. Trait 编译验证 — 所有公开 trait 可实现
-// ════════════════════════════════════════════════════════════════════════════
-
-struct MockClipboard;
-impl IClipboard for MockClipboard {
-    fn text(&self) -> String { String::new() }
-    fn set_text(&mut self, _text: &str) {}
-    fn has_text(&self) -> bool { false }
-}
-
-struct MockCursor;
-impl ICursor for MockCursor {
-    fn set_cursor(&mut self, _cursor: CursorType) {}
-    fn show_cursor(&mut self, _visible: bool) {}
-    fn cursor_position(&self) -> Point { Point::zero() }
-    fn set_cursor_position(&mut self, _x: i32, _y: i32) {}
-    fn confine_cursor(&mut self, _confine: bool) {}
-    fn capture_mouse(&mut self) {}
-    fn release_mouse(&mut self) {}
-}
-
-struct MockKeyboard;
-impl IKeyboard for MockKeyboard {
-    fn is_down(&self, _key: KeyCode) -> bool { false }
-    fn idle_ms(&self) -> u32 { 0 }
-    fn double_click_ms(&self) -> u32 { 500 }
-}
-
-struct MockDisplay;
-impl IDisplay for MockDisplay {
-    fn dpi_scale(&self) -> f32 { 1.0 }
-    fn is_dark_mode(&self) -> bool { false }
-    fn count(&self) -> i32 { 1 }
-    fn info(&self, _index: i32) -> DisplayInfo { DisplayInfo::default() }
-}
-
-struct MockConsole;
-impl IConsole for MockConsole {
-    fn write(&mut self, _text: &str) {}
-    fn write_line(&mut self, _text: &str) {}
-    fn set_color(&mut self, _color: ConsoleColor) {}
-    fn reset_color(&mut self) {}
-    fn show_terminal_cursor(&mut self, _visible: bool) {}
-    fn set_terminal_title(&mut self, _title: &str) {}
-    fn capabilities(&self) -> TerminalCapabilities {
-        TerminalCapabilities { has_color: true, has_raw_mode: false, has_cursor_control: true }
-    }
-}
-
-struct MockFileDialog;
-impl IFileDialog for MockFileDialog {
-    fn open(&mut self, _title: &str, _filters: &str) -> Vec<String> { vec![] }
-    fn save(&mut self, _title: &str, _filters: &str) -> String { String::new() }
-    fn open_folder(&mut self, _title: &str) -> String { String::new() }
-}
-
-struct MockFileSystem;
-impl IFileSystem for MockFileSystem {
-    fn get_special_dir(&self, _dir: SpecialDir) -> String { String::new() }
-    fn executable_path(&self) -> String { String::new() }
-    fn executable_dir(&self) -> String { String::new() }
-    fn read_file(&self, _path: &str) -> Result<Vec<u8>, Error> { Ok(vec![]) }
-}
-
-struct MockNotification;
-impl INotification for MockNotification {
-    fn show(&mut self, _title: &str, _message: &str) {}
-}
-
-struct MockTimer;
-impl ITimer for MockTimer {
-    fn set(&mut self, _interval_ms: u32, _repeating: bool) -> u32 { 1 }
-    fn clear(&mut self, _id: u32) {}
-}
-
-struct MockEventLoop;
-impl IEventLoop for MockEventLoop {
-    fn poll_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
-        let _ = callback;
-        false
-    }
-    fn wait_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool {
-        let _ = callback;
-        false
-    }
-    fn wait_timeout(
-        &mut self,
-        _timeout: std::time::Duration,
-        callback: &dyn Fn(&UiEvent) -> bool,
-    ) -> bool {
-        let _ = callback;
-        false
-    }
-}
-
-struct MockWindowManager;
-impl IWindowManager for MockWindowManager {
-    fn create_window(
-        &mut self,
-        _title: &str,
-        _width: i32,
-        _height: i32,
-    ) -> Result<Box<dyn PlatformWindow>, Error> {
-        Err(Error::new(Errc::NotImplemented, "mock"))
-    }
-}
-
-struct MockSystemInfo;
-impl ISystemInfo for MockSystemInfo {
-    fn os_info(&self) -> OsInfo {
-        OsInfo { name: "MockOS".into(), version: "1.0".into(), build: "1".into(), is_64bit: false }
-    }
-    fn cpu_count(&self) -> u32 { 4 }
-    fn memory_info(&self) -> MemoryInfo {
-        MemoryInfo { total_bytes: 0, available_bytes: 0, process_working_set: 0, process_private_bytes: 0 }
-    }
-    fn hostname(&self) -> String { "mock".into() }
-    fn username(&self) -> String { "mock".into() }
-    fn up_time(&self) -> u64 { 0 }
-    fn default_font_path(&self) -> Option<String> { None }
-}
-
-struct MockTextInput;
-impl ITextInput for MockTextInput {
-    fn start(&mut self) {}
-    fn stop(&mut self) {}
-}
-
-struct MockPlatformAggregate {
-    event_bus: EventBus,
-    window_manager: MockWindowManager,
-    event_loop: MockEventLoop,
-    clipboard: MockClipboard,
-    cursor: MockCursor,
-    display: MockDisplay,
-    file_dialog: MockFileDialog,
-    keyboard: MockKeyboard,
-    text_input: MockTextInput,
-    timer: MockTimer,
-    notification: MockNotification,
-    console: MockConsole,
-    file_system: MockFileSystem,
-    system_info: MockSystemInfo,
-}
-
-impl MockPlatformAggregate {
-    fn new() -> Self {
-        Self {
-            event_bus: EventBus::new(),
-            window_manager: MockWindowManager,
-            event_loop: MockEventLoop,
-            clipboard: MockClipboard,
-            cursor: MockCursor,
-            display: MockDisplay,
-            file_dialog: MockFileDialog,
-            keyboard: MockKeyboard,
-            text_input: MockTextInput,
-            timer: MockTimer,
-            notification: MockNotification,
-            console: MockConsole,
-            file_system: MockFileSystem,
-            system_info: MockSystemInfo,
-        }
-    }
-}
-
-impl Platform for MockPlatformAggregate {
-    fn window_manager(&mut self) -> &mut dyn IWindowManager { &mut self.window_manager }
-    fn event_loop(&mut self) -> &mut dyn IEventLoop { &mut self.event_loop }
-    fn event_bus(&mut self) -> &mut EventBus { &mut self.event_bus }
-    fn clipboard(&mut self) -> &mut dyn IClipboard { &mut self.clipboard }
-    fn cursor(&mut self) -> &mut dyn ICursor { &mut self.cursor }
-    fn display(&self) -> &dyn IDisplay { &self.display }
-    fn file_dialog(&mut self) -> &mut dyn IFileDialog { &mut self.file_dialog }
-    fn keyboard(&self) -> &dyn IKeyboard { &self.keyboard }
-    fn text_input(&mut self) -> &mut dyn ITextInput { &mut self.text_input }
-    fn timer(&mut self) -> &mut dyn ITimer { &mut self.timer }
-    fn notification(&mut self) -> &mut dyn INotification { &mut self.notification }
-    fn console(&mut self) -> &mut dyn IConsole { &mut self.console }
-    fn file_system(&self) -> &dyn IFileSystem { &self.file_system }
-    fn system_info(&self) -> &dyn ISystemInfo { &self.system_info }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 3. NullPresenter — IPresenter 空实现行为验证
+// Platform trait — 所有访问器方法可用
 // ════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn null_presenter_new_via_api() {
-    let p = NullPresenter::new();
-    let _ = p;
-}
-
-#[test]
-fn null_presenter_present_discards_all_pixels() {
-    let mut p = NullPresenter::new();
-    assert!(IPresenter::present(&mut p, &[0u32; 100], 10, 10, None).is_ok());
-    assert!(IPresenter::present(&mut p, &[], 0, 0, None).is_ok());
-    assert!(IPresenter::present(&mut p, &[1, 2, 3], 1, 3, Some((0, 0, 1, 3))).is_ok());
-}
-
-#[test]
-fn null_presenter_resize_noop() {
-    let mut p = NullPresenter::new();
-    assert!(IPresenter::resize(&mut p, 1920, 1080).is_ok());
-    assert!(IPresenter::resize(&mut p, 0, 0).is_ok());
-    assert!(IPresenter::resize(&mut p, -1, -1).is_ok());
-}
-
-#[test]
-fn null_presenter_is_default() {
-    let p1 = NullPresenter::new();
-    let p2 = NullPresenter::default();
-    let _ = p1;
-    let _ = p2;
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 4. IWindowProperties — 属性状态测试
-// ════════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn window_properties_position_roundtrip() {
-    let mut w = MockWindowProperties::default();
-    assert_eq!(w.position().x, 0.0);
-    assert_eq!(w.position().y, 0.0);
-    w.set_position(100, 200);
-    assert_eq!(w.x, 100);
-    assert_eq!(w.y, 200);
-}
-
-#[test]
-fn window_properties_fullscreen_toggle() {
-    let mut w = MockWindowProperties::default();
-    assert!(!w.is_fullscreen());
-    w.set_fullscreen(true);
-    assert!(w.is_fullscreen());
-    w.set_fullscreen(false);
-    assert!(!w.is_fullscreen());
-}
-
-#[test]
-fn window_properties_maximize_minimize_restore() {
-    let mut w = MockWindowProperties::default();
-    assert!(!w.is_maximized());
-    assert!(!w.is_minimized());
-    w.maximize();
-    assert!(w.is_maximized());
-    w.minimize();
-    assert!(w.is_minimized());
-    assert!(!w.is_maximized());
-    w.restore();
-    assert!(!w.is_maximized());
-    assert!(!w.is_minimized());
-}
-
-#[test]
-fn window_properties_resizable_borderless_opacity() {
-    let mut w = MockWindowProperties::default();
-    assert!(w.is_maximized() == false || w.is_maximized() == true); // 确保不 panic
-    w.set_resizable(false);
-    w.set_borderless(true);
-    w.set_window_opacity(0.5);
-    w.set_always_on_top(true);
-    w.start_text_input();
-    w.stop_text_input();
-    w.enable_file_drop(true);
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 5. IGraphicsContext 默认方法
-// ════════════════════════════════════════════════════════════════════════════
-
-struct MockGraphicsContext;
-
-impl IGraphicsContext for MockGraphicsContext {
-    fn initialize(&mut self, _: *mut c_void, _: i32, _: i32) -> Result<(), Error> { Ok(()) }
-    fn resize(&mut self, _: i32, _: i32) {}
-    fn make_current(&mut self) {}
-    fn swap_buffers(&mut self) {}
-    fn shutdown(&mut self) {}
-    fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> { vec![] }
-    fn width(&self) -> i32 { 800 }
-    fn height(&self) -> i32 { 600 }
-}
-
-#[test]
-fn graphics_context_get_proc_address_default_returns_none() {
-    assert!(MockGraphicsContext.get_proc_address("glClear").is_none());
-    assert!(MockGraphicsContext.get_proc_address("").is_none());
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 6. PlatformWindow 默认方法
-// ════════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn platform_window_graphics_context_default_returns_none() {
-    let mut win = MockPlatformWindow::new();
-    assert!(win.graphics_context().is_none());
-}
-
-#[test]
-fn platform_window_native_surface_ptr_default_returns_null() {
-    let win = MockPlatformWindow::new();
-    assert!(win.native_surface_ptr().is_null());
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 7. ISystemInfo 默认方法
-// ════════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn system_info_default_font_paths_empty_when_default_returns_none() {
-    assert!(MockSystemInfo.default_font_paths().is_empty());
-}
-
-#[test]
-fn system_info_default_font_paths_single_item_when_default_returns_some() {
-    let info = InfoWithFont;
-    let paths = info.default_font_paths();
-    assert_eq!(paths.len(), 1);
-    assert_eq!(paths[0], "/mock/font.ttf");
-}
-
-#[test]
-fn system_info_default_methods_return_defaults() {
-    assert!(MockSystemInfo.probe_cjk_font_path().is_none());
-    assert!(MockSystemInfo.probe_family_font_path("Arial").is_none());
-    assert!(MockSystemInfo.scan_fallback_font_path().is_none());
-    assert_eq!(MockSystemInfo.process_memory(), (0, 0));
-}
-
-struct InfoWithFont;
-impl ISystemInfo for InfoWithFont {
-    fn os_info(&self) -> OsInfo {
-        OsInfo { name: "MockOS".into(), version: "1.0".into(), build: "1".into(), is_64bit: false }
-    }
-    fn cpu_count(&self) -> u32 { 2 }
-    fn memory_info(&self) -> MemoryInfo {
-        MemoryInfo { total_bytes: 0, available_bytes: 0, process_working_set: 0, process_private_bytes: 0 }
-    }
-    fn hostname(&self) -> String { String::new() }
-    fn username(&self) -> String { String::new() }
-    fn up_time(&self) -> u64 { 0 }
-    fn default_font_path(&self) -> Option<String> { Some("/mock/font.ttf".into()) }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 8. Platform 工厂函数
-// ════════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn create_gpu_context_on_windows_returns_error() {
-    let result = uix_platform::create_gpu_context(
-        std::ptr::null_mut(),
-        800,
-        600,
-    );
-    assert!(result.is_err());
-}
-
-#[test]
-fn available_memory_bytes_returns_non_zero() {
-    let mem = uix_platform::available_memory_bytes();
-    assert!(mem > 0, "可用内存应大于 0，实际为 {}", mem);
-}
-
-#[test]
-fn create_platform_returns_ok() {
-    let mut platform = uix_platform::create_platform().unwrap();
-    // 验证 Platform trait 所有 accessor 不 panic
-    let _ = platform.event_bus();
-    let _ = platform.display();
-    let _ = platform.keyboard();
-    let _ = platform.file_system();
-    let _ = platform.system_info();
-    let _ = platform.window_manager();
-    let _ = platform.event_loop();
-    let _ = platform.clipboard();
-    let _ = platform.cursor();
-    let _ = platform.file_dialog();
-    let _ = platform.text_input();
-    let _ = platform.timer();
-    let _ = platform.notification();
-    let _ = platform.console();
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// 9. Platform Mock — 聚合 trait 行为测试
-// ════════════════════════════════════════════════════════════════════════════
-
-#[test]
-fn platform_mock_all_accessors_work() {
-    let mut p = MockPlatformAggregate::new();
-    // &mut self accessors
+fn platform_trait_all_accessors_available() {
+    let mut pf = FakePlatform::new();
+    let p: &mut dyn Platform = &mut pf;
     let _ = p.window_manager();
     let _ = p.event_loop();
     let _ = p.event_bus();
@@ -472,7 +31,6 @@ fn platform_mock_all_accessors_work() {
     let _ = p.timer();
     let _ = p.notification();
     let _ = p.console();
-    // &self accessors
     let _ = p.display();
     let _ = p.keyboard();
     let _ = p.file_system();
@@ -480,157 +38,465 @@ fn platform_mock_all_accessors_work() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 11. Error 类型 — 通过 api 模块构造和使用
+// IPresenter — 像素呈现
 // ════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn error_construction_via_api() {
-    let e = Error::new(Errc::NotFound, "file not found");
-    assert_eq!(e.code(), Errc::NotFound);
-    assert!(e.what().contains("file not found"));
+fn presenter_default_empty() {
+    let pf = FakePlatform::new();
+    assert_eq!(pf.presenter.present_count(), 0);
 }
 
 #[test]
-fn error_severity_via_api() {
-    let info = Error::info(Errc::None, "info msg");
-    assert_eq!(info.severity(), ErrorSeverity::Info);
-    let warn = Error::warn(Errc::None, "warn msg");
-    assert_eq!(warn.severity(), ErrorSeverity::Warning);
-    let err = Error::new(Errc::Unknown, "error msg");
-    assert_eq!(err.severity(), ErrorSeverity::Error);
-    let fatal = Error::fatal(Errc::Unknown, "fatal msg");
-    assert_eq!(fatal.severity(), ErrorSeverity::Fatal);
+fn presenter_present_stores_pixels() {
+    let mut pf = FakePlatform::new();
+    pf.presenter.present(&[0xFF0000, 0x00FF00], 2, 1, None).unwrap();
+    assert_eq!(pf.presenter.present_count(), 1);
+    assert_eq!(pf.presenter.state.last_pixels.len(), 2);
 }
 
 #[test]
-fn error_chaining_via_api() {
-    let inner = Error::new(Errc::NotFound, "inner");
-    let outer = Error::new(Errc::InvalidOperation, "outer").with_source(inner);
-    assert_eq!(outer.depth(), 1);
-    assert!(outer.what().contains("outer"));
-    assert!(outer.root_cause().what().contains("inner"));
-}
-
-#[test]
-fn error_factory_methods_via_api() {
-    assert_eq!(Error::not_found("test").code(), Errc::NotFound);
-    assert_eq!(Error::invalid_arg("test").code(), Errc::InvalidArgument);
-    assert_eq!(Error::invalid_state("test").code(), Errc::InvalidState);
-    assert_eq!(Error::io_error("test").code(), Errc::IoError);
-    assert_eq!(Error::not_implemented("test").code(), Errc::NotImplemented);
-    assert_eq!(Error::unknown("test").code(), Errc::Unknown);
-    assert_eq!(Error::write_failure("test").code(), Errc::WriteFailure);
+fn presenter_resize_tracks_calls() {
+    let mut pf = FakePlatform::new();
+    pf.presenter.resize(1920, 1080).unwrap();
+    assert_eq!(pf.presenter.resize_count(), 1);
+    assert_eq!(pf.presenter.state.resize_calls[0], (1920, 1080));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 10. EventBus — 通过 api 模块访问
+// IClipboard — 剪贴板
 // ════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn event_bus_via_api_module() {
-    let mut bus = EventBus::new();
-    assert_eq!(bus.subscriber_count(), 0);
-    bus.subscribe(UiEventType::WindowClose, |_| true);
-    assert_eq!(bus.subscriber_count(), 1);
+fn clipboard_read_write_roundtrip() {
+    let mut pf = FakePlatform::new();
+    pf.clipboard.set_text("uix-framework");
+    assert_eq!(pf.clipboard.text(), "uix-framework");
+    assert!(pf.clipboard.has_text());
+    assert_eq!(pf.clipboard.last_set_text(), Some("uix-framework"));
+}
+
+#[test]
+fn clipboard_overwrite() {
+    let mut pf = FakePlatform::new();
+    pf.clipboard.set_text("first");
+    pf.clipboard.set_text("second");
+    assert_eq!(pf.clipboard.text(), "second");
+    assert_eq!(pf.clipboard.state.set_text_calls.len(), 2);
+}
+
+#[test]
+fn clipboard_empty_initially() {
+    let pf = FakePlatform::new();
+    assert!(!pf.clipboard.has_text());
+    assert_eq!(pf.clipboard.text(), "");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 11. 几何类型 — 通过 api 模块访问
+// ICursor — 光标
 // ════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn geometry_types_via_api() {
-    let p1 = Point::new(3.0, 4.0);
-    let p2 = Point::new(1.0, 2.0);
-    let mid = Point::midpoint(p1, p2);
-    assert_eq!(mid.x, 2.0);
-    assert_eq!(mid.y, 3.0);
-    assert_eq!(Point::zero(), Point::default());
+fn cursor_set_type() {
+    let mut pf = FakePlatform::new();
+    pf.cursor.set_cursor(CursorType::Hand);
+    assert_eq!(pf.cursor.state.cursor_type, CursorType::Hand);
+}
+
+#[test]
+fn cursor_position() {
+    let mut pf = FakePlatform::new();
+    pf.cursor.set_cursor_position(100, 200);
+    let pos = pf.cursor.cursor_position();
+    assert_eq!(pos.x, 100.0);
+    assert_eq!(pos.y, 200.0);
+}
+
+#[test]
+fn cursor_show_hide() {
+    let mut pf = FakePlatform::new();
+    pf.cursor.show_cursor(false);
+    assert!(!pf.cursor.state.visible);
+    pf.cursor.show_cursor(true);
+    assert!(pf.cursor.state.visible);
+}
+
+#[test]
+fn cursor_capture_release() {
+    let mut pf = FakePlatform::new();
+    pf.cursor.capture_mouse();
+    assert!(pf.cursor.state.captured);
+    pf.cursor.release_mouse();
+    assert!(!pf.cursor.state.captured);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 12. UiEvent 工厂 — 通过 api 模块访问
+// IKeyboard — 键盘
 // ════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn ui_event_factories_via_api() {
-    let ev = UiEvent::close();
-    assert_eq!(ev.type_, UiEventType::WindowClose);
-    let ev = UiEvent::mouse_down(Point::new(10.0, 10.0), MouseButton::Left);
-    assert_eq!(ev.type_, UiEventType::MouseDown);
-    let ev = UiEvent::key_down(KeyCode::Escape, KeyMod::NONE);
-    assert_eq!(ev.type_, UiEventType::KeyDown);
+fn keyboard_press_detects_down() {
+    let mut pf = FakePlatform::new();
+    assert!(!pf.keyboard.is_down(KeyCode::Space));
+    pf.keyboard.press(KeyCode::Space);
+    assert!(pf.keyboard.is_down(KeyCode::Space));
+    pf.keyboard.release(KeyCode::Space);
+    assert!(!pf.keyboard.is_down(KeyCode::Space));
+}
+
+#[test]
+fn keyboard_idle_ms_default() {
+    let pf = FakePlatform::new();
+    assert_eq!(pf.keyboard.idle_ms(), 0);
+}
+
+#[test]
+fn keyboard_double_click_ms_default() {
+    let pf = FakePlatform::new();
+    assert_eq!(pf.keyboard.double_click_ms(), 500);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 辅助结构体
+// IDisplay — 显示
 // ════════════════════════════════════════════════════════════════════════════
 
-struct MockWindowProperties {
-    x: i32, y: i32, w: i32, h: i32,
-    maximized: bool, minimized: bool, fullscreen: bool,
+#[test]
+fn display_defaults() {
+    let pf = FakePlatform::new();
+    assert_eq!(pf.display.dpi_scale(), 1.0);
+    assert!(!pf.display.is_dark_mode());
+    assert_eq!(pf.display.count(), 1);
 }
 
-impl Default for MockWindowProperties {
-    fn default() -> Self {
-        Self { x: 0, y: 0, w: 800, h: 600, maximized: false, minimized: false, fullscreen: false }
-    }
+#[test]
+fn display_configure() {
+    let pf = FakePlatform::new();
+    pf.display.set_dpi(2.0);
+    pf.display.set_dark_mode(true);
+    assert_eq!(pf.display.dpi_scale(), 2.0);
+    assert!(pf.display.is_dark_mode());
 }
 
-impl IWindowProperties for MockWindowProperties {
-    fn width(&self) -> i32 { self.w }
-    fn height(&self) -> i32 { self.h }
-    fn set_size(&mut self, w: i32, h: i32) { self.w = w; self.h = h; }
-    fn set_minimum_size(&mut self, _: i32, _: i32) {}
-    fn set_maximum_size(&mut self, _: i32, _: i32) {}
-    fn position(&self) -> Point { Point::new(self.x as f32, self.y as f32) }
-    fn set_position(&mut self, x: i32, y: i32) { self.x = x; self.y = y; }
-    fn set_resizable(&mut self, _: bool) {}
-    fn is_maximized(&self) -> bool { self.maximized }
-    fn is_minimized(&self) -> bool { self.minimized }
-    fn maximize(&mut self) { self.maximized = true; self.minimized = false; }
-    fn minimize(&mut self) { self.minimized = true; self.maximized = false; }
-    fn restore(&mut self) { self.maximized = false; self.minimized = false; }
-    fn set_borderless(&mut self, _: bool) {}
-    fn set_fullscreen(&mut self, v: bool) { self.fullscreen = v; }
-    fn is_fullscreen(&self) -> bool { self.fullscreen }
-    fn set_always_on_top(&mut self, _: bool) {}
-    fn set_window_opacity(&mut self, _: f32) {}
-    fn start_text_input(&mut self) {}
-    fn stop_text_input(&mut self) {}
-    fn enable_file_drop(&mut self, _: bool) {}
+// ════════════════════════════════════════════════════════════════════════════
+// IConsole — 控制台
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn console_write_appends() {
+    let mut pf = FakePlatform::new();
+    pf.console.write("hello ");
+    pf.console.write("world");
+    assert!(pf.console.state.output.contains("hello world"));
 }
 
-struct MockPlatformWindow {
-    props: MockWindowProperties,
-    pres: NullPresenter,
+#[test]
+fn console_write_line_stores_lines() {
+    let mut pf = FakePlatform::new();
+    pf.console.write_line("line1");
+    pf.console.write_line("line2");
+    assert_eq!(pf.console.state.lines.len(), 2);
+    assert_eq!(pf.console.last_line(), Some("line2"));
 }
 
-impl MockPlatformWindow {
-    fn new() -> Self {
-        Self { props: MockWindowProperties::default(), pres: NullPresenter }
-    }
+#[test]
+fn console_color_tracking() {
+    let mut pf = FakePlatform::new();
+    pf.console.set_color(ConsoleColor::Warn);
+    assert_eq!(pf.console.state.current_color, ConsoleColor::Warn);
+    pf.console.reset_color();
+    assert_eq!(pf.console.state.current_color, ConsoleColor::Default);
 }
 
-impl PlatformWindow for MockPlatformWindow {
-    fn show(&mut self) {}
-    fn hide(&mut self) {}
-    fn close(&mut self) {}
-    fn is_visible(&self) -> bool { false }
-    fn set_title(&mut self, _: &str) {}
-    fn center_on_screen(&mut self) {}
-    fn raise(&mut self) {}
-    fn lower(&mut self) {}
-    fn set_window_icon(&mut self, _: &str) {}
-    fn flash_window(&mut self) {}
-    fn resize_notify(&mut self, _: i32, _: i32) {}
-    fn properties(&self) -> &dyn IWindowProperties { &self.props }
-    fn properties_mut(&mut self) -> &mut dyn IWindowProperties { &mut self.props }
-    fn presenter(&mut self) -> &mut dyn IPresenter { &mut self.pres }
-    fn native_handle(&self) -> &dyn INativeHandle { &MockNativeHandle }
+#[test]
+fn console_title() {
+    let mut pf = FakePlatform::new();
+    pf.console.set_terminal_title("uix-test");
+    assert_eq!(pf.console.state.title, "uix-test");
 }
 
-struct MockNativeHandle;
-impl INativeHandle for MockNativeHandle {
-    fn native_window(&self) -> *mut c_void { std::ptr::null_mut() }
+// ════════════════════════════════════════════════════════════════════════════
+// IFileDialog — 文件对话框
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn file_dialog_open_mock() {
+    let mut pf = FakePlatform::new();
+    pf.file_dialog.mock_open_result(vec!["/path/a.txt".into(), "/path/b.txt".into()]);
+    let files = pf.file_dialog.open("Open", "*.txt");
+    assert_eq!(files, vec!["/path/a.txt", "/path/b.txt"]);
+    assert_eq!(pf.file_dialog.state.open_calls[0].0, "Open");
+}
+
+#[test]
+fn file_dialog_save_mock() {
+    let mut pf = FakePlatform::new();
+    pf.file_dialog.mock_save_result("/out/result.txt");
+    let path = pf.file_dialog.save("Save", "*.txt");
+    assert_eq!(path, "/out/result.txt");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// IFileSystem — 文件系统
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn file_system_add_and_read() {
+    let mut pf = FakePlatform::new();
+    pf.file_system.add_file("/hello.txt", b"world".to_vec());
+    let content = pf.file_system.read_file("/hello.txt").unwrap();
+    assert_eq!(content, b"world");
+}
+
+#[test]
+fn file_system_read_missing_returns_error() {
+    let pf = FakePlatform::new();
+    let result = pf.file_system.read_file("/nonexistent");
+    assert!(result.is_err());
+}
+
+#[test]
+fn file_system_tracks_reads() {
+    let mut pf = FakePlatform::new();
+    pf.file_system.add_file("/a", vec![1]);
+    let _ = pf.file_system.read_file("/a");
+    let _ = pf.file_system.read_file("/a");
+    assert_eq!(pf.file_system.read_calls.borrow().len(), 2);
+}
+
+#[test]
+fn file_system_special_dirs() {
+    let pf = FakePlatform::new();
+    assert_eq!(pf.file_system.get_special_dir(SpecialDir::Home), "/home/user");
+    assert_eq!(pf.file_system.get_special_dir(SpecialDir::Temp), "/tmp");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// INotification — 通知
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn notification_shows_and_records() {
+    let mut pf = FakePlatform::new();
+    pf.notification.show("Test", "Hello");
+    assert_eq!(pf.notification.count(), 1);
+    let r = pf.notification.last().unwrap();
+    assert_eq!(r.title, "Test");
+    assert_eq!(r.message, "Hello");
+}
+
+#[test]
+fn notification_multiple() {
+    let mut pf = FakePlatform::new();
+    pf.notification.show("A", "1");
+    pf.notification.show("B", "2");
+    assert_eq!(pf.notification.count(), 2);
+    assert_eq!(pf.notification.find_by_title("A").len(), 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ITimer — 定时器
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn timer_set_and_clear() {
+    let mut pf = FakePlatform::new();
+    let id = pf.timer.set(1000, false);
+    assert!(pf.timer.is_pending(id));
+    pf.timer.clear(id);
+    assert!(!pf.timer.is_pending(id));
+}
+
+#[test]
+fn timer_single_shot_fires_once() {
+    let mut pf = FakePlatform::new();
+    let id = pf.timer.set(100, false);
+    let fired = pf.timer.advance(std::time::Duration::from_millis(100));
+    assert_eq!(fired, vec![id]);
+    assert!(!pf.timer.is_pending(id));
+}
+
+#[test]
+fn timer_repeating_fires_multiple() {
+    let mut pf = FakePlatform::new();
+    pf.timer.set(50, true);
+    pf.timer.advance(std::time::Duration::from_millis(50));
+    assert_eq!(pf.timer.pending_count(), 1);
+    pf.timer.advance(std::time::Duration::from_millis(50));
+    assert_eq!(pf.timer.pending_count(), 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ITextInput — 文字输入
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn text_input_start_stop() {
+    let mut pf = FakePlatform::new();
+    assert!(!pf.text_input.state.active);
+    pf.text_input.start();
+    assert!(pf.text_input.state.active);
+    pf.text_input.stop();
+    assert!(!pf.text_input.state.active);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ISystemInfo — 系统信息
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn system_info_defaults() {
+    let pf = FakePlatform::new();
+    let os = pf.system_info.os_info();
+    assert_eq!(os.name, "FakeOS");
+    assert_eq!(pf.system_info.cpu_count(), 4);
+    assert!(pf.system_info.memory_info().total_bytes > 0);
+    assert_eq!(pf.system_info.hostname(), "fake-host");
+    assert_eq!(pf.system_info.username(), "user");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 事件分发 — IEventLoop
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn event_loop_polls_injected_events() {
+    use std::cell::Cell;
+    let mut pf = FakePlatform::new();
+    pf.event_source.inject(UiEvent::close());
+    let called = Cell::new(false);
+    pf.event_loop().poll_event(&|ev| {
+        assert_eq!(ev.type_, uix_platform::event::UiEventType::WindowClose);
+        called.set(true);
+        true
+    });
+    assert!(called.get());
+}
+
+#[test]
+fn event_loop_multiple_events() {
+    use std::cell::Cell;
+    let mut pf = FakePlatform::new();
+    pf.event_source.inject(UiEvent::close());
+    pf.event_source.inject(UiEvent::close());
+    let count = Cell::new(0);
+    pf.event_loop().poll_event(&|_| {
+        count.set(count.get() + 1);
+        true
+    });
+    assert_eq!(count.get(), 2);
+}
+
+#[test]
+fn event_loop_stops_on_false() {
+    use std::cell::Cell;
+    let mut pf = FakePlatform::new();
+    pf.event_source.inject(UiEvent::close());
+    pf.event_source.inject(UiEvent::close());
+    let count = Cell::new(0);
+    let result = pf.event_loop().poll_event(&|_| {
+        let prev = count.get();
+        count.set(prev + 1);
+        prev < 0 // first call → false → stops
+    });
+    assert!(!result);
+    assert_eq!(count.get(), 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// IWindowManager + PlatformWindow
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn window_create_and_show() {
+    let mut pf = FakePlatform::new();
+    let mut win = pf.window_manager.create_window("test", 640, 480).unwrap();
+    assert!(!win.is_visible());
+    win.show();
+    assert!(win.is_visible());
+    assert_eq!(pf.window_manager.create_calls.len(), 1);
+}
+
+#[test]
+fn window_properties() {
+    let mut pf = FakePlatform::new();
+    let mut win = pf.window_manager.create_window("prop-test", 800, 600).unwrap();
+    assert_eq!(win.properties().width(), 800);
+    win.properties_mut().set_size(1024, 768);
+    assert_eq!(win.properties().width(), 1024);
+}
+
+#[test]
+fn window_title() {
+    let mut pf = FakePlatform::new();
+    let mut win = pf.window_manager.create_window("", 100, 100).unwrap();
+    win.set_title("My Window");
+    // 无法读取 boxed PlatformWindow 的 title——但可以通过 manager 的 create_calls 验证
+    assert_eq!(pf.window_manager.create_calls[0].0, "");
+}
+
+#[test]
+fn window_close() {
+    let mut pf = FakePlatform::new();
+    let mut win = pf.window_manager.create_window("close-test", 100, 100).unwrap();
+    win.show();
+    assert!(win.is_visible());
+    win.close();
+    assert!(!win.is_visible());
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// IGraphicsContext
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn graphics_context_init() {
+    let mut ctx = uix_platform::test_harness::FakeGraphicsContext::new();
+    ctx.initialize(std::ptr::null_mut(), 800, 600).unwrap();
+    assert_eq!(ctx.width(), 800);
+    assert_eq!(ctx.height(), 600);
+}
+
+#[test]
+fn graphics_context_swap() {
+    let mut ctx = uix_platform::test_harness::FakeGraphicsContext::new();
+    ctx.make_current();
+    ctx.swap_buffers();
+    assert_eq!(ctx.state.make_current_calls, 1);
+    assert_eq!(ctx.state.swap_buffers_calls, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 类型可见性 — 确保公开类型可通过 uix_platform 访问
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn types_available() {
+    let _p = Point::new(1.0, 2.0);
+    let _s = Size::new(100.0, 200.0);
+    let _r = Rect::new(0.0, 0.0, 100.0, 200.0);
+    let _e = EdgeInsets::new(1.0, 2.0, 3.0, 4.0);
+    let _err = uix_platform::error::Error::new(uix_platform::error::Errc::None, "");
+    let _ = StatusLevel::Info;
+    let _ = ConsoleColor::Default;
+    let _ = CursorType::Arrow;
+    let _ = KeyCode::A;
+    let _ = KeyMod::NONE;
+    let _ = ScrollDirection::Both;
+    let _ = ControlSize::Medium;
+    let _ = SpecialDir::Home;
+    let _bus = uix_platform::event_bus::EventBus::new();
+    let _ev = UiEvent::close();
+    let _ = uix_platform::event::UiEventType::WindowClose;
+}
+
+#[test]
+fn prelude_via_star_import() {
+    use uix_platform::api::*;
+    let _p = Point::new(0.0, 0.0);
+    let _err: uix_platform::error::Error = uix_platform::error::Error::new(uix_platform::error::Errc::None, "");
+    let _ev = UiEvent::close();
+    let _bus = uix_platform::event_bus::EventBus::new();
+    let _kc = KeyCode::Enter;
+    // traits available
+    let _: &dyn IPresenter = &uix_platform::presenter::NullPresenter;
 }

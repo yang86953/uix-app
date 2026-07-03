@@ -1,3 +1,5 @@
+//! diagnostic — 诊断系统测试（Collector / RetryPolicy / CircuitBreaker / Middleware）。
+
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -682,4 +684,66 @@ fn middleware_pipeline_multiple_middleware() {
         c.store(true, Ordering::SeqCst);
     });
     assert!(chain.load(Ordering::SeqCst));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// fatal — 崩溃处理（depend on Collector singleton → sequential）
+// ════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn fatal_sequential() {
+    let c = Collector::instance();
+
+    // ── dump_crash_report 生成文件 ──
+    let crash_path = std::path::Path::new("uix_crash.log");
+    let _ = std::fs::remove_file(crash_path);
+    uix_platform::diagnostic::dump_crash_report();
+    assert!(crash_path.exists(), "uix_crash.log should exist after dump_crash_report");
+    let content = std::fs::read_to_string(crash_path).unwrap_or_default();
+    assert!(content.contains("UIX CRASH REPORT"), "should contain report header");
+    assert!(content.contains("Timestamp"), "should contain timestamp");
+    let _ = std::fs::remove_file(crash_path);
+
+    // ── abort_if_fatal 非 fatal 不 abort ──
+    let err = Error::new(Errc::NotFound, "non-fatal test");
+    let result = uix_platform::diagnostic::abort_if_fatal(err);
+    assert_eq!(result.code(), Errc::NotFound);
+
+    // ── collect_or_abort 非 fatal 只收集 ──
+    let before_fatal = c.total_collected();
+    uix_platform::diagnostic::collect_or_abort(
+        Error::warn(Errc::Timeout, "collect only"),
+    );
+    assert!(c.total_collected() > before_fatal, "collect_or_abort should collect the error");
+
+    // ── install_fatal_handler 能安全调用（Once 保护） ──
+    uix_platform::diagnostic::install_fatal_handler();
+    // 第二次调用应静默成功（call_once 保护）
+    uix_platform::diagnostic::install_fatal_handler();
+}
+
+#[test]
+fn fatal_abort_if_fatal_severity_info() {
+    let err = Error::info(Errc::None, "info severity");
+    let result = uix_platform::diagnostic::abort_if_fatal(err);
+    assert_eq!(result.code(), Errc::None);
+    assert_eq!(result.severity(), uix_platform::error::ErrorSeverity::Info);
+}
+
+#[test]
+fn fatal_abort_if_fatal_severity_warning() {
+    let err = Error::warn(Errc::NotFound, "warning");
+    let result = uix_platform::diagnostic::abort_if_fatal(err);
+    assert_eq!(result.severity(), uix_platform::error::ErrorSeverity::Warning);
+}
+
+#[test]
+fn fatal_collect_or_abort_collects_specific_error() {
+    let c = Collector::instance();
+    let _before2 = c.total_collected();
+    uix_platform::diagnostic::collect_or_abort(
+        Error::invalid_arg("collected_by_collect_or_abort_test"),
+    );
+    let found = c.errors_if(|e| e.message().contains("collected_by_collect_or_abort_test"));
+    assert!(!found.is_empty(), "collect_or_abort should have collected the error");
 }

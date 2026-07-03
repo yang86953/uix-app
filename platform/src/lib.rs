@@ -124,3 +124,7 @@ pub fn available_memory_bytes() -> u64 {
 pub fn available_memory_bytes() -> u64 {
     512 * 1024 * 1024 // 回退：512 MB
 }
+
+// ── 测试框架（仅在启用 test-harness feature 时编译）────────────────
+#[cfg(feature = "test-harness")]
+pub mod test_harness;

@@ -29,5 +29,8 @@ wayland-protocols = { version = "=0.29.5", features = ["client", "unstable_proto
 glow = { workspace = true }
 khronos-egl = { workspace = true }
 
+[features]
+test-harness = []
+
 [lints]
 workspace = true
