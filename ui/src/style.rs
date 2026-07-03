@@ -440,13 +440,13 @@ impl StyleVariant {
 ///     margin: [0, 8],             // [f32; 2] → EdgeInsets::new(8, 0, 8, 0) [top_bottom, left_right]
 ///     margin: [0, 8, 0, 8],       // [f32; 4] → EdgeInsets::new(8, 0, 8, 0) [top, right, bottom, left]
 ///     padding: 16,
-///     border: [RED, 1],           // [Color, f32] → BorderLine
+///     border: (RED, 1),           // (Color, f32) → 边框颜色+宽度
 ///     rounded: 6,                 // border_radius 的别名
 ///     fs: 14,                     // font_size 的别名
 ///     display: Flex,
 ///     direction: Row,             // flex_direction 的别名
 ///     gap: 8,
-///     shadow: [BLACK, 4, 2, 2],   // [Color, blur, offset_x, offset_y]
+///     shadow: (BLACK, 4, 2, 2),   // (Color, blur, offset_x, offset_y) → 盒阴影
 ///     grow: 1,                    // flex_grow 的别名
 ///     shrink: 0,                  // flex_shrink 的别名
 ///     w: 200,                     // width 的别名
@@ -472,10 +472,11 @@ macro_rules! style {
     (@inner $s:ident height $v:expr) => { $s.height = Some($v as f32); };
     (@inner $s:ident margin $v:expr) => { $s.margin = $crate::style::edge_insets_from_expr($v); };
     (@inner $s:ident padding $v:expr) => { $s.padding = $crate::style::edge_insets_from_expr($v); };
+    // 元组语法：`border: (RED, 1)` — 使用括号而非 bracket，确保 `$val:expr` 正确捕获为元组
     (@inner $s:ident border $v:expr) => {
-        let (color, width_val): (uix_graphics::Color, f32) = $v;
-        $s.border_color = Some(color);
-        $s.border_width = width_val;
+        let (c, w): (uix_graphics::Color, f32) = $v;
+        $s.border_color = Some(c);
+        $s.border_width = w;
     };
     (@inner $s:ident border_color $v:expr) => { $s.border_color = Some($v.into()); };
     (@inner $s:ident border_width $v:expr) => { $s.border_width = $v as f32; };
@@ -496,6 +497,7 @@ macro_rules! style {
     (@inner $s:ident flex_grow $v:expr) => { $s.flex_grow = $v as f32; };
     (@inner $s:ident shrink $v:expr) => { $s.flex_shrink = $v as f32; };
     (@inner $s:ident flex_shrink $v:expr) => { $s.flex_shrink = $v as f32; };
+    // 元组语法：`shadow: (BLACK, 4, 2, 2)`
     (@inner $s:ident shadow $v:expr) => {
         let (sc, sb, sox, soy): (uix_graphics::Color, f32, f32, f32) = $v;
         $s.box_shadow = Some($crate::style::BoxShadowDef::new(sc, sb, sox, soy));
@@ -520,21 +522,21 @@ macro_rules! style {
     (@each $s:ident,) => {};
     (@each $s:ident) => {};
 
-    // 入口
-    ($($key:ident : $val:expr),+ $(,)?) => {
-        {
-            let mut __style = $crate::style::Style::default();
-            $(
-                $crate::style!(@inner __style $key $val);
-            )+
-            __style
-        }
-    };
+    // 入口（bracket 优先，用于 margin/padding 的 `[a, b, c, d]` 纯数值数组）
     ($($key:ident : [$($v:tt),+]),+ $(,)?) => {
         {
             let mut __style = $crate::style::Style::default();
             $(
                 $crate::style!(@inner __style $key [$($v),+]);
+            )+
+            __style
+        }
+    };
+    ($($key:ident : $val:expr),+ $(,)?) => {
+        {
+            let mut __style = $crate::style::Style::default();
+            $(
+                $crate::style!(@inner __style $key $val);
             )+
             __style
         }
@@ -993,12 +995,10 @@ mod tests {
 
     #[test]
     fn style_macro_border_and_shadow() {
-        // 注意：border/shadow 的 bracket 语法 `[val1, val2]` 会被解析为数组而非元组，
-        // 因此使用独立 key 来测试
+        // 元组语法：`border: (color, width)`, `shadow: (color, blur, ox, oy)`
         let s = crate::style! {
-            border_color: Color::red(),
-            border_width: 2.0,
-            box_shadow: BoxShadowDef::new(Color::black(), 4.0, 2.0, 2.0),
+            border: (Color::red(), 2.0),
+            shadow: (Color::black(), 4.0, 2.0, 2.0),
         };
         assert_eq!(s.border_color, Some(Color::red()));
         assert_eq!(s.border_width, 2.0);
