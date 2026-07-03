@@ -1,7 +1,7 @@
 //! uix-ui theme 模块集成测试。
 
 use uix_graphics::color::Color;
-use uix_ui::api::traits::{IBoxShadowTokens, TokenProvider};
+use uix_ui::api::traits::{IBoxShadowTokens, ThemeTokens, TokenProvider};
 use uix_ui::api::{DesignTokens, ShadowToken};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -11,14 +11,14 @@ use uix_ui::api::{DesignTokens, ShadowToken};
 #[test]
 fn antd_light_is_not_dark() {
     let tk = DesignTokens::antd_light();
-    assert!(!tk.is_dark());
+    assert!(!ThemeTokens::is_dark(&tk));
     assert_eq!(tk.is_dark, false);
 }
 
 #[test]
 fn antd_dark_is_dark() {
     let tk = DesignTokens::antd_dark();
-    assert!(tk.is_dark());
+    assert!(ThemeTokens::is_dark(&tk));
     assert_eq!(tk.is_dark, true);
 }
 

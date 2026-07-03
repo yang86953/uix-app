@@ -62,7 +62,7 @@ define_widget! {
         if visual.w <= 0.0 || visual.h <= 0.0 { return; }
 
         // 统一样式——绘制背景/边框/阴影/透明度
-        ctx.apply_style(visual, s);
+        crate::render::apply_style(ctx, visual, s);
     }
 
     layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)

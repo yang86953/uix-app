@@ -10,7 +10,7 @@ pub mod primitives;
 
 use super::color_tokens::ShadowToken;
 use crate::api::traits::{
-    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, TokenProvider,
+    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,
 };
 use uix_graphics::Color;
 
@@ -377,8 +377,10 @@ impl IBoxShadowTokens for DesignTokens {
     }
 }
 
-impl TokenProvider for DesignTokens {
+impl ThemeTokens for DesignTokens {
     fn is_dark(&self) -> bool {
         self.is_dark
     }
 }
+
+impl TokenProvider for DesignTokens {}

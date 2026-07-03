@@ -3,9 +3,8 @@
 //! 本模块定义 ui 层的所有公开 trait 接口。
 //! 实现保留在各领域内部模块中，通过本模块统一暴露契约。
 
-use crate::render_context::RenderContext;
+use uix_graphics::painting::PaintContext as RenderContext;
 use crate::style::Style;
-use crate::theme::ShadowToken;
 use crate::widget::{EventResult, WidgetEvent, WidgetId, WidgetNode, WidgetTree};
 use std::any::Any;
 use uix_graphics::spatial::{Ray3D, SpatialContext};
@@ -348,203 +347,15 @@ pub trait Animatable: Clone + Copy + Send + 'static {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 设计令牌（主题）
+// 设计令牌（主题）— 聚合 trait 定义在 graphics/painting，UI 扩展 style_* 助手
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 颜色设计令牌 — brand, background, border, fill, text, semantic, shadow, link。
-pub trait IColorTokens: Send + Sync {
-    fn color_primary(&self) -> Color;
-    fn color_primary_hover(&self) -> Color;
-    fn color_primary_active(&self) -> Color;
-    fn color_primary_bg(&self) -> Color;
-    fn color_primary_border(&self) -> Color;
-    fn color_bg_container(&self) -> Color;
-    fn color_bg_elevated(&self) -> Color;
-    fn color_bg_raised(&self) -> Color;
-    fn color_bg_overlay(&self) -> Color;
-    fn color_bg_layout(&self) -> Color;
-    fn color_bg_spotlight(&self) -> Color;
-    fn color_bg_mask(&self) -> Color;
-    fn color_border(&self) -> Color;
-    fn color_border_secondary(&self) -> Color;
-    fn color_fill(&self) -> Color;
-    fn color_fill_secondary(&self) -> Color;
-    fn color_fill_tertiary(&self) -> Color;
-    fn color_fill_quaternary(&self) -> Color;
-    fn color_text(&self) -> Color;
-    fn color_text_secondary(&self) -> Color;
-    fn color_text_tertiary(&self) -> Color;
-    fn color_text_quaternary(&self) -> Color;
-    fn color_white(&self) -> Color;
-    fn color_black(&self) -> Color;
-    fn color_shadow(&self) -> Color;
-    fn color_shadow_secondary(&self) -> Color;
-    fn color_success(&self) -> Color;
-    fn color_success_bg(&self) -> Color;
-    fn color_success_border(&self) -> Color;
-    fn color_warning(&self) -> Color;
-    fn color_warning_bg(&self) -> Color;
-    fn color_warning_border(&self) -> Color;
-    fn color_error(&self) -> Color;
-    fn color_error_bg(&self) -> Color;
-    fn color_error_border(&self) -> Color;
-    fn color_info(&self) -> Color;
-    fn color_info_bg(&self) -> Color;
-    fn color_info_border(&self) -> Color;
-    fn color_link(&self) -> Color;
-    fn color_link_hover(&self) -> Color;
-    fn color_link_active(&self) -> Color;
-}
+pub use uix_graphics::painting::{
+    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ShadowToken, ThemeTokens,
+};
 
-/// 排版设计令牌。
-pub trait ITypographyTokens: Send + Sync {
-    fn font_family(&self) -> &str;
-    fn font_size_sm(&self) -> f32 {
-        12.0
-    }
-    fn font_size(&self) -> f32 {
-        14.0
-    }
-    fn font_size_lg(&self) -> f32 {
-        16.0
-    }
-    fn font_size_xl(&self) -> f32 {
-        20.0
-    }
-    fn font_size_heading_1(&self) -> f32 {
-        38.0
-    }
-    fn font_size_heading_2(&self) -> f32 {
-        30.0
-    }
-    fn font_size_heading_3(&self) -> f32 {
-        24.0
-    }
-    fn font_size_heading_4(&self) -> f32 {
-        20.0
-    }
-    fn font_size_heading_5(&self) -> f32 {
-        16.0
-    }
-    fn font_weight_regular(&self) -> f32 {
-        400.0
-    }
-    fn font_weight_medium(&self) -> f32 {
-        500.0
-    }
-    fn font_weight_semibold(&self) -> f32 {
-        600.0
-    }
-    fn font_weight_bold(&self) -> f32 {
-        700.0
-    }
-    fn line_height(&self) -> f32 {
-        1.5715
-    }
-}
-
-/// 间距与尺寸设计令牌。
-pub trait ISpacingTokens: Send + Sync {
-    fn padding_xss(&self) -> f32 {
-        4.0
-    }
-    fn padding_xs(&self) -> f32 {
-        8.0
-    }
-    fn padding_sm(&self) -> f32 {
-        12.0
-    }
-    fn padding(&self) -> f32 {
-        16.0
-    }
-    fn padding_md(&self) -> f32 {
-        20.0
-    }
-    fn padding_lg(&self) -> f32 {
-        24.0
-    }
-    fn padding_xl(&self) -> f32 {
-        32.0
-    }
-    fn border_radius(&self) -> f32 {
-        6.0
-    }
-    fn border_radius_sm(&self) -> f32 {
-        4.0
-    }
-    fn border_radius_lg(&self) -> f32 {
-        8.0
-    }
-    fn border_radius_xl(&self) -> f32 {
-        12.0
-    }
-    fn border_radius_round(&self) -> f32 {
-        999.0
-    }
-    fn control_height_sm(&self) -> f32 {
-        24.0
-    }
-    fn control_height(&self) -> f32 {
-        32.0
-    }
-    fn control_height_lg(&self) -> f32 {
-        40.0
-    }
-    fn motion_duration_fast(&self) -> f32 {
-        0.1
-    }
-    fn motion_duration_mid(&self) -> f32 {
-        0.2
-    }
-    fn motion_duration_slow(&self) -> f32 {
-        0.3
-    }
-    fn motion_easing_default(&self) -> &str {
-        "cubic-bezier(0.25, 0.1, 0.25, 1)"
-    }
-    fn motion_easing_in(&self) -> &str {
-        "cubic-bezier(0.42, 0, 1, 1)"
-    }
-    fn motion_easing_out(&self) -> &str {
-        "cubic-bezier(0, 0, 0.58, 1)"
-    }
-    fn motion_easing_in_out(&self) -> &str {
-        "cubic-bezier(0.42, 0, 0.58, 1)"
-    }
-    fn screen_xs(&self) -> f32 {
-        480.0
-    }
-    fn screen_sm(&self) -> f32 {
-        576.0
-    }
-    fn screen_md(&self) -> f32 {
-        768.0
-    }
-    fn screen_lg(&self) -> f32 {
-        992.0
-    }
-    fn screen_xl(&self) -> f32 {
-        1200.0
-    }
-    fn screen_xxl(&self) -> f32 {
-        1600.0
-    }
-}
-
-/// 结构化多层阴影令牌。
-pub trait IBoxShadowTokens: Send + Sync {
-    fn box_shadow(&self) -> ShadowToken;
-    fn box_shadow_secondary(&self) -> ShadowToken;
-}
-
-/// 抽象设计令牌提供者 — 聚合全部子 trait。
-pub trait TokenProvider:
-    IColorTokens + ITypographyTokens + ISpacingTokens + IBoxShadowTokens + Send + Sync
-{
-    fn is_dark(&self) -> bool {
-        false
-    }
-
+/// 抽象设计令牌提供者 — 聚合 ThemeTokens 与 UI 域 style 助手。
+pub trait TokenProvider: ThemeTokens + Send + Sync {
     fn style_container(&self) -> Style {
         Style {
             background: None,

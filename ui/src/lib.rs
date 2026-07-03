@@ -68,10 +68,22 @@ pub use core::{children, context};
 pub use foundation::{
     clipboard, config as config_provider, focus_trap, locale, state, style, virtual_scroll,
 };
-pub use render::{
-    context as render_context, debug as debug_render, event_loop as render_loop,
-    layer, text as text_render,
-};
+pub mod render_context {
+    pub use crate::render::{
+        apply_style, DebugRenderService, LayerNode, LayerTree, PaintContext, RenderContext,
+        TextRenderService, ThemeSnapshot, resolve_font_size,
+    };
+}
+pub mod layer {
+    pub use crate::render::{LayerNode, LayerTree};
+}
+pub mod debug_render {
+    pub use crate::render::DebugRenderService;
+}
+pub mod text_render {
+    pub use crate::render::TextRenderService;
+}
+pub use render::event_loop as render_loop;
 
 pub use api::*;
 

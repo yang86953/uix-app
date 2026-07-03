@@ -12,7 +12,7 @@ use std::sync::RwLock;
 use super::color_tokens::ShadowToken;
 use super::design_tokens::DesignTokens;
 use crate::api::traits::{
-    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, TokenProvider,
+    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ThemeTokens, TokenProvider,
 };
 use uix_graphics::Color;
 
@@ -60,7 +60,7 @@ impl Theme {
     }
 
     pub fn is_dark(&self) -> bool {
-        self.provider.is_dark()
+        ThemeTokens::is_dark(self.provider.as_ref())
     }
 }
 
@@ -507,8 +507,10 @@ impl IBoxShadowTokens for DynTokens {
     }
 }
 
-impl TokenProvider for DynTokens {
+impl ThemeTokens for DynTokens {
     fn is_dark(&self) -> bool {
         self.inner.read().unwrap_or_else(|e| e.into_inner()).is_dark
     }
 }
+
+impl TokenProvider for DynTokens {}

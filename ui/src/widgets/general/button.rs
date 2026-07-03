@@ -123,7 +123,7 @@ define_widget! {
         let btn_frame = Rect::new(frame.x, frame.y, frame.w, btn_h);
         let style = self.compute_style(ctx);
 
-        ctx.apply_style(btn_frame, &style);
+        crate::render::apply_style(ctx, btn_frame, &style);
         let content_rect = btn_frame.inset(style.padding);
 
         let mut cursor = content_rect.x;

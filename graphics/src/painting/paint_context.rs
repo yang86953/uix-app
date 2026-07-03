@@ -1,28 +1,22 @@
-//! RenderContext — 渲染上下文。
+//! PaintContext — 绘制上下文（Phase 3 迁入 graphics）。
 //!
 //! 持有 Canvas2D（2D 零成本路径）和 SpatialContext（3D 空间路径），
-//! 组合 TextRenderService（文本布局/光栅化）和 DebugRenderService（调试绘制）。
-//!
-//! # 两条绘制路径
-//!
-//! - **2D 零成本路径**：`ctx.fill_rect(rect, color, radius)` → 直接委托 Canvas2D
-//! - **3D 空间路径**：`ctx.spatial().fill_rect(box_3d, color, radius)` → 经 SpatialContext 投影
+//! 组合 TextRenderService 与 DebugRenderService。
 
-use crate::api::traits::TokenProvider;
-use crate::debug_render::DebugRenderService;
-use crate::style::Style;
-use crate::text_render::TextRenderService;
-use uix_graphics::font_service::FontService;
-use uix_graphics::path::{FillRule, Path};
-use uix_graphics::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
-use uix_graphics::stroker::StrokeOptions;
-use uix_graphics::traits::Canvas2D;
-use uix_graphics::GradientDirection;
-use uix_graphics::{Color, FontHandle, Radius};
+use crate::debug::DebugRenderService;
+use crate::font_service::FontService;
+use crate::painting::ThemeTokens;
+use crate::path::{FillRule, Path};
+use crate::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
+use crate::stroker::StrokeOptions;
+use crate::text::TextRenderService;
+use crate::traits::Canvas2D;
+use crate::GradientDirection;
+use crate::{Color, FontHandle, Radius};
 use uix_platform::{Point, Rect, Size};
 
-/// 渲染上下文。
-pub struct RenderContext<'a> {
+/// 绘制上下文（对外兼容别名 `RenderContext`）。
+pub struct PaintContext<'a> {
     /// 3D 空间上下文（持有 Canvas2D 引用）。
     spatial: SpatialContext<'a>,
 
@@ -32,11 +26,14 @@ pub struct RenderContext<'a> {
     /// 调试渲染服务。
     debug: DebugRenderService,
 
-    /// 设计令牌提供者。
-    tokens: &'a dyn TokenProvider,
+    /// 设计令牌。
+    tokens: &'a dyn ThemeTokens,
 }
 
-impl<'a> RenderContext<'a> {
+/// 兼容 UI 层既有命名。
+pub type RenderContext<'a> = PaintContext<'a>;
+
+impl<'a> PaintContext<'a> {
     /// 创建渲染上下文。
     ///
     /// `canvas_2d` 用于所有绘制操作。
@@ -48,7 +45,7 @@ impl<'a> RenderContext<'a> {
         canvas_2d: &'a mut dyn Canvas2D,
         font: FontHandle,
         font_service: &'a FontService,
-        tokens: &'a dyn TokenProvider,
+        tokens: &'a dyn ThemeTokens,
         dpi: f32,
         device_pixel_ratio: f32,
         orientation: Orientation,
@@ -407,9 +404,9 @@ impl<'a> RenderContext<'a> {
     }
 
     /// 将 glyph layout 绘制到引擎上。
-    pub(crate) fn blit_glyph_layout(
+    pub fn blit_glyph_layout(
         &mut self,
-        layout: &uix_graphics::text_backend::TextLayout,
+        layout: &crate::text_backend::TextLayout,
         pos: Point,
         color: Color,
         font_size: f32,
@@ -418,48 +415,11 @@ impl<'a> RenderContext<'a> {
             .blit_to(self.spatial.canvas_2d(), layout, pos, color, font_size);
     }
 
-    // ── 辅助 ──
-
-    /// 应用 Style 到矩形区域（背景 + 边框 + 阴影 + 透明度）。
-    pub fn apply_style(&mut self, rect: Rect, style: &Style) {
-        let r = if style.border_radius > 0.0 {
-            Some(Radius::uniform(style.border_radius))
-        } else {
-            None
-        };
-        if let Some(shadow) = style.box_shadow.as_ref() {
-            self.draw_box_shadow(
-                rect,
-                shadow.blur,
-                shadow.offset_x,
-                shadow.offset_y,
-                shadow.color,
-                r,
-            );
-        }
-        if style.opacity < 1.0 {
-            self.spatial.canvas_2d().set_opacity(style.opacity);
-        }
-        if let Some(bg) = style.background {
-            self.fill_rect(rect, bg, r);
-        }
-        if style.border_width > 0.0 {
-            if let Some(bc) = style.border_color {
-                self.stroke_rect(rect, bc, style.border_width, r);
-            }
-        }
-        if style.opacity < 1.0 {
-            self.spatial.canvas_2d().set_opacity(1.0);
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    // 访问器
-    // ════════════════════════════════════════════════════════════════════
+    // ── 访问器 ──
 
     /// 获取设计令牌。
     #[inline(always)]
-    pub fn tokens(&self) -> &dyn TokenProvider {
+    pub fn tokens(&self) -> &dyn ThemeTokens {
         self.tokens
     }
 
@@ -579,7 +539,7 @@ pub fn resolve_font_size(base: f32, unit: Option<PhysicalUnit>, dpi: f32) -> f32
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uix_graphics::spatial::PhysicalUnit;
+    use crate::spatial::PhysicalUnit;
 
     #[test]
     fn resolve_font_size_no_unit_returns_base() {
