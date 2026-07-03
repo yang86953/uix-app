@@ -5,7 +5,10 @@ use uix_graphics::DirtyRegion;
 impl WidgetTree {
     pub fn dirty_region(&self) -> &DirtyRegion { &self.dirty.region }
 
-    /// 终极方案：从指定节点向上传播子树脏标记到所有祖先。
+    /// 从指定节点向上传播脏标记到所有祖先。
+    /// 既更新 `subtree_dirty`（布局遍历用），
+    /// 也设置 `is_dirty` 标志并加入 `dirty_nodes`（渲染用）。
+    /// 这样当事件命中子节点但由父节点处理时，父节点也会被正确重绘。
     pub(crate) fn propagate_subtree_dirty(&mut self, from: WidgetId) {
         let parents: Vec<WidgetId> = {
             let mut chain = Vec::new();
@@ -18,6 +21,12 @@ impl WidgetTree {
         };
         for pid in parents {
             self.subtree_dirty.insert(pid);
+            // 同时设置 is_dirty 标志并加入 dirty_nodes，
+            // 确保祖先节点在渲染时被正确识别为脏。
+            if let Some(node) = self.get_mut(pid) {
+                node.set_dirty(true);
+            }
+            self.dirty_nodes.insert(pid);
         }
     }
 
