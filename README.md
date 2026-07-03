@@ -7,7 +7,7 @@ UIX 是一个用 Rust 编写的原生桌面 UI 框架，目标是在 Windows 和
 ## 核心特性
 
 - **组件化 Widget 体系**：每个组件封装数据、行为和生命周期，通过 trait 接口组合，而不是继承层级。
-- **声明式 UI 构建**：提供 `ui!`、`define_widget!`、`tree!` 宏，以及面向应用层的 `view` 简化 API。
+- **声明式 UI 构建**：提供 `define_widget!`、`tree!` 宏，以及面向应用层的 `view` 简化 API。
 - **响应式状态**：`State<T>`、`Computed<T>`、`Effect` 自动追踪依赖并触发局部更新。
 - **布局系统**：支持 Flexbox、Grid、间距、对齐、伸缩和嵌套布局。
 - **增量渲染**：基于 DirtyRects、像素滚动和 FrameGraph pass 裁剪，只重绘变化区域。
@@ -82,7 +82,6 @@ uix-app/
 ├── platform/               # uix-platform: OS 抽象、事件、呈现、日志、服务
 ├── graphics/               # uix-graphics: 2D 渲染、FrameGraph、字体、空间坐标
 ├── ui/                     # uix-ui: Widget、布局、状态、主题、动画、组件库
-│   └── macros/             # uix-macros: ui!/define_widget!/tree!
 ├── app/                    # uix-app: 应用入口、窗口生命周期、CLI、DI
 ├── demo/                   # uix-demo: GUI、CLI、简化 API 演示
 ├── ARCHITECTURE.md         # 架构设计与模块详解
@@ -95,8 +94,6 @@ uix-app/
 uix -> app -> ui -> graphics -> platform
        └──> ui -> graphics -> platform
 ```
-
-`uix-macros` 是编译期宏 crate，不参与运行时依赖链。
 
 ## 平台支持
 

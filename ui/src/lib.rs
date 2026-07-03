@@ -31,51 +31,29 @@
 //! widget_tree.build(node);
 //! ```
 //!
-//! # 核心模块
+//! # 模块结构
 //!
-//! - [`widget`] — Widget trait、WidgetTree、事件系统
-//! - [`widgets`] — 内置组件库（Button、Input、Modal 等 60+）
+//! - [`core`] — Widget 运行时（`widget` 子模块）、上下文与构建器
+//! - [`render`] — 渲染管线（事件循环、绘制上下文、图层合成）
+//! - [`foundation`] — 基础能力（状态、样式、国际化、剪贴板）
+//! - [`widgets`] — 内置组件库（按 Ant Design 分类）
 //! - [`layout`] — Flexbox + Grid 布局引擎
-//! - [`render_context`] — 渲染上下文（文本/图形/主题令牌）
-//! - [`spatial`] — 空间坐标系统（`SpatialContext`、物理单位、3D 变换）
-//!   通过 `ctx.spatial()` 访问，支持：
-//!   - 物理单位：`10.mm()`, `5.cm()`, `12.pt()`
-//!   - 3D 变换：`translate()`, `rotate_z()`, `scale()`
-//!   - 透视投影：`set_perspective()`, `set_camera_look_at()`
-//! - [`state`] — 响应式状态管理（State/Computed/Effect）
-//! - [`theme`] — 设计令牌系统
-//! - [`animation`] — 动画与过渡系统
-//! - [`macros`] — `define_widget!` 与 `tree!` 宏
-//! - [`managers`] — 事件焦点/拖拽/动画管理器
-//!
-//! # 布局方式
-//!
-//! ```ignore
-//! use uix::ui::layout::engine::{FlexLayout, LayoutEngine, LayoutChild};
-//! ```
+//! - [`view`] — 简化声明式 API
+//! - [`api`] — 稳定公开契约
 
 extern crate self as uix_ui;
 
+// ── 基础设施 ──────────────────────────────────────────────────
 pub mod animation;
-pub mod children;
-pub mod clipboard;
-pub mod config_provider;
-pub mod context;
-pub mod debug_render;
-pub mod focus_trap;
-pub mod layer;
+pub mod core;
+pub mod foundation;
 pub mod layout;
-pub mod locale;
 pub mod macros;
 pub mod managers;
-pub mod render_context;
-pub mod render_loop;
-pub mod state;
-pub mod style;
-pub mod text_render;
+pub mod render;
 pub mod theme;
-pub mod virtual_scroll;
-pub mod widget;
+
+// ── 组件与 API ────────────────────────────────────────────────
 pub mod widgets;
 
 // ── 用户层简化 API（View 体系）──
@@ -83,6 +61,17 @@ pub mod view;
 
 // ── 稳定公开 API ───────────────────────────────────────────────
 pub mod api;
+
+// ── 兼容层：保持旧模块路径不变 ────────────────────────────────
+pub use core::widget as widget;
+pub use core::{children, context};
+pub use foundation::{
+    clipboard, config as config_provider, focus_trap, locale, state, style, virtual_scroll,
+};
+pub use render::{
+    context as render_context, debug as debug_render, event_loop as render_loop,
+    layer, text as text_render,
+};
 
 pub use api::*;
 

@@ -142,7 +142,7 @@ impl ConfigProvider {
 /// 使用方式：
 /// ```ignore
 /// ConfigProvider::new().size(Large).wrap(
-///     ui! { Container { Button("OK") } }
+///     tree! { Container::new() => [ Button::new("OK") ] }
 /// )
 /// ```
 impl ConfigProvider {

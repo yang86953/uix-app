@@ -12,7 +12,6 @@ uix workspace
 ├── platform/   (uix-platform)  OS 抽象层 — Win32/Wayland
 ├── graphics/   (uix-graphics)  2D 渲染引擎 — CPU + 可选 GPU
 ├── ui/         (uix-ui)        Widget 框架 — 60+ 组件 + 状态 + 布局 + 主题
-│   └── macros/ (uix-macros)    proc-macro（ui!/define_widget!/tree!）
 ├── app/        (uix-app)       应用入口 — 窗口生命周期 + CLI + DI
 ├── demo/       (uix-demo)      演示二进制
 └── uix         根 crate        聚合重导出层
@@ -25,8 +24,6 @@ uix ──→ app ──→ ui ──→ graphics ──→ platform
            ↘        ↘              ↙
             ui ──→ graphics ──→ platform
 ```
-
-uix-macros 编译期独立，无运行时依赖。
 
 | Crate | 核心导出 |
 |-------|---------|
@@ -49,6 +46,32 @@ platform 层 OS 抽象 — Win32 / Wayland / 文件 / 日志 / 通知 / 设置
 - **每层依赖下层接口**，下层不反向依赖上层
 - 同层组件通过 trait 接口通信，不依赖具体实现
 - 各 crate 均采用 **API 外观模式**：`api/traits.rs` + `api/types.rs` 定义公开契约，内部模块只保留实现
+
+### uix-ui 内部目录
+
+```
+ui/src/
+├── api/              稳定公开契约（traits + types）
+├── core/             Widget 运行时（widget/ 子树、context、children）
+├── render/           渲染管线（event_loop、context、layer、text、debug）
+├── foundation/       基础能力（state、style、locale、clipboard、config、focus_trap、virtual_scroll）
+├── layout/           Flexbox + Grid 布局引擎
+├── theme/            Ant Design 5 设计令牌
+├── animation/        动画与过渡
+├── managers/         跨组件服务（焦点、拖拽、事件等）
+├── view/             简化声明式 API（View / App）
+├── macros.rs         define_widget! / tree! 声明宏
+└── widgets/          内置组件库（按 Ant Design 分类）
+    ├── general/      通用（Button、Icon、Typography、Divider、Space）
+    ├── containers/   布局容器（Container、Grid、Layout、Splitter、Affix）
+    ├── navigation/   导航（Menu、Tabs、Breadcrumb、Pagination、Steps）
+    ├── input/        输入（Input、Select、Checkbox、Form、DatePicker 等）
+    ├── display/      数据展示（Table、List、Card、Tree、Tag 等）
+    ├── feedback/     反馈（Modal、Drawer、Alert、Message、Spin 等）
+    └── other/        其他（Chart、RichText、ScrollView、ThemeToggle、Misc）
+```
+
+旧模块路径（`widget`、`render_loop`、`state`、`widgets::button` 等）通过 `lib.rs` 兼容层重导出，外部代码无需修改。
 
 ---
 

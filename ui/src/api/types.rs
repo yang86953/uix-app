@@ -2,9 +2,6 @@
 //!
 //! 本模块定义 ui 层的共享数据结构（值类型）。
 
-// ── 宏 ──
-pub use uix_macros::ui;
-
 // ── 控件核心 ──
 pub use crate::children::WidgetChildren;
 pub use crate::context::WidgetContext;
