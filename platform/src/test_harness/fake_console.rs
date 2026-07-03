@@ -85,6 +85,7 @@ impl IConsole for FakeConsole {
     fn write_line(&mut self, text: &str) {
         self.state.output.push_str(text);
         self.state.output.push('\n');
+        self.state.writes.push(text.to_string());
         self.state.lines.push(text.to_string());
     }
 

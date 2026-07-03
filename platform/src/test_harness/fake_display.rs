@@ -10,6 +10,8 @@ pub struct FakeDisplay {
     pub dpi_scale: Cell<f32>,
     pub is_dark_mode: Cell<bool>,
     pub count: Cell<i32>,
+    /// `info()` 调用记录 (每次调用的 index 参数)
+    pub info_calls: std::cell::RefCell<Vec<i32>>,
 }
 
 impl FakeDisplay {
@@ -18,6 +20,7 @@ impl FakeDisplay {
             dpi_scale: Cell::new(1.0),
             is_dark_mode: Cell::new(false),
             count: Cell::new(1),
+            info_calls: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -31,6 +34,11 @@ impl FakeDisplay {
 
     pub fn set_count(&self, count: i32) {
         self.count.set(count);
+    }
+
+    /// 清除调用记录
+    pub fn clear_history(&self) {
+        self.info_calls.borrow_mut().clear();
     }
 
     /// 生成 DisplayInfo（基于当前配置）
@@ -59,6 +67,7 @@ impl IDisplay for FakeDisplay {
     }
 
     fn info(&self, index: i32) -> DisplayInfo {
+        self.info_calls.borrow_mut().push(index);
         self.make_info(index)
     }
 }

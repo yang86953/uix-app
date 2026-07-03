@@ -59,6 +59,12 @@ pub struct FakeWindowProperties {
 
 impl FakeWindowProperties {
     pub fn new() -> Self { Self { state: FakeWindowPropertiesState::default() } }
+
+    /// 清除调用记录（保留当前属性值）
+    pub fn clear_history(&mut self) {
+        self.state.set_size_calls.clear();
+        self.state.set_position_calls.clear();
+    }
 }
 
 impl IWindowProperties for FakeWindowProperties {
@@ -167,6 +173,22 @@ impl FakeWindow {
         self.gpu_ctx = Some(FakeGraphicsContext::new());
         self.state.has_gpu = true;
         self
+    }
+
+    /// 清除调用记录（保留当前窗口状态）
+    pub fn clear_history(&mut self) {
+        self.state.show_calls = 0;
+        self.state.hide_calls = 0;
+        self.state.close_called = false;
+        self.state.center_called = false;
+        self.state.raise_calls = 0;
+        self.state.lower_calls = 0;
+        self.state.flash_calls = 0;
+        self.state.icon_path.clear();
+        self.state.resize_notify_calls.clear();
+        self.state.set_title_calls.clear();
+        self.props.clear_history();
+        self.presenter.clear_history();
     }
 }
 

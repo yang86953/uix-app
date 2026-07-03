@@ -21,6 +21,8 @@ pub struct FakeSystemInfo {
     /// MemoryInfo.process_private_bytes 是 usize
     pub process_private_bytes: Cell<usize>,
     pub default_font: String,
+    /// `default_font_path` 调用次数追踪
+    pub default_font_calls: std::cell::Cell<usize>,
 }
 
 impl FakeSystemInfo {
@@ -39,7 +41,13 @@ impl FakeSystemInfo {
             process_working_set: Cell::new(256 * 1024 * 1024), // 256 MB
             process_private_bytes: Cell::new(128 * 1024 * 1024), // 128 MB
             default_font: "/usr/share/fonts/NotoSans.ttf".to_string(),
+            default_font_calls: std::cell::Cell::new(0),
         }
+    }
+
+    /// 清除调用记录（保留其他配置不变）
+    pub fn clear_history(&mut self) {
+        self.default_font_calls.set(0);
     }
 }
 
@@ -79,6 +87,7 @@ impl ISystemInfo for FakeSystemInfo {
     }
 
     fn default_font_path(&self) -> Option<String> {
+        self.default_font_calls.set(self.default_font_calls.get() + 1);
         if self.default_font.is_empty() { None } else { Some(self.default_font.clone()) }
     }
 }
