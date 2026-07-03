@@ -6,6 +6,7 @@ use std::collections::HashSet;
 
 use uix_platform::{Point, Rect};
 
+use crate::compositor::picture::{blit_picture_cache, rasterize_picture_to_offscreen, LayerRenderEnv};
 use crate::compositor::ScenePaint;
 use crate::font_service::FontService;
 use crate::painting::{PaintContext, ThemeSnapshot};
@@ -215,22 +216,49 @@ impl LayerTree {
         let orientation = engine.orientation();
         let surface_w = engine.canvas_2d().width();
         let surface_h = engine.canvas_2d().height();
-        let mut rctx = PaintContext::new(
-            engine.canvas_2d(),
+        let dirty_bounds = dirty_region.bounds();
+        let env = LayerRenderEnv {
             font,
             font_service,
-            theme.tokens(),
+            tokens: theme.tokens(),
             dpi,
             dpr,
             orientation,
-            surface_w,
-            surface_h,
-        );
-        let dirty_bounds = dirty_region.bounds();
+        };
         if let Some(ref mut root) = self.root {
-            Self::render_node(root, &mut rctx, scene, dirty_region, dirty_bounds, false);
+            Self::render_node(
+                root,
+                engine,
+                scene,
+                dirty_region,
+                dirty_bounds,
+                false,
+                &env,
+                surface_w,
+                surface_h,
+            );
             root.mark_clean();
         }
+    }
+
+    /// 创建短生命周期绘制上下文（避免与 Picture 离屏路径争用 engine 借用）。
+    fn paint_context<'a>(
+        engine: &'a mut dyn GraphicsEngine,
+        env: &'a LayerRenderEnv<'_>,
+        surface_w: i32,
+        surface_h: i32,
+    ) -> PaintContext<'a> {
+        PaintContext::new(
+            engine.canvas_2d(),
+            env.font,
+            env.font_service,
+            env.tokens,
+            env.dpi,
+            env.dpr,
+            env.orientation,
+            surface_w,
+            surface_h,
+        )
     }
 
     /// 渲染 overlay 层（post_render，绘制在所有内容之上）。
@@ -474,11 +502,14 @@ impl LayerTree {
     /// 而 dirty_region 在 viewport 坐标系，直接交叉检测会导致子节点被错误跳过。
     fn render_node(
         node: &mut LayerNode,
-        ctx: &mut PaintContext<'_>,
+        engine: &mut dyn GraphicsEngine,
         scene: &impl ScenePaint,
         dirty_region: &DirtyRegion,
         dirty_bounds: Rect,
         force_render: bool,
+        env: &LayerRenderEnv<'_>,
+        surface_w: i32,
+        surface_h: i32,
     ) {
         match node {
             LayerNode::Picture {
@@ -495,25 +526,30 @@ impl LayerTree {
                     return;
                 }
 
+                let in_bounds = dirty_bounds.intersect(bounds).is_some();
+                let needs_blit =
+                    force_render || *is_dirty || dirty_region.intersects(*bounds) || in_bounds;
+
                 if *is_dirty || offscreen_handle.is_none() {
-                    Self::render_picture_dirty(
+                    rasterize_picture_to_offscreen(
+                        engine,
                         *widget_id,
                         bounds,
                         offscreen_handle,
                         children,
-                        ctx,
+                        is_dirty,
                         scene,
                         w,
                         h,
                         retry_count,
-                        dirty_region,
-                        dirty_bounds,
+                        env,
                     );
-                } else if offscreen_handle.is_some() {
-                    // TODO(v2): blit_image 需要像素数据，待重建 ImageManager
-                    // let src = Rect::new(0.0, 0.0, w as f32, h as f32);
-                    // let dst = Rect::new(bounds.x, bounds.y, w as f32, h as f32);
-                    // ctx.canvas_2d().blit_image(handle, src, dst);
+                }
+
+                if needs_blit {
+                    if let Some(handle) = offscreen_handle.as_ref() {
+                        blit_picture_cache(engine, handle, bounds, w, h);
+                    }
                 }
             }
             LayerNode::ClipRect {
@@ -521,54 +557,61 @@ impl LayerTree {
                 rect,
                 children,
             } => {
-                // 空间+脏状态双剪枝 + dirty_bounds 间隙修正：
-                // widget 不脏且 frame 既不在 dirty_region 也不在 dirty_bounds → 跳过 render_self
                 let widget_frame = scene.node_frame(*widget_id);
                 let in_bounds = dirty_bounds.intersect(&widget_frame).is_some();
                 let needs_render = scene.node_dirty(*widget_id)
                     || dirty_region.intersects(widget_frame)
                     || in_bounds;
                 if needs_render {
-                    Self::render_widget_self(*widget_id, ctx, scene);
+                    let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
+                    Self::render_widget_self(*widget_id, &mut ctx, scene);
                 }
-                let r = *rect;
-                ctx.canvas_2d().push_clip(r);
-                // 应用画布偏移（ScrollView 的滚动平移）使子节点在内容坐标下绘制
+                engine.canvas_2d().push_clip(*rect);
                 let scroll_off = Self::get_scroll_offset(scene, *widget_id);
                 if let Some((sx, sy)) = scroll_off {
-                    ctx.canvas_2d().translate(-sx, -sy);
+                    engine.canvas_2d().translate(-sx, -sy);
                 }
-                // 滚动时强制渲染所有子节点：子节点 frame 在 content 坐标系，
-                // dirty_region 在 viewport 坐标系，坐标不匹配会导致子节点被跳过。
-                // clip rect 已限制实际像素写入范围，不会产生多余绘制。
                 let child_force = scroll_off.is_some() || force_render;
                 for child in children.iter_mut() {
-                    Self::render_node(child, ctx, scene, dirty_region, dirty_bounds, child_force);
+                    Self::render_node(
+                        child,
+                        engine,
+                        scene,
+                        dirty_region,
+                        dirty_bounds,
+                        child_force,
+                        env,
+                        surface_w,
+                        surface_h,
+                    );
                 }
                 if let Some((sx, sy)) = scroll_off {
-                    ctx.canvas_2d().translate(sx, sy);
+                    engine.canvas_2d().translate(sx, sy);
                 }
-                ctx.canvas_2d().pop_clip();
+                engine.canvas_2d().pop_clip();
             }
             LayerNode::Direct {
                 widget_id,
                 children,
             } => {
                 Self::render_widget_and_children(
+                    engine,
                     *widget_id,
                     children,
-                    ctx,
                     scene,
                     dirty_region,
                     dirty_bounds,
                     force_render,
+                    env,
+                    surface_w,
+                    surface_h,
                 );
             }
         }
     }
 
     /// 仅渲染 widget 自身的视觉效果（不处理子节点）。
-    fn render_widget_self(id: NodeId, ctx: &mut PaintContext<'_>, scene: &impl ScenePaint) {
+    pub(crate) fn render_widget_self(id: NodeId, ctx: &mut PaintContext<'_>, scene: &impl ScenePaint) {
         if !scene.node_visible(id) {
             return;
         }
@@ -593,97 +636,50 @@ impl LayerTree {
     /// 再通过 inner().visible() 决定是否渲染子节点。这样模态框等组件
     /// 的 render() 可以控制自身绘制，同时阻止子节点在隐藏时渲染。
     fn render_widget_and_children(
+        engine: &mut dyn GraphicsEngine,
         id: NodeId,
         children: &mut [LayerNode],
-        ctx: &mut PaintContext<'_>,
         scene: &impl ScenePaint,
         dirty_region: &DirtyRegion,
         dirty_bounds: Rect,
         force_render: bool,
+        env: &LayerRenderEnv<'_>,
+        surface_w: i32,
+        surface_h: i32,
     ) {
         if !scene.node_visible(id) {
             return;
         }
         let frame = scene.node_frame(id);
-        // 空间+脏状态双剪枝 + dirty_bounds 间隙修正：
-        // widget 不脏且 frame 既不在 dirty_region 也不在 dirty_bounds → 跳过 render_self
         let in_bounds = dirty_bounds.intersect(&frame).is_some();
         let need_self_render =
             force_render || scene.node_dirty(id) || dirty_region.intersects(frame) || in_bounds;
 
         if need_self_render {
+            let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
             ctx.save();
-            scene.paint(id, frame, ctx);
-        }
-
-        // 仅在 widget 内部可见时才渲染子节点。
-        // 支持 Modal 等组件：内部 visible 为 false 时 render() 已返回，
-        // 同时阻止子节点在隐藏位渲染（子节点 frame 可能仍在屏幕内）。
-        if scene.node_visible(id) {
-            for child in children.iter_mut() {
-                Self::render_node(child, ctx, scene, dirty_region, dirty_bounds, force_render);
-            }
-        }
-
-        if need_self_render {
+            scene.paint(id, frame, &mut ctx);
             ctx.restore();
         }
-    }
 
-    /// 离屏创建失败时，回退到在主缓冲直接渲染 widget 及其子树。
-    /// 不使用 LayerNode children，而是通过 ScenePaint 递归遍历整个子树。
-    ///
-    /// 注意：widget 的 frame 是绝对坐标（由 layout 阶段设置），
-    /// 子节点 frame 也是绝对坐标，因此直接使用子节点的 frame 即可，
-    /// 无需也不能累加父级偏移。
-    fn render_widget_and_children_direct(
-        widget_id: NodeId,
-        ctx: &mut PaintContext<'_>,
-        scene: &impl ScenePaint,
-    ) {
-        if !scene.node_visible(widget_id) {
-            return;
-        }
-        let frame = scene.node_frame(widget_id);
-        ctx.save();
-        scene.paint(widget_id, frame, ctx);
-        // 仅在 widget 内部可见时才递归渲染子节点
-        if scene.node_visible(widget_id) {
-            for &child_id in scene.node_children(widget_id) {
-                Self::render_widget_and_children_direct(child_id, ctx, scene);
+        if scene.node_visible(id) {
+            for child in children.iter_mut() {
+                Self::render_node(
+                    child,
+                    engine,
+                    scene,
+                    dirty_region,
+                    dirty_bounds,
+                    force_render,
+                    env,
+                    surface_w,
+                    surface_h,
+                );
             }
         }
-        ctx.restore();
-    }
-
-    /// 渲染脏 Picture 节点。
-    /// 离屏 API 待重建（TODO v2），当前始终回退到主缓冲直接渲染子树。
-    fn render_picture_dirty(
-        widget_id: NodeId,
-        _bounds: &Rect,
-        _offscreen_handle: &mut Option<ImageHandle>,
-        _children: &mut [LayerNode],
-        ctx: &mut PaintContext<'_>,
-        scene: &impl ScenePaint,
-        _w: i32,
-        _h: i32,
-        _retry_count: &mut u8,
-        _dirty_region: &DirtyRegion,
-        _dirty_bounds: Rect,
-    ) {
-        Self::render_widget_and_children_direct(widget_id, ctx, scene);
     }
 
     /// 递归渲染 overlay 层（post_render 回调 + 调试覆盖）。
-    ///
-    /// 当 `debug_mode` 为 false 时，跳过与 `dirty_region` 无交集的 widget
-    /// 的 `post_render` 调用，因为其 overlay 内容未发生变化。
-    /// 子树始终递归（子节点可能位于脏区域内）。
-    ///
-    /// `force_overlay`：为 true 时跳过脏检查，强制渲染所有子节点的 overlay。
-    /// 用于滚动容器——子节点 frame 在 content 坐标系，dirty_region 在 viewport 坐标系，
-    /// 坐标不匹配会导致脏检查失效（漏渲或错渲）。clip 已限制实际像素写入范围，
-    /// 不会产生多余绘制。
     fn render_overlay_node(
         node: &LayerNode,
         ctx: &mut PaintContext<'_>,
@@ -697,24 +693,18 @@ impl LayerTree {
     ) {
         let widget_id = node.widget_id();
 
-        // 判断此 widget 是否需要重新绘制 overlay
         let needs_overlay = force_overlay
             || if debug_mode {
-                // 调试模式下始终绘制边框，不跳过
                 true
             } else if scene.node_visible(widget_id) {
                 let frame = scene.node_frame(widget_id);
-                // 使用 dirty_rect（含 draw_margin 扩展）而非 raw frame
-                // 确保阴影等扩展区域的 overlay 内容被正确重绘
                 let draw_area = scene.dirty_rect(widget_id, frame);
-                // dirty_bounds 间隙修正：parent 在脏包围盒内重绘会覆盖 overlay 内容
                 dirty_region.intersects(draw_area)
                     || dirty_bounds.intersect(&draw_area).is_some()
             } else {
                 false
             };
 
-        // 调用 widget 的 post_render（仅当需要时）
         if needs_overlay {
             if scene.node_visible(widget_id) {
                 let frame = scene.node_frame(widget_id);
@@ -724,7 +714,6 @@ impl LayerTree {
             }
         }
 
-        // 调试模式：悬浮 widget 及其父链显示坐标信息，其余仅极淡边框
         if debug_mode {
             if scene.node_visible(widget_id) {
                 let frame = scene.node_frame(widget_id);
@@ -738,7 +727,6 @@ impl LayerTree {
             }
         }
 
-        // 递归子节点（深度 + 1）
         match node {
             LayerNode::Picture { children, .. } | LayerNode::Direct { children, .. } => {
                 for child in children {
@@ -762,14 +750,10 @@ impl LayerTree {
                 ..
             } => {
                 ctx.canvas_2d().push_clip(*rect);
-                // 应用画布偏移（ScrollView 滚动平移）使子节点 overlay 在内容坐标下绘制
                 let scroll_off = Self::get_scroll_offset(scene, *widget_id);
                 if let Some((sx, sy)) = scroll_off {
                     ctx.canvas_2d().translate(-sx, -sy);
                 }
-                // 滚动时强制渲染所有子节点 overlay：子节点 frame 在 content 坐标系，
-                // dirty_region 在 viewport 坐标系，坐标不匹配导致脏检查不可靠。
-                // clip 已限制实际像素写入范围，不会产生多余绘制。
                 let child_force = scroll_off.is_some() || force_overlay;
                 for child in children {
                     Self::render_overlay_node(
@@ -793,7 +777,7 @@ impl LayerTree {
     }
 
     /// 获取滚动容器的 content 偏移（viewport → content）。
-    fn get_scroll_offset(scene: &impl ScenePaint, widget_id: NodeId) -> Option<(f32, f32)> {
+    pub(crate) fn get_scroll_offset(scene: &impl ScenePaint, widget_id: NodeId) -> Option<(f32, f32)> {
         scene.scroll_offset(widget_id)
     }
 }
