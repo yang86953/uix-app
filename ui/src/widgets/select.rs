@@ -34,6 +34,8 @@ define_widget! {
         search: bool,
     }
 
+
+    tab_index => (&self) -> i32 { 1 }
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         if self.options.is_empty() && self.optgroups.is_empty() {
             return Size::new(120.0, 32.0);

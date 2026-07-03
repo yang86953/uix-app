@@ -42,6 +42,9 @@ pub trait WidgetComponent: 'static {
     /// 返回当前 widget 的内部可见性。
     fn visible(&self) -> bool { true }
     fn build(&self) -> Vec<Box<dyn WidgetComponent>> { vec![] }
+    /// 默认 Tab 键导航索引（> 0 表示组件默认可通过 Tab 聚焦）。
+    /// 应用层可通过 `WidgetNode::tab_index()` 覆盖。
+    fn tab_index(&self) -> i32 { 0 }
 
     // ── 可选能力上转型（宏自动生成） ──
     fn as_layout(&self) -> Option<&dyn WidgetLayout> { None }

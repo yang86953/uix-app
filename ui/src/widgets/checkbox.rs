@@ -16,6 +16,8 @@ define_widget! {
         on_change: Option<Box<dyn FnMut(bool) + 'static>>,
     }
 
+
+    tab_index => (&self) -> i32 { 1 }
     preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
         let text_w = self.label.len() as f32 * 8.0;
         Size::new(22.0 + text_w, 22.0)

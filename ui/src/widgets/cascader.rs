@@ -53,6 +53,8 @@ define_widget! {
         focused: bool,
     }
 
+
+    tab_index => (&self) -> i32 { 1 }
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         Size::new(120.0, 32.0)
     }

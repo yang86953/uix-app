@@ -1,4 +1,4 @@
-use uix_platform::{Point, Rect, Size};
+use uix_platform::{KeyCode, Point, Rect, Size};
 use crate::define_widget;
 use crate::style::Style;
 use crate::animation::core::Animation;
@@ -49,6 +49,8 @@ define_widget! {
         style: Style,
     }
 
+    tab_index => (&self) -> i32 { 1 }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         let h = button_height(self.btn_size);
         let icon_w = if self.icon.is_empty() { 0.0 } else { 20.0 };
@@ -77,6 +79,14 @@ define_widget! {
             }
             WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
             WidgetEvent::HoverLeave => { self.hovered = false; self.pressed = false; EventResult::Handled }
+            WidgetEvent::KeyDown { key, .. } if *key == KeyCode::Enter || *key == KeyCode::Space => {
+                self.pressed = true;
+                self.ripple_anim = Some(
+                    Animation::new(0.0, 1.0, 0.4).with_easing(Easing::antd_default()),
+                );
+                if let Some(ref mut cb) = self.on_click { cb(); }
+                EventResult::Handled
+            }
             _ => EventResult::NotHandled,
         }
     }

@@ -46,6 +46,9 @@ macro_rules! __define_widget_build_method {
     (visible; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn visible($($p)*) -> $ret $body
     };
+    (tab_index; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn tab_index($($p)*) -> $ret $body
+    };
     ($other:ident; $($rest:tt)*) => {};
 }
 

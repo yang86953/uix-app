@@ -26,6 +26,8 @@ define_widget! {
         on_change: Option<Box<dyn FnMut(usize) + 'static>>,
     }
 
+
+    tab_index => (&self) -> i32 { 1 }
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         let item_w = self.options.iter().map(|o| o.len() as f32 * 9.0 + 30.0).collect::<Vec<_>>();
         match self.direction {

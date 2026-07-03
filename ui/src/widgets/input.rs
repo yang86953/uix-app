@@ -60,6 +60,8 @@ define_widget! {
         on_submit: Option<Box<dyn FnMut(&str) + 'static>>,
     }
 
+    tab_index => (&self) -> i32 { 1 }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         if self.textarea {
             let line_count = self.value.lines().count().max(self.textarea_rows);

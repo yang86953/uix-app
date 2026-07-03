@@ -85,17 +85,20 @@ pub struct WidgetNode {
     pub children: Vec<WidgetNode>,
     pub z_index: i32,
     pub key: Option<Box<str>>,
+    pub tab_idx: i32,
 }
 
 impl WidgetNode {
     pub fn new(widget: Box<dyn WidgetComponent>, children: Vec<WidgetNode>) -> Self {
-        Self { widget, children, z_index: 0, key: None }
+        Self { widget, children, z_index: 0, key: None, tab_idx: 0 }
     }
     pub fn key(mut self, k: &str) -> Self { self.key = Some(k.into()); self }
     pub fn leaf(widget: Box<dyn WidgetComponent>) -> Self {
-        Self { widget, children: vec![], z_index: 0, key: None }
+        Self { widget, children: vec![], z_index: 0, key: None, tab_idx: 0 }
     }
     pub fn z_index(mut self, z: i32) -> Self { self.z_index = z; self }
+    /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
+    pub fn tab_index(mut self, idx: i32) -> Self { self.tab_idx = idx; self }
 }
 
 pub trait WidgetCore {

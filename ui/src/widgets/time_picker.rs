@@ -42,6 +42,8 @@ define_widget! {
         on_change: Option<Box<dyn FnMut(TimeValue) + 'static>>,
     }
 
+
+    tab_index => (&self) -> i32 { 1 }
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         Size::new(120.0, 32.0)
     }

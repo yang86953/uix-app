@@ -1006,6 +1006,9 @@ impl WidgetTree {
         };
         if let Some(n) = self.get_mut(id) {
             n.set_z_index(node.z_index);
+            // 优先使用 WidgetNode 的 tab_index，否则使用组件默认值
+            let ti = if node.tab_idx != 0 { node.tab_idx } else { n.component().tab_index() };
+            n.set_tab_index(ti);
         }
         for child in node.children {
             self.build_node(child, Some(id));
