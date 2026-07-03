@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 uix-graphics = { path = "../graphics" }
-uix-macros = { path = "macros" }
 uix-platform = { path = "../platform" }
 
 [features]

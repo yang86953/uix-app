@@ -1,4 +1,4 @@
-use super::tree::TreeNode;
+use crate::widgets::display::tree::TreeNode;
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};

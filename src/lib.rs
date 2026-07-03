@@ -14,7 +14,6 @@ pub use uix_ui as ui;
 // 重新导出 macros
 pub use uix_ui::define_widget;
 pub use uix_ui::tree;
-pub use uix_ui::ui;
 
 // ── 简化 API（用户可通过 `use uix::view::*` 使用）──
 pub use uix_ui::view;
