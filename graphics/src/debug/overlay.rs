@@ -1,12 +1,8 @@
 //! DebugRenderService — 调试绘制服务。
-//!
-//! 提供 widget 调试边框、标签和 frame 信息的绘制。
-//! 由 RenderContext 组合持有。
 
-use crate::api::traits::DebugRenderer;
-use uix_graphics::pipeline::{InvalidationSource, RenderMetrics};
-use uix_graphics::traits::Canvas2D;
-use uix_graphics::Color;
+use crate::pipeline::{InvalidationSource, RenderMetrics};
+use crate::traits::Canvas2D;
+use crate::Color;
 use uix_platform::Rect;
 
 /// 调试渲染服务。
@@ -177,30 +173,10 @@ impl DebugRenderService {
     }
 }
 
-// ── DebugRenderer trait 实现 ────────────────────────────────────
-
-impl DebugRenderer for DebugRenderService {
-    fn set_debug_mode(&mut self, mode: bool) {
-        self.set_debug_mode(mode);
-    }
-    fn debug_mode(&self) -> bool {
-        self.debug_mode
-    }
-    fn draw_debug_border(
-        &self,
-        canvas: &mut dyn Canvas2D,
-        rect: Rect,
-        depth: usize,
-        hovered: bool,
-    ) {
-        self.draw_debug_border(canvas, rect, depth, hovered);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uix_graphics::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::engine::cpu::noop_canvas_2d::NoopCanvas2D;
 
     #[test]
     fn new_off_by_default() {
@@ -303,20 +279,9 @@ mod tests {
     }
 
     #[test]
-    fn debug_renderer_trait_set_debug_mode() {
-        let mut d = DebugRenderService::new(false);
-        let r: &mut dyn DebugRenderer = &mut d;
-        r.set_debug_mode(true);
-        assert!(r.debug_mode());
-        r.set_debug_mode(false);
-        assert!(!r.debug_mode());
-    }
-
-    #[test]
     fn draw_debug_label_rect_position() {
         let d = DebugRenderService::new(true);
         let mut canvas = NoopCanvas2D;
-        // 验证不 panic：标签绘制在 widget 左上角
         d.draw_debug_label(&mut canvas, 99, 1, Rect::new(10.0, 20.0, 150.0, 80.0));
     }
 

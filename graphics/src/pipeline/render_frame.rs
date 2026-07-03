@@ -1,0 +1,462 @@
+//! 帧渲染调度 — 从 UI event_loop 迁入的渲染段（Phase 3）。
+
+use uix_platform::{Point, Rect};
+
+use crate::compositor::{LayerTree, ScenePaint};
+use crate::debug::DebugRenderService;
+use crate::font_service::FontService;
+use crate::painting::ThemeSnapshot;
+use crate::pipeline::{InvalidationSource, RenderMetrics};
+use crate::text::TextRenderService;
+use crate::traits::{GraphicsEngine, UpdateStrategy};
+use crate::types::DirtyRegion;
+use crate::{Color, FontHandle, RenderOutcome};
+
+/// 单帧渲染输入。
+pub struct FrameRenderInput<'a> {
+    pub rendered_first: bool,
+    pub dirty_region: &'a DirtyRegion,
+    pub tree_version: u64,
+    pub scroll_move: Option<(Rect, f32, f32)>,
+    pub theme: ThemeSnapshot<'a>,
+    pub font: FontHandle,
+    pub font_service: &'a FontService,
+    pub debug_mode: bool,
+    pub hover_pos: Option<Point>,
+    pub metrics: Option<&'a RenderMetrics>,
+}
+
+/// 单帧渲染输出。
+pub struct FrameRenderOutput {
+    pub outcome: RenderOutcome,
+    pub inv_source: InvalidationSource,
+    pub tree_version: u64,
+}
+
+/// 帧渲染器 — 持有 LayerTree 与合成状态。
+pub struct FrameRenderer {
+    layer_tree: LayerTree,
+    last_tree_version: u64,
+}
+
+impl FrameRenderer {
+    pub fn new() -> Self {
+        Self {
+            layer_tree: LayerTree::new(),
+            last_tree_version: 0,
+        }
+    }
+
+    pub fn layer_tree(&self) -> &LayerTree {
+        &self.layer_tree
+    }
+
+    pub fn layer_tree_mut(&mut self) -> &mut LayerTree {
+        &mut self.layer_tree
+    }
+
+    /// 执行 Geometry + Overlay 双 Pass 渲染；返回 Present damage 与 invalidation 来源。
+    pub fn render_frame<S: ScenePaint>(
+        &mut self,
+        engine: &mut dyn GraphicsEngine,
+        scene: &S,
+        input: FrameRenderInput<'_>,
+    ) -> FrameRenderOutput {
+        let caps = engine.capabilities();
+        let region = if !input.rendered_first
+            || input.dirty_region.full_frame
+            || !caps.supports_partial_redraw()
+        {
+            DirtyRegion::full()
+        } else {
+            input.dirty_region.clone()
+        };
+
+        let cur_version = scene.tree_version();
+        if self.last_tree_version != cur_version {
+            self.layer_tree.build(scene);
+            self.layer_tree.sweep_orphaned_offscreens(engine);
+            self.last_tree_version = cur_version;
+        }
+        self.layer_tree.update_dirty(scene);
+
+        if let Some((frame, dx, dy)) = input.scroll_move {
+            engine.canvas_2d().scroll_region(frame, dx, dy);
+        }
+
+        let damage = compute_damage(&region, input.scroll_move, input.rendered_first);
+
+        let strategy = if !input.rendered_first || region.full_frame {
+            UpdateStrategy::FullRedraw
+        } else {
+            UpdateStrategy::DirtyRects(region.rects().to_vec())
+        };
+        engine.begin_frame(strategy);
+        self.layer_tree.render(
+            engine,
+            scene,
+            &input.theme,
+            input.font,
+            input.font_service,
+        );
+        engine.end_frame();
+
+        let overlay_rects = overlay_clip_rects(&region, input.scroll_move, engine);
+        engine.begin_frame(UpdateStrategy::Overlay(overlay_rects));
+        self.layer_tree.render_overlays(
+            engine,
+            scene,
+            &input.theme,
+            input.font,
+            input.font_service,
+            input.debug_mode,
+            input.hover_pos,
+            &region,
+        );
+        engine.end_frame();
+
+        if input.debug_mode {
+            draw_debug_telemetry(engine, input.metrics, input.font, input.font_service);
+        }
+
+        let inv_source = classify_invalidation(input.rendered_first, &region);
+
+        FrameRenderOutput {
+            outcome: RenderOutcome::Present(damage),
+            inv_source,
+            tree_version: cur_version,
+        }
+    }
+}
+
+impl Default for FrameRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn compute_damage(
+    region: &DirtyRegion,
+    scroll_move: Option<(Rect, f32, f32)>,
+    rendered_first: bool,
+) -> Option<(i32, i32, i32, i32)> {
+    if !rendered_first || region.full_frame {
+        return None;
+    }
+    let bounds = if let Some((frame, _, _)) = scroll_move {
+        region.bounds().union(&frame)
+    } else {
+        region.bounds()
+    };
+    Some((
+        (bounds.x - 1.0).max(0.0) as i32,
+        (bounds.y - 1.0).max(0.0) as i32,
+        (bounds.w + 2.0) as i32,
+        (bounds.h + 2.0) as i32,
+    ))
+}
+
+fn overlay_clip_rects(
+    region: &DirtyRegion,
+    scroll_move: Option<(Rect, f32, f32)>,
+    engine: &mut dyn GraphicsEngine,
+) -> Vec<Rect> {
+    if !region.clear_required {
+        return Vec::new();
+    }
+    if region.full_frame {
+        let w = engine.canvas_2d().width() as f32;
+        let h = engine.canvas_2d().height() as f32;
+        vec![Rect::new(0.0, 0.0, w, h)]
+    } else {
+        let mut rects = region.rects().to_vec();
+        if let Some((frame, _, _)) = scroll_move {
+            rects.push(frame);
+        }
+        rects
+    }
+}
+
+fn draw_debug_telemetry(
+    engine: &mut dyn GraphicsEngine,
+    metrics: Option<&RenderMetrics>,
+    font: FontHandle,
+    font_service: &FontService,
+) {
+    let Some(m) = metrics else {
+        return;
+    };
+    let canvas = engine.canvas_2d();
+    let sw = canvas.width();
+    let hud = DebugRenderService::new(true);
+    hud.draw_telemetry_hud(canvas, m, sw);
+    let lines = DebugRenderService::telemetry_hud_lines(m);
+    let mut text_svc = TextRenderService::new(font, font_service, 300.0);
+    let panel_x = sw as f32 - 214.0;
+    for (i, line) in lines.iter().enumerate() {
+        text_svc.draw_text(
+            canvas,
+            line,
+            Point::new(panel_x, 12.0 + i as f32 * 14.0),
+            Color::from_rgba(220, 220, 220, 255),
+            11.0,
+        );
+    }
+}
+
+fn classify_invalidation(rendered_first: bool, dirty_region: &DirtyRegion) -> InvalidationSource {
+    if !rendered_first {
+        return InvalidationSource::FirstFrame;
+    }
+    if !dirty_region.is_empty() {
+        return InvalidationSource::DirtyRegion;
+    }
+    InvalidationSource::None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::null_engine::NullEngine;
+    use crate::painting::PaintContext;
+
+    struct EmptyScene {
+        region: DirtyRegion,
+    }
+
+    impl EmptyScene {
+        fn new() -> Self {
+            Self {
+                region: DirtyRegion::empty(),
+            }
+        }
+    }
+
+    impl ScenePaint for EmptyScene {
+        fn root_id(&self) -> Option<crate::pipeline::NodeId> {
+            None
+        }
+        fn tree_version(&self) -> u64 {
+            0
+        }
+        fn dirty_region(&self) -> &DirtyRegion {
+            &self.region
+        }
+        fn node_visible(&self, _: crate::pipeline::NodeId) -> bool {
+            false
+        }
+        fn node_frame(&self, _: crate::pipeline::NodeId) -> Rect {
+            Rect::zero()
+        }
+        fn node_dirty(&self, _: crate::pipeline::NodeId) -> bool {
+            false
+        }
+        fn node_z_index(&self, _: crate::pipeline::NodeId) -> i32 {
+            0
+        }
+        fn node_children(&self, _: crate::pipeline::NodeId) -> &[crate::pipeline::NodeId] {
+            &[]
+        }
+        fn is_repaint_boundary(&self, _: crate::pipeline::NodeId) -> bool {
+            false
+        }
+        fn children_clip(&self, _: crate::pipeline::NodeId, _: Rect) -> Option<Rect> {
+            None
+        }
+        fn dirty_rect(&self, _: crate::pipeline::NodeId, frame: Rect) -> Rect {
+            frame
+        }
+        fn scroll_offset(&self, _: crate::pipeline::NodeId) -> Option<(f32, f32)> {
+            None
+        }
+        fn focused_node(&self) -> Option<crate::pipeline::NodeId> {
+            None
+        }
+        fn node_focusable(&self, _: crate::pipeline::NodeId) -> bool {
+            false
+        }
+        fn hit_test(&self, _: Point) -> Option<crate::pipeline::NodeId> {
+            None
+        }
+        fn parent(&self, _: crate::pipeline::NodeId) -> Option<crate::pipeline::NodeId> {
+            None
+        }
+        fn paint(&self, _: crate::pipeline::NodeId, _: Rect, _: &mut PaintContext<'_>) {}
+        fn paint_overlay(&self, _: crate::pipeline::NodeId, _: Rect, _: &mut PaintContext<'_>) {}
+    }
+
+    struct MockTokens;
+
+    impl crate::painting::IColorTokens for MockTokens {
+        fn color_primary(&self) -> Color {
+            Color::blue()
+        }
+        fn color_primary_hover(&self) -> Color {
+            Color::blue()
+        }
+        fn color_primary_active(&self) -> Color {
+            Color::blue()
+        }
+        fn color_primary_bg(&self) -> Color {
+            Color::blue()
+        }
+        fn color_primary_border(&self) -> Color {
+            Color::blue()
+        }
+        fn color_bg_container(&self) -> Color {
+            Color::white()
+        }
+        fn color_bg_elevated(&self) -> Color {
+            Color::white()
+        }
+        fn color_bg_raised(&self) -> Color {
+            Color::white()
+        }
+        fn color_bg_overlay(&self) -> Color {
+            Color::white()
+        }
+        fn color_bg_layout(&self) -> Color {
+            Color::white()
+        }
+        fn color_bg_spotlight(&self) -> Color {
+            Color::white()
+        }
+        fn color_bg_mask(&self) -> Color {
+            Color::white()
+        }
+        fn color_border(&self) -> Color {
+            Color::black()
+        }
+        fn color_border_secondary(&self) -> Color {
+            Color::black()
+        }
+        fn color_fill(&self) -> Color {
+            Color::black()
+        }
+        fn color_fill_secondary(&self) -> Color {
+            Color::black()
+        }
+        fn color_fill_tertiary(&self) -> Color {
+            Color::black()
+        }
+        fn color_fill_quaternary(&self) -> Color {
+            Color::black()
+        }
+        fn color_text(&self) -> Color {
+            Color::black()
+        }
+        fn color_text_secondary(&self) -> Color {
+            Color::black()
+        }
+        fn color_text_tertiary(&self) -> Color {
+            Color::black()
+        }
+        fn color_text_quaternary(&self) -> Color {
+            Color::black()
+        }
+        fn color_white(&self) -> Color {
+            Color::white()
+        }
+        fn color_black(&self) -> Color {
+            Color::black()
+        }
+        fn color_shadow(&self) -> Color {
+            Color::black()
+        }
+        fn color_shadow_secondary(&self) -> Color {
+            Color::black()
+        }
+        fn color_success(&self) -> Color {
+            Color::green()
+        }
+        fn color_success_bg(&self) -> Color {
+            Color::green()
+        }
+        fn color_success_border(&self) -> Color {
+            Color::green()
+        }
+        fn color_warning(&self) -> Color {
+            Color::from_rgb(255, 255, 0)
+        }
+        fn color_warning_bg(&self) -> Color {
+            Color::from_rgb(255, 255, 0)
+        }
+        fn color_warning_border(&self) -> Color {
+            Color::from_rgb(255, 255, 0)
+        }
+        fn color_error(&self) -> Color {
+            Color::red()
+        }
+        fn color_error_bg(&self) -> Color {
+            Color::red()
+        }
+        fn color_error_border(&self) -> Color {
+            Color::red()
+        }
+        fn color_info(&self) -> Color {
+            Color::blue()
+        }
+        fn color_info_bg(&self) -> Color {
+            Color::blue()
+        }
+        fn color_info_border(&self) -> Color {
+            Color::blue()
+        }
+        fn color_link(&self) -> Color {
+            Color::blue()
+        }
+        fn color_link_hover(&self) -> Color {
+            Color::blue()
+        }
+        fn color_link_active(&self) -> Color {
+            Color::blue()
+        }
+    }
+
+    impl crate::painting::ITypographyTokens for MockTokens {
+        fn font_family(&self) -> &str {
+            "sans"
+        }
+    }
+
+    impl crate::painting::IBoxShadowTokens for MockTokens {
+        fn box_shadow(&self) -> crate::painting::ShadowToken {
+            crate::painting::ShadowToken::none()
+        }
+        fn box_shadow_secondary(&self) -> crate::painting::ShadowToken {
+            crate::painting::ShadowToken::none()
+        }
+    }
+
+    impl crate::painting::ISpacingTokens for MockTokens {}
+
+    impl crate::painting::ThemeTokens for MockTokens {}
+
+    #[test]
+    fn mock_scene_render_frame_does_not_panic() {
+        let mut renderer = FrameRenderer::new();
+        let mut engine = NullEngine::new();
+        let _ = engine.initialize(64, 64);
+        let tokens = MockTokens;
+        let theme = ThemeSnapshot::new(&tokens);
+        let fs = FontService::new();
+        let region = DirtyRegion::full();
+        let out = renderer.render_frame(
+            &mut engine,
+            &EmptyScene::new(),
+            FrameRenderInput {
+                rendered_first: false,
+                dirty_region: &region,
+                tree_version: 0,
+                scroll_move: None,
+                theme,
+                font: FontHandle::default(),
+                font_service: &fs,
+                debug_mode: false,
+                hover_pos: None,
+                metrics: None,
+            },
+        );
+        assert_eq!(out.outcome, RenderOutcome::Present(None));
+    }
+}
