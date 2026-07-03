@@ -9,5 +9,9 @@ uix-graphics = { path = "../graphics" }
 uix-macros = { path = "macros" }
 uix-platform = { path = "../platform" }
 
+[features]
+# 启用平台层测试框架（FakePlatform），用于 UI 层集成测试
+test-harness = ["uix-platform/test-harness"]
+
 [lints]
 workspace = true
