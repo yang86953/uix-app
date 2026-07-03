@@ -253,6 +253,10 @@ define_widget! {
         }
     }
 
+    viewport_scroll_offset => (&self) -> Option<(f32, f32)> {
+        Some((self.scroll_x, self.scroll_y))
+    }
+
     children_clip => (&self, frame: Rect) -> Option<Rect> {
         Some(frame)
     }

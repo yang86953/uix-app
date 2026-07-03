@@ -1,6 +1,5 @@
 use super::tree_core::WidgetTree;
 use super::*;
-use crate::widgets::scroll_view::ScrollView;
 
 impl WidgetTree {
     /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
@@ -52,17 +51,9 @@ impl WidgetTree {
         }
     }
 
-    /// 获取 ScrollView 的滚动偏移量（用于 hit_test 补偿）。
+    /// 获取 viewport 容器的 scroll 偏移（用于 hit_test 补偿）。
     fn get_scroll_offset(tree: &WidgetTree, id: WidgetId) -> Option<(f32, f32)> {
-        tree.get(id).and_then(|node| {
-            let comp = node.component();
-            let sv = comp.as_any().downcast_ref::<ScrollView>()?;
-            if sv.scroll_x().abs() > 0.5 || sv.scroll_y().abs() > 0.5 {
-                Some((sv.scroll_x(), sv.scroll_y()))
-            } else {
-                None
-            }
-        })
+        tree.get(id).and_then(|n| n.viewport_scroll_offset())
     }
 
     fn hit_test_internal(&self, id: WidgetId, pos: Point) -> Option<WidgetId> {

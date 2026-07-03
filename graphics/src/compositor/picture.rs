@@ -4,6 +4,7 @@ use uix_platform::Rect;
 
 use super::layer_tree::{LayerNode, LayerTree};
 use crate::color::Color;
+use crate::compositor::viewport_transform::needs_paint;
 use crate::compositor::ScenePaint;
 use crate::font_service::FontService;
 use crate::painting::{PaintContext, ThemeTokens};
@@ -108,8 +109,6 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
                 &mut off_ctx,
                 scene,
                 scene.dirty_region(),
-                scene.dirty_region().bounds(),
-                true,
                 env,
             );
         }
@@ -233,8 +232,6 @@ fn render_non_picture_subtree<S: ScenePaint>(
     ctx: &mut PaintContext<'_>,
     scene: &S,
     dirty_region: &DirtyRegion,
-    dirty_bounds: Rect,
-    force_render: bool,
     env: &LayerRenderEnv<'_>,
 ) {
     for child in children.iter_mut() {
@@ -245,31 +242,15 @@ fn render_non_picture_subtree<S: ScenePaint>(
                 rect,
                 children: sub,
             } => {
-                let widget_frame = scene.node_frame(*widget_id);
-                let in_bounds = dirty_bounds.intersect(&widget_frame).is_some();
-                let needs_render = scene.node_dirty(*widget_id)
-                    || dirty_region.intersects(widget_frame)
-                    || in_bounds
-                    || force_render;
-                if needs_render {
+                if needs_paint(scene, *widget_id, dirty_region) {
                     LayerTree::render_widget_self(*widget_id, ctx, scene);
                 }
                 ctx.canvas_2d().push_clip(*rect);
-                let scroll_off = LayerTree::get_scroll_offset(scene, *widget_id);
-                if let Some((sx, sy)) = scroll_off {
+                if let Some((sx, sy)) = LayerTree::get_scroll_offset(scene, *widget_id) {
                     ctx.canvas_2d().translate(-sx, -sy);
                 }
-                let child_force = scroll_off.is_some() || force_render;
-                render_non_picture_subtree(
-                    sub,
-                    ctx,
-                    scene,
-                    dirty_region,
-                    dirty_bounds,
-                    child_force,
-                    env,
-                );
-                if let Some((sx, sy)) = scroll_off {
+                render_non_picture_subtree(sub, ctx, scene, dirty_region, env);
+                if let Some((sx, sy)) = LayerTree::get_scroll_offset(scene, *widget_id) {
                     ctx.canvas_2d().translate(sx, sy);
                 }
                 ctx.canvas_2d().pop_clip();
@@ -281,29 +262,14 @@ fn render_non_picture_subtree<S: ScenePaint>(
                 if !scene.node_visible(*widget_id) {
                     continue;
                 }
-                let frame = scene.node_frame(*widget_id);
-                let in_bounds = dirty_bounds.intersect(&frame).is_some();
-                let need_self = force_render
-                    || scene.node_dirty(*widget_id)
-                    || dirty_region.intersects(frame)
-                    || in_bounds;
-                if need_self {
+                if needs_paint(scene, *widget_id, dirty_region) {
+                    let frame = scene.node_frame(*widget_id);
                     ctx.save();
                     scene.paint(*widget_id, frame, ctx);
+                    ctx.restore();
                 }
                 if scene.node_visible(*widget_id) {
-                    render_non_picture_subtree(
-                        sub,
-                        ctx,
-                        scene,
-                        dirty_region,
-                        dirty_bounds,
-                        force_render,
-                        env,
-                    );
-                }
-                if need_self {
-                    ctx.restore();
+                    render_non_picture_subtree(sub, ctx, scene, dirty_region, env);
                 }
             }
         }
