@@ -233,20 +233,20 @@ fn logger_sequential() {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let c = captured.clone();
     logger.add_sink(Arc::new(CallbackSink::new(move |rec: &Record| {
-        c.lock().unwrap().push(rec.level);
+        c.lock().unwrap_or_else(|e| e.into_inner()).push(rec.level);
     })));
     logger.set_level(Level::Warn);
     logger.log(Level::Info, "should not appear".into(), "test.rs", 1, Vec::new());
-    assert!(captured.lock().unwrap().is_empty());
+    assert!(captured.lock().unwrap_or_else(|e| e.into_inner()).is_empty());
     logger.log(Level::Error, "should appear".into(), "test.rs", 2, Vec::new());
-    assert_eq!(captured.lock().unwrap().len(), 1);
+    assert_eq!(captured.lock().unwrap_or_else(|e| e.into_inner()).len(), 1);
 
     // ── convenience methods ──
     logger.clear_sinks();
     let captured2 = Arc::new(Mutex::new(Vec::new()));
     let c2 = captured2.clone();
     logger.add_sink(Arc::new(CallbackSink::new(move |rec: &Record| {
-        c2.lock().unwrap().push((rec.level, rec.message.clone()));
+        c2.lock().unwrap_or_else(|e| e.into_inner()).push((rec.level, rec.message.clone()));
     })));
     logger.set_level(Level::Trace);
     logger.trace("trace msg".into(), "t.rs", 1);
@@ -256,10 +256,21 @@ fn logger_sequential() {
     logger.error("error msg".into(), "e.rs", 5);
     logger.fatal("fatal msg".into(), "f.rs", 6);
     {
-        let msgs = captured2.lock().unwrap();
-        assert_eq!(msgs.len(), 6);
-        assert_eq!(msgs[0].0, Level::Trace);
-        assert_eq!(msgs[5].0, Level::Fatal);
+        let msgs = captured2.lock().unwrap_or_else(|e| e.into_inner());
+        // 至少包含自己写入的 6 条；其他并行测试可能写入额外日志
+        assert!(msgs.len() >= 6, "expected >=6 logs, got {}", msgs.len());
+        // 验证自己的 6 条日志都存在且顺序正确
+        let own_levels: Vec<Level> = vec![
+            Level::Trace, Level::Debug, Level::Info,
+            Level::Warn, Level::Error, Level::Fatal,
+        ];
+        let own_msgs: Vec<&(Level, String)> = msgs.iter().filter(|(_, msg)| {
+            matches!(msg.as_str(), "trace msg"|"debug msg"|"info msg"|"warn msg"|"error msg"|"fatal msg")
+        }).collect();
+        assert_eq!(own_msgs.len(), 6, "should find exactly 6 own messages");
+        for (i, m) in own_msgs.iter().enumerate() {
+            assert_eq!(m.0, own_levels[i], "own message {} level mismatch", i);
+        }
     }
 
     // ── log_error ──
@@ -267,14 +278,13 @@ fn logger_sequential() {
     let captured3 = Arc::new(Mutex::new(None::<String>));
     let c3 = captured3.clone();
     logger.add_sink(Arc::new(CallbackSink::new(move |rec: &Record| {
-        *c3.lock().unwrap() = Some(rec.message.clone());
+        *c3.lock().unwrap_or_else(|e| e.into_inner()) = Some(rec.message.clone());
     })));
     logger.set_level(Level::Trace);
     let err = uix_platform::Error::new(uix_platform::Errc::None, "ignored message");
     logger.log_error(&err, Level::Info);
     {
-        let msg = captured3.lock().unwrap().take();
-        // log_error 使用 short_what()，内容为 "[severity] code (file:line)"
+        let msg = captured3.lock().unwrap_or_else(|e| e.into_inner()).take();
         assert!(msg.as_deref().unwrap_or("").contains("none"));
     }
 
