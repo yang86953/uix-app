@@ -1,6 +1,7 @@
 use super::*;
 use crate::managers::EventManager;
 use std::collections::HashMap;
+use uix_graphics::pipeline::{AnimationRegistry, InvalidationQueue};
 use uix_graphics::DirtyRegion;
 use uix_platform::{KeyMod, MouseButton, Point, Rect};
 
@@ -192,6 +193,10 @@ pub struct WidgetTree {
     /// 拖拽手势状态：跟踪 MouseDown→Move 序列以产生 DragStart/DragMove/DragEnd。
     /// 拖拽阈值 5px，MouseMove 超出此距离才触发拖拽。
     pub(crate) drag_gesture: DragGestureState,
+    /// 渲染失效队列（Phase 2：统一 invalidation 入口）。
+    pub(crate) invalidation: InvalidationQueue,
+    /// 动画注册表（Phase 2：仅 tick 活跃动画节点）。
+    pub(crate) animation_registry: AnimationRegistry,
 }
 
 impl Default for WidgetTree {
@@ -211,6 +216,8 @@ impl Default for WidgetTree {
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
             event_managers: HashMap::new(),
             drag_gesture: DragGestureState::default(),
+            invalidation: InvalidationQueue::new(),
+            animation_registry: AnimationRegistry::new(),
         }
     }
 }
@@ -293,6 +300,7 @@ impl WidgetTree {
         for child in children {
             self.add_child(id, child);
         }
+        self.try_register_animation(id);
         id
     }
 
@@ -380,6 +388,7 @@ impl WidgetTree {
 
         // 终极方案：向父链传播子树脏标记（新节点需要加入脏子树遍历）
         self.propagate_subtree_dirty(parent_id);
+        self.try_register_animation(child_id);
 
         child_id
     }
@@ -415,6 +424,7 @@ impl WidgetTree {
         if let Some(frame) = old_frame {
             self.dirty.region.add_rect(frame);
         }
+        self.animation_registry.unregister(id);
 
         // 终极方案：向父链传播子树脏标记（结构变化影响父布局）
         if let Some(pid) = parent_id {
@@ -917,111 +927,78 @@ impl WidgetTree {
     }
 
     pub fn update(&mut self, dt: f64) -> bool {
-        // ⚠️  使用 traverse() 而非 dirty_traverse()：动画节点在 reset_dirty()
-        // 清除脏标记后不会被 dirty_traverse 遍历到，导致 on_update 不再被调用，
-        // 动画冻结在第 1 帧。全树遍历确保所有动画节点每帧都能收到 on_update 推进。
-        let order = self.traverse();
+        // Phase 2：仅 tick AnimationRegistry 中的节点，避免全树 O(n) 扫描。
+        let order = self.animation_registry.active_ids();
         let mut any_animating = false;
-        for &id in &order {
-            // 跳过不可见节点，避免隐藏页面的动画组件拖累全局帧率
+        for id in order {
             if !self.get(id).map(|n| n.visible()).unwrap_or(false) {
+                self.animation_registry.unregister(id);
                 continue;
             }
-            let was_animating = self
-                .get(id)
-                .map(|n| n.needs_continuous_update())
-                .unwrap_or(false);
+            let was_animating = true;
 
-            // ── 动画帧快照：on_update 前记录旧绘制区域 ──
-            // dirty_rect() 返回 widget 的实际绘制区域（含阴影等扩展），
-            // 比 frame() 更精确——frame 不变但阴影效果变化时也能追踪。
-            // 只对动画 widget 生效，非动画 widget 零开销。
-            // 同时对刚启动动画的 widget 也做快照，确保旧帧被正确清除。
-            let old_dirty_rect = if was_animating {
-                self.get(id).map(|n| n.dirty_rect(n.frame()))
-            } else {
-                None
-            };
+            let old_dirty_rect = self.get(id).map(|n| n.dirty_rect(n.frame()));
 
             if let Some(node) = self.get_mut(id) {
                 node.on_update(dt);
             }
 
-            let (rect, just_started) = self
+            let (rect, just_started, is_still) = self
                 .get(id)
                 .map(|node| {
                     let is_still = node.needs_continuous_update();
-                    if is_still {
-                        uix_platform::log::info_fn(format!(
-                            "[Anim] id={} still animating",
-                            node.id()
-                        ));
-                        any_animating = true;
-                    }
                     let dirty = if was_animating || is_still {
-                        any_animating = any_animating || is_still;
                         node.dirty_rect(node.frame())
                     } else {
                         Rect::zero()
                     };
-                    (dirty, is_still && !was_animating)
+                    (dirty, is_still && !was_animating, is_still)
                 })
-                .unwrap_or_default();
+                .unwrap_or((Rect::zero(), false, false));
 
-            // ── 刚启动动画的 widget：也对其旧帧做脏标记 ──
-            // 避免首次 on_update 后旧绘制区域未被清除导致视觉残留。
+            if is_still {
+                any_animating = true;
+            } else {
+                self.animation_registry.unregister(id);
+            }
+
             if just_started && old_dirty_rect.is_none() {
                 if let Some(old) = self.get(id).map(|n| n.dirty_rect(n.frame())) {
                     if old != rect && old.w > 0.0 && old.h > 0.0 {
-                        self.dirty.region.add_rect(old);
-                        if let Some(node) = self.get_mut(id) {
-                            node.set_dirty(true);
-                        }
+                        self.mark_dirty_rect(id, old);
                     }
                 }
             }
 
-            // ── 动画帧变化追踪：标记旧绘制区域为脏 ──
-            // 当 widget 的 dirty_rect 变化（包括 frame 移动、阴影变化等），
-            // 旧绘制区域必须被清除，否则产生视觉残留。
             if let Some(old) = old_dirty_rect {
                 if old != rect && old.w > 0.0 && old.h > 0.0 {
-                    self.dirty.region.add_rect(old);
-                    if let Some(node) = self.get_mut(id) {
-                        node.set_dirty(true);
-                    }
+                    self.mark_dirty_rect(id, old);
                 }
             }
 
             if rect.w > 0.0 || rect.h > 0.0 {
                 self.mark_dirty_rect(id, rect);
             }
-            // 收集 scroll_delta_for_dirty 用于 scroll_region 像素移动
+
             if let Some((dx, dy)) = self.get(id).and_then(|n| n.scroll_delta_for_dirty()) {
                 if (dx.abs() > 0.5 || dy.abs() > 0.5) && self.dirty.scroll_region_move.is_none() {
                     if let Some(frame) = self.get(id).map(|n| n.frame()) {
                         self.dirty.scroll_region_move = Some((frame, dx, dy));
+                        self.push_composite_invalidation(
+                            frame,
+                            Some(uix_graphics::pipeline::ScrollDelta { dx, dy }),
+                        );
                     }
                 }
             }
         }
 
-        // ── 可见性同步：组件主动隐藏 → 同步到树级 visible ──
-        // on_update 中组件（Modal/Drawer 等）可能修改了 self.visible 为 false
-        //（退场动画完成），但树级 BoxedWidget.visible 未更新。
-        // 这里单向同步：组件→树，且仅限 comp_visible=false 方向（组件隐藏自己）。
-        // 反向（组件想显示）由调用方显式调用 tree.set_visible() 处理，
-        // 因为 on_update 不会把隐藏的组件显示出来。
-        //
-        // 注意：!comp_visible 条件天然阻止了 tree.set_visible(false) 被默认
-        // component().visible()=true 反向覆盖——页面容器没有 visible 覆盖，
-        // comp.visible 永远为 true，!comp_visible 为 false，不会进入同步。
+        // 可见性同步：仅检查动画注册表节点（Modal/Drawer 退场等）。
         let mut sync_list: Vec<(WidgetId, bool)> = Vec::new();
-        for &id in &order {
+        for id in self.animation_registry.active_ids() {
             if let Some(node) = self.get(id) {
                 let comp_visible = node.component().visible();
                 if node.visible() != comp_visible && !comp_visible {
-                    // 组件主动隐藏了自己（如动画完成），同步到 tree 层
                     sync_list.push((id, comp_visible));
                 }
             }

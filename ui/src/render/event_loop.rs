@@ -20,10 +20,9 @@
 //!
 //! ```text
 //! tree.update(dt)
-//!   ├─ on_update() 推进动画/滚动
-//!   ├─ dirty_rect() 计算变化区域 → 加入 dirty_region
-//!   ├─ scroll_delta() 收集滚动增量 → dirty.scroll_deltas
-//!   └─ 返回 keep_polling（有动画/滚动进行中）
+//!   ├─ AnimationRegistry 仅 tick 活跃动画节点
+//!   ├─ dirty_rect() 计算变化区域 → InvalidationQueue + dirty_region
+//!   └─ 动画结束 → 注册表清空，恢复 0 帧
 //!       ↓
 //! tree.layout() —— 仅 dirty_traverse 遍历脏子树
 //!       ↓
@@ -40,28 +39,11 @@
 //! tree.reset_dirty() → 准备下一帧
 //! ```
 //!
-//! # 滚动优化（像素移动）
-//!
-//! ScrollView 滚动时不触发全帧重绘：
-//! 1. `scroll_delta` 返回帧间偏移量 (dx, dy)
-//! 2. `drain_scroll_deltas` 在 begin_frame 前消费这些偏移
-//! 3. `canvas.scroll_region(viewport, dx, dy)` memmove 像素缓冲
-//! 4. `dirty_rect` 只返回新暴露的 strip 区域
-//! 5. `DirtyRects(strip)` 只清除并重绘 strip
-//! 6. 视口内非 strip 区域的内容通过像素移动保留，无需重绘
-//!
-//! # FrameGraph 裁剪
-//!
-//! FrameGraph 追踪资源版本号。当输入未变化且输出无消费时，
-//! Pass 被自动裁剪（culled），`zero_frame_cost = true` 跳过整帧渲染。
-//! 动画/滚动持续时 `mark_resource_dirty` 通知 FrameGraph 资源有变化，
-//! 防止 Pass 被误裁剪。
+//! 无 invalidation 且无脏区域时返回 `RenderOutcome::Idle`（0 帧）。
 
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
-use uix_graphics::frame_graph::resource::{PassId, ResourceId};
-use uix_graphics::frame_graph::FrameGraph;
 use uix_graphics::pipeline::{InvalidationSource, RenderMetrics};
 use uix_graphics::{Color, DirtyRegion, GraphicsEngine, RenderOutcome, UpdateStrategy};
 use uix_platform::event::{UiEvent, UiEventPayload, UiEventType};
@@ -96,24 +78,20 @@ where
     X: Fn(&UiEvent) -> bool,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
-    let mut frame_graph = FrameGraph::new();
-    let main_color_res = frame_graph.register_texture("MainColor", 800, 600);
-
     // 从 platform 提前取出 event_bus 原始指针——避免 collect closure 中双重可变借用。
     // Safety: platform 在 closure 的整个生命周期内存活且不被别名访问。
     let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
 
     let pending_events = RefCell::new(Vec::<UiEvent>::new());
+    tree.bind_invalidation();
+
     let mut first_frame = true;
     let mut rendered_first = false;
     let mut last_frame = Instant::now();
-    let mut keep_polling = false;
     let mut idle_count: u32 = 0;
     let mut window_visible = true;
     let mut layer_tree = LayerTree::new();
     let mut last_tree_version: u64 = 0;
-    let mut geom_pass_id: Option<PassId> = None;
-    let mut over_pass_id: Option<PassId> = None;
     let mut initial_size = (
         platform_window.properties().width(),
         platform_window.properties().height(),
@@ -151,7 +129,8 @@ where
         platform.text_input().start();
 
         // ── 事件轮询（内联 collect closure）──
-        if keep_polling {
+        let animations_active = tree.animations_active();
+        if animations_active {
             if !platform.event_loop().wait_event(&collect) {
                 break;
             }
@@ -259,16 +238,12 @@ where
         let now = Instant::now();
         let dt = (now - last_frame).as_secs_f64().min(0.05);
         last_frame = now;
-        keep_polling = tree.update(dt);
+        let _ = tree.update(dt);
 
         // 仅在以下情况触发 layout：
         // - 有布局事件（resize/点击/键盘等，排除 MouseMove）
-        // - 有动画/滚动运行（keep_polling）
         // - 首帧（尚未 rendered_first）
-        // MouseMove 不改变树结构，无需 layout；
-        // 其带来的 hover 视觉变化通过 mark_dirty() 直接设置脏矩形，
-        // 由下方的 need_render 独立处理渲染。
-        let needs_work = window_visible && (had_layout_event || keep_polling || !rendered_first);
+        let needs_work = window_visible && (had_layout_event || !rendered_first);
 
         if needs_work {
             let before_version = tree.tree_version();
@@ -282,9 +257,6 @@ where
             sync_root_frame_to_engine(tree, engine);
 
             // on_frame 可能重建整棵树（主题切换），此时必须强制全帧渲染。
-            // 重建后 mark_full_frame_dirty 已设置全帧脏区域，
-            // 但 FrameGraph culling 可能因版本追踪将 Pass 裁剪掉，
-            // 导致画面停留在重建前的帧。强制刷新确保重建生效。
             if tree.tree_version() != before_version {
                 // ⚠️  重建后必须重新 layout：set_root 只设置了根节点的 frame，
                 // 所有子节点的 frame 为 Rect::zero()，不 layout 则组件位置混乱。
@@ -297,15 +269,10 @@ where
 
         let dirty_region = tree.dirty_region();
         let need_render =
-            window_visible && (!rendered_first || !dirty_region.is_empty() || keep_polling);
+            window_visible && (!rendered_first || tree.has_render_work());
         let engine_capabilities = engine.capabilities();
 
-        let inv_source = classify_invalidation(
-            rendered_first,
-            keep_polling,
-            had_layout_event,
-            &dirty_region,
-        );
+        let inv_source = classify_invalidation(rendered_first, had_layout_event, &dirty_region);
 
         let (outcome, outcome_source) = if !need_render {
             (RenderOutcome::Idle, InvalidationSource::None)
@@ -319,175 +286,113 @@ where
                 dirty_region.clone()
             };
 
-            if geom_pass_id.is_none() {
-                let gid = frame_graph.add_pass("Geometry", |b| b.writes(&[main_color_res]));
-                let oid = frame_graph.add_pass("Overlay", |b| {
-                    b.reads(&[main_color_res]).writes(&[main_color_res])
-                });
-                geom_pass_id = Some(gid);
-                over_pass_id = Some(oid);
+            let cur_version = tree.tree_version();
+            if last_tree_version != cur_version {
+                layer_tree.build(tree);
+                layer_tree.sweep_orphaned_offscreens(engine);
+                last_tree_version = cur_version;
+            }
+            layer_tree.update_dirty(tree);
+
+            let scroll_move = tree.drain_scroll_region_move();
+            if let Some((frame, dx, dy)) = scroll_move {
+                engine.canvas_2d().scroll_region(frame, dx, dy);
             }
 
-            // 通知 FrameGraph 资源有变化，防止 pass 被裁剪。
-            // 必须同时覆盖动画（keep_polling）和脏区域（鼠标/键盘事件导致的 hover 变化等）
-            // 两个场景，否则 FrameGraph 认为资源版本未变而裁剪 Pass，
-            // 导致脏区域的视觉更新（hover 高亮、ripple、焦点框等）丢失。
-            frame_graph.mark_resource_dirty(main_color_res);
-
-            let plan = frame_graph.compile();
-
-            if plan.zero_frame_cost {
-                // FrameGraph 认为本轮无需渲染，脏数据已被消费，清理后返回空闲。
-                tree.reset_dirty();
-                (RenderOutcome::Idle, InvalidationSource::FrameGraphCull)
+            let damage: Option<(i32, i32, i32, i32)> = if region.full_frame {
+                None
             } else {
-                let cur_version = tree.tree_version();
-                if last_tree_version != cur_version {
-                    layer_tree.build(tree);
-                    layer_tree.sweep_orphaned_offscreens(engine);
-                    last_tree_version = cur_version;
-                }
-                layer_tree.update_dirty(tree);
-
-                // ── 滚动偏移像素移动（提前执行，确保 present 前像素已移位）──
-                // scroll_region memmove 修改了视口内全部像素（非仅 strip），
-                // 必须在 present 前将变化提交到 DIB/窗口，否则非 strip 区域
-                // 残留旧帧像素，导致滚动画面撕裂。
-                let scroll_move = tree.drain_scroll_region_move();
-                if let Some((frame, dx, dy)) = scroll_move {
-                    engine.canvas_2d().scroll_region(frame, dx, dy);
-                }
-
-                // damage rect：滚动时将 ScrollView 视口纳入 damage，
-                // 确保 present 提交 memmove 引起的全视口像素变化。
-                let damage: Option<(i32, i32, i32, i32)> = if region.full_frame {
-                    None
+                let bounds = if let Some((frame, _, _)) = scroll_move {
+                    region.bounds().union(&frame)
                 } else {
-                    let bounds = if let Some((frame, _, _)) = scroll_move {
-                        region.bounds().union(&frame)
-                    } else {
-                        region.bounds()
-                    };
-                    Some((
-                        (bounds.x - 1.0).max(0.0) as i32,
-                        (bounds.y - 1.0).max(0.0) as i32,
-                        (bounds.w + 2.0) as i32,
-                        (bounds.h + 2.0) as i32,
-                    ))
+                    region.bounds()
                 };
+                Some((
+                    (bounds.x - 1.0).max(0.0) as i32,
+                    (bounds.y - 1.0).max(0.0) as i32,
+                    (bounds.w + 2.0) as i32,
+                    (bounds.h + 2.0) as i32,
+                ))
+            };
 
-                let pass_info: std::collections::HashMap<_, _> = frame_graph
-                    .passes()
-                    .iter()
-                    .map(|p| (p.id, p.writes.clone()))
-                    .collect();
-                let resources_to_bump: Vec<ResourceId> = plan
-                    .execution_order
-                    .iter()
-                    .filter_map(|&pid| pass_info.get(&pid))
-                    .flat_map(|writes| writes.iter().copied())
-                    .collect();
+            // Geometry Pass
+            let strategy = if !rendered_first || region.full_frame {
+                UpdateStrategy::FullRedraw
+            } else {
+                UpdateStrategy::DirtyRects(region.rects().to_vec())
+            };
+            engine.begin_frame(strategy);
 
-                for &pid in &plan.execution_order {
-                    if Some(pid) == geom_pass_id {
-                        // 选择更新策略：首次帧或全帧脏时用 FullRedraw，
-                        // 增量帧用 DirtyRects（只清除并重绘脏区域）
-                        let strategy = if !rendered_first || region.full_frame {
-                            UpdateStrategy::FullRedraw
-                        } else {
-                            UpdateStrategy::DirtyRects(region.rects().to_vec())
-                        };
-                        engine.begin_frame(strategy);
+            let lt_ref = theme.borrow();
+            let tokens = lt_ref.tokens();
+            let lt_font = font_service.loaded_font_handle;
+            layer_tree.render(engine, tree, tokens, lt_font, font_service);
+            record_paint(metrics);
+            drop(lt_ref);
+            engine.end_frame();
 
-                        let lt_ref = theme.borrow();
-                        let tokens = lt_ref.tokens();
-                        let lt_font = font_service.loaded_font_handle;
-                        layer_tree.render(engine, tree, tokens, lt_font, font_service);
-                        record_paint(metrics);
-                        drop(lt_ref);
-                        engine.end_frame();
-                    } else if Some(pid) == over_pass_id {
-                        // 使用 Overlay 策略——不清除画布，在 Geometry Pass
-                        // 的渲染结果上叠加 overlay 内容。FullRedraw 会清空画布
-                        // 导致几何渲染内容被擦除（黑屏）。
-                        //
-                        // clear_required 表示是否有实际脏区域需要清空后重绘。
-                        // 当 clear_required=false 时（如仅动画触发的渲染），
-                        // 传空 vec 避免不必要的 overlay 清空。
-                        let overlay_rects: Vec<Rect> = if region.clear_required {
-                            if region.full_frame {
-                                let w = engine.canvas_2d().width() as f32;
-                                let h = engine.canvas_2d().height() as f32;
-                                vec![Rect::new(0.0, 0.0, w, h)]
-                            } else {
-                                let mut rects = region.rects().to_vec();
-                                // 滚动时将 ScrollView 视口帧纳入 overlay 区域，
-                                // 否则 Overlay clip 限制在 strip 内，
-                                // 导致滚动条等视口内非 strip 的 overlay 内容被截掉。
-                                if let Some((frame, _, _)) = scroll_move {
-                                    rects.push(frame);
-                                }
-                                rects
-                            }
-                        } else {
-                            Vec::new()
-                        };
-                        engine.begin_frame(UpdateStrategy::Overlay(overlay_rects));
-                        let theme_ref = theme.borrow();
-                        let tokens = theme_ref.tokens();
-                        let lt_font = font_service.loaded_font_handle;
-                        let hover_pos = if debug_mode.get() {
-                            Some(cursor_pos.get())
-                        } else {
-                            None
-                        };
-                        layer_tree.render_overlays(
-                            engine,
-                            tree,
-                            tokens,
-                            lt_font,
-                            font_service,
-                            debug_mode.get(),
-                            hover_pos,
-                            &region,
+            // Overlay Pass
+            let overlay_rects: Vec<Rect> = if region.clear_required {
+                if region.full_frame {
+                    let w = engine.canvas_2d().width() as f32;
+                    let h = engine.canvas_2d().height() as f32;
+                    vec![Rect::new(0.0, 0.0, w, h)]
+                } else {
+                    let mut rects = region.rects().to_vec();
+                    if let Some((frame, _, _)) = scroll_move {
+                        rects.push(frame);
+                    }
+                    rects
+                }
+            } else {
+                Vec::new()
+            };
+            engine.begin_frame(UpdateStrategy::Overlay(overlay_rects));
+            let theme_ref = theme.borrow();
+            let tokens = theme_ref.tokens();
+            let lt_font = font_service.loaded_font_handle;
+            let hover_pos = if debug_mode.get() {
+                Some(cursor_pos.get())
+            } else {
+                None
+            };
+            layer_tree.render_overlays(
+                engine,
+                tree,
+                tokens,
+                lt_font,
+                font_service,
+                debug_mode.get(),
+                hover_pos,
+                &region,
+            );
+            drop(theme_ref);
+            engine.end_frame();
+            if debug_mode.get() {
+                if let Some(m) = metrics {
+                    let canvas = engine.canvas_2d();
+                    let sw = canvas.width();
+                    let hud = DebugRenderService::new(true);
+                    hud.draw_telemetry_hud(canvas, &m.get(), sw);
+                    let lines = DebugRenderService::telemetry_hud_lines(&m.get());
+                    let mut text_svc =
+                        TextRenderService::new(lt_font, font_service, 300.0);
+                    let panel_x = sw as f32 - 214.0;
+                    for (i, line) in lines.iter().enumerate() {
+                        text_svc.draw_text(
+                            canvas,
+                            line,
+                            Point::new(panel_x, 12.0 + i as f32 * 14.0),
+                            Color::from_rgba(220, 220, 220, 255),
+                            11.0,
                         );
-                        drop(theme_ref);
-                        engine.end_frame();
-                        if debug_mode.get() {
-                            if let Some(m) = metrics {
-                                let canvas = engine.canvas_2d();
-                                let sw = canvas.width();
-                                let hud = DebugRenderService::new(true);
-                                hud.draw_telemetry_hud(canvas, &m.get(), sw);
-                                let lines = DebugRenderService::telemetry_hud_lines(&m.get());
-                                let mut text_svc = TextRenderService::new(
-                                    lt_font,
-                                    font_service,
-                                    300.0,
-                                );
-                                let panel_x = sw as f32 - 214.0;
-                                for (i, line) in lines.iter().enumerate() {
-                                    text_svc.draw_text(
-                                        canvas,
-                                        line,
-                                        Point::new(panel_x, 12.0 + i as f32 * 14.0),
-                                        Color::from_rgba(220, 220, 220, 255),
-                                        11.0,
-                                    );
-                                }
-                            }
-                        }
                     }
                 }
-
-                for res in resources_to_bump {
-                    frame_graph.mark_resource_dirty(res);
-                }
-
-                tree.reset_dirty();
-                rendered_first = true;
-                (RenderOutcome::Present(damage), inv_source)
             }
+
+            tree.reset_dirty();
+            rendered_first = true;
+            (RenderOutcome::Present(damage), inv_source)
         };
 
         match outcome {
@@ -516,7 +421,7 @@ where
             }
         }
 
-        if keep_polling {
+        if tree.animations_active() {
             if !platform.event_loop().wait_event(&collect) {
                 break;
             }
@@ -529,15 +434,11 @@ where
 
 fn classify_invalidation(
     rendered_first: bool,
-    keep_polling: bool,
     had_layout_event: bool,
     dirty_region: &DirtyRegion,
 ) -> InvalidationSource {
     if !rendered_first {
         return InvalidationSource::FirstFrame;
-    }
-    if keep_polling && dirty_region.is_empty() {
-        return InvalidationSource::AnimationPolling;
     }
     if !dirty_region.is_empty() {
         return InvalidationSource::DirtyRegion;
@@ -623,7 +524,7 @@ mod tests {
     fn classify_invalidation_first_frame() {
         let region = DirtyRegion::default();
         assert_eq!(
-            classify_invalidation(false, false, false, &region),
+            classify_invalidation(false, false, &region),
             InvalidationSource::FirstFrame
         );
     }
@@ -633,7 +534,7 @@ mod tests {
         let mut region = DirtyRegion::default();
         region.add_rect(Rect::new(0.0, 0.0, 10.0, 10.0));
         assert_eq!(
-            classify_invalidation(true, false, false, &region),
+            classify_invalidation(true, false, &region),
             InvalidationSource::DirtyRegion
         );
     }

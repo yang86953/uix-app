@@ -1,8 +1,56 @@
 use super::tree_core::WidgetTree;
 use super::*;
+use uix_graphics::pipeline::{Invalidation, InvalidationQueue, ScrollDelta};
 use uix_graphics::DirtyRegion;
 
 impl WidgetTree {
+    pub fn invalidation(&self) -> &InvalidationQueue {
+        &self.invalidation
+    }
+
+    /// 是否有待渲染工作（失效队列或脏区域非空）。
+    pub fn has_render_work(&self) -> bool {
+        !self.invalidation.is_empty() || !self.dirty.region.is_empty()
+    }
+
+    /// 是否有进行中的动画/滚动惯性（仅用于事件轮询，不触发 present）。
+    pub fn animations_active(&self) -> bool {
+        self.animation_registry.has_active()
+    }
+
+    /// 绑定失效队列：初始化并扫描常驻动画节点。
+    pub fn bind_invalidation(&mut self) {
+        self.invalidation.clear();
+        self.animation_registry.clear();
+        if self.root_id.is_some() {
+            for id in self.traverse() {
+                self.try_register_animation(id);
+            }
+        }
+    }
+
+    pub(crate) fn try_register_animation(&mut self, id: WidgetId) {
+        if self
+            .get(id)
+            .is_some_and(|n| n.visible() && n.needs_continuous_update())
+        {
+            self.animation_registry.register(id);
+        }
+    }
+
+    pub(crate) fn push_paint_invalidation(&mut self, id: WidgetId, rect: Option<Rect>) {
+        self.invalidation.push(Invalidation::Paint { id, rect });
+    }
+
+    pub(crate) fn push_composite_invalidation(
+        &mut self,
+        rect: Rect,
+        scroll: Option<ScrollDelta>,
+    ) {
+        self.invalidation
+            .push(Invalidation::Composite { rect, scroll });
+    }
+
     pub fn dirty_region(&self) -> &DirtyRegion {
         &self.dirty.region
     }
@@ -51,9 +99,13 @@ impl WidgetTree {
             .unwrap_or_default();
         if dirty.w > 0.0 && dirty.h > 0.0 {
             self.dirty.region.add_rect(dirty);
+            self.push_paint_invalidation(id, Some(dirty));
         } else if frame.w > 0.0 && frame.h > 0.0 {
             self.dirty.region.add_rect(frame);
+            self.push_paint_invalidation(id, Some(frame));
         }
+
+        self.try_register_animation(id);
 
         // 终极方案：向上传播子树脏标记
         self.propagate_subtree_dirty(id);
@@ -66,7 +118,10 @@ impl WidgetTree {
         }
         if rect.w > 0.0 && rect.h > 0.0 {
             self.dirty.region.add_rect(rect);
+            self.push_paint_invalidation(id, Some(rect));
         }
+
+        self.try_register_animation(id);
 
         // 终极方案：向上传播子树脏标记
         self.propagate_subtree_dirty(id);
@@ -100,6 +155,7 @@ impl WidgetTree {
     /// 遍历复杂度与脏节点数成正比，与总节点数无关。
     pub fn reset_dirty(&mut self) {
         self.dirty.reset();
+        self.invalidation.clear();
         let ids: Vec<WidgetId> = self.dirty_nodes.iter_dirty().collect();
         for id in ids {
             if let Some(node) = self.get_mut(id) {
@@ -117,6 +173,7 @@ impl WidgetTree {
 
     pub fn mark_full_frame_dirty(&mut self) {
         self.dirty.region = DirtyRegion::full();
+        self.invalidation.push(Invalidation::Paint { id: 0, rect: None });
         for id in self.traverse() {
             self.dirty_nodes.insert(id);
             self.subtree_dirty.insert(id);
