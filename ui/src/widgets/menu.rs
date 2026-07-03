@@ -68,7 +68,7 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 let idx = self.item_at(pos.x, pos.y);
                 if let Some(i) = idx {
                     self.hovered_idx.set(i);

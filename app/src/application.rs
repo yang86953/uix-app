@@ -213,7 +213,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<uix_ui::widget::WidgetEvent> {
         }
         UiEventType::MouseMove => {
             if let UiEventPayload::MouseMove(ref d) = ev.payload {
-                Some(uix_ui::widget::WidgetEvent::MouseMove { pos: d.pos })
+                Some(uix_ui::widget::WidgetEvent::MouseMove { pos: d.pos, mods: d.mods })
             } else {
                 None
             }

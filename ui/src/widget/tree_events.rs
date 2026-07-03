@@ -87,6 +87,10 @@ impl WidgetTree {
                 self.mouse_down_target = target;
                 if let Some(t) = target {
                     self.mark_dirty(t);
+                    // 捕获阶段：root → target，用于 Modal 等拦截
+                    if self.capture_to(t, event) == EventResult::Handled {
+                        return EventResult::Handled;
+                    }
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
                         self.set_focus(Some(t));
@@ -102,13 +106,20 @@ impl WidgetTree {
                 self.mouse_down_target = None;
                 let hit = self.hit_test(*pos);
                 let mut result = EventResult::NotHandled;
-                if let Some(t) = hit { self.mark_dirty(t); result = self.dispatch_to(t, event); }
+                if let Some(t) = hit {
+                    self.mark_dirty(t);
+                    // 捕获阶段：root → target
+                    if self.capture_to(t, event) == EventResult::Handled {
+                        return EventResult::Handled;
+                    }
+                    result = self.dispatch_to(t, event);
+                }
                 if let Some(t) = hold {
                     if Some(t) != hit { self.mark_dirty(t); let _ = self.dispatch_to(t, event); }
                 }
                 result
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 let new_hover = self.hit_test(*pos);
                 if new_hover != self.hovered_widget {
                     if let Some(old) = self.hovered_widget {
@@ -132,10 +143,28 @@ impl WidgetTree {
             }
             WidgetEvent::MouseWheel { pos, .. } => {
                 let target = self.hit_test(*pos).or(self.hovered_widget).or(self.root_id);
-                if let Some(t) = target { self.mark_dirty(t); self.dispatch_to(t, event) }
+                if let Some(t) = target {
+                    self.mark_dirty(t);
+                    // 捕获阶段：root → target，ScrollView 在此拦截滚动
+                    if self.capture_to(t, event) == EventResult::Handled {
+                        return EventResult::Handled;
+                    }
+                    self.dispatch_to(t, event)
+                }
                 else { EventResult::NotHandled }
             }
-            WidgetEvent::KeyDown { .. } | WidgetEvent::KeyUp { .. } | WidgetEvent::KeyPress { .. } => {
+            WidgetEvent::KeyDown { .. } | WidgetEvent::KeyUp { .. } => {
+                if let Some(t) = self.focused_widget {
+                    self.mark_dirty(t);
+                    // 捕获阶段：root → target，用于全局快捷键
+                    if self.capture_to(t, event) == EventResult::Handled {
+                        return EventResult::Handled;
+                    }
+                    self.dispatch_to(t, event)
+                }
+                else { EventResult::NotHandled }
+            }
+            WidgetEvent::KeyPress { .. } => {
                 if let Some(t) = self.focused_widget { self.mark_dirty(t); self.dispatch_to(t, event) }
                 else { EventResult::NotHandled }
             }
@@ -205,10 +234,33 @@ impl WidgetTree {
                 WidgetEvent::MouseDown { pos: Point::new(pos.x + sx, pos.y + sy), button, mods },
             WidgetEvent::MouseUp { pos, button, mods } =>
                 WidgetEvent::MouseUp { pos: Point::new(pos.x + sx, pos.y + sy), button, mods },
-            WidgetEvent::MouseMove { pos } =>
-                WidgetEvent::MouseMove { pos: Point::new(pos.x + sx, pos.y + sy) },
+            WidgetEvent::MouseMove { pos, mods } =>
+                WidgetEvent::MouseMove { pos: Point::new(pos.x + sx, pos.y + sy), mods },
             other => other,
         }
+    }
+
+    /// 捕获阶段：从 root 到 target 的路径上依次分发事件（不含 target 自身）。
+    /// 任意节点返回 `Handled` 则终止捕获并阻止后续冒泡阶段。
+    /// 用于 Modal 外部点击拦截、ScrollView 滚动拦截、全局快捷键等场景。
+    fn capture_to(&mut self, target: WidgetId, event: &WidgetEvent) -> EventResult {
+        // 收集从 root 到 target 的祖先路径（不含 target）
+        let mut path = Vec::new();
+        let mut current = self.get(target).and_then(|n| n.parent());
+        while let Some(id) = current {
+            path.push(id);
+            current = self.get(id).and_then(|n| n.parent());
+        }
+        path.reverse(); // 现在是从 root → ... → target.parent
+
+        for &id in &path {
+            if let Some(node) = self.get_mut(id) {
+                if node.on_event(event) == EventResult::Handled {
+                    return EventResult::Handled;
+                }
+            }
+        }
+        EventResult::NotHandled
     }
 
     fn dispatch_to(&mut self, target: WidgetId, event: &WidgetEvent) -> EventResult {
@@ -254,8 +306,8 @@ impl WidgetTree {
                     button,
                     mods,
                 },
-            WidgetEvent::MouseMove { pos } =>
-                WidgetEvent::MouseMove { pos: Point::new(pos.x - frame.x, pos.y - frame.y) },
+            WidgetEvent::MouseMove { pos, mods } =>
+                WidgetEvent::MouseMove { pos: Point::new(pos.x - frame.x, pos.y - frame.y), mods },
             ref other => other.clone(),
         }
     }

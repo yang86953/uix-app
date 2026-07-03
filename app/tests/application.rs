@@ -210,7 +210,7 @@ fn map_mouse_move() {
     let ev = UiEvent::mouse_move(Point::new(50.0, 60.0));
     let result = map_ui_event(&ev);
     assert!(result.is_some());
-    if let Some(WidgetEvent::MouseMove { pos }) = result {
+    if let Some(WidgetEvent::MouseMove { pos, .. }) = result {
         assert_eq!(pos, Point::new(50.0, 60.0));
     }
 }

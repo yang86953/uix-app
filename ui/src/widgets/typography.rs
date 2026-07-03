@@ -70,7 +70,7 @@ define_widget! {
                 self.sel_dragging.set(true);
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 if !self.sel_dragging.get() { return EventResult::NotHandled; }
                 let dp = self.draw_pos.get();
                 let text_x = pos.x - dp.x;

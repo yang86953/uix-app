@@ -115,7 +115,7 @@ define_widget! {
                 }
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 if self.open.get() {
                     if let Some(frame) = self.last_frame.get() {
                         let popup_y = frame.y + frame.h + 2.0;

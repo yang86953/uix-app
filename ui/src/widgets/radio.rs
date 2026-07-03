@@ -51,7 +51,7 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 self.hovered_idx = self.option_at(pos.x, pos.y);
                 EventResult::Handled
             }

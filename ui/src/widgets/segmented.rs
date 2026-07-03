@@ -37,7 +37,7 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 self.hovered_idx = self.segment_at(pos.x);
                 EventResult::Handled
             }

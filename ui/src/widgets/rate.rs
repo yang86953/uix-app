@@ -47,7 +47,7 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 let star_idx = (pos.x / 24.0) as usize;
                 if star_idx < self.count {
                     if self.half {

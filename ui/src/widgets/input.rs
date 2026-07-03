@@ -92,7 +92,7 @@ define_widget! {
                 self.sel_dragging.set(true);
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 if !self.sel_dragging.get() { return EventResult::NotHandled; }
                 let ci = if self.textarea {
                     self.char_at_xy(pos.x - PAD, pos.y)

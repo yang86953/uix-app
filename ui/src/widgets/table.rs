@@ -122,7 +122,7 @@ define_widget! {
                 self.selected_row.set(None);
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 if pos.y >= self.header_h {
                     let row = ((pos.y - self.header_h) / self.row_h) as usize;
                     self.hover_row.set(if row < self.rows.len() { Some(row) } else { None });

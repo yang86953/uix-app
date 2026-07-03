@@ -152,7 +152,7 @@ define_widget! {
                 EventResult::NotHandled
             }
 
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 let old_hover = self.hovered_index.get();
                 let old_btn = self.hovered_header.get();
                 let mut new_hover: Option<usize> = None;

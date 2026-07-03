@@ -338,6 +338,7 @@ fn dispatch_mouse_move_triggers_hover_enter_leave() {
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
     tree.dispatch_event(&WidgetEvent::MouseMove {
         pos: Point::new(50.0, 50.0),
+        mods: KeyMod::NONE,
     });
 }
 

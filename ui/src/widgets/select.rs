@@ -75,7 +75,7 @@ define_widget! {
                 self.open = false;
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 if self.open && pos.y > 32.0 {
                     let idx = ((pos.y - 32.0) / 28.0) as usize;
                     self.hovered_option = if idx < all_opts.len() { Some(idx) } else { None };

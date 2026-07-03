@@ -65,7 +65,7 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 if self.open && pos.y > 36.0 {
                     let cols = 8;
                     let cell = 24.0;

@@ -239,7 +239,7 @@ define_widget! {
                 EventResult::Handled
             }
 
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 let lines = self.layout_lines.borrow();
 
                 // 代码块悬停

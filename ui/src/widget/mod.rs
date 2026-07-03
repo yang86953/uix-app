@@ -10,7 +10,7 @@ pub enum EventResult { Handled, NotHandled, Bubbled }
 pub enum WidgetEvent {
     MouseDown { pos: Point, button: MouseButton, mods: KeyMod },
     MouseUp { pos: Point, button: MouseButton, mods: KeyMod },
-    MouseMove { pos: Point },
+    MouseMove { pos: Point, mods: KeyMod },
     MouseWheel { pos: Point, delta: Point },
     KeyDown { key: KeyCode, mods: KeyMod },
     KeyUp { key: KeyCode, mods: KeyMod },

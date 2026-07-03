@@ -117,7 +117,7 @@ define_widget! {
                     }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 if self.scrollbar_v.dragging {
                     let frame = match self.last_frame.get() {
                         Some(f) => f,

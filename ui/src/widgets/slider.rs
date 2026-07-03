@@ -35,7 +35,7 @@ define_widget! {
                 self.update_from_pos(pos.x, frame_w);
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 let frame_w = self.last_frame.get().map(|f| f.w).unwrap_or(200.0);
                 if self.dragging {
                     self.update_from_pos(pos.x, frame_w);

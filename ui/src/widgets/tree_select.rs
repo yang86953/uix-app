@@ -44,7 +44,7 @@ define_widget! {
                 self.open = false;
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos } => {
+            WidgetEvent::MouseMove { pos, .. } => {
                 if self.open && pos.y > 32.0 {
                     let flat = self.flatten_nodes();
                     let idx = ((pos.y - 32.0) / 28.0) as usize;
