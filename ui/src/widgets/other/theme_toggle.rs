@@ -14,7 +14,7 @@ define_widget! {
         pub dark: Cell<bool>,
     }
 
-    preferred_size => (&self, _eng: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _eng: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(32.0, 32.0)
     }
 

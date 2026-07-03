@@ -52,7 +52,7 @@ fn presenter_default_empty() {
 fn presenter_present_stores_pixels() {
     let mut pf = FakePlatform::new();
     pf.presenter
-        .present(&[0xFF0000, 0x00FF00], 2, 1, None)
+        .present(&[0xFF0000, 0x00FF00], 2, 1, uix_platform::PresentDamage::Full)
         .unwrap();
     assert_eq!(pf.presenter.present_count(), 1);
     assert_eq!(pf.presenter.state.last_pixels.len(), 2);

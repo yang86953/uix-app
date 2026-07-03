@@ -14,6 +14,7 @@ use wayland_client::protocol::{wl_callback, wl_compositor, wl_shm, wl_surface};
 use wayland_client::Main;
 
 use crate::IPresenter;
+use crate::PresentDamage;
 
 use super::shm_buffer::ShmBuffer;
 
@@ -57,7 +58,7 @@ impl WaylandPresenter {
         pixels: &[u32],
         width: i32,
         height: i32,
-        dirty_rect: Option<(i32, i32, i32, i32)>,
+        damage: PresentDamage,
     ) {
         let needs_resize = width != self.width
             || height != self.height
@@ -102,9 +103,15 @@ impl WaylandPresenter {
         };
 
         surface.attach(Some(&shm.buffer), 0, 0);
-        match dirty_rect {
-            Some((x, y, w, h)) if w > 0 && h > 0 => surface.damage_buffer(x, y, w, h),
-            _ => surface.damage(0, 0, width, height),
+        match damage {
+            PresentDamage::Partial(ref rects) => {
+                for &(x, y, w, h) in rects {
+                    if w > 0 && h > 0 {
+                        surface.damage_buffer(x, y, w, h);
+                    }
+                }
+            }
+            PresentDamage::Full => surface.damage(0, 0, width, height),
         }
 
         let _cb: Main<wl_callback::WlCallback> = surface.frame();
@@ -168,7 +175,7 @@ impl IPresenter for WaylandPresenter {
         pixels: &[u32],
         width: i32,
         height: i32,
-        dirty_rect: Option<(i32, i32, i32, i32)>,
+        damage: PresentDamage,
     ) -> Result<(), Error> {
         self.present_impl(pixels, width, height, dirty_rect);
         Ok(())

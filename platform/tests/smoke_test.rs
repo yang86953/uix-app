@@ -232,7 +232,7 @@ fn fake_display_configure() {
 fn fake_presenter_tracks_calls() {
     let mut pf = FakePlatform::new();
     pf.presenter
-        .present(&[0xFF0000; 100], 10, 10, None)
+        .present(&[0xFF0000; 100], 10, 10, uix_platform::PresentDamage::Full)
         .unwrap();
     assert_eq!(pf.presenter.present_count(), 1);
 }
@@ -872,7 +872,7 @@ fn window_presenter_access() {
         .create_window("present", 100, 100)
         .unwrap();
     let p = win.presenter();
-    p.present(&[0xFF; 100], 10, 10, None).unwrap();
+    p.present(&[0xFF; 100], 10, 10, uix_platform::PresentDamage::Full).unwrap();
     // 通过 Platform trait 也可以访问 presenter
     // 这里直接验证 presenter 工作
 }
@@ -937,7 +937,9 @@ fn full_window_display_present_sequence() {
 
     // 呈现一帧像素（通过窗口自己的 presenter）
     let pixels: Vec<u32> = vec![0xFF0000; 200 * 100];
-    win.presenter().present(&pixels, 200, 100, None).unwrap();
+    win.presenter()
+        .present(&pixels, 200, 100, uix_platform::PresentDamage::Full)
+        .unwrap();
 
     // 注入一个鼠标事件
     pf.event_source.inject(UiEvent::mouse_down(
@@ -982,7 +984,9 @@ fn clipboard_large_text() {
 fn presenter_large_pixels() {
     let mut pf = FakePlatform::new();
     let pixels = vec![0x12345678u32; 10_000];
-    pf.presenter.present(&pixels, 100, 100, None).unwrap();
+    pf.presenter
+        .present(&pixels, 100, 100, uix_platform::PresentDamage::Full)
+        .unwrap();
     assert_eq!(pf.presenter.state.last_pixels.len(), 10_000);
     assert_eq!(pf.presenter.state.last_pixels[0], 0x12345678);
 }
@@ -990,7 +994,9 @@ fn presenter_large_pixels() {
 #[test]
 fn presenter_empty_pixels() {
     let mut pf = FakePlatform::new();
-    pf.presenter.present(&[], 0, 0, None).unwrap();
+    pf.presenter
+        .present(&[], 0, 0, uix_platform::PresentDamage::Full)
+        .unwrap();
     assert_eq!(pf.presenter.state.last_pixels.len(), 0);
 }
 
@@ -998,10 +1004,15 @@ fn presenter_empty_pixels() {
 fn presenter_dirty_rect() {
     let mut pf = FakePlatform::new();
     pf.presenter
-        .present(&[0xFF; 100], 10, 10, Some((2, 3, 6, 7)))
+        .present(
+            &[0xFF; 100],
+            10,
+            10,
+            uix_platform::PresentDamage::single(2, 3, 6, 7),
+        )
         .unwrap();
     let call = &pf.presenter.state.present_calls[0];
-    assert_eq!(call.dirty_rect, Some((2, 3, 6, 7)));
+    assert_eq!(call.damage, uix_platform::PresentDamage::single(2, 3, 6, 7));
 }
 
 #[test]

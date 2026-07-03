@@ -42,7 +42,7 @@ define_widget! {
         placement: NotifPlacement,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::zero()
     }
 
@@ -70,9 +70,7 @@ define_widget! {
         !self.queue.borrow().is_empty()
     }
 
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
-
-    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let queue = self.queue.borrow();
         if queue.is_empty() { return; }
         let notif_w = 384.0;

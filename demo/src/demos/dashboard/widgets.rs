@@ -1,5 +1,5 @@
 use uix::define_widget;
-use uix::graphics::{Color, GraphicsEngine};
+use uix::graphics::{Color, traits::GraphicsEngine};
 use uix::platform::{Point, Rect, Size};
 use uix::ui::render_context::RenderContext;
 use uix::ui::widget::WidgetTree;

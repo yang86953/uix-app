@@ -6,5 +6,7 @@
 pub mod traits;
 pub mod types;
 
-pub use traits::*;
+pub use traits::{
+    Canvas2D, GraphicsCapabilities, PresentationMode, RenderingBackend, UpdateStrategy,
+};
 pub use types::*;

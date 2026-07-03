@@ -3,8 +3,11 @@
 //! 持有 Canvas2D（2D 零成本路径）和 SpatialContext（3D 空间路径），
 //! 组合 TextRenderService 与 DebugRenderService。
 
+use std::ptr::NonNull;
+
 use crate::debug::DebugRenderService;
 use crate::font_service::FontService;
+use crate::painting::display_list::{DisplayList, PaintOp, PaintPass};
 use crate::painting::ThemeTokens;
 use crate::path::{FillRule, Path};
 use crate::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
@@ -28,6 +31,15 @@ pub struct PaintContext<'a> {
 
     /// 设计令牌。
     tokens: &'a dyn ThemeTokens,
+
+    /// 当前绘制阶段（合成器设置）。
+    paint_pass: PaintPass,
+
+    /// 可选：录制绘制指令到 DisplayList（独立生命周期，不绑定 canvas）。
+    recorder: Option<NonNull<DisplayList>>,
+
+    /// 是否向 recorder 写入（replay 时关闭）。
+    record_ops: bool,
 }
 
 /// 兼容 UI 层既有命名。
@@ -64,6 +76,40 @@ impl<'a> PaintContext<'a> {
             text: TextRenderService::new(font, font_service, f32::MAX),
             debug: DebugRenderService::new(false),
             tokens,
+            paint_pass: PaintPass::Content,
+            recorder: None,
+            record_ops: true,
+        }
+    }
+
+    /// 当前绘制阶段。
+    pub fn paint_pass(&self) -> PaintPass {
+        self.paint_pass
+    }
+
+    /// 设置绘制阶段（合成器在子节点前后切换）。
+    pub fn set_paint_pass(&mut self, pass: PaintPass) {
+        self.paint_pass = pass;
+    }
+
+    /// 绑定 DisplayList 录制目标。
+    pub fn set_recorder(&mut self, recorder: Option<&mut DisplayList>) {
+        self.recorder = recorder.map(NonNull::from);
+    }
+
+    /// 暂停/恢复指令录制（replay 时使用）。
+    pub fn set_record_ops(&mut self, on: bool) {
+        self.record_ops = on;
+    }
+
+    fn record_op(&mut self, op: PaintOp) {
+        if self.record_ops {
+            if let Some(mut list) = self.recorder {
+                // SAFETY: recorder 仅在 set_recorder 与 paint 调用栈内有效，调用方保证 list 存活。
+                unsafe {
+                    list.as_mut().push(op);
+                }
+            }
         }
     }
 
@@ -84,12 +130,18 @@ impl<'a> PaintContext<'a> {
     /// 填充矩形。
     #[inline(always)]
     pub fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
+        self.record_op(PaintOp::FillRect {
+            rect,
+            color,
+            radius,
+        });
         self.spatial.canvas_2d().fill_rect(rect, color, radius);
     }
 
     /// 填充圆形。
     #[inline(always)]
     pub fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
+        self.record_op(PaintOp::FillCircle { cx, cy, r, color });
         self.spatial.canvas_2d().fill_circle(cx, cy, r, color);
     }
 
@@ -130,6 +182,12 @@ impl<'a> PaintContext<'a> {
         line_width: f32,
         radius: Option<Radius>,
     ) {
+        self.record_op(PaintOp::StrokeRect {
+            rect,
+            color,
+            line_width,
+            radius,
+        });
         self.spatial
             .canvas_2d()
             .stroke_rect(rect, color, line_width, radius);
@@ -168,6 +226,12 @@ impl<'a> PaintContext<'a> {
         color_b: Color,
         dir: GradientDirection,
     ) {
+        self.record_op(PaintOp::FillLinearGradient {
+            rect,
+            color_a,
+            color_b,
+            dir,
+        });
         self.spatial
             .canvas_2d()
             .fill_linear_gradient(rect, color_a, color_b, dir);
@@ -207,6 +271,14 @@ impl<'a> PaintContext<'a> {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
+        self.record_op(PaintOp::DrawBoxShadow {
+            rect,
+            blur_radius,
+            offset_x,
+            offset_y,
+            color,
+            corner_radius,
+        });
         self.spatial.canvas_2d().draw_box_shadow(
             rect,
             blur_radius,
@@ -243,12 +315,14 @@ impl<'a> PaintContext<'a> {
     /// 保存渲染状态。
     #[inline(always)]
     pub fn save(&mut self) {
+        self.record_op(PaintOp::Save);
         self.spatial.canvas_2d().save();
     }
 
     /// 恢复渲染状态。
     #[inline(always)]
     pub fn restore(&mut self) {
+        self.record_op(PaintOp::Restore);
         self.spatial.canvas_2d().restore();
     }
 
@@ -298,6 +372,12 @@ impl<'a> PaintContext<'a> {
 
     /// 绘制文本（左对齐，顶部对齐）。
     pub fn draw_text(&mut self, text: &str, pos: Point, color: Color, font_size: f32) {
+        self.record_op(PaintOp::DrawText {
+            text: text.to_string(),
+            pos,
+            color,
+            font_size,
+        });
         self.text
             .draw_text(self.spatial.canvas_2d(), text, pos, color, font_size);
     }
@@ -323,6 +403,12 @@ impl<'a> PaintContext<'a> {
 
     /// 在矩形内居中绘制文本。
     pub fn text_center(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
+        self.record_op(PaintOp::TextCenter {
+            text: text.to_string(),
+            rect,
+            color,
+            font_size,
+        });
         self.text
             .text_center(self.spatial.canvas_2d(), text, rect, color, font_size);
     }

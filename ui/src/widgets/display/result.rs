@@ -30,7 +30,7 @@ define_widget! {
         extra_text: String,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(400.0, 300.0)
     }
 

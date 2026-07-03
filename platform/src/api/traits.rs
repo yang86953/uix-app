@@ -7,7 +7,7 @@
 
 use super::types::{
     ConsoleColor, CursorType, DisplayInfo, Error, EventBus, KeyCode, MemoryInfo, OsInfo, Point,
-    Result, SpecialDir, TerminalCapabilities, UiEvent,
+    PresentDamage, Result, SpecialDir, TerminalCapabilities, UiEvent,
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -21,7 +21,7 @@ pub trait IPresenter {
         pixels: &[u32],
         width: i32,
         height: i32,
-        dirty_rect: Option<(i32, i32, i32, i32)>,
+        damage: PresentDamage,
     ) -> Result<(), Error>;
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
 }

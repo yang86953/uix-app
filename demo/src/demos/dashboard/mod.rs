@@ -9,7 +9,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
 use uix::app::map_ui_event;
-use uix::graphics::{GraphicsEngine, SoftwareEngine};
+use uix::graphics::{SoftwareEngine, traits::GraphicsEngine};
 use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
 use uix::platform::{create_platform, EdgeInsets, KeyCode, Platform, Point, Rect};
 use uix::tree;

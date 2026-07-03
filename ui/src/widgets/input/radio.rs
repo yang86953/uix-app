@@ -3,7 +3,7 @@
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, WidgetEvent, WidgetTree};
-use uix_graphics::{GraphicsEngine, Radius};
+use uix_graphics::{traits::GraphicsEngine, Radius};
 use uix_platform::{Point, Rect, Size};
 
 /// 方向。

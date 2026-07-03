@@ -18,7 +18,7 @@ define_widget! {
 
 
     tab_index => (&self) -> i32 { 1 }
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(200.0, 32.0)
     }
 

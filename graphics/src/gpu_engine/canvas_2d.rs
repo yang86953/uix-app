@@ -1,11 +1,11 @@
-//! GpuCanvas2D — GPU 加速的 Canvas2D 实现，未实现的方法用软件回退。
+//! GpuCanvas2D — GPU 加速的 Canvas2D 实现，未实现的方法走 SharedRasterizer。
 
 use glow::HasContext as _;
 use uix_platform::{Errc, Error, Rect};
 
 use crate::color::Color;
-use crate::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::engine::cpu::pixel_surface::PixelSurface;
+use crate::engine::cpu::shared_rasterizer::SharedRasterizer;
 use crate::path::{FillRule, Path};
 use crate::rasterizer::core as rast;
 use crate::stroker::StrokeOptions;
@@ -35,8 +35,8 @@ pub struct GpuCanvas2D {
     u_color_loc: Option<glow::UniformLocation>,
     u_radius_loc: Option<glow::UniformLocation>,
 
-    // ── 软件回退（未实现 GPU 路径的方法走 CPU 渲染）──
-    soft_fallback: CpuCanvas2D,
+    // ── 未实现 GPU 路径 → SharedRasterizer CPU 光栅化 ──
+    soft_fallback: SharedRasterizer,
     fallback_texture: glow::Texture,
 
     // ── 表面尺寸 ──
@@ -206,7 +206,7 @@ impl GpuCanvas2D {
             u_rect_loc,
             u_color_loc,
             u_radius_loc,
-            soft_fallback: CpuCanvas2D::new(PixelSurface::new(width.max(1), height.max(1))),
+            soft_fallback: SharedRasterizer::new(PixelSurface::new(width.max(1), height.max(1))),
             fallback_texture,
             surface_w: width,
             surface_h: height,
@@ -217,7 +217,7 @@ impl GpuCanvas2D {
         self.surface_w = width;
         self.surface_h = height;
         self.clip_rect = Rect::new(0.0, 0.0, width as f32, height as f32);
-        self.soft_fallback = CpuCanvas2D::new(PixelSurface::new(width.max(1), height.max(1)));
+        self.soft_fallback = SharedRasterizer::new(PixelSurface::new(width.max(1), height.max(1)));
         let new_tex = unsafe { Self::create_fallback_texture(self.gl(), width, height)? };
         unsafe {
             self.gl().delete_texture(self.fallback_texture);

@@ -9,7 +9,7 @@ use crate::render_context::RenderContext;
 use crate::style::Style;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
 use uix_graphics::spatial::PhysicalUnit;
-use uix_graphics::{GraphicsEngine, TextLayoutOptions};
+use uix_graphics::{traits::GraphicsEngine, TextLayoutOptions};
 use uix_platform::{Rect, Size};
 
 define_widget! {

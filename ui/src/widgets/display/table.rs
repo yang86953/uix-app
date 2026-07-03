@@ -85,7 +85,7 @@ define_widget! {
         on_change: Option<TableChangeCallback>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let w: f32 = self.columns.iter().map(|c| c.width).sum();
         let data_rows = self.rows.len().min(self.page_size);
         let extra = if self.expanded_row.get().is_some() { self.expand_height } else { 0.0 };

@@ -21,7 +21,7 @@ define_widget! {
         selected_idx: usize,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(200.0, 32.0)
     }
 

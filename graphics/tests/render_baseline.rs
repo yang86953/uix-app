@@ -21,7 +21,6 @@ fn render_baseline_invalidation_labels_distinct() {
         InvalidationSource::DirtyRegion,
         InvalidationSource::AnimationPolling,
         InvalidationSource::LayoutEvent,
-        InvalidationSource::FrameGraphCull,
     ];
     let labels: Vec<_> = sources.iter().map(|s| s.label()).collect();
     let unique: std::collections::HashSet<_> = labels.iter().copied().collect();

@@ -90,7 +90,7 @@ define_widget! {
         layout: FormLayout,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         match self.layout {
             FormLayout::Vertical => Size::new(400.0, 56.0),
             FormLayout::Inline => Size::new(200.0, 44.0),
@@ -267,7 +267,7 @@ define_widget! {
         on_finish_failed: Option<FormFinishFailedCallback>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(400.0, 200.0)
     }
 

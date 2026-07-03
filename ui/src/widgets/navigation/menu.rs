@@ -38,7 +38,7 @@ define_widget! {
         on_click: Option<Box<dyn FnMut(usize) + 'static>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         match self.mode {
             MenuMode::Horizontal => {
                 let w = self.items.iter().map(|i| i.label.len() as f32 * 8.0 + 32.0).sum::<f32>();

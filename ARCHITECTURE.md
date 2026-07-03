@@ -1,6 +1,6 @@
 # UIX 架构设计
 
-> 最后更新: 2026-07-03
+> 最后更新: 2026-07-04
 > 本文档是项目的实时架构地图，随代码变更同步更新。
 
 ---
@@ -28,7 +28,7 @@ uix ──→ app ──→ ui ──→ graphics ──→ platform
 | Crate | 核心导出 |
 |-------|---------|
 | **uix-platform** | `Platform`, `IPresenter`, `IEventLoop`, `Error`, `EventBus`, `UiEvent`, `Point/Size/Rect` |
-| **uix-graphics** | `GraphicsEngine`, `Canvas2D`, `RenderingBackend`, `Color`, `Path`, `FrameGraph`, `FontService`, `SpatialContext` |
+| **uix-graphics** | `RenderSession`, `RenderBackend`, `Canvas2D`, `DamageRegion`, `PresentDamage`, `SoftwareEngine`, `Color`, `Path`, `FontService`, `SpatialContext` |
 | **uix-ui** | `WidgetComponent`, `WidgetLayout`, `WidgetRender`, `WidgetEventHandler`, `WidgetLifecycle`, `State`/`Computed`/`Effect`, `WidgetTree`, `TokenProvider`, `LayoutEngine` |
 | **uix-app** | `App`, `AppMode`, `Window`, `Cli`, `Container` |
 
@@ -39,7 +39,7 @@ uix ──→ app ──→ ui ──→ graphics ──→ platform
 ```
 app 层     入口 + 窗口 + CLI + DI
 ui 层      Widget 框架 + 组件库 + 状态 + 布局 + 动画 + 主题 + LayerTree
-graphics 层 2D 渲染引擎 + FrameGraph + 光栅化 + 字体 + 空间坐标
+graphics 层 2D 渲染引擎 + RenderPipeline + 光栅化 + 字体 + 空间坐标
 platform 层 OS 抽象 — Win32 / Wayland / 文件 / 日志 / 通知 / 设置
 ```
 
@@ -108,7 +108,7 @@ OS 事件 → IEventLoop → pending_events → WidgetTree.dispatch_event()
 | 决策 | 方案 | 原因 |
 |------|------|------|
 | Widget 能力位 | `WidgetCapabilities` 位标记 + `WidgetComponent` 上转型 | 避免上帝接口，按需实现 Layout/Render/Event/Lifecycle |
-| 增量渲染 | scroll_region + DirtyRects + FrameGraph Pass culling | CPU 渲染性能关键，只重绘变化像素 |
+| 增量渲染 | scroll_region + DirtyRects + multi-rect PresentDamage | CPU 渲染性能关键，只重绘变化像素 |
 | API 外观模式 | 每个 crate 的 `api/` 模块定义公开契约 | 内部重构不影响外部使用者 |
 | 响应式状态 | `State<T>` + thread_local 依赖追踪 | Computed 自动追踪依赖，惰性求值 |
 | LayerTree | Picture(离屏) / ClipRect(裁剪) / Direct(直接) 三类节点 | 支持 RepaintBoundary 嵌套，按 z_index 预排序 |

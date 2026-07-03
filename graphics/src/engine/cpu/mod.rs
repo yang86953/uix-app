@@ -6,4 +6,5 @@ pub mod canvas_2d;
 pub mod noop_canvas_2d;
 pub mod pixel_surface;
 pub mod raster_renderer;
+pub mod shared_rasterizer;
 pub mod software;

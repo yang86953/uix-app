@@ -25,7 +25,7 @@ use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
 use uix_graphics::spatial::PhysicalUnit;
-use uix_graphics::{Color, GraphicsEngine, Radius};
+use uix_graphics::{Color, traits::GraphicsEngine, Radius};
 use uix_platform::{Point, Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════

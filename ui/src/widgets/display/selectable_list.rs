@@ -8,7 +8,7 @@ use std::cell::Cell;
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
-use uix_graphics::{Color, GraphicsEngine, Radius};
+use uix_graphics::{Color, traits::GraphicsEngine, Radius};
 use uix_platform::{Point, Rect, Size};
 
 /// 列表项数据

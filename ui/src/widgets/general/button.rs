@@ -4,7 +4,7 @@ use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::style::Style;
 use crate::widget::{EventResult, WidgetEvent, WidgetTree};
-use uix_graphics::{Color, GraphicsEngine};
+use uix_graphics::{Color, traits::GraphicsEngine};
 use uix_platform::{KeyCode, Point, Rect, Size};
 
 /// Button style variant.
@@ -161,12 +161,10 @@ define_widget! {
                 ctx.draw_text(&self.text, Point::new(tx, ty), style.color, style.font_size);
             }
         }
-    }
 
-    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+        // 点击波纹动画
         let Some(ref anim) = self.ripple_anim else { return; };
         let progress = anim.current_value();
-        let _style = self.compute_style(ctx);
         let page_bg = ctx.tokens().color_bg_container();
         let base = match self.variant {
             ButtonVariant::Primary => ctx.tokens().color_primary().mix(&Color::black(), 0.3),

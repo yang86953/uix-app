@@ -9,6 +9,9 @@ pub use crate::error::{
     ErrorSeverity, Result, ResultErrorExt, ResultExt,
 };
 
+// ── 呈现损伤 ──
+pub use crate::present_damage::PresentDamage;
+
 // ── 几何类型 ──
 pub use crate::geometry::{EdgeInsets, Point, Rect, Size};
 

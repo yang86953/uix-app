@@ -1,7 +1,7 @@
 //! CLI 演示 — 从命令行运行所有主要 UIX 子系统的功能演示。
 
 use std::cell::Cell;
-use uix::graphics::{self, colors, GraphicsEngine};
+use uix::graphics::{self, colors, traits::GraphicsEngine};
 use uix::platform::diagnostic::{
     LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
 };

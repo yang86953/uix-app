@@ -32,7 +32,7 @@ define_widget! {
         cached_content_size: Cell<Size>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let mh = self.style.margin.horizontal();
         let mv = self.style.margin.vertical();
         let bh = self.style.border_width * 2.0;

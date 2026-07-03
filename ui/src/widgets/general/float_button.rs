@@ -20,7 +20,7 @@ define_widget! {
         hovered: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::zero() // 不占用布局空间
     }
 
@@ -32,10 +32,7 @@ define_widget! {
         }
     }
 
-    // 使用 post_render 作为浮层绘制
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
-
-    post_render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
         let loc = crate::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();

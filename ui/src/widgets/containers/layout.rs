@@ -5,7 +5,7 @@
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::WidgetTree;
-use uix_graphics::{Color, GraphicsEngine};
+use uix_graphics::{Color, traits::GraphicsEngine};
 use uix_platform::{Rect, Size};
 
 define_widget! {

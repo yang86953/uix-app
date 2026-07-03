@@ -39,7 +39,7 @@ define_widget! {
         closing: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         if self.overlay {
             // 覆盖层模式：不参与父容器 flex 布局
             Size::zero()

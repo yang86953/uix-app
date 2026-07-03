@@ -2,13 +2,14 @@
 
 use crate::api::traits::IPresenter;
 use crate::error::Result;
+use crate::PresentDamage;
 
 #[derive(Debug, Clone)]
 pub struct PresentCall {
     pub width: i32,
     pub height: i32,
     pub pixels_len: usize,
-    pub dirty_rect: Option<(i32, i32, i32, i32)>,
+    pub damage: PresentDamage,
 }
 
 #[derive(Debug, Clone)]
@@ -69,14 +70,14 @@ impl IPresenter for FakePresenter {
         pixels: &[u32],
         width: i32,
         height: i32,
-        dirty_rect: Option<(i32, i32, i32, i32)>,
+        damage: PresentDamage,
     ) -> Result<()> {
         self.state.last_pixels = pixels.to_vec();
         self.state.present_calls.push(PresentCall {
             width,
             height,
             pixels_len: pixels.len(),
-            dirty_rect,
+            damage,
         });
         Ok(())
     }

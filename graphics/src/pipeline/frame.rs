@@ -2,6 +2,7 @@
 
 use uix_platform::Rect;
 
+use crate::backend::DamageRegion;
 use crate::backend::traits::{BackendCapabilities, DrawSurface};
 use crate::engine::RenderOutcome;
 use crate::traits::UpdateStrategy;
@@ -95,13 +96,13 @@ pub fn begin_frame(
         }
     }
 
-    RenderOutcome::Present(None)
+    RenderOutcome::Present(DamageRegion::full())
 }
 
 /// 帧结束：恢复裁剪栈。
 pub fn end_frame(surface: &mut dyn DrawSurface) -> RenderOutcome {
     surface.pop_clip();
-    RenderOutcome::Present(None)
+    RenderOutcome::Present(DamageRegion::full())
 }
 
 #[cfg(test)]
@@ -149,7 +150,7 @@ mod tests {
             10,
             BackendCapabilities::cpu(),
         );
-        assert_eq!(outcome, RenderOutcome::Present(None));
+        assert_eq!(outcome, RenderOutcome::Present(DamageRegion::full()));
         end_frame(&mut surface);
     }
 
@@ -163,7 +164,7 @@ mod tests {
             20,
             BackendCapabilities::gpu_full_redraw(),
         );
-        assert_eq!(outcome, RenderOutcome::Present(None));
+        assert_eq!(outcome, RenderOutcome::Present(DamageRegion::full()));
         end_frame(&mut surface);
     }
 }

@@ -17,7 +17,7 @@ define_widget! {
         tab_offset: usize,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         Size::new(0.0, 0.0)
     }
 

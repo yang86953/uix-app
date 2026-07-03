@@ -37,7 +37,7 @@ impl WidgetComponent for SpyWidget {
     crate::wc_upcast!(SpyWidget; WidgetEventHandler);
 }
 impl WidgetLayout for SpyWidget {
-    fn preferred_size(&self, _: Option<&dyn uix_graphics::GraphicsEngine>) -> uix_platform::Size {
+    fn preferred_size(&self, _: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> uix_platform::Size {
         self.size
     }
 }
@@ -83,7 +83,7 @@ impl WidgetComponent for PassThroughContainer {
     crate::wc_upcast!(PassThroughContainer; WidgetEventHandler);
 }
 impl WidgetLayout for PassThroughContainer {
-    fn preferred_size(&self, _: Option<&dyn uix_graphics::GraphicsEngine>) -> uix_platform::Size {
+    fn preferred_size(&self, _: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> uix_platform::Size {
         self.size
     }
 }

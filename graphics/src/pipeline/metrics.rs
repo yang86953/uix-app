@@ -14,9 +14,6 @@ pub enum InvalidationSource {
     AnimationPolling,
     /// 布局相关 OS 事件（resize 等）。
     LayoutEvent,
-    /// 已废弃：FrameGraph 已从 UI 路径移除（Phase 2）。
-    #[allow(dead_code)]
-    FrameGraphCull,
 }
 
 impl InvalidationSource {
@@ -28,7 +25,6 @@ impl InvalidationSource {
             Self::DirtyRegion => "dirty_region",
             Self::AnimationPolling => "animation",
             Self::LayoutEvent => "layout_event",
-            Self::FrameGraphCull => "fg_cull",
         }
     }
 }
@@ -69,11 +65,6 @@ impl RenderMetrics {
     pub fn record_idle_with_source(&mut self, source: InvalidationSource) {
         self.idle_frames += 1;
         self.last_invalidation = source;
-    }
-
-    pub fn record_frame_graph_cull(&mut self) {
-        self.idle_frames += 1;
-        self.last_invalidation = InvalidationSource::FrameGraphCull;
     }
 }
 

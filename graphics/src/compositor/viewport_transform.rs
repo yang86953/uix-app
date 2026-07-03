@@ -164,7 +164,6 @@ mod tests {
             }
         }
         fn paint(&self, _: NodeId, _: Rect, _: &mut PaintContext<'_>) {}
-        fn paint_overlay(&self, _: NodeId, _: Rect, _: &mut PaintContext<'_>) {}
     }
 
     #[test]

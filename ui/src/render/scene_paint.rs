@@ -84,14 +84,6 @@ impl ScenePaint for WidgetTree {
             }
         }
     }
-
-    fn paint_overlay(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
-        if let Some(node) = self.get(id) {
-            if node.visible() {
-                node.post_render(frame, ctx, self);
-            }
-        }
-    }
 }
 
 // WidgetId 与 NodeId 同型

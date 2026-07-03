@@ -38,7 +38,7 @@ define_widget! {
         last_frame_and_step_w: Cell<Option<(Rect, f32)>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         if self.direction {
             Size::new(600.0, 80.0)
         } else {

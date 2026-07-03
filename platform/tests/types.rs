@@ -242,14 +242,19 @@ fn null_presenter_new() {
 #[test]
 fn null_presenter_present_returns_ok() {
     let mut p = NullPresenter::new();
-    let result = p.present(&[0u32; 100], 10, 10, Some((0, 0, 10, 10)));
+    let result = p.present(
+        &[0u32; 100],
+        10,
+        10,
+        uix_platform::PresentDamage::single(0, 0, 10, 10),
+    );
     assert!(result.is_ok());
 }
 
 #[test]
 fn null_presenter_present_without_dirty_rect() {
     let mut p = NullPresenter::new();
-    let result = p.present(&[], 0, 0, None);
+    let result = p.present(&[], 0, 0, uix_platform::PresentDamage::Full);
     assert!(result.is_ok());
 }
 

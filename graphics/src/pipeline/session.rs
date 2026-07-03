@@ -168,6 +168,7 @@ fn resolve_kind(kind: BackendKind) -> BackendKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::DamageRegion;
 
     #[test]
     fn set_backend_to_null_forces_full_frame_once() {
@@ -176,7 +177,7 @@ mod tests {
         session.set_backend(BackendKind::Null).expect("switch");
         assert_eq!(session.backend_kind(), BackendKind::Null);
         let outcome = session.begin_frame(UpdateStrategy::DirtyRects(vec![]));
-        assert_eq!(outcome, RenderOutcome::Present(None));
+        assert_eq!(outcome, RenderOutcome::Present(DamageRegion::full()));
         session.end_frame();
         let outcome = session.begin_frame(UpdateStrategy::DirtyRects(vec![]));
         assert_eq!(outcome, RenderOutcome::Idle);

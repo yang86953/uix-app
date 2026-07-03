@@ -8,7 +8,7 @@ use crate::children::WidgetChildren;
 use crate::define_widget;
 use crate::render_context::RenderContext;
 use crate::widget::{EventResult, WidgetComponent, WidgetEvent, WidgetId, WidgetTree};
-use uix_graphics::GraphicsEngine;
+use uix_graphics::traits::GraphicsEngine;
 use uix_platform::{Point, Rect, Size};
 
 define_widget! {

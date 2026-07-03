@@ -39,7 +39,7 @@ define_widget! {
         indet_anim: Option<Animation<f32>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         if self.progress_type == ProgressType::Circle {
             let d = self.width.max(self.height);
             return Size::new(d, d);

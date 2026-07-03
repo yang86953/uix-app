@@ -32,7 +32,7 @@ define_widget! {
         separator: String,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         if self.items.is_empty() { return Size::zero(); }
         let mut w = 0.0f32;
         for (i, item) in self.items.iter().enumerate() {

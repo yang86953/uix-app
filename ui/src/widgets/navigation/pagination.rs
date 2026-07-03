@@ -22,7 +22,7 @@ define_widget! {
         on_change: Option<Box<dyn FnMut(usize) + 'static>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn uix_graphics::GraphicsEngine>) -> Size {
+    preferred_size => (&self, _engine: Option<&dyn uix_graphics::traits::GraphicsEngine>) -> Size {
         let pages = self.total.div_ceil(self.page_size);
         let count = pages.min(7) as f32; // 最多显示 7 个页码按钮
         Size::new(count * (self.size + 4.0) + 80.0, self.size + 8.0)

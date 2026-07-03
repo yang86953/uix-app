@@ -10,8 +10,9 @@ use crate::compositor::picture::{blit_picture_cache, rasterize_picture_to_offscr
 use crate::compositor::viewport_transform::{needs_paint, needs_paint_rect};
 use crate::compositor::ScenePaint;
 use crate::font_service::FontService;
-use crate::painting::{PaintContext, ThemeSnapshot};
+use crate::painting::{DisplayList, PaintContext, PaintPass, ThemeSnapshot};
 use crate::pipeline::NodeId;
+use crate::render_object::RenderObjectTree;
 use crate::traits::GraphicsEngine;
 use crate::types::{DirtyRegion, ImageHandle};
 use crate::FontHandle;
@@ -25,6 +26,8 @@ pub enum LayerNode {
         bounds: Rect,
         is_dirty: bool,
         offscreen_handle: Option<ImageHandle>,
+        /// widget 自身 Content 阶段的 DisplayList（Phase 7 离屏回放缓存）。
+        display_list: Option<DisplayList>,
         children: Vec<LayerNode>,
         /// 离屏创建连续失败计数，rebuild 时重置为 0。
         retry_count: u8,
@@ -50,6 +53,7 @@ impl std::fmt::Debug for LayerNode {
                 bounds,
                 is_dirty,
                 offscreen_handle,
+                display_list,
                 children,
                 retry_count,
             } => f
@@ -58,6 +62,7 @@ impl std::fmt::Debug for LayerNode {
                 .field("bounds", bounds)
                 .field("is_dirty", is_dirty)
                 .field("has_offscreen", &offscreen_handle.is_some())
+                .field("has_display_list", &display_list.is_some())
                 .field("children_count", &children.len())
                 .field("retry_count", retry_count)
                 .finish(),
@@ -163,9 +168,11 @@ impl LayerTree {
     /// 注意：build 后未复用的旧离屏缓冲句柄暂存在 `orphaned_handles` 中，
     /// 调用者需在合适的时机调用 `sweep_orphaned_offscreens` 释放。
     pub fn build(&mut self, scene: &impl ScenePaint) {
-        // 收集旧 Picture 节点的离屏缓冲（按 widget_id 索引）
-        let mut old_cache: std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>)> =
-            std::collections::HashMap::new();
+        // 收集旧 Picture 节点的离屏缓冲与 DisplayList（按 widget_id 索引）
+        let mut old_cache: std::collections::HashMap<
+            NodeId,
+            (Rect, Option<ImageHandle>, Option<DisplayList>),
+        > = std::collections::HashMap::new();
         if let Some(ref root) = self.root {
             Self::collect_picture_handles(root, &mut old_cache);
         }
@@ -176,7 +183,7 @@ impl LayerTree {
 
         // 收集未复用的旧句柄（需要在引擎上下文中释放）
         self.orphaned_handles.clear();
-        for (_, (_, handle_opt)) in old_cache {
+        for (_, (_, handle_opt, _)) in old_cache {
             if let Some(h) = handle_opt {
                 self.orphaned_handles.push(h);
             }
@@ -198,11 +205,7 @@ impl LayerTree {
         }
     }
 
-    /// 渲染图层树。
-    /// 子节点已在 build 时预排序，渲染时直接遍历。
-    /// 每个节点做空间+脏状态双剪枝：
-    /// - frame 与 dirty_region 无交集且 widget 不脏 → 跳过 render_self
-    /// - Picture is_dirty=false → 跳过整棵子树
+    /// 单 Pass 渲染：按 z-order 合成 widget 绘制、调试覆盖与焦点环（Phase 7）。
     pub fn render(
         &mut self,
         engine: &mut dyn GraphicsEngine,
@@ -210,6 +213,9 @@ impl LayerTree {
         theme: &ThemeSnapshot<'_>,
         font: FontHandle,
         font_service: &FontService,
+        debug_mode: bool,
+        hover_pos: Option<Point>,
+        render_objects: Option<&mut RenderObjectTree>,
     ) {
         let dirty_region = scene.dirty_region();
         let dpi = engine.dpi();
@@ -225,6 +231,23 @@ impl LayerTree {
             dpr,
             orientation,
         };
+
+        let hovered_chain: Option<HashSet<NodeId>> = if debug_mode {
+            hover_pos.and_then(|pos| {
+                let deepest = scene.hit_test(pos)?;
+                let mut chain = HashSet::new();
+                let mut current = deepest;
+                chain.insert(current);
+                while let Some(pid) = scene.parent(current) {
+                    chain.insert(pid);
+                    current = pid;
+                }
+                Some(chain)
+            })
+        } else {
+            None
+        };
+
         if let Some(ref mut root) = self.root {
             Self::render_node(
                 root,
@@ -234,8 +257,22 @@ impl LayerTree {
                 &env,
                 surface_w,
                 surface_h,
+                debug_mode,
+                &hovered_chain,
+                0,
+                render_objects,
             );
             root.mark_clean();
+        }
+
+        // 焦点环
+        if let Some(focused_id) = scene.focused_node() {
+            if scene.node_visible(focused_id) && scene.node_focusable(focused_id) {
+                let frame = scene.node_frame(focused_id);
+                let focus_color = theme.tokens().color_primary();
+                let mut ctx = Self::paint_context(engine, &env, surface_w, surface_h);
+                ctx.canvas_2d().stroke_rect(frame, focus_color, 2.0, None);
+            }
         }
     }
 
@@ -259,89 +296,6 @@ impl LayerTree {
         )
     }
 
-    /// 渲染 overlay 层（post_render，绘制在所有内容之上）。
-    /// 替代旧的 tree_render.rs 中的 post_render_pass 路径。
-    ///
-    /// 当 `debug_mode` 为 true 时：
-    /// - 所有 widget 绘制极淡彩色边框（alpha=30）
-    /// - 光标下的 widget 及其父链绘制高亮边框 + ID/深度标签 + 坐标信息
-    ///   `hover_pos` 为当前光标位置，用于调试模式的悬浮高亮。
-    ///   渲染 overlay 层（post_render 回调 + 调试覆盖）。
-    ///
-    /// `dirty_region` 用于跳过脏区域之外 widget 的 `post_render` 调用——
-    /// 当 widget 的 frame 与 dirty_region 无交集时，其 overlay 内容未变化，
-    /// 无需重新绘制。仅跳过 `post_render` 调用，子树递归仍继续，
-    /// 确保子树内可能有脏 widget 时不被遗漏。
-    /// 调试模式下始终渲染所有 widget 的调试边框。
-    pub fn render_overlays(
-        &self,
-        engine: &mut dyn GraphicsEngine,
-        scene: &impl ScenePaint,
-        theme: &ThemeSnapshot<'_>,
-        font: FontHandle,
-        font_service: &FontService,
-        debug_mode: bool,
-        hover_pos: Option<Point>,
-        dirty_region: &DirtyRegion,
-    ) {
-        let dpi = engine.dpi();
-        let dpr = engine.device_pixel_ratio();
-        let orientation = engine.orientation();
-        let surface_w = engine.canvas_2d().width();
-        let surface_h = engine.canvas_2d().height();
-        let mut rctx = PaintContext::new(
-            engine.canvas_2d(),
-            font,
-            font_service,
-            theme.tokens(),
-            dpi,
-            dpr,
-            orientation,
-            surface_w,
-            surface_h,
-        );
-        rctx.set_debug_mode(debug_mode);
-
-        // 预计算悬浮链：光标所在 widget + 所有父节点
-        let hovered_chain: Option<HashSet<NodeId>> = if debug_mode {
-            hover_pos.and_then(|pos| {
-                let deepest = scene.hit_test(pos)?;
-                let mut chain = HashSet::new();
-                let mut current = deepest;
-                chain.insert(current);
-                while let Some(pid) = scene.parent(current) {
-                    chain.insert(pid);
-                    current = pid;
-                }
-                Some(chain)
-            })
-        } else {
-            None
-        };
-
-        if let Some(ref root) = self.root {
-            Self::render_overlay_node(
-                root,
-                &mut rctx,
-                scene,
-                0,
-                &hovered_chain,
-                debug_mode,
-                dirty_region,
-            );
-        }
-
-        // 焦点环：在聚焦 widget 周围绘制 2px 轮廓
-        if let Some(focused_id) = scene.focused_node() {
-            if scene.node_visible(focused_id) && scene.node_focusable(focused_id) {
-                let frame = scene.node_frame(focused_id);
-                // 轮廓颜色使用主题 primary 色
-                let focus_color = theme.tokens().color_primary();
-                rctx.canvas_2d().stroke_rect(frame, focus_color, 2.0, None);
-            }
-        }
-    }
-
     pub fn invalidate(&mut self) {
         if let Some(ref mut root) = self.root {
             root.mark_dirty();
@@ -358,16 +312,23 @@ impl LayerTree {
     /// 同时重置 retry_count 为 0（rebuild 意味着新的尝试机会）。
     fn collect_picture_handles(
         node: &LayerNode,
-        cache: &mut std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>)>,
+        cache: &mut std::collections::HashMap<
+            NodeId,
+            (Rect, Option<ImageHandle>, Option<DisplayList>),
+        >,
     ) {
         match node {
             LayerNode::Picture {
                 widget_id,
                 bounds,
                 offscreen_handle,
+                display_list,
                 ..
             } => {
-                cache.insert(*widget_id, (*bounds, *offscreen_handle));
+                cache.insert(
+                    *widget_id,
+                    (*bounds, *offscreen_handle, display_list.clone()),
+                );
             }
             LayerNode::ClipRect { children, .. } | LayerNode::Direct { children, .. } => {
                 for child in children {
@@ -385,7 +346,10 @@ impl LayerTree {
     fn build_node_cached(
         scene: &impl ScenePaint,
         id: NodeId,
-        cache: &std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>)>,
+        cache: &std::collections::HashMap<
+            NodeId,
+            (Rect, Option<ImageHandle>, Option<DisplayList>),
+        >,
     ) -> Option<LayerNode> {
         if !scene.node_visible(id) {
             return None;
@@ -396,19 +360,23 @@ impl LayerTree {
             // frame 是绝对坐标，直接用作 bounds
             let bounds = frame;
             // 检查旧缓存：如果 bounds 相同，复用离屏句柄
-            let offscreen_handle = cache.get(&id).and_then(|(old_bounds, old_handle)| {
-                if *old_bounds == bounds {
-                    *old_handle
-                } else {
-                    None
-                }
-            });
+            let (offscreen_handle, display_list) =
+                cache.get(&id).map(|(old_bounds, old_handle, old_list)| {
+                    if *old_bounds == bounds {
+                        (*old_handle, old_list.clone())
+                    } else {
+                        (None, None)
+                    }
+                }).unwrap_or((None, None));
             let children = Self::build_children_cached(scene, id, cache);
             Some(LayerNode::Picture {
                 widget_id: id,
                 bounds,
-                is_dirty: offscreen_handle.is_none() || scene.node_dirty(id),
+                is_dirty: offscreen_handle.is_none()
+                    || display_list.is_none()
+                    || scene.node_dirty(id),
                 offscreen_handle,
+                display_list,
                 children,
                 retry_count: 0,
             })
@@ -434,7 +402,10 @@ impl LayerTree {
     fn build_children_cached(
         scene: &impl ScenePaint,
         id: NodeId,
-        cache: &std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>)>,
+        cache: &std::collections::HashMap<
+            NodeId,
+            (Rect, Option<ImageHandle>, Option<DisplayList>),
+        >,
     ) -> Vec<LayerNode> {
         let mut children: Vec<LayerNode> = scene
             .node_children(id)
@@ -497,6 +468,10 @@ impl LayerTree {
         env: &LayerRenderEnv<'_>,
         surface_w: i32,
         surface_h: i32,
+        debug_mode: bool,
+        hovered_chain: &Option<HashSet<NodeId>>,
+        depth: usize,
+        mut render_objects: Option<&mut RenderObjectTree>,
     ) {
         match node {
             LayerNode::Picture {
@@ -504,6 +479,7 @@ impl LayerTree {
                 bounds,
                 is_dirty,
                 offscreen_handle,
+                display_list,
                 children,
                 retry_count,
             } => {
@@ -522,6 +498,7 @@ impl LayerTree {
                         *widget_id,
                         bounds,
                         offscreen_handle,
+                        display_list,
                         children,
                         is_dirty,
                         scene,
@@ -545,7 +522,21 @@ impl LayerTree {
             } => {
                 if needs_paint(scene, *widget_id, dirty_region) {
                     let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
-                    Self::render_widget_self(*widget_id, &mut ctx, scene);
+                    Self::paint_widget(
+                        *widget_id,
+                        &mut ctx,
+                        scene,
+                        PaintPass::Content,
+                        render_objects.as_deref_mut(),
+                    );
+                    Self::draw_debug_for_widget(
+                        &mut ctx,
+                        scene,
+                        *widget_id,
+                        debug_mode,
+                        hovered_chain,
+                        depth,
+                    );
                 }
                 engine.canvas_2d().push_clip(*rect);
                 if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
@@ -560,12 +551,26 @@ impl LayerTree {
                         env,
                         surface_w,
                         surface_h,
+                        debug_mode,
+                        hovered_chain,
+                        depth + 1,
+                        render_objects.as_deref_mut(),
                     );
                 }
                 if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
                     engine.canvas_2d().translate(sx, sy);
                 }
                 engine.canvas_2d().pop_clip();
+                if needs_paint(scene, *widget_id, dirty_region) {
+                    let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
+                    Self::paint_widget(
+                        *widget_id,
+                        &mut ctx,
+                        scene,
+                        PaintPass::AfterChildren,
+                        None,
+                    );
+                }
             }
             LayerNode::Direct {
                 widget_id,
@@ -580,20 +585,64 @@ impl LayerTree {
                     env,
                     surface_w,
                     surface_h,
+                    debug_mode,
+                    hovered_chain,
+                    depth,
+                    render_objects,
                 );
             }
         }
     }
 
-    /// 仅渲染 widget 自身的视觉效果（不处理子节点）。
-    pub(crate) fn render_widget_self(id: NodeId, ctx: &mut PaintContext<'_>, scene: &impl ScenePaint) {
+    /// 按绘制阶段调用 widget `paint`；Content 阶段可走 RenderObject DisplayList 缓存。
+    fn paint_widget(
+        id: NodeId,
+        ctx: &mut PaintContext<'_>,
+        scene: &impl ScenePaint,
+        pass: PaintPass,
+        render_objects: Option<&mut RenderObjectTree>,
+    ) {
         if !scene.node_visible(id) {
             return;
         }
         let frame = scene.node_frame(id);
+        ctx.set_paint_pass(pass);
         ctx.save();
+        if pass == PaintPass::Content {
+            if let Some(ro) = render_objects {
+                ro.paint_content(id, frame, scene, ctx);
+                ctx.restore();
+                return;
+            }
+        }
         scene.paint(id, frame, ctx);
         ctx.restore();
+    }
+
+    fn draw_debug_for_widget(
+        ctx: &mut PaintContext<'_>,
+        scene: &impl ScenePaint,
+        widget_id: NodeId,
+        debug_mode: bool,
+        hovered_chain: &Option<HashSet<NodeId>>,
+        depth: usize,
+    ) {
+        if !debug_mode || !scene.node_visible(widget_id) {
+            return;
+        }
+        let frame = scene.node_frame(widget_id);
+        let hovered = hovered_chain
+            .as_ref()
+            .is_some_and(|c| c.contains(&widget_id));
+        ctx.draw_debug_border(frame, depth, hovered);
+        if hovered {
+            ctx.draw_debug_frame_info(widget_id, frame);
+        }
+    }
+
+    /// 仅渲染 widget 自身的视觉效果（不处理子节点）。
+    pub(crate) fn render_widget_self(id: NodeId, ctx: &mut PaintContext<'_>, scene: &impl ScenePaint) {
+        Self::paint_widget(id, ctx, scene, PaintPass::Content, None);
     }
 
     /// 渲染 widget 自身及其子节点（直接遍历 children LayerNodes）。
@@ -606,16 +655,24 @@ impl LayerTree {
         env: &LayerRenderEnv<'_>,
         surface_w: i32,
         surface_h: i32,
+        debug_mode: bool,
+        hovered_chain: &Option<HashSet<NodeId>>,
+        depth: usize,
+        mut render_objects: Option<&mut RenderObjectTree>,
     ) {
         if !scene.node_visible(id) {
             return;
         }
         if needs_paint(scene, id, dirty_region) {
-            let frame = scene.node_frame(id);
             let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
-            ctx.save();
-            scene.paint(id, frame, &mut ctx);
-            ctx.restore();
+            Self::paint_widget(
+                id,
+                &mut ctx,
+                scene,
+                PaintPass::Content,
+                render_objects.as_deref_mut(),
+            );
+            Self::draw_debug_for_widget(&mut ctx, scene, id, debug_mode, hovered_chain, depth);
         }
 
         if scene.node_visible(id) {
@@ -628,91 +685,11 @@ impl LayerTree {
                     env,
                     surface_w,
                     surface_h,
+                    debug_mode,
+                    hovered_chain,
+                    depth + 1,
+                    render_objects.as_deref_mut(),
                 );
-            }
-        }
-    }
-
-    /// 递归渲染 overlay 层（post_render 回调 + 调试覆盖）。
-    fn render_overlay_node(
-        node: &LayerNode,
-        ctx: &mut PaintContext<'_>,
-        scene: &impl ScenePaint,
-        depth: usize,
-        hovered_chain: &Option<HashSet<NodeId>>,
-        debug_mode: bool,
-        dirty_region: &DirtyRegion,
-    ) {
-        let widget_id = node.widget_id();
-
-        let needs_overlay = debug_mode
-            || (scene.node_visible(widget_id) && {
-                let frame = scene.node_frame(widget_id);
-                let draw_area = scene.dirty_rect(widget_id, frame);
-                needs_paint_rect(scene, widget_id, draw_area, dirty_region)
-            });
-
-        if needs_overlay {
-            if scene.node_visible(widget_id) {
-                let frame = scene.node_frame(widget_id);
-                ctx.save();
-                scene.paint_overlay(widget_id, frame, ctx);
-                ctx.restore();
-            }
-        }
-
-        if debug_mode {
-            if scene.node_visible(widget_id) {
-                let frame = scene.node_frame(widget_id);
-                let hovered = hovered_chain
-                    .as_ref()
-                    .is_some_and(|c| c.contains(&widget_id));
-                ctx.draw_debug_border(frame, depth, hovered);
-                if hovered {
-                    ctx.draw_debug_frame_info(widget_id, frame);
-                }
-            }
-        }
-
-        match node {
-            LayerNode::Picture { children, .. } | LayerNode::Direct { children, .. } => {
-                for child in children {
-                    Self::render_overlay_node(
-                        child,
-                        ctx,
-                        scene,
-                        depth + 1,
-                        hovered_chain,
-                        debug_mode,
-                        dirty_region,
-                    );
-                }
-            }
-            LayerNode::ClipRect {
-                widget_id,
-                rect,
-                children,
-                ..
-            } => {
-                ctx.canvas_2d().push_clip(*rect);
-                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
-                    ctx.canvas_2d().translate(-sx, -sy);
-                }
-                for child in children {
-                    Self::render_overlay_node(
-                        child,
-                        ctx,
-                        scene,
-                        depth + 1,
-                        hovered_chain,
-                        debug_mode,
-                        dirty_region,
-                    );
-                }
-                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
-                    ctx.canvas_2d().translate(sx, sy);
-                }
-                ctx.canvas_2d().pop_clip();
             }
         }
     }

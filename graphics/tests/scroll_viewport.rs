@@ -112,7 +112,6 @@ impl ScenePaint for ScrollStripScene {
         *self.paint_counts.borrow_mut().entry(id).or_insert(0) += 1;
         ctx.fill_rect(frame, Color::from_rgba(80, 80, 80, 255), None);
     }
-    fn paint_overlay(&self, _: NodeId, _: Rect, _: &mut PaintContext<'_>) {}
 }
 
 struct MockTokens;
@@ -273,6 +272,9 @@ fn render_scene(engine: &mut SoftwareEngine, tree: &mut LayerTree, scene: &Scrol
         &theme,
         FontHandle::default(),
         &fs,
+        false,
+        None,
+        None,
     );
     engine.end_frame();
 }

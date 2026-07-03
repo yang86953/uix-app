@@ -2,7 +2,8 @@
 
 use uix_platform::{Point, Rect};
 
-use crate::compositor::{LayerTree, ScenePaint};
+use crate::backend::DamageRegion;
+use crate::compositor::{LayerTree, RenderObjectTree, ScenePaint};
 use crate::debug::DebugRenderService;
 use crate::font_service::FontService;
 use crate::painting::ThemeSnapshot;
@@ -36,6 +37,7 @@ pub struct FrameRenderOutput {
 /// 帧渲染器 — 持有 LayerTree 与合成状态。
 pub struct FrameRenderer {
     layer_tree: LayerTree,
+    render_object_tree: RenderObjectTree,
     last_tree_version: u64,
 }
 
@@ -43,8 +45,13 @@ impl FrameRenderer {
     pub fn new() -> Self {
         Self {
             layer_tree: LayerTree::new(),
+            render_object_tree: RenderObjectTree::new(),
             last_tree_version: 0,
         }
+    }
+
+    pub fn render_object_tree(&self) -> &RenderObjectTree {
+        &self.render_object_tree
     }
 
     pub fn layer_tree(&self) -> &LayerTree {
@@ -79,6 +86,7 @@ impl FrameRenderer {
             self.last_tree_version = cur_version;
         }
         self.layer_tree.update_dirty(scene);
+        self.render_object_tree.sync(scene);
 
         if let Some((frame, dx, dy)) = input.scroll_move {
             engine.canvas_2d().scroll_region(frame, dx, dy);
@@ -98,20 +106,9 @@ impl FrameRenderer {
             &input.theme,
             input.font,
             input.font_service,
-        );
-        engine.end_frame();
-
-        let overlay_rects = overlay_clip_rects(&region, input.scroll_move, engine);
-        engine.begin_frame(UpdateStrategy::Overlay(overlay_rects));
-        self.layer_tree.render_overlays(
-            engine,
-            scene,
-            &input.theme,
-            input.font,
-            input.font_service,
             input.debug_mode,
             input.hover_pos,
-            &region,
+            Some(&mut self.render_object_tree),
         );
         engine.end_frame();
 
@@ -139,42 +136,35 @@ fn compute_damage(
     region: &DirtyRegion,
     scroll_move: Option<(Rect, f32, f32)>,
     rendered_first: bool,
-) -> Option<(i32, i32, i32, i32)> {
+) -> DamageRegion {
     if !rendered_first || region.full_frame {
-        return None;
+        return DamageRegion::full();
     }
-    let bounds = if let Some((frame, _, _)) = scroll_move {
-        region.bounds().union(&frame)
+    let mut rects: Vec<Rect> = region
+        .rects()
+        .iter()
+        .filter(|r| r.w > 0.0 && r.h > 0.0)
+        .map(pad_damage_rect)
+        .collect();
+    if let Some((frame, _, _)) = scroll_move {
+        if frame.w > 0.0 && frame.h > 0.0 {
+            rects.push(pad_damage_rect(&frame));
+        }
+    }
+    if rects.is_empty() {
+        DamageRegion::full()
     } else {
-        region.bounds()
-    };
-    Some((
-        (bounds.x - 1.0).max(0.0) as i32,
-        (bounds.y - 1.0).max(0.0) as i32,
-        (bounds.w + 2.0) as i32,
-        (bounds.h + 2.0) as i32,
-    ))
+        DamageRegion::partial(rects)
+    }
 }
 
-fn overlay_clip_rects(
-    region: &DirtyRegion,
-    scroll_move: Option<(Rect, f32, f32)>,
-    engine: &mut dyn GraphicsEngine,
-) -> Vec<Rect> {
-    if !region.clear_required {
-        return Vec::new();
-    }
-    if region.full_frame {
-        let w = engine.canvas_2d().width() as f32;
-        let h = engine.canvas_2d().height() as f32;
-        vec![Rect::new(0.0, 0.0, w, h)]
-    } else {
-        let mut rects = region.rects().to_vec();
-        if let Some((frame, _, _)) = scroll_move {
-            rects.push(frame);
-        }
-        rects
-    }
+fn pad_damage_rect(r: &Rect) -> Rect {
+    Rect::new(
+        (r.x - 1.0).max(0.0),
+        (r.y - 1.0).max(0.0),
+        r.w + 2.0,
+        r.h + 2.0,
+    )
 }
 
 fn draw_debug_telemetry(
@@ -282,7 +272,6 @@ mod tests {
             None
         }
         fn paint(&self, _: crate::pipeline::NodeId, _: Rect, _: &mut PaintContext<'_>) {}
-        fn paint_overlay(&self, _: crate::pipeline::NodeId, _: Rect, _: &mut PaintContext<'_>) {}
     }
 
     struct MockTokens;
@@ -457,6 +446,6 @@ mod tests {
                 metrics: None,
             },
         );
-        assert_eq!(out.outcome, RenderOutcome::Present(None));
+        assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
     }
 }
