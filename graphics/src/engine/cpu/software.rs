@@ -117,6 +117,22 @@ impl GraphicsEngine for SoftwareEngine {
         }
     }
 
+    fn blit_offscreen_to_canvas(
+        &mut self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+        canvas: &mut dyn Canvas2D,
+    ) {
+        if let Some(cpu) = self.session.cpu_backend() {
+            cpu.blit_offscreen_to_canvas(handle, src_rect, dst_rect, canvas);
+        }
+    }
+
+    fn copy_offscreen_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
+        self.session.cpu_backend()?.copy_offscreen_pixels(handle)
+    }
+
     fn memory_usage(&self) -> usize {
         self.session
             .cpu_backend()

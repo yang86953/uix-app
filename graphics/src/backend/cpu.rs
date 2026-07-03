@@ -229,6 +229,32 @@ impl CpuBackend {
         self.blit_offscreen_impl(handle, src_rect, dst_rect);
     }
 
+    /// 将离屏缓冲内容 blit 到任意 Canvas2D（支持嵌套 Picture 合成）。
+    pub fn blit_offscreen_to_canvas(
+        &self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+        canvas: &mut dyn crate::traits::Canvas2D,
+    ) {
+        let idx = handle.0 as usize;
+        if idx >= self.offscreens.len() {
+            return;
+        }
+        if let Some(ref offscreen_canvas) = self.offscreens[idx] {
+            let surf = offscreen_canvas.surface();
+            canvas.blit_image(surf.pixels(), surf.width(), src_rect, dst_rect);
+        }
+    }
+
+    /// 复制离屏像素（避免与 offscreen_canvas 可变借用冲突）。
+    pub fn copy_offscreen_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
+        let idx = handle.0 as usize;
+        let canvas = self.offscreens.get(idx)?.as_ref()?;
+        let surf = canvas.surface();
+        Some((surf.pixels().to_vec(), surf.width()))
+    }
+
     pub fn memory_usage(&self) -> usize {
         let surf = self.main.surface();
         let main_bytes = (surf.width() * surf.height() * 4) as usize;

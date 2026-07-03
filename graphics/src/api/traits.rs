@@ -530,6 +530,19 @@ pub trait GraphicsEngine: 'static {
     fn blit_offscreen_src(&mut self, _handle: &ImageHandle, _src_rect: Rect, _dst_rect: Rect) {
         // 默认实现：直接 blit 全离屏画面到 dst
     }
+    /// 将离屏缓冲 blit 到指定 Canvas2D（嵌套 Picture 合成时使用）。
+    fn blit_offscreen_to_canvas(
+        &mut self,
+        _handle: &ImageHandle,
+        _src_rect: Rect,
+        _dst_rect: Rect,
+        _canvas: &mut dyn Canvas2D,
+    ) {
+    }
+    /// 复制离屏缓冲像素（嵌套 Picture 合成时使用）。
+    fn copy_offscreen_pixels(&self, _handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
+        None
+    }
 
     fn memory_usage(&self) -> usize {
         0
