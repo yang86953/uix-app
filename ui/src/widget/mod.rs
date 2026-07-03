@@ -11,6 +11,8 @@ pub enum WidgetEventKind {
     WindowMaximize, WindowMinimize, WindowRestore, WindowFocus, WindowBlur,
     Timer,
     FileDrop,
+    /// 组合事件：拖拽
+    DragStart, DragMove, DragEnd,
 }
 use uix_graphics::spatial::{Ray3D, SpatialContext};
 use uix_graphics::GraphicsEngine;
@@ -32,6 +34,12 @@ pub enum WidgetEvent {
     WindowMaximize, WindowMinimize, WindowRestore, WindowFocus, WindowBlur,
     Timer { id: u32 },
     FileDrop { files: Vec<String>, position: Point },
+    /// 组合事件：拖拽开始（MouseDown + MouseMove 超出阈值后触发）
+    DragStart { pos: Point, button: MouseButton, mods: KeyMod },
+    /// 组合事件：拖拽移动
+    DragMove { pos: Point, delta: Point, mods: KeyMod },
+    /// 组合事件：拖拽结束
+    DragEnd { pos: Point, button: MouseButton, mods: KeyMod },
 }
 
 impl WidgetEvent {
@@ -57,6 +65,9 @@ impl WidgetEvent {
             WidgetEvent::WindowBlur => WidgetEventKind::WindowBlur,
             WidgetEvent::Timer { .. } => WidgetEventKind::Timer,
             WidgetEvent::FileDrop { .. } => WidgetEventKind::FileDrop,
+            WidgetEvent::DragStart { .. } => WidgetEventKind::DragStart,
+            WidgetEvent::DragMove { .. } => WidgetEventKind::DragMove,
+            WidgetEvent::DragEnd { .. } => WidgetEventKind::DragEnd,
         }
     }
 }

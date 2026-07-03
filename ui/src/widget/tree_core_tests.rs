@@ -679,6 +679,90 @@ fn tab_no_focusable_does_nothing() {
     assert_eq!(result, EventResult::NotHandled, "Tab with no focusable should be NotHandled");
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// 拖拽手势测试
+// ════════════════════════════════════════════════════════════════════════
+
+/// MouseDown + 小幅度 MouseMove 不触发拖拽（阈值 5px）。
+#[test]
+fn drag_gesture_threshold_not_exceeded() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+    // MouseDown
+    tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    // 小幅度移动（3px < 5px 阈值）
+    tree.dispatch_event(&WidgetEvent::MouseMove {
+        pos: Point::new(53.0, 50.0),
+        mods: KeyMod::NONE,
+    });
+    // 拖拽未激活
+    assert!(!tree.drag_gesture.active, "drag should not start below threshold");
+    assert!(tree.drag_gesture.potential, "still potential after small move");
+}
+
+/// MouseDown + 大幅度 MouseMove 触发 DragStart 和 DragMove。
+#[test]
+fn drag_gesture_triggers_drag_start() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+    // MouseDown
+    tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    // 大幅度移动（超出 5px 阈值）
+    tree.dispatch_event(&WidgetEvent::MouseMove {
+        pos: Point::new(60.0, 60.0),
+        mods: KeyMod::NONE,
+    });
+    // 拖拽应激活
+    assert!(tree.drag_gesture.active, "drag should be active after threshold exceeded");
+    assert!(!tree.drag_gesture.potential, "no longer potential after drag start");
+}
+
+/// MouseUp 在拖拽激活后发射 DragEnd。
+#[test]
+fn drag_gesture_mouse_up_emits_drag_end() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
+    tree.get_mut(root_id).unwrap().set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(child).unwrap().set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+    tree.dispatch_event(&WidgetEvent::MouseDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&WidgetEvent::MouseMove {
+        pos: Point::new(60.0, 60.0),
+        mods: KeyMod::NONE,
+    });
+    assert!(tree.drag_gesture.active, "drag should be active");
+
+    tree.dispatch_event(&WidgetEvent::MouseUp {
+        pos: Point::new(65.0, 65.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    // MouseUp 后拖拽应重置
+    assert!(!tree.drag_gesture.active, "drag should be reset after MouseUp");
+    assert!(!tree.drag_gesture.potential);
+}
+
 fn nav_item_click_updates_shared_active() {
     use crate::widgets::nav::{NavItem, SharedActive};
     use std::cell::Cell;

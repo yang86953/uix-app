@@ -1,8 +1,53 @@
 use super::*;
 use crate::managers::EventManager;
-use uix_platform::Rect;
+use uix_platform::{KeyMod, MouseButton, Point, Rect};
 use uix_graphics::DirtyRegion;
 use std::collections::HashMap;
+
+/// 拖拽手势状态，用于从原始鼠标事件组合 DragStart/DragMove/DragEnd。
+/// 当 MouseDown 后 MouseMove 超出 5px 阈值时自动识别为拖拽。
+#[derive(Clone)]
+pub(crate) struct DragGestureState {
+    /// MouseDown 已收到且未触发 DragStart
+    pub potential: bool,
+    /// 拖拽已激活（超出移动阈值）
+    pub active: bool,
+    /// 拖拽起始位置（屏幕坐标）
+    pub start_pos: Point,
+    /// 上一次 MouseMove 位置
+    pub last_pos: Point,
+    /// 触发拖拽的鼠标按钮
+    pub button: MouseButton,
+    /// 触发拖拽时的修饰键
+    pub mods: KeyMod,
+    /// 拖拽目标 widget（mouse_down_target）
+    pub target: Option<WidgetId>,
+}
+
+impl Default for DragGestureState {
+    fn default() -> Self {
+        Self {
+            potential: false,
+            active: false,
+            start_pos: Point::default(),
+            last_pos: Point::default(),
+            button: MouseButton::None,
+            mods: KeyMod::NONE,
+            target: None,
+        }
+    }
+}
+
+impl DragGestureState {
+    /// 重置所有状态。
+    pub fn reset(&mut self) {
+        self.potential = false;
+        self.active = false;
+        self.button = MouseButton::None;
+        self.mods = KeyMod::NONE;
+        self.target = None;
+    }
+}
 
 /// 脏状态管理器 —— 集中管理脏区域。
 ///
@@ -143,6 +188,10 @@ pub struct WidgetTree {
     /// 每个 widget 的独立事件管理器（按需创建）。
     /// 在 `dispatch_to` 中，于 `on_event` 之后自动调用。
     pub(crate) event_managers: HashMap<WidgetId, EventManager>,
+
+    /// 拖拽手势状态：跟踪 MouseDown→Move 序列以产生 DragStart/DragMove/DragEnd。
+    /// 拖拽阈值 5px，MouseMove 超出此距离才触发拖拽。
+    pub(crate) drag_gesture: DragGestureState,
 }
 
 impl Default for WidgetTree {
@@ -161,6 +210,7 @@ impl Default for WidgetTree {
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
             event_managers: HashMap::new(),
+            drag_gesture: DragGestureState::default(),
         }
     }
 }

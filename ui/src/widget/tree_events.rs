@@ -82,9 +82,16 @@ impl WidgetTree {
 
     pub fn dispatch_event(&mut self, event: &WidgetEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            WidgetEvent::MouseDown { pos, button, mods } => {
                 let target = self.hit_test(*pos);
                 self.mouse_down_target = target;
+                // 记录拖拽起始状态
+                self.drag_gesture.potential = true;
+                self.drag_gesture.start_pos = *pos;
+                self.drag_gesture.last_pos = *pos;
+                self.drag_gesture.button = *button;
+                self.drag_gesture.mods = *mods;
+                self.drag_gesture.target = target;
                 if let Some(t) = target {
                     self.mark_dirty(t);
                     // 捕获阶段：root → target，用于 Modal 等拦截
@@ -101,8 +108,19 @@ impl WidgetTree {
                     result
                 } else { self.set_focus(None); EventResult::NotHandled }
             }
-            WidgetEvent::MouseUp { pos, .. } => {
+            WidgetEvent::MouseUp { pos, button, mods } => {
                 let hold = self.mouse_down_target;
+                // 如果拖拽处于活跃状态，发射 DragEnd 到拖拽目标
+                if self.drag_gesture.active {
+                    if let Some(target) = self.drag_gesture.target {
+                        self.mark_dirty(target);
+                        let drag_end = WidgetEvent::DragEnd {
+                            pos: *pos, button: *button, mods: *mods,
+                        };
+                        let _ = self.dispatch_to(target, &drag_end);
+                    }
+                }
+                self.drag_gesture.reset();
                 self.mouse_down_target = None;
                 let hit = self.hit_test(*pos);
                 let mut result = EventResult::NotHandled;
@@ -119,7 +137,43 @@ impl WidgetTree {
                 }
                 result
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            WidgetEvent::MouseMove { pos, mods } => {
+                // 拖拽手势检测：potential → active 转换
+                if self.drag_gesture.potential && !self.drag_gesture.active {
+                    let dx = pos.x - self.drag_gesture.start_pos.x;
+                    let dy = pos.y - self.drag_gesture.start_pos.y;
+                    // 5px 阈值：超出才视为拖拽开始
+                    if dx.abs() > 5.0 || dy.abs() > 5.0 {
+                        self.drag_gesture.active = true;
+                        self.drag_gesture.potential = false;
+                        // 发射 DragStart 到拖拽目标
+                        if let Some(target) = self.drag_gesture.target {
+                            self.mark_dirty(target);
+                            let drag_start = WidgetEvent::DragStart {
+                                pos: *pos,
+                                button: self.drag_gesture.button,
+                                mods: *mods,
+                            };
+                            let _ = self.dispatch_to(target, &drag_start);
+                        }
+                    }
+                }
+                // 拖拽进行中：发射 DragMove
+                if self.drag_gesture.active {
+                    if let Some(target) = self.drag_gesture.target {
+                        self.mark_dirty(target);
+                        let delta = Point::new(
+                            pos.x - self.drag_gesture.last_pos.x,
+                            pos.y - self.drag_gesture.last_pos.y,
+                        );
+                        let drag_move = WidgetEvent::DragMove {
+                            pos: *pos, delta, mods: *mods,
+                        };
+                        let _ = self.dispatch_to(target, &drag_move);
+                    }
+                }
+                self.drag_gesture.last_pos = *pos;
+
                 let new_hover = self.hit_test(*pos);
                 if new_hover != self.hovered_widget {
                     if let Some(old) = self.hovered_widget {
@@ -134,6 +188,8 @@ impl WidgetTree {
                 }
                 // 拖拽期间同时分发 MouseMove 给 mouse_down_target
                 // （支持文字选中、滑动条拖拽等跨边界操作）
+                // 注意：在拖拽活跃时，MouseMove 原始事件仍然分发，
+                // 以便使用 mouse_down_target 的 scrollbar/slider 等仍能工作
                 if let Some(drag_target) = self.mouse_down_target {
                     self.mark_dirty(drag_target);
                     let _ = self.dispatch_to(drag_target, event);
@@ -213,6 +269,11 @@ impl WidgetTree {
                 if let Some(root) = self.root_id { self.dispatch_to(root, event) }
                 else { EventResult::NotHandled }
             }
+            // 拖拽组合事件：由 dispatch_event 内部合成并直接 dispatch_to，
+            // 不会从外部传入 dispatch_event。
+            WidgetEvent::DragStart { .. }
+            | WidgetEvent::DragMove { .. }
+            | WidgetEvent::DragEnd { .. } => EventResult::NotHandled,
             WidgetEvent::Resize { width, height } => {
                 if let Some(root) = self.root_id {
                     if *width > 0.0 && *height > 0.0 {
