@@ -892,16 +892,15 @@ impl WidgetTree {
                 self.mark_dirty_rect(id, rect);
             }
 
+            // 滚动时使用整视口 Paint 失效，避免 scroll_region memmove 与 strip
+            // 剪枝不同步导致内容间歇性消失。
             if let Some((dx, dy)) = self.get(id).and_then(|n| n.scroll_delta_for_dirty()) {
-                if (dx.abs() > 0.5 || dy.abs() > 0.5) && self.scroll_region_move.is_none() {
+                if dx.abs() > 0.5 || dy.abs() > 0.5 {
                     if let Some(node) = self.get(id) {
                         let frame = node.frame();
-                        let strip = node.dirty_rect(frame);
-                        self.scroll_region_move = Some((frame, dx, dy));
-                        self.push_composite_invalidation(
-                            strip,
-                            Some(uix_graphics::pipeline::ScrollDelta { dx, dy }),
-                        );
+                        if frame.w > 0.0 && frame.h > 0.0 {
+                            self.invalidate_paint_rect(id, frame);
+                        }
                     }
                 }
             }

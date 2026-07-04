@@ -1,5 +1,6 @@
 //! Phase 6：精确 Invalidation + State 绑定验收测试。
 
+use uix_graphics::pipeline::Invalidation;
 use uix_platform::Rect;
 use uix_ui::state::{begin_state_capture, State};
 use uix_ui::view::{column, dynamic_label, label, ViewAdapter};
@@ -91,4 +92,25 @@ fn layout_invalidation_skipped_when_paint_only() {
     tree.invalidate_paint(0);
     assert!(tree.layout_traverse().is_empty());
     assert!(tree.has_render_work());
+}
+
+#[test]
+fn layout_only_invalidation_does_not_trigger_render_work() {
+    let mut tree = WidgetTree::new();
+    tree.bind_invalidation();
+    tree.set_root(Box::new(uix_ui::widgets::Label::new("static")));
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+    }
+    tree.layout();
+    tree.reset_dirty();
+
+    // 模拟 set_root / add_child 仅推送 Layout 失效的场景
+    tree.invalidation()
+        .lock()
+        .unwrap()
+        .push(Invalidation::Layout(0));
+
+    assert!(!tree.has_render_work());
+    assert!(tree.invalidation().lock().unwrap().has_layout());
 }

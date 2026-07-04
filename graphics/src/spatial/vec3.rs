@@ -1,61 +1,19 @@
-//! 3D 向量类型：Vec2、Vec3、Vec4。
+//! 3D 向量类型：Vec3、Vec4。
 //!
+//! 2D 向量/点请使用 [`super::quad2d::Vec2`]（唯一定义，本模块不再重复）。
 //! 提供基本的向量运算（加减、点积、叉积、缩放、归一化）。
 //! 所有运算使用 f32，无动态分配。
 
 use std::ops::{Add, Mul, Sub};
 
 // ════════════════════════════════════════════════════════════════════════════
-// Vec2 — 2D 点/向量
-// ════════════════════════════════════════════════════════════════════════════
-
-/// 2D 向量/点。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Vec2 {
-    pub x: f32,
-    pub y: f32,
-}
-
-impl Vec2 {
-    #[inline(always)]
-    pub const fn new(x: f32, y: f32) -> Self {
-        Self { x, y }
-    }
-
-    #[inline(always)]
-    pub const fn zero() -> Self {
-        Self { x: 0.0, y: 0.0 }
-    }
-
-    /// 点积
-    #[inline(always)]
-    pub fn dot(&self, rhs: &Self) -> f32 {
-        self.x * rhs.x + self.y * rhs.y
-    }
-
-    /// 长度
-    #[inline(always)]
-    pub fn length(&self) -> f32 {
-        self.dot(self).sqrt()
-    }
-
-    /// 归一化
-    #[inline(always)]
-    pub fn normalized(&self) -> Self {
-        let l = self.length();
-        if l > 1e-10 {
-            Self::new(self.x / l, self.y / l)
-        } else {
-            *self
-        }
-    }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 // Vec3 — 3D 点/向量
 // ════════════════════════════════════════════════════════════════════════════
 
 /// 3D 向量/点。
+///
+/// 默认处于**模型空间**（model space）；变换链路中的具体空间由调用方约定，
+/// 由 [`crate::spatial::SpatialContext`] 的 MVP 矩阵统一推进。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3 {
     pub x: f32,
@@ -287,12 +245,5 @@ mod tests {
         assert!((r.x - 2.0).abs() < 1e-10);
         assert!((r.y - 3.0).abs() < 1e-10);
         assert!((r.z - 4.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn vec2_basic() {
-        let a = Vec2::new(3.0, 4.0);
-        assert!((a.length() - 5.0).abs() < 1e-6);
-        assert!((a.dot(&Vec2::new(1.0, 0.0)) - 3.0).abs() < 1e-10);
     }
 }

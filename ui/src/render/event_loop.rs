@@ -60,6 +60,7 @@ where
     }
 
     let running = Cell::new(true);
+    let mut animating = false;
 
     let collect = |ev: &UiEvent| {
         match ev.type_ {
@@ -81,7 +82,7 @@ where
     while running.get() {
         platform.text_input().start();
 
-        let animations_active = tree.animations_active();
+        let animations_active = animating || tree.animations_active();
         if animations_active {
             if !platform.event_loop().wait_event(&collect) {
                 break;
@@ -180,7 +181,7 @@ where
         let now = Instant::now();
         let dt = (now - last_frame).as_secs_f64().min(0.05);
         last_frame = now;
-        let _ = tree.update(dt);
+        animating = tree.update(dt);
 
         let needs_work = window_visible && (had_layout_event || !rendered_first);
 
@@ -232,10 +233,12 @@ where
                     metrics: metrics_ref.as_ref(),
                 },
             );
-            tree.reset_dirty();
             rendered_first = true;
             (frame_out.outcome, frame_out.inv_source)
         };
+
+        // 每帧末尾清空失效队列（含已消费的 Layout 项），避免 Layout 残留触发空渲染。
+        tree.reset_dirty();
 
         match outcome {
             RenderOutcome::Present(damage) => {

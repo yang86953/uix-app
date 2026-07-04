@@ -5,6 +5,9 @@
 use super::vec3::Vec3;
 
 /// 3D 轴对齐包围盒（Axis-Aligned Bounding Box）。
+///
+/// 默认处于**模型空间**（model space），经 [`crate::spatial::SpatialContext`] 的
+/// MVP 矩阵投影后落到屏幕空间。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AABB3D {
     pub min: Vec3,

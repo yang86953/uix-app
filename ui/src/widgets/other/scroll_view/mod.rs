@@ -262,9 +262,9 @@ define_widget! {
         Some(frame)
     }
 
-    // 滚动时只返回 strip 区域，避免全视口重绘。其余像素由 Canvas2D offset 保留。
+    // 滚动视口始终按整 frame 失效，保证子树完整重绘。
     dirty_rect => (&self, frame: Rect) -> Rect {
-        self.scroll_strip_dirty_rect(frame)
+        frame
     }
 
     render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
@@ -418,30 +418,6 @@ impl ScrollView {
         self
     }
 
-    // ── Dirty rect（strip 优化）──
-
-    fn scroll_strip_dirty_rect(&self, frame: Rect) -> Rect {
-        let (dx, dy) = self.scroll_delta_strip.get();
-        let int_dy = dy.round();
-        let int_dx = dx.round();
-        let strip = if int_dy > 0.0 {
-            let strip_h = (int_dy + 1.0).min(frame.h);
-            Rect::new(frame.x, frame.y + frame.h - strip_h, frame.w, strip_h)
-        } else if int_dy < 0.0 {
-            let strip_h = ((-int_dy) + 1.0).min(frame.h);
-            Rect::new(frame.x, frame.y, frame.w, strip_h)
-        } else if int_dx > 0.0 {
-            let strip_w = (int_dx + 1.0).min(frame.w);
-            Rect::new(frame.x + frame.w - strip_w, frame.y, strip_w, frame.h)
-        } else if int_dx < 0.0 {
-            let strip_w = ((-int_dx) + 1.0).min(frame.w);
-            Rect::new(frame.x, frame.y, strip_w, frame.h)
-        } else {
-            frame
-        };
-        strip
-    }
-
     // ── Runtime accessors ──
 
     pub fn scroll_x(&self) -> f32 {
@@ -499,7 +475,8 @@ impl ScrollView {
                     .unwrap_or(self.fixed_height.unwrap_or(200.0));
                 (cs.h - view_h).max(0.0)
             }
-            None => f32::MAX,
+            // layout 尚未写入 content_bounds 时不允许滚动，避免 scroll_y 失控
+            None => 0.0,
         }
     }
 }

@@ -330,6 +330,7 @@ fn switch_page(tree: &mut WidgetTree, state: &DemoState, active: usize) {
     // 显示新页面
     if active < ids.len() {
         tree.set_visible(ids[active], true);
+        tree.mark_dirty_subtree(ids[active]);
     }
     // 标记全场重绘（树结构未变，render loop 的 tree_version 检查会触发再布局）
     tree.mark_full_frame_dirty();
