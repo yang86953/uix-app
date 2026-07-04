@@ -72,6 +72,7 @@ impl FrameRenderer {
         let caps = engine.capabilities();
         let region = if !input.rendered_first
             || input.dirty_region.full_frame
+            || input.dirty_region.is_empty()
             || !caps.supports_partial_redraw()
         {
             DirtyRegion::full()

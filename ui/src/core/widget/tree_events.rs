@@ -225,11 +225,12 @@ impl WidgetTree {
             WidgetEvent::MouseWheel { pos, .. } => {
                 let target = self.hit_test(*pos).or(self.hovered_widget).or(self.root_id);
                 if let Some(t) = target {
-                    self.mark_dirty(t);
-                    // 捕获阶段：root → target，ScrollView 在此拦截滚动
+                    // 捕获阶段：ScrollView 等祖先先处理；Handled 时由 capture 侧登记动画与视口重绘，
+                    // 避免仅 mark_dirty 子节点导致 strip 局部清除后内容消失。
                     if self.capture_to(t, event) == EventResult::Handled {
                         return EventResult::Handled;
                     }
+                    self.mark_dirty(t);
                     self.dispatch_to(t, event)
                 } else {
                     EventResult::NotHandled
@@ -394,13 +395,39 @@ impl WidgetTree {
         path.reverse(); // 现在是从 root → ... → target.parent
 
         for &id in &path {
-            if let Some(node) = self.get_mut(id) {
-                if node.on_event(event) == EventResult::Handled {
-                    return EventResult::Handled;
-                }
+            let handled = {
+                let node = match self.get_mut(id) {
+                    Some(n) => n,
+                    None => continue,
+                };
+                node.on_event(event) == EventResult::Handled
+            };
+            if handled {
+                self.on_widget_handled_in_capture(id);
+                return EventResult::Handled;
             }
         }
         EventResult::NotHandled
+    }
+
+    /// capture 阶段拦截事件后：登记连续动画节点，并对 viewport 容器做整视口 Paint 失效。
+    fn on_widget_handled_in_capture(&mut self, id: WidgetId) {
+        let (needs_continuous, is_viewport, frame) = {
+            let Some(node) = self.get(id) else {
+                return;
+            };
+            (
+                node.needs_continuous_update(),
+                node.viewport_scroll_offset().is_some(),
+                node.frame(),
+            )
+        };
+        if needs_continuous {
+            self.try_register_animation(id);
+        }
+        if is_viewport && frame.w > 0.0 && frame.h > 0.0 {
+            self.invalidate_paint_rect(id, frame);
+        }
     }
 
     fn dispatch_to(&mut self, target: WidgetId, event: &WidgetEvent) -> EventResult {
@@ -426,13 +453,18 @@ impl WidgetTree {
             };
 
             // 处理 widget 自身的 on_event
-            let (result, parent_id) = {
+            let (result, parent_id, needs_continuous) = {
                 let node = match self.get_mut(id) {
                     Some(n) => n,
                     None => return EventResult::NotHandled,
                 };
-                (node.on_event(&compensated), node.parent())
+                let r = node.on_event(&compensated);
+                let nc = node.needs_continuous_update();
+                (r, node.parent(), nc)
             };
+            if needs_continuous {
+                self.try_register_animation(id);
+            }
             if result == EventResult::Handled {
                 return EventResult::Handled;
             }

@@ -12,9 +12,15 @@ impl WidgetTree {
         self.invalidation.clone()
     }
 
-    /// 是否有待渲染工作（失效队列非空）。
+    /// 是否有待渲染工作（Paint / Composite 失效，不含纯 Layout）。
+    ///
+    /// Layout 失效由 `layout()` 消费；若仅用 `is_empty()` 判定，
+    /// 会在 dirty_region 为空时仍进入 render，导致 begin_frame 返回 Idle、画面不更新。
     pub fn has_render_work(&self) -> bool {
-        !self.invalidation.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_paint_or_composite()
     }
 
     /// 是否有进行中的动画/滚动惯性（仅用于事件轮询，不触发 present）。

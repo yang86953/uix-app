@@ -2,10 +2,16 @@
 //!
 //! 在透视投影下，3D 矩形的投影可能是梯形或任意四边形。
 //! Quad2D 提供外接矩形计算、凸四边形包含测试、多边形路径导出。
+//!
+//! 本模块同时定义唯一的 2D 向量/点类型 [`Vec2`]，供整个空间系统复用。
+
+use std::ops::{Add, Mul, Sub};
 
 use uix_platform::Rect;
 
-/// 2D 点（屏幕空间）。
+/// 2D 向量/点（屏幕空间）。
+///
+/// 这是空间系统中唯一的 2D 向量类型；3D 场景请使用 [`super::vec3::Vec3`]。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec2 {
     pub x: f32,
@@ -17,6 +23,34 @@ impl Vec2 {
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
+
+    #[inline(always)]
+    pub const fn zero() -> Self {
+        Self { x: 0.0, y: 0.0 }
+    }
+
+    /// 点积
+    #[inline(always)]
+    pub fn dot(&self, rhs: &Self) -> f32 {
+        self.x * rhs.x + self.y * rhs.y
+    }
+
+    /// 长度
+    #[inline(always)]
+    pub fn length(&self) -> f32 {
+        self.dot(self).sqrt()
+    }
+
+    /// 归一化。零向量返回自身（避免除零）。
+    #[inline(always)]
+    pub fn normalized(&self) -> Self {
+        let l = self.length();
+        if l > 1e-10 {
+            Self::new(self.x / l, self.y / l)
+        } else {
+            *self
+        }
+    }
 }
 
 impl From<(f32, f32)> for Vec2 {
@@ -25,9 +59,42 @@ impl From<(f32, f32)> for Vec2 {
     }
 }
 
+impl Add for Vec2 {
+    type Output = Self;
+    #[inline(always)]
+    fn add(self, rhs: Self) -> Self {
+        Self::new(self.x + rhs.x, self.y + rhs.y)
+    }
+}
+
+impl Sub for Vec2 {
+    type Output = Self;
+    #[inline(always)]
+    fn sub(self, rhs: Self) -> Self {
+        Self::new(self.x - rhs.x, self.y - rhs.y)
+    }
+}
+
+impl Mul<f32> for Vec2 {
+    type Output = Self;
+    #[inline(always)]
+    fn mul(self, s: f32) -> Self {
+        Self::new(self.x * s, self.y * s)
+    }
+}
+
+impl Mul<Vec2> for f32 {
+    type Output = Vec2;
+    #[inline(always)]
+    fn mul(self, v: Vec2) -> Vec2 {
+        Vec2::new(self * v.x, self * v.y)
+    }
+}
+
 /// 屏幕空间的四边形（由四个 2D 顶点定义）。
 ///
 /// 顶点顺序：p0→p1→p2→p3 构成顺时针或逆时针环。
+/// 通常由 [`crate::spatial::AABB3D`] 经投影得到，处于**屏幕空间**（screen space）。
 #[derive(Debug, Clone, Copy)]
 pub struct Quad2D {
     pub p0: Vec2,
@@ -196,5 +263,39 @@ mod tests {
         assert!((b.y - 3.0).abs() < 1e-10);
         assert!((b.w - 19.0).abs() < 1e-10);
         assert!((b.h - 22.0).abs() < 1e-10);
+    }
+
+    // ── Vec2 运算符与向量方法 ──
+
+    #[test]
+    fn vec2_add_sub_mul() {
+        let a = Vec2::new(1.0, 2.0);
+        let b = Vec2::new(10.0, 20.0);
+        assert_eq!(a + b, Vec2::new(11.0, 22.0));
+        assert_eq!(b - a, Vec2::new(9.0, 18.0));
+        assert_eq!(a * 2.0, Vec2::new(2.0, 4.0));
+        assert_eq!(2.0 * a, Vec2::new(2.0, 4.0));
+    }
+
+    #[test]
+    fn vec2_dot_length_normalized() {
+        let a = Vec2::new(3.0, 4.0);
+        assert!((a.length() - 5.0).abs() < 1e-6);
+        assert!((a.dot(&Vec2::new(1.0, 0.0)) - 3.0).abs() < 1e-10);
+        let n = a.normalized();
+        assert!((n.length() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn vec2_normalized_zero_is_safe() {
+        let n = Vec2::zero().normalized();
+        assert_eq!(n, Vec2::zero());
+    }
+
+    #[test]
+    fn vec2_from_tuple() {
+        let v: Vec2 = (1.5, 2.5).into();
+        assert!((v.x - 1.5).abs() < 1e-10);
+        assert!((v.y - 2.5).abs() < 1e-10);
     }
 }

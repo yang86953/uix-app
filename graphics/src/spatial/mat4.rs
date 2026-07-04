@@ -386,6 +386,19 @@ impl Mat4 {
         }
     }
 
+    /// 转换为 2D 仿射 [`crate::Transform`]。
+    ///
+    /// 仅当矩阵为 2D-only（无 z 轴旋转/平移，非透视）时成功，
+    /// 否则返回 `None`——Fail-Fast，不静默降级丢弃 3D 信息。
+    ///
+    /// 内存布局与 [`Mat4::from`](`From<crate::Transform>`) 及光栅器对
+    /// `Transform.m = [a, b, tx, c, d, ty]` 的索引完全一致，可安全往返：
+    /// `Transform → Mat4 → Transform` 等值。
+    pub fn to_transform(&self) -> Option<crate::Transform> {
+        let (a, b, tx, c, d, ty) = self.to_affine_2d()?;
+        Some(crate::Transform { m: [a, b, tx, c, d, ty] })
+    }
+
     /// 是否为透视投影
     #[inline(always)]
     pub fn is_perspective(&self) -> bool {
@@ -727,5 +740,68 @@ mod tests {
                 restored
             );
         }
+    }
+
+    // ── Transform ↔ Mat4 双向互转 ──
+
+    #[test]
+    fn transform_to_mat4_roundtrip_identity() {
+        let t = crate::Transform::identity();
+        let m = Mat4::from(t);
+        let back = m.to_transform();
+        assert!(back.is_some(), "identity should convert back");
+        assert_eq!(back.unwrap().m, t.m);
+    }
+
+    #[test]
+    fn transform_to_mat4_roundtrip_translate() {
+        let t = crate::Transform::translate(10.0, 20.0);
+        let m = Mat4::from(t);
+        let back = m.to_transform().unwrap();
+        assert_eq!(back.m, t.m);
+    }
+
+    #[test]
+    fn transform_to_mat4_roundtrip_scale() {
+        let t = crate::Transform::scale(2.0, 3.0);
+        let m = Mat4::from(t);
+        let back = m.to_transform().unwrap();
+        assert_eq!(back.m, t.m);
+    }
+
+    #[test]
+    fn mat4_to_transform_returns_none_for_3d() {
+        // 绕 X 轴旋转会引入 z→x/y 耦合，不再是 2D-only
+        let m = Mat4::rotate_x(0.5);
+        assert!(m.to_transform().is_none());
+    }
+
+    #[test]
+    fn mat4_to_transform_returns_none_for_perspective() {
+        let m = Mat4::perspective(1.0, 1.6, 0.1, 100.0);
+        assert!(m.to_transform().is_none());
+    }
+
+    #[test]
+    fn mat4_translate_z_to_transform_none() {
+        // z 平移不影响 x/y 渲染，但 is_2d_only 要求 m[14]==0，故返回 None
+        let m = Mat4::translate(0.0, 0.0, 5.0);
+        assert!(m.to_transform().is_none());
+    }
+
+    #[test]
+    fn affine_2d_layout_matches_transform_m() {
+        // 验证 to_affine_2d 的 (a,b,tx,c,d,ty) 与 Transform.m 索引一致
+        let t = crate::Transform {
+            m: [2.0, 0.5, 10.0, -0.5, 3.0, 20.0],
+        };
+        let m = Mat4::from(t);
+        let (a, b, tx, c, d, ty) = m.to_affine_2d().unwrap();
+        assert!((a - 2.0).abs() < 1e-6);
+        assert!((b - 0.5).abs() < 1e-6);
+        assert!((tx - 10.0).abs() < 1e-6);
+        assert!((c - (-0.5)).abs() < 1e-6);
+        assert!((d - 3.0).abs() < 1e-6);
+        assert!((ty - 20.0).abs() < 1e-6);
     }
 }
