@@ -27,18 +27,99 @@ thread_local! {
     static PENDING_STATE_BINDS: RefCell<Vec<Arc<dyn StatePaintBind>>> = RefCell::new(Vec::new());
 }
 
+// layout 后探测 DynamicLabel 闭包时捕获 `State::get()` 读取的实例。
+thread_local! {
+    static STATE_BIND_CAPTURE: RefCell<
+        Option<(usize, InvalidationQueueHandle, Option<Rect>, Vec<Arc<dyn StatePaintBind>>)>,
+    > = RefCell::new(None);
+}
+
+// View 构建期暂存的 Effect（build 后注册到 WidgetTree）。
+thread_local! {
+    static PENDING_EFFECTS: RefCell<Vec<Effect>> = RefCell::new(Vec::new());
+}
+
 static STATE_CAPTURE_ACTIVE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// 开始捕获 `State::new` 实例（View 构建期间调用）。
+/// 开始捕获 `State::new` / `Effect::new` 实例（View 构建期间调用）。
 pub fn begin_state_capture() {
     STATE_CAPTURE_ACTIVE.store(true, std::sync::atomic::Ordering::SeqCst);
     PENDING_STATE_BINDS.with(|p| p.borrow_mut().clear());
+    PENDING_EFFECTS.with(|p| p.borrow_mut().clear());
 }
 
-/// 取出并清空当前 pending State 绑定（响应式 widget 构造时调用）。
+/// 结束 View 构建期的 State 捕获。
+pub fn end_state_capture() {
+    STATE_CAPTURE_ACTIVE.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// 取出并清空未关联 widget 的 pending State 绑定（build 末兜底）。
 pub fn drain_pending_state_binds() -> Vec<Arc<dyn StatePaintBind>> {
     PENDING_STATE_BINDS.with(|p| std::mem::take(&mut *p.borrow_mut()))
+}
+
+/// 取出 View 构建期捕获的 Effect。
+pub fn drain_pending_effects() -> Vec<Effect> {
+    PENDING_EFFECTS.with(|p| std::mem::take(&mut *p.borrow_mut()))
+}
+
+/// 开始探测 DynamicLabel 闭包内读取的 State / Computed（layout 后 bind 阶段调用）。
+pub fn begin_state_bind_capture(
+    widget_id: usize,
+    queue: InvalidationQueueHandle,
+    rect: Option<Rect>,
+) {
+    STATE_BIND_CAPTURE.with(|c| {
+        *c.borrow_mut() = Some((widget_id, queue, rect, Vec::new()));
+    });
+}
+
+/// 结束探测并将捕获到的 State 绑定到指定 widget。
+pub fn end_state_bind_capture(widget_id: usize) {
+    STATE_BIND_CAPTURE.with(|c| {
+        let Some((id, queue, rect, states)) = c.borrow_mut().take() else {
+            return;
+        };
+        if id != widget_id {
+            crate::core::log::warn_fn(format!(
+                "State 绑定探测 widget_id 不一致: 期望 {widget_id}, 实际 {id}"
+            ));
+        }
+        for source in states {
+            source.bind_paint(widget_id, queue.clone(), rect);
+        }
+    });
+}
+
+fn try_capture_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
+    STATE_BIND_CAPTURE.with(|c| {
+        let mut guard = c.borrow_mut();
+        if let Some((_, _, _, ref mut captured)) = *guard {
+            let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
+            captured.push(bind);
+        }
+    });
+}
+
+fn try_capture_computed_bind<T: Clone + Send + Sync + 'static>(computed: &Computed<T>) {
+    STATE_BIND_CAPTURE.with(|c| {
+        if let Some((widget_id, queue, rect, _)) = c.borrow().as_ref() {
+            computed.bind_paint_invalidation(*widget_id, queue.clone(), *rect);
+        }
+    });
+}
+
+fn fire_paint_binding(
+    binding: &Arc<
+        std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>,
+    >,
+) {
+    if let Ok(guard) = binding.lock() {
+        if let Some((id, q, r)) = guard.as_ref() {
+            invalidate_paint_handle(q, *id, *r);
+        }
+    }
 }
 
 /// State 变更时推送精确 Paint 失效的绑定接口。
@@ -52,6 +133,17 @@ pub trait StatePaintBind: Send + Sync {
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
+    fn bind_paint(
+        &self,
+        widget_id: usize,
+        queue: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    ) {
+        self.bind_paint_invalidation(widget_id, queue, rect);
+    }
+}
+
+impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
     fn bind_paint(
         &self,
         widget_id: usize,
@@ -196,6 +288,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
                     .generation
             })
         });
+        try_capture_state_bind(self);
 
         self.inner
             .read()
@@ -245,11 +338,13 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>,
         >,
     ) {
-        if let Ok(binding) = paint_binding.lock() {
-            if let Some((id, q, r)) = binding.as_ref() {
-                invalidate_paint_handle(q, *id, *r);
-                return;
-            }
+        let has_paint_binding = paint_binding
+            .lock()
+            .ok()
+            .is_some_and(|guard| guard.is_some());
+        if has_paint_binding {
+            fire_paint_binding(paint_binding);
+            return;
         }
         if let Ok(guard) = dirty_fn.lock() {
             if let Some(ref f) = *guard {
@@ -313,6 +408,10 @@ pub struct Computed<T> {
     cached: Arc<RwLock<Option<T>>>,
     /// 依赖的 generation 检查器列表：(检查器, 上次计算时的 generation)
     deps: Arc<RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>>,
+    /// Phase R2：精确 Paint 失效绑定。
+    paint_binding: Arc<
+        std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>,
+    >,
 }
 
 impl<T: Clone + Send + Sync + 'static> Computed<T> {
@@ -333,12 +432,31 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             compute_fn: Box::new(f),
             cached: Arc::new(RwLock::new(Some(initial))),
             deps: Arc::new(RwLock::new(dep_pairs)),
+            paint_binding: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    /// 绑定精确 Paint 失效：依赖变化导致重算时向队列推送 `Invalidation::Paint`。
+    pub fn bind_paint_invalidation(
+        &self,
+        widget_id: usize,
+        queue: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    ) {
+        if let Ok(mut guard) = self.paint_binding.lock() {
+            *guard = Some((widget_id, queue, rect));
         }
     }
 
     pub fn get(&self) -> T {
-        // 检查依赖是否变化
-        let need_recompute = {
+        try_capture_computed_bind(self);
+
+        let force_probe = STATE_BIND_CAPTURE.with(|c| c.borrow().is_some());
+
+        // 检查依赖是否变化（layout 探测阶段强制执行一次以捕获 State 绑定）
+        let need_recompute = if force_probe {
+            true
+        } else {
             let deps = self.deps.read().unwrap_or_else(|e| e.into_inner());
             deps.iter()
                 .any(|(check, cached_gen)| check() != *cached_gen)
@@ -358,6 +476,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             *cached = Some(value.clone());
             let mut deps = self.deps.write().unwrap_or_else(|e| e.into_inner());
             *deps = new_pairs;
+            fire_paint_binding(&self.paint_binding);
             value
         } else {
             let cached = self.cached.read().unwrap_or_else(|e| e.into_inner());
@@ -381,28 +500,20 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for Computed<T> {
 }
 
 /// ── Effect — 自动追踪依赖的副作用 ──────────────────────────────
-///
-/// 创建时执行闭包，自动追踪其中读取的所有 State。
-/// 当任意依赖的 generation 变化时，自动重新执行。
-///
-/// 适合替代手动 `watch()` 组合，用于日志、持久化、触发 UI 刷新等场景。
-///
-/// # 示例
-/// ```ignore
-/// let count = State::new(0);
-/// let eff = Effect::new(|| {
-///     println!("count = {}", count.get());
-/// });
-/// count.set(1); // 自动打印 "count = 1"
-/// ```
-pub struct Effect {
+struct EffectInner {
     effect_fn: Box<dyn Fn() + Send + Sync>,
-    deps: Arc<RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>>,
+    deps: RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>,
+}
+
+/// 创建时执行闭包，自动追踪其中读取的所有 State。
+/// 当任意依赖的 generation 变化时，`tick()` 重新执行。
+#[derive(Clone)]
+pub struct Effect {
+    inner: Arc<EffectInner>,
 }
 
 impl Effect {
     pub fn new<F: Fn() + Send + Sync + 'static>(f: F) -> Self {
-        // 首次运行收集依赖
         let (_, deps) = collect_deps(&f);
         let dep_pairs: Vec<_> = deps
             .into_iter()
@@ -412,23 +523,29 @@ impl Effect {
             })
             .collect();
 
-        Self {
-            effect_fn: Box::new(f),
-            deps: Arc::new(RwLock::new(dep_pairs)),
+        let effect = Self {
+            inner: Arc::new(EffectInner {
+                effect_fn: Box::new(f),
+                deps: RwLock::new(dep_pairs),
+            }),
+        };
+        if STATE_CAPTURE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
+            PENDING_EFFECTS.with(|p| p.borrow_mut().push(effect.clone()));
         }
+        effect
     }
 
     /// 检查依赖是否有变化，如有则重新执行。
     /// 返回 `true` 表示重新执行了。
     pub fn tick(&self) -> bool {
         let need_run = {
-            let deps = self.deps.read().unwrap_or_else(|e| e.into_inner());
+            let deps = self.inner.deps.read().unwrap_or_else(|e| e.into_inner());
             deps.iter()
                 .any(|(check, cached_gen)| check() != *cached_gen)
         };
 
         if need_run {
-            let (_, new_deps) = collect_deps(&self.effect_fn);
+            let (_, new_deps) = collect_deps(&self.inner.effect_fn);
             let new_pairs: Vec<_> = new_deps
                 .into_iter()
                 .map(|check| {
@@ -436,7 +553,7 @@ impl Effect {
                     (check, gen)
                 })
                 .collect();
-            let mut deps = self.deps.write().unwrap_or_else(|e| e.into_inner());
+            let mut deps = self.inner.deps.write().unwrap_or_else(|e| e.into_inner());
             *deps = new_pairs;
             true
         } else {

@@ -5,7 +5,7 @@
 use crate::native::Error;
 use crate::native::Rect;
 
-use crate::draw::backend::{BackendKind, CpuBackend};
+use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
 use crate::draw::primitives::color::Color;
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::RenderSession;
@@ -85,7 +85,7 @@ impl GraphicsEngine for SoftwareEngine {
         self.session.begin_frame(strategy)
     }
 
-    fn end_frame(&mut self) -> RenderOutcome {
+    fn end_frame(&mut self, _present_damage: &DamageRegion) -> RenderOutcome {
         self.session.end_frame()
     }
 

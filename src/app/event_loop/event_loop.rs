@@ -163,6 +163,7 @@ where
                     if let UiEventPayload::Key(ref data) = ev.payload {
                         if data.key == KeyCode::F12 {
                             debug_mode.set(!debug_mode.get());
+                            tree.mark_full_frame_dirty();
                             continue;
                         }
                     }
@@ -186,6 +187,7 @@ where
         let dt = (now - last_frame).as_secs_f64().min(0.05);
         last_frame = now;
         animating = tree.update(dt);
+        let _effects_ran = tree.tick_effects();
 
         let needs_work = window_visible && (had_layout_event || !rendered_first);
 
@@ -343,7 +345,6 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
 mod tests {
     use super::*;
     use crate::ui::widgets::container::Container;
-    use std::cell::Cell;
     use crate::draw::NullEngine;
 
     #[test]

@@ -77,7 +77,8 @@ pub trait GraphicsEngine: 'static {
     fn shutdown(&mut self);
     fn resize(&mut self, width: i32, height: i32);
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome;
-    fn end_frame(&mut self) -> RenderOutcome;
+    /// `present_damage` 为合成层计算的呈现损伤；EngineManaged 后端用于 swap/present。
+    fn end_frame(&mut self, present_damage: &crate::draw::backend::DamageRegion) -> RenderOutcome;
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
 
     fn capabilities(&self) -> GraphicsCapabilities {

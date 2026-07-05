@@ -101,10 +101,10 @@ impl GraphicsEngine for GpuEngine {
         self.session.begin_frame(strategy)
     }
 
-    fn end_frame(&mut self) -> RenderOutcome {
+    fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
         let outcome = self.session.end_frame();
         if let Some(gpu) = self.session.gpu_backend_mut() {
-            if gpu.present(&DamageRegion::full()).is_err() {
+            if gpu.present(present_damage).is_err() {
                 crate::core::log::error_fn("GpuEngine present 失败");
             }
         }

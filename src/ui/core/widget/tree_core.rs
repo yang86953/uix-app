@@ -81,6 +81,8 @@ pub struct WidgetTree {
     pub(crate) invalidation: InvalidationQueueHandle,
     /// 动画注册表（Phase 2：仅 tick 活跃动画节点）。
     pub(crate) animation_registry: AnimationRegistry,
+    /// View 构建期注册的 Effect（每帧 tick）。
+    pub(crate) effects: Vec<crate::ui::foundation::state::Effect>,
 }
 
 impl Default for WidgetTree {
@@ -100,6 +102,7 @@ impl Default for WidgetTree {
             drag_gesture: DragGestureState::default(),
             invalidation: crate::draw::pipeline::InvalidationQueue::shared(),
             animation_registry: AnimationRegistry::new(),
+            effects: Vec::new(),
         }
     }
 }

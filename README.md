@@ -8,9 +8,9 @@ UIX 是一个用 Rust 编写的跨平台原生桌面 UI 框架，在 Windows 和
 
 - **组件化 Widget 体系**：每个组件封装数据、行为和生命周期，通过 trait 接口组合
 - **声明式 UI**：`define_widget!`、`tree!` 宏，以及 `ui::view` 简化 API（`column`、`button`、`dynamic_label` 等）
-- **响应式状态**：`State<T>`、`Computed<T>`、`Effect` 自动追踪依赖并触发局部更新
+- **响应式状态**：`State<T>` + `dynamic_label` 自动 Paint 失效（含 View 外创建的 State）；`Computed` / `Effect` 依赖追踪与帧末 `tick_effects` 已贯通（见 [ARCHITECTURE.md §11](ARCHITECTURE.md#十一渲染机制完善计划)）
 - **布局系统**：Flexbox、Grid、间距、对齐、伸缩与嵌套布局
-- **增量渲染**：DirtyRects、多矩形 PresentDamage 与像素滚动，只重绘变化区域
+- **增量渲染**：DirtyRects、多矩形 PresentDamage、像素滚动与 GPU scissor 局部 clear，只重绘变化区域
 - **主题与组件库**：Ant Design 5 风格设计令牌，60+ 内置 Widget
 - **平台抽象**：窗口、事件循环、呈现器、日志、文件、通知与配置持久化
 
@@ -85,7 +85,7 @@ uix-app/
 ├── src/
 │   ├── core/               # 错误、几何、日志、诊断
 │   ├── native/             # 平台能力（traits / backends / services）
-│   ├── draw/               # 绘制引擎、光栅化、字体、合成
+│   ├── draw/               # 绘制引擎、光栅化、字体、图片、合成
 │   ├── ui/                 # 组件、布局、主题、View DSL
 │   ├── app/                # 应用生命周期、主循环、窗口、CLI、DI
 │   ├── data/               # 配置持久化
@@ -141,7 +141,7 @@ workspace lint 禁止 `unwrap()` / `expect()` 进入生产代码。
 
 | 文档 | 内容 |
 |------|------|
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | 功能域详解、数据流、跨平台规则、设计决策 |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | 功能域详解、渲染数据流、跨平台规则、设计决策、[渲染完善计划](ARCHITECTURE.md#十一渲染机制完善计划) |
 | [`AGENTS.md`](AGENTS.md) | 组件化原则、Fail Fast、可测性、编码硬约束 |
 
 ## 许可证

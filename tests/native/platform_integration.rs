@@ -14,6 +14,7 @@ use uix::draw::primitives::color::Color;
 use uix::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use uix::draw::engine::cpu::pixel_surface::PixelSurface;
 use uix::draw::engine::cpu::software::SoftwareEngine;
+use uix::draw::backend::DamageRegion;
 use uix::draw::{Canvas2D, GraphicsEngine, UpdateStrategy};
 use uix::native::PresentDamage;
 use uix::native::traits::{
@@ -759,7 +760,7 @@ fn end_to_end_software_engine_frame_no_panic() {
             None,
         );
     }
-    let result2 = engine.end_frame();
+    let result2 = engine.end_frame(&DamageRegion::full());
     assert!(matches!(
         result,
         uix::draw::engine::RenderOutcome::Present(_)
@@ -771,7 +772,7 @@ fn end_to_end_software_engine_frame_no_panic() {
 
     // Overlay 帧
     engine.begin_frame(UpdateStrategy::Overlay(vec![Rect::new(2.0, 2.0, 3.0, 3.0)]));
-    engine.end_frame();
+    engine.end_frame(&DamageRegion::full());
 
     // Overlay 空列表 → Idle（无 overlay 区域需绘制）
     let overlay = engine.begin_frame(UpdateStrategy::Overlay(vec![]));
@@ -866,7 +867,7 @@ fn cross_layer_full_pipeline_via_fake_platform() {
             None,
         );
     }
-    engine.end_frame();
+    engine.end_frame(&DamageRegion::full());
 
     window.close();
 }
@@ -885,6 +886,6 @@ fn null_engine_with_fake_platform() {
     let mut engine = NullEngine::new();
     engine.initialize(100, 100).unwrap();
     engine.begin_frame(UpdateStrategy::FullRedraw);
-    engine.end_frame();
+    engine.end_frame(&DamageRegion::full());
     engine.shutdown();
 }

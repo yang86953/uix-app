@@ -1,6 +1,6 @@
 use super::tree_core::WidgetTree;
 use super::*;
-use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
+use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle, ScrollDelta};
 use crate::draw::DirtyRegion;
 
 impl WidgetTree {
@@ -184,6 +184,7 @@ impl WidgetTree {
 
     /// 绑定响应式 widget（DynamicLabel 等）的 State → Paint 失效。
     pub fn bind_reactive_widget_states(&mut self) {
+        use crate::ui::foundation::state::{begin_state_bind_capture, end_state_bind_capture};
         use crate::ui::view::combinators::DynamicLabel;
         let handle = self.invalidation_handle();
         for id in self.traverse() {
@@ -209,9 +210,97 @@ impl WidgetTree {
                 if let Some(node) = self.get(id) {
                     if let Some(dl) = node.component().as_any().downcast_ref::<DynamicLabel>() {
                         dl.bind_state_invalidation(id, handle.clone(), paint_rect);
+                        // 探测闭包运行时读取的 State（含 View 外创建的实例，如 README Counter）
+                        begin_state_bind_capture(id, handle.clone(), paint_rect);
+                        dl.probe_dependencies();
+                        end_state_bind_capture(id);
                     }
                 }
             }
         }
+    }
+
+    /// 将 View 构建期未关联 widget 的 pending State 绑定到根节点（兜底全帧 Paint）。
+    pub fn bind_orphan_pending_states(&mut self) {
+        use crate::ui::foundation::state::drain_pending_state_binds;
+        let orphans = drain_pending_state_binds();
+        if orphans.is_empty() {
+            return;
+        }
+        let Some(root_id) = self.root_id else {
+            return;
+        };
+        let handle = self.invalidation_handle();
+        let paint_rect = self.get(root_id).and_then(|n| {
+            let frame = n.frame();
+            if frame.w > 0.0 && frame.h > 0.0 {
+                Some(frame)
+            } else {
+                None
+            }
+        });
+        for source in orphans {
+            source.bind_paint(root_id, handle.clone(), paint_rect);
+        }
+    }
+
+    /// 注册 View 构建期捕获的 Effect。
+    pub fn bind_pending_effects(&mut self) {
+        use crate::ui::foundation::state::drain_pending_effects;
+        self.effects.extend(drain_pending_effects());
+    }
+
+    /// 每帧 tick 已注册的 Effect；任一 Effect 重新执行时返回 true。
+    pub fn tick_effects(&self) -> bool {
+        self.effects.iter().any(|eff| eff.tick())
+    }
+
+    /// 滚动增量较小时推送 Composite strip 失效 + scroll_region memmove 参数。
+    pub(crate) fn push_scroll_strip_invalidation(
+        &mut self,
+        viewport_id: WidgetId,
+        frame: Rect,
+        dx: f32,
+        dy: f32,
+    ) {
+        let strip = scroll_exposed_strip(frame, dx, dy);
+        if strip.w <= 0.0 || strip.h <= 0.0 {
+            self.invalidate_paint_rect(viewport_id, frame);
+            return;
+        }
+        // 大幅跳转仍整视口重绘，避免多条 strip 叠加复杂度
+        if dy.abs() > frame.h * 0.5 || dx.abs() > frame.w * 0.5 {
+            self.invalidate_paint_rect(viewport_id, frame);
+            return;
+        }
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Invalidation::Composite {
+                rect: strip,
+                scroll: Some(ScrollDelta { dx, dy }),
+            });
+        self.scroll_region_move = Some((frame, dx, dy));
+        self.try_register_animation(viewport_id);
+    }
+}
+
+/// 根据滚动增量计算暴露条带（viewport 坐标）。
+fn scroll_exposed_strip(frame: Rect, dx: f32, dy: f32) -> Rect {
+    const MIN: f32 = 0.01;
+    if dy.abs() > MIN && dy.abs() >= dx.abs() {
+        if dy > 0.0 {
+            Rect::new(frame.x, frame.y + frame.h - dy, frame.w, dy)
+        } else {
+            Rect::new(frame.x, frame.y, frame.w, -dy)
+        }
+    } else if dx.abs() > MIN {
+        if dx > 0.0 {
+            Rect::new(frame.x + frame.w - dx, frame.y, dx, frame.h)
+        } else {
+            Rect::new(frame.x, frame.y, -dx, frame.h)
+        }
+    } else {
+        Rect::zero()
     }
 }

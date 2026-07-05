@@ -7,6 +7,8 @@ use std::cell::Cell;
 use crate::define_widget;
 use crate::draw::image::BitmapHandle;
 use crate::draw::painting::RenderContext;
+use crate::draw::pipeline::invalidate_paint_handle;
+use crate::ui::core::paint_scope::current_paint_widget;
 use crate::ui::WidgetTree;
 use crate::draw::{Color, Radius};
 use crate::native::{Point, Rect, Size};
@@ -33,12 +35,12 @@ define_widget! {
         Size::new(self.width, self.height)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut RenderContext, tree: &WidgetTree) {
         let fill = ctx.tokens().color_fill_tertiary();
         let text_sec = ctx.tokens().color_text_quaternary();
         let r = Some(Radius::uniform(self.radius));
 
-        let handle = self.resolve_handle(ctx);
+        let handle = self.resolve_handle(ctx, tree, frame);
         let drew = if let Some(h) = handle {
             ctx.fill_rect(frame, fill, r);
             if self.fit {
@@ -135,7 +137,12 @@ impl Image {
         self
     }
 
-    fn resolve_handle(&self, ctx: &RenderContext<'_>) -> Option<BitmapHandle> {
+    fn resolve_handle(
+        &self,
+        ctx: &RenderContext<'_>,
+        tree: &WidgetTree,
+        frame: Rect,
+    ) -> Option<BitmapHandle> {
         let svc = ctx.image_service();
 
         if let Some(h) = self.slot {
@@ -153,7 +160,13 @@ impl Image {
 
         if !self.src.is_empty() {
             if let Some(h) = svc.ensure_loaded(&self.src) {
+                let first_load = self.cached.get().is_none();
                 self.cached.set(Some(h));
+                if first_load {
+                    if let Some(id) = current_paint_widget() {
+                        invalidate_paint_handle(&tree.invalidation_handle(), id, Some(frame));
+                    }
+                }
                 return Some(h);
             }
         }

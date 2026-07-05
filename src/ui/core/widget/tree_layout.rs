@@ -502,13 +502,20 @@ impl WidgetTree {
                 })
                 .unwrap_or((Rect::zero(), false, false));
 
+            let scroll_delta = self.get(id).and_then(|n| n.scroll_delta_for_dirty());
+            let use_scroll_strip =
+                scroll_delta.is_some_and(|(dx, dy)| dx.abs() > 0.01 || dy.abs() > 0.01);
+            let is_scroll_viewport = self
+                .get(id)
+                .is_some_and(|n| n.viewport_scroll_offset().is_some());
+
             if is_still {
                 any_animating = true;
             } else {
                 self.animation_registry.unregister(id);
             }
 
-            if just_started && old_dirty_rect.is_none() {
+            if just_started && old_dirty_rect.is_none() && !use_scroll_strip {
                 if let Some(old) = self.get(id).map(|n| n.dirty_rect(n.frame())) {
                     if old != rect && old.w > 0.0 && old.h > 0.0 {
                         self.mark_dirty_rect(id, old);
@@ -517,23 +524,22 @@ impl WidgetTree {
             }
 
             if let Some(old) = old_dirty_rect {
-                if old != rect && old.w > 0.0 && old.h > 0.0 {
+                if !use_scroll_strip && old != rect && old.w > 0.0 && old.h > 0.0 {
                     self.mark_dirty_rect(id, old);
                 }
             }
 
-            if rect.w > 0.0 || rect.h > 0.0 {
+            if (rect.w > 0.0 || rect.h > 0.0) && !use_scroll_strip && !is_scroll_viewport {
                 self.mark_dirty_rect(id, rect);
             }
 
-            // 滚动时使用整视口 Paint 失效，避免 scroll_region memmove 与 strip
-            // 剪枝不同步导致内容间歇性消失。
-            if let Some((dx, dy)) = self.get(id).and_then(|n| n.scroll_delta_for_dirty()) {
-                if dx.abs() > 0.5 || dy.abs() > 0.5 {
+            // 滚动：小增量用 Composite strip + scroll_region；大幅跳转整视口 Paint。
+            if use_scroll_strip {
+                if let Some((dx, dy)) = scroll_delta {
                     if let Some(node) = self.get(id) {
                         let frame = node.frame();
                         if frame.w > 0.0 && frame.h > 0.0 {
-                            self.invalidate_paint_rect(id, frame);
+                            self.push_scroll_strip_invalidation(id, frame, dx, dy);
                         }
                     }
                 }

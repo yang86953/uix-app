@@ -12,6 +12,7 @@ use uix::draw::painting::{
 };
 use uix::draw::pipeline::NodeId;
 use uix::draw::traits::{GraphicsEngine, UpdateStrategy};
+use uix::draw::backend::DamageRegion;
 use uix::draw::types::DirtyRegion;
 use uix::draw::{Color, FontHandle, SoftwareEngine};
 use uix::native::Rect;
@@ -348,7 +349,7 @@ fn render_scene(engine: &mut SoftwareEngine, tree: &mut LayerTree, scene: &Bound
         None,
         None,
     );
-    engine.end_frame();
+    engine.end_frame(&DamageRegion::full());
 }
 
 #[test]

@@ -109,6 +109,17 @@ impl BackendCapabilities {
         }
     }
 
+    /// GPU 默认能力：支持局部 clear 与 partial present damage。
+    pub fn gpu() -> Self {
+        Self {
+            presentation_mode: PresentationMode::EngineManaged,
+            partial_redraw: true,
+            offscreen: false,
+            scroll_memmove: false,
+        }
+    }
+
+    /// GPU 降级：不支持 partial，pipeline 会扩为全帧重绘。
     pub fn gpu_full_redraw() -> Self {
         Self {
             presentation_mode: PresentationMode::EngineManaged,

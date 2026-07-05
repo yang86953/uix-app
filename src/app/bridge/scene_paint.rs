@@ -7,6 +7,7 @@ use crate::draw::primitives::types::DirtyRegion;
 use crate::native::{Point, Rect};
 
 use crate::ui::{WidgetCore, WidgetId, WidgetTree};
+use crate::ui::core::paint_scope::set_current_paint_widget;
 
 impl ScenePaint for WidgetTree {
     fn root_id(&self) -> Option<NodeId> {
@@ -80,7 +81,9 @@ impl ScenePaint for WidgetTree {
     fn paint(&self, id: NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
         if let Some(node) = self.get(id) {
             if node.visible() {
+                set_current_paint_widget(Some(id));
                 node.render(frame, ctx, self);
+                set_current_paint_widget(None);
             }
         }
     }

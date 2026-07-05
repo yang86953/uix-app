@@ -96,13 +96,26 @@ pub fn begin_frame(
         }
     }
 
-    RenderOutcome::Present(DamageRegion::full())
+    RenderOutcome::Present(present_damage_for_strategy(&strategy))
 }
 
 /// 帧结束：恢复裁剪栈。
 pub fn end_frame(surface: &mut dyn DrawSurface) -> RenderOutcome {
     surface.pop_clip();
     RenderOutcome::Present(DamageRegion::full())
+}
+
+fn present_damage_for_strategy(strategy: &UpdateStrategy) -> DamageRegion {
+    match strategy {
+        UpdateStrategy::FullRedraw => DamageRegion::full(),
+        UpdateStrategy::DirtyRects(rects) | UpdateStrategy::Overlay(rects) => {
+            if rects.is_empty() {
+                DamageRegion::full()
+            } else {
+                DamageRegion::partial(rects.clone())
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -125,6 +138,29 @@ mod tests {
         let normalized =
             normalize_strategy(UpdateStrategy::DirtyRects(rects.clone()), BackendCapabilities::cpu());
         assert!(matches!(normalized, UpdateStrategy::DirtyRects(_)));
+    }
+
+    #[test]
+    fn normalize_strategy_keeps_dirty_for_gpu_partial() {
+        let rects = vec![Rect::new(1.0, 2.0, 10.0, 10.0)];
+        let normalized =
+            normalize_strategy(UpdateStrategy::DirtyRects(rects.clone()), BackendCapabilities::gpu());
+        assert!(matches!(normalized, UpdateStrategy::DirtyRects(_)));
+    }
+
+    #[test]
+    fn begin_frame_partial_dirty_returns_partial_damage() {
+        let rects = vec![Rect::new(1.0, 2.0, 10.0, 10.0)];
+        let mut surface = CpuDrawSurface::new(20, 20);
+        let outcome = begin_frame(
+            UpdateStrategy::DirtyRects(rects.clone()),
+            &mut surface,
+            20,
+            20,
+            BackendCapabilities::cpu(),
+        );
+        assert_eq!(outcome, RenderOutcome::Present(DamageRegion::partial(rects)));
+        end_frame(&mut surface);
     }
 
     #[test]

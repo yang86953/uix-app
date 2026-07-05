@@ -2,6 +2,7 @@
 
 pub mod children;
 pub mod context;
+pub mod paint_scope;
 pub mod widget;
 
 pub use children::*;
