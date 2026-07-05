@@ -140,10 +140,7 @@ pub fn scan_random_font_path() -> Option<String> {
     preferred.or(fallback)
 }
 
-fn scan_fonts_dir(
-    fonts_dir: &str,
-    mut accept: impl FnMut(&str) -> bool,
-) -> Option<String> {
+fn scan_fonts_dir(fonts_dir: &str, mut accept: impl FnMut(&str) -> bool) -> Option<String> {
     unsafe {
         let scan_pattern = format!("{}*.*", fonts_dir);
         let wide_pattern = to_wide(&scan_pattern);

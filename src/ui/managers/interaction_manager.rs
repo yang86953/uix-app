@@ -1,21 +1,13 @@
 ﻿use crate::native::Point;
 use crate::ui::{EventResult, SystemEvent};
 
-/// Callback types for user interactions.
-pub type ClickCallback = Box<dyn FnMut(&Point)>;
-pub type ChangedCallback = Box<dyn FnMut()>;
-pub type SubmitCallback = Box<dyn FnMut()>;
-
-/// Manages mouse/touch interaction callbacks.
+/// Tracks mouse/touch interaction state.
 ///
 /// 事件坐标应为相对于 widget 左上角的偏移量。
 /// `handle_event` 的 `widget_size` 参数用于验证 `PointerUp` 位置
 /// 是否仍在 widget 范围内，避免在 widget 外释放误触 click。
 #[derive(Default)]
 pub struct InteractionManager {
-    on_click: Option<ClickCallback>,
-    on_changed: Option<ChangedCallback>,
-    on_submit: Option<SubmitCallback>,
     hovered: bool,
     pressed: bool,
     /// PointerDown 时的位置，用于 PointerUp 边界验证。
@@ -27,18 +19,6 @@ impl InteractionManager {
         Self::default()
     }
 
-    pub fn set_on_click<F: FnMut(&Point) + 'static>(&mut self, f: F) {
-        self.on_click = Some(Box::new(f));
-    }
-
-    pub fn set_on_changed<F: FnMut() + 'static>(&mut self, f: F) {
-        self.on_changed = Some(Box::new(f));
-    }
-
-    pub fn set_on_submit<F: FnMut() + 'static>(&mut self, f: F) {
-        self.on_submit = Some(Box::new(f));
-    }
-
     pub fn hovered(&self) -> bool {
         self.hovered
     }
@@ -47,7 +27,7 @@ impl InteractionManager {
     }
 
     /// 处理事件。`widget_size` 为 widget 的 (宽度, 高度)，
-    /// 用于验证 PointerUp 是否在 widget 范围内触发 click。
+    /// 用于验证 PointerUp 是否仍在 widget 范围内。
     pub fn handle_event(&mut self, event: &SystemEvent, widget_size: (f32, f32)) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, .. } => {
@@ -68,13 +48,12 @@ impl InteractionManager {
                         p.x >= 0.0 && p.y >= 0.0 && p.x <= widget_size.0 && p.y <= widget_size.1
                     })
                     .unwrap_or(false);
-                if within_bounds && started_inside {
-                    if let Some(ref mut cb) = self.on_click {
-                        cb(pos);
-                    }
-                }
                 self.press_pos = None;
-                EventResult::Handled
+                if within_bounds && started_inside {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             SystemEvent::PointerEnter => {
                 self.hovered = true;

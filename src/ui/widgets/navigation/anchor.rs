@@ -6,7 +6,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::Cell;
 
 define_widget! {
     /// Anchor — 锚点导航条。
@@ -23,7 +24,7 @@ define_widget! {
         offset_top: f32,
         /// 背景色
         bg_color: Option<Color>,
-        on_click: Option<Box<dyn FnMut(usize) + 'static>>,
+        pending_change: Cell<Option<usize>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -40,7 +41,7 @@ define_widget! {
                 let idx = (pos.y / 36.0) as usize;
                 if idx < self.items.len() {
                     self.active_index = idx;
-                    if let Some(ref mut cb) = self.on_click { cb(idx); }
+                    self.pending_change.set(Some(idx));
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -50,6 +51,16 @@ define_widget! {
             SystemEvent::PointerLeave => EventResult::Handled,
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        let idx = self.pending_change.take()?;
+        let href = self
+            .items
+            .get(idx)
+            .map(|item| item.href.clone())
+            .unwrap_or_default();
+        Some(SemanticEvent::change(id, href))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -113,7 +124,7 @@ impl Anchor {
             anchor_positions: vec![0.0; count],
             offset_top: 0.0,
             bg_color: None,
-            on_click: None,
+            pending_change: Cell::new(None),
         }
     }
 
@@ -142,11 +153,6 @@ impl Anchor {
         self.bg_color = Some(c);
         self
     }
-    pub fn on_click<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
-        self.on_click = Some(Box::new(f));
-        self
-    }
-
     pub fn active_index(&self) -> usize {
         self.active_index
     }
@@ -158,5 +164,44 @@ impl Anchor {
     }
     pub fn items(&self) -> &[AnchorItem] {
         &self.items
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::{KeyMod, MouseButton};
+    use crate::ui::{SemanticKind, WidgetCore, WidgetTree};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn anchor_click_emits_change_semantic_event() {
+        let mut tree = WidgetTree::new();
+        let id = tree.set_root(Box::new(Anchor::new(vec![
+            AnchorItem::new("基础", "#basic"),
+            AnchorItem::new("高级", "#advanced"),
+            AnchorItem::new("API", "#api"),
+        ])));
+        tree.get_mut(id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 160.0, 108.0));
+
+        let href = Rc::new(RefCell::new(String::new()));
+        let href_for_handler = href.clone();
+        tree.handler_table()
+            .on(id, SemanticKind::Change, move |event| {
+                if let Some(value) = event.text_payload() {
+                    *href_for_handler.borrow_mut() = value.to_string();
+                }
+            });
+
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(20.0, 80.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+
+        assert_eq!(&*href.borrow(), "#api");
     }
 }

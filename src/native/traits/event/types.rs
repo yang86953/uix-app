@@ -29,6 +29,8 @@ pub enum UiEventType {
     TextInput,
     Timer,
     FileDrop,
+    ThemeChanged,
+    LocaleChanged,
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -123,6 +125,16 @@ pub struct FileDropData {
     pub position: Point,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ThemeChangeData {
+    pub is_dark: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LocaleChangeData {
+    pub locale: String,
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // UiEventPayload — 事件载荷枚举
 // ════════════════════════════════════════════════════════════════════════════
@@ -139,6 +151,8 @@ pub enum UiEventPayload {
     Timer(TimerEventData),
     TextInput(TextInputData),
     FileDrop(FileDropData),
+    ThemeChanged(ThemeChangeData),
+    LocaleChanged(LocaleChangeData),
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -227,6 +241,22 @@ impl UiEvent {
         Self {
             type_: UiEventType::TextInput,
             payload: UiEventPayload::TextInput(TextInputData { text: text.into() }),
+        }
+    }
+
+    pub fn theme_changed(is_dark: bool) -> Self {
+        Self {
+            type_: UiEventType::ThemeChanged,
+            payload: UiEventPayload::ThemeChanged(ThemeChangeData { is_dark }),
+        }
+    }
+
+    pub fn locale_changed(locale: impl Into<String>) -> Self {
+        Self {
+            type_: UiEventType::LocaleChanged,
+            payload: UiEventPayload::LocaleChanged(LocaleChangeData {
+                locale: locale.into(),
+            }),
         }
     }
 

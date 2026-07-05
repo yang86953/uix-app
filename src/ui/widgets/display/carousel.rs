@@ -12,7 +12,7 @@ use crate::native::{Point, Rect, Size};
 use crate::ui::animation::core::Animation;
 use crate::ui::animation::Easing;
 use crate::ui::children::WidgetChildren;
-use crate::ui::{EventResult, WidgetComponent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 
 define_widget! {
     /// Carousel — 轮播图组件。

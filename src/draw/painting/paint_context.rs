@@ -45,7 +45,6 @@ pub struct PaintContext<'a> {
     record_ops: bool,
 }
 
-
 impl<'a> PaintContext<'a> {
     /// 创建渲染上下文。
     ///

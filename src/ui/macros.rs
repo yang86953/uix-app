@@ -166,6 +166,7 @@ macro_rules! __define_widget_upcast_method {
     (flex_shrink; $T:ty) => {};
     (layout_children; $T:ty) => {};
     (render; $T:ty) => { $crate::wc_upcast!($T; WidgetRender); };
+    (uses_palette; $T:ty) => {};
     (dirty_rect; $T:ty) => {};
     (children_clip; $T:ty) => {};
     (draw_margin; $T:ty) => {};
@@ -176,8 +177,14 @@ macro_rules! __define_widget_upcast_method {
     (viewport_scroll_offset; $T:ty) => {};
     (hit_test_frame; $T:ty) => {};
     (on_init; $T:ty) => { $crate::wc_upcast!($T; WidgetLifecycle); };
+    (on_attach; $T:ty) => {};
     (on_mount; $T:ty) => {};
+    (on_active; $T:ty) => {};
+    (on_inactive; $T:ty) => {};
+    (on_theme_changed; $T:ty) => {};
     (on_unmount; $T:ty) => {};
+    (on_detach; $T:ty) => {};
+    (on_destroy; $T:ty) => {};
     (on_update; $T:ty) => {};
     ($other:ident; $T:ty) => {};
 }
@@ -239,11 +246,11 @@ macro_rules! define_widget {
                     match stringify!($method) {
                         "preferred_size" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
-                        "render" | "dirty_rect" | "children_clip" | "draw_margin" =>
+                        "render" | "uses_palette" | "dirty_rect" | "children_clip" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
                         "on_event" | "needs_continuous_update" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "hit_test_frame" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
-                        "on_init" | "on_mount" | "on_unmount" | "on_update" =>
+                        "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" | "on_update" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
                         _ => {}
                     }
@@ -275,7 +282,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             WidgetRender,
             $name,
-            [render dirty_rect children_clip draw_margin],
+            [render uses_palette dirty_rect children_clip draw_margin],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -291,7 +298,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             WidgetLifecycle,
             $name,
-            [on_init on_mount on_unmount on_update],
+            [on_init on_attach on_mount on_active on_inactive on_theme_changed on_unmount on_detach on_destroy on_update],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -323,6 +330,9 @@ macro_rules! __define_widget_method_builder {
     // ── WidgetRender ──
     (render; WidgetRender; ($($p:tt)*) $body:block) => {
         fn render($($p)*) $body
+    };
+    (uses_palette; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn uses_palette($($p)*) -> $ret $body
     };
     (dirty_rect; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn dirty_rect($($p)*) -> $ret $body
@@ -359,11 +369,29 @@ macro_rules! __define_widget_method_builder {
     (on_init; WidgetLifecycle; ($($p:tt)*) $body:block) => {
         fn on_init($($p)*) $body
     };
+    (on_attach; WidgetLifecycle; ($($p:tt)*) $body:block) => {
+        fn on_attach($($p)*) $body
+    };
     (on_mount; WidgetLifecycle; ($($p:tt)*) $body:block) => {
         fn on_mount($($p)*) $body
     };
+    (on_active; WidgetLifecycle; ($($p:tt)*) $body:block) => {
+        fn on_active($($p)*) $body
+    };
+    (on_inactive; WidgetLifecycle; ($($p:tt)*) $body:block) => {
+        fn on_inactive($($p)*) $body
+    };
+    (on_theme_changed; WidgetLifecycle; ($($p:tt)*) $body:block) => {
+        fn on_theme_changed($($p)*) $body
+    };
     (on_unmount; WidgetLifecycle; ($($p:tt)*) $body:block) => {
         fn on_unmount($($p)*) $body
+    };
+    (on_detach; WidgetLifecycle; ($($p:tt)*) $body:block) => {
+        fn on_detach($($p)*) $body
+    };
+    (on_destroy; WidgetLifecycle; ($($p:tt)*) $body:block) => {
+        fn on_destroy($($p)*) $body
     };
     (on_update; WidgetLifecycle; ($($p:tt)*) $body:block) => {
         fn on_update($($p)*) $body
@@ -392,6 +420,9 @@ macro_rules! __match_trait_method {
     // ── WidgetRender ──
     (WidgetRender, render, ($($p:tt)*) $body:block) => {
         fn render($($p)*) $body
+    };
+    (WidgetRender, uses_palette, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn uses_palette($($p)*) -> $ret $body
     };
     (WidgetRender, dirty_rect, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn dirty_rect($($p)*) -> $ret $body
@@ -428,11 +459,29 @@ macro_rules! __match_trait_method {
     (WidgetLifecycle, on_init, ($($p:tt)*) $body:block) => {
         fn on_init($($p)*) $body
     };
+    (WidgetLifecycle, on_attach, ($($p:tt)*) $body:block) => {
+        fn on_attach($($p)*) $body
+    };
     (WidgetLifecycle, on_mount, ($($p:tt)*) $body:block) => {
         fn on_mount($($p)*) $body
     };
+    (WidgetLifecycle, on_active, ($($p:tt)*) $body:block) => {
+        fn on_active($($p)*) $body
+    };
+    (WidgetLifecycle, on_inactive, ($($p:tt)*) $body:block) => {
+        fn on_inactive($($p)*) $body
+    };
+    (WidgetLifecycle, on_theme_changed, ($($p:tt)*) $body:block) => {
+        fn on_theme_changed($($p)*) $body
+    };
     (WidgetLifecycle, on_unmount, ($($p:tt)*) $body:block) => {
         fn on_unmount($($p)*) $body
+    };
+    (WidgetLifecycle, on_detach, ($($p:tt)*) $body:block) => {
+        fn on_detach($($p)*) $body
+    };
+    (WidgetLifecycle, on_destroy, ($($p:tt)*) $body:block) => {
+        fn on_destroy($($p)*) $body
     };
     (WidgetLifecycle, on_update, ($($p:tt)*) $body:block) => {
         fn on_update($($p)*) $body

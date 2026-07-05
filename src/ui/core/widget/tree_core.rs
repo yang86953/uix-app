@@ -161,11 +161,82 @@ impl WidgetTree {
         self.pointer_down_target = None;
     }
 
+    fn collect_lifecycle_subtree(&self, id: WidgetId, out: &mut Vec<WidgetId>) {
+        if self.get(id).is_none() {
+            return;
+        }
+        out.push(id);
+        if let Some(node) = self.get(id) {
+            for &child_id in node.children() {
+                self.collect_lifecycle_subtree(child_id, out);
+            }
+        }
+    }
+
+    fn attach_node(&mut self, id: WidgetId) {
+        if let Some(node) = self.get_mut(id) {
+            if !node.attached() {
+                node.set_attached(true);
+                node.on_attach();
+            }
+        }
+    }
+
+    fn deactivate_detach_and_destroy(&mut self, id: WidgetId) {
+        if let Some(node) = self.get_mut(id) {
+            if node.active() {
+                node.set_active(false);
+                node.on_inactive();
+            }
+            if node.mounted() {
+                node.set_mounted(false);
+                node.on_unmount();
+            }
+            if node.attached() {
+                node.set_attached(false);
+                node.on_detach();
+            }
+            if !node.destroyed() {
+                node.set_destroyed(true);
+                node.on_destroy();
+            }
+        }
+    }
+
+    pub(crate) fn teardown_subtree(&mut self, id: WidgetId) {
+        let mut ids = Vec::new();
+        self.collect_lifecycle_subtree(id, &mut ids);
+        for id in ids.into_iter().rev() {
+            self.deactivate_detach_and_destroy(id);
+        }
+    }
+
+    fn teardown_all(&mut self) {
+        let ids = self.traverse();
+        for id in ids.into_iter().rev() {
+            self.deactivate_detach_and_destroy(id);
+        }
+    }
+
+    pub fn notify_theme_changed(&mut self) {
+        let ids = self.traverse();
+        for id in ids {
+            if let Some(node) = self.get_mut(id) {
+                node.on_theme_changed();
+            }
+            if self.get(id).is_some_and(|node| node.uses_palette()) {
+                self.invalidate_paint(id);
+            }
+        }
+    }
+
     /// 设置根节点（全量重建）。
     ///
     /// 每次调用会**彻底清空旧树**，ID 空间从 0 重新开始分配。
     /// 这意味着同一棵 widget 树（相同构建顺序）每次重建后拿到相同的 ID。
     pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> WidgetId {
+        self.teardown_all();
+
         // 硬重置：清空旧树，ID 空间归零，free_ids 废弃
         self.nodes.clear();
         self.free_ids.clear();
@@ -186,6 +257,7 @@ impl WidgetTree {
         }
         self.nodes[id] = Some(boxed);
         self.root_id = Some(id);
+        self.attach_node(id);
         for child in children {
             self.add_child(id, child);
         }
@@ -268,6 +340,7 @@ impl WidgetTree {
             self.nodes.resize_with(child_id + 1, || None);
         }
         self.nodes[child_id] = Some(boxed);
+        self.attach_node(child_id);
         if let Some(parent) = self.get_mut(parent_id) {
             parent.children_mut().push(child_id);
         }
@@ -297,6 +370,7 @@ impl WidgetTree {
             .get(id)
             .and_then(|n| n.as_ref())
             .and_then(|n| n.parent());
+        self.teardown_subtree(id);
         if let Some(node) = self.nodes.get_mut(id) {
             if let Some(node) = node.take() {
                 for child_id in node.children().to_vec() {
@@ -359,6 +433,7 @@ impl WidgetTree {
         }
 
         self.propagate_layout_invalidation(id);
+        self.reconcile_lifecycle_after_layout();
     }
 
     /// 返回树中所有节点的先序遍历顺序。
@@ -483,6 +558,7 @@ impl WidgetTree {
                 input.set_focused(true);
             }
         }
+        self.reconcile_lifecycle_after_layout();
         Some(id)
     }
 

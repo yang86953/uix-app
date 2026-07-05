@@ -7,7 +7,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Rect, Size};
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
 /// 步骤状态。
@@ -33,7 +33,7 @@ define_widget! {
         steps: Vec<Step>,
         current: Cell<usize>,
         direction: bool, // true=horizontal, false=vertical
-        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
+        pending_change: Cell<Option<usize>>,
         /// 缓存 render 时的 frame 和 step_w，供 on_event 定位点击区域
         last_frame_and_step_w: Cell<Option<(Rect, f32)>>,
     }
@@ -58,8 +58,10 @@ define_widget! {
                     if rel_x >= 0.0 {
                         let idx = (rel_x / step_w) as usize;
                         if idx < count {
-                            self.current.set(idx);
-                            if let Some(ref mut cb) = self.on_change { cb(idx); }
+                            if self.current.get() != idx {
+                                self.current.set(idx);
+                                self.pending_change.set(Some(idx));
+                            }
                             return EventResult::Handled;
                         }
                     }
@@ -67,6 +69,12 @@ define_widget! {
             }
         }
         EventResult::NotHandled
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|idx| SemanticEvent::change(id, idx.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -132,7 +140,7 @@ impl Steps {
             steps,
             current,
             direction: true,
-            on_change: None,
+            pending_change: Cell::new(None),
             last_frame_and_step_w: Cell::new(None),
         }
     }
@@ -152,10 +160,6 @@ impl Steps {
     }
     pub fn step_count(&self) -> usize {
         self.steps.len()
-    }
-    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
     }
 }
 

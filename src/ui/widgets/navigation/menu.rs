@@ -6,8 +6,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
-use std::cell::Cell;
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::{Cell, RefCell};
 
 /// 菜单方向。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -34,8 +34,7 @@ define_widget! {
         hovered_idx: Cell<usize>,
         focused: bool,
         item_h: f32,
-        on_change: Option<Box<dyn FnMut(String) + 'static>>,
-        on_click: Option<Box<dyn FnMut(usize) + 'static>>,
+        pending_change: RefCell<Option<String>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -59,9 +58,8 @@ define_widget! {
                         let old_key = self.active_key.clone();
                         self.active_key = self.items[i].key.clone();
                         self.hovered_idx.set(i);
-                        if let Some(ref mut cb) = self.on_click { cb(i); }
                         if self.active_key != old_key {
-                            if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                            self.pending_change.replace(Some(self.active_key.clone()));
                         }
                         return EventResult::Handled;
                     }
@@ -92,12 +90,12 @@ define_widget! {
                             }
                             if next < self.items.len() {
                                 self.active_key = self.items[next].key.clone();
-                                if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                                self.pending_change.replace(Some(self.active_key.clone()));
                             }
                         } else {
                             if let Some(i) = self.first_non_disabled() {
                                 self.active_key = self.items[i].key.clone();
-                                if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                                self.pending_change.replace(Some(self.active_key.clone()));
                             }
                         }
                         EventResult::Handled
@@ -109,7 +107,7 @@ define_widget! {
                                 loop {
                                     if !self.items[prev].disabled {
                                         self.active_key = self.items[prev].key.clone();
-                                        if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                                        self.pending_change.replace(Some(self.active_key.clone()));
                                         break;
                                     }
                                     if prev == 0 { break; }
@@ -126,12 +124,12 @@ define_widget! {
                             }
                             if next < self.items.len() {
                                 self.active_key = self.items[next].key.clone();
-                                if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                                self.pending_change.replace(Some(self.active_key.clone()));
                             }
                         } else {
                             if let Some(i) = self.first_non_disabled() {
                                 self.active_key = self.items[i].key.clone();
-                                if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                                self.pending_change.replace(Some(self.active_key.clone()));
                             }
                         }
                         EventResult::Handled
@@ -143,7 +141,7 @@ define_widget! {
                                 loop {
                                     if !self.items[prev].disabled {
                                         self.active_key = self.items[prev].key.clone();
-                                        if let Some(ref mut cb) = self.on_change { cb(self.active_key.clone()); }
+                                        self.pending_change.replace(Some(self.active_key.clone()));
                                         break;
                                     }
                                     if prev == 0 { break; }
@@ -157,6 +155,13 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|key| SemanticEvent::change(id, key))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -273,8 +278,7 @@ impl Menu {
             hovered_idx: Cell::new(usize::MAX),
             focused: false,
             item_h: 32.0,
-            on_change: None,
-            on_click: None,
+            pending_change: RefCell::new(None),
         }
     }
     pub fn items(mut self, items: Vec<MenuItem>) -> Self {
@@ -303,12 +307,54 @@ impl Menu {
         self.item_h = h;
         self
     }
-    pub fn on_change<F: FnMut(String) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
-    }
-    pub fn on_click<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
-        self.on_click = Some(Box::new(f));
-        self
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::{KeyMod, MouseButton};
+    use crate::ui::{SemanticKind, WidgetCore, WidgetTree};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn menu_selection_emits_change_semantic_event() {
+        let mut tree = WidgetTree::new();
+        let id = tree.set_root(Box::new(
+            Menu::new()
+                .add_item(MenuItem {
+                    key: "home".into(),
+                    label: "首页".into(),
+                    icon: String::new(),
+                    disabled: false,
+                })
+                .add_item(MenuItem {
+                    key: "docs".into(),
+                    label: "文档".into(),
+                    icon: String::new(),
+                    disabled: false,
+                })
+                .active_key("home"),
+        ));
+        tree.get_mut(id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 200.0, 32.0));
+
+        let selected = Rc::new(RefCell::new(String::new()));
+        let selected_for_handler = selected.clone();
+        tree.handler_table()
+            .on(id, SemanticKind::Change, move |event| {
+                if let Some(value) = event.text_payload() {
+                    *selected_for_handler.borrow_mut() = value.to_string();
+                }
+            });
+
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(90.0, 16.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+
+        assert_eq!(&*selected.borrow(), "docs");
     }
 }

@@ -4,7 +4,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
 use crate::native::{Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::Cell;
 
 define_widget! {
     /// Segmented — 水平分段选择器。
@@ -15,7 +16,7 @@ define_widget! {
         disabled_options: Vec<bool>,
         hovered_idx: Option<usize>,
         focused: bool,
-        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
+        pending_change: Cell<Option<usize>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -30,8 +31,10 @@ define_widget! {
             SystemEvent::PointerDown { pos, .. } => {
                 if let Some(idx) = self.segment_at(pos.x) {
                     if !self.is_segment_disabled(idx) {
-                        self.selected = idx;
-                        if let Some(ref mut cb) = self.on_change { cb(idx); }
+                        if self.selected != idx {
+                            self.selected = idx;
+                            self.pending_change.set(Some(idx));
+                        }
                         return EventResult::Handled;
                     }
                 }
@@ -54,7 +57,7 @@ define_widget! {
                         }
                         if next < self.options.len() {
                             self.selected = next;
-                            if let Some(ref mut cb) = self.on_change { cb(next); }
+                            self.pending_change.set(Some(next));
                         }
                         EventResult::Handled
                     }
@@ -64,8 +67,10 @@ define_widget! {
                             prev -= 1;
                         }
                         if !self.is_segment_disabled(prev) && prev < self.options.len() {
-                            self.selected = prev;
-                            if let Some(ref mut cb) = self.on_change { cb(prev); }
+                            if self.selected != prev {
+                                self.selected = prev;
+                                self.pending_change.set(Some(prev));
+                            }
                         }
                         EventResult::Handled
                     }
@@ -74,6 +79,12 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|idx| SemanticEvent::change(id, idx.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -160,7 +171,7 @@ impl Segmented {
             disabled_options: Vec::new(),
             hovered_idx: None,
             focused: false,
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
     pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
@@ -180,10 +191,6 @@ impl Segmented {
             self.disabled_options.push(false);
         }
         self.disabled_options[idx] = true;
-        self
-    }
-    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
         self
     }
 }

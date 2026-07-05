@@ -285,7 +285,11 @@ pub fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {
     let py = uy - cy;
 
     let cr = if px < 0.0 {
-        if py < 0.0 { rad.tl } else { rad.bl }
+        if py < 0.0 {
+            rad.tl
+        } else {
+            rad.bl
+        }
     } else if py < 0.0 {
         rad.tr
     } else {

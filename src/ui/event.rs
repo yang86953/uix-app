@@ -21,6 +21,8 @@ pub enum SystemEventKind {
     PointerEnter,
     PointerLeave,
     Resize,
+    ThemeChanged,
+    LocaleChanged,
     WindowMaximize,
     WindowMinimize,
     WindowRestore,
@@ -68,6 +70,12 @@ pub enum SystemEvent {
     FocusOut,
     PointerEnter,
     PointerLeave,
+    ThemeChanged {
+        is_dark: bool,
+    },
+    LocaleChanged {
+        locale: String,
+    },
     Resize {
         width: f32,
         height: f32,
@@ -115,6 +123,8 @@ impl SystemEvent {
             SystemEvent::FocusOut => SystemEventKind::FocusOut,
             SystemEvent::PointerEnter => SystemEventKind::PointerEnter,
             SystemEvent::PointerLeave => SystemEventKind::PointerLeave,
+            SystemEvent::ThemeChanged { .. } => SystemEventKind::ThemeChanged,
+            SystemEvent::LocaleChanged { .. } => SystemEventKind::LocaleChanged,
             SystemEvent::Resize { .. } => SystemEventKind::Resize,
             SystemEvent::WindowMaximize => SystemEventKind::WindowMaximize,
             SystemEvent::WindowMinimize => SystemEventKind::WindowMinimize,

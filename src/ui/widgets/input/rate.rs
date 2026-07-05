@@ -4,7 +4,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::Cell;
 
 define_widget! {
     /// Rate — 星级评分，点击选择分值。
@@ -16,7 +17,7 @@ define_widget! {
         clearable: bool,
         hover_value: usize,
         focused: bool,
-        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
+        pending_change: Cell<Option<usize>>,
         character: String,
     }
 
@@ -42,7 +43,7 @@ define_widget! {
                     } else {
                         self.value = new_val;
                     }
-                    if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                    self.pending_change.set(Some(self.value));
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
@@ -70,14 +71,14 @@ define_widget! {
                         let max_val = if self.half { self.count * 2 } else { self.count };
                         if self.value < max_val {
                             self.value += 1;
-                            if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                            self.pending_change.set(Some(self.value));
                         }
                         EventResult::Handled
                     }
                     KeyCode::Left | KeyCode::Down => {
                         if self.value > 0 {
                             self.value -= 1;
-                            if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                            self.pending_change.set(Some(self.value));
                         }
                         EventResult::Handled
                     }
@@ -86,6 +87,12 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|value| SemanticEvent::change(id, value.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -143,7 +150,7 @@ impl Rate {
             clearable: false,
             hover_value: 0,
             focused: false,
-            on_change: None,
+            pending_change: Cell::new(None),
             character: String::new(),
         }
     }
@@ -165,10 +172,6 @@ impl Rate {
     }
     pub fn clearable(mut self) -> Self {
         self.clearable = true;
-        self
-    }
-    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
         self
     }
     pub fn character(mut self, c: impl Into<String>) -> Self {

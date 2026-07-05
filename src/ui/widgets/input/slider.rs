@@ -6,7 +6,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 
 define_widget! {
     /// Slider — 水平滑块，支持拖拽选择值。
@@ -19,7 +19,7 @@ define_widget! {
         hovered: bool,
         focused: bool,
         last_frame: Cell<Option<Rect>>,
-        on_change: Option<Box<dyn FnMut(f32) + 'static>>,
+        pending_change: Cell<Option<f32>>,
     }
 
 
@@ -62,7 +62,7 @@ define_widget! {
                         let new_val = (self.value + self.step).min(self.max);
                         if (new_val - self.value).abs() > f32::EPSILON {
                             self.value = new_val;
-                            if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                            self.pending_change.set(Some(self.value));
                         }
                         EventResult::Handled
                     }
@@ -70,7 +70,7 @@ define_widget! {
                         let new_val = (self.value - self.step).max(self.min);
                         if (self.value - new_val).abs() > f32::EPSILON {
                             self.value = new_val;
-                            if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                            self.pending_change.set(Some(self.value));
                         }
                         EventResult::Handled
                     }
@@ -79,6 +79,12 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|value| SemanticEvent::change(id, value.to_string()))
     }
 
     needs_continuous_update => (&self) -> bool { self.dragging }
@@ -125,9 +131,7 @@ impl Slider {
             self.value = raw.clamp(self.min, self.max);
         }
         if (self.value - prev).abs() > f32::EPSILON {
-            if let Some(ref mut cb) = self.on_change {
-                cb(self.value);
-            }
+            self.pending_change.set(Some(self.value));
         }
     }
 }
@@ -149,7 +153,7 @@ impl Slider {
             hovered: false,
             focused: false,
             last_frame: Cell::new(None),
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
     pub fn range(mut self, min: f32, max: f32) -> Self {
@@ -167,9 +171,5 @@ impl Slider {
     }
     pub fn get_value(&self) -> f32 {
         self.value
-    }
-    pub fn on_change<F: FnMut(f32) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
     }
 }

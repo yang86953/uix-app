@@ -8,7 +8,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 
 /// 时间结构
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -42,7 +42,7 @@ define_widget! {
         scroll_hour: Cell<f32>,
         scroll_min: Cell<f32>,
         last_frame: Cell<Option<Rect>>,
-        on_change: Option<Box<dyn FnMut(TimeValue) + 'static>>,
+        pending_change: Cell<Option<TimeValue>>,
     }
 
 
@@ -77,9 +77,11 @@ define_widget! {
                                 self.hover_hour.set(idx);
                                 let val = self.value.get();
                                 let new_val = TimeValue::new(idx as u32, val.minute);
-                                self.value.set(new_val);
+                                if val != new_val {
+                                    self.value.set(new_val);
+                                    self.pending_change.set(Some(new_val));
+                                }
                                 self.open.set(false);
-                                if let Some(ref mut cb) = self.on_change { cb(new_val); }
                                 return EventResult::Handled;
                             }
                         } else {
@@ -90,9 +92,11 @@ define_widget! {
                                 self.hover_minute.set(idx);
                                 let val = self.value.get();
                                 let new_val = TimeValue::new(val.hour, minute as u32);
-                                self.value.set(new_val);
+                                if val != new_val {
+                                    self.value.set(new_val);
+                                    self.pending_change.set(Some(new_val));
+                                }
                                 self.open.set(false);
-                                if let Some(ref mut cb) = self.on_change { cb(new_val); }
                                 return EventResult::Handled;
                             }
                         }
@@ -155,6 +159,12 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|value| SemanticEvent::change(id, value.format()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -248,7 +258,7 @@ impl TimePicker {
             scroll_hour: Cell::new(0.0),
             scroll_min: Cell::new(0.0),
             last_frame: Cell::new(None),
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
 
@@ -261,9 +271,5 @@ impl TimePicker {
     }
     pub fn set_value(&mut self, v: TimeValue) {
         self.value.set(v);
-    }
-    pub fn on_change<F: FnMut(TimeValue) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
     }
 }

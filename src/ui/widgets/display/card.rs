@@ -9,7 +9,7 @@ use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
-use crate::ui::{EventResult, WidgetComponent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 
 define_widget! {
     /// Card widget with shadow elevation, hover highlight, and content padding.

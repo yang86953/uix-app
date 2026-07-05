@@ -1,4 +1,4 @@
-﻿use super::tree_core::WidgetTree;
+use super::tree_core::WidgetTree;
 use super::*;
 use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle, ScrollDelta};
 use crate::draw::DirtyRegion;
@@ -121,7 +121,6 @@ impl WidgetTree {
         }
         self.try_register_animation(id);
     }
-
 
     pub fn invalidate_paint_subtree(&mut self, id: WidgetId) {
         let ids: Vec<WidgetId> = {

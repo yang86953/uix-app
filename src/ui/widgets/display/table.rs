@@ -2,8 +2,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
-use std::cell::Cell;
+use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::{Cell, RefCell};
 
 /// 排序方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,9 +51,6 @@ pub type TableRow = Vec<String>;
 /// 扩展行渲染器。
 pub type ExpandRenderer = Box<dyn Fn(usize, &mut PaintContext, Rect)>;
 
-/// 数据变更回调。
-pub type TableChangeCallback = Box<dyn FnMut(TableChange)>;
-
 /// 变更事件。
 #[derive(Debug, Clone)]
 pub struct TableChange {
@@ -82,7 +79,7 @@ define_widget! {
         /// 当前分页。
         current_page: Cell<usize>,
         page_size: usize,
-        on_change: Option<TableChangeCallback>,
+        pending_change: RefCell<Option<String>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -116,14 +113,13 @@ define_widget! {
                             };
                             for c in &mut self.columns { c.sort_direction = SortDirection::None; }
                             self.columns[ci].sort_direction = new_dir;
-                            if let Some(ref mut cb) = self.on_change {
-                                cb(TableChange {
-                                    sort_column: Some(ci),
-                                    sort_direction: new_dir,
-                                    page: self.current_page.get(),
-                                    page_size: self.page_size,
-                                });
-                            }
+                            let change = TableChange {
+                                sort_column: Some(ci),
+                                sort_direction: new_dir,
+                                page: self.current_page.get(),
+                                page_size: self.page_size,
+                            };
+                            self.pending_change.replace(Some(change.payload()));
                             return EventResult::Handled;
                         }
                         x += col.width;
@@ -150,6 +146,13 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|value| SemanticEvent::change(id, value))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -258,6 +261,24 @@ define_widget! {
     }
 }
 
+impl TableChange {
+    fn payload(&self) -> String {
+        let sort_column = self
+            .sort_column
+            .map(|idx| idx.to_string())
+            .unwrap_or_default();
+        let sort_direction = match self.sort_direction {
+            SortDirection::None => "none",
+            SortDirection::Asc => "asc",
+            SortDirection::Desc => "desc",
+        };
+        format!(
+            "sort_column={};sort_direction={};page={};page_size={}",
+            sort_column, sort_direction, self.page, self.page_size
+        )
+    }
+}
+
 impl Default for Table {
     fn default() -> Self {
         Self::new()
@@ -280,7 +301,7 @@ impl Table {
             empty_text: String::new(),
             current_page: Cell::new(0),
             page_size: 20,
-            on_change: None,
+            pending_change: RefCell::new(None),
         }
     }
     pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {
@@ -319,10 +340,6 @@ impl Table {
     }
     pub fn page_size(mut self, n: usize) -> Self {
         self.page_size = n;
-        self
-    }
-    pub fn on_change<F: FnMut(TableChange) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
         self
     }
 }
