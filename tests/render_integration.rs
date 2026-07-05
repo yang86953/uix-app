@@ -1,21 +1,21 @@
-//! uix-graphics crate 集成测试。
+//! uix draw 域集成测试。
 
-use uix::render::blur::gaussian_blur;
-use uix::render::color::{colors, Color};
-use uix::render::flattener::flatten;
-use uix::render::path::{FillRule, LineCap, LineJoin, PathBuilder, PathSegment};
-use uix::render::rasterizer::core::{
+use uix::draw::blur::gaussian_blur;
+use uix::draw::color::{colors, Color};
+use uix::draw::flattener::flatten;
+use uix::draw::path::{FillRule, LineCap, LineJoin, PathBuilder, PathSegment};
+use uix::draw::rasterizer::core::{
     apply_opacity, blend_srcover, clip_to_int, color_to_premul, fill_rect_raw, fill_span,
     intersect_rect, line_segment_sdf, premul, put_pixel, put_pixel_aa, rect_to_pixels,
     rounded_rect_sdf, sdf_to_coverage, sdf_to_coverage_aa, shadow_coverage,
     shadow_coverage_ambient,
 };
-use uix::render::stroker::{stroke_path, StrokeOptions};
-use uix::render::types::{
+use uix::draw::stroker::{stroke_path, StrokeOptions};
+use uix::draw::types::{
     BlendMode, DirtyRegion, FontHandle, HAlign, ImageHandle, Radius, TextLayoutOptions, Transform,
     VAlign,
 };
-use uix::platform::api::geometry::{Point, Rect};
+use uix::core::geometry::{Point, Rect};
 
 // ════════════════════════════════════════════════════════════════════════════
 // color 测试

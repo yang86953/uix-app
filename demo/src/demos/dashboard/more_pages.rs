@@ -1,14 +1,6 @@
 //! 组件展示页面（图表、其他）
 
-use uix::platform::EdgeInsets;
-use uix::tree;
-use uix::api::widget::layout::FlexDirection;
-use uix::widget::theme::DesignTokens;
-use uix::widget::WidgetNode;
-use uix::api::widget::{
-    BarChart, BarData, ColorPicker, Container, Form, IntoWidgetNode, Label, LineChart, LineData,
-    PieChart, PieData,
-};
+use uix::prelude::*;
 
 use super::widgets::{BounceBall, Counter, PulseRing};
 use super::{row, PageBuilder, INNER_W};

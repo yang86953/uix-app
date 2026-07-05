@@ -1,12 +1,12 @@
 //! graphics 会话与后端切换集成测试。
 
-use uix::render::backend::BackendKind;
-use uix::render::engine::RenderOutcome;
-use uix::render::engine::cpu::software::SoftwareEngine;
-use uix::render::backend::DamageRegion;
-use uix::render::pipeline::RenderSession;
-use uix::render::traits::{GraphicsEngine, UpdateStrategy};
-use uix::platform::Rect;
+use uix::draw::backend::BackendKind;
+use uix::draw::engine::RenderOutcome;
+use uix::draw::engine::cpu::software::SoftwareEngine;
+use uix::draw::backend::DamageRegion;
+use uix::draw::pipeline::RenderSession;
+use uix::draw::traits::{GraphicsEngine, UpdateStrategy};
+use uix::native::Rect;
 
 #[test]
 fn software_engine_delegates_to_shared_frame_logic() {

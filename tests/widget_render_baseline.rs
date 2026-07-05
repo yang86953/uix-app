@@ -2,16 +2,16 @@
 //!
 //! 运行方式：
 //! ```bash
-//! cargo test --features test-harness -p uix-ui render_baseline
-//! cargo test -p uix-graphics render_baseline
+//! cargo test --features test-harness -p uix ui 域 render_baseline
+//! cargo test -p uix draw 域 render_baseline
 //! ```
 
 #![cfg(feature = "test-harness")]
 
-use uix::render::pipeline::RenderMetrics;
-use uix::platform::Rect;
-use uix::widget::WidgetTree;
-use uix::widget::widgets::container::Container;
+use uix::draw::pipeline::RenderMetrics;
+use uix::native::Rect;
+use uix::ui::WidgetTree;
+use uix::ui::widgets::container::Container;
 
 #[test]
 fn baseline_idle_zero_present() {

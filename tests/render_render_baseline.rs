@@ -1,6 +1,6 @@
 //! Phase 0 绘图层度量基线测试（不依赖 UI）。
 
-use uix::render::pipeline::{InvalidationSource, RenderMetrics};
+use uix::draw::pipeline::{InvalidationSource, RenderMetrics};
 
 #[test]
 fn render_baseline_metrics_reset() {

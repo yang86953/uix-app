@@ -6,17 +6,17 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use uix::platform::api::*;
-use uix::platform::api::error::Errc;
-use uix::platform::api::event::{UiEvent, UiEventType};
-use uix::platform::api::geometry::Point;
-use uix::platform::presenter::NullPresenter;
-use uix::platform::shared::{
+use uix::native::traits::*;
+use uix::core::error::Errc;
+use uix::native::traits::event::{UiEvent, UiEventType};
+use uix::core::geometry::Point;
+use uix::native::presenter::NullPresenter;
+use uix::native::shared::{
     FileSystemCore, OsEventSource, PlatformWindowCore, SpecialDirProvider, WindowOps, WindowState,
 };
-use uix::platform::test_harness::{FakeEventSource, FakeGraphicsContext, FakePlatform};
-use uix::platform::api::input::{KeyCode, KeyMod, MouseButton};
-use uix::platform::api::system::SpecialDir;
+use uix::native::test_harness::{FakeEventSource, FakeGraphicsContext, FakePlatform};
+use uix::native::traits::input::{KeyCode, KeyMod, MouseButton};
+use uix::native::traits::system::SpecialDir;
 
 // ════════════════════════════════════════════════════════════════════════════
 // WindowState — 纯状态机逻辑
@@ -555,15 +555,15 @@ fn os_event_source_next_event_fifo() {
     source.inject(UiEvent::close());
     source.inject(UiEvent::mouse_down(
         Point::new(0.0, 0.0),
-        uix::platform::api::input::MouseButton::Left,
+        uix::native::traits::input::MouseButton::Left,
     ));
     assert_eq!(
         source.next_event().unwrap().type_,
-        uix::platform::api::event::UiEventType::WindowClose
+        uix::native::traits::event::UiEventType::WindowClose
     );
     assert_eq!(
         source.next_event().unwrap().type_,
-        uix::platform::api::event::UiEventType::MouseDown
+        uix::native::traits::event::UiEventType::MouseDown
     );
     assert!(source.next_event().is_none());
 }

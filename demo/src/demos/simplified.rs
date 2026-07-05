@@ -2,8 +2,7 @@
 //!
 //! 运行：`cargo run --bin uix-demo -- --simple`
 
-use uix::view::{App, View, ViewNode, StyleExt, Ui, column, row, label, button, dynamic_label, space};
-use uix::widget::state::State;
+use uix::prelude::*;
 
 // ── 计数器 —— 展示 State 自动脏标记 + 响应式 Label ─────────────
 
@@ -106,7 +105,7 @@ fn layout_section() -> ViewNode {
 // ── 入口 ──────────────────────────────────────────────────────
 
 pub fn run_simplified_demo() {
-    let theme = uix::widget::theme::Theme::antd_light();
+    let theme = Theme::antd_light();
 
     App::new()
         .title("UIX 简化 API 演示")

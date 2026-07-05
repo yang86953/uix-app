@@ -3,17 +3,17 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use uix::render::compositor::{LayerTree, ScenePaint};
-use uix::render::font_service::FontService;
-use uix::render::painting::{
+use uix::draw::compositor::{LayerTree, ScenePaint};
+use uix::draw::font_service::FontService;
+use uix::draw::painting::{
     PaintContext, ShadowToken, ThemeSnapshot, ThemeTokens, IBoxShadowTokens, IColorTokens,
     ISpacingTokens, ITypographyTokens,
 };
-use uix::render::pipeline::NodeId;
-use uix::render::traits::{GraphicsEngine, UpdateStrategy};
-use uix::render::types::DirtyRegion;
-use uix::api::render::{Color, FontHandle, SoftwareEngine};
-use uix::platform::Rect;
+use uix::draw::pipeline::NodeId;
+use uix::draw::traits::{GraphicsEngine, UpdateStrategy};
+use uix::draw::types::DirtyRegion;
+use uix::draw::{Color, FontHandle, SoftwareEngine};
+use uix::native::Rect;
 
 const VIEWPORT: NodeId = 1;
 const VISIBLE_CHILD: NodeId = 2;
@@ -98,7 +98,7 @@ impl ScenePaint for ScrollStripScene {
     fn node_focusable(&self, _: NodeId) -> bool {
         false
     }
-    fn hit_test(&self, _: uix::platform::Point) -> Option<NodeId> {
+    fn hit_test(&self, _: uix::native::Point) -> Option<NodeId> {
         None
     }
     fn parent(&self, id: NodeId) -> Option<NodeId> {

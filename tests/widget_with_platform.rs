@@ -1,19 +1,19 @@
-//! uix-ui 与平台层测试框架（FakePlatform）的集成测试。
+//! uix ui 域 与平台层测试框架（FakePlatform）的集成测试。
 //!
-//! 使用 `uix::platform::test_harness::FakePlatform` 验证 UI 组件与平台服务的交互。
+//! 使用 `uix::native::test_harness::FakePlatform` 验证 UI 组件与平台服务的交互。
 //!
 //! 运行方式：
 //! ```bash
-//! cargo test --features test-harness -p uix-ui
+//! cargo test --features test-harness -p uix
 //! ```
 
 #![cfg(feature = "test-harness")]
 
 use std::cell::Cell;
 
-use uix::platform::api::geometry::Point;
-use uix::platform::test_harness::FakePlatform;
-use uix::platform::{
+use uix::core::geometry::Point;
+use uix::native::test_harness::FakePlatform;
+use uix::native::{
     IClipboard, IDisplay, IEventLoop, IWindowManager, MouseButton, Platform, UiEvent,
     UiEventPayload, UiEventType,
 };
@@ -191,7 +191,7 @@ fn resize_event_payload() {
 
 #[test]
 fn key_event_injection() {
-    use uix::platform::{KeyCode, KeyMod};
+    use uix::native::{KeyCode, KeyMod};
 
     let mut pf = FakePlatform::new();
     pf.event_source

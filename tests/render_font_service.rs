@@ -1,10 +1,10 @@
-//! uix-graphics FontService 集成测试。
+//! uix draw 域 FontService 集成测试。
 //! 覆盖字体服务的基本构造、文本布局、测量、命中测试。
 
-use uix::render::font_service::FontService;
-use uix::render::text_backend::TextLayoutOptions;
-use uix::render::types::{FontHandle, HAlign, VAlign};
-use uix::platform::api::geometry::Point;
+use uix::draw::font_service::FontService;
+use uix::draw::text_backend::TextLayoutOptions;
+use uix::draw::types::{FontHandle, HAlign, VAlign};
+use uix::core::geometry::Point;
 
 fn default_opts() -> TextLayoutOptions {
     TextLayoutOptions {

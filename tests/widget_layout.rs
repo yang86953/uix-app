@@ -1,11 +1,11 @@
-//! uix-ui layout 模块集成测试。
+//! uix ui 域 layout 模块集成测试。
 //!
 //! 使用公共 LayoutEngine API（FlexLayout / GridLayout）而非内部 compute_* 函数。
 
-use uix::platform::api::geometry::{Rect, Size};
-use uix::api::widget::LayoutEngine;
-use uix::api::widget::{AlignItems, FlexDirection, GridTrack, JustifyContent};
-use uix::api::widget::{FlexLayout, GridLayout, LayoutChild};
+use uix::core::geometry::{Rect, Size};
+use uix::ui::LayoutEngine;
+use uix::ui::{AlignItems, FlexDirection, GridTrack, JustifyContent};
+use uix::ui::{FlexLayout, GridLayout, LayoutChild};
 
 /// 辅助：用 FlexLayout 执行布局并返回其 positions。
 fn flex_layout(

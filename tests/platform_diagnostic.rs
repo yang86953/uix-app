@@ -3,13 +3,13 @@
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use uix::platform::diagnostic::{
+use uix::core::diagnostic::{
     retry, with_recovery, with_recovery_typed, CircuitBreaker, CircuitState, Collector,
     CollectorConfig, CollectorSnapshot, ExponentialBackoffRetryPolicy, FilteredRetryPolicy,
     FixedRetryPolicy, LogMiddleware, Middleware, MiddlewareContext, MiddlewarePipeline,
     RecoveryAction, RecoveryHandler, RetryMiddleware, RetryPolicy, ScopedCollector,
 };
-use uix::platform::api::error::{Errc, Error};
+use uix::core::error::{Errc, Error};
 
 #[test]
 fn collector_config_default() {
@@ -31,7 +31,7 @@ fn collector_sequential() {
     c.configure(CollectorConfig {
         max_errors: 100,
         auto_log: false,
-        auto_log_level: uix::platform::log::Level::Warn,
+        auto_log_level: uix::core::log::Level::Warn,
         deduplicate: false,
     });
     let cfg = c.get_config();
@@ -43,7 +43,7 @@ fn collector_sequential() {
     c.configure(CollectorConfig {
         max_errors: 20,
         auto_log: true,
-        auto_log_level: uix::platform::log::Level::Warn,
+        auto_log_level: uix::core::log::Level::Warn,
         deduplicate: true,
     });
     let cfg2 = c.get_config();
@@ -55,7 +55,7 @@ fn collector_sequential() {
     c.configure(CollectorConfig {
         max_errors: 1000,
         auto_log: false,
-        auto_log_level: uix::platform::log::Level::Warn,
+        auto_log_level: uix::core::log::Level::Warn,
         deduplicate: false,
     });
 
@@ -147,7 +147,7 @@ fn collector_sequential() {
     c.set_max_errors(4096);
 
     // ── set_auto_log ──
-    c.set_auto_log(false, uix::platform::log::Level::Info);
+    c.set_auto_log(false, uix::core::log::Level::Info);
     let cfg3 = c.get_config();
     assert!(!cfg3.auto_log);
 
@@ -701,7 +701,7 @@ fn fatal_sequential() {
     // ── dump_crash_report 生成文件 ──
     let crash_path = std::path::Path::new("uix_crash.log");
     let _ = std::fs::remove_file(crash_path);
-    uix::platform::diagnostic::dump_crash_report();
+    uix::core::diagnostic::dump_crash_report();
     assert!(
         crash_path.exists(),
         "uix_crash.log should exist after dump_crash_report"
@@ -716,17 +716,17 @@ fn fatal_sequential() {
 
     // ── abort_if_fatal 非 fatal 不 abort ──
     let err = Error::new(Errc::NotFound, "non-fatal test");
-    let result = uix::platform::diagnostic::abort_if_fatal(err);
+    let result = uix::core::diagnostic::abort_if_fatal(err);
     assert_eq!(result.code(), Errc::NotFound);
 
     // ── collect_or_abort 非 fatal 只收集 ──
     let before_fatal = c.total_collected();
-    uix::platform::diagnostic::collect_or_abort(Error::warn(Errc::Timeout, "collect only"));
+    uix::core::diagnostic::collect_or_abort(Error::warn(Errc::Timeout, "collect only"));
     assert!(
         c.total_collected() > before_fatal,
         "collect_or_abort should collect the error"
     );
-    uix::platform::diagnostic::collect_or_abort(Error::invalid_arg(
+    uix::core::diagnostic::collect_or_abort(Error::invalid_arg(
         "collected_by_collect_or_abort_test",
     ));
     let found = c.errors_if(|e| e.message().contains("collected_by_collect_or_abort_test"));
@@ -736,26 +736,26 @@ fn fatal_sequential() {
     );
 
     // ── install_fatal_handler 能安全调用（Once 保护） ──
-    uix::platform::diagnostic::install_fatal_handler();
+    uix::core::diagnostic::install_fatal_handler();
     // 第二次调用应静默成功（call_once 保护）
-    uix::platform::diagnostic::install_fatal_handler();
+    uix::core::diagnostic::install_fatal_handler();
 }
 
 #[test]
 fn fatal_abort_if_fatal_severity_info() {
     let err = Error::info(Errc::None, "info severity");
-    let result = uix::platform::diagnostic::abort_if_fatal(err);
+    let result = uix::core::diagnostic::abort_if_fatal(err);
     assert_eq!(result.code(), Errc::None);
-    assert_eq!(result.severity(), uix::platform::api::error::ErrorSeverity::Info);
+    assert_eq!(result.severity(), uix::core::error::ErrorSeverity::Info);
 }
 
 #[test]
 fn fatal_abort_if_fatal_severity_warning() {
     let err = Error::warn(Errc::NotFound, "warning");
-    let result = uix::platform::diagnostic::abort_if_fatal(err);
+    let result = uix::core::diagnostic::abort_if_fatal(err);
     assert_eq!(
         result.severity(),
-        uix::platform::api::error::ErrorSeverity::Warning
+        uix::core::error::ErrorSeverity::Warning
     );
 }
 

@@ -1,9 +1,9 @@
 //! Phase 2 invalidation + animation_registry 单元测试。
 
-use uix::render::pipeline::{
+use uix::draw::pipeline::{
     AnimationRegistry, Invalidation, InvalidationQueue, ScrollDelta,
 };
-use uix::platform::Rect;
+use uix::native::Rect;
 
 #[test]
 fn render_baseline_invalidation_queue_idle() {

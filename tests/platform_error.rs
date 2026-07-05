@@ -1,7 +1,7 @@
-//! uix-platform crate 集成测试（error 模块）。
+//! uix 集成测试（error 模块）。
 
 use std::hash::{DefaultHasher, Hash, Hasher};
-use uix::platform::api::error::{
+use uix::core::error::{
     collect_errors, collect_values, make_error, try_invoke, Errc, Error, ErrorSeverity,
     ResultErrorExt, ResultExt, ResultVoidExt,
 };
@@ -45,7 +45,7 @@ fn accessors_return_correct_values() {
     assert_eq!(err.severity(), ErrorSeverity::Error);
     let file = err.file().replace('\\', "/");
     assert!(
-        file.contains("api/error")
+        file.contains("core/error")
             || file.contains("error.rs")
             || file.contains("tests")
     );
@@ -240,7 +240,7 @@ fn short_what_includes_severity_code_and_location() {
     let s = err.short_what().replace('\\', "/");
     assert!(s.contains("[ERROR]"));
     assert!(s.contains("invalid_argument"));
-    assert!(s.contains("api/error") || s.contains("error.rs"));
+    assert!(s.contains("core/error") || s.contains("error.rs"));
 }
 
 #[test]
@@ -259,7 +259,7 @@ fn what_includes_category_code_message_and_location() {
     assert!(s.contains("general"));
     assert!(s.contains("invalid_argument"));
     assert!(s.contains("bad input"));
-    assert!(s.contains("api/error") || s.contains("error.rs"));
+    assert!(s.contains("core/error") || s.contains("error.rs"));
 }
 
 #[test]

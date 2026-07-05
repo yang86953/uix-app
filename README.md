@@ -2,12 +2,12 @@
 
 UIX 是一个用 Rust 编写的原生桌面 UI 框架，目标是在 Windows 和 Linux 上提供一致的组件模型、渲染管线和应用生命周期。
 
-当前项目处于 `0.1.0` 开发阶段，核心方向是组件化架构、响应式状态、增量渲染和跨平台抽象。平台差异只封装在 `uix-platform` 内部，上层业务与 UI 代码不直接依赖具体 OS 实现。
+当前项目处于 `0.1.0` 开发阶段，核心方向是组件化架构、响应式状态、增量渲染和跨平台抽象。平台差异只封装在 `native` 域内部，上层业务与 UI 代码不直接依赖具体 OS 实现。
 
 ## 核心特性
 
 - **组件化 Widget 体系**：每个组件封装数据、行为和生命周期，通过 trait 接口组合，而不是继承层级。
-- **声明式 UI 构建**：提供 `define_widget!`、`tree!` 宏，以及面向应用层的 `view` 简化 API。
+- **声明式 UI 构建**：提供 `define_widget!`、`tree!` 宏，以及 `ui::view` 简化 API。
 - **响应式状态**：`State<T>`、`Computed<T>`、`Effect` 自动追踪依赖并触发局部更新。
 - **布局系统**：支持 Flexbox、Grid、间距、对齐、伸缩和嵌套布局。
 - **增量渲染**：基于 DirtyRects、多矩形 PresentDamage 与像素滚动，只重绘变化区域。
@@ -43,11 +43,10 @@ $env:RUST_LOG = "debug"; cargo run --bin uix-demo
 
 ## 基础用法
 
-应用层可以优先使用 `uix::ui::view` 简化 API：
+推荐通过 `prelude` 统一导入：
 
 ```rust
-use uix::ui::view::*;
-use uix::ui::{App, State};
+use uix::prelude::*;
 
 fn main() {
     let count = State::new(0);
@@ -73,12 +72,21 @@ fn main() {
 
 更底层的 Widget 能力可以通过 `uix::ui::*`、`define_widget!` 和 `tree!` 直接使用。
 
-## Workspace 结构
+## 模块结构
+
+框架按六大功能域组织（详见 [`ARCHITECTURE.md`](ARCHITECTURE.md)）：
 
 ```text
 uix-app/
 ├── Cargo.toml              # workspace 根与框架 crate: uix
-├── src/                    # uix: platform / render / widget / runtime / view
+├── src/
+│   ├── core/               # 错误、几何、日志、诊断
+│   ├── native/             # 平台能力（traits / backends / services）
+│   ├── draw/               # 绘制引擎、光栅化、字体、合成
+│   ├── ui/                 # 组件、布局、主题、View DSL
+│   ├── app/                # 应用生命周期、主循环、窗口、CLI、DI
+│   ├── data/               # 配置持久化
+│   └── prelude.rs          # 统一对外入口
 ├── demo/                   # uix-demo: GUI、CLI、简化 API 演示
 ├── tests/                  # 集成测试
 ├── ARCHITECTURE.md         # 架构设计与模块详解
@@ -88,9 +96,22 @@ uix-app/
 依赖方向保持单向：
 
 ```text
-uix -> app -> ui -> graphics -> platform
-       └──> ui -> graphics -> platform
+core ← native ← draw ← ui ← app
+  ↑      ↑               ↑
+  └──────┴─── data ──────┘
 ```
+
+常用路径：
+
+| 功能域 | 导入路径 |
+|--------|---------|
+| 统一入口 | `uix::prelude::*` |
+| 基础设施 | `uix::core::*` |
+| 平台能力 | `uix::native::*` |
+| 绘制 | `uix::draw::*` |
+| 界面 | `uix::ui::*` |
+| 应用 | `uix::app::*` |
+| 数据 | `uix::data::*` |
 
 ## 平台支持
 

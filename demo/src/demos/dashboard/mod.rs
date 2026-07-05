@@ -8,25 +8,13 @@ pub mod widgets;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
-use uix::runtime::application::map_ui_event;
-use uix::render::{SoftwareEngine, traits::GraphicsEngine};
-use uix::platform::event::{UiEvent, UiEventPayload, UiEventType};
-use uix::platform::{create_platform, EdgeInsets, KeyCode, Platform, Point, Rect};
-use uix::tree;
-use uix::api::widget::layout::{AlignItems, FlexDirection};
-use uix::widget::scene::event_loop::run_widget_loop;
-use uix::widget::theme::{DesignTokens, DynTokens, Theme};
-use uix::widget::{WidgetCore, WidgetId, WidgetNode, WidgetTree};
-use uix::widget::widgets::icon::init_lucide_font;
-use uix::api::widget::{
-    Container, Icon, IntoWidgetNode, Label, Navigation, ScrollDirection, ScrollView, SharedActive,
-    Space, SpaceSize,
-};
-use uix::render::font_service::FontService;
+use uix::prelude::*;
+use uix::native::event::{UiEvent, UiEventPayload, UiEventType};
+use uix::native::Platform;
+use uix::ui::widgets::icon::init_lucide_font;
 
 use more_pages::{page_charts, page_other};
 use sections::{page_data, page_feedback, page_general, page_input, page_layout, page_nav};
-use uix::api::widget::ThemeToggle;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 布局常量
@@ -319,7 +307,7 @@ fn switch_page(tree: &mut WidgetTree, state: &DemoState, active: usize) {
     if prev == active {
         return;
     }
-    uix::platform::log::debug_fn(format!("switch_page: {} -> {}", prev, active));
+    uix::core::log::debug_fn(format!("switch_page: {} -> {}", prev, active));
     state.prev_active.set(active);
 
     let ids = state.page_ids.borrow();
@@ -343,7 +331,7 @@ fn rebuild_for_theme(
     dyn_tokens: &DynTokens,
     state: &DemoState,
 ) -> SharedActive {
-    uix::platform::log::debug_fn(format!("rebuild_for_theme: dark={}", state.dark_mode.get()));
+    uix::core::log::debug_fn(format!("rebuild_for_theme: dark={}", state.dark_mode.get()));
     // 先更新内存中的 tokens，供后续 snapshot 和渲染使用
     dyn_tokens.set_mode(state.dark_mode.get());
     let tk = dyn_tokens.snapshot();
@@ -426,7 +414,7 @@ pub fn run_gui_demo() {
     let mut platform = match create_platform() {
         Ok(p) => p,
         Err(e) => {
-            uix::platform::log::error_fn(format!("create_platform: {}", e.short_what()));
+            uix::core::log::error_fn(format!("create_platform: {}", e.short_what()));
             return;
         }
     };
@@ -438,7 +426,7 @@ pub fn run_gui_demo() {
         {
             Ok(w) => w,
             Err(e) => {
-                uix::platform::log::error_fn(format!("create_window: {}", e.short_what()));
+                uix::core::log::error_fn(format!("create_window: {}", e.short_what()));
                 return;
             }
         };
@@ -452,30 +440,30 @@ pub fn run_gui_demo() {
     if use_gpu {
         let surface_ptr = platform_window.native_surface_ptr();
         if surface_ptr.is_null() {
-            uix::platform::log::error_fn("GPU: 无法获取 surface 指针");
+            uix::core::log::error_fn("GPU: 无法获取 surface 指针");
             return;
         }
-        match uix::platform::create_gpu_context(surface_ptr, INIT_W, INIT_H) {
-            Ok(ctx) => match uix::render::GpuEngine::new(ctx) {
+        match uix::native::create_gpu_context(surface_ptr, INIT_W, INIT_H) {
+            Ok(ctx) => match uix::draw::GpuEngine::new(ctx) {
                 Ok(mut e) => {
                     if let Err(err) = e.initialize(INIT_W, INIT_H) {
-                        uix::platform::log::error_fn(format!(
+                        uix::core::log::error_fn(format!(
                             "GPU引擎初始化失败: {}",
                             err.short_what()
                         ));
                         return;
                     }
-                    uix::platform::log::info_fn("GPU: GpuEngine 就绪");
+                    uix::core::log::info_fn("GPU: GpuEngine 就绪");
                     engine = Box::new(e);
                 }
                 Err(e) => {
-                    uix::platform::log::warn_fn(format!(
+                    uix::core::log::warn_fn(format!(
                         "GPU: GpuEngine 创建失败({}), 回退CPU",
                         e.short_what()
                     ));
                     let mut se = SoftwareEngine::new();
                     se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
-                        uix::platform::log::error_fn(format!(
+                        uix::core::log::error_fn(format!(
                             "CPU引擎初始化失败: {}",
                             e.short_what()
                         ));
@@ -484,13 +472,13 @@ pub fn run_gui_demo() {
                 }
             },
             Err(e) => {
-                uix::platform::log::warn_fn(format!(
+                uix::core::log::warn_fn(format!(
                     "GPU: 上下文创建失败({}), 回退CPU",
                     e.short_what()
                 ));
                 let mut se = SoftwareEngine::new();
                 se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
-                    uix::platform::log::error_fn(format!("CPU引擎初始化失败: {}", e.short_what()));
+                    uix::core::log::error_fn(format!("CPU引擎初始化失败: {}", e.short_what()));
                 });
                 engine = Box::new(se);
             }
@@ -498,7 +486,7 @@ pub fn run_gui_demo() {
     } else {
         let mut se = SoftwareEngine::new();
         se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
-            uix::platform::log::error_fn(format!("CPU引擎初始化失败: {}", e.short_what()));
+            uix::core::log::error_fn(format!("CPU引擎初始化失败: {}", e.short_what()));
         });
         engine = Box::new(se);
     }
@@ -508,7 +496,7 @@ pub fn run_gui_demo() {
     if let Ok(ttf) = std::fs::read("assets/fonts/lucide.ttf") {
         init_lucide_font(&ttf, &mut font_service);
     } else {
-        uix::platform::log::warn_fn("Lucide font not found — icons will be blank");
+        uix::core::log::warn_fn("Lucide font not found — icons will be blank");
     }
 
     // 加载系统默认字体作为主文本字体（必须在 Lucide 之后，
@@ -547,7 +535,7 @@ pub fn run_gui_demo() {
             tree.find_by_type_and_modify::<ThemeToggle>(|w| new_dark = w.dark.get());
 
             if new_dark != state.dark_mode.get() {
-                uix::platform::log::debug_fn(format!("on_frame: THEME CHANGE dark={}", new_dark));
+                uix::core::log::debug_fn(format!("on_frame: THEME CHANGE dark={}", new_dark));
                 state.dark_mode.set(new_dark);
                 dyn_tokens.set_mode(new_dark);
                 let a = rebuild_for_theme(tree, eng, &dyn_tokens, &state);
@@ -593,7 +581,7 @@ mod tests {
     /// 验证 demo 树布局后导航项与按钮行不重叠。
     #[test]
     fn demo_tree_layout_no_overlap() {
-        use uix::widget::widgets::navigation::NavItem;
+        use uix::ui::widgets::navigation::NavItem;
 
         let tk = DesignTokens::antd_light();
         let (root_node, _, _) = build_demo_tree(&tk, 0);
@@ -698,12 +686,10 @@ mod tests {
     /// 首帧渲染后侧栏导航区应有非背景像素（验证 CPU 路径完整绘制）。
     #[test]
     fn demo_first_frame_renders_nav_sidebar() {
-        use uix::render::pipeline::{FrameRenderInput, FrameRenderer};
-        use uix::render::painting::ThemeSnapshot;
-        use uix::render::font_service::FontService;
-        use uix::render::SoftwareEngine;
-        use uix::render::traits::GraphicsEngine;
-        use uix::widget::widgets::navigation::NavItem;
+        use uix::prelude::*;
+        use uix::draw::pipeline::{FrameRenderInput, FrameRenderer};
+        use uix::draw::painting::ThemeSnapshot;
+        use uix::ui::widgets::navigation::NavItem;
 
         let tk = DesignTokens::antd_light();
         let (root_node, _, _) = build_demo_tree(&tk, 0);

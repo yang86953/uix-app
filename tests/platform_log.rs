@@ -2,8 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
-use uix::platform::diagnostic::Timestamp;
-use uix::platform::log::{self, CallbackSink, ConsoleSink, FileSink, Level, Logger, Record, Sink};
+use uix::core::diagnostic::Timestamp;
+use uix::core::log::{self, CallbackSink, ConsoleSink, FileSink, Level, Logger, Record, Sink};
 
 fn ts_from_millis(ms: u64) -> Timestamp {
     Timestamp::from_system_time(UNIX_EPOCH + Duration::from_millis(ms))
@@ -306,7 +306,7 @@ fn logger_sequential() {
         *c3.lock().unwrap_or_else(|e| e.into_inner()) = Some(rec.message.clone());
     })));
     logger.set_level(Level::Trace);
-    let err = uix::platform::make_error(uix::platform::Errc::None, "ignored message");
+    let err = uix::native::make_error(uix::native::Errc::None, "ignored message");
     logger.log_error(&err, Level::Info);
     {
         let msg = captured3.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -335,7 +335,7 @@ fn global_log_functions() {
 
 #[test]
 fn log_error_does_not_panic() {
-    let err = uix::platform::make_error(uix::platform::Errc::PlatformError, "test error");
+    let err = uix::native::make_error(uix::native::Errc::PlatformError, "test error");
     log::log_error(&err, Level::Warn);
 }
 

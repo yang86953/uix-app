@@ -3,17 +3,17 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use uix::render::compositor::{RenderObjectTree, ScenePaint};
-use uix::render::font_service::FontService;
-use uix::render::painting::{
+use uix::draw::compositor::{RenderObjectTree, ScenePaint};
+use uix::draw::font_service::FontService;
+use uix::draw::painting::{
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, PaintContext, ShadowToken,
     ThemeSnapshot, ThemeTokens,
 };
-use uix::render::pipeline::{FrameRenderInput, FrameRenderer, NodeId};
-use uix::render::traits::GraphicsEngine;
-use uix::render::types::DirtyRegion;
-use uix::api::render::{Color, FontHandle, SoftwareEngine};
-use uix::platform::{Point, Rect};
+use uix::draw::pipeline::{FrameRenderInput, FrameRenderer, NodeId};
+use uix::draw::traits::GraphicsEngine;
+use uix::draw::types::DirtyRegion;
+use uix::draw::{Color, FontHandle, SoftwareEngine};
+use uix::native::{Point, Rect};
 
 const ROOT: NodeId = 1;
 const LEAF: NodeId = 2;

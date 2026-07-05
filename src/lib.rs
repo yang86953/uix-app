@@ -3,20 +3,21 @@
 
 //! UIX — Rust Native UI Framework
 //!
-//! # 模块划分
+//! # 功能域
 //!
 //! | 模块 | 职责 |
 //! |------|------|
-//! | [`platform`] | 平台系统 — OS 抽象（Win32 / Wayland） |
-//! | [`render`] | 渲染系统 — 2D 引擎、光栅化、字体、合成 |
-//! | [`widget`] | 组件系统 — Widget 框架、布局、主题、内置组件 |
-//! | [`runtime`] | 运行时系统 — 应用入口、窗口、CLI、DI |
-//! | [`view`] | 视图系统 — 声明式 UI API |
-//! | [`api`] | 各系统稳定公开契约 |
+//! | [`core`] | 基础设施 — 错误、几何、日志、诊断 |
+//! | [`native`] | 平台能力 — OS 抽象（Win32 / Wayland） |
+//! | [`draw`] | 绘制能力 — 2D 引擎、光栅化、字体、合成 |
+//! | [`ui`] | 界面能力 — 组件、布局、主题、View DSL |
+//! | [`app`] | 应用能力 — 生命周期、主循环、CLI、DI |
+//! | [`data`] | 数据能力 — 配置持久化 |
 
-pub mod api;
-pub mod platform;
-pub mod render;
-pub mod runtime;
-pub mod view;
-pub mod widget;
+pub mod app;
+pub mod core;
+pub mod data;
+pub mod draw;
+pub mod native;
+pub mod prelude;
+pub mod ui;

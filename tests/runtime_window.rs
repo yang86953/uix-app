@@ -2,15 +2,15 @@
 //!
 //! 只测试不依赖平台交互的状态方法。create / show / run 需要真实平台窗口，跳过。
 
-use uix::runtime::window::Window;
-use uix::platform::Point;
+use uix::app::Window;
+use uix::native::Point;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Window 构造
 // ════════════════════════════════════════════════════════════════════════════
 
 fn new_window() -> Option<Window> {
-    match uix::platform::create_platform() {
+    match uix::native::create_platform() {
         Ok(p) => Some(Window::new(p)),
         Err(_) => None,
     }

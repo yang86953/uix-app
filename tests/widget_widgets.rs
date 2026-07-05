@@ -1,27 +1,27 @@
-//! uix-ui widgets 集成测试（scroll_view, tree_core 等）。
+//! uix ui 域 widgets 集成测试（scroll_view, tree_core 等）。
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use uix::render::Color;
-use uix::render::traits::GraphicsEngine;
-use uix::platform::api::geometry::{Point, Rect, Size};
-use uix::platform::ControlSize;
-use uix::platform::EdgeInsets;
-use uix::platform::ScrollDirection;
-use uix::api::widget::JustifyContent;
-use uix::api::widget::RenderContext;
-use uix::api::widget::Style;
-use uix::api::widget::{AlignItems, FlexDirection};
-use uix::api::widget::{
+use uix::draw::Color;
+use uix::draw::traits::GraphicsEngine;
+use uix::core::geometry::{Point, Rect, Size};
+use uix::native::ControlSize;
+use uix::native::EdgeInsets;
+use uix::native::ScrollDirection;
+use uix::ui::JustifyContent;
+use uix::ui::RenderContext;
+use uix::ui::Style;
+use uix::ui::{AlignItems, FlexDirection};
+use uix::ui::{
     Button, ButtonSize, ButtonVariant, Drawer, DrawerPlacement, Input, InputSize, Modal,
 };
-use uix::api::widget::{Container, NavItem, ScrollView, SharedActive};
-use uix::api::widget::{
+use uix::ui::{Container, NavItem, ScrollView, SharedActive};
+use uix::ui::{
     EventResult, KeyCode, KeyMod, MouseButton, WidgetCapabilities, WidgetComponent, WidgetCore,
     WidgetEvent, WidgetEventHandler, WidgetLayout, WidgetLifecycle, WidgetRender, WidgetTree,
 };
-use uix::widget::style::{BoxShadowDef, DisplayMode};
-use uix::widget::widgets::{button_font_size, button_height, button_padding_h, input_height};
+use uix::ui::style::{BoxShadowDef, DisplayMode};
+use uix::ui::widgets::{button_font_size, button_height, button_padding_h, input_height};
 
 // ════════════════════════════════════════════════════════════════════════════
 // ScrollView 测试
