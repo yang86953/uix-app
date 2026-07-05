@@ -1,4 +1,4 @@
-//! 输入协议 — 键盘、鼠标、光标、剪贴板与 IME。
+﻿//! 输入协议 — 键盘、鼠标、光标、剪贴板与 IME。
 
 use crate::core::geometry::Point;
 
@@ -157,8 +157,6 @@ impl std::ops::BitOrAssign for KeyMod {
 // ════════════════════════════════════════════════════════════════════════════
 
 /// 通用控件尺寸。
-///
-/// 统一替代各 widget 分散定义的 `ButtonSize`、`InputSize`、`ListSize`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlSize {
     Small,

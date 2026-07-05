@@ -219,13 +219,7 @@ impl GdiPresenter {
 
     /// 将像素缓冲中的局部区域复制到 DIB。
     fn copy_partial_rect(&self, pixels: &[u32], dx: i32, dy: i32, dw: i32, dh: i32) {
-        if dx < 0
-            || dy < 0
-            || dw <= 0
-            || dh <= 0
-            || dx + dw > self.width
-            || dy + dh > self.height
-        {
+        if dx < 0 || dy < 0 || dw <= 0 || dh <= 0 || dx + dw > self.width || dy + dh > self.height {
             return;
         }
         unsafe {

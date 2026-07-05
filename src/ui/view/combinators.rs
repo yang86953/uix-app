@@ -16,14 +16,14 @@
 use crate::ui::layout::FlexDirection;
 use crate::ui::view::{View, ViewNode};
 
-use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
-use crate::draw::painting::RenderContext;
+use crate::draw::painting::PaintContext;
+use crate::draw::pipeline::InvalidationQueueHandle;
+use crate::native::{Rect, Size};
 use crate::ui::state::{drain_pending_state_binds, StatePaintBind};
+use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
 use crate::ui::{WidgetId, WidgetTree};
 use std::any::Any;
 use std::sync::Arc;
-use crate::draw::pipeline::InvalidationQueueHandle;
-use crate::native::{Rect, Size};
 
 // ── 基础组合子 ──────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ impl WidgetLayout for DynamicLabel {
 }
 
 impl WidgetRender for DynamicLabel {
-    fn render(&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    fn render(&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let text = (self.text_fn)();
         if !text.is_empty() {
             ctx.draw_text(
@@ -165,68 +165,111 @@ pub fn space(height: f32) -> ViewNode {
     )
 }
 
-// ── 按钮构建器 ──────────────────────────────────────────────
+// ── 按钮（View DSL 唯一入口）──────────────────────────────────
 
-/// 按钮构建器。通过 `button("text").primary().on_click(fn)` 链式调用。
+use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
+use crate::ui::style::StyleSet;
+use crate::ui::widgets::Button;
+
+/// 按钮构建器 — 通过 `button("text").primary().on_click(fn)` 创建。
 ///
-/// # 示例
+/// 样式（背景、颜色、边距等）在 builder 之后链式调用 `StyleExt` 方法：
+/// `button("保存").primary().bg(color).padding(8.0)`。
 ///
-/// ```ignore
-/// button("提交").primary().on_click(|| println!("提交成功"))
-/// ```
+/// 嵌入 `tree!` / `Space::child` 等非 View 容器时，末尾调用 `.widget()`。
 pub struct ButtonBuilder {
     text: String,
-    variant: crate::ui::widgets::ButtonVariant,
-    danger: bool,
-    on_click: Option<Box<dyn FnMut() + 'static>>,
+    style_set: StyleSet,
+    disabled: bool,
+    block: bool,
+    handlers: Vec<HandlerRegistration>,
 }
 
 impl ButtonBuilder {
-    /// 设置为主要按钮样式。
+    fn into_parts(self) -> (Button, Vec<HandlerRegistration>) {
+        (
+            Button::assemble(self.text, self.style_set, self.disabled, self.block),
+            self.handlers,
+        )
+    }
+
+    /// 构建底层 `Button`（用于 `tree!`、`Space::child` 等）。
+    pub fn widget(self) -> Button {
+        self.into_parts().0
+    }
+
+    pub fn style_set(mut self, style_set: StyleSet) -> Self {
+        self.style_set = style_set;
+        self
+    }
+
     pub fn primary(mut self) -> Self {
-        self.variant = crate::ui::widgets::ButtonVariant::Primary;
+        self.style_set = StyleSet::button_primary();
         self
     }
 
-    /// 设置为危险按钮样式（红色提示）。
+    pub fn ghost(mut self) -> Self {
+        self.style_set = StyleSet::button_ghost();
+        self
+    }
+
     pub fn danger(mut self) -> Self {
-        self.danger = true;
+        self.style_set = StyleSet::button_danger();
         self
     }
 
-    /// 绑定点击回调。
-    pub fn on_click<F: FnMut() + 'static>(mut self, f: F) -> Self {
-        self.on_click = Some(Box::new(f));
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
+
+    pub fn block(mut self, v: bool) -> Self {
+        self.block = v;
+        self
+    }
+
+    pub fn on_click<F: FnMut() + 'static>(mut self, mut f: F) -> Self {
+        self.handlers.push(HandlerRegistration::new(
+            SemanticKind::Click,
+            Box::new(move |_| f()),
+        ));
+        self
+    }
+
+    pub fn on_click_event<F: FnMut(&mut SemanticEvent) + 'static>(mut self, f: F) -> Self {
+        self.handlers
+            .push(HandlerRegistration::new(SemanticKind::Click, Box::new(f)));
         self
     }
 }
 
 impl View for ButtonBuilder {
     fn build(self) -> ViewNode {
-        let mut btn = crate::ui::widgets::Button::new(self.text).variant(self.variant);
-        if self.danger {
-            btn = btn.danger(true);
-        }
-        if let Some(f) = self.on_click {
-            btn = btn.on_click(f);
-        }
-        ViewNode::leaf(btn)
+        let (button, handlers) = self.into_parts();
+        let mut node = ViewNode::leaf(button);
+        node.handlers = handlers;
+        node
     }
 }
 
-/// 创建按钮。返回 `ButtonBuilder` 以链式设置属性。
-///
-/// # 示例
+impl From<ButtonBuilder> for ViewNode {
+    fn from(b: ButtonBuilder) -> Self {
+        b.build()
+    }
+}
+
+/// 创建按钮。
 ///
 /// ```ignore
-/// button("保存").primary().on_click(|| save_data())
+/// button("保存").primary().on_click(|| save())
 /// ```
 pub fn button(text: impl Into<String>) -> ButtonBuilder {
     ButtonBuilder {
         text: text.into(),
-        variant: crate::ui::widgets::ButtonVariant::Default,
-        danger: false,
-        on_click: None,
+        style_set: StyleSet::button_default(),
+        disabled: false,
+        block: false,
+        handlers: Vec::new(),
     }
 }
 
@@ -241,7 +284,7 @@ pub fn button(text: impl Into<String>) -> ButtonBuilder {
 /// ```
 pub struct InputBuilder {
     placeholder: String,
-    on_change: Option<Box<dyn FnMut(&str) + 'static>>,
+    handlers: Vec<HandlerRegistration>,
 }
 
 impl InputBuilder {
@@ -252,19 +295,24 @@ impl InputBuilder {
     }
 
     /// 绑定值变更回调（输入内容变化时触发）。
-    pub fn on_change<F: FnMut(&str) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
+    pub fn on_change<F: FnMut(&str) + 'static>(mut self, mut f: F) -> Self {
+        self.handlers.push(HandlerRegistration::new(
+            SemanticKind::Change,
+            Box::new(move |event| {
+                if let Some(value) = event.text_payload() {
+                    f(value);
+                }
+            }),
+        ));
         self
     }
 }
 
 impl View for InputBuilder {
     fn build(self) -> ViewNode {
-        let mut input = crate::ui::widgets::Input::new(self.placeholder);
-        if let Some(f) = self.on_change {
-            input = input.on_change(f);
-        }
-        ViewNode::leaf(input)
+        let mut node = ViewNode::leaf(crate::ui::widgets::Input::new(self.placeholder));
+        node.handlers = self.handlers;
+        node
     }
 }
 
@@ -278,6 +326,6 @@ impl View for InputBuilder {
 pub fn input() -> InputBuilder {
     InputBuilder {
         placeholder: String::new(),
-        on_change: None,
+        handlers: Vec::new(),
     }
 }

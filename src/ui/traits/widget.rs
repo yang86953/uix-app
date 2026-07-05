@@ -1,15 +1,32 @@
 //! # Widget 组件契约
 //!
-//! 定义 widget 能力 trait 与核心数据类型 re-export。
+//! ## 组件模型
+//!
+//! 1. **数据 struct** — 组件首先是承载字段的结构体。
+//! 2. **可选能力 trait** — 按需实现 `WidgetLayout` / `WidgetRender` /
+//!    `EventHandler` / `WidgetLifecycle`；未实现的方法走 trait 默认行为。
+//! 3. **`WidgetComponent` 胶水** — 用 `impl_widget_component!` 声明实现了哪些能力。
+//!
+//! ```ignore
+//! pub struct Button { text: String, ... }
+//!
+//! impl_widget_component!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
+//!
+//! impl WidgetLayout for Button {
+//!     fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size { ... }
+//! }
+//! impl WidgetRender for Button {
+//!     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) { ... }
+//! }
+//! ```
 
-use std::any::Any;
-use crate::draw::painting::PaintContext as RenderContext;
+use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::draw::traits::GraphicsEngine;
 use crate::native::{Rect, Size};
-use crate::ui::widget::{
-    EventResult, WidgetEvent, WidgetId, WidgetNode, WidgetTree,
-};
+use crate::ui::event::SemanticEvent;
+use crate::ui::widget::{EventResult, SystemEvent, WidgetId, WidgetNode, WidgetTree};
+use std::any::Any;
 
 /// 能力位标记。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -67,10 +84,10 @@ pub trait WidgetComponent: 'static {
     fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> {
         None
     }
-    fn as_event(&self) -> Option<&dyn WidgetEventHandler> {
+    fn as_event(&self) -> Option<&dyn EventHandler> {
         None
     }
-    fn as_event_mut(&mut self) -> Option<&mut dyn WidgetEventHandler> {
+    fn as_event_mut(&mut self) -> Option<&mut dyn EventHandler> {
         None
     }
     fn as_lifecycle(&self) -> Option<&dyn WidgetLifecycle> {
@@ -105,7 +122,7 @@ pub trait WidgetLayout: WidgetComponent {
 
 /// 渲染行为：绘制、覆盖层、脏区域。
 pub trait WidgetRender: WidgetComponent {
-    fn render(&self, frame: Rect, ctx: &mut RenderContext, tree: &WidgetTree);
+    fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree);
     fn draw_margin(&self) -> f32 {
         0.0
     }
@@ -122,18 +139,18 @@ pub trait WidgetRender: WidgetComponent {
             frame
         }
     }
-    fn is_repaint_boundary(&self) -> bool {
-        false
-    }
     fn children_clip(&self, _frame: Rect) -> Option<Rect> {
         None
     }
 }
 
 /// 事件行为：输入事件处理、持续更新、滚动偏移、命中测试。
-pub trait WidgetEventHandler: WidgetComponent {
-    fn on_event(&mut self, _event: &WidgetEvent) -> EventResult {
+pub trait EventHandler: WidgetComponent {
+    fn on_event(&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
+    }
+    fn semantic_event(&self, _id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        None
     }
     fn needs_continuous_update(&self) -> bool {
         false

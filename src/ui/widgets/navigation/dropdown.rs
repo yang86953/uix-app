@@ -1,10 +1,10 @@
 //! Dropdown widget — 下拉菜单。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {
     /// Dropdown — 点击触发的下拉菜单。
@@ -20,8 +20,8 @@ define_widget! {
         Size::new(160.0, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::PointerDown { pos, .. } = event {
             if pos.y >= 0.0 && pos.y <= 32.0 {
                 self.open = !self.open;
                 return EventResult::Handled;
@@ -37,7 +37,7 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
         // 触发按钮（固定高度 32px）

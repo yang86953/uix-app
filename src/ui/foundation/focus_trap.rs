@@ -1,8 +1,8 @@
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetId, WidgetTree};
-use std::collections::HashSet;
+use crate::draw::painting::PaintContext;
 use crate::native::{KeyCode, KeyMod, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetId, WidgetTree};
+use std::collections::HashSet;
 
 define_widget! {
     /// FocusTrap — 将键盘 Tab/Shift+Tab 焦点限制在子树内。
@@ -21,13 +21,13 @@ define_widget! {
         Size::new(0.0, 0.0)
     }
 
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
+    render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if !self.active {
             return EventResult::NotHandled;
         }
-        if let WidgetEvent::KeyDown { key, mods } = event {
+        if let SystemEvent::KeyDown { key, mods } = event {
             if *key == KeyCode::Tab {
                 let mut sorted: Vec<WidgetId> = self.focusable_ids.iter().copied().collect();
                 sorted.sort();

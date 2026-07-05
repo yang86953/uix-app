@@ -4,10 +4,10 @@
 //! 包含图标、标题、副标题、额外操作区域。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Point, Rect, Size};
+use crate::ui::WidgetTree;
 
 /// 结果类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -34,7 +34,7 @@ define_widget! {
         Size::new(400.0, 300.0)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let loc = crate::ui::locale::use_locale();

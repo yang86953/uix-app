@@ -4,15 +4,11 @@
 //! 四类状态，可配置持续时长，支持手动关闭。通过静态队列管理多消息叠加。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
+use crate::draw::painting::PaintContext;
+use crate::native::{Rect, Size, StatusLevel};
 use crate::ui::WidgetTree;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use crate::native::{Rect, Size};
-
-/// 消息类型。
-/// （已统一为 crate::native::StatusLevel，保留别名以兼容旧代码。）
-pub use crate::native::StatusLevel as MessageType;
 
 /// 消息弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -25,7 +21,7 @@ pub enum MessagePlacement {
 /// 单条消息数据。
 #[derive(Debug, Clone)]
 pub struct MessageItem {
-    pub type_: MessageType,
+    pub type_: StatusLevel,
     pub content: String,
     pub duration_ms: u64, // 0 = 不自动消失
     pub closable: bool,
@@ -82,7 +78,7 @@ define_widget! {
     }
 
     // 消息在 render 中作为浮层绘制，不影响布局
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let queue = self.queue.borrow();
         if queue.is_empty() { return; }
         let cw = frame.w;
@@ -100,10 +96,10 @@ define_widget! {
 
         for item in queue.iter() {
             let (icon, accent) = match item.type_ {
-                MessageType::Success => ("✓", ctx.tokens().color_success()),
-                MessageType::Info    => ("ℹ", ctx.tokens().color_info()),
-                MessageType::Warning => ("⚠", ctx.tokens().color_warning()),
-                MessageType::Error   => ("✗", ctx.tokens().color_error()),
+                StatusLevel::Success => ("✓", ctx.tokens().color_success()),
+                StatusLevel::Info    => ("ℹ", ctx.tokens().color_info()),
+                StatusLevel::Warning => ("⚠", ctx.tokens().color_warning()),
+                StatusLevel::Error   => ("✗", ctx.tokens().color_error()),
             };
             let msg_rect = Rect::new(start_x, y, msg_w, 40.0);
             // 阴影（简化：纯色半透明底边）
@@ -172,7 +168,7 @@ impl Message {
     /// 便捷方法：成功消息。
     pub fn success(&self, content: &str) {
         self.add(MessageItem {
-            type_: MessageType::Success,
+            type_: StatusLevel::Success,
             content: content.into(),
             duration_ms: Self::MSG_DURATION_SUCCESS,
             closable: true,
@@ -181,7 +177,7 @@ impl Message {
     /// 便捷方法：信息消息。
     pub fn info(&self, content: &str) {
         self.add(MessageItem {
-            type_: MessageType::Info,
+            type_: StatusLevel::Info,
             content: content.into(),
             duration_ms: Self::MSG_DURATION_INFO,
             closable: true,
@@ -190,7 +186,7 @@ impl Message {
     /// 便捷方法：警告消息。
     pub fn warning(&self, content: &str) {
         self.add(MessageItem {
-            type_: MessageType::Warning,
+            type_: StatusLevel::Warning,
             content: content.into(),
             duration_ms: Self::MSG_DURATION_WARNING,
             closable: true,
@@ -199,7 +195,7 @@ impl Message {
     /// 便捷方法：错误消息。
     pub fn error(&self, content: &str) {
         self.add(MessageItem {
-            type_: MessageType::Error,
+            type_: StatusLevel::Error,
             content: content.into(),
             duration_ms: Self::MSG_DURATION_ERROR,
             closable: true,

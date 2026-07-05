@@ -3,10 +3,10 @@
 //! 点击切换暗色/亮色主题，通过 Cell<bool> 通知外部代码。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
-use std::cell::Cell;
+use crate::draw::painting::PaintContext;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use std::cell::Cell;
 
 define_widget! {
     /// ThemeToggle — 主题切换按钮。
@@ -18,8 +18,8 @@ define_widget! {
         Size::new(32.0, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::PointerDown { .. } = event {
             let new = !self.dark.get();
             self.dark.set(new);
             EventResult::Handled
@@ -28,7 +28,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let icon = if self.dark.get() { "sun" } else { "moon" };
         let icon_str = crate::ui::widgets::icon::icon_char(icon);
         let text_color = ctx.tokens().color_text();

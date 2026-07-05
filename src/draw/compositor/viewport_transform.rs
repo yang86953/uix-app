@@ -67,9 +67,7 @@ pub fn needs_paint_rect(
 }
 
 fn is_viewport(scene: &impl ScenePaint, id: NodeId) -> bool {
-    scene
-        .children_clip(id, scene.node_frame(id))
-        .is_some()
+    scene.children_clip(id, scene.node_frame(id)).is_some()
 }
 
 #[cfg(test)]
@@ -126,9 +124,6 @@ mod tests {
                 1 => &[2][..],
                 _ => &[],
             }
-        }
-        fn is_repaint_boundary(&self, _: NodeId) -> bool {
-            false
         }
         fn children_clip(&self, id: NodeId, _: Rect) -> Option<Rect> {
             if id == 1 {

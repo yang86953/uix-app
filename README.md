@@ -1,28 +1,54 @@
 # UIX
 
-UIX 是一个用 Rust 编写的跨平台原生桌面 UI 框架，在 Windows 和 Linux 上提供一致的组件模型、渲染管线和应用生命周期。
+UIX 是一个用 Rust 编写的跨平台原生桌面 UI 框架，用于在 Windows 和 Linux 上提供一致的组件模型、渲染管线、输入事件与应用生命周期。
 
-当前版本 `0.1.0`，处于积极开发阶段。框架按**六大功能域**组织（`core` / `native` / `draw` / `ui` / `app` / `data`），平台差异只封装在 `native` 域，上层代码各平台完全一致。
+版本 `0.1.0`，处于积极开发阶段。项目按六大功能域组织：`core` / `native` / `draw` / `ui` / `app` / `data`。平台差异只封装在 `native` 域，上层业务代码不写平台分支。
+
+## 快速入口
+
+| 你想做什么 | 先看 |
+|------------|------|
+| 运行 demo、了解公共 API | 本文档 |
+| 查看架构地图与源码边界 | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
+| 理解系统设计 | [`docs/Main.md`](docs/Main.md) |
+| 查询设计决策与废止关系 | [`docs/decisions.md`](docs/decisions.md) |
+| 写代码前确认规则 | [`AGENTS.md`](AGENTS.md) |
+
+推荐应用侧入口：
+
+```rust
+use uix::prelude::*;
+```
 
 ## 核心特性
 
-- **组件化 Widget 体系**：每个组件封装数据、行为和生命周期，通过 trait 接口组合
-- **声明式 UI**：`define_widget!`、`tree!` 宏，以及 `ui::view` 简化 API（`column`、`button`、`dynamic_label` 等）
-- **响应式状态**：`State<T>` + `dynamic_label` 自动 Paint 失效（含 View 外创建的 State）；`Computed` / `Effect` 依赖追踪与帧末 `tick_effects` 已贯通（见 [ARCHITECTURE.md §11](ARCHITECTURE.md#十一渲染机制完善计划)）
-- **布局系统**：Flexbox、Grid、间距、对齐、伸缩与嵌套布局
-- **增量渲染**：DirtyRects、多矩形 PresentDamage、像素滚动与 GPU scissor 局部 clear，只重绘变化区域
-- **主题与组件库**：Ant Design 5 风格设计令牌，60+ 内置 Widget
-- **平台抽象**：窗口、事件循环、呈现器、日志、文件、通知与配置持久化
+- **组件化 Widget 体系**：组件封装数据、行为与生命周期，通过 trait 对外暴露能力。
+- **声明式 UI**：提供 `define_widget!`、`tree!` 宏，以及 `ui::view` 简化 API（`column`、`row`、`button`、`dynamic_label` 等）。
+- **响应式状态**：`State<T>` 可驱动自动失效；`Computed` / `Effect` 用于派生状态与帧末副作用。
+- **布局系统**：支持 Flex、Grid、间距、对齐、伸缩与嵌套布局。
+- **增量渲染**：DirtyRects、PresentDamage、像素滚动与局部重绘，避免无意义 present。
+- **主题与组件库**：Ant Design 5 风格设计令牌，内置常用 Widget。
+- **平台抽象**：窗口、事件循环、呈现器、日志、文件、通知与配置持久化通过 trait 抽象。
+
+## 平台支持
+
+| 平台 | 状态 | 呈现路径 |
+|------|------|--------------|
+| Windows | 支持 | CPU GDI DIB，GPU 能力按实现可选 |
+| Linux | 支持 | Wayland SHM，可选 EGL/GLES |
+| macOS | 未支持 | 暂无 backend |
+
+跨平台约束见 [`AGENTS.md`](AGENTS.md)：平台条件编译只允许出现在 `src/native/backends/` 与 `src/native/factory.rs`。
 
 ## 快速开始
 
-**前置要求**：Rust 工具链；Linux 需可用 Wayland 会话。
+前置要求：Rust 工具链；Linux 运行 GUI demo 需要可用 Wayland 会话。
 
 ```bash
 # 完整 GUI 演示
 cargo run --bin uix-demo
 
-# 简化 API 演示
+# 简化 View API 演示
 cargo run --bin uix-demo -- --simple
 
 # CLI 演示
@@ -39,9 +65,26 @@ RUST_LOG=debug cargo run --bin uix-demo
 $env:RUST_LOG = "debug"; cargo run --bin uix-demo
 ```
 
-## 基础用法
+常用验证入口：
 
-推荐通过 `prelude` 统一导入：
+```bash
+cargo test
+cargo test --features test-harness
+```
+
+如果工作树或依赖文件被改动，请先以 `cargo metadata`、`Cargo.toml` 和 `git status` 的结果为准。
+
+## 设计权威
+
+项目以文档为设计权威；源码若不一致，应按文档重构，不保留兼容分支。
+
+| 文档 | 说明 |
+|------|------|
+| [`docs/Main.md`](docs/Main.md) | 系统边界、设计正文、阅读顺序 |
+| [`docs/decisions.md`](docs/decisions.md) | 已定稿的取舍、废止关系和追加编号 |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | 功能域、源码边界、数据流和约束 |
+
+## 基础用法
 
 ```rust
 use uix::prelude::*;
@@ -68,20 +111,20 @@ fn main() {
 }
 ```
 
-更底层的能力可通过各功能域精确导入：
+更底层的能力可以按功能域精确导入：
 
 ```rust
-use uix::ui::{define_widget, WidgetComponent, WidgetNode};
-use uix::draw::Color;
-use uix::core::Error;
 use uix::app::App;
+use uix::core::{Error, Point};
+use uix::draw::Color;
+use uix::ui::{define_widget, WidgetComponent, WidgetNode};
 ```
 
 ## 模块结构
 
 ```text
 uix-app/
-├── Cargo.toml              # workspace 根 + uix crate
+├── Cargo.toml              # uix crate + uix-demo binary
 ├── src/
 │   ├── core/               # 错误、几何、日志、诊断
 │   ├── native/             # 平台能力（traits / backends / services）
@@ -92,9 +135,10 @@ uix-app/
 │   ├── lib.rs              # crate 根
 │   └── prelude.rs          # 统一对外入口
 ├── demo/                   # uix-demo 演示
-├── tests/                  # 集成测试
-├── ARCHITECTURE.md         # 架构地图
-├── AGENTS.md               # 编码规范
+├── docs/                   # 系统设计文档与决策台账
+├── assets/                 # 字体、图片等资源
+├── ARCHITECTURE.md         # 架构地图与源码边界
+├── AGENTS.md               # 维护规则与架构硬约束
 └── README.md               # 本文档
 ```
 
@@ -107,7 +151,7 @@ core ← native ← draw ← ui ← app
 ```
 
 | 功能域 | 导入路径 | 典型用途 |
-|--------|---------|---------|
+|--------|----------|----------|
 | 统一入口 | `uix::prelude::*` | 应用开发 |
 | 基础设施 | `uix::core::*` | 错误、几何、日志 |
 | 平台能力 | `uix::native::*` | 窗口、事件、文件 |
@@ -116,34 +160,11 @@ core ← native ← draw ← ui ← app
 | 应用 | `uix::app::*` | App、Window、CLI |
 | 数据 | `uix::data::*` | SettingsService |
 
-## 平台支持
+## 开发约束摘要
 
-| 平台 | 后端 | 状态 |
-|------|------|------|
-| Windows | Win32 API + GDI DIB 呈现 | ✅ 支持 |
-| Linux | Wayland SHM buffer，可选 EGL/GLES | ✅ 支持 |
-| macOS | — | ❌ 暂不支持 |
+- 上层只依赖 `native::traits`，不直接使用 `native::backends::*`。
+- `#[cfg(windows/unix)]` 只允许出现在 `src/native/backends/` 与 `src/native/factory.rs`。
+- 组件通过 trait 暴露能力，不依赖其他组件内部细节。
+- 新设计先补 `docs/decisions.md` 与对应 `docs/systems/*.md`，再同步 `ARCHITECTURE.md` 的架构边界。
 
-跨平台规则：`#[cfg(windows/unix)]` 仅允许出现在 `native/backends/` 与 `native/factory.rs`，详见 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
-
-## 开发校验
-
-```bash
-cargo fmt --all
-cargo clippy --workspace --all-targets
-cargo test --workspace
-cargo test --features test-harness -p uix   # 含 FakePlatform 的平台集成测试
-```
-
-workspace lint 禁止 `unwrap()` / `expect()` 进入生产代码。
-
-## 文档
-
-| 文档 | 内容 |
-|------|------|
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | 功能域详解、渲染数据流、跨平台规则、设计决策、[渲染完善计划](ARCHITECTURE.md#十一渲染机制完善计划) |
-| [`AGENTS.md`](AGENTS.md) | 组件化原则、Fail Fast、可测性、编码硬约束 |
-
-## 许可证
-
-本软件为专有软件，不开源。详见 [LICENSE](LICENSE)。
+完整规则见 [`AGENTS.md`](AGENTS.md)。

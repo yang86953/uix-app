@@ -11,7 +11,6 @@ use crate::native::{Error, Rect};
 pub enum UpdateStrategy {
     FullRedraw,
     DirtyRects(Vec<Rect>),
-    Overlay(Vec<Rect>),
 }
 
 impl UpdateStrategy {
@@ -19,7 +18,6 @@ impl UpdateStrategy {
         match self {
             UpdateStrategy::FullRedraw => None,
             UpdateStrategy::DirtyRects(rects) => Some(rects),
-            UpdateStrategy::Overlay(rects) => Some(rects),
         }
     }
 
@@ -156,25 +154,6 @@ mod tests {
     fn dirty_rects_empty_should_clear() {
         let strategy = UpdateStrategy::DirtyRects(vec![]);
         assert!(strategy.should_clear());
-    }
-
-    #[test]
-    fn overlay_rects_some() {
-        let rects = vec![Rect::new(0.0, 0.0, 10.0, 10.0)];
-        let strategy = UpdateStrategy::Overlay(rects.clone());
-        assert_eq!(strategy.rects(), Some(rects.as_slice()));
-    }
-
-    #[test]
-    fn overlay_empty_should_not_clear() {
-        let strategy = UpdateStrategy::Overlay(vec![]);
-        assert!(!strategy.should_clear());
-    }
-
-    #[test]
-    fn overlay_empty_rects_some() {
-        let strategy = UpdateStrategy::Overlay(vec![]);
-        assert_eq!(strategy.rects(), Some(&[] as &[Rect]));
     }
 
     #[test]

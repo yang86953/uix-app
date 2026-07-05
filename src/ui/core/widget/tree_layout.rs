@@ -1,4 +1,4 @@
-use super::super::*;
+﻿use super::super::*;
 use super::WidgetTree;
 use crate::native::Rect;
 
@@ -7,10 +7,7 @@ impl WidgetTree {
     ///
     /// 全帧或含 Layout 根时遍历对应子树；无 Layout 失效时返回空（跳过 layout）。
     pub fn layout_traverse(&self) -> Vec<WidgetId> {
-        let inv = self
-            .invalidation
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let inv = self.invalidation.lock().unwrap_or_else(|e| e.into_inner());
         if inv.needs_full_frame() {
             return self.traverse();
         }
@@ -53,12 +50,6 @@ impl WidgetTree {
             }
         }
         result
-    }
-
-    #[allow(dead_code)]
-    /// 兼容旧名；Phase 6 后 layout 使用 `layout_traverse`。
-    pub fn dirty_traverse(&self) -> Vec<WidgetId> {
-        self.layout_traverse()
     }
 
     pub fn layout(&mut self) {
@@ -518,19 +509,19 @@ impl WidgetTree {
             if just_started && old_dirty_rect.is_none() && !use_scroll_strip {
                 if let Some(old) = self.get(id).map(|n| n.dirty_rect(n.frame())) {
                     if old != rect && old.w > 0.0 && old.h > 0.0 {
-                        self.mark_dirty_rect(id, old);
+                        self.invalidate_paint_rect(id, old);
                     }
                 }
             }
 
             if let Some(old) = old_dirty_rect {
                 if !use_scroll_strip && old != rect && old.w > 0.0 && old.h > 0.0 {
-                    self.mark_dirty_rect(id, old);
+                    self.invalidate_paint_rect(id, old);
                 }
             }
 
             if (rect.w > 0.0 || rect.h > 0.0) && !use_scroll_strip && !is_scroll_viewport {
-                self.mark_dirty_rect(id, rect);
+                self.invalidate_paint_rect(id, rect);
             }
 
             // 滚动：小增量用 Composite strip + scroll_region；大幅跳转整视口 Paint。

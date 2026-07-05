@@ -1,7 +1,7 @@
 //! Easing — 缓动曲线，支持 antd 5 主题令牌中的 cubic-bezier 以及经典预设。
 
-use crate::ui::traits::Animatable;
 use crate::draw::Color;
+use crate::ui::traits::Animatable;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Easing 曲线

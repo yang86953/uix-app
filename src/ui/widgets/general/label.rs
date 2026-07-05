@@ -3,14 +3,14 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use crate::ui::clipboard;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::style::Style;
-use crate::ui::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{traits::GraphicsEngine, TextLayoutOptions};
 use crate::native::{Rect, Size};
+use crate::ui::clipboard;
+use crate::ui::style::Style;
+use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
 
 define_widget! {
     pub struct Label {
@@ -43,9 +43,9 @@ define_widget! {
         }
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, mods, .. } => {
+            SystemEvent::PointerDown { pos, mods, .. } => {
                 let dp = self.draw_pos.get();
                 let text_x = pos.x - dp.x;
                 let text_y = pos.y - dp.y;
@@ -60,7 +60,7 @@ define_widget! {
                 self.sel_dragging.set(true);
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if !self.sel_dragging.get() { return EventResult::NotHandled; }
                 let dp = self.draw_pos.get();
                 let text_x = pos.x - dp.x;
@@ -70,14 +70,14 @@ define_widget! {
                 self.set_selection_range(anchor, ci);
                 EventResult::Handled
             }
-            WidgetEvent::MouseUp { .. } => {
+            SystemEvent::PointerUp { .. } => {
                 self.sel_dragging.set(false);
                 if let Some((s, e)) = self.selection.get() {
                     if s == e { self.selection.set(None); }
                 }
                 EventResult::Handled
             }
-            WidgetEvent::KeyDown { key, mods } => {
+            SystemEvent::KeyDown { key, mods } => {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 match key {
                     KeyCode::A if ctrl => {
@@ -102,7 +102,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // 统一样式优先：style.color > self.color > theme default
         let c = self.style.as_ref()
             .map(|s| s.color)

@@ -1,9 +1,9 @@
 //! UI 层 trait 桥接 — TextRenderer / DebugRenderer 实现。
 
 use crate::draw::debug::DebugRenderService;
-use crate::draw::spatial::{PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::font::text::TextRenderService;
 use crate::draw::font::text_backend::TextLayout;
+use crate::draw::spatial::{PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::traits::Canvas2D;
 use crate::draw::{Color, FontHandle};
 use crate::native::{Point, Rect, Size};
@@ -104,7 +104,14 @@ impl<'a> TextRenderer for TextRenderService<'a> {
         selection_bg: Color,
     ) {
         TextRenderService::draw_text_with_selection(
-            self, canvas, text, pos, color, font_size, selection, selection_bg,
+            self,
+            canvas,
+            text,
+            pos,
+            color,
+            font_size,
+            selection,
+            selection_bg,
         );
     }
     fn selection_rects(
@@ -153,7 +160,9 @@ impl<'a> TextRenderer for TextRenderService<'a> {
         color: Color,
         font_size: PhysicalUnit,
     ) {
-        TextRenderService::text_center_spatial(self, canvas, spatial, text, box_3d, color, font_size);
+        TextRenderService::text_center_spatial(
+            self, canvas, spatial, text, box_3d, color, font_size,
+        );
     }
     fn blit_to(
         &mut self,

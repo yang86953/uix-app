@@ -4,9 +4,10 @@
 //! 完全不需要了解 `WidgetTree`、`WidgetNode`、`BoxedWidget` 等内部概念。
 
 use crate::draw::Color;
+use crate::native::{EdgeInsets, Point, Rect};
+use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
-use crate::native::{EdgeInsets, Point, Rect};
 
 pub mod adapter;
 pub mod combinators;
@@ -28,6 +29,7 @@ pub struct ViewNode {
     pub(crate) style: Style,
     pub(crate) z_index: i32,
     pub(crate) key: Option<String>,
+    pub(crate) handlers: Vec<HandlerRegistration>,
 }
 
 impl View for ViewNode {
@@ -44,6 +46,7 @@ impl ViewNode {
             style: Style::default(),
             z_index: 0,
             key: None,
+            handlers: Vec::new(),
         }
     }
 
@@ -54,6 +57,7 @@ impl ViewNode {
             style: Style::default(),
             z_index: 0,
             key: None,
+            handlers: Vec::new(),
         }
     }
 
@@ -98,7 +102,7 @@ impl ViewNode {
     }
 
     pub fn border(mut self, width: f32, color: impl Into<Color>) -> Self {
-        self.style.border_width = width;
+        self.style.border_width = EdgeInsets::uniform(width);
         self.style.border_color = Some(color.into());
         self
     }
@@ -116,6 +120,22 @@ impl ViewNode {
     pub fn key(mut self, k: impl Into<String>) -> Self {
         self.key = Some(k.into());
         self
+    }
+
+    pub fn on_semantic(
+        mut self,
+        kind: SemanticKind,
+        handler: impl FnMut(&mut SemanticEvent) + 'static,
+    ) -> Self {
+        self.handlers
+            .push(HandlerRegistration::new(kind, Box::new(handler)));
+        self
+    }
+}
+
+impl crate::ui::IntoWidgetNode for ViewNode {
+    fn into_node(self) -> crate::ui::WidgetNode {
+        adapter::ViewAdapter::expand(self)
     }
 }
 
@@ -183,7 +203,7 @@ pub trait StyleExt: Into<ViewNode> + Sized {
 
     fn border(self, width: f32, color: impl Into<Color>) -> ViewNode {
         let mut node: ViewNode = self.into();
-        node.style.border_width = width;
+        node.style.border_width = EdgeInsets::uniform(width);
         node.style.border_color = Some(color.into());
         node
     }

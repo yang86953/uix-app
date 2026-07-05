@@ -63,16 +63,6 @@ impl ISystemInfo for LinuxSystemInfo {
     fn up_time(&self) -> u64 {
         probe_uptime_ms()
     }
-
-    /// 用 fontconfig 查询系统当前默认无衬线字体路径。
-    ///
-    /// 使用 `fc-match sans-serif:scalable=true` 获取，返回的路径若为
-    /// 可变字体（CFF2 VF，fontdue 不兼容），会尝试查同一家族的常规风格。
-    fn default_font_path(&self) -> Option<String> {
-        probe_font_path_via_fc_match("sans-serif:scalable=true")
-            .or_else(|| probe_font_path_via_fc_match("sans-serif"))
-    }
-
     fn default_font_paths(&self) -> Vec<String> {
         match probe_system_default_font() {
             Some(p) => vec![p],

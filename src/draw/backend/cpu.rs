@@ -5,12 +5,12 @@ use crate::native::{Error, Point, Rect};
 use crate::draw::backend::traits::{
     BackendCapabilities, BackendKind, DamageRegion, DrawSurface, RenderBackend,
 };
-use crate::draw::primitives::color::Color;
 use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::primitives::color::Color;
+use crate::draw::primitives::types::ImageHandle;
 use crate::draw::rasterizer::image::blit_image;
 use crate::draw::traits::Canvas2D;
-use crate::draw::primitives::types::ImageHandle;
 
 /// CPU 主缓冲 DrawSurface 适配器。
 pub struct CpuDrawSurface {
@@ -61,12 +61,7 @@ impl DrawSurface for CpuDrawSurface {
     fn copy_region(&mut self, src: Rect, dst: Point) {
         use crate::draw::traits::RenderingBackend;
         let canvas = &mut self.canvas;
-        RenderingBackend::copy_region(
-            canvas.surface_mut(),
-            src,
-            dst.x as i32,
-            dst.y as i32,
-        );
+        RenderingBackend::copy_region(canvas.surface_mut(), src, dst.x as i32, dst.y as i32);
     }
 
     fn canvas(&mut self) -> &mut dyn Canvas2D {

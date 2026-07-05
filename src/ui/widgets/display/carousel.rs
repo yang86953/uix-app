@@ -5,14 +5,14 @@
 use std::cell::Cell;
 use std::time::Instant;
 
+use crate::define_widget;
+use crate::draw::painting::PaintContext;
+use crate::draw::traits::GraphicsEngine;
+use crate::native::{Point, Rect, Size};
 use crate::ui::animation::core::Animation;
 use crate::ui::animation::Easing;
 use crate::ui::children::WidgetChildren;
-use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetComponent, WidgetEvent, WidgetId, WidgetTree};
-use crate::draw::traits::GraphicsEngine;
-use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, WidgetComponent, SystemEvent, WidgetId, WidgetTree};
 
 define_widget! {
     /// Carousel — 轮播图组件。
@@ -44,9 +44,9 @@ define_widget! {
         self.children.take()
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 if let Some(frame) = self.last_frame.get() {
                     let dot_area_y = frame.y + frame.h - 20.0;
                     if pos.y >= dot_area_y && pos.y <= dot_area_y + 12.0 {
@@ -115,7 +115,7 @@ define_widget! {
         self.anim.is_some()
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
         let count = self.children.len();
         if count == 0 { return; }

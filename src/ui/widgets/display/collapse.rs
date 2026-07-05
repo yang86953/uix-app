@@ -1,10 +1,10 @@
 //! Collapse widget — 折叠面板。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// 单个折叠面板。
 #[derive(Debug, Clone)]
@@ -50,8 +50,8 @@ define_widget! {
         Size::new(0.0, h)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::PointerDown { pos, .. } = event {
             let mut cy = 0.0f32;
             let panel_count = self.panels.len();
             for i in 0..panel_count {
@@ -80,7 +80,7 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();

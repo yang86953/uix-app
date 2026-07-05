@@ -1,12 +1,12 @@
 //! Skeleton widget — 骨架屏加载占位（带动画闪烁）。
 
-use crate::ui::animation::core::Animation;
-use crate::ui::animation::Easing;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Rect, Size};
+use crate::ui::animation::core::Animation;
+use crate::ui::animation::Easing;
+use crate::ui::WidgetTree;
 
 /// 骨架形状。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -41,7 +41,7 @@ define_widget! {
 
     needs_continuous_update => (&self) -> bool { true }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_fill_tertiary();
         let phase = self.anim.as_ref().map(|a| a.current_value()).unwrap_or(0.0);
         // 闪烁：相位控制亮度偏移

@@ -1,12 +1,12 @@
 //! ProgressBar widget — deterministic and indeterminate progress indicators.
 
-use crate::ui::animation::core::Animation;
-use crate::ui::animation::Easing;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Rect, Size};
+use crate::ui::animation::core::Animation;
+use crate::ui::animation::Easing;
+use crate::ui::WidgetTree;
 
 /// Progress display type.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,7 +61,7 @@ define_widget! {
         self.indet_anim.is_some()
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let tokens = ctx.tokens();
 
         let track_c = self.track_color.unwrap_or(tokens.color_fill_tertiary());

@@ -4,16 +4,12 @@
 //! 支持标题、描述、类型图标、自动关闭。通过静态队列管理。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
+use crate::draw::painting::PaintContext;
+use crate::draw::{Color, Radius};
+use crate::native::{Point, Rect, Size, StatusLevel};
 use crate::ui::WidgetTree;
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::draw::{Color, Radius};
-use crate::native::{Point, Rect, Size};
-
-/// 通知类型。
-/// （已统一为 crate::native::StatusLevel，保留别名以兼容旧代码。）
-pub use crate::native::StatusLevel as NotificationType;
 
 /// 通知弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,7 +23,7 @@ pub enum NotifPlacement {
 /// 单条通知数据。
 #[derive(Debug, Clone)]
 pub struct NotificationItem {
-    pub type_: NotificationType,
+    pub type_: StatusLevel,
     pub title: String,
     pub description: String,
     pub duration_ms: u64,
@@ -70,7 +66,7 @@ define_widget! {
         !self.queue.borrow().is_empty()
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let queue = self.queue.borrow();
         if queue.is_empty() { return; }
         let notif_w = 384.0;
@@ -92,10 +88,10 @@ define_widget! {
             let desc_h = if item.description.is_empty() { 0.0 } else { 18.0 };
             let notif_h = 48.0 + desc_h;
             let (icon, accent) = match item.type_ {
-                NotificationType::Success => ("✓", ctx.tokens().color_success()),
-                NotificationType::Info    => ("ℹ", ctx.tokens().color_info()),
-                NotificationType::Warning => ("⚠", ctx.tokens().color_warning()),
-                NotificationType::Error   => ("✗", ctx.tokens().color_error()),
+                StatusLevel::Success => ("✓", ctx.tokens().color_success()),
+                StatusLevel::Info    => ("ℹ", ctx.tokens().color_info()),
+                StatusLevel::Warning => ("⚠", ctx.tokens().color_warning()),
+                StatusLevel::Error   => ("✗", ctx.tokens().color_error()),
             };
             let notif_rect = Rect::new(start_x, y, notif_w, notif_h);
             // 阴影
@@ -155,7 +151,7 @@ impl Notification {
         );
     }
 
-    pub fn open(&self, title: &str, desc: &str, type_: NotificationType) {
+    pub fn open(&self, title: &str, desc: &str, type_: StatusLevel) {
         self.add(NotificationItem {
             type_,
             title: title.to_string(),
@@ -165,16 +161,16 @@ impl Notification {
         });
     }
     pub fn success(&self, title: &str, desc: &str) {
-        self.open(title, desc, NotificationType::Success);
+        self.open(title, desc, StatusLevel::Success);
     }
     pub fn info(&self, title: &str, desc: &str) {
-        self.open(title, desc, NotificationType::Info);
+        self.open(title, desc, StatusLevel::Info);
     }
     pub fn warning(&self, title: &str, desc: &str) {
-        self.open(title, desc, NotificationType::Warning);
+        self.open(title, desc, StatusLevel::Warning);
     }
     pub fn error(&self, title: &str, desc: &str) {
-        self.open(title, desc, NotificationType::Error);
+        self.open(title, desc, StatusLevel::Error);
     }
     pub fn queue(&self) -> Rc<RefCell<Vec<NotificationItem>>> {
         self.queue.clone()

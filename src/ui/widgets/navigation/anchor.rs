@@ -3,10 +3,10 @@
 //! 与 ScrollView 配合使用：监听滚动位置，自动高亮当前锚点。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
-use crate::draw::{Color, traits::GraphicsEngine};
+use crate::draw::painting::PaintContext;
+use crate::draw::{traits::GraphicsEngine, Color};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {
     /// Anchor — 锚点导航条。
@@ -34,9 +34,9 @@ define_widget! {
         Size::new(w, self.items.len() as f32 * 36.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 let idx = (pos.y / 36.0) as usize;
                 if idx < self.items.len() {
                     self.active_index = idx;
@@ -46,13 +46,13 @@ define_widget! {
                     EventResult::NotHandled
                 }
             }
-            WidgetEvent::HoverEnter => EventResult::Handled,
-            WidgetEvent::HoverLeave => EventResult::Handled,
+            SystemEvent::PointerEnter => EventResult::Handled,
+            SystemEvent::PointerLeave => EventResult::Handled,
             _ => EventResult::NotHandled,
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // 背景
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);

@@ -23,9 +23,9 @@ impl IPresenter for GpuPresenter {
         _pixels: &[u32],
         _width: i32,
         _height: i32,
-        _damage: PresentDamage,
+        damage: PresentDamage,
     ) -> Result<(), Error> {
-        self.gpu_ctx.swap_buffers();
+        self.gpu_ctx.swap_buffers(damage);
         Ok(())
     }
 

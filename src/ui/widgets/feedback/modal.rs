@@ -1,11 +1,11 @@
 use std::cell::Cell;
 
-use crate::ui::animation::transition::{presets, TransitionPlayer};
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetCore, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{ControlSize, Point, Rect, Size};
+use crate::ui::animation::transition::{presets, TransitionPlayer};
+use crate::ui::{EventResult, WidgetCore, SystemEvent, WidgetTree};
 
 // Modal — 模态对话框。
 //
@@ -63,10 +63,10 @@ define_widget! {
         }
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if !self.visible || self.closing { return EventResult::NotHandled; }
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 if self.overlay {
                     // 覆盖层模式：计算弹窗在全屏中的实际矩形
                     let dw = self.width;
@@ -97,7 +97,7 @@ define_widget! {
                 }
                 EventResult::Handled
             }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::KeyDown { key, .. } => {
                 if *key == crate::ui::KeyCode::Escape && self.closable {
                     self.close();
                     return EventResult::Handled;
@@ -141,7 +141,7 @@ define_widget! {
         self.transition_player.as_ref().is_some_and(|tp| !tp.finished)
     }
 
-    render => (&self, _frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, _frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // 完全隐藏 → 不渲染
         if !self.visible && self.transition_player.is_none() { return; }
         let opacity = self.transition_player.as_ref().map_or(1.0, |tp| tp.opacity_progress);

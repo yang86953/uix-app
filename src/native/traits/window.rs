@@ -1,8 +1,8 @@
 //! 窗口协议 — 窗口创建、属性与生命周期。
 
+use super::present::{IGraphicsContext, IPresenter};
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
-use super::present::{IGraphicsContext, IPresenter};
 
 pub trait IWindowProperties {
     fn width(&self) -> i32;

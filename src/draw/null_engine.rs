@@ -38,7 +38,7 @@ impl GraphicsEngine for NullEngine {
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         match strategy {
             UpdateStrategy::FullRedraw => RenderOutcome::Present(DamageRegion::full()),
-            UpdateStrategy::DirtyRects(rects) | UpdateStrategy::Overlay(rects) => {
+            UpdateStrategy::DirtyRects(rects) => {
                 if rects.is_empty() {
                     RenderOutcome::Idle
                 } else {

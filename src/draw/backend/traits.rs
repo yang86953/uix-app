@@ -4,8 +4,8 @@ use std::any::Any;
 
 use crate::native::{Error, Point, Rect, Size};
 
-use crate::draw::ImageHandle;
 use crate::draw::traits::{Canvas2D, PresentationMode};
+use crate::draw::ImageHandle;
 
 /// 后端种类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,10 +38,7 @@ impl DamageRegion {
     }
 
     pub fn partial(rects: Vec<Rect>) -> Self {
-        Self {
-            full: false,
-            rects,
-        }
+        Self { full: false, rects }
     }
 
     pub fn from_rect(rect: Rect) -> Self {

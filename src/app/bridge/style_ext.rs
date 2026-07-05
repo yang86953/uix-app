@@ -1,4 +1,4 @@
-//! RenderContext 扩展 — UI 域样式应用。
+//! PaintContext 扩展 — UI 域样式应用。
 
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
@@ -29,23 +29,12 @@ pub fn apply_style(ctx: &mut PaintContext<'_>, rect: Rect, style: &Style) {
     if let Some(bg) = style.background {
         ctx.fill_rect(rect, bg, r);
     }
-    if style.border_width > 0.0 {
+    if style.has_border() {
         if let Some(bc) = style.border_color {
-            ctx.stroke_rect(rect, bc, style.border_width, r);
+            ctx.stroke_rect(rect, bc, style.stroke_width(), r);
         }
     }
     if style.opacity < 1.0 {
         ctx.canvas_2d().set_opacity(1.0);
-    }
-}
-
-/// 兼容 widget 对 `ctx.apply_style()` 的调用习惯。
-pub trait RenderContextStyleExt {
-    fn apply_style(&mut self, rect: Rect, style: &Style);
-}
-
-impl RenderContextStyleExt for PaintContext<'_> {
-    fn apply_style(&mut self, rect: Rect, style: &Style) {
-        apply_style(self, rect, style);
     }
 }

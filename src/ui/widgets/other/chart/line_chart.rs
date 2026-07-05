@@ -1,10 +1,10 @@
 //! LineChart — line chart with grid lines and data point markers.
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Point, Rect, Size};
+use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone)]
 pub struct LineData {
@@ -41,7 +41,7 @@ define_widget! {
         Size::new(w, h)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let n = self.data.len();
         if n < 2 || frame.w <= 0.0 || frame.h <= 0.0 { return; }
 

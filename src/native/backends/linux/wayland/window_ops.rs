@@ -17,9 +17,9 @@ use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::X
 use wayland_protocols::unstable::xdg_decoration::v1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
-use crate::native::traits::event::UiEvent;
 use crate::native::shared::unimpl;
 use crate::native::shared::WindowOps;
+use crate::native::traits::event::UiEvent;
 
 /// Wayland 平台窗口操作句柄。
 ///
@@ -291,7 +291,9 @@ impl WindowOps for WaylandWindowOps {
             xa.activate(String::new(), surface);
             crate::core::log::info_fn("已请求窗口激活 (xdg_activation_v1)");
         } else {
-            crate::core::log::info_fn("请求窗口提升: xdg_activation_v1 不可用，由 compositor 自行决定");
+            crate::core::log::info_fn(
+                "请求窗口提升: xdg_activation_v1 不可用，由 compositor 自行决定",
+            );
         }
     }
 

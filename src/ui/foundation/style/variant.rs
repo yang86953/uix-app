@@ -1,25 +1,32 @@
-//! StyleVariant — 按交互状态区分的样式集合。
+﻿//! StyleSet — normal/hover/pressed/focused/disabled 五态样式集合。
 
 use super::Style;
+use crate::draw::Color;
+use crate::native::EdgeInsets;
 
-/// 携带交互状态的样式集合——让 widget 根据 normal / hover / active / disabled
-/// 自动选择对应的视觉颜色。
+/// 组件交互态，用于从 `StyleSet` 中解析最终样式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StyleState {
+    pub hovered: bool,
+    pub pressed: bool,
+    pub focused: bool,
+    pub disabled: bool,
+}
+
+/// 五态样式集合。
 ///
-/// 使用方式：widget 在 `render` 中根据自身状态（hovered/pressed/disabled）
-/// 从 variant 中取色，回退到 Style 基础色。
+/// 状态层只保存差异字段，解析时继承 `normal`。优先级：
+/// disabled > focused > pressed > hover > normal。
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct StyleVariant {
-    /// 正常状态基础样式
+pub struct StyleSet {
     pub normal: Style,
-    /// 悬停样式覆盖（None = 使用 normal）
     pub hover: Option<Style>,
-    /// 按下样式覆盖
-    pub active: Option<Style>,
-    /// 禁用样式覆盖
+    pub pressed: Option<Style>,
+    pub focused: Option<Style>,
     pub disabled: Option<Style>,
 }
 
-impl StyleVariant {
+impl StyleSet {
     pub fn new(base: Style) -> Self {
         Self {
             normal: base,
@@ -27,32 +34,170 @@ impl StyleVariant {
         }
     }
 
-    /// 链式设置悬停样式。
     pub fn hover(mut self, s: Style) -> Self {
         self.hover = Some(s);
         self
     }
-    /// 链式设置按下样式。
-    pub fn active(mut self, s: Style) -> Self {
-        self.active = Some(s);
+
+    pub fn pressed(mut self, s: Style) -> Self {
+        self.pressed = Some(s);
         self
     }
-    /// 链式设置禁用样式。
+
+    pub fn focused(mut self, s: Style) -> Self {
+        self.focused = Some(s);
+        self
+    }
+
     pub fn disabled(mut self, s: Style) -> Self {
         self.disabled = Some(s);
         self
     }
 
-    /// 根据 widget 状态获取当前有效的 Style。
-    pub fn resolve(&self, hovered: bool, pressed: bool, disabled: bool) -> &Style {
-        if disabled {
-            self.disabled.as_ref().unwrap_or(&self.normal)
-        } else if pressed {
-            self.active.as_ref().unwrap_or(&self.normal)
-        } else if hovered {
-            self.hover.as_ref().unwrap_or(&self.normal)
+    pub fn active(self, s: Style) -> Self {
+        self.pressed(s)
+    }
+
+    pub fn resolve(&self, state: StyleState) -> Style {
+        let mut style = self.normal.clone();
+        let overlay = if state.disabled {
+            self.disabled.as_ref()
+        } else if state.focused {
+            self.focused.as_ref()
+        } else if state.pressed {
+            self.pressed.as_ref()
+        } else if state.hovered {
+            self.hover.as_ref()
         } else {
-            &self.normal
+            None
+        };
+        if let Some(overlay) = overlay {
+            style = style.apply(overlay.clone());
         }
+        style
+    }
+
+    pub fn resolve_flags(
+        &self,
+        hovered: bool,
+        pressed: bool,
+        focused: bool,
+        disabled: bool,
+    ) -> Style {
+        self.resolve(StyleState {
+            hovered,
+            pressed,
+            focused,
+            disabled,
+        })
+    }
+
+    pub fn button_default() -> Self {
+        let normal = Style::button_default();
+        Self::new(normal.clone())
+            .hover(Style {
+                border_color: Some(Color::from_rgba(22, 119, 255, 255)),
+                color: Color::from_rgba(22, 119, 255, 255),
+                ..Style::default()
+            })
+            .pressed(Style {
+                border_color: Some(Color::from_rgba(9, 88, 217, 255)),
+                color: Color::from_rgba(9, 88, 217, 255),
+                ..Style::default()
+            })
+            .focused(Style {
+                border_color: Some(Color::from_rgba(22, 119, 255, 255)),
+                box_shadow: Some(super::BoxShadowDef::new(
+                    Color::from_rgba(22, 119, 255, 80),
+                    4.0,
+                    0.0,
+                    0.0,
+                )),
+                ..Style::default()
+            })
+            .disabled(Style {
+                border_color: Some(Color::from_rgba(217, 217, 217, 255)),
+                color: Color::from_rgba(0, 0, 0, 64),
+                opacity: 0.45,
+                ..Style::default()
+            })
+    }
+
+    pub fn button_primary() -> Self {
+        let normal = Style::button_primary();
+        Self::new(normal.clone())
+            .hover(Style {
+                background: Some(Color::from_rgba(64, 150, 255, 255)),
+                border_color: Some(Color::from_rgba(64, 150, 255, 255)),
+                color: Color::white(),
+                ..Style::default()
+            })
+            .pressed(Style {
+                background: Some(Color::from_rgba(9, 88, 217, 255)),
+                border_color: Some(Color::from_rgba(9, 88, 217, 255)),
+                color: Color::white(),
+                ..Style::default()
+            })
+            .focused(Style {
+                box_shadow: Some(super::BoxShadowDef::new(
+                    Color::from_rgba(22, 119, 255, 90),
+                    4.0,
+                    0.0,
+                    0.0,
+                )),
+                ..Style::default()
+            })
+            .disabled(Style {
+                background: Some(Color::from_rgba(217, 217, 217, 255)),
+                border_color: Some(Color::from_rgba(217, 217, 217, 255)),
+                color: Color::from_rgba(0, 0, 0, 64),
+                opacity: 0.45,
+                ..Style::default()
+            })
+    }
+
+    pub fn button_ghost() -> Self {
+        Self::new(Style {
+            background: None,
+            border_color: Some(Color::from_rgba(22, 119, 255, 255)),
+            border_width: EdgeInsets::uniform(1.0),
+            border_radius: 6.0,
+            padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
+            color: Color::from_rgba(22, 119, 255, 255),
+            font_size: 14.0,
+            ..Style::default()
+        })
+        .hover(Style {
+            background: Some(Color::from_rgba(230, 244, 255, 255)),
+            ..Style::default()
+        })
+        .pressed(Style {
+            border_color: Some(Color::from_rgba(9, 88, 217, 255)),
+            color: Color::from_rgba(9, 88, 217, 255),
+            ..Style::default()
+        })
+    }
+
+    pub fn button_danger() -> Self {
+        Self::new(Style {
+            background: Some(Color::from_rgba(255, 77, 79, 255)),
+            border_color: Some(Color::from_rgba(255, 77, 79, 255)),
+            border_width: EdgeInsets::uniform(1.0),
+            border_radius: 6.0,
+            padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
+            color: Color::white(),
+            font_size: 14.0,
+            ..Style::default()
+        })
+        .hover(Style {
+            background: Some(Color::from_rgba(255, 120, 117, 255)),
+            border_color: Some(Color::from_rgba(255, 120, 117, 255)),
+            ..Style::default()
+        })
+        .pressed(Style {
+            background: Some(Color::from_rgba(207, 19, 34, 255)),
+            border_color: Some(Color::from_rgba(207, 19, 34, 255)),
+            ..Style::default()
+        })
     }
 }

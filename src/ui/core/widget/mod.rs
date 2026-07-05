@@ -1,35 +1,9 @@
-pub use crate::native::{KeyCode, KeyMod, MouseButton};
-use crate::native::{Point, Rect, Size};
-
-/// WidgetEvent 的种类区分（无载荷），用于事件管理器按类型过滤。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WidgetEventKind {
-    MouseDown,
-    MouseUp,
-    MouseMove,
-    MouseWheel,
-    KeyDown,
-    KeyUp,
-    KeyPress,
-    FocusIn,
-    FocusOut,
-    HoverEnter,
-    HoverLeave,
-    Resize,
-    WindowMaximize,
-    WindowMinimize,
-    WindowRestore,
-    WindowFocus,
-    WindowBlur,
-    Timer,
-    FileDrop,
-    /// 组合事件：拖拽
-    DragStart,
-    DragMove,
-    DragEnd,
-}
+pub use crate::native::{KeyCode, KeyMod, MouseButton, Point};
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::draw::traits::GraphicsEngine;
+use crate::native::{Rect, Size};
+use crate::ui::event::HandlerRegistration;
+pub use crate::ui::event::{SystemEvent, SystemEventKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventResult {
@@ -38,112 +12,11 @@ pub enum EventResult {
     Bubbled,
 }
 
-#[derive(Debug, Clone)]
-pub enum WidgetEvent {
-    MouseDown {
-        pos: Point,
-        button: MouseButton,
-        mods: KeyMod,
-    },
-    MouseUp {
-        pos: Point,
-        button: MouseButton,
-        mods: KeyMod,
-    },
-    MouseMove {
-        pos: Point,
-        mods: KeyMod,
-    },
-    MouseWheel {
-        pos: Point,
-        delta: Point,
-    },
-    KeyDown {
-        key: KeyCode,
-        mods: KeyMod,
-    },
-    KeyUp {
-        key: KeyCode,
-        mods: KeyMod,
-    },
-    KeyPress {
-        text: String,
-    },
-    FocusIn,
-    FocusOut,
-    HoverEnter,
-    HoverLeave,
-    Resize {
-        width: f32,
-        height: f32,
-    },
-    WindowMaximize,
-    WindowMinimize,
-    WindowRestore,
-    WindowFocus,
-    WindowBlur,
-    Timer {
-        id: u32,
-    },
-    FileDrop {
-        files: Vec<String>,
-        position: Point,
-    },
-    /// 组合事件：拖拽开始（MouseDown + MouseMove 超出阈值后触发）
-    DragStart {
-        pos: Point,
-        button: MouseButton,
-        mods: KeyMod,
-    },
-    /// 组合事件：拖拽移动
-    DragMove {
-        pos: Point,
-        delta: Point,
-        mods: KeyMod,
-    },
-    /// 组合事件：拖拽结束
-    DragEnd {
-        pos: Point,
-        button: MouseButton,
-        mods: KeyMod,
-    },
-}
-
-impl WidgetEvent {
-    /// 返回事件的种类（忽略载荷），用于事件管理器按类型过滤。
-    pub fn kind(&self) -> WidgetEventKind {
-        match self {
-            WidgetEvent::MouseDown { .. } => WidgetEventKind::MouseDown,
-            WidgetEvent::MouseUp { .. } => WidgetEventKind::MouseUp,
-            WidgetEvent::MouseMove { .. } => WidgetEventKind::MouseMove,
-            WidgetEvent::MouseWheel { .. } => WidgetEventKind::MouseWheel,
-            WidgetEvent::KeyDown { .. } => WidgetEventKind::KeyDown,
-            WidgetEvent::KeyUp { .. } => WidgetEventKind::KeyUp,
-            WidgetEvent::KeyPress { .. } => WidgetEventKind::KeyPress,
-            WidgetEvent::FocusIn => WidgetEventKind::FocusIn,
-            WidgetEvent::FocusOut => WidgetEventKind::FocusOut,
-            WidgetEvent::HoverEnter => WidgetEventKind::HoverEnter,
-            WidgetEvent::HoverLeave => WidgetEventKind::HoverLeave,
-            WidgetEvent::Resize { .. } => WidgetEventKind::Resize,
-            WidgetEvent::WindowMaximize => WidgetEventKind::WindowMaximize,
-            WidgetEvent::WindowMinimize => WidgetEventKind::WindowMinimize,
-            WidgetEvent::WindowRestore => WidgetEventKind::WindowRestore,
-            WidgetEvent::WindowFocus => WidgetEventKind::WindowFocus,
-            WidgetEvent::WindowBlur => WidgetEventKind::WindowBlur,
-            WidgetEvent::Timer { .. } => WidgetEventKind::Timer,
-            WidgetEvent::FileDrop { .. } => WidgetEventKind::FileDrop,
-            WidgetEvent::DragStart { .. } => WidgetEventKind::DragStart,
-            WidgetEvent::DragMove { .. } => WidgetEventKind::DragMove,
-            WidgetEvent::DragEnd { .. } => WidgetEventKind::DragEnd,
-        }
-    }
-}
-
 pub type WidgetId = usize;
 
 // 重新导出 api 中的 trait 定义
 pub use crate::ui::traits::{
-    IntoWidgetNode, WidgetCapabilities, WidgetComponent, WidgetEventHandler, WidgetLayout,
+    IntoWidgetNode, WidgetCapabilities, WidgetComponent, EventHandler, WidgetLayout,
     WidgetLifecycle, WidgetRender,
 };
 
@@ -153,6 +26,7 @@ pub struct WidgetNode {
     pub z_index: i32,
     pub key: Option<Box<str>>,
     pub tab_idx: i32,
+    pub handlers: Vec<HandlerRegistration>,
 }
 
 impl WidgetNode {
@@ -163,6 +37,7 @@ impl WidgetNode {
             z_index: 0,
             key: None,
             tab_idx: 0,
+            handlers: Vec::new(),
         }
     }
     pub fn key(mut self, k: &str) -> Self {
@@ -176,6 +51,7 @@ impl WidgetNode {
             z_index: 0,
             key: None,
             tab_idx: 0,
+            handlers: Vec::new(),
         }
     }
     pub fn z_index(mut self, z: i32) -> Self {
@@ -185,6 +61,14 @@ impl WidgetNode {
     /// 设置 Tab 键导航顺序索引（> 0 表示可通过 Tab 获取焦点）。
     pub fn tab_index(mut self, idx: i32) -> Self {
         self.tab_idx = idx;
+        self
+    }
+    pub fn on_semantic(mut self, registration: HandlerRegistration) -> Self {
+        self.handlers.push(registration);
+        self
+    }
+    pub fn with_handlers(mut self, handlers: Vec<HandlerRegistration>) -> Self {
+        self.handlers = handlers;
         self
     }
 }
@@ -259,10 +143,10 @@ impl BoxedWidget {
     pub fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> {
         self.component.as_render_mut()
     }
-    pub fn as_event(&self) -> Option<&dyn WidgetEventHandler> {
+    pub fn as_event(&self) -> Option<&dyn EventHandler> {
         self.component.as_event()
     }
-    pub fn as_event_mut(&mut self) -> Option<&mut dyn WidgetEventHandler> {
+    pub fn as_event_mut(&mut self) -> Option<&mut dyn EventHandler> {
         self.component.as_event_mut()
     }
     pub fn as_layout(&self) -> Option<&dyn WidgetLayout> {
@@ -352,11 +236,20 @@ impl BoxedWidget {
             .map(|e| e.hit_test_3d(ray, spatial, frame))
             .unwrap_or(false)
     }
-    pub fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
+    pub fn on_event(&mut self, event: &SystemEvent) -> EventResult {
         self.component_mut()
             .as_event_mut()
             .map(|e| e.on_event(event))
             .unwrap_or(EventResult::NotHandled)
+    }
+    pub fn semantic_event(
+        &self,
+        id: WidgetId,
+        event: &SystemEvent,
+    ) -> Option<crate::ui::event::SemanticEvent> {
+        self.component()
+            .as_event()
+            .and_then(|e| e.semantic_event(id, event))
     }
     pub fn is_focusable(&self) -> bool {
         self.tab_idx > 0 && self.visible && self.component.as_event().is_some()
@@ -370,18 +263,12 @@ impl BoxedWidget {
     pub fn render(
         &self,
         frame: Rect,
-        ctx: &mut crate::draw::painting::RenderContext,
+        ctx: &mut crate::draw::painting::PaintContext,
         tree: &WidgetTree,
     ) {
         if let Some(r) = self.component().as_render() {
             r.render(frame, ctx, tree);
         }
-    }
-    pub fn is_repaint_boundary(&self) -> bool {
-        self.component()
-            .as_render()
-            .map(|r| r.is_repaint_boundary())
-            .unwrap_or(false)
     }
 }
 

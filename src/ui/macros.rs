@@ -1,5 +1,96 @@
 //! Macros — 组件式 widget 定义。
 
+/// 为组件生成 `WidgetComponent` 胶水代码（能力位 + 上转型）。
+///
+/// 组件本身是数据 struct；按需 `impl WidgetLayout / WidgetRender / …`，
+/// 未覆盖的方法使用 trait 默认实现。
+///
+/// ```ignore
+/// pub struct Button { text: String, ... }
+///
+/// impl_widget_component!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
+///
+/// impl WidgetLayout for Button {
+///     fn preferred_size(&self, engine: Option<&dyn GraphicsEngine>) -> Size { ... }
+/// }
+/// impl WidgetRender for Button {
+///     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) { ... }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_widget_component {
+    (
+        $T:ty;
+        $($cap:ident),+ $(,)?
+        $(; tab_index => $tab:expr)?
+    ) => {
+        impl $crate::ui::traits::WidgetComponent for $T {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
+            fn capabilities(&self) -> $crate::ui::traits::WidgetCapabilities {
+                let mut caps = $crate::ui::traits::WidgetCapabilities::new();
+                $(
+                    impl_widget_component!(@insert_cap caps $cap);
+                )+
+                caps
+            }
+            $(
+                fn tab_index(&self) -> i32 {
+                    $tab
+                }
+            )?
+            $(
+                impl_widget_component!(@upcast $cap);
+            )+
+        }
+    };
+    (@insert_cap $caps:ident Layout) => {
+        $caps.insert($crate::ui::traits::WidgetCapabilities::LAYOUT);
+    };
+    (@insert_cap $caps:ident Render) => {
+        $caps.insert($crate::ui::traits::WidgetCapabilities::RENDER);
+    };
+    (@insert_cap $caps:ident Event) => {
+        $caps.insert($crate::ui::traits::WidgetCapabilities::EVENT);
+    };
+    (@insert_cap $caps:ident Lifecycle) => {
+        $caps.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE);
+    };
+    (@upcast Layout) => {
+        fn as_layout(&self) -> Option<&dyn $crate::ui::traits::WidgetLayout> {
+            Some(self)
+        }
+    };
+    (@upcast Render) => {
+        fn as_render(&self) -> Option<&dyn $crate::ui::traits::WidgetRender> {
+            Some(self)
+        }
+        fn as_render_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetRender> {
+            Some(self)
+        }
+    };
+    (@upcast Event) => {
+        fn as_event(&self) -> Option<&dyn $crate::ui::traits::EventHandler> {
+            Some(self)
+        }
+        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::EventHandler> {
+            Some(self)
+        }
+    };
+    (@upcast Lifecycle) => {
+        fn as_lifecycle(&self) -> Option<&dyn $crate::ui::traits::WidgetLifecycle> {
+            Some(self)
+        }
+        fn as_lifecycle_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetLifecycle> {
+            Some(self)
+        }
+    };
+}
+
 #[macro_export]
 macro_rules! tree {
     ($parent:expr => [$($child:expr),+ $(,)?]) => {
@@ -25,11 +116,11 @@ macro_rules! wc_upcast {
             Some(self)
         }
     };
-    ($T:ty; WidgetEventHandler) => {
-        fn as_event(&self) -> Option<&dyn $crate::ui::traits::WidgetEventHandler> {
+    ($T:ty; EventHandler) => {
+        fn as_event(&self) -> Option<&dyn $crate::ui::traits::EventHandler> {
             Some(self)
         }
-        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetEventHandler> {
+        fn as_event_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::EventHandler> {
             Some(self)
         }
     };
@@ -78,7 +169,7 @@ macro_rules! __define_widget_upcast_method {
     (dirty_rect; $T:ty) => {};
     (children_clip; $T:ty) => {};
     (draw_margin; $T:ty) => {};
-    (on_event; $T:ty) => { $crate::wc_upcast!($T; WidgetEventHandler); };
+    (on_event; $T:ty) => { $crate::wc_upcast!($T; EventHandler); };
     (needs_continuous_update; $T:ty) => {};
     (scroll_delta; $T:ty) => {};
     (scroll_delta_for_dirty; $T:ty) => {};
@@ -167,7 +258,7 @@ macro_rules! define_widget {
             // Lifecycle/EventHandler 各方法均有默认实现），因此所有上转型始终有效 ═══
             $crate::wc_upcast!($name; WidgetLayout);
             $crate::wc_upcast!($name; WidgetRender);
-            $crate::wc_upcast!($name; WidgetEventHandler);
+            $crate::wc_upcast!($name; EventHandler);
             $crate::wc_upcast!($name; WidgetLifecycle);
         }
 
@@ -190,7 +281,7 @@ macro_rules! define_widget {
             )*]
         }
         $crate::__define_widget_grouped_impl! {
-            WidgetEventHandler,
+            EventHandler,
             $name,
             [on_event needs_continuous_update scroll_delta scroll_delta_for_dirty viewport_scroll_offset hit_test_frame],
             [$(
@@ -242,23 +333,26 @@ macro_rules! __define_widget_method_builder {
     (draw_margin; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn draw_margin($($p)*) -> $ret $body
     };
-    // ── WidgetEventHandler ──
-    (on_event; WidgetEventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+    // ── EventHandler ──
+    (on_event; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn on_event($($p)*) -> $ret $body
     };
-    (needs_continuous_update; WidgetEventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+    (semantic_event; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn semantic_event($($p)*) -> $ret $body
+    };
+    (needs_continuous_update; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn needs_continuous_update($($p)*) -> $ret $body
     };
-    (scroll_delta; WidgetEventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+    (scroll_delta; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta($($p)*) -> $ret $body
     };
-    (scroll_delta_for_dirty; WidgetEventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+    (scroll_delta_for_dirty; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta_for_dirty($($p)*) -> $ret $body
     };
-    (viewport_scroll_offset; WidgetEventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+    (viewport_scroll_offset; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn viewport_scroll_offset($($p)*) -> $ret $body
     };
-    (hit_test_frame; WidgetEventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+    (hit_test_frame; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn hit_test_frame($($p)*) -> $ret $body
     };
     // ── WidgetLifecycle ──
@@ -308,23 +402,26 @@ macro_rules! __match_trait_method {
     (WidgetRender, draw_margin, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn draw_margin($($p)*) -> $ret $body
     };
-    // ── WidgetEventHandler ──
-    (WidgetEventHandler, on_event, ($($p:tt)*) -> $ret:ty $body:block) => {
+    // ── EventHandler ──
+    (EventHandler, on_event, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn on_event($($p)*) -> $ret $body
     };
-    (WidgetEventHandler, needs_continuous_update, ($($p:tt)*) -> $ret:ty $body:block) => {
+    (EventHandler, semantic_event, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn semantic_event($($p)*) -> $ret $body
+    };
+    (EventHandler, needs_continuous_update, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn needs_continuous_update($($p)*) -> $ret $body
     };
-    (WidgetEventHandler, scroll_delta, ($($p:tt)*) -> $ret:ty $body:block) => {
+    (EventHandler, scroll_delta, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta($($p)*) -> $ret $body
     };
-    (WidgetEventHandler, scroll_delta_for_dirty, ($($p:tt)*) -> $ret:ty $body:block) => {
+    (EventHandler, scroll_delta_for_dirty, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta_for_dirty($($p)*) -> $ret $body
     };
-    (WidgetEventHandler, viewport_scroll_offset, ($($p:tt)*) -> $ret:ty $body:block) => {
+    (EventHandler, viewport_scroll_offset, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn viewport_scroll_offset($($p)*) -> $ret $body
     };
-    (WidgetEventHandler, hit_test_frame, ($($p:tt)*) -> $ret:ty $body:block) => {
+    (EventHandler, hit_test_frame, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn hit_test_frame($($p)*) -> $ret $body
     };
     // ── WidgetLifecycle ──
@@ -366,11 +463,11 @@ macro_rules! __define_widget_grouped_impl {
             )*
         }
     };
-    // ── WidgetEventHandler ──
-    (WidgetEventHandler, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
-        impl $crate::ui::traits::WidgetEventHandler for $T {
+    // ── EventHandler ──
+    (EventHandler, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
+        impl $crate::ui::traits::EventHandler for $T {
             $(
-                $crate::__match_trait_method!(WidgetEventHandler, $method, ($($p)*) $(-> $ret)? $body);
+                $crate::__match_trait_method!(EventHandler, $method, ($($p)*) $(-> $ret)? $body);
             )*
         }
     };

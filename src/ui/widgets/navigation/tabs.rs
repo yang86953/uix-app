@@ -1,11 +1,11 @@
 //! Tabs widget — Ant Design style tab bar with content panels.
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
-use std::cell::RefCell;
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use std::cell::RefCell;
 
 /// A single tab definition.
 #[derive(Clone)]
@@ -38,9 +38,9 @@ define_widget! {
         Size::new(self.fixed_width.unwrap_or(400.0), self.fixed_height.unwrap_or(200.0))
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 let tab_count = self.tabs.len();
                 if tab_count == 0 { return EventResult::NotHandled; }
                 // 使用 render 时存储的 tab_x_positions 做点击定位
@@ -65,7 +65,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg_container = ctx.tokens().color_bg_container();
         let border_secondary = ctx.tokens().color_border_secondary();
         let primary = ctx.tokens().color_primary();

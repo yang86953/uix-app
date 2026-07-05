@@ -6,9 +6,9 @@ use crate::native::Error;
 use crate::native::Rect;
 
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
-use crate::draw::primitives::color::Color;
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::RenderSession;
+use crate::draw::primitives::color::Color;
 use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 use crate::draw::ImageHandle;
 
@@ -31,10 +31,7 @@ impl SoftwareEngine {
         let session = match RenderSession::new(BackendKind::Cpu) {
             Ok(s) => s,
             Err(e) => {
-                crate::core::log::error_fn(format!(
-                    "RenderSession 创建失败: {}",
-                    e.short_what()
-                ));
+                crate::core::log::error_fn(format!("RenderSession 创建失败: {}", e.short_what()));
                 RenderSession::with_backend(Box::new(CpuBackend::new()))
             }
         };

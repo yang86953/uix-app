@@ -11,7 +11,7 @@
 //! ## 使用方式
 //!
 //! ```ignore
-//! use uix_platform::test_harness::FakePlatform;
+//! use uix::native::test_harness::FakePlatform;
 //!
 //! let mut pf = FakePlatform::new();
 //! pf.clipboard.set_text("hello");
@@ -57,10 +57,10 @@ pub use fake_window::{FakeNativeHandle, FakeWindow, FakeWindowManager, FakeWindo
 
 use std::time::Duration;
 
-use crate::native::traits::*;
-use crate::native::traits::event::UiEvent;
-use crate::native::traits::event::EventBus;
 use crate::native::shared::OsEventSource;
+use crate::native::traits::event::EventBus;
+use crate::native::traits::event::UiEvent;
+use crate::native::traits::*;
 
 // ════════════════════════════════════════════════════════════════════════════
 // FakePlatform — 聚合所有 Fake 子系统

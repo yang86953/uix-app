@@ -1,7 +1,7 @@
 //! Fake 图形上下文 — 空操作实现，记录调用。
 
-use crate::native::traits::present::IGraphicsContext;
 use crate::core::error::Result;
+use crate::native::traits::present::{IGraphicsContext, PresentDamage};
 use std::cell::Cell;
 
 #[derive(Debug, Clone)]
@@ -11,6 +11,7 @@ pub struct FakeGraphicsContextState {
     pub initialized: bool,
     pub make_current_calls: usize,
     pub swap_buffers_calls: usize,
+    pub last_swap_damage: Option<PresentDamage>,
     pub shutdown_called: bool,
 }
 
@@ -22,6 +23,7 @@ impl FakeGraphicsContextState {
             initialized: false,
             make_current_calls: 0,
             swap_buffers_calls: 0,
+            last_swap_damage: None,
             shutdown_called: false,
         }
     }
@@ -69,8 +71,9 @@ impl IGraphicsContext for FakeGraphicsContext {
         self.state.make_current_calls += 1;
     }
 
-    fn swap_buffers(&mut self) {
+    fn swap_buffers(&mut self, damage: PresentDamage) {
         self.state.swap_buffers_calls += 1;
+        self.state.last_swap_damage = Some(damage);
     }
 
     fn shutdown(&mut self) {

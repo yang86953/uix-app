@@ -1,11 +1,11 @@
 //! ab_glyph 后端：纯 advance 定位。字形缓存已统一移到 FontService。
 
-use crate::draw::TextBackend;
 use crate::draw::font::text_backend::*;
 use crate::draw::FontHandle;
+use crate::draw::TextBackend;
+use crate::native::{Errc, Error};
 use ab_glyph::*;
 use std::sync::Arc;
-use crate::native::{Errc, Error};
 
 struct FontSlot {
     handle: FontHandle,

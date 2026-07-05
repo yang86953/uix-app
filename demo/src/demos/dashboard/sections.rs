@@ -1,4 +1,4 @@
-//! 组件展示页面（通用 ~ 反馈）
+﻿//! 组件展示页面（通用 ~ 反馈）
 //! 分类：通用、布局、导航、输入、数据展示、反馈
 //!
 //! 使用 `prelude` 导入组件与布局 API。
@@ -32,28 +32,20 @@ pub fn page_general(tk: &DesignTokens) -> WidgetNode {
                 .child(Label::new("Quaternary").color(tk.color_text_quaternary).font_size(14.0)),
         )
         // ── Button ──
-        .section("按钮 — 5 种变体")
+        .section("按钮 — StyleSet 预设")
         .push(
             row(40.0)
-                .child(Button::new("主要").primary())
-                .child(Button::new("默认"))
-                .child(Button::new("虚线").dashed())
-                .child(Button::new("文字").text())
-                .child(Button::new("链接").link()),
-        )
-        .section("按钮 — 3 种尺寸")
-        .push(
-            row(32.0)
-                .child(Button::new("Small").size(ButtonSize::Small))
-                .child(Button::new("Middle").size(ButtonSize::Medium))
-                .child(Button::new("Large").size(ButtonSize::Large)),
+                .child(button("主要").primary().widget())
+                .child(button("默认").widget())
+                .child(button("幽灵").ghost().widget())
+                .child(button("危险").danger().widget()),
         )
         .section("按钮组")
         .push(
             row(40.0)
-                .child(Button::new("保存").primary())
-                .child(Button::new("取消"))
-                .child(Button::new("删除").primary()),
+                .child(button("保存").primary().widget())
+                .child(button("取消").widget())
+                .child(button("删除").danger().widget()),
         )
         // ── Tag ──
         .section("标签 Tag")
@@ -193,8 +185,8 @@ pub fn page_layout(tk: &DesignTokens) -> WidgetNode {
                     Space::new().size(sz).width(INNER_W).height(h)
                         .direction(FlexDirection::Row).align(AlignItems::Center)
                         .child(Label::new(label).color(tk.color_text_tertiary).font_size(11.0))
-                        .child(Button::new("甲").size(ButtonSize::Small))
-                        .child(Button::new("乙").size(ButtonSize::Small)),
+                        .child(button("甲").widget())
+                        .child(button("乙").widget()),
                 );
             }
             sp
@@ -334,9 +326,9 @@ pub fn page_input(tk: &DesignTokens) -> WidgetNode {
         .section("输入框 Input — 3 种尺寸")
         .push(
             row(28.0)
-                .child(Input::new("小型...").size(InputSize::Small))
-                .child(Input::new("中型...").size(InputSize::Medium))
-                .child(Input::new("大型...").size(InputSize::Large)),
+                .child(Input::new("小型...").size(ControlSize::Small))
+                .child(Input::new("中型...").size(ControlSize::Medium))
+                .child(Input::new("大型...").size(ControlSize::Large)),
         )
         .section("数字输入 InputNumber")
         .push(
@@ -487,7 +479,11 @@ pub fn page_data(tk: &DesignTokens) -> WidgetNode {
         .section("图片 Image")
         .push(
             row(80.0)
-                .child(Image::new(80.0, 60.0).src("assets/images/demo.png").alt("示例图片"))
+                .child(
+                    Image::new(80.0, 60.0)
+                        .src("assets/images/demo.png")
+                        .alt("示例图片"),
+                )
                 .child(Image::new(80.0, 60.0).alt("占位图")),
         )
         .section("二维码 QRCode")
@@ -513,10 +509,10 @@ pub fn page_feedback(tk: &DesignTokens) -> WidgetNode {
     PageBuilder::new(tk)
         .gap()
         .section("提示条 Alert — 4 种类型")
-        .push(Alert::new("成功: 操作已完成").type_(AlertType::Success))
-        .push(Alert::new("信息: 这是一个提示").type_(AlertType::Info))
-        .push(Alert::new("警告: 请注意").type_(AlertType::Warning))
-        .push(Alert::new("错误: 操作失败").type_(AlertType::Error))
+        .push(Alert::new("成功: 操作已完成").type_(StatusLevel::Success))
+        .push(Alert::new("信息: 这是一个提示").type_(StatusLevel::Info))
+        .push(Alert::new("警告: 请注意").type_(StatusLevel::Warning))
+        .push(Alert::new("错误: 操作失败").type_(StatusLevel::Error))
         .section("加载中 Spin — 3 种尺寸")
         .push(
             row(40.0)

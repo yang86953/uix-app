@@ -1,9 +1,9 @@
-use crate::ui::animation::transition::{presets, SlideDirection, TransitionPlayer};
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{ControlSize, Point, Rect, Size};
+use crate::ui::animation::transition::{presets, SlideDirection, TransitionPlayer};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// 抽屉滑出方向。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -47,9 +47,9 @@ define_widget! {
 
     visible => (&self) -> bool { self.visible }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if !self.visible || self.closing { return EventResult::NotHandled; }
-        if let WidgetEvent::MouseDown { pos, .. } = event {
+        if let SystemEvent::PointerDown { pos, .. } = event {
             if self.mask_closable {
                 let outside = match self.placement {
                     DrawerPlacement::Right => pos.x < 0.0,
@@ -66,7 +66,7 @@ define_widget! {
                 }
             }
         }
-        if let WidgetEvent::KeyDown { key, .. } = event {
+        if let SystemEvent::KeyDown { key, .. } = event {
             if *key == crate::ui::KeyCode::Escape && self.closable {
                 self.close(); return EventResult::Handled;
             }
@@ -111,7 +111,7 @@ define_widget! {
         self.transition_player.as_ref().is_some_and(|tp| !tp.finished)
     }
 
-    render => (&self, _frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, _frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         if !self.visible { return; }
         let opacity = self.transition_player.as_ref().map_or(1.0, |tp| tp.opacity_progress);

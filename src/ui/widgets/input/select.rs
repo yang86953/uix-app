@@ -1,8 +1,8 @@
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 /// 选项组。
 #[derive(Debug, Clone)]
@@ -55,11 +55,11 @@ define_widget! {
         Size::new(w, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
         let all_opts: Vec<&str> = self.all_options();
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 if pos.y >= 0.0 && pos.y <= 32.0 {
                     self.open = !self.open; self.hovered_option = None;
                     return EventResult::Handled;
@@ -85,7 +85,7 @@ define_widget! {
                 self.open = false;
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if self.open && pos.y > 32.0 {
                     let idx = ((pos.y - 32.0) / 28.0) as usize;
                     self.hovered_option = if idx < all_opts.len() { Some(idx) } else { None };
@@ -93,11 +93,11 @@ define_widget! {
                 self.hovered = pos.y >= 0.0 && pos.y <= 32.0;
                 EventResult::Handled
             }
-            WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
-            WidgetEvent::HoverLeave => { self.hovered = false; self.hovered_option = None; EventResult::Handled }
-            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            WidgetEvent::FocusOut => { self.focused = false; self.open = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
+            SystemEvent::PointerLeave => { self.hovered = false; self.hovered_option = None; EventResult::Handled }
+            SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            SystemEvent::FocusOut => { self.focused = false; self.open = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Down => {
                         if self.open {
@@ -130,7 +130,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -235,7 +235,7 @@ impl Select {
         idx: usize,
         label: &str,
         opt_idx: usize,
-        ctx: &mut RenderContext,
+        ctx: &mut PaintContext,
         text_color: Color,
         primary: Color,
         fill_tertiary: Color,

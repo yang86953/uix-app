@@ -10,14 +10,14 @@ pub use scrollbar::*;
 use std::cell::Cell;
 
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
-use crate::ui::children::WidgetChildren;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetComponent, WidgetCore, WidgetEvent, WidgetId, WidgetTree};
-#[cfg(test)]
-use crate::ui::traits::{WidgetCapabilities, WidgetEventHandler, WidgetLayout, WidgetRender};
 use crate::draw::painting::PaintPass;
+use crate::draw::painting::PaintContext;
 use crate::native::{Rect, Size};
+use crate::ui::children::WidgetChildren;
+#[cfg(test)]
+use crate::ui::traits::{WidgetCapabilities, EventHandler, WidgetLayout, WidgetRender};
+use crate::ui::{EventResult, WidgetComponent, WidgetCore, SystemEvent, WidgetId, WidgetTree};
 
 /// Scroll direction for a ScrollView.
 /// （已统一为 crate::native::ScrollDirection。）
@@ -74,9 +74,9 @@ define_widget! {
         self.children.take()
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseWheel { delta, .. } => {
+            SystemEvent::Wheel { delta, .. } => {
                 let mut handled = false;
                 let view = self.last_frame.get();
                 // 加速度（每滚轮单位增加的像素/秒速度）：
@@ -96,7 +96,7 @@ define_widget! {
                 }
                 if handled { EventResult::Handled } else { EventResult::NotHandled }
             }
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 let frame = match self.last_frame.get() {
                     Some(f) => f,
                     None => return EventResult::NotHandled,
@@ -118,7 +118,7 @@ define_widget! {
                     }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if self.scrollbar_v.dragging {
                     let frame = match self.last_frame.get() {
                         Some(f) => f,
@@ -175,13 +175,13 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseUp { .. } => {
+            SystemEvent::PointerUp { .. } => {
                 let was_dragging = self.scrollbar_v.dragging || self.scrollbar_h.dragging;
                 self.scrollbar_v.dragging = false;
                 self.scrollbar_h.dragging = false;
                 if was_dragging { EventResult::Handled } else { EventResult::NotHandled }
             }
-            WidgetEvent::HoverLeave => {
+            SystemEvent::PointerLeave => {
                 self.scrollbar_v.hover = false;
                 self.scrollbar_h.hover = false;
                 EventResult::NotHandled
@@ -267,7 +267,7 @@ define_widget! {
         frame
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // Save frame for scrollbar hit-testing in on_event.
         self.last_frame.set(Some(frame));
 
@@ -490,11 +490,11 @@ impl Default for ScrollView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::draw::painting::RenderContext;
-    use crate::ui::EventResult;
-    use crate::ui::widgets::{Collapse, CollapsePanel, Container, Space};
-    use crate::ui::layout::{AlignItems, FlexDirection};
+    use crate::draw::painting::PaintContext;
     use crate::native::{Point, Rect, Size};
+    use crate::ui::layout::{AlignItems, FlexDirection};
+    use crate::ui::widgets::{Collapse, CollapsePanel, Container, Space};
+    use crate::ui::EventResult;
 
     /// A simple fixed-size widget for testing.
     struct FixedWidget {
@@ -517,7 +517,10 @@ mod tests {
         crate::wc_upcast!(FixedWidget; WidgetRender);
     }
     impl WidgetLayout for FixedWidget {
-        fn preferred_size(&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+        fn preferred_size(
+            &self,
+            _engine: Option<&dyn crate::draw::traits::GraphicsEngine>,
+        ) -> Size {
             self.size
         }
     }
@@ -525,7 +528,7 @@ mod tests {
         fn render(
             &self,
             _frame: Rect,
-            _ctx: &mut crate::draw::painting::RenderContext,
+            _ctx: &mut crate::draw::painting::PaintContext,
             _tree: &WidgetTree,
         ) {
         }
@@ -616,7 +619,7 @@ mod tests {
     #[test]
     fn scrollview_not_handled_for_non_scroll_events() {
         let mut sv = ScrollView::new(ScrollDirection::Vertical);
-        let result = sv.on_event(&WidgetEvent::MouseDown {
+        let result = sv.on_event(&SystemEvent::PointerDown {
             pos: Point::new(10.0, 10.0),
             button: crate::ui::MouseButton::Left,
             mods: crate::native::KeyMod::NONE,
@@ -646,7 +649,7 @@ mod tests {
             }
             crate::wc_upcast!(GrowWidget; WidgetLayout);
             crate::wc_upcast!(GrowWidget; WidgetRender);
-            crate::wc_upcast!(GrowWidget; WidgetEventHandler);
+            crate::wc_upcast!(GrowWidget; EventHandler);
         }
         impl WidgetLayout for GrowWidget {
             fn preferred_size(&self, _: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -654,11 +657,11 @@ mod tests {
             }
         }
         impl WidgetRender for GrowWidget {
-            fn render(&self, _: Rect, _: &mut RenderContext, _: &WidgetTree) {}
+            fn render(&self, _: Rect, _: &mut PaintContext, _: &WidgetTree) {}
         }
-        impl WidgetEventHandler for GrowWidget {
-            fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
-                if matches!(event, WidgetEvent::MouseDown { .. }) {
+        impl EventHandler for GrowWidget {
+            fn on_event(&mut self, event: &SystemEvent) -> EventResult {
+                if matches!(event, SystemEvent::PointerDown { .. }) {
                     self.size.set(self.size.get() * 2.0);
                     EventResult::Handled
                 } else {
@@ -689,7 +692,7 @@ mod tests {
         assert_eq!(max_y(&tree), 0.0, "初始内容<视口");
 
         // 展开1：100→200, 刚好等于视口
-        tree.dispatch_event(&WidgetEvent::MouseDown {
+        tree.dispatch_event(&SystemEvent::PointerDown {
             pos: Point::new(50.0, 10.0),
             button: crate::ui::MouseButton::Left,
             mods: crate::native::KeyMod::NONE,
@@ -698,7 +701,7 @@ mod tests {
         assert_eq!(max_y(&tree), 0.0, "展开到200=视口200");
 
         // 展开2：200→400, 内容>视口
-        tree.dispatch_event(&WidgetEvent::MouseDown {
+        tree.dispatch_event(&SystemEvent::PointerDown {
             pos: Point::new(50.0, 10.0),
             button: crate::ui::MouseButton::Left,
             mods: crate::native::KeyMod::NONE,
@@ -763,7 +766,7 @@ mod tests {
 
         // 点击展开第二个面板
         // Collapse 每个 header 36px, 点击 y=45 应在第二个面板 header 区域
-        tree.dispatch_event(&WidgetEvent::MouseDown {
+        tree.dispatch_event(&SystemEvent::PointerDown {
             pos: Point::new(50.0, 45.0), // 面板B的header区域
             button: crate::ui::MouseButton::Left,
             mods: crate::native::KeyMod::NONE,

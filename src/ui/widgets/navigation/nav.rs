@@ -10,13 +10,38 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。
 pub type SharedActive = Rc<Cell<usize>>;
+
+/// 导航项绘制区域：上下各扩 0.5px，避免局部重绘与相邻项出现 1px 接缝。
+fn nav_item_paint_rect(frame: Rect, min_w: f32, min_h: f32) -> Rect {
+    Rect::new(
+        frame.x,
+        frame.y - 0.5,
+        frame.w.max(min_w),
+        frame.h.max(min_h) + 1.0,
+    )
+}
+
+/// 先铺不透明底色，再叠 hover/active 色，避免局部清除后以透底产生白线。
+fn paint_nav_item_bg(
+    ctx: &mut PaintContext,
+    rect: Rect,
+    base: crate::draw::Color,
+    overlay: Option<crate::draw::Color>,
+) {
+    ctx.fill_rect(rect, base, None);
+    if let Some(color) = overlay {
+        if color.a > 0 {
+            ctx.fill_rect(rect, color, None);
+        }
+    }
+}
 
 // NavItem — 侧边栏导航项
 define_widget! {
@@ -35,11 +60,11 @@ define_widget! {
         Size::new(self.fixed_width, self.fixed_height)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
-            WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
-            WidgetEvent::MouseDown { .. } => {
+            SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
+            SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
+            SystemEvent::PointerDown { .. } => {
                 self.active_shared.set(self.index);
                 EventResult::Handled
             }
@@ -47,32 +72,32 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let active = self.index == self.active_shared.get();
         let primary = ctx.tokens().color_primary();
         let primary_bg = ctx.tokens().color_primary_bg();
         let text = ctx.tokens().color_text();
         let text_secondary = ctx.tokens().color_text_secondary();
         let fill_tertiary = ctx.tokens().color_fill_tertiary();
+        let bg_container = ctx.tokens().color_bg_container();
         let bg_elevated = ctx.tokens().color_bg_elevated();
 
-        let item_frame = Rect::new(
-            frame.x,
-            frame.y,
-            frame.w.max(self.fixed_width),
-            frame.h.max(self.fixed_height),
+        let item_frame = nav_item_paint_rect(
+            frame,
+            self.fixed_width,
+            self.fixed_height,
         );
 
         // —— Compact 模式：纯图标按钮，无文字标签，无指示条 ——
         if self.compact {
-            let (bg, text_color) = if active {
-                (primary_bg, primary)
+            let (base, overlay, text_color) = if active {
+                (bg_elevated, Some(primary_bg), primary)
             } else if self.hovered {
-                (fill_tertiary, text)
+                (bg_elevated, Some(fill_tertiary), text)
             } else {
-                (bg_elevated, text_secondary)
+                (bg_elevated, None, text_secondary)
             };
-            ctx.fill_rect(item_frame, bg, None);
+            paint_nav_item_bg(ctx, item_frame, base, overlay);
 
             let display = if !self.icon.is_empty() {
                 crate::ui::widgets::icon::icon_char(&self.icon)
@@ -96,15 +121,15 @@ define_widget! {
         // —— 标准模式 ——
         let indicator_w = 3.0;
 
-        let (bg, icon_color, label_color) = if active {
-            (primary_bg, primary, text)
+        let (overlay, icon_color, label_color) = if active {
+            (Some(primary_bg), primary, text)
         } else if self.hovered {
-            (fill_tertiary, text, text)
+            (Some(fill_tertiary), text, text)
         } else {
-            (fill_tertiary, text_secondary, text_secondary)
+            (None, text_secondary, text_secondary)
         };
 
-        ctx.fill_rect(item_frame, bg, None);
+        paint_nav_item_bg(ctx, item_frame, bg_container, overlay);
 
         if active {
             let bar = Rect::new(frame.x, frame.y, indicator_w, frame.h.max(self.fixed_height));
@@ -291,13 +316,10 @@ impl Navigation {
         self
     }
 
-    pub fn build(
-        self,
-        tokens: &dyn crate::ui::traits::TokenProvider,
-    ) -> crate::ui::WidgetNode {
+    pub fn build(self, tokens: &dyn crate::ui::traits::TokenProvider) -> crate::ui::WidgetNode {
         let loc = crate::ui::locale::use_locale();
-        use crate::ui::IntoWidgetNode;
         use crate::ui::widgets::{Container, Divider, Label};
+        use crate::ui::IntoWidgetNode;
 
         let item_h = if self.compact_items { self.width } else { 36.0 };
         let mut children: Vec<crate::ui::WidgetNode> = Vec::new();

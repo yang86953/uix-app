@@ -2,15 +2,15 @@
 
 use std::cell::Cell;
 
-use crate::ui::traits::LayoutEngine;
 use crate::define_widget;
-use crate::ui::layout::engine::{child_from_tree, BoxModel, FlexLayout, LayoutChild};
-use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
-use crate::draw::painting::RenderContext;
-use crate::ui::style::{BoxShadowDef, DisplayMode, Style};
-use crate::ui::{WidgetCore, WidgetId, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{EdgeInsets, Rect, Size};
+use crate::ui::layout::engine::{child_from_tree, BoxModel, FlexLayout, LayoutChild};
+use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
+use crate::ui::style::{BoxShadowDef, DisplayMode, Style};
+use crate::ui::traits::LayoutEngine;
+use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 
 define_widget! {
     /// Container — flexbox 布局容器，带背景/边框/圆角/阴影。
@@ -35,8 +35,8 @@ define_widget! {
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
         let mh = self.style.margin.horizontal();
         let mv = self.style.margin.vertical();
-        let bh = self.style.border_width * 2.0;
-        let bv = self.style.border_width * 2.0;
+        let bh = self.style.border_width.horizontal();
+        let bv = self.style.border_width.vertical();
         let cached = self.cached_content_size.get();
         let effective_w = self.style.width
             .unwrap_or_else(|| if cached.w > 0.0 { cached.w + self.style.padding.horizontal() } else { 0.0 });
@@ -50,7 +50,7 @@ define_widget! {
 
     flex_shrink => (&self) -> f32 { self.style.flex_shrink }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // Visual area excludes margin (margin is transparent per CSS box model)
         let s = &self.style;
         let visual = Rect::new(
@@ -220,7 +220,7 @@ impl Container {
     /// 设置边框。
     pub fn border(mut self, color: Color, width: f32) -> Self {
         self.style.border_color = Some(color);
-        self.style.border_width = width;
+        self.style.border_width = EdgeInsets::uniform(width);
         self
     }
 
@@ -321,17 +321,13 @@ impl Container {
         self
     }
 
-    // ═══════════════════════════════════════════════════
-    // 兼容旧 API（委托到 style）
-    // ═══════════════════════════════════════════════════
-
-    /// 便捷方法：单独设置内边距（旧 API 兼容）。
+    /// 便捷方法：单独设置内边距。
     pub fn pad(mut self, p: EdgeInsets) -> Self {
         self.style.padding = p;
         self
     }
 
-    /// 便捷方法：设置 flex 方向（旧 API 兼容）。
+    /// 便捷方法：设置 flex 方向。
     pub fn dir(mut self, d: FlexDirection) -> Self {
         self.style.flex_direction = match d {
             FlexDirection::Row => crate::ui::style::FlexDirection::Row,

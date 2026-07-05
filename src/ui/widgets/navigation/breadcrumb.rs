@@ -1,9 +1,9 @@
 //! Breadcrumb widget — 面包屑导航路径。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::native::{Rect, Size};
+use crate::ui::WidgetTree;
 
 /// 面包屑的一项。
 #[derive(Debug, Clone)]
@@ -44,7 +44,7 @@ define_widget! {
         Size::new(w, 22.0)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let text_secondary = ctx.tokens().color_text_secondary();
         let text_color = ctx.tokens().color_text();

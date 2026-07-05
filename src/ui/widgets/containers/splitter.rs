@@ -4,12 +4,12 @@
 
 use std::cell::Cell;
 
-use crate::ui::children::WidgetChildren;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetComponent, WidgetEvent, WidgetId, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::native::{Point, Rect, Size};
+use crate::ui::children::WidgetChildren;
+use crate::ui::{EventResult, WidgetComponent, SystemEvent, WidgetId, WidgetTree};
 
 define_widget! {
     /// Splitter — 可拖拽分割面板容器。
@@ -41,9 +41,9 @@ define_widget! {
         self.children.take()
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 if let Some(frame) = self.last_frame.get() {
                     if let Some(idx) = self.hit_test_handle(frame, *pos) {
                         self.dragging = Some(idx);
@@ -52,11 +52,11 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseUp { .. } => {
+            SystemEvent::PointerUp { .. } => {
                 self.dragging = None;
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if let Some(idx) = self.dragging {
                     if let Some(frame) = self.last_frame.get() {
                         self.update_ratios(frame, idx, *pos);
@@ -69,7 +69,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
         ctx.fill_rect(frame, ctx.tokens().color_bg_container(), None);
 

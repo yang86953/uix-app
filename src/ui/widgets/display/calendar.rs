@@ -3,11 +3,11 @@
 //! 月视图展示日期，支持选中日期、月份切换。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
-use std::cell::Cell;
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use std::cell::Cell;
 
 fn days_in_month(year: i32, month: usize) -> usize {
     match month {
@@ -52,8 +52,8 @@ define_widget! {
         Size::new(self.cell_size * 7.0, self.cell_size * 7.0 + 40.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::PointerDown { pos, .. } = event {
             let header_h = 40.0;
             if pos.y < header_h {
                 // 月份切换
@@ -86,7 +86,7 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_quaternary();

@@ -1,9 +1,9 @@
 use crate::define_widget;
 
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// Popover 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -45,10 +45,10 @@ define_widget! {
         Size::new(80.0, 28.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match self.trigger {
             PopoverTrigger::Click => {
-                if let WidgetEvent::MouseDown { pos, .. } = event {
+                if let SystemEvent::PointerDown { pos, .. } = event {
                     if pos.x >= 0.0 && pos.x <= 80.0 && pos.y >= 0.0 && pos.y <= 28.0 {
                         self.visible = !self.visible;
                         return EventResult::Handled;
@@ -61,15 +61,15 @@ define_widget! {
             }
             PopoverTrigger::Hover => {
                 match event {
-                    WidgetEvent::HoverEnter => { self.visible = true; self.timer = 0.0; return EventResult::Handled; }
-                    WidgetEvent::HoverLeave => { self.visible = false; return EventResult::Handled; }
+                    SystemEvent::PointerEnter => { self.visible = true; self.timer = 0.0; return EventResult::Handled; }
+                    SystemEvent::PointerLeave => { self.visible = false; return EventResult::Handled; }
                     _ => {}
                 }
             }
             PopoverTrigger::Focus => {
                 match event {
-                    WidgetEvent::FocusIn => { self.visible = true; return EventResult::Handled; }
-                    WidgetEvent::FocusOut => { self.visible = false; return EventResult::Handled; }
+                    SystemEvent::FocusIn => { self.visible = true; return EventResult::Handled; }
+                    SystemEvent::FocusOut => { self.visible = false; return EventResult::Handled; }
                     _ => {}
                 }
             }
@@ -81,7 +81,7 @@ define_widget! {
         self.timer += dt as f32;
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();
@@ -184,7 +184,7 @@ impl Popover {
 }
 
 fn draw_popover_arrow(
-    ctx: &mut RenderContext,
+    ctx: &mut PaintContext,
     _trigger: Rect,
     popup: Rect,
     placement: PopoverPlacement,

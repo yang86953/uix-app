@@ -1,10 +1,10 @@
 //! Rate widget — 星级评分，支持半星、hover 预览、disabled、clearable。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 define_widget! {
     /// Rate — 星级评分，点击选择分值。
@@ -24,10 +24,10 @@ define_widget! {
         Size::new(self.count as f32 * 24.0, 24.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 let star_idx = (pos.x / 24.0) as usize;
                 if star_idx < self.count {
                     let new_val = if self.half {
@@ -47,7 +47,7 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 let star_idx = (pos.x / 24.0) as usize;
                 if star_idx < self.count {
                     if self.half {
@@ -61,10 +61,10 @@ define_widget! {
                 }
                 EventResult::Handled
             }
-            WidgetEvent::HoverLeave => { self.hover_value = 0; EventResult::Handled }
-            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::PointerLeave => { self.hover_value = 0; EventResult::Handled }
+            SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Right | KeyCode::Up => {
                         let max_val = if self.half { self.count * 2 } else { self.count };
@@ -88,7 +88,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let warning = ctx.tokens().color_warning();
         let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let text_quaternary = ctx.tokens().color_text_quaternary();

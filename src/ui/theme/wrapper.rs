@@ -14,8 +14,8 @@ use super::design_tokens::DesignTokens;
 use crate::draw::painting::{
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ThemeTokens,
 };
-use crate::ui::traits::TokenProvider;
 use crate::draw::Color;
+use crate::ui::traits::TokenProvider;
 
 // ════════════════════════════════════════════════════════════════════════════
 // TokenProvider — supertrait 聚合全部子 trait

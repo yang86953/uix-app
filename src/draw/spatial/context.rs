@@ -8,7 +8,7 @@
 //! - 提供空间感知的绘制方法（fill_rect）
 //!
 //! SpatialContext 不耦合 FontService，不处理文字渲染。
-//! 文字渲染由 RenderContext 通过 SpatialContext::project 获取位置后自行处理。
+//! 文字渲染由 PaintContext 通过 SpatialContext::project 获取位置后自行处理。
 
 use super::aabb3d::AABB3D;
 use super::mat4::Mat4;
@@ -299,7 +299,7 @@ impl<'a> SpatialContext<'a> {
 
     /// 填充矩形。
     ///
-    /// 接受 `Rect`（向后兼容）、`AABB3D`、`PhysicalBox` 三种输入。
+    /// 接受 `Rect`、`AABB3D`、`PhysicalBox` 三种输入。
     ///
     /// - 纯 2D 场景（正交 + 无 3D 旋转）：走优化路径，无矩阵乘法
     /// - 3D 场景：走完整投影路径

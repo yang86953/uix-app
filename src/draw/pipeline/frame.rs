@@ -2,8 +2,8 @@
 
 use crate::native::Rect;
 
-use crate::draw::backend::DamageRegion;
 use crate::draw::backend::traits::{BackendCapabilities, DrawSurface};
+use crate::draw::backend::DamageRegion;
 use crate::draw::engine::RenderOutcome;
 use crate::draw::traits::UpdateStrategy;
 
@@ -16,7 +16,7 @@ pub fn normalize_strategy(strategy: UpdateStrategy, caps: BackendCapabilities) -
     }
     match strategy {
         UpdateStrategy::FullRedraw => UpdateStrategy::FullRedraw,
-        UpdateStrategy::DirtyRects(_) | UpdateStrategy::Overlay(_) => UpdateStrategy::FullRedraw,
+        UpdateStrategy::DirtyRects(_) => UpdateStrategy::FullRedraw,
     }
 }
 
@@ -39,14 +39,6 @@ pub fn begin_frame(
     let w = width;
     let h = height;
 
-    if !strategy.should_clear() {
-        if let UpdateStrategy::Overlay(rects) = &strategy {
-            if rects.is_empty() {
-                return RenderOutcome::Idle;
-            }
-        }
-    }
-
     let fw = w as f32;
     let fh = h as f32;
     let full = Rect::new(0.0, 0.0, fw, fh);
@@ -55,7 +47,7 @@ pub fn begin_frame(
         UpdateStrategy::FullRedraw => {
             surface.push_clip(full);
         }
-        UpdateStrategy::DirtyRects(rects) | UpdateStrategy::Overlay(rects) => {
+        UpdateStrategy::DirtyRects(rects) => {
             if rects.is_empty() {
                 surface.push_clip(full);
             } else {
@@ -92,7 +84,6 @@ pub fn begin_frame(
                     }
                 }
             }
-            UpdateStrategy::Overlay(_) => {}
         }
     }
 
@@ -108,7 +99,7 @@ pub fn end_frame(surface: &mut dyn DrawSurface) -> RenderOutcome {
 fn present_damage_for_strategy(strategy: &UpdateStrategy) -> DamageRegion {
     match strategy {
         UpdateStrategy::FullRedraw => DamageRegion::full(),
-        UpdateStrategy::DirtyRects(rects) | UpdateStrategy::Overlay(rects) => {
+        UpdateStrategy::DirtyRects(rects) => {
             if rects.is_empty() {
                 DamageRegion::full()
             } else {
@@ -127,24 +118,30 @@ mod tests {
     #[test]
     fn normalize_strategy_expands_dirty_to_full_when_no_partial_redraw() {
         let rects = vec![Rect::new(1.0, 2.0, 10.0, 10.0)];
-        let normalized =
-            normalize_strategy(UpdateStrategy::DirtyRects(rects), BackendCapabilities::gpu_full_redraw());
+        let normalized = normalize_strategy(
+            UpdateStrategy::DirtyRects(rects),
+            BackendCapabilities::gpu_full_redraw(),
+        );
         assert!(matches!(normalized, UpdateStrategy::FullRedraw));
     }
 
     #[test]
     fn normalize_strategy_keeps_dirty_when_partial_redraw() {
         let rects = vec![Rect::new(1.0, 2.0, 10.0, 10.0)];
-        let normalized =
-            normalize_strategy(UpdateStrategy::DirtyRects(rects.clone()), BackendCapabilities::cpu());
+        let normalized = normalize_strategy(
+            UpdateStrategy::DirtyRects(rects.clone()),
+            BackendCapabilities::cpu(),
+        );
         assert!(matches!(normalized, UpdateStrategy::DirtyRects(_)));
     }
 
     #[test]
     fn normalize_strategy_keeps_dirty_for_gpu_partial() {
         let rects = vec![Rect::new(1.0, 2.0, 10.0, 10.0)];
-        let normalized =
-            normalize_strategy(UpdateStrategy::DirtyRects(rects.clone()), BackendCapabilities::gpu());
+        let normalized = normalize_strategy(
+            UpdateStrategy::DirtyRects(rects.clone()),
+            BackendCapabilities::gpu(),
+        );
         assert!(matches!(normalized, UpdateStrategy::DirtyRects(_)));
     }
 
@@ -159,7 +156,10 @@ mod tests {
             20,
             BackendCapabilities::cpu(),
         );
-        assert_eq!(outcome, RenderOutcome::Present(DamageRegion::partial(rects)));
+        assert_eq!(
+            outcome,
+            RenderOutcome::Present(DamageRegion::partial(rects))
+        );
         end_frame(&mut surface);
     }
 

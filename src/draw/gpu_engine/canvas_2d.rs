@@ -1,16 +1,16 @@
 //! GpuCanvas2D — GPU 加速的 Canvas2D 实现，未实现的方法走 SharedRasterizer。
 
-use glow::HasContext as _;
 use crate::native::{Errc, Error, Rect};
+use glow::HasContext as _;
 
-use crate::draw::primitives::color::Color;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
-use crate::draw::rasterizer::core as rast;
 use crate::draw::primitives::stroker::StrokeOptions;
-use crate::draw::traits::Canvas2D;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
+use crate::draw::rasterizer::core as rast;
+use crate::draw::traits::Canvas2D;
 
 /// GPU 2D 绘制上下文。
 pub struct GpuCanvas2D {

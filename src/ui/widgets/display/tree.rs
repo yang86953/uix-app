@@ -1,7 +1,7 @@
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// 树节点。
 #[derive(Debug, Clone)]
@@ -53,8 +53,8 @@ define_widget! {
         Size::new(200.0, h.max(28.0))
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::PointerDown { pos, .. } = event {
             let idx = (pos.y / 28.0) as usize;
             if idx < self.flat.len() {
                 let node_key = self.flat[idx].key.clone();
@@ -111,7 +111,7 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();

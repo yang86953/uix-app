@@ -6,12 +6,12 @@ use std::cell::Cell;
 
 use crate::define_widget;
 use crate::draw::image::BitmapHandle;
-use crate::draw::painting::RenderContext;
+use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::invalidate_paint_handle;
-use crate::ui::core::paint_scope::current_paint_widget;
-use crate::ui::WidgetTree;
 use crate::draw::{Color, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::core::paint_scope::current_paint_widget;
+use crate::ui::WidgetTree;
 
 // Image — 图片显示组件。
 define_widget! {
@@ -35,7 +35,7 @@ define_widget! {
         Size::new(self.width, self.height)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
         let fill = ctx.tokens().color_fill_tertiary();
         let text_sec = ctx.tokens().color_text_quaternary();
         let r = Some(Radius::uniform(self.radius));
@@ -139,7 +139,7 @@ impl Image {
 
     fn resolve_handle(
         &self,
-        ctx: &RenderContext<'_>,
+        ctx: &PaintContext<'_>,
         tree: &WidgetTree,
         frame: Rect,
     ) -> Option<BitmapHandle> {

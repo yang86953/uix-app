@@ -1,9 +1,9 @@
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
-use std::cell::Cell;
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use std::cell::Cell;
 
 /// 排序方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,7 +49,7 @@ impl TableColumn {
 pub type TableRow = Vec<String>;
 
 /// 扩展行渲染器。
-pub type ExpandRenderer = Box<dyn Fn(usize, &mut RenderContext, Rect)>;
+pub type ExpandRenderer = Box<dyn Fn(usize, &mut PaintContext, Rect)>;
 
 /// 数据变更回调。
 pub type TableChangeCallback = Box<dyn FnMut(TableChange)>;
@@ -93,9 +93,9 @@ define_widget! {
         Size::new(w, h.max(60.0))
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 if pos.x < 32.0 && pos.y >= self.header_h {
                     let row = ((pos.y - self.header_h) / self.row_h) as usize;
                     if row < self.rows.len() {
@@ -139,7 +139,7 @@ define_widget! {
                 self.selected_row.set(None);
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if pos.y >= self.header_h {
                     let row = ((pos.y - self.header_h) / self.row_h) as usize;
                     self.hover_row.set(if row < self.rows.len() { Some(row) } else { None });
@@ -152,7 +152,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let bg = ctx.tokens().color_bg_elevated();
         let header_bg = ctx.tokens().color_fill_tertiary();
@@ -311,7 +311,7 @@ impl Table {
     pub fn expandable(
         mut self,
         height: f32,
-        renderer: impl Fn(usize, &mut RenderContext, Rect) + 'static,
+        renderer: impl Fn(usize, &mut PaintContext, Rect) + 'static,
     ) -> Self {
         self.expand_height = height;
         self.expand_renderer = Some(Box::new(renderer));

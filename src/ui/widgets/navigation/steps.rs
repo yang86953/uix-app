@@ -4,11 +4,11 @@
 //! 自定义当前步骤，可点击切换。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
-use std::cell::Cell;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use std::cell::Cell;
 
 /// 步骤状态。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,8 +46,8 @@ define_widget! {
         }
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::PointerDown { pos, .. } = event {
             if self.direction && !self.steps.is_empty() {
                 // 使用与 render 相同的 step_w 计算，缓存由 render 设置
                 let count = self.steps.len();
@@ -69,7 +69,7 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
         let _success = ctx.tokens().color_success();
         let error = ctx.tokens().color_error();

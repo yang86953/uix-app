@@ -8,9 +8,7 @@ pub mod traits;
 pub use cpu::CpuBackend;
 pub use gpu::GpuBackend;
 pub use null::NullBackend;
-pub use traits::{
-    BackendCapabilities, BackendKind, DamageRegion, DrawSurface, RenderBackend,
-};
+pub use traits::{BackendCapabilities, BackendKind, DamageRegion, DrawSurface, RenderBackend};
 
 use crate::native::{Error, IGraphicsContext};
 

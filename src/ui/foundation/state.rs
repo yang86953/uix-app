@@ -111,9 +111,7 @@ fn try_capture_computed_bind<T: Clone + Send + Sync + 'static>(computed: &Comput
 }
 
 fn fire_paint_binding(
-    binding: &Arc<
-        std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>,
-    >,
+    binding: &Arc<std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>>,
 ) {
     if let Ok(guard) = binding.lock() {
         if let Some((id, q, r)) = guard.as_ref() {
@@ -124,32 +122,17 @@ fn fire_paint_binding(
 
 /// State 变更时推送精确 Paint 失效的绑定接口。
 pub trait StatePaintBind: Send + Sync {
-    fn bind_paint(
-        &self,
-        widget_id: usize,
-        queue: InvalidationQueueHandle,
-        rect: Option<Rect>,
-    );
+    fn bind_paint(&self, widget_id: usize, queue: InvalidationQueueHandle, rect: Option<Rect>);
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
-    fn bind_paint(
-        &self,
-        widget_id: usize,
-        queue: InvalidationQueueHandle,
-        rect: Option<Rect>,
-    ) {
+    fn bind_paint(&self, widget_id: usize, queue: InvalidationQueueHandle, rect: Option<Rect>) {
         self.bind_paint_invalidation(widget_id, queue, rect);
     }
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
-    fn bind_paint(
-        &self,
-        widget_id: usize,
-        queue: InvalidationQueueHandle,
-        rect: Option<Rect>,
-    ) {
+    fn bind_paint(&self, widget_id: usize, queue: InvalidationQueueHandle, rect: Option<Rect>) {
         self.bind_paint_invalidation(widget_id, queue, rect);
     }
 }
@@ -409,9 +392,7 @@ pub struct Computed<T> {
     /// 依赖的 generation 检查器列表：(检查器, 上次计算时的 generation)
     deps: Arc<RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>>,
     /// Phase R2：精确 Paint 失效绑定。
-    paint_binding: Arc<
-        std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>,
-    >,
+    paint_binding: Arc<std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>>,
 }
 
 impl<T: Clone + Send + Sync + 'static> Computed<T> {

@@ -1,8 +1,6 @@
 //! 文本后端契约。
 
-use crate::draw::font::text_backend::{
-    GlyphRaster, LineMetrics, TextLayout, TextLayoutOptions,
-};
+use crate::draw::font::text_backend::{GlyphRaster, LineMetrics, TextLayout, TextLayoutOptions};
 use crate::draw::primitives::types::FontHandle;
 use crate::native::Error;
 

@@ -104,7 +104,10 @@ impl WaylandBackend {
         let ret = unsafe { poll(&mut pfd, 1, timeout_ms) };
         if ret > 0 && (pfd.revents & POLLIN) != 0 {
             if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
-                crate::core::log::error_fn(format!("Wayland dispatch_timeout dispatch error: {}", e));
+                crate::core::log::error_fn(format!(
+                    "Wayland dispatch_timeout dispatch error: {}",
+                    e
+                ));
                 self.closed = true;
                 return false;
             }
@@ -183,7 +186,7 @@ impl WaylandBackend {
         let mut q = self.events.lock().unwrap_or_else(|e| e.into_inner());
         q.push_back(UiEvent::key_down(code, mods));
         if let Some(text) = keycode_to_char(code, shift_down) {
-            q.push_back(UiEvent::key_press(text));
+            q.push_back(UiEvent::text_input(text));
         }
     }
 

@@ -11,9 +11,9 @@ pub use font_cache::{FontFace, GlyphCache};
 
 use std::sync::Arc;
 
-use crate::draw::TextBackend;
 use crate::draw::font::text_backend::{self as tb, GlyphRaster, TextLayoutOptions};
 use crate::draw::FontHandle;
+use crate::draw::TextBackend;
 use crate::native::Error;
 use crate::native::{Point, Size};
 
@@ -49,7 +49,9 @@ impl FontService {
     /// 创建新的字体服务实例（ab_glyph 后端）。
     pub fn new() -> Self {
         Self {
-            text_backend: Box::new(crate::draw::font::text_backends::ab_glyph::AbGlyphBackend::new()),
+            text_backend: Box::new(
+                crate::draw::font::text_backends::ab_glyph::AbGlyphBackend::new(),
+            ),
             registry: Vec::new(),
             primary_family: "sans-serif".into(),
             user_family_set: false,
@@ -381,7 +383,7 @@ impl FontService {
                         }
                     } else {
                         crate::core::log::info_fn(format!(
-                            "CJK font '{}' found but failed to load (incompatible format)",
+                            "CJK font '{}' found but failed to load (unsupported format)",
                             path
                         ));
                     }

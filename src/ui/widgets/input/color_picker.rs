@@ -3,10 +3,10 @@
 //! 预设色板选择，点击触发弹出面板。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 const PRESET_COLORS: &[u32] = &[
     0xF52222, 0xFA541C, 0xFA8C16, 0xFADB14, 0x52C41A, 0x13C2C2, 0x1677FF, 0x2F54EB, 0x722ED1,
@@ -32,9 +32,9 @@ define_widget! {
         Size::new(32.0, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 if pos.y >= 0.0 && pos.y <= 32.0 {
                     self.open = !self.open;
                     self.focused = true;
@@ -67,7 +67,7 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if self.open && pos.y > 36.0 {
                     let cols = 8;
                     let cell = 24.0;
@@ -88,10 +88,10 @@ define_widget! {
                 }
                 EventResult::Handled
             }
-            WidgetEvent::HoverLeave => { self.hovered = false; self.hovered_idx = None; EventResult::Handled }
-            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            WidgetEvent::FocusOut => { self.open = false; self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::PointerLeave => { self.hovered = false; self.hovered_idx = None; EventResult::Handled }
+            SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            SystemEvent::FocusOut => { self.open = false; self.focused = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 if *key == KeyCode::Escape
                     && self.open { self.open = false; return EventResult::Handled; }
                 if *key == KeyCode::Space || *key == KeyCode::Enter {
@@ -105,7 +105,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let border = ctx.tokens().color_border();
         let primary = ctx.tokens().color_primary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));

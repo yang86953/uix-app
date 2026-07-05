@@ -4,13 +4,13 @@
 
 use crate::native::Rect;
 
-use crate::draw::primitives::color::Color;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::raster_renderer::RasterRenderer;
+use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
-use crate::draw::traits::Canvas2D;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
+use crate::draw::traits::Canvas2D;
 
 /// 共享 CPU 光栅化 surface。
 pub struct SharedRasterizer {

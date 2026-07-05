@@ -2,9 +2,7 @@
 
 use crate::native::{Error, Point, Rect};
 
-use crate::draw::backend::traits::{
-    BackendCapabilities, BackendKind, DrawSurface, RenderBackend,
-};
+use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
 use crate::draw::traits::Canvas2D;
 

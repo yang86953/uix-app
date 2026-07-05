@@ -12,8 +12,8 @@ use super::color_tokens::ShadowToken;
 use crate::draw::painting::{
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ThemeTokens,
 };
-use crate::ui::traits::TokenProvider;
 use crate::draw::Color;
+use crate::ui::traits::TokenProvider;
 
 #[derive(Debug, Clone)]
 pub struct DesignTokens {

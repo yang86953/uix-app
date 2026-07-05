@@ -3,11 +3,11 @@
 //! 支持页码切换、上一页/下一页、快速跳转（省略号）、pageSize 切换。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
-use std::cell::Cell;
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use std::cell::Cell;
 
 // Pagination — 分页器。
 define_widget! {
@@ -28,8 +28,8 @@ define_widget! {
         Size::new(count * (self.size + 4.0) + 80.0, self.size + 8.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::PointerDown { pos, .. } = event {
             let total_pages = self.total.div_ceil(self.page_size);
             let mut cur = self.current.get();
             let item_w = self.size;
@@ -55,7 +55,7 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let total_pages = self.total.div_ceil(self.page_size);
         if total_pages <= 1 { return; }

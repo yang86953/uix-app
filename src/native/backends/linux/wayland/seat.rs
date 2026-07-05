@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex};
 
 use wayland_client::protocol::{wl_data_device, wl_keyboard, wl_pointer, wl_seat};
 
-use crate::native::traits::event::*;
 use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
+use crate::native::traits::event::*;
 use crate::native::{KeyMod, MouseButton, Point};
 
 use super::WaylandBackend;
@@ -85,7 +85,7 @@ impl WaylandBackend {
                                 if let Ok(mut lp) = pos.lock() {
                                     lp.position = p;
                                 }
-                                q.push_back(UiEvent::mouse_move(p));
+                                q.push_back(UiEvent::pointer_move(p));
                             }
                             wl_pointer::Event::Motion {
                                 surface_x,
@@ -96,7 +96,7 @@ impl WaylandBackend {
                                 if let Ok(mut lp) = pos.lock() {
                                     lp.position = p;
                                 }
-                                q.push_back(UiEvent::mouse_move(p));
+                                q.push_back(UiEvent::pointer_move(p));
                             }
                             wl_pointer::Event::Leave { .. } => {}
                             wl_pointer::Event::Button { button, state, .. } => {
@@ -109,9 +109,9 @@ impl WaylandBackend {
                                 let click_pos =
                                     pos.lock().map(|lp| lp.position).unwrap_or_default();
                                 if state == wl_pointer::ButtonState::Pressed {
-                                    q.push_back(UiEvent::mouse_down(click_pos, btn));
+                                    q.push_back(UiEvent::pointer_down(click_pos, btn));
                                 } else {
-                                    q.push_back(UiEvent::mouse_up(click_pos, btn));
+                                    q.push_back(UiEvent::pointer_up(click_pos, btn));
                                 }
                             }
                             wl_pointer::Event::Axis { axis, value, .. } => {
@@ -123,7 +123,7 @@ impl WaylandBackend {
                                 if dx != 0.0 || dy != 0.0 {
                                     let scroll_pos =
                                         pos.lock().map(|lp| lp.position).unwrap_or_default();
-                                    q.push_back(UiEvent::mouse_wheel(
+                                    q.push_back(UiEvent::wheel(
                                         scroll_pos,
                                         dx as f32,
                                         dy as f32,
@@ -177,7 +177,7 @@ impl WaylandBackend {
                                     // 始终从物理键盘生成字符事件（即使 IME 激活）
                                     // IME 通过 CommitString 额外提交文本（如中文），两者互补
                                     if let Some(text) = keycode_to_char(code, shift_down) {
-                                        q.push_back(UiEvent::key_press(text));
+                                        q.push_back(UiEvent::text_input(text));
                                     }
                                     // 记录按住的键，用于客户端侧重复
                                     if let Ok(mut hki) = held_key_info.lock() {

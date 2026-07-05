@@ -1,4 +1,4 @@
-//! 系统服务协议 — 文件、对话框、通知、定时器、控制台与系统信息。
+﻿//! 系统服务协议 — 文件、对话框、通知、定时器、控制台与系统信息。
 
 use crate::core::error::{Error, Result};
 
@@ -64,9 +64,6 @@ pub struct TerminalCapabilities {
 }
 
 /// 通用状态级别。
-///
-/// 统一替代各层分散定义的 `AlertType`、`MessageType`、
-/// `NotificationType`、`NotificationLevel`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusLevel {
     Success,
@@ -104,10 +101,7 @@ pub trait ISystemInfo {
     fn hostname(&self) -> String;
     fn username(&self) -> String;
     fn up_time(&self) -> u64;
-    fn default_font_path(&self) -> Option<String>;
-    fn default_font_paths(&self) -> Vec<String> {
-        self.default_font_path().into_iter().collect()
-    }
+    fn default_font_paths(&self) -> Vec<String>;
     fn probe_cjk_font_path(&self) -> Option<String> {
         None
     }

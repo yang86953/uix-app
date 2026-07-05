@@ -1,21 +1,17 @@
 //! Alert widget — 警示条，支持类型、图标、关闭。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Rect, Size};
-
-/// 警示类型。
-/// （已统一为 crate::native::StatusLevel，保留别名以兼容旧代码。）
-pub use crate::native::StatusLevel as AlertType;
+use crate::native::{Rect, Size, StatusLevel};
+use crate::ui::WidgetTree;
 
 define_widget! {
     /// Alert — 带类型颜色的警示条。
     pub struct Alert {
         message: String,
         description: String,
-        type_: AlertType,
+        type_: StatusLevel,
         closable: bool,
         _show_icon: bool,
     }
@@ -25,12 +21,12 @@ define_widget! {
         Size::new(300.0, h)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let (bg, border, fg) = match self.type_ {
-            AlertType::Success => (ctx.tokens().color_success_bg(), ctx.tokens().color_success(), ctx.tokens().color_success()),
-            AlertType::Info    => (ctx.tokens().color_info_bg(), ctx.tokens().color_info(), ctx.tokens().color_info()),
-            AlertType::Warning => (ctx.tokens().color_warning_bg(), ctx.tokens().color_warning(), ctx.tokens().color_warning()),
-            AlertType::Error   => (ctx.tokens().color_error_bg(), ctx.tokens().color_error(), ctx.tokens().color_error()),
+            StatusLevel::Success => (ctx.tokens().color_success_bg(), ctx.tokens().color_success(), ctx.tokens().color_success()),
+            StatusLevel::Info    => (ctx.tokens().color_info_bg(), ctx.tokens().color_info(), ctx.tokens().color_info()),
+            StatusLevel::Warning => (ctx.tokens().color_warning_bg(), ctx.tokens().color_warning(), ctx.tokens().color_warning()),
+            StatusLevel::Error   => (ctx.tokens().color_error_bg(), ctx.tokens().color_error(), ctx.tokens().color_error()),
         };
         let r = Some(Radius::uniform(ctx.tokens().border_radius()));
         ctx.fill_rect(frame, bg, r);
@@ -64,7 +60,7 @@ impl Alert {
         Self {
             message: message.into(),
             description: String::new(),
-            type_: AlertType::Info,
+            type_: StatusLevel::Info,
             closable: false,
             _show_icon: true,
         }
@@ -73,7 +69,7 @@ impl Alert {
         self.description = d.into();
         self
     }
-    pub fn type_(mut self, t: AlertType) -> Self {
+    pub fn type_(mut self, t: StatusLevel) -> Self {
         self.type_ = t;
         self
     }

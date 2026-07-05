@@ -3,14 +3,14 @@
 // 从 `tree_core.rs` 拆分出来以遵守 900 行文件限制。
 
 use super::*;
-use std::cell::RefCell;
-use std::rc::Rc;
 use crate::native::KeyMod;
 use crate::native::Point;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 struct SpyWidget {
     size: crate::native::Size,
-    last_event: RefCell<Option<WidgetEvent>>,
+    last_event: RefCell<Option<SystemEvent>>,
 }
 impl SpyWidget {
     fn new(w: f32, h: f32) -> Self {
@@ -34,18 +34,21 @@ impl WidgetComponent for SpyWidget {
     }
     crate::wc_upcast!(SpyWidget; WidgetLayout);
     crate::wc_upcast!(SpyWidget; WidgetRender);
-    crate::wc_upcast!(SpyWidget; WidgetEventHandler);
+    crate::wc_upcast!(SpyWidget; EventHandler);
 }
 impl WidgetLayout for SpyWidget {
-    fn preferred_size(&self, _: Option<&dyn crate::draw::traits::GraphicsEngine>) -> crate::native::Size {
+    fn preferred_size(
+        &self,
+        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
+    ) -> crate::native::Size {
         self.size
     }
 }
 impl WidgetRender for SpyWidget {
-    fn render(&self, _: Rect, _: &mut crate::draw::painting::RenderContext, _: &WidgetTree) {}
+    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
 }
-impl WidgetEventHandler for SpyWidget {
-    fn on_event(&mut self, event: &WidgetEvent) -> EventResult {
+impl EventHandler for SpyWidget {
+    fn on_event(&mut self, event: &SystemEvent) -> EventResult {
         *self.last_event.borrow_mut() = Some(event.clone());
         EventResult::Handled
     }
@@ -80,18 +83,21 @@ impl WidgetComponent for PassThroughContainer {
     }
     crate::wc_upcast!(PassThroughContainer; WidgetLayout);
     crate::wc_upcast!(PassThroughContainer; WidgetRender);
-    crate::wc_upcast!(PassThroughContainer; WidgetEventHandler);
+    crate::wc_upcast!(PassThroughContainer; EventHandler);
 }
 impl WidgetLayout for PassThroughContainer {
-    fn preferred_size(&self, _: Option<&dyn crate::draw::traits::GraphicsEngine>) -> crate::native::Size {
+    fn preferred_size(
+        &self,
+        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
+    ) -> crate::native::Size {
         self.size
     }
 }
 impl WidgetRender for PassThroughContainer {
-    fn render(&self, _: Rect, _: &mut crate::draw::painting::RenderContext, _: &WidgetTree) {}
+    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
 }
-impl WidgetEventHandler for PassThroughContainer {
-    fn on_event(&mut self, _: &WidgetEvent) -> EventResult {
+impl EventHandler for PassThroughContainer {
+    fn on_event(&mut self, _: &SystemEvent) -> EventResult {
         EventResult::NotHandled
     }
 }
@@ -183,7 +189,7 @@ fn hit_test_skips_invisible() {
 }
 
 #[test]
-fn dispatch_mouse_down_focuses_target() {
+fn dispatch_pointer_down_focuses_target() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     let btn = tree.add_child(root_id, Box::new(SpyWidget::new(80.0, 40.0)));
@@ -194,7 +200,7 @@ fn dispatch_mouse_down_focuses_target() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 80.0, 40.0));
     assert_eq!(
-        tree.dispatch_event(&WidgetEvent::MouseDown {
+        tree.dispatch_event(&SystemEvent::PointerDown {
             pos: Point::new(40.0, 20.0),
             button: MouseButton::Left,
             mods: KeyMod::NONE,
@@ -204,11 +210,11 @@ fn dispatch_mouse_down_focuses_target() {
 }
 
 #[test]
-fn dispatch_mouse_down_empty_space_clears_focus() {
+fn dispatch_pointer_down_empty_space_clears_focus() {
     let mut tree = WidgetTree::new();
     tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
     tree.layout();
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(300.0, 300.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
@@ -220,13 +226,13 @@ fn dispatch_key_to_focused_widget() {
     let mut tree = WidgetTree::new();
     tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
     tree.layout();
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
     assert_eq!(
-        tree.dispatch_event(&WidgetEvent::KeyDown {
+        tree.dispatch_event(&SystemEvent::KeyDown {
             key: KeyCode::Enter,
             mods: KeyMod::NONE,
         }),
@@ -235,7 +241,7 @@ fn dispatch_key_to_focused_widget() {
 }
 
 #[test]
-fn dispatch_mouse_move_triggers_hover_enter_leave() {
+fn dispatch_pointer_move_triggers_hover_enter_leave() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
@@ -245,7 +251,7 @@ fn dispatch_mouse_move_triggers_hover_enter_leave() {
     tree.get_mut(child)
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
-    tree.dispatch_event(&WidgetEvent::MouseMove {
+    tree.dispatch_event(&SystemEvent::PointerMove {
         pos: Point::new(50.0, 50.0),
         mods: KeyMod::NONE,
     });
@@ -257,7 +263,7 @@ fn dispatch_resize_goes_to_root() {
     tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
     tree.layout();
     assert_eq!(
-        tree.dispatch_event(&WidgetEvent::Resize {
+        tree.dispatch_event(&SystemEvent::Resize {
             width: 400.0,
             height: 300.0
         }),
@@ -292,7 +298,7 @@ fn capture_phase_root_handles_before_child() {
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
     // 点击在 child 区域内
-    let result = tree.dispatch_event(&WidgetEvent::MouseDown {
+    let result = tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
@@ -301,7 +307,7 @@ fn capture_phase_root_handles_before_child() {
     assert_eq!(result, EventResult::Handled);
     // SpyWidget(root) 收到了事件（捕获阶段）
     // root 不是 focused_widget（target=child 在冒泡阶段才设焦点，但捕获阶段 Handled 阻止了冒泡）
-    // 所以 focused_widget 应为 None（MouseDown 未进入冒泡阶段的 set_focus）
+    // 所以 focused_widget 应为 None（PointerDown 未进入冒泡阶段的 set_focus）
     assert!(tree.focused_widget.is_none());
 }
 
@@ -321,7 +327,7 @@ fn capture_phase_not_intercepted_proceeds_to_bubble() {
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
     // 点击在 child 区域内
-    let result = tree.dispatch_event(&WidgetEvent::MouseDown {
+    let result = tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
@@ -332,9 +338,9 @@ fn capture_phase_not_intercepted_proceeds_to_bubble() {
     assert_eq!(tree.focused_widget, Some(child));
 }
 
-/// 捕获阶段：MouseWheel 事件被祖先拦截（如 ScrollView 外层拦截滚动）。
+/// 捕获阶段：Wheel 事件被祖先拦截（如 ScrollView 外层拦截滚动）。
 #[test]
-fn capture_phase_mouse_wheel_intercepted() {
+fn capture_phase_wheel_intercepted() {
     let mut tree = WidgetTree::new();
     // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
@@ -353,7 +359,7 @@ fn capture_phase_mouse_wheel_intercepted() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
-    let result = tree.dispatch_event(&WidgetEvent::MouseWheel {
+    let result = tree.dispatch_event(&SystemEvent::Wheel {
         pos: Point::new(50.0, 50.0),
         delta: Point::new(0.0, -10.0),
     });
@@ -376,14 +382,14 @@ fn capture_phase_key_down_intercepted() {
         .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
 
     // 先设焦点（直接设置 focused_widget 字段，但它是 pub(crate) 的）
-    // 或者通过 dispatch MouseDown 设焦点
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    // 或者通过 dispatch PointerDown 设焦点
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
 
-    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+    let result = tree.dispatch_event(&SystemEvent::KeyDown {
         key: KeyCode::Escape,
         mods: KeyMod::NONE,
     });
@@ -397,7 +403,7 @@ fn capture_phase_key_down_intercepted() {
 
 /// EventManager 的 add_handler 处理所有事件。
 #[test]
-fn event_manager_catches_mouse_down() {
+fn event_manager_catches_pointer_down() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     tree.get_mut(root_id)
@@ -412,7 +418,7 @@ fn event_manager_catches_mouse_down() {
         EventResult::Handled
     });
 
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
@@ -432,43 +438,132 @@ fn event_manager_on_kind_filters() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
 
-    let mouse_down_count = Rc::new(RefCell::new(0u32));
-    let md = mouse_down_count.clone();
+    let pointer_down_count = Rc::new(RefCell::new(0u32));
+    let md = pointer_down_count.clone();
     let key_count = Rc::new(RefCell::new(0u32));
     let kc = key_count.clone();
 
     {
         let em = tree.event_manager_for(root_id);
-        em.on_kind(WidgetEventKind::MouseDown, move |_| {
+        em.on_kind(SystemEventKind::PointerDown, move |_| {
             *md.borrow_mut() += 1;
             EventResult::Handled
         });
-        em.on_kind(WidgetEventKind::KeyDown, move |_| {
+        em.on_kind(SystemEventKind::KeyDown, move |_| {
             *kc.borrow_mut() += 1;
             EventResult::Handled
         });
     }
 
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
     assert_eq!(
-        *mouse_down_count.borrow(),
+        *pointer_down_count.borrow(),
         1,
-        "MouseDown handler should fire"
+        "PointerDown handler should fire"
     );
     assert_eq!(*key_count.borrow(), 0, "KeyDown handler should NOT fire");
 
-    tree.dispatch_event(&WidgetEvent::KeyDown {
+    tree.dispatch_event(&SystemEvent::KeyDown {
         key: KeyCode::Enter,
         mods: KeyMod::NONE,
     });
     assert_eq!(
-        *mouse_down_count.borrow(),
+        *pointer_down_count.borrow(),
         1,
-        "MouseDown handler should NOT fire again"
+        "PointerDown handler should NOT fire again"
     );
     assert_eq!(*key_count.borrow(), 1, "KeyDown handler should fire");
+}
+
+#[test]
+fn right_pointer_up_emits_context_menu_semantic_event() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let called = Rc::new(RefCell::new(false));
+    let called_for_handler = called.clone();
+    tree.handler_table()
+        .on(root_id, crate::ui::SemanticKind::ContextMenu, move |event| {
+            if event.click_payload().is_some() {
+                *called_for_handler.borrow_mut() = true;
+            }
+        });
+
+    let pos = Point::new(50.0, 50.0);
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+
+    assert!(*called.borrow());
+}
+
+#[test]
+fn text_input_emits_semantic_event_for_focused_target() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let text = Rc::new(RefCell::new(String::new()));
+    let text_for_handler = text.clone();
+    tree.handler_table()
+        .on(root_id, crate::ui::SemanticKind::TextInput, move |event| {
+            if let Some(value) = event.text_payload() {
+                *text_for_handler.borrow_mut() = value.to_string();
+            }
+        });
+
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(10.0, 10.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::TextInput {
+        text: "hello".to_string(),
+    });
+
+    assert_eq!(&*text.borrow(), "hello");
+}
+
+#[test]
+fn file_drop_emits_semantic_event_for_hit_target() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let files = Rc::new(RefCell::new(Vec::<String>::new()));
+    let files_for_handler = files.clone();
+    tree.handler_table()
+        .on(root_id, crate::ui::SemanticKind::FileDrop, move |event| {
+            if let Some((payload, _position)) = event.file_drop_payload() {
+                *files_for_handler.borrow_mut() = payload.to_vec();
+            }
+        });
+
+    tree.dispatch_event(&SystemEvent::FileDrop {
+        files: vec!["a.txt".to_string(), "b.txt".to_string()],
+        position: Point::new(20.0, 20.0),
+    });
+
+    assert_eq!(
+        &*files.borrow(),
+        &vec!["a.txt".to_string(), "b.txt".to_string()]
+    );
 }

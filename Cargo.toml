@@ -1,35 +1,14 @@
-[workspace]
-resolver = "2"
-members = ["demo"]
-default-members = [".", "demo"]
-
-[workspace.package]
+[package]
+name = "uix"
 version = "0.1.0"
 edition = "2021"
 publish = false
 license-file = "LICENSE"
 
-[workspace.dependencies]
-glow = "0.17.0"
-khronos-egl = { version = "6", features = ["static"] }
-ab_glyph = "0.2.32"
-image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"] }
-
-[workspace.lints.clippy]
-unwrap_used = "warn"
-expect_used = "warn"
-
-[package]
-name = "uix"
-version.workspace = true
-edition.workspace = true
-publish.workspace = true
-license-file.workspace = true
-
 [dependencies]
-ab_glyph = { workspace = true }
-glow = { workspace = true }
-image = { workspace = true }
+ab_glyph = "0.2.32"
+glow = "0.17.0"
+image = { version = "0.25.6", default-features = false, features = ["png", "jpeg"] }
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62.2"
@@ -51,7 +30,7 @@ features = [
 libc = "0.2.186"
 wayland-client = { version = "=0.29.5", features = ["dlopen"] }
 wayland-protocols = { version = "=0.29.5", features = ["client", "unstable_protocols", "staging_protocols"] }
-khronos-egl = { workspace = true }
+khronos-egl = { version = "6", features = ["static"] }
 
 [features]
 test-harness = []
@@ -59,5 +38,10 @@ test-harness = []
 [lib]
 path = "src/lib.rs"
 
-[lints]
-workspace = true
+[[bin]]
+name = "uix-demo"
+path = "demo/src/main.rs"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"

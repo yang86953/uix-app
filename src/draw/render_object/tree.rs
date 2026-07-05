@@ -131,7 +131,11 @@ impl RenderObjectTree {
         self.entries = next;
     }
 
-    fn collect_nodes(scene: &impl ScenePaint, id: NodeId, out: &mut HashMap<NodeId, RenderObjectEntry>) {
+    fn collect_nodes(
+        scene: &impl ScenePaint,
+        id: NodeId,
+        out: &mut HashMap<NodeId, RenderObjectEntry>,
+    ) {
         if !scene.node_visible(id) {
             return;
         }

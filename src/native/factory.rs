@@ -31,11 +31,8 @@ pub fn create_gpu_context(
     width: i32,
     height: i32,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    let egl = crate::native::backends::linux::gpu::egl::EglContext::new(
-        native_surface,
-        width,
-        height,
-    )?;
+    let egl =
+        crate::native::backends::linux::gpu::egl::EglContext::new(native_surface, width, height)?;
     Ok(Box::new(egl))
 }
 
