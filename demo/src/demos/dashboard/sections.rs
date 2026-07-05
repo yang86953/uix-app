@@ -487,7 +487,7 @@ pub fn page_data(tk: &DesignTokens) -> WidgetNode {
         .section("图片 Image")
         .push(
             row(80.0)
-                .child(Image::new(80.0, 60.0).alt("示例图片"))
+                .child(Image::new(80.0, 60.0).src("assets/images/demo.png").alt("示例图片"))
                 .child(Image::new(80.0, 60.0).alt("占位图")),
         )
         .section("二维码 QRCode")

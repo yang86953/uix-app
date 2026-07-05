@@ -9,6 +9,7 @@ use uix::draw::painting::{
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, PaintContext, ShadowToken,
     ThemeSnapshot, ThemeTokens,
 };
+use uix::draw::image::ImageService;
 use uix::draw::pipeline::{FrameRenderInput, FrameRenderer, NodeId};
 use uix::draw::traits::GraphicsEngine;
 use uix::draw::types::DirtyRegion;
@@ -299,7 +300,8 @@ fn frame_renderer_replays_clean_leaf_via_display_list() {
     let mut renderer = FrameRenderer::new();
     let tokens = MockTokens;
     let theme = ThemeSnapshot::new(&tokens);
-    let fs = FontService::new();
+        let fs = FontService::new();
+        let img = ImageService::new();
     let region = DirtyRegion::full();
 
     renderer.render_frame(
@@ -313,6 +315,7 @@ fn frame_renderer_replays_clean_leaf_via_display_list() {
             theme: ThemeSnapshot::new(&tokens),
             font: FontHandle::default(),
             font_service: &fs,
+            image_service: &img,
             debug_mode: false,
             hover_pos: None,
             metrics: None,
@@ -332,6 +335,7 @@ fn frame_renderer_replays_clean_leaf_via_display_list() {
             theme,
             font: FontHandle::default(),
             font_service: &fs,
+            image_service: &img,
             debug_mode: false,
             hover_pos: None,
             metrics: None,

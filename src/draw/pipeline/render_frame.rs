@@ -6,6 +6,7 @@ use crate::draw::backend::DamageRegion;
 use crate::draw::compositor::{LayerTree, RenderObjectTree, ScenePaint};
 use crate::draw::debug::DebugRenderService;
 use crate::draw::font::font_service::FontService;
+use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
 use crate::draw::pipeline::{InvalidationSource, RenderMetrics};
 use crate::draw::font::text::TextRenderService;
@@ -22,6 +23,7 @@ pub struct FrameRenderInput<'a> {
     pub theme: ThemeSnapshot<'a>,
     pub font: FontHandle,
     pub font_service: &'a FontService,
+    pub image_service: &'a ImageService,
     pub debug_mode: bool,
     pub hover_pos: Option<Point>,
     pub metrics: Option<&'a RenderMetrics>,
@@ -114,6 +116,7 @@ impl FrameRenderer {
             &input.theme,
             input.font,
             input.font_service,
+            input.image_service,
             input.debug_mode,
             input.hover_pos,
             render_objects,
@@ -515,6 +518,7 @@ mod tests {
         let tokens = MockTokens;
         let theme = ThemeSnapshot::new(&tokens);
         let fs = FontService::new();
+        let img = ImageService::new();
         let scene = PartialDirtyScene::new();
         let partial = scene.dirty_region();
         assert!(!partial.full_frame);
@@ -532,6 +536,7 @@ mod tests {
                 theme,
                 font: FontHandle::default(),
                 font_service: &fs,
+                image_service: &img,
                 debug_mode: false,
                 hover_pos: None,
                 metrics: None,
@@ -548,6 +553,7 @@ mod tests {
         let tokens = MockTokens;
         let theme = ThemeSnapshot::new(&tokens);
         let fs = FontService::new();
+        let img = ImageService::new();
         let region = DirtyRegion::full();
         let out = renderer.render_frame(
             &mut engine,
@@ -560,6 +566,7 @@ mod tests {
                 theme,
                 font: FontHandle::default(),
                 font_service: &fs,
+                image_service: &img,
                 debug_mode: false,
                 hover_pos: None,
                 metrics: None,

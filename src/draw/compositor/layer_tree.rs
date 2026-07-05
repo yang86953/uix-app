@@ -10,6 +10,7 @@ use crate::draw::compositor::picture::{blit_picture_cache, rasterize_picture_to_
 use crate::draw::compositor::viewport_transform::{needs_paint, needs_paint_rect};
 use crate::draw::compositor::ScenePaint;
 use crate::draw::font::font_service::FontService;
+use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, PaintPass, ThemeSnapshot};
 use crate::draw::pipeline::NodeId;
 use crate::draw::render_object::RenderObjectTree;
@@ -217,6 +218,7 @@ impl LayerTree {
         theme: &ThemeSnapshot<'_>,
         font: FontHandle,
         font_service: &FontService,
+        image_service: &ImageService,
         debug_mode: bool,
         hover_pos: Option<Point>,
         render_objects: Option<&mut RenderObjectTree>,
@@ -229,6 +231,7 @@ impl LayerTree {
         let env = LayerRenderEnv {
             font,
             font_service,
+            image_service,
             tokens: theme.tokens(),
             dpi,
             dpr,
@@ -290,6 +293,7 @@ impl LayerTree {
             engine.canvas_2d(),
             env.font,
             env.font_service,
+            env.image_service,
             env.tokens,
             env.dpi,
             env.dpr,

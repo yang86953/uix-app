@@ -7,6 +7,7 @@ use crate::draw::primitives::color::Color;
 use crate::draw::compositor::viewport_transform::needs_paint;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::font::font_service::FontService;
+use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, ThemeTokens};
 use crate::draw::pipeline::NodeId;
 use crate::draw::spatial::Orientation;
@@ -21,6 +22,7 @@ const MAX_OFFSCREEN_RETRY: u8 = 8;
 pub(crate) struct LayerRenderEnv<'a> {
     pub font: FontHandle,
     pub font_service: &'a FontService,
+    pub image_service: &'a ImageService,
     pub tokens: &'a dyn ThemeTokens,
     pub dpi: f32,
     pub dpr: f32,
@@ -103,6 +105,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             off_canvas,
             env.font,
             env.font_service,
+            env.image_service,
             env.tokens,
             env.dpi,
             env.dpr,

@@ -5,6 +5,7 @@ pub mod compositor;
 pub mod debug;
 pub mod engine;
 pub mod font;
+pub mod image;
 pub mod gpu_engine;
 pub mod null_engine;
 pub mod painting;
@@ -16,6 +17,7 @@ pub mod spatial;
 pub mod traits;
 
 pub use font::{bitmap_font, font_service, text, text_backend, text_backends};
+pub use image::{BitmapHandle, ImageService, ImageSlot};
 pub use primitives::{blur, color, flattener, path, stroker, types};
 pub use primitives::color::{colors, Color};
 pub use primitives::path::{FillRule, LineCap, LineJoin, Path, PathBuilder, PathSegment};

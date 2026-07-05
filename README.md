@@ -144,6 +144,6 @@ workspace lint 禁止 `unwrap()` / `expect()` 进入生产代码。
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 功能域详解、数据流、跨平台规则、设计决策 |
 | [`AGENTS.md`](AGENTS.md) | 组件化原则、Fail Fast、可测性、编码硬约束 |
 
-## License
+## 许可证
 
-MIT
+本软件为专有软件，不开源。详见 [LICENSE](LICENSE)。

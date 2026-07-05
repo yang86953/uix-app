@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use uix::draw::compositor::{LayerTree, ScenePaint};
 use uix::draw::font_service::FontService;
+use uix::draw::image::ImageService;
 use uix::draw::painting::{
     PaintContext, ShadowToken, ThemeSnapshot, ThemeTokens, IBoxShadowTokens, IColorTokens,
     ISpacingTokens, ITypographyTokens,
@@ -333,6 +334,7 @@ fn render_scene(engine: &mut SoftwareEngine, tree: &mut LayerTree, scene: &Bound
     let tokens = MockTokens;
     let theme = ThemeSnapshot::new(&tokens);
     let fs = FontService::new();
+    let img = ImageService::new();
     engine.begin_frame(UpdateStrategy::FullRedraw);
     tree.render(
         engine,
@@ -341,6 +343,7 @@ fn render_scene(engine: &mut SoftwareEngine, tree: &mut LayerTree, scene: &Bound
         &theme,
         FontHandle::default(),
         &fs,
+        &img,
         false,
         None,
         None,

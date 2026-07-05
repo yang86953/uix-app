@@ -4,6 +4,7 @@
 
 use crate::native::{Point, Rect};
 
+use crate::draw::image::BitmapHandle;
 use crate::draw::painting::PaintContext;
 use crate::draw::font::text::TextRenderService;
 use crate::draw::traits::Canvas2D;
@@ -64,6 +65,11 @@ pub enum PaintOp {
         color_a: Color,
         color_b: Color,
         dir: GradientDirection,
+    },
+    DrawImage {
+        handle: BitmapHandle,
+        bounds: Rect,
+        fit: bool,
     },
     Save,
     Restore,
@@ -142,6 +148,17 @@ impl DisplayList {
                     color_b,
                     dir,
                 } => ctx.fill_linear_gradient(*rect, *color_a, *color_b, *dir),
+                PaintOp::DrawImage {
+                    handle,
+                    bounds,
+                    fit,
+                } => {
+                    if *fit {
+                        ctx.draw_image(*handle, *bounds);
+                    } else {
+                        ctx.draw_image_fill(*handle, *bounds);
+                    }
+                }
                 PaintOp::Save => ctx.save(),
                 PaintOp::Restore => ctx.restore(),
             }
@@ -209,6 +226,9 @@ impl DisplayList {
                     color_b,
                     dir,
                 } => canvas.fill_linear_gradient(*rect, *color_a, *color_b, *dir),
+                PaintOp::DrawImage { .. } => {
+                    // replay_canvas 无 ImageService，图片须走 replay() 路径。
+                }
                 PaintOp::Save => canvas.save(),
                 PaintOp::Restore => canvas.restore(),
             }

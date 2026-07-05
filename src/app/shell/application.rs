@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell};
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::{create_platform, Point};
 use crate::draw::font::font_service::FontService;
+use crate::draw::image::ImageService;
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::SoftwareEngine;
 use crate::app::shell::cli::Cli;
@@ -192,6 +193,7 @@ impl App {
 
         let mut font_service = FontService::new();
         font_service.load_default_system_font(14.0, platform.system_info());
+        let image_service = ImageService::new();
 
         let mut tree = ViewAdapter::build_nodes(root_node);
         if let Some(root) = tree.root_mut() {
@@ -213,6 +215,7 @@ impl App {
             &mut engine,
             &mut tree,
             &font_service,
+            &image_service,
             &theme,
             &debug_mode,
             &cursor_pos,
