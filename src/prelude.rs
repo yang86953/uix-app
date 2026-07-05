@@ -16,7 +16,7 @@ pub use crate::native::{create_platform, KeyCode, KeyMod, MouseButton};
 // ── draw ──────────────────────────────────────────────────────
 
 pub use crate::draw::traits::GraphicsEngine;
-pub use crate::draw::{colors, Color, FontService, NullEngine, SoftwareEngine};
+pub use crate::draw::{colors, Color, FontService, ImageService, NullEngine, SoftwareEngine};
 
 // ── ui ────────────────────────────────────────────────────────
 

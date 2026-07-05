@@ -4,6 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
 use crate::draw::font::font_service::FontService;
+use crate::draw::image::ImageService;
 use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource, RenderMetrics};
 use crate::draw::painting::ThemeSnapshot;
 use crate::draw::traits::GraphicsEngine;
@@ -23,6 +24,7 @@ pub fn run_widget_loop<M, X, F>(
     engine: &mut dyn GraphicsEngine,
     tree: &mut WidgetTree,
     font_service: &FontService,
+    image_service: &ImageService,
     theme: &RefCell<Theme>,
     debug_mode: &Cell<bool>,
     cursor_pos: &Cell<Point>,
@@ -237,6 +239,7 @@ where
                     theme: snapshot,
                     font: font_service.loaded_font_handle,
                     font_service,
+                    image_service,
                     debug_mode: debug_mode.get(),
                     hover_pos,
                     metrics: metrics_ref.as_ref(),

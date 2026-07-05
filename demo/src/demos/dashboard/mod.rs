@@ -423,6 +423,7 @@ pub fn run_gui_demo() {
 
     let mut engine = create_engine(use_gpu, &*platform_window, INIT_W, INIT_H);
     let font_service = create_font_service(&*platform);
+    let image_service = ImageService::new();
 
     let exit_code = run_event_loop(
         &mut *platform,
@@ -430,6 +431,7 @@ pub fn run_gui_demo() {
         &mut *engine,
         &mut tree,
         &font_service,
+        &image_service,
         &state,
         dyn_tokens,
     );
@@ -630,6 +632,7 @@ mod tests {
         let mut renderer = FrameRenderer::new();
         let theme = ThemeSnapshot::new(&tk);
         let fs = FontService::new();
+        let img = ImageService::new();
         let region = tree.dirty_region();
 
         renderer.render_frame(
@@ -643,6 +646,7 @@ mod tests {
                 theme,
                 font: fs.loaded_font_handle,
                 font_service: &fs,
+                image_service: &img,
                 debug_mode: false,
                 hover_pos: None,
                 metrics: None,
@@ -712,6 +716,7 @@ mod tests {
                 theme: ThemeSnapshot::new(&tk),
                 font: fs.loaded_font_handle,
                 font_service: &fs,
+                image_service: &img,
                 debug_mode: false,
                 hover_pos: None,
                 metrics: None,

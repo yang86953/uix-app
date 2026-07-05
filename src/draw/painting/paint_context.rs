@@ -7,6 +7,7 @@ use std::ptr::NonNull;
 
 use crate::draw::debug::DebugRenderService;
 use crate::draw::font::font_service::FontService;
+use crate::draw::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::painting::display_list::{DisplayList, PaintOp, PaintPass};
 use crate::draw::painting::ThemeTokens;
 use crate::draw::primitives::path::{FillRule, Path};
@@ -25,6 +26,9 @@ pub struct PaintContext<'a> {
 
     /// 文本渲染服务。
     text: TextRenderService<'a>,
+
+    /// 图片资源服务。
+    image_service: &'a ImageService,
 
     /// 调试渲染服务。
     debug: DebugRenderService,
@@ -57,6 +61,7 @@ impl<'a> PaintContext<'a> {
         canvas_2d: &'a mut dyn Canvas2D,
         font: FontHandle,
         font_service: &'a FontService,
+        image_service: &'a ImageService,
         tokens: &'a dyn ThemeTokens,
         dpi: f32,
         device_pixel_ratio: f32,
@@ -74,6 +79,7 @@ impl<'a> PaintContext<'a> {
                 surface_h,
             ),
             text: TextRenderService::new(font, font_service, f32::MAX),
+            image_service,
             debug: DebugRenderService::new(false),
             tokens,
             paint_pass: PaintPass::Content,
@@ -513,6 +519,37 @@ impl<'a> PaintContext<'a> {
     #[inline(always)]
     pub fn font_service(&mut self) -> &FontService {
         self.text.font_service
+    }
+
+    /// 获取图片服务。
+    #[inline(always)]
+    pub fn image_service(&self) -> &ImageService {
+        self.image_service
+    }
+
+    /// 绘制解码位图（按目标区域 fit 居中）。
+    pub fn draw_image(&mut self, handle: BitmapHandle, bounds: Rect) {
+        self.blit_bitmap(handle, bounds, true);
+    }
+
+    /// 绘制解码位图（拉伸填满 bounds）。
+    pub fn draw_image_fill(&mut self, handle: BitmapHandle, bounds: Rect) {
+        self.blit_bitmap(handle, bounds, false);
+    }
+
+    fn blit_bitmap(&mut self, handle: BitmapHandle, bounds: Rect, fit: bool) {
+        self.record_op(PaintOp::DrawImage {
+            handle,
+            bounds,
+            fit,
+        });
+        blit_handle(
+            self.image_service,
+            self.spatial.canvas_2d(),
+            handle,
+            bounds,
+            fit,
+        );
     }
 
     /// 获取当前字体句柄。

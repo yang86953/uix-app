@@ -4,6 +4,7 @@
 //! 这些测试不依赖平台层测试框架，可在无 `test-harness` feature 时运行。
 
 use uix::draw::font_service::FontService;
+use uix::draw::image::ImageService;
 use uix::draw::null_engine::NullEngine;
 use uix::draw::{Color, FontHandle, GradientDirection, traits::GraphicsEngine, Orientation, Radius};
 use uix::core::geometry::Rect;
@@ -18,6 +19,7 @@ use uix::ui::RenderContext;
 fn render_context_creation_succeeds() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -26,6 +28,7 @@ fn render_context_creation_succeeds() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -39,6 +42,7 @@ fn render_context_creation_succeeds() {
 fn render_context_with_gpu_dpr() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -47,6 +51,7 @@ fn render_context_with_gpu_dpr() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         192.0, // dpi = 2x
         2.0,   // device_pixel_ratio
@@ -64,6 +69,7 @@ fn render_context_with_gpu_dpr() {
 fn fill_rect_does_not_panic() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -71,6 +77,7 @@ fn fill_rect_does_not_panic() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -91,6 +98,7 @@ fn fill_rect_does_not_panic() {
 fn fill_circle_does_not_panic() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -98,6 +106,7 @@ fn fill_circle_does_not_panic() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -114,6 +123,7 @@ fn fill_circle_does_not_panic() {
 fn stroke_rect_does_not_panic() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -121,6 +131,7 @@ fn stroke_rect_does_not_panic() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -142,6 +153,7 @@ fn stroke_rect_does_not_panic() {
 fn draw_line_does_not_panic() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -149,6 +161,7 @@ fn draw_line_does_not_panic() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -169,6 +182,7 @@ fn draw_line_does_not_panic() {
 fn fill_linear_gradient_does_not_panic() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -176,6 +190,7 @@ fn fill_linear_gradient_does_not_panic() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -196,6 +211,7 @@ fn fill_linear_gradient_does_not_panic() {
 fn draw_box_shadow_does_not_panic() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -203,6 +219,7 @@ fn draw_box_shadow_does_not_panic() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -229,6 +246,7 @@ fn draw_box_shadow_does_not_panic() {
 fn tokens_access_returns_design_tokens() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -236,6 +254,7 @@ fn tokens_access_returns_design_tokens() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -254,6 +273,7 @@ fn tokens_access_returns_design_tokens() {
 fn tokens_dark_mode() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_dark();
     let canvas = null_engine.canvas_2d();
 
@@ -261,6 +281,7 @@ fn tokens_dark_mode() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -282,6 +303,7 @@ fn tokens_dark_mode() {
 fn spatial_context_accessible() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -289,6 +311,7 @@ fn spatial_context_accessible() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,
@@ -310,6 +333,7 @@ fn spatial_context_accessible() {
 fn debug_render_mode_toggle() {
     let mut null_engine = NullEngine::new();
     let font_service = FontService::new();
+    let image_service = ImageService::new();
     let tokens = DesignTokens::antd_light();
     let canvas = null_engine.canvas_2d();
 
@@ -317,6 +341,7 @@ fn debug_render_mode_toggle() {
         canvas,
         FontHandle::new(0),
         &font_service,
+        &image_service,
         &tokens,
         96.0,
         1.0,

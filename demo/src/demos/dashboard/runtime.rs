@@ -80,6 +80,7 @@ pub(super) fn run_event_loop(
     engine: &mut dyn GraphicsEngine,
     tree: &mut WidgetTree,
     font_service: &FontService,
+    image_service: &ImageService,
     state: &DemoState,
     dyn_tokens: Arc<DynTokens>,
 ) -> i32 {
@@ -93,6 +94,7 @@ pub(super) fn run_event_loop(
         engine,
         tree,
         font_service,
+        image_service,
         &theme_cell,
         &debug_mode,
         &cursor_pos,
