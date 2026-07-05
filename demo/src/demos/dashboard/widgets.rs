@@ -1,9 +1,9 @@
 use uix::define_widget;
-use uix::graphics::{Color, traits::GraphicsEngine};
+use uix::render::{Color, traits::GraphicsEngine};
 use uix::platform::{Point, Rect, Size};
-use uix::ui::render_context::RenderContext;
-use uix::ui::widget::WidgetTree;
-use uix::ui::widget::{EventResult, WidgetEvent};
+use uix::widget::scene::RenderContext;
+use uix::widget::WidgetTree;
+use uix::widget::{EventResult, WidgetEvent};
 
 // ── Counter — 自定义 widget 示例 ──
 

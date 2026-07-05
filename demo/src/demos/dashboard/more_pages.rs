@@ -2,10 +2,10 @@
 
 use uix::platform::EdgeInsets;
 use uix::tree;
-use uix::ui::layout::FlexDirection;
-use uix::ui::theme::DesignTokens;
-use uix::ui::widget::WidgetNode;
-use uix::ui::{
+use uix::api::widget::layout::FlexDirection;
+use uix::widget::theme::DesignTokens;
+use uix::widget::WidgetNode;
+use uix::api::widget::{
     BarChart, BarData, ColorPicker, Container, Form, IntoWidgetNode, Label, LineChart, LineData,
     PieChart, PieData,
 };

@@ -1,6 +1,6 @@
 # UIX 架构设计
 
-> 最后更新: 2026-07-04
+> 最后更新: 2026-07-05
 > 本文档是项目的实时架构地图，随代码变更同步更新。
 
 ---
@@ -9,69 +9,92 @@
 
 ```
 uix workspace
-├── platform/   (uix-platform)  OS 抽象层 — Win32/Wayland
-├── graphics/   (uix-graphics)  2D 渲染引擎 — CPU + 可选 GPU
-├── ui/         (uix-ui)        Widget 框架 — 60+ 组件 + 状态 + 布局 + 主题
-├── app/        (uix-app)       应用入口 — 窗口生命周期 + CLI + DI
-├── demo/       (uix-demo)      演示二进制
-└── uix         根 crate        聚合重导出层
+├── src/        (uix)     单一框架 crate — 按系统模块组织
+└── demo/       (uix-demo) 演示二进制
 ```
 
 ### 依赖拓扑
 
 ```
-uix ──→ app ──→ ui ──→ graphics ──→ platform
-           ↘        ↘              ↙
-            ui ──→ graphics ──→ platform
+demo ──→ uix
 ```
-
-| Crate | 核心导出 |
-|-------|---------|
-| **uix-platform** | `Platform`, `IPresenter`, `IEventLoop`, `Error`, `EventBus`, `UiEvent`, `Point/Size/Rect` |
-| **uix-graphics** | `RenderSession`, `RenderBackend`, `Canvas2D`, `DamageRegion`, `PresentDamage`, `SoftwareEngine`, `Color`, `Path`, `FontService`, `SpatialContext` |
-| **uix-ui** | `WidgetComponent`, `WidgetLayout`, `WidgetRender`, `WidgetEventHandler`, `WidgetLifecycle`, `State`/`Computed`/`Effect`, `WidgetTree`, `TokenProvider`, `LayoutEngine` |
-| **uix-app** | `App`, `AppMode`, `Window`, `Cli`, `Container` |
 
 ---
 
-## 二、分层架构
+## 二、uix 模块划分
 
 ```
-app 层     入口 + 窗口 + CLI + DI
-ui 层      Widget 框架 + 组件库 + 状态 + 布局 + 动画 + 主题 + LayerTree
-graphics 层 2D 渲染引擎 + RenderPipeline + 光栅化 + 字体 + 空间坐标
-platform 层 OS 抽象 — Win32 / Wayland / 文件 / 日志 / 通知 / 设置
+uix/src/
+├── api/              稳定公开契约（按系统分子模块）
+│   ├── platform/     （契约内嵌于 platform::api）
+│   ├── render/       渲染系统 API
+│   ├── widget/       组件系统 API
+│   └── runtime/      运行时系统 API
+├── platform/         平台系统 — OS 抽象（Win32 / Wayland）
+├── render/           渲染系统 — 2D 引擎、光栅化、字体、合成
+├── widget/           组件系统 — Widget 框架、布局、主题、内置组件
+│   └── scene/        Widget 呈现桥接（事件循环、RenderContext）
+├── runtime/          运行时系统 — 应用入口、窗口、CLI、DI
+└── view/             视图系统 — 声明式 UI API
 ```
 
-- **每层依赖下层接口**，下层不反向依赖上层
-- 同层组件通过 trait 接口通信，不依赖具体实现
-- 各 crate 均采用 **API 外观模式**：`api/traits.rs` + `api/types.rs` 定义公开契约，内部模块只保留实现
+### 系统职责
 
-### uix-ui 内部目录
+| 系统 | 模块路径 | 职责 |
+|------|---------|------|
+| **platform** | `uix::platform` | OS 抽象：窗口、事件、呈现、输入、文件、日志 |
+| **render** | `uix::render` | 2D 渲染引擎、RenderPipeline、光栅化、字体、LayerTree |
+| **widget** | `uix::widget` | Widget 框架、状态、布局、动画、主题、60+ 内置组件 |
+| **runtime** | `uix::runtime` | 应用生命周期、窗口、CLI、依赖注入 |
+| **view** | `uix::view` | 声明式 View API（函数式组合子） |
+| **api** | `uix::api::{render,widget,runtime}` | 各系统稳定 trait 与类型契约 |
+
+### platform 系统内部
 
 ```
-ui/src/
-├── api/              稳定公开契约（traits + types）
-├── core/             Widget 运行时（widget/ 子树、context、children）
-├── render/           渲染管线（event_loop、context、layer、text、debug）
-├── foundation/       基础能力（state、style、locale、clipboard、config、focus_trap、virtual_scroll）
+platform/
+├── api/              稳定公开契约（error / geometry / event / window / …）
+├── services/         文件、通知、设置
+├── log/              日志基础设施
+├── diagnostic/       诊断与恢复
+├── shared/           跨平台共享实现
+├── presenter.rs      像素呈现器
+├── test_harness/     测试用 Fake 实现
+├── windows/          Windows 实现
+└── linux/            Linux（Wayland）实现
+```
+
+### render 系统内部
+
+```
+render/
+├── backend/          CPU/GPU/Null 渲染后端
+├── compositor/       LayerTree + Picture + 视口变换
+├── engine/           CPU 渲染引擎
+├── font/             字体加载、布局、文本渲染
+├── gpu_engine/       GPU 渲染引擎
+├── painting/         PaintContext、DisplayList
+├── pipeline/         帧调度与 RenderSession
+├── primitives/       颜色、路径、描边
+├── rasterizer/       纯函数光栅化
+├── render_object/    渲染对象树
+└── spatial/          空间坐标系统
+```
+
+### widget 系统内部
+
+```
+widget/
+├── core/             Widget 运行时（WidgetTree、事件、布局钩子）
+├── scene/            呈现桥接（event_loop、RenderContext、LayerTree 合成）
+├── foundation/       状态、样式、国际化、剪贴板
 ├── layout/           Flexbox + Grid 布局引擎
-├── theme/            Ant Design 5 设计令牌
+├── theme/            设计令牌（Ant Design 5）
 ├── animation/        动画与过渡
 ├── managers/         跨组件服务（焦点、拖拽、事件等）
-├── view/             简化声明式 API（View / App）
-├── macros.rs         define_widget! / tree! 声明宏
-└── widgets/          内置组件库（按 Ant Design 分类）
-    ├── general/      通用（Button、Icon、Typography、Divider、Space）
-    ├── containers/   布局容器（Container、Grid、Layout、Splitter、Affix）
-    ├── navigation/   导航（Menu、Tabs、Breadcrumb、Pagination、Steps）
-    ├── input/        输入（Input、Select、Checkbox、Form、DatePicker 等）
-    ├── display/      数据展示（Table、List、Card、Tree、Tag 等）
-    ├── feedback/     反馈（Modal、Drawer、Alert、Message、Spin 等）
-    └── other/        其他（Chart、RichText、ScrollView、ThemeToggle、Misc）
+├── widgets/          内置组件库
+└── macros.rs         define_widget! / tree! 宏
 ```
-
-旧模块路径（`widget`、`render_loop`、`state`、`widgets::button` 等）通过 `lib.rs` 兼容层重导出，外部代码无需修改。
 
 ---
 
@@ -84,14 +107,12 @@ WidgetTree.update(dt) → dirty regions + scroll deltas
     ↓
 WidgetTree.layout() → 仅遍历脏子树
     ↓
-canvas.scroll_region() → begin_frame(DirtyRects) → LayerTree.render() → end_frame()
+scene.scroll_region() → begin_frame(DirtyRects) → LayerTree.render() → end_frame()
     ↓
 begin_frame(Overlay) → LayerTree.render_overlays() → end_frame()
     ↓
 IPresenter.present() → 屏幕
 ```
-
-每帧两步：Geometry Pass（清除+绘制）→ Overlay Pass（叠加），均裁剪到脏区域。
 
 ### 事件流
 
@@ -107,11 +128,11 @@ OS 事件 → IEventLoop → pending_events → WidgetTree.dispatch_event()
 
 | 决策 | 方案 | 原因 |
 |------|------|------|
-| Widget 能力位 | `WidgetCapabilities` 位标记 + `WidgetComponent` 上转型 | 避免上帝接口，按需实现 Layout/Render/Event/Lifecycle |
-| 增量渲染 | scroll_region + DirtyRects + multi-rect PresentDamage | CPU 渲染性能关键，只重绘变化像素 |
-| API 外观模式 | 每个 crate 的 `api/` 模块定义公开契约 | 内部重构不影响外部使用者 |
-| 响应式状态 | `State<T>` + thread_local 依赖追踪 | Computed 自动追踪依赖，惰性求值 |
-| LayerTree | Picture(离屏) / ClipRect(裁剪) / Direct(直接) 三类节点 | 支持 RepaintBoundary 嵌套，按 z_index 预排序 |
+| 单一 crate | 全部系统合入 `uix` | 消除跨 crate 边界，模块内聚 |
+| 系统模块 | platform / render / widget / runtime / view | 职责清晰，依赖单向 |
+| API 契约 | `api/{system}/` + `platform/api/` | 实现与契约分离 |
+| Widget 能力位 | `WidgetCapabilities` + 上转型 | 按需实现 Layout/Render/Event/Lifecycle |
+| 增量渲染 | scroll_region + DirtyRects + PresentDamage | CPU 渲染只重绘变化像素 |
 
 ---
 
@@ -120,4 +141,4 @@ OS 事件 → IEventLoop → pending_events → WidgetTree.dispatch_event()
 - `deny(clippy::unwrap_used)`, `deny(clippy::expect_used)`
 - 每个 Rust 文件 ≤ 900 行
 - 中文注释
-- 组合优于继承，无 trait 继承模拟 OOP
+- 组合优于继承

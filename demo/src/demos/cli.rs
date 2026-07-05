@@ -1,7 +1,7 @@
 //! CLI 演示 — 从命令行运行所有主要 UIX 子系统的功能演示。
 
 use std::cell::Cell;
-use uix::graphics::{self, colors, traits::GraphicsEngine};
+use uix::render::{colors, traits::GraphicsEngine, NullEngine};
 use uix::platform::diagnostic::{
     LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
 };
@@ -10,10 +10,10 @@ use uix::platform::log::{info_fn, Level, Logger};
 use uix::platform::settings::SettingsService;
 use uix::platform::{EdgeInsets, Point, Rect, Size};
 use uix::platform::{Errc, Error};
-use uix::ui::layout::{AlignItems, JustifyContent};
-use uix::ui::layout::{FlexLayout, LayoutChild, LayoutEngine};
-use uix::ui::state::{Computed, State};
-use uix::ui::Theme;
+use uix::api::widget::layout::{AlignItems, JustifyContent};
+use uix::api::widget::layout::{FlexLayout, LayoutChild, LayoutEngine};
+use uix::widget::state::{Computed, State};
+use uix::widget::theme::Theme;
 
 // ── Logger ────────────────────────────────────────────────────────────────
 
@@ -260,12 +260,12 @@ pub fn demo_theme() {
 
 pub fn demo_graphics_engine() -> Result<(), Error> {
     println!("\n╔══ 图形引擎 ═══╗");
-    let mut e = graphics::NullEngine::new();
+    let mut e = NullEngine::new();
     e.initialize(800, 600)?;
     e.canvas_2d()
         .fill_rect(Rect::new(10.0, 10.0, 100.0, 50.0), colors::PRIMARY, None);
     e.shutdown();
-    let mut boxed: Box<dyn GraphicsEngine> = Box::new(graphics::NullEngine::new());
+    let mut boxed: Box<dyn GraphicsEngine> = Box::new(NullEngine::new());
     boxed.initialize(640, 480)?;
     println!(
         "  Box<dyn GraphicsEngine> width={}",
@@ -279,7 +279,7 @@ pub fn demo_graphics_engine() -> Result<(), Error> {
 
 pub fn demo_di_container() {
     println!("\n╔══ 依赖注入容器 ═══╗");
-    let mut c = uix::app::Container::new();
+    let mut c = uix::runtime::di::Container::new();
     c.singleton("config_value".to_string());
     c.singleton(42i32);
     match c.resolve::<String>() {
