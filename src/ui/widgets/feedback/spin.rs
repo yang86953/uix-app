@@ -1,12 +1,12 @@
 //! Spin widget — 加载中旋转动画指示器。
 
-use crate::ui::animation::core::Animation;
-use crate::ui::animation::Easing;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Rect, Size};
+use crate::ui::animation::core::Animation;
+use crate::ui::animation::Easing;
+use crate::ui::WidgetTree;
 
 /// Spin 尺寸。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -51,7 +51,7 @@ define_widget! {
         self.spinning
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if !self.spinning && !self.wrapper_mode { return; }
         let phase = self.anim.as_ref().map(|a| a.current_value()).unwrap_or(0.0);
         let cx = frame.x + frame.w * 0.5;

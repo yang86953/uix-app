@@ -30,7 +30,7 @@ fn event_manager_priority_order() {
         });
     }
 
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
@@ -75,7 +75,7 @@ fn event_manager_handled_stops_bubble_to_parent() {
         });
     }
 
-    let result = tree.dispatch_event(&WidgetEvent::MouseDown {
+    let result = tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
@@ -121,7 +121,7 @@ fn event_manager_runs_after_on_event() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 50.0, 50.0));
 
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(25.0, 25.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
@@ -199,7 +199,7 @@ fn tab_key_focuses_next_widget() {
     // 设焦点在 btn1
     tree.focused_widget = Some(btn1);
 
-    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+    let result = tree.dispatch_event(&SystemEvent::KeyDown {
         key: KeyCode::Tab,
         mods: KeyMod::NONE,
     });
@@ -221,7 +221,7 @@ fn shift_tab_focuses_prev_widget() {
     // 设焦点在 btn2
     tree.focused_widget = Some(btn2);
 
-    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+    let result = tree.dispatch_event(&SystemEvent::KeyDown {
         key: KeyCode::Tab,
         mods: KeyMod::SHIFT,
     });
@@ -241,7 +241,7 @@ fn tab_wraps_around_to_first() {
     // 设焦点在 btn2（最后一个）
     tree.focused_widget = Some(btn2);
 
-    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+    let result = tree.dispatch_event(&SystemEvent::KeyDown {
         key: KeyCode::Tab,
         mods: KeyMod::NONE,
     });
@@ -259,7 +259,7 @@ fn tab_no_focusable_does_nothing() {
     let mut tree = WidgetTree::new();
     tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     tree.layout();
-    let result = tree.dispatch_event(&WidgetEvent::KeyDown {
+    let result = tree.dispatch_event(&SystemEvent::KeyDown {
         key: KeyCode::Tab,
         mods: KeyMod::NONE,
     });
@@ -274,7 +274,7 @@ fn tab_no_focusable_does_nothing() {
 // 拖拽手势测试
 // ════════════════════════════════════════════════════════════════════════
 
-/// MouseDown + 小幅度 MouseMove 不触发拖拽（阈值 5px）。
+/// PointerDown + 小幅度 PointerMove 不触发拖拽（阈值 5px）。
 #[test]
 fn drag_gesture_threshold_not_exceeded() {
     let mut tree = WidgetTree::new();
@@ -287,14 +287,14 @@ fn drag_gesture_threshold_not_exceeded() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
-    // MouseDown
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    // PointerDown
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
     // 小幅度移动（3px < 5px 阈值）
-    tree.dispatch_event(&WidgetEvent::MouseMove {
+    tree.dispatch_event(&SystemEvent::PointerMove {
         pos: Point::new(53.0, 50.0),
         mods: KeyMod::NONE,
     });
@@ -309,7 +309,7 @@ fn drag_gesture_threshold_not_exceeded() {
     );
 }
 
-/// MouseDown + 大幅度 MouseMove 触发 DragStart 和 DragMove。
+/// PointerDown + 大幅度 PointerMove 触发 DragStart 和 DragMove。
 #[test]
 fn drag_gesture_triggers_drag_start() {
     let mut tree = WidgetTree::new();
@@ -322,14 +322,14 @@ fn drag_gesture_triggers_drag_start() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
-    // MouseDown
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    // PointerDown
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
     // 大幅度移动（超出 5px 阈值）
-    tree.dispatch_event(&WidgetEvent::MouseMove {
+    tree.dispatch_event(&SystemEvent::PointerMove {
         pos: Point::new(60.0, 60.0),
         mods: KeyMod::NONE,
     });
@@ -344,9 +344,9 @@ fn drag_gesture_triggers_drag_start() {
     );
 }
 
-/// MouseUp 在拖拽激活后发射 DragEnd。
+/// PointerUp 在拖拽激活后发射 DragEnd。
 #[test]
-fn drag_gesture_mouse_up_emits_drag_end() {
+fn drag_gesture_pointer_up_emits_drag_end() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
@@ -357,26 +357,26 @@ fn drag_gesture_mouse_up_emits_drag_end() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
-    tree.dispatch_event(&WidgetEvent::MouseDown {
+    tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
-    tree.dispatch_event(&WidgetEvent::MouseMove {
+    tree.dispatch_event(&SystemEvent::PointerMove {
         pos: Point::new(60.0, 60.0),
         mods: KeyMod::NONE,
     });
     assert!(tree.drag_gesture.active, "drag should be active");
 
-    tree.dispatch_event(&WidgetEvent::MouseUp {
+    tree.dispatch_event(&SystemEvent::PointerUp {
         pos: Point::new(65.0, 65.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
-    // MouseUp 后拖拽应重置
+    // PointerUp 后拖拽应重置
     assert!(
         !tree.drag_gesture.active,
-        "drag should be reset after MouseUp"
+        "drag should be reset after PointerUp"
     );
     assert!(!tree.drag_gesture.potential);
 }
@@ -418,21 +418,21 @@ fn nav_item_click_updates_shared_active() {
         .unwrap()
         .set_frame(Rect::new(0.0, 36.0, 200.0, 36.0));
     assert_eq!(active.get(), 0);
-    let result = tree.dispatch_event(&WidgetEvent::MouseDown {
+    let result = tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 54.0),
         button: crate::native::MouseButton::Left,
         mods: KeyMod::NONE,
     });
     assert_eq!(result, EventResult::Handled);
     assert_eq!(active.get(), 1);
-    let result = tree.dispatch_event(&WidgetEvent::MouseDown {
+    let result = tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 18.0),
         button: crate::native::MouseButton::Left,
         mods: KeyMod::NONE,
     });
     assert_eq!(result, EventResult::Handled);
     assert_eq!(active.get(), 0);
-    let result = tree.dispatch_event(&WidgetEvent::MouseDown {
+    let result = tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 150.0),
         button: crate::native::MouseButton::Left,
         mods: KeyMod::NONE,

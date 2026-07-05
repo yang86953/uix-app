@@ -3,16 +3,16 @@
 use crate::native::Rect;
 
 use super::layer_tree::{LayerNode, LayerTree};
-use crate::draw::primitives::color::Color;
 use crate::draw::compositor::viewport_transform::needs_paint;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, ThemeTokens};
 use crate::draw::pipeline::NodeId;
+use crate::draw::primitives::color::Color;
+use crate::draw::primitives::types::{DirtyRegion, ImageHandle};
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::GraphicsEngine;
-use crate::draw::primitives::types::{DirtyRegion, ImageHandle};
 use crate::draw::FontHandle;
 
 /// 离屏创建连续失败上限（超过后本帧跳过栅格化，下帧 rebuild 重置）。
@@ -122,13 +122,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             cached.replay(&mut off_ctx);
         }
         if scene.node_visible(widget_id) {
-            render_non_picture_subtree(
-                children,
-                &mut off_ctx,
-                scene,
-                paint_region,
-                env,
-            );
+            render_non_picture_subtree(children, &mut off_ctx, scene, paint_region, env);
         }
         for (child_bounds, pixels, pw) in nested_pixels {
             let local = Rect::new(
@@ -219,7 +213,10 @@ fn prepare_nested_pictures<S: ScenePaint>(
     }
 }
 
-fn collect_picture_blit_info(children: &[LayerNode], parent_bounds: &Rect) -> Vec<(Rect, ImageHandle)> {
+fn collect_picture_blit_info(
+    children: &[LayerNode],
+    parent_bounds: &Rect,
+) -> Vec<(Rect, ImageHandle)> {
     let mut out = Vec::new();
     collect_picture_blit_info_rec(children, parent_bounds, &mut out);
     out
@@ -244,7 +241,8 @@ fn collect_picture_blit_info_rec(
                 collect_picture_blit_info_rec(sub, parent_bounds, out);
             }
             LayerNode::Picture {
-                offscreen_handle: None, ..
+                offscreen_handle: None,
+                ..
             } => {}
             LayerNode::ClipRect { children: sub, .. } | LayerNode::Direct { children: sub, .. } => {
                 collect_picture_blit_info_rec(sub, parent_bounds, out);

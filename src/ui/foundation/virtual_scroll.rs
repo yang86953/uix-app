@@ -3,9 +3,9 @@
 //! 仅渲染视口内的子项，适用于 Select 下拉列表、Tree、Table 等大数据量场景。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetNode, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetNode, WidgetTree};
 
 define_widget! {
     pub struct VirtualScroll {
@@ -22,10 +22,10 @@ define_widget! {
         Size::new(0.0, self.total_height)
     }
 
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
+    render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseWheel { delta, .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::Wheel { delta, .. } = event {
             let max_offset = (self.total_height - 300.0).max(0.0);
             let new_offset = (self.scroll_offset - delta.y * 40.0)
                 .clamp(0.0, max_offset);

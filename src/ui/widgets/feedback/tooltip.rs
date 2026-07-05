@@ -1,8 +1,8 @@
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// Tooltip 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -37,27 +37,27 @@ define_widget! {
         Size::new(0.0, 0.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match (self.trigger, event) {
-            (TriggerMode::Hover, WidgetEvent::HoverEnter) => {
+            (TriggerMode::Hover, SystemEvent::PointerEnter) => {
                 self.visible = true;
                 self.timer = 0.0;
                 EventResult::Handled
             }
-            (TriggerMode::Hover, WidgetEvent::HoverLeave) => {
+            (TriggerMode::Hover, SystemEvent::PointerLeave) => {
                 self.visible = false;
                 self.timer = 0.0;
                 EventResult::Handled
             }
-            (TriggerMode::Click, WidgetEvent::MouseDown { .. }) => {
+            (TriggerMode::Click, SystemEvent::PointerDown { .. }) => {
                 self.visible = !self.visible;
                 EventResult::Handled
             }
-            (TriggerMode::Focus, WidgetEvent::FocusIn) => {
+            (TriggerMode::Focus, SystemEvent::FocusIn) => {
                 self.visible = true;
                 EventResult::Handled
             }
-            (TriggerMode::Focus, WidgetEvent::FocusOut) => {
+            (TriggerMode::Focus, SystemEvent::FocusOut) => {
                 self.visible = false;
                 EventResult::Handled
             }
@@ -75,7 +75,7 @@ define_widget! {
         matches!(self.trigger, TriggerMode::Hover)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if !self.visible { return; }
         if self.trigger == TriggerMode::Hover && self.timer < 0.5 { return; }
 
@@ -128,7 +128,7 @@ define_widget! {
 
 /// 绘制三角形箭头。
 fn draw_arrow(
-    ctx: &mut RenderContext,
+    ctx: &mut PaintContext,
     x: f32,
     y: f32,
     w: f32,

@@ -6,12 +6,12 @@ use crate::draw::backend::DamageRegion;
 use crate::draw::compositor::{LayerTree, RenderObjectTree, ScenePaint};
 use crate::draw::debug::DebugRenderService;
 use crate::draw::font::font_service::FontService;
+use crate::draw::font::text::TextRenderService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
 use crate::draw::pipeline::{InvalidationSource, RenderMetrics};
-use crate::draw::font::text::TextRenderService;
-use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
 use crate::draw::primitives::types::DirtyRegion;
+use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
 use crate::draw::{Color, FontHandle, RenderOutcome};
 
 /// 单帧渲染输入。
@@ -262,11 +262,11 @@ mod tests {
         fn node_z_index(&self, _: crate::draw::pipeline::NodeId) -> i32 {
             0
         }
-        fn node_children(&self, _: crate::draw::pipeline::NodeId) -> &[crate::draw::pipeline::NodeId] {
+        fn node_children(
+            &self,
+            _: crate::draw::pipeline::NodeId,
+        ) -> &[crate::draw::pipeline::NodeId] {
             &[]
-        }
-        fn is_repaint_boundary(&self, _: crate::draw::pipeline::NodeId) -> bool {
-            false
         }
         fn children_clip(&self, _: crate::draw::pipeline::NodeId, _: Rect) -> Option<Rect> {
             None
@@ -286,7 +286,10 @@ mod tests {
         fn hit_test(&self, _: Point) -> Option<crate::draw::pipeline::NodeId> {
             None
         }
-        fn parent(&self, _: crate::draw::pipeline::NodeId) -> Option<crate::draw::pipeline::NodeId> {
+        fn parent(
+            &self,
+            _: crate::draw::pipeline::NodeId,
+        ) -> Option<crate::draw::pipeline::NodeId> {
             None
         }
         fn paint(&self, _: crate::draw::pipeline::NodeId, _: Rect, _: &mut PaintContext<'_>) {}
@@ -479,7 +482,10 @@ mod tests {
             fn node_z_index(&self, _: crate::draw::pipeline::NodeId) -> i32 {
                 0
             }
-            fn node_children(&self, id: crate::draw::pipeline::NodeId) -> &[crate::draw::pipeline::NodeId] {
+            fn node_children(
+                &self,
+                id: crate::draw::pipeline::NodeId,
+            ) -> &[crate::draw::pipeline::NodeId] {
                 static ROOT_KIDS: [crate::draw::pipeline::NodeId; 1] = [2];
                 static EMPTY: [crate::draw::pipeline::NodeId; 0] = [];
                 if id == 1 {
@@ -487,9 +493,6 @@ mod tests {
                 } else {
                     &EMPTY
                 }
-            }
-            fn is_repaint_boundary(&self, _: crate::draw::pipeline::NodeId) -> bool {
-                false
             }
             fn children_clip(&self, _: crate::draw::pipeline::NodeId, _: Rect) -> Option<Rect> {
                 None
@@ -509,7 +512,10 @@ mod tests {
             fn hit_test(&self, _: Point) -> Option<crate::draw::pipeline::NodeId> {
                 None
             }
-            fn parent(&self, id: crate::draw::pipeline::NodeId) -> Option<crate::draw::pipeline::NodeId> {
+            fn parent(
+                &self,
+                id: crate::draw::pipeline::NodeId,
+            ) -> Option<crate::draw::pipeline::NodeId> {
                 if id == 2 {
                     Some(1)
                 } else {

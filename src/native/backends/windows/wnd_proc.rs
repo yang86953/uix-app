@@ -169,7 +169,7 @@ impl WindowsPlatform {
             }
             WM_CHAR => {
                 if let Some(ch) = std::char::from_u32(wparam as u32) {
-                    self.push_event(UiEvent::key_press(ch.to_string()));
+                    self.push_event(UiEvent::text_input(ch.to_string()));
                 }
                 0
             }
@@ -199,7 +199,7 @@ impl WindowsPlatform {
             }
             WM_MOUSEMOVE => {
                 let pos = self.mouse_pos_from_lparam(lparam);
-                self.push_event(UiEvent::mouse_move(pos));
+                self.push_event(UiEvent::pointer_move(pos));
                 0
             }
             WM_MOUSEWHEEL => {
@@ -215,7 +215,7 @@ impl WindowsPlatform {
                 let delta = (Self::hiword_usize(wparam) as i16) as i32;
                 let delta_y = -(delta as f32) / 120.0;
                 let mods = Self::get_modifier_state();
-                self.push_event(UiEvent::mouse_wheel(pos, 0.0, delta_y, mods));
+                self.push_event(UiEvent::wheel(pos, 0.0, delta_y, mods));
                 0
             }
             WM_TIMER => {

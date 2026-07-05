@@ -13,7 +13,7 @@
 //! - `TokenProvider` — supertrait aggregating all above; add `is_dark()` directly
 //! - `DesignTokens` — concrete provider with `antd_light()` & `antd_dark()` presets
 //! - `Theme` — wraps `Arc<dyn TokenProvider>` for runtime polymorphism
-//! - `RenderContext` carries `&dyn TokenProvider` for widget rendering
+//! - `PaintContext` carries `&dyn TokenProvider` for widget rendering
 
 mod color_tokens;
 mod design_tokens;

@@ -1,10 +1,10 @@
 //! Divider widget — Ant Design style horizontal/vertical divider with optional text.
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Point, Rect, Size};
+use crate::ui::WidgetTree;
 
 /// Divider orientation for text placement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,11 +41,11 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let line_color = self.color.unwrap_or(ctx.tokens().color_border_secondary());
         let text_secondary = ctx.tokens().color_text_secondary();
 
-        let draw_line = |ctx: &mut RenderContext, x: f32, y: f32, w: f32, h: f32, color: Color| {
+        let draw_line = |ctx: &mut PaintContext, x: f32, y: f32, w: f32, h: f32, color: Color| {
             if !self.dashed {
                 ctx.fill_rect(Rect::new(x, y, w, h), color, None);
             } else {

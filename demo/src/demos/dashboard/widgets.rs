@@ -10,11 +10,11 @@ define_widget! {
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size { Size::new(120.0, 36.0) }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        match event { WidgetEvent::MouseDown { .. } => { self.count += 1; EventResult::Handled } _ => EventResult::NotHandled }
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        match event { SystemEvent::PointerDown { .. } => { self.count += 1; EventResult::Handled } _ => EventResult::NotHandled }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_primary_bg();
         let color = ctx.tokens().color_primary();
         ctx.fill_rect(frame, bg, None);
@@ -49,7 +49,7 @@ define_widget! {
         Rect::new(cx - max_r, cy - max_r, max_r * 2.0, max_r * 2.0)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.5;
         let phase = (self.time * 1.5).sin() * 0.5 + 0.5; // 0..1
@@ -93,7 +93,7 @@ define_widget! {
         Rect::new(cx - max_r, ball_top - max_r, max_r * 2.0, ball_bot - ball_top + max_r * 2.0)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let t = self.time / 2.0; // 0..1
         // 弹跳：快速上升，慢速下降
         let bounce = if t < 0.5 {

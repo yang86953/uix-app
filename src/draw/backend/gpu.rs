@@ -3,8 +3,8 @@
 use std::any::Any;
 use std::cell::RefCell;
 
-use glow::HasContext as _;
 use crate::native::{Error, IGraphicsContext, Point, Rect};
+use glow::HasContext as _;
 
 use crate::draw::backend::traits::{
     BackendCapabilities, BackendKind, DamageRegion, DrawSurface, RenderBackend,
@@ -161,9 +161,9 @@ impl RenderBackend for GpuBackend {
         &mut self.surface
     }
 
-    fn present(&mut self, _damage: &DamageRegion) -> Result<(), Error> {
+    fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         self.gpu_ctx.make_current();
-        self.gpu_ctx.swap_buffers();
+        self.gpu_ctx.swap_buffers(damage.to_present_damage());
         Ok(())
     }
 

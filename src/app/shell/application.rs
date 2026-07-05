@@ -2,19 +2,19 @@
 
 use std::cell::{Cell, RefCell};
 
-use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::{create_platform, Point};
+use crate::app::event_loop::run_widget_loop;
+use crate::app::shell::cli::Cli;
+use crate::app::shell::di::Container;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::SoftwareEngine;
-use crate::app::shell::cli::Cli;
-use crate::app::shell::di::Container;
+use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::{create_platform, Point};
+use crate::ui::theme::Theme;
 use crate::ui::view::adapter::ViewAdapter;
 use crate::ui::view::{View, ViewNode};
-use crate::app::event_loop::run_widget_loop;
-use crate::ui::theme::Theme;
-use crate::ui::{WidgetCore, WidgetEvent};
+use crate::ui::{WidgetCore, SystemEvent};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -229,15 +229,15 @@ impl App {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// UiEvent → WidgetEvent 映射（唯一实现）
+// UiEvent → SystemEvent 映射（唯一实现）
 // ════════════════════════════════════════════════════════════════════════════
 
-/// 将平台 `UiEvent` 转换为 `WidgetEvent`。
-pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
+/// 将平台 `UiEvent` 转换为 `SystemEvent`。
+pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
     match ev.type_ {
-        UiEventType::MouseDown => {
-            if let UiEventPayload::MouseButton(ref d) = ev.payload {
-                Some(WidgetEvent::MouseDown {
+        UiEventType::PointerDown => {
+            if let UiEventPayload::PointerButton(ref d) = ev.payload {
+                Some(SystemEvent::PointerDown {
                     pos: d.pos,
                     button: d.btn,
                     mods: d.mods,
@@ -246,9 +246,9 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 None
             }
         }
-        UiEventType::MouseUp => {
-            if let UiEventPayload::MouseButton(ref d) = ev.payload {
-                Some(WidgetEvent::MouseUp {
+        UiEventType::PointerUp => {
+            if let UiEventPayload::PointerButton(ref d) = ev.payload {
+                Some(SystemEvent::PointerUp {
                     pos: d.pos,
                     button: d.btn,
                     mods: d.mods,
@@ -257,9 +257,9 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 None
             }
         }
-        UiEventType::MouseMove => {
-            if let UiEventPayload::MouseMove(ref d) = ev.payload {
-                Some(WidgetEvent::MouseMove {
+        UiEventType::PointerMove => {
+            if let UiEventPayload::PointerMove(ref d) = ev.payload {
+                Some(SystemEvent::PointerMove {
                     pos: d.pos,
                     mods: d.mods,
                 })
@@ -267,9 +267,9 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 None
             }
         }
-        UiEventType::MouseWheel => {
-            if let UiEventPayload::MouseWheel(ref d) = ev.payload {
-                Some(WidgetEvent::MouseWheel {
+        UiEventType::Wheel => {
+            if let UiEventPayload::Wheel(ref d) = ev.payload {
+                Some(SystemEvent::Wheel {
                     pos: d.pos,
                     delta: Point::new(d.delta_x, d.delta_y),
                 })
@@ -279,7 +279,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
         }
         UiEventType::KeyDown => {
             if let UiEventPayload::Key(ref d) = ev.payload {
-                Some(WidgetEvent::KeyDown {
+                Some(SystemEvent::KeyDown {
                     key: d.key,
                     mods: d.mods,
                 })
@@ -289,7 +289,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
         }
         UiEventType::KeyUp => {
             if let UiEventPayload::Key(ref d) = ev.payload {
-                Some(WidgetEvent::KeyUp {
+                Some(SystemEvent::KeyUp {
                     key: d.key,
                     mods: d.mods,
                 })
@@ -297,9 +297,9 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 None
             }
         }
-        UiEventType::KeyPress => {
-            if let UiEventPayload::KeyPress(ref d) = ev.payload {
-                Some(WidgetEvent::KeyPress {
+        UiEventType::TextInput => {
+            if let UiEventPayload::TextInput(ref d) = ev.payload {
+                Some(SystemEvent::TextInput {
                     text: d.text.clone(),
                 })
             } else {
@@ -308,7 +308,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
         }
         UiEventType::WindowResize => {
             if let UiEventPayload::Resize(ref d) = ev.payload {
-                Some(WidgetEvent::Resize {
+                Some(SystemEvent::Resize {
                     width: d.width as f32,
                     height: d.height as f32,
                 })
@@ -316,21 +316,21 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<WidgetEvent> {
                 None
             }
         }
-        UiEventType::WindowMaximize => Some(WidgetEvent::WindowMaximize),
-        UiEventType::WindowMinimize => Some(WidgetEvent::WindowMinimize),
-        UiEventType::WindowRestore => Some(WidgetEvent::WindowRestore),
-        UiEventType::WindowFocus => Some(WidgetEvent::WindowFocus),
-        UiEventType::WindowBlur => Some(WidgetEvent::WindowBlur),
+        UiEventType::WindowMaximize => Some(SystemEvent::WindowMaximize),
+        UiEventType::WindowMinimize => Some(SystemEvent::WindowMinimize),
+        UiEventType::WindowRestore => Some(SystemEvent::WindowRestore),
+        UiEventType::WindowFocus => Some(SystemEvent::WindowFocus),
+        UiEventType::WindowBlur => Some(SystemEvent::WindowBlur),
         UiEventType::Timer => {
             if let UiEventPayload::Timer(ref d) = ev.payload {
-                Some(WidgetEvent::Timer { id: d.timer_id })
+                Some(SystemEvent::Timer { id: d.timer_id })
             } else {
                 None
             }
         }
         UiEventType::FileDrop => {
             if let UiEventPayload::FileDrop(ref d) = ev.payload {
-                Some(WidgetEvent::FileDrop {
+                Some(SystemEvent::FileDrop {
                     files: d.files.clone(),
                     position: d.position,
                 })

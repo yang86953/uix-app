@@ -396,7 +396,9 @@ impl Mat4 {
     /// `Transform → Mat4 → Transform` 等值。
     pub fn to_transform(&self) -> Option<crate::draw::Transform> {
         let (a, b, tx, c, d, ty) = self.to_affine_2d()?;
-        Some(crate::draw::Transform { m: [a, b, tx, c, d, ty] })
+        Some(crate::draw::Transform {
+            m: [a, b, tx, c, d, ty],
+        })
     }
 
     /// 是否为透视投影

@@ -1,8 +1,8 @@
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 // ════════════════════════════════════════════════════════════════════════════
 // QRCode
@@ -19,7 +19,7 @@ define_widget! {
         Size::new(self.size, self.size)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let bg = Color::white();
         let fg = Color::black();
@@ -98,8 +98,8 @@ define_widget! {
         Size::new(500.0, 200.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::PointerDown { pos, .. } = event {
             let half = 220.0;
             let item_h = 28.0;
             if pos.x < half {
@@ -136,7 +136,7 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let text = ctx.tokens().color_text();
@@ -241,9 +241,9 @@ define_widget! {
         Size::new(300.0, 100.0 + list_h)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { .. } => {
+            SystemEvent::PointerDown { .. } => {
                 self.add_file(&format!("upload_{}.txt", self.file_list.len() + 1));
                 if let Some(ref mut cb) = self.on_change {
                     cb("upload", UploadStatus::Pending);
@@ -254,7 +254,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let text_sec = ctx.tokens().color_text_quaternary();
@@ -393,7 +393,7 @@ define_widget! {
         Size::zero()
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if self.text.is_empty() { return; }
         let mut c = self.color;
         c.a = (self.opacity * 255.0) as u8;

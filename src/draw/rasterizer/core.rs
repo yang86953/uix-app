@@ -1,12 +1,8 @@
-//! 光栅化核心工具——所有纯函数工具，rasterizer 子模块和 Canvas2D 实现共用。
-//!
-//! 消除 rasterizer/mod.rs ↔ engine/cpu/canvas_2d.rs 之间的代码重复。
-
-use crate::native::Rect;
+//! Shared rasterizer helpers used by the software renderer and raster modules.
 
 use crate::draw::primitives::types::Radius;
+use crate::native::Rect;
 
-/// 预乘 RGBA 颜色。
 #[inline]
 pub fn premul(c: u32) -> u32 {
     let a = (c >> 24) & 0xFF;
@@ -19,7 +15,6 @@ pub fn premul(c: u32) -> u32 {
     (a << 24) | (r << 16) | (g << 8) | b
 }
 
-/// 合成 α 通道（SrcOver）。
 #[inline]
 pub fn blend_srcover(
     src_a: u32,
@@ -41,7 +36,6 @@ pub fn blend_srcover(
     (out_a.min(255) << 24) | (out_r.min(255) << 16) | (out_g.min(255) << 8) | out_b.min(255)
 }
 
-/// 对 premul 颜色应用透明度系数。
 #[inline]
 pub fn apply_opacity(color: u32, opacity: f32) -> u32 {
     if opacity >= 1.0 - 1e-6 {
@@ -57,7 +51,6 @@ pub fn apply_opacity(color: u32, opacity: f32) -> u32 {
         | (b as u32).min(255)
 }
 
-/// 将 Color 转为预乘 u32，并应用透明度。
 #[inline]
 pub fn color_to_premul(r: u8, g: u8, b: u8, a: u8, opacity: f32) -> u32 {
     let a = (a as f32 * opacity) as u8;
@@ -71,7 +64,6 @@ pub fn color_to_premul(r: u8, g: u8, b: u8, a: u8, opacity: f32) -> u32 {
     (ra << 24) | (r << 16) | (g << 8) | b
 }
 
-/// 向像素缓冲写入一个像素（SrcOver 混合，考虑裁剪）。
 #[inline]
 pub fn put_pixel(
     pixels: &mut [u32],
@@ -114,25 +106,6 @@ pub fn put_pixel(
     pixels[idx] = out;
 }
 
-/// `put_pixel` 别名（向下兼容）。
-#[inline]
-pub fn put_pixel_raw(
-    pixels: &mut [u32],
-    stride: i32,
-    x: i32,
-    y: i32,
-    clip_x0: i32,
-    clip_y0: i32,
-    clip_x1: i32,
-    clip_y1: i32,
-    color: u32,
-) {
-    put_pixel(
-        pixels, stride, x, y, clip_x0, clip_y0, clip_x1, clip_y1, color,
-    );
-}
-
-/// 写入一个带抗锯齿覆盖率的像素。
 #[inline]
 pub fn put_pixel_aa(
     pixels: &mut [u32],
@@ -197,7 +170,6 @@ pub fn put_pixel_aa(
         | (out_b_p.round() as u32).min(255);
 }
 
-/// 填充一整行上的连续区间，针对不透明颜色优化。
 #[inline]
 pub fn fill_span(
     pixels: &mut [u32],
@@ -231,7 +203,6 @@ pub fn fill_span(
     }
 }
 
-/// 填充矩形区域。
 #[inline]
 pub fn fill_rect_raw(
     pixels: &mut [u32],
@@ -262,7 +233,6 @@ pub fn fill_rect_raw(
     }
 }
 
-/// 对浮点矩形取整为像素矩形。
 #[inline]
 pub fn rect_to_pixels(r: &Rect) -> (i32, i32, i32, i32) {
     let x0 = (r.x + 0.5).floor() as i32;
@@ -272,7 +242,6 @@ pub fn rect_to_pixels(r: &Rect) -> (i32, i32, i32, i32) {
     (x0, y0, x1 - x0, y1 - y0)
 }
 
-/// 将浮点 clip 转换为整数边界。
 #[inline]
 pub fn clip_to_int(r: &Rect) -> (i32, i32, i32, i32) {
     (
@@ -283,7 +252,6 @@ pub fn clip_to_int(r: &Rect) -> (i32, i32, i32, i32) {
     )
 }
 
-/// 求两个矩形的交集。
 #[inline]
 pub fn intersect_rect(a: &Rect, b: &Rect) -> Option<Rect> {
     let x = a.x.max(b.x);
@@ -297,7 +265,6 @@ pub fn intersect_rect(a: &Rect, b: &Rect) -> Option<Rect> {
     }
 }
 
-/// Signed distance field for a rounded rectangle with per-corner radii.
 #[inline]
 pub fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {
     if rad.tl == 0.0 && rad.tr == 0.0 && rad.bl == 0.0 && rad.br == 0.0 {
@@ -318,17 +285,11 @@ pub fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {
     let py = uy - cy;
 
     let cr = if px < 0.0 {
-        if py < 0.0 {
-            rad.tl
-        } else {
-            rad.bl
-        }
+        if py < 0.0 { rad.tl } else { rad.bl }
+    } else if py < 0.0 {
+        rad.tr
     } else {
-        if py < 0.0 {
-            rad.tr
-        } else {
-            rad.br
-        }
+        rad.br
     };
 
     let qx = px.abs() - half_w + cr;
@@ -340,7 +301,6 @@ pub fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &Radius) -> f32 {
     outside + inside - cr
 }
 
-/// Signed distance from point to a line segment.
 #[inline]
 pub fn line_segment_sdf(ux: f32, uy: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     let dx = x2 - x1;
@@ -358,26 +318,22 @@ pub fn line_segment_sdf(ux: f32, uy: f32, x1: f32, y1: f32, x2: f32, y2: f32) ->
     ((ux - px).powi(2) + (uy - py).powi(2)).sqrt()
 }
 
-/// Convert SDF value to pixel coverage.
 #[inline]
 pub fn sdf_to_coverage(sd: f32) -> f32 {
     ((0.5 - sd) / (2.0 * 0.5)).clamp(0.0, 1.0)
 }
 
-/// Convert SDF value to pixel coverage with custom AA half-width.
 #[inline]
 pub fn sdf_to_coverage_aa(sd: f32, aa_half: f32) -> f32 {
     ((aa_half - sd) / (2.0 * aa_half)).clamp(0.0, 1.0)
 }
 
-/// Shadow coverage with smooth Gaussian-like falloff.
 #[inline]
 pub fn shadow_coverage(sd: f32, blur: f32) -> f32 {
     let t = ((blur - sd) / (2.0 * blur)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Wider, softer shadow falloff for ambient layers.
 #[inline]
 pub fn shadow_coverage_ambient(sd: f32, blur: f32) -> f32 {
     let half = blur * 0.5;

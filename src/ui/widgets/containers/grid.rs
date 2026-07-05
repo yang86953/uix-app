@@ -1,13 +1,13 @@
 //! Grid widget — CSS Grid-like layout container.
 
-use crate::ui::traits::layout::LayoutEngine;
 use crate::define_widget;
-use crate::ui::layout::engine::{child_from_tree, GridLayout, LayoutChild};
-use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
-use crate::draw::painting::RenderContext;
-use crate::ui::{WidgetId, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{EdgeInsets, Rect, Size};
+use crate::ui::layout::engine::{child_from_tree, GridLayout, LayoutChild};
+use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
+use crate::ui::traits::layout::LayoutEngine;
+use crate::ui::{WidgetId, WidgetTree};
 
 define_widget! {
     /// Grid container widget.
@@ -31,7 +31,7 @@ define_widget! {
         Size::new(self.fixed_width.unwrap_or(0.0), self.fixed_height.unwrap_or(0.0))
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(c) = self.bg_color {
             let r = if self.border_radius > 0.0 { Some(Radius::uniform(self.border_radius)) } else { None };
             ctx.fill_rect(frame, c, r);

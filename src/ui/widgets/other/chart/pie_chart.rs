@@ -1,10 +1,10 @@
 //! PieChart — pie / donut chart with proportional circular sectors.
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Point, Rect, Size};
+use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone)]
 pub struct PieData {
@@ -35,7 +35,7 @@ define_widget! {
         Size::new(s, s)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let n = self.data.len();
         if n == 0 { return; }
         let total: f32 = self.data.iter().map(|d| d.value).sum();

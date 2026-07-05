@@ -3,21 +3,17 @@
 //! 支持列表项渲染、header/footer、bordered、size 等选项。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Point, Rect, Size};
-
-/// 列表尺寸。
-/// （已统一为 crate::native::ControlSize，保留别名以兼容旧代码。）
-pub use crate::native::ControlSize as ListSize;
+use crate::native::{ControlSize, Point, Rect, Size};
+use crate::ui::WidgetTree;
 
 /// List 尺寸对应的行高。
-pub fn list_item_height(size: ListSize) -> f32 {
+pub fn list_item_height(size: ControlSize) -> f32 {
     match size {
-        ListSize::Small => 32.0,
-        ListSize::Medium => 40.0,
-        ListSize::Large => 48.0,
+        ControlSize::Small => 32.0,
+        ControlSize::Medium => 40.0,
+        ControlSize::Large => 48.0,
     }
 }
 
@@ -27,7 +23,7 @@ define_widget! {
         header: String,
         footer: String,
         bordered: bool,
-        list_size: ListSize,
+        list_size: ControlSize,
         items: Vec<String>,
         load_more_text: String,
     }
@@ -40,7 +36,7 @@ define_widget! {
         Size::new(400.0, h.max(100.0))
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border_secondary();
         let text = ctx.tokens().color_text();
@@ -104,7 +100,7 @@ impl List {
             header: String::new(),
             footer: String::new(),
             bordered: true,
-            list_size: ListSize::Medium,
+            list_size: ControlSize::Medium,
             items: Vec::new(),
             load_more_text: String::new(),
         }
@@ -125,7 +121,7 @@ impl List {
         self.bordered = v;
         self
     }
-    pub fn size(mut self, s: ListSize) -> Self {
+    pub fn size(mut self, s: ControlSize) -> Self {
         self.list_size = s;
         self
     }

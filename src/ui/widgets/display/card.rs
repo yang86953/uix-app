@@ -1,15 +1,15 @@
 //! Card widget — Ant Design style container with elevation, shadow, optional
 //! title, body, hover feedback, and configurable border radius.
 
-use crate::ui::children::WidgetChildren;
 use crate::define_widget;
+use crate::draw::painting::PaintContext;
+use crate::draw::{Color, Radius};
+use crate::native::{EdgeInsets, Point, Rect, Size};
+use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetComponent, WidgetEvent, WidgetId, WidgetTree};
-use crate::draw::{Color, Radius};
-use crate::native::{EdgeInsets, Point, Rect, Size};
+use crate::ui::{EventResult, WidgetComponent, SystemEvent, WidgetId, WidgetTree};
 
 define_widget! {
     /// Card widget with shadow elevation, hover highlight, and content padding.
@@ -37,11 +37,11 @@ define_widget! {
         self.children.take()
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.hoverable {
             match event {
-                WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
-                WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
+                SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
+                SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
                 _ => EventResult::NotHandled,
             }
         } else {
@@ -49,7 +49,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let border_radius_lg = ctx.tokens().border_radius_lg();
         let bg_container = ctx.tokens().color_bg_container();
         let bg_elevated = ctx.tokens().color_bg_elevated();
@@ -201,7 +201,7 @@ define_widget! {
 /// Each elevation level scales the layers differently so the visual depth
 /// increases naturally: the contact shadow grows slightly, while the ambient
 /// and glow layers expand significantly.
-fn draw_elevation_shadow(ctx: &mut RenderContext, frame: Rect, elevation: u8) {
+fn draw_elevation_shadow(ctx: &mut PaintContext, frame: Rect, elevation: u8) {
     if elevation == 0 {
         return;
     }

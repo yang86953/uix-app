@@ -45,10 +45,7 @@ pub fn create_engine(
                     }
                 },
                 Err(e) => {
-                    warn_fn(format!(
-                        "GPU: 上下文创建失败({}), 回退 CPU",
-                        e.short_what()
-                    ));
+                    warn_fn(format!("GPU: 上下文创建失败({}), 回退 CPU", e.short_what()));
                 }
             }
         }

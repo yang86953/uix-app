@@ -252,9 +252,9 @@ pub fn with_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
 }
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 // LocaleProvider — 为子树注入国际化文案。
 define_widget! {
@@ -267,9 +267,9 @@ define_widget! {
         Size::new(0.0, 0.0)
     }
 
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
+    render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
-    on_event => (&mut self, _event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
     }
 }

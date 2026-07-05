@@ -5,9 +5,9 @@ use crate::native::Rect;
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::flattener;
 use crate::draw::primitives::path::Path;
-use crate::draw::rasterizer::polygon;
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::primitives::types::Radius;
+use crate::draw::rasterizer::polygon;
 
 use super::fill;
 use super::{

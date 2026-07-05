@@ -7,8 +7,8 @@ use crate::native::Rect;
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::flattener;
 use crate::draw::primitives::path::{FillRule, Path};
-use crate::draw::rasterizer::polygon;
 use crate::draw::primitives::types::Radius;
+use crate::draw::rasterizer::polygon;
 
 use super::{
     clip_to_int, color_to_premul, fill_rect_raw, intersect_rect, put_pixel_aa, rect_to_pixels,

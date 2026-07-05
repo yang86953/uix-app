@@ -7,8 +7,8 @@
 use crate::native::Rect;
 
 use crate::draw::primitives::color::Color;
-use crate::draw::rasterizer::core as rast;
 use crate::draw::primitives::types::{BlendMode, Transform};
+use crate::draw::rasterizer::core as rast;
 
 /// 渲染状态快照（用于 save/restore）。
 #[derive(Clone)]
@@ -207,7 +207,7 @@ impl RasterRenderer {
 
     // ═══ 像素操作 ═══
 
-    fn put_pixel_raw(&self, pixels: &mut [u32], w: i32, h: i32, x: i32, y: i32, color: u32) {
+    fn blend_pixel(&self, pixels: &mut [u32], w: i32, h: i32, x: i32, y: i32, color: u32) {
         let (cx0, cy0, cx1, cy1) = self.clip_int;
         if x < cx0.max(0) || y < cy0.max(0) || x >= cx1.min(w) || y >= cy1.min(h) {
             return;
@@ -254,7 +254,7 @@ impl RasterRenderer {
             return;
         }
         if coverage >= 1.0 - 1e-6 {
-            self.put_pixel_raw(pixels, w, h, x, y, premul_color);
+            self.blend_pixel(pixels, w, h, x, y, premul_color);
             return;
         }
         if coverage <= 0.0 {
@@ -312,7 +312,7 @@ impl RasterRenderer {
             return;
         }
         for dx in 0..span_w {
-            self.put_pixel_raw(pixels, w, h, x + dx, y, color);
+            self.blend_pixel(pixels, w, h, x + dx, y, color);
         }
     }
 
@@ -334,7 +334,12 @@ impl RasterRenderer {
 
     // ═══ SDF 工具 ═══
 
-    pub(crate) fn rounded_rect_sdf(ux: f32, uy: f32, r: &Rect, rad: &crate::draw::primitives::types::Radius) -> f32 {
+    pub(crate) fn rounded_rect_sdf(
+        ux: f32,
+        uy: f32,
+        r: &Rect,
+        rad: &crate::draw::primitives::types::Radius,
+    ) -> f32 {
         rast::rounded_rect_sdf(ux, uy, r, rad)
     }
     pub(crate) fn line_segment_sdf(ux: f32, uy: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {

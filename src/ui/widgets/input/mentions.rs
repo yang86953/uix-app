@@ -3,10 +3,10 @@
 //! 基于 Input 交互模式，增加触发字符检测和建议弹出。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
-use crate::draw::{Color, traits::GraphicsEngine};
+use crate::draw::painting::PaintContext;
+use crate::draw::{traits::GraphicsEngine, Color};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 define_widget! {
     /// Mentions — @ 提及输入框。
@@ -37,12 +37,12 @@ define_widget! {
         Size::new(80.0, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { .. } => { self.focused = true; EventResult::Handled }
-            WidgetEvent::MouseMove { .. } => EventResult::NotHandled,
-            WidgetEvent::FocusOut => { self.focused = false; self.suggesting = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::PointerDown { .. } => { self.focused = true; EventResult::Handled }
+            SystemEvent::PointerMove { .. } => EventResult::NotHandled,
+            SystemEvent::FocusOut => { self.focused = false; self.suggesting = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Backspace => {
                         if self.suggesting {
@@ -89,7 +89,7 @@ define_widget! {
                     _ => EventResult::NotHandled,
                 }
             }
-            WidgetEvent::KeyPress { text } => {
+            SystemEvent::TextInput { text } => {
                 if text.chars().any(|c| c.is_control()) {
                     return EventResult::NotHandled;
                 }
@@ -120,7 +120,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();
         let text_color = ctx.tokens().color_text();

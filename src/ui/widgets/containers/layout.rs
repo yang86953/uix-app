@@ -3,10 +3,10 @@
 //! 组合使用构建标准页面布局。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
-use crate::draw::{Color, traits::GraphicsEngine};
+use crate::draw::painting::PaintContext;
+use crate::draw::{traits::GraphicsEngine, Color};
 use crate::native::{Rect, Size};
+use crate::ui::WidgetTree;
 
 define_widget! {
     /// Layout — 页面布局容器（flex 列）。
@@ -20,7 +20,7 @@ define_widget! {
 
     flex_grow => (&self) -> f32 { 1.0 }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
         }
@@ -38,7 +38,7 @@ define_widget! {
         Size::new(0.0, self.height)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
         }
@@ -63,7 +63,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
         }
@@ -89,7 +89,7 @@ define_widget! {
 
     flex_grow => (&self) -> f32 { 1.0 }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
         }
@@ -114,7 +114,7 @@ define_widget! {
         Size::new(0.0, self.height)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
         }

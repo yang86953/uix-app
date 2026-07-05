@@ -2,7 +2,7 @@
 
 use super::*;
 
-use crate::draw::painting::RenderContext;
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect};
 
@@ -11,7 +11,7 @@ use crate::native::{Point, Rect};
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Input {
-    pub(super) fn render_textarea(&self, frame: Rect, ctx: &mut RenderContext) {
+    pub(super) fn render_textarea(&self, frame: Rect, ctx: &mut PaintContext) {
         let fill_tertiary = ctx.tokens().color_fill_tertiary();
         let border_color = ctx.tokens().color_border();
         let primary = ctx.tokens().color_primary();
@@ -159,7 +159,7 @@ impl Input {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Input {
-    pub(super) fn render_singleline(&self, frame: Rect, ctx: &mut RenderContext) {
+    pub(super) fn render_singleline(&self, frame: Rect, ctx: &mut PaintContext) {
         let h = input_height(self.input_size).min(frame.h);
         let input_frame = Rect::new(frame.x, frame.y, frame.w, h);
 

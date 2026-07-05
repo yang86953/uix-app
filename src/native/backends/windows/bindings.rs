@@ -1,15 +1,13 @@
 // ============================================================================
-// bindings.rs — Windows 结构体定义（与 windows crate 重复，保留为过渡期使用）
+// bindings.rs - local Win32 raw FFI structs used by the Windows backend.
 //
-// 这些定义与 windows crate 中的类型对应，但因该 crate 的 newtype 包装
-// （HWND/*mut c_void, WPARAM(usize) 等）与本项目的 raw-pointer 风格不兼容，
-// 暂时保留本地定义。后续逐步迁移到 windows crate。
+// These definitions keep backend internals in raw-pointer form at the native
+// boundary. Higher layers only see native traits and platform-neutral types.
 // ============================================================================
-
 #![cfg(windows)]
 #![allow(nonstandard_style)]
 #![allow(clippy::upper_case_acronyms)]
-// Allow non-standard names like RECT, MSG, WNDCLASSEXW for Windows API compatibility.
+// Allow Win32 names such as RECT, MSG, and WNDCLASSEXW at the FFI boundary.
 
 // ════════════════════════════════════════════════════════════════════════════
 // 数据结构（仅用于窗口管理 + 事件循环）

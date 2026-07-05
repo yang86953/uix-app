@@ -1,9 +1,9 @@
-use crate::ui::widgets::display::tree::TreeNode;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect, Size};
+use crate::ui::widgets::display::tree::TreeNode;
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {
     pub struct TreeSelect {
@@ -22,9 +22,9 @@ define_widget! {
         Size::new(200.0, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 if pos.y >= 0.0 && pos.y <= 32.0 {
                     self.open = !self.open;
                     return EventResult::Handled;
@@ -46,7 +46,7 @@ define_widget! {
                 self.open = false;
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if self.open && pos.y > 32.0 {
                     let flat = self.flatten_nodes();
                     let idx = ((pos.y - 32.0) / 28.0) as usize;
@@ -60,7 +60,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let primary = ctx.tokens().color_primary();

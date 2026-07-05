@@ -1,10 +1,10 @@
 //! Avatar — circular avatar with initials/text.
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Rect, Size};
+use crate::ui::WidgetTree;
 
 define_widget! {
     pub struct Avatar {
@@ -20,7 +20,7 @@ define_widget! {
         Size::new(self.size, self.size)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let primary_bg = ctx.tokens().color_primary_bg();
         let primary = ctx.tokens().color_primary();
         let bg = self.bg_color.unwrap_or(primary_bg);

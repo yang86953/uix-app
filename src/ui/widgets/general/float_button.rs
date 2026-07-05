@@ -3,10 +3,10 @@
 //! 固定在屏幕角落的圆形按钮，支持图标、tooltip、badge 等。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 // FloatButton — 浮动操作按钮。
 define_widget! {
@@ -24,15 +24,15 @@ define_widget! {
         Size::zero() // 不占用布局空间
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
-            WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
+            SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
+            SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
             _ => EventResult::NotHandled
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();

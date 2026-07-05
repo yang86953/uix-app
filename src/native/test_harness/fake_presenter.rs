@@ -1,7 +1,7 @@
 //! Fake 呈现器 — 记录每次像素输出。
 
-use crate::native::traits::present::IPresenter;
 use crate::core::error::Result;
+use crate::native::traits::present::IPresenter;
 use crate::native::PresentDamage;
 
 #[derive(Debug, Clone)]

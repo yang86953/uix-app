@@ -1,10 +1,10 @@
 //! Radio widget — 单选组，支持 horizontal/vertical、disabled、hover。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 /// 方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,10 +42,10 @@ define_widget! {
         }
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 if let Some(idx) = self.option_at(pos.x, pos.y) {
                     self.selected = idx;
                     if let Some(ref mut cb) = self.on_change { cb(idx); }
@@ -53,15 +53,15 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 self.hovered_idx = self.option_at(pos.x, pos.y);
                 EventResult::Handled
             }
-            WidgetEvent::HoverEnter => { EventResult::Handled }
-            WidgetEvent::HoverLeave => { self.hovered_idx = None; EventResult::Handled }
-            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::PointerEnter => { EventResult::Handled }
+            SystemEvent::PointerLeave => { self.hovered_idx = None; EventResult::Handled }
+            SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
             match key {
                 KeyCode::Right | KeyCode::Down => {
                     let next = self.selected + 1;
@@ -86,7 +86,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let cy = frame.y + self.item_h * 0.5;
 
         match self.direction {
@@ -139,7 +139,7 @@ impl Radio {
 
     fn render_radio_item(
         &self,
-        ctx: &mut RenderContext,
+        ctx: &mut PaintContext,
         i: usize,
         opt: &str,
         x: f32,

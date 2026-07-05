@@ -1,9 +1,9 @@
 //! Empty widget — 空状态占位（图标 + 描述居中）。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::native::{Rect, Size};
+use crate::ui::WidgetTree;
 
 define_widget! {
     /// Empty — 空状态展示。
@@ -17,7 +17,7 @@ define_widget! {
         Size::new(160.0, 100.0)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let desc = if self.description.is_empty() { loc.empty_description } else { &self.description };
         let text_secondary = ctx.tokens().color_text_quaternary();

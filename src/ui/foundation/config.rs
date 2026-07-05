@@ -1,6 +1,7 @@
+use crate::native::ControlSize;
+use crate::ui::style::StyleSet;
 use crate::ui::theme::Theme;
 use std::cell::RefCell;
-use crate::native::ControlSize;
 
 /// 组件全局默认配置。
 #[derive(Clone)]
@@ -37,7 +38,7 @@ pub struct ComponentOverrides {
 
 #[derive(Clone, Default)]
 pub struct ButtonOverrides {
-    pub variant: Option<crate::ui::widgets::ButtonVariant>,
+    pub style_set: Option<StyleSet>,
 }
 
 #[derive(Clone, Default)]
@@ -86,9 +87,9 @@ pub fn with_config<T>(config: &ComponentConfig, f: impl FnOnce() -> T) -> T {
 }
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {
     /// ConfigProvider — 为子树注入全局组件默认配置。
@@ -102,9 +103,9 @@ define_widget! {
         Size::new(0.0, 0.0)
     }
 
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
+    render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
-    on_event => (&mut self, _event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
     }
 }
@@ -142,7 +143,7 @@ impl ConfigProvider {
 /// 使用方式：
 /// ```ignore
 /// ConfigProvider::new().size(Large).wrap(
-///     tree! { Container::new() => [ Button::new("OK") ] }
+///     tree! { Container::new() => [ button("OK").widget() ] }
 /// )
 /// ```
 impl ConfigProvider {

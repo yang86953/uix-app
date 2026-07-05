@@ -10,8 +10,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use crate::native::traits::event::UiEvent;
 use crate::native::shared::{OsEventSource, WindowState};
+use crate::native::traits::event::UiEvent;
 use crate::native::traits::*;
 
 use crate::native::backends::linux::console::LinuxConsole;

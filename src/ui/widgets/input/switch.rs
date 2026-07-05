@@ -1,9 +1,9 @@
 //! Switch — on/off toggle switch.
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 define_widget! {
     pub struct Switch {
@@ -21,20 +21,20 @@ define_widget! {
         Size::new(self.size * 2.0 - 4.0, self.size + 4.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            WidgetEvent::MouseDown { .. } => {
+            SystemEvent::PointerDown { .. } => {
                 self.checked = !self.checked;
                 self.focused = true;
                 if let Some(ref mut cb) = self.on_change { cb(self.checked); }
                 EventResult::Handled
             }
-            WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
-            WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
-            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
+            SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
+            SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 if *key == KeyCode::Space || *key == KeyCode::Enter {
                     self.checked = !self.checked;
                     if let Some(ref mut cb) = self.on_change { cb(self.checked); }
@@ -47,7 +47,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         let primary_border = ctx.tokens().color_primary_border();

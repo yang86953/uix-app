@@ -1,10 +1,10 @@
 //! BackTop 回到顶部 — 滚动超过阈值时显示返回顶部按钮。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {
     /// BackTop — 回到顶部按钮。
@@ -19,16 +19,16 @@ define_widget! {
         Size::new(40.0, 40.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         // 点击回到顶部
-        if let WidgetEvent::MouseDown { .. } = event {
+        if let SystemEvent::PointerDown { .. } = event {
             EventResult::Handled
         } else {
             EventResult::NotHandled
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if !self.visible { return; }
 
         let primary = ctx.tokens().color_primary();

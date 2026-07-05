@@ -13,8 +13,8 @@ use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crate::native::traits::event::UiEvent;
 use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
+use crate::native::traits::event::UiEvent;
 use crate::native::traits::*;
 use crate::native::{Errc, Error};
 

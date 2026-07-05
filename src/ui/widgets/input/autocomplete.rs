@@ -3,10 +3,10 @@
 //! 输入时弹出匹配选项列表，支持键盘导航选择。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 // AutoComplete — 自动完成输入框。
 define_widget! {
@@ -25,9 +25,9 @@ define_widget! {
         Size::new(200.0, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 if pos.y >= 0.0 && pos.y <= 32.0 {
                     self.focus = true;
                     self.open = true;
@@ -46,9 +46,9 @@ define_widget! {
                 self.open = false;
                 EventResult::NotHandled
             }
-            WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
-            WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
+            SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 match key {
                     crate::ui::KeyCode::Down if self.open => {
                         self.selected_idx = (self.selected_idx + 1).min(self.filtered.len().saturating_sub(1));
@@ -71,7 +71,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let primary = ctx.tokens().color_primary();

@@ -1,5 +1,5 @@
-use crate::ui::{EventResult, WidgetEvent};
-use crate::native::Point;
+﻿use crate::native::Point;
+use crate::ui::{EventResult, SystemEvent};
 
 /// Callback types for user interactions.
 pub type ClickCallback = Box<dyn FnMut(&Point)>;
@@ -9,7 +9,7 @@ pub type SubmitCallback = Box<dyn FnMut()>;
 /// Manages mouse/touch interaction callbacks.
 ///
 /// 事件坐标应为相对于 widget 左上角的偏移量。
-/// `handle_event` 的 `widget_size` 参数用于验证 `MouseUp` 位置
+/// `handle_event` 的 `widget_size` 参数用于验证 `PointerUp` 位置
 /// 是否仍在 widget 范围内，避免在 widget 外释放误触 click。
 #[derive(Default)]
 pub struct InteractionManager {
@@ -18,7 +18,7 @@ pub struct InteractionManager {
     on_submit: Option<SubmitCallback>,
     hovered: bool,
     pressed: bool,
-    /// MouseDown 时的位置，用于 MouseUp 边界验证。
+    /// PointerDown 时的位置，用于 PointerUp 边界验证。
     press_pos: Option<Point>,
 }
 
@@ -47,15 +47,15 @@ impl InteractionManager {
     }
 
     /// 处理事件。`widget_size` 为 widget 的 (宽度, 高度)，
-    /// 用于验证 MouseUp 是否在 widget 范围内触发 click。
-    pub fn handle_event(&mut self, event: &WidgetEvent, widget_size: (f32, f32)) -> EventResult {
+    /// 用于验证 PointerUp 是否在 widget 范围内触发 click。
+    pub fn handle_event(&mut self, event: &SystemEvent, widget_size: (f32, f32)) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 self.pressed = true;
                 self.press_pos = Some(*pos);
                 EventResult::Handled
             }
-            WidgetEvent::MouseUp { pos, .. } => {
+            SystemEvent::PointerUp { pos, .. } => {
                 self.pressed = false;
                 // 仅在按下和松开都在 widget 范围内才触发 click
                 let within_bounds = pos.x >= 0.0
@@ -76,11 +76,11 @@ impl InteractionManager {
                 self.press_pos = None;
                 EventResult::Handled
             }
-            WidgetEvent::HoverEnter => {
+            SystemEvent::PointerEnter => {
                 self.hovered = true;
                 EventResult::Handled
             }
-            WidgetEvent::HoverLeave => {
+            SystemEvent::PointerLeave => {
                 self.hovered = false;
                 EventResult::Handled
             }

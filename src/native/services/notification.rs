@@ -13,7 +13,7 @@
 use crate::native::StatusLevel;
 use std::collections::VecDeque;
 
-/// 通知级别（统一使用 uix_platform::StatusLevel）。
+/// 通知级别（统一使用 uix::native::StatusLevel）。
 pub use crate::native::StatusLevel as NotificationLevel;
 
 /// 单条通知条目，作为 Toast 组件的数据源。

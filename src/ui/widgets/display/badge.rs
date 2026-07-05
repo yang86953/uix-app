@@ -3,11 +3,11 @@
 //! 支持物理单位：`offset()` 接受 mm/cm/pt，自动适配 DPI。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
 use crate::native::{Rect, Size};
+use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BadgeStatus {
@@ -29,7 +29,7 @@ define_widget! {
         show_zero: bool,
         text: String,
 
-        // ── 2D 偏移（f32 像素，向后兼容）──
+        // ── 2D 偏移（f32 像素）──
         offset_x: f32,
         offset_y: f32,
 
@@ -52,7 +52,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // 计算实际偏移：物理单位优先
         let (off_x, off_y) = if let Some((ux, uy)) = self.offset_unit {
             let dpi = ctx.spatial().dpi();
@@ -148,7 +148,7 @@ impl Badge {
         self
     }
 
-    /// 像素偏移（向后兼容）。
+    /// 像素偏移。
     pub fn offset(mut self, x: f32, y: f32) -> Self {
         self.offset_x = x;
         self.offset_y = y;

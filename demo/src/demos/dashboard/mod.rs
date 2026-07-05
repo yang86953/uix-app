@@ -1,4 +1,4 @@
-//! Ant Design 5 全组件展示 — 分类多页面版。
+﻿//! Ant Design 5 全组件展示 — 分类多页面版。
 //!
 //! 运行：`cargo run --bin uix-demo`（可选 `--gpu`）
 //!
@@ -242,9 +242,7 @@ fn build_demo_tree(
         let title_node = page_title(tk, icon, label);
         let page_content = build_page(i, tk);
         page_nodes.push(WidgetNode::new(
-            Box::new(
-                Container::new().dir(FlexDirection::Column).flex_grow(1.0),
-            ),
+            Box::new(Container::new().dir(FlexDirection::Column).flex_grow(1.0)),
             vec![title_node, page_content],
         ));
         // WidgetId 在树构建后才能得到，这里先占位
@@ -322,7 +320,7 @@ pub(super) fn switch_page(tree: &mut WidgetTree, state: &DemoState, active: usiz
     // 显示新页面
     if active < ids.len() {
         tree.set_visible(ids[active], true);
-        tree.mark_dirty_subtree(ids[active]);
+        tree.invalidate_paint_subtree(ids[active]);
     }
     // 标记全场重绘（树结构未变，render loop 的 tree_version 检查会触发再布局）
     tree.mark_full_frame_dirty();
@@ -407,16 +405,17 @@ pub fn run_gui_demo() {
         }
     };
 
-    let mut platform_window = match platform
-        .window_manager()
-        .create_window("UIX — 组件库", INIT_W, INIT_H)
-    {
-        Ok(w) => w,
-        Err(e) => {
-            error_fn(format!("create_window: {}", e.short_what()));
-            return;
-        }
-    };
+    let mut platform_window =
+        match platform
+            .window_manager()
+            .create_window("UIX — 组件库", INIT_W, INIT_H)
+        {
+            Ok(w) => w,
+            Err(e) => {
+                error_fn(format!("create_window: {}", e.short_what()));
+                return;
+            }
+        };
     platform_window.center_on_screen();
     platform_window.show();
     platform_window.raise();
@@ -506,7 +505,11 @@ mod tests {
         assert!(nav_item_ys.len() >= 2);
         let unique_ys: std::collections::HashSet<i32> =
             nav_item_ys.iter().map(|y| y.round() as i32).collect();
-        assert_eq!(unique_ys.len(), nav_item_ys.len(), "nav overlap: {nav_item_ys:?}");
+        assert_eq!(
+            unique_ys.len(),
+            nav_item_ys.len(),
+            "nav overlap: {nav_item_ys:?}"
+        );
 
         // 按钮行内 5 个按钮应横向错开
         let page0 = page_ids[0];
@@ -561,10 +564,8 @@ mod tests {
             .into_iter()
             .filter_map(|(id, _)| tree.get(id).map(|n| n.frame().y))
             .collect();
-        let unique_after: std::collections::HashSet<i32> = nav_item_ys_after
-            .iter()
-            .map(|y| y.round() as i32)
-            .collect();
+        let unique_after: std::collections::HashSet<i32> =
+            nav_item_ys_after.iter().map(|y| y.round() as i32).collect();
         assert_eq!(
             unique_after.len(),
             nav_item_ys_after.len(),
@@ -631,7 +632,8 @@ mod tests {
         engine.initialize(INIT_W, INIT_H).unwrap();
         let mut renderer = FrameRenderer::new();
         let theme = ThemeSnapshot::new(&tk);
-        let fs = FontService::new();
+        let platform = uix::native::create_platform().expect("platform");
+        let fs = create_font_service(platform.as_ref());
         let img = ImageService::new();
         let region = tree.dirty_region();
 
@@ -657,11 +659,11 @@ mod tests {
         let stride = canvas.width() as usize;
         let pixels = canvas.pixels_mut();
 
-        // 在第二个导航项区域采样（非 active，应有文字或图标像素）
+        // 在第二个导航项的文字/图标区域采样（背景与侧栏同色，跳过左侧背景区）
         let (_, second) = &nav_items[1];
-        let sx = second.x as i32;
+        let sx = (second.x + 40.0) as i32;
         let sy = second.y as i32;
-        let sw = second.w as i32;
+        let sw = (second.w - 40.0) as i32;
         let sh = second.h as i32;
         let bg = tk.color_bg_container.to_rgba();
         let mut non_bg = 0usize;
@@ -688,7 +690,10 @@ mod tests {
         for y in ay..(ay + ah).min(INIT_H) {
             for x in ax..(ax + aw).min(INIT_W) {
                 let idx = y as usize * stride + x as usize;
-                if idx < pixels.len() && pixels[idx] != bg && pixels[idx] != tk.color_primary_bg.to_rgba() {
+                if idx < pixels.len()
+                    && pixels[idx] != bg
+                    && pixels[idx] != tk.color_primary_bg.to_rgba()
+                {
                     active_non_bg += 1;
                 }
             }
@@ -696,6 +701,48 @@ mod tests {
         assert!(
             active_non_bg > 5,
             "active nav item should have text/icon pixels, got {active_non_bg}"
+        );
+
+        // 第二帧：节点已干净，依赖 DisplayList 重放，激活项文字/图标仍应可见
+        tree.reset_dirty();
+        tree.mark_full_frame_dirty();
+        let cached_region = tree.dirty_region();
+        renderer.render_frame(
+            &mut engine,
+            &tree,
+            FrameRenderInput {
+                rendered_first: true,
+                dirty_region: &cached_region,
+                tree_version: tree.tree_version(),
+                scroll_move: None,
+                theme: ThemeSnapshot::new(&tk),
+                font: fs.loaded_font_handle,
+                font_service: &fs,
+                image_service: &img,
+                debug_mode: false,
+                hover_pos: None,
+                metrics: None,
+            },
+        );
+
+        let canvas = engine.canvas_2d();
+        let stride = canvas.width() as usize;
+        let pixels = canvas.pixels_mut();
+        let mut active_replay_non_bg = 0usize;
+        for y in ay..(ay + ah).min(INIT_H) {
+            for x in ax..(ax + aw).min(INIT_W) {
+                let idx = y as usize * stride + x as usize;
+                if idx < pixels.len()
+                    && pixels[idx] != bg
+                    && pixels[idx] != tk.color_primary_bg.to_rgba()
+                {
+                    active_replay_non_bg += 1;
+                }
+            }
+        }
+        assert!(
+            active_replay_non_bg > 5,
+            "active nav item should keep text/icon after DisplayList replay, got {active_replay_non_bg}"
         );
 
         // 模拟第二帧：仅内容区 partial dirty（滚动/局部更新常见路径）
@@ -738,6 +785,117 @@ mod tests {
         assert!(
             non_bg_after_partial > 10,
             "nav should survive partial content repaint, got {non_bg_after_partial} non-bg"
+        );
+    }
+
+    /// 模拟 hover 触发的局部重绘，顶部不应出现透底/layout 底色接缝。
+    #[test]
+    fn demo_nav_hover_partial_repaint_no_top_seam() {
+        use uix::draw::painting::ThemeSnapshot;
+        use uix::draw::pipeline::{FrameRenderInput, FrameRenderer};
+        use uix::native::{KeyMod, Point};
+        use uix::ui::widgets::navigation::NavItem;
+        use uix::ui::SystemEvent;
+
+        let tk = DesignTokens::antd_light();
+        let (root_node, _, _) = build_demo_tree(&tk, 0);
+        let mut tree = WidgetTree::new();
+        tree.build(root_node);
+        if let Some(root) = tree.root_mut() {
+            root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+        }
+        for (i, &id) in collect_page_ids(&tree).iter().enumerate() {
+            if i != 0 {
+                tree.set_visible(id, false);
+            }
+        }
+        tree.bind_invalidation();
+        tree.layout();
+
+        let mut engine = SoftwareEngine::new();
+        engine.initialize(INIT_W, INIT_H).unwrap();
+        let mut renderer = FrameRenderer::new();
+        let platform = uix::native::create_platform().expect("platform");
+        let fs = create_font_service(platform.as_ref());
+        let img = ImageService::new();
+
+        // 首帧建立 DisplayList 缓存
+        tree.mark_full_frame_dirty();
+        let first_region = tree.dirty_region();
+        renderer.render_frame(
+            &mut engine,
+            &tree,
+            FrameRenderInput {
+                rendered_first: false,
+                dirty_region: &first_region,
+                tree_version: tree.tree_version(),
+                scroll_move: None,
+                theme: ThemeSnapshot::new(&tk),
+                font: fs.loaded_font_handle,
+                font_service: &fs,
+                image_service: &img,
+                debug_mode: false,
+                hover_pos: None,
+                metrics: None,
+            },
+        );
+        tree.reset_dirty();
+
+        let nav_items: Vec<(WidgetId, Rect)> = tree
+            .find_all_by_type::<NavItem>()
+            .into_iter()
+            .map(|(id, _)| (id, tree.get(id).unwrap().frame()))
+            .collect();
+        let (hover_id, hover_frame) = nav_items[2];
+        let hover_center = Point::new(
+            hover_frame.x + hover_frame.w * 0.5,
+            hover_frame.y + hover_frame.h * 0.5,
+        );
+        let _ = tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: hover_center,
+            mods: KeyMod::NONE,
+        });
+        let _ = hover_id;
+
+        let hover_region = tree.dirty_region();
+        assert!(
+            !hover_region.is_empty(),
+            "hover should produce paint invalidation"
+        );
+        renderer.render_frame(
+            &mut engine,
+            &tree,
+            FrameRenderInput {
+                rendered_first: true,
+                dirty_region: &hover_region,
+                tree_version: tree.tree_version(),
+                scroll_move: None,
+                theme: ThemeSnapshot::new(&tk),
+                font: fs.loaded_font_handle,
+                font_service: &fs,
+                image_service: &img,
+                debug_mode: false,
+                hover_pos: Some(hover_center),
+                metrics: None,
+            },
+        );
+
+        let canvas = engine.canvas_2d();
+        let stride = canvas.width() as usize;
+        let pixels = canvas.pixels_mut();
+        let top_y = hover_frame.y as i32;
+        let mid_x = hover_center.x as i32;
+        let idx = top_y as usize * stride + mid_x as usize;
+        let px = pixels[idx];
+        let layout_bg = tk.color_bg_layout.to_rgba();
+        let transparent = 0u32;
+        assert!(
+            px != layout_bg && px != transparent,
+            "hover item top edge should not expose layout/transparent seam, got {px:#010x}"
+        );
+        assert!(
+            (px >> 24) >= 240,
+            "hover item top pixel should be opaque, got {px:#010x}"
         );
     }
 }

@@ -16,7 +16,6 @@ pub trait ScenePaint {
     fn node_dirty(&self, id: NodeId) -> bool;
     fn node_z_index(&self, id: NodeId) -> i32;
     fn node_children(&self, id: NodeId) -> &[NodeId];
-    fn is_repaint_boundary(&self, id: NodeId) -> bool;
     fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect>;
     fn dirty_rect(&self, id: NodeId, frame: Rect) -> Rect;
     /// 滚动容器内容偏移（viewport → content），无滚动时返回 `None`。

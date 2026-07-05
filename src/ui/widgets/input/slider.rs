@@ -3,10 +3,10 @@
 use std::cell::Cell;
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 define_widget! {
     /// Slider — 水平滑块，支持拖拽选择值。
@@ -28,16 +28,16 @@ define_widget! {
         Size::new(200.0, 24.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 self.dragging = true;
                 self.focused = true;
                 let frame_w = self.last_frame.get().map(|f| f.w).unwrap_or(200.0);
                 self.update_from_pos(pos.x, frame_w);
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 let frame_w = self.last_frame.get().map(|f| f.w).unwrap_or(200.0);
                 if self.dragging {
                     self.update_from_pos(pos.x, frame_w);
@@ -45,18 +45,18 @@ define_widget! {
                 self.hovered = true;
                 EventResult::Handled
             }
-            WidgetEvent::MouseUp { .. } => {
+            SystemEvent::PointerUp { .. } => {
                 self.dragging = false;
                 EventResult::Handled
             }
-            WidgetEvent::HoverLeave => {
+            SystemEvent::PointerLeave => {
                 self.hovered = false;
                 self.dragging = false;
                 EventResult::Handled
             }
-            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Right | KeyCode::Up => {
                         let new_val = (self.value + self.step).min(self.max);
@@ -83,7 +83,7 @@ define_widget! {
 
     needs_continuous_update => (&self) -> bool { self.dragging }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();

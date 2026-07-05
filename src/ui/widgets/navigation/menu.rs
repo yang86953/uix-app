@@ -3,11 +3,11 @@
 //! 支持水平或垂直布局，子菜单项、hover 高亮、active 选中态。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
-use std::cell::Cell;
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use std::cell::Cell;
 
 /// 菜单方向。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,9 +50,9 @@ define_widget! {
         }
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 let idx = self.item_at(pos.x, pos.y);
                 if let Some(i) = idx {
                     if !self.items[i].disabled {
@@ -68,20 +68,20 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 let idx = self.item_at(pos.x, pos.y);
                 if let Some(i) = idx {
                     self.hovered_idx.set(i);
                 }
                 EventResult::Handled
             }
-            WidgetEvent::HoverLeave => {
+            SystemEvent::PointerLeave => {
                 self.hovered_idx.set(usize::MAX);
                 EventResult::NotHandled
             }
-            WidgetEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
+            SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 let cur_idx = self.item_index_of_key(&self.active_key).unwrap_or(0);
                 match key {
                     KeyCode::Right => {
@@ -159,7 +159,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();

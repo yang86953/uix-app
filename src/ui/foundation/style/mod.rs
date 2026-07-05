@@ -6,7 +6,7 @@
 //! # 设计原则
 //!
 //! - Style 是纯数据（无方法，只有字段 + 构造器/Builder）
-//! - 每个 widget 可选持有一个 `Style`，render 时通过 `ctx.apply_style()` 应用
+//! - 每个 widget 可选持有一个 `Style`，render 时通过 `apply_style(ctx, ...)` 应用
 //! - 状态变体在 widget 内部由事件更新，Style 只定义各状态的色值
 //! - 主题感知：Style 可从 `TokenProvider` 获取默认值，用户可选择性覆盖
 //!
@@ -21,7 +21,7 @@ mod variant;
 #[cfg(test)]
 mod tests;
 
-pub use variant::StyleVariant;
+pub use variant::{StyleSet, StyleState};
 
 use crate::draw::Color;
 use crate::native::EdgeInsets;
@@ -77,7 +77,7 @@ pub enum DisplayMode {
 
 /// 类 CSS 视觉样式——覆盖 widget 常见的视觉属性。
 ///
-/// widget 在 `render` 中通过 `ctx.apply_style(rect, &self.style)` 统一绘制
+/// widget 在 `render` 中通过 `apply_style(ctx, rect, &self.style)` 统一绘制
 /// 背景/边框/阴影，然后使用 `self.style.color/font_size` 绘制文本。
 ///
 /// 布局引擎通过以下字段影响布局：
@@ -99,8 +99,8 @@ pub struct Style {
     pub padding: EdgeInsets,
     /// 边框颜色（Some = 显示边框）
     pub border_color: Option<Color>,
-    /// 边框宽度
-    pub border_width: f32,
+    /// 四边边框宽度。
+    pub border_width: EdgeInsets,
     /// 边框圆角
     pub border_radius: f32,
 
@@ -161,7 +161,7 @@ impl Default for Style {
             margin: EdgeInsets::zero(),
             padding: EdgeInsets::zero(),
             border_color: None,
-            border_width: 0.0,
+            border_width: EdgeInsets::zero(),
             border_radius: 0.0,
 
             width: None,
@@ -222,7 +222,7 @@ impl Style {
         Self {
             background: None,
             border_color: Some(Color::from_rgba(217, 217, 217, 255)),
-            border_width: 1.0,
+            border_width: EdgeInsets::uniform(1.0),
             border_radius: 6.0,
             padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
             color: Color::from_rgb(0, 0, 0),
@@ -236,7 +236,7 @@ impl Style {
         Self {
             background: Some(Color::from_rgba(22, 119, 255, 255)),
             border_color: Some(Color::from_rgba(22, 119, 255, 255)),
-            border_width: 1.0,
+            border_width: EdgeInsets::uniform(1.0),
             border_radius: 6.0,
             padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
             color: Color::white(),
@@ -309,7 +309,7 @@ impl Style {
         if other.border_color.is_some() {
             self.border_color = other.border_color;
         }
-        if other.border_width != 0.0 {
+        if other.border_width != EdgeInsets::zero() {
             self.border_width = other.border_width;
         }
         if other.border_radius != 0.0 {
@@ -390,7 +390,11 @@ impl Style {
     }
     pub fn with_border(mut self, color: Color, width: f32) -> Self {
         self.border_color = Some(color);
-        self.border_width = width;
+        self.border_width = EdgeInsets::uniform(width);
+        self
+    }
+    pub fn with_border_width(mut self, width: impl Into<EdgeInsets>) -> Self {
+        self.border_width = width.into();
         self
     }
     pub fn with_rounded(mut self, r: f32) -> Self {
@@ -483,6 +487,24 @@ impl Style {
         self.visible = v;
         self
     }
+
+    /// 当前样式是否需要绘制边框。
+    pub fn has_border(&self) -> bool {
+        self.border_color.is_some()
+            && (self.border_width.left > 0.0
+                || self.border_width.top > 0.0
+                || self.border_width.right > 0.0
+                || self.border_width.bottom > 0.0)
+    }
+
+    /// 返回当前 Canvas 描边使用的单一宽度，取四边最大值。
+    pub fn stroke_width(&self) -> f32 {
+        self.border_width
+            .left
+            .max(self.border_width.top)
+            .max(self.border_width.right)
+            .max(self.border_width.bottom)
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -553,10 +575,10 @@ macro_rules! style {
     (@inner $s:ident border $v:expr) => {
         let (c, w): (crate::draw::Color, f32) = $v;
         $s.border_color = Some(c);
-        $s.border_width = w;
+        $s.border_width = $crate::native::EdgeInsets::uniform(w);
     };
     (@inner $s:ident border_color $v:expr) => { $s.border_color = Some($v.into()); };
-    (@inner $s:ident border_width $v:expr) => { $s.border_width = $v as f32; };
+    (@inner $s:ident border_width $v:expr) => { $s.border_width = $crate::ui::style::edge_insets_from_expr($v); };
     (@inner $s:ident rounded $v:expr) => { $s.border_radius = $v as f32; };
     (@inner $s:ident border_radius $v:expr) => { $s.border_radius = $v as f32; };
     (@inner $s:ident display $v:expr) => { $s.display = $v; };

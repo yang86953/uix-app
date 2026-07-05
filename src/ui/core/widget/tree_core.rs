@@ -1,29 +1,30 @@
 use super::*;
-use crate::ui::managers::EventManager;
-use std::collections::HashMap;
 use crate::draw::pipeline::{AnimationRegistry, InvalidationQueueHandle};
 use crate::native::{KeyMod, MouseButton, Point, Rect};
+use crate::ui::event::HandlerTable;
+use crate::ui::managers::EventManager;
+use std::collections::HashMap;
 
 #[path = "tree_layout.rs"]
 mod tree_layout;
 
 /// 拖拽手势状态，用于从原始鼠标事件组合 DragStart/DragMove/DragEnd。
-/// 当 MouseDown 后 MouseMove 超出 5px 阈值时自动识别为拖拽。
+/// 当 PointerDown 后 PointerMove 超出 5px 阈值时自动识别为拖拽。
 #[derive(Clone)]
 pub(crate) struct DragGestureState {
-    /// MouseDown 已收到且未触发 DragStart
+    /// PointerDown 已收到且未触发 DragStart
     pub potential: bool,
     /// 拖拽已激活（超出移动阈值）
     pub active: bool,
     /// 拖拽起始位置（屏幕坐标）
     pub start_pos: Point,
-    /// 上一次 MouseMove 位置
+    /// 上一次 PointerMove 位置
     pub last_pos: Point,
     /// 触发拖拽的鼠标按钮
     pub button: MouseButton,
     /// 触发拖拽时的修饰键
     pub mods: KeyMod,
-    /// 拖拽目标 widget（mouse_down_target）
+    /// 拖拽目标 widget（pointer_down_target）
     pub target: Option<WidgetId>,
 }
 
@@ -62,7 +63,7 @@ pub struct WidgetTree {
     pub(crate) hovered_widget: Option<WidgetId>,
     /// 滚动 memmove 参数（Composite 失效附带，帧内消费）。
     pub(crate) scroll_region_move: Option<(Rect, f32, f32)>,
-    pub(crate) mouse_down_target: Option<WidgetId>,
+    pub(crate) pointer_down_target: Option<WidgetId>,
     /// 树结构版本号，结构变更时递增（add_child / remove / set_root）。
     /// 引擎可用此判断 LayerTree 是否需要重建。
     pub tree_version: u64,
@@ -73,9 +74,10 @@ pub struct WidgetTree {
     /// 每个 widget 的独立事件管理器（按需创建）。
     /// 在 `dispatch_to` 中，于 `on_event` 之后自动调用。
     pub(crate) event_managers: HashMap<WidgetId, EventManager>,
+    pub(crate) handler_table: HandlerTable,
 
-    /// 拖拽手势状态：跟踪 MouseDown→Move 序列以产生 DragStart/DragMove/DragEnd。
-    /// 拖拽阈值 5px，MouseMove 超出此距离才触发拖拽。
+    /// 拖拽手势状态：跟踪 PointerDown→Move 序列以产生 DragStart/DragMove/DragEnd。
+    /// 拖拽阈值 5px，PointerMove 超出此距离才触发拖拽。
     pub(crate) drag_gesture: DragGestureState,
     /// 渲染失效队列（Phase 2/6：统一 invalidation 入口）。
     pub(crate) invalidation: InvalidationQueueHandle,
@@ -95,10 +97,11 @@ impl Default for WidgetTree {
             focused_widget: None,
             hovered_widget: None,
             scroll_region_move: None,
-            mouse_down_target: None,
+            pointer_down_target: None,
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
             event_managers: HashMap::new(),
+            handler_table: HandlerTable::new(),
             drag_gesture: DragGestureState::default(),
             invalidation: crate::draw::pipeline::InvalidationQueue::shared(),
             animation_registry: AnimationRegistry::new(),
@@ -155,7 +158,7 @@ impl WidgetTree {
     fn reset_interaction_state(&mut self) {
         self.focused_widget = None;
         self.hovered_widget = None;
-        self.mouse_down_target = None;
+        self.pointer_down_target = None;
     }
 
     /// 设置根节点（全量重建）。
@@ -168,6 +171,7 @@ impl WidgetTree {
         self.free_ids.clear();
         self.next_id = 0;
         self.root_id = None;
+        self.handler_table.clear();
         self.reset_interaction_state();
         self.tree_version += 1;
 
@@ -298,6 +302,7 @@ impl WidgetTree {
                 for child_id in node.children().to_vec() {
                     self.remove(child_id);
                 }
+                self.handler_table.clear_component(id);
                 self.free_ids.push(id);
             }
         }
@@ -383,7 +388,7 @@ impl WidgetTree {
     }
 
     /// 设置 widget 的 frame 并自动标记旧区域为脏。
-    /// 封装了 set_frame + mark_dirty_rect(old) + mark_dirty 的三重模式。
+    /// 封装了 set_frame + invalidate_paint_rect(old) + mark_dirty 的三重模式。
     pub fn set_frame_dirty(&mut self, id: WidgetId, new_frame: Rect) {
         let old = match self.get(id) {
             Some(w) => {
@@ -430,21 +435,32 @@ impl WidgetTree {
 
     /// 递归构建节点及其子树。
     fn build_node(&mut self, node: WidgetNode, parent: Option<WidgetId>) -> WidgetId {
+        let WidgetNode {
+            widget,
+            children,
+            z_index,
+            key: _,
+            tab_idx,
+            handlers,
+        } = node;
         let id = match parent {
-            Some(p) => self.add_child(p, node.widget),
-            None => self.set_root(node.widget),
+            Some(p) => self.add_child(p, widget),
+            None => self.set_root(widget),
         };
         if let Some(n) = self.get_mut(id) {
-            n.set_z_index(node.z_index);
+            n.set_z_index(z_index);
             // 优先使用 WidgetNode 的 tab_index，否则使用组件默认值
-            let ti = if node.tab_idx != 0 {
-                node.tab_idx
+            let ti = if tab_idx != 0 {
+                tab_idx
             } else {
                 n.component().tab_index()
             };
             n.set_tab_index(ti);
         }
-        for child in node.children {
+        for handler in handlers {
+            self.handler_table.register(id, handler);
+        }
+        for child in children {
             self.build_node(child, Some(id));
         }
         id
@@ -495,6 +511,10 @@ impl WidgetTree {
     /// 清空所有事件管理器。
     pub fn clear_event_managers(&mut self) {
         self.event_managers.clear();
+    }
+
+    pub fn handler_table(&mut self) -> &mut HandlerTable {
+        &mut self.handler_table
     }
 
     // ── Tab 键焦点导航 ─────────────────────────────────────────

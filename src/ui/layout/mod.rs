@@ -1,12 +1,12 @@
-//! UIX Layout — Flexbox 和 Grid 布局引擎。
+﻿//! UIX Layout — Flexbox 和 Grid 布局引擎。
 //!
 //! 布局入口是 [`LayoutEngine`] trait 及其实现 [`FlexLayout`] / [`GridLayout`]。
 //!
 //! 推荐用法：容器 widget 组合 `FlexLayout` 或 `GridLayout`，
 //! 在 `layout_children` 中调用 `LayoutEngine::layout()` 获取子节点位置。
 
-use std::f32;
 use crate::native::{EdgeInsets, Rect, Size};
+use std::f32;
 
 // 内部模块（仅同 crate 内部使用，不对外公开）
 pub mod engine;
@@ -17,7 +17,7 @@ pub(crate) mod grid;
 pub use crate::ui::traits::LayoutEngine;
 pub use engine::{child_from_tree, BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutOutput};
 
-// ── 枚举类型（新旧引擎共用）──
+// ── 枚举类型（布局引擎共用）──
 
 /// Flex container direction。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -52,7 +52,7 @@ pub enum AlignItems {
     Stretch,
 }
 
-// ── 旧版布局类型（pub(crate)，仅内部兼容使用，不对外暴露）──
+// ── 布局求解内部类型（pub(crate)，不对外暴露）──
 
 /// 单个 flex 子项的弹性属性。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -78,7 +78,7 @@ impl Default for FlexChild {
     }
 }
 
-/// 旧版 flex 布局输入（内部兼容）。
+/// flex 布局输入。
 #[derive(Debug, Clone)]
 pub(crate) struct FlexInput {
     pub direction: FlexDirection,
@@ -108,7 +108,7 @@ impl Default for FlexInput {
     }
 }
 
-/// 旧版 flex 布局输出（内部兼容）。
+/// flex 布局输出。
 #[derive(Debug, Clone)]
 pub(crate) struct FlexOutput {
     pub child_rects: Vec<Rect>,
@@ -125,7 +125,7 @@ pub enum GridTrack {
     Auto,
 }
 
-/// 旧版 grid 布局子项（内部兼容）。
+/// grid 布局子项。
 #[derive(Debug, Clone)]
 pub(crate) struct GridChild {
     pub cell: usize,
@@ -149,7 +149,7 @@ impl Default for GridChild {
     }
 }
 
-/// 旧版 grid 布局输入（内部兼容）。
+/// grid 布局输入。
 #[derive(Debug, Clone)]
 pub(crate) struct GridInput {
     pub container: Rect,
@@ -179,7 +179,7 @@ impl Default for GridInput {
     }
 }
 
-/// 旧版 grid 布局输出（内部兼容）。
+/// grid 布局输出。
 #[derive(Debug, Clone)]
 pub(crate) struct GridOutput {
     pub child_rects: Vec<Rect>,

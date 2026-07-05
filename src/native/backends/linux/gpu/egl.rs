@@ -10,7 +10,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use crate::native::{Errc, Error};
+use crate::native::{Errc, Error, PresentDamage};
 
 use crate::native::IGraphicsContext;
 
@@ -36,6 +36,38 @@ extern "C" {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// EGL_KHR_swap_buffers_with_damage
+// ════════════════════════════════════════════════════════════════════════════
+
+type SwapBuffersWithDamageFn = unsafe extern "system" fn(
+    khronos_egl::Display,
+    khronos_egl::Surface,
+    *const i32,
+    i32,
+) -> khronos_egl::Boolean;
+
+fn load_swap_buffers_with_damage(
+    egl: &khronos_egl::Instance<khronos_egl::Static>,
+    display: khronos_egl::Display,
+) -> Option<SwapBuffersWithDamageFn> {
+    use khronos_egl as egl;
+
+    let extensions = egl
+        .query_string(Some(display), egl::EXTENSIONS)
+        .ok()?
+        .to_str()
+        .ok()?;
+    if !extensions
+        .split_whitespace()
+        .any(|ext| ext == "EGL_KHR_swap_buffers_with_damage")
+    {
+        return None;
+    }
+    let proc = egl.get_proc_address("eglSwapBuffersWithDamageKHR")?;
+    Some(unsafe { std::mem::transmute(proc) })
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // EglContext
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -54,6 +86,8 @@ pub struct EglContext {
     egl_window: *mut WlEglWindow,
     width: i32,
     height: i32,
+    /// `EGL_KHR_swap_buffers_with_damage`；不可用时回退全屏 swap。
+    swap_with_damage: Option<SwapBuffersWithDamageFn>,
 }
 
 impl EglContext {
@@ -192,6 +226,11 @@ impl EglContext {
                 )
             })?;
 
+        let swap_with_damage = load_swap_buffers_with_damage(&egl, display);
+        if swap_with_damage.is_some() {
+            crate::core::log::info_fn("EglContext: EGL_KHR_swap_buffers_with_damage 可用");
+        }
+
         Ok(Self {
             egl,
             display,
@@ -201,6 +240,7 @@ impl EglContext {
             egl_window,
             width,
             height,
+            swap_with_damage,
         })
     }
 }
@@ -216,7 +256,7 @@ impl IGraphicsContext for EglContext {
         _width: i32,
         _height: i32,
     ) -> Result<(), Error> {
-        // EglContext 在 new() 中初始化完毕，此方法仅为 trait 兼容保留。
+        // EglContext 在 new() 中初始化完毕；initialize 表达 trait 生命周期入口。
         Ok(())
     }
 
@@ -242,8 +282,39 @@ impl IGraphicsContext for EglContext {
         );
     }
 
-    fn swap_buffers(&mut self) {
-        let _ = self.egl.swap_buffers(self.display, self.surface);
+    fn swap_buffers(&mut self, damage: PresentDamage) {
+        match damage {
+            PresentDamage::Full => {
+                let _ = self.egl.swap_buffers(self.display, self.surface);
+            }
+            PresentDamage::Partial(rects) => {
+                if rects.is_empty() {
+                    let _ = self.egl.swap_buffers(self.display, self.surface);
+                    return;
+                }
+                if let Some(swap_with_damage) = self.swap_with_damage {
+                    let mut flat = Vec::with_capacity(rects.len() * 4);
+                    for (x, y, w, h) in &rects {
+                        flat.push(*x, *y, *w, *h);
+                    }
+                    let ok = unsafe {
+                        swap_with_damage(
+                            self.display,
+                            self.surface,
+                            flat.as_ptr(),
+                            rects.len() as i32,
+                        )
+                    };
+                    if ok == khronos_egl::TRUE {
+                        return;
+                    }
+                    crate::core::log::warn_fn(
+                        "EglContext: eglSwapBuffersWithDamageKHR 失败，回退全屏 swap",
+                    );
+                }
+                let _ = self.egl.swap_buffers(self.display, self.surface);
+            }
+        }
     }
 
     fn shutdown(&mut self) {
@@ -293,7 +364,7 @@ impl Drop for EglContext {
 // Send + Sync
 //
 // EGL 上下文并非线程安全，但 UIX 架构保证所有 GPU 操作在单一
-// 事件循环线程上执行。标记为 Send + Sync 以兼容 Box<dyn IGraphicsContext>。
+// 事件循环线程上执行。Send + Sync 标记服务于 IGraphicsContext trait object。
 // ════════════════════════════════════════════════════════════════════════════
 
 unsafe impl Send for EglContext {}

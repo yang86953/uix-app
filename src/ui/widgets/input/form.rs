@@ -1,9 +1,9 @@
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
-use std::collections::HashMap;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Point, Rect, Size};
+use crate::ui::WidgetTree;
+use std::collections::HashMap;
 
 /// 校验状态。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -98,7 +98,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let error = ctx.tokens().color_error();
@@ -271,7 +271,7 @@ define_widget! {
         Size::new(400.0, 200.0)
     }
 
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
+    render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
     layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], tree: &WidgetTree)
         -> Vec<(crate::ui::WidgetId, Rect)>

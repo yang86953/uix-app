@@ -1,12 +1,12 @@
-//! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw FrameRenderer。
+﻿//! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw FrameRenderer。
 
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
-use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource, RenderMetrics};
 use crate::draw::painting::ThemeSnapshot;
+use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource, RenderMetrics};
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::RenderOutcome;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
@@ -14,7 +14,7 @@ use crate::native::{Platform, PlatformWindow, Point, Rect};
 
 use crate::ui::clipboard;
 use crate::ui::theme::Theme;
-use crate::ui::{WidgetCore, WidgetEvent, WidgetTree};
+use crate::ui::{WidgetCore, SystemEvent, WidgetTree};
 
 /// 运行完整的 widget 渲染事件循环。
 #[allow(clippy::too_many_arguments)]
@@ -34,7 +34,7 @@ pub fn run_widget_loop<M, X, F>(
     on_frame: F,
 ) -> i32
 where
-    M: Fn(&UiEvent) -> Option<WidgetEvent>,
+    M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
@@ -114,7 +114,7 @@ where
         let mut had_layout_event = false;
 
         for ev in pending_events.borrow_mut().drain(..) {
-            let is_layout_event = !matches!(ev.type_, UiEventType::MouseMove);
+            let is_layout_event = !matches!(ev.type_, UiEventType::PointerMove);
             if is_layout_event {
                 had_layout_event = true;
             }
@@ -153,8 +153,8 @@ where
                 UiEventType::WindowMinimize => {
                     window_visible = false;
                 }
-                UiEventType::MouseMove => {
-                    if let UiEventPayload::MouseMove(ref data) = ev.payload {
+                UiEventType::PointerMove => {
+                    if let UiEventPayload::PointerMove(ref data) = ev.payload {
                         cursor_pos.set(data.pos);
                     }
                 }
@@ -191,7 +191,13 @@ where
 
         let needs_work = window_visible && (had_layout_event || !rendered_first);
 
-        if needs_work || tree.invalidation.lock().unwrap_or_else(|e| e.into_inner()).has_layout() {
+        if needs_work
+            || tree
+                .invalidation
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .has_layout()
+        {
             let before_version = tree.tree_version();
             tree.layout();
             record_layout(metrics);
@@ -262,11 +268,12 @@ where
                     let canvas = engine.canvas_2d();
                     let cw = canvas.width();
                     let ch = canvas.height();
-                    if let Err(e) =
-                        platform_window
-                            .presenter()
-                            .present(canvas.pixels_mut(), cw, ch, damage.to_present_damage())
-                    {
+                    if let Err(e) = platform_window.presenter().present(
+                        canvas.pixels_mut(),
+                        cw,
+                        ch,
+                        damage.to_present_damage(),
+                    ) {
                         crate::core::log::error_fn(format!(
                             "[EventLoop] present failed: {}",
                             e.short_what()
@@ -344,8 +351,8 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::widgets::container::Container;
     use crate::draw::NullEngine;
+    use crate::ui::widgets::container::Container;
 
     #[test]
     fn sync_root_frame_mismatch() {

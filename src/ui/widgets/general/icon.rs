@@ -7,11 +7,11 @@
 use std::sync::OnceLock;
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
 use crate::draw::font::font_service::FontService;
+use crate::draw::painting::PaintContext;
 use crate::draw::FontHandle;
 use crate::native::{Rect, Size};
+use crate::ui::WidgetTree;
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。
 /// FontHandle 为 Copy 类型，无需 Mutex 保护——OnceLock 本身保证线程安全初始化。
@@ -184,7 +184,7 @@ define_widget! {
         Size::new(self.size, self.size)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let icon_str = icon_char(&self.name);
         let color = ctx.tokens().color_text();
         let saved = *ctx.font();

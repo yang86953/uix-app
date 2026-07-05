@@ -20,13 +20,13 @@
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
-use crate::ui::clipboard;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
-use crate::draw::{Color, traits::GraphicsEngine, Radius};
+use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::clipboard;
+use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 数据类型
@@ -197,9 +197,9 @@ define_widget! {
         Size::new(self.content_width.get(), self.layout_height.get())
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 // 代码块复制按钮点击
                 for region in self.code_regions.borrow().iter() {
                     if region.rect.contains(*pos) {
@@ -232,7 +232,7 @@ define_widget! {
                 EventResult::Handled
             }
 
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 let lines = self.layout_lines.borrow();
 
                 // 代码块悬停
@@ -252,7 +252,7 @@ define_widget! {
                 EventResult::Handled
             }
 
-            WidgetEvent::MouseUp { .. } => {
+            SystemEvent::PointerUp { .. } => {
                 self.sel_dragging.set(false);
                 if let Some((s, e)) = self.selection.get() {
                     if s == e { self.selection.set(None); }
@@ -260,14 +260,14 @@ define_widget! {
                 EventResult::Handled
             }
 
-            WidgetEvent::FocusOut => {
+            SystemEvent::FocusOut => {
                 // 失去焦点时清除文字选中
                 self.selection.set(None);
                 self.sel_dragging.set(false);
                 EventResult::Handled
             }
 
-            WidgetEvent::KeyDown { key, mods } => {
+            SystemEvent::KeyDown { key, mods } => {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 match key {
                     KeyCode::A if ctrl => {
@@ -299,7 +299,7 @@ define_widget! {
 
     flex_grow => (&self) -> f32 { 1.0 }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let max_w = frame.w.max(1.0);
 
         // 布局缓存：仅在内容或宽度变化时重新布局，否则复用上次结果

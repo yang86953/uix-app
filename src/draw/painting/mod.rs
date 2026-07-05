@@ -5,8 +5,8 @@ pub mod paint_context;
 pub mod theme;
 
 pub use display_list::{DisplayList, PaintOp, PaintPass};
-pub use paint_context::{PaintContext, RenderContext, resolve_font_size};
+pub use paint_context::{resolve_font_size, PaintContext};
 pub use theme::{
-    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ShadowToken,
-    ThemeSnapshot, ThemeTokens,
+    IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ShadowToken, ThemeSnapshot,
+    ThemeTokens,
 };

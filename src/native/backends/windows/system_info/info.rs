@@ -6,8 +6,8 @@
 #![allow(nonstandard_style)]
 #![allow(clippy::upper_case_acronyms)]
 
-use crate::native::traits::system::{MemoryInfo, OsInfo};
 use crate::native::backends::windows::util::to_utf8;
+use crate::native::traits::system::{MemoryInfo, OsInfo};
 use crate::native::ISystemInfo;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -52,10 +52,6 @@ impl ISystemInfo for WindowsSystemInfo {
 
     fn up_time(&self) -> u64 {
         get_uptime_ms()
-    }
-
-    fn default_font_path(&self) -> Option<String> {
-        None
     }
 
     fn default_font_paths(&self) -> Vec<String> {

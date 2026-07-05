@@ -1,4 +1,4 @@
-use crate::ui::{EventResult, WidgetEvent, WidgetEventKind};
+﻿use crate::ui::{EventResult, SystemEvent, SystemEventKind};
 
 /// 事件管理器默认优先级（中间值）。
 pub const EM_PRIORITY_DEFAULT: i32 = 0;
@@ -10,8 +10,8 @@ pub const EM_PRIORITY_LOWEST: i32 = i32::MIN;
 struct HandlerEntry {
     id: usize,
     /// None = 处理所有事件类型
-    event_kind: Option<WidgetEventKind>,
-    handler: Box<dyn FnMut(&WidgetEvent) -> EventResult>,
+    event_kind: Option<SystemEventKind>,
+    handler: Box<dyn FnMut(&SystemEvent) -> EventResult>,
     priority: i32,
 }
 
@@ -30,10 +30,10 @@ struct HandlerEntry {
 /// mgr.add_handler(|ev| { ...; EventResult::Handled });
 ///
 /// // 只处理特定类型
-/// mgr.on_kind(WidgetEventKind::MouseDown, |ev| { ...; EventResult::Handled });
+/// mgr.on_kind(SystemEventKind::PointerDown, |ev| { ...; EventResult::Handled });
 ///
 /// // 高优先级处理
-/// mgr.on_kind_with_priority(WidgetEventKind::MouseWheel, 100, |ev| { ... });
+/// mgr.on_kind_with_priority(SystemEventKind::Wheel, 100, |ev| { ... });
 /// ```
 #[derive(Default)]
 pub struct EventManager {
@@ -50,7 +50,7 @@ impl EventManager {
     /// 返回 handler ID（用于 `remove`）。
     pub fn add_handler<F>(&mut self, handler: F) -> usize
     where
-        F: FnMut(&WidgetEvent) -> EventResult + 'static,
+        F: FnMut(&SystemEvent) -> EventResult + 'static,
     {
         self.add_handler_inner(None, EM_PRIORITY_DEFAULT, Box::new(handler))
     }
@@ -58,15 +58,15 @@ impl EventManager {
     /// 按优先级添加 handler（处理所有事件类型）。
     pub fn add_handler_with_priority<F>(&mut self, priority: i32, handler: F) -> usize
     where
-        F: FnMut(&WidgetEvent) -> EventResult + 'static,
+        F: FnMut(&SystemEvent) -> EventResult + 'static,
     {
         self.add_handler_inner(None, priority, Box::new(handler))
     }
 
     /// 只处理特定事件类型。
-    pub fn on_kind<F>(&mut self, kind: WidgetEventKind, handler: F) -> usize
+    pub fn on_kind<F>(&mut self, kind: SystemEventKind, handler: F) -> usize
     where
-        F: FnMut(&WidgetEvent) -> EventResult + 'static,
+        F: FnMut(&SystemEvent) -> EventResult + 'static,
     {
         self.add_handler_inner(Some(kind), EM_PRIORITY_DEFAULT, Box::new(handler))
     }
@@ -74,21 +74,21 @@ impl EventManager {
     /// 按优先级处理特定事件类型。
     pub fn on_kind_with_priority<F>(
         &mut self,
-        kind: WidgetEventKind,
+        kind: SystemEventKind,
         priority: i32,
         handler: F,
     ) -> usize
     where
-        F: FnMut(&WidgetEvent) -> EventResult + 'static,
+        F: FnMut(&SystemEvent) -> EventResult + 'static,
     {
         self.add_handler_inner(Some(kind), priority, Box::new(handler))
     }
 
     fn add_handler_inner(
         &mut self,
-        event_kind: Option<WidgetEventKind>,
+        event_kind: Option<SystemEventKind>,
         priority: i32,
-        handler: Box<dyn FnMut(&WidgetEvent) -> EventResult>,
+        handler: Box<dyn FnMut(&SystemEvent) -> EventResult>,
     ) -> usize {
         let id = self.next_id;
         self.next_id += 1;
@@ -125,7 +125,7 @@ impl EventManager {
     ///
     /// 按优先级降序（高→低）执行，相同优先级按注册顺序。
     /// 任意 handler 返回 `Handled` 则终止并返回 `Handled`。
-    pub fn dispatch(&mut self, event: &WidgetEvent) -> EventResult {
+    pub fn dispatch(&mut self, event: &SystemEvent) -> EventResult {
         // 按优先级降序排序
         self.handlers.sort_by(|a, b| b.priority.cmp(&a.priority));
 

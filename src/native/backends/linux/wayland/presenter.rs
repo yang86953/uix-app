@@ -52,13 +52,7 @@ impl WaylandPresenter {
     }
 
     /// 将像素数据提交到 Wayland surface。
-    fn present_impl(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        damage: PresentDamage,
-    ) {
+    fn present_impl(&mut self, pixels: &[u32], width: i32, height: i32, damage: PresentDamage) {
         let needs_resize = width != self.width
             || height != self.height
             || self.shm_buffers[0].is_none()

@@ -20,13 +20,13 @@ pub enum UiEventType {
     WindowRestore,
     WindowFocus,
     WindowBlur,
-    MouseDown,
-    MouseUp,
-    MouseMove,
-    MouseWheel,
+    PointerDown,
+    PointerUp,
+    PointerMove,
+    Wheel,
     KeyDown,
     KeyUp,
-    KeyPress,
+    TextInput,
     Timer,
     FileDrop,
 }
@@ -51,13 +51,13 @@ impl Default for KeyEventData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MouseButtonEventData {
+pub struct PointerButtonEventData {
     pub pos: Point,
     pub btn: MouseButton,
     pub mods: KeyMod,
 }
 
-impl Default for MouseButtonEventData {
+impl Default for PointerButtonEventData {
     fn default() -> Self {
         Self {
             pos: Point::default(),
@@ -68,12 +68,12 @@ impl Default for MouseButtonEventData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MouseMoveEventData {
+pub struct PointerMoveEventData {
     pub pos: Point,
     pub mods: KeyMod,
 }
 
-impl Default for MouseMoveEventData {
+impl Default for PointerMoveEventData {
     fn default() -> Self {
         Self {
             pos: Point::default(),
@@ -83,14 +83,14 @@ impl Default for MouseMoveEventData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MouseWheelData {
+pub struct WheelData {
     pub pos: Point,
     pub delta_x: f32,
     pub delta_y: f32,
     pub mods: KeyMod,
 }
 
-impl Default for MouseWheelData {
+impl Default for WheelData {
     fn default() -> Self {
         Self {
             pos: Point::default(),
@@ -113,7 +113,7 @@ pub struct TimerEventData {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct KeyPressData {
+pub struct TextInputData {
     pub text: String,
 }
 
@@ -132,12 +132,12 @@ pub enum UiEventPayload {
     #[default]
     None,
     Key(KeyEventData),
-    MouseButton(MouseButtonEventData),
-    MouseMove(MouseMoveEventData),
-    MouseWheel(MouseWheelData),
+    PointerButton(PointerButtonEventData),
+    PointerMove(PointerMoveEventData),
+    Wheel(WheelData),
     Resize(ResizeData),
     Timer(TimerEventData),
-    KeyPress(KeyPressData),
+    TextInput(TextInputData),
     FileDrop(FileDropData),
 }
 
@@ -165,10 +165,10 @@ impl UiEvent {
         }
     }
 
-    pub fn mouse_down(pos: Point, btn: MouseButton) -> Self {
+    pub fn pointer_down(pos: Point, btn: MouseButton) -> Self {
         Self {
-            type_: UiEventType::MouseDown,
-            payload: UiEventPayload::MouseButton(MouseButtonEventData {
+            type_: UiEventType::PointerDown,
+            payload: UiEventPayload::PointerButton(PointerButtonEventData {
                 pos,
                 btn,
                 mods: KeyMod::NONE,
@@ -176,10 +176,10 @@ impl UiEvent {
         }
     }
 
-    pub fn mouse_up(pos: Point, btn: MouseButton) -> Self {
+    pub fn pointer_up(pos: Point, btn: MouseButton) -> Self {
         Self {
-            type_: UiEventType::MouseUp,
-            payload: UiEventPayload::MouseButton(MouseButtonEventData {
+            type_: UiEventType::PointerUp,
+            payload: UiEventPayload::PointerButton(PointerButtonEventData {
                 pos,
                 btn,
                 mods: KeyMod::NONE,
@@ -187,20 +187,20 @@ impl UiEvent {
         }
     }
 
-    pub fn mouse_move(pos: Point) -> Self {
+    pub fn pointer_move(pos: Point) -> Self {
         Self {
-            type_: UiEventType::MouseMove,
-            payload: UiEventPayload::MouseMove(MouseMoveEventData {
+            type_: UiEventType::PointerMove,
+            payload: UiEventPayload::PointerMove(PointerMoveEventData {
                 pos,
                 mods: KeyMod::NONE,
             }),
         }
     }
 
-    pub fn mouse_wheel(pos: Point, delta_x: f32, delta_y: f32, mods: KeyMod) -> Self {
+    pub fn wheel(pos: Point, delta_x: f32, delta_y: f32, mods: KeyMod) -> Self {
         Self {
-            type_: UiEventType::MouseWheel,
-            payload: UiEventPayload::MouseWheel(MouseWheelData {
+            type_: UiEventType::Wheel,
+            payload: UiEventPayload::Wheel(WheelData {
                 pos,
                 delta_x,
                 delta_y,
@@ -223,10 +223,10 @@ impl UiEvent {
         }
     }
 
-    pub fn key_press(text: impl Into<String>) -> Self {
+    pub fn text_input(text: impl Into<String>) -> Self {
         Self {
-            type_: UiEventType::KeyPress,
-            payload: UiEventPayload::KeyPress(KeyPressData { text: text.into() }),
+            type_: UiEventType::TextInput,
+            payload: UiEventPayload::TextInput(TextInputData { text: text.into() }),
         }
     }
 

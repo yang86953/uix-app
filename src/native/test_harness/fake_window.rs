@@ -1,11 +1,13 @@
 //! Fake 窗口系统 — 窗口管理器、窗口实例、窗口属性、原生句柄。
 
-use crate::native::traits::present::{IGraphicsContext, IPresenter};
-use crate::native::traits::window::{INativeHandle, IWindowManager, IWindowProperties, PlatformWindow};
 use crate::core::error::Result;
 use crate::core::geometry::Point;
 use crate::native::test_harness::fake_graphics_context::FakeGraphicsContext;
 use crate::native::test_harness::fake_presenter::FakePresenter;
+use crate::native::traits::present::{IGraphicsContext, IPresenter};
+use crate::native::traits::window::{
+    INativeHandle, IWindowManager, IWindowProperties, PlatformWindow,
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // FakeWindowProperties

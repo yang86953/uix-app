@@ -6,20 +6,18 @@
 
 use std::cell::{Cell, RefCell};
 
-use crate::ui::clipboard;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::{Rect, Size};
+use crate::native::{ControlSize, Rect, Size};
+use crate::ui::clipboard;
+use crate::ui::{EventResult, KeyCode, KeyMod, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 
-pub use crate::native::ControlSize as InputSize;
-
-pub fn input_height(size: InputSize) -> f32 {
+pub fn input_height(size: ControlSize) -> f32 {
     match size {
-        InputSize::Small => 24.0,
-        InputSize::Medium => 32.0,
-        InputSize::Large => 40.0,
+        ControlSize::Small => 24.0,
+        ControlSize::Medium => 32.0,
+        ControlSize::Large => 40.0,
     }
 }
 
@@ -31,7 +29,7 @@ define_widget! {
     pub struct Input {
         value: String,
         placeholder: String,
-        input_size: InputSize,
+        input_size: ControlSize,
         disabled: bool,
         focused: bool,
         hovered: bool,
@@ -76,10 +74,10 @@ define_widget! {
         }
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            WidgetEvent::MouseDown { pos, mods, .. } => {
+            SystemEvent::PointerDown { pos, mods, .. } => {
                 self.focused = true;
                 let ci = if self.textarea {
                     self.char_at_xy(pos.x - PAD, pos.y)
@@ -98,7 +96,7 @@ define_widget! {
                 self.sel_dragging.set(true);
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if !self.sel_dragging.get() { return EventResult::NotHandled; }
                 let ci = if self.textarea {
                     self.char_at_xy(pos.x - PAD, pos.y)
@@ -111,21 +109,21 @@ define_widget! {
                 self.set_selection_range(anchor, ci);
                 EventResult::Handled
             }
-            WidgetEvent::MouseUp { .. } => {
+            SystemEvent::PointerUp { .. } => {
                 self.sel_dragging.set(false);
                 if let Some((s, e)) = self.selection.get() {
                     if s == e { self.selection.set(None); }
                 }
                 EventResult::Handled
             }
-            WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
-            WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
-            WidgetEvent::FocusOut => {
+            SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
+            SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
+            SystemEvent::FocusOut => {
                 self.focused = false; self.selection.set(None);
                 if let Some(ref mut cb) = self.on_change { cb(&self.value); }
                 EventResult::Handled
             }
-            WidgetEvent::KeyDown { key, mods } => {
+            SystemEvent::KeyDown { key, mods } => {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 let shift = mods.contains(KeyMod::SHIFT);
                 match key {
@@ -231,7 +229,7 @@ define_widget! {
                     _ => EventResult::NotHandled,
                 }
             }
-            WidgetEvent::KeyPress { text } => {
+            SystemEvent::TextInput { text } => {
                 if self.textarea {
                     // textarea 模式：允许 '\n', '\r' 等
                     let chars: Vec<char> = text.chars().filter(|&c| c >= ' ' || c == '\n' || c == '\r').collect();
@@ -261,7 +259,23 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    semantic_event => (&self, id: WidgetId, event: &SystemEvent) -> Option<SemanticEvent> {
+        match event {
+            SystemEvent::TextInput { .. }
+            | SystemEvent::KeyDown {
+                key: KeyCode::Backspace | KeyCode::Delete,
+                ..
+            } => Some(SemanticEvent::change(id, self.value.clone())),
+            SystemEvent::KeyDown { key: KeyCode::Enter, mods }
+                if self.textarea && mods.contains(KeyMod::SHIFT) =>
+            {
+                Some(SemanticEvent::change(id, self.value.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if self.textarea {
             self.render_textarea(frame, ctx);
         } else {
@@ -281,7 +295,7 @@ impl Input {
         Self {
             value: String::new(),
             placeholder: placeholder.into(),
-            input_size: InputSize::Medium,
+            input_size: ControlSize::Medium,
             disabled: false,
             focused: false,
             hovered: false,
@@ -312,7 +326,7 @@ impl Input {
         self.scroll_offset_x.set(0.0);
         self
     }
-    pub fn size(mut self, s: InputSize) -> Self {
+    pub fn size(mut self, s: ControlSize) -> Self {
         self.input_size = s;
         self
     }

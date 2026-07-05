@@ -194,8 +194,8 @@ impl WindowsPlatform {
     pub(crate) fn handle_mouse_down(&mut self, lparam: isize, btn: MouseButton) {
         let pos = self.mouse_pos_from_lparam(lparam);
         let mods = Self::get_modifier_state();
-        let mut ev = UiEvent::mouse_down(pos, btn);
-        if let UiEventPayload::MouseButton(ref mut data) = ev.payload {
+        let mut ev = UiEvent::pointer_down(pos, btn);
+        if let UiEventPayload::PointerButton(ref mut data) = ev.payload {
             data.mods = mods;
         }
         self.push_event(ev);
@@ -207,8 +207,8 @@ impl WindowsPlatform {
     pub(crate) fn handle_mouse_up(&mut self, lparam: isize, btn: MouseButton) {
         let pos = self.mouse_pos_from_lparam(lparam);
         let mods = Self::get_modifier_state();
-        let mut ev = UiEvent::mouse_up(pos, btn);
-        if let UiEventPayload::MouseButton(ref mut data) = ev.payload {
+        let mut ev = UiEvent::pointer_up(pos, btn);
+        if let UiEventPayload::PointerButton(ref mut data) = ev.payload {
             data.mods = mods;
         }
         self.push_event(ev);

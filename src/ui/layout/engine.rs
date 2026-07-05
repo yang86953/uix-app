@@ -9,9 +9,9 @@ use super::flex::compute_flex_layout;
 use super::grid::compute_grid_layout;
 use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
-use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 use crate::draw::spatial::AABB3D;
-use crate::native::{Rect, Size};
+use crate::native::{EdgeInsets, Rect, Size};
+use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 
 // ── 统一盒模型 ────────────────────────────────────────────────────
 
@@ -20,27 +20,27 @@ use crate::native::{Rect, Size};
 /// 与 Web CSS 盒模型一致：frame → 扣除 margin → 扣除 border → 扣除 padding → 内容区域。
 #[derive(Debug, Clone, Copy)]
 pub struct BoxModel {
-    pub margin: crate::native::EdgeInsets,
-    pub border_width: f32,
-    pub padding: crate::native::EdgeInsets,
+    pub margin: EdgeInsets,
+    pub border_width: EdgeInsets,
+    pub padding: EdgeInsets,
 }
 
 impl BoxModel {
     pub const ZERO: Self = Self {
-        margin: crate::native::EdgeInsets::zero(),
-        border_width: 0.0,
-        padding: crate::native::EdgeInsets::zero(),
+        margin: EdgeInsets::zero(),
+        border_width: EdgeInsets::zero(),
+        padding: EdgeInsets::zero(),
     };
 
     /// 从 frame 计算内框（扣除 margin + border + padding）。
     pub fn content_rect(&self, frame: Rect) -> Rect {
         let mh = self.margin.horizontal();
         let mv = self.margin.vertical();
-        let bh = self.border_width * 2.0;
-        let bv = self.border_width * 2.0;
+        let bh = self.border_width.horizontal();
+        let bv = self.border_width.vertical();
         Rect::new(
-            frame.x + self.margin.left + self.border_width + self.padding.left,
-            frame.y + self.margin.top + self.border_width + self.padding.top,
+            frame.x + self.margin.left + self.border_width.left + self.padding.left,
+            frame.y + self.margin.top + self.border_width.top + self.padding.top,
             (frame.w - mh - bh - self.padding.horizontal()).max(0.0),
             (frame.h - mv - bv - self.padding.vertical()).max(0.0),
         )

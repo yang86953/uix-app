@@ -1,8 +1,8 @@
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// Popconfirm 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,8 +32,8 @@ define_widget! {
         Size::new(80.0, 28.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
-        if let WidgetEvent::MouseDown { pos, .. } = event {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if let SystemEvent::PointerDown { pos, .. } = event {
             if pos.x >= 0.0 && pos.x <= 80.0 && pos.y >= 0.0 && pos.y <= 28.0 {
                 self.visible = !self.visible;
                 return EventResult::Handled;
@@ -72,7 +72,7 @@ define_widget! {
         frame.union(&pop)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border();
@@ -184,7 +184,7 @@ impl Popconfirm {
 }
 
 fn draw_popconfirm_arrow(
-    ctx: &mut RenderContext,
+    ctx: &mut PaintContext,
     _trigger: Rect,
     popup: Rect,
     placement: PopconfirmPlacement,

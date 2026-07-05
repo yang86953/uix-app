@@ -3,10 +3,10 @@
 //! 垂直时间轴展示事件序列，支持节点颜色、标签、描述。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Point, Rect, Size};
+use crate::ui::WidgetTree;
 
 /// 时间线节点。
 #[derive(Debug, Clone)]
@@ -29,7 +29,7 @@ define_widget! {
         Size::new(400.0, h.max(60.0))
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();

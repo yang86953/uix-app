@@ -2,7 +2,7 @@
 // platform/linux/wayland/text_input.rs — ITextInput impl (zwp_text_input_v3)
 //
 // 通过 zwp_text_input_v3 协议实现 Linux 下的输入法（IME）支持。
-// 当 IME 提交文本时，将 UiEvent::key_press 推入事件队列。
+// 当 IME 提交文本时，将 UiEvent::text_input 推入事件队列。
 // ============================================================================
 
 use std::sync::atomic::Ordering;
@@ -22,7 +22,9 @@ impl ITextInput for WaylandBackend {
         let seat = match self.seat.as_ref() {
             Some(s) => s,
             None => {
-                crate::core::log::warn_fn("Wayland text_input: no seat available, IME not activated");
+                crate::core::log::warn_fn(
+                    "Wayland text_input: no seat available, IME not activated",
+                );
                 return;
             }
         };
@@ -46,7 +48,7 @@ impl ITextInput for WaylandBackend {
                 if let Some(ref t) = text {
                     if !t.is_empty() {
                         if let Ok(mut q) = events.lock() {
-                            q.push_back(UiEvent::key_press(t.clone()));
+                            q.push_back(UiEvent::text_input(t.clone()));
                         }
                     }
                 }

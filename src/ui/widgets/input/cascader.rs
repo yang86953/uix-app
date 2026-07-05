@@ -3,10 +3,10 @@
 //! 支持多级选项、搜索过滤、选中回显。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
-use crate::draw::{Color, traits::GraphicsEngine};
+use crate::draw::painting::PaintContext;
+use crate::draw::{traits::GraphicsEngine, Color};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 /// 级联选项
 #[derive(Debug, Clone)]
@@ -68,9 +68,9 @@ define_widget! {
         Size::new(120.0, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos: _, .. } => {
+            SystemEvent::PointerDown { pos: _, .. } => {
                 // 点击输入框切换弹出
                 self.focused = true;
                 if !self.open {
@@ -79,8 +79,8 @@ define_widget! {
                 }
                 EventResult::Handled
             }
-            WidgetEvent::FocusOut => { self.focused = false; self.open = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::FocusOut => { self.focused = false; self.open = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 if !self.open { return EventResult::NotHandled; }
                 match key {
                     KeyCode::Escape => { self.open = false; EventResult::Handled }
@@ -96,7 +96,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();
@@ -193,7 +193,7 @@ impl Cascader {
         self.level_indices = vec![0];
     }
 
-    /// 点击某选项时触发（由外部或 MouseDown 处理）
+    /// 点击某选项时触发（由外部或 PointerDown 处理）
     pub fn select_option(&mut self, level: usize, index: usize) {
         if level >= self.current_levels.len() {
             return;

@@ -6,8 +6,8 @@ use crate::draw::pipeline::NodeId;
 use crate::draw::primitives::types::DirtyRegion;
 use crate::native::{Point, Rect};
 
-use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 use crate::ui::core::paint_scope::set_current_paint_widget;
+use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 
 impl ScenePaint for WidgetTree {
     fn root_id(&self) -> Option<NodeId> {
@@ -44,10 +44,6 @@ impl ScenePaint for WidgetTree {
     fn node_children(&self, id: NodeId) -> &[NodeId] {
         static EMPTY: &[NodeId] = &[];
         self.get(id).map(|n| n.children()).unwrap_or(EMPTY)
-    }
-
-    fn is_repaint_boundary(&self, id: NodeId) -> bool {
-        self.get(id).is_some_and(|n| n.is_repaint_boundary())
     }
 
     fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect> {

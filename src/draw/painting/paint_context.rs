@@ -7,19 +7,18 @@ use std::ptr::NonNull;
 
 use crate::draw::debug::DebugRenderService;
 use crate::draw::font::font_service::FontService;
+use crate::draw::font::text::TextRenderService;
 use crate::draw::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::painting::display_list::{DisplayList, PaintOp, PaintPass};
 use crate::draw::painting::ThemeTokens;
 use crate::draw::primitives::path::{FillRule, Path};
-use crate::draw::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::primitives::stroker::StrokeOptions;
-use crate::draw::font::text::TextRenderService;
+use crate::draw::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::traits::Canvas2D;
 use crate::draw::GradientDirection;
 use crate::draw::{Color, FontHandle, Radius};
 use crate::native::{Point, Rect, Size};
 
-/// 绘制上下文（对外兼容别名 `RenderContext`）。
 pub struct PaintContext<'a> {
     /// 3D 空间上下文（持有 Canvas2D 引用）。
     spatial: SpatialContext<'a>,
@@ -46,8 +45,6 @@ pub struct PaintContext<'a> {
     record_ops: bool,
 }
 
-/// 兼容 UI 层既有命名。
-pub type RenderContext<'a> = PaintContext<'a>;
 
 impl<'a> PaintContext<'a> {
     /// 创建渲染上下文。
@@ -421,6 +418,14 @@ impl<'a> PaintContext<'a> {
 
     /// 左对齐、垂直居中的文本绘制。
     pub fn draw_text_in_frame(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
+        if !text.is_empty() {
+            self.record_op(PaintOp::DrawTextInFrame {
+                text: text.to_string(),
+                rect,
+                color,
+                font_size,
+            });
+        }
         self.text
             .draw_text_in_frame(self.spatial.canvas_2d(), text, rect, color, font_size);
     }
@@ -561,6 +566,7 @@ impl<'a> PaintContext<'a> {
     /// 设置字体句柄。
     #[inline(always)]
     pub fn set_font(&mut self, font: FontHandle) {
+        self.record_op(PaintOp::SetFont { font });
         self.text.set_font(font);
     }
 

@@ -1,7 +1,7 @@
 //! Fake 光标 — 追踪光标位置、可见性、捕获状态。
 
-use crate::native::traits::input::ICursor;
 use crate::native::traits::input::CursorType;
+use crate::native::traits::input::ICursor;
 use crate::native::Point;
 
 #[derive(Debug, Clone)]

@@ -5,10 +5,10 @@
 use std::cell::Cell;
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
-use crate::draw::{Color, traits::GraphicsEngine};
+use crate::draw::painting::PaintContext;
+use crate::draw::{traits::GraphicsEngine, Color};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 /// 时间结构
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -51,9 +51,9 @@ define_widget! {
         Size::new(120.0, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 self.focused = true;
                 if !self.open.get() {
                     self.open.set(true);
@@ -100,7 +100,7 @@ define_widget! {
                 }
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if self.open.get() {
                     if let Some(frame) = self.last_frame.get() {
                         let popup_y = frame.y + frame.h + 2.0;
@@ -127,9 +127,9 @@ define_widget! {
                 }
                 EventResult::NotHandled
             }
-            WidgetEvent::HoverLeave => EventResult::NotHandled,
-            WidgetEvent::FocusOut => { self.focused = false; self.open.set(false); EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::PointerLeave => EventResult::NotHandled,
+            SystemEvent::FocusOut => { self.focused = false; self.open.set(false); EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 if self.open.get() {
                     match key {
                         KeyCode::Escape => { self.open.set(false); }
@@ -157,7 +157,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
         let primary = ctx.tokens().color_primary();
         let border_color = ctx.tokens().color_border();

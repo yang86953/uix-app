@@ -72,7 +72,7 @@ impl DebugRenderService {
             Color::from_rgba(0, 0, 0, 180),
             None,
         );
-        // draw_text 由 RenderContext 委托，此处由 RenderContext 调用 debug service 后自行绘制
+        // draw_text 由 PaintContext 委托，此处由 PaintContext 调用 debug service 后自行绘制
     }
 
     /// 在 widget 下方显示 frame 坐标和尺寸。
@@ -93,7 +93,7 @@ impl DebugRenderService {
             Color::from_rgba(0, 0, 0, 160),
             None,
         );
-        // draw_text 由 RenderContext 委托，此处由 RenderContext 调用 debug service 后自行绘制
+        // draw_text 由 PaintContext 委托，此处由 PaintContext 调用 debug service 后自行绘制
     }
 
     /// Debug overlay：右上角显示度量计数与 invalidation 来源。
@@ -146,7 +146,12 @@ impl DebugRenderService {
         for (i, (&v, &c)) in values.iter().zip(colors.iter()).enumerate() {
             let y = bar_y + i as f32 * 14.0;
             canvas.fill_rect(
-                Rect::new(x + 10.0, y, scale(v).max(if v > 0 { 2.0 } else { 0.0 }), bar_h),
+                Rect::new(
+                    x + 10.0,
+                    y,
+                    scale(v).max(if v > 0 { 2.0 } else { 0.0 }),
+                    bar_h,
+                ),
                 c,
                 None,
             );
@@ -160,7 +165,7 @@ impl DebugRenderService {
         );
     }
 
-    /// 返回 HUD 文本行（供 RenderContext 绘制标签）。
+    /// 返回 HUD 文本行（供 PaintContext 绘制标签）。
     pub fn telemetry_hud_lines(metrics: &RenderMetrics) -> [String; 5] {
         [
             format!("inv: {}", metrics.last_invalidation.label()),

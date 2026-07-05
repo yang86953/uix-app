@@ -3,10 +3,10 @@
 //! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{ControlSize, Point, Rect, Size};
+use crate::ui::WidgetTree;
 
 /// 单个描述项。
 #[derive(Debug, Clone)]
@@ -38,7 +38,7 @@ define_widget! {
         Size::new(600.0, title_h + rows as f32 * item_h)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border_secondary();
         let text = ctx.tokens().color_text();

@@ -1,10 +1,10 @@
 //! Tag widget — 彩色标签/徽标，支持关闭按钮。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::WidgetTree;
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Rect, Size};
+use crate::ui::WidgetTree;
 
 /// 预设标签类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,7 +33,7 @@ define_widget! {
         Size::new(w, self.font_size + 8.0)
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let (bg, fg) = if let Some(cc) = self.custom_color {
             (cc, Color::white())
         } else {

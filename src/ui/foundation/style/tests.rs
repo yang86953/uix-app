@@ -1,4 +1,4 @@
-use super::*;
+﻿use super::*;
 use crate::draw::Color;
 use crate::native::EdgeInsets;
 
@@ -10,7 +10,7 @@ fn style_default_all_fields() {
     assert_eq!(s.margin, EdgeInsets::zero());
     assert_eq!(s.padding, EdgeInsets::zero());
     assert_eq!(s.border_color, None);
-    assert_eq!(s.border_width, 0.0);
+    assert_eq!(s.border_width, EdgeInsets::zero());
     assert_eq!(s.border_radius, 0.0);
     assert_eq!(s.width, None);
     assert_eq!(s.height, None);
@@ -58,7 +58,7 @@ fn style_column() {
     let s = Style::column();
     assert_eq!(s.display, DisplayMode::Flex);
     assert_eq!(s.flex_direction, FlexDirection::default()); // Column
-                                                              // 其余字段应与 default 一致
+                                                            // 其余字段应与 default 一致
     let mut expected = Style::default();
     expected.display = DisplayMode::Flex;
     assert_eq!(s, expected);
@@ -69,7 +69,7 @@ fn style_button_default() {
     let s = Style::button_default();
     assert_eq!(s.background, None);
     assert_eq!(s.border_color, Some(Color::from_rgba(217, 217, 217, 255)));
-    assert_eq!(s.border_width, 1.0);
+    assert_eq!(s.border_width, EdgeInsets::uniform(1.0));
     assert_eq!(s.border_radius, 6.0);
     assert_eq!(s.padding, EdgeInsets::new(15.0, 0.0, 15.0, 0.0));
     assert_eq!(s.color, Color::from_rgb(0, 0, 0));
@@ -81,7 +81,7 @@ fn style_button_primary() {
     let s = Style::button_primary();
     assert_eq!(s.background, Some(Color::from_rgba(22, 119, 255, 255)));
     assert_eq!(s.border_color, Some(Color::from_rgba(22, 119, 255, 255)));
-    assert_eq!(s.border_width, 1.0);
+    assert_eq!(s.border_width, EdgeInsets::uniform(1.0));
     assert_eq!(s.border_radius, 6.0);
     assert_eq!(s.padding, EdgeInsets::new(15.0, 0.0, 15.0, 0.0));
     assert_eq!(s.color, Color::white());
@@ -199,7 +199,7 @@ fn chain_builder_all_methods() {
     assert_eq!(s.margin, EdgeInsets::uniform(8.0));
     assert_eq!(s.padding, EdgeInsets::uniform(4.0));
     assert_eq!(s.border_color, Some(Color::red()));
-    assert_eq!(s.border_width, 2.0);
+    assert_eq!(s.border_width, EdgeInsets::uniform(2.0));
     assert_eq!(s.border_radius, 6.0);
     assert_eq!(s.width, Some(200.0)); // with_size overrides with_width
     assert_eq!(s.height, Some(100.0));
@@ -313,70 +313,82 @@ fn box_shadow_def_new() {
     assert_eq!(s.offset_y, 1.0);
 }
 
-// ── StyleVariant ─────────────────────────────────────
+// ── StyleSet ─────────────────────────────────────
 
 #[test]
-fn style_variant_new() {
+fn style_set_new() {
     let base = Style::default().with_bg(Color::red());
-    let v = StyleVariant::new(base.clone());
+    let v = StyleSet::new(base.clone());
     assert_eq!(v.normal, base);
     assert_eq!(v.hover, None);
-    assert_eq!(v.active, None);
+    assert_eq!(v.pressed, None);
     assert_eq!(v.disabled, None);
 }
 
 #[test]
-fn style_variant_resolve_priority() {
+fn style_set_resolve_priority() {
     let normal = Style::default().with_bg(Color::red());
     let hover = Style::default().with_bg(Color::green());
     let active = Style::default().with_bg(Color::blue());
     let disabled = Style::default().with_bg(Color::from_rgb(128, 128, 128));
-    let v = StyleVariant::new(normal.clone())
+    let v = StyleSet::new(normal.clone())
         .hover(hover)
         .active(active)
         .disabled(disabled);
     // 优先级：disabled > active > hover > normal
     assert_eq!(
-        v.resolve(false, false, true).background,
+        v.resolve_flags(false, false, false, true).background,
         Some(Color::from_rgb(128, 128, 128))
     );
     assert_eq!(
-        v.resolve(false, true, false).background,
+        v.resolve_flags(false, true, false, false).background,
         Some(Color::blue())
     );
     assert_eq!(
-        v.resolve(true, false, false).background,
+        v.resolve_flags(true, false, false, false).background,
         Some(Color::green())
     );
     assert_eq!(
-        v.resolve(false, false, false).background,
+        v.resolve_flags(false, false, false, false).background,
         Some(Color::red())
     );
 }
 
 #[test]
-fn style_variant_resolve_fallback() {
+fn style_set_resolve_fallback() {
     let normal = Style::default().with_bg(Color::red());
-    let v = StyleVariant::new(normal.clone());
+    let v = StyleSet::new(normal.clone());
     // 无 hover/active/disabled 时回退到 normal
-    assert_eq!(v.resolve(true, true, false).background, Some(Color::red()));
-    assert_eq!(v.resolve(true, false, false).background, Some(Color::red()));
-    assert_eq!(v.resolve(false, true, false).background, Some(Color::red()));
-    assert_eq!(v.resolve(false, false, true).background, Some(Color::red()));
+    assert_eq!(
+        v.resolve_flags(true, true, false, false).background,
+        Some(Color::red())
+    );
+    assert_eq!(
+        v.resolve_flags(true, false, false, false).background,
+        Some(Color::red())
+    );
+    assert_eq!(
+        v.resolve_flags(false, true, false, false).background,
+        Some(Color::red())
+    );
+    assert_eq!(
+        v.resolve_flags(false, false, false, true).background,
+        Some(Color::red())
+    );
 }
 
 #[test]
-fn style_variant_chain_methods() {
+fn style_set_chain_methods() {
     let normal = Style::default().with_bg(Color::red());
     let hover = Style::default().with_bg(Color::green());
     let active = Style::default().with_bg(Color::blue());
     let disabled = Style::default().with_bg(Color::from_rgb(128, 128, 128));
-    let v = StyleVariant::new(normal)
+    let v = StyleSet::new(normal)
         .hover(hover.clone())
         .active(active.clone())
         .disabled(disabled.clone());
     assert_eq!(v.hover, Some(hover));
-    assert_eq!(v.active, Some(active));
+    assert_eq!(v.pressed, Some(active));
     assert_eq!(v.disabled, Some(disabled));
 }
 
@@ -478,7 +490,7 @@ fn style_macro_border_and_shadow() {
         shadow: (Color::black(), 4.0, 2.0, 2.0),
     };
     assert_eq!(s.border_color, Some(Color::red()));
-    assert_eq!(s.border_width, 2.0);
+    assert_eq!(s.border_width, EdgeInsets::uniform(2.0));
     assert_eq!(
         s.box_shadow,
         Some(BoxShadowDef::new(Color::black(), 4.0, 2.0, 2.0))

@@ -6,10 +6,10 @@
 use std::cell::Cell;
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
-use crate::draw::{Color, traits::GraphicsEngine, Radius};
+use crate::draw::painting::PaintContext;
+use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// 列表项数据
 #[derive(Debug, Clone)]
@@ -108,9 +108,9 @@ define_widget! {
         Size::new(220.0, h.max(100.0))
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, .. } => {
+            SystemEvent::PointerDown { pos, .. } => {
                 let mut y = 0.0;
 
                 // Header 按钮点击
@@ -159,7 +159,7 @@ define_widget! {
                 EventResult::NotHandled
             }
 
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 let old_hover = self.hovered_index.get();
                 let old_btn = self.hovered_header.get();
                 let mut new_hover: Option<usize> = None;
@@ -184,14 +184,14 @@ define_widget! {
                 else { EventResult::NotHandled }
             }
 
-            WidgetEvent::MouseWheel { delta, .. } => {
+            SystemEvent::Wheel { delta, .. } => {
                 let sy = self.scroll_y.get();
                 let max_scroll = -(self.items.len() as f32 * (self.item_height + 2.0) - 500.0).min(0.0);
                 self.scroll_y.set((sy + delta.y * 0.5).max(max_scroll).min(0.0));
                 EventResult::Handled
             }
 
-            WidgetEvent::HoverLeave => {
+            SystemEvent::PointerLeave => {
                 self.hovered_index.set(None);
                 self.hovered_header.set(false);
                 EventResult::Handled
@@ -201,7 +201,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_layout();
         let border = Color::from_rgb(40, 40, 45);
         let t_sec = ctx.tokens().color_text_secondary();

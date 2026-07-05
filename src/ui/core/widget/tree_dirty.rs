@@ -1,4 +1,4 @@
-use super::tree_core::WidgetTree;
+﻿use super::tree_core::WidgetTree;
 use super::*;
 use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle, ScrollDelta};
 use crate::draw::DirtyRegion;
@@ -122,16 +122,8 @@ impl WidgetTree {
         self.try_register_animation(id);
     }
 
-    /// 兼容旧 API。
-    pub fn mark_dirty(&mut self, id: WidgetId) {
-        self.invalidate_paint(id);
-    }
 
-    pub fn mark_dirty_rect(&mut self, id: WidgetId, rect: Rect) {
-        self.invalidate_paint_rect(id, rect);
-    }
-
-    pub fn mark_dirty_subtree(&mut self, id: WidgetId) {
+    pub fn invalidate_paint_subtree(&mut self, id: WidgetId) {
         let ids: Vec<WidgetId> = {
             let mut result = vec![id];
             if let Some(node) = self.get(id) {
@@ -173,10 +165,7 @@ impl WidgetTree {
         self.invalidation
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .push(Invalidation::Paint {
-                id: 0,
-                rect: None,
-            });
+            .push(Invalidation::Paint { id: 0, rect: None });
         if let Some(root) = self.root_id {
             self.push_layout_invalidation(root);
         }

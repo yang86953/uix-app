@@ -3,7 +3,7 @@
 //! Used by [`ScrollView`](super::ScrollView) to render draggable scrollbar
 //! tracks and thumbs. Each axis gets its own [`ScrollBar`] instance.
 
-use crate::draw::painting::RenderContext;
+use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect};
 
@@ -181,7 +181,7 @@ impl ScrollBar {
     ///
     /// `abs_frame` is the viewport frame in absolute (screen) coordinates.
     /// `scroll` and `max_scroll` define the current scroll position.
-    pub fn render(&self, abs_frame: Rect, ctx: &mut RenderContext, scroll: f32, max_scroll: f32) {
+    pub fn render(&self, abs_frame: Rect, ctx: &mut PaintContext, scroll: f32, max_scroll: f32) {
         if !self.show || max_scroll <= 0.0 {
             return;
         }

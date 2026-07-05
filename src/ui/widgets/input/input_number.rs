@@ -3,10 +3,10 @@
 //! 支持 min/max/step、键盘上下箭头、+/- 按钮。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, WidgetEvent, WidgetTree};
-use crate::draw::{Color, traits::GraphicsEngine, Radius};
+use crate::draw::painting::PaintContext;
+use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::native::{Point, Rect, Size};
+use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 define_widget! {
     /// InputNumber — 数字输入框。
@@ -27,18 +27,18 @@ define_widget! {
         Size::new(80.0, 32.0)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }
         match event {
-            WidgetEvent::MouseDown { pos: _, .. } => {
+            SystemEvent::PointerDown { pos: _, .. } => {
                 self.focused = true;
                 self.text_buffer = self.value.to_string();
                 EventResult::Handled
             }
-            WidgetEvent::HoverEnter => { self.hovered = true; EventResult::Handled }
-            WidgetEvent::HoverLeave => { self.hovered = false; EventResult::Handled }
-            WidgetEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            WidgetEvent::KeyDown { key, .. } => {
+            SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
+            SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
+            SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
+            SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Up => {
                         self.value = (self.value + self.step).min(self.max);
@@ -67,7 +67,7 @@ define_widget! {
                     _ => EventResult::NotHandled,
                 }
             }
-            WidgetEvent::KeyPress { text } => {
+            SystemEvent::TextInput { text } => {
                 if text.chars().any(|c| c.is_control()) {
                     return EventResult::NotHandled;
                 }
@@ -82,7 +82,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let input_frame = Rect::new(frame.x, frame.y, frame.w - 32.0, frame.h);
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();

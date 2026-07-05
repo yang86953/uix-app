@@ -63,7 +63,8 @@ impl InvalidationQueue {
                 .find(|i| matches!(i, Invalidation::Paint { id: eid, .. } if *eid == *id))
             {
                 if let Invalidation::Paint {
-                    rect: existing_rect, ..
+                    rect: existing_rect,
+                    ..
                 } = existing
                 {
                     *existing_rect = merge_paint_rect(*existing_rect, *rect);
@@ -159,11 +160,7 @@ impl InvalidationQueue {
 }
 
 /// 通过共享句柄推送 Paint 失效（State 绑定用）。
-pub fn invalidate_paint_handle(
-    handle: &InvalidationQueueHandle,
-    id: NodeId,
-    rect: Option<Rect>,
-) {
+pub fn invalidate_paint_handle(handle: &InvalidationQueueHandle, id: NodeId, rect: Option<Rect>) {
     if let Ok(mut q) = handle.lock() {
         q.push(Invalidation::Paint { id, rect });
     }

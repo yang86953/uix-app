@@ -4,9 +4,9 @@
 
 use crate::native::{Point, Rect};
 
+use crate::draw::font::text::TextRenderService;
 use crate::draw::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::painting::PaintContext;
-use crate::draw::font::text::TextRenderService;
 use crate::draw::traits::Canvas2D;
 use crate::draw::{Color, FontHandle, GradientDirection, Radius};
 
@@ -59,6 +59,15 @@ pub enum PaintOp {
         rect: Rect,
         color: Color,
         font_size: f32,
+    },
+    DrawTextInFrame {
+        text: String,
+        rect: Rect,
+        color: Color,
+        font_size: f32,
+    },
+    SetFont {
+        font: FontHandle,
     },
     FillLinearGradient {
         rect: Rect,
@@ -142,6 +151,13 @@ impl DisplayList {
                     color,
                     font_size,
                 } => ctx.text_center(text, *rect, *color, *font_size),
+                PaintOp::DrawTextInFrame {
+                    text,
+                    rect,
+                    color,
+                    font_size,
+                } => ctx.draw_text_in_frame(text, *rect, *color, *font_size),
+                PaintOp::SetFont { font } => ctx.set_font(*font),
                 PaintOp::FillLinearGradient {
                     rect,
                     color_a,
@@ -189,7 +205,9 @@ impl DisplayList {
                     line_width,
                     radius,
                 } => canvas.stroke_rect(*rect, *color, *line_width, *radius),
-                PaintOp::FillCircle { cx, cy, r, color } => canvas.fill_circle(*cx, *cy, *r, *color),
+                PaintOp::FillCircle { cx, cy, r, color } => {
+                    canvas.fill_circle(*cx, *cy, *r, *color)
+                }
                 PaintOp::DrawBoxShadow {
                     rect,
                     blur_radius,
@@ -221,6 +239,17 @@ impl DisplayList {
                 } => {
                     text.text_center(canvas, s, *rect, *color, *font_size);
                 }
+                PaintOp::DrawTextInFrame {
+                    text: s,
+                    rect,
+                    color,
+                    font_size,
+                } => {
+                    text.draw_text_in_frame(canvas, s, *rect, *color, *font_size);
+                }
+                PaintOp::SetFont { font } => {
+                    text.set_font(*font);
+                }
                 PaintOp::FillLinearGradient {
                     rect,
                     color_a,
@@ -247,9 +276,15 @@ impl DisplayList {
 mod tests {
     use super::*;
     use crate::draw::font::font_service::FontService;
+    use crate::draw::traits::GraphicsEngine;
     use crate::draw::Color;
     use crate::draw::NullEngine;
-    use crate::draw::traits::GraphicsEngine;
+
+    const RED_PNG: &[u8] = &[
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6,
+        0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 248, 207, 192, 240,
+        31, 0, 5, 0, 1, 255, 137, 153, 61, 29, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ];
 
     #[test]
     fn display_list_stores_ops() {
@@ -264,10 +299,24 @@ mod tests {
     }
 
     #[test]
+    fn display_list_stores_draw_text_in_frame_and_set_font() {
+        let mut list = DisplayList::new();
+        list.push(PaintOp::SetFont {
+            font: FontHandle::new(1),
+        });
+        list.push(PaintOp::DrawTextInFrame {
+            text: "Nav".into(),
+            rect: Rect::new(0.0, 0.0, 40.0, 20.0),
+            color: Color::black(),
+            font_size: 14.0,
+        });
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
     fn replay_canvas_draw_image_with_service() {
         let svc = ImageService::new();
-        let png = include_bytes!("../../../tests/fixtures/red_1x1.png");
-        let handle = svc.load_from_bytes(png).expect("load png");
+        let handle = svc.load_from_bytes(RED_PNG).expect("load png");
 
         let mut list = DisplayList::new();
         list.push(PaintOp::DrawImage {

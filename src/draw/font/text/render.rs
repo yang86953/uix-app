@@ -1,8 +1,8 @@
 //! TextRenderService — 文本渲染服务。
 
 use crate::draw::font::font_service::FontService;
-use crate::draw::spatial::{PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::font::text_backend::TextLayoutOptions;
+use crate::draw::spatial::{PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::traits::Canvas2D;
 use crate::draw::{Color, FontHandle, HAlign, VAlign};
 use crate::native::{Point, Rect, Size};
@@ -80,7 +80,7 @@ impl<'a> TextRenderService<'a> {
         }
     }
 
-    /// 公开的 glyph 绘制入口（供 RenderContext 委托）。
+    /// 公开的 glyph 绘制入口（供 PaintContext 委托）。
     pub fn blit_to(
         &mut self,
         canvas: &mut dyn Canvas2D,

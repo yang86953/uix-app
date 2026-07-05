@@ -54,14 +54,14 @@ impl PhysicalBox {
 
 /// 统一 3D AABB 转换接口。
 ///
-/// 允许 `fill_rect` 等方法同时接受 `Rect`（向后兼容）、`AABB3D`、`PhysicalBox`。
+/// 允许 `fill_rect` 等方法统一接受 `Rect`、`AABB3D`、`PhysicalBox`。
 pub trait IntoAABB3D {
     /// 转换为 AABB3D（以 dip 为单位）。
     #[allow(clippy::wrong_self_convention)]
     fn into_aabb(&self, dpi: f32, dpr: f32) -> AABB3D;
 }
 
-/// 从 `crate::native::Rect` 转换（向后兼容，纯 2D）。
+/// 从 `crate::native::Rect` 转换（纯 2D 逻辑像素）。
 impl IntoAABB3D for crate::native::Rect {
     fn into_aabb(&self, _dpi: f32, _dpr: f32) -> AABB3D {
         AABB3D::new(

@@ -21,7 +21,7 @@ pub struct FakeSystemInfo {
     /// MemoryInfo.process_private_bytes 是 usize
     pub process_private_bytes: Cell<usize>,
     pub default_font: String,
-    /// `default_font_path` 调用次数追踪
+    /// `default_font_paths` 调用次数追踪
     pub default_font_calls: std::cell::Cell<usize>,
 }
 
@@ -92,13 +92,13 @@ impl ISystemInfo for FakeSystemInfo {
         self.up_time.get()
     }
 
-    fn default_font_path(&self) -> Option<String> {
+    fn default_font_paths(&self) -> Vec<String> {
         self.default_font_calls
             .set(self.default_font_calls.get() + 1);
         if self.default_font.is_empty() {
-            None
+            Vec::new()
         } else {
-            Some(self.default_font.clone())
+            vec![self.default_font.clone()]
         }
     }
 }

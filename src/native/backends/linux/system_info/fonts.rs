@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // Uses fc-match / fontconfig to discover system-default and CJK fonts.
-// Also handles CFF2 variable font detection (fontdue-incompatible).
+// Also handles CFF2 variable font detection for formats unsupported by fontdue.
 // ============================================================================
 
 /// 当 fontdue 不支持的 CFF2 可变字体被匹配到时，
@@ -43,7 +43,7 @@ fn try_cff2_alt_family(pattern: &str) -> Option<String> {
 ///
 /// 预读取数据让调用方可直接加载，避免二次 I/O。调用方应优先使用返回的 data
 /// 而非自己重复 `fs::read(&path)`。
-/// Returns `None` if no compatible font found.
+/// Returns `None` if no supported font is found.
 fn probe_fc_match_with_data(pattern: &str) -> Option<(String, Vec<u8>)> {
     let output = std::process::Command::new("fc-match")
         .args(["-f", "%{file}\n", pattern])

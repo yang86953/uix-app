@@ -6,12 +6,12 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use crate::ui::clipboard;
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, KeyCode, KeyMod, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::native::{Point, Rect, Size};
+use crate::ui::clipboard;
+use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypographyType {
@@ -53,9 +53,9 @@ define_widget! {
         Size::new(w, h)
     }
 
-    on_event => (&mut self, event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            WidgetEvent::MouseDown { pos, mods, .. } => {
+            SystemEvent::PointerDown { pos, mods, .. } => {
                 let dp = self.draw_pos.get();
                 let text_x = pos.x - dp.x;
                 let text_y = pos.y - dp.y;
@@ -70,7 +70,7 @@ define_widget! {
                 self.sel_dragging.set(true);
                 EventResult::Handled
             }
-            WidgetEvent::MouseMove { pos, .. } => {
+            SystemEvent::PointerMove { pos, .. } => {
                 if !self.sel_dragging.get() { return EventResult::NotHandled; }
                 let dp = self.draw_pos.get();
                 let text_x = pos.x - dp.x;
@@ -80,20 +80,20 @@ define_widget! {
                 self.set_selection_range(anchor, ci);
                 EventResult::Handled
             }
-            WidgetEvent::MouseUp { .. } => {
+            SystemEvent::PointerUp { .. } => {
                 self.sel_dragging.set(false);
                 if let Some((s, e)) = self.selection.get() {
                     if s == e { self.selection.set(None); }
                 }
                 EventResult::Handled
             }
-            WidgetEvent::FocusOut => {
+            SystemEvent::FocusOut => {
                 // 失去焦点时清除文字选中
                 self.selection.set(None);
                 self.sel_dragging.set(false);
                 EventResult::Handled
             }
-            WidgetEvent::KeyDown { key, mods } => {
+            SystemEvent::KeyDown { key, mods } => {
                 let ctrl = mods.contains(KeyMod::CTRL);
                 match key {
                     KeyCode::A if ctrl => {
@@ -118,7 +118,7 @@ define_widget! {
         }
     }
 
-    render => (&self, frame: Rect, ctx: &mut RenderContext, _tree: &WidgetTree) {
+    render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let (fs, _fw) = self.compute_font_style();
         let text_c = self.color_override.unwrap_or_else(|| {
             if self.disabled { ctx.tokens().color_text_quaternary() } else { ctx.tokens().color_text() }

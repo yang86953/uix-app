@@ -3,10 +3,10 @@
 //! 监听滚动位置变化，当 scroll_y > offset_top 时固定。
 
 use crate::define_widget;
-use crate::draw::painting::RenderContext;
-use crate::ui::{EventResult, WidgetEvent, WidgetTree};
+use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::native::{Rect, Size};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {
     /// Affix — 固定定位容器。
@@ -30,11 +30,11 @@ define_widget! {
         Size::new(0.0, if self.affixed { self.child_height } else { 0.0 })
     }
 
-    on_event => (&mut self, _event: &WidgetEvent) -> EventResult {
+    on_event => (&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
     }
 
-    render => (&self, _frame: Rect, _ctx: &mut RenderContext, _tree: &WidgetTree) {}
+    render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
     layout_children => (&self, _frame: Rect, _children: &[crate::ui::WidgetId],
         _tree: &crate::ui::WidgetTree) -> Vec<(crate::ui::WidgetId, Rect)>

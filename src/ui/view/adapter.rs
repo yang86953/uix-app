@@ -1,4 +1,4 @@
-//! 适配层 — 将 View 树展开为 WidgetTree。
+﻿//! 适配层 — 将 View 树展开为 WidgetTree。
 //!
 //! 用户在 `App::run()` 内部通过本模块将用户层的 `View` 树递归展开为框架层的
 //! `WidgetTree`，完全隐藏 `WidgetNode`、`BoxedWidget` 等内部概念。
@@ -16,12 +16,12 @@
 //! - layout 后：`bind_reactive_widget_states` 探测 `dynamic_label` 闭包依赖并绑定 Paint 失效
 //! - 兜底：`bind_orphan_pending_states` 将未关联 State 绑到根节点
 
-use crate::ui::traits::WidgetComponent;
-use crate::ui::style::Style;
 use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
+use crate::ui::style::Style;
+use crate::ui::traits::WidgetComponent;
 use crate::ui::view::{View, ViewNode};
-use crate::ui::{WidgetNode, WidgetTree};
 use crate::ui::widgets::{Button, Container, Label};
+use crate::ui::{WidgetNode, WidgetTree};
 
 /// View 树适配器。将 ViewNode 递归展开为 WidgetTree。
 pub struct ViewAdapter;
@@ -51,7 +51,7 @@ impl ViewAdapter {
     }
 
     /// 递归展开 ViewNode → WidgetNode。
-    fn expand(node: ViewNode) -> WidgetNode {
+    pub(crate) fn expand(node: ViewNode) -> WidgetNode {
         let children: Vec<WidgetNode> = node.children.into_iter().map(Self::expand).collect();
 
         let widget = Self::apply_style(node.widget, &node.style);
@@ -68,6 +68,10 @@ impl ViewAdapter {
 
         if node.z_index != 0 {
             wnode = wnode.z_index(node.z_index);
+        }
+
+        if !node.handlers.is_empty() {
+            wnode = wnode.with_handlers(node.handlers);
         }
 
         wnode
@@ -115,10 +119,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::view::ViewNode;
-    use crate::ui::WidgetCore;
-    use crate::ui::widgets::Container;
     use crate::draw::Color;
+    use crate::ui::view::ViewNode;
+    use crate::ui::widgets::Container;
+    use crate::ui::WidgetCore;
 
     #[test]
     fn test_build_single_node() {
@@ -174,5 +178,65 @@ mod tests {
         assert!(!dirty_called.load(Ordering::SeqCst));
         state.set(100);
         assert!(dirty_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn button_on_click_is_registered_as_semantic_handler() {
+        use crate::native::{KeyMod, MouseButton, Point};
+        use crate::ui::view::button;
+        use crate::ui::SystemEvent;
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let clicks = Rc::new(Cell::new(0));
+        let clicks_for_handler = clicks.clone();
+        let mut tree = ViewAdapter::build(button("OK").on_click(move || {
+            clicks_for_handler.set(clicks_for_handler.get() + 1);
+        }));
+
+        let pos = Point::new(2.0, 2.0);
+        let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+        let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+
+        assert_eq!(clicks.get(), 1);
+    }
+
+    #[test]
+    fn input_on_change_is_registered_as_semantic_handler() {
+        use crate::native::{KeyMod, MouseButton, Point, Rect};
+        use crate::ui::view::input;
+        use crate::ui::{SystemEvent, WidgetCore};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let value = Rc::new(RefCell::new(String::new()));
+        let value_for_handler = value.clone();
+        let mut tree = ViewAdapter::build(input().on_change(move |next| {
+            *value_for_handler.borrow_mut() = next.to_string();
+        }));
+
+        let root = tree.root_id().expect("input root should exist");
+        tree.get_mut(root)
+            .expect("input root should be present")
+            .set_frame(Rect::new(0.0, 0.0, 120.0, 32.0));
+
+        let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(8.0, 8.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+        let _ = tree.dispatch_event(&SystemEvent::TextInput {
+            text: "A".to_string(),
+        });
+
+        assert_eq!(&*value.borrow(), "A");
     }
 }

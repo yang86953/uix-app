@@ -3,8 +3,8 @@
 //! 提供统一过渡动画定义，用于 Modal（弹出/关闭）、Drawer（滑入/滑出）、
 //! Tooltip（渐隐渐现）、Collapse（展开/折叠）等场景。
 
-use crate::ui::animation::core::Animation;
 use crate::native::Point;
+use crate::ui::animation::core::Animation;
 
 /// 过渡动画方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

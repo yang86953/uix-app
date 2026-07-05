@@ -5,9 +5,9 @@
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 
+use crate::native::backends::windows::util::to_utf8;
 use crate::native::shared::{FileSystemCore, SpecialDirProvider};
 use crate::native::traits::system::SpecialDir;
-use crate::native::backends::windows::util::to_utf8;
 use std::ptr;
 
 // ════════════════════════════════════════════════════════════════════════════
