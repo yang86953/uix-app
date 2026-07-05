@@ -7,7 +7,7 @@
 
 ## 一、定位
 
-UIX 是一个**跨平台原生桌面应用开发框架**（Rust）。组织原则是：
+UIX 是一个**跨平台原生桌面应用开发框架**（Rust，单一 crate `uix`）。组织原则是：
 
 - **按功能域划分模块** — 模块名对应开发者「在做什么」，而非技术实现层
 - **平台差异只封装在 `native` 域** — 其余代码在每个平台上完全一致
@@ -16,24 +16,28 @@ UIX 是一个**跨平台原生桌面应用开发框架**（Rust）。组织原�
 
 ## 二、Workspace 结构
 
-```
-uix workspace
-├── src/        (uix)     单一框架 crate
-├── demo/       (uix-demo) 演示二进制
-└── tests/      集成测试
+```text
+uix-app/
+├── Cargo.toml          # workspace 根 + uix crate
+├── src/                # uix 框架源码（六大功能域）
+├── demo/               # uix-demo 演示二进制
+├── tests/              # 集成测试（按功能域命名）
+├── ARCHITECTURE.md     # 本文档
+├── README.md           # 快速上手
+└── AGENTS.md           # 编码规范
 ```
 
 ### 依赖拓扑
 
-```
+```text
 demo ──→ uix
 ```
 
 ---
 
-## 三、六大功能域（目标架构）
+## 三、六大功能域（当前架构）
 
-```
+```text
 uix/src/
 │
 ├── core/                  # 基础设施 — 与 OS / UI 无关
@@ -48,6 +52,7 @@ uix/src/
 │   ├── backends/          # 平台实现（windows/ + linux/），#[cfg] 只在此处
 │   ├── factory.rs         # create_platform(), create_gpu_context()
 │   ├── services/          # FileService, NotificationService
+│   ├── presenter.rs       # 呈现器编排
 │   └── test_harness/      # FakePlatform — 无真实 OS 也能测试上层
 │
 ├── draw/                  # 绘制能力 — 内容如何变成像素
@@ -56,7 +61,7 @@ uix/src/
 │   ├── backend/           # Cpu / Gpu / Null 后端
 │   ├── rasterizer/        # 光栅化算法
 │   ├── font/              # 字体加载与文本布局
-│   ├── compositor/        # LayerTree, ScenePaint
+│   ├── compositor/        # LayerTree, ScenePaint trait
 │   ├── pipeline/          # 帧调度、无效化
 │   ├── primitives/        # Color, Path, 描边
 │   └── spatial/           # 坐标变换、脏区域
@@ -69,22 +74,20 @@ uix/src/
 │   ├── theme/             # DesignTokens, Theme（Ant Design 5）
 │   ├── animation/         # Animation, Transition, Easing
 │   ├── managers/          # 焦点、拖拽、事件管理等
-│   ├── widgets/           # 76 个内置组件
+│   ├── widgets/           # 内置组件库
 │   ├── view/              # 声明式 DSL（column, row, label…）
-│   └── macros/            # define_widget!, tree!
+│   └── macros.rs          # define_widget!, tree!
 │
 ├── app/                   # 应用能力 — 组装各域成为可运行应用
 │   ├── shell/             # App 生命周期、CLI、DI
 │   ├── event_loop/        # 主事件循环
-│   ├── bridge/            # UI ↔ Draw 桥接（ScenePaint, trait 适配）
-│   ├── window/            # 应用级窗口管理
-│   └── navigation/        # 【预留】应用级路由 / 页面栈
+│   ├── bridge/            # UI ↔ Draw 桥接（ScenePaint 实现、trait 适配）
+│   └── window/            # 应用级窗口管理
 │
 ├── data/                  # 数据能力
-│   ├── settings/          # 键值持久化
-│   ├── store/             # 【预留】应用状态仓库
-│   └── sync/              # 【预留】离线 / 同步
+│   └── settings/          # 键值持久化（SettingsService）
 │
+├── lib.rs                 # crate 根，声明六大功能域
 └── prelude.rs             # 统一对外入口
 ```
 
@@ -97,11 +100,11 @@ uix/src/
 | **draw** | 内容变成像素 | 2D 引擎、字体、光栅化、合成 |
 | **ui** | 界面与交互 | 组件、布局、主题、动画、响应式状态 |
 | **app** | 应用怎么跑起来 | 启动、主循环、窗口、CLI、DI |
-| **data** | 数据从哪来存哪去 | 配置持久化、（未来）状态仓库与同步 |
+| **data** | 数据从哪来存哪去 | 配置持久化 |
 
 ### 依赖方向（严格单向）
 
-```
+```text
 core ← native ← draw ← ui ← app
   ↑      ↑               ↑
   └──────┴─── data ──────┘
@@ -112,6 +115,15 @@ core ← native ← draw ← ui ← app
 | 上层依赖下层 | `ui` 依赖 `draw` + `core`，不反向 |
 | 平台隔离 | `draw` / `ui` / `app` / `data` / `core` 只依赖 `native::traits` |
 | 禁止泄漏 | 上层不得 `use native::backends::*`，不得出现 `#[cfg(windows)]` |
+
+### 对外入口
+
+| 场景 | 导入 |
+|------|------|
+| 90% 应用开发 | `use uix::prelude::*;` |
+| 按域精确导入 | `uix::core::*` / `native::*` / `draw::*` / `ui::*` / `app::*` / `data::*` |
+
+`prelude` 重导出：`App`、`State`、`column`/`row`/`button` 等 View DSL、常用组件、`Error`/`Point`/`Color` 等基础类型。
 
 ---
 
@@ -130,8 +142,6 @@ pub mod linux;
 #[cfg(windows)]
 fn handle_click() { ... }
 ```
-
-当前代码已满足：`#[cfg(windows/unix)]` 仅出现在 `native/backends/` 与 `native/factory.rs`，`draw` / `ui` / `app` / `data` / `core` 中为零。
 
 ### 4.2 能力差异用 trait 表达，不用条件编译泄漏
 
@@ -156,13 +166,13 @@ pub fn create_gpu_context(...) -> Result<Box<dyn IGraphicsContext>, Error> {
 
 ### 4.4 native 域三层抹平机制
 
-```
+```text
 native/traits     统一契约 — 上层唯一可见的 native 接口
 native/shared     共享逻辑 — 平台只实现最小钩子，其余一份代码
 native/backends/  平台实现 — #[cfg] 只在此处
 ```
 
-**shared 层关键模式**（现有代码，迁移时保留）：
+**shared 层关键模式**：
 
 | 模式 | 平台必须实现 | 自动获得 |
 |------|-------------|---------|
@@ -176,7 +186,7 @@ native/backends/  平台实现 — #[cfg] 只在此处
 
 ### 5.1 端到端链路
 
-```
+```text
 OS 事件
   → native/backends（平台特有分发）
   → native/traits::UiEvent（统一格式）
@@ -193,7 +203,7 @@ OS 事件
 
 ### 5.2 渲染管线
 
-```
+```text
 WidgetTree.update(dt) → dirty regions + scroll deltas
     ↓
 WidgetTree.layout() → 仅遍历脏子树
@@ -207,7 +217,7 @@ IPresenter.present() → 屏幕
 
 ### 5.3 事件流
 
-```
+```text
 OS 事件 → IEventLoop → UiEvent → WidgetTree.dispatch_event()
     → 命中测试 → WidgetEventHandler.on_event()
     → EventBus.publish() → 外部订阅者
@@ -231,7 +241,7 @@ OS 事件 → IEventLoop → UiEvent → WidgetTree.dispatch_event()
 | 错误 / 日志 | `core` | `Error`, `Logger` |
 | 90% 场景 | `prelude` | `use uix::prelude::*` |
 
-### 6.2 目标入口体验
+### 6.2 入口示例
 
 ```rust
 use uix::prelude::*;
@@ -240,61 +250,97 @@ fn main() {
     App::new()
         .title("我的应用")
         .size(1024, 768)
-        .root(my_page())
+        .root(column([label("Hello")]))
         .run();
+}
+```
+
+### 6.3 自定义组件（底层）
+
+```rust
+use uix::prelude::*;
+
+define_widget! {
+    struct Greeting { text: String }
+
+    impl WidgetComponent for Greeting {
+        fn build(self, _ctx: &WidgetContext) -> WidgetNode {
+            label(self.text).into_node()
+        }
+    }
 }
 ```
 
 ---
 
-## 七、现状 → 目标映射（已完成）
+## 七、测试布局
 
-> P3 物理搬迁已完成，下表保留迁移对照供查阅。
+### 集成测试（`tests/`）
 
-| 目标功能域 | 原代码路径 | 状态 |
-|-----------|-------------|------|
-| `core/error` | `platform/api/error/` | ✅ |
-| `core/geometry` | `platform/api/geometry/` | ✅ |
-| `core/log` | `platform/log/` | ✅ |
-| `core/diagnostic` | `platform/diagnostic/` | ✅ |
-| `native/traits` | `platform/api/` | ✅ |
-| `native/shared` | `platform/shared/` | ✅ |
-| `native/backends/windows` | `platform/windows/` | ✅ |
-| `native/backends/linux` | `platform/linux/` | ✅ |
-| `native/services` | `platform/services/` | ✅ |
-| `native/test_harness` | `platform/test_harness/` | ✅ |
-| `draw/*` | `render/*` | ✅ |
-| `ui/core` | `widget/core/` | ✅ |
-| `ui/foundation/state` | `widget/foundation/state/` | ✅ |
-| `ui/foundation/style` | `widget/foundation/style/` | ✅ |
-| `ui/widgets` | `widget/widgets/` | ✅ |
-| `ui/view` | `view/` | ✅ |
-| `app/shell` | `runtime/application.rs` + `view/app.rs` | ✅ |
-| `app/event_loop` | `widget/scene/event_loop.rs` | ✅ |
-| `app/bridge` | `widget/scene/bridges.rs` + `scene_paint.rs` | ✅ |
-| `app/window` | `runtime/window.rs` | ✅ |
-| `app/shell/cli` | `runtime/cli.rs` | ✅ |
-| `app/shell/di` | `runtime/di.rs` | ✅ |
-| `data/settings` | `platform/services/settings.rs` | ✅ |
-| `prelude` | — | ✅ |
-| `api/*` | `api/` + 各域 re-export | ✅ 已消除 |
+按六大功能域组织，每个域一个入口二进制：
 
-### 待清理项
+```text
+tests/
+├── common/mod.rs       # 共享辅助
+├── core.rs             # core 域入口
+├── native.rs           # native 域入口
+├── draw.rs             # draw 域入口
+├── ui.rs               # ui 域入口
+├── app.rs              # app 域入口
+├── core/               # error, geometry, log, diagnostic
+├── native/             # api, event, event_bus, shared, smoke, types, platform_integration
+├── draw/               # integration, engine_cpu, bitmap_font, font_service, ...
+├── ui/                 # core, layout, theme, animation, widgets, ...
+└── app/                # application, window, cli_and_di
+```
 
-- ~~`api/` 独立镜像层~~（P2 已删除，trait 迁入 `widget/traits/` 与 `render/traits/`）
-- ~~`runtime::App` 与 `view::App` 两个同名入口~~（P2 已合并为 `runtime::App`）
-- ~~`map_ui_event` 重复实现~~（P2 已去重）
+| 入口 | 覆盖域 | 子模块示例 |
+|------|--------|-----------|
+| `--test core` | `core` | `error`, `geometry`, `log`, `diagnostic` |
+| `--test native` | `native` | `api`, `event`, `smoke`, `platform_integration` |
+| `--test draw` | `draw` | `integration`, `engine_cpu`, `render_baseline` |
+| `--test ui` | `ui` | `core`, `layout`, `widgets`, `with_native` |
+| `--test app` | `app` | `application`, `window`, `cli_and_di` |
+
+集成测试优先 `use uix::prelude::*`，域专用符号再精确导入。
+
+常用命令：
+
+```bash
+cargo test -p uix                          # 全部测试（单元 + 集成）
+cargo test -p uix --test core              # 单个域集成测试
+cargo test --features test-harness -p uix  # 含 FakePlatform 的测试
+```
+
+### 单元测试（`src/`）
+
+分布在各模块的 `#[cfg(test)]` 块中，用于测试 `pub(crate)` / 私有实现细节。
+**不迁入** `tests/`，因集成测试 crate 无法访问 crate 内部符号。
+
+`demo/` 内的布局冒烟测试保留在 demo crate 的 `#[cfg(test)]` 中。
 
 ---
 
-## 八、实施路线
+## 八、重构历程（已完成）
 
-| 阶段 | 目标 | 改动范围 |
-|------|------|---------|
-| **P0 文档** | 确立功能域架构与跨平台规则 | 本文档 ✅ |
-| **P1 统一入口** | 新增 `prelude`；demo 改用 prelude；删 render 旧路径 shim | 低 | ✅ |
-| **P2 收拢入口** | 合并两个 `App`；`map_ui_event` 去重；消除 `api/` 纯 re-export | 中 | ✅ |
-| **P3 物理搬迁** | 按第七章映射表搬迁模块 | 高 | ✅ |
+| 阶段 | 目标 | 状态 |
+|------|------|------|
+| **P0 文档** | 确立功能域架构与跨平台规则 | ✅ |
+| **P1 统一入口** | 新增 `prelude`；demo 改用 prelude | ✅ |
+| **P2 收拢入口** | 合并两个 `App`；`map_ui_event` 去重；消除 `api/` 层 | ✅ |
+| **P3 物理搬迁** | `platform/render/widget/runtime/view` → 六大功能域 | ✅ |
+
+### 路径迁移对照（供查阅）
+
+| 当前路径 | 原路径 |
+|---------|--------|
+| `core/*` | `platform/api/error`, `platform/log`, `platform/diagnostic` |
+| `native/*` | `platform/windows`, `platform/linux`, `platform/shared`, `platform/services` |
+| `draw/*` | `render/*` |
+| `ui/*` | `widget/*`, `view/*` |
+| `app/*` | `runtime/*`, `widget/scene/*` |
+| `data/settings` | `platform/services/settings.rs` |
+| `draw/traits`, `ui/traits` | `api/render/*`, `api/widget/*` |
 
 ---
 
@@ -304,15 +350,18 @@ fn main() {
 |------|------|------|
 | 组织维度 | 六大功能域（core / native / draw / ui / app / data） | 按开发者任务划分，不按技术层 |
 | 跨平台 | `native` 域封装全部差异，上层零 `#[cfg]` | 余下代码每个平台完全一致 |
-| 单一 crate | 全部合入 `uix` | 消除跨 crate 边界 |
-| 契约位置 | 各域 `traits/`，消灭独立 `api/` 层 | 契约与实现同域，通过 `pub` 控制暴露 |
+| 单一 crate | 全部合入 `uix` | 消除跨 crate 边界与镜像层 |
+| 契约位置 | 各域 `traits/`，无独立 `api/` 层 | 契约与实现同域，通过 `pub` 控制暴露 |
 | Widget 能力位 | `WidgetCapabilities` + 上转型 | 按需实现 Layout / Render / Event / Lifecycle |
 | 增量渲染 | scroll_region + DirtyRects + PresentDamage | CPU 渲染只重绘变化像素 |
+| draw ↔ ui 解耦 | `ScenePaint` trait + `app/bridge` | draw 不依赖 ui 域 |
 | 测试 | `native/test_harness::FakePlatform` | 上层测试不依赖真实 OS |
 
 ---
 
 ## 十、代码约束
+
+与 [`AGENTS.md`](AGENTS.md) 一致，核心条目：
 
 - `deny(clippy::unwrap_used)`, `deny(clippy::expect_used)`
 - 每个 Rust 文件 ≤ 900 行
@@ -320,3 +369,4 @@ fn main() {
 - 组合优于继承
 - `#[cfg(windows/unix)]` 只允许出现在 `native/backends/` 和 `native/factory.rs`
 - 上层模块禁止依赖 `native::backends::*`
+- 重构不做兼容层，直接改路径

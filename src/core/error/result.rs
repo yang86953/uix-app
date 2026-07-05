@@ -136,3 +136,18 @@ pub fn collect_errors<T, E>(
 ) -> Vec<E> {
     results.into_iter().filter_map(|r| r.err()).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::error::ResultExt;
+
+    #[test]
+    fn try_invoke_panic_returns_error() {
+        let result = try_invoke(|| -> i32 {
+            panic!("intentional panic in test");
+        });
+        assert!(result.has_error());
+        assert_eq!(result.err_code(), Some(Errc::Unknown));
+    }
+}

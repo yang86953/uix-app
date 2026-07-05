@@ -1,10 +1,13 @@
-//! 简化 API 演示 — 展示 View 组合子、State 自动脏标记、App 一键启动。
+//! 简化 API 演示 — `prelude` + `App::new()` 一键启动。
 //!
 //! 运行：`cargo run --bin uix-demo -- --simple`
+//!
+//! 本演示展示入门推荐路径：View DSL（`column` / `row` / `button`）+
+//! 响应式 `State` + `App` 生命周期，无需直接接触 `WidgetTree` 或平台 API。
 
 use uix::prelude::*;
 
-// ── 计数器 —— 展示 State 自动脏标记 + 响应式 Label ─────────────
+// ── 计数器 — State 自动脏标记 + dynamic_label ────────────────────────────
 
 fn counter_section() -> ViewNode {
     let count = State::new(0);
@@ -15,7 +18,6 @@ fn counter_section() -> ViewNode {
 
     column([
         label("计数器").font_size(20.0).padding(8.0),
-        // 响应式 label：每次 count 变更自动触发重绘，文本自动更新
         dynamic_label(move || format!("当前值: {}", label_count.get()))
             .font_size(28.0)
             .padding(8.0),
@@ -39,7 +41,7 @@ fn counter_section() -> ViewNode {
     .radius(8.0)
 }
 
-// ── 样式展示 —— 展示 hex 颜色 + EdgeInsets 数字快捷构造 ────────
+// ── 样式 — hex 颜色 + EdgeInsets 数字快捷构造 ────────────────────────────
 
 fn style_demo_section() -> ViewNode {
     column([
@@ -66,7 +68,7 @@ fn style_demo_section() -> ViewNode {
     .radius(8.0)
 }
 
-// ── 布局展示 —— 展示 column/row/gap/flex_grow ──────────────────
+// ── 布局 — column/row/gap/flex_grow ──────────────────────────────────────
 
 fn layout_section() -> ViewNode {
     column([
@@ -102,15 +104,13 @@ fn layout_section() -> ViewNode {
     .radius(8.0)
 }
 
-// ── 入口 ──────────────────────────────────────────────────────
+// ── 入口 ──────────────────────────────────────────────────────────────────
 
 pub fn run_simplified_demo() {
-    let theme = Theme::antd_light();
-
     App::new()
         .title("UIX 简化 API 演示")
         .size(500, 520)
-        .theme(theme)
+        .theme(Theme::antd_light())
         .root(
             column([
                 label("UIX 简化 API 演示")

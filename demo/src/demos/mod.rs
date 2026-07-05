@@ -1,10 +1,11 @@
-//! UIX 演示程序 — UIX 框架的命令行与 GUI 功能展示。
-//! 这些是仅二进制模块（不属于 `uix` 库 crate）。
+//! UIX 演示程序。
+//!
+//! | 模式 | 命令 | 说明 |
+//! |------|------|------|
+//! | 简化 API | `--simple` | `prelude` + `App::new()`，入门推荐 |
+//! | 组件库 | （默认） | `WidgetTree` + `run_widget_loop`，展示高级用法 |
+//! | CLI | `--cli` | 各功能域 API 无 GUI 演示 |
 
 pub mod cli;
-
-// 跨平台 GUI 演示 — 平台抽象层处理平台差异。
 pub mod dashboard;
-
-// 简化 API 演示 — View 组合子 + State 自动脏标记 + App 一键启动。
 pub mod simplified;

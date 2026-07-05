@@ -1,14 +1,17 @@
-//! CLI 演示 — 从命令行运行所有主要 UIX 子系统的功能演示。
+//! CLI 演示 — 按功能域展示 `core` / `native` / `draw` / `ui` / `app` / `data` 能力。
+//!
+//! 运行：`cargo run --bin uix-demo -- --cli`
 
 use std::cell::Cell;
-use uix::prelude::*;
 use std::result::Result;
+
 use uix::core::diagnostic::{
     LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
 };
-use uix::native::services::file_service::FileService;
 use uix::core::log::{info_fn, Level, Logger};
-use uix::data::settings::SettingsService;
+use uix::data::SettingsService;
+use uix::native::file_service::FileService;
+use uix::prelude::*;
 
 // ── Logger ────────────────────────────────────────────────────────────────
 
@@ -18,10 +21,10 @@ pub fn init_logger() {
     info_fn("演示日志初始化完成");
 }
 
-// ── 核心类型 ──────────────────────────────────────────────────────────────
+// ── core：几何与错误 ──────────────────────────────────────────────────────
 
 pub fn demo_core_types() {
-    println!("\n╔══ 核心类型 ═══╗");
+    println!("\n╔══ core：几何类型 ═══╗");
     let pt = Point::new(10.0, 20.0);
     println!("  Point(10,20) → ({},{})", pt.x, pt.y);
     let sz = Size::new(100.0, 50.0);
@@ -50,10 +53,8 @@ pub fn demo_core_types() {
     println!("  Primary: {} (RGBA:{:08X})", c, c.to_rgba());
 }
 
-// ── 错误处理 ──────────────────────────────────────────────────────────────
-
 pub fn demo_errors() {
-    println!("\n╔══ 错误处理 ═══╗");
+    println!("\n╔══ core：错误处理 ═══╗");
     println!("  Ok: {:?}", Ok::<i32, Error>(42));
     let e1 = Error::invalid_arg("bad input");
     println!("  invalid_arg: {}", e1);
@@ -71,100 +72,8 @@ pub fn demo_errors() {
     println!("  root_cause: {}", chained.root_cause());
 }
 
-// ── 响应式状态 ────────────────────────────────────────────────────────────
-
-pub fn demo_state() {
-    println!("\n╔══ 响应式状态 ═══╗");
-    let count = State::new(0i32);
-    println!("  State(0) = {}", count.get());
-    count.watch(|v| println!("    ⤷ Watcher: count = {}", v));
-    count.set(1);
-    count.set(2);
-    count.update(|v| *v += 10);
-    println!(
-        "  After set(1,2) + update(+10): {} gen:{}",
-        count.get(),
-        count.generation()
-    );
-    let a = State::new(5);
-    let b = State::new(3);
-    let sum = Computed::new({
-        let a = a.clone();
-        let b = b.clone();
-        move || a.get() + b.get()
-    });
-    println!("  Computed: {}+{}={}", a.get(), b.get(), sum.get());
-    a.set(10);
-    sum.invalidate();
-    println!("  After a=10, invalidate: sum={}", sum.get());
-}
-
-// ── Flex 布局 ────────────────────────────────────────────────────────────
-
-pub fn demo_flex() {
-    println!("\n╔══ Flex 布局 ═══╗");
-    // 使用新的公共 LayoutEngine API
-    let flex = FlexLayout::row()
-        .with_gap(8.0)
-        .with_justify(JustifyContent::Center)
-        .with_align(AlignItems::Center);
-
-    let children = vec![
-        LayoutChild::new(0, Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
-        LayoutChild::new(1, Size::new(100.0, 200.0)).with_flex(2.0, 1.0),
-        LayoutChild::new(2, Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
-    ];
-
-    let container = Rect::new(0.0, 0.0, 400.0, 300.0);
-    let padding = EdgeInsets::uniform(16.0);
-    let content_rect = Rect::new(
-        container.x + padding.left,
-        container.y + padding.top,
-        (container.w - padding.horizontal()).max(0.0),
-        (container.h - padding.vertical()).max(0.0),
-    );
-
-    let out = flex.layout(content_rect, &children);
-    println!("  Row flex(1,2,1) in 400x300 pad=16 gap=8:");
-    for (i, r) in out.positions.iter().enumerate() {
-        println!(
-            "    [{}] x={:.0} y={:.0} w={:.0} h={:.0}",
-            i, r.x, r.y, r.w, r.h
-        );
-    }
-}
-
-// ── 设置服务 ──────────────────────────────────────────────────────────────
-
-pub fn demo_settings() -> Result<(), Error> {
-    println!("\n╔══ 设置服务 ═══╗");
-    let mut s = SettingsService::new();
-    s.set("theme", "dark");
-    s.set("font_size", "14");
-    s.set("language", "zh-CN");
-    println!("  count:{} dirty:{}", s.count(), s.dirty());
-    println!(
-        "  theme={:?} font_size={:?} missing={:?}",
-        s.get("theme"),
-        s.get("font_size"),
-        s.get("nope")
-    );
-    let p = std::env::temp_dir().join("uix_demo_settings.json");
-    let ps = p.to_string_lossy().to_string();
-    s.load(&ps)?;
-    s.set("demo_ok", "true");
-    s.save()?;
-    let mut s2 = SettingsService::new();
-    s2.load(&ps)?;
-    println!("  reloaded: {} keys", s2.count());
-    std::fs::remove_file(&ps)?;
-    Ok(())
-}
-
-// ── 中间件 ────────────────────────────────────────────────────────────────
-
 pub fn demo_middleware() {
-    println!("\n╔══ 中间件 ═══╗");
+    println!("\n╔══ core：诊断中间件 ═══╗");
     let mut p = MiddlewarePipeline::new();
     p.add(SvcLogMiddleware);
     p.add(RetryMiddleware::new(2));
@@ -205,32 +114,68 @@ pub fn demo_middleware() {
     );
 }
 
-// ── 文件服务 ──────────────────────────────────────────────────────────────
+// ── ui：响应式状态与布局 ──────────────────────────────────────────────────
 
-pub fn demo_file_service() -> Result<(), Error> {
-    println!("\n╔══ 文件服务 ═══╗");
-    let fs = FileService::new();
-    let tmp = std::env::temp_dir().join("uix_demo_fs");
-    let p = tmp.join("hello.txt");
-    let ps = p.to_string_lossy().to_string();
-    fs.write_string(&ps, "Hello UIX!\nLine 2.\n")?;
+pub fn demo_state() {
+    println!("\n╔══ ui：响应式状态 ═══╗");
+    let count = State::new(0i32);
+    println!("  State(0) = {}", count.get());
+    count.watch(|v| println!("    ⤷ Watcher: count = {}", v));
+    count.set(1);
+    count.set(2);
+    count.update(|v| *v += 10);
     println!(
-        "  written, exists:{} size:{}",
-        fs.exists(&ps),
-        fs.file_size(&ps)?
+        "  After set(1,2) + update(+10): {} gen:{}",
+        count.get(),
+        count.generation()
     );
-    println!("  content: {}", fs.read_to_string(&ps)?.trim());
-    fs.append_string(&ps, "Line 3.\n")?;
-    println!("  after append: {} lines", fs.read_lines(&ps)?.len());
-    fs.remove(&ps)?;
-    std::fs::remove_dir(&tmp).ok();
-    Ok(())
+    let a = State::new(5);
+    let b = State::new(3);
+    let sum = Computed::new({
+        let a = a.clone();
+        let b = b.clone();
+        move || a.get() + b.get()
+    });
+    println!("  Computed: {}+{}={}", a.get(), b.get(), sum.get());
+    a.set(10);
+    sum.invalidate();
+    println!("  After a=10, invalidate: sum={}", sum.get());
 }
 
-// ── 主题 ───────────────────────────────────────────────────────────────────
+pub fn demo_flex() {
+    println!("\n╔══ ui：Flex 布局 ═══╗");
+    let flex = FlexLayout::row()
+        .with_gap(8.0)
+        .with_justify(JustifyContent::Center)
+        .with_align(AlignItems::Center);
+
+    let children = vec![
+        LayoutChild::new(0, Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
+        LayoutChild::new(1, Size::new(100.0, 200.0)).with_flex(2.0, 1.0),
+        LayoutChild::new(2, Size::new(60.0, 200.0)).with_flex(1.0, 1.0),
+    ];
+
+    let container = Rect::new(0.0, 0.0, 400.0, 300.0);
+    let padding = EdgeInsets::uniform(16.0);
+    let content_rect = Rect::new(
+        container.x + padding.left,
+        container.y + padding.top,
+        (container.w - padding.horizontal()).max(0.0),
+        (container.h - padding.vertical()).max(0.0),
+    );
+
+    let out = flex.layout(content_rect, &children);
+    println!("  Row flex(1,2,1) in 400x300 pad=16 gap=8:");
+    for (i, r) in out.positions.iter().enumerate() {
+        println!(
+            "    [{}] x={:.0} y={:.0} w={:.0} h={:.0}",
+            i, r.x, r.y, r.w, r.h
+        );
+    }
+}
 
 pub fn demo_theme() {
-    println!("\n╔══ 主题 (Ant Design 5) ═══╗");
+    println!("\n╔══ ui：主题 (Ant Design 5) ═══╗");
     let l = Theme::antd_light();
     println!(
         "  Light: primary:{} bg:{} surface:{} text:{} dark:{}",
@@ -251,10 +196,59 @@ pub fn demo_theme() {
     );
 }
 
-// ── 图形引擎 ──────────────────────────────────────────────────────────────
+// ── data：配置持久化 ──────────────────────────────────────────────────────
+
+pub fn demo_settings() -> Result<(), Error> {
+    println!("\n╔══ data：设置服务 ═══╗");
+    let mut s = SettingsService::new();
+    s.set("theme", "dark");
+    s.set("font_size", "14");
+    s.set("language", "zh-CN");
+    println!("  count:{} dirty:{}", s.count(), s.dirty());
+    println!(
+        "  theme={:?} font_size={:?} missing={:?}",
+        s.get("theme"),
+        s.get("font_size"),
+        s.get("nope")
+    );
+    let p = std::env::temp_dir().join("uix_demo_settings.json");
+    let ps = p.to_string_lossy().to_string();
+    s.load(&ps)?;
+    s.set("demo_ok", "true");
+    s.save()?;
+    let mut s2 = SettingsService::new();
+    s2.load(&ps)?;
+    println!("  reloaded: {} keys", s2.count());
+    std::fs::remove_file(&ps)?;
+    Ok(())
+}
+
+// ── native：文件服务 ──────────────────────────────────────────────────────
+
+pub fn demo_file_service() -> Result<(), Error> {
+    println!("\n╔══ native：文件服务 ═══╗");
+    let fs = FileService::new();
+    let tmp = std::env::temp_dir().join("uix_demo_fs");
+    let p = tmp.join("hello.txt");
+    let ps = p.to_string_lossy().to_string();
+    fs.write_string(&ps, "Hello UIX!\nLine 2.\n")?;
+    println!(
+        "  written, exists:{} size:{}",
+        fs.exists(&ps),
+        fs.file_size(&ps)?
+    );
+    println!("  content: {}", fs.read_to_string(&ps)?.trim());
+    fs.append_string(&ps, "Line 3.\n")?;
+    println!("  after append: {} lines", fs.read_lines(&ps)?.len());
+    fs.remove(&ps)?;
+    std::fs::remove_dir(&tmp).ok();
+    Ok(())
+}
+
+// ── draw：图形引擎 ────────────────────────────────────────────────────────
 
 pub fn demo_graphics_engine() -> Result<(), Error> {
-    println!("\n╔══ 图形引擎 ═══╗");
+    println!("\n╔══ draw：图形引擎 ═══╗");
     let mut e = NullEngine::new();
     e.initialize(800, 600)?;
     e.canvas_2d()
@@ -270,10 +264,10 @@ pub fn demo_graphics_engine() -> Result<(), Error> {
     Ok(())
 }
 
-// ── 依赖注入容器 ──────────────────────────────────────────────────────────
+// ── app：依赖注入 ────────────────────────────────────────────────────────
 
 pub fn demo_di_container() {
-    println!("\n╔══ 依赖注入容器 ═══╗");
+    println!("\n╔══ app：依赖注入容器 ═══╗");
     let mut c = DiContainer::new();
     c.singleton("config_value".to_string());
     c.singleton(42i32);
@@ -292,14 +286,14 @@ pub fn demo_di_container() {
 
 pub fn run_all_cli() -> Result<(), Error> {
     println!("\n  ╔══════════════════════════════════╗");
-    println!("  ║   UIX 框架 — CLI 演示         ║");
+    println!("  ║   UIX 框架 — CLI 功能域演示       ║");
     println!("  ╚══════════════════════════════════╝");
     demo_core_types();
     demo_errors();
+    demo_middleware();
     demo_state();
     demo_flex();
     demo_settings()?;
-    demo_middleware();
     demo_file_service()?;
     demo_theme();
     demo_graphics_engine()?;

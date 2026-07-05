@@ -1,19 +1,23 @@
 //! Ant Design 5 全组件展示 — 分类多页面版。
 //!
-//! 运行：`cargo run --bin uix-demo`
+//! 运行：`cargo run --bin uix-demo`（可选 `--gpu`）
+//!
+//! 本演示使用**高级 API**（`WidgetTree` + `run_widget_loop`），展示多页面切换、
+//! 主题热重建与 GPU 引擎。入门路径见 `simplified` 演示（`prelude` + `App`）。
+
 pub mod more_pages;
+pub mod runtime;
 pub mod sections;
 pub mod widgets;
 
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
+use uix::core::log::{debug_fn, error_fn};
 use uix::prelude::*;
-use uix::native::event::{UiEvent, UiEventPayload, UiEventType};
-use uix::native::Platform;
-use uix::ui::widgets::icon::init_lucide_font;
 
 use more_pages::{page_charts, page_other};
+use runtime::{create_engine, create_font_service, run_event_loop};
 use sections::{page_data, page_feedback, page_general, page_input, page_layout, page_nav};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -276,12 +280,12 @@ fn build_demo_tree(
 // 运行时状态
 // ════════════════════════════════════════════════════════════════════════════
 
-struct DemoState {
-    prev_active: Cell<usize>,
-    dark_mode: Cell<bool>,
-    nav_active: Rc<std::cell::RefCell<SharedActive>>,
+pub(super) struct DemoState {
+    pub(super) prev_active: Cell<usize>,
+    pub(super) dark_mode: Cell<bool>,
+    pub(super) nav_active: Rc<std::cell::RefCell<SharedActive>>,
     /// 每页在树中的根容器 WidgetId（用于切换可见性）
-    page_ids: std::cell::RefCell<Vec<WidgetId>>,
+    pub(super) page_ids: std::cell::RefCell<Vec<WidgetId>>,
 }
 
 impl DemoState {
@@ -302,12 +306,12 @@ impl DemoState {
 // ── 页面切换（可见性切换，不重建树）──
 
 /// 切换到指定页面：隐藏旧页面，显示新页面。
-fn switch_page(tree: &mut WidgetTree, state: &DemoState, active: usize) {
+pub(super) fn switch_page(tree: &mut WidgetTree, state: &DemoState, active: usize) {
     let prev = state.prev_active.get();
     if prev == active {
         return;
     }
-    uix::core::log::debug_fn(format!("switch_page: {} -> {}", prev, active));
+    debug_fn(format!("switch_page: {} -> {}", prev, active));
     state.prev_active.set(active);
 
     let ids = state.page_ids.borrow();
@@ -325,13 +329,13 @@ fn switch_page(tree: &mut WidgetTree, state: &DemoState, active: usize) {
 }
 
 /// 主题切换：重建整棵树（主题 token 全局变化，无法增量更新）。
-fn rebuild_for_theme(
+pub(super) fn rebuild_for_theme(
     tree: &mut WidgetTree,
     eng: &mut dyn GraphicsEngine,
     dyn_tokens: &DynTokens,
     state: &DemoState,
 ) -> SharedActive {
-    uix::core::log::debug_fn(format!("rebuild_for_theme: dark={}", state.dark_mode.get()));
+    debug_fn(format!("rebuild_for_theme: dark={}", state.dark_mode.get()));
     // 先更新内存中的 tokens，供后续 snapshot 和渲染使用
     dyn_tokens.set_mode(state.dark_mode.get());
     let tk = dyn_tokens.snapshot();
@@ -371,13 +375,11 @@ fn rebuild_for_theme(
     new_active
 }
 
-/// 运行 GUI 演示的主入口。
-/// 支持 --gpu 参数切换到 GPU 渲染引擎。
+/// 运行 GUI 演示的主入口（高级 API：`WidgetTree` + `run_widget_loop`）。
 pub fn run_gui_demo() {
     let use_gpu = std::env::args().any(|a| a == "--gpu");
     let tk = DesignTokens::antd_light();
 
-    // 构建包含所有 8 页的完整 demo 树
     let (root_node, nav_active, _) = build_demo_tree(&tk, 0);
     let mut tree = WidgetTree::new();
     tree.build(root_node);
@@ -385,19 +387,7 @@ pub fn run_gui_demo() {
         root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
     }
 
-    // 构建后获取所有页面容器的真实 WidgetId
-    // 树结构：root → content_container → page_panel → [page_0, page_1, ..., page_N]
-    let page_ids: Vec<WidgetId> = tree
-        .root_id()
-        .and_then(|root| tree.get(root))
-        .map(|r| r.children().to_vec()) // [nav, content_container]
-        .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
-        .map(|cc| cc.children().to_vec()) // [header_bar, page_panel]
-        .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
-        .map(|pp| pp.children().to_vec()) // [page_0..page_N]
-        .unwrap_or_default();
-
-    // 初始：仅第 0 页可见
+    let page_ids: Vec<WidgetId> = collect_page_ids(&tree);
     for (i, &id) in page_ids.iter().enumerate() {
         if i != 0 {
             tree.set_visible(id, false);
@@ -408,151 +398,56 @@ pub fn run_gui_demo() {
 
     let state = DemoState::new(nav_active, page_ids);
     let dyn_tokens = Arc::new(DynTokens::new(tk));
-    let theme_cell = std::cell::RefCell::new(Theme::from_arc(dyn_tokens.clone()));
 
-    // ── 创建平台与窗口 ────────────────────────────────────────────
     let mut platform = match create_platform() {
         Ok(p) => p,
         Err(e) => {
-            uix::core::log::error_fn(format!("create_platform: {}", e.short_what()));
+            error_fn(format!("create_platform: {}", e.short_what()));
             return;
         }
     };
 
-    let mut platform_window =
-        match platform
-            .window_manager()
-            .create_window("UIX — 组件库", INIT_W, INIT_H)
-        {
-            Ok(w) => w,
-            Err(e) => {
-                uix::core::log::error_fn(format!("create_window: {}", e.short_what()));
-                return;
-            }
-        };
+    let mut platform_window = match platform
+        .window_manager()
+        .create_window("UIX — 组件库", INIT_W, INIT_H)
+    {
+        Ok(w) => w,
+        Err(e) => {
+            error_fn(format!("create_window: {}", e.short_what()));
+            return;
+        }
+    };
     platform_window.center_on_screen();
     platform_window.show();
     platform_window.raise();
 
-    // ── 创建图形引擎 ────────────────────────────────────────────
-    let mut engine: Box<dyn GraphicsEngine>;
+    let mut engine = create_engine(use_gpu, &*platform_window, INIT_W, INIT_H);
+    let font_service = create_font_service(&*platform);
 
-    if use_gpu {
-        let surface_ptr = platform_window.native_surface_ptr();
-        if surface_ptr.is_null() {
-            uix::core::log::error_fn("GPU: 无法获取 surface 指针");
-            return;
-        }
-        match uix::native::create_gpu_context(surface_ptr, INIT_W, INIT_H) {
-            Ok(ctx) => match uix::draw::GpuEngine::new(ctx) {
-                Ok(mut e) => {
-                    if let Err(err) = e.initialize(INIT_W, INIT_H) {
-                        uix::core::log::error_fn(format!(
-                            "GPU引擎初始化失败: {}",
-                            err.short_what()
-                        ));
-                        return;
-                    }
-                    uix::core::log::info_fn("GPU: GpuEngine 就绪");
-                    engine = Box::new(e);
-                }
-                Err(e) => {
-                    uix::core::log::warn_fn(format!(
-                        "GPU: GpuEngine 创建失败({}), 回退CPU",
-                        e.short_what()
-                    ));
-                    let mut se = SoftwareEngine::new();
-                    se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
-                        uix::core::log::error_fn(format!(
-                            "CPU引擎初始化失败: {}",
-                            e.short_what()
-                        ));
-                    });
-                    engine = Box::new(se);
-                }
-            },
-            Err(e) => {
-                uix::core::log::warn_fn(format!(
-                    "GPU: 上下文创建失败({}), 回退CPU",
-                    e.short_what()
-                ));
-                let mut se = SoftwareEngine::new();
-                se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
-                    uix::core::log::error_fn(format!("CPU引擎初始化失败: {}", e.short_what()));
-                });
-                engine = Box::new(se);
-            }
-        }
-    } else {
-        let mut se = SoftwareEngine::new();
-        se.initialize(INIT_W, INIT_H).unwrap_or_else(|e| {
-            uix::core::log::error_fn(format!("CPU引擎初始化失败: {}", e.short_what()));
-        });
-        engine = Box::new(se);
-    }
-
-    // ── 创建字体服务 ────────────────────────────────────────────
-    let mut font_service = FontService::new();
-    if let Ok(ttf) = std::fs::read("assets/fonts/lucide.ttf") {
-        init_lucide_font(&ttf, &mut font_service);
-    } else {
-        uix::core::log::warn_fn("Lucide font not found — icons will be blank");
-    }
-
-    // 加载系统默认字体作为主文本字体（必须在 Lucide 之后，
-    // 因为 Lucide 会占用 FontHandle(0)，而 load_default_system_font
-    // 会设置 loaded_font_handle 为真正的文字字体）。
-    font_service.load_default_system_font(14.0, platform.system_info());
-
-    // ── 运行事件循环 ────────────────────────────────────────────
-    let debug_mode = Cell::new(false);
-    let cursor_pos = Cell::new(Point::new(0.0, 0.0));
-
-    let exit_code = run_widget_loop(
+    let exit_code = run_event_loop(
         &mut *platform,
         &mut *platform_window,
         &mut *engine,
         &mut tree,
         &font_service,
-        &theme_cell,
-        &debug_mode,
-        &cursor_pos,
-        None,
-        map_ui_event,
-        |ev| {
-            matches!(
-                ev,
-                UiEvent {
-                    type_: UiEventType::KeyDown,
-                    payload: UiEventPayload::Key(ref d),
-                    ..
-                } if d.key == KeyCode::Escape
-            )
-        },
-        move |tree: &mut WidgetTree, eng: &mut dyn GraphicsEngine, _platform: &mut dyn Platform| {
-            // ── 主题切换 → 重建整棵树（token 全局变化）──
-            let mut new_dark = false;
-            tree.find_by_type_and_modify::<ThemeToggle>(|w| new_dark = w.dark.get());
-
-            if new_dark != state.dark_mode.get() {
-                uix::core::log::debug_fn(format!("on_frame: THEME CHANGE dark={}", new_dark));
-                state.dark_mode.set(new_dark);
-                dyn_tokens.set_mode(new_dark);
-                let a = rebuild_for_theme(tree, eng, &dyn_tokens, &state);
-                *state.nav_active.borrow_mut() = a;
-                return;
-            }
-
-            // ── 导航切换 → 仅切页面可见性（树不变）──
-            let active = state.nav_active.borrow().get();
-            if active != state.prev_active.get() {
-                switch_page(tree, &state, active);
-            }
-        },
+        &state,
+        dyn_tokens,
     );
 
     engine.shutdown();
     std::process::exit(exit_code);
+}
+
+/// 从 demo 树中提取各页面容器的 WidgetId。
+fn collect_page_ids(tree: &WidgetTree) -> Vec<WidgetId> {
+    tree.root_id()
+        .and_then(|root| tree.get(root))
+        .map(|r| r.children().to_vec())
+        .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
+        .map(|cc| cc.children().to_vec())
+        .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
+        .map(|pp| pp.children().to_vec())
+        .unwrap_or_default()
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -591,15 +486,7 @@ mod tests {
             root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
         }
 
-        let page_ids: Vec<WidgetId> = tree
-            .root_id()
-            .and_then(|root| tree.get(root))
-            .map(|r| r.children().to_vec())
-            .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
-            .map(|cc| cc.children().to_vec())
-            .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
-            .map(|pp| pp.children().to_vec())
-            .unwrap_or_default();
+        let page_ids = collect_page_ids(&tree);
 
         for (i, &id) in page_ids.iter().enumerate() {
             if i != 0 {
@@ -686,9 +573,8 @@ mod tests {
     /// 首帧渲染后侧栏导航区应有非背景像素（验证 CPU 路径完整绘制）。
     #[test]
     fn demo_first_frame_renders_nav_sidebar() {
-        use uix::prelude::*;
-        use uix::draw::pipeline::{FrameRenderInput, FrameRenderer};
         use uix::draw::painting::ThemeSnapshot;
+        use uix::draw::pipeline::{FrameRenderInput, FrameRenderer};
         use uix::ui::widgets::navigation::NavItem;
 
         let tk = DesignTokens::antd_light();
@@ -699,18 +585,7 @@ mod tests {
             root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
         }
 
-        for (i, &id) in tree
-            .root_id()
-            .and_then(|r| tree.get(r))
-            .map(|r| r.children().to_vec())
-            .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
-            .map(|cc| cc.children().to_vec())
-            .and_then(|c| if c.len() >= 2 { tree.get(c[1]) } else { None })
-            .map(|pp| pp.children().to_vec())
-            .unwrap_or_default()
-            .iter()
-            .enumerate()
-        {
+        for (i, &id) in collect_page_ids(&tree).iter().enumerate() {
             if i != 0 {
                 tree.set_visible(id, false);
             }
