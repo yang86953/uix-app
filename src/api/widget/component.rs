@@ -1,0 +1,76 @@
+//! # 内置组件
+//!
+//! 所有 widget 组件的公开 re-export。
+
+pub use crate::widget::widgets::affix::Affix;
+pub use crate::widget::widgets::alert::{Alert, AlertType};
+pub use crate::widget::widgets::anchor::{Anchor, AnchorItem};
+pub use crate::widget::widgets::autocomplete::AutoComplete;
+pub use crate::widget::widgets::avatar::Avatar;
+pub use crate::widget::widgets::back_top::BackTop;
+pub use crate::widget::widgets::badge::Badge;
+pub use crate::widget::widgets::breadcrumb::{Breadcrumb, BreadcrumbItem};
+pub use crate::widget::widgets::button::{Button, ButtonSize, ButtonVariant};
+pub use crate::widget::widgets::calendar::Calendar;
+pub use crate::widget::widgets::card::Card;
+pub use crate::widget::widgets::carousel::Carousel;
+pub use crate::widget::widgets::cascader::{Cascader, CascaderOption};
+pub use crate::widget::widgets::chart::{BarChart, BarData, LineChart, LineData, PieChart, PieData};
+pub use crate::widget::widgets::checkbox::Checkbox;
+pub use crate::widget::widgets::collapse::{Collapse, CollapsePanel};
+pub use crate::widget::widgets::color_picker::ColorPicker;
+pub use crate::widget::widgets::container::Container;
+pub use crate::widget::widgets::date_picker::{DatePicker, DateValue};
+pub use crate::widget::widgets::descriptions::{Descriptions, DescriptionsItem};
+pub use crate::widget::widgets::divider::{Divider, DividerDirection, DividerOrientation};
+pub use crate::widget::widgets::drawer::{Drawer, DrawerPlacement};
+pub use crate::widget::widgets::dropdown::Dropdown;
+pub use crate::widget::widgets::empty::Empty;
+pub use crate::widget::widgets::float_button::FloatButton;
+pub use crate::widget::widgets::form::{Form, FormItem, ValidateStatus};
+pub use crate::widget::widgets::grid::Grid;
+pub use crate::widget::widgets::icon::Icon;
+pub use crate::widget::widgets::image::Image;
+pub use crate::widget::widgets::input::{Input, InputSize};
+pub use crate::widget::widgets::input_number::InputNumber;
+pub use crate::widget::widgets::label::Label;
+pub use crate::widget::widgets::layout::{Content, Footer, Header, Layout, Sider};
+pub use crate::widget::widgets::list::{List, ListSize};
+pub use crate::widget::widgets::mentions::Mentions;
+pub use crate::widget::widgets::menu::{Menu, MenuItem, MenuMode};
+pub use crate::widget::widgets::message::{Message, MessageItem, MessageType};
+pub use crate::widget::widgets::misc::{QRCode, Transfer, TransferItem, Upload, Watermark};
+pub use crate::widget::widgets::modal::Modal;
+pub use crate::widget::widgets::nav::{NavGroup, NavItem, Navigation, SharedActive};
+pub use crate::widget::widgets::notification::{Notification, NotificationItem, NotificationType};
+pub use crate::widget::widgets::pagination::Pagination;
+pub use crate::widget::widgets::popconfirm::Popconfirm;
+pub use crate::widget::widgets::popover::Popover;
+pub use crate::widget::widgets::progress::{ProgressBar, ProgressMode};
+pub use crate::widget::widgets::radio::Radio;
+pub use crate::widget::widgets::rate::Rate;
+pub use crate::widget::widgets::result::{Result, ResultType};
+pub use crate::widget::widgets::rich_text::{
+    layout_rich_text_segments, parse_rich_text, RichText, RichTextSegment, RichTextStyle,
+};
+pub use crate::widget::widgets::scroll_view::{ScrollDirection, ScrollView};
+pub use crate::widget::widgets::segmented::Segmented;
+pub use crate::widget::widgets::select::Select;
+pub use crate::widget::widgets::selectable_list::{SelectableItem, SelectableList};
+pub use crate::widget::widgets::skeleton::{Skeleton, SkeletonShape};
+pub use crate::widget::widgets::slider::Slider;
+pub use crate::widget::widgets::space::{Space, SpaceSize};
+pub use crate::widget::widgets::spin::{Spin, SpinSize};
+pub use crate::widget::widgets::splitter::Splitter;
+pub use crate::widget::widgets::steps::{Step, StepStatus, Steps};
+pub use crate::widget::widgets::switch::Switch;
+pub use crate::widget::widgets::table::{Table, TableColumn, TableRow};
+pub use crate::widget::widgets::tabs::{Tab, TabPosition, Tabs};
+pub use crate::widget::widgets::tag::{Tag, TagColor};
+pub use crate::widget::widgets::theme_toggle::ThemeToggle;
+pub use crate::widget::widgets::time_picker::{TimePicker, TimeValue};
+pub use crate::widget::widgets::timeline::{Timeline, TimelineItem};
+pub use crate::widget::widgets::tooltip::{Tooltip, TooltipPlacement};
+pub use crate::widget::widgets::tree::{Tree, TreeNode};
+pub use crate::widget::widgets::tree_select::TreeSelect;
+pub use crate::widget::widgets::typography::{Typography, TypographyType};

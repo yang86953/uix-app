@@ -77,13 +77,10 @@ fn main() {
 
 ```text
 uix-app/
-├── Cargo.toml              # workspace 根与聚合 crate: uix
-├── src/                    # 根 crate 重导出层
-├── platform/               # uix-platform: OS 抽象、事件、呈现、日志、服务
-├── graphics/               # uix-graphics: 2D 渲染、RenderPipeline、字体、空间坐标
-├── ui/                     # uix-ui: Widget、布局、状态、主题、动画、组件库
-├── app/                    # uix-app: 应用入口、窗口生命周期、CLI、DI
+├── Cargo.toml              # workspace 根与框架 crate: uix
+├── src/                    # uix: platform / render / widget / runtime / view
 ├── demo/                   # uix-demo: GUI、CLI、简化 API 演示
+├── tests/                  # 集成测试
 ├── ARCHITECTURE.md         # 架构设计与模块详解
 └── AGENTS.md               # 项目编码规范与设计约束
 ```

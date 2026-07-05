@@ -256,45 +256,7 @@ checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 name = "uix"
 version = "0.1.0"
 dependencies = [
- "uix-app",
- "uix-graphics",
- "uix-platform",
- "uix-ui",
-]
-
-[[package]]
-name = "uix-app"
-version = "0.1.0"
-dependencies = [
- "uix-graphics",
- "uix-platform",
- "uix-ui",
-]
-
-[[package]]
-name = "uix-demo"
-version = "0.1.0"
-dependencies = [
- "uix",
- "uix-app",
- "uix-graphics",
- "uix-platform",
- "uix-ui",
-]
-
-[[package]]
-name = "uix-graphics"
-version = "0.1.0"
-dependencies = [
  "ab_glyph",
- "glow",
- "uix-platform",
-]
-
-[[package]]
-name = "uix-platform"
-version = "0.1.0"
-dependencies = [
  "glow",
  "khronos-egl",
  "libc",
@@ -304,11 +266,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "uix-ui"
+name = "uix-demo"
 version = "0.1.0"
 dependencies = [
- "uix-graphics",
- "uix-platform",
+ "uix",
 ]
 
 [[package]]

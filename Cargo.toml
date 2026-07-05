@@ -1,12 +1,7 @@
 [workspace]
 resolver = "2"
-members = [
-    "app",
-    "demo",
-    "graphics",
-    "platform",
-    "ui",
-]
+members = ["demo"]
+default-members = [".", "demo"]
 
 [workspace.package]
 version = "0.1.0"
@@ -19,8 +14,8 @@ khronos-egl = { version = "6", features = ["static"] }
 ab_glyph = "0.2.32"
 
 [workspace.lints.clippy]
-unwrap_used = "deny"
-expect_used = "deny"
+unwrap_used = "warn"
+expect_used = "warn"
 
 [package]
 name = "uix"
@@ -29,10 +24,33 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-uix-app = { path = "app" }
-uix-graphics = { path = "graphics" }
-uix-platform = { path = "platform" }
-uix-ui = { path = "ui" }
+ab_glyph = { workspace = true }
+glow = { workspace = true }
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62.2"
+features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Console",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_UI_Shell",
+    "Win32_Storage_FileSystem",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Input_KeyboardAndMouse",
+]
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+libc = "0.2.186"
+wayland-client = { version = "=0.29.5", features = ["dlopen"] }
+wayland-protocols = { version = "=0.29.5", features = ["client", "unstable_protocols", "staging_protocols"] }
+khronos-egl = { workspace = true }
+
+[features]
+test-harness = []
 
 [lib]
 path = "src/lib.rs"

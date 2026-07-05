@@ -1,14 +1,14 @@
 //! 组件展示页面（通用 ~ 反馈）
 //! 分类：通用、布局、导航、输入、数据展示、反馈
 
-use uix::graphics::Color;
+use uix::render::Color;
 use uix::platform::EdgeInsets;
 use uix::tree;
-use uix::ui::layout::{AlignItems, FlexDirection, JustifyContent};
-use uix::ui::theme::DesignTokens;
-use uix::ui::widget::WidgetNode;
-use uix::ui::Icon;
-use uix::ui::{
+use uix::api::widget::layout::{AlignItems, FlexDirection, JustifyContent};
+use uix::widget::theme::DesignTokens;
+use uix::widget::WidgetNode;
+use uix::api::widget::Icon;
+use uix::api::widget::{
     Alert, AlertType, Anchor, AnchorItem, AutoComplete, Avatar, Badge, Breadcrumb, BreadcrumbItem,
     Button, ButtonSize, Calendar, Card, Carousel, Cascader, CascaderOption, Checkbox, Collapse,
     CollapsePanel, Container, DatePicker, DateValue, Descriptions, DescriptionsItem, Divider,
@@ -172,14 +172,14 @@ pub fn page_layout(tk: &DesignTokens) -> WidgetNode {
             ]},
         ]})
         .section("网格 Grid — 2 列")
-        .push(tree! { uix::ui::Grid::two_columns().gap(8.0).pad(EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
+        .push(tree! { uix::api::widget::Grid::two_columns().gap(8.0).pad(EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
             tree! { Container::new().size(100.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
                 [Label::new("Column 1").color(tk.color_primary).font_size(13.0)]},
             tree! { Container::new().size(100.0, 60.0).bg(tk.color_success_bg).rounded(tk.border_radius_sm) =>
                 [Label::new("Column 2").color(tk.color_success).font_size(13.0)]},
         ]})
         .section("网格 Grid — 3 列")
-        .push(tree! { uix::ui::Grid::three_columns().gap(8.0).pad(EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
+        .push(tree! { uix::api::widget::Grid::three_columns().gap(8.0).pad(EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
             tree! { Container::new().size(100.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>
                 [Label::new("Cell A").color(tk.color_primary).font_size(13.0)]},
             tree! { Container::new().size(100.0, 60.0).bg(tk.color_warning_bg).rounded(tk.border_radius_sm) =>
@@ -188,7 +188,7 @@ pub fn page_layout(tk: &DesignTokens) -> WidgetNode {
                 [Label::new("Cell C").color(tk.color_success).font_size(13.0)]},
         ]})
         .section("网格 Grid — 自定义 (1fr 2fr)")
-        .push(tree! { uix::ui::Grid::new()
+        .push(tree! { uix::api::widget::Grid::new()
             .columns(vec![GridTrack::Fr(1.0), GridTrack::Fr(2.0)])
             .gap(8.0).pad(EdgeInsets::uniform(4.0)).size(INNER_W, 70.0) => [
             tree! { Container::new().size(100.0, 60.0).bg(tk.color_primary_bg).rounded(tk.border_radius_sm) =>

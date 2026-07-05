@@ -1,24 +1,22 @@
+#![deny(clippy::unwrap_used, clippy::expect_used)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 //! UIX — Rust Native UI Framework
 //!
-//! Modular UI framework for Windows, built in Rust.
-//! Foundation types (geometry, error, status, input) are in `uix-platform`.
-//! 服务层已合并至 platform crate（见 uix_platform::file_service / notification / settings）。
-#![deny(clippy::unwrap_used)]
-#![deny(clippy::expect_used)]
+//! # 模块划分
+//!
+//! | 模块 | 职责 |
+//! |------|------|
+//! | [`platform`] | 平台系统 — OS 抽象（Win32 / Wayland） |
+//! | [`render`] | 渲染系统 — 2D 引擎、光栅化、字体、合成 |
+//! | [`widget`] | 组件系统 — Widget 框架、布局、主题、内置组件 |
+//! | [`runtime`] | 运行时系统 — 应用入口、窗口、CLI、DI |
+//! | [`view`] | 视图系统 — 声明式 UI API |
+//! | [`api`] | 各系统稳定公开契约 |
 
-pub use uix_app as app;
-pub use uix_graphics as graphics;
-pub use uix_platform as platform;
-pub use uix_ui as ui;
-
-// 重新导出 macros
-pub use uix_ui::define_widget;
-pub use uix_ui::tree;
-
-// ── 简化 API（用户可通过 `use uix::view::*` 使用）──
-pub use uix_ui::view;
-pub use uix_ui::App;
-pub use uix_ui::StyleExt;
-pub use uix_ui::Ui;
-pub use uix_ui::View;
-pub use uix_ui::ViewNode;
+pub mod api;
+pub mod platform;
+pub mod render;
+pub mod runtime;
+pub mod view;
+pub mod widget;
