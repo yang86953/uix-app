@@ -1,19 +1,14 @@
 //! CLI 演示 — 从命令行运行所有主要 UIX 子系统的功能演示。
 
 use std::cell::Cell;
-use uix::render::{colors, traits::GraphicsEngine, NullEngine};
-use uix::platform::diagnostic::{
+use uix::prelude::*;
+use std::result::Result;
+use uix::core::diagnostic::{
     LogMiddleware as SvcLogMiddleware, MiddlewareContext, MiddlewarePipeline, RetryMiddleware,
 };
-use uix::platform::file_service::FileService;
-use uix::platform::log::{info_fn, Level, Logger};
-use uix::platform::settings::SettingsService;
-use uix::platform::{EdgeInsets, Point, Rect, Size};
-use uix::platform::{Errc, Error};
-use uix::api::widget::layout::{AlignItems, JustifyContent};
-use uix::api::widget::layout::{FlexLayout, LayoutChild, LayoutEngine};
-use uix::widget::state::{Computed, State};
-use uix::widget::theme::Theme;
+use uix::native::services::file_service::FileService;
+use uix::core::log::{info_fn, Level, Logger};
+use uix::data::settings::SettingsService;
 
 // ── Logger ────────────────────────────────────────────────────────────────
 
@@ -279,7 +274,7 @@ pub fn demo_graphics_engine() -> Result<(), Error> {
 
 pub fn demo_di_container() {
     println!("\n╔══ 依赖注入容器 ═══╗");
-    let mut c = uix::runtime::di::Container::new();
+    let mut c = DiContainer::new();
     c.singleton("config_value".to_string());
     c.singleton(42i32);
     match c.resolve::<String>() {

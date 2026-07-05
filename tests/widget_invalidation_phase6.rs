@@ -1,16 +1,16 @@
 //! Phase 6：精确 Invalidation + State 绑定验收测试。
 
-use uix::render::pipeline::Invalidation;
-use uix::platform::Rect;
-use uix::widget::state::{begin_state_capture, State};
-use uix::view::{column, dynamic_label, label, ViewAdapter};
-use uix::widget::{WidgetCore, WidgetTree};
+use uix::draw::pipeline::Invalidation;
+use uix::native::Rect;
+use uix::ui::state::{begin_state_capture, State};
+use uix::ui::view::{column, dynamic_label, label, ViewAdapter};
+use uix::ui::{WidgetCore, WidgetTree};
 
 #[test]
 fn state_bind_paint_invalidation_is_targeted() {
     let mut tree = WidgetTree::new();
     tree.bind_invalidation();
-    let label_id = tree.set_root(Box::new(uix::widget::widgets::Label::new("0")));
+    let label_id = tree.set_root(Box::new(uix::ui::widgets::Label::new("0")));
     let state = State::new(0);
     let queue = tree.invalidation_handle();
     let damage = Rect::new(10.0, 20.0, 80.0, 18.0);
@@ -81,7 +81,7 @@ fn counter_increment_only_label_damage() {
 fn layout_invalidation_skipped_when_paint_only() {
     let mut tree = WidgetTree::new();
     tree.bind_invalidation();
-    tree.set_root(Box::new(uix::widget::widgets::Label::new("static")));
+    tree.set_root(Box::new(uix::ui::widgets::Label::new("static")));
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
     }
@@ -97,7 +97,7 @@ fn layout_invalidation_skipped_when_paint_only() {
 #[test]
 fn bind_invalidation_enables_layout_traverse() {
     let mut tree = WidgetTree::new();
-    tree.set_root(Box::new(uix::widget::widgets::Label::new("child")));
+    tree.set_root(Box::new(uix::ui::widgets::Label::new("child")));
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
     }
@@ -116,7 +116,7 @@ fn bind_invalidation_enables_layout_traverse() {
 fn layout_only_invalidation_does_not_trigger_render_work() {
     let mut tree = WidgetTree::new();
     tree.bind_invalidation();
-    tree.set_root(Box::new(uix::widget::widgets::Label::new("static")));
+    tree.set_root(Box::new(uix::ui::widgets::Label::new("static")));
     if let Some(root) = tree.root_mut() {
         root.set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
     }

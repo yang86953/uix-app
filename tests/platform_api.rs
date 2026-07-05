@@ -8,10 +8,10 @@
 #![cfg(feature = "test-harness")]
 
 use std::rc::Rc;
-use uix::platform::api::*;
-use uix::platform::api::event::UiEvent;
-use uix::platform::api::geometry::Point;
-use uix::platform::test_harness::FakePlatform;
+use uix::native::traits::*;
+use uix::native::traits::event::UiEvent;
+use uix::core::geometry::Point;
+use uix::native::test_harness::FakePlatform;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Platform trait — 所有访问器方法可用
@@ -51,7 +51,7 @@ fn presenter_default_empty() {
 fn presenter_present_stores_pixels() {
     let mut pf = FakePlatform::new();
     pf.presenter
-        .present(&[0xFF0000, 0x00FF00], 2, 1, uix::platform::PresentDamage::Full)
+        .present(&[0xFF0000, 0x00FF00], 2, 1, uix::native::PresentDamage::Full)
         .unwrap();
     assert_eq!(pf.presenter.present_count(), 1);
     assert_eq!(pf.presenter.state.last_pixels.len(), 2);
@@ -371,7 +371,7 @@ fn event_loop_polls_injected_events() {
     pf.event_source.inject(UiEvent::close());
     let called = Cell::new(false);
     pf.event_loop().poll_event(&|ev| {
-        assert_eq!(ev.type_, uix::platform::api::event::UiEventType::WindowClose);
+        assert_eq!(ev.type_, uix::native::traits::event::UiEventType::WindowClose);
         called.set(true);
         true
     });
@@ -462,7 +462,7 @@ fn window_close() {
 
 #[test]
 fn graphics_context_init() {
-    let mut ctx = uix::platform::test_harness::FakeGraphicsContext::new();
+    let mut ctx = uix::native::test_harness::FakeGraphicsContext::new();
     ctx.initialize(std::ptr::null_mut(), 800, 600).unwrap();
     assert_eq!(ctx.width(), 800);
     assert_eq!(ctx.height(), 600);
@@ -470,7 +470,7 @@ fn graphics_context_init() {
 
 #[test]
 fn graphics_context_swap() {
-    let mut ctx = uix::platform::test_harness::FakeGraphicsContext::new();
+    let mut ctx = uix::native::test_harness::FakeGraphicsContext::new();
     ctx.make_current();
     ctx.swap_buffers();
     assert_eq!(ctx.state.make_current_calls, 1);
@@ -487,7 +487,7 @@ fn types_available() {
     let _s = Size::new(100.0, 200.0);
     let _r = Rect::new(0.0, 0.0, 100.0, 200.0);
     let _e = EdgeInsets::new(1.0, 2.0, 3.0, 4.0);
-    let _err = uix::platform::api::error::Error::new(uix::platform::api::error::Errc::None, "");
+    let _err = uix::core::error::Error::new(uix::core::error::Errc::None, "");
     let _ = StatusLevel::Info;
     let _ = ConsoleColor::Default;
     let _ = CursorType::Arrow;
@@ -496,22 +496,22 @@ fn types_available() {
     let _ = ScrollDirection::Both;
     let _ = ControlSize::Medium;
     let _ = SpecialDir::Home;
-    let _bus = uix::platform::api::event::EventBus::new();
+    let _bus = uix::native::traits::event::EventBus::new();
     let _ev = UiEvent::close();
-    let _ = uix::platform::api::event::UiEventType::WindowClose;
+    let _ = uix::native::traits::event::UiEventType::WindowClose;
 }
 
 #[test]
 fn prelude_via_star_import() {
-    use uix::platform::api::*;
+    use uix::native::traits::*;
     let _p = Point::new(0.0, 0.0);
-    let _err: uix::platform::api::error::Error =
-        uix::platform::api::error::Error::new(uix::platform::api::error::Errc::None, "");
+    let _err: uix::core::error::Error =
+        uix::core::error::Error::new(uix::core::error::Errc::None, "");
     let _ev = UiEvent::close();
-    let _bus = uix::platform::api::event::EventBus::new();
+    let _bus = uix::native::traits::event::EventBus::new();
     let _kc = KeyCode::Enter;
     // traits available
-    let _: &dyn IPresenter = &uix::platform::presenter::NullPresenter;
+    let _: &dyn IPresenter = &uix::native::presenter::NullPresenter;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -545,7 +545,7 @@ fn platform_event_bus_integration() {
     let called = Rc::new(std::cell::Cell::new(false));
     let c = called.clone();
     pf.event_bus
-        .subscribe(uix::platform::api::event::UiEventType::MouseDown, move |_| {
+        .subscribe(uix::native::traits::event::UiEventType::MouseDown, move |_| {
             c.set(true);
             true
         });
@@ -566,7 +566,7 @@ fn platform_event_bus_via_trait() {
         let c = called.clone();
         let p: &mut dyn Platform = &mut pf;
         p.event_bus()
-            .subscribe(uix::platform::api::event::UiEventType::MouseDown, move |_| {
+            .subscribe(uix::native::traits::event::UiEventType::MouseDown, move |_| {
                 c.set(true);
                 true
             });
@@ -714,9 +714,9 @@ fn platform_event_loop_multiple_types() {
 
     let recorded = types.take();
     assert_eq!(recorded.len(), 3);
-    assert_eq!(recorded[0], uix::platform::api::event::UiEventType::WindowClose);
-    assert_eq!(recorded[1], uix::platform::api::event::UiEventType::KeyDown);
-    assert_eq!(recorded[2], uix::platform::api::event::UiEventType::MouseDown);
+    assert_eq!(recorded[0], uix::native::traits::event::UiEventType::WindowClose);
+    assert_eq!(recorded[1], uix::native::traits::event::UiEventType::KeyDown);
+    assert_eq!(recorded[2], uix::native::traits::event::UiEventType::MouseDown);
 }
 
 #[test]

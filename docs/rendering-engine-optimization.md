@@ -25,10 +25,10 @@
 
 ### 1.2 能力归属原则
 
-**凡与「如何把内容变成像素并提交到屏幕」相关的能力，归属 `uix-graphics`（绘图层）。**
+**凡与「如何把内容变成像素并提交到屏幕」相关的能力，归属 `draw` 域（绘图层）。**
 
-- UI 层（`uix-ui`）只负责：Widget 声明、布局、事件、主题令牌消费
-- Platform 层（`uix-platform`）只负责：OS 窗口、原始 surface 句柄、系统级 present 原语
+- UI 层（`ui` 域）只负责：Widget 声明、布局、事件、主题令牌消费
+- Platform 层（`native` 域）只负责：OS 窗口、原始 surface 句柄、系统级 present 原语
 - 绘图层拥有：invalidation 调度、合成、DisplayList、帧生命周期、文本光栅化编排、damage 计算
 
 不允许绘图层能力长期散落在 UI event_loop 或 WidgetTree 中。
@@ -302,11 +302,11 @@ GpuEngine.begin_frame       → 全帧 glClear（不支持 partial_redraw）
 ### 4.1 目标 crate 边界
 
 ```text
-uix-ui
+ui 域
   ├── Widget / Layout / Event / State / Theme（令牌）
   └── 通过 RenderSession 提交 PaintCommand，不直接持有 Canvas2D
 
-uix-graphics（绘图层 — 完整引擎）
+draw 域（绘图层 — 完整引擎）
   ├── pipeline/          帧调度、InvalidationQueue、0 帧判定
   ├── compositor/        Layer 树、Picture 缓存、scroll transform
   ├── painting/          PaintContext、DisplayList、录制与 replay
@@ -316,7 +316,7 @@ uix-graphics（绘图层 — 完整引擎）
   ├── rasterizer/        共享光栅化算法（现有）
   └── api/               对外稳定契约
 
-uix-platform
+native 域
   ├── IEventLoop / 窗口
   └── ISurfacePresenter   仅接收 pixels + damage，不含渲染策略
 ```
@@ -594,11 +594,11 @@ InvalidationQueue
 ### 6.5 目标分层（整合能力归属 + 可切换后端）
 
 ```text
-uix-ui
+ui 域
   ├── Widget / Layout / Event / State / Theme
   └── RenderSession::invalidate + paint callbacks
 
-uix-graphics
+draw 域
   ├── pipeline/          InvalidationQueue、帧调度、0 帧、scroll、damage
   ├── compositor/        LayerTree、Picture 缓存、Transform
   ├── painting/          PaintContext、DisplayList
@@ -610,7 +610,7 @@ uix-graphics
   ├── rasterizer/        共享算法（CPU 默认，GPU 可选覆盖）
   └── api/               RenderSession、RenderOutcome 公开契约
 
-uix-platform
+native 域
   └── ISurfacePresenter  原始 present 原语
 ```
 
@@ -655,7 +655,7 @@ uix-platform
 | 项 | 决策 |
 |----|------|
 | 架构 | Demand-Driven Rendering + 能力归属 graphics + 可插拔后端 |
-| 依赖 | graphics 禁止依赖 uix-ui；`ScenePaint` trait 解耦 |
+| 依赖 | draw 禁止依赖 ui 域；`ScenePaint` trait 解耦 |
 | 后端 | `RenderPipeline`（共享）+ `RenderBackend`（差异） |
 | 主题 | `ThemeSnapshot` 每帧注入 |
 | Widget API | Phase 1–6 保留 `render/post_render`；**Phase 7** 合并为 `paint` |
@@ -830,7 +830,7 @@ P0 → P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8 → (P9)
 ```text
 请阅读 docs/rendering-engine-optimization.md，执行 Phase N（§7.x）。
 仅做该 Phase 范围；Phase 结束 cargo test --workspace；不 commit 除非要求。
-graphics 禁止依赖 uix-ui。
+draw 禁止依赖 ui 域。
 ```
 
 | Phase | 章节 |

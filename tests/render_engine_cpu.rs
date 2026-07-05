@@ -1,15 +1,15 @@
-//! uix-graphics CPU 引擎集成测试。
+//! uix draw 域 CPU 引擎集成测试。
 //! 覆盖 PixelSurface、RasterRenderer、CpuCanvas2D、SoftwareEngine、NullEngine。
 
-use uix::render::color::Color;
-use uix::render::engine::cpu::canvas_2d::CpuCanvas2D;
-use uix::render::engine::cpu::pixel_surface::PixelSurface;
-use uix::render::engine::cpu::raster_renderer::RasterRenderer;
-use uix::render::engine::cpu::software::SoftwareEngine;
-use uix::render::null_engine::NullEngine;
-use uix::render::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
-use uix::render::types::ImageHandle;
-use uix::platform::api::geometry::{Rect, Size};
+use uix::draw::color::Color;
+use uix::draw::engine::cpu::canvas_2d::CpuCanvas2D;
+use uix::draw::engine::cpu::pixel_surface::PixelSurface;
+use uix::draw::engine::cpu::raster_renderer::RasterRenderer;
+use uix::draw::engine::cpu::software::SoftwareEngine;
+use uix::draw::null_engine::NullEngine;
+use uix::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use uix::draw::types::ImageHandle;
+use uix::core::geometry::{Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // PixelSurface 测试
@@ -90,7 +90,7 @@ fn pixel_surface_clear_rect_raw_zero_size_noop() {
 
 #[test]
 fn pixel_surface_copy_region_within_bounds() {
-    use uix::render::traits::RenderingBackend;
+    use uix::draw::traits::RenderingBackend;
     let mut surf = PixelSurface::new(10, 10);
     // 在左上角写一些像素
     surf.set_clear_color(Color::from_rgba(255, 255, 255, 255));
@@ -104,7 +104,7 @@ fn pixel_surface_copy_region_within_bounds() {
 
 #[test]
 fn pixel_surface_copy_region_zero_size_noop() {
-    use uix::render::traits::RenderingBackend;
+    use uix::draw::traits::RenderingBackend;
     let mut surf = PixelSurface::new(10, 10);
     RenderingBackend::copy_region(&mut surf, Rect::new(0.0, 0.0, 0.0, 0.0), 5, 5);
     // 不应 panic
@@ -477,7 +477,7 @@ fn cpu_canvas_2d_draw_box_shadow_ambient_changes_pixels() {
 fn cpu_canvas_2d_set_blend_mode_no_panic() {
     let surf = PixelSurface::new(10, 10);
     let mut canvas = CpuCanvas2D::new(surf);
-    canvas.set_blend_mode(uix::render::types::BlendMode::Alpha);
+    canvas.set_blend_mode(uix::draw::types::BlendMode::Alpha);
     canvas.fill_rect(
         Rect::new(0.0, 0.0, 5.0, 5.0),
         Color::from_rgba(255, 0, 0, 255),
@@ -490,7 +490,7 @@ fn cpu_canvas_2d_set_blend_mode_no_panic() {
 
 #[test]
 fn cpu_canvas_2d_push_clip_path_no_panic() {
-    use uix::render::path::PathBuilder;
+    use uix::draw::path::PathBuilder;
     let surf = PixelSurface::new(10, 10);
     let mut canvas = CpuCanvas2D::new(surf);
     let path = PathBuilder::new()
@@ -537,7 +537,7 @@ fn software_engine_begin_frame_full_redraw() {
     let result = engine.begin_frame(UpdateStrategy::FullRedraw);
     assert!(matches!(
         result,
-        uix::render::engine::RenderOutcome::Present(_)
+        uix::draw::engine::RenderOutcome::Present(_)
     ));
     engine.end_frame();
 }
@@ -551,7 +551,7 @@ fn software_engine_begin_frame_overlay() {
     )]));
     assert!(matches!(
         result,
-        uix::render::engine::RenderOutcome::Present(_)
+        uix::draw::engine::RenderOutcome::Present(_)
     ));
     engine.end_frame();
 }
@@ -731,7 +731,7 @@ fn software_engine_orientation_default() {
     let engine = SoftwareEngine::new();
     assert_eq!(
         engine.orientation(),
-        uix::render::spatial::Orientation::YDown
+        uix::draw::spatial::Orientation::YDown
     );
 }
 
@@ -762,14 +762,14 @@ fn null_engine_begin_frame() {
     let mut engine = NullEngine::new();
     engine.initialize(800, 600).unwrap();
     let result = engine.begin_frame(UpdateStrategy::FullRedraw);
-    assert!(matches!(result, uix::render::engine::RenderOutcome::Idle));
+    assert!(matches!(result, uix::draw::engine::RenderOutcome::Idle));
 }
 
 #[test]
 fn null_engine_end_frame() {
     let mut engine = NullEngine::new();
     let result = engine.end_frame();
-    assert!(matches!(result, uix::render::engine::RenderOutcome::Idle));
+    assert!(matches!(result, uix::draw::engine::RenderOutcome::Idle));
 }
 
 #[test]

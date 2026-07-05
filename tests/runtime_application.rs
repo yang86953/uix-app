@@ -1,11 +1,10 @@
 //! uix-app 应用层集成测试 —— Application / AppMode / map_ui_event
 
-use uix::runtime::application::{map_ui_event, App, AppMode};
-use uix::runtime::cli::{Cli, CliArgs};
-use uix::platform::api::event::{UiEvent, UiEventPayload, UiEventType};
-use uix::platform::api::geometry::Point;
-use uix::platform::api::input::{KeyCode, KeyMod, MouseButton};
-use uix::widget::WidgetEvent;
+use uix::app::{map_ui_event, App, AppMode, Cli, CliArgs};
+use uix::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
+use uix::core::geometry::Point;
+use uix::native::{KeyCode, KeyMod, MouseButton};
+use uix::ui::WidgetEvent;
 
 // ════════════════════════════════════════════════════════════════════════════
 // AppMode 枚举
@@ -59,23 +58,19 @@ fn default_works_same_as_new() {
 
 #[test]
 fn title_sets_window_title() {
-    let mut app = App::new();
-    app.title("自定义标题");
+    let app = App::new().title("自定义标题");
     assert_eq!(app.window_title(), "自定义标题");
 }
 
 #[test]
 fn size_sets_window_size() {
-    let mut app = App::new();
-    app.size(1280, 720);
+    let app = App::new().size(1280, 720);
     assert_eq!(app.window_size(), (1280, 720));
 }
 
 #[test]
 fn mode_sets_app_mode() {
-    let mut app = App::new();
-    assert_eq!(app.current_mode(), AppMode::GUI);
-    app.mode(AppMode::CLI);
+    let app = App::new().mode(AppMode::CLI);
     assert_eq!(app.current_mode(), AppMode::CLI);
 }
 
@@ -86,28 +81,17 @@ fn cli_registers_cli() {
     }
     let mut cli = Cli::new();
     cli.command("build", handler, "");
-    let mut app = App::new();
-    app.mode(AppMode::CLI).cli(cli);
-    // CLI mode run reads std::env::args(); just verify no panic
+    let app = App::new().mode(AppMode::CLI).cli(cli);
     let code = app.run();
     assert!(code >= 0);
 }
 
 #[test]
-fn container_returns_mutable_ref() {
-    let mut app = App::new();
-    let c = app.container();
-    c.singleton(42i32);
-    assert!(c.has::<i32>());
-}
-
-#[test]
-fn singleton_registers_via_container() {
-    let mut app = App::new();
-    app.singleton("你好世界".to_string());
-    assert!(app.container().has::<String>());
-    if let Some(val) = app.container().resolve::<String>() {
-        assert_eq!(val, "你好世界");
+fn singleton_registers_via_builder() {
+    let app = App::new().singleton(42i32);
+    assert!(app.container().has::<i32>());
+    if let Some(val) = app.container().resolve::<i32>() {
+        assert_eq!(*val, 42);
     }
 }
 
@@ -139,26 +123,13 @@ fn exit_code_starts_at_zero() {
     assert_eq!(app.exit_code(), 0);
 }
 
-#[test]
-fn window_returns_none_before_create() {
-    let app = App::new();
-    assert!(app.window().is_none());
-}
-
-#[test]
-fn window_mut_returns_none_before_create() {
-    let mut app = App::new();
-    assert!(app.window_mut().is_none());
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // App::run() CLI 路径
 // ════════════════════════════════════════════════════════════════════════════
 
 #[test]
 fn run_cli_mode_without_cli_returns_zero() {
-    let mut app = App::new();
-    app.mode(AppMode::CLI);
+    let app = App::new().mode(AppMode::CLI);
     let code = app.run();
     assert_eq!(code, 0);
 }
@@ -170,10 +141,8 @@ fn run_cli_mode_with_registered_cli_returns_exit_code() {
     }
     let mut cli = Cli::new();
     cli.command("build", handler, "");
-    let mut app = App::new();
-    app.mode(AppMode::CLI).cli(cli);
+    let app = App::new().mode(AppMode::CLI).cli(cli);
     let code = app.run();
-    // run() invokes cli.run(&std::env::args()); result depends on actual args
     assert!(code >= 0);
 }
 
@@ -366,7 +335,6 @@ fn map_window_close_returns_none() {
 
 #[test]
 fn map_wrong_payload_type_returns_none() {
-    // MouseDown expects MouseButton payload, but we provide None
     let ev = UiEvent::new(UiEventType::MouseDown, UiEventPayload::None);
     let result = map_ui_event(&ev);
     assert!(result.is_none());

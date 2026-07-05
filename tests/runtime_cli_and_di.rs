@@ -1,7 +1,6 @@
-//! uix-app crate 集成测试。
+//! uix app 域集成测试。
 
-use uix::runtime::cli::{Cli, CliArgs};
-use uix::runtime::di::Container;
+use uix::app::{Cli, CliArgs, Container};
 
 // ════════════════════════════════════════════════════════════════════════════
 // cli 测试

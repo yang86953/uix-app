@@ -1,6 +1,6 @@
-//! uix-platform crate 集成测试（geometry 模块）。
+//! uix 集成测试（geometry 模块）。
 
-use uix::platform::api::geometry::{EdgeInsets, Point, Rect, Size};
+use uix::core::geometry::{EdgeInsets, Point, Rect, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // geometry 测试

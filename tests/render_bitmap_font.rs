@@ -1,9 +1,9 @@
-//! uix-graphics BitmapFont 集成测试。
+//! uix draw 域 BitmapFont 集成测试。
 //! 覆盖 5x7 位图字体的度量、测量和绘制。
 
-use uix::render::bitmap_font::BitmapFont;
-use uix::render::types::TextLayoutOptions;
-use uix::platform::api::geometry::{Point, Size};
+use uix::draw::bitmap_font::BitmapFont;
+use uix::draw::types::TextLayoutOptions;
+use uix::core::geometry::{Point, Size};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 基础构造与度量
@@ -33,8 +33,8 @@ fn default_opts() -> TextLayoutOptions {
         max_height: 0.0,
         line_height: 10.0,
         word_wrap: false,
-        h_align: uix::render::HAlign::Left,
-        v_align: uix::render::VAlign::Top,
+        h_align: uix::draw::HAlign::Left,
+        v_align: uix::draw::VAlign::Top,
         font_size: 12.0,
     }
 }

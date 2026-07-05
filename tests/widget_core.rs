@@ -1,16 +1,16 @@
-//! uix-ui 核心模块集成测试（state, style, clipboard, children）。
+//! uix ui 域 核心模块集成测试（state, style, clipboard, children）。
 
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::Arc;
-use uix::render::color::Color;
-use uix::platform::api::geometry::{EdgeInsets, Rect};
-use uix::api::widget::copy_to_clipboard;
-use uix::api::widget::RenderContext;
-use uix::api::widget::WidgetChildren;
-use uix::widget::WidgetTree;
-use uix::api::widget::{Computed, Effect, State};
-use uix::api::widget::{Style, StyleVariant};
-use uix::api::widget::{WidgetCapabilities, WidgetComponent, WidgetRender};
+use uix::draw::color::Color;
+use uix::core::geometry::{EdgeInsets, Rect};
+use uix::ui::copy_to_clipboard;
+use uix::ui::RenderContext;
+use uix::ui::WidgetChildren;
+use uix::ui::WidgetTree;
+use uix::ui::{Computed, Effect, State};
+use uix::ui::{Style, StyleVariant};
+use uix::ui::{WidgetCapabilities, WidgetComponent, WidgetRender};
 
 // ════════════════════════════════════════════════════════════════════════════
 // clipboard 测试
@@ -240,7 +240,7 @@ fn chained_modifications() {
         .with_font_size(16.0)
         .with_padding(EdgeInsets::uniform(8.0))
         .with_rounded(4.0)
-        .with_shadow(uix::widget::style::BoxShadowDef::new(
+        .with_shadow(uix::ui::style::BoxShadowDef::new(
             Color::from_rgba(0, 0, 0, 128),
             8.0,
             0.0,
@@ -295,7 +295,7 @@ fn with_border_sets_both() {
 
 #[test]
 fn with_shadow_sets_box_shadow() {
-    use uix::widget::style::BoxShadowDef;
+    use uix::ui::style::BoxShadowDef;
     let shadow = BoxShadowDef::new(Color::from_rgba(0, 0, 0, 100), 10.0, 0.0, 0.0);
     let s = Style::default().with_shadow(shadow);
     assert_eq!(s.box_shadow, Some(shadow));

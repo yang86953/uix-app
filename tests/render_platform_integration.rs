@@ -1,6 +1,6 @@
 //! 绘图层与平台层测试框架集成测试。
 //!
-//! 使用 `uix-platform` 的 `test_harness`（`FakePlatform`、`FakeGraphicsContext` 等）
+//! 使用 native 域 的 `test_harness`（`FakePlatform`、`FakeGraphicsContext` 等）
 //! 验证绘图层组件与平台抽象层的集成契约：
 //!
 //! - `IGraphicsContext` 生命周期（初始化/尺寸/渲染/销毁）
@@ -10,17 +10,17 @@
 //! - `FakePlatform` 全平台聚合
 //! - 端到端：图形渲染 → 像素输出 → 呈现器
 
-use uix::render::color::Color;
-use uix::render::engine::cpu::canvas_2d::CpuCanvas2D;
-use uix::render::engine::cpu::pixel_surface::PixelSurface;
-use uix::render::engine::cpu::software::SoftwareEngine;
-use uix::api::render::{Canvas2D, GraphicsEngine, UpdateStrategy};
-use uix::platform::PresentDamage;
-use uix::platform::api::{
+use uix::draw::color::Color;
+use uix::draw::engine::cpu::canvas_2d::CpuCanvas2D;
+use uix::draw::engine::cpu::pixel_surface::PixelSurface;
+use uix::draw::engine::cpu::software::SoftwareEngine;
+use uix::draw::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use uix::native::PresentDamage;
+use uix::native::traits::{
     IClipboard, IDisplay, IGraphicsContext, IPresenter, IWindowManager, Platform, PlatformWindow,
 };
-use uix::platform::api::geometry::Rect;
-use uix::platform::test_harness::{
+use uix::core::geometry::Rect;
+use uix::native::test_harness::{
     FakeDisplay, FakeGraphicsContext, FakePlatform, FakePresenter, FakeWindow, FakeWindowManager,
 };
 
@@ -762,11 +762,11 @@ fn end_to_end_software_engine_frame_no_panic() {
     let result2 = engine.end_frame();
     assert!(matches!(
         result,
-        uix::render::engine::RenderOutcome::Present(_)
+        uix::draw::engine::RenderOutcome::Present(_)
     ));
     assert!(matches!(
         result2,
-        uix::render::engine::RenderOutcome::Present(_)
+        uix::draw::engine::RenderOutcome::Present(_)
     ));
 
     // Overlay 帧
@@ -775,7 +775,7 @@ fn end_to_end_software_engine_frame_no_panic() {
 
     // Overlay 空列表 → Idle（无 overlay 区域需绘制）
     let overlay = engine.begin_frame(UpdateStrategy::Overlay(vec![]));
-    assert_eq!(overlay, uix::render::engine::RenderOutcome::Idle);
+    assert_eq!(overlay, uix::draw::engine::RenderOutcome::Idle);
 }
 
 /// 端到端：SoftwareEngine 离屏缓冲 → blit → 不 panic。
@@ -878,7 +878,7 @@ fn cross_layer_full_pipeline_via_fake_platform() {
 /// NullEngine 在 FakePlatform 场景下正常工作。
 #[test]
 fn null_engine_with_fake_platform() {
-    use uix::render::null_engine::NullEngine;
+    use uix::draw::null_engine::NullEngine;
 
     let _pf = FakePlatform::new();
     // 验证 FakePlatform 与 NullEngine 可以共存于同一个测试中

@@ -1,11 +1,11 @@
-//! uix-platform crate 集成测试（event 模块）。
+//! uix 集成测试（event 模块）。
 
-use uix::platform::api::event::{
+use uix::native::traits::event::{
     FileDropData, KeyEventData, KeyPressData, MouseButtonEventData, MouseMoveEventData,
     MouseWheelData, ResizeData, TimerEventData, UiEvent, UiEventPayload, UiEventType,
 };
-use uix::platform::api::geometry::Point;
-use uix::platform::api::input::{KeyCode, KeyMod, MouseButton};
+use uix::core::geometry::Point;
+use uix::native::traits::input::{KeyCode, KeyMod, MouseButton};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 工厂方法测试

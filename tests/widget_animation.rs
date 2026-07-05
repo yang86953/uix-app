@@ -1,9 +1,9 @@
-//! uix-ui animation 模块集成测试。
+//! uix ui 域 animation 模块集成测试。
 
-use uix::render::color::Color;
-use uix::platform::api::geometry::Rect;
-use uix::api::widget::Animatable;
-use uix::api::widget::{Animation, Easing};
+use uix::draw::color::Color;
+use uix::core::geometry::Rect;
+use uix::ui::traits::Animatable;
+use uix::ui::{Animation, Easing};
 
 // ════════════════════════════════════════════════════════════════════════════
 // animation::core 测试

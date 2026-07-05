@@ -9,7 +9,7 @@
 
 mod demos;
 
-use uix::platform::log::{info_fn, Level, Logger};
+use uix::core::log::{info_fn, Level, Logger};
 
 fn main() {
     let log_level = std::env::var("RUST_LOG")

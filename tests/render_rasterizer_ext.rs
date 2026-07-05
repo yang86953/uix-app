@@ -1,15 +1,15 @@
-//! uix-graphics 栅格化扩展模块集成测试。
+//! uix draw 域 栅格化扩展模块集成测试。
 //! 覆盖 gradient、glyph、image、fill、stroke 模块级纯函数。
 
-use uix::render::color::Color;
-use uix::render::path::{FillRule, PathBuilder};
-use uix::render::rasterizer::fill;
-use uix::render::rasterizer::glyph;
-use uix::render::rasterizer::gradient;
-use uix::render::rasterizer::image;
-use uix::render::rasterizer::stroke;
-use uix::render::types::{GradientDirection, Radius};
-use uix::platform::api::geometry::Rect;
+use uix::draw::color::Color;
+use uix::draw::path::{FillRule, PathBuilder};
+use uix::draw::rasterizer::fill;
+use uix::draw::rasterizer::glyph;
+use uix::draw::rasterizer::gradient;
+use uix::draw::rasterizer::image;
+use uix::draw::rasterizer::stroke;
+use uix::draw::types::{GradientDirection, Radius};
+use uix::core::geometry::Rect;
 
 // ════════════════════════════════════════════════════════════════════════════
 // gradient 测试
@@ -516,7 +516,7 @@ fn draw_box_shadow_module_basic() {
     let mut pixels = vec![0u32; 400]; // 20x20
     let clip = Rect::new(0.0, 0.0, 20.0, 20.0);
     // 在 (5,5) 位置，10x10 的盒子绘制阴影，偏移 (3,3)，模糊 2px
-    uix::render::rasterizer::shadow::draw_box_shadow(
+    uix::draw::rasterizer::shadow::draw_box_shadow(
         &mut pixels,
         20,
         20,
@@ -540,7 +540,7 @@ fn draw_box_shadow_module_zero_blur() {
     let mut pixels = vec![0u32; 400]; // 20x20
     let clip = Rect::new(0.0, 0.0, 20.0, 20.0);
     // blur_radius=0 时退化为清晰投影
-    uix::render::rasterizer::shadow::draw_box_shadow(
+    uix::draw::rasterizer::shadow::draw_box_shadow(
         &mut pixels,
         20,
         20,
@@ -563,7 +563,7 @@ fn draw_box_shadow_module_zero_blur() {
 fn draw_box_shadow_ambient_module_basic() {
     let mut pixels = vec![0u32; 400]; // 20x20
     let clip = Rect::new(0.0, 0.0, 20.0, 20.0);
-    uix::render::rasterizer::shadow::draw_box_shadow_ambient(
+    uix::draw::rasterizer::shadow::draw_box_shadow_ambient(
         &mut pixels,
         20,
         20,
@@ -586,7 +586,7 @@ fn draw_box_shadow_ambient_module_basic() {
 fn draw_box_shadow_transparent_color_noop() {
     let mut pixels = vec![0xFFFFFFFF; 100]; // 10x10
     let clip = Rect::new(0.0, 0.0, 10.0, 10.0);
-    uix::render::rasterizer::shadow::draw_box_shadow(
+    uix::draw::rasterizer::shadow::draw_box_shadow(
         &mut pixels,
         10,
         10,

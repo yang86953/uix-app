@@ -1,14 +1,14 @@
-//! uix-ui RenderContext 集成测试。
+//! uix ui 域 RenderContext 集成测试。
 //!
 //! 使用 `NullEngine`（NoopCanvas2D）测试 RenderContext 的创建和基本操作。
 //! 这些测试不依赖平台层测试框架，可在无 `test-harness` feature 时运行。
 
-use uix::render::font_service::FontService;
-use uix::render::null_engine::NullEngine;
-use uix::render::{Color, FontHandle, GradientDirection, traits::GraphicsEngine, Orientation, Radius};
-use uix::platform::api::geometry::Rect;
-use uix::api::widget::DesignTokens;
-use uix::api::widget::RenderContext;
+use uix::draw::font_service::FontService;
+use uix::draw::null_engine::NullEngine;
+use uix::draw::{Color, FontHandle, GradientDirection, traits::GraphicsEngine, Orientation, Radius};
+use uix::core::geometry::Rect;
+use uix::ui::DesignTokens;
+use uix::ui::RenderContext;
 
 // ════════════════════════════════════════════════════════════════════════════
 // RenderContext 创建测试

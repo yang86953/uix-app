@@ -3,12 +3,12 @@
 #![cfg(feature = "test-harness")]
 
 use std::cell::Cell;
-use uix::platform::api::*;
-use uix::platform::api::event::UiEvent;
-use uix::platform::api::geometry::Point;
-use uix::platform::shared::OsEventSource;
-use uix::platform::test_harness::FakePlatform;
-use uix::platform::api::input::KeyCode;
+use uix::native::traits::*;
+use uix::native::traits::event::UiEvent;
+use uix::core::geometry::Point;
+use uix::native::shared::OsEventSource;
+use uix::native::test_harness::FakePlatform;
+use uix::native::traits::input::KeyCode;
 
 // ════════════════════════════════════════════════════════════════════════════
 // FakeClipboard
@@ -46,10 +46,10 @@ fn console_write_line() {
 fn console_color() {
     let mut pf = FakePlatform::new();
     pf.console
-        .set_color(uix::platform::api::system::ConsoleColor::Warn);
+        .set_color(uix::native::traits::system::ConsoleColor::Warn);
     assert_eq!(
         pf.console.last_color(),
-        Some(uix::platform::api::system::ConsoleColor::Warn)
+        Some(uix::native::traits::system::ConsoleColor::Warn)
     );
 }
 
@@ -60,7 +60,7 @@ fn console_color() {
 #[test]
 fn cursor_type() {
     let mut pf = FakePlatform::new();
-    pf.cursor.set_cursor(uix::platform::api::input::CursorType::Hand);
+    pf.cursor.set_cursor(uix::native::traits::input::CursorType::Hand);
     assert_eq!(pf.cursor.state.set_cursor_calls.len(), 1);
 }
 
@@ -76,7 +76,7 @@ fn inject_and_dispatch_event() {
     let called = Cell::new(false);
     let result = pf.event_loop().poll_event(&|ev| {
         called.set(true);
-        assert_eq!(ev.type_, uix::platform::api::event::UiEventType::WindowClose);
+        assert_eq!(ev.type_, uix::native::traits::event::UiEventType::WindowClose);
         true
     });
     assert!(result);
@@ -231,7 +231,7 @@ fn fake_display_configure() {
 fn fake_presenter_tracks_calls() {
     let mut pf = FakePlatform::new();
     pf.presenter
-        .present(&[0xFF0000; 100], 10, 10, uix::platform::PresentDamage::Full)
+        .present(&[0xFF0000; 100], 10, 10, uix::native::PresentDamage::Full)
         .unwrap();
     assert_eq!(pf.presenter.present_count(), 1);
 }
@@ -247,7 +247,7 @@ fn fake_text_input_active() {
 
 #[test]
 fn fake_graphics_context() {
-    let mut ctx = uix::platform::test_harness::FakeGraphicsContext::with_size(800, 600);
+    let mut ctx = uix::native::test_harness::FakeGraphicsContext::with_size(800, 600);
     assert_eq!(ctx.width(), 800);
     assert_eq!(ctx.height(), 600);
     ctx.make_current();
@@ -453,7 +453,7 @@ fn text_input_clear_history() {
 
 #[test]
 fn fake_window_direct_clear_history() {
-    use uix::platform::test_harness::FakeWindow;
+    use uix::native::test_harness::FakeWindow;
     let mut win = FakeWindow::new(1, "test", 100, 100);
     win.show();
     win.set_title("title1");
@@ -650,7 +650,7 @@ fn file_system_special_dir_customizable() {
 fn file_system_read_file_not_found() {
     let pf = FakePlatform::new();
     match pf.file_system.read_file("/missing") {
-        Err(e) => assert_eq!(e.code(), uix::platform::api::error::Errc::NotFound),
+        Err(e) => assert_eq!(e.code(), uix::core::error::Errc::NotFound),
         Ok(_) => panic!("expected error"),
     }
 }
@@ -774,7 +774,7 @@ fn timer_clear_invalid_id() {
 
 #[test]
 fn window_create_with_gpu() {
-    use uix::platform::test_harness::FakeWindow;
+    use uix::native::test_harness::FakeWindow;
     let mut win = FakeWindow::new(1, "gpu-win", 800, 600).with_gpu();
     assert!(win.state.has_gpu);
     assert!(win.gpu_ctx.is_some());
@@ -871,7 +871,7 @@ fn window_presenter_access() {
         .create_window("present", 100, 100)
         .unwrap();
     let p = win.presenter();
-    p.present(&[0xFF; 100], 10, 10, uix::platform::PresentDamage::Full).unwrap();
+    p.present(&[0xFF; 100], 10, 10, uix::native::PresentDamage::Full).unwrap();
     // 通过 Platform trait 也可以访问 presenter
     // 这里直接验证 presenter 工作
 }
@@ -896,7 +896,7 @@ fn inject_event_read_via_platform_trait() {
     let called = Cell::new(false);
     let result = pf.event_loop().poll_event(&|ev| {
         called.set(true);
-        assert_eq!(ev.type_, uix::platform::api::event::UiEventType::WindowClose);
+        assert_eq!(ev.type_, uix::native::traits::event::UiEventType::WindowClose);
         true
     });
     assert!(result);
@@ -937,7 +937,7 @@ fn full_window_display_present_sequence() {
     // 呈现一帧像素（通过窗口自己的 presenter）
     let pixels: Vec<u32> = vec![0xFF0000; 200 * 100];
     win.presenter()
-        .present(&pixels, 200, 100, uix::platform::PresentDamage::Full)
+        .present(&pixels, 200, 100, uix::native::PresentDamage::Full)
         .unwrap();
 
     // 注入一个鼠标事件
@@ -948,7 +948,7 @@ fn full_window_display_present_sequence() {
 
     let event_handled = Cell::new(false);
     pf.event_loop().poll_event(&|ev| {
-        if let uix::platform::api::event::UiEventPayload::MouseButton(ref data) = ev.payload {
+        if let uix::native::traits::event::UiEventPayload::MouseButton(ref data) = ev.payload {
             event_handled.set(data.pos.x == 50.0 && data.btn == MouseButton::Left);
         }
         true
@@ -984,7 +984,7 @@ fn presenter_large_pixels() {
     let mut pf = FakePlatform::new();
     let pixels = vec![0x12345678u32; 10_000];
     pf.presenter
-        .present(&pixels, 100, 100, uix::platform::PresentDamage::Full)
+        .present(&pixels, 100, 100, uix::native::PresentDamage::Full)
         .unwrap();
     assert_eq!(pf.presenter.state.last_pixels.len(), 10_000);
     assert_eq!(pf.presenter.state.last_pixels[0], 0x12345678);
@@ -994,7 +994,7 @@ fn presenter_large_pixels() {
 fn presenter_empty_pixels() {
     let mut pf = FakePlatform::new();
     pf.presenter
-        .present(&[], 0, 0, uix::platform::PresentDamage::Full)
+        .present(&[], 0, 0, uix::native::PresentDamage::Full)
         .unwrap();
     assert_eq!(pf.presenter.state.last_pixels.len(), 0);
 }
@@ -1007,11 +1007,11 @@ fn presenter_dirty_rect() {
             &[0xFF; 100],
             10,
             10,
-            uix::platform::PresentDamage::single(2, 3, 6, 7),
+            uix::native::PresentDamage::single(2, 3, 6, 7),
         )
         .unwrap();
     let call = &pf.presenter.state.present_calls[0];
-    assert_eq!(call.damage, uix::platform::PresentDamage::single(2, 3, 6, 7));
+    assert_eq!(call.damage, uix::native::PresentDamage::single(2, 3, 6, 7));
 }
 
 #[test]
@@ -1093,7 +1093,7 @@ fn timer_multiple_repeating() {
 
 #[test]
 fn graphics_context_shutdown() {
-    let mut ctx = uix::platform::test_harness::FakeGraphicsContext::new();
+    let mut ctx = uix::native::test_harness::FakeGraphicsContext::new();
     assert!(!ctx.state.shutdown_called);
     ctx.shutdown();
     assert!(ctx.state.shutdown_called);
@@ -1101,7 +1101,7 @@ fn graphics_context_shutdown() {
 
 #[test]
 fn graphics_context_read_pixels() {
-    let mut ctx = uix::platform::test_harness::FakeGraphicsContext::new();
+    let mut ctx = uix::native::test_harness::FakeGraphicsContext::new();
     let pixels = ctx.read_pixels(0, 0, 10, 10);
     assert!(pixels.is_empty());
 }

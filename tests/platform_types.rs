@@ -1,12 +1,12 @@
 //! types — 平台层数据类型测试（枚举 / 结构体 / 默认值）。
 
-use uix::platform::api::present::IPresenter;
-use uix::platform::presenter::NullPresenter;
-use uix::platform::api::display::DisplayInfo;
-use uix::platform::api::input::{
+use uix::native::traits::present::IPresenter;
+use uix::native::presenter::NullPresenter;
+use uix::native::traits::display::DisplayInfo;
+use uix::native::traits::input::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
-use uix::platform::api::system::{
+use uix::native::traits::system::{
     ConsoleColor, MemoryInfo, OsInfo, SpecialDir, StatusLevel, TerminalCapabilities,
 };
 
@@ -48,7 +48,7 @@ fn display_info_default() {
 
 #[test]
 fn display_info_custom() {
-    use uix::platform::api::geometry::Rect;
+    use uix::core::geometry::Rect;
     let info = DisplayInfo {
         bounds: Rect::new(0.0, 0.0, 1920.0, 1080.0),
         dpi_scale: 2.0,
@@ -249,7 +249,7 @@ fn null_presenter_present_returns_ok() {
         &[0u32; 100],
         10,
         10,
-        uix::platform::PresentDamage::single(0, 0, 10, 10),
+        uix::native::PresentDamage::single(0, 0, 10, 10),
     );
     assert!(result.is_ok());
 }
@@ -257,7 +257,7 @@ fn null_presenter_present_returns_ok() {
 #[test]
 fn null_presenter_present_without_dirty_rect() {
     let mut p = NullPresenter::new();
-    let result = p.present(&[], 0, 0, uix::platform::PresentDamage::Full);
+    let result = p.present(&[], 0, 0, uix::native::PresentDamage::Full);
     assert!(result.is_ok());
 }
 
