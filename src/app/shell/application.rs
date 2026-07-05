@@ -85,8 +85,7 @@ impl App {
 
     /// 设置根 View（GUI 模式必需）。
     pub fn root(mut self, view: impl View) -> Self {
-        crate::ui::state::begin_state_capture();
-        self.root = Some(view.build());
+        self.root = Some(ViewAdapter::capture_view(view));
         self
     }
 

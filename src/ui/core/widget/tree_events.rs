@@ -411,23 +411,14 @@ impl WidgetTree {
         EventResult::NotHandled
     }
 
-    /// capture 阶段拦截事件后：登记连续动画节点，并对 viewport 容器做整视口 Paint 失效。
+    /// capture 阶段拦截事件后：登记连续动画节点。
+    /// 滚动视口的 Paint 失效由 `update()` 内 Composite strip 路径负责，避免与局部重绘冲突。
     fn on_widget_handled_in_capture(&mut self, id: WidgetId) {
-        let (needs_continuous, is_viewport, frame) = {
-            let Some(node) = self.get(id) else {
-                return;
-            };
-            (
-                node.needs_continuous_update(),
-                node.viewport_scroll_offset().is_some(),
-                node.frame(),
-            )
-        };
+        let needs_continuous = self
+            .get(id)
+            .is_some_and(|node| node.needs_continuous_update());
         if needs_continuous {
             self.try_register_animation(id);
-        }
-        if is_viewport && frame.w > 0.0 && frame.h > 0.0 {
-            self.invalidate_paint_rect(id, frame);
         }
     }
 

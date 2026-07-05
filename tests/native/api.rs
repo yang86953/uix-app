@@ -10,7 +10,7 @@
 use std::rc::Rc;
 use uix::native::traits::*;
 use uix::native::traits::event::UiEvent;
-use uix::core::geometry::Point;
+use uix::core::geometry::{EdgeInsets, Point, Rect, Size};
 use uix::native::test_harness::FakePlatform;
 
 // ════════════════════════════════════════════════════════════════════════════

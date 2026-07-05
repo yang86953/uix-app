@@ -4,7 +4,7 @@
 
 use crate::native::{Point, Rect};
 
-use crate::draw::image::BitmapHandle;
+use crate::draw::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::painting::PaintContext;
 use crate::draw::font::text::TextRenderService;
 use crate::draw::traits::Canvas2D;
@@ -172,6 +172,7 @@ impl DisplayList {
         canvas: &mut dyn Canvas2D,
         font: FontHandle,
         font_service: &crate::draw::font::font_service::FontService,
+        image_service: Option<&ImageService>,
         surface_w: f32,
     ) {
         let mut text = TextRenderService::new(font, font_service, surface_w);
@@ -226,8 +227,14 @@ impl DisplayList {
                     color_b,
                     dir,
                 } => canvas.fill_linear_gradient(*rect, *color_a, *color_b, *dir),
-                PaintOp::DrawImage { .. } => {
-                    // replay_canvas 无 ImageService，图片须走 replay() 路径。
+                PaintOp::DrawImage {
+                    handle,
+                    bounds,
+                    fit,
+                } => {
+                    if let Some(svc) = image_service {
+                        blit_handle(svc, canvas, *handle, *bounds, *fit);
+                    }
                 }
                 PaintOp::Save => canvas.save(),
                 PaintOp::Restore => canvas.restore(),
@@ -239,7 +246,10 @@ impl DisplayList {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::draw::font::font_service::FontService;
     use crate::draw::Color;
+    use crate::draw::NullEngine;
+    use crate::draw::traits::GraphicsEngine;
 
     #[test]
     fn display_list_stores_ops() {
@@ -251,5 +261,30 @@ mod tests {
         });
         assert_eq!(list.len(), 1);
         assert!(!list.is_empty());
+    }
+
+    #[test]
+    fn replay_canvas_draw_image_with_service() {
+        let svc = ImageService::new();
+        let png = include_bytes!("../../../tests/fixtures/red_1x1.png");
+        let handle = svc.load_from_bytes(png).expect("load png");
+
+        let mut list = DisplayList::new();
+        list.push(PaintOp::DrawImage {
+            handle,
+            bounds: Rect::new(0.0, 0.0, 4.0, 4.0),
+            fit: true,
+        });
+
+        let mut engine = NullEngine::new();
+        engine.initialize(8, 8).expect("init");
+        let canvas = engine.canvas_2d();
+        list.replay_canvas(
+            canvas,
+            Default::default(),
+            &FontService::new(),
+            Some(&svc),
+            8.0,
+        );
     }
 }

@@ -28,7 +28,7 @@ fn software_engine_set_backend_switches_to_null() {
     assert_eq!(engine.session().backend_kind(), BackendKind::Null);
     let outcome = engine.begin_frame(UpdateStrategy::FullRedraw);
     assert_eq!(outcome, RenderOutcome::Present(DamageRegion::full()));
-    engine.end_frame();
+    engine.end_frame(&DamageRegion::full());
 }
 
 #[test]
@@ -38,6 +38,11 @@ fn render_session_cpu_dirty_rect_partial_redraw() {
     let outcome = session.begin_frame(UpdateStrategy::DirtyRects(vec![Rect::new(
         0.0, 0.0, 10.0, 10.0,
     )]));
-    assert_eq!(outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(
+        outcome,
+        RenderOutcome::Present(DamageRegion::partial(vec![Rect::new(
+            0.0, 0.0, 10.0, 10.0
+        )]))
+    );
     session.end_frame();
 }

@@ -103,6 +103,11 @@ impl DynamicLabel {
             source.bind_paint(widget_id, queue.clone(), rect);
         }
     }
+
+    /// layout 后探测闭包依赖：执行一次文本闭包以捕获 `State::get()`。
+    pub(crate) fn probe_dependencies(&self) {
+        let _ = (self.text_fn)();
+    }
 }
 
 impl WidgetComponent for DynamicLabel {

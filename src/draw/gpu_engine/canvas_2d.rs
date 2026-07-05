@@ -213,6 +213,30 @@ impl GpuCanvas2D {
         })
     }
 
+    /// 用 GL scissor 限定范围清屏，再恢复当前 clip scissor。
+    pub(crate) fn clear_rect_raw(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        if w <= 0 || h <= 0 {
+            return;
+        }
+        unsafe {
+            self.gl().enable(glow::SCISSOR_TEST);
+            let sy = (self.surface_h - y - h).max(0);
+            self.gl().scissor(x, sy, w, h);
+            self.gl().clear_color(0.0, 0.0, 0.0, 0.0);
+            self.gl().clear(glow::COLOR_BUFFER_BIT);
+            if self.clip_rect.w > 0.0 && self.clip_rect.h > 0.0 {
+                self.gl().scissor(
+                    self.clip_rect.x as i32,
+                    (self.surface_h as f32 - self.clip_rect.y - self.clip_rect.h) as i32,
+                    self.clip_rect.w as i32,
+                    self.clip_rect.h as i32,
+                );
+            } else {
+                self.gl().scissor(0, 0, 0, 0);
+            }
+        }
+    }
+
     pub fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.surface_w = width;
         self.surface_h = height;

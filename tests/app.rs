@@ -10,3 +10,7 @@ mod window;
 
 #[path = "app/cli_and_di.rs"]
 mod cli_and_di;
+
+#[cfg(feature = "test-harness")]
+#[path = "app/event_loop.rs"]
+mod event_loop;

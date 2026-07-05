@@ -2,7 +2,7 @@
 
 use uix::draw::pipeline::Invalidation;
 use uix::native::Rect;
-use uix::ui::state::{begin_state_capture, State};
+use uix::ui::state::{begin_state_capture, Computed, State};
 use uix::ui::view::{column, dynamic_label, label, ViewAdapter};
 use uix::ui::{WidgetCore, WidgetTree};
 
@@ -75,6 +75,56 @@ fn counter_increment_only_label_damage() {
     // 至少有一个 paint 目标，且 damage 面积远小于根 frame
     let bounds = region.bounds();
     assert!(bounds.w * bounds.h < 200.0 * 100.0 * 0.5);
+}
+
+#[test]
+fn computed_dynamic_label_repaints_on_dep_change() {
+    let a = State::new(1);
+    let b = State::new(2);
+    let a2 = a.clone();
+    let b2 = b.clone();
+    let sum = Computed::new(move || a2.get() + b2.get());
+
+    let section = column([dynamic_label(move || format!("Sum: {}", sum.get()))]);
+
+    let mut tree = ViewAdapter::build_nodes(section);
+    tree.bind_invalidation();
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, 200.0, 40.0));
+    }
+    tree.layout();
+    tree.reset_dirty();
+
+    a.set(10);
+
+    assert!(tree.has_render_work());
+    assert!(!tree.dirty_region().full_frame);
+}
+
+#[test]
+fn external_state_with_dynamic_label_binds_on_layout() {
+    // README Counter 模式：State 在 View 外创建
+    let count = State::new(0);
+    let label_count = count.clone();
+
+    let section = column([
+        label("Header"),
+        dynamic_label(move || format!("Count: {}", label_count.get())),
+    ]);
+
+    let mut tree = ViewAdapter::build_nodes(section);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+    }
+    tree.layout();
+    tree.reset_dirty();
+
+    count.set(1);
+
+    assert!(tree.has_render_work());
+    let region = tree.dirty_region();
+    assert!(!region.full_frame);
+    assert!(!region.is_empty());
 }
 
 #[test]

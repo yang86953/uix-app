@@ -12,11 +12,13 @@
 //!
 //! # State 自动脏标记
 //!
-//! 展开时通过 `set_current_view_dirty_fn` 设置线程局部回调。
-//! `State::new` 创建时自动读取该回调并绑定——State 值变更时自动触发 WidgetTree 重绘。
+//! - View 构建期：`begin_state_capture` 捕获 `State::new`（`capture_view` / `with_view_context`）
+//! - layout 后：`bind_reactive_widget_states` 探测 `dynamic_label` 闭包依赖并绑定 Paint 失效
+//! - 兜底：`bind_orphan_pending_states` 将未关联 State 绑到根节点
 
 use crate::ui::traits::WidgetComponent;
 use crate::ui::style::Style;
+use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::view::{View, ViewNode};
 use crate::ui::{WidgetNode, WidgetTree};
 use crate::ui::widgets::{Button, Container, Label};
@@ -25,26 +27,26 @@ use crate::ui::widgets::{Button, Container, Label};
 pub struct ViewAdapter;
 
 impl ViewAdapter {
-    /// 将 `View` 树构建为 `WidgetTree`。
-    ///
-    /// 在构建前设置 View 上下文，`State::new` 在其内部创建时会自动绑定脏标记。
-    /// `view.build()` 只会被调用一次，返回可直接交给渲染循环。
-    pub fn build(view: impl View) -> WidgetTree {
-        // 设置脏标记上下文（通过线程局部方式），使 State::new 自动绑定
-        // 由于 ViewNode 在此闭包外构建，此处实际需要一个更细粒度的绑定方式。
-        // 详见 Phase 3 的 ViewContext 设计。
+    /// 在 View 构建期开启 State 捕获并返回 ViewNode（供 `App::root` 使用）。
+    pub fn capture_view(view: impl View) -> ViewNode {
+        begin_state_capture();
+        let node = view.build();
+        end_state_capture();
+        node
+    }
 
-        // 先用 thread_local 设置一个（将在更细粒度控制后完善）
-        let root_node = view.build();
-        Self::build_nodes(root_node)
+    /// 将 `View` 树一步构建为 `WidgetTree`。
+    pub fn build(view: impl View) -> WidgetTree {
+        Self::build_nodes(Self::capture_view(view))
     }
 
     /// 将已展开的 ViewNode 树构建为 WidgetTree。
-    /// 当 ViewNode 已通过其他方式构建时使用此方法。
     pub fn build_nodes(root: ViewNode) -> WidgetTree {
         let mut tree = WidgetTree::new();
         let wnode = Self::expand(root);
         tree.build(wnode);
+        tree.bind_orphan_pending_states();
+        tree.bind_pending_effects();
         tree
     }
 
@@ -99,16 +101,15 @@ impl ViewAdapter {
     }
 }
 
-/// 在闭包作用域内设置当前 View 上下文。
-/// `State::new` 在 `f` 内部创建时会自动绑定到此上下文的脏标记回调。
-/// 返回闭包的返回值。
+/// 在闭包作用域内设置当前 View 的 State 捕获上下文（View 子树构建时使用）。
 pub fn with_view_context<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
 {
-    // Phase 3 完善：此处会设置 ViewId 上下文，使 State::new 能关联到 WidgetTree 节点。
-    // 当前先直接执行，State 绑定通过 set_dirty_fn 手动/自动完成。
-    f()
+    begin_state_capture();
+    let result = f();
+    end_state_capture();
+    result
 }
 
 #[cfg(test)]

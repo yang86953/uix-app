@@ -247,7 +247,7 @@ define_widget! {
     // 帧间滚动增量，用于 render_loop 的 scroll_region 像素移动
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
         let delta = self.scroll_delta_strip.get();
-        if delta.0.abs() > 0.5 || delta.1.abs() > 0.5 {
+        if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
             Some(delta)
         } else {
             None

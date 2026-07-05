@@ -8,6 +8,7 @@ use uix::draw::engine::cpu::raster_renderer::RasterRenderer;
 use uix::draw::engine::cpu::software::SoftwareEngine;
 use uix::draw::null_engine::NullEngine;
 use uix::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
+use uix::draw::backend::DamageRegion;
 use uix::draw::types::ImageHandle;
 use uix::core::geometry::{Rect, Size};
 
@@ -539,7 +540,7 @@ fn software_engine_begin_frame_full_redraw() {
         result,
         uix::draw::engine::RenderOutcome::Present(_)
     ));
-    engine.end_frame();
+    engine.end_frame(&DamageRegion::full());
 }
 
 #[test]
@@ -553,7 +554,7 @@ fn software_engine_begin_frame_overlay() {
         result,
         uix::draw::engine::RenderOutcome::Present(_)
     ));
-    engine.end_frame();
+    engine.end_frame(&DamageRegion::full());
 }
 
 #[test]
@@ -761,15 +762,23 @@ fn null_engine_initialize() {
 fn null_engine_begin_frame() {
     let mut engine = NullEngine::new();
     engine.initialize(800, 600).unwrap();
-    let result = engine.begin_frame(UpdateStrategy::FullRedraw);
-    assert!(matches!(result, uix::draw::engine::RenderOutcome::Idle));
+    let full = engine.begin_frame(UpdateStrategy::FullRedraw);
+    assert!(matches!(
+        full,
+        uix::draw::engine::RenderOutcome::Present(_)
+    ));
+    let idle = engine.begin_frame(UpdateStrategy::DirtyRects(vec![]));
+    assert!(matches!(idle, uix::draw::engine::RenderOutcome::Idle));
 }
 
 #[test]
 fn null_engine_end_frame() {
     let mut engine = NullEngine::new();
-    let result = engine.end_frame();
-    assert!(matches!(result, uix::draw::engine::RenderOutcome::Idle));
+    let result = engine.end_frame(&DamageRegion::full());
+    assert!(matches!(
+        result,
+        uix::draw::engine::RenderOutcome::Present(_)
+    ));
 }
 
 #[test]

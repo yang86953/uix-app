@@ -50,9 +50,8 @@ impl DrawSurface for GpuDrawSurface {
         }
     }
 
-    fn clear_rect_raw(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) {
-        // GPU 后端不支持局部 clear，由 pipeline 降级为全帧 clear。
-        self.clear_all();
+    fn clear_rect_raw(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        self.canvas.clear_rect_raw(x, y, w, h);
     }
 
     fn copy_region(&mut self, _src: Rect, _dst: Point) {
@@ -138,7 +137,7 @@ impl RenderBackend for GpuBackend {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        BackendCapabilities::gpu_full_redraw()
+        BackendCapabilities::gpu()
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {

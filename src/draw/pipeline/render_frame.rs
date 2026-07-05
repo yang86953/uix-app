@@ -64,7 +64,7 @@ impl FrameRenderer {
         &mut self.layer_tree
     }
 
-    /// 执行 Geometry + Overlay 双 Pass 渲染；返回 Present damage 与 invalidation 来源。
+    /// 执行单 Pass 渲染（Content + AfterChildren + 焦点环）；返回 Present damage 与 invalidation 来源。
     pub fn render_frame<S: ScenePaint>(
         &mut self,
         engine: &mut dyn GraphicsEngine,
@@ -102,7 +102,14 @@ impl FrameRenderer {
         } else {
             UpdateStrategy::DirtyRects(region.rects().to_vec())
         };
-        engine.begin_frame(strategy);
+        let begin_outcome = engine.begin_frame(strategy);
+        if begin_outcome == RenderOutcome::Idle {
+            return FrameRenderOutput {
+                outcome: RenderOutcome::Idle,
+                inv_source: InvalidationSource::None,
+                tree_version: cur_version,
+            };
+        }
         // 首帧绕过 DisplayList 缓存，避免空缓存重放导致侧栏等节点漏绘
         let render_objects = if input.rendered_first {
             Some(&mut self.render_object_tree)
@@ -121,7 +128,7 @@ impl FrameRenderer {
             input.hover_pos,
             render_objects,
         );
-        engine.end_frame();
+        engine.end_frame(&damage);
 
         if input.debug_mode {
             draw_debug_telemetry(engine, input.metrics, input.font, input.font_service);
