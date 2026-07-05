@@ -320,6 +320,23 @@ impl WidgetTree {
                 }
             }
             SystemEvent::PointerEnter | SystemEvent::PointerLeave => EventResult::NotHandled,
+            SystemEvent::ThemeChanged { .. } => {
+                self.notify_theme_changed();
+                if let Some(root) = self.root_id {
+                    self.dispatch_to(root, event)
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::LocaleChanged { .. } => {
+                if let Some(root) = self.root_id {
+                    self.push_layout_invalidation(root);
+                    self.invalidate_paint(root);
+                    self.dispatch_to(root, event)
+                } else {
+                    EventResult::NotHandled
+                }
+            }
             // 窗口状态变化事件 → 统一分发给 root，让应用层处理
             SystemEvent::WindowMaximize
             | SystemEvent::WindowMinimize
@@ -568,6 +585,7 @@ impl WidgetTree {
             self.invalidate_paint(new);
             let _ = self.dispatch_to(new, &SystemEvent::FocusIn);
         }
+        self.reconcile_lifecycle_after_layout();
     }
 
     /// NavItem 共享 active 索引时，刷新整组导航项（取消/选中态联动）。

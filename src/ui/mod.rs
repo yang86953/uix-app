@@ -35,7 +35,7 @@ pub use layout::{
 };
 pub use theme::{DesignTokens, ShadowToken, Theme};
 pub use traits::{
-    Animatable, DebugRenderer, TextRenderer, TokenProvider, WidgetCapabilities, WidgetComponent,
-    EventHandler, WidgetLayout, WidgetLifecycle, WidgetRender,
+    Animatable, DebugRenderer, EventHandler, TextRenderer, TokenProvider, WidgetCapabilities,
+    WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,
 };
 pub use widgets::*;

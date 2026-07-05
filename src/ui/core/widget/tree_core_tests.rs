@@ -3,8 +3,8 @@
 // 从 `tree_core.rs` 拆分出来以遵守 900 行文件限制。
 
 use super::*;
-use crate::native::KeyMod;
 use crate::native::Point;
+use crate::native::{KeyMod, MouseButton};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -102,6 +102,185 @@ impl EventHandler for PassThroughContainer {
     }
 }
 
+struct ClipContainer {
+    size: crate::native::Size,
+    child_y: f32,
+    children: RefCell<Vec<Box<dyn WidgetComponent>>>,
+}
+
+impl ClipContainer {
+    fn new(w: f32, h: f32, child_y: f32, children: Vec<Box<dyn WidgetComponent>>) -> Self {
+        Self {
+            size: crate::native::Size::new(w, h),
+            child_y,
+            children: RefCell::new(children),
+        }
+    }
+}
+
+impl WidgetComponent for ClipContainer {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
+    }
+    fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
+        std::mem::take(&mut *self.children.borrow_mut())
+    }
+    crate::wc_upcast!(ClipContainer; WidgetLayout);
+    crate::wc_upcast!(ClipContainer; WidgetRender);
+}
+
+impl WidgetLayout for ClipContainer {
+    fn preferred_size(
+        &self,
+        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
+    ) -> crate::native::Size {
+        self.size
+    }
+
+    fn layout_children(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+    ) -> Vec<(WidgetId, Rect)> {
+        children
+            .iter()
+            .copied()
+            .map(|id| {
+                let size = tree
+                    .get(id)
+                    .map(|node| node.preferred_size(None))
+                    .unwrap_or_default();
+                (
+                    id,
+                    Rect::new(frame.x, frame.y + self.child_y, size.w, size.h),
+                )
+            })
+            .collect()
+    }
+}
+
+impl WidgetRender for ClipContainer {
+    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
+
+    fn uses_palette(&self) -> bool {
+        false
+    }
+
+    fn children_clip(&self, frame: Rect) -> Option<Rect> {
+        Some(frame)
+    }
+}
+
+struct LifecycleProbe {
+    size: crate::native::Size,
+    events: Rc<RefCell<Vec<&'static str>>>,
+    uses_palette: bool,
+}
+
+impl LifecycleProbe {
+    fn new(w: f32, h: f32, events: Rc<RefCell<Vec<&'static str>>>) -> Self {
+        Self {
+            size: crate::native::Size::new(w, h),
+            events,
+            uses_palette: true,
+        }
+    }
+
+    fn static_colors(mut self) -> Self {
+        self.uses_palette = false;
+        self
+    }
+}
+
+impl WidgetComponent for LifecycleProbe {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(
+            WidgetCapabilities::LAYOUT
+                | WidgetCapabilities::RENDER
+                | WidgetCapabilities::EVENT
+                | WidgetCapabilities::LIFECYCLE,
+        )
+    }
+    crate::wc_upcast!(LifecycleProbe; WidgetLayout);
+    crate::wc_upcast!(LifecycleProbe; WidgetRender);
+    crate::wc_upcast!(LifecycleProbe; EventHandler);
+    crate::wc_upcast!(LifecycleProbe; WidgetLifecycle);
+}
+
+impl WidgetLayout for LifecycleProbe {
+    fn preferred_size(
+        &self,
+        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
+    ) -> crate::native::Size {
+        self.size
+    }
+}
+
+impl WidgetRender for LifecycleProbe {
+    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
+
+    fn uses_palette(&self) -> bool {
+        self.uses_palette
+    }
+}
+
+impl EventHandler for LifecycleProbe {
+    fn on_event(&mut self, _: &SystemEvent) -> EventResult {
+        EventResult::Handled
+    }
+}
+
+impl WidgetLifecycle for LifecycleProbe {
+    fn on_init(&mut self) {
+        self.events.borrow_mut().push("init");
+    }
+
+    fn on_attach(&mut self) {
+        self.events.borrow_mut().push("attach");
+    }
+
+    fn on_mount(&mut self) {
+        self.events.borrow_mut().push("mount");
+    }
+
+    fn on_active(&mut self) {
+        self.events.borrow_mut().push("active");
+    }
+
+    fn on_inactive(&mut self) {
+        self.events.borrow_mut().push("inactive");
+    }
+
+    fn on_theme_changed(&mut self) {
+        self.events.borrow_mut().push("theme");
+    }
+
+    fn on_unmount(&mut self) {
+        self.events.borrow_mut().push("unmount");
+    }
+
+    fn on_detach(&mut self) {
+        self.events.borrow_mut().push("detach");
+    }
+
+    fn on_destroy(&mut self) {
+        self.events.borrow_mut().push("destroy");
+    }
+}
+
 #[test]
 fn tree_set_root_returns_valid_id() {
     let mut tree = WidgetTree::new();
@@ -140,6 +319,170 @@ fn tree_remove_cascades_to_children() {
     assert!(tree.get(a).is_none());
     assert!(tree.get(b).is_none());
     assert_eq!(tree.get(root).unwrap().children().len(), 0);
+}
+
+#[test]
+fn lifecycle_active_inactive_follow_clip_intersection() {
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(ClipContainer::new(
+        100.0,
+        100.0,
+        120.0,
+        vec![Box::new(LifecycleProbe::new(20.0, 20.0, events.clone()))],
+    )));
+
+    tree.layout();
+    assert_eq!(events.borrow().clone(), vec!["init", "attach", "mount"]);
+
+    tree.find_by_type_and_modify::<ClipContainer>(|container| {
+        container.child_y = 10.0;
+    });
+    tree.push_layout_invalidation(root);
+    tree.layout();
+    assert_eq!(
+        events.borrow().clone(),
+        vec!["init", "attach", "mount", "active"]
+    );
+
+    tree.find_by_type_and_modify::<ClipContainer>(|container| {
+        container.child_y = 150.0;
+    });
+    tree.push_layout_invalidation(root);
+    tree.layout();
+    assert_eq!(
+        events.borrow().clone(),
+        vec!["init", "attach", "mount", "active", "inactive"]
+    );
+}
+
+#[test]
+fn lifecycle_focus_keeps_clipped_widget_active() {
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+    tree.set_root(Box::new(ClipContainer::new(
+        100.0,
+        100.0,
+        150.0,
+        vec![Box::new(LifecycleProbe::new(20.0, 20.0, events.clone()))],
+    )));
+    tree.layout();
+    assert_eq!(events.borrow().clone(), vec!["init", "attach", "mount"]);
+
+    let probe_id = tree.find_by_type::<LifecycleProbe>().unwrap();
+    tree.get_mut(probe_id).unwrap().set_tab_index(1);
+    assert_eq!(tree.focus_by_type::<LifecycleProbe>(), Some(probe_id));
+    assert_eq!(
+        events.borrow().clone(),
+        vec!["init", "attach", "mount", "active"]
+    );
+
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(200.0, 200.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(
+        events.borrow().clone(),
+        vec!["init", "attach", "mount", "active", "inactive"]
+    );
+}
+
+#[test]
+fn lifecycle_unmount_inactivates_active_subtree() {
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+    tree.set_root(Box::new(ClipContainer::new(
+        100.0,
+        100.0,
+        10.0,
+        vec![Box::new(LifecycleProbe::new(20.0, 20.0, events.clone()))],
+    )));
+    tree.layout();
+
+    tree.set_root(Box::new(SpyWidget::new(20.0, 20.0)));
+
+    assert_eq!(
+        events.borrow().clone(),
+        vec!["init", "attach", "mount", "active", "inactive", "unmount", "detach", "destroy"]
+    );
+}
+
+#[test]
+fn lifecycle_theme_changed_notifies_and_invalidates_palette_only() {
+    let palette_events = Rc::new(RefCell::new(Vec::new()));
+    let static_events = Rc::new(RefCell::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+    tree.set_root(Box::new(ClipContainer::new(
+        100.0,
+        100.0,
+        10.0,
+        vec![
+            Box::new(LifecycleProbe::new(20.0, 20.0, palette_events.clone())),
+            Box::new(LifecycleProbe::new(20.0, 20.0, static_events.clone()).static_colors()),
+        ],
+    )));
+    tree.layout();
+    tree.reset_dirty();
+
+    let probes = tree.find_all_by_type::<LifecycleProbe>();
+    let palette_id = probes
+        .iter()
+        .find(|(_, probe)| probe.uses_palette)
+        .map(|(id, _)| *id)
+        .unwrap();
+    let static_id = probes
+        .iter()
+        .find(|(_, probe)| !probe.uses_palette)
+        .map(|(id, _)| *id)
+        .unwrap();
+
+    tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark: true });
+
+    assert_eq!(
+        palette_events.borrow().clone(),
+        vec!["init", "attach", "mount", "active", "theme"]
+    );
+    assert_eq!(
+        static_events.borrow().clone(),
+        vec!["init", "attach", "mount", "active", "theme"]
+    );
+
+    {
+        let invalidation = tree.invalidation.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(invalidation.node_needs_paint(palette_id));
+        assert!(!invalidation.node_needs_paint(static_id));
+    }
+    assert!(tree.has_render_work());
+    assert!(!tree.dirty_region().full_frame);
+}
+
+#[test]
+fn locale_changed_dispatches_to_root_and_invalidates_layout() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(SpyWidget::new(100.0, 50.0)));
+    tree.layout();
+    tree.reset_dirty();
+
+    tree.dispatch_event(&SystemEvent::LocaleChanged {
+        locale: "zh-CN".to_string(),
+    });
+
+    assert!(matches!(
+        tree.get(root)
+            .unwrap()
+            .component()
+            .as_any()
+            .downcast_ref::<SpyWidget>()
+            .unwrap()
+            .last_event
+            .borrow()
+            .as_ref(),
+        Some(SystemEvent::LocaleChanged { locale }) if locale == "zh-CN"
+    ));
+    let invalidation = tree.invalidation.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(invalidation.has_layout());
+    assert!(invalidation.node_needs_paint(root));
 }
 
 #[test]
@@ -489,12 +832,15 @@ fn right_pointer_up_emits_context_menu_semantic_event() {
 
     let called = Rc::new(RefCell::new(false));
     let called_for_handler = called.clone();
-    tree.handler_table()
-        .on(root_id, crate::ui::SemanticKind::ContextMenu, move |event| {
+    tree.handler_table().on(
+        root_id,
+        crate::ui::SemanticKind::ContextMenu,
+        move |event| {
             if event.click_payload().is_some() {
                 *called_for_handler.borrow_mut() = true;
             }
-        });
+        },
+    );
 
     let pos = Point::new(50.0, 50.0);
     tree.dispatch_event(&SystemEvent::PointerDown {

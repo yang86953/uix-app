@@ -6,7 +6,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::Cell;
 
 define_widget! {
     /// InputNumber — 数字输入框。
@@ -20,7 +21,7 @@ define_widget! {
         hovered: bool,
         disabled: bool,
         text_buffer: String,
-        on_change: Option<Box<dyn FnMut(f64) + 'static>>,
+        pending_change: Cell<Option<f64>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
@@ -41,22 +42,28 @@ define_widget! {
             SystemEvent::KeyDown { key, .. } => {
                 match key {
                     KeyCode::Up => {
-                        self.value = (self.value + self.step).min(self.max);
-                        self.text_buffer = self.value.to_string();
-                        if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                        let next = (self.value + self.step).min(self.max);
+                        if (next - self.value).abs() > f64::EPSILON {
+                            self.value = next;
+                            self.text_buffer = self.value.to_string();
+                            self.pending_change.set(Some(self.value));
+                        }
                         EventResult::Handled
                     }
                     KeyCode::Down => {
-                        self.value = (self.value - self.step).max(self.min);
-                        self.text_buffer = self.value.to_string();
-                        if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                        let next = (self.value - self.step).max(self.min);
+                        if (self.value - next).abs() > f64::EPSILON {
+                            self.value = next;
+                            self.text_buffer = self.value.to_string();
+                            self.pending_change.set(Some(self.value));
+                        }
                         EventResult::Handled
                     }
                     KeyCode::Enter => {
                         let old = self.value;
                         self.commit_buffer();
                         if (self.value - old).abs() > f64::EPSILON {
-                            if let Some(ref mut cb) = self.on_change { cb(self.value); }
+                            self.pending_change.set(Some(self.value));
                         }
                         EventResult::Handled
                     }
@@ -80,6 +87,12 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|value| SemanticEvent::change(id, value.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -146,7 +159,7 @@ impl InputNumber {
             hovered: false,
             disabled: false,
             text_buffer: String::new(),
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
 
@@ -171,11 +184,6 @@ impl InputNumber {
     pub fn get_value(&self) -> f64 {
         self.value
     }
-    pub fn on_change<F: FnMut(f64) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
-    }
-
     fn commit_buffer(&mut self) {
         if let Ok(v) = self.text_buffer.parse::<f64>() {
             self.value = v.clamp(self.min, self.max);

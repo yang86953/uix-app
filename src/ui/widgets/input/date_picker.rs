@@ -8,7 +8,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 
 // 日期结构（复用 Calendar 中的日期逻辑）
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -78,7 +78,7 @@ define_widget! {
         focused: bool,
         hover_day: Cell<Option<usize>>,
         last_frame: Cell<Option<Rect>>,
-        on_change: Option<Box<dyn FnMut(DateValue) + 'static>>,
+        pending_change: Cell<Option<DateValue>>,
     }
 
 
@@ -125,9 +125,11 @@ define_widget! {
                                 let d = day - fwd;
                                 if d <= days_in_month(self.view_year.get(), self.view_month.get()) {
                                     let new_val = DateValue::new(self.view_year.get(), self.view_month.get(), d);
-                                    self.value.set(new_val);
+                                    if self.value.get() != new_val {
+                                        self.value.set(new_val);
+                                        self.pending_change.set(Some(new_val));
+                                    }
                                     self.open.set(false);
-                                    if let Some(ref mut cb) = self.on_change { cb(new_val); }
                                 }
                             }
                         }
@@ -189,6 +191,12 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|value| SemanticEvent::change(id, value.format()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -299,7 +307,7 @@ impl DatePicker {
             focused: false,
             hover_day: Cell::new(None),
             last_frame: Cell::new(None),
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
 
@@ -312,10 +320,6 @@ impl DatePicker {
     }
     pub fn set_value(&mut self, v: DateValue) {
         self.value.set(v);
-    }
-    pub fn on_change<F: FnMut(DateValue) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
     }
 }
 

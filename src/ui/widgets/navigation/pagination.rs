@@ -6,7 +6,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
 // Pagination — 分页器。
@@ -19,7 +19,7 @@ define_widget! {
         show_total: bool,
         size: f32, // item size
         page_size_options: Vec<usize>,
-        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
+        pending_change: Cell<Option<usize>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -31,28 +31,50 @@ define_widget! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if let SystemEvent::PointerDown { pos, .. } = event {
             let total_pages = self.total.div_ceil(self.page_size);
-            let mut cur = self.current.get();
+            let cur = self.current.get();
             let item_w = self.size;
             let gap = 4.0;
             let x = pos.x;
             // 上一页
             let mut btn_x = 0.0;
-            if x >= btn_x && x < btn_x + item_w { cur = cur.saturating_sub(1).max(1); self.current.set(cur); if let Some(ref mut cb) = self.on_change { cb(cur); } return EventResult::Handled; }
+            if x >= btn_x && x < btn_x + item_w {
+                let next = cur.saturating_sub(1).max(1);
+                if next != cur {
+                    self.current.set(next);
+                    self.pending_change.set(Some(next));
+                }
+                return EventResult::Handled;
+            }
             btn_x += item_w + gap;
             // 页码按钮（最多 7 个，p=0 表示省略号，跳过点击）
             let range = self.visible_range(total_pages, cur);
             for &p in &range {
                 if p > 0 && x >= btn_x && x < btn_x + item_w {
-                    self.current.set(p);
-                    if let Some(ref mut cb) = self.on_change { cb(p); }
+                    if p != cur {
+                        self.current.set(p);
+                        self.pending_change.set(Some(p));
+                    }
                     return EventResult::Handled;
                 }
                 btn_x += item_w + gap;
             }
             // 下一页
-            if x >= btn_x && x < btn_x + item_w { cur = (cur + 1).min(total_pages); self.current.set(cur); if let Some(ref mut cb) = self.on_change { cb(cur); } return EventResult::Handled; }
+            if x >= btn_x && x < btn_x + item_w {
+                let next = (cur + 1).min(total_pages);
+                if next != cur {
+                    self.current.set(next);
+                    self.pending_change.set(Some(next));
+                }
+                return EventResult::Handled;
+            }
         }
         EventResult::NotHandled
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|page| SemanticEvent::change(id, page.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -132,7 +154,7 @@ impl Pagination {
             show_total: true,
             size: 28.0,
             page_size_options: Vec::new(),
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
     pub fn current(self, v: usize) -> Self {
@@ -168,11 +190,6 @@ impl Pagination {
         self.page_size_options = opts;
         self
     }
-    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
-    }
-
     /// 计算可见页码范围（含省略号逻辑，最多 7 个按钮）。
     fn visible_range(&self, total_pages: usize, cur: usize) -> Vec<usize> {
         if total_pages <= 7 {
@@ -193,5 +210,40 @@ impl Pagination {
         }
         pages.push(total_pages);
         pages
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::{KeyMod, MouseButton};
+    use crate::ui::{SemanticKind, WidgetCore, WidgetTree};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn pagination_click_emits_change_semantic_event() {
+        let mut tree = WidgetTree::new();
+        let id = tree.set_root(Box::new(Pagination::new(85, 10)));
+        tree.get_mut(id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 260.0, 40.0));
+
+        let page = Rc::new(RefCell::new(String::new()));
+        let page_for_handler = page.clone();
+        tree.handler_table()
+            .on(id, SemanticKind::Change, move |event| {
+                if let Some(value) = event.text_payload() {
+                    *page_for_handler.borrow_mut() = value.to_string();
+                }
+            });
+
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(70.0, 16.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+
+        assert_eq!(&*page.borrow(), "2");
     }
 }

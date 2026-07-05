@@ -165,7 +165,75 @@ impl WidgetTree {
         self.layout_viewports();
         // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
         self.bind_reactive_widget_states();
+        self.reconcile_lifecycle_after_layout();
         crate::core::log::debug_fn("[Layout] layout() done");
+    }
+
+    pub(crate) fn reconcile_lifecycle_after_layout(&mut self) {
+        let states: Vec<(WidgetId, bool)> = self
+            .traverse()
+            .into_iter()
+            .filter(|&id| self.get(id).is_some())
+            .map(|id| {
+                (
+                    id,
+                    self.visible_rect_for(id).is_some() || self.focus_affects_active(id),
+                )
+            })
+            .collect();
+
+        for (id, should_be_active) in states {
+            if let Some(node) = self.get_mut(id) {
+                if !node.mounted() {
+                    node.set_mounted(true);
+                    node.on_mount();
+                }
+
+                if should_be_active && !node.active() {
+                    node.set_active(true);
+                    node.on_active();
+                } else if !should_be_active && node.active() {
+                    node.set_active(false);
+                    node.on_inactive();
+                }
+            }
+        }
+    }
+
+    fn focus_affects_active(&self, id: WidgetId) -> bool {
+        let mut current = self.focused_widget;
+        while let Some(current_id) = current {
+            if current_id == id {
+                return true;
+            }
+            current = self.get(current_id).and_then(|node| node.parent());
+        }
+        false
+    }
+
+    fn visible_rect_for(&self, id: WidgetId) -> Option<Rect> {
+        let node = self.get(id)?;
+        if !node.visible() {
+            return None;
+        }
+        let mut rect = node.frame();
+        if rect.w <= 0.0 || rect.h <= 0.0 {
+            return None;
+        }
+
+        let mut current = id;
+        while let Some(parent_id) = self.get(current).and_then(|n| n.parent()) {
+            let parent = self.get(parent_id)?;
+            if !parent.visible() {
+                return None;
+            }
+            if let Some(clip) = parent.children_clip(parent.frame()) {
+                rect = rect.intersect(&clip)?;
+            }
+            current = parent_id;
+        }
+
+        Some(rect)
     }
 
     /// 自下而上扩展：当子节点底部超出容器底部时，扩展容器高度。

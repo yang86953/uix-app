@@ -6,7 +6,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::Cell;
 
 const PRESET_COLORS: &[u32] = &[
     0xF52222, 0xFA541C, 0xFA8C16, 0xFADB14, 0x52C41A, 0x13C2C2, 0x1677FF, 0x2F54EB, 0x722ED1,
@@ -23,7 +24,7 @@ define_widget! {
         hovered: bool,
         hovered_idx: Option<usize>,
         focused: bool,
-        on_change: Option<Box<dyn FnMut(Color) + 'static>>,
+        pending_change: Cell<Option<Color>>,
     }
 
 
@@ -55,9 +56,12 @@ define_widget! {
                         if panel_y >= 0.0 && panel_y <= panel_h {
                             let idx = ri * cols + ci;
                             if idx < self.preset_colors.len() {
-                                self.value = self.preset_colors[idx];
+                                let next = self.preset_colors[idx];
+                                if self.value != next {
+                                    self.value = next;
+                                    self.pending_change.set(Some(next));
+                                }
                                 self.open = false;
-                                if let Some(ref mut cb) = self.on_change { cb(self.value); }
                                 return EventResult::Handled;
                             }
                         }
@@ -103,6 +107,12 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|value| SemanticEvent::change(id, value.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -164,7 +174,7 @@ impl ColorPicker {
             hovered: false,
             hovered_idx: None,
             focused: false,
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
     pub fn value(&self) -> Color {
@@ -172,9 +182,5 @@ impl ColorPicker {
     }
     pub fn set_value(&mut self, v: Color) {
         self.value = v;
-    }
-    pub fn on_change<F: FnMut(Color) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
     }
 }

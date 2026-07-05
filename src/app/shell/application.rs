@@ -14,7 +14,7 @@ use crate::native::{create_platform, Point};
 use crate::ui::theme::Theme;
 use crate::ui::view::adapter::ViewAdapter;
 use crate::ui::view::{View, ViewNode};
-use crate::ui::{WidgetCore, SystemEvent};
+use crate::ui::{SystemEvent, WidgetCore};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -306,6 +306,22 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        UiEventType::ThemeChanged => {
+            if let UiEventPayload::ThemeChanged(ref d) = ev.payload {
+                Some(SystemEvent::ThemeChanged { is_dark: d.is_dark })
+            } else {
+                None
+            }
+        }
+        UiEventType::LocaleChanged => {
+            if let UiEventPayload::LocaleChanged(ref d) = ev.payload {
+                Some(SystemEvent::LocaleChanged {
+                    locale: d.locale.clone(),
+                })
+            } else {
+                None
+            }
+        }
         UiEventType::WindowResize => {
             if let UiEventPayload::Resize(ref d) = ev.payload {
                 Some(SystemEvent::Resize {
@@ -339,5 +355,39 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
             }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::traits::event::{LocaleChangeData, ThemeChangeData};
+
+    #[test]
+    fn map_theme_changed_event() {
+        let event = UiEvent::new(
+            UiEventType::ThemeChanged,
+            UiEventPayload::ThemeChanged(ThemeChangeData { is_dark: true }),
+        );
+
+        assert!(matches!(
+            map_ui_event(&event),
+            Some(SystemEvent::ThemeChanged { is_dark: true })
+        ));
+    }
+
+    #[test]
+    fn map_locale_changed_event() {
+        let event = UiEvent::new(
+            UiEventType::LocaleChanged,
+            UiEventPayload::LocaleChanged(LocaleChangeData {
+                locale: "zh-CN".to_string(),
+            }),
+        );
+
+        assert!(matches!(
+            map_ui_event(&event),
+            Some(SystemEvent::LocaleChanged { locale }) if locale == "zh-CN"
+        ));
     }
 }

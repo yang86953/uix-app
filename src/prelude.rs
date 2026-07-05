@@ -30,22 +30,22 @@ pub use crate::ui::state::{Computed, State};
 pub use crate::ui::style::{Style, StyleSet};
 pub use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 pub use crate::ui::{
-    EventResult, IntoWidgetNode, PaintContext, WidgetCore, SystemEvent, WidgetId, WidgetNode,
+    EventResult, IntoWidgetNode, PaintContext, SystemEvent, WidgetCore, WidgetId, WidgetNode,
     WidgetTree,
 };
 
 // ui / components
 pub use crate::ui::{
-    Alert, Anchor, AnchorItem, AutoComplete, Avatar, Badge, BarChart, BarData,
-    Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption,
-    Checkbox, Collapse, CollapsePanel, ColorPicker, Container, DatePicker, DateValue, Descriptions,
-    DescriptionsItem, Divider, Drawer, Dropdown, Empty, Form, Grid, Icon, Image, Input,
-    InputNumber, Label, LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode,
-    Modal, Navigation, Pagination, PieChart, PieData, Popconfirm, Popover, ProgressBar, QRCode,
-    Radio, Rate, Result, ResultType, ScrollDirection, ScrollView, Segmented, Select, SharedActive,
-    Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, Splitter, Step, StepStatus, Steps,
-    Switch, TabPosition, Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline,
-    TimelineItem, Tooltip, TooltipPlacement, Tree, TreeNode, Typography, Watermark,
+    Alert, Anchor, AnchorItem, AutoComplete, Avatar, Badge, BarChart, BarData, Breadcrumb,
+    BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption, Checkbox, Collapse,
+    CollapsePanel, ColorPicker, Container, DatePicker, DateValue, Descriptions, DescriptionsItem,
+    Divider, Drawer, Dropdown, Empty, Form, Grid, Icon, Image, Input, InputNumber, Label,
+    LineChart, LineData, List, Mentions, Menu, MenuItem, MenuMode, Modal, Navigation, Pagination,
+    PieChart, PieData, Popconfirm, Popover, ProgressBar, QRCode, Radio, Rate, Result, ResultType,
+    ScrollDirection, ScrollView, Segmented, Select, SharedActive, Skeleton, SkeletonShape, Slider,
+    Space, SpaceSize, Spin, Splitter, Step, StepStatus, Steps, Switch, TabPosition, Tabs, Tag,
+    TagColor, ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip,
+    TooltipPlacement, Tree, TreeNode, Typography, Watermark,
 };
 
 // ── app ───────────────────────────────────────────────────────

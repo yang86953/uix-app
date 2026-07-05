@@ -123,6 +123,9 @@ pub trait WidgetLayout: WidgetComponent {
 /// 渲染行为：绘制、覆盖层、脏区域。
 pub trait WidgetRender: WidgetComponent {
     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree);
+    fn uses_palette(&self) -> bool {
+        true
+    }
     fn draw_margin(&self) -> f32 {
         0.0
     }
@@ -184,8 +187,14 @@ pub trait EventHandler: WidgetComponent {
 /// 生命周期行为。
 pub trait WidgetLifecycle: WidgetComponent {
     fn on_init(&mut self) {}
+    fn on_attach(&mut self) {}
     fn on_mount(&mut self) {}
+    fn on_active(&mut self) {}
+    fn on_inactive(&mut self) {}
+    fn on_theme_changed(&mut self) {}
     fn on_unmount(&mut self) {}
+    fn on_detach(&mut self) {}
+    fn on_destroy(&mut self) {}
     fn on_update(&mut self, _dt: f64) {}
 }
 

@@ -56,10 +56,8 @@ define_widget! {
         textarea: bool,
         /// 默认显示行数
         textarea_rows: usize,
-        /// 值变更回调
-        on_change: Option<Box<dyn FnMut(&str) + 'static>>,
-        /// 提交回调（Enter 触发）
-        on_submit: Option<Box<dyn FnMut(&str) + 'static>>,
+        pending_change: RefCell<Option<String>>,
+        pending_submit: RefCell<Option<String>>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -120,7 +118,6 @@ define_widget! {
             SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
             SystemEvent::FocusOut => {
                 self.focused = false; self.selection.set(None);
-                if let Some(ref mut cb) = self.on_change { cb(&self.value); }
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, mods } => {
@@ -128,7 +125,7 @@ define_widget! {
                 let shift = mods.contains(KeyMod::SHIFT);
                 match key {
                     KeyCode::Enter if self.search => {
-                        if let Some(ref mut cb) = self.on_submit { cb(&self.value); }
+                        self.pending_submit.replace(Some(self.value.clone()));
                         self.value.clear();
                         self.cursor_char = 0;
                         EventResult::Handled
@@ -136,11 +133,11 @@ define_widget! {
                     // textarea: Shift+Enter 换行, Enter 提交
                     KeyCode::Enter if self.textarea && shift => {
                         self.insert_at_cursor('\n');
-                        if let Some(ref mut cb) = self.on_change { cb(&self.value); }
+                        self.pending_change.replace(Some(self.value.clone()));
                         EventResult::Handled
                     }
                     KeyCode::Enter if self.textarea => {
-                        if let Some(ref mut cb) = self.on_submit { cb(&self.value); }
+                        self.pending_submit.replace(Some(self.value.clone()));
                         // 提交后清空值（聊天场景的通用行为）
                         self.value.clear();
                         self.cursor_char = 0;
@@ -150,7 +147,7 @@ define_widget! {
                     }
                     // 单行: Enter 提交
                     KeyCode::Enter => {
-                        if let Some(ref mut cb) = self.on_submit { cb(&self.value); }
+                        self.pending_submit.replace(Some(self.value.clone()));
                         self.value.clear();
                         self.cursor_char = 0;
                         EventResult::Handled
@@ -187,7 +184,7 @@ define_widget! {
                             self.value.replace_range(byte_start..byte_end, "");
                             self.cursor_char -= 1;
                         } else { return EventResult::NotHandled; }
-                        if let Some(ref mut cb) = self.on_change { cb(&self.value); }
+                        self.pending_change.replace(Some(self.value.clone()));
                         EventResult::Handled
                     }
                     KeyCode::Delete => {
@@ -202,7 +199,7 @@ define_widget! {
                                 self.value.replace_range(byte_start..byte_end, "");
                             } else { return EventResult::NotHandled; }
                         }
-                        if let Some(ref mut cb) = self.on_change { cb(&self.value); }
+                        self.pending_change.replace(Some(self.value.clone()));
                         EventResult::Handled
                     }
                     KeyCode::Left => { self.move_cursor_left(ctrl); EventResult::Handled }
@@ -252,27 +249,21 @@ define_widget! {
                     }
                 }
                 self.sel_anchor.set(self.cursor_char);
-                if let Some(ref mut cb) = self.on_change { cb(&self.value); }
+                self.pending_change.replace(Some(self.value.clone()));
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
         }
     }
 
-    semantic_event => (&self, id: WidgetId, event: &SystemEvent) -> Option<SemanticEvent> {
-        match event {
-            SystemEvent::TextInput { .. }
-            | SystemEvent::KeyDown {
-                key: KeyCode::Backspace | KeyCode::Delete,
-                ..
-            } => Some(SemanticEvent::change(id, self.value.clone())),
-            SystemEvent::KeyDown { key: KeyCode::Enter, mods }
-                if self.textarea && mods.contains(KeyMod::SHIFT) =>
-            {
-                Some(SemanticEvent::change(id, self.value.clone()))
-            }
-            _ => None,
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        if let Some(value) = self.pending_submit.borrow_mut().take() {
+            return Some(SemanticEvent::submit(id, value));
         }
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|value| SemanticEvent::change(id, value))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -316,8 +307,8 @@ impl Input {
             search: false,
             textarea: false,
             textarea_rows: 3,
-            on_change: None,
-            on_submit: None,
+            pending_change: RefCell::new(None),
+            pending_submit: RefCell::new(None),
         }
     }
     pub fn with_value(mut self, value: impl Into<String>) -> Self {
@@ -385,15 +376,6 @@ impl Input {
         self.textarea_rows = n;
         self
     }
-    pub fn on_change<F: FnMut(&str) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
-    }
-    pub fn on_submit<F: FnMut(&str) + 'static>(mut self, f: F) -> Self {
-        self.on_submit = Some(Box::new(f));
-        self
-    }
-
     // ── 内部：光标移动 ──
 
     fn move_cursor_left(&mut self, ctrl: bool) {

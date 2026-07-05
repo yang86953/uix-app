@@ -1,4 +1,4 @@
-﻿//! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw FrameRenderer。
+//! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw FrameRenderer。
 
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
@@ -14,7 +14,7 @@ use crate::native::{Platform, PlatformWindow, Point, Rect};
 
 use crate::ui::clipboard;
 use crate::ui::theme::Theme;
-use crate::ui::{WidgetCore, SystemEvent, WidgetTree};
+use crate::ui::{SystemEvent, WidgetCore, WidgetTree};
 
 /// 运行完整的 widget 渲染事件循环。
 #[allow(clippy::too_many_arguments)]

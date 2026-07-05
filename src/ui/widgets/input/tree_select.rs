@@ -3,7 +3,8 @@ use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Point, Rect, Size};
 use crate::ui::widgets::display::tree::TreeNode;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::RefCell;
 
 define_widget! {
     pub struct TreeSelect {
@@ -13,7 +14,7 @@ define_widget! {
         nodes: Vec<TreeNode>,
         open: bool,
         hovered_option: Option<String>,
-        on_change: Option<Box<dyn FnMut(String, String) + 'static>>,
+        pending_change: RefCell<Option<String>>,
     }
 
 
@@ -37,9 +38,7 @@ define_widget! {
                         self.value = title.clone();
                         self.value_key = key.clone();
                         self.open = false;
-                        if let Some(ref mut cb) = self.on_change {
-                            cb(key.clone(), title.clone());
-                        }
+                        self.pending_change.replace(Some(key.clone()));
                         return EventResult::Handled;
                     }
                 }
@@ -58,6 +57,13 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|key| SemanticEvent::change(id, key))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -141,7 +147,7 @@ impl TreeSelect {
             nodes: Vec::new(),
             open: false,
             hovered_option: None,
-            on_change: None,
+            pending_change: RefCell::new(None),
         }
     }
     pub fn placeholder(mut self, p: &str) -> Self {
@@ -157,10 +163,6 @@ impl TreeSelect {
     }
     pub fn value_key(&self) -> &str {
         &self.value_key
-    }
-    pub fn on_change<F: FnMut(String, String) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
     }
 }
 impl Default for TreeSelect {

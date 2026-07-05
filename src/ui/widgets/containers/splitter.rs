@@ -9,7 +9,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::native::{Point, Rect, Size};
 use crate::ui::children::WidgetChildren;
-use crate::ui::{EventResult, WidgetComponent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 
 define_widget! {
     /// Splitter — 可拖拽分割面板容器。

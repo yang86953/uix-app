@@ -3,7 +3,8 @@
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::native::{Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::Cell;
 
 define_widget! {
     pub struct Switch {
@@ -12,7 +13,7 @@ define_widget! {
         size: f32,
         hovered: bool,
         focused: bool,
-        on_change: Option<Box<dyn FnMut(bool) + 'static>>,
+        pending_change: Cell<Option<bool>>,
     }
 
 
@@ -27,7 +28,7 @@ define_widget! {
             SystemEvent::PointerDown { .. } => {
                 self.checked = !self.checked;
                 self.focused = true;
-                if let Some(ref mut cb) = self.on_change { cb(self.checked); }
+                self.pending_change.set(Some(self.checked));
                 EventResult::Handled
             }
             SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
@@ -37,7 +38,7 @@ define_widget! {
             SystemEvent::KeyDown { key, .. } => {
                 if *key == KeyCode::Space || *key == KeyCode::Enter {
                     self.checked = !self.checked;
-                    if let Some(ref mut cb) = self.on_change { cb(self.checked); }
+                    self.pending_change.set(Some(self.checked));
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -45,6 +46,12 @@ define_widget! {
             }
             _ => EventResult::NotHandled
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|checked| SemanticEvent::change(id, checked.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -94,7 +101,7 @@ impl Switch {
             size: 22.0,
             hovered: false,
             focused: false,
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
     pub fn checked(mut self, v: bool) -> Self {
@@ -107,9 +114,5 @@ impl Switch {
     }
     pub fn is_checked(&self) -> bool {
         self.checked
-    }
-    pub fn on_change<F: FnMut(bool) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
     }
 }

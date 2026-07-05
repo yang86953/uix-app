@@ -1,6 +1,6 @@
-pub use crate::native::{KeyCode, KeyMod, MouseButton, Point};
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::draw::traits::GraphicsEngine;
+pub use crate::native::{KeyCode, KeyMod, MouseButton, Point};
 use crate::native::{Rect, Size};
 use crate::ui::event::HandlerRegistration;
 pub use crate::ui::event::{SystemEvent, SystemEventKind};
@@ -16,7 +16,7 @@ pub type WidgetId = usize;
 
 // 重新导出 api 中的 trait 定义
 pub use crate::ui::traits::{
-    IntoWidgetNode, WidgetCapabilities, WidgetComponent, EventHandler, WidgetLayout,
+    EventHandler, IntoWidgetNode, WidgetCapabilities, WidgetComponent, WidgetLayout,
     WidgetLifecycle, WidgetRender,
 };
 
@@ -103,6 +103,10 @@ pub struct BoxedWidget {
     children: Vec<WidgetId>,
     frame: Rect,
     visible: bool,
+    attached: bool,
+    mounted: bool,
+    active: bool,
+    destroyed: bool,
     is_dirty: bool,
     widget_opacity: f32,
     z: i32,
@@ -111,8 +115,11 @@ pub struct BoxedWidget {
 }
 
 impl BoxedWidget {
-    pub fn new(component: Box<dyn WidgetComponent>) -> Self {
+    pub fn new(mut component: Box<dyn WidgetComponent>) -> Self {
         let caps = component.capabilities();
+        if let Some(lifecycle) = component.as_lifecycle_mut() {
+            lifecycle.on_init();
+        }
         Self {
             component,
             caps,
@@ -121,6 +128,10 @@ impl BoxedWidget {
             children: Vec::new(),
             frame: Rect::zero(),
             visible: true,
+            attached: false,
+            mounted: false,
+            active: false,
+            destroyed: false,
             is_dirty: true,
             widget_opacity: 1.0,
             z: 0,
@@ -255,6 +266,75 @@ impl BoxedWidget {
         self.tab_idx > 0 && self.visible && self.component.as_event().is_some()
     }
 
+    pub fn attached(&self) -> bool {
+        self.attached
+    }
+    pub(crate) fn set_attached(&mut self, attached: bool) {
+        self.attached = attached;
+    }
+    pub fn mounted(&self) -> bool {
+        self.mounted
+    }
+    pub(crate) fn set_mounted(&mut self, mounted: bool) {
+        self.mounted = mounted;
+    }
+    pub fn active(&self) -> bool {
+        self.active
+    }
+    pub(crate) fn set_active(&mut self, active: bool) {
+        self.active = active;
+    }
+    pub fn destroyed(&self) -> bool {
+        self.destroyed
+    }
+    pub(crate) fn set_destroyed(&mut self, destroyed: bool) {
+        self.destroyed = destroyed;
+    }
+    pub fn uses_palette(&self) -> bool {
+        self.component()
+            .as_render()
+            .is_some_and(|render| render.uses_palette())
+    }
+    pub fn on_attach(&mut self) {
+        if let Some(l) = self.component_mut().as_lifecycle_mut() {
+            l.on_attach();
+        }
+    }
+    pub fn on_mount(&mut self) {
+        if let Some(l) = self.component_mut().as_lifecycle_mut() {
+            l.on_mount();
+        }
+    }
+    pub fn on_active(&mut self) {
+        if let Some(l) = self.component_mut().as_lifecycle_mut() {
+            l.on_active();
+        }
+    }
+    pub fn on_inactive(&mut self) {
+        if let Some(l) = self.component_mut().as_lifecycle_mut() {
+            l.on_inactive();
+        }
+    }
+    pub fn on_theme_changed(&mut self) {
+        if let Some(l) = self.component_mut().as_lifecycle_mut() {
+            l.on_theme_changed();
+        }
+    }
+    pub fn on_unmount(&mut self) {
+        if let Some(l) = self.component_mut().as_lifecycle_mut() {
+            l.on_unmount();
+        }
+    }
+    pub fn on_detach(&mut self) {
+        if let Some(l) = self.component_mut().as_lifecycle_mut() {
+            l.on_detach();
+        }
+    }
+    pub fn on_destroy(&mut self) {
+        if let Some(l) = self.component_mut().as_lifecycle_mut() {
+            l.on_destroy();
+        }
+    }
     pub fn on_update(&mut self, dt: f64) {
         if let Some(l) = self.component_mut().as_lifecycle_mut() {
             l.on_update(dt);

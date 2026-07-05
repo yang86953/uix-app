@@ -4,7 +4,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::Cell;
 
 /// 方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,7 +24,7 @@ define_widget! {
         item_h: f32,
         hovered_idx: Option<usize>,
         focused: bool,
-        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
+        pending_change: Cell<Option<usize>>,
     }
 
 
@@ -47,8 +48,10 @@ define_widget! {
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 if let Some(idx) = self.option_at(pos.x, pos.y) {
-                    self.selected = idx;
-                    if let Some(ref mut cb) = self.on_change { cb(idx); }
+                    if self.selected != idx {
+                        self.selected = idx;
+                        self.pending_change.set(Some(idx));
+                    }
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
@@ -67,7 +70,7 @@ define_widget! {
                     let next = self.selected + 1;
                     if next < self.options.len() {
                         self.selected = next;
-                        if let Some(ref mut cb) = self.on_change { cb(next); }
+                        self.pending_change.set(Some(next));
                     }
                     EventResult::Handled
                 }
@@ -75,7 +78,7 @@ define_widget! {
                         if self.selected > 0 {
                             let prev = self.selected - 1;
                             self.selected = prev;
-                            if let Some(ref mut cb) = self.on_change { cb(prev); }
+                            self.pending_change.set(Some(prev));
                         }
                         EventResult::Handled
                     }
@@ -84,6 +87,12 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|idx| SemanticEvent::change(id, idx.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -208,7 +217,7 @@ impl Radio {
             item_h: 24.0,
             hovered_idx: None,
             focused: false,
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
     pub fn options(mut self, opts: Vec<impl Into<String>>) -> Self {
@@ -225,10 +234,6 @@ impl Radio {
     }
     pub fn vertical(mut self) -> Self {
         self.direction = RadioDirection::Vertical;
-        self
-    }
-    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
         self
     }
 }

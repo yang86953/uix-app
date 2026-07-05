@@ -5,7 +5,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{ControlSize, Point, Rect, Size};
 use crate::ui::animation::transition::{presets, TransitionPlayer};
-use crate::ui::{EventResult, WidgetCore, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SystemEvent, WidgetCore, WidgetTree};
 
 // Modal — 模态对话框。
 //

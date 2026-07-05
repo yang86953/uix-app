@@ -2,7 +2,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::RefCell;
 
 /// 选项组。
 #[derive(Debug, Clone)]
@@ -36,8 +37,7 @@ define_widget! {
         focused: bool,
         placeholder: String,
         hovered_option: Option<usize>,
-        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
-        on_change_multi: Option<Box<dyn FnMut(Vec<usize>) + 'static>>,
+        pending_change: RefCell<Option<String>>,
         multiple: bool,
         search: bool,
     }
@@ -73,11 +73,13 @@ define_widget! {
                             } else {
                                 self.selected_multi.push(idx);
                             }
-                            if let Some(ref mut cb) = self.on_change_multi { cb(self.selected_multi.clone()); }
+                            self.pending_change.replace(Some(self.selected_multi_payload()));
                         } else {
-                            self.selected = idx;
+                            if self.selected != idx {
+                                self.selected = idx;
+                                self.pending_change.replace(Some(idx.to_string()));
+                            }
                             self.open = false;
-                            if let Some(ref mut cb) = self.on_change { cb(idx); }
                         }
                         return EventResult::Handled;
                     }
@@ -102,7 +104,10 @@ define_widget! {
                     KeyCode::Down => {
                         if self.open {
                             let next = self.selected + 1;
-                            if next < all_opts.len() { self.selected = next; if let Some(ref mut cb) = self.on_change { cb(next); } }
+                            if next < all_opts.len() {
+                                self.selected = next;
+                                self.pending_change.replace(Some(next.to_string()));
+                            }
                         } else { self.open = true; }
                         EventResult::Handled
                     }
@@ -110,7 +115,7 @@ define_widget! {
                         if self.open && self.selected > 0 {
                             let prev = self.selected - 1;
                             self.selected = prev;
-                            if let Some(ref mut cb) = self.on_change { cb(prev); }
+                            self.pending_change.replace(Some(prev.to_string()));
                         }
                         EventResult::Handled
                     }
@@ -119,7 +124,7 @@ define_widget! {
                     KeyCode::Backspace => {
                         if self.multiple && !self.selected_multi.is_empty() {
                             self.selected_multi.pop();
-                            if let Some(ref mut cb) = self.on_change_multi { cb(self.selected_multi.clone()); }
+                            self.pending_change.replace(Some(self.selected_multi_payload()));
                         }
                         EventResult::Handled
                     }
@@ -128,6 +133,13 @@ define_widget! {
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|value| SemanticEvent::change(id, value))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -303,6 +315,14 @@ impl Select {
             .position(|&s| s == opt)
             .unwrap_or(0)
     }
+
+    fn selected_multi_payload(&self) -> String {
+        self.selected_multi
+            .iter()
+            .map(|idx| idx.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
 }
 
 use crate::draw::Color;
@@ -326,8 +346,7 @@ impl Select {
             focused: false,
             placeholder: String::new(),
             hovered_option: None,
-            on_change: None,
-            on_change_multi: None,
+            pending_change: RefCell::new(None),
             multiple: false,
             search: false,
         }
@@ -358,14 +377,6 @@ impl Select {
     }
     pub fn search(mut self, v: bool) -> Self {
         self.search = v;
-        self
-    }
-    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
-        self
-    }
-    pub fn on_change_multi<F: FnMut(Vec<usize>) + 'static>(mut self, f: F) -> Self {
-        self.on_change_multi = Some(Box::new(f));
         self
     }
 }

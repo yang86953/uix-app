@@ -2,7 +2,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::{Point, Rect, Size};
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::RefCell;
 
 // ════════════════════════════════════════════════════════════════════════════
 // QRCode
@@ -223,8 +224,6 @@ pub enum UploadStatus {
     Done,
     Error,
 }
-pub type UploadCallback = Box<dyn FnMut(&str, UploadStatus)>;
-
 define_widget! {
     pub struct Upload {
         accept: String,
@@ -233,7 +232,7 @@ define_widget! {
         drag: bool,
         drag_hover: bool,
         max_count: usize,
-        on_change: Option<UploadCallback>,
+        pending_change: RefCell<Option<String>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -244,14 +243,21 @@ define_widget! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { .. } => {
-                self.add_file(&format!("upload_{}.txt", self.file_list.len() + 1));
-                if let Some(ref mut cb) = self.on_change {
-                    cb("upload", UploadStatus::Pending);
-                }
+                let file_name = format!("upload_{}.txt", self.file_list.len() + 1);
+                self.add_file(&file_name);
+                self.pending_change
+                    .replace(Some(format!("{}:pending", file_name)));
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|value| SemanticEvent::change(id, value))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -313,7 +319,7 @@ impl Upload {
             drag: true,
             drag_hover: false,
             max_count: 10,
-            on_change: None,
+            pending_change: RefCell::new(None),
         }
     }
     pub fn accept(mut self, a: &str) -> Self {
@@ -330,10 +336,6 @@ impl Upload {
     }
     pub fn max_count(mut self, n: usize) -> Self {
         self.max_count = n;
-        self
-    }
-    pub fn on_change<F: FnMut(&str, UploadStatus) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
         self
     }
     pub fn add_file(&mut self, name: &str) {

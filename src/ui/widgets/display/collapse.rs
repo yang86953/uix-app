@@ -4,7 +4,8 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::{Rect, Size};
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use std::cell::Cell;
 
 /// 单个折叠面板。
 #[derive(Debug, Clone)]
@@ -33,7 +34,7 @@ define_widget! {
     pub struct Collapse {
         panels: Vec<CollapsePanel>,
         accordion: bool,
-        on_change: Option<Box<dyn FnMut(usize) + 'static>>,
+        pending_change: Cell<Option<usize>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -65,7 +66,7 @@ define_widget! {
                         }
                     }
                     self.panels[i].expanded = new_state;
-                    if let Some(ref mut cb) = self.on_change { cb(i); }
+                    self.pending_change.set(Some(i));
                     crate::core::log::debug_fn(format!("[Collapse] 面板 \"{}\" 切换 expanded: {} → {}",
                         name, !new_state, new_state));
                     return EventResult::Handled;
@@ -78,6 +79,12 @@ define_widget! {
             }
         }
         EventResult::NotHandled
+    }
+
+    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .take()
+            .map(|idx| SemanticEvent::change(id, idx.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -138,7 +145,7 @@ impl Collapse {
         Self {
             panels: Vec::new(),
             accordion: false,
-            on_change: None,
+            pending_change: Cell::new(None),
         }
     }
     pub fn panels(mut self, ps: Vec<CollapsePanel>) -> Self {
@@ -147,10 +154,6 @@ impl Collapse {
     }
     pub fn accordion(mut self) -> Self {
         self.accordion = true;
-        self
-    }
-    pub fn on_change<F: FnMut(usize) + 'static>(mut self, f: F) -> Self {
-        self.on_change = Some(Box::new(f));
         self
     }
 }
