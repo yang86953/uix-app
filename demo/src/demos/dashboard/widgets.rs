@@ -1,3 +1,5 @@
+//! 自定义 widget 示例 — `define_widget!` + `prelude` 绘制 API。
+
 use uix::prelude::*;
 
 // ── Counter — 自定义 widget 示例 ──

@@ -1,4 +1,6 @@
 //! 组件展示页面（图表、其他）
+//!
+//! 使用 `prelude` 导入组件；自定义 widget 见同目录 `widgets` 模块。
 
 use uix::prelude::*;
 
