@@ -17,6 +17,9 @@ clippy_out.txt
 clippy_output.txt
 nul
 
+# CodeGraph local index
+.codegraph/
+
 # Pi agent system files (auto-generated, per-session state)
 .pi/
 
