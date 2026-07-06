@@ -93,10 +93,38 @@ impl WidgetTree {
         }
     }
 
+    fn overlay_target_at(&self, pos: Point) -> Option<WidgetId> {
+        self.overlay_stack
+            .hit_test(pos.x, pos.y)
+            .map(|entry| entry.owner())
+    }
+
+    fn intercept_top_overlay_outside_pointer_down(&mut self, pos: Point) -> Option<EventResult> {
+        let top = self.overlay_stack.top().cloned()?;
+        let inside_top = top.bounds_rect().is_some_and(|bounds| bounds.contains(pos));
+        if inside_top {
+            return None;
+        }
+
+        if top.is_modal() || top.traps_focus() || top.dismisses_on_outside() {
+            if top.dismisses_on_outside() {
+                self.overlay_stack.remove(top.id());
+                self.invalidate_paint(top.owner());
+            }
+            self.set_focus(None);
+            return Some(EventResult::Handled);
+        }
+
+        None
+    }
+
     pub fn dispatch_event(&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, button, mods } => {
-                let target = self.hit_test(*pos);
+                if let Some(result) = self.intercept_top_overlay_outside_pointer_down(*pos) {
+                    return result;
+                }
+                let target = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
                 self.pointer_down_target = target;
                 // 记录拖拽起始状态
                 self.drag_gesture.potential = true;
@@ -141,7 +169,7 @@ impl WidgetTree {
                 }
                 self.drag_gesture.reset();
                 self.pointer_down_target = None;
-                let hit = self.hit_test(*pos);
+                let hit = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
                 let mut result = EventResult::NotHandled;
                 if let Some(t) = hit {
                     self.invalidate_paint(t);
@@ -209,7 +237,7 @@ impl WidgetTree {
                 }
                 self.drag_gesture.last_pos = *pos;
 
-                let new_hover = self.hit_test(*pos);
+                let new_hover = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
                 if new_hover != self.hovered_widget {
                     if let Some(old) = self.hovered_widget {
                         let _ = self.dispatch_to(old, &SystemEvent::PointerLeave);
@@ -236,7 +264,11 @@ impl WidgetTree {
                 }
             }
             SystemEvent::Wheel { pos, .. } => {
-                let target = self.hit_test(*pos).or(self.hovered_widget).or(self.root_id);
+                let target = self
+                    .overlay_target_at(*pos)
+                    .or_else(|| self.hit_test(*pos))
+                    .or(self.hovered_widget)
+                    .or(self.root_id);
                 if let Some(t) = target {
                     // 捕获阶段：ScrollView 等祖先先处理；Handled 时由 capture 侧登记动画与视口重绘，
                     // 避免仅 mark_dirty 子节点导致 strip 局部清除后内容消失。
