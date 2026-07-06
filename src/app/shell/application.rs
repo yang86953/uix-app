@@ -340,6 +340,17 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        UiEventType::Copy => Some(SystemEvent::Copy),
+        UiEventType::Cut => Some(SystemEvent::Cut),
+        UiEventType::Paste => {
+            if let UiEventPayload::Clipboard(ref d) = ev.payload {
+                Some(SystemEvent::Paste {
+                    text: d.text.clone(),
+                })
+            } else {
+                None
+            }
+        }
         UiEventType::TextInput => {
             if let UiEventPayload::TextInput(ref d) = ev.payload {
                 Some(SystemEvent::TextInput {
@@ -404,7 +415,7 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::traits::event::{LocaleChangeData, ThemeChangeData};
+    use crate::native::traits::event::{ClipboardData, LocaleChangeData, ThemeChangeData};
 
     #[test]
     fn map_theme_changed_event() {
@@ -431,6 +442,29 @@ mod tests {
         assert!(matches!(
             map_ui_event(&event),
             Some(SystemEvent::LocaleChanged { locale }) if locale == "zh-CN"
+        ));
+    }
+
+    #[test]
+    fn map_clipboard_events() {
+        assert!(matches!(
+            map_ui_event(&UiEvent::copy()),
+            Some(SystemEvent::Copy)
+        ));
+        assert!(matches!(
+            map_ui_event(&UiEvent::cut()),
+            Some(SystemEvent::Cut)
+        ));
+
+        let paste = UiEvent::new(
+            UiEventType::Paste,
+            UiEventPayload::Clipboard(ClipboardData {
+                text: "hello".to_string(),
+            }),
+        );
+        assert!(matches!(
+            map_ui_event(&paste),
+            Some(SystemEvent::Paste { text }) if text == "hello"
         ));
     }
 }

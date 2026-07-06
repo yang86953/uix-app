@@ -1002,6 +1002,53 @@ fn text_input_emits_semantic_event_for_focused_target() {
 }
 
 #[test]
+fn clipboard_events_emit_semantic_events_for_focused_target() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let copied = Rc::new(RefCell::new(false));
+    let copied_for_handler = copied.clone();
+    tree.handler_table()
+        .on_copy(root_id, move || *copied_for_handler.borrow_mut() = true);
+
+    let cut = Rc::new(RefCell::new(false));
+    let cut_for_handler = cut.clone();
+    tree.handler_table()
+        .on_cut(root_id, move || *cut_for_handler.borrow_mut() = true);
+
+    let pasted = Rc::new(RefCell::new(String::new()));
+    let pasted_for_handler = pasted.clone();
+    tree.handler_table().on_paste(root_id, move |text| {
+        *pasted_for_handler.borrow_mut() = text.to_string()
+    });
+
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(10.0, 10.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Copy),
+        EventResult::Handled
+    );
+    assert_eq!(tree.dispatch_event(&SystemEvent::Cut), EventResult::Handled);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Paste {
+            text: "from clipboard".to_string(),
+        }),
+        EventResult::Handled
+    );
+
+    assert!(*copied.borrow());
+    assert!(*cut.borrow());
+    assert_eq!(&*pasted.borrow(), "from clipboard");
+}
+
+#[test]
 fn file_drop_emits_semantic_event_for_hit_target() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));

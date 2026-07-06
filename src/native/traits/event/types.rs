@@ -26,6 +26,9 @@ pub enum UiEventType {
     Wheel,
     KeyDown,
     KeyUp,
+    Copy,
+    Cut,
+    Paste,
     TextInput,
     Timer,
     FileDrop,
@@ -120,6 +123,11 @@ pub struct TextInputData {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
+pub struct ClipboardData {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct FileDropData {
     pub files: Vec<String>,
     pub position: Point,
@@ -150,6 +158,7 @@ pub enum UiEventPayload {
     Resize(ResizeData),
     Timer(TimerEventData),
     TextInput(TextInputData),
+    Clipboard(ClipboardData),
     FileDrop(FileDropData),
     ThemeChanged(ThemeChangeData),
     LocaleChanged(LocaleChangeData),
@@ -241,6 +250,27 @@ impl UiEvent {
         Self {
             type_: UiEventType::TextInput,
             payload: UiEventPayload::TextInput(TextInputData { text: text.into() }),
+        }
+    }
+
+    pub fn copy() -> Self {
+        Self {
+            type_: UiEventType::Copy,
+            payload: UiEventPayload::None,
+        }
+    }
+
+    pub fn cut() -> Self {
+        Self {
+            type_: UiEventType::Cut,
+            payload: UiEventPayload::None,
+        }
+    }
+
+    pub fn paste(text: impl Into<String>) -> Self {
+        Self {
+            type_: UiEventType::Paste,
+            payload: UiEventPayload::Clipboard(ClipboardData { text: text.into() }),
         }
     }
 
