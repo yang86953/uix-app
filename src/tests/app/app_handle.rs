@@ -1,5 +1,8 @@
 use super::*;
+use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadContext;
+use crate::app::main_thread_queue::MainThreadQueue;
+use crate::app::session_runtime::AppRuntime;
 use crate::app::Container;
 use crate::ui::view::combinators::label;
 use crate::ui::view::ViewAdapter;
@@ -26,11 +29,12 @@ fn new_test_handle(
     queue: MainThreadQueue,
     alive: Arc<AtomicBool>,
 ) -> AppHandle {
+    let runtime = AppRuntime::new();
+    runtime.register_session(WindowId::root(), timers, queue, alive.clone());
     AppHandle::new(
         WindowId::root(),
         AppState::new(),
-        timers,
-        queue,
+        runtime,
         Container::new(),
         alive,
     )
@@ -46,6 +50,39 @@ fn app_handle_post_to_ui_enqueues_while_alive() {
     handle.post_to_ui(|| {});
 
     assert_eq!(queue.len(), 1);
+}
+
+#[test]
+fn app_handle_post_to_ui_routes_by_window_id() {
+    let root_queue = MainThreadQueue::new();
+    let child_queue = MainThreadQueue::new();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::ROOT,
+        AppTimerQueue::new(),
+        root_queue.clone(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let child_alive = Arc::new(AtomicBool::new(true));
+    let child_id = WindowId::new(9);
+    runtime.register_session(
+        child_id,
+        AppTimerQueue::new(),
+        child_queue.clone(),
+        child_alive.clone(),
+    );
+    let handle = AppHandle::new(
+        child_id,
+        AppState::new(),
+        runtime,
+        Container::new(),
+        child_alive,
+    );
+
+    handle.post_to_ui(|| {});
+
+    assert_eq!(root_queue.len(), 0);
+    assert_eq!(child_queue.len(), 1);
 }
 
 #[test]
@@ -131,6 +168,39 @@ fn app_handle_run_after_registers_timer_while_alive() {
     let _timer = handle.run_after(Duration::from_secs(1), || {});
 
     assert_eq!(timers.len(), 1);
+}
+
+#[test]
+fn app_handle_run_after_routes_by_window_id() {
+    let root_timers = AppTimerQueue::new();
+    let child_timers = AppTimerQueue::new();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::ROOT,
+        root_timers.clone(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let child_alive = Arc::new(AtomicBool::new(true));
+    let child_id = WindowId::new(11);
+    runtime.register_session(
+        child_id,
+        child_timers.clone(),
+        MainThreadQueue::new(),
+        child_alive.clone(),
+    );
+    let handle = AppHandle::new(
+        child_id,
+        AppState::new(),
+        runtime,
+        Container::new(),
+        child_alive,
+    );
+
+    let _timer = handle.run_after(Duration::from_secs(1), || {});
+
+    assert_eq!(root_timers.len(), 0);
+    assert_eq!(child_timers.len(), 1);
 }
 
 #[test]

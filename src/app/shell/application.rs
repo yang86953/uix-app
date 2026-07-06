@@ -8,6 +8,7 @@ use crate::app::app_handle::AppHandle;
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::event_loop::run_window_session_loop_with_system_theme;
 use crate::app::main_thread_queue::MainThreadQueue;
+use crate::app::session_runtime::AppRuntime;
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
 use crate::app::window_session::WindowSession;
@@ -51,6 +52,7 @@ pub struct App {
     app_state: AppState,
     app_timers: AppTimerQueue,
     main_thread_queue: MainThreadQueue,
+    runtime: AppRuntime,
     handle_alive: Arc<AtomicBool>,
     root_factory: Option<Arc<dyn Fn() -> ViewNode + Send + Sync>>,
     on_start: Option<Box<dyn FnOnce(AppHandle) + Send>>,
@@ -63,6 +65,17 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
+        let app_timers = AppTimerQueue::new();
+        let main_thread_queue = MainThreadQueue::new();
+        let handle_alive = Arc::new(AtomicBool::new(true));
+        let runtime = AppRuntime::new();
+        runtime.register_session(
+            WindowId::ROOT,
+            app_timers.clone(),
+            main_thread_queue.clone(),
+            handle_alive.clone(),
+        );
+
         Self {
             mode: AppMode::GUI,
             title: "UIX App".to_string(),
@@ -70,9 +83,10 @@ impl Default for App {
             theme: Theme::antd_light(),
             follow_system_theme: false,
             app_state: AppState::new(),
-            app_timers: AppTimerQueue::new(),
-            main_thread_queue: MainThreadQueue::new(),
-            handle_alive: Arc::new(AtomicBool::new(true)),
+            app_timers,
+            main_thread_queue,
+            runtime,
+            handle_alive,
             root_factory: None,
             on_start: None,
             on_exit: None,
@@ -134,7 +148,7 @@ impl App {
     where
         F: FnOnce() + Send + 'static,
     {
-        self.main_thread_queue.enqueue(f);
+        self.runtime.post_to_ui(WindowId::ROOT, f);
     }
 
     pub fn on_start<F>(mut self, f: F) -> Self
@@ -182,8 +196,7 @@ impl App {
         AppHandle::new(
             WindowId::ROOT,
             self.app_state.clone(),
-            self.app_timers.clone(),
-            self.main_thread_queue.clone(),
+            self.runtime.clone(),
             self.container.clone(),
             self.handle_alive.clone(),
         )
@@ -315,8 +328,12 @@ impl App {
         session.set_app_state(self.app_state.clone());
         session.set_app_timers(self.app_timers.clone());
         session.set_main_thread_queue(self.main_thread_queue.clone());
-        self.handle_alive
-            .store(true, std::sync::atomic::Ordering::Release);
+        self.runtime.register_session(
+            WindowId::ROOT,
+            self.app_timers.clone(),
+            self.main_thread_queue.clone(),
+            self.handle_alive.clone(),
+        );
         let app_handle = self.app_handle();
         if let Some(on_start) = self.on_start.take() {
             on_start(app_handle.clone());
@@ -346,8 +363,6 @@ impl App {
         );
 
         app_handle.mark_closed();
-        self.app_timers.cancel_all();
-        self.main_thread_queue.clear();
 
         0
     }
