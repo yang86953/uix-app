@@ -1,7 +1,15 @@
 use super::*;
+use crate::app::app_timer::AppTimerQueue;
+use crate::app::main_thread_queue::MainThreadQueue;
 use crate::data::SettingsService;
+use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::{
     ClipboardData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
+};
+use crate::ui::view::combinators::label;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
 };
 
 #[test]
@@ -118,6 +126,58 @@ fn app_handle_can_target_registered_platform_window_id() {
     let handle = app.app_handle_for_window(WindowId::new(12));
 
     assert_eq!(handle.window_id(), WindowId::new(12));
+}
+
+#[test]
+fn drain_pending_open_windows_bootstraps_secondary_session() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let request =
+        runtime.request_open_window(WindowConfig::new("Inspector", 320, 600, || label("child")));
+    let started = Arc::new(Mutex::new(Vec::new()));
+    let on_window_start: Arc<dyn Fn(AppHandle) + Send + Sync> = {
+        let started = started.clone();
+        Arc::new(move |handle| {
+            started
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(handle.window_id());
+        })
+    };
+    let mut secondary_windows = Vec::new();
+
+    let created = drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        Some(&on_window_start),
+        &mut secondary_windows,
+    );
+
+    assert_eq!(created, 1);
+    assert_eq!(platform.window_manager.create_calls.len(), 2);
+    assert_eq!(
+        platform.window_manager.create_calls[1],
+        ("Inspector".to_string(), 320, 600)
+    );
+    assert_eq!(
+        *started.lock().unwrap_or_else(|e| e.into_inner()),
+        vec![request.window_id]
+    );
+    assert_eq!(secondary_windows[0].handle.window_id(), request.window_id);
+    assert_eq!(secondary_windows[0]._session.window_id(), request.window_id);
+    assert!(request.alive.load(Ordering::Acquire));
 }
 
 #[test]

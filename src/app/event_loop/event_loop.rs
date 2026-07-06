@@ -69,6 +69,7 @@ where
         metrics,
         map_event,
         on_exit,
+        |_| {},
         on_frame,
     )
 }
@@ -111,6 +112,7 @@ where
     )
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
     platform: &mut dyn Platform,
@@ -132,6 +134,47 @@ where
     X: Fn(&UiEvent) -> bool,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
+    run_window_session_loop_with_system_theme_and_tasks(
+        platform,
+        platform_window,
+        session,
+        font_service,
+        image_service,
+        theme,
+        system_theme_tokens,
+        debug_mode,
+        cursor_pos,
+        metrics,
+        map_event,
+        on_exit,
+        |_| {},
+        on_frame,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, F>(
+    platform: &mut dyn Platform,
+    platform_window: &mut dyn PlatformWindow,
+    session: &mut WindowSession,
+    font_service: &FontService,
+    image_service: &ImageService,
+    theme: &RefCell<Theme>,
+    system_theme_tokens: Option<&DynTokens>,
+    debug_mode: &Cell<bool>,
+    cursor_pos: &Cell<Point>,
+    metrics: Option<&Cell<RenderMetrics>>,
+    map_event: M,
+    on_exit: X,
+    on_runtime_tasks: T,
+    on_frame: F,
+) -> i32
+where
+    M: Fn(&UiEvent) -> Option<SystemEvent>,
+    X: Fn(&UiEvent) -> bool,
+    T: FnMut(&mut dyn Platform),
+    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+{
     run_window_session_loop_with_system_theme_and_clock(
         platform,
         platform_window,
@@ -146,6 +189,7 @@ where
         metrics,
         map_event,
         on_exit,
+        on_runtime_tasks,
         on_frame,
     )
 }
@@ -186,12 +230,13 @@ where
         metrics,
         map_event,
         on_exit,
+        |_| {},
         on_frame,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_window_session_loop_with_system_theme_and_clock<M, X, F>(
+fn run_window_session_loop_with_system_theme_and_clock<M, X, T, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
@@ -205,11 +250,13 @@ fn run_window_session_loop_with_system_theme_and_clock<M, X, F>(
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
     on_exit: X,
+    on_runtime_tasks: T,
     on_frame: F,
 ) -> i32
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
+    T: FnMut(&mut dyn Platform),
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
     let parts = session.parts_mut();
@@ -235,12 +282,13 @@ where
         metrics,
         map_event,
         on_exit,
+        on_runtime_tasks,
         on_frame,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_widget_loop_with_active_work<M, X, F>(
+fn run_widget_loop_with_active_work<M, X, T, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
     engine: &mut dyn GraphicsEngine,
@@ -262,11 +310,13 @@ fn run_widget_loop_with_active_work<M, X, F>(
     metrics: Option<&Cell<RenderMetrics>>,
     map_event: M,
     on_exit: X,
+    mut on_runtime_tasks: T,
     on_frame: F,
 ) -> i32
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
+    T: FnMut(&mut dyn Platform),
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
     let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
@@ -423,6 +473,7 @@ where
         let had_main_thread_work = main_thread_queue.drain(&mut main_thread_context);
         active_work.sync_timers(tree.active_timers(), clock.now());
         active_work.sync_app_timers(app_timers.deadlines());
+        on_runtime_tasks(platform);
         if tree.take_reconcile_requested() {
             *reconcile_pending = true;
         }

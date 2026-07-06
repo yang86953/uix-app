@@ -51,7 +51,7 @@ P4 多窗                P5 组件 Handle 体系
 - P5 与 P1 **可交错**（`ComponentId` 宜尽早，利于 #123）。
 - 每阶段对应 [demand-driven · 实现差距](systems/demand-driven.md#实现差距) 行清零或缩减。
 
-> **实现注记**：当前整体仍处于 **P0 未完备**；`ActiveWorkRegistry`、无 deadline 注册项、`WindowSession` 壳、单窗三态写回、DeepIdle 门控、Registry deadline wait、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源、IME composition session 托管、AppTimer 队列、MainThreadQueue、`AppHandle` 与 `.on_start` 已落地（无固定 100ms 探活，DeepIdle 不跑 `tick_effects`）；`AppHandle` 的 Timer / `post_to_ui` / `update_view` 已经按 `window_id` 路由；`WindowConfig` / `open_window` 请求层与 `.on_window_start` 已接；单窗 `pending_root` 与响应式 `State` 批次 reconcile 已接入主循环；其他过渡动画源、真实副窗 native 创建与多 session loop drain 仍待接线。接线顺序见 [P0 落地清单](#p0-落地清单)（#157）。
+> **实现注记**：当前整体仍处于 **P0 未完备**；`ActiveWorkRegistry`、无 deadline 注册项、`WindowSession` 壳、单窗三态写回、DeepIdle 门控、Registry deadline wait、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源、IME composition session 托管、AppTimer 队列、MainThreadQueue、`AppHandle` 与 `.on_start` 已落地（无固定 100ms 探活，DeepIdle 不跑 `tick_effects`）；`AppHandle` 的 Timer / `post_to_ui` / `update_view` 已经按 `window_id` 路由；`WindowConfig` / `open_window` 请求层、native 副窗创建、独立 `WindowSession` bootstrap 与 `.on_window_start` 已接；单窗 `pending_root` 与响应式 `State` 批次 reconcile 已接入主循环；其他过渡动画源、副窗事件路由/帧循环消费与完整多 session loop drain 仍待接线。接线顺序见 [P0 落地清单](#p0-落地清单)（#157）。
 
 ---
 
