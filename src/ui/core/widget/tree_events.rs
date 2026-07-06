@@ -1,6 +1,7 @@
 use super::tree_core::WidgetTree;
 use super::*;
 use crate::ui::event::{ClickEvent, SemanticEvent};
+use crate::ui::{OverlayEntry, OverlayKind};
 
 impl WidgetTree {
     /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
@@ -118,6 +119,18 @@ impl WidgetTree {
         None
     }
 
+    fn open_context_menu_overlay(&mut self, owner: WidgetId, pos: Point) {
+        self.overlay_stack
+            .retain_entries(|entry| entry.kind() != OverlayKind::ContextMenu);
+        self.overlay_stack.push_entry(
+            OverlayEntry::new(owner, OverlayKind::ContextMenu)
+                .bounds(Rect::new(pos.x, pos.y, 160.0, 160.0))
+                .z_index(1200)
+                .dismiss_on_outside(true),
+        );
+        self.invalidate_paint(owner);
+    }
+
     pub fn dispatch_event(&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, button, mods } => {
@@ -188,7 +201,11 @@ impl WidgetTree {
                         };
                         let _ = self.dispatch_semantic(SemanticEvent::click(t, click));
                         if *button == MouseButton::Right {
-                            let _ = self.dispatch_semantic(SemanticEvent::context_menu(t, click));
+                            let mut context_menu = SemanticEvent::context_menu(t, click);
+                            let _ = self.dispatch_semantic_event(&mut context_menu);
+                            if !context_menu.default_prevented() {
+                                self.open_context_menu_overlay(t, click.pos);
+                            }
                         }
                     }
                 }
@@ -568,9 +585,13 @@ impl WidgetTree {
         path
     }
 
-    pub fn dispatch_semantic(&mut self, mut event: SemanticEvent) -> EventResult {
+    pub fn dispatch_semantic_event(&mut self, event: &mut SemanticEvent) -> EventResult {
         let path = self.semantic_path_to_root(event.target);
-        self.handler_table.dispatch_path(&path, &mut event)
+        self.handler_table.dispatch_path(&path, event)
+    }
+
+    pub fn dispatch_semantic(&mut self, mut event: SemanticEvent) -> EventResult {
+        self.dispatch_semantic_event(&mut event)
     }
 
     fn translate_pointer_event(event: &SystemEvent, frame: Rect) -> SystemEvent {

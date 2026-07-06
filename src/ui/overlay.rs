@@ -7,6 +7,7 @@ pub enum OverlayKind {
     Drawer,
     Popover,
     Tooltip,
+    ContextMenu,
     Message,
     Notification,
     Custom,
