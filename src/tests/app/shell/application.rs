@@ -2,6 +2,7 @@ use super::*;
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::test_clock::system_clock;
+use crate::app::window_session::WindowLoopState;
 use crate::core::Point;
 use crate::data::SettingsService;
 use crate::draw::font::font_service::FontService;
@@ -467,6 +468,56 @@ fn secondary_windows_next_deadline_reads_window_timers() {
     );
 
     assert!(secondary_windows_next_deadline(&mut secondary_windows).is_some());
+}
+
+#[test]
+fn drain_secondary_window_frames_records_registered_active_state() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let child =
+        runtime.request_open_window(WindowConfig::new("Child", 320, 240, || label("child")));
+    let _timer = runtime.run_after(child.window_id, Duration::from_secs(1), || {});
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::new(0.0, 0.0));
+    let clock = system_clock();
+
+    drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    );
+
+    assert_eq!(
+        secondary_windows[0].session.loop_state(),
+        WindowLoopState::RegisteredActive
+    );
 }
 
 #[test]

@@ -14,7 +14,7 @@ use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
 use crate::app::test_clock::{system_clock, AppClock};
 use crate::app::window_config::WindowConfig;
-use crate::app::window_session::WindowSession;
+use crate::app::window_session::{WindowLoopState, WindowSession};
 use crate::core::{Point, WindowId};
 use crate::data::SettingsService;
 use crate::draw::font::font_service::FontService;
@@ -277,6 +277,7 @@ impl SecondaryWindowSession {
             }
         }
 
+        *parts.loop_state = secondary_next_loop_state(parts.tree, parts.active_work);
         active_frame || need_render
     }
 
@@ -940,6 +941,24 @@ fn sync_secondary_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn G
         }
         tree.mark_full_frame_dirty();
         tree.layout();
+    }
+}
+
+fn secondary_next_loop_state(
+    tree: &WidgetTree,
+    active_work: &ActiveWorkRegistry,
+) -> WindowLoopState {
+    let has_layout_work = tree
+        .invalidation
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .has_layout();
+    if tree.has_render_work() || has_layout_work {
+        WindowLoopState::Active
+    } else if !active_work.is_empty() {
+        WindowLoopState::RegisteredActive
+    } else {
+        WindowLoopState::DeepIdle
     }
 }
 

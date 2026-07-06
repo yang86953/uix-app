@@ -640,7 +640,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | ActiveWorkRegistry | register / next_deadline / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 托管 | [#115](../decisions.md#d115) |
 | 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；副窗创建、独立 `WindowSession` bootstrap、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接，外部线程投递后的真实 OS wake 待接 | [#116](../decisions.md#d116) |
 | 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入主循环；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接，外部线程投递后的真实 OS wake 待接 | [#118](../decisions.md#d118) |
-| 每窗独立状态 | 每窗独立 DeepIdle/Active | 单窗 WindowSession 已写回三态；多窗独立状态未接 | [#110](../decisions.md#d110) |
+| 每窗独立状态 | 每窗独立 DeepIdle/Active | 单窗 WindowSession 与副窗运行期 frame drain 已写回三态；外部线程投递后的真实 OS wake 待接 | [#110](../decisions.md#d110) |
 | Composite scroll | Composite + memmove | Wheel → ScrollView 已接 exposed strip + `scroll_region`；其他滚动来源待接 | [#107](../decisions.md#d107) |
 | PicturePolicy 自动推断 | 元数据 + 子树信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 首批 Eligible，默认 Never | [#122](../decisions.md#d122) [#129](../decisions.md#d129) |
 | Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 已托管；其他内置组件动画源待接 | [#124](../decisions.md#d124) |
