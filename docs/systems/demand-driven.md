@@ -397,7 +397,7 @@ else → wait_timeout(remaining)   // 单次，非固定 100ms 探活
 
 每 **WindowSession** 持有一份 Registry（#116）。
 
-> **实现注记**：`ActiveWorkRegistry` 内部类型已落地，并由 `WindowSession` 持有；单窗 event loop 已接 `next_deadline` / `drain_due` 骨架、到期 `Timer` → `SystemEvent::Timer` 消费、AppTimer 主线程回调执行、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源；IME 与其他内置组件动画源尚未接入。
+> **实现注记**：`ActiveWorkRegistry` 内部类型已落地，并由 `WindowSession` 持有；单窗 event loop 已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` → `SystemEvent::Timer` 消费、AppTimer 主线程回调执行、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 托管；其他内置组件动画源尚未接入。
 
 ### 多窗单 loop（#116）
 
@@ -475,7 +475,7 @@ run_active_frame(session):
 
 未托管的周期工作 **不得**存在；须内置组件、**#132 Timer API** 或 async→State（#131）。
 
-> **实现注记**：当前已有 RegisteredActive deadline wait 骨架；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，并将 `update` / `tick_effects` 门控到 Active 帧；Tooltip 内置 timer、AppTimer 注册源、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已接，其他内置组件动画源 / IME 待接。
+> **实现注记**：当前已有 RegisteredActive deadline wait 骨架与无 deadline 注册项；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，并将 `update` / `tick_effects` 门控到 Active 帧；Tooltip 内置 timer、AppTimer 注册源、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 已接，其他内置组件动画源待接。
 
 ---
 
@@ -637,13 +637,13 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | 能力 | 设计 | 当前 | 文档 |
 |------|------|------|------|
 | 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 update / tick_effects；RegisteredActive deadline wait 骨架已接 | [#106](../decisions.md#d106) [#117](../decisions.md#d117) |
-| ActiveWorkRegistry | register / next_deadline / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due` 骨架、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源；IME 待接 | [#115](../decisions.md#d115) |
+| ActiveWorkRegistry | register / next_deadline / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 托管 | [#115](../decisions.md#d115) |
 | 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；多窗路由未接 | [#116](../decisions.md#d116) |
 | 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入主循环；多窗路由待接 | [#118](../decisions.md#d118) |
 | 每窗独立状态 | 每窗独立 DeepIdle/Active | 单窗 WindowSession 已写回三态；多窗独立状态未接 | [#110](../decisions.md#d110) |
 | Composite scroll | Composite + memmove | Wheel → ScrollView 已接 exposed strip + `scroll_region`；其他滚动来源待接 | [#107](../decisions.md#d107) |
 | PicturePolicy 自动推断 | 元数据 + 子树信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 首批 Eligible，默认 Never | [#122](../decisions.md#d122) [#129](../decisions.md#d129) |
-| Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已托管；其他内置组件动画源 / IME 接线未完成 | [#124](../decisions.md#d124) |
+| Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 已托管；其他内置组件动画源待接 | [#124](../decisions.md#d124) |
 | follow_system_theme opt-in | false 默认；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](../decisions.md#d125) |
 | App Timer API | run_after / run_interval | `App` / 单窗 `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出并接入单窗 session；多窗路由待接 | [#132](../decisions.md#d132) |
 | post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + 单窗 `AppHandle::post_to_ui` + MainThreadQueue 已接；阻塞等待 wake 与多窗路由待接 | [#133](../decisions.md#d133) |

@@ -17,7 +17,7 @@ pub(crate) enum ActiveWorkKind {
 
 #[derive(Debug, Default)]
 pub(crate) struct ActiveWorkRegistry {
-    entries: BTreeMap<ActiveWorkKind, Instant>,
+    entries: BTreeMap<ActiveWorkKind, Option<Instant>>,
     managed_timers: BTreeSet<TimerId>,
     managed_app_timers: BTreeSet<TimerId>,
 }
@@ -28,7 +28,11 @@ impl ActiveWorkRegistry {
     }
 
     pub(crate) fn register(&mut self, kind: ActiveWorkKind, next_deadline: Instant) {
-        self.entries.insert(kind, next_deadline);
+        self.entries.insert(kind, Some(next_deadline));
+    }
+
+    pub(crate) fn register_open(&mut self, kind: ActiveWorkKind) {
+        self.entries.insert(kind, None);
     }
 
     pub(crate) fn unregister(&mut self, kind: ActiveWorkKind) -> bool {
@@ -42,14 +46,14 @@ impl ActiveWorkRegistry {
     }
 
     pub(crate) fn next_deadline(&self) -> Option<Instant> {
-        self.entries.values().copied().min()
+        self.entries.values().filter_map(|deadline| *deadline).min()
     }
 
     pub(crate) fn drain_due(&mut self, now: Instant) -> Vec<ActiveWorkKind> {
         let due: Vec<_> = self
             .entries
             .iter()
-            .filter_map(|(&kind, &deadline)| (deadline <= now).then_some(kind))
+            .filter_map(|(&kind, &deadline)| deadline.is_some_and(|d| d <= now).then_some(kind))
             .collect();
         for kind in &due {
             self.entries.remove(kind);
@@ -86,7 +90,7 @@ impl ActiveWorkRegistry {
         for (id, delay) in desired {
             self.entries
                 .entry(ActiveWorkKind::Timer(id))
-                .or_insert(now + delay);
+                .or_insert(Some(now + delay));
             self.managed_timers.insert(id);
         }
     }
@@ -105,7 +109,8 @@ impl ActiveWorkRegistry {
         self.managed_app_timers
             .retain(|id| desired.contains_key(id));
         for (id, deadline) in desired {
-            self.entries.insert(ActiveWorkKind::AppTimer(id), deadline);
+            self.entries
+                .insert(ActiveWorkKind::AppTimer(id), Some(deadline));
             self.managed_app_timers.insert(id);
         }
     }
@@ -163,6 +168,19 @@ mod tests {
         assert!(registry.unregister(ActiveWorkKind::Animation(1)));
         assert!(!registry.unregister(ActiveWorkKind::Animation(9)));
         assert_eq!(registry.drain_due(now), vec![ActiveWorkKind::AppTimer(2)]);
+    }
+
+    #[test]
+    fn open_registration_has_no_deadline_and_is_not_drained() {
+        let now = Instant::now();
+        let mut registry = ActiveWorkRegistry::new();
+
+        registry.register_open(ActiveWorkKind::ImeSession(7));
+
+        assert_eq!(registry.len(), 1);
+        assert_eq!(registry.next_deadline(), None);
+        assert!(registry.drain_due(now + Duration::from_secs(60)).is_empty());
+        assert!(!registry.is_empty());
     }
 
     #[test]

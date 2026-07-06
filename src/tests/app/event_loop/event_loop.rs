@@ -1,6 +1,7 @@
 use super::*;
 use crate::app::active_work_registry::ActiveWorkKind;
 use crate::app::app_timer::AppTimerQueue;
+use crate::app::map_ui_event;
 use crate::app::test_clock::TestClock;
 use crate::app::window_session::{WindowLoopState, WindowSession};
 use crate::draw::pipeline::RenderMetrics;
@@ -414,6 +415,107 @@ fn registered_active_wait_until_uses_injected_test_clock() {
     );
     assert!(!session.active_work().is_empty());
     assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+}
+
+#[test]
+fn ime_composition_start_registers_open_active_work_without_timeout() {
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .inject(UiEvent::ime_composition_start());
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    {
+        let (tree, _) = session.tree_and_engine_mut();
+        let root = tree.root_id().unwrap();
+        tree.managers_mut().focus.set_focused_widget(Some(root));
+    }
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
+    assert!(!session.active_work().is_empty());
+    assert_eq!(session.active_work().next_deadline(), None);
+    assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+}
+
+#[test]
+fn ime_composition_end_unregisters_active_work() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject_all([
+        UiEvent::ime_composition_start(),
+        UiEvent::ime_composition_end("done"),
+    ]);
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    {
+        let (tree, _) = session.tree_and_engine_mut();
+        let root = tree.root_id().unwrap();
+        tree.managers_mut().focus.set_focused_widget(Some(root));
+    }
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert!(session.active_work().is_empty());
+    assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
 }
 
 #[test]
