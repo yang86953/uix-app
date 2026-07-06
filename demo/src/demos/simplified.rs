@@ -111,7 +111,7 @@ pub fn run_simplified_demo() {
         .title("UIX 简化 API 演示")
         .size(500, 520)
         .theme(Theme::antd_light())
-        .root(
+        .root(|| {
             column([
                 label("UIX 简化 API 演示")
                     .font_size(24.0)
@@ -122,7 +122,7 @@ pub fn run_simplified_demo() {
                 space(8.0),
                 layout_section(),
             ])
-            .gap(0.0),
-        )
+            .gap(0.0)
+        })
         .run();
 }

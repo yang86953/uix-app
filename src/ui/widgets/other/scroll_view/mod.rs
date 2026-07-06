@@ -190,6 +190,7 @@ define_widget! {
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
         let delta = self.scroll_delta_strip.get();
         if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
+            self.scroll_delta_strip.set((0.0, 0.0));
             Some(delta)
         } else {
             None
@@ -207,6 +208,7 @@ define_widget! {
     dirty_rect => (&self, frame: Rect) -> Rect {
         frame
     }
+
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
@@ -390,4 +392,3 @@ impl Default for ScrollView {
 #[cfg(test)]
 #[path = "../../../../tests/ui/widgets/other/scroll_view/mod.rs"]
 mod tests;
-

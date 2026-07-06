@@ -86,7 +86,7 @@ ViewNode::new(widget, children)
 | `build(view)` | 捕获 → 新建 WidgetTree → expand → build |
 | `reconcile(tree, view)` | 增量更新或整树重建 |
 
-> **实现注记**：`reconcile` 已实现，App 启动仍用 `build_nodes`；热更新路径待接入主循环。
+> **实现注记**：`reconcile` 已实现；单窗 `App::root(|| ...)` 会安装 session factory，`AppHandle::update_view` / `set_root` 与响应式 `State` 批次已接入帧末一次 reconcile。多窗独立路由待接。
 
 ### 根节点决策
 
@@ -229,7 +229,7 @@ fingerprint(kind, captures) :=
 | 稳定性 | 同源码 rebuild、同 capture 集 → **同指纹**（测试可断言） |
 | 算法 | 框架内部固定（如 `FxHasher` → `u64`）；App **不可配** |
 
-> **实现注记**：`handler_generation` 字段与指纹逻辑尚未落地；当前 reconcile 仍全清 handler。`StateSlotId`（#143）尚未分配；落地前指纹实现不得误用 `generation()`。
+> **实现注记**：内部 `HandlerSignature` / `handler_generation` 存储与 reconcile 比较已接；带稳定 generation 的 handler 可跳过 `clear_component` + 重注册。State capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump。View build / DSL / 宏的 handler capture 自动收集仍待接；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
 
 ---
 
@@ -263,13 +263,13 @@ static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 
 | 设计（#143） | 当前 `state.rs` |
 |--------------|-----------------|
-| `StateSlotId` 字段 | 无；`Arc` 共享 inner |
-| 指纹用 slot id | 尚未实现 capture 指纹 |
+| `StateSlotId` 字段 | 已接；`State::new` 分配，clone 共享 |
+| 指纹用 slot id | State 侧 `TypeId + StateSlotId` 指纹基础已接；handler fingerprint 解析可消费该值，自动 capture 收集待接 |
 | `generation()` | 已有；用于 Computed/Effect |
 
 落地 #143 时 **保留** 现有 `generation()` 语义；仅 **新增** `slot_id` 字段与 accessor。
 
-> **实现注记**：`StateSlotId` 未落地；`State::generation()` 已存在但含义不同。
+> **实现注记**：`StateSlotId` 已落地；`State::generation()` 保持值变更计数语义，不参与 State capture 指纹。
 
 ---
 
@@ -397,7 +397,7 @@ if session.reconcile_pending {
 | 多窗 | 各 session **独立** factory / `pending_root` / `reconcile_pending`（#148） |
 | layout | reconcile 后若结构变 → layout 标脏；仅 paint 变 → 窄 paint |
 
-> **实现注记**：`WindowSession` / `view_factory` / `pending_root` 未接入；`reconcile` 函数已实现。
+> **实现注记**：单窗 `WindowSession` 已持有 `view_factory` / `pending_root` / `reconcile_pending`，`App::root(|| ...)` 会安装长期 factory；`AppHandle::update_view` 会经 MainThreadQueue 写入一次性 `pending_root`。响应式 `State` 批次会自动置位并在无 `pending_root` 时调用 factory；多窗独立路由仍待接。
 
 ### 与 build 的关系
 
@@ -408,7 +408,7 @@ if session.reconcile_pending {
 
 Reconcile 完成后仍走既有 layout → overlay rebuild → paint invalidation 管线（见 [layout · 布局管线](layout.md#布局管线)）。
 
-> **实现注记**：`reconcile` 已实现；`App::run_gui` 启动仍仅调用 `build_nodes`，主循环尚未在 State 批次末或 App API 接入 reconcile。热更新路径待接线。
+> **实现注记**：`reconcile` 已实现；单窗主循环已在 `tick_effects` 后、layout/render 前消费 `pending_root` 或 State 批次置位，并至多 reconcile 一次；State 批次无 `pending_root` 时会调用 session factory。
 
 ---
 
@@ -438,7 +438,7 @@ WindowSession A                    WindowSession B
 inspector_handle.update_view(|| inspector_view_v2());  // 仅 reconcile session B（#149）
 ```
 
-> **实现注记**：多窗 reconcile / `update_view` 未接线；当前仅单窗 `build_nodes`。
+> **实现注记**：单窗 `update_view` 已接入主循环帧末 reconcile；多窗 reconcile / `window_id` 路由仍未接线。
 
 ---
 
@@ -484,13 +484,13 @@ State::set(value)
 
 | 设计（#150） | 当前 `state.rs` |
 |--------------|-----------------|
-| `paint_sites: Vec<_>` fan-out | 单个 `paint_binding: Option<...>` |
-| 按 `window_id` wake session | 无多窗 session 模型 |
-| `State::set` 多 queue | 至多一个 queue 收到 Paint |
+| `paint_sites: Vec<_>` fan-out | `State` / `Computed` 已支持多 paint site fan-out |
+| 按 `window_id` wake session | 无多窗 session 路由 |
+| `State::set` 多 queue / reconcile | 多个已绑定 queue 均收到 Paint；多个 reconcile callback 按 site key fan-out |
 
 落地 #150 时 **保留** 窄 rect 标脏；扩展为多 site，**禁止**全树 invalidate 替代。
 
-> **实现注记**：fan-out 与 session wake 未实现；单 bind slot 与单窗主循环。
+> **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(widget_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调。`window_id` session wake 仍待多窗路由接入。
 
 ---
 

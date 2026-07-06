@@ -69,4 +69,3 @@ impl Ray3D {
 #[cfg(test)]
 #[path = "../../tests/draw/spatial/ray3d.rs"]
 mod tests;
-

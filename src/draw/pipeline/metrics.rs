@@ -71,4 +71,3 @@ impl RenderMetrics {
 #[cfg(test)]
 #[path = "../../tests/draw/pipeline/metrics.rs"]
 mod tests;
-

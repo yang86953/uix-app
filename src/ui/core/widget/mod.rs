@@ -1,9 +1,10 @@
 pub use crate::core::Point;
 use crate::core::{Rect, Size};
+use crate::draw::compositor::PicturePolicy;
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::draw::traits::GraphicsEngine;
 pub use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
-use crate::ui::event::HandlerRegistration;
+use crate::ui::event::{HandlerRegistration, HandlerSignature};
 pub use crate::ui::event::{SystemEvent, SystemEventKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +115,7 @@ pub struct BoxedWidget {
     z: i32,
     /// Tab 键导航顺序（0=不可通过 Tab 导航聚焦）。
     tab_idx: i32,
+    handler_signatures: Vec<HandlerSignature>,
 }
 
 impl BoxedWidget {
@@ -139,6 +141,7 @@ impl BoxedWidget {
             widget_opacity: 1.0,
             z: 0,
             tab_idx: 0,
+            handler_signatures: Vec::new(),
         }
     }
     pub fn component(&self) -> &dyn WidgetComponent {
@@ -162,6 +165,12 @@ impl BoxedWidget {
     }
     pub(crate) fn set_key(&mut self, key: Option<Box<str>>) {
         self.key = key;
+    }
+    pub(crate) fn handler_signatures(&self) -> &[HandlerSignature] {
+        &self.handler_signatures
+    }
+    pub(crate) fn set_handler_signatures(&mut self, signatures: Vec<HandlerSignature>) {
+        self.handler_signatures = signatures;
     }
 
     pub fn as_render(&self) -> Option<&dyn WidgetRender> {
@@ -250,6 +259,14 @@ impl BoxedWidget {
             .as_event()
             .and_then(|e| e.viewport_scroll_offset())
     }
+    pub fn active_timer(&self) -> Option<(u64, std::time::Duration)> {
+        self.component().as_event().and_then(|e| e.active_timer())
+    }
+    pub fn wants_continuous_pointer_move(&self) -> bool {
+        self.component()
+            .as_event()
+            .is_some_and(|e| e.wants_continuous_pointer_move())
+    }
     pub fn hit_test_frame(&self, actual_frame: Rect) -> Rect {
         self.component()
             .as_event()
@@ -309,6 +326,15 @@ impl BoxedWidget {
         self.component()
             .as_render()
             .is_some_and(|render| render.uses_palette())
+    }
+    pub fn picture_policy(&self) -> PicturePolicy {
+        self.component().picture_policy()
+    }
+    pub fn has_dynamic_content(&self) -> bool {
+        self.component().has_dynamic_content()
+    }
+    pub fn has_interactive_state(&self) -> bool {
+        self.caps.contains(WidgetCapabilities::EVENT)
     }
     pub fn on_attach(&mut self) {
         if let Some(l) = self.component_mut().as_lifecycle_mut() {

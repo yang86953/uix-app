@@ -2,6 +2,7 @@
 
 use crate::core::DirtyRegion;
 use crate::core::{Point, Rect};
+use crate::draw::compositor::PicturePolicy;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::NodeId;
@@ -43,6 +44,35 @@ impl ScenePaint for WidgetTree {
     fn node_children(&self, id: NodeId) -> &[NodeId] {
         static EMPTY: &[NodeId] = &[];
         self.get(id).map(|n| n.children()).unwrap_or(EMPTY)
+    }
+
+    fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
+        self.get(id)
+            .map(|n| n.picture_policy())
+            .unwrap_or(PicturePolicy::Never)
+    }
+
+    fn node_has_semantic_handlers(&self, id: NodeId) -> bool {
+        self.get(id)
+            .is_some_and(|n| !n.handler_signatures().is_empty())
+    }
+
+    fn node_has_dynamic_content(&self, id: NodeId) -> bool {
+        self.get(id).is_some_and(|n| n.has_dynamic_content())
+    }
+
+    fn node_has_interactive_state(&self, id: NodeId) -> bool {
+        self.get(id).is_some_and(|n| n.has_interactive_state())
+    }
+
+    fn node_wants_continuous_pointer_move(&self, id: NodeId) -> bool {
+        self.get(id)
+            .is_some_and(|n| n.wants_continuous_pointer_move())
+    }
+
+    fn node_is_overlay(&self, id: NodeId) -> bool {
+        self.get(id)
+            .is_some_and(|n| n.overlay_entry(id, n.frame()).is_some())
     }
 
     fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect> {

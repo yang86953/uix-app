@@ -11,7 +11,7 @@ use crate::draw::compositor::picture::{
     blit_picture_cache, rasterize_picture_to_offscreen, LayerRenderEnv,
 };
 use crate::draw::compositor::viewport_transform::{needs_paint, needs_paint_rect};
-use crate::draw::compositor::ScenePaint;
+use crate::draw::compositor::{PicturePolicy, ScenePaint};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, PaintPass, ThemeSnapshot};
@@ -148,7 +148,23 @@ pub struct LayerTree {
     orphaned_handles: Vec<ImageHandle>,
 }
 
-const PICTURE_CACHE_MIN_DEPTH: usize = 4;
+const PICTURE_CACHE_MIN_NODES: usize = 8;
+const PICTURE_CACHE_MIN_PIXELS: f32 = 65_536.0;
+
+#[derive(Debug, Clone, Copy)]
+struct PictureSubtreeStats {
+    node_count: usize,
+    estimated_pixels: f32,
+    cacheable: bool,
+}
+
+impl PictureSubtreeStats {
+    fn eligible(self) -> bool {
+        self.cacheable
+            && self.node_count >= PICTURE_CACHE_MIN_NODES
+            && self.estimated_pixels >= PICTURE_CACHE_MIN_PIXELS
+    }
+}
 
 impl std::fmt::Debug for LayerTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -366,7 +382,9 @@ impl LayerTree {
         }
         let frame = scene.node_frame(id);
 
-        if depth >= PICTURE_CACHE_MIN_DEPTH {
+        let stats = Self::picture_subtree_stats(scene, id);
+
+        if stats.eligible() {
             // frame 是绝对坐标，直接用作 bounds
             let bounds = frame;
             // 检查旧缓存：如果 bounds 相同，复用离屏句柄
@@ -408,6 +426,36 @@ impl LayerTree {
                 children,
             })
         }
+    }
+
+    fn picture_subtree_stats(scene: &impl ScenePaint, id: NodeId) -> PictureSubtreeStats {
+        let frame = scene.node_frame(id);
+        let mut stats = PictureSubtreeStats {
+            node_count: 1,
+            estimated_pixels: (frame.w.max(0.0) * frame.h.max(0.0)).max(0.0),
+            cacheable: Self::node_allows_picture(scene, id, frame),
+        };
+
+        for child in scene.node_children(id) {
+            let child_stats = Self::picture_subtree_stats(scene, *child);
+            stats.node_count += child_stats.node_count;
+            stats.estimated_pixels += child_stats.estimated_pixels;
+            stats.cacheable &= child_stats.cacheable;
+        }
+
+        stats
+    }
+
+    fn node_allows_picture(scene: &impl ScenePaint, id: NodeId, frame: Rect) -> bool {
+        scene.node_picture_policy(id) == PicturePolicy::Eligible
+            && !scene.node_has_semantic_handlers(id)
+            && !scene.node_has_dynamic_content(id)
+            && !scene.node_has_interactive_state(id)
+            && !scene.node_wants_continuous_pointer_move(id)
+            && !scene.node_is_overlay(id)
+            && !scene.node_focusable(id)
+            && scene.children_clip(id, frame).is_none()
+            && scene.scroll_offset(id).is_none()
     }
 
     /// 带缓存复用的子节点构建，按 z_index 预排序（#97：排序缓存）。
@@ -730,5 +778,228 @@ impl LayerTree {
 
     pub fn orphaned_handles_mut(&mut self) -> &mut Vec<ImageHandle> {
         &mut self.orphaned_handles
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone)]
+    struct TestNode {
+        id: NodeId,
+        frame: Rect,
+        children: Vec<NodeId>,
+        policy: PicturePolicy,
+        has_handler: bool,
+        dynamic: bool,
+        interactive: bool,
+        continuous_pointer: bool,
+        overlay: bool,
+        focusable: bool,
+        clip: bool,
+        scroll: bool,
+    }
+
+    impl TestNode {
+        fn eligible(id: NodeId, children: Vec<NodeId>) -> Self {
+            Self {
+                id,
+                frame: Rect::new(0.0, 0.0, 300.0, 300.0),
+                children,
+                policy: PicturePolicy::Eligible,
+                has_handler: false,
+                dynamic: false,
+                interactive: false,
+                continuous_pointer: false,
+                overlay: false,
+                focusable: false,
+                clip: false,
+                scroll: false,
+            }
+        }
+    }
+
+    struct TestScene {
+        nodes: Vec<TestNode>,
+    }
+
+    impl TestScene {
+        fn static_tree(node_count: usize) -> Self {
+            let children = (2..=node_count).collect();
+            let mut nodes = vec![TestNode::eligible(1, children)];
+            for id in 2..=node_count {
+                nodes.push(TestNode::eligible(id, Vec::new()));
+            }
+            Self { nodes }
+        }
+
+        fn node_mut(&mut self, id: NodeId) -> &mut TestNode {
+            self.nodes.iter_mut().find(|node| node.id == id).unwrap()
+        }
+
+        fn node(&self, id: NodeId) -> &TestNode {
+            self.nodes.iter().find(|node| node.id == id).unwrap()
+        }
+
+        fn build_layer_tree(&self) -> LayerTree {
+            let mut tree = LayerTree::new();
+            tree.build(self);
+            tree
+        }
+    }
+
+    impl ScenePaint for TestScene {
+        fn root_id(&self) -> Option<NodeId> {
+            Some(1)
+        }
+
+        fn tree_version(&self) -> u64 {
+            1
+        }
+
+        fn dirty_region(&self) -> DirtyRegion {
+            DirtyRegion::empty()
+        }
+
+        fn node_visible(&self, id: NodeId) -> bool {
+            self.nodes.iter().any(|node| node.id == id)
+        }
+
+        fn node_frame(&self, id: NodeId) -> Rect {
+            self.node(id).frame
+        }
+
+        fn node_dirty(&self, _id: NodeId) -> bool {
+            false
+        }
+
+        fn node_z_index(&self, _id: NodeId) -> i32 {
+            0
+        }
+
+        fn node_children(&self, id: NodeId) -> &[NodeId] {
+            &self.node(id).children
+        }
+
+        fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
+            self.node(id).policy
+        }
+
+        fn node_has_semantic_handlers(&self, id: NodeId) -> bool {
+            self.node(id).has_handler
+        }
+
+        fn node_has_dynamic_content(&self, id: NodeId) -> bool {
+            self.node(id).dynamic
+        }
+
+        fn node_has_interactive_state(&self, id: NodeId) -> bool {
+            self.node(id).interactive
+        }
+
+        fn node_wants_continuous_pointer_move(&self, id: NodeId) -> bool {
+            self.node(id).continuous_pointer
+        }
+
+        fn node_is_overlay(&self, id: NodeId) -> bool {
+            self.node(id).overlay
+        }
+
+        fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect> {
+            self.node(id).clip.then_some(frame)
+        }
+
+        fn dirty_rect(&self, _id: NodeId, frame: Rect) -> Rect {
+            frame
+        }
+
+        fn scroll_offset(&self, id: NodeId) -> Option<(f32, f32)> {
+            self.node(id).scroll.then_some((1.0, 0.0))
+        }
+
+        fn focused_node(&self) -> Option<NodeId> {
+            None
+        }
+
+        fn node_focusable(&self, id: NodeId) -> bool {
+            self.node(id).focusable
+        }
+
+        fn hit_test(&self, _pos: Point) -> Option<NodeId> {
+            None
+        }
+
+        fn parent(&self, _id: NodeId) -> Option<NodeId> {
+            None
+        }
+
+        fn paint(&self, _id: NodeId, _frame: Rect, _ctx: &mut PaintContext<'_>) {}
+    }
+
+    #[test]
+    fn eligible_large_static_subtree_builds_picture_layer() {
+        let scene = TestScene::static_tree(8);
+        let tree = scene.build_layer_tree();
+
+        assert!(matches!(
+            tree.root_node(),
+            Some(LayerNode::Picture { widget_id: 1, .. })
+        ));
+    }
+
+    #[test]
+    fn picture_policy_requires_node_count_and_pixel_thresholds() {
+        let small_count = TestScene::static_tree(7).build_layer_tree();
+        assert!(matches!(
+            small_count.root_node(),
+            Some(LayerNode::Direct { widget_id: 1, .. })
+        ));
+
+        let mut small_pixels = TestScene::static_tree(8);
+        for node in &mut small_pixels.nodes {
+            node.frame = Rect::new(0.0, 0.0, 10.0, 10.0);
+        }
+        let small_pixels = small_pixels.build_layer_tree();
+        assert!(matches!(
+            small_pixels.root_node(),
+            Some(LayerNode::Direct { widget_id: 1, .. })
+        ));
+    }
+
+    #[test]
+    fn runtime_signals_force_picture_policy_never_for_subtree() {
+        let runtime_signals: [fn(&mut TestNode); 7] = [
+            |node: &mut TestNode| node.has_handler = true,
+            |node: &mut TestNode| node.dynamic = true,
+            |node: &mut TestNode| node.interactive = true,
+            |node: &mut TestNode| node.continuous_pointer = true,
+            |node: &mut TestNode| node.overlay = true,
+            |node: &mut TestNode| node.focusable = true,
+            |node: &mut TestNode| node.scroll = true,
+        ];
+
+        for mark_runtime_signal in runtime_signals {
+            let mut scene = TestScene::static_tree(8);
+            mark_runtime_signal(scene.node_mut(2));
+            let tree = scene.build_layer_tree();
+
+            assert!(matches!(
+                tree.root_node(),
+                Some(LayerNode::Direct { widget_id: 1, .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn clip_nodes_remain_clip_layers_instead_of_picture_layers() {
+        let mut scene = TestScene::static_tree(8);
+        scene.node_mut(1).clip = true;
+        let tree = scene.build_layer_tree();
+
+        assert!(matches!(
+            tree.root_node(),
+            Some(LayerNode::ClipRect { widget_id: 1, .. })
+        ));
     }
 }

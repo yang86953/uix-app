@@ -6,6 +6,13 @@ use crate::core::DirtyRegion;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::NodeId;
 
+/// Picture cache eligibility declared by widget metadata and refined by runtime signals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PicturePolicy {
+    Never,
+    Eligible,
+}
+
 /// 场景绘制契约：LayerTree 通过此 trait 读取节点元数据并下发绘制。
 pub trait ScenePaint {
     fn root_id(&self) -> Option<NodeId>;
@@ -16,6 +23,30 @@ pub trait ScenePaint {
     fn node_dirty(&self, id: NodeId) -> bool;
     fn node_z_index(&self, id: NodeId) -> i32;
     fn node_children(&self, id: NodeId) -> &[NodeId];
+    fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
+        let _ = id;
+        PicturePolicy::Never
+    }
+    fn node_has_semantic_handlers(&self, id: NodeId) -> bool {
+        let _ = id;
+        false
+    }
+    fn node_has_dynamic_content(&self, id: NodeId) -> bool {
+        let _ = id;
+        false
+    }
+    fn node_has_interactive_state(&self, id: NodeId) -> bool {
+        let _ = id;
+        false
+    }
+    fn node_wants_continuous_pointer_move(&self, id: NodeId) -> bool {
+        let _ = id;
+        false
+    }
+    fn node_is_overlay(&self, id: NodeId) -> bool {
+        let _ = id;
+        false
+    }
     fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect>;
     fn dirty_rect(&self, id: NodeId, frame: Rect) -> Rect;
     /// 滚动容器内容偏移（viewport → content），无滚动时返回 `None`。

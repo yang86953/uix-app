@@ -204,10 +204,12 @@ impl WidgetTree {
             .collect();
 
         for (id, should_be_active) in states {
+            let mut mounted_now = false;
             if let Some(node) = self.get_mut(id) {
                 if !node.mounted() {
                     node.set_mounted(true);
                     node.on_mount();
+                    mounted_now = true;
                 }
 
                 if should_be_active && !node.active() {
@@ -217,6 +219,9 @@ impl WidgetTree {
                     node.set_active(false);
                     node.on_inactive();
                 }
+            }
+            if mounted_now {
+                self.register_app_state_snapshot(id);
             }
         }
     }
@@ -553,7 +558,29 @@ impl WidgetTree {
     }
 
     pub fn update(&mut self, dt: f64) -> bool {
-        let _ = dt;
-        false
+        let mut any_active = false;
+        let ids = self.traverse();
+        for id in ids {
+            let Some(frame) = self.get(id).and_then(|node| {
+                node.capabilities()
+                    .contains(crate::ui::traits::WidgetCapabilities::ANIMATION)
+                    .then_some(node.frame())
+            }) else {
+                continue;
+            };
+            let Some(node) = self.get_mut(id) else {
+                continue;
+            };
+            let Some(animation) = node.component_mut().as_animation_mut() else {
+                continue;
+            };
+            let still_active = animation.update_animation(dt);
+            let dirty = animation.animation_dirty_rect(frame);
+            if dirty.w > 0.0 && dirty.h > 0.0 {
+                self.invalidate_paint_rect(id, dirty);
+            }
+            any_active |= still_active;
+        }
+        any_active
     }
 }

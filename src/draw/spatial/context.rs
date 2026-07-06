@@ -432,4 +432,3 @@ impl<'a> SpatialContext<'a> {
 #[cfg(test)]
 #[path = "../../tests/draw/spatial/context.rs"]
 mod tests;
-

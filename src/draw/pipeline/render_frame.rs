@@ -71,6 +71,15 @@ impl FrameRenderer {
         scene: &S,
         input: FrameRenderInput<'_>,
     ) -> FrameRenderOutput {
+        let cur_version = scene.tree_version();
+        if input.rendered_first && input.dirty_region.is_empty() && input.scroll_move.is_none() {
+            return FrameRenderOutput {
+                outcome: RenderOutcome::Idle,
+                inv_source: InvalidationSource::None,
+                tree_version: cur_version,
+            };
+        }
+
         let caps = engine.capabilities();
         let region = if !input.rendered_first
             || input.dirty_region.full_frame
@@ -82,7 +91,6 @@ impl FrameRenderer {
             input.dirty_region.clone()
         };
 
-        let cur_version = scene.tree_version();
         if self.last_tree_version != cur_version {
             self.layer_tree.build(scene);
             self.layer_tree.sweep_orphaned_offscreens(engine);
@@ -225,4 +233,3 @@ fn classify_invalidation(rendered_first: bool, dirty_region: &DirtyRegion) -> In
 #[cfg(test)]
 #[path = "../../tests/draw/pipeline/render_frame.rs"]
 mod tests;
-

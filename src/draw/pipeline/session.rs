@@ -169,4 +169,3 @@ fn resolve_kind(kind: BackendKind) -> BackendKind {
 #[cfg(test)]
 #[path = "../../tests/draw/pipeline/session.rs"]
 mod tests;
-

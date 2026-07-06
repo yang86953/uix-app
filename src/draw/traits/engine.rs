@@ -125,4 +125,3 @@ pub trait GraphicsEngine: 'static {
     }
     fn diagnose_memory(&self) {}
 }
-

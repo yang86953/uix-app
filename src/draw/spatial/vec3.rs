@@ -166,4 +166,3 @@ impl Vec4 {
 #[cfg(test)]
 #[path = "../../tests/draw/spatial/vec3.rs"]
 mod tests;
-

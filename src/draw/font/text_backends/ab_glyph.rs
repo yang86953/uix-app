@@ -248,4 +248,3 @@ impl TextBackend for AbGlyphBackend {
 #[cfg(test)]
 #[path = "../../../tests/draw/font/text_backends/ab_glyph.rs"]
 mod tests;
-

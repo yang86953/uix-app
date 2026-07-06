@@ -58,6 +58,11 @@ impl WidgetManagers {
         self.overrides.remove(&widget_id);
     }
 
+    /// Remove every per-widget override from this tree.
+    pub fn clear_overrides(&mut self) {
+        self.overrides.clear();
+    }
+
     /// Get the effective state manager for a widget (override or default).
     pub fn state_for(&self, widget_id: usize) -> &StateManager {
         self.overrides

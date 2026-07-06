@@ -13,6 +13,7 @@ use crate::draw::traits::GraphicsEngine;
 use crate::native::traits::input::ControlSize;
 use crate::ui::clipboard;
 use crate::ui::{EventResult, KeyCode, KeyMod, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{SnapshotFields, SnapshotSource};
 
 pub fn input_height(size: ControlSize) -> f32 {
     match size {
@@ -547,6 +548,26 @@ impl Input {
             self.value.replace_range(byte_s..byte_e, "");
             self.cursor_char = ss;
             self.selection.set(None);
+        }
+    }
+}
+
+impl SnapshotSource for Input {
+    fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Input {
+            placeholder: self.placeholder.clone(),
+            input_size: self.input_size,
+            disabled: self.disabled,
+            prefix: self.prefix.clone(),
+            suffix: self.suffix.clone(),
+            addon_before: self.addon_before.clone(),
+            addon_after: self.addon_after.clone(),
+            password: self.password,
+            password_visible: self.password_visible,
+            clearable: self.clearable,
+            search: self.search,
+            textarea: self.textarea,
+            textarea_rows: self.textarea_rows,
         }
     }
 }

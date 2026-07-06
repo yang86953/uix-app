@@ -23,4 +23,3 @@ pub fn decode_to_pixels(data: &[u8]) -> Result<(i32, i32, Vec<u32>), Error> {
 #[cfg(test)]
 #[path = "../../tests/draw/image/decode.rs"]
 mod tests;
-

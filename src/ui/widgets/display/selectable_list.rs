@@ -162,6 +162,8 @@ define_widget! {
         Some(SemanticEvent::change(id, value))
     }
 
+    wants_continuous_pointer_move => (&self) -> bool { true }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_layout();
         let border = Color::from_rgb(40, 40, 45);

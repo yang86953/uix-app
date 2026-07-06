@@ -120,7 +120,7 @@ ComponentHandle::emit(event)
 
 测试：FakePlatform 注入与 `handle.emit` 应对同一 handler 产生 **相同** HandlerTable 副作用（见 [testing · 语义断言](testing.md#语义断言)）。
 
-> **实现注记**：`ComponentHandle::emit` 未导出；`WidgetTree::dispatch_semantic` **已有**（`tree_events.rs`）。
+> **实现注记**：`ComponentHandle::emit` 已导出，并将事件 target 归一到 handle 所属组件后调用 `WidgetTree::dispatch_semantic`；`ComponentHandle` 只读 snapshot getter 已接。`AppState` snapshot registry、`get_handle` 与单窗 App 默认注入已接；跨窗共享与 lookup handle 的 live tree 绑定尚未接。
 
 ---
 
@@ -166,12 +166,12 @@ dispatch_semantic_event:
 [demand-driven · 边界感知窄路径](demand-driven.md#pointermove-窄路径)：
 
 1. `drag_gesture.active` 或 `pointer_down_target` → **全 dispatch**
-2. `pos` 仍在 `hovered_widget` 扩大 hit 框内 → 仅更新 `cursor_pos`；**不 hit_test、不 dispatch**
-3. 否则 `hit_test`；`target ≠ hovered_widget` → dispatch + 窄标脏
+2. `pos` 仍在 `hovered_widget` 扩大 hit 框内 → 仅更新 `cursor_pos`；**不 hit_test**；默认 **不 dispatch**
+3. 否则 `hit_test`；`target ≠ hovered_widget` → enter/leave + 窄标脏，并对新 target dispatch
 
-Widget 可 opt-in **`WantsContinuousPointerMove`** trait（#121，默认 false）。实现见 [component · 能力](component.md#能力)。
+Widget 可通过 `EventHandler::wants_continuous_pointer_move` opt-in（#121，默认 false）。实现见 [component · 能力](component.md#能力)。
 
-> **实现注记**：当前每 move 均 dispatch；hover 不变时不标脏。
+> **实现注记**：`tree_events.rs` 已按 #109 接入：pointer capture/drag 路径全 dispatch；hover hit frame 内跳过 `hit_test` 与默认 dispatch；opt-in widget 保留连续 `PointerMove`。
 
 ---
 

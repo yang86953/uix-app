@@ -1,11 +1,18 @@
 //! 应用入口 — 统一 GUI / CLI 生命周期。
 
 use std::cell::{Cell, RefCell};
+use std::sync::{atomic::AtomicBool, Arc};
+use std::time::Duration;
 
-use crate::app::event_loop::run_widget_loop;
+use crate::app::app_handle::{AppHandle, WindowId};
+use crate::app::app_timer::{AppTimerQueue, TimerHandle};
+use crate::app::event_loop::run_window_session_loop_with_system_theme;
+use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
+use crate::app::window_session::WindowSession;
 use crate::core::Point;
+use crate::data::SettingsService;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::traits::GraphicsEngine;
@@ -14,10 +21,10 @@ use crate::draw::SoftwareEngine;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::window::PlatformWindow;
 use crate::native::{create_gpu_context, create_platform};
-use crate::ui::theme::Theme;
-use crate::ui::view::adapter::ViewAdapter;
-use crate::ui::view::{View, ViewNode};
-use crate::ui::{SystemEvent, WidgetCore};
+use crate::ui::theme::{DesignTokens, DynTokens, Theme};
+use crate::ui::traits::TokenProvider;
+use crate::ui::view::ViewNode;
+use crate::ui::{AppState, SystemEvent};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -40,10 +47,17 @@ pub struct App {
     title: String,
     size: (i32, i32),
     theme: Theme,
-    root: Option<ViewNode>,
+    follow_system_theme: bool,
+    app_state: AppState,
+    app_timers: AppTimerQueue,
+    main_thread_queue: MainThreadQueue,
+    handle_alive: Arc<AtomicBool>,
+    root_factory: Option<Arc<dyn Fn() -> ViewNode + Send + Sync>>,
+    on_start: Option<Box<dyn FnOnce(AppHandle) + Send>>,
     on_exit: Option<Box<dyn Fn(&UiEvent) -> bool>>,
     cli: Option<Cli>,
     container: Container,
+    settings_path: Option<String>,
     exit_code: i32,
 }
 
@@ -54,10 +68,17 @@ impl Default for App {
             title: "UIX App".to_string(),
             size: (800, 600),
             theme: Theme::antd_light(),
-            root: None,
+            follow_system_theme: false,
+            app_state: AppState::new(),
+            app_timers: AppTimerQueue::new(),
+            main_thread_queue: MainThreadQueue::new(),
+            handle_alive: Arc::new(AtomicBool::new(true)),
+            root_factory: None,
+            on_start: None,
             on_exit: None,
             cli: None,
             container: Container::new(),
+            settings_path: None,
             exit_code: 0,
         }
     }
@@ -86,9 +107,50 @@ impl App {
         self
     }
 
+    /// 设置是否在运行中跟随 OS 主题变化（默认 false）。
+    pub fn follow_system_theme(mut self, follow: bool) -> Self {
+        self.follow_system_theme = follow;
+        self
+    }
+
+    /// 延迟一次执行 App 级回调；回调在主循环线程执行。
+    pub fn run_after<F>(&self, delay: Duration, f: F) -> TimerHandle
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        self.app_timers.run_after(delay, f)
+    }
+
+    /// 按固定间隔重复执行 App 级回调；`TimerHandle` drop/cancel 后停止。
+    pub fn run_interval<F>(&self, interval: Duration, f: F) -> TimerHandle
+    where
+        F: FnMut() + Send + 'static,
+    {
+        self.app_timers.run_interval(interval, f)
+    }
+
+    /// 投递一次主线程回调；回调在当前窗口 session 的帧内 drain。
+    pub fn post_to_ui<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        self.main_thread_queue.enqueue(f);
+    }
+
+    pub fn on_start<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(AppHandle) + Send + 'static,
+    {
+        self.on_start = Some(Box::new(f));
+        self
+    }
+
     /// 设置根 View（GUI 模式必需）。
-    pub fn root(mut self, view: impl View) -> Self {
-        self.root = Some(ViewAdapter::capture_view(view));
+    pub fn root<F>(mut self, build_root: F) -> Self
+    where
+        F: Fn() -> ViewNode + Send + Sync + 'static,
+    {
+        self.root_factory = Some(Arc::new(build_root));
         self
     }
 
@@ -108,6 +170,22 @@ impl App {
     pub fn cli(mut self, cli: Cli) -> Self {
         self.cli = Some(cli);
         self
+    }
+
+    /// Opt in to loading SettingsService once before `run()` enters its mode.
+    pub fn settings(mut self, path: impl Into<String>) -> Self {
+        self.settings_path = Some(path.into());
+        self
+    }
+
+    pub(crate) fn app_handle(&self) -> AppHandle {
+        AppHandle::new(
+            WindowId::root(),
+            self.app_state.clone(),
+            self.app_timers.clone(),
+            self.main_thread_queue.clone(),
+            self.handle_alive.clone(),
+        )
     }
 
     /// 注册全局单例。
@@ -138,13 +216,36 @@ impl App {
         &self.container
     }
 
+    pub fn app_state(&self) -> AppState {
+        self.app_state.clone()
+    }
+
     // ── 运行 ──────────────────────────────────────────────────────
 
     pub fn run(mut self) -> i32 {
+        if !self.load_configured_settings() {
+            return self.exit_code;
+        }
         match self.mode {
             AppMode::CLI => self.run_cli(),
             AppMode::GUI => self.run_gui(),
         }
+    }
+
+    fn load_configured_settings(&mut self) -> bool {
+        let Some(path) = self.settings_path.as_deref() else {
+            return true;
+        };
+
+        let mut settings = SettingsService::new();
+        if let Err(err) = settings.load(path) {
+            crate::core::log::error_fn(format!("load settings failed: {}", err.short_what()));
+            self.exit_code = 1;
+            return false;
+        }
+
+        self.container.singleton(settings);
+        true
     }
 
     fn run_cli(&mut self) -> i32 {
@@ -158,8 +259,8 @@ impl App {
     }
 
     fn run_gui(mut self) -> i32 {
-        let root_node = match self.root.take() {
-            Some(node) => node,
+        let root_factory = match self.root_factory.take() {
+            Some(factory) => factory,
             None => {
                 crate::core::log::error_fn("GUI 模式须调用 .root() 设置根 View");
                 return 1;
@@ -187,7 +288,7 @@ impl App {
         platform_window.show();
         platform_window.raise();
 
-        let mut engine = match create_preferred_engine(platform_window.as_mut(), w, h) {
+        let engine = match create_preferred_engine(platform_window.as_mut(), w, h) {
             Some(engine) => engine,
             None => return 1,
         };
@@ -196,12 +297,29 @@ impl App {
         font_service.load_default_system_font(14.0, platform.system_info());
         let image_service = ImageService::new();
 
-        let mut tree = ViewAdapter::build_nodes(root_node);
-        if let Some(root) = tree.root_mut() {
-            root.set_frame(crate::core::Rect::new(0.0, 0.0, w as f32, h as f32));
+        let system_theme_tokens = if self.follow_system_theme {
+            let tokens = Arc::new(DynTokens::new(if platform.display().is_dark_mode() {
+                DesignTokens::antd_dark()
+            } else {
+                DesignTokens::antd_light()
+            }));
+            let provider: Arc<dyn TokenProvider> = tokens.clone();
+            self.theme = Theme::from_arc(provider);
+            Some(tokens)
+        } else {
+            None
+        };
+
+        let mut session = WindowSession::from_root_factory(move || root_factory(), engine, w, h);
+        session.set_app_state(self.app_state.clone());
+        session.set_app_timers(self.app_timers.clone());
+        session.set_main_thread_queue(self.main_thread_queue.clone());
+        self.handle_alive
+            .store(true, std::sync::atomic::Ordering::Release);
+        let app_handle = self.app_handle();
+        if let Some(on_start) = self.on_start.take() {
+            on_start(app_handle.clone());
         }
-        tree.layout();
-        tree.mark_full_frame_dirty();
 
         let theme = RefCell::new(self.theme);
         let debug_mode = Cell::new(false);
@@ -210,14 +328,14 @@ impl App {
             .on_exit
             .unwrap_or_else(|| Box::new(|_: &UiEvent| false));
 
-        run_widget_loop(
+        run_window_session_loop_with_system_theme(
             &mut *platform,
             &mut *platform_window,
-            engine.as_mut(),
-            &mut tree,
+            &mut session,
             &font_service,
             &image_service,
             &theme,
+            system_theme_tokens.as_deref(),
             &debug_mode,
             &cursor_pos,
             None,
@@ -225,6 +343,10 @@ impl App {
             |ev| on_exit(ev),
             |_, _, _| {},
         );
+
+        app_handle.mark_closed();
+        self.app_timers.cancel_all();
+        self.main_thread_queue.clear();
 
         0
     }
@@ -434,4 +556,3 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
 #[cfg(test)]
 #[path = "../../tests/app/shell/application.rs"]
 mod tests;
-

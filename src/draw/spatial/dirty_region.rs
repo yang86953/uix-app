@@ -56,4 +56,3 @@ impl DirtyRegion3D {
 #[cfg(test)]
 #[path = "../../tests/draw/spatial/dirty_region.rs"]
 mod tests;
-

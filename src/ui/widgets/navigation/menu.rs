@@ -1,7 +1,5 @@
-//! Menu widget — 横向/纵向导航菜单（与 Nav 侧边栏不同）。
-//!
-//! 支持水平或垂直布局，子菜单项、hover 高亮、active 选中态。
-
+//! Menu widget 鈥?妯悜/绾靛悜瀵艰埅鑿滃崟锛堜笌 Nav 渚ц竟鏍忎笉鍚岋級銆?//!
+//! 鏀寔姘村钩鎴栧瀭鐩村竷灞€锛屽瓙鑿滃崟椤广€乭over 楂樹寒銆乤ctive 閫変腑鎬併€?
 use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
@@ -9,14 +7,14 @@ use crate::draw::Radius;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::{Cell, RefCell};
 
-/// 菜单方向。
+/// 鑿滃崟鏂瑰悜銆?
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MenuMode {
     Horizontal,
     Vertical,
 }
 
-/// 单个菜单项。
+/// 鍗曚釜鑿滃崟椤广€?
 #[derive(Debug, Clone)]
 pub struct MenuItem {
     pub key: String,
@@ -25,7 +23,7 @@ pub struct MenuItem {
     pub disabled: bool,
 }
 
-// Menu — 导航菜单组件。
+// Menu 鈥?瀵艰埅鑿滃崟缁勪欢銆?
 define_widget! {
     pub struct Menu {
         items: Vec<MenuItem>,
@@ -164,6 +162,8 @@ define_widget! {
             .map(|key| SemanticEvent::change(id, key))
     }
 
+    wants_continuous_pointer_move => (&self) -> bool { true }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let primary = ctx.tokens().color_primary();
         let text = ctx.tokens().color_text();
@@ -188,7 +188,7 @@ define_widget! {
                     if is_active {
                         ctx.fill_rect(Rect::new(cx + 8.0, frame.y + self.item_h - 2.0, iw - 16.0, 2.0), primary, None);
                     }
-                    // 文字水平居中：使用 text_center 替代左对齐
+                    // 鏂囧瓧姘村钩灞呬腑锛氫娇鐢?text_center 鏇夸唬宸﹀榻?                    ctx.text_center(&item.label, item_rect, item_c, 14.0);
                     ctx.text_center(&item.label, item_rect, item_c, 14.0);
                     cx += iw;
                 }
@@ -312,4 +312,3 @@ impl Menu {
 #[cfg(test)]
 #[path = "../../../tests/ui/widgets/navigation/menu.rs"]
 mod tests;
-

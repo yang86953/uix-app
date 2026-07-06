@@ -43,7 +43,9 @@ fn main() {
     App::new()
         .title("UIX Counter")
         .size(420, 260)
-        .root(
+        .root(move || {
+            let label_count = label_count.clone();
+            let button_count = button_count.clone();
             column([
                 dynamic_label(move || format!("当前值: {}", label_count.get())).font_size(24.0),
                 button("+1").primary().on_click(move || {
@@ -51,8 +53,8 @@ fn main() {
                 }),
             ])
             .gap(12.0)
-            .padding(16.0),
-        )
+            .padding(16.0)
+        })
         .run();
 }
 ```

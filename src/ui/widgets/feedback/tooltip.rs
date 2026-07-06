@@ -83,6 +83,13 @@ define_widget! {
         }
     }
 
+    active_timer => (&self) -> Option<(u64, std::time::Duration)> {
+        (self.pending && self.delay_ms > 0).then_some((
+            u64::from(self.timer_id),
+            std::time::Duration::from_millis(u64::from(self.delay_ms)),
+        ))
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if !self.visible {
             return;

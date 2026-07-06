@@ -6,6 +6,7 @@
 //! # State 鑷姩鑴忔爣璁?//!
 //! - View 鏋勫缓鏈燂細`begin_state_capture` 鎹曡幏 `State::new`锛坄capture_view` / `with_view_context`锛?//! - layout 鍚庯細`bind_reactive_widget_states` 鎺㈡祴 `dynamic_label` 闂寘渚濊禆骞剁粦瀹?Paint 澶辨晥
 //! - 鍏滃簳锛歚bind_orphan_pending_states` 灏嗘湭鍏宠仈 State 缁戝埌鏍硅妭鐐?
+use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
@@ -23,6 +24,17 @@ impl ViewAdapter {
     pub fn capture_view(view: impl View) -> ViewNode {
         begin_state_capture();
         let node = view.build();
+        end_state_capture();
+        node
+    }
+
+    /// Builds a ViewNode while capturing State bindings.
+    pub fn capture_root<F>(build_root: F) -> ViewNode
+    where
+        F: FnOnce() -> ViewNode,
+    {
+        begin_state_capture();
+        let node = build_root();
         end_state_capture();
         node
     }
@@ -135,6 +147,7 @@ impl ViewAdapter {
         } = node;
         let widget = Self::apply_style(widget, &style);
         Self::patch_widget(tree, id, widget);
+        tree.register_app_state_snapshot(id);
 
         if let Some(current) = tree.get_mut(id) {
             current.set_key(key.map(Into::into));
@@ -143,15 +156,109 @@ impl ViewAdapter {
             }
         }
 
-        tree.handler_table().clear_component(id);
-        for handler in handlers {
-            tree.handler_table().register(id, handler);
-        }
+        Self::reconcile_handlers(tree, id, handlers);
 
         tree.invalidate_paint(id);
         tree.push_layout_invalidation(id);
         tree.propagate_layout_invalidation(id);
         Self::reconcile_children(tree, id, children);
+    }
+
+    fn reconcile_handlers(tree: &mut WidgetTree, id: WidgetId, handlers: Vec<HandlerRegistration>) {
+        let next_signatures = tree
+            .get(id)
+            .map(|current| {
+                Self::resolve_handler_signatures(current.handler_signatures(), &handlers)
+            })
+            .unwrap_or_else(|| {
+                handlers
+                    .iter()
+                    .map(|handler| handler.authored_signature())
+                    .collect()
+            });
+        let changed = tree.get(id).is_none_or(|current| {
+            !Self::handler_signatures_are_stable(current.handler_signatures(), &next_signatures)
+                || Self::handler_signature_groups(current.handler_signatures())
+                    != Self::handler_signature_groups(&next_signatures)
+        });
+        if !changed {
+            return;
+        }
+
+        tree.handler_table().clear_component(id);
+        if let Some(current) = tree.get_mut(id) {
+            current.set_handler_signatures(next_signatures);
+        }
+        for handler in handlers {
+            tree.handler_table().register(id, handler);
+        }
+    }
+
+    fn resolve_handler_signatures(
+        current: &[HandlerSignature],
+        handlers: &[HandlerRegistration],
+    ) -> Vec<HandlerSignature> {
+        let mut seen_by_kind = HashMap::new();
+        handlers
+            .iter()
+            .map(|handler| {
+                let mut next = handler.signature();
+                if next.generation.is_some() || next.capture_fingerprint.is_none() {
+                    return next;
+                }
+
+                let occurrence = seen_by_kind.entry(next.kind).or_insert(0);
+                let current_signature =
+                    Self::nth_handler_signature(current, next.kind, *occurrence);
+                *occurrence += 1;
+
+                next.generation = Some(match current_signature {
+                    Some(current)
+                        if current.capture_fingerprint == next.capture_fingerprint
+                            && current.generation.is_some() =>
+                    {
+                        current.generation.unwrap_or(0)
+                    }
+                    Some(current) => current.generation.unwrap_or(0).saturating_add(1),
+                    None => 0,
+                });
+                next
+            })
+            .collect()
+    }
+
+    fn nth_handler_signature(
+        signatures: &[HandlerSignature],
+        kind: SemanticKind,
+        occurrence: usize,
+    ) -> Option<&HandlerSignature> {
+        signatures
+            .iter()
+            .filter(|signature| signature.kind == kind)
+            .nth(occurrence)
+    }
+
+    fn handler_signature_groups(
+        signatures: &[HandlerSignature],
+    ) -> HashMap<SemanticKind, Vec<Option<u32>>> {
+        let mut groups = HashMap::new();
+        for signature in signatures {
+            groups
+                .entry(signature.kind)
+                .or_insert_with(Vec::new)
+                .push(signature.generation);
+        }
+        groups
+    }
+
+    fn handler_signatures_are_stable(
+        current: &[HandlerSignature],
+        next: &[HandlerSignature],
+    ) -> bool {
+        current
+            .iter()
+            .all(|signature| signature.generation.is_some())
+            && next.iter().all(|signature| signature.generation.is_some())
     }
 
     fn patch_widget(tree: &mut WidgetTree, id: WidgetId, widget: Box<dyn WidgetComponent>) {
@@ -304,4 +411,3 @@ where
 #[cfg(test)]
 #[path = "../../tests/ui/view/adapter.rs"]
 mod tests;
-

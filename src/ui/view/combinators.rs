@@ -19,6 +19,7 @@ use crate::ui::style::{DisplayMode, Style};
 use crate::ui::view::{View, ViewNode};
 
 use crate::core::{Rect, Size};
+use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::InvalidationQueueHandle;
 use crate::ui::state::{drain_pending_state_binds, StatePaintBind};
@@ -252,8 +253,11 @@ impl DynamicLabel {
         widget_id: WidgetId,
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
+        reconcile_key: usize,
+        reconcile: Arc<dyn Fn() + Send + Sync>,
     ) {
         for source in &self.state_sources {
+            source.bind_reconcile_site(reconcile_key, reconcile.clone());
             source.bind_paint(widget_id, queue.clone(), rect);
         }
     }
@@ -279,6 +283,12 @@ impl WidgetComponent for DynamicLabel {
         c.insert(WidgetCapabilities::LAYOUT);
         c.insert(WidgetCapabilities::RENDER);
         c
+    }
+    fn picture_policy(&self) -> PicturePolicy {
+        PicturePolicy::Never
+    }
+    fn has_dynamic_content(&self) -> bool {
+        true
     }
     fn as_layout(&self) -> Option<&dyn WidgetLayout> {
         Some(self)
@@ -490,4 +500,3 @@ pub fn input() -> InputBuilder {
 #[cfg(test)]
 #[path = "../../tests/ui/view/combinators.rs"]
 mod tests;
-

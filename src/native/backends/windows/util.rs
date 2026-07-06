@@ -241,4 +241,3 @@ extern "system" {
 #[cfg(test)]
 #[path = "../../../tests/native/backends/windows/util.rs"]
 mod tests;
-

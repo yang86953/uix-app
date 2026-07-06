@@ -154,7 +154,7 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll。
 
 > Scroll offset 变更优先标 **`Invalidation::Composite`** + `scroll_region` memmove（#107）；框架在 ScrollView 内 **自动** 写入，App 不介入。
 
-> **实现注记**：Composite scroll 尚未接入 ScrollView；当前仍走 Paint invalidate。
+> **实现注记**：Wheel → ScrollView 已写入 `Invalidation::Composite` 并接 `scroll_region` memmove；其他非 Wheel 滚动来源仍待逐项接入。
 
 ---
 

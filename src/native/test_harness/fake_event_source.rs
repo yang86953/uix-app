@@ -6,6 +6,7 @@
 use crate::native::shared::OsEventSource;
 use crate::native::traits::event::UiEvent;
 use std::collections::VecDeque;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Default)]
 pub struct FakeEventSourceState {
@@ -15,6 +16,12 @@ pub struct FakeEventSourceState {
     pub processed: Vec<UiEvent>,
     /// dispatch 方法返回 false（模拟平台退出）
     pub should_exit: bool,
+    pub dispatch_pending_calls: usize,
+    pub dispatch_blocking_calls: usize,
+    pub dispatch_timeout_calls: usize,
+    pub dispatch_timeout_durations: Vec<Duration>,
+    pub exit_after_blocking_calls: Option<usize>,
+    pub exit_after_timeout_calls: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -56,6 +63,12 @@ impl FakeEventSource {
         self.state.events.clear();
         self.state.processed.clear();
         self.state.should_exit = false;
+        self.state.dispatch_pending_calls = 0;
+        self.state.dispatch_blocking_calls = 0;
+        self.state.dispatch_timeout_calls = 0;
+        self.state.dispatch_timeout_durations.clear();
+        self.state.exit_after_blocking_calls = None;
+        self.state.exit_after_timeout_calls = None;
     }
 }
 
@@ -67,14 +80,32 @@ impl Default for FakeEventSource {
 
 impl OsEventSource for FakeEventSource {
     fn dispatch_pending(&mut self) -> bool {
+        self.state.dispatch_pending_calls += 1;
         !self.state.should_exit
     }
 
     fn dispatch_blocking(&mut self) -> bool {
+        self.state.dispatch_blocking_calls += 1;
+        if self
+            .state
+            .exit_after_blocking_calls
+            .is_some_and(|limit| self.state.dispatch_blocking_calls >= limit)
+        {
+            self.state.should_exit = true;
+        }
         !self.state.should_exit
     }
 
-    fn dispatch_timeout(&mut self, _timeout: std::time::Duration) -> bool {
+    fn dispatch_timeout(&mut self, timeout: Duration) -> bool {
+        self.state.dispatch_timeout_calls += 1;
+        self.state.dispatch_timeout_durations.push(timeout);
+        if self
+            .state
+            .exit_after_timeout_calls
+            .is_some_and(|limit| self.state.dispatch_timeout_calls >= limit)
+        {
+            self.state.should_exit = true;
+        }
         !self.state.should_exit
     }
 

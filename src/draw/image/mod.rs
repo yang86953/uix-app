@@ -219,4 +219,3 @@ pub fn fit_dst_rect(src_w: i32, src_h: i32, bounds: Rect) -> Rect {
 #[cfg(test)]
 #[path = "../../tests/draw/image/mod.rs"]
 mod tests;
-

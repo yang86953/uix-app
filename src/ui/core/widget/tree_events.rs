@@ -139,7 +139,11 @@ impl WidgetTree {
                 }
                 let target = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
                 self.pointer_down_target = target;
-                // 记录拖拽起始状态
+                self.managers_mut().interaction.set_pressed_widget(target);
+                self.managers_mut()
+                    .drag
+                    .begin_gesture(target, *pos, *button, *mods);
+                // 旧字段暂作为兼容镜像，手势事实源在 DragManager。
                 self.drag_gesture.potential = true;
                 self.drag_gesture.start_pos = *pos;
                 self.drag_gesture.last_pos = *pos;
@@ -169,10 +173,15 @@ impl WidgetTree {
                 }
             }
             SystemEvent::PointerUp { pos, button, mods } => {
-                let hold = self.pointer_down_target;
+                let hold = self
+                    .managers()
+                    .interaction
+                    .pressed_widget()
+                    .or(self.pointer_down_target);
                 // 如果拖拽处于活跃状态，发射 DragEnd 到拖拽目标
-                if self.drag_gesture.active {
-                    if let Some(target) = self.drag_gesture.target {
+                if self.managers().drag.is_dragging() || self.drag_gesture.active {
+                    if let Some(target) = self.managers().drag.target().or(self.drag_gesture.target)
+                    {
                         self.invalidate_paint(target);
                         let drag_end = SystemEvent::DragEnd {
                             pos: *pos,
@@ -182,8 +191,10 @@ impl WidgetTree {
                         let _ = self.dispatch_to(target, &drag_end);
                     }
                 }
+                self.managers_mut().drag.end_drag();
                 self.drag_gesture.reset();
                 self.pointer_down_target = None;
+                self.managers_mut().interaction.set_pressed_widget(None);
                 let hit = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
                 let mut result = EventResult::NotHandled;
                 if let Some(t) = hit {
@@ -220,19 +231,23 @@ impl WidgetTree {
             }
             SystemEvent::PointerMove { pos, mods } => {
                 // 拖拽手势检测：potential → active 转换
-                if self.drag_gesture.potential && !self.drag_gesture.active {
-                    let dx = pos.x - self.drag_gesture.start_pos.x;
-                    let dy = pos.y - self.drag_gesture.start_pos.y;
+                if self.managers().drag.is_potential() && !self.managers().drag.is_dragging() {
+                    let start_pos = self.managers().drag.start_pos();
+                    let dx = pos.x - start_pos.x;
+                    let dy = pos.y - start_pos.y;
                     // 5px 阈值：超出才视为拖拽开始
                     if dx.abs() > 5.0 || dy.abs() > 5.0 {
+                        self.managers_mut().drag.activate_gesture();
                         self.drag_gesture.active = true;
                         self.drag_gesture.potential = false;
                         // 发射 DragStart 到拖拽目标
-                        if let Some(target) = self.drag_gesture.target {
+                        if let Some(target) =
+                            self.managers().drag.target().or(self.drag_gesture.target)
+                        {
                             self.invalidate_paint(target);
                             let drag_start = SystemEvent::DragStart {
                                 pos: *pos,
-                                button: self.drag_gesture.button,
+                                button: self.managers().drag.button(),
                                 mods: *mods,
                             };
                             let _ = self.dispatch_to(target, &drag_start);
@@ -240,13 +255,12 @@ impl WidgetTree {
                     }
                 }
                 // 拖拽进行中：发射 DragMove
-                if self.drag_gesture.active {
-                    if let Some(target) = self.drag_gesture.target {
+                if self.managers().drag.is_dragging() {
+                    if let Some(target) = self.managers().drag.target().or(self.drag_gesture.target)
+                    {
                         self.invalidate_paint(target);
-                        let delta = Point::new(
-                            pos.x - self.drag_gesture.last_pos.x,
-                            pos.y - self.drag_gesture.last_pos.y,
-                        );
+                        let last_pos = self.managers().drag.last_pos();
+                        let delta = Point::new(pos.x - last_pos.x, pos.y - last_pos.y);
                         let drag_move = SystemEvent::DragMove {
                             pos: *pos,
                             delta,
@@ -255,11 +269,48 @@ impl WidgetTree {
                         let _ = self.dispatch_to(target, &drag_move);
                     }
                 }
+                if self.managers().drag.is_dragging() || self.managers().drag.is_potential() {
+                    self.managers_mut().drag.update_drag(*pos);
+                }
                 self.drag_gesture.last_pos = *pos;
 
+                if let Some(drag_target) = self
+                    .managers()
+                    .interaction
+                    .pressed_widget()
+                    .or(self.pointer_down_target)
+                {
+                    self.invalidate_paint(drag_target);
+                    let result = self.dispatch_to(drag_target, event);
+                    self.rebuild_widget_overlays();
+                    return result;
+                }
+
+                let current_hover = self
+                    .managers()
+                    .interaction
+                    .hovered_widget()
+                    .or(self.hovered_widget);
+
+                if let Some(hovered) = current_hover {
+                    if self.pointer_inside_widget_hit_frame(hovered, *pos) {
+                        let result = if self
+                            .get(hovered)
+                            .is_some_and(|node| node.wants_continuous_pointer_move())
+                        {
+                            self.dispatch_to(hovered, event)
+                        } else {
+                            EventResult::NotHandled
+                        };
+                        self.rebuild_widget_overlays();
+                        return result;
+                    }
+                }
+
+                let old_hover = current_hover;
                 let new_hover = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
-                if new_hover != self.hovered_widget {
-                    if let Some(old) = self.hovered_widget {
+                if new_hover != current_hover {
+                    if let Some(old) = current_hover {
                         let _ = self.dispatch_to(old, &SystemEvent::PointerLeave);
                         self.invalidate_paint(old);
                     }
@@ -268,17 +319,20 @@ impl WidgetTree {
                         self.invalidate_paint(new);
                     }
                     self.hovered_widget = new_hover;
-                }
-                // 拖拽期间同时分发 PointerMove 给 pointer_down_target
-                // （支持文字选中、滑动条拖拽等跨边界操作）
-                // 注意：在拖拽活跃时，PointerMove 原始事件仍然分发，
-                // 以便使用 pointer_down_target 的 scrollbar/slider 等仍能工作
-                if let Some(drag_target) = self.pointer_down_target {
-                    self.invalidate_paint(drag_target);
-                    let _ = self.dispatch_to(drag_target, event);
+                    self.managers_mut()
+                        .interaction
+                        .set_hovered_widget(new_hover);
                 }
                 let result = if let Some(t) = new_hover {
-                    self.dispatch_to(t, event)
+                    if new_hover != old_hover
+                        || self
+                            .get(t)
+                            .is_some_and(|node| node.wants_continuous_pointer_move())
+                    {
+                        self.dispatch_to(t, event)
+                    } else {
+                        EventResult::NotHandled
+                    }
                 } else {
                     EventResult::NotHandled
                 };
@@ -289,16 +343,16 @@ impl WidgetTree {
                 let target = self
                     .overlay_target_at(*pos)
                     .or_else(|| self.hit_test(*pos))
+                    .or(self.managers().interaction.hovered_widget())
                     .or(self.hovered_widget)
                     .or(self.root_id);
                 if let Some(t) = target {
                     // 捕获阶段：ScrollView 等祖先先处理；Handled 时由 capture 侧登记动画与视口重绘，
                     // 避免仅 mark_dirty 子节点导致 strip 局部清除后内容消失。
-                    if self.capture_to(t, event) == EventResult::Handled {
+                    if self.capture_wheel_to(t, event) == EventResult::Handled {
                         return EventResult::Handled;
                     }
-                    self.invalidate_paint(t);
-                    self.dispatch_to(t, event)
+                    self.dispatch_wheel_to(t, event)
                 } else {
                     EventResult::NotHandled
                 }
@@ -448,7 +502,14 @@ impl WidgetTree {
                 }
             }
             SystemEvent::Timer { .. } => {
-                let target = self.hovered_widget.or(self.focused_widget).or(self.root_id);
+                let target = self
+                    .managers()
+                    .interaction
+                    .hovered_widget()
+                    .or(self.hovered_widget)
+                    .or(self.managers().focus.focused_widget())
+                    .or(self.focused_widget)
+                    .or(self.root_id);
                 if let Some(target) = target {
                     let result = self.dispatch_to(target, event);
                     self.rebuild_widget_overlays();
@@ -541,6 +602,103 @@ impl WidgetTree {
     /// 捕获阶段：从 root 到 target 的路径上依次分发事件（不含 target 自身）。
     /// 任意节点返回 `Handled` 则终止捕获并阻止后续冒泡阶段。
     /// 用于 Modal 外部点击拦截、ScrollView 滚动拦截、全局快捷键等场景。
+    fn pointer_inside_widget_hit_frame(&self, target: WidgetId, pos: Point) -> bool {
+        let Some(node) = self.get(target) else {
+            return false;
+        };
+        if !node.visible() {
+            return false;
+        }
+
+        let pos = match self.cumulative_scroll_offset(target) {
+            Some((sx, sy)) => Point::new(pos.x + sx, pos.y + sy),
+            None => pos,
+        };
+        node.hit_test_frame(node.frame()).contains(pos)
+    }
+
+    fn capture_wheel_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+        let mut path = Vec::new();
+        let mut current = Some(target);
+        while let Some(id) = current {
+            path.push(id);
+            current = self.get(id).and_then(|node| node.parent());
+        }
+        path.reverse();
+        if path.last() == Some(&target) {
+            path.pop();
+        }
+
+        for id in path {
+            let frame = match self.get(id) {
+                Some(node) => node.frame(),
+                None => continue,
+            };
+            let translated = Self::translate_pointer_event(event, frame);
+            let result = {
+                let node = match self.get_mut(id) {
+                    Some(node) => node,
+                    None => continue,
+                };
+                node.on_event(&translated)
+            };
+            if result == EventResult::Handled {
+                return self.finish_scroll_aware_dispatch(id, &translated);
+            }
+        }
+        EventResult::NotHandled
+    }
+
+    fn dispatch_wheel_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+        let scroll_off = self.cumulative_scroll_offset(target);
+        let mut current = Some(target);
+        while let Some(id) = current {
+            let frame = match self.get(id) {
+                Some(node) => node.frame(),
+                None => return EventResult::NotHandled,
+            };
+            let translated = Self::translate_pointer_event(event, frame);
+            let compensated = match scroll_off {
+                Some((sx, sy)) => Self::add_offset_to_event(translated, sx, sy),
+                None => translated,
+            };
+            let (result, parent_id) = {
+                let node = match self.get_mut(id) {
+                    Some(node) => node,
+                    None => return EventResult::NotHandled,
+                };
+                let result = node.on_event(&compensated);
+                (result, node.parent())
+            };
+            if result == EventResult::Handled {
+                return self.finish_scroll_aware_dispatch(id, &compensated);
+            }
+            current = parent_id;
+        }
+        EventResult::NotHandled
+    }
+
+    fn finish_scroll_aware_dispatch(&mut self, id: WidgetId, event: &SystemEvent) -> EventResult {
+        if !self.register_scroll_composite(id) {
+            self.invalidate_paint(id);
+        }
+        let semantic = self.get(id).and_then(|node| node.semantic_event(id, event));
+        if let Some(event) = semantic {
+            let _ = self.dispatch_semantic(event);
+        }
+        EventResult::Handled
+    }
+
+    fn register_scroll_composite(&mut self, id: WidgetId) -> bool {
+        let Some((dx, dy)) = self.get(id).and_then(|node| node.scroll_delta_for_dirty()) else {
+            return false;
+        };
+        let Some(frame) = self.get(id).map(|node| node.frame()) else {
+            return false;
+        };
+        self.push_scroll_composite(frame, dx, dy)
+    }
+
     fn capture_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
         // 收集从 root 到 target 的祖先路径（不含 target）
         let mut path = Vec::new();
@@ -667,6 +825,7 @@ impl WidgetTree {
             let _ = self.dispatch_to(old, &SystemEvent::FocusOut);
         }
         self.focused_widget = new_focus;
+        self.managers_mut().focus.set_focused_widget(new_focus);
         if let Some(new) = new_focus {
             self.invalidate_paint(new);
             let _ = self.dispatch_to(new, &SystemEvent::FocusIn);

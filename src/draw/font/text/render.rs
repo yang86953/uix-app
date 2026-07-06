@@ -431,4 +431,3 @@ impl<'a> TextRenderService<'a> {
 #[cfg(test)]
 #[path = "../../../tests/draw/font/text/render.rs"]
 mod tests;
-
