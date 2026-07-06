@@ -2,7 +2,21 @@
 
 Rust 跨平台原生桌面 UI 框架（Windows / Linux）。`use uix::prelude::*;` 为推荐入口。
 
-设计文档：[`docs/Main.md`](docs/Main.md) · 决策 [`docs/decisions.md`](docs/decisions.md) · 规则 [`AGENTS.md`](AGENTS.md)
+## 核心理念
+
+> **用最少资源，做最好效果。**
+
+这是 UIX **最重要的一条规则**（[#105](docs/decisions.md#d105)，Demand-Driven Zero Idle Work）：有触发才工作，无 pending 则休眠；变化尽量窄，效果不妥协。统领六域依赖、主循环、渲染、事件与 API 设计——冲突时 **以本规则为准**。
+
+**零维护**（[#130](docs/decisions.md#d130)）：Picture、Registry 托管、标脏、Theme 由框架自动；App 用 State/View + **Timer API**（[#132](docs/decisions.md#d132)）、**`post_to_ui`**（[#133](docs/decisions.md#d133)）与 **`on_start`**（[#140](docs/decisions.md#d140)）注入运行中句柄。
+
+细则 → [`docs/systems/demand-driven.md`](docs/systems/demand-driven.md) · [`AGENTS.md`](AGENTS.md)
+
+> **面向 AI Agent**：阅读顺序：
+> 1. **本页核心理念** + [`demand-driven.md`](docs/systems/demand-driven.md)
+> 2. [`AGENTS.md`](AGENTS.md) — 最高规则 + 架构硬约束（**编码前必读**）
+> 3. [`docs/Main.md`](docs/Main.md) — 架构地图 + 实现进度
+> 4. 按需 `docs/systems/*.md` · [`decisions.md`](docs/decisions.md) · [`glossary.md`](docs/glossary.md)
 
 ## 快速开始
 
@@ -55,4 +69,4 @@ fn main() {
 | app | `uix::app::*` | App、Window、CLI |
 | data | `uix::data::*` | SettingsService |
 
-架构约束见 [`AGENTS.md`](AGENTS.md)。
+架构全貌 → [`docs/Main.md`](docs/Main.md) · 最高规则 → [`AGENTS.md`](AGENTS.md)
