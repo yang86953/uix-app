@@ -165,8 +165,28 @@ impl WidgetTree {
         self.layout_viewports();
         // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
         self.bind_reactive_widget_states();
+        self.rebuild_widget_overlays();
         self.reconcile_lifecycle_after_layout();
         crate::core::log::debug_fn("[Layout] layout() done");
+    }
+
+    pub(crate) fn rebuild_widget_overlays(&mut self) {
+        let entries: Vec<_> = self
+            .traverse()
+            .into_iter()
+            .filter_map(|id| {
+                let node = self.get(id)?;
+                if !node.visible() {
+                    return None;
+                }
+                node.overlay_entry(id, node.frame())
+            })
+            .collect();
+
+        self.overlay_stack.clear();
+        for entry in entries {
+            self.overlay_stack.push_entry(entry);
+        }
     }
 
     pub(crate) fn reconcile_lifecycle_after_layout(&mut self) {

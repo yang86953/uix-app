@@ -215,6 +215,11 @@ impl BoxedWidget {
             .map(|r| r.dirty_rect(frame))
             .unwrap_or(frame)
     }
+    pub fn overlay_entry(&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        self.component()
+            .as_render()
+            .and_then(|r| r.overlay_entry(id, frame))
+    }
     pub fn scroll_delta(&self, frame: Rect) -> Option<(f32, f32)> {
         self.component()
             .as_event()

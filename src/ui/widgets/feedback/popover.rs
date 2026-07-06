@@ -116,6 +116,20 @@ define_widget! {
         let pop = Rect::new(px, py, pw, ph);
         frame.union(&pop)
     }
+
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        if !self.visible {
+            return None;
+        }
+
+        let (pw, ph) = (220.0, 100.0);
+        let (px, py) = self.popup_position(frame, pw, ph);
+        Some(
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
+                .bounds(Rect::new(px, py, pw, ph))
+                .z_index(900),
+        )
+    }
 }
 
 impl Default for Popover {

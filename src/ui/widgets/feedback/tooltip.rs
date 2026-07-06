@@ -117,6 +117,23 @@ define_widget! {
         let (tx, ty) = tooltip_origin(frame, self.placement, text_w, text_h, gap);
         frame.union(&Rect::new(tx, ty, text_w, text_h))
     }
+
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        if !self.visible {
+            return None;
+        }
+
+        let text_w = self.text.len() as f32 * 7.5 + 16.0;
+        let text_h = 26.0;
+        let arrow_sz = 6.0;
+        let gap = if self.arrow { arrow_sz + 2.0 } else { 4.0 };
+        let (tx, ty) = tooltip_origin(frame, self.placement, text_w, text_h, gap);
+        Some(
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Tooltip)
+                .bounds(Rect::new(tx, ty, text_w, text_h))
+                .z_index(1100),
+        )
+    }
 }
 
 fn tooltip_origin(

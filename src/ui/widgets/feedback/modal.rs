@@ -137,6 +137,18 @@ define_widget! {
         }
     }
 
+    overlay_entry => (&self, id: crate::ui::WidgetId, _frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        if self.visible && self.overlay {
+            Some(
+                crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Modal)
+                    .bounds(Rect::new(-2000.0, -2000.0, 4000.0, 4000.0))
+                    .z_index(1000),
+            )
+        } else {
+            None
+        }
+    }
+
     layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], tree: &WidgetTree)
         -> Vec<(crate::ui::WidgetId, Rect)>
     {
