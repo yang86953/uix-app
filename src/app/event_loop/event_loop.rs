@@ -295,6 +295,7 @@ where
 
     let running = Cell::new(true);
     active_work.sync_app_timers(app_timers.deadlines());
+    let mut ime_session = None;
 
     let collect = |ev: &UiEvent| {
         match ev.type_ {
@@ -407,6 +408,7 @@ where
                 _ => {}
             }
 
+            sync_ime_session(tree, active_work, &mut ime_session, &ev);
             if let Some(we) = map_event(&ev) {
                 tree.dispatch_event(&we);
             }
@@ -631,7 +633,7 @@ fn sync_animation_deadline(
 }
 
 fn wait_loop_state(active_work: &ActiveWorkRegistry) -> WindowLoopState {
-    if active_work.next_deadline().is_some() {
+    if !active_work.is_empty() {
         WindowLoopState::RegisteredActive
     } else {
         WindowLoopState::DeepIdle
@@ -651,6 +653,34 @@ fn has_layout_work(tree: &WidgetTree) -> bool {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .has_layout()
+}
+
+fn sync_ime_session(
+    tree: &WidgetTree,
+    active_work: &mut ActiveWorkRegistry,
+    current_session: &mut Option<usize>,
+    ev: &UiEvent,
+) {
+    match ev.type_ {
+        UiEventType::ImeCompositionStart | UiEventType::ImeCompositionUpdate => {
+            let Some(target) = tree.managers().focus.focused_widget() else {
+                return;
+            };
+            if *current_session != Some(target) {
+                if let Some(previous) = *current_session {
+                    active_work.unregister(ActiveWorkKind::ImeSession(previous));
+                }
+                *current_session = Some(target);
+            }
+            active_work.register_open(ActiveWorkKind::ImeSession(target));
+        }
+        UiEventType::ImeCompositionEnd | UiEventType::WindowBlur => {
+            if let Some(target) = current_session.take() {
+                active_work.unregister(ActiveWorkKind::ImeSession(target));
+            }
+        }
+        _ => {}
+    }
 }
 
 fn set_loop_state(state_slot: &mut Option<&mut WindowLoopState>, state: WindowLoopState) {

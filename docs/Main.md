@@ -281,17 +281,17 @@ flowchart TB
 | 多窗口 | v1 多窗；共享 AppState + Theme | `run_gui` 仅单窗；native 已支持多窗 | [application · 多窗](systems/application.md#appstate--多窗--settings) · [#93](decisions.md#d93) |
 | Reconcile 热更新 | `reconcile` 增量更新 WidgetTree | 单窗主循环已接帧末 reconcile；稳定 handler signature 与 fingerprint→generation 路径已接；多窗路由与自动 handler capture 收集待接 | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) · [Reconciler](systems/view-reactive.md#reconciler) |
 | Manager 横切 | `WidgetManagers` 注入 WidgetTree | `WidgetTree` 已持有 per-tree `WidgetManagers`；`FocusManager` 已记录当前焦点与 Tab 顺序并驱动焦点导航；`InteractionManager` 已记录 hovered / pressed widget 并作为事件目标解析的优先状态源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset 并驱动基础 DragStart / DragMove / DragEnd 热路径；旧字段保留为兼容镜像；`state_for(id)` / `text_for(id)` override 会随节点移除清理 | [component · Manager](systems/component.md#manager-横切) |
-| AnimationRegistry | Registry tick + `tree.update(dt)` | `WidgetAnimation` 能力、`tree.update(dt)` 窄 Paint 标脏、单窗下一帧 deadline 与 `Spin` 内置动画源已接入；其他内置组件动画源与 IME 待接 | [component · 动画](systems/component.md#动画) · [rendering · 动画帧](systems/rendering.md#动画帧) |
+| AnimationRegistry | Registry tick + `tree.update(dt)` | `WidgetAnimation` 能力、`tree.update(dt)` 窄 Paint 标脏、单窗下一帧 deadline 与 `Spin` 内置动画源已接入；其他内置组件动画源待接 | [component · 动画](systems/component.md#动画) · [rendering · 动画帧](systems/rendering.md#动画帧) |
 | Composite scroll | `Invalidation::Composite` + scroll_region memmove | Wheel → ScrollView 已写 Composite exposed strip 并接 `scroll_region` memmove；其他滚动来源待逐项接入 | [rendering · 管线与失效](systems/rendering.md#管线与失效) |
 | App 内置 Settings load（opt-in） | builder 配置 path 后 `run()` 前代调 `load()` | `App::settings(path)` 已接；`run()` 前加载一次并注册 `SettingsService` 到 App DI；默认不 load/save | [data · App 集成](systems/data.md#app-集成) |
 | 主循环 DI | Container 可在运行时 resolve | 未注入 `run_widget_loop`；DI 限启动 / CLI | [application · DI](systems/application.md#cli-与-di) |
 | 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 `tick_effects`；RegisteredActive deadline wait 骨架已接；多窗待接 | [demand-driven · 主循环](systems/demand-driven.md#主循环状态机) · [#106](decisions.md#d106) [#117](decisions.md#d117) |
-| ActiveWorkRegistry | register / wait_until / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due`、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管与 Animation 下一帧 deadline；IME 待接 | [#115](decisions.md#d115) |
+| ActiveWorkRegistry | register / wait_until / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due`、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、Animation 下一帧 deadline 与 IME composition session 无 deadline 托管 | [#115](decisions.md#d115) |
 | 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；多窗路由未接 | [#116](decisions.md#d116) |
 | 帧内 reconcile | 帧末一次 + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入；同帧多次更新取最后一次并在 layout 前 reconcile；多窗路由待接 | [#118](decisions.md#d118) |
 | 每窗独立零闲置 | 每窗独立三态 | 单窗 WindowSession 已写回三态；多窗独立状态未接 | [#110](decisions.md#d110) |
 | PicturePolicy 自动推断 | 元数据+信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 首批 Eligible，默认 Never | [#122](decisions.md#d122) [#129](decisions.md#d129) |
-| Registry 框架托管 | 内置/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已托管；其他内置组件动画源 / IME 接线未完成 | [#124](decisions.md#d124) |
+| Registry 框架托管 | 内置/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 已托管；其他内置组件动画源待接 | [#124](decisions.md#d124) |
 | follow_system_theme | opt-in；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](decisions.md#d125) |
 | App Timer API | run_after / run_interval | `App` / 单窗 `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出并接入单窗 session；多窗路由待接 | [#132](decisions.md#d132) |
 | post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + 单窗 `AppHandle::post_to_ui` + MainThreadQueue 已接；阻塞等待 wake 与多窗路由待接 | [#133](decisions.md#d133) |
