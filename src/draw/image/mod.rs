@@ -11,8 +11,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::core::error::Error;
+use crate::core::Rect;
 use crate::draw::traits::Canvas2D;
-use crate::native::Rect;
 
 pub use decode::decode_to_pixels;
 

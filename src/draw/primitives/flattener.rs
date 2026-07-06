@@ -3,7 +3,7 @@
 //! 参考 tiny-skia 的路径展平算法。容差 0.25 像素。
 
 use super::path::PathSegment;
-use crate::native::Point;
+use crate::core::Point;
 
 /// 展平后的线段序列：（起点, 终点）。
 /// 连续的线段构成一个子路径，Close 表示回到子路径起点。

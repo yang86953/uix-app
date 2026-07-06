@@ -1,6 +1,6 @@
 //! GpuCanvas2D — GPU 加速的 Canvas2D 实现，未实现的方法走 SharedRasterizer。
 
-use crate::native::{Errc, Error, Rect};
+use crate::core::{Errc, Error, Rect};
 use glow::HasContext as _;
 
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
@@ -552,8 +552,8 @@ impl Canvas2D for GpuCanvas2D {
         self.soft_fallback.pixels_mut()
     }
 
-    fn surface_size(&self) -> crate::native::Size {
-        crate::native::Size::new(self.surface_w as f32, self.surface_h as f32)
+    fn surface_size(&self) -> crate::core::Size {
+        crate::core::Size::new(self.surface_w as f32, self.surface_h as f32)
     }
 
     fn current_clip(&self) -> Rect {

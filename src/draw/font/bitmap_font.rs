@@ -1,8 +1,8 @@
 //! 5x7 bitmap font — public domain monospace font for ASCII 32..126.
 //! Each character is defined as 5 bytes (one per column), bits 0-6 are rows.
 
+use crate::core::{Point, Size};
 use crate::draw::TextLayoutOptions;
-use crate::native::{Point, Size};
 
 /// A monospace bitmap font (5x7 pixels per character).
 pub struct BitmapFont {

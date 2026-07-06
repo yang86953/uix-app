@@ -2,10 +2,10 @@
 //!
 //! 与 ScrollView 配合使用：监听滚动位置，自动高亮当前锚点。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -170,7 +170,7 @@ impl Anchor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::{KeyMod, MouseButton};
+    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::{SemanticKind, WidgetCore, WidgetTree};
     use std::cell::RefCell;
     use std::rc::Rc;

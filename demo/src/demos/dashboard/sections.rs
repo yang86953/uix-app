@@ -1,4 +1,4 @@
-﻿//! 组件展示页面（通用 ~ 反馈）
+//! 组件展示页面（通用 ~ 反馈）
 //! 分类：通用、布局、导航、输入、数据展示、反馈
 //!
 //! 使用 `prelude` 导入组件与布局 API。
@@ -456,12 +456,7 @@ pub fn page_data(tk: &DesignTokens) -> WidgetNode {
             ]},
         )
         .section("轮播 Carousel")
-        .push(
-            Carousel::new()
-                .autoplay(3.0)
-                .show_dots(true)
-                .show_arrows(true),
-        )
+        .push(Carousel::new().show_dots(true).show_arrows(true))
         .section("徽标 Badge")
         .push(
             row(40.0)

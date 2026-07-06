@@ -1,6 +1,7 @@
 //! 绘图层会话 — Pipeline + Backend 组合入口（Phase 1 骨架）。
 
-use crate::native::{Error, IGraphicsContext};
+use crate::core::Error;
+use crate::native::traits::present::IGraphicsContext;
 
 use crate::draw::backend::{
     create_backend, BackendCapabilities, BackendKind, CpuBackend, GpuBackend, NullBackend,

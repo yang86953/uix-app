@@ -1,19 +1,18 @@
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::native::{KeyCode, KeyMod, Rect, Size};
+use crate::native::traits::input::{KeyCode, KeyMod};
 use crate::ui::{EventResult, SystemEvent, WidgetId, WidgetTree};
 use std::collections::HashSet;
 
 define_widget! {
-    /// FocusTrap — 将键盘 Tab/Shift+Tab 焦点限制在子树内。
-    ///
-    /// 用于 Modal、Drawer 等弹出式容器，确保焦点不会逃逸到遮罩后方。
+    /// Keeps Tab/Shift+Tab focus inside a subtree.
     pub struct FocusTrap {
-        /// 是否激活焦点锁定。
+        /// Whether focus trapping is active.
         active: bool,
-        /// 上次渲染时捕获的焦点 widgets。
+        /// Focusable widgets captured after layout.
         focusable_ids: HashSet<WidgetId>,
-        /// 内部焦点循环偏移量。
+        /// Offset used while cycling focus.
         tab_offset: usize,
     }
 
@@ -50,7 +49,6 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    on_update => (&mut self, _dt: f64) {}
 }
 
 impl Default for FocusTrap {
@@ -73,7 +71,7 @@ impl FocusTrap {
         self
     }
 
-    /// 更新可聚焦 widget 列表（由外部在布局后调用）。
+    /// Updates the focusable widget list after layout.
     pub fn update_focusable(&mut self, ids: HashSet<WidgetId>) {
         self.focusable_ids = ids;
     }

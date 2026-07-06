@@ -4,12 +4,12 @@
 
 use std::cell::Cell;
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::image::BitmapHandle;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::invalidate_paint_handle;
 use crate::draw::{Color, Radius};
-use crate::native::{Point, Rect, Size};
 use crate::ui::core::paint_scope::current_paint_widget;
 use crate::ui::WidgetTree;
 

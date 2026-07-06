@@ -1,6 +1,6 @@
 //! RasterRenderer 矢量描边实现。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};

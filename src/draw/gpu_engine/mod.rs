@@ -5,12 +5,12 @@
 use glow::HasContext as _;
 use std::cell::RefCell;
 
+use crate::core::Error;
 use crate::draw::backend::{DamageRegion, GpuBackend, RenderBackend};
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::RenderSession;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
-use crate::native::Error;
-use crate::native::IGraphicsContext;
+use crate::native::traits::present::IGraphicsContext;
 
 pub use canvas_2d::GpuCanvas2D;
 pub use shaders::*;

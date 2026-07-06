@@ -6,8 +6,8 @@
 //! 3. 按 x 排序活跃边，配对填充
 //! 4. 支持 NonZero 和 EvenOdd 填充规则
 
+use crate::core::{Point, Rect};
 use crate::draw::primitives::path::FillRule;
-use crate::native::{Point, Rect};
 
 use super::fill_span;
 

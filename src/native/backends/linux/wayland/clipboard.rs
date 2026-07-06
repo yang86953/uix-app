@@ -7,7 +7,7 @@ use std::os::unix::io::FromRawFd;
 
 use wayland_client::protocol::wl_data_source;
 
-use crate::native::IClipboard;
+use crate::native::traits::input::IClipboard;
 
 use super::WaylandBackend;
 

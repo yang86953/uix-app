@@ -4,7 +4,7 @@
 //! 提供所有 Canvas2D 绘制方法的实现，但输出目标由调用者以像素缓冲传递。
 //! CPU/GPU 后端只需「往哪写像素」，渲染逻辑由这里统一完成。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::types::{BlendMode, Transform};

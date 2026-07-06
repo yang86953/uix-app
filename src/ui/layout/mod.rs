@@ -1,11 +1,11 @@
-﻿//! UIX Layout — Flexbox 和 Grid 布局引擎。
+//! UIX Layout — Flexbox 和 Grid 布局引擎。
 //!
 //! 布局入口是 [`LayoutEngine`] trait 及其实现 [`FlexLayout`] / [`GridLayout`]。
 //!
 //! 推荐用法：容器 widget 组合 `FlexLayout` 或 `GridLayout`，
 //! 在 `layout_children` 中调用 `LayoutEngine::layout()` 获取子节点位置。
 
-use crate::native::{EdgeInsets, Rect, Size};
+use crate::core::{EdgeInsets, Rect, Size};
 use std::f32;
 
 // 内部模块（仅同 crate 内部使用，不对外公开）

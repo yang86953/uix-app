@@ -1,8 +1,10 @@
-﻿//! StyleSet — normal/hover/pressed/focused/disabled 五态样式集合。
+//! StyleSet — normal/hover/pressed/focused/disabled 五态样式集合。
 
 use super::Style;
+use super::{ColorValue, PaletteColor, TypographyToken};
+use crate::core::EdgeInsets;
 use crate::draw::Color;
-use crate::native::EdgeInsets;
+use crate::ui::theme::NeutralRole;
 
 /// 组件交互态，用于从 `StyleSet` 中解析最终样式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -96,17 +98,17 @@ impl StyleSet {
         let normal = Style::button_default();
         Self::new(normal.clone())
             .hover(Style {
-                border_color: Some(Color::from_rgba(22, 119, 255, 255)),
-                color: Color::from_rgba(22, 119, 255, 255),
+                border_color: Some(ColorValue::Palette(PaletteColor::Primary)),
+                color: ColorValue::Palette(PaletteColor::Primary),
                 ..Style::default()
             })
             .pressed(Style {
-                border_color: Some(Color::from_rgba(9, 88, 217, 255)),
-                color: Color::from_rgba(9, 88, 217, 255),
+                border_color: Some(ColorValue::Palette(PaletteColor::PrimaryActive)),
+                color: ColorValue::Palette(PaletteColor::PrimaryActive),
                 ..Style::default()
             })
             .focused(Style {
-                border_color: Some(Color::from_rgba(22, 119, 255, 255)),
+                border_color: Some(ColorValue::Palette(PaletteColor::Primary)),
                 box_shadow: Some(super::BoxShadowDef::new(
                     Color::from_rgba(22, 119, 255, 80),
                     4.0,
@@ -116,8 +118,8 @@ impl StyleSet {
                 ..Style::default()
             })
             .disabled(Style {
-                border_color: Some(Color::from_rgba(217, 217, 217, 255)),
-                color: Color::from_rgba(0, 0, 0, 64),
+                border_color: Some(ColorValue::Neutral(NeutralRole::Border)),
+                color: ColorValue::Neutral(NeutralRole::TextQuaternary),
                 opacity: 0.45,
                 ..Style::default()
             })
@@ -127,15 +129,15 @@ impl StyleSet {
         let normal = Style::button_primary();
         Self::new(normal.clone())
             .hover(Style {
-                background: Some(Color::from_rgba(64, 150, 255, 255)),
-                border_color: Some(Color::from_rgba(64, 150, 255, 255)),
-                color: Color::white(),
+                background: Some(ColorValue::Palette(PaletteColor::PrimaryHover)),
+                border_color: Some(ColorValue::Palette(PaletteColor::PrimaryHover)),
+                color: ColorValue::Palette(PaletteColor::White),
                 ..Style::default()
             })
             .pressed(Style {
-                background: Some(Color::from_rgba(9, 88, 217, 255)),
-                border_color: Some(Color::from_rgba(9, 88, 217, 255)),
-                color: Color::white(),
+                background: Some(ColorValue::Palette(PaletteColor::PrimaryActive)),
+                border_color: Some(ColorValue::Palette(PaletteColor::PrimaryActive)),
+                color: ColorValue::Palette(PaletteColor::White),
                 ..Style::default()
             })
             .focused(Style {
@@ -148,9 +150,9 @@ impl StyleSet {
                 ..Style::default()
             })
             .disabled(Style {
-                background: Some(Color::from_rgba(217, 217, 217, 255)),
-                border_color: Some(Color::from_rgba(217, 217, 217, 255)),
-                color: Color::from_rgba(0, 0, 0, 64),
+                background: Some(ColorValue::Neutral(NeutralRole::FillTertiary)),
+                border_color: Some(ColorValue::Neutral(NeutralRole::Border)),
+                color: ColorValue::Neutral(NeutralRole::TextQuaternary),
                 opacity: 0.45,
                 ..Style::default()
             })
@@ -159,44 +161,44 @@ impl StyleSet {
     pub fn button_ghost() -> Self {
         Self::new(Style {
             background: None,
-            border_color: Some(Color::from_rgba(22, 119, 255, 255)),
+            border_color: Some(ColorValue::Palette(PaletteColor::Primary)),
             border_width: EdgeInsets::uniform(1.0),
             border_radius: 6.0,
             padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
-            color: Color::from_rgba(22, 119, 255, 255),
-            font_size: 14.0,
+            color: ColorValue::Palette(PaletteColor::Primary),
+            font_size: TypographyToken::Body,
             ..Style::default()
         })
         .hover(Style {
-            background: Some(Color::from_rgba(230, 244, 255, 255)),
+            background: Some(ColorValue::Palette(PaletteColor::PrimaryBg)),
             ..Style::default()
         })
         .pressed(Style {
-            border_color: Some(Color::from_rgba(9, 88, 217, 255)),
-            color: Color::from_rgba(9, 88, 217, 255),
+            border_color: Some(ColorValue::Palette(PaletteColor::PrimaryActive)),
+            color: ColorValue::Palette(PaletteColor::PrimaryActive),
             ..Style::default()
         })
     }
 
     pub fn button_danger() -> Self {
         Self::new(Style {
-            background: Some(Color::from_rgba(255, 77, 79, 255)),
-            border_color: Some(Color::from_rgba(255, 77, 79, 255)),
+            background: Some(ColorValue::Palette(PaletteColor::Error)),
+            border_color: Some(ColorValue::Palette(PaletteColor::Error)),
             border_width: EdgeInsets::uniform(1.0),
             border_radius: 6.0,
             padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
-            color: Color::white(),
-            font_size: 14.0,
+            color: ColorValue::Palette(PaletteColor::White),
+            font_size: TypographyToken::Body,
             ..Style::default()
         })
         .hover(Style {
-            background: Some(Color::from_rgba(255, 120, 117, 255)),
-            border_color: Some(Color::from_rgba(255, 120, 117, 255)),
+            background: Some(ColorValue::Palette(PaletteColor::ErrorBorder)),
+            border_color: Some(ColorValue::Palette(PaletteColor::ErrorBorder)),
             ..Style::default()
         })
         .pressed(Style {
-            background: Some(Color::from_rgba(207, 19, 34, 255)),
-            border_color: Some(Color::from_rgba(207, 19, 34, 255)),
+            background: Some(ColorValue::Palette(PaletteColor::Error)),
+            border_color: Some(ColorValue::Palette(PaletteColor::Error)),
             ..Style::default()
         })
     }

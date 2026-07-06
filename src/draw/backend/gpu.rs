@@ -3,12 +3,11 @@
 use std::any::Any;
 use std::cell::RefCell;
 
-use crate::native::{Error, IGraphicsContext, Point, Rect};
+use crate::core::{DamageRegion, Error, Point, Rect};
+use crate::native::traits::present::IGraphicsContext;
 use glow::HasContext as _;
 
-use crate::draw::backend::traits::{
-    BackendCapabilities, BackendKind, DamageRegion, DrawSurface, RenderBackend,
-};
+use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::gpu_engine::GpuCanvas2D;
 use crate::draw::traits::Canvas2D;
 
@@ -31,8 +30,8 @@ impl GpuDrawSurface {
 }
 
 impl DrawSurface for GpuDrawSurface {
-    fn size(&self) -> crate::native::Size {
-        crate::native::Size::new(self.width as f32, self.height as f32)
+    fn size(&self) -> crate::core::Size {
+        crate::core::Size::new(self.width as f32, self.height as f32)
     }
 
     fn push_clip(&mut self, rect: Rect) {

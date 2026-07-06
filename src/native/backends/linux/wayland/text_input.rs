@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 use wayland_protocols::unstable::text_input::v3::client::zwp_text_input_v3;
 
 use crate::native::traits::event::UiEvent;
-use crate::native::ITextInput;
+use crate::native::traits::input::ITextInput;
 
 use super::WaylandBackend;
 

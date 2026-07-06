@@ -1,9 +1,9 @@
 //! Tag widget — 彩色标签/徽标，支持关闭按钮。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Rect, Size};
 use crate::ui::WidgetTree;
 
 /// 预设标签类型。
@@ -24,7 +24,6 @@ define_widget! {
         font_size: f32,
         custom_color: Option<Color>,
         checkable: bool,
-        on_close: Option<Box<dyn FnMut() + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -54,7 +53,7 @@ define_widget! {
         if self.closable {
             let cx = frame.x + frame.w - 14.0;
             let cy = ctx.visual_center_y(frame, 10.0);
-            ctx.draw_text("✕", crate::native::Point::new(cx, cy), fg, 10.0);
+            ctx.draw_text("✕", crate::core::Point::new(cx, cy), fg, 10.0);
         }
     }
 }
@@ -74,7 +73,6 @@ impl Tag {
             font_size: 12.0,
             custom_color: None,
             checkable: false,
-            on_close: None,
         }
     }
     pub fn color(mut self, c: TagColor) -> Self {
@@ -91,10 +89,6 @@ impl Tag {
     }
     pub fn checkable(mut self, v: bool) -> Self {
         self.checkable = v;
-        self
-    }
-    pub fn on_close<F: FnMut() + 'static>(mut self, f: F) -> Self {
-        self.on_close = Some(Box::new(f));
         self
     }
     pub fn font_size(mut self, s: f32) -> Self {

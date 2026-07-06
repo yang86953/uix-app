@@ -2,10 +2,10 @@
 //!
 //! 垂直时间轴展示事件序列，支持节点颜色、标签、描述。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::native::{Point, Rect, Size};
 use crate::ui::WidgetTree;
 
 /// 时间线节点。

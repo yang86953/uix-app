@@ -9,10 +9,10 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。

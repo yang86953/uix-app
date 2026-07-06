@@ -7,7 +7,7 @@
 
 use std::ops::{Add, Mul, Sub};
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 /// 2D 向量/点（屏幕空间）。
 ///

@@ -1,7 +1,7 @@
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// Popconfirm 弹出位置。
@@ -24,8 +24,6 @@ define_widget! {
         placement: PopconfirmPlacement,
         arrow: bool,
         icon: bool,
-        on_confirm: Option<Box<dyn FnMut() + 'static>>,
-        on_cancel: Option<Box<dyn FnMut() + 'static>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -52,12 +50,10 @@ define_widget! {
                 let cancel_rect = Rect::new(px + pw - 92.0, py + ph - 36.0, 80.0, 26.0);
                 if confirm_rect.contains(*pos) {
                     self.visible = false;
-                    if let Some(ref mut cb) = self.on_confirm { cb(); }
                     return EventResult::Handled;
                 }
                 if cancel_rect.contains(*pos) {
                     self.visible = false;
-                    if let Some(ref mut cb) = self.on_cancel { cb(); }
                     return EventResult::Handled;
                 }
             }
@@ -133,8 +129,6 @@ impl Popconfirm {
             placement: PopconfirmPlacement::Top,
             arrow: true,
             icon: true,
-            on_confirm: None,
-            on_cancel: None,
         }
     }
     pub fn title(mut self, t: impl Into<String>) -> Self {
@@ -161,15 +155,6 @@ impl Popconfirm {
         self.icon = v;
         self
     }
-    pub fn on_confirm<F: FnMut() + 'static>(mut self, f: F) -> Self {
-        self.on_confirm = Some(Box::new(f));
-        self
-    }
-    pub fn on_cancel<F: FnMut() + 'static>(mut self, f: F) -> Self {
-        self.on_cancel = Some(Box::new(f));
-        self
-    }
-
     fn popup_pos(&self, _pw: f32, ph: f32) -> (f32, f32) {
         let gap = if self.arrow { 10.0 } else { 4.0 };
         match self.placement {

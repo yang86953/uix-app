@@ -323,7 +323,7 @@ impl<'a> SpatialContext<'a> {
             let pw = (x2 - x1).abs() * self.device_pixel_ratio;
             let ph = (y2 - y1).abs() * self.device_pixel_ratio;
             self.canvas.fill_rect(
-                crate::native::Rect::new(
+                crate::core::Rect::new(
                     lx * self.device_pixel_ratio,
                     ly * self.device_pixel_ratio,
                     pw,
@@ -338,7 +338,7 @@ impl<'a> SpatialContext<'a> {
             let bounds = quad.bounds();
             // 3D 变换后的矩形可能不是矩形了（透视），取外接矩形作为近似
             self.canvas.fill_rect(
-                crate::native::Rect::new(
+                crate::core::Rect::new(
                     bounds.x * self.device_pixel_ratio,
                     bounds.y * self.device_pixel_ratio,
                     bounds.w * self.device_pixel_ratio,
@@ -367,7 +367,7 @@ impl<'a> SpatialContext<'a> {
     pub fn push_clip_3d(&mut self, aabb: AABB3D) {
         let quad = self.project_aabb(&aabb);
         let bounds = quad.bounds();
-        self.canvas.push_clip(crate::native::Rect::new(
+        self.canvas.push_clip(crate::core::Rect::new(
             bounds.x * self.device_pixel_ratio,
             bounds.y * self.device_pixel_ratio,
             bounds.w * self.device_pixel_ratio,
@@ -624,7 +624,7 @@ mod tests {
     #[test]
     fn fill_rect_accepts_rect() {
         let mut ctx = make_context(800, 600);
-        let rect = crate::native::Rect::new(10.0, 20.0, 100.0, 50.0);
+        let rect = crate::core::Rect::new(10.0, 20.0, 100.0, 50.0);
         // 只是验证编译通过和不会 panic
         ctx.fill_rect(rect, Color::from_rgb(255, 0, 0), None);
     }

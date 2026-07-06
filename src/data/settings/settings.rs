@@ -5,7 +5,7 @@
 // 原位于 services crate，迁入 platform 层以消除服务层。
 // ============================================================================
 
-use crate::native::{Errc, Error, Result};
+use crate::core::{Errc, Error, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -221,6 +221,9 @@ impl SettingsService {
             .path
             .as_deref()
             .ok_or_else(|| Error::new(Errc::InvalidState, "no settings path set"))?;
+        if !self.dirty {
+            return Ok(());
+        }
         let json = serialize_json_flat(&self.values);
         fs::write(path, &json)?;
         self.dirty = false;
@@ -256,6 +259,9 @@ impl SettingsService {
 
     pub fn all(&self) -> &HashMap<String, String> {
         &self.values
+    }
+    pub fn loaded_path(&self) -> Option<&str> {
+        self.path.as_deref()
     }
     pub fn dirty(&self) -> bool {
         self.dirty
@@ -526,6 +532,36 @@ mod json_parser_tests {
             assert!(!s2.dirty());
         }
 
+        std::fs::remove_file(&ps).ok();
+    }
+
+    #[test]
+    fn test_loaded_path_after_load() {
+        let p = std::env::temp_dir().join("uix_settings_loaded_path_test.json");
+        let ps = p.to_string_lossy().to_string();
+        std::fs::remove_file(&ps).ok();
+
+        let mut s = SettingsService::new();
+        assert_eq!(s.loaded_path(), None);
+        s.load(&ps).unwrap();
+        assert_eq!(s.loaded_path(), Some(ps.as_str()));
+        assert!(!s.dirty());
+    }
+
+    #[test]
+    fn test_save_skips_clean_settings() {
+        let p = std::env::temp_dir().join("uix_settings_clean_save_test.json");
+        let ps = p.to_string_lossy().to_string();
+        std::fs::write(&ps, r#"{"theme": "light"}"#).unwrap();
+        let before = std::fs::metadata(&ps).unwrap().modified().unwrap();
+
+        let mut s = SettingsService::new();
+        s.load(&ps).unwrap();
+        s.save().unwrap();
+
+        let after = std::fs::metadata(&ps).unwrap().modified().unwrap();
+        assert_eq!(before, after);
+        assert!(!s.dirty());
         std::fs::remove_file(&ps).ok();
     }
 

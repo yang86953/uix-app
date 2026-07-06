@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::fmt;
 use std::sync::{Arc, RwLock};
 
+use crate::core::Rect;
 use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
-use crate::native::Rect;
 
 // ── 响应式依赖追踪 ────────────────────────────────────────────
 //

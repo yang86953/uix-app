@@ -7,7 +7,7 @@
 //!   1. 应用层调用 `set_clipboard_parts(data, vtable)` 注入剪贴板指针
 //!   2. widget 在 Ctrl+C 时调用 `copy_to_clipboard(text)`
 
-use crate::native::IClipboard;
+use crate::native::traits::input::IClipboard;
 use std::cell::Cell;
 
 thread_local! {

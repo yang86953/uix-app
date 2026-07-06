@@ -1,6 +1,6 @@
 //! 阴影绘制纯函数——盒阴影（定向+环境）。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::types::Radius;

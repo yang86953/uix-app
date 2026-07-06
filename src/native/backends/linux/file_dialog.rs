@@ -7,7 +7,7 @@
 // Falls back to zenity if neither is detected or available.
 // ============================================================================
 
-use crate::native::IFileDialog;
+use crate::native::traits::system::IFileDialog;
 
 // ════════════════════════════════════════════════════════════════════════════
 // LinuxFileDialog

@@ -2,10 +2,11 @@
 //!
 //! 支持列表项渲染、header/footer、bordered、size 等选项。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{ControlSize, Point, Rect, Size};
+use crate::native::traits::input::ControlSize;
 use crate::ui::WidgetTree;
 
 /// List 尺寸对应的行高。

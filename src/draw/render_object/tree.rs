@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::compositor::ScenePaint;
 use crate::draw::painting::{DisplayList, PaintContext, PaintPass};

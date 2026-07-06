@@ -1,10 +1,10 @@
 //! 2D 绘制上下文协议。
 
+use crate::core::{Rect, Size};
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius};
-use crate::native::{Rect, Size};
 
 pub trait Canvas2D {
     // ── 画布偏移（像素空间平移）──

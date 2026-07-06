@@ -1,6 +1,6 @@
 //! 图像混合纯函数——将 src 像素区域缩放绘制到 dst 区域。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use super::{clip_to_int, put_pixel};
 

@@ -12,8 +12,8 @@ use std::os::unix::io::AsRawFd;
 use wayland_client::protocol::{wl_callback, wl_compositor, wl_shm, wl_surface};
 use wayland_client::Main;
 
-use crate::native::IPresenter;
-use crate::native::PresentDamage;
+use crate::native::traits::present::IPresenter;
+use crate::native::traits::present::PresentDamage;
 
 use super::shm_buffer::ShmBuffer;
 

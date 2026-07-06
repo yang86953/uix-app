@@ -7,7 +7,7 @@
 #![allow(nonstandard_style)]
 
 use crate::native::backends::windows::util::to_wide;
-use crate::native::INotification;
+use crate::native::traits::system::INotification;
 use std::ptr;
 
 pub struct WindowsNotification {

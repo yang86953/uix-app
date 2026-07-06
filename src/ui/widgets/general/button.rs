@@ -1,10 +1,11 @@
 //! Button — 纯文本按钮，外观由 StyleSet 预设驱动。
 
+use crate::core::{Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::impl_widget_component;
-use crate::native::{KeyCode, Rect, Size};
-use crate::ui::style::{Style, StyleSet, StyleState};
+use crate::native::traits::input::KeyCode;
+use crate::ui::style::{apply_style, Style, StyleSet, StyleState};
 use crate::ui::traits::{EventHandler, WidgetLayout, WidgetRender};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
@@ -25,7 +26,7 @@ impl_widget_component!(Button; Layout, Render, Event; tab_index => 1);
 impl WidgetLayout for Button {
     fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         let base = self.style_set.normal.clone().apply(self.style.clone());
-        let font_size = base.font_size.max(1.0);
+        let font_size = base.font_size.default_size().max(1.0);
         let height = base.height.unwrap_or(32.0);
         let text_w = self.text.chars().count() as f32 * font_size * 0.55;
         let width = base
@@ -89,10 +90,15 @@ impl EventHandler for Button {
 impl WidgetRender for Button {
     fn render(&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let style = self.resolve_style();
-        crate::app::bridge::apply_style(ctx, frame, &style);
+        apply_style(ctx, frame, &style);
         if !self.text.is_empty() {
             let content = frame.inset(style.padding);
-            ctx.text_center(&self.text, content, style.color, style.font_size);
+            ctx.text_center(
+                &self.text,
+                content,
+                style.resolve_color(ctx.tokens()),
+                style.resolve_font_size(ctx.tokens()),
+            );
         }
     }
 

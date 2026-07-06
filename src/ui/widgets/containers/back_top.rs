@@ -1,9 +1,9 @@
 //! BackTop 回到顶部 — 滚动超过阈值时显示返回顶部按钮。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {

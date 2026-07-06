@@ -1,4 +1,4 @@
-﻿use crate::native::Point;
+use crate::core::Point;
 use crate::ui::{EventResult, SystemEvent};
 
 /// Tracks mouse/touch interaction state.

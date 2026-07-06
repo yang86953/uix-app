@@ -467,15 +467,9 @@ impl WidgetTree {
         EventResult::NotHandled
     }
 
-    /// capture 阶段拦截事件后：登记连续动画节点。
-    /// 滚动视口的 Paint 失效由 `update()` 内 Composite strip 路径负责，避免与局部重绘冲突。
+    /// capture 阶段拦截事件后：标记拦截节点重绘。
     fn on_widget_handled_in_capture(&mut self, id: WidgetId) {
-        let needs_continuous = self
-            .get(id)
-            .is_some_and(|node| node.needs_continuous_update());
-        if needs_continuous {
-            self.try_register_animation(id);
-        }
+        self.invalidate_paint(id);
     }
 
     fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
@@ -501,18 +495,14 @@ impl WidgetTree {
             };
 
             // 处理 widget 自身的 on_event
-            let (result, parent_id, needs_continuous) = {
+            let (result, parent_id) = {
                 let node = match self.get_mut(id) {
                     Some(n) => n,
                     None => return EventResult::NotHandled,
                 };
                 let r = node.on_event(&compensated);
-                let nc = node.needs_continuous_update();
-                (r, node.parent(), nc)
+                (r, node.parent())
             };
-            if needs_continuous {
-                self.try_register_animation(id);
-            }
             if result == EventResult::Handled {
                 let semantic = self
                     .get(id)
@@ -521,14 +511,6 @@ impl WidgetTree {
                     let _ = self.dispatch_semantic(event);
                 }
                 return EventResult::Handled;
-            }
-
-            // 事件管理器：widget 注册的额外 handler 链（在 on_event 之后调用）
-            // node 的 &mut 借用已在上面的块中释放，可安全访问 event_managers
-            if let Some(em) = self.event_managers.get_mut(&id) {
-                if em.dispatch(&compensated) == EventResult::Handled {
-                    return EventResult::Handled;
-                }
             }
 
             // Bubbled 或 NotHandled → 继续向父节点传播

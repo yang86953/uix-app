@@ -1,8 +1,8 @@
 //! Breadcrumb widget — 面包屑导航路径。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::native::{Rect, Size};
 use crate::ui::WidgetTree;
 
 /// 面包屑的一项。

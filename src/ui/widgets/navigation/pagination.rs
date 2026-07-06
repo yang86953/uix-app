@@ -2,10 +2,10 @@
 //!
 //! 支持页码切换、上一页/下一页、快速跳转（省略号）、pageSize 切换。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -216,7 +216,7 @@ impl Pagination {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::{KeyMod, MouseButton};
+    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::{SemanticKind, WidgetCore, WidgetTree};
     use std::cell::RefCell;
     use std::rc::Rc;

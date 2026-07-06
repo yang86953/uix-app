@@ -1,8 +1,8 @@
 //! 文本后端契约。
 
+use crate::core::Error;
 use crate::draw::font::text_backend::{GlyphRaster, LineMetrics, TextLayout, TextLayoutOptions};
 use crate::draw::primitives::types::FontHandle;
-use crate::native::Error;
 
 /// 字体文本后端 — 字体加载、布局与 glyph 光栅化。
 pub trait TextBackend: std::fmt::Debug + Send + Sync {

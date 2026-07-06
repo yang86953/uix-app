@@ -2,10 +2,10 @@
 //!
 //! 组合使用构建标准页面布局。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
-use crate::native::{Rect, Size};
 use crate::ui::WidgetTree;
 
 define_widget! {

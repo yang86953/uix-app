@@ -1,9 +1,9 @@
 //! Rate widget — 星级评分，支持半星、hover 预览、disabled、clearable。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 

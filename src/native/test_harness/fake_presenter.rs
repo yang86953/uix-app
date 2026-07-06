@@ -2,7 +2,7 @@
 
 use crate::core::error::Result;
 use crate::native::traits::present::IPresenter;
-use crate::native::PresentDamage;
+use crate::native::traits::present::PresentDamage;
 
 #[derive(Debug, Clone)]
 pub struct PresentCall {

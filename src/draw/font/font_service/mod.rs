@@ -11,11 +11,11 @@ pub use font_cache::{FontFace, GlyphCache};
 
 use std::sync::Arc;
 
+use crate::core::Error;
+use crate::core::{Point, Size};
 use crate::draw::font::text_backend::{self as tb, GlyphRaster, TextLayoutOptions};
 use crate::draw::FontHandle;
 use crate::draw::TextBackend;
-use crate::native::Error;
-use crate::native::{Point, Size};
 
 use font_cache::{CachedRaster, FontSlot, GlyphCacheKey};
 
@@ -249,7 +249,7 @@ impl FontService {
     pub fn load_default_system_font(
         &mut self,
         size: f32,
-        system_info: &dyn crate::native::ISystemInfo,
+        system_info: &dyn crate::native::traits::system::ISystemInfo,
     ) {
         if self.user_family_set {
             let family = self.primary_family.clone();
@@ -356,7 +356,11 @@ impl FontService {
 
     /// 加载 CJK 回退字体（通过平台层探测）。
     /// 如果主字体本身已经包含中文字形则跳过，避免重复加载。
-    fn load_cjk_fallback(&mut self, size: f32, system_info: &dyn crate::native::ISystemInfo) {
+    fn load_cjk_fallback(
+        &mut self,
+        size: f32,
+        system_info: &dyn crate::native::traits::system::ISystemInfo,
+    ) {
         let cjk_test = ['中', '国', '文'];
         let primary_has_cjk = cjk_test.iter().all(|&ch| {
             self.text_backend.is_valid(&self.loaded_font_handle)
@@ -406,7 +410,7 @@ impl FontService {
         &mut self,
         family: &str,
         size: f32,
-        system_info: &dyn crate::native::ISystemInfo,
+        system_info: &dyn crate::native::traits::system::ISystemInfo,
     ) -> Option<()> {
         if let Some(p) = system_info.probe_family_font_path(family) {
             if let Ok(data) = std::fs::read(&p) {

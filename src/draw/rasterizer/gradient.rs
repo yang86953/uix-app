@@ -1,6 +1,6 @@
 //! 渐变填充纯函数——线性渐变、径向渐变。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::types::GradientDirection;

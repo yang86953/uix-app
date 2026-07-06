@@ -1,18 +1,18 @@
-//! PaintContext 扩展 — UI 域样式应用。
+//! Style painting helpers used by UI widgets.
 
+use crate::core::Rect;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::Rect;
-
 use crate::ui::style::Style;
 
-/// 将 Style 应用到矩形区域（背景 + 边框 + 阴影 + 透明度）。
+/// Applies a `Style` to a rectangular area.
 pub fn apply_style(ctx: &mut PaintContext<'_>, rect: Rect, style: &Style) {
-    let r = if style.border_radius > 0.0 {
+    let radius = if style.border_radius > 0.0 {
         Some(Radius::uniform(style.border_radius))
     } else {
         None
     };
+
     if let Some(shadow) = style.box_shadow.as_ref() {
         ctx.draw_box_shadow(
             rect,
@@ -20,18 +20,24 @@ pub fn apply_style(ctx: &mut PaintContext<'_>, rect: Rect, style: &Style) {
             shadow.offset_x,
             shadow.offset_y,
             shadow.color,
-            r,
+            radius,
         );
     }
+
     if style.opacity < 1.0 {
         ctx.canvas_2d().set_opacity(style.opacity);
     }
-    if let Some(bg) = style.background {
-        ctx.fill_rect(rect, bg, r);
+    if let Some(background) = style.background {
+        ctx.fill_rect(rect, background.resolve(ctx.tokens()), radius);
     }
     if style.has_border() {
-        if let Some(bc) = style.border_color {
-            ctx.stroke_rect(rect, bc, style.stroke_width(), r);
+        if let Some(border_color) = style.border_color {
+            ctx.stroke_rect(
+                rect,
+                border_color.resolve(ctx.tokens()),
+                style.stroke_width(),
+                radius,
+            );
         }
     }
     if style.opacity < 1.0 {

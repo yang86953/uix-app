@@ -1,11 +1,9 @@
-//! ProgressBar widget — deterministic and indeterminate progress indicators.
+//! ProgressBar widget 鈥?deterministic and indeterminate progress indicators.
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
-use crate::native::{Rect, Size};
-use crate::ui::animation::core::Animation;
-use crate::ui::animation::Easing;
 use crate::ui::WidgetTree;
 
 /// Progress display type.
@@ -20,7 +18,7 @@ pub enum ProgressType {
 pub enum ProgressMode {
     /// Fixed percentage (0.0 - 1.0).
     Determinate(f32),
-    /// Animated indeterminate bar.
+    /// Indeterminate bar. Animation is driven outside the component.
     Indeterminate,
 }
 
@@ -35,8 +33,6 @@ define_widget! {
         width: f32,
         round: bool,
         progress_type: ProgressType,
-        /// 不确定进度动画（0→1 循环，周期 2s）
-        indet_anim: Option<Animation<f32>>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -47,19 +43,7 @@ define_widget! {
         Size::new(self.width, self.height)
     }
 
-    on_update => (&mut self, dt: f64) {
-        if let Some(ref mut anim) = self.indet_anim {
-            anim.update(dt);
-            if anim.is_finished() {
-                // 循环：重置到起点
-                *anim = Animation::new(0.0, 1.0, 2.0).with_easing(Easing::Linear);
-            }
-        }
-    }
 
-    needs_continuous_update => (&self) -> bool {
-        self.indet_anim.is_some()
-    }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let tokens = ctx.tokens();
@@ -112,9 +96,8 @@ define_widget! {
                 }
             }
             ProgressMode::Indeterminate => {
-                let p = self.indet_anim.as_ref().map(|a| a.current_value()).unwrap_or(0.0);
                 let bar_w = frame.w * 0.3;
-                let bar_x = frame.x + (p * (frame.w - bar_w));
+                let bar_x = frame.x + (frame.w - bar_w) * 0.5;
                 let bar_rect = Rect::new(bar_x, frame.y, bar_w, frame.h);
                 ctx.fill_rect(bar_rect, stroke_c, radius);
             }
@@ -139,20 +122,17 @@ impl ProgressBar {
             width: 200.0,
             round: true,
             progress_type: ProgressType::Line,
-            indet_anim: None,
         }
     }
 
     pub fn progress(mut self, p: f32) -> Self {
         self.progress = p.clamp(0.0, 1.0);
         self.mode = ProgressMode::Determinate(self.progress);
-        self.indet_anim = None;
         self
     }
 
     pub fn indeterminate(mut self) -> Self {
         self.mode = ProgressMode::Indeterminate;
-        self.indet_anim = Some(Animation::new(0.0, 1.0, 2.0).with_easing(Easing::Linear));
         self
     }
 

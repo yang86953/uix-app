@@ -2,10 +2,10 @@
 //!
 //! 监听滚动位置变化，当 scroll_y > offset_top 时固定。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {

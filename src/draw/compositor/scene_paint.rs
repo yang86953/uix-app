@@ -1,10 +1,10 @@
 //! ScenePaint — 场景绘制抽象，解耦 compositor 与 ui 域。
 
-use crate::native::{Point, Rect};
+use crate::core::{Point, Rect};
 
+use crate::core::DirtyRegion;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::NodeId;
-use crate::draw::primitives::types::DirtyRegion;
 
 /// 场景绘制契约：LayerTree 通过此 trait 读取节点元数据并下发绘制。
 pub trait ScenePaint {

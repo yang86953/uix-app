@@ -11,10 +11,9 @@
 #![allow(nonstandard_style)]
 
 use crate::native::backends::windows::ffi::{GetDC, ReleaseDC};
-use crate::native::IPresenter;
-use crate::native::PresentDamage;
+use crate::native::traits::present::IPresenter;
+use crate::native::traits::present::PresentDamage;
 use crate::native::{Errc, Error};
-
 // ── Windows FFI declarations ────────────────────────────────────────────────
 
 #[link(name = "gdi32")]

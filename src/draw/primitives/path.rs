@@ -2,7 +2,7 @@
 //!
 //! 参考 tiny-skia::PathBuilder 设计，保持接口简洁。
 
-use crate::native::Point;
+use crate::core::Point;
 
 /// 填充规则。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,7 +138,7 @@ impl PathSegment {
     }
 }
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 /// 路径构建器。调用 move_to / line_to / quad_to / cubic_to / close 构建路径。
 ///

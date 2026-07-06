@@ -1,9 +1,9 @@
 //! Checkbox — checkbox with label, checked/unchecked state.
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 

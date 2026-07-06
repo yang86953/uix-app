@@ -3,11 +3,11 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{traits::GraphicsEngine, TextLayoutOptions};
-use crate::native::{Rect, Size};
 use crate::ui::clipboard;
 use crate::ui::style::Style;
 use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
@@ -29,7 +29,7 @@ define_widget! {
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
         /// 上次渲染时的文本 draw_pos（用于事件命中测试）。
-        draw_pos: Cell<crate::native::Point>,
+        draw_pos: Cell<crate::core::Point>,
         /// 统一样式覆盖（优先于 color/font_size 独立字段）。
         pub(crate) style: Option<Style>,
     }
@@ -104,17 +104,18 @@ define_widget! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // 统一样式优先：style.color > self.color > theme default
-        let c = self.style.as_ref()
-            .map(|s| s.color)
-            .or(self.color)
-            .unwrap_or_else(|| ctx.tokens().color_text());
+        let c = if let Some(style) = self.style.as_ref() {
+            style.resolve_color(ctx.tokens())
+        } else {
+            self.color.unwrap_or_else(|| ctx.tokens().color_text())
+        };
         // 分辨率：物理单位优先 > style > self.font_size
         let fs = if let Some(unit) = self.font_size_unit {
             unit.to_dip(ctx.spatial().dpi())
+        } else if let Some(style) = self.style.as_ref() {
+            style.resolve_font_size(ctx.tokens())
         } else {
-            self.style.as_ref()
-                .map(|s| s.font_size)
-                .unwrap_or(self.font_size)
+            self.font_size
         };
 
         // 单次布局：同时用于 hit-test 缓存、选中背景和文字绘制
@@ -134,9 +135,9 @@ define_widget! {
         // 左上对齐（frame-relative，用于 on_event 命中测试）
         let x = 0.0;
         let y = 0.0;
-        let draw_pos = crate::native::Point::new(x, y);
+        let draw_pos = crate::core::Point::new(x, y);
         self.draw_pos.set(draw_pos);
-        let abs_pos = crate::native::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
+        let abs_pos = crate::core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
 
         if !self.text.is_empty() {
             // 缓存 glyph x 位置
@@ -210,7 +211,7 @@ impl Label {
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
-            draw_pos: Cell::new(crate::native::Point::new(0.0, 0.0)),
+            draw_pos: Cell::new(crate::core::Point::new(0.0, 0.0)),
             style: None,
         }
     }

@@ -2,8 +2,7 @@
 //!
 //! 内部委托 `RenderSession` + `CpuBackend`，帧逻辑由 `pipeline/frame.rs` 统一处理。
 
-use crate::native::Error;
-use crate::native::Rect;
+use crate::core::{Error, Rect};
 
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
 use crate::draw::engine::RenderOutcome;

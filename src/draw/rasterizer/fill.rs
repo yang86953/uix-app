@@ -2,7 +2,7 @@
 //!
 //! 所有函数不持状态，只接受像素缓冲、裁剪、参数，直接写入像素。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::flattener;

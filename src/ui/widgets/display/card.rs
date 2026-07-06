@@ -1,10 +1,10 @@
 //! Card widget — Ant Design style container with elevation, shadow, optional
 //! title, body, hover feedback, and configurable border radius.
 
+use crate::core::{EdgeInsets, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
-use crate::native::{EdgeInsets, Point, Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,

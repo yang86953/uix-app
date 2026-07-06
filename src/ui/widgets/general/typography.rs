@@ -6,10 +6,10 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::native::{Point, Rect, Size};
 use crate::ui::clipboard;
 use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
 
@@ -43,7 +43,7 @@ define_widget! {
         selection: Cell<Option<(usize, usize)>>,
         sel_anchor: Cell<usize>,
         sel_dragging: Cell<bool>,
-        draw_pos: Cell<crate::native::Point>,
+        draw_pos: Cell<crate::core::Point>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -140,9 +140,9 @@ define_widget! {
 
         let x = 0.0;
         let y = ctx.visual_center_y(frame, fs) - frame.y;
-        let draw_pos = crate::native::Point::new(x, y);
+        let draw_pos = crate::core::Point::new(x, y);
         self.draw_pos.set(draw_pos);
-        let abs_pos = crate::native::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
+        let abs_pos = crate::core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
 
         if !self.content.is_empty() {
             // 缓存 glyph x 位置
@@ -228,7 +228,7 @@ impl Typography {
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
             sel_dragging: Cell::new(false),
-            draw_pos: Cell::new(crate::native::Point::new(0.0, 0.0)),
+            draw_pos: Cell::new(crate::core::Point::new(0.0, 0.0)),
         }
     }
     pub fn heading(content: &str, level: u8) -> Self {

@@ -6,7 +6,7 @@
 // ============================================================================
 
 use crate::native::traits::display::DisplayInfo;
-use crate::native::IDisplay;
+use crate::native::traits::display::IDisplay;
 
 use super::WaylandBackend;
 
@@ -46,7 +46,7 @@ impl IDisplay for WaylandBackend {
             .unwrap_or_else(|| {
                 // 回退：虚拟 1080p 显示器
                 DisplayInfo {
-                    bounds: crate::native::Rect::new(0.0, 0.0, 1920.0, 1080.0),
+                    bounds: crate::core::Rect::new(0.0, 0.0, 1920.0, 1080.0),
                     dpi_scale: 1.0,
                     is_primary: index == 0,
                 }

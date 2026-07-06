@@ -9,7 +9,7 @@
 
 use super::aabb3d::AABB3D;
 use super::context::SpatialContext;
-use crate::native::Rect;
+use crate::core::Rect;
 
 /// 3D 脏区域：模型空间 AABB + 投影到屏幕。
 ///

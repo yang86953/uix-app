@@ -20,11 +20,11 @@
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
-use crate::native::{Point, Rect, Size};
 use crate::ui::clipboard;
 use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
 

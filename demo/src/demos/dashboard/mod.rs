@@ -1,4 +1,4 @@
-﻿//! Ant Design 5 全组件展示 — 分类多页面版。
+//! Ant Design 5 全组件展示 — 分类多页面版。
 //!
 //! 运行：`cargo run --bin uix-demo`（可选 `--gpu`）
 //!
@@ -791,9 +791,10 @@ mod tests {
     /// 模拟 hover 触发的局部重绘，顶部不应出现透底/layout 底色接缝。
     #[test]
     fn demo_nav_hover_partial_repaint_no_top_seam() {
+        use uix::core::Point;
         use uix::draw::painting::ThemeSnapshot;
         use uix::draw::pipeline::{FrameRenderInput, FrameRenderer};
-        use uix::native::{KeyMod, Point};
+        use uix::native::traits::input::KeyMod;
         use uix::ui::widgets::navigation::NavItem;
         use uix::ui::SystemEvent;
 

@@ -3,9 +3,9 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use crate::native::Rect;
+use crate::core::Rect;
 
-use crate::draw::primitives::types::DirtyRegion;
+use crate::core::DirtyRegion;
 
 /// 节点标识（与 UI 层 WidgetId 对齐，draw 不依赖 ui 域）。
 pub type NodeId = usize;

@@ -1,6 +1,6 @@
 //! 字形混合纯函数——将 coverage 位图与颜色混合到像素缓冲。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::primitives::color::Color;
 

@@ -16,7 +16,8 @@ pub mod render_object;
 pub mod spatial;
 pub mod traits;
 
-pub use backend::{BackendCapabilities, BackendKind, DamageRegion, RenderBackend};
+pub use crate::core::{DamageRegion, DirtyRegion};
+pub use backend::{BackendCapabilities, BackendKind, RenderBackend};
 pub use engine::cpu::software::SoftwareEngine;
 pub use engine::RenderOutcome;
 pub use font::bitmap_font::BitmapFont;
@@ -34,8 +35,8 @@ pub use primitives::color::{colors, Color};
 pub use primitives::path::{FillRule, LineCap, LineJoin, Path, PathBuilder, PathSegment};
 pub use primitives::stroker::StrokeOptions;
 pub use primitives::types::{
-    BlendMode, DirtyRegion, FontHandle, GradientDirection, HAlign, ImageHandle, Radius,
-    TextLayoutOptions, Transform, VAlign,
+    BlendMode, FontHandle, GradientDirection, HAlign, ImageHandle, Radius, TextLayoutOptions,
+    Transform, VAlign,
 };
 pub use primitives::{blur, color, flattener, path, stroker, types};
 pub use spatial::unit::AngleExt;

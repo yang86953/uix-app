@@ -3,8 +3,8 @@
 pub use crate::draw::engine::RenderOutcome;
 
 use super::canvas::Canvas2D;
+use crate::core::{Error, Rect};
 use crate::draw::primitives::types::ImageHandle;
-use crate::native::{Error, Rect};
 
 /// 帧更新策略。
 #[derive(Debug, Clone)]
@@ -129,7 +129,7 @@ pub trait GraphicsEngine: 'static {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::Rect;
+    use crate::core::Rect;
 
     #[test]
     fn full_redraw_rects_none() {

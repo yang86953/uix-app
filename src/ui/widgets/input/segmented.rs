@@ -1,9 +1,9 @@
 //! Segmented widget — 分段选择器，支持 disabled/hover/keyboard/focus。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 

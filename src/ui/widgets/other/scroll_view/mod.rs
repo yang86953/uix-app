@@ -1,7 +1,4 @@
-//! ScrollView widget — a scrollable viewport that clips and scrolls its children.
-//!
-//! Supports vertical and horizontal scrolling via mouse wheel, with optional
-//! scrollbar rendering. Content offsets are managed per-frame via scroll_x/scroll_y.
+//! ScrollView widget: a scrollable viewport that clips and scrolls children.
 
 pub mod scrollbar;
 #[allow(unused_imports)]
@@ -10,49 +7,28 @@ pub use scrollbar::*;
 use std::cell::Cell;
 
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
+use crate::core::{Rect, Size};
 use crate::define_widget;
-use crate::draw::painting::PaintContext;
-use crate::draw::painting::PaintPass;
-use crate::native::{Rect, Size};
+use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
 #[cfg(test)]
 use crate::ui::traits::{EventHandler, WidgetCapabilities, WidgetLayout, WidgetRender};
 use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetCore, WidgetId, WidgetTree};
 
-/// Scroll direction for a ScrollView.
-/// （已统一为 crate::native::ScrollDirection。）
-pub use crate::native::ScrollDirection;
+pub use crate::native::traits::input::ScrollDirection;
 
 define_widget! {
-    /// A scrollable viewport that clips its children and supports mouse-wheel
-    /// scrolling. Content offset is stored in `scroll_x` / `scroll_y`.
-    ///
-    /// # Layout
-    ///
-    /// Children are offset by (-scroll_x, -scroll_y) so that scrolling
-    /// reveals different regions of the content. The viewport (visible area)
-    /// is defined by the widget's `frame`.
-    ///
-    /// # Rendering
-    ///
-    /// A clip rect is pushed to the engine before rendering children, so
-    /// content outside the viewport is masked out.
+    /// A scrollable viewport that clips its children.
     pub struct ScrollView {
         children: WidgetChildren,
         pub scroll_x: f32,
         pub scroll_y: f32,
-        /// Velocity-based momentum scrolling: velocity accumulates on
-        /// wheel events and decays via friction in on_update.
-        pub velocity_x: f32,
-        pub velocity_y: f32,
         direction: ScrollDirection,
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
         flex_grow_val: f32,
         flex_shrink_val: f32,
         content_bounds: Cell<Option<Size>>,
-        /// 帧间滚动增量（用于 dirty_rect strip 计算）。
-        /// on_update 中计算，dirty_rect 中读取。
         scroll_delta_strip: Cell<(f32, f32)>,
         scrollbar_v: ScrollBar,
         scrollbar_h: ScrollBar,
@@ -79,22 +55,33 @@ define_widget! {
             SystemEvent::Wheel { delta, .. } => {
                 let mut handled = false;
                 let view = self.last_frame.get();
-                // 加速度（每滚轮单位增加的像素/秒速度）：
-                // 比例因子 0.25 约 = 每次滚轮移动视口 5% 的距离（经阻尼衰减后），
-                // 比之前的 0.08(1%) 大幅提升响应感。
+                let old_x = self.scroll_x;
+                let old_y = self.scroll_y;
+
                 if self.direction.can_scroll_y() && delta.y != 0.0 {
-                    let view_h = view.map(|f| f.h)
+                    let view_h = view
+                        .map(|f| f.h)
                         .unwrap_or(self.fixed_height.unwrap_or(200.0));
-                    self.velocity_y += delta.y * view_h * 0.25;
+                    self.scroll_y = (self.scroll_y + delta.y * view_h * 0.25)
+                        .clamp(0.0, self.max_scroll_y());
                     handled = true;
                 }
                 if self.direction.can_scroll_x() && delta.x != 0.0 {
-                    let view_w = view.map(|f| f.w)
+                    let view_w = view
+                        .map(|f| f.w)
                         .unwrap_or(self.fixed_width.unwrap_or(300.0));
-                    self.velocity_x += delta.x * view_w * 0.25;
+                    self.scroll_x = (self.scroll_x + delta.x * view_w * 0.25)
+                        .clamp(0.0, self.max_scroll_x());
                     handled = true;
                 }
-                if handled { EventResult::Handled } else { EventResult::NotHandled }
+
+                self.scroll_delta_strip
+                    .set((self.scroll_x - old_x, self.scroll_y - old_y));
+                if handled {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             SystemEvent::PointerDown { pos, .. } => {
                 let frame = match self.last_frame.get() {
@@ -104,18 +91,24 @@ define_widget! {
                 if !self.scrollbar_v.show && !self.scrollbar_h.show {
                     return EventResult::NotHandled;
                 }
-                // Vertical scrollbar thumb
-                if self.direction.can_scroll_y() && self.max_scroll_y() > 0.0
-                    && self.scrollbar_v.hit_test_thumb(frame, *pos, self.scroll_y, self.max_scroll_y()) {
-                        self.scrollbar_v.dragging = true;
-                        return EventResult::Handled;
-                    }
-                // Horizontal scrollbar thumb
-                if self.direction.can_scroll_x() && self.max_scroll_x() > 0.0
-                    && self.scrollbar_h.hit_test_thumb(frame, *pos, self.scroll_x, self.max_scroll_x()) {
-                        self.scrollbar_h.dragging = true;
-                        return EventResult::Handled;
-                    }
+                if self.direction.can_scroll_y()
+                    && self.max_scroll_y() > 0.0
+                    && self
+                        .scrollbar_v
+                        .hit_test_thumb(frame, *pos, self.scroll_y, self.max_scroll_y())
+                {
+                    self.scrollbar_v.dragging = true;
+                    return EventResult::Handled;
+                }
+                if self.direction.can_scroll_x()
+                    && self.max_scroll_x() > 0.0
+                    && self
+                        .scrollbar_h
+                        .hit_test_thumb(frame, *pos, self.scroll_x, self.max_scroll_x())
+                {
+                    self.scrollbar_h.dragging = true;
+                    return EventResult::Handled;
+                }
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
@@ -126,13 +119,15 @@ define_widget! {
                     };
                     let max_y = self.max_scroll_y();
                     if max_y > 0.0 {
-                        self.scroll_y = self.scrollbar_v.scroll_from_drag(
-                            frame, pos.y, self.scroll_y, max_y,
-                        );
-                        self.velocity_y = 0.0;
+                        let old_y = self.scroll_y;
+                        self.scroll_y = self
+                            .scrollbar_v
+                            .scroll_from_drag(frame, pos.y, self.scroll_y, max_y);
+                        self.scroll_delta_strip.set((0.0, self.scroll_y - old_y));
                     }
                     return EventResult::Handled;
                 }
+
                 if self.scrollbar_h.dragging {
                     let frame = match self.last_frame.get() {
                         Some(f) => f,
@@ -140,14 +135,15 @@ define_widget! {
                     };
                     let max_x = self.max_scroll_x();
                     if max_x > 0.0 {
-                        self.scroll_x = self.scrollbar_h.scroll_from_drag(
-                            frame, pos.x, self.scroll_x, max_x,
-                        );
-                        self.velocity_x = 0.0;
+                        let old_x = self.scroll_x;
+                        self.scroll_x = self
+                            .scrollbar_h
+                            .scroll_from_drag(frame, pos.x, self.scroll_x, max_x);
+                        self.scroll_delta_strip.set((self.scroll_x - old_x, 0.0));
                     }
                     return EventResult::Handled;
                 }
-                // Not dragging: update thumb hover highlight.
+
                 if self.scrollbar_v.show || self.scrollbar_h.show {
                     if let Some(frame) = self.last_frame.get() {
                         let old_hover_v = self.scrollbar_v.hover;
@@ -156,16 +152,15 @@ define_widget! {
                         self.scrollbar_h.hover = false;
 
                         if self.direction.can_scroll_y() && self.max_scroll_y() > 0.0 {
-                            self.scrollbar_v.hover = self.scrollbar_v.hit_test_thumb(
-                                frame, *pos, self.scroll_y, self.max_scroll_y(),
-                            );
+                            self.scrollbar_v.hover = self
+                                .scrollbar_v
+                                .hit_test_thumb(frame, *pos, self.scroll_y, self.max_scroll_y());
                         }
                         if self.direction.can_scroll_x() && self.max_scroll_x() > 0.0 {
-                            self.scrollbar_h.hover = self.scrollbar_h.hit_test_thumb(
-                                frame, *pos, self.scroll_x, self.max_scroll_x(),
-                            );
+                            self.scrollbar_h.hover = self
+                                .scrollbar_h
+                                .hit_test_thumb(frame, *pos, self.scroll_x, self.max_scroll_x());
                         }
-                        // If hover state changed, the scrollbar needs a repaint.
                         if old_hover_v != self.scrollbar_v.hover
                             || old_hover_h != self.scrollbar_h.hover
                         {
@@ -179,7 +174,11 @@ define_widget! {
                 let was_dragging = self.scrollbar_v.dragging || self.scrollbar_h.dragging;
                 self.scrollbar_v.dragging = false;
                 self.scrollbar_h.dragging = false;
-                if was_dragging { EventResult::Handled } else { EventResult::NotHandled }
+                if was_dragging {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             SystemEvent::PointerLeave => {
                 self.scrollbar_v.hover = false;
@@ -190,61 +189,6 @@ define_widget! {
         }
     }
 
-    on_update => (&mut self, dt: f64) {
-        let dt32 = dt as f32;
-
-        // 记录 clamping 前的 scroll 位置，用于计算 clamping 后的真实 delta
-        let old_x = self.scroll_x;
-        let old_y = self.scroll_y;
-
-        const DAMPING_K: f32 = 5.0;
-        let damp = (-DAMPING_K * dt32).exp();
-        let threshold = 0.5;
-
-        self.scroll_x += self.velocity_x * dt32;
-        self.velocity_x *= damp;
-        if self.velocity_x.abs() < threshold { self.velocity_x = 0.0; }
-
-        self.scroll_y += self.velocity_y * dt32;
-        self.velocity_y *= damp;
-        if self.velocity_y.abs() < threshold { self.velocity_y = 0.0; }
-
-        // 边界 clamping：带软停止（velocity 急刹而非硬切）
-        if self.scroll_x < 0.0 {
-            self.scroll_x = 0.0;
-            self.velocity_x = 0.0;
-        }
-        let max_x = self.max_scroll_x();
-        if self.scroll_x > max_x {
-            self.scroll_x = max_x;
-            self.velocity_x = 0.0;
-        }
-        if self.scroll_y < 0.0 {
-            self.scroll_y = 0.0;
-            self.velocity_y = 0.0;
-        }
-        let max_y = self.max_scroll_y();
-        if self.scroll_y > max_y {
-            self.scroll_y = max_y;
-            self.velocity_y = 0.0;
-        }
-
-        // ⚠️ 必须在 clamping 之后计算 delta，否则当内容不超出视口
-        // （max_scroll=0）时，scroll_y 会被 clamp 回 0，但 delta 已经
-        // 记录了虚假偏移，导致 scroll_region 错误移动像素 + 虚假 strip 重绘。
-        self.scroll_delta_strip.set((self.scroll_x - old_x, self.scroll_y - old_y));
-    }
-
-    needs_continuous_update => (&self) -> bool {
-        self.scrollbar_v.dragging
-            || self.scrollbar_h.dragging
-            || self.scrollbar_v.hover
-            || self.scrollbar_h.hover
-            || self.velocity_x.abs() > 0.5
-            || self.velocity_y.abs() > 0.5
-    }
-
-    // 帧间滚动增量，用于 render_loop 的 scroll_region 像素移动
     scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
         let delta = self.scroll_delta_strip.get();
         if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
@@ -262,33 +206,31 @@ define_widget! {
         Some(frame)
     }
 
-    // 滚动视口始终按整 frame 失效，保证子树完整重绘。
     dirty_rect => (&self, frame: Rect) -> Rect {
         frame
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        // Save frame for scrollbar hit-testing in on_event.
         self.last_frame.set(Some(frame));
 
-        if ctx.paint_pass() == PaintPass::Content {
-            // Background fill so the viewport is always opaque.
-            let bg = ctx.tokens().color_bg_container();
-            ctx.fill_rect(frame, bg, None);
-        } else if ctx.paint_pass() == PaintPass::AfterChildren {
-            // Scrollbar overlay drawn on top of children.
-            if self.scrollbar_v.show || self.scrollbar_h.show {
-                // 用背景色先清空轨道区域，防止子节点脏时在未清除的半透明 overlay 像素上叠加导致变黑
+        match ctx.paint_pass() {
+            PaintPass::Content => {
+                let bg = ctx.tokens().color_bg_container();
+                ctx.fill_rect(frame, bg, None);
+            }
+            PaintPass::AfterChildren => {
                 let bg = ctx.tokens().color_bg_container();
                 if self.scrollbar_v.show && self.direction.can_scroll_y() {
                     let tr = self.scrollbar_v.track_rect_abs(frame);
                     ctx.fill_rect(tr, bg, None);
-                    self.scrollbar_v.render(frame, ctx, self.scroll_y, self.max_scroll_y());
+                    self.scrollbar_v
+                        .render(frame, ctx, self.scroll_y, self.max_scroll_y());
                 }
                 if self.scrollbar_h.show && self.direction.can_scroll_x() {
                     let tr = self.scrollbar_h.track_rect_abs(frame);
                     ctx.fill_rect(tr, bg, None);
-                    self.scrollbar_h.render(frame, ctx, self.scroll_x, self.max_scroll_x());
+                    self.scrollbar_h
+                        .render(frame, ctx, self.scroll_x, self.max_scroll_x());
                 }
             }
         }
@@ -303,9 +245,6 @@ define_widget! {
             return result;
         }
 
-        // Track content bounds. Children are placed at natural coordinates
-        // (no scroll offset). Scroll offset is applied as canvas translate
-        // during rendering via LayerTree.
         let mut max_right = frame.x;
         let mut max_bottom = frame.y;
         let mut cursor_y = 0.0f32;
@@ -314,16 +253,8 @@ define_widget! {
                 .get(cid)
                 .map(|c| c.preferred_size(None))
                 .unwrap_or_default();
-            // When preferred width is 0 (unspecified), stretch to
-            // fill the viewport so the child can use flex/Stretch
-            // for its own children.
             let w = if pref.w <= 0.0 { frame.w } else { pref.w };
-            // 高度取 preferred_size 和当前实际 frame 高度的较大值，
-            // 确保 Phase 2（底部向上扩展）后的尺寸正确反映到 content_bounds。
             let current_h = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
-            // 子节点高度优先用 preferred_size 或当前实际高度，
-            // 不再强制 ≥ 视口高度(frame.h)，避免与 Phase 4 收缩形成振荡循环。
-            // 仅在无任何尺寸信息时回退到视口高度。
             let h = if pref.h > 0.0 {
                 pref.h
             } else if current_h > 0.0 {
@@ -338,28 +269,19 @@ define_widget! {
             cursor_y += h;
         }
 
-        // Store content bounds for scrollbar calculation
         let content_w = (max_right - frame.x).max(frame.w);
         let content_h = (max_bottom - frame.y).max(frame.h);
         self.content_bounds.set(Some(Size::new(content_w, content_h)));
-        crate::core::log::debug_fn(format!("[ScrollView] layout_children: view=({:.0},{:.0}) content=({:.0},{:.0}) scroll=({:.0},{:.0})",
-            frame.w, frame.h,
-            content_w, content_h, self.scroll_x, self.scroll_y,));
-
         result
     }
 }
 
 impl ScrollView {
-    // ── Constructor ──
-
     pub fn new(direction: ScrollDirection) -> Self {
         Self {
             children: WidgetChildren::new(),
             scroll_x: 0.0,
             scroll_y: 0.0,
-            velocity_x: 0.0,
-            velocity_y: 0.0,
             direction,
             fixed_width: None,
             fixed_height: None,
@@ -373,8 +295,6 @@ impl ScrollView {
         }
     }
 
-    // ── Builder methods ──
-
     pub fn child(self, w: impl WidgetComponent + 'static) -> Self {
         self.children.add(w);
         self
@@ -385,7 +305,6 @@ impl ScrollView {
         self
     }
 
-    /// Set the viewport size (visible area).
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
@@ -402,54 +321,39 @@ impl ScrollView {
         self
     }
 
-    /// Show or hide the scrollbar overlay.
     pub fn show_scrollbar(mut self, v: bool) -> Self {
         self.scrollbar_v.show = v;
         self.scrollbar_h.show = v;
         self
     }
 
-    /// Set scroll offset manually (clamped to valid range).
     pub fn scroll_to(mut self, x: f32, y: f32) -> Self {
         self.scroll_x = x.max(0.0);
         self.scroll_y = y.max(0.0);
-        self.velocity_x = 0.0;
-        self.velocity_y = 0.0;
         self
     }
-
-    // ── Runtime accessors ──
 
     pub fn scroll_x(&self) -> f32 {
         self.scroll_x
     }
+
     pub fn scroll_y(&self) -> f32 {
         self.scroll_y
     }
+
     pub fn set_scroll_x(&mut self, x: f32) {
-        let v = x.max(0.0);
-        self.scroll_x = v;
-        self.velocity_x = 0.0;
+        self.scroll_x = x.max(0.0);
     }
+
     pub fn set_scroll_y(&mut self, y: f32) {
-        let v = y.max(0.0);
-        self.scroll_y = v;
-        self.velocity_y = 0.0;
+        self.scroll_y = y.max(0.0);
     }
 
-    /// Programmatically scroll to a position (clamped to valid range).
     pub fn scroll_to_xy(&mut self, x: f32, y: f32) {
-        let vx = x.max(0.0).min(self.max_scroll_x());
-        let vy = y.max(0.0).min(self.max_scroll_y());
-        self.scroll_x = vx;
-        self.scroll_y = vy;
-        self.velocity_x = 0.0;
-        self.velocity_y = 0.0;
+        self.scroll_x = x.max(0.0).min(self.max_scroll_x());
+        self.scroll_y = y.max(0.0).min(self.max_scroll_y());
     }
 
-    // ── Scroll range ──────────────────────────────────────────────────
-
-    /// Maximum scrollable offset along X axis.
     pub fn max_scroll_x(&self) -> f32 {
         match self.content_bounds.get() {
             Some(cs) => {
@@ -464,7 +368,6 @@ impl ScrollView {
         }
     }
 
-    /// Maximum scrollable offset along Y axis.
     pub fn max_scroll_y(&self) -> f32 {
         match self.content_bounds.get() {
             Some(cs) => {
@@ -475,7 +378,6 @@ impl ScrollView {
                     .unwrap_or(self.fixed_height.unwrap_or(200.0));
                 (cs.h - view_h).max(0.0)
             }
-            // layout 尚未写入 content_bounds 时不允许滚动，避免 scroll_y 失控
             None => 0.0,
         }
     }
@@ -490,13 +392,12 @@ impl Default for ScrollView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::{Point, Rect, Size};
     use crate::draw::painting::PaintContext;
-    use crate::native::{Point, Rect, Size};
     use crate::ui::layout::{AlignItems, FlexDirection};
     use crate::ui::widgets::{Collapse, CollapsePanel, Container, Space};
     use crate::ui::EventResult;
 
-    /// A simple fixed-size widget for testing.
     struct FixedWidget {
         size: Size,
         #[allow(dead_code)]
@@ -507,15 +408,19 @@ mod tests {
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }
+
         fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
             self
         }
+
         fn capabilities(&self) -> WidgetCapabilities {
             WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER)
         }
+
         crate::wc_upcast!(FixedWidget; WidgetLayout);
         crate::wc_upcast!(FixedWidget; WidgetRender);
     }
+
     impl WidgetLayout for FixedWidget {
         fn preferred_size(
             &self,
@@ -524,14 +429,9 @@ mod tests {
             self.size
         }
     }
+
     impl WidgetRender for FixedWidget {
-        fn render(
-            &self,
-            _frame: Rect,
-            _ctx: &mut crate::draw::painting::PaintContext,
-            _tree: &WidgetTree,
-        ) {
-        }
+        fn render(&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
     }
 
     #[test]
@@ -570,14 +470,14 @@ mod tests {
     }
 
     #[test]
-    fn scrollview_layout_children_offsets_by_scroll() {
+    fn scrollview_layout_children_uses_natural_coordinates() {
         let scrollview = ScrollView::new(ScrollDirection::Vertical)
             .size(200.0, 300.0)
             .scroll_to(0.0, 50.0);
 
         let mut tree = WidgetTree::new();
         let root_id = tree.set_root(Box::new(scrollview));
-        let _child_id = tree.add_child(
+        tree.add_child(
             root_id,
             Box::new(FixedWidget {
                 size: Size::new(200.0, 600.0),
@@ -587,23 +487,19 @@ mod tests {
 
         tree.layout();
 
-        let frame = tree.get(root_id).map(|n| n.frame()).unwrap_or(Rect::zero());
+        let frame = tree.get(root_id).map(|n| n.frame()).unwrap_or_default();
         let children = tree
             .get(root_id)
             .map(|n| n.children().to_vec())
             .unwrap_or_default();
-
         let result = tree
             .get(root_id)
             .unwrap()
             .layout_children(frame, &children, &tree);
-        if let Some((_, rect)) = result.first() {
-            // Child placed at natural coordinates (scroll offset is applied as canvas translate)
-            assert_eq!(rect.x, frame.x);
-            assert_eq!(rect.y, frame.y);
-        } else {
-            panic!("Expected at least one child rect");
-        }
+
+        let (_, rect) = result.first().expect("expected child rect");
+        assert_eq!(rect.x, frame.x);
+        assert_eq!(rect.y, frame.y);
     }
 
     #[test]
@@ -617,29 +513,31 @@ mod tests {
     }
 
     #[test]
-    fn scrollview_not_handled_for_non_scroll_events() {
+    fn scrollview_not_handled_for_non_scrollbar_pointer_down() {
         let mut sv = ScrollView::new(ScrollDirection::Vertical);
         let result = sv.on_event(&SystemEvent::PointerDown {
             pos: Point::new(10.0, 10.0),
             button: crate::ui::MouseButton::Left,
-            mods: crate::native::KeyMod::NONE,
+            mods: crate::native::traits::input::KeyMod::NONE,
         });
         assert_eq!(result, EventResult::NotHandled);
     }
 
-    /// 测试：ScrollView 内子节点 expand 后 content_bounds/max_scroll 更新
     #[test]
     fn scrollview_expand_child_updates_content_bounds() {
         struct GrowWidget {
             size: std::cell::Cell<f32>,
         }
+
         impl WidgetComponent for GrowWidget {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
+
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
                 self
             }
+
             fn capabilities(&self) -> WidgetCapabilities {
                 WidgetCapabilities::from_bits(
                     WidgetCapabilities::LAYOUT
@@ -647,18 +545,22 @@ mod tests {
                         | WidgetCapabilities::EVENT,
                 )
             }
+
             crate::wc_upcast!(GrowWidget; WidgetLayout);
             crate::wc_upcast!(GrowWidget; WidgetRender);
             crate::wc_upcast!(GrowWidget; EventHandler);
         }
+
         impl WidgetLayout for GrowWidget {
             fn preferred_size(&self, _: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
                 Size::new(300.0, self.size.get())
             }
         }
+
         impl WidgetRender for GrowWidget {
             fn render(&self, _: Rect, _: &mut PaintContext, _: &WidgetTree) {}
         }
+
         impl EventHandler for GrowWidget {
             fn on_event(&mut self, event: &SystemEvent) -> EventResult {
                 if matches!(event, SystemEvent::PointerDown { .. }) {
@@ -674,53 +576,44 @@ mod tests {
         let sv_id = tree.set_root(Box::new(
             ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
         ));
-        let _child_id = tree.add_child(
+        tree.add_child(
             sv_id,
             Box::new(GrowWidget {
                 size: std::cell::Cell::new(100.0),
             }),
         );
 
-        // 初始布局：子节点100 < 视口200
         tree.layout();
         let max_y = |tree: &WidgetTree| -> f32 {
             let sv = tree.get(sv_id).unwrap();
             let sv_ref: &ScrollView = sv.component().as_any().downcast_ref().unwrap();
             sv_ref.max_scroll_y()
         };
+        assert_eq!(max_y(&tree), 0.0);
 
-        assert_eq!(max_y(&tree), 0.0, "初始内容<视口");
-
-        // 展开1：100→200, 刚好等于视口
         tree.dispatch_event(&SystemEvent::PointerDown {
             pos: Point::new(50.0, 10.0),
             button: crate::ui::MouseButton::Left,
-            mods: crate::native::KeyMod::NONE,
+            mods: crate::native::traits::input::KeyMod::NONE,
         });
         tree.layout();
-        assert_eq!(max_y(&tree), 0.0, "展开到200=视口200");
+        assert_eq!(max_y(&tree), 0.0);
 
-        // 展开2：200→400, 内容>视口
         tree.dispatch_event(&SystemEvent::PointerDown {
             pos: Point::new(50.0, 10.0),
             button: crate::ui::MouseButton::Left,
-            mods: crate::native::KeyMod::NONE,
+            mods: crate::native::traits::input::KeyMod::NONE,
         });
         tree.layout();
         let max = max_y(&tree);
         assert!(
             (max - 200.0).abs() < 1.0,
-            "展开到400>视口200，max_scroll_y应为200, 实际{max}"
+            "expected max_scroll_y near 200, got {max}"
         );
     }
 
-    /// 测试：Collapse 展开后 ScrollView 的 max_scroll_y 正确更新
     #[test]
     fn collapse_expand_updates_scrollview_content_bounds() {
-        use crate::ui::WidgetTree;
-        // 构造与 wrap_page 类似的结构：
-        // ScrollView(300x200) -> Container(300x0,Column) -> Space(300x140,Column,Stretch) -> Collapse
-        // Container 需要用 WidgetNode / tree.add_child 添加子节点
         let mut tree = WidgetTree::new();
         let sv_id = tree.set_root(Box::new(
             ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
@@ -739,15 +632,13 @@ mod tests {
                     .align(AlignItems::Stretch),
             ),
         );
-        // 面板B 内容足够长（7行），展开后总高度 > 200px 视口
-        // 3个 header (36px) + 展开内容 (7*18+16=142) = 250 > 200
-        let long_content = "行1\n行2\n行3\n行4\n行5\n行6\n行7";
+        let long_content = "line\nline\nline\nline\nline\nline\nline";
         tree.add_child(
             space_id,
             Box::new(Collapse::new().panels(vec![
-                CollapsePanel::new("面板A", "面板A短内容。"),
-                CollapsePanel::new("面板B", long_content),
-                CollapsePanel::new("面板C", "面板C短内容。"),
+                CollapsePanel::new("Panel A", "short"),
+                CollapsePanel::new("Panel B", long_content),
+                CollapsePanel::new("Panel C", "short"),
             ])),
         );
 
@@ -761,15 +652,12 @@ mod tests {
                     .map(|sv| sv.max_scroll_y())
             })
             .unwrap();
-        assert_eq!(max_before, 0.0, "面板未展开时内容应不超过视口");
-        println!("Before click max_scroll_y: {max_before}");
+        assert_eq!(max_before, 0.0);
 
-        // 点击展开第二个面板
-        // Collapse 每个 header 36px, 点击 y=45 应在第二个面板 header 区域
         tree.dispatch_event(&SystemEvent::PointerDown {
-            pos: Point::new(50.0, 45.0), // 面板B的header区域
+            pos: Point::new(50.0, 45.0),
             button: crate::ui::MouseButton::Left,
-            mods: crate::native::KeyMod::NONE,
+            mods: crate::native::traits::input::KeyMod::NONE,
         });
         tree.layout();
         let max_after = tree
@@ -781,12 +669,10 @@ mod tests {
                     .map(|sv| sv.max_scroll_y())
             })
             .unwrap();
-        println!("After click max_scroll_y: {max_after}");
 
-        // 展开后 max_scroll_y 应增大
         assert!(
             max_after > max_before,
-            "面板展开后 max_scroll_y 应增大 (before={max_before}, after={max_after})"
+            "expected max_scroll_y to increase after expand, before={max_before}, after={max_after}"
         );
     }
 }

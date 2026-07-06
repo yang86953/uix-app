@@ -3,10 +3,10 @@
 //! 支持横向步骤条，步骤状态（wait/process/finish/error），
 //! 自定义当前步骤，可点击切换。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 

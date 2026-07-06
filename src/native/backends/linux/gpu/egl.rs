@@ -10,10 +10,8 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use crate::native::{Errc, Error, PresentDamage};
-
-use crate::native::IGraphicsContext;
-
+use crate::native::traits::present::{IGraphicsContext, PresentDamage};
+use crate::native::{Errc, Error};
 // ════════════════════════════════════════════════════════════════════════════
 // wl_egl_window FFI（wayland-egl 客户端库，Linux 系统自带）
 // ════════════════════════════════════════════════════════════════════════════

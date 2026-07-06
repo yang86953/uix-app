@@ -2,9 +2,9 @@
 //!
 //! 点击切换暗色/亮色主题，通过 Cell<bool> 通知外部代码。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use std::cell::Cell;
 

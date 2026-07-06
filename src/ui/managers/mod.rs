@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 
 mod drag_manager;
-mod event_manager;
 mod focus_manager;
 mod interaction_manager;
 mod state_manager;
@@ -12,7 +11,6 @@ mod style_manager;
 mod text_manager;
 
 pub use drag_manager::*;
-pub use event_manager::*;
 pub use focus_manager::*;
 pub use interaction_manager::*;
 pub use state_manager::*;
@@ -29,7 +27,6 @@ pub struct WidgetManagers {
     pub interaction: InteractionManager,
     pub focus: FocusManager,
     pub drag: DragManager,
-    pub event: EventManager,
     /// Per-widget manager overrides keyed by WidgetId.
     overrides: HashMap<usize, Box<WidgetManagersOverrides>>,
 }

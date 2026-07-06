@@ -2,13 +2,14 @@
 
 use std::cell::Cell;
 
+use crate::core::{EdgeInsets, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::Color;
-use crate::native::{EdgeInsets, Rect, Size};
 use crate::ui::layout::engine::{child_from_tree, BoxModel, FlexLayout, LayoutChild};
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
-use crate::ui::style::{BoxShadowDef, DisplayMode, Style};
+use crate::ui::style::{
+    apply_style, BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken,
+};
 use crate::ui::traits::LayoutEngine;
 use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 
@@ -62,7 +63,7 @@ define_widget! {
         if visual.w <= 0.0 || visual.h <= 0.0 { return; }
 
         // 统一样式——绘制背景/边框/阴影/透明度
-        crate::app::bridge::apply_style(ctx, visual, s);
+        apply_style(ctx, visual, s);
     }
 
     layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
@@ -194,8 +195,8 @@ impl Container {
     // ═══════════════════════════════════════════════════
 
     /// 设置背景色（`bg` 别名）。
-    pub fn bg(mut self, c: Color) -> Self {
-        self.style.background = Some(c);
+    pub fn bg(mut self, c: impl Into<ColorValue>) -> Self {
+        self.style.background = Some(c.into());
         self
     }
 
@@ -218,8 +219,8 @@ impl Container {
     }
 
     /// 设置边框。
-    pub fn border(mut self, color: Color, width: f32) -> Self {
-        self.style.border_color = Some(color);
+    pub fn border(mut self, color: impl Into<ColorValue>, width: f32) -> Self {
+        self.style.border_color = Some(color.into());
         self.style.border_width = EdgeInsets::uniform(width);
         self
     }
@@ -250,14 +251,14 @@ impl Container {
     }
 
     /// 设置文字颜色。
-    pub fn color(mut self, c: Color) -> Self {
-        self.style.color = c;
+    pub fn color(mut self, c: impl Into<ColorValue>) -> Self {
+        self.style.color = c.into();
         self
     }
 
     /// 设置字号。
-    pub fn fs(mut self, s: f32) -> Self {
-        self.style.font_size = s;
+    pub fn fs(mut self, s: impl Into<TypographyToken>) -> Self {
+        self.style.font_size = s.into();
         self
     }
 

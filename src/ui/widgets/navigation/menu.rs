@@ -2,10 +2,10 @@
 //!
 //! 支持水平或垂直布局，子菜单项、hover 高亮、active 选中态。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::{Cell, RefCell};
 
@@ -312,7 +312,7 @@ impl Menu {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::{KeyMod, MouseButton};
+    use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::{SemanticKind, WidgetCore, WidgetTree};
     use std::cell::RefCell;
     use std::rc::Rc;

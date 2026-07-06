@@ -251,9 +251,9 @@ pub fn with_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
     result
 }
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 // LocaleProvider — 为子树注入国际化文案。

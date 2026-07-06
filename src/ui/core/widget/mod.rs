@@ -1,7 +1,8 @@
+pub use crate::core::Point;
+use crate::core::{Rect, Size};
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::draw::traits::GraphicsEngine;
-pub use crate::native::{KeyCode, KeyMod, MouseButton, Point};
-use crate::native::{Rect, Size};
+pub use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::event::HandlerRegistration;
 pub use crate::ui::event::{SystemEvent, SystemEventKind};
 
@@ -214,12 +215,6 @@ impl BoxedWidget {
             .map(|r| r.dirty_rect(frame))
             .unwrap_or(frame)
     }
-    pub fn needs_continuous_update(&self) -> bool {
-        self.component()
-            .as_event()
-            .map(|e| e.needs_continuous_update())
-            .unwrap_or(false)
-    }
     pub fn scroll_delta(&self, frame: Rect) -> Option<(f32, f32)> {
         self.component()
             .as_event()
@@ -333,11 +328,6 @@ impl BoxedWidget {
     pub fn on_destroy(&mut self) {
         if let Some(l) = self.component_mut().as_lifecycle_mut() {
             l.on_destroy();
-        }
-    }
-    pub fn on_update(&mut self, dt: f64) {
-        if let Some(l) = self.component_mut().as_lifecycle_mut() {
-            l.on_update(dt);
         }
     }
     pub fn render(

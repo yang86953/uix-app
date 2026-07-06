@@ -1,8 +1,8 @@
 //! Empty widget — 空状态占位（图标 + 描述居中）。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::native::{Rect, Size};
 use crate::ui::WidgetTree;
 
 define_widget! {

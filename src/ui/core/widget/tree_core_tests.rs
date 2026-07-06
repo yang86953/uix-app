@@ -1,21 +1,19 @@
-// WidgetTree 单元测试模块。
-//
-// 从 `tree_core.rs` 拆分出来以遵守 900 行文件限制。
-
+// WidgetTree 鍗曞厓娴嬭瘯妯″潡銆?//
+// 浠?`tree_core.rs` 鎷嗗垎鍑烘潵浠ラ伒瀹?900 琛屾枃浠堕檺鍒躲€?
 use super::*;
-use crate::native::Point;
-use crate::native::{KeyMod, MouseButton};
+use crate::core::Point;
+use crate::native::traits::input::{KeyMod, MouseButton};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 struct SpyWidget {
-    size: crate::native::Size,
+    size: crate::core::Size,
     last_event: RefCell<Option<SystemEvent>>,
 }
 impl SpyWidget {
     fn new(w: f32, h: f32) -> Self {
         Self {
-            size: crate::native::Size::new(w, h),
+            size: crate::core::Size::new(w, h),
             last_event: RefCell::new(None),
         }
     }
@@ -40,7 +38,7 @@ impl WidgetLayout for SpyWidget {
     fn preferred_size(
         &self,
         _: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::native::Size {
+    ) -> crate::core::Size {
         self.size
     }
 }
@@ -55,13 +53,13 @@ impl EventHandler for SpyWidget {
 }
 
 struct PassThroughContainer {
-    size: crate::native::Size,
+    size: crate::core::Size,
     children: RefCell<Vec<Box<dyn WidgetComponent>>>,
 }
 impl PassThroughContainer {
     fn new(w: f32, h: f32, children: Vec<Box<dyn WidgetComponent>>) -> Self {
         Self {
-            size: crate::native::Size::new(w, h),
+            size: crate::core::Size::new(w, h),
             children: RefCell::new(children),
         }
     }
@@ -89,7 +87,7 @@ impl WidgetLayout for PassThroughContainer {
     fn preferred_size(
         &self,
         _: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::native::Size {
+    ) -> crate::core::Size {
         self.size
     }
 }
@@ -103,7 +101,7 @@ impl EventHandler for PassThroughContainer {
 }
 
 struct ClipContainer {
-    size: crate::native::Size,
+    size: crate::core::Size,
     child_y: f32,
     children: RefCell<Vec<Box<dyn WidgetComponent>>>,
 }
@@ -111,7 +109,7 @@ struct ClipContainer {
 impl ClipContainer {
     fn new(w: f32, h: f32, child_y: f32, children: Vec<Box<dyn WidgetComponent>>) -> Self {
         Self {
-            size: crate::native::Size::new(w, h),
+            size: crate::core::Size::new(w, h),
             child_y,
             children: RefCell::new(children),
         }
@@ -139,7 +137,7 @@ impl WidgetLayout for ClipContainer {
     fn preferred_size(
         &self,
         _: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::native::Size {
+    ) -> crate::core::Size {
         self.size
     }
 
@@ -179,7 +177,7 @@ impl WidgetRender for ClipContainer {
 }
 
 struct LifecycleProbe {
-    size: crate::native::Size,
+    size: crate::core::Size,
     events: Rc<RefCell<Vec<&'static str>>>,
     uses_palette: bool,
 }
@@ -187,7 +185,7 @@ struct LifecycleProbe {
 impl LifecycleProbe {
     fn new(w: f32, h: f32, events: Rc<RefCell<Vec<&'static str>>>) -> Self {
         Self {
-            size: crate::native::Size::new(w, h),
+            size: crate::core::Size::new(w, h),
             events,
             uses_palette: true,
         }
@@ -224,7 +222,7 @@ impl WidgetLayout for LifecycleProbe {
     fn preferred_size(
         &self,
         _: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::native::Size {
+    ) -> crate::core::Size {
         self.size
     }
 }
@@ -614,16 +612,16 @@ fn dispatch_resize_goes_to_root() {
     );
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// 捕获阶段测试
-// ════════════════════════════════════════════════════════════════════════
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+// 鎹曡幏闃舵娴嬭瘯
+// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
 
-/// 捕获阶段：根节点在捕获阶段处理事件，阻止其到达子节点。
+/// Capture phase: root handles the event before the child.
 #[test]
 fn capture_phase_root_handles_before_child() {
     let mut tree = WidgetTree::new();
-    // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
-    // SpyWidget 的 on_event 返回 Handled，所以 root 捕获后子节点收不到。
+    // 鏍戠粨鏋勶細SpyWidget(root, Handled) 鈫?PassThroughContainer 鈫?SpyWidget(child)
+    // SpyWidget root handles the event before it reaches the child.
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
     let container = tree.add_child(
         root_id,
@@ -640,26 +638,23 @@ fn capture_phase_root_handles_before_child() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
-    // 点击在 child 区域内
     let result = tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
-    // SpyWidget(root) 在捕获阶段返回 Handled，最终结果应为 Handled
+    // SpyWidget(root) 鍦ㄦ崟鑾烽樁娈佃繑鍥?Handled锛屾渶缁堢粨鏋滃簲涓?Handled
     assert_eq!(result, EventResult::Handled);
-    // SpyWidget(root) 收到了事件（捕获阶段）
-    // root 不是 focused_widget（target=child 在冒泡阶段才设焦点，但捕获阶段 Handled 阻止了冒泡）
-    // 所以 focused_widget 应为 None（PointerDown 未进入冒泡阶段的 set_focus）
+    // SpyWidget(root) 鏀跺埌浜嗕簨浠讹紙鎹曡幏闃舵锛?    // root 涓嶆槸 focused_widget锛坱arget=child 鍦ㄥ啋娉￠樁娈垫墠璁剧劍鐐癸紝浣嗘崟鑾烽樁娈?Handled 闃绘浜嗗啋娉★級
     assert!(tree.focused_widget.is_none());
 }
 
-/// 捕获阶段不拦截时，事件正常冒泡到目标。
+/// Capture phase falls through to bubble phase when not intercepted.
 #[test]
 fn capture_phase_not_intercepted_proceeds_to_bubble() {
     let mut tree = WidgetTree::new();
-    // 树结构：PassThroughContainer(root) → SpyWidget(child)
-    // PassThroughContainer 返回 NotHandled，不拦截
+    // 鏍戠粨鏋勶細PassThroughContainer(root) 鈫?SpyWidget(child)
+    // PassThroughContainer 杩斿洖 NotHandled锛屼笉鎷︽埅
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
     tree.get_mut(root_id)
@@ -669,23 +664,21 @@ fn capture_phase_not_intercepted_proceeds_to_bubble() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
 
-    // 点击在 child 区域内
     let result = tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
-    // 捕获阶段无人拦截 → 冒泡阶段 child(SpyWidget) 返回 Handled
+    // 鎹曡幏闃舵鏃犱汉鎷︽埅 鈫?鍐掓场闃舵 child(SpyWidget) 杩斿洖 Handled
     assert_eq!(result, EventResult::Handled);
-    // 冒泡阶段设置了焦点
-    assert_eq!(tree.focused_widget, Some(child));
+    // 鍐掓场闃舵璁剧疆浜嗙劍鐐?    assert_eq!(tree.focused_widget, Some(child));
 }
 
-/// 捕获阶段：Wheel 事件被祖先拦截（如 ScrollView 外层拦截滚动）。
+/// Capture phase: wheel events can be intercepted before the target.
 #[test]
 fn capture_phase_wheel_intercepted() {
     let mut tree = WidgetTree::new();
-    // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
+    // 鏍戠粨鏋勶細SpyWidget(root, Handled) 鈫?PassThroughContainer 鈫?SpyWidget(child)
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
     let container = tree.add_child(
         root_id,
@@ -709,11 +702,11 @@ fn capture_phase_wheel_intercepted() {
     assert_eq!(result, EventResult::Handled);
 }
 
-/// 捕获阶段：KeyDown 事件被祖先拦截（如全局快捷键）。
+/// Capture phase: key down events can be intercepted globally.
 #[test]
 fn capture_phase_key_down_intercepted() {
     let mut tree = WidgetTree::new();
-    // 树结构：SpyWidget(root, Handled) → PassThroughContainer → SpyWidget(child)
+    // 鏍戠粨鏋勶細SpyWidget(root, Handled) 鈫?PassThroughContainer 鈫?SpyWidget(child)
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
     let container = tree.add_child(
         root_id,
@@ -724,8 +717,7 @@ fn capture_phase_key_down_intercepted() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
 
-    // 先设焦点（直接设置 focused_widget 字段，但它是 pub(crate) 的）
-    // 或者通过 dispatch PointerDown 设焦点
+    // 鍏堣鐒︾偣锛堢洿鎺ヨ缃?focused_widget 瀛楁锛屼絾瀹冩槸 pub(crate) 鐨勶級
     tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,
@@ -736,90 +728,8 @@ fn capture_phase_key_down_intercepted() {
         key: KeyCode::Escape,
         mods: KeyMod::NONE,
     });
-    // SpyWidget(root) 在捕获阶段返回 Handled
+    // SpyWidget(root) 鍦ㄦ崟鑾烽樁娈佃繑鍥?Handled
     assert_eq!(result, EventResult::Handled);
-}
-
-// ════════════════════════════════════════════════════════════════════════
-// 事件管理器集成测试
-// ════════════════════════════════════════════════════════════════════════
-
-/// EventManager 的 add_handler 处理所有事件。
-#[test]
-fn event_manager_catches_pointer_down() {
-    let mut tree = WidgetTree::new();
-    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    tree.get_mut(root_id)
-        .unwrap()
-        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-
-    let handled = Rc::new(RefCell::new(false));
-    let h = handled.clone();
-    let em = tree.event_manager_for(root_id);
-    em.add_handler(move |_| {
-        *h.borrow_mut() = true;
-        EventResult::Handled
-    });
-
-    tree.dispatch_event(&SystemEvent::PointerDown {
-        pos: Point::new(50.0, 50.0),
-        button: MouseButton::Left,
-        mods: KeyMod::NONE,
-    });
-    assert!(
-        *handled.borrow(),
-        "EventManager handler should have been called"
-    );
-}
-
-/// EventManager 的 on_kind 只处理匹配的事件类型。
-#[test]
-fn event_manager_on_kind_filters() {
-    let mut tree = WidgetTree::new();
-    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
-    tree.get_mut(root_id)
-        .unwrap()
-        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
-
-    let pointer_down_count = Rc::new(RefCell::new(0u32));
-    let md = pointer_down_count.clone();
-    let key_count = Rc::new(RefCell::new(0u32));
-    let kc = key_count.clone();
-
-    {
-        let em = tree.event_manager_for(root_id);
-        em.on_kind(SystemEventKind::PointerDown, move |_| {
-            *md.borrow_mut() += 1;
-            EventResult::Handled
-        });
-        em.on_kind(SystemEventKind::KeyDown, move |_| {
-            *kc.borrow_mut() += 1;
-            EventResult::Handled
-        });
-    }
-
-    tree.dispatch_event(&SystemEvent::PointerDown {
-        pos: Point::new(50.0, 50.0),
-        button: MouseButton::Left,
-        mods: KeyMod::NONE,
-    });
-    assert_eq!(
-        *pointer_down_count.borrow(),
-        1,
-        "PointerDown handler should fire"
-    );
-    assert_eq!(*key_count.borrow(), 0, "KeyDown handler should NOT fire");
-
-    tree.dispatch_event(&SystemEvent::KeyDown {
-        key: KeyCode::Enter,
-        mods: KeyMod::NONE,
-    });
-    assert_eq!(
-        *pointer_down_count.borrow(),
-        1,
-        "PointerDown handler should NOT fire again"
-    );
-    assert_eq!(*key_count.borrow(), 1, "KeyDown handler should fire");
 }
 
 #[test]

@@ -16,17 +16,191 @@
 //! 统一使用 `style: Style`。布局引擎从 `style.margin` 读取外边距参与盒模型计算。
 
 pub mod edge_insets;
+mod paint;
 mod variant;
 
 #[cfg(test)]
 mod tests;
 
+pub use paint::apply_style;
 pub use variant::{StyleSet, StyleState};
 
+use crate::core::EdgeInsets;
+use crate::draw::painting::ThemeTokens;
 use crate::draw::Color;
-use crate::native::EdgeInsets;
+use crate::ui::theme::NeutralRole;
 // Re-export layout enums so crate::ui::style::FlexDirection etc. work
 pub use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteColor {
+    Primary,
+    PrimaryHover,
+    PrimaryActive,
+    PrimaryBg,
+    PrimaryBorder,
+    Success,
+    SuccessBg,
+    SuccessBorder,
+    Warning,
+    WarningBg,
+    WarningBorder,
+    Error,
+    ErrorBg,
+    ErrorBorder,
+    Info,
+    InfoBg,
+    InfoBorder,
+    Link,
+    LinkHover,
+    LinkActive,
+    White,
+    Black,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorValue {
+    Palette(PaletteColor),
+    Neutral(NeutralRole),
+    Custom(Color),
+}
+
+impl ColorValue {
+    pub const fn custom(color: Color) -> Self {
+        Self::Custom(color)
+    }
+
+    pub const fn neutral(role: NeutralRole) -> Self {
+        Self::Neutral(role)
+    }
+
+    pub const fn palette(color: PaletteColor) -> Self {
+        Self::Palette(color)
+    }
+
+    pub fn resolve(self, tokens: &dyn ThemeTokens) -> Color {
+        match self {
+            Self::Palette(color) => match color {
+                PaletteColor::Primary => tokens.color_primary(),
+                PaletteColor::PrimaryHover => tokens.color_primary_hover(),
+                PaletteColor::PrimaryActive => tokens.color_primary_active(),
+                PaletteColor::PrimaryBg => tokens.color_primary_bg(),
+                PaletteColor::PrimaryBorder => tokens.color_primary_border(),
+                PaletteColor::Success => tokens.color_success(),
+                PaletteColor::SuccessBg => tokens.color_success_bg(),
+                PaletteColor::SuccessBorder => tokens.color_success_border(),
+                PaletteColor::Warning => tokens.color_warning(),
+                PaletteColor::WarningBg => tokens.color_warning_bg(),
+                PaletteColor::WarningBorder => tokens.color_warning_border(),
+                PaletteColor::Error => tokens.color_error(),
+                PaletteColor::ErrorBg => tokens.color_error_bg(),
+                PaletteColor::ErrorBorder => tokens.color_error_border(),
+                PaletteColor::Info => tokens.color_info(),
+                PaletteColor::InfoBg => tokens.color_info_bg(),
+                PaletteColor::InfoBorder => tokens.color_info_border(),
+                PaletteColor::Link => tokens.color_link(),
+                PaletteColor::LinkHover => tokens.color_link_hover(),
+                PaletteColor::LinkActive => tokens.color_link_active(),
+                PaletteColor::White => tokens.color_white(),
+                PaletteColor::Black => tokens.color_black(),
+            },
+            Self::Neutral(role) => match role {
+                NeutralRole::Text => tokens.color_text(),
+                NeutralRole::TextSecondary => tokens.color_text_secondary(),
+                NeutralRole::TextTertiary => tokens.color_text_tertiary(),
+                NeutralRole::TextQuaternary => tokens.color_text_quaternary(),
+                NeutralRole::TextInverse => {
+                    if tokens.is_dark() {
+                        tokens.color_black()
+                    } else {
+                        tokens.color_white()
+                    }
+                }
+                NeutralRole::Border => tokens.color_border(),
+                NeutralRole::BorderSecondary => tokens.color_border_secondary(),
+                NeutralRole::Fill => tokens.color_fill(),
+                NeutralRole::FillSecondary => tokens.color_fill_secondary(),
+                NeutralRole::FillTertiary => tokens.color_fill_tertiary(),
+                NeutralRole::FillQuaternary => tokens.color_fill_quaternary(),
+                NeutralRole::BgContainer => tokens.color_bg_container(),
+                NeutralRole::BgElevated => tokens.color_bg_elevated(),
+                NeutralRole::BgLayout => tokens.color_bg_layout(),
+                NeutralRole::BgMask => tokens.color_bg_mask(),
+            },
+            Self::Custom(color) => color,
+        }
+    }
+}
+
+impl From<Color> for ColorValue {
+    fn from(color: Color) -> Self {
+        Self::Custom(color)
+    }
+}
+
+impl From<&str> for ColorValue {
+    fn from(color: &str) -> Self {
+        Self::Custom(Color::from(color))
+    }
+}
+
+impl From<String> for ColorValue {
+    fn from(color: String) -> Self {
+        Self::from(color.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TypographyToken {
+    Small,
+    Body,
+    Large,
+    XLarge,
+    Heading1,
+    Heading2,
+    Heading3,
+    Heading4,
+    Heading5,
+    Custom(f32),
+}
+
+impl TypographyToken {
+    pub fn resolve(self, tokens: &dyn ThemeTokens) -> f32 {
+        match self {
+            Self::Small => tokens.font_size_sm(),
+            Self::Body => tokens.font_size(),
+            Self::Large => tokens.font_size_lg(),
+            Self::XLarge => tokens.font_size_xl(),
+            Self::Heading1 => tokens.font_size_heading_1(),
+            Self::Heading2 => tokens.font_size_heading_2(),
+            Self::Heading3 => tokens.font_size_heading_3(),
+            Self::Heading4 => tokens.font_size_heading_4(),
+            Self::Heading5 => tokens.font_size_heading_5(),
+            Self::Custom(size) => size,
+        }
+    }
+
+    pub const fn default_size(self) -> f32 {
+        match self {
+            Self::Small => 12.0,
+            Self::Body => 14.0,
+            Self::Large => 16.0,
+            Self::XLarge => 20.0,
+            Self::Heading1 => 38.0,
+            Self::Heading2 => 30.0,
+            Self::Heading3 => 24.0,
+            Self::Heading4 => 20.0,
+            Self::Heading5 => 16.0,
+            Self::Custom(size) => size,
+        }
+    }
+}
+
+impl From<f32> for TypographyToken {
+    fn from(size: f32) -> Self {
+        Self::Custom(size)
+    }
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // 盒阴影
@@ -98,7 +272,7 @@ pub struct Style {
     /// 内边距
     pub padding: EdgeInsets,
     /// 边框颜色（Some = 显示边框）
-    pub border_color: Option<Color>,
+    pub border_color: Option<ColorValue>,
     /// 四边边框宽度。
     pub border_width: EdgeInsets,
     /// 边框圆角
@@ -136,15 +310,15 @@ pub struct Style {
 
     // ── 视觉 ────────────────────────────────────────────────
     /// 背景色
-    pub background: Option<Color>,
+    pub background: Option<ColorValue>,
     /// 悬停状态背景色
-    pub background_hover: Option<Color>,
+    pub background_hover: Option<ColorValue>,
     /// 按下/激活状态背景色
-    pub background_active: Option<Color>,
+    pub background_active: Option<ColorValue>,
     /// 文字颜色
-    pub color: Color,
+    pub color: ColorValue,
     /// 字号
-    pub font_size: f32,
+    pub font_size: TypographyToken,
     /// 整体透明度
     pub opacity: f32,
     /// 盒阴影
@@ -182,8 +356,8 @@ impl Default for Style {
             background: None,
             background_hover: None,
             background_active: None,
-            color: Color::black(),
-            font_size: 14.0,
+            color: ColorValue::Neutral(NeutralRole::Text),
+            font_size: TypographyToken::Body,
             opacity: 1.0,
             box_shadow: None,
 
@@ -221,12 +395,12 @@ impl Style {
     pub fn button_default() -> Self {
         Self {
             background: None,
-            border_color: Some(Color::from_rgba(217, 217, 217, 255)),
+            border_color: Some(ColorValue::Neutral(NeutralRole::Border)),
             border_width: EdgeInsets::uniform(1.0),
             border_radius: 6.0,
             padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
-            color: Color::from_rgb(0, 0, 0),
-            font_size: 14.0,
+            color: ColorValue::Neutral(NeutralRole::Text),
+            font_size: TypographyToken::Body,
             ..Self::default()
         }
     }
@@ -234,13 +408,13 @@ impl Style {
     /// 主按钮样式（主题色背景 + 白色文字）。
     pub fn button_primary() -> Self {
         Self {
-            background: Some(Color::from_rgba(22, 119, 255, 255)),
-            border_color: Some(Color::from_rgba(22, 119, 255, 255)),
+            background: Some(ColorValue::Palette(PaletteColor::Primary)),
+            border_color: Some(ColorValue::Palette(PaletteColor::Primary)),
             border_width: EdgeInsets::uniform(1.0),
             border_radius: 6.0,
             padding: EdgeInsets::new(15.0, 0.0, 15.0, 0.0),
-            color: Color::white(),
-            font_size: 14.0,
+            color: ColorValue::Palette(PaletteColor::White),
+            font_size: TypographyToken::Body,
             ..Self::default()
         }
     }
@@ -256,7 +430,7 @@ impl Style {
     // ── State helpers ──────────────────────────────────────
 
     /// 根据 hover/pressed 状态返回当前背景色（优先返回状态色，fallback 到 background）。
-    pub fn effective_bg(&self, hovered: bool, pressed: bool) -> Option<Color> {
+    pub fn effective_bg(&self, hovered: bool, pressed: bool) -> Option<ColorValue> {
         if pressed {
             self.background_active.or(self.background)
         } else if hovered {
@@ -264,6 +438,14 @@ impl Style {
         } else {
             self.background
         }
+    }
+
+    pub fn resolve_color(&self, tokens: &dyn ThemeTokens) -> Color {
+        self.color.resolve(tokens)
+    }
+
+    pub fn resolve_font_size(&self, tokens: &dyn ThemeTokens) -> f32 {
+        self.font_size.resolve(tokens)
     }
 
     // ── 链式 Builder 方法 ──────────────────────────────────
@@ -360,10 +542,10 @@ impl Style {
         if other.background_active.is_some() {
             self.background_active = other.background_active;
         }
-        if other.color != Color::black() {
+        if other.color != ColorValue::Neutral(NeutralRole::Text) {
             self.color = other.color;
         }
-        if other.font_size != 14.0 {
+        if other.font_size != TypographyToken::Body {
             self.font_size = other.font_size;
         }
         if other.opacity != 1.0 {
@@ -388,8 +570,8 @@ impl Style {
         self.padding = p;
         self
     }
-    pub fn with_border(mut self, color: Color, width: f32) -> Self {
-        self.border_color = Some(color);
+    pub fn with_border(mut self, color: impl Into<ColorValue>, width: f32) -> Self {
+        self.border_color = Some(color.into());
         self.border_width = EdgeInsets::uniform(width);
         self
     }
@@ -455,24 +637,24 @@ impl Style {
 
     // ── 视觉链式方法 ──
 
-    pub fn with_bg(mut self, c: Color) -> Self {
-        self.background = Some(c);
+    pub fn with_bg(mut self, c: impl Into<ColorValue>) -> Self {
+        self.background = Some(c.into());
         self
     }
-    pub fn with_bg_hover(mut self, c: Color) -> Self {
-        self.background_hover = Some(c);
+    pub fn with_bg_hover(mut self, c: impl Into<ColorValue>) -> Self {
+        self.background_hover = Some(c.into());
         self
     }
-    pub fn with_bg_active(mut self, c: Color) -> Self {
-        self.background_active = Some(c);
+    pub fn with_bg_active(mut self, c: impl Into<ColorValue>) -> Self {
+        self.background_active = Some(c.into());
         self
     }
-    pub fn with_color(mut self, c: Color) -> Self {
-        self.color = c;
+    pub fn with_color(mut self, c: impl Into<ColorValue>) -> Self {
+        self.color = c.into();
         self
     }
-    pub fn with_font_size(mut self, s: f32) -> Self {
-        self.font_size = s;
+    pub fn with_font_size(mut self, s: impl Into<TypographyToken>) -> Self {
+        self.font_size = s.into();
         self
     }
     pub fn with_opacity(mut self, o: f32) -> Self {
@@ -561,8 +743,8 @@ macro_rules! style {
     (@inner $s:ident background_hover $v:expr) => { $s.background_hover = Some($v.into()); };
     (@inner $s:ident background_active $v:expr) => { $s.background_active = Some($v.into()); };
     (@inner $s:ident color $v:expr) => { $s.color = $v.into(); };
-    (@inner $s:ident fs $v:expr) => { $s.font_size = $v as f32; };
-    (@inner $s:ident font_size $v:expr) => { $s.font_size = $v as f32; };
+    (@inner $s:ident fs $v:expr) => { $s.font_size = $crate::ui::style::TypographyToken::Custom($v as f32); };
+    (@inner $s:ident font_size $v:expr) => { $s.font_size = $crate::ui::style::TypographyToken::Custom($v as f32); };
     (@inner $s:ident opacity $v:expr) => { $s.opacity = $v as f32; };
     (@inner $s:ident visible $v:expr) => { $s.visible = $v; };
     (@inner $s:ident w $v:expr) => { $s.width = Some($v as f32); };
@@ -573,9 +755,9 @@ macro_rules! style {
     (@inner $s:ident padding $v:expr) => { $s.padding = $crate::ui::style::edge_insets_from_expr($v); };
     // 元组语法：`border: (RED, 1)` — 使用括号而非 bracket，确保 `$val:expr` 正确捕获为元组
     (@inner $s:ident border $v:expr) => {
-        let (c, w): (crate::draw::Color, f32) = $v;
-        $s.border_color = Some(c);
-        $s.border_width = $crate::native::EdgeInsets::uniform(w);
+        let (c, w) = $v;
+        $s.border_color = Some(c.into());
+        $s.border_width = $crate::core::EdgeInsets::uniform(w);
     };
     (@inner $s:ident border_color $v:expr) => { $s.border_color = Some($v.into()); };
     (@inner $s:ident border_width $v:expr) => { $s.border_width = $crate::ui::style::edge_insets_from_expr($v); };
@@ -598,7 +780,7 @@ macro_rules! style {
     (@inner $s:ident flex_shrink $v:expr) => { $s.flex_shrink = $v as f32; };
     // 元组语法：`shadow: (BLACK, 4, 2, 2)`
     (@inner $s:ident shadow $v:expr) => {
-        let (sc, sb, sox, soy): (crate::draw::Color, f32, f32, f32) = $v;
+        let (sc, sb, sox, soy): ($crate::draw::Color, f32, f32, f32) = $v;
         $s.box_shadow = Some($crate::ui::style::BoxShadowDef::new(sc, sb, sox, soy));
     };
     (@inner $s:ident box_shadow $v:expr) => { $s.box_shadow = Some($v); };

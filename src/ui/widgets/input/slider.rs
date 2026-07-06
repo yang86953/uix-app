@@ -1,15 +1,15 @@
-//! Slider widget — 滑块拖动选择器。
+//! Slider input widget.
 
 use std::cell::Cell;
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 
 define_widget! {
-    /// Slider — 水平滑块，支持拖拽选择值。
+    /// Horizontal slider.
     pub struct Slider {
         min: f32,
         max: f32,
@@ -22,8 +22,8 @@ define_widget! {
         pending_change: Cell<Option<f32>>,
     }
 
-
     tab_index => (&self) -> i32 { 1 }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
         Size::new(200.0, 24.0)
     }
@@ -33,14 +33,16 @@ define_widget! {
             SystemEvent::PointerDown { pos, .. } => {
                 self.dragging = true;
                 self.focused = true;
-                let frame_w = self.last_frame.get().map(|f| f.w).unwrap_or(200.0);
-                self.update_from_pos(pos.x, frame_w);
+                if let Some(frame) = self.last_frame.get() {
+                    self.update_from_pos(pos.x, frame);
+                }
                 EventResult::Handled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                let frame_w = self.last_frame.get().map(|f| f.w).unwrap_or(200.0);
                 if self.dragging {
-                    self.update_from_pos(pos.x, frame_w);
+                    if let Some(frame) = self.last_frame.get() {
+                        self.update_from_pos(pos.x, frame);
+                    }
                 }
                 self.hovered = true;
                 EventResult::Handled
@@ -54,29 +56,25 @@ define_widget! {
                 self.dragging = false;
                 EventResult::Handled
             }
-            SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            SystemEvent::FocusOut => { self.focused = false; EventResult::Handled }
-            SystemEvent::KeyDown { key, .. } => {
-                match key {
-                    KeyCode::Right | KeyCode::Up => {
-                        let new_val = (self.value + self.step).min(self.max);
-                        if (new_val - self.value).abs() > f32::EPSILON {
-                            self.value = new_val;
-                            self.pending_change.set(Some(self.value));
-                        }
-                        EventResult::Handled
-                    }
-                    KeyCode::Left | KeyCode::Down => {
-                        let new_val = (self.value - self.step).max(self.min);
-                        if (self.value - new_val).abs() > f32::EPSILON {
-                            self.value = new_val;
-                            self.pending_change.set(Some(self.value));
-                        }
-                        EventResult::Handled
-                    }
-                    _ => EventResult::NotHandled,
-                }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
             }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                EventResult::Handled
+            }
+            SystemEvent::KeyDown { key, .. } => match key {
+                KeyCode::Right | KeyCode::Up => {
+                    self.set_value((self.value + self.step).min(self.max));
+                    EventResult::Handled
+                }
+                KeyCode::Left | KeyCode::Down => {
+                    self.set_value((self.value - self.step).max(self.min));
+                    EventResult::Handled
+                }
+                _ => EventResult::NotHandled,
+            },
             _ => EventResult::NotHandled,
         }
     }
@@ -87,10 +85,12 @@ define_widget! {
             .map(|value| SemanticEvent::change(id, value.to_string()))
     }
 
-    needs_continuous_update => (&self) -> bool { self.dragging }
-
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         self.last_frame.set(Some(frame));
+        if frame.w <= 0.0 || self.max <= self.min {
+            return;
+        }
+
         let primary = ctx.tokens().color_primary();
         let primary_hover = ctx.tokens().color_primary_hover();
         let fill = ctx.tokens().color_fill_tertiary();
@@ -98,21 +98,34 @@ define_widget! {
         let thumb_r = 6.0;
         let cy = frame.y + frame.h * 0.5;
 
-        if frame.w <= 0.0 { return; }
-
         let pct = ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0);
         let thumb_x = frame.x + pct * (frame.w - 2.0);
 
-        // 轨道（背景）
-        ctx.fill_rect(Rect::new(frame.x, cy - track_h * 0.5, frame.w, track_h), fill, Some(Radius::uniform(track_h * 0.5)));
-        // 轨道（已选部分）
-        ctx.fill_rect(Rect::new(frame.x, cy - track_h * 0.5, thumb_x - frame.x, track_h), primary, Some(Radius::uniform(track_h * 0.5)));
-        // 滑块
-        let thumb_color = if self.dragging { primary_hover } else if self.hovered { primary } else { Color::white() };
+        ctx.fill_rect(
+            Rect::new(frame.x, cy - track_h * 0.5, frame.w, track_h),
+            fill,
+            Some(Radius::uniform(track_h * 0.5)),
+        );
+        ctx.fill_rect(
+            Rect::new(frame.x, cy - track_h * 0.5, thumb_x - frame.x, track_h),
+            primary,
+            Some(Radius::uniform(track_h * 0.5)),
+        );
+        let thumb_color = if self.dragging {
+            primary_hover
+        } else if self.hovered {
+            primary
+        } else {
+            Color::white()
+        };
         ctx.fill_circle(thumb_x, cy, thumb_r, thumb_color);
-        ctx.stroke_rect(Rect::new(thumb_x - thumb_r, cy - thumb_r, thumb_r * 2.0, thumb_r * 2.0), primary, 2.0, Some(Radius::uniform(thumb_r)));
+        ctx.stroke_rect(
+            Rect::new(thumb_x - thumb_r, cy - thumb_r, thumb_r * 2.0, thumb_r * 2.0),
+            primary,
+            2.0,
+            Some(Radius::uniform(thumb_r)),
+        );
 
-        // focus 指示
         if self.focused {
             ctx.stroke_rect(frame, primary, 1.5, Some(Radius::uniform(4.0)));
         }
@@ -120,17 +133,22 @@ define_widget! {
 }
 
 impl Slider {
-    fn update_from_pos(&mut self, px: f32, frame_w: f32) {
-        let pct = ((px - 2.0) / (frame_w - 4.0)).clamp(0.0, 1.0);
+    fn update_from_pos(&mut self, px: f32, frame: Rect) {
+        let usable_w = (frame.w - 4.0).max(1.0);
+        let pct = ((px - frame.x - 2.0) / usable_w).clamp(0.0, 1.0);
         let raw = self.min + pct * (self.max - self.min);
-        let prev = self.value;
         if self.step > 0.0 {
             let stepped = (raw / self.step).round() * self.step;
-            self.value = stepped.clamp(self.min, self.max);
+            self.set_value(stepped.clamp(self.min, self.max));
         } else {
-            self.value = raw.clamp(self.min, self.max);
+            self.set_value(raw.clamp(self.min, self.max));
         }
-        if (self.value - prev).abs() > f32::EPSILON {
+    }
+
+    fn set_value(&mut self, value: f32) {
+        let value = value.clamp(self.min, self.max);
+        if (value - self.value).abs() > f32::EPSILON {
+            self.value = value;
             self.pending_change.set(Some(self.value));
         }
     }
@@ -156,19 +174,24 @@ impl Slider {
             pending_change: Cell::new(None),
         }
     }
+
     pub fn range(mut self, min: f32, max: f32) -> Self {
         self.min = min;
         self.max = max;
+        self.value = self.value.clamp(self.min, self.max);
         self
     }
+
     pub fn step(mut self, s: f32) -> Self {
         self.step = s;
         self
     }
+
     pub fn value(mut self, v: f32) -> Self {
         self.value = v.clamp(self.min, self.max);
         self
     }
+
     pub fn get_value(&self) -> f32 {
         self.value
     }

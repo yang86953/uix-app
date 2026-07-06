@@ -15,9 +15,9 @@
 
 use std::cell::Cell;
 
-use crate::native::Point;
-use crate::native::{Platform, PlatformWindow};
-
+use crate::core::Point;
+use crate::native::traits::platform::Platform;
+use crate::native::traits::window::PlatformWindow;
 /// Event-driven application window.
 ///
 /// 只负责窗口生命周期和平台句柄管理。

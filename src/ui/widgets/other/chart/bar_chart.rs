@@ -1,9 +1,9 @@
 //! BarChart — vertical bar chart with auto-scaling and value labels.
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::native::{Point, Rect, Size};
 use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone)]
@@ -89,13 +89,13 @@ define_widget! {
                 let sz = ctx.measure_text(&s, 10.0);
                 let val_rect = Rect::new(bx, by - sz.h - 4.0, bar_w, sz.h + 2.0);
                 let vy = ctx.visual_center_y(val_rect, 10.0);
-                ctx.draw_text(&s, crate::native::Point::new(bx + (bar_w - sz.w) * 0.5, vy), text_c, 10.0);
+                ctx.draw_text(&s, crate::core::Point::new(bx + (bar_w - sz.w) * 0.5, vy), text_c, 10.0);
             }
             let sz = ctx.measure_text(&bar.label, 10.0);
             let lx = bx + (bar_w - sz.w) * 0.5;
             let label_rect = Rect::new(lx, baseline + 2.0, sz.w, label_h - 2.0);
             let ly = ctx.visual_center_y(label_rect, 10.0);
-            ctx.draw_text(&bar.label, crate::native::Point::new(lx, ly), label_c, 10.0);
+            ctx.draw_text(&bar.label, crate::core::Point::new(lx, ly), label_c, 10.0);
         }
     }
 }

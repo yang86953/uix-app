@@ -2,10 +2,11 @@
 //!
 //! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{ControlSize, Point, Rect, Size};
+use crate::native::traits::input::ControlSize;
 use crate::ui::WidgetTree;
 
 /// 单个描述项。

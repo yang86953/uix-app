@@ -2,7 +2,7 @@
 
 use std::any::Any;
 
-use crate::native::{Error, Point, Rect, Size};
+use crate::core::{DamageRegion, Error, Point, Rect, Size};
 
 use crate::draw::traits::{Canvas2D, PresentationMode};
 use crate::draw::ImageHandle;
@@ -18,73 +18,6 @@ pub enum BackendKind {
     Auto,
     /// 空后端，用于测试。
     Null,
-}
-
-/// 呈现损伤区域（Phase 8 多矩形）。
-#[derive(Debug, Clone, PartialEq)]
-pub struct DamageRegion {
-    /// 全屏重绘；为 true 时忽略 `rects`。
-    pub full: bool,
-    /// 局部损伤矩形（逻辑/设备像素，与 DirtyRegion 一致）。
-    pub rects: Vec<Rect>,
-}
-
-impl DamageRegion {
-    pub fn full() -> Self {
-        Self {
-            full: true,
-            rects: Vec::new(),
-        }
-    }
-
-    pub fn partial(rects: Vec<Rect>) -> Self {
-        Self { full: false, rects }
-    }
-
-    pub fn from_rect(rect: Rect) -> Self {
-        if rect.w <= 0.0 || rect.h <= 0.0 {
-            Self::full()
-        } else {
-            Self::partial(vec![rect])
-        }
-    }
-
-    /// 合并 bounds；全屏时返回 `None`。
-    pub fn bounds(&self) -> Option<Rect> {
-        if self.full || self.rects.is_empty() {
-            return None;
-        }
-        let mut b = self.rects[0];
-        for r in &self.rects[1..] {
-            b = b.union(r);
-        }
-        Some(b)
-    }
-
-    /// 转为 platform 呈现损伤。
-    pub fn to_present_damage(&self) -> crate::native::PresentDamage {
-        if self.full || self.rects.is_empty() {
-            crate::native::PresentDamage::Full
-        } else {
-            let tuples: Vec<(i32, i32, i32, i32)> = self
-                .rects
-                .iter()
-                .filter(|r| r.w > 0.0 && r.h > 0.0)
-                .map(|r| (r.x as i32, r.y as i32, r.w as i32, r.h as i32))
-                .collect();
-            if tuples.is_empty() {
-                crate::native::PresentDamage::Full
-            } else {
-                crate::native::PresentDamage::Partial(tuples)
-            }
-        }
-    }
-}
-
-impl Default for DamageRegion {
-    fn default() -> Self {
-        Self::full()
-    }
 }
 
 /// 后端能力声明。

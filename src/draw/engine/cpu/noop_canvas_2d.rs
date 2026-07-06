@@ -1,12 +1,12 @@
 //! NoopCanvas2D — Canvas2D 的空实现。
 //! 所有绘制操作都是空操作，用于 NullEngine。
 
+use crate::core::{Rect, Size};
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius};
 use crate::draw::traits::Canvas2D;
-use crate::native::{Rect, Size};
 
 /// Canvas2D 空实现。
 pub struct NoopCanvas2D;

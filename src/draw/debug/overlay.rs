@@ -1,9 +1,9 @@
 //! DebugRenderService — 调试绘制服务。
 
+use crate::core::Rect;
 use crate::draw::pipeline::{InvalidationSource, RenderMetrics};
 use crate::draw::traits::Canvas2D;
 use crate::draw::Color;
-use crate::native::Rect;
 
 /// 调试渲染服务。
 pub struct DebugRenderService {

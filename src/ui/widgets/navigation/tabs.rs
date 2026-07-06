@@ -1,9 +1,9 @@
 //! Tabs widget — Ant Design style tab bar with content panels.
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use std::cell::RefCell;
 

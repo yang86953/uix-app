@@ -1,9 +1,9 @@
 //! Radio widget — 单选组，支持 horizontal/vertical、disabled、hover。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
