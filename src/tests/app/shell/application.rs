@@ -7,6 +7,7 @@ use crate::native::traits::event::{
     ClipboardData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
 };
 use crate::ui::view::combinators::label;
+use crate::ui::widgets::Label;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -176,8 +177,82 @@ fn drain_pending_open_windows_bootstraps_secondary_session() {
         vec![request.window_id]
     );
     assert_eq!(secondary_windows[0].handle.window_id(), request.window_id);
-    assert_eq!(secondary_windows[0]._session.window_id(), request.window_id);
+    assert_eq!(secondary_windows[0].session.window_id(), request.window_id);
     assert!(request.alive.load(Ordering::Acquire));
+
+    secondary_windows[0]
+        .handle
+        .update_view(|| label("updated child"));
+    assert!(drain_secondary_window_queues(&mut secondary_windows));
+    let (tree, _) = secondary_windows[0].session.tree_and_engine_mut();
+    let text = tree
+        .root()
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Label>()
+        .unwrap()
+        .text();
+    assert_eq!(text, "updated child");
+}
+
+#[test]
+fn drain_secondary_window_queues_drains_all_sessions() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let _first = runtime.request_open_window(WindowConfig::new("A", 320, 240, || label("a")));
+    let _second = runtime.request_open_window(WindowConfig::new("B", 320, 240, || label("b")));
+    let mut secondary_windows = Vec::new();
+    assert_eq!(
+        drain_pending_open_windows(
+            &mut platform,
+            &runtime,
+            &AppState::new(),
+            &Container::new(),
+            None,
+            &mut secondary_windows,
+        ),
+        2
+    );
+
+    secondary_windows[0]
+        .handle
+        .update_view(|| label("updated a"));
+    secondary_windows[1]
+        .handle
+        .update_view(|| label("updated b"));
+
+    assert!(drain_secondary_window_queues(&mut secondary_windows));
+    let (first_tree, _) = secondary_windows[0].session.tree_and_engine_mut();
+    let first_text = first_tree
+        .root()
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Label>()
+        .unwrap()
+        .text();
+    assert_eq!(first_text, "updated a");
+    let (second_tree, _) = secondary_windows[1].session.tree_and_engine_mut();
+    let second_text = second_tree
+        .root()
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Label>()
+        .unwrap()
+        .text();
+    assert_eq!(second_text, "updated b");
 }
 
 #[test]
