@@ -2,8 +2,9 @@
 
 use std::cell::{Cell, RefCell};
 use std::sync::{atomic::AtomicBool, Arc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::app_handle::AppHandle;
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
@@ -11,15 +12,17 @@ use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
+use crate::app::test_clock::{system_clock, AppClock};
 use crate::app::window_config::WindowConfig;
 use crate::app::window_session::WindowSession;
 use crate::core::{Point, WindowId};
 use crate::data::SettingsService;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
+use crate::draw::painting::ThemeSnapshot;
+use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource};
 use crate::draw::traits::GraphicsEngine;
-use crate::draw::GpuEngine;
-use crate::draw::SoftwareEngine;
+use crate::draw::{GpuEngine, RenderOutcome, SoftwareEngine};
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::window::PlatformWindow;
@@ -27,7 +30,7 @@ use crate::native::{create_gpu_context, create_platform};
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::ui::{AppState, SystemEvent};
+use crate::ui::{AppState, SystemEvent, WidgetCore, WidgetTree};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -44,6 +47,11 @@ struct SecondaryWindowSession {
     _window: Box<dyn PlatformWindow>,
     session: WindowSession,
     handle: AppHandle,
+    frame_renderer: FrameRenderer,
+    rendered_first: bool,
+    last_frame: Option<Instant>,
+    window_visible: bool,
+    initial_size: (i32, i32),
 }
 
 impl SecondaryWindowSession {
@@ -64,6 +72,8 @@ impl SecondaryWindowSession {
                     if d.width > 0 && d.height > 0 {
                         parts.engine.resize(d.width, d.height);
                         self._window.resize_notify(d.width, d.height);
+                        self.initial_size = (d.width, d.height);
+                        self.window_visible = true;
                     }
                 }
             }
@@ -74,13 +84,17 @@ impl SecondaryWindowSession {
                 if w > 0 && h > 0 {
                     parts.engine.resize(w, h);
                     self._window.resize_notify(w, h);
+                    self.window_visible = true;
                 }
             }
             UiEventType::WindowRestore => {
-                let w = self._window.properties().width();
-                let h = self._window.properties().height();
+                let (w, h) = self.initial_size;
                 parts.engine.resize(w, h);
                 self._window.resize_notify(w, h);
+                self.window_visible = true;
+            }
+            UiEventType::WindowMinimize => {
+                self.window_visible = false;
             }
             _ => {}
         }
@@ -111,6 +125,159 @@ impl SecondaryWindowSession {
         }
 
         had_main_thread_work
+    }
+
+    fn drain_frame(
+        &mut self,
+        font_service: &FontService,
+        image_service: &ImageService,
+        theme: &RefCell<Theme>,
+        debug_mode: &Cell<bool>,
+        cursor_pos: &Cell<Point>,
+        clock: &dyn AppClock,
+    ) -> bool {
+        let now = clock.now();
+        let last_frame = self.last_frame.get_or_insert(now);
+        let parts = self.session.parts_mut();
+
+        parts
+            .active_work
+            .sync_app_timers(parts.app_timers.deadlines());
+        let due_work = parts.active_work.drain_due(now);
+        let had_registered_work = !due_work.is_empty();
+        dispatch_due_secondary_active_work(parts.tree, &parts.app_timers, &due_work, clock);
+
+        let mut main_thread_context =
+            MainThreadContext::new(parts.pending_root, parts.reconcile_pending);
+        let had_main_thread_work = parts.main_thread_queue.drain(&mut main_thread_context);
+        parts
+            .active_work
+            .sync_timers(parts.tree.active_timers(), clock.now());
+        parts
+            .active_work
+            .sync_app_timers(parts.app_timers.deadlines());
+
+        if parts.tree.take_reconcile_requested() {
+            *parts.reconcile_pending = true;
+        }
+
+        let pending_layout_work = parts
+            .tree
+            .invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_layout();
+        let active_frame = had_registered_work
+            || had_main_thread_work
+            || *parts.reconcile_pending
+            || !self.rendered_first
+            || pending_layout_work
+            || parts.tree.has_render_work();
+
+        if active_frame {
+            let dt = (now - *last_frame).as_secs_f64().min(0.05);
+            *last_frame = now;
+            let animating = parts.tree.update(dt);
+            sync_secondary_animation_deadline(parts.tree, parts.active_work, animating, now);
+            let _effects_ran = parts.tree.tick_effects();
+        }
+
+        if parts.tree.take_reconcile_requested() {
+            *parts.reconcile_pending = true;
+        }
+
+        if *parts.reconcile_pending {
+            let root = parts
+                .pending_root
+                .take()
+                .or_else(|| parts.view_factory.build());
+            if let Some(root) = root {
+                ViewAdapter::reconcile_nodes(parts.tree, root);
+            }
+            *parts.reconcile_pending = false;
+        }
+
+        let has_layout_work = parts
+            .tree
+            .invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_layout();
+        if self.window_visible && (!self.rendered_first || has_layout_work) {
+            let before_version = parts.tree.tree_version();
+            parts.tree.layout();
+            sync_secondary_root_frame_to_engine(parts.tree, parts.engine);
+            if parts.tree.tree_version() != before_version {
+                parts.tree.layout();
+                parts.tree.mark_full_frame_dirty();
+            }
+        }
+
+        let need_render =
+            self.window_visible && (!self.rendered_first || parts.tree.has_render_work());
+        let engine_capabilities = parts.engine.capabilities();
+
+        if !self.rendered_first && need_render {
+            parts.tree.mark_full_frame_dirty();
+            parts.tree.layout();
+        }
+
+        let dirty_region = parts.tree.dirty_region();
+        let (outcome, outcome_source) = if !need_render {
+            (RenderOutcome::Idle, InvalidationSource::None)
+        } else {
+            let theme_ref = theme.borrow();
+            let snapshot = ThemeSnapshot::new(theme_ref.tokens());
+            let scroll_move = parts.tree.drain_scroll_region_move();
+            let hover_pos = if debug_mode.get() {
+                Some(cursor_pos.get())
+            } else {
+                None
+            };
+            let frame_out = self.frame_renderer.render_frame(
+                parts.engine,
+                parts.tree,
+                FrameRenderInput {
+                    rendered_first: self.rendered_first,
+                    dirty_region: &dirty_region,
+                    tree_version: parts.tree.tree_version(),
+                    scroll_move,
+                    theme: snapshot,
+                    font: font_service.loaded_font_handle,
+                    font_service,
+                    image_service,
+                    debug_mode: debug_mode.get(),
+                    hover_pos,
+                    metrics: None,
+                },
+            );
+            self.rendered_first = true;
+            (frame_out.outcome, frame_out.inv_source)
+        };
+
+        parts.tree.reset_dirty();
+
+        if let RenderOutcome::Present(damage) = outcome {
+            let _ = outcome_source;
+            if engine_capabilities.uses_external_presenter() {
+                let canvas = parts.engine.canvas_2d();
+                let cw = canvas.width();
+                let ch = canvas.height();
+                if let Err(e) = self._window.presenter().present(
+                    canvas.pixels_mut(),
+                    cw,
+                    ch,
+                    damage.to_present_damage(),
+                ) {
+                    crate::core::log::error_fn(format!(
+                        "[Application] secondary present failed: {}",
+                        e.short_what()
+                    ));
+                }
+            }
+        }
+
+        active_frame || need_render
     }
 
     fn close(self) {
@@ -441,6 +608,7 @@ impl App {
             on_start(app_handle.clone());
         }
         let secondary_windows = RefCell::new(Vec::new());
+        let secondary_clock = system_clock();
         drain_pending_open_windows(
             &mut *platform,
             &self.runtime,
@@ -454,6 +622,15 @@ impl App {
         let theme = RefCell::new(self.theme);
         let debug_mode = Cell::new(false);
         let cursor_pos = Cell::new(Point::new(0.0, 0.0));
+        drain_secondary_window_frames(
+            &mut secondary_windows.borrow_mut(),
+            &font_service,
+            &image_service,
+            &theme,
+            &debug_mode,
+            &cursor_pos,
+            secondary_clock.as_ref(),
+        );
         let on_exit = self
             .on_exit
             .unwrap_or_else(|| Box::new(|_: &UiEvent| false));
@@ -486,6 +663,15 @@ impl App {
                     &mut secondary_windows.borrow_mut(),
                 );
                 drain_secondary_window_queues(&mut secondary_windows.borrow_mut());
+                drain_secondary_window_frames(
+                    &mut secondary_windows.borrow_mut(),
+                    &font_service,
+                    &image_service,
+                    &theme,
+                    &debug_mode,
+                    &cursor_pos,
+                    secondary_clock.as_ref(),
+                );
             },
             |event, platform| {
                 dispatch_secondary_window_event(
@@ -535,6 +721,29 @@ fn drain_secondary_window_queues(secondary_windows: &mut [SecondaryWindowSession
     let mut drained = false;
     for window in secondary_windows {
         drained |= window.drain_main_thread_work();
+    }
+    drained
+}
+
+fn drain_secondary_window_frames(
+    secondary_windows: &mut [SecondaryWindowSession],
+    font_service: &FontService,
+    image_service: &ImageService,
+    theme: &RefCell<Theme>,
+    debug_mode: &Cell<bool>,
+    cursor_pos: &Cell<Point>,
+    clock: &dyn AppClock,
+) -> bool {
+    let mut drained = false;
+    for window in secondary_windows {
+        drained |= window.drain_frame(
+            font_service,
+            image_service,
+            theme,
+            debug_mode,
+            cursor_pos,
+            clock,
+        );
     }
     drained
 }
@@ -644,7 +853,76 @@ fn create_secondary_window(
         _window: platform_window,
         session,
         handle,
+        frame_renderer: FrameRenderer::new(),
+        rendered_first: false,
+        last_frame: None,
+        window_visible: true,
+        initial_size: (width, height),
     })
+}
+
+fn dispatch_due_secondary_active_work(
+    tree: &mut WidgetTree,
+    app_timers: &AppTimerQueue,
+    due_work: &[ActiveWorkKind],
+    clock: &dyn AppClock,
+) {
+    for work in due_work {
+        match *work {
+            ActiveWorkKind::Timer(id) => {
+                if let Ok(id) = u32::try_from(id) {
+                    let _ = tree.dispatch_event(&SystemEvent::Timer { id });
+                }
+            }
+            ActiveWorkKind::AppTimer(id) => {
+                app_timers.fire(id, clock.now());
+            }
+            _ => {}
+        }
+    }
+}
+
+fn sync_secondary_animation_deadline(
+    tree: &WidgetTree,
+    active_work: &mut ActiveWorkRegistry,
+    animating: bool,
+    now: Instant,
+) {
+    let Some(root_id) = tree.root_id() else {
+        return;
+    };
+    let kind = ActiveWorkKind::Animation(root_id);
+    if animating {
+        active_work.register(kind, now + Duration::from_millis(16));
+    } else {
+        active_work.unregister(kind);
+    }
+}
+
+fn sync_secondary_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEngine) {
+    let need_sync = tree
+        .root_id()
+        .and_then(|rid| tree.get(rid))
+        .is_some_and(|root| {
+            let ew = engine.canvas_2d().width() as f32;
+            let eh = engine.canvas_2d().height() as f32;
+            let rf = root.frame();
+            (rf.w - ew).abs() > 0.5 || (rf.h - eh).abs() > 0.5
+        });
+    if need_sync {
+        if let Some(rid) = tree.root_id() {
+            if let Some(root_mut) = tree.get_mut(rid) {
+                root_mut.set_frame(crate::core::Rect::new(
+                    0.0,
+                    0.0,
+                    engine.canvas_2d().width() as f32,
+                    engine.canvas_2d().height() as f32,
+                ));
+            }
+        }
+        tree.mark_full_frame_dirty();
+        tree.layout();
+    }
 }
 
 fn create_preferred_engine(
