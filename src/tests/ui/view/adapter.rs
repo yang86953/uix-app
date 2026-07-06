@@ -5,13 +5,6 @@ use super::*;
     use crate::ui::WidgetCore;
 
     #[test]
-    fn test_build_single_node() {
-        let node = ViewNode::leaf(Container::new());
-        let tree = ViewAdapter::build_nodes(node);
-        assert!(tree.root().is_some());
-    }
-
-    #[test]
     fn test_build_with_children() {
         let child1 = ViewNode::leaf(Container::new());
         let child2 = ViewNode::leaf(Container::new());

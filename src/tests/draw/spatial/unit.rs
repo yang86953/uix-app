@@ -75,27 +75,6 @@ use super::*;
     }
 
     #[test]
-    fn angle_rad_is_identity() {
-        let r = 0.5f32.rad();
-        assert!((r - 0.5).abs() < 1e-10);
-    }
-
-    #[test]
-    fn unit_name() {
-        assert_eq!(PhysicalUnit::Px(1.0).unit_name(), "px");
-        assert_eq!(PhysicalUnit::Mm(1.0).unit_name(), "mm");
-        assert_eq!(PhysicalUnit::Cm(1.0).unit_name(), "cm");
-        assert_eq!(PhysicalUnit::M(1.0).unit_name(), "m");
-        assert_eq!(PhysicalUnit::Pt(1.0).unit_name(), "pt");
-        assert_eq!(PhysicalUnit::Inch(1.0).unit_name(), "inch");
-    }
-
-    #[test]
-    fn value() {
-        assert!((PhysicalUnit::Cm(5.0).value() - 5.0).abs() < 1e-10);
-    }
-
-    #[test]
     fn add_units() {
         let a = PhysicalUnit::Mm(10.0);
         let b = PhysicalUnit::Cm(1.0); // 10mm

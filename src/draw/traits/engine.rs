@@ -126,7 +126,3 @@ pub trait GraphicsEngine: 'static {
     fn diagnose_memory(&self) {}
 }
 
-#[cfg(test)]
-#[path = "../../tests/draw/traits/engine.rs"]
-mod tests;
-

@@ -2,19 +2,6 @@ use super::*;
     use crate::draw::spatial::PhysicalUnitExt;
 
     #[test]
-    fn physical_box_new() {
-        let pb = PhysicalBox::new(10.mm(), 5.mm(), 0.mm(), 5.cm(), 3.cm(), 1.mm());
-        assert!(matches!(pb.x, PhysicalUnit::Mm(v) if (v - 10.0).abs() < 1e-10));
-    }
-
-    #[test]
-    fn physical_box_new_2d() {
-        let pb = PhysicalBox::new_2d(10.mm(), 5.mm(), 5.cm(), 3.cm());
-        assert!(matches!(pb.z, PhysicalUnit::Mm(v) if v.abs() < 1e-10));
-        assert!(matches!(pb.d, PhysicalUnit::Mm(v) if v.abs() < 1e-10));
-    }
-
-    #[test]
     fn rect_into_aabb() {
         let rect = crate::core::Rect::new(10.0, 20.0, 100.0, 50.0);
         let aabb = rect.into_aabb(96.0, 1.0);

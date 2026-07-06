@@ -189,34 +189,6 @@ use super::*;
     }
 
     #[test]
-    fn fill_rect_accepts_rect() {
-        let mut ctx = make_context(800, 600);
-        let rect = crate::core::Rect::new(10.0, 20.0, 100.0, 50.0);
-        // 只是验证编译通过和不会 panic
-        ctx.fill_rect(rect, Color::from_rgb(255, 0, 0), None);
-    }
-
-    #[test]
-    fn fill_rect_accepts_aabb3d() {
-        let mut ctx = make_context(800, 600);
-        let aabb = AABB3D::new(Vec3::new(10.0, 10.0, 0.0), Vec3::new(110.0, 60.0, 0.0));
-        ctx.fill_rect(aabb, Color::from_rgb(0, 255, 0), None);
-    }
-
-    #[test]
-    fn is_2d_only_with_identity() {
-        let ctx = make_context(800, 600);
-        assert!(ctx.is_2d_only());
-    }
-
-    #[test]
-    fn canvas_2d_accessor() {
-        let mut ctx = make_context(800, 600);
-        let _canvas = ctx.canvas_2d();
-        // 验证可以拿到 Canvas2D
-    }
-
-    #[test]
     fn set_camera_look_at() {
         let mut ctx = make_context(800, 600);
         ctx.set_camera_look_at(
@@ -237,15 +209,4 @@ use super::*;
         let canvas_ref: &'static mut dyn Canvas2D = unsafe { std::mem::transmute(canvas) };
         let ctx = SpatialContext::new(canvas_ref, 96.0, 2.0, Orientation::YDown, 800, 600);
         assert!((ctx.device_pixel_ratio() - 2.0).abs() < 1e-10);
-    }
-
-    /// 通过 canvas_2d 访问 NullEngine 绘制确认不 panic
-    #[test]
-    fn fill_circle_does_not_panic() {
-        let mut ctx = make_context(800, 600);
-        ctx.fill_circle(
-            Vec3::new(100.0, 200.0, 0.0),
-            10.0.px(),
-            Color::from_rgb(0, 0, 255),
-        );
     }

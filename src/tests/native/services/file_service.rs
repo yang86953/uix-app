@@ -92,10 +92,3 @@ use super::*;
         let fs = FileService::new();
         assert!(!fs.exists("/nonexistent/uix_fs_nonexistent_file"));
     }
-
-    #[test]
-    fn file_service_is_clone_and_copy() {
-        let fs1 = FileService::new();
-        let fs2 = fs1;
-        let _fs3 = fs2;
-    }

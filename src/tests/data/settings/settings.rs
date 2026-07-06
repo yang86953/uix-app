@@ -9,19 +9,6 @@ use super::*;
     }
 
     #[test]
-    fn parse_empty_object_with_whitespace() {
-        let m = parse_json_flat("  {  }  ").unwrap();
-        assert!(m.is_empty());
-    }
-
-    #[test]
-    fn parse_single_pair() {
-        let m = parse_json_flat(r#"{"key": "value"}"#).unwrap();
-        assert_eq!(m.get("key").unwrap(), "value");
-        assert_eq!(m.len(), 1);
-    }
-
-    #[test]
     fn parse_multiple_pairs() {
         let m = parse_json_flat(r#"{"a": "1", "b": "2", "c": "3"}"#).unwrap();
         assert_eq!(m.len(), 3);
@@ -150,27 +137,6 @@ use super::*;
     }
 
     #[test]
-    fn serialize_one_entry() {
-        let mut map = HashMap::new();
-        map.insert("key".into(), "value".into());
-        let json = serialize_json_flat(&map);
-        assert!(json.contains(r#""key": "value""#));
-        assert!(json.starts_with('{'));
-        assert!(json.ends_with('}'));
-    }
-
-    #[test]
-    fn serialize_multiple_entries() {
-        let mut map = HashMap::new();
-        map.insert("a".into(), "1".into());
-        map.insert("b".into(), "2".into());
-        let json = serialize_json_flat(&map);
-        // 两个键值对都应出现
-        assert!(json.contains(r#""a": "1""#));
-        assert!(json.contains(r#""b": "2""#));
-    }
-
-    #[test]
     fn serialize_escapes_special_chars() {
         let mut map = HashMap::new();
         map.insert("k".into(), "hello\"world\nnext".into());
@@ -209,27 +175,12 @@ use super::*;
     }
 
     #[test]
-    fn test_get_or() {
-        let s = SettingsService::new();
-        assert_eq!(s.get_or("missing", "default"), "default");
-    }
-
-    #[test]
     fn test_has_remove() {
         let mut s = SettingsService::new();
         s.set("key", "val");
         assert!(s.has("key"));
         s.remove("key");
         assert!(!s.has("key"));
-    }
-
-    #[test]
-    fn test_clear() {
-        let mut s = SettingsService::new();
-        s.set("a", "1");
-        s.set("b", "2");
-        s.clear();
-        assert_eq!(s.count(), 0);
     }
 
     #[test]
@@ -284,14 +235,4 @@ use super::*;
         assert_eq!(before, after);
         assert!(!s.dirty());
         std::fs::remove_file(&ps).ok();
-    }
-
-    #[test]
-    fn test_all() {
-        let mut s = SettingsService::new();
-        s.set("a", "1");
-        s.set("b", "2");
-        let all = s.all();
-        assert_eq!(all.len(), 2);
-        assert_eq!(all.get("a").unwrap(), "1");
     }

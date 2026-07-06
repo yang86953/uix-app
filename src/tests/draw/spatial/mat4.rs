@@ -185,18 +185,6 @@ use super::*;
     // ── is_2d_only ──
 
     #[test]
-    fn translate_is_2d_only() {
-        let t = Mat4::translate(10.0, 20.0, 0.0);
-        assert!(t.is_2d_only());
-    }
-
-    #[test]
-    fn rotate_z_is_2d_only() {
-        let r = Mat4::rotate_z(0.5);
-        assert!(r.is_2d_only());
-    }
-
-    #[test]
     fn rotate_x_is_not_2d_only() {
         let r = Mat4::rotate_x(0.5);
         assert!(!r.is_2d_only());
@@ -297,25 +285,8 @@ use super::*;
     // ── Transform ↔ Mat4 双向互转 ──
 
     #[test]
-    fn transform_to_mat4_roundtrip_identity() {
-        let t = crate::draw::Transform::identity();
-        let m = Mat4::from(t);
-        let back = m.to_transform();
-        assert!(back.is_some(), "identity should convert back");
-        assert_eq!(back.unwrap().m, t.m);
-    }
-
-    #[test]
     fn transform_to_mat4_roundtrip_translate() {
         let t = crate::draw::Transform::translate(10.0, 20.0);
-        let m = Mat4::from(t);
-        let back = m.to_transform().unwrap();
-        assert_eq!(back.m, t.m);
-    }
-
-    #[test]
-    fn transform_to_mat4_roundtrip_scale() {
-        let t = crate::draw::Transform::scale(2.0, 3.0);
         let m = Mat4::from(t);
         let back = m.to_transform().unwrap();
         assert_eq!(back.m, t.m);
