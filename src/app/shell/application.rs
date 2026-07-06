@@ -202,9 +202,14 @@ impl App {
         self
     }
 
+    #[cfg(test)]
     pub(crate) fn app_handle(&self) -> AppHandle {
+        self.app_handle_for_window(WindowId::ROOT)
+    }
+
+    pub(crate) fn app_handle_for_window(&self, window_id: WindowId) -> AppHandle {
         AppHandle::new(
-            WindowId::ROOT,
+            window_id,
             self.app_state.clone(),
             self.runtime.clone(),
             self.container.clone(),
@@ -334,17 +339,24 @@ impl App {
             None
         };
 
-        let mut session = WindowSession::from_root_factory(move || root_factory(), engine, w, h);
+        let root_window_id = platform_window.window_id();
+        let mut session = WindowSession::from_root_factory_for_window(
+            root_window_id,
+            move || root_factory(),
+            engine,
+            w,
+            h,
+        );
         session.set_app_state(self.app_state.clone());
         session.set_app_timers(self.app_timers.clone());
         session.set_main_thread_queue(self.main_thread_queue.clone());
         self.runtime.register_session(
-            WindowId::ROOT,
+            root_window_id,
             self.app_timers.clone(),
             self.main_thread_queue.clone(),
             self.handle_alive.clone(),
         );
-        let app_handle = self.app_handle();
+        let app_handle = self.app_handle_for_window(root_window_id);
         if let Some(on_start) = self.on_start.take() {
             on_start(app_handle.clone());
         }

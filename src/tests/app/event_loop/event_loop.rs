@@ -4,6 +4,7 @@ use crate::app::app_timer::AppTimerQueue;
 use crate::app::map_ui_event;
 use crate::app::test_clock::TestClock;
 use crate::app::window_session::{WindowLoopState, WindowSession};
+use crate::core::WindowId;
 use crate::draw::pipeline::RenderMetrics;
 use crate::draw::NullEngine;
 use crate::native::test_harness::{FakePlatform, FakeWindow};
@@ -93,6 +94,19 @@ impl WidgetAnimation for TestAnimatedWidget {
     fn animation_dirty_rect(&self, _frame: Rect) -> Rect {
         self.dirty_rect
     }
+}
+
+#[test]
+fn window_session_preserves_assigned_window_id() {
+    let session = WindowSession::from_root_for_window(
+        WindowId::new(9),
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+
+    assert_eq!(session.window_id(), WindowId::new(9));
 }
 
 #[test]

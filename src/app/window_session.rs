@@ -3,7 +3,7 @@
 use crate::app::active_work_registry::ActiveWorkRegistry;
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadQueue;
-use crate::core::Rect;
+use crate::core::{Rect, WindowId};
 use crate::draw::traits::GraphicsEngine;
 use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::{AppState, WidgetCore, WidgetTree};
@@ -36,6 +36,7 @@ impl ViewFactorySlot {
 }
 
 pub(crate) struct WindowSession {
+    window_id: WindowId,
     tree: WidgetTree,
     engine: Box<dyn GraphicsEngine>,
     loop_state: WindowLoopState,
@@ -67,6 +68,16 @@ impl WindowSession {
         width: i32,
         height: i32,
     ) -> Self {
+        Self::from_root_for_window(WindowId::ROOT, root_node, engine, width, height)
+    }
+
+    pub(crate) fn from_root_for_window(
+        window_id: WindowId,
+        root_node: ViewNode,
+        engine: Box<dyn GraphicsEngine>,
+        width: i32,
+        height: i32,
+    ) -> Self {
         let mut tree = ViewAdapter::build_nodes(root_node);
         if let Some(root) = tree.root_mut() {
             root.set_frame(Rect::new(0.0, 0.0, width as f32, height as f32));
@@ -75,6 +86,7 @@ impl WindowSession {
         tree.mark_full_frame_dirty();
 
         Self {
+            window_id,
             tree,
             engine,
             loop_state: WindowLoopState::Active,
@@ -97,9 +109,22 @@ impl WindowSession {
     where
         F: Fn() -> ViewNode + Send + Sync + 'static,
     {
+        Self::from_root_factory_for_window(WindowId::ROOT, build_root, engine, width, height)
+    }
+
+    pub(crate) fn from_root_factory_for_window<F>(
+        window_id: WindowId,
+        build_root: F,
+        engine: Box<dyn GraphicsEngine>,
+        width: i32,
+        height: i32,
+    ) -> Self
+    where
+        F: Fn() -> ViewNode + Send + Sync + 'static,
+    {
         let factory: ViewFactory = Arc::new(build_root);
         let root = ViewAdapter::capture_root(|| factory());
-        let mut session = Self::from_root(root, engine, width, height);
+        let mut session = Self::from_root_for_window(window_id, root, engine, width, height);
         session.view_factory = ViewFactorySlot {
             factory: Some(factory),
         };
@@ -108,6 +133,10 @@ impl WindowSession {
 
     pub(crate) fn tree_and_engine_mut(&mut self) -> (&mut WidgetTree, &mut dyn GraphicsEngine) {
         (&mut self.tree, self.engine.as_mut())
+    }
+
+    pub(crate) fn window_id(&self) -> WindowId {
+        self.window_id
     }
 
     pub(crate) fn parts_mut(&mut self) -> WindowSessionParts<'_> {

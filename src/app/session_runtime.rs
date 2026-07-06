@@ -52,6 +52,7 @@ impl AppRuntime {
         alive: Arc<AtomicBool>,
     ) {
         alive.store(true, Ordering::Release);
+        self.reserve_after(window_id);
         self.sessions
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -179,6 +180,17 @@ impl AppRuntime {
         let id = (*next).max(1);
         *next = id.wrapping_add(1).max(1);
         WindowId::new(id)
+    }
+
+    fn reserve_after(&self, window_id: WindowId) {
+        let mut next = self
+            .next_window_id
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let candidate = window_id.raw().wrapping_add(1).max(1);
+        if *next < candidate {
+            *next = candidate;
+        }
     }
 }
 
