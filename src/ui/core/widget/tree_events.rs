@@ -366,6 +366,24 @@ impl WidgetTree {
                     EventResult::NotHandled
                 }
             }
+            SystemEvent::Copy | SystemEvent::Cut | SystemEvent::Paste { .. } => {
+                if let Some(t) = self.focused_widget {
+                    self.invalidate_paint(t);
+                    let result = self.dispatch_to(t, event);
+                    if result == EventResult::Handled {
+                        let semantic = match event {
+                            SystemEvent::Copy => SemanticEvent::copy(t),
+                            SystemEvent::Cut => SemanticEvent::cut(t),
+                            SystemEvent::Paste { text } => SemanticEvent::paste(t, text.clone()),
+                            _ => unreachable!(),
+                        };
+                        let _ = self.dispatch_semantic(semantic);
+                    }
+                    result
+                } else {
+                    EventResult::NotHandled
+                }
+            }
             SystemEvent::FocusIn | SystemEvent::FocusOut => {
                 if let Some(t) = self.focused_widget {
                     self.dispatch_to(t, event)

@@ -17,6 +17,9 @@ pub enum SystemEventKind {
     Wheel,
     KeyDown,
     KeyUp,
+    Copy,
+    Cut,
+    Paste,
     TextInput,
     FocusIn,
     FocusOut,
@@ -64,6 +67,11 @@ pub enum SystemEvent {
     KeyUp {
         key: KeyCode,
         mods: KeyMod,
+    },
+    Copy,
+    Cut,
+    Paste {
+        text: String,
     },
     TextInput {
         text: String,
@@ -120,6 +128,9 @@ impl SystemEvent {
             SystemEvent::Wheel { .. } => SystemEventKind::Wheel,
             SystemEvent::KeyDown { .. } => SystemEventKind::KeyDown,
             SystemEvent::KeyUp { .. } => SystemEventKind::KeyUp,
+            SystemEvent::Copy => SystemEventKind::Copy,
+            SystemEvent::Cut => SystemEventKind::Cut,
+            SystemEvent::Paste { .. } => SystemEventKind::Paste,
             SystemEvent::TextInput { .. } => SystemEventKind::TextInput,
             SystemEvent::FocusIn => SystemEventKind::FocusIn,
             SystemEvent::FocusOut => SystemEventKind::FocusOut,
@@ -211,6 +222,22 @@ impl SemanticEvent {
     pub fn text_input(target: WidgetId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::TextInput,
+            target,
+            SemanticPayload::Text(text.into()),
+        )
+    }
+
+    pub fn copy(target: WidgetId) -> Self {
+        Self::new(SemanticKind::Copy, target, SemanticPayload::None)
+    }
+
+    pub fn cut(target: WidgetId) -> Self {
+        Self::new(SemanticKind::Cut, target, SemanticPayload::None)
+    }
+
+    pub fn paste(target: WidgetId, text: impl Into<String>) -> Self {
+        Self::new(
+            SemanticKind::Paste,
             target,
             SemanticPayload::Text(text.into()),
         )
@@ -412,6 +439,38 @@ impl HandlerTable {
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::TextInput, move |event| {
+            if let Some(text) = event.text_payload() {
+                handler(text);
+            }
+        })
+    }
+
+    pub fn on_copy(
+        &mut self,
+        component: WidgetId,
+        mut handler: impl FnMut() + 'static,
+    ) -> HandlerId {
+        self.on(component, SemanticKind::Copy, move |_event| {
+            handler();
+        })
+    }
+
+    pub fn on_cut(
+        &mut self,
+        component: WidgetId,
+        mut handler: impl FnMut() + 'static,
+    ) -> HandlerId {
+        self.on(component, SemanticKind::Cut, move |_event| {
+            handler();
+        })
+    }
+
+    pub fn on_paste(
+        &mut self,
+        component: WidgetId,
+        mut handler: impl FnMut(&str) + 'static,
+    ) -> HandlerId {
+        self.on(component, SemanticKind::Paste, move |event| {
             if let Some(text) = event.text_payload() {
                 handler(text);
             }
