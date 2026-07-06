@@ -95,6 +95,22 @@ fn request_open_window_reserves_independent_runtime_session() {
 }
 
 #[test]
+fn request_open_window_skips_registered_platform_window_ids() {
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(7),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+
+    let session =
+        runtime.request_open_window(WindowConfig::new("Inspector", 320, 600, || label("child")));
+
+    assert_eq!(session.window_id, WindowId::new(8));
+}
+
+#[test]
 fn close_session_removes_pending_open_window_request() {
     let runtime = AppRuntime::new();
     let session =

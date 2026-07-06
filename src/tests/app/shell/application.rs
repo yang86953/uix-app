@@ -113,6 +113,14 @@ fn app_handle_uses_root_window_and_shared_queues() {
 }
 
 #[test]
+fn app_handle_can_target_registered_platform_window_id() {
+    let app = App::new();
+    let handle = app.app_handle_for_window(WindowId::new(12));
+
+    assert_eq!(handle.window_id(), WindowId::new(12));
+}
+
+#[test]
 fn app_handle_resolves_builder_singletons_at_runtime() {
     let app = App::new().singleton("runtime-config".to_string());
     let handle = app.app_handle();
