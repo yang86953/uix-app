@@ -13,11 +13,6 @@ use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
-use crate::native::traits::event::UiEvent;
-use crate::native::traits::*;
-use crate::native::{Errc, Error};
-
 use super::bindings::*;
 use super::clipboard::WindowsClipboard;
 use super::console::WindowsConsole;
@@ -35,7 +30,10 @@ use super::text_input::WindowsTextInput;
 use super::timer::WindowsTimer;
 use super::util::to_wide;
 use super::window_ops::WindowsWindowOps;
-
+use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
+use crate::native::traits::event::UiEvent;
+use crate::native::traits::*;
+use crate::native::{Errc, Error};
 // ════════════════════════════════════════════════════════════════════════════
 // WindowsPlatform
 // ════════════════════════════════════════════════════════════════════════════

@@ -2,10 +2,9 @@
 
 use super::*;
 
+use crate::core::{Point, Rect};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Point, Rect};
-
 // ════════════════════════════════════════════════════════════════════════════
 // 多行渲染
 // ════════════════════════════════════════════════════════════════════════════

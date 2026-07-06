@@ -1,7 +1,8 @@
 //! 帧渲染调度 — 从 UI event_loop 迁入的渲染段（Phase 3）。
 
-use crate::native::{Point, Rect};
+use crate::core::{Point, Rect};
 
+use crate::core::DirtyRegion;
 use crate::draw::backend::DamageRegion;
 use crate::draw::compositor::{LayerTree, RenderObjectTree, ScenePaint};
 use crate::draw::debug::DebugRenderService;
@@ -10,7 +11,6 @@ use crate::draw::font::text::TextRenderService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
 use crate::draw::pipeline::{InvalidationSource, RenderMetrics};
-use crate::draw::primitives::types::DirtyRegion;
 use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
 use crate::draw::{Color, FontHandle, RenderOutcome};
 

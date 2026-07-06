@@ -1,10 +1,9 @@
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
-/// Tooltip 弹出位置。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TooltipPlacement {
     Top,
@@ -13,7 +12,6 @@ pub enum TooltipPlacement {
     Right,
 }
 
-/// Tooltip 触发方式。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TriggerMode {
     Hover,
@@ -29,7 +27,6 @@ define_widget! {
         bg_color: Option<Color>,
         text_color: Option<Color>,
         visible: bool,
-        timer: f32,
         arrow: bool,
     }
 
@@ -41,12 +38,10 @@ define_widget! {
         match (self.trigger, event) {
             (TriggerMode::Hover, SystemEvent::PointerEnter) => {
                 self.visible = true;
-                self.timer = 0.0;
                 EventResult::Handled
             }
             (TriggerMode::Hover, SystemEvent::PointerLeave) => {
                 self.visible = false;
-                self.timer = 0.0;
                 EventResult::Handled
             }
             (TriggerMode::Click, SystemEvent::PointerDown { .. }) => {
@@ -65,19 +60,10 @@ define_widget! {
         }
     }
 
-    on_update => (&mut self, dt: f64) {
-        if self.visible && self.trigger == TriggerMode::Hover {
-            self.timer += dt as f32;
-        }
-    }
-
-    needs_continuous_update => (&self) -> bool {
-        matches!(self.trigger, TriggerMode::Hover)
-    }
-
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        if !self.visible { return; }
-        if self.trigger == TriggerMode::Hover && self.timer < 0.5 { return; }
+        if !self.visible {
+            return;
+        }
 
         let bg = self.bg_color.unwrap_or(Color::from_rgba(50, 50, 50, 230));
         let txt_color = self.text_color.unwrap_or(Color::white());
@@ -87,23 +73,36 @@ define_widget! {
         let gap = if self.arrow { arrow_sz + 2.0 } else { 4.0 };
         let r = Some(Radius::uniform(4.0));
 
-        let (tx, ty) = match self.placement {
-            TooltipPlacement::Top => (frame.x + frame.w * 0.5 - text_w * 0.5, frame.y - text_h - gap),
-            TooltipPlacement::Bottom => (frame.x + frame.w * 0.5 - text_w * 0.5, frame.y + frame.h + gap),
-            TooltipPlacement::Left => (frame.x - text_w - gap, frame.y + frame.h * 0.5 - text_h * 0.5),
-            TooltipPlacement::Right => (frame.x + frame.w + gap, frame.y + frame.h * 0.5 - text_h * 0.5),
-        };
-
+        let (tx, ty) = tooltip_origin(frame, self.placement, text_w, text_h, gap);
         let tip_frame = Rect::new(tx, ty, text_w, text_h);
         ctx.fill_rect(tip_frame, bg, r);
 
-        // 箭头
         if self.arrow {
             let (ax, ay, aw, ah) = match self.placement {
-                TooltipPlacement::Top => (tx + text_w * 0.5 - arrow_sz, ty + text_h - 1.0, arrow_sz * 2.0, arrow_sz),
-                TooltipPlacement::Bottom => (tx + text_w * 0.5 - arrow_sz, ty - arrow_sz + 1.0, arrow_sz * 2.0, arrow_sz),
-                TooltipPlacement::Left => (tx + text_w - 1.0, ty + text_h * 0.5 - arrow_sz, arrow_sz, arrow_sz * 2.0),
-                TooltipPlacement::Right => (tx - arrow_sz + 1.0, ty + text_h * 0.5 - arrow_sz, arrow_sz, arrow_sz * 2.0),
+                TooltipPlacement::Top => (
+                    tx + text_w * 0.5 - arrow_sz,
+                    ty + text_h - 1.0,
+                    arrow_sz * 2.0,
+                    arrow_sz,
+                ),
+                TooltipPlacement::Bottom => (
+                    tx + text_w * 0.5 - arrow_sz,
+                    ty - arrow_sz + 1.0,
+                    arrow_sz * 2.0,
+                    arrow_sz,
+                ),
+                TooltipPlacement::Left => (
+                    tx + text_w - 1.0,
+                    ty + text_h * 0.5 - arrow_sz,
+                    arrow_sz,
+                    arrow_sz * 2.0,
+                ),
+                TooltipPlacement::Right => (
+                    tx - arrow_sz + 1.0,
+                    ty + text_h * 0.5 - arrow_sz,
+                    arrow_sz,
+                    arrow_sz * 2.0,
+                ),
             };
             draw_arrow(ctx, ax, ay, aw, ah, self.placement, bg);
         }
@@ -115,18 +114,38 @@ define_widget! {
         let text_w = self.text.len() as f32 * 7.5 + 20.0;
         let text_h = 26.0;
         let gap = if self.arrow { 8.0 } else { 4.0 };
-        let (tx, ty) = match self.placement {
-            TooltipPlacement::Top => (frame.x + frame.w * 0.5 - text_w * 0.5, frame.y - text_h - gap),
-            TooltipPlacement::Bottom => (frame.x + frame.w * 0.5 - text_w * 0.5, frame.y + frame.h + gap),
-            TooltipPlacement::Left => (frame.x - text_w - gap, frame.y + frame.h * 0.5 - text_h * 0.5),
-            TooltipPlacement::Right => (frame.x + frame.w + gap, frame.y + frame.h * 0.5 - text_h * 0.5),
-        };
-        let tip = Rect::new(tx, ty, text_w, text_h);
-        frame.union(&tip)
+        let (tx, ty) = tooltip_origin(frame, self.placement, text_w, text_h, gap);
+        frame.union(&Rect::new(tx, ty, text_w, text_h))
     }
 }
 
-/// 绘制三角形箭头。
+fn tooltip_origin(
+    frame: Rect,
+    placement: TooltipPlacement,
+    text_w: f32,
+    text_h: f32,
+    gap: f32,
+) -> (f32, f32) {
+    match placement {
+        TooltipPlacement::Top => (
+            frame.x + frame.w * 0.5 - text_w * 0.5,
+            frame.y - text_h - gap,
+        ),
+        TooltipPlacement::Bottom => (
+            frame.x + frame.w * 0.5 - text_w * 0.5,
+            frame.y + frame.h + gap,
+        ),
+        TooltipPlacement::Left => (
+            frame.x - text_w - gap,
+            frame.y + frame.h * 0.5 - text_h * 0.5,
+        ),
+        TooltipPlacement::Right => (
+            frame.x + frame.w + gap,
+            frame.y + frame.h * 0.5 - text_h * 0.5,
+        ),
+    }
+}
+
 fn draw_arrow(
     ctx: &mut PaintContext,
     x: f32,
@@ -165,26 +184,30 @@ impl Tooltip {
             bg_color: None,
             text_color: None,
             visible: false,
-            timer: 0.0,
             arrow: true,
         }
     }
+
     pub fn placement(mut self, p: TooltipPlacement) -> Self {
         self.placement = p;
         self
     }
+
     pub fn trigger(mut self, t: TriggerMode) -> Self {
         self.trigger = t;
         self
     }
+
     pub fn bg_color(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
     }
+
     pub fn text_color(mut self, c: Color) -> Self {
         self.text_color = Some(c);
         self
     }
+
     pub fn arrow(mut self, v: bool) -> Self {
         self.arrow = v;
         self

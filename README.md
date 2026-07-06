@@ -9,10 +9,9 @@ UIX 是一个用 Rust 编写的跨平台原生桌面 UI 框架，用于在 Windo
 | 你想做什么 | 先看 |
 |------------|------|
 | 运行 demo、了解公共 API | 本文档 |
-| 查看架构地图与源码边界 | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | 理解系统设计 | [`docs/Main.md`](docs/Main.md) |
 | 查询设计决策与废止关系 | [`docs/decisions.md`](docs/decisions.md) |
-| 写代码前确认规则 | [`AGENTS.md`](AGENTS.md) |
+| 写代码前确认规则与源码边界 | [`AGENTS.md`](AGENTS.md) |
 
 推荐应用侧入口：
 
@@ -82,7 +81,7 @@ cargo test --features test-harness
 |------|------|
 | [`docs/Main.md`](docs/Main.md) | 系统边界、设计正文、阅读顺序 |
 | [`docs/decisions.md`](docs/decisions.md) | 已定稿的取舍、废止关系和追加编号 |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | 功能域、源码边界、数据流和约束 |
+| [`AGENTS.md`](AGENTS.md) | 协作规则、功能域和跨平台硬约束 |
 
 ## 基础用法
 
@@ -137,7 +136,6 @@ uix-app/
 ├── demo/                   # uix-demo 演示
 ├── docs/                   # 系统设计文档与决策台账
 ├── assets/                 # 字体、图片等资源
-├── ARCHITECTURE.md         # 架构地图与源码边界
 ├── AGENTS.md               # 维护规则与架构硬约束
 └── README.md               # 本文档
 ```
@@ -165,6 +163,6 @@ core ← native ← draw ← ui ← app
 - 上层只依赖 `native::traits`，不直接使用 `native::backends::*`。
 - `#[cfg(windows/unix)]` 只允许出现在 `src/native/backends/` 与 `src/native/factory.rs`。
 - 组件通过 trait 暴露能力，不依赖其他组件内部细节。
-- 新设计先补 `docs/decisions.md` 与对应 `docs/systems/*.md`，再同步 `ARCHITECTURE.md` 的架构边界。
+- 新设计先补 `docs/decisions.md` 与对应 `docs/systems/*.md`；若涉及源码边界或硬约束，同步 `AGENTS.md`。
 
 完整规则见 [`AGENTS.md`](AGENTS.md)。

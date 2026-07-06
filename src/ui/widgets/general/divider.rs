@@ -1,9 +1,9 @@
 //! Divider widget — Ant Design style horizontal/vertical divider with optional text.
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::native::{Point, Rect, Size};
 use crate::ui::WidgetTree;
 
 /// Divider orientation for text placement.

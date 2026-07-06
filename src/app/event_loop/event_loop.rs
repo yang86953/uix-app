@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
+use crate::core::{Point, Rect};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
@@ -10,8 +11,8 @@ use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource,
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::RenderOutcome;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::{Platform, PlatformWindow, Point, Rect};
-
+use crate::native::traits::platform::Platform;
+use crate::native::traits::window::PlatformWindow;
 use crate::ui::clipboard;
 use crate::ui::theme::Theme;
 use crate::ui::{SystemEvent, WidgetCore, WidgetTree};
@@ -57,8 +58,8 @@ where
     );
 
     {
-        let c: &mut dyn crate::native::IClipboard = platform.clipboard();
-        let wide: *mut dyn crate::native::IClipboard = c;
+        let c: &mut dyn crate::native::traits::input::IClipboard = platform.clipboard();
+        let wide: *mut dyn crate::native::traits::input::IClipboard = c;
         let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
         clipboard::set_clipboard_parts(parts.0, parts.1);
     }
@@ -86,8 +87,7 @@ where
     while running.get() {
         platform.text_input().start();
 
-        let animations_active = animating || tree.animations_active();
-        if animations_active {
+        if animating {
             if !platform.event_loop().wait_event(&collect) {
                 break;
             }
@@ -159,7 +159,7 @@ where
                     }
                 }
                 UiEventType::KeyDown => {
-                    use crate::native::KeyCode;
+                    use crate::native::traits::input::KeyCode;
                     if let UiEventPayload::Key(ref data) = ev.payload {
                         if data.key == KeyCode::F12 {
                             debug_mode.set(!debug_mode.get());
@@ -285,13 +285,6 @@ where
                 record_idle(metrics, outcome_source);
                 idle_count = idle_count.saturating_add(1);
             }
-        }
-
-        if tree.animations_active() {
-            if !platform.event_loop().wait_event(&collect) {
-                break;
-            }
-            platform.event_loop().poll_event(&collect);
         }
     }
 

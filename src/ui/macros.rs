@@ -171,7 +171,6 @@ macro_rules! __define_widget_upcast_method {
     (children_clip; $T:ty) => {};
     (draw_margin; $T:ty) => {};
     (on_event; $T:ty) => { $crate::wc_upcast!($T; EventHandler); };
-    (needs_continuous_update; $T:ty) => {};
     (scroll_delta; $T:ty) => {};
     (scroll_delta_for_dirty; $T:ty) => {};
     (viewport_scroll_offset; $T:ty) => {};
@@ -185,7 +184,6 @@ macro_rules! __define_widget_upcast_method {
     (on_unmount; $T:ty) => {};
     (on_detach; $T:ty) => {};
     (on_destroy; $T:ty) => {};
-    (on_update; $T:ty) => {};
     ($other:ident; $T:ty) => {};
 }
 
@@ -248,9 +246,9 @@ macro_rules! define_widget {
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
-                        "on_event" | "needs_continuous_update" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "hit_test_frame" =>
+                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "hit_test_frame" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
-                        "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" | "on_update" =>
+                        "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
                         _ => {}
                     }
@@ -290,7 +288,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             EventHandler,
             $name,
-            [on_event needs_continuous_update scroll_delta scroll_delta_for_dirty viewport_scroll_offset hit_test_frame],
+            [on_event scroll_delta scroll_delta_for_dirty viewport_scroll_offset hit_test_frame],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -298,7 +296,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             WidgetLifecycle,
             $name,
-            [on_init on_attach on_mount on_active on_inactive on_theme_changed on_unmount on_detach on_destroy on_update],
+            [on_init on_attach on_mount on_active on_inactive on_theme_changed on_unmount on_detach on_destroy],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -350,9 +348,6 @@ macro_rules! __define_widget_method_builder {
     (semantic_event; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn semantic_event($($p)*) -> $ret $body
     };
-    (needs_continuous_update; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
-        fn needs_continuous_update($($p)*) -> $ret $body
-    };
     (scroll_delta; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta($($p)*) -> $ret $body
     };
@@ -392,9 +387,6 @@ macro_rules! __define_widget_method_builder {
     };
     (on_destroy; WidgetLifecycle; ($($p:tt)*) $body:block) => {
         fn on_destroy($($p)*) $body
-    };
-    (on_update; WidgetLifecycle; ($($p:tt)*) $body:block) => {
-        fn on_update($($p)*) $body
     };
     // ── 非此 trait 的方法：跳过 ──
     ($method:ident; $trait:ident; $($rest:tt)*) => {};
@@ -440,9 +432,6 @@ macro_rules! __match_trait_method {
     (EventHandler, semantic_event, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn semantic_event($($p)*) -> $ret $body
     };
-    (EventHandler, needs_continuous_update, ($($p:tt)*) -> $ret:ty $body:block) => {
-        fn needs_continuous_update($($p)*) -> $ret $body
-    };
     (EventHandler, scroll_delta, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn scroll_delta($($p)*) -> $ret $body
     };
@@ -482,9 +471,6 @@ macro_rules! __match_trait_method {
     };
     (WidgetLifecycle, on_destroy, ($($p:tt)*) $body:block) => {
         fn on_destroy($($p)*) $body
-    };
-    (WidgetLifecycle, on_update, ($($p:tt)*) $body:block) => {
-        fn on_update($($p)*) $body
     };
     // ── 不属于此 trait：跳过 ──
     ($trait:ident, $method:ident, $($rest:tt)*) => {};

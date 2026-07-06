@@ -7,16 +7,15 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
-use crate::native::traits::*;
-use crate::native::{Errc, Error, Point};
-
 use super::bindings::*;
 use super::consts::*;
 use super::ffi::*;
 use super::platform::WindowsPlatform;
 use super::util::{to_utf8, to_wide};
 use super::wnd_proc::wnd_proc;
-
+use crate::core::Point;
+use crate::native::traits::*;
+use crate::native::{Errc, Error};
 // ════════════════════════════════════════════════════════════════════════════
 // 窗口类注册
 // ════════════════════════════════════════════════════════════════════════════

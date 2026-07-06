@@ -7,7 +7,7 @@
 // ============================================================================
 
 use crate::native::traits::event::UiEvent;
-use crate::native::ITimer;
+use crate::native::traits::system::ITimer;
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};

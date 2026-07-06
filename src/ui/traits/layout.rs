@@ -1,6 +1,6 @@
 //! 布局引擎契约。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 /// 统一布局引擎 trait — Flex 和 Grid 的公共抽象。
 pub trait LayoutEngine {

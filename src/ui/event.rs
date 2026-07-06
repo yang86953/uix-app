@@ -3,7 +3,9 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
-use crate::native::{KeyCode, KeyMod, MouseButton, Point};
+use crate::core::Point;
+
+use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::widget::{EventResult, WidgetId};
 
 /// 应用边界后的系统事件。

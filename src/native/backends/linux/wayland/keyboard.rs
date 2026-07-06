@@ -2,8 +2,8 @@
 // platform/linux/wayland/keyboard.rs — IKeyboard impl for WaylandBackend
 // ============================================================================
 
-use crate::native::IKeyboard;
-use crate::native::KeyCode;
+use crate::native::traits::input::IKeyboard;
+use crate::native::traits::input::KeyCode;
 
 use super::WaylandBackend;
 

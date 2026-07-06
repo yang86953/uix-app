@@ -5,7 +5,7 @@ use super::ffi::*;
 // native/backends/windows/text_input.rs — Windows IME text input (ITextInput)
 // ============================================================================
 
-use crate::native::ITextInput;
+use crate::native::traits::input::ITextInput;
 use std::ptr;
 
 pub struct WindowsTextInput {

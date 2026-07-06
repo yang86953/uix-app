@@ -1,6 +1,6 @@
 //! 外边距/内边距快捷构造（不实现 From 以避免孤儿规则冲突）。
 
-use crate::native::EdgeInsets;
+use crate::core::EdgeInsets;
 
 /// 四边均匀外边距。
 pub fn all(v: f32) -> EdgeInsets {

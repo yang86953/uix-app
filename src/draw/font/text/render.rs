@@ -1,11 +1,11 @@
 //! TextRenderService — 文本渲染服务。
 
+use crate::core::{Point, Rect, Size};
 use crate::draw::font::font_service::FontService;
 use crate::draw::font::text_backend::TextLayoutOptions;
 use crate::draw::spatial::{PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::traits::Canvas2D;
 use crate::draw::{Color, FontHandle, HAlign, VAlign};
-use crate::native::{Point, Rect, Size};
 
 /// 文本渲染服务 — 字体管理、文本布局、glyph 光栅化。
 pub struct TextRenderService<'a> {

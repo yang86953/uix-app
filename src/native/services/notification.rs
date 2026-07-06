@@ -10,11 +10,11 @@
 // 原位于 services crate，迁入 platform 层以消除服务层。
 // ============================================================================
 
-use crate::native::StatusLevel;
+use crate::native::traits::system::StatusLevel;
 use std::collections::VecDeque;
 
-/// 通知级别（统一使用 uix::native::StatusLevel）。
-pub use crate::native::StatusLevel as NotificationLevel;
+/// 通知级别（统一使用 uix::native::traits::system::StatusLevel）。
+pub use crate::native::traits::system::StatusLevel as NotificationLevel;
 
 /// 单条通知条目，作为 Toast 组件的数据源。
 #[derive(Debug, Clone)]
@@ -40,7 +40,7 @@ pub struct ToastEntry {
 /// ```
 pub struct NotificationService {
     /// 平台通知实现（可选 — headless 模式下为 None）。
-    platform_notifier: Option<Box<dyn crate::native::INotification>>,
+    platform_notifier: Option<Box<dyn crate::native::traits::system::INotification>>,
     /// 应用内 Toast 队列。
     toasts: VecDeque<ToastEntry>,
     /// 同时可见的最大 Toast 数。
@@ -69,7 +69,10 @@ impl NotificationService {
     }
 
     /// 附加平台通知后端（如 Platform trait 提供）。
-    pub fn with_platform(mut self, notifier: Box<dyn crate::native::INotification>) -> Self {
+    pub fn with_platform(
+        mut self,
+        notifier: Box<dyn crate::native::traits::system::INotification>,
+    ) -> Self {
         self.platform_notifier = Some(notifier);
         self
     }
@@ -542,7 +545,7 @@ mod tests {
         struct SpyNotifier {
             called: Arc<AtomicBool>,
         }
-        impl crate::native::INotification for SpyNotifier {
+        impl crate::native::traits::system::INotification for SpyNotifier {
             fn show(&mut self, _title: &str, _message: &str) {
                 self.called.store(true, Ordering::SeqCst);
             }

@@ -8,7 +8,7 @@
 //! - 内核栈分配：小内核（≤31）使用栈数组避免堆分配
 //! - 内核 LRU 缓存：相同半径重复调用时复用已计算的内核
 
-use crate::native::Rect;
+use crate::core::Rect;
 use std::cell::RefCell;
 use std::collections::HashMap;
 

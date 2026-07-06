@@ -2,11 +2,11 @@
 //!
 //! 支持物理单位：`offset()` 接受 mm/cm/pt，自动适配 DPI。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
-use crate::native::{Rect, Size};
 use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

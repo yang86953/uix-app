@@ -4,11 +4,11 @@
 //! dirty_region 处于 viewport/screen 坐标；绘制时 canvas translate(-scroll) 对齐。
 //! 脏剪枝须先将 content frame 映射到 viewport 再与 dirty_region 求交。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
+use crate::core::DirtyRegion;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::pipeline::NodeId;
-use crate::draw::primitives::types::DirtyRegion;
 
 /// 累计从根到 node 路径上所有 viewport 祖先的 scroll 偏移。
 pub fn cumulative_scroll(scene: &impl ScenePaint, node_id: NodeId) -> (f32, f32) {
@@ -73,7 +73,7 @@ fn is_viewport(scene: &impl ScenePaint, id: NodeId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::Point;
+    use crate::core::Point;
 
     use crate::draw::painting::PaintContext;
 

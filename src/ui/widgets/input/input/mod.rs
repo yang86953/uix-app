@@ -1,15 +1,16 @@
 //! Input widget — 单行/多行文本输入框
 //!
 //! 支持单行 Input 和多行 Textarea 两种模式。
-//! textarea 模式：Enter 提交（可通过 on_submit 回调），Shift+Enter 换行。
+//! textarea mode: Enter emits a submit semantic event, Shift+Enter inserts a newline.
 //! 支持文字选择、粘贴、键盘导航、前缀/后缀图标等。
 
 use std::cell::{Cell, RefCell};
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::{ControlSize, Rect, Size};
+use crate::native::traits::input::ControlSize;
 use crate::ui::clipboard;
 use crate::ui::{EventResult, KeyCode, KeyMod, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 

@@ -2,10 +2,10 @@
 //!
 //! 基于 Input 交互模式，增加触发字符检测和建议弹出。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
 define_widget! {

@@ -1,4 +1,4 @@
-use crate::native::ControlSize;
+use crate::native::traits::input::ControlSize;
 use crate::ui::style::StyleSet;
 use crate::ui::theme::Theme;
 use std::cell::RefCell;
@@ -86,9 +86,9 @@ pub fn with_config<T>(config: &ComponentConfig, f: impl FnOnce() -> T) -> T {
     result
 }
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {

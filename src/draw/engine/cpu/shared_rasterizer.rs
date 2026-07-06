@@ -2,7 +2,7 @@
 //!
 //! GPU 未实现路径与 CPU 后端共用，避免 GpuCanvas2D 内嵌 CpuCanvas2D。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::raster_renderer::RasterRenderer;
@@ -326,7 +326,7 @@ impl Canvas2D for SharedRasterizer {
     fn pixels_mut(&mut self) -> &mut [u32] {
         self.surface.pixels_mut()
     }
-    fn surface_size(&self) -> crate::native::Size {
+    fn surface_size(&self) -> crate::core::Size {
         self.surface.surface_size()
     }
     fn current_clip(&self) -> Rect {

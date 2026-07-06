@@ -5,12 +5,15 @@ use std::cell::{Cell, RefCell};
 use crate::app::event_loop::run_widget_loop;
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
+use crate::core::Point;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::traits::GraphicsEngine;
+use crate::draw::GpuEngine;
 use crate::draw::SoftwareEngine;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::{create_platform, Point};
+use crate::native::traits::window::PlatformWindow;
+use crate::native::{create_gpu_context, create_platform};
 use crate::ui::theme::Theme;
 use crate::ui::view::adapter::ViewAdapter;
 use crate::ui::view::{View, ViewNode};
@@ -184,11 +187,10 @@ impl App {
         platform_window.show();
         platform_window.raise();
 
-        let mut engine = SoftwareEngine::new();
-        if engine.initialize(w, h).is_err() {
-            crate::core::log::error_fn("SoftwareEngine 初始化失败");
-            return 1;
-        }
+        let mut engine = match create_preferred_engine(platform_window.as_mut(), w, h) {
+            Some(engine) => engine,
+            None => return 1,
+        };
 
         let mut font_service = FontService::new();
         font_service.load_default_system_font(14.0, platform.system_info());
@@ -196,7 +198,7 @@ impl App {
 
         let mut tree = ViewAdapter::build_nodes(root_node);
         if let Some(root) = tree.root_mut() {
-            root.set_frame(crate::native::Rect::new(0.0, 0.0, w as f32, h as f32));
+            root.set_frame(crate::core::Rect::new(0.0, 0.0, w as f32, h as f32));
         }
         tree.layout();
         tree.mark_full_frame_dirty();
@@ -211,7 +213,7 @@ impl App {
         run_widget_loop(
             &mut *platform,
             &mut *platform_window,
-            &mut engine,
+            engine.as_mut(),
             &mut tree,
             &font_service,
             &image_service,
@@ -225,6 +227,47 @@ impl App {
         );
 
         0
+    }
+}
+
+fn create_preferred_engine(
+    platform_window: &mut dyn PlatformWindow,
+    width: i32,
+    height: i32,
+) -> Option<Box<dyn GraphicsEngine>> {
+    let surface = platform_window.native_surface_ptr();
+    match create_gpu_context(surface, width, height).and_then(GpuEngine::new) {
+        Ok(mut engine) => match engine.initialize(width, height) {
+            Ok(()) => {
+                crate::core::log::info_fn("GPU engine initialized");
+                return Some(Box::new(engine));
+            }
+            Err(e) => {
+                engine.shutdown();
+                crate::core::log::warn_fn(format!(
+                    "GPU engine initialize failed, falling back to CPU: {}",
+                    e.short_what()
+                ));
+            }
+        },
+        Err(e) => {
+            crate::core::log::warn_fn(format!(
+                "GPU engine unavailable, falling back to CPU: {}",
+                e.short_what()
+            ));
+        }
+    }
+
+    let mut engine = SoftwareEngine::new();
+    match engine.initialize(width, height) {
+        Ok(()) => {
+            crate::core::log::info_fn("CPU software engine initialized");
+            Some(Box::new(engine))
+        }
+        Err(e) => {
+            crate::core::log::error_fn(format!("SoftwareEngine 初始化失败: {}", e.short_what()));
+            None
+        }
     }
 }
 

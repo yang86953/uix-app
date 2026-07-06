@@ -10,12 +10,11 @@ use std::sync::{Arc, Mutex};
 
 use wayland_client::protocol::{wl_data_device, wl_keyboard, wl_pointer, wl_seat};
 
+use super::WaylandBackend;
+use crate::core::Point;
 use crate::native::backends::linux::wayland::keycode::{keycode_to_char, linux_keycode_to_keycode};
 use crate::native::traits::event::*;
-use crate::native::{KeyMod, MouseButton, Point};
-
-use super::WaylandBackend;
-
+use crate::native::traits::input::{KeyMod, MouseButton};
 impl WaylandBackend {
     /// 确保 seat 已绑定（指针 + 键盘 + 剪贴板数据设备）。
     /// 多窗口共享同一份输入设备绑定，仅首次调用时执行实际绑定。

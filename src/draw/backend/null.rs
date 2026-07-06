@@ -1,6 +1,6 @@
 //! 空渲染后端 — 测试桩，所有绘制均为 no-op。
 
-use crate::native::{Error, Point, Rect};
+use crate::core::{Error, Point, Rect};
 
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
@@ -12,7 +12,7 @@ struct NullDrawSurface {
 }
 
 impl DrawSurface for NullDrawSurface {
-    fn size(&self) -> crate::native::Size {
+    fn size(&self) -> crate::core::Size {
         self.canvas.surface_size()
     }
 

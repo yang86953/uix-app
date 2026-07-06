@@ -1,7 +1,7 @@
 //! 渲染后端协议 — 像素缓冲表面。
 
+use crate::core::{Rect, Size};
 use crate::draw::primitives::color::Color;
-use crate::native::{Rect, Size};
 
 pub trait RenderingBackend {
     fn surface_size(&self) -> Size;
@@ -12,4 +12,5 @@ pub trait RenderingBackend {
     fn copy_region(&mut self, _src: Rect, _dst_x: i32, _dst_y: i32) {}
 }
 
-pub use crate::draw::backend::{BackendCapabilities, BackendKind, DamageRegion, RenderBackend};
+pub use crate::core::DamageRegion;
+pub use crate::draw::backend::{BackendCapabilities, BackendKind, RenderBackend};

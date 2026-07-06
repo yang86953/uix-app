@@ -2,9 +2,9 @@
 // platform/linux/wayland/cursor.rs — ICursor impl for WaylandBackend
 // ============================================================================
 
+use crate::core::Point;
 use crate::native::traits::input::CursorType;
-use crate::native::ICursor;
-use crate::native::Point;
+use crate::native::traits::input::ICursor;
 
 use super::WaylandBackend;
 

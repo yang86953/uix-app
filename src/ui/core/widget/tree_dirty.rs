@@ -1,7 +1,7 @@
 use super::tree_core::WidgetTree;
 use super::*;
-use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle, ScrollDelta};
-use crate::draw::DirtyRegion;
+use crate::core::DirtyRegion;
+use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
 
 impl WidgetTree {
     pub fn invalidation(&self) -> &InvalidationQueueHandle {
@@ -23,34 +23,16 @@ impl WidgetTree {
             .has_paint_or_composite()
     }
 
-    /// 是否有进行中的动画/滚动惯性（仅用于事件轮询，不触发 present）。
-    pub fn animations_active(&self) -> bool {
-        self.animation_registry.has_active()
-    }
-
-    /// 绑定失效队列：初始化并扫描常驻动画节点。
+    /// 绑定失效队列。
     pub fn bind_invalidation(&mut self) {
         self.invalidation
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
-        self.animation_registry.clear();
         // 绑定后标记根节点 Layout 失效，确保 event_loop 首帧会执行 layout()
         // （否则 bind 清空队列后 layout_traverse 为空，子树 frame 无法初始化）
         if let Some(root_id) = self.root_id {
             self.push_layout_invalidation(root_id);
-            for id in self.traverse() {
-                self.try_register_animation(id);
-            }
-        }
-    }
-
-    pub(crate) fn try_register_animation(&mut self, id: WidgetId) {
-        if self
-            .get(id)
-            .is_some_and(|n| n.visible() && n.needs_continuous_update())
-        {
-            self.animation_registry.register(id);
         }
     }
 
@@ -108,7 +90,6 @@ impl WidgetTree {
         if let Some(r) = rect.filter(|r| r.w > 0.0 && r.h > 0.0) {
             self.push_paint_invalidation(id, Some(r));
         }
-        self.try_register_animation(id);
     }
 
     /// 标记指定矩形 Paint 失效。
@@ -119,7 +100,6 @@ impl WidgetTree {
         if rect.w > 0.0 && rect.h > 0.0 {
             self.push_paint_invalidation(id, Some(rect));
         }
-        self.try_register_animation(id);
     }
 
     pub fn invalidate_paint_subtree(&mut self, id: WidgetId) {
@@ -241,54 +221,5 @@ impl WidgetTree {
     /// 每帧 tick 已注册的 Effect；任一 Effect 重新执行时返回 true。
     pub fn tick_effects(&self) -> bool {
         self.effects.iter().any(|eff| eff.tick())
-    }
-
-    /// 滚动增量较小时推送 Composite strip 失效 + scroll_region memmove 参数。
-    pub(crate) fn push_scroll_strip_invalidation(
-        &mut self,
-        viewport_id: WidgetId,
-        frame: Rect,
-        dx: f32,
-        dy: f32,
-    ) {
-        let strip = scroll_exposed_strip(frame, dx, dy);
-        if strip.w <= 0.0 || strip.h <= 0.0 {
-            self.invalidate_paint_rect(viewport_id, frame);
-            return;
-        }
-        // 大幅跳转仍整视口重绘，避免多条 strip 叠加复杂度
-        if dy.abs() > frame.h * 0.5 || dx.abs() > frame.w * 0.5 {
-            self.invalidate_paint_rect(viewport_id, frame);
-            return;
-        }
-        self.invalidation
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(Invalidation::Composite {
-                rect: strip,
-                scroll: Some(ScrollDelta { dx, dy }),
-            });
-        self.scroll_region_move = Some((frame, dx, dy));
-        self.try_register_animation(viewport_id);
-    }
-}
-
-/// 根据滚动增量计算暴露条带（viewport 坐标）。
-fn scroll_exposed_strip(frame: Rect, dx: f32, dy: f32) -> Rect {
-    const MIN: f32 = 0.01;
-    if dy.abs() > MIN && dy.abs() >= dx.abs() {
-        if dy > 0.0 {
-            Rect::new(frame.x, frame.y + frame.h - dy, frame.w, dy)
-        } else {
-            Rect::new(frame.x, frame.y, frame.w, -dy)
-        }
-    } else if dx.abs() > MIN {
-        if dx > 0.0 {
-            Rect::new(frame.x + frame.w - dx, frame.y, dx, frame.h)
-        } else {
-            Rect::new(frame.x, frame.y, -dx, frame.h)
-        }
-    } else {
-        Rect::zero()
     }
 }

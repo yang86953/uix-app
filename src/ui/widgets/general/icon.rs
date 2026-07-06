@@ -6,11 +6,11 @@
 
 use std::sync::OnceLock;
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::font::font_service::FontService;
 use crate::draw::painting::PaintContext;
 use crate::draw::FontHandle;
-use crate::native::{Rect, Size};
 use crate::ui::WidgetTree;
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。

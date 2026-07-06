@@ -5,8 +5,7 @@
 // EGL 帧缓冲，present() 时调用 eglSwapBuffers 实现零拷贝呈现。
 // ============================================================================
 
-use crate::native::{IGraphicsContext, IPresenter, PresentDamage};
-
+use crate::native::traits::present::{IGraphicsContext, IPresenter, PresentDamage};
 pub struct GpuPresenter {
     gpu_ctx: Box<dyn IGraphicsContext>,
 }

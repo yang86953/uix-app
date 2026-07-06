@@ -1,13 +1,12 @@
 //! UI 层 trait 桥接 — TextRenderer / DebugRenderer 实现。
 
+use crate::core::{Point, Rect, Size};
 use crate::draw::debug::DebugRenderService;
 use crate::draw::font::text::TextRenderService;
 use crate::draw::font::text_backend::TextLayout;
 use crate::draw::spatial::{PhysicalUnit, SpatialContext, Vec3, AABB3D};
 use crate::draw::traits::Canvas2D;
 use crate::draw::{Color, FontHandle};
-use crate::native::{Point, Rect, Size};
-
 use crate::ui::traits::{DebugRenderer, TextRenderer};
 
 impl DebugRenderer for DebugRenderService {

@@ -1,8 +1,9 @@
-﻿use super::*;
+use super::*;
+use crate::core::EdgeInsets;
 use crate::draw::Color;
-use crate::native::EdgeInsets;
+use crate::ui::theme::NeutralRole;
 
-// ── 默认值 / 构造器 ────────────────────────────────────
+// 鈹€鈹€ 榛樿鍊?/ 鏋勯€犲櫒 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn style_default_all_fields() {
@@ -27,8 +28,8 @@ fn style_default_all_fields() {
     assert_eq!(s.background, None);
     assert_eq!(s.background_hover, None);
     assert_eq!(s.background_active, None);
-    assert_eq!(s.color, Color::black());
-    assert_eq!(s.font_size, 14.0);
+    assert_eq!(s.color, ColorValue::Neutral(NeutralRole::Text));
+    assert_eq!(s.font_size, TypographyToken::Body);
     assert_eq!(s.opacity, 1.0);
     assert_eq!(s.box_shadow, None);
     assert!(s.visible);
@@ -39,14 +40,14 @@ fn style_new_equals_default() {
     assert_eq!(Style::new(), Style::default());
 }
 
-// ── 便捷预设 ──────────────────────────────────────────
+// 鈹€鈹€ 渚挎嵎棰勮 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn style_row() {
     let s = Style::row();
     assert_eq!(s.display, DisplayMode::Flex);
     assert_eq!(s.flex_direction, FlexDirection::Row);
-    // 其余字段应与 default 一致
+    // Remaining fields should match default.
     let mut expected = Style::default();
     expected.display = DisplayMode::Flex;
     expected.flex_direction = FlexDirection::Row;
@@ -58,7 +59,7 @@ fn style_column() {
     let s = Style::column();
     assert_eq!(s.display, DisplayMode::Flex);
     assert_eq!(s.flex_direction, FlexDirection::default()); // Column
-                                                            // 其余字段应与 default 一致
+                                                            // Remaining fields should match default.
     let mut expected = Style::default();
     expected.display = DisplayMode::Flex;
     assert_eq!(s, expected);
@@ -68,89 +69,113 @@ fn style_column() {
 fn style_button_default() {
     let s = Style::button_default();
     assert_eq!(s.background, None);
-    assert_eq!(s.border_color, Some(Color::from_rgba(217, 217, 217, 255)));
+    assert_eq!(
+        s.border_color,
+        Some(ColorValue::Neutral(NeutralRole::Border))
+    );
     assert_eq!(s.border_width, EdgeInsets::uniform(1.0));
     assert_eq!(s.border_radius, 6.0);
     assert_eq!(s.padding, EdgeInsets::new(15.0, 0.0, 15.0, 0.0));
-    assert_eq!(s.color, Color::from_rgb(0, 0, 0));
-    assert_eq!(s.font_size, 14.0);
+    assert_eq!(s.color, ColorValue::Neutral(NeutralRole::Text));
+    assert_eq!(s.font_size, TypographyToken::Body);
 }
 
 #[test]
 fn style_button_primary() {
     let s = Style::button_primary();
-    assert_eq!(s.background, Some(Color::from_rgba(22, 119, 255, 255)));
-    assert_eq!(s.border_color, Some(Color::from_rgba(22, 119, 255, 255)));
+    assert_eq!(
+        s.background,
+        Some(ColorValue::Palette(PaletteColor::Primary))
+    );
+    assert_eq!(
+        s.border_color,
+        Some(ColorValue::Palette(PaletteColor::Primary))
+    );
     assert_eq!(s.border_width, EdgeInsets::uniform(1.0));
     assert_eq!(s.border_radius, 6.0);
     assert_eq!(s.padding, EdgeInsets::new(15.0, 0.0, 15.0, 0.0));
-    assert_eq!(s.color, Color::white());
-    assert_eq!(s.font_size, 14.0);
+    assert_eq!(s.color, ColorValue::Palette(PaletteColor::White));
+    assert_eq!(s.font_size, TypographyToken::Body);
 }
 
 #[test]
 fn style_container() {
     let s = Style::container();
     assert_eq!(s.display, DisplayMode::Flex);
-    // 其余字段应与 default 一致
+    // Remaining fields should match default.
     let mut expected = Style::default();
     expected.display = DisplayMode::Flex;
     assert_eq!(s, expected);
 }
 
-// ── effective_bg ───────────────────────────────────────
+// 鈹€鈹€ effective_bg 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn effective_bg_pressed_returns_active() {
     let s = Style {
-        background: Some(Color::red()),
-        background_hover: Some(Color::green()),
-        background_active: Some(Color::blue()),
+        background: Some(ColorValue::Custom(Color::red())),
+        background_hover: Some(ColorValue::Custom(Color::green())),
+        background_active: Some(ColorValue::Custom(Color::blue())),
         ..Style::default()
     };
-    assert_eq!(s.effective_bg(true, true), Some(Color::blue()));
+    assert_eq!(
+        s.effective_bg(true, true),
+        Some(ColorValue::Custom(Color::blue()))
+    );
 }
 
 #[test]
 fn effective_bg_pressed_fallback_to_background() {
     let s = Style {
-        background: Some(Color::red()),
+        background: Some(ColorValue::Custom(Color::red())),
         background_hover: None,
         background_active: None,
         ..Style::default()
     };
-    assert_eq!(s.effective_bg(false, true), Some(Color::red()));
+    assert_eq!(
+        s.effective_bg(false, true),
+        Some(ColorValue::Custom(Color::red()))
+    );
 }
 
 #[test]
 fn effective_bg_hovered_returns_hover() {
     let s = Style {
-        background: Some(Color::red()),
-        background_hover: Some(Color::green()),
+        background: Some(ColorValue::Custom(Color::red())),
+        background_hover: Some(ColorValue::Custom(Color::green())),
         background_active: None,
         ..Style::default()
     };
-    assert_eq!(s.effective_bg(true, false), Some(Color::green()));
+    assert_eq!(
+        s.effective_bg(true, false),
+        Some(ColorValue::Custom(Color::green()))
+    );
 }
 
 #[test]
 fn effective_bg_hovered_no_hover_fallback() {
     let s = Style {
-        background: Some(Color::red()),
+        background: Some(ColorValue::Custom(Color::red())),
         background_hover: None,
         background_active: None,
         ..Style::default()
     };
-    assert_eq!(s.effective_bg(true, false), Some(Color::red()));
+    assert_eq!(
+        s.effective_bg(true, false),
+        Some(ColorValue::Custom(Color::red()))
+    );
 }
 
 #[test]
 fn effective_bg_normal_returns_background() {
     let s = Style {
-        background: Some(Color::red()),
+        background: Some(ColorValue::Custom(Color::red())),
         ..Style::default()
     };
-    assert_eq!(s.effective_bg(false, false), Some(Color::red()));
+    assert_eq!(
+        s.effective_bg(false, false),
+        Some(ColorValue::Custom(Color::red()))
+    );
 }
 
 #[test]
@@ -166,7 +191,7 @@ fn effective_bg_all_none_returns_none() {
     assert_eq!(s.effective_bg(false, false), None);
 }
 
-// ── 链式 Builder ──────────────────────────────────────
+// 鈹€鈹€ 閾惧紡 Builder 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn chain_builder_all_methods() {
@@ -198,7 +223,7 @@ fn chain_builder_all_methods() {
 
     assert_eq!(s.margin, EdgeInsets::uniform(8.0));
     assert_eq!(s.padding, EdgeInsets::uniform(4.0));
-    assert_eq!(s.border_color, Some(Color::red()));
+    assert_eq!(s.border_color, Some(ColorValue::Custom(Color::red())));
     assert_eq!(s.border_width, EdgeInsets::uniform(2.0));
     assert_eq!(s.border_radius, 6.0);
     assert_eq!(s.width, Some(200.0)); // with_size overrides with_width
@@ -211,11 +236,11 @@ fn chain_builder_all_methods() {
     assert_eq!(s.gap, 8.0);
     assert_eq!(s.flex_grow, 1.0);
     assert_eq!(s.flex_shrink, 0.0);
-    assert_eq!(s.background, Some(Color::blue()));
-    assert_eq!(s.background_hover, Some(Color::green()));
-    assert_eq!(s.background_active, Some(Color::red()));
-    assert_eq!(s.color, Color::white());
-    assert_eq!(s.font_size, 16.0);
+    assert_eq!(s.background, Some(ColorValue::Custom(Color::blue())));
+    assert_eq!(s.background_hover, Some(ColorValue::Custom(Color::green())));
+    assert_eq!(s.background_active, Some(ColorValue::Custom(Color::red())));
+    assert_eq!(s.color, ColorValue::Custom(Color::white()));
+    assert_eq!(s.font_size, TypographyToken::Custom(16.0));
     assert_eq!(s.opacity, 0.5);
     assert_eq!(
         s.box_shadow,
@@ -224,45 +249,44 @@ fn chain_builder_all_methods() {
     assert!(!s.visible);
 }
 
-// ── apply ────────────────────────────────────────────
+// 鈹€鈹€ apply 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn apply_non_default_overrides_default_preserved() {
     let base = Style::default();
     let patch = Style {
-        background: Some(Color::red()),
-        border_color: Some(Color::blue()),
+        background: Some(ColorValue::Custom(Color::red())),
+        border_color: Some(ColorValue::Custom(Color::blue())),
         width: Some(100.0),
         ..Style::default()
     };
     let result = base.apply(patch);
-    assert_eq!(result.background, Some(Color::red()));
-    assert_eq!(result.border_color, Some(Color::blue()));
+    assert_eq!(result.background, Some(ColorValue::Custom(Color::red())));
+    assert_eq!(result.border_color, Some(ColorValue::Custom(Color::blue())));
     assert_eq!(result.width, Some(100.0));
-    // 默认字段应保留
-    assert_eq!(result.margin, EdgeInsets::zero());
+    // 榛樿瀛楁搴斾繚鐣?    assert_eq!(result.margin, EdgeInsets::zero());
     assert_eq!(result.padding, EdgeInsets::zero());
     assert_eq!(result.height, None);
     assert_eq!(result.display, DisplayMode::Flex);
     assert_eq!(result.flex_grow, 0.0);
     assert_eq!(result.flex_shrink, 1.0);
-    assert_eq!(result.color, Color::black());
-    assert_eq!(result.font_size, 14.0);
+    assert_eq!(result.color, ColorValue::Neutral(NeutralRole::Text));
+    assert_eq!(result.font_size, TypographyToken::Body);
     assert!(result.visible);
 }
 
 #[test]
 fn apply_empty_patch_preserves_all() {
     let base = Style {
-        background: Some(Color::red()),
-        border_color: Some(Color::blue()),
+        background: Some(ColorValue::Custom(Color::red())),
+        border_color: Some(ColorValue::Custom(Color::blue())),
         width: Some(100.0),
         ..Style::default()
     };
     let patch = Style::default();
     let result = base.apply(patch);
-    assert_eq!(result.background, Some(Color::red()));
-    assert_eq!(result.border_color, Some(Color::blue()));
+    assert_eq!(result.background, Some(ColorValue::Custom(Color::red())));
+    assert_eq!(result.border_color, Some(ColorValue::Custom(Color::blue())));
     assert_eq!(result.width, Some(100.0));
 }
 
@@ -275,19 +299,19 @@ fn apply_edge_cases_zero_and_none() {
         visible: false,
         ..Style::default()
     };
-    // patch 中 gap=0.0 不会覆盖（因为 gap 默认是 0.0，不触发覆盖）
+    // patch 涓?gap=0.0 涓嶄細瑕嗙洊锛堝洜涓?gap 榛樿鏄?0.0锛屼笉瑙﹀彂瑕嗙洊锛?
     let patch = Style {
-        margin: EdgeInsets::zero(), // 不会被 apply，因为等于 zero()
-        gap: 0.0,                   // 不会覆盖
+        margin: EdgeInsets::zero(), // 涓嶄細琚?apply锛屽洜涓虹瓑浜?zero()
+        gap: 0.0,                   // 涓嶄細瑕嗙洊
         ..Style::default()
     };
     let result = base.apply(patch);
-    assert_eq!(result.margin, EdgeInsets::uniform(5.0)); // 保留
-    assert_eq!(result.gap, 10.0); // 保留
-    assert!(!result.visible); // false 被保留（patch visible=true，但 only if !other.visible）
+    assert_eq!(result.margin, EdgeInsets::uniform(5.0)); // 淇濈暀
+    assert_eq!(result.gap, 10.0); // 淇濈暀
+    assert!(!result.visible); // false 琚繚鐣欙紙patch visible=true锛屼絾 only if !other.visible锛?}
 }
 
-// ── with_style ───────────────────────────────────────
+// 鈹€鈹€ with_style 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn with_style_full_replace() {
@@ -296,13 +320,13 @@ fn with_style_full_replace() {
         .with_color(Color::white());
     let replacement = Style::default().with_bg(Color::blue()).with_font_size(20.0);
     let result = original.with_style(replacement);
-    // 所有字段应全部替换
-    assert_eq!(result.background, Some(Color::blue()));
-    assert_eq!(result.color, Color::black()); // default
-    assert_eq!(result.font_size, 20.0);
+    // 鎵€鏈夊瓧娈靛簲鍏ㄩ儴鏇挎崲
+    assert_eq!(result.background, Some(ColorValue::Custom(Color::blue())));
+    assert_eq!(result.color, ColorValue::Neutral(NeutralRole::Text)); // default
+    assert_eq!(result.font_size, TypographyToken::Custom(20.0));
 }
 
-// ── BoxShadowDef ─────────────────────────────────────
+// 鈹€鈹€ BoxShadowDef 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn box_shadow_def_new() {
@@ -313,7 +337,7 @@ fn box_shadow_def_new() {
     assert_eq!(s.offset_y, 1.0);
 }
 
-// ── StyleSet ─────────────────────────────────────
+// 鈹€鈹€ StyleSet 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn style_set_new() {
@@ -335,22 +359,22 @@ fn style_set_resolve_priority() {
         .hover(hover)
         .active(active)
         .disabled(disabled);
-    // 优先级：disabled > active > hover > normal
+    // 浼樺厛绾э細disabled > active > hover > normal
     assert_eq!(
         v.resolve_flags(false, false, false, true).background,
-        Some(Color::from_rgb(128, 128, 128))
+        Some(ColorValue::Custom(Color::from_rgb(128, 128, 128)))
     );
     assert_eq!(
         v.resolve_flags(false, true, false, false).background,
-        Some(Color::blue())
+        Some(ColorValue::Custom(Color::blue()))
     );
     assert_eq!(
         v.resolve_flags(true, false, false, false).background,
-        Some(Color::green())
+        Some(ColorValue::Custom(Color::green()))
     );
     assert_eq!(
         v.resolve_flags(false, false, false, false).background,
-        Some(Color::red())
+        Some(ColorValue::Custom(Color::red()))
     );
 }
 
@@ -358,22 +382,22 @@ fn style_set_resolve_priority() {
 fn style_set_resolve_fallback() {
     let normal = Style::default().with_bg(Color::red());
     let v = StyleSet::new(normal.clone());
-    // 无 hover/active/disabled 时回退到 normal
+    // 鏃?hover/active/disabled 鏃跺洖閫€鍒?normal
     assert_eq!(
         v.resolve_flags(true, true, false, false).background,
-        Some(Color::red())
+        Some(ColorValue::Custom(Color::red()))
     );
     assert_eq!(
         v.resolve_flags(true, false, false, false).background,
-        Some(Color::red())
+        Some(ColorValue::Custom(Color::red()))
     );
     assert_eq!(
         v.resolve_flags(false, true, false, false).background,
-        Some(Color::red())
+        Some(ColorValue::Custom(Color::red()))
     );
     assert_eq!(
         v.resolve_flags(false, false, false, true).background,
-        Some(Color::red())
+        Some(ColorValue::Custom(Color::red()))
     );
 }
 
@@ -392,7 +416,7 @@ fn style_set_chain_methods() {
     assert_eq!(v.disabled, Some(disabled));
 }
 
-// ── edge_insets 辅助函数 ─────────────────────────────
+// 鈹€鈹€ edge_insets 杈呭姪鍑芥暟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn edge_insets_all_uniform() {
@@ -422,7 +446,7 @@ fn edge_insets_trbl() {
     assert_eq!(insets.bottom, 3.0);
 }
 
-// ── style! 宏 ────────────────────────────────────────
+// 鈹€鈹€ style! 瀹?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
 fn style_macro_basic() {
@@ -432,8 +456,8 @@ fn style_macro_basic() {
         rounded: 6,
         margin: EdgeInsets::uniform(8.0),
     };
-    assert_eq!(s.background, Some(Color::red()));
-    assert_eq!(s.color, Color::white());
+    assert_eq!(s.background, Some(ColorValue::Custom(Color::red())));
+    assert_eq!(s.color, ColorValue::Custom(Color::white()));
     assert_eq!(s.border_radius, 6.0);
     assert_eq!(s.margin, EdgeInsets::uniform(8.0));
 }
@@ -464,10 +488,16 @@ fn style_macro_aliases_bare() {
         grow: 1,
         shrink: 0,
     };
-    assert_eq!(s.background, Some(Color::blue()));
-    assert_eq!(s.background_hover, Some(Color::from_rgb(173, 216, 255)));
-    assert_eq!(s.background_active, Some(Color::from_rgb(0, 0, 139)));
-    assert_eq!(s.font_size, 16.0);
+    assert_eq!(s.background, Some(ColorValue::Custom(Color::blue())));
+    assert_eq!(
+        s.background_hover,
+        Some(ColorValue::Custom(Color::from_rgb(173, 216, 255)))
+    );
+    assert_eq!(
+        s.background_active,
+        Some(ColorValue::Custom(Color::from_rgb(0, 0, 139)))
+    );
+    assert_eq!(s.font_size, TypographyToken::Custom(16.0));
     assert_eq!(s.opacity, 0.8);
     assert!(s.visible);
     assert_eq!(s.width, Some(100.0));
@@ -484,12 +514,12 @@ fn style_macro_aliases_bare() {
 
 #[test]
 fn style_macro_border_and_shadow() {
-    // 元组语法：`border: (color, width)`, `shadow: (color, blur, ox, oy)`
+    // 鍏冪粍璇硶锛歚border: (color, width)`, `shadow: (color, blur, ox, oy)`
     let s = crate::style! {
         border: (Color::red(), 2.0),
         shadow: (Color::black(), 4.0, 2.0, 2.0),
     };
-    assert_eq!(s.border_color, Some(Color::red()));
+    assert_eq!(s.border_color, Some(ColorValue::Custom(Color::red())));
     assert_eq!(s.border_width, EdgeInsets::uniform(2.0));
     assert_eq!(
         s.box_shadow,

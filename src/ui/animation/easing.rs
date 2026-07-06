@@ -217,7 +217,7 @@ impl Animatable for Color {
     }
 }
 
-impl Animatable for crate::native::Rect {
+impl Animatable for crate::core::Rect {
     fn lerp(from: Self, to: Self, t: f64) -> Self {
         let t = t as f32;
         Self {
@@ -236,7 +236,7 @@ impl Animatable for crate::native::Rect {
     }
 }
 
-impl Animatable for crate::native::Point {
+impl Animatable for crate::core::Point {
     fn lerp(from: Self, to: Self, t: f64) -> Self {
         let t = t as f32;
         Self {

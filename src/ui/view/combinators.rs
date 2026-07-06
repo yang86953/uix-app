@@ -13,12 +13,13 @@
 //! ]).padding(16.0);
 //! ```
 
-use crate::ui::layout::FlexDirection;
+use crate::native::traits::input::ScrollDirection;
+use crate::ui::layout::{FlexDirection, GridTrack};
 use crate::ui::view::{View, ViewNode};
 
+use crate::core::{Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::InvalidationQueueHandle;
-use crate::native::{Rect, Size};
 use crate::ui::state::{drain_pending_state_binds, StatePaintBind};
 use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
 use crate::ui::{WidgetId, WidgetTree};
@@ -57,6 +58,135 @@ where
         crate::ui::widgets::Container::new().dir(FlexDirection::Row),
         children,
     )
+}
+
+/// Grid 容器。
+///
+/// 默认不预设轨道；调用 `.columns(...)` / `.rows(...)` 明确声明轨道。
+pub fn grid<I>(children: I) -> GridBuilder
+where
+    I: IntoIterator,
+    I::Item: View,
+{
+    GridBuilder {
+        children: children.into_iter().map(|v| v.build()).collect(),
+        widget: crate::ui::widgets::Grid::new(),
+    }
+}
+
+pub struct GridBuilder {
+    children: Vec<ViewNode>,
+    widget: crate::ui::widgets::Grid,
+}
+
+impl GridBuilder {
+    pub fn columns(mut self, columns: Vec<GridTrack>) -> Self {
+        self.widget = self.widget.columns(columns);
+        self
+    }
+
+    pub fn rows(mut self, rows: Vec<GridTrack>) -> Self {
+        self.widget = self.widget.rows(rows);
+        self
+    }
+
+    pub fn gap(mut self, gap: f32) -> Self {
+        self.widget = self.widget.gap(gap);
+        self
+    }
+
+    pub fn two_columns(mut self) -> Self {
+        self.widget = crate::ui::widgets::Grid::two_columns();
+        self
+    }
+
+    pub fn three_columns(mut self) -> Self {
+        self.widget = crate::ui::widgets::Grid::three_columns();
+        self
+    }
+}
+
+impl View for GridBuilder {
+    fn build(self) -> ViewNode {
+        ViewNode::new(self.widget, self.children)
+    }
+}
+
+impl From<GridBuilder> for ViewNode {
+    fn from(builder: GridBuilder) -> Self {
+        builder.build()
+    }
+}
+
+/// Scroll 容器。
+///
+/// 默认垂直滚动；可链式切换为 `.horizontal()` 或 `.both()`。
+pub fn scroll(child: impl View) -> ScrollBuilder {
+    ScrollBuilder {
+        child: child.build(),
+        direction: ScrollDirection::Vertical,
+        fixed_size: None,
+        flex_grow: 1.0,
+        show_scrollbar: true,
+    }
+}
+
+pub struct ScrollBuilder {
+    child: ViewNode,
+    direction: ScrollDirection,
+    fixed_size: Option<(f32, f32)>,
+    flex_grow: f32,
+    show_scrollbar: bool,
+}
+
+impl ScrollBuilder {
+    pub fn vertical(mut self) -> Self {
+        self.direction = ScrollDirection::Vertical;
+        self
+    }
+
+    pub fn horizontal(mut self) -> Self {
+        self.direction = ScrollDirection::Horizontal;
+        self
+    }
+
+    pub fn both(mut self) -> Self {
+        self.direction = ScrollDirection::Both;
+        self
+    }
+
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.fixed_size = Some((w, h));
+        self
+    }
+
+    pub fn flex_grow(mut self, value: f32) -> Self {
+        self.flex_grow = value;
+        self
+    }
+
+    pub fn show_scrollbar(mut self, value: bool) -> Self {
+        self.show_scrollbar = value;
+        self
+    }
+}
+
+impl View for ScrollBuilder {
+    fn build(self) -> ViewNode {
+        let mut widget = crate::ui::widgets::ScrollView::new(self.direction)
+            .flex_grow(self.flex_grow)
+            .show_scrollbar(self.show_scrollbar);
+        if let Some((w, h)) = self.fixed_size {
+            widget = widget.size(w, h);
+        }
+        ViewNode::new(widget, vec![self.child])
+    }
+}
+
+impl From<ScrollBuilder> for ViewNode {
+    fn from(builder: ScrollBuilder) -> Self {
+        builder.build()
+    }
 }
 
 /// 文本标签（静态文本）。
@@ -148,7 +278,7 @@ impl WidgetRender for DynamicLabel {
         if !text.is_empty() {
             ctx.draw_text(
                 &text,
-                crate::native::Point::new(frame.x, frame.y),
+                crate::core::Point::new(frame.x, frame.y),
                 ctx.tokens().color_text(),
                 14.0,
             );
@@ -327,5 +457,27 @@ pub fn input() -> InputBuilder {
     InputBuilder {
         placeholder: String::new(),
         handlers: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::widgets::{Grid, ScrollView};
+
+    #[test]
+    fn grid_combinator_builds_grid_node() {
+        let node = grid([label("A"), label("B")]).two_columns().build();
+
+        assert_eq!(node.children.len(), 2);
+        assert!(node.widget.as_any().downcast_ref::<Grid>().is_some());
+    }
+
+    #[test]
+    fn scroll_combinator_builds_scroll_view_node() {
+        let node = scroll(column([label("A")])).horizontal().build();
+
+        assert_eq!(node.children.len(), 1);
+        assert!(node.widget.as_any().downcast_ref::<ScrollView>().is_some());
     }
 }

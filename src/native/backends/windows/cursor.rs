@@ -5,9 +5,9 @@
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 
+use crate::core::Point;
 use crate::native::traits::input::CursorType;
-use crate::native::ICursor;
-use crate::native::Point;
+use crate::native::traits::input::ICursor;
 use std::ptr;
 
 pub struct WindowsCursor {

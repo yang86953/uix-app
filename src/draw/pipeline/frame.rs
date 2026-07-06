@@ -1,6 +1,6 @@
 //! 共享帧逻辑 — clip / clear / Idle 判定，CPU 与 GPU 共用。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::backend::traits::{BackendCapabilities, DrawSurface};
 use crate::draw::backend::DamageRegion;

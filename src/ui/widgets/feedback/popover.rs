@@ -1,11 +1,11 @@
 use crate::define_widget;
 
+use crate::core::{Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
-/// Popover 弹出位置。
+/// Popover placement.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PopoverPlacement {
     Top,
@@ -22,7 +22,7 @@ pub enum PopoverPlacement {
     RightBottom,
 }
 
-/// 触发方式。
+/// Popover trigger mode.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PopoverTrigger {
     Click,
@@ -77,9 +77,6 @@ define_widget! {
         EventResult::NotHandled
     }
 
-    on_update => (&mut self, dt: f64) {
-        self.timer += dt as f32;
-    }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_elevated();

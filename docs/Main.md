@@ -1,7 +1,7 @@
 # UIX 框架设计文档 — 总目录
 
 > 入口文档。设计按**系统**组织，不按源码文件夹。  
-> 架构地图 → [`ARCHITECTURE.md`](../ARCHITECTURE.md) · 维护规则 → [`AGENTS.md`](../AGENTS.md)
+> 维护规则 → [`AGENTS.md`](../AGENTS.md)
 
 ---
 
@@ -13,7 +13,6 @@
 | 设计规范 | [`systems/`](systems/) | 各系统的定稿行为、边界与跨系统关系 |
 | 决策台账 | [`decisions.md`](decisions.md) | 100 项已定稿选择；冲突以废止关系为准 |
 | 术语表 | [`glossary.md`](glossary.md) | 核心名词 |
-| 架构地图 | [`ARCHITECTURE.md`](../ARCHITECTURE.md) | 功能域、源码边界、数据流和约束 |
 
 ---
 
@@ -141,7 +140,7 @@ SettingsService 模型、与 App 可选集成、主题/locale 持久化边界。
 
 ## 推荐阅读顺序
 
-1. 本文件 + [`ARCHITECTURE.md`](../ARCHITECTURE.md) 架构地图  
+1. 本文件
 2. [`glossary.md`](glossary.md) — 统一术语  
 3. [`decisions.md`](decisions.md) — 实现顺序 #50 与关键 #  
 4. [application.md](systems/application.md) — 一帧怎么跑  
@@ -165,11 +164,11 @@ Theme/Style → Event/HandlerTable → Lifecycle → Button → 全量 Widget + 
 | 新增或重命名系统文档 | 更新本文件的系统全景、文件说明和阅读顺序 |
 | 新增设计选择 | 在 [`decisions.md`](decisions.md) 追加 #101+，并在相关系统文档引用 |
 | 决策发生冲突 | 在 `decisions.md` 的废止关系中说明，以较新的决策为准 |
-| 源码边界或数据流变化 | 更新 [`ARCHITECTURE.md`](../ARCHITECTURE.md)，不要把长源码清单塞进系统设计正文 |
+| 源码边界或数据流变化 | 更新相关 `docs/systems/*.md`；若涉及硬约束，同步 [`AGENTS.md`](../AGENTS.md) |
 | 架构硬约束变化 | 更新 [`AGENTS.md`](../AGENTS.md)，并在相关文档只做链接引用 |
 | 新增或重命名术语 | 更新 [`glossary.md`](glossary.md)，并检查系统文档是否用词一致 |
 
-文档分工原则：`docs/systems/` 解释“为什么这样设计”和“系统边界”；`ARCHITECTURE.md` 解释功能域、源码边界和运行数据流；`README.md` 面向第一次上手。
+文档分工原则：`docs/systems/` 解释“为什么这样设计”和“系统边界”；`AGENTS.md` 记录协作规则、功能域和硬约束；`README.md` 面向第一次上手。
 
 ---
 
@@ -188,4 +187,4 @@ Theme/Style → Event/HandlerTable → Lifecycle → Button → 全量 Widget + 
 
 ## 与源码功能域（仅供实现对照）
 
-设计按**系统**写；代码按 **core / native / draw / ui / app / data** 分域实现。对照关系见 [`ARCHITECTURE.md`](../ARCHITECTURE.md) 模块地图，**不在此重复源码路径**。
+设计按**系统**写；代码按 **core / native / draw / ui / app / data** 分域实现。功能域边界和跨平台硬约束见 [`AGENTS.md`](../AGENTS.md)，系统文档不维护长源码清单。

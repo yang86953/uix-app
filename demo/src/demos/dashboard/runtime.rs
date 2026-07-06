@@ -9,7 +9,10 @@ use std::sync::Arc;
 
 use uix::core::log::{debug_fn, error_fn, info_fn, warn_fn};
 use uix::draw::GpuEngine;
-use uix::native::{create_gpu_context, Platform, UiEvent, UiEventPayload, UiEventType};
+use uix::native::create_gpu_context;
+use uix::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
+use uix::native::traits::platform::Platform;
+use uix::native::traits::window::PlatformWindow;
 use uix::prelude::*;
 use uix::ui::widgets::icon::init_lucide_font;
 
@@ -18,7 +21,7 @@ use super::{rebuild_for_theme, switch_page, DemoState};
 /// 创建图形引擎（`--gpu` 时尝试 GPU，失败回退 CPU）。
 pub fn create_engine(
     use_gpu: bool,
-    platform_window: &dyn uix::native::PlatformWindow,
+    platform_window: &dyn PlatformWindow,
     width: i32,
     height: i32,
 ) -> Box<dyn GraphicsEngine> {
@@ -73,7 +76,7 @@ pub fn create_font_service(platform: &dyn Platform) -> FontService {
 /// 运行组件库演示事件循环。
 pub(super) fn run_event_loop(
     platform: &mut dyn Platform,
-    platform_window: &mut dyn uix::native::PlatformWindow,
+    platform_window: &mut dyn PlatformWindow,
     engine: &mut dyn GraphicsEngine,
     tree: &mut WidgetTree,
     font_service: &FontService,

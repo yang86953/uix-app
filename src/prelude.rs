@@ -11,8 +11,9 @@ pub use crate::core::{EdgeInsets, Errc, Error, Point, Rect, Size};
 
 // ── native ────────────────────────────────────────────────────
 
-pub use crate::native::{create_platform, ControlSize, KeyCode, KeyMod, MouseButton, StatusLevel};
-
+pub use crate::native::create_platform;
+pub use crate::native::traits::input::{ControlSize, KeyCode, KeyMod, MouseButton};
+pub use crate::native::traits::system::StatusLevel;
 // ── draw ──────────────────────────────────────────────────────
 
 pub use crate::draw::traits::GraphicsEngine;
@@ -27,8 +28,8 @@ pub use crate::ui::layout::{
     AlignItems, FlexDirection, FlexLayout, GridTrack, JustifyContent, LayoutChild, LayoutEngine,
 };
 pub use crate::ui::state::{Computed, State};
-pub use crate::ui::style::{Style, StyleSet};
-pub use crate::ui::theme::{DesignTokens, DynTokens, Theme};
+pub use crate::ui::style::{ColorValue, PaletteColor, Style, StyleSet, TypographyToken};
+pub use crate::ui::theme::{DesignTokens, DynTokens, NeutralRole, Theme};
 pub use crate::ui::{
     EventResult, IntoWidgetNode, PaintContext, SystemEvent, WidgetCore, WidgetId, WidgetNode,
     WidgetTree,
@@ -57,5 +58,6 @@ pub use crate::app::{map_ui_event, App, AppMode};
 // ── view ──────────────────────────────────────────────────────
 
 pub use crate::ui::view::{
-    button, column, dynamic_label, input, label, row, space, StyleExt, Ui, View, ViewNode,
+    button, column, dynamic_label, grid, input, label, row, scroll, space, StyleExt, Ui, View,
+    ViewNode,
 };

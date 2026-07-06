@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use libc::{poll, pollfd, POLLIN};
 
 use crate::native::traits::event::UiEvent;
-use crate::native::KeyMod;
+use crate::native::traits::input::KeyMod;
 
 use super::keycode::keycode_to_char;
 use super::WaylandBackend;

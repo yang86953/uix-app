@@ -1,6 +1,6 @@
-﻿use super::super::*;
+use super::super::*;
 use super::WidgetTree;
-use crate::native::Rect;
+use crate::core::Rect;
 
 impl WidgetTree {
     /// 返回 Layout 失效影响的子树先序遍历顺序。
@@ -532,93 +532,7 @@ impl WidgetTree {
     }
 
     pub fn update(&mut self, dt: f64) -> bool {
-        // Phase 2：仅 tick AnimationRegistry 中的节点，避免全树 O(n) 扫描。
-        let order = self.animation_registry.active_ids();
-        let mut any_animating = false;
-        for id in order {
-            if !self.get(id).map(|n| n.visible()).unwrap_or(false) {
-                self.animation_registry.unregister(id);
-                continue;
-            }
-            let was_animating = true;
-
-            let old_dirty_rect = self.get(id).map(|n| n.dirty_rect(n.frame()));
-
-            if let Some(node) = self.get_mut(id) {
-                node.on_update(dt);
-            }
-
-            let (rect, just_started, is_still) = self
-                .get(id)
-                .map(|node| {
-                    let is_still = node.needs_continuous_update();
-                    let dirty = if was_animating || is_still {
-                        node.dirty_rect(node.frame())
-                    } else {
-                        Rect::zero()
-                    };
-                    (dirty, is_still && !was_animating, is_still)
-                })
-                .unwrap_or((Rect::zero(), false, false));
-
-            let scroll_delta = self.get(id).and_then(|n| n.scroll_delta_for_dirty());
-            let use_scroll_strip =
-                scroll_delta.is_some_and(|(dx, dy)| dx.abs() > 0.01 || dy.abs() > 0.01);
-            let is_scroll_viewport = self
-                .get(id)
-                .is_some_and(|n| n.viewport_scroll_offset().is_some());
-
-            if is_still {
-                any_animating = true;
-            } else {
-                self.animation_registry.unregister(id);
-            }
-
-            if just_started && old_dirty_rect.is_none() && !use_scroll_strip {
-                if let Some(old) = self.get(id).map(|n| n.dirty_rect(n.frame())) {
-                    if old != rect && old.w > 0.0 && old.h > 0.0 {
-                        self.invalidate_paint_rect(id, old);
-                    }
-                }
-            }
-
-            if let Some(old) = old_dirty_rect {
-                if !use_scroll_strip && old != rect && old.w > 0.0 && old.h > 0.0 {
-                    self.invalidate_paint_rect(id, old);
-                }
-            }
-
-            if (rect.w > 0.0 || rect.h > 0.0) && !use_scroll_strip && !is_scroll_viewport {
-                self.invalidate_paint_rect(id, rect);
-            }
-
-            // 滚动：小增量用 Composite strip + scroll_region；大幅跳转整视口 Paint。
-            if use_scroll_strip {
-                if let Some((dx, dy)) = scroll_delta {
-                    if let Some(node) = self.get(id) {
-                        let frame = node.frame();
-                        if frame.w > 0.0 && frame.h > 0.0 {
-                            self.push_scroll_strip_invalidation(id, frame, dx, dy);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 可见性同步：仅检查动画注册表节点（Modal/Drawer 退场等）。
-        let mut sync_list: Vec<(WidgetId, bool)> = Vec::new();
-        for id in self.animation_registry.active_ids() {
-            if let Some(node) = self.get(id) {
-                let comp_visible = node.component().visible();
-                if node.visible() != comp_visible && !comp_visible {
-                    sync_list.push((id, comp_visible));
-                }
-            }
-        }
-        for (id, v) in sync_list {
-            self.set_visible(id, v);
-        }
-
-        any_animating
+        let _ = dt;
+        false
     }
 }

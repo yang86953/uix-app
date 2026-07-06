@@ -15,7 +15,7 @@ pub mod sink;
 use std::fmt;
 use std::sync::OnceLock;
 
-use crate::native::Error;
+use crate::core::error::Error;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 日志级别

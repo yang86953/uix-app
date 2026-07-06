@@ -2,9 +2,9 @@
 //!
 //! Provides consistent spacing for a row or column of child widgets.
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::native::{Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
@@ -103,7 +103,7 @@ define_widget! {
                 direction: self.direction,
                 wrap: self.wrap,
                 gap: self.space_size.value(),
-            padding: crate::native::EdgeInsets::zero(),
+            padding: crate::core::EdgeInsets::zero(),
             container: frame,
             children: flex_children,
             child_sizes,

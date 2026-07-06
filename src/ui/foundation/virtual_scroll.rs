@@ -1,10 +1,8 @@
-//! VirtualScroll — 虚拟滚动容器。
-//!
-//! 仅渲染视口内的子项，适用于 Select 下拉列表、Tree、Table 等大数据量场景。
-
+//! VirtualScroll 鈥?铏氭嫙婊氬姩瀹瑰櫒銆?//!
+//! 浠呮覆鏌撹鍙ｅ唴鐨勫瓙椤癸紝閫傜敤浜?Select 涓嬫媺鍒楄〃銆乀ree銆乀able 绛夊ぇ鏁版嵁閲忓満鏅€?
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::native::{Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetNode, WidgetTree};
 
 define_widget! {
@@ -39,13 +37,7 @@ define_widget! {
         }
     }
 
-    needs_continuous_update => (&self) -> bool {
-        self.needs_rebuild
-    }
 
-    on_update => (&mut self, _dt: f64) {
-        self.needs_rebuild = false;
-    }
 }
 
 impl Default for VirtualScroll {

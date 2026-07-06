@@ -8,7 +8,6 @@
 use crate::native::traits::system::IFileSystem;
 use crate::native::traits::system::SpecialDir;
 use crate::native::{Errc, Error};
-
 /// 平台特殊目录解析接口。
 pub trait SpecialDirProvider {
     fn special_dir(&self, dir: SpecialDir) -> String;

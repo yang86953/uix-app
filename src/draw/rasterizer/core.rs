@@ -1,7 +1,7 @@
 //! Shared rasterizer helpers used by the software renderer and raster modules.
 
+use crate::core::Rect;
 use crate::draw::primitives::types::Radius;
-use crate::native::Rect;
 
 #[inline]
 pub fn premul(c: u32) -> u32 {

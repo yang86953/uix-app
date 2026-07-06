@@ -1,10 +1,9 @@
 //! CPU 渲染后端 — PixelSurface + CpuCanvas2D。
 
-use crate::native::{Error, Point, Rect};
+use crate::core::{Error, Point, Rect};
 
-use crate::draw::backend::traits::{
-    BackendCapabilities, BackendKind, DamageRegion, DrawSurface, RenderBackend,
-};
+use crate::core::DamageRegion;
+use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::primitives::color::Color;
@@ -38,7 +37,7 @@ impl CpuDrawSurface {
 }
 
 impl DrawSurface for CpuDrawSurface {
-    fn size(&self) -> crate::native::Size {
+    fn size(&self) -> crate::core::Size {
         self.canvas.surface_size()
     }
 

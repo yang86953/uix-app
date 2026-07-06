@@ -1,9 +1,10 @@
 //! Alert widget — 警示条，支持类型、图标、关闭。
 
+use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Rect, Size, StatusLevel};
+use crate::native::traits::system::StatusLevel;
 use crate::ui::WidgetTree;
 
 define_widget! {
@@ -35,16 +36,16 @@ define_widget! {
 
         let text_x = frame.x + 14.0;
         let msg_y = ctx.visual_center_y(frame, 14.0);
-        ctx.draw_text(&self.message, crate::native::Point::new(text_x, msg_y), fg, 14.0);
+        ctx.draw_text(&self.message, crate::core::Point::new(text_x, msg_y), fg, 14.0);
         if !self.description.is_empty() {
             let desc_rect = Rect::new(frame.x, frame.y + frame.h * 0.5, frame.w, frame.h * 0.5);
             let desc_y = ctx.visual_center_y(desc_rect, 12.0);
-            ctx.draw_text(&self.description, crate::native::Point::new(text_x, desc_y), ctx.tokens().color_text_secondary(), 12.0);
+            ctx.draw_text(&self.description, crate::core::Point::new(text_x, desc_y), ctx.tokens().color_text_secondary(), 12.0);
         }
         if self.closable {
             let cx = frame.x + frame.w - 18.0;
             let cy = ctx.visual_center_y(frame, 14.0);
-            ctx.draw_text("✕", crate::native::Point::new(cx, cy), ctx.tokens().color_text_quaternary(), 14.0);
+            ctx.draw_text("✕", crate::core::Point::new(cx, cy), ctx.tokens().color_text_quaternary(), 14.0);
         }
     }
 }

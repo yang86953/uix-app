@@ -1,9 +1,9 @@
 //! ab_glyph 后端：纯 advance 定位。字形缓存已统一移到 FontService。
 
+use crate::core::{Errc, Error};
 use crate::draw::font::text_backend::*;
 use crate::draw::FontHandle;
 use crate::draw::TextBackend;
-use crate::native::{Errc, Error};
 use ab_glyph::*;
 use std::sync::Arc;
 
@@ -261,7 +261,7 @@ mod tests {
         let result = backend.load_font(&[]);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert_eq!(err.code(), crate::native::Errc::FormatError);
+        assert_eq!(err.code(), crate::core::Errc::FormatError);
     }
 
     #[test]

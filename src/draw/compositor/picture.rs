@@ -1,8 +1,9 @@
 //! Picture 离屏缓存栅格化与合成（Phase 4）。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use super::layer_tree::{LayerNode, LayerTree};
+use crate::core::DirtyRegion;
 use crate::draw::compositor::viewport_transform::needs_paint;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::font::font_service::FontService;
@@ -10,7 +11,7 @@ use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, ThemeTokens};
 use crate::draw::pipeline::NodeId;
 use crate::draw::primitives::color::Color;
-use crate::draw::primitives::types::{DirtyRegion, ImageHandle};
+use crate::draw::primitives::types::ImageHandle;
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::FontHandle;

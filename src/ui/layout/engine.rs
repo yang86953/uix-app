@@ -9,8 +9,8 @@ use super::flex::compute_flex_layout;
 use super::grid::compute_grid_layout;
 use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
+use crate::core::{EdgeInsets, Rect, Size};
 use crate::draw::spatial::AABB3D;
-use crate::native::{EdgeInsets, Rect, Size};
 use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 
 // ── 统一盒模型 ────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ pub struct LayoutChild {
     pub flex_grow: f32,
     pub flex_shrink: f32,
     /// 外边距——参与布局计算，推开兄弟节点
-    pub margin: crate::native::EdgeInsets,
+    pub margin: crate::core::EdgeInsets,
     /// Grid: 起始单元格索引
     pub grid_cell: usize,
     /// Grid: 列跨度
@@ -92,7 +92,7 @@ impl LayoutChild {
             preferred_size,
             flex_grow: 0.0,
             flex_shrink: 1.0,
-            margin: crate::native::EdgeInsets::zero(),
+            margin: crate::core::EdgeInsets::zero(),
             grid_cell: 0,
             grid_col_span: 1,
             grid_row_span: 1,
@@ -283,7 +283,7 @@ impl LayoutEngine for FlexLayout {
             direction: self.direction,
             wrap: self.wrap,
             gap: self.gap,
-            padding: crate::native::EdgeInsets::zero(),
+            padding: crate::core::EdgeInsets::zero(),
             container: content_rect,
             children: flex_children,
             child_sizes,
@@ -499,7 +499,7 @@ impl LayoutEngine for GridLayout {
             rows,
             col_gap: self.col_gap,
             row_gap: self.row_gap,
-            padding: crate::native::EdgeInsets::zero(),
+            padding: crate::core::EdgeInsets::zero(),
             children: grid_children,
             align_items: self.align_items,
             justify_items: self.justify_items,
@@ -538,7 +538,7 @@ pub fn child_from_tree(cid: WidgetId, tree: &WidgetTree) -> LayoutChild {
         preferred_size: Size::new(pref.w, h),
         flex_grow: grow,
         flex_shrink: shrink,
-        margin: crate::native::EdgeInsets::zero(),
+        margin: crate::core::EdgeInsets::zero(),
         grid_cell: 0,
         grid_col_span: 1,
         grid_row_span: 1,

@@ -6,9 +6,9 @@
 
 use super::ffi::*;
 use super::util::to_wide;
+use crate::core::Rect;
 use crate::native::traits::display::DisplayInfo;
-use crate::native::IDisplay;
-use crate::native::Rect;
+use crate::native::traits::display::IDisplay;
 use std::ptr;
 
 pub struct WindowsDisplay;

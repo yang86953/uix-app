@@ -1,9 +1,9 @@
 //! LineChart — line chart with grid lines and data point markers.
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::native::{Point, Rect, Size};
 use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone)]
@@ -87,8 +87,8 @@ define_widget! {
         let bl = map_y(r_min);
         ctx.fill_rect(Rect::new(chart_x, bl, chart_w, 1.0), ac, None);
 
-        let pts: Vec<crate::native::Point> = self.data.iter().enumerate().map(|(i, d)|
-            crate::native::Point::new(chart_x + i as f32 * step, map_y(d.value))
+        let pts: Vec<crate::core::Point> = self.data.iter().enumerate().map(|(i, d)|
+            crate::core::Point::new(chart_x + i as f32 * step, map_y(d.value))
         ).collect();
 
         let lw = self.line_width.max(1.0);
@@ -113,7 +113,7 @@ define_widget! {
             let lx = (x - sz.w * 0.5).max(chart_x).min(chart_x + chart_w - sz.w);
             let label_rect = Rect::new(lx, bl + 2.0, sz.w, x_label_h - 2.0);
             let ly = ctx.visual_center_y(label_rect, 10.0);
-            ctx.draw_text(&d.label, crate::native::Point::new(lx, ly), lbc, 10.0);
+            ctx.draw_text(&d.label, crate::core::Point::new(lx, ly), lbc, 10.0);
         }
     }
 }

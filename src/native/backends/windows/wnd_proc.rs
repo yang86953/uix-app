@@ -8,8 +8,8 @@
 #![cfg(windows)]
 #![allow(non_snake_case)]
 
+use crate::core::Point;
 use crate::native::traits::*;
-use crate::native::Point;
 
 use super::bindings::*;
 use super::consts::*;

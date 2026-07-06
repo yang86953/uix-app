@@ -4,8 +4,9 @@
 
 use std::collections::HashSet;
 
-use crate::native::{Point, Rect};
+use crate::core::{Point, Rect};
 
+use crate::core::DirtyRegion;
 use crate::draw::compositor::picture::{
     blit_picture_cache, rasterize_picture_to_offscreen, LayerRenderEnv,
 };
@@ -15,7 +16,7 @@ use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, PaintPass, ThemeSnapshot};
 use crate::draw::pipeline::NodeId;
-use crate::draw::primitives::types::{DirtyRegion, ImageHandle};
+use crate::draw::primitives::types::ImageHandle;
 use crate::draw::render_object::RenderObjectTree;
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::FontHandle;

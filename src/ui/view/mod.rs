@@ -3,10 +3,10 @@
 //! 本模块提供函数式组合子 API，让用户通过 `View` trait 和 `ViewNode` 声明 UI，
 //! 完全不需要了解 `WidgetTree`、`WidgetNode`、`BoxedWidget` 等内部概念。
 
+use crate::core::{EdgeInsets, Point, Rect};
 use crate::draw::Color;
-use crate::native::{EdgeInsets, Point, Rect};
 use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
-use crate::ui::style::Style;
+use crate::ui::style::{ColorValue, Style, TypographyToken};
 use crate::ui::traits::WidgetComponent;
 
 pub mod adapter;
@@ -14,7 +14,8 @@ pub mod combinators;
 
 pub use adapter::ViewAdapter;
 pub use combinators::{
-    button, column, dynamic_label, input, label, row, space, ButtonBuilder, InputBuilder,
+    button, column, dynamic_label, grid, input, label, row, scroll, space, ButtonBuilder,
+    GridBuilder, InputBuilder, ScrollBuilder,
 };
 
 /// 用户层 UI 声明 trait。
@@ -61,17 +62,17 @@ impl ViewNode {
         }
     }
 
-    pub fn color(mut self, color: impl Into<Color>) -> Self {
+    pub fn color(mut self, color: impl Into<ColorValue>) -> Self {
         self.style.color = color.into();
         self
     }
 
-    pub fn font_size(mut self, size: f32) -> Self {
-        self.style.font_size = size;
+    pub fn font_size(mut self, size: impl Into<TypographyToken>) -> Self {
+        self.style.font_size = size.into();
         self
     }
 
-    pub fn bg(mut self, color: impl Into<Color>) -> Self {
+    pub fn bg(mut self, color: impl Into<ColorValue>) -> Self {
         self.style.background = Some(color.into());
         self
     }
@@ -101,7 +102,7 @@ impl ViewNode {
         self
     }
 
-    pub fn border(mut self, width: f32, color: impl Into<Color>) -> Self {
+    pub fn border(mut self, width: f32, color: impl Into<ColorValue>) -> Self {
         self.style.border_width = EdgeInsets::uniform(width);
         self.style.border_color = Some(color.into());
         self
@@ -141,19 +142,19 @@ impl crate::ui::IntoWidgetNode for ViewNode {
 
 /// 为所有实现了 `Into<ViewNode>` 的类型提供链式样式设置方法。
 pub trait StyleExt: Into<ViewNode> + Sized {
-    fn color(self, color: impl Into<Color>) -> ViewNode {
+    fn color(self, color: impl Into<ColorValue>) -> ViewNode {
         let mut node: ViewNode = self.into();
         node.style.color = color.into();
         node
     }
 
-    fn font_size(self, size: f32) -> ViewNode {
+    fn font_size(self, size: impl Into<TypographyToken>) -> ViewNode {
         let mut node: ViewNode = self.into();
-        node.style.font_size = size;
+        node.style.font_size = size.into();
         node
     }
 
-    fn bg(self, color: impl Into<Color>) -> ViewNode {
+    fn bg(self, color: impl Into<ColorValue>) -> ViewNode {
         let mut node: ViewNode = self.into();
         node.style.background = Some(color.into());
         node
@@ -201,7 +202,7 @@ pub trait StyleExt: Into<ViewNode> + Sized {
         node
     }
 
-    fn border(self, width: f32, color: impl Into<Color>) -> ViewNode {
+    fn border(self, width: f32, color: impl Into<ColorValue>) -> ViewNode {
         let mut node: ViewNode = self.into();
         node.style.border_width = EdgeInsets::uniform(width);
         node.style.border_color = Some(color.into());

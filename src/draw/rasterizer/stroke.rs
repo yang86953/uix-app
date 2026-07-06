@@ -1,6 +1,6 @@
 //! 矢量描边纯函数——矩形描边/圆形描边/路径描边/直线。
 
-use crate::native::Rect;
+use crate::core::Rect;
 
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::flattener;

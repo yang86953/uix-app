@@ -3,10 +3,9 @@
 //! Used by [`ScrollView`](super::ScrollView) to render draggable scrollbar
 //! tracks and thumbs. Each axis gets its own [`ScrollBar`] instance.
 
+use crate::core::{Point, Rect};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Point, Rect};
-
 /// Which axis this scrollbar controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollbarOrientation {

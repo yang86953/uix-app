@@ -2,7 +2,7 @@
 //!
 //! 实现 RenderingBackend，供 CpuCanvas2D 底层使用。
 
-use crate::native::{Rect, Size};
+use crate::core::{Rect, Size};
 
 use crate::draw::primitives::color::Color;
 use crate::draw::traits::RenderingBackend;

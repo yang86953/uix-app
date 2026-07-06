@@ -6,7 +6,7 @@
 // Specification). Falls back silently if notify-send is not available.
 // ============================================================================
 
-use crate::native::INotification;
+use crate::native::traits::system::INotification;
 use std::process::Command;
 
 // ════════════════════════════════════════════════════════════════════════════

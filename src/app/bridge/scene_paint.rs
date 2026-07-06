@@ -1,11 +1,10 @@
 //! WidgetTree 的 ScenePaint 实现 — UI 与 draw compositor 的桥接。
 
+use crate::core::DirtyRegion;
+use crate::core::{Point, Rect};
 use crate::draw::compositor::ScenePaint;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::NodeId;
-use crate::draw::primitives::types::DirtyRegion;
-use crate::native::{Point, Rect};
-
 use crate::ui::core::paint_scope::set_current_paint_widget;
 use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 

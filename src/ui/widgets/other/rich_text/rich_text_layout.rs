@@ -4,10 +4,10 @@
 //! 从 `rich_text.rs` 拆分出来以遵守 900 行文件限制。
 
 use super::RichTextSegment;
+use crate::core::Rect;
 use crate::draw::font::font_service::FontService;
 use crate::draw::font::text_backend::TextLayoutOptions;
 use crate::draw::{Color, FontHandle};
-use crate::native::Rect;
 
 // ══════════════════════════════════════════════════════════════════
 // 布局类型

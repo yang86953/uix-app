@@ -12,7 +12,7 @@ use super::sink::{Record, Sink};
 use super::Level;
 use super::LogHandler;
 use crate::core::diagnostic::Timestamp;
-use crate::native::Error;
+use crate::core::error::Error;
 
 /// 将 Logger 桥接到 platform LogHandler trait。
 struct LoggerHandler;

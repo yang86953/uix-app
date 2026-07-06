@@ -1,9 +1,8 @@
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
-/// 树节点。
 #[derive(Debug, Clone)]
 pub struct TreeNode {
     pub title: String,
@@ -14,7 +13,6 @@ pub struct TreeNode {
     pub checkable: bool,
     pub checked: bool,
     pub draggable: bool,
-    /// 是否为异步叶子节点（尚未加载子节点）。
     pub is_leaf: bool,
 }
 
@@ -28,23 +26,15 @@ struct FlatNode {
     disabled: bool,
     checkable: bool,
     checked: bool,
-    is_leaf: bool,
 }
-
-/// 异步加载回调：返回子节点列表。
-pub type LoadDataCallback = Box<dyn FnMut(&str) -> Vec<TreeNode>>;
 
 define_widget! {
     pub struct Tree {
         nodes: Vec<TreeNode>,
         flat: Vec<FlatNode>,
         selected_key: String,
-        /// 多选：选中的 keys。
         selected_keys: Vec<String>,
         expanded_keys: Vec<String>,
-        /// 异步加载回调。
-        load_data: Option<LoadDataCallback>,
-        /// 是否启用多选。
         multiple: bool,
     }
 
@@ -60,40 +50,29 @@ define_widget! {
                 let node_key = self.flat[idx].key.clone();
                 let node_disabled = self.flat[idx].disabled;
 
-                if node_disabled { return EventResult::NotHandled; }
+                if node_disabled {
+                    return EventResult::NotHandled;
+                }
 
                 let indent = self.flat[idx].depth as f32 * 20.0;
 
-                // 复选框点击（左侧区域）
                 let check_x = indent;
                 if self.flat[idx].checkable && pos.x >= check_x && pos.x < check_x + 20.0 {
                     self.toggle_check(&node_key);
                     return EventResult::Handled;
                 }
 
-                // 展开/折叠切换（箭头区域）
                 let arrow_x = indent + 20.0;
                 if pos.x >= arrow_x && pos.x < arrow_x + 20.0 && self.flat[idx].has_children {
                     if let Some(ek_idx) = self.expanded_keys.iter().position(|k| *k == node_key) {
                         self.expanded_keys.remove(ek_idx);
                     } else {
                         self.expanded_keys.push(node_key.clone());
-                        // 异步加载
-                        if self.flat[idx].is_leaf {
-                            if let Some(ref mut ld) = self.load_data {
-                                let children = ld(&node_key);
-                                if let Some(node) = self.find_node_mut(&node_key) {
-                                    node.children = children;
-                                    node.is_leaf = false;
-                                }
-                            }
-                        }
                     }
                     self.flatten();
                     return EventResult::Handled;
                 }
 
-                // 选中
                 if self.multiple {
                     if let Some(ex_idx) = self.selected_keys.iter().position(|k| *k == node_key) {
                         self.selected_keys.remove(ex_idx);
@@ -103,7 +82,7 @@ define_widget! {
                 } else {
                     self.selected_key = node_key.clone();
                     self.selected_keys.clear();
-                    self.selected_keys.push(node_key.clone());
+                    self.selected_keys.push(node_key);
                 }
                 return EventResult::Handled;
             }
@@ -123,31 +102,32 @@ define_widget! {
             let is_selected = self.multiple && self.selected_keys.contains(&node.key)
                 || (!self.multiple && node.key == self.selected_key);
 
-            // 选中高亮
             if is_selected {
                 ctx.fill_rect(Rect::new(frame.x, y, frame.w, 28.0), fill, None);
             }
 
-            // 复选框
+            let row_rect = Rect::new(frame.x, y, frame.w, 28.0);
             let mut cursor = frame.x + indent;
+
             if node.checkable {
-                let check_str = if node.checked { "☑" } else { "☐" };
-                let row_rect = Rect::new(frame.x, y, frame.w, 28.0);
-                let check_y = ctx.visual_center_y(row_rect, 14.0);
-                ctx.draw_text(check_str, Point::new(cursor + 2.0, check_y), if node.checked { primary } else { text_sec }, 14.0);
-                cursor += 20.0;
+                let check_str = if node.checked { "[x]" } else { "[ ]" };
+                let check_y = ctx.visual_center_y(row_rect, 12.0);
+                ctx.draw_text(
+                    check_str,
+                    Point::new(cursor + 2.0, check_y),
+                    if node.checked { primary } else { text_sec },
+                    12.0,
+                );
+                cursor += 28.0;
             }
 
-            // 展开/折叠箭头
-            let row_rect = Rect::new(frame.x, y, frame.w, 28.0);
             let row_y = ctx.visual_center_y(row_rect, 10.0);
             if node.has_children {
-                let arrow = if node.expanded { "▼" } else if node.is_leaf { "○" } else { "▶" };
+                let arrow = if node.expanded { "v" } else { ">" };
                 ctx.draw_text(arrow, Point::new(cursor + 4.0, row_y), text_sec, 10.0);
             }
             cursor += 20.0;
 
-            // 图标
             if !node.icon.is_empty() {
                 let icon_str = crate::ui::widgets::icon::icon_char(&node.icon);
                 let saved = *ctx.font();
@@ -160,8 +140,13 @@ define_widget! {
                 cursor += 20.0;
             }
 
-            // 标题
-            let tc = if node.disabled { text_sec } else if is_selected { primary } else { text };
+            let tc = if node.disabled {
+                text_sec
+            } else if is_selected {
+                primary
+            } else {
+                text
+            };
             let title_y = ctx.visual_center_y(row_rect, 13.0);
             ctx.draw_text(&node.title, Point::new(cursor, title_y), tc, 13.0);
         }
@@ -176,7 +161,6 @@ impl Tree {
             selected_key: String::new(),
             selected_keys: Vec::new(),
             expanded_keys: Vec::new(),
-            load_data: None,
             multiple: false,
         };
         tree.flatten();
@@ -186,19 +170,17 @@ impl Tree {
     pub fn selected_key(&self) -> &str {
         &self.selected_key
     }
+
     pub fn selected_keys(&self) -> &[String] {
         &self.selected_keys
     }
+
     pub fn set_selected_key(&mut self, key: &str) {
         self.selected_key = key.to_string();
     }
 
     pub fn multiple(mut self, v: bool) -> Self {
         self.multiple = v;
-        self
-    }
-    pub fn load_data<F: FnMut(&str) -> Vec<TreeNode> + 'static>(mut self, f: F) -> Self {
-        self.load_data = Some(Box::new(f));
         self
     }
 
@@ -213,7 +195,7 @@ impl Tree {
         Self::find_in_nodes(&mut self.nodes, key)
     }
 
-    fn find_in_nodes<'a>(nodes: &'a mut Vec<TreeNode>, key: &str) -> Option<&'a mut TreeNode> {
+    fn find_in_nodes<'a>(nodes: &'a mut [TreeNode], key: &str) -> Option<&'a mut TreeNode> {
         for node in nodes.iter_mut() {
             if node.key == key {
                 return Some(node);
@@ -235,8 +217,7 @@ impl Tree {
 
     fn flatten_node(&mut self, node: &TreeNode, depth: usize) {
         let is_expanded = self.expanded_keys.contains(&node.key);
-        let has_children = !node.children.is_empty() || (!node.is_leaf && is_expanded);
-        let children = node.children.clone();
+        let has_children = !node.children.is_empty();
         self.flat.push(FlatNode {
             title: node.title.clone(),
             key: node.key.clone(),
@@ -247,10 +228,9 @@ impl Tree {
             disabled: node.disabled,
             checkable: node.checkable,
             checked: node.checked,
-            is_leaf: node.is_leaf,
         });
         if is_expanded {
-            for child in &children {
+            for child in &node.children {
                 self.flatten_node(child, depth + 1);
             }
         }
@@ -271,28 +251,34 @@ impl TreeNode {
             is_leaf: true,
         }
     }
+
     pub fn icon(mut self, i: &str) -> Self {
         self.icon = i.to_string();
         self
     }
+
     pub fn children(mut self, c: Vec<TreeNode>) -> Self {
         self.children = c;
         self.is_leaf = false;
         self
     }
+
     pub fn add(mut self, child: TreeNode) -> Self {
         self.children.push(child);
         self.is_leaf = false;
         self
     }
+
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
+
     pub fn checkable(mut self, v: bool) -> Self {
         self.checkable = v;
         self
     }
+
     pub fn draggable(mut self, v: bool) -> Self {
         self.draggable = v;
         self

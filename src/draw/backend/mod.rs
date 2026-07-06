@@ -5,12 +5,14 @@ pub mod gpu;
 pub mod null;
 pub mod traits;
 
+pub use crate::core::DamageRegion;
 pub use cpu::CpuBackend;
 pub use gpu::GpuBackend;
 pub use null::NullBackend;
-pub use traits::{BackendCapabilities, BackendKind, DamageRegion, DrawSurface, RenderBackend};
+pub use traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 
-use crate::native::{Error, IGraphicsContext};
+use crate::core::{Errc, Error};
+use crate::native::traits::present::IGraphicsContext;
 
 /// 按种类创建后端实例。
 pub fn create_backend(
@@ -22,10 +24,7 @@ pub fn create_backend(
         BackendKind::Null => Ok(Box::new(NullBackend::new())),
         BackendKind::Gpu => {
             let ctx = gpu_ctx.ok_or_else(|| {
-                Error::new(
-                    crate::native::Errc::InvalidArgument,
-                    "Gpu 后端需要 IGraphicsContext",
-                )
+                Error::new(Errc::InvalidArgument, "Gpu 后端需要 IGraphicsContext")
             })?;
             Ok(Box::new(GpuBackend::new(ctx)?))
         }

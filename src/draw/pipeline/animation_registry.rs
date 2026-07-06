@@ -1,10 +1,10 @@
-//! 动画注册表 — 仅 tick 需要持续更新的节点（Phase 2）。
+//! Animation registry for nodes driven by the centralized animation system.
 
 use std::collections::HashSet;
 
 use super::invalidation::NodeId;
 
-/// 跟踪 `needs_continuous_update` 节点，避免全树 `traverse()`。
+/// Tracks active animation nodes without walking the whole widget tree.
 #[derive(Debug, Clone, Default)]
 pub struct AnimationRegistry {
     active: HashSet<NodeId>,
@@ -15,12 +15,11 @@ impl AnimationRegistry {
         Self::default()
     }
 
-    /// 注册需要每帧 `on_update` 的节点。
+    /// Registers a node with active centralized animation work.
     pub fn register(&mut self, id: NodeId) {
         self.active.insert(id);
     }
 
-    /// 动画结束或节点移除时注销。
     pub fn unregister(&mut self, id: NodeId) {
         self.active.remove(&id);
     }
@@ -29,12 +28,10 @@ impl AnimationRegistry {
         self.active.contains(&id)
     }
 
-    /// 是否有进行中的动画/滚动惯性。
     pub fn has_active(&self) -> bool {
         !self.active.is_empty()
     }
 
-    /// 返回当前活跃节点快照（避免迭代中修改集合）。
     pub fn active_ids(&self) -> Vec<NodeId> {
         self.active.iter().copied().collect()
     }

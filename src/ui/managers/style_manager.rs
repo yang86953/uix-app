@@ -1,5 +1,5 @@
+use crate::core::EdgeInsets;
 use crate::draw::Color;
-use crate::native::EdgeInsets;
 
 /// 预留给将来按需扩展的 widget 样式预设。
 /// 当前未集成到 widget 系统中。如需使用，请直接使用 `ui::style::Style`。

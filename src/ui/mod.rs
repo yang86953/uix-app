@@ -7,13 +7,15 @@ pub mod foundation;
 pub mod layout;
 pub mod macros;
 pub mod managers;
+pub mod overlay;
 pub mod theme;
 pub mod traits;
 pub mod view;
 pub mod widgets;
 
 pub use crate::draw::painting::PaintContext;
-pub use crate::native::{ControlSize, KeyCode, KeyMod, MouseButton, StatusLevel};
+pub use crate::native::traits::input::{ControlSize, KeyCode, KeyMod, MouseButton};
+pub use crate::native::traits::system::StatusLevel;
 pub use animation::{Animation, Easing};
 pub use children::WidgetChildren;
 pub use clipboard::copy_to_clipboard;
@@ -27,13 +29,16 @@ pub use event::{
     SemanticKind, SemanticPayload, SystemEvent, SystemEventKind,
 };
 pub use foundation::state::{Computed, Effect, State};
-pub use foundation::style::{Style, StyleSet, StyleState};
+pub use foundation::style::{
+    ColorValue, PaletteColor, Style, StyleSet, StyleState, TypographyToken,
+};
 pub use foundation::{clipboard, config, focus_trap, locale, state, style, virtual_scroll};
 pub use layout::{
     AlignItems, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent, LayoutChild,
     LayoutEngine,
 };
-pub use theme::{DesignTokens, ShadowToken, Theme};
+pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
+pub use theme::{DesignTokens, NeutralRole, ShadowToken, Theme};
 pub use traits::{
     Animatable, DebugRenderer, EventHandler, TextRenderer, TokenProvider, WidgetCapabilities,
     WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,

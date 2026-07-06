@@ -1,21 +1,11 @@
-﻿//! 适配层 — 将 View 树展开为 WidgetTree。
+//! 閫傞厤灞?鈥?灏?View 鏍戝睍寮€涓?WidgetTree銆?//!
+//! 鐢ㄦ埛鍦?`App::run()` 鍐呴儴閫氳繃鏈ā鍧楀皢鐢ㄦ埛灞傜殑 `View` 鏍戦€掑綊灞曞紑涓烘鏋跺眰鐨?//! `WidgetTree`锛屽畬鍏ㄩ殣钘?`WidgetNode`銆乣BoxedWidget` 绛夊唴閮ㄦ蹇点€?//!
+//! # 鑱岃矗
 //!
-//! 用户在 `App::run()` 内部通过本模块将用户层的 `View` 树递归展开为框架层的
-//! `WidgetTree`，完全隐藏 `WidgetNode`、`BoxedWidget` 等内部概念。
-//!
-//! # 职责
-//!
-//! 1. `ViewAdapter::build(root)` — 入口，将 `View` 构建为 `WidgetTree`。
-//!    自动设置 View 上下文，使 `State::new` 绑定到正确的 WidgetId。
-//! 2. `expand(node)` — 递归展开：ViewNode → WidgetNode。
-//! 3. `apply_style(widget, style)` — 将 Style 应用到具体组件类型。
-//!
-//! # State 自动脏标记
-//!
-//! - View 构建期：`begin_state_capture` 捕获 `State::new`（`capture_view` / `with_view_context`）
-//! - layout 后：`bind_reactive_widget_states` 探测 `dynamic_label` 闭包依赖并绑定 Paint 失效
-//! - 兜底：`bind_orphan_pending_states` 将未关联 State 绑到根节点
-
+//! 1. `ViewAdapter::build(root)` 鈥?鍏ュ彛锛屽皢 `View` 鏋勫缓涓?`WidgetTree`銆?//!    鑷姩璁剧疆 View 涓婁笅鏂囷紝浣?`State::new` 缁戝畾鍒版纭殑 WidgetId銆?//! 2. `expand(node)` 鈥?閫掑綊灞曞紑锛歏iewNode 鈫?WidgetNode銆?//! 3. `apply_style(widget, style)` 鈥?灏?Style 搴旂敤鍒板叿浣撶粍浠剁被鍨嬨€?//!
+//! # State 鑷姩鑴忔爣璁?//!
+//! - View 鏋勫缓鏈燂細`begin_state_capture` 鎹曡幏 `State::new`锛坄capture_view` / `with_view_context`锛?//! - layout 鍚庯細`bind_reactive_widget_states` 鎺㈡祴 `dynamic_label` 闂寘渚濊禆骞剁粦瀹?Paint 澶辨晥
+//! - 鍏滃簳锛歚bind_orphan_pending_states` 灏嗘湭鍏宠仈 State 缁戝埌鏍硅妭鐐?
 use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
@@ -23,11 +13,11 @@ use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::{Button, Container, Label};
 use crate::ui::{WidgetNode, WidgetTree};
 
-/// View 树适配器。将 ViewNode 递归展开为 WidgetTree。
+/// View tree adapter.
 pub struct ViewAdapter;
 
 impl ViewAdapter {
-    /// 在 View 构建期开启 State 捕获并返回 ViewNode（供 `App::root` 使用）。
+    /// Builds a View while capturing State bindings.
     pub fn capture_view(view: impl View) -> ViewNode {
         begin_state_capture();
         let node = view.build();
@@ -35,12 +25,12 @@ impl ViewAdapter {
         node
     }
 
-    /// 将 `View` 树一步构建为 `WidgetTree`。
+    /// Builds a View tree into a WidgetTree.
     pub fn build(view: impl View) -> WidgetTree {
         Self::build_nodes(Self::capture_view(view))
     }
 
-    /// 将已展开的 ViewNode 树构建为 WidgetTree。
+    /// Builds an already expanded ViewNode tree into a WidgetTree.
     pub fn build_nodes(root: ViewNode) -> WidgetTree {
         let mut tree = WidgetTree::new();
         let wnode = Self::expand(root);
@@ -50,7 +40,7 @@ impl ViewAdapter {
         tree
     }
 
-    /// 递归展开 ViewNode → WidgetNode。
+    /// Expands a ViewNode recursively into a WidgetNode.
     pub(crate) fn expand(node: ViewNode) -> WidgetNode {
         let children: Vec<WidgetNode> = node.children.into_iter().map(Self::expand).collect();
 
@@ -105,7 +95,7 @@ impl ViewAdapter {
     }
 }
 
-/// 在闭包作用域内设置当前 View 的 State 捕获上下文（View 子树构建时使用）。
+/// Runs a closure inside the current View state-capture context.
 pub fn with_view_context<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
@@ -137,8 +127,8 @@ mod tests {
         let child2 = ViewNode::leaf(Container::new());
         let node = ViewNode::new(Container::new(), vec![child1, child2]);
         let tree = ViewAdapter::build_nodes(node);
-        let root_id = tree.root_id().expect("应有根节点");
-        let root = tree.get(root_id).expect("根节点应存在");
+        let root_id = tree.root_id().expect("root node should exist");
+        let root = tree.get(root_id).expect("root node should be present");
         let child_ids = root.children().to_vec();
         assert_eq!(child_ids.len(), 2);
     }
@@ -156,11 +146,14 @@ mod tests {
     #[test]
     fn test_apply_style_container() {
         let mut style = Style::default();
-        style.background = Some(Color::red());
+        style.background = Some(crate::ui::style::ColorValue::Custom(Color::red()));
         let widget: Box<dyn WidgetComponent> = Box::new(Container::new());
         let styled = ViewAdapter::apply_style(widget, &style);
         if let Some(c) = styled.as_any().downcast_ref::<Container>() {
-            assert_eq!(c.style.background, Some(Color::red()));
+            assert_eq!(
+                c.style.background,
+                Some(crate::ui::style::ColorValue::Custom(Color::red()))
+            );
         } else {
             panic!("expected Container");
         }
@@ -182,7 +175,8 @@ mod tests {
 
     #[test]
     fn button_on_click_is_registered_as_semantic_handler() {
-        use crate::native::{KeyMod, MouseButton, Point};
+        use crate::core::Point;
+        use crate::native::traits::input::{KeyMod, MouseButton};
         use crate::ui::view::button;
         use crate::ui::SystemEvent;
         use std::cell::Cell;
@@ -211,7 +205,8 @@ mod tests {
 
     #[test]
     fn input_on_change_is_registered_as_semantic_handler() {
-        use crate::native::{KeyMod, MouseButton, Point, Rect};
+        use crate::core::{Point, Rect};
+        use crate::native::traits::input::{KeyMod, MouseButton};
         use crate::ui::view::input;
         use crate::ui::{SystemEvent, WidgetCore};
         use std::cell::RefCell;

@@ -61,8 +61,8 @@ pub trait IntoAABB3D {
     fn into_aabb(&self, dpi: f32, dpr: f32) -> AABB3D;
 }
 
-/// 从 `crate::native::Rect` 转换（纯 2D 逻辑像素）。
-impl IntoAABB3D for crate::native::Rect {
+/// 从 `crate::core::Rect` 转换（纯 2D 逻辑像素）。
+impl IntoAABB3D for crate::core::Rect {
     fn into_aabb(&self, _dpi: f32, _dpr: f32) -> AABB3D {
         AABB3D::new(
             super::vec3::Vec3::new(self.x, self.y, 0.0),
@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn rect_into_aabb() {
-        let rect = crate::native::Rect::new(10.0, 20.0, 100.0, 50.0);
+        let rect = crate::core::Rect::new(10.0, 20.0, 100.0, 50.0);
         let aabb = rect.into_aabb(96.0, 1.0);
         assert!((aabb.min.x - 10.0).abs() < 1e-10);
         assert!((aabb.min.y - 20.0).abs() < 1e-10);

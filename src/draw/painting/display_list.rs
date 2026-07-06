@@ -2,7 +2,7 @@
 //!
 //! Widget 通过 `PaintContext` 录制绘制指令；Picture 离屏缓存与合成器重放时使用。
 
-use crate::native::{Point, Rect};
+use crate::core::{Point, Rect};
 
 use crate::draw::font::text::TextRenderService;
 use crate::draw::image::{blit_handle, BitmapHandle, ImageService};

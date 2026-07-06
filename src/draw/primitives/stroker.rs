@@ -5,7 +5,7 @@
 
 use super::flattener;
 use super::path::{LineCap, LineJoin, Path, PathBuilder, PathSegment};
-use crate::native::Point;
+use crate::core::Point;
 
 /// 描边参数。
 #[derive(Debug, Clone, Copy)]

@@ -5,8 +5,8 @@
 #![cfg(windows)]
 #![allow(clippy::upper_case_acronyms)]
 
-use crate::native::IKeyboard;
-use crate::native::KeyCode;
+use crate::native::traits::input::IKeyboard;
+use crate::native::traits::input::KeyCode;
 
 pub struct WindowsKeyboard;
 

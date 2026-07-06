@@ -8,7 +8,7 @@
 pub mod presets;
 pub mod primitives;
 
-use super::color_tokens::ShadowToken;
+use super::color_tokens::{NeutralRole, ShadowToken};
 use crate::draw::painting::{
     IBoxShadowTokens, IColorTokens, ISpacingTokens, ITypographyTokens, ThemeTokens,
 };
@@ -385,3 +385,56 @@ impl ThemeTokens for DesignTokens {
 }
 
 impl TokenProvider for DesignTokens {}
+
+impl DesignTokens {
+    pub fn neutral(&self, role: NeutralRole) -> Color {
+        match role {
+            NeutralRole::Text => self.color_text,
+            NeutralRole::TextSecondary => self.color_text_secondary,
+            NeutralRole::TextTertiary => self.color_text_tertiary,
+            NeutralRole::TextQuaternary => self.color_text_quaternary,
+            NeutralRole::TextInverse => {
+                if self.is_dark {
+                    self.color_black
+                } else {
+                    self.color_white
+                }
+            }
+            NeutralRole::Border => self.color_border,
+            NeutralRole::BorderSecondary => self.color_border_secondary,
+            NeutralRole::Fill => self.color_fill,
+            NeutralRole::FillSecondary => self.color_fill_secondary,
+            NeutralRole::FillTertiary => self.color_fill_tertiary,
+            NeutralRole::FillQuaternary => self.color_fill_quaternary,
+            NeutralRole::BgContainer => self.color_bg_container,
+            NeutralRole::BgElevated => self.color_bg_elevated,
+            NeutralRole::BgLayout => self.color_bg_layout,
+            NeutralRole::BgMask => self.color_bg_mask,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn neutral_roles_resolve_existing_tokens() {
+        let tokens = DesignTokens::antd_light();
+
+        assert_eq!(tokens.neutral(NeutralRole::Text), tokens.color_text);
+        assert_eq!(tokens.neutral(NeutralRole::Border), tokens.color_border);
+        assert_eq!(
+            tokens.neutral(NeutralRole::BgContainer),
+            tokens.color_bg_container
+        );
+        assert_eq!(tokens.neutral(NeutralRole::TextInverse), tokens.color_white);
+    }
+
+    #[test]
+    fn neutral_text_inverse_follows_mode() {
+        let tokens = DesignTokens::antd_dark();
+
+        assert_eq!(tokens.neutral(NeutralRole::TextInverse), tokens.color_black);
+    }
+}

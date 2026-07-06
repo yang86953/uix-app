@@ -4,10 +4,10 @@
 
 use std::cell::Cell;
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::{Point, Rect, Size};
 use crate::ui::children::WidgetChildren;
 use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 

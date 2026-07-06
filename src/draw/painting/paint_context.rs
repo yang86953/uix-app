@@ -5,6 +5,7 @@
 
 use std::ptr::NonNull;
 
+use crate::core::{Point, Rect, Size};
 use crate::draw::debug::DebugRenderService;
 use crate::draw::font::font_service::FontService;
 use crate::draw::font::text::TextRenderService;
@@ -17,7 +18,6 @@ use crate::draw::spatial::{Orientation, PhysicalUnit, SpatialContext, Vec3, AABB
 use crate::draw::traits::Canvas2D;
 use crate::draw::GradientDirection;
 use crate::draw::{Color, FontHandle, Radius};
-use crate::native::{Point, Rect, Size};
 
 pub struct PaintContext<'a> {
     /// 3D 空间上下文（持有 Canvas2D 引用）。

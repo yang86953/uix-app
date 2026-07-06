@@ -20,10 +20,10 @@
 //! }
 //! ```
 
+use crate::core::{Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::draw::traits::GraphicsEngine;
-use crate::native::{Rect, Size};
 use crate::ui::event::SemanticEvent;
 use crate::ui::widget::{EventResult, SystemEvent, WidgetId, WidgetNode, WidgetTree};
 use std::any::Any;
@@ -147,16 +147,13 @@ pub trait WidgetRender: WidgetComponent {
     }
 }
 
-/// 事件行为：输入事件处理、持续更新、滚动偏移、命中测试。
+/// 事件行为：输入事件处理、滚动偏移、命中测试。
 pub trait EventHandler: WidgetComponent {
     fn on_event(&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
     }
     fn semantic_event(&self, _id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
         None
-    }
-    fn needs_continuous_update(&self) -> bool {
-        false
     }
     fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {
         None
@@ -195,7 +192,6 @@ pub trait WidgetLifecycle: WidgetComponent {
     fn on_unmount(&mut self) {}
     fn on_detach(&mut self) {}
     fn on_destroy(&mut self) {}
-    fn on_update(&mut self, _dt: f64) {}
 }
 
 /// 转换为 WidgetNode 的 trait。

@@ -2,10 +2,10 @@
 //!
 //! 输入时弹出匹配选项列表，支持键盘导航选择。
 
+use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::native::{Point, Rect, Size};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 // AutoComplete — 自动完成输入框。

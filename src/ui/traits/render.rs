@@ -2,13 +2,12 @@
 //!
 //! 文本绘制与调试渲染的 trait 接口。
 
+use crate::core::{Point, Rect, Size};
 use crate::draw::font::font_service::FontService;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::traits::Canvas2D;
 use crate::draw::Color;
 use crate::draw::FontHandle;
-use crate::native::{Point, Rect, Size};
-
 /// 文本渲染服务接口 — 字体管理、文本布局、glyph 光栅化。
 pub trait TextRenderer {
     /// 更新字体句柄。
