@@ -1,20 +1,27 @@
 use super::*;
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadQueue;
+use crate::app::test_clock::system_clock;
+use crate::core::Point;
 use crate::data::SettingsService;
+use crate::draw::font::font_service::FontService;
+use crate::draw::image::ImageService;
 use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::{
     ClipboardData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
 };
+use crate::ui::theme::Theme;
 use crate::ui::view::combinators::label;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::Label;
 use crate::ui::{EventHandler, EventResult, SystemEvent, WidgetCapabilities, WidgetComponent};
 use std::any::Any;
+use std::cell::{Cell, RefCell};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
+use std::time::Duration;
 
 struct RecordingWidget {
     focus_events: Arc<AtomicBool>,
@@ -380,6 +387,56 @@ fn dispatch_secondary_window_close_removes_session() {
 
     assert!(secondary_windows.is_empty());
     assert!(!child.alive.load(Ordering::Acquire));
+}
+
+#[test]
+fn drain_secondary_window_frames_fires_window_timer() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let child =
+        runtime.request_open_window(WindowConfig::new("Child", 320, 240, || label("child")));
+    let fired = Arc::new(AtomicBool::new(false));
+    let _timer = runtime.run_after(child.window_id, Duration::ZERO, {
+        let fired = fired.clone();
+        move || fired.store(true, Ordering::Relaxed)
+    });
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::new(0.0, 0.0));
+    let clock = system_clock();
+
+    assert!(drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    ));
+    assert!(fired.load(Ordering::Relaxed));
 }
 
 #[test]

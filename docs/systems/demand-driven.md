@@ -171,7 +171,7 @@ impl AppHandle {
 
 与 #132 分工：**Timer** = 框架 register + deadline wake；**post_to_ui** = 外部完成信号 → 主线程一次性闭包。队列调度见 [MainThreadQueue](#mainthreadqueue)（#137）。
 
-> **实现注记**：`App::post_to_ui` 与 `AppHandle::post_to_ui` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 写入目标 `WindowSession` 的 `MainThreadQueue`，session 销毁后丢弃闭包。副窗 MainThreadQueue 已在运行时任务 hook 中消费，副窗事件已按 `window_id` 路由；阻塞等待中的真实 wake 与副窗渲染帧循环尚未接。
+> **实现注记**：`App::post_to_ui` 与 `AppHandle::post_to_ui` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 写入目标 `WindowSession` 的 `MainThreadQueue`，session 销毁后丢弃闭包。副窗 MainThreadQueue、事件路由与运行期 frame drain 已接；阻塞等待中的真实 wake 尚未接。
 
 ---
 
@@ -216,7 +216,7 @@ run_active_frame(session):
 
 `post_to_ui` 闭包内 `State::set` 并入步骤 5 的 reconcile 批次（#118）；禁止在步骤 3 直接改 WidgetTree。
 
-> **实现注记**：`MainThreadQueue` 已落地并在单窗 event loop 中按 UiEvent → due work → post_to_ui 顺序 drain；`AppRuntime` 已按 `window_id` 路由投递并在独立 session 关闭时清理队列；副窗 session bootstrap、MainThreadQueue 消费与事件路由已接，真实 wake 与副窗完整 loop 消费尚未接。
+> **实现注记**：`MainThreadQueue` 已落地并在单窗 event loop 中按 UiEvent → due work → post_to_ui 顺序 drain；`AppRuntime` 已按 `window_id` 路由投递并在独立 session 关闭时清理队列；副窗 session bootstrap、MainThreadQueue 消费、事件路由与运行期 frame drain 已接，真实 wake 仍待接。
 
 ### 周期可见 UI
 
@@ -277,7 +277,7 @@ impl TimerHandle {
 | 副作用 | 回调内 `State::set` → 按需 reconcile；**不**默认 layout/render |
 | 与内置 UI | 可见周期动画仍 **优先** 内置 widget；Timer API 用于 **业务逻辑**（保存、刷新、倒计时数据） |
 
-> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 AppTimer 队列，独立 session 关闭会批量 cancel。副窗 session bootstrap 已接，副窗 Timer 帧循环消费仍待接。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 AppTimer 队列，独立 session 关闭会批量 cancel。副窗 session bootstrap 与运行期 Timer 消费已接，阻塞等待 wake 仍待接。
 
 ---
 
@@ -638,22 +638,22 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 |------|------|------|------|
 | 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 update / tick_effects；RegisteredActive deadline wait 骨架已接 | [#106](../decisions.md#d106) [#117](../decisions.md#d117) |
 | ActiveWorkRegistry | register / next_deadline / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 托管 | [#115](../decisions.md#d115) |
-| 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；副窗创建、独立 `WindowSession` bootstrap 与事件按 `window_id` 路由已接，副窗渲染帧循环待接 | [#116](../decisions.md#d116) |
-| 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入主循环；副窗 MainThreadQueue / root reconcile 消费已接，副窗帧循环待接 | [#118](../decisions.md#d118) |
+| 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；副窗创建、独立 `WindowSession` bootstrap、事件按 `window_id` 路由与运行期 frame drain 已接，独立多 session deadline wait 待接 | [#116](../decisions.md#d116) |
+| 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入主循环；副窗 MainThreadQueue / root reconcile 消费与运行期 frame drain 已接，阻塞等待 wake 待接 | [#118](../decisions.md#d118) |
 | 每窗独立状态 | 每窗独立 DeepIdle/Active | 单窗 WindowSession 已写回三态；多窗独立状态未接 | [#110](../decisions.md#d110) |
 | Composite scroll | Composite + memmove | Wheel → ScrollView 已接 exposed strip + `scroll_region`；其他滚动来源待接 | [#107](../decisions.md#d107) |
 | PicturePolicy 自动推断 | 元数据 + 子树信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 首批 Eligible，默认 Never | [#122](../decisions.md#d122) [#129](../decisions.md#d129) |
 | Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 已托管；其他内置组件动画源待接 | [#124](../decisions.md#d124) |
 | follow_system_theme opt-in | false 默认；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](../decisions.md#d125) |
-| App Timer API | run_after / run_interval | `App` / `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出；`AppHandle` 已按 `window_id` 路由到所属 AppTimer 队列；副窗 session bootstrap 已接，副窗 Timer 帧循环消费待接 | [#132](../decisions.md#d132) |
-| post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + `AppHandle::post_to_ui` + MainThreadQueue 已接；`AppHandle` 已按 `window_id` 路由；副窗 MainThreadQueue 与事件路由已接；阻塞等待 wake 与副窗渲染帧循环待接 | [#133](../decisions.md#d133) |
-| MainThreadQueue | FIFO + 帧内 drain 顺序 | 每 WindowSession 队列已接；单窗 drain 顺序为 UiEvent → due work → post_to_ui；`AppHandle` 多窗队列路由、副窗 bootstrap 与副窗 MainThreadQueue 消费已接，副窗完整 loop 待接 | [#137](../decisions.md#d137) |
+| App Timer API | run_after / run_interval | `App` / `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出；`AppHandle` 已按 `window_id` 路由到所属 AppTimer 队列；副窗 session bootstrap 与运行期 Timer 消费已接，阻塞等待 wake 待接 | [#132](../decisions.md#d132) |
+| post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + `AppHandle::post_to_ui` + MainThreadQueue 已接；`AppHandle` 已按 `window_id` 路由；副窗 MainThreadQueue、事件路由与运行期 frame drain 已接；阻塞等待 wake 待接 | [#133](../decisions.md#d133) |
+| MainThreadQueue | FIFO + 帧内 drain 顺序 | 每 WindowSession 队列已接；单窗 drain 顺序为 UiEvent → due work → post_to_ui；`AppHandle` 多窗队列路由、副窗 bootstrap、MainThreadQueue 消费与运行期 frame drain 已接，阻塞等待 wake 待接 | [#137](../decisions.md#d137) |
 | TestClock | App drain_due / wait_until 测试注入 | App 层 `AppClock` / `TestClock` 已接入 AppTimer deadline、RegisteredActive wait_until、drain_due；native `FakeTimer` 仍独立 | [#139](../decisions.md#d139) |
 | AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | `AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求；副窗真实 close 事件路由已接，完整多 session close drain 待接 | [#134](../decisions.md#d134) |
 | on_start | `.on_start(AppHandle)` 每窗一次 | 单窗 `.on_start(AppHandle)` 已导出，并在 WindowSession 创建后、首帧前调用；多窗每窗注入待接 | [#140](../decisions.md#d140) |
 | 多窗 post_to_ui | AppHandle.window_id 路由 | `AppRuntime` 路由表已接；`AppHandle` 投递仅进入自身 `window_id` 的队列，session 销毁后丢弃闭包 | [#141](../decisions.md#d141) |
 | open_window | 副窗 API | `WindowConfig` / `AppHandle::open_window` / `.on_window_start` 已导出；可分配新 `window_id`、独立队列/Timer/handle 并暂存副窗创建请求；GUI loop 可 drain 请求并创建 native 窗 | [#144](../decisions.md#d144) |
-| open_window 接线 | 副窗独立 build/reconcile | 副窗 native 创建、独立 `WindowSession` bootstrap、MainThreadQueue / `update_view` reconcile 消费与事件按 `window_id` 路由已接；副窗渲染帧循环待接 | [#148](../decisions.md#d148) |
+| open_window 接线 | 副窗独立 build/reconcile | 副窗 native 创建、独立 `WindowSession` bootstrap、MainThreadQueue / `update_view` reconcile 消费、事件按 `window_id` 路由与运行期 frame drain 已接；阻塞等待 wake 待接 | [#148](../decisions.md#d148) |
 | AppState register | mount 自动 register Handle | `AppState` snapshot registry 已建；`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot；App 默认持有并注入单窗 `WindowSession` 已接；跨窗共享与 live tree handle 绑定待接 | [#145](../decisions.md#d145) |
 | StateSlotId | State::new 单调 id | 已接；clone 共享，`generation()` 不参与身份 | [#143](../decisions.md#d143) |
 | Handler 智能重绑 | handler 变才重注册（#135） | 稳定 signature 路径已跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 DSL handler 仍保守重绑 | [#123](../decisions.md#d123) [#135](../decisions.md#d135) |
@@ -662,11 +662,11 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | Effect DeepIdle 跳过 | 不 tick_effects | 单窗 loop 已门控到 Active 帧；动画续帧经 Registry deadline 唤醒；`Spin` 内置动画源已接，其他动画源待接 | #105 |
 | ComponentConfigSnapshot | mount 提取配置 | 类型与首批内置静态配置提取已接；`ComponentHandle` 直接 snapshot getter 已接；AppState mount/unmount snapshot register 已接；reconcile patch update 已接 | [#146](../decisions.md#d146) |
 | Handle emit / invalidate / getter | dispatch_semantic + 窄 Paint + 只读配置 | `ComponentHandle::emit` 已导出并走 `WidgetTree::dispatch_semantic`；`invalidate()` 已接 `WidgetTree::invalidate_paint` 窄 Paint；`snapshot()` / `text()` / `placeholder()` / `disabled()` 已接；App 默认持有 `AppState`，`AppState::get_handle` 可查 snapshot handle；lookup handle 的 live tree 绑定待接 | [#119](../decisions.md#d119) [#147](../decisions.md#d147) |
-| update_view | AppHandle 按 session reconcile | `AppHandle::update_view` / `set_root` 已导出；经 `AppRuntime` 按 `window_id` 写目标 MainThreadQueue 并在帧末 reconcile；副窗 session bootstrap 与 root reconcile 消费已接，副窗渲染帧循环待接 | [#149](../decisions.md#d149) |
+| update_view | AppHandle 按 session reconcile | `AppHandle::update_view` / `set_root` 已导出；经 `AppRuntime` 按 `window_id` 写目标 MainThreadQueue 并在帧末 reconcile；副窗 session bootstrap、root reconcile 消费与运行期 frame drain 已接，阻塞等待 wake 待接 | [#149](../decisions.md#d149) |
 | State 跨窗标脏 | paint_sites fan-out | 单 bind slot | [#150](../decisions.md#d150) |
 | SnapshotSource | component! 自动快照 | `SnapshotSource` trait 已导出；Button / Label / Input / Container / Grid 手写实现已接；`define_widget!` 自定义组件 pub 字段自动提取已接；`component! { name: ..., struct ... }` 已复用该路径，完整独立 DSL 待接 | [#151](../decisions.md#d151) |
 | snapshot(skip) | 字段属性排除 | `define_widget!` 已解析并消费 `#[snapshot(skip)]`；首批手写内置提取已人工排除运行态字段；`component! { name: ..., struct ... }` 已复用该排除逻辑，完整独立 DSL 待接 | [#152](../decisions.md#d152) |
-| reconcile 合并 | pending_root 优先 | 单窗 `update_view` 路径与 State 批次自动置位已接；副窗 MainThreadQueue / root reconcile 消费已接，副窗帧循环待接 | [#153](../decisions.md#d153) |
+| reconcile 合并 | pending_root 优先 | 单窗 `update_view` 路径与 State 批次自动置位已接；副窗 MainThreadQueue / root reconcile 消费与运行期 frame drain 已接，阻塞等待 wake 待接 | [#153](../decisions.md#d153) |
 | view_factory | session 固定 Arc | 单窗 `App::root(|| ...)` 已安装 session factory；多窗 factory 待接 | [#155](../decisions.md#d155) |
 | 豁免台账 | #158+ 条目 + 测试 | 未建立 | [#113](../decisions.md#d113) |
 
