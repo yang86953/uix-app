@@ -366,6 +366,7 @@ fn style_set_new() {
     assert_eq!(v.normal, base);
     assert_eq!(v.hover, None);
     assert_eq!(v.pressed, None);
+    assert_eq!(v.focused, None);
     assert_eq!(v.disabled, None);
 }
 
@@ -374,18 +375,24 @@ fn style_set_resolve_priority() {
     let normal = Style::default().with_bg(Color::red());
     let hover = Style::default().with_bg(Color::green());
     let active = Style::default().with_bg(Color::blue());
+    let focused = Style::default().with_bg(Color::from_rgb(255, 255, 0));
     let disabled = Style::default().with_bg(Color::from_rgb(128, 128, 128));
     let v = StyleSet::new(normal.clone())
         .hover(hover)
         .active(active)
+        .focused(focused)
         .disabled(disabled);
     // 浼樺厛绾э細disabled > active > hover > normal
     assert_eq!(
-        v.resolve_flags(false, false, false, true).background,
+        v.resolve_flags(true, true, true, true).background,
         Some(ColorValue::Custom(Color::from_rgb(128, 128, 128)))
     );
     assert_eq!(
-        v.resolve_flags(false, true, false, false).background,
+        v.resolve_flags(true, true, true, false).background,
+        Some(ColorValue::Custom(Color::from_rgb(255, 255, 0)))
+    );
+    assert_eq!(
+        v.resolve_flags(true, true, false, false).background,
         Some(ColorValue::Custom(Color::blue()))
     );
     assert_eq!(
@@ -426,14 +433,36 @@ fn style_set_chain_methods() {
     let normal = Style::default().with_bg(Color::red());
     let hover = Style::default().with_bg(Color::green());
     let active = Style::default().with_bg(Color::blue());
+    let focused = Style::default().with_bg(Color::from_rgb(255, 255, 0));
     let disabled = Style::default().with_bg(Color::from_rgb(128, 128, 128));
     let v = StyleSet::new(normal)
         .hover(hover.clone())
         .active(active.clone())
+        .focused(focused.clone())
         .disabled(disabled.clone());
     assert_eq!(v.hover, Some(hover));
     assert_eq!(v.pressed, Some(active));
+    assert_eq!(v.focused, Some(focused));
     assert_eq!(v.disabled, Some(disabled));
+}
+
+#[test]
+fn button_presets_cover_focused_and_disabled_states() {
+    for preset in [StyleSet::button_ghost(), StyleSet::button_danger()] {
+        let focused = preset.resolve_flags(false, false, true, false);
+        assert!(focused.box_shadow.is_some());
+
+        let disabled = preset.resolve_flags(true, true, true, true);
+        assert_eq!(disabled.opacity, 0.45);
+        assert_eq!(
+            disabled.border_color,
+            Some(ColorValue::Neutral(NeutralRole::Border))
+        );
+        assert_eq!(
+            disabled.color,
+            ColorValue::Neutral(NeutralRole::TextQuaternary)
+        );
+    }
 }
 
 // 鈹€鈹€ edge_insets 杈呭姪鍑芥暟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

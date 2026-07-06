@@ -178,6 +178,21 @@ impl StyleSet {
             color: ColorValue::Palette(PaletteColor::PrimaryActive),
             ..Style::default()
         })
+        .focused(Style {
+            box_shadow: Some(super::BoxShadowDef::new(
+                Color::from_rgba(22, 119, 255, 80),
+                4.0,
+                0.0,
+                0.0,
+            )),
+            ..Style::default()
+        })
+        .disabled(Style {
+            border_color: Some(ColorValue::Neutral(NeutralRole::Border)),
+            color: ColorValue::Neutral(NeutralRole::TextQuaternary),
+            opacity: 0.45,
+            ..Style::default()
+        })
     }
 
     pub fn button_danger() -> Self {
@@ -199,6 +214,22 @@ impl StyleSet {
         .pressed(Style {
             background: Some(ColorValue::Palette(PaletteColor::Error)),
             border_color: Some(ColorValue::Palette(PaletteColor::Error)),
+            ..Style::default()
+        })
+        .focused(Style {
+            box_shadow: Some(super::BoxShadowDef::new(
+                Color::from_rgba(255, 77, 79, 80),
+                4.0,
+                0.0,
+                0.0,
+            )),
+            ..Style::default()
+        })
+        .disabled(Style {
+            background: Some(ColorValue::Neutral(NeutralRole::FillTertiary)),
+            border_color: Some(ColorValue::Neutral(NeutralRole::Border)),
+            color: ColorValue::Neutral(NeutralRole::TextQuaternary),
+            opacity: 0.45,
             ..Style::default()
         })
     }
