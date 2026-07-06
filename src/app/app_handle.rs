@@ -7,17 +7,9 @@ use std::time::Duration;
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::shell::di::Container;
+pub use crate::core::WindowId;
 use crate::ui::view::{View, ViewAdapter, ViewNode};
 use crate::ui::AppState;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WindowId(u64);
-
-impl WindowId {
-    pub(crate) const fn root() -> Self {
-        Self(0)
-    }
-}
 
 #[derive(Clone)]
 pub struct AppHandle {

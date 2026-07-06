@@ -30,6 +30,7 @@ use super::text_input::WindowsTextInput;
 use super::timer::WindowsTimer;
 use super::util::to_wide;
 use super::window_ops::WindowsWindowOps;
+use crate::core::WindowId;
 use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
 use crate::native::traits::event::UiEvent;
 use crate::native::traits::*;
@@ -57,6 +58,7 @@ pub struct WindowsPlatform {
     pub(crate) console_subsys: WindowsConsole,
     pub(crate) system_info_subsys: WindowsSystemInfo,
     pub(crate) single_shot_timers: Arc<Mutex<HashSet<u32>>>,
+    next_window_id: u64,
 }
 
 impl Default for WindowsPlatform {
@@ -76,6 +78,7 @@ impl WindowsPlatform {
             hinstance: std::ptr::null_mut(),
             class_atom: 0,
             single_shot_timers: single_shot,
+            next_window_id: 1,
             clipboard_subsys: WindowsClipboard::new(),
             cursor_subsys: WindowsCursor::new(),
             display_subsys: WindowsDisplay::new(),
@@ -183,9 +186,11 @@ impl IWindowManager for WindowsPlatform {
         }
         {
             let mut state = self.window.borrow_mut();
+            state.window_id = WindowId::new(self.next_window_id);
             state.width = width;
             state.height = height;
         }
+        self.next_window_id += 1;
         let wide_title = to_wide(title);
         let class_name = self.class_name();
         let style = WS_OVERLAPPEDWINDOW;

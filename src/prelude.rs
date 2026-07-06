@@ -7,7 +7,7 @@
 
 // ── core ──────────────────────────────────────────────────────
 
-pub use crate::core::{EdgeInsets, Errc, Error, Point, Rect, Size};
+pub use crate::core::{EdgeInsets, Errc, Error, Point, Rect, Size, WindowId};
 
 // ── native ────────────────────────────────────────────────────
 

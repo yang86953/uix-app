@@ -2,6 +2,7 @@
 
 use crate::core::error::Result;
 use crate::core::geometry::Point;
+use crate::core::WindowId;
 use crate::native::test_harness::fake_graphics_context::FakeGraphicsContext;
 use crate::native::test_harness::fake_presenter::FakePresenter;
 use crate::native::traits::present::{IGraphicsContext, IPresenter};
@@ -200,7 +201,7 @@ impl INativeHandle for FakeNativeHandle {
 
 #[derive(Debug, Clone)]
 pub struct FakeWindowState {
-    pub id: u64,
+    pub id: WindowId,
     pub title: String,
     pub visible: bool,
     pub show_calls: usize,
@@ -218,7 +219,7 @@ pub struct FakeWindowState {
 
 #[derive(Debug)]
 pub struct FakeWindow {
-    pub id: u64,
+    pub id: WindowId,
     pub props: FakeWindowProperties,
     pub presenter: FakePresenter,
     pub native_handle: FakeNativeHandle,
@@ -228,6 +229,7 @@ pub struct FakeWindow {
 
 impl FakeWindow {
     pub fn new(id: u64, title: &str, width: i32, height: i32) -> Self {
+        let id = WindowId::new(id);
         let mut props = FakeWindowProperties::new();
         props.state.width = width;
         props.state.height = height;
@@ -280,6 +282,10 @@ impl FakeWindow {
 }
 
 impl PlatformWindow for FakeWindow {
+    fn window_id(&self) -> WindowId {
+        self.id
+    }
+
     fn show(&mut self) {
         self.state.visible = true;
         self.state.show_calls += 1;
@@ -382,5 +388,20 @@ impl IWindowManager for FakeWindowManager {
         self.next_id += 1;
         self.create_calls.push((title.to_string(), width, height));
         Ok(Box::new(FakeWindow::new(id, title, width, height)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fake_window_manager_assigns_stable_incrementing_window_ids() {
+        let mut manager = FakeWindowManager::new();
+        let first = manager.create_window("first", 320, 200).unwrap();
+        let second = manager.create_window("second", 640, 480).unwrap();
+
+        assert_eq!(first.window_id(), WindowId::new(1));
+        assert_eq!(second.window_id(), WindowId::new(2));
     }
 }

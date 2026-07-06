@@ -23,7 +23,7 @@ pub(crate) mod window_ops;
 
 // ── 依赖 ────────────────────────────────────────────────────────
 use self::shm_buffer::ShmBuffer;
-use crate::core::Point;
+use crate::core::{Point, WindowId};
 use crate::native::traits::event::*;
 use crate::native::traits::input::{KeyCode, KeyMod};
 use std::collections::{HashSet, VecDeque};
@@ -129,6 +129,7 @@ pub struct WaylandBackend {
 
     // ── xdg_activation（窗口提升/聚焦）────────────────────────
     pub(crate) _xdg_activation: Option<Main<XdgActivationV1>>,
+    pub(crate) next_window_id: u64,
 }
 
 impl WaylandBackend {
@@ -378,6 +379,7 @@ impl WaylandBackend {
             text_input: None,
             text_input_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             _xdg_activation: xdg_activation,
+            next_window_id: 1,
         })
     }
 }

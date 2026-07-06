@@ -17,6 +17,7 @@ use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::X
 use wayland_protocols::unstable::xdg_decoration::v1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
+use crate::core::WindowId;
 use crate::native::shared::unimpl;
 use crate::native::shared::WindowOps;
 use crate::native::traits::event::UiEvent;
@@ -26,6 +27,7 @@ use crate::native::traits::event::UiEvent;
 /// 持有 Wayland 协议窗口对象（surface/toplevel/xdg_surface），
 /// 所有 `os_*` 方法通过 Wayland 协议操作窗口。
 pub(crate) struct WaylandWindowOps {
+    pub(crate) window_id: WindowId,
     pub(crate) surface: Option<Main<wl_surface::WlSurface>>,
     pub(crate) xdg_surface: Option<Main<xdg_surface::XdgSurface>>,
     pub(crate) toplevel: Option<Main<xdg_toplevel::XdgToplevel>>,
@@ -59,6 +61,7 @@ impl WaylandWindowOps {
     }
 
     pub(crate) fn new(
+        window_id: WindowId,
         compositor: Main<wl_compositor::WlCompositor>,
         shm: Main<wl_shm::WlShm>,
         events: Arc<Mutex<VecDeque<UiEvent>>>,
@@ -66,6 +69,7 @@ impl WaylandWindowOps {
         xdg_activation: Option<Main<XdgActivationV1>>,
     ) -> Self {
         Self {
+            window_id,
             surface: None,
             xdg_surface: None,
             toplevel: None,
@@ -105,6 +109,7 @@ impl WaylandWindowOps {
         };
 
         let events = self.events.clone();
+        let window_id = self.window_id;
 
         let surface = self.compositor.create_surface();
         let xdg_surf = wm_base.get_xdg_surface(&surface);
@@ -126,7 +131,7 @@ impl WaylandWindowOps {
                 let _ = tl_events
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
-                    .push_back(UiEvent::close());
+                    .push_back(UiEvent::close().for_window(window_id));
             }
             xdg_toplevel::Event::Configure {
                 width: w,
@@ -150,13 +155,14 @@ impl WaylandWindowOps {
                     let _ = tl_events
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
-                        .push_back(UiEvent::resize(w, h));
+                        .push_back(UiEvent::resize(w, h).for_window(window_id));
                 }
                 if is_max && !was_max {
                     let _ = tl_events
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .push_back(UiEvent {
+                            window_id: Some(window_id),
                             type_: UiEventType::WindowMaximize,
                             payload: UiEventPayload::None,
                         });
@@ -165,6 +171,7 @@ impl WaylandWindowOps {
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .push_back(UiEvent {
+                            window_id: Some(window_id),
                             type_: UiEventType::WindowRestore,
                             payload: UiEventPayload::None,
                         });

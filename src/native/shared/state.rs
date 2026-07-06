@@ -4,11 +4,12 @@
 // 所有平台的窗口状态变量统一在此定义，消除各平台各自维护状态的重复。
 // ============================================================================
 
-use crate::core::Point;
+use crate::core::{Point, WindowId};
 
 /// 窗口状态（纯数据，无逻辑）
 #[derive(Debug, Clone)]
 pub struct WindowState {
+    pub window_id: WindowId,
     pub width: i32,
     pub height: i32,
     pub pos_x: i32,
@@ -28,6 +29,7 @@ pub struct WindowState {
 impl Default for WindowState {
     fn default() -> Self {
         Self {
+            window_id: WindowId::ROOT,
             width: 800,
             height: 600,
             pos_x: 0,
@@ -50,6 +52,16 @@ impl WindowState {
     /// 创建指定尺寸的初始窗口状态。
     pub fn with_size(width: i32, height: i32) -> Self {
         Self {
+            width,
+            height,
+            ..Default::default()
+        }
+    }
+
+    /// 创建指定 ID 与尺寸的初始窗口状态。
+    pub fn with_id_and_size(window_id: WindowId, width: i32, height: i32) -> Self {
+        Self {
+            window_id,
             width,
             height,
             ..Default::default()
