@@ -915,6 +915,64 @@ fn right_pointer_up_emits_context_menu_semantic_event() {
 }
 
 #[test]
+fn right_pointer_up_opens_context_menu_overlay_by_default() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let pos = Point::new(50.0, 50.0);
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+
+    let top = tree.overlay_stack().top().unwrap();
+    assert_eq!(top.owner(), root_id);
+    assert_eq!(top.kind(), OverlayKind::ContextMenu);
+    assert!(top.dismisses_on_outside());
+    assert!(top.bounds_rect().unwrap().contains(pos));
+}
+
+#[test]
+fn context_menu_prevent_default_skips_overlay() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    tree.handler_table()
+        .on(root_id, crate::ui::SemanticKind::ContextMenu, |event| {
+            event.prevent_default();
+        });
+
+    let pos = Point::new(50.0, 50.0);
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Right,
+        mods: KeyMod::NONE,
+    });
+
+    assert!(tree
+        .overlay_stack()
+        .iter()
+        .all(|entry| entry.kind() != OverlayKind::ContextMenu));
+}
+
+#[test]
 fn text_input_emits_semantic_event_for_focused_target() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
