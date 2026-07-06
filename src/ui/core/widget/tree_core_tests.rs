@@ -3,18 +3,21 @@
 use super::*;
 use crate::core::Point;
 use crate::native::traits::input::{KeyMod, MouseButton};
+use crate::ui::{OverlayEntry, OverlayKind};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 struct SpyWidget {
     size: crate::core::Size,
     last_event: RefCell<Option<SystemEvent>>,
+    events: RefCell<Vec<SystemEvent>>,
 }
 impl SpyWidget {
     fn new(w: f32, h: f32) -> Self {
         Self {
             size: crate::core::Size::new(w, h),
             last_event: RefCell::new(None),
+            events: RefCell::new(Vec::new()),
         }
     }
 }
@@ -48,6 +51,7 @@ impl WidgetRender for SpyWidget {
 impl EventHandler for SpyWidget {
     fn on_event(&mut self, event: &SystemEvent) -> EventResult {
         *self.last_event.borrow_mut() = Some(event.clone());
+        self.events.borrow_mut().push(event.clone());
         EventResult::Handled
     }
 }
@@ -548,6 +552,93 @@ fn dispatch_pointer_down_focuses_target() {
         }),
         EventResult::Handled
     );
+}
+
+#[test]
+fn dispatch_pointer_down_targets_overlay_owner() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let owner = tree.add_child(root_id, Box::new(SpyWidget::new(20.0, 20.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(owner)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 20.0, 20.0));
+
+    tree.overlay_stack_mut().push_entry(
+        OverlayEntry::new(owner, OverlayKind::Popover)
+            .bounds(Rect::new(50.0, 50.0, 60.0, 40.0))
+            .z_index(10),
+    );
+
+    let result = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(70.0, 70.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    let events = tree
+        .get(owner)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow()
+        .clone();
+
+    assert_eq!(result, EventResult::Handled);
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, SystemEvent::PointerDown { .. })));
+    assert_eq!(tree.focused_widget, Some(owner));
+}
+
+#[test]
+fn dispatch_pointer_down_outside_modal_overlay_dismisses_and_blocks_underlying() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let underlying = tree.add_child(root_id, Box::new(SpyWidget::new(200.0, 200.0)));
+    let owner = tree.add_child(root_id, Box::new(SpyWidget::new(20.0, 20.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(underlying)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(owner)
+        .unwrap()
+        .set_frame(Rect::new(150.0, 150.0, 20.0, 20.0));
+
+    tree.overlay_stack_mut().push_entry(
+        OverlayEntry::new(owner, OverlayKind::Modal)
+            .bounds(Rect::new(50.0, 50.0, 60.0, 40.0))
+            .z_index(100),
+    );
+
+    let result = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(20.0, 20.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    let underlying_event = tree
+        .get(underlying)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .last_event
+        .borrow()
+        .clone();
+
+    assert_eq!(result, EventResult::Handled);
+    assert!(tree.overlay_stack().is_empty());
+    assert!(underlying_event.is_none());
+    assert!(tree.focused_widget.is_none());
 }
 
 #[test]
