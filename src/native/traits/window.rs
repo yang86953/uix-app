@@ -3,6 +3,7 @@
 use super::present::{IGraphicsContext, IPresenter};
 use crate::core::error::{Error, Result};
 use crate::core::geometry::Point;
+use crate::core::WindowId;
 
 pub trait IWindowProperties {
     fn width(&self) -> i32;
@@ -43,6 +44,7 @@ pub trait IWindowManager {
 
 /// 平台窗口 — 可见性、标题、层级与呈现器访问。
 pub trait PlatformWindow {
+    fn window_id(&self) -> WindowId;
     fn show(&mut self);
     fn hide(&mut self);
     fn close(&mut self);

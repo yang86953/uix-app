@@ -3,6 +3,7 @@
 // ============================================================================
 
 use crate::core::geometry::Point;
+use crate::core::WindowId;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -179,19 +180,30 @@ pub enum UiEventPayload {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UiEvent {
+    pub window_id: Option<WindowId>,
     pub type_: UiEventType,
     pub payload: UiEventPayload,
 }
 
 impl UiEvent {
     pub fn new(type_: UiEventType, payload: UiEventPayload) -> Self {
-        Self { type_, payload }
+        Self {
+            window_id: None,
+            type_,
+            payload,
+        }
+    }
+
+    pub fn for_window(mut self, window_id: WindowId) -> Self {
+        self.window_id = Some(window_id);
+        self
     }
 
     // -- 工厂方法 ------------------------------------------------
 
     pub fn close() -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::WindowClose,
             payload: UiEventPayload::None,
         }
@@ -199,6 +211,7 @@ impl UiEvent {
 
     pub fn pointer_down(pos: Point, btn: MouseButton) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::PointerDown,
             payload: UiEventPayload::PointerButton(PointerButtonEventData {
                 pos,
@@ -210,6 +223,7 @@ impl UiEvent {
 
     pub fn pointer_up(pos: Point, btn: MouseButton) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::PointerUp,
             payload: UiEventPayload::PointerButton(PointerButtonEventData {
                 pos,
@@ -221,6 +235,7 @@ impl UiEvent {
 
     pub fn pointer_move(pos: Point) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::PointerMove,
             payload: UiEventPayload::PointerMove(PointerMoveEventData {
                 pos,
@@ -231,6 +246,7 @@ impl UiEvent {
 
     pub fn wheel(pos: Point, delta_x: f32, delta_y: f32, mods: KeyMod) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::Wheel,
             payload: UiEventPayload::Wheel(WheelData {
                 pos,
@@ -243,6 +259,7 @@ impl UiEvent {
 
     pub fn key_down(key: KeyCode, mods: KeyMod) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::KeyDown,
             payload: UiEventPayload::Key(KeyEventData { key, mods }),
         }
@@ -250,6 +267,7 @@ impl UiEvent {
 
     pub fn key_up(key: KeyCode, mods: KeyMod) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::KeyUp,
             payload: UiEventPayload::Key(KeyEventData { key, mods }),
         }
@@ -257,6 +275,7 @@ impl UiEvent {
 
     pub fn text_input(text: impl Into<String>) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::TextInput,
             payload: UiEventPayload::TextInput(TextInputData { text: text.into() }),
         }
@@ -264,6 +283,7 @@ impl UiEvent {
 
     pub fn ime_composition_start() -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::ImeCompositionStart,
             payload: UiEventPayload::None,
         }
@@ -271,6 +291,7 @@ impl UiEvent {
 
     pub fn ime_composition_update(text: impl Into<String>) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::ImeCompositionUpdate,
             payload: UiEventPayload::ImeComposition(ImeCompositionData { text: text.into() }),
         }
@@ -278,6 +299,7 @@ impl UiEvent {
 
     pub fn ime_composition_end(text: impl Into<String>) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::ImeCompositionEnd,
             payload: UiEventPayload::ImeComposition(ImeCompositionData { text: text.into() }),
         }
@@ -285,6 +307,7 @@ impl UiEvent {
 
     pub fn copy() -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::Copy,
             payload: UiEventPayload::None,
         }
@@ -292,6 +315,7 @@ impl UiEvent {
 
     pub fn cut() -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::Cut,
             payload: UiEventPayload::None,
         }
@@ -299,6 +323,7 @@ impl UiEvent {
 
     pub fn paste(text: impl Into<String>) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::Paste,
             payload: UiEventPayload::Clipboard(ClipboardData { text: text.into() }),
         }
@@ -306,6 +331,7 @@ impl UiEvent {
 
     pub fn theme_changed(is_dark: bool) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::ThemeChanged,
             payload: UiEventPayload::ThemeChanged(ThemeChangeData { is_dark }),
         }
@@ -313,6 +339,7 @@ impl UiEvent {
 
     pub fn locale_changed(locale: impl Into<String>) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::LocaleChanged,
             payload: UiEventPayload::LocaleChanged(LocaleChangeData {
                 locale: locale.into(),
@@ -322,6 +349,7 @@ impl UiEvent {
 
     pub fn timer(timer_id: u32) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::Timer,
             payload: UiEventPayload::Timer(TimerEventData { timer_id }),
         }
@@ -329,6 +357,7 @@ impl UiEvent {
 
     pub fn resize(width: i32, height: i32) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::WindowResize,
             payload: UiEventPayload::Resize(ResizeData { width, height }),
         }
@@ -336,8 +365,30 @@ impl UiEvent {
 
     pub fn file_drop(files: Vec<String>, position: Point) -> Self {
         Self {
+            window_id: None,
             type_: UiEventType::FileDrop,
             payload: UiEventPayload::FileDrop(FileDropData { files, position }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn for_window_tags_event_without_changing_payload() {
+        let window_id = WindowId::new(7);
+        let event = UiEvent::resize(320, 200).for_window(window_id);
+
+        assert_eq!(event.window_id, Some(window_id));
+        assert_eq!(event.type_, UiEventType::WindowResize);
+        assert_eq!(
+            event.payload,
+            UiEventPayload::Resize(ResizeData {
+                width: 320,
+                height: 200,
+            })
+        );
     }
 }

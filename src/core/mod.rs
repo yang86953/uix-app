@@ -5,9 +5,11 @@ pub mod diagnostic;
 pub mod error;
 pub mod geometry;
 pub mod log;
+pub mod window_id;
 
 pub use damage::*;
 pub use diagnostic::*;
 pub use error::*;
 pub use geometry::*;
 pub use log::*;
+pub use window_id::*;

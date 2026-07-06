@@ -183,6 +183,10 @@ impl<O: WindowOps> PlatformWindowCore<O> {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
+    fn window_id(&self) -> crate::core::WindowId {
+        state_read!(self.state, window_id)
+    }
+
     fn show(&mut self) {
         state_write!(self.state, visible, true);
         self.ops.os_show();

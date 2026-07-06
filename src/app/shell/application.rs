@@ -4,14 +4,14 @@ use std::cell::{Cell, RefCell};
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::Duration;
 
-use crate::app::app_handle::{AppHandle, WindowId};
+use crate::app::app_handle::AppHandle;
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::event_loop::run_window_session_loop_with_system_theme;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
 use crate::app::window_session::WindowSession;
-use crate::core::Point;
+use crate::core::{Point, WindowId};
 use crate::data::SettingsService;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
@@ -180,7 +180,7 @@ impl App {
 
     pub(crate) fn app_handle(&self) -> AppHandle {
         AppHandle::new(
-            WindowId::root(),
+            WindowId::ROOT,
             self.app_state.clone(),
             self.app_timers.clone(),
             self.main_thread_queue.clone(),

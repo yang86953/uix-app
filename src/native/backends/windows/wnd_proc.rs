@@ -46,6 +46,7 @@ pub(crate) unsafe extern "system" fn wnd_proc(
 
 impl WindowsPlatform {
     pub(crate) fn push_event(&mut self, event: UiEvent) {
+        let event = event.for_window(self.window.borrow().window_id);
         self.event_queue.push_back(event);
     }
 
@@ -112,18 +113,21 @@ impl WindowsPlatform {
                     match action {
                         SizeAction::Minimized => {
                             self.push_event(UiEvent {
+                                window_id: None,
                                 type_: UiEventType::WindowMinimize,
                                 payload: UiEventPayload::None,
                             });
                         }
                         SizeAction::Maximized => {
                             self.push_event(UiEvent {
+                                window_id: None,
                                 type_: UiEventType::WindowMaximize,
                                 payload: UiEventPayload::None,
                             });
                         }
                         SizeAction::Restored => {
                             self.push_event(UiEvent {
+                                window_id: None,
                                 type_: UiEventType::WindowRestore,
                                 payload: UiEventPayload::None,
                             });
@@ -143,6 +147,7 @@ impl WindowsPlatform {
             }
             WM_SETFOCUS => {
                 self.push_event(UiEvent {
+                    window_id: None,
                     type_: UiEventType::WindowFocus,
                     payload: UiEventPayload::None,
                 });
@@ -150,6 +155,7 @@ impl WindowsPlatform {
             }
             WM_KILLFOCUS => {
                 self.push_event(UiEvent {
+                    window_id: None,
                     type_: UiEventType::WindowBlur,
                     payload: UiEventPayload::None,
                 });
