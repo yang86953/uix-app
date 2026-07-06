@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::app::app_handle::AppHandle;
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
-use crate::app::main_thread_queue::MainThreadQueue;
+use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
@@ -26,7 +26,7 @@ use crate::native::traits::window::PlatformWindow;
 use crate::native::{create_gpu_context, create_platform};
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
-use crate::ui::view::ViewNode;
+use crate::ui::view::{ViewAdapter, ViewNode};
 use crate::ui::{AppState, SystemEvent};
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -42,11 +42,32 @@ pub enum AppMode {
 
 struct SecondaryWindowSession {
     _window: Box<dyn PlatformWindow>,
-    _session: WindowSession,
+    session: WindowSession,
     handle: AppHandle,
 }
 
 impl SecondaryWindowSession {
+    fn drain_main_thread_work(&mut self) -> bool {
+        let parts = self.session.parts_mut();
+        let mut main_thread_context =
+            MainThreadContext::new(parts.pending_root, parts.reconcile_pending);
+        let had_main_thread_work = parts.main_thread_queue.drain(&mut main_thread_context);
+
+        if *parts.reconcile_pending {
+            let root = parts
+                .pending_root
+                .take()
+                .or_else(|| parts.view_factory.build());
+            if let Some(root) = root {
+                ViewAdapter::reconcile_nodes(parts.tree, root);
+            }
+            *parts.reconcile_pending = false;
+            return true;
+        }
+
+        had_main_thread_work
+    }
+
     fn close(self) {
         self.handle.mark_closed();
     }
@@ -383,6 +404,7 @@ impl App {
             self.on_window_start.as_ref(),
             &mut secondary_windows,
         );
+        drain_secondary_window_queues(&mut secondary_windows);
 
         let theme = RefCell::new(self.theme);
         let debug_mode = Cell::new(false);
@@ -418,6 +440,7 @@ impl App {
                     on_window_start.as_ref(),
                     &mut secondary_windows,
                 );
+                drain_secondary_window_queues(&mut secondary_windows);
             },
             |_, _, _| {},
         );
@@ -441,17 +464,26 @@ fn drain_pending_open_windows(
 ) -> usize {
     let mut created = 0;
     while let Some(request) = runtime.take_next_open_window() {
-        if let Some(window) =
+        if let Some(mut window) =
             create_secondary_window(platform, runtime, app_state, container, request)
         {
             if let Some(callback) = on_window_start {
                 callback(window.handle.clone());
             }
+            window.drain_main_thread_work();
             secondary_windows.push(window);
             created += 1;
         }
     }
     created
+}
+
+fn drain_secondary_window_queues(secondary_windows: &mut [SecondaryWindowSession]) -> bool {
+    let mut drained = false;
+    for window in secondary_windows {
+        drained |= window.drain_main_thread_work();
+    }
+    drained
 }
 
 fn create_secondary_window(
@@ -534,7 +566,7 @@ fn create_secondary_window(
 
     Some(SecondaryWindowSession {
         _window: platform_window,
-        _session: session,
+        session,
         handle,
     })
 }
