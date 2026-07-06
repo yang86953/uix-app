@@ -347,7 +347,7 @@ App::new()
     .run();
 ```
 
-> **实现注记**：`open_window` / `on_window_start` / `WindowConfig` 尚未导出。
+> **实现注记**：`WindowConfig`、`AppHandle::open_window` 与 `.on_window_start` 已导出；`open_window` 当前会分配新 `window_id`、独立 AppTimer / MainThreadQueue / AppHandle，并把副窗创建请求暂存到 `AppRuntime`。native `create_window`、新 `WindowSession` bootstrap 与多 session loop drain 尚未接入，因此该请求层仍不是完整副窗创建。
 
 ### 副窗 bootstrap（#148）
 
@@ -466,7 +466,7 @@ autosave.cancel();
 | 业务逻辑（保存、轮询刷新、倒计时数据） | **#132 Timer API** 或 async→State |
 | 耗时 IO | async / 线程 → 主线程 `State::set` |
 
-> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与单窗 `AppHandle::run_after` / `run_interval` 已导出，并通过 `WindowSession` 的 AppTimer 队列接入 `ActiveWorkRegistry::AppTimer`；多窗路由 / 单 session 窗口关闭清理仍待接。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 session 的 AppTimer 队列，并可在 session 关闭时批量 cancel。副窗 native loop 消费仍待接。
 
 ### 调用入口
 
@@ -546,7 +546,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 // ✗ 禁止：用 A handle 期望更新 B 的树
 ```
 
-> **实现注记**：`App::post_to_ui`、单窗 `AppHandle::post_to_ui` 与单窗 `WindowSession.main_thread_queue` 已落地，并在 UiEvent / due work 后、`tick_effects` 前 drain；多窗 `window_id` 路由与阻塞等待中的真实 wake 尚未接。
+> **实现注记**：`App::post_to_ui`、`AppHandle::post_to_ui` 与 `WindowSession.main_thread_queue` 已落地；`AppHandle` 经 `AppRuntime` 按 `window_id` 仅写入目标 session 队列，并在 session 销毁后丢弃闭包。单窗 loop 已在 UiEvent / due work 后、`tick_effects` 前 drain；阻塞等待中的真实 wake 与副窗 loop 消费尚未接。
 
 ---
 
@@ -565,7 +565,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 
 入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
 
-> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由单窗 `WindowSession` 持有；单窗 `AppHandle` 关闭后会丢弃投递；多窗路由与独立 session 关闭策略尚未接。
+> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列。副窗 native loop 消费尚未接。
 
 ---
 
@@ -649,7 +649,7 @@ App::new()
 
 > **实现注记**：单窗 `.on_start(AppHandle)` 与 `AppHandle` / `WindowId` 已导出；`AppHandle::resolve<T: Clone>()` 可读取运行期 DI 单例 clone；多窗每窗注入待接。
 
-> **实现注记**（#134）：`TimerHandle` 已落地并支持 `cancel` / drop unregister；单窗 `App::run()` 结束会关闭 handle、cancel AppTimer 并清空 MainThreadQueue；多窗单 session 关闭时批量 cancel 仍待接。
+> **实现注记**（#134）：`TimerHandle` 已落地并支持 `cancel` / drop unregister；`AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求。真实窗口 close → session 销毁路由仍待接。
 
 ---
 
@@ -687,7 +687,7 @@ inspector_handle.update_view(|| inspector_panel_v2(data.get()));
 
 详见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153）与 [view_factory 生命周期](view-reactive.md#view_factory-生命周期)（#155–#156）。
 
-> **实现注记**：单窗 `AppHandle::update_view` / `set_root` 已导出，并经 `MainThreadQueue` 在主线程写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 `tick_effects` 后、layout/render 前至多 reconcile 一次。多窗 `window_id` 路由待接。
+> **实现注记**：`AppHandle::update_view` / `set_root` 已导出，并经 `AppRuntime` 按 `window_id` 投递到目标 `MainThreadQueue` 写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 `tick_effects` 后、layout/render 前至多 reconcile 一次。副窗 native loop 消费待接。
 
 ---
 

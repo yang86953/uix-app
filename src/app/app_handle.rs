@@ -7,7 +7,9 @@ use std::time::Duration;
 use crate::app::app_timer::TimerHandle;
 use crate::app::session_runtime::AppRuntime;
 use crate::app::shell::di::Container;
+use crate::app::window_config::WindowConfig;
 pub use crate::core::WindowId;
+use crate::core::{Errc, Error, Result};
 use crate::ui::view::{View, ViewAdapter, ViewNode};
 use crate::ui::AppState;
 
@@ -96,6 +98,23 @@ impl AppHandle {
         V: View + Send + 'static,
     {
         self.update_view(move || view.build());
+    }
+
+    pub fn open_window(&self, config: WindowConfig) -> Result<AppHandle> {
+        if !self.alive.load(Ordering::Acquire) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "cannot open a window from a closed AppHandle",
+            ));
+        }
+        let session = self.runtime.request_open_window(config);
+        Ok(Self::new(
+            session.window_id,
+            self.app_state.clone(),
+            self.runtime.clone(),
+            self.container.clone(),
+            session.alive,
+        ))
     }
 
     pub(crate) fn mark_closed(&self) {
