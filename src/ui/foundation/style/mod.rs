@@ -19,8 +19,6 @@ pub mod edge_insets;
 mod paint;
 mod variant;
 
-#[cfg(test)]
-mod tests;
 
 pub use paint::apply_style;
 pub use variant::{StyleSet, StyleState};
@@ -889,3 +887,7 @@ pub fn edge_insets_from_expr(v: impl Into<EdgeInsets>) -> EdgeInsets {
 pub fn uniform_insets(v: f32) -> EdgeInsets {
     EdgeInsets::uniform(v)
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/foundation/style.rs"]
+mod tests;

@@ -571,5 +571,6 @@ impl WidgetTree {
 }
 
 #[cfg(test)]
-#[path = "tree_core_tests.rs"]
+#[path = "../../../tests/ui/core/widget/tree_core.rs"]
 mod tests;
+
