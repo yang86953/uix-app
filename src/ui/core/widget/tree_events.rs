@@ -366,6 +366,32 @@ impl WidgetTree {
                     EventResult::NotHandled
                 }
             }
+            SystemEvent::ImeCompositionStart
+            | SystemEvent::ImeCompositionUpdate { .. }
+            | SystemEvent::ImeCompositionEnd { .. } => {
+                if let Some(t) = self.focused_widget {
+                    self.invalidate_paint(t);
+                    let result = self.dispatch_to(t, event);
+                    if result == EventResult::Handled {
+                        let semantic = match event {
+                            SystemEvent::ImeCompositionStart => {
+                                SemanticEvent::ime_composition_start(t)
+                            }
+                            SystemEvent::ImeCompositionUpdate { text } => {
+                                SemanticEvent::ime_composition_update(t, text.clone())
+                            }
+                            SystemEvent::ImeCompositionEnd { text } => {
+                                SemanticEvent::ime_composition_end(t, text.clone())
+                            }
+                            _ => unreachable!(),
+                        };
+                        let _ = self.dispatch_semantic(semantic);
+                    }
+                    result
+                } else {
+                    EventResult::NotHandled
+                }
+            }
             SystemEvent::Copy | SystemEvent::Cut | SystemEvent::Paste { .. } => {
                 if let Some(t) = self.focused_widget {
                     self.invalidate_paint(t);
