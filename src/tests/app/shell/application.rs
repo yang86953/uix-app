@@ -440,6 +440,36 @@ fn drain_secondary_window_frames_fires_window_timer() {
 }
 
 #[test]
+fn secondary_windows_next_deadline_reads_window_timers() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let child =
+        runtime.request_open_window(WindowConfig::new("Child", 320, 240, || label("child")));
+    let _timer = runtime.run_after(child.window_id, Duration::from_millis(10), || {});
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+
+    assert!(secondary_windows_next_deadline(&mut secondary_windows).is_some());
+}
+
+#[test]
 fn app_handle_resolves_builder_singletons_at_runtime() {
     let app = App::new().singleton("runtime-config".to_string());
     let handle = app.app_handle();

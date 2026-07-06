@@ -1,5 +1,5 @@
 use super::*;
-use crate::app::active_work_registry::ActiveWorkKind;
+use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
 use crate::app::app_timer::AppTimerQueue;
 use crate::app::map_ui_event;
 use crate::app::test_clock::TestClock;
@@ -107,6 +107,24 @@ fn window_session_preserves_assigned_window_id() {
     );
 
     assert_eq!(session.window_id(), WindowId::new(9));
+}
+
+#[test]
+fn external_deadline_keeps_loop_registered_active() {
+    let registry = ActiveWorkRegistry::new();
+    let now = Instant::now();
+
+    assert_eq!(
+        wait_loop_state(&registry, Some(now + Duration::from_millis(10))),
+        WindowLoopState::RegisteredActive
+    );
+    assert_eq!(
+        earliest_deadline(
+            Some(now + Duration::from_millis(30)),
+            Some(now + Duration::from_millis(10)),
+        ),
+        Some(now + Duration::from_millis(10))
+    );
 }
 
 #[test]

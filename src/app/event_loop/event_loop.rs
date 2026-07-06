@@ -18,7 +18,7 @@ use crate::ui::clipboard;
 use crate::ui::theme::{DynTokens, Theme};
 use crate::ui::{SystemEvent, WidgetCore, WidgetTree};
 use std::cell::{Cell, RefCell};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
@@ -71,6 +71,7 @@ where
         on_exit,
         |_| {},
         |_, _| {},
+        || None,
         on_frame,
     )
 }
@@ -150,12 +151,13 @@ where
         on_exit,
         |_| {},
         |_, _| {},
+        || None,
         on_frame,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, F>(
+pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, D, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
@@ -170,6 +172,7 @@ pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, F>
     on_exit: X,
     on_runtime_tasks: T,
     on_foreign_event: R,
+    next_external_deadline: D,
     on_frame: F,
 ) -> i32
 where
@@ -177,6 +180,7 @@ where
     X: Fn(&UiEvent) -> bool,
     T: FnMut(&mut dyn Platform),
     R: FnMut(&UiEvent, &mut dyn Platform),
+    D: FnMut() -> Option<Instant>,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
     run_window_session_loop_with_system_theme_and_clock(
@@ -195,6 +199,7 @@ where
         on_exit,
         on_runtime_tasks,
         on_foreign_event,
+        next_external_deadline,
         on_frame,
     )
 }
@@ -237,12 +242,13 @@ where
         on_exit,
         |_| {},
         |_, _| {},
+        || None,
         on_frame,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, F>(
+fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, D, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
@@ -258,6 +264,7 @@ fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, F>(
     on_exit: X,
     on_runtime_tasks: T,
     on_foreign_event: R,
+    next_external_deadline: D,
     on_frame: F,
 ) -> i32
 where
@@ -265,6 +272,7 @@ where
     X: Fn(&UiEvent) -> bool,
     T: FnMut(&mut dyn Platform),
     R: FnMut(&UiEvent, &mut dyn Platform),
+    D: FnMut() -> Option<Instant>,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
     let parts = session.parts_mut();
@@ -292,12 +300,13 @@ where
         on_exit,
         on_runtime_tasks,
         on_foreign_event,
+        next_external_deadline,
         on_frame,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_widget_loop_with_active_work<M, X, T, R, F>(
+fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
     engine: &mut dyn GraphicsEngine,
@@ -321,6 +330,7 @@ fn run_widget_loop_with_active_work<M, X, T, R, F>(
     on_exit: X,
     mut on_runtime_tasks: T,
     mut on_foreign_event: R,
+    mut next_external_deadline: D,
     on_frame: F,
 ) -> i32
 where
@@ -328,6 +338,7 @@ where
     X: Fn(&UiEvent) -> bool,
     T: FnMut(&mut dyn Platform),
     R: FnMut(&UiEvent, &mut dyn Platform),
+    D: FnMut() -> Option<Instant>,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
     let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
@@ -393,8 +404,18 @@ where
         } else if !main_thread_queue.is_empty() || *reconcile_pending {
             set_loop_state(&mut loop_state, WindowLoopState::Active);
         } else {
-            set_loop_state(&mut loop_state, wait_loop_state(active_work));
-            if !wait_for_event_or_registered_work(platform, active_work, clock.as_ref(), &collect) {
+            let external_deadline = next_external_deadline();
+            set_loop_state(
+                &mut loop_state,
+                wait_loop_state(active_work, external_deadline),
+            );
+            if !wait_for_event_or_registered_work(
+                platform,
+                active_work,
+                external_deadline,
+                clock.as_ref(),
+                &collect,
+            ) {
                 break;
             }
             platform.event_loop().poll_event(&collect);
@@ -630,7 +651,7 @@ where
             }
         }
 
-        let next_state = next_loop_state(tree, active_work);
+        let next_state = next_loop_state(tree, active_work, next_external_deadline());
         set_loop_state(&mut loop_state, next_state);
     }
 
@@ -648,10 +669,11 @@ fn record_layout(metrics: Option<&Cell<RenderMetrics>>) {
 fn wait_for_event_or_registered_work(
     platform: &mut dyn Platform,
     active_work: &ActiveWorkRegistry,
+    external_deadline: Option<Instant>,
     clock: &dyn AppClock,
     callback: &dyn Fn(&UiEvent) -> bool,
 ) -> bool {
-    match active_work.next_deadline() {
+    match earliest_deadline(active_work.next_deadline(), external_deadline) {
         Some(deadline) => {
             let now = clock.now();
             if deadline <= now {
@@ -663,6 +685,14 @@ fn wait_for_event_or_registered_work(
             }
         }
         None => platform.event_loop().wait_event(callback),
+    }
+}
+
+fn earliest_deadline(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
+        (None, None) => None,
     }
 }
 
@@ -704,19 +734,26 @@ fn sync_animation_deadline(
     }
 }
 
-fn wait_loop_state(active_work: &ActiveWorkRegistry) -> WindowLoopState {
-    if !active_work.is_empty() {
+fn wait_loop_state(
+    active_work: &ActiveWorkRegistry,
+    external_deadline: Option<Instant>,
+) -> WindowLoopState {
+    if !active_work.is_empty() || external_deadline.is_some() {
         WindowLoopState::RegisteredActive
     } else {
         WindowLoopState::DeepIdle
     }
 }
 
-fn next_loop_state(tree: &WidgetTree, active_work: &ActiveWorkRegistry) -> WindowLoopState {
+fn next_loop_state(
+    tree: &WidgetTree,
+    active_work: &ActiveWorkRegistry,
+    external_deadline: Option<Instant>,
+) -> WindowLoopState {
     if tree.has_render_work() || has_layout_work(tree) {
         WindowLoopState::Active
     } else {
-        wait_loop_state(active_work)
+        wait_loop_state(active_work, external_deadline)
     }
 }
 

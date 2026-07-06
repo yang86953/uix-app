@@ -280,6 +280,14 @@ impl SecondaryWindowSession {
         active_frame || need_render
     }
 
+    fn next_deadline(&mut self) -> Option<Instant> {
+        let parts = self.session.parts_mut();
+        parts
+            .active_work
+            .sync_app_timers(parts.app_timers.deadlines());
+        parts.active_work.next_deadline()
+    }
+
     fn close(self) {
         self.handle.mark_closed();
     }
@@ -680,6 +688,7 @@ impl App {
                     event,
                 );
             },
+            || secondary_windows_next_deadline(&mut secondary_windows.borrow_mut()),
             |_, _, _| {},
         );
 
@@ -746,6 +755,15 @@ fn drain_secondary_window_frames(
         );
     }
     drained
+}
+
+fn secondary_windows_next_deadline(
+    secondary_windows: &mut [SecondaryWindowSession],
+) -> Option<Instant> {
+    secondary_windows
+        .iter_mut()
+        .filter_map(SecondaryWindowSession::next_deadline)
+        .min()
 }
 
 fn dispatch_secondary_window_event(
