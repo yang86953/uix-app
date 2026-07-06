@@ -647,7 +647,7 @@ App::new()
 
 **禁止**在 `run()` 返回后再调用 Timer / `post_to_ui`（主循环已结束）。
 
-> **实现注记**：单窗 `.on_start(AppHandle)` 与 `AppHandle` / `WindowId` 已导出；多窗每窗注入待接。
+> **实现注记**：单窗 `.on_start(AppHandle)` 与 `AppHandle` / `WindowId` 已导出；`AppHandle::resolve<T: Clone>()` 可读取运行期 DI 单例 clone；多窗每窗注入待接。
 
 > **实现注记**（#134）：`TimerHandle` 已落地并支持 `cancel` / drop unregister；单窗 `App::run()` 结束会关闭 handle、cancel AppTimer 并清空 MainThreadQueue；多窗单 session 关闭时批量 cancel 仍待接。
 
@@ -711,9 +711,9 @@ Container { singletons: HashMap<TypeId, Box<dyn Any + Send>> }
 
 API：`singleton<T>()`、`resolve<T>()`、`resolve_mut<T>()`、`has<T>()`、`remove<T>()`。
 
-用途：App 级服务注册（Settings、自定义 repo 等）。**不参与 UI 热路径**；由业务在 builder 阶段自行 `resolve`。
+用途：App 级服务注册（Settings、自定义 repo 等）。**不参与 UI 热路径**；启动前可由业务在 builder 阶段自行 `resolve`，运行中可通过注入的 `AppHandle` resolve clone。
 
-> **实现注记**：`Container` 尚未注入 `run_widget_loop` / 事件循环；主循环内不可 `resolve`，DI 仅限启动与 CLI 分派阶段。
+> **实现注记**：`Container` 已随单窗 `AppHandle` 注入运行期；`AppHandle::resolve<T: Clone>()` 可读取 builder `.singleton()` 与 `.settings()` 注册的单例 clone。组件 layout/render/event 热路径仍不主动 resolve；多窗按 window handle 注入仍待 `open_window` 接线。
 
 ---
 

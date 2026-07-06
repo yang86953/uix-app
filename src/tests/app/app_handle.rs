@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::main_thread_queue::MainThreadContext;
+use crate::app::Container;
 use crate::ui::view::combinators::label;
 use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::Label;
@@ -20,18 +21,27 @@ fn drain_with_empty_context(
     (ran, pending_root, reconcile_pending)
 }
 
+fn new_test_handle(
+    timers: AppTimerQueue,
+    queue: MainThreadQueue,
+    alive: Arc<AtomicBool>,
+) -> AppHandle {
+    AppHandle::new(
+        WindowId::root(),
+        AppState::new(),
+        timers,
+        queue,
+        Container::new(),
+        alive,
+    )
+}
+
 #[test]
 fn app_handle_post_to_ui_enqueues_while_alive() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();
     let alive = Arc::new(AtomicBool::new(true));
-    let handle = AppHandle::new(
-        WindowId::root(),
-        AppState::new(),
-        timers,
-        queue.clone(),
-        alive,
-    );
+    let handle = new_test_handle(timers, queue.clone(), alive);
 
     handle.post_to_ui(|| {});
 
@@ -43,13 +53,7 @@ fn app_handle_post_to_ui_drops_after_close() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();
     let alive = Arc::new(AtomicBool::new(true));
-    let handle = AppHandle::new(
-        WindowId::root(),
-        AppState::new(),
-        timers,
-        queue.clone(),
-        alive,
-    );
+    let handle = new_test_handle(timers, queue.clone(), alive);
 
     handle.mark_closed();
     handle.post_to_ui(|| {});
@@ -62,13 +66,7 @@ fn app_handle_post_to_ui_can_be_sent_from_background_thread() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();
     let alive = Arc::new(AtomicBool::new(true));
-    let handle = AppHandle::new(
-        WindowId::root(),
-        AppState::new(),
-        timers,
-        queue.clone(),
-        alive,
-    );
+    let handle = new_test_handle(timers, queue.clone(), alive);
     let ran = Arc::new(AtomicUsize::new(0));
 
     let thread = std::thread::spawn({
@@ -92,13 +90,7 @@ fn app_handle_update_view_writes_pending_root_while_alive() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();
     let alive = Arc::new(AtomicBool::new(true));
-    let handle = AppHandle::new(
-        WindowId::root(),
-        AppState::new(),
-        timers,
-        queue.clone(),
-        alive,
-    );
+    let handle = new_test_handle(timers, queue.clone(), alive);
 
     handle.update_view(|| label("updated"));
     let (ran, pending_root, reconcile_pending) = drain_with_empty_context(&queue);
@@ -121,13 +113,7 @@ fn app_handle_update_view_drops_after_close() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();
     let alive = Arc::new(AtomicBool::new(true));
-    let handle = AppHandle::new(
-        WindowId::root(),
-        AppState::new(),
-        timers,
-        queue.clone(),
-        alive,
-    );
+    let handle = new_test_handle(timers, queue.clone(), alive);
 
     handle.mark_closed();
     handle.update_view(|| label("ignored"));
@@ -140,13 +126,7 @@ fn app_handle_run_after_registers_timer_while_alive() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();
     let alive = Arc::new(AtomicBool::new(true));
-    let handle = AppHandle::new(
-        WindowId::root(),
-        AppState::new(),
-        timers.clone(),
-        queue,
-        alive,
-    );
+    let handle = new_test_handle(timers.clone(), queue, alive);
 
     let _timer = handle.run_after(Duration::from_secs(1), || {});
 
@@ -158,13 +138,7 @@ fn app_handle_run_after_returns_inert_timer_after_close() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();
     let alive = Arc::new(AtomicBool::new(false));
-    let handle = AppHandle::new(
-        WindowId::root(),
-        AppState::new(),
-        timers.clone(),
-        queue,
-        alive,
-    );
+    let handle = new_test_handle(timers.clone(), queue, alive);
 
     let timer = handle.run_after(Duration::from_secs(1), || {});
     timer.cancel();

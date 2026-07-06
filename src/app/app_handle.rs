@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::main_thread_queue::MainThreadQueue;
+use crate::app::shell::di::Container;
 use crate::ui::view::{View, ViewAdapter, ViewNode};
 use crate::ui::AppState;
 
@@ -24,6 +25,7 @@ pub struct AppHandle {
     app_state: AppState,
     app_timers: AppTimerQueue,
     main_thread_queue: MainThreadQueue,
+    container: Container,
     alive: Arc<AtomicBool>,
 }
 
@@ -33,6 +35,7 @@ impl AppHandle {
         app_state: AppState,
         app_timers: AppTimerQueue,
         main_thread_queue: MainThreadQueue,
+        container: Container,
         alive: Arc<AtomicBool>,
     ) -> Self {
         Self {
@@ -40,6 +43,7 @@ impl AppHandle {
             app_state,
             app_timers,
             main_thread_queue,
+            container,
             alive,
         }
     }
@@ -50,6 +54,10 @@ impl AppHandle {
 
     pub fn app_state(&self) -> AppState {
         self.app_state.clone()
+    }
+
+    pub fn resolve<T: 'static + Send + Clone>(&self) -> Option<T> {
+        self.container.resolve_clone::<T>()
     }
 
     pub fn run_after<F>(&self, delay: Duration, f: F) -> TimerHandle
