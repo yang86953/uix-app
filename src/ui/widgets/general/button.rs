@@ -135,6 +135,22 @@ impl Button {
         self
     }
 
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn set_text(&mut self, text: impl Into<String>) {
+        self.text = text.into();
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.text = next.text;
+        self.disabled = next.disabled;
+        self.block = next.block;
+        self.style_set = next.style_set;
+        self.style = next.style;
+    }
+
     pub fn primary(self) -> Self {
         self.style_set(StyleSet::button_primary())
     }

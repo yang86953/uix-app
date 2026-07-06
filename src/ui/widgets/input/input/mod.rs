@@ -340,6 +340,24 @@ impl Input {
     pub fn set_focused(&mut self, v: bool) {
         self.focused = v;
     }
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        if self.value != next.value {
+            self.set_value(next.value);
+        }
+        self.placeholder = next.placeholder;
+        self.input_size = next.input_size;
+        self.disabled = next.disabled;
+        self.prefix = next.prefix;
+        self.suffix = next.suffix;
+        self.addon_before = next.addon_before;
+        self.addon_after = next.addon_after;
+        self.password = next.password;
+        self.password_visible = next.password_visible;
+        self.clearable = next.clearable;
+        self.search = next.search;
+        self.textarea = next.textarea;
+        self.textarea_rows = next.textarea_rows;
+    }
     pub fn prefix(mut self, s: &str) -> Self {
         self.prefix = s.to_string();
         self

@@ -28,6 +28,9 @@ impl WidgetComponent for SpyWidget {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
     fn capabilities(&self) -> WidgetCapabilities {
         WidgetCapabilities::from_bits(
             WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT,
@@ -73,6 +76,9 @@ impl WidgetComponent for PassThroughContainer {
         self
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn capabilities(&self) -> WidgetCapabilities {
@@ -125,6 +131,9 @@ impl WidgetComponent for ClipContainer {
         self
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn capabilities(&self) -> WidgetCapabilities {
@@ -206,6 +215,9 @@ impl WidgetComponent for LifecycleProbe {
         self
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
         self
     }
     fn capabilities(&self) -> WidgetCapabilities {

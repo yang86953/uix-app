@@ -31,6 +31,9 @@ macro_rules! impl_widget_component {
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
                 self
             }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+                self
+            }
             fn capabilities(&self) -> $crate::ui::traits::WidgetCapabilities {
                 let mut caps = $crate::ui::traits::WidgetCapabilities::new();
                 $(
@@ -239,6 +242,7 @@ macro_rules! define_widget {
         impl $crate::ui::traits::WidgetComponent for $name {
             fn as_any(&self) -> &dyn std::any::Any { self }
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }
             fn capabilities(&self) -> $crate::ui::traits::WidgetCapabilities {
                 let mut c = $crate::ui::traits::WidgetCapabilities::new();
                 $(

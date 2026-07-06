@@ -40,6 +40,10 @@ impl View for ViewNode {
 }
 
 impl ViewNode {
+    pub(crate) fn widget_type_id(&self) -> std::any::TypeId {
+        self.widget.as_any().type_id()
+    }
+
     pub fn leaf(widget: impl WidgetComponent + 'static) -> Self {
         Self {
             widget: Box::new(widget),
