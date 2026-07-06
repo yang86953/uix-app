@@ -284,7 +284,7 @@ flowchart TB
 | AnimationRegistry | Registry tick + `tree.update(dt)` | `WidgetAnimation` 能力、`tree.update(dt)` 窄 Paint 标脏、单窗下一帧 deadline 与 `Spin` 内置动画源已接入；其他内置组件动画源待接 | [component · 动画](systems/component.md#动画) · [rendering · 动画帧](systems/rendering.md#动画帧) |
 | Composite scroll | `Invalidation::Composite` + scroll_region memmove | Wheel → ScrollView 已写 Composite exposed strip 并接 `scroll_region` memmove；其他滚动来源待逐项接入 | [rendering · 管线与失效](systems/rendering.md#管线与失效) |
 | App 内置 Settings load（opt-in） | builder 配置 path 后 `run()` 前代调 `load()` | `App::settings(path)` 已接；`run()` 前加载一次并注册 `SettingsService` 到 App DI；默认不 load/save | [data · App 集成](systems/data.md#app-集成) |
-| 主循环 DI | Container 可在运行时 resolve | 未注入 `run_widget_loop`；DI 限启动 / CLI | [application · DI](systems/application.md#cli-与-di) |
+| 主循环 DI | Container 可在运行时 resolve | `AppHandle::resolve<T: Clone>()` 已可读取 builder / settings 注册的单例 clone；组件热路径仍不 resolve | [application · DI](systems/application.md#cli-与-di) |
 | 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 `tick_effects`；RegisteredActive deadline wait 骨架已接；多窗待接 | [demand-driven · 主循环](systems/demand-driven.md#主循环状态机) · [#106](decisions.md#d106) [#117](decisions.md#d117) |
 | ActiveWorkRegistry | register / wait_until / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due`、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、Animation 下一帧 deadline 与 IME composition session 无 deadline 托管 | [#115](decisions.md#d115) |
 | 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；多窗路由未接 | [#116](decisions.md#d116) |

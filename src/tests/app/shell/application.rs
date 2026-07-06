@@ -106,6 +106,42 @@ fn app_handle_uses_root_window_and_shared_queues() {
 }
 
 #[test]
+fn app_handle_resolves_builder_singletons_at_runtime() {
+    let app = App::new().singleton("runtime-config".to_string());
+    let handle = app.app_handle();
+
+    assert_eq!(
+        handle.resolve::<String>(),
+        Some("runtime-config".to_string())
+    );
+}
+
+#[test]
+fn app_handle_resolves_loaded_settings_service_at_runtime() {
+    let path = std::env::temp_dir().join(format!(
+        "uix-settings-{}-{}.json",
+        std::process::id(),
+        "app-handle-resolve"
+    ));
+    std::fs::write(&path, r##"{"theme_mode":"dark"}"##).unwrap();
+
+    let mut app = App::new().settings(path.to_string_lossy().to_string());
+
+    assert!(app.load_configured_settings());
+    let handle = app.app_handle();
+    let settings = handle
+        .resolve::<SettingsService>()
+        .expect("settings service");
+    assert_eq!(
+        settings.loaded_path(),
+        Some(path.to_string_lossy().as_ref())
+    );
+    assert_eq!(settings.get("theme_mode"), Some("dark"));
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn map_theme_changed_event() {
     let event = UiEvent::new(
         UiEventType::ThemeChanged,

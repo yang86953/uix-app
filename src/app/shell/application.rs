@@ -184,6 +184,7 @@ impl App {
             self.app_state.clone(),
             self.app_timers.clone(),
             self.main_thread_queue.clone(),
+            self.container.clone(),
             self.handle_alive.clone(),
         )
     }
