@@ -33,6 +33,7 @@ define_widget! {
         width: f32,
         round: bool,
         progress_type: ProgressType,
+        indeterminate_phase: f32,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -60,9 +61,17 @@ define_widget! {
             ctx.fill_circle(cx, cy, r, track_c);
             ctx.fill_circle(cx, cy, r - track_width, ctx.tokens().color_bg_container());
 
-            if let ProgressMode::Determinate(p) = self.mode {
-                let start_angle = -std::f32::consts::FRAC_PI_2;
-                let end_angle = start_angle + std::f32::consts::TAU * p;
+            let (start_angle, end_angle) = match self.mode {
+                ProgressMode::Determinate(p) => {
+                    let start_angle = -std::f32::consts::FRAC_PI_2;
+                    (start_angle, start_angle + std::f32::consts::TAU * p)
+                }
+                ProgressMode::Indeterminate => {
+                    let start_angle = self.indeterminate_phase * std::f32::consts::TAU;
+                    (start_angle, start_angle + std::f32::consts::TAU * 0.25)
+                }
+            };
+            if end_angle > start_angle {
                 let segments = 64;
                 for i in 0..segments {
                     let a1 = start_angle + (end_angle - start_angle) * i as f32 / segments as f32;
@@ -97,10 +106,29 @@ define_widget! {
             }
             ProgressMode::Indeterminate => {
                 let bar_w = frame.w * 0.3;
-                let bar_x = frame.x + (frame.w - bar_w) * 0.5;
+                let bar_x = frame.x + (frame.w - bar_w) * self.indeterminate_phase;
                 let bar_rect = Rect::new(bar_x, frame.y, bar_w, frame.h);
                 ctx.fill_rect(bar_rect, stroke_c, radius);
             }
+        }
+    }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !matches!(self.mode, ProgressMode::Indeterminate) {
+            return false;
+        }
+
+        self.indeterminate_phase = (self.indeterminate_phase
+            + dt as f32 * Self::INDETERMINATE_PHASE_SPEED)
+            .rem_euclid(1.0);
+        true
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if matches!(self.mode, ProgressMode::Indeterminate) {
+            frame
+        } else {
+            Rect::zero()
         }
     }
 }
@@ -112,6 +140,8 @@ impl Default for ProgressBar {
 }
 
 impl ProgressBar {
+    const INDETERMINATE_PHASE_SPEED: f32 = 0.75;
+
     pub fn new() -> Self {
         Self {
             progress: 0.0,
@@ -122,6 +152,7 @@ impl ProgressBar {
             width: 200.0,
             round: true,
             progress_type: ProgressType::Line,
+            indeterminate_phase: 0.0,
         }
     }
 
@@ -166,4 +197,12 @@ impl ProgressBar {
         self.progress_type = ProgressType::Circle;
         self
     }
+
+    pub fn animation_phase(&self) -> f32 {
+        self.indeterminate_phase
+    }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/feedback/progress.rs"]
+mod tests;
