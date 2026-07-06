@@ -81,7 +81,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** `run_app_loop`；UiEvent 按 **window_id** 路由。
 
-> **实现注记**：当前单窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`。多窗编排仍待接。
+> **实现注记**：当前单窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait 与三态写回已接；外部线程投递后的真实 OS wake 仍待接。
 
 ### 单帧顺序（Active 态，设计 #106、#137）
 
@@ -136,7 +136,7 @@ flowchart TD
 
 设计（#106、#117）：**DeepIdle** 下 blocking `wait_event`（无 timeout）；**RegisteredActive** 由 `ActiveWorkRegistry::next_deadline` → `wait_until` 唤醒；**Active** 在事件 drain 后若无 pending 则回 DeepIdle。详见 [demand-driven · 唤醒源白名单](demand-driven.md#唤醒源白名单) · [ActiveWorkRegistry](demand-driven.md#activeworkregistry)。
 
-> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已接入；其他内置组件动画源与多窗调度仍待接。
+> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已接入；副窗 deadline wait 与三态写回已接；其他内置组件动画源与外部线程投递后的真实 OS wake 仍待接。
 
 | 状态 | 设计 | 当前实现 |
 |------|------|----------|
