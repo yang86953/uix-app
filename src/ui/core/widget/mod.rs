@@ -102,6 +102,7 @@ pub struct BoxedWidget {
     id: WidgetId,
     parent: Option<WidgetId>,
     children: Vec<WidgetId>,
+    key: Option<Box<str>>,
     frame: Rect,
     visible: bool,
     attached: bool,
@@ -127,6 +128,7 @@ impl BoxedWidget {
             id: 0,
             parent: None,
             children: Vec::new(),
+            key: None,
             frame: Rect::zero(),
             visible: true,
             attached: false,
@@ -145,8 +147,21 @@ impl BoxedWidget {
     pub fn component_mut(&mut self) -> &mut dyn WidgetComponent {
         &mut *self.component
     }
+    pub(crate) fn replace_component(&mut self, mut component: Box<dyn WidgetComponent>) {
+        if let Some(lifecycle) = component.as_lifecycle_mut() {
+            lifecycle.on_init();
+        }
+        self.caps = component.capabilities();
+        self.component = component;
+    }
     pub fn capabilities(&self) -> WidgetCapabilities {
         self.caps
+    }
+    pub fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+    pub(crate) fn set_key(&mut self, key: Option<Box<str>>) {
+        self.key = key;
     }
 
     pub fn as_render(&self) -> Option<&dyn WidgetRender> {

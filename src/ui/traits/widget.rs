@@ -60,6 +60,7 @@ impl WidgetCapabilities {
 pub trait WidgetComponent: 'static {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
     /// 返回此 widget 实现了哪些能力。
     fn capabilities(&self) -> WidgetCapabilities;
     /// 返回当前 widget 的内部可见性。

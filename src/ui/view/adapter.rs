@@ -10,8 +10,10 @@ use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
 use crate::ui::view::{View, ViewNode};
-use crate::ui::widgets::{Button, Container, Grid, Label};
-use crate::ui::{WidgetNode, WidgetTree};
+use crate::ui::widgets::{Button, Container, Grid, Input, Label};
+use crate::ui::{WidgetCore, WidgetId, WidgetNode, WidgetTree};
+use std::any::TypeId;
+use std::collections::{HashMap, HashSet};
 
 /// View tree adapter.
 pub struct ViewAdapter;
@@ -38,6 +40,25 @@ impl ViewAdapter {
         tree.bind_orphan_pending_states();
         tree.bind_pending_effects();
         tree
+    }
+
+    /// Reconciles a new View tree into an existing WidgetTree.
+    pub fn reconcile(tree: &mut WidgetTree, view: impl View) {
+        Self::reconcile_nodes(tree, Self::capture_view(view));
+    }
+
+    /// Reconciles an already captured ViewNode tree into an existing WidgetTree.
+    pub fn reconcile_nodes(tree: &mut WidgetTree, root: ViewNode) {
+        match tree.root_id() {
+            Some(root_id) if Self::can_reuse(tree, root_id, &root) => {
+                Self::reconcile_existing(tree, root_id, root);
+            }
+            _ => {
+                tree.build(Self::expand(root));
+            }
+        }
+        tree.bind_orphan_pending_states();
+        tree.bind_pending_effects();
     }
 
     /// Expands a ViewNode recursively into a WidgetNode.
@@ -96,6 +117,176 @@ impl ViewAdapter {
         }
 
         widget
+    }
+
+    fn can_reuse(tree: &WidgetTree, id: WidgetId, node: &ViewNode) -> bool {
+        tree.get(id)
+            .is_some_and(|current| current.component().as_any().type_id() == node.widget_type_id())
+    }
+
+    fn reconcile_existing(tree: &mut WidgetTree, id: WidgetId, node: ViewNode) {
+        let ViewNode {
+            widget,
+            children,
+            style,
+            z_index,
+            key,
+            handlers,
+        } = node;
+        let widget = Self::apply_style(widget, &style);
+        Self::patch_widget(tree, id, widget);
+
+        if let Some(current) = tree.get_mut(id) {
+            current.set_key(key.map(Into::into));
+            if current.z_index() != z_index {
+                current.set_z_index(z_index);
+            }
+        }
+
+        tree.handler_table().clear_component(id);
+        for handler in handlers {
+            tree.handler_table().register(id, handler);
+        }
+
+        tree.invalidate_paint(id);
+        tree.push_layout_invalidation(id);
+        tree.propagate_layout_invalidation(id);
+        Self::reconcile_children(tree, id, children);
+    }
+
+    fn patch_widget(tree: &mut WidgetTree, id: WidgetId, widget: Box<dyn WidgetComponent>) {
+        let Some(current) = tree.get_mut(id) else {
+            return;
+        };
+
+        let next_type = widget.as_any().type_id();
+        if current.component().as_any().type_id() != next_type {
+            current.replace_component(widget);
+            return;
+        }
+
+        if next_type == TypeId::of::<Container>() {
+            if let Some(next) = widget.as_any().downcast_ref::<Container>() {
+                if let Some(existing) = current
+                    .component_mut()
+                    .as_any_mut()
+                    .downcast_mut::<Container>()
+                {
+                    existing.style = next.style.clone();
+                    return;
+                }
+            }
+            current.replace_component(widget);
+            return;
+        }
+
+        if next_type == TypeId::of::<Label>() {
+            let Ok(next) = widget.into_any().downcast::<Label>() else {
+                return;
+            };
+            if let Some(existing) = current.component_mut().as_any_mut().downcast_mut::<Label>() {
+                existing.sync_from(*next);
+            }
+            return;
+        }
+
+        if next_type == TypeId::of::<Button>() {
+            let Ok(next) = widget.into_any().downcast::<Button>() else {
+                return;
+            };
+            if let Some(existing) = current
+                .component_mut()
+                .as_any_mut()
+                .downcast_mut::<Button>()
+            {
+                existing.sync_from(*next);
+            }
+            return;
+        }
+
+        if next_type == TypeId::of::<Input>() {
+            let Ok(next) = widget.into_any().downcast::<Input>() else {
+                return;
+            };
+            if let Some(existing) = current.component_mut().as_any_mut().downcast_mut::<Input>() {
+                existing.sync_from(*next);
+            }
+            return;
+        }
+
+        if next_type == TypeId::of::<Grid>() {
+            let Ok(next) = widget.into_any().downcast::<Grid>() else {
+                return;
+            };
+            current.replace_component(next);
+            return;
+        }
+
+        current.replace_component(widget);
+    }
+
+    fn reconcile_children(tree: &mut WidgetTree, parent_id: WidgetId, children: Vec<ViewNode>) {
+        let old_children = tree
+            .get(parent_id)
+            .map(|node| node.children().to_vec())
+            .unwrap_or_default();
+        let mut old_by_key: HashMap<String, WidgetId> = HashMap::new();
+        for &child_id in &old_children {
+            if let Some(key) = tree.get(child_id).and_then(|node| node.key()) {
+                old_by_key.insert(key.to_string(), child_id);
+            }
+        }
+
+        let mut used_old = HashSet::new();
+        let mut new_order = Vec::with_capacity(children.len());
+
+        for (index, child) in children.into_iter().enumerate() {
+            let candidate = child
+                .key
+                .as_ref()
+                .and_then(|key| old_by_key.get(key).copied())
+                .filter(|id| !used_old.contains(id))
+                .or_else(|| {
+                    if child.key.is_some() {
+                        return None;
+                    }
+                    old_children
+                        .get(index)
+                        .copied()
+                        .filter(|id| !used_old.contains(id))
+                        .filter(|id| tree.get(*id).is_some_and(|node| node.key().is_none()))
+                });
+
+            let child_id = if let Some(child_id) = candidate {
+                used_old.insert(child_id);
+                if Self::can_reuse(tree, child_id, &child) {
+                    Self::reconcile_existing(tree, child_id, child);
+                    child_id
+                } else {
+                    tree.remove(child_id);
+                    tree.build_child_node(parent_id, Self::expand(child))
+                }
+            } else {
+                tree.build_child_node(parent_id, Self::expand(child))
+            };
+            new_order.push(child_id);
+        }
+
+        for child_id in old_children {
+            if !used_old.contains(&child_id) && tree.get(child_id).is_some() {
+                tree.remove(child_id);
+            }
+        }
+
+        let order_changed = tree
+            .get(parent_id)
+            .is_some_and(|parent| parent.children() != new_order.as_slice());
+        if order_changed {
+            if let Some(parent) = tree.get_mut(parent_id) {
+                *parent.children_mut() = new_order;
+            }
+            tree.tree_version += 1;
+        }
     }
 }
 
@@ -196,6 +387,105 @@ mod tests {
         assert_eq!(second.x, 60.0);
         assert_eq!(second.y, 0.0);
         assert_eq!(second.h, 40.0);
+    }
+
+    #[test]
+    fn reconcile_reuses_keyed_children_and_updates_label_text() {
+        use crate::ui::view::{column, label};
+        use crate::ui::widgets::Label;
+
+        let mut tree =
+            ViewAdapter::build_nodes(column(vec![label("A").key("a"), label("B").key("b")]));
+        let root_id = tree.root_id().expect("root should exist");
+        let old_children = tree.get(root_id).unwrap().children().to_vec();
+
+        ViewAdapter::reconcile_nodes(
+            &mut tree,
+            column(vec![label("B2").key("b"), label("A2").key("a")]),
+        );
+
+        let new_children = tree.get(root_id).unwrap().children().to_vec();
+        assert_eq!(new_children, vec![old_children[1], old_children[0]]);
+        let first = tree
+            .get(new_children[0])
+            .unwrap()
+            .component()
+            .as_any()
+            .downcast_ref::<Label>()
+            .unwrap();
+        let second = tree
+            .get(new_children[1])
+            .unwrap()
+            .component()
+            .as_any()
+            .downcast_ref::<Label>()
+            .unwrap();
+        assert_eq!(first.text(), "B2");
+        assert_eq!(second.text(), "A2");
+    }
+
+    #[test]
+    fn reconcile_reregisters_root_handlers() {
+        use crate::core::{Point, Rect};
+        use crate::native::traits::input::{KeyMod, MouseButton};
+        use crate::ui::view::button;
+        use crate::ui::SystemEvent;
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let old_hits = Rc::new(Cell::new(0));
+        let new_hits = Rc::new(Cell::new(0));
+        let old_for_handler = old_hits.clone();
+        let new_for_handler = new_hits.clone();
+
+        let mut tree = ViewAdapter::build(button("Old").on_click(move || {
+            old_for_handler.set(old_for_handler.get() + 1);
+        }));
+        let root_id = tree.root_id().expect("button root should exist");
+        tree.get_mut(root_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 80.0, 32.0));
+
+        let pos = Point::new(4.0, 4.0);
+        let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+        let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+
+        ViewAdapter::reconcile(
+            &mut tree,
+            button("New").on_click(move || {
+                new_for_handler.set(new_for_handler.get() + 1);
+            }),
+        );
+
+        let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+        let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+            pos,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+
+        assert_eq!(old_hits.get(), 1);
+        assert_eq!(new_hits.get(), 1);
+        let button = tree
+            .get(root_id)
+            .unwrap()
+            .component()
+            .as_any()
+            .downcast_ref::<Button>()
+            .unwrap();
+        assert_eq!(button.text(), "New");
     }
 
     #[test]

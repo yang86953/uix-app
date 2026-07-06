@@ -222,6 +222,31 @@ impl Label {
         self
     }
 
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn set_text(&mut self, text: impl Into<String>) {
+        self.text = text.into();
+        self.glyph_xs.borrow_mut().clear();
+        self.line_info.borrow_mut().clear();
+        self.selection.set(None);
+        self.sel_anchor.set(0);
+        self.sel_dragging.set(false);
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        if self.text != next.text {
+            self.set_text(next.text);
+        }
+        self.font_size = next.font_size;
+        self.font_size_unit = next.font_size_unit;
+        self.color = next.color;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
+        self.style = next.style;
+    }
+
     pub fn color(mut self, c: crate::draw::Color) -> Self {
         self.color = Some(c);
         self

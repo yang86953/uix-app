@@ -445,6 +445,10 @@ impl WidgetTree {
         self.build_node(node, None)
     }
 
+    pub(crate) fn build_child_node(&mut self, parent_id: WidgetId, node: WidgetNode) -> WidgetId {
+        self.build_node(node, Some(parent_id))
+    }
+
     pub fn set_children(&mut self, parent_id: WidgetId, children: Vec<WidgetNode>) {
         let old_children: Vec<WidgetId> = self
             .get(parent_id)
@@ -464,7 +468,7 @@ impl WidgetTree {
             widget,
             children,
             z_index,
-            key: _,
+            key,
             tab_idx,
             handlers,
         } = node;
@@ -473,6 +477,7 @@ impl WidgetTree {
             None => self.set_root(widget),
         };
         if let Some(n) = self.get_mut(id) {
+            n.set_key(key);
             n.set_z_index(z_index);
             let ti = if tab_idx != 0 {
                 tab_idx
