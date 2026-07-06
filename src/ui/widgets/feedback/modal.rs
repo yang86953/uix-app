@@ -5,6 +5,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
+use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{EventResult, SystemEvent, WidgetCore, WidgetTree};
 
 define_widget! {
@@ -22,19 +23,22 @@ define_widget! {
         overlay: bool,
         last_win_w: Cell<f32>,
         last_win_h: Cell<f32>,
+        transition: TransitionPlayer,
+        closing: bool,
+        transition_dirty: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
         if self.overlay {
             Size::zero()
-        } else if self.visible {
+        } else if self.is_present() {
             Size::new(self.width, self.height)
         } else {
             Size::zero()
         }
     }
 
-    visible => (&self) -> bool { self.visible }
+    visible => (&self) -> bool { self.is_present() }
 
     hit_test_frame => (&self, actual_frame: Rect) -> Rect {
         if self.overlay {
@@ -45,7 +49,7 @@ define_widget! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        if !self.visible {
+        if !self.is_present() {
             return EventResult::NotHandled;
         }
 
@@ -76,7 +80,7 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        if !self.visible {
+        if !self.is_present() {
             return;
         }
 
@@ -107,10 +111,12 @@ define_widget! {
         } else {
             Rect::new(frame.x, frame.y, self.width, self.height)
         };
+        let dialog = self.apply_transition_to_dialog(dialog);
+        let overlay_alpha = (128.0 * self.transition_opacity()).round().clamp(0.0, 128.0) as u8;
 
         ctx.fill_rect(
             Rect::new(-2000.0, -2000.0, 4000.0, 4000.0),
-            Color::from_rgba(0, 0, 0, 128),
+            Color::from_rgba(0, 0, 0, overlay_alpha),
             None,
         );
 
@@ -138,7 +144,7 @@ define_widget! {
     }
 
     overlay_entry => (&self, id: crate::ui::WidgetId, _frame: Rect) -> Option<crate::ui::OverlayEntry> {
-        if self.visible && self.overlay {
+        if self.is_present() && self.overlay {
             Some(
                 crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Modal)
                     .bounds(Rect::new(-2000.0, -2000.0, 4000.0, 4000.0))
@@ -153,7 +159,7 @@ define_widget! {
     layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], tree: &WidgetTree)
         -> Vec<(crate::ui::WidgetId, Rect)>
     {
-        if children.is_empty() {
+        if !self.is_present() || children.is_empty() {
             return Vec::new();
         }
 
@@ -182,6 +188,7 @@ define_widget! {
         } else {
             Rect::new(frame.x, frame.y, self.width, self.height)
         };
+        let dialog = self.apply_transition_to_dialog(dialog);
 
         let title_h = 56.0;
         let footer_h = if self.footer_visible { 56.0 } else { 0.0 };
@@ -203,6 +210,31 @@ define_widget! {
             })
             .collect()
     }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.is_present() || self.transition.finished {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        self.transition.update(dt);
+        self.transition_dirty = true;
+
+        if self.closing && self.transition.finished {
+            self.visible = false;
+            self.closing = false;
+        }
+
+        self.is_present() && !self.transition.finished
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.transition_dirty {
+            frame
+        } else {
+            Rect::zero()
+        }
+    }
 }
 
 impl Modal {
@@ -220,16 +252,19 @@ impl Modal {
             overlay: false,
             last_win_w: Cell::new(0.0),
             last_win_h: Cell::new(0.0),
+            transition: TransitionPlayer::new(presets::modal_enter()),
+            closing: false,
+            transition_dirty: false,
         }
     }
 
     pub fn visible(mut self, v: bool) -> Self {
-        self.visible = v;
+        self.set_visible(v);
         self
     }
 
     pub fn show(mut self) -> Self {
-        self.visible = true;
+        self.open();
         self
     }
 
@@ -288,15 +323,31 @@ impl Modal {
     }
 
     pub fn set_visible(&mut self, v: bool) {
-        self.visible = v;
+        if v {
+            self.open();
+        } else {
+            self.close();
+        }
     }
 
     pub fn open(&mut self) {
         self.visible = true;
+        self.closing = false;
+        self.transition = TransitionPlayer::new(presets::modal_enter());
+        self.transition_dirty = true;
     }
 
     pub fn close(&mut self) {
+        if !self.is_present() {
+            self.visible = false;
+            self.closing = false;
+            self.transition_dirty = false;
+            return;
+        }
         self.visible = false;
+        self.closing = true;
+        self.transition = TransitionPlayer::new(presets::modal_exit());
+        self.transition_dirty = true;
     }
 
     pub fn confirm(&mut self) {
@@ -315,4 +366,28 @@ impl Modal {
             Rect::new(0.0, 0.0, self.width, self.height)
         }
     }
+
+    fn is_present(&self) -> bool {
+        self.visible || self.closing
+    }
+
+    fn transition_opacity(&self) -> f32 {
+        self.transition.opacity_progress.clamp(0.0, 1.0)
+    }
+
+    fn apply_transition_to_dialog(&self, rect: Rect) -> Rect {
+        let scale = self.transition.scale.clamp(0.0, 1.0);
+        let w = rect.w * scale;
+        let h = rect.h * scale;
+        Rect::new(
+            rect.x + (rect.w - w) * 0.5 + self.transition.offset.x,
+            rect.y + (rect.h - h) * 0.5 + self.transition.offset.y,
+            w,
+            h,
+        )
+    }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/feedback/modal.rs"]
+mod tests;

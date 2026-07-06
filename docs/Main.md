@@ -281,7 +281,7 @@ flowchart TB
 | 多窗口 | v1 多窗；共享 AppState + Theme | `run_gui` 仅单窗；native 已支持多窗 | [application · 多窗](systems/application.md#appstate--多窗--settings) · [#93](decisions.md#d93) |
 | Reconcile 热更新 | `reconcile` 增量更新 WidgetTree | 单窗主循环已接帧末 reconcile；稳定 handler signature 与 fingerprint→generation 路径已接；多窗路由与自动 handler capture 收集待接 | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) · [Reconciler](systems/view-reactive.md#reconciler) |
 | Manager 横切 | `WidgetManagers` 注入 WidgetTree | `WidgetTree` 已持有 per-tree `WidgetManagers`；`FocusManager` 已记录当前焦点与 Tab 顺序并驱动焦点导航；`InteractionManager` 已记录 hovered / pressed widget 并作为事件目标解析的优先状态源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset 并驱动基础 DragStart / DragMove / DragEnd 热路径；旧字段保留为兼容镜像；`state_for(id)` / `text_for(id)` override 会随节点移除清理 | [component · Manager](systems/component.md#manager-横切) |
-| AnimationRegistry | Registry tick + `tree.update(dt)` | `WidgetAnimation` 能力、`tree.update(dt)` 窄 Paint 标脏、单窗下一帧 deadline 与 `Spin` / `ProgressBar` indeterminate 内置动画源已接入；Modal / Drawer 等过渡动画源待接 | [component · 动画](systems/component.md#动画) · [rendering · 动画帧](systems/rendering.md#动画帧) |
+| AnimationRegistry | Registry tick + `tree.update(dt)` | `WidgetAnimation` 能力、`tree.update(dt)` 窄 Paint 标脏、单窗下一帧 deadline 与 `Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源已接入；其他过渡动画源待接 | [component · 动画](systems/component.md#动画) · [rendering · 动画帧](systems/rendering.md#动画帧) |
 | Composite scroll | `Invalidation::Composite` + scroll_region memmove | Wheel → ScrollView 已写 Composite exposed strip 并接 `scroll_region` memmove；其他滚动来源待逐项接入 | [rendering · 管线与失效](systems/rendering.md#管线与失效) |
 | App 内置 Settings load（opt-in） | builder 配置 path 后 `run()` 前代调 `load()` | `App::settings(path)` 已接；`run()` 前加载一次并注册 `SettingsService` 到 App DI；默认不 load/save | [data · App 集成](systems/data.md#app-集成) |
 | 主循环 DI | Container 可在运行时 resolve | `AppHandle::resolve<T: Clone>()` 已可读取 builder / settings 注册的单例 clone；组件热路径仍不 resolve | [application · DI](systems/application.md#cli-与-di) |
@@ -291,7 +291,7 @@ flowchart TB
 | 帧内 reconcile | 帧末一次 + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入；同帧多次更新取最后一次并在 layout 前 reconcile；多窗路由待接 | [#118](decisions.md#d118) |
 | 每窗独立零闲置 | 每窗独立三态 | 单窗 WindowSession 已写回三态；多窗独立状态未接 | [#110](decisions.md#d110) |
 | PicturePolicy 自动推断 | 元数据+信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 首批 Eligible，默认 Never | [#122](decisions.md#d122) [#129](decisions.md#d129) |
-| Registry 框架托管 | 内置/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate 内置动画源与 IME composition session 已托管；Modal / Drawer 等过渡动画源待接 | [#124](decisions.md#d124) |
+| Registry 框架托管 | 内置/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源与 IME composition session 已托管；其他过渡动画源待接 | [#124](decisions.md#d124) |
 | follow_system_theme | opt-in；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](decisions.md#d125) |
 | App Timer API | run_after / run_interval | `App` / 单窗 `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出并接入单窗 session；多窗路由待接 | [#132](decisions.md#d132) |
 | post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + 单窗 `AppHandle::post_to_ui` + MainThreadQueue 已接；阻塞等待 wake 与多窗路由待接 | [#133](decisions.md#d133) |
@@ -304,7 +304,7 @@ flowchart TB
 | AppHandle | cloneable；运行中 Timer / post_to_ui | `AppHandle` / `WindowId` 已导出；运行中 Timer 与跨线程 `post_to_ui` 已接；多窗路由待接 | [#132](decisions.md#d132) [#133](decisions.md#d133) |
 | Handler 智能重绑 | handler 变才重注册 | 已按稳定 signature 跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 handler 保守 clear+register，待 #138/#142 自动作者化 | [#123](decisions.md#d123) [#135](decisions.md#d135) |
 | PointerMove 边界窄路径 | 框内不 hit_test | 已接：pointer_down_target/drag 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](decisions.md#d109) [#121](decisions.md#d121) |
-| Effect DeepIdle | 不 tick_effects | 单窗 loop 已门控到 Active 帧；动画续帧经 Registry deadline 唤醒，不回退固定探活；`Spin` / `ProgressBar` indeterminate 内置动画源已接，其他动画源待接 | #105 |
+| Effect DeepIdle | 不 tick_effects | 单窗 loop 已门控到 Active 帧；动画续帧经 Registry deadline 唤醒，不回退固定探活；`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源已接，其他动画源待接 | #105 |
 
 落地计划（分阶段路线图、P0 文件清单）→ [`roadmap.md`](roadmap.md)（#154 #157）。
 

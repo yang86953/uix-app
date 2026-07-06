@@ -3,6 +3,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
+use crate::ui::animation::{presets, SlideDirection, TransitionPlayer};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,10 +28,13 @@ define_widget! {
         mask: bool,
         footer_visible: bool,
         extra: String,
+        transition: TransitionPlayer,
+        closing: bool,
+        transition_dirty: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        if self.visible {
+        if self.is_present() {
             match self.placement {
                 DrawerPlacement::Right | DrawerPlacement::Left => Size::new(self.width, 600.0),
                 DrawerPlacement::Top | DrawerPlacement::Bottom => Size::new(400.0, self.height),
@@ -40,10 +44,10 @@ define_widget! {
         }
     }
 
-    visible => (&self) -> bool { self.visible }
+    visible => (&self) -> bool { self.is_present() }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        if !self.visible {
+        if !self.is_present() {
             return EventResult::NotHandled;
         }
 
@@ -82,14 +86,15 @@ define_widget! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
-        if !self.visible {
+        if !self.is_present() {
             return;
         }
 
+        let mask_alpha = (96.0 * self.transition_opacity()).round().clamp(0.0, 96.0) as u8;
         if self.mask {
             ctx.fill_rect(
                 Rect::new(-2000.0, -2000.0, 4000.0, 4000.0),
-                Color::from_rgba(0, 0, 0, 96),
+                Color::from_rgba(0, 0, 0, mask_alpha),
                 None,
             );
         }
@@ -104,7 +109,11 @@ define_widget! {
             DrawerPlacement::Right | DrawerPlacement::Left => (frame.x, frame.y, self.width, frame.h),
             DrawerPlacement::Top | DrawerPlacement::Bottom => (frame.x, frame.y, frame.w, self.height),
         };
-        let drawer_rect = Rect::new(drawer_x, drawer_y, drawer_w, drawer_h);
+        let drawer_rect = self.apply_transition_to_rect(Rect::new(drawer_x, drawer_y, drawer_w, drawer_h));
+        let drawer_x = drawer_rect.x;
+        let drawer_y = drawer_rect.y;
+        let drawer_w = drawer_rect.w;
+        let drawer_h = drawer_rect.h;
         let corner = match self.placement {
             DrawerPlacement::Right => Some(Radius { tl: r.tl, tr: 0.0, br: 0.0, bl: r.br }),
             DrawerPlacement::Left => Some(Radius { tl: 0.0, tr: r.tr, br: r.bl, bl: 0.0 }),
@@ -144,7 +153,7 @@ define_widget! {
     }
 
     overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
-        if !self.visible {
+        if !self.is_present() {
             return None;
         }
 
@@ -152,8 +161,12 @@ define_widget! {
             Rect::new(-2000.0, -2000.0, 4000.0, 4000.0)
         } else {
             match self.placement {
-                DrawerPlacement::Right | DrawerPlacement::Left => Rect::new(frame.x, frame.y, self.width, frame.h),
-                DrawerPlacement::Top | DrawerPlacement::Bottom => Rect::new(frame.x, frame.y, frame.w, self.height),
+                DrawerPlacement::Right | DrawerPlacement::Left => {
+                    self.apply_transition_to_rect(Rect::new(frame.x, frame.y, self.width, frame.h))
+                }
+                DrawerPlacement::Top | DrawerPlacement::Bottom => {
+                    self.apply_transition_to_rect(Rect::new(frame.x, frame.y, frame.w, self.height))
+                }
             }
         };
 
@@ -168,13 +181,18 @@ define_widget! {
     layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], _tree: &WidgetTree)
         -> Vec<(crate::ui::WidgetId, Rect)>
     {
-        if !self.visible || children.is_empty() {
+        if !self.is_present() || children.is_empty() {
             return Vec::new();
         }
         let (drawer_x, drawer_y, drawer_w, drawer_h) = match self.placement {
             DrawerPlacement::Right | DrawerPlacement::Left => (frame.x, frame.y, self.width, frame.h),
             DrawerPlacement::Top | DrawerPlacement::Bottom => (frame.x, frame.y, frame.w, self.height),
         };
+        let drawer_rect = self.apply_transition_to_rect(Rect::new(drawer_x, drawer_y, drawer_w, drawer_h));
+        let drawer_x = drawer_rect.x;
+        let drawer_y = drawer_rect.y;
+        let drawer_w = drawer_rect.w;
+        let drawer_h = drawer_rect.h;
         let footer_h = if self.footer_visible { 56.0 } else { 0.0 };
         let body_y = drawer_y + 56.0;
         let body_h = drawer_h - 56.0 - footer_h;
@@ -194,6 +212,31 @@ define_widget! {
             })
             .collect()
     }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.is_present() || self.transition.finished {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        self.transition.update(dt);
+        self.transition_dirty = true;
+
+        if self.closing && self.transition.finished {
+            self.visible = false;
+            self.closing = false;
+        }
+
+        self.is_present() && !self.transition.finished
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.transition_dirty {
+            frame
+        } else {
+            Rect::zero()
+        }
+    }
 }
 
 impl Drawer {
@@ -210,16 +253,21 @@ impl Drawer {
             mask: true,
             footer_visible: false,
             extra: String::new(),
+            transition: TransitionPlayer::new(presets::drawer_enter(Self::slide_direction_for(
+                DrawerPlacement::Right,
+            ))),
+            closing: false,
+            transition_dirty: false,
         }
     }
 
     pub fn visible(mut self, v: bool) -> Self {
-        self.visible = v;
+        self.set_visible(v);
         self
     }
 
     pub fn show(mut self) -> Self {
-        self.visible = true;
+        self.open();
         self
     }
 
@@ -250,6 +298,8 @@ impl Drawer {
 
     pub fn placement(mut self, p: DrawerPlacement) -> Self {
         self.placement = p;
+        self.transition =
+            TransitionPlayer::new(presets::drawer_enter(Self::slide_direction_for(p)));
         self
     }
 
@@ -284,13 +334,63 @@ impl Drawer {
 
     pub fn open(&mut self) {
         self.visible = true;
+        self.closing = false;
+        self.transition = TransitionPlayer::new(presets::drawer_enter(Self::slide_direction_for(
+            self.placement,
+        )));
+        self.transition_dirty = true;
     }
 
     pub fn close(&mut self) {
+        if !self.is_present() {
+            self.visible = false;
+            self.closing = false;
+            self.transition_dirty = false;
+            return;
+        }
         self.visible = false;
+        self.closing = true;
+        self.transition = TransitionPlayer::new(presets::drawer_exit(Self::slide_direction_for(
+            self.placement,
+        )));
+        self.transition_dirty = true;
     }
 
     pub fn set_visible(&mut self, v: bool) {
-        self.visible = v;
+        if v {
+            self.open();
+        } else {
+            self.close();
+        }
+    }
+
+    fn is_present(&self) -> bool {
+        self.visible || self.closing
+    }
+
+    fn transition_opacity(&self) -> f32 {
+        self.transition.opacity_progress.clamp(0.0, 1.0)
+    }
+
+    fn apply_transition_to_rect(&self, rect: Rect) -> Rect {
+        Rect::new(
+            rect.x + self.transition.offset.x,
+            rect.y + self.transition.offset.y,
+            rect.w,
+            rect.h,
+        )
+    }
+
+    fn slide_direction_for(placement: DrawerPlacement) -> SlideDirection {
+        match placement {
+            DrawerPlacement::Right => SlideDirection::Left,
+            DrawerPlacement::Left => SlideDirection::Right,
+            DrawerPlacement::Top => SlideDirection::Down,
+            DrawerPlacement::Bottom => SlideDirection::Up,
+        }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/feedback/drawer.rs"]
+mod tests;
