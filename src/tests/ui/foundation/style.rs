@@ -1,4 +1,4 @@
-use super::*;
+use crate::ui::foundation::style::*;
 use crate::core::EdgeInsets;
 use crate::draw::Color;
 use crate::ui::theme::NeutralRole;
