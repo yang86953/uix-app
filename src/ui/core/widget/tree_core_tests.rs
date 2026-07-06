@@ -3,7 +3,7 @@
 use super::*;
 use crate::core::Point;
 use crate::native::traits::input::{KeyMod, MouseButton};
-use crate::ui::{Modal, OverlayEntry, OverlayKind};
+use crate::ui::{Modal, OverlayEntry, OverlayKind, Tooltip};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -657,6 +657,44 @@ fn layout_registers_visible_modal_overlay() {
     assert_eq!(top.kind(), OverlayKind::Modal);
     assert!(top.is_modal());
     assert!(top.traps_focus());
+}
+
+#[test]
+fn delayed_tooltip_waits_for_timer_before_overlay() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let tooltip = tree.add_child(
+        root_id,
+        Box::new(Tooltip::new("Help").delay_ms(300).timer_id(42)),
+    );
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(tooltip)
+        .unwrap()
+        .set_frame(Rect::new(10.0, 10.0, 80.0, 20.0));
+
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(20.0, 15.0),
+        mods: KeyMod::NONE,
+    });
+
+    assert!(tree
+        .overlay_stack()
+        .iter()
+        .all(|entry| entry.kind() != OverlayKind::Tooltip));
+
+    tree.dispatch_event(&SystemEvent::Timer { id: 41 });
+    assert!(tree
+        .overlay_stack()
+        .iter()
+        .all(|entry| entry.kind() != OverlayKind::Tooltip));
+
+    tree.dispatch_event(&SystemEvent::Timer { id: 42 });
+
+    let top = tree.overlay_stack().top().unwrap();
+    assert_eq!(top.owner(), tooltip);
+    assert_eq!(top.kind(), OverlayKind::Tooltip);
 }
 
 #[test]

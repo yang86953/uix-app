@@ -160,7 +160,8 @@ define_widget! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Drawer)
                 .bounds(bounds)
-                .z_index(1000),
+                .z_index(1000)
+                .managed(true),
         )
     }
 
