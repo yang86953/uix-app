@@ -6,6 +6,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::layout::engine::{child_from_tree, GridLayout, LayoutChild};
 use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
+use crate::ui::style::{ColorValue, Style};
 use crate::ui::traits::layout::LayoutEngine;
 use crate::ui::{WidgetId, WidgetTree};
 
@@ -155,6 +156,61 @@ impl Grid {
     pub fn justify(mut self, j: JustifyContent) -> Self {
         self.justify_items = j;
         self
+    }
+
+    pub fn apply_style(&mut self, style: &Style) {
+        if !style.grid_template_columns.is_empty() {
+            self.columns = style.grid_template_columns.clone();
+        }
+        if !style.grid_template_rows.is_empty() {
+            self.rows = style.grid_template_rows.clone();
+        }
+        let col_gap = if style.grid_column_gap != 0.0 {
+            style.grid_column_gap
+        } else {
+            style.gap
+        };
+        let row_gap = if style.grid_row_gap != 0.0 {
+            style.grid_row_gap
+        } else {
+            style.gap
+        };
+        if col_gap != 0.0 {
+            self.col_gap = col_gap;
+        }
+        if row_gap != 0.0 {
+            self.row_gap = row_gap;
+        }
+        if style.padding != EdgeInsets::zero() {
+            self.padding = style.padding;
+        }
+        if let Some(ColorValue::Custom(color)) = style.background {
+            self.bg_color = Some(color);
+        }
+        if let Some(ColorValue::Custom(color)) = style.border_color {
+            self.border_color = Some(color);
+        }
+        if style.border_width != EdgeInsets::zero() {
+            self.border_width = style
+                .border_width
+                .horizontal()
+                .max(style.border_width.vertical());
+        }
+        if style.border_radius != 0.0 {
+            self.border_radius = style.border_radius;
+        }
+        if style.align_items != AlignItems::default() {
+            self.align_items = style.align_items;
+        }
+        if style.justify_content != JustifyContent::default() {
+            self.justify_items = style.justify_content;
+        }
+        if style.width.is_some() {
+            self.fixed_width = style.width;
+        }
+        if style.height.is_some() {
+            self.fixed_height = style.height;
+        }
     }
 
     pub fn two_columns() -> Self {

@@ -30,7 +30,7 @@ use crate::draw::painting::ThemeTokens;
 use crate::draw::Color;
 use crate::ui::theme::NeutralRole;
 // Re-export layout enums so crate::ui::style::FlexDirection etc. work
-pub use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
+pub use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaletteColor {
@@ -299,6 +299,14 @@ pub struct Style {
     pub align_items: AlignItems,
     /// 子项间距
     pub gap: f32,
+    /// Grid 列轨道模板
+    pub grid_template_columns: Vec<GridTrack>,
+    /// Grid 行轨道模板
+    pub grid_template_rows: Vec<GridTrack>,
+    /// Grid 列间距；0 时可由 `gap` 兜底
+    pub grid_column_gap: f32,
+    /// Grid 行间距；0 时可由 `gap` 兜底
+    pub grid_row_gap: f32,
 
     // ── 弹性布局（子项属性）──
     /// 扩展比例
@@ -348,6 +356,10 @@ impl Default for Style {
             justify_content: JustifyContent::default(),
             align_items: AlignItems::default(),
             gap: 0.0,
+            grid_template_columns: Vec::new(),
+            grid_template_rows: Vec::new(),
+            grid_column_gap: 0.0,
+            grid_row_gap: 0.0,
 
             flex_grow: 0.0,
             flex_shrink: 1.0,
@@ -466,6 +478,10 @@ impl Style {
         self.justify_content = s.justify_content;
         self.align_items = s.align_items;
         self.gap = s.gap;
+        self.grid_template_columns = s.grid_template_columns;
+        self.grid_template_rows = s.grid_template_rows;
+        self.grid_column_gap = s.grid_column_gap;
+        self.grid_row_gap = s.grid_row_gap;
         self.flex_grow = s.flex_grow;
         self.flex_shrink = s.flex_shrink;
         self.align_self = s.align_self;
@@ -523,6 +539,18 @@ impl Style {
         }
         if other.gap != 0.0 {
             self.gap = other.gap;
+        }
+        if !other.grid_template_columns.is_empty() {
+            self.grid_template_columns = other.grid_template_columns;
+        }
+        if !other.grid_template_rows.is_empty() {
+            self.grid_template_rows = other.grid_template_rows;
+        }
+        if other.grid_column_gap != 0.0 {
+            self.grid_column_gap = other.grid_column_gap;
+        }
+        if other.grid_row_gap != 0.0 {
+            self.grid_row_gap = other.grid_row_gap;
         }
         if other.flex_grow != 0.0 {
             self.flex_grow = other.flex_grow;
@@ -624,6 +652,19 @@ impl Style {
     }
     pub fn with_gap(mut self, g: f32) -> Self {
         self.gap = g;
+        self
+    }
+    pub fn with_grid_columns(mut self, columns: Vec<GridTrack>) -> Self {
+        self.grid_template_columns = columns;
+        self
+    }
+    pub fn with_grid_rows(mut self, rows: Vec<GridTrack>) -> Self {
+        self.grid_template_rows = rows;
+        self
+    }
+    pub fn with_grid_gap(mut self, col_gap: f32, row_gap: f32) -> Self {
+        self.grid_column_gap = col_gap;
+        self.grid_row_gap = row_gap;
         self
     }
     pub fn with_grow(mut self, g: f32) -> Self {
@@ -774,6 +815,17 @@ macro_rules! style {
     (@inner $s:ident align_items $v:expr) => { $s.align_items = $v; };
     (@inner $s:ident align_self $v:expr) => { $s.align_self = Some($v); };
     (@inner $s:ident gap $v:expr) => { $s.gap = $v as f32; };
+    (@inner $s:ident grid_columns $v:expr) => { $s.grid_template_columns = $v; };
+    (@inner $s:ident grid_template_columns $v:expr) => { $s.grid_template_columns = $v; };
+    (@inner $s:ident grid_rows $v:expr) => { $s.grid_template_rows = $v; };
+    (@inner $s:ident grid_template_rows $v:expr) => { $s.grid_template_rows = $v; };
+    (@inner $s:ident grid_column_gap $v:expr) => { $s.grid_column_gap = $v as f32; };
+    (@inner $s:ident grid_row_gap $v:expr) => { $s.grid_row_gap = $v as f32; };
+    (@inner $s:ident grid_gap $v:expr) => {
+        let (col_gap, row_gap) = $v;
+        $s.grid_column_gap = col_gap as f32;
+        $s.grid_row_gap = row_gap as f32;
+    };
     (@inner $s:ident grow $v:expr) => { $s.flex_grow = $v as f32; };
     (@inner $s:ident flex_grow $v:expr) => { $s.flex_grow = $v as f32; };
     (@inner $s:ident shrink $v:expr) => { $s.flex_shrink = $v as f32; };

@@ -15,6 +15,7 @@
 
 use crate::native::traits::input::ScrollDirection;
 use crate::ui::layout::{FlexDirection, GridTrack};
+use crate::ui::style::{DisplayMode, Style};
 use crate::ui::view::{View, ViewNode};
 
 use crate::core::{Rect, Size};
@@ -71,44 +72,67 @@ where
     GridBuilder {
         children: children.into_iter().map(|v| v.build()).collect(),
         widget: crate::ui::widgets::Grid::new(),
+        style: Style::default().with_display(DisplayMode::Grid),
     }
 }
 
 pub struct GridBuilder {
     children: Vec<ViewNode>,
     widget: crate::ui::widgets::Grid,
+    style: Style,
 }
 
 impl GridBuilder {
     pub fn columns(mut self, columns: Vec<GridTrack>) -> Self {
+        self.style = self.style.with_grid_columns(columns.clone());
         self.widget = self.widget.columns(columns);
         self
     }
 
     pub fn rows(mut self, rows: Vec<GridTrack>) -> Self {
+        self.style = self.style.with_grid_rows(rows.clone());
         self.widget = self.widget.rows(rows);
         self
     }
 
     pub fn gap(mut self, gap: f32) -> Self {
+        self.style = self.style.with_gap(gap).with_grid_gap(gap, gap);
         self.widget = self.widget.gap(gap);
         self
     }
 
+    pub fn col_gap(mut self, gap: f32) -> Self {
+        self.style.grid_column_gap = gap;
+        self.widget = self.widget.col_gap(gap);
+        self
+    }
+
+    pub fn row_gap(mut self, gap: f32) -> Self {
+        self.style.grid_row_gap = gap;
+        self.widget = self.widget.row_gap(gap);
+        self
+    }
+
     pub fn two_columns(mut self) -> Self {
-        self.widget = crate::ui::widgets::Grid::two_columns();
+        let columns = vec![GridTrack::Fr(1.0), GridTrack::Fr(1.0)];
+        self.style = self.style.with_grid_columns(columns.clone());
+        self.widget = self.widget.columns(columns);
         self
     }
 
     pub fn three_columns(mut self) -> Self {
-        self.widget = crate::ui::widgets::Grid::three_columns();
+        let columns = vec![GridTrack::Fr(1.0), GridTrack::Fr(1.0), GridTrack::Fr(1.0)];
+        self.style = self.style.with_grid_columns(columns.clone());
+        self.widget = self.widget.columns(columns);
         self
     }
 }
 
 impl View for GridBuilder {
     fn build(self) -> ViewNode {
-        ViewNode::new(self.widget, self.children)
+        let mut node = ViewNode::new(self.widget, self.children);
+        node.style = self.style;
+        node
     }
 }
 
@@ -467,10 +491,22 @@ mod tests {
 
     #[test]
     fn grid_combinator_builds_grid_node() {
-        let node = grid([label("A"), label("B")]).two_columns().build();
+        let node = grid([label("A"), label("B")])
+            .columns(vec![GridTrack::Fr(2.0), GridTrack::Px(120.0)])
+            .rows(vec![GridTrack::Auto])
+            .gap(8.0)
+            .build();
 
         assert_eq!(node.children.len(), 2);
         assert!(node.widget.as_any().downcast_ref::<Grid>().is_some());
+        assert_eq!(node.style.display, DisplayMode::Grid);
+        assert_eq!(
+            node.style.grid_template_columns,
+            vec![GridTrack::Fr(2.0), GridTrack::Px(120.0)]
+        );
+        assert_eq!(node.style.grid_template_rows, vec![GridTrack::Auto]);
+        assert_eq!(node.style.grid_column_gap, 8.0);
+        assert_eq!(node.style.grid_row_gap, 8.0);
     }
 
     #[test]
