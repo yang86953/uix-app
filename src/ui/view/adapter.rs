@@ -10,7 +10,7 @@ use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
 use crate::ui::view::{View, ViewNode};
-use crate::ui::widgets::{Button, Container, Label};
+use crate::ui::widgets::{Button, Container, Grid, Label};
 use crate::ui::{WidgetNode, WidgetTree};
 
 /// View tree adapter.
@@ -89,6 +89,10 @@ impl ViewAdapter {
             if let Some(b) = widget.as_any_mut().downcast_mut::<Button>() {
                 b.style = style.clone();
             }
+        } else if tid == std::any::TypeId::of::<Grid>() {
+            if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {
+                g.apply_style(style);
+            }
         }
 
         widget
@@ -157,6 +161,41 @@ mod tests {
         } else {
             panic!("expected Container");
         }
+    }
+
+    #[test]
+    fn grid_style_tracks_drive_layout() {
+        use crate::core::Rect;
+        use crate::ui::layout::GridTrack;
+        use crate::ui::view::{grid, label};
+
+        let mut tree = ViewAdapter::build(
+            grid([label("A"), label("B")])
+                .columns(vec![GridTrack::Px(50.0), GridTrack::Px(70.0)])
+                .gap(10.0),
+        );
+        let root_id = tree.root_id().expect("grid root should exist");
+        tree.get_mut(root_id)
+            .expect("grid root should be present")
+            .set_frame(Rect::new(0.0, 0.0, 140.0, 40.0));
+
+        tree.push_layout_invalidation(root_id);
+        tree.layout();
+
+        let children = tree
+            .get(root_id)
+            .expect("grid root should remain present")
+            .children()
+            .to_vec();
+        assert_eq!(children.len(), 2);
+        let first = tree.get(children[0]).unwrap().frame();
+        let second = tree.get(children[1]).unwrap().frame();
+        assert_eq!(first.x, 0.0);
+        assert_eq!(first.y, 0.0);
+        assert_eq!(first.h, 40.0);
+        assert_eq!(second.x, 60.0);
+        assert_eq!(second.y, 0.0);
+        assert_eq!(second.h, 40.0);
     }
 
     #[test]

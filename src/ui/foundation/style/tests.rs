@@ -22,6 +22,10 @@ fn style_default_all_fields() {
     assert_eq!(s.justify_content, JustifyContent::default());
     assert_eq!(s.align_items, AlignItems::default());
     assert_eq!(s.gap, 0.0);
+    assert!(s.grid_template_columns.is_empty());
+    assert!(s.grid_template_rows.is_empty());
+    assert_eq!(s.grid_column_gap, 0.0);
+    assert_eq!(s.grid_row_gap, 0.0);
     assert_eq!(s.flex_grow, 0.0);
     assert_eq!(s.flex_shrink, 1.0);
     assert_eq!(s.align_self, None);
@@ -106,6 +110,22 @@ fn style_container() {
     let mut expected = Style::default();
     expected.display = DisplayMode::Flex;
     assert_eq!(s, expected);
+}
+
+#[test]
+fn style_grid_template_builders() {
+    let s = Style::default()
+        .with_grid_columns(vec![GridTrack::Fr(1.0), GridTrack::Px(120.0)])
+        .with_grid_rows(vec![GridTrack::Auto])
+        .with_grid_gap(8.0, 12.0);
+
+    assert_eq!(
+        s.grid_template_columns,
+        vec![GridTrack::Fr(1.0), GridTrack::Px(120.0)]
+    );
+    assert_eq!(s.grid_template_rows, vec![GridTrack::Auto]);
+    assert_eq!(s.grid_column_gap, 8.0);
+    assert_eq!(s.grid_row_gap, 12.0);
 }
 
 // 鈹€鈹€ effective_bg 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -466,6 +486,23 @@ fn style_macro_basic() {
 fn style_macro_empty() {
     let s = crate::style! {};
     assert_eq!(s, Style::default());
+}
+
+#[test]
+fn style_macro_grid_template_fields() {
+    let s = crate::style! {
+        grid_columns: vec![GridTrack::Fr(1.0), GridTrack::Px(96.0)],
+        grid_rows: vec![GridTrack::Auto],
+        grid_gap: (6.0, 10.0),
+    };
+
+    assert_eq!(
+        s.grid_template_columns,
+        vec![GridTrack::Fr(1.0), GridTrack::Px(96.0)]
+    );
+    assert_eq!(s.grid_template_rows, vec![GridTrack::Auto]);
+    assert_eq!(s.grid_column_gap, 6.0);
+    assert_eq!(s.grid_row_gap, 10.0);
 }
 
 #[test]
