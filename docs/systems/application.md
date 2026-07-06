@@ -347,7 +347,7 @@ App::new()
     .run();
 ```
 
-> **实现注记**：`WindowConfig`、`AppHandle::open_window` 与 `.on_window_start` 已导出；`open_window` 当前会分配新 `window_id`、独立 AppTimer / MainThreadQueue / AppHandle，并把副窗创建请求暂存到 `AppRuntime`。native `create_window`、新 `WindowSession` bootstrap 与多 session loop drain 尚未接入，因此该请求层仍不是完整副窗创建。
+> **实现注记**：`WindowConfig`、`AppHandle::open_window` 与 `.on_window_start` 已导出；`open_window` 当前会分配新 `window_id`、独立 AppTimer / MainThreadQueue / AppHandle，并把副窗创建请求暂存到 `AppRuntime`。GUI loop 会在首窗 `.on_start` 后与活动轮次中 drain 请求，创建 native 窗、校验 native `window_id`、构造独立 `WindowSession` 并调用 `.on_window_start`；副窗事件路由/帧循环消费与完整多 session loop drain 仍待接入。
 
 ### 副窗 bootstrap（#148）
 
@@ -466,7 +466,7 @@ autosave.cancel();
 | 业务逻辑（保存、轮询刷新、倒计时数据） | **#132 Timer API** 或 async→State |
 | 耗时 IO | async / 线程 → 主线程 `State::set` |
 
-> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 session 的 AppTimer 队列，并可在 session 关闭时批量 cancel。副窗 native loop 消费仍待接。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 session 的 AppTimer 队列，并可在 session 关闭时批量 cancel。副窗 session bootstrap 已接，副窗帧循环消费仍待接。
 
 ### 调用入口
 
@@ -565,7 +565,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 
 入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
 
-> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列。副窗 native loop 消费尚未接。
+> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列。副窗 session bootstrap 已接，副窗 loop 消费尚未接。
 
 ---
 
@@ -687,7 +687,7 @@ inspector_handle.update_view(|| inspector_panel_v2(data.get()));
 
 详见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153）与 [view_factory 生命周期](view-reactive.md#view_factory-生命周期)（#155–#156）。
 
-> **实现注记**：`AppHandle::update_view` / `set_root` 已导出，并经 `AppRuntime` 按 `window_id` 投递到目标 `MainThreadQueue` 写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 `tick_effects` 后、layout/render 前至多 reconcile 一次。副窗 native loop 消费待接。
+> **实现注记**：`AppHandle::update_view` / `set_root` 已导出，并经 `AppRuntime` 按 `window_id` 投递到目标 `MainThreadQueue` 写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 `tick_effects` 后、layout/render 前至多 reconcile 一次。副窗 session bootstrap 已接，副窗 loop 消费待接。
 
 ---
 
@@ -713,7 +713,7 @@ API：`singleton<T>()`、`resolve<T>()`、`resolve_mut<T>()`、`has<T>()`、`rem
 
 用途：App 级服务注册（Settings、自定义 repo 等）。**不参与 UI 热路径**；启动前可由业务在 builder 阶段自行 `resolve`，运行中可通过注入的 `AppHandle` resolve clone。
 
-> **实现注记**：`Container` 已随单窗 `AppHandle` 注入运行期；`AppHandle::resolve<T: Clone>()` 可读取 builder `.singleton()` 与 `.settings()` 注册的单例 clone。组件 layout/render/event 热路径仍不主动 resolve；多窗按 window handle 注入仍待 `open_window` 接线。
+> **实现注记**：`Container` 已随 `AppHandle` 注入运行期；`AppHandle::resolve<T: Clone>()` 可读取 builder `.singleton()` 与 `.settings()` 注册的单例 clone。组件 layout/render/event 热路径仍不主动 resolve；副窗 bootstrap 已复用同一 container 注入新窗 handle。
 
 ---
 

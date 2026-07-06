@@ -90,7 +90,6 @@ impl AppRuntime {
         ReservedWindowSession { window_id, alive }
     }
 
-    #[cfg(test)]
     pub(crate) fn take_next_open_window(&self) -> Option<OpenWindowRequest> {
         self.pending_open_windows
             .lock()

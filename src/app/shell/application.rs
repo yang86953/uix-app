@@ -6,11 +6,12 @@ use std::time::Duration;
 
 use crate::app::app_handle::AppHandle;
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
-use crate::app::event_loop::run_window_session_loop_with_system_theme;
+use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
 use crate::app::main_thread_queue::MainThreadQueue;
-use crate::app::session_runtime::AppRuntime;
+use crate::app::session_runtime::{AppRuntime, OpenWindowRequest};
 use crate::app::shell::cli::Cli;
 use crate::app::shell::di::Container;
+use crate::app::window_config::WindowConfig;
 use crate::app::window_session::WindowSession;
 use crate::core::{Point, WindowId};
 use crate::data::SettingsService;
@@ -20,6 +21,7 @@ use crate::draw::traits::GraphicsEngine;
 use crate::draw::GpuEngine;
 use crate::draw::SoftwareEngine;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
+use crate::native::traits::platform::Platform;
 use crate::native::traits::window::PlatformWindow;
 use crate::native::{create_gpu_context, create_platform};
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
@@ -36,6 +38,18 @@ pub enum AppMode {
     #[default]
     GUI,
     CLI,
+}
+
+struct SecondaryWindowSession {
+    _window: Box<dyn PlatformWindow>,
+    _session: WindowSession,
+    handle: AppHandle,
+}
+
+impl SecondaryWindowSession {
+    fn close(self) {
+        self.handle.mark_closed();
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -360,6 +374,15 @@ impl App {
         if let Some(on_start) = self.on_start.take() {
             on_start(app_handle.clone());
         }
+        let mut secondary_windows = Vec::new();
+        drain_pending_open_windows(
+            &mut *platform,
+            &self.runtime,
+            &self.app_state,
+            &self.container,
+            self.on_window_start.as_ref(),
+            &mut secondary_windows,
+        );
 
         let theme = RefCell::new(self.theme);
         let debug_mode = Cell::new(false);
@@ -368,7 +391,12 @@ impl App {
             .on_exit
             .unwrap_or_else(|| Box::new(|_: &UiEvent| false));
 
-        run_window_session_loop_with_system_theme(
+        let runtime = self.runtime.clone();
+        let app_state = self.app_state.clone();
+        let container = self.container.clone();
+        let on_window_start = self.on_window_start.clone();
+
+        run_window_session_loop_with_system_theme_and_tasks(
             &mut *platform,
             &mut *platform_window,
             &mut session,
@@ -381,13 +409,134 @@ impl App {
             None,
             map_ui_event,
             |ev| on_exit(ev),
+            |platform| {
+                drain_pending_open_windows(
+                    platform,
+                    &runtime,
+                    &app_state,
+                    &container,
+                    on_window_start.as_ref(),
+                    &mut secondary_windows,
+                );
+            },
             |_, _, _| {},
         );
 
+        for window in secondary_windows.drain(..) {
+            window.close();
+        }
         app_handle.mark_closed();
 
         0
     }
+}
+
+fn drain_pending_open_windows(
+    platform: &mut dyn Platform,
+    runtime: &AppRuntime,
+    app_state: &AppState,
+    container: &Container,
+    on_window_start: Option<&Arc<dyn Fn(AppHandle) + Send + Sync>>,
+    secondary_windows: &mut Vec<SecondaryWindowSession>,
+) -> usize {
+    let mut created = 0;
+    while let Some(request) = runtime.take_next_open_window() {
+        if let Some(window) =
+            create_secondary_window(platform, runtime, app_state, container, request)
+        {
+            if let Some(callback) = on_window_start {
+                callback(window.handle.clone());
+            }
+            secondary_windows.push(window);
+            created += 1;
+        }
+    }
+    created
+}
+
+fn create_secondary_window(
+    platform: &mut dyn Platform,
+    runtime: &AppRuntime,
+    app_state: &AppState,
+    container: &Container,
+    request: OpenWindowRequest,
+) -> Option<SecondaryWindowSession> {
+    let OpenWindowRequest {
+        window_id,
+        config,
+        app_timers,
+        main_thread_queue,
+        alive,
+    } = request;
+    let WindowConfig {
+        title,
+        width,
+        height,
+        root,
+    } = config;
+
+    let mut platform_window = match platform
+        .window_manager()
+        .create_window(&title, width, height)
+    {
+        Ok(window) => window,
+        Err(e) => {
+            runtime.close_session(window_id);
+            crate::core::log::error_fn(format!(
+                "open_window create_window failed: {}",
+                e.short_what()
+            ));
+            return None;
+        }
+    };
+    if platform_window.window_id() != window_id {
+        let actual = platform_window.window_id();
+        platform_window.close();
+        runtime.close_session(window_id);
+        crate::core::log::error_fn(format!(
+            "open_window window_id mismatch: reserved={}, native={}",
+            window_id.raw(),
+            actual.raw()
+        ));
+        return None;
+    }
+
+    platform_window.center_on_screen();
+    platform_window.show();
+    platform_window.raise();
+
+    let engine = match create_preferred_engine(platform_window.as_mut(), width, height) {
+        Some(engine) => engine,
+        None => {
+            platform_window.close();
+            runtime.close_session(window_id);
+            return None;
+        }
+    };
+
+    let mut session = WindowSession::from_root_factory_for_window(
+        window_id,
+        move || root(),
+        engine,
+        width,
+        height,
+    );
+    session.set_app_state(app_state.clone());
+    session.set_app_timers(app_timers);
+    session.set_main_thread_queue(main_thread_queue);
+    let handle = AppHandle::new(
+        window_id,
+        app_state.clone(),
+        runtime.clone(),
+        container.clone(),
+        alive,
+    );
+
+    Some(SecondaryWindowSession {
+        _window: platform_window,
+        _session: session,
+        handle,
+    })
 }
 
 fn create_preferred_engine(
