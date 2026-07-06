@@ -3,7 +3,7 @@ use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadContext;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::session_runtime::AppRuntime;
-use crate::app::Container;
+use crate::app::{Container, WindowConfig};
 use crate::ui::view::combinators::label;
 use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::Label;
@@ -201,6 +201,46 @@ fn app_handle_run_after_routes_by_window_id() {
 
     assert_eq!(root_timers.len(), 0);
     assert_eq!(child_timers.len(), 1);
+}
+
+#[test]
+fn app_handle_open_window_returns_child_handle_and_queues_request() {
+    let timers = AppTimerQueue::new();
+    let queue = MainThreadQueue::new();
+    let alive = Arc::new(AtomicBool::new(true));
+    let runtime = AppRuntime::new();
+    runtime.register_session(WindowId::ROOT, timers, queue, alive.clone());
+    let handle = AppHandle::new(
+        WindowId::ROOT,
+        AppState::new(),
+        runtime.clone(),
+        Container::new(),
+        alive,
+    );
+
+    let child = handle
+        .open_window(WindowConfig::new("Inspector", 320, 600, || label("child")))
+        .unwrap();
+    let request = runtime.take_next_open_window().unwrap();
+
+    assert_ne!(child.window_id(), handle.window_id());
+    assert_eq!(request.window_id, child.window_id());
+    assert_eq!(request.config.title, "Inspector");
+    assert_eq!(request.config.width, 320);
+    assert_eq!(request.config.height, 600);
+}
+
+#[test]
+fn app_handle_open_window_rejects_closed_handle() {
+    let timers = AppTimerQueue::new();
+    let queue = MainThreadQueue::new();
+    let alive = Arc::new(AtomicBool::new(true));
+    let handle = new_test_handle(timers, queue, alive);
+
+    handle.mark_closed();
+    let result = handle.open_window(WindowConfig::new("ignored", 1, 1, || label("ignored")));
+
+    assert!(result.is_err());
 }
 
 #[test]

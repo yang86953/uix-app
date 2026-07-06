@@ -89,6 +89,13 @@ fn app_on_start_stores_start_callback() {
 }
 
 #[test]
+fn app_on_window_start_stores_secondary_window_callback() {
+    let app = App::new().on_window_start(|_| {});
+
+    assert!(app.on_window_start.is_some());
+}
+
+#[test]
 fn app_handle_uses_root_window_and_shared_queues() {
     let app = App::new();
     let handle = app.app_handle();

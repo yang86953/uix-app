@@ -1,5 +1,7 @@
 use super::*;
 use crate::app::main_thread_queue::MainThreadContext;
+use crate::app::WindowConfig;
+use crate::ui::view::combinators::label;
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
@@ -67,4 +69,38 @@ fn routed_post_to_ui_drains_target_queue() {
     assert!(queue.drain(&mut context));
 
     assert_eq!(ran.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn request_open_window_reserves_independent_runtime_session() {
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::ROOT,
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+
+    let session =
+        runtime.request_open_window(WindowConfig::new("Inspector", 320, 600, || label("child")));
+    runtime.post_to_ui(session.window_id, || {});
+    let _timer = runtime.run_after(session.window_id, Duration::from_secs(1), || {});
+    let request = runtime.take_next_open_window().unwrap();
+
+    assert_eq!(request.window_id, session.window_id);
+    assert_eq!(request.config.title, "Inspector");
+    assert_eq!(request.main_thread_queue.len(), 1);
+    assert_eq!(request.app_timers.len(), 1);
+    assert!(request.alive.load(Ordering::Acquire));
+}
+
+#[test]
+fn close_session_removes_pending_open_window_request() {
+    let runtime = AppRuntime::new();
+    let session =
+        runtime.request_open_window(WindowConfig::new("Inspector", 320, 600, || label("child")));
+
+    runtime.close_session(session.window_id);
+
+    assert!(runtime.take_next_open_window().is_none());
 }

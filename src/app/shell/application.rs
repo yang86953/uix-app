@@ -56,6 +56,7 @@ pub struct App {
     handle_alive: Arc<AtomicBool>,
     root_factory: Option<Arc<dyn Fn() -> ViewNode + Send + Sync>>,
     on_start: Option<Box<dyn FnOnce(AppHandle) + Send>>,
+    on_window_start: Option<Arc<dyn Fn(AppHandle) + Send + Sync>>,
     on_exit: Option<Box<dyn Fn(&UiEvent) -> bool>>,
     cli: Option<Cli>,
     container: Container,
@@ -89,6 +90,7 @@ impl Default for App {
             handle_alive,
             root_factory: None,
             on_start: None,
+            on_window_start: None,
             on_exit: None,
             cli: None,
             container: Container::new(),
@@ -156,6 +158,14 @@ impl App {
         F: FnOnce(AppHandle) + Send + 'static,
     {
         self.on_start = Some(Box::new(f));
+        self
+    }
+
+    pub fn on_window_start<F>(mut self, f: F) -> Self
+    where
+        F: Fn(AppHandle) + Send + Sync + 'static,
+    {
+        self.on_window_start = Some(Arc::new(f));
         self
     }
 

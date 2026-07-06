@@ -10,6 +10,7 @@ pub(crate) mod session_runtime;
 pub mod shell;
 pub(crate) mod test_clock;
 pub mod window;
+pub mod window_config;
 pub(crate) mod window_session;
 
 pub use crate::ui::AppState;
@@ -19,3 +20,4 @@ pub use shell::application::{map_ui_event, App, AppMode};
 pub use shell::cli::{Cli, CliArgs};
 pub use shell::di::Container;
 pub use window::window::Window;
+pub use window_config::WindowConfig;
