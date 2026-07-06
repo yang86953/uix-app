@@ -11,6 +11,6 @@ pub use layout::LayoutEngine;
 pub use render::{DebugRenderer, TextRenderer};
 pub use theme::TokenProvider;
 pub use widget::{
-    EventHandler, IntoWidgetNode, WidgetCapabilities, WidgetComponent, WidgetLayout,
-    WidgetLifecycle, WidgetRender,
+    EventHandler, IntoWidgetNode, WidgetAnimation, WidgetCapabilities, WidgetComponent,
+    WidgetLayout, WidgetLifecycle, WidgetRender,
 };

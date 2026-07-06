@@ -1,7 +1,9 @@
 use super::tree_core::WidgetTree;
 use super::*;
 use crate::core::DirtyRegion;
-use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle};
+use crate::draw::pipeline::{Invalidation, InvalidationQueueHandle, ScrollDelta};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 impl WidgetTree {
     pub fn invalidation(&self) -> &InvalidationQueueHandle {
@@ -10,6 +12,21 @@ impl WidgetTree {
 
     pub fn invalidation_handle(&self) -> InvalidationQueueHandle {
         self.invalidation.clone()
+    }
+
+    pub fn reconcile_requester(&self) -> Arc<dyn Fn() + Send + Sync> {
+        let requested = self.reconcile_requested.clone();
+        Arc::new(move || {
+            requested.store(true, Ordering::Release);
+        })
+    }
+
+    pub fn reconcile_requester_key(&self) -> usize {
+        Arc::as_ptr(&self.reconcile_requested) as usize
+    }
+
+    pub fn take_reconcile_requested(&self) -> bool {
+        self.reconcile_requested.swap(false, Ordering::AcqRel)
     }
 
     /// 是否有待渲染工作（Paint / Composite 失效，不含纯 Layout）。
@@ -48,6 +65,52 @@ impl WidgetTree {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(Invalidation::Layout(id));
+    }
+
+    pub(crate) fn push_scroll_composite(&mut self, viewport: Rect, dx: f32, dy: f32) -> bool {
+        let dx = dx.round();
+        let dy = dy.round();
+        if viewport.w <= 0.0 || viewport.h <= 0.0 || (dx == 0.0 && dy == 0.0) {
+            return false;
+        }
+
+        let mut exposed = None;
+        if dx != 0.0 {
+            let w = dx.abs().min(viewport.w);
+            let x = if dx > 0.0 {
+                viewport.x + viewport.w - w
+            } else {
+                viewport.x
+            };
+            exposed = Some(Rect::new(x, viewport.y, w, viewport.h));
+        }
+        if dy != 0.0 {
+            let h = dy.abs().min(viewport.h);
+            let y = if dy > 0.0 {
+                viewport.y + viewport.h - h
+            } else {
+                viewport.y
+            };
+            let strip = Rect::new(viewport.x, y, viewport.w, h);
+            exposed = Some(match exposed {
+                Some(rect) => union_rect(rect, strip),
+                None => strip,
+            });
+        }
+
+        let Some(rect) = exposed.filter(|r| r.w > 0.0 && r.h > 0.0) else {
+            return false;
+        };
+
+        self.invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Invalidation::Composite {
+                rect,
+                scroll: Some(ScrollDelta { dx, dy }),
+            });
+        self.scroll_region_move = Some((viewport, dx, dy));
+        true
     }
 
     pub fn dirty_region(&self) -> DirtyRegion {
@@ -155,6 +218,8 @@ impl WidgetTree {
         use crate::ui::foundation::state::{begin_state_bind_capture, end_state_bind_capture};
         use crate::ui::view::combinators::DynamicLabel;
         let handle = self.invalidation_handle();
+        let reconcile_key = self.reconcile_requester_key();
+        let reconcile = self.reconcile_requester();
         for id in self.traverse() {
             let type_id = self
                 .get(id)
@@ -177,9 +242,21 @@ impl WidgetTree {
                 });
                 if let Some(node) = self.get(id) {
                     if let Some(dl) = node.component().as_any().downcast_ref::<DynamicLabel>() {
-                        dl.bind_state_invalidation(id, handle.clone(), paint_rect);
+                        dl.bind_state_invalidation(
+                            id,
+                            handle.clone(),
+                            paint_rect,
+                            reconcile_key,
+                            reconcile.clone(),
+                        );
                         // 探测闭包运行时读取的 State（含 View 外创建的实例，如 README Counter）
-                        begin_state_bind_capture(id, handle.clone(), paint_rect);
+                        begin_state_bind_capture(
+                            id,
+                            handle.clone(),
+                            paint_rect,
+                            reconcile_key,
+                            reconcile.clone(),
+                        );
                         dl.probe_dependencies();
                         end_state_bind_capture(id);
                     }
@@ -199,6 +276,8 @@ impl WidgetTree {
             return;
         };
         let handle = self.invalidation_handle();
+        let reconcile_key = self.reconcile_requester_key();
+        let reconcile = self.reconcile_requester();
         let paint_rect = self.get(root_id).and_then(|n| {
             let frame = n.frame();
             if frame.w > 0.0 && frame.h > 0.0 {
@@ -208,6 +287,7 @@ impl WidgetTree {
             }
         });
         for source in orphans {
+            source.bind_reconcile_site(reconcile_key, reconcile.clone());
             source.bind_paint(root_id, handle.clone(), paint_rect);
         }
     }
@@ -222,4 +302,12 @@ impl WidgetTree {
     pub fn tick_effects(&self) -> bool {
         self.effects.iter().any(|eff| eff.tick())
     }
+}
+
+fn union_rect(a: Rect, b: Rect) -> Rect {
+    let x1 = a.x.min(b.x);
+    let y1 = a.y.min(b.y);
+    let x2 = (a.x + a.w).max(b.x + b.w);
+    let y2 = (a.y + a.h).max(b.y + b.h);
+    Rect::new(x1, y1, x2 - x1, y2 - y1)
 }

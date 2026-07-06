@@ -32,7 +32,7 @@
 | **GUI**（默认） | `App::new().root(...).run()` | 创建窗口、引擎、WidgetTree、进入 `run_widget_loop` |
 | **CLI** | `App::mode(AppMode::CLI).cli(...).run()` | 无窗口；解析 `argv`，分派已注册命令 |
 
-GUI 必须调用 `.root(view)`；CLI 须 `.cli(Cli)` 注册 handler。
+GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 ---
 
@@ -48,7 +48,7 @@ GUI 必须调用 `.root(view)`；CLI 须 `.cli(Cli)` 注册 handler。
       失败 → shutdown GPU → SoftwareEngine 回退          (#59)
 4. FontService::load_default_system_font
    ImageService::new
-5. ViewAdapter::build_nodes(root)
+5. WindowSession::from_root_factory(root)
       → WidgetTree::build → layout → mark_full_frame_dirty
       → 同时将 `.root` 闭包存入 `WindowSession.view_factory`（#155）
 6. run_widget_loop(platform, window, engine, tree, ...)
@@ -61,7 +61,7 @@ GUI 必须调用 `.root(view)`；CLI 须 `.cli(Cli)` 注册 handler。
 | `.title()` / `.size()` | 窗口标题与初始尺寸 |
 | `.theme(Theme)` | 全局 Theme；框架 **自动** 全窗 palette-only invalidate（#128） |
 | `.follow_system_theme(bool)` | 默认 **false**；**true** 时框架监听 ThemeChanged 自动跟 OS（#125） |
-| `.root(view)` | 捕获为 session **`view_factory`**（#155）；冷启动 `build` + 热路径 reconcile 共用 |
+| `.root(|| view)` | 捕获为 session **`view_factory`**（#155）；冷启动 `build` + 热路径 reconcile 共用 |
 | `.on_exit(Fn(&UiEvent) -> bool)` | 返回 `true` 退出主循环 |
 | `.singleton<T>(instance)` | 注册 DI 单例 |
 
@@ -81,7 +81,7 @@ GUI 必须调用 `.root(view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** `run_app_loop`；UiEvent 按 **window_id** 路由。
 
-> **实现注记**：当前单窗 + `wait_timeout(100ms)` + 每轮 `tick_effects`；WindowSession / Registry / 三态待落地。
+> **实现注记**：当前单窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`。多窗编排仍待接。
 
 ### 单帧顺序（Active 态，设计 #106、#137）
 
@@ -96,26 +96,28 @@ GUI 必须调用 `.root(view)`；CLI 须 `.cli(Cli)` 注册 handler。
 6. layout → render → present?
 ```
 
-当前实现仍为旧顺序（无 Registry / 无 MainThreadQueue）：
+当前单窗实现顺序：
 
 ```mermaid
 flowchart TD
-  A[platform.text_input.start] --> B[轮询 UiEvent]
-  B --> C[map_ui_event → dispatch_event]
-  C --> D[tree.update dt]
-  D --> E[tick_effects]
-  E --> F{Layout 脏?}
-  F -->|是| G[tree.layout]
-  G --> H[on_frame 回调]
-  F -->|否| I{Paint/Composite 脏?}
-  H --> I
-  I -->|是| J[FrameRenderer.render_frame]
-  J --> K{outcome}
-  K -->|Present| L[presenter.present damage]
-  K -->|Idle| M[跳过 present]
-  I -->|否| M
-  L --> N[tree.reset_dirty]
-  M --> N
+  A[wait_event / wait_timeout(deadline)] --> B[drain UiEvent]
+  B --> C[drain_due AppTimer / Widget Timer]
+  C --> D[main_thread_queue.drain]
+  D --> E{Active frame?}
+  E -->|是| F[tree.update + tick_effects]
+  E -->|否| G[跳过 update/effects]
+  F --> H{Layout 脏?}
+  G --> H
+  H -->|是| I[tree.layout + on_frame]
+  H -->|否| J{Paint/Composite 脏?}
+  I --> J
+  J -->|是| K[FrameRenderer.render_frame]
+  J -->|否| L[跳过 present]
+  K --> M{outcome}
+  M -->|Present| N[presenter.present damage]
+  M -->|Idle| L
+  N --> O[tree.reset_dirty]
+  L --> O
 ```
 
 | 阶段 | 触发条件 | present? |
@@ -134,13 +136,13 @@ flowchart TD
 
 设计（#106、#117）：**DeepIdle** 下 blocking `wait_event`（无 timeout）；**RegisteredActive** 由 `ActiveWorkRegistry::next_deadline` → `wait_until` 唤醒；**Active** 在事件 drain 后若无 pending 则回 DeepIdle。详见 [demand-driven · 唤醒源白名单](demand-driven.md#唤醒源白名单) · [ActiveWorkRegistry](demand-driven.md#activeworkregistry)。
 
-> **实现注记**（当前源码，违背 #106）：单窗；仍用 `wait_timeout(100ms)` 探活并每轮 `tick_effects`。
+> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已接入；IME 窄 tick 与多窗调度仍待接。
 
 | 状态 | 设计 | 当前实现 |
 |------|------|----------|
-| DeepIdle | blocking `wait_event`；不 layout/render/tick Effect | `idle_count > 3` 后 `wait_timeout(100ms)` |
-| RegisteredActive | `wait_until(next_deadline)` 窄 tick | 未实现 Registry 模型 |
-| Active / 动画中 | `tree.update` 返回 true → drain 事件后继续帧 | `wait_event` + drain；每轮 `tick_effects` |
+| DeepIdle | blocking `wait_event`；不 layout/render/tick Effect | 无 Registry deadline 时 blocking `wait_event` |
+| RegisteredActive | `wait_until(next_deadline)` 窄 tick | `ActiveWorkRegistry::next_deadline` → `wait_timeout(remaining)` |
+| Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline | Active 帧运行 `update` / `tick_effects`；`Spin` 已作为内置 Animation 源接入，其他动画源待接 |
 | 首帧 | 单次 `poll_event` | 同左 |
 
 ### 窗口生命周期事件
@@ -201,7 +203,7 @@ Platform UiEvent
 
 **ComponentHandle**（设计）：只读配置字段；可 `invalidate` / `emit`；不可改 style 或读 hover/pressed 等交互态。
 
-> **实现注记**（#101）：AppState / ComponentHandle 类型尚在落地中；当前业务数据直接经 `State<T>` 闭包捕获，树节点键为 **WidgetId**（当前实现）而非设计态 **ComponentId**（#35、#101）。
+> **实现注记**（#101）：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`invalidate()` 走窄 Paint；`ComponentConfigSnapshot` 类型与首批内置组件静态配置提取已接；`ComponentHandle::snapshot()` / `snapshot_fields()` 与首批只读配置 getter 已接。`AppState` 类型已导出，`WidgetTree::set_app_state` 后 mount/unmount 会自动注册/注销 snapshot，`AppState::get_handle` 可返回只读 snapshot handle。App 默认持有 `AppState`，`AppHandle::app_state()` 可访问同一 registry，单窗 `WindowSession` 已注入；跨窗共享与 lookup handle 的 live tree 绑定尚未接。当前业务数据仍可直接经 `State<T>` 闭包捕获，树节点键为 **WidgetId**（当前实现）而非设计态 **ComponentId**（#35、#101）。
 
 ### AppState · ComponentHandle 设计规格（设计 #32、#61、#72、#101、#145）
 
@@ -259,7 +261,7 @@ button().on_click(move || count.set(count.get() + 1));
 
 | 迁移 | 说明 |
 |------|------|
-| v1 现在 | `State<T>` 闭包捕获；无 AppState 类型 |
+| v1 现在 | `State<T>` 闭包捕获；`AppState` snapshot registry 与单窗 App 默认注入已接，跨窗共享待接 |
 | 落地后 | 新组件优先 `ComponentHandle`；旧代码无需改即可运行 |
 | 零维护 | register/unregister 由框架 mount 路径自动完成（#145） |
 
@@ -341,7 +343,7 @@ App::new()
     .on_window_start(|handle| {
         // 每个 open_window 成功后也会调用（若 builder 设置了）
     })
-    .root(main_view())
+    .root(|| main_view())
     .run();
 ```
 
@@ -387,7 +389,7 @@ pub root: impl Fn() -> ViewNode + Send + 'static;
 
 ## Settings（#64）
 
-`SettingsService` 由 App **可选**注入；**默认不**自动 load/save。持久化 key 如 `theme_mode`、`brand_primary`，App 启动时解析为 `Theme`；缺文件用 DefaultTheme（#48）。
+`SettingsService` 由 App **可选**注入；**默认不**自动 load/save。`App::settings(path)` 会在 `run()` 进入 GUI/CLI 模式前加载一次并注册到 App DI；持久化 key 如 `theme_mode`、`brand_primary` 可由业务解析为 `Theme`；缺文件用 DefaultTheme（#48）。
 
 Light/Dark 默认跟 OS（#74）于**启动**（可读 Settings / OS）。
 
@@ -464,7 +466,7 @@ autosave.cancel();
 | 业务逻辑（保存、轮询刷新、倒计时数据） | **#132 Timer API** 或 async→State |
 | 耗时 IO | async / 线程 → 主线程 `State::set` |
 
-> **实现注记**：`run_after` / `run_interval` / `TimerHandle` 尚未导出；设计 ahead of code。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与单窗 `AppHandle::run_after` / `run_interval` 已导出，并通过 `WindowSession` 的 AppTimer 队列接入 `ActiveWorkRegistry::AppTimer`；多窗路由 / 单 session 窗口关闭清理仍待接。
 
 ### 调用入口
 
@@ -544,7 +546,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 // ✗ 禁止：用 A handle 期望更新 B 的树
 ```
 
-> **实现注记**：`post_to_ui` / `AppHandle.window_id` 尚未导出。
+> **实现注记**：`App::post_to_ui`、单窗 `AppHandle::post_to_ui` 与单窗 `WindowSession.main_thread_queue` 已落地，并在 UiEvent / due work 后、`tick_effects` 前 drain；多窗 `window_id` 路由与阻塞等待中的真实 wake 尚未接。
 
 ---
 
@@ -563,7 +565,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 
 入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
 
-> **实现注记**：`MainThreadQueue` 尚未实现。
+> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由单窗 `WindowSession` 持有；单窗 `AppHandle` 关闭后会丢弃投递；多窗路由与独立 session 关闭策略尚未接。
 
 ---
 
@@ -645,9 +647,9 @@ App::new()
 
 **禁止**在 `run()` 返回后再调用 Timer / `post_to_ui`（主循环已结束）。
 
-> **实现注记**：`on_start` / `AppHandle` 尚未导出。
+> **实现注记**：单窗 `.on_start(AppHandle)` 与 `AppHandle` / `WindowId` 已导出；多窗每窗注入待接。
 
-> **实现注记**（#134）：生命周期规则尚未落地；当前无 `AppHandle` / `TimerHandle` 类型。
+> **实现注记**（#134）：`TimerHandle` 已落地并支持 `cancel` / drop unregister；单窗 `App::run()` 结束会关闭 handle、cancel AppTimer 并清空 MainThreadQueue；多窗单 session 关闭时批量 cancel 仍待接。
 
 ---
 
@@ -685,7 +687,7 @@ inspector_handle.update_view(|| inspector_panel_v2(data.get()));
 
 详见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153）与 [view_factory 生命周期](view-reactive.md#view_factory-生命周期)（#155–#156）。
 
-> **实现注记**：`update_view` 尚未导出。
+> **实现注记**：单窗 `AppHandle::update_view` / `set_root` 已导出，并经 `MainThreadQueue` 在主线程写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 `tick_effects` 后、layout/render 前至多 reconcile 一次。多窗 `window_id` 路由待接。
 
 ---
 

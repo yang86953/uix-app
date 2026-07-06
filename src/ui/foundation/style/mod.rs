@@ -19,7 +19,6 @@ pub mod edge_insets;
 mod paint;
 mod variant;
 
-
 pub use paint::apply_style;
 pub use variant::{StyleSet, StyleState};
 

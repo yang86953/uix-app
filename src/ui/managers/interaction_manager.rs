@@ -10,6 +10,8 @@ use crate::ui::{EventResult, SystemEvent};
 pub struct InteractionManager {
     hovered: bool,
     pressed: bool,
+    hovered_widget: Option<usize>,
+    pressed_widget: Option<usize>,
     /// PointerDown 时的位置，用于 PointerUp 边界验证。
     press_pos: Option<Point>,
 }
@@ -24,6 +26,41 @@ impl InteractionManager {
     }
     pub fn pressed(&self) -> bool {
         self.pressed
+    }
+
+    pub fn hovered_widget(&self) -> Option<usize> {
+        self.hovered_widget
+    }
+
+    pub fn set_hovered_widget(&mut self, id: Option<usize>) {
+        self.hovered_widget = id;
+        self.hovered = id.is_some();
+    }
+
+    pub fn pressed_widget(&self) -> Option<usize> {
+        self.pressed_widget
+    }
+
+    pub fn set_pressed_widget(&mut self, id: Option<usize>) {
+        self.pressed_widget = id;
+        self.pressed = id.is_some();
+        if id.is_none() {
+            self.press_pos = None;
+        }
+    }
+
+    pub fn unregister_widget(&mut self, widget_id: usize) {
+        if self.hovered_widget == Some(widget_id) {
+            self.set_hovered_widget(None);
+        }
+        if self.pressed_widget == Some(widget_id) {
+            self.set_pressed_widget(None);
+        }
+    }
+
+    pub fn clear_tree_interaction(&mut self) {
+        self.set_hovered_widget(None);
+        self.set_pressed_widget(None);
     }
 
     /// 处理事件。`widget_size` 为 widget 的 (宽度, 高度)，

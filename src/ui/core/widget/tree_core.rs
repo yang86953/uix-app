@@ -2,7 +2,10 @@ use super::*;
 use crate::core::{Point, Rect};
 use crate::draw::pipeline::InvalidationQueueHandle;
 use crate::native::traits::input::{KeyMod, MouseButton};
+use crate::ui::app_state::AppState;
+use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::HandlerTable;
+use crate::ui::managers::WidgetManagers;
 use crate::ui::overlay::OverlayStack;
 
 #[path = "tree_layout.rs"]
@@ -60,7 +63,10 @@ pub struct WidgetTree {
 
     pub(crate) drag_gesture: DragGestureState,
     pub(crate) invalidation: InvalidationQueueHandle,
+    pub(crate) reconcile_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub(crate) effects: Vec<crate::ui::foundation::state::Effect>,
+    managers: WidgetManagers,
+    app_state: Option<AppState>,
 }
 
 impl Default for WidgetTree {
@@ -80,7 +86,10 @@ impl Default for WidgetTree {
             overlay_stack: OverlayStack::new(),
             drag_gesture: DragGestureState::default(),
             invalidation: crate::draw::pipeline::InvalidationQueue::shared(),
+            reconcile_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             effects: Vec::new(),
+            managers: WidgetManagers::new(),
+            app_state: None,
         }
     }
 }
@@ -92,6 +101,53 @@ impl WidgetTree {
 
     pub fn tree_version(&self) -> u64 {
         self.tree_version
+    }
+
+    pub fn managers(&self) -> &WidgetManagers {
+        &self.managers
+    }
+
+    pub fn managers_mut(&mut self) -> &mut WidgetManagers {
+        &mut self.managers
+    }
+
+    pub fn set_app_state(&mut self, app_state: AppState) {
+        self.app_state = Some(app_state);
+        self.sync_app_state_registry();
+    }
+
+    pub fn app_state(&self) -> Option<AppState> {
+        self.app_state.clone()
+    }
+
+    pub(crate) fn register_app_state_snapshot(&self, id: WidgetId) {
+        let Some(app_state) = &self.app_state else {
+            return;
+        };
+        let Some(node) = self.get(id) else {
+            return;
+        };
+        app_state.register(
+            id,
+            ComponentConfigSnapshot::from_component(id, node.component()),
+        );
+    }
+
+    pub(crate) fn unregister_app_state_snapshot(&self, id: WidgetId) {
+        if let Some(app_state) = &self.app_state {
+            app_state.unregister(id);
+        }
+    }
+
+    fn sync_app_state_registry(&self) {
+        if self.app_state.is_none() {
+            return;
+        }
+        for id in self.traverse() {
+            if self.get(id).is_some_and(|node| node.mounted()) {
+                self.register_app_state_snapshot(id);
+            }
+        }
     }
 
     pub fn alloc_id(&mut self) -> WidgetId {
@@ -132,6 +188,9 @@ impl WidgetTree {
         self.focused_widget = None;
         self.hovered_widget = None;
         self.pointer_down_target = None;
+        self.managers.focus.clear_tree_focus();
+        self.managers.interaction.clear_tree_interaction();
+        self.managers.drag.clear_tree_drag();
     }
 
     fn collect_lifecycle_subtree(&self, id: WidgetId, out: &mut Vec<WidgetId>) {
@@ -156,6 +215,7 @@ impl WidgetTree {
     }
 
     fn deactivate_detach_and_destroy(&mut self, id: WidgetId) {
+        self.unregister_app_state_snapshot(id);
         if let Some(node) = self.get_mut(id) {
             if node.active() {
                 node.set_active(false);
@@ -213,6 +273,7 @@ impl WidgetTree {
         self.root_id = None;
         self.handler_table.clear();
         self.overlay_stack.clear();
+        self.managers.clear_overrides();
         self.reset_interaction_state();
         self.tree_version += 1;
 
@@ -220,6 +281,7 @@ impl WidgetTree {
         let id = self.alloc_id();
         let mut boxed = BoxedWidget::new(widget);
         boxed.set_id(id);
+        boxed.set_tab_index(boxed.component().tab_index());
         let ps = boxed.preferred_size(None);
         boxed.set_frame(Rect::new(0.0, 0.0, ps.w, ps.h));
         if self.nodes.len() <= id {
@@ -227,6 +289,7 @@ impl WidgetTree {
         }
         self.nodes[id] = Some(boxed);
         self.root_id = Some(id);
+        self.register_focusable(id);
         self.attach_node(id);
         for child in children {
             self.add_child(id, child);
@@ -306,10 +369,12 @@ impl WidgetTree {
         let mut boxed = BoxedWidget::new(child);
         boxed.set_id(child_id);
         boxed.set_parent(Some(parent_id));
+        boxed.set_tab_index(boxed.component().tab_index());
         if self.nodes.len() <= child_id {
             self.nodes.resize_with(child_id + 1, || None);
         }
         self.nodes[child_id] = Some(boxed);
+        self.register_focusable(child_id);
         self.attach_node(child_id);
         if let Some(parent) = self.get_mut(parent_id) {
             parent.children_mut().push(child_id);
@@ -346,6 +411,10 @@ impl WidgetTree {
                 }
                 self.handler_table.clear_component(id);
                 self.overlay_stack.remove_for_owner(id);
+                self.managers.remove_overrides(id);
+                self.managers.focus.unregister_widget(id);
+                self.managers.interaction.unregister_widget(id);
+                self.managers.drag.unregister_widget(id);
                 self.free_ids.push(id);
             }
         }
@@ -419,6 +488,13 @@ impl WidgetTree {
         ids.clone()
     }
 
+    pub fn active_timers(&self) -> Vec<(u64, std::time::Duration)> {
+        self.traverse()
+            .into_iter()
+            .filter_map(|id| self.get(id).and_then(|node| node.active_timer()))
+            .collect()
+    }
+
     pub fn set_frame_dirty(&mut self, id: WidgetId, new_frame: Rect) {
         let old = match self.get(id) {
             Some(w) => {
@@ -486,6 +562,14 @@ impl WidgetTree {
             };
             n.set_tab_index(ti);
         }
+        self.register_focusable(id);
+        let handler_signatures = handlers
+            .iter()
+            .map(|handler| handler.authored_signature())
+            .collect();
+        if let Some(n) = self.get_mut(id) {
+            n.set_handler_signatures(handler_signatures);
+        }
         for handler in handlers {
             self.handler_table.register(id, handler);
         }
@@ -498,6 +582,7 @@ impl WidgetTree {
     pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<WidgetId> {
         let id = self.find_by_type::<T>()?;
         self.focused_widget = Some(id);
+        self.managers.focus.set_focused_widget(Some(id));
         if let Some(node) = self.get_mut(id) {
             if let Some(input) = node
                 .component_mut()
@@ -533,17 +618,21 @@ impl WidgetTree {
     // 鈹€鈹€ Tab 閿劍鐐瑰鑸?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     pub fn collect_focusable(&self) -> Vec<WidgetId> {
-        let mut result: Vec<(i32, WidgetId)> = Vec::new();
+        let mut result = self
+            .managers
+            .focus
+            .focusable_order()
+            .into_iter()
+            .filter(|&id| self.get(id).is_some_and(|node| node.is_focusable()))
+            .collect::<Vec<_>>();
+
         for id in self.traverse() {
-            if let Some(node) = self.get(id) {
-                if node.is_focusable() {
-                    result.push((node.tab_index(), id));
-                }
+            if !result.contains(&id) && self.get(id).is_some_and(|node| node.is_focusable()) {
+                result.push(id);
             }
         }
-        // 鎸?tab_index 鍗囧簭鎺掑簭锛堝皬鏁板瓧鍏堣仛鐒︼級
-        result.sort_by_key(|&(idx, _)| idx);
-        result.into_iter().map(|(_, id)| id).collect()
+
+        result
     }
 
     pub fn focus_next(&self, forward: bool) -> Option<WidgetId> {
@@ -551,7 +640,7 @@ impl WidgetTree {
         if focusable.is_empty() {
             return None;
         }
-        let current = self.focused_widget;
+        let current = self.managers.focus.focused_widget().or(self.focused_widget);
         if let Some(cur_id) = current {
             let pos = focusable.iter().position(|&id| id == cur_id);
             match pos {
@@ -568,9 +657,14 @@ impl WidgetTree {
             Some(focusable[0])
         }
     }
+
+    fn register_focusable(&mut self, id: WidgetId) {
+        if let Some(node) = self.get(id) {
+            self.managers.focus.register_focusable(id, node.tab_index());
+        }
+    }
 }
 
 #[cfg(test)]
 #[path = "../../../tests/ui/core/widget/tree_core.rs"]
 mod tests;
-

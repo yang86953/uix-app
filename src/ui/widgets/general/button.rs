@@ -8,6 +8,7 @@ use crate::native::traits::input::KeyCode;
 use crate::ui::style::{apply_style, Style, StyleSet, StyleState};
 use crate::ui::traits::{EventHandler, WidgetLayout, WidgetRender};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{SnapshotFields, SnapshotSource};
 
 /// 按钮组件。业务绑定不存放在组件内，由 HandlerTable 按 ComponentId 管理。
 pub struct Button {
@@ -22,6 +23,18 @@ pub struct Button {
 }
 
 impl_widget_component!(Button; Layout, Render, Event; tab_index => 1);
+
+impl SnapshotSource for Button {
+    fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Button {
+            text: self.text.clone(),
+            disabled: self.disabled,
+            block: self.block,
+            style_set: self.style_set.clone(),
+            style: self.style.clone(),
+        }
+    }
+}
 
 impl WidgetLayout for Button {
     fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size {

@@ -79,4 +79,3 @@ impl RenderBackend for NullBackend {
 #[cfg(test)]
 #[path = "../../tests/draw/backend/null.rs"]
 mod tests;
-

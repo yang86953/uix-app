@@ -170,4 +170,3 @@ impl Anchor {
 #[cfg(test)]
 #[path = "../../../tests/ui/widgets/navigation/anchor.rs"]
 mod tests;
-

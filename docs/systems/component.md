@@ -47,8 +47,8 @@
 |-------|-------------|------|
 | **WidgetLayout** | `preferred_size`, `flex_grow/shrink`, `layout_children` | #29 |
 | **WidgetRender** | `render(frame, ctx, tree)`；可选 `overlay_entry`, `dirty_rect` | |
-| **EventHandler** | `on_event`, `semantic_event` | #36 |
-| **WantsContinuousPointerMove** | 默认 false；true → 窗内每 PointerMove dispatch（#121） | #109 |
+| **EventHandler** | `on_event`, `semantic_event`, `wants_continuous_pointer_move` | #36 #121 |
+| **连续 PointerMove opt-in** | 默认 false；true → hover 框内每 PointerMove dispatch（#121） | #109 |
 | **WidgetLifecycle** | mount/unmount/active/inactive；`on_theme_changed` | #8 #9 |
 | **PicturePolicyMeta** | authoring 声明默认 `Never`/`Eligible`（#122）；框架 build 时自动推断 |
 
@@ -59,16 +59,16 @@
 **Active** = 有焦点 **或** 与祖先 clip/scroll 视口求交后仍有可见像素。  
 Inactive 组件跳过大部分语义派发，Lifecycle 进入 inactive。
 
-### WantsContinuousPointerMove（#121）
+### 连续 PointerMove opt-in（#121）
 
-opt-in capability trait；**默认不 impl**（等价 false）。
+源码落点是 `EventHandler::wants_continuous_pointer_move` hook；默认实现返回 `false`。
 
-| impl | PointerMove 行为 |
-|------|------------------|
-| 无 / false | [边界感知窄路径](demand-driven.md#pointermove-窄路径)（#109） |
-| true | 窗内 **每** move 全 dispatch（SignaturePad、画布涂鸦等） |
+| 返回值 | PointerMove 行为 |
+|--------|------------------|
+| false | [边界感知窄路径](demand-driven.md#pointermove-窄路径)（#109）：同一 hover 框内默认不 dispatch |
+| true | 同一 hover 框内仍收到每次 `PointerMove`；适合画布、拖拽预览、SignaturePad |
 
-新内置 widget **默认不 impl**；移出窄路径须评审 + 测试证明必要性。
+新内置 widget 默认继承 false；移出窄路径须评审 + 测试证明必要性。
 
 ### ComponentHandle（设计 #61、#72、#145）
 
@@ -76,7 +76,7 @@ opt-in capability trait；**默认不 impl**（等价 false）。
 
 框架在 Reconciler **mount** 时向 AppState **自动 register**（#145）；unmount 时 unregister。快照字段见 [ComponentConfigSnapshot](#componentconfigsnapshot)（#146）。App **不手写**注册表。
 
-> **实现注记**：`ComponentHandle` 类型尚在落地中；当前 handler 经 `State<T>` 闭包捕获访问业务数据。
+> **实现注记**：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出；`invalidate()` 已接 `WidgetTree::invalidate_paint` 窄 Paint。`snapshot()` / `snapshot_fields()` 与首批只读配置 getter（`text` / `placeholder` / `disabled`）已接，当前优先从 live widget 提取静态配置快照，必要时可回退到 `AppState` snapshot registry，并排除交互态。`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot 与 `AppState::get_handle` 已接；App 默认持有并注入单窗 `WindowSession` 已接；跨窗共享与 lookup handle 的 live tree 绑定待接，当前 handler 仍可经 `State<T>` 闭包捕获访问业务数据。
 
 ---
 
@@ -115,7 +115,7 @@ enum SnapshotFields {
 
 自定义 widget：见 [SnapshotSource](#snapshotsource)（#151）。
 
-> **实现注记**：`ComponentConfigSnapshot` 未落地；Handle getter 设计 ahead of code。
+> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；Button / Label / Input / Container / Grid 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event 等运行态。`ComponentHandle` 已可读取当前组件快照与首批类型化 getter；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`define_widget!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 已复用该路径，完整独立 DSL 仍待接。
 
 ### SnapshotSource（#151）
 
@@ -157,6 +157,8 @@ impl SnapshotSource for Rating {
 | 提取时机 | mount + reconcile patch（#146） |
 
 内置 widget：框架为各类型手写 `SnapshotFields` 变体；与 #146 `enum SnapshotFields` 对齐。
+
+> **实现注记**：首批内置提取覆盖 Button、Label、Input、Container、Grid；`define_widget!` 自定义 widget 已自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，且支持 `#[snapshot(skip)]` 排除 pub 字段；`component!` 已支持文档示例的 `name: ..., struct ...` 入口并复用同一提取路径，完整独立 DSL 解析尚未接。
 
 ### #[snapshot(skip)]（#152）
 
@@ -228,7 +230,7 @@ WidgetTree
 
 支持 **per-widget override**（`state_for(id)` / `text_for(id)`）。
 
-> **实现注记**：Manager 聚合类型已导出，尚未注入 WidgetTree；焦点/拖拽/交互态当前由 WidgetTree 自身字段驱动。
+> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `text_for(id)` per-widget override；节点移除或根替换会清理 stale override，避免复用的 `WidgetId` 命中旧状态。`FocusManager` 已记录当前焦点与 Tab 顺序，`collect_focusable` / `focus_next` 由 manager 驱动；`InteractionManager` 已记录 hovered / pressed widget，并作为 PointerMove / Wheel / Timer 目标解析的优先状态源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset，并驱动基础 DragStart / DragMove / DragEnd 热路径。旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 字段保留为事件派发兼容镜像。
 
 ---
 
@@ -242,9 +244,9 @@ WidgetTree
 | tick | `drain_due` → `tree.update(dt)` → 自动 `dirty_bounds()` 标脏（#126） |
 | 结束 | 框架 unregister → Registry 空时可 DeepIdle |
 
-**App 不调用 register**。Spinner、Modal 过渡等内置组件内部托管。
+**App 不调用 register**。`Spin` 已作为内置 `WidgetAnimation` source 托管；Modal / Drawer 过渡等内置动画源后续接入。
 
-> **实现注记**：`AnimationRegistry` 与 `tree.update` 骨架已存在，尚未接入 event loop；`update` 当前恒返回 false。
+> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入 event loop；动画 widget 每次 update 后按 `animation_dirty_rect` 窄 Paint 标脏，仍活跃时由 Registry 登记下一帧 deadline。`Spin` 已作为首个内置动画源接入；Modal / Drawer 等过渡动画源仍待接入该能力。
 
 ---
 
@@ -394,9 +396,9 @@ WidgetTree
 
 ## Authoring
 
-设计决策 [#102](../decisions.md#d102)：设计态 **`component!`**（[#20](../decisions.md#d20)）；当前实现 **`define_widget!` + `impl_widget_component!`**，重构对齐 `component!`。
+设计决策 [#102](../decisions.md#d102)：设计态 **`component!`**（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 已接入现有 `define_widget!` 展开，完整独立 DSL 继续对齐。
 
-### define_widget! + impl_widget_component!（当前实现）
+### component! / define_widget!（当前实现）
 
 ```rust
 define_widget! {
@@ -473,6 +475,8 @@ picture_policy: PicturePolicy::Never,  // 默认
 ```
 
 App / View **不**配置 Picture；调用方零维护。
+
+> **实现注记**：`WidgetComponent::picture_policy()` 与 `define_widget!` 的 `picture_policy =>` 元数据方法已接；LayerTree 会合并 handler、dynamic content、interactive state、continuous pointer、overlay、focusable、clip、scroll 等运行时信号并套用 #129 阈值。当前 Container / Grid 首批声明 `Eligible`；未声明组件默认 `Never`。
 
 ---
 

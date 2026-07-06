@@ -11,6 +11,7 @@ use crate::draw::{traits::GraphicsEngine, TextLayoutOptions};
 use crate::ui::clipboard;
 use crate::ui::style::Style;
 use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
+use crate::ui::{SnapshotFields, SnapshotSource};
 
 define_widget! {
     pub struct Label {
@@ -192,6 +193,20 @@ define_widget! {
 
             // 绘制文本（使用同一布局）
             ctx.blit_glyph_layout(&layout, abs_pos, c, fs);
+        }
+    }
+}
+
+impl SnapshotSource for Label {
+    fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Label {
+            text: self.text.clone(),
+            font_size: self.font_size,
+            font_size_unit: self.font_size_unit,
+            color: self.color,
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
+            style: self.style.clone(),
         }
     }
 }

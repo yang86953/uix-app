@@ -31,6 +31,10 @@ pub use crate::ui::state::{Computed, State};
 pub use crate::ui::style::{ColorValue, PaletteColor, Style, StyleSet, TypographyToken};
 pub use crate::ui::theme::{DesignTokens, DynTokens, NeutralRole, Theme};
 pub use crate::ui::{
+    DragManager, FocusManager, InteractionManager, StateManager, StyleManager, TextManager,
+    WidgetManagers,
+};
+pub use crate::ui::{
     EventResult, IntoWidgetNode, PaintContext, SystemEvent, WidgetCore, WidgetId, WidgetNode,
     WidgetTree,
 };

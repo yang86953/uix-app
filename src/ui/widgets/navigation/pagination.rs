@@ -216,4 +216,3 @@ impl Pagination {
 #[cfg(test)]
 #[path = "../../../tests/ui/widgets/navigation/pagination.rs"]
 mod tests;
-

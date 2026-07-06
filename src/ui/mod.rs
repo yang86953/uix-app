@@ -1,6 +1,9 @@
 //! 界面能力 — 组件框架、布局、主题、内置组件与声明式 View。
 
 pub mod animation;
+pub mod app_state;
+pub mod component_handle;
+pub mod component_snapshot;
 pub mod core;
 pub mod event;
 pub mod foundation;
@@ -17,8 +20,13 @@ pub use crate::draw::painting::PaintContext;
 pub use crate::native::traits::input::{ControlSize, KeyCode, KeyMod, MouseButton};
 pub use crate::native::traits::system::StatusLevel;
 pub use animation::{Animation, Easing};
+pub use app_state::AppState;
 pub use children::WidgetChildren;
 pub use clipboard::copy_to_clipboard;
+pub use component_handle::ComponentHandle;
+pub use component_snapshot::{
+    ComponentConfigSnapshot, SnapshotField, SnapshotFields, SnapshotSource, SnapshotValue,
+};
 pub use core::widget;
 pub use core::widget::{
     BoxedWidget, EventResult, IntoWidgetNode, WidgetCore, WidgetId, WidgetNode, WidgetTree,
@@ -28,7 +36,7 @@ pub use event::{
     ClickEvent, HandlerId, HandlerOptions, HandlerRegistration, HandlerTable, SemanticEvent,
     SemanticKind, SemanticPayload, SystemEvent, SystemEventKind,
 };
-pub use foundation::state::{Computed, Effect, State};
+pub use foundation::state::{Computed, Effect, State, StateSlotId};
 pub use foundation::style::{
     ColorValue, PaletteColor, Style, StyleSet, StyleState, TypographyToken,
 };
@@ -37,10 +45,14 @@ pub use layout::{
     AlignItems, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent, LayoutChild,
     LayoutEngine,
 };
+pub use managers::{
+    DragManager, FocusManager, InteractionManager, StateManager, StyleManager, TextManager,
+    WidgetManagers,
+};
 pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
 pub use theme::{DesignTokens, NeutralRole, ShadowToken, Theme};
 pub use traits::{
-    Animatable, DebugRenderer, EventHandler, TextRenderer, TokenProvider, WidgetCapabilities,
-    WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,
+    Animatable, DebugRenderer, EventHandler, TextRenderer, TokenProvider, WidgetAnimation,
+    WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,
 };
 pub use widgets::*;

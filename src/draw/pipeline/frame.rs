@@ -112,4 +112,3 @@ fn present_damage_for_strategy(strategy: &UpdateStrategy) -> DamageRegion {
 #[cfg(test)]
 #[path = "../../tests/draw/pipeline/frame.rs"]
 mod tests;
-

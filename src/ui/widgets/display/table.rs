@@ -155,6 +155,8 @@ define_widget! {
             .map(|value| SemanticEvent::change(id, value))
     }
 
+    wants_continuous_pointer_move => (&self) -> bool { true }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let bg = ctx.tokens().color_bg_elevated();

@@ -86,7 +86,7 @@ App 启动（可选）
 | 缺文件 | DefaultTheme（#48） |
 | 单线程 | GUI 主线程（#88） |
 
-> **实现注记**：Settings 类型已就绪；App builder 尚未内置 opt-in load 集成（配置 path 后 `run()` 前代调 `load()`），由应用在 `run()` 前自行集成。
+> **实现注记**：Settings 类型已就绪；`App::settings(path)` 已提供 opt-in load 集成，`run()` 进入 GUI/CLI 模式前加载一次并注册 `SettingsService` 到 App DI；默认仍不自动 load/save，运行中保存由业务显式调用。
 
 ---
 

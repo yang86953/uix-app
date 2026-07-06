@@ -232,4 +232,3 @@ impl NotificationService {
 #[cfg(test)]
 #[path = "../../tests/native/services/notification.rs"]
 mod tests;
-

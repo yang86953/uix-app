@@ -184,4 +184,3 @@ fn union_rect(a: Rect, b: Rect) -> Rect {
 #[cfg(test)]
 #[path = "../../tests/draw/pipeline/invalidation.rs"]
 mod tests;
-

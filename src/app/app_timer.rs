@@ -1,0 +1,181 @@
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, Weak};
+use std::time::{Duration, Instant};
+
+use crate::app::active_work_registry::TimerId;
+use crate::app::test_clock::{system_clock, AppClock};
+
+#[derive(Clone)]
+pub(crate) struct AppTimerQueue {
+    inner: Arc<Mutex<AppTimerQueueInner>>,
+    clock: Arc<dyn AppClock>,
+}
+
+struct AppTimerQueueInner {
+    next_id: TimerId,
+    entries: BTreeMap<TimerId, AppTimerEntry>,
+}
+
+impl Default for AppTimerQueueInner {
+    fn default() -> Self {
+        Self {
+            next_id: 1,
+            entries: BTreeMap::new(),
+        }
+    }
+}
+
+struct AppTimerEntry {
+    deadline: Instant,
+    interval: Option<Duration>,
+    callback: Box<dyn FnMut() + Send>,
+}
+
+pub struct TimerHandle {
+    id: TimerId,
+    queue: Weak<Mutex<AppTimerQueueInner>>,
+    cancelled: bool,
+}
+
+impl AppTimerQueue {
+    pub(crate) fn new() -> Self {
+        Self::with_clock(system_clock())
+    }
+
+    pub(crate) fn with_clock(clock: Arc<dyn AppClock>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(AppTimerQueueInner::default())),
+            clock,
+        }
+    }
+
+    pub(crate) fn run_after<F>(&self, delay: Duration, f: F) -> TimerHandle
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let mut f = Some(f);
+        self.insert(delay, None, move || {
+            if let Some(f) = f.take() {
+                f();
+            }
+        })
+    }
+
+    pub(crate) fn run_interval<F>(&self, interval: Duration, f: F) -> TimerHandle
+    where
+        F: FnMut() + Send + 'static,
+    {
+        self.insert(interval, Some(interval), f)
+    }
+
+    pub(crate) fn deadlines(&self) -> Vec<(TimerId, Instant)> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries
+            .iter()
+            .map(|(&id, entry)| (id, entry.deadline))
+            .collect()
+    }
+
+    pub(crate) fn cancel_all(&self) {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries
+            .clear();
+    }
+
+    pub(crate) fn fire(&self, id: TimerId, now: Instant) -> bool {
+        let mut entry = {
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            inner.entries.remove(&id)
+        };
+
+        let Some(mut entry) = entry.take() else {
+            return false;
+        };
+
+        (entry.callback)();
+
+        if let Some(interval) = entry.interval {
+            entry.deadline = now + interval;
+            self.inner
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .entries
+                .insert(id, entry);
+        }
+
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries
+            .len()
+    }
+
+    fn insert<F>(&self, delay: Duration, interval: Option<Duration>, f: F) -> TimerHandle
+    where
+        F: FnMut() + Send + 'static,
+    {
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let id = inner.next_id;
+        inner.next_id = inner.next_id.wrapping_add(1).max(1);
+        inner.entries.insert(
+            id,
+            AppTimerEntry {
+                deadline: self.clock.now() + delay,
+                interval,
+                callback: Box::new(f),
+            },
+        );
+        TimerHandle {
+            id,
+            queue: Arc::downgrade(&self.inner),
+            cancelled: false,
+        }
+    }
+}
+
+impl TimerHandle {
+    pub(crate) fn inactive() -> Self {
+        Self {
+            id: 0,
+            queue: Weak::new(),
+            cancelled: true,
+        }
+    }
+
+    pub fn cancel(mut self) {
+        self.cancel_inner();
+    }
+
+    fn cancel_inner(&mut self) {
+        if self.cancelled {
+            return;
+        }
+        self.cancelled = true;
+        if let Some(queue) = self.queue.upgrade() {
+            queue
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .entries
+                .remove(&self.id);
+        }
+    }
+}
+
+impl Drop for TimerHandle {
+    fn drop(&mut self) {
+        self.cancel_inner();
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/app/app_timer.rs"]
+mod tests;

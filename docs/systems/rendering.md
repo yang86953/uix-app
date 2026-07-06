@@ -140,7 +140,7 @@ InvalidationQueue.dirty_region()
 
 几何类型定义在 `core::damage`（见 [foundation](foundation.md)）。
 
-> **实现注记**：`Invalidation::Composite` 与 `FrameRenderer` 的 scroll_region **memmove** API（`tree.drain_scroll_region_move`、`Canvas2D::scroll_region`）已存在；Scroll 容器 / UI 侧 writer 尚未写入 Composite 失效，当前滚动路径仍以 Paint invalidate 为主。
+> **实现注记**：`Invalidation::Composite` 与 `FrameRenderer` 的 scroll_region **memmove** API（`tree.drain_scroll_region_move`、`Canvas2D::scroll_region`）已存在；Wheel → ScrollView 已写入 Composite exposed strip，并避免整 viewport Paint invalidate。滚动条拖拽、程序化滚动等其他来源仍需逐项接入。
 
 ---
 
@@ -149,7 +149,7 @@ InvalidationQueue.dirty_region()
 `render_frame(engine, scene: &ScenePaint, input)` 顺序：
 
 ```text
-1. 归一化 dirty（首帧 / full_frame / 空 / 无 partial 能力 → full）
+1. 归一化 dirty（首帧 / full_frame / 无 partial 能力 → full；首帧后空 dirty 且无 Composite → Idle）
 2. tree_version 变 → LayerTree.build + sweep_orphaned_offscreens
 3. LayerTree.update_dirty(scene)
 4. RenderObjectTree.sync(scene)
@@ -162,6 +162,8 @@ InvalidationQueue.dirty_region()
 ```
 
 Debug：F12 切换 debug_mode；hover 链边框 + 帧指标 HUD。
+
+> **实现注记**：`FrameRenderer` 已在 `rendered_first && dirty_region.is_empty() && scroll_move.is_none()` 时直接返回 `RenderOutcome::Idle`，避免空 dirty 被提升为全帧 present；首帧仍强制 full redraw。
 
 ---
 
@@ -194,7 +196,7 @@ Bitmap 字体（内置）用于 debug / 回退；正常路径走系统字体栈�
 
 设计（#83）：`AnimationRegistry` 持有 active node 集合；主循环在 `tick_effects` **之前**调用 `tree.update(dt)`，由各 widget 推进 `Animatable`（见 [component · 动画](component.md#动画)、[application · 主循环](application.md#主循环)）。
 
-> **实现注记**：Registry 已导出未接入；`tree.update` 当前 stub 返回 false。接入后 animating flag 影响 event loop 轮询策略（blocking wait）。
+> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入；动画更新会按 widget 的 `animation_dirty_rect` 做窄 Paint 标脏，单窗 event loop 在仍有动画时登记下一帧 Registry deadline。具体内置组件动画源与多窗路由仍待接。
 
 ---
 

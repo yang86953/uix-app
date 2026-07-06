@@ -1,8 +1,9 @@
 //! Render Loop — OS 事件 + Widget 调度；渲染段委托 draw FrameRenderer。
 
-use std::cell::{Cell, RefCell};
-use std::time::Instant;
-
+use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
+use crate::app::main_thread_queue::MainThreadContext;
+use crate::app::test_clock::{system_clock, AppClock};
+use crate::app::window_session::{WindowLoopState, WindowSession};
 use crate::core::{Point, Rect};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
@@ -14,8 +15,12 @@ use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::window::PlatformWindow;
 use crate::ui::clipboard;
-use crate::ui::theme::Theme;
+use crate::ui::theme::{DynTokens, Theme};
 use crate::ui::{SystemEvent, WidgetCore, WidgetTree};
+use std::cell::{Cell, RefCell};
+use std::time::Duration;
+
+const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
 /// 运行完整的 widget 渲染事件循环。
 #[allow(clippy::too_many_arguments)]
@@ -39,6 +44,231 @@ where
     X: Fn(&UiEvent) -> bool,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
+    let mut active_work = ActiveWorkRegistry::new();
+    let mut pending_root = None;
+    let mut reconcile_pending = false;
+    run_widget_loop_with_active_work(
+        platform,
+        platform_window,
+        engine,
+        tree,
+        &mut active_work,
+        crate::app::app_timer::AppTimerQueue::new(),
+        crate::app::main_thread_queue::MainThreadQueue::new(),
+        system_clock(),
+        None,
+        &mut pending_root,
+        &mut reconcile_pending,
+        None,
+        font_service,
+        image_service,
+        theme,
+        None,
+        debug_mode,
+        cursor_pos,
+        metrics,
+        map_event,
+        on_exit,
+        on_frame,
+    )
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_window_session_loop<M, X, F>(
+    platform: &mut dyn Platform,
+    platform_window: &mut dyn PlatformWindow,
+    session: &mut WindowSession,
+    font_service: &FontService,
+    image_service: &ImageService,
+    theme: &RefCell<Theme>,
+    debug_mode: &Cell<bool>,
+    cursor_pos: &Cell<Point>,
+    metrics: Option<&Cell<RenderMetrics>>,
+    map_event: M,
+    on_exit: X,
+    on_frame: F,
+) -> i32
+where
+    M: Fn(&UiEvent) -> Option<SystemEvent>,
+    X: Fn(&UiEvent) -> bool,
+    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+{
+    run_window_session_loop_with_system_theme(
+        platform,
+        platform_window,
+        session,
+        font_service,
+        image_service,
+        theme,
+        None,
+        debug_mode,
+        cursor_pos,
+        metrics,
+        map_event,
+        on_exit,
+        on_frame,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_window_session_loop_with_system_theme<M, X, F>(
+    platform: &mut dyn Platform,
+    platform_window: &mut dyn PlatformWindow,
+    session: &mut WindowSession,
+    font_service: &FontService,
+    image_service: &ImageService,
+    theme: &RefCell<Theme>,
+    system_theme_tokens: Option<&DynTokens>,
+    debug_mode: &Cell<bool>,
+    cursor_pos: &Cell<Point>,
+    metrics: Option<&Cell<RenderMetrics>>,
+    map_event: M,
+    on_exit: X,
+    on_frame: F,
+) -> i32
+where
+    M: Fn(&UiEvent) -> Option<SystemEvent>,
+    X: Fn(&UiEvent) -> bool,
+    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+{
+    run_window_session_loop_with_system_theme_and_clock(
+        platform,
+        platform_window,
+        session,
+        font_service,
+        image_service,
+        theme,
+        system_theme_tokens,
+        system_clock(),
+        debug_mode,
+        cursor_pos,
+        metrics,
+        map_event,
+        on_exit,
+        on_frame,
+    )
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_window_session_loop_with_clock<M, X, F>(
+    platform: &mut dyn Platform,
+    platform_window: &mut dyn PlatformWindow,
+    session: &mut WindowSession,
+    font_service: &FontService,
+    image_service: &ImageService,
+    theme: &RefCell<Theme>,
+    clock: std::sync::Arc<dyn AppClock>,
+    debug_mode: &Cell<bool>,
+    cursor_pos: &Cell<Point>,
+    metrics: Option<&Cell<RenderMetrics>>,
+    map_event: M,
+    on_exit: X,
+    on_frame: F,
+) -> i32
+where
+    M: Fn(&UiEvent) -> Option<SystemEvent>,
+    X: Fn(&UiEvent) -> bool,
+    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+{
+    run_window_session_loop_with_system_theme_and_clock(
+        platform,
+        platform_window,
+        session,
+        font_service,
+        image_service,
+        theme,
+        None,
+        clock,
+        debug_mode,
+        cursor_pos,
+        metrics,
+        map_event,
+        on_exit,
+        on_frame,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_window_session_loop_with_system_theme_and_clock<M, X, F>(
+    platform: &mut dyn Platform,
+    platform_window: &mut dyn PlatformWindow,
+    session: &mut WindowSession,
+    font_service: &FontService,
+    image_service: &ImageService,
+    theme: &RefCell<Theme>,
+    system_theme_tokens: Option<&DynTokens>,
+    clock: std::sync::Arc<dyn AppClock>,
+    debug_mode: &Cell<bool>,
+    cursor_pos: &Cell<Point>,
+    metrics: Option<&Cell<RenderMetrics>>,
+    map_event: M,
+    on_exit: X,
+    on_frame: F,
+) -> i32
+where
+    M: Fn(&UiEvent) -> Option<SystemEvent>,
+    X: Fn(&UiEvent) -> bool,
+    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+{
+    let parts = session.parts_mut();
+    run_widget_loop_with_active_work(
+        platform,
+        platform_window,
+        parts.engine,
+        parts.tree,
+        parts.active_work,
+        parts.app_timers,
+        parts.main_thread_queue,
+        clock,
+        Some(parts.view_factory),
+        parts.pending_root,
+        parts.reconcile_pending,
+        Some(parts.loop_state),
+        font_service,
+        image_service,
+        theme,
+        system_theme_tokens,
+        debug_mode,
+        cursor_pos,
+        metrics,
+        map_event,
+        on_exit,
+        on_frame,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_widget_loop_with_active_work<M, X, F>(
+    platform: &mut dyn Platform,
+    platform_window: &mut dyn PlatformWindow,
+    engine: &mut dyn GraphicsEngine,
+    tree: &mut WidgetTree,
+    active_work: &mut ActiveWorkRegistry,
+    app_timers: crate::app::app_timer::AppTimerQueue,
+    main_thread_queue: crate::app::main_thread_queue::MainThreadQueue,
+    clock: std::sync::Arc<dyn AppClock>,
+    view_factory: Option<&crate::app::window_session::ViewFactorySlot>,
+    pending_root: &mut Option<crate::ui::view::ViewNode>,
+    reconcile_pending: &mut bool,
+    mut loop_state: Option<&mut WindowLoopState>,
+    font_service: &FontService,
+    image_service: &ImageService,
+    theme: &RefCell<Theme>,
+    system_theme_tokens: Option<&DynTokens>,
+    debug_mode: &Cell<bool>,
+    cursor_pos: &Cell<Point>,
+    metrics: Option<&Cell<RenderMetrics>>,
+    map_event: M,
+    on_exit: X,
+    on_frame: F,
+) -> i32
+where
+    M: Fn(&UiEvent) -> Option<SystemEvent>,
+    X: Fn(&UiEvent) -> bool,
+    F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
+{
     let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
 
     let pending_events = RefCell::new(Vec::<UiEvent>::new());
@@ -48,8 +278,7 @@ where
 
     let mut first_frame = true;
     let mut rendered_first = false;
-    let mut last_frame = Instant::now();
-    let mut idle_count: u32 = 0;
+    let mut last_frame = clock.now();
     let mut window_visible = true;
     let mut frame_renderer = FrameRenderer::new();
     let mut initial_size = (
@@ -65,7 +294,7 @@ where
     }
 
     let running = Cell::new(true);
-    let mut animating = false;
+    active_work.sync_app_timers(app_timers.deadlines());
 
     let collect = |ev: &UiEvent| {
         match ev.type_ {
@@ -87,31 +316,27 @@ where
     while running.get() {
         platform.text_input().start();
 
-        if animating {
-            if !platform.event_loop().wait_event(&collect) {
-                break;
-            }
-            platform.event_loop().poll_event(&collect);
-        } else if first_frame {
+        if first_frame {
+            set_loop_state(&mut loop_state, WindowLoopState::Active);
             if !platform.event_loop().poll_event(&collect) {
                 break;
             }
             first_frame = false;
+        } else if !main_thread_queue.is_empty() || *reconcile_pending {
+            set_loop_state(&mut loop_state, WindowLoopState::Active);
         } else {
-            if idle_count > 3 {
-                platform
-                    .event_loop()
-                    .wait_timeout(std::time::Duration::from_millis(100), &collect);
-            } else {
-                if !platform.event_loop().wait_event(&collect) {
-                    break;
-                }
+            set_loop_state(&mut loop_state, wait_loop_state(active_work));
+            if !wait_for_event_or_registered_work(platform, active_work, clock.as_ref(), &collect) {
+                break;
             }
             platform.event_loop().poll_event(&collect);
         }
 
         let had_events = !pending_events.borrow().is_empty();
         let mut had_layout_event = false;
+        let now = clock.now();
+        let due_work = active_work.drain_due(now);
+        let had_registered_work = !due_work.is_empty();
 
         for ev in pending_events.borrow_mut().drain(..) {
             let is_layout_event = !matches!(ev.type_, UiEventType::PointerMove);
@@ -168,6 +393,17 @@ where
                         }
                     }
                 }
+                UiEventType::ThemeChanged => {
+                    if let Some(tokens) = system_theme_tokens {
+                        let is_dark = platform.display().is_dark_mode();
+                        tokens.set_mode(is_dark);
+                        tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark });
+                    }
+                    unsafe {
+                        (*bus_ptr).event_bus().publish(&ev);
+                    }
+                    continue;
+                }
                 _ => {}
             }
 
@@ -179,25 +415,60 @@ where
                 (*bus_ptr).event_bus().publish(&ev);
             }
         }
-        if had_events {
-            idle_count = 0;
+
+        dispatch_due_active_work(tree, &app_timers, &due_work, clock.as_ref());
+        let mut main_thread_context = MainThreadContext::new(pending_root, reconcile_pending);
+        let had_main_thread_work = main_thread_queue.drain(&mut main_thread_context);
+        active_work.sync_timers(tree.active_timers(), clock.now());
+        active_work.sync_app_timers(app_timers.deadlines());
+        if tree.take_reconcile_requested() {
+            *reconcile_pending = true;
         }
 
-        let now = Instant::now();
+        let now = clock.now();
         let dt = (now - last_frame).as_secs_f64().min(0.05);
-        last_frame = now;
-        animating = tree.update(dt);
-        let _effects_ran = tree.tick_effects();
+        let pending_layout_work = tree
+            .invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_layout();
+        let active_frame = had_events
+            || had_registered_work
+            || had_main_thread_work
+            || *reconcile_pending
+            || !rendered_first
+            || pending_layout_work
+            || tree.has_render_work();
+        if active_frame {
+            last_frame = now;
+            let animating = tree.update(dt);
+            sync_animation_deadline(tree, active_work, animating, now);
+            let _effects_ran = tree.tick_effects();
+        }
+
+        if tree.take_reconcile_requested() {
+            *reconcile_pending = true;
+        }
+
+        if *reconcile_pending {
+            let root = pending_root
+                .take()
+                .or_else(|| view_factory.and_then(|factory| factory.build()));
+            if let Some(root) = root {
+                crate::ui::view::ViewAdapter::reconcile_nodes(tree, root);
+            }
+            *reconcile_pending = false;
+        }
+
+        let has_layout_work = tree
+            .invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_layout();
 
         let needs_work = window_visible && (had_layout_event || !rendered_first);
 
-        if needs_work
-            || tree
-                .invalidation
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .has_layout()
-        {
+        if needs_work || has_layout_work {
             let before_version = tree.tree_version();
             tree.layout();
             record_layout(metrics);
@@ -263,7 +534,6 @@ where
         match outcome {
             RenderOutcome::Present(damage) => {
                 record_present(metrics, outcome_source);
-                idle_count = 0;
                 if engine_capabilities.uses_external_presenter() {
                     let canvas = engine.canvas_2d();
                     let cw = canvas.width();
@@ -283,9 +553,11 @@ where
             }
             RenderOutcome::Idle => {
                 record_idle(metrics, outcome_source);
-                idle_count = idle_count.saturating_add(1);
             }
         }
+
+        let next_state = next_loop_state(tree, active_work);
+        set_loop_state(&mut loop_state, next_state);
     }
 
     0
@@ -296,6 +568,94 @@ fn record_layout(metrics: Option<&Cell<RenderMetrics>>) {
         let mut stats = m.get();
         stats.record_layout();
         m.set(stats);
+    }
+}
+
+fn wait_for_event_or_registered_work(
+    platform: &mut dyn Platform,
+    active_work: &ActiveWorkRegistry,
+    clock: &dyn AppClock,
+    callback: &dyn Fn(&UiEvent) -> bool,
+) -> bool {
+    match active_work.next_deadline() {
+        Some(deadline) => {
+            let now = clock.now();
+            if deadline <= now {
+                true
+            } else {
+                platform
+                    .event_loop()
+                    .wait_timeout(deadline.duration_since(now), callback)
+            }
+        }
+        None => platform.event_loop().wait_event(callback),
+    }
+}
+
+fn dispatch_due_active_work(
+    tree: &mut WidgetTree,
+    app_timers: &crate::app::app_timer::AppTimerQueue,
+    due_work: &[crate::app::active_work_registry::ActiveWorkKind],
+    clock: &dyn AppClock,
+) {
+    for work in due_work {
+        match *work {
+            crate::app::active_work_registry::ActiveWorkKind::Timer(id) => {
+                if let Ok(id) = u32::try_from(id) {
+                    let _ = tree.dispatch_event(&SystemEvent::Timer { id });
+                }
+            }
+            crate::app::active_work_registry::ActiveWorkKind::AppTimer(id) => {
+                app_timers.fire(id, clock.now());
+            }
+            _ => {}
+        }
+    }
+}
+
+fn sync_animation_deadline(
+    tree: &WidgetTree,
+    active_work: &mut ActiveWorkRegistry,
+    animating: bool,
+    now: std::time::Instant,
+) {
+    let Some(root_id) = tree.root_id() else {
+        return;
+    };
+    let kind = ActiveWorkKind::Animation(root_id);
+    if animating {
+        active_work.register(kind, now + ANIMATION_FRAME_INTERVAL);
+    } else {
+        active_work.unregister(kind);
+    }
+}
+
+fn wait_loop_state(active_work: &ActiveWorkRegistry) -> WindowLoopState {
+    if active_work.next_deadline().is_some() {
+        WindowLoopState::RegisteredActive
+    } else {
+        WindowLoopState::DeepIdle
+    }
+}
+
+fn next_loop_state(tree: &WidgetTree, active_work: &ActiveWorkRegistry) -> WindowLoopState {
+    if tree.has_render_work() || has_layout_work(tree) {
+        WindowLoopState::Active
+    } else {
+        wait_loop_state(active_work)
+    }
+}
+
+fn has_layout_work(tree: &WidgetTree) -> bool {
+    tree.invalidation
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .has_layout()
+}
+
+fn set_loop_state(state_slot: &mut Option<&mut WindowLoopState>, state: WindowLoopState) {
+    if let Some(slot) = state_slot.as_deref_mut() {
+        *slot = state;
     }
 }
 
@@ -344,4 +704,3 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
 #[cfg(test)]
 #[path = "../../tests/app/event_loop/event_loop.rs"]
 mod tests;
-

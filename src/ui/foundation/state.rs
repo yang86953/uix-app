@@ -1,9 +1,28 @@
+use std::any::TypeId;
 use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt;
+use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crate::core::Rect;
 use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
+
+type ReconcileCallback = Arc<dyn Fn() + Send + Sync>;
+
+#[derive(Clone)]
+struct PaintBindSite {
+    widget_id: usize,
+    queue: InvalidationQueueHandle,
+    rect: Option<Rect>,
+}
+
+#[derive(Clone)]
+struct ReconcileBindSite {
+    key: usize,
+    callback: ReconcileCallback,
+}
 
 // ── 响应式依赖追踪 ────────────────────────────────────────────
 //
@@ -30,7 +49,14 @@ thread_local! {
 // layout 后探测 DynamicLabel 闭包时捕获 `State::get()` 读取的实例。
 thread_local! {
     static STATE_BIND_CAPTURE: RefCell<
-        Option<(usize, InvalidationQueueHandle, Option<Rect>, Vec<Arc<dyn StatePaintBind>>)>,
+        Option<(
+            usize,
+            InvalidationQueueHandle,
+            Option<Rect>,
+            usize,
+            ReconcileCallback,
+            Vec<Arc<dyn StatePaintBind>>,
+        )>,
     > = RefCell::new(None);
 }
 
@@ -41,6 +67,20 @@ thread_local! {
 
 static STATE_CAPTURE_ACTIVE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StateSlotId(pub(crate) u64);
+
+impl StateSlotId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[cfg(test)]
+#[path = "../../tests/ui/foundation/state.rs"]
+mod tests;
 
 /// 开始捕获 `State::new` / `Effect::new` 实例（View 构建期间调用）。
 pub fn begin_state_capture() {
@@ -69,16 +109,19 @@ pub fn begin_state_bind_capture(
     widget_id: usize,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
+    reconcile_key: usize,
+    reconcile: ReconcileCallback,
 ) {
     STATE_BIND_CAPTURE.with(|c| {
-        *c.borrow_mut() = Some((widget_id, queue, rect, Vec::new()));
+        *c.borrow_mut() = Some((widget_id, queue, rect, reconcile_key, reconcile, Vec::new()));
     });
 }
 
 /// 结束探测并将捕获到的 State 绑定到指定 widget。
 pub fn end_state_bind_capture(widget_id: usize) {
     STATE_BIND_CAPTURE.with(|c| {
-        let Some((id, queue, rect, states)) = c.borrow_mut().take() else {
+        let Some((id, queue, rect, reconcile_key, reconcile, states)) = c.borrow_mut().take()
+        else {
             return;
         };
         if id != widget_id {
@@ -87,6 +130,7 @@ pub fn end_state_bind_capture(widget_id: usize) {
             ));
         }
         for source in states {
+            source.bind_reconcile_site(reconcile_key, reconcile.clone());
             source.bind_paint(widget_id, queue.clone(), rect);
         }
     });
@@ -95,7 +139,7 @@ pub fn end_state_bind_capture(widget_id: usize) {
 fn try_capture_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
     STATE_BIND_CAPTURE.with(|c| {
         let mut guard = c.borrow_mut();
-        if let Some((_, _, _, ref mut captured)) = *guard {
+        if let Some((_, _, _, _, _, ref mut captured)) = *guard {
             let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
             captured.push(bind);
         }
@@ -104,34 +148,95 @@ fn try_capture_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
 
 fn try_capture_computed_bind<T: Clone + Send + Sync + 'static>(computed: &Computed<T>) {
     STATE_BIND_CAPTURE.with(|c| {
-        if let Some((widget_id, queue, rect, _)) = c.borrow().as_ref() {
+        if let Some((widget_id, queue, rect, _, _, _)) = c.borrow().as_ref() {
             computed.bind_paint_invalidation(*widget_id, queue.clone(), *rect);
         }
     });
 }
 
-fn fire_paint_binding(
-    binding: &Arc<std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>>,
+fn bind_paint_site(
+    sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
+    widget_id: usize,
+    queue: InvalidationQueueHandle,
+    rect: Option<Rect>,
 ) {
-    if let Ok(guard) = binding.lock() {
-        if let Some((id, q, r)) = guard.as_ref() {
-            invalidate_paint_handle(q, *id, *r);
+    if let Ok(mut guard) = sites.lock() {
+        if let Some(site) = guard
+            .iter_mut()
+            .find(|site| site.widget_id == widget_id && Arc::ptr_eq(&site.queue, &queue))
+        {
+            site.rect = rect;
+        } else {
+            guard.push(PaintBindSite {
+                widget_id,
+                queue,
+                rect,
+            });
         }
+    }
+}
+
+fn fire_paint_bindings(sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>) {
+    let sites = sites.lock().ok().map(|guard| guard.clone());
+    let Some(sites) = sites else {
+        return;
+    };
+    for site in &sites {
+        invalidate_paint_handle(&site.queue, site.widget_id, site.rect);
+    }
+}
+
+fn bind_reconcile_site(
+    sites: &Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
+    key: usize,
+    callback: ReconcileCallback,
+) {
+    if let Ok(mut guard) = sites.lock() {
+        if let Some(site) = guard.iter_mut().find(|site| site.key == key) {
+            site.callback = callback;
+        } else {
+            guard.push(ReconcileBindSite { key, callback });
+        }
+    }
+}
+
+fn fire_reconcile_bindings(sites: &Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>) {
+    let callbacks: Vec<ReconcileCallback> = sites
+        .lock()
+        .ok()
+        .map(|guard| guard.iter().map(|site| site.callback.clone()).collect())
+        .unwrap_or_default();
+    for callback in callbacks {
+        callback();
     }
 }
 
 /// State 变更时推送精确 Paint 失效的绑定接口。
 pub trait StatePaintBind: Send + Sync {
+    fn bind_reconcile(&self, reconcile: ReconcileCallback);
+    fn bind_reconcile_site(&self, _key: usize, reconcile: ReconcileCallback) {
+        self.bind_reconcile(reconcile);
+    }
     fn bind_paint(&self, widget_id: usize, queue: InvalidationQueueHandle, rect: Option<Rect>);
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
+    fn bind_reconcile(&self, reconcile: ReconcileCallback) {
+        self.bind_reconcile_invalidation(0, reconcile);
+    }
+
+    fn bind_reconcile_site(&self, key: usize, reconcile: ReconcileCallback) {
+        self.bind_reconcile_invalidation(key, reconcile);
+    }
+
     fn bind_paint(&self, widget_id: usize, queue: InvalidationQueueHandle, rect: Option<Rect>) {
         self.bind_paint_invalidation(widget_id, queue, rect);
     }
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
+    fn bind_reconcile(&self, _reconcile: ReconcileCallback) {}
+
     fn bind_paint(&self, widget_id: usize, queue: InvalidationQueueHandle, rect: Option<Rect>) {
         self.bind_paint_invalidation(widget_id, queue, rect);
     }
@@ -187,12 +292,13 @@ where
 pub struct State<T> {
     inner: Arc<RwLock<StateInner<T>>>,
     /// 脏标记回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
-    dirty_fn: Arc<std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>>,
+    reconcile_sites: Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
     /// Phase 6：精确 Paint 失效绑定（WidgetId + 队列句柄）。
-    paint_binding: Arc<std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>>,
+    paint_sites: Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
 }
 
 struct StateInner<T> {
+    slot_id: StateSlotId,
     value: T,
     generation: u64,
     #[allow(clippy::type_complexity)]
@@ -202,26 +308,23 @@ struct StateInner<T> {
 impl<T: Clone + Send + Sync + 'static> State<T> {
     pub fn new(value: T) -> Self {
         // 自动从线程局部上下文绑定脏标记回调
-        let dirty_fn: Arc<std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>> =
-            Arc::new(std::sync::Mutex::new(None));
-        let paint_binding = Arc::new(std::sync::Mutex::new(None));
+        let reconcile_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let paint_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
         CURRENT_VIEW_DIRTY_FN.with(|dirty| {
             let borrowed = dirty.borrow();
             if let Some(ref f) = *borrowed {
-                let cb = f.clone();
-                if let Ok(mut guard) = dirty_fn.lock() {
-                    *guard = Some(Box::new(move || cb()));
-                }
+                bind_reconcile_site(&reconcile_sites, 0, f.clone());
             }
         });
         let state = Self {
             inner: Arc::new(RwLock::new(StateInner {
+                slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
                 value,
                 generation: 0,
                 watchers: Vec::new(),
             })),
-            dirty_fn,
-            paint_binding,
+            reconcile_sites,
+            paint_sites,
         };
         if STATE_CAPTURE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
             let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
@@ -237,26 +340,22 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {
-        if let Ok(mut guard) = self.paint_binding.lock() {
-            *guard = Some((widget_id, queue.clone(), rect));
-        }
-        let paint_binding = self.paint_binding.clone();
-        if let Ok(mut guard) = self.dirty_fn.lock() {
-            *guard = Some(Box::new(move || {
-                if let Ok(binding) = paint_binding.lock() {
-                    if let Some((id, q, r)) = binding.as_ref() {
-                        invalidate_paint_handle(q, *id, *r);
-                    }
-                }
-            }));
-        }
+        bind_paint_site(&self.paint_sites, widget_id, queue, rect);
+    }
+
+    pub fn bind_reconcile_invalidation(&self, key: usize, reconcile: ReconcileCallback) {
+        bind_reconcile_site(&self.reconcile_sites, key, reconcile);
     }
 
     /// 设置脏标记回调。此回调在值变更时（`set` / `update`）自动调用。
     /// 由 ViewAdapter 内部使用，用户不需要调用此方法。
     pub fn set_dirty_fn<F: Fn() + Send + Sync + 'static>(&self, f: F) {
-        if let Ok(mut guard) = self.dirty_fn.lock() {
-            *guard = Some(Box::new(f));
+        if let Ok(mut guard) = self.reconcile_sites.lock() {
+            guard.clear();
+            guard.push(ReconcileBindSite {
+                key: 0,
+                callback: Arc::new(f),
+            });
         }
     }
 
@@ -293,7 +392,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         for watcher in &watchers {
             watcher(&snapshot);
         }
-        Self::fire_invalidation(&self.dirty_fn, &self.paint_binding);
+        Self::fire_invalidation(&self.reconcile_sites, &self.paint_sites);
     }
 
     pub fn update<F>(&self, f: F)
@@ -312,28 +411,15 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         for watcher in &watchers {
             watcher(&snapshot);
         }
-        Self::fire_invalidation(&self.dirty_fn, &self.paint_binding);
+        Self::fire_invalidation(&self.reconcile_sites, &self.paint_sites);
     }
 
     fn fire_invalidation(
-        dirty_fn: &Arc<std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>>,
-        paint_binding: &Arc<
-            std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>,
-        >,
+        reconcile_sites: &Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
+        paint_sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
     ) {
-        let has_paint_binding = paint_binding
-            .lock()
-            .ok()
-            .is_some_and(|guard| guard.is_some());
-        if has_paint_binding {
-            fire_paint_binding(paint_binding);
-            return;
-        }
-        if let Ok(guard) = dirty_fn.lock() {
-            if let Some(ref f) = *guard {
-                f();
-            }
-        }
+        fire_paint_bindings(paint_sites);
+        fire_reconcile_bindings(reconcile_sites);
     }
 
     pub fn watch<F: Fn(&T) + Send + Sync + 'static>(&self, f: F) {
@@ -350,14 +436,26 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             .unwrap_or_else(|e| e.into_inner())
             .generation
     }
+
+    pub fn slot_id(&self) -> StateSlotId {
+        self.inner.read().unwrap_or_else(|e| e.into_inner()).slot_id
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn capture_fingerprint(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        TypeId::of::<T>().hash(&mut hasher);
+        self.slot_id().hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 impl<T: Clone + Send + Sync + 'static> Clone for State<T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            dirty_fn: self.dirty_fn.clone(),
-            paint_binding: self.paint_binding.clone(),
+            reconcile_sites: self.reconcile_sites.clone(),
+            paint_sites: self.paint_sites.clone(),
         }
     }
 }
@@ -365,6 +463,7 @@ impl<T: Clone + Send + Sync + 'static> Clone for State<T> {
 impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for State<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("State")
+            .field("slot_id", &self.slot_id())
             .field("value", &self.get())
             .field("generation", &self.generation())
             .finish()
@@ -392,7 +491,7 @@ pub struct Computed<T> {
     /// 依赖的 generation 检查器列表：(检查器, 上次计算时的 generation)
     deps: Arc<RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>>,
     /// Phase R2：精确 Paint 失效绑定。
-    paint_binding: Arc<std::sync::Mutex<Option<(usize, InvalidationQueueHandle, Option<Rect>)>>>,
+    paint_sites: Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
 }
 
 impl<T: Clone + Send + Sync + 'static> Computed<T> {
@@ -413,7 +512,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             compute_fn: Box::new(f),
             cached: Arc::new(RwLock::new(Some(initial))),
             deps: Arc::new(RwLock::new(dep_pairs)),
-            paint_binding: Arc::new(std::sync::Mutex::new(None)),
+            paint_sites: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -424,9 +523,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {
-        if let Ok(mut guard) = self.paint_binding.lock() {
-            *guard = Some((widget_id, queue, rect));
-        }
+        bind_paint_site(&self.paint_sites, widget_id, queue, rect);
     }
 
     pub fn get(&self) -> T {
@@ -457,7 +554,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             *cached = Some(value.clone());
             let mut deps = self.deps.write().unwrap_or_else(|e| e.into_inner());
             *deps = new_pairs;
-            fire_paint_binding(&self.paint_binding);
+            fire_paint_bindings(&self.paint_sites);
             value
         } else {
             let cached = self.cached.read().unwrap_or_else(|e| e.into_inner());

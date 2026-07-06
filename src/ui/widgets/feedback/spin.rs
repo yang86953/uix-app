@@ -1,4 +1,4 @@
-//! Static loading indicator.
+//! Animated loading indicator.
 
 use crate::core::{Point, Rect, Size};
 use crate::define_widget;
@@ -21,6 +21,7 @@ define_widget! {
         spinning: bool,
         tip: String,
         wrapper_mode: bool,
+        phase: f32,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -61,9 +62,29 @@ define_widget! {
             );
         }
     }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.spinning {
+            return false;
+        }
+
+        self.phase = (self.phase + dt as f32 * Self::SPIN_ANGULAR_SPEED)
+            .rem_euclid(std::f32::consts::TAU);
+        true
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.spinning {
+            frame
+        } else {
+            Rect::zero()
+        }
+    }
 }
 
 impl Spin {
+    const SPIN_ANGULAR_SPEED: f32 = std::f32::consts::TAU;
+
     fn diameter(&self) -> f32 {
         match self.size {
             SpinSize::Small => 16.0,
@@ -75,7 +96,7 @@ impl Spin {
     fn render_dots(&self, ctx: &mut PaintContext, cx: f32, cy: f32, r: f32, c: Color) {
         let dot_r = r * 0.18;
         for i in 0..8 {
-            let angle = i as f32 * std::f32::consts::TAU / 8.0;
+            let angle = i as f32 * std::f32::consts::TAU / 8.0 + self.phase;
             let dx = angle.cos() * r;
             let dy = angle.sin() * r;
             let opacity = 0.25 + (i as f32 / 8.0) * 0.75;
@@ -104,6 +125,7 @@ impl Spin {
             spinning: true,
             tip: String::new(),
             wrapper_mode: false,
+            phase: 0.0,
         }
     }
 
@@ -136,4 +158,12 @@ impl Spin {
         self.wrapper_mode = true;
         self
     }
+
+    pub fn phase(&self) -> f32 {
+        self.phase
+    }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/feedback/spin.rs"]
+mod tests;

@@ -5,7 +5,6 @@
 //! with the `is_dark()` mode query. `Theme` wraps an `Arc<dyn TokenProvider>`
 //! for runtime-polymorphic token injection.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::RwLock;
 
@@ -98,8 +97,6 @@ impl std::fmt::Debug for Theme {
 #[derive(Debug)]
 pub struct DynTokens {
     inner: RwLock<DesignTokens>,
-    /// 是否开启了系统主题跟随
-    auto_follow: AtomicBool,
 }
 
 impl DynTokens {
@@ -107,27 +104,23 @@ impl DynTokens {
     pub fn new(tokens: DesignTokens) -> Self {
         Self {
             inner: RwLock::new(tokens),
-            auto_follow: AtomicBool::new(false),
         }
     }
 
     /// 切换到亮色模式。
     pub fn set_light(&self) {
-        self.auto_follow.store(false, Ordering::Relaxed);
         let new = DesignTokens::antd_light();
         *self.inner.write().unwrap_or_else(|e| e.into_inner()) = new;
     }
 
     /// 切换到暗色模式。
     pub fn set_dark(&self) {
-        self.auto_follow.store(false, Ordering::Relaxed);
         let new = DesignTokens::antd_dark();
         *self.inner.write().unwrap_or_else(|e| e.into_inner()) = new;
     }
 
     /// 根据 `dark` 参数切换模式（true=暗色，false=亮色）。
     pub fn set_mode(&self, dark: bool) {
-        self.auto_follow.store(false, Ordering::Relaxed);
         let new = if dark {
             DesignTokens::antd_dark()
         } else {
@@ -150,79 +143,7 @@ impl DynTokens {
     /// 设置为任意自定义 DesignTokens。
     /// 用于运行时切换非标准主题（如樱花、极光等自定义预设）。
     pub fn set_custom(&self, tokens: DesignTokens) {
-        self.auto_follow.store(false, Ordering::Relaxed);
         *self.inner.write().unwrap_or_else(|e| e.into_inner()) = tokens;
-    }
-
-    /// 是否开启了系统主题自动跟随
-    pub fn is_auto_following(&self) -> bool {
-        self.auto_follow.load(Ordering::Relaxed)
-    }
-
-    /// 启动系统主题自动跟随。
-    ///
-    /// 在后台线程中每隔 `poll_interval_secs` 秒调用 `is_dark_fn` 检测系统主题，
-    /// 当系统主题切换时自动切换暗/亮模式。
-    ///
-    /// # 参数
-    /// - `is_dark_fn`: 返回 `true` 表示系统当前为暗色模式的检测函数
-    /// - `poll_interval_secs`: 轮询间隔（秒），建议 2~5 秒
-    ///
-    /// # 线程安全
-    ///
-    /// 此方法会 spawn 一个后台线程，该线程通过 `RwLock` 安全地切换主题。
-    /// 调用 `set_light()` / `set_dark()` / `set_mode()` / `set_custom()` 会
-    /// 自动关闭自动跟随。
-    ///
-    /// # 示例
-    ///
-    /// ```ignore
-    /// let platform = create_platform().unwrap();
-    /// let dt = Arc::new(DynTokens::new(DesignTokens::antd_dark()));
-    /// dt.follow_system_theme(
-    ///     Box::new(move || platform.display().is_dark_mode()),
-    ///     3,
-    /// );
-    /// ```
-    pub fn follow_system_theme(
-        self: &Arc<Self>,
-        is_dark_fn: Box<dyn Fn() -> bool + Send>,
-        poll_interval_secs: u64,
-    ) {
-        self.auto_follow.store(true, Ordering::Relaxed);
-        let this = Arc::clone(self);
-        std::thread::spawn(move || {
-            let interval = std::time::Duration::from_secs(poll_interval_secs.max(1));
-            let mut last_known_dark = is_dark_fn();
-
-            // 初始同步：设置与系统一致
-            let current_dark = this.inner.read().unwrap_or_else(|e| e.into_inner()).is_dark;
-            if current_dark != last_known_dark {
-                this.set_mode(last_known_dark);
-            }
-
-            loop {
-                std::thread::sleep(interval);
-
-                if !this.auto_follow.load(Ordering::Relaxed) {
-                    break; // 手动切换主题时退出跟随
-                }
-
-                let current = is_dark_fn();
-                if current != last_known_dark {
-                    last_known_dark = current;
-                    let new = if current {
-                        DesignTokens::antd_dark()
-                    } else {
-                        DesignTokens::antd_light()
-                    };
-                    match this.inner.write() {
-                        Ok(mut guard) => *guard = new,
-                        Err(e) => *e.into_inner() = new,
-                    }
-                }
-            }
-        });
     }
 }
 

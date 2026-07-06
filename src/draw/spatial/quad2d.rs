@@ -170,4 +170,3 @@ impl Quad2D {
 #[cfg(test)]
 #[path = "../../tests/draw/spatial/quad2d.rs"]
 mod tests;
-

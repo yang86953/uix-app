@@ -140,4 +140,3 @@ pub fn collect_errors<T, E>(
 #[cfg(test)]
 #[path = "../../tests/core/error/result.rs"]
 mod tests;
-

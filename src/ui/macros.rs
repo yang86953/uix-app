@@ -63,6 +63,9 @@ macro_rules! impl_widget_component {
     (@insert_cap $caps:ident Lifecycle) => {
         $caps.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE);
     };
+    (@insert_cap $caps:ident Animation) => {
+        $caps.insert($crate::ui::traits::WidgetCapabilities::ANIMATION);
+    };
     (@upcast Layout) => {
         fn as_layout(&self) -> Option<&dyn $crate::ui::traits::WidgetLayout> {
             Some(self)
@@ -89,6 +92,14 @@ macro_rules! impl_widget_component {
             Some(self)
         }
         fn as_lifecycle_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetLifecycle> {
+            Some(self)
+        }
+    };
+    (@upcast Animation) => {
+        fn as_animation(&self) -> Option<&dyn $crate::ui::traits::WidgetAnimation> {
+            Some(self)
+        }
+        fn as_animation_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetAnimation> {
             Some(self)
         }
     };
@@ -135,6 +146,14 @@ macro_rules! wc_upcast {
             Some(self)
         }
     };
+    ($T:ty; WidgetAnimation) => {
+        fn as_animation(&self) -> Option<&dyn $crate::ui::traits::WidgetAnimation> {
+            Some(self)
+        }
+        fn as_animation_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetAnimation> {
+            Some(self)
+        }
+    };
     ($T:ty; WidgetLayout) => {
         fn as_layout(&self) -> Option<&dyn $crate::ui::traits::WidgetLayout> {
             Some(self)
@@ -156,6 +175,12 @@ macro_rules! __define_widget_build_method {
     };
     (tab_index; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn tab_index($($p)*) -> $ret $body
+    };
+    (picture_policy; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn picture_policy($($p)*) -> $ret $body
+    };
+    (has_dynamic_content; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn has_dynamic_content($($p)*) -> $ret $body
     };
     ($other:ident; $($rest:tt)*) => {};
 }
@@ -188,6 +213,8 @@ macro_rules! __define_widget_upcast_method {
     (on_unmount; $T:ty) => {};
     (on_detach; $T:ty) => {};
     (on_destroy; $T:ty) => {};
+    (update_animation; $T:ty) => { $crate::wc_upcast!($T; WidgetAnimation); };
+    (animation_dirty_rect; $T:ty) => {};
     ($other:ident; $T:ty) => {};
 }
 
@@ -230,7 +257,11 @@ macro_rules! define_widget {
             $method:ident => ( $($params:tt)* ) $(-> $ret:ty)? $body:block
         )*
     ) => {
-        $(#[$m])* $vis struct $name { $($field)* }
+        $crate::__define_widget_struct! {
+            [$(#[$m])* $vis struct $name]
+            []
+            $($field)*
+        }
 
         // @new 构造函数（如果存在）
         $(
@@ -239,10 +270,15 @@ macro_rules! define_widget {
             }
         )?
 
+        $crate::__define_widget_snapshot_impl! {
+            $name { $($field)* }
+        }
+
         impl $crate::ui::traits::WidgetComponent for $name {
             fn as_any(&self) -> &dyn std::any::Any { self }
             fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
             fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }
+            $crate::__define_widget_component_snapshot_method!($name);
             fn capabilities(&self) -> $crate::ui::traits::WidgetCapabilities {
                 let mut c = $crate::ui::traits::WidgetCapabilities::new();
                 $(
@@ -251,10 +287,12 @@ macro_rules! define_widget {
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
-                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "hit_test_frame" =>
+                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "active_timer" | "wants_continuous_pointer_move" | "hit_test_frame" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
+                        "update_animation" | "animation_dirty_rect" =>
+                            c.insert($crate::ui::traits::WidgetCapabilities::ANIMATION),
                         _ => {}
                     }
                 )*
@@ -270,6 +308,7 @@ macro_rules! define_widget {
             $crate::wc_upcast!($name; WidgetRender);
             $crate::wc_upcast!($name; EventHandler);
             $crate::wc_upcast!($name; WidgetLifecycle);
+            $crate::wc_upcast!($name; WidgetAnimation);
         }
 
         // ═══ 生成 grouped trait impl 块 ═══
@@ -293,7 +332,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             EventHandler,
             $name,
-            [on_event scroll_delta scroll_delta_for_dirty viewport_scroll_offset hit_test_frame],
+            [on_event scroll_delta scroll_delta_for_dirty viewport_scroll_offset active_timer wants_continuous_pointer_move hit_test_frame],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -306,6 +345,35 @@ macro_rules! define_widget {
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
         }
+        $crate::__define_widget_grouped_impl! {
+            WidgetAnimation,
+            $name,
+            [update_animation animation_dirty_rect],
+            [$(
+                ($method, ($($params)*) $(-> $ret)? $body)
+            )*]
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! component {
+    (
+        name: $component_name:ident,
+        $(#[$m:meta])*
+        $vis:vis struct $name:ident { $($field:tt)* }
+        $($rest:tt)*
+    ) => {
+        $crate::define_widget! {
+            $(#[$m])*
+            $vis struct $name { $($field)* }
+            $($rest)*
+        }
+    };
+    ($($tt:tt)*) => {
+        $crate::define_widget! {
+            $($tt)*
+        }
     };
 }
 
@@ -314,6 +382,142 @@ macro_rules! define_widget {
 // ════════════════════════════════════════════════════════════════════════════
 
 /// 如果方法属于指定 trait，生成 `fn method(params) -> Ret? { body }`；否则生成空。
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __define_widget_struct {
+    ([$($head:tt)*] [$($out:tt)*]) => {
+        $($head)* { $($out)* }
+    };
+    ([$($head:tt)*] [$($out:tt)*] , $($tail:tt)*) => {
+        $crate::__define_widget_struct! {
+            [$($head)*]
+            [$($out)*]
+            $($tail)*
+        }
+    };
+    (
+        [$($head:tt)*]
+        [$($out:tt)*]
+        #[snapshot(skip)]
+        $(#[$field_attr:meta])*
+        $field_vis:vis $field_name:ident : $field_ty:ty,
+        $($tail:tt)*
+    ) => {
+        $crate::__define_widget_struct! {
+            [$($head)*]
+            [$($out)* $(#[$field_attr])* $field_vis $field_name: $field_ty,]
+            $($tail)*
+        }
+    };
+    (
+        [$($head:tt)*]
+        [$($out:tt)*]
+        #[snapshot(skip)]
+        $(#[$field_attr:meta])*
+        $field_vis:vis $field_name:ident : $field_ty:ty
+    ) => {
+        $($head)* {
+            $($out)*
+            $(#[$field_attr])*
+            $field_vis $field_name: $field_ty,
+        }
+    };
+    (
+        [$($head:tt)*]
+        [$($out:tt)*]
+        $(#[$field_attr:meta])*
+        $field_vis:vis $field_name:ident : $field_ty:ty,
+        $($tail:tt)*
+    ) => {
+        $crate::__define_widget_struct! {
+            [$($head)*]
+            [$($out)* $(#[$field_attr])* $field_vis $field_name: $field_ty,]
+            $($tail)*
+        }
+    };
+    (
+        [$($head:tt)*]
+        [$($out:tt)*]
+        $(#[$field_attr:meta])*
+        $field_vis:vis $field_name:ident : $field_ty:ty
+    ) => {
+        $($head)* {
+            $($out)*
+            $(#[$field_attr])*
+            $field_vis $field_name: $field_ty,
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __define_widget_component_snapshot_method {
+    (Label) => {};
+    (Input) => {};
+    (Container) => {};
+    (Grid) => {};
+    ($name:ident) => {
+        fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+            $crate::ui::SnapshotSource::snapshot_fields(self)
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __define_widget_snapshot_impl {
+    (Label { $($field:tt)* }) => {};
+    (Input { $($field:tt)* }) => {};
+    (Container { $($field:tt)* }) => {};
+    (Grid { $($field:tt)* }) => {};
+    ($name:ident { $($field:tt)* }) => {
+        impl $crate::ui::SnapshotSource for $name {
+            #[allow(clippy::vec_init_then_push)]
+            fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
+                #[allow(unused_mut, clippy::vec_init_then_push)]
+                let mut fields = Vec::new();
+                $crate::__define_widget_snapshot_collect_fields!(fields, self, $($field)*);
+                $crate::ui::SnapshotFields::Custom {
+                    widget: stringify!($name),
+                    fields,
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __define_widget_snapshot_collect_fields {
+    ($fields:ident, $this:ident,) => {};
+    ($fields:ident, $this:ident) => {};
+    ($fields:ident, $this:ident, #[snapshot(skip)] $(#[$field_attr:meta])* pub $field_name:ident : $field_ty:ty, $($tail:tt)*) => {
+        $crate::__define_widget_snapshot_collect_fields!($fields, $this, $($tail)*);
+    };
+    ($fields:ident, $this:ident, #[snapshot(skip)] $(#[$field_attr:meta])* pub $field_name:ident : $field_ty:ty) => {};
+    ($fields:ident, $this:ident, $(#[$field_attr:meta])* pub $field_name:ident : $field_ty:ty, $($tail:tt)*) => {
+        $fields.push($crate::ui::SnapshotField::debug(
+            stringify!($field_name),
+            &$this.$field_name,
+        ));
+        $crate::__define_widget_snapshot_collect_fields!($fields, $this, $($tail)*);
+    };
+    ($fields:ident, $this:ident, $(#[$field_attr:meta])* pub $field_name:ident : $field_ty:ty) => {
+        $fields.push($crate::ui::SnapshotField::debug(
+            stringify!($field_name),
+            &$this.$field_name,
+        ));
+    };
+    ($fields:ident, $this:ident, $(#[$field_attr:meta])* pub($($scope:tt)*) $field_name:ident : $field_ty:ty, $($tail:tt)*) => {
+        $crate::__define_widget_snapshot_collect_fields!($fields, $this, $($tail)*);
+    };
+    ($fields:ident, $this:ident, $(#[$field_attr:meta])* pub($($scope:tt)*) $field_name:ident : $field_ty:ty) => {};
+    ($fields:ident, $this:ident, $(#[$field_attr:meta])* $field_name:ident : $field_ty:ty, $($tail:tt)*) => {
+        $crate::__define_widget_snapshot_collect_fields!($fields, $this, $($tail)*);
+    };
+    ($fields:ident, $this:ident, $(#[$field_attr:meta])* $field_name:ident : $field_ty:ty) => {};
+}
+
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __define_widget_method_builder {
@@ -365,6 +569,12 @@ macro_rules! __define_widget_method_builder {
     (viewport_scroll_offset; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn viewport_scroll_offset($($p)*) -> $ret $body
     };
+    (active_timer; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn active_timer($($p)*) -> $ret $body
+    };
+    (wants_continuous_pointer_move; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn wants_continuous_pointer_move($($p)*) -> $ret $body
+    };
     (hit_test_frame; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn hit_test_frame($($p)*) -> $ret $body
     };
@@ -395,6 +605,13 @@ macro_rules! __define_widget_method_builder {
     };
     (on_destroy; WidgetLifecycle; ($($p:tt)*) $body:block) => {
         fn on_destroy($($p)*) $body
+    };
+    // ── WidgetAnimation ──
+    (update_animation; WidgetAnimation; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn update_animation($($p)*) -> $ret $body
+    };
+    (animation_dirty_rect; WidgetAnimation; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn animation_dirty_rect($($p)*) -> $ret $body
     };
     // ── 非此 trait 的方法：跳过 ──
     ($method:ident; $trait:ident; $($rest:tt)*) => {};
@@ -452,6 +669,12 @@ macro_rules! __match_trait_method {
     (EventHandler, viewport_scroll_offset, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn viewport_scroll_offset($($p)*) -> $ret $body
     };
+    (EventHandler, active_timer, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn active_timer($($p)*) -> $ret $body
+    };
+    (EventHandler, wants_continuous_pointer_move, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn wants_continuous_pointer_move($($p)*) -> $ret $body
+    };
     (EventHandler, hit_test_frame, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn hit_test_frame($($p)*) -> $ret $body
     };
@@ -482,6 +705,12 @@ macro_rules! __match_trait_method {
     };
     (WidgetLifecycle, on_destroy, ($($p:tt)*) $body:block) => {
         fn on_destroy($($p)*) $body
+    };
+    (WidgetAnimation, update_animation, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn update_animation($($p)*) -> $ret $body
+    };
+    (WidgetAnimation, animation_dirty_rect, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn animation_dirty_rect($($p)*) -> $ret $body
     };
     // ── 不属于此 trait：跳过 ──
     ($trait:ident, $method:ident, $($rest:tt)*) => {};
@@ -522,6 +751,13 @@ macro_rules! __define_widget_grouped_impl {
         impl $crate::ui::traits::WidgetLifecycle for $T {
             $(
                 $crate::__match_trait_method!(WidgetLifecycle, $method, ($($p)*) $(-> $ret)? $body);
+            )*
+        }
+    };
+    (WidgetAnimation, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
+        impl $crate::ui::traits::WidgetAnimation for $T {
+            $(
+                $crate::__match_trait_method!(WidgetAnimation, $method, ($($p)*) $(-> $ret)? $body);
             )*
         }
     };

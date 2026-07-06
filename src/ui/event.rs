@@ -384,10 +384,19 @@ impl HandlerOptions {
 
 pub type SemanticHandler = Box<dyn FnMut(&mut SemanticEvent) + 'static>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HandlerSignature {
+    pub kind: SemanticKind,
+    pub generation: Option<u32>,
+    pub capture_fingerprint: Option<u64>,
+}
+
 pub struct HandlerRegistration {
     pub kind: SemanticKind,
     pub options: HandlerOptions,
     pub handler: SemanticHandler,
+    generation: Option<u32>,
+    capture_fingerprint: Option<u64>,
 }
 
 impl HandlerRegistration {
@@ -396,6 +405,8 @@ impl HandlerRegistration {
             kind,
             options: HandlerOptions::default(),
             handler,
+            generation: None,
+            capture_fingerprint: None,
         }
     }
 
@@ -408,7 +419,45 @@ impl HandlerRegistration {
             kind,
             options,
             handler,
+            generation: None,
+            capture_fingerprint: None,
         }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn with_generation(mut self, generation: u32) -> Self {
+        self.generation = Some(generation);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn with_capture_fingerprint(mut self, capture_fingerprint: u64) -> Self {
+        self.capture_fingerprint = Some(capture_fingerprint);
+        self
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn with_state_capture<T: Clone + Send + Sync + 'static>(
+        self,
+        state: &crate::ui::foundation::state::State<T>,
+    ) -> Self {
+        self.with_capture_fingerprint(state.capture_fingerprint())
+    }
+
+    pub(crate) fn signature(&self) -> HandlerSignature {
+        HandlerSignature {
+            kind: self.kind,
+            generation: self.generation,
+            capture_fingerprint: self.capture_fingerprint,
+        }
+    }
+
+    pub(crate) fn authored_signature(&self) -> HandlerSignature {
+        let mut signature = self.signature();
+        if signature.generation.is_none() && signature.capture_fingerprint.is_some() {
+            signature.generation = Some(0);
+        }
+        signature
     }
 }
 
@@ -688,4 +737,3 @@ macro_rules! register_semantic {
 #[cfg(test)]
 #[path = "../tests/ui/event.rs"]
 mod tests;
-

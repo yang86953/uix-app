@@ -2,12 +2,14 @@
 
 use crate::core::{EdgeInsets, Rect, Size};
 use crate::define_widget;
+use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::layout::engine::{child_from_tree, GridLayout, LayoutChild};
 use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
 use crate::ui::style::{ColorValue, Style};
 use crate::ui::traits::layout::LayoutEngine;
+use crate::ui::{SnapshotFields, SnapshotSource};
 use crate::ui::{WidgetId, WidgetTree};
 
 define_widget! {
@@ -31,6 +33,8 @@ define_widget! {
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
         Size::new(self.fixed_width.unwrap_or(0.0), self.fixed_height.unwrap_or(0.0))
     }
+
+    picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(c) = self.bg_color {
@@ -84,6 +88,26 @@ define_widget! {
 impl Default for Grid {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl SnapshotSource for Grid {
+    fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Grid {
+            columns: self.columns.clone(),
+            rows: self.rows.clone(),
+            col_gap: self.col_gap,
+            row_gap: self.row_gap,
+            padding: self.padding,
+            bg_color: self.bg_color,
+            border_color: self.border_color,
+            border_width: self.border_width,
+            border_radius: self.border_radius,
+            align_items: self.align_items,
+            justify_items: self.justify_items,
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
+        }
     }
 }
 

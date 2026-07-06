@@ -4,6 +4,7 @@ use std::cell::Cell;
 
 use crate::core::{EdgeInsets, Rect, Size};
 use crate::define_widget;
+use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::ui::layout::engine::{child_from_tree, BoxModel, FlexLayout, LayoutChild};
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
@@ -11,6 +12,7 @@ use crate::ui::style::{
     apply_style, BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken,
 };
 use crate::ui::traits::LayoutEngine;
+use crate::ui::{SnapshotFields, SnapshotSource};
 use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 
 define_widget! {
@@ -50,6 +52,8 @@ define_widget! {
     flex_grow => (&self) -> f32 { self.style.flex_grow }
 
     flex_shrink => (&self) -> f32 { self.style.flex_shrink }
+
+    picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // Visual area excludes margin (margin is transparent per CSS box model)
@@ -163,6 +167,14 @@ fn convert_align(a: crate::ui::style::AlignItems) -> AlignItems {
 impl Default for Container {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl SnapshotSource for Container {
+    fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Container {
+            style: self.style.clone(),
+        }
     }
 }
 

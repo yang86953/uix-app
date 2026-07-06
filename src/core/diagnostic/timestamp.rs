@@ -113,4 +113,3 @@ fn days_to_date(days: u64) -> (i32, u32, u32) {
 #[cfg(test)]
 #[path = "../../tests/core/diagnostic/timestamp.rs"]
 mod tests;
-

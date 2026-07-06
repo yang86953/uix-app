@@ -73,4 +73,3 @@ fn is_viewport(scene: &impl ScenePaint, id: NodeId) -> bool {
 #[cfg(test)]
 #[path = "../../tests/draw/compositor/viewport_transform.rs"]
 mod tests;
-

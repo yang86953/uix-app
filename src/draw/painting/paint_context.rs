@@ -667,4 +667,3 @@ pub fn resolve_font_size(base: f32, unit: Option<PhysicalUnit>, dpi: f32) -> f32
 #[cfg(test)]
 #[path = "../../tests/draw/painting/paint_context.rs"]
 mod tests;
-

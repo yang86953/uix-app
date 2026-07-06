@@ -59,7 +59,7 @@
 | **View + State** | 声明 UI；`State::set` 驱动更新 |
 | **Effect** | 业务副作用；**禁止**轮询式 Effect（#131） |
 | **Timer API** | `run_after` / `run_interval`（#132）；框架内 register，主线程回调 |
-| **opt-in API** | `.follow_system_theme(true)`（#125）；`.theme(...)`；`WantsContinuousPointerMove`（#121） |
+| **opt-in API** | `.follow_system_theme(true)`（#125）；`.theme(...)`；`EventHandler::wants_continuous_pointer_move`（#121） |
 
 ### 调用方禁止
 
@@ -171,7 +171,7 @@ impl AppHandle {
 
 与 #132 分工：**Timer** = 框架 register + deadline wake；**post_to_ui** = 外部完成信号 → 主线程一次性闭包。队列调度见 [MainThreadQueue](#mainthreadqueue)（#137）。
 
-> **实现注记**：`post_to_ui` 尚未导出；当前文档占位与 #88 对齐。
+> **实现注记**：`App::post_to_ui` 与单窗 `AppHandle::post_to_ui` 已导出，并写入单窗 `WindowSession` 的 `MainThreadQueue`；多窗 window_id 路由与阻塞等待中的真实 wake 尚未接。
 
 ---
 
@@ -180,7 +180,7 @@ impl AppHandle {
 设计（#137）— `post_to_ui` / `AppTimer` 回调与 UiEvent 在同一 **WindowSession** 主线程帧内调度。
 
 ```rust
-// app/event_loop/main_thread_queue.rs（设计）
+// app/main_thread_queue.rs（设计）
 struct MainThreadQueue {
     pending: VecDeque<Box<dyn FnOnce() + Send>>,
 }
@@ -216,7 +216,7 @@ run_active_frame(session):
 
 `post_to_ui` 闭包内 `State::set` 并入步骤 5 的 reconcile 批次（#118）；禁止在步骤 3 直接改 WidgetTree。
 
-> **实现注记**：`MainThreadQueue` 尚未实现。
+> **实现注记**：`MainThreadQueue` 已落地并在单窗 event loop 中按 UiEvent → due work → post_to_ui 顺序 drain；单窗 `AppHandle` 关闭后会丢弃投递；多窗路由、独立 session 关闭与真实 wake 尚未接。
 
 ### 周期可见 UI
 
@@ -277,7 +277,7 @@ impl TimerHandle {
 | 副作用 | 回调内 `State::set` → 按需 reconcile；**不**默认 layout/render |
 | 与内置 UI | 可见周期动画仍 **优先** 内置 widget；Timer API 用于 **业务逻辑**（保存、刷新、倒计时数据） |
 
-> **实现注记**：API 尚未导出；当前无 App Timer 路径。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与单窗 `AppHandle::run_after` / `run_interval` 已导出；单窗 `WindowSession` 已接 AppTimer 队列、deadline 同步、主线程回调执行与 interval 续期；多窗路由和独立 session 生命周期清理仍待接。
 
 ---
 
@@ -374,7 +374,7 @@ impl ActiveWorkRegistry {
 | 自动 register 来源 | 触发 | unregister |
 |-------------------|------|------------|
 | `Animatable` 动画开始/续帧 | 组件 / Registry tick | 动画结束 |
-| Tooltip / Spin 等内置周期 UI | 组件 mount / show | hide / unmount |
+| Tooltip 等内置周期 UI | 组件 mount / show | hide / unmount |
 | **App Timer**（#132） | `run_after` / `run_interval` | 触发一次 / `cancel` / drop |
 | IME 焦点 Input | `text_input.start` | 失焦 / `stop` |
 
@@ -397,7 +397,7 @@ else → wait_timeout(remaining)   // 单次，非固定 100ms 探活
 
 每 **WindowSession** 持有一份 Registry（#116）。
 
-> **实现注记**：当前无 Registry；`AnimationRegistry` 骨架未接入 event loop。
+> **实现注记**：`ActiveWorkRegistry` 内部类型已落地，并由 `WindowSession` 持有；单窗 event loop 已接 `next_deadline` / `drain_due` 骨架、到期 `Timer` → `SystemEvent::Timer` 消费、AppTimer 主线程回调执行、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源；IME 与其他内置组件动画源尚未接入。
 
 ### 多窗单 loop（#116）
 
@@ -435,7 +435,7 @@ run_app_loop(sessions):
 | 独立 present | 各 session 独立 `FrameRenderer` + presenter |
 | A 窗 Active | **不** wake B 窗（#110）；B 可仍 DeepIdle |
 
-> **实现注记**：`run_gui` 当前单窗；native 多窗已具备，编排待扩展。
+> **实现注记**：`run_gui` 当前单窗，已构造 `WindowSession` 并传入 session loop；native 多窗已具备，window_id 路由与多 session 编排待扩展。
 
 ### 帧内合并（#118）
 
@@ -461,7 +461,7 @@ run_active_frame(session):
 | Effect | 在 reconcile **之前** tick（步骤 4）；Effect → State → 并入步骤 5 |
 | reconcile | 合并算法见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153） |
 
-> **实现注记**：主循环未接 reconcile；State 变更路径待接线。
+> **实现注记**：单窗主循环已接帧末 reconcile；`update_view` 的 `pending_root` 与响应式 `State` 批次置位会合并到同一次 reconcile。多窗路由仍待接。
 
 ### 框架托管的周期工作（#111、#124）
 
@@ -469,13 +469,13 @@ run_active_frame(session):
 
 | 类型 | 来源 | 框架 unregister 时机 |
 |------|------|----------------------|
-| Animation | `Animatable` 开始 | 动画结束 |
-| Timer | Tooltip / Spin 等 **内置**组件 | hide / unmount / 触发 |
+| Animation | `Animatable` / Spin 等 **内置动画**开始 | 动画结束 / hide / unmount |
+| Timer | Tooltip 等 **内置**组件 | hide / unmount / 触发 |
 | IME | 焦点 Input + `text_input.start` | 失焦 |
 
 未托管的周期工作 **不得**存在；须内置组件、**#132 Timer API** 或 async→State（#131）。
 
-> **实现注记**：当前无 RegisteredActive 模型；`wait_timeout(100ms)` + 每轮 `update` + `tick_effects`。
+> **实现注记**：当前已有 RegisteredActive deadline wait 骨架；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，并将 `update` / `tick_effects` 门控到 Active 帧；Tooltip 内置 timer、AppTimer 注册源、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已接，其他内置组件动画源 / IME 待接。
 
 ---
 
@@ -512,7 +512,7 @@ enum PicturePolicy {
 | State / dynamic 内容 | `dynamic_label`、State bind 标记 |
 | 滚动视口 | `children_clip` / ScrollView |
 | 浮层 | `overlay_entry` / OverlayKind |
-| 连续 pointer | `WantsContinuousPointerMove` |
+| 连续 pointer | `EventHandler::wants_continuous_pointer_move` |
 | 显式覆盖 | widget metadata `PicturePolicy::Never` |
 
 **Eligible + 自适应阈值**（#129，框架常量，App 不可配）：
@@ -550,7 +550,8 @@ PointerMove 到达
   ├─ drag_gesture.active 或 pointer_down_target 存在？
   │     → 全 dispatch（Scrollbar 拖拽等）
   ├─ pos 仍在 hovered_widget 扩大 hit 框内？
-  │     → 仅更新 cursor_pos；不 hit_test、不 dispatch
+  │     → 仅更新 cursor_pos；不 hit_test；默认不 dispatch
+  │       （wants_continuous_pointer_move=true 时仍 dispatch）
   └─ 否则
         → hit_test
         → target ≠ hovered_widget 时 dispatch + 窄标脏
@@ -558,7 +559,7 @@ PointerMove 到达
 
 | 扩展 | 规则 |
 |------|------|
-| `WantsContinuousPointerMove`（#121） | opt-in trait；默认 **false**；为 true 时窗内每 move 仍 dispatch（SignaturePad、画布涂鸦等） |
+| `EventHandler::wants_continuous_pointer_move`（#121） | opt-in hook；默认 **false**；为 true 时 hover 框内每 move 仍 dispatch（SignaturePad、画布涂鸦等） |
 | debug_mode hover 链 | 可走独立路径；不强制每 move 全树 dispatch |
 
 ---
@@ -635,37 +636,38 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 | 能力 | 设计 | 当前 | 文档 |
 |------|------|------|------|
-| 三态主循环 | DeepIdle / RegisteredActive / Active | 100ms timeout；每轮 update + tick_effects | [#106](../decisions.md#d106) [#117](../decisions.md#d117) |
-| ActiveWorkRegistry | register / next_deadline / drain_due | 无 Registry 模型 | [#115](../decisions.md#d115) |
-| 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui | [#116](../decisions.md#d116) |
-| 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 未接入主循环 | [#118](../decisions.md#d118) |
-| 每窗独立状态 | 每窗独立 DeepIdle/Active | 单窗 run_gui | [#110](../decisions.md#d110) |
-| Composite scroll | Composite + memmove | 整 viewport Paint | [#107](../decisions.md#d107) |
-| PicturePolicy 自动推断 | 元数据 + 子树信号 → Never/Eligible | 深度 ≥4 全开 | [#122](../decisions.md#d122) [#129](../decisions.md#d129) |
-| Registry 框架托管 | 内置组件/IME 自动 register | 无 Registry | [#124](../decisions.md#d124) |
-| follow_system_theme opt-in | false 默认；true 框架全自动 | 文档化旧 poll API | [#125](../decisions.md#d125) |
-| App Timer API | run_after / run_interval | 未导出 | [#132](../decisions.md#d132) |
-| post_to_ui | App / AppHandle 主线程投递 | 未定义 | [#133](../decisions.md#d133) |
-| MainThreadQueue | FIFO + 帧内 drain 顺序 | 未实现 | [#137](../decisions.md#d137) |
-| AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | 未定义 | [#134](../decisions.md#d134) |
-| on_start | `.on_start(AppHandle)` 每窗一次 | 未导出 | [#140](../decisions.md#d140) |
+| 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 update / tick_effects；RegisteredActive deadline wait 骨架已接 | [#106](../decisions.md#d106) [#117](../decisions.md#d117) |
+| ActiveWorkRegistry | register / next_deadline / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due` 骨架、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源；IME 待接 | [#115](../decisions.md#d115) |
+| 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；多窗路由未接 | [#116](../decisions.md#d116) |
+| 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入主循环；多窗路由待接 | [#118](../decisions.md#d118) |
+| 每窗独立状态 | 每窗独立 DeepIdle/Active | 单窗 WindowSession 已写回三态；多窗独立状态未接 | [#110](../decisions.md#d110) |
+| Composite scroll | Composite + memmove | Wheel → ScrollView 已接 exposed strip + `scroll_region`；其他滚动来源待接 | [#107](../decisions.md#d107) |
+| PicturePolicy 自动推断 | 元数据 + 子树信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 首批 Eligible，默认 Never | [#122](../decisions.md#d122) [#129](../decisions.md#d129) |
+| Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已托管；其他内置组件动画源 / IME 接线未完成 | [#124](../decisions.md#d124) |
+| follow_system_theme opt-in | false 默认；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](../decisions.md#d125) |
+| App Timer API | run_after / run_interval | `App` / 单窗 `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出并接入单窗 session；多窗路由待接 | [#132](../decisions.md#d132) |
+| post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + 单窗 `AppHandle::post_to_ui` + MainThreadQueue 已接；阻塞等待 wake 与多窗路由待接 | [#133](../decisions.md#d133) |
+| MainThreadQueue | FIFO + 帧内 drain 顺序 | 每 WindowSession 队列已接；drain 顺序为 UiEvent → due work → post_to_ui；多窗路由待接 | [#137](../decisions.md#d137) |
+| TestClock | App drain_due / wait_until 测试注入 | App 层 `AppClock` / `TestClock` 已接入 AppTimer deadline、RegisteredActive wait_until、drain_due；native `FakeTimer` 仍独立 | [#139](../decisions.md#d139) |
+| AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | 单窗 run 结束会关闭 handle、cancel AppTimer、清空 MainThreadQueue；多窗单 session 销毁待接 | [#134](../decisions.md#d134) |
+| on_start | `.on_start(AppHandle)` 每窗一次 | 单窗 `.on_start(AppHandle)` 已导出，并在 WindowSession 创建后、首帧前调用；多窗每窗注入待接 | [#140](../decisions.md#d140) |
 | 多窗 post_to_ui | AppHandle.window_id 路由 | 未定义 | [#141](../decisions.md#d141) |
 | open_window | 副窗 API | 未导出 | [#144](../decisions.md#d144) |
 | open_window 接线 | 副窗独立 build/reconcile | 单窗 run_gui | [#148](../decisions.md#d148) |
-| AppState register | mount 自动 register Handle | 无 AppState | [#145](../decisions.md#d145) |
-| StateSlotId | State::new 单调 id | 无 slot id | [#143](../decisions.md#d143) |
-| Handler 智能重绑 | handler 变才重注册（#135） | 每次 reconcile 全清 | [#123](../decisions.md#d123) [#135](../decisions.md#d135) |
-| handler_generation + 指纹 | build 自动 bump（#142） | reconcile 全清 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) |
-| PointerMove 边界窄路径 | 框内不 hit_test | 每 move dispatch | [#109](../decisions.md#d109) |
-| Effect DeepIdle 跳过 | 不 tick_effects | 每轮 tick | #105 |
-| ComponentConfigSnapshot | mount 提取配置 | 未实现 | [#146](../decisions.md#d146) |
-| Handle emit | dispatch_semantic | Handle 未导出 | [#147](../decisions.md#d147) |
-| update_view | AppHandle 按 session reconcile | 未导出 | [#149](../decisions.md#d149) |
+| AppState register | mount 自动 register Handle | `AppState` snapshot registry 已建；`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot；App 默认持有并注入单窗 `WindowSession` 已接；跨窗共享与 live tree handle 绑定待接 | [#145](../decisions.md#d145) |
+| StateSlotId | State::new 单调 id | 已接；clone 共享，`generation()` 不参与身份 | [#143](../decisions.md#d143) |
+| Handler 智能重绑 | handler 变才重注册（#135） | 稳定 signature 路径已跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 DSL handler 仍保守重绑 | [#123](../decisions.md#d123) [#135](../decisions.md#d135) |
+| handler_generation + 指纹 | build 自动 bump（#142） | 内部 generation 字段、State capture 指纹基础与 fingerprint→generation 解析已接；View build / DSL 自动 capture 收集待接 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) |
+| PointerMove 边界窄路径 | 框内不 hit_test | 已接：pointer_down_target/drag 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](../decisions.md#d109) [#121](../decisions.md#d121) |
+| Effect DeepIdle 跳过 | 不 tick_effects | 单窗 loop 已门控到 Active 帧；动画续帧经 Registry deadline 唤醒；`Spin` 内置动画源已接，其他动画源待接 | #105 |
+| ComponentConfigSnapshot | mount 提取配置 | 类型与首批内置静态配置提取已接；`ComponentHandle` 直接 snapshot getter 已接；AppState mount/unmount snapshot register 已接；reconcile patch update 已接 | [#146](../decisions.md#d146) |
+| Handle emit / invalidate / getter | dispatch_semantic + 窄 Paint + 只读配置 | `ComponentHandle::emit` 已导出并走 `WidgetTree::dispatch_semantic`；`invalidate()` 已接 `WidgetTree::invalidate_paint` 窄 Paint；`snapshot()` / `text()` / `placeholder()` / `disabled()` 已接；App 默认持有 `AppState`，`AppState::get_handle` 可查 snapshot handle；lookup handle 的 live tree 绑定待接 | [#119](../decisions.md#d119) [#147](../decisions.md#d147) |
+| update_view | AppHandle 按 session reconcile | 单窗 `AppHandle::update_view` / `set_root` 已导出；经 MainThreadQueue 写 `pending_root` 并在帧末 reconcile；多窗路由待接 | [#149](../decisions.md#d149) |
 | State 跨窗标脏 | paint_sites fan-out | 单 bind slot | [#150](../decisions.md#d150) |
-| SnapshotSource | component! 自动快照 | 未实现 | [#151](../decisions.md#d151) |
-| snapshot(skip) | 字段属性排除 | 未实现 | [#152](../decisions.md#d152) |
-| reconcile 合并 | pending_root 优先 | 未接入 | [#153](../decisions.md#d153) |
-| view_factory | session 固定 Arc | 未建模 | [#155](../decisions.md#d155) |
+| SnapshotSource | component! 自动快照 | `SnapshotSource` trait 已导出；Button / Label / Input / Container / Grid 手写实现已接；`define_widget!` 自定义组件 pub 字段自动提取已接；`component! { name: ..., struct ... }` 已复用该路径，完整独立 DSL 待接 | [#151](../decisions.md#d151) |
+| snapshot(skip) | 字段属性排除 | `define_widget!` 已解析并消费 `#[snapshot(skip)]`；首批手写内置提取已人工排除运行态字段；`component! { name: ..., struct ... }` 已复用该排除逻辑，完整独立 DSL 待接 | [#152](../decisions.md#d152) |
+| reconcile 合并 | pending_root 优先 | 单窗 `update_view` 路径与 State 批次自动置位已接；多窗路由待接 | [#153](../decisions.md#d153) |
+| view_factory | session 固定 Arc | 单窗 `App::root(|| ...)` 已安装 session factory；多窗 factory 待接 | [#155](../decisions.md#d155) |
 | 豁免台账 | #158+ 条目 + 测试 | 未建立 | [#113](../decisions.md#d113) |
 
 源码与「设计」列不一致时 **按文档重构**（[`AGENTS.md`](../../AGENTS.md)）。
@@ -677,10 +679,13 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 跨域；无独立 `src/` 顶层目录。主要落点：
 
 ```text
-app/event_loop/event_loop.rs     run_app_loop、WindowSession、三态（#106 #116 #117）
-app/event_loop/main_thread_queue.rs  post_to_ui FIFO（#137）
-app/event_loop/test_clock.rs     TestClock 注入（#139）
-ui/core/picture_policy.rs       PicturePolicy 推断（#122）
+app/window_session.rs            WindowSession 壳、Registry 持有、三态字段（#106 #116）
+app/event_loop/event_loop.rs     run_app_loop、三态调度（#106 #117）
+app/main_thread_queue.rs        post_to_ui FIFO（#137）
+app/test_clock.rs                AppClock / TestClock 注入（#139）
+draw/compositor/scene_paint.rs  PicturePolicy 元数据与运行时信号 trait（#122）
+draw/compositor/layer_tree.rs   PicturePolicy 子树推断与 #129 阈值
+ui/traits/widget.rs             WidgetComponent::picture_policy 默认 Never（#122）
 ui/core/active_work.rs          ActiveWorkRegistry 内部（#124）
 ui/core/widget/tree_dirty.rs     失效队列
 ui/core/widget/tree_events.rs    PointerMove、scroll
@@ -688,9 +693,8 @@ draw/pipeline/invalidation.rs    Invalidation
 ui/foundation/state.rs          StateSlotId（#143）落地
 ui/view/build_context.rs        handler_generation / capture 指纹（#138 #142）
 ui/animation/                    AnimationRegistry register
-app/state/app_state.rs          AppState register（#145，设计）
-app/state/component_snapshot.rs ComponentConfigSnapshot（#146）
-ui/component/snapshot.rs         SnapshotSource（#151）
+ui/app_state.rs                 AppState snapshot registry（#145，部分落地）
+ui/component_snapshot.rs         ComponentConfigSnapshot / SnapshotSource（#146 #151）
 ```
 
 详见 [Main · 源码目录详表](../Main.md#源码目录详表)。

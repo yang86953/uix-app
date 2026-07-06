@@ -130,4 +130,3 @@ impl AABB3D {
 #[cfg(test)]
 #[path = "../../tests/draw/spatial/aabb3d.rs"]
 mod tests;
-

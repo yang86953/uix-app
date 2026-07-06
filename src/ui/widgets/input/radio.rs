@@ -95,6 +95,8 @@ define_widget! {
             .map(|idx| SemanticEvent::change(id, idx.to_string()))
     }
 
+    wants_continuous_pointer_move => (&self) -> bool { true }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let cy = frame.y + self.item_h * 0.5;
 

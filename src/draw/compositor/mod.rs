@@ -9,7 +9,7 @@ mod viewport_transform;
 
 pub use crate::draw::render_object::{RenderObjectEntry, RenderObjectTree};
 pub use layer_tree::{LayerNode, LayerTree};
-pub use scene_paint::ScenePaint;
+pub use scene_paint::{PicturePolicy, ScenePaint};
 pub use viewport_transform::{
     content_to_viewport, cumulative_scroll, needs_paint, needs_paint_rect,
 };

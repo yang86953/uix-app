@@ -449,4 +449,3 @@ impl From<crate::draw::Transform> for Mat4 {
 #[cfg(test)]
 #[path = "../../tests/draw/spatial/mat4.rs"]
 mod tests;
-
