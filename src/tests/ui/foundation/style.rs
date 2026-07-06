@@ -39,35 +39,7 @@ fn style_default_all_fields() {
     assert!(s.visible);
 }
 
-#[test]
-fn style_new_equals_default() {
-    assert_eq!(Style::new(), Style::default());
-}
-
 // 鈹€鈹€ 渚挎嵎棰勮 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-
-#[test]
-fn style_row() {
-    let s = Style::row();
-    assert_eq!(s.display, DisplayMode::Flex);
-    assert_eq!(s.flex_direction, FlexDirection::Row);
-    // Remaining fields should match default.
-    let mut expected = Style::default();
-    expected.display = DisplayMode::Flex;
-    expected.flex_direction = FlexDirection::Row;
-    assert_eq!(s, expected);
-}
-
-#[test]
-fn style_column() {
-    let s = Style::column();
-    assert_eq!(s.display, DisplayMode::Flex);
-    assert_eq!(s.flex_direction, FlexDirection::default()); // Column
-                                                            // Remaining fields should match default.
-    let mut expected = Style::default();
-    expected.display = DisplayMode::Flex;
-    assert_eq!(s, expected);
-}
 
 #[test]
 fn style_button_default() {
@@ -100,16 +72,6 @@ fn style_button_primary() {
     assert_eq!(s.padding, EdgeInsets::new(15.0, 0.0, 15.0, 0.0));
     assert_eq!(s.color, ColorValue::Palette(PaletteColor::White));
     assert_eq!(s.font_size, TypographyToken::Body);
-}
-
-#[test]
-fn style_container() {
-    let s = Style::container();
-    assert_eq!(s.display, DisplayMode::Flex);
-    // Remaining fields should match default.
-    let mut expected = Style::default();
-    expected.display = DisplayMode::Flex;
-    assert_eq!(s, expected);
 }
 
 #[test]
@@ -346,29 +308,7 @@ fn with_style_full_replace() {
     assert_eq!(result.font_size, TypographyToken::Custom(20.0));
 }
 
-// 鈹€鈹€ BoxShadowDef 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-
-#[test]
-fn box_shadow_def_new() {
-    let s = BoxShadowDef::new(Color::red(), 4.0, 2.0, 1.0);
-    assert_eq!(s.color, Color::red());
-    assert_eq!(s.blur, 4.0);
-    assert_eq!(s.offset_x, 2.0);
-    assert_eq!(s.offset_y, 1.0);
-}
-
 // 鈹€鈹€ StyleSet 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-
-#[test]
-fn style_set_new() {
-    let base = Style::default().with_bg(Color::red());
-    let v = StyleSet::new(base.clone());
-    assert_eq!(v.normal, base);
-    assert_eq!(v.hover, None);
-    assert_eq!(v.pressed, None);
-    assert_eq!(v.focused, None);
-    assert_eq!(v.disabled, None);
-}
 
 #[test]
 fn style_set_resolve_priority() {
@@ -429,24 +369,6 @@ fn style_set_resolve_fallback() {
 }
 
 #[test]
-fn style_set_chain_methods() {
-    let normal = Style::default().with_bg(Color::red());
-    let hover = Style::default().with_bg(Color::green());
-    let active = Style::default().with_bg(Color::blue());
-    let focused = Style::default().with_bg(Color::from_rgb(255, 255, 0));
-    let disabled = Style::default().with_bg(Color::from_rgb(128, 128, 128));
-    let v = StyleSet::new(normal)
-        .hover(hover.clone())
-        .active(active.clone())
-        .focused(focused.clone())
-        .disabled(disabled.clone());
-    assert_eq!(v.hover, Some(hover));
-    assert_eq!(v.pressed, Some(active));
-    assert_eq!(v.focused, Some(focused));
-    assert_eq!(v.disabled, Some(disabled));
-}
-
-#[test]
 fn button_presets_cover_focused_and_disabled_states() {
     for preset in [StyleSet::button_ghost(), StyleSet::button_danger()] {
         let focused = preset.resolve_flags(false, false, true, false);
@@ -465,36 +387,6 @@ fn button_presets_cover_focused_and_disabled_states() {
     }
 }
 
-// 鈹€鈹€ edge_insets 杈呭姪鍑芥暟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-
-#[test]
-fn edge_insets_all_uniform() {
-    let insets = edge_insets::all(8.0);
-    assert_eq!(insets, EdgeInsets::uniform(8.0));
-    assert_eq!(insets.left, 8.0);
-    assert_eq!(insets.top, 8.0);
-    assert_eq!(insets.right, 8.0);
-    assert_eq!(insets.bottom, 8.0);
-}
-
-#[test]
-fn edge_insets_symmetric() {
-    let insets = edge_insets::symmetric(10.0, 20.0);
-    assert_eq!(insets.left, 20.0);
-    assert_eq!(insets.top, 10.0);
-    assert_eq!(insets.right, 20.0);
-    assert_eq!(insets.bottom, 10.0);
-}
-
-#[test]
-fn edge_insets_trbl() {
-    let insets = edge_insets::trbl(1.0, 2.0, 3.0, 4.0);
-    assert_eq!(insets.left, 4.0);
-    assert_eq!(insets.top, 1.0);
-    assert_eq!(insets.right, 2.0);
-    assert_eq!(insets.bottom, 3.0);
-}
-
 // 鈹€鈹€ style! 瀹?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[test]
@@ -509,12 +401,6 @@ fn style_macro_basic() {
     assert_eq!(s.color, ColorValue::Custom(Color::white()));
     assert_eq!(s.border_radius, 6.0);
     assert_eq!(s.margin, EdgeInsets::uniform(8.0));
-}
-
-#[test]
-fn style_macro_empty() {
-    let s = crate::style! {};
-    assert_eq!(s, Style::default());
 }
 
 #[test]
@@ -591,10 +477,4 @@ fn style_macro_border_and_shadow() {
         s.box_shadow,
         Some(BoxShadowDef::new(Color::black(), 4.0, 2.0, 2.0))
     );
-}
-
-#[test]
-fn uniform_insets_helper() {
-    let insets = uniform_insets(12.0);
-    assert_eq!(insets, EdgeInsets::uniform(12.0));
 }

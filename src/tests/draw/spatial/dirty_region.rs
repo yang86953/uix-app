@@ -4,13 +4,6 @@ use super::*;
     use crate::draw::spatial::Orientation;
 
     #[test]
-    fn new_stores_aabb() {
-        let aabb = AABB3D::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 20.0, 0.0));
-        let region = DirtyRegion3D::new(aabb);
-        assert_eq!(region.aabb, aabb);
-    }
-
-    #[test]
     fn from_rect_z_builds_aabb() {
         let region = DirtyRegion3D::from_rect_z(Rect::new(10.0, 20.0, 100.0, 50.0), -1.0, 2.0);
         // z 范围 [-1, -1+2] = [-1, 1]

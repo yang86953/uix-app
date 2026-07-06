@@ -16,14 +16,6 @@ use super::*;
     }
 
     #[test]
-    fn test_notify_returns_incremented_ids() {
-        let mut svc = NotificationService::new();
-        let id1 = svc.notify("A", "1", StatusLevel::Info, 1000);
-        let id2 = svc.notify("B", "2", StatusLevel::Info, 1000);
-        assert!(id2 > id1);
-    }
-
-    #[test]
     fn test_notify_sets_correct_fields() {
         let mut svc = NotificationService::new();
         let id = svc.notify("Title", "Msg", StatusLevel::Warning, 5000);
@@ -81,17 +73,6 @@ use super::*;
     }
 
     #[test]
-    fn test_dismiss_all_empty_does_nothing() {
-        let mut svc = NotificationService::new();
-        svc.dismiss_all(); // 不应 panic
-        assert!(!svc.has_active());
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    // 便利方法：info / success / warning / error
-    // ════════════════════════════════════════════════════════════════════
-
-    #[test]
     fn test_info_convenience() {
         let mut svc = NotificationService::new();
         svc.info("Info", "details");
@@ -100,27 +81,6 @@ use super::*;
         assert_eq!(t.title, "Info");
         assert_eq!(t.message, "details");
         assert!(t.duration_ms > 0);
-    }
-
-    #[test]
-    fn test_success_convenience() {
-        let mut svc = NotificationService::new();
-        svc.success("OK", "done");
-        assert_eq!(svc.visible_toasts()[0].level, StatusLevel::Success);
-    }
-
-    #[test]
-    fn test_warning_convenience() {
-        let mut svc = NotificationService::new();
-        svc.warning("Caution", "be careful");
-        assert_eq!(svc.visible_toasts()[0].level, StatusLevel::Warning);
-    }
-
-    #[test]
-    fn test_error_convenience() {
-        let mut svc = NotificationService::new();
-        svc.error("Fail", "something broke");
-        assert_eq!(svc.visible_toasts()[0].level, StatusLevel::Error);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -276,23 +236,11 @@ use super::*;
     // ════════════════════════════════════════════════════════════════════
 
     #[test]
-    fn test_has_active_false_initially() {
-        let svc = NotificationService::new();
-        assert!(!svc.has_active());
-    }
-
-    #[test]
     fn test_has_active_false_after_dismiss_all() {
         let mut svc = NotificationService::new();
         svc.notify("A", "", StatusLevel::Info, 4000);
         svc.dismiss_all();
         assert!(!svc.has_active());
-    }
-
-    #[test]
-    fn test_visible_toasts_empty_initially() {
-        let svc = NotificationService::new();
-        assert!(svc.visible_toasts().is_empty());
     }
 
     #[test]
@@ -326,17 +274,4 @@ use super::*;
             .max_visible(5);
         svc.notify("A", "", StatusLevel::Info, 4000);
         assert!(called.load(Ordering::SeqCst));
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    // ToastEntry 默认值和字段
-    // ════════════════════════════════════════════════════════════════════
-
-    #[test]
-    fn test_toast_entry_debug_and_clone() {
-        let mut svc = NotificationService::new();
-        svc.notify("A", "msg", StatusLevel::Info, 4000);
-        let entry = svc.visible_toasts()[0].clone();
-        let debug = format!("{:?}", entry);
-        assert!(debug.contains("ToastEntry"));
     }

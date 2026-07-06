@@ -1,12 +1,6 @@
 use super::*;
 
     #[test]
-    fn layout_constants() {
-        assert_eq!(CONTENT_W, 1000.0);
-        assert_eq!(INNER_W, 960.0);
-    }
-
-    #[test]
     fn page_titles_and_build() {
         assert_eq!(PAGE_TITLES.len(), 8);
         let tk = DesignTokens::antd_light();

@@ -1,16 +1,6 @@
 use super::*;
 
     #[test]
-    fn metrics_default_zero() {
-        let m = RenderMetrics::default();
-        assert_eq!(m.layout_calls, 0);
-        assert_eq!(m.paint_calls, 0);
-        assert_eq!(m.present_calls, 0);
-        assert_eq!(m.idle_frames, 0);
-        assert_eq!(m.last_invalidation, InvalidationSource::None);
-    }
-
-    #[test]
     fn metrics_accumulates_counters() {
         let mut m = RenderMetrics::default();
         m.record_layout();

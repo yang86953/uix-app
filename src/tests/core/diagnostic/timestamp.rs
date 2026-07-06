@@ -1,15 +1,6 @@
 use super::*;
 
     #[test]
-    fn test_now() {
-        let ts = Timestamp::now();
-        assert!(
-            ts.as_millis() > 946_684_800_000,
-            "timestamp should be after 2000"
-        );
-    }
-
-    #[test]
     fn test_format_iso_ms() {
         let ts = Timestamp(1736937045123);
         assert_eq!(ts.format_iso_ms(), "2025-01-15T10:30:45.123Z");

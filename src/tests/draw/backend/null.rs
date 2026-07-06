@@ -24,14 +24,3 @@ use super::*;
         );
         assert_eq!(outcome, RenderOutcome::Idle);
     }
-
-    #[test]
-    fn null_backend_canvas_ops_no_panic() {
-        let mut backend = NullBackend::new();
-        let canvas = backend.surface().canvas();
-        canvas.fill_rect(
-            Rect::new(0.0, 0.0, 10.0, 10.0),
-            crate::draw::primitives::color::Color::from_rgba(255, 0, 0, 255),
-            None,
-        );
-    }

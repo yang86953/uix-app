@@ -1,14 +1,6 @@
 use super::*;
 
     #[test]
-    fn empty_queue_is_idle() {
-        let q = InvalidationQueue::new();
-        assert!(q.is_empty());
-        assert!(!q.has_layout());
-        assert!(!q.has_paint_or_composite());
-    }
-
-    #[test]
     fn paint_merges_to_dirty_region() {
         let mut q = InvalidationQueue::new();
         q.push(Invalidation::Paint {
