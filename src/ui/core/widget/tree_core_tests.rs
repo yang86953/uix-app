@@ -1002,6 +1002,63 @@ fn text_input_emits_semantic_event_for_focused_target() {
 }
 
 #[test]
+fn ime_composition_events_emit_semantic_events_for_focused_target() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    let started = Rc::new(RefCell::new(false));
+    let started_for_handler = started.clone();
+    tree.handler_table()
+        .on_ime_composition_start(root_id, move || {
+            *started_for_handler.borrow_mut() = true;
+        });
+
+    let update = Rc::new(RefCell::new(String::new()));
+    let update_for_handler = update.clone();
+    tree.handler_table()
+        .on_ime_composition_update(root_id, move |text| {
+            *update_for_handler.borrow_mut() = text.to_string();
+        });
+
+    let end = Rc::new(RefCell::new(String::new()));
+    let end_for_handler = end.clone();
+    tree.handler_table()
+        .on_ime_composition_end(root_id, move |text| {
+            *end_for_handler.borrow_mut() = text.to_string();
+        });
+
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(10.0, 10.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::ImeCompositionStart),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::ImeCompositionUpdate {
+            text: "zh".to_string(),
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::ImeCompositionEnd {
+            text: "中".to_string(),
+        }),
+        EventResult::Handled
+    );
+
+    assert!(*started.borrow());
+    assert_eq!(&*update.borrow(), "zh");
+    assert_eq!(&*end.borrow(), "中");
+}
+
+#[test]
 fn clipboard_events_emit_semantic_events_for_focused_target() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));

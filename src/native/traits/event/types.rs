@@ -30,6 +30,9 @@ pub enum UiEventType {
     Cut,
     Paste,
     TextInput,
+    ImeCompositionStart,
+    ImeCompositionUpdate,
+    ImeCompositionEnd,
     Timer,
     FileDrop,
     ThemeChanged,
@@ -123,6 +126,11 @@ pub struct TextInputData {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
+pub struct ImeCompositionData {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ClipboardData {
     pub text: String,
 }
@@ -158,6 +166,7 @@ pub enum UiEventPayload {
     Resize(ResizeData),
     Timer(TimerEventData),
     TextInput(TextInputData),
+    ImeComposition(ImeCompositionData),
     Clipboard(ClipboardData),
     FileDrop(FileDropData),
     ThemeChanged(ThemeChangeData),
@@ -250,6 +259,27 @@ impl UiEvent {
         Self {
             type_: UiEventType::TextInput,
             payload: UiEventPayload::TextInput(TextInputData { text: text.into() }),
+        }
+    }
+
+    pub fn ime_composition_start() -> Self {
+        Self {
+            type_: UiEventType::ImeCompositionStart,
+            payload: UiEventPayload::None,
+        }
+    }
+
+    pub fn ime_composition_update(text: impl Into<String>) -> Self {
+        Self {
+            type_: UiEventType::ImeCompositionUpdate,
+            payload: UiEventPayload::ImeComposition(ImeCompositionData { text: text.into() }),
+        }
+    }
+
+    pub fn ime_composition_end(text: impl Into<String>) -> Self {
+        Self {
+            type_: UiEventType::ImeCompositionEnd,
+            payload: UiEventPayload::ImeComposition(ImeCompositionData { text: text.into() }),
         }
     }
 

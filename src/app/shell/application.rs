@@ -360,6 +360,25 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
                 None
             }
         }
+        UiEventType::ImeCompositionStart => Some(SystemEvent::ImeCompositionStart),
+        UiEventType::ImeCompositionUpdate => {
+            if let UiEventPayload::ImeComposition(ref d) = ev.payload {
+                Some(SystemEvent::ImeCompositionUpdate {
+                    text: d.text.clone(),
+                })
+            } else {
+                None
+            }
+        }
+        UiEventType::ImeCompositionEnd => {
+            if let UiEventPayload::ImeComposition(ref d) = ev.payload {
+                Some(SystemEvent::ImeCompositionEnd {
+                    text: d.text.clone(),
+                })
+            } else {
+                None
+            }
+        }
         UiEventType::ThemeChanged => {
             if let UiEventPayload::ThemeChanged(ref d) = ev.payload {
                 Some(SystemEvent::ThemeChanged { is_dark: d.is_dark })
@@ -415,7 +434,9 @@ pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::traits::event::{ClipboardData, LocaleChangeData, ThemeChangeData};
+    use crate::native::traits::event::{
+        ClipboardData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
+    };
 
     #[test]
     fn map_theme_changed_event() {
@@ -465,6 +486,36 @@ mod tests {
         assert!(matches!(
             map_ui_event(&paste),
             Some(SystemEvent::Paste { text }) if text == "hello"
+        ));
+    }
+
+    #[test]
+    fn map_ime_composition_events() {
+        assert!(matches!(
+            map_ui_event(&UiEvent::ime_composition_start()),
+            Some(SystemEvent::ImeCompositionStart)
+        ));
+
+        let update = UiEvent::new(
+            UiEventType::ImeCompositionUpdate,
+            UiEventPayload::ImeComposition(ImeCompositionData {
+                text: "zh".to_string(),
+            }),
+        );
+        assert!(matches!(
+            map_ui_event(&update),
+            Some(SystemEvent::ImeCompositionUpdate { text }) if text == "zh"
+        ));
+
+        let end = UiEvent::new(
+            UiEventType::ImeCompositionEnd,
+            UiEventPayload::ImeComposition(ImeCompositionData {
+                text: "中".to_string(),
+            }),
+        );
+        assert!(matches!(
+            map_ui_event(&end),
+            Some(SystemEvent::ImeCompositionEnd { text }) if text == "中"
         ));
     }
 }

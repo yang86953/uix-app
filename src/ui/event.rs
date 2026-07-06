@@ -21,6 +21,9 @@ pub enum SystemEventKind {
     Cut,
     Paste,
     TextInput,
+    ImeCompositionStart,
+    ImeCompositionUpdate,
+    ImeCompositionEnd,
     FocusIn,
     FocusOut,
     PointerEnter,
@@ -74,6 +77,13 @@ pub enum SystemEvent {
         text: String,
     },
     TextInput {
+        text: String,
+    },
+    ImeCompositionStart,
+    ImeCompositionUpdate {
+        text: String,
+    },
+    ImeCompositionEnd {
         text: String,
     },
     FocusIn,
@@ -132,6 +142,9 @@ impl SystemEvent {
             SystemEvent::Cut => SystemEventKind::Cut,
             SystemEvent::Paste { .. } => SystemEventKind::Paste,
             SystemEvent::TextInput { .. } => SystemEventKind::TextInput,
+            SystemEvent::ImeCompositionStart => SystemEventKind::ImeCompositionStart,
+            SystemEvent::ImeCompositionUpdate { .. } => SystemEventKind::ImeCompositionUpdate,
+            SystemEvent::ImeCompositionEnd { .. } => SystemEventKind::ImeCompositionEnd,
             SystemEvent::FocusIn => SystemEventKind::FocusIn,
             SystemEvent::FocusOut => SystemEventKind::FocusOut,
             SystemEvent::PointerEnter => SystemEventKind::PointerEnter,
@@ -165,6 +178,9 @@ pub enum SemanticKind {
     Cut,
     Paste,
     TextInput,
+    ImeCompositionStart,
+    ImeCompositionUpdate,
+    ImeCompositionEnd,
     Custom(TypeId),
 }
 
@@ -222,6 +238,30 @@ impl SemanticEvent {
     pub fn text_input(target: WidgetId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::TextInput,
+            target,
+            SemanticPayload::Text(text.into()),
+        )
+    }
+
+    pub fn ime_composition_start(target: WidgetId) -> Self {
+        Self::new(
+            SemanticKind::ImeCompositionStart,
+            target,
+            SemanticPayload::None,
+        )
+    }
+
+    pub fn ime_composition_update(target: WidgetId, text: impl Into<String>) -> Self {
+        Self::new(
+            SemanticKind::ImeCompositionUpdate,
+            target,
+            SemanticPayload::Text(text.into()),
+        )
+    }
+
+    pub fn ime_composition_end(target: WidgetId, text: impl Into<String>) -> Self {
+        Self::new(
+            SemanticKind::ImeCompositionEnd,
             target,
             SemanticPayload::Text(text.into()),
         )
@@ -439,6 +479,48 @@ impl HandlerTable {
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::TextInput, move |event| {
+            if let Some(text) = event.text_payload() {
+                handler(text);
+            }
+        })
+    }
+
+    pub fn on_ime_composition_start(
+        &mut self,
+        component: WidgetId,
+        mut handler: impl FnMut() + 'static,
+    ) -> HandlerId {
+        self.on(
+            component,
+            SemanticKind::ImeCompositionStart,
+            move |_event| {
+                handler();
+            },
+        )
+    }
+
+    pub fn on_ime_composition_update(
+        &mut self,
+        component: WidgetId,
+        mut handler: impl FnMut(&str) + 'static,
+    ) -> HandlerId {
+        self.on(
+            component,
+            SemanticKind::ImeCompositionUpdate,
+            move |event| {
+                if let Some(text) = event.text_payload() {
+                    handler(text);
+                }
+            },
+        )
+    }
+
+    pub fn on_ime_composition_end(
+        &mut self,
+        component: WidgetId,
+        mut handler: impl FnMut(&str) + 'static,
+    ) -> HandlerId {
+        self.on(component, SemanticKind::ImeCompositionEnd, move |event| {
             if let Some(text) = event.text_payload() {
                 handler(text);
             }
