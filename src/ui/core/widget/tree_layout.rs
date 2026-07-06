@@ -183,7 +183,8 @@ impl WidgetTree {
             })
             .collect();
 
-        self.overlay_stack.clear();
+        self.overlay_stack
+            .retain_entries(|entry| !entry.is_managed());
         for entry in entries {
             self.overlay_stack.push_entry(entry);
         }

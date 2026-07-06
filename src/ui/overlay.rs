@@ -31,6 +31,7 @@ pub struct OverlayEntry {
     modal: bool,
     dismiss_on_outside: bool,
     focus_trap: bool,
+    managed: bool,
 }
 
 impl OverlayEntry {
@@ -44,6 +45,7 @@ impl OverlayEntry {
             modal: matches!(kind, OverlayKind::Modal | OverlayKind::Drawer),
             dismiss_on_outside: matches!(kind, OverlayKind::Modal | OverlayKind::Drawer),
             focus_trap: matches!(kind, OverlayKind::Modal | OverlayKind::Drawer),
+            managed: false,
         }
     }
 
@@ -69,6 +71,11 @@ impl OverlayEntry {
 
     pub fn focus_trap(mut self, focus_trap: bool) -> Self {
         self.focus_trap = focus_trap;
+        self
+    }
+
+    pub fn managed(mut self, managed: bool) -> Self {
+        self.managed = managed;
         self
     }
 
@@ -103,6 +110,10 @@ impl OverlayEntry {
     pub fn traps_focus(&self) -> bool {
         self.focus_trap
     }
+
+    pub fn is_managed(&self) -> bool {
+        self.managed
+    }
 }
 
 #[derive(Debug, Default)]
@@ -136,6 +147,10 @@ impl OverlayStack {
 
     pub fn remove_for_owner(&mut self, owner: WidgetId) {
         self.entries.retain(|entry| entry.owner != owner);
+    }
+
+    pub fn retain_entries(&mut self, mut keep: impl FnMut(&OverlayEntry) -> bool) {
+        self.entries.retain(|entry| keep(entry));
     }
 
     pub fn clear(&mut self) {

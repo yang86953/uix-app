@@ -147,9 +147,11 @@ impl WidgetTree {
                         // 点击不处理事件的 widget → 取消焦点
                         self.set_focus(None);
                     }
+                    self.rebuild_widget_overlays();
                     result
                 } else {
                     self.set_focus(None);
+                    self.rebuild_widget_overlays();
                     EventResult::NotHandled
                 }
             }
@@ -196,6 +198,7 @@ impl WidgetTree {
                         let _ = self.dispatch_to(t, event);
                     }
                 }
+                self.rebuild_widget_overlays();
                 result
             }
             SystemEvent::PointerMove { pos, mods } => {
@@ -257,11 +260,13 @@ impl WidgetTree {
                     self.invalidate_paint(drag_target);
                     let _ = self.dispatch_to(drag_target, event);
                 }
-                if let Some(t) = new_hover {
+                let result = if let Some(t) = new_hover {
                     self.dispatch_to(t, event)
                 } else {
                     EventResult::NotHandled
-                }
+                };
+                self.rebuild_widget_overlays();
+                result
             }
             SystemEvent::Wheel { pos, .. } => {
                 let target = self
@@ -382,9 +387,11 @@ impl WidgetTree {
                 }
             }
             SystemEvent::Timer { .. } => {
-                // 定时器事件分发给 root
-                if let Some(root) = self.root_id {
-                    self.dispatch_to(root, event)
+                let target = self.hovered_widget.or(self.focused_widget).or(self.root_id);
+                if let Some(target) = target {
+                    let result = self.dispatch_to(target, event);
+                    self.rebuild_widget_overlays();
+                    result
                 } else {
                     EventResult::NotHandled
                 }

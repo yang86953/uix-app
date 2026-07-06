@@ -27,6 +27,9 @@ define_widget! {
         bg_color: Option<Color>,
         text_color: Option<Color>,
         visible: bool,
+        pending: bool,
+        delay_ms: u32,
+        timer_id: u32,
         arrow: bool,
     }
 
@@ -37,23 +40,43 @@ define_widget! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match (self.trigger, event) {
             (TriggerMode::Hover, SystemEvent::PointerEnter) => {
-                self.visible = true;
+                if self.delay_ms == 0 {
+                    self.visible = true;
+                    self.pending = false;
+                } else {
+                    self.visible = false;
+                    self.pending = true;
+                }
                 EventResult::Handled
             }
             (TriggerMode::Hover, SystemEvent::PointerLeave) => {
                 self.visible = false;
+                self.pending = false;
                 EventResult::Handled
             }
             (TriggerMode::Click, SystemEvent::PointerDown { .. }) => {
                 self.visible = !self.visible;
+                self.pending = false;
                 EventResult::Handled
             }
             (TriggerMode::Focus, SystemEvent::FocusIn) => {
-                self.visible = true;
+                if self.delay_ms == 0 {
+                    self.visible = true;
+                    self.pending = false;
+                } else {
+                    self.visible = false;
+                    self.pending = true;
+                }
                 EventResult::Handled
             }
             (TriggerMode::Focus, SystemEvent::FocusOut) => {
                 self.visible = false;
+                self.pending = false;
+                EventResult::Handled
+            }
+            (_, SystemEvent::Timer { id }) if self.pending && *id == self.timer_id => {
+                self.visible = true;
+                self.pending = false;
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
@@ -131,7 +154,8 @@ define_widget! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Tooltip)
                 .bounds(Rect::new(tx, ty, text_w, text_h))
-                .z_index(1100),
+                .z_index(1100)
+                .managed(true),
         )
     }
 }
@@ -201,6 +225,9 @@ impl Tooltip {
             bg_color: None,
             text_color: None,
             visible: false,
+            pending: false,
+            delay_ms: 0,
+            timer_id: 1,
             arrow: true,
         }
     }
@@ -228,5 +255,19 @@ impl Tooltip {
     pub fn arrow(mut self, v: bool) -> Self {
         self.arrow = v;
         self
+    }
+
+    pub fn delay_ms(mut self, ms: u32) -> Self {
+        self.delay_ms = ms;
+        self
+    }
+
+    pub fn timer_id(mut self, id: u32) -> Self {
+        self.timer_id = id;
+        self
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.visible
     }
 }

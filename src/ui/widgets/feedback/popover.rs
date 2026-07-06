@@ -127,7 +127,8 @@ define_widget! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 .bounds(Rect::new(px, py, pw, ph))
-                .z_index(900),
+                .z_index(900)
+                .managed(true),
         )
     }
 }
