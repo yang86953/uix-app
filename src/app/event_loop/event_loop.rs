@@ -70,6 +70,7 @@ where
         map_event,
         on_exit,
         |_| {},
+        |_, _| {},
         on_frame,
     )
 }
@@ -148,12 +149,13 @@ where
         map_event,
         on_exit,
         |_| {},
+        |_, _| {},
         on_frame,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, F>(
+pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
@@ -167,12 +169,14 @@ pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, F>(
     map_event: M,
     on_exit: X,
     on_runtime_tasks: T,
+    on_foreign_event: R,
     on_frame: F,
 ) -> i32
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
     T: FnMut(&mut dyn Platform),
+    R: FnMut(&UiEvent, &mut dyn Platform),
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
     run_window_session_loop_with_system_theme_and_clock(
@@ -190,6 +194,7 @@ where
         map_event,
         on_exit,
         on_runtime_tasks,
+        on_foreign_event,
         on_frame,
     )
 }
@@ -231,12 +236,13 @@ where
         map_event,
         on_exit,
         |_| {},
+        |_, _| {},
         on_frame,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_window_session_loop_with_system_theme_and_clock<M, X, T, F>(
+fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
     session: &mut WindowSession,
@@ -251,12 +257,14 @@ fn run_window_session_loop_with_system_theme_and_clock<M, X, T, F>(
     map_event: M,
     on_exit: X,
     on_runtime_tasks: T,
+    on_foreign_event: R,
     on_frame: F,
 ) -> i32
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
     T: FnMut(&mut dyn Platform),
+    R: FnMut(&UiEvent, &mut dyn Platform),
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
     let parts = session.parts_mut();
@@ -283,12 +291,13 @@ where
         map_event,
         on_exit,
         on_runtime_tasks,
+        on_foreign_event,
         on_frame,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_widget_loop_with_active_work<M, X, T, F>(
+fn run_widget_loop_with_active_work<M, X, T, R, F>(
     platform: &mut dyn Platform,
     platform_window: &mut dyn PlatformWindow,
     engine: &mut dyn GraphicsEngine,
@@ -311,17 +320,21 @@ fn run_widget_loop_with_active_work<M, X, T, F>(
     map_event: M,
     on_exit: X,
     mut on_runtime_tasks: T,
+    mut on_foreign_event: R,
     on_frame: F,
 ) -> i32
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
     T: FnMut(&mut dyn Platform),
+    R: FnMut(&UiEvent, &mut dyn Platform),
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 {
     let bus_ptr: *mut dyn Platform = platform as *mut dyn Platform;
+    let window_id = platform_window.window_id();
 
     let pending_events = RefCell::new(Vec::<UiEvent>::new());
+    let foreign_events = RefCell::new(Vec::<UiEvent>::new());
     tree.bind_invalidation();
     // bind 会清空失效队列；首帧须保留全帧 Paint，避免 RenderObject 重放空缓存
     tree.mark_full_frame_dirty();
@@ -348,6 +361,10 @@ where
     let mut ime_session = None;
 
     let collect = |ev: &UiEvent| {
+        if ev.window_id.is_some_and(|target| target != window_id) {
+            foreign_events.borrow_mut().push(ev.clone());
+            return true;
+        }
         match ev.type_ {
             UiEventType::WindowClose => {
                 running.set(false);
@@ -381,6 +398,10 @@ where
                 break;
             }
             platform.event_loop().poll_event(&collect);
+        }
+
+        for ev in foreign_events.borrow_mut().drain(..) {
+            on_foreign_event(&ev, platform);
         }
 
         let had_events = !pending_events.borrow().is_empty();

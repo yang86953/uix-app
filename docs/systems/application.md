@@ -347,7 +347,7 @@ App::new()
     .run();
 ```
 
-> **实现注记**：`WindowConfig`、`AppHandle::open_window` 与 `.on_window_start` 已导出；`open_window` 当前会分配新 `window_id`、独立 AppTimer / MainThreadQueue / AppHandle，并把副窗创建请求暂存到 `AppRuntime`。GUI loop 会在首窗 `.on_start` 后与活动轮次中 drain 请求，创建 native 窗、校验 native `window_id`、构造独立 `WindowSession` 并调用 `.on_window_start`；副窗 MainThreadQueue / `update_view` reconcile 已消费，副窗事件路由/渲染帧循环与完整多 session loop drain 仍待接入。
+> **实现注记**：`WindowConfig`、`AppHandle::open_window` 与 `.on_window_start` 已导出；`open_window` 当前会分配新 `window_id`、独立 AppTimer / MainThreadQueue / AppHandle，并把副窗创建请求暂存到 `AppRuntime`。GUI loop 会在首窗 `.on_start` 后与活动轮次中 drain 请求，创建 native 窗、校验 native `window_id`、构造独立 `WindowSession` 并调用 `.on_window_start`；副窗 MainThreadQueue / `update_view` reconcile 已消费，副窗事件已按 `window_id` 路由，副窗渲染帧循环与完整多 session loop drain 仍待接入。
 
 ### 副窗 bootstrap（#148）
 
@@ -546,7 +546,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 // ✗ 禁止：用 A handle 期望更新 B 的树
 ```
 
-> **实现注记**：`App::post_to_ui`、`AppHandle::post_to_ui` 与 `WindowSession.main_thread_queue` 已落地；`AppHandle` 经 `AppRuntime` 按 `window_id` 仅写入目标 session 队列，并在 session 销毁后丢弃闭包。单窗 loop 已在 UiEvent / due work 后、`tick_effects` 前 drain；副窗 MainThreadQueue 已在运行时任务 hook 中消费；阻塞等待中的真实 wake 与副窗事件/渲染帧循环尚未接。
+> **实现注记**：`App::post_to_ui`、`AppHandle::post_to_ui` 与 `WindowSession.main_thread_queue` 已落地；`AppHandle` 经 `AppRuntime` 按 `window_id` 仅写入目标 session 队列，并在 session 销毁后丢弃闭包。单窗 loop 已在 UiEvent / due work 后、`tick_effects` 前 drain；副窗 MainThreadQueue 已在运行时任务 hook 中消费，副窗事件已按 `window_id` 路由；阻塞等待中的真实 wake 与副窗渲染帧循环尚未接。
 
 ---
 
@@ -565,7 +565,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 
 入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
 
-> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列。副窗 session bootstrap 与 MainThreadQueue 消费已接，副窗完整 loop 消费尚未接。
+> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列。副窗 session bootstrap、MainThreadQueue 消费与事件路由已接，副窗完整 loop 消费尚未接。
 
 ---
 
