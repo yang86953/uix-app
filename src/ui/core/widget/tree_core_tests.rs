@@ -3,7 +3,7 @@
 use super::*;
 use crate::core::Point;
 use crate::native::traits::input::{KeyMod, MouseButton};
-use crate::ui::{OverlayEntry, OverlayKind};
+use crate::ui::{Modal, OverlayEntry, OverlayKind};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -639,6 +639,24 @@ fn dispatch_pointer_down_outside_modal_overlay_dismisses_and_blocks_underlying()
     assert!(tree.overlay_stack().is_empty());
     assert!(underlying_event.is_none());
     assert!(tree.focused_widget.is_none());
+}
+
+#[test]
+fn layout_registers_visible_modal_overlay() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let modal = tree.add_child(root_id, Box::new(Modal::new("Dialog").show().overlay(true)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    tree.layout();
+
+    let top = tree.overlay_stack().top().unwrap();
+    assert_eq!(top.owner(), modal);
+    assert_eq!(top.kind(), OverlayKind::Modal);
+    assert!(top.is_modal());
+    assert!(top.traps_focus());
 }
 
 #[test]

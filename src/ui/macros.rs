@@ -169,6 +169,7 @@ macro_rules! __define_widget_upcast_method {
     (uses_palette; $T:ty) => {};
     (dirty_rect; $T:ty) => {};
     (children_clip; $T:ty) => {};
+    (overlay_entry; $T:ty) => {};
     (draw_margin; $T:ty) => {};
     (on_event; $T:ty) => { $crate::wc_upcast!($T; EventHandler); };
     (scroll_delta; $T:ty) => {};
@@ -244,7 +245,7 @@ macro_rules! define_widget {
                     match stringify!($method) {
                         "preferred_size" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
-                        "render" | "uses_palette" | "dirty_rect" | "children_clip" | "draw_margin" =>
+                        "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
                         "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "hit_test_frame" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
@@ -280,7 +281,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             WidgetRender,
             $name,
-            [render uses_palette dirty_rect children_clip draw_margin],
+            [render uses_palette dirty_rect children_clip overlay_entry draw_margin],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -337,6 +338,9 @@ macro_rules! __define_widget_method_builder {
     };
     (children_clip; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn children_clip($($p)*) -> $ret $body
+    };
+    (overlay_entry; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn overlay_entry($($p)*) -> $ret $body
     };
     (draw_margin; WidgetRender; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn draw_margin($($p)*) -> $ret $body
@@ -421,6 +425,9 @@ macro_rules! __match_trait_method {
     };
     (WidgetRender, children_clip, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn children_clip($($p)*) -> $ret $body
+    };
+    (WidgetRender, overlay_entry, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn overlay_entry($($p)*) -> $ret $body
     };
     (WidgetRender, draw_margin, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn draw_margin($($p)*) -> $ret $body

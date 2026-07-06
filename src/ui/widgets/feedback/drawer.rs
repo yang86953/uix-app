@@ -143,6 +143,27 @@ define_widget! {
         }
     }
 
+    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+        if !self.visible {
+            return None;
+        }
+
+        let bounds = if self.mask {
+            Rect::new(-2000.0, -2000.0, 4000.0, 4000.0)
+        } else {
+            match self.placement {
+                DrawerPlacement::Right | DrawerPlacement::Left => Rect::new(frame.x, frame.y, self.width, frame.h),
+                DrawerPlacement::Top | DrawerPlacement::Bottom => Rect::new(frame.x, frame.y, frame.w, self.height),
+            }
+        };
+
+        Some(
+            crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Drawer)
+                .bounds(bounds)
+                .z_index(1000),
+        )
+    }
+
     layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], _tree: &WidgetTree)
         -> Vec<(crate::ui::WidgetId, Rect)>
     {

@@ -25,6 +25,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::draw::traits::GraphicsEngine;
 use crate::ui::event::SemanticEvent;
+use crate::ui::overlay::OverlayEntry;
 use crate::ui::widget::{EventResult, SystemEvent, WidgetId, WidgetNode, WidgetTree};
 use std::any::Any;
 
@@ -143,6 +144,9 @@ pub trait WidgetRender: WidgetComponent {
         }
     }
     fn children_clip(&self, _frame: Rect) -> Option<Rect> {
+        None
+    }
+    fn overlay_entry(&self, _id: WidgetId, _frame: Rect) -> Option<OverlayEntry> {
         None
     }
 }
