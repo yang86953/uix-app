@@ -4,8 +4,8 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use crate::app::app_timer::{AppTimerQueue, TimerHandle};
-use crate::app::main_thread_queue::MainThreadQueue;
+use crate::app::app_timer::TimerHandle;
+use crate::app::session_runtime::AppRuntime;
 use crate::app::shell::di::Container;
 pub use crate::core::WindowId;
 use crate::ui::view::{View, ViewAdapter, ViewNode};
@@ -15,8 +15,7 @@ use crate::ui::AppState;
 pub struct AppHandle {
     window_id: WindowId,
     app_state: AppState,
-    app_timers: AppTimerQueue,
-    main_thread_queue: MainThreadQueue,
+    runtime: AppRuntime,
     container: Container,
     alive: Arc<AtomicBool>,
 }
@@ -25,16 +24,14 @@ impl AppHandle {
     pub(crate) fn new(
         window_id: WindowId,
         app_state: AppState,
-        app_timers: AppTimerQueue,
-        main_thread_queue: MainThreadQueue,
+        runtime: AppRuntime,
         container: Container,
         alive: Arc<AtomicBool>,
     ) -> Self {
         Self {
             window_id,
             app_state,
-            app_timers,
-            main_thread_queue,
+            runtime,
             container,
             alive,
         }
@@ -59,7 +56,7 @@ impl AppHandle {
         if !self.alive.load(Ordering::Acquire) {
             return TimerHandle::inactive();
         }
-        self.app_timers.run_after(delay, f)
+        self.runtime.run_after(self.window_id, delay, f)
     }
 
     pub fn run_interval<F>(&self, interval: Duration, f: F) -> TimerHandle
@@ -69,7 +66,7 @@ impl AppHandle {
         if !self.alive.load(Ordering::Acquire) {
             return TimerHandle::inactive();
         }
-        self.app_timers.run_interval(interval, f)
+        self.runtime.run_interval(self.window_id, interval, f)
     }
 
     pub fn post_to_ui<F>(&self, f: F)
@@ -77,7 +74,7 @@ impl AppHandle {
         F: FnOnce() + Send + 'static,
     {
         if self.alive.load(Ordering::Acquire) {
-            self.main_thread_queue.enqueue(f);
+            self.runtime.post_to_ui(self.window_id, f);
         }
     }
 
@@ -86,10 +83,11 @@ impl AppHandle {
         F: FnOnce() -> ViewNode + Send + 'static,
     {
         if self.alive.load(Ordering::Acquire) {
-            self.main_thread_queue.enqueue_with_context(move |ctx| {
-                let root = ViewAdapter::capture_root(build_root);
-                ctx.update_root(root);
-            });
+            self.runtime
+                .enqueue_with_context(self.window_id, move |ctx| {
+                    let root = ViewAdapter::capture_root(build_root);
+                    ctx.update_root(root);
+                });
         }
     }
 
@@ -102,6 +100,7 @@ impl AppHandle {
 
     pub(crate) fn mark_closed(&self) {
         self.alive.store(false, Ordering::Release);
+        self.runtime.close_session(self.window_id);
     }
 }
 

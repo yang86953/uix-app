@@ -6,6 +6,7 @@ pub mod app_timer;
 pub mod bridge;
 pub mod event_loop;
 pub(crate) mod main_thread_queue;
+pub(crate) mod session_runtime;
 pub mod shell;
 pub(crate) mod test_clock;
 pub mod window;
