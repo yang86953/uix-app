@@ -7,11 +7,61 @@ use crate::native::traits::event::{
     ClipboardData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
 };
 use crate::ui::view::combinators::label;
+use crate::ui::view::ViewNode;
 use crate::ui::widgets::Label;
+use crate::ui::{EventHandler, EventResult, SystemEvent, WidgetCapabilities, WidgetComponent};
+use std::any::Any;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
+
+struct RecordingWidget {
+    focus_events: Arc<AtomicBool>,
+}
+
+impl RecordingWidget {
+    fn new(focus_events: Arc<AtomicBool>) -> Self {
+        Self { focus_events }
+    }
+}
+
+impl WidgetComponent for RecordingWidget {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::EVENT)
+    }
+
+    fn as_event(&self) -> Option<&dyn EventHandler> {
+        Some(self)
+    }
+
+    fn as_event_mut(&mut self) -> Option<&mut dyn EventHandler> {
+        Some(self)
+    }
+}
+
+impl EventHandler for RecordingWidget {
+    fn on_event(&mut self, event: &SystemEvent) -> EventResult {
+        if matches!(event, SystemEvent::WindowFocus) {
+            self.focus_events.store(true, Ordering::Relaxed);
+            EventResult::Handled
+        } else {
+            EventResult::NotHandled
+        }
+    }
+}
 
 #[test]
 fn app_default_does_not_follow_system_theme() {
@@ -253,6 +303,83 @@ fn drain_secondary_window_queues_drains_all_sessions() {
         .unwrap()
         .text();
     assert_eq!(second_text, "updated b");
+}
+
+#[test]
+fn dispatch_secondary_window_event_routes_by_window_id() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let child_focus = Arc::new(AtomicBool::new(false));
+    let child = runtime.request_open_window(WindowConfig::new("Child", 320, 240, {
+        let child_focus = child_focus.clone();
+        move || ViewNode::leaf(RecordingWidget::new(child_focus.clone()))
+    }));
+    let mut secondary_windows = Vec::new();
+    assert_eq!(
+        drain_pending_open_windows(
+            &mut platform,
+            &runtime,
+            &AppState::new(),
+            &Container::new(),
+            None,
+            &mut secondary_windows,
+        ),
+        1
+    );
+
+    assert!(dispatch_secondary_window_event(
+        &mut secondary_windows,
+        &mut platform,
+        &UiEvent::new(UiEventType::WindowFocus, UiEventPayload::None).for_window(child.window_id),
+    ));
+
+    assert!(child_focus.load(Ordering::Relaxed));
+}
+
+#[test]
+fn dispatch_secondary_window_close_removes_session() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let child =
+        runtime.request_open_window(WindowConfig::new("Child", 320, 240, || label("child")));
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+
+    assert!(dispatch_secondary_window_event(
+        &mut secondary_windows,
+        &mut platform,
+        &UiEvent::close().for_window(child.window_id),
+    ));
+
+    assert!(secondary_windows.is_empty());
+    assert!(!child.alive.load(Ordering::Acquire));
 }
 
 #[test]

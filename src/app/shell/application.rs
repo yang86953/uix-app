@@ -47,6 +47,51 @@ struct SecondaryWindowSession {
 }
 
 impl SecondaryWindowSession {
+    fn window_id(&self) -> WindowId {
+        self.session.window_id()
+    }
+
+    fn handle_event(&mut self, platform: &mut dyn Platform, event: &UiEvent) -> bool {
+        if event.type_ == UiEventType::WindowClose {
+            self.handle.mark_closed();
+            return false;
+        }
+
+        let parts = self.session.parts_mut();
+        match event.type_ {
+            UiEventType::WindowResize => {
+                if let UiEventPayload::Resize(ref d) = event.payload {
+                    if d.width > 0 && d.height > 0 {
+                        parts.engine.resize(d.width, d.height);
+                        self._window.resize_notify(d.width, d.height);
+                    }
+                }
+            }
+            UiEventType::WindowMaximize => {
+                let info = platform.display().info(0);
+                let w = info.bounds.w as i32;
+                let h = info.bounds.h as i32;
+                if w > 0 && h > 0 {
+                    parts.engine.resize(w, h);
+                    self._window.resize_notify(w, h);
+                }
+            }
+            UiEventType::WindowRestore => {
+                let w = self._window.properties().width();
+                let h = self._window.properties().height();
+                parts.engine.resize(w, h);
+                self._window.resize_notify(w, h);
+            }
+            _ => {}
+        }
+
+        if let Some(system_event) = map_ui_event(event) {
+            parts.tree.dispatch_event(&system_event);
+        }
+        platform.event_bus().publish(event);
+        true
+    }
+
     fn drain_main_thread_work(&mut self) -> bool {
         let parts = self.session.parts_mut();
         let mut main_thread_context =
@@ -395,16 +440,16 @@ impl App {
         if let Some(on_start) = self.on_start.take() {
             on_start(app_handle.clone());
         }
-        let mut secondary_windows = Vec::new();
+        let secondary_windows = RefCell::new(Vec::new());
         drain_pending_open_windows(
             &mut *platform,
             &self.runtime,
             &self.app_state,
             &self.container,
             self.on_window_start.as_ref(),
-            &mut secondary_windows,
+            &mut secondary_windows.borrow_mut(),
         );
-        drain_secondary_window_queues(&mut secondary_windows);
+        drain_secondary_window_queues(&mut secondary_windows.borrow_mut());
 
         let theme = RefCell::new(self.theme);
         let debug_mode = Cell::new(false);
@@ -438,13 +483,21 @@ impl App {
                     &app_state,
                     &container,
                     on_window_start.as_ref(),
-                    &mut secondary_windows,
+                    &mut secondary_windows.borrow_mut(),
                 );
-                drain_secondary_window_queues(&mut secondary_windows);
+                drain_secondary_window_queues(&mut secondary_windows.borrow_mut());
+            },
+            |event, platform| {
+                dispatch_secondary_window_event(
+                    &mut secondary_windows.borrow_mut(),
+                    platform,
+                    event,
+                );
             },
             |_, _, _| {},
         );
 
+        let mut secondary_windows = secondary_windows.into_inner();
         for window in secondary_windows.drain(..) {
             window.close();
         }
@@ -484,6 +537,29 @@ fn drain_secondary_window_queues(secondary_windows: &mut [SecondaryWindowSession
         drained |= window.drain_main_thread_work();
     }
     drained
+}
+
+fn dispatch_secondary_window_event(
+    secondary_windows: &mut Vec<SecondaryWindowSession>,
+    platform: &mut dyn Platform,
+    event: &UiEvent,
+) -> bool {
+    let Some(window_id) = event.window_id else {
+        return false;
+    };
+    let Some(index) = secondary_windows
+        .iter()
+        .position(|window| window.window_id() == window_id)
+    else {
+        return false;
+    };
+
+    if secondary_windows[index].handle_event(platform, event) {
+        true
+    } else {
+        secondary_windows.remove(index);
+        true
+    }
 }
 
 fn create_secondary_window(
