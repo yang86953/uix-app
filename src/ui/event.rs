@@ -595,6 +595,22 @@ impl HandlerTable {
         })
     }
 
+    pub fn on_custom<T: Any>(
+        &mut self,
+        component: WidgetId,
+        mut handler: impl FnMut(&T) + 'static,
+    ) -> HandlerId {
+        self.on(
+            component,
+            SemanticKind::Custom(TypeId::of::<T>()),
+            move |event| {
+                if let Some(payload) = event.custom_payload::<T>() {
+                    handler(payload);
+                }
+            },
+        )
+    }
+
     pub fn remove(&mut self, component: WidgetId, handler_id: HandlerId) {
         if let Some(entries) = self.handlers.get_mut(&component) {
             entries.retain(|entry| entry.id != handler_id);
@@ -780,5 +796,34 @@ mod tests {
         let _ = table.dispatch_path(&[id], &mut event);
 
         assert_eq!(calls.get(), 1);
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct BusinessPayload {
+        value: u32,
+    }
+
+    #[test]
+    fn register_semantic_macro_matches_custom_event_kind() {
+        let event = SemanticEvent::custom(1, BusinessPayload { value: 7 });
+
+        assert_eq!(event.kind, register_semantic!(BusinessPayload));
+    }
+
+    #[test]
+    fn handler_table_dispatches_typed_custom_payload() {
+        let id = 1;
+        let value = Rc::new(Cell::new(0));
+        let value_for_handler = value.clone();
+        let mut table = HandlerTable::new();
+        table.on_custom::<BusinessPayload>(id, move |payload| {
+            value_for_handler.set(payload.value);
+        });
+
+        let mut event = SemanticEvent::custom(1, BusinessPayload { value: 42 });
+        let result = table.dispatch_path(&[id], &mut event);
+
+        assert_eq!(result, EventResult::Handled);
+        assert_eq!(value.get(), 42);
     }
 }
