@@ -67,6 +67,16 @@ fn scrollview_set_scroll_programmatically() {
 }
 
 #[test]
+fn scrollview_programmatic_scroll_records_composite_delta() {
+    let mut sv = ScrollView::new(ScrollDirection::Both);
+    sv.set_scroll_x(50.0);
+    sv.set_scroll_y(75.0);
+
+    assert_eq!(sv.scroll_delta_for_dirty(), Some((50.0, 75.0)));
+    assert!(sv.scroll_delta_for_dirty().is_none());
+}
+
+#[test]
 fn scrollview_child_builder() {
     let sv = ScrollView::new(ScrollDirection::Vertical).child(FixedWidget {
         size: Size::new(100.0, 200.0),
@@ -181,6 +191,45 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
         .downcast_ref::<ScrollView>()
         .unwrap();
     assert!(sv.scroll_delta_for_dirty().is_none());
+}
+
+#[test]
+fn scrollview_programmatic_scroll_invalidates_composite_strip() {
+    let mut tree = WidgetTree::new();
+    let sv_id = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
+    ));
+    tree.add_child(
+        sv_id,
+        Box::new(FixedWidget {
+            size: Size::new(300.0, 600.0),
+            id: 1,
+        }),
+    );
+
+    tree.layout();
+    tree.reset_dirty();
+    tree.get_mut(sv_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<ScrollView>()
+        .unwrap()
+        .set_scroll_y(50.0);
+
+    tree.invalidate_paint(sv_id);
+
+    let dirty = tree.dirty_region();
+    assert!(!dirty.full_frame);
+    assert_eq!(dirty.rects().len(), 1);
+    assert_eq!(dirty.rects()[0], Rect::new(0.0, 150.0, 300.0, 50.0));
+
+    let (frame, dx, dy) = tree
+        .drain_scroll_region_move()
+        .expect("programmatic scroll should register memmove");
+    assert_eq!(frame, Rect::new(0.0, 0.0, 300.0, 200.0));
+    assert_eq!(dx, 0.0);
+    assert_eq!(dy, 50.0);
 }
 
 #[test]

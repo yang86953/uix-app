@@ -140,7 +140,7 @@ InvalidationQueue.dirty_region()
 
 几何类型定义在 `core::damage`（见 [foundation](foundation.md)）。
 
-> **实现注记**：`Invalidation::Composite` 与 `FrameRenderer` 的 scroll_region **memmove** API（`tree.drain_scroll_region_move`、`Canvas2D::scroll_region`）已存在；Wheel → ScrollView 已写入 Composite exposed strip，并避免整 viewport Paint invalidate。滚动条拖拽、程序化滚动等其他来源仍需逐项接入。
+> **实现注记**：`Invalidation::Composite` 与 `FrameRenderer` 的 scroll_region **memmove** API（`tree.drain_scroll_region_move`、`Canvas2D::scroll_region`）已存在；Wheel、滚动条拖拽与程序化 ScrollView 滚动已写入 Composite exposed strip，并避免整 viewport Paint invalidate。其他滚动来源仍需逐项接入。
 
 ---
 
