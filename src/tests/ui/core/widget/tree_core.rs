@@ -5,7 +5,8 @@ use crate::draw::Color;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
 use crate::ui::{
-    AppState, Label, Modal, OverlayEntry, OverlayKind, StyleManager, TextManager, Tooltip,
+    AppState, Label, Modal, OverlayEntry, OverlayKind, QRCode, SnapshotFields, StyleManager,
+    TextManager, Tooltip,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -578,6 +579,25 @@ fn app_state_registers_mounted_components_and_unregisters_removed_components() {
     tree.remove(child);
     assert!(app_state.get_handle(child).is_none());
     assert!(app_state.get_handle(root).is_some());
+}
+
+#[test]
+fn app_state_lookup_handle_reads_typed_snapshot_for_define_widget_builtin() {
+    let app_state = AppState::new();
+    let mut tree = WidgetTree::new();
+    tree.set_app_state(app_state.clone());
+    let root = tree.set_root(Box::new(QRCode::new("uix").size(96.0).error_level(2)));
+
+    tree.layout();
+
+    assert_eq!(
+        app_state.get_handle(root).unwrap().snapshot_fields(),
+        Some(SnapshotFields::QRCode {
+            value: "uix".to_string(),
+            size: 96.0,
+            error_level: 2,
+        })
+    );
 }
 
 #[test]
