@@ -21,7 +21,7 @@ use crate::native::traits::window::PlatformWindow;
 /// Event-driven application window.
 ///
 /// 只负责窗口生命周期和平台句柄管理。
-/// 渲染循环由 ui::render_loop 处理。
+/// 渲染与 present 由 app 主循环和 FrameRenderer 处理。
 pub struct Window {
     platform: Box<dyn Platform>,
     window: Option<Box<dyn PlatformWindow>>,
