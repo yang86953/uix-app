@@ -167,8 +167,7 @@ component! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Drawer)
                 .bounds(bounds)
-                .z_index(1000)
-                .managed(true),
+                .z_index(1000),
         )
     }
 

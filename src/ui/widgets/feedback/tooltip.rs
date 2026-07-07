@@ -167,8 +167,7 @@ component! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Tooltip)
                 .bounds(Rect::new(tx, ty, text_w, text_h))
-                .z_index(1100)
-                .managed(true),
+                .z_index(1100),
         )
     }
 

@@ -144,8 +144,7 @@ component! {
             Some(
                 crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Modal)
                     .bounds(Rect::new(-2000.0, -2000.0, 4000.0, 4000.0))
-                    .z_index(1000)
-                    .managed(true),
+                    .z_index(1000),
             )
         } else {
             None
