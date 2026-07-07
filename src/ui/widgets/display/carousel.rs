@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
@@ -19,8 +19,12 @@ define_widget! {
         last_frame: Cell<Option<Rect>>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(300.0, 200.0)
+        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { 1.0 }
@@ -122,6 +126,10 @@ impl Default for Carousel {
 }
 
 impl Carousel {
+    fn intrinsic_size(&self) -> Size {
+        Size::new(300.0, 200.0)
+    }
+
     pub fn new() -> Self {
         Self {
             children: WidgetChildren::new(),
@@ -144,5 +152,18 @@ impl Carousel {
 
     pub fn current_index(&self) -> usize {
         self.current.get()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_carousel_size() {
+        let measured = Carousel::new().measure(Constraints::loose(Size::new(150.0, 90.0)));
+
+        assert_eq!(measured, Size::new(150.0, 90.0));
     }
 }

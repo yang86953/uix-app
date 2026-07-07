@@ -2,7 +2,7 @@
 //!
 //! 与 ScrollView 配合使用：监听滚动位置，自动高亮当前锚点。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
@@ -27,12 +27,12 @@ define_widget! {
         pending_change: Cell<Option<usize>>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        let w = self.items.iter().map(|i| i.label.len() as f32 * 14.0 + 32.0)
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or(120.0)
-            .max(120.0);
-        Size::new(w, self.items.len() as f32 * 36.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -116,6 +116,17 @@ impl AnchorItem {
 }
 
 impl Anchor {
+    fn intrinsic_size(&self) -> Size {
+        let w = self
+            .items
+            .iter()
+            .map(|i| i.label.len() as f32 * 14.0 + 32.0)
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(120.0)
+            .max(120.0);
+        Size::new(w, self.items.len() as f32 * 36.0)
+    }
+
     pub fn new(items: Vec<AnchorItem>) -> Self {
         let count = items.len();
         Self {

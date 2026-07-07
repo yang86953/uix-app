@@ -1,6 +1,6 @@
 //! Dropdown widget — 下拉菜单。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
@@ -19,9 +19,12 @@ define_widget! {
         transition_dirty: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        // 固定为按钮高度，不随 open 变化，避免布局偏移
-        Size::new(160.0, 32.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -122,6 +125,11 @@ impl Default for Dropdown {
 }
 
 impl Dropdown {
+    fn intrinsic_size(&self) -> Size {
+        // 固定为按钮高度，不随 open 变化，避免布局偏移
+        Size::new(160.0, 32.0)
+    }
+
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),

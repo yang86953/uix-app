@@ -9,7 +9,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
@@ -56,8 +56,12 @@ define_widget! {
         compact: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(self.fixed_width, self.fixed_height)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -165,6 +169,10 @@ define_widget! {
 }
 
 impl NavItem {
+    fn intrinsic_size(&self) -> Size {
+        Size::new(self.fixed_width, self.fixed_height)
+    }
+
     pub fn new(label: &str, index: usize, active_shared: SharedActive) -> Self {
         Self {
             label: label.to_string(),
@@ -378,5 +386,22 @@ impl Navigation {
             ),
             children,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_nav_item_size() {
+        let active = Rc::new(Cell::new(0));
+        let measured = NavItem::new("Home", 0, active)
+            .width(180.0)
+            .height(36.0)
+            .measure(Constraints::loose(Size::new(90.0, 20.0)));
+
+        assert_eq!(measured, Size::new(90.0, 20.0));
     }
 }

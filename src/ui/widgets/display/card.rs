@@ -1,7 +1,7 @@
 //! Card widget — Ant Design style container with elevation, shadow, optional
 //! title, body, hover feedback, and configurable border radius.
 
-use crate::core::{EdgeInsets, Point, Rect, Size};
+use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
@@ -27,8 +27,12 @@ define_widget! {
         actions: Vec<String>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(self.fixed_width.unwrap_or(200.0), self.fixed_height.unwrap_or(0.0))
+        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }
@@ -271,6 +275,13 @@ impl Default for Card {
 }
 
 impl Card {
+    fn intrinsic_size(&self) -> Size {
+        Size::new(
+            self.fixed_width.unwrap_or(200.0),
+            self.fixed_height.unwrap_or(0.0),
+        )
+    }
+
     pub fn new() -> Self {
         Self {
             title: None,
@@ -327,5 +338,20 @@ impl Card {
     pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
         self.children.set_all(widgets);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_card_size() {
+        let measured = Card::new()
+            .size(240.0, 120.0)
+            .measure(Constraints::loose(Size::new(100.0, 60.0)));
+
+        assert_eq!(measured, Size::new(100.0, 60.0));
     }
 }

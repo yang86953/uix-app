@@ -2,7 +2,7 @@
 //!
 //! Supports hover highlight, active selection, disabled items, icons, and
 //! keyboard navigation.
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
@@ -37,16 +37,12 @@ define_widget! {
         pending_change: RefCell<Option<String>>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        match self.mode {
-            MenuMode::Horizontal => {
-                let w = self.items.iter().map(|i| i.label.len() as f32 * 8.0 + 32.0).sum::<f32>();
-                Size::new(w.max(100.0), self.item_h)
-            }
-            MenuMode::Vertical => {
-                Size::new(200.0, self.items.len() as f32 * self.item_h)
-            }
-        }
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -229,6 +225,20 @@ define_widget! {
 }
 
 impl Menu {
+    fn intrinsic_size(&self) -> Size {
+        match self.mode {
+            MenuMode::Horizontal => {
+                let w = self
+                    .items
+                    .iter()
+                    .map(|i| i.label.len() as f32 * 8.0 + 32.0)
+                    .sum::<f32>();
+                Size::new(w.max(100.0), self.item_h)
+            }
+            MenuMode::Vertical => Size::new(200.0, self.items.len() as f32 * self.item_h),
+        }
+    }
+
     fn item_at(&self, px: f32, py: f32) -> Option<usize> {
         match self.mode {
             MenuMode::Horizontal => {
