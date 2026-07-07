@@ -1,6 +1,7 @@
 use super::*;
 use crate::app::main_thread_queue::MainThreadContext;
 use crate::app::WindowConfig;
+use crate::native::traits::event::EventLoopWaker;
 use crate::ui::view::combinators::label;
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -69,6 +70,58 @@ fn routed_post_to_ui_drains_target_queue() {
     assert!(queue.drain(&mut context));
 
     assert_eq!(ran.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn post_to_ui_wakes_event_loop_after_enqueue() {
+    let runtime = AppRuntime::new();
+    let queue = MainThreadQueue::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    let window_id = WindowId::new(6);
+    runtime.set_event_loop_waker(EventLoopWaker::new({
+        let wake_calls = wake_calls.clone();
+        move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
+    runtime.register_session(
+        window_id,
+        AppTimerQueue::new(),
+        queue.clone(),
+        Arc::new(AtomicBool::new(true)),
+    );
+
+    runtime.post_to_ui(window_id, || {});
+    runtime.enqueue_with_context(window_id, |_| {});
+
+    assert_eq!(queue.len(), 2);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn closed_session_post_to_ui_does_not_wake_event_loop() {
+    let runtime = AppRuntime::new();
+    let queue = MainThreadQueue::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    let window_id = WindowId::new(6);
+    runtime.set_event_loop_waker(EventLoopWaker::new({
+        let wake_calls = wake_calls.clone();
+        move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
+    runtime.register_session(
+        window_id,
+        AppTimerQueue::new(),
+        queue.clone(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    runtime.close_session(window_id);
+
+    runtime.post_to_ui(window_id, || {});
+
+    assert_eq!(queue.len(), 0);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 0);
 }
 
 #[test]

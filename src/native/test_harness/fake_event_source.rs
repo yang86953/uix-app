@@ -4,8 +4,12 @@
 //! 支持注入事件序列、追踪已处理事件、模拟退出信号。
 
 use crate::native::shared::OsEventSource;
-use crate::native::traits::event::UiEvent;
+use crate::native::traits::event::{EventLoopWaker, UiEvent};
 use std::collections::VecDeque;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Default)]
@@ -20,6 +24,7 @@ pub struct FakeEventSourceState {
     pub dispatch_blocking_calls: usize,
     pub dispatch_timeout_calls: usize,
     pub dispatch_timeout_durations: Vec<Duration>,
+    pub wake_calls: Arc<AtomicUsize>,
     pub exit_after_blocking_calls: Option<usize>,
     pub exit_after_timeout_calls: Option<usize>,
 }
@@ -58,6 +63,10 @@ impl FakeEventSource {
         self.state.processed.len()
     }
 
+    pub fn wake_count(&self) -> usize {
+        self.state.wake_calls.load(Ordering::Relaxed)
+    }
+
     /// 清除所有事件和记录
     pub fn clear(&mut self) {
         self.state.events.clear();
@@ -67,6 +76,7 @@ impl FakeEventSource {
         self.state.dispatch_blocking_calls = 0;
         self.state.dispatch_timeout_calls = 0;
         self.state.dispatch_timeout_durations.clear();
+        self.state.wake_calls.store(0, Ordering::Relaxed);
         self.state.exit_after_blocking_calls = None;
         self.state.exit_after_timeout_calls = None;
     }
@@ -79,6 +89,13 @@ impl Default for FakeEventSource {
 }
 
 impl OsEventSource for FakeEventSource {
+    fn waker(&self) -> EventLoopWaker {
+        let wake_calls = self.state.wake_calls.clone();
+        EventLoopWaker::new(move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        })
+    }
+
     fn dispatch_pending(&mut self) -> bool {
         self.state.dispatch_pending_calls += 1;
         !self.state.should_exit
@@ -113,5 +130,22 @@ impl OsEventSource for FakeEventSource {
         let ev = self.state.events.pop_front()?;
         self.state.processed.push(ev.clone());
         Some(ev)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::shared::OsEventSource;
+
+    #[test]
+    fn waker_records_wake_calls() {
+        let source = FakeEventSource::new();
+        let waker = OsEventSource::waker(&source);
+
+        waker.wake();
+        waker.wake();
+
+        assert_eq!(source.wake_count(), 2);
     }
 }

@@ -32,7 +32,7 @@ use super::util::to_wide;
 use super::window_ops::WindowsWindowOps;
 use crate::core::WindowId;
 use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
-use crate::native::traits::event::UiEvent;
+use crate::native::traits::event::{EventLoopWaker, UiEvent};
 use crate::native::traits::*;
 use crate::native::{Errc, Error};
 // ════════════════════════════════════════════════════════════════════════════
@@ -100,6 +100,18 @@ impl WindowsPlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl OsEventSource for WindowsPlatform {
+    fn waker(&self) -> EventLoopWaker {
+        let hwnd = self.hwnd as usize;
+        EventLoopWaker::new(move || {
+            if hwnd == 0 {
+                return;
+            }
+            unsafe {
+                PostMessageW(hwnd as *mut std::ffi::c_void, WM_NULL, 0, 0);
+            }
+        })
+    }
+
     fn dispatch_pending(&mut self) -> bool {
         unsafe {
             let mut msg = MSG::default();
@@ -114,8 +126,6 @@ impl OsEventSource for WindowsPlatform {
         true
     }
 
-    /// 阻塞等待 OS 事件，但最多等待约 16ms（约 60fps）。
-    /// 即使无事件也周期性返回，保证动画帧节奏。
     fn dispatch_blocking(&mut self) -> bool {
         loop {
             unsafe {
@@ -129,18 +139,7 @@ impl OsEventSource for WindowsPlatform {
                     DispatchMessageW(&msg);
                     return true;
                 }
-                // 无消息——等待消息或超时（16ms 帧间隔）
-                let result = MsgWaitForMultipleObjects(
-                    0, // 不等待任何内核对象
-                    std::ptr::null(),
-                    0,           // fWaitAll = FALSE
-                    16,          // 16ms 超时 ≈ 60fps
-                    QS_ALLINPUT, // 任何输入消息都能唤醒
-                );
-                if result == WAIT_TIMEOUT {
-                    // 超时：无事件，但返回以继续帧循环
-                    return true;
-                }
+                MsgWaitForMultipleObjects(0, std::ptr::null(), 0, INFINITE, QS_ALLINPUT);
                 // 否则有消息到达，循环回去 PeekMessage 处理
             }
         }
@@ -150,17 +149,11 @@ impl OsEventSource for WindowsPlatform {
         if !self.dispatch_pending() {
             return false;
         }
-        unsafe {
-            let mut msg = MSG::default();
-            if PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
-                if msg.message == WM_QUIT {
-                    return false;
-                }
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            } else {
-                std::thread::sleep(timeout);
-            }
+        let timeout_ms = timeout.as_millis().min(u32::MAX as u128) as u32;
+        let result =
+            unsafe { MsgWaitForMultipleObjects(0, std::ptr::null(), 0, timeout_ms, QS_ALLINPUT) };
+        if result != WAIT_TIMEOUT && !self.dispatch_pending() {
+            return false;
         }
         true
     }

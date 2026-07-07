@@ -572,6 +572,8 @@ impl App {
         platform_window.center_on_screen();
         platform_window.show();
         platform_window.raise();
+        self.runtime
+            .set_event_loop_waker(platform.event_loop().waker());
 
         let engine = match create_preferred_engine(platform_window.as_mut(), w, h) {
             Some(engine) => engine,
