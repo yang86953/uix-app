@@ -68,10 +68,10 @@ pub use crate::ui::{
     RichTextSegment, RichTextStyle, ScrollView, Segmented, Select, SelectableItem, SelectableList,
     SharedActive, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin,
     SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table, TableChange,
-    TableColumn, Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem,
-    Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode,
-    Typography, TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult,
-    ValidationRule, Watermark,
+    TableColumn, TableRow, Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline,
+    TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect,
+    TriggerMode, Typography, TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus,
+    ValidationResult, ValidationRule, Watermark,
 };
 
 // app
@@ -262,6 +262,7 @@ mod tests {
         assert_exported::<SelectableItem>();
         assert_exported::<Table>();
         assert_exported::<TableColumn>();
+        assert_exported::<TableRow>();
         assert_exported::<TableChange>();
         assert_exported::<SortDirection>();
         assert_exported::<TreeSelect>();
