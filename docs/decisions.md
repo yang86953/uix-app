@@ -2,7 +2,7 @@
 
 ← [Main](Main.md) · 按需查阅
 
-> **唯一决策台账**（#1–#100 定稿；#101–#157 术语收敛与核心理念；新决策 #158+）。锚点 `#d{N}`。系统正文 → [`systems/`](systems/) · 完整索引 → [Main.md](Main.md)
+> **唯一决策台账**（#1–#100 定稿；#101–#158 术语收敛、核心理念与豁免治理；新决策 #159+）。锚点 `#d{N}`。系统正文 → [`systems/`](systems/) · 完整索引 → [Main.md](Main.md)
 
 ## 实现顺序（[#50](#d50)）
 
@@ -28,8 +28,8 @@
 | **平台 / 测试** | [#40](#d40)、[#59](#d59) [#139](#d139) |
 | **浮层** | [#96](#d96)–[#100](#d100) |
 | **术语收敛** | [#101](#d101)–[#104](#d104) |
-| **按需零闲置** | [#105](#d105)–[#157](#d157) |
-| **工程** | [#154](#d154) [#157](#d157) |
+| **按需零闲置** | [#105](#d105)–[#158](#d158) |
+| **工程** | [#154](#d154) [#157](#d157) [#158](#d158) |
 | **预留** | [#41](#d41)、[#54](#d54)、[#85](#d85) |
 
 ## 决策全表
@@ -148,7 +148,7 @@
 | <a id="d110"></a>110 | 多窗零闲置 | **每窗独立** DeepIdle/RegisteredActive/Active；A 窗 Active 不要求 B 窗 wake |
 | <a id="d111"></a>111 | RegisteredActive | 周期工作由**框架**在组件/IME 生命周期内 **自动 register/unregister**（[#124](#d124)）；unregister → DeepIdle |
 | <a id="d112"></a>112 | 运行中 Theme | 默认 **不**跟 OS；App **opt-in** `.follow_system_theme(true)` 后框架自动处理 ThemeChanged（[#125](#d125)） |
-| <a id="d113"></a>113 | 零闲置豁免 | 无法框架托管的定时/轮询 → **`decisions.md` #158+** 公开条目 + 测试证明；默认不豁免 |
+| <a id="d113"></a>113 | 零闲置豁免 | 无法框架托管的定时/轮询 → **`decisions.md` #159+** 公开条目 + 测试证明；默认不豁免；当前无豁免见 [#158](#d158) |
 | <a id="d114"></a>114 | Picture 启用 | **PicturePolicy 自动推断** + 自适应阈值（[#122](#d122) [#129](#d129) [#136](#d136)）；修订旧「黑名单+深度4」 |
 | <a id="d115"></a>115 | ActiveWorkRegistry | 框架内部注册表（**App 不可访问** [#124](#d124)）；`next_deadline` / `drain_due` |
 | <a id="d116"></a>116 | 多窗单 loop | **WindowSession** 每窗独立树+引擎+三态+Registry；**单** `run_app_loop`；UiEvent 带 **window_id** 路由 |
@@ -193,5 +193,6 @@
 | <a id="d155"></a>155 | view_factory 生命周期 | 每 `WindowSession` **创建时**从 `App::root` 或 `open_window` 根闭包生成 **`Arc<dyn Fn() -> ViewNode + Send + Sync>`**；**会话内不可变**；`State` 批次 reconcile **始终**调用该 factory |
 | <a id="d156"></a>156 | update_view 与 factory | `update_view` **仅**写 `pending_root`；**不**替换 `view_factory`；`take()` 消费后下一帧 State  reconcile 仍走原 factory |
 | <a id="d157"></a>157 | P0 落地清单 | 按文件路径的 P0 接线表；详见 [roadmap · P0 落地清单](roadmap.md#p0-落地清单) |
+| <a id="d158"></a>158 | 零闲置豁免台账 | 当前 **无豁免**；新增豁免必须从 **#159+** 追加公开条目，并写明触发源、wake 频率、允许工作范围、无法 register 的理由与测试边界 |
 
-新决策追加 **#158+**（含豁免条目）。
+新决策追加 **#159+**（含豁免条目）。

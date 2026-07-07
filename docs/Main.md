@@ -17,7 +17,7 @@ UIX **最重要的一条规则** — 统领六域依赖、主循环、渲染、�
 
 L0 零像素 · L1 零帧循环 · L2 最小脏区 · 三态主循环（DeepIdle / RegisteredActive / Active）。
 
-**细则** → [`systems/demand-driven.md`](systems/demand-driven.md) · [`AGENTS.md`](../AGENTS.md) · [#105–#157](decisions.md#d105)
+**细则** → [`systems/demand-driven.md`](systems/demand-driven.md) · [`AGENTS.md`](../AGENTS.md) · [#105–#158](decisions.md#d105)
 
 ---
 
@@ -27,7 +27,7 @@ L0 零像素 · L1 零帧循环 · L2 最小脏区 · 三态主循环（DeepIdle
 
 1. **查目录** — 在下文「系统索引」或「主题索引」定位目标；读源码或重构前先看「[实现进度总览](#实现进度总览)」对照设计 vs 当前实现。
 2. **按需读** — 只打开相关 `systems/*.md`；需要裁决时查 [`decisions.md`](decisions.md)，不懂术语查 [`glossary.md`](glossary.md)。
-3. **改设计** — 边界/数据流变更同步 [`AGENTS.md`](../AGENTS.md) 与对应系统文档；新决策追加 #158+。
+3. **改设计** — 边界/数据流变更同步 [`AGENTS.md`](../AGENTS.md) 与对应系统文档；新决策追加 #159+。
 4. **写代码** — 先查「[术语对照（#101–#104）](#术语对照101104)」、[按需零闲置](systems/demand-driven.md) 与「[落地计划](roadmap.md)」；确认 API 与零闲置审查清单。
 
 ```text
@@ -45,7 +45,7 @@ Main（索引） ──按需──► systems/*.md（系统正文）
 | 索引 | **Main.md**（本页） | 导航、域映射、协作图 | 始终从此开始 |
 | 落地 | [`roadmap.md`](roadmap.md) | P0–P5 分阶段接线与文件清单 | 写代码、排期时 |
 | 系统 | [`systems/*.md`](systems/) | 各子系统设计与行为 | 做该域功能/重构时 |
-| 裁决 | [`decisions.md`](decisions.md) | #1–#157 决策台账 | 争议、实现取舍 |
+| 裁决 | [`decisions.md`](decisions.md) | #1–#158 决策台账 | 争议、实现取舍 |
 | 术语 | [`glossary.md`](glossary.md) | 名词定义 | 遇到陌生词 |
 | 约束 | [`AGENTS.md`](../AGENTS.md) | **核心理念**（最高规则）+ 架构硬约束 | 改边界、写代码前 |
 
@@ -105,7 +105,7 @@ core ← native ← draw ← ui ← app
 | 10 | 基础设施 | [foundation.md](systems/foundation.md) | 几何、错误、日志、诊断 | #38 #56 #70 |
 | 11 | 数据 | [data.md](systems/data.md) | Settings KV 持久化 | #64 |
 | 12 | 测试 | [testing.md](systems/testing.md) | FakePlatform、语义断言、paint snapshot | #40 |
-| 13 | **按需零闲置** | [demand-driven.md](systems/demand-driven.md) | 核心理念；零维护；Timer / post_to_ui / open_window | #105–#157 |
+| 13 | **按需零闲置** | [demand-driven.md](systems/demand-driven.md) | 核心理念；零维护；Timer / post_to_ui / open_window | #105–#158 |
 
 ---
 
@@ -157,7 +157,7 @@ core ← native ← draw ← ui ← app
 
 | 文档 | 内容 | 何时查 |
 |------|------|--------|
-| `docs/decisions.md` | 决策全表 #1–#157；[按域索引](decisions.md#按域索引)；新决策 #158+ | 实现分歧、API 取舍 |
+| `docs/decisions.md` | 决策全表 #1–#158；[按域索引](decisions.md#按域索引)；新决策 #159+ | 实现分歧、API 取舍 |
 | [`glossary.md`](glossary.md) | 术语定义（按域分组） | 名词不明 |
 | [术语对照（#101–#104）](#术语对照101104) | 设计名 vs 当前源码 API | 读源码、重构命名 |
 | [`AGENTS.md`](../AGENTS.md) | 六域依赖、平台隔离、文档维护 | 改架构、AI 协作 |
@@ -316,7 +316,7 @@ flowchart TB
 - 新增 `src/` 路径映射 → 更新「[源码目录详表](#源码目录详表)」与对应系统文档「源码模块」。
 - 设计落地或产生新差距 → 更新「[实现进度总览](#实现进度总览)」与各系统 `> **实现注记**`；阶段接线变更同步 [`roadmap.md`](roadmap.md)。
 - 新增**跨系统主题** → 更新「主题索引」；正文放在最相关系统文档的独立章节。
-- 新增**术语** → [`glossary.md`](glossary.md)；若涉及取舍 → [`decisions.md`](decisions.md) #158+。
+- 新增**术语** → [`glossary.md`](glossary.md)；若涉及取舍 → [`decisions.md`](decisions.md) #159+。
 - 系统文档头部保持统一导航（← Main · 系统 # · 功能域），便于从索引跳回。
 - 正文采用 **设计规格 + 实现注记** 格式：设计 ahead of code 处用 `> **实现注记**` 标注，避免索引与源码脱节。
 - 协作图中 **虚线（`-.->`）** 表示设计态或尚未完全接入运行时的横切能力（如 Manager 热路径迁移）。
