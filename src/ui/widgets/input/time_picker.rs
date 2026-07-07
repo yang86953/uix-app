@@ -8,7 +8,9 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
-use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{
+    EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree,
+};
 
 /// 时间结构
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -281,6 +283,12 @@ impl TimePicker {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(120.0, 32.0)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::TimePicker {
+            placeholder: self.placeholder.clone(),
+        }
     }
 }
 

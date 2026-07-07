@@ -8,7 +8,9 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
-use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{
+    EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree,
+};
 
 // 日期结构（复用 Calendar 中的日期逻辑）
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -330,6 +332,12 @@ impl DatePicker {
     }
     pub fn set_value(&mut self, v: DateValue) {
         self.value.set(v);
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::DatePicker {
+            placeholder: self.placeholder.clone(),
+        }
     }
 }
 

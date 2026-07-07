@@ -4,7 +4,9 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::widgets::display::tree::TreeNode;
-use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{
+    EventResult, SemanticEvent, SnapshotFields, SnapshotTreeNode, SystemEvent, WidgetId, WidgetTree,
+};
 use std::cell::RefCell;
 
 define_widget! {
@@ -242,6 +244,17 @@ impl TreeSelect {
         self.closing = true;
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::TreeSelect {
+            placeholder: self.placeholder.clone(),
+            nodes: self
+                .nodes
+                .iter()
+                .map(SnapshotTreeNode::from_tree_node)
+                .collect(),
+        }
     }
 }
 

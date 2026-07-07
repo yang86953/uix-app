@@ -7,7 +7,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SnapshotFields, SystemEvent, WidgetTree};
 
 // AutoComplete — 自动完成输入框。
 define_widget! {
@@ -226,6 +226,13 @@ impl AutoComplete {
         self.closing = true;
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::AutoComplete {
+            placeholder: self.placeholder.clone(),
+            options: self.options.clone(),
+        }
     }
 }
 

@@ -4,7 +4,9 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
-use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{
+    EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree,
+};
 use std::cell::Cell;
 
 define_widget! {
@@ -209,6 +211,14 @@ impl Segmented {
         }
         self.disabled_options[idx] = true;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Segmented {
+            options: self.options.clone(),
+            disabled: self.disabled,
+            disabled_options: self.disabled_options.clone(),
+        }
     }
 }
 

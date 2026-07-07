@@ -6,7 +6,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetTree};
 
 define_widget! {
     /// Mentions — @ 提及输入框。
@@ -221,6 +221,13 @@ impl Mentions {
                 self.value.push(' ');
             }
             self.suggesting = false;
+        }
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Mentions {
+            placeholder: self.placeholder.clone(),
+            options: self.options.clone(),
         }
     }
 }

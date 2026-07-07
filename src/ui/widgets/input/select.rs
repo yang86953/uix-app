@@ -3,11 +3,13 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{
+    EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree,
+};
 use std::cell::RefCell;
 
 /// 选项组。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OptGroup {
     pub label: String,
     pub options: Vec<String>,
@@ -568,6 +570,17 @@ impl Select {
         self.closing = true;
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Select {
+            options: self.options.clone(),
+            optgroups: self.optgroups.clone(),
+            disabled: self.disabled,
+            placeholder: self.placeholder.clone(),
+            multiple: self.multiple,
+            search: self.search,
+        }
     }
 }
 
