@@ -498,6 +498,8 @@ where
                         let is_dark = platform.display().is_dark_mode();
                         tokens.set_mode(is_dark);
                         tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark });
+                        let normalized_event = UiEvent::theme_changed(is_dark);
+                        on_foreign_event(&normalized_event, platform);
                     }
                     unsafe {
                         (*bus_ptr).event_bus().publish(&ev);

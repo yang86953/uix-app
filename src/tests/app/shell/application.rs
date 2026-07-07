@@ -74,6 +74,91 @@ impl EventHandler for RecordingWidget {
     }
 }
 
+struct ThemeRecordingWidget {
+    theme_events: Arc<AtomicUsize>,
+}
+
+impl ThemeRecordingWidget {
+    fn new(theme_events: Arc<AtomicUsize>) -> Self {
+        Self { theme_events }
+    }
+}
+
+impl WidgetComponent for ThemeRecordingWidget {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::EVENT)
+    }
+
+    fn as_event(&self) -> Option<&dyn EventHandler> {
+        Some(self)
+    }
+
+    fn as_event_mut(&mut self) -> Option<&mut dyn EventHandler> {
+        Some(self)
+    }
+}
+
+impl EventHandler for ThemeRecordingWidget {
+    fn on_event(&mut self, event: &SystemEvent) -> EventResult {
+        if matches!(event, SystemEvent::ThemeChanged { .. }) {
+            self.theme_events.fetch_add(1, Ordering::Relaxed);
+            EventResult::Handled
+        } else {
+            EventResult::NotHandled
+        }
+    }
+}
+
+struct PaletteWidget;
+
+impl WidgetComponent for PaletteWidget {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::RENDER)
+    }
+
+    fn as_render(&self) -> Option<&dyn WidgetRender> {
+        Some(self)
+    }
+
+    fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> {
+        Some(self)
+    }
+}
+
+impl WidgetRender for PaletteWidget {
+    fn render(
+        &self,
+        _frame: Rect,
+        _ctx: &mut crate::draw::painting::PaintContext,
+        _tree: &WidgetTree,
+    ) {
+    }
+}
+
 struct CountingAnimationWidget {
     update_calls: Arc<AtomicUsize>,
 }
@@ -438,6 +523,104 @@ fn dispatch_secondary_window_event_routes_by_window_id() {
     ));
 
     assert!(child_focus.load(Ordering::Relaxed));
+}
+
+#[test]
+fn dispatch_secondary_system_theme_changed_broadcasts_to_all_sessions() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let first_theme_events = Arc::new(AtomicUsize::new(0));
+    let second_theme_events = Arc::new(AtomicUsize::new(0));
+    runtime.request_open_window(WindowConfig::new("First", 320, 240, {
+        let first_theme_events = first_theme_events.clone();
+        move || ViewNode::leaf(ThemeRecordingWidget::new(first_theme_events.clone()))
+    }));
+    runtime.request_open_window(WindowConfig::new("Second", 320, 240, {
+        let second_theme_events = second_theme_events.clone();
+        move || ViewNode::leaf(ThemeRecordingWidget::new(second_theme_events.clone()))
+    }));
+    let mut secondary_windows = Vec::new();
+    assert_eq!(
+        drain_pending_open_windows(
+            &mut platform,
+            &runtime,
+            &AppState::new(),
+            &Container::new(),
+            None,
+            &mut secondary_windows,
+        ),
+        2
+    );
+
+    assert!(dispatch_secondary_system_theme_changed(
+        &mut secondary_windows,
+        true
+    ));
+
+    assert_eq!(first_theme_events.load(Ordering::Relaxed), 1);
+    assert_eq!(second_theme_events.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn dispatch_secondary_system_theme_changed_invalidates_palette_widgets() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    runtime.request_open_window(WindowConfig::new("Child", 320, 240, || {
+        ViewNode::leaf(PaletteWidget)
+    }));
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+
+    {
+        let parts = secondary_windows[0].session.parts_mut();
+        parts.tree.reset_dirty();
+        assert!(!parts.tree.has_render_work());
+    }
+
+    assert!(dispatch_secondary_system_theme_changed(
+        &mut secondary_windows,
+        true
+    ));
+
+    let parts = secondary_windows[0].session.parts_mut();
+    assert!(parts.tree.has_render_work());
+}
+
+#[test]
+fn dispatch_secondary_system_theme_changed_reports_no_work_for_empty_list() {
+    let mut secondary_windows = Vec::new();
+
+    assert!(!dispatch_secondary_system_theme_changed(
+        &mut secondary_windows,
+        true
+    ));
 }
 
 #[test]
