@@ -131,6 +131,12 @@ impl Switch {
             size: self.size,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.checked = next.checked;
+        self.disabled = next.disabled;
+        self.size = next.size;
+    }
 }
 
 #[cfg(test)]
