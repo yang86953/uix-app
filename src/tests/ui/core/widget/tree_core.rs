@@ -545,6 +545,14 @@ fn boxed_widget_measure_uses_constraints() {
 }
 
 #[test]
+fn boxed_widget_layout_defaults_use_documented_flex_shrink() {
+    let boxed = BoxedWidget::new(Box::new(SpyWidget::new(120.0, 80.0)));
+
+    assert_eq!(boxed.flex_grow(), 0.0);
+    assert_eq!(boxed.flex_shrink(), 1.0);
+}
+
+#[test]
 fn child_from_tree_reads_component_layout_margin() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
@@ -583,6 +591,16 @@ fn child_from_tree_with_constraints_clamps_measured_size() {
         child_from_tree_with_constraints(child, &tree, Constraints::loose(Size::new(40.0, 24.0)));
 
     assert_eq!(layout_child.measured_size, Size::new(40.0, 24.0));
+}
+
+#[test]
+fn child_from_tree_reads_documented_flex_shrink_default() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(120.0, 80.0)));
+
+    assert_eq!(child_from_tree(child, &tree).flex_grow, 0.0);
+    assert_eq!(child_from_tree(child, &tree).flex_shrink, 1.0);
 }
 
 #[test]
