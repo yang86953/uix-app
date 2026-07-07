@@ -397,7 +397,7 @@ else → wait_timeout(remaining)   // 单次，非固定 100ms 探活
 
 每 **WindowSession** 持有一份 Registry（#116）。
 
-> **实现注记**：`ActiveWorkRegistry` 内部类型已落地，并由 `WindowSession` 持有；单窗 event loop 已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` → `SystemEvent::Timer` 消费、AppTimer 主线程回调执行、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与 IME composition session 托管；其他过渡动画源尚未接入。
+> **实现注记**：`ActiveWorkRegistry` 内部类型已落地，并由 `WindowSession` 持有；单窗 event loop 已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` → `SystemEvent::Timer` 消费、AppTimer 主线程回调执行、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与 IME composition session 托管；其他过渡动画源尚未接入。
 
 ### 多窗单 loop（#116）
 
@@ -475,7 +475,7 @@ run_active_frame(session):
 
 未托管的周期工作 **不得**存在；须内置组件、**#132 Timer API** 或 async→State（#131）。
 
-> **实现注记**：当前已有 RegisteredActive deadline wait 骨架与无 deadline 注册项；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，并将 `update` 门控到 Active 帧、将 `tick_effects` 进一步收窄到 Effect pending；Tooltip 内置 timer、AppTimer 注册源、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与 IME composition session 已接，其他过渡动画源待接。
+> **实现注记**：当前已有 RegisteredActive deadline wait 骨架与无 deadline 注册项；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，并将 `update` 门控到 Active 帧、将 `tick_effects` 进一步收窄到 Effect pending；Tooltip 内置 timer、AppTimer 注册源、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与 IME composition session 已接，其他过渡动画源待接。
 
 ---
 
@@ -637,13 +637,13 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | 能力 | 设计 | 当前 | 文档 |
 |------|------|------|------|
 | 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 update / tick_effects；Active 帧仅在 Effect pending 时 tick；RegisteredActive deadline wait 骨架已接 | [#106](../decisions.md#d106) [#117](../decisions.md#d117) |
-| ActiveWorkRegistry | register / next_deadline / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与 IME composition session 托管 | [#115](../decisions.md#d115) |
+| ActiveWorkRegistry | register / next_deadline / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与 IME composition session 托管 | [#115](../decisions.md#d115) |
 | 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；副窗创建、独立 `WindowSession` bootstrap、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#116](../decisions.md#d116) |
 | 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入主循环；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#118](../decisions.md#d118) |
 | 每窗独立状态 | 每窗独立 DeepIdle/Active | 单窗 WindowSession 与副窗运行期 frame drain 已写回三态；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#110](../decisions.md#d110) |
 | Composite scroll | Composite + memmove | Wheel、滚动条拖拽与程序化 ScrollView 滚动已接 exposed strip + `scroll_region`；其他滚动来源待接 | [#107](../decisions.md#d107) |
 | PicturePolicy 自动推断 | 元数据 + 子树信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 首批 Eligible，默认 Never | [#122](../decisions.md#d122) [#129](../decisions.md#d129) |
-| Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与 IME composition session 已托管；其他过渡动画源待接 | [#124](../decisions.md#d124) |
+| Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与 IME composition session 已托管；其他过渡动画源待接 | [#124](../decisions.md#d124) |
 | follow_system_theme opt-in | false 默认；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](../decisions.md#d125) |
 | App Timer API | run_after / run_interval | `App` / `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出；`AppHandle` 已按 `window_id` 路由到所属 AppTimer 队列；副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#132](../decisions.md#d132) |
 | post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + `AppHandle::post_to_ui` + MainThreadQueue 已接；`AppHandle` 已按 `window_id` 路由；副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；有效入队会触发 `EventLoopWaker`，Windows/fake/Linux Wayland 后端已接真实 wake | [#133](../decisions.md#d133) |
@@ -659,7 +659,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | Handler 智能重绑 | handler 变才重注册（#135） | 稳定 signature 路径已跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 DSL handler 仍保守重绑 | [#123](../decisions.md#d123) [#135](../decisions.md#d135) |
 | handler_generation + 指纹 | build 自动 bump（#142） | 内部 generation 字段、State capture 指纹基础与 fingerprint→generation 解析已接；View build / DSL 自动 capture 收集待接 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) |
 | PointerMove 边界窄路径 | 框内不 hit_test | 已接：pointer_down_target/drag 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](../decisions.md#d109) [#121](../decisions.md#d121) |
-| Effect DeepIdle 跳过 | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 Registry deadline 唤醒；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源已接，其他过渡动画源待接 | #105 |
+| Effect DeepIdle 跳过 | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 Registry deadline 唤醒；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源已接，其他过渡动画源待接 | #105 |
 | ComponentConfigSnapshot | mount 提取配置 | 类型与首批内置静态配置提取已接；`ComponentHandle` 直接 snapshot getter 已接；AppState mount/unmount snapshot register 已接；reconcile patch update 已接 | [#146](../decisions.md#d146) |
 | Handle emit / invalidate / getter | dispatch_semantic + 窄 Paint + 只读配置 | `ComponentHandle::emit` 已导出并走 `WidgetTree::dispatch_semantic`；live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均已接窄 Paint；`snapshot()` / `text()` / `placeholder()` / `disabled()` 已接；App 默认持有 `AppState`，`AppState::get_handle` 可查 snapshot handle；lookup handle 的 live `emit` dispatch 绑定待接 | [#119](../decisions.md#d119) [#147](../decisions.md#d147) |
 | update_view | AppHandle 按 session reconcile | `AppHandle::update_view` / `set_root` 已导出；经 `AppRuntime` 按 `window_id` 写目标 MainThreadQueue 并在帧末 reconcile；副窗 session bootstrap、root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#149](../decisions.md#d149) |

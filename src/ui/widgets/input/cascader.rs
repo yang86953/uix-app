@@ -1,14 +1,12 @@
-//! Cascader 级联选择器 — 多级联动下拉选择。
-//!
-//! 支持多级选项、搜索过滤、选中回显。
+//! Cascader widget - linked multi-level popup selection.
 
 use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::{traits::GraphicsEngine, Color};
+use crate::draw::{traits::GraphicsEngine, Color, Radius};
+use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
 
-/// 级联选项
 #[derive(Debug, Clone)]
 pub struct CascaderOption {
     pub label: String,
@@ -26,17 +24,18 @@ impl CascaderOption {
             disabled: false,
         }
     }
+
     pub fn children(mut self, children: Vec<CascaderOption>) -> Self {
         self.children = children;
         self
     }
+
     pub fn disabled(mut self, v: bool) -> Self {
         self.disabled = v;
         self
     }
 }
 
-/// 选中的级联路径项
 #[derive(Debug, Clone, PartialEq)]
 pub struct CascaderValue {
     pub labels: Vec<String>,
@@ -44,48 +43,63 @@ pub struct CascaderValue {
 }
 
 define_widget! {
-    /// Cascader — 级联选择器。
     pub struct Cascader {
-        /// 选项树
         options: Vec<CascaderOption>,
-        /// 当前选中值（各级路径）
         selected: CascaderValue,
-        /// 每层展开的选项列表
         current_levels: Vec<Vec<CascaderOption>>,
-        /// 每层选中索引
         level_indices: Vec<usize>,
-        /// 弹出层是否展开
         open: bool,
-        /// 占位文本
+        transition: TransitionPlayer,
+        closing: bool,
+        transition_dirty: bool,
         placeholder: String,
-        /// 焦点
         focused: bool,
     }
 
-
     tab_index => (&self) -> i32 { 1 }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         Size::new(120.0, 32.0)
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
-            SystemEvent::PointerDown { pos: _, .. } => {
-                // 点击输入框切换弹出
+            SystemEvent::PointerDown { pos, .. } => {
                 self.focused = true;
-                if !self.open {
-                    self.open = true;
-                    self.init_levels();
+                if pos.y >= 0.0 && pos.y <= 32.0 {
+                    if self.open {
+                        self.close();
+                    } else {
+                        self.open();
+                    }
+                    return EventResult::Handled;
                 }
+
+                if self.is_present() && pos.y > 34.0 {
+                    let idx = ((pos.y - 34.0) / 32.0) as usize;
+                    let level = self.current_levels.len().saturating_sub(1);
+                    self.select_option(level, idx);
+                    return EventResult::Handled;
+                }
+
+                self.close();
+                EventResult::NotHandled
+            }
+            SystemEvent::FocusOut => {
+                self.focused = false;
+                self.close();
                 EventResult::Handled
             }
-            SystemEvent::FocusOut => { self.focused = false; self.open = false; EventResult::Handled }
             SystemEvent::KeyDown { key, .. } => {
-                if !self.open { return EventResult::NotHandled; }
+                if !self.open {
+                    return EventResult::NotHandled;
+                }
                 match key {
-                    KeyCode::Escape => { self.open = false; EventResult::Handled }
+                    KeyCode::Escape => {
+                        self.close();
+                        EventResult::Handled
+                    }
                     KeyCode::Enter => {
-                        // 确认当前选择
                         self.confirm_selection();
                         EventResult::Handled
                     }
@@ -104,70 +118,120 @@ define_widget! {
         let text_secondary = ctx.tokens().color_text_secondary();
         let text_tertiary = ctx.tokens().color_text_tertiary();
         let bg_elevated = ctx.tokens().color_bg_elevated();
-        let border_radius_sm = ctx.tokens().border_radius_sm();
-        let radius = Some(crate::draw::Radius::uniform(border_radius_sm));
+        let radius = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        // 输入框
         ctx.fill_rect(frame, Color::white(), radius);
-        ctx.stroke_rect(frame, if self.focused { primary } else { border_color },
-            if self.focused { 2.0 } else { 1.0 }, radius);
+        ctx.stroke_rect(
+            frame,
+            if self.focused { primary } else { border_color },
+            if self.focused { 2.0 } else { 1.0 },
+            radius,
+        );
 
         let draw_y = ctx.visual_center_y(frame, 14.0);
         if self.selected.labels.is_empty() {
-            ctx.draw_text(&self.placeholder, Point::new(frame.x + 12.0, draw_y),
-                text_tertiary, 14.0);
+            ctx.draw_text(
+                &self.placeholder,
+                Point::new(frame.x + 12.0, draw_y),
+                text_tertiary,
+                14.0,
+            );
         } else {
             let display_text = self.selected.labels.join(loc.cascader_separator);
-            ctx.draw_text(&display_text, Point::new(frame.x + 12.0, draw_y),
-                text_color, 14.0);
+            ctx.draw_text(
+                &display_text,
+                Point::new(frame.x + 12.0, draw_y),
+                text_color,
+                14.0,
+            );
         }
 
-        // 下拉箭头
         let arrow_y = ctx.visual_center_y(frame, 8.0);
-        ctx.draw_text(if self.open { "▲" } else { "▼" },
-            Point::new(frame.x + frame.w - 20.0, arrow_y), text_secondary, 8.0);
+        ctx.draw_text(
+            if self.is_present() { "▲" } else { "▼" },
+            Point::new(frame.x + frame.w - 20.0, arrow_y),
+            text_secondary,
+            8.0,
+        );
 
-        // 弹出层
-        if self.open {
-            let popup_w = frame.w.max(200.0);
-            let popup = Rect::new(frame.x, frame.y + frame.h + 2.0, popup_w, 200.0);
-            ctx.fill_rect(popup, bg_elevated, radius);
-            ctx.stroke_rect(popup, border_color, 1.0, radius);
+        if !self.is_present() {
+            return;
+        }
 
-            // 当前级别选项
-            let current_opts = if let Some(level) = self.current_levels.last() {
-                level
-            } else { return; };
+        let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
+        let popup_w = frame.w.max(200.0);
+        let popup = Rect::new(frame.x, frame.y + frame.h + 2.0, popup_w, 200.0);
+        let bg_elevated = fade_color(bg_elevated, opacity);
+        let border_color = fade_color(border_color, opacity);
+        let text_color = fade_color(text_color, opacity);
+        let text_secondary = fade_color(text_secondary, opacity);
+        let text_tertiary = fade_color(text_tertiary, opacity);
+        let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
 
-            let item_h = 32.0;
-            let visible = (popup.h / item_h) as usize;
-            let start = 0;
+        ctx.fill_rect(popup, bg_elevated, radius);
+        ctx.stroke_rect(popup, border_color, 1.0, radius);
 
-            for i in start..(start + visible).min(current_opts.len()) {
-                let y = popup.y + (i - start) as f32 * item_h;
-                if i < current_opts.len() {
-                    let opt = &current_opts[i];
-                    let has_children = !opt.children.is_empty();
+        let current_opts = if let Some(level) = self.current_levels.last() {
+            level
+        } else {
+            return;
+        };
 
-                    // 高亮
-                    if let Some(&sel_idx) = self.level_indices.last() {
-                        if i == sel_idx {
-                            ctx.fill_rect(Rect::new(popup.x, y, popup.w, item_h),
-                                ctx.tokens().color_primary_bg(), None);
-                        }
-                    }
+        let item_h = 32.0;
+        let visible = (popup.h / item_h) as usize;
+        for i in 0..visible.min(current_opts.len()) {
+            let y = popup.y + i as f32 * item_h;
+            let opt = &current_opts[i];
+            let has_children = !opt.children.is_empty();
 
-                    ctx.draw_text(&opt.label,
-                        Point::new(popup.x + 12.0, y + (item_h - 14.0) * 0.5),
-                        if opt.disabled { text_tertiary } else { text_color }, 14.0);
-
-                    if has_children {
-                        ctx.draw_text(loc.cascader_arrow,
-                            Point::new(popup.x + popup.w - 16.0, y + (item_h - 14.0) * 0.5),
-                            text_secondary, 14.0);
-                    }
-                }
+            if self.level_indices.last() == Some(&i) {
+                ctx.fill_rect(Rect::new(popup.x, y, popup.w, item_h), primary_bg, None);
             }
+
+            ctx.draw_text(
+                &opt.label,
+                Point::new(popup.x + 12.0, y + (item_h - 14.0) * 0.5),
+                if opt.disabled { text_tertiary } else { text_color },
+                14.0,
+            );
+
+            if has_children {
+                ctx.draw_text(
+                    loc.cascader_arrow,
+                    Point::new(popup.x + popup.w - 16.0, y + (item_h - 14.0) * 0.5),
+                    text_secondary,
+                    14.0,
+                );
+            }
+        }
+    }
+
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        cascader_dirty_rect(frame)
+    }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.is_present() || self.transition.finished {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        self.transition.update(dt);
+        self.transition_dirty = true;
+
+        if self.closing && self.transition.finished {
+            self.open = false;
+            self.closing = false;
+        }
+
+        self.is_present() && !self.transition.finished
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.transition_dirty {
+            cascader_dirty_rect(frame)
+        } else {
+            Rect::zero()
         }
     }
 }
@@ -183,6 +247,9 @@ impl Cascader {
             current_levels: vec![options],
             level_indices: vec![0],
             open: false,
+            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            closing: false,
+            transition_dirty: false,
             placeholder: placeholder.into(),
             focused: false,
         }
@@ -193,7 +260,6 @@ impl Cascader {
         self.level_indices = vec![0];
     }
 
-    /// 点击某选项时触发（由外部或 PointerDown 处理）
     pub fn select_option(&mut self, level: usize, index: usize) {
         if level >= self.current_levels.len() {
             return;
@@ -206,7 +272,6 @@ impl Cascader {
             return;
         }
 
-        // 截断到当前层级
         self.level_indices.truncate(level);
         self.level_indices.push(index);
         self.selected.labels.truncate(level);
@@ -214,28 +279,72 @@ impl Cascader {
         self.selected.labels.push(opt.label.clone());
         self.selected.values.push(opt.value.clone());
 
-        // 更新子级选项列表
         self.current_levels.truncate(level + 1);
         if !opt.children.is_empty() {
             self.current_levels.push(opt.children);
         } else {
-            // 叶子节点，关闭弹出
-            self.open = false;
+            self.close();
         }
     }
 
     fn confirm_selection(&mut self) {
-        // 如果有选中值就关闭
         if !self.selected.values.is_empty() {
-            self.open = false;
+            self.close();
         }
     }
 
     pub fn selected(&self) -> &CascaderValue {
         &self.selected
     }
+
     pub fn placeholder(mut self, p: impl Into<String>) -> Self {
         self.placeholder = p.into();
         self
     }
+
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
+    pub fn is_present(&self) -> bool {
+        self.open || self.closing
+    }
+
+    pub fn open(&mut self) {
+        self.init_levels();
+        self.open = true;
+        self.closing = false;
+        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition_dirty = true;
+    }
+
+    pub fn close(&mut self) {
+        if !self.is_present() {
+            self.open = false;
+            self.closing = false;
+            self.transition_dirty = false;
+            return;
+        }
+
+        self.open = false;
+        self.closing = true;
+        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition_dirty = true;
+    }
 }
+
+fn cascader_dirty_rect(frame: Rect) -> Rect {
+    let popup = Rect::new(frame.x, frame.y + frame.h + 2.0, frame.w.max(200.0), 200.0);
+    frame.union(&popup)
+}
+
+fn fade_color(color: Color, opacity: f32) -> Color {
+    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    color.with_alpha(alpha)
+}
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/input/cascader.rs"]
+mod tests;
