@@ -650,7 +650,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | MainThreadQueue | FIFO + 帧内 drain 顺序 | 每 WindowSession 队列已接；单窗 drain 顺序为 UiEvent → due work → post_to_ui；`AppHandle` 多窗队列路由、副窗 bootstrap、MainThreadQueue 消费、运行期 frame drain 与 deadline wait 已接；有效入队会触发 `EventLoopWaker`，Windows/fake/Linux Wayland 后端已接真实 wake | [#137](../decisions.md#d137) |
 | TestClock | App drain_due / wait_until 测试注入 | App 层 `AppClock` / `TestClock` 已接入 AppTimer deadline、RegisteredActive wait_until、drain_due；native `FakeTimer` 仍独立 | [#139](../decisions.md#d139) |
 | AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | `AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求；主窗 close 退出主循环，副窗真实 close 事件按 `window_id` 关闭对应 session | [#134](../decisions.md#d134) |
-| on_start | `.on_start(AppHandle)` 每窗一次 | 单窗 `.on_start(AppHandle)` 与副窗 `.on_window_start(AppHandle)` 已导出，并在对应 WindowSession 创建后、首帧前调用 | [#140](../decisions.md#d140) |
+| on_start / on_window_start | 每个 session 注入 AppHandle | 单窗 `.on_start(AppHandle)` 与副窗 `.on_window_start(AppHandle)` 已导出，并在对应 WindowSession 创建后、首帧前调用 | [#140](../decisions.md#d140) |
 | 多窗 post_to_ui | AppHandle.window_id 路由 | `AppRuntime` 路由表已接；`AppHandle` 投递仅进入自身 `window_id` 的队列，session 销毁后丢弃闭包 | [#141](../decisions.md#d141) |
 | open_window | 副窗 API | `WindowConfig` / `AppHandle::open_window` / `.on_window_start` 已导出；可分配新 `window_id`、独立队列/Timer/handle 并暂存副窗创建请求；GUI loop 可 drain 请求并创建 native 窗 | [#144](../decisions.md#d144) |
 | open_window 接线 | 副窗独立 build/reconcile | 副窗 native 创建、独立 `WindowSession` bootstrap、MainThreadQueue / `update_view` reconcile 消费、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#148](../decisions.md#d148) |

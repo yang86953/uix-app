@@ -298,7 +298,7 @@ flowchart TB
 | MainThreadQueue | FIFO + 帧内 drain 顺序 | 每 WindowSession 队列已接；单窗 drain 顺序为 UiEvent → due work → post_to_ui；`AppHandle` 多窗队列路由、副窗 bootstrap、MainThreadQueue 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#137](decisions.md#d137) |
 | TestClock | App drain_due 测试注入 | App 层 `AppClock` / `TestClock` 已接入 AppTimer deadline、RegisteredActive wait_until、drain_due；native `FakeTimer` 仍独立 | [#139](decisions.md#d139) |
 | handler_generation | View build 自动 bump | 内部 signature/generation 字段与比较已接；State capture 指纹基础与 fingerprint→generation 解析已接；`HandlerRegistration::with_state_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State capture 可复用 generation；View build / DSL 自动 capture 收集待接，默认 DSL handler 仍保守重绑 | [#138](decisions.md#d138) [#142](decisions.md#d142) |
-| on_start | 每窗注入 AppHandle | 单窗 `.on_start(AppHandle)` 与副窗 `.on_window_start(AppHandle)` 已导出，并在对应 WindowSession 创建后、首帧前调用 | [#140](decisions.md#d140) |
+| on_start / on_window_start | 每个 session 注入 AppHandle | 单窗 `.on_start(AppHandle)` 与副窗 `.on_window_start(AppHandle)` 已导出，并在对应 WindowSession 创建后、首帧前调用 | [#140](decisions.md#d140) |
 | 多窗 post_to_ui | window_id 路由 | `AppRuntime` 路由表已接；`AppHandle` 投递仅进入自身 `window_id` 的队列，session 销毁后丢弃闭包 | [#141](decisions.md#d141) |
 | AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | `AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求；主窗 close 退出主循环，副窗真实 close 事件按 `window_id` 关闭对应 session | [#134](decisions.md#d134) |
 | AppHandle | cloneable；运行中 Timer / post_to_ui | `AppHandle` / `WindowId` 已导出；运行中 Timer、跨线程 `post_to_ui` 与 `update_view` 已按 `window_id` 路由；`open_window` 请求层与副窗 bootstrap 已接 | [#132](decisions.md#d132) [#133](decisions.md#d133) |

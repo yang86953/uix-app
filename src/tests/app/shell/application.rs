@@ -156,6 +156,19 @@ fn app_on_start_stores_start_callback() {
 }
 
 #[test]
+fn app_on_start_accepts_fn_once_callback() {
+    struct StartupToken(String);
+    let token = StartupToken(String::from("boot"));
+
+    let app = App::new().on_start(move |_| {
+        let StartupToken(value) = token;
+        assert_eq!(value, "boot");
+    });
+
+    assert!(app.on_start.is_some());
+}
+
+#[test]
 fn app_on_window_start_stores_secondary_window_callback() {
     let app = App::new().on_window_start(|_| {});
 
@@ -244,6 +257,7 @@ fn drain_pending_open_windows_bootstraps_secondary_session() {
     );
     assert_eq!(secondary_windows[0].handle.window_id(), request.window_id);
     assert_eq!(secondary_windows[0].session.window_id(), request.window_id);
+    assert_ne!(secondary_windows[0].handle.window_id(), WindowId::ROOT);
     assert!(request.alive.load(Ordering::Acquire));
 
     secondary_windows[0]

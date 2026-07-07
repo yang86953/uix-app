@@ -299,12 +299,12 @@ pub struct WindowConfig {
     pub title: String,
     pub width: i32,
     pub height: i32,
-    pub root: Box<dyn Fn() -> ViewNode + Send>,  // 或 View 类型
+    pub root: Box<dyn Fn() -> ViewNode + Send + Sync + 'static>,  // 或 View 类型
 }
 
 impl AppHandle {
     /// 主线程调用；创建 WindowSession + native 窗；返回 **新窗** handle
-    pub fn open_window(&self, config: WindowConfig) -> Result<AppHandle, AppError>;
+    pub fn open_window(&self, config: WindowConfig) -> Result<AppHandle>;
 }
 
 impl App {
@@ -330,12 +330,7 @@ impl App {
 ```rust
 App::new()
     .on_start(|primary| {
-        primary.open_window(WindowConfig {
-            title: "Inspector".into(),
-            width: 320,
-            height: 600,
-            root: Box::new(|| inspector_view()),
-        }).map(|inspector| {
+        primary.open_window(WindowConfig::new("Inspector", 320, 600, || inspector_view())).map(|inspector| {
             // inspector.window_id != primary.window_id
             inspector.run_after(Duration::from_secs(1), || { /* ... */ });
         });
@@ -379,7 +374,7 @@ open_window(config) [主线程]
 
 ```rust
 // WindowConfig.root — 与 App::root 同型
-pub root: impl Fn() -> ViewNode + Send + 'static;
+pub root: impl Fn() -> ViewNode + Send + Sync + 'static;
 // 或 Box<dyn View>；expand 后走同一 ViewAdapter 路径
 ```
 
@@ -613,10 +608,10 @@ TimerHandle drop / cancel
 
 ```rust
 impl App {
-    /// 每个 WindowSession 创建后、进入主循环首帧前调用一次
+    /// 主 WindowSession 创建后、进入主循环首帧前调用一次
     pub fn on_start<F>(mut self, f: F) -> Self
     where
-        F: Fn(AppHandle) + Send + 'static;
+        F: FnOnce(AppHandle) + Send + 'static;
 }
 ```
 
