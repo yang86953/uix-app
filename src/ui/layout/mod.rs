@@ -133,7 +133,7 @@ pub enum GridTrack {
 /// grid 布局子项。
 #[derive(Debug, Clone)]
 pub(crate) struct GridChild {
-    pub cell: usize,
+    pub cell: Option<usize>,
     pub col_span: u32,
     pub row_span: u32,
     pub measured_size: Size,
@@ -144,7 +144,7 @@ pub(crate) struct GridChild {
 impl Default for GridChild {
     fn default() -> Self {
         Self {
-            cell: 0,
+            cell: None,
             col_span: 1,
             row_span: 1,
             measured_size: Size::zero(),

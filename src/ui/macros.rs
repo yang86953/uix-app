@@ -193,6 +193,9 @@ macro_rules! __component_upcast_method {
     (flex_grow; $T:ty) => {};
     (flex_shrink; $T:ty) => {};
     (align_self; $T:ty) => {};
+    (grid_cell; $T:ty) => {};
+    (grid_column_span; $T:ty) => {};
+    (grid_row_span; $T:ty) => {};
     (layout_margin; $T:ty) => {};
     (layout_children; $T:ty) => {};
     (render; $T:ty) => { $crate::wc_upcast!($T; WidgetRender); };
@@ -280,7 +283,7 @@ macro_rules! component {
                 let mut c = $crate::ui::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "measure" | "flex_grow" | "flex_shrink" | "align_self" | "layout_margin" | "layout_children" | "build" =>
+                        "measure" | "flex_grow" | "flex_shrink" | "align_self" | "grid_cell" | "grid_column_span" | "grid_row_span" | "layout_margin" | "layout_children" | "build" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
@@ -309,7 +312,7 @@ macro_rules! component {
         $crate::__component_grouped_impl! {
             WidgetLayout,
             $name,
-            [measure flex_grow flex_shrink align_self layout_margin layout_children],
+            [measure flex_grow flex_shrink align_self grid_cell grid_column_span grid_row_span layout_margin layout_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -512,6 +515,15 @@ macro_rules! __component_method_builder {
     (align_self; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn align_self($($p)*) -> $ret $body
     };
+    (grid_cell; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn grid_cell($($p)*) -> $ret $body
+    };
+    (grid_column_span; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn grid_column_span($($p)*) -> $ret $body
+    };
+    (grid_row_span; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn grid_row_span($($p)*) -> $ret $body
+    };
     (layout_margin; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn layout_margin($($p)*) -> $ret $body
     };
@@ -620,6 +632,15 @@ macro_rules! __match_trait_method {
     };
     (WidgetLayout, align_self, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn align_self($($p)*) -> $ret $body
+    };
+    (WidgetLayout, grid_cell, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn grid_cell($($p)*) -> $ret $body
+    };
+    (WidgetLayout, grid_column_span, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn grid_column_span($($p)*) -> $ret $body
+    };
+    (WidgetLayout, grid_row_span, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn grid_row_span($($p)*) -> $ret $body
     };
     (WidgetLayout, layout_margin, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn layout_margin($($p)*) -> $ret $body
