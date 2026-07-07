@@ -13,9 +13,9 @@ use std::fs::File;
 use std::os::unix::io::FromRawFd;
 use std::time::{Duration, Instant};
 
-use libc::{poll, pollfd, POLLIN};
+use libc::{poll, pollfd, POLLERR, POLLHUP, POLLIN, POLLNVAL};
 
-use crate::native::traits::event::UiEvent;
+use crate::native::traits::event::{EventLoopWaker, UiEvent};
 use crate::native::traits::input::KeyMod;
 
 use super::keycode::keycode_to_char;
@@ -33,24 +33,7 @@ impl WaylandBackend {
             self.closed = true;
             return false;
         }
-        let fd = self.display.get_connection_fd();
-        let mut pfd = pollfd {
-            fd,
-            events: POLLIN,
-            revents: 0,
-        };
-        let ret = unsafe { poll(&mut pfd as *mut pollfd, 1, 0) };
-        if ret > 0 && (pfd.revents & POLLIN) != 0 {
-            let _ = self.display.flush();
-            if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
-                crate::core::log::error_fn(format!("Wayland dispatch error: {}", e));
-                self.closed = true;
-                return false;
-            }
-        }
-        self.read_clipboard_pipe();
-        self.generate_key_repeats();
-        true
+        self.dispatch_polled(0, "dispatch")
     }
 
     /// 阻塞等待 Wayland 事件。
@@ -77,15 +60,7 @@ impl WaylandBackend {
         }
 
         // 无按键按住：传统阻塞 dispatch
-        let _ = self.display.flush();
-        if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
-            crate::core::log::error_fn(format!("Wayland dispatch_blocking error: {}", e));
-            self.closed = true;
-            return false;
-        }
-        self.read_clipboard_pipe();
-        self.generate_key_repeats();
-        true
+        self.dispatch_polled(-1, "dispatch_blocking")
     }
 
     /// 带超时的 Wayland 事件分发。
@@ -93,28 +68,16 @@ impl WaylandBackend {
         if self.closed {
             return false;
         }
-        let _ = self.display.flush();
-        let fd = self.display.get_connection_fd();
-        let mut pfd = pollfd {
-            fd,
-            events: POLLIN,
-            revents: 0,
-        };
-        let timeout_ms = timeout.as_millis().min(u32::MAX as u128) as i32;
-        let ret = unsafe { poll(&mut pfd, 1, timeout_ms) };
-        if ret > 0 && (pfd.revents & POLLIN) != 0 {
-            if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
-                crate::core::log::error_fn(format!(
-                    "Wayland dispatch_timeout dispatch error: {}",
-                    e
-                ));
-                self.closed = true;
-                return false;
-            }
-        }
-        self.read_clipboard_pipe();
-        self.generate_key_repeats();
-        true
+        let timeout_ms = timeout.as_millis().min(i32::MAX as u128) as i32;
+        self.dispatch_polled(timeout_ms, "dispatch_timeout")
+    }
+
+    pub(crate) fn waker(&self) -> EventLoopWaker {
+        let fd = self.wake_write_fd;
+        EventLoopWaker::new(move || {
+            let byte = [1_u8];
+            let _ = unsafe { libc::write(fd, byte.as_ptr().cast(), byte.len()) };
+        })
     }
 
     /// 从事件队列弹出下一个事件。
@@ -136,6 +99,71 @@ impl WaylandBackend {
     }
 
     // ── 内部辅助 ──────────────────────────────────────────
+
+    fn dispatch_polled(&mut self, timeout_ms: i32, context: &str) -> bool {
+        let _ = self.display.flush();
+        let wayland_fd = self.display.get_connection_fd();
+        let mut pfds = [
+            pollfd {
+                fd: wayland_fd,
+                events: POLLIN,
+                revents: 0,
+            },
+            pollfd {
+                fd: self.wake_read_fd,
+                events: POLLIN,
+                revents: 0,
+            },
+        ];
+        let ret = unsafe { poll(pfds.as_mut_ptr(), pfds.len() as libc::nfds_t, timeout_ms) };
+        if ret < 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::Interrupted {
+                return true;
+            }
+            crate::core::log::error_fn(format!("Wayland {} poll error: {}", context, error));
+            self.closed = true;
+            return false;
+        }
+
+        let wayland_revents = pfds[0].revents;
+        let wake_revents = pfds[1].revents;
+        if (wake_revents & POLLIN) != 0 {
+            self.drain_wake_pipe();
+        }
+        if (wayland_revents & (POLLERR | POLLHUP | POLLNVAL)) != 0 {
+            crate::core::log::error_fn(format!("Wayland {} fd error", context));
+            self.closed = true;
+            return false;
+        }
+        if (wayland_revents & POLLIN) != 0 {
+            if let Err(e) = self.event_queue.dispatch(&mut (), |_, _, _| {}) {
+                crate::core::log::error_fn(format!("Wayland {} dispatch error: {}", context, e));
+                self.closed = true;
+                return false;
+            }
+        }
+        self.read_clipboard_pipe();
+        self.generate_key_repeats();
+        true
+    }
+
+    fn drain_wake_pipe(&self) {
+        let mut buf = [0_u8; 64];
+        loop {
+            let ret = unsafe { libc::read(self.wake_read_fd, buf.as_mut_ptr().cast(), buf.len()) };
+            if ret > 0 {
+                continue;
+            }
+            if ret < 0 {
+                let error = std::io::Error::last_os_error();
+                if error.kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
+            }
+            break;
+        }
+    }
 
     fn generate_key_repeats(&mut self) {
         let (_linux_key, code, mods, first_press) = match self

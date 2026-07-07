@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use crate::native::shared::{OsEventSource, WindowState};
-use crate::native::traits::event::UiEvent;
+use crate::native::traits::event::{EventLoopWaker, UiEvent};
 use crate::native::traits::*;
 
 use crate::native::backends::linux::console::LinuxConsole;
@@ -101,6 +101,10 @@ impl OsEventSource for LinuxPlatform {
 
     fn next_event(&mut self) -> Option<UiEvent> {
         self.backend.next_event()
+    }
+
+    fn waker(&self) -> EventLoopWaker {
+        self.backend.waker()
     }
 }
 

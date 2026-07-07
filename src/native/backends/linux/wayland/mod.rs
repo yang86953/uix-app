@@ -116,6 +116,8 @@ pub struct WaylandBackend {
     pub(crate) clipboard_text: Arc<Mutex<String>>,
     pub(crate) owns_clipboard: Arc<Mutex<bool>>,
     pub(crate) clipboard_read_fd: Arc<Mutex<Option<RawFd>>>,
+    pub(crate) wake_read_fd: RawFd,
+    pub(crate) wake_write_fd: RawFd,
 
     // ── 显示器 ────────────────────────────────────────────────────
     pub(crate) outputs: Arc<Mutex<Vec<output::RawOutput>>>,
@@ -136,6 +138,20 @@ impl WaylandBackend {
     /// 返回事件队列句柄（供定时器子系统使用）。
     pub fn event_queue_handle(&self) -> Arc<Mutex<VecDeque<UiEvent>>> {
         self.events.clone()
+    }
+
+    pub(crate) fn create_wake_pipe() -> Result<(RawFd, RawFd), String> {
+        let mut fds = [0; 2];
+        let flags = libc::O_CLOEXEC | libc::O_NONBLOCK;
+        let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), flags) };
+        if ret == 0 {
+            Ok((fds[0], fds[1]))
+        } else {
+            Err(format!(
+                "failed to create Wayland wake pipe: {}",
+                std::io::Error::last_os_error()
+            ))
+        }
     }
 
     pub fn new() -> Result<Self, String> {
@@ -338,6 +354,8 @@ impl WaylandBackend {
             .unwrap_or_else(|e| e.into_inner())
             .take();
 
+        let (wake_read_fd, wake_write_fd) = Self::create_wake_pipe()?;
+
         Ok(Self {
             display,
             event_queue,
@@ -373,6 +391,8 @@ impl WaylandBackend {
             clipboard_text,
             owns_clipboard,
             clipboard_read_fd,
+            wake_read_fd,
+            wake_write_fd,
             outputs,
             _wl_outputs,
             text_input_manager,
@@ -381,5 +401,12 @@ impl WaylandBackend {
             _xdg_activation: xdg_activation,
             next_window_id: 1,
         })
+    }
+}
+
+impl Drop for WaylandBackend {
+    fn drop(&mut self) {
+        let _ = unsafe { libc::close(self.wake_read_fd) };
+        let _ = unsafe { libc::close(self.wake_write_fd) };
     }
 }
