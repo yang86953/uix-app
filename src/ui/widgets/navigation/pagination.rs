@@ -190,6 +190,15 @@ impl Pagination {
         self
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.total = next.total;
+        self.page_size = next.page_size;
+        self.show_size_changer = next.show_size_changer;
+        self.show_total = next.show_total;
+        self.size = next.size;
+        self.page_size_options = next.page_size_options;
+    }
+
     fn intrinsic_size(&self) -> Size {
         let pages = self.total.div_ceil(self.page_size);
         let count = pages.min(7) as f32; // 最多显示 7 个页码按钮

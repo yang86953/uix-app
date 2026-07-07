@@ -184,6 +184,9 @@ impl Tabs {
         self.active_index = index.min(self.tabs.len().saturating_sub(1));
         self
     }
+    pub(crate) fn active_index(&self) -> usize {
+        self.active_index
+    }
     pub fn position(mut self, pos: TabPosition) -> Self {
         self.position = pos;
         self
@@ -192,6 +195,14 @@ impl Tabs {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
         self
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.tabs = next.tabs;
+        self.position = next.position;
+        self.tab_height = next.tab_height;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

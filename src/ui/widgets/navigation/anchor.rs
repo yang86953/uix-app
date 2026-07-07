@@ -174,6 +174,12 @@ impl Anchor {
         &self.items
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.items = next.items;
+        self.offset_top = next.offset_top;
+        self.bg_color = next.bg_color;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Anchor {
             items: self.items.clone(),

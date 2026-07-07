@@ -317,6 +317,12 @@ impl Menu {
         self
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.items = next.items;
+        self.mode = next.mode;
+        self.item_h = next.item_h;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Menu {
             items: self.items.clone(),
