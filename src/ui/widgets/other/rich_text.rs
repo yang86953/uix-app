@@ -26,7 +26,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::ui::clipboard;
-use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, KeyMod, SnapshotFields, SystemEvent, WidgetTree};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 数据类型
@@ -36,7 +36,7 @@ use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
 ///
 /// 一个 RichText 由多个段组成，按顺序排列。
 /// 支持普通文本（独立样式控制）、内联代码、链接、换行。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RichTextSegment {
     /// 普通文本段（带独立样式）
     Text {
@@ -54,7 +54,7 @@ pub enum RichTextSegment {
 /// 文本样式
 ///
 /// 所有字段可选，未设置的字段会继承默认样式。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct RichTextStyle {
     /// 粗体
     pub bold: bool,
@@ -480,6 +480,15 @@ impl RichText {
         self.default_color = c;
         self.layout_dirty.set(true);
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::RichText {
+            segments: self.segments.clone(),
+            default_font_size: self.default_font_size,
+            default_font_size_unit: self.default_font_size_unit,
+            default_color: self.default_color,
+        }
     }
 
     /// 获取选中的文本

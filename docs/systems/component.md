@@ -115,7 +115,7 @@ enum SnapshotFields {
 
 自定义 widget：见 [SnapshotSource](#snapshotsource)（#151）。
 
-> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event / layout cache / resource cache / queue / visible / transition / animation phase / scroll / current page / active tab / selected key / expanded panel / dragging / popup open / typed query / validation status / table sort/filter active state 等运行态。`ComponentHandle` 已可读取当前组件快照与首批类型化 getter；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`define_widget!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径。
+> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event / layout cache / resource cache / queue / visible / transition / animation phase / scroll / current page / active tab / selected key / expanded panel / dragging / popup open / typed query / validation status / table sort/filter active state / selected transfer item / transfer runtime membership / upload file queue 等运行态。`ComponentHandle` 已可读取当前组件快照与首批类型化 getter；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`define_widget!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径。
 
 ### SnapshotSource（#151）
 
@@ -158,7 +158,7 @@ impl SnapshotSource for Rating {
 
 内置 widget：框架为各类型手写 `SnapshotFields` 变体；与 #146 `enum SnapshotFields` 对齐。
 
-> **实现注记**：内置提取已覆盖 Button、Label、Input、Container、Grid、Space、Divider、Icon、Typography、Checkbox、Radio、Switch、Slider、Rate、InputNumber、Avatar、Badge、Card、Empty、Image、Tag、Timeline、Calendar、Skeleton、FloatButton、Alert、Message、Notification、ProgressBar、Spin、Tooltip、Popover、Popconfirm、Modal、Drawer、Layout、Header、Sider、Content、Footer、Splitter、Affix、BackTop、Breadcrumb、Pagination、Anchor、Menu、Dropdown、Tabs、Steps、NavItem、Tree、List、Collapse、Carousel、Select、AutoComplete、TreeSelect、Cascader、ColorPicker、DatePicker、TimePicker、Mentions、Segmented、FormItem、Form、Descriptions、Result、Table、SelectableList、ScrollView、BarChart、LineChart、PieChart、QRCode；`define_widget!` 自定义 widget 已自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，且支持 `#[snapshot(skip)]` 排除 pub 字段；`component!` 已支持文档示例的 `name: ..., struct ...` 入口和直接 `struct ...` 入口，并直接生成同一提取路径。
+> **实现注记**：内置提取已覆盖 Button、Label、Input、Container、Grid、Space、Divider、Icon、Typography、Checkbox、Radio、Switch、Slider、Rate、InputNumber、Avatar、Badge、Card、Empty、Image、Tag、Timeline、Calendar、Skeleton、FloatButton、Alert、Message、Notification、ProgressBar、Spin、Tooltip、Popover、Popconfirm、Modal、Drawer、Layout、Header、Sider、Content、Footer、Splitter、Affix、BackTop、Breadcrumb、Pagination、Anchor、Menu、Dropdown、Tabs、Steps、NavItem、Tree、List、Collapse、Carousel、Select、AutoComplete、TreeSelect、Cascader、ColorPicker、DatePicker、TimePicker、Mentions、Segmented、FormItem、Form、Descriptions、Result、Table、SelectableList、ScrollView、BarChart、LineChart、PieChart、QRCode、RichText、ThemeToggle、Transfer、Upload、Watermark；`define_widget!` 自定义 widget 已自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，且支持 `#[snapshot(skip)]` 排除 pub 字段；`component!` 已支持文档示例的 `name: ..., struct ...` 入口和直接 `struct ...` 入口，并直接生成同一提取路径。
 
 ### #[snapshot(skip)]（#152）
 
@@ -375,6 +375,14 @@ WidgetTree
 | PieChart | | Big Bang |
 | PieData | | 数据辅助 |
 | QRCode | | Big Bang |
+| RichText | | Big Bang |
+| RichTextSegment | | 数据辅助 |
+| RichTextStyle | | 数据辅助 |
+| Transfer | | Big Bang |
+| TransferItem | | 数据辅助 |
+| Upload | | Big Bang |
+| UploadFile | | 数据辅助 |
+| UploadStatus | | 枚举辅助 |
 | Watermark | | Big Bang |
 | ThemeToggle | | Big Bang |
 | SharedActive | | 共享态辅助 |
