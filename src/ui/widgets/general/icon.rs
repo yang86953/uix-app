@@ -207,6 +207,11 @@ component! {
 }
 
 impl Icon {
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.name = next.name;
+        self.size = next.size;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Icon {
             name: self.name.clone(),

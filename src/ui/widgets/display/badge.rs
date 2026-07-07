@@ -167,6 +167,20 @@ impl Badge {
         self
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.count = next.count;
+        self.max = next.max;
+        self.dot = next.dot;
+        self.color = next.color;
+        self._size = next._size;
+        self.status = next.status;
+        self.show_zero = next.show_zero;
+        self.text = next.text;
+        self.offset_x = next.offset_x;
+        self.offset_y = next.offset_y;
+        self.offset_unit = next.offset_unit;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Badge {
             count: self.count,

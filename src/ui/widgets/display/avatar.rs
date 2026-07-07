@@ -88,6 +88,15 @@ impl Avatar {
 }
 
 impl Avatar {
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.text = next.text;
+        self.size = next.size;
+        self.bg_color = next.bg_color;
+        self.text_color = next.text_color;
+        self.square = next.square;
+        self.src = next.src;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Avatar {
             text: self.text.clone(),

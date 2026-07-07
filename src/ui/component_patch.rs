@@ -1,7 +1,8 @@
 use crate::ui::widgets::{
-    Anchor, AutoComplete, Button, Cascader, ColorPicker, Container, DatePicker, Drawer, Dropdown,
-    Grid, Input, Label, Mentions, Menu, Modal, Pagination, Popconfirm, Popover, ScrollView, Select,
-    Space, Steps, Tabs, TimePicker, Tooltip, TreeSelect,
+    Anchor, AutoComplete, Avatar, Badge, Button, Cascader, ColorPicker, Container, DatePicker,
+    Divider, Drawer, Dropdown, Grid, Icon, Input, Label, Mentions, Menu, Modal, Pagination,
+    Popconfirm, Popover, ScrollView, Select, Space, Steps, Tabs, TimePicker, Tooltip, TreeSelect,
+    Typography,
 };
 use crate::ui::WidgetComponent;
 
@@ -29,6 +30,11 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Button);
     patch_as!(Container);
     patch_as!(Grid);
+    patch_as!(Divider);
+    patch_as!(Icon);
+    patch_as!(Typography);
+    patch_as!(Avatar);
+    patch_as!(Badge);
     patch_as!(Input);
     patch_as!(Label);
     patch_as!(ScrollView);
