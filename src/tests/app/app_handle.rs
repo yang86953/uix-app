@@ -228,6 +228,16 @@ fn app_handle_open_window_returns_child_handle_and_queues_request() {
     assert_eq!(request.config.title, "Inspector");
     assert_eq!(request.config.width, 320);
     assert_eq!(request.config.height, 600);
+
+    let tree = ViewAdapter::build_nodes((request.config.root)());
+    let label = tree
+        .root()
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Label>()
+        .unwrap();
+    assert_eq!(label.text(), "child");
 }
 
 #[test]
