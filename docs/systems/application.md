@@ -81,7 +81,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** `run_app_loop`；UiEvent 按 **window_id** 路由。
 
-> **实现注记**：当前单窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接。
+> **实现注记**：当前单窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait、Effect pending tick 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接。
 
 ### 单帧顺序（Active 态，设计 #106、#137）
 
@@ -104,7 +104,7 @@ flowchart TD
   B --> C[drain_due AppTimer / Widget Timer]
   C --> D[main_thread_queue.drain]
   D --> E{Active frame?}
-  E -->|是| F[tree.update + tick_effects]
+  E -->|是| F[tree.update + pending tick_effects]
   E -->|否| G[跳过 update/effects]
   F --> H{Layout 脏?}
   G --> H
@@ -142,7 +142,7 @@ flowchart TD
 |------|------|----------|
 | DeepIdle | blocking `wait_event`；不 layout/render/tick Effect | 无 Registry deadline 时 blocking `wait_event` |
 | RegisteredActive | `wait_until(next_deadline)` 窄 tick | `ActiveWorkRegistry::next_deadline` → `wait_timeout(remaining)` |
-| Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline | Active 帧运行 `update` / `tick_effects`；`Spin` / `ProgressBar` indeterminate / Modal / Drawer 已作为内置 Animation 源接入，其他过渡动画源待接 |
+| Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline | Active 帧运行 `update`，且仅在 Effect pending 时运行 `tick_effects`；`Spin` / `ProgressBar` indeterminate / Modal / Drawer 已作为内置 Animation 源接入，其他过渡动画源待接 |
 | 首帧 | 单次 `poll_event` | 同左 |
 
 ### 窗口生命周期事件
@@ -561,7 +561,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 | 1 | UiEvent dispatch |
 | 2 | `drain_due` — AppTimer / Animation |
 | 3 | `main_thread_queue.drain` — post_to_ui |
-| 4+ | tick_effects → reconcile → layout → render |
+| 4+ | pending tick_effects → reconcile → layout → render |
 
 入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
 
@@ -687,7 +687,7 @@ inspector_handle.update_view(|| inspector_panel_v2(data.get()));
 
 详见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153）与 [view_factory 生命周期](view-reactive.md#view_factory-生命周期)（#155–#156）。
 
-> **实现注记**：`AppHandle::update_view` / `set_root` 已导出，并经 `AppRuntime` 按 `window_id` 投递到目标 `MainThreadQueue` 写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 `tick_effects` 后、layout/render 前至多 reconcile 一次。副窗 session bootstrap、root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接。
+> **实现注记**：`AppHandle::update_view` / `set_root` 已导出，并经 `AppRuntime` 按 `window_id` 投递到目标 `MainThreadQueue` 写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 pending `tick_effects` 后、layout/render 前至多 reconcile 一次。副窗 session bootstrap、root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接。
 
 ---
 
