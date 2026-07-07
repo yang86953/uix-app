@@ -259,7 +259,7 @@ static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 | 不用 generation | `generation()` 随 `set` 变化；用于 Computed/Effect **依赖追踪**，非身份 |
 | Computed | 设计态可分配独立 slot id；v1 指纹以捕获的 `State` slot 为准 |
 
-### 与当前实现差距
+### 实现状态
 
 | 设计（#143） | 当前 `state.rs` |
 |--------------|-----------------|
@@ -267,7 +267,7 @@ static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 | 指纹用 slot id | State 侧 `TypeId + StateSlotId` 指纹基础已接，WindowId capture 侧使用 `TypeId<WindowId> + WindowId`；handler fingerprint 解析可消费这些值；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接；任意闭包运行时自动 capture 收集按 #159 禁止 |
 | `generation()` | 已有；用于 Computed/Effect |
 
-落地 #143 时 **保留** 现有 `generation()` 语义；仅 **新增** `slot_id` 字段与 accessor。
+实现 **保留** 现有 `generation()` 语义；`slot_id` 字段与 accessor 已接。
 
 > **实现注记**：`StateSlotId` 已落地；`State::generation()` 保持值变更计数语义，不参与 State capture 指纹。
 

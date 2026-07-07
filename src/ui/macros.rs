@@ -189,6 +189,7 @@ macro_rules! __define_widget_build_method {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __define_widget_upcast_method {
+    (measure; $T:ty) => { $crate::wc_upcast!($T; WidgetLayout); };
     (preferred_size; $T:ty) => { $crate::wc_upcast!($T; WidgetLayout); };
     (flex_grow; $T:ty) => {};
     (flex_shrink; $T:ty) => {};
@@ -224,7 +225,7 @@ macro_rules! __define_widget_upcast_method {
 /// ```ignore
 /// define_widget! {
 ///     pub Button { text: String }
-///     preferred_size => (&self, _engine) -> Size { ... }
+///     measure => (&self, constraints) -> Size { ... }
 ///     render => (&self, frame, ctx, tree) { ... }
 ///     on_event => (&mut self, event) -> EventResult { ... }
 /// }
@@ -283,7 +284,7 @@ macro_rules! define_widget {
                 let mut c = $crate::ui::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "preferred_size" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
+                        "measure" | "preferred_size" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
@@ -316,7 +317,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             WidgetLayout,
             $name,
-            [preferred_size flex_grow flex_shrink layout_children],
+            [measure preferred_size flex_grow flex_shrink layout_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -416,7 +417,7 @@ macro_rules! component {
                 let mut c = $crate::ui::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "preferred_size" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
+                        "measure" | "preferred_size" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
@@ -445,7 +446,7 @@ macro_rules! component {
         $crate::__define_widget_grouped_impl! {
             WidgetLayout,
             $name,
-            [preferred_size flex_grow flex_shrink layout_children],
+            [measure preferred_size flex_grow flex_shrink layout_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -630,6 +631,9 @@ macro_rules! __define_widget_snapshot_collect_fields {
 #[doc(hidden)]
 macro_rules! __define_widget_method_builder {
     // ── WidgetLayout ──
+    (measure; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn measure($($p)*) -> $ret $body
+    };
     (preferred_size; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn preferred_size($($p)*) -> $ret $body
     };
@@ -730,6 +734,9 @@ macro_rules! __define_widget_method_builder {
 #[doc(hidden)]
 macro_rules! __match_trait_method {
     // ── WidgetLayout ──
+    (WidgetLayout, measure, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn measure($($p)*) -> $ret $body
+    };
     (WidgetLayout, preferred_size, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn preferred_size($($p)*) -> $ret $body
     };

@@ -302,7 +302,7 @@ flowchart TB
 | 多窗 post_to_ui | window_id 路由 | `AppRuntime` 路由表已接；`AppHandle` 投递仅进入自身 `window_id` 的队列，session 销毁后丢弃闭包 | [#141](decisions.md#d141) |
 | AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | `AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求；主窗 close 退出主循环，副窗真实 close 事件按 `window_id` 关闭对应 session | [#134](decisions.md#d134) |
 | AppHandle | cloneable；运行中 Timer / post_to_ui | `AppHandle` / `WindowId` 已导出；运行中 Timer、跨线程 `post_to_ui` 与 `update_view` 已按 `window_id` 路由；`open_window` 请求层与副窗 bootstrap 已接 | [#132](decisions.md#d132) [#133](decisions.md#d133) |
-| Handler 智能重绑 | handler 变才重注册 | 已按稳定 signature 跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 handler 保守 clear+register，待 #138/#142 自动作者化 | [#123](decisions.md#d123) [#135](decisions.md#d135) |
+| Handler 智能重绑 | handler 变才重注册 | 已按稳定 signature 跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 handler 按 #159 保守 clear+register，未来宏 / DSL 若生成 fingerprint 再进入稳定复用 | [#123](decisions.md#d123) [#135](decisions.md#d135) [#159](decisions.md#d159) |
 | PointerMove 边界窄路径 | 框内不 hit_test | 已接：pointer_down_target/drag 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](decisions.md#d109) [#121](decisions.md#d121) |
 | Effect DeepIdle | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 Registry deadline 唤醒，不回退固定探活；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接 | #105 |
 
