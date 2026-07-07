@@ -255,11 +255,11 @@ App **可用** 高层定时 API；框架在内部 register，**不**暴露 `Acti
 impl App {
     /// 一次：到期主线程执行 f，随后 unregister
     fn run_after<F>(&self, delay: Duration, f: F) -> TimerHandle
-    where F: FnOnce() + 'static;
+    where F: FnOnce() + Send + 'static;
 
     /// 重复：每 interval 主线程执行 f；cancel/drop 停止
     fn run_interval<F>(&self, interval: Duration, f: F) -> TimerHandle
-    where F: FnMut() + 'static;
+    where F: FnMut() + Send + 'static;
 }
 
 struct TimerHandle { /* opaque */ }

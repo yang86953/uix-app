@@ -256,7 +256,7 @@ flowchart TB
 | `src/ui/overlay.rs` | [overlay](systems/overlay.md) | |
 | `src/data/settings/*` | [data](systems/data.md) | |
 | `src/tests/**` | [testing](systems/testing.md) | mirror `src/` layout |
-| `src/prelude.rs`、`src/lib.rs` | — | 对外入口；见 [AGENTS.md](../AGENTS.md) |
+| `src/prelude.rs`、`src/lib.rs` | — | 推荐入口 `uix::prelude::*`；导出 App、View、State、常用组件、事件、handle 与布局类型 |
 
 ---
 
@@ -284,7 +284,7 @@ flowchart TB
 | AnimationRegistry | Registry tick + `tree.update(dt)` | `WidgetAnimation` 能力、`tree.update(dt)` 窄 Paint 标脏、单窗下一帧 deadline 与 `Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接入 | [component · 动画](systems/component.md#动画) · [rendering · 动画帧](systems/rendering.md#动画帧) |
 | Composite scroll | `Invalidation::Composite` + scroll_region memmove | Wheel、键盘、滚动条拖拽与程序化 ScrollView 滚动已写 Composite exposed strip 并接 `scroll_region` memmove；新增滚动来源须复用该路径 | [rendering · 管线与失效](systems/rendering.md#管线与失效) |
 | App 内置 Settings load（opt-in） | builder 配置 path 后 `run()` 前代调 `load()` | `App::settings(path)` 已接；`run()` 前加载一次并注册 `SettingsService` 到 App DI；默认不 load/save | [data · App 集成](systems/data.md#app-集成) |
-| 主循环 DI | Container 可在运行时 resolve | `AppHandle::resolve<T: Clone>()` 已可读取 builder / settings 注册的单例 clone；组件热路径仍不 resolve | [application · DI](systems/application.md#cli-与-di) |
+| 主循环 DI | Container 可在运行时 resolve | `AppHandle::resolve<T: Send + Clone + 'static>()` 已可读取 builder / settings 注册的单例 clone；组件热路径仍不 resolve | [application · DI](systems/application.md#cli-与-di) |
 | 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 `tick_effects`，Active 帧仅在 Effect pending 时 tick；RegisteredActive deadline wait 与副窗三态写回已接；Windows `dispatch_blocking` 已移除固定 16ms 等待，外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [demand-driven · 主循环](systems/demand-driven.md#主循环状态机) · [#106](decisions.md#d106) [#117](decisions.md#d117) |
 | ActiveWorkRegistry | register / wait_until / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due`、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、Animation 下一帧 deadline 与 IME composition session 无 deadline 托管 | [#115](decisions.md#d115) |
 | 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；副窗创建、独立 `WindowSession` bootstrap、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#116](decisions.md#d116) |

@@ -63,7 +63,7 @@ fn main() {
 
 | 域 | 路径 | 用途 |
 |----|------|------|
-| 入口 | `uix::prelude::*` | 应用开发 |
+| 入口 | `uix::prelude::*` | 应用、View DSL、常用组件、事件、handle 与 State |
 | core | `uix::core::*` | 错误、几何、日志 |
 | native | `uix::native::*` | 窗口、事件（仅 traits 对外） |
 | draw | `uix::draw::*` | 引擎、颜色、字体 |

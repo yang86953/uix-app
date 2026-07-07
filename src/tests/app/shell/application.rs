@@ -180,6 +180,14 @@ fn app_handle_uses_root_window_and_shared_queues() {
 }
 
 #[test]
+fn app_handle_resolve_reads_builder_singleton_clone() {
+    let app = App::new().singleton(String::from("service"));
+    let handle = app.app_handle();
+
+    assert_eq!(handle.resolve::<String>(), Some(String::from("service")));
+}
+
+#[test]
 fn app_handle_can_target_registered_platform_window_id() {
     let app = App::new();
     let handle = app.app_handle_for_window(WindowId::new(12));
