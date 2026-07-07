@@ -6,10 +6,11 @@ use crate::app::test_clock::TestClock;
 use crate::app::window_session::{WindowLoopState, WindowSession};
 use crate::core::WindowId;
 use crate::draw::pipeline::RenderMetrics;
-use crate::draw::NullEngine;
+use crate::draw::{NullEngine, SoftwareEngine};
 use crate::native::test_harness::{FakePlatform, FakeWindow};
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
+use crate::native::traits::present::PresentDamage;
 use crate::ui::overlay::OverlayKind;
 use crate::ui::theme::{DesignTokens, DynTokens};
 use crate::ui::traits::TokenProvider;
@@ -18,7 +19,10 @@ use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::container::Container;
 use crate::ui::widgets::feedback::Tooltip;
 use crate::ui::widgets::Label;
-use crate::ui::{SemanticKind, WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetRender};
+use crate::ui::{
+    AppState, EventResult, SemanticEvent, SemanticKind, WidgetAnimation, WidgetCapabilities,
+    WidgetComponent, WidgetRender,
+};
 use std::any::Any;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -656,6 +660,130 @@ fn deep_idle_waits_without_fixed_timeout_or_extra_present() {
     assert_eq!(stats.idle_frames, 4);
     assert_eq!(platform.text_input.state.start_calls, 0);
     assert_eq!(platform.text_input.state.stop_calls, 0);
+}
+
+#[test]
+fn software_engine_present_forwards_damage_to_fake_presenter() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 120, 80);
+    let mut session = WindowSession::from_root(
+        button("hover target").into(),
+        Box::new(SoftwareEngine::new()),
+        120,
+        80,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |tree, _, _| {
+            let root = tree.root_id().expect("root should exist");
+            tree.reset_dirty();
+            tree.invalidate_paint_rect(root, Rect::new(3.0, 4.0, 5.0, 6.0));
+        },
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(metrics.get().present_calls, 1);
+    assert_eq!(window.presenter.state.present_calls.len(), 1);
+    assert_eq!(
+        window
+            .presenter
+            .state
+            .present_calls
+            .last()
+            .map(|call| &call.damage),
+        Some(&PresentDamage::Full)
+    );
+}
+
+#[test]
+fn app_state_lookup_emit_drains_in_event_loop_and_returns_deep_idle() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let app_state = AppState::new();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut root: ViewNode = button("emit target").into();
+    {
+        let calls = calls.clone();
+        root.handlers.push(crate::ui::HandlerRegistration::new(
+            SemanticKind::Change,
+            Box::new(move |event| {
+                calls.lock().unwrap_or_else(|e| e.into_inner()).push((
+                    event.target,
+                    event.current_target,
+                    event.text_payload().map(str::to_string),
+                ));
+            }),
+        ));
+    }
+    let mut session = WindowSession::from_root(root, Box::new(NullEngine::new()), 800, 600);
+    session.set_app_state(app_state.clone());
+    let root_id = session
+        .tree_and_engine_mut()
+        .0
+        .root_id()
+        .expect("root should exist");
+    app_state.set_event_loop_waker(platform.event_loop().waker());
+    let handle = app_state
+        .get_handle(root_id)
+        .expect("lookup handle should be registered");
+    assert_eq!(
+        handle.emit(SemanticEvent::change(root_id, "from-loop")),
+        EventResult::Handled
+    );
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(platform.event_source.wake_count(), 1);
+    assert_eq!(
+        *calls.lock().unwrap_or_else(|e| e.into_inner()),
+        vec![(root_id, root_id, Some("from-loop".to_string()))]
+    );
+    assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+    assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
 }
 
 #[test]
