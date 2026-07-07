@@ -76,7 +76,7 @@ Compositor 只通过 ScenePaint 读树：frame、children、clip、scroll、dirt
 
 Picture 由框架 **自动推断** Policy（metadata + runtime 合并 #136）+ 自适应阈值；**无**调用方黑名单。详见 [demand-driven · PicturePolicy](demand-driven.md#picturepolicy-自动推断122129) · [component · PicturePolicy 元数据](component.md#picturepolicy-元数据122)。
 
-Build 时子节点按 `z_index` 排序。旧 Picture offscreen 按 widget_id+bounds 复用。
+Build 时子节点按 `z_index` 排序。旧 Picture offscreen 按 node_id+bounds 复用。
 
 ### RenderObjectTree
 

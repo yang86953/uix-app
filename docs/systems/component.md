@@ -45,8 +45,8 @@
 
 | Trait | 方法 / 职责 | 决策 |
 |-------|-------------|------|
-| **WidgetLayout** | `measure`, `flex_grow/shrink`, `layout_children` | #29 |
-| **WidgetRender** | `render(frame, ctx, tree)`；可选 `overlay_entry`, `dirty_rect` | |
+| **WidgetLayout** | `measure`, `flex_grow/shrink`, `layout_children(ComponentId)` | #29 #101 |
+| **WidgetRender** | `render(frame, ctx, tree)`；可选 `overlay_entry(ComponentId)`, `dirty_rect` | #101 |
 | **EventHandler** | `on_event`, `semantic_event(ComponentId, event)`, `wants_continuous_pointer_move` | #36 #101 #121 |
 | **连续 PointerMove opt-in** | 默认 false；true → hover 框内每 PointerMove dispatch（#121） | #109 |
 | **WidgetLifecycle** | mount/unmount/active/inactive；`on_theme_changed` | #8 #9 |
@@ -76,7 +76,7 @@ Inactive 组件跳过大部分语义派发，Lifecycle 进入 inactive。
 
 框架在 Reconciler **mount** 时向 AppState **自动 register**（#145）；unmount 时 unregister。快照字段见 [ComponentConfigSnapshot](#componentconfigsnapshot)（#146）。App **不手写**注册表。
 
-> **实现注记**：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均已接窄 Paint。`snapshot()` / `snapshot_fields()` 与首批只读配置 getter（`text` / `placeholder` / `disabled`）已接，当前优先从 live widget 提取静态配置快照，必要时可回退到 `AppState` snapshot registry，并排除交互态。`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot、所属失效队列与当前 dirty rect，`AppState::get_handle` 已可返回 snapshot + invalidate + emit handle；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`，lookup handle `emit` 经 AppState semantic queue 唤醒并由主/副窗 drain 派发；当前 handler 仍可经 `State<T>` 闭包捕获访问业务数据。
+> **实现注记**：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；`AppState` 内部 register/unregister、snapshot/invalidate 与 semantic queue 也已按 `ComponentId` 命名；live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均已接窄 Paint。`snapshot()` / `snapshot_fields()` 与首批只读配置 getter（`text` / `placeholder` / `disabled`）已接，当前优先从 live widget 提取静态配置快照，必要时可回退到 `AppState` snapshot registry，并排除交互态。`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot、所属失效队列与当前 dirty rect，`AppState::get_handle` 已可返回 snapshot + invalidate + emit handle；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`，lookup handle `emit` 经 AppState semantic queue 唤醒并由主/副窗 drain 派发；当前 handler 仍可经 `State<T>` 闭包捕获访问业务数据。
 
 ---
 
@@ -208,7 +208,7 @@ WidgetTree
 | `tree_version` | Reconciler / layout 结构变更计数；LayerTree 同步依据 |
 | `cached_traversal` | 布局遍历缓存，version 不匹配时重建 |
 
-**ComponentId**（#35、#101）：`core::ComponentId { slot, generation }` 已作为 generational 稳定 ID 落地；源码中 `WidgetId` / `NodeId` 仍作为同一类型的模块别名使用。
+**ComponentId**（#35、#101）：`core::ComponentId { slot, generation }` 已作为 generational 稳定 ID 落地；公开事件 / handle / snapshot / Reconciler / Widget trait 边界 / managers 已按 `ComponentId` 命名，源码中 `WidgetId` / `NodeId` 仍作为树、布局、draw 内部同型别名使用。
 
 **BoxedWidget** 持有：component、`parent/children` id、frame、visibility、lifecycle 标志、`is_dirty`、opacity、z_index、tab_idx。
 
@@ -220,16 +220,16 @@ WidgetTree
 
 | Manager | 职责 |
 |---------|------|
-| FocusManager | focused / focusable / tab_index |
-| InteractionManager | hovered / pressed；bounds 内 click 检测 |
+| FocusManager | focused / focusable / tab_index；ComponentId key |
+| InteractionManager | hovered / pressed；bounds 内 click 检测；ComponentId key |
 | StateManager | 字符串键 → `State<T>` 字典 |
 | StyleManager | 旧版 preset（**已弃用**，用 `ui::style::Style`） |
 | TextManager | text / font / placeholder / alignment |
-| DragManager | widget 局部 drag offset |
+| DragManager | component 局部 drag offset；ComponentId key |
 
-支持 **per-widget override**（`state_for(id)` / `text_for(id)`）。
+支持 **per-component override**（`state_for(id)` / `text_for(id)`）。
 
-> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `style_for(id)` / `text_for(id)` per-widget override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`collect_focusable` / `focus_next` 由 manager 驱动；`InteractionManager` 已记录 hovered / pressed widget，并作为 PointerMove / Wheel / Timer 目标解析的事实源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset，并驱动基础 DragStart / DragMove / DragEnd 热路径。`WidgetTree` 旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 过渡镜像字段已移除。
+> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `style_for(id)` / `text_for(id)` per-component override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`InteractionManager` 已记录 hovered / pressed component，`DragManager` 已记录拖拽 target，相关 manager 签名均已按 `ComponentId` 命名；它们作为 PointerMove / Wheel / Timer / Drag 目标解析的事实源，并驱动基础 DragStart / DragMove / DragEnd 热路径。`WidgetTree` 旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 过渡镜像字段已移除。
 
 ---
 

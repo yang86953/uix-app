@@ -1,4 +1,4 @@
-use std::cell::Cell;
+﻿use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -138,7 +138,7 @@ component! {
         }
     }
 
-    overlay_entry => (&self, id: crate::ui::WidgetId, _frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::ComponentId, _frame: Rect) -> Option<crate::ui::OverlayEntry> {
         if self.is_present() && self.overlay {
             Some(
                 crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Modal)
@@ -151,8 +151,8 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], tree: &WidgetTree)
-        -> Vec<(crate::ui::WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
     {
         if !self.is_present() || children.is_empty() {
             return Vec::new();

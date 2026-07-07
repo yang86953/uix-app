@@ -28,10 +28,11 @@ use crate::ui::widgets::{
     TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
     TypographyType, Upload, ValidateStatus, Watermark,
 };
+use crate::ui::ComponentId;
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotCollapsePanel, SnapshotFields, SnapshotSource,
     SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
-    WidgetAnimation, WidgetId, WidgetLayout,
+    WidgetAnimation, WidgetLayout,
 };
 
 component! {
@@ -145,9 +146,9 @@ component! {
 #[test]
 fn component_config_snapshot_records_id_type_and_fields() {
     let label = Label::new("status").font_size(18.0).size(80.0, 20.0);
-    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(7), &label);
+    let snapshot = ComponentConfigSnapshot::from_component(ComponentId::new(7), &label);
 
-    assert_eq!(snapshot.id, WidgetId::new(7));
+    assert_eq!(snapshot.id, ComponentId::new(7));
     assert_eq!(snapshot.widget_type, TypeId::of::<Label>());
     assert!(matches!(
         snapshot.fields,
@@ -164,9 +165,9 @@ fn component_config_snapshot_records_id_type_and_fields() {
 #[test]
 fn component_config_snapshot_uses_typed_fields_for_component_builtin() {
     let qrcode = QRCode::new("uix").size(96.0).error_level(2);
-    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(8), &qrcode);
+    let snapshot = ComponentConfigSnapshot::from_component(ComponentId::new(8), &qrcode);
 
-    assert_eq!(snapshot.id, WidgetId::new(8));
+    assert_eq!(snapshot.id, ComponentId::new(8));
     assert_eq!(snapshot.widget_type, TypeId::of::<QRCode>());
     assert_eq!(
         snapshot.fields,
@@ -638,7 +639,7 @@ fn other_widget_snapshots_capture_static_config() {
         .font_size_unit(PhysicalUnit::Pt(12.0))
         .color(Color::green());
     assert_eq!(
-        ComponentConfigSnapshot::from_component(WidgetId::new(91), &rich_text).fields,
+        ComponentConfigSnapshot::from_component(ComponentId::new(91), &rich_text).fields,
         SnapshotFields::RichText {
             segments,
             default_font_size: 16.0,
@@ -648,14 +649,14 @@ fn other_widget_snapshots_capture_static_config() {
     );
 
     let mut theme_toggle = ThemeToggle::new().dark(true);
-    let before = ComponentConfigSnapshot::from_component(WidgetId::new(9), &theme_toggle).fields;
+    let before = ComponentConfigSnapshot::from_component(ComponentId::new(9), &theme_toggle).fields;
     let _ = theme_toggle.on_event(&SystemEvent::PointerDown {
         button: MouseButton::Left,
         pos: Point::zero(),
         mods: KeyMod::NONE,
     });
     assert_eq!(
-        ComponentConfigSnapshot::from_component(WidgetId::new(9), &theme_toggle).fields,
+        ComponentConfigSnapshot::from_component(ComponentId::new(9), &theme_toggle).fields,
         before
     );
     assert_eq!(before, SnapshotFields::ThemeToggle { dark: true });
@@ -668,7 +669,7 @@ fn other_widget_snapshots_capture_static_config() {
         .gap(120.0, 90.0)
         .offset(4.0, 8.0);
     assert_eq!(
-        ComponentConfigSnapshot::from_component(WidgetId::new(92), &watermark).fields,
+        ComponentConfigSnapshot::from_component(ComponentId::new(92), &watermark).fields,
         SnapshotFields::Watermark {
             text: "draft".to_string(),
             color: Color::blue(),
@@ -696,14 +697,14 @@ fn transfer_and_upload_snapshots_exclude_runtime_state() {
             title: "Beta".to_string(),
             selected: false,
         }]);
-    let before = ComponentConfigSnapshot::from_component(WidgetId::new(93), &transfer).fields;
+    let before = ComponentConfigSnapshot::from_component(ComponentId::new(93), &transfer).fields;
     let _ = transfer.on_event(&SystemEvent::PointerDown {
         button: MouseButton::Left,
         pos: Point::new(228.0, 88.0),
         mods: KeyMod::NONE,
     });
     assert_eq!(
-        ComponentConfigSnapshot::from_component(WidgetId::new(93), &transfer).fields,
+        ComponentConfigSnapshot::from_component(ComponentId::new(93), &transfer).fields,
         before
     );
     assert_eq!(
@@ -725,7 +726,7 @@ fn transfer_and_upload_snapshots_exclude_runtime_state() {
         .multiple(true)
         .drag(false)
         .max_count(2);
-    let before = ComponentConfigSnapshot::from_component(WidgetId::new(94), &upload).fields;
+    let before = ComponentConfigSnapshot::from_component(ComponentId::new(94), &upload).fields;
     upload.add_file("hero.png");
     upload.update_progress(0, 0.5);
     let _ = upload.on_event(&SystemEvent::PointerDown {
@@ -734,7 +735,7 @@ fn transfer_and_upload_snapshots_exclude_runtime_state() {
         mods: KeyMod::NONE,
     });
     assert_eq!(
-        ComponentConfigSnapshot::from_component(WidgetId::new(94), &upload).fields,
+        ComponentConfigSnapshot::from_component(ComponentId::new(94), &upload).fields,
         before
     );
     assert_eq!(
@@ -1844,9 +1845,9 @@ fn component_auto_snapshot_captures_public_fields_only() {
         _secret: "runtime".to_string(),
     };
 
-    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(42), &probe);
+    let snapshot = ComponentConfigSnapshot::from_component(ComponentId::new(42), &probe);
 
-    assert_eq!(snapshot.id, WidgetId::new(42));
+    assert_eq!(snapshot.id, ComponentId::new(42));
     assert_eq!(snapshot.widget_type, TypeId::of::<SnapshotProbe>());
     let SnapshotFields::Custom { widget, fields } = snapshot.fields else {
         panic!("expected custom snapshot fields");
@@ -1899,9 +1900,9 @@ fn component_macro_name_struct_syntax_reuses_snapshot_metadata() {
         private_note: "hidden".to_string(),
     };
 
-    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(77), &probe);
+    let snapshot = ComponentConfigSnapshot::from_component(ComponentId::new(77), &probe);
 
-    assert_eq!(snapshot.id, WidgetId::new(77));
+    assert_eq!(snapshot.id, ComponentId::new(77));
     assert_eq!(snapshot.widget_type, TypeId::of::<ComponentMacroProbe>());
     let SnapshotFields::Custom { widget, fields } = snapshot.fields else {
         panic!("expected custom snapshot fields");
@@ -1924,9 +1925,9 @@ fn component_macro_struct_syntax_captures_public_fields() {
         cache_key: "private".to_string(),
     };
 
-    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(78), &probe);
+    let snapshot = ComponentConfigSnapshot::from_component(ComponentId::new(78), &probe);
 
-    assert_eq!(snapshot.id, WidgetId::new(78));
+    assert_eq!(snapshot.id, ComponentId::new(78));
     assert_eq!(snapshot.widget_type, TypeId::of::<ComponentStructProbe>());
     let SnapshotFields::Custom { widget, fields } = snapshot.fields else {
         panic!("expected custom snapshot fields");

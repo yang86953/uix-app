@@ -9,9 +9,9 @@ use super::flex::compute_flex_layout;
 use super::grid::compute_grid_layout;
 use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
-use crate::core::{Constraints, EdgeInsets, Rect, Size};
+use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 use crate::draw::spatial::AABB3D;
-use crate::ui::{WidgetCore, WidgetId, WidgetTree};
+use crate::ui::{WidgetCore, WidgetTree};
 
 // ── 统一盒模型 ────────────────────────────────────────────────────
 
@@ -71,7 +71,7 @@ impl BoxModel {
 /// - 分配 frame 时：交叉轴起始位置 = cross_offset + margin.cross_start
 #[derive(Debug, Clone)]
 pub struct LayoutChild {
-    pub id: WidgetId,
+    pub id: ComponentId,
     pub preferred_size: Size,
     pub flex_grow: f32,
     pub flex_shrink: f32,
@@ -86,7 +86,7 @@ pub struct LayoutChild {
 }
 
 impl LayoutChild {
-    pub fn new(id: WidgetId, preferred_size: Size) -> Self {
+    pub fn new(id: ComponentId, preferred_size: Size) -> Self {
         Self {
             id,
             preferred_size,
@@ -515,8 +515,8 @@ impl LayoutEngine for GridLayout {
 // ── 辅助：从 WidgetTree 构建 LayoutChild ──────────────────────────
 
 /// 从 WidgetTree 节点构建统一的 LayoutChild。
-pub fn child_from_tree(cid: WidgetId, tree: &WidgetTree) -> LayoutChild {
-    let node = tree.get(cid);
+pub fn child_from_tree(component_id: ComponentId, tree: &WidgetTree) -> LayoutChild {
+    let node = tree.get(component_id);
     let pref = node
         .map(|c| c.measure(Constraints::unconstrained()))
         .unwrap_or_default();
@@ -536,7 +536,7 @@ pub fn child_from_tree(cid: WidgetId, tree: &WidgetTree) -> LayoutChild {
         .unwrap_or(1.0);
 
     LayoutChild {
-        id: cid,
+        id: component_id,
         preferred_size: Size::new(pref.w, h),
         flex_grow: grow,
         flex_shrink: shrink,

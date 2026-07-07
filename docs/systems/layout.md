@@ -58,7 +58,7 @@ fn measure(&self, constraints: Constraints) -> Size;
 
 ```rust
 LayoutChild {
-    id: WidgetId,
+    id: ComponentId,
     preferred_size: Size,
     flex_grow, flex_shrink,
     margin: EdgeInsets,
@@ -66,7 +66,7 @@ LayoutChild {
 }
 ```
 
-由 `child_from_tree(cid, tree)` 从 WidgetTree 构建。
+由 `child_from_tree(component_id, tree)` 从 WidgetTree 构建；源码树内 `WidgetId` 仍为同型别名。
 
 ---
 

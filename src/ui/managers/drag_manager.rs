@@ -1,6 +1,6 @@
 use crate::core::Point;
 use crate::native::traits::input::{KeyMod, MouseButton};
-use crate::ui::WidgetId;
+use crate::ui::ComponentId;
 
 /// Result of a drag target operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub struct DragManager {
     last_pos: Point,
     button: MouseButton,
     mods: KeyMod,
-    target: Option<WidgetId>,
+    target: Option<ComponentId>,
 }
 
 impl Default for DragManager {
@@ -52,7 +52,7 @@ impl DragManager {
 
     pub fn begin_gesture(
         &mut self,
-        target: Option<WidgetId>,
+        target: Option<ComponentId>,
         pos: Point,
         button: MouseButton,
         mods: KeyMod,
@@ -101,7 +101,7 @@ impl DragManager {
         self.potential
     }
 
-    pub fn target(&self) -> Option<WidgetId> {
+    pub fn target(&self) -> Option<ComponentId> {
         self.target
     }
 
@@ -125,8 +125,8 @@ impl DragManager {
         self.drag_offset
     }
 
-    pub fn unregister_widget(&mut self, widget_id: WidgetId) {
-        if self.target == Some(widget_id) {
+    pub fn unregister_widget(&mut self, component_id: ComponentId) {
+        if self.target == Some(component_id) {
             self.end_drag();
         }
     }

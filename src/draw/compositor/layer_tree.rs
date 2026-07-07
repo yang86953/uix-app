@@ -26,7 +26,7 @@ pub enum LayerNode {
     /// 图片图层：缓存被 ScenePaint 边界选中的子树栅格结果。
     /// 包含 children 以支持嵌套 Picture 缓存层（#82、#86、#87）。
     Picture {
-        widget_id: NodeId,
+        node_id: NodeId,
         bounds: Rect,
         is_dirty: bool,
         offscreen_handle: Option<ImageHandle>,
@@ -38,13 +38,13 @@ pub enum LayerNode {
     },
     /// 裁剪图层：将子图层内容限制在矩形区域内。
     ClipRect {
-        widget_id: NodeId,
+        node_id: NodeId,
         rect: Rect,
         children: Vec<LayerNode>,
     },
     /// 普通节点：直接渲染 widget 及其子树（无特殊图层语义，无离屏缓存）。
     Direct {
-        widget_id: NodeId,
+        node_id: NodeId,
         children: Vec<LayerNode>,
     },
 }
@@ -53,7 +53,7 @@ impl std::fmt::Debug for LayerNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LayerNode::Picture {
-                widget_id,
+                node_id,
                 bounds,
                 is_dirty,
                 offscreen_handle,
@@ -62,7 +62,7 @@ impl std::fmt::Debug for LayerNode {
                 retry_count,
             } => f
                 .debug_struct("PictureLayer")
-                .field("widget_id", widget_id)
+                .field("node_id", node_id)
                 .field("bounds", bounds)
                 .field("is_dirty", is_dirty)
                 .field("has_offscreen", &offscreen_handle.is_some())
@@ -71,21 +71,18 @@ impl std::fmt::Debug for LayerNode {
                 .field("retry_count", retry_count)
                 .finish(),
             LayerNode::ClipRect {
-                widget_id,
+                node_id,
                 rect,
                 children,
             } => f
                 .debug_struct("ClipRectLayer")
-                .field("widget_id", widget_id)
+                .field("node_id", node_id)
                 .field("rect", rect)
                 .field("children_count", &children.len())
                 .finish(),
-            LayerNode::Direct {
-                widget_id,
-                children,
-            } => f
+            LayerNode::Direct { node_id, children } => f
                 .debug_struct("DirectLayer")
-                .field("widget_id", widget_id)
+                .field("node_id", node_id)
                 .field("children_count", &children.len())
                 .finish(),
         }
@@ -129,12 +126,12 @@ impl LayerNode {
         }
     }
 
-    /// 获取该节点对应的 widget_id。
-    fn widget_id(&self) -> NodeId {
+    /// 获取该节点对应的 node_id。
+    fn node_id(&self) -> NodeId {
         match self {
-            LayerNode::Picture { widget_id, .. }
-            | LayerNode::ClipRect { widget_id, .. }
-            | LayerNode::Direct { widget_id, .. } => *widget_id,
+            LayerNode::Picture { node_id, .. }
+            | LayerNode::ClipRect { node_id, .. }
+            | LayerNode::Direct { node_id, .. } => *node_id,
         }
     }
 }
@@ -184,13 +181,13 @@ impl LayerTree {
 
     /// 从 ScenePaint 构建图层树。
     /// 生成所有可见 widget 的 LayerNode（无遗漏）。
-    /// 自动复用已缓存离屏缓冲——按 widget_id 匹配旧 Picture 节点。
+    /// 自动复用已缓存离屏缓冲——按 node_id 匹配旧 Picture 节点。
     /// 子节点按 z_index 预排序，渲染时无需再排序（#97）。
     ///
     /// 注意：build 后未复用的旧离屏缓冲句柄暂存在 `orphaned_handles` 中，
     /// 调用者需在合适的时机调用 `sweep_orphaned_offscreens` 释放。
     pub fn build(&mut self, scene: &impl ScenePaint) {
-        // 收集旧 Picture 节点的离屏缓冲与 DisplayList（按 widget_id 索引）
+        // 收集旧 Picture 节点的离屏缓冲与 DisplayList（按 node_id 索引）
         let mut old_cache: std::collections::HashMap<
             NodeId,
             (Rect, Option<ImageHandle>, Option<DisplayList>),
@@ -347,16 +344,13 @@ impl LayerTree {
     ) {
         match node {
             LayerNode::Picture {
-                widget_id,
+                node_id,
                 bounds,
                 offscreen_handle,
                 display_list,
                 ..
             } => {
-                cache.insert(
-                    *widget_id,
-                    (*bounds, *offscreen_handle, display_list.clone()),
-                );
+                cache.insert(*node_id, (*bounds, *offscreen_handle, display_list.clone()));
             }
             LayerNode::ClipRect { children, .. } | LayerNode::Direct { children, .. } => {
                 for child in children {
@@ -367,7 +361,7 @@ impl LayerTree {
     }
 
     /// 带缓存复用的 build_node。
-    /// 如果旧缓存中有相同 widget_id 且 bounds 未变的 Picture，复用其离屏句柄。
+    /// 如果旧缓存中有相同 node_id 且 bounds 未变的 Picture，复用其离屏句柄。
     ///
     /// 注意：`frame` 是绝对坐标（由 layout 阶段设置），以下所有位置计算直接使用 `frame` 的坐标，
     /// 不再累加父级偏移。
@@ -400,7 +394,7 @@ impl LayerTree {
                 .unwrap_or((None, None));
             let children = Self::build_children_cached(scene, id, depth, cache);
             Some(LayerNode::Picture {
-                widget_id: id,
+                node_id: id,
                 bounds,
                 is_dirty: offscreen_handle.is_none()
                     || display_list.is_none()
@@ -415,14 +409,14 @@ impl LayerTree {
             let adj = Rect::new(clip.x, clip.y, clip.w, clip.h);
             let children = Self::build_children_cached(scene, id, depth, cache);
             Some(LayerNode::ClipRect {
-                widget_id: id,
+                node_id: id,
                 rect: adj,
                 children,
             })
         } else {
             let children = Self::build_children_cached(scene, id, depth, cache);
             Some(LayerNode::Direct {
-                widget_id: id,
+                node_id: id,
                 children,
             })
         }
@@ -472,7 +466,7 @@ impl LayerTree {
             .filter_map(|cid| Self::build_node_cached(scene, cid, depth + 1, cache))
             .collect();
         // 预排序：render 时无需再排序
-        children.sort_by_key(|child| scene.node_z_index(child.widget_id()));
+        children.sort_by_key(|child| scene.node_z_index(child.node_id()));
         children
     }
 
@@ -484,13 +478,13 @@ impl LayerTree {
     fn update_dirty_node(node: &mut LayerNode, scene: &impl ScenePaint) -> bool {
         match node {
             LayerNode::Picture {
-                widget_id,
+                node_id,
                 is_dirty,
                 children,
                 ..
             } => {
                 // Picture 自身脏标记 + 子节点传播的脏标记
-                let self_dirty = scene.node_dirty(*widget_id);
+                let self_dirty = scene.node_dirty(*node_id);
                 let child_dirty = children
                     .iter_mut()
                     .any(|child| Self::update_dirty_node(child, scene));
@@ -498,17 +492,13 @@ impl LayerTree {
                 *is_dirty
             }
             LayerNode::ClipRect {
-                widget_id,
-                children,
-                ..
+                node_id, children, ..
             }
             | LayerNode::Direct {
-                widget_id,
-                children,
-                ..
+                node_id, children, ..
             } => {
                 // 检查自身 dirty + 子节点传播的脏标记
-                let self_dirty = scene.node_dirty(*widget_id);
+                let self_dirty = scene.node_dirty(*node_id);
                 let child_dirty = children
                     .iter_mut()
                     .any(|child| Self::update_dirty_node(child, scene));
@@ -533,7 +523,7 @@ impl LayerTree {
     ) {
         match node {
             LayerNode::Picture {
-                widget_id,
+                node_id,
                 bounds,
                 is_dirty,
                 offscreen_handle,
@@ -548,12 +538,12 @@ impl LayerTree {
                 }
 
                 let needs_blit =
-                    *is_dirty || needs_paint_rect(scene, *widget_id, *bounds, dirty_region);
+                    *is_dirty || needs_paint_rect(scene, *node_id, *bounds, dirty_region);
 
                 if *is_dirty || offscreen_handle.is_none() {
                     rasterize_picture_to_offscreen(
                         engine,
-                        *widget_id,
+                        *node_id,
                         bounds,
                         offscreen_handle,
                         display_list,
@@ -575,14 +565,14 @@ impl LayerTree {
                 }
             }
             LayerNode::ClipRect {
-                widget_id,
+                node_id,
                 rect,
                 children,
             } => {
-                if needs_paint(scene, *widget_id, dirty_region) {
+                if needs_paint(scene, *node_id, dirty_region) {
                     let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
                     Self::paint_widget(
-                        *widget_id,
+                        *node_id,
                         &mut ctx,
                         scene,
                         PaintPass::Content,
@@ -591,14 +581,14 @@ impl LayerTree {
                     Self::draw_debug_for_widget(
                         &mut ctx,
                         scene,
-                        *widget_id,
+                        *node_id,
                         debug_mode,
                         hovered_chain,
                         depth,
                     );
                 }
                 engine.canvas_2d().push_clip(*rect);
-                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
+                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *node_id) {
                     engine.canvas_2d().translate(-sx, -sy);
                 }
                 for child in children.iter_mut() {
@@ -616,22 +606,19 @@ impl LayerTree {
                         render_objects.as_deref_mut(),
                     );
                 }
-                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *widget_id) {
+                if let Some((sx, sy)) = Self::get_scroll_offset(scene, *node_id) {
                     engine.canvas_2d().translate(sx, sy);
                 }
                 engine.canvas_2d().pop_clip();
-                if needs_paint(scene, *widget_id, dirty_region) {
+                if needs_paint(scene, *node_id, dirty_region) {
                     let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
-                    Self::paint_widget(*widget_id, &mut ctx, scene, PaintPass::AfterChildren, None);
+                    Self::paint_widget(*node_id, &mut ctx, scene, PaintPass::AfterChildren, None);
                 }
             }
-            LayerNode::Direct {
-                widget_id,
-                children,
-            } => {
+            LayerNode::Direct { node_id, children } => {
                 Self::render_widget_and_children(
                     engine,
-                    *widget_id,
+                    *node_id,
                     children,
                     scene,
                     dirty_region,
@@ -675,21 +662,19 @@ impl LayerTree {
     fn draw_debug_for_widget(
         ctx: &mut PaintContext<'_>,
         scene: &impl ScenePaint,
-        widget_id: NodeId,
+        node_id: NodeId,
         debug_mode: bool,
         hovered_chain: &Option<HashSet<NodeId>>,
         depth: usize,
     ) {
-        if !debug_mode || !scene.node_visible(widget_id) {
+        if !debug_mode || !scene.node_visible(node_id) {
             return;
         }
-        let frame = scene.node_frame(widget_id);
-        let hovered = hovered_chain
-            .as_ref()
-            .is_some_and(|c| c.contains(&widget_id));
+        let frame = scene.node_frame(node_id);
+        let hovered = hovered_chain.as_ref().is_some_and(|c| c.contains(&node_id));
         ctx.draw_debug_border(frame, depth, hovered);
         if hovered {
-            ctx.draw_debug_frame_info(widget_id.slot(), frame);
+            ctx.draw_debug_frame_info(node_id.slot(), frame);
         }
     }
 
@@ -754,9 +739,9 @@ impl LayerTree {
     /// 获取滚动容器的 content 偏移（viewport → content）。
     pub(crate) fn get_scroll_offset(
         scene: &impl ScenePaint,
-        widget_id: NodeId,
+        node_id: NodeId,
     ) -> Option<(f32, f32)> {
-        scene.scroll_offset(widget_id)
+        scene.scroll_offset(node_id)
     }
 }
 
@@ -944,7 +929,7 @@ mod tests {
 
         assert!(matches!(
             tree.root_node(),
-            Some(LayerNode::Picture { widget_id, .. }) if *widget_id == NodeId::new(1)
+            Some(LayerNode::Picture { node_id, .. }) if *node_id == NodeId::new(1)
         ));
     }
 
@@ -953,7 +938,7 @@ mod tests {
         let small_count = TestScene::static_tree(7).build_layer_tree();
         assert!(matches!(
             small_count.root_node(),
-            Some(LayerNode::Direct { widget_id, .. }) if *widget_id == NodeId::new(1)
+            Some(LayerNode::Direct { node_id, .. }) if *node_id == NodeId::new(1)
         ));
 
         let mut small_pixels = TestScene::static_tree(8);
@@ -963,7 +948,7 @@ mod tests {
         let small_pixels = small_pixels.build_layer_tree();
         assert!(matches!(
             small_pixels.root_node(),
-            Some(LayerNode::Direct { widget_id, .. }) if *widget_id == NodeId::new(1)
+            Some(LayerNode::Direct { node_id, .. }) if *node_id == NodeId::new(1)
         ));
     }
 
@@ -986,7 +971,7 @@ mod tests {
 
             assert!(matches!(
                 tree.root_node(),
-                Some(LayerNode::Direct { widget_id, .. }) if *widget_id == NodeId::new(1)
+                Some(LayerNode::Direct { node_id, .. }) if *node_id == NodeId::new(1)
             ));
         }
     }
@@ -999,7 +984,7 @@ mod tests {
 
         assert!(matches!(
             tree.root_node(),
-            Some(LayerNode::ClipRect { widget_id, .. }) if *widget_id == NodeId::new(1)
+            Some(LayerNode::ClipRect { node_id, .. }) if *node_id == NodeId::new(1)
         ));
     }
 }

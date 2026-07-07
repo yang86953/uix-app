@@ -1,4 +1,4 @@
-use crate::component;
+﻿use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
@@ -146,7 +146,7 @@ component! {
         }
     }
 
-    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         if !self.is_present() {
             return None;
         }
@@ -172,8 +172,8 @@ component! {
         )
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], _tree: &WidgetTree)
-        -> Vec<(crate::ui::WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
     {
         if !self.is_present() || children.is_empty() {
             return Vec::new();
