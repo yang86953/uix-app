@@ -113,11 +113,14 @@ impl WidgetTree {
         }
 
         if top.is_modal() || top.traps_focus() || top.dismisses_on_outside() {
+            let restore_focus = self
+                .take_focus_trap_restore(top.id())
+                .filter(|&id| self.get(id).is_some());
             if top.dismisses_on_outside() {
                 self.overlay_stack.remove(top.id());
                 self.invalidate_paint(top.owner());
             }
-            self.set_focus(None);
+            self.set_focus(restore_focus);
             return Some(EventResult::Handled);
         }
 
@@ -333,7 +336,20 @@ impl WidgetTree {
                 // Tab 键焦点导航（在捕获和冒泡之前处理）
                 if *key == KeyCode::Tab {
                     let forward = !mods.contains(KeyMod::SHIFT);
-                    if let Some(next) = self.focus_next(forward) {
+                    if let Some((overlay_id, owner)) = self
+                        .overlay_stack
+                        .top()
+                        .filter(|entry| entry.traps_focus())
+                        .map(|entry| (entry.id(), entry.owner()))
+                    {
+                        if let Some(next) = self.focus_next_in_scope(owner, forward) {
+                            self.remember_focus_before_trap(overlay_id, owner);
+                            self.set_focus(Some(next));
+                            return EventResult::Handled;
+                        } else {
+                            return EventResult::NotHandled;
+                        }
+                    } else if let Some(next) = self.focus_next(forward) {
                         self.set_focus(Some(next));
                         return EventResult::Handled;
                     }

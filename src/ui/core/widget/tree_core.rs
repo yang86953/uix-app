@@ -30,6 +30,7 @@ pub struct WidgetTree {
     managers: WidgetManagers,
     app_state: Option<AppState>,
     timer_routes: BTreeMap<u64, (WidgetId, u32)>,
+    focus_trap_restore: Vec<(crate::ui::OverlayId, Option<WidgetId>)>,
 }
 
 impl Default for WidgetTree {
@@ -51,6 +52,7 @@ impl Default for WidgetTree {
             managers: WidgetManagers::new(),
             app_state: None,
             timer_routes: BTreeMap::new(),
+            focus_trap_restore: Vec::new(),
         }
     }
 }
@@ -208,6 +210,7 @@ impl WidgetTree {
         self.managers.focus.clear_tree_focus();
         self.managers.interaction.clear_tree_interaction();
         self.managers.drag.clear_tree_drag();
+        self.focus_trap_restore.clear();
     }
 
     fn collect_lifecycle_subtree(&self, id: WidgetId, out: &mut Vec<WidgetId>) {
@@ -689,12 +692,33 @@ impl WidgetTree {
         result
     }
 
-    pub fn focus_next(&self, forward: bool) -> Option<WidgetId> {
-        let focusable = self.collect_focusable();
+    pub(crate) fn is_descendant_of(&self, id: WidgetId, ancestor: WidgetId) -> bool {
+        let mut current = Some(id);
+        while let Some(current_id) = current {
+            if current_id == ancestor {
+                return true;
+            }
+            current = self.get(current_id).and_then(|node| node.parent());
+        }
+        false
+    }
+
+    pub(crate) fn collect_focusable_within(&self, root: WidgetId) -> Vec<WidgetId> {
+        self.collect_focusable()
+            .into_iter()
+            .filter(|&id| self.is_descendant_of(id, root))
+            .collect()
+    }
+
+    fn next_focus_from_order(
+        &self,
+        focusable: &[WidgetId],
+        current: Option<WidgetId>,
+        forward: bool,
+    ) -> Option<WidgetId> {
         if focusable.is_empty() {
             return None;
         }
-        let current = self.managers.focus.focused_component();
         if let Some(cur_id) = current {
             let pos = focusable.iter().position(|&id| id == cur_id);
             match pos {
@@ -710,6 +734,44 @@ impl WidgetTree {
         } else {
             Some(focusable[0])
         }
+    }
+
+    pub fn focus_next(&self, forward: bool) -> Option<WidgetId> {
+        let focusable = self.collect_focusable();
+        self.next_focus_from_order(&focusable, self.managers.focus.focused_component(), forward)
+    }
+
+    pub(crate) fn focus_next_in_scope(&self, root: WidgetId, forward: bool) -> Option<WidgetId> {
+        let focusable = self.collect_focusable_within(root);
+        self.next_focus_from_order(&focusable, self.managers.focus.focused_component(), forward)
+    }
+
+    pub(crate) fn remember_focus_before_trap(
+        &mut self,
+        overlay_id: crate::ui::OverlayId,
+        owner: WidgetId,
+    ) {
+        if self
+            .focus_trap_restore
+            .iter()
+            .any(|&(id, _)| id == overlay_id)
+        {
+            return;
+        }
+        let current = self.managers.focus.focused_component();
+        let restore = current.filter(|&id| !self.is_descendant_of(id, owner));
+        self.focus_trap_restore.push((overlay_id, restore));
+    }
+
+    pub(crate) fn take_focus_trap_restore(
+        &mut self,
+        overlay_id: crate::ui::OverlayId,
+    ) -> Option<WidgetId> {
+        let index = self
+            .focus_trap_restore
+            .iter()
+            .position(|&(id, _)| id == overlay_id)?;
+        self.focus_trap_restore.remove(index).1
     }
 
     fn register_focusable(&mut self, id: WidgetId) {
