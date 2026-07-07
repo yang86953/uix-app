@@ -1391,6 +1391,108 @@ fn theme_changed_opt_in_updates_tokens_from_display_without_polling() {
 }
 
 #[test]
+fn theme_changed_opt_in_notifies_runtime_task_with_display_mode() {
+    let mut platform = FakePlatform::new();
+    platform.display.set_dark_mode(true);
+    platform.event_source.inject(UiEvent::theme_changed(false));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let tokens = Arc::new(DynTokens::new(DesignTokens::antd_light()));
+    let provider: Arc<dyn TokenProvider> = tokens.clone();
+    let theme = RefCell::new(Theme::from_arc(provider));
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let observed = Cell::new(None);
+
+    let status = run_window_session_loop_with_system_theme_and_tasks(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        Some(tokens.as_ref()),
+        &debug_mode,
+        &cursor_pos,
+        None,
+        |_| Some(SystemEvent::ThemeChanged { is_dark: false }),
+        |_| false,
+        |_| {},
+        |event, _| {
+            if let UiEventPayload::ThemeChanged(data) = &event.payload {
+                observed.set(Some(data.is_dark));
+            }
+        },
+        || None,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(observed.get(), Some(true));
+    assert!(tokens.is_dark());
+}
+
+#[test]
+fn theme_changed_without_system_theme_does_not_notify_runtime_task() {
+    let mut platform = FakePlatform::new();
+    platform.display.set_dark_mode(true);
+    platform.event_source.inject(UiEvent::theme_changed(true));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let tokens = Arc::new(DynTokens::new(DesignTokens::antd_light()));
+    let provider: Arc<dyn TokenProvider> = tokens.clone();
+    let theme = RefCell::new(Theme::from_arc(provider));
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let observed = Cell::new(false);
+
+    let status = run_window_session_loop_with_system_theme_and_tasks(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        None,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        |_| Some(SystemEvent::ThemeChanged { is_dark: true }),
+        |_| false,
+        |_| {},
+        |event, _| {
+            if matches!(event.payload, UiEventPayload::ThemeChanged(_)) {
+                observed.set(true);
+            }
+        },
+        || None,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert!(!observed.get());
+    assert!(!tokens.is_dark());
+}
+
+#[test]
 fn app_timer_due_work_runs_callback_without_fixed_polling() {
     let mut platform = FakePlatform::new();
     platform.event_source.state.exit_after_blocking_calls = Some(1);

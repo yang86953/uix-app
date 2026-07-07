@@ -747,11 +747,20 @@ impl App {
                 );
             },
             |event, platform| {
-                dispatch_secondary_window_event(
-                    &mut secondary_windows.borrow_mut(),
-                    platform,
-                    event,
-                );
+                if let UiEventType::ThemeChanged = event.type_ {
+                    if let UiEventPayload::ThemeChanged(ref data) = event.payload {
+                        dispatch_secondary_system_theme_changed(
+                            &mut secondary_windows.borrow_mut(),
+                            data.is_dark,
+                        );
+                    }
+                } else {
+                    dispatch_secondary_window_event(
+                        &mut secondary_windows.borrow_mut(),
+                        platform,
+                        event,
+                    );
+                }
             },
             || secondary_windows_next_deadline(&mut secondary_windows.borrow_mut()),
             |_, _, _| {},
@@ -855,6 +864,22 @@ fn dispatch_secondary_window_event(
         secondary_windows.remove(index);
         true
     }
+}
+
+fn dispatch_secondary_system_theme_changed(
+    secondary_windows: &mut [SecondaryWindowSession],
+    is_dark: bool,
+) -> bool {
+    let mut dispatched = false;
+    for window in secondary_windows {
+        window
+            .session
+            .parts_mut()
+            .tree
+            .dispatch_event(&SystemEvent::ThemeChanged { is_dark });
+        dispatched = true;
+    }
+    dispatched
 }
 
 fn create_secondary_window(
