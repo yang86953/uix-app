@@ -377,6 +377,16 @@ impl ScrollView {
         }
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.direction = next.direction;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
+        self.flex_grow_val = next.flex_grow_val;
+        self.flex_shrink_val = next.flex_shrink_val;
+        self.scrollbar_v.show = next.scrollbar_v.show;
+        self.scrollbar_h.show = next.scrollbar_h.show;
+    }
+
     pub fn scroll_x(&self) -> f32 {
         self.scroll_x
     }

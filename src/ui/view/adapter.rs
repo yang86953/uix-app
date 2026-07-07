@@ -17,6 +17,7 @@
 //!   dependencies and binds them to narrow Paint invalidation.
 //! - As a fallback, `bind_orphan_pending_states` binds unassociated state to
 //!   the root node.
+use crate::ui::component_patch::patch_builtin_widget;
 use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
@@ -24,9 +25,8 @@ use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
 use crate::ui::view::{View, ViewNode};
-use crate::ui::widgets::{Button, Container, Grid, Input, Label};
+use crate::ui::widgets::{Button, Container, Grid, Label};
 use crate::ui::{ComponentId, WidgetTree};
-use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 
 /// View tree adapter.
@@ -302,74 +302,17 @@ impl ViewAdapter {
             return false;
         };
 
-        let next_type = widget.as_any().type_id();
         let next_fields = widget.snapshot_fields();
         let config_changed = current.component().snapshot_fields() != next_fields
             || next_fields == SnapshotFields::Unknown;
-        if current.component().as_any().type_id() != next_type {
-            current.replace_component(widget);
-            return true;
-        }
-
-        if next_type == TypeId::of::<Container>() {
-            if let Some(next) = widget.as_any().downcast_ref::<Container>() {
-                if let Some(existing) = current
-                    .component_mut()
-                    .as_any_mut()
-                    .downcast_mut::<Container>()
-                {
-                    existing.style = next.style.clone();
-                    return config_changed;
-                }
+        match patch_builtin_widget(current.component_mut(), widget) {
+            Ok(true) => config_changed,
+            Err(widget) => {
+                current.replace_component(widget);
+                config_changed
             }
-            current.replace_component(widget);
-            return true;
+            Ok(false) => false,
         }
-
-        if next_type == TypeId::of::<Label>() {
-            let Ok(next) = widget.into_any().downcast::<Label>() else {
-                return false;
-            };
-            if let Some(existing) = current.component_mut().as_any_mut().downcast_mut::<Label>() {
-                existing.sync_from(*next);
-            }
-            return config_changed;
-        }
-
-        if next_type == TypeId::of::<Button>() {
-            let Ok(next) = widget.into_any().downcast::<Button>() else {
-                return false;
-            };
-            if let Some(existing) = current
-                .component_mut()
-                .as_any_mut()
-                .downcast_mut::<Button>()
-            {
-                existing.sync_from(*next);
-            }
-            return config_changed;
-        }
-
-        if next_type == TypeId::of::<Input>() {
-            let Ok(next) = widget.into_any().downcast::<Input>() else {
-                return false;
-            };
-            if let Some(existing) = current.component_mut().as_any_mut().downcast_mut::<Input>() {
-                existing.sync_from(*next);
-            }
-            return config_changed;
-        }
-
-        if next_type == TypeId::of::<Grid>() {
-            let Ok(next) = widget.into_any().downcast::<Grid>() else {
-                return false;
-            };
-            current.replace_component(next);
-            return config_changed;
-        }
-
-        current.replace_component(widget);
-        config_changed
     }
 
     fn reconcile_children(

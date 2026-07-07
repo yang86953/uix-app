@@ -122,6 +122,7 @@ trait Platform {
 fn poll_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool;
 fn wait_event(...);
 fn wait_timeout(timeout, ...);
+fn waker(&self) -> Option<Arc<dyn IEventLoopWaker>>;
 ```
 
 Callback 返回 `false` → 请求退出循环。Backend 实现 `OsEventSource`；blanket impl 提供 `IEventLoop`。

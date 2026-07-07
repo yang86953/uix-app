@@ -206,6 +206,17 @@ impl Space {
             flex_grow: self.flex_grow_val,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.direction = next.direction;
+        self.space_size = next.space_size;
+        self.wrap = next.wrap;
+        self.justify = next.justify;
+        self.align = next.align;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
+        self.flex_grow_val = next.flex_grow_val;
+    }
 }
 
 impl Default for Space {

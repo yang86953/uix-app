@@ -3,6 +3,7 @@
 pub mod animation;
 pub mod app_state;
 pub mod component_handle;
+pub(crate) mod component_patch;
 pub mod component_snapshot;
 pub mod core;
 pub mod event;

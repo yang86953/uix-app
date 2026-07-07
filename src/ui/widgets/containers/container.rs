@@ -195,6 +195,10 @@ impl Container {
     // ═══════════════════════════════════════════════════
 
     /// 批量设置 Style（替换所有现有值）。
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.style = next.style;
+    }
+
     pub fn style(mut self, s: Style) -> Self {
         self.style = s;
         self

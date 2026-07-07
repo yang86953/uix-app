@@ -2,7 +2,8 @@ use super::*;
 use crate::draw::Color;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::ViewNode;
-use crate::ui::widgets::Container;
+use crate::ui::widgets::{Button, Container};
+use crate::ui::{EventResult, SnapshotFields, SystemEvent};
 
 #[test]
 fn test_build_with_children() {
@@ -292,6 +293,142 @@ fn reconcile_reregisters_root_handlers() {
         .downcast_ref::<Button>()
         .unwrap();
     assert_eq!(button.text(), "New");
+}
+
+#[test]
+fn reconcile_same_type_select_preserves_open_state() {
+    use crate::ui::widgets::Select;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Select::new().options(vec!["A", "B"]).placeholder("old"),
+    ));
+    let root_id = tree.root_id().expect("select root should exist");
+    tree.get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Select>()
+        .unwrap()
+        .open();
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Select::new()
+                .options(vec!["A", "B", "C"])
+                .placeholder("new"),
+        ),
+    );
+
+    let select = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Select>()
+        .unwrap();
+    assert!(select.is_open());
+    assert!(matches!(
+        select.snapshot_fields(),
+        SnapshotFields::Select {
+            placeholder,
+            options,
+            ..
+        } if placeholder == "new" && options == vec!["A", "B", "C"]
+    ));
+}
+
+#[test]
+fn reconcile_same_type_tooltip_preserves_pending_timer_state() {
+    use crate::ui::widgets::{Tooltip, TooltipPlacement};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Tooltip::new("old").delay_ms(120).timer_id(7),
+    ));
+    let root_id = tree.root_id().expect("tooltip root should exist");
+    assert_eq!(
+        crate::ui::EventHandler::on_event(
+            tree.get_mut(root_id)
+                .unwrap()
+                .component_mut()
+                .as_any_mut()
+                .downcast_mut::<Tooltip>()
+                .unwrap(),
+            &SystemEvent::PointerEnter,
+        ),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.get(root_id).unwrap().active_timer(),
+        Some((7, std::time::Duration::from_millis(120)))
+    );
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Tooltip::new("new")
+                .placement(TooltipPlacement::Bottom)
+                .delay_ms(250)
+                .timer_id(9),
+        ),
+    );
+
+    assert_eq!(
+        tree.get(root_id).unwrap().active_timer(),
+        Some((9, std::time::Duration::from_millis(250)))
+    );
+    assert!(matches!(
+        tree.get(root_id).unwrap().component().snapshot_fields(),
+        SnapshotFields::Tooltip {
+            text,
+            placement: TooltipPlacement::Bottom,
+            delay_ms: 250,
+            timer_id: 9,
+            ..
+        } if text == "new"
+    ));
+}
+
+#[test]
+fn reconcile_same_type_scroll_view_preserves_offset() {
+    use crate::native::traits::input::ScrollDirection;
+    use crate::ui::widgets::ScrollView;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        ScrollView::new(ScrollDirection::Vertical)
+            .size(300.0, 200.0)
+            .scroll_to(0.0, 40.0)
+            .show_scrollbar(true),
+    ));
+    let root_id = tree.root_id().expect("scroll root should exist");
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            ScrollView::new(ScrollDirection::Both)
+                .size(320.0, 240.0)
+                .show_scrollbar(false),
+        ),
+    );
+
+    let scroll = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .unwrap();
+    assert_eq!(scroll.scroll_y(), 40.0);
+    assert!(matches!(
+        scroll.snapshot_fields(),
+        SnapshotFields::ScrollView {
+            direction: ScrollDirection::Both,
+            fixed_width: Some(320.0),
+            fixed_height: Some(240.0),
+            show_scrollbar: false,
+            ..
+        }
+    ));
 }
 
 #[test]
