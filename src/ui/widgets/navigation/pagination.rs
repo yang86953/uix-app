@@ -6,6 +6,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -219,6 +220,17 @@ impl Pagination {
         }
         pages.push(total_pages);
         pages
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Pagination {
+            total: self.total,
+            page_size: self.page_size,
+            show_size_changer: self.show_size_changer,
+            show_total: self.show_total,
+            size: self.size,
+            page_size_options: self.page_size_options.clone(),
+        }
     }
 }
 

@@ -4,11 +4,12 @@
 
 use std::cell::Cell;
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::ui::children::WidgetChildren;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 
 define_widget! {
@@ -31,8 +32,12 @@ define_widget! {
         last_frame: Cell<Option<Rect>>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(300.0, 200.0)
+        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { 1.0 }
@@ -163,6 +168,19 @@ impl Splitter {
             self.min_sizes[index] = size;
         }
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(300.0, 200.0)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Splitter {
+            vertical: self.vertical,
+            panel_count: self.ratios.len(),
+            min_sizes: self.min_sizes.clone(),
+            handle_size: self.handle_size,
+        }
     }
 
     fn hit_test_handle(&self, frame: Rect, pos: Point) -> Option<usize> {

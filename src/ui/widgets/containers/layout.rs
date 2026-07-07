@@ -6,6 +6,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 define_widget! {
@@ -156,6 +157,12 @@ impl Layout {
     fn intrinsic_size(&self) -> Size {
         Size::new(300.0, 200.0)
     }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Layout {
+            bg_color: self.bg_color,
+        }
+    }
 }
 
 impl Header {
@@ -172,6 +179,13 @@ impl Header {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(0.0, self.height)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Header {
+            height: self.height,
+            bg_color: self.bg_color,
+        }
     }
 }
 
@@ -209,6 +223,16 @@ impl Sider {
             Size::new(self.width, 0.0)
         }
     }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Sider {
+            width: self.width,
+            bg_color: self.bg_color,
+            collapsible: self.collapsible,
+            collapsed: self.collapsed,
+            collapsed_width: self.collapsed_width,
+        }
+    }
 }
 
 impl Default for Content {
@@ -229,6 +253,12 @@ impl Content {
     fn intrinsic_size(&self) -> Size {
         Size::new(0.0, 0.0)
     }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Content {
+            bg_color: self.bg_color,
+        }
+    }
 }
 
 impl Footer {
@@ -245,6 +275,13 @@ impl Footer {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(0.0, self.height)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Footer {
+            height: self.height,
+            bg_color: self.bg_color,
+        }
     }
 }
 
