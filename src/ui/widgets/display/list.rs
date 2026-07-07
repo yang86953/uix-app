@@ -2,12 +2,12 @@
 //!
 //! 支持列表项渲染、header/footer、bordered、size 等选项。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
-use crate::ui::WidgetTree;
+use crate::ui::{SnapshotFields, WidgetTree};
 
 /// List 尺寸对应的行高。
 pub fn list_item_height(size: ControlSize) -> f32 {
@@ -29,12 +29,12 @@ define_widget! {
         load_more_text: String,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        let h = self.items.len() as f32 * list_item_height(self.list_size)
-            + if self.header.is_empty() { 0.0 } else { 40.0 }
-            + if self.footer.is_empty() { 0.0 } else { 40.0 }
-            + if self.load_more_text.is_empty() { 0.0 } else { 40.0 };
-        Size::new(400.0, h.max(100.0))
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -96,6 +96,18 @@ define_widget! {
 }
 
 impl List {
+    fn intrinsic_size(&self) -> Size {
+        let h = self.items.len() as f32 * list_item_height(self.list_size)
+            + if self.header.is_empty() { 0.0 } else { 40.0 }
+            + if self.footer.is_empty() { 0.0 } else { 40.0 }
+            + if self.load_more_text.is_empty() {
+                0.0
+            } else {
+                40.0
+            };
+        Size::new(400.0, h.max(100.0))
+    }
+
     pub fn new() -> Self {
         Self {
             header: String::new(),
@@ -129,6 +141,17 @@ impl List {
     pub fn load_more(mut self, text: impl Into<String>) -> Self {
         self.load_more_text = text.into();
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::List {
+            header: self.header.clone(),
+            footer: self.footer.clone(),
+            bordered: self.bordered,
+            list_size: self.list_size,
+            items: self.items.clone(),
+            load_more_text: self.load_more_text.clone(),
+        }
     }
 }
 

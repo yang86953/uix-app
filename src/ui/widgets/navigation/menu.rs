@@ -6,6 +6,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::{Cell, RefCell};
 
@@ -17,7 +18,7 @@ pub enum MenuMode {
 }
 
 /// Single menu item.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MenuItem {
     pub key: String,
     pub label: String,
@@ -318,6 +319,14 @@ impl Menu {
     pub fn item_height(mut self, h: f32) -> Self {
         self.item_h = h;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Menu {
+            items: self.items.clone(),
+            mode: self.mode,
+            item_h: self.item_h,
+        }
     }
 }
 

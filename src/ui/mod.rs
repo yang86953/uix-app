@@ -25,7 +25,8 @@ pub use children::WidgetChildren;
 pub use clipboard::copy_to_clipboard;
 pub use component_handle::ComponentHandle;
 pub use component_snapshot::{
-    ComponentConfigSnapshot, SnapshotField, SnapshotFields, SnapshotSource, SnapshotValue,
+    ComponentConfigSnapshot, SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource,
+    SnapshotTreeNode, SnapshotValue,
 };
 pub use core::widget;
 pub use core::widget::{

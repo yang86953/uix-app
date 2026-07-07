@@ -1,11 +1,14 @@
 //! Collapse widget — 折叠面板。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{
+    EventResult, SemanticEvent, SnapshotCollapsePanel, SnapshotFields, SystemEvent, WidgetId,
+    WidgetTree,
+};
 use std::cell::Cell;
 
 /// 单个折叠面板。
@@ -40,17 +43,12 @@ define_widget! {
         transition_dirty: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        let mut h = 0.0f32;
-        for (idx, p) in self.panels.iter().enumerate() {
-            h += 36.0; // header 高度（14px 字体 + padding）
-            if self.panel_present(idx, p) {
-                // 内容高度 = 行数 × 行高（12px × 1.5）+ 上下 padding（8+8）
-                // 与 render 中 draw_text(12.0) 保持一致，不再使用虚构字符宽度估算。
-                h += Self::content_height(&p.content);
-            }
-        }
-        Size::new(0.0, h)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -174,6 +172,17 @@ impl Default for Collapse {
 }
 
 impl Collapse {
+    fn intrinsic_size(&self) -> Size {
+        let mut h = 0.0f32;
+        for (idx, p) in self.panels.iter().enumerate() {
+            h += 36.0;
+            if self.panel_present(idx, p) {
+                h += Self::content_height(&p.content);
+            }
+        }
+        Size::new(0.0, h)
+    }
+
     pub fn new() -> Self {
         Self {
             panels: Vec::new(),
@@ -255,6 +264,20 @@ impl Collapse {
             .get(idx)
             .map(|transition| transition.opacity_progress.clamp(0.0, 1.0))
             .unwrap_or(if panel.expanded { 1.0 } else { 0.0 })
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Collapse {
+            panels: self
+                .panels
+                .iter()
+                .map(|panel| SnapshotCollapsePanel {
+                    header: panel.header.clone(),
+                    content: panel.content.clone(),
+                })
+                .collect(),
+            accordion: self.accordion,
+        }
     }
 }
 

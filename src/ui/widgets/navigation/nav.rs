@@ -13,6 +13,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。
@@ -205,6 +206,17 @@ impl NavItem {
     pub fn compact(mut self, val: bool) -> Self {
         self.compact = val;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::NavItem {
+            label: self.label.clone(),
+            icon: self.icon.clone(),
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
+            index: self.index,
+            compact: self.compact,
+        }
     }
 }
 

@@ -1,9 +1,9 @@
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SnapshotFields, SnapshotTreeNode, SystemEvent, WidgetTree};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TreeNode {
     pub title: String,
     pub key: String,
@@ -38,9 +38,12 @@ define_widget! {
         multiple: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        let h = self.flat.len() as f32 * 28.0;
-        Size::new(200.0, h.max(28.0))
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -154,6 +157,11 @@ define_widget! {
 }
 
 impl Tree {
+    fn intrinsic_size(&self) -> Size {
+        let h = self.flat.len() as f32 * 28.0;
+        Size::new(200.0, h.max(28.0))
+    }
+
     pub fn new(nodes: Vec<TreeNode>) -> Self {
         let mut tree = Self {
             nodes,
@@ -233,6 +241,17 @@ impl Tree {
             for child in &node.children {
                 self.flatten_node(child, depth + 1);
             }
+        }
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Tree {
+            nodes: self
+                .nodes
+                .iter()
+                .map(SnapshotTreeNode::from_tree_node)
+                .collect(),
+            multiple: self.multiple,
         }
     }
 }

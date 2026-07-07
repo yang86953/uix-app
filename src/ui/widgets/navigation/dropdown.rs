@@ -5,6 +5,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {
@@ -171,6 +172,13 @@ impl Dropdown {
         self.closing = true;
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Dropdown {
+            label: self.label.clone(),
+            items: self.items.clone(),
+        }
     }
 }
 

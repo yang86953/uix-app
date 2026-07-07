@@ -7,6 +7,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -20,7 +21,7 @@ pub enum StepStatus {
 }
 
 /// 单个步骤定义。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Step {
     pub title: String,
     pub description: String,
@@ -168,6 +169,13 @@ impl Steps {
     }
     pub fn step_count(&self) -> usize {
         self.steps.len()
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Steps {
+            steps: self.steps.clone(),
+            direction: self.direction,
+        }
     }
 }
 

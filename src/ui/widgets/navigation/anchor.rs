@@ -6,6 +6,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -98,7 +99,7 @@ define_widget! {
 }
 
 /// 锚点项
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnchorItem {
     /// 显示文本
     pub label: String,
@@ -175,6 +176,14 @@ impl Anchor {
     }
     pub fn items(&self) -> &[AnchorItem] {
         &self.items
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Anchor {
+            items: self.items.clone(),
+            offset_top: self.offset_top,
+            bg_color: self.bg_color,
+        }
     }
 }
 
