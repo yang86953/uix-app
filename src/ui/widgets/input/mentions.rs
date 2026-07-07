@@ -2,7 +2,7 @@
 //!
 //! 基于 Input 交互模式，增加触发字符检测和建议弹出。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
@@ -33,8 +33,12 @@ define_widget! {
         focused: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(80.0, 32.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -164,6 +168,10 @@ define_widget! {
 }
 
 impl Mentions {
+    fn intrinsic_size(&self) -> Size {
+        Size::new(80.0, 32.0)
+    }
+
     pub fn new(placeholder: impl Into<String>) -> Self {
         Self {
             value: String::new(),
@@ -214,5 +222,18 @@ impl Mentions {
             }
             self.suggesting = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_mentions_size() {
+        let measured = Mentions::new("Mention").measure(Constraints::loose(Size::new(60.0, 20.0)));
+
+        assert_eq!(measured, Size::new(60.0, 20.0));
     }
 }

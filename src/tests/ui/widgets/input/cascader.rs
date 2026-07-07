@@ -1,4 +1,6 @@
+use crate::core::{Constraints, Size};
 use crate::ui::traits::WidgetAnimation;
+use crate::ui::traits::WidgetLayout;
 use crate::ui::widgets::input::{Cascader, CascaderOption};
 
 #[test]
@@ -29,4 +31,12 @@ fn cascader_exit_animation_stays_present_until_finished() {
     assert!(!WidgetAnimation::update_animation(&mut cascader, 1.0));
     assert!(!cascader.is_open());
     assert!(!cascader.is_present());
+}
+
+#[test]
+fn measure_clamps_cascader_size() {
+    let measured = Cascader::new(vec![CascaderOption::new("Alpha", "alpha")], "Pick")
+        .measure(Constraints::loose(Size::new(90.0, 20.0)));
+
+    assert_eq!(measured, Size::new(90.0, 20.0));
 }

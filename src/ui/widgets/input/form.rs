@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
@@ -88,12 +88,12 @@ define_widget! {
         layout: FormLayout,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        match self.layout {
-            FormLayout::Vertical => Size::new(400.0, 56.0),
-            FormLayout::Inline => Size::new(200.0, 44.0),
-            FormLayout::Horizontal => Size::new(400.0, 44.0),
-        }
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -188,6 +188,14 @@ define_widget! {
 }
 
 impl FormItem {
+    fn intrinsic_size(&self) -> Size {
+        match self.layout {
+            FormLayout::Vertical => Size::new(400.0, 56.0),
+            FormLayout::Inline => Size::new(200.0, 44.0),
+            FormLayout::Horizontal => Size::new(400.0, 44.0),
+        }
+    }
+
     pub fn new(label: &str) -> Self {
         Self {
             label: label.to_string(),
@@ -285,8 +293,12 @@ define_widget! {
         fields: HashMap<String, FieldDef>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(400.0, 200.0)
+        self.intrinsic_size()
     }
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
@@ -332,6 +344,10 @@ impl Default for Form {
 }
 
 impl Form {
+    fn intrinsic_size(&self) -> Size {
+        Size::new(400.0, 200.0)
+    }
+
     pub fn new() -> Self {
         Self {
             label_width: 80.0,
@@ -476,4 +492,24 @@ fn simple_pattern_match(value: &str, pattern: &str) -> bool {
     }
 
     pi >= p_chars.len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_form_item_size() {
+        let measured = FormItem::new("Name").measure(Constraints::loose(Size::new(120.0, 20.0)));
+
+        assert_eq!(measured, Size::new(120.0, 20.0));
+    }
+
+    #[test]
+    fn measure_clamps_form_size() {
+        let measured = Form::new().measure(Constraints::loose(Size::new(160.0, 80.0)));
+
+        assert_eq!(measured, Size::new(160.0, 80.0));
+    }
 }

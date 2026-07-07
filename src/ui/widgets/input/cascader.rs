@@ -1,6 +1,6 @@
 //! Cascader widget - linked multi-level popup selection.
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
@@ -58,8 +58,12 @@ define_widget! {
 
     tab_index => (&self) -> i32 { 1 }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(120.0, 32.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -237,6 +241,10 @@ define_widget! {
 }
 
 impl Cascader {
+    fn intrinsic_size(&self) -> Size {
+        Size::new(120.0, 32.0)
+    }
+
     pub fn new(options: Vec<CascaderOption>, placeholder: impl Into<String>) -> Self {
         Self {
             options: options.clone(),

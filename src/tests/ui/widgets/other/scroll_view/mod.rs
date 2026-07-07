@@ -51,6 +51,15 @@ fn scrollview_scroll_to() {
 }
 
 #[test]
+fn measure_clamps_scrollview_size() {
+    let measured = ScrollView::new(ScrollDirection::Vertical)
+        .size(300.0, 200.0)
+        .measure(Constraints::loose(Size::new(120.0, 90.0)));
+
+    assert_eq!(measured, Size::new(120.0, 90.0));
+}
+
+#[test]
 fn scrollview_scroll_to_clamped() {
     let sv = ScrollView::new(ScrollDirection::Vertical).scroll_to(-10.0, -50.0);
     assert_eq!(sv.scroll_x, 0.0);
