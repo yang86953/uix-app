@@ -3,7 +3,6 @@ pub use crate::core::Point;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::spatial::{Ray3D, SpatialContext};
-use crate::draw::traits::GraphicsEngine;
 pub use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::event::{HandlerRegistration, HandlerSignature};
 pub use crate::ui::event::{SystemEvent, SystemEventKind};
@@ -228,15 +227,6 @@ impl BoxedWidget {
             .unwrap_or_default()
     }
 
-    pub fn preferred_size(&self, engine: Option<&dyn GraphicsEngine>) -> Size {
-        if engine.is_none() {
-            return self.measure(Constraints::unconstrained());
-        }
-        self.component()
-            .as_layout()
-            .map(|l| l.preferred_size(engine))
-            .unwrap_or_default()
-    }
     pub fn flex_grow(&self) -> f32 {
         self.component()
             .as_layout()

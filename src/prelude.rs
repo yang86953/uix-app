@@ -38,8 +38,7 @@ pub use crate::ui::{
     SemanticPayload, SystemEvent, SystemEventKind, WidgetCore, WidgetNode, WidgetTree,
 };
 pub use crate::ui::{
-    DragManager, FocusManager, InteractionManager, StateManager, StyleManager, TextManager,
-    WidgetManagers,
+    DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
 };
 
 // ui / components

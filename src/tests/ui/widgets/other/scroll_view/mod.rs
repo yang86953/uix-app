@@ -1,5 +1,5 @@
 ﻿use super::*;
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::layout::{AlignItems, FlexDirection};
 use crate::ui::traits::{EventHandler, WidgetCapabilities, WidgetLayout, WidgetRender};
@@ -34,8 +34,8 @@ impl WidgetComponent for FixedWidget {
 }
 
 impl WidgetLayout for FixedWidget {
-    fn preferred_size(&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.size
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.size)
     }
 }
 
@@ -422,8 +422,8 @@ fn scrollview_expand_child_updates_content_bounds() {
     }
 
     impl WidgetLayout for GrowWidget {
-        fn preferred_size(&self, _: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-            Size::new(300.0, self.size.get())
+        fn measure(&self, constraints: Constraints) -> Size {
+            constraints.clamp(Size::new(300.0, self.size.get()))
         }
     }
 

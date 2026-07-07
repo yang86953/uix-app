@@ -24,6 +24,7 @@ pub use text_manager::*;
 #[derive(Default)]
 pub struct WidgetManagers {
     pub state: StateManager,
+    /// Legacy style preset manager. Prefer `ui::style::Style` on components.
     pub style: StyleManager,
     pub text: TextManager,
     pub interaction: InteractionManager,
@@ -51,7 +52,7 @@ impl WidgetManagers {
         self.overrides.entry(component_id).or_default().state = Some(mgr);
     }
 
-    /// Override the style manager for a specific component.
+    /// Override the legacy style manager for a specific component.
     pub fn override_style(&mut self, component_id: ComponentId, mgr: StyleManager) {
         self.overrides.entry(component_id).or_default().style = Some(mgr);
     }
@@ -79,7 +80,7 @@ impl WidgetManagers {
             .unwrap_or(&self.state)
     }
 
-    /// Get the effective style manager for a component (override or default).
+    /// Get the effective legacy style manager for a component (override or default).
     pub fn style_for(&self, component_id: ComponentId) -> &StyleManager {
         self.overrides
             .get(&component_id)

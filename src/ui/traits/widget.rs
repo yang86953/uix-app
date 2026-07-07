@@ -24,7 +24,6 @@ use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
-use crate::draw::traits::GraphicsEngine;
 use crate::ui::event::SemanticEvent;
 use crate::ui::overlay::OverlayEntry;
 use crate::ui::widget::{EventResult, SystemEvent, WidgetNode, WidgetTree};
@@ -121,10 +120,7 @@ pub trait WidgetComponent: 'static {
 /// 布局行为：尺寸、弹性、子节点排列。
 pub trait WidgetLayout: WidgetComponent {
     fn measure(&self, constraints: Constraints) -> Size {
-        constraints.clamp(self.preferred_size(None))
-    }
-    fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::zero()
+        constraints.clamp(Size::zero())
     }
     fn flex_grow(&self) -> f32 {
         0.0
