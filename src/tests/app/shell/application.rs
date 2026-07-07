@@ -9,7 +9,7 @@ use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::{
-    ClipboardData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
+    ClipboardData, FileDropData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
 };
 use crate::ui::theme::Theme;
 use crate::ui::view::combinators::label;
@@ -786,6 +786,24 @@ fn map_locale_changed_event() {
     assert!(matches!(
         map_ui_event(&event),
         Some(SystemEvent::LocaleChanged { locale }) if locale == "zh-CN"
+    ));
+}
+
+#[test]
+fn map_file_drop_event() {
+    let event = UiEvent::new(
+        UiEventType::FileDrop,
+        UiEventPayload::FileDrop(FileDropData {
+            files: vec!["a.txt".to_string(), "nested/b.png".to_string()],
+            position: Point::new(12.0, 34.0),
+        }),
+    );
+
+    assert!(matches!(
+        map_ui_event(&event),
+        Some(SystemEvent::FileDrop { files, position })
+            if files == vec!["a.txt".to_string(), "nested/b.png".to_string()]
+                && position == Point::new(12.0, 34.0)
     ));
 }
 

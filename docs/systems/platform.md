@@ -64,6 +64,18 @@ trait Platform {
 
 `Window`（app 层）是轻量包装；多窗 native 能力具备，app 编排见 [application · 多窗](application.md#appstate--多窗--settings)。
 
+### 窗口可选能力
+
+`WindowOps` 将平台可选窗口能力表达为 `Result<()>`：支持的后端返回 `Ok(())`，协议或 OS 不支持的能力返回 `Err(Errc::NotImplemented)`。`PlatformWindowCore` 保持公开 `PlatformWindow` / `IWindowProperties` 的无返回值兼容 API，但必须记录错误，并且只有底层能力返回 `Ok(())` 后才更新共享 `WindowState`，避免 Wayland 等平台把未支持操作误记为成功状态。
+
+当前能力边界：
+
+| 能力 | Windows | Linux Wayland |
+|------|---------|---------------|
+| position / resizable / borderless / always_on_top / opacity / file_drop | 原生或窗口管理 API 支持则 `Ok(())` | 协议不支持或由 compositor 控制，返回 `Err(NotImplemented)` |
+| maximize / minimize / restore / fullscreen | `Ok(())` | xdg_toplevel 支持，返回 `Ok(())` |
+| text_input | 由平台 IME/text-input 通道管理，返回 `Ok(())` | 由 Wayland text-input manager 管理，返回 `Ok(())` |
+
 ### 呈现（#59、#70）
 
 | 路径 | 接口 | damage |

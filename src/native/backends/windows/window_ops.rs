@@ -7,6 +7,7 @@
 
 #![cfg(windows)]
 
+use crate::core::error::Result;
 use crate::native::shared::WindowOps;
 
 /// Windows 平台窗口操作句柄。
@@ -60,7 +61,7 @@ impl WindowOps for WindowsWindowOps {
         }
     }
 
-    fn os_center_on_screen(&mut self) {
+    fn os_center_on_screen(&mut self) -> Result<()> {
         unsafe {
             let sw = GetSystemMetrics(SM_CXSCREEN);
             let sh = GetSystemMetrics(SM_CYSCREEN);
@@ -86,9 +87,10 @@ impl WindowOps for WindowsWindowOps {
                 );
             }
         }
+        Ok(())
     }
 
-    fn os_raise(&mut self) {
+    fn os_raise(&mut self) -> Result<()> {
         unsafe {
             SetWindowPos(
                 self.hwnd,
@@ -100,9 +102,10 @@ impl WindowOps for WindowsWindowOps {
                 SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED,
             );
         }
+        Ok(())
     }
 
-    fn os_lower(&mut self) {
+    fn os_lower(&mut self) -> Result<()> {
         unsafe {
             SetWindowPos(
                 self.hwnd,
@@ -114,6 +117,7 @@ impl WindowOps for WindowsWindowOps {
                 SWP_NOMOVE | SWP_NOSIZE,
             );
         }
+        Ok(())
     }
 
     // ── 尺寸/位置 ─────────────────────────────────────────
@@ -132,15 +136,17 @@ impl WindowOps for WindowsWindowOps {
         }
     }
 
-    fn os_set_min_size(&mut self, _w: i32, _h: i32) {
+    fn os_set_min_size(&mut self, _w: i32, _h: i32) -> Result<()> {
         // Windows: 通过 WM_GETMINMAXINFO 处理，在 wnd_proc 中实现
+        Ok(())
     }
 
-    fn os_set_max_size(&mut self, _w: i32, _h: i32) {
+    fn os_set_max_size(&mut self, _w: i32, _h: i32) -> Result<()> {
         // Windows: 通过 WM_GETMINMAXINFO 处理，在 wnd_proc 中实现
+        Ok(())
     }
 
-    fn os_set_position(&mut self, x: i32, y: i32) {
+    fn os_set_position(&mut self, x: i32, y: i32) -> Result<()> {
         unsafe {
             SetWindowPos(
                 self.hwnd,
@@ -152,11 +158,12 @@ impl WindowOps for WindowsWindowOps {
                 SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
             );
         }
+        Ok(())
     }
 
     // ── 窗口状态 ──────────────────────────────────────────
 
-    fn os_set_resizable(&mut self, resizable: bool) {
+    fn os_set_resizable(&mut self, resizable: bool) -> Result<()> {
         unsafe {
             let style = GetWindowLongW(self.hwnd, GWL_STYLE) as u32;
             let new_style = if resizable {
@@ -175,27 +182,31 @@ impl WindowOps for WindowsWindowOps {
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
             );
         }
+        Ok(())
     }
 
-    fn os_maximize(&mut self) {
+    fn os_maximize(&mut self) -> Result<()> {
         unsafe {
             ShowWindow(self.hwnd, SW_MAXIMIZE);
         }
+        Ok(())
     }
 
-    fn os_minimize(&mut self) {
+    fn os_minimize(&mut self) -> Result<()> {
         unsafe {
             ShowWindow(self.hwnd, SW_MINIMIZE);
         }
+        Ok(())
     }
 
-    fn os_restore(&mut self) {
+    fn os_restore(&mut self) -> Result<()> {
         unsafe {
             ShowWindow(self.hwnd, SW_RESTORE);
         }
+        Ok(())
     }
 
-    fn os_set_borderless(&mut self, borderless: bool) {
+    fn os_set_borderless(&mut self, borderless: bool) -> Result<()> {
         unsafe {
             let style = GetWindowLongW(self.hwnd, GWL_STYLE) as u32;
             let new_style = if borderless {
@@ -214,9 +225,10 @@ impl WindowOps for WindowsWindowOps {
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
             );
         }
+        Ok(())
     }
 
-    fn os_set_fullscreen(&mut self, fullscreen: bool) {
+    fn os_set_fullscreen(&mut self, fullscreen: bool) -> Result<()> {
         if fullscreen {
             unsafe {
                 SetWindowLongW(self.hwnd, GWL_STYLE, (WS_POPUP | WS_VISIBLE) as i32);
@@ -248,9 +260,10 @@ impl WindowOps for WindowsWindowOps {
                 );
             }
         }
+        Ok(())
     }
 
-    fn os_set_always_on_top(&mut self, on: bool) {
+    fn os_set_always_on_top(&mut self, on: bool) -> Result<()> {
         unsafe {
             let pos = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
             SetWindowPos(
@@ -263,9 +276,10 @@ impl WindowOps for WindowsWindowOps {
                 SWP_NOMOVE | SWP_NOSIZE,
             );
         }
+        Ok(())
     }
 
-    fn os_set_opacity(&mut self, opacity: f32) {
+    fn os_set_opacity(&mut self, opacity: f32) -> Result<()> {
         if opacity < 1.0 {
             unsafe {
                 let ex_style = GetWindowLongW(self.hwnd, GWL_EXSTYLE) as u32;
@@ -273,22 +287,26 @@ impl WindowOps for WindowsWindowOps {
                 SetLayeredWindowAttributes(self.hwnd, 0, (opacity * 255.0) as u8, LWA_ALPHA);
             }
         }
+        Ok(())
     }
 
     // ── 特性开关 ──────────────────────────────────────────
 
-    fn os_start_text_input(&mut self) {
+    fn os_start_text_input(&mut self) -> Result<()> {
         // Windows IME: managed via WM_IME_* messages
+        Ok(())
     }
 
-    fn os_stop_text_input(&mut self) {
+    fn os_stop_text_input(&mut self) -> Result<()> {
         // Windows IME: managed via WM_IME_* messages
+        Ok(())
     }
 
-    fn os_enable_file_drop(&mut self, enable: bool) {
+    fn os_enable_file_drop(&mut self, enable: bool) -> Result<()> {
         unsafe {
             DragAcceptFiles(self.hwnd, if enable { TRUE } else { FALSE });
         }
+        Ok(())
     }
 
     // ── 原生句柄 ──────────────────────────────────────────

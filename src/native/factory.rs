@@ -21,7 +21,10 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
 
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
-    compile_error!("Unsupported platform: only Windows and Linux are supported");
+    Err(Error::new(
+        Errc::PlatformError,
+        "Unsupported platform: only Windows and Linux are supported".to_string(),
+    ))
 }
 
 /// 创建 GPU 图形上下文。

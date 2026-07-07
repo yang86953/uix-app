@@ -1,4 +1,4 @@
-﻿# 实现落地计划
+# 实现落地计划
 
 ← [Main](Main.md) · 决策 [#154](decisions.md#d154) [#157](decisions.md#d157)
 
@@ -51,7 +51,7 @@ P4 多窗                P5 组件 Handle 体系
 - P5 与 P1 **可交错**（`ComponentId` 宜尽早，利于 #123）。
 - 每阶段对应 [demand-driven · 实现差距](systems/demand-driven.md#实现差距) 行清零或缩减。
 
-> **实现注记**：P0 核心零闲置接线已落地：`ActiveWorkRegistry`、无 deadline 注册项、`WindowSession` 壳、单窗三态写回、DeepIdle 门控、Registry deadline wait、到期 `Timer` / `AppTimer` 消费、Tooltip widget scoped timer route 托管、WidgetAnimation `Animation(id)` 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源、IME composition session 托管、AppTimer 队列、MainThreadQueue、`AppHandle` 与 `.on_start` 已落地（无固定 100ms 探活，DeepIdle 不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick，隐藏窗口不 layout/render 且保留 pending dirty）；`AppHandle` 的 Timer / `post_to_ui` / `update_view` 已经按 `window_id` 路由；`WindowConfig` / `open_window` 请求层、native 副窗创建、独立 `WindowSession` bootstrap、`.on_window_start`、副窗 MainThreadQueue / `update_view` reconcile 消费、副窗事件按 `window_id` 路由、副窗运行期 frame drain 与副窗 deadline wait 已接；单窗 `pending_root` 与响应式 `State` 批次 reconcile 已接入主循环；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。当前剩余差距以 [Main · 实现进度总览](Main.md#实现进度总览) 与 [demand-driven · 实现差距](systems/demand-driven.md#实现差距) 为准。
+> **实现注记**：P0 核心零闲置接线已落地：`ActiveWorkRegistry`、无 deadline 注册项、`WindowSession` 壳、单窗三态写回、DeepIdle 门控、Registry deadline wait、到期 `Timer` / `AppTimer` 消费、Tooltip widget scoped timer route 托管、WidgetAnimation `Animation(id)` 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源、IME composition session 托管、AppTimer 队列、MainThreadQueue、`AppHandle` 与 `.on_start` 已落地（无固定 100ms 探活，DeepIdle 不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick，隐藏窗口不 layout/render 且保留 pending dirty）；`AppHandle` 的 Timer / `post_to_ui` / `update_view` 已经按 `window_id` 路由；`WindowConfig` / `open_window` 请求层、native 副窗创建、独立 `WindowSession` bootstrap、`.on_window_start`、副窗 MainThreadQueue / `update_view` reconcile 消费、副窗事件按 `window_id` 路由、副窗运行期 frame drain 与副窗 deadline wait 已接；单窗 `pending_root` 与响应式 `State` 批次 reconcile 已接入主循环；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端；平台窗口可选能力已改为 `WindowOps -> Result<()>`，未支持能力不再误写共享状态。当前剩余差距以 [Main · 实现进度总览](Main.md#实现进度总览) 与 [demand-driven · 实现差距](systems/demand-driven.md#实现差距) 为准。
 
 ---
 
