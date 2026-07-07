@@ -15,7 +15,10 @@ pub(crate) mod grid;
 
 // 重新导出统一布局引擎的核心类型
 pub use crate::ui::traits::LayoutEngine;
-pub use engine::{child_from_tree, BoxModel, FlexLayout, GridLayout, LayoutChild, LayoutOutput};
+pub use engine::{
+    child_from_tree, child_from_tree_with_constraints, BoxModel, FlexLayout, GridLayout,
+    LayoutChild, LayoutOutput,
+};
 
 // ── 枚举类型（布局引擎共用）──
 

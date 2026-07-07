@@ -5,7 +5,7 @@ use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
-use crate::ui::layout::engine::{child_from_tree, GridLayout, LayoutChild};
+use crate::ui::layout::engine::{child_from_tree_with_constraints, GridLayout, LayoutChild};
 use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
 use crate::ui::style::{ColorValue, Style};
 use crate::ui::traits::layout::LayoutEngine;
@@ -58,7 +58,13 @@ component! {
         // 构建统一子节点信息
         let layout_children: Vec<LayoutChild> = children
             .iter()
-            .map(|&cid| child_from_tree(cid, tree))
+            .map(|&cid| {
+                let child_constraints = Constraints::loose(Size::new(
+                    (frame.w - self.padding.horizontal()).max(0.0),
+                    (frame.h - self.padding.vertical()).max(0.0),
+                ));
+                child_from_tree_with_constraints(cid, tree, child_constraints)
+            })
             .collect();
 
         // 委托给统一的 GridLayout 布局引擎

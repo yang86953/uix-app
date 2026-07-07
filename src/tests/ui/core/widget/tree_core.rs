@@ -4,7 +4,7 @@ use crate::core::{ComponentId, Constraints, EdgeInsets, Point, Size};
 use crate::draw::Color;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
-use crate::ui::layout::engine::child_from_tree;
+use crate::ui::layout::engine::{child_from_tree, child_from_tree_with_constraints};
 use crate::ui::managers::StyleManager;
 use crate::ui::{
     AppState, Button, Container, Drawer, Grid, Label, Modal, OverlayEntry, OverlayKind, QRCode,
@@ -571,6 +571,52 @@ fn child_from_tree_reads_common_style_component_margins() {
     assert_eq!(child_from_tree(button, &tree).margin, margin);
     assert_eq!(child_from_tree(label, &tree).margin, margin);
     assert_eq!(child_from_tree(grid, &tree).margin, margin);
+}
+
+#[test]
+fn child_from_tree_with_constraints_clamps_measured_size() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(120.0, 80.0)));
+
+    let layout_child =
+        child_from_tree_with_constraints(child, &tree, Constraints::loose(Size::new(40.0, 24.0)));
+
+    assert_eq!(layout_child.measured_size, Size::new(40.0, 24.0));
+}
+
+#[test]
+fn container_layout_measures_children_with_content_constraints() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(40.0, 24.0)));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(120.0, 80.0)));
+
+    tree.layout();
+
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 40.0, 24.0)
+    );
+}
+
+#[test]
+fn grid_layout_measures_children_with_content_constraints() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Grid::new()
+            .columns(vec![crate::ui::layout::GridTrack::Px(100.0)])
+            .rows(vec![crate::ui::layout::GridTrack::Px(60.0)])
+            .size(40.0, 24.0)
+            .align(crate::ui::layout::AlignItems::Start),
+    ));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(120.0, 80.0)));
+
+    tree.layout();
+
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 40.0, 24.0)
+    );
 }
 
 #[test]
