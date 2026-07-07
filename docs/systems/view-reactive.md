@@ -40,7 +40,7 @@
 | `input("...").on_change(...)` | Input | |
 | `grid([...]).columns([...])` | Grid | #67 |
 | `scroll([...]).vertical()` | ScrollView | #73 |
-| `space()` | Space | 占位 |
+| `space(height)` | Space | 固定高度间距 |
 
 Builder 类型（`ButtonBuilder` 等）实现 `View`，支持链式修饰。
 

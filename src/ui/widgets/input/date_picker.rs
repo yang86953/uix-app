@@ -327,6 +327,9 @@ impl DatePicker {
     pub fn selected(&self) -> DateValue {
         self.value.get()
     }
+    pub fn is_open(&self) -> bool {
+        self.open.get()
+    }
     pub fn set_value(&mut self, v: DateValue) {
         self.value.set(v);
     }
@@ -335,6 +338,10 @@ impl DatePicker {
         SnapshotFields::DatePicker {
             placeholder: self.placeholder.clone(),
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.placeholder = next.placeholder;
     }
 }
 

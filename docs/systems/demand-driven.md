@@ -695,7 +695,7 @@ ui/core/widget/tree_events.rs    PointerMove、scroll
 draw/pipeline/invalidation.rs    Invalidation
 ui/foundation/state.rs          StateSlotId（#143）落地
 ui/view/build_context.rs        handler_generation / capture 指纹（#138 #142）
-ui/animation/                    AnimationRegistry register
+draw/pipeline/animation_registry.rs AnimationRegistry register
 ui/app_state.rs                 AppState snapshot registry（#145）
 ui/component_snapshot.rs         ComponentConfigSnapshot / SnapshotSource（#146 #151）
 ```

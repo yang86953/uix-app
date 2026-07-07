@@ -1,6 +1,6 @@
 use crate::ui::widgets::{
-    Button, Cascader, ColorPicker, Container, Grid, Input, Label, ScrollView, Select, Space,
-    Tooltip, TreeSelect,
+    AutoComplete, Button, Cascader, ColorPicker, Container, DatePicker, Grid, Input, Label,
+    Mentions, ScrollView, Select, Space, TimePicker, Tooltip, TreeSelect,
 };
 use crate::ui::WidgetComponent;
 
@@ -37,6 +37,10 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(TreeSelect);
     patch_as!(Cascader);
     patch_as!(ColorPicker);
+    patch_as!(AutoComplete);
+    patch_as!(DatePicker);
+    patch_as!(TimePicker);
+    patch_as!(Mentions);
 
     Err(next)
 }

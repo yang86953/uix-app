@@ -574,6 +574,207 @@ fn reconcile_color_picker_preserves_open_color_and_syncs_presets() {
 }
 
 #[test]
+fn reconcile_autocomplete_preserves_open_value_and_syncs_options() {
+    use crate::ui::widgets::AutoComplete;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        AutoComplete::new()
+            .placeholder("old")
+            .options(vec!["Apple", "Banana"]),
+    ));
+    let root_id = tree.root_id().expect("autocomplete root should exist");
+    {
+        let autocomplete = tree
+            .get_mut(root_id)
+            .unwrap()
+            .component_mut()
+            .as_any_mut()
+            .downcast_mut::<AutoComplete>()
+            .unwrap();
+        autocomplete.set_value("A");
+        autocomplete.open();
+    }
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            AutoComplete::new()
+                .placeholder("new")
+                .options(vec!["Apricot", "Avocado"]),
+        ),
+    );
+
+    let autocomplete = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<AutoComplete>()
+        .unwrap();
+    assert!(autocomplete.is_open());
+    assert_eq!(autocomplete.value(), "A");
+    assert!(matches!(
+        autocomplete.snapshot_fields(),
+        SnapshotFields::AutoComplete {
+            placeholder,
+            options,
+        } if placeholder == "new" && options == vec!["Apricot", "Avocado"]
+    ));
+}
+
+#[test]
+fn reconcile_date_picker_preserves_open_value_and_syncs_placeholder() {
+    use crate::ui::widgets::{DatePicker, DateValue};
+
+    let selected = DateValue::new(2026, 7, 7);
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(DatePicker::new("old").value(selected)));
+    let root_id = tree.root_id().expect("date picker root should exist");
+    assert_eq!(
+        crate::ui::EventHandler::on_event(
+            tree.get_mut(root_id)
+                .unwrap()
+                .component_mut()
+                .as_any_mut()
+                .downcast_mut::<DatePicker>()
+                .unwrap(),
+            &SystemEvent::PointerDown {
+                pos: crate::core::Point::new(4.0, 4.0),
+                button: crate::ui::MouseButton::Left,
+                mods: crate::ui::KeyMod::NONE,
+            },
+        ),
+        EventResult::Handled
+    );
+
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(DatePicker::new("new")));
+
+    let date_picker = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<DatePicker>()
+        .unwrap();
+    assert!(date_picker.is_open());
+    assert_eq!(date_picker.selected(), selected);
+    assert!(matches!(
+        date_picker.snapshot_fields(),
+        SnapshotFields::DatePicker { placeholder } if placeholder == "new"
+    ));
+}
+
+#[test]
+fn reconcile_time_picker_preserves_open_value_and_syncs_placeholder() {
+    use crate::ui::widgets::{TimePicker, TimeValue};
+
+    let selected = TimeValue::new(9, 30);
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(TimePicker::new("old").value(selected)));
+    let root_id = tree.root_id().expect("time picker root should exist");
+    assert_eq!(
+        crate::ui::EventHandler::on_event(
+            tree.get_mut(root_id)
+                .unwrap()
+                .component_mut()
+                .as_any_mut()
+                .downcast_mut::<TimePicker>()
+                .unwrap(),
+            &SystemEvent::PointerDown {
+                pos: crate::core::Point::new(4.0, 4.0),
+                button: crate::ui::MouseButton::Left,
+                mods: crate::ui::KeyMod::NONE,
+            },
+        ),
+        EventResult::Handled
+    );
+
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(TimePicker::new("new")));
+
+    let time_picker = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<TimePicker>()
+        .unwrap();
+    assert!(time_picker.is_open());
+    assert_eq!(time_picker.selected(), selected);
+    assert!(matches!(
+        time_picker.snapshot_fields(),
+        SnapshotFields::TimePicker { placeholder } if placeholder == "new"
+    ));
+}
+
+#[test]
+fn reconcile_mentions_preserves_suggestion_state_and_syncs_options() {
+    use crate::ui::widgets::Mentions;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Mentions::new("old").options(vec!["Alice", "Bob"]),
+    ));
+    let root_id = tree.root_id().expect("mentions root should exist");
+    {
+        let mentions = tree
+            .get_mut(root_id)
+            .unwrap()
+            .component_mut()
+            .as_any_mut()
+            .downcast_mut::<Mentions>()
+            .unwrap();
+        assert_eq!(
+            crate::ui::EventHandler::on_event(
+                mentions,
+                &SystemEvent::TextInput {
+                    text: "@".to_string(),
+                },
+            ),
+            EventResult::Handled
+        );
+        assert_eq!(
+            crate::ui::EventHandler::on_event(
+                mentions,
+                &SystemEvent::TextInput {
+                    text: "a".to_string(),
+                },
+            ),
+            EventResult::Handled
+        );
+    }
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(Mentions::new("new").options(vec!["Ann", "Cara"])),
+    );
+
+    let mentions = tree
+        .get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Mentions>()
+        .unwrap();
+    assert!(mentions.is_suggesting());
+    assert_eq!(mentions.value(), "@");
+    assert!(matches!(
+        mentions.snapshot_fields(),
+        SnapshotFields::Mentions {
+            placeholder,
+            options,
+        } if placeholder == "new" && options == vec!["Ann", "Cara"]
+    ));
+    assert_eq!(
+        crate::ui::EventHandler::on_event(
+            mentions,
+            &SystemEvent::KeyDown {
+                key: crate::ui::KeyCode::Enter,
+                mods: crate::ui::KeyMod::NONE,
+            },
+        ),
+        EventResult::Handled
+    );
+    assert_eq!(mentions.value(), "@Ann ");
+}
+
+#[test]
 fn reconcile_preserves_consumed_once_handler_when_signature_is_unchanged() {
     use crate::core::Point;
     use crate::native::traits::input::{KeyMod, MouseButton};

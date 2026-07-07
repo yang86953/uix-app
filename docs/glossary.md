@@ -66,7 +66,7 @@
 | State 跨窗标脏 | #150：`State::set` fan-out 至各 `PaintBindSite` |
 | SettingsService | 扁平字符串 KV 持久化；见 [data](systems/data.md) |
 | FakeTimer | 已有：`ITimer` 平台测试时钟；见 [testing · 测试时钟分层](systems/testing.md#测试时钟分层) |
-| TestClock | 设计：App `drain_due` 注入时钟（#139） |
+| TestClock | 已接入：App `drain_due` / `wait_until` 测试注入时钟（#139） |
 
 ## UI
 
@@ -139,7 +139,7 @@
 | Invalidation | 单条失效记录 |
 | DirtyRegion | 逻辑坐标脏矩形集合 |
 | DamageRegion | 渲染 damage |
-| AnimationRegistry | 动画帧驱动（设计） |
+| AnimationRegistry | 动画帧驱动 registry；位于 `draw::pipeline`，按需注册下一帧 deadline |
 | FontService / ImageService | 字体与图像资源服务 |
 
 ## 平台
