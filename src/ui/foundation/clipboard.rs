@@ -5,7 +5,7 @@
 //!
 //! 用法：
 //!   1. 应用层调用 `set_clipboard_parts(data, vtable)` 注入剪贴板指针
-//!   2. widget 在 Ctrl+C 时调用 `copy_to_clipboard(text)`
+//!   2. widget 在 Ctrl+C / Ctrl+V 时调用 `copy_to_clipboard(text)` / `read_text_from_clipboard()`
 
 use crate::native::traits::input::IClipboard;
 use std::cell::Cell;
@@ -36,6 +36,26 @@ pub fn copy_to_clipboard(text: &str) {
             }
         });
     });
+}
+
+/// widget 调用此方法读取剪贴板文本。
+pub fn read_text_from_clipboard() -> Option<String> {
+    DATA.with(|data| {
+        let d = data.get();
+        if d == 0 {
+            return None;
+        }
+        VTABLE.with(|vtable| {
+            let v = vtable.get();
+            let ptr = fat_ptr_from_parts::<dyn IClipboard>(d, v);
+            let text = unsafe { (*ptr).text() };
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        })
+    })
 }
 
 fn fat_ptr_from_parts<T: ?Sized>(data: usize, vtable: usize) -> *mut T {

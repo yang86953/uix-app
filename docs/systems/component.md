@@ -230,7 +230,7 @@ WidgetTree
 
 支持 **per-widget override**（`state_for(id)` / `text_for(id)`）。
 
-> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `text_for(id)` per-widget override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`collect_focusable` / `focus_next` 由 manager 驱动；`InteractionManager` 已记录 hovered / pressed widget，并作为 PointerMove / Wheel / Timer 目标解析的优先状态源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset，并驱动基础 DragStart / DragMove / DragEnd 热路径。旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 字段保留为事件派发兼容镜像。
+> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `style_for(id)` / `text_for(id)` per-widget override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`collect_focusable` / `focus_next` 由 manager 驱动；`InteractionManager` 已记录 hovered / pressed widget，并作为 PointerMove / Wheel / Timer 目标解析的优先状态源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset，并驱动基础 DragStart / DragMove / DragEnd 热路径。旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 字段保留为事件派发兼容镜像。
 
 ---
 
@@ -379,16 +379,7 @@ WidgetTree
 | ThemeToggle | | Big Bang |
 | SharedActive | | 共享态辅助 |
 
-> **已实现但未进入 prelude 导出**（源码存在、可内部使用，但 `use uix::prelude::*` 不含）：
->
-> | 分类 | Widget（源码路径） |
-> |------|---------------------|
-> | general | FloatButton (`general/float_button.rs`) |
-> | containers | Affix (`containers/affix.rs`)、BackTop (`containers/back_top.rs`)、Layout (`containers/layout.rs`) |
-> | display | SelectableList (`display/selectable_list.rs`)、Table (`display/table.rs`) |
-> | input | TreeSelect (`input/tree_select.rs`) |
-> | feedback | Message (`feedback/message.rs`)、Notification (`feedback/notification.rs`) |
-> | other | RichText (`other/rich_text.rs`)、Transfer (`other/misc.rs`)、Upload (`other/misc.rs`) |
+> **prelude 导出**：以上已实现组件及其常用辅助类型均应可通过 `use uix::prelude::*` 取得；`src/prelude.rs` 的断言测试负责防止公开入口再次落后于组件目录。
 >
 > Modal / Tooltip / Drawer / Popover / Popconfirm / Dropdown 同时见 [overlay](overlay.md)。
 
