@@ -619,7 +619,7 @@ fn other_widget_snapshots_capture_static_config() {
         .font_size_unit(PhysicalUnit::Pt(12.0))
         .color(Color::green());
     assert_eq!(
-        rich_text.snapshot_fields(),
+        ComponentConfigSnapshot::from_component(WidgetId::new(91), &rich_text).fields,
         SnapshotFields::RichText {
             segments,
             default_font_size: 16.0,
@@ -641,15 +641,15 @@ fn other_widget_snapshots_capture_static_config() {
     );
     assert_eq!(before, SnapshotFields::ThemeToggle { dark: true });
 
+    let watermark = Watermark::new("draft")
+        .color(Color::blue())
+        .font_size(18.0)
+        .opacity(0.25)
+        .rotate(-15.0)
+        .gap(120.0, 90.0)
+        .offset(4.0, 8.0);
     assert_eq!(
-        Watermark::new("draft")
-            .color(Color::blue())
-            .font_size(18.0)
-            .opacity(0.25)
-            .rotate(-15.0)
-            .gap(120.0, 90.0)
-            .offset(4.0, 8.0)
-            .snapshot_fields(),
+        ComponentConfigSnapshot::from_component(WidgetId::new(92), &watermark).fields,
         SnapshotFields::Watermark {
             text: "draft".to_string(),
             color: Color::blue(),
@@ -677,13 +677,16 @@ fn transfer_and_upload_snapshots_exclude_runtime_state() {
             title: "Beta".to_string(),
             selected: false,
         }]);
-    let before = transfer.snapshot_fields();
+    let before = ComponentConfigSnapshot::from_component(WidgetId::new(93), &transfer).fields;
     let _ = transfer.on_event(&SystemEvent::PointerDown {
         button: MouseButton::Left,
         pos: Point::new(228.0, 88.0),
         mods: KeyMod::NONE,
     });
-    assert_eq!(transfer.snapshot_fields(), before);
+    assert_eq!(
+        ComponentConfigSnapshot::from_component(WidgetId::new(93), &transfer).fields,
+        before
+    );
     assert_eq!(
         before,
         SnapshotFields::Transfer {
@@ -703,7 +706,7 @@ fn transfer_and_upload_snapshots_exclude_runtime_state() {
         .multiple(true)
         .drag(false)
         .max_count(2);
-    let before = upload.snapshot_fields();
+    let before = ComponentConfigSnapshot::from_component(WidgetId::new(94), &upload).fields;
     upload.add_file("hero.png");
     upload.update_progress(0, 0.5);
     let _ = upload.on_event(&SystemEvent::PointerDown {
@@ -711,7 +714,10 @@ fn transfer_and_upload_snapshots_exclude_runtime_state() {
         pos: Point::zero(),
         mods: KeyMod::NONE,
     });
-    assert_eq!(upload.snapshot_fields(), before);
+    assert_eq!(
+        ComponentConfigSnapshot::from_component(WidgetId::new(94), &upload).fields,
+        before
+    );
     assert_eq!(
         before,
         SnapshotFields::Upload {

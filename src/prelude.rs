@@ -21,6 +21,7 @@ pub use crate::draw::{colors, Color, FontService, ImageService, NullEngine, Soft
 
 // ui
 
+pub use crate::component;
 pub use crate::define_widget;
 pub use crate::impl_widget_component;
 pub use crate::tree;
@@ -32,8 +33,8 @@ pub use crate::ui::style::{ColorValue, PaletteColor, Style, StyleSet, Typography
 pub use crate::ui::theme::{DesignTokens, DynTokens, NeutralRole, Theme};
 pub use crate::ui::{
     AppState, ClickEvent, ComponentHandle, EventResult, HandlerId, HandlerOptions,
-    HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
-    SemanticPayload, SystemEvent, SystemEventKind, WidgetCore, WidgetId, WidgetNode, WidgetTree,
+    HandlerRegistration, PaintContext, SemanticEvent, SemanticKind, SemanticPayload, SystemEvent,
+    SystemEventKind, WidgetId,
 };
 pub use crate::ui::{
     DragManager, FocusManager, InteractionManager, StateManager, StyleManager, TextManager,
@@ -79,8 +80,24 @@ pub use crate::ui::view::{
 mod tests {
     use crate::prelude::*;
 
+    component! {
+        struct PreludeComponentProbe {
+            pub label: String,
+        }
+
+        render => (
+            &self,
+            _frame: Rect,
+            _ctx: &mut PaintContext,
+            _tree: &crate::ui::core::widget::WidgetTree
+        ) {}
+    }
+
     #[test]
     fn prelude_exports_event_and_state_capture_types() {
+        let _probe = PreludeComponentProbe {
+            label: "probe".to_string(),
+        };
         let state = State::new(1);
         let _registration = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
             .with_state_capture(&state);

@@ -270,6 +270,42 @@ fn app_state_lookup_handle_emit_drains_into_widget_tree() {
 }
 
 #[test]
+fn app_state_get_handle_panics_off_owner_thread() {
+    let mut tree = WidgetTree::new();
+    let app_state = AppState::new();
+    let root = tree.set_root(Box::new(Button::new("root")));
+
+    tree.layout();
+    tree.set_app_state(app_state.clone());
+
+    let result = std::thread::spawn(move || {
+        let _ = app_state.get_handle(root).is_some();
+    })
+    .join();
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn lookup_component_handle_emit_panics_off_owner_thread() {
+    let mut tree = WidgetTree::new();
+    let app_state = AppState::new();
+    let root = tree.set_root(Box::new(Button::new("root")));
+
+    tree.layout();
+    tree.set_app_state(app_state.clone());
+    let app_state_inner = std::sync::Arc::downgrade(&app_state.inner);
+
+    let result = std::thread::spawn(move || {
+        let handle = ComponentHandle::from_app_state(root, app_state_inner);
+        let _ = handle.emit(SemanticEvent::change(root, "off-thread"));
+    })
+    .join();
+
+    assert!(result.is_err());
+}
+
+#[test]
 fn component_handle_invalidate_marks_narrow_paint_only() {
     let tree = Rc::new(RefCell::new(WidgetTree::new()));
     let root = tree.borrow_mut().set_root(Box::new(Button::new("root")));

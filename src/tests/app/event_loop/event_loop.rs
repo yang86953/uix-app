@@ -363,6 +363,66 @@ fn key_event_after_first_frame_does_not_force_layout_without_invalidation() {
 }
 
 #[test]
+fn ime_events_without_focused_widget_do_not_start_text_input_or_force_frame() {
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::ime_composition_start());
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::ime_composition_update("zh"));
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::ime_composition_end("中"));
+    platform.event_source.state.exit_after_blocking_calls = Some(4);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    let stats = metrics.get();
+    assert_eq!(status, 0);
+    assert_eq!(stats.layout_calls, 1);
+    assert_eq!(stats.present_calls, 1);
+    assert_eq!(platform.text_input.state.start_calls, 0);
+    assert_eq!(platform.text_input.state.stop_calls, 0);
+    assert!(session.active_work().is_empty());
+    assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
+}
+
+#[test]
 fn window_session_deep_idle_records_loop_state() {
     let mut platform = FakePlatform::new();
     platform.event_source.state.exit_after_blocking_calls = Some(2);
