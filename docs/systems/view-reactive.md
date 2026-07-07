@@ -475,20 +475,20 @@ State::set(value)
 |------|------|
 | bind 时机 | layout 后 `bind_reactive_widget_states` / DynamicLabel 探测（现有路径） |
 | 多 bind | 同 State 在 A、B 两窗各绑一次 → `paint_sites.len() == 2` |
-| wake | **仅**含 bind 的 session 进入 Active；无 bind 的 session **不** wake |
+| wake | State 变更只标记含 bind 的 queue / reconcile requester；后台来源须经 `post_to_ui` / Timer 等入口唤醒 event loop；无 bind 的 session **不**产生 pending |
 | reconcile | 每 session **独立** reconcile；A 的 bind **不**触发 B 的 diff |
 | 无 bind | 仅 `dirty_fn`（View 级）→ wake **创建 bind 的 session** |
 | ComponentHandle | `invalidate()` → 单组件单 session（#119） |
 
-### 与当前实现差距
+### 实现状态
 
 | 设计（#150） | 当前 `state.rs` |
 |--------------|-----------------|
 | `paint_sites: Vec<_>` fan-out | `State` / `Computed` 已支持多 paint site fan-out |
-| 按 `window_id` wake session | 无多窗 session 路由 |
+| 按 `window_id` wake session | 副窗 session 路由已接；State 绑定通过每窗 `InvalidationQueueHandle` 与 reconcile requester fan-out，`State` 本体不保存 `window_id` |
 | `State::set` 多 queue / reconcile | 多个已绑定 queue 均收到 Paint；多个 reconcile callback 按 site key fan-out |
 
-落地 #150 时 **保留** 窄 rect 标脏；扩展为多 site，**禁止**全树 invalidate 替代。
+实现须 **保留** 窄 rect 标脏；多 site fan-out 已接，**禁止**回退为全树 invalidate。
 
 > **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(widget_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调；副窗 session 路由与运行期 frame drain 已接，外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
 
