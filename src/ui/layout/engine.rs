@@ -81,7 +81,7 @@ pub struct LayoutChild {
     /// 子项交叉轴对齐覆盖；None 时继承父容器 align_items。
     pub align_self: Option<AlignItems>,
     /// Grid: 起始单元格索引
-    pub grid_cell: usize,
+    pub grid_cell: Option<usize>,
     /// Grid: 列跨度
     pub grid_column_span: u32,
     /// Grid: 行跨度
@@ -97,7 +97,7 @@ impl LayoutChild {
             flex_shrink: 1.0,
             margin: crate::core::EdgeInsets::zero(),
             align_self: None,
-            grid_cell: 0,
+            grid_cell: None,
             grid_column_span: 1,
             grid_row_span: 1,
         }
@@ -106,6 +106,17 @@ impl LayoutChild {
     pub fn with_flex(mut self, grow: f32, shrink: f32) -> Self {
         self.flex_grow = grow;
         self.flex_shrink = shrink;
+        self
+    }
+
+    pub fn with_grid_cell(mut self, cell: usize) -> Self {
+        self.grid_cell = Some(cell);
+        self
+    }
+
+    pub fn with_grid_span(mut self, columns: u32, rows: u32) -> Self {
+        self.grid_column_span = columns.max(1);
+        self.grid_row_span = rows.max(1);
         self
     }
 
@@ -581,6 +592,15 @@ pub fn child_from_tree_with_constraints(
     let align_self = node
         .and_then(|c| c.as_layout())
         .and_then(|l| l.align_self());
+    let grid_cell = node.and_then(|c| c.as_layout()).and_then(|l| l.grid_cell());
+    let grid_column_span = node
+        .and_then(|c| c.as_layout())
+        .map(|l| l.grid_column_span().max(1))
+        .unwrap_or(1);
+    let grid_row_span = node
+        .and_then(|c| c.as_layout())
+        .map(|l| l.grid_row_span().max(1))
+        .unwrap_or(1);
 
     LayoutChild {
         id: component_id,
@@ -589,8 +609,8 @@ pub fn child_from_tree_with_constraints(
         flex_shrink: shrink,
         margin,
         align_self,
-        grid_cell: 0,
-        grid_column_span: 1,
-        grid_row_span: 1,
+        grid_cell,
+        grid_column_span,
+        grid_row_span,
     }
 }

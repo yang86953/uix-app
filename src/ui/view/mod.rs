@@ -101,6 +101,27 @@ impl ViewNode {
         self
     }
 
+    pub fn flex_shrink(mut self, s: f32) -> Self {
+        self.style.flex_shrink = s;
+        self
+    }
+
+    pub fn align_self(mut self, a: crate::ui::layout::AlignItems) -> Self {
+        self.style.align_self = Some(a);
+        self
+    }
+
+    pub fn grid_cell(mut self, cell: usize) -> Self {
+        self.style.grid_cell = Some(cell);
+        self
+    }
+
+    pub fn grid_span(mut self, columns: u32, rows: u32) -> Self {
+        self.style.grid_column_span = columns.max(1);
+        self.style.grid_row_span = rows.max(1);
+        self
+    }
+
     pub fn gap(mut self, g: f32) -> Self {
         self.style.gap = g;
         self
@@ -222,6 +243,25 @@ pub trait StyleExt: Into<ViewNode> + Sized {
     fn flex_shrink(self, s: f32) -> ViewNode {
         let mut node: ViewNode = self.into();
         node.style.flex_shrink = s;
+        node
+    }
+
+    fn align_self(self, a: crate::ui::layout::AlignItems) -> ViewNode {
+        let mut node: ViewNode = self.into();
+        node.style.align_self = Some(a);
+        node
+    }
+
+    fn grid_cell(self, cell: usize) -> ViewNode {
+        let mut node: ViewNode = self.into();
+        node.style.grid_cell = Some(cell);
+        node
+    }
+
+    fn grid_span(self, columns: u32, rows: u32) -> ViewNode {
+        let mut node: ViewNode = self.into();
+        node.style.grid_column_span = columns.max(1);
+        node.style.grid_row_span = rows.max(1);
         node
     }
 

@@ -47,6 +47,18 @@ impl WidgetLayout for Button {
     fn align_self(&self) -> Option<crate::ui::layout::AlignItems> {
         self.style.align_self
     }
+
+    fn grid_cell(&self) -> Option<usize> {
+        self.style.grid_cell
+    }
+
+    fn grid_column_span(&self) -> u32 {
+        self.style.grid_column_span
+    }
+
+    fn grid_row_span(&self) -> u32 {
+        self.style.grid_row_span
+    }
 }
 
 impl EventHandler for Button {

@@ -25,6 +25,12 @@ component! {
         border_width: f32,
         border_radius: f32,
         margin: EdgeInsets,
+        flex_grow: f32,
+        flex_shrink: f32,
+        align_self: Option<AlignItems>,
+        grid_cell: Option<usize>,
+        grid_column_span: u32,
+        grid_row_span: u32,
         align_items: AlignItems,
         justify_items: JustifyContent,
         fixed_width: Option<f32>,
@@ -36,6 +42,18 @@ component! {
     }
 
     layout_margin => (&self) -> EdgeInsets { self.margin }
+
+    flex_grow => (&self) -> f32 { self.flex_grow }
+
+    flex_shrink => (&self) -> f32 { self.flex_shrink }
+
+    align_self => (&self) -> Option<AlignItems> { self.align_self }
+
+    grid_cell => (&self) -> Option<usize> { self.grid_cell }
+
+    grid_column_span => (&self) -> u32 { self.grid_column_span }
+
+    grid_row_span => (&self) -> u32 { self.grid_row_span }
 
     picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }
 
@@ -133,6 +151,12 @@ impl Grid {
             border_width: 0.0,
             border_radius: 0.0,
             margin: EdgeInsets::zero(),
+            flex_grow: 0.0,
+            flex_shrink: 1.0,
+            align_self: None,
+            grid_cell: None,
+            grid_column_span: 1,
+            grid_row_span: 1,
             align_items: AlignItems::Stretch,
             justify_items: JustifyContent::Start,
             fixed_width: None,
@@ -235,6 +259,24 @@ impl Grid {
         }
         if style.margin != EdgeInsets::zero() {
             self.margin = style.margin;
+        }
+        if style.flex_grow != 0.0 {
+            self.flex_grow = style.flex_grow;
+        }
+        if style.flex_shrink != 1.0 {
+            self.flex_shrink = style.flex_shrink;
+        }
+        if style.align_self.is_some() {
+            self.align_self = style.align_self;
+        }
+        if style.grid_cell.is_some() {
+            self.grid_cell = style.grid_cell;
+        }
+        if style.grid_column_span != 1 {
+            self.grid_column_span = style.grid_column_span;
+        }
+        if style.grid_row_span != 1 {
+            self.grid_row_span = style.grid_row_span;
         }
         if style.align_items != AlignItems::default() {
             self.align_items = style.align_items;

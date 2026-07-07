@@ -48,6 +48,12 @@ component! {
 
     align_self => (&self) -> Option<AlignItems> { self.style.align_self }
 
+    grid_cell => (&self) -> Option<usize> { self.style.grid_cell }
+
+    grid_column_span => (&self) -> u32 { self.style.grid_column_span }
+
+    grid_row_span => (&self) -> u32 { self.style.grid_row_span }
+
     layout_margin => (&self) -> EdgeInsets { self.style.margin }
 
     picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }

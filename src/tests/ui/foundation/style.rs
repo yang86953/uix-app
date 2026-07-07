@@ -29,6 +29,9 @@ fn style_default_all_fields() {
     assert_eq!(s.flex_grow, 0.0);
     assert_eq!(s.flex_shrink, 1.0);
     assert_eq!(s.align_self, None);
+    assert_eq!(s.grid_cell, None);
+    assert_eq!(s.grid_column_span, 1);
+    assert_eq!(s.grid_row_span, 1);
     assert_eq!(s.background, None);
     assert_eq!(s.background_hover, None);
     assert_eq!(s.background_active, None);
@@ -194,6 +197,9 @@ fn chain_builder_all_methods() {
         .with_gap(8.0)
         .with_grow(1.0)
         .with_shrink(0.0)
+        .with_align_self(AlignItems::End)
+        .with_grid_cell(3)
+        .with_grid_span(2, 4)
         .with_bg(Color::blue())
         .with_bg_hover(Color::green())
         .with_bg_active(Color::red())
@@ -218,6 +224,10 @@ fn chain_builder_all_methods() {
     assert_eq!(s.gap, 8.0);
     assert_eq!(s.flex_grow, 1.0);
     assert_eq!(s.flex_shrink, 0.0);
+    assert_eq!(s.align_self, Some(AlignItems::End));
+    assert_eq!(s.grid_cell, Some(3));
+    assert_eq!(s.grid_column_span, 2);
+    assert_eq!(s.grid_row_span, 4);
     assert_eq!(s.background, Some(ColorValue::Custom(Color::blue())));
     assert_eq!(s.background_hover, Some(ColorValue::Custom(Color::green())));
     assert_eq!(s.background_active, Some(ColorValue::Custom(Color::red())));

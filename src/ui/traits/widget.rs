@@ -132,6 +132,15 @@ pub trait WidgetLayout: WidgetComponent {
     fn align_self(&self) -> Option<AlignItems> {
         None
     }
+    fn grid_cell(&self) -> Option<usize> {
+        None
+    }
+    fn grid_column_span(&self) -> u32 {
+        1
+    }
+    fn grid_row_span(&self) -> u32 {
+        1
+    }
     fn layout_margin(&self) -> EdgeInsets {
         EdgeInsets::zero()
     }

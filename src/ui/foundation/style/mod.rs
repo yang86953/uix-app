@@ -312,6 +312,12 @@ pub struct Style {
     pub flex_shrink: f32,
     /// 子项单独覆盖 align_items
     pub align_self: Option<AlignItems>,
+    /// Grid child explicit cell; None means auto-place.
+    pub grid_cell: Option<usize>,
+    /// Grid child column span.
+    pub grid_column_span: u32,
+    /// Grid child row span.
+    pub grid_row_span: u32,
 
     // ── 视觉 ────────────────────────────────────────────────
     /// 背景色
@@ -361,6 +367,9 @@ impl Default for Style {
             flex_grow: 0.0,
             flex_shrink: 1.0,
             align_self: None,
+            grid_cell: None,
+            grid_column_span: 1,
+            grid_row_span: 1,
 
             background: None,
             background_hover: None,
@@ -482,6 +491,9 @@ impl Style {
         self.flex_grow = s.flex_grow;
         self.flex_shrink = s.flex_shrink;
         self.align_self = s.align_self;
+        self.grid_cell = s.grid_cell;
+        self.grid_column_span = s.grid_column_span;
+        self.grid_row_span = s.grid_row_span;
         self.background = s.background;
         self.background_hover = s.background_hover;
         self.background_active = s.background_active;
@@ -557,6 +569,15 @@ impl Style {
         }
         if other.align_self.is_some() {
             self.align_self = other.align_self;
+        }
+        if other.grid_cell.is_some() {
+            self.grid_cell = other.grid_cell;
+        }
+        if other.grid_column_span != 1 {
+            self.grid_column_span = other.grid_column_span;
+        }
+        if other.grid_row_span != 1 {
+            self.grid_row_span = other.grid_row_span;
         }
         if other.background.is_some() {
             self.background = other.background;
@@ -670,6 +691,27 @@ impl Style {
     }
     pub fn with_shrink(mut self, s: f32) -> Self {
         self.flex_shrink = s;
+        self
+    }
+    pub fn with_align_self(mut self, a: AlignItems) -> Self {
+        self.align_self = Some(a);
+        self
+    }
+    pub fn with_grid_cell(mut self, cell: usize) -> Self {
+        self.grid_cell = Some(cell);
+        self
+    }
+    pub fn with_grid_column_span(mut self, span: u32) -> Self {
+        self.grid_column_span = span.max(1);
+        self
+    }
+    pub fn with_grid_row_span(mut self, span: u32) -> Self {
+        self.grid_row_span = span.max(1);
+        self
+    }
+    pub fn with_grid_span(mut self, columns: u32, rows: u32) -> Self {
+        self.grid_column_span = columns.max(1);
+        self.grid_row_span = rows.max(1);
         self
     }
 
@@ -818,6 +860,14 @@ macro_rules! style {
     (@inner $s:ident grid_template_rows $v:expr) => { $s.grid_template_rows = $v; };
     (@inner $s:ident grid_column_gap $v:expr) => { $s.grid_column_gap = $v as f32; };
     (@inner $s:ident grid_row_gap $v:expr) => { $s.grid_row_gap = $v as f32; };
+    (@inner $s:ident grid_cell $v:expr) => { $s.grid_cell = Some($v); };
+    (@inner $s:ident grid_column_span $v:expr) => { $s.grid_column_span = ($v as u32).max(1); };
+    (@inner $s:ident grid_row_span $v:expr) => { $s.grid_row_span = ($v as u32).max(1); };
+    (@inner $s:ident grid_span $v:expr) => {
+        let (col_span, row_span) = $v;
+        $s.grid_column_span = (col_span as u32).max(1);
+        $s.grid_row_span = (row_span as u32).max(1);
+    };
     (@inner $s:ident grid_gap $v:expr) => {
         let (col_gap, row_gap) = $v;
         $s.grid_column_gap = col_gap as f32;

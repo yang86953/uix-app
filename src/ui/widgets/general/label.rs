@@ -47,6 +47,18 @@ component! {
         self.style.as_ref().and_then(|style| style.align_self)
     }
 
+    grid_cell => (&self) -> Option<usize> {
+        self.style.as_ref().and_then(|style| style.grid_cell)
+    }
+
+    grid_column_span => (&self) -> u32 {
+        self.style.as_ref().map(|style| style.grid_column_span).unwrap_or(1)
+    }
+
+    grid_row_span => (&self) -> u32 {
+        self.style.as_ref().map(|style| style.grid_row_span).unwrap_or(1)
+    }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, mods, .. } => {

@@ -25,8 +25,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
     let mut next_cell = 0;
 
     for (ci, child) in input.children.iter().enumerate() {
-        let (start_cell, col, row) = if child.cell > 0 {
-            let cell = child.cell;
+        let (start_cell, col, row) = if let Some(cell) = child.cell {
             let min_rows = (cell / n_cols) + (child.row_span as usize);
             let cur_rows = occupied.len() / n_cols;
             if min_rows > cur_rows {

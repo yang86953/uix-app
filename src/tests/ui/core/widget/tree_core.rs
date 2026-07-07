@@ -606,6 +606,29 @@ fn child_from_tree_reads_common_style_align_self() {
 }
 
 #[test]
+fn child_from_tree_reads_common_style_grid_placement() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let style = Style::default()
+        .with_grid_cell(2)
+        .with_grid_column_span(3)
+        .with_grid_row_span(2);
+    let container = tree.add_child(root, Box::new(Container::new().style(style.clone())));
+    let button = tree.add_child(root, Box::new(Button::new("Ok").style(style.clone())));
+    let label = tree.add_child(root, Box::new(Label::new("Name").style(style.clone())));
+    let mut grid_widget = Grid::new();
+    grid_widget.apply_style(&style);
+    let grid = tree.add_child(root, Box::new(grid_widget));
+
+    for child in [container, button, label, grid] {
+        let layout_child = child_from_tree(child, &tree);
+        assert_eq!(layout_child.grid_cell, Some(2));
+        assert_eq!(layout_child.grid_column_span, 3);
+        assert_eq!(layout_child.grid_row_span, 2);
+    }
+}
+
+#[test]
 fn child_from_tree_with_constraints_clamps_measured_size() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
@@ -854,6 +877,67 @@ fn grid_layout_applies_child_margin_inside_cell() {
     assert_eq!(
         tree.get(child).unwrap().frame(),
         Rect::new(4.0, 3.0, 40.0, 30.0)
+    );
+}
+
+#[test]
+fn grid_layout_honors_explicit_cell_zero() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Grid::new()
+            .columns(vec![
+                crate::ui::layout::GridTrack::Px(50.0),
+                crate::ui::layout::GridTrack::Px(50.0),
+            ])
+            .rows(vec![crate::ui::layout::GridTrack::Px(40.0)])
+            .size(100.0, 40.0)
+            .align(crate::ui::layout::AlignItems::Start),
+    ));
+    tree.add_child(root, Box::new(Container::new().size(10.0, 10.0)));
+    let explicit = tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .style(Style::default().with_grid_cell(0))
+                .size(10.0, 10.0),
+        ),
+    );
+
+    tree.layout();
+
+    assert_eq!(
+        tree.get(explicit).unwrap().frame(),
+        Rect::new(0.0, 0.0, 10.0, 10.0)
+    );
+}
+
+#[test]
+fn grid_layout_uses_child_grid_span() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Grid::new()
+            .columns(vec![
+                crate::ui::layout::GridTrack::Px(50.0),
+                crate::ui::layout::GridTrack::Px(50.0),
+            ])
+            .rows(vec![crate::ui::layout::GridTrack::Px(40.0)])
+            .size(100.0, 40.0)
+            .justify(crate::ui::layout::JustifyContent::Stretch),
+    ));
+    let child = tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .style(Style::default().with_grid_cell(0).with_grid_column_span(2))
+                .size(10.0, 10.0),
+        ),
+    );
+
+    tree.layout();
+
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 100.0, 40.0)
     );
 }
 
