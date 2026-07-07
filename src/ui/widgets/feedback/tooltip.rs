@@ -2,6 +2,7 @@ use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
+use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -31,6 +32,9 @@ define_widget! {
         delay_ms: u32,
         timer_id: u32,
         arrow: bool,
+        transition: TransitionPlayer,
+        closing: bool,
+        transition_dirty: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -41,41 +45,45 @@ define_widget! {
         match (self.trigger, event) {
             (TriggerMode::Hover, SystemEvent::PointerEnter) => {
                 if self.delay_ms == 0 {
-                    self.visible = true;
+                    self.open();
                     self.pending = false;
                 } else {
-                    self.visible = false;
+                    self.close();
                     self.pending = true;
                 }
                 EventResult::Handled
             }
             (TriggerMode::Hover, SystemEvent::PointerLeave) => {
-                self.visible = false;
+                self.close();
                 self.pending = false;
                 EventResult::Handled
             }
             (TriggerMode::Click, SystemEvent::PointerDown { .. }) => {
-                self.visible = !self.visible;
+                if self.is_present() {
+                    self.close();
+                } else {
+                    self.open();
+                }
                 self.pending = false;
                 EventResult::Handled
             }
             (TriggerMode::Focus, SystemEvent::FocusIn) => {
                 if self.delay_ms == 0 {
-                    self.visible = true;
+                    self.open();
                     self.pending = false;
                 } else {
-                    self.visible = false;
+                    self.close();
                     self.pending = true;
                 }
                 EventResult::Handled
             }
             (TriggerMode::Focus, SystemEvent::FocusOut) => {
-                self.visible = false;
+                self.close();
                 self.pending = false;
                 EventResult::Handled
             }
             (_, SystemEvent::Timer { id }) if self.pending && *id == self.timer_id => {
-                self.visible = true;
+                self.open();
                 self.pending = false;
                 EventResult::Handled
             }
@@ -91,12 +99,13 @@ define_widget! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        if !self.visible {
+        if !self.is_present() {
             return;
         }
 
-        let bg = self.bg_color.unwrap_or(Color::from_rgba(50, 50, 50, 230));
-        let txt_color = self.text_color.unwrap_or(Color::white());
+        let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
+        let bg = fade_color(self.bg_color.unwrap_or(Color::from_rgba(50, 50, 50, 230)), opacity);
+        let txt_color = fade_color(self.text_color.unwrap_or(Color::white()), opacity);
         let text_w = self.text.len() as f32 * 7.5 + 16.0;
         let text_h = 26.0;
         let arrow_sz = 6.0;
@@ -141,15 +150,11 @@ define_widget! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        let text_w = self.text.len() as f32 * 7.5 + 20.0;
-        let text_h = 26.0;
-        let gap = if self.arrow { 8.0 } else { 4.0 };
-        let (tx, ty) = tooltip_origin(frame, self.placement, text_w, text_h, gap);
-        frame.union(&Rect::new(tx, ty, text_w, text_h))
+        tooltip_dirty_rect(&self.text, self.arrow, self.placement, frame)
     }
 
     overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
-        if !self.visible {
+        if !self.is_present() {
             return None;
         }
 
@@ -164,6 +169,31 @@ define_widget! {
                 .z_index(1100)
                 .managed(true),
         )
+    }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.is_present() || self.transition.finished {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        self.transition.update(dt);
+        self.transition_dirty = true;
+
+        if self.closing && self.transition.finished {
+            self.visible = false;
+            self.closing = false;
+        }
+
+        self.is_present() && !self.transition.finished
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.transition_dirty {
+            tooltip_dirty_rect(&self.text, self.arrow, self.placement, frame)
+        } else {
+            Rect::zero()
+        }
     }
 }
 
@@ -194,6 +224,14 @@ fn tooltip_origin(
     }
 }
 
+fn tooltip_dirty_rect(text: &str, arrow: bool, placement: TooltipPlacement, frame: Rect) -> Rect {
+    let text_w = text.len() as f32 * 7.5 + 20.0;
+    let text_h = 26.0;
+    let gap = if arrow { 8.0 } else { 4.0 };
+    let (tx, ty) = tooltip_origin(frame, placement, text_w, text_h, gap);
+    frame.union(&Rect::new(tx, ty, text_w, text_h))
+}
+
 fn draw_arrow(
     ctx: &mut PaintContext,
     x: f32,
@@ -217,6 +255,13 @@ fn draw_arrow(
     ctx.fill_path(&pb.build(), color, FillRule::NonZero);
 }
 
+fn fade_color(color: Color, opacity: f32) -> Color {
+    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    color.with_alpha(alpha)
+}
+
 impl Default for Tooltip {
     fn default() -> Self {
         Self::new("")
@@ -236,6 +281,9 @@ impl Tooltip {
             delay_ms: 0,
             timer_id: 1,
             arrow: true,
+            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            closing: false,
+            transition_dirty: false,
         }
     }
 
@@ -277,4 +325,32 @@ impl Tooltip {
     pub fn is_visible(&self) -> bool {
         self.visible
     }
+
+    pub fn is_present(&self) -> bool {
+        self.visible || self.closing
+    }
+
+    pub fn open(&mut self) {
+        self.visible = true;
+        self.closing = false;
+        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition_dirty = true;
+    }
+
+    pub fn close(&mut self) {
+        if !self.is_present() {
+            self.visible = false;
+            self.closing = false;
+            self.transition_dirty = false;
+            return;
+        }
+        self.visible = false;
+        self.closing = true;
+        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition_dirty = true;
+    }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/feedback/tooltip.rs"]
+mod tests;
