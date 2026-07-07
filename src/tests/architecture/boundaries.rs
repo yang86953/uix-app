@@ -62,6 +62,14 @@ fn platform_cfgs_stay_inside_native_boundary() {
     let platform_cfg_needles = [
         "cfg(windows",
         "cfg(unix",
+        "cfg(all(windows",
+        "cfg(all(unix",
+        "cfg(any(windows",
+        "cfg(any(unix",
+        "cfg(not(windows",
+        "cfg(not(unix",
+        "cfg_attr(windows",
+        "cfg_attr(unix",
         "cfg(target_os",
         "cfg(target_family",
     ];
