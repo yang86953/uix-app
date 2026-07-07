@@ -2,10 +2,11 @@
 //!
 //! 月视图展示日期，支持选中日期、月份切换。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use std::cell::Cell;
 
@@ -48,8 +49,12 @@ define_widget! {
         year_jump: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(self.cell_size * 7.0, self.cell_size * 7.0 + 40.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -161,6 +166,17 @@ impl Calendar {
     pub fn year_jump(mut self, v: bool) -> Self {
         self.year_jump = v;
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(self.cell_size * 7.0, self.cell_size * 7.0 + 40.0)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Calendar {
+            cell_size: self.cell_size,
+            year_jump: self.year_jump,
+        }
     }
 }
 

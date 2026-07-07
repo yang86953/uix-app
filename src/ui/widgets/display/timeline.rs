@@ -2,14 +2,15 @@
 //!
 //! 垂直时间轴展示事件序列，支持节点颜色、标签、描述。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 /// 时间线节点。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TimelineItem {
     pub color: Color,
     pub label: String,
@@ -24,9 +25,12 @@ define_widget! {
         reverse: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        let h = self.items.len() as f32 * 60.0;
-        Size::new(400.0, h.max(60.0))
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -92,6 +96,19 @@ impl Timeline {
     pub fn reverse(mut self, v: bool) -> Self {
         self.reverse = v;
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        let h = self.items.len() as f32 * 60.0;
+        Size::new(400.0, h.max(60.0))
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Timeline {
+            items: self.items.clone(),
+            pending: self.pending,
+            reverse: self.reverse,
+        }
     }
 }
 

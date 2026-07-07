@@ -1,14 +1,16 @@
 use std::any::TypeId;
 
 use crate::core::{Constraints, EdgeInsets, Size};
+use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::layout::GridTrack;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::widgets::{
-    Button, Checkbox, Container, Divider, DividerDirection, DividerOrientation, Grid, Icon, Input,
-    InputNumber, Label, Radio, RadioDirection, Rate, Slider, Space, SpaceSize, Switch, Typography,
-    TypographyType,
+    Avatar, Badge, BadgeStatus, Button, Calendar, Card, Checkbox, Container, Divider,
+    DividerDirection, DividerOrientation, Empty, FloatButton, Grid, Icon, Image, Input,
+    InputNumber, Label, Radio, RadioDirection, Rate, Skeleton, SkeletonShape, Slider, Space,
+    SpaceSize, Switch, Tag, TagColor, Timeline, TimelineItem, Typography, TypographyType,
 };
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotFields, SnapshotSource, SnapshotValue,
@@ -395,6 +397,218 @@ fn numeric_input_snapshots_exclude_runtime_caches() {
             step: 0.25,
             placeholder: "amount".to_string(),
             disabled: false,
+        }
+    );
+}
+
+#[test]
+fn display_widget_snapshots_capture_static_config() {
+    assert_eq!(
+        Avatar::new("AB")
+            .size(40.0)
+            .bg(Color::blue())
+            .text_color(Color::white())
+            .square(true)
+            .src("avatar.png")
+            .snapshot_fields(),
+        SnapshotFields::Avatar {
+            text: "AB".to_string(),
+            size: 40.0,
+            bg_color: Some(Color::blue()),
+            text_color: Some(Color::white()),
+            square: true,
+            src: "avatar.png".to_string(),
+        }
+    );
+
+    assert_eq!(
+        Badge::new()
+            .count(120)
+            .max(9)
+            .dot()
+            .color(Color::red())
+            .status(BadgeStatus::Warning)
+            .show_zero(true)
+            .text("hot")
+            .offset(2.0, 4.0)
+            .offset_unit(PhysicalUnit::Mm(2.0), PhysicalUnit::Pt(3.0))
+            .snapshot_fields(),
+        SnapshotFields::Badge {
+            count: 1,
+            max: 9,
+            dot: true,
+            color: Some(Color::red()),
+            size: 16.0,
+            status: Some(BadgeStatus::Warning),
+            show_zero: true,
+            text: "hot".to_string(),
+            offset_x: 2.0,
+            offset_y: 4.0,
+            offset_unit: Some((PhysicalUnit::Mm(2.0), PhysicalUnit::Pt(3.0))),
+        }
+    );
+
+    assert_eq!(
+        Empty::new()
+            .description("Nothing")
+            .icon("search")
+            .image("file")
+            .snapshot_fields(),
+        SnapshotFields::Empty {
+            description: "Nothing".to_string(),
+            icon_name: "search".to_string(),
+            image: "file".to_string(),
+        }
+    );
+}
+
+#[test]
+fn card_and_float_button_snapshots_exclude_hover_state() {
+    let mut card = Card::new()
+        .title("Panel")
+        .bordered(false)
+        .hoverable()
+        .size(320.0, 180.0)
+        .padding(20.0)
+        .elevation(3)
+        .flex_grow(2.0)
+        .actions(vec!["Edit", "Delete"]);
+    let before = card.snapshot_fields();
+    let _ = card.on_event(&SystemEvent::PointerEnter);
+    assert_eq!(card.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Card {
+            title: Some("Panel".to_string()),
+            bordered: false,
+            hoverable: true,
+            fixed_width: Some(320.0),
+            fixed_height: Some(180.0),
+            padding: 20.0,
+            elevation: 3,
+            flex_grow: 2.0,
+            actions: vec!["Edit".to_string(), "Delete".to_string()],
+        }
+    );
+
+    let mut float_button = FloatButton::new("+")
+        .tooltip("Create")
+        .badge(7)
+        .position(12.0, 24.0)
+        .size(48.0);
+    let before = float_button.snapshot_fields();
+    let _ = float_button.on_event(&SystemEvent::PointerEnter);
+    assert_eq!(float_button.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::FloatButton {
+            icon: "+".to_string(),
+            tooltip: "Create".to_string(),
+            badge_count: 7,
+            size: 48.0,
+            x: 12.0,
+            y: 24.0,
+        }
+    );
+}
+
+#[test]
+fn media_and_tag_snapshots_capture_config() {
+    let image = Image::new(120.0, 80.0)
+        .src("hero.png")
+        .alt("Hero")
+        .fallback("Missing")
+        .radius(8.0)
+        .preview(false)
+        .fit(false);
+    assert_eq!(
+        image.snapshot_fields(),
+        SnapshotFields::Image {
+            src: "hero.png".to_string(),
+            alt: "Hero".to_string(),
+            fallback: "Missing".to_string(),
+            width: 120.0,
+            height: 80.0,
+            radius: 8.0,
+            preview: false,
+            fit: false,
+        }
+    );
+    assert_eq!(
+        image.measure(Constraints::loose(Size::new(90.0, 60.0))),
+        Size::new(90.0, 60.0)
+    );
+
+    assert_eq!(
+        Tag::new("stable")
+            .color(TagColor::Success)
+            .custom_color(Color::green())
+            .closable()
+            .checkable(true)
+            .font_size(14.0)
+            .snapshot_fields(),
+        SnapshotFields::Tag {
+            text: "stable".to_string(),
+            color: TagColor::Success,
+            closable: true,
+            font_size: 14.0,
+            custom_color: Some(Color::green()),
+            checkable: true,
+        }
+    );
+}
+
+#[test]
+fn timeline_calendar_and_skeleton_snapshots_capture_static_config() {
+    let item = TimelineItem::new("Build")
+        .description("done")
+        .color(Color::green());
+    let timeline = Timeline::new()
+        .add(item.clone())
+        .pending(true)
+        .reverse(true);
+    assert_eq!(
+        timeline.snapshot_fields(),
+        SnapshotFields::Timeline {
+            items: vec![item],
+            pending: true,
+            reverse: true,
+        }
+    );
+    assert_eq!(
+        timeline.measure(Constraints::loose(Size::new(180.0, 40.0))),
+        Size::new(180.0, 40.0)
+    );
+
+    let mut calendar = Calendar::new().cell_size(32.0).year_jump(true);
+    let before = calendar.snapshot_fields();
+    let _ = calendar.on_event(&SystemEvent::PointerDown {
+        button: crate::ui::MouseButton::Left,
+        pos: crate::core::Point::new(8.0, 8.0),
+        mods: crate::ui::KeyMod::NONE,
+    });
+    assert_eq!(calendar.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Calendar {
+            cell_size: 32.0,
+            year_jump: true,
+        }
+    );
+    assert_eq!(
+        calendar.measure(Constraints::loose(Size::new(160.0, 120.0))),
+        Size::new(160.0, 120.0)
+    );
+
+    assert_eq!(
+        Skeleton::new()
+            .shape(SkeletonShape::Circle)
+            .size(64.0, 64.0)
+            .snapshot_fields(),
+        SnapshotFields::Skeleton {
+            shape: SkeletonShape::Circle,
+            width: 64.0,
+            height: 64.0,
         }
     );
 }

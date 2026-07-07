@@ -9,9 +9,10 @@ use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widget::WidgetId;
 use crate::ui::widgets::{
-    Button, Checkbox, Container, Divider, DividerDirection, DividerOrientation, Grid, Icon, Input,
-    InputNumber, Label, Radio, RadioDirection, Rate, Slider, Space, SpaceSize, Switch, Typography,
-    TypographyType,
+    Avatar, Badge, BadgeStatus, Button, Calendar, Card, Checkbox, Container, Divider,
+    DividerDirection, DividerOrientation, Empty, FloatButton, Grid, Icon, Image, Input,
+    InputNumber, Label, Radio, RadioDirection, Rate, Skeleton, SkeletonShape, Slider, Space,
+    SpaceSize, Switch, Tag, TagColor, Timeline, TimelineItem, Typography, TypographyType,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -166,6 +167,83 @@ pub enum SnapshotFields {
         placeholder: String,
         disabled: bool,
     },
+    Avatar {
+        text: String,
+        size: f32,
+        bg_color: Option<Color>,
+        text_color: Option<Color>,
+        square: bool,
+        src: String,
+    },
+    Badge {
+        count: i32,
+        max: i32,
+        dot: bool,
+        color: Option<Color>,
+        size: f32,
+        status: Option<BadgeStatus>,
+        show_zero: bool,
+        text: String,
+        offset_x: f32,
+        offset_y: f32,
+        offset_unit: Option<(PhysicalUnit, PhysicalUnit)>,
+    },
+    Card {
+        title: Option<String>,
+        bordered: bool,
+        hoverable: bool,
+        fixed_width: Option<f32>,
+        fixed_height: Option<f32>,
+        padding: f32,
+        elevation: u8,
+        flex_grow: f32,
+        actions: Vec<String>,
+    },
+    Empty {
+        description: String,
+        icon_name: String,
+        image: String,
+    },
+    Image {
+        src: String,
+        alt: String,
+        fallback: String,
+        width: f32,
+        height: f32,
+        radius: f32,
+        preview: bool,
+        fit: bool,
+    },
+    Tag {
+        text: String,
+        color: TagColor,
+        closable: bool,
+        font_size: f32,
+        custom_color: Option<Color>,
+        checkable: bool,
+    },
+    Timeline {
+        items: Vec<TimelineItem>,
+        pending: bool,
+        reverse: bool,
+    },
+    Calendar {
+        cell_size: f32,
+        year_jump: bool,
+    },
+    Skeleton {
+        shape: SkeletonShape,
+        width: f32,
+        height: f32,
+    },
+    FloatButton {
+        icon: String,
+        tooltip: String,
+        badge_count: i32,
+        size: f32,
+        x: f32,
+        y: f32,
+    },
     Container {
         style: Style,
     },
@@ -229,6 +307,36 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     if let Some(input_number) = component.downcast_ref::<InputNumber>() {
         return input_number.snapshot_fields();
+    }
+    if let Some(avatar) = component.downcast_ref::<Avatar>() {
+        return avatar.snapshot_fields();
+    }
+    if let Some(badge) = component.downcast_ref::<Badge>() {
+        return badge.snapshot_fields();
+    }
+    if let Some(card) = component.downcast_ref::<Card>() {
+        return card.snapshot_fields();
+    }
+    if let Some(empty) = component.downcast_ref::<Empty>() {
+        return empty.snapshot_fields();
+    }
+    if let Some(image) = component.downcast_ref::<Image>() {
+        return image.snapshot_fields();
+    }
+    if let Some(tag) = component.downcast_ref::<Tag>() {
+        return tag.snapshot_fields();
+    }
+    if let Some(timeline) = component.downcast_ref::<Timeline>() {
+        return timeline.snapshot_fields();
+    }
+    if let Some(calendar) = component.downcast_ref::<Calendar>() {
+        return calendar.snapshot_fields();
+    }
+    if let Some(skeleton) = component.downcast_ref::<Skeleton>() {
+        return skeleton.snapshot_fields();
+    }
+    if let Some(float_button) = component.downcast_ref::<FloatButton>() {
+        return float_button.snapshot_fields();
     }
     if let Some(container) = component.downcast_ref::<Container>() {
         return container.snapshot_fields();
