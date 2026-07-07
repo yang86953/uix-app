@@ -140,6 +140,12 @@ impl WidgetTree {
         true
     }
 
+    pub(crate) fn has_app_state_semantic_events(&self) -> bool {
+        self.app_state
+            .as_ref()
+            .is_some_and(AppState::has_semantic_events)
+    }
+
     pub(crate) fn register_app_state_snapshot(&self, id: WidgetId) {
         let Some(app_state) = &self.app_state else {
             return;

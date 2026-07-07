@@ -3,7 +3,7 @@ use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::test_clock::system_clock;
 use crate::app::window_session::WindowLoopState;
-use crate::core::Point;
+use crate::core::{Point, Rect};
 use crate::data::SettingsService;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
@@ -15,11 +15,14 @@ use crate::ui::theme::Theme;
 use crate::ui::view::combinators::label;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::Label;
-use crate::ui::{EventHandler, EventResult, SystemEvent, WidgetCapabilities, WidgetComponent};
+use crate::ui::{
+    EventHandler, EventResult, SystemEvent, WidgetAnimation, WidgetCapabilities, WidgetComponent,
+    WidgetRender, WidgetTree,
+};
 use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
 };
 use std::time::Duration;
@@ -68,6 +71,67 @@ impl EventHandler for RecordingWidget {
         } else {
             EventResult::NotHandled
         }
+    }
+}
+
+struct CountingAnimationWidget {
+    update_calls: Arc<AtomicUsize>,
+}
+
+impl CountingAnimationWidget {
+    fn new(update_calls: Arc<AtomicUsize>) -> Self {
+        Self { update_calls }
+    }
+}
+
+impl WidgetComponent for CountingAnimationWidget {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::RENDER | WidgetCapabilities::ANIMATION)
+    }
+
+    fn as_render(&self) -> Option<&dyn WidgetRender> {
+        Some(self)
+    }
+
+    fn as_render_mut(&mut self) -> Option<&mut dyn WidgetRender> {
+        Some(self)
+    }
+
+    fn as_animation(&self) -> Option<&dyn WidgetAnimation> {
+        Some(self)
+    }
+
+    fn as_animation_mut(&mut self) -> Option<&mut dyn WidgetAnimation> {
+        Some(self)
+    }
+}
+
+impl WidgetRender for CountingAnimationWidget {
+    fn render(
+        &self,
+        _frame: Rect,
+        _ctx: &mut crate::draw::painting::PaintContext,
+        _tree: &WidgetTree,
+    ) {
+    }
+}
+
+impl WidgetAnimation for CountingAnimationWidget {
+    fn update_animation(&mut self, _dt: f64) -> bool {
+        self.update_calls.fetch_add(1, Ordering::Relaxed);
+        false
     }
 }
 
@@ -540,6 +604,125 @@ fn drain_secondary_window_frames_records_registered_active_state() {
         secondary_windows[0].session.loop_state(),
         WindowLoopState::RegisteredActive
     );
+}
+
+#[test]
+fn drain_secondary_window_frames_skips_deep_idle_windows() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    runtime.request_open_window(WindowConfig::new("Child", 320, 240, || label("child")));
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::new(0.0, 0.0));
+    let clock = system_clock();
+
+    assert!(drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    ));
+    assert_eq!(
+        secondary_windows[0].session.loop_state(),
+        WindowLoopState::DeepIdle
+    );
+
+    secondary_windows[0].last_frame = None;
+    assert!(!drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    ));
+    assert!(secondary_windows[0].last_frame.is_none());
+}
+
+#[test]
+fn noop_secondary_post_to_ui_does_not_tick_animation() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let update_calls = Arc::new(AtomicUsize::new(0));
+    runtime.request_open_window(WindowConfig::new("Child", 320, 240, {
+        let update_calls = update_calls.clone();
+        move || ViewNode::leaf(CountingAnimationWidget::new(update_calls.clone()))
+    }));
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::new(0.0, 0.0));
+    let clock = system_clock();
+
+    assert!(drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    ));
+    assert_eq!(update_calls.load(Ordering::Relaxed), 1);
+
+    secondary_windows[0].handle.post_to_ui(|| {});
+    assert!(!drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    ));
+    assert_eq!(update_calls.load(Ordering::Relaxed), 1);
 }
 
 #[test]

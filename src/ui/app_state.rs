@@ -74,6 +74,13 @@ impl AppState {
             .drain_semantic_events()
     }
 
+    pub(crate) fn has_semantic_events(&self) -> bool {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_semantic_events()
+    }
+
     pub fn get_snapshot(&self, id: WidgetId) -> Option<ComponentConfigSnapshot> {
         self.inner
             .lock()
@@ -148,6 +155,10 @@ impl AppStateInner {
 
     fn drain_semantic_events(&mut self) -> Vec<(WidgetId, SemanticEvent)> {
         self.semantic_events.drain(..).collect()
+    }
+
+    fn has_semantic_events(&self) -> bool {
+        !self.semantic_events.is_empty()
     }
 
     fn contains(&self, id: WidgetId) -> bool {

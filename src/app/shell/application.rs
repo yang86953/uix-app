@@ -128,6 +128,40 @@ impl SecondaryWindowSession {
         had_main_thread_work || had_app_state_semantic_work
     }
 
+    fn has_frame_work(&mut self, now: Instant) -> bool {
+        if !self.rendered_first {
+            return true;
+        }
+
+        let parts = self.session.parts_mut();
+        parts
+            .active_work
+            .sync_app_timers(parts.app_timers.deadlines());
+        if parts.tree.take_reconcile_requested() {
+            *parts.reconcile_pending = true;
+        }
+
+        let due_registered_work = parts
+            .active_work
+            .next_deadline()
+            .is_some_and(|deadline| deadline <= now);
+        let has_layout_work = parts
+            .tree
+            .invalidation
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .has_layout();
+
+        due_registered_work
+            || !parts.main_thread_queue.is_empty()
+            || parts.pending_root.is_some()
+            || *parts.reconcile_pending
+            || parts.tree.has_app_state_semantic_events()
+            || parts.tree.has_pending_effects()
+            || parts.tree.has_render_work()
+            || has_layout_work
+    }
+
     fn drain_frame(
         &mut self,
         font_service: &FontService,
@@ -150,7 +184,7 @@ impl SecondaryWindowSession {
 
         let mut main_thread_context =
             MainThreadContext::new(parts.pending_root, parts.reconcile_pending);
-        let had_main_thread_work = parts.main_thread_queue.drain(&mut main_thread_context);
+        let _had_main_thread_work = parts.main_thread_queue.drain(&mut main_thread_context);
         let had_app_state_semantic_work = parts.tree.drain_app_state_semantic_events();
         parts
             .active_work
@@ -171,7 +205,6 @@ impl SecondaryWindowSession {
             .has_layout();
         let pending_effects = parts.tree.has_pending_effects();
         let active_frame = had_registered_work
-            || had_main_thread_work
             || had_app_state_semantic_work
             || *parts.reconcile_pending
             || pending_effects
@@ -757,15 +790,18 @@ fn drain_secondary_window_frames(
     clock: &dyn AppClock,
 ) -> bool {
     let mut drained = false;
+    let now = clock.now();
     for window in secondary_windows {
-        drained |= window.drain_frame(
-            font_service,
-            image_service,
-            theme,
-            debug_mode,
-            cursor_pos,
-            clock,
-        );
+        if window.has_frame_work(now) {
+            drained |= window.drain_frame(
+                font_service,
+                image_service,
+                theme,
+                debug_mode,
+                cursor_pos,
+                clock,
+            );
+        }
     }
     drained
 }
