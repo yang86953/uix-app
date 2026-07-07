@@ -161,7 +161,7 @@
 | <a id="d123"></a>123 | Handler 智能重绑 | reconcile 时 **仅 handler 变更** 才 `clear_component`+重注册；判定细则 [#135](#d135) |
 | <a id="d124"></a>124 | Registry 框架独占 | **禁止** App 直接访问 Registry；App 经 **#132 Timer API** 或内置组件 **间接** register |
 | <a id="d125"></a>125 | follow_system_theme | App builder **opt-in** `.follow_system_theme(bool)`，默认 **false**；**true** 时框架监听 ThemeChanged→切换+全窗 palette invalidate |
-| <a id="d126"></a>126 | RegisteredActive 脏区 | 关联 paint = `dirty_bounds()` / 目标 widget frame / IME caret rect 并集；框架自动 push Invalidation |
+| <a id="d126"></a>126 | RegisteredActive 脏区 | 关联 paint = `dirty_bounds()` / 目标 component frame / IME caret rect 并集；框架自动 push Invalidation |
 | <a id="d127"></a>127 | wait_until 实现 | app 层 `min(next_deadline)-now` → **单次** `wait_timeout(remaining)`；不要求 native 新 API |
 | <a id="d128"></a>128 | 多窗 Theme 广播 | `.theme()` 或 follow_system_theme 切换时，框架 **遍历 WindowSession** 逐树 palette-only invalidate |
 | <a id="d129"></a>129 | Picture 自适应阈值 | 替代固定深度4：`node_count≥8` 且 `est_pixels≥65536` 且 PicturePolicy=Eligible（框架常量，非 App 配置） |

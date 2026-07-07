@@ -769,7 +769,7 @@ fn hidden_window_preserves_dirty_until_restore() {
 }
 
 #[test]
-fn ime_events_without_focused_widget_do_not_start_text_input_or_force_frame() {
+fn ime_events_without_focused_component_do_not_start_text_input_or_force_frame() {
     let mut platform = FakePlatform::new();
     platform
         .event_source
@@ -983,7 +983,7 @@ fn ime_composition_start_registers_open_active_work_without_timeout() {
     {
         let (tree, _) = session.tree_and_engine_mut();
         let root = tree.root_id().unwrap();
-        tree.managers_mut().focus.set_focused_widget(Some(root));
+        tree.managers_mut().focus.set_focused_component(Some(root));
     }
     let font_service = FontService::new();
     let image_service = ImageService::new();
@@ -1038,7 +1038,7 @@ fn ime_composition_end_unregisters_active_work() {
     {
         let (tree, _) = session.tree_and_engine_mut();
         let root = tree.root_id().unwrap();
-        tree.managers_mut().focus.set_focused_widget(Some(root));
+        tree.managers_mut().focus.set_focused_component(Some(root));
     }
     let font_service = FontService::new();
     let image_service = ImageService::new();

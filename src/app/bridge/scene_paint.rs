@@ -1,4 +1,4 @@
-﻿//! WidgetTree 的 ScenePaint 实现 — UI 与 draw compositor 的桥接。
+//! WidgetTree 的 ScenePaint 实现 — UI 与 draw compositor 的桥接。
 
 use crate::core::DirtyRegion;
 use crate::core::{ComponentId, Point, Rect};
@@ -88,7 +88,7 @@ impl ScenePaint for WidgetTree {
     }
 
     fn focused_node(&self) -> Option<NodeId> {
-        self.managers().focus.focused_widget()
+        self.managers().focus.focused_component()
     }
 
     fn node_focusable(&self, id: NodeId) -> bool {

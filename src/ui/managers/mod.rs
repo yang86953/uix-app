@@ -20,7 +20,7 @@ pub use style_manager::*;
 pub use text_manager::*;
 
 /// 聚合所有 manager 系统。
-/// 支持 per-widget override：个别 widget 可使用独立实例，否则回退到树级默认。
+/// 支持 per-component override：个别 component 可使用独立实例，否则回退到树级默认。
 #[derive(Default)]
 pub struct WidgetManagers {
     pub state: StateManager,
@@ -33,7 +33,7 @@ pub struct WidgetManagers {
     overrides: HashMap<ComponentId, Box<WidgetManagersOverrides>>,
 }
 
-/// 可按 widget 单独 override 的 manager 子集。
+/// 可按 component 单独 override 的 manager 子集。
 #[derive(Default)]
 struct WidgetManagersOverrides {
     state: Option<StateManager>,
@@ -66,7 +66,7 @@ impl WidgetManagers {
         self.overrides.remove(&component_id);
     }
 
-    /// Remove every per-widget override from this tree.
+    /// Remove every per-component override from this tree.
     pub fn clear_overrides(&mut self) {
         self.overrides.clear();
     }

@@ -832,7 +832,7 @@ fn sync_ime_session(
 ) {
     match ev.type_ {
         UiEventType::ImeCompositionStart | UiEventType::ImeCompositionUpdate => {
-            let Some(target) = tree.managers().focus.focused_widget() else {
+            let Some(target) = tree.managers().focus.focused_component() else {
                 return;
             };
             if *current_session != Some(target) {

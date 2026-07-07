@@ -99,7 +99,7 @@ component! {
 pub struct AnchorItem {
     /// 显示文本
     pub label: String,
-    /// 锚点标识（对应目标 widget 的 ID 或 key）
+    /// 锚点标识（对应目标 component 的 ID 或 key）
     pub href: String,
 }
 

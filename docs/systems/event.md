@@ -1,4 +1,4 @@
-﻿# 事件系统
+# 事件系统
 
 ← [Main](../Main.md) · 系统 **#5** · 功能域：`ui` · `app`（UiEvent 映射）
 
@@ -53,7 +53,7 @@ Pointer（Down/Up/Move）、Wheel、Key（Down/Up）、TextInput、IME（Start/U
 | 阶段 | 方向 | 默认 |
 |------|------|------|
 | Capture | 根 → 目标（不含目标） | opt-in |
-| Target | 目标 widget | — |
+| Target | 目标 component | — |
 | Bubble | 目标 → 根 | **默认** |
 
 `EventResult`：`Handled`（停止）| `NotHandled` | `Bubbled`。
@@ -138,7 +138,7 @@ ComponentHandle::emit(event)
 | PointerMove | drag（5px 阈值）/ hover enter-leave | capture → bubble |
 | Wheel | overlay **或** hit **或** hover **或** root | capture 优先（ScrollView 消化，#45） |
 | KeyDown | Tab → focus_next；否则 focused | capture → bubble → Enter/Space → Click |
-| TextInput / IME / Copy/Cut/Paste | focused widget | system → optional semantic |
+| TextInput / IME / Copy/Cut/Paste | focused component | system → optional semantic |
 | ThemeChanged | 全树 notify + root invalidate | |
 | FileDrop | hit **或** root | system + semantic（#95） |
 
@@ -166,9 +166,9 @@ dispatch_semantic_event:
 
 [demand-driven · 边界感知窄路径](demand-driven.md#pointermove-窄路径)：
 
-1. `DragManager` active/potential 或 `InteractionManager.pressed_widget` → **全 dispatch**
-2. `pos` 仍在 `InteractionManager.hovered_widget` 扩大 hit 框内 → 仅更新拖拽/hover 状态；**不 hit_test**；默认 **不 dispatch**
-3. 否则 `hit_test`；`target ≠ hovered_widget` → enter/leave + 窄标脏，并对新 target dispatch
+1. `DragManager` active/potential 或 `InteractionManager.pressed_component` → **全 dispatch**
+2. `pos` 仍在 `InteractionManager.hovered_component` 扩大 hit 框内 → 仅更新拖拽/hover 状态；**不 hit_test**；默认 **不 dispatch**
+3. 否则 `hit_test`；`target ≠ hovered_component` → enter/leave + 窄标脏，并对新 target dispatch
 
 Widget 可通过 `EventHandler::wants_continuous_pointer_move` opt-in（#121，默认 false）。实现见 [component · 能力](component.md#能力)。
 
