@@ -172,7 +172,7 @@ core ← native ← draw ← ui ← app
 |----------------------|------------------|------|
 | ComponentId (Generational) | `core::ComponentId`；源码仍通过 `WidgetId` / `NodeId` 别名使用 | [#101](decisions.md#d101) |
 | component! | component! name+struct / struct；define_widget! 兼容入口 | [#102](decisions.md#d102) |
-| measure(constraints) | preferred_size(engine) | [#103](decisions.md#d103) |
+| measure(constraints) | `WidgetLayout::measure(Constraints)` 已接；`preferred_size(engine)` 保留兼容 | [#103](decisions.md#d103) |
 | ScrollView | ScrollView (was ScrollContainer in old docs) | [#104](decisions.md#d104) |
 | AppState + ComponentHandle | State closure capture | [#32](decisions.md#d32), [#101](decisions.md#d101) |
 | HandlerTable key ComponentId | HandlerTable key `WidgetId`（= `ComponentId`） | [#10](decisions.md#d10), [#101](decisions.md#d101) |

@@ -1,6 +1,6 @@
 pub use crate::core::ComponentId;
 pub use crate::core::Point;
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::draw::traits::GraphicsEngine;
@@ -221,7 +221,17 @@ impl BoxedWidget {
 
     // ═══ 便捷分发方法 ═══
 
+    pub fn measure(&self, constraints: Constraints) -> Size {
+        self.component()
+            .as_layout()
+            .map(|l| l.measure(constraints))
+            .unwrap_or_default()
+    }
+
     pub fn preferred_size(&self, engine: Option<&dyn GraphicsEngine>) -> Size {
+        if engine.is_none() {
+            return self.measure(Constraints::unconstrained());
+        }
         self.component()
             .as_layout()
             .map(|l| l.preferred_size(engine))

@@ -27,24 +27,24 @@
 每个实现 `WidgetLayout` 的组件提供：
 
 ```rust
-fn preferred_size(&self, engine: Option<&dyn GraphicsEngine>) -> Size;
+fn measure(&self, constraints: Constraints) -> Size;
 ```
 
-在父级分配的 **content rect** 约束下测量 intrinsic size。复杂组件可读 engine 做文本测量。
+在父级分配的 **content rect** 约束下测量 intrinsic size。旧 `preferred_size(engine)` 保留为兼容桥。
 
 ### measure 与 preferred_size（#103）
 
 | | 设计（#29） | 当前实现 |
 |---|------------|----------|
-| API | `measure(constraints) -> Size` | `preferred_size(engine) -> Size` |
-| 约束 | `Constraints { min, max, definite }`（#38） | 父级 content rect + 可选 engine 文本测量 |
+| API | `measure(constraints) -> Size` | 已接；`preferred_size(engine)` 保留兼容，`preferred_size(None)` 会走 `measure(Constraints::unconstrained())` |
+| 约束 | `Constraints { min, max, definite }`（#38） | `core::Constraints` 已接，含 `loose` / `unconstrained` / `clamp` |
 | 语义 | 在约束下计算 intrinsic size | 等同 |
 
-重构时将 `preferred_size` 重命名为 `measure` 并显式传入 Constraints（[#103](../decisions.md#d103)）。
+新组件优先实现 `measure`；旧组件可继续实现 `preferred_size`，由默认 `measure` 兼容调用（[#103](../decisions.md#d103)）。
 
 ### Constraints（#38）
 
-设计规格 `{ min, max, definite }`；当前布局管线通过父级 `Rect` 传递可用空间：
+实现规格 `{ min, max, definite }`；当前布局管线仍多处通过父级 `Rect` 传递可用空间，逐步收敛到显式 Constraints：
 
 | 概念 | 含义 |
 |------|------|

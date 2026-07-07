@@ -13,14 +13,14 @@
 //! impl_widget_component!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
 //!
 //! impl WidgetLayout for Button {
-//!     fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size { ... }
+//!     fn measure(&self, constraints: Constraints) -> Size { ... }
 //! }
 //! impl WidgetRender for Button {
 //!     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) { ... }
 //! }
 //! ```
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
@@ -120,6 +120,9 @@ pub trait WidgetComponent: 'static {
 
 /// 布局行为：尺寸、弹性、子节点排列。
 pub trait WidgetLayout: WidgetComponent {
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.preferred_size(None))
+    }
     fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
         Size::zero()
     }
