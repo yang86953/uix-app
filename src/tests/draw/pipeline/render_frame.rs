@@ -1,6 +1,67 @@
 use super::*;
+use crate::core::Error;
+use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
 use crate::draw::null_engine::NullEngine;
 use crate::draw::painting::PaintContext;
+use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
+
+struct RecordingEngine {
+    canvas: NoopCanvas2D,
+    events: Vec<&'static str>,
+    partial_redraw: bool,
+}
+
+impl RecordingEngine {
+    fn new() -> Self {
+        Self {
+            canvas: NoopCanvas2D,
+            events: Vec::new(),
+            partial_redraw: true,
+        }
+    }
+
+    fn without_partial_redraw(mut self) -> Self {
+        self.partial_redraw = false;
+        self
+    }
+}
+
+impl GraphicsEngine for RecordingEngine {
+    fn initialize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn shutdown(&mut self) {}
+
+    fn resize(&mut self, _width: i32, _height: i32) {}
+
+    fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
+        self.events.push("begin");
+        match strategy {
+            UpdateStrategy::FullRedraw => RenderOutcome::Present(DamageRegion::full()),
+            UpdateStrategy::DirtyRects(rects) => {
+                RenderOutcome::Present(DamageRegion::partial(rects))
+            }
+        }
+    }
+
+    fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
+        self.events.push("end");
+        RenderOutcome::Present(present_damage.clone())
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        self.events.push("canvas");
+        &mut self.canvas
+    }
+
+    fn capabilities(&self) -> GraphicsCapabilities {
+        GraphicsCapabilities {
+            presentation_mode: crate::draw::traits::PresentationMode::ExternalPresenter,
+            partial_redraw: self.partial_redraw,
+        }
+    }
+}
 
 struct EmptyScene {
     region: DirtyRegion,
@@ -391,4 +452,196 @@ fn rendered_frame_with_empty_dirty_region_is_idle() {
 
     assert_eq!(out.outcome, RenderOutcome::Idle);
     assert_eq!(out.inv_source, InvalidationSource::None);
+}
+
+#[test]
+fn rendered_frame_with_partial_dirty_outputs_padded_partial_damage() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = NullEngine::new();
+    let _ = engine.initialize(64, 64);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut region = DirtyRegion::empty();
+    region.add_rect(Rect::new(3.0, 4.0, 5.0, 6.0));
+
+    let out = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &region,
+            tree_version: 0,
+            scroll_move: None,
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::Present(DamageRegion::partial(vec![Rect::new(2.0, 3.0, 7.0, 8.0)]))
+    );
+    assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
+}
+
+#[test]
+fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = NullEngine::new();
+    let _ = engine.initialize(128, 128);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut region = DirtyRegion::empty();
+    region.add_rect(Rect::new(10.0, 20.0, 4.0, 5.0));
+
+    let out = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &region,
+            tree_version: 0,
+            scroll_move: Some((Rect::new(30.0, 40.0, 50.0, 60.0), 0.0, -12.0)),
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::Present(DamageRegion::partial(vec![
+            Rect::new(9.0, 19.0, 6.0, 7.0),
+            Rect::new(29.0, 39.0, 52.0, 62.0),
+        ]))
+    );
+    assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
+}
+
+#[test]
+fn engine_without_partial_redraw_expands_dirty_region_to_full_damage() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new().without_partial_redraw();
+    let _ = engine.initialize(64, 64);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut region = DirtyRegion::empty();
+    region.add_rect(Rect::new(8.0, 8.0, 12.0, 12.0));
+
+    let out = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &region,
+            tree_version: 0,
+            scroll_move: None,
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
+}
+
+#[test]
+fn first_frame_with_scroll_move_still_uses_full_damage() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = NullEngine::new();
+    let _ = engine.initialize(128, 128);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut region = DirtyRegion::empty();
+    region.add_rect(Rect::new(1.0, 2.0, 3.0, 4.0));
+
+    let out = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &region,
+            tree_version: 0,
+            scroll_move: Some((Rect::new(10.0, 12.0, 30.0, 40.0), 0.0, -8.0)),
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(out.inv_source, InvalidationSource::FirstFrame);
+}
+
+#[test]
+fn debug_telemetry_draws_before_end_frame() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new();
+    let _ = engine.initialize(64, 64);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let region = DirtyRegion::full();
+    let metrics = RenderMetrics::default();
+
+    let out = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &region,
+            tree_version: 0,
+            scroll_move: None,
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: true,
+            hover_pos: None,
+            metrics: Some(&metrics),
+        },
+    );
+
+    let first_canvas = engine
+        .events
+        .iter()
+        .position(|event| *event == "canvas")
+        .expect("debug telemetry should draw to canvas");
+    let end = engine
+        .events
+        .iter()
+        .position(|event| *event == "end")
+        .expect("frame should end");
+    assert!(
+        first_canvas < end,
+        "debug HUD must be drawn before end_frame"
+    );
+    assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
 }
