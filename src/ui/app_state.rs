@@ -1,5 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
+use std::thread::ThreadId;
 
 use crate::core::Rect;
 use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
@@ -14,8 +15,8 @@ pub struct AppState {
     pub(crate) inner: Arc<Mutex<AppStateInner>>,
 }
 
-#[derive(Default)]
 pub(crate) struct AppStateInner {
+    owner_thread: ThreadId,
     components: HashMap<WidgetId, AppStateEntry>,
     semantic_events: VecDeque<(WidgetId, SemanticEvent)>,
     event_loop_waker: EventLoopWaker,
@@ -64,7 +65,7 @@ impl AppState {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .event_loop_waker = waker;
+            .set_event_loop_waker(waker);
     }
 
     pub(crate) fn drain_semantic_events(&self) -> Vec<(WidgetId, SemanticEvent)> {
@@ -107,7 +108,25 @@ impl AppState {
     }
 }
 
+impl Default for AppStateInner {
+    fn default() -> Self {
+        Self {
+            owner_thread: std::thread::current().id(),
+            components: HashMap::new(),
+            semantic_events: VecDeque::new(),
+            event_loop_waker: EventLoopWaker::default(),
+        }
+    }
+}
+
 impl AppStateInner {
+    fn assert_owner_thread(&self) {
+        assert!(
+            std::thread::current().id() == self.owner_thread,
+            "AppState and lookup ComponentHandle must be used on the UI thread; use AppHandle::post_to_ui from background threads"
+        );
+    }
+
     fn register(
         &mut self,
         id: WidgetId,
@@ -115,6 +134,7 @@ impl AppStateInner {
         invalidation: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {
+        self.assert_owner_thread();
         self.components.insert(
             id,
             AppStateEntry {
@@ -126,14 +146,22 @@ impl AppStateInner {
     }
 
     fn unregister(&mut self, id: WidgetId) {
+        self.assert_owner_thread();
         self.components.remove(&id);
     }
 
+    fn set_event_loop_waker(&mut self, waker: EventLoopWaker) {
+        self.assert_owner_thread();
+        self.event_loop_waker = waker;
+    }
+
     pub(crate) fn snapshot(&self, id: WidgetId) -> Option<ComponentConfigSnapshot> {
+        self.assert_owner_thread();
         self.components.get(&id).map(|entry| entry.snapshot.clone())
     }
 
     pub(crate) fn invalidate(&self, id: WidgetId) -> bool {
+        self.assert_owner_thread();
         let Some(entry) = self.components.get(&id) else {
             return false;
         };
@@ -146,6 +174,7 @@ impl AppStateInner {
         id: WidgetId,
         event: SemanticEvent,
     ) -> Option<EventLoopWaker> {
+        self.assert_owner_thread();
         if !self.contains(id) {
             return None;
         }
@@ -154,22 +183,27 @@ impl AppStateInner {
     }
 
     fn drain_semantic_events(&mut self) -> Vec<(WidgetId, SemanticEvent)> {
+        self.assert_owner_thread();
         self.semantic_events.drain(..).collect()
     }
 
     fn has_semantic_events(&self) -> bool {
+        self.assert_owner_thread();
         !self.semantic_events.is_empty()
     }
 
     fn contains(&self, id: WidgetId) -> bool {
+        self.assert_owner_thread();
         self.components.contains_key(&id)
     }
 
     fn len(&self) -> usize {
+        self.assert_owner_thread();
         self.components.len()
     }
 
     fn is_empty(&self) -> bool {
+        self.assert_owner_thread();
         self.components.is_empty()
     }
 }
