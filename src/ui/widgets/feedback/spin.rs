@@ -4,8 +4,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
-use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpinSize {

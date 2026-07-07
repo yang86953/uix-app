@@ -1,4 +1,4 @@
-﻿//! Layout 页面布局组件 — Header / Sider / Content / Footer 骨架。
+//! Layout 页面布局组件 — Header / Sider / Content / Footer 骨架。
 //!
 //! 组合使用构建标准页面布局。
 
@@ -6,8 +6,8 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
-use crate::ui::WidgetTree;
 
 component! {
     /// Layout — 页面布局容器（flex 列）。

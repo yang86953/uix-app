@@ -3,8 +3,8 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
+use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
-use crate::ui::WidgetTree;
 
 /// 面包屑的一项。
 #[derive(Debug, Clone, PartialEq)]
