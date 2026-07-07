@@ -6,7 +6,8 @@ use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
 use crate::ui::managers::StyleManager;
 use crate::ui::{
-    AppState, Label, Modal, OverlayEntry, OverlayKind, QRCode, SnapshotFields, TextManager, Tooltip,
+    AppState, Drawer, Label, Modal, OverlayEntry, OverlayKind, QRCode, SnapshotFields, TextManager,
+    Tooltip,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -953,6 +954,155 @@ fn focus_manager_drives_tab_navigation() {
 }
 
 #[test]
+fn focus_trap_tab_navigation_stays_inside_top_overlay_owner_subtree() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));
+    let outside = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    let modal = tree.add_child(root, Box::new(Modal::new("Dialog").show().overlay(true)));
+    let first = tree.add_child(
+        modal,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)),
+    );
+    let second = tree.add_child(
+        modal,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(3)),
+    );
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 200.0));
+    tree.layout();
+
+    tree.managers_mut()
+        .focus
+        .set_focused_component(Some(outside));
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(first));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(second));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(first));
+}
+
+#[test]
+fn focus_trap_shift_tab_wraps_inside_top_overlay_owner_subtree() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));
+    let _outside = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    let modal = tree.add_child(root, Box::new(Modal::new("Dialog").show().overlay(true)));
+    let first = tree.add_child(
+        modal,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)),
+    );
+    let second = tree.add_child(
+        modal,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(3)),
+    );
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 200.0));
+    tree.layout();
+    tree.managers_mut().focus.set_focused_component(Some(first));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::SHIFT,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(second));
+}
+
+#[test]
+fn focus_trap_without_focusable_children_does_not_escape_to_main_tree() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));
+    let outside = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    let owner = tree.add_child(
+        root,
+        Box::new(PassThroughContainer::new(100.0, 80.0, vec![])),
+    );
+    tree.overlay_stack_mut().push_entry(
+        OverlayEntry::new(owner, OverlayKind::Modal)
+            .bounds(Rect::new(50.0, 30.0, 120.0, 100.0))
+            .z_index(1000),
+    );
+    tree.managers_mut()
+        .focus
+        .set_focused_component(Some(outside));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(outside));
+}
+
+#[test]
+fn drawer_focus_trap_tab_navigation_stays_inside_drawer_subtree() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(300.0, 200.0, vec![])));
+    let outside = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    let drawer = tree.add_child(root, Box::new(Drawer::new("Drawer").show()));
+    let first = tree.add_child(
+        drawer,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)),
+    );
+    let second = tree.add_child(
+        drawer,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(3)),
+    );
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 200.0));
+    tree.layout();
+    tree.managers_mut()
+        .focus
+        .set_focused_component(Some(outside));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(first));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(second));
+}
+
+#[test]
 fn focus_manager_clears_removed_focused_component() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
@@ -1480,6 +1630,112 @@ fn dispatch_pointer_down_outside_modal_overlay_dismisses_and_blocks_underlying()
     assert_eq!(result, EventResult::Handled);
     assert!(tree.overlay_stack().is_empty());
     assert!(underlying_event.is_none());
+    assert!(tree.managers().focus.focused_component().is_none());
+}
+
+#[test]
+fn dismissing_focus_trap_restores_focus_before_trap() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(240.0, 160.0, vec![])));
+    let outside = tree.add_child(
+        root_id,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)),
+    );
+    let owner = tree.add_child(
+        root_id,
+        Box::new(PassThroughContainer::new(100.0, 80.0, vec![])),
+    );
+    let inside = tree.add_child(
+        owner,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)),
+    );
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 160.0));
+    tree.get_mut(outside)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 20.0, 20.0));
+    tree.get_mut(owner)
+        .unwrap()
+        .set_frame(Rect::new(60.0, 40.0, 100.0, 80.0));
+    tree.get_mut(inside)
+        .unwrap()
+        .set_frame(Rect::new(60.0, 40.0, 20.0, 20.0));
+    tree.overlay_stack_mut().push_entry(
+        OverlayEntry::new(owner, OverlayKind::Modal)
+            .bounds(Rect::new(50.0, 30.0, 120.0, 100.0))
+            .z_index(1000),
+    );
+    tree.managers_mut()
+        .focus
+        .set_focused_component(Some(outside));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(inside));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(20.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+
+    assert!(tree.overlay_stack().is_empty());
+    assert_eq!(tree.managers().focus.focused_component(), Some(outside));
+}
+
+#[test]
+fn dismissing_focus_trap_drops_stale_restore_target() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(240.0, 160.0, vec![])));
+    let outside = tree.add_child(
+        root_id,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)),
+    );
+    let owner = tree.add_child(
+        root_id,
+        Box::new(PassThroughContainer::new(100.0, 80.0, vec![])),
+    );
+    let inside = tree.add_child(
+        owner,
+        Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(2)),
+    );
+    tree.overlay_stack_mut().push_entry(
+        OverlayEntry::new(owner, OverlayKind::Modal)
+            .bounds(Rect::new(50.0, 30.0, 120.0, 100.0))
+            .z_index(1000),
+    );
+    tree.managers_mut()
+        .focus
+        .set_focused_component(Some(outside));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Tab,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().focus.focused_component(), Some(inside));
+
+    tree.remove(outside);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(20.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+
     assert!(tree.managers().focus.focused_component().is_none());
 }
 
