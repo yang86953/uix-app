@@ -1,8 +1,9 @@
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -37,8 +38,12 @@ define_widget! {
         transition_dirty: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(0.0, 0.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -348,6 +353,23 @@ impl Tooltip {
         self.closing = true;
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::zero()
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Tooltip {
+            text: self.text.clone(),
+            placement: self.placement,
+            trigger: self.trigger,
+            bg_color: self.bg_color,
+            text_color: self.text_color,
+            delay_ms: self.delay_ms,
+            timer_id: self.timer_id,
+            arrow: self.arrow,
+        }
     }
 }
 

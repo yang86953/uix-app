@@ -4,6 +4,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 /// Progress display type.
@@ -208,6 +209,19 @@ impl ProgressBar {
             return Size::new(d, d);
         }
         Size::new(self.width, self.height)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::ProgressBar {
+            progress: self.progress,
+            mode: self.mode,
+            stroke_color: self.stroke_color,
+            track_color: self.track_color,
+            height: self.height,
+            width: self.width,
+            round: self.round,
+            progress_type: self.progress_type,
+        }
     }
 }
 

@@ -4,17 +4,21 @@ use crate::core::{Constraints, EdgeInsets, Size};
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
+use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::GridTrack;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::widgets::{
-    Avatar, Badge, BadgeStatus, Button, Calendar, Card, Checkbox, Container, Divider,
-    DividerDirection, DividerOrientation, Empty, FloatButton, Grid, Icon, Image, Input,
-    InputNumber, Label, Radio, RadioDirection, Rate, Skeleton, SkeletonShape, Slider, Space,
-    SpaceSize, Switch, Tag, TagColor, Timeline, TimelineItem, Typography, TypographyType,
+    Alert, Avatar, Badge, BadgeStatus, Button, Calendar, Card, Checkbox, Container, Divider,
+    DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Empty, FloatButton, Grid, Icon,
+    Image, Input, InputNumber, Label, Message, MessageItem, MessagePlacement, Modal,
+    NotifPlacement, Notification, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
+    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate, Skeleton,
+    SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Switch, Tag, TagColor, Timeline,
+    TimelineItem, Tooltip, TooltipPlacement, TriggerMode, Typography, TypographyType,
 };
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotFields, SnapshotSource, SnapshotValue,
-    SystemEvent, WidgetId, WidgetLayout,
+    SystemEvent, WidgetAnimation, WidgetId, WidgetLayout,
 };
 use crate::{component, define_widget};
 
@@ -609,6 +613,211 @@ fn timeline_calendar_and_skeleton_snapshots_capture_static_config() {
             shape: SkeletonShape::Circle,
             width: 64.0,
             height: 64.0,
+        }
+    );
+}
+
+#[test]
+fn feedback_snapshots_capture_static_config() {
+    assert_eq!(
+        Alert::new("Saved")
+            .description("Done")
+            .type_(StatusLevel::Success)
+            .closable()
+            .snapshot_fields(),
+        SnapshotFields::Alert {
+            message: "Saved".to_string(),
+            description: "Done".to_string(),
+            type_: StatusLevel::Success,
+            closable: true,
+            show_icon: true,
+        }
+    );
+
+    assert_eq!(
+        Message::new()
+            .placement(MessagePlacement::TopRight)
+            .snapshot_fields(),
+        SnapshotFields::Message {
+            placement: MessagePlacement::TopRight,
+        }
+    );
+
+    assert_eq!(
+        Notification::new()
+            .placement(NotifPlacement::BottomLeft)
+            .snapshot_fields(),
+        SnapshotFields::Notification {
+            placement: NotifPlacement::BottomLeft,
+        }
+    );
+}
+
+#[test]
+fn message_and_notification_snapshots_exclude_runtime_queues() {
+    let message = Message::new().placement(MessagePlacement::TopLeft);
+    let before = message.snapshot_fields();
+    message.add(MessageItem {
+        type_: StatusLevel::Warning,
+        content: "Queued".to_string(),
+        duration_ms: 2500,
+        closable: false,
+    });
+    assert_eq!(message.snapshot_fields(), before);
+
+    let notification = Notification::new().placement(NotifPlacement::TopLeft);
+    let before = notification.snapshot_fields();
+    notification.open("Deploy", "Done", StatusLevel::Info);
+    assert_eq!(notification.snapshot_fields(), before);
+}
+
+#[test]
+fn progress_and_spin_snapshots_exclude_animation_phase() {
+    let mut progress = ProgressBar::new()
+        .size(240.0, 12.0)
+        .progress(0.4)
+        .stroke_color(Color::green())
+        .track_color(Color::blue())
+        .circle();
+    let before = progress.snapshot_fields();
+    assert!(!WidgetAnimation::update_animation(&mut progress, 0.25));
+    assert_eq!(progress.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::ProgressBar {
+            progress: 0.4,
+            mode: ProgressMode::Determinate(0.4),
+            stroke_color: Some(Color::green()),
+            track_color: Some(Color::blue()),
+            height: 12.0,
+            width: 240.0,
+            round: true,
+            progress_type: ProgressType::Circle,
+        }
+    );
+
+    let mut spin = Spin::new()
+        .large()
+        .color(Color::red())
+        .spinning(true)
+        .tip("Loading")
+        .wrapper_mode();
+    let before = spin.snapshot_fields();
+    assert!(WidgetAnimation::update_animation(&mut spin, 0.25));
+    assert_eq!(spin.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Spin {
+            size: SpinSize::Large,
+            color: Some(Color::red()),
+            spinning: true,
+            tip: "Loading".to_string(),
+            wrapper_mode: true,
+        }
+    );
+}
+
+#[test]
+fn floating_feedback_snapshots_exclude_visibility_and_transition_state() {
+    let mut tooltip = Tooltip::new("Help")
+        .placement(TooltipPlacement::Bottom)
+        .trigger(TriggerMode::Click)
+        .bg_color(Color::blue())
+        .text_color(Color::white())
+        .arrow(false)
+        .delay_ms(150)
+        .timer_id(8);
+    let before = tooltip.snapshot_fields();
+    tooltip.open();
+    assert_eq!(tooltip.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Tooltip {
+            text: "Help".to_string(),
+            placement: TooltipPlacement::Bottom,
+            trigger: TriggerMode::Click,
+            bg_color: Some(Color::blue()),
+            text_color: Some(Color::white()),
+            delay_ms: 150,
+            timer_id: 8,
+            arrow: false,
+        }
+    );
+
+    let mut popover = Popover::new("Body")
+        .title("Title")
+        .placement(PopoverPlacement::RightBottom)
+        .trigger(PopoverTrigger::Hover)
+        .arrow(false);
+    let before = popover.snapshot_fields();
+    popover.open();
+    assert_eq!(popover.snapshot_fields(), before);
+
+    let mut popconfirm = Popconfirm::new()
+        .title("Delete?")
+        .confirm_text("Yes")
+        .cancel_text("No")
+        .placement(PopconfirmPlacement::BottomRight)
+        .arrow(false)
+        .icon(false);
+    let before = popconfirm.snapshot_fields();
+    popconfirm.open();
+    assert_eq!(popconfirm.snapshot_fields(), before);
+}
+
+#[test]
+fn modal_and_drawer_snapshots_capture_config_not_runtime_visibility() {
+    let mut modal = Modal::new("Dialog")
+        .modal_size(ControlSize::Large)
+        .size(640.0, 360.0)
+        .closable(false)
+        .mask_closable(false)
+        .footer_visible(false)
+        .centered(false)
+        .overlay(true);
+    let before = modal.snapshot_fields();
+    modal.open();
+    assert_eq!(modal.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Modal {
+            title: "Dialog".to_string(),
+            width: 640.0,
+            height: 360.0,
+            modal_size: ControlSize::Large,
+            closable: false,
+            mask_closable: false,
+            footer_visible: false,
+            centered: false,
+            overlay: true,
+        }
+    );
+
+    let mut drawer = Drawer::new("Panel")
+        .drawer_size(ControlSize::Small)
+        .size(420.0, 260.0)
+        .placement(DrawerPlacement::Left)
+        .closable(false)
+        .mask_closable(false)
+        .mask(false)
+        .footer_visible(true)
+        .extra("More");
+    let before = drawer.snapshot_fields();
+    drawer.open();
+    assert_eq!(drawer.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Drawer {
+            title: "Panel".to_string(),
+            width: 420.0,
+            height: 260.0,
+            drawer_size: ControlSize::Small,
+            placement: DrawerPlacement::Left,
+            closable: false,
+            mask_closable: false,
+            mask: false,
+            footer_visible: true,
+            extra: "More".to_string(),
         }
     );
 }

@@ -4,6 +4,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -168,6 +169,16 @@ impl Spin {
         } else {
             let d = self.diameter();
             Size::new(d, d)
+        }
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Spin {
+            size: self.size,
+            color: self.color,
+            spinning: self.spinning,
+            tip: self.tip.clone(),
+            wrapper_mode: self.wrapper_mode,
         }
     }
 }

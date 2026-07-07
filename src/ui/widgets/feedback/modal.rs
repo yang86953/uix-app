@@ -1,11 +1,12 @@
 use std::cell::Cell;
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetCore, WidgetTree};
 
 define_widget! {
@@ -28,14 +29,12 @@ define_widget! {
         transition_dirty: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        if self.overlay {
-            Size::zero()
-        } else if self.is_present() {
-            Size::new(self.width, self.height)
-        } else {
-            Size::zero()
-        }
+        self.intrinsic_size()
     }
 
     visible => (&self) -> bool { self.is_present() }
@@ -385,6 +384,30 @@ impl Modal {
             w,
             h,
         )
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        if self.overlay {
+            Size::zero()
+        } else if self.is_present() {
+            Size::new(self.width, self.height)
+        } else {
+            Size::zero()
+        }
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Modal {
+            title: self.title.clone(),
+            width: self.width,
+            height: self.height,
+            modal_size: self.modal_size,
+            closable: self.closable,
+            mask_closable: self.mask_closable,
+            footer_visible: self.footer_visible,
+            centered: self.centered,
+            overlay: self.overlay,
+        }
     }
 }
 

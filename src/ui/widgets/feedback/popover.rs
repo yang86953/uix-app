@@ -1,9 +1,10 @@
 use crate::define_widget;
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// Popover placement.
@@ -45,8 +46,12 @@ define_widget! {
         transition_dirty: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(80.0, 28.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -248,6 +253,20 @@ impl Popover {
 
     fn popup_position(&self, frame: Rect, pw: f32, ph: f32) -> (f32, f32) {
         popover_position(frame, self.placement, self.arrow, pw, ph)
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(80.0, 28.0)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Popover {
+            title: self.title.clone(),
+            content: self.content.clone(),
+            placement: self.placement,
+            trigger: self.trigger,
+            arrow: self.arrow,
+        }
     }
 }
 
