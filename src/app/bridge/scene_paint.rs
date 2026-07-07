@@ -1,13 +1,13 @@
-//! WidgetTree 的 ScenePaint 实现 — UI 与 draw compositor 的桥接。
+﻿//! WidgetTree 的 ScenePaint 实现 — UI 与 draw compositor 的桥接。
 
 use crate::core::DirtyRegion;
-use crate::core::{Point, Rect};
+use crate::core::{ComponentId, Point, Rect};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::compositor::ScenePaint;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::NodeId;
 use crate::ui::core::paint_scope::set_current_paint_widget;
-use crate::ui::{WidgetCore, WidgetId, WidgetTree};
+use crate::ui::{WidgetCore, WidgetTree};
 
 impl ScenePaint for WidgetTree {
     fn root_id(&self) -> Option<NodeId> {
@@ -114,5 +114,5 @@ impl ScenePaint for WidgetTree {
     }
 }
 
-// WidgetId 与 NodeId 同型
-const _: () = assert!(std::mem::size_of::<WidgetId>() == std::mem::size_of::<NodeId>());
+// ComponentId 与 NodeId 同型
+const _: () = assert!(std::mem::size_of::<ComponentId>() == std::mem::size_of::<NodeId>());

@@ -1,4 +1,4 @@
-//! 渲染失效队列 — 所有渲染触发的统一入口（Phase 2 / Phase 6）。
+﻿//! 渲染失效队列 — 所有渲染触发的统一入口（Phase 2 / Phase 6）。
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -7,7 +7,7 @@ use crate::core::{ComponentId, Rect};
 
 use crate::core::DirtyRegion;
 
-/// 节点标识（与 UI 层 WidgetId 对齐，draw 不依赖 ui 域）。
+/// 节点标识（与 core::ComponentId 同型，draw 不依赖 ui 域）。
 pub type NodeId = ComponentId;
 
 /// 共享失效队列句柄（State 绑定 paint 失效时使用，每棵树一个实例）。
@@ -28,7 +28,7 @@ pub enum Invalidation {
     /// 视觉变化，布局不变。
     Paint {
         id: NodeId,
-        /// `None` 表示整个 widget 的 dirty_rect。
+        /// `None` 表示整个节点的 dirty_rect。
         rect: Option<Rect>,
     },
     /// 合成层操作（如 scroll memmove 后的 exposed strip）。

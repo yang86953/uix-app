@@ -1,4 +1,4 @@
-# UIX 设计文档
+﻿# UIX 设计文档
 
 > **唯一入口**。完整索引在此；正文按需打开链接，不必通读。
 
@@ -170,7 +170,7 @@ core ← native ← draw ← ui ← app
 
 | 设计（文档/重构目标） | 当前实现（源码） | 决策 |
 |----------------------|------------------|------|
-| ComponentId (Generational) | `core::ComponentId`；公开事件/handle/snapshot/Reconciler、Widget trait 边界与 managers 已按 `ComponentId` 命名，树/布局/draw 内部仍保留 `WidgetId` / `NodeId` 同型别名 | [#101](decisions.md#d101) |
+| ComponentId (Generational) | `core::ComponentId`；公开事件/handle/snapshot/Reconciler、Widget trait 边界、managers、layout implementor 与 paint/debug 边界已按 `ComponentId` / `NodeId` 命名，WidgetTree 内部仍保留 `WidgetId` 同型别名，draw 内部保留 `NodeId` 同型别名 | [#101](decisions.md#d101) |
 | component! | `component! { name: ..., struct ... }` / `component! { struct ... }` | [#102](decisions.md#d102) |
 | measure(constraints) | `WidgetLayout::measure(Constraints)` 已接；`preferred_size(engine)` 保留兼容 | [#103](decisions.md#d103) |
 | ScrollView | ScrollView (was ScrollContainer in old docs) | [#104](decisions.md#d104) |
@@ -266,7 +266,7 @@ flowchart TB
 
 | 能力 | 设计 | 当前 | 文档 |
 |------|------|------|------|
-| ComponentId | Generational 稳定 ID | `core::ComponentId` 已落地并从 `ui::ComponentId` 与 `prelude` 重导出；`WidgetId` / `NodeId` 为源码别名；`SemanticEvent`、`EventHandler::semantic_event`、`HandlerTable` 存储/API、Reconciler 热路径、State paint binding、Widget trait 边界与 managers 已按 `ComponentId` 命名并覆盖 generation key 测试 | [component · WidgetTree](systems/component.md#widgettree) · [#10](decisions.md#d10) [#101](decisions.md#d101) |
+| ComponentId | Generational 稳定 ID | `core::ComponentId` 已落地并从 `ui::ComponentId` 与 `prelude` 重导出；`WidgetId` / `NodeId` 为源码别名；`SemanticEvent`、`EventHandler::semantic_event`、`HandlerTable` 存储/API、Reconciler 热路径、State paint binding、Widget trait 边界、managers 与 layout implementor 已按 `ComponentId` 命名并覆盖 generation key 测试 | [component · WidgetTree](systems/component.md#widgettree) · [#10](decisions.md#d10) [#101](decisions.md#d101) |
 | component! | `component!` authoring 宏 | `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已作为唯一 authoring 入口；旧 `define_widget!` 兼容入口已移除 | [component · Authoring](systems/component.md#authoring) · [#102](decisions.md#d102) |
 | AppState / ComponentHandle | mount 自动 register | `AppState` snapshot registry 已接入 `WidgetTree::set_app_state` mount/unmount，主窗与副窗共享同一 AppState；`get_handle` / `get_snapshot` / `contains` 公开查找 API、内部 register/unregister、snapshot/invalidate 与 semantic queue 均已按 `ComponentId` 命名；`ComponentHandle::id` 已按 `ComponentId` 命名；lookup handle 可读 snapshot、窄 Paint invalidate，并通过 AppState semantic queue 触发 emit | [application · AppState](systems/application.md#appstate--多窗--settings) · [#145](decisions.md#d145) |
 | StateSlotId | new 时单调 id | `State::new` 已分配稳定 slot id，clone 共享；State capture 指纹基础已用 `TypeId + slot_id` 接入 | [#143](decisions.md#d143) |

@@ -2,7 +2,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::native::traits::input::{KeyCode, KeyMod};
-use crate::ui::{EventResult, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
 use std::collections::HashSet;
 
 component! {
@@ -11,7 +11,7 @@ component! {
         /// Whether focus trapping is active.
         active: bool,
         /// Focusable widgets captured after layout.
-        focusable_ids: HashSet<WidgetId>,
+        focusable_ids: HashSet<ComponentId>,
         /// Offset used while cycling focus.
         tab_offset: usize,
     }
@@ -28,7 +28,7 @@ component! {
         }
         if let SystemEvent::KeyDown { key, mods } = event {
             if *key == KeyCode::Tab {
-                let mut sorted: Vec<WidgetId> = self.focusable_ids.iter().copied().collect();
+                let mut sorted: Vec<ComponentId> = self.focusable_ids.iter().copied().collect();
                 sorted.sort();
                 if sorted.is_empty() {
                     return EventResult::Handled;
@@ -72,7 +72,7 @@ impl FocusTrap {
     }
 
     /// Updates the focusable widget list after layout.
-    pub fn update_focusable(&mut self, ids: HashSet<WidgetId>) {
+    pub fn update_focusable(&mut self, ids: HashSet<ComponentId>) {
         self.focusable_ids = ids;
     }
 

@@ -1,4 +1,4 @@
-//! DebugRenderService — 调试绘制服务。
+﻿//! DebugRenderService — 调试绘制服务。
 
 use crate::core::Rect;
 use crate::draw::pipeline::{InvalidationSource, RenderMetrics};
@@ -31,7 +31,7 @@ impl DebugRenderService {
         Color::from_rgba(180, 180, 60, 200),
     ];
 
-    /// 绘制 widget 调试边框。
+    /// 绘制节点调试边框。
     pub fn draw_debug_border(
         &self,
         canvas: &mut dyn Canvas2D,
@@ -51,11 +51,11 @@ impl DebugRenderService {
         canvas.stroke_rect(rect, color, if hovered { 1.5 } else { 0.5 }, None);
     }
 
-    /// 在 widget 左上角显示调试标签。
+    /// 在节点左上角显示调试标签。
     pub fn draw_debug_label(
         &self,
         canvas: &mut dyn Canvas2D,
-        widget_id: usize,
+        node_slot: usize,
         depth: usize,
         rect: Rect,
     ) {
@@ -63,7 +63,7 @@ impl DebugRenderService {
             return;
         }
         let _color = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
-        let label = format!("#{} d{}", widget_id, depth);
+        let label = format!("#{} d{}", node_slot, depth);
         let _font_size = 12.0;
         let label_w = label.len() as f32 * 7.0 + 6.0;
         let label_h = 16.0;
@@ -76,13 +76,13 @@ impl DebugRenderService {
     }
 
     /// 在 widget 下方显示 frame 坐标和尺寸。
-    pub fn draw_debug_frame_info(&self, canvas: &mut dyn Canvas2D, widget_id: usize, rect: Rect) {
+    pub fn draw_debug_frame_info(&self, canvas: &mut dyn Canvas2D, node_slot: usize, rect: Rect) {
         if !self.debug_mode {
             return;
         }
         let info = format!(
             "#{} ({:.0},{:.0}) {:.0}×{:.0}",
-            widget_id, rect.x, rect.y, rect.w, rect.h
+            node_slot, rect.x, rect.y, rect.w, rect.h
         );
         let _font_size = 11.0;
         let info_w = info.len() as f32 * 6.5 + 6.0;

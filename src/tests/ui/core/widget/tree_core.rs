@@ -1,6 +1,6 @@
-// WidgetTree unit tests.
+﻿// WidgetTree unit tests.
 // Split out of `tree_core.rs` to keep implementation files manageable.
-use crate::core::{Constraints, Point, Size};
+use crate::core::{ComponentId, Constraints, Point, Size};
 use crate::draw::Color;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
@@ -307,9 +307,9 @@ impl WidgetLayout for ClipContainer {
     fn layout_children(
         &self,
         frame: Rect,
-        children: &[WidgetId],
+        children: &[ComponentId],
         tree: &WidgetTree,
-    ) -> Vec<(WidgetId, Rect)> {
+    ) -> Vec<(ComponentId, Rect)> {
         children
             .iter()
             .copied()
@@ -397,9 +397,9 @@ impl WidgetLayout for ScrollClipContainer {
     fn layout_children(
         &self,
         frame: Rect,
-        children: &[WidgetId],
+        children: &[ComponentId],
         tree: &WidgetTree,
-    ) -> Vec<(WidgetId, Rect)> {
+    ) -> Vec<(ComponentId, Rect)> {
         children
             .iter()
             .copied()

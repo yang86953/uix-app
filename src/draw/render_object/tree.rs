@@ -1,4 +1,4 @@
-//! RenderObjectTree — 从 ScenePaint 构建的 DisplayList 缓存索引。
+﻿//! RenderObjectTree — 从 ScenePaint 构建的 DisplayList 缓存索引。
 
 use std::collections::HashMap;
 
@@ -26,7 +26,7 @@ impl RenderObjectEntry {
     }
 }
 
-/// RenderObject 索引树：widget_id → Content DisplayList。
+/// RenderObject 索引树：node_id → Content DisplayList。
 ///
 /// 与 Widget 树解耦，仅通过 `ScenePaint` 只读快照同步。
 #[derive(Debug, Default)]
