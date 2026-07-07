@@ -8,7 +8,7 @@ use crate::core::WindowId;
 use crate::draw::pipeline::RenderMetrics;
 use crate::draw::NullEngine;
 use crate::native::test_harness::{FakePlatform, FakeWindow};
-use crate::native::traits::event::UiEvent;
+use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::input::{KeyCode, KeyMod};
 use crate::ui::overlay::OverlayKind;
 use crate::ui::theme::{DesignTokens, DynTokens};
@@ -91,7 +91,7 @@ impl WidgetAnimation for TestAnimatedWidget {
         previous > 1
     }
 
-    fn animation_dirty_rect(&self, _frame: Rect) -> Rect {
+    fn dirty_bounds(&self, _frame: Rect) -> Rect {
         self.dirty_rect
     }
 }
@@ -165,6 +165,7 @@ fn widget_tree_update_advances_animation_and_marks_dirty_rect() {
     tree.get_mut(root)
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+    tree.get_mut(root).unwrap().set_active(true);
     tree.reset_dirty();
 
     assert!(tree.update(0.016));
@@ -176,12 +177,58 @@ fn widget_tree_update_advances_animation_and_marks_dirty_rect() {
 }
 
 #[test]
+fn widget_tree_update_animation_nodes_advances_only_requested_ids() {
+    let first_remaining = Arc::new(AtomicUsize::new(2));
+    let first_updates = Arc::new(AtomicUsize::new(0));
+    let second_remaining = Arc::new(AtomicUsize::new(2));
+    let second_updates = Arc::new(AtomicUsize::new(0));
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new()));
+    let first = tree.add_child(
+        root,
+        Box::new(TestAnimatedWidget::new(
+            first_remaining.clone(),
+            first_updates.clone(),
+        )),
+    );
+    let second = tree.add_child(
+        root,
+        Box::new(TestAnimatedWidget::new(
+            second_remaining.clone(),
+            second_updates.clone(),
+        )),
+    );
+    tree.get_mut(first)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+    tree.get_mut(first).unwrap().set_active(true);
+    tree.get_mut(second)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 60.0, 100.0, 50.0));
+    tree.get_mut(second).unwrap().set_active(true);
+    tree.reset_dirty();
+
+    let updates = tree.update_animation_nodes([first], 0.016);
+
+    assert_eq!(updates, vec![(first, true)]);
+    assert_eq!(first_updates.load(Ordering::Relaxed), 1);
+    assert_eq!(first_remaining.load(Ordering::Relaxed), 1);
+    assert_eq!(second_updates.load(Ordering::Relaxed), 0);
+    assert_eq!(second_remaining.load(Ordering::Relaxed), 2);
+    assert_eq!(
+        tree.dirty_region().rects(),
+        &[Rect::new(4.0, 5.0, 6.0, 7.0)]
+    );
+}
+
+#[test]
 fn active_animation_registers_next_frame_deadline() {
     let start = Instant::now();
     let clock = TestClock::new(start);
     let remaining = Arc::new(AtomicUsize::new(2));
     let updates = Arc::new(AtomicUsize::new(0));
     let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
     platform.event_source.state.exit_after_timeout_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "test", 800, 600);
@@ -223,6 +270,302 @@ fn active_animation_registers_next_frame_deadline() {
     );
     assert!(!session.active_work().is_empty());
     assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+}
+
+#[test]
+fn due_animation_work_advances_only_due_node() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let first_remaining = Arc::new(AtomicUsize::new(2));
+    let first_updates = Arc::new(AtomicUsize::new(0));
+    let second_remaining = Arc::new(AtomicUsize::new(2));
+    let second_updates = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let (first, second) = {
+        let (tree, _) = session.tree_and_engine_mut();
+        let root = tree.root_id().unwrap();
+        let first = tree.add_child(
+            root,
+            Box::new(TestAnimatedWidget::new(
+                first_remaining.clone(),
+                first_updates.clone(),
+            )),
+        );
+        let second = tree.add_child(
+            root,
+            Box::new(TestAnimatedWidget::new(
+                second_remaining.clone(),
+                second_updates.clone(),
+            )),
+        );
+        tree.get_mut(first)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+        tree.get_mut(first).unwrap().set_active(true);
+        tree.get_mut(second)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 60.0, 100.0, 50.0));
+        tree.get_mut(second).unwrap().set_active(true);
+        tree.reset_dirty();
+        (first, second)
+    };
+    session
+        .active_work_mut()
+        .register(ActiveWorkKind::Animation(first), start);
+    session.active_work_mut().register(
+        ActiveWorkKind::Animation(second),
+        start + Duration::from_secs(60),
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(first_updates.load(Ordering::Relaxed), 1);
+    assert_eq!(first_remaining.load(Ordering::Relaxed), 1);
+    assert_eq!(second_updates.load(Ordering::Relaxed), 0);
+    assert_eq!(second_remaining.load(Ordering::Relaxed), 2);
+    assert!(!session.active_work().is_empty());
+}
+
+#[test]
+fn due_animation_work_unregisters_hidden_node_without_tick() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let remaining = Arc::new(AtomicUsize::new(2));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::new(remaining.clone(), updates.clone())),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let root = {
+        let (tree, _) = session.tree_and_engine_mut();
+        let root = tree.root_id().unwrap();
+        tree.get_mut(root).unwrap().set_visible(false);
+        root
+    };
+    session
+        .active_work_mut()
+        .register(ActiveWorkKind::Animation(root), start);
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(updates.load(Ordering::Relaxed), 0);
+    assert_eq!(remaining.load(Ordering::Relaxed), 2);
+    assert!(session.active_work().is_empty());
+}
+
+#[test]
+fn due_animation_frame_discovers_unregistered_animation_without_advancing_future() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let due_remaining = Arc::new(AtomicUsize::new(2));
+    let due_updates = Arc::new(AtomicUsize::new(0));
+    let future_remaining = Arc::new(AtomicUsize::new(2));
+    let future_updates = Arc::new(AtomicUsize::new(0));
+    let discovered_remaining = Arc::new(AtomicUsize::new(2));
+    let discovered_updates = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let (due_id, future_id) = {
+        let (tree, _) = session.tree_and_engine_mut();
+        let root = tree.root_id().unwrap();
+        let due_id = tree.add_child(
+            root,
+            Box::new(TestAnimatedWidget::new(
+                due_remaining.clone(),
+                due_updates.clone(),
+            )),
+        );
+        let future_id = tree.add_child(
+            root,
+            Box::new(TestAnimatedWidget::new(
+                future_remaining.clone(),
+                future_updates.clone(),
+            )),
+        );
+        let discovered_id = tree.add_child(
+            root,
+            Box::new(TestAnimatedWidget::new(
+                discovered_remaining.clone(),
+                discovered_updates.clone(),
+            )),
+        );
+        tree.get_mut(due_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
+        tree.get_mut(due_id).unwrap().set_active(true);
+        tree.get_mut(future_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 60.0, 100.0, 50.0));
+        tree.get_mut(future_id).unwrap().set_active(true);
+        tree.get_mut(discovered_id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 120.0, 100.0, 50.0));
+        tree.get_mut(discovered_id).unwrap().set_active(true);
+        tree.reset_dirty();
+        (due_id, future_id)
+    };
+    session
+        .active_work_mut()
+        .register(ActiveWorkKind::Animation(due_id), start);
+    session.active_work_mut().register(
+        ActiveWorkKind::Animation(future_id),
+        start + Duration::from_secs(60),
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(due_updates.load(Ordering::Relaxed), 1);
+    assert_eq!(due_remaining.load(Ordering::Relaxed), 1);
+    assert_eq!(future_updates.load(Ordering::Relaxed), 0);
+    assert_eq!(future_remaining.load(Ordering::Relaxed), 2);
+    assert_eq!(discovered_updates.load(Ordering::Relaxed), 1);
+    assert_eq!(discovered_remaining.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn app_timer_due_work_does_not_advance_future_animation() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let remaining = Arc::new(AtomicUsize::new(2));
+    let updates = Arc::new(AtomicUsize::new(0));
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(TestAnimatedWidget::new(remaining.clone(), updates.clone())),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let root = {
+        let (tree, _) = session.tree_and_engine_mut();
+        tree.root_id().unwrap()
+    };
+    session.active_work_mut().register(
+        ActiveWorkKind::Animation(root),
+        start + Duration::from_secs(60),
+    );
+    let app_timers = crate::app::app_timer::AppTimerQueue::with_clock(clock.clone());
+    let fired = Arc::new(AtomicUsize::new(0));
+    let _handle = app_timers.run_after(Duration::ZERO, {
+        let fired = fired.clone();
+        move || {
+            fired.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+    session.set_app_timers(app_timers);
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop_with_clock(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        clock,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(fired.load(Ordering::Relaxed), 1);
+    assert_eq!(updates.load(Ordering::Relaxed), 0);
+    assert_eq!(remaining.load(Ordering::Relaxed), 2);
+    assert!(!session.active_work().is_empty());
 }
 
 #[test]
@@ -359,6 +702,69 @@ fn key_event_after_first_frame_does_not_force_layout_without_invalidation() {
     assert_eq!(status, 0);
     assert_eq!(stats.layout_calls, 1);
     assert_eq!(stats.present_calls, 1);
+    assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
+}
+
+#[test]
+fn hidden_window_preserves_dirty_until_restore() {
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::new(
+            UiEventType::WindowMinimize,
+            UiEventPayload::None,
+        ));
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::key_down(KeyCode::F12, KeyMod::NONE));
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::new(
+            UiEventType::WindowRestore,
+            UiEventPayload::None,
+        ));
+    platform.event_source.state.exit_after_blocking_calls = Some(4);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    let stats = metrics.get();
+    assert_eq!(status, 0);
+    assert_eq!(stats.present_calls, 2);
+    assert_eq!(window.presenter.state.present_calls.len(), 2);
     assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
 }
 
@@ -855,6 +1261,7 @@ fn due_registry_timer_dispatches_system_timer_to_tree() {
         tree.get_mut(tooltip)
             .unwrap()
             .set_frame(Rect::new(10.0, 10.0, 80.0, 20.0));
+        tree.get_mut(tooltip).unwrap().set_active(true);
         let _ = tree.dispatch_event(&SystemEvent::PointerMove {
             pos: Point::new(20.0, 15.0),
             mods: KeyMod::NONE,

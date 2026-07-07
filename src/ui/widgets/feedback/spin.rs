@@ -73,9 +73,9 @@ define_widget! {
         true
     }
 
-    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+    dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.spinning {
-            frame
+            self.spinner_bounds(frame)
         } else {
             Rect::zero()
         }
@@ -108,6 +108,16 @@ impl Spin {
             );
             ctx.fill_circle(cx + dx, cy + dy, dot_r, dot_color);
         }
+    }
+
+    fn spinner_bounds(&self, frame: Rect) -> Rect {
+        let d = self.diameter();
+        let orbit_r = d * 0.35;
+        let dot_r = orbit_r * 0.18;
+        let extent = orbit_r + dot_r + 1.0;
+        let cx = frame.x + frame.w * 0.5;
+        let cy = frame.y + frame.h * 0.5;
+        Rect::new(cx - extent, cy - extent, extent * 2.0, extent * 2.0)
     }
 }
 

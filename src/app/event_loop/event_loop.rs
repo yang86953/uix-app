@@ -18,7 +18,7 @@ use crate::native::traits::platform::Platform;
 use crate::native::traits::window::PlatformWindow;
 use crate::ui::clipboard;
 use crate::ui::theme::{DynTokens, Theme};
-use crate::ui::{SystemEvent, WidgetCore, WidgetTree};
+use crate::ui::{EventResult, SystemEvent, WidgetCore, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::time::{Duration, Instant};
 
@@ -430,6 +430,7 @@ where
         let now = clock.now();
         let due_work = active_work.drain_due(now);
         let had_registered_work = !due_work.is_empty();
+        let due_animation_ids = due_animation_ids(&due_work);
 
         for ev in pending_events.borrow_mut().drain(..) {
             let is_layout_event = matches!(
@@ -515,7 +516,8 @@ where
             }
         }
 
-        dispatch_due_active_work(tree, &app_timers, &due_work, clock.as_ref());
+        let had_due_widget_timer_work =
+            dispatch_due_active_work(tree, &app_timers, &due_work, clock.as_ref());
         let mut main_thread_context = MainThreadContext::new(pending_root, reconcile_pending);
         let _had_main_thread_work = main_thread_queue.drain(&mut main_thread_context);
         let had_app_state_semantic_work = tree.drain_app_state_semantic_events();
@@ -534,6 +536,7 @@ where
             .unwrap_or_else(|e| e.into_inner())
             .has_layout();
         let pending_effects = tree.has_pending_effects();
+        let pending_render_work = tree.has_render_work();
         let active_frame = had_events
             || had_registered_work
             || had_app_state_semantic_work
@@ -541,11 +544,25 @@ where
             || pending_effects
             || !rendered_first
             || pending_layout_work
-            || tree.has_render_work();
+            || pending_render_work;
+        let discover_animation_work = had_events
+            || had_due_widget_timer_work
+            || had_app_state_semantic_work
+            || *reconcile_pending
+            || pending_effects
+            || !rendered_first
+            || pending_layout_work
+            || pending_render_work;
         if active_frame {
             last_frame = now;
-            let animating = tree.update(dt);
-            sync_animation_deadline(tree, active_work, animating, now);
+            let animation_updates = update_due_and_discovered_animations(
+                tree,
+                active_work,
+                &due_animation_ids,
+                dt,
+                discover_animation_work,
+            );
+            sync_animation_deadlines(active_work, &animation_updates, now);
             if pending_effects {
                 let _effects_ran = tree.tick_effects();
             }
@@ -573,7 +590,7 @@ where
 
         let needs_work = window_visible && (had_layout_event || !rendered_first);
 
-        if needs_work || has_layout_work {
+        if window_visible && (needs_work || has_layout_work) {
             let before_version = tree.tree_version();
             tree.layout();
             record_layout(metrics);
@@ -633,8 +650,10 @@ where
             (frame_out.outcome, frame_out.inv_source)
         };
 
-        // 每帧末尾清空失效队列（含已消费的 Layout 项），避免 Layout 残留触发空渲染。
-        tree.reset_dirty();
+        if window_visible && (needs_work || has_layout_work || need_render) {
+            // 每帧末尾清空已消费的失效队列，隐藏窗口保留 pending dirty 到恢复可见。
+            tree.reset_dirty();
+        }
 
         match outcome {
             RenderOutcome::Present(damage) => {
@@ -711,13 +730,12 @@ fn dispatch_due_active_work(
     app_timers: &crate::app::app_timer::AppTimerQueue,
     due_work: &[crate::app::active_work_registry::ActiveWorkKind],
     clock: &dyn AppClock,
-) {
+) -> bool {
+    let mut handled_widget_timer = false;
     for work in due_work {
         match *work {
             crate::app::active_work_registry::ActiveWorkKind::Timer(id) => {
-                if let Ok(id) = u32::try_from(id) {
-                    let _ = tree.dispatch_event(&SystemEvent::Timer { id });
-                }
+                handled_widget_timer |= tree.dispatch_timer_work(id) == EventResult::Handled;
             }
             crate::app::active_work_registry::ActiveWorkKind::AppTimer(id) => {
                 app_timers.fire(id, clock.now());
@@ -725,22 +743,53 @@ fn dispatch_due_active_work(
             _ => {}
         }
     }
+    handled_widget_timer
 }
 
-fn sync_animation_deadline(
-    tree: &WidgetTree,
+fn due_animation_ids(due_work: &[ActiveWorkKind]) -> Vec<NodeId> {
+    due_work
+        .iter()
+        .filter_map(|work| match *work {
+            ActiveWorkKind::Animation(id) => Some(id),
+            _ => None,
+        })
+        .collect()
+}
+
+fn update_due_and_discovered_animations(
+    tree: &mut WidgetTree,
+    active_work: &ActiveWorkRegistry,
+    due_animation_ids: &[NodeId],
+    dt: f64,
+    discover_animation_work: bool,
+) -> Vec<(NodeId, bool)> {
+    let mut updates = if due_animation_ids.is_empty() {
+        Vec::new()
+    } else {
+        tree.update_animation_nodes(due_animation_ids.iter().copied(), dt)
+    };
+
+    if discover_animation_work {
+        let mut registered_ids: Vec<_> = active_work.animation_ids().collect();
+        registered_ids.extend_from_slice(due_animation_ids);
+        updates.extend(tree.update_animations_except(registered_ids, dt));
+    }
+
+    updates
+}
+
+fn sync_animation_deadlines(
     active_work: &mut ActiveWorkRegistry,
-    animating: bool,
+    animation_updates: &[(NodeId, bool)],
     now: std::time::Instant,
 ) {
-    let Some(root_id) = tree.root_id() else {
-        return;
-    };
-    let kind = ActiveWorkKind::Animation(root_id);
-    if animating {
-        active_work.register(kind, now + ANIMATION_FRAME_INTERVAL);
-    } else {
-        active_work.unregister(kind);
+    for &(id, animating) in animation_updates {
+        let kind = ActiveWorkKind::Animation(id);
+        if animating {
+            active_work.register(kind, now + ANIMATION_FRAME_INTERVAL);
+        } else {
+            active_work.unregister(kind);
+        }
     }
 }
 

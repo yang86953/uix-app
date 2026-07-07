@@ -521,14 +521,20 @@ impl WidgetTree {
             SystemEvent::Resize { width, height } => {
                 if let Some(root) = self.root_id {
                     if *width > 0.0 && *height > 0.0 {
-                        if let Some(root_mut) = self.get_mut(root) {
+                        let resized_root = if let Some(root_mut) = self.get_mut(root) {
                             root_mut.set_frame(Rect::new(0.0, 0.0, *width, *height));
+                            true
+                        } else {
+                            false
+                        };
+                        if resized_root {
+                            self.push_layout_invalidation(root);
                             self.invalidate_paint(root);
+                            // 递增 tree_version 使 LayerTree 重建
+                            // LayerTree 缓存了 ClipRect（如 ScrollView 的裁剪矩形），
+                            // 不重建则子节点位置更新了但裁剪区还是旧尺寸 → 内容被裁剪。
+                            self.tree_version += 1;
                         }
-                        // 递增 tree_version 使 LayerTree 重建
-                        // LayerTree 缓存了 ClipRect（如 ScrollView 的裁剪矩形），
-                        // 不重建则子节点位置更新了但裁剪区还是旧尺寸 → 内容被裁剪。
-                        self.tree_version += 1;
                     }
                     self.dispatch_to(root, event)
                 } else {
@@ -714,7 +720,7 @@ impl WidgetTree {
         self.invalidate_paint(id);
     }
 
-    fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
+    pub(crate) fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
         let mut current = Some(target);
         // ScrollView 的子节点框架是自然坐标（未含滚动偏移），
         // 必须先计算目标路径上所有 ScrollView 的累计偏移量，

@@ -20,7 +20,7 @@ use crate::data::SettingsService;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
-use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource};
+use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource, NodeId};
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::{GpuEngine, RenderOutcome, SoftwareEngine};
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
@@ -30,7 +30,7 @@ use crate::native::{create_gpu_context, create_platform};
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::ui::{AppState, SystemEvent, WidgetCore, WidgetTree};
+use crate::ui::{AppState, EventResult, SystemEvent, WidgetCore, WidgetTree};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式
@@ -180,7 +180,9 @@ impl SecondaryWindowSession {
             .sync_app_timers(parts.app_timers.deadlines());
         let due_work = parts.active_work.drain_due(now);
         let had_registered_work = !due_work.is_empty();
-        dispatch_due_secondary_active_work(parts.tree, &parts.app_timers, &due_work, clock);
+        let due_animation_ids = due_secondary_animation_ids(&due_work);
+        let had_due_widget_timer_work =
+            dispatch_due_secondary_active_work(parts.tree, &parts.app_timers, &due_work, clock);
 
         let mut main_thread_context =
             MainThreadContext::new(parts.pending_root, parts.reconcile_pending);
@@ -204,19 +206,33 @@ impl SecondaryWindowSession {
             .unwrap_or_else(|e| e.into_inner())
             .has_layout();
         let pending_effects = parts.tree.has_pending_effects();
+        let pending_render_work = parts.tree.has_render_work();
         let active_frame = had_registered_work
             || had_app_state_semantic_work
             || *parts.reconcile_pending
             || pending_effects
             || !self.rendered_first
             || pending_layout_work
-            || parts.tree.has_render_work();
+            || pending_render_work;
+        let discover_animation_work = had_due_widget_timer_work
+            || had_app_state_semantic_work
+            || *parts.reconcile_pending
+            || pending_effects
+            || !self.rendered_first
+            || pending_layout_work
+            || pending_render_work;
 
         if active_frame {
             let dt = (now - *last_frame).as_secs_f64().min(0.05);
             *last_frame = now;
-            let animating = parts.tree.update(dt);
-            sync_secondary_animation_deadline(parts.tree, parts.active_work, animating, now);
+            let animation_updates = update_due_and_discovered_secondary_animations(
+                parts.tree,
+                parts.active_work,
+                &due_animation_ids,
+                dt,
+                discover_animation_work,
+            );
+            sync_secondary_animation_deadlines(parts.active_work, &animation_updates, now);
             if pending_effects {
                 let _effects_ran = parts.tree.tick_effects();
             }
@@ -295,7 +311,9 @@ impl SecondaryWindowSession {
             (frame_out.outcome, frame_out.inv_source)
         };
 
-        parts.tree.reset_dirty();
+        if self.window_visible && (!self.rendered_first || has_layout_work || need_render) {
+            parts.tree.reset_dirty();
+        }
 
         if let RenderOutcome::Present(damage) = outcome {
             let _ = outcome_source;
@@ -928,13 +946,12 @@ fn dispatch_due_secondary_active_work(
     app_timers: &AppTimerQueue,
     due_work: &[ActiveWorkKind],
     clock: &dyn AppClock,
-) {
+) -> bool {
+    let mut handled_widget_timer = false;
     for work in due_work {
         match *work {
             ActiveWorkKind::Timer(id) => {
-                if let Ok(id) = u32::try_from(id) {
-                    let _ = tree.dispatch_event(&SystemEvent::Timer { id });
-                }
+                handled_widget_timer |= tree.dispatch_timer_work(id) == EventResult::Handled;
             }
             ActiveWorkKind::AppTimer(id) => {
                 app_timers.fire(id, clock.now());
@@ -942,22 +959,53 @@ fn dispatch_due_secondary_active_work(
             _ => {}
         }
     }
+    handled_widget_timer
 }
 
-fn sync_secondary_animation_deadline(
-    tree: &WidgetTree,
+fn due_secondary_animation_ids(due_work: &[ActiveWorkKind]) -> Vec<NodeId> {
+    due_work
+        .iter()
+        .filter_map(|work| match *work {
+            ActiveWorkKind::Animation(id) => Some(id),
+            _ => None,
+        })
+        .collect()
+}
+
+fn update_due_and_discovered_secondary_animations(
+    tree: &mut WidgetTree,
+    active_work: &ActiveWorkRegistry,
+    due_animation_ids: &[NodeId],
+    dt: f64,
+    discover_animation_work: bool,
+) -> Vec<(NodeId, bool)> {
+    let mut updates = if due_animation_ids.is_empty() {
+        Vec::new()
+    } else {
+        tree.update_animation_nodes(due_animation_ids.iter().copied(), dt)
+    };
+
+    if discover_animation_work {
+        let mut registered_ids: Vec<_> = active_work.animation_ids().collect();
+        registered_ids.extend_from_slice(due_animation_ids);
+        updates.extend(tree.update_animations_except(registered_ids, dt));
+    }
+
+    updates
+}
+
+fn sync_secondary_animation_deadlines(
     active_work: &mut ActiveWorkRegistry,
-    animating: bool,
+    animation_updates: &[(NodeId, bool)],
     now: Instant,
 ) {
-    let Some(root_id) = tree.root_id() else {
-        return;
-    };
-    let kind = ActiveWorkKind::Animation(root_id);
-    if animating {
-        active_work.register(kind, now + Duration::from_millis(16));
-    } else {
-        active_work.unregister(kind);
+    for &(id, animating) in animation_updates {
+        let kind = ActiveWorkKind::Animation(id);
+        if animating {
+            active_work.register(kind, now + Duration::from_millis(16));
+        } else {
+            active_work.unregister(kind);
+        }
     }
 }
 

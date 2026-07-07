@@ -164,7 +164,7 @@ define_widget! {
         self.is_present() && !self.transition.finished
     }
 
-    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+    dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
             popover_dirty_rect(self.placement, self.arrow, frame)
         } else {

@@ -7,6 +7,7 @@ use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::HandlerTable;
 use crate::ui::managers::WidgetManagers;
 use crate::ui::overlay::OverlayStack;
+use std::collections::BTreeMap;
 
 #[path = "tree_layout.rs"]
 mod tree_layout;
@@ -68,6 +69,7 @@ pub struct WidgetTree {
     pub(crate) effects: Vec<crate::ui::foundation::state::Effect>,
     managers: WidgetManagers,
     app_state: Option<AppState>,
+    timer_routes: BTreeMap<u64, (WidgetId, u32)>,
 }
 
 impl Default for WidgetTree {
@@ -92,6 +94,7 @@ impl Default for WidgetTree {
             effects: Vec::new(),
             managers: WidgetManagers::new(),
             app_state: None,
+            timer_routes: BTreeMap::new(),
         }
     }
 }
@@ -552,11 +555,44 @@ impl WidgetTree {
         ids.clone()
     }
 
-    pub fn active_timers(&self) -> Vec<(u64, std::time::Duration)> {
-        self.traverse()
-            .into_iter()
-            .filter_map(|id| self.get(id).and_then(|node| node.active_timer()))
-            .collect()
+    pub fn active_timers(&mut self) -> Vec<(u64, std::time::Duration)> {
+        self.timer_routes.clear();
+        let mut timers = Vec::new();
+        for id in self.traverse() {
+            if let Some((local_id, delay)) = self.get(id).and_then(|node| node.active_timer()) {
+                let Ok(local_timer_id) = u32::try_from(local_id) else {
+                    continue;
+                };
+                let key = Self::timer_work_key(id, local_id);
+                self.timer_routes.insert(key, (id, local_timer_id));
+                timers.push((key, delay));
+            }
+        }
+        timers
+    }
+
+    pub(crate) fn dispatch_timer_work(&mut self, timer_id: u64) -> EventResult {
+        if let Some((target, local_id)) = self.timer_routes.get(&timer_id).copied() {
+            if self.get(target).is_some() {
+                let result = self.dispatch_to(target, &SystemEvent::Timer { id: local_id });
+                self.rebuild_widget_overlays();
+                return result;
+            }
+        }
+
+        if let Ok(id) = u32::try_from(timer_id) {
+            self.dispatch_event(&SystemEvent::Timer { id })
+        } else {
+            EventResult::NotHandled
+        }
+    }
+
+    pub(crate) fn timer_work_key(id: WidgetId, local_id: u64) -> u64 {
+        let slot = id.slot() as u64;
+        let generation = id.generation() as u64;
+        slot.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ generation.rotate_left(17)
+            ^ local_id.rotate_left(33)
     }
 
     pub fn set_frame_dirty(&mut self, id: WidgetId, new_frame: Rect) {

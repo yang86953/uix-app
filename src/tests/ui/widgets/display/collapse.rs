@@ -35,7 +35,7 @@ fn collapse_click_starts_panel_transition_and_marks_paint_dirty() {
     assert!(WidgetAnimation::update_animation(&mut collapse, 0.05));
     assert!(collapse.transitions[0].opacity_progress > initial_opacity);
     assert_eq!(
-        WidgetAnimation::animation_dirty_rect(&collapse, Rect::new(0.0, 0.0, 320.0, 36.0)),
+        WidgetAnimation::dirty_bounds(&collapse, Rect::new(0.0, 0.0, 320.0, 36.0)),
         Rect::new(0.0, 0.0, 320.0, 70.0)
     );
 }

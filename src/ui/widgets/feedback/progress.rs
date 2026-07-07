@@ -35,6 +35,7 @@ define_widget! {
         round: bool,
         progress_type: ProgressType,
         indeterminate_phase: f32,
+        previous_indeterminate_phase: f32,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -119,17 +120,20 @@ define_widget! {
             return false;
         }
 
+        self.previous_indeterminate_phase = self.indeterminate_phase;
         self.indeterminate_phase = (self.indeterminate_phase
             + dt as f32 * Self::INDETERMINATE_PHASE_SPEED)
             .rem_euclid(1.0);
         true
     }
 
-    animation_dirty_rect => (&self, frame: Rect) -> Rect {
-        if matches!(self.mode, ProgressMode::Indeterminate) {
-            frame
-        } else {
-            Rect::zero()
+    dirty_bounds => (&self, frame: Rect) -> Rect {
+        match self.mode {
+            ProgressMode::Indeterminate if self.progress_type == ProgressType::Circle => {
+                self.circle_indeterminate_bounds(frame)
+            }
+            ProgressMode::Indeterminate => self.line_indeterminate_bounds(frame),
+            ProgressMode::Determinate(_) => Rect::zero(),
         }
     }
 }
@@ -154,6 +158,7 @@ impl ProgressBar {
             round: true,
             progress_type: ProgressType::Line,
             indeterminate_phase: 0.0,
+            previous_indeterminate_phase: 0.0,
         }
     }
 
@@ -201,6 +206,25 @@ impl ProgressBar {
 
     pub fn animation_phase(&self) -> f32 {
         self.indeterminate_phase
+    }
+
+    fn line_indeterminate_bounds(&self, frame: Rect) -> Rect {
+        let previous = self.indeterminate_bar_rect(frame, self.previous_indeterminate_phase);
+        let current = self.indeterminate_bar_rect(frame, self.indeterminate_phase);
+        previous.union(&current)
+    }
+
+    fn indeterminate_bar_rect(&self, frame: Rect, phase: f32) -> Rect {
+        let bar_w = frame.w * 0.3;
+        let bar_x = frame.x + (frame.w - bar_w) * phase;
+        Rect::new(bar_x, frame.y, bar_w, frame.h)
+    }
+
+    fn circle_indeterminate_bounds(&self, frame: Rect) -> Rect {
+        let r = frame.w.min(frame.h) * 0.4 + 1.0;
+        let cx = frame.x + frame.w * 0.5;
+        let cy = frame.y + frame.h * 0.5;
+        Rect::new(cx - r, cy - r, r * 2.0, r * 2.0)
     }
 
     fn intrinsic_size(&self) -> Size {

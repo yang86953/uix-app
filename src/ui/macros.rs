@@ -215,7 +215,7 @@ macro_rules! __define_widget_upcast_method {
     (on_detach; $T:ty) => {};
     (on_destroy; $T:ty) => {};
     (update_animation; $T:ty) => { $crate::wc_upcast!($T; WidgetAnimation); };
-    (animation_dirty_rect; $T:ty) => {};
+    (dirty_bounds; $T:ty) => {};
     ($other:ident; $T:ty) => {};
 }
 
@@ -292,7 +292,7 @@ macro_rules! define_widget {
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
-                        "update_animation" | "animation_dirty_rect" =>
+                        "update_animation" | "dirty_bounds" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::ANIMATION),
                         _ => {}
                     }
@@ -349,7 +349,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             WidgetAnimation,
             $name,
-            [update_animation animation_dirty_rect],
+            [update_animation dirty_bounds],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -425,7 +425,7 @@ macro_rules! component {
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
-                        "update_animation" | "animation_dirty_rect" =>
+                        "update_animation" | "dirty_bounds" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::ANIMATION),
                         _ => {}
                     }
@@ -478,7 +478,7 @@ macro_rules! component {
         $crate::__define_widget_grouped_impl! {
             WidgetAnimation,
             $name,
-            [update_animation animation_dirty_rect],
+            [update_animation dirty_bounds],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -731,8 +731,8 @@ macro_rules! __define_widget_method_builder {
     (update_animation; WidgetAnimation; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn update_animation($($p)*) -> $ret $body
     };
-    (animation_dirty_rect; WidgetAnimation; ($($p:tt)*) -> $ret:ty $body:block) => {
-        fn animation_dirty_rect($($p)*) -> $ret $body
+    (dirty_bounds; WidgetAnimation; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn dirty_bounds($($p)*) -> $ret $body
     };
     // ── 非此 trait 的方法：跳过 ──
     ($method:ident; $trait:ident; $($rest:tt)*) => {};
@@ -836,8 +836,8 @@ macro_rules! __match_trait_method {
     (WidgetAnimation, update_animation, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn update_animation($($p)*) -> $ret $body
     };
-    (WidgetAnimation, animation_dirty_rect, ($($p:tt)*) -> $ret:ty $body:block) => {
-        fn animation_dirty_rect($($p)*) -> $ret $body
+    (WidgetAnimation, dirty_bounds, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn dirty_bounds($($p)*) -> $ret $body
     };
     // ── 不属于此 trait：跳过 ──
     ($trait:ident, $method:ident, $($rest:tt)*) => {};

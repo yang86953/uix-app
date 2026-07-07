@@ -71,6 +71,13 @@ impl ActiveWorkRegistry {
         self.entries.is_empty()
     }
 
+    pub(crate) fn animation_ids(&self) -> impl Iterator<Item = NodeId> + '_ {
+        self.entries.keys().filter_map(|kind| match *kind {
+            ActiveWorkKind::Animation(id) => Some(id),
+            _ => None,
+        })
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
