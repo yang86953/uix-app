@@ -177,7 +177,6 @@ impl WidgetTree {
                 // 如果拖拽处于活跃状态，发射 DragEnd 到拖拽目标
                 if self.managers().drag.is_dragging() {
                     if let Some(target) = self.managers().drag.target() {
-                        self.invalidate_paint(target);
                         let drag_end = SystemEvent::DragEnd {
                             pos: *pos,
                             button: *button,
@@ -237,7 +236,6 @@ impl WidgetTree {
                         self.drag_gesture.potential = false;
                         // 发射 DragStart 到拖拽目标
                         if let Some(target) = self.managers().drag.target() {
-                            self.invalidate_paint(target);
                             let drag_start = SystemEvent::DragStart {
                                 pos: *pos,
                                 button: self.managers().drag.button(),
@@ -250,7 +248,6 @@ impl WidgetTree {
                 // 拖拽进行中：发射 DragMove
                 if self.managers().drag.is_dragging() {
                     if let Some(target) = self.managers().drag.target() {
-                        self.invalidate_paint(target);
                         let last_pos = self.managers().drag.last_pos();
                         let delta = Point::new(pos.x - last_pos.x, pos.y - last_pos.y);
                         let drag_move = SystemEvent::DragMove {
@@ -267,7 +264,6 @@ impl WidgetTree {
                 self.drag_gesture.last_pos = *pos;
 
                 if let Some(drag_target) = self.managers().interaction.pressed_widget() {
-                    self.invalidate_paint(drag_target);
                     let result = self.dispatch_to(drag_target, event);
                     self.rebuild_widget_overlays();
                     return result;
@@ -711,9 +707,6 @@ impl WidgetTree {
     }
 
     fn dispatch_to(&mut self, target: WidgetId, event: &SystemEvent) -> EventResult {
-        // 分发前标记目标为脏
-        self.invalidate_paint(target);
-
         let mut current = Some(target);
         // ScrollView 的子节点框架是自然坐标（未含滚动偏移），
         // 必须先计算目标路径上所有 ScrollView 的累计偏移量，
@@ -742,13 +735,7 @@ impl WidgetTree {
                 (r, node.parent())
             };
             if result == EventResult::Handled {
-                let semantic = self
-                    .get(id)
-                    .and_then(|node| node.semantic_event(id, &compensated));
-                if let Some(event) = semantic {
-                    let _ = self.dispatch_semantic(event);
-                }
-                return EventResult::Handled;
+                return self.finish_scroll_aware_dispatch(id, &compensated);
             }
 
             // Bubbled 或 NotHandled → 继续向父节点传播
