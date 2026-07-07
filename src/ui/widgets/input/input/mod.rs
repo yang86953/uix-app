@@ -223,36 +223,33 @@ define_widget! {
                         if !shift { self.sel_anchor.set(len); }
                         EventResult::Handled
                     }
-                    // Ctrl+V 粘贴（待实现：需要 platform clipboard read）
-                    KeyCode::V if ctrl => EventResult::NotHandled,
+                    KeyCode::V if ctrl => {
+                        if let Some(text) = clipboard::read_text_from_clipboard() {
+                            if self.insert_text_at_cursor(&text) {
+                                EventResult::Handled
+                            } else {
+                                EventResult::NotHandled
+                            }
+                        } else {
+                            EventResult::NotHandled
+                        }
+                    }
                     _ => EventResult::NotHandled,
                 }
             }
             SystemEvent::TextInput { text } => {
-                if self.textarea {
-                    // textarea 模式：允许 '\n', '\r' 等
-                    let chars: Vec<char> = text.chars().filter(|&c| c >= ' ' || c == '\n' || c == '\r').collect();
-                    if chars.is_empty() { return EventResult::NotHandled; }
-                    if self.selection.get().is_some() { self.delete_selection(); }
-                    for ch in &chars {
-                        let byte_pos = self.value.char_indices().nth(self.cursor_char).map(|(i, _)| i).unwrap_or(self.value.len());
-                        self.value.insert(byte_pos, *ch);
-                        self.cursor_char += 1;
-                    }
+                if self.insert_text_at_cursor(text) {
+                    EventResult::Handled
                 } else {
-                    // 单行模式：过滤控制字符
-                    let chars: Vec<char> = text.chars().filter(|c| !c.is_control()).collect();
-                    if chars.is_empty() { return EventResult::NotHandled; }
-                    if self.selection.get().is_some() { self.delete_selection(); }
-                    for ch in &chars {
-                        let byte_pos = self.value.char_indices().nth(self.cursor_char).map(|(i, _)| i).unwrap_or(self.value.len());
-                        self.value.insert(byte_pos, *ch);
-                        self.cursor_char += 1;
-                    }
+                    EventResult::NotHandled
                 }
-                self.sel_anchor.set(self.cursor_char);
-                self.pending_change.replace(Some(self.value.clone()));
-                EventResult::Handled
+            }
+            SystemEvent::Paste { text } => {
+                if self.insert_text_at_cursor(text) {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             _ => EventResult::NotHandled,
         }
@@ -499,6 +496,28 @@ impl Input {
         self.cursor_char += 1;
     }
 
+    fn insert_text_at_cursor(&mut self, text: &str) -> bool {
+        let chars: Vec<char> = if self.textarea {
+            text.chars()
+                .filter(|&c| c >= ' ' || c == '\n' || c == '\r')
+                .collect()
+        } else {
+            text.chars().filter(|c| !c.is_control()).collect()
+        };
+        if chars.is_empty() {
+            return false;
+        }
+        if self.selection.get().is_some() {
+            self.delete_selection();
+        }
+        for ch in chars {
+            self.insert_at_cursor(ch);
+        }
+        self.sel_anchor.set(self.cursor_char);
+        self.pending_change.replace(Some(self.value.clone()));
+        true
+    }
+
     fn char_at_x(&self, text_x: f32) -> usize {
         let xs = self.glyph_xs.borrow();
         if xs.is_empty() {
@@ -569,5 +588,56 @@ impl SnapshotSource for Input {
             textarea: self.textarea,
             textarea_rows: self.textarea_rows,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::test_harness::FakeClipboard;
+    use crate::native::traits::input::IClipboard;
+    use crate::ui::traits::EventHandler;
+
+    fn install_clipboard(clipboard: &mut FakeClipboard) {
+        let c: &mut dyn IClipboard = clipboard;
+        let wide: *mut dyn IClipboard = c;
+        let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
+        clipboard::set_clipboard_parts(parts.0, parts.1);
+    }
+
+    fn clear_clipboard() {
+        clipboard::set_clipboard_parts(0, 0);
+    }
+
+    #[test]
+    fn ctrl_v_pastes_from_injected_clipboard() {
+        let mut clipboard = FakeClipboard::new();
+        clipboard.set_text("clip");
+        install_clipboard(&mut clipboard);
+
+        let mut input = Input::new("").with_value("ab");
+        input.cursor_char = 1;
+        let result = input.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::V,
+            mods: KeyMod::CTRL,
+        });
+
+        assert_eq!(result, EventResult::Handled);
+        assert_eq!(input.value(), "aclipb");
+        clear_clipboard();
+    }
+
+    #[test]
+    fn paste_event_replaces_selection() {
+        let mut input = Input::new("").with_value("abcd");
+        input.set_selection_range(1, 3);
+        input.cursor_char = 3;
+
+        let result = input.on_event(&SystemEvent::Paste {
+            text: "XY".to_string(),
+        });
+
+        assert_eq!(result, EventResult::Handled);
+        assert_eq!(input.value(), "aXYd");
     }
 }

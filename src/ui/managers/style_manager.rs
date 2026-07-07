@@ -1,8 +1,8 @@
 use crate::core::EdgeInsets;
 use crate::draw::Color;
 
-/// 预留给将来按需扩展的 widget 样式预设。
-/// 当前未集成到 widget 系统中。如需使用，请直接使用 `ui::style::Style`。
+/// Widget 样式预设。
+/// 可通过 `WidgetManagers::style` 设置树级默认值，或通过 `override_style` 为单个 widget 覆盖。
 #[derive(Debug, Clone, PartialEq)]
 pub struct WidgetStylePreset {
     pub bg_color: Option<Color>,
@@ -39,7 +39,6 @@ impl Default for WidgetStylePreset {
 }
 
 /// Manages widget Style — properties separate from layout.
-/// 备注：当前未集成到 widget 系统中，保留为将来扩展预留。
 #[derive(Default, Clone)]
 pub struct StyleManager {
     style: WidgetStylePreset,

@@ -1,9 +1,12 @@
 // WidgetTree unit tests.
 // Split out of `tree_core.rs` to keep implementation files manageable.
 use crate::core::{Constraints, Point, Size};
+use crate::draw::Color;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
-use crate::ui::{AppState, Label, Modal, OverlayEntry, OverlayKind, TextManager, Tooltip};
+use crate::ui::{
+    AppState, Label, Modal, OverlayEntry, OverlayKind, StyleManager, TextManager, Tooltip,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -634,15 +637,27 @@ fn widget_tree_injects_tree_level_managers() {
 fn widget_tree_manager_overrides_are_per_widget() {
     let mut tree = WidgetTree::new();
     tree.managers_mut().text.set_text("tree default");
+    tree.managers_mut().style.set_bg(Color::from_rgb(1, 2, 3));
     let root = tree.set_root(Box::new(Label::new("root")));
     let child = tree.add_child(root, Box::new(Label::new("child")));
 
     let mut text = TextManager::new();
     text.set_text("root override");
     tree.managers_mut().override_text(root, text);
+    let mut style = StyleManager::new();
+    style.set_bg(Color::from_rgb(4, 5, 6));
+    tree.managers_mut().override_style(root, style);
 
     assert_eq!(tree.managers().text_for(root).text(), "root override");
     assert_eq!(tree.managers().text_for(child).text(), "tree default");
+    assert_eq!(
+        tree.managers().style_for(root).bg(),
+        Some(Color::from_rgb(4, 5, 6))
+    );
+    assert_eq!(
+        tree.managers().style_for(child).bg(),
+        Some(Color::from_rgb(1, 2, 3))
+    );
 }
 
 #[test]
