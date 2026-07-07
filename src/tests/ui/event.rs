@@ -1,5 +1,5 @@
 use super::*;
-use crate::core::{ComponentId, Rect};
+use crate::core::{ComponentId, Rect, WindowId};
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
 use crate::ui::state::State;
 use crate::ui::widgets::{Button, Input, Label};
@@ -168,6 +168,66 @@ fn handler_table_keys_by_component_id_generation() {
 }
 
 #[test]
+fn plain_handler_registration_has_no_stable_authored_signature() {
+    let registration = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}));
+
+    let signature = registration.authored_signature();
+
+    assert_eq!(signature.kind, SemanticKind::Click);
+    assert_eq!(signature.generation, None);
+    assert_eq!(signature.capture_fingerprint, None);
+}
+
+#[test]
+fn explicit_handler_generation_authors_stable_signature() {
+    let signature = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_generation(7)
+        .authored_signature();
+
+    assert_eq!(signature.kind, SemanticKind::Click);
+    assert_eq!(signature.generation, Some(7));
+    assert_eq!(signature.capture_fingerprint, None);
+}
+
+#[test]
+fn state_capture_authors_stable_signature_by_state_identity() {
+    let state = State::new(1);
+    let first = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_state_capture(&state)
+        .authored_signature();
+
+    state.set(2);
+
+    let same_state = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_state_capture(&state)
+        .authored_signature();
+    let other_state = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_state_capture(&State::new(2))
+        .authored_signature();
+
+    assert_eq!(first.generation, Some(0));
+    assert_eq!(first.capture_fingerprint, same_state.capture_fingerprint);
+    assert_ne!(first.capture_fingerprint, other_state.capture_fingerprint);
+}
+
+#[test]
+fn window_capture_authors_stable_signature_by_window_id() {
+    let first = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_window_capture(WindowId::new(7))
+        .authored_signature();
+    let same = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_window_capture(WindowId::new(7))
+        .authored_signature();
+    let different = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_window_capture(WindowId::new(8))
+        .authored_signature();
+
+    assert_eq!(first.generation, Some(0));
+    assert_eq!(first.capture_fingerprint, same.capture_fingerprint);
+    assert_ne!(first.capture_fingerprint, different.capture_fingerprint);
+}
+
+#[test]
 fn widget_node_on_semantic_capture_registers_captured_handler() {
     let state = State::new(1);
     let calls = Rc::new(Cell::new(0));
@@ -190,8 +250,6 @@ fn widget_node_on_semantic_capture_registers_captured_handler() {
 
 #[test]
 fn widget_node_on_semantic_window_capture_registers_captured_handler() {
-    use crate::core::WindowId;
-
     let calls = Rc::new(Cell::new(0));
     let calls_for_handler = calls.clone();
     let node = WidgetNode::leaf(Box::new(Label::new("captured"))).on_semantic_window_capture(
