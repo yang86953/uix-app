@@ -111,6 +111,7 @@ impl SecondaryWindowSession {
         let mut main_thread_context =
             MainThreadContext::new(parts.pending_root, parts.reconcile_pending);
         let had_main_thread_work = parts.main_thread_queue.drain(&mut main_thread_context);
+        let had_app_state_semantic_work = parts.tree.drain_app_state_semantic_events();
 
         if *parts.reconcile_pending {
             let root = parts
@@ -124,7 +125,7 @@ impl SecondaryWindowSession {
             return true;
         }
 
-        had_main_thread_work
+        had_main_thread_work || had_app_state_semantic_work
     }
 
     fn drain_frame(
@@ -150,6 +151,7 @@ impl SecondaryWindowSession {
         let mut main_thread_context =
             MainThreadContext::new(parts.pending_root, parts.reconcile_pending);
         let had_main_thread_work = parts.main_thread_queue.drain(&mut main_thread_context);
+        let had_app_state_semantic_work = parts.tree.drain_app_state_semantic_events();
         parts
             .active_work
             .sync_timers(parts.tree.active_timers(), clock.now());
@@ -170,6 +172,7 @@ impl SecondaryWindowSession {
         let pending_effects = parts.tree.has_pending_effects();
         let active_frame = had_registered_work
             || had_main_thread_work
+            || had_app_state_semantic_work
             || *parts.reconcile_pending
             || pending_effects
             || !self.rendered_first
@@ -576,8 +579,9 @@ impl App {
         platform_window.center_on_screen();
         platform_window.show();
         platform_window.raise();
-        self.runtime
-            .set_event_loop_waker(platform.event_loop().waker());
+        let event_loop_waker = platform.event_loop().waker();
+        self.runtime.set_event_loop_waker(event_loop_waker.clone());
+        self.app_state.set_event_loop_waker(event_loop_waker);
 
         let engine = match create_preferred_engine(platform_window.as_mut(), w, h) {
             Some(engine) => engine,

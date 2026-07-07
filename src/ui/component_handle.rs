@@ -123,23 +123,36 @@ impl ComponentHandle {
     }
 
     pub fn emit(&self, mut event: SemanticEvent) -> EventResult {
-        let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) else {
-            return EventResult::NotHandled;
-        };
-        let Ok(tree_ref) = tree.try_borrow() else {
-            return EventResult::NotHandled;
-        };
-        if tree_ref.get(self.id).is_none() {
-            return EventResult::NotHandled;
-        }
-        drop(tree_ref);
+        if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
+            let Ok(tree_ref) = tree.try_borrow() else {
+                return EventResult::NotHandled;
+            };
+            if tree_ref.get(self.id).is_none() {
+                return EventResult::NotHandled;
+            }
+            drop(tree_ref);
 
-        event.target = self.id;
-        event.current_target = self.id;
-        let result = match tree.try_borrow_mut() {
-            Ok(mut tree) => tree.dispatch_semantic(event),
-            Err(_) => EventResult::NotHandled,
-        };
-        result
+            event.target = self.id;
+            event.current_target = self.id;
+            return match tree.try_borrow_mut() {
+                Ok(mut tree) => tree.dispatch_semantic(event),
+                Err(_) => EventResult::NotHandled,
+            };
+        }
+
+        if let Some(state) = self.app_state.as_ref().and_then(SyncWeak::upgrade) {
+            event.target = self.id;
+            event.current_target = self.id;
+            let waker = state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .emit_semantic_event(self.id, event);
+            if let Some(waker) = waker {
+                waker.wake();
+                return EventResult::Handled;
+            }
+        }
+
+        EventResult::NotHandled
     }
 }

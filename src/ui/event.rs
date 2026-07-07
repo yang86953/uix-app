@@ -199,7 +199,7 @@ pub enum SemanticPayload {
     Click(ClickEvent),
     Text(String),
     FileDrop { files: Vec<String>, position: Point },
-    Custom(Box<dyn Any>),
+    Custom(Box<dyn Any + Send>),
 }
 
 /// 语义事件。默认冒泡；handler 可 stop / preventDefault。
@@ -308,7 +308,7 @@ impl SemanticEvent {
         )
     }
 
-    pub fn custom<T: Any>(target: WidgetId, payload: T) -> Self {
+    pub fn custom<T: Any + Send>(target: WidgetId, payload: T) -> Self {
         Self::new(
             SemanticKind::Custom(TypeId::of::<T>()),
             target,

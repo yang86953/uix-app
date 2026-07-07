@@ -122,6 +122,24 @@ impl WidgetTree {
         self.app_state.clone()
     }
 
+    pub(crate) fn drain_app_state_semantic_events(&mut self) -> bool {
+        let Some(app_state) = self.app_state.clone() else {
+            return false;
+        };
+        let events = app_state.drain_semantic_events();
+        if events.is_empty() {
+            return false;
+        }
+        for (id, mut event) in events {
+            if self.get(id).is_some() {
+                event.target = id;
+                event.current_target = id;
+                let _ = self.dispatch_semantic(event);
+            }
+        }
+        true
+    }
+
     pub(crate) fn register_app_state_snapshot(&self, id: WidgetId) {
         let Some(app_state) = &self.app_state else {
             return;

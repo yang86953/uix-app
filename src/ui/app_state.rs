@@ -1,10 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use crate::core::Rect;
 use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
+use crate::native::traits::event::EventLoopWaker;
 use crate::ui::component_handle::ComponentHandle;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;
+use crate::ui::event::SemanticEvent;
 use crate::ui::widget::WidgetId;
 
 #[derive(Clone, Default)]
@@ -15,6 +17,8 @@ pub struct AppState {
 #[derive(Default)]
 pub(crate) struct AppStateInner {
     components: HashMap<WidgetId, AppStateEntry>,
+    semantic_events: VecDeque<(WidgetId, SemanticEvent)>,
+    event_loop_waker: EventLoopWaker,
 }
 
 struct AppStateEntry {
@@ -54,6 +58,20 @@ impl AppState {
             .unwrap_or_else(|e| e.into_inner())
             .contains(id)
             .then(|| ComponentHandle::from_app_state(id, Arc::downgrade(&self.inner)))
+    }
+
+    pub(crate) fn set_event_loop_waker(&self, waker: EventLoopWaker) {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .event_loop_waker = waker;
+    }
+
+    pub(crate) fn drain_semantic_events(&self) -> Vec<(WidgetId, SemanticEvent)> {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain_semantic_events()
     }
 
     pub fn get_snapshot(&self, id: WidgetId) -> Option<ComponentConfigSnapshot> {
@@ -114,6 +132,22 @@ impl AppStateInner {
         };
         invalidate_paint_handle(&entry.invalidation, id, entry.rect);
         true
+    }
+
+    pub(crate) fn emit_semantic_event(
+        &mut self,
+        id: WidgetId,
+        event: SemanticEvent,
+    ) -> Option<EventLoopWaker> {
+        if !self.contains(id) {
+            return None;
+        }
+        self.semantic_events.push_back((id, event));
+        Some(self.event_loop_waker.clone())
+    }
+
+    fn drain_semantic_events(&mut self) -> Vec<(WidgetId, SemanticEvent)> {
+        self.semantic_events.drain(..).collect()
     }
 
     fn contains(&self, id: WidgetId) -> bool {
