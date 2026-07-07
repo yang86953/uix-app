@@ -48,8 +48,9 @@ impl DragGestureState {
 
 pub struct WidgetTree {
     pub(crate) nodes: Vec<Option<BoxedWidget>>,
-    pub(crate) free_ids: Vec<WidgetId>,
-    pub(crate) next_id: WidgetId,
+    pub(crate) free_slots: Vec<usize>,
+    pub(crate) generations: Vec<u32>,
+    pub(crate) next_slot: usize,
     pub(crate) root_id: Option<WidgetId>,
     pub(crate) focused_widget: Option<WidgetId>,
     pub(crate) hovered_widget: Option<WidgetId>,
@@ -73,8 +74,9 @@ impl Default for WidgetTree {
     fn default() -> Self {
         Self {
             nodes: Vec::new(),
-            free_ids: Vec::new(),
-            next_id: 0,
+            free_slots: Vec::new(),
+            generations: Vec::new(),
+            next_slot: 0,
             root_id: None,
             focused_widget: None,
             hovered_widget: None,
@@ -162,12 +164,36 @@ impl WidgetTree {
     }
 
     pub fn alloc_id(&mut self) -> WidgetId {
-        if let Some(id) = self.free_ids.pop() {
-            return id;
+        if let Some(slot) = self.free_slots.pop() {
+            return WidgetId::from_parts(slot, self.generations[slot]);
         }
-        let id = self.next_id;
-        self.next_id += 1;
-        id
+        let slot = self.next_slot;
+        self.next_slot += 1;
+        if self.generations.len() <= slot {
+            self.generations.push(0);
+        }
+        WidgetId::from_parts(slot, self.generations[slot])
+    }
+
+    fn slot_for(&self, id: WidgetId) -> Option<usize> {
+        let slot = id.slot();
+        self.generations
+            .get(slot)
+            .copied()
+            .filter(|&generation| generation == id.generation())?;
+        Some(slot)
+    }
+
+    fn node_slot_for(&self, id: WidgetId) -> Option<usize> {
+        let slot = self.slot_for(id)?;
+        self.nodes.get(slot).and_then(|node| node.as_ref())?;
+        Some(slot)
+    }
+
+    fn invalidate_slot_generation(&mut self, slot: usize) {
+        if let Some(generation) = self.generations.get_mut(slot) {
+            *generation = generation.wrapping_add(1);
+        }
     }
 
     pub fn set_root_with_children(
@@ -277,10 +303,13 @@ impl WidgetTree {
     pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> WidgetId {
         self.teardown_all();
 
-        // Hard reset: clear the old tree, reset ID allocation, and discard free IDs.
+        // Hard reset: clear the old tree and invalidate every previous ComponentId.
         self.nodes.clear();
-        self.free_ids.clear();
-        self.next_id = 0;
+        self.free_slots.clear();
+        for generation in &mut self.generations {
+            *generation = generation.wrapping_add(1);
+        }
+        self.next_slot = 0;
         self.root_id = None;
         self.handler_table.clear();
         self.overlay_stack.clear();
@@ -295,10 +324,11 @@ impl WidgetTree {
         boxed.set_tab_index(boxed.component().tab_index());
         let ps = boxed.preferred_size(None);
         boxed.set_frame(Rect::new(0.0, 0.0, ps.w, ps.h));
-        if self.nodes.len() <= id {
-            self.nodes.resize_with(id + 1, || None);
+        let slot = id.slot();
+        if self.nodes.len() <= slot {
+            self.nodes.resize_with(slot + 1, || None);
         }
-        self.nodes[id] = Some(boxed);
+        self.nodes[slot] = Some(boxed);
         self.root_id = Some(id);
         self.register_focusable(id);
         self.attach_node(id);
@@ -310,17 +340,13 @@ impl WidgetTree {
     }
 
     pub fn root(&self) -> Option<&BoxedWidget> {
-        self.root_id
-            .and_then(|id| self.nodes.get(id))
-            .and_then(|n| n.as_ref())
+        self.root_id.and_then(|id| self.get(id))
     }
     pub fn root_id(&self) -> Option<WidgetId> {
         self.root_id
     }
     pub fn root_mut(&mut self) -> Option<&mut BoxedWidget> {
-        self.root_id
-            .and_then(|id| self.nodes.get_mut(id))
-            .and_then(|n| n.as_mut())
+        self.root_id.and_then(|id| self.get_mut(id))
     }
 
     pub fn find_by_type<T: WidgetComponent + 'static>(&self) -> Option<WidgetId> {
@@ -360,10 +386,12 @@ impl WidgetTree {
     }
 
     pub fn get(&self, id: WidgetId) -> Option<&BoxedWidget> {
-        self.nodes.get(id).and_then(|n| n.as_ref())
+        let slot = self.node_slot_for(id)?;
+        self.nodes.get(slot).and_then(|n| n.as_ref())
     }
     pub fn get_mut(&mut self, id: WidgetId) -> Option<&mut BoxedWidget> {
-        self.nodes.get_mut(id).and_then(|n| n.as_mut())
+        let slot = self.node_slot_for(id)?;
+        self.nodes.get_mut(slot).and_then(|n| n.as_mut())
     }
 
     pub fn set_z_index(&mut self, id: WidgetId, z: i32) -> &mut Self {
@@ -381,10 +409,11 @@ impl WidgetTree {
         boxed.set_id(child_id);
         boxed.set_parent(Some(parent_id));
         boxed.set_tab_index(boxed.component().tab_index());
-        if self.nodes.len() <= child_id {
-            self.nodes.resize_with(child_id + 1, || None);
+        let child_slot = child_id.slot();
+        if self.nodes.len() <= child_slot {
+            self.nodes.resize_with(child_slot + 1, || None);
         }
-        self.nodes[child_id] = Some(boxed);
+        self.nodes[child_slot] = Some(boxed);
         self.register_focusable(child_id);
         self.attach_node(child_id);
         if let Some(parent) = self.get_mut(parent_id) {
@@ -409,13 +438,12 @@ impl WidgetTree {
             .map(|n| n.frame())
             .filter(|f| f.w > 0.0 && f.h > 0.0);
 
-        let parent_id = self
-            .nodes
-            .get(id)
-            .and_then(|n| n.as_ref())
-            .and_then(|n| n.parent());
+        let Some(slot) = self.node_slot_for(id) else {
+            return;
+        };
+        let parent_id = self.nodes[slot].as_ref().and_then(|n| n.parent());
         self.teardown_subtree(id);
-        if let Some(node) = self.nodes.get_mut(id) {
+        if let Some(node) = self.nodes.get_mut(slot) {
             if let Some(node) = node.take() {
                 for child_id in node.children().to_vec() {
                     self.remove(child_id);
@@ -426,7 +454,8 @@ impl WidgetTree {
                 self.managers.focus.unregister_widget(id);
                 self.managers.interaction.unregister_widget(id);
                 self.managers.drag.unregister_widget(id);
-                self.free_ids.push(id);
+                self.invalidate_slot_generation(slot);
+                self.free_slots.push(slot);
             }
         }
         if let Some(pid) = parent_id {

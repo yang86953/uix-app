@@ -8,7 +8,9 @@ use crate::core::{Point, Rect};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
-use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource, RenderMetrics};
+use crate::draw::pipeline::{
+    FrameRenderInput, FrameRenderer, InvalidationSource, NodeId, RenderMetrics,
+};
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::RenderOutcome;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
@@ -771,7 +773,7 @@ fn has_layout_work(tree: &WidgetTree) -> bool {
 fn sync_ime_session(
     tree: &WidgetTree,
     active_work: &mut ActiveWorkRegistry,
-    current_session: &mut Option<usize>,
+    current_session: &mut Option<NodeId>,
     ev: &UiEvent,
 ) {
     match ev.type_ {

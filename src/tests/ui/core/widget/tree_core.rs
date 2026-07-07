@@ -402,6 +402,34 @@ fn tree_remove_cascades_to_children() {
 }
 
 #[test]
+fn removed_widget_id_does_not_match_reused_slot() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let first = tree.add_child(root, Box::new(Label::new("first")));
+
+    tree.remove(first);
+    let second = tree.add_child(root, Box::new(Label::new("second")));
+
+    assert_eq!(first.slot(), second.slot());
+    assert_ne!(first.generation(), second.generation());
+    assert!(tree.get(first).is_none());
+    assert!(tree.get(second).is_some());
+}
+
+#[test]
+fn replacing_root_invalidates_previous_root_id() {
+    let mut tree = WidgetTree::new();
+    let first = tree.set_root(Box::new(Label::new("first")));
+
+    let second = tree.set_root(Box::new(Label::new("second")));
+
+    assert_eq!(first.slot(), second.slot());
+    assert_ne!(first.generation(), second.generation());
+    assert!(tree.get(first).is_none());
+    assert!(tree.get(second).is_some());
+}
+
+#[test]
 fn lifecycle_active_inactive_follow_clip_intersection() {
     let events = Rc::new(RefCell::new(Vec::new()));
     let mut tree = WidgetTree::new();
@@ -572,13 +600,14 @@ fn widget_tree_manager_overrides_are_per_widget() {
     let mut tree = WidgetTree::new();
     tree.managers_mut().text.set_text("tree default");
     let root = tree.set_root(Box::new(Label::new("root")));
+    let child = tree.add_child(root, Box::new(Label::new("child")));
 
     let mut text = TextManager::new();
     text.set_text("root override");
     tree.managers_mut().override_text(root, text);
 
     assert_eq!(tree.managers().text_for(root).text(), "root override");
-    assert_eq!(tree.managers().text_for(root + 1).text(), "tree default");
+    assert_eq!(tree.managers().text_for(child).text(), "tree default");
 }
 
 #[test]
@@ -611,7 +640,9 @@ fn widget_tree_clears_manager_overrides_when_root_is_replaced() {
 
     let second = tree.set_root(Box::new(Label::new("second")));
 
-    assert_eq!(second, first);
+    assert_eq!(second.slot(), first.slot());
+    assert_ne!(second.generation(), first.generation());
+    assert_eq!(tree.managers().text_for(first).text(), "tree default");
     assert_eq!(tree.managers().text_for(second).text(), "tree default");
 }
 

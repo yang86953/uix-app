@@ -8,13 +8,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crate::core::Rect;
-use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
+use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle, NodeId};
 
 type ReconcileCallback = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Clone)]
 struct PaintBindSite {
-    widget_id: usize,
+    widget_id: NodeId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
 }
@@ -57,7 +57,7 @@ thread_local! {
 thread_local! {
     static STATE_BIND_CAPTURE: RefCell<
         Option<(
-            usize,
+            NodeId,
             InvalidationQueueHandle,
             Option<Rect>,
             usize,
@@ -113,7 +113,7 @@ pub fn drain_pending_effects() -> Vec<Effect> {
 
 /// 开始探测 DynamicLabel 闭包内读取的 State / Computed（layout 后 bind 阶段调用）。
 pub fn begin_state_bind_capture(
-    widget_id: usize,
+    widget_id: NodeId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
     reconcile_key: usize,
@@ -125,7 +125,7 @@ pub fn begin_state_bind_capture(
 }
 
 /// 结束探测并将捕获到的 State 绑定到指定 widget。
-pub fn end_state_bind_capture(widget_id: usize) {
+pub fn end_state_bind_capture(widget_id: NodeId) {
     STATE_BIND_CAPTURE.with(|c| {
         let Some((id, queue, rect, reconcile_key, reconcile, states)) = c.borrow_mut().take()
         else {
@@ -163,7 +163,7 @@ fn try_capture_computed_bind<T: Clone + Send + Sync + 'static>(computed: &Comput
 
 fn bind_paint_site(
     sites: &Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
-    widget_id: usize,
+    widget_id: NodeId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
 ) {
@@ -224,7 +224,7 @@ pub trait StatePaintBind: Send + Sync {
     fn bind_reconcile_site(&self, _key: usize, reconcile: ReconcileCallback) {
         self.bind_reconcile(reconcile);
     }
-    fn bind_paint(&self, widget_id: usize, queue: InvalidationQueueHandle, rect: Option<Rect>);
+    fn bind_paint(&self, widget_id: NodeId, queue: InvalidationQueueHandle, rect: Option<Rect>);
 }
 
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
@@ -236,7 +236,7 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
         self.bind_reconcile_invalidation(key, reconcile);
     }
 
-    fn bind_paint(&self, widget_id: usize, queue: InvalidationQueueHandle, rect: Option<Rect>) {
+    fn bind_paint(&self, widget_id: NodeId, queue: InvalidationQueueHandle, rect: Option<Rect>) {
         self.bind_paint_invalidation(widget_id, queue, rect);
     }
 }
@@ -244,7 +244,7 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for State<T> {
 impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
     fn bind_reconcile(&self, _reconcile: ReconcileCallback) {}
 
-    fn bind_paint(&self, widget_id: usize, queue: InvalidationQueueHandle, rect: Option<Rect>) {
+    fn bind_paint(&self, widget_id: NodeId, queue: InvalidationQueueHandle, rect: Option<Rect>) {
         self.bind_paint_invalidation(widget_id, queue, rect);
     }
 }
@@ -343,7 +343,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     /// 绑定精确 Paint 失效：State 变更时向队列推送 `Invalidation::Paint`。
     pub fn bind_paint_invalidation(
         &self,
-        widget_id: usize,
+        widget_id: NodeId,
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {
@@ -538,7 +538,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
     /// 绑定精确 Paint 失效：依赖变化导致重算时向队列推送 `Invalidation::Paint`。
     pub fn bind_paint_invalidation(
         &self,
-        widget_id: usize,
+        widget_id: NodeId,
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
     ) {

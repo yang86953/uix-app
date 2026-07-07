@@ -60,7 +60,7 @@ Pointer（Down/Up/Move）、Wheel、Key（Down/Up）、TextInput、IME（Start/U
 
 ### HandlerTable（#10、#101）
 
-设计键 **ComponentId** / 当前键 **WidgetId**（#10、#101）。
+设计键 **ComponentId**；源码中 `WidgetId` 为 `core::ComponentId` 别名（#10、#101）。
 
 ```rust
 HashMap<WidgetId, Vec<HandlerEntry>>   // WidgetId（当前实现，#101）
@@ -96,7 +96,7 @@ Handler 闭包 `'static`；**AppState** / **ComponentHandle**（设计，#32）�
 
 ```text
 ComponentHandle::emit(event)
-  → 解析 ComponentId → WidgetId（当前实现）
+  → 使用 ComponentId/WidgetId 同一代际 ID
   → SemanticEvent { target: id, .. event }
   → WidgetTree::dispatch_semantic(event)   // 已有 API
        → semantic_path_to_root(target)
@@ -210,7 +210,7 @@ Fake 组件：`native/test_harness/FakePlatform` — 内存实现 + 调用历史
 ## 与 Reconciler 交互
 
 View rebuild 时 **智能重绑** handler（#123、#135，修订 #62）— 仅 handler 变更时 `clear_component`+重注册。判定细则 → [view-reactive · Handler 变更判定](view-reactive.md#handler-变更判定-135)。  
-业务 handler 不应假设跨 rebuild 的注册 id 稳定；依赖 **WidgetId**（当前实现，[#101](../decisions.md#d101)）与 key 匹配复用 widget 实例（设计态称 **ComponentId**，#35、#101）。
+业务 handler 不应把 id 当裸 slot/usize 使用；依赖 **ComponentId**（源码别名 `WidgetId`，[#101](../decisions.md#d101)）与 key 匹配复用 widget 实例。
 
 ---
 

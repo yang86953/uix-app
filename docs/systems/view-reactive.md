@@ -71,9 +71,9 @@ ViewNode::new(widget, children)
 
 > **术语（[#101](../decisions.md#d101)）**
 >
-> - **ComponentId**（设计，#35、#101）：Generational ID；Reconciler diff 复用依据。
-> - **WidgetId**（当前实现，#101）：`usize` + free list；源码与 WidgetTree 使用此名。
-> - **HandlerTable** 键：设计 **ComponentId** / 当前 **WidgetId**（#10、#101）。
+> - **ComponentId**（#35、#101）：Generational ID；Reconciler diff 复用依据。
+> - **WidgetId**（源码名，#101）：`core::ComponentId` 的 UI 模块别名。
+> - **HandlerTable** 键：`WidgetId`（= **ComponentId**，#10、#101）。
 > - **Handler 重绑**（#123、#135，修订 #62）：reconcile 时 **仅 handler 变更** 才 `clear_component`+重注册；未变则保留。
 > - **AppState** / **ComponentHandle**（设计，#32）：当前业务数据经 `State<T>` 闭包捕获。
 
@@ -450,7 +450,7 @@ inspector_handle.update_view(|| inspector_view_v2());  // 仅 reconcile session 
 // 设计态 — State 内部（修订单 slot paint_binding）
 struct PaintBindSite {
     window_id: WindowId,
-    widget_id: WidgetId,  // 当前实现 usize
+    widget_id: WidgetId,  // = core::ComponentId
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
 }

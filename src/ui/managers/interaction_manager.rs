@@ -1,5 +1,5 @@
 use crate::core::Point;
-use crate::ui::{EventResult, SystemEvent};
+use crate::ui::{EventResult, SystemEvent, WidgetId};
 
 /// Tracks mouse/touch interaction state.
 ///
@@ -10,8 +10,8 @@ use crate::ui::{EventResult, SystemEvent};
 pub struct InteractionManager {
     hovered: bool,
     pressed: bool,
-    hovered_widget: Option<usize>,
-    pressed_widget: Option<usize>,
+    hovered_widget: Option<WidgetId>,
+    pressed_widget: Option<WidgetId>,
     /// PointerDown 时的位置，用于 PointerUp 边界验证。
     press_pos: Option<Point>,
 }
@@ -28,20 +28,20 @@ impl InteractionManager {
         self.pressed
     }
 
-    pub fn hovered_widget(&self) -> Option<usize> {
+    pub fn hovered_widget(&self) -> Option<WidgetId> {
         self.hovered_widget
     }
 
-    pub fn set_hovered_widget(&mut self, id: Option<usize>) {
+    pub fn set_hovered_widget(&mut self, id: Option<WidgetId>) {
         self.hovered_widget = id;
         self.hovered = id.is_some();
     }
 
-    pub fn pressed_widget(&self) -> Option<usize> {
+    pub fn pressed_widget(&self) -> Option<WidgetId> {
         self.pressed_widget
     }
 
-    pub fn set_pressed_widget(&mut self, id: Option<usize>) {
+    pub fn set_pressed_widget(&mut self, id: Option<WidgetId>) {
         self.pressed_widget = id;
         self.pressed = id.is_some();
         if id.is_none() {
@@ -49,7 +49,7 @@ impl InteractionManager {
         }
     }
 
-    pub fn unregister_widget(&mut self, widget_id: usize) {
+    pub fn unregister_widget(&mut self, widget_id: WidgetId) {
         if self.hovered_widget == Some(widget_id) {
             self.set_hovered_widget(None);
         }

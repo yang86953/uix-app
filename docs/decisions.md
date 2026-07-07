@@ -136,7 +136,7 @@
 | <a id="d98"></a>98 | 右键菜单 | **SemanticEvent::ContextMenu** |
 | <a id="d99"></a>99 | 无障碍 | **v2** |
 | <a id="d100"></a>100 | 浮层 | **`OverlayStack` 统一管理** |
-| <a id="d101"></a>101 | 组件 ID 命名 | 设计态 **ComponentId**（Generational）；当前实现 **WidgetId = usize**，重构目标 [#35](#d35) |
+| <a id="d101"></a>101 | 组件 ID 命名 | **ComponentId**（Generational）已落地；源码 `WidgetId` / `NodeId` 为 `core::ComponentId` 别名 |
 | <a id="d102"></a>102 | authoring 宏 | 设计态 **`component!`**；当前实现 **`define_widget!` + `impl_widget_component!`**，重构对齐 [#20](#d20) |
 | <a id="d103"></a>103 | measure API | 设计态 **`measure(constraints)`**；当前 **`preferred_size(engine)`**，语义等同 [#29](#d29) |
 | <a id="d104"></a>104 | 滚动容器 | 统一称 **ScrollView**；决策 [#45](#d45) 中 ScrollContainer 指 ScrollView 实现 |

@@ -7,7 +7,7 @@ use crate::ui::layout::GridTrack;
 use crate::ui::widgets::{Button, Container, Grid, Input, Label};
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotFields, SnapshotSource, SnapshotValue,
-    SystemEvent,
+    SystemEvent, WidgetId,
 };
 use crate::{component, define_widget};
 
@@ -69,9 +69,9 @@ component! {
 #[test]
 fn component_config_snapshot_records_id_type_and_fields() {
     let label = Label::new("status").font_size(18.0).size(80.0, 20.0);
-    let snapshot = ComponentConfigSnapshot::from_component(7, &label);
+    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(7), &label);
 
-    assert_eq!(snapshot.id, 7);
+    assert_eq!(snapshot.id, WidgetId::new(7));
     assert_eq!(snapshot.widget_type, TypeId::of::<Label>());
     assert!(matches!(
         snapshot.fields,
@@ -185,9 +185,9 @@ fn define_widget_auto_snapshot_captures_public_fields_only() {
         _secret: "runtime".to_string(),
     };
 
-    let snapshot = ComponentConfigSnapshot::from_component(42, &probe);
+    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(42), &probe);
 
-    assert_eq!(snapshot.id, 42);
+    assert_eq!(snapshot.id, WidgetId::new(42));
     assert_eq!(snapshot.widget_type, TypeId::of::<SnapshotProbe>());
     let SnapshotFields::Custom { widget, fields } = snapshot.fields else {
         panic!("expected custom snapshot fields");
@@ -215,9 +215,9 @@ fn component_macro_name_struct_syntax_reuses_snapshot_metadata() {
         private_note: "hidden".to_string(),
     };
 
-    let snapshot = ComponentConfigSnapshot::from_component(77, &probe);
+    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(77), &probe);
 
-    assert_eq!(snapshot.id, 77);
+    assert_eq!(snapshot.id, WidgetId::new(77));
     assert_eq!(snapshot.widget_type, TypeId::of::<ComponentMacroProbe>());
     let SnapshotFields::Custom { widget, fields } = snapshot.fields else {
         panic!("expected custom snapshot fields");
@@ -240,9 +240,9 @@ fn component_macro_struct_syntax_captures_public_fields() {
         cache_key: "private".to_string(),
     };
 
-    let snapshot = ComponentConfigSnapshot::from_component(78, &probe);
+    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(78), &probe);
 
-    assert_eq!(snapshot.id, 78);
+    assert_eq!(snapshot.id, WidgetId::new(78));
     assert_eq!(snapshot.widget_type, TypeId::of::<ComponentStructProbe>());
     let SnapshotFields::Custom { widget, fields } = snapshot.fields else {
         panic!("expected custom snapshot fields");

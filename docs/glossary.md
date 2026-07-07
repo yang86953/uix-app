@@ -75,12 +75,12 @@
 | View DSL | `column`、`row`、`button`、`dynamic_label` 等声明式 API |
 | ViewNode | View 构建产物；经 Reconciler 同步到组件树 |
 | Widget | UI 组件实例 |
-| ComponentId | **设计**：Generational 稳定 ID（[#35](decisions.md#d35)、[#101](decisions.md#d101)）；布局 / 事件 / HandlerTable 设计键 |
-| WidgetId | **当前实现**：`usize` + free list（[#101](decisions.md#d101)）；重构目标 ComponentId [#35](decisions.md#d35) |
+| ComponentId | Generational 稳定 ID（[#35](decisions.md#d35)、[#101](decisions.md#d101)）；布局 / 事件 / HandlerTable 语义键 |
+| WidgetId | 源码 UI 模块别名：`core::ComponentId`（[#101](decisions.md#d101)） |
 | component! | authoring 宏（[#20](decisions.md#d20)、[#102](decisions.md#d102)）；当前直接支持 `name + struct` 与 `struct` 入口 |
 | define_widget! | 兼容 authoring 宏；底层能力与 `component!` 保持一致 |
 | WidgetTree | 运行时组件树容器 |
-| HandlerTable | 业务回调表；**设计**键 ComponentId（#10）；**当前**键 WidgetId（[#101](decisions.md#d101)） |
+| HandlerTable | 业务回调表；键为 ComponentId 语义，源码名仍使用 WidgetId（[#10](decisions.md#d10)、[#101](decisions.md#d101)） |
 | State / Computed / Effect | 响应式原语；Effect 禁止直接改 UI；周期可用 **Timer API**（#132） |
 | TimerHandle | #132：`run_after` / `run_interval` 返回值；cancel/drop 自动 unregister |
 | UI 主循环 vs 后台 | #131：禁止裸 Registry；**允许** #132 Timer 与 async→State |

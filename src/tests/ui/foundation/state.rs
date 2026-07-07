@@ -65,14 +65,16 @@ fn state_set_fans_out_to_multiple_paint_sites() {
     let state = State::new(1);
     let first_queue = InvalidationQueue::shared();
     let second_queue = InvalidationQueue::shared();
+    let first_id = NodeId::new(10);
+    let second_id = NodeId::new(20);
 
     state.bind_paint_invalidation(
-        10,
+        first_id,
         first_queue.clone(),
         Some(Rect::new(0.0, 0.0, 10.0, 10.0)),
     );
     state.bind_paint_invalidation(
-        20,
+        second_id,
         second_queue.clone(),
         Some(Rect::new(5.0, 5.0, 10.0, 10.0)),
     );
@@ -81,19 +83,20 @@ fn state_set_fans_out_to_multiple_paint_sites() {
 
     let first = first_queue.lock().unwrap_or_else(|e| e.into_inner());
     let second = second_queue.lock().unwrap_or_else(|e| e.into_inner());
-    assert!(first.node_needs_paint(10));
-    assert!(!first.node_needs_paint(20));
-    assert!(second.node_needs_paint(20));
-    assert!(!second.node_needs_paint(10));
+    assert!(first.node_needs_paint(first_id));
+    assert!(!first.node_needs_paint(second_id));
+    assert!(second.node_needs_paint(second_id));
+    assert!(!second.node_needs_paint(first_id));
 }
 
 #[test]
 fn state_rebinding_same_paint_site_updates_in_place() {
     let state = State::new(1);
     let queue = InvalidationQueue::shared();
+    let id = NodeId::new(10);
 
-    state.bind_paint_invalidation(10, queue.clone(), None);
-    state.bind_paint_invalidation(10, queue.clone(), Some(Rect::new(0.0, 0.0, 10.0, 10.0)));
+    state.bind_paint_invalidation(id, queue.clone(), None);
+    state.bind_paint_invalidation(id, queue.clone(), Some(Rect::new(0.0, 0.0, 10.0, 10.0)));
 
     assert_eq!(
         state
@@ -107,7 +110,7 @@ fn state_rebinding_same_paint_site_updates_in_place() {
     state.set(2);
 
     let queue = queue.lock().unwrap_or_else(|e| e.into_inner());
-    assert!(queue.node_needs_paint(10));
+    assert!(queue.node_needs_paint(id));
     assert!(!queue.needs_full_frame());
 }
 
@@ -118,14 +121,16 @@ fn computed_recompute_fans_out_to_multiple_paint_sites() {
     let computed = Computed::new(move || source_for_computed.get() * 2);
     let first_queue = InvalidationQueue::shared();
     let second_queue = InvalidationQueue::shared();
+    let first_id = NodeId::new(10);
+    let second_id = NodeId::new(20);
 
     computed.bind_paint_invalidation(
-        10,
+        first_id,
         first_queue.clone(),
         Some(Rect::new(0.0, 0.0, 10.0, 10.0)),
     );
     computed.bind_paint_invalidation(
-        20,
+        second_id,
         second_queue.clone(),
         Some(Rect::new(5.0, 5.0, 10.0, 10.0)),
     );
@@ -135,8 +140,8 @@ fn computed_recompute_fans_out_to_multiple_paint_sites() {
 
     let first = first_queue.lock().unwrap_or_else(|e| e.into_inner());
     let second = second_queue.lock().unwrap_or_else(|e| e.into_inner());
-    assert!(first.node_needs_paint(10));
-    assert!(second.node_needs_paint(20));
+    assert!(first.node_needs_paint(first_id));
+    assert!(second.node_needs_paint(second_id));
 }
 
 #[test]

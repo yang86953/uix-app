@@ -4,11 +4,11 @@ use super::*;
 fn paint_merges_to_dirty_region() {
     let mut q = InvalidationQueue::new();
     q.push(Invalidation::Paint {
-        id: 1,
+        id: NodeId::new(1),
         rect: Some(Rect::new(0.0, 0.0, 10.0, 10.0)),
     });
     q.push(Invalidation::Paint {
-        id: 2,
+        id: NodeId::new(2),
         rect: Some(Rect::new(20.0, 0.0, 10.0, 10.0)),
     });
     let region = q.dirty_region();
@@ -19,7 +19,7 @@ fn paint_merges_to_dirty_region() {
 #[test]
 fn layout_only_does_not_imply_paint() {
     let mut q = InvalidationQueue::new();
-    q.push(Invalidation::Layout(0));
+    q.push(Invalidation::Layout(NodeId::new(0)));
     assert!(!q.is_empty());
     assert!(q.has_layout());
     assert!(!q.has_paint_or_composite());
@@ -29,7 +29,10 @@ fn layout_only_does_not_imply_paint() {
 #[test]
 fn paint_none_expands_full_frame() {
     let mut q = InvalidationQueue::new();
-    q.push(Invalidation::Paint { id: 0, rect: None });
+    q.push(Invalidation::Paint {
+        id: NodeId::new(0),
+        rect: None,
+    });
     assert!(q.dirty_region().full_frame);
     assert!(q.needs_full_frame());
 }
@@ -51,11 +54,11 @@ fn composite_scroll_extract() {
 fn merge_same_node_paint_rects() {
     let mut q = InvalidationQueue::new();
     q.push(Invalidation::Paint {
-        id: 3,
+        id: NodeId::new(3),
         rect: Some(Rect::new(0.0, 0.0, 10.0, 10.0)),
     });
     q.push(Invalidation::Paint {
-        id: 3,
+        id: NodeId::new(3),
         rect: Some(Rect::new(5.0, 5.0, 10.0, 10.0)),
     });
     assert_eq!(q.items.len(), 1);
@@ -70,9 +73,9 @@ fn merge_same_node_paint_rects() {
 fn node_needs_paint_targeted() {
     let mut q = InvalidationQueue::new();
     q.push(Invalidation::Paint {
-        id: 7,
+        id: NodeId::new(7),
         rect: Some(Rect::new(0.0, 0.0, 5.0, 5.0)),
     });
-    assert!(q.node_needs_paint(7));
-    assert!(!q.node_needs_paint(8));
+    assert!(q.node_needs_paint(NodeId::new(7)));
+    assert!(!q.node_needs_paint(NodeId::new(8)));
 }

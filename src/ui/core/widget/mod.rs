@@ -1,3 +1,4 @@
+pub use crate::core::ComponentId;
 pub use crate::core::Point;
 use crate::core::{Rect, Size};
 use crate::draw::compositor::PicturePolicy;
@@ -14,7 +15,7 @@ pub enum EventResult {
     Bubbled,
 }
 
-pub type WidgetId = usize;
+pub type WidgetId = ComponentId;
 
 // 重新导出 api 中的 trait 定义
 pub use crate::ui::traits::{
@@ -148,7 +149,7 @@ impl BoxedWidget {
         Self {
             component,
             caps,
-            id: 0,
+            id: WidgetId::default(),
             parent: None,
             children: Vec::new(),
             key: None,
