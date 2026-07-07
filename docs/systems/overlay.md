@@ -26,7 +26,7 @@
 ```rust
 struct OverlayEntry {
     id: OverlayId,
-    owner: WidgetId,
+    owner: ComponentId,
     kind: OverlayKind,
     bounds: Rect,
     z_index: i32,
@@ -107,7 +107,7 @@ Modal 打开 → 焦点限制在 overlay 子树；Tab 循环不逃逸到主树�
 | Modal 外点击 | `intercept_top_overlay_outside_pointer_down` 吞掉或 dismiss |
 | 右键 | PointerUp → `open_context_menu_overlay` at click pos |
 | Wheel | overlay 命中则 overlay 消费 |
-| Semantic | HandlerTable 规则同主树；path 含 overlay widget id |
+| Semantic | HandlerTable 规则同主树；path 含 overlay owner ComponentId |
 
 FileDrop / ContextMenu semantic 与 overlay 协作见 [event](event.md)。
 

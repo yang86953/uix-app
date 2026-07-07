@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 
-use crate::core::Rect;
+use crate::core::{ComponentId, Rect};
 use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
 use crate::native::traits::event::EventLoopWaker;
 use crate::ui::component_handle::ComponentHandle;
@@ -53,7 +53,7 @@ impl AppState {
             .unregister(id);
     }
 
-    pub fn get_handle(&self, id: WidgetId) -> Option<ComponentHandle> {
+    pub fn get_handle(&self, id: ComponentId) -> Option<ComponentHandle> {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -82,14 +82,14 @@ impl AppState {
             .has_semantic_events()
     }
 
-    pub fn get_snapshot(&self, id: WidgetId) -> Option<ComponentConfigSnapshot> {
+    pub fn get_snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .snapshot(id)
     }
 
-    pub fn contains(&self, id: WidgetId) -> bool {
+    pub fn contains(&self, id: ComponentId) -> bool {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())

@@ -1,7 +1,6 @@
 use super::*;
-use crate::core::{Constraints, Point, Rect};
+use crate::core::{Constraints, Rect};
 use crate::draw::pipeline::InvalidationQueueHandle;
-use crate::native::traits::input::{KeyMod, MouseButton};
 use crate::ui::app_state::AppState;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::HandlerTable;
@@ -12,58 +11,19 @@ use std::collections::BTreeMap;
 #[path = "tree_layout.rs"]
 mod tree_layout;
 
-#[derive(Clone)]
-pub(crate) struct DragGestureState {
-    pub potential: bool,
-    pub active: bool,
-    pub start_pos: Point,
-    pub last_pos: Point,
-    pub button: MouseButton,
-    pub mods: KeyMod,
-    pub target: Option<WidgetId>,
-}
-
-impl Default for DragGestureState {
-    fn default() -> Self {
-        Self {
-            potential: false,
-            active: false,
-            start_pos: Point::default(),
-            last_pos: Point::default(),
-            button: MouseButton::None,
-            mods: KeyMod::NONE,
-            target: None,
-        }
-    }
-}
-
-impl DragGestureState {
-    pub fn reset(&mut self) {
-        self.potential = false;
-        self.active = false;
-        self.button = MouseButton::None;
-        self.mods = KeyMod::NONE;
-        self.target = None;
-    }
-}
-
 pub struct WidgetTree {
     pub(crate) nodes: Vec<Option<BoxedWidget>>,
     pub(crate) free_slots: Vec<usize>,
     pub(crate) generations: Vec<u32>,
     pub(crate) next_slot: usize,
     pub(crate) root_id: Option<WidgetId>,
-    pub(crate) focused_widget: Option<WidgetId>,
-    pub(crate) hovered_widget: Option<WidgetId>,
     pub(crate) scroll_region_move: Option<(Rect, f32, f32)>,
-    pub(crate) pointer_down_target: Option<WidgetId>,
     pub tree_version: u64,
     cached_traversal: std::cell::RefCell<(Vec<WidgetId>, u64)>,
 
     pub(crate) handler_table: HandlerTable,
     pub(crate) overlay_stack: OverlayStack,
 
-    pub(crate) drag_gesture: DragGestureState,
     pub(crate) invalidation: InvalidationQueueHandle,
     pub(crate) reconcile_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub(crate) effects: Vec<crate::ui::foundation::state::Effect>,
@@ -80,15 +40,11 @@ impl Default for WidgetTree {
             generations: Vec::new(),
             next_slot: 0,
             root_id: None,
-            focused_widget: None,
-            hovered_widget: None,
             scroll_region_move: None,
-            pointer_down_target: None,
             tree_version: 0,
             cached_traversal: std::cell::RefCell::new((Vec::new(), 0)),
             handler_table: HandlerTable::new(),
             overlay_stack: OverlayStack::new(),
-            drag_gesture: DragGestureState::default(),
             invalidation: crate::draw::pipeline::InvalidationQueue::shared(),
             reconcile_requested: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             effects: Vec::new(),
@@ -249,9 +205,6 @@ impl WidgetTree {
     }
 
     fn reset_interaction_state(&mut self) {
-        self.focused_widget = None;
-        self.hovered_widget = None;
-        self.pointer_down_target = None;
         self.managers.focus.clear_tree_focus();
         self.managers.interaction.clear_tree_interaction();
         self.managers.drag.clear_tree_drag();
@@ -681,7 +634,6 @@ impl WidgetTree {
 
     pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<WidgetId> {
         let id = self.find_by_type::<T>()?;
-        self.focused_widget = Some(id);
         self.managers.focus.set_focused_widget(Some(id));
         if let Some(node) = self.get_mut(id) {
             if let Some(input) = node

@@ -24,7 +24,7 @@ use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::{Button, Container, Grid, Input, Label};
-use crate::ui::{WidgetCore, WidgetId, WidgetNode, WidgetTree};
+use crate::ui::{ComponentId, WidgetCore, WidgetNode, WidgetTree};
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 
@@ -143,12 +143,12 @@ impl ViewAdapter {
         widget
     }
 
-    fn can_reuse(tree: &WidgetTree, id: WidgetId, node: &ViewNode) -> bool {
+    fn can_reuse(tree: &WidgetTree, id: ComponentId, node: &ViewNode) -> bool {
         tree.get(id)
             .is_some_and(|current| current.component().as_any().type_id() == node.widget_type_id())
     }
 
-    fn reconcile_existing(tree: &mut WidgetTree, id: WidgetId, node: ViewNode) {
+    fn reconcile_existing(tree: &mut WidgetTree, id: ComponentId, node: ViewNode) {
         let ViewNode {
             widget,
             children,
@@ -192,7 +192,7 @@ impl ViewAdapter {
 
     fn reconcile_handlers(
         tree: &mut WidgetTree,
-        id: WidgetId,
+        id: ComponentId,
         handlers: Vec<HandlerRegistration>,
     ) -> bool {
         let next_signatures = tree
@@ -292,7 +292,11 @@ impl ViewAdapter {
             && next.iter().all(|signature| signature.generation.is_some())
     }
 
-    fn patch_widget(tree: &mut WidgetTree, id: WidgetId, widget: Box<dyn WidgetComponent>) -> bool {
+    fn patch_widget(
+        tree: &mut WidgetTree,
+        id: ComponentId,
+        widget: Box<dyn WidgetComponent>,
+    ) -> bool {
         let Some(current) = tree.get_mut(id) else {
             return false;
         };
@@ -369,14 +373,14 @@ impl ViewAdapter {
 
     fn reconcile_children(
         tree: &mut WidgetTree,
-        parent_id: WidgetId,
+        parent_id: ComponentId,
         children: Vec<ViewNode>,
     ) -> bool {
         let old_children = tree
             .get(parent_id)
             .map(|node| node.children().to_vec())
             .unwrap_or_default();
-        let mut old_by_key: HashMap<String, WidgetId> = HashMap::new();
+        let mut old_by_key: HashMap<String, ComponentId> = HashMap::new();
         for &child_id in &old_children {
             if let Some(key) = tree.get(child_id).and_then(|node| node.key()) {
                 old_by_key.insert(key.to_string(), child_id);

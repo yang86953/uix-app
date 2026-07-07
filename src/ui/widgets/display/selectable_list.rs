@@ -6,7 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
-use crate::ui::{EventResult, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree};
 
 const DEFAULT_SCROLL_VIEWPORT_HEIGHT: f32 = 500.0;
 
@@ -193,7 +193,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         let index = self.pending_change.take()?;
         let value = self
             .items

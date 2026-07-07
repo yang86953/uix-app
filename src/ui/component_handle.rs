@@ -2,20 +2,21 @@ use std::cell::RefCell;
 use std::rc::{Rc, Weak as RcWeak};
 use std::sync::{Mutex, Weak as SyncWeak};
 
+use crate::core::ComponentId;
 use crate::ui::app_state::AppStateInner;
 use crate::ui::component_snapshot::{ComponentConfigSnapshot, SnapshotFields};
 use crate::ui::event::SemanticEvent;
-use crate::ui::widget::{EventResult, WidgetId, WidgetTree};
+use crate::ui::widget::{EventResult, WidgetTree};
 
 #[derive(Clone)]
 pub struct ComponentHandle {
-    id: WidgetId,
+    id: ComponentId,
     tree: Option<RcWeak<RefCell<WidgetTree>>>,
     app_state: Option<SyncWeak<Mutex<AppStateInner>>>,
 }
 
 impl ComponentHandle {
-    pub fn new(id: WidgetId, tree: &Rc<RefCell<WidgetTree>>) -> Self {
+    pub fn new(id: ComponentId, tree: &Rc<RefCell<WidgetTree>>) -> Self {
         Self {
             id,
             tree: Some(Rc::downgrade(tree)),
@@ -23,7 +24,10 @@ impl ComponentHandle {
         }
     }
 
-    pub(crate) fn from_app_state(id: WidgetId, app_state: SyncWeak<Mutex<AppStateInner>>) -> Self {
+    pub(crate) fn from_app_state(
+        id: ComponentId,
+        app_state: SyncWeak<Mutex<AppStateInner>>,
+    ) -> Self {
         Self {
             id,
             tree: None,
@@ -31,7 +35,7 @@ impl ComponentHandle {
         }
     }
 
-    pub fn id(&self) -> WidgetId {
+    pub fn id(&self) -> ComponentId {
         self.id
     }
 

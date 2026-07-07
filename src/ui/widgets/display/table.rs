@@ -3,7 +3,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::{
-    EventResult, SemanticEvent, SnapshotFields, SnapshotTableColumn, SystemEvent, WidgetId,
+    ComponentId, EventResult, SemanticEvent, SnapshotFields, SnapshotTableColumn, SystemEvent,
     WidgetTree,
 };
 use std::cell::{Cell, RefCell};
@@ -151,7 +151,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()

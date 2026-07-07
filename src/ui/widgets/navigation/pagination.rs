@@ -7,7 +7,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SemanticEvent, SystemEvent, WidgetTree};
 use std::cell::Cell;
 
 // Pagination — 分页器。
@@ -70,7 +70,7 @@ component! {
         EventResult::NotHandled
     }
 
-    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|page| SemanticEvent::change(id, page.to_string()))

@@ -73,7 +73,7 @@ ViewNode::new(widget, children)
 >
 > - **ComponentId**（#35、#101）：Generational ID；Reconciler diff 复用依据。
 > - **WidgetId**（源码名，#101）：`core::ComponentId` 的 UI 模块别名。
-> - **HandlerTable** 键：`WidgetId`（= **ComponentId**，#10、#101）。
+> - **HandlerTable** 键：`ComponentId`（`WidgetId` 仅为树内同型别名，#10、#101）。
 > - **Handler 重绑**（#123、#135，修订 #62）：reconcile 时 **仅 handler 变更** 才 `clear_component`+重注册；未变则保留。
 > - **AppState** / **ComponentHandle**（设计，#32）：当前业务数据经 `State<T>` 闭包捕获。
 
@@ -167,7 +167,7 @@ handlers_changed(old, new) :=
 | 仅 Style / 文本变 | 不变 |
 | kind 移除后同 slot 新 kind | 新 kind 从 0 起 |
 
-`handlers_changed == false` → **跳过** `clear_component` + 重注册；`true` → 清空该 ComponentId/WidgetId 全部 handler 再注册新表。
+`handlers_changed == false` → **跳过** `clear_component` + 重注册；`true` → 清空该 ComponentId 全部 handler 再注册新表。
 
 测试：勿断言闭包指针跨 rebuild 稳定；可断言 **同 generation + 同 kind 集** 时 HandlerTable 条目保留（见 [testing · 语义断言](testing.md#语义断言)）。
 
@@ -287,8 +287,8 @@ static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 View build 阶段 State::get()
     → pending_state_binds
     → bind_orphan_pending_states (根) / bind_reactive_widget_states (布局后)
-    → invalidate_paint_handle(widget_id, rect)
-    → （设计 #150）register PaintBindSite { window_id, widget_id, queue, rect }
+    → invalidate_paint_handle(component_id, rect)
+    → （设计 #150）register PaintBindSite { window_id, component_id, queue, rect }
 ```
 
 跨窗 fan-out 见 [State 跨窗标脏](#state-跨窗标脏)（#150）。
@@ -404,7 +404,7 @@ if session.reconcile_pending {
 | API | 用途 |
 |-----|------|
 | `ViewAdapter::build(view)` | 冷启动：新建 WidgetTree + expand + layout |
-| `ViewAdapter::reconcile(tree, view)` | 热路径：复用稳定 WidgetId，patch / keyed children diff |
+| `ViewAdapter::reconcile(tree, view)` | 热路径：复用稳定 ComponentId，patch / keyed children diff |
 
 Reconcile 完成后仍走既有 layout → overlay rebuild → paint invalidation 管线（见 [layout · 布局管线](layout.md#布局管线)）。
 
@@ -450,7 +450,7 @@ inspector_handle.update_view(|| inspector_view_v2());  // 仅 reconcile session 
 // 设计态 — State 内部（修订单 slot paint_binding）
 struct PaintBindSite {
     window_id: WindowId,
-    widget_id: WidgetId,  // = core::ComponentId
+    component_id: ComponentId,
     queue: InvalidationQueueHandle,
     rect: Option<Rect>,
 }
@@ -490,7 +490,7 @@ State::set(value)
 
 实现须 **保留** 窄 rect 标脏；多 site fan-out 已接，**禁止**回退为全树 invalidate。
 
-> **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(widget_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调；副窗 session 路由与运行期 frame drain 已接，外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
+> **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(component_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调；副窗 session 路由与运行期 frame drain 已接，外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
 
 ---
 

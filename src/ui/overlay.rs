@@ -1,5 +1,5 @@
 use crate::core::{Point, Rect};
-use crate::ui::WidgetId;
+use crate::ui::ComponentId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayKind {
@@ -25,7 +25,7 @@ impl OverlayId {
 #[derive(Debug, Clone)]
 pub struct OverlayEntry {
     id: OverlayId,
-    owner: WidgetId,
+    owner: ComponentId,
     kind: OverlayKind,
     bounds: Option<Rect>,
     z_index: i32,
@@ -36,7 +36,7 @@ pub struct OverlayEntry {
 }
 
 impl OverlayEntry {
-    pub fn new(owner: WidgetId, kind: OverlayKind) -> Self {
+    pub fn new(owner: ComponentId, kind: OverlayKind) -> Self {
         Self {
             id: OverlayId(0),
             owner,
@@ -84,7 +84,7 @@ impl OverlayEntry {
         self.id
     }
 
-    pub fn owner(&self) -> WidgetId {
+    pub fn owner(&self) -> ComponentId {
         self.owner
     }
 
@@ -128,7 +128,7 @@ impl OverlayStack {
         Self::default()
     }
 
-    pub fn push(&mut self, owner: WidgetId, kind: OverlayKind) -> OverlayId {
+    pub fn push(&mut self, owner: ComponentId, kind: OverlayKind) -> OverlayId {
         self.push_entry(OverlayEntry::new(owner, kind))
     }
 
@@ -146,7 +146,7 @@ impl OverlayStack {
         Some(self.entries.remove(index))
     }
 
-    pub fn remove_for_owner(&mut self, owner: WidgetId) {
+    pub fn remove_for_owner(&mut self, owner: ComponentId) {
         self.entries.retain(|entry| entry.owner != owner);
     }
 

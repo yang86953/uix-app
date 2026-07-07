@@ -7,7 +7,9 @@
 
 // core
 
-pub use crate::core::{Constraints, EdgeInsets, Errc, Error, Point, Rect, Size, WindowId};
+pub use crate::core::{
+    ComponentId, Constraints, EdgeInsets, Errc, Error, Point, Rect, Size, WindowId,
+};
 
 // native
 
@@ -105,6 +107,7 @@ mod tests {
         fn assert_exported<T>() {}
         assert_exported::<AppHandle>();
         assert_exported::<TimerHandle>();
+        assert_exported::<ComponentId>();
         assert_exported::<ComponentHandle>();
         assert_exported::<Constraints>();
         assert_exported::<SemanticEvent>();

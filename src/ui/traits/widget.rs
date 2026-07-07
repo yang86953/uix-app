@@ -20,7 +20,7 @@
 //! }
 //! ```
 
-use crate::core::{Constraints, Rect, Size};
+use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
@@ -178,7 +178,7 @@ pub trait EventHandler: WidgetComponent {
     fn on_event(&mut self, _event: &SystemEvent) -> EventResult {
         EventResult::NotHandled
     }
-    fn semantic_event(&self, _id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    fn semantic_event(&self, _id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         None
     }
     fn scroll_delta(&self, _frame: Rect) -> Option<(f32, f32)> {

@@ -88,7 +88,7 @@ impl ScenePaint for WidgetTree {
     }
 
     fn focused_node(&self) -> Option<NodeId> {
-        self.focused_widget
+        self.managers().focus.focused_widget()
     }
 
     fn node_focusable(&self, id: NodeId) -> bool {

@@ -47,7 +47,7 @@
 |-------|-------------|------|
 | **WidgetLayout** | `measure`, `flex_grow/shrink`, `layout_children` | #29 |
 | **WidgetRender** | `render(frame, ctx, tree)`；可选 `overlay_entry`, `dirty_rect` | |
-| **EventHandler** | `on_event`, `semantic_event`, `wants_continuous_pointer_move` | #36 #121 |
+| **EventHandler** | `on_event`, `semantic_event(ComponentId, event)`, `wants_continuous_pointer_move` | #36 #101 #121 |
 | **连续 PointerMove opt-in** | 默认 false；true → hover 框内每 PointerMove dispatch（#121） | #109 |
 | **WidgetLifecycle** | mount/unmount/active/inactive；`on_theme_changed` | #8 #9 |
 | **PicturePolicyMeta** | authoring 声明默认 `Never`/`Eligible`（#122）；框架 build 时自动推断 |
@@ -76,7 +76,7 @@ Inactive 组件跳过大部分语义派发，Lifecycle 进入 inactive。
 
 框架在 Reconciler **mount** 时向 AppState **自动 register**（#145）；unmount 时 unregister。快照字段见 [ComponentConfigSnapshot](#componentconfigsnapshot)（#146）。App **不手写**注册表。
 
-> **实现注记**：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出；live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均已接窄 Paint。`snapshot()` / `snapshot_fields()` 与首批只读配置 getter（`text` / `placeholder` / `disabled`）已接，当前优先从 live widget 提取静态配置快照，必要时可回退到 `AppState` snapshot registry，并排除交互态。`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot、所属失效队列与当前 dirty rect，`AppState::get_handle` 已可返回 snapshot + invalidate + emit handle；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`，lookup handle `emit` 经 AppState semantic queue 唤醒并由主/副窗 drain 派发；当前 handler 仍可经 `State<T>` 闭包捕获访问业务数据。
+> **实现注记**：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均已接窄 Paint。`snapshot()` / `snapshot_fields()` 与首批只读配置 getter（`text` / `placeholder` / `disabled`）已接，当前优先从 live widget 提取静态配置快照，必要时可回退到 `AppState` snapshot registry，并排除交互态。`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot、所属失效队列与当前 dirty rect，`AppState::get_handle` 已可返回 snapshot + invalidate + emit handle；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`，lookup handle `emit` 经 AppState semantic queue 唤醒并由主/副窗 drain 派发；当前 handler 仍可经 `State<T>` 闭包捕获访问业务数据。
 
 ---
 
@@ -115,7 +115,7 @@ enum SnapshotFields {
 
 自定义 widget：见 [SnapshotSource](#snapshotsource)（#151）。
 
-> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event / layout cache / resource cache / queue / visible / transition / animation phase / scroll / current page / active tab / selected key / expanded panel / dragging / popup open / typed query / validation status / table sort/filter active state / selected transfer item / transfer runtime membership / upload file queue 等运行态。`ComponentHandle` 已可读取当前组件快照与首批类型化 getter；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`component!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径。
+> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出，`ComponentConfigSnapshot::id` 与 `from_component(id, ..)` 已按 `ComponentId` 命名；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event / layout cache / resource cache / queue / visible / transition / animation phase / scroll / current page / active tab / selected key / expanded panel / dragging / popup open / typed query / validation status / table sort/filter active state / selected transfer item / transfer runtime membership / upload file queue 等运行态。`ComponentHandle` 已可读取当前组件快照与首批类型化 getter；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`component!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径。
 
 ### SnapshotSource（#151）
 
@@ -196,11 +196,10 @@ component! {
 WidgetTree
 ├── nodes: Vec<Option<BoxedWidget>>     // 扁平存储 + free list
 ├── root_id, tree_version
-├── focused_widget, hovered_widget
+├── managers: WidgetManagers
 ├── handler_table: HandlerTable
 ├── overlay_stack: OverlayStack
 ├── invalidation: InvalidationQueueHandle
-├── drag_gesture: DragGestureState
 └── effects: Vec<Effect>
 ```
 
@@ -230,7 +229,7 @@ WidgetTree
 
 支持 **per-widget override**（`state_for(id)` / `text_for(id)`）。
 
-> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `style_for(id)` / `text_for(id)` per-widget override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`collect_focusable` / `focus_next` 由 manager 驱动；`InteractionManager` 已记录 hovered / pressed widget，并作为 PointerMove / Wheel / Timer 目标解析的事实源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset，并驱动基础 DragStart / DragMove / DragEnd 热路径。旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 字段仅写入过渡镜像，不再参与事件目标解析。
+> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `style_for(id)` / `text_for(id)` per-widget override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`collect_focusable` / `focus_next` 由 manager 驱动；`InteractionManager` 已记录 hovered / pressed widget，并作为 PointerMove / Wheel / Timer 目标解析的事实源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset，并驱动基础 DragStart / DragMove / DragEnd 热路径。`WidgetTree` 旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 过渡镜像字段已移除。
 
 ---
 
@@ -413,7 +412,7 @@ component! {
 
 ### prelude（#69）
 
-`use uix::prelude::*` 导出高频符号：App / AppHandle / TimerHandle、View 组合器与 Builder、State、Theme、常用 Widget、布局枚举、语义事件与 HandlerRegistration、ComponentHandle / AppState。
+`use uix::prelude::*` 导出高频符号：App / AppHandle / TimerHandle、View 组合器与 Builder、State、Theme、ComponentId、常用 Widget、布局枚举、语义事件与 HandlerRegistration、ComponentHandle / AppState。
 
 ---
 
