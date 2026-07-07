@@ -98,7 +98,7 @@ P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 
 | 文件 / 模块 | 动作 | 决策 |
 |-------------|------|------|
 | `src/ui/view/adapter.rs` | `reconcile` 复用同类型 / key 匹配节点，patch 样式、handler 与静态配置 snapshot；类型不同才卸载子树 | #118 #153 |
-| `src/ui/event.rs` | `HandlerSignature` / `handler_generation` / capture fingerprint 比较；State / WindowId capture 变化才重注册 handler | #123 #135 #138 #159 |
+| `src/ui/event.rs` | `HandlerSignature` / `handler_generation` / capture fingerprint 比较；State / WindowId capture 变化才重注册 handler；无 generation / fingerprint 的普通 handler 保守重绑 | #123 #135 #138 #159 #160 |
 | `src/ui/foundation/state.rs` | `StateSlotId` 单调稳定；State set/update fan-out 到 reconcile site 与 paint site | #143 #150 |
 | `src/app/window_session.rs` | `pending_root` 与 `reconcile_pending` 挂在 session；帧内消费一次，`pending_root` 优先于 factory rebuild | #153 #155 #156 |
 | `src/app/event_loop/event_loop.rs` | Active 帧中 drain due / post_to_ui / State 批次后、layout 前执行 reconcile；无 pending 时不唤醒 | #105 #118 |

@@ -345,6 +345,56 @@ fn reconcile_preserves_consumed_once_handler_when_signature_is_unchanged() {
 }
 
 #[test]
+fn reconcile_reregisters_plain_handler_without_stable_signature() {
+    use crate::core::Point;
+    use crate::native::traits::input::{KeyMod, MouseButton};
+    use crate::ui::event::{
+        ClickEvent, HandlerOptions, HandlerRegistration, SemanticEvent, SemanticKind,
+    };
+    use crate::ui::view::button;
+    use crate::ui::view::View;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let first_hits = Rc::new(Cell::new(0));
+    let second_hits = Rc::new(Cell::new(0));
+    let mut initial = button("First").build();
+    initial.handlers = vec![HandlerRegistration::with_options(
+        SemanticKind::Click,
+        HandlerOptions::once(),
+        {
+            let first_hits = first_hits.clone();
+            Box::new(move |_| first_hits.set(first_hits.get() + 1))
+        },
+    )];
+    let mut tree = ViewAdapter::build_nodes(initial);
+    let root_id = tree.root_id().unwrap();
+
+    let click = ClickEvent {
+        button: MouseButton::Left,
+        pos: Point::new(0.0, 0.0),
+        modifiers: KeyMod::NONE,
+    };
+    let _ = tree.dispatch_semantic(SemanticEvent::click(root_id, click));
+    assert_eq!(first_hits.get(), 1);
+
+    let mut next = button("Second").build();
+    next.handlers = vec![HandlerRegistration::with_options(
+        SemanticKind::Click,
+        HandlerOptions::once(),
+        {
+            let second_hits = second_hits.clone();
+            Box::new(move |_| second_hits.set(second_hits.get() + 1))
+        },
+    )];
+    ViewAdapter::reconcile_nodes(&mut tree, next);
+
+    let _ = tree.dispatch_semantic(SemanticEvent::click(root_id, click));
+    assert_eq!(first_hits.get(), 1);
+    assert_eq!(second_hits.get(), 1);
+}
+
+#[test]
 fn reconcile_reregisters_handler_when_generation_changes() {
     use crate::core::Point;
     use crate::native::traits::input::{KeyMod, MouseButton};

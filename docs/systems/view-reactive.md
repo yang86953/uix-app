@@ -9,7 +9,7 @@
 | 主题 | 章节 | 决策 |
 |------|------|------|
 | 组合器 API | [View DSL](#view-dsl) | #21 #67 #73 |
-| 树同步 | [Reconciler](#reconciler) · [Handler 变更判定](#handler-变更判定-135) | #49 #60 #62 #123 #135 #138 #142 #159 #101 |
+| 树同步 | [Reconciler](#reconciler) · [Handler 变更判定](#handler-变更判定-135) | #49 #60 #62 #101 #123 #135 #138 #142 #159 #160 #161 |
 | 响应式原语 | [响应式](#响应式) · [StateSlotId](#stateslotid) | #24 #78 #79 #143 |
 | 样式链 | [StyleExt](#styleext) | #21 |
 | 热更新 | [热更新（设计）](#热更新设计) · [reconcile 合并](#reconcile-合并) · [view_factory 生命周期](#view_factory-生命周期) · [多窗 Reconcile](#多窗-reconcile) · [State 跨窗标脏](#state-跨窗标脏) | #49 #60 #118 #148 #149 #150 #153 #155 #156 |
