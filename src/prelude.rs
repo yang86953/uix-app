@@ -44,7 +44,8 @@ pub use crate::ui::{Animation, Easing};
 pub use crate::ui::{
     AppState, ClickEvent, ComponentConfigSnapshot, ComponentHandle, EventResult, HandlerId,
     HandlerOptions, HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
-    SemanticPayload, SnapshotField, SnapshotFields, SnapshotSource, SnapshotValue, SystemEvent,
+    SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource,
+    SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
     SystemEventKind, WidgetChildren,
 };
 pub use crate::ui::{
@@ -164,9 +165,13 @@ mod tests {
         assert_exported::<HandlerId>();
         assert_exported::<HandlerOptions>();
         assert_exported::<HandlerRegistration>();
+        assert_exported::<SnapshotCollapsePanel>();
         assert_exported::<SnapshotField>();
         assert_exported::<SnapshotFields>();
         assert_exported::<dyn SnapshotSource>();
+        assert_exported::<SnapshotTableColumn>();
+        assert_exported::<SnapshotTransferItem>();
+        assert_exported::<SnapshotTreeNode>();
         assert_exported::<SnapshotValue>();
         assert_exported::<PaintContext>();
         assert_exported::<Computed<i32>>();
