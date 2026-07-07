@@ -1418,6 +1418,36 @@ fn lifecycle_theme_changed_notifies_and_invalidates_palette_only() {
 }
 
 #[test]
+fn theme_changed_invalidates_palette_widget_inside_overlay_subtree() {
+    let palette_events = Rc::new(RefCell::new(Vec::new()));
+    let static_events = Rc::new(RefCell::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(240.0, 180.0, vec![])));
+    let static_id = tree.add_child(
+        root_id,
+        Box::new(LifecycleProbe::new(20.0, 20.0, static_events.clone()).static_colors()),
+    );
+    let modal = tree.add_child(root_id, Box::new(Modal::new("Dialog").show().overlay(true)));
+    let palette_id = tree.add_child(
+        modal,
+        Box::new(LifecycleProbe::new(20.0, 20.0, palette_events.clone())),
+    );
+    tree.layout();
+    tree.reset_dirty();
+
+    assert!(tree.overlay_stack().top().is_some());
+
+    tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark: true });
+
+    assert_eq!(palette_events.borrow().last(), Some(&"theme"));
+    assert_eq!(static_events.borrow().last(), Some(&"theme"));
+
+    let invalidation = tree.invalidation.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(invalidation.node_needs_paint(palette_id));
+    assert!(!invalidation.node_needs_paint(static_id));
+}
+
+#[test]
 fn locale_changed_dispatches_to_root_and_invalidates_layout() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(SpyWidget::new(100.0, 50.0)));
@@ -1586,6 +1616,61 @@ fn dispatch_pointer_down_targets_overlay_owner() {
         .iter()
         .any(|event| matches!(event, SystemEvent::PointerDown { .. })));
     assert_eq!(tree.managers().focus.focused_component(), Some(owner));
+}
+
+#[test]
+fn dispatch_wheel_targets_overlay_owner_before_main_tree() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let underlying = tree.add_child(root_id, Box::new(SpyWidget::new(200.0, 200.0)));
+    let owner = tree.add_child(root_id, Box::new(SpyWidget::new(20.0, 20.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(underlying)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(owner)
+        .unwrap()
+        .set_frame(Rect::new(150.0, 150.0, 20.0, 20.0));
+
+    tree.overlay_stack_mut().push_entry(
+        OverlayEntry::new(owner, OverlayKind::Popover)
+            .bounds(Rect::new(50.0, 50.0, 60.0, 40.0))
+            .z_index(10),
+    );
+
+    let result = tree.dispatch_event(&SystemEvent::Wheel {
+        pos: Point::new(70.0, 70.0),
+        delta: Point::new(0.0, -1.0),
+    });
+
+    let overlay_events = tree
+        .get(owner)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow()
+        .clone();
+    let underlying_events = tree
+        .get(underlying)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow()
+        .clone();
+
+    assert_eq!(result, EventResult::Handled);
+    assert!(overlay_events
+        .iter()
+        .any(|event| matches!(event, SystemEvent::Wheel { .. })));
+    assert!(underlying_events.is_empty());
 }
 
 #[test]
@@ -2634,7 +2719,44 @@ fn right_pointer_up_opens_context_menu_overlay_by_default() {
     assert_eq!(top.kind(), OverlayKind::ContextMenu);
     assert!(top.dismisses_on_outside());
     assert!(top.is_managed());
-    assert!(top.bounds_rect().unwrap().contains(pos));
+    assert_eq!(
+        top.bounds_rect(),
+        Some(Rect::new(pos.x, pos.y, 160.0, 160.0))
+    );
+}
+
+#[test]
+fn right_pointer_up_replaces_existing_context_menu_overlay() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    for pos in [Point::new(30.0, 30.0), Point::new(70.0, 80.0)] {
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos,
+            button: MouseButton::Right,
+            mods: KeyMod::NONE,
+        });
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos,
+            button: MouseButton::Right,
+            mods: KeyMod::NONE,
+        });
+    }
+
+    let context_menus: Vec<_> = tree
+        .overlay_stack()
+        .iter()
+        .filter(|entry| entry.kind() == OverlayKind::ContextMenu)
+        .collect();
+
+    assert_eq!(context_menus.len(), 1);
+    assert_eq!(
+        context_menus[0].bounds_rect(),
+        Some(Rect::new(70.0, 80.0, 160.0, 160.0))
+    );
 }
 
 #[test]
