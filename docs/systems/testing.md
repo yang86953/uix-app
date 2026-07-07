@@ -107,8 +107,8 @@ Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138）；未变
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
-│  TestClock（设计，app/event_loop/test_clock.rs）         │
-│  注入 run_widget_loop / run_app_loop 的 now() 源          │
+│  TestClock（已接，app/test_clock.rs）                   │
+│  注入 AppTimerQueue / session loop 的 now() 源            │
 │  test_clock.advance(delta) → drain_due(now)             │
 │  用途：#132 App Timer、Animation Registry、wait_until    │
 └─────────────────────────────────────────────────────────┘
@@ -127,8 +127,8 @@ impl TestClock {
     pub fn advance(&mut self, delta: Duration) { self.elapsed += delta; }
 }
 
-// 测试入口（设计）
-fn run_widget_loop_with_clock(
+// 当前测试入口
+fn run_window_session_loop_with_clock(
     platform: &mut FakePlatform,
     clock: &mut TestClock,
     steps: impl FnMut(&mut TestClock),
@@ -137,17 +137,17 @@ fn run_widget_loop_with_clock(
 
 | 场景 | 时钟 | 做法 | 断言 |
 |------|------|------|------|
-| `run_after` 到期 | **TestClock** | `advance(500ms)` → `step_frame` | 回调副作用；DeepIdle |
+| `run_after` 到期 | **TestClock** | `advance(500ms)` → clock-driven loop/drain | 回调副作用；DeepIdle |
 | `run_interval` × N | **TestClock** | `advance(interval)` × N | N 次回调；`cancel` 后不再触发 |
 | 与 UiEvent 交织 | TestClock + inject | inject + advance | Timer 不破坏事件顺序（#137） |
 | `ITimer::set` 平台路径 | **FakeTimer** | `pf.timer.advance` | `set_calls` / fired ids |
 | blocking wait | TestClock | DeepIdle + advance 无 register | 无 present/layout（L0） |
 
-主循环测试：`step_frame(clock.now())` 内部执行 `drain_due` → `main_thread_queue.drain` → reconcile…（见 [demand-driven · MainThreadQueue](demand-driven.md#mainthreadqueue)）。
+主循环测试：`run_window_session_loop_with_clock` 注入 `TestClock`，内部执行 `drain_due` → `main_thread_queue.drain` → reconcile…（见 [demand-driven · MainThreadQueue](demand-driven.md#mainthreadqueue)）。
 
 **禁止**测试依赖真实 `thread::sleep` 或 wall clock；须可重复、确定性（#40）。
 
-> **实现注记**：`TestClock` 与 `run_widget_loop_with_clock` 尚未实现；`FakeTimer` 已存在于 `native/test_harness`。
+> **实现注记**：App 层 `AppClock` / `TestClock` 已实现，`AppTimerQueue::with_clock` 与 `run_window_session_loop_with_clock` 已用于 AppTimer deadline、RegisteredActive wait_until 与 `drain_due` 测试；`FakeTimer` 仍作为 `native/test_harness` 的平台 timer fake 独立存在。
 
 ---
 
@@ -158,7 +158,7 @@ fn run_widget_loop_with_clock(
 2. TestClock::new()                    // App Timer 测试时
 3. 构建 WidgetTree（ViewAdapter / 直接 mount Widget）
 4. event_source.inject(UiEvent::pointer_down(...))
-5. step_frame(clock) 或 run_widget_loop_with_clock
+5. `run_window_session_loop_with_clock` 或针对 AppTimer 的 `drain_due`
 6. 语义断言：handler 副作用、focus、State<T>
 7. paint snapshot：FakePresenter damage / 帧缓冲对比
 8. （可选）Fake 子系统调用历史断言
@@ -178,5 +178,6 @@ src/tests/               镜像 src/ 布局的集成测试
   data/                  SettingsService
 native/test_harness/     FakePlatform 与各 Fake 子系统
   fake_timer.rs          ITimer（平台层，#139）
-app/event_loop/          TestClock（设计，#139）
+app/test_clock.rs        AppClock / TestClock（#139）
+app/event_loop/          run_window_session_loop_with_clock（测试入口）
 ```
