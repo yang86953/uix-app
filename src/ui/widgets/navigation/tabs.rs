@@ -1,4 +1,4 @@
-//! Tabs widget — Ant Design style tab bar with content panels.
+﻿//! Tabs widget — Ant Design style tab bar with content panels.
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -124,8 +124,8 @@ component! {
         ctx.fill_rect(Rect::new(frame.x, content_y, frame.w, frame.h - tab_bar_h), bg_container, None);
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], _tree: &WidgetTree)
-        -> Vec<(crate::ui::WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
         let tab_bar_h = self.tab_height;

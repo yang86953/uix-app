@@ -10,7 +10,7 @@ use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
 use crate::ui::SnapshotFields;
-use crate::ui::{WidgetComponent, WidgetCore, WidgetId, WidgetTree};
+use crate::ui::{ComponentId, WidgetComponent, WidgetCore, WidgetTree};
 
 /// Predefined space sizes matching Ant Design.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -62,8 +62,8 @@ component! {
         self.children.take()
     }
 
-    layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
-        -> Vec<(WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
 

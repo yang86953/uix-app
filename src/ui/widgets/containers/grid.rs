@@ -9,8 +9,8 @@ use crate::ui::layout::engine::{child_from_tree, GridLayout, LayoutChild};
 use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
 use crate::ui::style::{ColorValue, Style};
 use crate::ui::traits::layout::LayoutEngine;
+use crate::ui::{ComponentId, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
-use crate::ui::{WidgetId, WidgetTree};
 
 component! {
     /// Grid container widget.
@@ -47,8 +47,8 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
-        -> Vec<(WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
     {
         if self.columns.is_empty() || children.is_empty() { return Vec::new(); }
 

@@ -8,7 +8,7 @@ use crate::draw::painting::PaintContext;
 
 use crate::ui::children::WidgetChildren;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetComponent, WidgetTree};
 
 component! {
     /// Displays one child at a time with dot and arrow controls.
@@ -109,8 +109,8 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[WidgetId], _tree: &WidgetTree)
-        -> Vec<(WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[ComponentId], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
     {
         children.iter().map(|&cid| (cid, frame)).collect()
     }

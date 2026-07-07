@@ -1,4 +1,4 @@
-//! Layout 页面布局组件 — Header / Sider / Content / Footer 骨架。
+﻿//! Layout 页面布局组件 — Header / Sider / Content / Footer 骨架。
 //!
 //! 组合使用构建标准页面布局。
 
@@ -69,8 +69,8 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], _tree: &WidgetTree)
-        -> Vec<(crate::ui::WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
     {
         // Sider 作为布局容器，将其 frame 直接传递给所有子节点
         children.iter().map(|&cid| (cid, frame)).collect()
@@ -96,8 +96,8 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], _tree: &WidgetTree)
-        -> Vec<(crate::ui::WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
     {
         // Content 作为布局容器，将其 frame 直接传递给所有子节点
         children.iter().map(|&cid| (cid, frame)).collect()

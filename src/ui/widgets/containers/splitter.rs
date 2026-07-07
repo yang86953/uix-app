@@ -9,7 +9,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::children::WidgetChildren;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetComponent, WidgetTree};
 
 component! {
     /// Splitter — 可拖拽分割面板容器。
@@ -102,8 +102,8 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[WidgetId], _tree: &WidgetTree)
-        -> Vec<(WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[ComponentId], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
     {
         let mut result = Vec::new();
         let n = children.len().min(self.ratios.len());
