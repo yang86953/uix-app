@@ -51,7 +51,7 @@ P4 多窗                P5 组件 Handle 体系
 - P5 与 P1 **可交错**（`ComponentId` 宜尽早，利于 #123）。
 - 每阶段对应 [demand-driven · 实现差距](systems/demand-driven.md#实现差距) 行清零或缩减。
 
-> **实现注记**：当前整体仍处于 **P0 未完备**；`ActiveWorkRegistry`、无 deadline 注册项、`WindowSession` 壳、单窗三态写回、DeepIdle 门控、Registry deadline wait、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源、IME composition session 托管、AppTimer 队列、MainThreadQueue、`AppHandle` 与 `.on_start` 已落地（无固定 100ms 探活，DeepIdle 不跑 `tick_effects`）；`AppHandle` 的 Timer / `post_to_ui` / `update_view` 已经按 `window_id` 路由；`WindowConfig` / `open_window` 请求层、native 副窗创建、独立 `WindowSession` bootstrap、`.on_window_start`、副窗 MainThreadQueue / `update_view` reconcile 消费、副窗事件按 `window_id` 路由、副窗运行期 frame drain 与副窗 deadline wait 已接；单窗 `pending_root` 与响应式 `State` 批次 reconcile 已接入主循环；其他过渡动画源与外部线程投递后的真实 OS wake 仍待接线。接线顺序见 [P0 落地清单](#p0-落地清单)（#157）。
+> **实现注记**：当前整体仍处于 **P0 未完备**；`ActiveWorkRegistry`、无 deadline 注册项、`WindowSession` 壳、单窗三态写回、DeepIdle 门控、Registry deadline wait、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源、IME composition session 托管、AppTimer 队列、MainThreadQueue、`AppHandle` 与 `.on_start` 已落地（无固定 100ms 探活，DeepIdle 不跑 `tick_effects`）；`AppHandle` 的 Timer / `post_to_ui` / `update_view` 已经按 `window_id` 路由；`WindowConfig` / `open_window` 请求层、native 副窗创建、独立 `WindowSession` bootstrap、`.on_window_start`、副窗 MainThreadQueue / `update_view` reconcile 消费、副窗事件按 `window_id` 路由、副窗运行期 frame drain 与副窗 deadline wait 已接；单窗 `pending_root` 与响应式 `State` 批次 reconcile 已接入主循环；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接；其他过渡动画源仍待接线。接线顺序见 [P0 落地清单](#p0-落地清单)（#157）。
 
 ---
 
@@ -82,7 +82,7 @@ P4 多窗                P5 组件 Handle 体系
   5. 零闲置验收测试
 ```
 
-P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 批次置位与 `view_factory`（#155–#156）已接入主循环；副窗 `MainThreadQueue` / `update_view` root reconcile 消费已接，外部线程投递后的真实 OS wake 仍待推进 — 见 [view-reactive · view_factory](systems/view-reactive.md#view_factory-生命周期)。
+P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 批次置位与 `view_factory`（#155–#156）已接入主循环；副窗 `MainThreadQueue` / `update_view` root reconcile 消费已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待推进 — 见 [view-reactive · view_factory](systems/view-reactive.md#view_factory-生命周期)。
 
 ---
 

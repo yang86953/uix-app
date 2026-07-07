@@ -66,6 +66,12 @@ extern "system" {
         wMsgFilterMax: u32,
         wRemoveMsg: u32,
     ) -> i32;
+    pub(super) fn PostMessageW(
+        hwnd: *mut std::ffi::c_void,
+        msg: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> i32;
     /// 等待消息或超时。返回 WAIT_TIMEOUT 表示超时，WAIT_FAILED 表示失败。
     pub(super) fn MsgWaitForMultipleObjects(
         nCount: u32,

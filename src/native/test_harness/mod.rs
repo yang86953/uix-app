@@ -59,6 +59,7 @@ use std::time::Duration;
 
 use crate::native::shared::OsEventSource;
 use crate::native::traits::event::EventBus;
+use crate::native::traits::event::EventLoopWaker;
 use crate::native::traits::event::UiEvent;
 use crate::native::traits::*;
 
@@ -129,6 +130,10 @@ impl Default for FakePlatform {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl OsEventSource for FakePlatform {
+    fn waker(&self) -> EventLoopWaker {
+        OsEventSource::waker(&self.event_source)
+    }
+
     fn dispatch_pending(&mut self) -> bool {
         self.event_source.dispatch_pending()
     }

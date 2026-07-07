@@ -9,6 +9,7 @@ use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::window_config::WindowConfig;
 use crate::core::WindowId;
+use crate::native::traits::event::EventLoopWaker;
 use std::collections::VecDeque;
 
 #[derive(Clone, Default)]
@@ -16,6 +17,7 @@ pub(crate) struct AppRuntime {
     sessions: Arc<Mutex<BTreeMap<WindowId, SessionRuntime>>>,
     pending_open_windows: Arc<Mutex<VecDeque<OpenWindowRequest>>>,
     next_window_id: Arc<Mutex<u64>>,
+    event_loop_waker: Arc<Mutex<EventLoopWaker>>,
 }
 
 #[derive(Clone)]
@@ -97,6 +99,13 @@ impl AppRuntime {
             .pop_front()
     }
 
+    pub(crate) fn set_event_loop_waker(&self, waker: EventLoopWaker) {
+        *self
+            .event_loop_waker
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = waker;
+    }
+
     pub(crate) fn close_session(&self, window_id: WindowId) {
         let session = self
             .sessions
@@ -145,6 +154,7 @@ impl AppRuntime {
     {
         if let Some(session) = self.session(window_id) {
             session.main_thread_queue.enqueue(f);
+            self.wake_event_loop();
         }
     }
 
@@ -154,6 +164,7 @@ impl AppRuntime {
     {
         if let Some(session) = self.session(window_id) {
             session.main_thread_queue.enqueue_with_context(f);
+            self.wake_event_loop();
         }
     }
 
@@ -190,6 +201,13 @@ impl AppRuntime {
         if *next < candidate {
             *next = candidate;
         }
+    }
+
+    fn wake_event_loop(&self) {
+        self.event_loop_waker
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .wake();
     }
 }
 

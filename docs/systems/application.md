@@ -81,7 +81,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** `run_app_loop`；UiEvent 按 **window_id** 路由。
 
-> **实现注记**：当前单窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait 与三态写回已接；外部线程投递后的真实 OS wake 仍待接。
+> **实现注记**：当前单窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接。
 
 ### 单帧顺序（Active 态，设计 #106、#137）
 
@@ -136,7 +136,7 @@ flowchart TD
 
 设计（#106、#117）：**DeepIdle** 下 blocking `wait_event`（无 timeout）；**RegisteredActive** 由 `ActiveWorkRegistry::next_deadline` → `wait_until` 唤醒；**Active** 在事件 drain 后若无 pending 则回 DeepIdle。详见 [demand-driven · 唤醒源白名单](demand-driven.md#唤醒源白名单) · [ActiveWorkRegistry](demand-driven.md#activeworkregistry)。
 
-> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已接入；副窗 deadline wait 与三态写回已接；其他内置组件动画源与外部线程投递后的真实 OS wake 仍待接。
+> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` 内置动画源已接入；副窗 deadline wait 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端；其他内置组件动画源与 Linux Wayland 原生 waker 仍待接。
 
 | 状态 | 设计 | 当前实现 |
 |------|------|----------|
@@ -347,7 +347,7 @@ App::new()
     .run();
 ```
 
-> **实现注记**：`WindowConfig`、`AppHandle::open_window` 与 `.on_window_start` 已导出；`open_window` 当前会分配新 `window_id`、独立 AppTimer / MainThreadQueue / AppHandle，并把副窗创建请求暂存到 `AppRuntime`。GUI loop 会在首窗 `.on_start` 后与活动轮次中 drain 请求，创建 native 窗、校验 native `window_id`、构造独立 `WindowSession` 并调用 `.on_window_start`；副窗 MainThreadQueue / `update_view` reconcile、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接，外部线程投递后的真实 OS wake 仍待接入。
+> **实现注记**：`WindowConfig`、`AppHandle::open_window` 与 `.on_window_start` 已导出；`open_window` 当前会分配新 `window_id`、独立 AppTimer / MainThreadQueue / AppHandle，并把副窗创建请求暂存到 `AppRuntime`。GUI loop 会在首窗 `.on_start` 后与活动轮次中 drain 请求，创建 native 窗、校验 native `window_id`、构造独立 `WindowSession` 并调用 `.on_window_start`；副窗 MainThreadQueue / `update_view` reconcile、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接。
 
 ### 副窗 bootstrap（#148）
 
@@ -466,7 +466,7 @@ autosave.cancel();
 | 业务逻辑（保存、轮询刷新、倒计时数据） | **#132 Timer API** 或 async→State |
 | 耗时 IO | async / 线程 → 主线程 `State::set` |
 
-> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 session 的 AppTimer 队列，并可在 session 关闭时批量 cancel。副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接，外部线程投递后的真实 OS wake 仍待接。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 session 的 AppTimer 队列，并可在 session 关闭时批量 cancel。副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接。
 
 ### 调用入口
 
@@ -546,7 +546,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 // ✗ 禁止：用 A handle 期望更新 B 的树
 ```
 
-> **实现注记**：`App::post_to_ui`、`AppHandle::post_to_ui` 与 `WindowSession.main_thread_queue` 已落地；`AppHandle` 经 `AppRuntime` 按 `window_id` 仅写入目标 session 队列，并在 session 销毁后丢弃闭包。单窗 loop 已在 UiEvent / due work 后、`tick_effects` 前 drain；副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；外部线程投递后的真实 OS wake 尚未接。
+> **实现注记**：`App::post_to_ui`、`AppHandle::post_to_ui` 与 `WindowSession.main_thread_queue` 已落地；`AppHandle` 经 `AppRuntime` 按 `window_id` 仅写入目标 session 队列，并在 session 销毁后丢弃闭包；成功入队后会调用通用 `EventLoopWaker`。单窗 loop 已在 UiEvent / due work 后、`tick_effects` 前 drain；副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；Windows/fake 后端已提供真实 wake，Linux Wayland 原生 waker 待接。
 
 ---
 
@@ -565,7 +565,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 
 入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
 
-> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列。副窗 session bootstrap、MainThreadQueue 消费、事件路由、运行期 frame drain 与 deadline wait 已接，外部线程投递后的真实 OS wake 仍待接。
+> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列；有效 session 成功入队后会唤醒事件循环，关闭后的 late post 不入队也不唤醒。副窗 session bootstrap、MainThreadQueue 消费、事件路由、运行期 frame drain 与 deadline wait 已接；Windows/fake 后端已接真实 wake，Linux Wayland 原生 waker 待接。
 
 ---
 
@@ -687,7 +687,7 @@ inspector_handle.update_view(|| inspector_panel_v2(data.get()));
 
 详见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153）与 [view_factory 生命周期](view-reactive.md#view_factory-生命周期)（#155–#156）。
 
-> **实现注记**：`AppHandle::update_view` / `set_root` 已导出，并经 `AppRuntime` 按 `window_id` 投递到目标 `MainThreadQueue` 写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 `tick_effects` 后、layout/render 前至多 reconcile 一次。副窗 session bootstrap、root reconcile 消费、运行期 frame drain 与 deadline wait 已接，外部线程投递后的真实 OS wake 仍待接。
+> **实现注记**：`AppHandle::update_view` / `set_root` 已导出，并经 `AppRuntime` 按 `window_id` 投递到目标 `MainThreadQueue` 写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 `tick_effects` 后、layout/render 前至多 reconcile 一次。副窗 session bootstrap、root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接。
 
 ---
 

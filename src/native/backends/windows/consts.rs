@@ -4,6 +4,7 @@
 
 pub(crate) const DEFAULT_CLASS_STYLE: u32 = 0x0008 | 0x0002 | 0x0001;
 pub(crate) const GWLP_USERDATA: i32 = -21;
+pub(crate) const WM_NULL: u32 = 0x0000;
 pub(crate) const WM_QUIT: u32 = 0x0012;
 
 pub(crate) const WM_NCCREATE: u32 = 0x0081;
@@ -43,6 +44,7 @@ pub(crate) const SW_MAXIMIZE: i32 = 3;
 
 pub(crate) const PM_REMOVE: u32 = 0x0001;
 pub(crate) const QS_ALLINPUT: u32 = 0x04FF;
+pub(crate) const INFINITE: u32 = 0xFFFF_FFFF;
 pub(crate) const WAIT_TIMEOUT: u32 = 0x00000102;
 
 pub(crate) const CW_USEDEFAULT: i32 = -2147483648;
