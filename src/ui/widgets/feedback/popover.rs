@@ -1,4 +1,4 @@
-use crate::define_widget;
+use crate::component;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
@@ -32,7 +32,7 @@ pub enum PopoverTrigger {
     Focus,
 }
 
-define_widget! {
+component! {
     pub struct Popover {
         title: String,
         content: String,
@@ -48,10 +48,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

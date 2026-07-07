@@ -305,10 +305,6 @@ impl WidgetLayout for DynamicLabel {
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
-
-    fn preferred_size(&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 }
 
 impl DynamicLabel {

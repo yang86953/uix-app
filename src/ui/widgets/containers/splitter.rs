@@ -4,15 +4,14 @@
 
 use std::cell::Cell;
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::traits::GraphicsEngine;
 use crate::ui::children::WidgetChildren;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 
-define_widget! {
+component! {
     /// Splitter — 可拖拽分割面板容器。
     ///
     /// 子面板之间显示拖拽手柄，支持水平（左右排列）和垂直（上下排列）方向。
@@ -34,10 +33,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { 1.0 }

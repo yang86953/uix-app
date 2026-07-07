@@ -2,15 +2,15 @@
 //!
 //! 支持 min/max/step、键盘上下箭头、+/- 按钮。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
-define_widget! {
+component! {
     /// InputNumber — 数字输入框。
     pub struct InputNumber {
         value: f64,

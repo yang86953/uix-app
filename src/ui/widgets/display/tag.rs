@@ -1,7 +1,7 @@
 //! Tag widget — 彩色标签/徽标，支持关闭按钮。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::SnapshotFields;
@@ -17,7 +17,7 @@ pub enum TagColor {
     Error,
 }
 
-define_widget! {
+component! {
     pub struct Tag {
         text: String,
         color: TagColor,
@@ -29,10 +29,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

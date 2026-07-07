@@ -9,8 +9,8 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::SnapshotFields;
@@ -45,7 +45,7 @@ fn paint_nav_item_bg(
 }
 
 // NavItem — 侧边栏导航项
-define_widget! {
+component! {
     pub struct NavItem {
         label: String,
         icon: String,
@@ -59,10 +59,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

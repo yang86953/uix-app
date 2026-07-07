@@ -1,5 +1,5 @@
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
@@ -9,7 +9,7 @@ use crate::ui::{
 };
 use std::cell::RefCell;
 
-define_widget! {
+component! {
     pub struct TreeSelect {
         placeholder: String,
         value: String,

@@ -4,8 +4,8 @@
 
 use std::cell::Cell;
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
 use crate::ui::{
@@ -31,7 +31,7 @@ impl TimeValue {
     }
 }
 
-define_widget! {
+component! {
     /// TimePicker — 时间选择器。
     pub struct TimePicker {
         value: Cell<TimeValue>,

@@ -2,8 +2,8 @@
 //!
 //! 月视图展示日期，支持选中日期、月份切换。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
@@ -40,7 +40,7 @@ fn first_weekday(year: i32, month: usize) -> usize {
 }
 
 // Calendar — 日历组件。
-define_widget! {
+component! {
     pub struct Calendar {
         year: Cell<i32>,
         month: Cell<usize>,
@@ -51,10 +51,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

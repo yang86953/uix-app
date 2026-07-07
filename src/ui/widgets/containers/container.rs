@@ -2,8 +2,8 @@
 
 use std::cell::Cell;
 
+use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
-use crate::define_widget;
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::ui::layout::engine::{child_from_tree, BoxModel, FlexLayout, LayoutChild};
@@ -15,7 +15,7 @@ use crate::ui::traits::LayoutEngine;
 use crate::ui::{SnapshotFields, SnapshotSource};
 use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 
-define_widget! {
+component! {
     /// Container — flexbox 布局容器，带背景/边框/圆角/阴影。
     ///
     /// 所有视觉效果统一通过 `style: Style` 配置。布局引擎从 `style.margin`
@@ -31,16 +31,12 @@ define_widget! {
         /// 统一样式（所有视觉属性的唯一来源）
         pub style: Style,
         /// 缓存子节点内容尺寸（layout_children 后更新），
-        /// 使 preferred_size 在无固定尺寸时能基于子节点内容估算宽度。
+        /// 使 measure 在无固定尺寸时能基于子节点内容估算宽度。
         cached_content_size: Cell<Size>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { self.style.flex_grow }

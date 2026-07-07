@@ -1,11 +1,11 @@
-use crate::core::{Rect, Size};
-use crate::define_widget;
+use crate::component;
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::native::traits::input::{KeyCode, KeyMod};
 use crate::ui::{EventResult, SystemEvent, WidgetId, WidgetTree};
 use std::collections::HashSet;
 
-define_widget! {
+component! {
     /// Keeps Tab/Shift+Tab focus inside a subtree.
     pub struct FocusTrap {
         /// Whether focus trapping is active.
@@ -16,8 +16,8 @@ define_widget! {
         tab_offset: usize,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(0.0, 0.0)
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(0.0, 0.0))
     }
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}

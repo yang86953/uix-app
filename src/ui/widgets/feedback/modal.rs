@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
@@ -9,7 +9,7 @@ use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetCore, WidgetTree};
 
-define_widget! {
+component! {
     /// Modal dialog.
     pub struct Modal {
         title: String,
@@ -31,10 +31,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     visible => (&self) -> bool { self.is_present() }

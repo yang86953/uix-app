@@ -8,7 +8,7 @@
 //!
 //! # Usage
 //!
-//! In your `define_widget!` struct, include a field:
+//! In your `component!` struct, include a field:
 //! ```ignore
 //! children: WidgetChildren,
 //! ```

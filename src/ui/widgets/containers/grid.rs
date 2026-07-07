@@ -1,7 +1,7 @@
 //! Grid widget — CSS Grid-like layout container.
 
-use crate::core::{EdgeInsets, Rect, Size};
-use crate::define_widget;
+use crate::component;
+use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
@@ -12,7 +12,7 @@ use crate::ui::traits::layout::LayoutEngine;
 use crate::ui::{SnapshotFields, SnapshotSource};
 use crate::ui::{WidgetId, WidgetTree};
 
-define_widget! {
+component! {
     /// Grid container widget.
     pub struct Grid {
         columns: Vec<GridTrack>,
@@ -30,8 +30,8 @@ define_widget! {
         fixed_height: Option<f32>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(self.fixed_width.unwrap_or(0.0), self.fixed_height.unwrap_or(0.0))
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(self.fixed_width.unwrap_or(0.0), self.fixed_height.unwrap_or(0.0)))
     }
 
     picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }

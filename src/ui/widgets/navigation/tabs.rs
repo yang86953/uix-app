@@ -1,7 +1,7 @@
 //! Tabs widget — Ant Design style tab bar with content panels.
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::SnapshotFields;
@@ -22,7 +22,7 @@ pub enum TabPosition {
     Bottom,
 }
 
-define_widget! {
+component! {
     /// Tabs widget with a tab bar and content switching.
     pub struct Tabs {
         tabs: Vec<Tab>,
@@ -37,10 +37,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

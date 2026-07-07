@@ -3,8 +3,8 @@
 //! 支持横向步骤条，步骤状态（wait/process/finish/error），
 //! 自定义当前步骤，可点击切换。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
@@ -29,7 +29,7 @@ pub struct Step {
 }
 
 // Steps — 步骤条组件。
-define_widget! {
+component! {
     pub struct Steps {
         steps: Vec<Step>,
         current: Cell<usize>,
@@ -41,10 +41,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

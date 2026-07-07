@@ -1,7 +1,7 @@
 //! Breadcrumb widget — 面包屑导航路径。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
@@ -26,7 +26,7 @@ impl BreadcrumbItem {
     }
 }
 
-define_widget! {
+component! {
     /// Breadcrumb — 导航路径指示器。
     pub struct Breadcrumb {
         items: Vec<BreadcrumbItem>,
@@ -35,10 +35,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

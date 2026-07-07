@@ -1,5 +1,5 @@
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
@@ -21,7 +21,7 @@ pub enum TriggerMode {
     Focus,
 }
 
-define_widget! {
+component! {
     pub struct Tooltip {
         text: String,
         placement: TooltipPlacement,
@@ -40,10 +40,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

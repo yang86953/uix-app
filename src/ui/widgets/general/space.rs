@@ -2,8 +2,8 @@
 //!
 //! Provides consistent spacing for a row or column of child widgets.
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
@@ -32,7 +32,7 @@ impl SpaceSize {
     }
 }
 
-define_widget! {
+component! {
     /// Space — a flex container that adds uniform gap between its children.
     pub struct Space {
         children: WidgetChildren,
@@ -48,10 +48,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }

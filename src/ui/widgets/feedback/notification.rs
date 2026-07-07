@@ -3,8 +3,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::system::StatusLevel;
@@ -28,7 +28,7 @@ pub struct NotificationItem {
     pub closable: bool,
 }
 
-define_widget! {
+component! {
     pub struct Notification {
         queue: Rc<RefCell<Vec<NotificationItem>>>,
         placement: NotifPlacement,
@@ -36,10 +36,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

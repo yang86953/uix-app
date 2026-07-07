@@ -2,6 +2,7 @@ use std::any::TypeId;
 use std::cell::Cell;
 use std::rc::Rc;
 
+use crate::component;
 use crate::core::{Constraints, EdgeInsets, Point, Size};
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
@@ -32,9 +33,8 @@ use crate::ui::{
     SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
     WidgetAnimation, WidgetId, WidgetLayout,
 };
-use crate::{component, define_widget};
 
-define_widget! {
+component! {
     struct SnapshotProbe {
         pub title: String,
         pub count: usize,
@@ -52,7 +52,7 @@ define_widget! {
     ) {}
 }
 
-define_widget! {
+component! {
     struct MeasureMacroProbe {
         pub label: String,
     }
@@ -69,7 +69,7 @@ define_widget! {
     ) {}
 }
 
-define_widget! {
+component! {
     struct CaptureMacroProbe {}
 
     on_event => (&mut self, _event: &SystemEvent) -> crate::ui::EventResult {
@@ -162,7 +162,7 @@ fn component_config_snapshot_records_id_type_and_fields() {
 }
 
 #[test]
-fn component_config_snapshot_uses_typed_fields_for_define_widget_builtin() {
+fn component_config_snapshot_uses_typed_fields_for_component_builtin() {
     let qrcode = QRCode::new("uix").size(96.0).error_level(2);
     let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(8), &qrcode);
 
@@ -1836,7 +1836,7 @@ fn display_snapshots_exclude_runtime_selection_and_animation_state() {
 }
 
 #[test]
-fn define_widget_auto_snapshot_captures_public_fields_only() {
+fn component_auto_snapshot_captures_public_fields_only() {
     let probe = SnapshotProbe {
         title: "Ready".to_string(),
         count: 3,
@@ -1867,7 +1867,7 @@ fn define_widget_auto_snapshot_captures_public_fields_only() {
 }
 
 #[test]
-fn define_widget_measure_method_implements_layout() {
+fn component_measure_method_implements_layout() {
     let probe = MeasureMacroProbe {
         label: "measure".to_string(),
     };
@@ -1880,7 +1880,7 @@ fn define_widget_measure_method_implements_layout() {
 }
 
 #[test]
-fn define_widget_capture_method_implements_event_handler() {
+fn component_capture_method_implements_event_handler() {
     let mut probe = CaptureMacroProbe {};
 
     assert!(crate::ui::WidgetComponent::as_event(&probe).is_some());

@@ -2,8 +2,8 @@
 //!
 //! 预设色板选择，点击触发弹出面板。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
@@ -19,7 +19,7 @@ const PRESET_COLORS: &[u32] = &[
 ];
 
 // ColorPicker — 颜色选择器。
-define_widget! {
+component! {
     pub struct ColorPicker {
         value: Color,
         open: bool,

@@ -2,7 +2,6 @@
 
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::traits::GraphicsEngine;
 use crate::impl_widget_component;
 use crate::native::traits::input::KeyCode;
 use crate::ui::style::{apply_style, Style, StyleSet, StyleState};
@@ -39,10 +38,6 @@ impl SnapshotSource for Button {
 impl WidgetLayout for Button {
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 }
 

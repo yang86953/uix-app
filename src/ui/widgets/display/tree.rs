@@ -1,5 +1,5 @@
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::{EventResult, SnapshotFields, SnapshotTreeNode, SystemEvent, WidgetTree};
 
@@ -28,7 +28,7 @@ struct FlatNode {
     checked: bool,
 }
 
-define_widget! {
+component! {
     pub struct Tree {
         nodes: Vec<TreeNode>,
         flat: Vec<FlatNode>,
@@ -40,10 +40,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

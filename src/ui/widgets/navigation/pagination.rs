@@ -2,8 +2,8 @@
 //!
 //! 支持页码切换、上一页/下一页、快速跳转（省略号）、pageSize 切换。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
@@ -11,7 +11,7 @@ use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
 // Pagination — 分页器。
-define_widget! {
+component! {
     pub struct Pagination {
         total: usize,
         page_size: usize,
@@ -25,10 +25,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

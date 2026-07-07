@@ -1,12 +1,12 @@
 //! Empty widget — 空状态占位（图标 + 描述居中）。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
-define_widget! {
+component! {
     /// Empty — 空状态展示。
     pub struct Empty {
         description: String,
@@ -16,10 +16,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

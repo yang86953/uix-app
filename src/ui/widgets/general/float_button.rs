@@ -2,15 +2,15 @@
 //!
 //! 固定在屏幕角落的圆形按钮，支持图标、tooltip、badge 等。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 // FloatButton — 浮动操作按钮。
-define_widget! {
+component! {
     pub struct FloatButton {
         icon: String,
         tooltip: String,
@@ -23,10 +23,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

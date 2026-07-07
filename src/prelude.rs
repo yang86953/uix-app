@@ -22,7 +22,6 @@ pub use crate::draw::{colors, Color, FontService, ImageService, NullEngine, Soft
 // ui
 
 pub use crate::component;
-pub use crate::define_widget;
 pub use crate::impl_widget_component;
 pub use crate::tree;
 pub use crate::ui::layout::{
@@ -33,8 +32,8 @@ pub use crate::ui::style::{ColorValue, PaletteColor, Style, StyleSet, Typography
 pub use crate::ui::theme::{DesignTokens, DynTokens, NeutralRole, Theme};
 pub use crate::ui::{
     AppState, ClickEvent, ComponentHandle, EventResult, HandlerId, HandlerOptions,
-    HandlerRegistration, PaintContext, SemanticEvent, SemanticKind, SemanticPayload, SystemEvent,
-    SystemEventKind, WidgetId,
+    HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
+    SemanticPayload, SystemEvent, SystemEventKind, WidgetCore, WidgetId, WidgetNode, WidgetTree,
 };
 pub use crate::ui::{
     DragManager, FocusManager, InteractionManager, StateManager, StyleManager, TextManager,

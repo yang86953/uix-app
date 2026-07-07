@@ -2,8 +2,8 @@
 //!
 //! 支持物理单位：`offset()` 接受 mm/cm/pt，自动适配 DPI。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
@@ -19,7 +19,7 @@ pub enum BadgeStatus {
     Warning,
 }
 
-define_widget! {
+component! {
     pub struct Badge {
         count: i32,
         max: i32,
@@ -40,10 +40,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

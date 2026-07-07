@@ -1,5 +1,5 @@
-use crate::core::{Point, Rect, Size};
-use crate::define_widget;
+use crate::component;
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::{
@@ -63,7 +63,7 @@ pub struct TableChange {
     pub page_size: usize,
 }
 
-define_widget! {
+component! {
     pub struct Table {
         columns: Vec<TableColumn>,
         rows: Vec<TableRow>,
@@ -85,12 +85,12 @@ define_widget! {
         pending_change: RefCell<Option<String>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+    measure => (&self, constraints: Constraints) -> Size {
         let w: f32 = self.columns.iter().map(|c| c.width).sum();
         let data_rows = self.rows.len().min(self.page_size);
         let extra = if self.expanded_row.get().is_some() { self.expand_height } else { 0.0 };
         let h = self.header_h + data_rows as f32 * self.row_h + extra;
-        Size::new(w, h.max(60.0))
+        constraints.clamp(Size::new(w, h.max(60.0)))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

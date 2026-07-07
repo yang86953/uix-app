@@ -1,14 +1,14 @@
 //! Alert widget — 警示条，支持类型、图标、关闭。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::system::StatusLevel;
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
-define_widget! {
+component! {
     /// Alert — 带类型颜色的警示条。
     pub struct Alert {
         message: String,
@@ -20,10 +20,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

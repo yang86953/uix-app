@@ -2,10 +2,10 @@
 
 use std::cell::Cell;
 
-use crate::core::{Point, Rect, Size};
-use crate::define_widget;
+use crate::component;
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::{traits::GraphicsEngine, Color, Radius};
+use crate::draw::{Color, Radius};
 use crate::ui::{EventResult, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree};
 
 const DEFAULT_SCROLL_VIEWPORT_HEIGHT: f32 = 500.0;
@@ -74,7 +74,7 @@ impl SelectableItem {
     }
 }
 
-define_widget! {
+component! {
     /// A vertical list with selectable rows.
     pub struct SelectableList {
         pub items: Vec<SelectableItem>,
@@ -105,7 +105,7 @@ define_widget! {
         }
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
+    measure => (&self, constraints: Constraints) -> Size {
         let mut h = 0.0;
         if !self.header_button_text.is_empty() {
             h += 48.0;
@@ -114,7 +114,7 @@ define_widget! {
         if !self.footer_text.is_empty() {
             h += 28.0;
         }
-        Size::new(220.0, h.max(100.0))
+        constraints.clamp(Size::new(220.0, h.max(100.0)))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

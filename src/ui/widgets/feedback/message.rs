@@ -3,8 +3,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::native::traits::system::StatusLevel;
 use crate::ui::SnapshotFields;
@@ -25,7 +25,7 @@ pub struct MessageItem {
     pub closable: bool,
 }
 
-define_widget! {
+component! {
     /// Global floating message container.
     pub struct Message {
         queue: Rc<RefCell<Vec<MessageItem>>>,
@@ -34,10 +34,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

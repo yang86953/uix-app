@@ -1,7 +1,7 @@
 //! Radio widget — 单选组，支持 horizontal/vertical、disabled、hover。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
 use crate::ui::SnapshotFields;
@@ -15,7 +15,7 @@ pub enum RadioDirection {
     Vertical,
 }
 
-define_widget! {
+component! {
     /// Radio — 单选按钮组。
     pub struct Radio {
         options: Vec<String>,
