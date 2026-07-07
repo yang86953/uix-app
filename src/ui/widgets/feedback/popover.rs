@@ -3,6 +3,7 @@ use crate::define_widget;
 use crate::core::{Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
+use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// Popover placement.
@@ -39,6 +40,9 @@ define_widget! {
         trigger: PopoverTrigger,
         arrow: bool,
         timer: f32,
+        transition: TransitionPlayer,
+        closing: bool,
+        transition_dirty: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -50,26 +54,30 @@ define_widget! {
             PopoverTrigger::Click => {
                 if let SystemEvent::PointerDown { pos, .. } = event {
                     if pos.x >= 0.0 && pos.x <= 80.0 && pos.y >= 0.0 && pos.y <= 28.0 {
-                        self.visible = !self.visible;
+                        if self.visible {
+                            self.close();
+                        } else {
+                            self.open();
+                        }
                         return EventResult::Handled;
                     }
                     let popup = self.popup_rect(80.0, 28.0);
-                    if self.visible && !popup.contains(*pos) && !(pos.x >= 0.0 && pos.x <= 80.0 && pos.y >= 0.0 && pos.y <= 28.0) {
-                        self.visible = false;
+                    if self.is_present() && !popup.contains(*pos) && !(pos.x >= 0.0 && pos.x <= 80.0 && pos.y >= 0.0 && pos.y <= 28.0) {
+                        self.close();
                     }
                 }
             }
             PopoverTrigger::Hover => {
                 match event {
-                    SystemEvent::PointerEnter => { self.visible = true; self.timer = 0.0; return EventResult::Handled; }
-                    SystemEvent::PointerLeave => { self.visible = false; return EventResult::Handled; }
+                    SystemEvent::PointerEnter => { self.open(); self.timer = 0.0; return EventResult::Handled; }
+                    SystemEvent::PointerLeave => { self.close(); return EventResult::Handled; }
                     _ => {}
                 }
             }
             PopoverTrigger::Focus => {
                 match event {
-                    SystemEvent::FocusIn => { self.visible = true; return EventResult::Handled; }
-                    SystemEvent::FocusOut => { self.visible = false; return EventResult::Handled; }
+                    SystemEvent::FocusIn => { self.open(); return EventResult::Handled; }
+                    SystemEvent::FocusOut => { self.close(); return EventResult::Handled; }
                     _ => {}
                 }
             }
@@ -88,37 +96,39 @@ define_widget! {
         ctx.stroke_rect(frame, border, 1.0, r);
         ctx.text_center("Popover", frame, text_secondary, 12.0);
 
-        if self.visible {
+        if self.is_present() {
+            let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
+            let popup_bg = fade_color(bg, opacity);
+            let popup_border = fade_color(border, opacity);
+            let popup_text = fade_color(text_color, opacity);
+            let popup_secondary = fade_color(text_secondary, opacity);
             let (pw, ph) = (220.0, 100.0);
             let (px, py) = self.popup_position(frame, pw, ph);
             let pop_rect = Rect::new(px, py, pw, ph);
-            ctx.fill_rect(pop_rect, bg, r);
-            ctx.stroke_rect(pop_rect, border, 1.0, r);
+            ctx.fill_rect(pop_rect, popup_bg, r);
+            ctx.stroke_rect(pop_rect, popup_border, 1.0, r);
 
             if self.arrow {
-                draw_popover_arrow(ctx, frame, pop_rect, self.placement, bg);
+                draw_popover_arrow(ctx, frame, pop_rect, self.placement, popup_bg);
             }
 
             if !self.title.is_empty() {
                 let title_rect = Rect::new(px, py, pw, 32.0);
                 let title_y = ctx.visual_center_y(title_rect, 14.0);
-                ctx.draw_text(&self.title, Point::new(px + 12.0, title_y), text_color, 14.0);
-                ctx.fill_rect(Rect::new(px + 12.0, py + 32.0, pw - 24.0, 1.0), border, None);
+                ctx.draw_text(&self.title, Point::new(px + 12.0, title_y), popup_text, 14.0);
+                ctx.fill_rect(Rect::new(px + 12.0, py + 32.0, pw - 24.0, 1.0), popup_border, None);
             }
             let content_y = py + if self.title.is_empty() { 12.0 } else { 40.0 };
-            ctx.draw_text(&self.content, Point::new(px + 12.0, content_y), text_secondary, 12.0);
+            ctx.draw_text(&self.content, Point::new(px + 12.0, content_y), popup_secondary, 12.0);
         }
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        let (pw, ph) = (220.0, 100.0);
-        let (px, py) = self.popup_position(frame, pw, ph);
-        let pop = Rect::new(px, py, pw, ph);
-        frame.union(&pop)
+        popover_dirty_rect(self.placement, self.arrow, frame)
     }
 
     overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
-        if !self.visible {
+        if !self.is_present() {
             return None;
         }
 
@@ -130,6 +140,31 @@ define_widget! {
                 .z_index(900)
                 .managed(true),
         )
+    }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.is_present() || self.transition.finished {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        self.transition.update(dt);
+        self.transition_dirty = true;
+
+        if self.closing && self.transition.finished {
+            self.visible = false;
+            self.closing = false;
+        }
+
+        self.is_present() && !self.transition.finished
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.transition_dirty {
+            popover_dirty_rect(self.placement, self.arrow, frame)
+        } else {
+            Rect::zero()
+        }
     }
 }
 
@@ -149,6 +184,9 @@ impl Popover {
             trigger: PopoverTrigger::Click,
             arrow: true,
             timer: 0.0,
+            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            closing: false,
+            transition_dirty: false,
         }
     }
     pub fn title(mut self, t: impl Into<String>) -> Self {
@@ -168,31 +206,86 @@ impl Popover {
         self
     }
 
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
+
+    pub fn is_present(&self) -> bool {
+        self.visible || self.closing
+    }
+
+    pub fn open(&mut self) {
+        self.visible = true;
+        self.closing = false;
+        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition_dirty = true;
+    }
+
+    pub fn close(&mut self) {
+        if !self.is_present() {
+            self.visible = false;
+            self.closing = false;
+            self.transition_dirty = false;
+            return;
+        }
+        self.visible = false;
+        self.closing = true;
+        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition_dirty = true;
+    }
+
     fn popup_rect(&self, _fw: f32, _fh: f32) -> Rect {
         let (pw, ph) = (220.0, 100.0);
-        let (px, py) = (0.0, -ph - 8.0);
+        let (px, py) = popover_position(
+            Rect::new(0.0, 0.0, 80.0, 28.0),
+            self.placement,
+            self.arrow,
+            pw,
+            ph,
+        );
         Rect::new(px, py, pw, ph)
     }
 
     fn popup_position(&self, frame: Rect, pw: f32, ph: f32) -> (f32, f32) {
-        let gap = if self.arrow { 10.0 } else { 4.0 };
-        match self.placement {
-            PopoverPlacement::Top => (frame.x, frame.y - ph - gap),
-            PopoverPlacement::TopLeft => (frame.x, frame.y - ph - gap),
-            PopoverPlacement::TopRight => (frame.x + frame.w - pw, frame.y - ph - gap),
-            PopoverPlacement::Bottom => (frame.x, frame.y + frame.h + gap),
-            PopoverPlacement::BottomLeft => (frame.x, frame.y + frame.h + gap),
-            PopoverPlacement::BottomRight => (frame.x + frame.w - pw, frame.y + frame.h + gap),
-            PopoverPlacement::Left => (frame.x - pw - gap, frame.y + frame.h * 0.5 - ph * 0.5),
-            PopoverPlacement::LeftTop => (frame.x - pw - gap, frame.y),
-            PopoverPlacement::LeftBottom => (frame.x - pw - gap, frame.y + frame.h - ph),
-            PopoverPlacement::Right => {
-                (frame.x + frame.w + gap, frame.y + frame.h * 0.5 - ph * 0.5)
-            }
-            PopoverPlacement::RightTop => (frame.x + frame.w + gap, frame.y),
-            PopoverPlacement::RightBottom => (frame.x + frame.w + gap, frame.y + frame.h - ph),
-        }
+        popover_position(frame, self.placement, self.arrow, pw, ph)
     }
+}
+
+fn popover_position(
+    frame: Rect,
+    placement: PopoverPlacement,
+    arrow: bool,
+    pw: f32,
+    ph: f32,
+) -> (f32, f32) {
+    let gap = if arrow { 10.0 } else { 4.0 };
+    match placement {
+        PopoverPlacement::Top | PopoverPlacement::TopLeft => (frame.x, frame.y - ph - gap),
+        PopoverPlacement::TopRight => (frame.x + frame.w - pw, frame.y - ph - gap),
+        PopoverPlacement::Bottom | PopoverPlacement::BottomLeft => {
+            (frame.x, frame.y + frame.h + gap)
+        }
+        PopoverPlacement::BottomRight => (frame.x + frame.w - pw, frame.y + frame.h + gap),
+        PopoverPlacement::Left => (frame.x - pw - gap, frame.y + frame.h * 0.5 - ph * 0.5),
+        PopoverPlacement::LeftTop => (frame.x - pw - gap, frame.y),
+        PopoverPlacement::LeftBottom => (frame.x - pw - gap, frame.y + frame.h - ph),
+        PopoverPlacement::Right => (frame.x + frame.w + gap, frame.y + frame.h * 0.5 - ph * 0.5),
+        PopoverPlacement::RightTop => (frame.x + frame.w + gap, frame.y),
+        PopoverPlacement::RightBottom => (frame.x + frame.w + gap, frame.y + frame.h - ph),
+    }
+}
+
+fn popover_dirty_rect(placement: PopoverPlacement, arrow: bool, frame: Rect) -> Rect {
+    let (pw, ph) = (220.0, 100.0);
+    let (px, py) = popover_position(frame, placement, arrow, pw, ph);
+    frame.union(&Rect::new(px, py, pw, ph))
+}
+
+fn fade_color(color: Color, opacity: f32) -> Color {
+    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    color.with_alpha(alpha)
 }
 
 fn draw_popover_arrow(
@@ -256,3 +349,7 @@ fn draw_popover_arrow(
     pb.close();
     ctx.fill_path(&pb.build(), color, FillRule::NonZero);
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/feedback/popover.rs"]
+mod tests;

@@ -244,9 +244,9 @@ WidgetTree
 | tick | `drain_due` → `tree.update(dt)` → 自动 `dirty_bounds()` 标脏（#126） |
 | 结束 | 框架 unregister → Registry 空时可 DeepIdle |
 
-**App 不调用 register**。`Spin`、`ProgressBar` indeterminate、Tooltip fade、Modal 与 Drawer 已作为内置 `WidgetAnimation` source 托管；其他过渡动画源后续接入。
+**App 不调用 register**。`Spin`、`ProgressBar` indeterminate、Tooltip fade、Popover fade、Modal 与 Drawer 已作为内置 `WidgetAnimation` source 托管；其他过渡动画源后续接入。
 
-> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入 event loop；动画 widget 每次 update 后按 `animation_dirty_rect` 窄 Paint 标脏，仍活跃时由 Registry 登记下一帧 deadline。`Spin`、`ProgressBar` indeterminate、Tooltip fade、Modal 与 Drawer 已作为内置动画源接入；其他过渡动画源仍待接入该能力。
+> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入 event loop；动画 widget 每次 update 后按 `animation_dirty_rect` 窄 Paint 标脏，仍活跃时由 Registry 登记下一帧 deadline。`Spin`、`ProgressBar` indeterminate、Tooltip fade、Popover fade、Modal 与 Drawer 已作为内置动画源接入；其他过渡动画源仍待接入该能力。
 
 ---
 
