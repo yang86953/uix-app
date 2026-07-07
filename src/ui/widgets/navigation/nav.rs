@@ -332,13 +332,16 @@ impl Navigation {
         self
     }
 
-    pub fn build(self, tokens: &dyn crate::ui::traits::TokenProvider) -> crate::ui::WidgetNode {
+    pub fn build(
+        self,
+        tokens: &dyn crate::ui::traits::TokenProvider,
+    ) -> crate::ui::core::widget::WidgetNode {
         let loc = crate::ui::locale::use_locale();
         use crate::ui::widgets::{Container, Divider, Label};
         use crate::ui::IntoWidgetNode;
 
         let item_h = if self.compact_items { self.width } else { 36.0 };
-        let mut children: Vec<crate::ui::WidgetNode> = Vec::new();
+        let mut children: Vec<crate::ui::core::widget::WidgetNode> = Vec::new();
 
         if self.show_title {
             children.push(
@@ -383,7 +386,7 @@ impl Navigation {
             );
         }
 
-        crate::ui::WidgetNode::new(
+        crate::ui::core::widget::WidgetNode::new(
             Box::new(
                 Container::new()
                     .bg(tokens.color_bg_container())

@@ -221,6 +221,53 @@ fn test_loaded_path_after_load() {
 }
 
 #[test]
+fn test_load_missing_file_resets_to_clean_empty_map() {
+    let p = std::env::temp_dir().join("uix_settings_missing_load_test.json");
+    let ps = p.to_string_lossy().to_string();
+    std::fs::remove_file(&ps).ok();
+
+    let mut s = SettingsService::new();
+    s.set("stale", "value");
+    assert!(s.dirty());
+
+    s.load(&ps).unwrap();
+
+    assert_eq!(s.count(), 0);
+    assert_eq!(s.loaded_path(), Some(ps.as_str()));
+    assert!(!s.dirty());
+}
+
+#[test]
+fn test_load_empty_file_resets_to_clean_empty_map() {
+    let p = std::env::temp_dir().join("uix_settings_empty_load_test.json");
+    let ps = p.to_string_lossy().to_string();
+    std::fs::write(&ps, "   \n\t").unwrap();
+
+    let mut s = SettingsService::new();
+    s.set("stale", "value");
+    assert!(s.dirty());
+
+    s.load(&ps).unwrap();
+
+    assert_eq!(s.count(), 0);
+    assert_eq!(s.loaded_path(), Some(ps.as_str()));
+    assert!(!s.dirty());
+    std::fs::remove_file(&ps).ok();
+}
+
+#[test]
+fn test_save_without_loaded_path_is_noop() {
+    let mut s = SettingsService::new();
+    s.set("theme", "dark");
+
+    s.save().unwrap();
+
+    assert_eq!(s.loaded_path(), None);
+    assert_eq!(s.get("theme"), Some("dark"));
+    assert!(s.dirty());
+}
+
+#[test]
 fn test_save_skips_clean_settings() {
     let p = std::env::temp_dir().join("uix_settings_clean_save_test.json");
     let ps = p.to_string_lossy().to_string();

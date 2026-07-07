@@ -1,6 +1,7 @@
 use super::*;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 // ════════════════════════════════════════════════════════════════════
 // 基础 notify / dismiss
@@ -142,8 +143,7 @@ fn test_update_removes_expired() {
     let mut svc = NotificationService::new();
     svc.notify("Short", "x", StatusLevel::Info, 1); // 1ms 后过期
     svc.notify("Long", "y", StatusLevel::Info, 60000); // 60s
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    let visible = svc.update();
+    let visible = svc.update_at(Instant::now() + Duration::from_millis(5));
     assert_eq!(visible.len(), 1);
     assert_eq!(visible[0].title, "Long");
 }
@@ -161,8 +161,7 @@ fn test_update_keeps_visible_when_not_expired() {
 fn test_update_removes_zero_duration_immediately() {
     let mut svc = NotificationService::new();
     svc.notify("A", "", StatusLevel::Info, 0); // 0 = 不自动过期（由手动关闭）
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    let visible = svc.update();
+    let visible = svc.update_at(Instant::now() + Duration::from_millis(5));
     assert_eq!(visible.len(), 1); // 0 duration 表示不超时
 }
 
@@ -171,8 +170,7 @@ fn test_update_all_expired_returns_empty() {
     let mut svc = NotificationService::new();
     svc.notify("A", "", StatusLevel::Info, 1);
     svc.notify("B", "", StatusLevel::Info, 1);
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    let visible = svc.update();
+    let visible = svc.update_at(Instant::now() + Duration::from_millis(5));
     assert!(visible.is_empty());
 }
 

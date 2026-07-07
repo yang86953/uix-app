@@ -1,4 +1,4 @@
-﻿//! Unified public entrypoint with common re-exports grouped by domain.
+//! Unified public entrypoint with common re-exports grouped by domain.
 //!
 //! Most apps only need:
 //! ```ignore
@@ -27,15 +27,16 @@ pub use crate::component;
 pub use crate::impl_widget_component;
 pub use crate::tree;
 pub use crate::ui::layout::{
-    AlignItems, FlexDirection, FlexLayout, GridTrack, JustifyContent, LayoutChild, LayoutEngine,
+    AlignItems, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent, LayoutChild,
+    LayoutEngine,
 };
 pub use crate::ui::state::{Computed, State};
 pub use crate::ui::style::{ColorValue, PaletteColor, Style, StyleSet, TypographyToken};
 pub use crate::ui::theme::{DesignTokens, DynTokens, NeutralRole, Theme};
 pub use crate::ui::{
-    AppState, ClickEvent, ComponentHandle, EventResult, HandlerId, HandlerOptions,
-    HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
-    SemanticPayload, SystemEvent, SystemEventKind,
+    AppState, ClickEvent, ComponentConfigSnapshot, ComponentHandle, EventResult, HandlerId,
+    HandlerOptions, HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
+    SemanticPayload, SnapshotField, SnapshotFields, SnapshotValue, SystemEvent, SystemEventKind,
 };
 pub use crate::ui::{
     DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
@@ -107,31 +108,60 @@ mod tests {
         assert_exported::<AppHandle>();
         assert_exported::<TimerHandle>();
         assert_exported::<ComponentId>();
+        assert_exported::<ComponentConfigSnapshot>();
         assert_exported::<ComponentHandle>();
         assert_exported::<Constraints>();
         assert_exported::<SemanticEvent>();
+        assert_exported::<SnapshotField>();
+        assert_exported::<SnapshotFields>();
+        assert_exported::<SnapshotValue>();
         assert_exported::<ButtonBuilder>();
         assert_exported::<InputBuilder>();
         assert_exported::<ViewAdapter>();
+        assert_exported::<FlexLayout>();
+        assert_exported::<GridLayout>();
+        assert_exported::<GridTrack>();
+        assert_exported::<AnchorItem>();
         assert_exported::<BadgeStatus>();
+        assert_exported::<BarData>();
+        assert_exported::<BreadcrumbItem>();
+        assert_exported::<CascaderOption>();
         assert_exported::<CascaderValue>();
+        assert_exported::<CollapsePanel>();
+        assert_exported::<DateValue>();
+        assert_exported::<DescriptionsItem>();
         assert_exported::<DividerDirection>();
         assert_exported::<DividerOrientation>();
         assert_exported::<DrawerPlacement>();
         assert_exported::<FieldDef>();
         assert_exported::<FormItem>();
         assert_exported::<FormLayout>();
+        assert_exported::<LineData>();
+        assert_exported::<MenuItem>();
+        assert_exported::<MenuMode>();
         assert_exported::<NavGroup>();
         assert_exported::<NavItem>();
         assert_exported::<OptGroup>();
+        assert_exported::<PieData>();
         assert_exported::<PopconfirmPlacement>();
         assert_exported::<PopoverPlacement>();
         assert_exported::<PopoverTrigger>();
         assert_exported::<ProgressMode>();
         assert_exported::<ProgressType>();
         assert_exported::<RadioDirection>();
+        assert_exported::<ResultType>();
+        assert_exported::<SkeletonShape>();
+        assert_exported::<SpaceSize>();
         assert_exported::<SpinSize>();
+        assert_exported::<Step>();
+        assert_exported::<StepStatus>();
         assert_exported::<Tab>();
+        assert_exported::<TabPosition>();
+        assert_exported::<TagColor>();
+        assert_exported::<TimeValue>();
+        assert_exported::<TimelineItem>();
+        assert_exported::<TooltipPlacement>();
+        assert_exported::<TreeNode>();
         assert_exported::<TriggerMode>();
         assert_exported::<TypographyType>();
         assert_exported::<ValidateStatus>();

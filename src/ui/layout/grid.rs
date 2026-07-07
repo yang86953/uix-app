@@ -183,7 +183,7 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
 
         let h_align = child.justify.unwrap_or(input.justify_items);
         let v_align = child.align.unwrap_or(input.align_items);
-        let pref = child.preferred_size;
+        let pref = child.measured_size;
 
         let child_w = match h_align {
             JustifyContent::Start => pref.w.min(cell_w),

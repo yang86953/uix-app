@@ -76,7 +76,10 @@ impl FocusTrap {
         self.focusable_ids = ids;
     }
 
-    pub fn wrap(self, node: crate::ui::WidgetNode) -> crate::ui::WidgetNode {
-        crate::ui::WidgetNode::new(Box::new(self), vec![node])
+    pub fn wrap(
+        self,
+        node: crate::ui::core::widget::WidgetNode,
+    ) -> crate::ui::core::widget::WidgetNode {
+        crate::ui::core::widget::WidgetNode::new(Box::new(self), vec![node])
     }
 }

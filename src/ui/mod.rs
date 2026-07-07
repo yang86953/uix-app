@@ -30,7 +30,7 @@ pub use component_snapshot::{
     SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
 };
 pub use core::widget;
-pub use core::widget::{EventResult, IntoWidgetNode, WidgetNode, WidgetTree};
+pub use core::widget::{EventResult, IntoWidgetNode, WidgetTree};
 pub use core::{children, context};
 pub use event::{
     ClickEvent, HandlerId, HandlerOptions, HandlerRegistration, HandlerTable, SemanticEvent,
