@@ -127,9 +127,20 @@ impl WidgetTree {
         let Some(node) = self.get(id) else {
             return;
         };
+        let frame = node.frame();
+        let dirty = node.dirty_rect(frame);
+        let rect = if dirty.w > 0.0 && dirty.h > 0.0 {
+            Some(dirty)
+        } else if frame.w > 0.0 && frame.h > 0.0 {
+            Some(frame)
+        } else {
+            None
+        };
         app_state.register(
             id,
             ComponentConfigSnapshot::from_component(id, node.component()),
+            self.invalidation_handle(),
+            rect,
         );
     }
 
