@@ -9,7 +9,7 @@ use crate::draw::pipeline::RenderMetrics;
 use crate::draw::NullEngine;
 use crate::native::test_harness::{FakePlatform, FakeWindow};
 use crate::native::traits::event::UiEvent;
-use crate::native::traits::input::KeyMod;
+use crate::native::traits::input::{KeyCode, KeyMod};
 use crate::ui::overlay::OverlayKind;
 use crate::ui::theme::{DesignTokens, DynTokens};
 use crate::ui::traits::TokenProvider;
@@ -311,6 +311,55 @@ fn deep_idle_waits_without_fixed_timeout_or_extra_present() {
     assert_eq!(stats.present_calls, 1);
     assert_eq!(window.presenter.state.present_calls.len(), 1);
     assert_eq!(stats.idle_frames, 4);
+    assert_eq!(platform.text_input.state.start_calls, 0);
+    assert_eq!(platform.text_input.state.stop_calls, 0);
+}
+
+#[test]
+fn key_event_after_first_frame_does_not_force_layout_without_invalidation() {
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::key_up(KeyCode::Enter, KeyMod::NONE));
+    platform.event_source.state.exit_after_blocking_calls = Some(2);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    let stats = metrics.get();
+    assert_eq!(status, 0);
+    assert_eq!(stats.layout_calls, 1);
+    assert_eq!(stats.present_calls, 1);
+    assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
 }
 
 #[test]
@@ -498,6 +547,9 @@ fn ime_composition_start_registers_open_active_work_without_timeout() {
     assert!(!session.active_work().is_empty());
     assert_eq!(session.active_work().next_deadline(), None);
     assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
+    assert_eq!(platform.text_input.state.start_calls, 1);
+    assert_eq!(platform.text_input.state.stop_calls, 0);
+    assert!(platform.text_input.state.active);
 }
 
 #[test]
@@ -548,6 +600,9 @@ fn ime_composition_end_unregisters_active_work() {
     assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
     assert!(session.active_work().is_empty());
     assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
+    assert_eq!(platform.text_input.state.start_calls, 1);
+    assert_eq!(platform.text_input.state.stop_calls, 1);
+    assert!(!platform.text_input.state.active);
 }
 
 #[test]

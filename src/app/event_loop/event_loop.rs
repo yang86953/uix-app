@@ -395,8 +395,6 @@ where
     };
 
     while running.get() {
-        platform.text_input().start();
-
         if first_frame {
             set_loop_state(&mut loop_state, WindowLoopState::Active);
             if !platform.event_loop().poll_event(&collect) {
@@ -434,7 +432,12 @@ where
         let had_registered_work = !due_work.is_empty();
 
         for ev in pending_events.borrow_mut().drain(..) {
-            let is_layout_event = !matches!(ev.type_, UiEventType::PointerMove);
+            let is_layout_event = matches!(
+                ev.type_,
+                UiEventType::WindowResize
+                    | UiEventType::WindowMaximize
+                    | UiEventType::WindowRestore
+            );
             if is_layout_event {
                 had_layout_event = true;
             }
@@ -502,7 +505,7 @@ where
                 _ => {}
             }
 
-            sync_ime_session(tree, active_work, &mut ime_session, &ev);
+            sync_ime_session(tree, active_work, &mut ime_session, &ev, platform);
             if let Some(we) = map_event(&ev) {
                 tree.dispatch_event(&we);
             }
@@ -777,6 +780,7 @@ fn sync_ime_session(
     active_work: &mut ActiveWorkRegistry,
     current_session: &mut Option<NodeId>,
     ev: &UiEvent,
+    platform: &mut dyn Platform,
 ) {
     match ev.type_ {
         UiEventType::ImeCompositionStart | UiEventType::ImeCompositionUpdate => {
@@ -786,7 +790,9 @@ fn sync_ime_session(
             if *current_session != Some(target) {
                 if let Some(previous) = *current_session {
                     active_work.unregister(ActiveWorkKind::ImeSession(previous));
+                    platform.text_input().stop();
                 }
+                platform.text_input().start();
                 *current_session = Some(target);
             }
             active_work.register_open(ActiveWorkKind::ImeSession(target));
@@ -794,6 +800,7 @@ fn sync_ime_session(
         UiEventType::ImeCompositionEnd | UiEventType::WindowBlur => {
             if let Some(target) = current_session.take() {
                 active_work.unregister(ActiveWorkKind::ImeSession(target));
+                platform.text_input().stop();
             }
         }
         _ => {}

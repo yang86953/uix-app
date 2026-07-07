@@ -24,6 +24,7 @@ pub struct FakeEventSourceState {
     pub dispatch_blocking_calls: usize,
     pub dispatch_timeout_calls: usize,
     pub dispatch_timeout_durations: Vec<Duration>,
+    pub blocking_events: VecDeque<UiEvent>,
     pub wake_calls: Arc<AtomicUsize>,
     pub exit_after_blocking_calls: Option<usize>,
     pub exit_after_timeout_calls: Option<usize>,
@@ -76,6 +77,7 @@ impl FakeEventSource {
         self.state.dispatch_blocking_calls = 0;
         self.state.dispatch_timeout_calls = 0;
         self.state.dispatch_timeout_durations.clear();
+        self.state.blocking_events.clear();
         self.state.wake_calls.store(0, Ordering::Relaxed);
         self.state.exit_after_blocking_calls = None;
         self.state.exit_after_timeout_calls = None;
@@ -103,6 +105,9 @@ impl OsEventSource for FakeEventSource {
 
     fn dispatch_blocking(&mut self) -> bool {
         self.state.dispatch_blocking_calls += 1;
+        if let Some(event) = self.state.blocking_events.pop_front() {
+            self.state.events.push_back(event);
+        }
         if self
             .state
             .exit_after_blocking_calls

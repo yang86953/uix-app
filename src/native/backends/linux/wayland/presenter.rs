@@ -170,7 +170,7 @@ impl IPresenter for WaylandPresenter {
         height: i32,
         damage: PresentDamage,
     ) -> Result<(), Error> {
-        self.present_impl(pixels, width, height, dirty_rect);
+        self.present_impl(pixels, width, height, damage);
         Ok(())
     }
 

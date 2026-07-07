@@ -142,6 +142,23 @@ fn component_config_snapshot_records_id_type_and_fields() {
 }
 
 #[test]
+fn component_config_snapshot_uses_typed_fields_for_define_widget_builtin() {
+    let qrcode = QRCode::new("uix").size(96.0).error_level(2);
+    let snapshot = ComponentConfigSnapshot::from_component(WidgetId::new(8), &qrcode);
+
+    assert_eq!(snapshot.id, WidgetId::new(8));
+    assert_eq!(snapshot.widget_type, TypeId::of::<QRCode>());
+    assert_eq!(
+        snapshot.fields,
+        SnapshotFields::QRCode {
+            value: "uix".to_string(),
+            size: 96.0,
+            error_level: 2,
+        }
+    );
+}
+
+#[test]
 fn button_snapshot_excludes_interaction_state() {
     let mut button = Button::new("Save").block(true);
     let before = button.snapshot_fields();

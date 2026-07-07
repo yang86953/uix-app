@@ -567,7 +567,13 @@ macro_rules! __define_widget_component_snapshot_method {
     (Grid) => {};
     ($name:ident) => {
         fn snapshot_fields(&self) -> $crate::ui::SnapshotFields {
-            $crate::ui::SnapshotSource::snapshot_fields(self)
+            let typed = $crate::ui::component_snapshot::snapshot_fields_from_any(self.as_any());
+            match typed {
+                $crate::ui::SnapshotFields::Unknown => {
+                    $crate::ui::SnapshotSource::snapshot_fields(self)
+                }
+                fields => fields,
+            }
         }
     };
 }

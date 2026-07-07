@@ -140,13 +140,17 @@ mod tests {
         assert_exported::<Notification>();
         assert_exported::<NotificationItem>();
         assert_exported::<NotifPlacement>();
+        assert_exported::<QRCode>();
         assert_exported::<RichText>();
         assert_exported::<RichTextSegment>();
         assert_exported::<RichTextStyle>();
+        assert_exported::<SharedActive>();
+        assert_exported::<ThemeToggle>();
         assert_exported::<Transfer>();
         assert_exported::<TransferItem>();
         assert_exported::<Upload>();
         assert_exported::<UploadFile>();
         assert_exported::<UploadStatus>();
+        assert_exported::<Watermark>();
     }
 }
