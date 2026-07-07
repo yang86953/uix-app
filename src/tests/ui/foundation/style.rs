@@ -281,19 +281,19 @@ fn apply_edge_cases_zero_and_none() {
         visible: false,
         ..Style::default()
     };
-    // patch 涓?gap=0.0 涓嶄細瑕嗙洊锛堝洜涓?gap 榛樿鏄?0.0锛屼笉瑙﹀彂瑕嗙洊锛?
+    // A zero-valued patch does not override gap, because 0.0 is the default.
     let patch = Style {
-        margin: EdgeInsets::zero(), // 涓嶄細琚?apply锛屽洜涓虹瓑浜?zero()
-        gap: 0.0,                   // 涓嶄細瑕嗙洊
+        margin: EdgeInsets::zero(), // Does not apply because it equals zero.
+        gap: 0.0,                   // Does not override.
         ..Style::default()
     };
     let result = base.apply(patch);
-    assert_eq!(result.margin, EdgeInsets::uniform(5.0)); // 淇濈暀
-    assert_eq!(result.gap, 10.0); // 淇濈暀
-    assert!(!result.visible); // false 琚繚鐣欙紙patch visible=true锛屼絾 only if !other.visible锛?}
+    assert_eq!(result.margin, EdgeInsets::uniform(5.0)); // preserved
+    assert_eq!(result.gap, 10.0); // preserved
+    assert!(!result.visible); // false is preserved
 }
 
-// 鈹€鈹€ with_style 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// with_style
 
 #[test]
 fn with_style_full_replace() {
@@ -349,7 +349,7 @@ fn style_set_resolve_priority() {
 fn style_set_resolve_fallback() {
     let normal = Style::default().with_bg(Color::red());
     let v = StyleSet::new(normal.clone());
-    // 鏃?hover/active/disabled 鏃跺洖閫€鍒?normal
+    // Falls back to normal when hover/active/disabled styles are absent.
     assert_eq!(
         v.resolve_flags(true, true, false, false).background,
         Some(ColorValue::Custom(Color::red()))
@@ -466,7 +466,7 @@ fn style_macro_aliases_bare() {
 
 #[test]
 fn style_macro_border_and_shadow() {
-    // 鍏冪粍璇硶锛歚border: (color, width)`, `shadow: (color, blur, ox, oy)`
+    // Tuple syntax: `border: (color, width)`, `shadow: (color, blur, ox, oy)`.
     let s = crate::style! {
         border: (Color::red(), 2.0),
         shadow: (Color::black(), 4.0, 2.0, 2.0),

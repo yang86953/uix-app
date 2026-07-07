@@ -115,7 +115,7 @@ enum SnapshotFields {
 
 自定义 widget：见 [SnapshotSource](#snapshotsource)（#151）。
 
-> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；Button / Label / Input / Container / Grid 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event 等运行态。`ComponentHandle` 已可读取当前组件快照与首批类型化 getter；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`define_widget!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 已复用该路径，完整独立 DSL 仍待接。
+> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；Button / Label / Input / Container / Grid 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event 等运行态。`ComponentHandle` 已可读取当前组件快照与首批类型化 getter；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`define_widget!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径。
 
 ### SnapshotSource（#151）
 
@@ -158,7 +158,7 @@ impl SnapshotSource for Rating {
 
 内置 widget：框架为各类型手写 `SnapshotFields` 变体；与 #146 `enum SnapshotFields` 对齐。
 
-> **实现注记**：首批内置提取覆盖 Button、Label、Input、Container、Grid；`define_widget!` 自定义 widget 已自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，且支持 `#[snapshot(skip)]` 排除 pub 字段；`component!` 已支持文档示例的 `name: ..., struct ...` 入口并复用同一提取路径，完整独立 DSL 解析尚未接。
+> **实现注记**：首批内置提取覆盖 Button、Label、Input、Container、Grid；`define_widget!` 自定义 widget 已自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，且支持 `#[snapshot(skip)]` 排除 pub 字段；`component!` 已支持文档示例的 `name: ..., struct ...` 入口和直接 `struct ...` 入口，并直接生成同一提取路径。
 
 ### #[snapshot(skip)]（#152）
 
@@ -244,9 +244,9 @@ WidgetTree
 | tick | `drain_due` → `tree.update(dt)` → 自动 `dirty_bounds()` 标脏（#126） |
 | 结束 | 框架 unregister → Registry 空时可 DeepIdle |
 
-**App 不调用 register**。`Spin`、`ProgressBar` indeterminate、Dropdown fade、Select fade、AutoComplete fade、TreeSelect fade、Cascader fade、ColorPicker fade、Tooltip fade、Popover fade、Popconfirm fade、Modal 与 Drawer 已作为内置 `WidgetAnimation` source 托管；Collapse 等布局相关过渡源后续接入。
+**App 不调用 register**。`Spin`、`ProgressBar` indeterminate、Dropdown fade、Select fade、AutoComplete fade、TreeSelect fade、Cascader fade、ColorPicker fade、Tooltip fade、Popover fade、Popconfirm fade、Modal、Drawer 与 Collapse 已作为内置 `WidgetAnimation` source 托管。
 
-> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入 event loop；动画 widget 每次 update 后按 `animation_dirty_rect` 窄 Paint 标脏，仍活跃时由 Registry 登记下一帧 deadline。`Spin`、`ProgressBar` indeterminate、Dropdown fade、Select fade、AutoComplete fade、TreeSelect fade、Cascader fade、ColorPicker fade、Tooltip fade、Popover fade、Popconfirm fade、Modal 与 Drawer 已作为内置动画源接入；Collapse 等布局相关过渡源仍待接入该能力。
+> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入 event loop；动画 widget 每次 update 后按 `animation_dirty_rect` 窄 Paint 标脏，仍活跃时由 Registry 登记下一帧 deadline。`Spin`、`ProgressBar` indeterminate、Dropdown fade、Select fade、AutoComplete fade、TreeSelect fade、Cascader fade、ColorPicker fade、Tooltip fade、Popover fade、Popconfirm fade、Modal、Drawer 与 Collapse 已作为内置动画源接入。
 
 ---
 
@@ -396,23 +396,21 @@ WidgetTree
 
 ## Authoring
 
-设计决策 [#102](../decisions.md#d102)：设计态 **`component!`**（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 已接入现有 `define_widget!` 展开，完整独立 DSL 继续对齐。
+设计决策 [#102](../decisions.md#d102)：设计态 **`component!`**（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已作为直接 authoring 入口，`define_widget!` 保留为兼容入口。
 
 ### component! / define_widget!（当前实现）
 
 ```rust
-define_widget! {
+component! {
     pub struct MyWidget { ... }
 
     preferred_size => (&self, engine) -> Size { ... }
     render => (&self, frame, ctx, tree) { ... }
     on_event => (&mut self, event) -> EventResult { ... }
 }
-
-impl_widget_component!(MyWidget; Layout, Render, Event; tab_index => 0);
 ```
 
-按需 impl trait；未覆盖的方法使用 trait 默认实现。
+`component!` 与兼容入口 `define_widget!` 均按已声明的方法自动生成能力、上转型与 trait impl；未覆盖的方法使用 trait 默认实现。
 
 ### prelude（#69）
 

@@ -1,4 +1,4 @@
-//! ProgressBar widget 鈥?deterministic and indeterminate progress indicators.
+//! ProgressBar widget - deterministic and indeterminate progress indicators.
 
 use crate::core::{Rect, Size};
 use crate::define_widget;

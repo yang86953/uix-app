@@ -1,5 +1,5 @@
-// WidgetTree 鍗曞厓娴嬭瘯妯″潡銆?//
-// 浠?`tree_core.rs` 鎷嗗垎鍑烘潵浠ラ伒瀹?900 琛屾枃浠堕檺鍒躲€?
+// WidgetTree unit tests.
+// Split out of `tree_core.rs` to keep implementation files manageable.
 use crate::core::Point;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
@@ -1435,15 +1435,13 @@ fn dispatch_resize_goes_to_root() {
     );
 }
 
-// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
-// 鎹曡幏闃舵娴嬭瘯
-// 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+// Capture phase tests.
 
 /// Capture phase: root handles the event before the child.
 #[test]
 fn capture_phase_root_handles_before_child() {
     let mut tree = WidgetTree::new();
-    // 鏍戠粨鏋勶細SpyWidget(root, Handled) 鈫?PassThroughContainer 鈫?SpyWidget(child)
+    // Tree: SpyWidget(root, Handled) -> PassThroughContainer -> SpyWidget(child).
     // SpyWidget root handles the event before it reaches the child.
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
     let container = tree.add_child(
@@ -1466,9 +1464,9 @@ fn capture_phase_root_handles_before_child() {
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
-    // SpyWidget(root) 鍦ㄦ崟鑾烽樁娈佃繑鍥?Handled锛屾渶缁堢粨鏋滃簲涓?Handled
+    // SpyWidget(root) returns Handled during capture, so dispatch is handled.
     assert_eq!(result, EventResult::Handled);
-    // SpyWidget(root) 鏀跺埌浜嗕簨浠讹紙鎹曡幏闃舵锛?    // root 涓嶆槸 focused_widget锛坱arget=child 鍦ㄥ啋娉￠樁娈垫墠璁剧劍鐐癸紝浣嗘崟鑾烽樁娈?Handled 闃绘浜嗗啋娉★級
+    // Capture handled the event before bubbling, so focus is not moved to child.
     assert!(tree.focused_widget.is_none());
 }
 
@@ -1476,8 +1474,8 @@ fn capture_phase_root_handles_before_child() {
 #[test]
 fn capture_phase_not_intercepted_proceeds_to_bubble() {
     let mut tree = WidgetTree::new();
-    // 鏍戠粨鏋勶細PassThroughContainer(root) 鈫?SpyWidget(child)
-    // PassThroughContainer 杩斿洖 NotHandled锛屼笉鎷︽埅
+    // Tree: PassThroughContainer(root) -> SpyWidget(child).
+    // PassThroughContainer returns NotHandled and does not intercept.
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
     let child = tree.add_child(root_id, Box::new(SpyWidget::new(100.0, 100.0)));
     tree.get_mut(root_id)
@@ -1492,16 +1490,17 @@ fn capture_phase_not_intercepted_proceeds_to_bubble() {
         button: MouseButton::Left,
         mods: KeyMod::NONE,
     });
-    // 鎹曡幏闃舵鏃犱汉鎷︽埅 鈫?鍐掓场闃舵 child(SpyWidget) 杩斿洖 Handled
+    // Capture does not intercept, then child handles the event during bubble.
     assert_eq!(result, EventResult::Handled);
-    // 鍐掓场闃舵璁剧疆浜嗙劍鐐?    assert_eq!(tree.focused_widget, Some(child));
+    // Bubble dispatch sets focus to the child.
+    assert_eq!(tree.focused_widget, Some(child));
 }
 
 /// Capture phase: wheel events can be intercepted before the target.
 #[test]
 fn capture_phase_wheel_intercepted() {
     let mut tree = WidgetTree::new();
-    // 鏍戠粨鏋勶細SpyWidget(root, Handled) 鈫?PassThroughContainer 鈫?SpyWidget(child)
+    // Tree: SpyWidget(root, Handled) -> PassThroughContainer -> SpyWidget(child).
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
     let container = tree.add_child(
         root_id,
@@ -1529,7 +1528,7 @@ fn capture_phase_wheel_intercepted() {
 #[test]
 fn capture_phase_key_down_intercepted() {
     let mut tree = WidgetTree::new();
-    // 鏍戠粨鏋勶細SpyWidget(root, Handled) 鈫?PassThroughContainer 鈫?SpyWidget(child)
+    // Tree: SpyWidget(root, Handled) -> PassThroughContainer -> SpyWidget(child).
     let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
     let container = tree.add_child(
         root_id,
@@ -1540,7 +1539,7 @@ fn capture_phase_key_down_intercepted() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
 
-    // 鍏堣鐒︾偣锛堢洿鎺ヨ缃?focused_widget 瀛楁锛屼絾瀹冩槸 pub(crate) 鐨勶級
+    // Establish focus first; focused_widget is pub(crate) in this test module.
     tree.dispatch_event(&SystemEvent::PointerDown {
         pos: Point::new(50.0, 50.0),
         button: MouseButton::Left,

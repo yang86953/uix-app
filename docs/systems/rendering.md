@@ -140,7 +140,7 @@ InvalidationQueue.dirty_region()
 
 几何类型定义在 `core::damage`（见 [foundation](foundation.md)）。
 
-> **实现注记**：`Invalidation::Composite` 与 `FrameRenderer` 的 scroll_region **memmove** API（`tree.drain_scroll_region_move`、`Canvas2D::scroll_region`）已存在；Wheel、滚动条拖拽与程序化 ScrollView 滚动已写入 Composite exposed strip，并避免整 viewport Paint invalidate。其他滚动来源仍需逐项接入。
+> **实现注记**：`Invalidation::Composite` 与 `FrameRenderer` 的 scroll_region **memmove** API（`tree.drain_scroll_region_move`、`Canvas2D::scroll_region`）已存在；Wheel、键盘、滚动条拖拽与程序化 ScrollView 滚动已写入 Composite exposed strip，并避免整 viewport Paint invalidate；新增滚动来源须复用该路径。
 
 ---
 
@@ -196,7 +196,7 @@ Bitmap 字体（内置）用于 debug / 回退；正常路径走系统字体栈�
 
 设计（#83）：`AnimationRegistry` 持有 active node 集合；主循环在 `tick_effects` **之前**调用 `tree.update(dt)`，由各 widget 推进 `Animatable`（见 [component · 动画](component.md#动画)、[application · 主循环](application.md#主循环)）。
 
-> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入；动画更新会按 widget 的 `animation_dirty_rect` 做窄 Paint 标脏，单窗 event loop 在仍有动画时登记下一帧 Registry deadline。`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与多窗运行期 frame drain 已接；Collapse 等布局相关过渡源仍待接。
+> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入；动画更新会按 widget 的 `animation_dirty_rect` 做窄 Paint 标脏，单窗 event loop 在仍有动画时登记下一帧 Registry deadline。`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源与多窗运行期 frame drain 已接。
 
 ---
 

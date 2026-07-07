@@ -77,6 +77,52 @@ fn scrollview_programmatic_scroll_records_composite_delta() {
 }
 
 #[test]
+fn scrollview_keyboard_page_scroll_records_composite_delta() {
+    let mut sv = ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0);
+    sv.content_bounds.set(Some(Size::new(300.0, 600.0)));
+    sv.last_frame.set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
+
+    assert_eq!(
+        sv.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::PageDown,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+
+    assert_eq!(sv.scroll_y(), 180.0);
+    assert_eq!(sv.scroll_delta_for_dirty(), Some((0.0, 180.0)));
+    assert!(sv.scroll_delta_for_dirty().is_none());
+}
+
+#[test]
+fn scrollview_keyboard_home_end_records_actual_clamped_delta() {
+    let mut sv = ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0);
+    sv.content_bounds.set(Some(Size::new(300.0, 600.0)));
+    sv.last_frame.set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
+
+    assert_eq!(
+        sv.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::End,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(sv.scroll_y(), 400.0);
+    assert_eq!(sv.scroll_delta_for_dirty(), Some((0.0, 400.0)));
+
+    assert_eq!(
+        sv.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Home,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(sv.scroll_y(), 0.0);
+    assert_eq!(sv.scroll_delta_for_dirty(), Some((0.0, -400.0)));
+}
+
+#[test]
 fn scrollview_child_builder() {
     let sv = ScrollView::new(ScrollDirection::Vertical).child(FixedWidget {
         size: Size::new(100.0, 200.0),

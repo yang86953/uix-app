@@ -364,15 +364,123 @@ macro_rules! component {
         $vis:vis struct $name:ident { $($field:tt)* }
         $($rest:tt)*
     ) => {
-        $crate::define_widget! {
+        $crate::component! {
             $(#[$m])*
             $vis struct $name { $($field)* }
             $($rest)*
         }
     };
-    ($($tt:tt)*) => {
-        $crate::define_widget! {
-            $($tt)*
+    (
+        $(#[$m:meta])* $vis:vis struct $name:ident { $($field:tt)* }
+        $($rest:tt)*
+    ) => {
+        $crate::component! {
+            $(#[$m])* $vis $name { $($field)* }
+            $($rest)*
+        }
+    };
+    (
+        $(#[$m:meta])*
+        $vis:vis $name:ident {
+            $($field:tt)*
+        }
+        $(
+            @new -> Self $new_body:block
+        )?
+        $(
+            $method:ident => ( $($params:tt)* ) $(-> $ret:ty)? $body:block
+        )*
+    ) => {
+        $crate::__define_widget_struct! {
+            [$(#[$m])* $vis struct $name]
+            []
+            $($field)*
+        }
+
+        $(
+            impl $name {
+                pub fn new() -> Self $new_body
+            }
+        )?
+
+        $crate::__define_widget_snapshot_impl! {
+            $name { $($field)* }
+        }
+
+        impl $crate::ui::traits::WidgetComponent for $name {
+            fn as_any(&self) -> &dyn std::any::Any { self }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+            fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> { self }
+            $crate::__define_widget_component_snapshot_method!($name);
+            fn capabilities(&self) -> $crate::ui::traits::WidgetCapabilities {
+                let mut c = $crate::ui::traits::WidgetCapabilities::new();
+                $(
+                    match stringify!($method) {
+                        "preferred_size" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
+                            c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
+                        "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
+                            c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
+                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "active_timer" | "wants_continuous_pointer_move" | "hit_test_frame" =>
+                            c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
+                        "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
+                            c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
+                        "update_animation" | "animation_dirty_rect" =>
+                            c.insert($crate::ui::traits::WidgetCapabilities::ANIMATION),
+                        _ => {}
+                    }
+                )*
+                c
+            }
+            $(
+                $crate::__define_widget_build_method!($method; ($($params)*) $(-> $ret)? $body);
+            )*
+
+            $crate::wc_upcast!($name; WidgetLayout);
+            $crate::wc_upcast!($name; WidgetRender);
+            $crate::wc_upcast!($name; EventHandler);
+            $crate::wc_upcast!($name; WidgetLifecycle);
+            $crate::wc_upcast!($name; WidgetAnimation);
+        }
+
+        $crate::__define_widget_grouped_impl! {
+            WidgetLayout,
+            $name,
+            [preferred_size flex_grow flex_shrink layout_children],
+            [$(
+                ($method, ($($params)*) $(-> $ret)? $body)
+            )*]
+        }
+        $crate::__define_widget_grouped_impl! {
+            WidgetRender,
+            $name,
+            [render uses_palette dirty_rect children_clip overlay_entry draw_margin],
+            [$(
+                ($method, ($($params)*) $(-> $ret)? $body)
+            )*]
+        }
+        $crate::__define_widget_grouped_impl! {
+            EventHandler,
+            $name,
+            [on_event scroll_delta scroll_delta_for_dirty viewport_scroll_offset active_timer wants_continuous_pointer_move hit_test_frame],
+            [$(
+                ($method, ($($params)*) $(-> $ret)? $body)
+            )*]
+        }
+        $crate::__define_widget_grouped_impl! {
+            WidgetLifecycle,
+            $name,
+            [on_init on_attach on_mount on_active on_inactive on_theme_changed on_unmount on_detach on_destroy],
+            [$(
+                ($method, ($($params)*) $(-> $ret)? $body)
+            )*]
+        }
+        $crate::__define_widget_grouped_impl! {
+            WidgetAnimation,
+            $name,
+            [update_animation animation_dirty_rect],
+            [$(
+                ($method, ($($params)*) $(-> $ret)? $body)
+            )*]
         }
     };
 }

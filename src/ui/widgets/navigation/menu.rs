@@ -1,5 +1,7 @@
-//! Menu widget 鈥?妯悜/绾靛悜瀵艰埅鑿滃崟锛堜笌 Nav 渚ц竟鏍忎笉鍚岋級銆?//!
-//! 鏀寔姘村钩鎴栧瀭鐩村竷灞€锛屽瓙鑿滃崟椤广€乭over 楂樹寒銆乤ctive 閫変腑鎬併€?
+//! Menu widget - horizontal or vertical navigation menu.
+//!
+//! Supports hover highlight, active selection, disabled items, icons, and
+//! keyboard navigation.
 use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
@@ -7,14 +9,14 @@ use crate::draw::Radius;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::{Cell, RefCell};
 
-/// 鑿滃崟鏂瑰悜銆?
+/// Menu direction.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MenuMode {
     Horizontal,
     Vertical,
 }
 
-/// 鍗曚釜鑿滃崟椤广€?
+/// Single menu item.
 #[derive(Debug, Clone)]
 pub struct MenuItem {
     pub key: String,
@@ -23,7 +25,7 @@ pub struct MenuItem {
     pub disabled: bool,
 }
 
-// Menu 鈥?瀵艰埅鑿滃崟缁勪欢銆?
+// Navigation menu component.
 define_widget! {
     pub struct Menu {
         items: Vec<MenuItem>,
@@ -188,7 +190,7 @@ define_widget! {
                     if is_active {
                         ctx.fill_rect(Rect::new(cx + 8.0, frame.y + self.item_h - 2.0, iw - 16.0, 2.0), primary, None);
                     }
-                    // 鏂囧瓧姘村钩灞呬腑锛氫娇鐢?text_center 鏇夸唬宸﹀榻?                    ctx.text_center(&item.label, item_rect, item_c, 14.0);
+                    // Center text horizontally with the shared text_center helper.
                     ctx.text_center(&item.label, item_rect, item_c, 14.0);
                     cx += iw;
                 }

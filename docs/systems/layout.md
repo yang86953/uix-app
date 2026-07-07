@@ -150,11 +150,11 @@ Style 字段：`grid_template_columns/rows`、`grid_gap`。
 
 Scroll 内容区在 `layout_viewports` 阶段单独处理；viewport 祖先不参与 shrink 循环。
 
-Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll。
+Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获得焦点的 ScrollView 消费。
 
 > Scroll offset 变更优先标 **`Invalidation::Composite`** + `scroll_region` memmove（#107）；框架在 ScrollView 内 **自动** 写入，App 不介入。
 
-> **实现注记**：Wheel → ScrollView 已写入 `Invalidation::Composite` 并接 `scroll_region` memmove；其他非 Wheel 滚动来源仍待逐项接入。
+> **实现注记**：Wheel / Keyboard、滚动条拖拽与程序化 ScrollView 滚动已写入 `Invalidation::Composite` 并接 `scroll_region` memmove；新增滚动来源须复用该路径。
 
 ---
 
