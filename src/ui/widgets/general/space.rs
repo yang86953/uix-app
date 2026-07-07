@@ -77,7 +77,7 @@ component! {
                 let actual_h = tree.get(cid)
                     .map(|c| c.frame().h)
                     .unwrap_or(0.0);
-                // 有明确 preferred_size 的子节点优先用 pref.h，
+                // 有明确 measured_size 的子节点优先用 pref.h，
                 // 避免面板折叠后 Phase 2 的扩展高度被误保留。
                 // 对于 pref.h=0 的弹性子节点，保留实际 frame 高度。
                 let h = if pref.h > 0.0 { pref.h } else { actual_h };

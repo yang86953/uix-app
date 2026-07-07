@@ -147,7 +147,10 @@ impl ConfigProvider {
 /// )
 /// ```
 impl ConfigProvider {
-    pub fn wrap(self, node: crate::ui::WidgetNode) -> crate::ui::WidgetNode {
-        crate::ui::WidgetNode::new(Box::new(self), vec![node])
+    pub fn wrap(
+        self,
+        node: crate::ui::core::widget::WidgetNode,
+    ) -> crate::ui::core::widget::WidgetNode {
+        crate::ui::core::widget::WidgetNode::new(Box::new(self), vec![node])
     }
 }

@@ -108,13 +108,13 @@ macro_rules! impl_widget_component {
 #[macro_export]
 macro_rules! tree {
     ($parent:expr => [$($child:expr),+ $(,)?]) => {
-        $crate::ui::WidgetNode::new(
+        $crate::ui::core::widget::WidgetNode::new(
             Box::new($parent),
             vec![$($crate::ui::IntoWidgetNode::into_node($child)),+],
         )
     };
     ($widget:expr) => {
-        $crate::ui::WidgetNode::leaf(Box::new($widget))
+        $crate::ui::core::widget::WidgetNode::leaf(Box::new($widget))
     };
 }
 

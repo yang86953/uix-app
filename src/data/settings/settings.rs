@@ -202,11 +202,13 @@ impl SettingsService {
         self.values.clear();
 
         if !Path::new(path).exists() {
+            self.dirty = false;
             return Ok(());
         }
 
         let content = fs::read_to_string(path)?;
         if content.trim().is_empty() {
+            self.dirty = false;
             return Ok(());
         }
 
@@ -217,13 +219,12 @@ impl SettingsService {
 
     /// 保存设置到 JSON 文件。
     pub fn save(&mut self) -> Result<()> {
-        let path = self
-            .path
-            .as_deref()
-            .ok_or_else(|| Error::new(Errc::InvalidState, "no settings path set"))?;
         if !self.dirty {
             return Ok(());
         }
+        let Some(path) = self.path.as_deref() else {
+            return Ok(());
+        };
         let json = serialize_json_flat(&self.values);
         fs::write(path, &json)?;
         self.dirty = false;

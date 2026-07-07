@@ -81,7 +81,7 @@ pub struct LayoutChild {
     /// Grid: 起始单元格索引
     pub grid_cell: usize,
     /// Grid: 列跨度
-    pub grid_col_span: u32,
+    pub grid_column_span: u32,
     /// Grid: 行跨度
     pub grid_row_span: u32,
 }
@@ -95,7 +95,7 @@ impl LayoutChild {
             flex_shrink: 1.0,
             margin: crate::core::EdgeInsets::zero(),
             grid_cell: 0,
-            grid_col_span: 1,
+            grid_column_span: 1,
             grid_row_span: 1,
         }
     }
@@ -486,9 +486,9 @@ impl LayoutEngine for GridLayout {
             .iter()
             .map(|c| GridChild {
                 cell: c.grid_cell,
-                col_span: c.grid_col_span,
+                col_span: c.grid_column_span,
                 row_span: c.grid_row_span,
-                preferred_size: c.measured_size,
+                measured_size: c.measured_size,
                 align: None,
                 justify: None,
             })
@@ -543,7 +543,7 @@ pub fn child_from_tree(component_id: ComponentId, tree: &WidgetTree) -> LayoutCh
         flex_shrink: shrink,
         margin: crate::core::EdgeInsets::zero(),
         grid_cell: 0,
-        grid_col_span: 1,
+        grid_column_span: 1,
         grid_row_span: 1,
     }
 }

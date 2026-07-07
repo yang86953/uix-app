@@ -164,7 +164,7 @@ impl ViewNode {
 }
 
 impl crate::ui::IntoWidgetNode for ViewNode {
-    fn into_node(self) -> crate::ui::WidgetNode {
+    fn into_node(self) -> crate::ui::core::widget::WidgetNode {
         adapter::ViewAdapter::expand(self)
     }
 }

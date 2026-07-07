@@ -129,10 +129,10 @@ component! {
         /// 布局总高度缓存
         layout_height: Cell<f32>,
 
-        /// 内容最大行宽（用于 preferred_size 返回合理宽度）
+        /// 内容最大行宽（用于 measure 返回合理宽度）
         content_width: Cell<f32>,
 
-        /// 上次布局使用的宽度（用于 preferred_size 复用估计值）
+        /// 上次布局使用的宽度（用于 measure 复用估计值）
         last_layout_width: Cell<f32>,
 
         /// 是否需要重新布局

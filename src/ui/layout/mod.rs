@@ -131,7 +131,7 @@ pub(crate) struct GridChild {
     pub cell: usize,
     pub col_span: u32,
     pub row_span: u32,
-    pub preferred_size: Size,
+    pub measured_size: Size,
     pub align: Option<AlignItems>,
     pub justify: Option<JustifyContent>,
 }
@@ -142,7 +142,7 @@ impl Default for GridChild {
             cell: 0,
             col_span: 1,
             row_span: 1,
-            preferred_size: Size::zero(),
+            measured_size: Size::zero(),
             align: None,
             justify: None,
         }

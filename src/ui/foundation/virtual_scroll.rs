@@ -5,7 +5,8 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::ui::{EventResult, SystemEvent, WidgetNode, WidgetTree};
+use crate::ui::core::widget::WidgetNode;
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 component! {
     pub struct VirtualScroll {

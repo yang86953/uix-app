@@ -184,7 +184,10 @@ impl NotificationService {
 
     /// 移除过期 Toast（超时自动清理），返回当前可见列表。
     pub fn update(&mut self) -> Vec<ToastEntry> {
-        let now = std::time::Instant::now();
+        self.update_at(std::time::Instant::now())
+    }
+
+    pub(crate) fn update_at(&mut self, now: std::time::Instant) -> Vec<ToastEntry> {
         self.toasts.retain(|t| {
             if t.duration_ms > 0
                 && now.duration_since(t.created_at).as_millis() as u32 >= t.duration_ms
