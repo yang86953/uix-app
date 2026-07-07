@@ -86,6 +86,11 @@ impl ViewNode {
         self
     }
 
+    pub fn margin(mut self, m: impl Into<EdgeInsets>) -> Self {
+        self.style.margin = m.into();
+        self
+    }
+
     pub fn width(mut self, w: f32) -> Self {
         self.style.width = Some(w);
         self
@@ -135,6 +140,11 @@ impl ViewNode {
 
     pub fn radius(mut self, r: f32) -> Self {
         self.style.border_radius = r;
+        self
+    }
+
+    pub fn opacity(mut self, o: f32) -> Self {
+        self.style.opacity = o;
         self
     }
 

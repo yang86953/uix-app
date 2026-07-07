@@ -1,5 +1,5 @@
 use super::*;
-use crate::core::{Constraints, Size};
+use crate::core::{Constraints, EdgeInsets, Size};
 use crate::ui::traits::WidgetLayout;
 use crate::ui::widgets::{Grid, ScrollView};
 
@@ -29,6 +29,16 @@ fn scroll_combinator_builds_scroll_view_node() {
 
     assert_eq!(node.children.len(), 1);
     assert!(node.widget.as_any().downcast_ref::<ScrollView>().is_some());
+}
+
+#[test]
+fn view_node_direct_style_methods_cover_margin_and_opacity() {
+    let node = label("styled")
+        .margin(EdgeInsets::uniform(6.0))
+        .opacity(0.5);
+
+    assert_eq!(node.style.margin, EdgeInsets::uniform(6.0));
+    assert_eq!(node.style.opacity, 0.5);
 }
 
 #[test]
