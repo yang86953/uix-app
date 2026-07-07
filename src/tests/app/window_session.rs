@@ -1,12 +1,12 @@
 use super::*;
 use crate::app::main_thread_queue::MainThreadContext;
 use crate::draw::NullEngine;
-use crate::ui::view::combinators::label;
+use crate::ui::view::combinators::{dynamic_label, label};
 use crate::ui::view::ViewAdapter;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::container::Container;
 use crate::ui::widgets::Label;
-use crate::ui::{AppState, WidgetCore};
+use crate::ui::{AppState, State, WidgetCore};
 
 fn root_label_text(root: ViewNode) -> String {
     let tree = ViewAdapter::build_nodes(root);
@@ -57,6 +57,49 @@ fn window_session_injects_app_state_into_existing_mounted_tree() {
         app_state.get_handle(root_id).unwrap().text().as_deref(),
         Some("root")
     );
+}
+
+#[test]
+fn shared_state_marks_only_bound_window_session_dirty() {
+    let state = State::new(0);
+    let mut bound_session = WindowSession::from_root_factory(
+        {
+            let state = state.clone();
+            move || {
+                let state = state.clone();
+                dynamic_label(move || format!("value-{}", state.get()))
+            }
+        },
+        Box::new(NullEngine::new()),
+        320,
+        240,
+    );
+    let mut unrelated_session =
+        WindowSession::from_root(label("static"), Box::new(NullEngine::new()), 320, 240);
+
+    {
+        let (tree, _) = bound_session.tree_and_engine_mut();
+        tree.reset_dirty();
+        assert!(!tree.has_render_work());
+    }
+    {
+        let (tree, _) = unrelated_session.tree_and_engine_mut();
+        tree.reset_dirty();
+        assert!(!tree.has_render_work());
+    }
+
+    state.set(1);
+
+    {
+        let (tree, _) = bound_session.tree_and_engine_mut();
+        assert!(tree.take_reconcile_requested());
+        assert!(tree.has_render_work());
+    }
+    {
+        let (tree, _) = unrelated_session.tree_and_engine_mut();
+        assert!(!tree.take_reconcile_requested());
+        assert!(!tree.has_render_work());
+    }
 }
 
 #[test]

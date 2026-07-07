@@ -2,7 +2,10 @@ use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
-use crate::ui::{EventResult, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{
+    EventResult, SemanticEvent, SnapshotFields, SnapshotTransferItem, SystemEvent, WidgetId,
+    WidgetTree,
+};
 use std::cell::RefCell;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -101,6 +104,8 @@ define_widget! {
     pub struct Transfer {
         source: Vec<TransferItem>,
         target: Vec<TransferItem>,
+        initial_source: Vec<TransferItem>,
+        initial_target: Vec<TransferItem>,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -195,15 +200,34 @@ impl Transfer {
         Self {
             source: Vec::new(),
             target: Vec::new(),
+            initial_source: Vec::new(),
+            initial_target: Vec::new(),
         }
     }
     pub fn source(mut self, items: Vec<TransferItem>) -> Self {
+        self.initial_source = items.clone();
         self.source = items;
         self
     }
     pub fn target(mut self, items: Vec<TransferItem>) -> Self {
+        self.initial_target = items.clone();
         self.target = items;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Transfer {
+            source: self
+                .initial_source
+                .iter()
+                .map(SnapshotTransferItem::from_transfer_item)
+                .collect(),
+            target: self
+                .initial_target
+                .iter()
+                .map(SnapshotTransferItem::from_transfer_item)
+                .collect(),
+        }
     }
 }
 impl Default for Transfer {
@@ -375,6 +399,15 @@ impl Upload {
     pub fn file_count(&self) -> usize {
         self.file_list.len()
     }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Upload {
+            accept: self.accept.clone(),
+            multiple: self.multiple,
+            drag: self.drag,
+            max_count: self.max_count,
+        }
+    }
 }
 impl Default for Upload {
     fn default() -> Self {
@@ -477,5 +510,19 @@ impl Watermark {
         self.x_offset = x;
         self.y_offset = y;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Watermark {
+            text: self.text.clone(),
+            color: self.color,
+            font_size: self.font_size,
+            opacity: self.opacity,
+            rotate: self.rotate,
+            gap_x: self.gap_x,
+            gap_y: self.gap_y,
+            x_offset: self.x_offset,
+            y_offset: self.y_offset,
+        }
     }
 }

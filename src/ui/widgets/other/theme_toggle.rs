@@ -5,13 +5,15 @@
 use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SnapshotFields, SystemEvent, WidgetTree};
 use std::cell::Cell;
 
 define_widget! {
     /// ThemeToggle — 主题切换按钮。
     pub struct ThemeToggle {
+        #[snapshot(skip)]
         pub dark: Cell<bool>,
+        initial_dark: bool,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -49,16 +51,24 @@ impl ThemeToggle {
     pub fn new() -> Self {
         Self {
             dark: Cell::new(false),
+            initial_dark: false,
         }
     }
 
-    pub fn dark(self, dark: bool) -> Self {
+    pub fn dark(mut self, dark: bool) -> Self {
         self.dark.set(dark);
+        self.initial_dark = dark;
         self
     }
 
     pub fn is_dark(&self) -> bool {
         self.dark.get()
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::ThemeToggle {
+            dark: self.initial_dark,
+        }
     }
 
     fn intrinsic_size(&self) -> Size {

@@ -20,16 +20,17 @@ use crate::ui::widgets::{
     NotifPlacement, Notification, OptGroup, Pagination, PieChart, PieData, Popconfirm,
     PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode,
     ProgressType, QRCode, Radio, RadioDirection, Rate, Result as ResultWidget, ResultType,
-    ScrollView, Segmented, Select, SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape,
-    Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps,
-    Switch, Tab, TabPosition, Table, TableColumn, Tabs, Tag, TagColor, TimePicker, TimeValue,
-    Timeline, TimelineItem, Tooltip, TooltipPlacement, Tree, TreeNode, TreeSelect, TriggerMode,
-    Typography, TypographyType, ValidateStatus,
+    RichText, RichTextSegment, RichTextStyle, ScrollView, Segmented, Select, SelectableItem,
+    SelectableList, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin,
+    SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table, TableColumn,
+    Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem, Tooltip,
+    TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
+    TypographyType, Upload, ValidateStatus, Watermark,
 };
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotCollapsePanel, SnapshotFields, SnapshotSource,
-    SnapshotTableColumn, SnapshotTreeNode, SnapshotValue, SystemEvent, WidgetAnimation, WidgetId,
-    WidgetLayout,
+    SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
+    WidgetAnimation, WidgetId, WidgetLayout,
 };
 use crate::{component, define_widget};
 
@@ -586,6 +587,138 @@ fn media_and_tag_snapshots_capture_config() {
             font_size: 14.0,
             custom_color: Some(Color::green()),
             checkable: true,
+        }
+    );
+}
+
+#[test]
+fn other_widget_snapshots_capture_static_config() {
+    let style = RichTextStyle {
+        bold: true,
+        font_size: Some(18.0),
+        color: Some(Color::red()),
+        ..RichTextStyle::default()
+    };
+    let segments = vec![
+        RichTextSegment::Text {
+            content: "Hello".to_string(),
+            style: style.clone(),
+        },
+        RichTextSegment::Code {
+            content: "uix".to_string(),
+        },
+        RichTextSegment::Link {
+            content: "docs".to_string(),
+            url: "https://example.test".to_string(),
+        },
+        RichTextSegment::NewLine,
+    ];
+    let rich_text = RichText::new()
+        .content(segments.clone())
+        .font_size(16.0)
+        .font_size_unit(PhysicalUnit::Pt(12.0))
+        .color(Color::green());
+    assert_eq!(
+        rich_text.snapshot_fields(),
+        SnapshotFields::RichText {
+            segments,
+            default_font_size: 16.0,
+            default_font_size_unit: Some(PhysicalUnit::Pt(12.0)),
+            default_color: Color::green(),
+        }
+    );
+
+    let mut theme_toggle = ThemeToggle::new().dark(true);
+    let before = ComponentConfigSnapshot::from_component(WidgetId::new(9), &theme_toggle).fields;
+    let _ = theme_toggle.on_event(&SystemEvent::PointerDown {
+        button: MouseButton::Left,
+        pos: Point::zero(),
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(
+        ComponentConfigSnapshot::from_component(WidgetId::new(9), &theme_toggle).fields,
+        before
+    );
+    assert_eq!(before, SnapshotFields::ThemeToggle { dark: true });
+
+    assert_eq!(
+        Watermark::new("draft")
+            .color(Color::blue())
+            .font_size(18.0)
+            .opacity(0.25)
+            .rotate(-15.0)
+            .gap(120.0, 90.0)
+            .offset(4.0, 8.0)
+            .snapshot_fields(),
+        SnapshotFields::Watermark {
+            text: "draft".to_string(),
+            color: Color::blue(),
+            font_size: 18.0,
+            opacity: 0.25,
+            rotate: -15.0,
+            gap_x: 120.0,
+            gap_y: 90.0,
+            x_offset: 4.0,
+            y_offset: 8.0,
+        }
+    );
+}
+
+#[test]
+fn transfer_and_upload_snapshots_exclude_runtime_state() {
+    let mut transfer = Transfer::new()
+        .source(vec![TransferItem {
+            key: "a".to_string(),
+            title: "Alpha".to_string(),
+            selected: true,
+        }])
+        .target(vec![TransferItem {
+            key: "b".to_string(),
+            title: "Beta".to_string(),
+            selected: false,
+        }]);
+    let before = transfer.snapshot_fields();
+    let _ = transfer.on_event(&SystemEvent::PointerDown {
+        button: MouseButton::Left,
+        pos: Point::new(228.0, 88.0),
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(transfer.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Transfer {
+            source: vec![SnapshotTransferItem {
+                key: "a".to_string(),
+                title: "Alpha".to_string(),
+            }],
+            target: vec![SnapshotTransferItem {
+                key: "b".to_string(),
+                title: "Beta".to_string(),
+            }],
+        }
+    );
+
+    let mut upload = Upload::new()
+        .accept(".png")
+        .multiple(true)
+        .drag(false)
+        .max_count(2);
+    let before = upload.snapshot_fields();
+    upload.add_file("hero.png");
+    upload.update_progress(0, 0.5);
+    let _ = upload.on_event(&SystemEvent::PointerDown {
+        button: MouseButton::Left,
+        pos: Point::zero(),
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(upload.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Upload {
+            accept: ".png".to_string(),
+            multiple: true,
+            drag: false,
+            max_count: 2,
         }
     );
 }

@@ -19,11 +19,12 @@ use crate::ui::widgets::{
     MenuMode, Message, MessagePlacement, Modal, NavItem, NotifPlacement, Notification, OptGroup,
     Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
     PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate,
-    Result, ResultType, ScrollView, Segmented, Select, SelectableItem, SelectableList, Sider,
-    Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Step, Steps,
-    Switch, Tab, TabPosition, Table, TableColumn, TableRow, Tabs, Tag, TagColor, TimePicker,
-    Timeline, TimelineItem, Tooltip, TooltipPlacement, Tree, TreeNode, TreeSelect, TriggerMode,
-    Typography, TypographyType,
+    Result, ResultType, RichText, RichTextSegment, ScrollView, Segmented, Select, SelectableItem,
+    SelectableList, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize,
+    Splitter, Step, Steps, Switch, Tab, TabPosition, Table, TableColumn, TableRow, Tabs, Tag,
+    TagColor, ThemeToggle, TimePicker, Timeline, TimelineItem, Tooltip, TooltipPlacement, Transfer,
+    TransferItem, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType, Upload,
+    Watermark,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,6 +116,21 @@ impl SnapshotTableColumn {
                 .iter()
                 .map(|(label, _active)| label.clone())
                 .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapshotTransferItem {
+    pub key: String,
+    pub title: String,
+}
+
+impl SnapshotTransferItem {
+    pub fn from_transfer_item(item: &TransferItem) -> Self {
+        Self {
+            key: item.key.clone(),
+            title: item.title.clone(),
         }
     }
 }
@@ -607,6 +623,36 @@ pub enum SnapshotFields {
         size: f32,
         error_level: u8,
     },
+    RichText {
+        segments: Vec<RichTextSegment>,
+        default_font_size: f32,
+        default_font_size_unit: Option<PhysicalUnit>,
+        default_color: Color,
+    },
+    ThemeToggle {
+        dark: bool,
+    },
+    Transfer {
+        source: Vec<SnapshotTransferItem>,
+        target: Vec<SnapshotTransferItem>,
+    },
+    Upload {
+        accept: String,
+        multiple: bool,
+        drag: bool,
+        max_count: usize,
+    },
+    Watermark {
+        text: String,
+        color: Color,
+        font_size: f32,
+        opacity: f32,
+        rotate: f32,
+        gap_x: f32,
+        gap_y: f32,
+        x_offset: f32,
+        y_offset: f32,
+    },
     Container {
         style: Style,
     },
@@ -850,6 +896,21 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     if let Some(qrcode) = component.downcast_ref::<QRCode>() {
         return qrcode.snapshot_fields();
+    }
+    if let Some(rich_text) = component.downcast_ref::<RichText>() {
+        return rich_text.snapshot_fields();
+    }
+    if let Some(theme_toggle) = component.downcast_ref::<ThemeToggle>() {
+        return theme_toggle.snapshot_fields();
+    }
+    if let Some(transfer) = component.downcast_ref::<Transfer>() {
+        return transfer.snapshot_fields();
+    }
+    if let Some(upload) = component.downcast_ref::<Upload>() {
+        return upload.snapshot_fields();
+    }
+    if let Some(watermark) = component.downcast_ref::<Watermark>() {
+        return watermark.snapshot_fields();
     }
     if let Some(container) = component.downcast_ref::<Container>() {
         return container.snapshot_fields();
