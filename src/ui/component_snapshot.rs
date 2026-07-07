@@ -10,13 +10,14 @@ use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widget::WidgetId;
 use crate::ui::widgets::{
-    Alert, Avatar, Badge, BadgeStatus, Button, Calendar, Card, Checkbox, Container, Divider,
-    DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Empty, FloatButton, Grid, Icon,
-    Image, Input, InputNumber, Label, Message, MessagePlacement, Modal, NotifPlacement,
-    Notification, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
-    ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate, Skeleton, SkeletonShape,
-    Slider, Space, SpaceSize, Spin, SpinSize, Switch, Tag, TagColor, Timeline, TimelineItem,
-    Tooltip, TooltipPlacement, TriggerMode, Typography, TypographyType,
+    Affix, Alert, Avatar, BackTop, Badge, BadgeStatus, Breadcrumb, BreadcrumbItem, Button,
+    Calendar, Card, Checkbox, Container, Content, Divider, DividerDirection, DividerOrientation,
+    Drawer, DrawerPlacement, Empty, FloatButton, Footer, Grid, Header, Icon, Image, Input,
+    InputNumber, Label, Layout, Message, MessagePlacement, Modal, NotifPlacement, Notification,
+    Pagination, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
+    ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate, Sider, Skeleton,
+    SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Switch, Tag, TagColor,
+    Timeline, TimelineItem, Tooltip, TooltipPlacement, TriggerMode, Typography, TypographyType,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -326,6 +327,51 @@ pub enum SnapshotFields {
         footer_visible: bool,
         extra: String,
     },
+    Layout {
+        bg_color: Option<Color>,
+    },
+    Header {
+        height: f32,
+        bg_color: Option<Color>,
+    },
+    Sider {
+        width: f32,
+        bg_color: Option<Color>,
+        collapsible: bool,
+        collapsed: bool,
+        collapsed_width: f32,
+    },
+    Content {
+        bg_color: Option<Color>,
+    },
+    Footer {
+        height: f32,
+        bg_color: Option<Color>,
+    },
+    Splitter {
+        vertical: bool,
+        panel_count: usize,
+        min_sizes: Vec<f32>,
+        handle_size: f32,
+    },
+    Affix {
+        offset_top: f32,
+    },
+    BackTop {
+        visibility_height: f32,
+    },
+    Breadcrumb {
+        items: Vec<BreadcrumbItem>,
+        separator: String,
+    },
+    Pagination {
+        total: usize,
+        page_size: usize,
+        show_size_changer: bool,
+        show_total: bool,
+        size: f32,
+        page_size_options: Vec<usize>,
+    },
     Container {
         style: Style,
     },
@@ -449,6 +495,36 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     if let Some(drawer) = component.downcast_ref::<Drawer>() {
         return drawer.snapshot_fields();
+    }
+    if let Some(layout) = component.downcast_ref::<Layout>() {
+        return layout.snapshot_fields();
+    }
+    if let Some(header) = component.downcast_ref::<Header>() {
+        return header.snapshot_fields();
+    }
+    if let Some(sider) = component.downcast_ref::<Sider>() {
+        return sider.snapshot_fields();
+    }
+    if let Some(content) = component.downcast_ref::<Content>() {
+        return content.snapshot_fields();
+    }
+    if let Some(footer) = component.downcast_ref::<Footer>() {
+        return footer.snapshot_fields();
+    }
+    if let Some(splitter) = component.downcast_ref::<Splitter>() {
+        return splitter.snapshot_fields();
+    }
+    if let Some(affix) = component.downcast_ref::<Affix>() {
+        return affix.snapshot_fields();
+    }
+    if let Some(back_top) = component.downcast_ref::<BackTop>() {
+        return back_top.snapshot_fields();
+    }
+    if let Some(breadcrumb) = component.downcast_ref::<Breadcrumb>() {
+        return breadcrumb.snapshot_fields();
+    }
+    if let Some(pagination) = component.downcast_ref::<Pagination>() {
+        return pagination.snapshot_fields();
     }
     if let Some(container) = component.downcast_ref::<Container>() {
         return container.snapshot_fields();

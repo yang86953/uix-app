@@ -4,6 +4,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {
@@ -79,6 +80,12 @@ impl BackTop {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(40.0, 40.0)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::BackTop {
+            visibility_height: self.visibility_height,
+        }
     }
 }
 

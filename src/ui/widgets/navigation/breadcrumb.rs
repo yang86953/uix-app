@@ -3,10 +3,11 @@
 use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 /// 面包屑的一项。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BreadcrumbItem {
     pub title: String,
     pub active: bool,
@@ -98,6 +99,13 @@ impl Breadcrumb {
     pub fn separator(mut self, s: impl Into<String>) -> Self {
         self.separator = s.into();
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Breadcrumb {
+            items: self.items.clone(),
+            separator: self.separator.clone(),
+        }
     }
 }
 

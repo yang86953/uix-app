@@ -8,13 +8,15 @@ use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::GridTrack;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::widgets::{
-    Alert, Avatar, Badge, BadgeStatus, Button, Calendar, Card, Checkbox, Container, Divider,
-    DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Empty, FloatButton, Grid, Icon,
-    Image, Input, InputNumber, Label, Message, MessageItem, MessagePlacement, Modal,
-    NotifPlacement, Notification, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
-    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate, Skeleton,
-    SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Switch, Tag, TagColor, Timeline,
-    TimelineItem, Tooltip, TooltipPlacement, TriggerMode, Typography, TypographyType,
+    Affix, Alert, Avatar, BackTop, Badge, BadgeStatus, Breadcrumb, BreadcrumbItem, Button,
+    Calendar, Card, Checkbox, Container, Content, Divider, DividerDirection, DividerOrientation,
+    Drawer, DrawerPlacement, Empty, FloatButton, Footer, Grid, Header, Icon, Image, Input,
+    InputNumber, Label, Layout, Message, MessageItem, MessagePlacement, Modal, NotifPlacement,
+    Notification, Pagination, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
+    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate, Sider,
+    Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Switch, Tag,
+    TagColor, Timeline, TimelineItem, Tooltip, TooltipPlacement, TriggerMode, Typography,
+    TypographyType,
 };
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotFields, SnapshotSource, SnapshotValue,
@@ -820,6 +822,136 @@ fn modal_and_drawer_snapshots_capture_config_not_runtime_visibility() {
             extra: "More".to_string(),
         }
     );
+}
+
+#[test]
+fn layout_container_snapshots_capture_static_config() {
+    assert_eq!(
+        Layout::new().bg(Color::blue()).snapshot_fields(),
+        SnapshotFields::Layout {
+            bg_color: Some(Color::blue()),
+        }
+    );
+
+    assert_eq!(
+        Header::new(64.0).bg(Color::red()).snapshot_fields(),
+        SnapshotFields::Header {
+            height: 64.0,
+            bg_color: Some(Color::red()),
+        }
+    );
+
+    assert_eq!(
+        Sider::new(220.0)
+            .bg(Color::green())
+            .collapsible(true)
+            .collapsed(true)
+            .collapsed_width(72.0)
+            .snapshot_fields(),
+        SnapshotFields::Sider {
+            width: 220.0,
+            bg_color: Some(Color::green()),
+            collapsible: true,
+            collapsed: true,
+            collapsed_width: 72.0,
+        }
+    );
+
+    assert_eq!(
+        Content::new().bg(Color::white()).snapshot_fields(),
+        SnapshotFields::Content {
+            bg_color: Some(Color::white()),
+        }
+    );
+
+    assert_eq!(
+        Footer::new(48.0).bg(Color::black()).snapshot_fields(),
+        SnapshotFields::Footer {
+            height: 48.0,
+            bg_color: Some(Color::black()),
+        }
+    );
+}
+
+#[test]
+fn container_navigation_snapshots_capture_static_config() {
+    assert_eq!(
+        Splitter::new()
+            .panels(3)
+            .vertical(true)
+            .min_size(1, 80.0)
+            .snapshot_fields(),
+        SnapshotFields::Splitter {
+            vertical: true,
+            panel_count: 3,
+            min_sizes: vec![50.0, 80.0, 50.0],
+            handle_size: 6.0,
+        }
+    );
+
+    assert_eq!(
+        Affix::new(24.0).snapshot_fields(),
+        SnapshotFields::Affix { offset_top: 24.0 }
+    );
+
+    assert_eq!(
+        BackTop::new().visibility_height(320.0).snapshot_fields(),
+        SnapshotFields::BackTop {
+            visibility_height: 320.0,
+        }
+    );
+
+    let items = vec![
+        BreadcrumbItem::new("Home"),
+        BreadcrumbItem::new("Docs").active(),
+    ];
+    assert_eq!(
+        Breadcrumb::new()
+            .items(items.clone())
+            .separator(">")
+            .snapshot_fields(),
+        SnapshotFields::Breadcrumb {
+            items,
+            separator: ">".to_string(),
+        }
+    );
+
+    assert_eq!(
+        Pagination::new(240, 20)
+            .current(3)
+            .show_total(false)
+            .show_size_changer(true)
+            .item_size(32.0)
+            .page_size_options(vec![10, 20, 50])
+            .snapshot_fields(),
+        SnapshotFields::Pagination {
+            total: 240,
+            page_size: 20,
+            show_size_changer: true,
+            show_total: false,
+            size: 32.0,
+            page_size_options: vec![10, 20, 50],
+        }
+    );
+}
+
+#[test]
+fn container_navigation_snapshots_exclude_runtime_state() {
+    let mut affix = Affix::new(12.0);
+    let before = affix.snapshot_fields();
+    affix.set_child_bounds(40.0, 80.0);
+    affix.update_scroll(32.0);
+    assert_eq!(affix.snapshot_fields(), before);
+
+    let mut back_top = BackTop::new().visibility_height(100.0);
+    let before = back_top.snapshot_fields();
+    back_top.update_visibility(200.0);
+    assert_eq!(back_top.snapshot_fields(), before);
+
+    let pagination = Pagination::new(120, 10).current(2);
+    let before = pagination.snapshot_fields();
+    pagination.set_current(5);
+    assert_eq!(pagination.snapshot_fields(), before);
 }
 
 #[test]
