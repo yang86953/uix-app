@@ -4,6 +4,7 @@ use crate::draw::pipeline::InvalidationQueueHandle;
 use crate::ui::app_state::AppState;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::HandlerTable;
+use crate::ui::foundation::focus_trap::next_focus_in_order;
 use crate::ui::managers::WidgetManagers;
 use crate::ui::overlay::OverlayStack;
 use std::collections::BTreeMap;
@@ -731,24 +732,7 @@ impl WidgetTree {
         current: Option<WidgetId>,
         forward: bool,
     ) -> Option<WidgetId> {
-        if focusable.is_empty() {
-            return None;
-        }
-        if let Some(cur_id) = current {
-            let pos = focusable.iter().position(|&id| id == cur_id);
-            match pos {
-                Some(p) => {
-                    if forward {
-                        Some(focusable[(p + 1) % focusable.len()])
-                    } else {
-                        Some(focusable[(p + focusable.len() - 1) % focusable.len()])
-                    }
-                }
-                None => Some(focusable[0]),
-            }
-        } else {
-            Some(focusable[0])
-        }
+        next_focus_in_order(focusable, current, forward)
     }
 
     pub fn focus_next(&self, forward: bool) -> Option<WidgetId> {
