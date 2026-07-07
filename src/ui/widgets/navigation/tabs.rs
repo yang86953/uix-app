@@ -1,6 +1,6 @@
 //! Tabs widget — Ant Design style tab bar with content panels.
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
@@ -34,8 +34,12 @@ define_widget! {
         tab_x_positions: RefCell<Vec<f32>>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(self.fixed_width.unwrap_or(400.0), self.fixed_height.unwrap_or(200.0))
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -149,6 +153,13 @@ impl Default for Tabs {
 }
 
 impl Tabs {
+    fn intrinsic_size(&self) -> Size {
+        Size::new(
+            self.fixed_width.unwrap_or(400.0),
+            self.fixed_height.unwrap_or(200.0),
+        )
+    }
+
     pub fn new() -> Self {
         Self {
             tabs: Vec::new(),
@@ -184,5 +195,20 @@ impl Tabs {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_tabs_size() {
+        let measured = Tabs::new()
+            .tab("One", "one")
+            .measure(Constraints::loose(Size::new(120.0, 80.0)));
+
+        assert_eq!(measured, Size::new(120.0, 80.0));
     }
 }

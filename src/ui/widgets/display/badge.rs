@@ -2,7 +2,7 @@
 //!
 //! 支持物理单位：`offset()` 接受 mm/cm/pt，自动适配 DPI。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
@@ -37,19 +37,12 @@ define_widget! {
         offset_unit: Option<(PhysicalUnit, PhysicalUnit)>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        if self.dot || self.status.is_some() {
-            Size::new(10.0, 10.0)
-        } else if self.count > 0 || (self.count == 0 && self.show_zero) {
-            let text = format!("{}", self.count.min(self.max));
-            let w = (text.len() as f32) * 7.0 + 12.0;
-            Size::new(w.max(20.0), 20.0)
-        } else if !self.text.is_empty() {
-            let w = self.text.len() as f32 * 7.0 + 12.0;
-            Size::new(w, 20.0)
-        } else {
-            Size::zero()
-        }
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -103,6 +96,21 @@ impl Default for Badge {
 }
 
 impl Badge {
+    fn intrinsic_size(&self) -> Size {
+        if self.dot || self.status.is_some() {
+            Size::new(10.0, 10.0)
+        } else if self.count > 0 || (self.count == 0 && self.show_zero) {
+            let text = format!("{}", self.count.min(self.max));
+            let w = (text.len() as f32) * 7.0 + 12.0;
+            Size::new(w.max(20.0), 20.0)
+        } else if !self.text.is_empty() {
+            let w = self.text.len() as f32 * 7.0 + 12.0;
+            Size::new(w, 20.0)
+        } else {
+            Size::zero()
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             count: 0,
@@ -160,5 +168,20 @@ impl Badge {
     pub fn offset_unit(mut self, x: PhysicalUnit, y: PhysicalUnit) -> Self {
         self.offset_unit = Some((x, y));
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_badge_size() {
+        let measured = Badge::new()
+            .count(1234)
+            .measure(Constraints::loose(Size::new(18.0, 12.0)));
+
+        assert_eq!(measured, Size::new(18.0, 12.0));
     }
 }

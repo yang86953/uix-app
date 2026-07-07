@@ -3,7 +3,7 @@
 //! 支持横向步骤条，步骤状态（wait/process/finish/error），
 //! 自定义当前步骤，可点击切换。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
@@ -38,12 +38,12 @@ define_widget! {
         last_frame_and_step_w: Cell<Option<(Rect, f32)>>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        if self.direction {
-            Size::new(600.0, 80.0)
-        } else {
-            Size::new(200.0, self.steps.len() as f32 * 80.0)
-        }
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -134,6 +134,14 @@ define_widget! {
 }
 
 impl Steps {
+    fn intrinsic_size(&self) -> Size {
+        if self.direction {
+            Size::new(600.0, 80.0)
+        } else {
+            Size::new(200.0, self.steps.len() as f32 * 80.0)
+        }
+    }
+
     pub fn new(steps: Vec<Step>) -> Self {
         let current = Cell::new(0);
         Self {
@@ -178,5 +186,19 @@ impl Step {
     pub fn status(mut self, s: StepStatus) -> Self {
         self.status = s;
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_steps_size() {
+        let measured = Steps::new(vec![Step::new("One"), Step::new("Two")])
+            .measure(Constraints::loose(Size::new(120.0, 40.0)));
+
+        assert_eq!(measured, Size::new(120.0, 40.0));
     }
 }
