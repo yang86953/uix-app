@@ -1,11 +1,22 @@
-//! 閫傞厤灞?鈥?灏?View 鏍戝睍寮€涓?WidgetTree銆?//!
-//! 鐢ㄦ埛鍦?`App::run()` 鍐呴儴閫氳繃鏈ā鍧楀皢鐢ㄦ埛灞傜殑 `View` 鏍戦€掑綊灞曞紑涓烘鏋跺眰鐨?//! `WidgetTree`锛屽畬鍏ㄩ殣钘?`WidgetNode`銆乣BoxedWidget` 绛夊唴閮ㄦ蹇点€?//!
-//! # 鑱岃矗
+//! ViewAdapter - expands a View tree into a WidgetTree.
 //!
-//! 1. `ViewAdapter::build(root)` 鈥?鍏ュ彛锛屽皢 `View` 鏋勫缓涓?`WidgetTree`銆?//!    鑷姩璁剧疆 View 涓婁笅鏂囷紝浣?`State::new` 缁戝畾鍒版纭殑 WidgetId銆?//! 2. `expand(node)` 鈥?閫掑綊灞曞紑锛歏iewNode 鈫?WidgetNode銆?//! 3. `apply_style(widget, style)` 鈥?灏?Style 搴旂敤鍒板叿浣撶粍浠剁被鍨嬨€?//!
-//! # State 鑷姩鑴忔爣璁?//!
-//! - View 鏋勫缓鏈燂細`begin_state_capture` 鎹曡幏 `State::new`锛坄capture_view` / `with_view_context`锛?//! - layout 鍚庯細`bind_reactive_widget_states` 鎺㈡祴 `dynamic_label` 闂寘渚濊禆骞剁粦瀹?Paint 澶辨晥
-//! - 鍏滃簳锛歚bind_orphan_pending_states` 灏嗘湭鍏宠仈 State 缁戝埌鏍硅妭鐐?
+//! `App::run()` uses this module to recursively expand user-authored `View`
+//! trees into framework `WidgetTree` nodes, keeping `WidgetNode` and
+//! `BoxedWidget` internal.
+//!
+//! # Responsibilities
+//!
+//! 1. `ViewAdapter::build(root)` captures view context and builds a `WidgetTree`.
+//! 2. `expand(node)` recursively converts `ViewNode` into `WidgetNode`.
+//! 3. `apply_style(widget, style)` applies declarative style to concrete widgets.
+//!
+//! # State Binding
+//!
+//! - During view build, `begin_state_capture` records `State::new` instances.
+//! - After layout, `bind_reactive_widget_states` detects dynamic label closure
+//!   dependencies and binds them to narrow Paint invalidation.
+//! - As a fallback, `bind_orphan_pending_states` binds unassociated state to
+//!   the root node.
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::style::Style;

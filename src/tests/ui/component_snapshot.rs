@@ -48,6 +48,24 @@ component! {
     ) {}
 }
 
+component! {
+    struct ComponentStructProbe {
+        pub caption: String,
+        #[snapshot(skip)]
+        #[allow(dead_code)]
+        pub runtime_state: usize,
+        #[allow(dead_code)]
+        cache_key: String,
+    }
+
+    render => (
+        &self,
+        _frame: crate::core::Rect,
+        _ctx: &mut crate::draw::painting::PaintContext,
+        _tree: &crate::ui::WidgetTree
+    ) {}
+}
+
 #[test]
 fn component_config_snapshot_records_id_type_and_fields() {
     let label = Label::new("status").font_size(18.0).size(80.0, 20.0);
@@ -211,5 +229,30 @@ fn component_macro_name_struct_syntax_reuses_snapshot_metadata() {
     assert_eq!(
         fields[0].value,
         SnapshotValue::Debug("\"Thin\"".to_string())
+    );
+}
+
+#[test]
+fn component_macro_struct_syntax_captures_public_fields() {
+    let probe = ComponentStructProbe {
+        caption: "Direct".to_string(),
+        runtime_state: 9,
+        cache_key: "private".to_string(),
+    };
+
+    let snapshot = ComponentConfigSnapshot::from_component(78, &probe);
+
+    assert_eq!(snapshot.id, 78);
+    assert_eq!(snapshot.widget_type, TypeId::of::<ComponentStructProbe>());
+    let SnapshotFields::Custom { widget, fields } = snapshot.fields else {
+        panic!("expected custom snapshot fields");
+    };
+
+    assert_eq!(widget, "ComponentStructProbe");
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].name, "caption");
+    assert_eq!(
+        fields[0].value,
+        SnapshotValue::Debug("\"Direct\"".to_string())
     );
 }

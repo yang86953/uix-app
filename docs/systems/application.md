@@ -81,7 +81,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** `run_app_loop`；UiEvent 按 **window_id** 路由。
 
-> **实现注记**：当前单窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait、Effect pending tick 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
+> **实现注记**：主窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait、Effect pending tick 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
 
 ### 单帧顺序（Active 态，设计 #106、#137）
 
@@ -96,7 +96,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 6. layout → render → present?
 ```
 
-当前单窗实现顺序：
+主窗当前实现顺序：
 
 ```mermaid
 flowchart TD
@@ -136,13 +136,13 @@ flowchart TD
 
 设计（#106、#117）：**DeepIdle** 下 blocking `wait_event`（无 timeout）；**RegisteredActive** 由 `ActiveWorkRegistry::next_deadline` → `wait_until` 唤醒；**Active** 在事件 drain 后若无 pending 则回 DeepIdle。详见 [demand-driven · 唤醒源白名单](demand-driven.md#唤醒源白名单) · [ActiveWorkRegistry](demand-driven.md#activeworkregistry)。
 
-> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源已接入；副窗 deadline wait 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端；Collapse 等布局相关过渡源仍待接。
+> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接入；副窗 deadline wait 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
 
 | 状态 | 设计 | 当前实现 |
 |------|------|----------|
 | DeepIdle | blocking `wait_event`；不 layout/render/tick Effect | 无 Registry deadline 时 blocking `wait_event` |
 | RegisteredActive | `wait_until(next_deadline)` 窄 tick | `ActiveWorkRegistry::next_deadline` → `wait_timeout(remaining)` |
-| Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline | Active 帧运行 `update`，且仅在 Effect pending 时运行 `tick_effects`；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 已作为内置 Animation 源接入，Collapse 等布局相关过渡源待接 |
+| Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline | Active 帧运行 `update`，且仅在 Effect pending 时运行 `tick_effects`；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 已作为内置 Animation 源接入 |
 | 首帧 | 单次 `poll_event` | 同左 |
 
 ### 窗口生命周期事件
@@ -286,7 +286,7 @@ struct WindowSession {
 
 详见 [demand-driven · 多窗单 loop](demand-driven.md#多窗单-loop)。副窗创建见 [open_window](#open_window)（#144）。
 
-> **实现注记**：`App::run_gui` 当前仅创建单窗；native 层 `IWindowManager` 已支持多窗，应用编排待扩展。
+> **实现注记**：`App::run_gui` 已创建主窗并在同一 loop 内 drain `open_window` 请求；副窗会创建 native window、独立 `WindowSession`、独立队列与 Timer，并共享 AppState。
 
 ---
 

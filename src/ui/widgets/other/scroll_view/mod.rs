@@ -11,7 +11,9 @@ use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
-use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetCore, WidgetId, WidgetTree};
+use crate::ui::{
+    EventResult, KeyCode, SystemEvent, WidgetComponent, WidgetCore, WidgetId, WidgetTree,
+};
 
 pub use crate::native::traits::input::ScrollDirection;
 
@@ -182,6 +184,38 @@ define_widget! {
                 self.scrollbar_v.hover = false;
                 self.scrollbar_h.hover = false;
                 EventResult::NotHandled
+            }
+            SystemEvent::KeyDown { key, .. } => {
+                let view = self.last_frame.get();
+                let view_w = view
+                    .map(|f| f.w)
+                    .unwrap_or(self.fixed_width.unwrap_or(300.0));
+                let view_h = view
+                    .map(|f| f.h)
+                    .unwrap_or(self.fixed_height.unwrap_or(200.0));
+                let line_x = (view_w * 0.1).max(16.0);
+                let line_y = (view_h * 0.1).max(16.0);
+                let page_y = (view_h * 0.9).max(line_y);
+
+                let (dx, dy) = match key {
+                    KeyCode::Down if self.direction.can_scroll_y() => (0.0, line_y),
+                    KeyCode::Up if self.direction.can_scroll_y() => (0.0, -line_y),
+                    KeyCode::PageDown if self.direction.can_scroll_y() => (0.0, page_y),
+                    KeyCode::PageUp if self.direction.can_scroll_y() => (0.0, -page_y),
+                    KeyCode::End if self.direction.can_scroll_y() => {
+                        (0.0, self.max_scroll_y() - self.scroll_y)
+                    }
+                    KeyCode::Home if self.direction.can_scroll_y() => (0.0, -self.scroll_y),
+                    KeyCode::Right if self.direction.can_scroll_x() => (line_x, 0.0),
+                    KeyCode::Left if self.direction.can_scroll_x() => (-line_x, 0.0),
+                    _ => return EventResult::NotHandled,
+                };
+
+                if self.scroll_by(dx, dy) {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
             _ => EventResult::NotHandled,
         }
@@ -396,6 +430,17 @@ impl ScrollView {
         let current = self.scroll_delta_strip.get();
         self.scroll_delta_strip
             .set((current.0 + dx, current.1 + dy));
+    }
+
+    fn scroll_by(&mut self, dx: f32, dy: f32) -> bool {
+        let old_x = self.scroll_x;
+        let old_y = self.scroll_y;
+        self.scroll_x = (self.scroll_x + dx).clamp(0.0, self.max_scroll_x());
+        self.scroll_y = (self.scroll_y + dy).clamp(0.0, self.max_scroll_y());
+        let actual_dx = self.scroll_x - old_x;
+        let actual_dy = self.scroll_y - old_y;
+        self.push_scroll_delta(actual_dx, actual_dy);
+        actual_dx.abs() > 0.01 || actual_dy.abs() > 0.01
     }
 }
 

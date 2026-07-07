@@ -277,7 +277,7 @@ impl WidgetTree {
     pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> WidgetId {
         self.teardown_all();
 
-        // 纭噸缃細娓呯┖鏃ф爲锛孖D 绌洪棿褰掗浂锛宖ree_ids 搴熷純
+        // Hard reset: clear the old tree, reset ID allocation, and discard free IDs.
         self.nodes.clear();
         self.free_ids.clear();
         self.next_id = 0;
@@ -483,7 +483,7 @@ impl WidgetTree {
         if *ver != self.tree_version {
             ids.clear();
             if let Some(root_id) = self.root_id {
-                // 杩唬閬嶅巻锛堥伩鍏嶉€掑綊杩囨繁鏃剁殑鏍堟孩鍑猴級
+                // Iterative traversal avoids stack overflow on very deep trees.
                 let mut stack = vec![root_id];
                 while let Some(current) = stack.pop() {
                     ids.push(current);
@@ -626,7 +626,7 @@ impl WidgetTree {
         &mut self.overlay_stack
     }
 
-    // 鈹€鈹€ Tab 閿劍鐐瑰鑸?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    // Tab focus navigation.
 
     pub fn collect_focusable(&self) -> Vec<WidgetId> {
         let mut result = self

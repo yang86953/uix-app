@@ -1,5 +1,7 @@
-//! VirtualScroll 鈥?铏氭嫙婊氬姩瀹瑰櫒銆?//!
-//! 浠呮覆鏌撹鍙ｅ唴鐨勫瓙椤癸紝閫傜敤浜?Select 涓嬫媺鍒楄〃銆乀ree銆乀able 绛夊ぇ鏁版嵁閲忓満鏅€?
+//! VirtualScroll - virtual scrolling container.
+//!
+//! Renders only children near the viewport; useful for large Select, Tree,
+//! Table, and similar lists.
 use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
