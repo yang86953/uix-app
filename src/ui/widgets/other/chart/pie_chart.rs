@@ -4,9 +4,9 @@ use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::ui::WidgetTree;
+use crate::ui::{SnapshotFields, WidgetTree};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PieData {
     pub label: String,
     pub value: f32,
@@ -125,5 +125,13 @@ impl PieChart {
     pub fn donut(mut self, r: f32) -> Self {
         self.hole_radius = r.clamp(0.0, 0.9);
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::PieChart {
+            data: self.data.clone(),
+            fixed_size: self.fixed_size,
+            hole_radius: self.hole_radius,
+        }
     }
 }

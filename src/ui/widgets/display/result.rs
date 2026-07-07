@@ -7,7 +7,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::ui::WidgetTree;
+use crate::ui::{SnapshotFields, WidgetTree};
 
 /// 结果类型。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -122,6 +122,15 @@ impl Result {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(400.0, 300.0)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Result {
+            result_type: self.type_,
+            title: self.title.clone(),
+            subtitle: self.subtitle.clone(),
+            extra_text: self.extra_text.clone(),
+        }
     }
 }
 

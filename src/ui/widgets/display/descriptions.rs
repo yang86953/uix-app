@@ -7,10 +7,10 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
-use crate::ui::WidgetTree;
+use crate::ui::{SnapshotFields, WidgetTree};
 
 /// 单个描述项。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DescriptionsItem {
     pub label: String,
     pub value: String,
@@ -130,6 +130,17 @@ impl Descriptions {
     pub fn size(mut self, s: ControlSize) -> Self {
         self.size = s;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Descriptions {
+            title: self.title.clone(),
+            items: self.items.clone(),
+            bordered: self.bordered,
+            column: self.column,
+            label_width: self.label_width,
+            descriptions_size: self.size,
+        }
     }
 }
 

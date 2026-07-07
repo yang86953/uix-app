@@ -6,9 +6,9 @@ use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
-use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{EventResult, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SelectableItem {
     pub id: String,
     pub text: String,
@@ -18,6 +18,17 @@ pub struct SelectableItem {
 impl Default for SelectableList {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl SelectableList {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::SelectableList {
+            items: self.items.clone(),
+            header_button_text: self.header_button_text.clone(),
+            footer_text: self.footer_text.clone(),
+            item_height: self.item_height,
+        }
     }
 }
 

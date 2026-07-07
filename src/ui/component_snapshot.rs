@@ -4,24 +4,26 @@ use std::fmt;
 use crate::core::EdgeInsets;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
-use crate::native::traits::input::ControlSize;
+use crate::native::traits::input::{ControlSize, ScrollDirection};
 use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widget::WidgetId;
 use crate::ui::widgets::{
-    Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus,
-    Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption,
-    Checkbox, Collapse, ColorPicker, Container, Content, DatePicker, Divider, DividerDirection,
-    DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FloatButton, Footer, FormItem,
-    FormLayout, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, List, Mentions, Menu,
-    MenuItem, MenuMode, Message, MessagePlacement, Modal, NavItem, NotifPlacement, Notification,
-    OptGroup, Pagination, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
-    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate,
-    Segmented, Select, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize,
-    Splitter, Step, Steps, Switch, Tab, TabPosition, Tabs, Tag, TagColor, TimePicker, Timeline,
-    TimelineItem, Tooltip, TooltipPlacement, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
-    TypographyType,
+    Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
+    BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader,
+    CascaderOption, Checkbox, Collapse, ColorPicker, Container, Content, DatePicker, Descriptions,
+    DescriptionsItem, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement,
+    Dropdown, Empty, FloatButton, Footer, Form, FormItem, FormLayout, Grid, Header, Icon, Image,
+    Input, InputNumber, Label, Layout, LineChart, LineData, List, Mentions, Menu, MenuItem,
+    MenuMode, Message, MessagePlacement, Modal, NavItem, NotifPlacement, Notification, OptGroup,
+    Pagination, PieChart, PieData, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
+    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, QRCode, Radio, RadioDirection, Rate,
+    Result, ResultType, ScrollView, Segmented, Select, SelectableItem, SelectableList, Sider,
+    Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Step, Steps,
+    Switch, Tab, TabPosition, Table, TableColumn, TableRow, Tabs, Tag, TagColor, TimePicker,
+    Timeline, TimelineItem, Tooltip, TooltipPlacement, Tree, TreeNode, TreeSelect, TriggerMode,
+    Typography, TypographyType,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -90,6 +92,31 @@ impl SnapshotTreeNode {
 pub struct SnapshotCollapsePanel {
     pub header: String,
     pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapshotTableColumn {
+    pub title: String,
+    pub width: f32,
+    pub sortable: bool,
+    pub filterable: bool,
+    pub filters: Vec<String>,
+}
+
+impl SnapshotTableColumn {
+    pub fn from_table_column(column: &TableColumn) -> Self {
+        Self {
+            title: column.title.clone(),
+            width: column.width,
+            sortable: column.sortable,
+            filterable: column.filterable,
+            filters: column
+                .filters
+                .iter()
+                .map(|(label, _active)| label.clone())
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -508,6 +535,78 @@ pub enum SnapshotFields {
         label_width: f32,
         layout: FormLayout,
     },
+    Form {
+        label_width: f32,
+        gap: f32,
+        layout: FormLayout,
+    },
+    Descriptions {
+        title: String,
+        items: Vec<DescriptionsItem>,
+        bordered: bool,
+        column: usize,
+        label_width: f32,
+        descriptions_size: ControlSize,
+    },
+    Result {
+        result_type: ResultType,
+        title: String,
+        subtitle: String,
+        extra_text: String,
+    },
+    Table {
+        columns: Vec<SnapshotTableColumn>,
+        rows: Vec<TableRow>,
+        row_h: f32,
+        header_h: f32,
+        expand_height: f32,
+        empty_text: String,
+        page_size: usize,
+    },
+    SelectableList {
+        items: Vec<SelectableItem>,
+        header_button_text: String,
+        footer_text: String,
+        item_height: f32,
+    },
+    ScrollView {
+        direction: ScrollDirection,
+        fixed_width: Option<f32>,
+        fixed_height: Option<f32>,
+        flex_grow: f32,
+        flex_shrink: f32,
+        show_scrollbar: bool,
+    },
+    BarChart {
+        data: Vec<BarData>,
+        fixed_width: f32,
+        fixed_height: f32,
+        max_value: f32,
+        show_value: bool,
+        bar_radius: f32,
+    },
+    LineChart {
+        data: Vec<LineData>,
+        fixed_width: f32,
+        fixed_height: f32,
+        line_color: Option<Color>,
+        max_value: f32,
+        auto_min: bool,
+        show_grid: bool,
+        show_dots: bool,
+        line_width: f32,
+        dot_radius: f32,
+    },
+    PieChart {
+        data: Vec<PieData>,
+        fixed_size: f32,
+        hole_radius: f32,
+    },
+    QRCode {
+        value: String,
+        size: f32,
+        error_level: u8,
+    },
     Container {
         style: Style,
     },
@@ -721,6 +820,36 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     if let Some(form_item) = component.downcast_ref::<FormItem>() {
         return form_item.snapshot_fields();
+    }
+    if let Some(form) = component.downcast_ref::<Form>() {
+        return form.snapshot_fields();
+    }
+    if let Some(descriptions) = component.downcast_ref::<Descriptions>() {
+        return descriptions.snapshot_fields();
+    }
+    if let Some(result) = component.downcast_ref::<Result>() {
+        return result.snapshot_fields();
+    }
+    if let Some(table) = component.downcast_ref::<Table>() {
+        return table.snapshot_fields();
+    }
+    if let Some(selectable_list) = component.downcast_ref::<SelectableList>() {
+        return selectable_list.snapshot_fields();
+    }
+    if let Some(scroll_view) = component.downcast_ref::<ScrollView>() {
+        return scroll_view.snapshot_fields();
+    }
+    if let Some(bar_chart) = component.downcast_ref::<BarChart>() {
+        return bar_chart.snapshot_fields();
+    }
+    if let Some(line_chart) = component.downcast_ref::<LineChart>() {
+        return line_chart.snapshot_fields();
+    }
+    if let Some(pie_chart) = component.downcast_ref::<PieChart>() {
+        return pie_chart.snapshot_fields();
+    }
+    if let Some(qrcode) = component.downcast_ref::<QRCode>() {
+        return qrcode.snapshot_fields();
     }
     if let Some(container) = component.downcast_ref::<Container>() {
         return container.snapshot_fields();

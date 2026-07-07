@@ -2,7 +2,10 @@ use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
-use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{
+    EventResult, SemanticEvent, SnapshotFields, SnapshotTableColumn, SystemEvent, WidgetId,
+    WidgetTree,
+};
 use std::cell::{Cell, RefCell};
 
 /// 排序方向。
@@ -14,7 +17,7 @@ pub enum SortDirection {
 }
 
 /// 表格列定义。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TableColumn {
     pub title: String,
     pub width: f32,
@@ -343,5 +346,21 @@ impl Table {
     pub fn page_size(mut self, n: usize) -> Self {
         self.page_size = n;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Table {
+            columns: self
+                .columns
+                .iter()
+                .map(SnapshotTableColumn::from_table_column)
+                .collect(),
+            rows: self.rows.clone(),
+            row_h: self.row_h,
+            header_h: self.header_h,
+            expand_height: self.expand_height,
+            empty_text: self.empty_text.clone(),
+            page_size: self.page_size,
+        }
     }
 }

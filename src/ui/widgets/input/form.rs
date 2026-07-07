@@ -417,6 +417,14 @@ impl Form {
         all_valid
     }
 
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Form {
+            label_width: self.label_width,
+            gap: self.gap,
+            layout: self.layout,
+        }
+    }
+
     fn validate_field(field: &FieldDef) -> ValidationResult {
         for rule in &field.rules {
             if rule.required && field.value.is_empty() {

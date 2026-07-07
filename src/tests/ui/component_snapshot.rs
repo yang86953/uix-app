@@ -5,28 +5,31 @@ use std::rc::Rc;
 use crate::core::{Constraints, EdgeInsets, Point, Size};
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
-use crate::native::traits::input::{ControlSize, KeyMod, MouseButton};
+use crate::native::traits::input::{ControlSize, KeyMod, MouseButton, ScrollDirection};
 use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::GridTrack;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::widgets::{
-    Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus,
-    Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption,
-    Checkbox, Collapse, CollapsePanel, ColorPicker, Container, Content, DatePicker, DateValue,
-    Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty,
-    FloatButton, Footer, FormItem, FormLayout, Grid, Header, Icon, Image, Input, InputNumber,
-    Label, Layout, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem,
-    MessagePlacement, Modal, NavItem, NotifPlacement, Notification, OptGroup, Pagination,
-    Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar,
-    ProgressMode, ProgressType, Radio, RadioDirection, Rate, Segmented, Select, Sider, Skeleton,
-    SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps,
-    Switch, Tab, TabPosition, Tabs, Tag, TagColor, TimePicker, TimeValue, Timeline, TimelineItem,
-    Tooltip, TooltipPlacement, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType,
-    ValidateStatus,
+    Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
+    BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader,
+    CascaderOption, Checkbox, Collapse, CollapsePanel, ColorPicker, Container, Content, DatePicker,
+    DateValue, Descriptions, DescriptionsItem, Divider, DividerDirection, DividerOrientation,
+    Drawer, DrawerPlacement, Dropdown, Empty, FloatButton, Footer, Form, FormItem, FormLayout,
+    Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, LineChart, LineData, List,
+    Mentions, Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavItem,
+    NotifPlacement, Notification, OptGroup, Pagination, PieChart, PieData, Popconfirm,
+    PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode,
+    ProgressType, QRCode, Radio, RadioDirection, Rate, Result as ResultWidget, ResultType,
+    ScrollView, Segmented, Select, SelectableItem, SelectableList, Sider, Skeleton, SkeletonShape,
+    Slider, SortDirection, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps,
+    Switch, Tab, TabPosition, Table, TableColumn, Tabs, Tag, TagColor, TimePicker, TimeValue,
+    Timeline, TimelineItem, Tooltip, TooltipPlacement, Tree, TreeNode, TreeSelect, TriggerMode,
+    Typography, TypographyType, ValidateStatus,
 };
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotCollapsePanel, SnapshotFields, SnapshotSource,
-    SnapshotTreeNode, SnapshotValue, SystemEvent, WidgetAnimation, WidgetId, WidgetLayout,
+    SnapshotTableColumn, SnapshotTreeNode, SnapshotValue, SystemEvent, WidgetAnimation, WidgetId,
+    WidgetLayout,
 };
 use crate::{component, define_widget};
 
@@ -1404,6 +1407,232 @@ fn input_snapshots_exclude_runtime_selection_popup_and_validation_state() {
     let before = form_item.snapshot_fields();
     form_item.set_status(ValidateStatus::Error);
     assert_eq!(form_item.snapshot_fields(), before);
+}
+
+#[test]
+fn data_display_and_other_snapshots_capture_static_config() {
+    assert_eq!(
+        Form::new()
+            .label_width(104.0)
+            .gap(12.0)
+            .layout(FormLayout::Inline)
+            .snapshot_fields(),
+        SnapshotFields::Form {
+            label_width: 104.0,
+            gap: 12.0,
+            layout: FormLayout::Inline,
+        }
+    );
+
+    let description_items = vec![
+        DescriptionsItem::new("Name", "Ada"),
+        DescriptionsItem::new("Role", "Engineer").span(2),
+    ];
+    assert_eq!(
+        Descriptions::new()
+            .title("Profile")
+            .items(description_items.clone())
+            .bordered(true)
+            .column(2)
+            .label_width(88.0)
+            .size(ControlSize::Small)
+            .snapshot_fields(),
+        SnapshotFields::Descriptions {
+            title: "Profile".to_string(),
+            items: description_items,
+            bordered: true,
+            column: 2,
+            label_width: 88.0,
+            descriptions_size: ControlSize::Small,
+        }
+    );
+
+    assert_eq!(
+        ResultWidget::new(ResultType::Success)
+            .title("Done")
+            .subtitle("All set")
+            .extra_text("Continue")
+            .snapshot_fields(),
+        SnapshotFields::Result {
+            result_type: ResultType::Success,
+            title: "Done".to_string(),
+            subtitle: "All set".to_string(),
+            extra_text: "Continue".to_string(),
+        }
+    );
+
+    let mut name_col = TableColumn::new("Name", 120.0).sortable(true);
+    name_col.sort_direction = SortDirection::Desc;
+    name_col.filters = vec![("Active".to_string(), true), ("Paused".to_string(), false)];
+    let rows = vec![vec!["Ada".to_string(), "Active".to_string()]];
+    assert_eq!(
+        Table::new()
+            .columns(vec![name_col])
+            .rows(rows.clone())
+            .row_height(36.0)
+            .empty_text("No rows")
+            .expandable(72.0, |_idx, _ctx, _rect| {})
+            .page_size(8)
+            .snapshot_fields(),
+        SnapshotFields::Table {
+            columns: vec![SnapshotTableColumn {
+                title: "Name".to_string(),
+                width: 120.0,
+                sortable: true,
+                filterable: false,
+                filters: vec!["Active".to_string(), "Paused".to_string()],
+            }],
+            rows,
+            row_h: 36.0,
+            header_h: 32.0,
+            expand_height: 72.0,
+            empty_text: "No rows".to_string(),
+            page_size: 8,
+        }
+    );
+
+    let mut selectable = SelectableList::new();
+    selectable.items = vec![SelectableItem::new("home", "Home").icon("house")];
+    selectable.active_index = 2;
+    selectable.header_button_text = "Create".to_string();
+    selectable.footer_text = "1 item".to_string();
+    selectable.item_height = 42.0;
+    assert_eq!(
+        selectable.snapshot_fields(),
+        SnapshotFields::SelectableList {
+            items: vec![SelectableItem {
+                id: "home".to_string(),
+                text: "Home".to_string(),
+                icon: Some("house".to_string()),
+            }],
+            header_button_text: "Create".to_string(),
+            footer_text: "1 item".to_string(),
+            item_height: 42.0,
+        }
+    );
+
+    assert_eq!(
+        ScrollView::new(ScrollDirection::Both)
+            .size(320.0, 180.0)
+            .flex_grow(1.0)
+            .flex_shrink(0.0)
+            .show_scrollbar(false)
+            .scroll_to(40.0, 80.0)
+            .snapshot_fields(),
+        SnapshotFields::ScrollView {
+            direction: ScrollDirection::Both,
+            fixed_width: Some(320.0),
+            fixed_height: Some(180.0),
+            flex_grow: 1.0,
+            flex_shrink: 0.0,
+            show_scrollbar: false,
+        }
+    );
+
+    assert_eq!(
+        QRCode::new("uix")
+            .size(96.0)
+            .error_level(2)
+            .snapshot_fields(),
+        SnapshotFields::QRCode {
+            value: "uix".to_string(),
+            size: 96.0,
+            error_level: 2,
+        }
+    );
+}
+
+#[test]
+fn chart_snapshots_capture_static_config() {
+    let bars = vec![BarData::new("A", 12.0, Color::red())];
+    assert_eq!(
+        BarChart::new()
+            .data(bars.clone())
+            .width(320.0)
+            .height(180.0)
+            .max_value(20.0)
+            .show_value(false)
+            .bar_radius(4.0)
+            .snapshot_fields(),
+        SnapshotFields::BarChart {
+            data: bars,
+            fixed_width: 320.0,
+            fixed_height: 180.0,
+            max_value: 20.0,
+            show_value: false,
+            bar_radius: 4.0,
+        }
+    );
+
+    let points = vec![LineData::new("Mon", 1.0), LineData::new("Tue", 3.0)];
+    assert_eq!(
+        LineChart::new()
+            .data(points.clone())
+            .width(360.0)
+            .height(160.0)
+            .line_color(Color::blue())
+            .max_value(4.0)
+            .auto_min(true)
+            .show_grid(false)
+            .show_dots(false)
+            .line_width(3.0)
+            .snapshot_fields(),
+        SnapshotFields::LineChart {
+            data: points,
+            fixed_width: 360.0,
+            fixed_height: 160.0,
+            line_color: Some(Color::blue()),
+            max_value: 4.0,
+            auto_min: true,
+            show_grid: false,
+            show_dots: false,
+            line_width: 3.0,
+            dot_radius: 3.0,
+        }
+    );
+
+    let slices = vec![PieData::new("Used", 70.0, Color::green())];
+    assert_eq!(
+        PieChart::new()
+            .data(slices.clone())
+            .size(140.0)
+            .donut(0.45)
+            .snapshot_fields(),
+        SnapshotFields::PieChart {
+            data: slices,
+            fixed_size: 140.0,
+            hole_radius: 0.45,
+        }
+    );
+}
+
+#[test]
+fn data_display_and_scroll_snapshots_exclude_runtime_state() {
+    let mut form = Form::new();
+    let before = form.snapshot_fields();
+    form.set_field_value("missing", "ignored");
+    form.set_field_status("missing", ValidateStatus::Error, "ignored");
+    assert_eq!(form.snapshot_fields(), before);
+
+    let mut sorted_col = TableColumn::new("Name", 120.0).sortable(true);
+    sorted_col.sort_direction = SortDirection::Asc;
+    sorted_col.filters = vec![("Active".to_string(), true)];
+    let mut plain_col = TableColumn::new("Name", 120.0).sortable(true);
+    plain_col.filters = vec![("Active".to_string(), false)];
+    assert_eq!(
+        Table::new().columns(vec![sorted_col]).snapshot_fields(),
+        Table::new().columns(vec![plain_col]).snapshot_fields()
+    );
+
+    let table = Table::new().rows(vec![vec!["Ada".to_string()]]);
+    let before = table.snapshot_fields();
+    table.set_selected_row(Some(0));
+    assert_eq!(table.snapshot_fields(), before);
+
+    let mut scroll = ScrollView::new(ScrollDirection::Vertical).size(200.0, 100.0);
+    let before = scroll.snapshot_fields();
+    scroll.set_scroll_y(80.0);
+    assert_eq!(scroll.snapshot_fields(), before);
 }
 
 #[test]
