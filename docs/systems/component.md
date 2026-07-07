@@ -1,4 +1,4 @@
-# 组件系统
+﻿# 组件系统
 
 ← [Main](../Main.md) · 系统 **#3** · 功能域：`ui`
 
@@ -208,7 +208,7 @@ WidgetTree
 | `tree_version` | Reconciler / layout 结构变更计数；LayerTree 同步依据 |
 | `cached_traversal` | 布局遍历缓存，version 不匹配时重建 |
 
-**ComponentId**（#35、#101）：`core::ComponentId { slot, generation }` 已作为 generational 稳定 ID 落地；公开事件 / handle / snapshot / Reconciler / Widget trait 边界 / managers 已按 `ComponentId` 命名，源码中 `WidgetId` / `NodeId` 仍作为树、布局、draw 内部同型别名使用。
+**ComponentId**（#35、#101）：`core::ComponentId { slot, generation }` 已作为 generational 稳定 ID 落地；公开事件 / handle / snapshot / Reconciler / Widget trait 边界 / managers / layout implementor 已按 `ComponentId` 命名，源码中 `WidgetId` 仍作为 WidgetTree 内部同型别名使用，`NodeId` 仍作为 draw 内部同型别名使用。
 
 **BoxedWidget** 持有：component、`parent/children` id、frame、visibility、lifecycle 标志、`is_dirty`、opacity、z_index、tab_idx。
 

@@ -1,4 +1,4 @@
-use super::*;
+﻿use super::*;
 use crate::core::{Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::layout::{AlignItems, FlexDirection};
@@ -9,7 +9,7 @@ use crate::ui::EventResult;
 struct FixedWidget {
     size: Size,
     #[allow(dead_code)]
-    id: WidgetId,
+    id: ComponentId,
 }
 
 impl WidgetComponent for FixedWidget {
@@ -135,7 +135,7 @@ fn scrollview_keyboard_home_end_records_actual_clamped_delta() {
 fn scrollview_child_builder() {
     let sv = ScrollView::new(ScrollDirection::Vertical).child(FixedWidget {
         size: Size::new(100.0, 200.0),
-        id: WidgetId::new(0),
+        id: ComponentId::new(0),
     });
     assert!(sv.children.is_set());
     assert_eq!(sv.children.len(), 1);
@@ -155,7 +155,7 @@ fn scrollview_layout_children_uses_natural_coordinates() {
         root_id,
         Box::new(FixedWidget {
             size: Size::new(200.0, 600.0),
-            id: WidgetId::new(1),
+            id: ComponentId::new(1),
         }),
     );
 
@@ -207,7 +207,7 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
         sv_id,
         Box::new(FixedWidget {
             size: Size::new(300.0, 600.0),
-            id: WidgetId::new(1),
+            id: ComponentId::new(1),
         }),
     );
 
@@ -266,7 +266,7 @@ fn scrollview_wheel_at_scroll_boundary_does_not_fallback_invalidate() {
         sv_id,
         Box::new(FixedWidget {
             size: Size::new(300.0, 600.0),
-            id: WidgetId::new(1),
+            id: ComponentId::new(1),
         }),
     );
 
@@ -307,7 +307,7 @@ fn scrollview_scrollbar_drag_registers_composite_scroll_strip() {
         sv_id,
         Box::new(FixedWidget {
             size: Size::new(300.0, 600.0),
-            id: WidgetId::new(1),
+            id: ComponentId::new(1),
         }),
     );
 
@@ -362,7 +362,7 @@ fn scrollview_programmatic_scroll_invalidates_composite_strip() {
         sv_id,
         Box::new(FixedWidget {
             size: Size::new(300.0, 600.0),
-            id: WidgetId::new(1),
+            id: ComponentId::new(1),
         }),
     );
 

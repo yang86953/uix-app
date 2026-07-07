@@ -12,7 +12,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
 use crate::ui::{
-    EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetComponent, WidgetCore, WidgetId,
+    ComponentId, EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetComponent, WidgetCore,
     WidgetTree,
 };
 
@@ -262,8 +262,8 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
-        -> Vec<(WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
     {
         let mut result = Vec::new();
         if children.is_empty() {

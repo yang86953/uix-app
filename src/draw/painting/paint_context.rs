@@ -1,4 +1,4 @@
-//! PaintContext — 绘制上下文（Phase 3 迁入 draw）。
+﻿//! PaintContext — 绘制上下文（Phase 3 迁入 draw）。
 //!
 //! 持有 Canvas2D（2D 零成本路径）和 SpatialContext（3D 空间路径），
 //! 组合 TextRenderService 与 DebugRenderService。
@@ -591,20 +591,20 @@ impl<'a> PaintContext<'a> {
     // 调试绘制（委托给 DebugRenderService）
     // ════════════════════════════════════════════════════════════════════
 
-    /// 绘制 widget 调试边框。
+    /// 绘制节点调试边框。
     pub fn draw_debug_border(&mut self, rect: Rect, depth: usize, hovered: bool) {
         self.debug
             .draw_debug_border(self.spatial.canvas_2d(), rect, depth, hovered);
     }
 
-    /// 在 widget 左上角显示调试标签。
-    pub fn draw_debug_label(&mut self, widget_id: usize, depth: usize, rect: Rect) {
+    /// 在节点左上角显示调试标签。
+    pub fn draw_debug_label(&mut self, node_slot: usize, depth: usize, rect: Rect) {
         if !self.debug.debug_mode {
             return;
         }
         let color =
             DebugRenderService::DEBUG_COLORS[depth % DebugRenderService::DEBUG_COLORS.len()];
-        let label = format!("#{} d{}", widget_id, depth);
+        let label = format!("#{} d{}", node_slot, depth);
         let font_size = 12.0;
         let label_w = label.len() as f32 * 7.0 + 6.0;
         let label_h = 16.0;
@@ -623,13 +623,13 @@ impl<'a> PaintContext<'a> {
     }
 
     /// 在 widget 下方显示 frame 坐标和尺寸。
-    pub fn draw_debug_frame_info(&mut self, widget_id: usize, rect: Rect) {
+    pub fn draw_debug_frame_info(&mut self, node_slot: usize, rect: Rect) {
         if !self.debug.debug_mode {
             return;
         }
         let info = format!(
             "#{} ({:.0},{:.0}) {:.0}×{:.0}",
-            widget_id, rect.x, rect.y, rect.w, rect.h
+            node_slot, rect.x, rect.y, rect.w, rect.h
         );
         let font_size = 11.0;
         let info_w = info.len() as f32 * 6.5 + 6.0;
