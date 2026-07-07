@@ -1,4 +1,6 @@
 use super::*;
+use crate::core::{Constraints, Size};
+use crate::ui::traits::WidgetLayout;
 use crate::ui::widgets::{Grid, ScrollView};
 
 #[test]
@@ -27,4 +29,13 @@ fn scroll_combinator_builds_scroll_view_node() {
 
     assert_eq!(node.children.len(), 1);
     assert!(node.widget.as_any().downcast_ref::<ScrollView>().is_some());
+}
+
+#[test]
+fn dynamic_label_measure_clamps_current_text() {
+    let label = DynamicLabel::new(|| "abcdef".to_string());
+
+    let measured = label.measure(Constraints::loose(Size::new(30.0, 12.0)));
+
+    assert_eq!(measured, Size::new(30.0, 12.0));
 }

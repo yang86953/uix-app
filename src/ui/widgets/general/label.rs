@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
@@ -35,13 +35,12 @@ define_widget! {
         pub(crate) style: Option<Style>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        if let (Some(w), Some(h)) = (self.fixed_width, self.fixed_height) {
-            Size::new(w, h)
-        } else {
-            let len = self.text.len() as f32;
-            Size::new(len * 7.0, self.font_size * 1.5)
-        }
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -290,6 +289,15 @@ impl Label {
         self.selection.get().map(|(s, e)| self.slice_range(s, e))
     }
 
+    fn intrinsic_size(&self) -> Size {
+        if let (Some(w), Some(h)) = (self.fixed_width, self.fixed_height) {
+            Size::new(w, h)
+        } else {
+            let len = self.text.len() as f32;
+            Size::new(len * 7.0, self.font_size * 1.5)
+        }
+    }
+
     fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
         let xs = self.glyph_xs.borrow();
         let li = self.line_info.borrow();
@@ -344,5 +352,18 @@ impl Label {
         let e = end_char.min(chars.len());
         let s = start_char.min(e);
         chars[s..e].iter().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_label_size() {
+        let measured = Label::new("abcdef").measure(Constraints::loose(Size::new(30.0, 12.0)));
+
+        assert_eq!(measured, Size::new(30.0, 12.0));
     }
 }

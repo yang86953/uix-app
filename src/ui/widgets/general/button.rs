@@ -1,6 +1,6 @@
 //! Button — 纯文本按钮，外观由 StyleSet 预设驱动。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::impl_widget_component;
@@ -37,20 +37,12 @@ impl SnapshotSource for Button {
 }
 
 impl WidgetLayout for Button {
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     fn preferred_size(&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        let base = self.style_set.normal.clone().apply(self.style.clone());
-        let font_size = base.font_size.default_size().max(1.0);
-        let height = base.height.unwrap_or(32.0);
-        let text_w = self.text.chars().count() as f32 * font_size * 0.55;
-        let width = base
-            .width
-            .unwrap_or(text_w + base.padding.horizontal())
-            .max(32.0);
-        if self.block {
-            Size::new(f32::MAX, height)
-        } else {
-            Size::new(width, height)
-        }
+        self.intrinsic_size()
     }
 }
 
@@ -195,5 +187,33 @@ impl Button {
                 disabled: self.disabled,
             })
             .apply(self.style.clone())
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        let base = self.style_set.normal.clone().apply(self.style.clone());
+        let font_size = base.font_size.default_size().max(1.0);
+        let height = base.height.unwrap_or(32.0);
+        let text_w = self.text.chars().count() as f32 * font_size * 0.55;
+        let width = base
+            .width
+            .unwrap_or(text_w + base.padding.horizontal())
+            .max(32.0);
+        if self.block {
+            Size::new(f32::MAX, height)
+        } else {
+            Size::new(width, height)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn measure_clamps_button_size() {
+        let measured = Button::new("abcdef").measure(Constraints::loose(Size::new(40.0, 24.0)));
+
+        assert_eq!(measured, Size::new(40.0, 24.0));
     }
 }

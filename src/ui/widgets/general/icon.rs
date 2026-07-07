@@ -6,7 +6,7 @@
 
 use std::sync::OnceLock;
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::font::font_service::FontService;
 use crate::draw::painting::PaintContext;
@@ -180,8 +180,12 @@ define_widget! {
         size: f32,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(self.size, self.size)
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -221,5 +225,24 @@ impl Icon {
     pub fn size(mut self, s: f32) -> Self {
         self.size = s;
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(self.size, self.size)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_icon_size() {
+        let measured = Icon::new("search")
+            .size(32.0)
+            .measure(Constraints::loose(Size::new(20.0, 24.0)));
+
+        assert_eq!(measured, Size::new(20.0, 24.0));
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! 点击切换暗色/亮色主题，通过 Cell<bool> 通知外部代码。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
@@ -14,8 +14,12 @@ define_widget! {
         pub dark: Cell<bool>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _eng: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(32.0, 32.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -56,10 +60,27 @@ impl ThemeToggle {
     pub fn is_dark(&self) -> bool {
         self.dark.get()
     }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(32.0, 32.0)
+    }
 }
 
 impl Default for ThemeToggle {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_theme_toggle_size() {
+        let measured = ThemeToggle::new().measure(Constraints::loose(Size::new(20.0, 20.0)));
+
+        assert_eq!(measured, Size::new(20.0, 20.0));
     }
 }

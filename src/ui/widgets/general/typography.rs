@@ -6,7 +6,7 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
@@ -46,11 +46,12 @@ define_widget! {
         draw_pos: Cell<crate::core::Point>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        let (fs, _fw) = self.compute_font_style();
-        let w = self.content.len() as f32 * fs * 0.6;
-        let h = fs * 1.5;
-        Size::new(w, h)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -300,6 +301,13 @@ impl Typography {
         }
     }
 
+    fn intrinsic_size(&self) -> Size {
+        let (fs, _fw) = self.compute_font_style();
+        let w = self.content.len() as f32 * fs * 0.6;
+        let h = fs * 1.5;
+        Size::new(w, h)
+    }
+
     fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
         let xs = self.glyph_xs.borrow();
         let li = self.line_info.borrow();
@@ -354,5 +362,19 @@ impl Typography {
         let e = end_char.min(chars.len());
         let s = start_char.min(e);
         chars[s..e].iter().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_typography_text_size() {
+        let measured =
+            Typography::heading("abcdef", 1).measure(Constraints::loose(Size::new(60.0, 40.0)));
+
+        assert_eq!(measured, Size::new(60.0, 40.0));
     }
 }
