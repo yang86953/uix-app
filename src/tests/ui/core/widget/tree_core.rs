@@ -339,6 +339,102 @@ impl WidgetRender for ClipContainer {
     }
 }
 
+struct ScrollClipContainer {
+    size: crate::core::Size,
+    child_y: f32,
+    scroll_y: f32,
+    children: RefCell<Vec<Box<dyn WidgetComponent>>>,
+}
+
+impl ScrollClipContainer {
+    fn new(
+        w: f32,
+        h: f32,
+        child_y: f32,
+        scroll_y: f32,
+        children: Vec<Box<dyn WidgetComponent>>,
+    ) -> Self {
+        Self {
+            size: crate::core::Size::new(w, h),
+            child_y,
+            scroll_y,
+            children: RefCell::new(children),
+        }
+    }
+}
+
+impl WidgetComponent for ScrollClipContainer {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(
+            WidgetCapabilities::LAYOUT | WidgetCapabilities::RENDER | WidgetCapabilities::EVENT,
+        )
+    }
+    fn build(&self) -> Vec<Box<dyn WidgetComponent>> {
+        std::mem::take(&mut *self.children.borrow_mut())
+    }
+    crate::wc_upcast!(ScrollClipContainer; WidgetLayout);
+    crate::wc_upcast!(ScrollClipContainer; WidgetRender);
+    crate::wc_upcast!(ScrollClipContainer; EventHandler);
+}
+
+impl WidgetLayout for ScrollClipContainer {
+    fn preferred_size(
+        &self,
+        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
+    ) -> crate::core::Size {
+        self.size
+    }
+
+    fn layout_children(
+        &self,
+        frame: Rect,
+        children: &[WidgetId],
+        tree: &WidgetTree,
+    ) -> Vec<(WidgetId, Rect)> {
+        children
+            .iter()
+            .copied()
+            .map(|id| {
+                let size = tree
+                    .get(id)
+                    .map(|node| node.preferred_size(None))
+                    .unwrap_or_default();
+                (
+                    id,
+                    Rect::new(frame.x, frame.y + self.child_y, size.w, size.h),
+                )
+            })
+            .collect()
+    }
+}
+
+impl WidgetRender for ScrollClipContainer {
+    fn render(&self, _: Rect, _: &mut crate::draw::painting::PaintContext, _: &WidgetTree) {}
+
+    fn uses_palette(&self) -> bool {
+        false
+    }
+
+    fn children_clip(&self, frame: Rect) -> Option<Rect> {
+        Some(frame)
+    }
+}
+
+impl EventHandler for ScrollClipContainer {
+    fn viewport_scroll_offset(&self) -> Option<(f32, f32)> {
+        Some((0.0, self.scroll_y))
+    }
+}
+
 struct LifecycleProbe {
     size: crate::core::Size,
     events: Rc<RefCell<Vec<&'static str>>>,
@@ -550,6 +646,42 @@ fn lifecycle_active_inactive_follow_clip_intersection() {
 
     tree.find_by_type_and_modify::<ClipContainer>(|container| {
         container.child_y = 150.0;
+    });
+    tree.push_layout_invalidation(root);
+    tree.layout();
+    assert_eq!(
+        events.borrow().clone(),
+        vec!["init", "attach", "mount", "active", "inactive"]
+    );
+}
+
+#[test]
+fn lifecycle_active_follows_scroll_viewport_offset() {
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(ScrollClipContainer::new(
+        100.0,
+        100.0,
+        150.0,
+        0.0,
+        vec![Box::new(LifecycleProbe::new(20.0, 20.0, events.clone()))],
+    )));
+
+    tree.layout();
+    assert_eq!(events.borrow().clone(), vec!["init", "attach", "mount"]);
+
+    tree.find_by_type_and_modify::<ScrollClipContainer>(|container| {
+        container.scroll_y = 100.0;
+    });
+    tree.push_layout_invalidation(root);
+    tree.layout();
+    assert_eq!(
+        events.borrow().clone(),
+        vec!["init", "attach", "mount", "active"]
+    );
+
+    tree.find_by_type_and_modify::<ScrollClipContainer>(|container| {
+        container.scroll_y = 180.0;
     });
     tree.push_layout_invalidation(root);
     tree.layout();
@@ -1531,7 +1663,10 @@ fn delayed_tooltip_waits_for_timer_before_overlay() {
 
     assert_eq!(
         tree.active_timers(),
-        vec![(42, std::time::Duration::from_millis(300))]
+        vec![(
+            WidgetTree::timer_work_key(tooltip, 42),
+            std::time::Duration::from_millis(300)
+        )]
     );
 
     assert!(tree
@@ -1550,6 +1685,44 @@ fn delayed_tooltip_waits_for_timer_before_overlay() {
     let top = tree.overlay_stack().top().unwrap();
     assert_eq!(top.owner(), tooltip);
     assert_eq!(top.kind(), OverlayKind::Tooltip);
+}
+
+#[test]
+fn delayed_tooltips_use_widget_scoped_timer_keys_by_default() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let first = tree.add_child(root_id, Box::new(Tooltip::new("One").delay_ms(300)));
+    let second = tree.add_child(root_id, Box::new(Tooltip::new("Two").delay_ms(300)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(first)
+        .unwrap()
+        .set_frame(Rect::new(10.0, 10.0, 80.0, 20.0));
+    tree.get_mut(second)
+        .unwrap()
+        .set_frame(Rect::new(10.0, 40.0, 80.0, 20.0));
+
+    assert_eq!(
+        tree.dispatch_to(first, &SystemEvent::PointerEnter),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_to(second, &SystemEvent::PointerEnter),
+        EventResult::Handled
+    );
+
+    let timers = tree.active_timers();
+    assert_eq!(timers.len(), 2);
+    assert!(timers.contains(&(
+        WidgetTree::timer_work_key(first, 1),
+        std::time::Duration::from_millis(300)
+    )));
+    assert!(timers.contains(&(
+        WidgetTree::timer_work_key(second, 1),
+        std::time::Duration::from_millis(300)
+    )));
+    assert_ne!(timers[0].0, timers[1].0);
 }
 
 #[test]
@@ -1756,8 +1929,12 @@ fn pointer_down_target_receives_move_even_after_leaving_hover_frame() {
 #[test]
 fn dispatch_resize_goes_to_root() {
     let mut tree = WidgetTree::new();
-    tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    let root = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(50.0, 40.0)));
     tree.layout();
+    tree.reset_dirty();
+    assert!(tree.layout_traverse().is_empty());
+
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Resize {
             width: 400.0,
@@ -1765,6 +1942,18 @@ fn dispatch_resize_goes_to_root() {
         }),
         EventResult::Handled
     );
+
+    let invalidation = tree.invalidation.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(invalidation.has_layout());
+    assert!(invalidation.layout_roots().contains(&root));
+    assert!(invalidation.node_needs_paint(root));
+    drop(invalidation);
+
+    assert_eq!(
+        tree.get(root).unwrap().frame(),
+        Rect::new(0.0, 0.0, 400.0, 300.0)
+    );
+    assert_eq!(tree.layout_traverse(), vec![root, child]);
 }
 
 // Capture phase tests.

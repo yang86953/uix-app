@@ -243,7 +243,7 @@ pub trait WidgetAnimation: WidgetComponent {
     }
 
     /// Paint bounds dirtied by the animation state change.
-    fn animation_dirty_rect(&self, frame: Rect) -> Rect {
+    fn dirty_bounds(&self, frame: Rect) -> Rect {
         let _ = frame;
         Rect::zero()
     }

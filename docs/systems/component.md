@@ -246,7 +246,7 @@ WidgetTree
 
 **App 不调用 register**。`Spin`、`ProgressBar` indeterminate、Dropdown fade、Select fade、AutoComplete fade、TreeSelect fade、Cascader fade、ColorPicker fade、Tooltip fade、Popover fade、Popconfirm fade、Modal、Drawer 与 Collapse 已作为内置 `WidgetAnimation` source 托管。
 
-> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入 event loop；动画 widget 每次 update 后按 `animation_dirty_rect` 窄 Paint 标脏，仍活跃时由 Registry 登记下一帧 deadline。`Spin`、`ProgressBar` indeterminate、Dropdown fade、Select fade、AutoComplete fade、TreeSelect fade、Cascader fade、ColorPicker fade、Tooltip fade、Popover fade、Popconfirm fade、Modal、Drawer 与 Collapse 已作为内置动画源接入。
+> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入 event loop；动画 widget 每次 update 后按 `dirty_bounds` 窄 Paint 标脏，仍活跃时由 Registry 以 `Animation(id)` 登记下一帧 deadline；due 帧只推进到期 id，并只发现 active + visible 动画节点。`Spin`、`ProgressBar` indeterminate、Dropdown fade、Select fade、AutoComplete fade、TreeSelect fade、Cascader fade、ColorPicker fade、Tooltip fade、Popover fade、Popconfirm fade、Modal、Drawer 与 Collapse 已作为内置动画源接入；`Spin` / `ProgressBar` indeterminate 已收窄动画 dirty bounds。
 
 ---
 

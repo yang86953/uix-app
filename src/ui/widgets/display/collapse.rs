@@ -156,7 +156,7 @@ define_widget! {
         still_active
     }
 
-    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+    dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
             self.full_dirty_rect(frame)
         } else {

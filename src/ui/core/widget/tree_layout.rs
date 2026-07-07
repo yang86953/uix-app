@@ -256,6 +256,9 @@ impl WidgetTree {
             if !parent.visible() {
                 return None;
             }
+            if let Some((sx, sy)) = parent.viewport_scroll_offset() {
+                rect = Rect::new(rect.x - sx, rect.y - sy, rect.w, rect.h);
+            }
             if let Some(clip) = parent.children_clip(parent.frame()) {
                 rect = rect.intersect(&clip)?;
             }
@@ -561,29 +564,76 @@ impl WidgetTree {
     }
 
     pub fn update(&mut self, dt: f64) -> bool {
-        let mut any_active = false;
-        let ids = self.traverse();
+        self.update_animations(dt)
+            .into_iter()
+            .any(|(_, still_active)| still_active)
+    }
+
+    pub(crate) fn update_animations(&mut self, dt: f64) -> Vec<(WidgetId, bool)> {
+        let ids = self.animation_node_ids();
+        self.update_animation_nodes(ids, dt)
+    }
+
+    pub(crate) fn update_animations_except<I>(
+        &mut self,
+        excluded_ids: I,
+        dt: f64,
+    ) -> Vec<(WidgetId, bool)>
+    where
+        I: IntoIterator<Item = WidgetId>,
+    {
+        let excluded_ids: Vec<_> = excluded_ids.into_iter().collect();
+        let ids: Vec<_> = self
+            .animation_node_ids()
+            .into_iter()
+            .filter(|id| !excluded_ids.contains(id))
+            .collect();
+        self.update_animation_nodes(ids, dt)
+    }
+
+    fn animation_node_ids(&self) -> Vec<WidgetId> {
+        self.traverse()
+            .into_iter()
+            .filter(|&id| self.active_animation_frame(id).is_some())
+            .collect()
+    }
+
+    fn active_animation_frame(&self, id: WidgetId) -> Option<Rect> {
+        let node = self.get(id)?;
+        (node.visible()
+            && node.active()
+            && node
+                .capabilities()
+                .contains(crate::ui::traits::WidgetCapabilities::ANIMATION))
+        .then_some(node.frame())
+    }
+
+    pub(crate) fn update_animation_nodes<I>(&mut self, ids: I, dt: f64) -> Vec<(WidgetId, bool)>
+    where
+        I: IntoIterator<Item = WidgetId>,
+    {
+        let mut updates = Vec::new();
         for id in ids {
-            let Some(frame) = self.get(id).and_then(|node| {
-                node.capabilities()
-                    .contains(crate::ui::traits::WidgetCapabilities::ANIMATION)
-                    .then_some(node.frame())
+            let Some(frame) = self.active_animation_frame(id) else {
+                updates.push((id, false));
+                continue;
+            };
+
+            let Some((still_active, dirty)) = self.get_mut(id).and_then(|node| {
+                let animation = node.component_mut().as_animation_mut()?;
+                let still_active = animation.update_animation(dt);
+                let dirty = animation.dirty_bounds(frame);
+                Some((still_active, dirty))
             }) else {
+                updates.push((id, false));
                 continue;
             };
-            let Some(node) = self.get_mut(id) else {
-                continue;
-            };
-            let Some(animation) = node.component_mut().as_animation_mut() else {
-                continue;
-            };
-            let still_active = animation.update_animation(dt);
-            let dirty = animation.animation_dirty_rect(frame);
+
             if dirty.w > 0.0 && dirty.h > 0.0 {
                 self.invalidate_paint_rect(id, dirty);
             }
-            any_active |= still_active;
+            updates.push((id, still_active));
         }
-        any_active
+        updates
     }
 }

@@ -231,7 +231,7 @@ define_widget! {
         self.is_present() && !self.transition.finished
     }
 
-    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+    dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
             cascader_dirty_rect(frame)
         } else {

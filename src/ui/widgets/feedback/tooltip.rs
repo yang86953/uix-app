@@ -193,7 +193,7 @@ define_widget! {
         self.is_present() && !self.transition.finished
     }
 
-    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+    dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
             tooltip_dirty_rect(&self.text, self.arrow, self.placement, frame)
         } else {

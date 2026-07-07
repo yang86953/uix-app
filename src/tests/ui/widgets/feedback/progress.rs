@@ -28,12 +28,17 @@ fn indeterminate_progress_advances_phase_and_marks_paint_dirty() {
 
     assert!(WidgetAnimation::update_animation(&mut progress, 0.25));
     assert_ne!(progress.animation_phase(), initial_phase);
+    let frame = Rect::new(4.0, 5.0, 120.0, 8.0);
+    let dirty = WidgetAnimation::dirty_bounds(&progress, frame);
+    assert_eq!(dirty.y, frame.y);
+    assert_eq!(dirty.h, frame.h);
+    assert!(dirty.w < frame.w);
 
     let mut tree = WidgetTree::new();
     let id = tree.set_root(Box::new(ProgressBar::new().indeterminate()));
-    tree.get_mut(id)
-        .expect("progress root")
-        .set_frame(Rect::new(4.0, 5.0, 120.0, 8.0));
+    let root = tree.get_mut(id).expect("progress root");
+    root.set_frame(frame);
+    root.set_active(true);
     tree.invalidation().lock().unwrap().clear();
 
     assert!(tree.update(1.0 / 60.0));
@@ -41,6 +46,9 @@ fn indeterminate_progress_advances_phase_and_marks_paint_dirty() {
     let queue = tree.invalidation().lock().unwrap();
     assert!(queue.has_paint_or_composite());
     assert!(queue.node_needs_paint(id));
+    let region = queue.dirty_region();
+    assert_eq!(region.rects().len(), 1);
+    assert!(region.rects()[0].w < frame.w);
 }
 
 #[test]
@@ -53,9 +61,9 @@ fn determinate_progress_does_not_keep_animation_pending() {
 
     let mut tree = WidgetTree::new();
     let id = tree.set_root(Box::new(ProgressBar::new().progress(0.4)));
-    tree.get_mut(id)
-        .expect("progress root")
-        .set_frame(Rect::new(4.0, 5.0, 120.0, 8.0));
+    let root = tree.get_mut(id).expect("progress root");
+    root.set_frame(Rect::new(4.0, 5.0, 120.0, 8.0));
+    root.set_active(true);
     tree.invalidation().lock().unwrap().clear();
 
     assert!(!tree.update(1.0 / 60.0));

@@ -26,12 +26,16 @@ fn spinning_spin_advances_phase_and_marks_paint_dirty() {
 
     assert!(WidgetAnimation::update_animation(&mut spin, 0.25));
     assert_ne!(spin.phase(), initial_phase);
+    let frame = Rect::new(4.0, 5.0, 24.0, 24.0);
+    let dirty = WidgetAnimation::dirty_bounds(&spin, frame);
+    assert!(dirty.w < frame.w);
+    assert!(dirty.h < frame.h);
 
     let mut tree = WidgetTree::new();
     let id = tree.set_root(Box::new(Spin::new()));
-    tree.get_mut(id)
-        .expect("spin root")
-        .set_frame(Rect::new(4.0, 5.0, 24.0, 24.0));
+    let root = tree.get_mut(id).expect("spin root");
+    root.set_frame(frame);
+    root.set_active(true);
     tree.invalidation().lock().unwrap().clear();
 
     assert!(tree.update(1.0 / 60.0));
@@ -39,6 +43,7 @@ fn spinning_spin_advances_phase_and_marks_paint_dirty() {
     let queue = tree.invalidation().lock().unwrap();
     assert!(queue.has_paint_or_composite());
     assert!(queue.node_needs_paint(id));
+    assert_eq!(queue.dirty_region().rects(), &[dirty]);
 }
 
 #[test]
@@ -51,9 +56,9 @@ fn stopped_spin_does_not_keep_animation_pending() {
 
     let mut tree = WidgetTree::new();
     let id = tree.set_root(Box::new(Spin::new().spinning(false)));
-    tree.get_mut(id)
-        .expect("spin root")
-        .set_frame(Rect::new(4.0, 5.0, 24.0, 24.0));
+    let root = tree.get_mut(id).expect("spin root");
+    root.set_frame(Rect::new(4.0, 5.0, 24.0, 24.0));
+    root.set_active(true);
     tree.invalidation().lock().unwrap().clear();
 
     assert!(!tree.update(1.0 / 60.0));
