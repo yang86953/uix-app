@@ -18,7 +18,9 @@ pub mod widgets;
 
 pub use crate::core::ComponentId;
 pub use crate::draw::painting::PaintContext;
-pub use crate::native::traits::input::{ControlSize, KeyCode, KeyMod, MouseButton};
+pub use crate::native::traits::input::{
+    ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
+};
 pub use crate::native::traits::system::StatusLevel;
 pub use animation::{Animation, Easing};
 pub use app_state::AppState;
@@ -42,14 +44,14 @@ pub use foundation::style::{
 };
 pub use foundation::{clipboard, config, focus_trap, locale, state, style, virtual_scroll};
 pub use layout::{
-    AlignItems, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent, LayoutChild,
-    LayoutEngine,
+    AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
+    LayoutChild, LayoutEngine, LayoutOutput,
 };
 pub use managers::{
     DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
 };
 pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
-pub use theme::{DesignTokens, NeutralRole, ShadowToken, Theme};
+pub use theme::{DesignTokens, DynTokens, NeutralRole, ShadowToken, Theme, ThemePrimitives};
 pub use traits::{
     Animatable, DebugRenderer, EventHandler, TextRenderer, TokenProvider, WidgetAnimation,
     WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetLifecycle, WidgetRender,

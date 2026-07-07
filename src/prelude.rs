@@ -14,7 +14,9 @@ pub use crate::core::{
 // native
 
 pub use crate::native::create_platform;
-pub use crate::native::traits::input::{ControlSize, KeyCode, KeyMod, MouseButton};
+pub use crate::native::traits::input::{
+    ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
+};
 pub use crate::native::traits::system::StatusLevel;
 // draw
 
@@ -27,20 +29,28 @@ pub use crate::component;
 pub use crate::impl_widget_component;
 pub use crate::tree;
 pub use crate::ui::layout::{
-    AlignItems, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent, LayoutChild,
-    LayoutEngine,
+    AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
+    LayoutChild, LayoutEngine, LayoutOutput,
 };
-pub use crate::ui::state::{Computed, State};
-pub use crate::ui::style::{ColorValue, PaletteColor, Style, StyleSet, TypographyToken};
-pub use crate::ui::theme::{DesignTokens, DynTokens, NeutralRole, Theme};
+pub use crate::ui::state::{Computed, Effect, State, StateSlotId};
+pub use crate::ui::style::{
+    BoxShadowDef, ColorValue, DisplayMode, PaletteColor, Style, StyleSet, StyleState,
+    TypographyToken,
+};
+pub use crate::ui::theme::{
+    DesignTokens, DynTokens, NeutralRole, ShadowToken, Theme, ThemePrimitives,
+};
+pub use crate::ui::{Animation, Easing};
 pub use crate::ui::{
     AppState, ClickEvent, ComponentConfigSnapshot, ComponentHandle, EventResult, HandlerId,
     HandlerOptions, HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
     SemanticPayload, SnapshotField, SnapshotFields, SnapshotValue, SystemEvent, SystemEventKind,
+    WidgetChildren,
 };
 pub use crate::ui::{
     DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
 };
+pub use crate::ui::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
 
 // ui / components
 pub use crate::ui::{
@@ -55,13 +65,13 @@ pub use crate::ui::{
     Notification, NotificationItem, OptGroup, Pagination, PieChart, PieData, Popconfirm,
     PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode,
     ProgressType, QRCode, Radio, RadioDirection, Rate, Result, ResultType, RichText,
-    RichTextSegment, RichTextStyle, ScrollDirection, ScrollView, Segmented, Select, SelectableItem,
-    SelectableList, SharedActive, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space,
-    SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table,
-    TableChange, TableColumn, Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline,
-    TimelineItem, Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect,
-    TriggerMode, Typography, TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus,
-    ValidationResult, ValidationRule, Watermark,
+    RichTextSegment, RichTextStyle, ScrollView, Segmented, Select, SelectableItem, SelectableList,
+    SharedActive, Sider, Skeleton, SkeletonShape, Slider, SortDirection, Space, SpaceSize, Spin,
+    SpinSize, Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Table, TableChange,
+    TableColumn, Tabs, Tag, TagColor, ThemeToggle, TimePicker, TimeValue, Timeline, TimelineItem,
+    Tooltip, TooltipPlacement, Transfer, TransferItem, Tree, TreeNode, TreeSelect, TriggerMode,
+    Typography, TypographyType, Upload, UploadFile, UploadStatus, ValidateStatus, ValidationResult,
+    ValidationRule, Watermark,
 };
 
 // app
@@ -105,12 +115,19 @@ mod tests {
         let _node = label("captured").on_semantic_capture(SemanticKind::Click, &state, |_| {});
 
         fn assert_exported<T>() {}
+        assert_exported::<Animation<f32>>();
         assert_exported::<AppHandle>();
         assert_exported::<TimerHandle>();
         assert_exported::<ComponentId>();
         assert_exported::<ComponentConfigSnapshot>();
         assert_exported::<ComponentHandle>();
         assert_exported::<Constraints>();
+        assert_exported::<ControlSize>();
+        assert_exported::<CursorType>();
+        assert_exported::<KeyCode>();
+        assert_exported::<KeyMod>();
+        assert_exported::<MouseButton>();
+        assert_exported::<ScrollDirection>();
         assert_exported::<SemanticEvent>();
         assert_exported::<SnapshotField>();
         assert_exported::<SnapshotFields>();
@@ -118,9 +135,13 @@ mod tests {
         assert_exported::<ButtonBuilder>();
         assert_exported::<InputBuilder>();
         assert_exported::<ViewAdapter>();
+        assert_exported::<BoxModel>();
+        assert_exported::<BoxShadowDef>();
+        assert_exported::<DisplayMode>();
         assert_exported::<FlexLayout>();
         assert_exported::<GridLayout>();
         assert_exported::<GridTrack>();
+        assert_exported::<LayoutOutput>();
         assert_exported::<AnchorItem>();
         assert_exported::<BadgeStatus>();
         assert_exported::<BarData>();
@@ -133,6 +154,9 @@ mod tests {
         assert_exported::<DividerDirection>();
         assert_exported::<DividerOrientation>();
         assert_exported::<DrawerPlacement>();
+        assert_exported::<DynTokens>();
+        assert_exported::<Easing>();
+        assert_exported::<Effect>();
         assert_exported::<FieldDef>();
         assert_exported::<FormItem>();
         assert_exported::<FormLayout>();
@@ -142,6 +166,10 @@ mod tests {
         assert_exported::<NavGroup>();
         assert_exported::<NavItem>();
         assert_exported::<OptGroup>();
+        assert_exported::<OverlayEntry>();
+        assert_exported::<OverlayId>();
+        assert_exported::<OverlayKind>();
+        assert_exported::<OverlayStack>();
         assert_exported::<PieData>();
         assert_exported::<PopconfirmPlacement>();
         assert_exported::<PopoverPlacement>();
@@ -152,12 +180,17 @@ mod tests {
         assert_exported::<ResultType>();
         assert_exported::<SkeletonShape>();
         assert_exported::<SpaceSize>();
+        assert_exported::<StyleState>();
+        assert_exported::<ShadowToken>();
         assert_exported::<SpinSize>();
+        assert_exported::<StateSlotId>();
+        assert_exported::<StatusLevel>();
         assert_exported::<Step>();
         assert_exported::<StepStatus>();
         assert_exported::<Tab>();
         assert_exported::<TabPosition>();
         assert_exported::<TagColor>();
+        assert_exported::<ThemePrimitives>();
         assert_exported::<TimeValue>();
         assert_exported::<TimelineItem>();
         assert_exported::<TooltipPlacement>();
@@ -200,5 +233,6 @@ mod tests {
         assert_exported::<UploadFile>();
         assert_exported::<UploadStatus>();
         assert_exported::<Watermark>();
+        assert_exported::<WidgetChildren>();
     }
 }
