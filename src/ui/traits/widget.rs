@@ -126,7 +126,7 @@ pub trait WidgetLayout: WidgetComponent {
         0.0
     }
     fn flex_shrink(&self) -> f32 {
-        0.0
+        1.0
     }
     fn layout_margin(&self) -> EdgeInsets {
         EdgeInsets::zero()
