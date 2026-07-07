@@ -29,25 +29,13 @@ impl BitmapHandle {
 }
 
 /// 引擎内单个解码位图槽位。
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ImageSlot {
     width: i32,
     height: i32,
     pixels: Vec<u32>,
     path: Option<String>,
     valid: bool,
-}
-
-impl Default for ImageSlot {
-    fn default() -> Self {
-        Self {
-            width: 0,
-            height: 0,
-            pixels: Vec::new(),
-            path: None,
-            valid: false,
-        }
-    }
 }
 
 impl ImageSlot {

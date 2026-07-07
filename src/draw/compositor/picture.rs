@@ -123,7 +123,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             cached.replay(&mut off_ctx);
         }
         if scene.node_visible(widget_id) {
-            render_non_picture_subtree(children, &mut off_ctx, scene, paint_region, env);
+            render_non_picture_subtree(children, &mut off_ctx, scene, paint_region);
         }
         for (child_bounds, pixels, pw) in nested_pixels {
             let local = Rect::new(
@@ -257,7 +257,6 @@ fn render_non_picture_subtree<S: ScenePaint>(
     ctx: &mut PaintContext<'_>,
     scene: &S,
     dirty_region: &DirtyRegion,
-    env: &LayerRenderEnv<'_>,
 ) {
     for child in children.iter_mut() {
         match child {
@@ -274,7 +273,7 @@ fn render_non_picture_subtree<S: ScenePaint>(
                 if let Some((sx, sy)) = LayerTree::get_scroll_offset(scene, *widget_id) {
                     ctx.canvas_2d().translate(-sx, -sy);
                 }
-                render_non_picture_subtree(sub, ctx, scene, dirty_region, env);
+                render_non_picture_subtree(sub, ctx, scene, dirty_region);
                 if let Some((sx, sy)) = LayerTree::get_scroll_offset(scene, *widget_id) {
                     ctx.canvas_2d().translate(sx, sy);
                 }
@@ -294,7 +293,7 @@ fn render_non_picture_subtree<S: ScenePaint>(
                     ctx.restore();
                 }
                 if scene.node_visible(*widget_id) {
-                    render_non_picture_subtree(sub, ctx, scene, dirty_region, env);
+                    render_non_picture_subtree(sub, ctx, scene, dirty_region);
                 }
             }
         }

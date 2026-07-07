@@ -66,11 +66,12 @@ define_widget! {
                         while prev > 0 && self.is_segment_disabled(prev) {
                             prev -= 1;
                         }
-                        if !self.is_segment_disabled(prev) && prev < self.options.len() {
-                            if self.selected != prev {
-                                self.selected = prev;
-                                self.pending_change.set(Some(prev));
-                            }
+                        if !self.is_segment_disabled(prev)
+                            && prev < self.options.len()
+                            && self.selected != prev
+                        {
+                            self.selected = prev;
+                            self.pending_change.set(Some(prev));
                         }
                         EventResult::Handled
                     }

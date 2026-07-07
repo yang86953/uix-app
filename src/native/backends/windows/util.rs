@@ -1,6 +1,7 @@
 //! Windows backend utility functions.
 
 #![cfg(windows)]
+#![allow(clippy::upper_case_acronyms)]
 
 use crate::native::{Errc, Error};
 pub fn to_wide(s: &str) -> Vec<u16> {
