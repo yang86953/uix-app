@@ -7,6 +7,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -168,6 +169,22 @@ impl Badge {
     pub fn offset_unit(mut self, x: PhysicalUnit, y: PhysicalUnit) -> Self {
         self.offset_unit = Some((x, y));
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Badge {
+            count: self.count,
+            max: self.max,
+            dot: self.dot,
+            color: self.color,
+            size: self._size,
+            status: self.status,
+            show_zero: self.show_zero,
+            text: self.text.clone(),
+            offset_x: self.offset_x,
+            offset_y: self.offset_y,
+            offset_unit: self.offset_unit,
+        }
     }
 }
 

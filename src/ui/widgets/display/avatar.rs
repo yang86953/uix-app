@@ -4,6 +4,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 define_widget! {
@@ -87,6 +88,19 @@ impl Avatar {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(self.size, self.size)
+    }
+}
+
+impl Avatar {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Avatar {
+            text: self.text.clone(),
+            size: self.size,
+            bg_color: self.bg_color,
+            text_color: self.text_color,
+            square: self.square,
+            src: self.src.clone(),
+        }
     }
 }
 

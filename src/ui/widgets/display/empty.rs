@@ -3,6 +3,7 @@
 use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 define_widget! {
@@ -87,6 +88,14 @@ impl Empty {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(160.0, 100.0)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Empty {
+            description: self.description.clone(),
+            icon_name: self.icon_name.clone(),
+            image: self.image.clone(),
+        }
     }
 }
 

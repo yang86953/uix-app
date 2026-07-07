@@ -4,13 +4,14 @@
 
 use std::cell::Cell;
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::image::BitmapHandle;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::invalidate_paint_handle;
 use crate::draw::{Color, Radius};
 use crate::ui::core::paint_scope::current_paint_widget;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 // Image — 图片显示组件。
@@ -31,8 +32,12 @@ define_widget! {
         fit: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(self.width, self.height)
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) {
@@ -135,6 +140,23 @@ impl Image {
     pub fn fit(mut self, v: bool) -> Self {
         self.fit = v;
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(self.width, self.height)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Image {
+            src: self.src.clone(),
+            alt: self.alt.clone(),
+            fallback: self.fallback.clone(),
+            width: self.width,
+            height: self.height,
+            radius: self.radius,
+            preview: self.preview,
+            fit: self.fit,
+        }
     }
 
     fn resolve_handle(

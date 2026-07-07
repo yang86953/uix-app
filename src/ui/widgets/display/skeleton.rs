@@ -3,6 +3,7 @@
 use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -89,6 +90,14 @@ impl Skeleton {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(self.w, self.h)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Skeleton {
+            shape: self.shape,
+            width: self.w,
+            height: self.h,
+        }
     }
 }
 

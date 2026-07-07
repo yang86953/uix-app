@@ -4,6 +4,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 /// 预设标签类型。
@@ -103,6 +104,17 @@ impl Tag {
             + 16.0
             + if self.closable { 20.0 } else { 0.0 };
         Size::new(w, self.font_size + 8.0)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Tag {
+            text: self.text.clone(),
+            color: self.color,
+            closable: self.closable,
+            font_size: self.font_size,
+            custom_color: self.custom_color,
+            checkable: self.checkable,
+        }
     }
 }
 

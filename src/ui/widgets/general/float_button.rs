@@ -6,6 +6,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 // FloatButton — 浮动操作按钮。
@@ -96,6 +97,17 @@ impl FloatButton {
 
     fn intrinsic_size(&self) -> Size {
         Size::zero() // 不占用布局空间
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::FloatButton {
+            icon: self.icon.clone(),
+            tooltip: self.tooltip.clone(),
+            badge_count: self.badge_count,
+            size: self.size,
+            x: self.x,
+            y: self.y,
+        }
     }
 }
 

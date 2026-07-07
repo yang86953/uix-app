@@ -9,6 +9,7 @@ use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 
 define_widget! {
@@ -338,6 +339,20 @@ impl Card {
     pub fn children(self, widgets: Vec<Box<dyn WidgetComponent>>) -> Self {
         self.children.set_all(widgets);
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Card {
+            title: self.title.clone(),
+            bordered: self.bordered,
+            hoverable: self.hoverable,
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
+            padding: self.padding,
+            elevation: self.elevation,
+            flex_grow: self.flex_grow_val,
+            actions: self.actions.clone(),
+        }
     }
 }
 
