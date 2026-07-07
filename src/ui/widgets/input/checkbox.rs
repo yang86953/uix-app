@@ -1,6 +1,6 @@
 //! Checkbox — checkbox with label, checked/unchecked state.
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
@@ -19,9 +19,12 @@ define_widget! {
 
 
     tab_index => (&self) -> i32 { 1 }
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        let text_w = self.label.len() as f32 * 8.0;
-        Size::new(22.0 + text_w, 22.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -119,5 +122,23 @@ impl Checkbox {
     }
     pub fn is_checked(&self) -> bool {
         self.checked
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        let text_w = self.label.len() as f32 * 8.0;
+        Size::new(22.0 + text_w, 22.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_checkbox_size() {
+        let measured = Checkbox::new("abcdef").measure(Constraints::loose(Size::new(40.0, 18.0)));
+
+        assert_eq!(measured, Size::new(40.0, 18.0));
     }
 }

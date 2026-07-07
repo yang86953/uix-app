@@ -2,7 +2,7 @@
 //!
 //! 支持 min/max/step、键盘上下箭头、+/- 按钮。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
@@ -24,8 +24,12 @@ define_widget! {
         pending_change: Cell<Option<f64>>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(80.0, 32.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -184,10 +188,28 @@ impl InputNumber {
     pub fn get_value(&self) -> f64 {
         self.value
     }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(80.0, 32.0)
+    }
+
     fn commit_buffer(&mut self) {
         if let Ok(v) = self.text_buffer.parse::<f64>() {
             self.value = v.clamp(self.min, self.max);
         }
         self.text_buffer = self.value.to_string();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_input_number_size() {
+        let measured = InputNumber::new("0").measure(Constraints::loose(Size::new(60.0, 24.0)));
+
+        assert_eq!(measured, Size::new(60.0, 24.0));
     }
 }

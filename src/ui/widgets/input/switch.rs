@@ -1,6 +1,6 @@
 //! Switch — on/off toggle switch.
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
@@ -18,8 +18,12 @@ define_widget! {
 
 
     tab_index => (&self) -> i32 { 1 }
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(self.size * 2.0 - 4.0, self.size + 4.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -114,5 +118,22 @@ impl Switch {
     }
     pub fn is_checked(&self) -> bool {
         self.checked
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(self.size * 2.0 - 4.0, self.size + 4.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_switch_size() {
+        let measured = Switch::new().measure(Constraints::loose(Size::new(32.0, 20.0)));
+
+        assert_eq!(measured, Size::new(32.0, 20.0));
     }
 }

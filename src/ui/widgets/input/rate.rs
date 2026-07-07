@@ -1,6 +1,6 @@
 //! Rate widget — 星级评分，支持半星、hover 预览、disabled、clearable。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
@@ -21,8 +21,12 @@ define_widget! {
         character: String,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(self.count as f32 * 24.0, 24.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -179,5 +183,24 @@ impl Rate {
     pub fn character(mut self, c: impl Into<String>) -> Self {
         self.character = c.into();
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(self.count as f32 * 24.0, 24.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_rate_size() {
+        let measured = Rate::new()
+            .count(4)
+            .measure(Constraints::loose(Size::new(80.0, 18.0)));
+
+        assert_eq!(measured, Size::new(80.0, 18.0));
     }
 }

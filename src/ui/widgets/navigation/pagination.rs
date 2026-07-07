@@ -2,7 +2,7 @@
 //!
 //! 支持页码切换、上一页/下一页、快速跳转（省略号）、pageSize 切换。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
@@ -22,10 +22,12 @@ define_widget! {
         pending_change: Cell<Option<usize>>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        let pages = self.total.div_ceil(self.page_size);
-        let count = pages.min(7) as f32; // 最多显示 7 个页码按钮
-        Size::new(count * (self.size + 4.0) + 80.0, self.size + 8.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -190,6 +192,13 @@ impl Pagination {
         self.page_size_options = opts;
         self
     }
+
+    fn intrinsic_size(&self) -> Size {
+        let pages = self.total.div_ceil(self.page_size);
+        let count = pages.min(7) as f32; // 最多显示 7 个页码按钮
+        Size::new(count * (self.size + 4.0) + 80.0, self.size + 8.0)
+    }
+
     /// 计算可见页码范围（含省略号逻辑，最多 7 个按钮）。
     fn visible_range(&self, total_pages: usize, cur: usize) -> Vec<usize> {
         if total_pages <= 7 {

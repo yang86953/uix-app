@@ -1,4 +1,4 @@
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
@@ -49,19 +49,12 @@ define_widget! {
 
     tab_index => (&self) -> i32 { 1 }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        if self.options.is_empty() && self.optgroups.is_empty() {
-            return Size::new(120.0, 32.0);
-        }
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
 
-        let all_opts: Vec<&str> = self.all_options();
-        let w = all_opts
-            .iter()
-            .map(|o| o.len() as f32 * 9.0 + 32.0)
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or(150.0)
-            .max(120.0);
-        Size::new(w, 32.0)
+    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -382,6 +375,21 @@ define_widget! {
 }
 
 impl Select {
+    fn intrinsic_size(&self) -> Size {
+        if self.options.is_empty() && self.optgroups.is_empty() {
+            return Size::new(120.0, 32.0);
+        }
+
+        let all_opts: Vec<&str> = self.all_options();
+        let w = all_opts
+            .iter()
+            .map(|o| o.len() as f32 * 9.0 + 32.0)
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(150.0)
+            .max(120.0);
+        Size::new(w, 32.0)
+    }
+
     fn render_option(
         &self,
         frame: Rect,
