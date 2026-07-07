@@ -23,7 +23,7 @@
 | 失效 | [失效与窄标脏](#失效与窄标脏) | #107 #122 #129 |
 | 输入 | [PointerMove 窄路径](#pointermove-窄路径) | #109 #121 |
 | Effect / Theme | [Effect 与 Theme](#effect-与-theme) | #79 #125 #128 |
-| 分域要求 | [分域要求](#分域要求) | #105–#157 |
+| 分域要求 | [分域要求](#分域要求) | #105–#158 |
 | 豁免 | [豁免机制](#豁免机制) | #113 |
 | 审查 | [新 API 审查清单](#新-api-审查清单) | #105 #120 #130 |
 | 实现差距 | [实现差距](#实现差距) | — |
@@ -609,7 +609,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 若存在 **无法**通过 register 或事件驱动的定时/轮询需求（如极少数平台 API）：
 
-1. 在 [`decisions.md`](../decisions.md) 追加 **#158+** 公开豁免条目；
+1. 在 [`decisions.md`](../decisions.md) 追加 **#159+** 公开豁免条目（#158 记录当前无豁免）；
 2. 说明触发源、wake 频率、允许的工作范围、为何无法 register；
 3. [testing · 零闲置验收](testing.md#测试策略) 须覆盖：无事件时 assert **不** present/layout（或豁免边界）；
 4. 默认 **不豁免**；从严审查。
@@ -628,7 +628,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 6. **多窗？** 是否仅影响本窗状态（#110）？
 7. **调用方能否零维护？** 是否须 App register/名单/手动标脏？（#130 应答「否」）
 
-无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（#158+）。
+无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（#159+）。
 
 ---
 
@@ -668,7 +668,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | snapshot(skip) | 字段属性排除 | `define_widget!` 已解析并消费 `#[snapshot(skip)]`；首批手写内置提取已人工排除运行态字段；`component! { name: ..., struct ... }` 已复用该排除逻辑，完整独立 DSL 待接 | [#152](../decisions.md#d152) |
 | reconcile 合并 | pending_root 优先 | 单窗 `update_view` 路径与 State 批次自动置位已接；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接 | [#153](../decisions.md#d153) |
 | view_factory | session 固定 Arc | 单窗 `App::root(|| ...)` 与副窗 `WindowConfig::new(..., || ...)` 已安装 session factory | [#155](../decisions.md#d155) |
-| 豁免台账 | #158+ 条目 + 测试 | 未建立 | [#113](../decisions.md#d113) |
+| 豁免台账 | #159+ 条目 + 测试 | 已建立初始台账：#158 明确当前无豁免；新增豁免须从 #159+ 追加并补测试边界 | [#113](../decisions.md#d113) [#158](../decisions.md#d158) |
 
 源码与「设计」列不一致时 **按文档重构**（[`AGENTS.md`](../../AGENTS.md)）。
 
