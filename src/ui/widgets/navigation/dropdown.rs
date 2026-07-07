@@ -3,7 +3,8 @@
 use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::Radius;
+use crate::draw::{Color, Radius};
+use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 define_widget! {
@@ -13,6 +14,9 @@ define_widget! {
         label: String,
         items: Vec<String>,
         open: bool,
+        transition: TransitionPlayer,
+        closing: bool,
+        transition_dirty: bool,
     }
 
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
@@ -23,13 +27,17 @@ define_widget! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if let SystemEvent::PointerDown { pos, .. } = event {
             if pos.y >= 0.0 && pos.y <= 32.0 {
-                self.open = !self.open;
+                if self.open {
+                    self.close();
+                } else {
+                    self.open();
+                }
                 return EventResult::Handled;
             }
-            if self.open && pos.y > 32.0 {
+            if self.is_present() && pos.y > 32.0 {
                 let idx = ((pos.y - 32.0) / 30.0) as usize;
                 if idx < self.items.len() {
-                    self.open = false;
+                    self.close();
                     return EventResult::Handled;
                 }
             }
@@ -46,10 +54,11 @@ define_widget! {
         ctx.text_center(&self.label, btn_rect, crate::draw::Color::white(), 13.0);
 
         // 菜单作为浮层渲染（不影响布局定位）
-        if !self.open { return; }
-        let bg = ctx.tokens().color_bg_elevated();
-        let border = ctx.tokens().color_border();
-        let text_color = ctx.tokens().color_text();
+        if !self.is_present() { return; }
+        let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
+        let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
+        let border = fade_color(ctx.tokens().color_border(), opacity);
+        let text_color = fade_color(ctx.tokens().color_text(), opacity);
 
         let menu_y = frame.y + 32.0;
         let menu_h = self.items.len() as f32 * 30.0;
@@ -68,7 +77,7 @@ define_widget! {
 
     // 菜单展开时扩展 hit_test 区域，使浮层中的菜单项可点击
     hit_test_frame => (&self, frame: Rect) -> Rect {
-        if self.open {
+        if self.is_present() {
             let menu_h = self.items.len() as f32 * 30.0;
             Rect::new(frame.x, frame.y, frame.w, 32.0 + menu_h)
         } else {
@@ -77,13 +86,32 @@ define_widget! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        // 始终包含菜单区域，确保 open 切换时残留像素被清除
-        let menu_h = self.items.len() as f32 * 30.0;
-        let menu = Rect::new(frame.x, frame.y + 32.0, frame.w, menu_h);
-        let expanded = frame.union(&menu);
-        // 扩展脏区域覆盖阴影边界（blur + 安全边距）
-        let expand = 8.0;
-        Rect::new(expanded.x - expand, expanded.y - expand, expanded.w + expand * 2.0, expanded.h + expand * 2.0)
+        dropdown_dirty_rect(frame, self.items.len())
+    }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.is_present() || self.transition.finished {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        self.transition.update(dt);
+        self.transition_dirty = true;
+
+        if self.closing && self.transition.finished {
+            self.open = false;
+            self.closing = false;
+        }
+
+        self.is_present() && !self.transition.finished
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.transition_dirty {
+            dropdown_dirty_rect(frame, self.items.len())
+        } else {
+            Rect::zero()
+        }
     }
 }
 
@@ -99,10 +127,65 @@ impl Dropdown {
             label: label.into(),
             items: Vec::new(),
             open: false,
+            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            closing: false,
+            transition_dirty: false,
         }
     }
     pub fn items(mut self, items: Vec<impl Into<String>>) -> Self {
         self.items = items.into_iter().map(|s| s.into()).collect();
         self
     }
+
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
+    pub fn is_present(&self) -> bool {
+        self.open || self.closing
+    }
+
+    pub fn open(&mut self) {
+        self.open = true;
+        self.closing = false;
+        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition_dirty = true;
+    }
+
+    pub fn close(&mut self) {
+        if !self.is_present() {
+            self.open = false;
+            self.closing = false;
+            self.transition_dirty = false;
+            return;
+        }
+        self.open = false;
+        self.closing = true;
+        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition_dirty = true;
+    }
 }
+
+fn dropdown_dirty_rect(frame: Rect, item_count: usize) -> Rect {
+    let menu_h = item_count as f32 * 30.0;
+    let menu = Rect::new(frame.x, frame.y + 32.0, frame.w, menu_h);
+    let expanded = frame.union(&menu);
+    let expand = 8.0;
+    Rect::new(
+        expanded.x - expand,
+        expanded.y - expand,
+        expanded.w + expand * 2.0,
+        expanded.h + expand * 2.0,
+    )
+}
+
+fn fade_color(color: Color, opacity: f32) -> Color {
+    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    color.with_alpha(alpha)
+}
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/navigation/dropdown.rs"]
+mod tests;
