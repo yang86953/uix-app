@@ -76,7 +76,7 @@ Inactive 组件跳过大部分语义派发，Lifecycle 进入 inactive。
 
 框架在 Reconciler **mount** 时向 AppState **自动 register**（#145）；unmount 时 unregister。快照字段见 [ComponentConfigSnapshot](#componentconfigsnapshot)（#146）。App **不手写**注册表。
 
-> **实现注记**：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出；`invalidate()` 已接 `WidgetTree::invalidate_paint` 窄 Paint。`snapshot()` / `snapshot_fields()` 与首批只读配置 getter（`text` / `placeholder` / `disabled`）已接，当前优先从 live widget 提取静态配置快照，必要时可回退到 `AppState` snapshot registry，并排除交互态。`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot 与 `AppState::get_handle` 已接；App 默认持有并注入单窗 `WindowSession` 已接；跨窗共享与 lookup handle 的 live tree 绑定待接，当前 handler 仍可经 `State<T>` 闭包捕获访问业务数据。
+> **实现注记**：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出；`invalidate()` 已接 `WidgetTree::invalidate_paint` 窄 Paint。`snapshot()` / `snapshot_fields()` 与首批只读配置 getter（`text` / `placeholder` / `disabled`）已接，当前优先从 live widget 提取静态配置快照，必要时可回退到 `AppState` snapshot registry，并排除交互态。`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot 与 `AppState::get_handle` 已接；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`；lookup handle 的 live tree 绑定待接，当前 handler 仍可经 `State<T>` 闭包捕获访问业务数据。
 
 ---
 
