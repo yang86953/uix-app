@@ -1,5 +1,7 @@
+use crate::core::{Constraints, Size};
 use crate::draw::Color;
 use crate::ui::traits::WidgetAnimation;
+use crate::ui::traits::WidgetLayout;
 use crate::ui::widgets::input::ColorPicker;
 
 #[test]
@@ -30,4 +32,12 @@ fn color_picker_exit_animation_stays_present_until_finished() {
     assert!(!WidgetAnimation::update_animation(&mut picker, 1.0));
     assert!(!picker.is_open());
     assert!(!picker.is_present());
+}
+
+#[test]
+fn measure_clamps_color_picker_size() {
+    let measured = ColorPicker::new(Color::from_rgb(255, 0, 0))
+        .measure(Constraints::loose(Size::new(20.0, 20.0)));
+
+    assert_eq!(measured, Size::new(20.0, 20.0));
 }

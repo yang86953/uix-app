@@ -6,7 +6,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
@@ -64,14 +64,12 @@ define_widget! {
 
     tab_index => (&self) -> i32 { 1 }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        if self.textarea {
-            let line_count = self.value.lines().count().max(self.textarea_rows);
-            let h = (line_count as f32 * LINE_HEIGHT + 16.0).max(48.0);
-            Size::new(80.0, h)
-        } else {
-            Size::new(80.0, input_height(self.input_size))
-        }
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -281,6 +279,16 @@ mod input_render;
 // ════════════════════════════════════════════════════════════════════════════
 
 impl Input {
+    fn intrinsic_size(&self) -> Size {
+        if self.textarea {
+            let line_count = self.value.lines().count().max(self.textarea_rows);
+            let h = (line_count as f32 * LINE_HEIGHT + 16.0).max(48.0);
+            Size::new(80.0, h)
+        } else {
+            Size::new(80.0, input_height(self.input_size))
+        }
+    }
+
     pub fn new(placeholder: impl Into<String>) -> Self {
         Self {
             value: String::new(),
@@ -597,6 +605,7 @@ mod tests {
     use crate::native::test_harness::FakeClipboard;
     use crate::native::traits::input::IClipboard;
     use crate::ui::traits::EventHandler;
+    use crate::ui::traits::WidgetLayout;
 
     fn install_clipboard(clipboard: &mut FakeClipboard) {
         let c: &mut dyn IClipboard = clipboard;
@@ -639,5 +648,12 @@ mod tests {
 
         assert_eq!(result, EventResult::Handled);
         assert_eq!(input.value(), "aXYd");
+    }
+
+    #[test]
+    fn measure_clamps_input_size() {
+        let measured = Input::new("Search").measure(Constraints::loose(Size::new(60.0, 20.0)));
+
+        assert_eq!(measured, Size::new(60.0, 20.0));
     }
 }

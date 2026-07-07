@@ -1,4 +1,6 @@
+use crate::core::{Constraints, Size};
 use crate::ui::traits::WidgetAnimation;
+use crate::ui::traits::WidgetLayout;
 use crate::ui::widgets::display::TreeNode;
 use crate::ui::widgets::input::TreeSelect;
 
@@ -30,4 +32,13 @@ fn tree_select_exit_animation_stays_present_until_finished() {
     assert!(!WidgetAnimation::update_animation(&mut tree_select, 1.0));
     assert!(!tree_select.is_open());
     assert!(!tree_select.is_present());
+}
+
+#[test]
+fn measure_clamps_tree_select_size() {
+    let measured = TreeSelect::new()
+        .nodes(vec![TreeNode::new("Alpha", "alpha")])
+        .measure(Constraints::loose(Size::new(120.0, 20.0)));
+
+    assert_eq!(measured, Size::new(120.0, 20.0));
 }

@@ -1,4 +1,4 @@
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
@@ -23,8 +23,12 @@ define_widget! {
 
 
     tab_index => (&self) -> i32 { 1 }
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(200.0, 32.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -163,6 +167,10 @@ define_widget! {
 }
 
 impl TreeSelect {
+    fn intrinsic_size(&self) -> Size {
+        Size::new(200.0, 32.0)
+    }
+
     fn flatten_nodes(&self) -> Vec<(String, String, usize)> {
         let mut result = Vec::new();
         self.flatten(&self.nodes, 0, &mut result);

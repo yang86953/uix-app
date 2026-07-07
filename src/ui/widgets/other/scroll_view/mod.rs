@@ -7,7 +7,7 @@ pub use scrollbar::*;
 use std::cell::Cell;
 
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
@@ -39,11 +39,12 @@ define_widget! {
 
     flex_shrink => (&self) -> f32 { self.flex_shrink_val }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(
-            self.fixed_width.unwrap_or(300.0),
-            self.fixed_height.unwrap_or(200.0),
-        )
+        self.intrinsic_size()
     }
 
     build => (&self) -> Vec<Box<dyn WidgetComponent>> {
@@ -311,6 +312,13 @@ define_widget! {
 }
 
 impl ScrollView {
+    fn intrinsic_size(&self) -> Size {
+        Size::new(
+            self.fixed_width.unwrap_or(300.0),
+            self.fixed_height.unwrap_or(200.0),
+        )
+    }
+
     pub fn new(direction: ScrollDirection) -> Self {
         Self {
             children: WidgetChildren::new(),

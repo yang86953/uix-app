@@ -1,4 +1,6 @@
+use crate::core::{Constraints, Size};
 use crate::ui::traits::WidgetAnimation;
+use crate::ui::traits::WidgetLayout;
 use crate::ui::widgets::input::AutoComplete;
 
 #[test]
@@ -29,4 +31,13 @@ fn autocomplete_exit_animation_stays_present_until_finished() {
     assert!(!WidgetAnimation::update_animation(&mut autocomplete, 1.0));
     assert!(!autocomplete.is_open());
     assert!(!autocomplete.is_present());
+}
+
+#[test]
+fn measure_clamps_autocomplete_size() {
+    let measured = AutoComplete::new()
+        .options(vec!["Alpha", "Beta"])
+        .measure(Constraints::loose(Size::new(100.0, 20.0)));
+
+    assert_eq!(measured, Size::new(100.0, 20.0));
 }
