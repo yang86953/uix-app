@@ -414,7 +414,7 @@ component! {
 
 ### prelude（#69）
 
-`use uix::prelude::*` 导出高频符号：App、View 组合器、State、Theme、常用 Widget、布局枚举。
+`use uix::prelude::*` 导出高频符号：App / AppHandle / TimerHandle、View 组合器与 Builder、State、Theme、常用 Widget、布局枚举、语义事件与 HandlerRegistration、ComponentHandle / AppState。
 
 ---
 

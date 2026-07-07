@@ -302,7 +302,7 @@ fn with_style_full_replace() {
         .with_color(Color::white());
     let replacement = Style::default().with_bg(Color::blue()).with_font_size(20.0);
     let result = original.with_style(replacement);
-    // 鎵€鏈夊瓧娈靛簲鍏ㄩ儴鏇挎崲
+    // All fields should be replaced.
     assert_eq!(result.background, Some(ColorValue::Custom(Color::blue())));
     assert_eq!(result.color, ColorValue::Neutral(NeutralRole::Text)); // default
     assert_eq!(result.font_size, TypographyToken::Custom(20.0));

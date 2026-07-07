@@ -415,12 +415,12 @@ impl App {
     /// 延迟一次：到期在 **主线程** 执行 `f`，随后自动 unregister
     pub fn run_after<F>(&self, delay: Duration, f: F) -> TimerHandle
     where
-        F: FnOnce() + 'static;
+        F: FnOnce() + Send + 'static;
 
     /// 固定间隔重复：每次在 **主线程** 执行 `f`；`cancel` 或 drop 停止
     pub fn run_interval<F>(&self, interval: Duration, mut f: F) -> TimerHandle
     where
-        F: FnMut() + 'static;
+        F: FnMut() + Send + 'static;
 }
 
 pub struct TimerHandle { /* opaque; 不暴露 Registry */ }
@@ -647,7 +647,7 @@ App::new()
 
 **禁止**在 `run()` 返回后再调用 Timer / `post_to_ui`（主循环已结束）。
 
-> **实现注记**：单窗 `.on_start(AppHandle)`、副窗 `.on_window_start(AppHandle)` 与 `AppHandle` / `WindowId` 已导出；`AppHandle::resolve<T: Clone>()` 可读取运行期 DI 单例 clone。
+> **实现注记**：单窗 `.on_start(AppHandle)`、副窗 `.on_window_start(AppHandle)` 与 `AppHandle` / `WindowId` 已导出；`AppHandle::resolve<T: Send + Clone + 'static>()` 可读取运行期 DI 单例 clone。
 
 > **实现注记**（#134）：`TimerHandle` 已落地并支持 `cancel` / drop unregister；`AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求。主窗 close 会退出主循环，副窗真实 close 事件会按 `window_id` 关闭对应 session。
 
@@ -665,7 +665,7 @@ impl AppHandle {
         F: FnOnce() -> ViewNode + Send + 'static;
 
     ///  sugar：传入 `impl View`
-    pub fn set_root<V: View + 'static>(&self, view: V) {
+    pub fn set_root<V: View + Send + 'static>(&self, view: V) {
         self.update_view(move || view.build());
     }
 }
@@ -713,7 +713,7 @@ API：`singleton<T>()`、`resolve<T>()`、`resolve_mut<T>()`、`has<T>()`、`rem
 
 用途：App 级服务注册（Settings、自定义 repo 等）。**不参与 UI 热路径**；启动前可由业务在 builder 阶段自行 `resolve`，运行中可通过注入的 `AppHandle` resolve clone。
 
-> **实现注记**：`Container` 已随 `AppHandle` 注入运行期；`AppHandle::resolve<T: Clone>()` 可读取 builder `.singleton()` 与 `.settings()` 注册的单例 clone。组件 layout/render/event 热路径仍不主动 resolve；副窗 bootstrap 已复用同一 container 注入新窗 handle。
+> **实现注记**：`Container` 已随 `AppHandle` 注入运行期；`AppHandle::resolve<T: Send + Clone + 'static>()` 可读取 builder `.singleton()` 与 `.settings()` 注册的单例 clone。组件 layout/render/event 热路径仍不主动 resolve；副窗 bootstrap 已复用同一 container 注入新窗 handle。
 
 ---
 
