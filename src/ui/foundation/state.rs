@@ -346,7 +346,7 @@ pub struct State<T> {
     inner: Arc<RwLock<StateInner<T>>>,
     /// 脏标记回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
     reconcile_sites: Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
-    /// Phase 6：精确 Paint 失效绑定（WidgetId + 队列句柄）。
+    /// Phase 6：精确 Paint 失效绑定（ComponentId + 队列句柄）。
     paint_sites: Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
 }
 

@@ -27,7 +27,7 @@ use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::draw::traits::GraphicsEngine;
 use crate::ui::event::SemanticEvent;
 use crate::ui::overlay::OverlayEntry;
-use crate::ui::widget::{EventResult, SystemEvent, WidgetId, WidgetNode, WidgetTree};
+use crate::ui::widget::{EventResult, SystemEvent, WidgetNode, WidgetTree};
 use std::any::Any;
 use std::time::Duration;
 
@@ -135,9 +135,9 @@ pub trait WidgetLayout: WidgetComponent {
     fn layout_children(
         &self,
         frame: Rect,
-        children: &[WidgetId],
+        children: &[ComponentId],
         tree: &WidgetTree,
-    ) -> Vec<(WidgetId, Rect)> {
+    ) -> Vec<(ComponentId, Rect)> {
         let _ = (frame, children, tree);
         Vec::new()
     }
@@ -168,7 +168,7 @@ pub trait WidgetRender: WidgetComponent {
     fn children_clip(&self, _frame: Rect) -> Option<Rect> {
         None
     }
-    fn overlay_entry(&self, _id: WidgetId, _frame: Rect) -> Option<OverlayEntry> {
+    fn overlay_entry(&self, _id: ComponentId, _frame: Rect) -> Option<OverlayEntry> {
         None
     }
 }

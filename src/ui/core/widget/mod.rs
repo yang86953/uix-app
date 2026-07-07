@@ -252,9 +252,9 @@ impl BoxedWidget {
     pub fn layout_children(
         &self,
         frame: Rect,
-        children: &[WidgetId],
+        children: &[ComponentId],
         tree: &WidgetTree,
-    ) -> Vec<(WidgetId, Rect)> {
+    ) -> Vec<(ComponentId, Rect)> {
         self.component()
             .as_layout()
             .map(|l| l.layout_children(frame, children, tree))
@@ -271,7 +271,7 @@ impl BoxedWidget {
             .map(|r| r.dirty_rect(frame))
             .unwrap_or(frame)
     }
-    pub fn overlay_entry(&self, id: WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    pub fn overlay_entry(&self, id: ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         self.component()
             .as_render()
             .and_then(|r| r.overlay_entry(id, frame))

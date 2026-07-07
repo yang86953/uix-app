@@ -8,7 +8,6 @@ use crate::native::traits::event::EventLoopWaker;
 use crate::ui::component_handle::ComponentHandle;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::event::SemanticEvent;
-use crate::ui::widget::WidgetId;
 
 #[derive(Clone, Default)]
 pub struct AppState {
@@ -17,8 +16,8 @@ pub struct AppState {
 
 pub(crate) struct AppStateInner {
     owner_thread: ThreadId,
-    components: HashMap<WidgetId, AppStateEntry>,
-    semantic_events: VecDeque<(WidgetId, SemanticEvent)>,
+    components: HashMap<ComponentId, AppStateEntry>,
+    semantic_events: VecDeque<(ComponentId, SemanticEvent)>,
     event_loop_waker: EventLoopWaker,
 }
 
@@ -35,7 +34,7 @@ impl AppState {
 
     pub(crate) fn register(
         &self,
-        id: WidgetId,
+        id: ComponentId,
         snapshot: ComponentConfigSnapshot,
         invalidation: InvalidationQueueHandle,
         rect: Option<Rect>,
@@ -46,7 +45,7 @@ impl AppState {
             .register(id, snapshot, invalidation, rect);
     }
 
-    pub(crate) fn unregister(&self, id: WidgetId) {
+    pub(crate) fn unregister(&self, id: ComponentId) {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -68,7 +67,7 @@ impl AppState {
             .set_event_loop_waker(waker);
     }
 
-    pub(crate) fn drain_semantic_events(&self) -> Vec<(WidgetId, SemanticEvent)> {
+    pub(crate) fn drain_semantic_events(&self) -> Vec<(ComponentId, SemanticEvent)> {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -129,7 +128,7 @@ impl AppStateInner {
 
     fn register(
         &mut self,
-        id: WidgetId,
+        id: ComponentId,
         snapshot: ComponentConfigSnapshot,
         invalidation: InvalidationQueueHandle,
         rect: Option<Rect>,
@@ -145,7 +144,7 @@ impl AppStateInner {
         );
     }
 
-    fn unregister(&mut self, id: WidgetId) {
+    fn unregister(&mut self, id: ComponentId) {
         self.assert_owner_thread();
         self.components.remove(&id);
     }
@@ -155,12 +154,12 @@ impl AppStateInner {
         self.event_loop_waker = waker;
     }
 
-    pub(crate) fn snapshot(&self, id: WidgetId) -> Option<ComponentConfigSnapshot> {
+    pub(crate) fn snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
         self.assert_owner_thread();
         self.components.get(&id).map(|entry| entry.snapshot.clone())
     }
 
-    pub(crate) fn invalidate(&self, id: WidgetId) -> bool {
+    pub(crate) fn invalidate(&self, id: ComponentId) -> bool {
         self.assert_owner_thread();
         let Some(entry) = self.components.get(&id) else {
             return false;
@@ -171,7 +170,7 @@ impl AppStateInner {
 
     pub(crate) fn emit_semantic_event(
         &mut self,
-        id: WidgetId,
+        id: ComponentId,
         event: SemanticEvent,
     ) -> Option<EventLoopWaker> {
         self.assert_owner_thread();
@@ -182,7 +181,7 @@ impl AppStateInner {
         Some(self.event_loop_waker.clone())
     }
 
-    fn drain_semantic_events(&mut self) -> Vec<(WidgetId, SemanticEvent)> {
+    fn drain_semantic_events(&mut self) -> Vec<(ComponentId, SemanticEvent)> {
         self.assert_owner_thread();
         self.semantic_events.drain(..).collect()
     }
@@ -192,7 +191,7 @@ impl AppStateInner {
         !self.semantic_events.is_empty()
     }
 
-    fn contains(&self, id: WidgetId) -> bool {
+    fn contains(&self, id: ComponentId) -> bool {
         self.assert_owner_thread();
         self.components.contains_key(&id)
     }

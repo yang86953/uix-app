@@ -2,16 +2,14 @@ use super::*;
 use crate::core::{ComponentId, Rect};
 use crate::ui::state::State;
 use crate::ui::widgets::{Button, Input, Label};
-use crate::ui::{
-    AppState, ComponentHandle, SnapshotFields, WidgetCore, WidgetId, WidgetNode, WidgetTree,
-};
+use crate::ui::{AppState, ComponentHandle, SnapshotFields, WidgetCore, WidgetNode, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 #[test]
 fn handler_table_bubbles_until_stopped() {
-    let child = WidgetId::new(2);
-    let parent = WidgetId::new(1);
+    let child = ComponentId::new(2);
+    let parent = ComponentId::new(1);
     let called_child = Rc::new(Cell::new(false));
     let called_parent = Rc::new(Cell::new(false));
 
@@ -47,7 +45,7 @@ fn handler_table_bubbles_until_stopped() {
 
 #[test]
 fn handler_table_once_removes_after_first_dispatch() {
-    let id = WidgetId::new(1);
+    let id = ComponentId::new(1);
     let calls = Rc::new(Cell::new(0));
     let mut table = HandlerTable::new();
     let calls_for_handler = calls.clone();
@@ -77,7 +75,7 @@ fn handler_table_once_removes_after_first_dispatch() {
 
 #[test]
 fn handler_table_when_is_evaluated_per_dispatch() {
-    let id = WidgetId::new(1);
+    let id = ComponentId::new(1);
     let enabled = Rc::new(Cell::new(false));
     let calls = Rc::new(Cell::new(0));
     let mut table = HandlerTable::new();
@@ -205,7 +203,7 @@ fn register_semantic_macro_matches_custom_event_kind() {
 
 #[test]
 fn handler_table_dispatches_typed_custom_payload() {
-    let id = WidgetId::new(1);
+    let id = ComponentId::new(1);
     let value = Rc::new(Cell::new(0));
     let value_for_handler = value.clone();
     let mut table = HandlerTable::new();

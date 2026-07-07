@@ -1,4 +1,4 @@
-//! Picture 离屏缓存栅格化与合成（Phase 4）。
+﻿//! Picture 离屏缓存栅格化与合成（Phase 4）。
 
 use crate::core::Rect;
 
@@ -47,7 +47,7 @@ pub(crate) fn blit_picture_cache(
 /// 将脏 Picture 栅格化到离屏缓冲。
 pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     engine: &mut dyn GraphicsEngine,
-    widget_id: NodeId,
+    node_id: NodeId,
     bounds: &Rect,
     offscreen_handle: &mut Option<ImageHandle>,
     display_list: &mut Option<DisplayList>,
@@ -66,7 +66,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
         *retry_count = retry_count.saturating_add(1);
         if *retry_count >= MAX_OFFSCREEN_RETRY {
             crate::core::log::warn_fn(format!(
-                "Picture 离屏创建失败已达 {MAX_OFFSCREEN_RETRY} 次，widget_id={widget_id}"
+                "Picture 离屏创建失败已达 {MAX_OFFSCREEN_RETRY} 次，node_id={node_id}"
             ));
         }
         return;
@@ -86,7 +86,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
         })
         .collect();
 
-    let self_dirty = scene.node_dirty(widget_id);
+    let self_dirty = scene.node_dirty(node_id);
     let mut fresh_list = if self_dirty || display_list.is_none() {
         Some(DisplayList::new())
     } else {
@@ -117,12 +117,12 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
         off_ctx.canvas_2d().translate(-bounds.x, -bounds.y);
         if let Some(list) = fresh_list.as_mut() {
             off_ctx.set_recorder(Some(list));
-            LayerTree::render_widget_self(widget_id, &mut off_ctx, scene);
+            LayerTree::render_widget_self(node_id, &mut off_ctx, scene);
             off_ctx.set_recorder(None);
         } else if let Some(cached) = display_list.as_ref() {
             cached.replay(&mut off_ctx);
         }
-        if scene.node_visible(widget_id) {
+        if scene.node_visible(node_id) {
             render_non_picture_subtree(children, &mut off_ctx, scene, paint_region);
         }
         for (child_bounds, pixels, pw) in nested_pixels {
@@ -175,7 +175,7 @@ fn prepare_nested_pictures<S: ScenePaint>(
 ) {
     for child in children.iter_mut() {
         if let LayerNode::Picture {
-            widget_id,
+            node_id,
             bounds,
             is_dirty,
             offscreen_handle,
@@ -190,7 +190,7 @@ fn prepare_nested_pictures<S: ScenePaint>(
             if *is_dirty || offscreen_handle.is_none() {
                 rasterize_picture_to_offscreen(
                     engine,
-                    *widget_id,
+                    *node_id,
                     bounds,
                     offscreen_handle,
                     display_list,
@@ -262,37 +262,37 @@ fn render_non_picture_subtree<S: ScenePaint>(
         match child {
             LayerNode::Picture { .. } => {}
             LayerNode::ClipRect {
-                widget_id,
+                node_id,
                 rect,
                 children: sub,
             } => {
-                if needs_paint(scene, *widget_id, dirty_region) {
-                    LayerTree::render_widget_self(*widget_id, ctx, scene);
+                if needs_paint(scene, *node_id, dirty_region) {
+                    LayerTree::render_widget_self(*node_id, ctx, scene);
                 }
                 ctx.canvas_2d().push_clip(*rect);
-                if let Some((sx, sy)) = LayerTree::get_scroll_offset(scene, *widget_id) {
+                if let Some((sx, sy)) = LayerTree::get_scroll_offset(scene, *node_id) {
                     ctx.canvas_2d().translate(-sx, -sy);
                 }
                 render_non_picture_subtree(sub, ctx, scene, dirty_region);
-                if let Some((sx, sy)) = LayerTree::get_scroll_offset(scene, *widget_id) {
+                if let Some((sx, sy)) = LayerTree::get_scroll_offset(scene, *node_id) {
                     ctx.canvas_2d().translate(sx, sy);
                 }
                 ctx.canvas_2d().pop_clip();
             }
             LayerNode::Direct {
-                widget_id,
+                node_id,
                 children: sub,
             } => {
-                if !scene.node_visible(*widget_id) {
+                if !scene.node_visible(*node_id) {
                     continue;
                 }
-                if needs_paint(scene, *widget_id, dirty_region) {
-                    let frame = scene.node_frame(*widget_id);
+                if needs_paint(scene, *node_id, dirty_region) {
+                    let frame = scene.node_frame(*node_id);
                     ctx.save();
-                    scene.paint(*widget_id, frame, ctx);
+                    scene.paint(*node_id, frame, ctx);
                     ctx.restore();
                 }
-                if scene.node_visible(*widget_id) {
+                if scene.node_visible(*node_id) {
                     render_non_picture_subtree(sub, ctx, scene, dirty_region);
                 }
             }

@@ -1,4 +1,4 @@
-use crate::component;
+﻿use crate::component;
 
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
@@ -128,7 +128,7 @@ component! {
         popover_dirty_rect(self.placement, self.arrow, frame)
     }
 
-    overlay_entry => (&self, id: crate::ui::WidgetId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
+    overlay_entry => (&self, id: crate::ui::ComponentId, frame: Rect) -> Option<crate::ui::OverlayEntry> {
         if !self.is_present() {
             return None;
         }

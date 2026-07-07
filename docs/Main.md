@@ -170,7 +170,7 @@ core ← native ← draw ← ui ← app
 
 | 设计（文档/重构目标） | 当前实现（源码） | 决策 |
 |----------------------|------------------|------|
-| ComponentId (Generational) | `core::ComponentId`；公开事件/handle/snapshot/Reconciler 已按 `ComponentId` 命名，树/布局/draw 内部仍保留 `WidgetId` / `NodeId` 同型别名 | [#101](decisions.md#d101) |
+| ComponentId (Generational) | `core::ComponentId`；公开事件/handle/snapshot/Reconciler、Widget trait 边界与 managers 已按 `ComponentId` 命名，树/布局/draw 内部仍保留 `WidgetId` / `NodeId` 同型别名 | [#101](decisions.md#d101) |
 | component! | `component! { name: ..., struct ... }` / `component! { struct ... }` | [#102](decisions.md#d102) |
 | measure(constraints) | `WidgetLayout::measure(Constraints)` 已接；`preferred_size(engine)` 保留兼容 | [#103](decisions.md#d103) |
 | ScrollView | ScrollView (was ScrollContainer in old docs) | [#104](decisions.md#d104) |
@@ -266,9 +266,9 @@ flowchart TB
 
 | 能力 | 设计 | 当前 | 文档 |
 |------|------|------|------|
-| ComponentId | Generational 稳定 ID | `core::ComponentId` 已落地并从 `ui::ComponentId` 与 `prelude` 重导出；`WidgetId` / `NodeId` 为源码别名；`SemanticEvent`、`EventHandler::semantic_event`、`HandlerTable` 存储/API、Reconciler 热路径与 State paint binding 已按 `ComponentId` 命名并覆盖 generation key 测试 | [component · WidgetTree](systems/component.md#widgettree) · [#10](decisions.md#d10) [#101](decisions.md#d101) |
+| ComponentId | Generational 稳定 ID | `core::ComponentId` 已落地并从 `ui::ComponentId` 与 `prelude` 重导出；`WidgetId` / `NodeId` 为源码别名；`SemanticEvent`、`EventHandler::semantic_event`、`HandlerTable` 存储/API、Reconciler 热路径、State paint binding、Widget trait 边界与 managers 已按 `ComponentId` 命名并覆盖 generation key 测试 | [component · WidgetTree](systems/component.md#widgettree) · [#10](decisions.md#d10) [#101](decisions.md#d101) |
 | component! | `component!` authoring 宏 | `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已作为唯一 authoring 入口；旧 `define_widget!` 兼容入口已移除 | [component · Authoring](systems/component.md#authoring) · [#102](decisions.md#d102) |
-| AppState / ComponentHandle | mount 自动 register | `AppState` snapshot registry 已接入 `WidgetTree::set_app_state` mount/unmount，主窗与副窗共享同一 AppState；`get_handle` / `get_snapshot` / `contains` 公开查找 API 与 `ComponentHandle::id` 已按 `ComponentId` 命名；lookup handle 可读 snapshot、窄 Paint invalidate，并通过 AppState semantic queue 触发 emit | [application · AppState](systems/application.md#appstate--多窗--settings) · [#145](decisions.md#d145) |
+| AppState / ComponentHandle | mount 自动 register | `AppState` snapshot registry 已接入 `WidgetTree::set_app_state` mount/unmount，主窗与副窗共享同一 AppState；`get_handle` / `get_snapshot` / `contains` 公开查找 API、内部 register/unregister、snapshot/invalidate 与 semantic queue 均已按 `ComponentId` 命名；`ComponentHandle::id` 已按 `ComponentId` 命名；lookup handle 可读 snapshot、窄 Paint invalidate，并通过 AppState semantic queue 触发 emit | [application · AppState](systems/application.md#appstate--多窗--settings) · [#145](decisions.md#d145) |
 | StateSlotId | new 时单调 id | `State::new` 已分配稳定 slot id，clone 共享；State capture 指纹基础已用 `TypeId + slot_id` 接入 | [#143](decisions.md#d143) |
 | open_window | 副窗 + 新 AppHandle | `WindowConfig` / `AppHandle::open_window` / `.on_window_start` 已导出；运行时可分配新 `window_id`、独立 AppTimer/MainThreadQueue/AppHandle 并暂存副窗创建请求，成功入队会 wake event loop；GUI loop 会在首窗启动后与活动轮次中 drain 请求，创建 native 窗与独立 `WindowSession` bootstrap；副窗 MainThreadQueue / `update_view` reconcile、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#144](decisions.md#d144) [#148](decisions.md#d148) |
 | 平台窗口能力 | 能力差异用 trait + Result 表达 | `WindowOps` 可选窗口能力已返回 `Result<()>`；共享 `PlatformWindowCore` 仅在底层返回 `Ok(())` 后写入 `WindowState`，未支持能力记录 `Errc::NotImplemented`；`create_platform()` 非支持平台返回 `Err`，不再编译期中断；`FileDrop` 平台映射已补回归测试 | [platform · 窗口可选能力](systems/platform.md#窗口可选能力) |
