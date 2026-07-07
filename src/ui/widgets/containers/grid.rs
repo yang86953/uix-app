@@ -24,6 +24,7 @@ component! {
         border_color: Option<Color>,
         border_width: f32,
         border_radius: f32,
+        margin: EdgeInsets,
         align_items: AlignItems,
         justify_items: JustifyContent,
         fixed_width: Option<f32>,
@@ -33,6 +34,8 @@ component! {
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(Size::new(self.fixed_width.unwrap_or(0.0), self.fixed_height.unwrap_or(0.0)))
     }
+
+    layout_margin => (&self) -> EdgeInsets { self.margin }
 
     picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }
 
@@ -123,6 +126,7 @@ impl Grid {
             border_color: None,
             border_width: 0.0,
             border_radius: 0.0,
+            margin: EdgeInsets::zero(),
             align_items: AlignItems::Stretch,
             justify_items: JustifyContent::Start,
             fixed_width: None,
@@ -222,6 +226,9 @@ impl Grid {
         }
         if style.border_radius != 0.0 {
             self.border_radius = style.border_radius;
+        }
+        if style.margin != EdgeInsets::zero() {
+            self.margin = style.margin;
         }
         if style.align_items != AlignItems::default() {
             self.align_items = style.align_items;

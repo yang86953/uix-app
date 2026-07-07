@@ -106,6 +106,7 @@ component! {
             container: frame,
             children: flex_children,
             child_sizes,
+            child_margins: vec![crate::core::EdgeInsets::zero(); children.len()],
             justify_content: self.justify,
             align_items: self.align,
         };

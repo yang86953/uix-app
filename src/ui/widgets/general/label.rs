@@ -39,6 +39,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    layout_margin => (&self) -> crate::core::EdgeInsets {
+        self.style.as_ref().map(|style| style.margin).unwrap_or_default()
+    }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, mods, .. } => {

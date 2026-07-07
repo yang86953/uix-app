@@ -1,13 +1,14 @@
 // WidgetTree unit tests.
 // Split out of `tree_core.rs` to keep implementation files manageable.
-use crate::core::{ComponentId, Constraints, Point, Size};
+use crate::core::{ComponentId, Constraints, EdgeInsets, Point, Size};
 use crate::draw::Color;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
+use crate::ui::layout::engine::child_from_tree;
 use crate::ui::managers::StyleManager;
 use crate::ui::{
-    AppState, Drawer, Label, Modal, OverlayEntry, OverlayKind, QRCode, SnapshotFields, TextManager,
-    Tooltip,
+    AppState, Button, Container, Drawer, Grid, Label, Modal, OverlayEntry, OverlayKind, QRCode,
+    SnapshotFields, Style, TextManager, Tooltip,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -540,6 +541,191 @@ fn boxed_widget_measure_uses_constraints() {
     assert_eq!(
         boxed.measure(Constraints::unconstrained()),
         Size::new(120.0, 80.0)
+    );
+}
+
+#[test]
+fn child_from_tree_reads_component_layout_margin() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let margin = EdgeInsets::new(1.0, 2.0, 3.0, 4.0);
+    let child = tree.add_child(root, Box::new(Container::new().margin(margin)));
+
+    let layout_child = child_from_tree(child, &tree);
+
+    assert_eq!(layout_child.margin, margin);
+}
+
+#[test]
+fn child_from_tree_reads_common_style_component_margins() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let margin = EdgeInsets::new(4.0, 5.0, 6.0, 7.0);
+    let style = Style::default().with_margin(margin);
+    let button = tree.add_child(root, Box::new(Button::new("Ok").style(style.clone())));
+    let label = tree.add_child(root, Box::new(Label::new("Name").style(style.clone())));
+    let mut grid_widget = Grid::new();
+    grid_widget.apply_style(&style);
+    let grid = tree.add_child(root, Box::new(grid_widget));
+
+    assert_eq!(child_from_tree(button, &tree).margin, margin);
+    assert_eq!(child_from_tree(label, &tree).margin, margin);
+    assert_eq!(child_from_tree(grid, &tree).margin, margin);
+}
+
+#[test]
+fn layout_margin_offsets_child_frame() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(200.0, 100.0)));
+    let child = tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .size(20.0, 10.0)
+                .margin(EdgeInsets::new(4.0, 3.0, 8.0, 6.0)),
+        ),
+    );
+
+    tree.layout();
+
+    assert_eq!(tree.get(child).unwrap().frame().x, 4.0);
+    assert_eq!(tree.get(child).unwrap().frame().y, 3.0);
+}
+
+#[test]
+fn layout_margin_occupies_space_between_siblings() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(200.0, 100.0)));
+    let first = tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .size(20.0, 10.0)
+                .margin(EdgeInsets::new(0.0, 0.0, 7.0, 0.0)),
+        ),
+    );
+    let second = tree.add_child(root, Box::new(Container::new().size(20.0, 10.0)));
+
+    tree.layout();
+
+    assert_eq!(tree.get(first).unwrap().frame().x, 0.0);
+    assert_eq!(tree.get(second).unwrap().frame().x, 27.0);
+}
+
+#[test]
+fn layout_margin_occupies_space_in_column_direction() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Container::new()
+            .size(200.0, 100.0)
+            .direction(crate::ui::style::FlexDirection::Column),
+    ));
+    let first = tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .size(20.0, 10.0)
+                .margin(EdgeInsets::new(0.0, 6.0, 0.0, 0.0)),
+        ),
+    );
+    let second = tree.add_child(root, Box::new(Container::new().size(20.0, 10.0)));
+
+    tree.layout();
+
+    assert_eq!(tree.get(first).unwrap().frame().y, 6.0);
+    assert_eq!(tree.get(second).unwrap().frame().y, 16.0);
+}
+
+#[test]
+fn layout_margin_reduces_stretched_cross_axis_size() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(200.0, 100.0)));
+    let child = tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .size(20.0, 10.0)
+                .margin(EdgeInsets::new(0.0, 3.0, 0.0, 7.0)),
+        ),
+    );
+
+    tree.layout();
+
+    let frame = tree.get(child).unwrap().frame();
+    assert_eq!(frame.y, 3.0);
+    assert_eq!(frame.h, 90.0);
+}
+
+#[test]
+fn overflow_layout_margin_occupies_space_between_siblings() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Container::new().size(200.0, 100.0).overflow_content(),
+    ));
+    tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .size(20.0, 10.0)
+                .margin(EdgeInsets::new(0.0, 0.0, 7.0, 0.0)),
+        ),
+    );
+    let second = tree.add_child(root, Box::new(Container::new().size(20.0, 10.0)));
+
+    tree.layout();
+
+    assert_eq!(tree.get(second).unwrap().frame().x, 27.0);
+}
+
+#[test]
+fn wrapped_layout_uses_margin_for_line_breaks() {
+    let mut tree = WidgetTree::new();
+    let root_style = Style::container()
+        .with_wrap(true)
+        .with_align(crate::ui::style::AlignItems::Start)
+        .with_width(50.0)
+        .with_height(100.0);
+    let root = tree.set_root(Box::new(Container::new().style(root_style)));
+    tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .size(30.0, 10.0)
+                .margin(EdgeInsets::new(0.0, 0.0, 25.0, 0.0)),
+        ),
+    );
+    let second = tree.add_child(root, Box::new(Container::new().size(10.0, 10.0)));
+
+    tree.layout();
+
+    assert_eq!(tree.get(second).unwrap().frame().x, 0.0);
+    assert_eq!(tree.get(second).unwrap().frame().y, 10.0);
+}
+
+#[test]
+fn grid_layout_applies_child_margin_inside_cell() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Grid::new()
+            .columns(vec![crate::ui::layout::GridTrack::Px(50.0)])
+            .rows(vec![crate::ui::layout::GridTrack::Px(40.0)])
+            .size(50.0, 40.0)
+            .justify(crate::ui::layout::JustifyContent::Stretch),
+    ));
+    let child = tree.add_child(
+        root,
+        Box::new(
+            Container::new()
+                .size(10.0, 10.0)
+                .margin(EdgeInsets::new(4.0, 3.0, 6.0, 7.0)),
+        ),
+    );
+
+    tree.layout();
+
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(4.0, 3.0, 40.0, 30.0)
     );
 }
 

@@ -39,6 +39,10 @@ impl WidgetLayout for Button {
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
+
+    fn layout_margin(&self) -> crate::core::EdgeInsets {
+        self.style.margin
+    }
 }
 
 impl EventHandler for Button {

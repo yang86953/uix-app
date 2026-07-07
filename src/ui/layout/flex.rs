@@ -109,6 +109,43 @@ fn make_size_from(is_row: bool, main: f32, cross: f32) -> Size {
     }
 }
 
+fn child_margin(input: &FlexInput, index: usize) -> EdgeInsets {
+    input.child_margins.get(index).copied().unwrap_or_default()
+}
+
+fn margin_main(margin: EdgeInsets, is_row: bool) -> f32 {
+    if is_row {
+        margin.horizontal()
+    } else {
+        margin.vertical()
+    }
+}
+
+fn margin_cross(margin: EdgeInsets, is_row: bool) -> f32 {
+    if is_row {
+        margin.vertical()
+    } else {
+        margin.horizontal()
+    }
+}
+
+fn margin_main_start(margin: EdgeInsets, is_row: bool, is_reverse: bool) -> f32 {
+    match (is_row, is_reverse) {
+        (true, false) => margin.left,
+        (true, true) => margin.right,
+        (false, false) => margin.top,
+        (false, true) => margin.bottom,
+    }
+}
+
+fn margin_cross_start(margin: EdgeInsets, is_row: bool) -> f32 {
+    if is_row {
+        margin.top
+    } else {
+        margin.left
+    }
+}
+
 fn distribute_flex_grow(
     base: &mut [f32],
     remaining: f32,
@@ -197,19 +234,22 @@ fn compute_single_line(
     let count = base_main_sizes.len();
 
     // Phase 2: distribute flex-grow/shrink
-    let total_base: f32 = base_main_sizes.iter().sum();
+    let total_margin_main: f32 = (0..count)
+        .map(|i| margin_main(child_margin(input, i), is_row))
+        .sum();
+    let total_base: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
     let gaps = input.gap * (count as f32 - 1.0);
     let overflow = total_base + gaps - container_main;
 
     if overflow > 0.0 {
         distribute_shrink(base_main_sizes, overflow, &input.children);
     }
-    let total_after: f32 = base_main_sizes.iter().sum();
+    let total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
     let mut remaining = (container_main - total_after - gaps).max(0.0);
     distribute_flex_grow(base_main_sizes, remaining, &input.children, total_flex_grow);
 
     // Apply Stretch justify-content: distribute remaining space as growth
-    let mut total_after: f32 = base_main_sizes.iter().sum();
+    let mut total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
     remaining = (container_main - total_after - gaps).max(0.0);
     if input.justify_content == JustifyContent::Stretch && remaining > 0.0 {
         let extra = remaining / count as f32;
@@ -226,7 +266,7 @@ fn compute_single_line(
     // to children with remaining flex_grow capacity. Loop up to 3 rounds
     // to handle cascading clamp effects until all space is consumed.
     for _round in 0..3 {
-        let current_total = base_main_sizes.iter().sum::<f32>();
+        let current_total = base_main_sizes.iter().sum::<f32>() + total_margin_main;
         let leftover = (container_main - current_total - gaps).max(0.0);
         if leftover > 0.0 && total_flex_grow > 0.0 {
             distribute_flex_grow(base_main_sizes, leftover, &input.children, total_flex_grow);
@@ -238,7 +278,7 @@ fn compute_single_line(
 
     // Phase 3: justify-content positioning
     // Reuse the most recent total to avoid an extra sum() traversal
-    let total_final = base_main_sizes.iter().sum::<f32>();
+    let total_final = base_main_sizes.iter().sum::<f32>() + total_margin_main;
     remaining = (container_main - total_final - gaps).max(0.0);
     let (effective_gap, start_offset) = compute_justify(
         remaining,
@@ -257,9 +297,10 @@ fn compute_single_line(
     };
 
     for i in 0..count {
+        let margin = child_margin(input, i);
         let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
         let child_cross_size = if cross_align == AlignItems::Stretch {
-            container_cross
+            (container_cross - margin_cross(margin, is_row)).max(0.0)
         } else {
             cross_sizes[i]
         };
@@ -271,10 +312,18 @@ fn compute_single_line(
             AlignItems::Stretch => 0.0,
         };
 
+        let main_start = margin_main_start(margin, is_row, is_reverse);
+        let cross_start = margin_cross_start(margin, is_row);
         let (cx, cy) = if is_row {
-            (inner.x + cursor, inner.y + cross_offset)
+            (
+                inner.x + cursor + main_start,
+                inner.y + cross_offset + cross_start,
+            )
         } else {
-            (inner.x + cross_offset, inner.y + cursor)
+            (
+                inner.x + cross_offset + cross_start,
+                inner.y + cursor + main_start,
+            )
         };
         let (cw, ch) = if is_row {
             (base_main_sizes[i], child_cross_size)
@@ -283,10 +332,11 @@ fn compute_single_line(
         };
 
         child_rects.push(Rect::new(cx, cy, cw, ch));
+        let occupied_main = base_main_sizes[i] + margin_main(margin, is_row);
         cursor += if is_reverse {
-            -(base_main_sizes[i] + effective_gap)
+            -(occupied_main + effective_gap)
         } else {
-            base_main_sizes[i] + effective_gap
+            occupied_main + effective_gap
         };
     }
 
@@ -337,7 +387,7 @@ fn compute_wrapped(
     let mut line_main = 0.0f32;
 
     for i in 0..count {
-        let child_main = base_main_sizes[i];
+        let child_main = base_main_sizes[i] + margin_main(child_margin(input, i), is_row);
         let item_gap = if i > line_start { input.gap } else { 0.0 };
 
         if line_main + item_gap + child_main > container_main && line_main > 0.0 {
@@ -373,7 +423,11 @@ fn compute_wrapped(
 
     for line in &lines {
         let line_count = line.end - line.start;
-        let line_base: f32 = base_main_sizes[line.start..line.end].iter().sum();
+        let line_margin_main: f32 = (line.start..line.end)
+            .map(|i| margin_main(child_margin(input, i), is_row))
+            .sum();
+        let line_base: f32 =
+            base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
         let line_gaps = input.gap * (line_count as f32 - 1.0).max(0.0);
         let overflow = line_base + line_gaps - container_main;
 
@@ -389,6 +443,7 @@ fn compute_wrapped(
         // Grow within line
         let remaining = (container_main
             - base_main_sizes[line.start..line.end].iter().sum::<f32>()
+            - line_margin_main
             - line_gaps)
             .max(0.0);
         let line_grow: f32 = input.children[line.start..line.end]
@@ -403,7 +458,8 @@ fn compute_wrapped(
         );
 
         // Apply Stretch
-        let total_after: f32 = base_main_sizes[line.start..line.end].iter().sum();
+        let total_after: f32 =
+            base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
         let remaining2 = (container_main - total_after - line_gaps).max(0.0);
         if input.justify_content == JustifyContent::Stretch && remaining2 > 0.0 {
             let extra = remaining2 / line_count as f32;
@@ -413,9 +469,8 @@ fn compute_wrapped(
         }
 
         // Compute cross size for this line
-        let max_cross = cross_sizes[line.start..line.end]
-            .iter()
-            .cloned()
+        let max_cross = (line.start..line.end)
+            .map(|i| cross_sizes[i] + margin_cross(child_margin(input, i), is_row))
             .fold(0.0, f32::max);
         line_cross_positions.push(cursor_cross);
         line_max_cross.push(max_cross);
@@ -441,7 +496,11 @@ fn compute_wrapped(
     for (li, line) in lines.iter().enumerate() {
         let line_count = line.end - line.start;
         let line_gaps_total = input.gap * (line_count as f32 - 1.0).max(0.0);
-        let total_line_main: f32 = base_main_sizes[line.start..line.end].iter().sum();
+        let line_margin_main: f32 = (line.start..line.end)
+            .map(|i| margin_main(child_margin(input, i), is_row))
+            .sum();
+        let total_line_main: f32 =
+            base_main_sizes[line.start..line.end].iter().sum::<f32>() + line_margin_main;
         let remaining = (container_main - total_line_main - line_gaps_total).max(0.0);
         let (effective_gap, start_offset) = compute_justify(
             remaining,
@@ -460,9 +519,10 @@ fn compute_wrapped(
         let line_cross_base = line_cross_positions[li] + cross_start_offset;
 
         for i in line.start..line.end {
+            let margin = child_margin(input, i);
             let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
             let child_cross_size = if cross_align == AlignItems::Stretch {
-                line_max_cross[li]
+                (line_max_cross[li] - margin_cross(margin, is_row)).max(0.0)
             } else {
                 cross_sizes[i]
             };
@@ -476,13 +536,13 @@ fn compute_wrapped(
 
             let (cx, cy) = if is_row {
                 (
-                    inner.x + cursor_main,
-                    inner.y + line_cross_base + cross_offset,
+                    inner.x + cursor_main + margin_main_start(margin, is_row, is_reverse),
+                    inner.y + line_cross_base + cross_offset + margin_cross_start(margin, is_row),
                 )
             } else {
                 (
-                    inner.x + line_cross_base + cross_offset,
-                    inner.y + cursor_main,
+                    inner.x + line_cross_base + cross_offset + margin_cross_start(margin, is_row),
+                    inner.y + cursor_main + margin_main_start(margin, is_row, is_reverse),
                 )
             };
             let (cw, ch) = if is_row {
@@ -492,10 +552,11 @@ fn compute_wrapped(
             };
 
             child_rects[i] = Rect::new(cx, cy, cw, ch);
+            let occupied_main = base_main_sizes[i] + margin_main(margin, is_row);
             cursor_main += if is_reverse {
-                -(base_main_sizes[i] + effective_gap)
+                -(occupied_main + effective_gap)
             } else {
-                base_main_sizes[i] + effective_gap
+                occupied_main + effective_gap
             };
         }
     }

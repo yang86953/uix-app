@@ -44,6 +44,8 @@ component! {
 
     flex_shrink => (&self) -> f32 { self.style.flex_shrink }
 
+    layout_margin => (&self) -> EdgeInsets { self.style.margin }
+
     picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -349,8 +351,6 @@ impl Container {
     }
 
     fn intrinsic_size(&self) -> Size {
-        let mh = self.style.margin.horizontal();
-        let mv = self.style.margin.vertical();
         let bh = self.style.border_width.horizontal();
         let bv = self.style.border_width.vertical();
         let cached = self.cached_content_size.get();
@@ -362,8 +362,8 @@ impl Container {
             }
         });
         Size::new(
-            effective_w + mh + bh,
-            self.style.height.map(|h| h + mv + bv).unwrap_or(0.0),
+            effective_w + bh,
+            self.style.height.map(|h| h + bv).unwrap_or(0.0),
         )
     }
 }
@@ -380,5 +380,15 @@ mod tests {
             .measure(Constraints::loose(Size::new(50.0, 40.0)));
 
         assert_eq!(measured, Size::new(50.0, 30.0));
+    }
+
+    #[test]
+    fn measure_excludes_margin_from_intrinsic_size() {
+        let measured = Container::new()
+            .size(80.0, 24.0)
+            .margin(EdgeInsets::new(1.0, 2.0, 3.0, 4.0))
+            .measure(Constraints::unconstrained());
+
+        assert_eq!(measured, Size::new(80.0, 24.0));
     }
 }
