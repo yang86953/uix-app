@@ -1,0 +1,32 @@
+use crate::ui::traits::WidgetAnimation;
+use crate::ui::widgets::input::AutoComplete;
+
+#[test]
+fn autocomplete_enter_animation_finishes_open() {
+    let mut autocomplete = AutoComplete::new().options(vec!["Alpha", "Beta"]);
+
+    autocomplete.open();
+    assert!(autocomplete.is_open());
+    assert!(autocomplete.is_present());
+
+    assert!(WidgetAnimation::update_animation(&mut autocomplete, 0.05));
+    assert!(!WidgetAnimation::update_animation(&mut autocomplete, 1.0));
+    assert!(autocomplete.is_open());
+    assert!(autocomplete.is_present());
+}
+
+#[test]
+fn autocomplete_exit_animation_stays_present_until_finished() {
+    let mut autocomplete = AutoComplete::new().options(vec!["Alpha", "Beta"]);
+    autocomplete.open();
+    assert!(!WidgetAnimation::update_animation(&mut autocomplete, 1.0));
+
+    autocomplete.close();
+    assert!(!autocomplete.is_open());
+    assert!(autocomplete.is_present());
+
+    assert!(WidgetAnimation::update_animation(&mut autocomplete, 0.03));
+    assert!(!WidgetAnimation::update_animation(&mut autocomplete, 1.0));
+    assert!(!autocomplete.is_open());
+    assert!(!autocomplete.is_present());
+}

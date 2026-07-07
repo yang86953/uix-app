@@ -6,6 +6,7 @@ use crate::core::{Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -20,6 +21,9 @@ define_widget! {
     pub struct ColorPicker {
         value: Color,
         open: bool,
+        transition: TransitionPlayer,
+        closing: bool,
+        transition_dirty: bool,
         preset_colors: Vec<Color>,
         hovered: bool,
         hovered_idx: Option<usize>,
@@ -37,11 +41,15 @@ define_widget! {
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 if pos.y >= 0.0 && pos.y <= 32.0 {
-                    self.open = !self.open;
+                    if self.open {
+                        self.close();
+                    } else {
+                        self.open();
+                    }
                     self.focused = true;
                     return EventResult::Handled;
                 }
-                if self.open && pos.y > 32.0 {
+                if self.is_present() && pos.y > 32.0 {
                     let cols = 8;
                     let cell = 24.0;
                     let pad = 8.0;
@@ -61,18 +69,18 @@ define_widget! {
                                     self.value = next;
                                     self.pending_change.set(Some(next));
                                 }
-                                self.open = false;
+                                self.close();
                                 return EventResult::Handled;
                             }
                         }
                     }
-                    self.open = false;
+                    self.close();
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if self.open && pos.y > 36.0 {
+                if self.is_present() && pos.y > 36.0 {
                     let cols = 8;
                     let cell = 24.0;
                     let pad = 8.0;
@@ -94,12 +102,16 @@ define_widget! {
             }
             SystemEvent::PointerLeave => { self.hovered = false; self.hovered_idx = None; EventResult::Handled }
             SystemEvent::FocusIn => { self.focused = true; EventResult::Handled }
-            SystemEvent::FocusOut => { self.open = false; self.focused = false; EventResult::Handled }
+            SystemEvent::FocusOut => { self.close(); self.focused = false; EventResult::Handled }
             SystemEvent::KeyDown { key, .. } => {
                 if *key == KeyCode::Escape
-                    && self.open { self.open = false; return EventResult::Handled; }
+                    && self.open { self.close(); return EventResult::Handled; }
                 if *key == KeyCode::Space || *key == KeyCode::Enter {
-                    self.open = !self.open;
+                    if self.open {
+                        self.close();
+                    } else {
+                        self.open();
+                    }
                     self.focused = true;
                     return EventResult::Handled;
                 }
@@ -130,7 +142,8 @@ define_widget! {
             ctx.stroke_rect(Rect::new(frame.x - 1.0, frame.y + 3.0, 26.0, 26.0), primary, 1.0, None);
         }
 
-        if self.open {
+        if self.is_present() {
+            let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
             let cols = 8;
             let cell = 24.0;
             let pad = 8.0;
@@ -139,7 +152,8 @@ define_widget! {
             let panel_h = rows as f32 * cell + pad * 2.0;
             let panel_x = frame.x;
             let panel_y = frame.y + 36.0;
-            let bg = ctx.tokens().color_bg_elevated();
+            let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
+            let border = fade_color(border, opacity);
             let panel_rect = Rect::new(panel_x, panel_y, panel_w, panel_h);
             let panel_radius = Some(Radius::uniform(ctx.tokens().border_radius()));
             ctx.fill_rect(panel_rect, bg, panel_radius);
@@ -149,11 +163,45 @@ define_widget! {
                 let cx = panel_x + pad + (i % cols) as f32 * cell;
                 let cy = panel_y + pad + (i / cols) as f32 * cell;
                 let cell_rect = Rect::new(cx + 1.0, cy + 1.0, cell - 2.0, cell - 2.0);
-                ctx.fill_rect(cell_rect, *c, Some(Radius::uniform(2.0)));
+                ctx.fill_rect(cell_rect, fade_color(*c, opacity), Some(Radius::uniform(2.0)));
                 if self.hovered_idx == Some(i) {
-                    ctx.stroke_rect(cell_rect, Color::white(), 1.5, Some(Radius::uniform(2.0)));
+                    ctx.stroke_rect(
+                        cell_rect,
+                        fade_color(Color::white(), opacity),
+                        1.5,
+                        Some(Radius::uniform(2.0)),
+                    );
                 }
             }
+        }
+    }
+
+    dirty_rect => (&self, frame: Rect) -> Rect {
+        color_picker_dirty_rect(frame, self.preset_colors.len())
+    }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.is_present() || self.transition.finished {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        self.transition.update(dt);
+        self.transition_dirty = true;
+
+        if self.closing && self.transition.finished {
+            self.open = false;
+            self.closing = false;
+        }
+
+        self.is_present() && !self.transition.finished
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.transition_dirty {
+            color_picker_dirty_rect(frame, self.preset_colors.len())
+        } else {
+            Rect::zero()
         }
     }
 }
@@ -162,6 +210,9 @@ impl ColorPicker {
         Self {
             value,
             open: false,
+            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            closing: false,
+            transition_dirty: false,
             preset_colors: PRESET_COLORS
                 .iter()
                 .map(|&c| {
@@ -185,4 +236,55 @@ impl ColorPicker {
     pub fn set_value(&mut self, v: Color) {
         self.value = v;
     }
+
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
+    pub fn is_present(&self) -> bool {
+        self.open || self.closing
+    }
+
+    pub fn open(&mut self) {
+        self.open = true;
+        self.closing = false;
+        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition_dirty = true;
+    }
+
+    pub fn close(&mut self) {
+        if !self.is_present() {
+            self.open = false;
+            self.closing = false;
+            self.transition_dirty = false;
+            return;
+        }
+
+        self.open = false;
+        self.closing = true;
+        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition_dirty = true;
+    }
 }
+
+fn color_picker_dirty_rect(frame: Rect, color_count: usize) -> Rect {
+    let cols = 8usize;
+    let cell = 24.0;
+    let pad = 8.0;
+    let panel_w = cols as f32 * cell + pad * 2.0;
+    let rows = color_count.div_ceil(cols);
+    let panel_h = rows as f32 * cell + pad * 2.0;
+    let panel = Rect::new(frame.x, frame.y + 36.0, panel_w, panel_h);
+    frame.union(&panel)
+}
+
+fn fade_color(color: Color, opacity: f32) -> Color {
+    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    color.with_alpha(alpha)
+}
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/input/color_picker.rs"]
+mod tests;

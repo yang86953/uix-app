@@ -1,7 +1,8 @@
 use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::Radius;
+use crate::draw::{Color, Radius};
+use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::widgets::display::tree::TreeNode;
 use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::RefCell;
@@ -13,6 +14,9 @@ define_widget! {
         value_key: String,
         nodes: Vec<TreeNode>,
         open: bool,
+        transition: TransitionPlayer,
+        closing: bool,
+        transition_dirty: bool,
         hovered_option: Option<String>,
         pending_change: RefCell<Option<String>>,
     }
@@ -27,26 +31,30 @@ define_widget! {
         match event {
             SystemEvent::PointerDown { pos, .. } => {
                 if pos.y >= 0.0 && pos.y <= 32.0 {
-                    self.open = !self.open;
+                    if self.open {
+                        self.close();
+                    } else {
+                        self.open();
+                    }
                     return EventResult::Handled;
                 }
-                if self.open && pos.y > 32.0 {
+                if self.is_present() && pos.y > 32.0 {
                     let flat = self.flatten_nodes();
                     let idx = ((pos.y - 32.0) / 28.0) as usize;
                     if idx < flat.len() {
                         let (key, title, _) = &flat[idx];
                         self.value = title.clone();
                         self.value_key = key.clone();
-                        self.open = false;
+                        self.close();
                         self.pending_change.replace(Some(key.clone()));
                         return EventResult::Handled;
                     }
                 }
-                self.open = false;
+                self.close();
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if self.open && pos.y > 32.0 {
+                if self.is_present() && pos.y > 32.0 {
                     let flat = self.flatten_nodes();
                     let idx = ((pos.y - 32.0) / 28.0) as usize;
                     self.hovered_option = flat.get(idx).map(|(k, _, _)| k.clone());
@@ -88,7 +96,14 @@ define_widget! {
         ctx.draw_text(if self.open { "▲" } else { "▼" }, Point::new(frame.x + frame.w - 18.0, arrow_y), text_sec, 10.0);
 
         // 下拉树面板
-        if self.open {
+        if self.is_present() {
+            let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
+            let bg = fade_color(bg, opacity);
+            let border = fade_color(border, opacity);
+            let primary = fade_color(primary, opacity);
+            let text = fade_color(text, opacity);
+            let fill = fade_color(fill, opacity);
+            let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
             let flat = self.flatten_nodes();
             let list_h = flat.len() as f32 * 28.0;
             let list_y = frame.y + 32.0;
@@ -107,7 +122,7 @@ define_widget! {
                     ctx.fill_rect(item_rect, fill, None);
                 }
                 if is_selected {
-                    ctx.fill_rect(item_rect, ctx.tokens().color_primary_bg(), None);
+                    ctx.fill_rect(item_rect, primary_bg, None);
                 }
 
                 let row_y = ctx.visual_center_y(item_rect, 13.0);
@@ -118,10 +133,32 @@ define_widget! {
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        let flat = self.flatten_nodes();
-        let list_h = flat.len() as f32 * 28.0;
-        let list = Rect::new(frame.x, frame.y + 32.0, frame.w, list_h);
-        frame.union(&list)
+        tree_select_dirty_rect(frame, self.flatten_nodes().len())
+    }
+
+    update_animation => (&mut self, dt: f64) -> bool {
+        if !self.is_present() || self.transition.finished {
+            self.transition_dirty = false;
+            return false;
+        }
+
+        self.transition.update(dt);
+        self.transition_dirty = true;
+
+        if self.closing && self.transition.finished {
+            self.open = false;
+            self.closing = false;
+        }
+
+        self.is_present() && !self.transition.finished
+    }
+
+    animation_dirty_rect => (&self, frame: Rect) -> Rect {
+        if self.transition_dirty {
+            tree_select_dirty_rect(frame, self.flatten_nodes().len())
+        } else {
+            Rect::zero()
+        }
     }
 }
 
@@ -148,6 +185,9 @@ impl TreeSelect {
             value_key: String::new(),
             nodes: Vec::new(),
             open: false,
+            transition: TransitionPlayer::new(presets::tooltip_enter()),
+            closing: false,
+            transition_dirty: false,
             hovered_option: None,
             pending_change: RefCell::new(None),
         }
@@ -166,9 +206,56 @@ impl TreeSelect {
     pub fn value_key(&self) -> &str {
         &self.value_key
     }
+
+    pub fn is_open(&self) -> bool {
+        self.open
+    }
+
+    pub fn is_present(&self) -> bool {
+        self.open || self.closing
+    }
+
+    pub fn open(&mut self) {
+        self.open = true;
+        self.closing = false;
+        self.transition = TransitionPlayer::new(presets::tooltip_enter());
+        self.transition_dirty = true;
+    }
+
+    pub fn close(&mut self) {
+        if !self.is_present() {
+            self.open = false;
+            self.closing = false;
+            self.transition_dirty = false;
+            return;
+        }
+
+        self.open = false;
+        self.closing = true;
+        self.transition = TransitionPlayer::new(presets::tooltip_exit());
+        self.transition_dirty = true;
+    }
 }
+
+fn tree_select_dirty_rect(frame: Rect, item_count: usize) -> Rect {
+    let list_h = item_count as f32 * 28.0;
+    let list = Rect::new(frame.x, frame.y + 32.0, frame.w, list_h);
+    frame.union(&list)
+}
+
+fn fade_color(color: Color, opacity: f32) -> Color {
+    let alpha = (color.a as f32 * opacity.clamp(0.0, 1.0))
+        .round()
+        .clamp(0.0, 255.0) as u8;
+    color.with_alpha(alpha)
+}
+
 impl Default for TreeSelect {
     fn default() -> Self {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/input/tree_select.rs"]
+mod tests;

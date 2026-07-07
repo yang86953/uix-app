@@ -136,13 +136,13 @@ flowchart TD
 
 设计（#106、#117）：**DeepIdle** 下 blocking `wait_event`（无 timeout）；**RegisteredActive** 由 `ActiveWorkRegistry::next_deadline` → `wait_until` 唤醒；**Active** 在事件 drain 后若无 pending 则回 DeepIdle。详见 [demand-driven · 唤醒源白名单](demand-driven.md#唤醒源白名单) · [ActiveWorkRegistry](demand-driven.md#activeworkregistry)。
 
-> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源已接入；副窗 deadline wait 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端；其他过渡动画源仍待接。
+> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源已接入；副窗 deadline wait 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端；其他过渡动画源仍待接。
 
 | 状态 | 设计 | 当前实现 |
 |------|------|----------|
 | DeepIdle | blocking `wait_event`；不 layout/render/tick Effect | 无 Registry deadline 时 blocking `wait_event` |
 | RegisteredActive | `wait_until(next_deadline)` 窄 tick | `ActiveWorkRegistry::next_deadline` → `wait_timeout(remaining)` |
-| Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline | Active 帧运行 `update`，且仅在 Effect pending 时运行 `tick_effects`；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 已作为内置 Animation 源接入，其他过渡动画源待接 |
+| Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline | Active 帧运行 `update`，且仅在 Effect pending 时运行 `tick_effects`；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 已作为内置 Animation 源接入，其他过渡动画源待接 |
 | 首帧 | 单次 `poll_event` | 同左 |
 
 ### 窗口生命周期事件
