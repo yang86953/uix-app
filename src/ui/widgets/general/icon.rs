@@ -11,8 +11,8 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::font::font_service::FontService;
 use crate::draw::painting::PaintContext;
 use crate::draw::FontHandle;
+use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
-use crate::ui::WidgetTree;
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。
 /// FontHandle 为 Copy 类型，无需 Mutex 保护——OnceLock 本身保证线程安全初始化。

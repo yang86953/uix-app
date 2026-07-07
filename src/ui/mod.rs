@@ -1,4 +1,4 @@
-﻿//! 界面能力 — 组件框架、布局、主题、内置组件与声明式 View。
+//! 界面能力 — 组件框架、布局、主题、内置组件与声明式 View。
 
 pub mod animation;
 pub mod app_state;
@@ -32,7 +32,8 @@ pub use component_snapshot::{
     SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
 };
 pub use core::widget;
-pub use core::widget::{EventResult, IntoWidgetNode, WidgetTree};
+pub(crate) use core::widget::WidgetTree;
+pub use core::widget::{EventResult, IntoWidgetNode};
 pub use core::{children, context};
 pub use event::{
     ClickEvent, HandlerId, HandlerOptions, HandlerRegistration, HandlerTable, SemanticEvent,

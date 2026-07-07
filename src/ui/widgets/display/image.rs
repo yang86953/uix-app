@@ -11,8 +11,8 @@ use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::invalidate_paint_handle;
 use crate::draw::{Color, Radius};
 use crate::ui::core::paint_scope::current_paint_widget;
+use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
-use crate::ui::WidgetTree;
 
 // Image — 图片显示组件。
 component! {

@@ -45,6 +45,25 @@ fn handler_table_bubbles_until_stopped() {
 }
 
 #[test]
+fn semantic_event_prevent_default_sets_default_prevented() {
+    let id = ComponentId::new(1);
+    let mut event = SemanticEvent::click(
+        id,
+        ClickEvent {
+            button: MouseButton::Left,
+            pos: Point::zero(),
+            modifiers: KeyMod::NONE,
+        },
+    );
+
+    assert!(!event.default_prevented());
+
+    event.prevent_default();
+
+    assert!(event.default_prevented());
+}
+
+#[test]
 fn handler_table_once_removes_after_first_dispatch() {
     let id = ComponentId::new(1);
     let calls = Rc::new(Cell::new(0));

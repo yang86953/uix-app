@@ -8,7 +8,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::NodeId;
 use crate::ui::core::paint_scope::set_current_paint_widget;
 use crate::ui::core::widget::WidgetCore;
-use crate::ui::WidgetTree;
+use crate::ui::core::widget::WidgetTree;
 
 impl ScenePaint for WidgetTree {
     fn root_id(&self) -> Option<NodeId> {

@@ -49,7 +49,7 @@ component! {
         &self,
         _frame: crate::core::Rect,
         _ctx: &mut crate::draw::painting::PaintContext,
-        _tree: &crate::ui::WidgetTree
+        _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }
 
@@ -66,7 +66,7 @@ component! {
         &self,
         _frame: crate::core::Rect,
         _ctx: &mut crate::draw::painting::PaintContext,
-        _tree: &crate::ui::WidgetTree
+        _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }
 
@@ -85,7 +85,7 @@ component! {
         &self,
         _frame: crate::core::Rect,
         _ctx: &mut crate::draw::painting::PaintContext,
-        _tree: &crate::ui::WidgetTree
+        _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }
 
@@ -104,7 +104,7 @@ component! {
         &self,
         _frame: crate::core::Rect,
         _ctx: &mut crate::draw::painting::PaintContext,
-        _tree: &crate::ui::WidgetTree
+        _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }
 
@@ -122,7 +122,7 @@ component! {
         &self,
         _frame: crate::core::Rect,
         _ctx: &mut crate::draw::painting::PaintContext,
-        _tree: &crate::ui::WidgetTree
+        _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }
 
@@ -139,7 +139,7 @@ component! {
         &self,
         _frame: crate::core::Rect,
         _ctx: &mut crate::draw::painting::PaintContext,
-        _tree: &crate::ui::WidgetTree
+        _tree: &crate::ui::core::widget::WidgetTree
     ) {}
 }
 

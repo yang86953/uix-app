@@ -7,8 +7,8 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::{Color, Radius};
+use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
-use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BadgeStatus {

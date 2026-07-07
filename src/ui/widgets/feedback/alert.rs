@@ -5,8 +5,8 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::system::StatusLevel;
+use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
-use crate::ui::WidgetTree;
 
 component! {
     /// Alert — 带类型颜色的警示条。

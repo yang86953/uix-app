@@ -243,3 +243,91 @@ fn legacy_style_manager_stays_off_recommended_entrypoints() {
         "legacy style presets must stay behind ui::managers, not prelude/ui::*: {violations:?}"
     );
 }
+
+#[test]
+fn active_work_registry_stays_internal() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let checked = ["prelude.rs", "lib.rs", "app/mod.rs"];
+    let mut violations = Vec::new();
+
+    for rel in checked {
+        let text = fs::read_to_string(src.join(rel)).unwrap();
+        if text.contains("ActiveWorkRegistry") {
+            violations.push(format!("{rel} exposes ActiveWorkRegistry"));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "ActiveWorkRegistry is framework-managed and must not be exposed to app code: {violations:?}"
+    );
+}
+
+#[test]
+fn internal_widget_tree_types_stay_off_user_entrypoints() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let checked = ["prelude.rs", "ui/mod.rs"];
+    let internal_types = ["WidgetTree", "WidgetNode", "BoxedWidget"];
+    let mut violations = Vec::new();
+
+    for rel in checked {
+        let text = fs::read_to_string(src.join(rel)).unwrap();
+        for (idx, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if !(trimmed.starts_with("pub use") || trimmed.contains("assert_exported::<")) {
+                continue;
+            }
+            for symbol in internal_types {
+                if trimmed
+                    .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                    .any(|token| token == symbol)
+                {
+                    violations.push(format!("{rel}:{} exposes {symbol}", idx + 1));
+                }
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "WidgetTree/WidgetNode/BoxedWidget are internal view adapter details, not user entrypoints: {violations:?}"
+    );
+}
+
+#[test]
+fn business_event_callbacks_stay_out_of_widget_fields() {
+    let widgets = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/widgets");
+    let mut violations = Vec::new();
+
+    for file in rust_files_under(&widgets) {
+        let rel = relative_src_path(&file);
+        let text = fs::read_to_string(&file).unwrap();
+        for (idx, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("on_") && trimmed.contains(':') && !trimmed.contains("=>") {
+                violations.push(format!("{rel}:{} contains {trimmed}", idx + 1));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "business event handlers belong in HandlerTable/View bindings, not widget struct fields: {violations:?}"
+    );
+}
+
+#[test]
+fn main_md_remains_the_architecture_document() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let forbidden = ["ARCHITECTURE.md", "architecture.md"];
+    let present: Vec<_> = forbidden
+        .iter()
+        .copied()
+        .filter(|name| root.join(name).exists())
+        .collect();
+
+    assert!(
+        present.is_empty(),
+        "docs/Main.md is the project architecture document; do not add standalone architecture files: {present:?}"
+    );
+}

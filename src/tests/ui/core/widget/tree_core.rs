@@ -1272,6 +1272,60 @@ fn widget_tree_manager_overrides_are_per_component() {
 }
 
 #[test]
+fn widget_tree_remove_overrides_restores_style_default() {
+    let mut tree = WidgetTree::new();
+    tree.managers_mut().style.set_bg(Color::from_rgb(1, 2, 3));
+    let root = tree.set_root(Box::new(Label::new("root")));
+    let child = tree.add_child(root, Box::new(Label::new("child")));
+
+    let mut root_style = StyleManager::new();
+    root_style.set_bg(Color::from_rgb(4, 5, 6));
+    tree.managers_mut().override_style(root, root_style);
+
+    let mut child_style = StyleManager::new();
+    child_style.set_bg(Color::from_rgb(7, 8, 9));
+    tree.managers_mut().override_style(child, child_style);
+
+    tree.managers_mut().remove_overrides(root);
+
+    assert_eq!(
+        tree.managers().style_for(root).bg(),
+        Some(Color::from_rgb(1, 2, 3))
+    );
+    assert_eq!(
+        tree.managers().style_for(child).bg(),
+        Some(Color::from_rgb(7, 8, 9))
+    );
+}
+
+#[test]
+fn widget_tree_clear_overrides_restores_all_style_defaults() {
+    let mut tree = WidgetTree::new();
+    tree.managers_mut().style.set_bg(Color::from_rgb(1, 2, 3));
+    let root = tree.set_root(Box::new(Label::new("root")));
+    let child = tree.add_child(root, Box::new(Label::new("child")));
+
+    let mut root_style = StyleManager::new();
+    root_style.set_bg(Color::from_rgb(4, 5, 6));
+    tree.managers_mut().override_style(root, root_style);
+
+    let mut child_style = StyleManager::new();
+    child_style.set_bg(Color::from_rgb(7, 8, 9));
+    tree.managers_mut().override_style(child, child_style);
+
+    tree.managers_mut().clear_overrides();
+
+    assert_eq!(
+        tree.managers().style_for(root).bg(),
+        Some(Color::from_rgb(1, 2, 3))
+    );
+    assert_eq!(
+        tree.managers().style_for(child).bg(),
+        Some(Color::from_rgb(1, 2, 3))
+    );
+}
+
+#[test]
 fn widget_tree_removes_manager_overrides_with_removed_nodes() {
     let mut tree = WidgetTree::new();
     tree.managers_mut().text.set_text("tree default");
