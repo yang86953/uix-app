@@ -238,6 +238,15 @@ impl Popconfirm {
         self.transition_dirty = true;
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.title = next.title;
+        self.confirm_text = next.confirm_text;
+        self.cancel_text = next.cancel_text;
+        self.placement = next.placement;
+        self.arrow = next.arrow;
+        self.icon = next.icon;
+    }
+
     fn popup_pos(&self, _pw: f32, ph: f32) -> (f32, f32) {
         popconfirm_position(
             Rect::new(0.0, 0.0, 80.0, 28.0),

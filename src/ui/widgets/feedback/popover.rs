@@ -234,6 +234,14 @@ impl Popover {
         self.transition_dirty = true;
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.title = next.title;
+        self.content = next.content;
+        self.placement = next.placement;
+        self.trigger = next.trigger;
+        self.arrow = next.arrow;
+    }
+
     fn popup_rect(&self, _fw: f32, _fh: f32) -> Rect {
         let (pw, ph) = (220.0, 100.0);
         let (px, py) = popover_position(

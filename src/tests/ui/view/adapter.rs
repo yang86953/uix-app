@@ -390,6 +390,241 @@ fn reconcile_same_type_tooltip_preserves_pending_timer_state() {
 }
 
 #[test]
+fn reconcile_popover_preserves_visibility_and_syncs_config() {
+    use crate::ui::widgets::{Popover, PopoverPlacement, PopoverTrigger};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Popover::new("old").title("old title")));
+    let root_id = tree.root_id().expect("popover root should exist");
+    tree.get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Popover>()
+        .unwrap()
+        .open();
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Popover::new("new")
+                .title("new title")
+                .placement(PopoverPlacement::BottomRight)
+                .trigger(PopoverTrigger::Hover)
+                .arrow(false),
+        ),
+    );
+
+    let popover = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Popover>()
+        .unwrap();
+    assert!(popover.is_visible());
+    assert!(matches!(
+        popover.snapshot_fields(),
+        SnapshotFields::Popover {
+            title,
+            content,
+            placement: PopoverPlacement::BottomRight,
+            trigger: PopoverTrigger::Hover,
+            arrow: false,
+        } if title == "new title" && content == "new"
+    ));
+}
+
+#[test]
+fn reconcile_popconfirm_preserves_visibility_and_syncs_config() {
+    use crate::ui::widgets::{Popconfirm, PopconfirmPlacement};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Popconfirm::new().title("old")));
+    let root_id = tree.root_id().expect("popconfirm root should exist");
+    tree.get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Popconfirm>()
+        .unwrap()
+        .open();
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Popconfirm::new()
+                .title("new")
+                .confirm_text("Yes")
+                .cancel_text("No")
+                .placement(PopconfirmPlacement::BottomRight)
+                .arrow(false)
+                .icon(false),
+        ),
+    );
+
+    let popconfirm = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Popconfirm>()
+        .unwrap();
+    assert!(popconfirm.is_visible());
+    assert!(matches!(
+        popconfirm.snapshot_fields(),
+        SnapshotFields::Popconfirm {
+            title,
+            confirm_text,
+            cancel_text,
+            placement: PopconfirmPlacement::BottomRight,
+            arrow: false,
+            icon: false,
+        } if title == "new" && confirm_text == "Yes" && cancel_text == "No"
+    ));
+}
+
+#[test]
+fn reconcile_modal_preserves_present_state_and_syncs_config() {
+    use crate::native::traits::input::ControlSize;
+    use crate::ui::widgets::Modal;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Modal::new("old").show()));
+    let root_id = tree.root_id().expect("modal root should exist");
+    tree.get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Modal>()
+        .unwrap()
+        .close();
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Modal::new("new")
+                .modal_size(ControlSize::Large)
+                .size(640.0, 360.0)
+                .closable(false)
+                .mask_closable(false)
+                .footer_visible(false)
+                .centered(false)
+                .overlay(true),
+        ),
+    );
+
+    let modal = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Modal>()
+        .unwrap();
+    assert!(modal.is_present());
+    assert!(matches!(
+        modal.snapshot_fields(),
+        SnapshotFields::Modal {
+            title,
+            width: 640.0,
+            height: 360.0,
+            modal_size: ControlSize::Large,
+            closable: false,
+            mask_closable: false,
+            footer_visible: false,
+            centered: false,
+            overlay: true,
+        } if title == "new"
+    ));
+}
+
+#[test]
+fn reconcile_drawer_preserves_present_state_and_syncs_config() {
+    use crate::native::traits::input::ControlSize;
+    use crate::ui::widgets::{Drawer, DrawerPlacement};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Drawer::new("old").show()));
+    let root_id = tree.root_id().expect("drawer root should exist");
+    tree.get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Drawer>()
+        .unwrap()
+        .close();
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Drawer::new("new")
+                .drawer_size(ControlSize::Large)
+                .size(680.0, 460.0)
+                .placement(DrawerPlacement::Left)
+                .closable(false)
+                .mask_closable(false)
+                .mask(false)
+                .footer_visible(true)
+                .extra("extra"),
+        ),
+    );
+
+    let drawer = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Drawer>()
+        .unwrap();
+    assert!(drawer.is_present());
+    assert!(matches!(
+        drawer.snapshot_fields(),
+        SnapshotFields::Drawer {
+            title,
+            width: 680.0,
+            height: 460.0,
+            drawer_size: ControlSize::Large,
+            placement: DrawerPlacement::Left,
+            closable: false,
+            mask_closable: false,
+            mask: false,
+            footer_visible: true,
+            extra,
+        } if title == "new" && extra == "extra"
+    ));
+}
+
+#[test]
+fn reconcile_dropdown_preserves_open_state_and_syncs_items() {
+    use crate::ui::widgets::Dropdown;
+
+    let mut tree =
+        ViewAdapter::build_nodes(ViewNode::leaf(Dropdown::new("old").items(vec!["A", "B"])));
+    let root_id = tree.root_id().expect("dropdown root should exist");
+    tree.get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Dropdown>()
+        .unwrap()
+        .open();
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(Dropdown::new("new").items(vec!["C", "D", "E"])),
+    );
+
+    let dropdown = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Dropdown>()
+        .unwrap();
+    assert!(dropdown.is_open());
+    assert!(matches!(
+        dropdown.snapshot_fields(),
+        SnapshotFields::Dropdown { label, items } if label == "new" && items == vec!["C", "D", "E"]
+    ));
+}
+
+#[test]
 fn reconcile_same_type_scroll_view_preserves_offset() {
     use crate::native::traits::input::ScrollDirection;
     use crate::ui::widgets::ScrollView;
