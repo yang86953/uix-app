@@ -230,7 +230,7 @@ Platform UiEvent
 | 禁止 | 不可改 style；不可读 hover / pressed 等交互态 |
 
 ```rust
-// 伪代码 — 设计态 API，尚未完全落地
+// 规格示意 — 关键 API 已落地；字段 / 签名以源码为准
 struct App { state: Arc<AppState>, /* ... */ }
 
 impl AppState {
