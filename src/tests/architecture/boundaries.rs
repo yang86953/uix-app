@@ -35,6 +35,27 @@ fn is_architecture_guard(path: &str) -> bool {
     path == "tests/architecture/boundaries.rs"
 }
 
+fn assert_domain_has_no_forbidden_dependencies(domain: &str, forbidden: &[&str]) {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let root = src.join(domain);
+    let mut violations = Vec::new();
+
+    for file in rust_files_under(&root) {
+        let text = fs::read_to_string(&file).unwrap();
+        let rel = relative_src_path(&file);
+        for needle in forbidden {
+            if text.contains(needle) {
+                violations.push(format!("{rel} contains {needle}"));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{domain} domain must not depend on forbidden upper domains: {violations:?}"
+    );
+}
+
 #[test]
 fn platform_cfgs_stay_inside_native_boundary() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -94,7 +115,6 @@ fn native_backend_symbols_stay_inside_native_boundary() {
 
 #[test]
 fn data_domain_does_not_depend_on_upper_domains() {
-    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/data");
     let forbidden = [
         "crate::native",
         "crate::draw",
@@ -105,18 +125,58 @@ fn data_domain_does_not_depend_on_upper_domains() {
         "super::super::ui",
         "super::super::app",
     ];
-    let mut violations = Vec::new();
+    assert_domain_has_no_forbidden_dependencies("data", &forbidden);
+}
 
-    for file in rust_files_under(&data) {
-        let text = fs::read_to_string(&file).unwrap();
-        if forbidden.iter().any(|needle| text.contains(needle)) {
-            violations.push(relative_src_path(&file));
-        }
-    }
-
-    assert!(
-        violations.is_empty(),
-        "data domain must not depend on native/draw/ui/app: {violations:?}"
+#[test]
+fn domain_dependencies_stay_layered() {
+    assert_domain_has_no_forbidden_dependencies(
+        "core",
+        &[
+            "crate::native",
+            "crate::draw",
+            "crate::ui",
+            "crate::app",
+            "crate::data",
+            "super::super::native",
+            "super::super::draw",
+            "super::super::ui",
+            "super::super::app",
+            "super::super::data",
+        ],
+    );
+    assert_domain_has_no_forbidden_dependencies(
+        "native",
+        &[
+            "crate::draw",
+            "crate::ui",
+            "crate::app",
+            "crate::data",
+            "super::super::draw",
+            "super::super::ui",
+            "super::super::app",
+            "super::super::data",
+        ],
+    );
+    assert_domain_has_no_forbidden_dependencies(
+        "draw",
+        &[
+            "crate::ui",
+            "crate::app",
+            "crate::data",
+            "super::super::ui",
+            "super::super::app",
+            "super::super::data",
+        ],
+    );
+    assert_domain_has_no_forbidden_dependencies(
+        "ui",
+        &[
+            "crate::app",
+            "crate::data",
+            "super::super::app",
+            "super::super::data",
+        ],
     );
 }
 
