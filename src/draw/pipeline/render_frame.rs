@@ -136,11 +136,12 @@ impl FrameRenderer {
             input.hover_pos,
             render_objects,
         );
-        engine.end_frame(&damage);
 
         if input.debug_mode {
             draw_debug_telemetry(engine, input.metrics, input.font, input.font_service);
         }
+
+        engine.end_frame(&damage);
 
         let inv_source = classify_invalidation(input.rendered_first, &region);
 
