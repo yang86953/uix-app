@@ -1,5 +1,6 @@
 //! 应用入口 — 统一 GUI / CLI 生命周期。
 
+use crate::ui::core::widget::WidgetCore;
 use std::cell::{Cell, RefCell};
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
@@ -30,7 +31,7 @@ use crate::native::{create_gpu_context, create_platform};
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::ui::{AppState, EventResult, SystemEvent, WidgetCore, WidgetTree};
+use crate::ui::{AppState, EventResult, SystemEvent, WidgetTree};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 应用模式

@@ -1,4 +1,5 @@
-﻿use std::cell::Cell;
+use crate::ui::core::widget::WidgetCore;
+use std::cell::Cell;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -7,7 +8,7 @@ use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetCore, WidgetTree};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 component! {
     /// Modal dialog.

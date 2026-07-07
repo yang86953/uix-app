@@ -18,13 +18,14 @@
 //! - As a fallback, `bind_orphan_pending_states` binds unassociated state to
 //!   the root node.
 use crate::ui::component_snapshot::SnapshotFields;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::style::Style;
 use crate::ui::traits::WidgetComponent;
 use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::{Button, Container, Grid, Input, Label};
-use crate::ui::{ComponentId, WidgetCore, WidgetNode, WidgetTree};
+use crate::ui::{ComponentId, WidgetNode, WidgetTree};
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 

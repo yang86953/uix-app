@@ -11,7 +11,8 @@ use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
 use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 use crate::draw::spatial::AABB3D;
-use crate::ui::{WidgetCore, WidgetTree};
+use crate::ui::core::widget::WidgetCore;
+use crate::ui::WidgetTree;
 
 // ── 统一盒模型 ────────────────────────────────────────────────────
 

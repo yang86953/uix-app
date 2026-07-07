@@ -1,6 +1,7 @@
 use crate::core::{Constraints, Rect, Size};
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::traits::{WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetLayout};
-use crate::ui::{Spin, WidgetCore, WidgetTree};
+use crate::ui::{Spin, WidgetTree};
 
 #[test]
 fn spin_advertises_animation_capability() {

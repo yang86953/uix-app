@@ -1,7 +1,8 @@
 use super::*;
 use crate::core::{Point, Rect};
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::traits::EventHandler;
-use crate::ui::{EventResult, WidgetCore, WidgetTree};
+use crate::ui::{EventResult, WidgetTree};
 
 fn long_selectable_list() -> SelectableList {
     let mut list = SelectableList::new();

@@ -35,7 +35,7 @@ pub use crate::ui::theme::{DesignTokens, DynTokens, NeutralRole, Theme};
 pub use crate::ui::{
     AppState, ClickEvent, ComponentHandle, EventResult, HandlerId, HandlerOptions,
     HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
-    SemanticPayload, SystemEvent, SystemEventKind, WidgetCore, WidgetNode, WidgetTree,
+    SemanticPayload, SystemEvent, SystemEventKind,
 };
 pub use crate::ui::{
     DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,

@@ -5,8 +5,9 @@ use crate::app::app_timer::AppTimerQueue;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::core::{Rect, WindowId};
 use crate::draw::traits::GraphicsEngine;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::{ViewAdapter, ViewNode};
-use crate::ui::{AppState, WidgetCore, WidgetTree};
+use crate::ui::{AppState, WidgetTree};
 use std::sync::Arc;
 
 type ViewFactory = Arc<dyn Fn() -> ViewNode + Send + Sync>;

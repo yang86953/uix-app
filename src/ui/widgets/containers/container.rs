@@ -1,5 +1,6 @@
 //! Container widget — flexbox layout container with background/border.
 
+use crate::ui::core::widget::WidgetCore;
 use std::cell::Cell;
 
 use crate::component;
@@ -12,7 +13,7 @@ use crate::ui::style::{
     apply_style, BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken,
 };
 use crate::ui::traits::LayoutEngine;
-use crate::ui::{ComponentId, WidgetCore, WidgetTree};
+use crate::ui::{ComponentId, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
 component! {

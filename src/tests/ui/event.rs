@@ -1,8 +1,9 @@
 use super::*;
 use crate::core::{ComponentId, Rect};
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::state::State;
 use crate::ui::widgets::{Button, Input, Label};
-use crate::ui::{AppState, ComponentHandle, SnapshotFields, WidgetCore, WidgetNode, WidgetTree};
+use crate::ui::{AppState, ComponentHandle, SnapshotFields, WidgetNode, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 

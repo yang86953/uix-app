@@ -6,11 +6,12 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::children::WidgetChildren;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
 use crate::ui::SnapshotFields;
-use crate::ui::{ComponentId, WidgetComponent, WidgetCore, WidgetTree};
+use crate::ui::{ComponentId, WidgetComponent, WidgetTree};
 
 /// Predefined space sizes matching Ant Design.
 #[derive(Debug, Clone, Copy, PartialEq)]
