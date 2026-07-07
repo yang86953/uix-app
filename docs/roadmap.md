@@ -23,7 +23,7 @@
 
 ## 分阶段路线图
 
-设计（#154）— 建议 **分阶段落地**顺序；每阶段须满足 #105 零闲置验收后再进下一阶段。与 [实现进度总览](Main.md#实现进度总览) 对照：已落地阶段打勾，未落地按此顺序推进。
+设计（#154）— 本文保留 **分阶段落地**的历史接线清单；当前实现状态以 [实现进度总览](Main.md#实现进度总览) 为准，剩余差距以 [demand-driven · 实现差距](systems/demand-driven.md#实现差距) 为准。
 
 ```text
 P0 基础零闲置          P1 热更新           P2 App 运行时 API      P3 渲染窄路径
@@ -51,7 +51,7 @@ P4 多窗                P5 组件 Handle 体系
 
 **原则**：
 
-- **不**为兼容保留 100ms 探活或每轮 `tick_effects`；P0 完成前勿叠 P2+ API。
+- **不**为兼容保留 100ms 探活或每轮 `tick_effects`；新增 API / 主循环路径继续受 #105 零闲置约束。
 - P1 `reconcile` 可先 **单窗** 接线，再扩 P4 多 session。
 - P5 与 P1 **可交错**（`ComponentId` 宜尽早，利于 #123）。
 - 每阶段对应 [demand-driven · 实现差距](systems/demand-driven.md#实现差距) 行清零或缩减。
@@ -62,7 +62,7 @@ P4 多窗                P5 组件 Handle 体系
 
 ## P0 落地清单
 
-设计（#157）— **P0 完成前勿叠 P2+ API**（#154）。按文件路径的接线表；验收：无事件无 present、DeepIdle **不** `tick_effects`（#105 #106）。
+设计（#157）— 历史 P0 接线表；验收仍是无事件无 present、DeepIdle **不** `tick_effects`（#105 #106）。
 
 | 文件 / 模块 | 动作 | 决策 |
 |-------------|------|------|
@@ -95,6 +95,8 @@ P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 
 
 目标：热更新不上全量 build；State 批次在帧内合并为一次 reconcile，handler 只在签名变化时重绑。
 
+状态：主体接线已落地；同类型组件 patch 继续按静态配置同步、运行态保留的规则扩展。
+
 | 文件 / 模块 | 动作 | 决策 |
 |-------------|------|------|
 | `src/ui/view/adapter.rs` | `reconcile` 复用同类型 / key 匹配节点，patch 样式、handler 与静态配置 snapshot；类型不同才卸载子树 | #118 #153 |
@@ -107,6 +109,8 @@ P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 
 ## P2 落地清单
 
 目标：App 公开 Timer、主线程投递、启动回调与 TestClock，且 cancel / drain 后回到 DeepIdle。
+
+状态：Timer、post_to_ui、MainThreadQueue、AppHandle、on_start / on_window_start 与 TestClock 主体接线已落地。
 
 | 文件 / 模块 | 动作 | 决策 |
 |-------------|------|------|
@@ -121,6 +125,8 @@ P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 
 
 目标：渲染只为真实变化工作；滚动走 Composite memmove，Picture 缓存由元数据与运行时信号共同决定。
 
+状态：Composite strip、PicturePolicy、PointerMove 窄路径与空 dirty idle 主体接线已落地。
+
 | 文件 / 模块 | 动作 | 决策 |
 |-------------|------|------|
 | `src/draw/pipeline/invalidation.rs` | `Invalidation::Paint/Layout/Composite` 合并与 dirty region 查询；Layout 不隐式 Paint | #107 |
@@ -134,6 +140,8 @@ P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 
 
 目标：多窗共享 AppState / Theme，但每窗独立 session、队列、三态与 deadline；State fan-out 只 wake 相关窗。
 
+状态：WindowSession、多窗 open_window / update_view、session 路由与 State fan-out 主体接线已落地。
+
 | 文件 / 模块 | 动作 | 决策 |
 |-------------|------|------|
 | `src/app/window_session.rs` | 每窗持有独立 WidgetTree、Registry、MainThreadQueue、pending_root、AppTimer 与 loop_state | #116 |
@@ -146,6 +154,8 @@ P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 
 ## P5 落地清单
 
 目标：ComponentHandle 与 AppState 零维护；mount / unmount 自动注册 snapshot，emit 统一走语义派发。
+
+状态：AppState snapshot registry、ComponentHandle getter / invalidate / emit、SnapshotSource 与 mount/unmount 注册主体接线已落地。
 
 | 文件 / 模块 | 动作 | 决策 |
 |-------------|------|------|
@@ -162,4 +172,4 @@ P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 
 
 - 阶段划分或原则变更 → 同步 [decisions.md](decisions.md) #154（或 #162+ 新决策）与本文件。
 - 新增/完成某阶段文件级任务 → 更新本文件对应表 + [Main · 实现进度总览](Main.md#实现进度总览) 行。
-- 新阶段落地清单随阶段推进 **在本文件追加章节**，勿回写 `systems/*.md` 正文。
+- 新阶段落地清单随阶段推进 **在本文件追加章节**；系统行为变更仍须同步对应 `systems/*.md` 正文。
