@@ -1,4 +1,4 @@
-# 事件系统
+﻿# 事件系统
 
 ← [Main](../Main.md) · 系统 **#5** · 功能域：`ui` · `app`（UiEvent 映射）
 
@@ -60,7 +60,7 @@ Pointer（Down/Up/Move）、Wheel、Key（Down/Up）、TextInput、IME（Start/U
 
 ### HandlerTable（#10、#101）
 
-设计与当前源码键均为 **ComponentId**；`WidgetId` 仅为树内 `core::ComponentId` 同型别名（#10、#101）。
+设计与当前源码键均为 **ComponentId**；`WidgetId` 仅为 WidgetTree 内部 `core::ComponentId` 同型别名（#10、#101）。
 
 ```rust
 HashMap<ComponentId, Vec<HandlerEntry>>
@@ -210,7 +210,7 @@ Fake 组件：`native/test_harness/FakePlatform` — 内存实现 + 调用历史
 ## 与 Reconciler 交互
 
 View rebuild 时 **智能重绑** handler（#123、#135，修订 #62）— 仅 handler 变更时 `clear_component`+重注册。判定细则 → [view-reactive · Handler 变更判定](view-reactive.md#handler-变更判定-135)。  
-业务 handler 不应把 id 当裸 slot/usize 使用；依赖 **ComponentId**（源码别名 `WidgetId`，[#101](../decisions.md#d101)）与 key 匹配复用 widget 实例。
+业务 handler 不应把 id 当裸 slot/usize 使用；依赖 **ComponentId** 与 key 匹配复用 widget 实例；`WidgetId` 仅是 WidgetTree 内部别名（[#101](../decisions.md#d101)）。
 
 ---
 

@@ -178,7 +178,7 @@ Platform UiEvent
 | `hit_test` / `focused_node` | 事件与焦点环 |
 | `paint(id, frame, ctx)` | 委托 `WidgetRender::render` |
 
-`NodeId` ≡ `WidgetId` ≡ `core::ComponentId`（generational）。
+`NodeId` 与 WidgetTree 内部 `WidgetId` 均同型于 `core::ComponentId`（generational）。
 
 ### 主题注入
 

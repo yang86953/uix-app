@@ -1,4 +1,4 @@
-//! Unified public entrypoint with common re-exports grouped by domain.
+﻿//! Unified public entrypoint with common re-exports grouped by domain.
 //!
 //! Most apps only need:
 //! ```ignore
@@ -35,7 +35,7 @@ pub use crate::ui::theme::{DesignTokens, DynTokens, NeutralRole, Theme};
 pub use crate::ui::{
     AppState, ClickEvent, ComponentHandle, EventResult, HandlerId, HandlerOptions,
     HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
-    SemanticPayload, SystemEvent, SystemEventKind, WidgetCore, WidgetId, WidgetNode, WidgetTree,
+    SemanticPayload, SystemEvent, SystemEventKind, WidgetCore, WidgetNode, WidgetTree,
 };
 pub use crate::ui::{
     DragManager, FocusManager, InteractionManager, StateManager, StyleManager, TextManager,

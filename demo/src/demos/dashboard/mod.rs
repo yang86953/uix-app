@@ -1,4 +1,4 @@
-//! Ant Design 5 全组件展示 — 分类多页面版。
+﻿//! Ant Design 5 全组件展示 — 分类多页面版。
 //!
 //! 运行：`cargo run --bin uix-demo`（可选 `--gpu`）
 //!
@@ -220,7 +220,7 @@ fn build_page(page_index: usize, tk: &DesignTokens) -> WidgetNode {
 fn build_demo_tree(
     tk: &DesignTokens,
     active_page: usize,
-) -> (WidgetNode, SharedActive, Vec<WidgetId>) {
+) -> (WidgetNode, SharedActive, Vec<ComponentId>) {
     let nav = Navigation::new("UIX 组件")
         .item(" 通用", "type")
         .item(" 布局", "layout")
@@ -245,8 +245,8 @@ fn build_demo_tree(
             Box::new(Container::new().dir(FlexDirection::Column).flex_grow(1.0)),
             vec![title_node, page_content],
         ));
-        // WidgetId 在树构建后才能得到，这里先占位
-        page_ids.push(WidgetId::default());
+        // ComponentId 在树构建后才能得到，这里先占位
+        page_ids.push(ComponentId::default());
     }
 
     // page_panel 是页面容器的父节点，不可见子节点不参与布局（见 Container::layout_children）
@@ -282,12 +282,12 @@ pub(super) struct DemoState {
     pub(super) prev_active: Cell<usize>,
     pub(super) dark_mode: Cell<bool>,
     pub(super) nav_active: Rc<std::cell::RefCell<SharedActive>>,
-    /// 每页在树中的根容器 WidgetId（用于切换可见性）
-    pub(super) page_ids: std::cell::RefCell<Vec<WidgetId>>,
+    /// 每页在树中的根容器 ComponentId（用于切换可见性）
+    pub(super) page_ids: std::cell::RefCell<Vec<ComponentId>>,
 }
 
 impl DemoState {
-    fn new(nav_active: SharedActive, page_ids: Vec<WidgetId>) -> Self {
+    fn new(nav_active: SharedActive, page_ids: Vec<ComponentId>) -> Self {
         Self {
             prev_active: Cell::new(0),
             dark_mode: Cell::new(false),
@@ -348,8 +348,8 @@ pub(super) fn rebuild_for_theme(
             eng.canvas_2d().height() as f32,
         ));
     }
-    // 树构建后通过遍历获取每页容器的真实 WidgetId
-    let page_ids: Vec<WidgetId> = tree
+    // 树构建后通过遍历获取每页容器的真实 ComponentId
+    let page_ids: Vec<ComponentId> = tree
         .root_id()
         .and_then(|root| tree.get(root))
         .map(|r| r.children().to_vec())
@@ -385,7 +385,7 @@ pub fn run_gui_demo() {
         root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
     }
 
-    let page_ids: Vec<WidgetId> = collect_page_ids(&tree);
+    let page_ids: Vec<ComponentId> = collect_page_ids(&tree);
     for (i, &id) in page_ids.iter().enumerate() {
         if i != 0 {
             tree.set_visible(id, false);
@@ -439,8 +439,8 @@ pub fn run_gui_demo() {
     std::process::exit(exit_code);
 }
 
-/// 从 demo 树中提取各页面容器的 WidgetId。
-fn collect_page_ids(tree: &WidgetTree) -> Vec<WidgetId> {
+/// 从 demo 树中提取各页面容器的 ComponentId。
+fn collect_page_ids(tree: &WidgetTree) -> Vec<ComponentId> {
     tree.root_id()
         .and_then(|root| tree.get(root))
         .map(|r| r.children().to_vec())
