@@ -647,9 +647,9 @@ App::new()
 
 **禁止**在 `run()` 返回后再调用 Timer / `post_to_ui`（主循环已结束）。
 
-> **实现注记**：单窗 `.on_start(AppHandle)` 与 `AppHandle` / `WindowId` 已导出；`AppHandle::resolve<T: Clone>()` 可读取运行期 DI 单例 clone；多窗每窗注入待接。
+> **实现注记**：单窗 `.on_start(AppHandle)`、副窗 `.on_window_start(AppHandle)` 与 `AppHandle` / `WindowId` 已导出；`AppHandle::resolve<T: Clone>()` 可读取运行期 DI 单例 clone。
 
-> **实现注记**（#134）：`TimerHandle` 已落地并支持 `cancel` / drop unregister；`AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求。真实窗口 close → session 销毁路由仍待接。
+> **实现注记**（#134）：`TimerHandle` 已落地并支持 `cancel` / drop unregister；`AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求。主窗 close 会退出主循环，副窗真实 close 事件会按 `window_id` 关闭对应 session。
 
 ---
 
