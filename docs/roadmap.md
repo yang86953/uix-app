@@ -82,7 +82,7 @@ P4 多窗                P5 组件 Handle 体系
   5. 零闲置验收测试
 ```
 
-P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 批次置位与 `view_factory`（#155–#156）已接入主循环；多窗独立 reconcile 仍待推进 — 见 [view-reactive · view_factory](systems/view-reactive.md#view_factory-生命周期)。
+P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 批次置位与 `view_factory`（#155–#156）已接入主循环；副窗 `MainThreadQueue` / `update_view` root reconcile 消费已接，外部线程投递后的真实 OS wake 仍待推进 — 见 [view-reactive · view_factory](systems/view-reactive.md#view_factory-生命周期)。
 
 ---
 
