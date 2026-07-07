@@ -1,5 +1,5 @@
 // ============================================================================
-// platform/src/diagnostic/fatal.rs — 崩溃处理
+// core/diagnostic/fatal.rs — 崩溃处理
 //
 // Crash dump, abort handler, panic integration.
 // ============================================================================

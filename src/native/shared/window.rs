@@ -7,7 +7,7 @@
 //                             IWindowProperties + INativeHandle 的完整实现
 //
 // 公开接口（IWindowProperties / INativeHandle / IWindowManager / PlatformWindow）
-// 已迁移至 crate::native::api 功能模块。
+// 已迁移至 crate::native::traits 功能模块。
 // ============================================================================
 
 use std::cell::RefCell;
