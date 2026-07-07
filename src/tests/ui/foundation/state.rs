@@ -225,3 +225,30 @@ fn state_set_dirty_fn_replaces_reconcile_sites() {
     assert_eq!(first_hits.load(Ordering::SeqCst), 0);
     assert_eq!(second_hits.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn effect_ticks_only_after_dependency_is_pending() {
+    let state = State::new(1);
+    let runs = Arc::new(AtomicUsize::new(0));
+    let state_for_effect = state.clone();
+    let runs_for_effect = runs.clone();
+
+    let effect = Effect::new(move || {
+        let _ = state_for_effect.get();
+        runs_for_effect.fetch_add(1, Ordering::SeqCst);
+    });
+
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+    assert!(!effect.has_pending());
+    assert!(!effect.tick());
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+
+    state.set(2);
+
+    assert!(effect.has_pending());
+    assert!(effect.tick());
+    assert_eq!(runs.load(Ordering::SeqCst), 2);
+    assert!(!effect.has_pending());
+    assert!(!effect.tick());
+    assert_eq!(runs.load(Ordering::SeqCst), 2);
+}

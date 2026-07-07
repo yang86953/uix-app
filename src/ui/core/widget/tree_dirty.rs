@@ -298,6 +298,10 @@ impl WidgetTree {
         self.effects.extend(drain_pending_effects());
     }
 
+    pub fn has_pending_effects(&self) -> bool {
+        self.effects.iter().any(|eff| eff.has_pending())
+    }
+
     /// 每帧 tick 已注册的 Effect；任一 Effect 重新执行时返回 true。
     pub fn tick_effects(&self) -> bool {
         self.effects.iter().any(|eff| eff.tick())

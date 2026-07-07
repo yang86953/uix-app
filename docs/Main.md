@@ -304,7 +304,7 @@ flowchart TB
 | AppHandle | cloneable；运行中 Timer / post_to_ui | `AppHandle` / `WindowId` 已导出；运行中 Timer、跨线程 `post_to_ui` 与 `update_view` 已按 `window_id` 路由；`open_window` 请求层与副窗 bootstrap 已接 | [#132](decisions.md#d132) [#133](decisions.md#d133) |
 | Handler 智能重绑 | handler 变才重注册 | 已按稳定 signature 跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 handler 保守 clear+register，待 #138/#142 自动作者化 | [#123](decisions.md#d123) [#135](decisions.md#d135) |
 | PointerMove 边界窄路径 | 框内不 hit_test | 已接：pointer_down_target/drag 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](decisions.md#d109) [#121](decisions.md#d121) |
-| Effect DeepIdle | 不 tick_effects | 单窗 loop 已门控到 Active 帧；动画续帧经 Registry deadline 唤醒，不回退固定探活；`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源已接，其他动画源待接 | #105 |
+| Effect DeepIdle | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 Registry deadline 唤醒，不回退固定探活；`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源已接，其他动画源待接 | #105 |
 
 落地计划（分阶段路线图、P0 文件清单）→ [`roadmap.md`](roadmap.md)（#154 #157）。
 
