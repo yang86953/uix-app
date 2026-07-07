@@ -343,6 +343,11 @@ impl Cascader {
             placeholder: self.placeholder.clone(),
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.options = next.options;
+        self.placeholder = next.placeholder;
+    }
 }
 
 fn cascader_dirty_rect(frame: Rect) -> Rect {

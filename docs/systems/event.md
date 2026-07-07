@@ -88,13 +88,15 @@ HashMap<ComponentId, Vec<HandlerEntry>>
 - `event.stop_propagation()` — 阻后续 handler **与**语义冒泡（#68）
 - `event.prevent_default()` — 语义层 `default_prevented`（#92）
 
-Handler 闭包 `'static`；**ComponentHandle**（设计，#32）以窗口作用域 `WindowId` 指纹表达，或通过 `State<T>` 捕获（#26）。`ComponentHandle::emit` 见 [Handle emit](#handle-emit)（#147）。
+Handler 闭包 `'static`；**ComponentHandle**（#32、#145）以窗口作用域 `WindowId` 指纹表达，或通过 `State<T>` 捕获（#26）。`ComponentHandle::emit` 见 [Handle emit](#handle-emit)（#147）。
+
+显式 capture 可组合多个稳定来源（如 `State<T>` + `WindowId`），指纹按条目排序后合并，顺序无关；普通 Rust 闭包不做运行时自动捕获探测。
 
 ---
 
 ## Handle emit
 
-设计（#147）— 业务经 **ComponentHandle** 注入语义事件，走与 OS 输入 **相同** 的派发路径。
+规格（#147）— 业务经 **ComponentHandle** 注入语义事件，走与 OS 输入 **相同** 的派发路径。
 
 ```text
 ComponentHandle::emit(event)

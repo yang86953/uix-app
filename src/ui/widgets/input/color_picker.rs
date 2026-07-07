@@ -278,6 +278,10 @@ impl ColorPicker {
             preset_colors: self.preset_colors.clone(),
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.preset_colors = next.preset_colors;
+    }
 }
 
 fn color_picker_dirty_rect(frame: Rect, color_count: usize) -> Rect {

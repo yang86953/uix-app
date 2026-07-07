@@ -42,7 +42,7 @@
 | 术语 | 含义 |
 |------|------|
 | App | 应用入口：GUI（View 根）或 CLI；见 [application](systems/application.md) |
-| AppHandle | 设计：含 `window_id`；`run_after` / `post_to_ui`（#132–#133）；仅路由至本 session（#141）；drop 不 cancel Timer（#134） |
+| AppHandle | 含 `window_id`；`run_after` / `post_to_ui`（#132–#133）已按 session 路由（#141）；session 关闭会清理对应 Timer（#134） |
 | on_start | #140：每 WindowSession 首帧前 `Fn(AppHandle)`；运行中 API 的 canonical 注入点 |
 | post_to_ui | #133：跨线程 `FnOnce + Send` 投递；路由见 #141 |
 | MainThreadQueue | #137：每 WindowSession FIFO；帧内 UiEvent → drain_due → drain_queue |
@@ -51,8 +51,8 @@
 | capture 指纹 | #142：`StateSlotId`（#143）+ TypeId + Copy 值 + AppHandle.window_id |
 | StateSlotId | #143：`State::new` 单调 id；clone 共享；**≠** `State::generation()` |
 | open_window | #144：运行中创建副窗；返回新 `AppHandle` |
-| AppState | **设计**（#145）：不替代 `State<T>`；mount 自动 register；跨窗共享 |
-| ComponentHandle | **设计**（#145–#147）：只读 snapshot getter + invalidate/`emit`；mount 自动注册 |
+| AppState | #145：不替代 `State<T>`；mount 自动 register；跨窗共享；snapshot registry 与 semantic queue 已接 |
+| ComponentHandle | #145–#147：只读 snapshot getter + invalidate/`emit` 已接；mount 自动注册 |
 | ComponentConfigSnapshot | #146：mount 时静态配置快照；Handle getter 数据源 |
 | SnapshotSource | #151：自定义 widget 快照 trait；`component!` 默认自动 |
 | Handle emit | #147：`ComponentHandle::emit` → `dispatch_semantic` |
@@ -77,8 +77,7 @@
 | Widget | UI 组件实例 |
 | ComponentId | Generational 稳定 ID（[#35](decisions.md#d35)、[#101](decisions.md#d101)）；布局 / 事件 / HandlerTable 语义键 |
 | WidgetId | WidgetTree 内部源码别名：`core::ComponentId`（[#101](decisions.md#d101)） |
-| component! | authoring 宏（[#20](decisions.md#d20)、[#102](decisions.md#d102)）；当前直接支持 `name + struct` 与 `struct` 入口 |
-| component! | authoring 宏；支持 `name + struct` 与直接 `struct` 入口 |
+| component! | 推荐 authoring 宏（[#20](decisions.md#d20)、[#102](decisions.md#d102)）；支持 `name + struct` 与直接 `struct` 入口，低层能力声明仍可用 `impl_widget_component!` |
 | WidgetTree | 运行时组件树容器 |
 | HandlerTable | 业务回调表；键/API 为 ComponentId；WidgetId 仅为 WidgetTree 内部同型别名（[#10](decisions.md#d10)、[#101](decisions.md#d101)） |
 | State / Computed / Effect | 响应式原语；Effect 禁止直接改 UI；周期可用 **Timer API**（#132） |
