@@ -798,6 +798,57 @@ fn focus_manager_clears_removed_focused_widget() {
 }
 
 #[test]
+fn focus_manager_is_single_source_for_key_dispatch() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    tree.focused_widget = None;
+    tree.managers_mut().focus.set_focused_widget(Some(child));
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+
+    let events = tree
+        .get(child)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn stale_legacy_focus_field_does_not_drive_key_dispatch() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0).with_tab_index(1)));
+    tree.focused_widget = Some(child);
+    tree.managers_mut().focus.set_focused_widget(None);
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::NotHandled
+    );
+}
+
+#[test]
 fn interaction_manager_mirrors_hover_changes() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
@@ -858,6 +909,39 @@ fn interaction_manager_mirrors_pressed_changes() {
 }
 
 #[test]
+fn stale_legacy_pointer_down_target_does_not_capture_pointer_move() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0)));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 100.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 20.0, 20.0));
+    tree.pointer_down_target = Some(child);
+    tree.managers_mut().interaction.set_pressed_widget(None);
+
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(120.0, 50.0),
+        mods: KeyMod::NONE,
+    });
+
+    let events = tree
+        .get(child)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow();
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, SystemEvent::PointerMove { .. })));
+}
+
+#[test]
 fn interaction_manager_hover_drives_timer_target() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
@@ -881,6 +965,33 @@ fn interaction_manager_hover_drives_timer_target() {
         .events
         .borrow();
     assert!(events
+        .iter()
+        .any(|event| matches!(event, SystemEvent::Timer { id: 7 })));
+}
+
+#[test]
+fn stale_legacy_hover_field_does_not_drive_timer_target() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(SpyWidget::new(200.0, 100.0)));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(20.0, 20.0)));
+    tree.hovered_widget = Some(child);
+    tree.managers_mut().interaction.set_hovered_widget(None);
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Timer { id: 7 }),
+        EventResult::Handled
+    );
+
+    let events = tree
+        .get(child)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow();
+    assert!(!events
         .iter()
         .any(|event| matches!(event, SystemEvent::Timer { id: 7 })));
 }
@@ -1006,6 +1117,36 @@ fn drag_manager_target_drives_drag_when_legacy_target_is_empty() {
     assert!(events
         .iter()
         .any(|event| matches!(event, SystemEvent::DragMove { .. })));
+}
+
+#[test]
+fn stale_legacy_drag_gesture_does_not_drive_drag_events() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(30.0, 30.0)));
+
+    tree.drag_gesture.active = true;
+    tree.drag_gesture.target = Some(child);
+    tree.managers_mut().drag.end_drag();
+
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos: Point::new(20.0, 10.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    let events = tree
+        .get(child)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap()
+        .events
+        .borrow();
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, SystemEvent::DragEnd { .. })));
 }
 
 #[test]

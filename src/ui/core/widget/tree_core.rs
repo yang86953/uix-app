@@ -655,7 +655,9 @@ impl WidgetTree {
     }
 
     pub fn is_focused_type<T: WidgetComponent + 'static>(&self) -> bool {
-        self.focused_widget
+        self.managers
+            .focus
+            .focused_widget()
             .and_then(|id| self.get(id))
             .map(|node| node.component().as_any().downcast_ref::<T>().is_some())
             .unwrap_or(false)
@@ -698,7 +700,7 @@ impl WidgetTree {
         if focusable.is_empty() {
             return None;
         }
-        let current = self.managers.focus.focused_widget().or(self.focused_widget);
+        let current = self.managers.focus.focused_widget();
         if let Some(cur_id) = current {
             let pos = focusable.iter().position(|&id| id == cur_id);
             match pos {
