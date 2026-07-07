@@ -229,7 +229,7 @@ fingerprint(kind, captures) :=
 | 稳定性 | 同源码 rebuild、同 capture 集 → **同指纹**（测试可断言） |
 | 算法 | 框架内部固定（如 `FxHasher` → `u64`）；App **不可配** |
 
-> **实现注记**：内部 `HandlerSignature` / `handler_generation` 存储与 reconcile 比较已接；带稳定 generation 的 handler 可跳过 `clear_component` + 重注册。State capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump。`HandlerRegistration::with_state_capture` 已公开；Button/Input DSL 已提供显式 State capture 入口（`on_click_capture` / `on_click_event_capture` / `on_change_capture`），通用 `ViewNode::on_semantic_capture` 与低层 `WidgetNode::on_semantic_capture` 也已复用该路径；View build / DSL / 宏的 handler capture 自动收集仍待接；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
+> **实现注记**：内部 `HandlerSignature` / `handler_generation` 存储与 reconcile 比较已接；带稳定 generation 的 handler 可跳过 `clear_component` + 重注册。State / WindowId capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump。`HandlerRegistration::with_state_capture` / `with_window_capture` 已公开；Button/Input DSL 已提供显式 State capture 入口（`on_click_capture` / `on_click_event_capture` / `on_change_capture`）与 WindowId capture 入口（`on_click_window_capture` / `on_click_event_window_capture` / `on_change_window_capture`），通用 `ViewNode::on_semantic_capture` / `on_semantic_window_capture` 与低层 `WidgetNode::on_semantic_capture` / `on_semantic_window_capture` 也已复用该路径；View build / DSL / 宏的 handler capture 自动收集仍待接；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
 
 ---
 
@@ -264,7 +264,7 @@ static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 | 设计（#143） | 当前 `state.rs` |
 |--------------|-----------------|
 | `StateSlotId` 字段 | 已接；`State::new` 分配，clone 共享 |
-| 指纹用 slot id | State 侧 `TypeId + StateSlotId` 指纹基础已接；handler fingerprint 解析可消费该值；`HandlerRegistration::with_state_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State capture 已接，自动 capture 收集待接 |
+| 指纹用 slot id | State 侧 `TypeId + StateSlotId` 指纹基础已接，WindowId capture 侧使用 `TypeId<WindowId> + WindowId`；handler fingerprint 解析可消费这些值；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接，自动 capture 收集待接 |
 | `generation()` | 已有；用于 Computed/Effect |
 
 落地 #143 时 **保留** 现有 `generation()` 语义；仅 **新增** `slot_id` 字段与 accessor。

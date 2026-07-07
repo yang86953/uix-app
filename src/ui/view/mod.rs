@@ -150,6 +150,17 @@ impl ViewNode {
             .push(HandlerRegistration::new(kind, Box::new(handler)).with_state_capture(state));
         self
     }
+
+    pub fn on_semantic_window_capture(
+        mut self,
+        kind: SemanticKind,
+        window_id: crate::core::WindowId,
+        handler: impl FnMut(&mut SemanticEvent) + 'static,
+    ) -> Self {
+        self.handlers
+            .push(HandlerRegistration::new(kind, Box::new(handler)).with_window_capture(window_id));
+        self
+    }
 }
 
 impl crate::ui::IntoWidgetNode for ViewNode {

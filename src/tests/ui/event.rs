@@ -134,6 +134,27 @@ fn widget_node_on_semantic_capture_registers_captured_handler() {
     assert_eq!(calls.get(), 1);
 }
 
+#[test]
+fn widget_node_on_semantic_window_capture_registers_captured_handler() {
+    use crate::core::WindowId;
+
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_handler = calls.clone();
+    let node = WidgetNode::leaf(Box::new(Label::new("captured"))).on_semantic_window_capture(
+        HandlerRegistration::new(
+            SemanticKind::Change,
+            Box::new(move |_| calls_for_handler.set(calls_for_handler.get() + 1)),
+        ),
+        WindowId::new(7),
+    );
+    let mut tree = WidgetTree::new();
+    let root = tree.build(node);
+
+    let _ = tree.dispatch_semantic(SemanticEvent::change(root, "next"));
+
+    assert_eq!(calls.get(), 1);
+}
+
 #[derive(Debug, PartialEq)]
 struct BusinessPayload {
     value: u32,

@@ -1,9 +1,10 @@
 //! 事件模型：SystemEvent / SemanticEvent / HandlerTable。
 
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
+use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::hash::{Hash, Hasher};
 
-use crate::core::Point;
+use crate::core::{Point, WindowId};
 
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::widget::{EventResult, WidgetId};
@@ -444,6 +445,11 @@ impl HandlerRegistration {
         self.with_capture_fingerprint(state.capture_fingerprint())
     }
 
+    /// Marks this handler as capturing a window-scoped app handle.
+    pub fn with_window_capture(self, window_id: WindowId) -> Self {
+        self.with_capture_fingerprint(window_capture_fingerprint(window_id))
+    }
+
     pub(crate) fn signature(&self) -> HandlerSignature {
         HandlerSignature {
             kind: self.kind,
@@ -459,6 +465,13 @@ impl HandlerRegistration {
         }
         signature
     }
+}
+
+fn window_capture_fingerprint(window_id: WindowId) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    TypeId::of::<WindowId>().hash(&mut hasher);
+    window_id.hash(&mut hasher);
+    hasher.finish()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
