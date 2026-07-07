@@ -99,6 +99,15 @@ component! {
 }
 
 impl Divider {
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.text = next.text;
+        self.orientation = next.orientation;
+        self.direction = next.direction;
+        self.color = next.color;
+        self.text_size = next.text_size;
+        self.dashed = next.dashed;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Divider {
             text: self.text.clone(),

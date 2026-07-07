@@ -363,6 +363,27 @@ impl Typography {
 }
 
 impl Typography {
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        if self.content != next.content {
+            self.content = next.content;
+            self.glyph_xs.borrow_mut().clear();
+            self.line_info.borrow_mut().clear();
+            self.selection.set(None);
+            self.sel_anchor.set(0);
+            self.sel_dragging.set(false);
+        }
+        self.type_ = next.type_;
+        self.disabled = next.disabled;
+        self.mark = next.mark;
+        self.code = next.code;
+        self.underline = next.underline;
+        self.delete = next.delete;
+        self.strong = next.strong;
+        self.italic = next.italic;
+        self.copyable = next.copyable;
+        self.color_override = next.color_override;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Typography {
             content: self.content.clone(),

@@ -883,6 +883,168 @@ fn reconcile_steps_preserves_current_step_and_syncs_steps() {
 }
 
 #[test]
+fn reconcile_divider_syncs_config() {
+    use crate::ui::widgets::{Divider, DividerDirection, DividerOrientation};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Divider::new()));
+    let root_id = tree.root_id().expect("divider root should exist");
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Divider::new()
+                .with_text("Section")
+                .orientation(DividerOrientation::Right)
+                .vertical()
+                .color(Color::red())
+                .dashed(),
+        ),
+    );
+
+    assert!(matches!(
+        tree.get(root_id).unwrap().component().snapshot_fields(),
+        SnapshotFields::Divider {
+            text: Some(text),
+            orientation: DividerOrientation::Right,
+            direction: DividerDirection::Vertical,
+            color: Some(color),
+            dashed: true,
+            ..
+        } if text == "Section" && color == Color::red()
+    ));
+}
+
+#[test]
+fn reconcile_icon_syncs_name_and_size() {
+    use crate::ui::widgets::Icon;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Icon::new("search").size(16.0)));
+    let root_id = tree.root_id().expect("icon root should exist");
+
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Icon::new("settings").size(28.0)));
+
+    assert!(matches!(
+        tree.get(root_id).unwrap().component().snapshot_fields(),
+        SnapshotFields::Icon { name, size: 28.0 } if name == "settings"
+    ));
+}
+
+#[test]
+fn reconcile_typography_syncs_text_and_flags() {
+    use crate::ui::widgets::{Typography, TypographyType};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Typography::text("old")));
+    let root_id = tree.root_id().expect("typography root should exist");
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Typography::heading("new", 2)
+                .disabled(true)
+                .mark()
+                .code()
+                .underline()
+                .delete()
+                .strong()
+                .italic()
+                .copyable(true)
+                .color(Color::green()),
+        ),
+    );
+
+    assert!(matches!(
+        tree.get(root_id).unwrap().component().snapshot_fields(),
+        SnapshotFields::Typography {
+            content,
+            type_: TypographyType::Heading2,
+            disabled: true,
+            mark: true,
+            code: true,
+            underline: true,
+            delete: true,
+            strong: true,
+            italic: true,
+            copyable: true,
+            color_override: Some(color),
+        } if content == "new" && color == Color::green()
+    ));
+}
+
+#[test]
+fn reconcile_avatar_syncs_visual_config() {
+    use crate::ui::widgets::Avatar;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Avatar::new("A")));
+    let root_id = tree.root_id().expect("avatar root should exist");
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Avatar::new("B")
+                .size(48.0)
+                .bg(Color::blue())
+                .text_color(Color::white())
+                .square(true)
+                .src("avatar.png"),
+        ),
+    );
+
+    assert!(matches!(
+        tree.get(root_id).unwrap().component().snapshot_fields(),
+        SnapshotFields::Avatar {
+            text,
+            size: 48.0,
+            bg_color: Some(bg),
+            text_color: Some(fg),
+            square: true,
+            src,
+        } if text == "B" && bg == Color::blue() && fg == Color::white() && src == "avatar.png"
+    ));
+}
+
+#[test]
+fn reconcile_badge_syncs_count_status_and_offsets() {
+    use crate::draw::spatial::PhysicalUnit;
+    use crate::ui::widgets::{Badge, BadgeStatus};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Badge::new().count(1)));
+    let root_id = tree.root_id().expect("badge root should exist");
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Badge::new()
+                .count(120)
+                .max(88)
+                .dot()
+                .color(Color::green())
+                .status(BadgeStatus::Warning)
+                .show_zero(true)
+                .text("warn")
+                .offset(4.0, 6.0)
+                .offset_unit(PhysicalUnit::Mm(2.0), PhysicalUnit::Pt(3.0)),
+        ),
+    );
+
+    assert!(matches!(
+        tree.get(root_id).unwrap().component().snapshot_fields(),
+        SnapshotFields::Badge {
+            count: 1,
+            max: 88,
+            dot: true,
+            color: Some(color),
+            status: Some(BadgeStatus::Warning),
+            show_zero: true,
+            text,
+            offset_x: 4.0,
+            offset_y: 6.0,
+            offset_unit: Some((PhysicalUnit::Mm(2.0), PhysicalUnit::Pt(3.0))),
+            ..
+        } if color == Color::green() && text == "warn"
+    ));
+}
+
+#[test]
 fn reconcile_same_type_scroll_view_preserves_offset() {
     use crate::native::traits::input::ScrollDirection;
     use crate::ui::widgets::ScrollView;
