@@ -1,6 +1,6 @@
 //! BackTop 回到顶部 — 滚动超过阈值时显示返回顶部按钮。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
@@ -15,8 +15,12 @@ define_widget! {
         visible: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(40.0, 40.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -71,5 +75,22 @@ impl BackTop {
     }
     pub fn is_visible(&self) -> bool {
         self.visible
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(40.0, 40.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_back_top_size() {
+        let measured = BackTop::new().measure(Constraints::loose(Size::new(24.0, 32.0)));
+
+        assert_eq!(measured, Size::new(24.0, 32.0));
     }
 }

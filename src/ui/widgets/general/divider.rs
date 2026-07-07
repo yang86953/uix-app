@@ -1,6 +1,6 @@
 //! Divider widget — Ant Design style horizontal/vertical divider with optional text.
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
@@ -32,13 +32,12 @@ define_widget! {
         dashed: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        match self.direction {
-            DividerDirection::Horizontal => {
-                if self.text.is_some() { Size::new(0.0, 24.0) } else { Size::new(0.0, 1.0) }
-            }
-            DividerDirection::Vertical => Size::new(1.0, 0.0),
-        }
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -139,5 +138,33 @@ impl Divider {
     pub fn dashed(mut self) -> Self {
         self.dashed = true;
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        match self.direction {
+            DividerDirection::Horizontal => {
+                if self.text.is_some() {
+                    Size::new(0.0, 24.0)
+                } else {
+                    Size::new(0.0, 1.0)
+                }
+            }
+            DividerDirection::Vertical => Size::new(1.0, 0.0),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_divider_text_height() {
+        let measured = Divider::new()
+            .with_text("Section")
+            .measure(Constraints::loose(Size::new(80.0, 12.0)));
+
+        assert_eq!(measured, Size::new(0.0, 12.0));
     }
 }
