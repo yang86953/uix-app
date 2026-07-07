@@ -143,7 +143,7 @@ Style / 文本 / 静态 props 比较（#60）：Style 变 → paint invalidate�
 
 #123 智能重绑的 **可实现判定规则**（修订 #60、#62）。
 
-View **每次 build** 为带 handler 的 ViewNode 分配递增 **`handler_generation: u32`**（同 reconcile 周期内稳定）。Reconciler 在 `reconcile_existing` 步骤 3 比较：
+View build 只为具备稳定身份的 handler 维护 **`handler_generation: u32`**：显式 `handler_generation`、显式 capture 指纹，或未来宏 / DSL 在语法层可见捕获集并生成的 `capture_fingerprint`。普通 Rust 闭包若没有 generation / fingerprint，按 #159 **保守视为变更**，避免误保留已变化 capture。Reconciler 在 `reconcile_existing` 步骤 3 比较：
 
 ```text
 handlers_changed(old, new) :=
@@ -155,7 +155,7 @@ handlers_changed(old, new) :=
 | 比较项 | 规则 |
 |--------|------|
 | **SemanticKind 集合** | `Click`、`Changed`、`Submit`… 增删 → **变更** |
-| **handler_generation** | 同 kind 代际不同 → **变更**（含闭包 capture 变化导致 rebuild） |
+| **handler_generation** | 同 kind 代际不同 → **变更**；任一侧缺 generation → **变更** |
 | **闭包指针 / TypeId** | **不**比较；避免误杀稳定 handler |
 | **静态 props / Style** | 走 #60 paint/layout 路径；**不**触发 clear_component |
 
@@ -163,7 +163,8 @@ handlers_changed(old, new) :=
 
 | 事件 | generation |
 |------|------------|
-| 同 kind 闭包重新创建（新 capture） | +1 |
+| 稳定 capture 指纹变化 | +1 |
+| 普通闭包无 generation / fingerprint | 保守变更并重绑 |
 | 仅 Style / 文本变 | 不变 |
 | kind 移除后同 slot 新 kind | 新 kind 从 0 起 |
 
@@ -173,7 +174,7 @@ handlers_changed(old, new) :=
 
 ### handler_generation 作者化（#138）
 
-**调用方不可配**；由 View DSL / `ViewAdapter` build 阶段 **自动**维护。
+**调用方不可配**；由 View DSL / `ViewAdapter` build 阶段基于稳定 signature / capture 指纹维护。无显式 capture 的普通闭包不做运行时捕获探测，按 #159 保守重绑。
 
 ```rust
 // ViewNode 内部（设计）
@@ -191,7 +192,8 @@ struct BuildContext {
 
 | 规则 | 说明 |
 |------|------|
-| `.on_click(f)` 等宏 | build 时写入 `HandlerSlot { kind, generation }` |
+| `.on_click(f)` 等普通闭包 | 无显式 capture 时不生成稳定 generation；保守重绑 |
+| 显式 capture API / 未来语法层宏 | build 时写入 `HandlerSlot { kind, generation }` |
 | capture 指纹 | 由显式 capture API，或未来宏 / DSL 在语法层生成 **稳定 hash**（#138、#159） |
 | 指纹不变 | **复用**上代 `generation`（同 reconcile 周期内闭包重建但 capture 相同） |
 | 指纹变化 | 该 kind `generation += 1` |
@@ -207,9 +209,9 @@ struct BuildContext {
 | 捕获类型 | 参与 hash 的字段 | 不参与 |
 |----------|------------------|--------|
 | `State<T>` | `TypeId::of::<T>()` + **`StateSlotId`**（#143） | 当前值、`generation()`、指针地址 |
-| `AppHandle` | `window_id` | 句柄内部指针 |
-| `Copy` 标量 / 枚举 | `discriminant` + `bits()` / 各字段 | — |
-| `&'static T` | `TypeId::of::<T>()` | 运行时地址 |
+| `WindowId`（代表窗口作用域 / AppHandle） | `WindowId` 值 | AppHandle 内部指针；`ui` 不依赖 `app` |
+| `Copy` 标量 / 枚举 | 未来语法层 capture API 生成后参与 | 当前普通 Rust 闭包不自动探测 |
+| `&'static T` | 未来语法层 capture API 生成后参与 | 当前普通 Rust 闭包不自动探测 |
 | 闭包本体 | — | **fn 指针、vtable、堆地址** |
 | 未捕获 | — | — |
 

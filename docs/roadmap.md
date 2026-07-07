@@ -160,6 +160,6 @@ P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 
 
 ## 维护
 
-- 阶段划分或原则变更 → 同步 [decisions.md](decisions.md) #154（或 #160+ 新决策）与本文件。
+- 阶段划分或原则变更 → 同步 [decisions.md](decisions.md) #154（或 #162+ 新决策）与本文件。
 - 新增/完成某阶段文件级任务 → 更新本文件对应表 + [Main · 实现进度总览](Main.md#实现进度总览) 行。
 - 新阶段落地清单随阶段推进 **在本文件追加章节**，勿回写 `systems/*.md` 正文。

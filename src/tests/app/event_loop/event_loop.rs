@@ -9,16 +9,16 @@ use crate::draw::pipeline::RenderMetrics;
 use crate::draw::NullEngine;
 use crate::native::test_harness::{FakePlatform, FakeWindow};
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
-use crate::native::traits::input::{KeyCode, KeyMod};
+use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::overlay::OverlayKind;
 use crate::ui::theme::{DesignTokens, DynTokens};
 use crate::ui::traits::TokenProvider;
-use crate::ui::view::combinators::{dynamic_label, label};
-use crate::ui::view::ViewNode;
+use crate::ui::view::combinators::{button, dynamic_label, label};
+use crate::ui::view::{View, ViewNode};
 use crate::ui::widgets::container::Container;
 use crate::ui::widgets::feedback::Tooltip;
 use crate::ui::widgets::Label;
-use crate::ui::{WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetRender};
+use crate::ui::{SemanticKind, WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetRender};
 use std::any::Any;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -703,6 +703,107 @@ fn key_event_after_first_frame_does_not_force_layout_without_invalidation() {
     assert_eq!(stats.layout_calls, 1);
     assert_eq!(stats.present_calls, 1);
     assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
+}
+
+#[test]
+fn fake_platform_pointer_click_reaches_handler_table() {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_for_handler = hits.clone();
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject_all([
+        UiEvent::pointer_down(Point::new(4.0, 4.0), MouseButton::Left),
+        UiEvent::pointer_up(Point::new(4.0, 4.0), MouseButton::Left),
+    ]);
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        button("Hit")
+            .on_click(move || {
+                hits_for_handler.fetch_add(1, Ordering::Relaxed);
+            })
+            .build(),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(platform.event_source.processed_count(), 2);
+    assert_eq!(hits.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn fake_platform_file_drop_reaches_handler_table() {
+    let dropped = Arc::new(Mutex::new(Vec::<String>::new()));
+    let dropped_for_handler = dropped.clone();
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject(UiEvent::file_drop(
+        vec!["a.txt".to_string(), "b.txt".to_string()],
+        Point::new(20.0, 20.0),
+    ));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+
+    let mut root = ViewNode::leaf(Container::new());
+    root.handlers.push(crate::ui::HandlerRegistration::new(
+        SemanticKind::FileDrop,
+        Box::new(move |event| {
+            if let Some((files, _position)) = event.file_drop_payload() {
+                *dropped_for_handler
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = files.to_vec();
+            }
+        }),
+    ));
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(root, Box::new(NullEngine::new()), 800, 600);
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(platform.event_source.processed_count(), 1);
+    assert_eq!(
+        &*dropped.lock().unwrap_or_else(|e| e.into_inner()),
+        &vec!["a.txt".to_string(), "b.txt".to_string()]
+    );
 }
 
 #[test]

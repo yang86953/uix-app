@@ -37,7 +37,7 @@
 - **局部绘制**：配合 `NullEngine` / `SoftwareEngine` + FakePresenter 记录 damage rects。
 - 生产 `deny(clippy::unwrap_used)`；**测试 crate 除外**。
 - **零闲置验收**（#105）：无 `UiEvent`、无标脏时 assert 无 `present`、无 `layout`（**L0**）；DeepIdle 下 assert 无 `tick_effects`、blocking wait（**L1**）。**Timer**：`run_interval` + `cancel` 后 assert 回 DeepIdle（#132）；到期行为见 [测试时钟分层](#测试时钟分层)。
-- **豁免**（#113）：须 `decisions.md` **#158+** 公开条目 + 测试覆盖豁免边界；默认不豁免。
+- **豁免**（#113）：须 `decisions.md` **#162+** 公开条目 + 测试覆盖豁免边界；默认不豁免。
 
 ---
 
@@ -69,12 +69,12 @@ FakePlatform.inject(UiEvent)
 
 | 断言类型 | 示例 |
 |----------|------|
-| Handler 触发 | `on_click` 闭包计数、State 变更 |
+| Handler 触发 | `on_click` 闭包计数、`FileDrop` handler payload、State 变更 |
 | 语义 payload | Click `{ button, pos, modifiers }`（#36） |
 | 焦点 / 冒泡 | focus 转移、`stop_propagation` 阻后续 handler（#68） |
 | 平台副作用 | `FakeClipboard` 历史、`text_input.start/stop` 调用序 |
 
-Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138）；未变则保留注册。测试勿假设跨 rebuild 的 handler 指针/闭包 identity 稳定；可断言 **同 handler_generation + 同 SemanticKind 集** 时 HandlerTable 保留。**ComponentId** key 复用仍有效；`WidgetId` 仅为 WidgetTree 内部同型别名。
+Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138、#160）；未变则保留注册。测试勿假设跨 rebuild 的 handler 指针/闭包 identity 稳定；可断言 **同 handler_generation / capture fingerprint + 同 SemanticKind 集** 时 HandlerTable 保留；无 generation / fingerprint 的普通闭包按 changed 重绑。**ComponentId** key 复用仍有效；`WidgetId` 仅为 WidgetTree 内部同型别名。
 
 ---
 
