@@ -4,7 +4,7 @@
 // OsEventSource trait：平台只需实现 3 个必须方法 + 1 个可选方法，
 // 自动获得 IEventLoop（poll_event / wait_event / wait_timeout）。
 //
-// 公开接口 IEventLoop 已迁移至 crate::native::api 功能模块。
+// 公开接口 IEventLoop 已迁移至 crate::native::traits 功能模块。
 // ============================================================================
 
 use crate::native::traits::event::EventLoopWaker;

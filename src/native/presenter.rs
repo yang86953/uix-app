@@ -1,7 +1,7 @@
 // ============================================================================
 // platform/presenter.rs — 像素呈现器实现
 //
-// IPresenter / IGraphicsContext trait 已迁移至 crate::native::api 功能模块。
+// IPresenter / IGraphicsContext trait 已迁移至 crate::native::traits 功能模块。
 // ============================================================================
 
 use crate::core::error::Error;

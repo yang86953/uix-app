@@ -1,5 +1,5 @@
 // ============================================================================
-// platform/src/diagnostic/timestamp.rs — 轻量时间戳
+// core/diagnostic/timestamp.rs — 轻量时间戳
 //
 // 提供毫秒精度的时间戳生成与格式化，仅依赖 std::time。
 // 替代 chrono crate，用于日志记录、诊断报告等场景。

@@ -268,6 +268,28 @@ fn test_save_without_loaded_path_is_noop() {
 }
 
 #[test]
+fn test_save_pretty_prints_two_spaces() {
+    let p = std::env::temp_dir().join("uix_settings_pretty_print_test.json");
+    let ps = p.to_string_lossy().to_string();
+    std::fs::remove_file(&ps).ok();
+
+    let mut s = SettingsService::new();
+    s.load(&ps).unwrap();
+    s.set("theme", "dark");
+    s.save().unwrap();
+
+    let saved = std::fs::read_to_string(&ps).unwrap();
+    assert!(saved.starts_with("{\n"));
+    assert!(saved.ends_with("\n}"));
+    assert!(saved
+        .lines()
+        .filter(|line| line.contains("\": \""))
+        .all(|line| line.starts_with("  ") && !line.starts_with("   ")));
+
+    std::fs::remove_file(&ps).ok();
+}
+
+#[test]
 fn test_save_skips_clean_settings() {
     let p = std::env::temp_dir().join("uix_settings_clean_save_test.json");
     let ps = p.to_string_lossy().to_string();

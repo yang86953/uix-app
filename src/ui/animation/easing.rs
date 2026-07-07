@@ -178,7 +178,7 @@ fn cubic_bezier_dx(x1: f64, x2: f64, t: f64) -> f64 {
     3.0 * u * u * x1 + 6.0 * u * t * (x2 - x1) + 3.0 * t * t * (1.0 - x2)
 }
 
-// Animatable trait 定义已迁移至 api/traits.rs，以下是类型实现
+// Animatable trait 定义已迁移至 ui::traits::animation，以下是类型实现。
 
 impl Animatable for f32 {
     fn lerp(from: Self, to: Self, t: f64) -> Self {

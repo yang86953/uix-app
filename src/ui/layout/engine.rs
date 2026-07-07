@@ -137,7 +137,7 @@ impl LayoutChild {
 
 // ── 布局引擎 trait ─────────────────────────────────────────────────
 
-// LayoutEngine trait 定义已迁移至 api/traits.rs
+// LayoutEngine trait 定义已迁移至 ui::traits::layout。
 use crate::ui::traits::layout::LayoutEngine;
 
 /// 布局引擎的输出：子节点位置 + 内容总尺寸。

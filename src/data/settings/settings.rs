@@ -1,5 +1,5 @@
 // ============================================================================
-// platform/settings.rs — 键值设置服务（JSON 持久化）
+// data/settings/settings.rs — 键值设置服务（JSON 持久化）
 //
 // 提供扁平 HashMap<String, String> 的 JSON 读写能力。
 // 原位于 services crate，迁入 platform 层以消除服务层。

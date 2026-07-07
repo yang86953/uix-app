@@ -20,7 +20,7 @@ use crate::ui::traits::TokenProvider;
 // TokenProvider — supertrait 聚合全部子 trait
 // ════════════════════════════════════════════════════════════════════════════
 
-// TokenProvider trait 定义已迁移至 api/traits.rs
+// TokenProvider trait 定义已迁移至 ui::traits::theme。
 
 // ════════════════════════════════════════════════════════════════════════════
 // Theme

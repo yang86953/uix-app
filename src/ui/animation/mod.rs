@@ -28,4 +28,4 @@ pub use core::*;
 pub use easing::*;
 pub use transition::*;
 
-// Animatable trait 已迁移至 api/traits.rs，通过 api 模块统一导出
+// Animatable trait 已迁移至 ui::traits::animation，通过 ui::traits 统一导出。
