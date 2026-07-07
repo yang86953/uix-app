@@ -9,7 +9,7 @@
 | 主题 | 章节 | 决策 |
 |------|------|------|
 | 组合器 API | [View DSL](#view-dsl) | #21 #67 #73 |
-| 树同步 | [Reconciler](#reconciler) · [Handler 变更判定](#handler-变更判定-135) | #49 #60 #62 #123 #135 #138 #142 #101 |
+| 树同步 | [Reconciler](#reconciler) · [Handler 变更判定](#handler-变更判定-135) | #49 #60 #62 #123 #135 #138 #142 #159 #101 |
 | 响应式原语 | [响应式](#响应式) · [StateSlotId](#stateslotid) | #24 #78 #79 #143 |
 | 样式链 | [StyleExt](#styleext) | #21 |
 | 热更新 | [热更新（设计）](#热更新设计) · [reconcile 合并](#reconcile-合并) · [view_factory 生命周期](#view_factory-生命周期) · [多窗 Reconcile](#多窗-reconcile) · [State 跨窗标脏](#state-跨窗标脏) | #49 #60 #118 #148 #149 #150 #153 #155 #156 |
@@ -192,13 +192,13 @@ struct BuildContext {
 | 规则 | 说明 |
 |------|------|
 | `.on_click(f)` 等宏 | build 时写入 `HandlerSlot { kind, generation }` |
-| capture 指纹 | 对闭包捕获的 `State` 句柄 / 静态 env 做 **稳定 hash**（#138） |
+| capture 指纹 | 由显式 capture API，或未来宏 / DSL 在语法层生成 **稳定 hash**（#138、#159） |
 | 指纹不变 | **复用**上代 `generation`（同 reconcile 周期内闭包重建但 capture 相同） |
 | 指纹变化 | 该 kind `generation += 1` |
 | kind 新增/移除 | 更新 SemanticKind 集合（#135） |
 | App API | **无** `set_handler_generation`；零维护 |
 
-实现落点：`src/ui/view/build_context.rs`（设计）；`button().on_click(...)` 等链式 API 在 `expand` 时更新 slot。
+实现落点：当前显式 capture 路径在 `src/ui/event.rs`、`src/ui/view/mod.rs` 与各 DSL builder；未来宏 / DSL 若在语法层可见捕获集，再生成 `capture_fingerprint`。任意 Rust 闭包不做运行时自动探测（#159）。
 
 ### capture 指纹字段（#142）
 
@@ -229,7 +229,7 @@ fingerprint(kind, captures) :=
 | 稳定性 | 同源码 rebuild、同 capture 集 → **同指纹**（测试可断言） |
 | 算法 | 框架内部固定（如 `FxHasher` → `u64`）；App **不可配** |
 
-> **实现注记**：内部 `HandlerSignature` / `handler_generation` 存储与 reconcile 比较已接；带稳定 generation 的 handler 可跳过 `clear_component` + 重注册。State / WindowId capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump。`HandlerRegistration::with_state_capture` / `with_window_capture` 已公开；Button/Input DSL 已提供显式 State capture 入口（`on_click_capture` / `on_click_event_capture` / `on_change_capture`）与 WindowId capture 入口（`on_click_window_capture` / `on_click_event_window_capture` / `on_change_window_capture`），通用 `ViewNode::on_semantic_capture` / `on_semantic_window_capture` 与低层 `WidgetNode::on_semantic_capture` / `on_semantic_window_capture` 也已复用该路径；View build / DSL / 宏的 handler capture 自动收集仍待接；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
+> **实现注记**：内部 `HandlerSignature` / `handler_generation` 存储与 reconcile 比较已接；带稳定 generation 的 handler 可跳过 `clear_component` + 重注册。State / WindowId capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump。`HandlerRegistration::with_state_capture` / `with_window_capture` 已公开；Button/Input DSL 已提供显式 State capture 入口（`on_click_capture` / `on_click_event_capture` / `on_change_capture`）与 WindowId capture 入口（`on_click_window_capture` / `on_click_event_window_capture` / `on_change_window_capture`），通用 `ViewNode::on_semantic_capture` / `on_semantic_window_capture` 与低层 `WidgetNode::on_semantic_capture` / `on_semantic_window_capture` 也已复用该路径；任意 Rust handler 闭包不做运行时自动收集（#159），未来宏 / DSL 只有在语法层生成 fingerprint 时才进入稳定复用；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
 
 ---
 
@@ -264,7 +264,7 @@ static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 | 设计（#143） | 当前 `state.rs` |
 |--------------|-----------------|
 | `StateSlotId` 字段 | 已接；`State::new` 分配，clone 共享 |
-| 指纹用 slot id | State 侧 `TypeId + StateSlotId` 指纹基础已接，WindowId capture 侧使用 `TypeId<WindowId> + WindowId`；handler fingerprint 解析可消费这些值；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接，自动 capture 收集待接 |
+| 指纹用 slot id | State 侧 `TypeId + StateSlotId` 指纹基础已接，WindowId capture 侧使用 `TypeId<WindowId> + WindowId`；handler fingerprint 解析可消费这些值；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接；任意闭包运行时自动 capture 收集按 #159 禁止 |
 | `generation()` | 已有；用于 Computed/Effect |
 
 落地 #143 时 **保留** 现有 `generation()` 语义；仅 **新增** `slot_id` 字段与 accessor。
