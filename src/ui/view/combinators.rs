@@ -18,7 +18,7 @@ use crate::ui::layout::{FlexDirection, GridTrack};
 use crate::ui::style::{DisplayMode, Style};
 use crate::ui::view::{View, ViewNode};
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::InvalidationQueueHandle;
@@ -302,7 +302,17 @@ impl WidgetComponent for DynamicLabel {
 }
 
 impl WidgetLayout for DynamicLabel {
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     fn preferred_size(&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+        self.intrinsic_size()
+    }
+}
+
+impl DynamicLabel {
+    fn intrinsic_size(&self) -> Size {
         let text = (self.text_fn)();
         let len = text.len() as f32;
         Size::new(len * 7.0, 18.0)

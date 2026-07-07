@@ -2,7 +2,7 @@
 //!
 //! Provides consistent spacing for a row or column of child widgets.
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::children::WidgetChildren;
@@ -45,11 +45,12 @@ define_widget! {
         flex_grow_val: f32,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(
-            self.fixed_width.unwrap_or(0.0),
-            self.fixed_height.unwrap_or(0.0),
-        )
+        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }
@@ -183,10 +184,33 @@ impl Space {
         self.wrap = v;
         self
     }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(
+            self.fixed_width.unwrap_or(0.0),
+            self.fixed_height.unwrap_or(0.0),
+        )
+    }
 }
 
 impl Default for Space {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_fixed_space_size() {
+        let measured = Space::new()
+            .width(80.0)
+            .height(24.0)
+            .measure(Constraints::loose(Size::new(40.0, 32.0)));
+
+        assert_eq!(measured, Size::new(40.0, 24.0));
     }
 }
