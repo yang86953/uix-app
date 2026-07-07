@@ -17,6 +17,7 @@ use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::X
 use wayland_protocols::unstable::xdg_decoration::v1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
+use crate::core::error::Result;
 use crate::core::WindowId;
 use crate::native::shared::unimpl;
 use crate::native::shared::WindowOps;
@@ -266,7 +267,7 @@ impl WindowOps for WaylandWindowOps {
         }
     }
 
-    fn os_center_on_screen(&mut self) {
+    fn os_center_on_screen(&mut self) -> Result<()> {
         // Wayland 不支持客户端设置窗口位置，compositor 自行决定放置。
         // 但我们可以读取显示器几何信息，供调试和日志参考。
         let outputs = self.outputs.lock().unwrap_or_else(|e| e.into_inner());
@@ -284,9 +285,10 @@ impl WindowOps for WaylandWindowOps {
         } else {
             crate::core::log::info_fn("窗口居中: 未检测到显示器信息，由 compositor 自行放置");
         }
+        Ok(())
     }
 
-    fn os_raise(&mut self) {
+    fn os_raise(&mut self) -> Result<()> {
         // 通过 xdg_activation_v1 请求窗口激活（提升聚焦）。
         // 注意：此协议需要异步 done 事件获取 token 字符串，在同步上下文中
         // 无法等待；携带空 token 的 activate 请求部分 compositor 仍会处理。
@@ -302,18 +304,19 @@ impl WindowOps for WaylandWindowOps {
                 "请求窗口提升: xdg_activation_v1 不可用，由 compositor 自行决定",
             );
         }
+        Ok(())
     }
 
-    fn os_lower(&mut self) {
-        unimpl("os_lower"); // Wayland 不支持程序化窗口层级
+    fn os_lower(&mut self) -> Result<()> {
+        unimpl("os_lower") // Wayland 不支持程序化窗口层级
     }
 
-    fn os_set_icon(&mut self, _path: &str) {
-        unimpl("os_set_icon");
+    fn os_set_icon(&mut self, _path: &str) -> Result<()> {
+        unimpl("os_set_icon")
     }
 
-    fn os_flash(&mut self) {
-        unimpl("os_flash");
+    fn os_flash(&mut self) -> Result<()> {
+        unimpl("os_flash")
     }
 
     // ── 尺寸/位置 ─────────────────────────────────────────
@@ -331,20 +334,22 @@ impl WindowOps for WaylandWindowOps {
         }
     }
 
-    fn os_set_min_size(&mut self, w: i32, h: i32) {
+    fn os_set_min_size(&mut self, w: i32, h: i32) -> Result<()> {
         if let Some(ref t) = self.toplevel {
             t.set_min_size(w, h);
         }
+        Ok(())
     }
 
-    fn os_set_max_size(&mut self, w: i32, h: i32) {
+    fn os_set_max_size(&mut self, w: i32, h: i32) -> Result<()> {
         if let Some(ref t) = self.toplevel {
             t.set_max_size(w, h);
         }
+        Ok(())
     }
 
-    fn os_set_position(&mut self, _x: i32, _y: i32) {
-        unimpl("os_set_position"); // Wayland 不允许客户端设置窗口位置
+    fn os_set_position(&mut self, _x: i32, _y: i32) -> Result<()> {
+        unimpl("os_set_position") // Wayland 不允许客户端设置窗口位置
     }
 
     /// 窗口尺寸变化通知。更新 xdg_surface 窗口几何和输入区域，
@@ -359,34 +364,37 @@ impl WindowOps for WaylandWindowOps {
 
     // ── 窗口状态 ──────────────────────────────────────────
 
-    fn os_set_resizable(&mut self, _resizable: bool) {
-        unimpl("os_set_resizable"); // compositor 控制
+    fn os_set_resizable(&mut self, _resizable: bool) -> Result<()> {
+        unimpl("os_set_resizable") // compositor 控制
     }
 
-    fn os_maximize(&mut self) {
+    fn os_maximize(&mut self) -> Result<()> {
         if let Some(ref t) = self.toplevel {
             t.set_maximized();
         }
+        Ok(())
     }
 
-    fn os_minimize(&mut self) {
+    fn os_minimize(&mut self) -> Result<()> {
         if let Some(ref t) = self.toplevel {
             t.set_minimized();
         }
+        Ok(())
     }
 
-    fn os_restore(&mut self) {
+    fn os_restore(&mut self) -> Result<()> {
         if let Some(ref t) = self.toplevel {
             t.unset_maximized();
             t.unset_fullscreen();
         }
+        Ok(())
     }
 
-    fn os_set_borderless(&mut self, _borderless: bool) {
-        unimpl("os_set_borderless");
+    fn os_set_borderless(&mut self, _borderless: bool) -> Result<()> {
+        unimpl("os_set_borderless")
     }
 
-    fn os_set_fullscreen(&mut self, fullscreen: bool) {
+    fn os_set_fullscreen(&mut self, fullscreen: bool) -> Result<()> {
         if let Some(ref t) = self.toplevel {
             if fullscreen {
                 t.set_fullscreen(None);
@@ -394,28 +402,31 @@ impl WindowOps for WaylandWindowOps {
                 t.unset_fullscreen();
             }
         }
+        Ok(())
     }
 
-    fn os_set_always_on_top(&mut self, _on: bool) {
-        unimpl("os_set_always_on_top");
+    fn os_set_always_on_top(&mut self, _on: bool) -> Result<()> {
+        unimpl("os_set_always_on_top")
     }
 
-    fn os_set_opacity(&mut self, _opacity: f32) {
-        unimpl("os_set_opacity");
+    fn os_set_opacity(&mut self, _opacity: f32) -> Result<()> {
+        unimpl("os_set_opacity")
     }
 
     // ── 特性开关 ──────────────────────────────────────────
 
-    fn os_start_text_input(&mut self) {
+    fn os_start_text_input(&mut self) -> Result<()> {
         // 文本输入通过 WaylandBackend 的 text_input_manager 管理
+        Ok(())
     }
 
-    fn os_stop_text_input(&mut self) {
+    fn os_stop_text_input(&mut self) -> Result<()> {
         // 文本输入通过 WaylandBackend 的 text_input_manager 管理
+        Ok(())
     }
 
-    fn os_enable_file_drop(&mut self, _enable: bool) {
-        unimpl("os_enable_file_drop");
+    fn os_enable_file_drop(&mut self, _enable: bool) -> Result<()> {
+        unimpl("os_enable_file_drop")
     }
 
     // ── 原生句柄 ──────────────────────────────────────────
