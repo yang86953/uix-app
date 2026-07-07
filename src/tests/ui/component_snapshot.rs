@@ -10,17 +10,19 @@ use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::GridTrack;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::widgets::{
-    Affix, Alert, Anchor, AnchorItem, Avatar, BackTop, Badge, BadgeStatus, Breadcrumb,
-    BreadcrumbItem, Button, Calendar, Card, Carousel, Checkbox, Collapse, CollapsePanel, Container,
-    Content, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown,
-    Empty, FloatButton, Footer, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, List,
-    Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavItem,
-    NotifPlacement, Notification, Pagination, Popconfirm, PopconfirmPlacement, Popover,
-    PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Radio,
-    RadioDirection, Rate, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize,
-    Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Tabs, Tag, TagColor, Timeline,
-    TimelineItem, Tooltip, TooltipPlacement, Tree, TreeNode, TriggerMode, Typography,
-    TypographyType,
+    Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus,
+    Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption,
+    Checkbox, Collapse, CollapsePanel, ColorPicker, Container, Content, DatePicker, DateValue,
+    Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty,
+    FloatButton, Footer, FormItem, FormLayout, Grid, Header, Icon, Image, Input, InputNumber,
+    Label, Layout, List, Mentions, Menu, MenuItem, MenuMode, Message, MessageItem,
+    MessagePlacement, Modal, NavItem, NotifPlacement, Notification, OptGroup, Pagination,
+    Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger, ProgressBar,
+    ProgressMode, ProgressType, Radio, RadioDirection, Rate, Segmented, Select, Sider, Skeleton,
+    SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Step, StepStatus, Steps,
+    Switch, Tab, TabPosition, Tabs, Tag, TagColor, TimePicker, TimeValue, Timeline, TimelineItem,
+    Tooltip, TooltipPlacement, Tree, TreeNode, TreeSelect, TriggerMode, Typography, TypographyType,
+    ValidateStatus,
 };
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotCollapsePanel, SnapshotFields, SnapshotSource,
@@ -1192,6 +1194,216 @@ fn navigation_and_display_snapshots_capture_static_config() {
             show_arrows: false,
         }
     );
+}
+
+#[test]
+fn input_selection_snapshots_capture_static_config() {
+    let groups = vec![OptGroup::new("Letters").add("A").add("B")];
+    assert_eq!(
+        Select::new()
+            .options(vec!["Loose"])
+            .optgroups(groups.clone())
+            .selected(1)
+            .placeholder("Pick")
+            .disabled(true)
+            .multiple(true)
+            .search(true)
+            .snapshot_fields(),
+        SnapshotFields::Select {
+            options: vec!["Loose".to_string()],
+            optgroups: groups,
+            disabled: true,
+            placeholder: "Pick".to_string(),
+            multiple: true,
+            search: true,
+        }
+    );
+
+    assert_eq!(
+        AutoComplete::new()
+            .placeholder("City")
+            .options(vec!["Paris", "Prague"])
+            .snapshot_fields(),
+        SnapshotFields::AutoComplete {
+            placeholder: "City".to_string(),
+            options: vec!["Paris".to_string(), "Prague".to_string()],
+        }
+    );
+
+    let nodes = vec![TreeNode::new("Root", "root")
+        .checkable(true)
+        .children(vec![TreeNode::new("Leaf", "leaf").disabled(true)])];
+    assert_eq!(
+        TreeSelect::new()
+            .placeholder("Node")
+            .nodes(nodes)
+            .snapshot_fields(),
+        SnapshotFields::TreeSelect {
+            placeholder: "Node".to_string(),
+            nodes: vec![SnapshotTreeNode {
+                title: "Root".to_string(),
+                key: "root".to_string(),
+                icon: String::new(),
+                children: vec![SnapshotTreeNode {
+                    title: "Leaf".to_string(),
+                    key: "leaf".to_string(),
+                    icon: String::new(),
+                    children: Vec::new(),
+                    disabled: true,
+                    checkable: false,
+                    draggable: false,
+                    is_leaf: true,
+                }],
+                disabled: false,
+                checkable: true,
+                draggable: false,
+                is_leaf: false,
+            }],
+        }
+    );
+
+    let cascader_options = vec![CascaderOption::new("Asia", "asia")
+        .children(vec![CascaderOption::new("China", "cn").disabled(true)])];
+    assert_eq!(
+        Cascader::new(cascader_options.clone(), "Region").snapshot_fields(),
+        SnapshotFields::Cascader {
+            options: cascader_options,
+            placeholder: "Region".to_string(),
+        }
+    );
+}
+
+#[test]
+fn input_picker_snapshots_capture_static_config() {
+    let SnapshotFields::ColorPicker { preset_colors } =
+        ColorPicker::new(Color::red()).snapshot_fields()
+    else {
+        panic!("expected ColorPicker snapshot");
+    };
+    assert!(!preset_colors.is_empty());
+
+    assert_eq!(
+        DatePicker::new("Date")
+            .value(DateValue::new(2026, 7, 7))
+            .snapshot_fields(),
+        SnapshotFields::DatePicker {
+            placeholder: "Date".to_string(),
+        }
+    );
+
+    assert_eq!(
+        TimePicker::new("Time")
+            .value(TimeValue::new(9, 30))
+            .snapshot_fields(),
+        SnapshotFields::TimePicker {
+            placeholder: "Time".to_string(),
+        }
+    );
+
+    assert_eq!(
+        Mentions::new("Mention")
+            .options(vec!["Ada", "Grace"])
+            .snapshot_fields(),
+        SnapshotFields::Mentions {
+            placeholder: "Mention".to_string(),
+            options: vec!["Ada".to_string(), "Grace".to_string()],
+        }
+    );
+
+    assert_eq!(
+        Segmented::new()
+            .options(vec!["Daily", "Weekly", "Monthly"])
+            .selected(2)
+            .disabled(true)
+            .disable_option(1)
+            .snapshot_fields(),
+        SnapshotFields::Segmented {
+            options: vec![
+                "Daily".to_string(),
+                "Weekly".to_string(),
+                "Monthly".to_string(),
+            ],
+            disabled: true,
+            disabled_options: vec![false, true],
+        }
+    );
+
+    assert_eq!(
+        FormItem::new("Name")
+            .name("name")
+            .required(true)
+            .status(ValidateStatus::Error)
+            .help("Required")
+            .label_width(96.0)
+            .layout(FormLayout::Vertical)
+            .snapshot_fields(),
+        SnapshotFields::FormItem {
+            label: "Name".to_string(),
+            name: "name".to_string(),
+            required: true,
+            help: "Required".to_string(),
+            label_width: 96.0,
+            layout: FormLayout::Vertical,
+        }
+    );
+}
+
+#[test]
+fn input_snapshots_exclude_runtime_selection_popup_and_validation_state() {
+    let mut select = Select::new().options(vec!["A", "B"]);
+    let before = select.snapshot_fields();
+    select.open();
+    assert_eq!(select.snapshot_fields(), before);
+
+    let mut autocomplete = AutoComplete::new()
+        .placeholder("Search")
+        .options(vec!["Ada", "Grace"]);
+    let before = autocomplete.snapshot_fields();
+    autocomplete.set_value("Ada");
+    autocomplete.open();
+    assert_eq!(autocomplete.snapshot_fields(), before);
+
+    let mut tree_select = TreeSelect::new().nodes(vec![TreeNode::new("Root", "root")]);
+    let before = tree_select.snapshot_fields();
+    tree_select.open();
+    assert_eq!(tree_select.snapshot_fields(), before);
+
+    let mut cascader = Cascader::new(vec![CascaderOption::new("Root", "root")], "Path");
+    let before = cascader.snapshot_fields();
+    cascader.open();
+    cascader.select_option(0, 0);
+    assert_eq!(cascader.snapshot_fields(), before);
+
+    let mut color_picker = ColorPicker::new(Color::red());
+    let before = color_picker.snapshot_fields();
+    color_picker.open();
+    color_picker.set_value(Color::blue());
+    assert_eq!(color_picker.snapshot_fields(), before);
+
+    let mut date_picker = DatePicker::new("Date").value(DateValue::new(2026, 7, 7));
+    let before = date_picker.snapshot_fields();
+    date_picker.set_value(DateValue::new(2026, 8, 1));
+    assert_eq!(date_picker.snapshot_fields(), before);
+
+    let mut time_picker = TimePicker::new("Time").value(TimeValue::new(9, 30));
+    let before = time_picker.snapshot_fields();
+    time_picker.set_value(TimeValue::new(10, 45));
+    assert_eq!(time_picker.snapshot_fields(), before);
+
+    let selected_zero = Segmented::new()
+        .options(vec!["Daily", "Weekly"])
+        .selected(0)
+        .snapshot_fields();
+    let selected_one = Segmented::new()
+        .options(vec!["Daily", "Weekly"])
+        .selected(1)
+        .snapshot_fields();
+    assert_eq!(selected_one, selected_zero);
+
+    let mut form_item = FormItem::new("Email").help("Shown");
+    let before = form_item.snapshot_fields();
+    form_item.set_status(ValidateStatus::Error);
+    assert_eq!(form_item.snapshot_fields(), before);
 }
 
 #[test]

@@ -4,7 +4,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::ui::WidgetTree;
+use crate::ui::{SnapshotFields, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValidateStatus {
@@ -244,6 +244,17 @@ impl FormItem {
 
     pub fn set_status(&mut self, s: ValidateStatus) {
         self.status = s;
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::FormItem {
+            label: self.label.clone(),
+            name: self.name.clone(),
+            required: self.required,
+            help: self.help.clone(),
+            label_width: self.label_width,
+            layout: self.layout,
+        }
     }
 
     fn render_status(

@@ -5,9 +5,9 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
-use crate::ui::{EventResult, KeyCode, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetTree};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CascaderOption {
     pub label: String,
     pub value: String,
@@ -338,6 +338,13 @@ impl Cascader {
         self.closing = true;
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Cascader {
+            options: self.options.clone(),
+            placeholder: self.placeholder.clone(),
+        }
     }
 }
 

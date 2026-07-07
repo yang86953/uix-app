@@ -10,16 +10,18 @@ use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widget::WidgetId;
 use crate::ui::widgets::{
-    Affix, Alert, Anchor, AnchorItem, Avatar, BackTop, Badge, BadgeStatus, Breadcrumb,
-    BreadcrumbItem, Button, Calendar, Card, Carousel, Checkbox, Collapse, Container, Content,
-    Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty,
-    FloatButton, Footer, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, List, Menu,
+    Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus,
+    Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader, CascaderOption,
+    Checkbox, Collapse, ColorPicker, Container, Content, DatePicker, Divider, DividerDirection,
+    DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty, FloatButton, Footer, FormItem,
+    FormLayout, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, List, Mentions, Menu,
     MenuItem, MenuMode, Message, MessagePlacement, Modal, NavItem, NotifPlacement, Notification,
-    Pagination, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
-    ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate, Sider, Skeleton,
-    SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Step, Steps, Switch, Tab,
-    TabPosition, Tabs, Tag, TagColor, Timeline, TimelineItem, Tooltip, TooltipPlacement, Tree,
-    TreeNode, TriggerMode, Typography, TypographyType,
+    OptGroup, Pagination, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
+    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate,
+    Segmented, Select, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize,
+    Splitter, Step, Steps, Switch, Tab, TabPosition, Tabs, Tag, TagColor, TimePicker, Timeline,
+    TimelineItem, Tooltip, TooltipPlacement, Tree, TreeNode, TreeSelect, TriggerMode, Typography,
+    TypographyType,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -460,6 +462,52 @@ pub enum SnapshotFields {
         show_dots: bool,
         show_arrows: bool,
     },
+    Select {
+        options: Vec<String>,
+        optgroups: Vec<OptGroup>,
+        disabled: bool,
+        placeholder: String,
+        multiple: bool,
+        search: bool,
+    },
+    AutoComplete {
+        placeholder: String,
+        options: Vec<String>,
+    },
+    TreeSelect {
+        placeholder: String,
+        nodes: Vec<SnapshotTreeNode>,
+    },
+    Cascader {
+        options: Vec<CascaderOption>,
+        placeholder: String,
+    },
+    ColorPicker {
+        preset_colors: Vec<Color>,
+    },
+    DatePicker {
+        placeholder: String,
+    },
+    TimePicker {
+        placeholder: String,
+    },
+    Mentions {
+        placeholder: String,
+        options: Vec<String>,
+    },
+    Segmented {
+        options: Vec<String>,
+        disabled: bool,
+        disabled_options: Vec<bool>,
+    },
+    FormItem {
+        label: String,
+        name: String,
+        required: bool,
+        help: String,
+        label_width: f32,
+        layout: FormLayout,
+    },
     Container {
         style: Style,
     },
@@ -643,6 +691,36 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     if let Some(carousel) = component.downcast_ref::<Carousel>() {
         return carousel.snapshot_fields();
+    }
+    if let Some(select) = component.downcast_ref::<Select>() {
+        return select.snapshot_fields();
+    }
+    if let Some(autocomplete) = component.downcast_ref::<AutoComplete>() {
+        return autocomplete.snapshot_fields();
+    }
+    if let Some(tree_select) = component.downcast_ref::<TreeSelect>() {
+        return tree_select.snapshot_fields();
+    }
+    if let Some(cascader) = component.downcast_ref::<Cascader>() {
+        return cascader.snapshot_fields();
+    }
+    if let Some(color_picker) = component.downcast_ref::<ColorPicker>() {
+        return color_picker.snapshot_fields();
+    }
+    if let Some(date_picker) = component.downcast_ref::<DatePicker>() {
+        return date_picker.snapshot_fields();
+    }
+    if let Some(time_picker) = component.downcast_ref::<TimePicker>() {
+        return time_picker.snapshot_fields();
+    }
+    if let Some(mentions) = component.downcast_ref::<Mentions>() {
+        return mentions.snapshot_fields();
+    }
+    if let Some(segmented) = component.downcast_ref::<Segmented>() {
+        return segmented.snapshot_fields();
+    }
+    if let Some(form_item) = component.downcast_ref::<FormItem>() {
+        return form_item.snapshot_fields();
     }
     if let Some(container) = component.downcast_ref::<Container>() {
         return container.snapshot_fields();
