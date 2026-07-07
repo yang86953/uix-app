@@ -51,7 +51,7 @@ P4 多窗                P5 组件 Handle 体系
 - P5 与 P1 **可交错**（`ComponentId` 宜尽早，利于 #123）。
 - 每阶段对应 [demand-driven · 实现差距](systems/demand-driven.md#实现差距) 行清零或缩减。
 
-> **实现注记**：当前整体仍处于 **P0 未完备**；`ActiveWorkRegistry`、无 deadline 注册项、`WindowSession` 壳、单窗三态写回、DeepIdle 门控、Registry deadline wait、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Tooltip fade / Popover fade / Modal / Drawer 内置动画源、IME composition session 托管、AppTimer 队列、MainThreadQueue、`AppHandle` 与 `.on_start` 已落地（无固定 100ms 探活，DeepIdle 不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick）；`AppHandle` 的 Timer / `post_to_ui` / `update_view` 已经按 `window_id` 路由；`WindowConfig` / `open_window` 请求层、native 副窗创建、独立 `WindowSession` bootstrap、`.on_window_start`、副窗 MainThreadQueue / `update_view` reconcile 消费、副窗事件按 `window_id` 路由、副窗运行期 frame drain 与副窗 deadline wait 已接；单窗 `pending_root` 与响应式 `State` 批次 reconcile 已接入主循环；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端；其他过渡动画源仍待接线。接线顺序见 [P0 落地清单](#p0-落地清单)（#157）。
+> **实现注记**：当前整体仍处于 **P0 未完备**；`ActiveWorkRegistry`、无 deadline 注册项、`WindowSession` 壳、单窗三态写回、DeepIdle 门控、Registry deadline wait、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源、IME composition session 托管、AppTimer 队列、MainThreadQueue、`AppHandle` 与 `.on_start` 已落地（无固定 100ms 探活，DeepIdle 不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick）；`AppHandle` 的 Timer / `post_to_ui` / `update_view` 已经按 `window_id` 路由；`WindowConfig` / `open_window` 请求层、native 副窗创建、独立 `WindowSession` bootstrap、`.on_window_start`、副窗 MainThreadQueue / `update_view` reconcile 消费、副窗事件按 `window_id` 路由、副窗运行期 frame drain 与副窗 deadline wait 已接；单窗 `pending_root` 与响应式 `State` 批次 reconcile 已接入主循环；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端；其他过渡动画源仍待接线。接线顺序见 [P0 落地清单](#p0-落地清单)（#157）。
 
 ---
 
@@ -65,7 +65,7 @@ P4 多窗                P5 组件 Handle 体系
 | `src/app/window_session.rs`（已建） | `WindowSession`：三态、`registry`、`view_factory`、`pending_root`、`reconcile_pending`；单窗 loop 已写回三态 | #106 #116 #153 #155 #156 |
 | `src/app/event_loop/event_loop.rs` | 拆 `run_app_loop` + `run_active_frame`；已先在单窗 loop **移除** `idle_count` + `wait_timeout(100ms)` 探活 | #106 #127 |
 | 同上 | DeepIdle：无 Registry deadline 时走 `wait_event` 并 **跳过** layout/render/`tick_effects`；有 deadline 时走单次 `wait_timeout(remaining)` | #105 #117 #127 |
-| 同上 | RegisteredActive：已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` → `SystemEvent::Timer` 消费、AppTimer 主线程回调执行、Tooltip pending timer 自动托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Tooltip fade / Popover fade / Modal / Drawer 内置动画源与 IME composition session 托管，并写回 session 状态；其他过渡动画源待接 | #115 #117 |
+| 同上 | RegisteredActive：已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` → `SystemEvent::Timer` 消费、AppTimer 主线程回调执行、Tooltip pending timer 自动托管、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer 内置动画源与 IME composition session 托管，并写回 session 状态；其他过渡动画源待接 | #115 #117 |
 | 同上 | Active：UiEvent → dispatch → due work → `MainThreadQueue::drain` → 单窗 pending_root / State 批次 reconcile 已接 | #106 #118 #137 #153 |
 | 同上 | `tick_effects` 已门控到 Active 帧且收窄到 Effect pending；Registry animation 待后续接线 | #105 |
 | `src/app/shell/application.rs` | `run_gui` 已构造 `WindowSession` + Registry + root factory，并传入单窗 session loop；单窗 `AppHandle` 与 `.on_start` 已在首帧前注入 | #116 #134 #140 #155 |
