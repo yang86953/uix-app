@@ -9,7 +9,6 @@ use std::cell::{Cell, RefCell};
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::traits::GraphicsEngine;
 use crate::native::traits::input::ControlSize;
 use crate::ui::clipboard;
 use crate::ui::{EventResult, KeyCode, KeyMod, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
@@ -68,9 +67,6 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }

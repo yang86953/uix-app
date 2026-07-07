@@ -1,7 +1,7 @@
 //! LineChart — line chart with grid lines and data point markers.
 
 use crate::component;
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::{SnapshotFields, WidgetTree};
@@ -35,7 +35,7 @@ component! {
         dot_radius: f32,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+    measure => (&self, _constraints: Constraints) -> Size {
         let w = if self.fixed_width > 0.0 { self.fixed_width } else { 300.0 };
         let h = if self.fixed_height > 0.0 { self.fixed_height } else { 200.0 };
         Size::new(w, h)

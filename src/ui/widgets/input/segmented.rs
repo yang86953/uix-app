@@ -3,7 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::{traits::GraphicsEngine, Radius};
+use crate::draw::Radius;
 use crate::ui::{
     EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree,
 };
@@ -25,9 +25,6 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled { return EventResult::NotHandled; }

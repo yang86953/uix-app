@@ -1,7 +1,7 @@
 //! PieChart — pie / donut chart with proportional circular sectors.
 
 use crate::component;
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::{SnapshotFields, WidgetTree};
@@ -30,7 +30,7 @@ component! {
         hole_radius: f32,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+    measure => (&self, _constraints: Constraints) -> Size {
         let s = if self.fixed_size > 0.0 { self.fixed_size } else { 180.0 };
         Size::new(s, s)
     }
