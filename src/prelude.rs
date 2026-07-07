@@ -251,6 +251,7 @@ mod tests {
         assert_exported::<ValidationRule>();
         assert_exported::<WidgetManagers>();
         assert_exported::<FloatButton>();
+        assert_exported::<FloatButtonBackTop>();
         assert_exported::<Affix>();
         assert_exported::<BackTop>();
         assert_exported::<Layout>();
@@ -269,6 +270,7 @@ mod tests {
         assert_exported::<Message>();
         assert_exported::<MessageItem>();
         assert_exported::<MessagePlacement>();
+        assert_exported::<Navigation>();
         assert_exported::<Notification>();
         assert_exported::<NotificationItem>();
         assert_exported::<NotifPlacement>();
