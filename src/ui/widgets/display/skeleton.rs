@@ -1,6 +1,6 @@
 //! Skeleton loading placeholder.
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::WidgetTree;
@@ -20,8 +20,12 @@ define_widget! {
         h: f32,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(self.w, self.h)
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -81,5 +85,24 @@ impl Skeleton {
         self.w = w;
         self.h = h;
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(self.w, self.h)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_skeleton_size() {
+        let measured = Skeleton::new()
+            .size(120.0, 40.0)
+            .measure(Constraints::loose(Size::new(80.0, 24.0)));
+
+        assert_eq!(measured, Size::new(80.0, 24.0));
     }
 }

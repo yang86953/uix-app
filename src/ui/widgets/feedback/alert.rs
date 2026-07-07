@@ -1,6 +1,6 @@
 //! Alert widget — 警示条，支持类型、图标、关闭。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
@@ -17,9 +17,12 @@ define_widget! {
         _show_icon: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        let h = 36.0 + if self.description.is_empty() { 0.0 } else { 18.0 };
-        Size::new(300.0, h)
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -77,5 +80,30 @@ impl Alert {
     pub fn closable(mut self) -> Self {
         self.closable = true;
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        let h = 36.0
+            + if self.description.is_empty() {
+                0.0
+            } else {
+                18.0
+            };
+        Size::new(300.0, h)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_alert_size() {
+        let measured = Alert::new("info")
+            .description("extra")
+            .measure(Constraints::loose(Size::new(120.0, 40.0)));
+
+        assert_eq!(measured, Size::new(120.0, 40.0));
     }
 }

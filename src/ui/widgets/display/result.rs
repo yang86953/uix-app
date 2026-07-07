@@ -3,7 +3,7 @@
 //! 用于展示操作结果（成功/错误/警告/信息/404/403/500），
 //! 包含图标、标题、副标题、额外操作区域。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
@@ -30,8 +30,12 @@ define_widget! {
         extra_text: String,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(400.0, 300.0)
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -115,10 +119,28 @@ impl Result {
         self.extra_text = t.into();
         self
     }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(400.0, 300.0)
+    }
 }
 
 impl Default for Result {
     fn default() -> Self {
         Self::new(ResultType::Info)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_result_size() {
+        let measured =
+            Result::new(ResultType::Success).measure(Constraints::loose(Size::new(240.0, 180.0)));
+
+        assert_eq!(measured, Size::new(240.0, 180.0));
     }
 }

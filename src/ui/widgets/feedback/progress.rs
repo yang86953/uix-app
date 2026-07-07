@@ -1,6 +1,6 @@
 //! ProgressBar widget - deterministic and indeterminate progress indicators.
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
@@ -36,12 +36,12 @@ define_widget! {
         indeterminate_phase: f32,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        if self.progress_type == ProgressType::Circle {
-            let d = self.width.max(self.height);
-            return Size::new(d, d);
-        }
-        Size::new(self.width, self.height)
+        self.intrinsic_size()
     }
 
 
@@ -200,6 +200,14 @@ impl ProgressBar {
 
     pub fn animation_phase(&self) -> f32 {
         self.indeterminate_phase
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        if self.progress_type == ProgressType::Circle {
+            let d = self.width.max(self.height);
+            return Size::new(d, d);
+        }
+        Size::new(self.width, self.height)
     }
 }
 

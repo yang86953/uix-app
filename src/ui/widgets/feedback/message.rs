@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::native::traits::system::StatusLevel;
@@ -31,8 +31,12 @@ define_widget! {
         placement: MessagePlacement,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::zero()
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -166,5 +170,22 @@ impl Message {
 
     pub fn queue(&self) -> Rc<RefCell<Vec<MessageItem>>> {
         self.queue.clone()
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::zero()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_preserves_message_zero_layout_footprint() {
+        let measured = Message::new().measure(Constraints::loose(Size::new(200.0, 80.0)));
+
+        assert_eq!(measured, Size::zero());
     }
 }

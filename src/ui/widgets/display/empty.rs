@@ -1,6 +1,6 @@
 //! Empty widget — 空状态占位（图标 + 描述居中）。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::WidgetTree;
@@ -13,8 +13,12 @@ define_widget! {
         image: String,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(160.0, 100.0)
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -79,5 +83,22 @@ impl Empty {
     pub fn image(mut self, name: impl Into<String>) -> Self {
         self.image = name.into();
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(160.0, 100.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_empty_size() {
+        let measured = Empty::new().measure(Constraints::loose(Size::new(100.0, 60.0)));
+
+        assert_eq!(measured, Size::new(100.0, 60.0));
     }
 }

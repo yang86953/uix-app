@@ -1,6 +1,6 @@
 //! Animated loading indicator.
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
@@ -24,13 +24,12 @@ define_widget! {
         phase: f32,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        if self.wrapper_mode {
-            Size::new(0.0, 0.0)
-        } else {
-            let d = self.diameter();
-            Size::new(d, d)
-        }
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -161,6 +160,15 @@ impl Spin {
 
     pub fn phase(&self) -> f32 {
         self.phase
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        if self.wrapper_mode {
+            Size::new(0.0, 0.0)
+        } else {
+            let d = self.diameter();
+            Size::new(d, d)
+        }
     }
 }
 
