@@ -431,9 +431,9 @@ impl WidgetTree {
                 self.handler_table.clear_component(id);
                 self.overlay_stack.remove_for_owner(id);
                 self.managers.remove_overrides(id);
-                self.managers.focus.unregister_widget(id);
-                self.managers.interaction.unregister_widget(id);
-                self.managers.drag.unregister_widget(id);
+                self.managers.focus.unregister_component(id);
+                self.managers.interaction.unregister_component(id);
+                self.managers.drag.unregister_component(id);
                 self.invalidate_slot_generation(slot);
                 self.free_slots.push(slot);
             }
@@ -634,7 +634,7 @@ impl WidgetTree {
 
     pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<WidgetId> {
         let id = self.find_by_type::<T>()?;
-        self.managers.focus.set_focused_widget(Some(id));
+        self.managers.focus.set_focused_component(Some(id));
         if let Some(node) = self.get_mut(id) {
             if let Some(input) = node
                 .component_mut()
@@ -651,7 +651,7 @@ impl WidgetTree {
     pub fn is_focused_type<T: WidgetComponent + 'static>(&self) -> bool {
         self.managers
             .focus
-            .focused_widget()
+            .focused_component()
             .and_then(|id| self.get(id))
             .map(|node| node.component().as_any().downcast_ref::<T>().is_some())
             .unwrap_or(false)
@@ -694,7 +694,7 @@ impl WidgetTree {
         if focusable.is_empty() {
             return None;
         }
-        let current = self.managers.focus.focused_widget();
+        let current = self.managers.focus.focused_component();
         if let Some(cur_id) = current {
             let pos = focusable.iter().position(|&id| id == cur_id);
             match pos {

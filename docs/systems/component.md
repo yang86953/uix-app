@@ -1,4 +1,4 @@
-﻿# 组件系统
+# 组件系统
 
 ← [Main](../Main.md) · 系统 **#3** · 功能域：`ui`
 
@@ -229,7 +229,7 @@ WidgetTree
 
 支持 **per-component override**（`state_for(id)` / `text_for(id)`）。
 
-> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `style_for(id)` / `text_for(id)` per-component override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`InteractionManager` 已记录 hovered / pressed component，`DragManager` 已记录拖拽 target，相关 manager 签名均已按 `ComponentId` 命名；它们作为 PointerMove / Wheel / Timer / Drag 目标解析的事实源，并驱动基础 DragStart / DragMove / DragEnd 热路径。`WidgetTree` 旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 过渡镜像字段已移除。
+> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `style_for(id)` / `text_for(id)` per-component override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`InteractionManager` 已记录 hovered / pressed component，`DragManager` 已记录拖拽 target，相关 manager 签名均已按 `ComponentId` 命名；它们作为 PointerMove / Wheel / Timer / Drag 目标解析的事实源，并驱动基础 DragStart / DragMove / DragEnd 热路径。`WidgetTree` 旧 `focused_component` / `hovered_component` / `pointer_down_target` / `drag_gesture` 过渡镜像字段已移除。
 
 ---
 

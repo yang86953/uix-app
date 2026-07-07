@@ -10,7 +10,7 @@ pub enum DragEventResult {
     Ignored,
 }
 
-/// Manages drag-and-drop for a widget.
+/// Manages drag-and-drop for a component.
 pub struct DragManager {
     dragging: bool,
     drag_start_pos: Point,
@@ -125,7 +125,7 @@ impl DragManager {
         self.drag_offset
     }
 
-    pub fn unregister_widget(&mut self, component_id: ComponentId) {
+    pub fn unregister_component(&mut self, component_id: ComponentId) {
         if self.target == Some(component_id) {
             self.end_drag();
         }

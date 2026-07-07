@@ -1,4 +1,4 @@
-﻿# UIX 设计文档
+# UIX 设计文档
 
 > **唯一入口**。完整索引在此；正文按需打开链接，不必通读。
 
@@ -281,7 +281,7 @@ flowchart TB
 | view_factory | session 固定 Arc factory | 单窗 `App::root(|| ...)` 与副窗 `WindowConfig::new(..., || ...)` 已安装 session factory | [#155](decisions.md#d155) |
 | 多窗口 | v1 多窗；共享 AppState + Theme | `run_gui` 已支持主窗 + 副窗单 loop 编排；副窗独立 `WindowSession`、AppState 共享、事件与队列按 `window_id` 路由 | [application · 多窗](systems/application.md#appstate--多窗--settings) · [#93](decisions.md#d93) |
 | Reconcile 热更新 | `reconcile` 增量更新 WidgetTree | 单窗主循环与副窗运行期 frame drain 已接帧末 reconcile；稳定 handler signature 与 fingerprint→generation 路径已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 `ViewNode` 与低层 `WidgetNode` 显式 State / WindowId capture 入口已接；任意闭包运行时自动收集按 #159 禁止，未来宏 / DSL 可在语法层生成 fingerprint | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) · [Reconciler](systems/view-reactive.md#reconciler) |
-| Manager 横切 | `WidgetManagers` 注入 WidgetTree | `WidgetTree` 已持有 per-tree `WidgetManagers`；`FocusManager` 已记录当前焦点与 Tab 顺序并驱动焦点导航；`InteractionManager` 已记录 hovered / pressed widget 并作为事件目标解析的事实源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset 并驱动基础 DragStart / DragMove / DragEnd 热路径；`WidgetTree` 旧交互镜像字段已移除；`state_for(id)` / `style_for(id)` / `text_for(id)` override 会随节点移除清理 | [component · Manager](systems/component.md#manager-横切) |
+| Manager 横切 | `WidgetManagers` 注入 WidgetTree | `WidgetTree` 已持有 per-tree `WidgetManagers`；`FocusManager` 已记录当前焦点与 Tab 顺序并驱动焦点导航；`InteractionManager` 已记录 hovered / pressed component 并作为事件目标解析的事实源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset 并驱动基础 DragStart / DragMove / DragEnd 热路径；`WidgetTree` 旧交互镜像字段已移除；`state_for(id)` / `style_for(id)` / `text_for(id)` override 会随节点移除清理 | [component · Manager](systems/component.md#manager-横切) |
 | AnimationRegistry | Registry tick + `tree.update(dt)` | `WidgetAnimation` 能力、`tree.update(dt)` 窄 Paint 标脏、单窗/副窗 `Animation(id)` 下一帧 deadline、due id scoped tick、active + visible 发现门控与 `Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接入；`Spin` / `ProgressBar` indeterminate 已收窄 dirty bounds | [component · 动画](systems/component.md#动画) · [rendering · 动画帧](systems/rendering.md#动画帧) |
 | Composite scroll | `Invalidation::Composite` + scroll_region memmove | Wheel、键盘、滚动条拖拽与程序化 ScrollView 滚动已写 Composite exposed strip 并接 `scroll_region` memmove；新增滚动来源须复用该路径 | [rendering · 管线与失效](systems/rendering.md#管线与失效) |
 | App 内置 Settings load（opt-in） | builder 配置 path 后 `run()` 前代调 `load()` | `App::settings(path)` 已接；`run()` 前加载一次并注册 `SettingsService` 到 App DI；默认不 load/save | [data · App 集成](systems/data.md#app-集成) |
@@ -304,7 +304,7 @@ flowchart TB
 | AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | `AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求；主窗 close 退出主循环，副窗真实 close 事件按 `window_id` 关闭对应 session | [#134](decisions.md#d134) |
 | AppHandle | cloneable；运行中 Timer / post_to_ui | `AppHandle` / `WindowId` 已导出；运行中 Timer、跨线程 `post_to_ui` 与 `update_view` 已按 `window_id` 路由；`open_window` 请求层与副窗 bootstrap 已接 | [#132](decisions.md#d132) [#133](decisions.md#d133) |
 | Handler 智能重绑 | handler 变才重注册 | 已按稳定 signature 跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 handler 按 #159 保守 clear+register，未来宏 / DSL 若生成 fingerprint 再进入稳定复用 | [#123](decisions.md#d123) [#135](decisions.md#d135) [#159](decisions.md#d159) |
-| PointerMove 边界窄路径 | 框内不 hit_test | 已接：`InteractionManager.pressed_widget` / `DragManager.target` 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](decisions.md#d109) [#121](decisions.md#d121) |
+| PointerMove 边界窄路径 | 框内不 hit_test | 已接：`InteractionManager.pressed_component` / `DragManager.target` 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](decisions.md#d109) [#121](decisions.md#d121) |
 | Effect DeepIdle | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 Registry deadline 唤醒，不回退固定探活；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接 | #105 |
 
 落地计划（分阶段路线图、阶段文件清单）→ [`roadmap.md`](roadmap.md)（#154 #157）。

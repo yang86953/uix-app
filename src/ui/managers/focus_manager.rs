@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use crate::ui::ComponentId;
 
-/// Manages keyboard focus for a widget tree.
+/// Manages keyboard focus for a component tree.
 #[derive(Default)]
 pub struct FocusManager {
     focused: bool,
     focusable: bool,
     tab_index: i32,
-    focused_widget: Option<ComponentId>,
-    focusable_widgets: HashMap<ComponentId, i32>,
+    focused_component: Option<ComponentId>,
+    focusable_components: HashMap<ComponentId, i32>,
 }
 
 impl FocusManager {
@@ -42,37 +42,37 @@ impl FocusManager {
         self.tab_index = idx;
     }
 
-    pub fn focused_widget(&self) -> Option<ComponentId> {
-        self.focused_widget
+    pub fn focused_component(&self) -> Option<ComponentId> {
+        self.focused_component
     }
 
-    pub fn set_focused_widget(&mut self, id: Option<ComponentId>) {
-        self.focused_widget = id;
+    pub fn set_focused_component(&mut self, id: Option<ComponentId>) {
+        self.focused_component = id;
     }
 
     pub fn register_focusable(&mut self, component_id: ComponentId, tab_index: i32) {
         if tab_index > 0 {
-            self.focusable_widgets.insert(component_id, tab_index);
+            self.focusable_components.insert(component_id, tab_index);
         } else {
-            self.focusable_widgets.remove(&component_id);
+            self.focusable_components.remove(&component_id);
         }
     }
 
-    pub fn unregister_widget(&mut self, component_id: ComponentId) {
-        self.focusable_widgets.remove(&component_id);
-        if self.focused_widget == Some(component_id) {
-            self.focused_widget = None;
+    pub fn unregister_component(&mut self, component_id: ComponentId) {
+        self.focusable_components.remove(&component_id);
+        if self.focused_component == Some(component_id) {
+            self.focused_component = None;
         }
     }
 
     pub fn clear_tree_focus(&mut self) {
-        self.focused_widget = None;
-        self.focusable_widgets.clear();
+        self.focused_component = None;
+        self.focusable_components.clear();
     }
 
     pub fn focusable_order(&self) -> Vec<ComponentId> {
         let mut focusable: Vec<(i32, ComponentId)> = self
-            .focusable_widgets
+            .focusable_components
             .iter()
             .map(|(&id, &tab_index)| (tab_index, id))
             .collect();

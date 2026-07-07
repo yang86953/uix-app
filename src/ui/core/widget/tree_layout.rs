@@ -230,7 +230,7 @@ impl WidgetTree {
     }
 
     fn focus_affects_active(&self, id: WidgetId) -> bool {
-        let mut current = self.managers().focus.focused_widget();
+        let mut current = self.managers().focus.focused_component();
         while let Some(current_id) = current {
             if current_id == id {
                 return true;
