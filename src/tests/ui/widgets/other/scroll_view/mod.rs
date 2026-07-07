@@ -212,6 +212,14 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
     );
 
     tree.layout();
+    tree.get_mut(sv_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<ScrollView>()
+        .unwrap()
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
     tree.reset_dirty();
 
     assert_eq!(
@@ -246,6 +254,61 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
         .downcast_ref::<ScrollView>()
         .unwrap();
     assert!(sv.scroll_delta_for_dirty().is_none());
+}
+
+#[test]
+fn scrollview_scrollbar_drag_registers_composite_scroll_strip() {
+    let mut tree = WidgetTree::new();
+    let sv_id = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
+    ));
+    tree.add_child(
+        sv_id,
+        Box::new(FixedWidget {
+            size: Size::new(300.0, 600.0),
+            id: WidgetId::new(1),
+        }),
+    );
+
+    tree.layout();
+    tree.get_mut(sv_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<ScrollView>()
+        .unwrap()
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
+    tree.reset_dirty();
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(295.0, 10.0),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    tree.reset_dirty();
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(295.0, 18.0),
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+
+    let (frame, dx, dy) = tree
+        .drain_scroll_region_move()
+        .expect("scrollbar drag should register memmove");
+    assert_eq!(frame, Rect::new(0.0, 0.0, 300.0, 200.0));
+    assert_eq!(dx, 0.0);
+    assert!(dy > 0.0 && dy < 200.0, "unexpected drag delta {dy}");
+
+    let dirty = tree.dirty_region();
+    assert!(!dirty.full_frame);
+    assert_eq!(dirty.rects(), &[Rect::new(0.0, 200.0 - dy, 300.0, dy)]);
 }
 
 #[test]
