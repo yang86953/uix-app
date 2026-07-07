@@ -6,7 +6,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{
-    EventResult, SemanticEvent, SnapshotCollapsePanel, SnapshotFields, SystemEvent, WidgetId,
+    ComponentId, EventResult, SemanticEvent, SnapshotCollapsePanel, SnapshotFields, SystemEvent,
     WidgetTree,
 };
 use std::cell::Cell;
@@ -86,7 +86,7 @@ component! {
         EventResult::NotHandled
     }
 
-    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|idx| SemanticEvent::change(id, idx.to_string()))

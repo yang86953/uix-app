@@ -143,18 +143,10 @@ impl WidgetTree {
                     return result;
                 }
                 let target = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
-                self.pointer_down_target = target;
                 self.managers_mut().interaction.set_pressed_widget(target);
                 self.managers_mut()
                     .drag
                     .begin_gesture(target, *pos, *button, *mods);
-                // 旧字段暂作为兼容镜像，手势事实源在 DragManager。
-                self.drag_gesture.potential = true;
-                self.drag_gesture.start_pos = *pos;
-                self.drag_gesture.last_pos = *pos;
-                self.drag_gesture.button = *button;
-                self.drag_gesture.mods = *mods;
-                self.drag_gesture.target = target;
                 if let Some(t) = target {
                     self.invalidate_paint(t);
                     // 捕获阶段：root → target，用于 Modal 等拦截
@@ -191,8 +183,6 @@ impl WidgetTree {
                     }
                 }
                 self.managers_mut().drag.end_drag();
-                self.drag_gesture.reset();
-                self.pointer_down_target = None;
                 self.managers_mut().interaction.set_pressed_widget(None);
                 let hit = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
                 let mut result = EventResult::NotHandled;
@@ -237,8 +227,6 @@ impl WidgetTree {
                     // 5px 阈值：超出才视为拖拽开始
                     if dx.abs() > 5.0 || dy.abs() > 5.0 {
                         self.managers_mut().drag.activate_gesture();
-                        self.drag_gesture.active = true;
-                        self.drag_gesture.potential = false;
                         // 发射 DragStart 到拖拽目标
                         if let Some(target) = self.managers().drag.target() {
                             let drag_start = SystemEvent::DragStart {
@@ -266,7 +254,6 @@ impl WidgetTree {
                 if self.managers().drag.is_dragging() || self.managers().drag.is_potential() {
                     self.managers_mut().drag.update_drag(*pos);
                 }
-                self.drag_gesture.last_pos = *pos;
 
                 if let Some(drag_target) = self.managers().interaction.pressed_widget() {
                     let result = self.dispatch_to(drag_target, event);
@@ -302,7 +289,6 @@ impl WidgetTree {
                         let _ = self.dispatch_to(new, &SystemEvent::PointerEnter);
                         self.invalidate_paint(new);
                     }
-                    self.hovered_widget = new_hover;
                     self.managers_mut()
                         .interaction
                         .set_hovered_widget(new_hover);
@@ -806,7 +792,6 @@ impl WidgetTree {
             self.invalidate_paint(old);
             let _ = self.dispatch_to(old, &SystemEvent::FocusOut);
         }
-        self.focused_widget = new_focus;
         self.managers_mut().focus.set_focused_widget(new_focus);
         if let Some(new) = new_focus {
             self.invalidate_paint(new);

@@ -1,14 +1,13 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::core::EdgeInsets;
+use crate::core::{ComponentId, EdgeInsets};
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
 use crate::native::traits::input::{ControlSize, ScrollDirection};
 use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
-use crate::ui::widget::WidgetId;
 use crate::ui::widgets::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
     BarData, Breadcrumb, BreadcrumbItem, Button, Calendar, Card, Carousel, Cascader,
@@ -29,14 +28,14 @@ use crate::ui::widgets::{
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComponentConfigSnapshot {
-    pub id: WidgetId,
+    pub id: ComponentId,
     pub widget_type: TypeId,
     pub fields: SnapshotFields,
 }
 
 impl ComponentConfigSnapshot {
     pub fn from_component(
-        id: WidgetId,
+        id: ComponentId,
         component: &dyn crate::ui::traits::WidgetComponent,
     ) -> Self {
         Self {

@@ -4,10 +4,10 @@ use std::any::{Any, TypeId};
 use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 
-use crate::core::{Point, WindowId};
+use crate::core::{ComponentId, Point, WindowId};
 
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
-use crate::ui::widget::{EventResult, WidgetId};
+use crate::ui::widget::EventResult;
 
 /// 应用边界后的系统事件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -205,15 +205,15 @@ pub enum SemanticPayload {
 /// 语义事件。默认冒泡；handler 可 stop / preventDefault。
 pub struct SemanticEvent {
     pub kind: SemanticKind,
-    pub target: WidgetId,
-    pub current_target: WidgetId,
+    pub target: ComponentId,
+    pub current_target: ComponentId,
     pub payload: SemanticPayload,
     propagation_stopped: bool,
     default_prevented: bool,
 }
 
 impl SemanticEvent {
-    pub fn new(kind: SemanticKind, target: WidgetId, payload: SemanticPayload) -> Self {
+    pub fn new(kind: SemanticKind, target: ComponentId, payload: SemanticPayload) -> Self {
         Self {
             kind,
             target,
@@ -224,11 +224,11 @@ impl SemanticEvent {
         }
     }
 
-    pub fn click(target: WidgetId, payload: ClickEvent) -> Self {
+    pub fn click(target: ComponentId, payload: ClickEvent) -> Self {
         Self::new(SemanticKind::Click, target, SemanticPayload::Click(payload))
     }
 
-    pub fn context_menu(target: WidgetId, payload: ClickEvent) -> Self {
+    pub fn context_menu(target: ComponentId, payload: ClickEvent) -> Self {
         Self::new(
             SemanticKind::ContextMenu,
             target,
@@ -236,7 +236,7 @@ impl SemanticEvent {
         )
     }
 
-    pub fn text_input(target: WidgetId, text: impl Into<String>) -> Self {
+    pub fn text_input(target: ComponentId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::TextInput,
             target,
@@ -244,7 +244,7 @@ impl SemanticEvent {
         )
     }
 
-    pub fn ime_composition_start(target: WidgetId) -> Self {
+    pub fn ime_composition_start(target: ComponentId) -> Self {
         Self::new(
             SemanticKind::ImeCompositionStart,
             target,
@@ -252,7 +252,7 @@ impl SemanticEvent {
         )
     }
 
-    pub fn ime_composition_update(target: WidgetId, text: impl Into<String>) -> Self {
+    pub fn ime_composition_update(target: ComponentId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::ImeCompositionUpdate,
             target,
@@ -260,7 +260,7 @@ impl SemanticEvent {
         )
     }
 
-    pub fn ime_composition_end(target: WidgetId, text: impl Into<String>) -> Self {
+    pub fn ime_composition_end(target: ComponentId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::ImeCompositionEnd,
             target,
@@ -268,15 +268,15 @@ impl SemanticEvent {
         )
     }
 
-    pub fn copy(target: WidgetId) -> Self {
+    pub fn copy(target: ComponentId) -> Self {
         Self::new(SemanticKind::Copy, target, SemanticPayload::None)
     }
 
-    pub fn cut(target: WidgetId) -> Self {
+    pub fn cut(target: ComponentId) -> Self {
         Self::new(SemanticKind::Cut, target, SemanticPayload::None)
     }
 
-    pub fn paste(target: WidgetId, text: impl Into<String>) -> Self {
+    pub fn paste(target: ComponentId, text: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::Paste,
             target,
@@ -284,7 +284,7 @@ impl SemanticEvent {
         )
     }
 
-    pub fn change(target: WidgetId, value: impl Into<String>) -> Self {
+    pub fn change(target: ComponentId, value: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::Change,
             target,
@@ -292,7 +292,7 @@ impl SemanticEvent {
         )
     }
 
-    pub fn submit(target: WidgetId, value: impl Into<String>) -> Self {
+    pub fn submit(target: ComponentId, value: impl Into<String>) -> Self {
         Self::new(
             SemanticKind::Submit,
             target,
@@ -300,7 +300,7 @@ impl SemanticEvent {
         )
     }
 
-    pub fn file_drop(target: WidgetId, files: Vec<String>, position: Point) -> Self {
+    pub fn file_drop(target: ComponentId, files: Vec<String>, position: Point) -> Self {
         Self::new(
             SemanticKind::FileDrop,
             target,
@@ -308,7 +308,7 @@ impl SemanticEvent {
         )
     }
 
-    pub fn custom<T: Any + Send>(target: WidgetId, payload: T) -> Self {
+    pub fn custom<T: Any + Send>(target: ComponentId, payload: T) -> Self {
         Self::new(
             SemanticKind::Custom(TypeId::of::<T>()),
             target,
@@ -488,7 +488,7 @@ struct HandlerEntry {
 
 #[derive(Default)]
 pub struct HandlerTable {
-    handlers: HashMap<WidgetId, Vec<HandlerEntry>>,
+    handlers: HashMap<ComponentId, Vec<HandlerEntry>>,
     next_id: usize,
 }
 
@@ -499,7 +499,7 @@ impl HandlerTable {
 
     pub fn register(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         registration: HandlerRegistration,
     ) -> HandlerId {
         let id = HandlerId(self.next_id);
@@ -518,7 +518,7 @@ impl HandlerTable {
 
     pub fn on(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         kind: SemanticKind,
         handler: impl FnMut(&mut SemanticEvent) + 'static,
     ) -> HandlerId {
@@ -527,7 +527,7 @@ impl HandlerTable {
 
     pub fn on_click(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut(&ClickEvent) + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::Click, move |event| {
@@ -539,7 +539,7 @@ impl HandlerTable {
 
     pub fn on_text_input(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::TextInput, move |event| {
@@ -551,7 +551,7 @@ impl HandlerTable {
 
     pub fn on_ime_composition_start(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut() + 'static,
     ) -> HandlerId {
         self.on(
@@ -565,7 +565,7 @@ impl HandlerTable {
 
     pub fn on_ime_composition_update(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
         self.on(
@@ -581,7 +581,7 @@ impl HandlerTable {
 
     pub fn on_ime_composition_end(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::ImeCompositionEnd, move |event| {
@@ -593,7 +593,7 @@ impl HandlerTable {
 
     pub fn on_copy(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut() + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::Copy, move |_event| {
@@ -603,7 +603,7 @@ impl HandlerTable {
 
     pub fn on_cut(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut() + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::Cut, move |_event| {
@@ -613,7 +613,7 @@ impl HandlerTable {
 
     pub fn on_paste(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::Paste, move |event| {
@@ -625,7 +625,7 @@ impl HandlerTable {
 
     pub fn on_change(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::Change, move |event| {
@@ -637,7 +637,7 @@ impl HandlerTable {
 
     pub fn on_submit(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut(&str) + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::Submit, move |event| {
@@ -649,7 +649,7 @@ impl HandlerTable {
 
     pub fn on_file_drop(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut(&[String], Point) + 'static,
     ) -> HandlerId {
         self.on(component, SemanticKind::FileDrop, move |event| {
@@ -661,7 +661,7 @@ impl HandlerTable {
 
     pub fn on_custom<T: Any>(
         &mut self,
-        component: WidgetId,
+        component: ComponentId,
         mut handler: impl FnMut(&T) + 'static,
     ) -> HandlerId {
         self.on(
@@ -675,13 +675,13 @@ impl HandlerTable {
         )
     }
 
-    pub fn remove(&mut self, component: WidgetId, handler_id: HandlerId) {
+    pub fn remove(&mut self, component: ComponentId, handler_id: HandlerId) {
         if let Some(entries) = self.handlers.get_mut(&component) {
             entries.retain(|entry| entry.id != handler_id);
         }
     }
 
-    pub fn clear_component(&mut self, component: WidgetId) {
+    pub fn clear_component(&mut self, component: ComponentId) {
         self.handlers.remove(&component);
     }
 
@@ -689,7 +689,11 @@ impl HandlerTable {
         self.handlers.clear();
     }
 
-    pub fn dispatch_path(&mut self, path: &[WidgetId], event: &mut SemanticEvent) -> EventResult {
+    pub fn dispatch_path(
+        &mut self,
+        path: &[ComponentId],
+        event: &mut SemanticEvent,
+    ) -> EventResult {
         let mut handled = false;
         for &component in path {
             event.current_target = component;
@@ -707,7 +711,7 @@ impl HandlerTable {
         }
     }
 
-    fn dispatch_component(&mut self, component: WidgetId, event: &mut SemanticEvent) -> bool {
+    fn dispatch_component(&mut self, component: ComponentId, event: &mut SemanticEvent) -> bool {
         let Some(entries) = self.handlers.get_mut(&component) else {
             return false;
         };

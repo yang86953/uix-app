@@ -5,7 +5,8 @@ use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::widgets::display::tree::TreeNode;
 use crate::ui::{
-    EventResult, SemanticEvent, SnapshotFields, SnapshotTreeNode, SystemEvent, WidgetId, WidgetTree,
+    ComponentId, EventResult, SemanticEvent, SnapshotFields, SnapshotTreeNode, SystemEvent,
+    WidgetTree,
 };
 use std::cell::RefCell;
 
@@ -70,7 +71,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .borrow_mut()
             .take()

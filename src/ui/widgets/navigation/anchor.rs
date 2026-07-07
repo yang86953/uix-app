@@ -7,7 +7,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SemanticEvent, SystemEvent, WidgetTree};
 use std::cell::Cell;
 
 component! {
@@ -50,7 +50,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         let idx = self.pending_change.take()?;
         let href = self
             .items

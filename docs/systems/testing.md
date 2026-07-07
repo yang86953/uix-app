@@ -74,7 +74,7 @@ FakePlatform.inject(UiEvent)
 | 焦点 / 冒泡 | focus 转移、`stop_propagation` 阻后续 handler（#68） |
 | 平台副作用 | `FakeClipboard` 历史、`text_input.start/stop` 调用序 |
 
-Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138）；未变则保留注册。测试勿假设跨 rebuild 的 handler 指针/闭包 identity 稳定；可断言 **同 handler_generation + 同 SemanticKind 集** 时 HandlerTable 保留。**WidgetId**（当前）/ key 复用仍有效。
+Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138）；未变则保留注册。测试勿假设跨 rebuild 的 handler 指针/闭包 identity 稳定；可断言 **同 handler_generation + 同 SemanticKind 集** 时 HandlerTable 保留。**ComponentId** key 复用仍有效；`WidgetId` 仅为树内同型别名。
 
 ---
 

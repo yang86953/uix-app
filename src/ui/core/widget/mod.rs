@@ -324,7 +324,7 @@ impl BoxedWidget {
     }
     pub fn semantic_event(
         &self,
-        id: WidgetId,
+        id: ComponentId,
         event: &SystemEvent,
     ) -> Option<crate::ui::event::SemanticEvent> {
         self.component()

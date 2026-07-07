@@ -24,7 +24,7 @@ use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::InvalidationQueueHandle;
 use crate::ui::state::{drain_pending_state_binds, StatePaintBind};
 use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
-use crate::ui::{WidgetId, WidgetTree};
+use crate::ui::{ComponentId, WidgetTree};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -250,7 +250,7 @@ impl DynamicLabel {
     /// 将关联 State 绑定到 widget 的 Paint 失效。
     pub(crate) fn bind_state_invalidation(
         &self,
-        widget_id: WidgetId,
+        component_id: ComponentId,
         queue: InvalidationQueueHandle,
         rect: Option<Rect>,
         reconcile_key: usize,
@@ -258,7 +258,7 @@ impl DynamicLabel {
     ) {
         for source in &self.state_sources {
             source.bind_reconcile_site(reconcile_key, reconcile.clone());
-            source.bind_paint(widget_id, queue.clone(), rect);
+            source.bind_paint(component_id, queue.clone(), rect);
         }
     }
 

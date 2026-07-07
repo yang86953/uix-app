@@ -1,5 +1,5 @@
 use super::*;
-use crate::core::Rect;
+use crate::core::{ComponentId, Rect};
 use crate::ui::state::State;
 use crate::ui::widgets::{Button, Input, Label};
 use crate::ui::{
@@ -116,6 +116,40 @@ fn handler_table_when_is_evaluated_per_dispatch() {
 }
 
 #[test]
+fn handler_table_keys_by_component_id_generation() {
+    let first_generation = ComponentId::from_parts(7, 0);
+    let second_generation = ComponentId::from_parts(7, 1);
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let mut table = HandlerTable::new();
+
+    {
+        let calls = calls.clone();
+        table.on(first_generation, SemanticKind::Click, move |_| {
+            calls.borrow_mut().push("first");
+        });
+    }
+    {
+        let calls = calls.clone();
+        table.on(second_generation, SemanticKind::Click, move |_| {
+            calls.borrow_mut().push("second");
+        });
+    }
+
+    let mut event = SemanticEvent::click(
+        second_generation,
+        ClickEvent {
+            button: MouseButton::Left,
+            pos: Point::zero(),
+            modifiers: KeyMod::NONE,
+        },
+    );
+    let result = table.dispatch_path(&[second_generation], &mut event);
+
+    assert_eq!(result, EventResult::Handled);
+    assert_eq!(calls.borrow().as_slice(), &["second"]);
+}
+
+#[test]
 fn widget_node_on_semantic_capture_registers_captured_handler() {
     let state = State::new(1);
     let calls = Rc::new(Cell::new(0));
@@ -164,7 +198,7 @@ struct BusinessPayload {
 
 #[test]
 fn register_semantic_macro_matches_custom_event_kind() {
-    let event = SemanticEvent::custom(WidgetId::new(1), BusinessPayload { value: 7 });
+    let event = SemanticEvent::custom(ComponentId::new(1), BusinessPayload { value: 7 });
 
     assert_eq!(event.kind, register_semantic!(BusinessPayload));
 }
@@ -179,7 +213,7 @@ fn handler_table_dispatches_typed_custom_payload() {
         value_for_handler.set(payload.value);
     });
 
-    let mut event = SemanticEvent::custom(WidgetId::new(1), BusinessPayload { value: 42 });
+    let mut event = SemanticEvent::custom(ComponentId::new(1), BusinessPayload { value: 42 });
     let result = table.dispatch_path(&[id], &mut event);
 
     assert_eq!(result, EventResult::Handled);

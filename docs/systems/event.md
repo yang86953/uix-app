@@ -60,10 +60,10 @@ Pointer（Down/Up/Move）、Wheel、Key（Down/Up）、TextInput、IME（Start/U
 
 ### HandlerTable（#10、#101）
 
-设计键 **ComponentId**；源码中 `WidgetId` 为 `core::ComponentId` 别名（#10、#101）。
+设计与当前源码键均为 **ComponentId**；`WidgetId` 仅为树内 `core::ComponentId` 同型别名（#10、#101）。
 
 ```rust
-HashMap<WidgetId, Vec<HandlerEntry>>   // WidgetId（当前实现，#101）
+HashMap<ComponentId, Vec<HandlerEntry>>
 ```
 
 | API | 作用 |
@@ -96,7 +96,7 @@ Handler 闭包 `'static`；**AppState** / **ComponentHandle**（设计，#32）�
 
 ```text
 ComponentHandle::emit(event)
-  → 使用 ComponentId/WidgetId 同一代际 ID
+  → 使用 ComponentId 同一代际 ID
   → SemanticEvent { target: id, .. event }
   → WidgetTree::dispatch_semantic(event)   // 已有 API
        → semantic_path_to_root(target)
@@ -107,7 +107,7 @@ ComponentHandle::emit(event)
 |------|------|
 | 线程 | **仅主线程**（#88）；与 Timer / post_to_ui 同约束 |
 | 路径 | **同** [语义冒泡](#语义冒泡)；`stop_propagation` / `prevent_default` 有效 |
-| target | `event.target` = handle 的 ComponentId/WidgetId；`current_target` 沿 path 更新 |
+| target | `event.target` = handle 的 ComponentId；`current_target` 沿 path 更新 |
 | payload | 标准 `SemanticEvent` 构造（`change` / `custom` / …）；**非**新并行事件类型 |
 | 绘制 | emit **不**默认 layout/render；handler 内 `State::set` / `invalidate` 按需 wake |
 | 禁止 | 绕过 HandlerTable 直调 handler 闭包；非主线程 emit |
@@ -121,7 +121,7 @@ ComponentHandle::emit(event)
 
 测试：FakePlatform 注入与 `handle.emit` 应对同一 handler 产生 **相同** HandlerTable 副作用（见 [testing · 语义断言](testing.md#语义断言)）。
 
-> **实现注记**：`ComponentHandle::emit` 已导出；live handle 将事件 target 归一到所属组件后直接调用 `WidgetTree::dispatch_semantic`，lookup handle 将事件写入 `AppState` semantic queue 并唤醒 loop，由主窗/副窗 `WindowSession` drain 后派发。`ComponentHandle` 只读 snapshot getter 已接；`AppState` snapshot registry、`get_handle`、lookup handle `invalidate()` 与主窗/副窗 AppState 注入已接。
+> **实现注记**：`SemanticEvent` target/current_target、`EventHandler::semantic_event` target 参数、`HandlerTable` 存储与公开 API 已按 `ComponentId` 命名，且覆盖同 slot 不同 generation 不串 handler 的测试。`ComponentHandle::emit` 已导出；live handle 将事件 target 归一到所属组件后直接调用 `WidgetTree::dispatch_semantic`，lookup handle 将事件写入 `AppState` semantic queue 并唤醒 loop，由主窗/副窗 `WindowSession` drain 后派发。`ComponentHandle` 只读 snapshot getter 已接；`AppState` snapshot registry、`get_handle`、lookup handle `invalidate()` 与主窗/副窗 AppState 注入已接。
 
 ---
 
@@ -166,8 +166,8 @@ dispatch_semantic_event:
 
 [demand-driven · 边界感知窄路径](demand-driven.md#pointermove-窄路径)：
 
-1. `drag_gesture.active` 或 `pointer_down_target` → **全 dispatch**
-2. `pos` 仍在 `hovered_widget` 扩大 hit 框内 → 仅更新 `cursor_pos`；**不 hit_test**；默认 **不 dispatch**
+1. `DragManager` active/potential 或 `InteractionManager.pressed_widget` → **全 dispatch**
+2. `pos` 仍在 `InteractionManager.hovered_widget` 扩大 hit 框内 → 仅更新拖拽/hover 状态；**不 hit_test**；默认 **不 dispatch**
 3. 否则 `hit_test`；`target ≠ hovered_widget` → enter/leave + 窄标脏，并对新 target dispatch
 
 Widget 可通过 `EventHandler::wants_continuous_pointer_move` opt-in（#121，默认 false）。实现见 [component · 能力](component.md#能力)。
@@ -218,9 +218,9 @@ View rebuild 时 **智能重绑** handler（#123、#135，修订 #62）— 仅 h
 
 ```text
 ui/event.rs              SystemEvent, SemanticEvent, SemanticKind, EventResult
+                         HandlerTable, HandlerRegistration
 ui/core/widget/
     tree_events.rs       dispatch_event, hit_test, 语义冒泡
-    handler_table.rs     HandlerTable, HandlerRegistration
 app/shell/application.rs map_ui_event（UiEvent → SystemEvent）
 ```
 

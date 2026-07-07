@@ -16,6 +16,7 @@ pub mod traits;
 pub mod view;
 pub mod widgets;
 
+pub use crate::core::ComponentId;
 pub use crate::draw::painting::PaintContext;
 pub use crate::native::traits::input::{ControlSize, KeyCode, KeyMod, MouseButton};
 pub use crate::native::traits::system::StatusLevel;

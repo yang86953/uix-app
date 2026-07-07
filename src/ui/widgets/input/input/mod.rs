@@ -11,7 +11,9 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::native::traits::input::ControlSize;
 use crate::ui::clipboard;
-use crate::ui::{EventResult, KeyCode, KeyMod, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{
+    ComponentId, EventResult, KeyCode, KeyMod, SemanticEvent, SystemEvent, WidgetTree,
+};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
 pub fn input_height(size: ControlSize) -> f32 {
@@ -249,7 +251,7 @@ component! {
         }
     }
 
-    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         if let Some(value) = self.pending_submit.borrow_mut().take() {
             return Some(SemanticEvent::submit(id, value));
         }

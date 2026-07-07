@@ -8,7 +8,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SemanticEvent, SystemEvent, WidgetTree};
 use std::cell::Cell;
 
 /// 步骤状态。
@@ -68,7 +68,7 @@ component! {
         EventResult::NotHandled
     }
 
-    semantic_event => (&self, id: WidgetId, _event: &SystemEvent) -> Option<SemanticEvent> {
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
         self.pending_change
             .take()
             .map(|idx| SemanticEvent::change(id, idx.to_string()))

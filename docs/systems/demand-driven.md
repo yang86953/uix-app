@@ -547,10 +547,10 @@ AND subtree_estimated_pixels >= 65536
 
 ```text
 PointerMove 到达
-  ├─ drag_gesture.active 或 pointer_down_target 存在？
+  ├─ DragManager active/potential 或 InteractionManager.pressed_widget 存在？
   │     → 全 dispatch（Scrollbar 拖拽等）
-  ├─ pos 仍在 hovered_widget 扩大 hit 框内？
-  │     → 仅更新 cursor_pos；不 hit_test；默认不 dispatch
+  ├─ pos 仍在 InteractionManager.hovered_widget 扩大 hit 框内？
+  │     → 仅更新拖拽/hover 状态；不 hit_test；默认不 dispatch
   │       （wants_continuous_pointer_move=true 时仍 dispatch）
   └─ 否则
         → hit_test
@@ -659,7 +659,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | StateSlotId | State::new 单调 id | 已接；clone 共享，`generation()` 不参与身份 | [#143](../decisions.md#d143) |
 | Handler 智能重绑 | handler 变才重注册（#135） | 稳定 signature 路径已跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 DSL handler 仍保守重绑 | [#123](../decisions.md#d123) [#135](../decisions.md#d135) |
 | handler_generation + 指纹 | build 自动 bump（#142） | 内部 generation 字段、State / WindowId capture 指纹基础与 fingerprint→generation 解析已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接；任意 Rust handler 闭包不做运行时自动收集（#159），未来宏 / DSL 只有在语法层生成 fingerprint 时才进入稳定复用 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) [#159](../decisions.md#d159) |
-| PointerMove 边界窄路径 | 框内不 hit_test | 已接：pointer_down_target/drag 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](../decisions.md#d109) [#121](../decisions.md#d121) |
+| PointerMove 边界窄路径 | 框内不 hit_test | 已接：`InteractionManager.pressed_widget` / `DragManager.target` 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](../decisions.md#d109) [#121](../decisions.md#d121) |
 | Effect DeepIdle 跳过 | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 `Animation(id)` Registry deadline 唤醒，due 帧只推进到期 active + visible 节点；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接 | #105 |
 | ComponentConfigSnapshot | mount 提取配置 | 类型与 80 个内置组件静态配置提取已接；`ComponentHandle` 直接 snapshot getter 已接；AppState mount/unmount snapshot register 已接；reconcile patch update 已接 | [#146](../decisions.md#d146) |
 | Handle emit / invalidate / getter | dispatch_semantic + 窄 Paint + 只读配置 | `ComponentHandle::emit` 已导出；live handle 直接走 `WidgetTree::dispatch_semantic`，lookup handle 经 AppState semantic queue 唤醒并由主/副窗 drain 派发；live handle 与 lookup handle 的 `invalidate()` 均已接窄 Paint；`snapshot()` / `text()` / `placeholder()` / `disabled()` 已接；App 默认持有 `AppState`，`AppState::get_handle` 可查 snapshot handle | [#119](../decisions.md#d119) [#147](../decisions.md#d147) |
