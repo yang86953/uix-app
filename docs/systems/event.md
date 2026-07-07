@@ -120,7 +120,7 @@ ComponentHandle::emit(event)
 
 测试：FakePlatform 注入与 `handle.emit` 应对同一 handler 产生 **相同** HandlerTable 副作用（见 [testing · 语义断言](testing.md#语义断言)）。
 
-> **实现注记**：`ComponentHandle::emit` 已导出，并将事件 target 归一到 handle 所属组件后调用 `WidgetTree::dispatch_semantic`；`ComponentHandle` 只读 snapshot getter 已接。`AppState` snapshot registry、`get_handle` 与主窗/副窗 AppState 注入已接；lookup handle 的 live tree 绑定尚未接。
+> **实现注记**：`ComponentHandle::emit` 已导出，并将事件 target 归一到 live handle 所属组件后调用 `WidgetTree::dispatch_semantic`；`ComponentHandle` 只读 snapshot getter 已接。`AppState` snapshot registry、`get_handle`、lookup handle `invalidate()` 与主窗/副窗 AppState 注入已接；lookup handle 的 live `emit` dispatch 绑定尚未接。
 
 ---
 

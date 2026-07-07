@@ -167,6 +167,7 @@ impl WidgetTree {
         self.bind_reactive_widget_states();
         self.rebuild_widget_overlays();
         self.reconcile_lifecycle_after_layout();
+        self.sync_app_state_registry();
         crate::core::log::debug_fn("[Layout] layout() done");
     }
 

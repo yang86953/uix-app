@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::core::Rect;
+use crate::draw::pipeline::{invalidate_paint_handle, InvalidationQueueHandle};
 use crate::ui::component_handle::ComponentHandle;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;
 use crate::ui::widget::WidgetId;
@@ -12,7 +14,13 @@ pub struct AppState {
 
 #[derive(Default)]
 pub(crate) struct AppStateInner {
-    components: HashMap<WidgetId, ComponentConfigSnapshot>,
+    components: HashMap<WidgetId, AppStateEntry>,
+}
+
+struct AppStateEntry {
+    snapshot: ComponentConfigSnapshot,
+    invalidation: InvalidationQueueHandle,
+    rect: Option<Rect>,
 }
 
 impl AppState {
@@ -20,11 +28,17 @@ impl AppState {
         Self::default()
     }
 
-    pub(crate) fn register(&self, id: WidgetId, snapshot: ComponentConfigSnapshot) {
+    pub(crate) fn register(
+        &self,
+        id: WidgetId,
+        snapshot: ComponentConfigSnapshot,
+        invalidation: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    ) {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .register(id, snapshot);
+            .register(id, snapshot, invalidation, rect);
     }
 
     pub(crate) fn unregister(&self, id: WidgetId) {
@@ -69,8 +83,21 @@ impl AppState {
 }
 
 impl AppStateInner {
-    fn register(&mut self, id: WidgetId, snapshot: ComponentConfigSnapshot) {
-        self.components.insert(id, snapshot);
+    fn register(
+        &mut self,
+        id: WidgetId,
+        snapshot: ComponentConfigSnapshot,
+        invalidation: InvalidationQueueHandle,
+        rect: Option<Rect>,
+    ) {
+        self.components.insert(
+            id,
+            AppStateEntry {
+                snapshot,
+                invalidation,
+                rect,
+            },
+        );
     }
 
     fn unregister(&mut self, id: WidgetId) {
@@ -78,7 +105,15 @@ impl AppStateInner {
     }
 
     pub(crate) fn snapshot(&self, id: WidgetId) -> Option<ComponentConfigSnapshot> {
-        self.components.get(&id).cloned()
+        self.components.get(&id).map(|entry| entry.snapshot.clone())
+    }
+
+    pub(crate) fn invalidate(&self, id: WidgetId) -> bool {
+        let Some(entry) = self.components.get(&id) else {
+            return false;
+        };
+        invalidate_paint_handle(&entry.invalidation, id, entry.rect);
+        true
     }
 
     fn contains(&self, id: WidgetId) -> bool {

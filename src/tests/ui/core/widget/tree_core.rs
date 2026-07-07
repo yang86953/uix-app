@@ -515,6 +515,25 @@ fn app_state_registers_mounted_components_and_unregisters_removed_components() {
 }
 
 #[test]
+fn app_state_lookup_handle_invalidate_marks_narrow_paint() {
+    let app_state = AppState::new();
+    let mut tree = WidgetTree::new();
+    tree.set_app_state(app_state.clone());
+    let root = tree.set_root(Box::new(Label::new("root")));
+    tree.layout();
+    tree.reset_dirty();
+
+    app_state.get_handle(root).unwrap().invalidate();
+
+    let invalidation = tree.invalidation.lock().unwrap_or_else(|e| e.into_inner());
+    assert!(invalidation.node_needs_paint(root));
+    assert!(!invalidation.has_layout());
+    drop(invalidation);
+    assert!(tree.has_render_work());
+    assert!(!tree.dirty_region().full_frame);
+}
+
+#[test]
 fn app_state_clears_stale_snapshots_when_root_is_replaced() {
     let app_state = AppState::new();
     let mut tree = WidgetTree::new();

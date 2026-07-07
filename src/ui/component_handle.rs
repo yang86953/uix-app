@@ -107,12 +107,19 @@ impl ComponentHandle {
     }
 
     pub fn invalidate(&self) {
-        let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) else {
+        if let Some(tree) = self.tree.as_ref().and_then(RcWeak::upgrade) {
+            if let Ok(mut tree) = tree.try_borrow_mut() {
+                tree.invalidate_paint(self.id);
+            };
             return;
-        };
-        if let Ok(mut tree) = tree.try_borrow_mut() {
-            tree.invalidate_paint(self.id);
-        };
+        }
+
+        if let Some(state) = self.app_state.as_ref().and_then(SyncWeak::upgrade) {
+            let _ = state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .invalidate(self.id);
+        }
     }
 
     pub fn emit(&self, mut event: SemanticEvent) -> EventResult {
