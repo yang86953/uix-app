@@ -1,4 +1,4 @@
-use super::*;
+﻿use super::*;
 
 #[test]
 fn page_titles_and_build() {
@@ -152,7 +152,7 @@ fn demo_first_frame_renders_nav_sidebar() {
         "nav container height too small: {nav_frame:?}"
     );
 
-    let nav_items: Vec<(WidgetId, Rect)> = tree
+    let nav_items: Vec<(ComponentId, Rect)> = tree
         .find_all_by_type::<NavItem>()
         .into_iter()
         .map(|(id, _)| (id, tree.get(id).unwrap().frame()))
@@ -377,7 +377,7 @@ fn demo_nav_hover_partial_repaint_no_top_seam() {
     );
     tree.reset_dirty();
 
-    let nav_items: Vec<(WidgetId, Rect)> = tree
+    let nav_items: Vec<(ComponentId, Rect)> = tree
         .find_all_by_type::<NavItem>()
         .into_iter()
         .map(|(id, _)| (id, tree.get(id).unwrap().frame()))

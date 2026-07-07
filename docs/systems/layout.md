@@ -1,4 +1,4 @@
-# 布局系统
+﻿# 布局系统
 
 ← [Main](../Main.md) · 系统 **#6** · 功能域：`ui`
 
@@ -66,7 +66,7 @@ LayoutChild {
 }
 ```
 
-由 `child_from_tree(component_id, tree)` 从 WidgetTree 构建；源码树内 `WidgetId` 仍为同型别名。
+由 `child_from_tree(component_id, tree)` 从 WidgetTree 构建；WidgetTree 内部 `WidgetId` 仍为同型别名。
 
 ---
 

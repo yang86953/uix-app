@@ -1,4 +1,4 @@
-//! 界面能力 — 组件框架、布局、主题、内置组件与声明式 View。
+﻿//! 界面能力 — 组件框架、布局、主题、内置组件与声明式 View。
 
 pub mod animation;
 pub mod app_state;
@@ -31,7 +31,7 @@ pub use component_snapshot::{
 };
 pub use core::widget;
 pub use core::widget::{
-    BoxedWidget, EventResult, IntoWidgetNode, WidgetCore, WidgetId, WidgetNode, WidgetTree,
+    BoxedWidget, EventResult, IntoWidgetNode, WidgetCore, WidgetNode, WidgetTree,
 };
 pub use core::{children, context};
 pub use event::{

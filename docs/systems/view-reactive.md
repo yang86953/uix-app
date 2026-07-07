@@ -1,4 +1,4 @@
-# View 与响应式系统
+﻿# View 与响应式系统
 
 ← [Main](../Main.md) · 系统 **#2** · 功能域：`ui`
 
@@ -72,8 +72,8 @@ ViewNode::new(widget, children)
 > **术语（[#101](../decisions.md#d101)）**
 >
 > - **ComponentId**（#35、#101）：Generational ID；Reconciler diff 复用依据。
-> - **WidgetId**（源码名，#101）：`core::ComponentId` 的 UI 模块别名。
-> - **HandlerTable** 键：`ComponentId`（`WidgetId` 仅为树内同型别名，#10、#101）。
+> - **WidgetId**（内部源码名，#101）：`core::ComponentId` 的 WidgetTree 内部别名。
+> - **HandlerTable** 键：`ComponentId`（`WidgetId` 仅为 WidgetTree 内部同型别名，#10、#101）。
 > - **Handler 重绑**（#123、#135，修订 #62）：reconcile 时 **仅 handler 变更** 才 `clear_component`+重注册；未变则保留。
 > - **AppState** / **ComponentHandle**（设计，#32）：当前业务数据经 `State<T>` 闭包捕获。
 
