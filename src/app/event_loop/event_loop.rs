@@ -517,7 +517,7 @@ where
 
         dispatch_due_active_work(tree, &app_timers, &due_work, clock.as_ref());
         let mut main_thread_context = MainThreadContext::new(pending_root, reconcile_pending);
-        let had_main_thread_work = main_thread_queue.drain(&mut main_thread_context);
+        let _had_main_thread_work = main_thread_queue.drain(&mut main_thread_context);
         let had_app_state_semantic_work = tree.drain_app_state_semantic_events();
         active_work.sync_timers(tree.active_timers(), clock.now());
         active_work.sync_app_timers(app_timers.deadlines());
@@ -536,7 +536,6 @@ where
         let pending_effects = tree.has_pending_effects();
         let active_frame = had_events
             || had_registered_work
-            || had_main_thread_work
             || had_app_state_semantic_work
             || *reconcile_pending
             || pending_effects

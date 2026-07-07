@@ -17,6 +17,7 @@
 //!   dependencies and binds them to narrow Paint invalidation.
 //! - As a fallback, `bind_orphan_pending_states` binds unassociated state to
 //!   the root node.
+use crate::ui::component_snapshot::SnapshotFields;
 use crate::ui::event::{HandlerRegistration, HandlerSignature, SemanticKind};
 use crate::ui::foundation::state::{begin_state_capture, end_state_capture};
 use crate::ui::style::Style;
@@ -157,25 +158,43 @@ impl ViewAdapter {
             handlers,
         } = node;
         let widget = Self::apply_style(widget, &style);
-        Self::patch_widget(tree, id, widget);
+        let widget_changed = Self::patch_widget(tree, id, widget);
         tree.register_app_state_snapshot(id);
 
+        let mut paint_changed = widget_changed;
+        let mut layout_changed = widget_changed;
         if let Some(current) = tree.get_mut(id) {
-            current.set_key(key.map(Into::into));
+            let next_key = key.map(Into::into);
+            if current.key() != next_key.as_deref() {
+                current.set_key(next_key);
+            }
             if current.z_index() != z_index {
                 current.set_z_index(z_index);
+                paint_changed = true;
             }
         }
 
-        Self::reconcile_handlers(tree, id, handlers);
+        let _handlers_changed = Self::reconcile_handlers(tree, id, handlers);
+        let children_changed = Self::reconcile_children(tree, id, children);
+        if children_changed {
+            paint_changed = true;
+            layout_changed = true;
+        }
 
-        tree.invalidate_paint(id);
-        tree.push_layout_invalidation(id);
-        tree.propagate_layout_invalidation(id);
-        Self::reconcile_children(tree, id, children);
+        if paint_changed {
+            tree.invalidate_paint(id);
+        }
+        if layout_changed {
+            tree.push_layout_invalidation(id);
+            tree.propagate_layout_invalidation(id);
+        }
     }
 
-    fn reconcile_handlers(tree: &mut WidgetTree, id: WidgetId, handlers: Vec<HandlerRegistration>) {
+    fn reconcile_handlers(
+        tree: &mut WidgetTree,
+        id: WidgetId,
+        handlers: Vec<HandlerRegistration>,
+    ) -> bool {
         let next_signatures = tree
             .get(id)
             .map(|current| {
@@ -193,7 +212,7 @@ impl ViewAdapter {
                     != Self::handler_signature_groups(&next_signatures)
         });
         if !changed {
-            return;
+            return false;
         }
 
         tree.handler_table().clear_component(id);
@@ -203,6 +222,7 @@ impl ViewAdapter {
         for handler in handlers {
             tree.handler_table().register(id, handler);
         }
+        true
     }
 
     fn resolve_handler_signatures(
@@ -272,15 +292,18 @@ impl ViewAdapter {
             && next.iter().all(|signature| signature.generation.is_some())
     }
 
-    fn patch_widget(tree: &mut WidgetTree, id: WidgetId, widget: Box<dyn WidgetComponent>) {
+    fn patch_widget(tree: &mut WidgetTree, id: WidgetId, widget: Box<dyn WidgetComponent>) -> bool {
         let Some(current) = tree.get_mut(id) else {
-            return;
+            return false;
         };
 
         let next_type = widget.as_any().type_id();
+        let next_fields = widget.snapshot_fields();
+        let config_changed = current.component().snapshot_fields() != next_fields
+            || next_fields == SnapshotFields::Unknown;
         if current.component().as_any().type_id() != next_type {
             current.replace_component(widget);
-            return;
+            return true;
         }
 
         if next_type == TypeId::of::<Container>() {
@@ -291,26 +314,26 @@ impl ViewAdapter {
                     .downcast_mut::<Container>()
                 {
                     existing.style = next.style.clone();
-                    return;
+                    return config_changed;
                 }
             }
             current.replace_component(widget);
-            return;
+            return true;
         }
 
         if next_type == TypeId::of::<Label>() {
             let Ok(next) = widget.into_any().downcast::<Label>() else {
-                return;
+                return false;
             };
             if let Some(existing) = current.component_mut().as_any_mut().downcast_mut::<Label>() {
                 existing.sync_from(*next);
             }
-            return;
+            return config_changed;
         }
 
         if next_type == TypeId::of::<Button>() {
             let Ok(next) = widget.into_any().downcast::<Button>() else {
-                return;
+                return false;
             };
             if let Some(existing) = current
                 .component_mut()
@@ -319,31 +342,36 @@ impl ViewAdapter {
             {
                 existing.sync_from(*next);
             }
-            return;
+            return config_changed;
         }
 
         if next_type == TypeId::of::<Input>() {
             let Ok(next) = widget.into_any().downcast::<Input>() else {
-                return;
+                return false;
             };
             if let Some(existing) = current.component_mut().as_any_mut().downcast_mut::<Input>() {
                 existing.sync_from(*next);
             }
-            return;
+            return config_changed;
         }
 
         if next_type == TypeId::of::<Grid>() {
             let Ok(next) = widget.into_any().downcast::<Grid>() else {
-                return;
+                return false;
             };
             current.replace_component(next);
-            return;
+            return config_changed;
         }
 
         current.replace_component(widget);
+        config_changed
     }
 
-    fn reconcile_children(tree: &mut WidgetTree, parent_id: WidgetId, children: Vec<ViewNode>) {
+    fn reconcile_children(
+        tree: &mut WidgetTree,
+        parent_id: WidgetId,
+        children: Vec<ViewNode>,
+    ) -> bool {
         let old_children = tree
             .get(parent_id)
             .map(|node| node.children().to_vec())
@@ -357,6 +385,7 @@ impl ViewAdapter {
 
         let mut used_old = HashSet::new();
         let mut new_order = Vec::with_capacity(children.len());
+        let mut structure_changed = old_children.len() != children.len();
 
         for (index, child) in children.into_iter().enumerate() {
             let candidate = child
@@ -382,9 +411,11 @@ impl ViewAdapter {
                     child_id
                 } else {
                     tree.remove(child_id);
+                    structure_changed = true;
                     tree.build_child_node(parent_id, Self::expand(child))
                 }
             } else {
+                structure_changed = true;
                 tree.build_child_node(parent_id, Self::expand(child))
             };
             new_order.push(child_id);
@@ -392,6 +423,7 @@ impl ViewAdapter {
 
         for child_id in old_children {
             if !used_old.contains(&child_id) && tree.get(child_id).is_some() {
+                structure_changed = true;
                 tree.remove(child_id);
             }
         }
@@ -404,7 +436,9 @@ impl ViewAdapter {
                 *parent.children_mut() = new_order;
             }
             tree.tree_version += 1;
+            structure_changed = true;
         }
+        structure_changed
     }
 }
 

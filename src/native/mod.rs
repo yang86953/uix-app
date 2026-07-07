@@ -1,6 +1,6 @@
 //! 平台能力 — OS 抽象，差异封装在此域。
 
-pub(crate) mod backends;
+mod backends;
 pub mod factory;
 pub mod presenter;
 pub mod services;

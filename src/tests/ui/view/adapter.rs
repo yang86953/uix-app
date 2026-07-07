@@ -43,6 +43,23 @@ fn test_apply_style_container() {
 }
 
 #[test]
+fn reconcile_same_view_keeps_invalidation_empty() {
+    use crate::ui::view::label;
+
+    let mut tree = ViewAdapter::build(label("same"));
+    tree.reset_dirty();
+
+    ViewAdapter::reconcile(&mut tree, label("same"));
+
+    assert!(!tree.has_render_work());
+    assert!(!tree
+        .invalidation
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .has_layout());
+}
+
+#[test]
 fn grid_style_tracks_drive_layout() {
     use crate::core::Rect;
     use crate::ui::layout::GridTrack;
