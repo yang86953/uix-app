@@ -257,16 +257,13 @@ fn container_and_grid_snapshots_capture_layout_config() {
         .size(320.0, 180.0);
     assert!(matches!(
         grid.snapshot_fields(),
-        SnapshotFields::Grid {
-            ref columns,
-            col_gap: 12.0,
-            row_gap: 12.0,
-            bg_color: Some(color),
-            fixed_width: Some(320.0),
-            fixed_height: Some(180.0),
-            ..
-        } if columns == &vec![GridTrack::Fr(1.0), GridTrack::Px(120.0)]
-            && color == Color::blue()
+        SnapshotFields::Grid { ref style }
+            if style.grid_template_columns == vec![GridTrack::Fr(1.0), GridTrack::Px(120.0)]
+                && style.grid_column_gap == 12.0
+                && style.grid_row_gap == 12.0
+                && style.background == Some(crate::ui::style::ColorValue::Custom(Color::blue()))
+                && style.width == Some(320.0)
+                && style.height == Some(180.0)
     ));
 }
 

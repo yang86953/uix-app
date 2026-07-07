@@ -1,13 +1,15 @@
-//! Grid widget — CSS Grid-like layout container.
+//! Grid widget - CSS Grid-like layout container.
 
 use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
-use crate::draw::{Color, Radius};
-use crate::ui::layout::engine::{child_from_tree_with_constraints, GridLayout, LayoutChild};
+use crate::draw::Color;
+use crate::ui::layout::engine::{
+    child_from_tree_with_constraints, BoxModel, GridLayout, LayoutChild,
+};
 use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
-use crate::ui::style::{ColorValue, Style};
+use crate::ui::style::{apply_style as paint_style, ColorValue, DisplayMode, Style};
 use crate::ui::traits::layout::LayoutEngine;
 use crate::ui::{ComponentId, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
@@ -15,97 +17,84 @@ use crate::ui::{SnapshotFields, SnapshotSource};
 component! {
     /// Grid container widget.
     pub struct Grid {
-        columns: Vec<GridTrack>,
-        rows: Vec<GridTrack>,
-        col_gap: f32,
-        row_gap: f32,
-        padding: EdgeInsets,
-        bg_color: Option<Color>,
-        border_color: Option<Color>,
-        border_width: f32,
-        border_radius: f32,
-        margin: EdgeInsets,
-        flex_grow: f32,
-        flex_shrink: f32,
-        align_self: Option<AlignItems>,
-        grid_cell: Option<usize>,
-        grid_column_span: u32,
-        grid_row_span: u32,
-        align_items: AlignItems,
-        justify_items: JustifyContent,
-        fixed_width: Option<f32>,
-        fixed_height: Option<f32>,
+        pub style: Style,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
-        constraints.clamp(Size::new(self.fixed_width.unwrap_or(0.0), self.fixed_height.unwrap_or(0.0)))
+        constraints.clamp(Size::new(
+            self.style.width.unwrap_or(0.0),
+            self.style.height.unwrap_or(0.0),
+        ))
     }
 
-    layout_margin => (&self) -> EdgeInsets { self.margin }
+    layout_margin => (&self) -> EdgeInsets { self.style.margin }
 
-    flex_grow => (&self) -> f32 { self.flex_grow }
+    flex_grow => (&self) -> f32 { self.style.flex_grow }
 
-    flex_shrink => (&self) -> f32 { self.flex_shrink }
+    flex_shrink => (&self) -> f32 { self.style.flex_shrink }
 
-    align_self => (&self) -> Option<AlignItems> { self.align_self }
+    align_self => (&self) -> Option<AlignItems> { self.style.align_self }
 
-    grid_cell => (&self) -> Option<usize> { self.grid_cell }
+    grid_cell => (&self) -> Option<usize> { self.style.grid_cell }
 
-    grid_column_span => (&self) -> u32 { self.grid_column_span }
+    grid_column_span => (&self) -> u32 { self.style.grid_column_span }
 
-    grid_row_span => (&self) -> u32 { self.grid_row_span }
+    grid_row_span => (&self) -> u32 { self.style.grid_row_span }
 
     picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        if let Some(c) = self.bg_color {
-            let r = if self.border_radius > 0.0 { Some(Radius::uniform(self.border_radius)) } else { None };
-            ctx.fill_rect(frame, c, r);
-        }
-        if let Some(c) = self.border_color {
-            let r = if self.border_radius > 0.0 { Some(Radius::uniform(self.border_radius)) } else { None };
-            ctx.stroke_rect(frame, c, self.border_width, r);
-        }
+        let visual = Rect::new(
+            frame.x + self.style.margin.left,
+            frame.y + self.style.margin.top,
+            (frame.w - self.style.margin.horizontal()).max(0.0),
+            (frame.h - self.style.margin.vertical()).max(0.0),
+        );
+        if visual.w <= 0.0 || visual.h <= 0.0 { return; }
+        paint_style(ctx, visual, &self.style);
     }
 
     layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
-        if self.columns.is_empty() || children.is_empty() { return Vec::new(); }
+        if self.style.grid_template_columns.is_empty() || children.is_empty() {
+            return Vec::new();
+        }
 
-        // 构建统一子节点信息
+        let box_model = BoxModel {
+            margin: self.style.margin,
+            border_width: self.style.border_width,
+            padding: self.style.padding,
+        };
+        let content_rect = box_model.content_rect(frame);
+        if content_rect.w <= 0.0 || content_rect.h <= 0.0 {
+            return Vec::new();
+        }
+
         let layout_children: Vec<LayoutChild> = children
             .iter()
             .map(|&cid| {
-                let child_constraints = Constraints::loose(Size::new(
-                    (frame.w - self.padding.horizontal()).max(0.0),
-                    (frame.h - self.padding.vertical()).max(0.0),
-                ));
-                child_from_tree_with_constraints(cid, tree, child_constraints)
+                child_from_tree_with_constraints(
+                    cid,
+                    tree,
+                    Constraints::loose(Size::new(content_rect.w, content_rect.h)),
+                )
             })
             .collect();
 
-        // 委托给统一的 GridLayout 布局引擎
         let engine = GridLayout {
-            columns: self.columns.clone(),
-            rows: self.rows.clone(),
-            col_gap: self.col_gap,
-            row_gap: self.row_gap,
-            align_items: self.align_items,
-            justify_items: self.justify_items,
+            columns: self.style.grid_template_columns.clone(),
+            rows: self.style.grid_template_rows.clone(),
+            col_gap: self.effective_col_gap(),
+            row_gap: self.effective_row_gap(),
+            align_items: self.style.align_items,
+            justify_items: self.style.justify_content,
         };
-
-        // 内容区域（Grid 无 margin/border，仅扣除 padding）
-        let content_rect = Rect::new(
-            frame.x + self.padding.left,
-            frame.y + self.padding.top,
-            (frame.w - self.padding.horizontal()).max(0.0),
-            (frame.h - self.padding.vertical()).max(0.0),
-        );
 
         let output = engine.layout(content_rect, &layout_children);
 
-        children.iter()
+        children
+            .iter()
             .zip(output.positions)
             .map(|(&cid, rect)| (cid, rect))
             .collect()
@@ -121,19 +110,7 @@ impl Default for Grid {
 impl SnapshotSource for Grid {
     fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Grid {
-            columns: self.columns.clone(),
-            rows: self.rows.clone(),
-            col_gap: self.col_gap,
-            row_gap: self.row_gap,
-            padding: self.padding,
-            bg_color: self.bg_color,
-            border_color: self.border_color,
-            border_width: self.border_width,
-            border_radius: self.border_radius,
-            align_items: self.align_items,
-            justify_items: self.justify_items,
-            fixed_width: self.fixed_width,
-            fixed_height: self.fixed_height,
+            style: self.style.clone(),
         }
     }
 }
@@ -141,165 +118,109 @@ impl SnapshotSource for Grid {
 impl Grid {
     pub fn new() -> Self {
         Self {
-            columns: Vec::new(),
-            rows: Vec::new(),
-            col_gap: 0.0,
-            row_gap: 0.0,
-            padding: EdgeInsets::zero(),
-            bg_color: None,
-            border_color: None,
-            border_width: 0.0,
-            border_radius: 0.0,
-            margin: EdgeInsets::zero(),
-            flex_grow: 0.0,
-            flex_shrink: 1.0,
-            align_self: None,
-            grid_cell: None,
-            grid_column_span: 1,
-            grid_row_span: 1,
-            align_items: AlignItems::Stretch,
-            justify_items: JustifyContent::Start,
-            fixed_width: None,
-            fixed_height: None,
+            style: Style::default().with_display(DisplayMode::Grid),
         }
     }
 
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = style.with_display(DisplayMode::Grid);
+        self
+    }
+
     pub fn columns(mut self, cols: Vec<GridTrack>) -> Self {
-        self.columns = cols;
+        self.style.grid_template_columns = cols;
         self
     }
+
     pub fn rows(mut self, rows: Vec<GridTrack>) -> Self {
-        self.rows = rows;
+        self.style.grid_template_rows = rows;
         self
     }
+
     pub fn col_gap(mut self, gap: f32) -> Self {
-        self.col_gap = gap;
+        self.style.grid_column_gap = gap;
         self
     }
+
     pub fn row_gap(mut self, gap: f32) -> Self {
-        self.row_gap = gap;
+        self.style.grid_row_gap = gap;
         self
     }
-    pub fn gap(mut self, g: f32) -> Self {
-        self.col_gap = g;
-        self.row_gap = g;
+
+    pub fn gap(mut self, gap: f32) -> Self {
+        self.style.gap = gap;
+        self.style.grid_column_gap = gap;
+        self.style.grid_row_gap = gap;
         self
     }
-    pub fn pad(mut self, p: EdgeInsets) -> Self {
-        self.padding = p;
+
+    pub fn pad(mut self, padding: EdgeInsets) -> Self {
+        self.style.padding = padding;
         self
     }
-    pub fn bg(mut self, c: Color) -> Self {
-        self.bg_color = Some(c);
+
+    pub fn bg(mut self, color: Color) -> Self {
+        self.style.background = Some(ColorValue::Custom(color));
         self
     }
-    pub fn border(mut self, c: Color, w: f32) -> Self {
-        self.border_color = Some(c);
-        self.border_width = w;
+
+    pub fn border(mut self, color: Color, width: f32) -> Self {
+        self.style.border_color = Some(ColorValue::Custom(color));
+        self.style.border_width = EdgeInsets::uniform(width);
         self
     }
-    pub fn rounded(mut self, r: f32) -> Self {
-        self.border_radius = r;
+
+    pub fn rounded(mut self, radius: f32) -> Self {
+        self.style.border_radius = radius;
         self
     }
-    pub fn size(mut self, w: f32, h: f32) -> Self {
-        self.fixed_width = Some(w);
-        self.fixed_height = Some(h);
+
+    pub fn size(mut self, width: f32, height: f32) -> Self {
+        self.style.width = Some(width);
+        self.style.height = Some(height);
         self
     }
-    pub fn align(mut self, a: AlignItems) -> Self {
-        self.align_items = a;
+
+    pub fn align(mut self, align: AlignItems) -> Self {
+        self.style.align_items = align;
         self
     }
-    pub fn justify(mut self, j: JustifyContent) -> Self {
-        self.justify_items = j;
+
+    pub fn justify(mut self, justify: JustifyContent) -> Self {
+        self.style.justify_content = justify;
         self
     }
 
     pub fn apply_style(&mut self, style: &Style) {
-        if !style.grid_template_columns.is_empty() {
-            self.columns = style.grid_template_columns.clone();
-        }
-        if !style.grid_template_rows.is_empty() {
-            self.rows = style.grid_template_rows.clone();
-        }
-        let col_gap = if style.grid_column_gap != 0.0 {
-            style.grid_column_gap
-        } else {
-            style.gap
-        };
-        let row_gap = if style.grid_row_gap != 0.0 {
-            style.grid_row_gap
-        } else {
-            style.gap
-        };
-        if col_gap != 0.0 {
-            self.col_gap = col_gap;
-        }
-        if row_gap != 0.0 {
-            self.row_gap = row_gap;
-        }
-        if style.padding != EdgeInsets::zero() {
-            self.padding = style.padding;
-        }
-        if let Some(ColorValue::Custom(color)) = style.background {
-            self.bg_color = Some(color);
-        }
-        if let Some(ColorValue::Custom(color)) = style.border_color {
-            self.border_color = Some(color);
-        }
-        if style.border_width != EdgeInsets::zero() {
-            self.border_width = style
-                .border_width
-                .horizontal()
-                .max(style.border_width.vertical());
-        }
-        if style.border_radius != 0.0 {
-            self.border_radius = style.border_radius;
-        }
-        if style.margin != EdgeInsets::zero() {
-            self.margin = style.margin;
-        }
-        if style.flex_grow != 0.0 {
-            self.flex_grow = style.flex_grow;
-        }
-        if style.flex_shrink != 1.0 {
-            self.flex_shrink = style.flex_shrink;
-        }
-        if style.align_self.is_some() {
-            self.align_self = style.align_self;
-        }
-        if style.grid_cell.is_some() {
-            self.grid_cell = style.grid_cell;
-        }
-        if style.grid_column_span != 1 {
-            self.grid_column_span = style.grid_column_span;
-        }
-        if style.grid_row_span != 1 {
-            self.grid_row_span = style.grid_row_span;
-        }
-        if style.align_items != AlignItems::default() {
-            self.align_items = style.align_items;
-        }
-        if style.justify_content != JustifyContent::default() {
-            self.justify_items = style.justify_content;
-        }
-        if style.width.is_some() {
-            self.fixed_width = style.width;
-        }
-        if style.height.is_some() {
-            self.fixed_height = style.height;
-        }
+        self.style = self.style.clone().apply(style.clone());
+        self.style.display = DisplayMode::Grid;
     }
 
     pub fn two_columns() -> Self {
         Self::new().columns(vec![GridTrack::Fr(1.0), GridTrack::Fr(1.0)])
     }
+
     pub fn three_columns() -> Self {
         Self::new().columns(vec![
             GridTrack::Fr(1.0),
             GridTrack::Fr(1.0),
             GridTrack::Fr(1.0),
         ])
+    }
+
+    fn effective_col_gap(&self) -> f32 {
+        if self.style.grid_column_gap != 0.0 {
+            self.style.grid_column_gap
+        } else {
+            self.style.gap
+        }
+    }
+
+    fn effective_row_gap(&self) -> f32 {
+        if self.style.grid_row_gap != 0.0 {
+            self.style.grid_row_gap
+        } else {
+            self.style.gap
+        }
     }
 }

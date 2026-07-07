@@ -725,6 +725,28 @@ fn grid_layout_measures_children_with_content_constraints() {
 }
 
 #[test]
+fn grid_layout_uses_style_box_model_content_rect() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Grid::new()
+            .columns(vec![crate::ui::layout::GridTrack::Fr(1.0)])
+            .rows(vec![crate::ui::layout::GridTrack::Fr(1.0)])
+            .pad(EdgeInsets::uniform(4.0))
+            .border(Color::black(), 2.0)
+            .size(120.0, 80.0)
+            .justify(crate::ui::layout::JustifyContent::Stretch),
+    ));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(120.0, 80.0)));
+
+    tree.layout();
+
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(6.0, 6.0, 108.0, 68.0)
+    );
+}
+
+#[test]
 fn layout_margin_offsets_child_frame() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(Container::new().size(200.0, 100.0)));

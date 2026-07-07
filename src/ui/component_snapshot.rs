@@ -1,12 +1,12 @@
 use std::any::{Any, TypeId};
 use std::fmt;
 
-use crate::core::{ComponentId, EdgeInsets};
+use crate::core::ComponentId;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
 use crate::native::traits::input::{ControlSize, ScrollDirection};
 use crate::native::traits::system::StatusLevel;
-use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
+use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widgets::{
     Affix, Alert, Anchor, AnchorItem, AutoComplete, Avatar, BackTop, Badge, BadgeStatus, BarChart,
@@ -656,19 +656,7 @@ pub enum SnapshotFields {
         style: Style,
     },
     Grid {
-        columns: Vec<GridTrack>,
-        rows: Vec<GridTrack>,
-        col_gap: f32,
-        row_gap: f32,
-        padding: EdgeInsets,
-        bg_color: Option<Color>,
-        border_color: Option<Color>,
-        border_width: f32,
-        border_radius: f32,
-        align_items: AlignItems,
-        justify_items: JustifyContent,
-        fixed_width: Option<f32>,
-        fixed_height: Option<f32>,
+        style: Style,
     },
 }
 
