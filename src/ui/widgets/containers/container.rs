@@ -46,6 +46,8 @@ component! {
 
     flex_shrink => (&self) -> f32 { self.style.flex_shrink }
 
+    align_self => (&self) -> Option<AlignItems> { self.style.align_self }
+
     layout_margin => (&self) -> EdgeInsets { self.style.margin }
 
     picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }

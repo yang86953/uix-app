@@ -582,6 +582,30 @@ fn child_from_tree_reads_common_style_component_margins() {
 }
 
 #[test]
+fn child_from_tree_reads_common_style_align_self() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let mut style = Style::default();
+    style.align_self = Some(crate::ui::layout::AlignItems::Start);
+    let container = tree.add_child(root, Box::new(Container::new().style(style.clone())));
+    let button = tree.add_child(root, Box::new(Button::new("Ok").style(style.clone())));
+    let label = tree.add_child(root, Box::new(Label::new("Name").style(style)));
+
+    assert_eq!(
+        child_from_tree(container, &tree).align_self,
+        Some(crate::ui::layout::AlignItems::Start)
+    );
+    assert_eq!(
+        child_from_tree(button, &tree).align_self,
+        Some(crate::ui::layout::AlignItems::Start)
+    );
+    assert_eq!(
+        child_from_tree(label, &tree).align_self,
+        Some(crate::ui::layout::AlignItems::Start)
+    );
+}
+
+#[test]
 fn child_from_tree_with_constraints_clamps_measured_size() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
@@ -614,6 +638,46 @@ fn container_layout_measures_children_with_content_constraints() {
     assert_eq!(
         tree.get(child).unwrap().frame(),
         Rect::new(0.0, 0.0, 40.0, 24.0)
+    );
+}
+
+#[test]
+fn flex_layout_uses_child_align_self_over_container_align() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(100.0, 50.0)));
+    let mut child_style = Style::default();
+    child_style.align_self = Some(crate::ui::layout::AlignItems::Start);
+    let child = tree.add_child(
+        root,
+        Box::new(Container::new().style(child_style).size(20.0, 10.0)),
+    );
+
+    tree.layout();
+
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 20.0, 10.0)
+    );
+}
+
+#[test]
+fn overflow_layout_uses_child_align_self_over_container_align() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Container::new().size(100.0, 50.0).overflow_content(),
+    ));
+    let mut child_style = Style::default();
+    child_style.align_self = Some(crate::ui::layout::AlignItems::Start);
+    let child = tree.add_child(
+        root,
+        Box::new(Container::new().style(child_style).size(20.0, 10.0)),
+    );
+
+    tree.layout();
+
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 20.0, 10.0)
     );
 }
 

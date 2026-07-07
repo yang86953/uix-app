@@ -43,6 +43,10 @@ impl WidgetLayout for Button {
     fn layout_margin(&self) -> crate::core::EdgeInsets {
         self.style.margin
     }
+
+    fn align_self(&self) -> Option<crate::ui::layout::AlignItems> {
+        self.style.align_self
+    }
 }
 
 impl EventHandler for Button {

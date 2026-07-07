@@ -192,6 +192,7 @@ macro_rules! __component_upcast_method {
     (measure; $T:ty) => { $crate::wc_upcast!($T; WidgetLayout); };
     (flex_grow; $T:ty) => {};
     (flex_shrink; $T:ty) => {};
+    (align_self; $T:ty) => {};
     (layout_margin; $T:ty) => {};
     (layout_children; $T:ty) => {};
     (render; $T:ty) => { $crate::wc_upcast!($T; WidgetRender); };
@@ -279,7 +280,7 @@ macro_rules! component {
                 let mut c = $crate::ui::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "measure" | "flex_grow" | "flex_shrink" | "layout_margin" | "layout_children" | "build" =>
+                        "measure" | "flex_grow" | "flex_shrink" | "align_self" | "layout_margin" | "layout_children" | "build" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
@@ -308,7 +309,7 @@ macro_rules! component {
         $crate::__component_grouped_impl! {
             WidgetLayout,
             $name,
-            [measure flex_grow flex_shrink layout_margin layout_children],
+            [measure flex_grow flex_shrink align_self layout_margin layout_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -508,6 +509,9 @@ macro_rules! __component_method_builder {
     (flex_shrink; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn flex_shrink($($p)*) -> $ret $body
     };
+    (align_self; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn align_self($($p)*) -> $ret $body
+    };
     (layout_margin; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn layout_margin($($p)*) -> $ret $body
     };
@@ -613,6 +617,9 @@ macro_rules! __match_trait_method {
     };
     (WidgetLayout, flex_shrink, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn flex_shrink($($p)*) -> $ret $body
+    };
+    (WidgetLayout, align_self, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn align_self($($p)*) -> $ret $body
     };
     (WidgetLayout, layout_margin, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn layout_margin($($p)*) -> $ret $body
