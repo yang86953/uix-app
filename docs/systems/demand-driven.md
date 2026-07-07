@@ -165,7 +165,7 @@ impl AppHandle {
 |------|------|
 | 线程 | `f` **仅主线程**执行（#88）；`Send` 约束闭包可跨线程 move |
 | 与 Timer | 与 #132 回调同队列语义；**不** register ActiveWork |
-| DeepIdle | 投递本身 **不** wake；闭包内 `State::set` 才进入 Active |
+| DeepIdle | 有效入队会 wake 事件循环以便 drain；**不** register ActiveWork，闭包无 `State::set` / invalidate 时 drain 后可回 DeepIdle |
 | 禁止 | 闭包内直接改 WidgetTree / HandlerTable / 裸 invalidate |
 | 多窗 | `AppHandle.window_id` → 该 session 队列（#141）；**禁止**跨窗 handle |
 

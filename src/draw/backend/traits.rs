@@ -14,7 +14,7 @@ pub enum BackendKind {
     Cpu,
     /// GPU 加速（需平台图形上下文）。
     Gpu,
-    /// 自动选择：当前等价于 Cpu。
+    /// 自动选择：无平台 GPU context 时等价于 Cpu；App 启动层负责 GPU 优先回退。
     Auto,
     /// 空后端，用于测试。
     Null,

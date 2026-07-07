@@ -172,11 +172,39 @@ impl BoxedWidget {
         &mut *self.component
     }
     pub(crate) fn replace_component(&mut self, mut component: Box<dyn WidgetComponent>) {
+        let was_attached = self.attached;
+        let was_mounted = self.mounted;
+        let was_active = self.active;
+
+        if was_active {
+            self.on_inactive();
+        }
+        if was_mounted {
+            self.on_unmount();
+        }
+        if was_attached {
+            self.on_detach();
+        }
+        if !self.destroyed {
+            self.on_destroy();
+        }
+
         if let Some(lifecycle) = component.as_lifecycle_mut() {
             lifecycle.on_init();
         }
         self.caps = component.capabilities();
         self.component = component;
+        self.destroyed = false;
+
+        if was_attached {
+            self.on_attach();
+        }
+        if was_mounted {
+            self.on_mount();
+        }
+        if was_active {
+            self.on_active();
+        }
     }
     pub fn capabilities(&self) -> WidgetCapabilities {
         self.caps
