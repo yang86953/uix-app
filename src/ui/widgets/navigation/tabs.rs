@@ -4,11 +4,12 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use std::cell::RefCell;
 
 /// A single tab definition.
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Tab {
     pub label: String,
     pub key: String,
@@ -195,6 +196,16 @@ impl Tabs {
         self.fixed_width = Some(w);
         self.fixed_height = Some(h);
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Tabs {
+            tabs: self.tabs.clone(),
+            position: self.position,
+            tab_height: self.tab_height,
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
+        }
     }
 }
 

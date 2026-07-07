@@ -10,14 +10,16 @@ use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widget::WidgetId;
 use crate::ui::widgets::{
-    Affix, Alert, Avatar, BackTop, Badge, BadgeStatus, Breadcrumb, BreadcrumbItem, Button,
-    Calendar, Card, Checkbox, Container, Content, Divider, DividerDirection, DividerOrientation,
-    Drawer, DrawerPlacement, Empty, FloatButton, Footer, Grid, Header, Icon, Image, Input,
-    InputNumber, Label, Layout, Message, MessagePlacement, Modal, NotifPlacement, Notification,
+    Affix, Alert, Anchor, AnchorItem, Avatar, BackTop, Badge, BadgeStatus, Breadcrumb,
+    BreadcrumbItem, Button, Calendar, Card, Carousel, Checkbox, Collapse, Container, Content,
+    Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown, Empty,
+    FloatButton, Footer, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, List, Menu,
+    MenuItem, MenuMode, Message, MessagePlacement, Modal, NavItem, NotifPlacement, Notification,
     Pagination, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
     ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate, Sider, Skeleton,
-    SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Switch, Tag, TagColor,
-    Timeline, TimelineItem, Tooltip, TooltipPlacement, TriggerMode, Typography, TypographyType,
+    SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Step, Steps, Switch, Tab,
+    TabPosition, Tabs, Tag, TagColor, Timeline, TimelineItem, Tooltip, TooltipPlacement, Tree,
+    TreeNode, TriggerMode, Typography, TypographyType,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,6 +55,39 @@ impl SnapshotField {
             value: SnapshotValue::Debug(format!("{value:?}")),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapshotTreeNode {
+    pub title: String,
+    pub key: String,
+    pub icon: String,
+    pub children: Vec<SnapshotTreeNode>,
+    pub disabled: bool,
+    pub checkable: bool,
+    pub draggable: bool,
+    pub is_leaf: bool,
+}
+
+impl SnapshotTreeNode {
+    pub fn from_tree_node(node: &TreeNode) -> Self {
+        Self {
+            title: node.title.clone(),
+            key: node.key.clone(),
+            icon: node.icon.clone(),
+            children: node.children.iter().map(Self::from_tree_node).collect(),
+            disabled: node.disabled,
+            checkable: node.checkable,
+            draggable: node.draggable,
+            is_leaf: node.is_leaf,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapshotCollapsePanel {
+    pub header: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -372,6 +407,59 @@ pub enum SnapshotFields {
         size: f32,
         page_size_options: Vec<usize>,
     },
+    Anchor {
+        items: Vec<AnchorItem>,
+        offset_top: f32,
+        bg_color: Option<Color>,
+    },
+    Menu {
+        items: Vec<MenuItem>,
+        mode: MenuMode,
+        item_h: f32,
+    },
+    Dropdown {
+        label: String,
+        items: Vec<String>,
+    },
+    Tabs {
+        tabs: Vec<Tab>,
+        position: TabPosition,
+        tab_height: f32,
+        fixed_width: Option<f32>,
+        fixed_height: Option<f32>,
+    },
+    Steps {
+        steps: Vec<Step>,
+        direction: bool,
+    },
+    NavItem {
+        label: String,
+        icon: String,
+        fixed_width: f32,
+        fixed_height: f32,
+        index: usize,
+        compact: bool,
+    },
+    Tree {
+        nodes: Vec<SnapshotTreeNode>,
+        multiple: bool,
+    },
+    List {
+        header: String,
+        footer: String,
+        bordered: bool,
+        list_size: ControlSize,
+        items: Vec<String>,
+        load_more_text: String,
+    },
+    Collapse {
+        panels: Vec<SnapshotCollapsePanel>,
+        accordion: bool,
+    },
+    Carousel {
+        show_dots: bool,
+        show_arrows: bool,
+    },
     Container {
         style: Style,
     },
@@ -525,6 +613,36 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     if let Some(pagination) = component.downcast_ref::<Pagination>() {
         return pagination.snapshot_fields();
+    }
+    if let Some(anchor) = component.downcast_ref::<Anchor>() {
+        return anchor.snapshot_fields();
+    }
+    if let Some(menu) = component.downcast_ref::<Menu>() {
+        return menu.snapshot_fields();
+    }
+    if let Some(dropdown) = component.downcast_ref::<Dropdown>() {
+        return dropdown.snapshot_fields();
+    }
+    if let Some(tabs) = component.downcast_ref::<Tabs>() {
+        return tabs.snapshot_fields();
+    }
+    if let Some(steps) = component.downcast_ref::<Steps>() {
+        return steps.snapshot_fields();
+    }
+    if let Some(nav_item) = component.downcast_ref::<NavItem>() {
+        return nav_item.snapshot_fields();
+    }
+    if let Some(tree) = component.downcast_ref::<Tree>() {
+        return tree.snapshot_fields();
+    }
+    if let Some(list) = component.downcast_ref::<List>() {
+        return list.snapshot_fields();
+    }
+    if let Some(collapse) = component.downcast_ref::<Collapse>() {
+        return collapse.snapshot_fields();
+    }
+    if let Some(carousel) = component.downcast_ref::<Carousel>() {
+        return carousel.snapshot_fields();
     }
     if let Some(container) = component.downcast_ref::<Container>() {
         return container.snapshot_fields();

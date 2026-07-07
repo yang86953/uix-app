@@ -7,6 +7,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::ui::children::WidgetChildren;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 
 define_widget! {
@@ -152,6 +153,13 @@ impl Carousel {
 
     pub fn current_index(&self) -> usize {
         self.current.get()
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Carousel {
+            show_dots: self.show_dots,
+            show_arrows: self.show_arrows,
+        }
     }
 }
 

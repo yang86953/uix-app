@@ -1,26 +1,30 @@
 use std::any::TypeId;
+use std::cell::Cell;
+use std::rc::Rc;
 
-use crate::core::{Constraints, EdgeInsets, Size};
+use crate::core::{Constraints, EdgeInsets, Point, Size};
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
-use crate::native::traits::input::ControlSize;
+use crate::native::traits::input::{ControlSize, KeyMod, MouseButton};
 use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::GridTrack;
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::widgets::{
-    Affix, Alert, Avatar, BackTop, Badge, BadgeStatus, Breadcrumb, BreadcrumbItem, Button,
-    Calendar, Card, Checkbox, Container, Content, Divider, DividerDirection, DividerOrientation,
-    Drawer, DrawerPlacement, Empty, FloatButton, Footer, Grid, Header, Icon, Image, Input,
-    InputNumber, Label, Layout, Message, MessageItem, MessagePlacement, Modal, NotifPlacement,
-    Notification, Pagination, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement,
-    PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate, Sider,
-    Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize, Splitter, Switch, Tag,
-    TagColor, Timeline, TimelineItem, Tooltip, TooltipPlacement, TriggerMode, Typography,
+    Affix, Alert, Anchor, AnchorItem, Avatar, BackTop, Badge, BadgeStatus, Breadcrumb,
+    BreadcrumbItem, Button, Calendar, Card, Carousel, Checkbox, Collapse, CollapsePanel, Container,
+    Content, Divider, DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Dropdown,
+    Empty, FloatButton, Footer, Grid, Header, Icon, Image, Input, InputNumber, Label, Layout, List,
+    Menu, MenuItem, MenuMode, Message, MessageItem, MessagePlacement, Modal, NavItem,
+    NotifPlacement, Notification, Pagination, Popconfirm, PopconfirmPlacement, Popover,
+    PopoverPlacement, PopoverTrigger, ProgressBar, ProgressMode, ProgressType, Radio,
+    RadioDirection, Rate, Sider, Skeleton, SkeletonShape, Slider, Space, SpaceSize, Spin, SpinSize,
+    Splitter, Step, StepStatus, Steps, Switch, Tab, TabPosition, Tabs, Tag, TagColor, Timeline,
+    TimelineItem, Tooltip, TooltipPlacement, Tree, TreeNode, TriggerMode, Typography,
     TypographyType,
 };
 use crate::ui::{
-    ComponentConfigSnapshot, EventHandler, SnapshotFields, SnapshotSource, SnapshotValue,
-    SystemEvent, WidgetAnimation, WidgetId, WidgetLayout,
+    ComponentConfigSnapshot, EventHandler, SnapshotCollapsePanel, SnapshotFields, SnapshotSource,
+    SnapshotTreeNode, SnapshotValue, SystemEvent, WidgetAnimation, WidgetId, WidgetLayout,
 };
 use crate::{component, define_widget};
 
@@ -952,6 +956,267 @@ fn container_navigation_snapshots_exclude_runtime_state() {
     let before = pagination.snapshot_fields();
     pagination.set_current(5);
     assert_eq!(pagination.snapshot_fields(), before);
+}
+
+#[test]
+fn navigation_snapshots_capture_static_config() {
+    let anchor_items = vec![
+        AnchorItem::new("Intro", "#intro"),
+        AnchorItem::new("API", "#api"),
+    ];
+    assert_eq!(
+        Anchor::new(anchor_items.clone())
+            .set_offset_top(48.0)
+            .bg(Color::white())
+            .snapshot_fields(),
+        SnapshotFields::Anchor {
+            items: anchor_items,
+            offset_top: 48.0,
+            bg_color: Some(Color::white()),
+        }
+    );
+
+    let menu_items = vec![
+        MenuItem {
+            key: "home".to_string(),
+            label: "Home".to_string(),
+            icon: "house".to_string(),
+            disabled: false,
+        },
+        MenuItem {
+            key: "docs".to_string(),
+            label: "Docs".to_string(),
+            icon: String::new(),
+            disabled: true,
+        },
+    ];
+    assert_eq!(
+        Menu::new()
+            .items(menu_items.clone())
+            .mode(MenuMode::Vertical)
+            .active_key("home")
+            .item_height(40.0)
+            .snapshot_fields(),
+        SnapshotFields::Menu {
+            items: menu_items,
+            mode: MenuMode::Vertical,
+            item_h: 40.0,
+        }
+    );
+
+    assert_eq!(
+        Dropdown::new("More")
+            .items(vec!["Edit", "Delete"])
+            .snapshot_fields(),
+        SnapshotFields::Dropdown {
+            label: "More".to_string(),
+            items: vec!["Edit".to_string(), "Delete".to_string()],
+        }
+    );
+
+    let tabs = vec![
+        Tab {
+            label: "One".to_string(),
+            key: "one".to_string(),
+        },
+        Tab {
+            label: "Two".to_string(),
+            key: "two".to_string(),
+        },
+    ];
+    assert_eq!(
+        Tabs::new()
+            .tabs(tabs.clone())
+            .active(1)
+            .position(TabPosition::Bottom)
+            .size(420.0, 240.0)
+            .snapshot_fields(),
+        SnapshotFields::Tabs {
+            tabs,
+            position: TabPosition::Bottom,
+            tab_height: 40.0,
+            fixed_width: Some(420.0),
+            fixed_height: Some(240.0),
+        }
+    );
+}
+
+#[test]
+fn navigation_runtime_state_is_excluded_from_snapshots() {
+    let mut anchor = Anchor::new(vec![
+        AnchorItem::new("Intro", "#intro"),
+        AnchorItem::new("API", "#api"),
+    ]);
+    let before = anchor.snapshot_fields();
+    anchor.set_positions(vec![0.0, 200.0]);
+    anchor.update_active(240.0);
+    assert_eq!(anchor.snapshot_fields(), before);
+
+    let mut menu = Menu::new()
+        .add_item(MenuItem {
+            key: "home".to_string(),
+            label: "Home".to_string(),
+            icon: String::new(),
+            disabled: false,
+        })
+        .add_item(MenuItem {
+            key: "docs".to_string(),
+            label: "Docs".to_string(),
+            icon: String::new(),
+            disabled: false,
+        });
+    let before = menu.snapshot_fields();
+    menu.set_active_key("docs");
+    assert_eq!(menu.snapshot_fields(), before);
+
+    let mut dropdown = Dropdown::new("More").items(vec!["Edit", "Delete"]);
+    let before = dropdown.snapshot_fields();
+    dropdown.open();
+    assert_eq!(dropdown.snapshot_fields(), before);
+}
+
+#[test]
+fn navigation_and_display_snapshots_capture_static_config() {
+    let active = Rc::new(Cell::new(0));
+    assert_eq!(
+        NavItem::new("Home", 2, active)
+            .icon("house")
+            .width(180.0)
+            .height(44.0)
+            .compact(true)
+            .snapshot_fields(),
+        SnapshotFields::NavItem {
+            label: "Home".to_string(),
+            icon: "house".to_string(),
+            fixed_width: 180.0,
+            fixed_height: 44.0,
+            index: 2,
+            compact: true,
+        }
+    );
+
+    let steps = vec![
+        Step::new("Start").status(StepStatus::Finish),
+        Step::new("Ship")
+            .description("Deploy")
+            .status(StepStatus::Process),
+    ];
+    assert_eq!(
+        Steps::new(steps.clone()).current(1).snapshot_fields(),
+        SnapshotFields::Steps {
+            steps,
+            direction: true,
+        }
+    );
+
+    let tree_nodes = vec![TreeNode::new("Root", "root")
+        .icon("folder")
+        .checkable(true)
+        .draggable(true)
+        .children(vec![TreeNode::new("Leaf", "leaf").disabled(true)])];
+    assert_eq!(
+        Tree::new(tree_nodes).multiple(true).snapshot_fields(),
+        SnapshotFields::Tree {
+            nodes: vec![SnapshotTreeNode {
+                title: "Root".to_string(),
+                key: "root".to_string(),
+                icon: "folder".to_string(),
+                children: vec![SnapshotTreeNode {
+                    title: "Leaf".to_string(),
+                    key: "leaf".to_string(),
+                    icon: String::new(),
+                    children: Vec::new(),
+                    disabled: true,
+                    checkable: false,
+                    draggable: false,
+                    is_leaf: true,
+                }],
+                disabled: false,
+                checkable: true,
+                draggable: true,
+                is_leaf: false,
+            }],
+            multiple: true,
+        }
+    );
+
+    assert_eq!(
+        List::new()
+            .header("Header")
+            .footer("Footer")
+            .bordered(false)
+            .size(ControlSize::Small)
+            .items(vec!["One", "Two"])
+            .load_more("More")
+            .snapshot_fields(),
+        SnapshotFields::List {
+            header: "Header".to_string(),
+            footer: "Footer".to_string(),
+            bordered: false,
+            list_size: ControlSize::Small,
+            items: vec!["One".to_string(), "Two".to_string()],
+            load_more_text: "More".to_string(),
+        }
+    );
+
+    assert_eq!(
+        Collapse::new()
+            .panels(vec![
+                CollapsePanel::new("A", "Alpha").expanded(),
+                CollapsePanel::new("B", "Beta"),
+            ])
+            .accordion()
+            .snapshot_fields(),
+        SnapshotFields::Collapse {
+            panels: vec![
+                SnapshotCollapsePanel {
+                    header: "A".to_string(),
+                    content: "Alpha".to_string(),
+                },
+                SnapshotCollapsePanel {
+                    header: "B".to_string(),
+                    content: "Beta".to_string(),
+                },
+            ],
+            accordion: true,
+        }
+    );
+
+    assert_eq!(
+        Carousel::new()
+            .show_dots(false)
+            .show_arrows(false)
+            .snapshot_fields(),
+        SnapshotFields::Carousel {
+            show_dots: false,
+            show_arrows: false,
+        }
+    );
+}
+
+#[test]
+fn display_snapshots_exclude_runtime_selection_and_animation_state() {
+    let mut tree = Tree::new(vec![TreeNode::new("Root", "root")]);
+    let before = tree.snapshot_fields();
+    tree.set_selected_key("root");
+    assert_eq!(tree.snapshot_fields(), before);
+
+    let steps = Steps::new(vec![Step::new("Start"), Step::new("Ship")]).current(0);
+    let before = steps.snapshot_fields();
+    steps.set_current(1);
+    assert_eq!(steps.snapshot_fields(), before);
+
+    let mut collapse = Collapse::new().panels(vec![CollapsePanel::new("A", "Alpha")]);
+    let before = collapse.snapshot_fields();
+    assert_eq!(
+        collapse.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(4.0, 4.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        crate::ui::EventResult::Handled
+    );
+    assert_eq!(collapse.snapshot_fields(), before);
 }
 
 #[test]
