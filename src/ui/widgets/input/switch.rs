@@ -3,6 +3,7 @@
 use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -122,6 +123,16 @@ impl Switch {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(self.size * 2.0 - 4.0, self.size + 4.0)
+    }
+}
+
+impl Switch {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Switch {
+            checked: self.checked,
+            disabled: self.disabled,
+            size: self.size,
+        }
     }
 }
 

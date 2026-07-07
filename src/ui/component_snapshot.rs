@@ -5,10 +5,14 @@ use crate::core::EdgeInsets;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
-use crate::ui::layout::{AlignItems, GridTrack, JustifyContent};
+use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widget::WidgetId;
-use crate::ui::widgets::{Button, Container, Grid, Input, Label};
+use crate::ui::widgets::{
+    Button, Checkbox, Container, Divider, DividerDirection, DividerOrientation, Grid, Icon, Input,
+    InputNumber, Label, Radio, RadioDirection, Rate, Slider, Space, SpaceSize, Switch, Typography,
+    TypographyType,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComponentConfigSnapshot {
@@ -88,6 +92,80 @@ pub enum SnapshotFields {
         textarea: bool,
         textarea_rows: usize,
     },
+    Space {
+        direction: FlexDirection,
+        space_size: SpaceSize,
+        wrap: bool,
+        justify: JustifyContent,
+        align: AlignItems,
+        fixed_width: Option<f32>,
+        fixed_height: Option<f32>,
+        flex_grow: f32,
+    },
+    Divider {
+        text: Option<String>,
+        orientation: DividerOrientation,
+        direction: DividerDirection,
+        color: Option<Color>,
+        text_size: f32,
+        dashed: bool,
+    },
+    Icon {
+        name: String,
+        size: f32,
+    },
+    Typography {
+        content: String,
+        type_: TypographyType,
+        disabled: bool,
+        mark: bool,
+        code: bool,
+        underline: bool,
+        delete: bool,
+        strong: bool,
+        italic: bool,
+        copyable: bool,
+        color_override: Option<Color>,
+    },
+    Checkbox {
+        checked: bool,
+        disabled: bool,
+        label: String,
+    },
+    Radio {
+        options: Vec<String>,
+        selected: usize,
+        disabled: bool,
+        direction: RadioDirection,
+        item_h: f32,
+    },
+    Switch {
+        checked: bool,
+        disabled: bool,
+        size: f32,
+    },
+    Slider {
+        min: f32,
+        max: f32,
+        step: f32,
+        value: f32,
+    },
+    Rate {
+        count: usize,
+        value: usize,
+        half: bool,
+        disabled: bool,
+        clearable: bool,
+        character: String,
+    },
+    InputNumber {
+        value: f64,
+        min: f64,
+        max: f64,
+        step: f64,
+        placeholder: String,
+        disabled: bool,
+    },
     Container {
         style: Style,
     },
@@ -121,6 +199,36 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     if let Some(input) = component.downcast_ref::<Input>() {
         return input.snapshot_fields();
+    }
+    if let Some(space) = component.downcast_ref::<Space>() {
+        return space.snapshot_fields();
+    }
+    if let Some(divider) = component.downcast_ref::<Divider>() {
+        return divider.snapshot_fields();
+    }
+    if let Some(icon) = component.downcast_ref::<Icon>() {
+        return icon.snapshot_fields();
+    }
+    if let Some(typography) = component.downcast_ref::<Typography>() {
+        return typography.snapshot_fields();
+    }
+    if let Some(checkbox) = component.downcast_ref::<Checkbox>() {
+        return checkbox.snapshot_fields();
+    }
+    if let Some(radio) = component.downcast_ref::<Radio>() {
+        return radio.snapshot_fields();
+    }
+    if let Some(switch) = component.downcast_ref::<Switch>() {
+        return switch.snapshot_fields();
+    }
+    if let Some(slider) = component.downcast_ref::<Slider>() {
+        return slider.snapshot_fields();
+    }
+    if let Some(rate) = component.downcast_ref::<Rate>() {
+        return rate.snapshot_fields();
+    }
+    if let Some(input_number) = component.downcast_ref::<InputNumber>() {
+        return input_number.snapshot_fields();
     }
     if let Some(container) = component.downcast_ref::<Container>() {
         return container.snapshot_fields();

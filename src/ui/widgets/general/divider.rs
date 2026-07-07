@@ -4,6 +4,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 /// Divider orientation for text placement.
@@ -97,6 +98,19 @@ define_widget! {
             DividerDirection::Vertical => {
                 draw_line(ctx, frame.x, frame.y, frame.w, frame.h, line_color);
             }
+        }
+    }
+}
+
+impl Divider {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Divider {
+            text: self.text.clone(),
+            orientation: self.orientation,
+            direction: self.direction,
+            color: self.color,
+            text_size: self.text_size,
+            dashed: self.dashed,
         }
     }
 }
