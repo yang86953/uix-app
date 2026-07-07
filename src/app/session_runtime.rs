@@ -89,6 +89,7 @@ impl AppRuntime {
                 main_thread_queue: main_thread_queue.clone(),
                 alive: alive.clone(),
             });
+        self.wake_event_loop();
         ReservedWindowSession { window_id, alive }
     }
 
@@ -130,7 +131,9 @@ impl AppRuntime {
         let Some(session) = self.session(window_id) else {
             return TimerHandle::inactive();
         };
-        session.app_timers.run_after(delay, f)
+        let handle = session.app_timers.run_after(delay, f);
+        self.wake_event_loop();
+        handle
     }
 
     pub(crate) fn run_interval<F>(
@@ -145,7 +148,9 @@ impl AppRuntime {
         let Some(session) = self.session(window_id) else {
             return TimerHandle::inactive();
         };
-        session.app_timers.run_interval(interval, f)
+        let handle = session.app_timers.run_interval(interval, f);
+        self.wake_event_loop();
+        handle
     }
 
     pub(crate) fn post_to_ui<F>(&self, window_id: WindowId, f: F)

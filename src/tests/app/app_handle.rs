@@ -4,6 +4,7 @@ use crate::app::main_thread_queue::MainThreadContext;
 use crate::app::main_thread_queue::MainThreadQueue;
 use crate::app::session_runtime::AppRuntime;
 use crate::app::{Container, WindowConfig};
+use crate::native::traits::event::EventLoopWaker;
 use crate::ui::view::combinators::label;
 use crate::ui::view::ViewAdapter;
 use crate::ui::widgets::Label;
@@ -204,11 +205,47 @@ fn app_handle_run_after_routes_by_window_id() {
 }
 
 #[test]
+fn app_handle_timer_registration_wakes_event_loop() {
+    let timers = AppTimerQueue::new();
+    let queue = MainThreadQueue::new();
+    let alive = Arc::new(AtomicBool::new(true));
+    let runtime = AppRuntime::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    runtime.set_event_loop_waker(EventLoopWaker::new({
+        let wake_calls = wake_calls.clone();
+        move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
+    runtime.register_session(WindowId::ROOT, timers.clone(), queue, alive.clone());
+    let handle = AppHandle::new(
+        WindowId::ROOT,
+        AppState::new(),
+        runtime,
+        Container::new(),
+        alive,
+    );
+
+    let _after = handle.run_after(Duration::from_secs(1), || {});
+    let _interval = handle.run_interval(Duration::from_secs(1), || {});
+
+    assert_eq!(timers.len(), 2);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 2);
+}
+
+#[test]
 fn app_handle_open_window_returns_child_handle_and_queues_request() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();
     let alive = Arc::new(AtomicBool::new(true));
     let runtime = AppRuntime::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    runtime.set_event_loop_waker(EventLoopWaker::new({
+        let wake_calls = wake_calls.clone();
+        move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
     runtime.register_session(WindowId::ROOT, timers, queue, alive.clone());
     let handle = AppHandle::new(
         WindowId::ROOT,
@@ -228,6 +265,7 @@ fn app_handle_open_window_returns_child_handle_and_queues_request() {
     assert_eq!(request.config.title, "Inspector");
     assert_eq!(request.config.width, 320);
     assert_eq!(request.config.height, 600);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 1);
 
     let tree = ViewAdapter::build_nodes((request.config.root)());
     let label = tree

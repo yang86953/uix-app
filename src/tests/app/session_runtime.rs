@@ -99,6 +99,32 @@ fn post_to_ui_wakes_event_loop_after_enqueue() {
 }
 
 #[test]
+fn app_timer_registration_wakes_event_loop() {
+    let runtime = AppRuntime::new();
+    let timers = AppTimerQueue::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    let window_id = WindowId::new(7);
+    runtime.set_event_loop_waker(EventLoopWaker::new({
+        let wake_calls = wake_calls.clone();
+        move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
+    runtime.register_session(
+        window_id,
+        timers.clone(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+
+    let _after = runtime.run_after(window_id, Duration::from_secs(1), || {});
+    let _interval = runtime.run_interval(window_id, Duration::from_secs(1), || {});
+
+    assert_eq!(timers.len(), 2);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 2);
+}
+
+#[test]
 fn closed_session_post_to_ui_does_not_wake_event_loop() {
     let runtime = AppRuntime::new();
     let queue = MainThreadQueue::new();
@@ -125,6 +151,33 @@ fn closed_session_post_to_ui_does_not_wake_event_loop() {
 }
 
 #[test]
+fn closed_session_timer_registration_does_not_wake_event_loop() {
+    let runtime = AppRuntime::new();
+    let timers = AppTimerQueue::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    let window_id = WindowId::new(8);
+    runtime.set_event_loop_waker(EventLoopWaker::new({
+        let wake_calls = wake_calls.clone();
+        move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
+    runtime.register_session(
+        window_id,
+        timers.clone(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    runtime.close_session(window_id);
+
+    let _after = runtime.run_after(window_id, Duration::from_secs(1), || {});
+    let _interval = runtime.run_interval(window_id, Duration::from_secs(1), || {});
+
+    assert_eq!(timers.len(), 0);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 0);
+}
+
+#[test]
 fn request_open_window_reserves_independent_runtime_session() {
     let runtime = AppRuntime::new();
     runtime.register_session(
@@ -145,6 +198,30 @@ fn request_open_window_reserves_independent_runtime_session() {
     assert_eq!(request.main_thread_queue.len(), 1);
     assert_eq!(request.app_timers.len(), 1);
     assert!(request.alive.load(Ordering::Acquire));
+}
+
+#[test]
+fn request_open_window_wakes_event_loop() {
+    let runtime = AppRuntime::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    runtime.set_event_loop_waker(EventLoopWaker::new({
+        let wake_calls = wake_calls.clone();
+        move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
+    runtime.register_session(
+        WindowId::ROOT,
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+
+    let session =
+        runtime.request_open_window(WindowConfig::new("Inspector", 320, 600, || label("child")));
+
+    assert_ne!(session.window_id, WindowId::ROOT);
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 1);
 }
 
 #[test]

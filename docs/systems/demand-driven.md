@@ -273,11 +273,11 @@ impl TimerHandle {
 |------|------|
 | 线程 | 回调 **仅主线程**（#88） |
 | register | `ActiveWorkKind::AppTimer(id)` 内部写入 Registry（#124） |
-| 零闲置 | 无 pending Timer → DeepIdle；`wait_until(min deadline)`（#127） |
+| 零闲置 | 无 pending Timer → DeepIdle；成功注册会 wake event loop 并进入 `wait_until(min deadline)`（#127） |
 | 副作用 | 回调内 `State::set` → 按需 reconcile；**不**默认 layout/render |
 | 与内置 UI | 可见周期动画仍 **优先** 内置 widget；Timer API 用于 **业务逻辑**（保存、刷新、倒计时数据） |
 
-> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 AppTimer 队列，独立 session 关闭会批量 cancel。副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 AppTimer 队列，成功注册会 wake event loop，独立 session 关闭会批量 cancel。副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
 
 ---
 
@@ -645,14 +645,14 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | PicturePolicy 自动推断 | 元数据 + 子树信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 首批 Eligible，默认 Never | [#122](../decisions.md#d122) [#129](../decisions.md#d129) |
 | Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源与 IME composition session 已托管 | [#124](../decisions.md#d124) |
 | follow_system_theme opt-in | false 默认；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](../decisions.md#d125) |
-| App Timer API | run_after / run_interval | `App` / `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出；`AppHandle` 已按 `window_id` 路由到所属 AppTimer 队列；副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#132](../decisions.md#d132) |
+| App Timer API | run_after / run_interval | `App` / `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出；`AppHandle` 已按 `window_id` 路由到所属 AppTimer 队列，成功注册会 wake event loop；副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#132](../decisions.md#d132) |
 | post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + `AppHandle::post_to_ui` + MainThreadQueue 已接；`AppHandle` 已按 `window_id` 路由；副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；有效入队会触发 `EventLoopWaker`，Windows/fake/Linux Wayland 后端已接真实 wake | [#133](../decisions.md#d133) |
 | MainThreadQueue | FIFO + 帧内 drain 顺序 | 每 WindowSession 队列已接；单窗 drain 顺序为 UiEvent → due work → post_to_ui；`AppHandle` 多窗队列路由、副窗 bootstrap、MainThreadQueue 消费、运行期 frame drain 与 deadline wait 已接；有效入队会触发 `EventLoopWaker`，Windows/fake/Linux Wayland 后端已接真实 wake | [#137](../decisions.md#d137) |
 | TestClock | App drain_due / wait_until 测试注入 | App 层 `AppClock` / `TestClock` 已接入 AppTimer deadline、RegisteredActive wait_until、drain_due；native `FakeTimer` 仍独立 | [#139](../decisions.md#d139) |
 | AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | `AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求；主窗 close 退出主循环，副窗真实 close 事件按 `window_id` 关闭对应 session | [#134](../decisions.md#d134) |
 | on_start / on_window_start | 每个 session 注入 AppHandle | 单窗 `.on_start(AppHandle)` 与副窗 `.on_window_start(AppHandle)` 已导出，并在对应 WindowSession 创建后、首帧前调用 | [#140](../decisions.md#d140) |
 | 多窗 post_to_ui | AppHandle.window_id 路由 | `AppRuntime` 路由表已接；`AppHandle` 投递仅进入自身 `window_id` 的队列，session 销毁后丢弃闭包 | [#141](../decisions.md#d141) |
-| open_window | 副窗 API | `WindowConfig` / `AppHandle::open_window` / `.on_window_start` 已导出；可分配新 `window_id`、独立队列/Timer/handle 并暂存副窗创建请求；GUI loop 可 drain 请求并创建 native 窗 | [#144](../decisions.md#d144) |
+| open_window | 副窗 API | `WindowConfig` / `AppHandle::open_window` / `.on_window_start` 已导出；可分配新 `window_id`、独立队列/Timer/handle 并暂存副窗创建请求，成功入队会 wake event loop；GUI loop 可 drain 请求并创建 native 窗 | [#144](../decisions.md#d144) |
 | open_window 接线 | 副窗独立 build/reconcile | 副窗 native 创建、独立 `WindowSession` bootstrap、MainThreadQueue / `update_view` reconcile 消费、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#148](../decisions.md#d148) |
 | AppState register | mount 自动 register Handle | `AppState` snapshot registry 已建；`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot，并记录所属失效队列与当前 dirty rect；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`；lookup handle 的 live `emit` dispatch 绑定待接 | [#145](../decisions.md#d145) |
 | StateSlotId | State::new 单调 id | 已接；clone 共享，`generation()` 不参与身份 | [#143](../decisions.md#d143) |
