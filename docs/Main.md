@@ -17,7 +17,7 @@ UIX **最重要的一条规则** — 统领六域依赖、主循环、渲染、�
 
 L0 零像素 · L1 零帧循环 · L2 最小脏区 · 三态主循环（DeepIdle / RegisteredActive / Active）。
 
-**细则** → [`systems/demand-driven.md`](systems/demand-driven.md) · [`AGENTS.md`](../AGENTS.md) · [#105–#158](decisions.md#d105)
+**细则** → [`systems/demand-driven.md`](systems/demand-driven.md) · [`AGENTS.md`](../AGENTS.md) · [#105–#159](decisions.md#d105)
 
 ---
 
@@ -27,7 +27,7 @@ L0 零像素 · L1 零帧循环 · L2 最小脏区 · 三态主循环（DeepIdle
 
 1. **查目录** — 在下文「系统索引」或「主题索引」定位目标；读源码或重构前先看「[实现进度总览](#实现进度总览)」对照设计 vs 当前实现。
 2. **按需读** — 只打开相关 `systems/*.md`；需要裁决时查 [`decisions.md`](decisions.md)，不懂术语查 [`glossary.md`](glossary.md)。
-3. **改设计** — 边界/数据流变更同步 [`AGENTS.md`](../AGENTS.md) 与对应系统文档；新决策追加 #159+。
+3. **改设计** — 边界/数据流变更同步 [`AGENTS.md`](../AGENTS.md) 与对应系统文档；新决策追加 #160+。
 4. **写代码** — 先查「[术语对照（#101–#104）](#术语对照101104)」、[按需零闲置](systems/demand-driven.md) 与「[落地计划](roadmap.md)」；确认 API 与零闲置审查清单。
 
 ```text
@@ -45,7 +45,7 @@ Main（索引） ──按需──► systems/*.md（系统正文）
 | 索引 | **Main.md**（本页） | 导航、域映射、协作图 | 始终从此开始 |
 | 落地 | [`roadmap.md`](roadmap.md) | P0–P5 分阶段接线与文件清单 | 写代码、排期时 |
 | 系统 | [`systems/*.md`](systems/) | 各子系统设计与行为 | 做该域功能/重构时 |
-| 裁决 | [`decisions.md`](decisions.md) | #1–#158 决策台账 | 争议、实现取舍 |
+| 裁决 | [`decisions.md`](decisions.md) | #1–#159 决策台账 | 争议、实现取舍 |
 | 术语 | [`glossary.md`](glossary.md) | 名词定义 | 遇到陌生词 |
 | 约束 | [`AGENTS.md`](../AGENTS.md) | **核心理念**（最高规则）+ 架构硬约束 | 改边界、写代码前 |
 
@@ -105,7 +105,7 @@ core ← native ← draw ← ui ← app
 | 10 | 基础设施 | [foundation.md](systems/foundation.md) | 几何、错误、日志、诊断 | #38 #56 #70 |
 | 11 | 数据 | [data.md](systems/data.md) | Settings KV 持久化 | #64 |
 | 12 | 测试 | [testing.md](systems/testing.md) | FakePlatform、语义断言、paint snapshot | #40 |
-| 13 | **按需零闲置** | [demand-driven.md](systems/demand-driven.md) | 核心理念；零维护；Timer / post_to_ui / open_window | #105–#158 |
+| 13 | **按需零闲置** | [demand-driven.md](systems/demand-driven.md) | 核心理念；零维护；Timer / post_to_ui / open_window | #105–#159 |
 
 ---
 
@@ -157,7 +157,7 @@ core ← native ← draw ← ui ← app
 
 | 文档 | 内容 | 何时查 |
 |------|------|--------|
-| `docs/decisions.md` | 决策全表 #1–#158；[按域索引](decisions.md#按域索引)；新决策 #159+ | 实现分歧、API 取舍 |
+| `docs/decisions.md` | 决策全表 #1–#159；[按域索引](decisions.md#按域索引)；新决策 #160+ | 实现分歧、API 取舍 |
 | [`glossary.md`](glossary.md) | 术语定义（按域分组） | 名词不明 |
 | [术语对照（#101–#104）](#术语对照101104) | 设计名 vs 当前源码 API | 读源码、重构命名 |
 | [`AGENTS.md`](../AGENTS.md) | 六域依赖、平台隔离、文档维护 | 改架构、AI 协作 |
@@ -279,7 +279,7 @@ flowchart TB
 | 实现路线图 | P0–P5 分阶段 | 见 [roadmap.md](roadmap.md) | [#154](decisions.md#d154) [#157](decisions.md#d157) |
 | view_factory | session 固定 Arc factory | 单窗 `App::root(|| ...)` 与副窗 `WindowConfig::new(..., || ...)` 已安装 session factory | [#155](decisions.md#d155) |
 | 多窗口 | v1 多窗；共享 AppState + Theme | `run_gui` 已支持主窗 + 副窗单 loop 编排；副窗独立 `WindowSession`、AppState 共享、事件与队列按 `window_id` 路由 | [application · 多窗](systems/application.md#appstate--多窗--settings) · [#93](decisions.md#d93) |
-| Reconcile 热更新 | `reconcile` 增量更新 WidgetTree | 单窗主循环与副窗运行期 frame drain 已接帧末 reconcile；稳定 handler signature 与 fingerprint→generation 路径已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 `ViewNode` 与低层 `WidgetNode` 显式 State / WindowId capture 入口已接，自动 handler capture 收集待接 | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) · [Reconciler](systems/view-reactive.md#reconciler) |
+| Reconcile 热更新 | `reconcile` 增量更新 WidgetTree | 单窗主循环与副窗运行期 frame drain 已接帧末 reconcile；稳定 handler signature 与 fingerprint→generation 路径已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 `ViewNode` 与低层 `WidgetNode` 显式 State / WindowId capture 入口已接；任意闭包运行时自动收集按 #159 禁止，未来宏 / DSL 可在语法层生成 fingerprint | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) · [Reconciler](systems/view-reactive.md#reconciler) |
 | Manager 横切 | `WidgetManagers` 注入 WidgetTree | `WidgetTree` 已持有 per-tree `WidgetManagers`；`FocusManager` 已记录当前焦点与 Tab 顺序并驱动焦点导航；`InteractionManager` 已记录 hovered / pressed widget 并作为事件目标解析的优先状态源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset 并驱动基础 DragStart / DragMove / DragEnd 热路径；旧字段保留为兼容镜像；`state_for(id)` / `text_for(id)` override 会随节点移除清理 | [component · Manager](systems/component.md#manager-横切) |
 | AnimationRegistry | Registry tick + `tree.update(dt)` | `WidgetAnimation` 能力、`tree.update(dt)` 窄 Paint 标脏、单窗下一帧 deadline 与 `Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接入 | [component · 动画](systems/component.md#动画) · [rendering · 动画帧](systems/rendering.md#动画帧) |
 | Composite scroll | `Invalidation::Composite` + scroll_region memmove | Wheel、键盘、滚动条拖拽与程序化 ScrollView 滚动已写 Composite exposed strip 并接 `scroll_region` memmove；新增滚动来源须复用该路径 | [rendering · 管线与失效](systems/rendering.md#管线与失效) |
@@ -297,7 +297,7 @@ flowchart TB
 | post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + `AppHandle::post_to_ui` + MainThreadQueue 已接；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由；副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#133](decisions.md#d133) |
 | MainThreadQueue | FIFO + 帧内 drain 顺序 | 每 WindowSession 队列已接；单窗 drain 顺序为 UiEvent → due work → post_to_ui；`AppHandle` 多窗队列路由、副窗 bootstrap、MainThreadQueue 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#137](decisions.md#d137) |
 | TestClock | App drain_due 测试注入 | App 层 `AppClock` / `TestClock` 已接入 AppTimer deadline、RegisteredActive wait_until、drain_due；native `FakeTimer` 仍独立 | [#139](decisions.md#d139) |
-| handler_generation | View build 自动 bump | 内部 signature/generation 字段与比较已接；State / WindowId capture 指纹基础与 fingerprint→generation 解析已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 可复用 generation；View build / DSL 自动 capture 收集待接，默认 DSL handler 仍保守重绑 | [#138](decisions.md#d138) [#142](decisions.md#d142) |
+| handler_generation | View build 自动 bump | 内部 signature/generation 字段与比较已接；State / WindowId capture 指纹基础与 fingerprint→generation 解析已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 可复用 generation；无显式 capture 的 DSL handler 按 #159 保守重绑，未来宏 / DSL 若生成 fingerprint 可进入稳定复用路径 | [#138](decisions.md#d138) [#142](decisions.md#d142) [#159](decisions.md#d159) |
 | on_start / on_window_start | 每个 session 注入 AppHandle | 单窗 `.on_start(AppHandle)` 与副窗 `.on_window_start(AppHandle)` 已导出，并在对应 WindowSession 创建后、首帧前调用 | [#140](decisions.md#d140) |
 | 多窗 post_to_ui | window_id 路由 | `AppRuntime` 路由表已接；`AppHandle` 投递仅进入自身 `window_id` 的队列，session 销毁后丢弃闭包 | [#141](decisions.md#d141) |
 | AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | `AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求；主窗 close 退出主循环，副窗真实 close 事件按 `window_id` 关闭对应 session | [#134](decisions.md#d134) |
@@ -316,7 +316,7 @@ flowchart TB
 - 新增 `src/` 路径映射 → 更新「[源码目录详表](#源码目录详表)」与对应系统文档「源码模块」。
 - 设计落地或产生新差距 → 更新「[实现进度总览](#实现进度总览)」与各系统 `> **实现注记**`；阶段接线变更同步 [`roadmap.md`](roadmap.md)。
 - 新增**跨系统主题** → 更新「主题索引」；正文放在最相关系统文档的独立章节。
-- 新增**术语** → [`glossary.md`](glossary.md)；若涉及取舍 → [`decisions.md`](decisions.md) #159+。
+- 新增**术语** → [`glossary.md`](glossary.md)；若涉及取舍 → [`decisions.md`](decisions.md) #160+。
 - 系统文档头部保持统一导航（← Main · 系统 # · 功能域），便于从索引跳回。
 - 正文采用 **设计规格 + 实现注记** 格式：设计 ahead of code 处用 `> **实现注记**` 标注，避免索引与源码脱节。
 - 协作图中 **虚线（`-.->`）** 表示设计态或尚未完全接入运行时的横切能力（如 Manager 热路径迁移）。

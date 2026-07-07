@@ -23,7 +23,7 @@
 | 失效 | [失效与窄标脏](#失效与窄标脏) | #107 #122 #129 |
 | 输入 | [PointerMove 窄路径](#pointermove-窄路径) | #109 #121 |
 | Effect / Theme | [Effect 与 Theme](#effect-与-theme) | #79 #125 #128 |
-| 分域要求 | [分域要求](#分域要求) | #105–#158 |
+| 分域要求 | [分域要求](#分域要求) | #105–#159 |
 | 豁免 | [豁免机制](#豁免机制) | #113 |
 | 审查 | [新 API 审查清单](#新-api-审查清单) | #105 #120 #130 |
 | 实现差距 | [实现差距](#实现差距) | — |
@@ -609,7 +609,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 若存在 **无法**通过 register 或事件驱动的定时/轮询需求（如极少数平台 API）：
 
-1. 在 [`decisions.md`](../decisions.md) 追加 **#159+** 公开豁免条目（#158 记录当前无豁免）；
+1. 在 [`decisions.md`](../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#160+** 起）；
 2. 说明触发源、wake 频率、允许的工作范围、为何无法 register；
 3. [testing · 零闲置验收](testing.md#测试策略) 须覆盖：无事件时 assert **不** present/layout（或豁免边界）；
 4. 默认 **不豁免**；从严审查。
@@ -628,7 +628,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 6. **多窗？** 是否仅影响本窗状态（#110）？
 7. **调用方能否零维护？** 是否须 App register/名单/手动标脏？（#130 应答「否」）
 
-无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（#159+）。
+无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（当前新豁免从 #160+ 起）。
 
 ---
 
@@ -657,7 +657,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | AppState register | mount 自动 register Handle | `AppState` snapshot registry 已建；`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot，并记录所属失效队列与当前 dirty rect；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`；lookup handle `emit` 经 AppState semantic queue 唤醒并由主/副窗 drain 派发 | [#145](../decisions.md#d145) |
 | StateSlotId | State::new 单调 id | 已接；clone 共享，`generation()` 不参与身份 | [#143](../decisions.md#d143) |
 | Handler 智能重绑 | handler 变才重注册（#135） | 稳定 signature 路径已跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 DSL handler 仍保守重绑 | [#123](../decisions.md#d123) [#135](../decisions.md#d135) |
-| handler_generation + 指纹 | build 自动 bump（#142） | 内部 generation 字段、State / WindowId capture 指纹基础与 fingerprint→generation 解析已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接；View build / DSL 自动 capture 收集待接 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) |
+| handler_generation + 指纹 | build 自动 bump（#142） | 内部 generation 字段、State / WindowId capture 指纹基础与 fingerprint→generation 解析已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接；任意 Rust handler 闭包不做运行时自动收集（#159），未来宏 / DSL 只有在语法层生成 fingerprint 时才进入稳定复用 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) [#159](../decisions.md#d159) |
 | PointerMove 边界窄路径 | 框内不 hit_test | 已接：pointer_down_target/drag 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](../decisions.md#d109) [#121](../decisions.md#d121) |
 | Effect DeepIdle 跳过 | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 Registry deadline 唤醒；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接 | #105 |
 | ComponentConfigSnapshot | mount 提取配置 | 类型与首批内置静态配置提取已接；`ComponentHandle` 直接 snapshot getter 已接；AppState mount/unmount snapshot register 已接；reconcile patch update 已接 | [#146](../decisions.md#d146) |
@@ -668,7 +668,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | snapshot(skip) | 字段属性排除 | `define_widget!` 已解析并消费 `#[snapshot(skip)]`；首批手写内置提取已人工排除运行态字段；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该排除逻辑 | [#152](../decisions.md#d152) |
 | reconcile 合并 | pending_root 优先 | 单窗 `update_view` 路径与 State 批次自动置位已接；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#153](../decisions.md#d153) |
 | view_factory | session 固定 Arc | 单窗 `App::root(|| ...)` 与副窗 `WindowConfig::new(..., || ...)` 已安装 session factory | [#155](../decisions.md#d155) |
-| 豁免台账 | #159+ 条目 + 测试 | 已建立初始台账：#158 明确当前无豁免；新增豁免须从 #159+ 追加并补测试边界 | [#113](../decisions.md#d113) [#158](../decisions.md#d158) |
+| 豁免台账 | #160+ 条目 + 测试 | 已建立初始台账：#158 明确当前无豁免；新增豁免须从 #160+ 追加并补测试边界 | [#113](../decisions.md#d113) [#158](../decisions.md#d158) |
 
 源码与「设计」列不一致时 **按文档重构**（[`AGENTS.md`](../../AGENTS.md)）。
 
