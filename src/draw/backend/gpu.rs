@@ -10,6 +10,7 @@ use glow::HasContext as _;
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::gpu_engine::GpuCanvas2D;
 use crate::draw::traits::Canvas2D;
+use crate::native::traits::present::PresentDamage;
 
 /// GPU DrawSurface 适配器。
 pub struct GpuDrawSurface {
@@ -130,6 +131,11 @@ impl GpuBackend {
     }
 }
 
+fn present_graphics_context(gpu_ctx: &mut dyn IGraphicsContext, damage: &DamageRegion) {
+    gpu_ctx.make_current();
+    gpu_ctx.swap_buffers(damage.to_present_damage());
+}
+
 impl RenderBackend for GpuBackend {
     fn kind(&self) -> BackendKind {
         BackendKind::Gpu
@@ -161,8 +167,7 @@ impl RenderBackend for GpuBackend {
     }
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
-        self.gpu_ctx.make_current();
-        self.gpu_ctx.swap_buffers(damage.to_present_damage());
+        present_graphics_context(self.gpu_ctx.as_mut(), damage);
         Ok(())
     }
 
@@ -178,3 +183,64 @@ impl RenderBackend for GpuBackend {
 // GL 上下文仅在主线程使用，与旧 GpuEngine 一致。
 unsafe impl Send for GpuBackend {}
 unsafe impl Sync for GpuBackend {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::Rect;
+
+    #[derive(Default)]
+    struct RecordingGraphicsContext {
+        make_current_calls: usize,
+        swap_damage: Option<PresentDamage>,
+    }
+
+    impl IGraphicsContext for RecordingGraphicsContext {
+        fn initialize(
+            &mut self,
+            _native_window: *mut std::ffi::c_void,
+            _width: i32,
+            _height: i32,
+        ) -> crate::core::Result<()> {
+            Ok(())
+        }
+
+        fn resize(&mut self, _width: i32, _height: i32) {}
+
+        fn make_current(&mut self) {
+            self.make_current_calls += 1;
+        }
+
+        fn swap_buffers(&mut self, damage: PresentDamage) {
+            self.swap_damage = Some(damage);
+        }
+
+        fn shutdown(&mut self) {}
+
+        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
+            Vec::new()
+        }
+
+        fn width(&self) -> i32 {
+            0
+        }
+
+        fn height(&self) -> i32 {
+            0
+        }
+    }
+
+    #[test]
+    fn gpu_present_forwards_partial_damage_to_graphics_context() {
+        let mut context = RecordingGraphicsContext::default();
+        let damage = DamageRegion::partial(vec![Rect::new(1.0, 2.0, 3.0, 4.0)]);
+
+        present_graphics_context(&mut context, &damage);
+
+        assert_eq!(context.make_current_calls, 1);
+        assert_eq!(
+            context.swap_damage,
+            Some(PresentDamage::Partial(vec![(1, 2, 3, 4)]))
+        );
+    }
+}

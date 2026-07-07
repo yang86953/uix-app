@@ -432,6 +432,148 @@ fn reconcile_same_type_scroll_view_preserves_offset() {
 }
 
 #[test]
+fn reconcile_tree_select_preserves_open_selection_and_syncs_options() {
+    use crate::ui::widgets::{TreeNode, TreeSelect};
+
+    let old_nodes = vec![TreeNode::new("Old", "old")];
+    let new_nodes = vec![TreeNode::new("New", "new")];
+    let mut tree =
+        ViewAdapter::build_nodes(ViewNode::leaf(TreeSelect::new().nodes(old_nodes.clone())));
+    let root_id = tree.root_id().expect("tree select root should exist");
+    {
+        let tree_select = tree
+            .get_mut(root_id)
+            .unwrap()
+            .component_mut()
+            .as_any_mut()
+            .downcast_mut::<TreeSelect>()
+            .unwrap();
+        tree_select.open();
+        assert_eq!(
+            crate::ui::EventHandler::on_event(
+                tree_select,
+                &SystemEvent::PointerDown {
+                    pos: crate::core::Point::new(4.0, 36.0),
+                    button: crate::ui::MouseButton::Left,
+                    mods: crate::ui::KeyMod::NONE,
+                },
+            ),
+            EventResult::Handled
+        );
+        tree_select.open();
+        assert_eq!(tree_select.value_key(), "old");
+    }
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            TreeSelect::new()
+                .placeholder("new placeholder")
+                .nodes(new_nodes),
+        ),
+    );
+
+    let tree_select = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<TreeSelect>()
+        .unwrap();
+    assert!(tree_select.is_open());
+    assert_eq!(tree_select.value_key(), "old");
+    assert!(matches!(
+        tree_select.snapshot_fields(),
+        SnapshotFields::TreeSelect {
+            placeholder,
+            nodes,
+        } if placeholder == "new placeholder" && nodes.len() == 1 && nodes[0].key == "new"
+    ));
+}
+
+#[test]
+fn reconcile_cascader_preserves_popup_state_and_syncs_options() {
+    use crate::ui::widgets::{Cascader, CascaderOption};
+
+    let old_options = vec![
+        CascaderOption::new("Old", "old").children(vec![CascaderOption::new("Child", "child")])
+    ];
+    let new_options = vec![CascaderOption::new("New", "new")];
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Cascader::new(old_options, "old")));
+    let root_id = tree.root_id().expect("cascader root should exist");
+    {
+        let cascader = tree
+            .get_mut(root_id)
+            .unwrap()
+            .component_mut()
+            .as_any_mut()
+            .downcast_mut::<Cascader>()
+            .unwrap();
+        cascader.open();
+        cascader.select_option(0, 0);
+        assert!(cascader.is_open());
+        assert_eq!(cascader.selected().values.as_slice(), &["old"]);
+    }
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(Cascader::new(new_options, "new placeholder")),
+    );
+
+    let cascader = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Cascader>()
+        .unwrap();
+    assert!(cascader.is_open());
+    assert_eq!(cascader.selected().values.as_slice(), &["old"]);
+    assert!(matches!(
+        cascader.snapshot_fields(),
+        SnapshotFields::Cascader {
+            placeholder,
+            options,
+        } if placeholder == "new placeholder" && options.len() == 1 && options[0].value == "new"
+    ));
+}
+
+#[test]
+fn reconcile_color_picker_preserves_open_color_and_syncs_presets() {
+    use crate::ui::widgets::ColorPicker;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(ColorPicker::new(Color::red())));
+    let root_id = tree.root_id().expect("color picker root should exist");
+    {
+        let color_picker = tree
+            .get_mut(root_id)
+            .unwrap()
+            .component_mut()
+            .as_any_mut()
+            .downcast_mut::<ColorPicker>()
+            .unwrap();
+        color_picker.open();
+        color_picker.set_value(Color::green());
+    }
+
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(ColorPicker::new(Color::blue())));
+
+    let color_picker = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<ColorPicker>()
+        .unwrap();
+    assert!(color_picker.is_open());
+    assert_eq!(color_picker.value(), Color::green());
+    assert!(matches!(
+        color_picker.snapshot_fields(),
+        SnapshotFields::ColorPicker { preset_colors } if !preset_colors.is_empty()
+    ));
+}
+
+#[test]
 fn reconcile_preserves_consumed_once_handler_when_signature_is_unchanged() {
     use crate::core::Point;
     use crate::native::traits::input::{KeyMod, MouseButton};

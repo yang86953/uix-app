@@ -1,5 +1,6 @@
 use crate::ui::widgets::{
-    Button, Container, Grid, Input, Label, ScrollView, Select, Space, Tooltip,
+    Button, Cascader, ColorPicker, Container, Grid, Input, Label, ScrollView, Select, Space,
+    Tooltip, TreeSelect,
 };
 use crate::ui::WidgetComponent;
 
@@ -33,6 +34,9 @@ pub(crate) fn patch_builtin_widget(
     patch_as!(Select);
     patch_as!(Space);
     patch_as!(Tooltip);
+    patch_as!(TreeSelect);
+    patch_as!(Cascader);
+    patch_as!(ColorPicker);
 
     Err(next)
 }

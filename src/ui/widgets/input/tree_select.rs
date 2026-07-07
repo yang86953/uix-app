@@ -254,6 +254,11 @@ impl TreeSelect {
                 .collect(),
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.placeholder = next.placeholder;
+        self.nodes = next.nodes;
+    }
 }
 
 fn tree_select_dirty_rect(frame: Rect, item_count: usize) -> Rect {

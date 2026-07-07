@@ -199,10 +199,11 @@ run_active_frame(session):
   1. drain 本窗 UiEvent → dispatch          // 输入优先
   2. active_work.drain_due(now)             // AppTimer / Animation / IME
   3. main_thread_queue.drain()              // post_to_ui 闭包
-  4. tick_effects（Active 态）
-  5. if reconcile_pending: reconcile 一次
-  6. layout → render → present?
-  7. 无 pending 且无 register → DeepIdle
+  4. drain AppState semantic queue
+  5. update due animation + tick_effects（仅 Effect pending）
+  6. if reconcile_pending: reconcile 一次
+  7. layout → render → present?
+  8. 无 pending 且无 register → DeepIdle
 ```
 
 | 规则 | 说明 |
@@ -214,7 +215,7 @@ run_active_frame(session):
 | 跨 session | 各 WindowSession **独立**队列；不跨窗投递（#141） |
 | 与 Timer | `AppTimer` 回调走 `drain_due`（步骤 2）；**不**与 post_to_ui 混队 |
 
-`post_to_ui` 闭包内 `State::set` 并入步骤 5 的 reconcile 批次（#118）；禁止在步骤 3 直接改 WidgetTree。
+`post_to_ui` 闭包内 `State::set` 并入步骤 6 的 reconcile 批次（#118）；禁止在步骤 3 直接改 WidgetTree。
 
 > **实现注记**：`MainThreadQueue` 已落地并在单窗 event loop 中按 UiEvent → due work → post_to_ui 顺序 drain；`AppRuntime` 已按 `window_id` 路由投递并在独立 session 关闭时清理队列；有效 session 成功入队后会唤醒事件循环，关闭后的 late post 不入队也不唤醒。副窗 session bootstrap、MainThreadQueue 消费、事件路由、运行期 frame drain 与 deadline wait 已接；Windows/fake/Linux Wayland 后端已接真实 wake。
 
@@ -446,11 +447,12 @@ run_active_frame(session):
   1. drain 本窗 UiEvent → dispatch
   2. active_work.drain_due(now) → 窄 tick / 关联 paint
   3. main_thread_queue.drain() → post_to_ui 闭包（#137）
-  4. tick_effects（Active 态）
-  5. if reconcile_pending: ViewAdapter::reconcile **一次**
-  6. if has_layout(): layout
-  7. if has_render_work(): render_frame → present?
-  8. coalesce 清空；无 pending 且无 register → DeepIdle
+  4. drain AppState semantic queue
+  5. update due animation + tick_effects（仅 Effect pending）
+  6. if reconcile_pending: ViewAdapter::reconcile **一次**
+  7. if has_layout(): layout
+  8. if has_render_work(): render_frame → present?
+  9. coalesce 清空；无 pending 且无 register → DeepIdle
 ```
 
 | 合并点 | 规则 |
@@ -658,7 +660,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | AppState register | mount 自动 register Handle | `AppState` snapshot registry 已建；`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot，并记录所属失效队列与当前 dirty rect；内部 register/unregister、snapshot/invalidate 与 semantic queue 均已按 `ComponentId` 命名；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`；lookup handle `emit` 经 AppState semantic queue 唤醒并由主/副窗 drain 派发 | [#145](../decisions.md#d145) |
 | StateSlotId | State::new 单调 id | 已接；clone 共享，`generation()` 不参与身份 | [#143](../decisions.md#d143) |
 | Handler 智能重绑 | handler 变才重注册（#135、#160） | 稳定 signature 路径已跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的普通 handler 仍保守重绑 | [#123](../decisions.md#d123) [#135](../decisions.md#d135) [#160](../decisions.md#d160) |
-| handler_generation + 指纹 | 显式 fingerprint 才稳定复用（#142、#160） | 内部 generation 字段、State / WindowId capture 指纹基础与 fingerprint→generation 解析已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接；任意 Rust handler 闭包不做运行时自动收集（#159），无 generation / fingerprint 时保守重绑（#160），未来宏 / DSL 只有在语法层生成 fingerprint 时才进入稳定复用 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) [#159](../decisions.md#d159) [#160](../decisions.md#d160) |
+| handler_generation + 指纹 | 显式 fingerprint 才稳定复用（#142、#160） | 内部 generation 字段、State / WindowId capture 指纹基础与 fingerprint→generation 解析已接；多个 capture 会排序合并为顺序无关指纹；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接；任意 Rust handler 闭包不做运行时自动收集（#159），无 generation / fingerprint 时保守重绑（#160），未来宏 / DSL 只有在语法层生成 fingerprint 时才进入稳定复用 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) [#159](../decisions.md#d159) [#160](../decisions.md#d160) |
 | PointerMove 边界窄路径 | 框内不 hit_test | 已接：`InteractionManager.pressed_component` / `DragManager.target` 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](../decisions.md#d109) [#121](../decisions.md#d121) |
 | Effect DeepIdle 跳过 | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 `Animation(id)` Registry deadline 唤醒，due 帧只推进到期 active + visible 节点；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接 | #105 |
 | ComponentConfigSnapshot | mount 提取配置 | 类型与 80 个内置组件静态配置提取已接；`ComponentHandle` 直接 snapshot getter 已接；AppState mount/unmount snapshot register 已接；reconcile patch update 已接 | [#146](../decisions.md#d146) |
@@ -694,7 +696,7 @@ draw/pipeline/invalidation.rs    Invalidation
 ui/foundation/state.rs          StateSlotId（#143）落地
 ui/view/build_context.rs        handler_generation / capture 指纹（#138 #142）
 ui/animation/                    AnimationRegistry register
-ui/app_state.rs                 AppState snapshot registry（#145，部分落地）
+ui/app_state.rs                 AppState snapshot registry（#145）
 ui/component_snapshot.rs         ComponentConfigSnapshot / SnapshotSource（#146 #151）
 ```
 
