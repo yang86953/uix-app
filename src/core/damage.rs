@@ -54,7 +54,7 @@ impl DirtyRegion {
             return;
         }
         self.clear_required = true;
-        if self.rects.len() >= DIRTY_MERGE_THRESHOLD {
+        if self.rects.len() >= DIRTY_MERGE_THRESHOLD - 1 {
             let bounds = self.bounds().union(&rect);
             self.rects.clear();
             self.rects.push(bounds);

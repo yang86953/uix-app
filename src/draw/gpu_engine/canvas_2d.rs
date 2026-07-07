@@ -64,6 +64,26 @@ impl GpuCanvas2D {
         Error::new(Errc::PlatformError, msg)
     }
 
+    fn scissor_for_clip(clip: Rect, surface_h: i32) -> (i32, i32, i32, i32) {
+        if clip.w <= 0.0 || clip.h <= 0.0 {
+            return (0, 0, 0, 0);
+        }
+        (
+            clip.x as i32,
+            (surface_h as f32 - clip.y - clip.h).max(0.0) as i32,
+            clip.w as i32,
+            clip.h as i32,
+        )
+    }
+
+    fn apply_clip_scissor(&self) {
+        let (x, y, w, h) = Self::scissor_for_clip(self.clip_rect, self.surface_h);
+        unsafe {
+            self.gl().enable(glow::SCISSOR_TEST);
+            self.gl().scissor(x, y, w, h);
+        }
+    }
+
     /// 编译单个着色器，失败时返回包含 info log 的错误。
     unsafe fn compile_shader(
         gl: &glow::Context,
@@ -224,29 +244,23 @@ impl GpuCanvas2D {
             self.gl().scissor(x, sy, w, h);
             self.gl().clear_color(0.0, 0.0, 0.0, 0.0);
             self.gl().clear(glow::COLOR_BUFFER_BIT);
-            if self.clip_rect.w > 0.0 && self.clip_rect.h > 0.0 {
-                self.gl().scissor(
-                    self.clip_rect.x as i32,
-                    (self.surface_h as f32 - self.clip_rect.y - self.clip_rect.h) as i32,
-                    self.clip_rect.w as i32,
-                    self.clip_rect.h as i32,
-                );
-            } else {
-                self.gl().scissor(0, 0, 0, 0);
-            }
         }
+        self.apply_clip_scissor();
     }
 
     pub fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.surface_w = width;
         self.surface_h = height;
         self.clip_rect = Rect::new(0.0, 0.0, width as f32, height as f32);
+        self.clip_stack.clear();
+        self.state_stack.clear();
         self.soft_fallback = SharedRasterizer::new(PixelSurface::new(width.max(1), height.max(1)));
         let new_tex = unsafe { Self::create_fallback_texture(self.gl(), width, height)? };
         unsafe {
             self.gl().delete_texture(self.fallback_texture);
         }
         self.fallback_texture = new_tex;
+        self.apply_clip_scissor();
         Ok(())
     }
 
@@ -485,6 +499,7 @@ impl Canvas2D for GpuCanvas2D {
             self.offset_y = state.offset_y;
             self.transform = state.transform;
             self.blend_mode = state.blend_mode;
+            self.apply_clip_scissor();
         }
     }
 
@@ -492,34 +507,16 @@ impl Canvas2D for GpuCanvas2D {
         self.clip_stack.push(self.clip_rect);
         if let Some(intersection) = self.clip_rect.intersect(&rect) {
             self.clip_rect = intersection;
-            unsafe {
-                self.gl().enable(glow::SCISSOR_TEST);
-                self.gl().scissor(
-                    self.clip_rect.x as i32,
-                    (self.surface_h as f32 - self.clip_rect.y - self.clip_rect.h) as i32,
-                    self.clip_rect.w as i32,
-                    self.clip_rect.h as i32,
-                );
-            }
         } else {
             self.clip_rect = Rect::zero();
-            unsafe {
-                self.gl().scissor(0, 0, 0, 0);
-            }
         }
+        self.apply_clip_scissor();
     }
 
     fn pop_clip(&mut self) {
         if let Some(prev) = self.clip_stack.pop() {
             self.clip_rect = prev;
-            unsafe {
-                self.gl().scissor(
-                    self.clip_rect.x as i32,
-                    (self.surface_h as f32 - self.clip_rect.y - self.clip_rect.h) as i32,
-                    self.clip_rect.w as i32,
-                    self.clip_rect.h as i32,
-                );
-            }
+            self.apply_clip_scissor();
         }
     }
 
@@ -558,5 +555,26 @@ impl Canvas2D for GpuCanvas2D {
 
     fn current_clip(&self) -> Rect {
         self.clip_rect
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scissor_for_clip_flips_y_to_gl_coordinates() {
+        assert_eq!(
+            GpuCanvas2D::scissor_for_clip(Rect::new(10.0, 20.0, 30.0, 40.0), 100),
+            (10, 40, 30, 40)
+        );
+    }
+
+    #[test]
+    fn scissor_for_empty_clip_disables_area() {
+        assert_eq!(
+            GpuCanvas2D::scissor_for_clip(Rect::new(0.0, 0.0, 0.0, 10.0), 100),
+            (0, 0, 0, 0)
+        );
     }
 }

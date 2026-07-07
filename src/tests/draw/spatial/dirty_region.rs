@@ -1,6 +1,5 @@
 use super::*;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
-use crate::draw::spatial::vec3::Vec3;
 use crate::draw::spatial::Orientation;
 
 #[test]

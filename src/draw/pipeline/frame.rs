@@ -55,12 +55,7 @@ pub fn begin_frame(
                 for r in &rects[1..] {
                     bounds = bounds.union(r);
                 }
-                let clip = Rect::new(
-                    bounds.x.max(0.0),
-                    bounds.y.max(0.0),
-                    bounds.w.min(fw - bounds.x.max(0.0)),
-                    bounds.h.min(fh - bounds.y.max(0.0)),
-                );
+                let clip = bounds.intersect(&full).unwrap_or_else(Rect::zero);
                 surface.push_clip(clip);
             }
         }

@@ -1,6 +1,5 @@
 use super::*;
 use crate::draw::null_engine::NullEngine;
-use crate::draw::spatial::PhysicalUnitExt;
 use crate::draw::traits::GraphicsEngine;
 
 fn make_context(surface_w: i32, surface_h: i32) -> SpatialContext<'static> {

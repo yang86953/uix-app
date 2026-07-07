@@ -25,9 +25,6 @@ impl WindowsNotification {
     pub fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
         self.hwnd = hwnd;
     }
-    pub fn is_active(&self) -> bool {
-        self.active
-    }
     /// Remove the notification icon. Called on Drop.
     pub fn remove_icon(&mut self) {
         if self.active && !self.hwnd.is_null() {

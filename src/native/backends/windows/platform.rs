@@ -28,7 +28,7 @@ use super::notification::WindowsNotification;
 use super::system_info::WindowsSystemInfo;
 use super::text_input::WindowsTextInput;
 use super::timer::WindowsTimer;
-use super::util::to_wide;
+use super::util::{to_wide, windows_diag};
 use super::window_ops::WindowsWindowOps;
 use crate::core::WindowId;
 use crate::native::shared::{OsEventSource, PlatformWindowCore, WindowState};
@@ -214,7 +214,7 @@ impl IWindowManager for WindowsPlatform {
                 self as *mut WindowsPlatform as *mut std::ffi::c_void,
             );
             if hwnd.is_null() {
-                return Err(Error::new(
+                return Err(windows_diag(
                     Errc::WindowCreationFailed,
                     "CreateWindowExW returned null",
                 ));

@@ -17,6 +17,25 @@ fn paint_merges_to_dirty_region() {
 }
 
 #[test]
+fn dirty_region_merges_when_sixteenth_rect_is_added() {
+    let mut q = InvalidationQueue::new();
+    for i in 0..15 {
+        q.push(Invalidation::Composite {
+            rect: Rect::new(i as f32, 0.0, 1.0, 1.0),
+            scroll: None,
+        });
+    }
+    assert_eq!(q.dirty_region().rects().len(), 15);
+
+    q.push(Invalidation::Composite {
+        rect: Rect::new(15.0, 0.0, 1.0, 1.0),
+        scroll: None,
+    });
+    let region = q.dirty_region();
+    assert_eq!(region.rects(), &[Rect::new(0.0, 0.0, 16.0, 1.0)]);
+}
+
+#[test]
 fn layout_only_does_not_imply_paint() {
     let mut q = InvalidationQueue::new();
     q.push(Invalidation::Layout(NodeId::new(0)));
