@@ -78,6 +78,8 @@ pub struct LayoutChild {
     pub flex_shrink: f32,
     /// 外边距——参与布局计算，推开兄弟节点
     pub margin: crate::core::EdgeInsets,
+    /// 子项交叉轴对齐覆盖；None 时继承父容器 align_items。
+    pub align_self: Option<AlignItems>,
     /// Grid: 起始单元格索引
     pub grid_cell: usize,
     /// Grid: 列跨度
@@ -94,6 +96,7 @@ impl LayoutChild {
             flex_grow: 0.0,
             flex_shrink: 1.0,
             margin: crate::core::EdgeInsets::zero(),
+            align_self: None,
             grid_cell: 0,
             grid_column_span: 1,
             grid_row_span: 1,
@@ -277,6 +280,7 @@ impl LayoutEngine for FlexLayout {
             .map(|c| FlexChild {
                 flex_grow: c.flex_grow,
                 flex_shrink: c.flex_shrink,
+                align_self: c.align_self,
                 ..FlexChild::default()
             })
             .collect();
@@ -375,13 +379,14 @@ fn overflow_layout(
             children[i].margin.horizontal()
         };
 
-        let child_cross = if engine.align == AlignItems::Stretch {
+        let cross_align = children[i].align_self.unwrap_or(engine.align);
+        let child_cross = if cross_align == AlignItems::Stretch {
             (container_cross - margin_cross).max(0.0)
         } else {
             cross_size
         };
 
-        let cross_offset = match engine.align {
+        let cross_offset = match cross_align {
             AlignItems::Start => 0.0,
             AlignItems::Center => (container_cross - child_cross) / 2.0,
             AlignItems::End => container_cross - child_cross,
@@ -573,6 +578,9 @@ pub fn child_from_tree_with_constraints(
         .and_then(|c| c.as_layout())
         .map(|l| l.layout_margin())
         .unwrap_or_default();
+    let align_self = node
+        .and_then(|c| c.as_layout())
+        .and_then(|l| l.align_self());
 
     LayoutChild {
         id: component_id,
@@ -580,6 +588,7 @@ pub fn child_from_tree_with_constraints(
         flex_grow: grow,
         flex_shrink: shrink,
         margin,
+        align_self,
         grid_cell: 0,
         grid_column_span: 1,
         grid_row_span: 1,

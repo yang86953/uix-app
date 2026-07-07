@@ -25,6 +25,7 @@ use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::ui::event::SemanticEvent;
+use crate::ui::layout::AlignItems;
 use crate::ui::overlay::OverlayEntry;
 use crate::ui::widget::{EventResult, SystemEvent, WidgetNode, WidgetTree};
 use std::any::Any;
@@ -127,6 +128,9 @@ pub trait WidgetLayout: WidgetComponent {
     }
     fn flex_shrink(&self) -> f32 {
         1.0
+    }
+    fn align_self(&self) -> Option<AlignItems> {
+        None
     }
     fn layout_margin(&self) -> EdgeInsets {
         EdgeInsets::zero()

@@ -43,6 +43,10 @@ component! {
         self.style.as_ref().map(|style| style.margin).unwrap_or_default()
     }
 
+    align_self => (&self) -> Option<crate::ui::layout::AlignItems> {
+        self.style.as_ref().and_then(|style| style.align_self)
+    }
+
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, mods, .. } => {

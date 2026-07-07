@@ -93,6 +93,7 @@ component! {
                     flex_grow: w.and_then(|c| c.as_layout()).map(|l| l.flex_grow()).unwrap_or(0.0),
                     // 禁止子节点收缩——Phase 2 负责扩展容器适应内容
                     flex_shrink: 0.0,
+                    align_self: w.and_then(|c| c.as_layout()).and_then(|l| l.align_self()),
                     ..FlexChild::default()
                 }
             })

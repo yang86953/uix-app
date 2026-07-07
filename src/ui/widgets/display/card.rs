@@ -166,6 +166,7 @@ component! {
                 FlexChild {
                     flex_grow: w.and_then(|c| c.as_layout()).map(|l| l.flex_grow()).unwrap_or(0.0),
                     flex_shrink: w.and_then(|c| c.as_layout()).map(|l| l.flex_shrink()).unwrap_or(0.0),
+                    align_self: w.and_then(|c| c.as_layout()).and_then(|l| l.align_self()),
                     ..FlexChild::default()
                 }
             })
