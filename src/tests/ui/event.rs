@@ -2,7 +2,9 @@ use super::*;
 use crate::core::Rect;
 use crate::ui::state::State;
 use crate::ui::widgets::{Button, Input, Label};
-use crate::ui::{ComponentHandle, SnapshotFields, WidgetCore, WidgetId, WidgetNode, WidgetTree};
+use crate::ui::{
+    AppState, ComponentHandle, SnapshotFields, WidgetCore, WidgetId, WidgetNode, WidgetTree,
+};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -218,6 +220,49 @@ fn component_handle_emit_uses_semantic_bubble_path() {
     let result = handle.emit(SemanticEvent::change(root, "from-handle"));
 
     assert_eq!(result, EventResult::Handled);
+    assert_eq!(
+        calls.borrow().as_slice(),
+        &[(child, child, "child"), (child, root, "root")]
+    );
+}
+
+#[test]
+fn app_state_lookup_handle_emit_drains_into_widget_tree() {
+    let mut tree = WidgetTree::new();
+    let app_state = AppState::new();
+    let root = tree.set_root(Box::new(Button::new("root")));
+    let child = tree.add_child(root, Box::new(Button::new("child")));
+
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    {
+        let calls = calls.clone();
+        tree.handler_table()
+            .on(child, SemanticKind::Change, move |event| {
+                calls
+                    .borrow_mut()
+                    .push((event.target, event.current_target, "child"));
+            });
+    }
+    {
+        let calls = calls.clone();
+        tree.handler_table()
+            .on(root, SemanticKind::Change, move |event| {
+                calls
+                    .borrow_mut()
+                    .push((event.target, event.current_target, "root"));
+            });
+    }
+
+    tree.layout();
+    tree.set_app_state(app_state.clone());
+    let handle = app_state.get_handle(child).unwrap();
+
+    assert_eq!(
+        handle.emit(SemanticEvent::change(root, "from-lookup")),
+        EventResult::Handled
+    );
+    assert!(calls.borrow().is_empty());
+    assert!(tree.drain_app_state_semantic_events());
     assert_eq!(
         calls.borrow().as_slice(),
         &[(child, child, "child"), (child, root, "root")]
