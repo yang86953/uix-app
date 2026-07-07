@@ -1,13 +1,13 @@
 use std::any::TypeId;
 
-use crate::core::EdgeInsets;
+use crate::core::{Constraints, EdgeInsets, Size};
 use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::layout::GridTrack;
 use crate::ui::widgets::{Button, Container, Grid, Input, Label};
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotFields, SnapshotSource, SnapshotValue,
-    SystemEvent, WidgetId,
+    SystemEvent, WidgetId, WidgetLayout,
 };
 use crate::{component, define_widget};
 
@@ -19,6 +19,23 @@ define_widget! {
         #[allow(dead_code)]
         pub hover_count: usize,
         _secret: String,
+    }
+
+    render => (
+        &self,
+        _frame: crate::core::Rect,
+        _ctx: &mut crate::draw::painting::PaintContext,
+        _tree: &crate::ui::WidgetTree
+    ) {}
+}
+
+define_widget! {
+    struct MeasureMacroProbe {
+        pub label: String,
+    }
+
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(72.0, 48.0))
     }
 
     render => (
@@ -56,6 +73,23 @@ component! {
         pub runtime_state: usize,
         #[allow(dead_code)]
         cache_key: String,
+    }
+
+    render => (
+        &self,
+        _frame: crate::core::Rect,
+        _ctx: &mut crate::draw::painting::PaintContext,
+        _tree: &crate::ui::WidgetTree
+    ) {}
+}
+
+component! {
+    struct ComponentMeasureProbe {
+        pub caption: String,
+    }
+
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(96.0, 64.0))
     }
 
     render => (
@@ -208,6 +242,19 @@ fn define_widget_auto_snapshot_captures_public_fields_only() {
 }
 
 #[test]
+fn define_widget_measure_method_implements_layout() {
+    let probe = MeasureMacroProbe {
+        label: "measure".to_string(),
+    };
+
+    assert!(crate::ui::WidgetComponent::as_layout(&probe).is_some());
+    assert_eq!(
+        WidgetLayout::measure(&probe, Constraints::loose(Size::new(50.0, 40.0))),
+        Size::new(50.0, 40.0)
+    );
+}
+
+#[test]
 fn component_macro_name_struct_syntax_reuses_snapshot_metadata() {
     let probe = ComponentMacroProbe {
         label: "Thin".to_string(),
@@ -254,5 +301,18 @@ fn component_macro_struct_syntax_captures_public_fields() {
     assert_eq!(
         fields[0].value,
         SnapshotValue::Debug("\"Direct\"".to_string())
+    );
+}
+
+#[test]
+fn component_macro_measure_method_implements_layout() {
+    let probe = ComponentMeasureProbe {
+        caption: "measure".to_string(),
+    };
+
+    assert!(crate::ui::WidgetComponent::as_layout(&probe).is_some());
+    assert_eq!(
+        WidgetLayout::measure(&probe, Constraints::loose(Size::new(80.0, 40.0))),
+        Size::new(80.0, 40.0)
     );
 }

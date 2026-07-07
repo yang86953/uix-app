@@ -404,13 +404,13 @@ WidgetTree
 component! {
     pub struct MyWidget { ... }
 
-    preferred_size => (&self, engine) -> Size { ... }
+    measure => (&self, constraints) -> Size { ... }
     render => (&self, frame, ctx, tree) { ... }
     on_event => (&mut self, event) -> EventResult { ... }
 }
 ```
 
-`component!` 与兼容入口 `define_widget!` 均按已声明的方法自动生成能力、上转型与 trait impl；未覆盖的方法使用 trait 默认实现。
+`component!` 与兼容入口 `define_widget!` 均按已声明的方法自动生成能力、上转型与 trait impl；未覆盖的方法使用 trait 默认实现。旧 `preferred_size` 分支保留为兼容桥，新组件优先写 `measure`。
 
 ### prelude（#69）
 
