@@ -190,7 +190,6 @@ macro_rules! __component_build_method {
 #[doc(hidden)]
 macro_rules! __component_upcast_method {
     (measure; $T:ty) => { $crate::wc_upcast!($T; WidgetLayout); };
-    (preferred_size; $T:ty) => { $crate::wc_upcast!($T; WidgetLayout); };
     (flex_grow; $T:ty) => {};
     (flex_shrink; $T:ty) => {};
     (layout_children; $T:ty) => {};
@@ -279,7 +278,7 @@ macro_rules! component {
                 let mut c = $crate::ui::traits::WidgetCapabilities::new();
                 $(
                     match stringify!($method) {
-                        "measure" | "preferred_size" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
+                        "measure" | "flex_grow" | "flex_shrink" | "layout_children" | "build" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
@@ -308,7 +307,7 @@ macro_rules! component {
         $crate::__component_grouped_impl! {
             WidgetLayout,
             $name,
-            [measure preferred_size flex_grow flex_shrink layout_children],
+            [measure flex_grow flex_shrink layout_children],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -502,9 +501,6 @@ macro_rules! __component_method_builder {
     (measure; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn measure($($p)*) -> $ret $body
     };
-    (preferred_size; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
-        fn preferred_size($($p)*) -> $ret $body
-    };
     (flex_grow; WidgetLayout; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn flex_grow($($p)*) -> $ret $body
     };
@@ -607,9 +603,6 @@ macro_rules! __match_trait_method {
     // ── WidgetLayout ──
     (WidgetLayout, measure, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn measure($($p)*) -> $ret $body
-    };
-    (WidgetLayout, preferred_size, ($($p:tt)*) -> $ret:ty $body:block) => {
-        fn preferred_size($($p)*) -> $ret $body
     };
     (WidgetLayout, flex_grow, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn flex_grow($($p)*) -> $ret $body

@@ -3,7 +3,7 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
-use crate::draw::{traits::GraphicsEngine, Color, Radius};
+use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetTree};
 
@@ -62,9 +62,6 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {

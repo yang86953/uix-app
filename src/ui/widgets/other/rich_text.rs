@@ -21,10 +21,10 @@ use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
 use crate::component;
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
-use crate::draw::{traits::GraphicsEngine, Color, Radius};
+use crate::draw::{Color, Radius};
 use crate::ui::clipboard;
 use crate::ui::{EventResult, KeyCode, KeyMod, SnapshotFields, SystemEvent, WidgetTree};
 
@@ -174,18 +174,19 @@ component! {
         }
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        // 使用上次渲染的实际宽度作为布局估计宽度，
-        // 避免 preferred_size 和 render 使用不同宽度导致高度估计偏差。
-        // 首帧无缓存时使用 400.0 作为合理默认值。
-        let est_width = if self.last_layout_width.get() > 0.0 {
+    measure => (&self, constraints: Constraints) -> Size {
+        // Use the explicit measure constraint first; fall back to the last
+        // rendered width so first layout and render stay close.
+        let est_width = if constraints.max.w.is_finite() && constraints.max.w > 0.0 {
+            constraints.max.w
+        } else if self.last_layout_width.get() > 0.0 {
             self.last_layout_width.get()
         } else {
             400.0_f32
         };
 
         if self.layout_dirty.get() || self.layout_height.get() <= 0.0 {
-            let dpi = _engine.map(|e| e.dpi()).unwrap_or(96.0);
+            let dpi = 96.0;
             let fs = self.resolved_font_size_px(dpi);
             let (_, total_h, max_w) = layout_rich_text(
                 &self.segments, est_width, fs, self.default_color,
@@ -194,7 +195,7 @@ component! {
             self.content_width.set(max_w);
             self.layout_dirty.set(false);
         }
-        Size::new(self.content_width.get(), self.layout_height.get())
+        constraints.clamp(Size::new(self.content_width.get(), self.layout_height.get()))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

@@ -1,5 +1,5 @@
 use crate::component;
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::{
@@ -19,7 +19,7 @@ component! {
         error_level: u8,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+    measure => (&self, _constraints: Constraints) -> Size {
         Size::new(self.size, self.size)
     }
 
@@ -108,7 +108,7 @@ component! {
         initial_target: Vec<TransferItem>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+    measure => (&self, _constraints: Constraints) -> Size {
         Size::new(500.0, 200.0)
     }
 
@@ -267,7 +267,7 @@ component! {
         pending_change: RefCell<Option<String>>,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+    measure => (&self, _constraints: Constraints) -> Size {
         let list_h = self.file_list.len() as f32 * 32.0;
         Size::new(300.0, 100.0 + list_h)
     }
@@ -432,7 +432,7 @@ component! {
         y_offset: f32,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+    measure => (&self, _constraints: Constraints) -> Size {
         Size::zero()
     }
 

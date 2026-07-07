@@ -20,9 +20,6 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _eng: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if let SystemEvent::PointerDown { .. } = event {

@@ -45,7 +45,7 @@
 
 | Trait | 方法 / 职责 | 决策 |
 |-------|-------------|------|
-| **WidgetLayout** | `preferred_size`, `flex_grow/shrink`, `layout_children` | #29 |
+| **WidgetLayout** | `measure`, `flex_grow/shrink`, `layout_children` | #29 |
 | **WidgetRender** | `render(frame, ctx, tree)`；可选 `overlay_entry`, `dirty_rect` | |
 | **EventHandler** | `on_event`, `semantic_event`, `wants_continuous_pointer_move` | #36 #121 |
 | **连续 PointerMove opt-in** | 默认 false；true → hover 框内每 PointerMove dispatch（#121） | #109 |
@@ -409,7 +409,7 @@ component! {
 }
 ```
 
-`component!` 按已声明的方法自动生成能力、上转型与 trait impl；未覆盖的方法使用 trait 默认实现。旧 `preferred_size` 分支保留为兼容桥，新组件优先写 `measure`。
+`component!` 按已声明的方法自动生成能力、上转型与 trait impl；未覆盖的方法使用 trait 默认实现。authoring 宏只接受 `measure`，不再接收旧 `preferred_size` 分支。
 
 ### prelude（#69）
 

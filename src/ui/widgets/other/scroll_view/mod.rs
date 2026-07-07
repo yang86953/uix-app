@@ -44,9 +44,6 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     build => (&self) -> Vec<Box<dyn WidgetComponent>> {
         self.children.take()
