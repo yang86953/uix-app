@@ -4,9 +4,9 @@ use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::ui::WidgetTree;
+use crate::ui::{SnapshotFields, WidgetTree};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BarData {
     pub label: String,
     pub value: f32,
@@ -139,5 +139,16 @@ impl BarChart {
     pub fn bar_radius(mut self, r: f32) -> Self {
         self.bar_radius = r;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::BarChart {
+            data: self.data.clone(),
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
+            max_value: self.max_value,
+            show_value: self.show_value,
+            bar_radius: self.bar_radius,
+        }
     }
 }

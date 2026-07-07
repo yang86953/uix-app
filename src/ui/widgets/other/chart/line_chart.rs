@@ -4,9 +4,9 @@ use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::ui::WidgetTree;
+use crate::ui::{SnapshotFields, WidgetTree};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LineData {
     pub label: String,
     pub value: f32,
@@ -173,5 +173,20 @@ impl LineChart {
     pub fn line_width(mut self, w: f32) -> Self {
         self.line_width = w;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::LineChart {
+            data: self.data.clone(),
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
+            line_color: self.line_color,
+            max_value: self.max_value,
+            auto_min: self.auto_min,
+            show_grid: self.show_grid,
+            show_dots: self.show_dots,
+            line_width: self.line_width,
+            dot_radius: self.dot_radius,
+        }
     }
 }

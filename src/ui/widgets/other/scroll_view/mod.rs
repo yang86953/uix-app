@@ -12,7 +12,8 @@ use crate::define_widget;
 use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
 use crate::ui::{
-    EventResult, KeyCode, SystemEvent, WidgetComponent, WidgetCore, WidgetId, WidgetTree,
+    EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetComponent, WidgetCore, WidgetId,
+    WidgetTree,
 };
 
 pub use crate::native::traits::input::ScrollDirection;
@@ -373,6 +374,17 @@ impl ScrollView {
         self.scroll_x = x.max(0.0);
         self.scroll_y = y.max(0.0);
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::ScrollView {
+            direction: self.direction,
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
+            flex_grow: self.flex_grow_val,
+            flex_shrink: self.flex_shrink_val,
+            show_scrollbar: self.scrollbar_v.show || self.scrollbar_h.show,
+        }
     }
 
     pub fn scroll_x(&self) -> f32 {

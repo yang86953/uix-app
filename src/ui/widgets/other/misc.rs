@@ -2,7 +2,7 @@ use crate::core::{Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
-use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
+use crate::ui::{EventResult, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree};
 use std::cell::RefCell;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -75,6 +75,14 @@ impl QRCode {
     pub fn error_level(mut self, lv: u8) -> Self {
         self.error_level = lv;
         self
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::QRCode {
+            value: self.value.clone(),
+            size: self.size,
+            error_level: self.error_level,
+        }
     }
 }
 
