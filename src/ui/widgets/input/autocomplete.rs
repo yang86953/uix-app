@@ -2,15 +2,15 @@
 //!
 //! 输入时弹出匹配选项列表，支持键盘导航选择。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
 use crate::ui::{EventResult, SnapshotFields, SystemEvent, WidgetTree};
 
 // AutoComplete — 自动完成输入框。
-define_widget! {
+component! {
     pub struct AutoComplete {
         placeholder: String,
         value: String,

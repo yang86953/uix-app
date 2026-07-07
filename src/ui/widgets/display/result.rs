@@ -3,8 +3,8 @@
 //! 用于展示操作结果（成功/错误/警告/信息/404/403/500），
 //! 包含图标、标题、副标题、额外操作区域。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::{SnapshotFields, WidgetTree};
@@ -22,7 +22,7 @@ pub enum ResultType {
 }
 
 // Result — 结果页组件。
-define_widget! {
+component! {
     pub struct Result {
         type_: ResultType,
         title: String,
@@ -32,10 +32,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

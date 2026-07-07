@@ -1,7 +1,7 @@
 //! Divider widget — Ant Design style horizontal/vertical divider with optional text.
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
@@ -22,7 +22,7 @@ pub enum DividerDirection {
     Vertical,
 }
 
-define_widget! {
+component! {
     /// Divider widget with optional label.
     pub struct Divider {
         text: Option<String>,
@@ -35,10 +35,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

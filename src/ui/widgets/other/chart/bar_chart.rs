@@ -1,7 +1,7 @@
 //! BarChart — vertical bar chart with auto-scaling and value labels.
 
+use crate::component;
 use crate::core::{Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::{SnapshotFields, WidgetTree};
@@ -23,7 +23,7 @@ impl BarData {
     }
 }
 
-define_widget! {
+component! {
     pub struct BarChart {
         data: Vec<BarData>,
         fixed_width: f32,

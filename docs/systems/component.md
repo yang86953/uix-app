@@ -115,7 +115,7 @@ enum SnapshotFields {
 
 自定义 widget：见 [SnapshotSource](#snapshotsource)（#151）。
 
-> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event / layout cache / resource cache / queue / visible / transition / animation phase / scroll / current page / active tab / selected key / expanded panel / dragging / popup open / typed query / validation status / table sort/filter active state / selected transfer item / transfer runtime membership / upload file queue 等运行态。`ComponentHandle` 已可读取当前组件快照与首批类型化 getter；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`define_widget!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径。
+> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event / layout cache / resource cache / queue / visible / transition / animation phase / scroll / current page / active tab / selected key / expanded panel / dragging / popup open / typed query / validation status / table sort/filter active state / selected transfer item / transfer runtime membership / upload file queue 等运行态。`ComponentHandle` 已可读取当前组件快照与首批类型化 getter；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`component!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径。
 
 ### SnapshotSource（#151）
 
@@ -150,7 +150,7 @@ impl SnapshotSource for Rating {
 
 | 规则 | 说明 |
 |------|------|
-| 默认 | `component!` / `define_widget!` **自动** `impl SnapshotSource`（pub 字段） |
+| 默认 | `component!` **自动** `impl SnapshotSource`（pub 字段） |
 | `#[snapshot(skip)]` | 字段属性；**显式排除**（#152）；见下节 |
 | Style | 存 **StyleSet 预设 id** 或序列化子集；非完整 computed Style |
 | 动态内容 | `dynamic_label` 文本 **不**进快照（走 State bind） |
@@ -158,7 +158,7 @@ impl SnapshotSource for Rating {
 
 内置 widget：框架为各类型手写 `SnapshotFields` 变体；与 #146 `enum SnapshotFields` 对齐。
 
-> **实现注记**：内置提取已覆盖 Button、Label、Input、Container、Grid、Space、Divider、Icon、Typography、Checkbox、Radio、Switch、Slider、Rate、InputNumber、Avatar、Badge、Card、Empty、Image、Tag、Timeline、Calendar、Skeleton、FloatButton、Alert、Message、Notification、ProgressBar、Spin、Tooltip、Popover、Popconfirm、Modal、Drawer、Layout、Header、Sider、Content、Footer、Splitter、Affix、BackTop、Breadcrumb、Pagination、Anchor、Menu、Dropdown、Tabs、Steps、NavItem、Tree、List、Collapse、Carousel、Select、AutoComplete、TreeSelect、Cascader、ColorPicker、DatePicker、TimePicker、Mentions、Segmented、FormItem、Form、Descriptions、Result、Table、SelectableList、ScrollView、BarChart、LineChart、PieChart、QRCode、RichText、ThemeToggle、Transfer、Upload、Watermark；`define_widget!` 自定义 widget 已自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，且支持 `#[snapshot(skip)]` 排除 pub 字段；`component!` 已支持文档示例的 `name: ..., struct ...` 入口和直接 `struct ...` 入口，并直接生成同一提取路径。
+> **实现注记**：内置提取已覆盖 Button、Label、Input、Container、Grid、Space、Divider、Icon、Typography、Checkbox、Radio、Switch、Slider、Rate、InputNumber、Avatar、Badge、Card、Empty、Image、Tag、Timeline、Calendar、Skeleton、FloatButton、Alert、Message、Notification、ProgressBar、Spin、Tooltip、Popover、Popconfirm、Modal、Drawer、Layout、Header、Sider、Content、Footer、Splitter、Affix、BackTop、Breadcrumb、Pagination、Anchor、Menu、Dropdown、Tabs、Steps、NavItem、Tree、List、Collapse、Carousel、Select、AutoComplete、TreeSelect、Cascader、ColorPicker、DatePicker、TimePicker、Mentions、Segmented、FormItem、Form、Descriptions、Result、Table、SelectableList、ScrollView、BarChart、LineChart、PieChart、QRCode、RichText、ThemeToggle、Transfer、Upload、Watermark；`component!` 自定义 widget 已自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，且支持 `#[snapshot(skip)]` 排除 pub 字段；`component!` 已支持文档示例的 `name: ..., struct ...` 入口和直接 `struct ...` 入口，并直接生成同一提取路径。
 
 ### #[snapshot(skip)]（#152）
 
@@ -395,9 +395,9 @@ WidgetTree
 
 ## Authoring
 
-设计决策 [#102](../decisions.md#d102)：设计态 **`component!`**（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已作为直接 authoring 入口，`define_widget!` 保留为兼容入口。
+设计决策 [#102](../decisions.md#d102)：设计态 **`component!`**（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已作为唯一 authoring 入口。
 
-### component! / define_widget!（当前实现）
+### component!（当前实现）
 
 ```rust
 component! {
@@ -409,7 +409,7 @@ component! {
 }
 ```
 
-`component!` 与兼容入口 `define_widget!` 均按已声明的方法自动生成能力、上转型与 trait impl；未覆盖的方法使用 trait 默认实现。旧 `preferred_size` 分支保留为兼容桥，新组件优先写 `measure`。
+`component!` 按已声明的方法自动生成能力、上转型与 trait impl；未覆盖的方法使用 trait 默认实现。旧 `preferred_size` 分支保留为兼容桥，新组件优先写 `measure`。
 
 ### prelude（#69）
 
@@ -466,14 +466,14 @@ merge(metadata, runtime) :=
 运行时信号由 LayerTree 遍历子树自动收集；**App 不配置**。
 
 ```rust
-// component! / define_widget! 元数据（设计）
+// component! 元数据（设计）
 picture_policy: PicturePolicy::Never,  // 默认
 // 纯静态只读 widget 可声明 Eligible
 ```
 
 App / View **不**配置 Picture；调用方零维护。
 
-> **实现注记**：`WidgetComponent::picture_policy()` 与 `define_widget!` 的 `picture_policy =>` 元数据方法已接；LayerTree 会合并 handler、dynamic content、interactive state、continuous pointer、overlay、focusable、clip、scroll 等运行时信号并套用 #129 阈值。当前 Container / Grid 首批声明 `Eligible`；未声明组件默认 `Never`。
+> **实现注记**：`WidgetComponent::picture_policy()` 与 `component!` 的 `picture_policy =>` 元数据方法已接；LayerTree 会合并 handler、dynamic content、interactive state、continuous pointer、overlay、focusable、clip、scroll 等运行时信号并套用 #129 阈值。当前 Container / Grid 首批声明 `Eligible`；未声明组件默认 `Never`。
 
 ---
 

@@ -2,8 +2,8 @@
 //!
 //! 垂直时间轴展示事件序列，支持节点颜色、标签、描述。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
@@ -18,7 +18,7 @@ pub struct TimelineItem {
 }
 
 // Timeline — 时间线组件。
-define_widget! {
+component! {
     pub struct Timeline {
         items: Vec<TimelineItem>,
         pending: bool,
@@ -27,10 +27,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

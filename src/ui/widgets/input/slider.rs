@@ -2,14 +2,14 @@
 
 use std::cell::Cell;
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 
-define_widget! {
+component! {
     /// Horizontal slider.
     pub struct Slider {
         min: f32,

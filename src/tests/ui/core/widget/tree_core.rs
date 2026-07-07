@@ -770,7 +770,7 @@ fn app_state_registers_mounted_components_and_unregisters_removed_components() {
 }
 
 #[test]
-fn app_state_lookup_handle_reads_typed_snapshot_for_define_widget_builtin() {
+fn app_state_lookup_handle_reads_typed_snapshot_for_component_builtin() {
     let app_state = AppState::new();
     let mut tree = WidgetTree::new();
     tree.set_app_state(app_state.clone());

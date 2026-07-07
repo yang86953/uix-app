@@ -137,7 +137,7 @@
 | <a id="d99"></a>99 | 无障碍 | **v2** |
 | <a id="d100"></a>100 | 浮层 | **`OverlayStack` 统一管理** |
 | <a id="d101"></a>101 | 组件 ID 命名 | **ComponentId**（Generational）已落地；源码 `WidgetId` / `NodeId` 为 `core::ComponentId` 别名 |
-| <a id="d102"></a>102 | authoring 宏 | 设计态 **`component!`**；当前实现 **`define_widget!` + `impl_widget_component!`**，重构对齐 [#20](#d20) |
+| <a id="d102"></a>102 | authoring 宏 | 设计态 **`component!`**；当前实现 **`component!` + `impl_widget_component!`**，重构对齐 [#20](#d20) |
 | <a id="d103"></a>103 | measure API | **`measure(constraints)`** 已接；`preferred_size(engine)` 保留为兼容桥，语义等同 [#29](#d29) |
 | <a id="d104"></a>104 | 滚动容器 | 统一称 **ScrollView**；决策 [#45](#d45) 中 ScrollContainer 指 ScrollView 实现 |
 | <a id="d105"></a>105 | **核心理念（最高规则）** | **用最少资源，做最好效果** — Demand-Driven Zero Idle Work；**统领**六域依赖与一切设计；冲突以本规则为准；细则 [`demand-driven.md`](systems/demand-driven.md) |

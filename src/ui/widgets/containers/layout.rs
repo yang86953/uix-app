@@ -2,14 +2,14 @@
 //!
 //! 组合使用构建标准页面布局。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::{traits::GraphicsEngine, Color};
+use crate::draw::Color;
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
-define_widget! {
+component! {
     /// Layout — 页面布局容器（flex 列）。
     pub struct Layout {
         bg_color: Option<Color>,
@@ -19,9 +19,6 @@ define_widget! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     flex_grow => (&self) -> f32 { 1.0 }
 
@@ -32,7 +29,7 @@ define_widget! {
     }
 }
 
-define_widget! {
+component! {
     /// Header — 页面顶部栏。
     pub struct Header {
         height: f32,
@@ -43,9 +40,6 @@ define_widget! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(bg) = self.bg_color {
@@ -54,7 +48,7 @@ define_widget! {
     }
 }
 
-define_widget! {
+component! {
     /// Sider — 侧边栏。
     pub struct Sider {
         width: f32,
@@ -68,9 +62,6 @@ define_widget! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(bg) = self.bg_color {
@@ -86,7 +77,7 @@ define_widget! {
     }
 }
 
-define_widget! {
+component! {
     /// Content — 内容区。
     pub struct Content {
         bg_color: Option<Color>,
@@ -96,9 +87,6 @@ define_widget! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     flex_grow => (&self) -> f32 { 1.0 }
 
@@ -116,7 +104,7 @@ define_widget! {
     }
 }
 
-define_widget! {
+component! {
     /// Footer — 页面底部栏。
     pub struct Footer {
         height: f32,
@@ -127,9 +115,6 @@ define_widget! {
         constraints.clamp(self.intrinsic_size())
     }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
-    }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if let Some(bg) = self.bg_color {

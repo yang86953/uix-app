@@ -1,7 +1,7 @@
 //! Cascader widget - linked multi-level popup selection.
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
@@ -42,7 +42,7 @@ pub struct CascaderValue {
     pub values: Vec<String>,
 }
 
-define_widget! {
+component! {
     pub struct Cascader {
         options: Vec<CascaderOption>,
         selected: CascaderValue,

@@ -1,7 +1,7 @@
 //! PieChart — pie / donut chart with proportional circular sectors.
 
+use crate::component;
 use crate::core::{Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::{SnapshotFields, WidgetTree};
@@ -23,7 +23,7 @@ impl PieData {
     }
 }
 
-define_widget! {
+component! {
     pub struct PieChart {
         data: Vec<PieData>,
         fixed_size: f32,

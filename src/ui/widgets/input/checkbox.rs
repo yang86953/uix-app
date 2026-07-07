@@ -1,14 +1,14 @@
 //! Checkbox — checkbox with label, checked/unchecked state.
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
-define_widget! {
+component! {
     pub struct Checkbox {
         checked: bool,
         disabled: bool,

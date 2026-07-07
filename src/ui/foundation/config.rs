@@ -86,12 +86,12 @@ pub fn with_config<T>(config: &ComponentConfig, f: impl FnOnce() -> T) -> T {
     result
 }
 
-use crate::core::{Rect, Size};
-use crate::define_widget;
+use crate::component;
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
-define_widget! {
+component! {
     /// ConfigProvider — 为子树注入全局组件默认配置。
     ///
     /// 所有后代 widget 可通过 `use_config()` 读取当前配置。
@@ -99,8 +99,8 @@ define_widget! {
         config: ComponentConfig,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(0.0, 0.0)
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(0.0, 0.0))
     }
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}

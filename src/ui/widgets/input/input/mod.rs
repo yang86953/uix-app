@@ -6,8 +6,8 @@
 
 use std::cell::{Cell, RefCell};
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::native::traits::input::ControlSize;
@@ -27,7 +27,7 @@ const PAD: f32 = 12.0;
 pub(crate) const FONT_SIZE: f32 = 14.0;
 const LINE_HEIGHT: f32 = 22.0;
 
-define_widget! {
+component! {
     pub struct Input {
         value: String,
         placeholder: String,

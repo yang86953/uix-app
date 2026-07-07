@@ -1,7 +1,7 @@
 //! Segmented widget — 分段选择器，支持 disabled/hover/keyboard/focus。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
 use crate::ui::{
@@ -9,7 +9,7 @@ use crate::ui::{
 };
 use std::cell::Cell;
 
-define_widget! {
+component! {
     /// Segmented — 水平分段选择器。
     pub struct Segmented {
         options: Vec<String>,

@@ -2,13 +2,13 @@
 //!
 //! 点击切换暗色/亮色主题，通过 Cell<bool> 通知外部代码。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::{EventResult, SnapshotFields, SystemEvent, WidgetTree};
 use std::cell::Cell;
 
-define_widget! {
+component! {
     /// ThemeToggle — 主题切换按钮。
     pub struct ThemeToggle {
         #[snapshot(skip)]

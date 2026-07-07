@@ -1,7 +1,7 @@
 //! ProgressBar widget - deterministic and indeterminate progress indicators.
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::SnapshotFields;
@@ -23,7 +23,7 @@ pub enum ProgressMode {
     Indeterminate,
 }
 
-define_widget! {
+component! {
     /// ProgressBar widget.
     pub struct ProgressBar {
         progress: f32,
@@ -40,10 +40,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
 

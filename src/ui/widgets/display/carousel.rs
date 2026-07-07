@@ -2,15 +2,15 @@
 
 use std::cell::Cell;
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::traits::GraphicsEngine;
+
 use crate::ui::children::WidgetChildren;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 
-define_widget! {
+component! {
     /// Displays one child at a time with dot and arrow controls.
     pub struct Carousel {
         children: WidgetChildren,
@@ -22,10 +22,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { 1.0 }

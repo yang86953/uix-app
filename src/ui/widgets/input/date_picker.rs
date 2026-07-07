@@ -4,8 +4,8 @@
 
 use std::cell::Cell;
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
 use crate::ui::{
@@ -69,7 +69,7 @@ fn first_weekday(year: i32, month: usize) -> usize {
     (w + 6) % 7
 }
 
-define_widget! {
+component! {
     /// DatePicker — 日期选择器。
     pub struct DatePicker {
         value: Cell<DateValue>,

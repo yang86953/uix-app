@@ -1,13 +1,15 @@
-﻿//! 鑷畾涔?widget 绀轰緥 鈥?`define_widget!` + `prelude` 缁樺埗 API銆?
+//! 鑷畾涔?widget 绀轰緥 鈥?`component!` + `prelude` 缁樺埗 API銆?
 use uix::prelude::*;
 
 // 鈹€鈹€ Counter 鈥?鑷畾涔?widget 绀轰緥 鈹€鈹€
 
-define_widget! {
+component! {
     pub struct Counter { pub count: u32 }
     @new -> Self { Self { count: 0 } }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size { Size::new(120.0, 36.0) }
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(120.0, 36.0))
+    }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event { SystemEvent::PointerDown { .. } => { self.count += 1; EventResult::Handled } _ => EventResult::NotHandled }
@@ -23,14 +25,14 @@ define_widget! {
 
 // 鈹€鈹€ PulseRing 鈥?鑴夊啿鍔ㄧ敾 鈹€鈹€
 
-define_widget! {
+component! {
     pub struct PulseRing {
         pub time: f32,
     }
     @new -> Self { Self { time: 0.0 } }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(48.0, 48.0)
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(48.0, 48.0))
     }
 
 
@@ -61,14 +63,14 @@ define_widget! {
 
 // 鈹€鈹€ BounceBall 鈥?寮硅烦鍔ㄧ敾 鈹€鈹€
 
-define_widget! {
+component! {
     pub struct BounceBall {
         pub time: f32,
     }
     @new -> Self { Self { time: 0.0 } }
 
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(200.0, 60.0)
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(200.0, 60.0))
     }
 
 

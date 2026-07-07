@@ -78,7 +78,7 @@
 | ComponentId | Generational 稳定 ID（[#35](decisions.md#d35)、[#101](decisions.md#d101)）；布局 / 事件 / HandlerTable 语义键 |
 | WidgetId | 源码 UI 模块别名：`core::ComponentId`（[#101](decisions.md#d101)） |
 | component! | authoring 宏（[#20](decisions.md#d20)、[#102](decisions.md#d102)）；当前直接支持 `name + struct` 与 `struct` 入口 |
-| define_widget! | 兼容 authoring 宏；底层能力与 `component!` 保持一致 |
+| component! | authoring 宏；支持 `name + struct` 与直接 `struct` 入口 |
 | WidgetTree | 运行时组件树容器 |
 | HandlerTable | 业务回调表；键为 ComponentId 语义，源码名仍使用 WidgetId（[#10](decisions.md#d10)、[#101](decisions.md#d101)） |
 | State / Computed / Effect | 响应式原语；Effect 禁止直接改 UI；周期可用 **Timer API**（#132） |

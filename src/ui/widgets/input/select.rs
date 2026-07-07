@@ -1,5 +1,5 @@
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
@@ -29,7 +29,7 @@ impl OptGroup {
     }
 }
 
-define_widget! {
+component! {
     pub struct Select {
         options: Vec<String>,
         optgroups: Vec<OptGroup>,

@@ -6,8 +6,8 @@
 
 use std::sync::OnceLock;
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::font::font_service::FontService;
 use crate::draw::painting::PaintContext;
 use crate::draw::FontHandle;
@@ -174,7 +174,7 @@ pub fn icon_char(name: &str) -> &'static str {
     }
 }
 
-define_widget! {
+component! {
     /// Icon widget — renders a single glyph from the Lucide icon font.
     pub struct Icon {
         name: String,
@@ -183,10 +183,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

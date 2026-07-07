@@ -1,7 +1,7 @@
 //! Collapse widget — 折叠面板。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::animation::{presets, TransitionPlayer};
@@ -33,7 +33,7 @@ impl CollapsePanel {
     }
 }
 
-define_widget! {
+component! {
     /// Collapse — 可折叠面板组。
     pub struct Collapse {
         panels: Vec<CollapsePanel>,
@@ -45,10 +45,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

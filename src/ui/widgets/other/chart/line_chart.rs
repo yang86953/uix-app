@@ -1,7 +1,7 @@
 //! LineChart — line chart with grid lines and data point markers.
 
+use crate::component;
 use crate::core::{Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::{SnapshotFields, WidgetTree};
@@ -21,7 +21,7 @@ impl LineData {
     }
 }
 
-define_widget! {
+component! {
     pub struct LineChart {
         data: Vec<LineData>,
         fixed_width: f32,

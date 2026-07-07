@@ -7,8 +7,8 @@ pub use scrollbar::*;
 use std::cell::Cell;
 
 use self::scrollbar::{ScrollBar, ScrollbarOrientation};
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
 use crate::ui::{
@@ -18,7 +18,7 @@ use crate::ui::{
 
 pub use crate::native::traits::input::ScrollDirection;
 
-define_widget! {
+component! {
     /// A scrollable viewport that clips its children.
     pub struct ScrollView {
         children: WidgetChildren,

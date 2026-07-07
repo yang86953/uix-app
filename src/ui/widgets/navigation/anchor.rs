@@ -2,15 +2,15 @@
 //!
 //! 与 ScrollView 配合使用：监听滚动位置，自动高亮当前锚点。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::{traits::GraphicsEngine, Color};
+use crate::draw::Color;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
-define_widget! {
+component! {
     /// Anchor — 锚点导航条。
     ///
     /// 传入 LinkItem 列表，点击跳转到对应锚点，滚动时高亮当前锚点。
@@ -30,10 +30,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

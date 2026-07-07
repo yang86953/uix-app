@@ -3,17 +3,17 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::PhysicalUnit;
-use crate::draw::{traits::GraphicsEngine, TextLayoutOptions};
+use crate::draw::TextLayoutOptions;
 use crate::ui::clipboard;
 use crate::ui::style::Style;
 use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
 
-define_widget! {
+component! {
     pub struct Label {
         pub text: String,
         pub font_size: f32,
@@ -37,10 +37,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

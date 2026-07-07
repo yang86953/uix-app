@@ -2,12 +2,12 @@
 //!
 //! Renders only children near the viewport; useful for large Select, Tree,
 //! Table, and similar lists.
-use crate::core::{Rect, Size};
-use crate::define_widget;
+use crate::component;
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::{EventResult, SystemEvent, WidgetNode, WidgetTree};
 
-define_widget! {
+component! {
     pub struct VirtualScroll {
         item_count: usize,
         item_height: f32,
@@ -18,8 +18,8 @@ define_widget! {
         needs_rebuild: bool,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(0.0, self.total_height)
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(0.0, self.total_height))
     }
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}

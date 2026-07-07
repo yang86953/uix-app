@@ -1,5 +1,5 @@
+use crate::component;
 use crate::core::{Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::{
@@ -12,7 +12,7 @@ use std::cell::RefCell;
 // QRCode
 // ════════════════════════════════════════════════════════════════════════════
 
-define_widget! {
+component! {
     pub struct QRCode {
         value: String,
         size: f32,
@@ -100,7 +100,7 @@ pub struct TransferItem {
     pub selected: bool,
 }
 
-define_widget! {
+component! {
     pub struct Transfer {
         source: Vec<TransferItem>,
         target: Vec<TransferItem>,
@@ -256,7 +256,7 @@ pub enum UploadStatus {
     Done,
     Error,
 }
-define_widget! {
+component! {
     pub struct Upload {
         accept: String,
         multiple: bool,
@@ -419,7 +419,7 @@ impl Default for Upload {
 // Watermark
 // ════════════════════════════════════════════════════════════════════════════
 
-define_widget! {
+component! {
     pub struct Watermark {
         text: String,
         color: Color,

@@ -1,13 +1,12 @@
 //! BackTop 回到顶部 — 滚动超过阈值时显示返回顶部按钮。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::traits::GraphicsEngine;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
-define_widget! {
+component! {
     /// BackTop — 回到顶部按钮。
     pub struct BackTop {
         /// 滚动超过此高度才显示
@@ -18,10 +17,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {

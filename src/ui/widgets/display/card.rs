@@ -1,8 +1,8 @@
 //! Card widget — Ant Design style container with elevation, shadow, optional
 //! title, body, hover feedback, and configurable border radius.
 
+use crate::component;
 use crate::core::{Constraints, EdgeInsets, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::children::WidgetChildren;
@@ -12,7 +12,7 @@ use crate::ui::layout::{
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
 
-define_widget! {
+component! {
     /// Card widget with shadow elevation, hover highlight, and content padding.
     pub struct Card {
         title: Option<String>,
@@ -30,10 +30,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { self.flex_grow_val }

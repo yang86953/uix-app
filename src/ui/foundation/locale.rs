@@ -251,20 +251,20 @@ pub fn with_locale<T>(locale: &Locale, f: impl FnOnce() -> T) -> T {
     result
 }
 
-use crate::core::{Rect, Size};
-use crate::define_widget;
+use crate::component;
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 // LocaleProvider — 为子树注入国际化文案。
-define_widget! {
+component! {
     pub struct LocaleProvider {
         #[allow(dead_code)]
         locale: Locale,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(0.0, 0.0)
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(0.0, 0.0))
     }
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}

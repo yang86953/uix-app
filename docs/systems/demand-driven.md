@@ -1,4 +1,4 @@
-﻿# 按需零闲置
+# 按需零闲置
 
 ← [Main](../Main.md) · 系统 **#13** · 功能域：跨域
 
@@ -524,7 +524,7 @@ AND subtree_estimated_pixels >= 65536
 → LayerTree 使用 Picture；否则 Direct
 ```
 
-内置 widget 在 **authoring 元数据**（`component!` / `define_widget!`）声明默认 PicturePolicy；合并算法详见 [component · PicturePolicy 元数据](component.md#picturepolicy-元数据122)。新 widget **默认 Never**。
+内置 widget 在 **authoring 元数据**（`component!`）声明默认 PicturePolicy；合并算法详见 [component · PicturePolicy 元数据](component.md#picturepolicy-元数据122)。新 widget **默认 Never**。
 
 ### RegisteredActive 关联脏区（#126）
 
@@ -664,8 +664,8 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | Handle emit / invalidate / getter | dispatch_semantic + 窄 Paint + 只读配置 | `ComponentHandle::emit` 已导出；live handle 直接走 `WidgetTree::dispatch_semantic`，lookup handle 经 AppState semantic queue 唤醒并由主/副窗 drain 派发；live handle 与 lookup handle 的 `invalidate()` 均已接窄 Paint；`snapshot()` / `text()` / `placeholder()` / `disabled()` 已接；App 默认持有 `AppState`，`AppState::get_handle` 可查 snapshot handle | [#119](../decisions.md#d119) [#147](../decisions.md#d147) |
 | update_view | AppHandle 按 session reconcile | `AppHandle::update_view` / `set_root` 已导出；经 `AppRuntime` 按 `window_id` 写目标 MainThreadQueue 并在帧末 reconcile；副窗 session bootstrap、root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#149](../decisions.md#d149) |
 | State 跨窗标脏 | paint_sites fan-out | `State` / `Computed` 已支持多个 paint site fan-out；`State` reconcile callback 已支持按 site key fan-out 并原地更新重复绑定；副窗 session 路由与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#150](../decisions.md#d150) |
-| SnapshotSource | component! 自动快照 | `SnapshotSource` trait 已导出；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 手写提取已接；`define_widget!` 自定义组件 pub 字段自动提取已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径 | [#151](../decisions.md#d151) |
-| snapshot(skip) | 字段属性排除 | `define_widget!` 已解析并消费 `#[snapshot(skip)]`；首批手写内置提取已人工排除运行态字段；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该排除逻辑 | [#152](../decisions.md#d152) |
+| SnapshotSource | component! 自动快照 | `SnapshotSource` trait 已导出；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 手写提取已接；`component!` 自定义组件 pub 字段自动提取已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径 | [#151](../decisions.md#d151) |
+| snapshot(skip) | 字段属性排除 | `component!` 已解析并消费 `#[snapshot(skip)]`；首批手写内置提取已人工排除运行态字段；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该排除逻辑 | [#152](../decisions.md#d152) |
 | reconcile 合并 | pending_root 优先 | 单窗 `update_view` 路径与 State 批次自动置位已接；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#153](../decisions.md#d153) |
 | view_factory | session 固定 Arc | 单窗 `App::root(|| ...)` 与副窗 `WindowConfig::new(..., || ...)` 已安装 session factory | [#155](../decisions.md#d155) |
 | 豁免台账 | #160+ 条目 + 测试 | 已建立初始台账：#158 明确当前无豁免；新增豁免须从 #160+ 追加并补测试边界 | [#113](../decisions.md#d113) [#158](../decisions.md#d158) |

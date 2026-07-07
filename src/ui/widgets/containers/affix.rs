@@ -2,14 +2,13 @@
 //!
 //! 监听滚动位置变化，当 scroll_y > offset_top 时固定。
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
-use crate::draw::traits::GraphicsEngine;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
-define_widget! {
+component! {
     /// Affix — 固定定位容器。
     ///
     /// 当页面滚动超过 offset_top 时，将子组件固定在视口顶部。
@@ -29,10 +28,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     on_event => (&mut self, _event: &SystemEvent) -> EventResult {

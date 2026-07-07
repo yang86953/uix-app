@@ -2,13 +2,13 @@
 //!
 //! 基于 Input 交互模式，增加触发字符检测和建议弹出。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
 use crate::ui::{EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetTree};
 
-define_widget! {
+component! {
     /// Mentions — @ 提及输入框。
     ///
     /// 输入 @ 字符后弹出建议列表，选择后插入完整提及文本。

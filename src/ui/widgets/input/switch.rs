@@ -1,13 +1,13 @@
 //! Switch — on/off toggle switch.
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
-define_widget! {
+component! {
     pub struct Switch {
         checked: bool,
         disabled: bool,

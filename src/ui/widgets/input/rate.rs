@@ -1,14 +1,14 @@
 //! Rate widget — 星级评分，支持半星、hover 预览、disabled、clearable。
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
-define_widget! {
+component! {
     /// Rate — 星级评分，点击选择分值。
     pub struct Rate {
         count: usize,

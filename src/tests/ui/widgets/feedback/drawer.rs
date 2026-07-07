@@ -26,6 +26,7 @@ fn drawer_enter_transition_advances_and_marks_paint_dirty() {
     tree.get_mut(id)
         .expect("drawer root")
         .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+    tree.get_mut(id).expect("drawer root").set_active(true);
     tree.invalidation().lock().unwrap().clear();
 
     assert!(tree.update(1.0 / 60.0));

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::{SnapshotFields, WidgetTree};
@@ -77,7 +77,7 @@ pub struct FieldDef {
     pub message: String,
 }
 
-define_widget! {
+component! {
     pub struct FormItem {
         label: String,
         name: String,
@@ -296,7 +296,7 @@ impl FormItem {
     }
 }
 
-define_widget! {
+component! {
     pub struct Form {
         label_width: f32,
         gap: f32,

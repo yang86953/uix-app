@@ -2,8 +2,8 @@
 //!
 //! 用于只读展示多条字段信息，支持 bordered、column 布局、label/value 键值对。
 
-use crate::core::{Point, Rect, Size};
-use crate::define_widget;
+use crate::component;
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
@@ -18,7 +18,7 @@ pub struct DescriptionsItem {
 }
 
 // Descriptions — 描述列表。
-define_widget! {
+component! {
     pub struct Descriptions {
         title: String,
         items: Vec<DescriptionsItem>,
@@ -28,7 +28,7 @@ define_widget! {
         size: ControlSize,
     }
 
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
+    measure => (&self, constraints: Constraints) -> Size {
         let rows = self.items.len().div_ceil(self.column).max(1);
         let title_h = if self.title.is_empty() { 0.0 } else { 32.0 };
         let item_h = match self.size {
@@ -36,7 +36,7 @@ define_widget! {
             ControlSize::Medium => 36.0,
             ControlSize::Large => 44.0,
         };
-        Size::new(600.0, title_h + rows as f32 * item_h)
+        constraints.clamp(Size::new(600.0, title_h + rows as f32 * item_h))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {

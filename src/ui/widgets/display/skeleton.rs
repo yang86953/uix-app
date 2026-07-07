@@ -1,7 +1,7 @@
 //! Skeleton loading placeholder.
 
+use crate::component;
 use crate::core::{Constraints, Rect, Size};
-use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
@@ -13,7 +13,7 @@ pub enum SkeletonShape {
     Text,
 }
 
-define_widget! {
+component! {
     /// A static loading placeholder.
     pub struct Skeleton {
         shape: SkeletonShape,
@@ -23,10 +23,6 @@ define_widget! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
-    }
-
-    preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
