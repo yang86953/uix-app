@@ -2,7 +2,7 @@
 //!
 //! 组合使用构建标准页面布局。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
@@ -14,8 +14,12 @@ define_widget! {
         bg_color: Option<Color>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(300.0, 200.0)
+        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { 1.0 }
@@ -34,8 +38,12 @@ define_widget! {
         bg_color: Option<Color>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(0.0, self.height)
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -55,12 +63,12 @@ define_widget! {
         collapsed_width: f32,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        if self.collapsed {
-            Size::new(self.collapsed_width, 0.0)
-        } else {
-            Size::new(self.width, 0.0)
-        }
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -83,8 +91,12 @@ define_widget! {
         bg_color: Option<Color>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(0.0, 0.0)
+        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { 1.0 }
@@ -110,8 +122,12 @@ define_widget! {
         bg_color: Option<Color>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(0.0, self.height)
+        self.intrinsic_size()
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -136,6 +152,10 @@ impl Layout {
         self.bg_color = Some(c);
         self
     }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(300.0, 200.0)
+    }
 }
 
 impl Header {
@@ -148,6 +168,10 @@ impl Header {
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(0.0, self.height)
     }
 }
 
@@ -177,6 +201,14 @@ impl Sider {
         self.collapsed_width = w;
         self
     }
+
+    fn intrinsic_size(&self) -> Size {
+        if self.collapsed {
+            Size::new(self.collapsed_width, 0.0)
+        } else {
+            Size::new(self.width, 0.0)
+        }
+    }
 }
 
 impl Default for Content {
@@ -193,6 +225,10 @@ impl Content {
         self.bg_color = Some(c);
         self
     }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(0.0, 0.0)
+    }
 }
 
 impl Footer {
@@ -205,5 +241,46 @@ impl Footer {
     pub fn bg(mut self, c: Color) -> Self {
         self.bg_color = Some(c);
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(0.0, self.height)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_layout_shell_parts() {
+        assert_eq!(
+            Layout::new().measure(Constraints::loose(Size::new(120.0, 80.0))),
+            Size::new(120.0, 80.0)
+        );
+        assert_eq!(
+            Header::new(64.0).measure(Constraints::loose(Size::new(120.0, 48.0))),
+            Size::new(0.0, 48.0)
+        );
+        assert_eq!(
+            Sider::new(200.0)
+                .collapsed(true)
+                .collapsed_width(64.0)
+                .measure(Constraints::loose(Size::new(120.0, 80.0))),
+            Size::new(64.0, 0.0)
+        );
+        assert_eq!(
+            Content::new().measure(Constraints::new(
+                Size::new(10.0, 12.0),
+                Size::new(120.0, 80.0),
+                None,
+            )),
+            Size::new(10.0, 12.0)
+        );
+        assert_eq!(
+            Footer::new(40.0).measure(Constraints::loose(Size::new(120.0, 24.0))),
+            Size::new(0.0, 24.0)
+        );
     }
 }

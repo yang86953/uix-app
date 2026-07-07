@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 
-use crate::core::{EdgeInsets, Rect, Size};
+use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::define_widget;
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
@@ -35,18 +35,12 @@ define_widget! {
         cached_content_size: Cell<Size>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        let mh = self.style.margin.horizontal();
-        let mv = self.style.margin.vertical();
-        let bh = self.style.border_width.horizontal();
-        let bv = self.style.border_width.vertical();
-        let cached = self.cached_content_size.get();
-        let effective_w = self.style.width
-            .unwrap_or_else(|| if cached.w > 0.0 { cached.w + self.style.padding.horizontal() } else { 0.0 });
-        Size::new(
-            effective_w + mh + bh,
-            self.style.height.map(|h| h + mv + bv).unwrap_or(0.0),
-        )
+        self.intrinsic_size()
     }
 
     flex_grow => (&self) -> f32 { self.style.flex_grow }
@@ -355,5 +349,39 @@ impl Container {
     pub fn overflow_content(mut self) -> Self {
         self.style.overflow_content = true;
         self
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        let mh = self.style.margin.horizontal();
+        let mv = self.style.margin.vertical();
+        let bh = self.style.border_width.horizontal();
+        let bv = self.style.border_width.vertical();
+        let cached = self.cached_content_size.get();
+        let effective_w = self.style.width.unwrap_or_else(|| {
+            if cached.w > 0.0 {
+                cached.w + self.style.padding.horizontal()
+            } else {
+                0.0
+            }
+        });
+        Size::new(
+            effective_w + mh + bh,
+            self.style.height.map(|h| h + mv + bv).unwrap_or(0.0),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_container_intrinsic_size() {
+        let measured = Container::new()
+            .size(80.0, 30.0)
+            .measure(Constraints::loose(Size::new(50.0, 40.0)));
+
+        assert_eq!(measured, Size::new(50.0, 30.0));
     }
 }

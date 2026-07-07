@@ -2,7 +2,7 @@
 //!
 //! 固定在屏幕角落的圆形按钮，支持图标、tooltip、badge 等。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
@@ -20,8 +20,12 @@ define_widget! {
         hovered: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::zero() // 不占用布局空间
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -89,6 +93,10 @@ impl FloatButton {
         self.size = s;
         self
     }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::zero() // 不占用布局空间
+    }
 }
 
 impl Default for FloatButton {
@@ -104,5 +112,18 @@ impl FloatButtonBackTop {
     #[allow(clippy::new_ret_no_self)]
     pub fn new() -> FloatButton {
         FloatButton::new("↑").tooltip("回到顶部").position(0.0, 0.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_preserves_float_button_zero_layout_footprint() {
+        let measured = FloatButton::new("+").measure(Constraints::loose(Size::new(40.0, 40.0)));
+
+        assert_eq!(measured, Size::zero());
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! 监听滚动位置变化，当 scroll_y > offset_top 时固定。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
@@ -26,8 +26,12 @@ define_widget! {
         scroll_y: f32,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(0.0, if self.affixed { self.child_height } else { 0.0 })
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, _event: &SystemEvent) -> EventResult {
@@ -81,5 +85,26 @@ impl Affix {
         } else {
             self.original_y - self.scroll_y
         }
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(0.0, if self.affixed { self.child_height } else { 0.0 })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_affixed_placeholder_height() {
+        let mut affix = Affix::new(12.0);
+        affix.set_child_bounds(0.0, 80.0);
+        affix.update_scroll(20.0);
+
+        let measured = affix.measure(Constraints::loose(Size::new(120.0, 32.0)));
+
+        assert_eq!(measured, Size::new(0.0, 32.0));
     }
 }
