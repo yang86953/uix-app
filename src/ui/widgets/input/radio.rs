@@ -4,6 +4,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -254,6 +255,18 @@ impl Radio {
     pub fn vertical(mut self) -> Self {
         self.direction = RadioDirection::Vertical;
         self
+    }
+}
+
+impl Radio {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Radio {
+            options: self.options.clone(),
+            selected: self.selected,
+            disabled: self.disabled,
+            direction: self.direction,
+            item_h: self.item_h,
+        }
     }
 }
 

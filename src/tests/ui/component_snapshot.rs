@@ -4,7 +4,12 @@ use crate::core::{Constraints, EdgeInsets, Size};
 use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
 use crate::ui::layout::GridTrack;
-use crate::ui::widgets::{Button, Container, Grid, Input, Label};
+use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
+use crate::ui::widgets::{
+    Button, Checkbox, Container, Divider, DividerDirection, DividerOrientation, Grid, Icon, Input,
+    InputNumber, Label, Radio, RadioDirection, Rate, Slider, Space, SpaceSize, Switch, Typography,
+    TypographyType,
+};
 use crate::ui::{
     ComponentConfigSnapshot, EventHandler, SnapshotFields, SnapshotSource, SnapshotValue,
     SystemEvent, WidgetId, WidgetLayout,
@@ -208,6 +213,190 @@ fn container_and_grid_snapshots_capture_layout_config() {
         } if columns == &vec![GridTrack::Fr(1.0), GridTrack::Px(120.0)]
             && color == Color::blue()
     ));
+}
+
+#[test]
+fn general_widget_snapshots_capture_static_config() {
+    let space = Space::new()
+        .vertical()
+        .size(SpaceSize::Custom(12.0))
+        .wrap(true)
+        .justify(JustifyContent::SpaceBetween)
+        .align(AlignItems::End)
+        .width(320.0)
+        .height(48.0)
+        .flex_grow(1.0);
+    assert_eq!(
+        space.snapshot_fields(),
+        SnapshotFields::Space {
+            direction: FlexDirection::Column,
+            space_size: SpaceSize::Custom(12.0),
+            wrap: true,
+            justify: JustifyContent::SpaceBetween,
+            align: AlignItems::End,
+            fixed_width: Some(320.0),
+            fixed_height: Some(48.0),
+            flex_grow: 1.0,
+        }
+    );
+
+    let divider = Divider::new()
+        .with_text("Meta")
+        .orientation(DividerOrientation::Left)
+        .vertical()
+        .color(Color::red())
+        .dashed();
+    assert_eq!(
+        divider.snapshot_fields(),
+        SnapshotFields::Divider {
+            text: Some("Meta".to_string()),
+            orientation: DividerOrientation::Left,
+            direction: DividerDirection::Vertical,
+            color: Some(Color::red()),
+            text_size: 14.0,
+            dashed: true,
+        }
+    );
+
+    assert_eq!(
+        Icon::new("settings").size(20.0).snapshot_fields(),
+        SnapshotFields::Icon {
+            name: "settings".to_string(),
+            size: 20.0,
+        }
+    );
+}
+
+#[test]
+fn typography_snapshot_excludes_selection_layout_cache() {
+    let typography = Typography::heading("Title", 2)
+        .disabled(true)
+        .mark()
+        .code()
+        .underline()
+        .delete()
+        .strong()
+        .italic()
+        .copyable(true)
+        .color(Color::green());
+
+    assert_eq!(
+        typography.snapshot_fields(),
+        SnapshotFields::Typography {
+            content: "Title".to_string(),
+            type_: TypographyType::Heading2,
+            disabled: true,
+            mark: true,
+            code: true,
+            underline: true,
+            delete: true,
+            strong: true,
+            italic: true,
+            copyable: true,
+            color_override: Some(Color::green()),
+        }
+    );
+}
+
+#[test]
+fn input_control_snapshots_capture_config_not_interaction_state() {
+    let mut checkbox = Checkbox::new("Agree").checked(true).disabled(true);
+    let before = checkbox.snapshot_fields();
+    let _ = checkbox.on_event(&SystemEvent::PointerEnter);
+    assert_eq!(checkbox.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Checkbox {
+            checked: true,
+            disabled: true,
+            label: "Agree".to_string(),
+        }
+    );
+
+    assert_eq!(
+        Radio::new()
+            .options(vec!["A", "B"])
+            .selected(1)
+            .disabled(true)
+            .vertical()
+            .snapshot_fields(),
+        SnapshotFields::Radio {
+            options: vec!["A".to_string(), "B".to_string()],
+            selected: 1,
+            disabled: true,
+            direction: RadioDirection::Vertical,
+            item_h: 24.0,
+        }
+    );
+
+    let mut switch = Switch::new().checked(true).disabled(true);
+    let before = switch.snapshot_fields();
+    let _ = switch.on_event(&SystemEvent::PointerEnter);
+    assert_eq!(switch.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Switch {
+            checked: true,
+            disabled: true,
+            size: 22.0,
+        }
+    );
+}
+
+#[test]
+fn numeric_input_snapshots_exclude_runtime_caches() {
+    let mut slider = Slider::new().range(-10.0, 10.0).step(0.5).value(3.0);
+    let before = slider.snapshot_fields();
+    let _ = slider.on_event(&SystemEvent::PointerMove {
+        pos: crate::core::Point::new(20.0, 4.0),
+        mods: crate::ui::KeyMod::NONE,
+    });
+    assert_eq!(slider.snapshot_fields(), before);
+    assert_eq!(
+        before,
+        SnapshotFields::Slider {
+            min: -10.0,
+            max: 10.0,
+            step: 0.5,
+            value: 3.0,
+        }
+    );
+
+    assert_eq!(
+        Rate::new()
+            .count(7)
+            .value(3)
+            .allow_half()
+            .disabled(true)
+            .clearable()
+            .character("#")
+            .snapshot_fields(),
+        SnapshotFields::Rate {
+            count: 7,
+            value: 3,
+            half: true,
+            disabled: true,
+            clearable: true,
+            character: "#".to_string(),
+        }
+    );
+
+    assert_eq!(
+        InputNumber::new("amount")
+            .min(-5.0)
+            .max(8.0)
+            .step(0.25)
+            .value(2.5)
+            .snapshot_fields(),
+        SnapshotFields::InputNumber {
+            value: 2.5,
+            min: -5.0,
+            max: 8.0,
+            step: 0.25,
+            placeholder: "amount".to_string(),
+            disabled: false,
+        }
+    );
 }
 
 #[test]

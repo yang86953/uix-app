@@ -11,6 +11,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
 use crate::ui::clipboard;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, KeyMod, SystemEvent, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -362,6 +363,24 @@ impl Typography {
         let e = end_char.min(chars.len());
         let s = start_char.min(e);
         chars[s..e].iter().collect()
+    }
+}
+
+impl Typography {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Typography {
+            content: self.content.clone(),
+            type_: self.type_,
+            disabled: self.disabled,
+            mark: self.mark,
+            code: self.code,
+            underline: self.underline,
+            delete: self.delete,
+            strong: self.strong,
+            italic: self.italic,
+            copyable: self.copyable,
+            color_override: self.color_override,
+        }
     }
 }
 

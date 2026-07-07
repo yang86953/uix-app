@@ -9,6 +9,7 @@ use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
+use crate::ui::SnapshotFields;
 use crate::ui::{WidgetComponent, WidgetCore, WidgetId, WidgetTree};
 
 /// Predefined space sizes matching Ant Design.
@@ -190,6 +191,21 @@ impl Space {
             self.fixed_width.unwrap_or(0.0),
             self.fixed_height.unwrap_or(0.0),
         )
+    }
+}
+
+impl Space {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Space {
+            direction: self.direction,
+            space_size: self.space_size,
+            wrap: self.wrap,
+            justify: self.justify,
+            align: self.align,
+            fixed_width: self.fixed_width,
+            fixed_height: self.fixed_height,
+            flex_grow: self.flex_grow_val,
+        }
     }
 }
 

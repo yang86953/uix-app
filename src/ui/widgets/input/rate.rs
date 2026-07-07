@@ -4,6 +4,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::GraphicsEngine;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -187,6 +188,19 @@ impl Rate {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(self.count as f32 * 24.0, 24.0)
+    }
+}
+
+impl Rate {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Rate {
+            count: self.count,
+            value: self.value,
+            half: self.half,
+            disabled: self.disabled,
+            clearable: self.clearable,
+            character: self.character.clone(),
+        }
     }
 }
 

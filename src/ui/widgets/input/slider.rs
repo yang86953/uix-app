@@ -6,6 +6,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 
 define_widget! {
@@ -154,6 +155,17 @@ impl Slider {
         if (value - self.value).abs() > f32::EPSILON {
             self.value = value;
             self.pending_change.set(Some(self.value));
+        }
+    }
+}
+
+impl Slider {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Slider {
+            min: self.min,
+            max: self.max,
+            step: self.step,
+            value: self.value,
         }
     }
 }

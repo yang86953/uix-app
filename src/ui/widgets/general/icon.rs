@@ -11,6 +11,7 @@ use crate::define_widget;
 use crate::draw::font::font_service::FontService;
 use crate::draw::painting::PaintContext;
 use crate::draw::FontHandle;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 /// 全局 Lucide 字体句柄（由 app 启动时加载）。
@@ -205,6 +206,15 @@ define_widget! {
                 let label = &self.name[..self.name.len().min(2)];
                 ctx.text_center(label, frame, color, self.size * 0.55);
             }
+        }
+    }
+}
+
+impl Icon {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Icon {
+            name: self.name.clone(),
+            size: self.size,
         }
     }
 }

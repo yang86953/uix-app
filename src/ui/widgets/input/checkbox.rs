@@ -4,6 +4,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -127,6 +128,16 @@ impl Checkbox {
     fn intrinsic_size(&self) -> Size {
         let text_w = self.label.len() as f32 * 8.0;
         Size::new(22.0 + text_w, 22.0)
+    }
+}
+
+impl Checkbox {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Checkbox {
+            checked: self.checked,
+            disabled: self.disabled,
+            label: self.label.clone(),
+        }
     }
 }
 

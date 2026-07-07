@@ -6,6 +6,7 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, KeyCode, SemanticEvent, SystemEvent, WidgetId, WidgetTree};
 use std::cell::Cell;
 
@@ -198,6 +199,19 @@ impl InputNumber {
             self.value = v.clamp(self.min, self.max);
         }
         self.text_buffer = self.value.to_string();
+    }
+}
+
+impl InputNumber {
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::InputNumber {
+            value: self.value,
+            min: self.min,
+            max: self.max,
+            step: self.step,
+            placeholder: self.placeholder.clone(),
+            disabled: self.disabled,
+        }
     }
 }
 
