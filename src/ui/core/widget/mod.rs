@@ -81,6 +81,15 @@ impl WidgetNode {
         self.handlers.push(registration);
         self
     }
+    pub fn on_semantic_window_capture(
+        mut self,
+        mut registration: HandlerRegistration,
+        window_id: crate::core::WindowId,
+    ) -> Self {
+        registration = registration.with_window_capture(window_id);
+        self.handlers.push(registration);
+        self
+    }
     pub fn with_handlers(mut self, handlers: Vec<HandlerRegistration>) -> Self {
         self.handlers = handlers;
         self

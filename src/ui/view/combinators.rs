@@ -415,6 +415,17 @@ impl ButtonBuilder {
         self
     }
 
+    pub fn on_click_window_capture<F>(mut self, window_id: crate::core::WindowId, mut f: F) -> Self
+    where
+        F: FnMut() + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(SemanticKind::Click, Box::new(move |_| f()))
+                .with_window_capture(window_id),
+        );
+        self
+    }
+
     pub fn on_click_event<F: FnMut(&mut SemanticEvent) + 'static>(mut self, f: F) -> Self {
         self.handlers
             .push(HandlerRegistration::new(SemanticKind::Click, Box::new(f)));
@@ -428,6 +439,21 @@ impl ButtonBuilder {
     {
         self.handlers.push(
             HandlerRegistration::new(SemanticKind::Click, Box::new(f)).with_state_capture(state),
+        );
+        self
+    }
+
+    pub fn on_click_event_window_capture<F>(
+        mut self,
+        window_id: crate::core::WindowId,
+        f: F,
+    ) -> Self
+    where
+        F: FnMut(&mut SemanticEvent) + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(SemanticKind::Click, Box::new(f))
+                .with_window_capture(window_id),
         );
         self
     }
@@ -512,6 +538,24 @@ impl InputBuilder {
                 }),
             )
             .with_state_capture(state),
+        );
+        self
+    }
+
+    pub fn on_change_window_capture<F>(mut self, window_id: crate::core::WindowId, mut f: F) -> Self
+    where
+        F: FnMut(&str) + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(
+                SemanticKind::Change,
+                Box::new(move |event| {
+                    if let Some(value) = event.text_payload() {
+                        f(value);
+                    }
+                }),
+            )
+            .with_window_capture(window_id),
         );
         self
     }
