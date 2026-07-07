@@ -11,6 +11,7 @@
 #![allow(nonstandard_style)]
 
 use crate::native::backends::windows::ffi::{GetDC, ReleaseDC};
+use crate::native::backends::windows::util::windows_diag;
 use crate::native::traits::present::IPresenter;
 use crate::native::traits::present::PresentDamage;
 use crate::native::{Errc, Error};
@@ -83,18 +84,19 @@ impl DibHandle {
         unsafe {
             let hdc = GetDC(hwnd);
             if hdc.is_null() {
-                return Err(Error::new(
+                return Err(windows_diag(
                     Errc::PlatformError,
-                    "GdiPresenter: GetDC failed".to_string(),
+                    "GdiPresenter: GetDC failed",
                 ));
             }
             let hdc_mem = CreateCompatibleDC(hdc);
             if hdc_mem.is_null() {
-                ReleaseDC(hwnd, hdc);
-                return Err(Error::new(
+                let err = windows_diag(
                     Errc::PlatformError,
-                    "GdiPresenter: CreateCompatibleDC failed".to_string(),
-                ));
+                    "GdiPresenter: CreateCompatibleDC failed",
+                );
+                ReleaseDC(hwnd, hdc);
+                return Err(err);
             }
             let bmi = BITMAPINFO {
                 bmi_header: BITMAPINFOHEADER {
@@ -121,16 +123,16 @@ impl DibHandle {
                 std::ptr::null_mut(),
                 0,
             );
+            let dib_err = (hbitmap.is_null() || pbits.is_null()).then(|| {
+                windows_diag(Errc::PlatformError, "GdiPresenter: CreateDIBSection failed")
+            });
             ReleaseDC(hwnd, hdc);
-            if hbitmap.is_null() || pbits.is_null() {
+            if let Some(err) = dib_err {
                 DeleteDC(hdc_mem);
                 if !hbitmap.is_null() {
                     DeleteObject(hbitmap);
                 }
-                return Err(Error::new(
-                    Errc::PlatformError,
-                    "GdiPresenter: CreateDIBSection failed".to_string(),
-                ));
+                return Err(err);
             }
             SelectObject(hdc_mem, hbitmap);
             Ok(Self {

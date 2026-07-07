@@ -1,6 +1,7 @@
 use super::*;
 use crate::draw::backend::cpu::CpuDrawSurface;
 use crate::draw::backend::traits::BackendCapabilities;
+use crate::draw::traits::Canvas2D;
 
 #[test]
 fn normalize_strategy_expands_dirty_to_full_when_no_partial_redraw() {
@@ -46,6 +47,24 @@ fn begin_frame_partial_dirty_returns_partial_damage() {
     assert_eq!(
         outcome,
         RenderOutcome::Present(DamageRegion::partial(rects))
+    );
+    end_frame(&mut surface);
+}
+
+#[test]
+fn begin_frame_dirty_clip_intersects_surface_bounds() {
+    let mut surface = CpuDrawSurface::new(20, 20);
+    let outcome = begin_frame(
+        UpdateStrategy::DirtyRects(vec![Rect::new(-10.0, -5.0, 12.0, 8.0)]),
+        &mut surface,
+        20,
+        20,
+        BackendCapabilities::cpu(),
+    );
+    assert!(matches!(outcome, RenderOutcome::Present(_)));
+    assert_eq!(
+        surface.canvas_mut().current_clip(),
+        Rect::new(0.0, 0.0, 2.0, 3.0)
     );
     end_frame(&mut surface);
 }

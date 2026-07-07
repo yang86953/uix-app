@@ -11,7 +11,7 @@ use super::bindings::*;
 use super::consts::*;
 use super::ffi::*;
 use super::platform::WindowsPlatform;
-use super::util::{to_utf8, to_wide};
+use super::util::{to_utf8, to_wide, windows_diag};
 use super::wnd_proc::wnd_proc;
 use crate::core::Point;
 use crate::native::traits::*;
@@ -30,7 +30,7 @@ impl WindowsPlatform {
         unsafe {
             let hinstance = GetModuleHandleW(std::ptr::null_mut());
             if hinstance.is_null() {
-                return Err(Error::new(
+                return Err(windows_diag(
                     Errc::PlatformError,
                     "register_class: GetModuleHandleW failed",
                 ));
@@ -54,7 +54,7 @@ impl WindowsPlatform {
 
             let atom = RegisterClassExW(&wc);
             if atom == 0 {
-                return Err(Error::new(
+                return Err(windows_diag(
                     Errc::ClassRegistrationFailed,
                     "register_class: RegisterClassExW failed",
                 ));
