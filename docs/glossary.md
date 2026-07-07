@@ -119,7 +119,7 @@
 | 术语 | 含义 |
 |------|------|
 | measure | **设计**：`measure(constraints) -> Size`（[#29](decisions.md#d29)、[#103](decisions.md#d103)） |
-| preferred_size | **当前实现**：`preferred_size(engine) -> Size`；语义等同 measure（[#103](decisions.md#d103)） |
+| preferred_size | 旧测量入口，已由 `measure(constraints) -> Size` 取代（[#103](decisions.md#d103)） |
 | Constraints | `{ min, max, definite }` |
 | Active / Inactive | **Active**：有焦点 **或** 视口内仍有可见像素（与祖先 clip/scroll 求交）；Inactive 跳过大部分语义派发（#8、#19） |
 | BoxModel | margin → border → padding → content 盒模型 |

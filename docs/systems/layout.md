@@ -30,17 +30,17 @@
 fn measure(&self, constraints: Constraints) -> Size;
 ```
 
-在父级分配的 **content rect** 约束下测量 intrinsic size。旧 `preferred_size(engine)` 保留为兼容桥。
+在父级分配的 **content rect** 约束下测量 intrinsic size。旧 `preferred_size(engine)` 兼容桥已移除。
 
 ### measure 与 preferred_size（#103）
 
 | | 设计（#29） | 当前实现 |
 |---|------------|----------|
-| API | `measure(constraints) -> Size` | 已接；`preferred_size(engine)` 保留兼容，`preferred_size(None)` 会走 `measure(Constraints::unconstrained())` |
+| API | `measure(constraints) -> Size` | 已接；旧 `preferred_size(engine)` 兼容桥已移除 |
 | 约束 | `Constraints { min, max, definite }`（#38） | `core::Constraints` 已接，含 `loose` / `unconstrained` / `clamp` |
 | 语义 | 在约束下计算 intrinsic size | 等同 |
 
-新组件优先实现 `measure`；旧组件可继续实现 `preferred_size`，由默认 `measure` 兼容调用（[#103](../decisions.md#d103)）。
+组件必须实现 `measure`；默认实现返回 `constraints.clamp(Size::zero())`，不再经旧 `preferred_size` 桥接（[#103](../decisions.md#d103)）。
 
 ### Constraints（#38）
 

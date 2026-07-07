@@ -4,9 +4,9 @@ use crate::core::{ComponentId, Constraints, Point, Size};
 use crate::draw::Color;
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
+use crate::ui::managers::StyleManager;
 use crate::ui::{
-    AppState, Label, Modal, OverlayEntry, OverlayKind, QRCode, SnapshotFields, StyleManager,
-    TextManager, Tooltip,
+    AppState, Label, Modal, OverlayEntry, OverlayKind, QRCode, SnapshotFields, TextManager, Tooltip,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -55,11 +55,8 @@ impl WidgetComponent for SpyWidget {
     crate::wc_upcast!(SpyWidget; EventHandler);
 }
 impl WidgetLayout for SpyWidget {
-    fn preferred_size(
-        &self,
-        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::core::Size {
-        self.size
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.size)
     }
 }
 impl WidgetRender for SpyWidget {
@@ -100,11 +97,8 @@ impl WidgetComponent for CaptureSpyWidget {
 }
 
 impl WidgetLayout for CaptureSpyWidget {
-    fn preferred_size(
-        &self,
-        engine: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::core::Size {
-        self.0.preferred_size(engine)
+    fn measure(&self, constraints: Constraints) -> Size {
+        self.0.measure(constraints)
     }
 }
 
@@ -180,11 +174,8 @@ impl WidgetComponent for ContinuousSpyWidget {
 }
 
 impl WidgetLayout for ContinuousSpyWidget {
-    fn preferred_size(
-        &self,
-        engine: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::core::Size {
-        self.0.preferred_size(engine)
+    fn measure(&self, constraints: Constraints) -> Size {
+        self.0.measure(constraints)
     }
 }
 
@@ -244,11 +235,8 @@ impl WidgetComponent for PassThroughContainer {
     crate::wc_upcast!(PassThroughContainer; EventHandler);
 }
 impl WidgetLayout for PassThroughContainer {
-    fn preferred_size(
-        &self,
-        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::core::Size {
-        self.size
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.size)
     }
 }
 impl WidgetRender for PassThroughContainer {
@@ -297,11 +285,8 @@ impl WidgetComponent for ClipContainer {
 }
 
 impl WidgetLayout for ClipContainer {
-    fn preferred_size(
-        &self,
-        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::core::Size {
-        self.size
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.size)
     }
 
     fn layout_children(
@@ -316,7 +301,7 @@ impl WidgetLayout for ClipContainer {
             .map(|id| {
                 let size = tree
                     .get(id)
-                    .map(|node| node.preferred_size(None))
+                    .map(|node| node.measure(Constraints::unconstrained()))
                     .unwrap_or_default();
                 (
                     id,
@@ -387,11 +372,8 @@ impl WidgetComponent for ScrollClipContainer {
 }
 
 impl WidgetLayout for ScrollClipContainer {
-    fn preferred_size(
-        &self,
-        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::core::Size {
-        self.size
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.size)
     }
 
     fn layout_children(
@@ -406,7 +388,7 @@ impl WidgetLayout for ScrollClipContainer {
             .map(|id| {
                 let size = tree
                     .get(id)
-                    .map(|node| node.preferred_size(None))
+                    .map(|node| node.measure(Constraints::unconstrained()))
                     .unwrap_or_default();
                 (
                     id,
@@ -481,11 +463,8 @@ impl WidgetComponent for LifecycleProbe {
 }
 
 impl WidgetLayout for LifecycleProbe {
-    fn preferred_size(
-        &self,
-        _: Option<&dyn crate::draw::traits::GraphicsEngine>,
-    ) -> crate::core::Size {
-        self.size
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.size)
     }
 }
 
@@ -550,14 +529,17 @@ fn tree_set_root_returns_valid_id() {
 }
 
 #[test]
-fn boxed_widget_preferred_size_uses_measure_without_engine() {
+fn boxed_widget_measure_uses_constraints() {
     let boxed = BoxedWidget::new(Box::new(MeasureOnlyWidget));
 
     assert_eq!(
         boxed.measure(Constraints::loose(Size::new(100.0, 50.0))),
         Size::new(100.0, 50.0)
     );
-    assert_eq!(boxed.preferred_size(None), Size::new(120.0, 80.0));
+    assert_eq!(
+        boxed.measure(Constraints::unconstrained()),
+        Size::new(120.0, 80.0)
+    );
 }
 
 #[test]

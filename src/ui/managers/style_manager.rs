@@ -1,8 +1,10 @@
 use crate::core::EdgeInsets;
 use crate::draw::Color;
 
-/// Widget 样式预设。
-/// 可通过 `WidgetManagers::style` 设置树级默认值，或通过 `override_style` 为单个 component 覆盖。
+/// Legacy component style preset.
+///
+/// Prefer `ui::style::Style` for new component authoring. This preset remains
+/// only for explicit `WidgetManagers` override paths.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WidgetStylePreset {
     pub bg_color: Option<Color>,
@@ -38,7 +40,9 @@ impl Default for WidgetStylePreset {
     }
 }
 
-/// Manages component Style — properties separate from layout.
+/// Legacy component Style manager — properties separate from layout.
+///
+/// Prefer `ui::style::Style` for new code.
 #[derive(Default, Clone)]
 pub struct StyleManager {
     style: WidgetStylePreset,

@@ -48,8 +48,7 @@ pub use layout::{
     LayoutEngine,
 };
 pub use managers::{
-    DragManager, FocusManager, InteractionManager, StateManager, StyleManager, TextManager,
-    WidgetManagers,
+    DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
 };
 pub use overlay::{OverlayEntry, OverlayId, OverlayKind, OverlayStack};
 pub use theme::{DesignTokens, NeutralRole, ShadowToken, Theme};
