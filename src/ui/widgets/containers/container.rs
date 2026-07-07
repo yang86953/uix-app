@@ -12,8 +12,8 @@ use crate::ui::style::{
     apply_style, BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken,
 };
 use crate::ui::traits::LayoutEngine;
+use crate::ui::{ComponentId, WidgetCore, WidgetTree};
 use crate::ui::{SnapshotFields, SnapshotSource};
-use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 
 component! {
     /// Container — flexbox 布局容器，带背景/边框/圆角/阴影。
@@ -60,8 +60,8 @@ component! {
         apply_style(ctx, visual, s);
     }
 
-    layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
-        -> Vec<(WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
 
@@ -77,7 +77,7 @@ component! {
         if content_rect.w <= 0.0 || content_rect.h <= 0.0 { return Vec::new(); }
 
         // 过滤不可见子节点
-        let visible_children: Vec<WidgetId> = children.iter().copied()
+        let visible_children: Vec<ComponentId> = children.iter().copied()
             .filter(|&cid| {
                 let visible = tree.get(cid)
                     .map(|n| n.visible())

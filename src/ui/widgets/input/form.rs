@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+﻿use std::collections::HashMap;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -141,8 +141,8 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], _tree: &WidgetTree)
-        -> Vec<(crate::ui::WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
     {
         if children.is_empty() {
             return Vec::new();
@@ -308,8 +308,8 @@ component! {
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::WidgetId], tree: &WidgetTree)
-        -> Vec<(crate::ui::WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
     {
         let mut result = Vec::new();
         match self.layout {

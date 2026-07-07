@@ -1,4 +1,4 @@
-//! Affix 固定定位组件 — 滚动超过指定偏移时将子组件固定在视口位置。
+﻿//! Affix 固定定位组件 — 滚动超过指定偏移时将子组件固定在视口位置。
 //!
 //! 监听滚动位置变化，当 scroll_y > offset_top 时固定。
 
@@ -36,8 +36,8 @@ component! {
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
-    layout_children => (&self, _frame: Rect, _children: &[crate::ui::WidgetId],
-        _tree: &crate::ui::WidgetTree) -> Vec<(crate::ui::WidgetId, Rect)>
+    layout_children => (&self, _frame: Rect, _children: &[crate::ui::ComponentId],
+        _tree: &crate::ui::WidgetTree) -> Vec<(crate::ui::ComponentId, Rect)>
     {
         Vec::new()
     }

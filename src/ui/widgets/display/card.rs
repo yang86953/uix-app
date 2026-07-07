@@ -10,7 +10,7 @@ use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetComponent, WidgetId, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetComponent, WidgetTree};
 
 component! {
     /// Card widget with shadow elevation, hover highlight, and content padding.
@@ -136,8 +136,8 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[WidgetId], tree: &WidgetTree)
-        -> Vec<(WidgetId, Rect)>
+    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
 
