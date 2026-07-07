@@ -1,7 +1,8 @@
 use super::*;
 use crate::core::Rect;
-use crate::ui::widgets::{Button, Input};
-use crate::ui::{ComponentHandle, SnapshotFields, WidgetCore, WidgetTree};
+use crate::ui::state::State;
+use crate::ui::widgets::{Button, Input, Label};
+use crate::ui::{ComponentHandle, SnapshotFields, WidgetCore, WidgetNode, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -108,6 +109,27 @@ fn handler_table_when_is_evaluated_per_dispatch() {
         },
     );
     let _ = table.dispatch_path(&[id], &mut event);
+
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn widget_node_on_semantic_capture_registers_captured_handler() {
+    let state = State::new(1);
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_handler = calls.clone();
+    let node = WidgetNode::leaf(Box::new(Label::new("captured"))).on_semantic_capture(
+        HandlerRegistration::new(
+            SemanticKind::Change,
+            Box::new(move |_| calls_for_handler.set(calls_for_handler.get() + 1)),
+        ),
+        &state,
+    );
+    let mut tree = WidgetTree::new();
+    let root = tree.build(node);
+
+    state.set(2);
+    let _ = tree.dispatch_semantic(SemanticEvent::change(root, "next"));
 
     assert_eq!(calls.get(), 1);
 }

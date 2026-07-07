@@ -526,7 +526,7 @@ impl WidgetTree {
         self.propagate_layout_invalidation(id);
     }
 
-    // 鈹€鈹€ WidgetNode tree building 鈹€鈹€
+    // WidgetNode tree building.
 
     pub fn build(&mut self, node: WidgetNode) -> WidgetId {
         self.build_node(node, None)

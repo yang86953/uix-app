@@ -436,8 +436,8 @@ impl HandlerRegistration {
         self
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn with_state_capture<T: Clone + Send + Sync + 'static>(
+    /// Marks this handler as capturing `state` for reconcile-time reuse.
+    pub fn with_state_capture<T: Clone + Send + Sync + 'static>(
         self,
         state: &crate::ui::foundation::state::State<T>,
     ) -> Self {

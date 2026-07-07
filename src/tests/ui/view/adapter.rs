@@ -390,6 +390,168 @@ fn reconcile_reregisters_handler_when_state_capture_fingerprint_changes() {
 }
 
 #[test]
+fn button_dsl_state_capture_preserves_handler_when_fingerprint_is_unchanged() {
+    use crate::core::Point;
+    use crate::native::traits::input::{KeyMod, MouseButton};
+    use crate::ui::state::State;
+    use crate::ui::view::button;
+    use crate::ui::SystemEvent;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let state = State::new(1);
+    let first_hits = Rc::new(Cell::new(0));
+    let second_hits = Rc::new(Cell::new(0));
+    let first_for_handler = first_hits.clone();
+    let second_for_handler = second_hits.clone();
+
+    let mut tree = ViewAdapter::build(button("First").on_click_capture(&state, move || {
+        first_for_handler.set(first_for_handler.get() + 1);
+    }));
+    let pos = Point::new(4.0, 4.0);
+
+    state.set(2);
+    ViewAdapter::reconcile(
+        &mut tree,
+        button("Second").on_click_capture(&state, move || {
+            second_for_handler.set(second_for_handler.get() + 1);
+        }),
+    );
+
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(first_hits.get(), 1);
+    assert_eq!(second_hits.get(), 0);
+}
+
+#[test]
+fn input_dsl_state_capture_reregisters_handler_when_fingerprint_changes() {
+    use crate::core::{Point, Rect};
+    use crate::native::traits::input::{KeyMod, MouseButton};
+    use crate::ui::state::State;
+    use crate::ui::view::input;
+    use crate::ui::{SystemEvent, WidgetCore};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    let first_state = State::new(1);
+    let second_state = State::new(1);
+    let first_value = Rc::new(RefCell::new(String::new()));
+    let second_value = Rc::new(RefCell::new(String::new()));
+    let first_for_handler = first_value.clone();
+    let second_for_handler = second_value.clone();
+
+    let mut tree = ViewAdapter::build(input().on_change_capture(&first_state, move |next| {
+        *first_for_handler.borrow_mut() = next.to_string();
+    }));
+    let root = tree.root_id().unwrap();
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 32.0));
+
+    ViewAdapter::reconcile(
+        &mut tree,
+        input().on_change_capture(&second_state, move |next| {
+            *second_for_handler.borrow_mut() = next.to_string();
+        }),
+    );
+
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(8.0, 8.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = tree.dispatch_event(&SystemEvent::TextInput {
+        text: "A".to_string(),
+    });
+
+    assert_eq!(&*first_value.borrow(), "");
+    assert_eq!(&*second_value.borrow(), "A");
+}
+
+#[test]
+fn view_node_state_capture_preserves_handler_when_fingerprint_is_unchanged() {
+    use crate::ui::event::{SemanticEvent, SemanticKind};
+    use crate::ui::state::State;
+    use crate::ui::view::label;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let state = State::new(1);
+    let first_hits = Rc::new(Cell::new(0));
+    let second_hits = Rc::new(Cell::new(0));
+    let first_for_handler = first_hits.clone();
+    let second_for_handler = second_hits.clone();
+
+    let mut tree = ViewAdapter::build(label("First").on_semantic_capture(
+        SemanticKind::Change,
+        &state,
+        move |_| {
+            first_for_handler.set(first_for_handler.get() + 1);
+        },
+    ));
+    let root_id = tree.root_id().unwrap();
+
+    ViewAdapter::reconcile(
+        &mut tree,
+        label("Second").on_semantic_capture(SemanticKind::Change, &state, move |_| {
+            second_for_handler.set(second_for_handler.get() + 1);
+        }),
+    );
+
+    let _ = tree.dispatch_semantic(SemanticEvent::change(root_id, "next"));
+
+    assert_eq!(first_hits.get(), 1);
+    assert_eq!(second_hits.get(), 0);
+}
+
+#[test]
+fn view_node_state_capture_reregisters_handler_when_fingerprint_changes() {
+    use crate::ui::event::{SemanticEvent, SemanticKind};
+    use crate::ui::state::State;
+    use crate::ui::view::label;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let first_state = State::new(1);
+    let second_state = State::new(1);
+    let first_hits = Rc::new(Cell::new(0));
+    let second_hits = Rc::new(Cell::new(0));
+    let first_for_handler = first_hits.clone();
+    let second_for_handler = second_hits.clone();
+
+    let mut tree = ViewAdapter::build(label("First").on_semantic_capture(
+        SemanticKind::Change,
+        &first_state,
+        move |_| {
+            first_for_handler.set(first_for_handler.get() + 1);
+        },
+    ));
+    let root_id = tree.root_id().unwrap();
+
+    ViewAdapter::reconcile(
+        &mut tree,
+        label("Second").on_semantic_capture(SemanticKind::Change, &second_state, move |_| {
+            second_for_handler.set(second_for_handler.get() + 1);
+        }),
+    );
+
+    let _ = tree.dispatch_semantic(SemanticEvent::change(root_id, "next"));
+
+    assert_eq!(first_hits.get(), 0);
+    assert_eq!(second_hits.get(), 1);
+}
+
+#[test]
 fn test_state_auto_dirty() {
     use crate::ui::state::State;
     use std::sync::atomic::{AtomicBool, Ordering};
