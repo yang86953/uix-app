@@ -272,13 +272,13 @@ impl ViewAdapter {
 
     fn handler_signature_groups(
         signatures: &[HandlerSignature],
-    ) -> HashMap<SemanticKind, Vec<Option<u32>>> {
+    ) -> HashMap<SemanticKind, Vec<(Option<u32>, crate::ui::event::HandlerOptionsSignature)>> {
         let mut groups = HashMap::new();
         for signature in signatures {
             groups
                 .entry(signature.kind)
                 .or_insert_with(Vec::new)
-                .push(signature.generation);
+                .push((signature.generation, signature.options));
         }
         groups
     }

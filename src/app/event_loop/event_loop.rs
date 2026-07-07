@@ -428,11 +428,6 @@ where
 
         let had_events = !pending_events.borrow().is_empty();
         let mut had_layout_event = false;
-        let now = clock.now();
-        let due_work = active_work.drain_due(now);
-        let had_registered_work = !due_work.is_empty();
-        let due_animation_ids = due_animation_ids(&due_work);
-
         for ev in pending_events.borrow_mut().drain(..) {
             let is_layout_event = matches!(
                 ev.type_,
@@ -519,6 +514,12 @@ where
             }
         }
 
+        active_work.sync_timers(tree.active_timers(), clock.now());
+        active_work.sync_app_timers(app_timers.deadlines());
+        let now = clock.now();
+        let due_work = active_work.drain_due(now);
+        let had_registered_work = !due_work.is_empty();
+        let due_animation_ids = due_animation_ids(&due_work);
         let had_due_widget_timer_work =
             dispatch_due_active_work(tree, &app_timers, &due_work, clock.as_ref());
         let mut main_thread_context = MainThreadContext::new(pending_root, reconcile_pending);

@@ -553,6 +553,42 @@ fn boxed_widget_layout_defaults_use_documented_flex_shrink() {
 }
 
 #[test]
+fn boxed_widget_replace_component_transfers_lifecycle_state() {
+    let old_events = Rc::new(RefCell::new(Vec::new()));
+    let new_events = Rc::new(RefCell::new(Vec::new()));
+    let mut boxed = BoxedWidget::new(Box::new(LifecycleProbe::new(
+        10.0,
+        10.0,
+        old_events.clone(),
+    )));
+    boxed.set_attached(true);
+    boxed.on_attach();
+    boxed.set_mounted(true);
+    boxed.on_mount();
+    boxed.set_active(true);
+    boxed.on_active();
+
+    boxed.replace_component(Box::new(LifecycleProbe::new(
+        20.0,
+        20.0,
+        new_events.clone(),
+    )));
+
+    assert_eq!(
+        old_events.borrow().clone(),
+        vec!["init", "attach", "mount", "active", "inactive", "unmount", "detach", "destroy"]
+    );
+    assert_eq!(
+        new_events.borrow().clone(),
+        vec!["init", "attach", "mount", "active"]
+    );
+    assert!(boxed.attached());
+    assert!(boxed.mounted());
+    assert!(boxed.active());
+    assert!(!boxed.destroyed());
+}
+
+#[test]
 fn child_from_tree_reads_component_layout_margin() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));

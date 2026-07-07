@@ -31,9 +31,11 @@ create_gpu_context → GpuEngine::new
 
 | 引擎 | 后端 | 特点 |
 |------|------|------|
-| GpuEngine | GPU swapchain + damage | 默认 |
+| GpuEngine | GPU swapchain + damage | App 启动默认优先 |
 | SoftwareEngine | CPU 像素缓冲 | 回退 |
 | NullEngine | 无操作 | 测试 |
+
+`App::run_gui` 按 #59 优先创建 GPU 上下文，失败时回退 `SoftwareEngine`。绘图层裸 `RenderSession::new(BackendKind::Auto)` 在没有平台 GPU context 注入时等价于 `Cpu`；需要 GPU 时先绑定平台图形上下文再切换 `BackendKind::Gpu`。
 
 ### GraphicsEngine 契约
 

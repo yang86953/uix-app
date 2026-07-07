@@ -388,8 +388,15 @@ impl HandlerOptions {
 pub type SemanticHandler = Box<dyn FnMut(&mut SemanticEvent) + 'static>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HandlerOptionsSignature {
+    pub once: bool,
+    pub when: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HandlerSignature {
     pub kind: SemanticKind,
+    pub options: HandlerOptionsSignature,
     pub generation: Option<u32>,
     pub capture_fingerprint: Option<u64>,
 }
@@ -399,7 +406,7 @@ pub struct HandlerRegistration {
     pub options: HandlerOptions,
     pub handler: SemanticHandler,
     generation: Option<u32>,
-    capture_fingerprint: Option<u64>,
+    capture_fingerprints: Vec<u64>,
 }
 
 impl HandlerRegistration {
@@ -409,7 +416,7 @@ impl HandlerRegistration {
             options: HandlerOptions::default(),
             handler,
             generation: None,
-            capture_fingerprint: None,
+            capture_fingerprints: Vec::new(),
         }
     }
 
@@ -423,7 +430,7 @@ impl HandlerRegistration {
             options,
             handler,
             generation: None,
-            capture_fingerprint: None,
+            capture_fingerprints: Vec::new(),
         }
     }
 
@@ -435,7 +442,7 @@ impl HandlerRegistration {
 
     #[allow(dead_code)]
     pub(crate) fn with_capture_fingerprint(mut self, capture_fingerprint: u64) -> Self {
-        self.capture_fingerprint = Some(capture_fingerprint);
+        self.capture_fingerprints.push(capture_fingerprint);
         self
     }
 
@@ -455,8 +462,9 @@ impl HandlerRegistration {
     pub(crate) fn signature(&self) -> HandlerSignature {
         HandlerSignature {
             kind: self.kind,
+            options: self.options.signature(),
             generation: self.generation,
-            capture_fingerprint: self.capture_fingerprint,
+            capture_fingerprint: combined_capture_fingerprint(&self.capture_fingerprints),
         }
     }
 
@@ -466,6 +474,29 @@ impl HandlerRegistration {
             signature.generation = Some(0);
         }
         signature
+    }
+}
+
+impl HandlerOptions {
+    fn signature(&self) -> HandlerOptionsSignature {
+        HandlerOptionsSignature {
+            once: self.once,
+            when: self.when.is_some(),
+        }
+    }
+}
+
+fn combined_capture_fingerprint(captures: &[u64]) -> Option<u64> {
+    match captures {
+        [] => None,
+        [single] => Some(*single),
+        _ => {
+            let mut sorted = captures.to_vec();
+            sorted.sort_unstable();
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            sorted.hash(&mut hasher);
+            Some(hasher.finish())
+        }
     }
 }
 

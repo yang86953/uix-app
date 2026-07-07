@@ -27,7 +27,7 @@
 |------|------|----------|
 | 输入 | `FakePlatform` 注入 `UiEvent` | 走 `map_ui_event` → `dispatch_event` 生产路径 |
 | 行为 | HandlerTable / State 副作用 | 语义事件、业务状态、focus/hover |
-| 绘制 | paint snapshot | 帧缓冲或 DisplayList 哈希/像素对比 |
+| 绘制 | paint snapshot | 帧缓冲、DisplayList、damage / idle 断言 |
 | 平台 | Fake 调用历史 | presenter damage、clipboard、text_input 等 |
 
 原则：
@@ -88,7 +88,7 @@ Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138、#160）�
 | 无 GPU | `NullEngine` 跳过 present，仍走 LayerTree / DisplayList |
 | damage | `FakePresenter` 记录的 `PresentDamage` rects |
 
-典型对比：逻辑帧缓冲像素 hash、或 golden file（CI 固定 scale/theme）。
+当前主线优先覆盖 DisplayList、damage rect 与 idle/present 行为；逻辑帧缓冲像素 hash / golden file 可在 CI 固定 scale/theme 后作为更强验收补充。
 
 失效类型与 present 规则见 [rendering · 管线与失效](rendering.md#管线与失效)（Layout alone 不 present）。
 
@@ -127,11 +127,15 @@ impl TestClock {
     pub fn advance(&mut self, delta: Duration) { self.elapsed += delta; }
 }
 
-// 当前测试入口
+// 当前测试入口（省略部分 service / callback 参数）
 fn run_window_session_loop_with_clock(
-    platform: &mut FakePlatform,
-    clock: &mut TestClock,
-    steps: impl FnMut(&mut TestClock),
+    platform: &mut dyn Platform,
+    platform_window: &mut dyn PlatformWindow,
+    session: &mut WindowSession,
+    clock: Arc<dyn AppClock>,
+    map_event: impl Fn(&UiEvent) -> Option<SystemEvent>,
+    on_exit: impl Fn(&UiEvent) -> bool,
+    on_frame: impl Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
 );
 ```
 
@@ -171,7 +175,7 @@ CLI / 纯逻辑单元测试可不挂载 Platform；**组件集成测试** 优先
 ## 源码模块
 
 ```text
-src/tests/               镜像 src/ 布局的集成测试
+src/tests/               按 src/ 布局镜像的主要测试入口
   ui/                    View、Widget、theme…
   draw/                  pipeline、compositor、spatial…
   native/                （通过 FakePlatform 间接）
@@ -181,3 +185,5 @@ native/test_harness/     FakePlatform 与各 Fake 子系统
 app/test_clock.rs        AppClock / TestClock（#139）
 app/event_loop/          run_window_session_loop_with_clock（测试入口）
 ```
+
+少量紧贴私有 helper / 内部不变量的单元测试可继续内联在源码模块，公共行为与跨模块路径优先放入 `src/tests/**`。

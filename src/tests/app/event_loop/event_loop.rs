@@ -1717,6 +1717,97 @@ fn post_to_ui_drains_after_app_timer_and_before_frame_update() {
 }
 
 #[test]
+fn ui_event_registered_timer_drains_before_post_to_ui_in_same_frame() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform
+        .event_source
+        .inject(UiEvent::pointer_move(Point::new(20.0, 15.0)));
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let app_timers = crate::app::app_timer::AppTimerQueue::new();
+    let main_thread_queue = crate::app::main_thread_queue::MainThreadQueue::new();
+    let order = Arc::new(Mutex::new(Vec::new()));
+    let frame_seen = Arc::new(AtomicUsize::new(0));
+    let timer_handles = Arc::new(Mutex::new(Vec::new()));
+    main_thread_queue.enqueue({
+        let order = order.clone();
+        move || order.lock().unwrap_or_else(|e| e.into_inner()).push("post")
+    });
+    session.set_app_timers(app_timers.clone());
+    session.set_main_thread_queue(main_thread_queue);
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        None,
+        {
+            let app_timers = app_timers.clone();
+            let order = order.clone();
+            let timer_handles = timer_handles.clone();
+            move |event| {
+                if matches!(event.type_, UiEventType::PointerMove) {
+                    order
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push("event");
+                    let order = order.clone();
+                    let timer = app_timers.run_after(Duration::ZERO, move || {
+                        order
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .push("timer");
+                    });
+                    timer_handles
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(timer);
+                }
+                None
+            }
+        },
+        |_| false,
+        {
+            let order = order.clone();
+            let frame_seen = frame_seen.clone();
+            move |_, _, _| {
+                frame_seen.fetch_add(1, Ordering::Relaxed);
+                order
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push("frame");
+            }
+        },
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(
+        *order.lock().unwrap_or_else(|e| e.into_inner()),
+        vec!["event", "timer", "post", "frame"]
+    );
+    assert_eq!(frame_seen.load(Ordering::Relaxed), 1);
+    assert!(session.active_work().is_empty());
+}
+
+#[test]
 fn pending_root_reconciles_once_before_frame_and_keeps_last_update() {
     let mut platform = FakePlatform::new();
     platform.event_source.state.exit_after_blocking_calls = Some(1);
