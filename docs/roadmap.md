@@ -10,6 +10,11 @@
 |------|------|
 | [分阶段路线图](#分阶段路线图) | #154 |
 | [P0 落地清单](#p0-落地清单) | #157 |
+| [P1 落地清单](#p1-落地清单) | #118 #123 #143 #153 |
+| [P2 落地清单](#p2-落地清单) | #132–#140 |
+| [P3 落地清单](#p3-落地清单) | #107 #109 #122 #129 |
+| [P4 落地清单](#p4-落地清单) | #116 #148 #149 #150 |
+| [P5 落地清单](#p5-落地清单) | #145–#152 #147 |
 | [维护](#维护) | — |
 
 **关联**：[demand-driven](systems/demand-driven.md) · [application](systems/application.md) · [view-reactive](systems/view-reactive.md) · [decisions](decisions.md)
@@ -86,8 +91,75 @@ P1 的单窗 `reconcile_pending` / `pending_root`（#153）、响应式 `State` 
 
 ---
 
+## P1 落地清单
+
+目标：热更新不上全量 build；State 批次在帧内合并为一次 reconcile，handler 只在签名变化时重绑。
+
+| 文件 / 模块 | 动作 | 决策 |
+|-------------|------|------|
+| `src/ui/view/adapter.rs` | `reconcile` 复用同类型 / key 匹配节点，patch 样式、handler 与静态配置 snapshot；类型不同才卸载子树 | #118 #153 |
+| `src/ui/event.rs` | `HandlerSignature` / `handler_generation` / capture fingerprint 比较；State / WindowId capture 变化才重注册 handler | #123 #135 #138 #159 |
+| `src/ui/foundation/state.rs` | `StateSlotId` 单调稳定；State set/update fan-out 到 reconcile site 与 paint site | #143 #150 |
+| `src/app/window_session.rs` | `pending_root` 与 `reconcile_pending` 挂在 session；帧内消费一次，`pending_root` 优先于 factory rebuild | #153 #155 #156 |
+| `src/app/event_loop/event_loop.rs` | Active 帧中 drain due / post_to_ui / State 批次后、layout 前执行 reconcile；无 pending 时不唤醒 | #105 #118 |
+| `src/tests/ui/view/adapter.rs`、`src/tests/app/event_loop/` | 覆盖 keyed reuse、handler generation、State 批次 reconcile 与 DeepIdle 不额外工作 | #118 #123 #153 |
+
+## P2 落地清单
+
+目标：App 公开 Timer、主线程投递、启动回调与 TestClock，且 cancel / drain 后回到 DeepIdle。
+
+| 文件 / 模块 | 动作 | 决策 |
+|-------------|------|------|
+| `src/app/app_timer.rs` | `run_after` / `run_interval` / `TimerHandle`；cancel 移除 pending timer，interval 以触发时间重排 | #132 |
+| `src/app/main_thread_queue.rs` | FIFO drain；drain 中追加的任务同轮继续执行；按 window session 隔离 | #137 |
+| `src/app/session_runtime.rs` | `AppRuntime` 按 `WindowId` 路由 timer、post_to_ui、update_view，并在成功注册后 wake event loop | #132 #133 #141 |
+| `src/app/app_handle.rs` | `AppHandle` cloneable；关闭后投递 / timer / update_view 惰性丢弃或返回 inert handle | #132 #133 #134 |
+| `src/app/shell/application.rs` | `.on_start` / `.on_window_start` 在 session 首帧前注入 `AppHandle`；`AppClock` / `TestClock` 测试入口 | #139 #140 |
+| `src/tests/app/` | 覆盖 timer deadline、cancel、post_to_ui 顺序、TestClock drain_due 与关闭后无 wake | #132 #137 #139 |
+
+## P3 落地清单
+
+目标：渲染只为真实变化工作；滚动走 Composite memmove，Picture 缓存由元数据与运行时信号共同决定。
+
+| 文件 / 模块 | 动作 | 决策 |
+|-------------|------|------|
+| `src/draw/pipeline/invalidation.rs` | `Invalidation::Paint/Layout/Composite` 合并与 dirty region 查询；Layout 不隐式 Paint | #107 |
+| `src/draw/pipeline/render_frame.rs` | 空 dirty + 无 scroll_move 直接返回 Idle；首帧才强制 full redraw | #105 #107 |
+| `src/draw/compositor/layer_tree.rs` | `PicturePolicy` 阈值、运行时信号降级、node_id+bounds cache 复用、z-order 构建 | #122 #129 |
+| `src/ui/core/widget/tree_events.rs` | PointerMove 边界窄路径：drag / pressed 全 dispatch，hover hit frame 内跳过 hit_test，opt-in 才连续 dispatch | #109 #121 |
+| `src/ui/widgets/other/scroll_view/` | Wheel、键盘、拖拽与程序化滚动写 Composite exposed strip；layout 使用自然坐标 | #107 |
+| `src/tests/draw/`、`src/tests/ui/widgets/other/scroll_view/` | 覆盖 Picture 阈值、空 dirty idle、Composite strip 与滚动来源一致性 | #107 #122 #129 |
+
+## P4 落地清单
+
+目标：多窗共享 AppState / Theme，但每窗独立 session、队列、三态与 deadline；State fan-out 只 wake 相关窗。
+
+| 文件 / 模块 | 动作 | 决策 |
+|-------------|------|------|
+| `src/app/window_session.rs` | 每窗持有独立 WidgetTree、Registry、MainThreadQueue、pending_root、AppTimer 与 loop_state | #116 |
+| `src/app/shell/application.rs` | `WindowConfig` / `open_window` 请求 drain；副窗 native 创建与独立 session bootstrap | #148 |
+| `src/app/session_runtime.rs` | session 路由表；副窗关闭清理 timer、queue、pending open request 与 handle alive 状态 | #134 #141 #148 |
+| `src/app/event_loop/event_loop.rs` | 主窗事件与副窗事件按 `window_id` 路由；副窗 frame drain 跳过 DeepIdle 窗 | #110 #116 |
+| `src/ui/foundation/state.rs` | 多 paint / reconcile site fan-out；重复 site 原地更新，set 只 wake 绑定 session | #150 |
+| `src/tests/app/window_session.rs`、`src/tests/app/shell/application.rs` | 覆盖副窗事件路由、独立 deadline、shared State fan-out 与关闭清理 | #116 #148 #150 |
+
+## P5 落地清单
+
+目标：ComponentHandle 与 AppState 零维护；mount / unmount 自动注册 snapshot，emit 统一走语义派发。
+
+| 文件 / 模块 | 动作 | 决策 |
+|-------------|------|------|
+| `src/ui/app_state.rs` | snapshot registry、semantic queue、handle lookup、owner-thread 校验与失效队列引用 | #145 #147 |
+| `src/ui/component_handle.rs` | live handle 与 lookup handle 的 `id`、`snapshot`、getter、`invalidate`、`emit` | #145 #147 |
+| `src/ui/component_snapshot.rs` | `ComponentConfigSnapshot`、`SnapshotFields`、内置组件静态配置提取与 custom snapshot | #146 #151 #152 |
+| `src/ui/core/widget/tree_core.rs` | mount/unmount/register/unregister snapshot；root replace 清理 stale snapshot 与 manager override | #145 #146 |
+| `src/ui/core/widget/tree_dirty.rs` | State paint binding 与 AppState lookup handle invalidate 均走窄 Paint | #105 #145 #147 |
+| `src/tests/ui/event.rs`、`src/tests/ui/component_snapshot.rs`、`src/tests/ui/core/widget/tree_core.rs` | 覆盖 generation key、snapshot getter、lookup emit drain、unmount 不可读与窄 Paint | #145–#152 |
+
+---
+
 ## 维护
 
 - 阶段划分或原则变更 → 同步 [decisions.md](decisions.md) #154（或 #160+ 新决策）与本文件。
 - 新增/完成某阶段文件级任务 → 更新本文件对应表 + [Main · 实现进度总览](Main.md#实现进度总览) 行。
-- P1+ 落地清单随阶段推进 **在本文件追加章节**（如 `## P1 落地清单`），勿回写 `systems/*.md` 正文。
+- 新阶段落地清单随阶段推进 **在本文件追加章节**，勿回写 `systems/*.md` 正文。

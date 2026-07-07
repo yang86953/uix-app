@@ -148,7 +148,7 @@ core ← native ← draw ← ui ← app
 | CLI / DI | [application · CLI](systems/application.md#cli-与-di) | — |
 | 源码目录详表 | [源码目录详表](#源码目录详表) | 各系统文档 |
 | 实现进度总览 | [实现进度总览](#实现进度总览) | decisions、各系统 · 实现注记 |
-| 落地计划 | [roadmap.md](roadmap.md) | P0–P5 路线图 · P0 文件清单 | #154 #157 · 写代码前 |
+| 落地计划 | [roadmap.md](roadmap.md) | P0–P5 路线图 · 阶段文件清单 | #154 #157 · 写代码前 |
 | 术语对照 | [术语对照（#101–#104）](#术语对照101104) | decisions #101–#104 |
 
 ---
@@ -307,7 +307,7 @@ flowchart TB
 | PointerMove 边界窄路径 | 框内不 hit_test | 已接：`InteractionManager.pressed_widget` / `DragManager.target` 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](decisions.md#d109) [#121](decisions.md#d121) |
 | Effect DeepIdle | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 Registry deadline 唤醒，不回退固定探活；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接 | #105 |
 
-落地计划（分阶段路线图、P0 文件清单）→ [`roadmap.md`](roadmap.md)（#154 #157）。
+落地计划（分阶段路线图、阶段文件清单）→ [`roadmap.md`](roadmap.md)（#154 #157）。
 
 ---
 
