@@ -66,13 +66,13 @@ impl BoxModel {
 /// # Margin 参与布局
 ///
 /// `margin` 占用了主轴和交叉轴的空间。布局引擎计算子节点位置时：
-/// - 主轴方向：子节点的占位 = preferred_size.main + margin.main_axis_sum
+/// - 主轴方向：子节点的占位 = measured_size.main + margin.main_axis_sum
 /// - 分配 frame 时：子节点起始位置 = cursor + margin.start (主轴方向)
 /// - 分配 frame 时：交叉轴起始位置 = cross_offset + margin.cross_start
 #[derive(Debug, Clone)]
 pub struct LayoutChild {
     pub id: ComponentId,
-    pub preferred_size: Size,
+    pub measured_size: Size,
     pub flex_grow: f32,
     pub flex_shrink: f32,
     /// 外边距——参与布局计算，推开兄弟节点
@@ -86,10 +86,10 @@ pub struct LayoutChild {
 }
 
 impl LayoutChild {
-    pub fn new(id: ComponentId, preferred_size: Size) -> Self {
+    pub fn new(id: ComponentId, measured_size: Size) -> Self {
         Self {
             id,
-            preferred_size,
+            measured_size,
             flex_grow: 0.0,
             flex_shrink: 1.0,
             margin: crate::core::EdgeInsets::zero(),
@@ -268,7 +268,7 @@ impl LayoutEngine for FlexLayout {
         }
 
         // 标准 FlexBox 模式
-        let child_sizes: Vec<Size> = children.iter().map(|c| c.preferred_size).collect();
+        let child_sizes: Vec<Size> = children.iter().map(|c| c.measured_size).collect();
 
         let flex_children: Vec<FlexChild> = children
             .iter()
@@ -332,9 +332,9 @@ fn overflow_layout(
         .iter()
         .map(|c| {
             let pref = if is_row {
-                c.preferred_size.w
+                c.measured_size.w
             } else {
-                c.preferred_size.h
+                c.measured_size.h
             };
             pref.max(0.0)
         })
@@ -357,9 +357,9 @@ fn overflow_layout(
     for i in 0..count {
         let main = main_sizes[i];
         let cross_size = if is_row {
-            children[i].preferred_size.h
+            children[i].measured_size.h
         } else {
-            children[i].preferred_size.w
+            children[i].measured_size.w
         };
 
         let child_cross = if engine.align == AlignItems::Stretch {
@@ -487,7 +487,7 @@ impl LayoutEngine for GridLayout {
                 cell: c.grid_cell,
                 col_span: c.grid_col_span,
                 row_span: c.grid_row_span,
-                preferred_size: c.preferred_size,
+                preferred_size: c.measured_size,
                 align: None,
                 justify: None,
             })
@@ -537,7 +537,7 @@ pub fn child_from_tree(component_id: ComponentId, tree: &WidgetTree) -> LayoutCh
 
     LayoutChild {
         id: component_id,
-        preferred_size: Size::new(pref.w, h),
+        measured_size: Size::new(pref.w, h),
         flex_grow: grow,
         flex_shrink: shrink,
         margin: crate::core::EdgeInsets::zero(),
