@@ -1,5 +1,5 @@
-use crate::core::Rect;
-use crate::ui::traits::{WidgetAnimation, WidgetCapabilities, WidgetComponent};
+use crate::core::{Constraints, Rect, Size};
+use crate::ui::traits::{WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetLayout};
 use crate::ui::{ProgressBar, WidgetCore, WidgetTree};
 
 #[test]
@@ -10,6 +10,15 @@ fn progress_bar_advertises_animation_capability() {
         .capabilities()
         .contains(WidgetCapabilities::ANIMATION));
     assert!(progress.as_animation().is_some());
+}
+
+#[test]
+fn measure_clamps_progress_size() {
+    let measured = ProgressBar::new()
+        .size(200.0, 8.0)
+        .measure(Constraints::loose(Size::new(120.0, 6.0)));
+
+    assert_eq!(measured, Size::new(120.0, 6.0));
 }
 
 #[test]

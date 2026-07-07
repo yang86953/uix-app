@@ -1,5 +1,5 @@
-use crate::core::Rect;
-use crate::ui::traits::{WidgetAnimation, WidgetCapabilities, WidgetComponent};
+use crate::core::{Constraints, Rect, Size};
+use crate::ui::traits::{WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetLayout};
 use crate::ui::{Spin, WidgetCore, WidgetTree};
 
 #[test]
@@ -8,6 +8,15 @@ fn spin_advertises_animation_capability() {
 
     assert!(spin.capabilities().contains(WidgetCapabilities::ANIMATION));
     assert!(spin.as_animation().is_some());
+}
+
+#[test]
+fn measure_clamps_spin_size() {
+    let measured = Spin::new()
+        .large()
+        .measure(Constraints::loose(Size::new(24.0, 30.0)));
+
+    assert_eq!(measured, Size::new(24.0, 30.0));
 }
 
 #[test]
