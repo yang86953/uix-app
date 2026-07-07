@@ -131,7 +131,8 @@ impl WidgetTree {
             OverlayEntry::new(owner, OverlayKind::ContextMenu)
                 .bounds(Rect::new(pos.x, pos.y, 160.0, 160.0))
                 .z_index(1200)
-                .dismiss_on_outside(true),
+                .dismiss_on_outside(true)
+                .managed(true),
         );
         self.invalidate_paint(owner);
     }
@@ -488,8 +489,12 @@ impl WidgetTree {
                 }
             }
             SystemEvent::FileDrop { files, position } => {
-                // 文件拖放优先分发给命中节点，否则交给 root。
-                if let Some(target) = self.hit_test(*position).or(self.root_id) {
+                // 文件拖放优先分发给 overlay 命中节点，否则交给主树/root。
+                if let Some(target) = self
+                    .overlay_target_at(*position)
+                    .or_else(|| self.hit_test(*position))
+                    .or(self.root_id)
+                {
                     let result = self.dispatch_to(target, event);
                     let _ = self.dispatch_semantic(SemanticEvent::file_drop(
                         target,

@@ -134,8 +134,7 @@ component! {
         Some(
             crate::ui::OverlayEntry::new(id, crate::ui::OverlayKind::Popover)
                 .bounds(Rect::new(px, py, pw, ph))
-                .z_index(950)
-                .managed(true),
+                .z_index(950),
         )
     }
 

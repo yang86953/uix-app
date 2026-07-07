@@ -1499,6 +1499,75 @@ fn layout_registers_visible_modal_overlay() {
     assert_eq!(top.kind(), OverlayKind::Modal);
     assert!(top.is_modal());
     assert!(top.traps_focus());
+    assert!(!top.is_managed());
+}
+
+#[test]
+fn layout_rebuilds_widget_overlay_without_duplicates() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let modal = tree.add_child(root_id, Box::new(Modal::new("Dialog").show().overlay(true)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+
+    tree.layout();
+    tree.layout();
+
+    let modal_entries = tree
+        .overlay_stack()
+        .iter()
+        .filter(|entry| entry.owner() == modal && entry.kind() == OverlayKind::Modal)
+        .count();
+    assert_eq!(modal_entries, 1);
+}
+
+#[test]
+fn layout_preserves_managed_overlay_entries_between_rebuilds() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let modal = tree.add_child(root_id, Box::new(Modal::new("Dialog").show().overlay(true)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    let managed_id = tree.overlay_stack_mut().push_entry(
+        OverlayEntry::new(root_id, OverlayKind::ContextMenu)
+            .bounds(Rect::new(10.0, 10.0, 80.0, 80.0))
+            .z_index(1200)
+            .managed(true),
+    );
+
+    tree.layout();
+    tree.layout();
+
+    assert!(tree
+        .overlay_stack()
+        .iter()
+        .any(|entry| entry.id() == managed_id && entry.is_managed()));
+    let modal_entries = tree
+        .overlay_stack()
+        .iter()
+        .filter(|entry| entry.owner() == modal && entry.kind() == OverlayKind::Modal)
+        .count();
+    assert_eq!(modal_entries, 1);
+}
+
+#[test]
+fn layout_discards_unmanaged_stale_overlay_entries() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.overlay_stack_mut().push_entry(
+        OverlayEntry::new(root_id, OverlayKind::Popover)
+            .bounds(Rect::new(10.0, 10.0, 80.0, 80.0))
+            .z_index(900),
+    );
+
+    tree.layout();
+
+    assert!(tree.overlay_stack().is_empty());
 }
 
 #[test]
@@ -2031,6 +2100,7 @@ fn right_pointer_up_opens_context_menu_overlay_by_default() {
     assert_eq!(top.owner(), root_id);
     assert_eq!(top.kind(), OverlayKind::ContextMenu);
     assert!(top.dismisses_on_outside());
+    assert!(top.is_managed());
     assert!(top.bounds_rect().unwrap().contains(pos));
 }
 
@@ -2224,4 +2294,39 @@ fn file_drop_emits_semantic_event_for_hit_target() {
         &*files.borrow(),
         &vec!["a.txt".to_string(), "b.txt".to_string()]
     );
+}
+
+#[test]
+fn file_drop_targets_overlay_owner_before_main_tree() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
+    let owner = tree.add_child(root_id, Box::new(SpyWidget::new(20.0, 20.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 200.0, 200.0));
+    tree.get_mut(owner)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 20.0, 20.0));
+    tree.overlay_stack_mut().push_entry(
+        OverlayEntry::new(owner, OverlayKind::Popover)
+            .bounds(Rect::new(50.0, 50.0, 80.0, 80.0))
+            .z_index(900)
+            .managed(true),
+    );
+
+    let files = Rc::new(RefCell::new(Vec::<String>::new()));
+    let files_for_handler = files.clone();
+    tree.handler_table()
+        .on(owner, crate::ui::SemanticKind::FileDrop, move |event| {
+            if let Some((payload, _position)) = event.file_drop_payload() {
+                *files_for_handler.borrow_mut() = payload.to_vec();
+            }
+        });
+
+    tree.dispatch_event(&SystemEvent::FileDrop {
+        files: vec!["overlay.txt".to_string()],
+        position: Point::new(70.0, 70.0),
+    });
+
+    assert_eq!(&*files.borrow(), &vec!["overlay.txt".to_string()]);
 }
