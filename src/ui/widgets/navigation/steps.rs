@@ -167,6 +167,11 @@ impl Steps {
         self.steps.len()
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.steps = next.steps;
+        self.direction = next.direction;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Steps {
             steps: self.steps.clone(),

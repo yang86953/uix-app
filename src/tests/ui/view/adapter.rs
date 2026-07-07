@@ -625,6 +625,264 @@ fn reconcile_dropdown_preserves_open_state_and_syncs_items() {
 }
 
 #[test]
+fn reconcile_menu_preserves_active_key_and_syncs_items() {
+    use crate::ui::widgets::{Menu, MenuItem, MenuMode};
+
+    let old_items = vec![
+        MenuItem {
+            key: "a".to_string(),
+            label: "A".to_string(),
+            icon: String::new(),
+            disabled: false,
+        },
+        MenuItem {
+            key: "b".to_string(),
+            label: "B".to_string(),
+            icon: String::new(),
+            disabled: false,
+        },
+    ];
+    let new_items = vec![MenuItem {
+        key: "c".to_string(),
+        label: "C".to_string(),
+        icon: "home".to_string(),
+        disabled: true,
+    }];
+    let mut tree =
+        ViewAdapter::build_nodes(ViewNode::leaf(Menu::new().items(old_items).active_key("a")));
+    let root_id = tree.root_id().expect("menu root should exist");
+    tree.get_mut(root_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<Menu>()
+        .unwrap()
+        .set_active_key("b");
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Menu::new()
+                .items(new_items)
+                .mode(MenuMode::Vertical)
+                .item_height(44.0),
+        ),
+    );
+
+    let menu = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Menu>()
+        .unwrap();
+    assert_eq!(menu.get_active_key(), "b");
+    assert!(matches!(
+        menu.snapshot_fields(),
+        SnapshotFields::Menu {
+            items,
+            mode: MenuMode::Vertical,
+            item_h: 44.0,
+        } if items.len() == 1 && items[0].key == "c" && items[0].disabled
+    ));
+}
+
+#[test]
+fn reconcile_tabs_preserves_active_index_and_syncs_tabs() {
+    use crate::ui::widgets::{Tab, TabPosition, Tabs};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Tabs::new().tab("One", "one").tab("Two", "two").active(1),
+    ));
+    let root_id = tree.root_id().expect("tabs root should exist");
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Tabs::new()
+                .tabs(vec![
+                    Tab {
+                        label: "First".to_string(),
+                        key: "first".to_string(),
+                    },
+                    Tab {
+                        label: "Second".to_string(),
+                        key: "second".to_string(),
+                    },
+                    Tab {
+                        label: "Third".to_string(),
+                        key: "third".to_string(),
+                    },
+                ])
+                .position(TabPosition::Bottom)
+                .size(520.0, 260.0),
+        ),
+    );
+
+    let tabs = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Tabs>()
+        .unwrap();
+    assert_eq!(tabs.active_index(), 1);
+    assert!(matches!(
+        tabs.snapshot_fields(),
+        SnapshotFields::Tabs {
+            tabs,
+            position: TabPosition::Bottom,
+            fixed_width: Some(520.0),
+            fixed_height: Some(260.0),
+            ..
+        } if tabs.len() == 3 && tabs[1].key == "second"
+    ));
+}
+
+#[test]
+fn reconcile_pagination_preserves_current_page_and_syncs_config() {
+    use crate::ui::widgets::Pagination;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Pagination::new(100, 10).current(2)));
+    let root_id = tree.root_id().expect("pagination root should exist");
+    tree.get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Pagination>()
+        .unwrap()
+        .set_current(4);
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Pagination::new(240, 20)
+                .show_size_changer(true)
+                .show_total(false)
+                .item_size(36.0)
+                .page_size_options(vec![10, 20, 40]),
+        ),
+    );
+
+    let pagination = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Pagination>()
+        .unwrap();
+    assert_eq!(pagination.get_current(), 4);
+    assert_eq!(pagination.total_pages(), 12);
+    assert!(matches!(
+        pagination.snapshot_fields(),
+        SnapshotFields::Pagination {
+            total: 240,
+            page_size: 20,
+            show_size_changer: true,
+            show_total: false,
+            size: 36.0,
+            page_size_options,
+        } if page_size_options == vec![10, 20, 40]
+    ));
+}
+
+#[test]
+fn reconcile_anchor_preserves_active_index_and_syncs_items() {
+    use crate::ui::widgets::{Anchor, AnchorItem};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Anchor::new(vec![
+        AnchorItem::new("A", "#a"),
+        AnchorItem::new("B", "#b"),
+    ])));
+    let root_id = tree.root_id().expect("anchor root should exist");
+    {
+        let anchor = tree
+            .get_mut(root_id)
+            .unwrap()
+            .component_mut()
+            .as_any_mut()
+            .downcast_mut::<Anchor>()
+            .unwrap();
+        anchor.set_positions(vec![0.0, 100.0]);
+        anchor.update_active(150.0);
+        assert_eq!(anchor.active_index(), 1);
+    }
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Anchor::new(vec![
+                AnchorItem::new("First", "#first"),
+                AnchorItem::new("Second", "#second"),
+            ])
+            .set_offset_top(24.0)
+            .bg(Color::red()),
+        ),
+    );
+
+    let anchor = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Anchor>()
+        .unwrap();
+    assert_eq!(anchor.active_index(), 1);
+    assert_eq!(anchor.active_href(), "#second");
+    assert!(matches!(
+        anchor.snapshot_fields(),
+        SnapshotFields::Anchor {
+            items,
+            offset_top: 24.0,
+            bg_color: Some(bg),
+        } if items.len() == 2 && items[1].label == "Second" && bg == Color::red()
+    ));
+}
+
+#[test]
+fn reconcile_steps_preserves_current_step_and_syncs_steps() {
+    use crate::ui::widgets::{Step, StepStatus, Steps};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Steps::new(vec![Step::new("One"), Step::new("Two")]).current(1),
+    ));
+    let root_id = tree.root_id().expect("steps root should exist");
+    tree.get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Steps>()
+        .unwrap()
+        .set_current(1);
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(Steps::new(vec![
+            Step::new("Start").status(StepStatus::Finish),
+            Step::new("Middle").description("in progress"),
+            Step::new("Done"),
+        ])),
+    );
+
+    let steps = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Steps>()
+        .unwrap();
+    assert_eq!(steps.get_current(), 1);
+    assert_eq!(steps.step_count(), 3);
+    assert!(matches!(
+        steps.snapshot_fields(),
+        SnapshotFields::Steps { steps, direction: true }
+            if steps.len() == 3
+                && steps[0].status == StepStatus::Finish
+                && steps[1].description == "in progress"
+    ));
+}
+
+#[test]
 fn reconcile_same_type_scroll_view_preserves_offset() {
     use crate::native::traits::input::ScrollDirection;
     use crate::ui::widgets::ScrollView;
