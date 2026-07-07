@@ -86,7 +86,7 @@ ViewNode::new(widget, children)
 | `build(view)` | 捕获 → 新建 WidgetTree → expand → build |
 | `reconcile(tree, view)` | 增量更新或整树重建 |
 
-> **实现注记**：`reconcile` 已实现；单窗 `App::root(|| ...)` 会安装 session factory，`AppHandle::update_view` / `set_root` 与响应式 `State` 批次已接入帧末一次 reconcile。多窗独立路由待接。
+> **实现注记**：`reconcile` 已实现；单窗 `App::root(|| ...)` 会安装 session factory，`AppHandle::update_view` / `set_root` 与响应式 `State` 批次已接入帧末一次 reconcile。副窗 `WindowSession` bootstrap、`MainThreadQueue` / `update_view` root reconcile 消费、事件按 `window_id` 路由与运行期 frame drain 已接。
 
 ### 根节点决策
 
@@ -397,7 +397,7 @@ if session.reconcile_pending {
 | 多窗 | 各 session **独立** factory / `pending_root` / `reconcile_pending`（#148） |
 | layout | reconcile 后若结构变 → layout 标脏；仅 paint 变 → 窄 paint |
 
-> **实现注记**：单窗 `WindowSession` 已持有 `view_factory` / `pending_root` / `reconcile_pending`，`App::root(|| ...)` 会安装长期 factory；`AppHandle::update_view` 会经 MainThreadQueue 写入一次性 `pending_root`。响应式 `State` 批次会自动置位并在无 `pending_root` 时调用 factory；多窗独立路由仍待接。
+> **实现注记**：单窗 `WindowSession` 已持有 `view_factory` / `pending_root` / `reconcile_pending`，`App::root(|| ...)` 会安装长期 factory；`AppHandle::update_view` 会经 MainThreadQueue 写入一次性 `pending_root`。响应式 `State` 批次会自动置位并在无 `pending_root` 时调用 factory；副窗独立 `WindowSession`、MainThreadQueue / root reconcile 消费与运行期 frame drain 已接。
 
 ### 与 build 的关系
 
@@ -438,7 +438,7 @@ WindowSession A                    WindowSession B
 inspector_handle.update_view(|| inspector_view_v2());  // 仅 reconcile session B（#149）
 ```
 
-> **实现注记**：单窗 `update_view` 已接入主循环帧末 reconcile；多窗 reconcile / `window_id` 路由仍未接线。
+> **实现注记**：单窗 `update_view` 已接入主循环帧末 reconcile；副窗 `update_view` 已经按 `window_id` 路由到目标 session 的 MainThreadQueue，并在副窗运行期 frame drain 中消费。
 
 ---
 
@@ -490,7 +490,7 @@ State::set(value)
 
 落地 #150 时 **保留** 窄 rect 标脏；扩展为多 site，**禁止**全树 invalidate 替代。
 
-> **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(widget_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调。`window_id` session wake 仍待多窗路由接入。
+> **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(widget_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调；副窗 session 路由与运行期 frame drain 已接，外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接。
 
 ---
 

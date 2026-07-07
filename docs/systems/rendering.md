@@ -196,7 +196,7 @@ Bitmap 字体（内置）用于 debug / 回退；正常路径走系统字体栈�
 
 设计（#83）：`AnimationRegistry` 持有 active node 集合；主循环在 `tick_effects` **之前**调用 `tree.update(dt)`，由各 widget 推进 `Animatable`（见 [component · 动画](component.md#动画)、[application · 主循环](application.md#主循环)）。
 
-> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入；动画更新会按 widget 的 `animation_dirty_rect` 做窄 Paint 标脏，单窗 event loop 在仍有动画时登记下一帧 Registry deadline。具体内置组件动画源与多窗路由仍待接。
+> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入；动画更新会按 widget 的 `animation_dirty_rect` 做窄 Paint 标脏，单窗 event loop 在仍有动画时登记下一帧 Registry deadline。`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源与多窗运行期 frame drain 已接；其他过渡动画源仍待接。
 
 ---
 
