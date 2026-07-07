@@ -141,6 +141,16 @@ impl WidgetTree {
         if self.get(id).is_none() {
             return;
         }
+        let scroll = self.get(id).and_then(|node| {
+            let frame = node.frame();
+            node.scroll_delta_for_dirty()
+                .map(|(dx, dy)| (frame, dx, dy))
+        });
+        if let Some((frame, dx, dy)) = scroll {
+            if self.push_scroll_composite(frame, dx, dy) {
+                return;
+            }
+        }
         let rect = self.get(id).map(|node| {
             let frame = node.frame();
             let dirty = node.dirty_rect(frame);

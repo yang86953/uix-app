@@ -342,16 +342,23 @@ impl ScrollView {
     }
 
     pub fn set_scroll_x(&mut self, x: f32) {
+        let old_x = self.scroll_x;
         self.scroll_x = x.max(0.0);
+        self.push_scroll_delta(self.scroll_x - old_x, 0.0);
     }
 
     pub fn set_scroll_y(&mut self, y: f32) {
+        let old_y = self.scroll_y;
         self.scroll_y = y.max(0.0);
+        self.push_scroll_delta(0.0, self.scroll_y - old_y);
     }
 
     pub fn scroll_to_xy(&mut self, x: f32, y: f32) {
+        let old_x = self.scroll_x;
+        let old_y = self.scroll_y;
         self.scroll_x = x.max(0.0).min(self.max_scroll_x());
         self.scroll_y = y.max(0.0).min(self.max_scroll_y());
+        self.push_scroll_delta(self.scroll_x - old_x, self.scroll_y - old_y);
     }
 
     pub fn max_scroll_x(&self) -> f32 {
@@ -380,6 +387,15 @@ impl ScrollView {
             }
             None => 0.0,
         }
+    }
+
+    fn push_scroll_delta(&self, dx: f32, dy: f32) {
+        if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
+            return;
+        }
+        let current = self.scroll_delta_strip.get();
+        self.scroll_delta_strip
+            .set((current.0 + dx, current.1 + dy));
     }
 }
 

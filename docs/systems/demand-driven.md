@@ -641,7 +641,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；副窗创建、独立 `WindowSession` bootstrap、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#116](../decisions.md#d116) |
 | 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入主循环；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#118](../decisions.md#d118) |
 | 每窗独立状态 | 每窗独立 DeepIdle/Active | 单窗 WindowSession 与副窗运行期 frame drain 已写回三态；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#110](../decisions.md#d110) |
-| Composite scroll | Composite + memmove | Wheel → ScrollView 已接 exposed strip + `scroll_region`；其他滚动来源待接 | [#107](../decisions.md#d107) |
+| Composite scroll | Composite + memmove | Wheel、滚动条拖拽与程序化 ScrollView 滚动已接 exposed strip + `scroll_region`；其他滚动来源待接 | [#107](../decisions.md#d107) |
 | PicturePolicy 自动推断 | 元数据 + 子树信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 首批 Eligible，默认 Never | [#122](../decisions.md#d122) [#129](../decisions.md#d129) |
 | Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer、单窗 AppTimer、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源与 IME composition session 已托管；其他过渡动画源待接 | [#124](../decisions.md#d124) |
 | follow_system_theme opt-in | false 默认；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](../decisions.md#d125) |
