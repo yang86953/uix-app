@@ -1,8 +1,9 @@
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, FillRule, PathBuilder, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 /// Popconfirm 弹出位置。
@@ -30,8 +31,12 @@ define_widget! {
         transition_dirty: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(80.0, 28.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -246,6 +251,21 @@ impl Popconfirm {
             200.0,
             ph,
         )
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(80.0, 28.0)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Popconfirm {
+            title: self.title.clone(),
+            confirm_text: self.confirm_text.clone(),
+            cancel_text: self.cancel_text.clone(),
+            placement: self.placement,
+            arrow: self.arrow,
+            icon: self.icon,
+        }
     }
 }
 

@@ -8,6 +8,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::system::StatusLevel;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -170,6 +171,12 @@ impl Notification {
 
     fn intrinsic_size(&self) -> Size {
         Size::zero()
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Notification {
+            placement: self.placement,
+        }
     }
 }
 

@@ -5,14 +5,18 @@ use crate::core::EdgeInsets;
 use crate::draw::spatial::PhysicalUnit;
 use crate::draw::Color;
 use crate::native::traits::input::ControlSize;
+use crate::native::traits::system::StatusLevel;
 use crate::ui::layout::{AlignItems, FlexDirection, GridTrack, JustifyContent};
 use crate::ui::style::{Style, StyleSet};
 use crate::ui::widget::WidgetId;
 use crate::ui::widgets::{
-    Avatar, Badge, BadgeStatus, Button, Calendar, Card, Checkbox, Container, Divider,
-    DividerDirection, DividerOrientation, Empty, FloatButton, Grid, Icon, Image, Input,
-    InputNumber, Label, Radio, RadioDirection, Rate, Skeleton, SkeletonShape, Slider, Space,
-    SpaceSize, Switch, Tag, TagColor, Timeline, TimelineItem, Typography, TypographyType,
+    Alert, Avatar, Badge, BadgeStatus, Button, Calendar, Card, Checkbox, Container, Divider,
+    DividerDirection, DividerOrientation, Drawer, DrawerPlacement, Empty, FloatButton, Grid, Icon,
+    Image, Input, InputNumber, Label, Message, MessagePlacement, Modal, NotifPlacement,
+    Notification, Popconfirm, PopconfirmPlacement, Popover, PopoverPlacement, PopoverTrigger,
+    ProgressBar, ProgressMode, ProgressType, Radio, RadioDirection, Rate, Skeleton, SkeletonShape,
+    Slider, Space, SpaceSize, Spin, SpinSize, Switch, Tag, TagColor, Timeline, TimelineItem,
+    Tooltip, TooltipPlacement, TriggerMode, Typography, TypographyType,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -244,6 +248,84 @@ pub enum SnapshotFields {
         x: f32,
         y: f32,
     },
+    Alert {
+        message: String,
+        description: String,
+        type_: StatusLevel,
+        closable: bool,
+        show_icon: bool,
+    },
+    Message {
+        placement: MessagePlacement,
+    },
+    Notification {
+        placement: NotifPlacement,
+    },
+    ProgressBar {
+        progress: f32,
+        mode: ProgressMode,
+        stroke_color: Option<Color>,
+        track_color: Option<Color>,
+        height: f32,
+        width: f32,
+        round: bool,
+        progress_type: ProgressType,
+    },
+    Spin {
+        size: SpinSize,
+        color: Option<Color>,
+        spinning: bool,
+        tip: String,
+        wrapper_mode: bool,
+    },
+    Tooltip {
+        text: String,
+        placement: TooltipPlacement,
+        trigger: TriggerMode,
+        bg_color: Option<Color>,
+        text_color: Option<Color>,
+        delay_ms: u32,
+        timer_id: u32,
+        arrow: bool,
+    },
+    Popover {
+        title: String,
+        content: String,
+        placement: PopoverPlacement,
+        trigger: PopoverTrigger,
+        arrow: bool,
+    },
+    Popconfirm {
+        title: String,
+        confirm_text: String,
+        cancel_text: String,
+        placement: PopconfirmPlacement,
+        arrow: bool,
+        icon: bool,
+    },
+    Modal {
+        title: String,
+        width: f32,
+        height: f32,
+        modal_size: ControlSize,
+        closable: bool,
+        mask_closable: bool,
+        footer_visible: bool,
+        centered: bool,
+        overlay: bool,
+    },
+    Drawer {
+        title: String,
+        width: f32,
+        height: f32,
+        drawer_size: ControlSize,
+        placement: DrawerPlacement,
+        closable: bool,
+        mask_closable: bool,
+        mask: bool,
+        footer_visible: bool,
+        extra: String,
+    },
     Container {
         style: Style,
     },
@@ -337,6 +419,36 @@ pub fn snapshot_fields_from_any(component: &dyn Any) -> SnapshotFields {
     }
     if let Some(float_button) = component.downcast_ref::<FloatButton>() {
         return float_button.snapshot_fields();
+    }
+    if let Some(alert) = component.downcast_ref::<Alert>() {
+        return alert.snapshot_fields();
+    }
+    if let Some(message) = component.downcast_ref::<Message>() {
+        return message.snapshot_fields();
+    }
+    if let Some(notification) = component.downcast_ref::<Notification>() {
+        return notification.snapshot_fields();
+    }
+    if let Some(progress) = component.downcast_ref::<ProgressBar>() {
+        return progress.snapshot_fields();
+    }
+    if let Some(spin) = component.downcast_ref::<Spin>() {
+        return spin.snapshot_fields();
+    }
+    if let Some(tooltip) = component.downcast_ref::<Tooltip>() {
+        return tooltip.snapshot_fields();
+    }
+    if let Some(popover) = component.downcast_ref::<Popover>() {
+        return popover.snapshot_fields();
+    }
+    if let Some(popconfirm) = component.downcast_ref::<Popconfirm>() {
+        return popconfirm.snapshot_fields();
+    }
+    if let Some(modal) = component.downcast_ref::<Modal>() {
+        return modal.snapshot_fields();
+    }
+    if let Some(drawer) = component.downcast_ref::<Drawer>() {
+        return drawer.snapshot_fields();
     }
     if let Some(container) = component.downcast_ref::<Container>() {
         return container.snapshot_fields();

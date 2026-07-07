@@ -1,9 +1,10 @@
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, SlideDirection, TransitionPlayer};
+use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,15 +34,12 @@ define_widget! {
         transition_dirty: bool,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        if self.is_present() {
-            match self.placement {
-                DrawerPlacement::Right | DrawerPlacement::Left => Size::new(self.width, 600.0),
-                DrawerPlacement::Top | DrawerPlacement::Bottom => Size::new(400.0, self.height),
-            }
-        } else {
-            Size::zero()
-        }
+        self.intrinsic_size()
     }
 
     visible => (&self) -> bool { self.is_present() }
@@ -387,6 +385,32 @@ impl Drawer {
             DrawerPlacement::Left => SlideDirection::Right,
             DrawerPlacement::Top => SlideDirection::Down,
             DrawerPlacement::Bottom => SlideDirection::Up,
+        }
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        if self.is_present() {
+            match self.placement {
+                DrawerPlacement::Right | DrawerPlacement::Left => Size::new(self.width, 600.0),
+                DrawerPlacement::Top | DrawerPlacement::Bottom => Size::new(400.0, self.height),
+            }
+        } else {
+            Size::zero()
+        }
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Drawer {
+            title: self.title.clone(),
+            width: self.width,
+            height: self.height,
+            drawer_size: self.drawer_size,
+            placement: self.placement,
+            closable: self.closable,
+            mask_closable: self.mask_closable,
+            mask: self.mask,
+            footer_visible: self.footer_visible,
+            extra: self.extra.clone(),
         }
     }
 }

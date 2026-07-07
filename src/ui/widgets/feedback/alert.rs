@@ -5,6 +5,7 @@ use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::system::StatusLevel;
+use crate::ui::SnapshotFields;
 use crate::ui::WidgetTree;
 
 define_widget! {
@@ -90,6 +91,16 @@ impl Alert {
                 18.0
             };
         Size::new(300.0, h)
+    }
+
+    pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
+        SnapshotFields::Alert {
+            message: self.message.clone(),
+            description: self.description.clone(),
+            type_: self.type_,
+            closable: self.closable,
+            show_icon: self._show_icon,
+        }
     }
 }
 
