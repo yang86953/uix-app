@@ -88,6 +88,7 @@ pub(crate) struct FlexInput {
     pub container: Rect,
     pub children: Vec<FlexChild>,
     pub child_sizes: Vec<Size>,
+    pub child_margins: Vec<EdgeInsets>,
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
 }
@@ -102,6 +103,7 @@ impl Default for FlexInput {
             container: Rect::zero(),
             children: Vec::new(),
             child_sizes: Vec::new(),
+            child_margins: Vec::new(),
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
         }

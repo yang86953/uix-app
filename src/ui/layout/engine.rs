@@ -270,6 +270,7 @@ impl LayoutEngine for FlexLayout {
 
         // 标准 FlexBox 模式
         let child_sizes: Vec<Size> = children.iter().map(|c| c.measured_size).collect();
+        let child_margins: Vec<_> = children.iter().map(|c| c.margin).collect();
 
         let flex_children: Vec<FlexChild> = children
             .iter()
@@ -288,6 +289,7 @@ impl LayoutEngine for FlexLayout {
             container: content_rect,
             children: flex_children,
             child_sizes,
+            child_margins,
             justify_content: self.justify,
             align_items: self.align,
         };
@@ -341,7 +343,12 @@ fn overflow_layout(
         })
         .collect();
 
-    let total_main: f32 = main_sizes.iter().sum::<f32>() + gap * (count as f32 - 1.0).max(0.0);
+    let total_margin_main: f32 = children
+        .iter()
+        .map(|child| child.margin_main(engine.direction))
+        .sum();
+    let total_main: f32 =
+        main_sizes.iter().sum::<f32>() + total_margin_main + gap * (count as f32 - 1.0).max(0.0);
     let total_size = if is_row {
         Size::new(total_main, container_cross)
     } else {
@@ -362,9 +369,14 @@ fn overflow_layout(
         } else {
             children[i].measured_size.w
         };
+        let margin_cross = if is_row {
+            children[i].margin.vertical()
+        } else {
+            children[i].margin.horizontal()
+        };
 
         let child_cross = if engine.align == AlignItems::Stretch {
-            container_cross
+            (container_cross - margin_cross).max(0.0)
         } else {
             cross_size
         };
@@ -378,15 +390,15 @@ fn overflow_layout(
 
         let (x, y, w, h) = if is_row {
             (
-                content_rect.x + cursor,
-                content_rect.y + cross_offset,
+                content_rect.x + cursor + children[i].margin_start(engine.direction),
+                content_rect.y + cross_offset + children[i].margin_cross_start(engine.direction),
                 main,
                 child_cross,
             )
         } else {
             (
-                content_rect.x + cross_offset,
-                content_rect.y + cursor,
+                content_rect.x + cross_offset + children[i].margin_cross_start(engine.direction),
+                content_rect.y + cursor + children[i].margin_start(engine.direction),
                 child_cross,
                 main,
             )
@@ -394,10 +406,11 @@ fn overflow_layout(
 
         positions.push(Rect::new(x, y, w, h));
 
+        let occupied_main = main + children[i].margin_main(engine.direction);
         if is_reverse {
-            cursor -= main + gap;
+            cursor -= occupied_main + gap;
         } else {
-            cursor += main + gap;
+            cursor += occupied_main + gap;
         }
     }
 
@@ -506,8 +519,22 @@ impl LayoutEngine for GridLayout {
             justify_items: self.justify_items,
         });
 
+        let positions = output
+            .child_rects
+            .into_iter()
+            .zip(children.iter())
+            .map(|(rect, child)| {
+                Rect::new(
+                    rect.x + child.margin.left,
+                    rect.y + child.margin.top,
+                    (rect.w - child.margin.horizontal()).max(0.0),
+                    (rect.h - child.margin.vertical()).max(0.0),
+                )
+            })
+            .collect();
+
         LayoutOutput {
-            positions: output.child_rects,
+            positions,
             total_size: output.total_size,
         }
     }
@@ -535,13 +562,17 @@ pub fn child_from_tree(component_id: ComponentId, tree: &WidgetTree) -> LayoutCh
         .and_then(|c| c.as_layout())
         .map(|l| l.flex_shrink())
         .unwrap_or(1.0);
+    let margin = node
+        .and_then(|c| c.as_layout())
+        .map(|l| l.layout_margin())
+        .unwrap_or_default();
 
     LayoutChild {
         id: component_id,
         measured_size: Size::new(pref.w, h),
         flex_grow: grow,
         flex_shrink: shrink,
-        margin: crate::core::EdgeInsets::zero(),
+        margin,
         grid_cell: 0,
         grid_column_span: 1,
         grid_row_span: 1,

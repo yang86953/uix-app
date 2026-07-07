@@ -20,7 +20,7 @@
 //! }
 //! ```
 
-use crate::core::{ComponentId, Constraints, Rect, Size};
+use crate::core::{ComponentId, Constraints, EdgeInsets, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
@@ -127,6 +127,9 @@ pub trait WidgetLayout: WidgetComponent {
     }
     fn flex_shrink(&self) -> f32 {
         0.0
+    }
+    fn layout_margin(&self) -> EdgeInsets {
+        EdgeInsets::zero()
     }
     fn layout_children(
         &self,
