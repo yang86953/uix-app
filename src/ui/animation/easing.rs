@@ -142,7 +142,7 @@ fn sample_cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64, t: f64) -> f64 {
             break;
         }
     }
-    if !converged || guess < 0.0 || guess > 1.0 {
+    if !converged || !(0.0..=1.0).contains(&guess) {
         // 二分法回退
         let mut lo = 0.0;
         let mut hi = 1.0;

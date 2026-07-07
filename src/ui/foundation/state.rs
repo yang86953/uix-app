@@ -33,7 +33,7 @@ struct ReconcileBindSite {
 
 thread_local! {
     static TRACKING_DEPS: RefCell<Option<Vec<EffectDependency>>> =
-        RefCell::new(None);
+        const { RefCell::new(None) };
 }
 
 struct EffectDependency {
@@ -45,12 +45,13 @@ struct EffectDependency {
 // 当前 View 的脏标记回调——State::new 创建时自动读取并绑定。
 thread_local! {
     static CURRENT_VIEW_DIRTY_FN: RefCell<Option<Arc<dyn Fn() + Send + Sync>>> =
-        RefCell::new(None);
+        const { RefCell::new(None) };
 }
 
 // Phase 6：State 创建时暂存，供 DynamicLabel 等响应式 widget 绑定。
 thread_local! {
-    static PENDING_STATE_BINDS: RefCell<Vec<Arc<dyn StatePaintBind>>> = RefCell::new(Vec::new());
+    static PENDING_STATE_BINDS: RefCell<Vec<Arc<dyn StatePaintBind>>> =
+        const { RefCell::new(Vec::new()) };
 }
 
 // layout 后探测 DynamicLabel 闭包时捕获 `State::get()` 读取的实例。
@@ -64,12 +65,12 @@ thread_local! {
             ReconcileCallback,
             Vec<Arc<dyn StatePaintBind>>,
         )>,
-    > = RefCell::new(None);
+    > = const { RefCell::new(None) };
 }
 
 // View 构建期暂存的 Effect（build 后注册到 WidgetTree）。
 thread_local! {
-    static PENDING_EFFECTS: RefCell<Vec<Effect>> = RefCell::new(Vec::new());
+    static PENDING_EFFECTS: RefCell<Vec<Effect>> = const { RefCell::new(Vec::new()) };
 }
 
 static STATE_CAPTURE_ACTIVE: std::sync::atomic::AtomicBool =

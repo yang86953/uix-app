@@ -320,12 +320,14 @@ pub struct App {
     root_factory: Option<Arc<dyn Fn() -> ViewNode + Send + Sync>>,
     on_start: Option<Box<dyn FnOnce(AppHandle) + Send>>,
     on_window_start: Option<Arc<dyn Fn(AppHandle) + Send + Sync>>,
-    on_exit: Option<Box<dyn Fn(&UiEvent) -> bool>>,
+    on_exit: Option<ExitPredicate>,
     cli: Option<Cli>,
     container: Container,
     settings_path: Option<String>,
     exit_code: i32,
 }
+
+type ExitPredicate = Box<dyn Fn(&UiEvent) -> bool>;
 
 impl Default for App {
     fn default() -> Self {
@@ -860,13 +862,8 @@ fn create_secondary_window(
         }
     };
 
-    let mut session = WindowSession::from_root_factory_for_window(
-        window_id,
-        move || root(),
-        engine,
-        width,
-        height,
-    );
+    let mut session =
+        WindowSession::from_root_factory_for_window(window_id, root, engine, width, height);
     session.set_app_state(app_state.clone());
     session.set_app_timers(app_timers);
     session.set_main_thread_queue(main_thread_queue);

@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use crate::ui::WidgetId;
 
 thread_local! {
-    static CURRENT_PAINT_WIDGET: RefCell<Option<WidgetId>> = RefCell::new(None);
+    static CURRENT_PAINT_WIDGET: RefCell<Option<WidgetId>> = const { RefCell::new(None) };
 }
 
 /// 设置当前正在绘制的 widget id（合成器 paint 入口调用）。

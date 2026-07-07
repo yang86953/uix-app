@@ -361,10 +361,12 @@ impl SemanticEvent {
     }
 }
 
+type HandlerPredicate = dyn Fn(&SemanticEvent) -> bool + 'static;
+
 #[derive(Default)]
 pub struct HandlerOptions {
     pub once: bool,
-    pub when: Option<Box<dyn Fn(&SemanticEvent) -> bool + 'static>>,
+    pub when: Option<Box<HandlerPredicate>>,
 }
 
 impl HandlerOptions {

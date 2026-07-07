@@ -182,6 +182,17 @@ impl Window {
     }
 }
 
+impl Drop for Window {
+    fn drop(&mut self) {
+        if self.running {
+            if let Some(ref mut w) = self.window {
+                w.close();
+            }
+        }
+        self.running = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Window;
@@ -219,16 +230,5 @@ mod tests {
 
         assert_eq!(status, 0);
         assert_eq!(calls.get(), 1);
-    }
-}
-
-impl Drop for Window {
-    fn drop(&mut self) {
-        if self.running {
-            if let Some(ref mut w) = self.window {
-                w.close();
-            }
-        }
-        self.running = false;
     }
 }

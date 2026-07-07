@@ -2,21 +2,11 @@
 
 use crate::native::traits::input::ITextInput;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FakeTextInputState {
     pub active: bool,
     pub start_calls: usize,
     pub stop_calls: usize,
-}
-
-impl Default for FakeTextInputState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            start_calls: 0,
-            stop_calls: 0,
-        }
-    }
 }
 
 #[derive(Debug)]
