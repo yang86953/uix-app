@@ -32,7 +32,7 @@ fn measure(&self, constraints: Constraints) -> Size;
 
 在父级分配的 **content rect** 约束下测量 intrinsic size。旧 `preferred_size(engine)` 兼容桥已移除。
 
-### measure 与 preferred_size（#103）
+### measure 入口（#103）
 
 | | 设计（#29） | 当前实现 |
 |---|------------|----------|
@@ -59,7 +59,7 @@ fn measure(&self, constraints: Constraints) -> Size;
 ```rust
 LayoutChild {
     id: ComponentId,
-    preferred_size: Size,
+    measured_size: Size,
     flex_grow, flex_shrink,
     margin: EdgeInsets,
     grid_cell, grid_column_span, grid_row_span,
@@ -107,7 +107,7 @@ v1 支持（#53）。配置来自容器 **Style**（#81）：
 
 ### 算法概要（`layout/flex.rs`）
 
-1. 主轴分配 flex-basis（preferred_size）
+1. 主轴分配 flex-basis（measured_size）
 2. 剩余空间 flex-grow 分配 / 超出 flex-shrink（最多 3 轮 redistribution）
 3. 交叉轴 align（Stretch 拉伸至容器高/宽）
 4. Wrap 模式多行：每行独立 justify
