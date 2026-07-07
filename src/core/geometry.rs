@@ -60,6 +60,49 @@ impl Default for Size {
     }
 }
 
+/// Measurement constraints for widget intrinsic sizing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Constraints {
+    pub min: Size,
+    pub max: Size,
+    pub definite: Option<Size>,
+}
+
+impl Constraints {
+    pub const fn new(min: Size, max: Size, definite: Option<Size>) -> Self {
+        Self { min, max, definite }
+    }
+
+    pub const fn loose(max: Size) -> Self {
+        Self {
+            min: Size::zero(),
+            max,
+            definite: None,
+        }
+    }
+
+    pub const fn unconstrained() -> Self {
+        Self {
+            min: Size::zero(),
+            max: Size::infinite(),
+            definite: None,
+        }
+    }
+
+    pub fn clamp(&self, size: Size) -> Size {
+        Size::new(
+            size.w.max(self.min.w).min(self.max.w),
+            size.h.max(self.min.h).min(self.max.h),
+        )
+    }
+}
+
+impl Default for Constraints {
+    fn default() -> Self {
+        Self::unconstrained()
+    }
+}
+
 /// A rectangle with position and size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {

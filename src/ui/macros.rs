@@ -11,7 +11,7 @@
 /// impl_widget_component!(Button; Layout, Render, Event, Lifecycle; tab_index => 1);
 ///
 /// impl WidgetLayout for Button {
-///     fn preferred_size(&self, engine: Option<&dyn GraphicsEngine>) -> Size { ... }
+///     fn measure(&self, constraints: Constraints) -> Size { ... }
 /// }
 /// impl WidgetRender for Button {
 ///     fn render(&self, frame: Rect, ctx: &mut PaintContext, tree: &WidgetTree) { ... }

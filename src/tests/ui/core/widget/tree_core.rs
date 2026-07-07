@@ -1,6 +1,6 @@
 // WidgetTree unit tests.
 // Split out of `tree_core.rs` to keep implementation files manageable.
-use crate::core::Point;
+use crate::core::{Constraints, Point, Size};
 use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
 use crate::ui::{AppState, Label, Modal, OverlayEntry, OverlayKind, TextManager, Tooltip};
@@ -66,6 +66,30 @@ impl EventHandler for SpyWidget {
         *self.last_event.borrow_mut() = Some(event.clone());
         self.events.borrow_mut().push(event.clone());
         EventResult::Handled
+    }
+}
+
+struct MeasureOnlyWidget;
+
+impl WidgetComponent for MeasureOnlyWidget {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT)
+    }
+    crate::wc_upcast!(MeasureOnlyWidget; WidgetLayout);
+}
+
+impl WidgetLayout for MeasureOnlyWidget {
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(120.0, 80.0))
     }
 }
 
@@ -367,6 +391,17 @@ fn tree_set_root_returns_valid_id() {
     let id = tree.set_root(Box::new(SpyWidget::new(100.0, 50.0)));
     assert!(tree.get(id).is_some());
     assert_eq!(tree.root().unwrap().id(), id);
+}
+
+#[test]
+fn boxed_widget_preferred_size_uses_measure_without_engine() {
+    let boxed = BoxedWidget::new(Box::new(MeasureOnlyWidget));
+
+    assert_eq!(
+        boxed.measure(Constraints::loose(Size::new(100.0, 50.0))),
+        Size::new(100.0, 50.0)
+    );
+    assert_eq!(boxed.preferred_size(None), Size::new(120.0, 80.0));
 }
 
 #[test]

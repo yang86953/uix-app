@@ -7,7 +7,7 @@
 
 // core
 
-pub use crate::core::{EdgeInsets, Errc, Error, Point, Rect, Size, WindowId};
+pub use crate::core::{Constraints, EdgeInsets, Errc, Error, Point, Rect, Size, WindowId};
 
 // native
 
@@ -82,6 +82,7 @@ mod tests {
         assert_exported::<AppHandle>();
         assert_exported::<TimerHandle>();
         assert_exported::<ComponentHandle>();
+        assert_exported::<Constraints>();
         assert_exported::<SemanticEvent>();
         assert_exported::<ButtonBuilder>();
         assert_exported::<InputBuilder>();
