@@ -78,6 +78,7 @@ HashMap<WidgetId, Vec<HandlerEntry>>   // WidgetId（当前实现，#101）
 - `kind: SemanticKind`
 - `options: HandlerOptions` — `once`（#90）、`when` 谓词（#91、#120，**O(1) 纯函数**，禁止 I/O/alloc/读 State）
 - `handler: FnMut(&mut SemanticEvent)`
+- `with_state_capture(&State<T>)`：当前已公开，用于标记 handler 捕获的 State，使 Reconciler 能在指纹不变时复用稳定 generation；裸 `capture_fingerprint` 仍是内部实现细节。
 
 ### 多 handler 与 stop（#7、#68）
 

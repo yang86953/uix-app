@@ -69,6 +69,18 @@ impl WidgetNode {
         self.handlers.push(registration);
         self
     }
+    pub fn on_semantic_capture<T>(
+        mut self,
+        mut registration: HandlerRegistration,
+        state: &crate::ui::state::State<T>,
+    ) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        registration = registration.with_state_capture(state);
+        self.handlers.push(registration);
+        self
+    }
     pub fn with_handlers(mut self, handlers: Vec<HandlerRegistration>) -> Self {
         self.handlers = handlers;
         self

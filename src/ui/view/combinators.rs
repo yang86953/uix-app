@@ -403,9 +403,32 @@ impl ButtonBuilder {
         self
     }
 
+    pub fn on_click_capture<T, F>(mut self, state: &crate::ui::state::State<T>, mut f: F) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+        F: FnMut() + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(SemanticKind::Click, Box::new(move |_| f()))
+                .with_state_capture(state),
+        );
+        self
+    }
+
     pub fn on_click_event<F: FnMut(&mut SemanticEvent) + 'static>(mut self, f: F) -> Self {
         self.handlers
             .push(HandlerRegistration::new(SemanticKind::Click, Box::new(f)));
+        self
+    }
+
+    pub fn on_click_event_capture<T, F>(mut self, state: &crate::ui::state::State<T>, f: F) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+        F: FnMut(&mut SemanticEvent) + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(SemanticKind::Click, Box::new(f)).with_state_capture(state),
+        );
         self
     }
 }
@@ -471,6 +494,25 @@ impl InputBuilder {
                 }
             }),
         ));
+        self
+    }
+
+    pub fn on_change_capture<T, F>(mut self, state: &crate::ui::state::State<T>, mut f: F) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+        F: FnMut(&str) + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(
+                SemanticKind::Change,
+                Box::new(move |event| {
+                    if let Some(value) = event.text_payload() {
+                        f(value);
+                    }
+                }),
+            )
+            .with_state_capture(state),
+        );
         self
     }
 }

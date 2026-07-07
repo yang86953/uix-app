@@ -3,7 +3,7 @@ use crate::draw::Color;
 use crate::ui::foundation::style::*;
 use crate::ui::theme::NeutralRole;
 
-// 鈹€鈹€ 榛樿鍊?/ 鏋勯€犲櫒 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Defaults / constructors
 
 #[test]
 fn style_default_all_fields() {
@@ -39,7 +39,7 @@ fn style_default_all_fields() {
     assert!(s.visible);
 }
 
-// 鈹€鈹€ 渚挎嵎棰勮 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Convenience presets
 
 #[test]
 fn style_button_default() {
@@ -90,7 +90,7 @@ fn style_grid_template_builders() {
     assert_eq!(s.grid_row_gap, 12.0);
 }
 
-// 鈹€鈹€ effective_bg 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// effective_bg
 
 #[test]
 fn effective_bg_pressed_returns_active() {
@@ -173,7 +173,7 @@ fn effective_bg_all_none_returns_none() {
     assert_eq!(s.effective_bg(false, false), None);
 }
 
-// 鈹€鈹€ 閾惧紡 Builder 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// Chained builder
 
 #[test]
 fn chain_builder_all_methods() {
@@ -231,7 +231,7 @@ fn chain_builder_all_methods() {
     assert!(!s.visible);
 }
 
-// 鈹€鈹€ apply 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// apply
 
 #[test]
 fn apply_non_default_overrides_default_preserved() {
@@ -308,7 +308,7 @@ fn with_style_full_replace() {
     assert_eq!(result.font_size, TypographyToken::Custom(20.0));
 }
 
-// 鈹€鈹€ StyleSet 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// StyleSet
 
 #[test]
 fn style_set_resolve_priority() {
@@ -387,7 +387,7 @@ fn button_presets_cover_focused_and_disabled_states() {
     }
 }
 
-// 鈹€鈹€ style! 瀹?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// style! macro
 
 #[test]
 fn style_macro_basic() {

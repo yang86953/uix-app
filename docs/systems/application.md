@@ -261,7 +261,7 @@ button().on_click(move || count.set(count.get() + 1));
 
 | 迁移 | 说明 |
 |------|------|
-| v1 现在 | `State<T>` 闭包捕获；`AppState` snapshot registry 与 lookup handle invalidate 已接，主窗与副窗共享同一 AppState；lookup handle 的 live `emit` dispatch 绑定待接 |
+| v1 现在 | `State<T>` 闭包捕获仍有效；显式 State capture handler 入口已接入 generation 复用路径；`AppState` snapshot registry 与 lookup handle invalidate 已接，主窗与副窗共享同一 AppState；lookup handle 的 live `emit` dispatch 绑定待接 |
 | 落地后 | 新组件优先 `ComponentHandle`；旧代码无需改即可运行 |
 | 零维护 | register/unregister 由框架 mount 路径自动完成（#145） |
 
