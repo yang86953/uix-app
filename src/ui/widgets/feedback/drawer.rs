@@ -357,8 +357,21 @@ impl Drawer {
         }
     }
 
-    fn is_present(&self) -> bool {
+    pub(crate) fn is_present(&self) -> bool {
         self.visible || self.closing
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.title = next.title;
+        self.width = next.width;
+        self.height = next.height;
+        self.drawer_size = next.drawer_size;
+        self.placement = next.placement;
+        self.closable = next.closable;
+        self.mask_closable = next.mask_closable;
+        self.mask = next.mask;
+        self.footer_visible = next.footer_visible;
+        self.extra = next.extra;
     }
 
     fn transition_opacity(&self) -> f32 {

@@ -1,4 +1,4 @@
-//! Dropdown widget — 下拉菜单。
+//! Dropdown widget.
 
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
@@ -9,8 +9,7 @@ use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
 component! {
-    /// Dropdown — 点击触发的下拉菜单。
-    /// 菜单在 render 末尾绘制为浮层，不触发布局偏移。
+    /// Click-triggered dropdown menu.
     pub struct Dropdown {
         label: String,
         items: Vec<String>,
@@ -48,13 +47,13 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        // 触发按钮（固定高度 32px）
         let btn_rect = Rect::new(frame.x, frame.y, frame.w, 32.0);
         ctx.fill_rect(btn_rect, ctx.tokens().color_primary(), r);
         ctx.text_center(&self.label, btn_rect, crate::draw::Color::white(), 13.0);
 
-        // 菜单作为浮层渲染（不影响布局定位）
-        if !self.is_present() { return; }
+        if !self.is_present() {
+            return;
+        }
         let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
         let bg = fade_color(ctx.tokens().color_bg_elevated(), opacity);
         let border = fade_color(ctx.tokens().color_border(), opacity);
@@ -63,9 +62,15 @@ component! {
         let menu_y = frame.y + 32.0;
         let menu_h = self.items.len() as f32 * 30.0;
         let menu_rect = Rect::new(frame.x, menu_y, frame.w, menu_h);
-        // 绘制浮层阴影
         let shadow = ctx.tokens().box_shadow_secondary();
-        ctx.draw_box_shadow(menu_rect, shadow.layer_1.2, shadow.layer_1.0, shadow.layer_1.1, shadow.layer_1.3, r);
+        ctx.draw_box_shadow(
+            menu_rect,
+            shadow.layer_1.2,
+            shadow.layer_1.0,
+            shadow.layer_1.1,
+            shadow.layer_1.3,
+            r,
+        );
         ctx.fill_rect(menu_rect, bg, r);
         ctx.stroke_rect(menu_rect, border, 1.0, r);
 
@@ -75,7 +80,6 @@ component! {
         }
     }
 
-    // 菜单展开时扩展 hit_test 区域，使浮层中的菜单项可点击
     hit_test_frame => (&self, frame: Rect) -> Rect {
         if self.is_present() {
             let menu_h = self.items.len() as f32 * 30.0;
@@ -123,7 +127,6 @@ impl Default for Dropdown {
 
 impl Dropdown {
     fn intrinsic_size(&self) -> Size {
-        // 固定为按钮高度，不随 open 变化，避免布局偏移
         Size::new(160.0, 32.0)
     }
 
@@ -137,6 +140,7 @@ impl Dropdown {
             transition_dirty: false,
         }
     }
+
     pub fn items(mut self, items: Vec<impl Into<String>>) -> Self {
         self.items = items.into_iter().map(|s| s.into()).collect();
         self
@@ -168,6 +172,11 @@ impl Dropdown {
         self.closing = true;
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.label = next.label;
+        self.items = next.items;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
