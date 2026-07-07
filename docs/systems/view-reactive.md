@@ -299,7 +299,7 @@ Effect 闭包 `'static`；禁止在 Effect 内直接操作 WidgetTree 或改 lay
 
 周期逻辑：**App Timer API**（#132）或 async→主线程 `State::set`。见 [application · App 定时 API](application.md#app-定时-api) · [demand-driven · UI 主循环 vs 后台](demand-driven.md#ui-主循环-vs-后台)。
 
-DeepIdle **不** `tick_effects`（[#105](decisions.md#d105)）。UiEvent 或 State 变更唤醒进入 Active 后，再检查依赖并执行 Effect。详见 [demand-driven · Effect 与 Theme](demand-driven.md#effect-与-theme)。
+DeepIdle **不** `tick_effects`（[#105](decisions.md#d105)）。State 变更会先标记依赖它的 Effect pending；UiEvent 或 State 变更唤醒进入 Active 后，仅 pending Effect 会执行。详见 [demand-driven · Effect 与 Theme](demand-driven.md#effect-与-theme)。
 
 ### 业务数据
 

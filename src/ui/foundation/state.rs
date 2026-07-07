@@ -1,9 +1,10 @@
 use std::any::TypeId;
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crate::core::Rect;
@@ -31,8 +32,14 @@ struct ReconcileBindSite {
 // 这些依赖的 generation 快照，后续 get() 时比对以判断是否需要重新计算。
 
 thread_local! {
-    static TRACKING_DEPS: RefCell<Option<Vec<Box<dyn Fn() -> u64 + Send + Sync>>>> =
+    static TRACKING_DEPS: RefCell<Option<Vec<EffectDependency>>> =
         RefCell::new(None);
+}
+
+struct EffectDependency {
+    slot_id: StateSlotId,
+    check_generation: Box<dyn Fn() -> u64 + Send + Sync>,
+    subscribe_pending: Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>,
 }
 
 // 当前 View 的脏标记回调——State::new 创建时自动读取并绑定。
@@ -258,7 +265,7 @@ pub fn clear_current_view_dirty_fn() {
 }
 
 /// 在当前线程启用依赖追踪，执行闭包后返回收集到的依赖 generation 检查器列表。
-fn collect_deps<F, R>(f: F) -> (R, Vec<Box<dyn Fn() -> u64 + Send + Sync>>)
+fn collect_deps<F, R>(f: F) -> (R, Vec<EffectDependency>)
 where
     F: FnOnce() -> R,
 {
@@ -273,7 +280,7 @@ where
 /// 将当前 State 注册到追踪上下文中（如果追踪已启用）。
 fn track_dep<F>(register: F)
 where
-    F: FnOnce() -> Box<dyn Fn() -> u64 + Send + Sync>,
+    F: FnOnce() -> EffectDependency,
 {
     TRACKING_DEPS.with(|deps| {
         let mut deps = deps.borrow_mut();
@@ -362,13 +369,25 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
     pub fn get(&self) -> T {
         // 将自身注册到活跃的追踪上下文中（如 Computed 计算期间）
         let self_clone = self.inner.clone();
-        track_dep(move || {
-            Box::new(move || {
+        let subscribe_inner = self.inner.clone();
+        let slot_id = self.slot_id();
+        track_dep(move || EffectDependency {
+            slot_id,
+            check_generation: Box::new(move || {
                 self_clone
                     .read()
                     .unwrap_or_else(|e| e.into_inner())
                     .generation
-            })
+            }),
+            subscribe_pending: Box::new(move |pending| {
+                subscribe_inner
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .watchers
+                    .push(Arc::new(move |_| {
+                        pending.store(true, Ordering::Release);
+                    }));
+            }),
         });
         try_capture_state_bind(self);
 
@@ -502,9 +521,9 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         let (initial, deps) = collect_deps(&f);
         let dep_pairs: Vec<_> = deps
             .into_iter()
-            .map(|check| {
-                let gen = check();
-                (check, gen)
+            .map(|dep| {
+                let gen = (dep.check_generation)();
+                (dep.check_generation, gen)
             })
             .collect();
 
@@ -544,9 +563,9 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             let (value, new_deps) = collect_deps(&self.compute_fn);
             let new_pairs: Vec<_> = new_deps
                 .into_iter()
-                .map(|check| {
-                    let gen = check();
-                    (check, gen)
+                .map(|dep| {
+                    let gen = (dep.check_generation)();
+                    (dep.check_generation, gen)
                 })
                 .collect();
 
@@ -581,6 +600,8 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for Computed<T> {
 struct EffectInner {
     effect_fn: Box<dyn Fn() + Send + Sync>,
     deps: RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>,
+    subscriptions: RwLock<HashSet<StateSlotId>>,
+    pending: Arc<AtomicBool>,
 }
 
 /// 创建时执行闭包，自动追踪其中读取的所有 State。
@@ -593,29 +614,51 @@ pub struct Effect {
 impl Effect {
     pub fn new<F: Fn() + Send + Sync + 'static>(f: F) -> Self {
         let (_, deps) = collect_deps(&f);
-        let dep_pairs: Vec<_> = deps
-            .into_iter()
-            .map(|check| {
-                let gen = check();
-                (check, gen)
-            })
-            .collect();
-
         let effect = Self {
             inner: Arc::new(EffectInner {
                 effect_fn: Box::new(f),
-                deps: RwLock::new(dep_pairs),
+                deps: RwLock::new(Vec::new()),
+                subscriptions: RwLock::new(HashSet::new()),
+                pending: Arc::new(AtomicBool::new(false)),
             }),
         };
+        effect.refresh_deps(deps);
         if STATE_CAPTURE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
             PENDING_EFFECTS.with(|p| p.borrow_mut().push(effect.clone()));
         }
         effect
     }
 
+    pub fn has_pending(&self) -> bool {
+        self.inner.pending.load(Ordering::Acquire)
+    }
+
+    fn refresh_deps(&self, deps: Vec<EffectDependency>) {
+        let mut dep_pairs = Vec::with_capacity(deps.len());
+        let mut subscriptions = self
+            .inner
+            .subscriptions
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+
+        for dep in deps {
+            if subscriptions.insert(dep.slot_id) {
+                (dep.subscribe_pending)(self.inner.pending.clone());
+            }
+            let gen = (dep.check_generation)();
+            dep_pairs.push((dep.check_generation, gen));
+        }
+
+        *self.inner.deps.write().unwrap_or_else(|e| e.into_inner()) = dep_pairs;
+    }
+
     /// 检查依赖是否有变化，如有则重新执行。
     /// 返回 `true` 表示重新执行了。
     pub fn tick(&self) -> bool {
+        if !self.inner.pending.swap(false, Ordering::AcqRel) {
+            return false;
+        }
+
         let need_run = {
             let deps = self.inner.deps.read().unwrap_or_else(|e| e.into_inner());
             deps.iter()
@@ -624,15 +667,7 @@ impl Effect {
 
         if need_run {
             let (_, new_deps) = collect_deps(&self.inner.effect_fn);
-            let new_pairs: Vec<_> = new_deps
-                .into_iter()
-                .map(|check| {
-                    let gen = check();
-                    (check, gen)
-                })
-                .collect();
-            let mut deps = self.inner.deps.write().unwrap_or_else(|e| e.into_inner());
-            *deps = new_pairs;
+            self.refresh_deps(new_deps);
             true
         } else {
             false

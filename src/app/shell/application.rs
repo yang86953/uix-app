@@ -167,9 +167,11 @@ impl SecondaryWindowSession {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .has_layout();
+        let pending_effects = parts.tree.has_pending_effects();
         let active_frame = had_registered_work
             || had_main_thread_work
             || *parts.reconcile_pending
+            || pending_effects
             || !self.rendered_first
             || pending_layout_work
             || parts.tree.has_render_work();
@@ -179,7 +181,9 @@ impl SecondaryWindowSession {
             *last_frame = now;
             let animating = parts.tree.update(dt);
             sync_secondary_animation_deadline(parts.tree, parts.active_work, animating, now);
-            let _effects_ran = parts.tree.tick_effects();
+            if pending_effects {
+                let _effects_ran = parts.tree.tick_effects();
+            }
         }
 
         if parts.tree.take_reconcile_requested() {

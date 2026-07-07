@@ -527,10 +527,12 @@ where
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .has_layout();
+        let pending_effects = tree.has_pending_effects();
         let active_frame = had_events
             || had_registered_work
             || had_main_thread_work
             || *reconcile_pending
+            || pending_effects
             || !rendered_first
             || pending_layout_work
             || tree.has_render_work();
@@ -538,7 +540,9 @@ where
             last_frame = now;
             let animating = tree.update(dt);
             sync_animation_deadline(tree, active_work, animating, now);
-            let _effects_ran = tree.tick_effects();
+            if pending_effects {
+                let _effects_ran = tree.tick_effects();
+            }
         }
 
         if tree.take_reconcile_requested() {
