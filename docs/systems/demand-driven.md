@@ -654,7 +654,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | 多窗 post_to_ui | AppHandle.window_id 路由 | `AppRuntime` 路由表已接；`AppHandle` 投递仅进入自身 `window_id` 的队列，session 销毁后丢弃闭包 | [#141](../decisions.md#d141) |
 | open_window | 副窗 API | `WindowConfig` / `AppHandle::open_window` / `.on_window_start` 已导出；可分配新 `window_id`、独立队列/Timer/handle 并暂存副窗创建请求；GUI loop 可 drain 请求并创建 native 窗 | [#144](../decisions.md#d144) |
 | open_window 接线 | 副窗独立 build/reconcile | 副窗 native 创建、独立 `WindowSession` bootstrap、MainThreadQueue / `update_view` reconcile 消费、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接 | [#148](../decisions.md#d148) |
-| AppState register | mount 自动 register Handle | `AppState` snapshot registry 已建；`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot；App 默认持有并注入单窗 `WindowSession` 已接；跨窗共享与 live tree handle 绑定待接 | [#145](../decisions.md#d145) |
+| AppState register | mount 自动 register Handle | `AppState` snapshot registry 已建；`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`；lookup handle 的 live tree 绑定待接 | [#145](../decisions.md#d145) |
 | StateSlotId | State::new 单调 id | 已接；clone 共享，`generation()` 不参与身份 | [#143](../decisions.md#d143) |
 | Handler 智能重绑 | handler 变才重注册（#135） | 稳定 signature 路径已跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的 DSL handler 仍保守重绑 | [#123](../decisions.md#d123) [#135](../decisions.md#d135) |
 | handler_generation + 指纹 | build 自动 bump（#142） | 内部 generation 字段、State capture 指纹基础与 fingerprint→generation 解析已接；View build / DSL 自动 capture 收集待接 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) |
