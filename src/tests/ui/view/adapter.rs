@@ -60,6 +60,57 @@ fn reconcile_same_view_keeps_invalidation_empty() {
 }
 
 #[test]
+fn unused_state_created_during_view_build_does_not_bind_root() {
+    use crate::ui::state::State;
+    use crate::ui::widgets::Label;
+    use std::sync::{Arc, Mutex};
+
+    let captured: Arc<Mutex<Option<State<i32>>>> = Arc::new(Mutex::new(None));
+    let captured_for_build = captured.clone();
+    let root = ViewAdapter::capture_root(move || {
+        let state = State::new(1);
+        *captured_for_build.lock().unwrap_or_else(|e| e.into_inner()) = Some(state.clone());
+        ViewNode::leaf(Label::new("static"))
+    });
+    let mut tree = ViewAdapter::build_nodes(root);
+    let state = captured
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .expect("state should be captured");
+
+    tree.reset_dirty();
+    assert!(!tree.take_reconcile_requested());
+
+    state.set(2);
+
+    assert!(!tree.take_reconcile_requested());
+    assert!(!tree.has_render_work());
+}
+
+#[test]
+fn state_get_during_view_build_binds_root_reconcile() {
+    use crate::ui::state::State;
+    use crate::ui::widgets::Label;
+
+    let state = State::new(1);
+    let state_for_build = state.clone();
+    let root = ViewAdapter::capture_root(move || {
+        let _ = state_for_build.get();
+        ViewNode::leaf(Label::new("static"))
+    });
+    let mut tree = ViewAdapter::build_nodes(root);
+
+    tree.reset_dirty();
+    assert!(!tree.take_reconcile_requested());
+
+    state.set(2);
+
+    assert!(tree.take_reconcile_requested());
+    assert!(tree.has_render_work());
+}
+
+#[test]
 fn grid_style_tracks_drive_layout() {
     use crate::core::Rect;
     use crate::ui::layout::GridTrack;
