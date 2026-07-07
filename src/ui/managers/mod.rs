@@ -3,6 +3,8 @@
 
 use std::collections::HashMap;
 
+use crate::ui::WidgetId;
+
 mod drag_manager;
 mod focus_manager;
 mod interaction_manager;
@@ -28,7 +30,7 @@ pub struct WidgetManagers {
     pub focus: FocusManager,
     pub drag: DragManager,
     /// Per-widget manager overrides keyed by WidgetId.
-    overrides: HashMap<usize, Box<WidgetManagersOverrides>>,
+    overrides: HashMap<WidgetId, Box<WidgetManagersOverrides>>,
 }
 
 /// 可按 widget 单独 override 的 manager 子集。
@@ -44,17 +46,17 @@ impl WidgetManagers {
     }
 
     /// Override the state manager for a specific widget.
-    pub fn override_state(&mut self, widget_id: usize, mgr: StateManager) {
+    pub fn override_state(&mut self, widget_id: WidgetId, mgr: StateManager) {
         self.overrides.entry(widget_id).or_default().state = Some(mgr);
     }
 
     /// Override the text manager for a specific widget.
-    pub fn override_text(&mut self, widget_id: usize, mgr: TextManager) {
+    pub fn override_text(&mut self, widget_id: WidgetId, mgr: TextManager) {
         self.overrides.entry(widget_id).or_default().text = Some(mgr);
     }
 
     /// Remove all overrides for a widget.
-    pub fn remove_overrides(&mut self, widget_id: usize) {
+    pub fn remove_overrides(&mut self, widget_id: WidgetId) {
         self.overrides.remove(&widget_id);
     }
 
@@ -64,7 +66,7 @@ impl WidgetManagers {
     }
 
     /// Get the effective state manager for a widget (override or default).
-    pub fn state_for(&self, widget_id: usize) -> &StateManager {
+    pub fn state_for(&self, widget_id: WidgetId) -> &StateManager {
         self.overrides
             .get(&widget_id)
             .and_then(|o| o.state.as_ref())
@@ -72,7 +74,7 @@ impl WidgetManagers {
     }
 
     /// Get the effective text manager for a widget (override or default).
-    pub fn text_for(&self, widget_id: usize) -> &TextManager {
+    pub fn text_for(&self, widget_id: WidgetId) -> &TextManager {
         self.overrides
             .get(&widget_id)
             .and_then(|o| o.text.as_ref())

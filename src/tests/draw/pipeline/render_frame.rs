@@ -226,7 +226,7 @@ fn first_frame_expands_partial_dirty_to_full_paint_region() {
 
     impl ScenePaint for PartialDirtyScene {
         fn root_id(&self) -> Option<crate::draw::pipeline::NodeId> {
-            Some(1)
+            Some(crate::draw::pipeline::NodeId::new(1))
         }
         fn tree_version(&self) -> u64 {
             1
@@ -239,8 +239,12 @@ fn first_frame_expands_partial_dirty_to_full_paint_region() {
         }
         fn node_frame(&self, id: crate::draw::pipeline::NodeId) -> Rect {
             match id {
-                1 => Rect::new(0.0, 0.0, 100.0, 100.0),
-                2 => Rect::new(200.0, 200.0, 30.0, 30.0),
+                id if id == crate::draw::pipeline::NodeId::new(1) => {
+                    Rect::new(0.0, 0.0, 100.0, 100.0)
+                }
+                id if id == crate::draw::pipeline::NodeId::new(2) => {
+                    Rect::new(200.0, 200.0, 30.0, 30.0)
+                }
                 _ => Rect::zero(),
             }
         }
@@ -254,9 +258,10 @@ fn first_frame_expands_partial_dirty_to_full_paint_region() {
             &self,
             id: crate::draw::pipeline::NodeId,
         ) -> &[crate::draw::pipeline::NodeId] {
-            static ROOT_KIDS: [crate::draw::pipeline::NodeId; 1] = [2];
+            static ROOT_KIDS: [crate::draw::pipeline::NodeId; 1] =
+                [crate::draw::pipeline::NodeId::new(2)];
             static EMPTY: [crate::draw::pipeline::NodeId; 0] = [];
-            if id == 1 {
+            if id == crate::draw::pipeline::NodeId::new(1) {
                 &ROOT_KIDS
             } else {
                 &EMPTY
@@ -284,8 +289,8 @@ fn first_frame_expands_partial_dirty_to_full_paint_region() {
             &self,
             id: crate::draw::pipeline::NodeId,
         ) -> Option<crate::draw::pipeline::NodeId> {
-            if id == 2 {
-                Some(1)
+            if id == crate::draw::pipeline::NodeId::new(2) {
+                Some(crate::draw::pipeline::NodeId::new(1))
             } else {
                 None
             }

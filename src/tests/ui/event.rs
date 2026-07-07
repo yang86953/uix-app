@@ -2,14 +2,14 @@ use super::*;
 use crate::core::Rect;
 use crate::ui::state::State;
 use crate::ui::widgets::{Button, Input, Label};
-use crate::ui::{ComponentHandle, SnapshotFields, WidgetCore, WidgetNode, WidgetTree};
+use crate::ui::{ComponentHandle, SnapshotFields, WidgetCore, WidgetId, WidgetNode, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 #[test]
 fn handler_table_bubbles_until_stopped() {
-    let child = 2;
-    let parent = 1;
+    let child = WidgetId::new(2);
+    let parent = WidgetId::new(1);
     let called_child = Rc::new(Cell::new(false));
     let called_parent = Rc::new(Cell::new(false));
 
@@ -45,7 +45,7 @@ fn handler_table_bubbles_until_stopped() {
 
 #[test]
 fn handler_table_once_removes_after_first_dispatch() {
-    let id = 1;
+    let id = WidgetId::new(1);
     let calls = Rc::new(Cell::new(0));
     let mut table = HandlerTable::new();
     let calls_for_handler = calls.clone();
@@ -75,7 +75,7 @@ fn handler_table_once_removes_after_first_dispatch() {
 
 #[test]
 fn handler_table_when_is_evaluated_per_dispatch() {
-    let id = 1;
+    let id = WidgetId::new(1);
     let enabled = Rc::new(Cell::new(false));
     let calls = Rc::new(Cell::new(0));
     let mut table = HandlerTable::new();
@@ -162,14 +162,14 @@ struct BusinessPayload {
 
 #[test]
 fn register_semantic_macro_matches_custom_event_kind() {
-    let event = SemanticEvent::custom(1, BusinessPayload { value: 7 });
+    let event = SemanticEvent::custom(WidgetId::new(1), BusinessPayload { value: 7 });
 
     assert_eq!(event.kind, register_semantic!(BusinessPayload));
 }
 
 #[test]
 fn handler_table_dispatches_typed_custom_payload() {
-    let id = 1;
+    let id = WidgetId::new(1);
     let value = Rc::new(Cell::new(0));
     let value_for_handler = value.clone();
     let mut table = HandlerTable::new();
@@ -177,7 +177,7 @@ fn handler_table_dispatches_typed_custom_payload() {
         value_for_handler.set(payload.value);
     });
 
-    let mut event = SemanticEvent::custom(1, BusinessPayload { value: 42 });
+    let mut event = SemanticEvent::custom(WidgetId::new(1), BusinessPayload { value: 42 });
     let result = table.dispatch_path(&[id], &mut event);
 
     assert_eq!(result, EventResult::Handled);

@@ -178,7 +178,7 @@ Platform UiEvent
 | `hit_test` / `focused_node` | 事件与焦点环 |
 | `paint(id, frame, ctx)` | 委托 `WidgetRender::render` |
 
-`NodeId` ≡ `WidgetId`（`usize`）。
+`NodeId` ≡ `WidgetId` ≡ `core::ComponentId`（generational）。
 
 ### 主题注入
 
@@ -203,7 +203,7 @@ Platform UiEvent
 
 **ComponentHandle**（设计）：只读配置字段；可 `invalidate` / `emit`；不可改 style 或读 hover/pressed 等交互态。
 
-> **实现注记**（#101）：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均走窄 Paint；`ComponentConfigSnapshot` 类型与首批内置组件静态配置提取已接；`ComponentHandle::snapshot()` / `snapshot_fields()` 与首批只读配置 getter 已接。`AppState` 类型已导出，`WidgetTree::set_app_state` 后 mount/unmount 会自动注册/注销 snapshot，并记录所属失效队列与当前 dirty rect，`AppState::get_handle` 可返回 snapshot + invalidate handle。App 默认持有同一 `AppState`，`AppHandle::app_state()` 可访问同一 registry，主窗与副窗 `WindowSession` 均已注入；lookup handle 的 live `emit` dispatch 绑定尚未接。当前业务数据仍可直接经 `State<T>` 闭包捕获，树节点键为 **WidgetId**（当前实现）而非设计态 **ComponentId**（#35、#101）。
+> **实现注记**（#101）：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均走窄 Paint；`ComponentConfigSnapshot` 类型与首批内置组件静态配置提取已接；`ComponentHandle::snapshot()` / `snapshot_fields()` 与首批只读配置 getter 已接。`AppState` 类型已导出，`WidgetTree::set_app_state` 后 mount/unmount 会自动注册/注销 snapshot，并记录所属失效队列与当前 dirty rect，`AppState::get_handle` 可返回 snapshot + invalidate handle。App 默认持有同一 `AppState`，`AppHandle::app_state()` 可访问同一 registry，主窗与副窗 `WindowSession` 均已注入；lookup handle 的 live `emit` dispatch 绑定尚未接。当前业务数据仍可直接经 `State<T>` 闭包捕获；树节点键已是 **ComponentId** 语义，源码名仍保留 `WidgetId` / `NodeId` 别名。
 
 ### AppState · ComponentHandle 设计规格（设计 #32、#61、#72、#101、#145）
 

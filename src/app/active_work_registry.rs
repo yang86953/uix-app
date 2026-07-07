@@ -127,12 +127,12 @@ mod tests {
         let mut registry = ActiveWorkRegistry::new();
 
         registry.register(
-            ActiveWorkKind::Animation(1),
+            ActiveWorkKind::Animation(NodeId::new(1)),
             now + Duration::from_millis(30),
         );
         registry.register(ActiveWorkKind::AppTimer(7), now + Duration::from_millis(10));
         registry.register(
-            ActiveWorkKind::ImeSession(2),
+            ActiveWorkKind::ImeSession(NodeId::new(2)),
             now + Duration::from_millis(20),
         );
 
@@ -162,11 +162,11 @@ mod tests {
         let now = Instant::now();
         let mut registry = ActiveWorkRegistry::new();
 
-        registry.register(ActiveWorkKind::Animation(1), now);
+        registry.register(ActiveWorkKind::Animation(NodeId::new(1)), now);
         registry.register(ActiveWorkKind::AppTimer(2), now);
 
-        assert!(registry.unregister(ActiveWorkKind::Animation(1)));
-        assert!(!registry.unregister(ActiveWorkKind::Animation(9)));
+        assert!(registry.unregister(ActiveWorkKind::Animation(NodeId::new(1))));
+        assert!(!registry.unregister(ActiveWorkKind::Animation(NodeId::new(9))));
         assert_eq!(registry.drain_due(now), vec![ActiveWorkKind::AppTimer(2)]);
     }
 
@@ -175,7 +175,7 @@ mod tests {
         let now = Instant::now();
         let mut registry = ActiveWorkRegistry::new();
 
-        registry.register_open(ActiveWorkKind::ImeSession(7));
+        registry.register_open(ActiveWorkKind::ImeSession(NodeId::new(7)));
 
         assert_eq!(registry.len(), 1);
         assert_eq!(registry.next_deadline(), None);
@@ -188,7 +188,10 @@ mod tests {
         let now = Instant::now();
         let mut registry = ActiveWorkRegistry::new();
 
-        registry.register(ActiveWorkKind::Animation(1), now - Duration::from_millis(1));
+        registry.register(
+            ActiveWorkKind::Animation(NodeId::new(1)),
+            now - Duration::from_millis(1),
+        );
         registry.register(ActiveWorkKind::Timer(2), now);
         registry.register(ActiveWorkKind::AppTimer(3), now + Duration::from_millis(1));
 
@@ -196,7 +199,10 @@ mod tests {
 
         assert_eq!(
             due,
-            vec![ActiveWorkKind::Animation(1), ActiveWorkKind::Timer(2)]
+            vec![
+                ActiveWorkKind::Animation(NodeId::new(1)),
+                ActiveWorkKind::Timer(2)
+            ]
         );
         assert_eq!(registry.len(), 1);
         assert_eq!(
@@ -211,7 +217,7 @@ mod tests {
         let mut registry = ActiveWorkRegistry::new();
 
         registry.register(ActiveWorkKind::Timer(1), now);
-        registry.register(ActiveWorkKind::ImeSession(2), now);
+        registry.register(ActiveWorkKind::ImeSession(NodeId::new(2)), now);
 
         assert_eq!(registry.drain_due(now).len(), 2);
         assert!(registry.is_empty());
@@ -224,14 +230,14 @@ mod tests {
         let mut registry = ActiveWorkRegistry::new();
         registry.sync_timers(vec![(1, Duration::from_millis(10))], now);
         registry.register(
-            ActiveWorkKind::Animation(7),
+            ActiveWorkKind::Animation(NodeId::new(7)),
             now + Duration::from_millis(20),
         );
 
         registry.sync_timers(vec![(2, Duration::from_millis(30))], now);
 
         assert!(!registry.unregister(ActiveWorkKind::Timer(1)));
-        assert!(registry.unregister(ActiveWorkKind::Animation(7)));
+        assert!(registry.unregister(ActiveWorkKind::Animation(NodeId::new(7))));
         assert_eq!(
             registry.next_deadline(),
             Some(now + Duration::from_millis(30))
@@ -272,14 +278,14 @@ mod tests {
         let mut registry = ActiveWorkRegistry::new();
         registry.sync_app_timers(vec![(1, now + Duration::from_millis(10))]);
         registry.register(
-            ActiveWorkKind::Animation(7),
+            ActiveWorkKind::Animation(NodeId::new(7)),
             now + Duration::from_millis(20),
         );
 
         registry.sync_app_timers(vec![(2, now + Duration::from_millis(30))]);
 
         assert!(!registry.unregister(ActiveWorkKind::AppTimer(1)));
-        assert!(registry.unregister(ActiveWorkKind::Animation(7)));
+        assert!(registry.unregister(ActiveWorkKind::Animation(NodeId::new(7))));
         assert_eq!(
             registry.next_deadline(),
             Some(now + Duration::from_millis(30))

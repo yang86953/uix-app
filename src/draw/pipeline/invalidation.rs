@@ -3,12 +3,12 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use crate::core::Rect;
+use crate::core::{ComponentId, Rect};
 
 use crate::core::DirtyRegion;
 
 /// 节点标识（与 UI 层 WidgetId 对齐，draw 不依赖 ui 域）。
-pub type NodeId = usize;
+pub type NodeId = ComponentId;
 
 /// 共享失效队列句柄（State 绑定 paint 失效时使用，每棵树一个实例）。
 pub type InvalidationQueueHandle = Arc<Mutex<InvalidationQueue>>;

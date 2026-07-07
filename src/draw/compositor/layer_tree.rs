@@ -689,7 +689,7 @@ impl LayerTree {
             .is_some_and(|c| c.contains(&widget_id));
         ctx.draw_debug_border(frame, depth, hovered);
         if hovered {
-            ctx.draw_debug_frame_info(widget_id, frame);
+            ctx.draw_debug_frame_info(widget_id.slot(), frame);
         }
     }
 
@@ -826,10 +826,10 @@ mod tests {
 
     impl TestScene {
         fn static_tree(node_count: usize) -> Self {
-            let children = (2..=node_count).collect();
-            let mut nodes = vec![TestNode::eligible(1, children)];
+            let children = (2..=node_count).map(NodeId::new).collect();
+            let mut nodes = vec![TestNode::eligible(NodeId::new(1), children)];
             for id in 2..=node_count {
-                nodes.push(TestNode::eligible(id, Vec::new()));
+                nodes.push(TestNode::eligible(NodeId::new(id), Vec::new()));
             }
             Self { nodes }
         }
@@ -851,7 +851,7 @@ mod tests {
 
     impl ScenePaint for TestScene {
         fn root_id(&self) -> Option<NodeId> {
-            Some(1)
+            Some(NodeId::new(1))
         }
 
         fn tree_version(&self) -> u64 {
@@ -944,7 +944,7 @@ mod tests {
 
         assert!(matches!(
             tree.root_node(),
-            Some(LayerNode::Picture { widget_id: 1, .. })
+            Some(LayerNode::Picture { widget_id, .. }) if *widget_id == NodeId::new(1)
         ));
     }
 
@@ -953,7 +953,7 @@ mod tests {
         let small_count = TestScene::static_tree(7).build_layer_tree();
         assert!(matches!(
             small_count.root_node(),
-            Some(LayerNode::Direct { widget_id: 1, .. })
+            Some(LayerNode::Direct { widget_id, .. }) if *widget_id == NodeId::new(1)
         ));
 
         let mut small_pixels = TestScene::static_tree(8);
@@ -963,7 +963,7 @@ mod tests {
         let small_pixels = small_pixels.build_layer_tree();
         assert!(matches!(
             small_pixels.root_node(),
-            Some(LayerNode::Direct { widget_id: 1, .. })
+            Some(LayerNode::Direct { widget_id, .. }) if *widget_id == NodeId::new(1)
         ));
     }
 
@@ -981,12 +981,12 @@ mod tests {
 
         for mark_runtime_signal in runtime_signals {
             let mut scene = TestScene::static_tree(8);
-            mark_runtime_signal(scene.node_mut(2));
+            mark_runtime_signal(scene.node_mut(NodeId::new(2)));
             let tree = scene.build_layer_tree();
 
             assert!(matches!(
                 tree.root_node(),
-                Some(LayerNode::Direct { widget_id: 1, .. })
+                Some(LayerNode::Direct { widget_id, .. }) if *widget_id == NodeId::new(1)
             ));
         }
     }
@@ -994,12 +994,12 @@ mod tests {
     #[test]
     fn clip_nodes_remain_clip_layers_instead_of_picture_layers() {
         let mut scene = TestScene::static_tree(8);
-        scene.node_mut(1).clip = true;
+        scene.node_mut(NodeId::new(1)).clip = true;
         let tree = scene.build_layer_tree();
 
         assert!(matches!(
             tree.root_node(),
-            Some(LayerNode::ClipRect { widget_id: 1, .. })
+            Some(LayerNode::ClipRect { widget_id, .. }) if *widget_id == NodeId::new(1)
         ));
     }
 }

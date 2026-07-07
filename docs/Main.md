@@ -170,12 +170,12 @@ core ← native ← draw ← ui ← app
 
 | 设计（文档/重构目标） | 当前实现（源码） | 决策 |
 |----------------------|------------------|------|
-| ComponentId (Generational) | WidgetId = usize | [#101](decisions.md#d101) |
+| ComponentId (Generational) | `core::ComponentId`；源码仍通过 `WidgetId` / `NodeId` 别名使用 | [#101](decisions.md#d101) |
 | component! | component! name+struct / struct；define_widget! 兼容入口 | [#102](decisions.md#d102) |
 | measure(constraints) | preferred_size(engine) | [#103](decisions.md#d103) |
 | ScrollView | ScrollView (was ScrollContainer in old docs) | [#104](decisions.md#d104) |
 | AppState + ComponentHandle | State closure capture | [#32](decisions.md#d32), [#101](decisions.md#d101) |
-| HandlerTable key ComponentId | HandlerTable key WidgetId | [#10](decisions.md#d10), [#101](decisions.md#d101) |
+| HandlerTable key ComponentId | HandlerTable key `WidgetId`（= `ComponentId`） | [#10](decisions.md#d10), [#101](decisions.md#d101) |
 
 ---
 
@@ -266,7 +266,7 @@ flowchart TB
 
 | 能力 | 设计 | 当前 | 文档 |
 |------|------|------|------|
-| ComponentId | Generational 稳定 ID | `WidgetId = usize` + free list | [component · WidgetTree](systems/component.md#widgettree) · [#101](decisions.md#d101) |
+| ComponentId | Generational 稳定 ID | `core::ComponentId` 已落地；`WidgetId` / `NodeId` 为源码别名 | [component · WidgetTree](systems/component.md#widgettree) · [#101](decisions.md#d101) |
 | component! | `component!` authoring 宏 | `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接展开；`define_widget!` 保留为兼容入口 | [component · Authoring](systems/component.md#authoring) · [#102](decisions.md#d102) |
 | AppState / ComponentHandle | mount 自动 register | `AppState` snapshot registry 已接入 `WidgetTree::set_app_state` mount/unmount，主窗与副窗共享同一 AppState；lookup handle 可读 snapshot 并窄 Paint invalidate，live emit 绑定仍待接 | [application · AppState](systems/application.md#appstate--多窗--settings) · [#145](decisions.md#d145) |
 | StateSlotId | new 时单调 id | `State::new` 已分配稳定 slot id，clone 共享；State capture 指纹基础已用 `TypeId + slot_id` 接入 | [#143](decisions.md#d143) |

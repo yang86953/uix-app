@@ -3,6 +3,10 @@ use crate::core::Point;
 
 use crate::draw::painting::PaintContext;
 
+const ROOT: NodeId = NodeId::new(1);
+const CHILD: NodeId = NodeId::new(2);
+const CHILDREN: &[NodeId] = &[CHILD];
+
 struct ScrollScene {
     region: DirtyRegion,
     scroll_y: f32,
@@ -20,7 +24,7 @@ impl ScrollScene {
 
 impl ScenePaint for ScrollScene {
     fn root_id(&self) -> Option<NodeId> {
-        Some(1)
+        Some(ROOT)
     }
     fn tree_version(&self) -> u64 {
         1
@@ -33,9 +37,9 @@ impl ScenePaint for ScrollScene {
     }
     fn node_frame(&self, id: NodeId) -> Rect {
         match id {
-            1 => Rect::new(0.0, 0.0, 100.0, 100.0),
+            ROOT => Rect::new(0.0, 0.0, 100.0, 100.0),
             // content 坐标：子节点在 scroll 后可见区底部
-            2 => Rect::new(0.0, 140.0, 100.0, 20.0),
+            CHILD => Rect::new(0.0, 140.0, 100.0, 20.0),
             _ => Rect::zero(),
         }
     }
@@ -47,12 +51,12 @@ impl ScenePaint for ScrollScene {
     }
     fn node_children(&self, id: NodeId) -> &[NodeId] {
         match id {
-            1 => &[2][..],
+            ROOT => CHILDREN,
             _ => &[],
         }
     }
     fn children_clip(&self, id: NodeId, _: Rect) -> Option<Rect> {
-        if id == 1 {
+        if id == ROOT {
             Some(Rect::new(0.0, 0.0, 100.0, 100.0))
         } else {
             None
@@ -62,7 +66,7 @@ impl ScenePaint for ScrollScene {
         frame
     }
     fn scroll_offset(&self, id: NodeId) -> Option<(f32, f32)> {
-        if id == 1 {
+        if id == ROOT {
             Some((0.0, self.scroll_y))
         } else {
             None
@@ -78,8 +82,8 @@ impl ScenePaint for ScrollScene {
         None
     }
     fn parent(&self, id: NodeId) -> Option<NodeId> {
-        if id == 2 {
-            Some(1)
+        if id == CHILD {
+            Some(ROOT)
         } else {
             None
         }
@@ -91,13 +95,13 @@ impl ScenePaint for ScrollScene {
 fn content_to_viewport_maps_scroll_child_into_visible_strip() {
     let scene = ScrollScene::with_strip_at_viewport_bottom();
     // child y=140, scroll_y=50 → viewport y=90，高度 20 → 与 strip [90,100] 相交
-    assert!(needs_paint(&scene, 2, &scene.dirty_region()));
+    assert!(needs_paint(&scene, CHILD, &scene.dirty_region()));
 }
 
 #[test]
 fn content_frame_without_transform_misses_strip() {
     let scene = ScrollScene::with_strip_at_viewport_bottom();
-    let frame = scene.node_frame(2);
+    let frame = scene.node_frame(CHILD);
     assert!(!scene.dirty_region().intersects(frame));
 }
 
@@ -110,7 +114,7 @@ fn far_content_child_skipped_when_not_dirty() {
     // 伪造 content 顶部子节点 id=3
     assert!(!needs_paint_rect(
         &scene,
-        2,
+        CHILD,
         Rect::new(0.0, 10.0, 100.0, 20.0),
         &scene.dirty_region()
     ));

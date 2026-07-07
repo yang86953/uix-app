@@ -214,11 +214,14 @@ impl WidgetTree {
     }
 
     pub fn mark_full_frame_dirty(&mut self) {
-        self.invalidation
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(Invalidation::Paint { id: 0, rect: None });
         if let Some(root) = self.root_id {
+            self.invalidation
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(Invalidation::Paint {
+                    id: root,
+                    rect: None,
+                });
             self.push_layout_invalidation(root);
         }
     }

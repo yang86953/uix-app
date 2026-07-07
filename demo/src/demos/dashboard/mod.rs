@@ -246,7 +246,7 @@ fn build_demo_tree(
             vec![title_node, page_content],
         ));
         // WidgetId 在树构建后才能得到，这里先占位
-        page_ids.push(0);
+        page_ids.push(WidgetId::default());
     }
 
     // page_panel 是页面容器的父节点，不可见子节点不参与布局（见 Container::layout_children）

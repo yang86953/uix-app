@@ -126,7 +126,7 @@ fn scrollview_keyboard_home_end_records_actual_clamped_delta() {
 fn scrollview_child_builder() {
     let sv = ScrollView::new(ScrollDirection::Vertical).child(FixedWidget {
         size: Size::new(100.0, 200.0),
-        id: 0,
+        id: WidgetId::new(0),
     });
     assert!(sv.children.is_set());
     assert_eq!(sv.children.len(), 1);
@@ -146,7 +146,7 @@ fn scrollview_layout_children_uses_natural_coordinates() {
         root_id,
         Box::new(FixedWidget {
             size: Size::new(200.0, 600.0),
-            id: 1,
+            id: WidgetId::new(1),
         }),
     );
 
@@ -198,7 +198,7 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
         sv_id,
         Box::new(FixedWidget {
             size: Size::new(300.0, 600.0),
-            id: 1,
+            id: WidgetId::new(1),
         }),
     );
 
@@ -249,7 +249,7 @@ fn scrollview_programmatic_scroll_invalidates_composite_strip() {
         sv_id,
         Box::new(FixedWidget {
             size: Size::new(300.0, 600.0),
-            id: 1,
+            id: WidgetId::new(1),
         }),
     );
 
