@@ -30,7 +30,7 @@ pub struct WidgetTree {
     managers: WidgetManagers,
     app_state: Option<AppState>,
     timer_routes: BTreeMap<u64, (WidgetId, u32)>,
-    focus_trap_restore: Vec<(crate::ui::OverlayId, Option<WidgetId>)>,
+    focus_trap_restore: Vec<(WidgetId, Option<WidgetId>)>,
 }
 
 impl Default for WidgetTree {
@@ -432,7 +432,22 @@ impl WidgetTree {
                     self.remove(child_id);
                 }
                 self.handler_table.clear_component(id);
-                self.overlay_stack.remove_for_owner(id);
+                let owner_was_top_trap = self
+                    .overlay_stack
+                    .top()
+                    .is_some_and(|entry| entry.owner() == id && entry.traps_focus());
+                let removed_focus_trap = self
+                    .overlay_stack
+                    .remove_for_owner(id)
+                    .iter()
+                    .any(|entry| entry.traps_focus());
+                if removed_focus_trap {
+                    if owner_was_top_trap {
+                        self.restore_focus_after_trap_owner(id);
+                    } else {
+                        let _ = self.take_focus_trap_restore(id);
+                    }
+                }
                 self.managers.remove_overrides(id);
                 self.managers.focus.unregister_component(id);
                 self.managers.interaction.unregister_component(id);
@@ -746,32 +761,32 @@ impl WidgetTree {
         self.next_focus_from_order(&focusable, self.managers.focus.focused_component(), forward)
     }
 
-    pub(crate) fn remember_focus_before_trap(
-        &mut self,
-        overlay_id: crate::ui::OverlayId,
-        owner: WidgetId,
-    ) {
+    pub(crate) fn remember_focus_before_trap(&mut self, owner: WidgetId) {
         if self
             .focus_trap_restore
             .iter()
-            .any(|&(id, _)| id == overlay_id)
+            .any(|&(restore_owner, _)| restore_owner == owner)
         {
             return;
         }
         let current = self.managers.focus.focused_component();
         let restore = current.filter(|&id| !self.is_descendant_of(id, owner));
-        self.focus_trap_restore.push((overlay_id, restore));
+        self.focus_trap_restore.push((owner, restore));
     }
 
-    pub(crate) fn take_focus_trap_restore(
-        &mut self,
-        overlay_id: crate::ui::OverlayId,
-    ) -> Option<WidgetId> {
+    pub(crate) fn take_focus_trap_restore(&mut self, owner: WidgetId) -> Option<WidgetId> {
         let index = self
             .focus_trap_restore
             .iter()
-            .position(|&(id, _)| id == overlay_id)?;
+            .position(|&(restore_owner, _)| restore_owner == owner)?;
         self.focus_trap_restore.remove(index).1
+    }
+
+    pub(crate) fn restore_focus_after_trap_owner(&mut self, owner: WidgetId) {
+        let restore_focus = self
+            .take_focus_trap_restore(owner)
+            .filter(|&id| self.get(id).is_some());
+        self.set_focus(restore_focus);
     }
 
     fn register_focusable(&mut self, id: WidgetId) {
