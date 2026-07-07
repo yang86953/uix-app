@@ -288,7 +288,7 @@ macro_rules! define_widget {
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
-                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "active_timer" | "wants_continuous_pointer_move" | "hit_test_frame" =>
+                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
@@ -333,7 +333,7 @@ macro_rules! define_widget {
         $crate::__define_widget_grouped_impl! {
             EventHandler,
             $name,
-            [on_event scroll_delta scroll_delta_for_dirty viewport_scroll_offset active_timer wants_continuous_pointer_move hit_test_frame],
+            [on_event scroll_delta scroll_delta_for_dirty viewport_scroll_offset active_timer wants_capture_phase wants_continuous_pointer_move hit_test_frame],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -421,7 +421,7 @@ macro_rules! component {
                             c.insert($crate::ui::traits::WidgetCapabilities::LAYOUT),
                         "render" | "uses_palette" | "dirty_rect" | "children_clip" | "overlay_entry" | "draw_margin" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::RENDER),
-                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "active_timer" | "wants_continuous_pointer_move" | "hit_test_frame" =>
+                        "on_event" | "scroll_delta" | "scroll_delta_for_dirty" | "viewport_scroll_offset" | "active_timer" | "wants_capture_phase" | "wants_continuous_pointer_move" | "hit_test_frame" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::EVENT),
                         "on_init" | "on_attach" | "on_mount" | "on_active" | "on_inactive" | "on_theme_changed" | "on_unmount" | "on_detach" | "on_destroy" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
@@ -462,7 +462,7 @@ macro_rules! component {
         $crate::__define_widget_grouped_impl! {
             EventHandler,
             $name,
-            [on_event scroll_delta scroll_delta_for_dirty viewport_scroll_offset active_timer wants_continuous_pointer_move hit_test_frame],
+            [on_event scroll_delta scroll_delta_for_dirty viewport_scroll_offset active_timer wants_capture_phase wants_continuous_pointer_move hit_test_frame],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -690,6 +690,9 @@ macro_rules! __define_widget_method_builder {
     (active_timer; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn active_timer($($p)*) -> $ret $body
     };
+    (wants_capture_phase; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn wants_capture_phase($($p)*) -> $ret $body
+    };
     (wants_continuous_pointer_move; EventHandler; ($($p:tt)*) -> $ret:ty $body:block) => {
         fn wants_continuous_pointer_move($($p)*) -> $ret $body
     };
@@ -792,6 +795,9 @@ macro_rules! __match_trait_method {
     };
     (EventHandler, active_timer, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn active_timer($($p)*) -> $ret $body
+    };
+    (EventHandler, wants_capture_phase, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn wants_capture_phase($($p)*) -> $ret $body
     };
     (EventHandler, wants_continuous_pointer_move, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn wants_continuous_pointer_move($($p)*) -> $ret $body

@@ -158,7 +158,7 @@ define_widget! {
             .iter()
             .map(|&cid| {
                 tree.get(cid)
-                    .map(|c| c.preferred_size(None))
+                    .map(|c| c.measure(Constraints::unconstrained()))
                     .unwrap_or_default()
             })
             .collect();

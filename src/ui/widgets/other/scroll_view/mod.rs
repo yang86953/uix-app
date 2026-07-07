@@ -55,31 +55,24 @@ define_widget! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::Wheel { delta, .. } => {
-                let mut handled = false;
                 let view = self.last_frame.get();
-                let old_x = self.scroll_x;
-                let old_y = self.scroll_y;
+                let mut dx = 0.0;
+                let mut dy = 0.0;
 
                 if self.direction.can_scroll_y() && delta.y != 0.0 {
                     let view_h = view
                         .map(|f| f.h)
                         .unwrap_or(self.fixed_height.unwrap_or(200.0));
-                    self.scroll_y = (self.scroll_y + delta.y * view_h * 0.25)
-                        .clamp(0.0, self.max_scroll_y());
-                    handled = true;
+                    dy = delta.y * view_h * 0.25;
                 }
                 if self.direction.can_scroll_x() && delta.x != 0.0 {
                     let view_w = view
                         .map(|f| f.w)
                         .unwrap_or(self.fixed_width.unwrap_or(300.0));
-                    self.scroll_x = (self.scroll_x + delta.x * view_w * 0.25)
-                        .clamp(0.0, self.max_scroll_x());
-                    handled = true;
+                    dx = delta.x * view_w * 0.25;
                 }
 
-                self.scroll_delta_strip
-                    .set((self.scroll_x - old_x, self.scroll_y - old_y));
-                if handled {
+                if self.scroll_by(dx, dy) {
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -287,7 +280,7 @@ define_widget! {
         for &cid in children {
             let pref = tree
                 .get(cid)
-                .map(|c| c.preferred_size(None))
+                .map(|c| c.measure(Constraints::unconstrained()))
                 .unwrap_or_default();
             let w = if pref.w <= 0.0 { frame.w } else { pref.w };
             let current_h = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);

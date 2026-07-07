@@ -73,15 +73,20 @@ impl WidgetTree {
             None => pos,
         };
 
-        let mut sorted: Vec<WidgetId> = node.children().to_vec();
-        sorted.sort_by(|&a, &b| {
-            let za = self.get(a).map_or(0, |c| c.z_index());
-            let zb = self.get(b).map_or(0, |c| c.z_index());
-            zb.cmp(&za)
-        });
-        for &child_id in &sorted {
-            if let Some(hit) = self.hit_test_internal(child_id, child_pos) {
-                return Some(hit);
+        let can_hit_children = node
+            .children_clip(node.frame())
+            .map_or(true, |clip| clip.contains(pos));
+        if can_hit_children {
+            let mut sorted: Vec<WidgetId> = node.children().to_vec();
+            sorted.sort_by(|&a, &b| {
+                let za = self.get(a).map_or(0, |c| c.z_index());
+                let zb = self.get(b).map_or(0, |c| c.z_index());
+                zb.cmp(&za)
+            });
+            for &child_id in &sorted {
+                if let Some(hit) = self.hit_test_internal(child_id, child_pos) {
+                    return Some(hit);
+                }
             }
         }
         // 使用 widget 的 hit_test_frame 代替原始 frame，支持 overlay 模式
@@ -686,6 +691,9 @@ impl WidgetTree {
         path.reverse(); // 现在是从 root → ... → target.parent
 
         for &id in &path {
+            if !self.get(id).is_some_and(|node| node.wants_capture_phase()) {
+                continue;
+            }
             let handled = {
                 let node = match self.get_mut(id) {
                     Some(n) => n,

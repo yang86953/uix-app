@@ -9,7 +9,7 @@ use super::flex::compute_flex_layout;
 use super::grid::compute_grid_layout;
 use super::{AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent};
 use super::{GridChild, GridInput, GridTrack};
-use crate::core::{EdgeInsets, Rect, Size};
+use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::spatial::AABB3D;
 use crate::ui::{WidgetCore, WidgetId, WidgetTree};
 
@@ -517,7 +517,9 @@ impl LayoutEngine for GridLayout {
 /// 从 WidgetTree 节点构建统一的 LayoutChild。
 pub fn child_from_tree(cid: WidgetId, tree: &WidgetTree) -> LayoutChild {
     let node = tree.get(cid);
-    let pref = node.map(|c| c.preferred_size(None)).unwrap_or_default();
+    let pref = node
+        .map(|c| c.measure(Constraints::unconstrained()))
+        .unwrap_or_default();
     let h = if pref.h > 0.0 {
         pref.h
     } else {

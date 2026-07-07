@@ -69,6 +69,25 @@ define_widget! {
     ) {}
 }
 
+define_widget! {
+    struct CaptureMacroProbe {}
+
+    on_event => (&mut self, _event: &SystemEvent) -> crate::ui::EventResult {
+        crate::ui::EventResult::NotHandled
+    }
+
+    wants_capture_phase => (&self) -> bool {
+        true
+    }
+
+    render => (
+        &self,
+        _frame: crate::core::Rect,
+        _ctx: &mut crate::draw::painting::PaintContext,
+        _tree: &crate::ui::WidgetTree
+    ) {}
+}
+
 component! {
     name: ComponentMacroProbe,
     struct ComponentMacroProbe {
@@ -1857,6 +1876,18 @@ fn define_widget_measure_method_implements_layout() {
     assert_eq!(
         WidgetLayout::measure(&probe, Constraints::loose(Size::new(50.0, 40.0))),
         Size::new(50.0, 40.0)
+    );
+}
+
+#[test]
+fn define_widget_capture_method_implements_event_handler() {
+    let mut probe = CaptureMacroProbe {};
+
+    assert!(crate::ui::WidgetComponent::as_event(&probe).is_some());
+    assert!(EventHandler::wants_capture_phase(&probe));
+    assert_eq!(
+        EventHandler::on_event(&mut probe, &SystemEvent::PointerLeave),
+        crate::ui::EventResult::NotHandled
     );
 }
 

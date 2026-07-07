@@ -8,6 +8,8 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color, Radius};
 use crate::ui::{EventResult, SemanticEvent, SnapshotFields, SystemEvent, WidgetId, WidgetTree};
 
+const DEFAULT_SCROLL_VIEWPORT_HEIGHT: f32 = 500.0;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectableItem {
     pub id: String,
@@ -29,6 +31,31 @@ impl SelectableList {
             footer_text: self.footer_text.clone(),
             item_height: self.item_height,
         }
+    }
+
+    fn max_scroll_offset(&self) -> f32 {
+        let content_height = self.items.len() as f32 * (self.item_height + 2.0);
+        (content_height - DEFAULT_SCROLL_VIEWPORT_HEIGHT).max(0.0)
+    }
+
+    fn push_scroll_delta(&self, dy: f32) {
+        if dy.abs() <= 0.01 {
+            return;
+        }
+        let current = self.scroll_delta_strip.get();
+        self.scroll_delta_strip.set((current.0, current.1 + dy));
+    }
+
+    fn scroll_by(&self, dy: f32) -> bool {
+        let old_offset = -self.scroll_y.get();
+        let new_offset = (old_offset + dy).clamp(0.0, self.max_scroll_offset());
+        let actual_dy = new_offset - old_offset;
+        if actual_dy.abs() <= 0.01 {
+            return false;
+        }
+        self.scroll_y.set(-new_offset);
+        self.push_scroll_delta(actual_dy);
+        true
     }
 }
 
@@ -59,6 +86,7 @@ define_widget! {
         hovered_index: Cell<Option<usize>>,
         hovered_header: Cell<bool>,
         scroll_y: Cell<f32>,
+        scroll_delta_strip: Cell<(f32, f32)>,
         pending_change: Cell<Option<usize>>,
     }
 
@@ -72,6 +100,7 @@ define_widget! {
             hovered_index: Cell::new(None),
             hovered_header: Cell::new(false),
             scroll_y: Cell::new(0.0),
+            scroll_delta_strip: Cell::new((0.0, 0.0)),
             pending_change: Cell::new(None),
         }
     }
@@ -147,10 +176,11 @@ define_widget! {
             }
 
             SystemEvent::Wheel { delta, .. } => {
-                let sy = self.scroll_y.get();
-                let max_scroll = -(self.items.len() as f32 * (self.item_height + 2.0) - 500.0).min(0.0);
-                self.scroll_y.set((sy + delta.y * 0.5).max(max_scroll).min(0.0));
-                EventResult::Handled
+                if self.scroll_by(delta.y * 0.5) {
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
             }
 
             SystemEvent::PointerLeave => {
@@ -174,6 +204,16 @@ define_widget! {
     }
 
     wants_continuous_pointer_move => (&self) -> bool { true }
+
+    scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
+        let delta = self.scroll_delta_strip.get();
+        if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
+            self.scroll_delta_strip.set((0.0, 0.0));
+            Some(delta)
+        } else {
+            None
+        }
+    }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_layout();
@@ -257,3 +297,7 @@ define_widget! {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/display/selectable_list.rs"]
+mod tests;

@@ -324,7 +324,7 @@ define_widget! {
                 for &cid in children {
                     let pref = tree
                         .get(cid)
-                        .map(|c| c.preferred_size(None))
+                        .map(|c| c.measure(Constraints::unconstrained()))
                         .unwrap_or(Size::new(200.0, 44.0));
                     let item_w = pref.w.max(120.0);
                     result.push((cid, Rect::new(x, frame.y, item_w, frame.h)));
@@ -336,7 +336,7 @@ define_widget! {
                 for &cid in children {
                     let pref = tree
                         .get(cid)
-                        .map(|c| c.preferred_size(None))
+                        .map(|c| c.measure(Constraints::unconstrained()))
                         .unwrap_or(Size::new(frame.w, 44.0));
                     let item_h = pref.h.max(44.0);
                     result.push((cid, Rect::new(frame.x, y, frame.w, item_h)));

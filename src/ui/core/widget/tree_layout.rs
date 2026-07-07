@@ -1,6 +1,6 @@
 use super::super::*;
 use super::WidgetTree;
-use crate::core::Rect;
+use crate::core::{Constraints, Rect};
 
 impl WidgetTree {
     /// 返回 Layout 失效影响的子树先序遍历顺序。
@@ -60,7 +60,9 @@ impl WidgetTree {
             .unwrap_or(false);
         if !has_valid_root {
             if let Some(root_id) = self.root_id {
-                let ps = self.get(root_id).map(|r| r.preferred_size(None));
+                let ps = self
+                    .get(root_id)
+                    .map(|r| r.measure(Constraints::unconstrained()));
                 if let Some(ps) = ps {
                     if let Some(root_mut) = self.get_mut(root_id) {
                         root_mut.set_frame(Rect::new(0.0, 0.0, ps.w.max(1.0), ps.h.max(1.0)));
@@ -85,7 +87,7 @@ impl WidgetTree {
                                 c.visible()
                                     && c.frame().w <= 0.0
                                     && c.frame().h <= 0.0
-                                    && c.preferred_size(None).h <= 0.0
+                                    && c.measure(Constraints::unconstrained()).h <= 0.0
                             })
                         })
                     })
@@ -479,14 +481,14 @@ impl WidgetTree {
                 }
 
                 let needed_h = max_child_bottom - node_frame.y;
-                // ⭐ 最小高度取子节点实际内容和 preferred_size 的较大值。
+                // ⭐ 最小高度取子节点实际内容和 measure 的较大值。
                 // 设此下限可防止收缩到子节点内容以下，从而避免与
                 // layout_expand（Phase 2）形成振荡循环。
                 // 使用 1.0 像素绝对最小值而非比例值（如 0.01 * h），
                 // 后者在高 DPI 场景下可能过大（2000px * 0.01 = 20px 虚高）。
                 let pref_h = self
                     .get(id)
-                    .map(|n| n.preferred_size(None).h)
+                    .map(|n| n.measure(Constraints::unconstrained()).h)
                     .unwrap_or(0.0);
                 let min_h = needed_h.max(pref_h).max(1.0);
                 let effective_needed = min_h;

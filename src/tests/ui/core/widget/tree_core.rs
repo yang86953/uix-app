@@ -73,6 +73,62 @@ impl EventHandler for SpyWidget {
     }
 }
 
+struct CaptureSpyWidget(SpyWidget);
+
+impl CaptureSpyWidget {
+    fn new(w: f32, h: f32) -> Self {
+        Self(SpyWidget::new(w, h))
+    }
+}
+
+impl WidgetComponent for CaptureSpyWidget {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+    fn capabilities(&self) -> WidgetCapabilities {
+        self.0.capabilities()
+    }
+    crate::wc_upcast!(CaptureSpyWidget; WidgetLayout);
+    crate::wc_upcast!(CaptureSpyWidget; WidgetRender);
+    crate::wc_upcast!(CaptureSpyWidget; EventHandler);
+}
+
+impl WidgetLayout for CaptureSpyWidget {
+    fn preferred_size(
+        &self,
+        engine: Option<&dyn crate::draw::traits::GraphicsEngine>,
+    ) -> crate::core::Size {
+        self.0.preferred_size(engine)
+    }
+}
+
+impl WidgetRender for CaptureSpyWidget {
+    fn render(
+        &self,
+        frame: Rect,
+        ctx: &mut crate::draw::painting::PaintContext,
+        tree: &WidgetTree,
+    ) {
+        self.0.render(frame, ctx, tree)
+    }
+}
+
+impl EventHandler for CaptureSpyWidget {
+    fn on_event(&mut self, event: &SystemEvent) -> EventResult {
+        self.0.on_event(event)
+    }
+
+    fn wants_capture_phase(&self) -> bool {
+        true
+    }
+}
+
 struct MeasureOnlyWidget;
 
 impl WidgetComponent for MeasureOnlyWidget {
@@ -1294,6 +1350,40 @@ fn hit_test_skips_invisible() {
 }
 
 #[test]
+fn hit_test_skips_children_outside_parent_clip() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(ClipContainer::new(
+        100.0,
+        100.0,
+        120.0,
+        vec![Box::new(SpyWidget::new(80.0, 40.0))],
+    )));
+    tree.layout();
+
+    let child = tree.get(root).unwrap().children()[0];
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(0.0, 120.0, 80.0, 40.0)
+    );
+    assert_eq!(tree.hit_test(Point::new(40.0, 130.0)), None);
+}
+
+#[test]
+fn hit_test_keeps_children_inside_parent_clip() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(ClipContainer::new(
+        100.0,
+        100.0,
+        60.0,
+        vec![Box::new(SpyWidget::new(80.0, 40.0))],
+    )));
+    tree.layout();
+
+    let child = tree.get(root).unwrap().children()[0];
+    assert_eq!(tree.hit_test(Point::new(40.0, 80.0)), Some(child));
+}
+
+#[test]
 fn dispatch_pointer_down_focuses_target() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
@@ -1679,13 +1769,13 @@ fn dispatch_resize_goes_to_root() {
 
 // Capture phase tests.
 
-/// Capture phase: root handles the event before the child.
+/// Capture phase: opt-in root handles the event before the child.
 #[test]
 fn capture_phase_root_handles_before_child() {
     let mut tree = WidgetTree::new();
-    // Tree: SpyWidget(root, Handled) -> PassThroughContainer -> SpyWidget(child).
-    // SpyWidget root handles the event before it reaches the child.
-    let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
+    // Tree: CaptureSpyWidget(root, Handled) -> PassThroughContainer -> SpyWidget(child).
+    // CaptureSpyWidget root opts into capture and handles before the child.
+    let root_id = tree.set_root(Box::new(CaptureSpyWidget::new(300.0, 300.0)));
     let container = tree.add_child(
         root_id,
         Box::new(PassThroughContainer::new(300.0, 300.0, vec![])),
@@ -1710,6 +1800,43 @@ fn capture_phase_root_handles_before_child() {
     assert_eq!(result, EventResult::Handled);
     // Capture handled the event before bubbling, so focus is not moved to child.
     assert!(tree.focused_widget.is_none());
+}
+
+#[test]
+fn capture_phase_requires_explicit_opt_in() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
+    let container = tree.add_child(
+        root_id,
+        Box::new(PassThroughContainer::new(300.0, 300.0, vec![])),
+    );
+    let child = tree.add_child(container, Box::new(SpyWidget::new(100.0, 100.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(container)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 300.0, 300.0));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 100.0, 100.0));
+
+    let result = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(50.0, 50.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(result, EventResult::Handled);
+    assert_eq!(tree.focused_widget, Some(child));
+    let root = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<SpyWidget>()
+        .unwrap();
+    assert!(root.events.borrow().is_empty());
 }
 
 /// Capture phase falls through to bubble phase when not intercepted.
@@ -1742,8 +1869,8 @@ fn capture_phase_not_intercepted_proceeds_to_bubble() {
 #[test]
 fn capture_phase_wheel_intercepted() {
     let mut tree = WidgetTree::new();
-    // Tree: SpyWidget(root, Handled) -> PassThroughContainer -> SpyWidget(child).
-    let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
+    // Tree: CaptureSpyWidget(root, Handled) -> PassThroughContainer -> SpyWidget(child).
+    let root_id = tree.set_root(Box::new(CaptureSpyWidget::new(300.0, 300.0)));
     let container = tree.add_child(
         root_id,
         Box::new(PassThroughContainer::new(300.0, 300.0, vec![])),
@@ -1770,8 +1897,8 @@ fn capture_phase_wheel_intercepted() {
 #[test]
 fn capture_phase_key_down_intercepted() {
     let mut tree = WidgetTree::new();
-    // Tree: SpyWidget(root, Handled) -> PassThroughContainer -> SpyWidget(child).
-    let root_id = tree.set_root(Box::new(SpyWidget::new(300.0, 300.0)));
+    // Tree: CaptureSpyWidget(root, Handled) -> PassThroughContainer -> SpyWidget(child).
+    let root_id = tree.set_root(Box::new(CaptureSpyWidget::new(300.0, 300.0)));
     let container = tree.add_child(
         root_id,
         Box::new(PassThroughContainer::new(300.0, 300.0, vec![])),
@@ -1792,7 +1919,7 @@ fn capture_phase_key_down_intercepted() {
         key: KeyCode::Escape,
         mods: KeyMod::NONE,
     });
-    // SpyWidget(root) 鍦ㄦ崟鑾烽樁娈佃繑鍥?Handled
+    // CaptureSpyWidget(root) handles during capture.
     assert_eq!(result, EventResult::Handled);
 }
 

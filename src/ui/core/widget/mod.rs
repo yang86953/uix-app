@@ -294,6 +294,11 @@ impl BoxedWidget {
     pub fn active_timer(&self) -> Option<(u64, std::time::Duration)> {
         self.component().as_event().and_then(|e| e.active_timer())
     }
+    pub fn wants_capture_phase(&self) -> bool {
+        self.component()
+            .as_event()
+            .is_some_and(|e| e.wants_capture_phase())
+    }
     pub fn wants_continuous_pointer_move(&self) -> bool {
         self.component()
             .as_event()
