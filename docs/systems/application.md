@@ -103,11 +103,15 @@ flowchart TD
   A[wait_event / wait_timeout(deadline)] --> B[drain UiEvent]
   B --> C[drain_due AppTimer / Widget Timer]
   C --> D[main_thread_queue.drain]
-  D --> E{Active frame?}
+  D --> Q[drain AppState semantic queue]
+  Q --> E{Active frame?}
   E -->|是| F[tree.update + pending tick_effects]
   E -->|否| G[跳过 update/effects]
-  F --> H{Layout 脏?}
-  G --> H
+  F --> R{reconcile_pending?}
+  G --> R
+  R -->|是| S[consume pending_root / view_factory]
+  R -->|否| H{Layout 脏?}
+  S --> H
   H -->|是| I[tree.layout + on_frame]
   H -->|否| J{Paint/Composite 脏?}
   I --> J
@@ -192,20 +196,20 @@ Platform UiEvent
 
 ## AppState · 多窗 · Settings
 
-### AppState（设计 #32、#55、#88、#101）
+### AppState（#32、#55、#88、#101）
 
 | 属性 | 规则 |
 |------|------|
 | 所有权 | App 单例持有 |
 | 线程 | 仅主线程 |
 | 多窗 | 共享同一 AppState（#93） |
-| 访问 | 业务通过 `State<T>` + **ComponentHandle**（设计，#61、#72） |
+| 访问 | 业务通过 `State<T>` + **ComponentHandle**（#61、#72） |
 
-**ComponentHandle**（设计）：只读配置字段；可 `invalidate` / `emit`；不可改 style 或读 hover/pressed 等交互态。
+**ComponentHandle**：只读配置字段；可 `invalidate` / `emit`；不可改 style 或读 hover/pressed 等交互态。
 
 > **实现注记**（#101）：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；`AppState` 内部 register/unregister、snapshot/invalidate 与 semantic queue 也已按 `ComponentId` 命名。live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均走窄 Paint；lookup handle 的 `emit()` 会写入 `AppState` semantic queue 并唤醒 loop，由主窗/副窗 `WindowSession` drain 后派发到 `WidgetTree::dispatch_semantic`。`ComponentConfigSnapshot` 类型与 80 个内置组件静态配置提取已接；`ComponentHandle::snapshot()` / `snapshot_fields()` 与首批只读配置 getter 已接。`AppState` 类型已导出，`WidgetTree::set_app_state` 后 mount/unmount 会自动注册/注销 snapshot，并记录所属失效队列与当前 dirty rect，`AppState::get_handle` 可返回 snapshot + invalidate + emit handle。App 默认持有同一 `AppState`，`AppHandle::app_state()` 可访问同一 registry，主窗与副窗 `WindowSession` 均已注入。当前业务数据仍可直接经 `State<T>` 闭包捕获；WidgetTree 内部源码名仍保留 `WidgetId` 别名，draw 内部源码名仍保留 `NodeId` 别名。
 
-### AppState · ComponentHandle 设计规格（设计 #32、#61、#72、#101、#145）
+### AppState · ComponentHandle 规格（#32、#61、#72、#101、#145）
 
 **#145**：AppState **不替代** `State<T>`；二者并存。`State<T>` 仍为响应式主路径；AppState 提供 **跨窗共享业务 struct** + **ComponentId → ComponentHandle** 查找。
 

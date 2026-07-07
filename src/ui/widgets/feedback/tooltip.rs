@@ -366,6 +366,17 @@ impl Tooltip {
             arrow: self.arrow,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.text = next.text;
+        self.placement = next.placement;
+        self.trigger = next.trigger;
+        self.bg_color = next.bg_color;
+        self.text_color = next.text_color;
+        self.delay_ms = next.delay_ms;
+        self.timer_id = next.timer_id;
+        self.arrow = next.arrow;
+    }
 }
 
 #[cfg(test)]

@@ -228,6 +228,33 @@ fn window_capture_authors_stable_signature_by_window_id() {
 }
 
 #[test]
+fn multiple_captures_author_stable_order_independent_signature() {
+    let state = State::new(1);
+    let state_then_window = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_state_capture(&state)
+        .with_window_capture(WindowId::new(7))
+        .authored_signature();
+    let window_then_state = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_window_capture(WindowId::new(7))
+        .with_state_capture(&state)
+        .authored_signature();
+    let different_window = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_state_capture(&state)
+        .with_window_capture(WindowId::new(8))
+        .authored_signature();
+
+    assert_eq!(state_then_window.generation, Some(0));
+    assert_eq!(
+        state_then_window.capture_fingerprint,
+        window_then_state.capture_fingerprint
+    );
+    assert_ne!(
+        state_then_window.capture_fingerprint,
+        different_window.capture_fingerprint
+    );
+}
+
+#[test]
 fn widget_node_on_semantic_capture_registers_captured_handler() {
     let state = State::new(1);
     let calls = Rc::new(Cell::new(0));

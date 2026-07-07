@@ -75,7 +75,7 @@ ViewNode::new(widget, children)
 > - **WidgetId**（内部源码名，#101）：`core::ComponentId` 的 WidgetTree 内部别名。
 > - **HandlerTable** 键：`ComponentId`（`WidgetId` 仅为 WidgetTree 内部同型别名，#10、#101）。
 > - **Handler 重绑**（#123、#135，修订 #62）：reconcile 时 **仅 handler 变更** 才 `clear_component`+重注册；未变则保留。
-> - **AppState** / **ComponentHandle**（设计，#32）：当前业务数据经 `State<T>` 闭包捕获。
+> - **AppState** / **ComponentHandle**（#32、#145）：snapshot registry、lookup handle、`invalidate` / `emit` 已接；业务数据主路径仍可经 `State<T>` 闭包捕获。
 
 实现：`ViewAdapter`（`src/ui/view/adapter.rs`）。策略：声明式重建 + diff，复用稳定 ID（#31、#49、#60）。
 
@@ -150,12 +150,14 @@ handlers_changed(old, new) :=
     old.semantic_kinds() != new.semantic_kinds()   // 集合相等（顺序无关）
     OR ∃ kind ∈ intersection:
          old.generation(kind) != new.generation(kind)
+         OR old.options(kind) != new.options(kind)
 ```
 
 | 比较项 | 规则 |
 |--------|------|
 | **SemanticKind 集合** | `Click`、`Changed`、`Submit`… 增删 → **变更** |
 | **handler_generation** | 同 kind 代际不同 → **变更**；任一侧缺 generation → **变更** |
+| **HandlerOptions** | `once` / `when` 语义不同 → **变更** |
 | **闭包指针 / TypeId** | **不**比较；避免误杀稳定 handler |
 | **静态 props / Style** | 走 #60 paint/layout 路径；**不**触发 clear_component |
 
@@ -170,7 +172,7 @@ handlers_changed(old, new) :=
 
 `handlers_changed == false` → **跳过** `clear_component` + 重注册；`true` → 清空该 ComponentId 全部 handler 再注册新表。
 
-测试：勿断言闭包指针跨 rebuild 稳定；可断言 **同 generation + 同 kind 集** 时 HandlerTable 条目保留（见 [testing · 语义断言](testing.md#语义断言)）。
+测试：勿断言闭包指针跨 rebuild 稳定；可断言 **同 generation + 同 kind 集 + 同 HandlerOptions + 同 capture 指纹集合** 时 HandlerTable 条目保留（见 [testing · 语义断言](testing.md#语义断言)）。
 
 ### handler_generation 作者化（#138）
 
@@ -219,7 +221,7 @@ struct BuildContext {
 fingerprint(kind, captures) :=
     hash((
         kind as u16,
-        sorted capture entries by TypeId tag,
+        sorted capture entries by TypeId tag and payload,
         per-entry payload per table above,
     )) → u64
 ```
@@ -231,7 +233,7 @@ fingerprint(kind, captures) :=
 | 稳定性 | 同源码 rebuild、同 capture 集 → **同指纹**（测试可断言） |
 | 算法 | 框架内部固定（如 `FxHasher` → `u64`）；App **不可配** |
 
-> **实现注记**：内部 `HandlerSignature` / `handler_generation` 存储与 reconcile 比较已接；带稳定 generation 的 handler 可跳过 `clear_component` + 重注册。State / WindowId capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump。`HandlerRegistration::with_state_capture` / `with_window_capture` 已公开；Button/Input DSL 已提供显式 State capture 入口（`on_click_capture` / `on_click_event_capture` / `on_change_capture`）与 WindowId capture 入口（`on_click_window_capture` / `on_click_event_window_capture` / `on_change_window_capture`），通用 `ViewNode::on_semantic_capture` / `on_semantic_window_capture` 与低层 `WidgetNode::on_semantic_capture` / `on_semantic_window_capture` 也已复用该路径；任意 Rust handler 闭包不做运行时自动收集（#159），未来宏 / DSL 只有在语法层生成 fingerprint 时才进入稳定复用；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
+> **实现注记**：内部 `HandlerSignature` / `handler_generation` / `HandlerOptions` 存储与 reconcile 比较已接；带稳定 generation 且 options 未变的 handler 可跳过 `clear_component` + 重注册。State / WindowId capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump；多个 capture 会合并为顺序无关的稳定指纹。`HandlerRegistration::with_state_capture` / `with_window_capture` 已公开；Button/Input DSL 已提供显式 State capture 入口（`on_click_capture` / `on_click_event_capture` / `on_change_capture`）与 WindowId capture 入口（`on_click_window_capture` / `on_click_event_window_capture` / `on_change_window_capture`），通用 `ViewNode::on_semantic_capture` / `on_semantic_window_capture` 与低层 `WidgetNode::on_semantic_capture` / `on_semantic_window_capture` 也已复用该路径；任意 Rust handler 闭包不做运行时自动收集（#159），未来宏 / DSL 只有在语法层生成 fingerprint 时才进入稳定复用；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
 
 ---
 
@@ -305,7 +307,7 @@ DeepIdle **不** `tick_effects`（[#105](decisions.md#d105)）。State 变更会
 
 ### 业务数据
 
-Handler 须 `'static`（#26）；业务数据经 **AppState** + **ComponentHandle**（设计，#32）或闭包捕获 `State` clone。组件 ID 与 HandlerTable 键术语见 [Reconciler · 术语](#reconciler)。
+Handler 须 `'static`（#26）；业务数据经 **AppState** + **ComponentHandle**（#32、#145）或闭包捕获 `State` clone。组件 ID 与 HandlerTable 键术语见 [Reconciler · 术语](#reconciler)。
 
 ---
 

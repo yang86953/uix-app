@@ -74,7 +74,7 @@ FakePlatform.inject(UiEvent)
 | 焦点 / 冒泡 | focus 转移、`stop_propagation` 阻后续 handler（#68） |
 | 平台副作用 | `FakeClipboard` 历史、`text_input.start/stop` 调用序 |
 
-Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138、#160）；未变则保留注册。测试勿假设跨 rebuild 的 handler 指针/闭包 identity 稳定；可断言 **同 handler_generation / capture fingerprint + 同 SemanticKind 集** 时 HandlerTable 保留；无 generation / fingerprint 的普通闭包按 changed 重绑。**ComponentId** key 复用仍有效；`WidgetId` 仅为 WidgetTree 内部同型别名。
+Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138、#160）；未变则保留注册。测试勿假设跨 rebuild 的 handler 指针/闭包 identity 稳定；可断言 **同 handler_generation / capture fingerprint 集合 + 同 SemanticKind 集 + 同 HandlerOptions** 时 HandlerTable 保留；无 generation / fingerprint 的普通闭包按 changed 重绑。**ComponentId** key 复用仍有效；`WidgetId` 仅为 WidgetTree 内部同型别名。
 
 ---
 
@@ -88,7 +88,7 @@ Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138、#160）�
 | 无 GPU | `NullEngine` 跳过 present，仍走 LayerTree / DisplayList |
 | damage | `FakePresenter` 记录的 `PresentDamage` rects |
 
-当前主线优先覆盖 DisplayList、damage rect 与 idle/present 行为；逻辑帧缓冲像素 hash / golden file 可在 CI 固定 scale/theme 后作为更强验收补充。
+当前主线优先覆盖 DisplayList、damage rect、FakePresenter 帧缓冲记录与 idle/present 行为；逻辑帧缓冲像素 hash 已用于最小 snapshot smoke，golden file 可在 CI 固定 scale/theme 后作为更强验收补充。
 
 失效类型与 present 规则见 [rendering · 管线与失效](rendering.md#管线与失效)（Layout alone 不 present）。
 

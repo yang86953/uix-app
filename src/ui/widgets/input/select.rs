@@ -579,6 +579,15 @@ impl Select {
             search: self.search,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.options = next.options;
+        self.optgroups = next.optgroups;
+        self.disabled = next.disabled;
+        self.placeholder = next.placeholder;
+        self.multiple = next.multiple;
+        self.search = next.search;
+    }
 }
 
 fn select_dirty_rect(frame: Rect, item_count: usize) -> Rect {

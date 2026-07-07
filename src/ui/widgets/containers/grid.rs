@@ -122,6 +122,10 @@ impl Grid {
         }
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.style = next.style;
+    }
+
     pub fn style(mut self, style: Style) -> Self {
         self.style = style.with_display(DisplayMode::Grid);
         self

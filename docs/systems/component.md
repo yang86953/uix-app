@@ -31,7 +31,7 @@
 | 颜色来自主题 | `ColorValue::palette` / `neutral`；Custom 仅 debug lint（#3） |
 | 回调不进 struct | 业务 handler 在 HandlerTable，不在组件字段（#10） |
 | 无 variant enum | 外观差异用 StyleSet 预设（#16） |
-| 能力拆分 trait | Layout / Render / Event / Lifecycle 按需 impl |
+| 能力拆分 trait | Layout / Render / Event / Lifecycle / Animation 按需 impl |
 | 无障碍 | **v2**（[#99](../decisions.md#d99)）；v1 不做 ARIA、屏幕阅读器、键盘导航扩展 |
 
 **struct 放**：配置、交互态（hover/pressed/disabled）、StyleSet。  
@@ -52,7 +52,7 @@
 | **WidgetLifecycle** | mount/unmount/active/inactive；`on_theme_changed` | #8 #9 |
 | **PicturePolicyMeta** | authoring 声明默认 `Never`/`Eligible`（#122）；框架 build 时自动推断 |
 
-`WidgetComponent` 是统一上转型入口；`impl_widget_component!` 宏声明能力位（Layout / Render / Event / Lifecycle）。
+`WidgetComponent` 是统一上转型入口；`impl_widget_component!` 宏声明能力位（Layout / Render / Event / Lifecycle / Animation）。
 
 ### Active / Inactive（#8、#19）
 
@@ -70,7 +70,7 @@ Inactive 组件跳过大部分语义派发，Lifecycle 进入 inactive。
 
 新内置 widget 默认继承 false；移出窄路径须评审 + 测试证明必要性。
 
-### ComponentHandle（设计 #61、#72、#145）
+### ComponentHandle（#61、#72、#145）
 
 只读配置句柄；可 `invalidate()`（默认 **窄 Paint**，#119）/ `emit(SemanticEvent)`；**不可**改 style、**不可**读 hover/focus 等运行时态。
 
@@ -394,7 +394,7 @@ WidgetTree
 
 ## Authoring
 
-设计决策 [#102](../decisions.md#d102)：设计态 **`component!`**（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已作为唯一 authoring 入口。
+设计决策 [#102](../decisions.md#d102)：设计态 **`component!`**（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已作为推荐 authoring 入口。少数手写 widget 仍可用低层 `impl_widget_component!` 显式声明能力；新组件默认优先 `component!`。
 
 ### component!（当前实现）
 
@@ -502,7 +502,7 @@ ui/
 ```text
 ui/
 ├── core/widget/       WidgetTree, BoxedWidget, tree_*
-├── traits/widget.rs   WidgetLayout / Render / Event / Lifecycle
+├── traits/widget.rs   WidgetLayout / Render / Event / Lifecycle / Animation
 ├── widgets/           内置库（general / containers / …）
 ├── managers/          横切 Manager（设计）
 ├── view/              View DSL + ViewAdapter
