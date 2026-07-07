@@ -183,6 +183,10 @@ impl InputNumber {
         self.step = v;
         self
     }
+    pub fn disabled(mut self, v: bool) -> Self {
+        self.disabled = v;
+        self
+    }
     pub fn get_value(&self) -> f64 {
         self.value
     }
@@ -208,6 +212,20 @@ impl InputNumber {
             step: self.step,
             placeholder: self.placeholder.clone(),
             disabled: self.disabled,
+        }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.min = next.min;
+        self.max = next.max;
+        self.step = next.step;
+        self.placeholder = next.placeholder;
+        self.disabled = next.disabled;
+
+        let next_value = next.value.clamp(self.min, self.max);
+        if (self.value - next_value).abs() > f64::EPSILON {
+            self.value = next_value;
+            self.text_buffer = self.value.to_string();
         }
     }
 }

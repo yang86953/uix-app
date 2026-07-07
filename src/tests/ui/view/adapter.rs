@@ -339,6 +339,224 @@ fn reconcile_same_type_select_preserves_open_state() {
 }
 
 #[test]
+fn reconcile_checkbox_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::widgets::Checkbox;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Checkbox::new("old")));
+    let root_id = tree.root_id().expect("checkbox root should exist");
+    let before_ptr = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Checkbox>()
+        .unwrap() as *const Checkbox;
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(Checkbox::new("new").checked(true).disabled(true)),
+    );
+
+    let checkbox = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Checkbox>()
+        .unwrap();
+    assert_eq!(checkbox as *const Checkbox, before_ptr);
+    assert!(checkbox.is_checked());
+    assert!(matches!(
+        checkbox.snapshot_fields(),
+        SnapshotFields::Checkbox {
+            checked: true,
+            disabled: true,
+            label,
+        } if label == "new"
+    ));
+}
+
+#[test]
+fn reconcile_switch_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::widgets::Switch;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Switch::new()));
+    let root_id = tree.root_id().expect("switch root should exist");
+    let before_ptr = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Switch>()
+        .unwrap() as *const Switch;
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(Switch::new().checked(true).disabled(true)),
+    );
+
+    let switch = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Switch>()
+        .unwrap();
+    assert_eq!(switch as *const Switch, before_ptr);
+    assert!(switch.is_checked());
+    assert_eq!(
+        switch.snapshot_fields(),
+        SnapshotFields::Switch {
+            checked: true,
+            disabled: true,
+            size: 22.0,
+        }
+    );
+}
+
+#[test]
+fn reconcile_radio_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::widgets::{Radio, RadioDirection};
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Radio::new().options(vec!["A", "B"]).selected(0),
+    ));
+    let root_id = tree.root_id().expect("radio root should exist");
+    let before_ptr = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Radio>()
+        .unwrap() as *const Radio;
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            Radio::new()
+                .options(vec!["C", "D", "E"])
+                .selected(2)
+                .disabled(true)
+                .vertical(),
+        ),
+    );
+
+    let radio = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Radio>()
+        .unwrap();
+    assert_eq!(radio as *const Radio, before_ptr);
+    assert_eq!(
+        radio.snapshot_fields(),
+        SnapshotFields::Radio {
+            options: vec!["C".to_string(), "D".to_string(), "E".to_string()],
+            selected: 2,
+            disabled: true,
+            direction: RadioDirection::Vertical,
+            item_h: 24.0,
+        }
+    );
+}
+
+#[test]
+fn reconcile_slider_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::widgets::Slider;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        Slider::new().range(0.0, 100.0).step(1.0).value(10.0),
+    ));
+    let root_id = tree.root_id().expect("slider root should exist");
+    let before_ptr = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Slider>()
+        .unwrap() as *const Slider;
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(Slider::new().range(-10.0, 10.0).step(0.5).value(3.0)),
+    );
+
+    let slider = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Slider>()
+        .unwrap();
+    assert_eq!(slider as *const Slider, before_ptr);
+    assert_eq!(slider.get_value(), 3.0);
+    assert_eq!(
+        slider.snapshot_fields(),
+        SnapshotFields::Slider {
+            min: -10.0,
+            max: 10.0,
+            step: 0.5,
+            value: 3.0,
+        }
+    );
+}
+
+#[test]
+fn reconcile_input_number_patches_instance_and_syncs_snapshot_fields() {
+    use crate::ui::widgets::InputNumber;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(
+        InputNumber::new("old")
+            .min(0.0)
+            .max(10.0)
+            .step(1.0)
+            .value(4.0),
+    ));
+    let root_id = tree.root_id().expect("input number root should exist");
+    let before_ptr = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<InputNumber>()
+        .unwrap() as *const InputNumber;
+
+    ViewAdapter::reconcile_nodes(
+        &mut tree,
+        ViewNode::leaf(
+            InputNumber::new("new")
+                .min(-5.0)
+                .max(8.0)
+                .step(0.25)
+                .value(2.5)
+                .disabled(true),
+        ),
+    );
+
+    let input_number = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<InputNumber>()
+        .unwrap();
+    assert_eq!(input_number as *const InputNumber, before_ptr);
+    assert_eq!(input_number.get_value(), 2.5);
+    assert_eq!(
+        input_number.snapshot_fields(),
+        SnapshotFields::InputNumber {
+            value: 2.5,
+            min: -5.0,
+            max: 8.0,
+            step: 0.25,
+            placeholder: "new".to_string(),
+            disabled: true,
+        }
+    );
+}
+
+#[test]
 fn reconcile_same_type_tooltip_preserves_pending_timer_state() {
     use crate::ui::widgets::{Tooltip, TooltipPlacement};
 

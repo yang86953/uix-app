@@ -136,6 +136,12 @@ impl Checkbox {
             label: self.label.clone(),
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.checked = next.checked;
+        self.disabled = next.disabled;
+        self.label = next.label;
+    }
 }
 
 #[cfg(test)]

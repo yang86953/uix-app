@@ -265,6 +265,14 @@ impl Radio {
             item_h: self.item_h,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.options = next.options;
+        self.selected = next.selected.min(self.options.len().saturating_sub(1));
+        self.disabled = next.disabled;
+        self.direction = next.direction;
+        self.item_h = next.item_h;
+    }
 }
 
 #[cfg(test)]

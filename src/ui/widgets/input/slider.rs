@@ -165,6 +165,13 @@ impl Slider {
             value: self.value,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.min = next.min;
+        self.max = next.max;
+        self.step = next.step;
+        self.value = next.value.clamp(self.min, self.max);
+    }
 }
 
 impl Default for Slider {
