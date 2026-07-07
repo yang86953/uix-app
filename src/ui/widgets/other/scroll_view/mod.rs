@@ -1,5 +1,6 @@
 //! ScrollView widget: a scrollable viewport that clips and scrolls children.
 
+use crate::ui::core::widget::WidgetCore;
 pub mod scrollbar;
 #[allow(unused_imports)]
 pub use scrollbar::*;
@@ -12,8 +13,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
 use crate::ui::{
-    ComponentId, EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetComponent, WidgetCore,
-    WidgetTree,
+    ComponentId, EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetComponent, WidgetTree,
 };
 
 pub use crate::native::traits::input::ScrollDirection;

@@ -1,7 +1,8 @@
 use super::*;
 use crate::core::Rect;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::traits::{WidgetAnimation, WidgetCapabilities, WidgetComponent};
-use crate::ui::{WidgetCore, WidgetTree};
+use crate::ui::WidgetTree;
 
 #[test]
 fn drawer_advertises_animation_capability() {

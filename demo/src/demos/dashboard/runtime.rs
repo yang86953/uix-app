@@ -14,6 +14,7 @@ use uix::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use uix::native::traits::platform::Platform;
 use uix::native::traits::window::PlatformWindow;
 use uix::prelude::*;
+use uix::ui::core::widget::WidgetTree;
 use uix::ui::widgets::icon::init_lucide_font;
 
 use super::{rebuild_for_theme, switch_page, DemoState};

@@ -1,5 +1,6 @@
 //! 鑷畾涔?widget 绀轰緥 鈥?`component!` + `prelude` 缁樺埗 API銆?
 use uix::prelude::*;
+use uix::ui::core::widget::WidgetTree;
 
 // 鈹€鈹€ Counter 鈥?鑷畾涔?widget 绀轰緥 鈹€鈹€
 

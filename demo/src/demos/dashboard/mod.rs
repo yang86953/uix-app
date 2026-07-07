@@ -15,6 +15,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use uix::core::log::{debug_fn, error_fn};
 use uix::prelude::*;
+use uix::ui::core::widget::{WidgetCore, WidgetNode, WidgetTree};
 
 use more_pages::{page_charts, page_other};
 use runtime::{create_engine, create_font_service, run_event_loop};

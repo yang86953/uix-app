@@ -4,6 +4,7 @@
 //! 使用 `prelude` 导入组件与布局 API。
 
 use uix::prelude::*;
+use uix::ui::core::widget::WidgetNode;
 
 use super::{row, PageBuilder, INNER_W};
 

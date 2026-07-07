@@ -3,6 +3,7 @@
 //! 使用 `prelude` 导入组件；自定义 widget 见同目录 `widgets` 模块。
 
 use uix::prelude::*;
+use uix::ui::core::widget::WidgetNode;
 
 use super::widgets::{BounceBall, Counter, PulseRing};
 use super::{row, PageBuilder, INNER_W};

@@ -1,12 +1,13 @@
 use super::*;
 use crate::app::main_thread_queue::MainThreadContext;
 use crate::draw::NullEngine;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::combinators::{dynamic_label, label};
 use crate::ui::view::ViewAdapter;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::container::Container;
 use crate::ui::widgets::Label;
-use crate::ui::{AppState, State, WidgetCore};
+use crate::ui::{AppState, State};
 
 fn root_label_text(root: ViewNode) -> String {
     let tree = ViewAdapter::build_nodes(root);

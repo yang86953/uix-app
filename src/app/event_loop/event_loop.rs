@@ -17,8 +17,9 @@ use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::window::PlatformWindow;
 use crate::ui::clipboard;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::theme::{DynTokens, Theme};
-use crate::ui::{EventResult, SystemEvent, WidgetCore, WidgetTree};
+use crate::ui::{EventResult, SystemEvent, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::time::{Duration, Instant};
 

@@ -1,8 +1,9 @@
 use super::*;
 use crate::core::{Point, Rect};
 use crate::native::traits::{KeyMod, MouseButton};
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::traits::{EventHandler, WidgetAnimation, WidgetCapabilities, WidgetComponent};
-use crate::ui::{SystemEvent, WidgetCore, WidgetTree};
+use crate::ui::{SystemEvent, WidgetTree};
 
 #[test]
 fn collapse_advertises_animation_capability() {

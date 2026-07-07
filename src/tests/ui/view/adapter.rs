@@ -1,8 +1,8 @@
 use super::*;
 use crate::draw::Color;
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::Container;
-use crate::ui::WidgetCore;
 
 #[test]
 fn test_build_with_children() {
@@ -653,7 +653,7 @@ fn input_dsl_state_capture_reregisters_handler_when_fingerprint_changes() {
     use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::state::State;
     use crate::ui::view::input;
-    use crate::ui::{SystemEvent, WidgetCore};
+    use crate::ui::SystemEvent;
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -697,7 +697,7 @@ fn input_dsl_window_capture_reregisters_handler_when_fingerprint_changes() {
     use crate::core::{Point, Rect, WindowId};
     use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::view::input;
-    use crate::ui::{SystemEvent, WidgetCore};
+    use crate::ui::SystemEvent;
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -927,7 +927,7 @@ fn input_on_change_is_registered_as_semantic_handler() {
     use crate::core::{Point, Rect};
     use crate::native::traits::input::{KeyMod, MouseButton};
     use crate::ui::view::input;
-    use crate::ui::{SystemEvent, WidgetCore};
+    use crate::ui::SystemEvent;
     use std::cell::RefCell;
     use std::rc::Rc;
 
