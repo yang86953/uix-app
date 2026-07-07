@@ -2,7 +2,7 @@
 
 ← [Main](Main.md) · 按需查阅
 
-> **唯一决策台账**（#1–#100 定稿；#101–#159 术语收敛、核心理念、豁免治理与实现边界；新决策 #160+）。锚点 `#d{N}`。系统正文 → [`systems/`](systems/) · 完整索引 → [Main.md](Main.md)
+> **唯一决策台账**（#1–#100 定稿；#101–#161 术语收敛、核心理念、豁免治理与实现边界；新决策 #162+）。锚点 `#d{N}`。系统正文 → [`systems/`](systems/) · 完整索引 → [Main.md](Main.md)
 
 ## 实现顺序（[#50](#d50)）
 
@@ -148,7 +148,7 @@
 | <a id="d110"></a>110 | 多窗零闲置 | **每窗独立** DeepIdle/RegisteredActive/Active；A 窗 Active 不要求 B 窗 wake |
 | <a id="d111"></a>111 | RegisteredActive | 周期工作由**框架**在组件/IME 生命周期内 **自动 register/unregister**（[#124](#d124)）；unregister → DeepIdle |
 | <a id="d112"></a>112 | 运行中 Theme | 默认 **不**跟 OS；App **opt-in** `.follow_system_theme(true)` 后框架自动处理 ThemeChanged（[#125](#d125)） |
-| <a id="d113"></a>113 | 零闲置豁免 | 无法框架托管的定时/轮询 → **`decisions.md` #160+** 公开条目 + 测试证明；默认不豁免；当前无豁免见 [#158](#d158) |
+| <a id="d113"></a>113 | 零闲置豁免 | 无法框架托管的定时/轮询 → **`decisions.md` #162+** 公开条目 + 测试证明；默认不豁免；当前无豁免见 [#158](#d158) |
 | <a id="d114"></a>114 | Picture 启用 | **PicturePolicy 自动推断** + 自适应阈值（[#122](#d122) [#129](#d129) [#136](#d136)）；修订旧「黑名单+深度4」 |
 | <a id="d115"></a>115 | ActiveWorkRegistry | 框架内部注册表（**App 不可访问** [#124](#d124)）；`next_deadline` / `drain_due` |
 | <a id="d116"></a>116 | 多窗单 loop | **WindowSession** 每窗独立树+引擎+三态+Registry；**单** `run_app_loop`；UiEvent 带 **window_id** 路由 |
@@ -177,7 +177,7 @@
 | <a id="d139"></a>139 | 测试时钟分层 | **`FakeTimer`** = `ITimer` 平台层；**`TestClock`** = App `drain_due` / `wait_until` 注入时钟；二者不混用 |
 | <a id="d140"></a>140 | on_start | **`.on_start(FnOnce(AppHandle))`** — 每 WindowSession 创建后、首帧前调用一次；运行中 Timer/post_to_ui 的 **canonical** 注入点 |
 | <a id="d141"></a>141 | 多窗 post_to_ui | `AppHandle` 含 **`window_id`**；投递 **仅** 入该 session 队列；**禁止**跨窗；session 已销毁则丢弃闭包 |
-| <a id="d142"></a>142 | capture 指纹字段 | hash 仅含 State 身份（[#143](#d143)）+ Copy 值 + AppHandle.window_id；**不含**闭包指针 / 堆地址 / State **value generation** |
+| <a id="d142"></a>142 | capture 指纹字段 | 当前 hash 仅含 State 身份（[#143](#d143)）与 `WindowId`（代表窗口作用域 / AppHandle）；Copy / `&'static` 仅由未来语法层 capture API 生成；**不含**闭包指针 / 堆地址 / State **value generation** |
 | <a id="d143"></a>143 | StateSlotId | `State::new` 分配全局单调 **slot id**；`clone` 共享；指纹用 slot id + `TypeId`；**不用** `generation()` |
 | <a id="d144"></a>144 | open_window | **`AppHandle::open_window`** → 新 WindowSession + **新 AppHandle**；可选 `.on_window_start`；不阻塞主 loop |
 | <a id="d145"></a>145 | AppState 注册 | **不替代** `State<T>`；mount 时框架自动 register；快照 [#146](#d146) |
@@ -193,7 +193,9 @@
 | <a id="d155"></a>155 | view_factory 生命周期 | 每 `WindowSession` **创建时**从 `App::root` 或 `open_window` 根闭包生成 **`Arc<dyn Fn() -> ViewNode + Send + Sync>`**；**会话内不可变**；`State` 批次 reconcile **始终**调用该 factory |
 | <a id="d156"></a>156 | update_view 与 factory | `update_view` **仅**写 `pending_root`；**不**替换 `view_factory`；`take()` 消费后下一帧 State  reconcile 仍走原 factory |
 | <a id="d157"></a>157 | P0 落地清单 | 按文件路径的 P0 接线表；详见 [roadmap · P0 落地清单](roadmap.md#p0-落地清单) |
-| <a id="d158"></a>158 | 零闲置豁免台账 | 当前 **无豁免**；新增豁免必须追加公开条目（当前从 **#160+** 起），并写明触发源、wake 频率、允许工作范围、无法 register 的理由与测试边界 |
+| <a id="d158"></a>158 | 零闲置豁免台账 | 当前 **无豁免**；新增豁免必须追加公开条目（当前从 **#162+** 起），并写明触发源、wake 频率、允许工作范围、无法 register 的理由与测试边界 |
 | <a id="d159"></a>159 | Handler capture 自动收集边界 | 任意 Rust handler 闭包 **不做运行时自动捕获探测**；稳定复用仅通过显式 capture API，或未来宏 / DSL 在语法层生成 `capture_fingerprint`；禁止执行 handler 做 probe，避免业务副作用、错误事件语义与零闲置破坏 |
+| <a id="d160"></a>160 | 普通 handler 保守重绑 | 无显式 `handler_generation` / `capture_fingerprint` 的普通 Rust handler 闭包在 reconcile 时 **视为变更并重绑**；不得用调用点、闭包指针、堆地址或 `TypeId` 伪造稳定身份；显式 capture API 与未来语法层 fingerprint 仍可稳定复用 |
+| <a id="d161"></a>161 | capture 指纹域边界 | `ui` 不依赖 `app`，因此 AppHandle 捕获在 UI 层表达为 `WindowId` 指纹；任意 Copy / `&'static` 捕获须由未来语法层 API 明确生成，当前普通闭包不得自动推断 |
 
-新决策追加 **#160+**（含豁免条目）。
+新决策追加 **#162+**（含豁免条目）。

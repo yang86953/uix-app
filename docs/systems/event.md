@@ -79,6 +79,8 @@ HashMap<ComponentId, Vec<HandlerEntry>>
 - `options: HandlerOptions` — `once`（#90）、`when` 谓词（#91、#120，**O(1) 纯函数**，禁止 I/O/alloc/读 State）
 - `handler: FnMut(&mut SemanticEvent)`
 - `with_state_capture(&State<T>)`：当前已公开，用于标记 handler 捕获的 State，使 Reconciler 能在指纹不变时复用稳定 generation；裸 `capture_fingerprint` 仍是内部实现细节。
+- `with_window_capture(WindowId)`：当前已公开，用于标记窗口作用域 AppHandle 等捕获；`ui` 只记录 `WindowId` 指纹，不依赖 `app`。
+- 普通 Rust 闭包若无显式 `handler_generation` / capture fingerprint，按 #160 保守视为 changed 并重绑；不使用 callsite、closure 指针或堆地址伪造稳定身份。
 
 ### 多 handler 与 stop（#7、#68）
 
@@ -86,7 +88,7 @@ HashMap<ComponentId, Vec<HandlerEntry>>
 - `event.stop_propagation()` — 阻后续 handler **与**语义冒泡（#68）
 - `event.prevent_default()` — 语义层 `default_prevented`（#92）
 
-Handler 闭包 `'static`；**AppState** / **ComponentHandle**（设计，#32）或 `State<T>` 捕获（#26）。`ComponentHandle::emit` 见 [Handle emit](#handle-emit)（#147）。
+Handler 闭包 `'static`；**ComponentHandle**（设计，#32）以窗口作用域 `WindowId` 指纹表达，或通过 `State<T>` 捕获（#26）。`ComponentHandle::emit` 见 [Handle emit](#handle-emit)（#147）。
 
 ---
 
