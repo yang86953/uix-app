@@ -125,7 +125,7 @@ impl ViewAdapter {
 
         if tid == std::any::TypeId::of::<Container>() {
             if let Some(c) = widget.as_any_mut().downcast_mut::<Container>() {
-                c.style = style.clone();
+                c.style = c.style.clone().apply(style.clone());
             }
         } else if tid == std::any::TypeId::of::<Label>() {
             if let Some(l) = widget.as_any_mut().downcast_mut::<Label>() {

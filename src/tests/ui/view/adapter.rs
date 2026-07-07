@@ -43,6 +43,49 @@ fn test_apply_style_container() {
 }
 
 #[test]
+fn container_view_style_preserves_builder_layout_style() {
+    use crate::core::EdgeInsets;
+    use crate::ui::style::FlexDirection;
+    use crate::ui::view::{column, label};
+
+    let tree = ViewAdapter::build_nodes(column([label("A")]).padding(8.0));
+    let root_id = tree.root_id().expect("root node should exist");
+    let root = tree.get(root_id).expect("root node should be present");
+    let container = root
+        .component()
+        .as_any()
+        .downcast_ref::<Container>()
+        .expect("root should be Container");
+
+    assert_eq!(container.style.flex_direction, FlexDirection::Column);
+    assert_eq!(container.style.flex_grow, 1.0);
+    assert_eq!(container.style.padding, EdgeInsets::uniform(8.0));
+}
+
+#[test]
+fn reconcile_container_view_style_preserves_builder_layout_style() {
+    use crate::core::EdgeInsets;
+    use crate::ui::style::FlexDirection;
+    use crate::ui::view::{column, label};
+
+    let mut tree = ViewAdapter::build_nodes(column([label("A")]));
+
+    ViewAdapter::reconcile_nodes(&mut tree, column([label("A")]).padding(8.0));
+
+    let root_id = tree.root_id().expect("root node should exist");
+    let root = tree.get(root_id).expect("root node should be present");
+    let container = root
+        .component()
+        .as_any()
+        .downcast_ref::<Container>()
+        .expect("root should be Container");
+
+    assert_eq!(container.style.flex_direction, FlexDirection::Column);
+    assert_eq!(container.style.flex_grow, 1.0);
+    assert_eq!(container.style.padding, EdgeInsets::uniform(8.0));
+}
+
+#[test]
 fn reconcile_same_view_keeps_invalidation_empty() {
     use crate::ui::view::label;
 
