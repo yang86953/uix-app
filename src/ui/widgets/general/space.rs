@@ -75,7 +75,7 @@ define_widget! {
             .iter()
             .map(|&cid| {
                 let pref = tree.get(cid)
-                    .map(|c| c.preferred_size(None))
+                    .map(|c| c.measure(Constraints::unconstrained()))
                     .unwrap_or_default();
                 let actual_h = tree.get(cid)
                     .map(|c| c.frame().h)

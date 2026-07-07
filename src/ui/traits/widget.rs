@@ -195,6 +195,9 @@ pub trait EventHandler: WidgetComponent {
     fn active_timer(&self) -> Option<(u64, Duration)> {
         None
     }
+    fn wants_capture_phase(&self) -> bool {
+        false
+    }
     /// Opt in to receiving every PointerMove while the pointer remains inside
     /// the widget's hit-test frame. Default false enables the boundary-aware
     /// PointerMove fast path.

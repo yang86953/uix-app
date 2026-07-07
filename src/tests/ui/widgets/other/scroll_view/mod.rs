@@ -257,6 +257,47 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
 }
 
 #[test]
+fn scrollview_wheel_at_scroll_boundary_does_not_fallback_invalidate() {
+    let mut tree = WidgetTree::new();
+    let sv_id = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
+    ));
+    tree.add_child(
+        sv_id,
+        Box::new(FixedWidget {
+            size: Size::new(300.0, 600.0),
+            id: WidgetId::new(1),
+        }),
+    );
+
+    tree.layout();
+    let sv = tree
+        .get_mut(sv_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<ScrollView>()
+        .unwrap();
+    sv.last_frame.set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
+    sv.scroll_y = sv.max_scroll_y();
+    sv.scroll_delta_strip.set((0.0, 0.0));
+    tree.reset_dirty();
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Wheel {
+            pos: Point::new(20.0, 20.0),
+            delta: Point::new(0.0, 1.0),
+        }),
+        EventResult::NotHandled
+    );
+
+    let dirty = tree.dirty_region();
+    assert!(!dirty.full_frame);
+    assert!(dirty.rects().is_empty());
+    assert!(tree.drain_scroll_region_move().is_none());
+}
+
+#[test]
 fn scrollview_scrollbar_drag_registers_composite_scroll_strip() {
     let mut tree = WidgetTree::new();
     let sv_id = tree.set_root(Box::new(

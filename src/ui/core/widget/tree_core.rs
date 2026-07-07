@@ -1,5 +1,5 @@
 use super::*;
-use crate::core::{Point, Rect};
+use crate::core::{Constraints, Point, Rect};
 use crate::draw::pipeline::InvalidationQueueHandle;
 use crate::native::traits::input::{KeyMod, MouseButton};
 use crate::ui::app_state::AppState;
@@ -346,7 +346,7 @@ impl WidgetTree {
         let mut boxed = BoxedWidget::new(widget);
         boxed.set_id(id);
         boxed.set_tab_index(boxed.component().tab_index());
-        let ps = boxed.preferred_size(None);
+        let ps = boxed.measure(Constraints::unconstrained());
         boxed.set_frame(Rect::new(0.0, 0.0, ps.w, ps.h));
         let slot = id.slot();
         if self.nodes.len() <= slot {
