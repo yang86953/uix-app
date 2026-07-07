@@ -475,7 +475,7 @@ run_active_frame(session):
 
 未托管的周期工作 **不得**存在；须内置组件、**#132 Timer API** 或 async→State（#131）。
 
-> **实现注记**：当前已有 RegisteredActive deadline wait 骨架与无 deadline 注册项；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，并将 `update` / `tick_effects` 门控到 Active 帧；Tooltip 内置 timer、AppTimer 注册源、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源与 IME composition session 已接，其他过渡动画源待接。
+> **实现注记**：当前已有 RegisteredActive deadline wait 骨架与无 deadline 注册项；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，并将 `update` 门控到 Active 帧、将 `tick_effects` 进一步收窄到 Effect pending；Tooltip 内置 timer、AppTimer 注册源、WidgetAnimation 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Modal / Drawer 内置动画源与 IME composition session 已接，其他过渡动画源待接。
 
 ---
 
@@ -636,7 +636,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 | 能力 | 设计 | 当前 | 文档 |
 |------|------|------|------|
-| 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 update / tick_effects；RegisteredActive deadline wait 骨架已接 | [#106](../decisions.md#d106) [#117](../decisions.md#d117) |
+| 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 update / tick_effects；Active 帧仅在 Effect pending 时 tick；RegisteredActive deadline wait 骨架已接 | [#106](../decisions.md#d106) [#117](../decisions.md#d117) |
 | ActiveWorkRegistry | register / next_deadline / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due` 骨架、无 deadline 注册项、到期 `Timer` / `AppTimer` 消费、Tooltip 内置 timer 托管、WidgetAnimation 下一帧 deadline、`Spin` 内置动画源与 IME composition session 托管 | [#115](../decisions.md#d115) |
 | 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；副窗创建、独立 `WindowSession` bootstrap、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接 | [#116](../decisions.md#d116) |
 | 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入主循环；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接 | [#118](../decisions.md#d118) |
@@ -663,7 +663,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | ComponentConfigSnapshot | mount 提取配置 | 类型与首批内置静态配置提取已接；`ComponentHandle` 直接 snapshot getter 已接；AppState mount/unmount snapshot register 已接；reconcile patch update 已接 | [#146](../decisions.md#d146) |
 | Handle emit / invalidate / getter | dispatch_semantic + 窄 Paint + 只读配置 | `ComponentHandle::emit` 已导出并走 `WidgetTree::dispatch_semantic`；`invalidate()` 已接 `WidgetTree::invalidate_paint` 窄 Paint；`snapshot()` / `text()` / `placeholder()` / `disabled()` 已接；App 默认持有 `AppState`，`AppState::get_handle` 可查 snapshot handle；lookup handle 的 live tree 绑定待接 | [#119](../decisions.md#d119) [#147](../decisions.md#d147) |
 | update_view | AppHandle 按 session reconcile | `AppHandle::update_view` / `set_root` 已导出；经 `AppRuntime` 按 `window_id` 写目标 MainThreadQueue 并在帧末 reconcile；副窗 session bootstrap、root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接 | [#149](../decisions.md#d149) |
-| State 跨窗标脏 | paint_sites fan-out | 单 bind slot | [#150](../decisions.md#d150) |
+| State 跨窗标脏 | paint_sites fan-out | `State` / `Computed` 已支持多个 paint site fan-out；`State` reconcile callback 已支持按 site key fan-out 并原地更新重复绑定；副窗 session 路由与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接 | [#150](../decisions.md#d150) |
 | SnapshotSource | component! 自动快照 | `SnapshotSource` trait 已导出；Button / Label / Input / Container / Grid 手写实现已接；`define_widget!` 自定义组件 pub 字段自动提取已接；`component! { name: ..., struct ... }` 已复用该路径，完整独立 DSL 待接 | [#151](../decisions.md#d151) |
 | snapshot(skip) | 字段属性排除 | `define_widget!` 已解析并消费 `#[snapshot(skip)]`；首批手写内置提取已人工排除运行态字段；`component! { name: ..., struct ... }` 已复用该排除逻辑，完整独立 DSL 待接 | [#152](../decisions.md#d152) |
 | reconcile 合并 | pending_root 优先 | 单窗 `update_view` 路径与 State 批次自动置位已接；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake 后端，Linux Wayland 原生 waker 待接 | [#153](../decisions.md#d153) |
