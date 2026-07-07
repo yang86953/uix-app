@@ -173,15 +173,10 @@ impl WidgetTree {
                 }
             }
             SystemEvent::PointerUp { pos, button, mods } => {
-                let hold = self
-                    .managers()
-                    .interaction
-                    .pressed_widget()
-                    .or(self.pointer_down_target);
+                let hold = self.managers().interaction.pressed_widget();
                 // 如果拖拽处于活跃状态，发射 DragEnd 到拖拽目标
-                if self.managers().drag.is_dragging() || self.drag_gesture.active {
-                    if let Some(target) = self.managers().drag.target().or(self.drag_gesture.target)
-                    {
+                if self.managers().drag.is_dragging() {
+                    if let Some(target) = self.managers().drag.target() {
                         self.invalidate_paint(target);
                         let drag_end = SystemEvent::DragEnd {
                             pos: *pos,
@@ -241,9 +236,7 @@ impl WidgetTree {
                         self.drag_gesture.active = true;
                         self.drag_gesture.potential = false;
                         // 发射 DragStart 到拖拽目标
-                        if let Some(target) =
-                            self.managers().drag.target().or(self.drag_gesture.target)
-                        {
+                        if let Some(target) = self.managers().drag.target() {
                             self.invalidate_paint(target);
                             let drag_start = SystemEvent::DragStart {
                                 pos: *pos,
@@ -256,8 +249,7 @@ impl WidgetTree {
                 }
                 // 拖拽进行中：发射 DragMove
                 if self.managers().drag.is_dragging() {
-                    if let Some(target) = self.managers().drag.target().or(self.drag_gesture.target)
-                    {
+                    if let Some(target) = self.managers().drag.target() {
                         self.invalidate_paint(target);
                         let last_pos = self.managers().drag.last_pos();
                         let delta = Point::new(pos.x - last_pos.x, pos.y - last_pos.y);
@@ -274,23 +266,14 @@ impl WidgetTree {
                 }
                 self.drag_gesture.last_pos = *pos;
 
-                if let Some(drag_target) = self
-                    .managers()
-                    .interaction
-                    .pressed_widget()
-                    .or(self.pointer_down_target)
-                {
+                if let Some(drag_target) = self.managers().interaction.pressed_widget() {
                     self.invalidate_paint(drag_target);
                     let result = self.dispatch_to(drag_target, event);
                     self.rebuild_widget_overlays();
                     return result;
                 }
 
-                let current_hover = self
-                    .managers()
-                    .interaction
-                    .hovered_widget()
-                    .or(self.hovered_widget);
+                let current_hover = self.managers().interaction.hovered_widget();
 
                 if let Some(hovered) = current_hover {
                     if self.pointer_inside_widget_hit_frame(hovered, *pos) {
@@ -344,7 +327,6 @@ impl WidgetTree {
                     .overlay_target_at(*pos)
                     .or_else(|| self.hit_test(*pos))
                     .or(self.managers().interaction.hovered_widget())
-                    .or(self.hovered_widget)
                     .or(self.root_id);
                 if let Some(t) = target {
                     // 捕获阶段：ScrollView 等祖先先处理；Handled 时由 capture 侧登记动画与视口重绘，
@@ -368,7 +350,7 @@ impl WidgetTree {
                     return EventResult::NotHandled;
                 }
 
-                if let Some(t) = self.focused_widget {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.invalidate_paint(t);
                     // 捕获阶段：root → target，用于全局快捷键
                     if self.capture_to(t, event) == EventResult::Handled {
@@ -397,7 +379,7 @@ impl WidgetTree {
                 }
             }
             SystemEvent::KeyUp { .. } => {
-                if let Some(t) = self.focused_widget {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.invalidate_paint(t);
                     // 捕获阶段：root → target
                     if self.capture_to(t, event) == EventResult::Handled {
@@ -409,7 +391,7 @@ impl WidgetTree {
                 }
             }
             SystemEvent::TextInput { text } => {
-                if let Some(t) = self.focused_widget {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.invalidate_paint(t);
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
@@ -423,7 +405,7 @@ impl WidgetTree {
             SystemEvent::ImeCompositionStart
             | SystemEvent::ImeCompositionUpdate { .. }
             | SystemEvent::ImeCompositionEnd { .. } => {
-                if let Some(t) = self.focused_widget {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.invalidate_paint(t);
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
@@ -447,7 +429,7 @@ impl WidgetTree {
                 }
             }
             SystemEvent::Copy | SystemEvent::Cut | SystemEvent::Paste { .. } => {
-                if let Some(t) = self.focused_widget {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.invalidate_paint(t);
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
@@ -465,7 +447,7 @@ impl WidgetTree {
                 }
             }
             SystemEvent::FocusIn | SystemEvent::FocusOut => {
-                if let Some(t) = self.focused_widget {
+                if let Some(t) = self.managers().focus.focused_widget() {
                     self.dispatch_to(t, event)
                 } else {
                     EventResult::NotHandled
@@ -506,9 +488,7 @@ impl WidgetTree {
                     .managers()
                     .interaction
                     .hovered_widget()
-                    .or(self.hovered_widget)
                     .or(self.managers().focus.focused_widget())
-                    .or(self.focused_widget)
                     .or(self.root_id);
                 if let Some(target) = target {
                     let result = self.dispatch_to(target, event);
@@ -817,10 +797,11 @@ impl WidgetTree {
     }
 
     fn set_focus(&mut self, new_focus: Option<WidgetId>) {
-        if new_focus == self.focused_widget {
+        let old_focus = self.managers().focus.focused_widget();
+        if new_focus == old_focus {
             return;
         }
-        if let Some(old) = self.focused_widget {
+        if let Some(old) = old_focus {
             self.invalidate_paint(old);
             let _ = self.dispatch_to(old, &SystemEvent::FocusOut);
         }

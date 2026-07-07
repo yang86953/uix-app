@@ -230,7 +230,7 @@ WidgetTree
 
 支持 **per-widget override**（`state_for(id)` / `text_for(id)`）。
 
-> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `style_for(id)` / `text_for(id)` per-widget override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`collect_focusable` / `focus_next` 由 manager 驱动；`InteractionManager` 已记录 hovered / pressed widget，并作为 PointerMove / Wheel / Timer 目标解析的优先状态源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset，并驱动基础 DragStart / DragMove / DragEnd 热路径。旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 字段保留为事件派发兼容镜像。
+> **实现注记**：`WidgetTree` 已持有 per-tree `WidgetManagers`，并通过 `managers()` / `managers_mut()` 暴露树级默认 manager 与 `state_for(id)` / `style_for(id)` / `text_for(id)` per-widget override；节点移除或根替换会清理 stale override，代际不同的旧 ID 不会命中复用 slot 的新节点。`FocusManager` 已记录当前焦点与 Tab 顺序，`collect_focusable` / `focus_next` 由 manager 驱动；`InteractionManager` 已记录 hovered / pressed widget，并作为 PointerMove / Wheel / Timer 目标解析的事实源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset，并驱动基础 DragStart / DragMove / DragEnd 热路径。旧 `focused_widget` / `hovered_widget` / `pointer_down_target` / `drag_gesture` 字段仅写入过渡镜像，不再参与事件目标解析。
 
 ---
 
