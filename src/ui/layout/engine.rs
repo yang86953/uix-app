@@ -544,10 +544,17 @@ impl LayoutEngine for GridLayout {
 
 /// 从 WidgetTree 节点构建统一的 LayoutChild。
 pub fn child_from_tree(component_id: ComponentId, tree: &WidgetTree) -> LayoutChild {
+    child_from_tree_with_constraints(component_id, tree, Constraints::unconstrained())
+}
+
+/// 从 WidgetTree 节点构建统一的 LayoutChild，并使用父级内容框约束测量。
+pub fn child_from_tree_with_constraints(
+    component_id: ComponentId,
+    tree: &WidgetTree,
+    constraints: Constraints,
+) -> LayoutChild {
     let node = tree.get(component_id);
-    let pref = node
-        .map(|c| c.measure(Constraints::unconstrained()))
-        .unwrap_or_default();
+    let pref = node.map(|c| c.measure(constraints)).unwrap_or_default();
     let h = if pref.h > 0.0 {
         pref.h
     } else {

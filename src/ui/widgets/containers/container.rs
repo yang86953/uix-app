@@ -7,7 +7,9 @@ use crate::component;
 use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
-use crate::ui::layout::engine::{child_from_tree, BoxModel, FlexLayout, LayoutChild};
+use crate::ui::layout::engine::{
+    child_from_tree_with_constraints, BoxModel, FlexLayout, LayoutChild,
+};
 use crate::ui::layout::{AlignItems, FlexDirection, JustifyContent};
 use crate::ui::style::{
     apply_style, BoxShadowDef, ColorValue, DisplayMode, Style, TypographyToken,
@@ -94,9 +96,10 @@ component! {
         if visible_children.is_empty() { return Vec::new(); }
 
         // 构建统一子节点信息
+        let child_constraints = Constraints::loose(Size::new(content_rect.w, content_rect.h));
         let layout_children: Vec<LayoutChild> = visible_children
             .iter()
-            .map(|&cid| child_from_tree(cid, tree))
+            .map(|&cid| child_from_tree_with_constraints(cid, tree, child_constraints))
             .collect();
 
         // 委托给统一的 FlexLayout 布局引擎
