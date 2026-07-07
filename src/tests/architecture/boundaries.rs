@@ -153,3 +153,25 @@ fn removed_compatibility_terms_do_not_return_to_source() {
         "removed compatibility terms must not return to source: {violations:?}"
     );
 }
+
+#[test]
+fn legacy_style_manager_stays_off_recommended_entrypoints() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let checked = ["prelude.rs", "ui/mod.rs"];
+    let legacy_exports = ["StyleManager", "WidgetStylePreset"];
+    let mut violations = Vec::new();
+
+    for rel in checked {
+        let text = fs::read_to_string(src.join(rel)).unwrap();
+        for symbol in legacy_exports {
+            if text.contains(symbol) {
+                violations.push(format!("{rel} exposes {symbol}"));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "legacy style presets must stay behind ui::managers, not prelude/ui::*: {violations:?}"
+    );
+}
