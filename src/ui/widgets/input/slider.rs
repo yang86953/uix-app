@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
@@ -24,8 +24,12 @@ define_widget! {
 
     tab_index => (&self) -> i32 { 1 }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn crate::draw::traits::GraphicsEngine>) -> Size {
-        Size::new(200.0, 24.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -194,5 +198,22 @@ impl Slider {
 
     pub fn get_value(&self) -> f32 {
         self.value
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(200.0, 24.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_slider_size() {
+        let measured = Slider::new().measure(Constraints::loose(Size::new(120.0, 16.0)));
+
+        assert_eq!(measured, Size::new(120.0, 16.0));
     }
 }

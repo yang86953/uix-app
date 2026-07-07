@@ -1,5 +1,7 @@
 use super::*;
+use crate::core::{Constraints, Size};
 use crate::native::traits::input::{KeyMod, MouseButton};
+use crate::ui::traits::WidgetLayout;
 use crate::ui::{SemanticKind, WidgetCore, WidgetTree};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -28,4 +30,11 @@ fn pagination_click_emits_change_semantic_event() {
     });
 
     assert_eq!(&*page.borrow(), "2");
+}
+
+#[test]
+fn measure_clamps_pagination_size() {
+    let measured = Pagination::new(100, 10).measure(Constraints::loose(Size::new(160.0, 24.0)));
+
+    assert_eq!(measured, Size::new(160.0, 24.0));
 }

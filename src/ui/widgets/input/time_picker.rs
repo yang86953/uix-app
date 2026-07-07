@@ -4,7 +4,7 @@
 
 use std::cell::Cell;
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Color};
@@ -47,8 +47,12 @@ define_widget! {
 
 
     tab_index => (&self) -> i32 { 1 }
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        Size::new(120.0, 32.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -273,5 +277,22 @@ impl TimePicker {
     }
     pub fn set_value(&mut self, v: TimeValue) {
         self.value.set(v);
+    }
+
+    fn intrinsic_size(&self) -> Size {
+        Size::new(120.0, 32.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_time_picker_size() {
+        let measured = TimePicker::new("time").measure(Constraints::loose(Size::new(90.0, 24.0)));
+
+        assert_eq!(measured, Size::new(90.0, 24.0));
     }
 }

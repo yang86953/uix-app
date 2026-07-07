@@ -1,6 +1,6 @@
 //! Segmented widget — 分段选择器，支持 disabled/hover/keyboard/focus。
 
-use crate::core::{Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
@@ -19,10 +19,12 @@ define_widget! {
         pending_change: Cell<Option<usize>>,
     }
 
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        if self.options.is_empty() { return Size::new(0.0, 32.0); }
-        let w = self.options.iter().map(|o| o.len() as f32 * 9.0 + 24.0).sum::<f32>();
-        Size::new(w, 32.0)
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -142,6 +144,18 @@ define_widget! {
 }
 
 impl Segmented {
+    fn intrinsic_size(&self) -> Size {
+        if self.options.is_empty() {
+            return Size::new(0.0, 32.0);
+        }
+        let w = self
+            .options
+            .iter()
+            .map(|o| o.len() as f32 * 9.0 + 24.0)
+            .sum::<f32>();
+        Size::new(w, 32.0)
+    }
+
     fn segment_at(&self, px: f32) -> Option<usize> {
         let mut cum_x = 0.0f32;
         for (i, opt) in self.options.iter().enumerate() {
@@ -195,5 +209,20 @@ impl Segmented {
         }
         self.disabled_options[idx] = true;
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_segmented_size() {
+        let measured = Segmented::new()
+            .options(vec!["One", "Two"])
+            .measure(Constraints::loose(Size::new(70.0, 24.0)));
+
+        assert_eq!(measured, Size::new(70.0, 24.0));
     }
 }

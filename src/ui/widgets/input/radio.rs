@@ -1,6 +1,6 @@
 //! Radio widget — 单选组，支持 horizontal/vertical、disabled、hover。
 
-use crate::core::{Point, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::define_widget;
 use crate::draw::painting::PaintContext;
 use crate::draw::{traits::GraphicsEngine, Radius};
@@ -29,18 +29,12 @@ define_widget! {
 
 
     tab_index => (&self) -> i32 { 1 }
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(self.intrinsic_size())
+    }
+
     preferred_size => (&self, _engine: Option<&dyn GraphicsEngine>) -> Size {
-        let item_w = self.options.iter().map(|o| o.len() as f32 * 9.0 + 30.0).collect::<Vec<_>>();
-        match self.direction {
-            RadioDirection::Horizontal => {
-                let w = item_w.iter().sum::<f32>().max(120.0);
-                Size::new(w, self.item_h)
-            }
-            RadioDirection::Vertical => {
-                let w = item_w.iter().cloned().max_by(|a,b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)).unwrap_or(120.0).max(120.0);
-                Size::new(w, self.item_h * self.options.len() as f32)
-            }
-        }
+        self.intrinsic_size()
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
@@ -121,6 +115,29 @@ define_widget! {
 }
 
 impl Radio {
+    fn intrinsic_size(&self) -> Size {
+        let item_w = self
+            .options
+            .iter()
+            .map(|o| o.len() as f32 * 9.0 + 30.0)
+            .collect::<Vec<_>>();
+        match self.direction {
+            RadioDirection::Horizontal => {
+                let w = item_w.iter().sum::<f32>().max(120.0);
+                Size::new(w, self.item_h)
+            }
+            RadioDirection::Vertical => {
+                let w = item_w
+                    .iter()
+                    .cloned()
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .unwrap_or(120.0)
+                    .max(120.0);
+                Size::new(w, self.item_h * self.options.len() as f32)
+            }
+        }
+    }
+
     fn option_at(&self, px: f32, py: f32) -> Option<usize> {
         match self.direction {
             RadioDirection::Horizontal => {
@@ -237,5 +254,20 @@ impl Radio {
     pub fn vertical(mut self) -> Self {
         self.direction = RadioDirection::Vertical;
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::traits::WidgetLayout;
+
+    #[test]
+    fn measure_clamps_radio_size() {
+        let measured = Radio::new()
+            .options(vec!["One", "Two"])
+            .measure(Constraints::loose(Size::new(70.0, 20.0)));
+
+        assert_eq!(measured, Size::new(70.0, 20.0));
     }
 }
