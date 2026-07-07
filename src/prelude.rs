@@ -115,6 +115,8 @@ mod tests {
         let _node = label("captured").on_semantic_capture(SemanticKind::Click, &state, |_| {});
 
         fn assert_exported<T: ?Sized>() {}
+        fn assert_style_ext<T: StyleExt>() {}
+        fn assert_view<T: View>() {}
         assert_exported::<Animation<f32>>();
         assert_exported::<App>();
         assert_exported::<AppHandle>();
@@ -142,6 +144,7 @@ mod tests {
         assert_exported::<StatusLevel>();
         assert_exported::<Color>();
         assert_exported::<FontService>();
+        assert_exported::<dyn GraphicsEngine>();
         assert_exported::<ImageService>();
         assert_exported::<NullEngine>();
         assert_exported::<SoftwareEngine>();
@@ -149,6 +152,7 @@ mod tests {
         assert_exported::<FlexDirection>();
         assert_exported::<JustifyContent>();
         assert_exported::<LayoutChild>();
+        assert_exported::<dyn LayoutEngine>();
         assert_exported::<SemanticEvent>();
         assert_exported::<SemanticKind>();
         assert_exported::<SemanticPayload>();
@@ -171,6 +175,9 @@ mod tests {
         assert_exported::<InputBuilder>();
         assert_exported::<ScrollBuilder>();
         assert_exported::<dyn IntoWidgetNode>();
+        assert_style_ext::<ViewNode>();
+        assert_view::<ViewNode>();
+        assert_exported::<Ui<'static>>();
         assert_exported::<ViewAdapter>();
         assert_exported::<ViewNode>();
         assert_exported::<BoxModel>();
