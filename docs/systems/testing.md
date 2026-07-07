@@ -114,7 +114,7 @@ Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138、#160）�
 └─────────────────────────────────────────────────────────┘
 ```
 
-### TestClock API（设计）
+### TestClock API（已接）
 
 ```rust
 pub struct TestClock {

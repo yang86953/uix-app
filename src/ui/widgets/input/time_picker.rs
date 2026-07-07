@@ -274,6 +274,9 @@ impl TimePicker {
     pub fn selected(&self) -> TimeValue {
         self.value.get()
     }
+    pub fn is_open(&self) -> bool {
+        self.open.get()
+    }
     pub fn set_value(&mut self, v: TimeValue) {
         self.value.set(v);
     }
@@ -286,6 +289,10 @@ impl TimePicker {
         SnapshotFields::TimePicker {
             placeholder: self.placeholder.clone(),
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.placeholder = next.placeholder;
     }
 }
 

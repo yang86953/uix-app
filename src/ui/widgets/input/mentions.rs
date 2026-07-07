@@ -192,6 +192,9 @@ impl Mentions {
     pub fn value(&self) -> &str {
         &self.value
     }
+    pub(crate) fn is_suggesting(&self) -> bool {
+        self.suggesting
+    }
 
     fn update_filtered(&mut self) {
         if self.search_text.is_empty() {
@@ -225,6 +228,14 @@ impl Mentions {
         SnapshotFields::Mentions {
             placeholder: self.placeholder.clone(),
             options: self.options.clone(),
+        }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.placeholder = next.placeholder;
+        self.options = next.options;
+        if self.suggesting {
+            self.update_filtered();
         }
     }
 }

@@ -248,13 +248,13 @@ Fake 不通过 `Platform` 暴露 presenter；测试通过 `FakeWindow` 获取 `F
 | 类型 | 路径 | 驱动对象 |
 |------|------|----------|
 | **`FakeTimer`** | `native/test_harness/fake_timer.rs`（**已有**） | `Platform::timer()` / `ITimer` |
-| **`TestClock`** | `app/event_loop/test_clock.rs`（设计） | `ActiveWorkRegistry::drain_due`、`wait_until` |
+| **`TestClock`** | `app/test_clock.rs`（已接） | `ActiveWorkRegistry::drain_due`、`wait_until` |
 
 ```rust
 // FakeTimer — 平台 ITimer
 pf.timer.advance(Duration::from_millis(100));  // → fired timer ids
 
-// TestClock — App 主循环（设计）
+// TestClock — App 主循环测试时钟
 clock.advance(Duration::from_secs(30));
 step_frame(&mut clock);  // → drain_due + post_to_ui drain
 ```

@@ -231,6 +231,14 @@ impl AutoComplete {
             options: self.options.clone(),
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.placeholder = next.placeholder;
+        self.options = next.options;
+        if self.is_present() || self.focus {
+            self.filter();
+        }
+    }
 }
 
 impl Default for AutoComplete {
