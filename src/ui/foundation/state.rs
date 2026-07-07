@@ -48,9 +48,9 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
-// Phase 6：State 创建时暂存，供 DynamicLabel 等响应式 widget 绑定。
+// Phase 6：State 读取时暂存，供 DynamicLabel 等响应式 widget 绑定。
 thread_local! {
-    static PENDING_STATE_BINDS: RefCell<Vec<Arc<dyn StatePaintBind>>> =
+    static PENDING_STATE_BINDS: RefCell<Vec<(StateSlotId, Arc<dyn StatePaintBind>)>> =
         const { RefCell::new(Vec::new()) };
 }
 
@@ -90,7 +90,7 @@ impl StateSlotId {
 #[path = "../../tests/ui/foundation/state.rs"]
 mod tests;
 
-/// 开始捕获 `State::new` / `Effect::new` 实例（View 构建期间调用）。
+/// 开始捕获 `State::get` 依赖 / `Effect::new` 实例（View 构建期间调用）。
 pub fn begin_state_capture() {
     STATE_CAPTURE_ACTIVE.store(true, std::sync::atomic::Ordering::SeqCst);
     PENDING_STATE_BINDS.with(|p| p.borrow_mut().clear());
@@ -104,7 +104,12 @@ pub fn end_state_capture() {
 
 /// 取出并清空未关联 widget 的 pending State 绑定（build 末兜底）。
 pub fn drain_pending_state_binds() -> Vec<Arc<dyn StatePaintBind>> {
-    PENDING_STATE_BINDS.with(|p| std::mem::take(&mut *p.borrow_mut()))
+    PENDING_STATE_BINDS.with(|p| {
+        std::mem::take(&mut *p.borrow_mut())
+            .into_iter()
+            .map(|(_, bind)| bind)
+            .collect()
+    })
 }
 
 /// 取出 View 构建期捕获的 Effect。
@@ -151,6 +156,24 @@ fn try_capture_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
             let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
             captured.push(bind);
         }
+    });
+}
+
+fn try_capture_pending_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
+    if !STATE_CAPTURE_ACTIVE.load(Ordering::SeqCst) {
+        return;
+    }
+    let slot_id = state.slot_id();
+    PENDING_STATE_BINDS.with(|p| {
+        let mut pending = p.borrow_mut();
+        if pending
+            .iter()
+            .any(|(captured_slot, _)| *captured_slot == slot_id)
+        {
+            return;
+        }
+        let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
+        pending.push((slot_id, bind));
     });
 }
 
@@ -334,10 +357,6 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             reconcile_sites,
             paint_sites,
         };
-        if STATE_CAPTURE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
-            let bind: Arc<dyn StatePaintBind> = Arc::new(state.clone());
-            PENDING_STATE_BINDS.with(|p| p.borrow_mut().push(bind));
-        }
         state
     }
 
@@ -391,6 +410,7 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
             }),
         });
         try_capture_state_bind(self);
+        try_capture_pending_state_bind(self);
 
         self.inner
             .read()
