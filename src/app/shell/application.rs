@@ -599,7 +599,8 @@ impl App {
             let args = std::env::args().collect::<Vec<_>>();
             self.exit_code = cli.run(&args);
         } else {
-            crate::core::log::info_fn("Running in CLI mode (no commands registered)");
+            crate::core::log::error_fn("CLI 模式须调用 .cli() 注册命令处理器");
+            self.exit_code = 1;
         }
         self.exit_code
     }

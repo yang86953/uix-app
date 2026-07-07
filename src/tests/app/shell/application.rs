@@ -231,6 +231,14 @@ fn app_builder_sets_follow_system_theme() {
 }
 
 #[test]
+fn app_cli_mode_without_cli_returns_error() {
+    let mut app = App::new().mode(AppMode::CLI);
+
+    assert_eq!(app.run_cli(), 1);
+    assert_eq!(app.exit_code(), 1);
+}
+
+#[test]
 fn app_settings_is_opt_in() {
     let mut app = App::new();
 
