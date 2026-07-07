@@ -174,6 +174,12 @@ impl WidgetTree {
     }
 
     pub(crate) fn rebuild_widget_overlays(&mut self) {
+        let previous_trap_owners: Vec<_> = self
+            .overlay_stack
+            .iter()
+            .filter(|entry| entry.traps_focus())
+            .map(|entry| entry.owner())
+            .collect();
         let entries: Vec<_> = self
             .traverse()
             .into_iter()
@@ -190,6 +196,18 @@ impl WidgetTree {
             .retain_entries(|entry| entry.is_managed());
         for entry in entries {
             self.overlay_stack.push_entry(entry);
+        }
+
+        let active_trap_owners: Vec<_> = self
+            .overlay_stack
+            .iter()
+            .filter(|entry| entry.traps_focus())
+            .map(|entry| entry.owner())
+            .collect();
+        for owner in previous_trap_owners {
+            if !active_trap_owners.contains(&owner) {
+                self.restore_focus_after_trap_owner(owner);
+            }
         }
     }
 

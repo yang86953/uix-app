@@ -113,14 +113,11 @@ impl WidgetTree {
         }
 
         if top.is_modal() || top.traps_focus() || top.dismisses_on_outside() {
-            let restore_focus = self
-                .take_focus_trap_restore(top.id())
-                .filter(|&id| self.get(id).is_some());
             if top.dismisses_on_outside() {
                 self.overlay_stack.remove(top.id());
                 self.invalidate_paint(top.owner());
             }
-            self.set_focus(restore_focus);
+            self.restore_focus_after_trap_owner(top.owner());
             return Some(EventResult::Handled);
         }
 
@@ -336,14 +333,14 @@ impl WidgetTree {
                 // Tab 键焦点导航（在捕获和冒泡之前处理）
                 if *key == KeyCode::Tab {
                     let forward = !mods.contains(KeyMod::SHIFT);
-                    if let Some((overlay_id, owner)) = self
+                    if let Some(owner) = self
                         .overlay_stack
                         .top()
                         .filter(|entry| entry.traps_focus())
-                        .map(|entry| (entry.id(), entry.owner()))
+                        .map(|entry| entry.owner())
                     {
                         if let Some(next) = self.focus_next_in_scope(owner, forward) {
-                            self.remember_focus_before_trap(overlay_id, owner);
+                            self.remember_focus_before_trap(owner);
                             self.set_focus(Some(next));
                             return EventResult::Handled;
                         } else {
@@ -806,7 +803,7 @@ impl WidgetTree {
         }
     }
 
-    fn set_focus(&mut self, new_focus: Option<WidgetId>) {
+    pub(crate) fn set_focus(&mut self, new_focus: Option<WidgetId>) {
         let old_focus = self.managers().focus.focused_component();
         if new_focus == old_focus {
             return;

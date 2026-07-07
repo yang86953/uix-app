@@ -146,8 +146,17 @@ impl OverlayStack {
         Some(self.entries.remove(index))
     }
 
-    pub fn remove_for_owner(&mut self, owner: ComponentId) {
-        self.entries.retain(|entry| entry.owner != owner);
+    pub fn remove_for_owner(&mut self, owner: ComponentId) -> Vec<OverlayEntry> {
+        let mut removed = Vec::new();
+        self.entries.retain(|entry| {
+            if entry.owner == owner {
+                removed.push(entry.clone());
+                false
+            } else {
+                true
+            }
+        });
+        removed
     }
 
     pub fn retain_entries(&mut self, mut keep: impl FnMut(&OverlayEntry) -> bool) {
