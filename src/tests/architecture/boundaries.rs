@@ -262,18 +262,17 @@ fn active_work_registry_stays_internal() {
 }
 
 #[test]
-fn graphics_backend_selection_stays_off_prelude_until_public_api_lands() {
+fn graphics_backend_public_api_exposes_enum_not_context_factory() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let prelude = fs::read_to_string(src.join("prelude.rs")).unwrap();
-    let forbidden = ["GraphicsBackend", "create_gpu_context_with_backend"];
-    let violations: Vec<_> = forbidden
-        .into_iter()
-        .filter(|term| prelude.contains(term))
-        .collect();
 
     assert!(
-        violations.is_empty(),
-        "P6.1 graphics backend selection is diagnostic/native-only until P6.5 public API lands: {violations:?}"
+        prelude.contains("GraphicsBackend"),
+        "P6.5 exposes GraphicsBackend so App::graphics_backend can be used from prelude"
+    );
+    assert!(
+        !prelude.contains("create_gpu_context_with_backend"),
+        "low-level native GPU context creation stays out of prelude"
     );
 }
 

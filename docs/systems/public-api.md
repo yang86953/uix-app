@@ -64,12 +64,13 @@ prelude **仅**导出平台工厂与跨层输入枚举；上层 **禁止** `use 
 | 符号 | 说明 |
 |------|------|
 | `create_platform()` | 当前 OS 的 `Platform` 实例 |
+| `GraphicsBackend` | P6.5 图形 API 选型枚举：`Auto` / `OpenGlEs` / `Vulkan` / `D3D11` / `D3D12` / `Metal` |
 | `ControlSize` · `CursorType` · `KeyCode` · `KeyMod` · `MouseButton` · `ScrollDirection` | 输入枚举 |
 | `StatusLevel` | 系统通知级别 |
 
 窗口 / 事件 / 呈现 trait → [platform](platform.md#traits-清单)。
 
-P6.1 的 `GraphicsBackend` 与 `create_gpu_context_with_backend` 仅作为 native factory 诊断 / 初始化期 opt-in；不进入 prelude。App builder / env 等稳定公开入口待 P6.5 写入本文。
+`create_gpu_context_with_backend` 仍是 native factory 低层入口，不进入 prelude。
 
 ---
 
@@ -194,6 +195,8 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | `App` · `AppHandle` · `AppMode` · `WindowConfig` · `TimerHandle` | 应用入口与运行中句柄（[#132–#144](../decisions.md#d132)） |
 | `DiContainer` | DI 容器（`app::Container`） |
 | `map_ui_event` | `UiEvent` → `SystemEvent` 桥接 |
+
+`App::graphics_backend(GraphicsBackend)` 在窗口 / 引擎初始化时一次性指定 GPU API；未显式指定时依次读取 `UIX_GRAPHICS_BACKEND`、Settings key `graphics_backend` / `uix.graphics_backend`，最后回到 `Auto`。无热切换。
 
 生命周期、Timer、`post_to_ui`、多窗 → [application](application.md)。
 

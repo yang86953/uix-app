@@ -123,15 +123,18 @@ P6.1 已落地 factory probe 基线：`create_gpu_context` 默认走 Auto 候选
 - `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；Vulkan/D3D/Metal 实现应把 API 细节封在各自 backend 子模块，对上仍实现 `RenderBackend` + `IGraphicsContext`（或等价 present 路径）。
 - `ScenePaint`、LayerTree、InvalidationQueue **与** GPU API 无关；局部重绘 damage 几何仍来自 `core::damage`。
 
-### 配置入口（规划）
+### 配置入口（P6.5 已落地）
 
 | 入口 | 说明 |
 |------|------|
-| App builder | 如 `.graphics_backend(GraphicsBackend::Auto)` — **默认 Auto** |
-| 环境变量 | 如 `UIX_GRAPHICS_BACKEND=vulkan` — 开发 / CI 覆盖 |
-| 运行时只读 | 引擎创建后 `engine.graphics_backend()` 供日志；**不可**热切换 |
+| App builder | `.graphics_backend(GraphicsBackend::Auto)` — 显式 builder 优先级最高 |
+| 环境变量 | `UIX_GRAPHICS_BACKEND=vulkan` — 开发 / CI 覆盖；仅初始化时读取 |
+| Settings | `graphics_backend` 或 `uix.graphics_backend`；仅 `.settings(path)` opt-in load 后参与选型 |
+| 运行时只读 | factory 记录最终 `GraphicsBackend`；**不可**热切换 |
 
-公开 API 形状与命名在实现阶段写入 [public-api](public-api.md) 与 [#162](decisions.md#d162)；本文仅定架构与选型原则。
+优先级：App builder > 环境变量 > Settings > `Auto`。无效值记录 warning 后继续读取下一来源；选型仍只在窗口 / 引擎初始化时完成一次。
+
+公开 API 形状见 [public-api](public-api.md) 与 [#162](decisions.md#d162)。
 
 **关联**：[platform · 窗口与呈现](platform.md#窗口与呈现) · [platform · 工厂与后端](platform.md#工厂与后端) · [roadmap · P6](../roadmap.md#p6-图形后端)
 
