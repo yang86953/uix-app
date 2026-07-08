@@ -7,6 +7,7 @@ use crate::app::{Container, WindowConfig};
 use crate::native::traits::event::EventLoopWaker;
 use crate::ui::view::combinators::label;
 use crate::ui::view::ViewAdapter;
+use crate::ui::widgets::feedback::notification::Notification;
 use crate::ui::widgets::Label;
 use crate::ui::AppState;
 use std::sync::{
@@ -157,6 +158,49 @@ fn app_handle_update_view_drops_after_close() {
     handle.update_view(|| label("ignored"));
 
     assert_eq!(queue.len(), 0);
+}
+
+#[test]
+fn app_handle_notify_error_updates_default_overlay_queue() {
+    let timers = AppTimerQueue::new();
+    let queue = MainThreadQueue::new();
+    let alive = Arc::new(AtomicBool::new(true));
+    let runtime = AppRuntime::new();
+    runtime.register_session(WindowId::ROOT, timers, queue.clone(), alive.clone());
+    let notifications = AppNotificationState::new();
+    let mut container = Container::new();
+    container.singleton(notifications.clone());
+    let handle = AppHandle::new(WindowId::ROOT, AppState::new(), runtime, container, alive);
+
+    let id = handle.notify_error(&Error::warn(Errc::InvalidState, "cache is stale"));
+    let fatal = handle.notify_error(&Error::fatal(Errc::InvalidState, "must abort"));
+
+    assert_eq!(id, Some(0));
+    assert_eq!(fatal, None);
+    assert_eq!(notifications.items().len(), 1);
+    assert_eq!(notifications.items()[0].title, "Warning");
+    assert!(notifications.items()[0]
+        .description
+        .contains("cache is stale"));
+    assert_eq!(queue.len(), 1);
+}
+
+#[test]
+fn app_overlay_root_keeps_app_root_and_mounts_notification() {
+    let notifications = AppNotificationState::new();
+    notifications.notify_error(&Error::new(Errc::IoError, "save failed"));
+
+    let tree = ViewAdapter::build_nodes(wrap_root_with_notification_overlay(
+        label("root"),
+        notifications,
+    ));
+
+    let labels = tree.find_all_by_type::<Label>();
+    let notifications = tree.find_all_by_type::<Notification>();
+    assert_eq!(labels.len(), 1);
+    assert_eq!(labels[0].1.text(), "root");
+    assert_eq!(notifications.len(), 1);
+    assert_eq!(notifications[0].1.queue().borrow().len(), 1);
 }
 
 #[test]

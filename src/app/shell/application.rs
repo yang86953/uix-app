@@ -6,7 +6,9 @@ use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, Instant};
 
 use crate::app::active_work_registry::{ActiveWorkKind, ActiveWorkRegistry};
-use crate::app::app_handle::AppHandle;
+use crate::app::app_handle::{
+    wrap_root_with_notification_overlay, AppHandle, AppNotificationState,
+};
 use crate::app::app_timer::{AppTimerQueue, TimerHandle};
 use crate::app::event_loop::run_window_session_loop_with_system_theme_and_tasks;
 use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
@@ -684,10 +686,14 @@ impl App {
             None
         };
 
+        let notifications = AppNotificationState::new();
+        self.container.singleton(notifications.clone());
+
         let root_window_id = platform_window.window_id();
+        let root_notifications = notifications.clone();
         let mut session = WindowSession::from_root_factory_for_window(
             root_window_id,
-            move || root_factory(),
+            move || wrap_root_with_notification_overlay(root_factory(), root_notifications.clone()),
             engine,
             w,
             h,
@@ -1038,8 +1044,16 @@ fn create_secondary_window(
             }
         };
 
+    let notifications = container.resolve_clone::<AppNotificationState>();
+    let wrapped_root = move || {
+        let root_node = root();
+        match notifications.clone() {
+            Some(state) => wrap_root_with_notification_overlay(root_node, state),
+            None => root_node,
+        }
+    };
     let mut session =
-        WindowSession::from_root_factory_for_window(window_id, root, engine, width, height);
+        WindowSession::from_root_factory_for_window(window_id, wrapped_root, engine, width, height);
     session.set_app_state(app_state.clone());
     session.set_app_timers(app_timers);
     session.set_main_thread_queue(main_thread_queue);

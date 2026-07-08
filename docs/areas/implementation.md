@@ -75,7 +75,7 @@ P6 图形后端（规划）    ← #162，详见下文
 |------|------|------|
 | 几何与标识 | `Point` / `Rect` / `EdgeInsets`；`ComponentId` / `WindowId`（Generational，跨窗 tree scope） | [foundation](systems/foundation.md) · [#101](../decisions.md#d101) |
 | Damage | `DirtyRegion` → `DamageRegion` → `PresentDamage` | [foundation · Damage](systems/foundation.md#damage-区域) |
-| 错误 / 日志 / 诊断 | `Errc` / `Error`；Logger；Fatal crash log；**默认 log**（#89） | [foundation](systems/foundation.md) |
+| 错误 / 日志 / 诊断 | `Errc` / `Error`；Logger；Fatal crash log；**默认 log**（#89）；App 默认错误 Toast overlay | [foundation](systems/foundation.md) |
 
 #### 平台 · `native`
 
@@ -167,7 +167,6 @@ P6 图形后端（规划）    ← #162，详见下文
 | 无障碍 v2 | #99：ARIA / 屏幕阅读器 / 键盘导航扩展；v1 不做 | [component](systems/component.md#内置-widget-目录) |
 | macOS 平台 | `create_platform()` 无 macOS backend（含 Metal） | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
 | Handler 宏层 fingerprint | #159 / #160：语法层 fingerprint 待设计；普通闭包保守重绑 | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) |
-| 错误 Toast 自动 overlay | #89：core 默认 log；`NotificationService` + `Notification` 显式同步已接，框架级自动 overlay 挂载策略待产品化 | [foundation · 诊断](systems/foundation.md#与错误-ui-的关系89) |
 
 ---
 
