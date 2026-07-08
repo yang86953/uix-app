@@ -10,7 +10,6 @@ use glow::HasContext as _;
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::gpu_engine::GpuCanvas2D;
 use crate::draw::traits::Canvas2D;
-use crate::native::traits::present::PresentDamage;
 
 /// GPU DrawSurface 适配器。
 pub struct GpuDrawSurface {
@@ -188,6 +187,7 @@ unsafe impl Sync for GpuBackend {}
 mod tests {
     use super::*;
     use crate::core::Rect;
+    use crate::native::traits::present::PresentDamage;
 
     #[derive(Default)]
     struct RecordingGraphicsContext {

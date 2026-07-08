@@ -94,18 +94,58 @@ impl ComponentHandle {
         }
     }
 
+    pub fn label(&self) -> Option<String> {
+        self.text()
+    }
+
     pub fn placeholder(&self) -> Option<String> {
         match self.snapshot_fields()? {
-            SnapshotFields::Input { placeholder, .. } => Some(placeholder),
+            SnapshotFields::Input { placeholder, .. }
+            | SnapshotFields::InputNumber { placeholder, .. }
+            | SnapshotFields::Select { placeholder, .. }
+            | SnapshotFields::AutoComplete { placeholder, .. }
+            | SnapshotFields::TreeSelect { placeholder, .. }
+            | SnapshotFields::Cascader { placeholder, .. }
+            | SnapshotFields::DatePicker { placeholder, .. }
+            | SnapshotFields::TimePicker { placeholder, .. }
+            | SnapshotFields::Mentions { placeholder, .. } => Some(placeholder),
             _ => None,
         }
     }
 
     pub fn disabled(&self) -> Option<bool> {
         match self.snapshot_fields()? {
-            SnapshotFields::Button { disabled, .. } | SnapshotFields::Input { disabled, .. } => {
-                Some(disabled)
+            SnapshotFields::Button { disabled, .. }
+            | SnapshotFields::Input { disabled, .. }
+            | SnapshotFields::Checkbox { disabled, .. }
+            | SnapshotFields::Radio { disabled, .. }
+            | SnapshotFields::Switch { disabled, .. }
+            | SnapshotFields::Rate { disabled, .. }
+            | SnapshotFields::InputNumber { disabled, .. }
+            | SnapshotFields::Select { disabled, .. }
+            | SnapshotFields::Segmented { disabled, .. }
+            | SnapshotFields::Typography { disabled, .. } => Some(disabled),
+            _ => None,
+        }
+    }
+
+    pub fn checked(&self) -> Option<bool> {
+        match self.snapshot_fields()? {
+            SnapshotFields::Checkbox { checked, .. } | SnapshotFields::Switch { checked, .. } => {
+                Some(checked)
             }
+            _ => None,
+        }
+    }
+
+    pub fn numeric_value(&self) -> Option<f64> {
+        match self.snapshot_fields()? {
+            SnapshotFields::Slider { value, .. }
+            | SnapshotFields::ProgressBar {
+                progress: value, ..
+            } => Some(value as f64),
+            SnapshotFields::Rate { value, .. } => Some(value as f64),
+            SnapshotFields::InputNumber { value, .. } => Some(value),
             _ => None,
         }
     }

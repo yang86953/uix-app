@@ -2,7 +2,9 @@ use super::*;
 use crate::core::{ComponentId, Rect, WindowId};
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
 use crate::ui::state::State;
-use crate::ui::widgets::{Button, Input, Label};
+use crate::ui::widgets::{
+    Button, Checkbox, Input, InputNumber, Label, ProgressBar, Select, Slider, Switch,
+};
 use crate::ui::{AppState, ComponentHandle, SnapshotFields, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -393,6 +395,7 @@ fn app_state_lookup_handle_emit_drains_into_widget_tree() {
     tree.layout();
     tree.set_app_state(app_state.clone());
     let handle = app_state.get_handle(child).unwrap();
+    assert_eq!(handle.label().as_deref(), Some("child"));
 
     assert_eq!(
         handle.emit(SemanticEvent::change(root, "from-lookup")),
@@ -404,6 +407,34 @@ fn app_state_lookup_handle_emit_drains_into_widget_tree() {
         calls.borrow().as_slice(),
         &[(child, child, "child"), (child, root, "root")]
     );
+}
+
+#[test]
+fn app_state_lookup_handle_exposes_read_only_config_getters() {
+    let mut tree = WidgetTree::new();
+    let app_state = AppState::new();
+    let root = tree.set_root(Box::new(Select::new().placeholder("Pick").disabled(true)));
+    let checkbox = tree.add_child(root, Box::new(Checkbox::new("Agree").checked(true)));
+    let input_number = tree.add_child(
+        root,
+        Box::new(InputNumber::new("Amount").value(12.5).disabled(true)),
+    );
+
+    tree.layout();
+    tree.set_app_state(app_state.clone());
+
+    let select = app_state.get_handle(root).unwrap();
+    assert_eq!(select.placeholder().as_deref(), Some("Pick"));
+    assert_eq!(select.disabled(), Some(true));
+
+    let checkbox = app_state.get_handle(checkbox).unwrap();
+    assert_eq!(checkbox.checked(), Some(true));
+    assert_eq!(checkbox.disabled(), Some(false));
+
+    let input_number = app_state.get_handle(input_number).unwrap();
+    assert_eq!(input_number.placeholder().as_deref(), Some("Amount"));
+    assert_eq!(input_number.disabled(), Some(true));
+    assert_eq!(input_number.numeric_value(), Some(12.5));
 }
 
 #[test]
@@ -527,6 +558,7 @@ fn component_handle_snapshot_exposes_read_only_config_getters() {
 
     let button = ComponentHandle::new(root, &tree);
     assert_eq!(button.text().as_deref(), Some("Save"));
+    assert_eq!(button.label().as_deref(), Some("Save"));
     assert_eq!(button.disabled(), Some(true));
     assert_eq!(button.placeholder(), None);
     assert!(matches!(
@@ -542,6 +574,55 @@ fn component_handle_snapshot_exposes_read_only_config_getters() {
     assert_eq!(input.text(), None);
     assert_eq!(input.placeholder().as_deref(), Some("Email"));
     assert_eq!(input.disabled(), Some(true));
+}
+
+#[test]
+fn component_handle_getters_cover_common_snapshot_fields() {
+    let tree = Rc::new(RefCell::new(WidgetTree::new()));
+    let root = tree
+        .borrow_mut()
+        .set_root(Box::new(Select::new().placeholder("Pick").disabled(true)));
+    let checkbox = tree
+        .borrow_mut()
+        .add_child(root, Box::new(Checkbox::new("Agree").checked(true)));
+    let switch = tree
+        .borrow_mut()
+        .add_child(root, Box::new(Switch::new().checked(true).disabled(true)));
+    let slider = tree
+        .borrow_mut()
+        .add_child(root, Box::new(Slider::new().value(42.0)));
+    let input_number = tree.borrow_mut().add_child(
+        root,
+        Box::new(InputNumber::new("Amount").value(12.5).disabled(true)),
+    );
+    let progress = tree
+        .borrow_mut()
+        .add_child(root, Box::new(ProgressBar::new().progress(0.75)));
+
+    let select = ComponentHandle::new(root, &tree);
+    assert_eq!(select.placeholder().as_deref(), Some("Pick"));
+    assert_eq!(select.disabled(), Some(true));
+
+    let checkbox = ComponentHandle::new(checkbox, &tree);
+    assert_eq!(checkbox.checked(), Some(true));
+    assert_eq!(checkbox.disabled(), Some(false));
+
+    let switch = ComponentHandle::new(switch, &tree);
+    assert_eq!(switch.checked(), Some(true));
+    assert_eq!(switch.disabled(), Some(true));
+
+    assert_eq!(
+        ComponentHandle::new(slider, &tree).numeric_value(),
+        Some(42.0)
+    );
+    let input_number = ComponentHandle::new(input_number, &tree);
+    assert_eq!(input_number.placeholder().as_deref(), Some("Amount"));
+    assert_eq!(input_number.disabled(), Some(true));
+    assert_eq!(input_number.numeric_value(), Some(12.5));
+    assert_eq!(
+        ComponentHandle::new(progress, &tree).numeric_value(),
+        Some(0.75)
+    );
 }
 
 #[test]
