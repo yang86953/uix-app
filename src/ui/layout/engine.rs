@@ -14,6 +14,10 @@ use crate::draw::spatial::AABB3D;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::core::widget::WidgetTree;
 
+pub fn natural_measure_constraints() -> Constraints {
+    Constraints::loose(Size::infinite())
+}
+
 // ── 统一盒模型 ────────────────────────────────────────────────────
 
 /// 统一盒模型 — 所有容器共享的 margin/border/padding 计算。
@@ -563,7 +567,7 @@ impl LayoutEngine for GridLayout {
 /// 这是自然尺寸 fallback；生产布局路径应优先使用
 /// [`child_from_tree_with_constraints`] 传入父级 content rect 约束。
 pub fn child_from_tree(component_id: ComponentId, tree: &WidgetTree) -> LayoutChild {
-    child_from_tree_with_constraints(component_id, tree, Constraints::unconstrained())
+    child_from_tree_with_constraints(component_id, tree, natural_measure_constraints())
 }
 
 /// 从 WidgetTree 节点构建统一的 LayoutChild，并使用父级内容框约束测量。

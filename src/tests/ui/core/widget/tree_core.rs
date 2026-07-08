@@ -149,6 +149,40 @@ impl WidgetLayout for MeasureOnlyWidget {
     }
 }
 
+struct ConstraintProbeWidget {
+    size: Size,
+    seen: Rc<RefCell<Vec<Constraints>>>,
+}
+
+impl ConstraintProbeWidget {
+    fn new(size: Size, seen: Rc<RefCell<Vec<Constraints>>>) -> Self {
+        Self { size, seen }
+    }
+}
+
+impl WidgetComponent for ConstraintProbeWidget {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT)
+    }
+    crate::wc_upcast!(ConstraintProbeWidget; WidgetLayout);
+}
+
+impl WidgetLayout for ConstraintProbeWidget {
+    fn measure(&self, constraints: Constraints) -> Size {
+        self.seen.borrow_mut().push(constraints);
+        constraints.clamp(self.size)
+    }
+}
+
 struct ContinuousSpyWidget(SpyWidget);
 
 impl ContinuousSpyWidget {
@@ -542,6 +576,45 @@ fn component_ids_are_unique_across_widget_trees() {
     assert_ne!(first_root, second_root);
     assert!(first.get(second_root).is_none());
     assert!(second.get(first_root).is_none());
+}
+
+#[test]
+fn set_root_uses_named_bootstrap_constraints() {
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+
+    tree.set_root(Box::new(ConstraintProbeWidget::new(
+        Size::new(100.0, 50.0),
+        seen.clone(),
+    )));
+
+    assert_eq!(
+        seen.borrow().as_slice(),
+        &[WidgetTree::root_bootstrap_constraints()]
+    );
+}
+
+#[test]
+fn layout_bootstrap_uses_named_bootstrap_constraints_for_missing_root_frame() {
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(ConstraintProbeWidget::new(
+        Size::new(100.0, 50.0),
+        seen.clone(),
+    )));
+    tree.get_mut(root).unwrap().set_frame(Rect::zero());
+    seen.borrow_mut().clear();
+
+    tree.layout();
+
+    assert_eq!(
+        seen.borrow().as_slice(),
+        &[WidgetTree::root_bootstrap_constraints()]
+    );
+    assert_eq!(
+        tree.get(root).unwrap().frame(),
+        Rect::new(0.0, 0.0, 100.0, 50.0)
+    );
 }
 
 #[test]

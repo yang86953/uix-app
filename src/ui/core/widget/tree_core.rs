@@ -1,5 +1,5 @@
 use super::*;
-use crate::core::{Constraints, Rect};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::pipeline::InvalidationQueueHandle;
 use crate::ui::app_state::AppState;
 use crate::ui::component_snapshot::ComponentConfigSnapshot;
@@ -295,6 +295,10 @@ impl WidgetTree {
         }
     }
 
+    pub(crate) fn root_bootstrap_constraints() -> Constraints {
+        Constraints::loose(Size::infinite())
+    }
+
     pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> ComponentId {
         self.teardown_all();
 
@@ -319,7 +323,7 @@ impl WidgetTree {
         boxed.set_tab_index(boxed.component().tab_index());
         // Root has no parent content rect yet; window/session layout overwrites this
         // natural fallback once a real viewport is available.
-        let ps = boxed.measure(Constraints::unconstrained());
+        let ps = boxed.measure(Self::root_bootstrap_constraints());
         boxed.set_frame(Rect::new(0.0, 0.0, ps.w, ps.h));
         let slot = id.slot();
         if self.nodes.len() <= slot {

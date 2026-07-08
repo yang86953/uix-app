@@ -68,7 +68,7 @@ impl WidgetTree {
                 // a viewport-sized frame, so use natural size for the temporary frame.
                 let ps = self
                     .get(root_id)
-                    .map(|r| r.measure(Constraints::unconstrained()));
+                    .map(|r| r.measure(Self::root_bootstrap_constraints()));
                 if let Some(ps) = ps {
                     if let Some(root_mut) = self.get_mut(root_id) {
                         root_mut.set_frame(Rect::new(0.0, 0.0, ps.w.max(1.0), ps.h.max(1.0)));

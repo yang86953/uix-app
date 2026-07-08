@@ -195,6 +195,15 @@ fn scrollview_child_constraints_are_axis_aware() {
         tree.get(vertical_child).unwrap().frame(),
         Rect::new(0.0, 0.0, 120.0, 300.0)
     );
+    let vertical_sv: &ScrollView = tree
+        .get(vertical)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert_eq!(vertical_sv.max_scroll_x(), 0.0);
+    assert_eq!(vertical_sv.max_scroll_y(), 220.0);
 
     let horizontal = tree.set_root(Box::new(
         ScrollView::new(ScrollDirection::Horizontal).size(120.0, 80.0),
@@ -212,6 +221,47 @@ fn scrollview_child_constraints_are_axis_aware() {
         tree.get(horizontal_child).unwrap().frame(),
         Rect::new(0.0, 0.0, 400.0, 80.0)
     );
+    let horizontal_sv: &ScrollView = tree
+        .get(horizontal)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert_eq!(horizontal_sv.max_scroll_x(), 280.0);
+    assert_eq!(horizontal_sv.max_scroll_y(), 0.0);
+}
+
+#[test]
+fn scrollview_both_direction_allows_both_axes_to_overflow() {
+    let mut tree = WidgetTree::new();
+    let both = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Both).size(120.0, 80.0),
+    ));
+    tree.add_child(
+        both,
+        Box::new(FixedWidget {
+            size: Size::new(400.0, 300.0),
+            id: ComponentId::new(3),
+        }),
+    );
+
+    tree.layout();
+
+    let child = tree.get(both).unwrap().children()[0];
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 400.0, 300.0)
+    );
+    let both_sv: &ScrollView = tree
+        .get(both)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert_eq!(both_sv.max_scroll_x(), 280.0);
+    assert_eq!(both_sv.max_scroll_y(), 220.0);
 }
 
 #[test]
