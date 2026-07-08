@@ -4,9 +4,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::component;
+use crate::core::error::{Error, Result as CoreResult};
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::native::notification::NotificationService;
 use crate::native::notification::ToastEntry;
 use crate::native::traits::system::StatusLevel;
 use crate::ui::core::widget::WidgetTree;
@@ -192,6 +194,31 @@ impl Notification {
         );
     }
 
+    pub fn replace_from_service(&self, service: &mut NotificationService) {
+        let toasts = service.update();
+        self.replace_from_toasts(&toasts);
+    }
+
+    pub fn notify_error_from_service(
+        &self,
+        service: &mut NotificationService,
+        error: &Error,
+    ) -> Option<u64> {
+        let id = service.notify_error(error);
+        self.replace_from_service(service);
+        id
+    }
+
+    pub fn notify_result_error_from_service<T>(
+        &self,
+        service: &mut NotificationService,
+        result: &CoreResult<T>,
+    ) -> Option<u64> {
+        let id = service.notify_result_error(result);
+        self.replace_from_service(service);
+        id
+    }
+
     fn intrinsic_size(&self) -> Size {
         Size::zero()
     }
@@ -210,6 +237,7 @@ impl Notification {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::error::{Errc, Error};
     use crate::ui::traits::WidgetLayout;
     use std::time::Instant;
 
@@ -275,5 +303,44 @@ mod tests {
         assert_eq!(queue[0].title, "Visible");
         assert_eq!(queue[0].description, "shown");
         assert_eq!(queue[0].type_, StatusLevel::Warning);
+    }
+
+    #[test]
+    fn notify_error_from_service_syncs_non_fatal_error_to_queue() {
+        let notification = Notification::new();
+        let mut service = NotificationService::new();
+
+        let id = notification.notify_error_from_service(
+            &mut service,
+            &Error::warn(Errc::InvalidState, "cache is stale"),
+        );
+
+        assert!(id.is_some());
+        let queue = notification.queue();
+        let queue = queue.borrow();
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].type_, StatusLevel::Warning);
+        assert_eq!(queue[0].title, "Warning");
+        assert!(queue[0].description.contains("cache is stale"));
+    }
+
+    #[test]
+    fn notify_result_error_from_service_keeps_ok_and_fatal_silent() {
+        let notification = Notification::new();
+        let mut service = NotificationService::new();
+        let ok: crate::core::Result<u32> = Ok(7);
+        let fatal: crate::core::Result<u32> = Err(Error::fatal(Errc::InvalidState, "must abort"));
+
+        assert_eq!(
+            notification.notify_result_error_from_service(&mut service, &ok),
+            None
+        );
+        assert_eq!(
+            notification.notify_result_error_from_service(&mut service, &fatal),
+            None
+        );
+
+        assert!(notification.queue().borrow().is_empty());
+        assert!(service.visible_toasts().is_empty());
     }
 }
