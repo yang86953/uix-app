@@ -48,7 +48,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
       失败 → shutdown GPU → SoftwareEngine 回退          (#59)
 4. FontService::load_default_system_font
    ImageService::new
-5. WindowSession::from_root_factory(root)
+5. WindowSession::from_root_factory(root + 默认 Notification overlay)
       → WidgetTree::build → layout → mark_full_frame_dirty
       → 同时将 `.root` 闭包存入 `WindowSession.view_factory`（#155）
 6. run_widget_loop(platform, window, engine, tree, ...)
@@ -83,7 +83,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** 进程级 loop（设计名 `run_app_loop`，源码 `run_widget_loop`）；UiEvent 按 **window_id** 路由。
 
-> **实现注记**：主窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait、Effect pending tick 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
+> **实现注记**：主窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、默认 Notification overlay、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait、Effect pending tick 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
 
 ### 单帧顺序（Active 态，设计 #106、#137）
 
@@ -489,6 +489,8 @@ impl AppHandle {
     pub fn post_to_ui<F>(&self, f: F)
     where
         F: FnOnce() + Send + 'static;
+
+    pub fn notify_error(&self, error: &Error) -> Option<u64>;
 }
 ```
 
@@ -541,6 +543,8 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 ```
 
 > **实现注记**：`App::post_to_ui`、`AppHandle::post_to_ui` 与 `WindowSession.main_thread_queue` 已落地；`AppHandle` 经 `AppRuntime` 按 `window_id` 仅写入目标 session 队列，并在 session 销毁后丢弃闭包；成功入队后会调用通用 `EventLoopWaker`。单窗 loop 已在 UiEvent / due work 后、`tick_effects` 前 drain；副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；Windows/fake/Linux Wayland 后端已提供真实 wake。
+
+> **实现注记**（#89）：`AppHandle::notify_error` 会把非致命 `core::Error` 写入本 App 默认 Notification overlay，并投递一次 UI wake 让下一帧 reconcile；Fatal 返回 `None`，仍保留在诊断/崩溃路径。
 
 ---
 

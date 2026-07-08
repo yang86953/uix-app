@@ -1,17 +1,91 @@
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::app::app_timer::TimerHandle;
 use crate::app::session_runtime::AppRuntime;
 use crate::app::shell::di::Container;
 use crate::app::window_config::WindowConfig;
 pub use crate::core::WindowId;
-use crate::core::{Errc, Error, Result};
+use crate::core::{ComponentId, Constraints, Errc, Error, Rect, Result, Size};
+use crate::impl_widget_component;
+use crate::native::notification::ToastEntry;
+use crate::ui::state::State;
+use crate::ui::traits::WidgetLayout;
 use crate::ui::view::{View, ViewAdapter, ViewNode};
+use crate::ui::widgets::feedback::notification::{Notification, NotificationItem};
 use crate::ui::AppState;
+
+#[derive(Default)]
+pub(crate) struct AppOverlayRoot;
+
+impl_widget_component!(AppOverlayRoot; Layout);
+
+impl WidgetLayout for AppOverlayRoot {
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.definite.unwrap_or(Size::zero())
+    }
+
+    fn layout_children(
+        &self,
+        frame: Rect,
+        children: &[ComponentId],
+        _tree: &crate::ui::WidgetTree,
+    ) -> Vec<(ComponentId, Rect)> {
+        children.iter().map(|&child| (child, frame)).collect()
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct AppNotificationState {
+    items: State<Vec<NotificationItem>>,
+    next_id: Arc<AtomicU64>,
+    max_visible: usize,
+}
+
+impl AppNotificationState {
+    pub(crate) fn new() -> Self {
+        Self {
+            items: State::new(Vec::new()),
+            next_id: Arc::new(AtomicU64::new(0)),
+            max_visible: 5,
+        }
+    }
+
+    pub(crate) fn items(&self) -> Vec<NotificationItem> {
+        self.items.get()
+    }
+
+    pub(crate) fn notify_error(&self, error: &Error) -> Option<u64> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let toast = ToastEntry::from_error(id, error, Instant::now())?;
+        let item = NotificationItem::from_toast_entry(&toast);
+        self.items.update(|items| {
+            items.push(item);
+            let excess = items.len().saturating_sub(self.max_visible);
+            if excess > 0 {
+                items.drain(0..excess);
+            }
+        });
+        Some(id)
+    }
+}
+
+pub(crate) fn wrap_root_with_notification_overlay(
+    root: ViewNode,
+    notifications: AppNotificationState,
+) -> ViewNode {
+    let notification = Notification::new();
+    for item in notifications.items() {
+        notification.add(item);
+    }
+    ViewNode::new(
+        AppOverlayRoot,
+        vec![root, ViewNode::leaf(notification).z_index(10_000)],
+    )
+}
 
 #[derive(Clone)]
 pub struct AppHandle {
@@ -80,14 +154,29 @@ impl AppHandle {
         }
     }
 
+    pub fn notify_error(&self, error: &Error) -> Option<u64> {
+        if !self.alive.load(Ordering::Acquire) {
+            return None;
+        }
+        let notifications = self.container.resolve_clone::<AppNotificationState>()?;
+        let id = notifications.notify_error(error)?;
+        self.runtime.post_to_ui(self.window_id, || {});
+        Some(id)
+    }
+
     pub fn update_view<F>(&self, build_root: F)
     where
         F: FnOnce() -> ViewNode + Send + 'static,
     {
         if self.alive.load(Ordering::Acquire) {
+            let notifications = self.container.resolve_clone::<AppNotificationState>();
             self.runtime
                 .enqueue_with_context(self.window_id, move |ctx| {
                     let root = ViewAdapter::capture_root(build_root);
+                    let root = match notifications {
+                        Some(state) => wrap_root_with_notification_overlay(root, state),
+                        None => root,
+                    };
                     ctx.update_root(root);
                 });
         }

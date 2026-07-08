@@ -32,6 +32,23 @@ pub struct ToastEntry {
     pub created_at: std::time::Instant,
 }
 
+impl ToastEntry {
+    pub fn from_error(id: u64, error: &Error, created_at: std::time::Instant) -> Option<Self> {
+        if error.severity().is_fatal() {
+            return None;
+        }
+        Some(Self {
+            id,
+            title: toast_title_for_error(error),
+            message: toast_message_for_error(error),
+            level: toast_level_for_error(error),
+            duration_ms: toast_duration_for_error(error),
+            visible: true,
+            created_at,
+        })
+    }
+}
+
 /// 通知服务 — 管理系统通知和应用内 Toast。
 ///
 /// 通过 DI 注入使用：
@@ -126,17 +143,9 @@ impl NotificationService {
     /// Fatal errors stay on the diagnostic/crash path and deliberately do not
     /// create UI toast entries.
     pub fn notify_error(&mut self, error: &Error) -> Option<u64> {
-        if error.severity().is_fatal() {
-            return None;
-        }
-        let level = Self::toast_level_for_error(error);
-        let duration = Self::toast_duration_for_error(error);
-        Some(self.notify(
-            &Self::toast_title_for_error(error),
-            &Self::toast_message_for_error(error),
-            level,
-            duration,
-        ))
+        let entry = ToastEntry::from_error(self.next_id, error, std::time::Instant::now())?;
+        let id = self.notify(&entry.title, &entry.message, entry.level, entry.duration_ms);
+        Some(id)
     }
 
     /// Enqueue the error side of a Result as a toast and leave Ok values silent.
@@ -253,40 +262,40 @@ impl NotificationService {
             }
         });
     }
+}
 
-    fn toast_level_for_error(error: &Error) -> StatusLevel {
-        match error.severity() {
-            ErrorSeverity::Info => StatusLevel::Info,
-            ErrorSeverity::Warning => StatusLevel::Warning,
-            ErrorSeverity::Error | ErrorSeverity::Fatal => StatusLevel::Error,
-        }
+fn toast_level_for_error(error: &Error) -> StatusLevel {
+    match error.severity() {
+        ErrorSeverity::Info => StatusLevel::Info,
+        ErrorSeverity::Warning => StatusLevel::Warning,
+        ErrorSeverity::Error | ErrorSeverity::Fatal => StatusLevel::Error,
     }
+}
 
-    fn toast_duration_for_error(error: &Error) -> u32 {
-        match error.severity() {
-            ErrorSeverity::Info => Self::DURATION_INFO,
-            ErrorSeverity::Warning => Self::DURATION_WARNING,
-            ErrorSeverity::Error | ErrorSeverity::Fatal => Self::DURATION_ERROR,
-        }
+fn toast_duration_for_error(error: &Error) -> u32 {
+    match error.severity() {
+        ErrorSeverity::Info => NotificationService::DURATION_INFO,
+        ErrorSeverity::Warning => NotificationService::DURATION_WARNING,
+        ErrorSeverity::Error | ErrorSeverity::Fatal => NotificationService::DURATION_ERROR,
     }
+}
 
-    fn toast_title_for_error(error: &Error) -> String {
-        match error.severity() {
-            ErrorSeverity::Info => "Info".to_string(),
-            ErrorSeverity::Warning => "Warning".to_string(),
-            ErrorSeverity::Error => "Error".to_string(),
-            ErrorSeverity::Fatal => "Fatal".to_string(),
-        }
+fn toast_title_for_error(error: &Error) -> String {
+    match error.severity() {
+        ErrorSeverity::Info => "Info".to_string(),
+        ErrorSeverity::Warning => "Warning".to_string(),
+        ErrorSeverity::Error => "Error".to_string(),
+        ErrorSeverity::Fatal => "Fatal".to_string(),
     }
+}
 
-    fn toast_message_for_error(error: &Error) -> String {
-        let mut message = error.message().to_string();
-        if let Some(source) = error.source_error() {
-            message.push_str(": ");
-            message.push_str(source.message());
-        }
-        message
+fn toast_message_for_error(error: &Error) -> String {
+    let mut message = error.message().to_string();
+    if let Some(source) = error.source_error() {
+        message.push_str(": ");
+        message.push_str(source.message());
     }
+    message
 }
 
 // ════════════════════════════════════════════════════════════════════════════
