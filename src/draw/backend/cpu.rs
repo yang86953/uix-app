@@ -99,6 +99,18 @@ impl CpuBackend {
         self.clear_color
     }
 
+    pub fn pixels(&self) -> &[u32] {
+        self.main.surface().pixels()
+    }
+
+    pub fn width(&self) -> i32 {
+        self.width
+    }
+
+    pub fn height(&self) -> i32 {
+        self.height
+    }
+
     fn blit_offscreen_impl(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
         let idx = handle.0 as usize;
         if idx >= self.offscreens.len() {

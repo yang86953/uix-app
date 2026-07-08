@@ -20,7 +20,10 @@ fn tree_scroll_range_limits_visible_nodes() {
         .body_scroll
         .scroll_range(tree.flat.len(), TREE_ROW_HEIGHT, viewport_h);
     assert_eq!(start, 0);
-    assert!(end - start < 80, "virtual scroll should expose a small window");
+    assert!(
+        end - start < 80,
+        "virtual scroll should expose a small window"
+    );
 }
 
 #[test]
@@ -48,7 +51,7 @@ fn tree_wheel_records_composite_delta() {
 #[test]
 fn tree_wheel_registers_composite_scroll_strip() {
     let mut widget_tree = WidgetTree::new();
-    let mut tree = large_tree();
+    let tree = large_tree();
     tree.last_frame.set(Some(Rect::new(0.0, 0.0, 200.0, 112.0)));
     let id = widget_tree.set_root(Box::new(tree));
     widget_tree

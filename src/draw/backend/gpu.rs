@@ -3,7 +3,7 @@
 use std::any::Any;
 use std::cell::RefCell;
 
-use crate::core::{DamageRegion, Error, Point, Rect};
+use crate::core::{DamageRegion, Errc, Error, Point, Rect};
 use crate::native::traits::present::IGraphicsContext;
 use glow::HasContext as _;
 
@@ -78,6 +78,15 @@ pub struct GpuBackend {
 
 impl GpuBackend {
     pub fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+        if !gpu_ctx.supports_gl_proc_address() {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "GpuBackend requires a GL-compatible graphics context, got {}",
+                    gpu_ctx.graphics_backend()
+                ),
+            ));
+        }
         let gl = Box::new(unsafe {
             glow::Context::from_loader_function(|s| {
                 gpu_ctx.get_proc_address(s).unwrap_or(std::ptr::null())
@@ -274,5 +283,53 @@ mod tests {
         // GpuBackend::resize 以窗口 dip 尺寸作为画布坐标系，帧缓冲为 physical。
         assert_eq!((physical_w as f32 / dpr).round() as i32, logical_w);
         assert_eq!((physical_h as f32 / dpr).round() as i32, logical_h);
+    }
+
+    struct NonGlGraphicsContext;
+
+    impl IGraphicsContext for NonGlGraphicsContext {
+        fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
+            crate::native::traits::present::GraphicsBackend::D3d11
+        }
+
+        fn initialize(
+            &mut self,
+            _native_window: *mut std::ffi::c_void,
+            _width: i32,
+            _height: i32,
+        ) -> crate::core::Result<()> {
+            Ok(())
+        }
+
+        fn resize(&mut self, _width: i32, _height: i32) {}
+
+        fn make_current(&mut self) {}
+
+        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+
+        fn shutdown(&mut self) {}
+
+        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
+            Vec::new()
+        }
+
+        fn width(&self) -> i32 {
+            1
+        }
+
+        fn height(&self) -> i32 {
+            1
+        }
+    }
+
+    #[test]
+    fn gpu_backend_rejects_non_gl_context() {
+        let err = match GpuBackend::new(Box::new(NonGlGraphicsContext)) {
+            Ok(_) => panic!("non-GL context must not initialize the GL backend"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.code(), crate::core::Errc::InvalidArgument);
+        assert!(err.message().contains("requires a GL-compatible"));
     }
 }

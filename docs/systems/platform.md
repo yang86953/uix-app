@@ -233,7 +233,7 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 | 平台 | Platform | GPU 上下文（当前） | GPU 上下文（规划） |
 |------|----------|-------------------|-------------------|
-| Windows | ✅ | ✅ WGL → OpenGL ES | D3D11 / D3D12 |
+| Windows | ✅ | ✅ D3D11 + WGL → OpenGL ES | D3D12 |
 | Linux (Wayland) | ✅ | ✅ EGL → OpenGL ES | Vulkan |
 | macOS | ❌ | — | Metal |
 
@@ -247,12 +247,12 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 | `#[cfg]` | 实现 | 底层 API |
 |----------|------|----------|
-| `windows` | `D3D12 → D3D11 → OpenGL ES` probe；仅 `OpenGL ES` 已接入 `WglContext::new` | OpenGL ES 3.x via WGL |
+| `windows` | `D3D12 → D3D11 → OpenGL ES` probe；D3D11 接入 `D3d11Context` + `PresentUploadEngine`，OpenGL ES 接入 `WglContext::new` | Direct3D 11 swapchain；OpenGL ES 3.x via WGL |
 | `unix`（非 macOS） | `Vulkan → OpenGL ES` probe；仅 `OpenGL ES` 已接入 `EglContext::new` | OpenGL ES via EGL |
 | `macOS` | `Metal` probe（后端未接入） | — |
 | 其他 | 无 GPU 候选，返回 `Err(PlatformError)` | — |
 
-**P6.1 / P6.5 已落地**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；App builder / env / Settings 可跳过 Auto 链直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。
+**P6.1 / P6.2 / P6.5 已落地**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；Windows D3D11 走 CPU upload present，WGL 作次选；App builder / env / Settings 可跳过 Auto 链直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。
 
 ```text
 create_gpu_context(surface, w, h)
@@ -265,7 +265,7 @@ create_gpu_context(surface, w, h)
 
 ### 未实现或后续
 
-macOS backend、Vulkan/D3D/Metal → [roadmap · P6 图形后端](../roadmap.md#p6-图形后端) · [后续工作](../roadmap.md#后续工作)。
+macOS backend、Vulkan、D3D12、Metal → [roadmap · P6 图形后端](../roadmap.md#p6-图形后端) · [后续工作](../roadmap.md#后续工作)。
 
 <a id="测试平台"></a>
 

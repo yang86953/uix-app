@@ -93,6 +93,30 @@ pub trait IGraphicsContext {
     fn width(&self) -> i32;
     fn height(&self) -> i32;
 
+    fn supports_gl_proc_address(&self) -> bool {
+        self.graphics_backend() == GraphicsBackend::OpenGlEs
+    }
+
+    fn supports_pixel_present(&self) -> bool {
+        false
+    }
+
+    fn present_pixels(
+        &mut self,
+        _pixels: &[u32],
+        _width: i32,
+        _height: i32,
+        _damage: PresentDamage,
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support CPU pixel present",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
     /// Drawable pixels per logical client pixel (HiDPI). Default `1.0`.
     fn device_pixel_ratio(&self) -> f32 {
         1.0

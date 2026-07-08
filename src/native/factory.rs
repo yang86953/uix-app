@@ -50,7 +50,7 @@ pub fn create_gpu_context_with_backend(
     })
 }
 
-fn gpu_probe_candidates(requested: GraphicsBackend) -> Vec<GraphicsBackend> {
+pub(crate) fn gpu_probe_candidates(requested: GraphicsBackend) -> Vec<GraphicsBackend> {
     match requested {
         GraphicsBackend::Auto => platform_default_gpu_backends(),
         backend => vec![backend],
@@ -114,10 +114,10 @@ fn create_gpu_context_candidate(
             "Graphics factory: Auto is not a concrete probe candidate",
         )),
         GraphicsBackend::OpenGlEs => create_opengles_context(native_surface, width, height),
-        GraphicsBackend::D3d12
-        | GraphicsBackend::D3d11
-        | GraphicsBackend::Vulkan
-        | GraphicsBackend::Metal => Err(planned_backend_error(backend)),
+        GraphicsBackend::D3d11 => create_d3d11_context(native_surface, width, height),
+        GraphicsBackend::D3d12 | GraphicsBackend::Vulkan | GraphicsBackend::Metal => {
+            Err(planned_backend_error(backend))
+        }
     }
 }
 
@@ -183,6 +183,29 @@ fn create_opengles_context(
     Err(Error::new(
         Errc::PlatformError,
         "GraphicsBackend opengles is not supported on this platform",
+    ))
+}
+
+#[cfg(windows)]
+fn create_d3d11_context(
+    native_surface: *mut c_void,
+    width: i32,
+    height: i32,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    let d3d11 =
+        crate::native::backends::windows::gpu::D3d11Context::new(native_surface, width, height)?;
+    Ok(Box::new(d3d11))
+}
+
+#[cfg(not(windows))]
+fn create_d3d11_context(
+    _native_surface: *mut c_void,
+    _width: i32,
+    _height: i32,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    Err(Error::new(
+        Errc::PlatformError,
+        "GraphicsBackend d3d11 is only supported on Windows",
     ))
 }
 

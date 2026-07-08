@@ -15,21 +15,22 @@ fn long_selectable_list() -> SelectableList {
 #[test]
 fn selectable_list_scroll_range_limits_visible_rows() {
     let list = long_selectable_list();
-    list.last_frame
-        .set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
+    list.last_frame.set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
     let viewport_h = list.list_body_viewport_height();
-    let (start, end) = list
-        .body_scroll
-        .scroll_range(list.items.len(), list.item_stride(), viewport_h);
+    let (start, end) =
+        list.body_scroll
+            .scroll_range(list.items.len(), list.item_stride(), viewport_h);
     assert_eq!(start, 0);
-    assert!(end - start < 100, "virtual scroll should expose a small window");
+    assert!(
+        end - start < 100,
+        "virtual scroll should expose a small window"
+    );
 }
 
 #[test]
 fn selectable_list_wheel_records_composite_delta() {
     let mut list = long_selectable_list();
-    list.last_frame
-        .set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
+    list.last_frame.set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
 
     assert_eq!(
         EventHandler::on_event(
@@ -52,15 +53,12 @@ fn selectable_list_wheel_records_composite_delta() {
 #[test]
 fn selectable_list_wheel_at_scroll_boundary_does_not_record_delta() {
     let mut list = long_selectable_list();
-    list.last_frame
-        .set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
+    list.last_frame.set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
 
     let viewport_h = list.list_body_viewport_height();
-    let max_offset = list.body_scroll.max_scroll_offset(
-        list.items.len(),
-        list.item_stride(),
-        viewport_h,
-    );
+    let max_offset =
+        list.body_scroll
+            .max_scroll_offset(list.items.len(), list.item_stride(), viewport_h);
     list.body_scroll.set_scroll_offset(max_offset);
 
     assert_eq!(
@@ -80,9 +78,8 @@ fn selectable_list_wheel_at_scroll_boundary_does_not_record_delta() {
 #[test]
 fn selectable_list_wheel_registers_composite_scroll_strip() {
     let mut tree = WidgetTree::new();
-    let mut list = long_selectable_list();
-    list.last_frame
-        .set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
+    let list = long_selectable_list();
+    list.last_frame.set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
     let id = tree.set_root(Box::new(list));
     tree.get_mut(id)
         .expect("selectable list root")
@@ -108,8 +105,7 @@ fn selectable_list_wheel_registers_composite_scroll_strip() {
 #[test]
 fn selectable_list_row_index_accounts_for_scroll_offset() {
     let mut list = long_selectable_list();
-    list.last_frame
-        .set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
+    list.last_frame.set(Some(Rect::new(0.0, 0.0, 220.0, 120.0)));
     list.body_scroll.set_scroll_offset(list.item_stride() * 5.0);
 
     assert_eq!(list.row_index_at_y(10.0), Some(5));

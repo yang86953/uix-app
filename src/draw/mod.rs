@@ -19,6 +19,7 @@ pub mod traits;
 pub use crate::core::{DamageRegion, DirtyRegion};
 pub use backend::{BackendCapabilities, BackendKind, RenderBackend};
 pub use engine::cpu::software::SoftwareEngine;
+pub use engine::present_upload::PresentUploadEngine;
 pub use engine::RenderOutcome;
 pub use font::bitmap_font::BitmapFont;
 pub use font::font_service::FontService;
