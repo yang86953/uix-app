@@ -82,6 +82,10 @@ impl BackTop {
             visibility_height: self.visibility_height,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.visibility_height = next.visibility_height;
+    }
 }
 
 #[cfg(test)]

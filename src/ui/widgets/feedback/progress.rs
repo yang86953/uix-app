@@ -243,6 +243,17 @@ impl ProgressBar {
             progress_type: self.progress_type,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.progress = next.progress;
+        self.mode = next.mode;
+        self.stroke_color = next.stroke_color;
+        self.track_color = next.track_color;
+        self.height = next.height;
+        self.width = next.width;
+        self.round = next.round;
+        self.progress_type = next.progress_type;
+    }
 }
 
 #[cfg(test)]

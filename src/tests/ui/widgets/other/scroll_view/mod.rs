@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::layout::{AlignItems, FlexDirection};
@@ -295,6 +295,52 @@ fn scrollview_wheel_at_scroll_boundary_does_not_fallback_invalidate() {
     assert!(!dirty.full_frame);
     assert!(dirty.rects().is_empty());
     assert!(tree.drain_scroll_region_move().is_none());
+}
+
+#[test]
+fn scrollview_keyboard_page_scroll_registers_composite_scroll_strip() {
+    let mut tree = WidgetTree::new();
+    let sv_id = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
+    ));
+    tree.add_child(
+        sv_id,
+        Box::new(FixedWidget {
+            size: Size::new(300.0, 600.0),
+            id: ComponentId::new(1),
+        }),
+    );
+
+    tree.layout();
+    tree.get_mut(sv_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<ScrollView>()
+        .unwrap()
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
+    tree.managers_mut().focus.set_focused_component(Some(sv_id));
+    tree.reset_dirty();
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::PageDown,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+
+    let (frame, dx, dy) = tree
+        .drain_scroll_region_move()
+        .expect("keyboard scroll should register memmove");
+    assert_eq!(frame, Rect::new(0.0, 0.0, 300.0, 200.0));
+    assert_eq!(dx, 0.0);
+    assert_eq!(dy, 180.0);
+
+    let dirty = tree.dirty_region();
+    assert!(!dirty.full_frame);
+    assert_eq!(dirty.rects(), &[Rect::new(0.0, 20.0, 300.0, 180.0)]);
 }
 
 #[test]

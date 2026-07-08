@@ -351,6 +351,18 @@ impl Card {
             actions: self.actions.clone(),
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.title = next.title;
+        self.bordered = next.bordered;
+        self.hoverable = next.hoverable;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
+        self.padding = next.padding;
+        self.elevation = next.elevation;
+        self.flex_grow_val = next.flex_grow_val;
+        self.actions = next.actions;
+    }
 }
 
 #[cfg(test)]

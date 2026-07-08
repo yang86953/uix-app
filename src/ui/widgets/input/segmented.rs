@@ -217,6 +217,13 @@ impl Segmented {
             disabled_options: self.disabled_options.clone(),
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.options = next.options;
+        self.disabled = next.disabled;
+        self.disabled_options = next.disabled_options;
+        self.selected = self.selected.min(self.options.len().saturating_sub(1));
+    }
 }
 
 #[cfg(test)]

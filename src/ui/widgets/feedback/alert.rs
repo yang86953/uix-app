@@ -22,6 +22,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let (bg, border, fg) = match self.type_ {
             StatusLevel::Success => (ctx.tokens().color_success_bg(), ctx.tokens().color_success(), ctx.tokens().color_success()),
@@ -97,6 +101,14 @@ impl Alert {
             closable: self.closable,
             show_icon: self._show_icon,
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.message = next.message;
+        self.description = next.description;
+        self.type_ = next.type_;
+        self.closable = next.closable;
+        self._show_icon = next._show_icon;
     }
 }
 

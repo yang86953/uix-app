@@ -173,6 +173,10 @@ impl Message {
         Size::zero()
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.placement = next.placement;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Message {
             placement: self.placement,

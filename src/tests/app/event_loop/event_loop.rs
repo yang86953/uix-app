@@ -663,7 +663,7 @@ fn deep_idle_waits_without_fixed_timeout_or_extra_present() {
 }
 
 #[test]
-fn software_engine_present_forwards_damage_to_fake_presenter() {
+fn software_engine_first_frame_present_forwards_full_damage_to_fake_presenter() {
     let mut platform = FakePlatform::new();
     platform.event_source.state.exit_after_blocking_calls = Some(1);
     platform.event_source.state.exit_after_timeout_calls = Some(1);
@@ -713,6 +713,81 @@ fn software_engine_present_forwards_damage_to_fake_presenter() {
             .map(|call| &call.damage),
         Some(&PresentDamage::Full)
     );
+}
+
+#[test]
+fn software_engine_after_first_frame_forwards_partial_damage_to_fake_presenter() {
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::key_up(KeyCode::Enter, KeyMod::NONE));
+    platform.event_source.state.exit_after_blocking_calls = Some(2);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 120, 80);
+    let mut session = WindowSession::from_root(
+        button("hover target").into(),
+        Box::new(SoftwareEngine::new()),
+        120,
+        80,
+    );
+    let app_state = AppState::new();
+    session.set_app_state(app_state.clone());
+    let root_id = session
+        .tree_and_engine_mut()
+        .0
+        .root_id()
+        .expect("root should exist");
+    app_state.set_event_loop_waker(platform.event_loop().waker());
+    let handle = app_state
+        .get_handle(root_id)
+        .expect("lookup handle should be registered");
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+    let runtime_ticks = Cell::new(0);
+
+    let status = run_window_session_loop_with_system_theme_and_tasks(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        None,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_| {
+            if runtime_ticks.get() == 1 {
+                handle.invalidate();
+            }
+            runtime_ticks.set(runtime_ticks.get() + 1);
+        },
+        |_, _| {},
+        || None,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(metrics.get().present_calls, 2);
+    assert_eq!(window.presenter.state.present_calls.len(), 2);
+    assert_eq!(
+        window.presenter.state.present_calls[0].damage,
+        PresentDamage::Full
+    );
+    assert!(matches!(
+        window.presenter.state.present_calls[1].damage,
+        PresentDamage::Partial(ref rects)
+            if rects.len() == 1 && rects[0].2 > 0 && rects[0].3 > 0
+    ));
 }
 
 #[test]

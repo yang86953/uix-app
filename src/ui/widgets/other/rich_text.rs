@@ -483,6 +483,35 @@ impl RichText {
         self
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        let segments_changed = self.segments != next.segments;
+        let layout_config_changed = segments_changed
+            || self.default_font_size != next.default_font_size
+            || self.default_font_size_unit != next.default_font_size_unit
+            || self.default_color != next.default_color;
+
+        self.segments = next.segments;
+        self.default_font_size = next.default_font_size;
+        self.default_font_size_unit = next.default_font_size_unit;
+        self.default_color = next.default_color;
+
+        if layout_config_changed {
+            self.layout_lines.borrow_mut().clear();
+            self.layout_height.set(0.0);
+            self.content_width.set(0.0);
+            self.last_layout_width.set(0.0);
+            self.code_regions.borrow_mut().clear();
+            self.hovered_code.set(None);
+            self.layout_dirty.set(true);
+        }
+        if segments_changed {
+            self.selection.set(None);
+            self.sel_anchor.set(0);
+            self.sel_dragging.set(false);
+            self._hovered_link.set(None);
+        }
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::RichText {
             segments: self.segments.clone(),

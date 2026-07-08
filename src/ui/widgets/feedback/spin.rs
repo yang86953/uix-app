@@ -187,6 +187,14 @@ impl Spin {
             wrapper_mode: self.wrapper_mode,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.size = next.size;
+        self.color = next.color;
+        self.spinning = next.spinning;
+        self.tip = next.tip;
+        self.wrapper_mode = next.wrapper_mode;
+    }
 }
 
 #[cfg(test)]

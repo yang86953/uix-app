@@ -76,7 +76,7 @@ Compositor 只通过 ScenePaint 读树：frame、children、clip、scroll、dirt
 | **ClipRect** | `children_clip` 存在 | Content → clip+scroll → children → AfterChildren |
 | **Direct** | 不满足 Picture 条件 | Content → children |
 
-Picture 由框架 **自动推断** Policy（metadata + runtime 合并 #136）+ 自适应阈值；**无**调用方黑名单。详见 [demand-driven · PicturePolicy](demand-driven.md#picturepolicy-自动推断122129) · [component · PicturePolicy 元数据](component.md#picturepolicy-元数据122)。
+Picture 由框架 **自动推断** Policy（metadata + runtime 合并 #136）+ 自适应阈值；**无**调用方黑名单。当前由 Container/Grid 与 Empty/Tag/Descriptions/Result/Alert/Timeline/Skeleton/List/Chart/QRCode/Watermark 等静态高收益组件声明 Eligible，实际启用仍受运行时信号、node_count 与像素阈值约束。详见 [demand-driven · PicturePolicy](demand-driven.md#picturepolicy-自动推断122129) · [component · PicturePolicy 元数据](component.md#picturepolicy-元数据122)。
 
 Build 时子节点按 `z_index` 排序。旧 Picture offscreen 按 node_id+bounds 复用。
 

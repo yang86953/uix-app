@@ -174,6 +174,11 @@ impl Calendar {
             year_jump: self.year_jump,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.cell_size = next.cell_size;
+        self.year_jump = next.year_jump;
+    }
 }
 
 impl Default for Calendar {

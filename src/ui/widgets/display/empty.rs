@@ -18,6 +18,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let desc = if self.description.is_empty() { loc.empty_description } else { &self.description };
@@ -92,6 +96,12 @@ impl Empty {
             icon_name: self.icon_name.clone(),
             image: self.image.clone(),
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.description = next.description;
+        self.icon_name = next.icon_name;
+        self.image = next.image;
     }
 }
 

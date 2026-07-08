@@ -262,6 +262,29 @@ impl Collapse {
             .unwrap_or(if panel.expanded { 1.0 } else { 0.0 })
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        let mut panels = next.panels;
+        for (idx, panel) in panels.iter_mut().enumerate() {
+            if let Some(current) = self.panels.get(idx) {
+                panel.expanded = current.expanded;
+            }
+        }
+        let transitions = panels
+            .iter()
+            .enumerate()
+            .map(|(idx, panel)| {
+                self.transitions
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_else(|| Self::settled_transition(panel.expanded))
+            })
+            .collect();
+
+        self.panels = panels;
+        self.accordion = next.accordion;
+        self.transitions = transitions;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Collapse {
             panels: self

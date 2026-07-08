@@ -57,6 +57,25 @@ impl SelectableList {
         self.push_scroll_delta(actual_dy);
         true
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.items = next.items;
+        self.header_button_text = next.header_button_text;
+        self.footer_text = next.footer_text;
+        self.item_height = next.item_height;
+        if self.items.is_empty() {
+            self.active_index = 0;
+        } else {
+            self.active_index = self.active_index.min(self.items.len() - 1);
+        }
+        self.scroll_y
+            .set(self.scroll_y.get().max(-self.max_scroll_offset()).min(0.0));
+        self.hovered_index.set(
+            self.hovered_index
+                .get()
+                .filter(|idx| *idx < self.items.len()),
+        );
+    }
 }
 
 impl SelectableItem {

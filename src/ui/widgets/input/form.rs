@@ -254,6 +254,15 @@ impl FormItem {
         }
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.label = next.label;
+        self.name = next.name;
+        self.required = next.required;
+        self.help = next.help;
+        self.label_width = next.label_width;
+        self.layout = next.layout;
+    }
+
     fn render_status(
         &self,
         ctx: &mut PaintContext,
@@ -417,6 +426,12 @@ impl Form {
             gap: self.gap,
             layout: self.layout,
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.label_width = next.label_width;
+        self.gap = next.gap;
+        self.layout = next.layout;
     }
 
     fn validate_field(field: &FieldDef) -> ValidationResult {

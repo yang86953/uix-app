@@ -105,6 +105,15 @@ impl FloatButton {
             y: self.y,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.icon = next.icon;
+        self.tooltip = next.tooltip;
+        self.badge_count = next.badge_count;
+        self.size = next.size;
+        self.x = next.x;
+        self.y = next.y;
+    }
 }
 
 impl Default for FloatButton {

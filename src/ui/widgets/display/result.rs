@@ -34,6 +34,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
@@ -127,6 +131,13 @@ impl Result {
             subtitle: self.subtitle.clone(),
             extra_text: self.extra_text.clone(),
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.type_ = next.type_;
+        self.title = next.title;
+        self.subtitle = next.subtitle;
+        self.extra_text = next.extra_text;
     }
 }
 

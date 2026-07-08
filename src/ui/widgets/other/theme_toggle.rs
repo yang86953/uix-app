@@ -62,6 +62,10 @@ impl ThemeToggle {
         self.dark.get()
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.initial_dark = next.initial_dark;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::ThemeToggle {
             dark: self.initial_dark,

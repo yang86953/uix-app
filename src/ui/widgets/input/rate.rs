@@ -198,6 +198,15 @@ impl Rate {
             character: self.character.clone(),
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.count = next.count;
+        self.value = next.value;
+        self.half = next.half;
+        self.disabled = next.disabled;
+        self.clearable = next.clearable;
+        self.character = next.character;
+    }
 }
 
 #[cfg(test)]

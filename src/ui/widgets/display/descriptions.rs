@@ -39,6 +39,10 @@ component! {
         constraints.clamp(Size::new(600.0, title_h + rows as f32 * item_h))
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border_secondary();
@@ -141,6 +145,15 @@ impl Descriptions {
             label_width: self.label_width,
             descriptions_size: self.size,
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.title = next.title;
+        self.items = next.items;
+        self.bordered = next.bordered;
+        self.column = next.column;
+        self.label_width = next.label_width;
+        self.size = next.size;
     }
 }
 

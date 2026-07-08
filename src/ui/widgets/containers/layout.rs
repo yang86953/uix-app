@@ -143,6 +143,10 @@ impl Layout {
         Size::new(300.0, 200.0)
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.bg_color = next.bg_color;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Layout {
             bg_color: self.bg_color,
@@ -164,6 +168,11 @@ impl Header {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(0.0, self.height)
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.height = next.height;
+        self.bg_color = next.bg_color;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -209,6 +218,14 @@ impl Sider {
         }
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.width = next.width;
+        self.bg_color = next.bg_color;
+        self.collapsible = next.collapsible;
+        self.collapsed = next.collapsed;
+        self.collapsed_width = next.collapsed_width;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Sider {
             width: self.width,
@@ -239,6 +256,10 @@ impl Content {
         Size::new(0.0, 0.0)
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.bg_color = next.bg_color;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Content {
             bg_color: self.bg_color,
@@ -260,6 +281,11 @@ impl Footer {
 
     fn intrinsic_size(&self) -> Size {
         Size::new(0.0, self.height)
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.height = next.height;
+        self.bg_color = next.bg_color;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

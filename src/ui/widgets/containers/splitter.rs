@@ -169,6 +169,21 @@ impl Splitter {
         Size::new(300.0, 200.0)
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.vertical = next.vertical;
+        self.min_sizes = next.min_sizes;
+        self.handle_size = next.handle_size;
+        if self.ratios.len() != next.ratios.len() {
+            self.ratios = next.ratios;
+        }
+        if self
+            .dragging
+            .is_some_and(|idx| idx + 1 >= self.ratios.len())
+        {
+            self.dragging = None;
+        }
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Splitter {
             vertical: self.vertical,
