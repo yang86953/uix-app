@@ -55,6 +55,10 @@ impl Default for FakeGraphicsContext {
 }
 
 impl IGraphicsContext for FakeGraphicsContext {
+    fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
+        crate::native::traits::present::GraphicsBackend::OpenGlEs
+    }
+
     fn initialize(&mut self, _native_window: *mut std::ffi::c_void, w: i32, h: i32) -> Result<()> {
         self.state.width.set(w);
         self.state.height.set(h);

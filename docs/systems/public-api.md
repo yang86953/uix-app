@@ -69,6 +69,8 @@ prelude **仅**导出平台工厂与跨层输入枚举；上层 **禁止** `use 
 
 窗口 / 事件 / 呈现 trait → [platform](platform.md#traits-清单)。
 
+P6.1 的 `GraphicsBackend` 与 `create_gpu_context_with_backend` 仅作为 native factory 诊断 / 初始化期 opt-in；不进入 prelude。App builder / env 等稳定公开入口待 P6.5 写入本文。
+
 ---
 
 <a id="draw"></a>

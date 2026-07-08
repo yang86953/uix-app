@@ -179,8 +179,8 @@
 
 | 术语 | 含义 |
 |------|------|
-| GraphicsBackend | #162：规划中的 **具体 GPU API** 枚举（如 `OpenGlEs` / `Vulkan` / `D3D11` / `Metal`）；factory 选型结果；供诊断与 opt-in 配置 |
-| GpuBackendKind | 与 `GraphicsBackend` 同义的设计名；实现阶段二选一公开 |
+| GraphicsBackend | #162 / P6.1：**具体 GPU API** 枚举（`Auto` / `OpenGlEs` / `Vulkan` / `D3D11` / `D3D12` / `Metal`）；factory 选型结果；供诊断与 native opt-in |
+| GpuBackendKind | 与 `GraphicsBackend` 同义的旧设计名；实现采用 `GraphicsBackend` |
 | IGraphicsContext | `native::traits::present`：surface 绑定、`swap_buffers(PresentDamage)`、DPR、`get_proc_address`；**各 GPU API 对上统一契约** |
 | IPresenter | CPU 像素 presenter；SoftwareEngine 回退路径 |
 | create_gpu_context | `native::factory`：按平台与 #162 创建 `Box<dyn IGraphicsContext>` |

@@ -83,7 +83,7 @@ create_gpu_context 失败 → SoftwareEngine（CpuBackend + IPresenter）
 | **native** | `IPresenter` | CPU 像素缓冲上屏（GDI / SHM） | `SoftwareEngine` 回退路径 |
 | **draw** | `GraphicsEngine` | `begin_frame` / `end_frame` / `UpdateStrategy` | `app` FrameRenderer |
 | **draw** | `RenderBackend` + `BackendKind` | Cpu / Gpu / Auto / Null；**不**暴露具体 GPU API | 引擎内部 |
-| **draw**（规划） | `GraphicsBackend` / `GpuBackendKind` | 枚举具体 GPU API（见下表） | 仅诊断 / 日志 / opt-in 配置；**非**公开稳定 API |
+| **native** | `GraphicsBackend` | 枚举具体 GPU API（见下表） | factory 诊断 / 日志 / native opt-in；**非**prelude 稳定 API |
 
 `BackendKind::Gpu` 表示「走 GPU 管线」；具体 API 由 `create_gpu_context` 在 **native 工厂** 内选定并封装为 `IGraphicsContext` 实现（#162）。
 
@@ -112,6 +112,8 @@ create_gpu_context 失败 → SoftwareEngine（CpuBackend + IPresenter）
 4. 全部 GPU 失败 → gpu.shutdown → SoftwareEngine
 5. 记录最终 GraphicsBackend（诊断 / 测试断言）
 ```
+
+P6.1 已落地 factory probe 基线：`create_gpu_context` 默认走 Auto 候选链；`create_gpu_context_with_backend` 可在 native 域内指定单个 `GraphicsBackend`，并记录每个候选失败原因与最终选型。真实 D3D/Vulkan/Metal context 仍属于 P6.2+。
 
 与现有 #59 一致：`App::run_gui` 调用 `create_gpu_context` → `GpuEngine::new`；失败回退 `SoftwareEngine`。多 API 扩展 **只增** native `backends/` 内实现与 factory 分支，**不**改 `ui` / `app` 帧循环契约。
 
