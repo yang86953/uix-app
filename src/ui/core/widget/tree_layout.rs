@@ -1,6 +1,10 @@
 use super::super::*;
 use super::WidgetTree;
-use crate::core::{Constraints, Rect};
+use crate::core::{Constraints, Rect, Size};
+
+fn frame_constraints(frame: Rect) -> Constraints {
+    Constraints::loose(Size::new(frame.w, frame.h))
+}
 
 impl WidgetTree {
     /// 返回 Layout 失效影响的子树先序遍历顺序。
@@ -60,6 +64,8 @@ impl WidgetTree {
             .unwrap_or(false);
         if !has_valid_root {
             if let Some(root_id) = self.root_id {
+                // Bootstrap only: root may be created before a window/session assigns
+                // a viewport-sized frame, so use natural size for the temporary frame.
                 let ps = self
                     .get(root_id)
                     .map(|r| r.measure(Constraints::unconstrained()));
@@ -87,7 +93,7 @@ impl WidgetTree {
                                 c.visible()
                                     && c.frame().w <= 0.0
                                     && c.frame().h <= 0.0
-                                    && c.measure(Constraints::unconstrained()).h <= 0.0
+                                    && c.measure(frame_constraints(rf)).h <= 0.0
                             })
                         })
                     })
@@ -412,20 +418,13 @@ impl WidgetTree {
 
         let ids = self.traverse();
         for id in ids {
-            let viewport_h = self
-                .get(id)
-                .map(|node| node.frame().h)
-                .unwrap_or(0.0);
+            let viewport_h = self.get(id).map(|node| node.frame().h).unwrap_or(0.0);
             if viewport_h <= 0.0 {
                 continue;
             }
             let needs_refresh = self
                 .get(id)
-                .and_then(|node| {
-                    node.component()
-                        .as_any()
-                        .downcast_ref::<VirtualScroll>()
-                })
+                .and_then(|node| node.component().as_any().downcast_ref::<VirtualScroll>())
                 .is_some_and(|vs| vs.needs_child_refresh(viewport_h));
             if !needs_refresh {
                 continue;
@@ -548,9 +547,10 @@ impl WidgetTree {
                 // layout_expand（Phase 2）形成振荡循环。
                 // 使用 1.0 像素绝对最小值而非比例值（如 0.01 * h），
                 // 后者在高 DPI 场景下可能过大（2000px * 0.01 = 20px 虚高）。
+                let measure_constraints = frame_constraints(node_frame);
                 let pref_h = self
                     .get(id)
-                    .map(|n| n.measure(Constraints::unconstrained()).h)
+                    .map(|n| n.measure(measure_constraints).h)
                     .unwrap_or(0.0);
                 let min_h = needed_h.max(pref_h).max(1.0);
                 let effective_needed = min_h;

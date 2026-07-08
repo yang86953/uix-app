@@ -559,6 +559,9 @@ impl LayoutEngine for GridLayout {
 // ── 辅助：从 WidgetTree 构建 LayoutChild ──────────────────────────
 
 /// 从 WidgetTree 节点构建统一的 LayoutChild。
+///
+/// 这是自然尺寸 fallback；生产布局路径应优先使用
+/// [`child_from_tree_with_constraints`] 传入父级 content rect 约束。
 pub fn child_from_tree(component_id: ComponentId, tree: &WidgetTree) -> LayoutChild {
     child_from_tree_with_constraints(component_id, tree, Constraints::unconstrained())
 }
