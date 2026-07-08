@@ -147,7 +147,7 @@ P6 图形后端（规划）    ← #162，详见下文
 |--------|------|------|
 | P6.0 设计 | 抽象分层、平台矩阵、回退链、术语 | ✅ 文档（本文 + rendering/platform/decisions） |
 | P6.1 基线 | `GraphicsBackend` 枚举；factory probe 框架；诊断日志 | ✅ 已实现（真实 D3D/Vulkan/Metal 后端仍在 P6.2+） |
-| P6.2 Windows | D3D11 或 D3D12 `IGraphicsContext`；WGL 作次选 | 规划 |
+| P6.2 Windows | D3D11 `IGraphicsContext` + CPU upload present；WGL 作次选，D3D12 后续 | ✅ 已实现（D3D12 仍规划） |
 | P6.3 Linux | Vulkan `IGraphicsContext`；EGL 作次选 | 规划 |
 | P6.4 macOS | Metal + `create_platform` backend | 规划 |
 | P6.5 配置 | App builder / env / Settings opt-in；公开 API 写入 public-api | ✅ 已实现 |

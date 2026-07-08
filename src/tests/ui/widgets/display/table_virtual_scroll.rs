@@ -21,19 +21,26 @@ fn large_table() -> Table {
 #[test]
 fn table_scroll_range_limits_visible_rows() {
     let table = large_table();
-    table.last_frame.set(Some(Rect::new(0.0, 0.0, 320.0, 120.0)));
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 320.0, 120.0)));
     let viewport_h = table.body_viewport_height();
     let (start, end) = table
         .body_scroll
         .scroll_range(table.rows.len(), table.row_h, viewport_h);
     assert_eq!(start, 0);
-    assert!(end - start < 100, "virtual scroll should expose a small window");
+    assert!(
+        end - start < 100,
+        "virtual scroll should expose a small window"
+    );
 }
 
 #[test]
 fn table_wheel_records_composite_delta() {
     let mut table = large_table();
-    table.last_frame.set(Some(Rect::new(0.0, 0.0, 320.0, 120.0)));
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 320.0, 120.0)));
 
     assert_eq!(
         EventHandler::on_event(
@@ -56,8 +63,10 @@ fn table_wheel_records_composite_delta() {
 #[test]
 fn table_wheel_registers_composite_scroll_strip() {
     let mut tree = WidgetTree::new();
-    let mut table = large_table();
-    table.last_frame.set(Some(Rect::new(0.0, 0.0, 320.0, 120.0)));
+    let table = large_table();
+    table
+        .last_frame
+        .set(Some(Rect::new(0.0, 0.0, 320.0, 120.0)));
     let id = tree.set_root(Box::new(table));
     tree.get_mut(id)
         .expect("table root")

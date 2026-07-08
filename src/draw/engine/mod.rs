@@ -5,6 +5,7 @@
 use crate::draw::backend::DamageRegion;
 
 pub mod cpu;
+pub mod present_upload;
 
 /// 帧渲染结果。
 #[derive(Debug, Clone, PartialEq)]
