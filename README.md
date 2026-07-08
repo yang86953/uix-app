@@ -1,4 +1,4 @@
-# UIX
+﻿# UIX
 
 Rust 跨平台原生桌面 UI 框架（Windows / Linux）。`use uix::prelude::*;` 为推荐入口。
 
@@ -10,9 +10,9 @@ Rust 跨平台原生桌面 UI 框架（Windows / Linux）。`use uix::prelude::*
 
 **零维护**（[#130](docs/decisions.md#d130)）：Picture、Registry 托管、标脏、Theme 由框架自动；App 用 State/View + **Timer API**（[#132](docs/decisions.md#d132)）、**`post_to_ui`**（[#133](docs/decisions.md#d133)）与 **`on_start`**（[#140](docs/decisions.md#d140)）注入运行中句柄。
 
-细则 → [`docs/systems/demand-driven.md`](docs/systems/demand-driven.md) · [`AGENTS.md`](AGENTS.md)
+细则 → [`docs/areas/systems/demand-driven.md`](docs/areas/systems/demand-driven.md) · [`AGENTS.md`](AGENTS.md)
 
-> **面向 AI Agent**：编码前必读 [`AGENTS.md`](AGENTS.md)（硬约束 + checklist）；架构导航 [`docs/Main.md`](docs/Main.md)。
+> **面向 AI Agent**：编码前必读 [`AGENTS.md`](AGENTS.md)（硬约束 + checklist）；架构导航 [`docs/areas/architecture.md`](docs/areas/architecture.md)。
 
 ## 快速开始
 
@@ -32,7 +32,7 @@ Linux GUI 需 Wayland 会话。
 | GUI（默认） | `cargo run --bin uix-demo` | 11 页多页应用：Gallery 覆盖矩阵、App Timer/Theme、全部内置 Widget |
 | CLI | `--cli` | 各功能域 API 无 GUI 演示 |
 
-公开 API 清单 → [`docs/systems/public-api.md`](docs/systems/public-api.md) · 设计文档 → [`docs/Main.md`](docs/Main.md) · 变更记录 → [`CHANGELOG.md`](CHANGELOG.md)
+公开 API 清单 → [`docs/areas/systems/public-api.md`](docs/areas/systems/public-api.md) · 设计文档 → [`docs/areas/architecture.md`](docs/areas/architecture.md) · 变更记录 → [`CHANGELOG.md`](CHANGELOG.md)
 
 ## 示例
 
@@ -75,4 +75,4 @@ fn main() {
 | app | `uix::app::*` | App、Window、CLI |
 | data | `uix::data::*` | SettingsService |
 
-架构全貌 → [`docs/Main.md`](docs/Main.md) · 最高规则 → [`AGENTS.md`](AGENTS.md)
+架构全貌 → [`docs/areas/architecture.md`](docs/areas/architecture.md) · 最高规则 → [`AGENTS.md`](AGENTS.md)

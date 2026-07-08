@@ -1,6 +1,6 @@
-# 主题与样式系统
+﻿# 主题与样式系统
 
-← [Main](../Main.md) · 系统 **#4** · 功能域：`ui`（Theme）· `draw`（token 解析）
+← [Main](../architecture.md) · 系统 **#4** · 功能域：`ui`（Theme）· `draw`（token 解析）
 
 > Theme 提供颜色与排版；Style / StyleSet 描述外观。
 
@@ -102,7 +102,7 @@ Theme { Arc<dyn TokenProvider> }
 
 ## 品牌与 Light/Dark
 
-> **启动 vs 运行中**（[#74](../decisions.md#d74) · [#125](../decisions.md#d125)）
+> **启动 vs 运行中**（[#74](../../decisions.md#d74) · [#125](../../decisions.md#d125)）
 >
 > | 阶段 | 行为 |
 > |------|------|
@@ -199,4 +199,4 @@ ui/foundation/style/   Style, StyleSet, ColorValue, apply_style
 draw/painting/theme/   ThemeTokens（IColor / ITypography / ISpacing）
 ```
 
-详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。
+详见 [implementation · 源码目录详表](../implementation.md#源码目录详表)。

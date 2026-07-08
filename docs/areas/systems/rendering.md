@@ -1,6 +1,6 @@
-# 渲染系统
+﻿# 渲染系统
 
-← [Main](../Main.md) · 系统 **#7** · 功能域：`draw` · `app`（ScenePaint 桥接）
+← [Main](../architecture.md) · 系统 **#7** · 功能域：`draw` · `app`（ScenePaint 桥接）
 
 > ScenePaint 契约绘制；局部重绘上屏。不知具体组件类型。**须符合** [按需零闲置](demand-driven.md) L0/L1/L2（#105、#107、#122、#129）。
 
@@ -96,14 +96,14 @@ create_gpu_context 失败 → SoftwareEngine（CpuBackend + IPresenter）
 | **macOS** | Metal | — | ❌ 无 backend | 规划 SoftwareEngine |
 | **Web**（远期） | WebGPU | — | ❌ | — |
 
-图例：**✅ 已实现** · **规划** 为 backlog，见 [roadmap · P6 图形后端](../roadmap.md#p6-图形后端)。
+图例：**✅ 已实现** · **规划** 为 backlog，见 [implementation · P6 图形后端](../implementation.md#p6-图形后端)。
 
 ### 选型与回退链（#162）
 
 选型在 **窗口 / 引擎初始化时一次性完成**；**禁止**每帧探测或切换 API（#105 零闲置）。
 
 ```text
-1. 读取 opt-in 配置（App builder / 环境变量 / Settings — API 待落地）
+1. 读取 opt-in 配置（App builder / 环境变量 / Settings）
 2. 若指定 GraphicsBackend → 仅尝试该 API
 3. 否则按平台默认优先级依次 probe：
        Windows:  D3D12 → D3D11 → OpenGL ES (WGL)
@@ -134,9 +134,9 @@ P6.1 已落地 factory probe 基线：`create_gpu_context` 默认走 Auto 候选
 
 优先级：App builder > 环境变量 > Settings > `Auto`。无效值记录 warning 后继续读取下一来源；选型仍只在窗口 / 引擎初始化时完成一次。
 
-公开 API 形状见 [public-api](public-api.md) 与 [#162](decisions.md#d162)。
+公开 API 形状见 [public-api](public-api.md) 与 [#162](../../decisions.md#d162)。
 
-**关联**：[platform · 窗口与呈现](platform.md#窗口与呈现) · [platform · 工厂与后端](platform.md#工厂与后端) · [roadmap · P6](../roadmap.md#p6-图形后端)
+**关联**：[platform · 窗口与呈现](platform.md#窗口与呈现) · [platform · 工厂与后端](platform.md#工厂与后端) · [implementation · P6](../implementation.md#p6-图形后端)
 
 ---
 
@@ -160,7 +160,7 @@ Compositor 只通过 ScenePaint 读树：frame、children、clip、scroll、dirt
 | **ClipRect** | `children_clip` 存在 | Content → clip+scroll → children → AfterChildren |
 | **Direct** | 不满足 Picture 条件 | Content → children |
 
-Picture 由框架 **自动推断** Policy（metadata + runtime 合并 #136）+ 自适应阈值；**无**调用方黑名单。当前由 Container/Grid 与 Empty/Tag/Descriptions/Result/Alert/Timeline/Skeleton/List/Chart/QRCode/Watermark 等静态高收益组件声明 Eligible，实际启用仍受运行时信号、node_count 与像素阈值约束。详见 [demand-driven · PicturePolicy](demand-driven.md#picturepolicy-自动推断122129) · [component · PicturePolicy 元数据](component.md#picturepolicy-元数据122)。
+Picture 由框架 **自动推断** Policy（metadata + runtime 合并 #136）+ 自适应阈值；**无**调用方黑名单。当前由 Container/Grid/Space/Layout shell、Breadcrumb/Form shell 与 Divider/Icon/Avatar/Badge、Empty/Tag/Descriptions/Result/Alert/Timeline/Skeleton/List/Chart/QRCode/Watermark 等静态高收益组件声明 Eligible，实际启用仍受运行时信号、node_count 与像素阈值约束。详见 [demand-driven · PicturePolicy](demand-driven.md#picturepolicy-自动推断122129) · [component · PicturePolicy 元数据](component.md#picturepolicy-元数据122)。
 
 Build 时子节点按 `z_index` 排序。旧 Picture offscreen 按 node_id+bounds 复用。
 

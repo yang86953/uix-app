@@ -1,6 +1,6 @@
 ﻿# View 与响应式系统
 
-← [Main](../Main.md) · 系统 **#2** · 功能域：`ui`
+← [Main](../architecture.md) · 系统 **#2** · 功能域：`ui`
 
 > 声明式 View 描述 UI；State 驱动重建与 diff。业务**仅**通过 View DSL 创建 UI（#21）。
 
@@ -72,7 +72,7 @@ ViewNode::new(widget, children)
 
 ## Reconciler
 
-> **术语（[#101](../decisions.md#d101)）**
+> **术语（[#101](../../decisions.md#d101)）**
 >
 > - **ComponentId**（#35、#101）：Generational ID；Reconciler diff 复用依据。
 > - **WidgetId**（内部源码名，#101）：`core::ComponentId` 的 WidgetTree 内部别名。
@@ -266,13 +266,11 @@ static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 | clone | `State::clone` **共享**同一 `slot_id`（同一逻辑状态） |
 | 指纹 | #142 使用 `TypeId::of::<T>() + slot_id.0` |
 | 不用 generation | `generation()` 随 `set` 变化；用于 Computed/Effect **依赖追踪**，非身份 |
-| Computed | 未来可分配独立 slot id；v1 指纹以捕获的 `State` slot 为准 |
+| Computed | `Computed::new` 分配独立 slot id；clone 共享同一逻辑派生状态 |
 
 ### 实现状态
 
-**已实现**（#143）：`StateSlotId` 字段；`State::new` 分配单调 slot，clone 共享；capture 指纹 `TypeId + slot_id`；`HandlerRegistration::with_state_capture` / Button·Input DSL 等显式 State capture 已接。
-
-**未实现**：`Computed` 独立 slot id（v1 指纹以捕获的 `State` slot 为准）→ [未实现或后续](#未实现或后续)。
+**已实现**（#143）：`StateSlotId` 字段；`State::new` / `Computed::new` 分配单调 slot，clone 共享；capture 指纹 `TypeId + slot_id`；`HandlerRegistration::with_state_capture` / `with_computed_capture` / Button·Input DSL 等显式 capture 已接。
 
 > **实现注记**：`StateSlotId` 已落地；`State::generation()` 保持值变更计数语义，不参与 State capture 指纹。
 
@@ -306,7 +304,7 @@ Effect 闭包 `'static`；禁止在 Effect 内直接操作 WidgetTree 或改 lay
 
 周期逻辑：**App Timer API**（#132）或 async→主线程 `State::set`。见 [application · App 定时 API](application.md#app-定时-api) · [demand-driven · UI 主循环 vs 后台](demand-driven.md#ui-主循环-vs-后台)。
 
-DeepIdle **不** `tick_effects`（[#105](decisions.md#d105)）。State 变更会先标记依赖它的 Effect pending；UiEvent 或 State 变更唤醒进入 Active 后，仅 pending Effect 会执行。详见 [demand-driven · Effect 与 Theme](demand-driven.md#effect-与-theme)。
+DeepIdle **不** `tick_effects`（[#105](../../decisions.md#d105)）。State 变更会先标记依赖它的 Effect pending；UiEvent 或 State 变更唤醒进入 Active 后，仅 pending Effect 会执行。详见 [demand-driven · Effect 与 Theme](demand-driven.md#effect-与-theme)。
 
 ### 业务数据
 
@@ -509,7 +507,7 @@ State::set(value)
 
 ## 未实现或后续
 
-本域相关项（Handler 宏层 fingerprint、Computed 独立 slot id）→ [roadmap · 后续工作](../roadmap.md#后续工作)。设计细节见 [热更新设计](#热更新设计)、[StateSlotId](#stateslotid)。排期 → [roadmap · 后续工作](../roadmap.md#后续工作)。
+本域相关项（Handler 宏层 fingerprint）→ [implementation · 后续工作](../implementation.md#后续工作)。设计细节见 [热更新设计](#热更新设计)、[StateSlotId](#stateslotid)。排期 → [implementation · 后续工作](../implementation.md#后续工作)。
 
 ---
 

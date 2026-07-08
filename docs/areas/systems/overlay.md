@@ -1,6 +1,6 @@
-# 浮层系统
+﻿# 浮层系统
 
-← [Main](../Main.md) · 系统 **#9** · 功能域：`ui`
+← [Main](../architecture.md) · 系统 **#9** · 功能域：`ui`
 
 > Modal、Tooltip、ContextMenu 等，由 **OverlayStack** 统一调度（#100）。周期性浮层（Tooltip 延迟、Spinner）须 **RegisteredActive register**（#111）。
 
@@ -136,4 +136,4 @@ ui/core/widget/tree_layout.rs rebuild_widget_overlays
 ui/core/widget/tree_events.rs overlay 命中与 modal 外拦截
 ```
 
-详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。
+详见 [implementation · 源码目录详表](../implementation.md#源码目录详表)。

@@ -1,8 +1,8 @@
-# 公开 API 参考
+﻿# 公开 API 参考
 
-← [Main](../Main.md) · 跨域 · 功能域：`prelude`
+← [Main](../architecture.md) · 跨域 · 功能域：`prelude`
 
-> **应用作者单页索引**：`use uix::prelude::*;` 的完整导出清单与分组说明。行为语义见各系统文档；设计名 vs 源码名 → [glossary · 术语对照](../glossary.md#术语对照)。
+> **应用作者单页索引**：`use uix::prelude::*;` 的完整导出清单与分组说明。行为语义见各系统文档；设计名 vs 源码名 → [glossary · 术语对照](../../glossary.md#术语对照)。
 
 ## 索引
 
@@ -21,7 +21,7 @@
 | App | [App 与运行时](#app-与运行时) |
 | 域外符号 | [未经 prelude 导出](#未经-prelude-导出) |
 
-**关联**：[application](application.md) · [view-reactive](view-reactive.md) · [component](component.md) · [glossary · prelude](../glossary.md#架构)
+**关联**：[application](application.md) · [view-reactive](view-reactive.md) · [component](component.md) · [glossary · prelude](../../glossary.md#架构)
 
 ---
 
@@ -31,8 +31,8 @@
 
 | 符号 | 说明 |
 |------|------|
-| `use uix::prelude::*;` | 推荐应用入口（[#69](../decisions.md#d69)） |
-| `component!` | 声明自定义 Widget（[#102](../decisions.md#d102)） |
+| `use uix::prelude::*;` | 推荐应用入口（[#69](../../decisions.md#d69)） |
+| `component!` | 声明自定义 Widget（[#102](../../decisions.md#d102)） |
 | `impl_widget_component!` | 为已有 struct 补 Widget trait 桥接 |
 | `tree` | WidgetTree 构建辅助模块 |
 
@@ -46,11 +46,11 @@
 
 | 类型 | 用途 |
 |------|------|
-| `ComponentId` | 组件 generational ID（[#101](../decisions.md#d101)） |
+| `ComponentId` | 组件 generational ID（[#101](../../decisions.md#d101)） |
 | `WindowId` | 进程内窗口 ID |
 | `Point` · `Rect` · `Size` | 几何（逻辑像素） |
 | `EdgeInsets` | 四边 inset |
-| `Constraints` | measure 约束（[#103](../decisions.md#d103)） |
+| `Constraints` | measure 约束（[#103](../../decisions.md#d103)） |
 | `Error` · `Errc` | 统一错误 |
 
 ---
@@ -97,10 +97,10 @@ prelude **仅**导出平台工厂与跨层输入枚举；上层 **禁止** `use 
 
 | 符号 | 说明 |
 |------|------|
-| `State<T>` · `Computed<T>` · `Effect` · `StateSlotId` | 响应式（[#21](../decisions.md#d21)） |
+| `State<T>` · `Computed<T>` · `Effect` · `StateSlotId` | 响应式（[#21](../../decisions.md#d21)） |
 | `Style` · `StyleSet` · `StyleState` | 组件样式 |
 | `ColorValue` · `DisplayMode` · `BoxShadowDef` · `PaletteColor` · `TypographyToken` | 样式字段类型 |
-| `Theme` · `DesignTokens` · `DynTokens` · `ThemePrimitives` · `NeutralRole` · `ShadowToken` | 主题（[#1–#3](../decisions.md#d1)） |
+| `Theme` · `DesignTokens` · `DynTokens` · `ThemePrimitives` · `NeutralRole` · `ShadowToken` | 主题（[#1–#3](../../decisions.md#d1)） |
 | `Animation<T>` · `Easing` | 动画 |
 
 ---
@@ -131,7 +131,7 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | `ClickEvent` | 点击载荷 |
 | `EventResult` | Handler 返回值 |
 | `HandlerId` · `HandlerOptions` · `HandlerRegistration` | Handler 注册 |
-| `AppState` · `ComponentHandle` | 跨窗共享 registry + lookup handle（[#145](../decisions.md#d145)） |
+| `AppState` · `ComponentHandle` | 跨窗共享 registry + lookup handle（[#145](../../decisions.md#d145)） |
 | `ComponentConfigSnapshot` · `SnapshotSource` · `SnapshotFields` · `SnapshotValue` 等 | 配置快照提取 |
 | `PaintContext` | 组件 render 上下文 |
 | `IntoWidgetNode` · `WidgetChildren` | 树节点转换 |
@@ -163,7 +163,7 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | `ButtonBuilder` · `GridBuilder` · `InputBuilder` · `ScrollBuilder` | Builder |
 | `StyleExt` | View 链式样式 |
 
-入门 → [view-reactive](view-reactive.md) · 示例 → [demo/README](../../demo/README.md)。
+入门 → [view-reactive](view-reactive.md) · 示例 → [demo/README](../../../demo/README.md)。
 
 ---
 
@@ -194,7 +194,7 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 
 | 符号 | 说明 |
 |------|------|
-| `App` · `AppHandle` · `AppMode` · `WindowConfig` · `TimerHandle` | 应用入口与运行中句柄（[#132–#144](../decisions.md#d132)） |
+| `App` · `AppHandle` · `AppMode` · `WindowConfig` · `TimerHandle` | 应用入口与运行中句柄（[#132–#144](../../decisions.md#d132)） |
 | `DiContainer` | DI 容器（`app::Container`） |
 | `map_ui_event` | `UiEvent` → `SystemEvent` 桥接 |
 
@@ -218,4 +218,4 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | `uix::app::event_loop` | `run_widget_loop` | 绕过 `App` 的主循环入口 |
 | `uix::native::traits::*` | Platform traits | 平台集成测试；生产 UI **禁止** backends |
 
-功能域全貌 → [Main · 功能域](Main.md#功能域--系统) · 迁移锚点 → [CHANGELOG](../../CHANGELOG.md)。
+功能域全貌 → [architecture · 功能域](../architecture.md#功能域--系统) · 迁移锚点 → [CHANGELOG](../../../CHANGELOG.md)。

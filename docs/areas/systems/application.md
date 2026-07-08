@@ -1,6 +1,6 @@
-# 应用系统
+﻿# 应用系统
 
-← [Main](../Main.md) · 系统 **#1** · 功能域：`app`
+← [Main](../architecture.md) · 系统 **#1** · 功能域：`app`
 
 > 启动、主循环、桥接平台 / View / 渲染。编排者，不实现组件或绘制算法。
 
@@ -71,7 +71,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 ## 主循环
 
-入口：`run_widget_loop`（`src/app/event_loop/event_loop.rs`）。设计文档与 [#116](../decisions.md#d116) 中的进程级编排名 **`run_app_loop`** 指同一套多 session 调度；测试与 session 内部入口为 `run_window_session_loop_*`（见 [testing · 主循环测试](testing.md)）。
+入口：`run_widget_loop`（`src/app/event_loop/event_loop.rs`）。设计文档与 [#116](../../decisions.md#d116) 中的进程级编排名 **`run_app_loop`** 指同一套多 session 调度；测试与 session 内部入口为 `run_window_session_loop_*`（见 [testing · 主循环测试](testing.md)）。
 
 ### 状态机（设计 #106、#110、#111）
 
@@ -712,4 +712,4 @@ API：`singleton<T>()`、`resolve<T>()`、`resolve_mut<T>()`、`has<T>()`、`rem
 
 ## 源码模块
 
-`app/` 子路径映射 → [roadmap · 源码目录详表](../roadmap.md#源码目录详表)（`shell/`、`window_session.rs`、`event_loop/`、`bridge/` 等）。
+`app/` 子路径映射 → [implementation · 源码目录详表](../implementation.md#源码目录详表)（`shell/`、`window_session.rs`、`event_loop/`、`bridge/` 等）。

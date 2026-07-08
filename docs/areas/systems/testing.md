@@ -1,6 +1,6 @@
 ﻿# 测试系统
 
-← [Main](../Main.md) · 系统 **#12** · 功能域：跨域
+← [Main](../architecture.md) · 系统 **#12** · 功能域：跨域
 
 > 组件与集成测试策略；FakePlatform 驱动真实代码路径。
 
@@ -21,7 +21,7 @@
 
 ## 测试策略
 
-裁决 [#40](../decisions.md#d40)：**FakePlatform + 语义断言 + paint snapshot**。
+裁决 [#40](../../decisions.md#d40)：**FakePlatform + 语义断言 + paint snapshot**。
 
 | 层级 | 手段 | 断言对象 |
 |------|------|----------|
@@ -51,7 +51,7 @@
 |------|------|
 | `FakeEventSource` | `inject` / `inject_all` FIFO 队列 |
 | `FakeWindow` / `FakePresenter` | 呈现与 damage 历史（不通过 `Platform` trait 暴露） |
-| `FakeTimer` | `ITimer` 平台定时器；`advance` 触发 **平台层** timer（见 [#139](../decisions.md#d139)） |
+| `FakeTimer` | `ITimer` 平台定时器；`advance` 触发 **平台层** timer（见 [#139](../../decisions.md#d139)） |
 | 其余 Fake | clipboard、cursor、text_input… 同生产接口 |
 
 详见 [platform · 测试平台](platform.md#测试平台)。

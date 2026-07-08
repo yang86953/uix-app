@@ -1,6 +1,6 @@
-# 组件系统
+﻿# 组件系统
 
-← [Main](../Main.md) · 系统 **#3** · 功能域：`ui`
+← [Main](../architecture.md) · 系统 **#3** · 功能域：`ui`
 
 > 单个 UI 组件的结构、能力与生命周期。
 
@@ -33,7 +33,7 @@
 | 回调不进 struct | 业务 handler 在 HandlerTable，不在组件字段（#10） |
 | 无 variant enum | 外观差异用 StyleSet 预设（#16） |
 | 能力拆分 trait | Layout / Render / Event / Lifecycle / Animation 按需 impl |
-| 无障碍 | **v2**（[#99](../decisions.md#d99)）；v1 不做 ARIA、屏幕阅读器、键盘导航扩展 |
+| 无障碍 | **v2**（[#99](../../decisions.md#d99)）；v1 不做 ARIA、屏幕阅读器、键盘导航扩展 |
 
 **struct 放**：配置、交互态（hover/pressed/disabled）、StyleSet。  
 **struct 不放**：业务闭包、`on_click` 字段、variant 枚举。
@@ -268,7 +268,7 @@ WidgetTree
 
 > 完整 **snapshot** 覆盖清单（约 80 个 `component!` widget）见 [ComponentConfigSnapshot · 实现注记](#componentconfigsnapshot)。
 
-**v1 共性**：除 Button 为 reference impl（[#58](../decisions.md#d58)）外，带 `component!` 的内置 widget 均为 Big Bang 落地（#80）；**Navigation** / **NavGroup** 等为 builder/compositor（无 `component!`、无 snapshot）。**无障碍 v2** 统一待 [#99](../decisions.md#d99)（v1 不做 ARIA / 屏幕阅读器 / 键盘导航扩展）。
+**v1 共性**：除 Button 为 reference impl（[#58](../../decisions.md#d58)）外，带 `component!` 的内置 widget 均为 Big Bang 落地（#80）；**Navigation** / **NavGroup** 等为 builder/compositor（无 `component!`、无 snapshot）。**无障碍 v2** 统一待 [#99](../../decisions.md#d99)（v1 不做 ARIA / 屏幕阅读器 / 键盘导航扩展）。
 
 **浮层列**：✓ = 参与 [OverlayStack](overlay.md) 或 `overlay_entry` 调度。
 
@@ -430,7 +430,7 @@ WidgetTree
 
 ## Authoring
 
-设计决策 [#102](../decisions.md#d102)：**`component!`** 为推荐 authoring 入口（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已导出。少数手写 widget 仍可用低层 `impl_widget_component!` 显式声明能力；新组件默认优先 `component!`。
+设计决策 [#102](../../decisions.md#d102)：**`component!`** 为推荐 authoring 入口（[#20](../../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已导出。少数手写 widget 仍可用低层 `impl_widget_component!` 显式声明能力；新组件默认优先 `component!`。
 
 ### component!（当前实现）
 
@@ -512,15 +512,15 @@ picture_policy: PicturePolicy::Never,  // 默认
 
 App / View **不**配置 Picture；调用方零维护。
 
-> **实现注记**：`WidgetComponent::picture_policy()` 与 `component!` 的 `picture_policy =>` 元数据方法已接；LayerTree 会合并 handler、dynamic content、interactive state、continuous pointer、overlay、focusable、clip、scroll 等运行时信号并套用 #129 阈值。当前已声明 `Eligible` 的静态高收益组件：Container、Grid、Empty、Tag、Descriptions、Result、Alert、Timeline、Skeleton、List、BarChart、LineChart、PieChart、QRCode、Watermark；未声明组件默认 `Never`，实际启用仍受运行时信号与 #129 阈值约束。
+> **实现注记**：`WidgetComponent::picture_policy()` 与 `component!` 的 `picture_policy =>` 元数据方法已接；LayerTree 会合并 handler、dynamic content、interactive state、continuous pointer、overlay、focusable、clip、scroll 等运行时信号并套用 #129 阈值。当前已声明 `Eligible` 的静态高收益组件：Container、Grid、Space、Layout、Header、Sider、Content、Footer、Divider、Icon、Avatar、Badge、Empty、Tag、Descriptions、Result、Alert、Timeline、Skeleton、List、BarChart、LineChart、PieChart、QRCode、Watermark、Breadcrumb、Form shell；未声明组件默认 `Never`，实际启用仍受运行时信号与 #129 阈值约束。已评估的边界项（Image、ProgressBar、Spin、Card、Label、Typography、RichText、overlay 类组件等）因资源缓存、动画、事件、选择状态或 overlay 运行态保持 `Never`。
 
-**未实现**：更多静态 widget 的 `Eligible` 声明须按子树代价逐一评估 → [未实现或后续](#未实现或后续)。
+后续新增静态 widget 时须按子树代价逐一评估 `Eligible`；当前内置组件无剩余低风险候选。
 
 ---
 
 ## 未实现或后续
 
-本域相关项（无障碍 v2、PicturePolicy 扩展）→ [roadmap · 后续工作](../roadmap.md#后续工作)。设计细节见 [内置 Widget 目录](#内置-widget-目录)、[PicturePolicy 元数据](#picturepolicy-元数据122)。排期 → [roadmap · 后续工作](../roadmap.md#后续工作)。
+本域相关项（无障碍 v2）→ [implementation · 后续工作](../implementation.md#后续工作)。设计细节见 [内置 Widget 目录](#内置-widget-目录)、[PicturePolicy 元数据](#picturepolicy-元数据122)。排期 → [implementation · 后续工作](../implementation.md#后续工作)。
 
 ---
 
@@ -558,4 +558,4 @@ ui/
 └── animation/         WidgetAnimation trait 与 easing
 ```
 
-详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。
+详见 [implementation · 源码目录详表](../implementation.md#源码目录详表)。
