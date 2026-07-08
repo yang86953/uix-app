@@ -38,15 +38,7 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
 
 #[cfg_attr(not(test), allow(dead_code))]
 fn unsupported_platform_message() -> String {
-    #[cfg(target_os = "macos")]
-    {
-        "Unsupported platform: macOS backend is planned but not implemented".to_string()
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        "Unsupported platform: only Windows and Linux are supported".to_string()
-    }
+    "Unsupported platform: only Windows, Linux, and macOS are supported".to_string()
 }
 
 /// 创建 GPU 图形上下文，使用平台默认候选链。
@@ -317,11 +309,7 @@ mod tests {
     fn unsupported_platform_message_tracks_platform_boundary() {
         let message = unsupported_platform_message();
 
-        #[cfg(target_os = "macos")]
-        assert!(message.contains("macOS backend is planned"));
-
-        #[cfg(not(target_os = "macos"))]
-        assert!(message.contains("only Windows and Linux"));
+        assert!(message.contains("only Windows, Linux, and macOS"));
     }
 
     #[test]
