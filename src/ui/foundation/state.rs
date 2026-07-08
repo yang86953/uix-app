@@ -552,7 +552,7 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for State<T> {
 /// ```
 pub struct Computed<T> {
     slot_id: StateSlotId,
-    compute_fn: Box<dyn Fn() -> T + Send + Sync>,
+    compute_fn: Arc<dyn Fn() -> T + Send + Sync>,
     cached: Arc<RwLock<Option<T>>>,
     /// 依赖的 generation 检查器列表：(检查器, 上次计算时的 generation)
     deps: Arc<RwLock<Vec<(Box<dyn Fn() -> u64 + Send + Sync>, u64)>>>,
@@ -576,7 +576,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
 
         Self {
             slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
-            compute_fn: Box::new(f),
+            compute_fn: Arc::new(f),
             cached: Arc::new(RwLock::new(Some(initial))),
             deps: Arc::new(RwLock::new(dep_pairs)),
             paint_sites: Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -620,7 +620,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         };
 
         if need_recompute {
-            let (value, new_deps) = collect_deps(&self.compute_fn);
+            let (value, new_deps) = collect_deps(|| (self.compute_fn)());
             let new_pairs: Vec<_> = new_deps
                 .into_iter()
                 .map(|dep| {
@@ -643,8 +643,20 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
 
     /// 强制使缓存失效并重新计算（当依赖无法被自动追踪时使用）。
     pub fn invalidate(&self) {
-        let (value, _new_deps) = collect_deps(&self.compute_fn);
+        let (value, _new_deps) = collect_deps(|| (self.compute_fn)());
         *self.cached.write().unwrap_or_else(|e| e.into_inner()) = Some(value);
+    }
+}
+
+impl<T> Clone for Computed<T> {
+    fn clone(&self) -> Self {
+        Self {
+            slot_id: self.slot_id,
+            compute_fn: self.compute_fn.clone(),
+            cached: self.cached.clone(),
+            deps: self.deps.clone(),
+            paint_sites: self.paint_sites.clone(),
+        }
     }
 }
 

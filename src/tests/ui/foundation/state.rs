@@ -83,6 +83,21 @@ fn computed_slot_id_is_stable_across_dependency_generation_changes() {
 }
 
 #[test]
+fn computed_clone_preserves_slot_and_fingerprint() {
+    let source = State::new(1);
+    let source_for_computed = source.clone();
+    let computed = Computed::new(move || source_for_computed.get() * 2);
+    let cloned = computed.clone();
+
+    assert_eq!(computed.slot_id(), cloned.slot_id());
+    assert_eq!(computed.capture_fingerprint(), cloned.capture_fingerprint());
+
+    source.set(3);
+    assert_eq!(cloned.get(), 6);
+    assert_eq!(computed.get(), 6);
+}
+
+#[test]
 fn computed_capture_fingerprint_is_stable_across_dependency_generation_changes() {
     let source = State::new(1);
     let source_for_computed = source.clone();

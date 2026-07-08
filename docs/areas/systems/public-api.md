@@ -34,6 +34,7 @@
 | `use uix::prelude::*;` | 推荐应用入口（[#69](../../decisions.md#d69)） |
 | `component!` | 声明自定义 Widget（[#102](../../decisions.md#d102)） |
 | `impl_widget_component!` | 为已有 struct 补 Widget trait 桥接 |
+| `semantic_handler!` | 语法层显式 capture list → Handler fingerprint（#159/#160） |
 | `tree` | WidgetTree 构建辅助模块 |
 
 源码：`src/prelude.rs` · 导出完整性由 `prelude` 内断言测试守护。
@@ -131,6 +132,7 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | `ClickEvent` | 点击载荷 |
 | `EventResult` | Handler 返回值 |
 | `HandlerId` · `HandlerOptions` · `HandlerRegistration` | Handler 注册 |
+| `semantic_handler!` | 显式列出 `state` / `computed` / `window` capture 并生成稳定 fingerprint |
 | `AppState` · `ComponentHandle` | 跨窗共享 registry + lookup handle（[#145](../../decisions.md#d145)） |
 | `ComponentConfigSnapshot` · `SnapshotSource` · `SnapshotFields` · `SnapshotValue` 等 | 配置快照提取 |
 | `PaintContext` | 组件 render 上下文 |

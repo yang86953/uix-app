@@ -41,4 +41,3 @@
 
 - D3D12、Metal 与更完整 native GPU renderer 的推进顺序待主人确定。
 - 无障碍 v2 需要先形成产品边界与设计决策。
-- Handler 宏层 fingerprint 仍需独立设计切片；Computed 已具备独立 slot id，后续仅按回归维护。

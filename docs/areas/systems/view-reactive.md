@@ -198,14 +198,14 @@ struct BuildContext {
 | 规则 | 说明 |
 |------|------|
 | `.on_click(f)` 等普通闭包 | 无显式 capture 时不生成稳定 generation；保守重绑 |
-| 显式 capture API / 未来语法层宏 | build 时写入 `HandlerSlot { kind, generation }` |
-| capture 指纹 | 由显式 capture API，或未来宏 / DSL 在语法层生成 **稳定 hash**（#138、#159） |
+| 显式 capture API / `semantic_handler!` | build 时写入 `HandlerSlot { kind, generation }` |
+| capture 指纹 | 由显式 capture API，或 `semantic_handler!` 在语法层显式 capture list 生成 **稳定 hash**（#138、#159） |
 | 指纹不变 | **复用**上代 `generation`（同 reconcile 周期内闭包重建但 capture 相同） |
 | 指纹变化 | 该 kind `generation += 1` |
 | kind 新增/移除 | 更新 SemanticKind 集合（#135） |
 | App API | **无** `set_handler_generation`；零维护 |
 
-实现落点：当前显式 capture 路径在 `src/ui/event.rs`、`src/ui/view/mod.rs` 与各 DSL builder；未来宏 / DSL 若在语法层可见捕获集，再生成 `capture_fingerprint`。任意 Rust 闭包不做运行时自动探测（#159）。
+实现落点：当前显式 capture 路径在 `src/ui/event.rs`、`src/ui/view/mod.rs` 与各 DSL builder；`semantic_handler!` 宏在语法层显式列出 `state` / `computed` / `window` capture，并复用同一 `capture_fingerprint` 管线。任意 Rust 闭包不做运行时自动探测（#159）。
 
 ### capture 指纹字段（#142）
 
@@ -236,7 +236,7 @@ fingerprint(kind, captures) :=
 | 稳定性 | 同源码 rebuild、同 capture 集 → **同指纹**（测试可断言） |
 | 算法 | 框架内部固定（如 `FxHasher` → `u64`）；App **不可配** |
 
-> **实现注记**：内部 `HandlerSignature` / `handler_generation` / `HandlerOptions` 存储与 reconcile 比较已接；带稳定 generation 且 options 未变的 handler 可跳过 `clear_component` + 重注册。State / WindowId capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump；多个 capture 会合并为顺序无关的稳定指纹。`HandlerRegistration::with_state_capture` / `with_window_capture` 已公开；Button/Input DSL 已提供显式 State capture 入口（`on_click_capture` / `on_click_event_capture` / `on_change_capture`）与 WindowId capture 入口（`on_click_window_capture` / `on_click_event_window_capture` / `on_change_window_capture`），通用 `ViewNode::on_semantic_capture` / `on_semantic_window_capture` 与低层 `WidgetNode::on_semantic_capture` / `on_semantic_window_capture` 也已复用该路径；任意 Rust handler 闭包不做运行时自动收集（#159），未来宏 / DSL 只有在语法层生成 fingerprint 时才进入稳定复用；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
+> **实现注记**：内部 `HandlerSignature` / `handler_generation` / `HandlerOptions` 存储与 reconcile 比较已接；带稳定 generation 且 options 未变的 handler 可跳过 `clear_component` + 重注册。State / Computed / WindowId capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump；多个 capture 会合并为顺序无关的稳定指纹。`HandlerRegistration::with_state_capture` / `with_computed_capture` / `with_window_capture` 已公开；Button/Input DSL 已提供显式 State capture 入口（`on_click_capture` / `on_click_event_capture` / `on_change_capture`）与 WindowId capture 入口（`on_click_window_capture` / `on_click_event_window_capture` / `on_change_window_capture`），通用 `ViewNode::on_semantic_capture` / `on_semantic_window_capture` 与低层 `WidgetNode::on_semantic_capture` / `on_semantic_window_capture` 也已复用该路径；`semantic_handler!` 宏可在语法层显式 capture list 生成 fingerprint 并进入稳定复用；任意 Rust handler 闭包不做运行时自动收集（#159）；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
 
 ---
 
@@ -270,7 +270,7 @@ static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 
 ### 实现状态
 
-**已实现**（#143）：`StateSlotId` 字段；`State::new` / `Computed::new` 分配单调 slot，clone 共享；capture 指纹 `TypeId + slot_id`；`HandlerRegistration::with_state_capture` / `with_computed_capture` / Button·Input DSL 等显式 capture 已接。
+**已实现**（#143）：`StateSlotId` 字段；`State::new` / `Computed::new` 分配单调 slot，`State` / `Computed` clone 共享；capture 指纹 `TypeId + slot_id`；`HandlerRegistration::with_state_capture` / `with_computed_capture` / Button·Input DSL 等显式 capture 已接。
 
 > **实现注记**：`StateSlotId` 已落地；`State::generation()` 保持值变更计数语义，不参与 State capture 指纹。
 
@@ -507,7 +507,7 @@ State::set(value)
 
 ## 未实现或后续
 
-本域相关项（Handler 宏层 fingerprint）→ [implementation · 后续工作](../implementation.md#后续工作)。设计细节见 [热更新设计](#热更新设计)、[StateSlotId](#stateslotid)。排期 → [implementation · 后续工作](../implementation.md#后续工作)。
+本域已接显式 capture API 与 `semantic_handler!` 宏层 fingerprint；普通闭包仍按 #159/#160 保守重绑。跨域剩余项 → [implementation · 后续工作](../implementation.md#后续工作)。
 
 ---
 

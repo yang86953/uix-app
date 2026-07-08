@@ -284,6 +284,75 @@ fn multiple_captures_author_stable_order_independent_signature() {
 }
 
 #[test]
+fn semantic_handler_macro_authors_state_fingerprint_and_dispatches() {
+    let state = State::new(1);
+    let calls = State::new(0);
+    let mut registration = crate::semantic_handler!(
+        SemanticKind::Click,
+        state [state, calls],
+        |event| {
+            calls.set(calls.get() + state.get());
+            event.stop_propagation();
+        }
+    );
+    let signature = registration.authored_signature();
+
+    assert_eq!(signature.kind, SemanticKind::Click);
+    assert_eq!(signature.generation, Some(0));
+    assert!(signature.capture_fingerprint.is_some());
+
+    let id = ComponentId::new(9);
+    let mut event = SemanticEvent::click(
+        id,
+        ClickEvent {
+            button: MouseButton::Left,
+            pos: Point::zero(),
+            modifiers: KeyMod::NONE,
+        },
+    );
+    (registration.handler)(&mut event);
+
+    assert_eq!(calls.get(), 1);
+    assert!(event.propagation_stopped());
+}
+
+#[test]
+fn semantic_handler_macro_combines_computed_and_window_fingerprints() {
+    let source = State::new(2);
+    let source_for_computed = source.clone();
+    let computed = Computed::new(move || source_for_computed.get() * 2);
+    let window_id = WindowId::new(12);
+    let first = crate::semantic_handler!(
+        SemanticKind::Change,
+        computed[computed],
+        window[window_id],
+        |_event| {}
+    )
+    .authored_signature();
+
+    source.set(3);
+    let same = crate::semantic_handler!(
+        SemanticKind::Change,
+        computed[computed],
+        window[window_id],
+        |_event| {}
+    )
+    .authored_signature();
+    let other_window = WindowId::new(13);
+    let different = crate::semantic_handler!(
+        SemanticKind::Change,
+        computed[computed],
+        window[other_window],
+        |_event| {}
+    )
+    .authored_signature();
+
+    assert_eq!(first.generation, Some(0));
+    assert_eq!(first.capture_fingerprint, same.capture_fingerprint);
+    assert_ne!(first.capture_fingerprint, different.capture_fingerprint);
+}
+
+#[test]
 fn widget_node_on_semantic_capture_registers_captured_handler() {
     let state = State::new(1);
     let calls = Rc::new(Cell::new(0));
