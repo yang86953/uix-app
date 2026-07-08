@@ -18,7 +18,7 @@
 | 里程碑 | 内容 | 下一步判定 |
 |--------|------|------------|
 | P0–P5 维护 | 主循环、热更新、App API、渲染窄路径、多窗、Handle 体系 | 新改动须同步系统文档与最小测试 |
-| P6 图形后端 | D3D11/Vulkan/配置已落地，D3D12/Metal/更完整 native GPU renderer 待推进 | 推进前读 [rendering](areas/systems/rendering.md)、[platform](areas/systems/platform.md)、[#162](decisions.md#d162) |
+| P6 图形后端 | D3D11/Vulkan/配置/macOS AppKit SoftwareEngine bootstrap 已落地，D3D12/Metal/更完整 native GPU renderer 待推进 | 推进前读 [rendering](areas/systems/rendering.md)、[platform](areas/systems/platform.md)、[#162](decisions.md#d162) |
 | 无障碍 v2 | ARIA、屏幕阅读器、键盘导航扩展 | 需要新设计决策或明确阶段切片 |
 | 文档维护 | 保持 AGENTS、index、areas/architecture、implementation、areas/systems 同步 | 新目录必须补 `index.md`；新决策写入 [decisions.md](decisions.md) |
 
