@@ -121,7 +121,7 @@ P6 图形后端（规划）    ← #162，详见下文
 | Handler 智能重绑 | 显式 capture fingerprint / `semantic_handler!` → generation；无指纹保守重绑（#160） | [view-reactive · Handler](systems/view-reactive.md#handler-变更判定-135) · [event](systems/event.md) |
 | ComponentHandle | mount 自动 snapshot；getter / 窄 invalidate / emit | [component · ComponentHandle](systems/component.md#componenthandle6172145) |
 | component! | 推荐 authoring；`SnapshotSource` 自动提取；`#[snapshot(skip)]` | [component · Authoring](systems/component.md#authoring) |
-| 无障碍快照元数据 | `ComponentConfigSnapshot::accessibility()` / `ComponentHandle::accessibility()` 派生 role、name、state | [component · ComponentConfigSnapshot](systems/component.md#componentconfigsnapshot) · [#99](../decisions.md#d99) |
+| 无障碍快照元数据 | `ComponentConfigSnapshot::accessibility()` / `ComponentHandle::accessibility()` 派生 role、name、state，并提供静态 ARIA role/attribute 导出 | [component · ComponentConfigSnapshot](systems/component.md#componentconfigsnapshot) · [#99](../decisions.md#d99) |
 | Manager 横切 | Focus / Interaction / Drag per-tree | [component · Manager](systems/component.md#manager-横切) |
 | 内置 Widget | 80+ Big Bang；OverlayStack（Modal / Tooltip / 菜单等） | [component · 内置 Widget](systems/component.md#内置-widget-目录) · [overlay](systems/overlay.md) |
 | 事件 | HandlerTable（`ComponentId` key）；PointerMove 窄路径 | [event](systems/event.md) |
@@ -165,7 +165,7 @@ P6 图形后端（规划）    ← #162，详见下文
 | 项 | 说明 | 文档 |
 |----|------|------|
 | 多图形 API（P6） | D3D12 / Metal；更完整 native GPU renderer | [P6 图形后端](#p6-图形后端) · [#162](../decisions.md#d162) |
-| 无障碍 v2 | #99：基础 role/name/state 快照元数据已落地；ARIA / 屏幕阅读器桥 / 键盘导航扩展待后续 | [component](systems/component.md#componentconfigsnapshot) |
+| 无障碍 v2 | #99：基础 role/name/state 快照元数据与静态 ARIA 映射已落地；屏幕阅读器桥 / 键盘导航扩展待后续 | [component](systems/component.md#componentconfigsnapshot) |
 | macOS 平台 | `create_platform()` 无 macOS backend（含 Metal） | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
 
 ---

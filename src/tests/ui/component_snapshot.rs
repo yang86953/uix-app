@@ -30,9 +30,10 @@ use crate::ui::widgets::{
 };
 use crate::ui::ComponentId;
 use crate::ui::{
-    AccessibilityRole, ComponentConfigSnapshot, EventHandler, SnapshotCollapsePanel,
-    SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode,
-    SnapshotValue, SystemEvent, WidgetAnimation, WidgetLayout,
+    AccessibilityRole, AccessibilitySnapshot, AriaAttribute, ComponentConfigSnapshot, EventHandler,
+    SnapshotCollapsePanel, SnapshotFields, SnapshotSource, SnapshotTableColumn,
+    SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent, WidgetAnimation,
+    WidgetLayout,
 };
 
 component! {
@@ -203,6 +204,71 @@ fn component_config_snapshot_derives_accessibility_metadata() {
     assert_eq!(accessibility.state.value_now, Some(4.0));
     assert_eq!(accessibility.state.value_min, Some(0.0));
     assert_eq!(accessibility.state.value_max, Some(10.0));
+}
+
+#[test]
+fn accessibility_snapshot_derives_static_aria_metadata() {
+    let button = Button::new("Save").disabled(true);
+    let snapshot = ComponentConfigSnapshot::from_component(ComponentId::new(13), &button);
+
+    assert_eq!(snapshot.aria_role(), Some("button"));
+    assert_eq!(
+        snapshot.aria_attributes(),
+        vec![
+            AriaAttribute::new("aria-label", "Save"),
+            AriaAttribute::new("aria-disabled", "true"),
+        ]
+    );
+
+    let checkbox = Checkbox::new("Agree").checked(true);
+    let accessibility =
+        ComponentConfigSnapshot::from_component(ComponentId::new(14), &checkbox).accessibility();
+    assert_eq!(accessibility.aria_role(), Some("checkbox"));
+    assert_eq!(
+        accessibility.aria_attributes(),
+        vec![
+            AriaAttribute::new("aria-label", "Agree"),
+            AriaAttribute::new("aria-checked", "true"),
+        ]
+    );
+
+    let slider = Slider::new().range(0.0, 10.0).value(4.0);
+    let accessibility =
+        ComponentConfigSnapshot::from_component(ComponentId::new(15), &slider).accessibility();
+    assert_eq!(accessibility.aria_role(), Some("slider"));
+    assert_eq!(
+        accessibility.aria_attributes(),
+        vec![
+            AriaAttribute::new("aria-valuenow", "4"),
+            AriaAttribute::new("aria-valuemin", "0"),
+            AriaAttribute::new("aria-valuemax", "10"),
+        ]
+    );
+
+    let required_group = AccessibilitySnapshot::named(AccessibilityRole::Group, "Email")
+        .with_state(crate::ui::AccessibilityState {
+            required: true,
+            multiline: true,
+            ..crate::ui::AccessibilityState::default()
+        });
+    assert_eq!(required_group.aria_role(), Some("group"));
+    assert_eq!(
+        required_group.aria_attributes(),
+        vec![
+            AriaAttribute::new("aria-label", "Email"),
+            AriaAttribute::new("aria-multiline", "true"),
+            AriaAttribute::new("aria-required", "true"),
+        ]
+    );
+
+    assert_eq!(
+        AccessibilitySnapshot::new(AccessibilityRole::Generic).aria_role(),
+        None
+    );
+    assert_eq!(
+        AccessibilitySnapshot::new(AccessibilityRole::Text).aria_role(),
+        None
+    );
 }
 
 #[test]

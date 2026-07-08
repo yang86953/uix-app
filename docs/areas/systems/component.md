@@ -118,7 +118,7 @@ enum SnapshotFields {
 | **unmount** | `AppState.unregister(id)` |
 | Handle getter | `handle.label()` 读 snapshot；**不**读 live widget 交互态 |
 
-> **无障碍 v2 基础元数据**：`ComponentConfigSnapshot::accessibility()` / `ComponentHandle::accessibility()` 已从 `SnapshotFields` 派生 `AccessibilityRole`、可访问名称与状态（disabled / checked / value / required 等）。该层仍只读取 authoring 配置与可序列化 props，不纳入 hover / pressed / focused / live text；ARIA 映射、屏幕阅读器平台桥与键盘导航扩展仍属后续工作。
+> **无障碍 v2 基础元数据**：`ComponentConfigSnapshot::accessibility()` / `ComponentHandle::accessibility()` 已从 `SnapshotFields` 派生 `AccessibilityRole`、可访问名称与状态（disabled / checked / value / required 等），并可通过 `aria_role()` / `aria_attributes()` 导出静态 ARIA role/attribute。该层仍只读取 authoring 配置与可序列化 props，不纳入 hover / pressed / focused / live text；屏幕阅读器平台桥与键盘导航扩展仍属后续工作。
 
 自定义 widget：见 [SnapshotSource](#snapshotsource)（#151）。
 
@@ -270,7 +270,7 @@ WidgetTree
 
 > 完整 **snapshot** 覆盖清单（约 80 个 `component!` widget）见 [ComponentConfigSnapshot · 实现注记](#componentconfigsnapshot)。
 
-**v1 共性**：除 Button 为 reference impl（[#58](../../decisions.md#d58)）外，带 `component!` 的内置 widget 均为 Big Bang 落地（#80）；**Navigation** / **NavGroup** 等为 builder/compositor（无 `component!`、无 snapshot）。**无障碍 v2** 统一待 [#99](../../decisions.md#d99)（v1 不做 ARIA / 屏幕阅读器 / 键盘导航扩展）。
+**v1 共性**：除 Button 为 reference impl（[#58](../../decisions.md#d58)）外，带 `component!` 的内置 widget 均为 Big Bang 落地（#80）；**Navigation** / **NavGroup** 等为 builder/compositor（无 `component!`、无 snapshot）。**无障碍 v2** 统一待 [#99](../../decisions.md#d99)（v1 不做 ARIA / 屏幕阅读器 / 键盘导航扩展；v2 已具备静态 ARIA 映射）。
 
 **浮层列**：✓ = 参与 [OverlayStack](overlay.md) 或 `overlay_entry` 调度。
 
@@ -522,7 +522,7 @@ App / View **不**配置 Picture；调用方零维护。
 
 ## 未实现或后续
 
-本域相关项（无障碍 v2 剩余：ARIA 映射、屏幕阅读器平台桥、键盘导航扩展）→ [implementation · 后续工作](../implementation.md#后续工作)。设计细节见 [内置 Widget 目录](#内置-widget-目录)、[PicturePolicy 元数据](#picturepolicy-元数据122)。排期 → [implementation · 后续工作](../implementation.md#后续工作)。
+本域相关项（无障碍 v2 剩余：屏幕阅读器平台桥、键盘导航扩展）→ [implementation · 后续工作](../implementation.md#后续工作)。设计细节见 [内置 Widget 目录](#内置-widget-目录)、[PicturePolicy 元数据](#picturepolicy-元数据122)。排期 → [implementation · 后续工作](../implementation.md#后续工作)。
 
 ---
 

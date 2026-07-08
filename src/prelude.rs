@@ -43,8 +43,8 @@ pub use crate::ui::theme::{
     DesignTokens, DynTokens, NeutralRole, ShadowToken, Theme, ThemePrimitives,
 };
 pub use crate::ui::{
-    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AppState, ClickEvent,
-    ComponentConfigSnapshot, ComponentHandle, EventResult, HandlerId, HandlerOptions,
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AppState, AriaAttribute,
+    ClickEvent, ComponentConfigSnapshot, ComponentHandle, EventResult, HandlerId, HandlerOptions,
     HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
     SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource,
     SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
@@ -129,6 +129,7 @@ mod tests {
         assert_exported::<AccessibilityRole>();
         assert_exported::<AccessibilitySnapshot>();
         assert_exported::<AccessibilityState>();
+        assert_exported::<AriaAttribute>();
         assert_exported::<DiContainer>();
         assert_exported::<TimerHandle>();
         assert_exported::<ComponentId>();
