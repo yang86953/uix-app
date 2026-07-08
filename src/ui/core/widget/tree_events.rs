@@ -354,7 +354,6 @@ impl WidgetTree {
                 }
 
                 if let Some(t) = self.managers().focus.focused_component() {
-                    self.invalidate_paint(t);
                     // 捕获阶段：root → target，用于全局快捷键
                     if self.capture_to(t, event) == EventResult::Handled {
                         return EventResult::Handled;

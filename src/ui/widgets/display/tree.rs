@@ -240,6 +240,49 @@ impl Tree {
         }
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        let mut nodes = next.nodes;
+        Self::preserve_checked_state(&self.nodes, &mut nodes);
+        self.nodes = nodes;
+        self.multiple = next.multiple;
+        self.selected_key = if Self::contains_key(&self.nodes, &self.selected_key) {
+            self.selected_key.clone()
+        } else {
+            String::new()
+        };
+        let nodes = &self.nodes;
+        self.selected_keys
+            .retain(|key| Self::contains_key(nodes, key));
+        self.expanded_keys
+            .retain(|key| Self::contains_key(nodes, key));
+        self.flatten();
+    }
+
+    fn preserve_checked_state(old_nodes: &[TreeNode], new_nodes: &mut [TreeNode]) {
+        for new_node in new_nodes {
+            if let Some(old_node) = Self::find_in_nodes_ref(old_nodes, &new_node.key) {
+                new_node.checked = old_node.checked;
+            }
+            Self::preserve_checked_state(old_nodes, &mut new_node.children);
+        }
+    }
+
+    fn contains_key(nodes: &[TreeNode], key: &str) -> bool {
+        !key.is_empty() && Self::find_in_nodes_ref(nodes, key).is_some()
+    }
+
+    fn find_in_nodes_ref<'a>(nodes: &'a [TreeNode], key: &str) -> Option<&'a TreeNode> {
+        for node in nodes {
+            if node.key == key {
+                return Some(node);
+            }
+            if let Some(found) = Self::find_in_nodes_ref(&node.children, key) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Tree {
             nodes: self

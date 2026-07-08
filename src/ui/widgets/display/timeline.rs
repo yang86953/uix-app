@@ -29,6 +29,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let text = ctx.tokens().color_text();
@@ -97,6 +101,12 @@ impl Timeline {
     fn intrinsic_size(&self) -> Size {
         let h = self.items.len() as f32 * 60.0;
         Size::new(400.0, h.max(60.0))
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.items = next.items;
+        self.pending = next.pending;
+        self.reverse = next.reverse;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

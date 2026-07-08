@@ -31,6 +31,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let (bg, fg) = if let Some(cc) = self.custom_color {
             (cc, Color::white())
@@ -111,6 +115,15 @@ impl Tag {
             custom_color: self.custom_color,
             checkable: self.checkable,
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.text = next.text;
+        self.color = next.color;
+        self.closable = next.closable;
+        self.font_size = next.font_size;
+        self.custom_color = next.custom_color;
+        self.checkable = next.checkable;
     }
 }
 

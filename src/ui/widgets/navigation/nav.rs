@@ -204,6 +204,15 @@ impl NavItem {
         self
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.label = next.label;
+        self.icon = next.icon;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
+        self.index = next.index;
+        self.compact = next.compact;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::NavItem {
             label: self.label.clone(),

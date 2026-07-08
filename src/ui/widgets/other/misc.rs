@@ -23,6 +23,10 @@ component! {
         Size::new(self.size, self.size)
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let bg = Color::white();
@@ -78,6 +82,12 @@ impl QRCode {
     pub fn error_level(mut self, lv: u8) -> Self {
         self.error_level = lv;
         self
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.value = next.value;
+        self.size = next.size;
+        self.error_level = next.error_level;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -213,6 +223,19 @@ impl Transfer {
         self.initial_target = items.clone();
         self.target = items;
         self
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.initial_source = next.initial_source;
+        self.initial_target = next.initial_target;
+    }
+
+    pub(crate) fn source_count(&self) -> usize {
+        self.source.len()
+    }
+
+    pub(crate) fn target_count(&self) -> usize {
+        self.target.len()
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -400,6 +423,16 @@ impl Upload {
         self.file_list.len()
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.accept = next.accept;
+        self.multiple = next.multiple;
+        self.drag = next.drag;
+        self.max_count = next.max_count;
+        if self.file_list.len() > self.max_count {
+            self.file_list.truncate(self.max_count);
+        }
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Upload {
             accept: self.accept.clone(),
@@ -434,6 +467,10 @@ component! {
 
     measure => (&self, _constraints: Constraints) -> Size {
         Size::zero()
+    }
+
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -510,6 +547,18 @@ impl Watermark {
         self.x_offset = x;
         self.y_offset = y;
         self
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.text = next.text;
+        self.color = next.color;
+        self.font_size = next.font_size;
+        self.opacity = next.opacity;
+        self.rotate = next.rotate;
+        self.gap_x = next.gap_x;
+        self.gap_y = next.gap_y;
+        self.x_offset = next.x_offset;
+        self.y_offset = next.y_offset;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

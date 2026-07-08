@@ -97,6 +97,11 @@ impl Breadcrumb {
         self
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.items = next.items;
+        self.separator = next.separator;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Breadcrumb {
             items: self.items.clone(),

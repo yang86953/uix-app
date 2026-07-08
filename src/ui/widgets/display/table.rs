@@ -363,4 +363,40 @@ impl Table {
             page_size: self.page_size,
         }
     }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.columns = merge_table_columns(self.columns.as_slice(), next.columns);
+        self.rows = next.rows;
+        self.row_h = next.row_h;
+        self.header_h = next.header_h;
+        self.expand_height = next.expand_height;
+        self.expand_renderer = next.expand_renderer;
+        self.empty_text = next.empty_text;
+        self.page_size = next.page_size;
+    }
+}
+
+fn merge_table_columns(current: &[TableColumn], next: Vec<TableColumn>) -> Vec<TableColumn> {
+    next.into_iter()
+        .enumerate()
+        .map(|(idx, mut next_col)| {
+            if let Some(current_col) = current.get(idx) {
+                if next_col.sortable {
+                    next_col.sort_direction = current_col.sort_direction;
+                }
+                if next_col.filterable {
+                    for (label, active) in &mut next_col.filters {
+                        if let Some((_, current_active)) = current_col
+                            .filters
+                            .iter()
+                            .find(|(current_label, _)| current_label == label)
+                        {
+                            *active = *current_active;
+                        }
+                    }
+                }
+            }
+            next_col
+        })
+        .collect()
 }

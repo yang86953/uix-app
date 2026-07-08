@@ -25,6 +25,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let color = ctx.tokens().color_fill_tertiary();
 
@@ -94,6 +98,12 @@ impl Skeleton {
             width: self.w,
             height: self.h,
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.shape = next.shape;
+        self.w = next.w;
+        self.h = next.h;
     }
 }
 

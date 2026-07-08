@@ -155,6 +155,22 @@ impl Image {
         }
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        let image_source_changed = self.src != next.src || self.slot != next.slot;
+        self.src = next.src;
+        self.alt = next.alt;
+        self.fallback = next.fallback;
+        self.width = next.width;
+        self.height = next.height;
+        self.radius = next.radius;
+        self.preview = next.preview;
+        self.slot = next.slot;
+        self.fit = next.fit;
+        if image_source_changed {
+            self.cached.set(None);
+        }
+    }
+
     fn resolve_handle(
         &self,
         ctx: &PaintContext<'_>,

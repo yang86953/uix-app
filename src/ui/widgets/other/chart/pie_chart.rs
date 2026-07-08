@@ -35,6 +35,10 @@ component! {
         Size::new(s, s)
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let n = self.data.len();
         if n == 0 { return; }
@@ -125,6 +129,12 @@ impl PieChart {
     pub fn donut(mut self, r: f32) -> Self {
         self.hole_radius = r.clamp(0.0, 0.9);
         self
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.data = next.data;
+        self.fixed_size = next.fixed_size;
+        self.hole_radius = next.hole_radius;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

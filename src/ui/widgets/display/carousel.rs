@@ -151,6 +151,11 @@ impl Carousel {
         self.current.get()
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.show_dots = next.show_dots;
+        self.show_arrows = next.show_arrows;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Carousel {
             show_dots: self.show_dots,

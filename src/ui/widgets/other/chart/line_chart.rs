@@ -41,6 +41,10 @@ component! {
         Size::new(w, h)
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let n = self.data.len();
         if n < 2 || frame.w <= 0.0 || frame.h <= 0.0 { return; }
@@ -173,6 +177,19 @@ impl LineChart {
     pub fn line_width(mut self, w: f32) -> Self {
         self.line_width = w;
         self
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.data = next.data;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
+        self.line_color = next.line_color;
+        self.max_value = next.max_value;
+        self.auto_min = next.auto_min;
+        self.show_grid = next.show_grid;
+        self.show_dots = next.show_dots;
+        self.line_width = next.line_width;
+        self.dot_radius = next.dot_radius;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

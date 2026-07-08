@@ -87,6 +87,10 @@ impl Affix {
         Size::new(0.0, if self.affixed { self.child_height } else { 0.0 })
     }
 
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.offset_top = next.offset_top;
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Affix {
             offset_top: self.offset_top,

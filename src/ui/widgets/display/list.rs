@@ -33,6 +33,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border_secondary();
@@ -148,6 +152,15 @@ impl List {
             items: self.items.clone(),
             load_more_text: self.load_more_text.clone(),
         }
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.header = next.header;
+        self.footer = next.footer;
+        self.bordered = next.bordered;
+        self.list_size = next.list_size;
+        self.items = next.items;
+        self.load_more_text = next.load_more_text;
     }
 }
 

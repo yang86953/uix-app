@@ -39,6 +39,10 @@ component! {
         Size::new(w, h)
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let n = self.data.len();
         if n == 0 || frame.w <= 0.0 || frame.h <= 0.0 { return; }
@@ -139,6 +143,15 @@ impl BarChart {
     pub fn bar_radius(mut self, r: f32) -> Self {
         self.bar_radius = r;
         self
+    }
+
+    pub(crate) fn sync_from(&mut self, next: Self) {
+        self.data = next.data;
+        self.fixed_width = next.fixed_width;
+        self.fixed_height = next.fixed_height;
+        self.max_value = next.max_value;
+        self.show_value = next.show_value;
+        self.bar_radius = next.bar_radius;
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
