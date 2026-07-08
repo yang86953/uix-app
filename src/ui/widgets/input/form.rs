@@ -314,6 +314,9 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
@@ -527,6 +530,7 @@ fn simple_pattern_match(value: &str, pattern: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::draw::compositor::PicturePolicy;
     use crate::ui::core::widget::WidgetCore;
     use crate::ui::traits::{WidgetCapabilities, WidgetLayout};
     use crate::ui::{WidgetComponent, WidgetTree};
@@ -571,6 +575,12 @@ mod tests {
         let measured = Form::new().measure(Constraints::loose(Size::new(160.0, 80.0)));
 
         assert_eq!(measured, Size::new(160.0, 80.0));
+    }
+
+    #[test]
+    fn form_shell_is_picture_eligible_but_form_item_is_not() {
+        assert_eq!(Form::new().picture_policy(), PicturePolicy::Eligible);
+        assert_eq!(FormItem::new("Name").picture_policy(), PicturePolicy::Never);
     }
 
     #[test]
