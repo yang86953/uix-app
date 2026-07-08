@@ -446,6 +446,7 @@ where
                             engine.resize(d.width, d.height);
                             platform_window.resize_notify(d.width, d.height);
                             initial_size = (d.width, d.height);
+                            tree.mark_full_frame_dirty();
                         }
                     }
                 }
@@ -461,6 +462,7 @@ where
                         if w > 0 && h > 0 {
                             engine.resize(w, h);
                             platform_window.resize_notify(w, h);
+                            tree.mark_full_frame_dirty();
                         }
                     }
                 }
@@ -469,6 +471,7 @@ where
                     engine.resize(rw, rh);
                     platform_window.resize_notify(rw, rh);
                     window_visible = true;
+                    tree.mark_full_frame_dirty();
                 }
                 UiEventType::WindowMinimize => {
                     window_visible = false;

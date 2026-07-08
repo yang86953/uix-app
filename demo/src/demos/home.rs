@@ -38,11 +38,9 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                 dynamic_label(move || format!("计数: {}", display.get()))
                     .font_size(20.0)
                     .color(tk.color_primary),
-                row([
-                    button("+1")
-                        .primary()
-                        .on_click(move || inc.set(inc.get() + 1)),
-                ])
+                row([button("+1")
+                    .primary()
+                    .on_click(move || inc.set(inc.get() + 1))])
                 .gap(8.0),
             ])
             .gap(8.0)

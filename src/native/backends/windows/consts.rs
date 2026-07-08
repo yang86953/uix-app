@@ -11,6 +11,7 @@ pub(crate) const WM_NCCREATE: u32 = 0x0081;
 pub(crate) const WM_DESTROY: u32 = 0x0002;
 pub(crate) const WM_CLOSE: u32 = 0x0010;
 pub(crate) const WM_SIZE: u32 = 0x0005;
+pub(crate) const WM_ERASEBKGND: u32 = 0x0014;
 pub(crate) const WM_MOVE: u32 = 0x0003;
 pub(crate) const WM_SETFOCUS: u32 = 0x0007;
 pub(crate) const WM_KILLFOCUS: u32 = 0x0008;

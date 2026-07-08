@@ -14,9 +14,9 @@
 //! ```
 
 use crate::native::traits::input::ScrollDirection;
+use crate::ui::core::widget::WidgetNode;
 use crate::ui::layout::{FlexDirection, GridTrack};
 use crate::ui::style::{DisplayMode, Style};
-use crate::ui::core::widget::WidgetNode;
 use crate::ui::view::{View, ViewNode};
 
 use crate::core::{Constraints, Rect, Size};
@@ -330,10 +330,7 @@ impl WidgetLayout for DynamicLabel {
     }
 
     fn layout_margin(&self) -> crate::core::EdgeInsets {
-        self.style
-            .as_ref()
-            .map(|s| s.margin)
-            .unwrap_or_default()
+        self.style.as_ref().map(|s| s.margin).unwrap_or_default()
     }
 
     fn align_self(&self) -> Option<crate::ui::layout::AlignItems> {
@@ -362,7 +359,11 @@ impl DynamicLabel {
             .as_ref()
             .map(|s| s.font_size.default_size())
             .unwrap_or(14.0);
-        let h = self.style.as_ref().and_then(|s| s.height).unwrap_or(fs * 1.5);
+        let h = self
+            .style
+            .as_ref()
+            .and_then(|s| s.height)
+            .unwrap_or(fs * 1.5);
         let w = self
             .style
             .as_ref()

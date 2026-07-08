@@ -238,7 +238,11 @@ impl TreeSelect {
         }
         let idx = (local_y / DROPDOWN_ROW_HEIGHT) as usize;
         let flat_len = self.flatten_nodes().len();
-        if idx < flat_len { Some(idx) } else { None }
+        if idx < flat_len {
+            Some(idx)
+        } else {
+            None
+        }
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -246,7 +250,8 @@ impl TreeSelect {
             return;
         }
         let current = self.scroll_delta_strip.get();
-        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
+        self.scroll_delta_strip
+            .set((current.0 + dx, current.1 + dy));
     }
 
     fn flatten_nodes(&self) -> Vec<(String, String, usize)> {

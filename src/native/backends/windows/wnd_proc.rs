@@ -241,6 +241,10 @@ impl WindowsPlatform {
                 self.handle_file_drop(hdrop);
                 0
             }
+            WM_ERASEBKGND => {
+                // 阻止系统擦除客户区，避免 resize 拖拽时出现黑色闪屏。
+                1
+            }
             WM_SETCURSOR => {
                 let hit = Self::loword(lparam) as u32;
                 if hit == HTCLIENT {

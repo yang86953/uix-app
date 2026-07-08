@@ -119,11 +119,7 @@ fn page_content(
     page_shell(idx, &active, tk, timer_ticks, anim_time)
 }
 
-fn app_shell(
-    active: State<usize>,
-    timer_ticks: State<u32>,
-    anim_time: State<f32>,
-) -> ViewNode {
+fn app_shell(active: State<usize>, timer_ticks: State<u32>, anim_time: State<f32>) -> ViewNode {
     let tk = DesignTokens::antd_light();
     column([
         row([
@@ -169,22 +165,16 @@ pub fn run() {
                 interval_handles
                     .lock()
                     .expect("timer keepalive")
-                    .push(handle.run_interval(
-                    Duration::from_secs(1),
-                    move || {
+                    .push(handle.run_interval(Duration::from_secs(1), move || {
                         ticks.set(ticks.get().wrapping_add(1));
-                    },
-                ));
+                    }));
                 let anim = anim_for_start.clone();
                 interval_handles
                     .lock()
                     .expect("timer keepalive")
-                    .push(handle.run_interval(
-                    Duration::from_millis(16),
-                    move || {
+                    .push(handle.run_interval(Duration::from_millis(16), move || {
                         anim.set(anim.get() + 0.016);
-                    },
-                ));
+                    }));
             }
         })
         .root(move || {

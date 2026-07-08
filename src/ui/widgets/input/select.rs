@@ -430,10 +430,7 @@ impl Select {
         if self.optgroups.is_empty() {
             self.options.len()
         } else {
-            self.optgroups
-                .iter()
-                .map(|g| 1 + g.options.len())
-                .sum()
+            self.optgroups.iter().map(|g| 1 + g.options.len()).sum()
         }
     }
 
@@ -531,7 +528,8 @@ impl Select {
             return;
         }
         let current = self.scroll_delta_strip.get();
-        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
+        self.scroll_delta_strip
+            .set((current.0 + dx, current.1 + dy));
     }
 
     fn render_option(

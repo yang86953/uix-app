@@ -33,11 +33,7 @@ fn coverage_row(
         }
     }
 
-    embed(
-        Label::new(&line)
-            .color(color)
-            .font_size(12.0),
-    )
+    embed(Label::new(&line).color(color).font_size(12.0))
 }
 
 /// 单行覆盖项：(分类, widget/特性, 演示页, 是否已展示)
@@ -54,7 +50,12 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
     // ── 布局 ──
     ("布局", "Container", "布局", true),
     ("布局", "Grid", "布局", true),
-    ("布局", "Layout / Header / Sider / Content / Footer", "布局", true),
+    (
+        "布局",
+        "Layout / Header / Sider / Content / Footer",
+        "布局",
+        true,
+    ),
     ("布局", "Splitter", "布局", true),
     ("布局", "Affix", "布局", true),
     ("布局", "BackTop", "布局", true),
@@ -102,7 +103,12 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
     ("反馈", "ProgressBar (线/圆/不确定)", "反馈", true),
     ("反馈", "Spin", "反馈", true),
     ("反馈", "Modal / Drawer (Overlay)", "反馈", true),
-    ("反馈", "Tooltip / Popover / Popconfirm (Overlay)", "反馈", true),
+    (
+        "反馈",
+        "Tooltip / Popover / Popconfirm (Overlay)",
+        "反馈",
+        true,
+    ),
     // ── 图表 ──
     ("图表", "BarChart / BarData", "图表", true),
     ("图表", "LineChart / LineData", "图表", true),
@@ -116,15 +122,35 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
     ("其他", "RichText", "数据展示", true),
     // ── App 能力 ──
     ("应用能力", "State / dynamic_label", "应用能力", true),
-    ("应用能力", "View DSL / embed / component!", "应用能力", true),
-    ("应用能力", "run_after / run_interval (Timer)", "应用能力", true),
-    ("应用能力", "Theme light/dark + ThemeToggle", "应用能力", true),
+    (
+        "应用能力",
+        "View DSL / embed / component!",
+        "应用能力",
+        true,
+    ),
+    (
+        "应用能力",
+        "run_after / run_interval (Timer)",
+        "应用能力",
+        true,
+    ),
+    (
+        "应用能力",
+        "Theme light/dark + ThemeToggle",
+        "应用能力",
+        true,
+    ),
     ("应用能力", "follow_system_theme (opt-in)", "应用能力", true),
     ("应用能力", "PicturePolicy (静态 vs 动画)", "应用能力", true),
     ("应用能力", "post_to_ui / on_start 句柄", "应用能力", true),
     ("应用能力", "多窗口 (API 说明)", "覆盖清单", true),
     // ── CLI ──
-    ("CLI", "core / native / draw / ui / app / data", "--cli", true),
+    (
+        "CLI",
+        "core / native / draw / ui / app / data",
+        "--cli",
+        true,
+    ),
     // ── Backlog / N/A ──
     ("Backlog", "无障碍 v2 (ARIA / 键盘导航)", "—", false),
     ("Backlog", "macOS create_platform()", "—", false),
@@ -178,6 +204,9 @@ mod tests {
         assert!(COVERAGE.len() >= 60);
         let (shown, total) = covered_count();
         assert_eq!(shown + (total - shown), total);
-        assert!(shown > 50, "expected most widgets covered, got {shown}/{total}");
+        assert!(
+            shown > 50,
+            "expected most widgets covered, got {shown}/{total}"
+        );
     }
 }

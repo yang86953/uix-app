@@ -142,8 +142,8 @@ impl ViewAdapter {
         } else if tid == std::any::TypeId::of::<crate::ui::view::combinators::DynamicLabel>() {
             if let Some(dl) = widget
                 .as_any_mut()
-                .downcast_mut::<crate::ui::view::combinators::DynamicLabel>(
-            ) {
+                .downcast_mut::<crate::ui::view::combinators::DynamicLabel>()
+            {
                 dl.set_style(style.clone());
             }
         }

@@ -49,7 +49,11 @@ impl SelectableList {
             .last_frame
             .get()
             .unwrap_or_else(|| Rect::new(0.0, 0.0, 220.0, 500.0));
-        let footer = if self.footer_text.is_empty() { 0.0 } else { 28.0 };
+        let footer = if self.footer_text.is_empty() {
+            0.0
+        } else {
+            28.0
+        };
         (frame.h - self.list_body_top() - footer).max(self.item_stride())
     }
 
@@ -75,7 +79,8 @@ impl SelectableList {
             return;
         }
         let current = self.scroll_delta_strip.get();
-        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
+        self.scroll_delta_strip
+            .set((current.0 + dx, current.1 + dy));
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {

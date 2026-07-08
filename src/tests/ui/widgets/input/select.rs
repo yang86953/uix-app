@@ -56,7 +56,10 @@ fn select_dropdown_scroll_range_limits_visible_rows() {
         .dropdown_scroll
         .scroll_range(row_count, 28.0, viewport_h);
     assert_eq!(start, 0);
-    assert!(end - start < 100, "virtual scroll should expose a small window");
+    assert!(
+        end - start < 100,
+        "virtual scroll should expose a small window"
+    );
 }
 
 #[test]
