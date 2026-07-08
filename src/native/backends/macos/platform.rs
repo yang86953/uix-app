@@ -577,21 +577,29 @@ struct MacosDisplay;
 
 impl IDisplay for MacosDisplay {
     fn dpi_scale(&self) -> f32 {
-        1.0
+        // SAFETY: NSScreen returns AppKit-owned objects and scalar values; Rust
+        // copies the scale factor immediately.
+        unsafe { cocoa::main_screen_scale() as f32 }
     }
 
     fn is_dark_mode(&self) -> bool {
-        false
+        // SAFETY: NSUserDefaults returns an autoreleased NSString that is copied
+        // into Rust before comparison.
+        unsafe { cocoa::is_dark_mode() }
     }
 
     fn count(&self) -> i32 {
-        1
+        // SAFETY: NSScreen screens is an AppKit-owned NSArray; only its count is read.
+        unsafe { cocoa::screen_count() as i32 }
     }
 
-    fn info(&self, _index: i32) -> DisplayInfo {
+    fn info(&self, index: i32) -> DisplayInfo {
+        // SAFETY: screen_info copies the selected NSScreen frame and scale into
+        // plain Rust values and falls back to the main screen for invalid indexes.
+        let screen = unsafe { cocoa::screen_info(index.max(0) as usize) };
         DisplayInfo {
-            bounds: Rect::new(0.0, 0.0, 1440.0, 900.0),
-            dpi_scale: self.dpi_scale(),
+            bounds: screen.bounds,
+            dpi_scale: screen.scale as f32,
             is_primary: true,
         }
     }
@@ -879,6 +887,11 @@ mod cocoa {
         size: CGSize,
     }
 
+    pub struct ScreenInfo {
+        pub bounds: Rect,
+        pub scale: f64,
+    }
+
     #[link(name = "objc")]
     unsafe extern "C" {
         fn objc_getClass(name: *const c_char) -> Id;
@@ -1017,6 +1030,53 @@ mod cocoa {
         !msg_id_id(pasteboard, "stringForType:", pasteboard_string_type()).is_null()
     }
 
+    pub unsafe fn main_screen_scale() -> f64 {
+        screen_scale(main_screen())
+    }
+
+    pub unsafe fn screen_count() -> usize {
+        let screens = msg_id(class("NSScreen"), "screens");
+        if screens.is_null() {
+            return usize::from(!main_screen().is_null());
+        }
+        msg_usize(screens, "count")
+    }
+
+    pub unsafe fn screen_info(index: usize) -> ScreenInfo {
+        let screen = screen_at(index);
+        let frame = if screen.is_null() {
+            CGRect {
+                origin: CGPoint { x: 0.0, y: 0.0 },
+                size: CGSize {
+                    width: 1440.0,
+                    height: 900.0,
+                },
+            }
+        } else {
+            msg_rect(screen, "frame")
+        };
+        ScreenInfo {
+            bounds: Rect::new(
+                frame.origin.x as f32,
+                frame.origin.y as f32,
+                frame.size.width as f32,
+                frame.size.height as f32,
+            ),
+            scale: screen_scale(screen),
+        }
+    }
+
+    pub unsafe fn is_dark_mode() -> bool {
+        let defaults = msg_id(class("NSUserDefaults"), "standardUserDefaults");
+        if defaults.is_null() {
+            return false;
+        }
+        let style = msg_id_id(defaults, "stringForKey:", ns_string("AppleInterfaceStyle"));
+        ns_string_to_string(style)
+            .map(|value| value.eq_ignore_ascii_case("dark"))
+            .unwrap_or(false)
+    }
+
     pub unsafe fn set_layer_pixels(layer: Id, pixels: &[u32], width: i32, height: i32) {
         if layer.is_null() || width <= 0 || height <= 0 || pixels.is_empty() {
             return;
@@ -1117,6 +1177,29 @@ mod cocoa {
 
     unsafe fn shared_application() -> Id {
         msg_id(class("NSApplication"), "sharedApplication")
+    }
+
+    unsafe fn main_screen() -> Id {
+        msg_id(class("NSScreen"), "mainScreen")
+    }
+
+    unsafe fn screen_at(index: usize) -> Id {
+        let screens = msg_id(class("NSScreen"), "screens");
+        if screens.is_null() {
+            return main_screen();
+        }
+        let count = msg_usize(screens, "count");
+        if count == 0 {
+            return std::ptr::null_mut();
+        }
+        msg_id_usize(screens, "objectAtIndex:", index.min(count - 1))
+    }
+
+    unsafe fn screen_scale(screen: Id) -> f64 {
+        if screen.is_null() {
+            return 1.0;
+        }
+        msg_f64(screen, "backingScaleFactor").max(1.0)
     }
 
     unsafe fn general_pasteboard() -> Id {
@@ -1245,6 +1328,12 @@ mod cocoa {
 
     unsafe fn msg_id_id(receiver: Id, selector: &str, arg: Id) -> Id {
         type FnType = unsafe extern "C" fn(Id, Sel, Id) -> Id;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector), arg)
+    }
+
+    unsafe fn msg_id_usize(receiver: Id, selector: &str, arg: usize) -> Id {
+        type FnType = unsafe extern "C" fn(Id, Sel, usize) -> Id;
         let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(receiver, sel(selector), arg)
     }
