@@ -37,6 +37,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         let text_secondary = ctx.tokens().color_text_secondary();
@@ -113,6 +117,8 @@ impl Breadcrumb {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::draw::compositor::PicturePolicy;
+    use crate::ui::traits::WidgetComponent;
     use crate::ui::traits::WidgetLayout;
 
     #[test]
@@ -123,5 +129,14 @@ mod tests {
             .measure(Constraints::loose(Size::new(60.0, 16.0)));
 
         assert_eq!(measured, Size::new(60.0, 16.0));
+    }
+
+    #[test]
+    fn breadcrumb_is_picture_eligible() {
+        let breadcrumb = Breadcrumb::new()
+            .item(BreadcrumbItem::new("Home"))
+            .item(BreadcrumbItem::new("Docs").active());
+
+        assert_eq!(breadcrumb.picture_policy(), PicturePolicy::Eligible);
     }
 }
