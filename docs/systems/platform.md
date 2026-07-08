@@ -252,7 +252,7 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 | `macOS` | `Metal` probe（后端未接入） | — |
 | 其他 | 无 GPU 候选，返回 `Err(PlatformError)` | — |
 
-**P6.1 已落地**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；native opt-in 可跳过 Auto 链直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。App builder / env / Settings 配置入口仍属 P6.5。
+**P6.1 / P6.5 已落地**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；App builder / env / Settings 可跳过 Auto 链直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。
 
 ```text
 create_gpu_context(surface, w, h)

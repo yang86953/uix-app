@@ -17,6 +17,7 @@ pub use crate::native::create_platform;
 pub use crate::native::traits::input::{
     ControlSize, CursorType, KeyCode, KeyMod, MouseButton, ScrollDirection,
 };
+pub use crate::native::traits::present::GraphicsBackend;
 pub use crate::native::traits::system::StatusLevel;
 // draw
 
@@ -141,6 +142,7 @@ mod tests {
         assert_exported::<KeyMod>();
         assert_exported::<MouseButton>();
         assert_exported::<ScrollDirection>();
+        assert_exported::<GraphicsBackend>();
         assert_exported::<StatusLevel>();
         assert_exported::<Color>();
         assert_exported::<FontService>();

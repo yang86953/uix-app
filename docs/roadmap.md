@@ -150,7 +150,7 @@ P6 图形后端（规划）    ← #162，详见下文
 | P6.2 Windows | D3D11 或 D3D12 `IGraphicsContext`；WGL 作次选 | 规划 |
 | P6.3 Linux | Vulkan `IGraphicsContext`；EGL 作次选 | 规划 |
 | P6.4 macOS | Metal + `create_platform` backend | 规划 |
-| P6.5 配置 | App builder / env opt-in；公开 API 写入 public-api | 规划 |
+| P6.5 配置 | App builder / env / Settings opt-in；公开 API 写入 public-api | ✅ 已实现 |
 | P6.6 WebGPU | 远期评估；非 v1 目标 |  backlog |
 
 实现细节 → [rendering · 多图形 API](systems/rendering.md#多图形-api) · [platform · 多图形 API 与 factory](systems/platform.md#多图形-api-与-factory)。

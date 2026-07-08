@@ -26,8 +26,9 @@ use crate::draw::traits::GraphicsEngine;
 use crate::draw::{GpuEngine, RenderOutcome, SoftwareEngine};
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
+use crate::native::traits::present::GraphicsBackend;
 use crate::native::traits::window::PlatformWindow;
-use crate::native::{create_gpu_context, create_platform};
+use crate::native::{create_gpu_context_with_backend, create_platform};
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::{ViewAdapter, ViewNode};
@@ -43,6 +44,9 @@ pub enum AppMode {
     GUI,
     CLI,
 }
+
+const GRAPHICS_BACKEND_ENV: &str = "UIX_GRAPHICS_BACKEND";
+const GRAPHICS_BACKEND_SETTING_KEYS: [&str; 2] = ["graphics_backend", "uix.graphics_backend"];
 
 struct SecondaryWindowSession {
     _window: Box<dyn PlatformWindow>,
@@ -376,6 +380,7 @@ pub struct App {
     cli: Option<Cli>,
     container: Container,
     settings_path: Option<String>,
+    graphics_backend: Option<GraphicsBackend>,
     exit_code: i32,
 }
 
@@ -412,6 +417,7 @@ impl Default for App {
             cli: None,
             container: Container::new(),
             settings_path: None,
+            graphics_backend: None,
             exit_code: 0,
         }
     }
@@ -443,6 +449,12 @@ impl App {
     /// 设置是否在运行中跟随 OS 主题变化（默认 false）。
     pub fn follow_system_theme(mut self, follow: bool) -> Self {
         self.follow_system_theme = follow;
+        self
+    }
+
+    /// Select the GPU API once during window/engine initialization.
+    pub fn graphics_backend(mut self, backend: GraphicsBackend) -> Self {
+        self.graphics_backend = Some(backend);
         self
     }
 
@@ -517,6 +529,15 @@ impl App {
     pub fn settings(mut self, path: impl Into<String>) -> Self {
         self.settings_path = Some(path.into());
         self
+    }
+
+    fn configured_graphics_backend(&self) -> GraphicsBackend {
+        let env_value = std::env::var(GRAPHICS_BACKEND_ENV).ok();
+        resolve_graphics_backend(
+            self.graphics_backend,
+            env_value.as_deref(),
+            self.container.resolve::<SettingsService>(),
+        )
     }
 
     #[cfg(test)]
@@ -615,6 +636,7 @@ impl App {
         };
 
         let (w, h) = self.size;
+        let graphics_backend = self.configured_graphics_backend();
 
         let mut platform = match create_platform() {
             Ok(p) => p,
@@ -638,7 +660,8 @@ impl App {
         self.runtime.set_event_loop_waker(event_loop_waker.clone());
         self.app_state.set_event_loop_waker(event_loop_waker);
 
-        let engine = match create_preferred_engine(platform_window.as_mut(), w, h) {
+        let engine = match create_preferred_engine(platform_window.as_mut(), w, h, graphics_backend)
+        {
             Some(engine) => engine,
             None => return 1,
         };
@@ -683,11 +706,12 @@ impl App {
         }
         let secondary_windows = RefCell::new(Vec::new());
         let secondary_clock = system_clock();
-        drain_pending_open_windows(
+        drain_pending_open_windows_with_backend(
             &mut *platform,
             &self.runtime,
             &self.app_state,
             &self.container,
+            graphics_backend,
             self.on_window_start.as_ref(),
             &mut secondary_windows.borrow_mut(),
         );
@@ -728,11 +752,12 @@ impl App {
             map_ui_event,
             |ev| on_exit(ev),
             |platform| {
-                drain_pending_open_windows(
+                drain_pending_open_windows_with_backend(
                     platform,
                     &runtime,
                     &app_state,
                     &container,
+                    graphics_backend,
                     on_window_start.as_ref(),
                     &mut secondary_windows.borrow_mut(),
                 );
@@ -777,6 +802,48 @@ impl App {
     }
 }
 
+fn resolve_graphics_backend(
+    builder: Option<GraphicsBackend>,
+    env_value: Option<&str>,
+    settings: Option<&SettingsService>,
+) -> GraphicsBackend {
+    if let Some(backend) = builder {
+        return backend;
+    }
+
+    if let Some(value) = env_value {
+        if let Some(backend) = parse_graphics_backend_config(GRAPHICS_BACKEND_ENV, value) {
+            return backend;
+        }
+    }
+
+    if let Some(settings) = settings {
+        for key in GRAPHICS_BACKEND_SETTING_KEYS {
+            if let Some(value) = settings.get(key) {
+                if let Some(backend) = parse_graphics_backend_config(key, value) {
+                    return backend;
+                }
+            }
+        }
+    }
+
+    GraphicsBackend::Auto
+}
+
+fn parse_graphics_backend_config(source: &str, value: &str) -> Option<GraphicsBackend> {
+    match value.parse::<GraphicsBackend>() {
+        Ok(backend) => Some(backend),
+        Err(err) => {
+            crate::core::log::warn_fn(format!(
+                "graphics backend config {source} ignored: {}",
+                err.short_what()
+            ));
+            None
+        }
+    }
+}
+
+#[cfg(test)]
 fn drain_pending_open_windows(
     platform: &mut dyn Platform,
     runtime: &AppRuntime,
@@ -785,11 +852,36 @@ fn drain_pending_open_windows(
     on_window_start: Option<&Arc<dyn Fn(AppHandle) + Send + Sync>>,
     secondary_windows: &mut Vec<SecondaryWindowSession>,
 ) -> usize {
+    drain_pending_open_windows_with_backend(
+        platform,
+        runtime,
+        app_state,
+        container,
+        GraphicsBackend::Auto,
+        on_window_start,
+        secondary_windows,
+    )
+}
+
+fn drain_pending_open_windows_with_backend(
+    platform: &mut dyn Platform,
+    runtime: &AppRuntime,
+    app_state: &AppState,
+    container: &Container,
+    graphics_backend: GraphicsBackend,
+    on_window_start: Option<&Arc<dyn Fn(AppHandle) + Send + Sync>>,
+    secondary_windows: &mut Vec<SecondaryWindowSession>,
+) -> usize {
     let mut created = 0;
     while let Some(request) = runtime.take_next_open_window() {
-        if let Some(mut window) =
-            create_secondary_window(platform, runtime, app_state, container, request)
-        {
+        if let Some(mut window) = create_secondary_window(
+            platform,
+            runtime,
+            app_state,
+            container,
+            graphics_backend,
+            request,
+        ) {
             if let Some(callback) = on_window_start {
                 callback(window.handle.clone());
             }
@@ -888,6 +980,7 @@ fn create_secondary_window(
     runtime: &AppRuntime,
     app_state: &AppState,
     container: &Container,
+    graphics_backend: GraphicsBackend,
     request: OpenWindowRequest,
 ) -> Option<SecondaryWindowSession> {
     let OpenWindowRequest {
@@ -934,14 +1027,15 @@ fn create_secondary_window(
     platform_window.show();
     platform_window.raise();
 
-    let engine = match create_preferred_engine(platform_window.as_mut(), width, height) {
-        Some(engine) => engine,
-        None => {
-            platform_window.close();
-            runtime.close_session(window_id);
-            return None;
-        }
-    };
+    let engine =
+        match create_preferred_engine(platform_window.as_mut(), width, height, graphics_backend) {
+            Some(engine) => engine,
+            None => {
+                platform_window.close();
+                runtime.close_session(window_id);
+                return None;
+            }
+        };
 
     let mut session =
         WindowSession::from_root_factory_for_window(window_id, root, engine, width, height);
@@ -1084,9 +1178,12 @@ fn create_preferred_engine(
     platform_window: &mut dyn PlatformWindow,
     width: i32,
     height: i32,
+    graphics_backend: GraphicsBackend,
 ) -> Option<Box<dyn GraphicsEngine>> {
     let surface = platform_window.native_surface_ptr();
-    match create_gpu_context(surface, width, height).and_then(GpuEngine::new) {
+    match create_gpu_context_with_backend(surface, width, height, graphics_backend)
+        .and_then(GpuEngine::new)
+    {
         Ok(mut engine) => match engine.initialize(width, height) {
             Ok(()) => {
                 crate::core::log::info_fn("GPU engine initialized");

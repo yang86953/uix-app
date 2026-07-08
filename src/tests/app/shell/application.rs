@@ -11,6 +11,7 @@ use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::{
     ClipboardData, FileDropData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
 };
+use crate::native::traits::present::GraphicsBackend;
 use crate::ui::state::State;
 use crate::ui::theme::Theme;
 use crate::ui::view::combinators::{dynamic_label, label};
@@ -229,6 +230,59 @@ fn app_default_does_not_follow_system_theme() {
 #[test]
 fn app_builder_sets_follow_system_theme() {
     assert!(App::new().follow_system_theme(true).follow_system_theme);
+}
+
+#[test]
+fn app_builder_sets_graphics_backend() {
+    let app = App::new().graphics_backend(GraphicsBackend::Vulkan);
+
+    assert_eq!(app.graphics_backend, Some(GraphicsBackend::Vulkan));
+    assert_eq!(app.configured_graphics_backend(), GraphicsBackend::Vulkan);
+}
+
+#[test]
+fn app_graphics_backend_defaults_to_auto() {
+    assert_eq!(
+        resolve_graphics_backend(None, None, None),
+        GraphicsBackend::Auto
+    );
+}
+
+#[test]
+fn app_graphics_backend_prefers_builder_over_env_and_settings() {
+    let mut settings = SettingsService::new();
+    settings.set("graphics_backend", "opengles");
+
+    assert_eq!(
+        resolve_graphics_backend(
+            Some(GraphicsBackend::D3d11),
+            Some("vulkan"),
+            Some(&settings)
+        ),
+        GraphicsBackend::D3d11
+    );
+}
+
+#[test]
+fn app_graphics_backend_uses_env_before_settings() {
+    let mut settings = SettingsService::new();
+    settings.set("graphics_backend", "opengles");
+
+    assert_eq!(
+        resolve_graphics_backend(None, Some("vulkan"), Some(&settings)),
+        GraphicsBackend::Vulkan
+    );
+}
+
+#[test]
+fn app_graphics_backend_falls_back_from_invalid_env_to_settings() {
+    let mut settings = SettingsService::new();
+    settings.set("uix.graphics_backend", "gles");
+
+    assert_eq!(
+        resolve_graphics_backend(None, Some("not-a-backend"), Some(&settings)),
+        GraphicsBackend::OpenGlEs
+    );
 }
 
 #[test]
