@@ -115,9 +115,8 @@ fn create_gpu_context_candidate(
         )),
         GraphicsBackend::OpenGlEs => create_opengles_context(native_surface, width, height),
         GraphicsBackend::D3d11 => create_d3d11_context(native_surface, width, height),
-        GraphicsBackend::D3d12 | GraphicsBackend::Vulkan | GraphicsBackend::Metal => {
-            Err(planned_backend_error(backend))
-        }
+        GraphicsBackend::Vulkan => create_vulkan_context(native_surface, width, height),
+        GraphicsBackend::D3d12 | GraphicsBackend::Metal => Err(planned_backend_error(backend)),
     }
 }
 
@@ -169,8 +168,7 @@ fn create_opengles_context(
     width: i32,
     height: i32,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    let egl =
-        crate::native::backends::linux::gpu::egl::EglContext::new(native_surface, width, height)?;
+    let egl = crate::native::backends::linux::gpu::EglContext::new(native_surface, width, height)?;
     Ok(Box::new(egl))
 }
 
@@ -206,6 +204,29 @@ fn create_d3d11_context(
     Err(Error::new(
         Errc::PlatformError,
         "GraphicsBackend d3d11 is only supported on Windows",
+    ))
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn create_vulkan_context(
+    native_surface: *mut c_void,
+    width: i32,
+    height: i32,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    let vulkan =
+        crate::native::backends::linux::gpu::VulkanContext::new(native_surface, width, height)?;
+    Ok(Box::new(vulkan))
+}
+
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+fn create_vulkan_context(
+    _native_surface: *mut c_void,
+    _width: i32,
+    _height: i32,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    Err(Error::new(
+        Errc::PlatformError,
+        "GraphicsBackend vulkan is only supported on Linux Wayland",
     ))
 }
 
@@ -315,5 +336,19 @@ mod tests {
         assert!(message.contains("d3d12"));
         assert!(message.contains("d3d11"));
         assert!(message.contains("all GPU backends failed"));
+    }
+
+    #[test]
+    fn vulkan_candidate_is_real_linux_backend_or_platform_specific_error() {
+        let err = match create_vulkan_context(std::ptr::null_mut(), 1, 1) {
+            Ok(_) => panic!("null surface should not create a Vulkan context"),
+            Err(err) => err,
+        };
+
+        #[cfg(all(unix, not(target_os = "macos")))]
+        assert!(err.message().contains("WaylandSurfaceHandle"));
+
+        #[cfg(not(all(unix, not(target_os = "macos"))))]
+        assert!(err.message().contains("only supported on Linux Wayland"));
     }
 }

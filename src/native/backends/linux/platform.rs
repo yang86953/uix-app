@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use crate::core::Error;
 use crate::native::shared::{OsEventSource, WindowState};
 use crate::native::traits::event::{EventLoopWaker, UiEvent};
 use crate::native::traits::*;
