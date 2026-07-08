@@ -165,7 +165,7 @@ P6 图形后端（规划）    ← #162，详见下文
 | 项 | 说明 | 文档 |
 |----|------|------|
 | 多图形 API（P6） | D3D12 / Metal；更完整 native GPU renderer | [P6 图形后端](#p6-图形后端) · [#162](../decisions.md#d162) |
-| 无障碍 v2 | #99：基础 role/name/state 快照元数据与静态 ARIA 映射已落地；屏幕阅读器桥 / 键盘导航扩展待后续 | [component](systems/component.md#componentconfigsnapshot) |
+| 无障碍 v2 | #99：基础 role/name/state 快照元数据、静态 ARIA 映射与键盘导航已落地；屏幕阅读器桥待后续 | [component](systems/component.md#componentconfigsnapshot) |
 | macOS 平台 | `create_platform()` 无 macOS backend（含 Metal） | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
 
 ---
