@@ -125,7 +125,7 @@ enum Invalidation {
 | `has_layout()` | 是否需 layout  pass |
 | `has_paint_or_composite()` | 是否需 render pass |
 | `dirty_region()` | → `DirtyRegion`（Paint + Composite rects） |
-| `clear()` | 帧末 `reset_dirty` |
+| `clear()` | 帧末 `reset_invalidation` |
 
 WidgetTree（`tree_dirty.rs`）共享 `InvalidationQueueHandle`；State 绑定通过 `invalidate_paint_handle` 跨线程安全入口（仍主线程消费）。
 

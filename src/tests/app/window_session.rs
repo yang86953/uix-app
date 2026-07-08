@@ -80,12 +80,12 @@ fn shared_state_marks_only_bound_window_session_dirty() {
 
     {
         let (tree, _) = bound_session.tree_and_engine_mut();
-        tree.reset_dirty();
+        tree.reset_invalidation();
         assert!(!tree.has_render_work());
     }
     {
         let (tree, _) = unrelated_session.tree_and_engine_mut();
-        tree.reset_dirty();
+        tree.reset_invalidation();
         assert!(!tree.has_render_work());
     }
 

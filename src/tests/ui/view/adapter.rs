@@ -91,7 +91,7 @@ fn reconcile_same_view_keeps_invalidation_empty() {
     use crate::ui::view::label;
 
     let mut tree = ViewAdapter::build(label("same"));
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     ViewAdapter::reconcile(&mut tree, label("same"));
 
@@ -123,7 +123,7 @@ fn unused_state_created_during_view_build_does_not_bind_root() {
         .clone()
         .expect("state should be captured");
 
-    tree.reset_dirty();
+    tree.reset_invalidation();
     assert!(!tree.take_reconcile_requested());
 
     state.set(2);
@@ -145,7 +145,7 @@ fn state_get_during_view_build_binds_root_reconcile() {
     });
     let mut tree = ViewAdapter::build_nodes(root);
 
-    tree.reset_dirty();
+    tree.reset_invalidation();
     assert!(!tree.take_reconcile_requested());
 
     state.set(2);
@@ -4546,7 +4546,7 @@ fn captured_state_set_requests_reconcile_and_preserves_paint_invalidation() {
         .expect("root should be present")
         .set_frame(Rect::new(0.0, 0.0, 80.0, 24.0));
     tree.layout();
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     assert!(!tree.take_reconcile_requested());
     assert!(!tree.has_render_work());

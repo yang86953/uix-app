@@ -73,7 +73,7 @@ fn selectable_list_wheel_registers_composite_scroll_strip() {
     tree.get_mut(id)
         .expect("selectable list root")
         .set_frame(Rect::new(0.0, 0.0, 220.0, 120.0));
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {

@@ -531,6 +531,20 @@ fn tree_set_root_returns_valid_id() {
 }
 
 #[test]
+fn component_ids_are_unique_across_widget_trees() {
+    let mut first = WidgetTree::new();
+    let mut second = WidgetTree::new();
+    let first_root = first.set_root(Box::new(SpyWidget::new(100.0, 50.0)));
+    let second_root = second.set_root(Box::new(SpyWidget::new(100.0, 50.0)));
+
+    assert_eq!(first_root.slot(), second_root.slot());
+    assert_eq!(first_root.generation(), second_root.generation());
+    assert_ne!(first_root, second_root);
+    assert!(first.get(second_root).is_none());
+    assert!(second.get(first_root).is_none());
+}
+
+#[test]
 fn boxed_widget_measure_uses_constraints() {
     let boxed = BoxedWidget::new(Box::new(MeasureOnlyWidget));
 
@@ -1234,7 +1248,7 @@ fn app_state_lookup_handle_invalidate_marks_narrow_paint() {
     tree.set_app_state(app_state.clone());
     let root = tree.set_root(Box::new(Label::new("root")));
     tree.layout();
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     app_state.get_handle(root).unwrap().invalidate();
 
@@ -1893,7 +1907,7 @@ fn lifecycle_theme_changed_notifies_and_invalidates_palette_only() {
         ],
     )));
     tree.layout();
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     let probes = tree.find_all_by_type::<LifecycleProbe>();
     let palette_id = probes
@@ -1943,7 +1957,7 @@ fn theme_changed_invalidates_palette_widget_inside_overlay_subtree() {
         Box::new(LifecycleProbe::new(20.0, 20.0, palette_events.clone())),
     );
     tree.layout();
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     assert!(tree.overlay_stack().top().is_some());
 
@@ -1962,7 +1976,7 @@ fn locale_changed_dispatches_to_root_and_invalidates_layout() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(SpyWidget::new(100.0, 50.0)));
     tree.layout();
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     tree.dispatch_event(&SystemEvent::LocaleChanged {
         locale: "zh-CN".to_string(),
@@ -2989,7 +3003,7 @@ fn dispatch_resize_goes_to_root() {
     let root = tree.set_root(Box::new(SpyWidget::new(200.0, 200.0)));
     let child = tree.add_child(root, Box::new(SpyWidget::new(50.0, 40.0)));
     tree.layout();
-    tree.reset_dirty();
+    tree.reset_invalidation();
     assert!(tree.layout_traverse().is_empty());
 
     assert_eq!(

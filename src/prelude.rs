@@ -77,7 +77,6 @@ pub use crate::ui::{
 
 // app
 
-pub use crate::app::event_loop::run_widget_loop;
 pub use crate::app::Container as DiContainer;
 pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowConfig};
 

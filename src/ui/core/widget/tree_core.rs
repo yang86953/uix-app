@@ -7,12 +7,16 @@ use crate::ui::event::HandlerTable;
 use crate::ui::foundation::focus_trap::next_focus_in_order;
 use crate::ui::managers::WidgetManagers;
 use crate::ui::overlay::OverlayStack;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_WIDGET_TREE_SCOPE: AtomicU64 = AtomicU64::new(1);
 
 #[path = "tree_layout.rs"]
 mod tree_layout;
 
 pub struct WidgetTree {
+    tree_scope: u64,
     pub(crate) nodes: Vec<Option<BoxedWidget>>,
     pub(crate) free_slots: Vec<usize>,
     pub(crate) generations: Vec<u32>,
@@ -37,6 +41,7 @@ pub struct WidgetTree {
 impl Default for WidgetTree {
     fn default() -> Self {
         Self {
+            tree_scope: NEXT_WIDGET_TREE_SCOPE.fetch_add(1, Ordering::Relaxed),
             nodes: Vec::new(),
             free_slots: Vec::new(),
             generations: Vec::new(),
@@ -88,7 +93,8 @@ impl WidgetTree {
         let Some(app_state) = self.app_state.clone() else {
             return false;
         };
-        let events = app_state.drain_semantic_events();
+        let targets: HashSet<_> = self.traverse().into_iter().collect();
+        let events = app_state.drain_semantic_events_for(&targets);
         if events.is_empty() {
             return false;
         }
@@ -103,9 +109,11 @@ impl WidgetTree {
     }
 
     pub(crate) fn has_app_state_semantic_events(&self) -> bool {
-        self.app_state
-            .as_ref()
-            .is_some_and(AppState::has_semantic_events)
+        let Some(app_state) = self.app_state.as_ref() else {
+            return false;
+        };
+        let targets: HashSet<_> = self.traverse().into_iter().collect();
+        app_state.has_semantic_events_for(&targets)
     }
 
     pub(crate) fn register_app_state_snapshot(&self, id: WidgetId) {
@@ -149,19 +157,22 @@ impl WidgetTree {
         }
     }
 
-    pub fn alloc_id(&mut self) -> WidgetId {
+    pub fn alloc_id(&mut self) -> ComponentId {
         if let Some(slot) = self.free_slots.pop() {
-            return WidgetId::from_parts(slot, self.generations[slot]);
+            return WidgetId::from_scoped_parts(self.tree_scope, slot, self.generations[slot]);
         }
         let slot = self.next_slot;
         self.next_slot += 1;
         if self.generations.len() <= slot {
             self.generations.push(0);
         }
-        WidgetId::from_parts(slot, self.generations[slot])
+        WidgetId::from_scoped_parts(self.tree_scope, slot, self.generations[slot])
     }
 
     fn slot_for(&self, id: WidgetId) -> Option<usize> {
+        if id.tree_scope() != self.tree_scope {
+            return None;
+        }
         let slot = id.slot();
         self.generations
             .get(slot)
@@ -186,7 +197,7 @@ impl WidgetTree {
         &mut self,
         widget: Box<dyn WidgetComponent>,
         children: Vec<Box<dyn WidgetComponent>>,
-    ) -> WidgetId {
+    ) -> ComponentId {
         let id = self.set_root(widget);
         for child in children {
             self.add_child(id, child);
@@ -196,10 +207,10 @@ impl WidgetTree {
 
     pub fn add_child_with_children(
         &mut self,
-        parent_id: WidgetId,
+        parent_id: ComponentId,
         widget: Box<dyn WidgetComponent>,
         children: Vec<Box<dyn WidgetComponent>>,
-    ) -> WidgetId {
+    ) -> ComponentId {
         let id = self.add_child(parent_id, widget);
         for child in children {
             self.add_child(id, child);
@@ -284,7 +295,7 @@ impl WidgetTree {
         }
     }
 
-    pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> WidgetId {
+    pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> ComponentId {
         self.teardown_all();
 
         // Hard reset: clear the old tree and invalidate every previous ComponentId.
@@ -326,14 +337,14 @@ impl WidgetTree {
     pub fn root(&self) -> Option<&BoxedWidget> {
         self.root_id.and_then(|id| self.get(id))
     }
-    pub fn root_id(&self) -> Option<WidgetId> {
+    pub fn root_id(&self) -> Option<ComponentId> {
         self.root_id
     }
     pub fn root_mut(&mut self) -> Option<&mut BoxedWidget> {
         self.root_id.and_then(|id| self.get_mut(id))
     }
 
-    pub fn find_by_type<T: WidgetComponent + 'static>(&self) -> Option<WidgetId> {
+    pub fn find_by_type<T: WidgetComponent + 'static>(&self) -> Option<ComponentId> {
         for id in self.traverse() {
             if let Some(node) = self.get(id) {
                 if node.component().as_any().downcast_ref::<T>().is_some() {
@@ -344,7 +355,7 @@ impl WidgetTree {
         None
     }
 
-    pub fn find_all_by_type<T: WidgetComponent + 'static>(&self) -> Vec<(WidgetId, &T)> {
+    pub fn find_all_by_type<T: WidgetComponent + 'static>(&self) -> Vec<(ComponentId, &T)> {
         let mut results = Vec::new();
         for id in self.traverse() {
             if let Some(node) = self.get(id) {
@@ -359,7 +370,7 @@ impl WidgetTree {
     pub fn find_by_type_and_modify<T: WidgetComponent + 'static>(
         &mut self,
         f: impl FnOnce(&mut T),
-    ) -> Option<WidgetId> {
+    ) -> Option<ComponentId> {
         let id = self.find_by_type::<T>()?;
         if let Some(node) = self.get_mut(id) {
             if let Some(w) = node.component_mut().as_any_mut().downcast_mut::<T>() {
@@ -369,23 +380,27 @@ impl WidgetTree {
         Some(id)
     }
 
-    pub fn get(&self, id: WidgetId) -> Option<&BoxedWidget> {
+    pub fn get(&self, id: ComponentId) -> Option<&BoxedWidget> {
         let slot = self.node_slot_for(id)?;
         self.nodes.get(slot).and_then(|n| n.as_ref())
     }
-    pub fn get_mut(&mut self, id: WidgetId) -> Option<&mut BoxedWidget> {
+    pub fn get_mut(&mut self, id: ComponentId) -> Option<&mut BoxedWidget> {
         let slot = self.node_slot_for(id)?;
         self.nodes.get_mut(slot).and_then(|n| n.as_mut())
     }
 
-    pub fn set_z_index(&mut self, id: WidgetId, z: i32) -> &mut Self {
+    pub fn set_z_index(&mut self, id: ComponentId, z: i32) -> &mut Self {
         if let Some(n) = self.get_mut(id) {
             n.set_z_index(z);
         }
         self
     }
 
-    pub fn add_child(&mut self, parent_id: WidgetId, child: Box<dyn WidgetComponent>) -> WidgetId {
+    pub fn add_child(
+        &mut self,
+        parent_id: ComponentId,
+        child: Box<dyn WidgetComponent>,
+    ) -> ComponentId {
         self.tree_version += 1;
         let children = child.build();
         let child_id = self.alloc_id();
@@ -414,7 +429,7 @@ impl WidgetTree {
         child_id
     }
 
-    pub fn remove(&mut self, id: WidgetId) {
+    pub fn remove(&mut self, id: ComponentId) {
         self.tree_version += 1;
 
         let old_frame = self
@@ -474,7 +489,7 @@ impl WidgetTree {
         }
     }
 
-    pub fn set_visible(&mut self, id: WidgetId, visible: bool) {
+    pub fn set_visible(&mut self, id: ComponentId, visible: bool) {
         let mut stack = vec![id];
         while let Some(current) = stack.pop() {
             let children: Vec<WidgetId> = self
@@ -505,7 +520,7 @@ impl WidgetTree {
         self.reconcile_lifecycle_after_layout();
     }
 
-    pub fn traverse(&self) -> Vec<WidgetId> {
+    pub fn traverse(&self) -> Vec<ComponentId> {
         let mut cache = self.cached_traversal.borrow_mut();
         let (ref mut ids, ref mut ver) = *cache;
         if *ver != self.tree_version {
@@ -567,7 +582,7 @@ impl WidgetTree {
             ^ local_id.rotate_left(33)
     }
 
-    pub fn set_frame_dirty(&mut self, id: WidgetId, new_frame: Rect) {
+    pub fn set_frame_dirty(&mut self, id: ComponentId, new_frame: Rect) {
         let old = match self.get(id) {
             Some(w) => {
                 let old = w.frame();
@@ -589,7 +604,7 @@ impl WidgetTree {
 
     // WidgetNode tree building.
 
-    pub fn build(&mut self, node: WidgetNode) -> WidgetId {
+    pub fn build(&mut self, node: WidgetNode) -> ComponentId {
         self.build_node(node, None)
     }
 
@@ -597,7 +612,7 @@ impl WidgetTree {
         self.build_node(node, Some(parent_id))
     }
 
-    pub fn set_children(&mut self, parent_id: WidgetId, children: Vec<WidgetNode>) {
+    pub fn set_children(&mut self, parent_id: ComponentId, children: Vec<WidgetNode>) {
         let old_children: Vec<WidgetId> = self
             .get(parent_id)
             .map(|n| n.children().to_vec())
@@ -651,7 +666,7 @@ impl WidgetTree {
         id
     }
 
-    pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<WidgetId> {
+    pub fn focus_by_type<T: WidgetComponent + 'static>(&mut self) -> Option<ComponentId> {
         let id = self.find_by_type::<T>()?;
         self.managers.focus.set_focused_component(Some(id));
         if let Some(node) = self.get_mut(id) {
@@ -690,7 +705,7 @@ impl WidgetTree {
 
     // Tab focus navigation.
 
-    pub fn collect_focusable(&self) -> Vec<WidgetId> {
+    pub fn collect_focusable(&self) -> Vec<ComponentId> {
         let mut result = self
             .managers
             .focus
@@ -735,7 +750,7 @@ impl WidgetTree {
         next_focus_in_order(focusable, current, forward)
     }
 
-    pub fn focus_next(&self, forward: bool) -> Option<WidgetId> {
+    pub fn focus_next(&self, forward: bool) -> Option<ComponentId> {
         let focusable = self.collect_focusable();
         self.next_focus_from_order(&focusable, self.managers.focus.focused_component(), forward)
     }

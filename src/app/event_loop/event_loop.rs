@@ -656,7 +656,7 @@ where
 
         if window_visible && (needs_work || has_layout_work || need_render) {
             // 每帧末尾清空已消费的失效队列，隐藏窗口保留 pending dirty 到恢复可见。
-            tree.reset_dirty();
+            tree.reset_invalidation();
         }
 
         match outcome {

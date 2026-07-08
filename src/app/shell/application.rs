@@ -313,7 +313,7 @@ impl SecondaryWindowSession {
         };
 
         if self.window_visible && (!self.rendered_first || has_layout_work || need_render) {
-            parts.tree.reset_dirty();
+            parts.tree.reset_invalidation();
         }
 
         if let RenderOutcome::Present(damage) = outcome {

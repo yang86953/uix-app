@@ -11,13 +11,14 @@ use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::{
     ClipboardData, FileDropData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
 };
+use crate::ui::state::State;
 use crate::ui::theme::Theme;
-use crate::ui::view::combinators::label;
+use crate::ui::view::combinators::{dynamic_label, label};
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::Label;
 use crate::ui::{
-    EventHandler, EventResult, SystemEvent, WidgetAnimation, WidgetCapabilities, WidgetComponent,
-    WidgetRender, WidgetTree,
+    EventHandler, EventResult, HandlerRegistration, SemanticEvent, SemanticKind, SystemEvent,
+    WidgetAnimation, WidgetCapabilities, WidgetComponent, WidgetRender, WidgetTree,
 };
 use std::any::Any;
 use std::cell::{Cell, RefCell};
@@ -608,7 +609,7 @@ fn dispatch_secondary_system_theme_changed_invalidates_palette_widgets() {
 
     {
         let parts = secondary_windows[0].session.parts_mut();
-        parts.tree.reset_dirty();
+        parts.tree.reset_invalidation();
         assert!(!parts.tree.has_render_work());
     }
 
@@ -854,6 +855,189 @@ fn drain_secondary_window_frames_skips_deep_idle_windows() {
         clock.as_ref(),
     ));
     assert!(secondary_windows[0].last_frame.is_none());
+}
+
+#[test]
+fn state_set_only_wakes_secondary_windows_bound_to_that_state() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let state = State::new(0);
+    runtime.request_open_window(WindowConfig::new("First", 320, 240, {
+        let state = state.clone();
+        move || {
+            let state = state.clone();
+            dynamic_label(move || format!("first {}", state.get()))
+        }
+    }));
+    runtime.request_open_window(WindowConfig::new("Second", 320, 240, {
+        let state = state.clone();
+        move || {
+            let state = state.clone();
+            dynamic_label(move || format!("second {}", state.get()))
+        }
+    }));
+    runtime.request_open_window(WindowConfig::new("Idle", 320, 240, || label("idle")));
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::new(0.0, 0.0));
+    let clock = system_clock();
+
+    assert!(drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    ));
+    assert_eq!(secondary_windows.len(), 3);
+    assert!(secondary_windows.iter().all(|window| {
+        window.last_frame.is_some() && window.session.loop_state() == WindowLoopState::DeepIdle
+    }));
+
+    for window in &mut secondary_windows {
+        window.last_frame = None;
+    }
+    state.set(1);
+
+    assert!(drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    ));
+    assert!(secondary_windows[0].last_frame.is_some());
+    assert!(secondary_windows[1].last_frame.is_some());
+    assert!(secondary_windows[2].last_frame.is_none());
+    assert_eq!(
+        secondary_windows[2].session.loop_state(),
+        WindowLoopState::DeepIdle
+    );
+}
+
+#[test]
+fn lookup_emit_only_wakes_secondary_window_containing_target() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    runtime.request_open_window(WindowConfig::new("Unrelated", 320, 240, || {
+        label("unrelated")
+    }));
+
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    runtime.request_open_window(WindowConfig::new("Target", 320, 240, {
+        let calls = calls.clone();
+        move || {
+            let mut node = label("target");
+            let calls = calls.clone();
+            node.handlers.push(HandlerRegistration::new(
+                SemanticKind::Change,
+                Box::new(move |event| {
+                    calls
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push((event.target, event.current_target));
+                }),
+            ));
+            node
+        }
+    }));
+
+    let app_state = AppState::new();
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &app_state,
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::new(0.0, 0.0));
+    let clock = system_clock();
+
+    assert!(drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    ));
+    let target_id = secondary_windows[1]
+        .session
+        .tree_and_engine_mut()
+        .0
+        .root_id()
+        .expect("target root should exist");
+    for window in &mut secondary_windows {
+        window.last_frame = None;
+    }
+
+    let handle = app_state
+        .get_handle(target_id)
+        .expect("target should be registered in shared AppState");
+    assert_eq!(
+        handle.emit(SemanticEvent::change(target_id, "from-lookup")),
+        EventResult::Handled
+    );
+
+    assert!(drain_secondary_window_frames(
+        &mut secondary_windows,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        clock.as_ref(),
+    ));
+    assert!(secondary_windows[0].last_frame.is_none());
+    assert!(secondary_windows[1].last_frame.is_some());
+    assert_eq!(
+        calls.lock().unwrap_or_else(|e| e.into_inner()).as_slice(),
+        &[(target_id, target_id)]
+    );
 }
 
 #[test]

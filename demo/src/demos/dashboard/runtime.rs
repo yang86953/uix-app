@@ -7,6 +7,7 @@
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 
+use uix::app::event_loop::run_widget_loop;
 use uix::core::log::{debug_fn, error_fn, info_fn, warn_fn};
 use uix::draw::GpuEngine;
 use uix::native::create_gpu_context;

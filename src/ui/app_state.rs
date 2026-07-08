@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 
@@ -67,18 +67,21 @@ impl AppState {
             .set_event_loop_waker(waker);
     }
 
-    pub(crate) fn drain_semantic_events(&self) -> Vec<(ComponentId, SemanticEvent)> {
+    pub(crate) fn drain_semantic_events_for(
+        &self,
+        targets: &HashSet<ComponentId>,
+    ) -> Vec<(ComponentId, SemanticEvent)> {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .drain_semantic_events()
+            .drain_semantic_events_for(targets)
     }
 
-    pub(crate) fn has_semantic_events(&self) -> bool {
+    pub(crate) fn has_semantic_events_for(&self, targets: &HashSet<ComponentId>) -> bool {
         self.inner
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .has_semantic_events()
+            .has_semantic_events_for(targets)
     }
 
     pub fn get_snapshot(&self, id: ComponentId) -> Option<ComponentConfigSnapshot> {
@@ -181,14 +184,35 @@ impl AppStateInner {
         Some(self.event_loop_waker.clone())
     }
 
-    fn drain_semantic_events(&mut self) -> Vec<(ComponentId, SemanticEvent)> {
+    fn drain_semantic_events_for(
+        &mut self,
+        targets: &HashSet<ComponentId>,
+    ) -> Vec<(ComponentId, SemanticEvent)> {
         self.assert_owner_thread();
-        self.semantic_events.drain(..).collect()
+        if targets.is_empty() || self.semantic_events.is_empty() {
+            return Vec::new();
+        }
+
+        let mut matched = Vec::new();
+        let mut retained = VecDeque::new();
+        while let Some((id, event)) = self.semantic_events.pop_front() {
+            if targets.contains(&id) {
+                matched.push((id, event));
+            } else {
+                retained.push_back((id, event));
+            }
+        }
+        self.semantic_events = retained;
+        matched
     }
 
-    fn has_semantic_events(&self) -> bool {
+    fn has_semantic_events_for(&self, targets: &HashSet<ComponentId>) -> bool {
         self.assert_owner_thread();
-        !self.semantic_events.is_empty()
+        !targets.is_empty()
+            && self
+                .semantic_events
+                .iter()
+                .any(|(id, _)| targets.contains(id))
     }
 
     fn contains(&self, id: ComponentId) -> bool {
