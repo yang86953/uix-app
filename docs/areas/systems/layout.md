@@ -1,6 +1,6 @@
 ﻿# 布局系统
 
-← [Main](../Main.md) · 系统 **#6** · 功能域：`ui`
+← [Main](../architecture.md) · 系统 **#6** · 功能域：`ui`
 
 > measure 定尺寸；Flex + Grid 排布；Scroll 消化 Wheel。Scroll 失效优先 Composite memmove（#107，见 [demand-driven](demand-driven.md#失效与窄标脏)）。
 
@@ -40,7 +40,7 @@ fn measure(&self, constraints: Constraints) -> Size;
 | 约束 | `Constraints { min, max, definite }`（#38） | `core::Constraints` 已接，含 `loose` / `unconstrained` / `clamp` |
 | 语义 | 在约束下计算 intrinsic size | 等同 |
 
-组件必须实现 `measure`；默认实现返回 `constraints.clamp(Size::zero())`，不再经旧 `preferred_size` 桥接（[#103](../decisions.md#d103)）。
+组件必须实现 `measure`；默认实现返回 `constraints.clamp(Size::zero())`，不再经旧 `preferred_size` 桥接（[#103](../../decisions.md#d103)）。
 
 ### Constraints（#38）
 
@@ -232,4 +232,4 @@ ui/foundation/virtual_scroll.rs   VirtualScroll / VirtualListScroll（Table/Tree
 ui/core/widget/tree_layout.rs   WidgetTree::layout, viewports, overlay rebuild
 ```
 
-详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。
+详见 [implementation · 源码目录详表](../implementation.md#源码目录详表)。

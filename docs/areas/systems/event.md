@@ -1,6 +1,6 @@
-# 事件系统
+﻿# 事件系统
 
-← [Main](../Main.md) · 系统 **#5** · 功能域：`ui` · `app`（UiEvent 映射）
+← [Main](../architecture.md) · 系统 **#5** · 功能域：`ui` · `app`（UiEvent 映射）
 
 > 输入 → 系统 / 语义 / 自定义 三层；业务只绑定后两层。
 
@@ -194,7 +194,7 @@ Widget 可通过 `EventHandler::wants_continuous_pointer_move` opt-in（#121，�
 | 右键菜单 | ContextMenu → OverlayStack | #98 |
 | i18n 事件 | LocaleChanged 预留 | #46 v1 不做用户 i18n |
 
-**Locale 与 #46**：裁决 [#46](../decisions.md#d46) 指 **用户-facing 应用级 i18n 系统**（资源文件、运行时语言切换 API、`LocaleChanged` 业务联动）v1 **不做**；`LocaleChanged` 仅平台事件预留。与之区分：`ui/foundation/locale.rs` 的 **`Locale` struct** 为内置 Widget **默认文案表**（如分页「上一页」、空状态提示），由 `use_locale()` 读取，**不是**应用级 i18n API，也不替代 #46 设计。
+**Locale 与 #46**：裁决 [#46](../../decisions.md#d46) 指 **用户-facing 应用级 i18n 系统**（资源文件、运行时语言切换 API、`LocaleChanged` 业务联动）v1 **不做**；`LocaleChanged` 仅平台事件预留。与之区分：`ui/foundation/locale.rs` 的 **`Locale` struct** 为内置 Widget **默认文案表**（如分页「上一页」、空状态提示），由 `use_locale()` 读取，**不是**应用级 i18n API，也不替代 #46 设计。
 
 `platform.text_input().start/stop()` 仅在 **RegisteredActive**（IME 焦点 Input 会话）或 Active 派发 IME 相关事件时调用；DeepIdle 不调用（#111）。
 
@@ -220,7 +220,7 @@ Fake 组件：`native/test_harness/FakePlatform` — 内存实现 + 调用历史
 ## 与 Reconciler 交互
 
 View rebuild 时 **智能重绑** handler（#123、#135，修订 #62）— 仅 handler 变更时 `clear_component`+重注册。判定细则 → [view-reactive · Handler 变更判定](view-reactive.md#handler-变更判定-135)。  
-业务 handler 不应把 id 当裸 slot/usize 使用；依赖 **ComponentId** 与 key 匹配复用 widget 实例；`WidgetId` 仅是 WidgetTree 内部别名（[#101](../decisions.md#d101)）。
+业务 handler 不应把 id 当裸 slot/usize 使用；依赖 **ComponentId** 与 key 匹配复用 widget 实例；`WidgetId` 仅是 WidgetTree 内部别名（[#101](../../decisions.md#d101)）。
 
 ---
 
@@ -234,4 +234,4 @@ ui/core/widget/
 app/shell/application.rs map_ui_event（UiEvent → SystemEvent）
 ```
 
-详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。
+详见 [implementation · 源码目录详表](../implementation.md#源码目录详表)。

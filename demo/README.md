@@ -1,6 +1,6 @@
 # UIX 演示程序
 
-> 可运行示例：验证 API、对照设计文档、回归 GUI 行为。设计权威 → [`docs/Main.md`](../docs/Main.md)。
+> 可运行示例：验证 API、对照设计文档、回归 GUI 行为。设计权威 → [`docs/index.md`](../docs/index.md)。
 
 ## 快速运行
 
@@ -69,7 +69,7 @@ demo/src/
 | 9 | 其他 | `other.rs` | Transfer、Upload、QRCode、Watermark、DesignTokens |
 | 10 | 覆盖清单 | `gallery.rs` | 交互式覆盖矩阵；点击 ✓ 行跳转对应页 |
 
-权威 widget 清单 → [`docs/systems/component.md`](../docs/systems/component.md#内置-widget-目录)。  
+权威 widget 清单 → [`docs/areas/systems/component.md`](../docs/areas/systems/component.md#内置-widget-目录)。
 机器可读矩阵 → [`demos/gallery.rs`](src/demos/gallery.rs) 中 `COVERAGE` 常量。
 
 ## 覆盖矩阵摘要
@@ -94,8 +94,7 @@ demo/src/
 | 无障碍 v2 (#99) | v1 刻意不做 ARIA / 键盘导航扩展 |
 | macOS 平台 | `create_platform()` 无 macOS backend |
 | Handler 宏 fingerprint (#159) | 语法层待设计 |
-| Computed 独立 slot id | v1 以捕获 State slot 为准 |
-| 错误 UI Toast 链 (#89) | 默认 log，Toast 待产品化 |
+| 错误 Toast 自动 overlay (#89) | Notification 数据与组件已落地；框架级自动 overlay 挂载待产品化 |
 | 多窗口 live demo | API 存在；单进程多窗 demo 待产品化，覆盖清单有说明 |
 | `follow_system_theme` 自动跟 OS | 可 demo 说明；默认 false，需 `.follow_system_theme(true)` 体验 live 切换 |
 
@@ -118,8 +117,8 @@ cargo test --bin uix-demo
 
 | 想学 | 读 |
 |------|-----|
-| 公开 API | [`public-api.md`](../docs/systems/public-api.md) |
-| View / State | [`view-reactive.md`](../docs/systems/view-reactive.md) |
-| App / Timer / 多窗 | [`application.md`](../docs/systems/application.md) |
-| 组件目录 | [`component.md`](../docs/systems/component.md) |
-| Overlay | [`overlay.md`](../docs/systems/overlay.md) |
+| 公开 API | [`public-api.md`](../docs/areas/systems/public-api.md) |
+| View / State | [`view-reactive.md`](../docs/areas/systems/view-reactive.md) |
+| App / Timer / 多窗 | [`application.md`](../docs/areas/systems/application.md) |
+| 组件目录 | [`component.md`](../docs/areas/systems/component.md) |
+| Overlay | [`overlay.md`](../docs/areas/systems/overlay.md) |

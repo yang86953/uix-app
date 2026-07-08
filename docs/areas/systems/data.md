@@ -1,6 +1,6 @@
-# 数据系统
+﻿# 数据系统
 
-← [Main](../Main.md) · 系统 **#11** · 功能域：`data`
+← [Main](../architecture.md) · 系统 **#11** · 功能域：`data`
 
 > 配置持久化；不参与 UI 热路径（符合核心理念 #105 冷路径边界）。
 
@@ -67,14 +67,14 @@ struct SettingsService {
 
 ## App 集成
 
-> **启动 vs 运行中**（[#74](../decisions.md#d74) · [#125](../decisions.md#d125)）
+> **启动 vs 运行中**（[#74](../../decisions.md#d74) · [#125](../../decisions.md#d125)）
 >
 > | 阶段 | 行为 |
 > |------|------|
 > | **启动** | 无 Settings → DefaultTheme；`theme_mode="system"` 或显式配置可读 OS 初始明暗 |
 > | **运行中** | 默认不跟 OS；须 `.follow_system_theme(true)` 才自动跟 OS 切换 |
 
-设计（#64）— opt-in 路径见 [roadmap · 实现进度总览](../roadmap.md#实现进度总览)：
+设计（#64）— opt-in 路径见 [implementation · 实现进度总览](../implementation.md#实现进度总览)：
 
 ```text
 App builder（opt-in）
@@ -164,4 +164,4 @@ data/
     └── settings.rs      SettingsService（扁平 JSON KV）
 ```
 
-详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。
+详见 [implementation · 源码目录详表](../implementation.md#源码目录详表)。

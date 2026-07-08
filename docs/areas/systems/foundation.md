@@ -1,6 +1,6 @@
-# 基础设施系统
+﻿# 基础设施系统
 
-← [Main](../Main.md) · 系统 **#10** · 功能域：`core`
+← [Main](../architecture.md) · 系统 **#10** · 功能域：`core`
 
 > 错误、几何、日志、诊断。最底层，无平台依赖，Fail Fast。
 
@@ -155,16 +155,16 @@ Fatal severity 收集 → crash log + `abort()`。
 
 ### 与错误 UI 的关系（#89）
 
-裁决 [#89](../decisions.md#d89)：**默认 log**；可选 **Toast** 向用户展示非致命错误。
+裁决 [#89](../../decisions.md#d89)：**默认 log**；可选 **Toast** 向用户展示非致命错误。
 
 | 层 | 职责 |
 |----|------|
 | `core` | 记录、分类、Fatal → crash log；**不**渲染 UI |
 | `ui` 反馈 | Toast 等（见 [component · feedback](component.md#内置-widget-目录)）承载可见提示 |
 
-业务在捕获 `Error` 后自行决定 log-only 或触发 Toast overlay；core 诊断链路不参与 WidgetTree 热路径。
+业务在捕获 `Error` 后自行决定 log-only 或触发 Toast overlay；core 诊断链路不参与 WidgetTree 热路径。`NotificationService::notify_error` / `notify_result_error` 会把非致命 `Error` 映射为 Toast 数据，`Notification` 可通过 `replace_from_service` / `notify_error_from_service` 显式同步到 UI 队列；Fatal 仍留在诊断/崩溃路径。
 
-**未实现**：框架级非致命错误 → Toast 自动集成链（#89）待产品化；当前须业务显式触发 Message / Notification 等反馈组件。汇总 → [roadmap · 后续工作](../roadmap.md#后续工作)。
+**未实现**：框架级非致命错误 → Toast 自动 overlay 挂载策略（#89）待产品化；当前须业务显式触发 Message / Notification 等反馈组件。汇总 → [implementation · 后续工作](../implementation.md#后续工作)。
 
 ---
 

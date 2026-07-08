@@ -1,6 +1,6 @@
-# 实现落地计划
+﻿# 实现落地计划
 
-← [Main](Main.md) · 决策 [#154](decisions.md#d154) [#157](decisions.md#d157)
+← [architecture](architecture.md) · 决策 [#154](../decisions.md#d154) [#157](../decisions.md#d157)
 
 > **P0–P5 主体已落地**。本文保留 **阶段摘要**、**实现进度**、**后续 backlog** 与 **源码目录详表**；刻意保留或未决项边界 → [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。
 
@@ -15,7 +15,7 @@
 | [源码目录详表](#源码目录详表) | `src/` 路径与系统文档映射 |
 | [维护](#维护) | 文档同步约定 |
 
-**关联**：[demand-driven](systems/demand-driven.md) · [application](systems/application.md) · [view-reactive](systems/view-reactive.md) · [decisions](decisions.md)
+**关联**：[demand-driven](systems/demand-driven.md) · [application](systems/application.md) · [view-reactive](systems/view-reactive.md) · [decisions](../decisions.md)
 
 ---
 
@@ -73,7 +73,7 @@ P6 图形后端（规划）    ← #162，详见下文
 
 | 能力 | 要点 | 文档 |
 |------|------|------|
-| 几何与标识 | `Point` / `Rect` / `EdgeInsets`；`ComponentId` / `WindowId`（Generational，跨窗 tree scope） | [foundation](systems/foundation.md) · [#101](decisions.md#d101) |
+| 几何与标识 | `Point` / `Rect` / `EdgeInsets`；`ComponentId` / `WindowId`（Generational，跨窗 tree scope） | [foundation](systems/foundation.md) · [#101](../decisions.md#d101) |
 | Damage | `DirtyRegion` → `DamageRegion` → `PresentDamage` | [foundation · Damage](systems/foundation.md#damage-区域) |
 | 错误 / 日志 / 诊断 | `Errc` / `Error`；Logger；Fatal crash log；**默认 log**（#89） | [foundation](systems/foundation.md) |
 
@@ -91,9 +91,9 @@ P6 图形后端（规划）    ← #162，详见下文
 
 | 能力 | 要点 | 文档 |
 |------|------|------|
-| GPU 引擎 | OpenGL ES：`GpuEngine` + WGL/EGL；D3D11/Vulkan：`PresentUploadEngine`；失败回退 SoftwareEngine | [rendering · 引擎](systems/rendering.md#引擎) · [#59](decisions.md#d59) |
+| GPU 引擎 | OpenGL ES：`GpuEngine` + WGL/EGL；D3D11/Vulkan：`PresentUploadEngine`；失败回退 SoftwareEngine | [rendering · 引擎](systems/rendering.md#引擎) · [#59](../decisions.md#d59) |
 | 失效管线 | `Invalidation::Paint` / `Layout` / `Composite`；脏区合并 | [rendering · 管线](systems/rendering.md#管线与失效) |
-| Composite 滚动 | Wheel / 键盘 / 拖拽 → `scroll_region` memmove | [rendering](systems/rendering.md) · [#107](decisions.md#d107) |
+| Composite 滚动 | Wheel / 键盘 / 拖拽 → `scroll_region` memmove | [rendering](systems/rendering.md) · [#107](../decisions.md#d107) |
 | PicturePolicy | 元数据 + 运行时信号；`node_count≥8 && est_pixels≥65536`；部分静态 widget `Eligible` | [rendering](systems/rendering.md) · [component · PicturePolicy](systems/component.md#picturepolicy-元数据122) |
 | 动画帧 | `AnimationRegistry` deadline；`tree.update(dt)` 窄标脏 | [rendering · 动画帧](systems/rendering.md#动画帧) · [component · 动画](systems/component.md#动画) |
 
@@ -117,7 +117,7 @@ P6 图形后端（规划）    ← #162，详见下文
 |------|------|------|
 | View / Reconciler | keyed diff；同类型 patch；`view_factory` + `pending_root` | [view-reactive](systems/view-reactive.md) |
 | 响应式 | `State` / `Computed` / `Effect`；窄 paint；跨窗 paint site fan-out | [view-reactive · 响应式](systems/view-reactive.md#响应式) |
-| StateSlotId | `State::new` 单调 slot；capture 指纹 `TypeId + slot_id` | [view-reactive · StateSlotId](systems/view-reactive.md#stateslotid) · [#143](decisions.md#d143) |
+| StateSlotId | `State::new` 单调 slot；capture 指纹 `TypeId + slot_id` | [view-reactive · StateSlotId](systems/view-reactive.md#stateslotid) · [#143](../decisions.md#d143) |
 | Handler 智能重绑 | 显式 capture fingerprint → generation；无指纹保守重绑（#160） | [view-reactive · Handler](systems/view-reactive.md#handler-变更判定-135) · [event](systems/event.md) |
 | ComponentHandle | mount 自动 snapshot；getter / 窄 invalidate / emit | [component · ComponentHandle](systems/component.md#componenthandle6172145) |
 | component! | 推荐 authoring；`SnapshotSource` 自动提取；`#[snapshot(skip)]` | [component · Authoring](systems/component.md#authoring) |
@@ -163,19 +163,17 @@ P6 图形后端（规划）    ← #162，详见下文
 
 | 项 | 说明 | 文档 |
 |----|------|------|
-| 多图形 API（P6） | D3D12 / Metal；更完整 native GPU renderer；factory probe + opt-in 配置 | [P6 图形后端](#p6-图形后端) · [#162](decisions.md#d162) |
+| 多图形 API（P6） | D3D12 / Metal；更完整 native GPU renderer | [P6 图形后端](#p6-图形后端) · [#162](../decisions.md#d162) |
 | 无障碍 v2 | #99：ARIA / 屏幕阅读器 / 键盘导航扩展；v1 不做 | [component](systems/component.md#内置-widget-目录) |
 | macOS 平台 | `create_platform()` 无 macOS backend（含 Metal） | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
 | Handler 宏层 fingerprint | #159 / #160：语法层 fingerprint 待设计；普通闭包保守重绑 | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) |
-| Computed 独立 slot id | v1 以捕获的 `State` slot 为准 | [view-reactive · StateSlotId](systems/view-reactive.md#stateslotid) |
-| PicturePolicy 扩展 | 更多静态 widget 可声明 `Eligible`；须逐一评估子树代价 | [component · PicturePolicy](systems/component.md#picturepolicy-元数据122) |
-| 错误 UI Toast 链 | #89：core 默认 log；非致命错误 Toast 集成待产品化 | [foundation · 诊断](systems/foundation.md#与错误-ui-的关系89) |
+| 错误 Toast 自动 overlay | #89：core 默认 log；`NotificationService` + `Notification` 显式同步已接，框架级自动 overlay 挂载策略待产品化 | [foundation · 诊断](systems/foundation.md#与错误-ui-的关系89) |
 
 ---
 
 ## 源码目录详表
 
-`src/` 子路径与系统文档的细粒度映射；功能域总览见 [Main · 功能域 ↔ 系统](Main.md#功能域--系统)。
+`src/` 子路径与系统文档的细粒度映射；功能域总览见 [architecture · 功能域 ↔ 系统](architecture.md#功能域--系统)。
 
 | 路径 | 系统文档 | 说明 |
 |------|----------|------|
@@ -224,7 +222,7 @@ P6 图形后端（规划）    ← #162，详见下文
 
 ## 维护
 
-- 阶段划分或原则变更 → 同步 [decisions.md](decisions.md) #154（或 #163+ 新决策）与本文件。
+- 阶段划分或原则变更 → 同步 [decisions.md](../decisions.md) #154（或 #163+ 新决策）与本文件。
 - 能力落地或产生新差距 → 更新 [实现进度总览](#实现进度总览) 与各系统 `> **实现注记**`；**不**在本文件恢复 per-file 接线 checklist。
 - 新 backlog 项追加到 [后续工作](#后续工作)；边界说明同步 [剩余差距](systems/demand-driven.md#剩余差距)。
 - 新增 `src/` 路径映射 → 更新 [源码目录详表](#源码目录详表) 与对应系统文档「源码模块」。

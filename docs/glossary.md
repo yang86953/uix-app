@@ -1,6 +1,6 @@
 ﻿# 术语表
 
-← [Main](Main.md) · 按需查阅，不必通读
+← [areas/architecture](areas/architecture.md) · 按需查阅，不必通读
 
 | 分类 | 跳转 |
 |------|------|
@@ -33,7 +33,7 @@
 | component! | `component! { name: ..., struct ... }` / `component! { struct ... }` | [#102](decisions.md#d102) |
 | measure(constraints) | `WidgetLayout::measure(Constraints)` 唯一入口；旧 `preferred_size` 已移除 | [#103](decisions.md#d103) |
 | ScrollView | ScrollView（旧文档 ScrollContainer） | [#104](decisions.md#d104) |
-| VirtualScroll | `ui::foundation::VirtualScroll`；不经 prelude；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll | [layout · VirtualScroll](systems/layout.md#virtual-scroll) |
+| VirtualScroll | `ui::foundation::VirtualScroll`；不经 prelude；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll | [layout · VirtualScroll](areas/systems/layout.md#virtual-scroll) |
 | AppState + ComponentHandle | `AppState` registry + `ComponentHandle` snapshot/invalidate/emit | [#32](decisions.md#d32), [#101](decisions.md#d101) |
 | HandlerTable key ComponentId | `SemanticEvent` / `HandlerTable` 已用 `ComponentId`；`WidgetId` 为树内别名 | [#10](decisions.md#d10), [#101](decisions.md#d101) |
 
@@ -44,9 +44,9 @@
 | 术语 | 含义 |
 |------|------|
 | 功能域 | 源码维度：`core` / `native` / `draw` / `ui` / `app` / `data` |
-| 系统 | 文档维度；与源码目录不一一对应；索引见 [Main · 系统索引](Main.md#系统索引) |
-| 按需零闲置 | **核心理念 / 最高规则**（#105）；框架 **零维护**（#130）；见 [demand-driven](systems/demand-driven.md) |
-| L0 / L1 / L2 | 零闲置三层目标（#105）：零像素 / 零帧循环 / 最小脏区；见 [demand-driven · 三层目标](systems/demand-driven.md#三层目标) |
+| 系统 | 文档维度；与源码目录不一一对应；索引见 [architecture · 系统索引](areas/architecture.md#系统索引) |
+| 按需零闲置 | **核心理念 / 最高规则**（#105）；框架 **零维护**（#130）；见 [demand-driven](areas/systems/demand-driven.md) |
+| L0 / L1 / L2 | 零闲置三层目标（#105）：零像素 / 零帧循环 / 最小脏区；见 [demand-driven · 三层目标](areas/systems/demand-driven.md#三层目标) |
 | 开发者零维护 | #130：调用方仅 State/View/opt-in API；Picture/Registry/标脏由框架自动 |
 | PicturePolicy | #122：框架按 widget 能力 **自动** Never/Eligible；**非**调用方黑名单 |
 | 核心理念 | 同「按需零闲置」— UIX **最重要的一条规则**；统领六域依赖 |
@@ -64,10 +64,10 @@
 
 | 术语 | 含义 |
 |------|------|
-| App | 应用入口：GUI（View 根）或 CLI；见 [application](systems/application.md) |
+| App | 应用入口：GUI（View 根）或 CLI；见 [application](areas/systems/application.md) |
 | AppHandle | 含 `window_id`；`run_after` / `post_to_ui`（#132–#133）已按 session 路由（#141）；session 关闭会清理对应 Timer（#134） |
-| AppRuntime | 内部 session 路由（Timer / post_to_ui / update_view / open_window）；见 [application · AppHandle](systems/application.md#apphandle-生命周期) |
-| EventLoopWaker | 跨线程唤醒 → [术语对照](#术语对照) · [platform · IEventLoop](systems/platform.md#ieventloop) |
+| AppRuntime | 内部 session 路由（Timer / post_to_ui / update_view / open_window）；见 [application · AppHandle](areas/systems/application.md#apphandle-生命周期) |
+| EventLoopWaker | 跨线程唤醒 → [术语对照](#术语对照) · [platform · IEventLoop](areas/systems/platform.md#ieventloop) |
 | WindowId | `core::WindowId`；进程内窗口 ID；`AppHandle` / `prelude` 重导出 |
 | on_start | #140：每 WindowSession 首帧前 `Fn(AppHandle)`；运行中 API 的 canonical 注入点 |
 | post_to_ui | #133：跨线程 `FnOnce + Send` 投递；路由见 #141 |
@@ -87,11 +87,11 @@
 | reconcile 合并 | #153：`pending_root` 优先；State + update_view 同帧一次 reconcile |
 | view_factory | #155：session 创建时固定 `Arc`；State reconcile 长期来源 |
 | update_view vs factory | #156：`update_view` 仅 `pending_root`；不替换 factory |
-| 实现路线图 | #154：P0–P5 分阶段落地；[roadmap · 分阶段路线图](roadmap.md#分阶段路线图) |
-| P0 落地清单 | #157：P0 阶段目标与验收（历史）；详见 [roadmap · 已落地阶段](roadmap.md#已落地阶段p0p5) |
+| 实现路线图 | #154：P0–P5 分阶段落地；[implementation · 分阶段路线图](areas/implementation.md#分阶段路线图) |
+| P0 落地清单 | #157：P0 阶段目标与验收（历史）；详见 [implementation · 已落地阶段](areas/implementation.md#已落地阶段p0p5) |
 | State 跨窗标脏 | #150：`State::set` fan-out 至各 `PaintBindSite` |
-| SettingsService | 扁平字符串 KV 持久化；见 [data](systems/data.md) |
-| FakeTimer | 已有：`ITimer` 平台测试时钟；见 [testing · 测试时钟分层](systems/testing.md#测试时钟分层) |
+| SettingsService | 扁平字符串 KV 持久化；见 [data](areas/systems/data.md) |
+| FakeTimer | 已有：`ITimer` 平台测试时钟；见 [testing · 测试时钟分层](areas/systems/testing.md#测试时钟分层) |
 | TestClock | 已接入：App `drain_due` / `wait_until` 测试注入时钟（#139） |
 
 ## UI
@@ -146,7 +146,7 @@
 | measure | 唯一测量入口 → [术语对照](#术语对照) · [#103](decisions.md#d103) |
 | preferred_size | 已废弃；见 measure |
 | ScrollView | 滚动容器 → [术语对照](#术语对照) · [#104](decisions.md#d104) |
-| VirtualScroll | 大列表虚拟滚动 helper；不经 prelude；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll → [layout · VirtualScroll](systems/layout.md#virtual-scroll) |
+| VirtualScroll | 大列表虚拟滚动 helper；不经 prelude；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll → [layout · VirtualScroll](areas/systems/layout.md#virtual-scroll) |
 | Constraints | `{ min, max, definite }` |
 | Active / Inactive | **Active**：有焦点 **或** 视口内仍有可见像素（与祖先 clip/scroll 求交）；Inactive 跳过大部分语义派发（#8、#19） |
 | BoxModel | margin → border → padding → content 盒模型 |
@@ -186,7 +186,7 @@
 | create_gpu_context | `native::factory`：按平台与 #162 创建 `Box<dyn IGraphicsContext>` |
 | 图形 API 回退链 | 初始化时按平台优先级 probe；全失败 → SoftwareEngine；**无**每帧切换 |
 
-详见 [rendering · 多图形 API](systems/rendering.md#多图形-api) · [#162](decisions.md#d162)。
+详见 [rendering · 多图形 API](areas/systems/rendering.md#多图形-api) · [#162](decisions.md#d162)。
 
 ## 平台
 
@@ -197,7 +197,7 @@
 | FakePlatform | 测试用内存 Platform |
 | FakeEventSource | 注入 UiEvent 的 FIFO 队列 |
 | EventBus | UiEvent 发布订阅 |
-| EventLoopWaker | 跨线程唤醒 blocking `wait_event` / `wait_until`；见 [platform · 事件模型](systems/platform.md#ieventloop) |
+| EventLoopWaker | 跨线程唤醒 blocking `wait_event` / `wait_until`；见 [platform · 事件模型](areas/systems/platform.md#ieventloop) |
 | PresentDamage | 物理像素上屏 damage |
 | WglContext / EglContext / VulkanContext | Windows WGL / Linux EGL 的 OpenGL ES `IGraphicsContext` 实现；Linux Vulkan 的 CPU upload present `IGraphicsContext` 实现 |
 
@@ -209,7 +209,7 @@
 
 ## 测试
 
-详见 [systems/testing.md](systems/testing.md) — 测试策略与术语上下文。
+详见 [areas/systems/testing.md](areas/systems/testing.md) — 测试策略与术语上下文。
 
 | 术语 | 含义 |
 |------|------|

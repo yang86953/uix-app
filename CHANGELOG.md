@@ -12,11 +12,11 @@
 
 ### Added
 
-- 公开 API 单页 [`docs/systems/public-api.md`](docs/systems/public-api.md)
+- 公开 API 单页 [`docs/areas/systems/public-api.md`](docs/areas/systems/public-api.md)
 - 演示文档 [`demo/README.md`](demo/README.md)
-- 平台贡献指南 [`docs/systems/platform.md#平台贡献指南`](docs/systems/platform.md#平台贡献指南)
-- `VirtualScroll` 设计/实现状态文档 → [`docs/systems/layout.md#virtual-scroll`](docs/systems/layout.md#virtual-scroll)
-- `VirtualScroll` / `VirtualListScroll` 已与 Table、Tree、SelectableList、Select、TreeSelect 集成 → [layout · VirtualScroll](docs/systems/layout.md#virtual-scroll)
+- 平台贡献指南 [`docs/areas/systems/platform.md#平台贡献指南`](docs/areas/systems/platform.md#平台贡献指南)
+- `VirtualScroll` 设计/实现状态文档 → [`docs/areas/systems/layout.md#virtual-scroll`](docs/areas/systems/layout.md#virtual-scroll)
+- `VirtualScroll` / `VirtualListScroll` 已与 Table、Tree、SelectableList、Select、TreeSelect 集成 → [layout · VirtualScroll](docs/areas/systems/layout.md#virtual-scroll)
 
 ### Changed
 
@@ -61,11 +61,11 @@
 | 跨窗 / 异步 lookup | `AppState::get_handle(ComponentId)` → `invalidate()` / `emit()` |
 | `State` vs `AppState` | **并存**；AppState 不替代 State |
 
-详情 → [application · AppState](docs/systems/application.md#appstate--多窗--settings) · [application · 迁移表](docs/systems/application.md#appstate--componenthandle-规格3236172101145)。
+详情 → [application · AppState](docs/areas/systems/application.md#appstate--多窗--settings) · [application · 迁移表](docs/areas/systems/application.md#appstate--componenthandle-规格3236172101145)。
 
 ### Known limitations（v0.1.0）
 
-- macOS backend 未实现 → [roadmap · 后续工作](docs/roadmap.md#后续工作)
+- macOS backend 未实现 → [implementation · 后续工作](docs/areas/implementation.md#后续工作)
 - crate 未发布 crates.io；API 仍可能按文档重构（冲突时 docs 为准，见 [AGENTS.md](AGENTS.md)）
 
 ---

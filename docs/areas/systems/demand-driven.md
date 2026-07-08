@@ -1,10 +1,10 @@
-# 按需零闲置
+﻿# 按需零闲置
 
-← [Main](../Main.md) · 系统 **#13** · 功能域：跨域
+← [Main](../architecture.md) · 系统 **#13** · 功能域：跨域
 
-> **UIX 核心理念的操作细则**（[#105](../decisions.md#d105)）。  
+> **UIX 核心理念的操作细则**（[#105](../../decisions.md#d105)）。
 > **最高规则**：**用最少资源，做最好效果** — 统领六域依赖与一切子系统；冲突时以本规则为准。  
-> 硬约束摘要 → [`AGENTS.md`](../../AGENTS.md)「核心理念」。
+> 硬约束摘要 → [`AGENTS.md`](../../../AGENTS.md)「核心理念」。
 
 ## 索引
 
@@ -26,7 +26,7 @@
 | 分域要求 | [分域要求](#分域要求) | #105–#159 |
 | 豁免 | [豁免机制](#豁免机制) | #113 |
 | 审查 | [新 API 审查清单](#新-api-审查清单) | #105 #120 #130 |
-| 已实现 | [roadmap · 实现进度总览](../roadmap.md#实现进度总览) | — |
+| 已实现 | [implementation · 实现进度总览](../implementation.md#实现进度总览) | — |
 | 剩余差距 | [剩余差距](#剩余差距) | — |
 
 **关联**：[application](application.md) · [rendering](rendering.md) · [event](event.md) · [view-reactive](view-reactive.md) · [component](component.md) · [data](data.md) · [theme-style](theme-style.md)
@@ -305,7 +305,7 @@ impl TimerHandle {
 
 - 固定 interval `wait_timeout` 探活并 layout/render
 - DeepIdle 下 `tick_effects`
-- 框架后台 poll OS 主题（[#125](../decisions.md#d125) 仅 opt-in 时响应 ThemeChanged，不 poll）
+- 框架后台 poll OS 主题（[#125](../../decisions.md#d125) 仅 opt-in 时响应 ThemeChanged，不 poll）
 - 无 register 的未托管周期工作 — 须 **内置组件**、**#132 Timer API** 或 async→State（#131）
 
 ---
@@ -501,7 +501,7 @@ run_active_frame(session):
 
 ### PicturePolicy 自动推断（#122、#129、#136）
 
-**调用方不维护名单**。LayerTree build 时框架对每个子树根 **自动** 判定；**metadata 与 runtime 合并**见 [#136](../decisions.md#d136)（任一为 Never → Never）。
+**调用方不维护名单**。LayerTree build 时框架对每个子树根 **自动** 判定；**metadata 与 runtime 合并**见 [#136](../../decisions.md#d136)（任一为 Never → Never）。
 
 ```rust
 enum PicturePolicy {
@@ -616,7 +616,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 若存在 **无法**通过 register 或事件驱动的定时/轮询需求（如极少数平台 API）：
 
-1. 在 [`decisions.md`](../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#163+** 起）；
+1. 在 [`decisions.md`](../../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#163+** 起）；
 2. 说明触发源、wake 频率、允许的工作范围、为何无法 register；
 3. [testing · 零闲置验收](testing.md#测试策略) 须覆盖：无事件时 assert **不** present/layout（或豁免边界）；
 4. 默认 **不豁免**；从严审查。
@@ -643,13 +643,13 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 ## 剩余差距
 
-P0–P5 与按需零闲置主体机制 **已落地**；按域能力清单见 [roadmap · 实现进度总览](../roadmap.md#实现进度总览)。
+P0–P5 与按需零闲置主体机制 **已落地**；按域能力清单见 [implementation · 实现进度总览](../implementation.md#实现进度总览)。
 
-**未实现 backlog（权威清单）** → [roadmap · 后续工作](../roadmap.md#后续工作)。各条的设计细节与域内边界见 roadmap 表格「文档」列链至的系统章节（如 [view-reactive · 热更新](view-reactive.md#热更新设计)、[component · PicturePolicy](component.md#picturepolicy-元数据122)）。
+**未实现 backlog（权威清单）** → [implementation · 后续工作](../implementation.md#后续工作)。各条的设计细节与域内边界见 implementation 表格「文档」列链至的系统章节（如 [view-reactive · 热更新](view-reactive.md#热更新设计)、[component · PicturePolicy](component.md#picturepolicy-元数据122)）。
 
-源码与「设计」列不一致时 **按文档重构**（[`AGENTS.md`](../../AGENTS.md)）。
+源码与「设计」列不一致时 **按文档重构**（[`AGENTS.md`](../../../AGENTS.md)）。
 ---
 
 ## 源码模块（实现时参考）
 
-跨域；无独立 `src/` 顶层目录。路径映射 → [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。与本系统直接相关的关键文件：`app/window_session.rs`、`app/active_work_registry.rs`、`app/main_thread_queue.rs`、`app/event_loop/event_loop.rs`（#106 #115 #118 #137）。
+跨域；无独立 `src/` 顶层目录。路径映射 → [implementation · 源码目录详表](../implementation.md#源码目录详表)。与本系统直接相关的关键文件：`app/window_session.rs`、`app/active_work_registry.rs`、`app/main_thread_queue.rs`、`app/event_loop/event_loop.rs`（#106 #115 #118 #137）。

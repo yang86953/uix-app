@@ -1,6 +1,6 @@
-# UIX 设计文档
+﻿# UIX 设计文档
 
-> **纯索引**。硬约束 → [`AGENTS.md`](../AGENTS.md)。**禁止通读** `docs/` — 按需打开链接即可。
+> **纯索引**。硬约束 → [`AGENTS.md`](../../AGENTS.md)。**禁止通读** `docs/` — 按需打开链接即可。
 
 ---
 
@@ -12,8 +12,8 @@
 
 | 任务 | 只读这些（顺序，≤4） |
 |------|---------------------|
-| 查 API / 设计名 vs 源码名 | [`public-api.md`](systems/public-api.md) → [`glossary.md#术语对照`](glossary.md#术语对照) → 相关 `#d{N}` in [`decisions.md`](decisions.md) |
-| 查实现是否已落地 | [`roadmap.md#实现进度总览`](roadmap.md#实现进度总览) → 对应系统 `> **实现注记**` |
+| 查 API / 设计名 vs 源码名 | [`public-api.md`](systems/public-api.md) → [`glossary.md#术语对照`](../glossary.md#术语对照) → 相关 `#d{N}` in [`decisions.md`](../decisions.md) |
+| 查实现是否已落地 | [`implementation.md#实现进度总览`](implementation.md#实现进度总览) → 对应系统 `> **实现注记**` |
 | 改主循环 / 帧调度 / 三态 | [`demand-driven.md#主循环状态机`](systems/demand-driven.md#主循环状态机) → [`application.md#主循环`](systems/application.md#主循环) |
 | 改标脏 / Picture / 局部重绘 | [`demand-driven.md#失效与窄标脏`](systems/demand-driven.md#失效与窄标脏) → [`rendering.md#管线与失效`](systems/rendering.md#管线与失效) |
 | 新 App API（Timer/post_to_ui/多窗） | [`demand-driven.md#开发者契约零维护`](systems/demand-driven.md#开发者契约零维护) → [`application.md#app-定时-api`](systems/application.md#app-定时-api) |
@@ -22,14 +22,14 @@
 | 改样式 / Theme | [`theme-style.md#style--styleset`](systems/theme-style.md#style--styleset) → [`theme-style.md#色板架构`](systems/theme-style.md#色板架构) |
 | 改布局 / Scroll | [`layout.md`](systems/layout.md) → [`component.md`](systems/component.md) |
 | 接平台 / 窗口 / 输入 | [`platform.md#traits-清单`](systems/platform.md#traits-清单) → [`platform.md#平台贡献指南`](systems/platform.md#平台贡献指南) → [`application.md`](systems/application.md) |
-| 多图形 API / GPU 选型 | [`rendering.md#多图形-api`](systems/rendering.md#多图形-api) → [`platform.md#多图形-api-与-factory`](systems/platform.md#多图形-api-与-factory) → [#162](decisions.md#d162) |
+| 多图形 API / GPU 选型 | [`rendering.md#多图形-api`](systems/rendering.md#多图形-api) → [`platform.md#多图形-api-与-factory`](systems/platform.md#多图形-api-与-factory) → [#162](../decisions.md#d162) |
 | Modal / Tooltip / 菜单 | [`overlay.md`](systems/overlay.md) → [`event.md`](systems/event.md) |
 | 持久化 Settings | [`data.md`](systems/data.md) → [`application.md#appstate--多窗--settings`](systems/application.md#appstate--多窗--settings) |
 | 写测试 | [`testing.md#fakeplatform`](systems/testing.md#fakeplatform) → [`event.md#测试`](systems/event.md#测试) |
 | 改几何 / Damage / 日志 | [`foundation.md`](systems/foundation.md) |
-| 新 API 设计审查 | [`demand-driven.md#新-api-审查清单`](systems/demand-driven.md#新-api-审查清单) → [#105](decisions.md#d105) |
+| 新 API 设计审查 | [`demand-driven.md#新-api-审查清单`](systems/demand-driven.md#新-api-审查清单) → [#105](../decisions.md#d105) |
 
-**人类读者**：首次了解 → [`glossary.md`](glossary.md) → [`decisions.md#d50`](decisions.md#d50) → [`application.md`](systems/application.md)。运行时协作图 → [`application.md#启动`](systems/application.md#启动)。
+**人类读者**：首次了解 → [`glossary.md`](../glossary.md) → [`decisions.md#d50`](../decisions.md#d50) → [`application.md`](systems/application.md)。运行时协作图 → [`application.md#启动`](systems/application.md#启动)。
 
 ---
 
@@ -47,7 +47,7 @@
 | `data` | `src/data/` | [data](systems/data.md) |
 | *(跨域)* | — | [public-api](systems/public-api.md)、[testing](systems/testing.md)、[**demand-driven**](systems/demand-driven.md)（#105） |
 
-依赖方向 → [`AGENTS.md` · 架构硬约束](../AGENTS.md#架构硬约束)
+依赖方向 → [`AGENTS.md` · 架构硬约束](../../AGENTS.md#架构硬约束)
 
 ---
 
@@ -80,7 +80,7 @@
 |------|---------------|------|
 | **按需零闲置** | [demand-driven · 开发者契约](systems/demand-driven.md#开发者契约零维护) | application, rendering, event |
 | 主循环 / 帧调度 | [application · 主循环](systems/application.md#主循环) | demand-driven, rendering |
-| Timer / post_to_ui | [application · App 定时](systems/application.md#app-定时-api) · [#132](decisions.md#d132) | demand-driven |
+| Timer / post_to_ui | [application · App 定时](systems/application.md#app-定时-api) · [#132](../decisions.md#d132) | demand-driven |
 | ActiveWorkRegistry / 多窗 | [demand-driven · Registry](systems/demand-driven.md#activeworkregistry) | application |
 | View / Reconcile | [view-reactive](systems/view-reactive.md) | component, event |
 | Widget trait | [component · 能力](systems/component.md#能力) | layout, event |
@@ -88,13 +88,13 @@
 | 事件传播 | [event · 传播](systems/event.md#传播--handlertable) | view-reactive |
 | measure / Scroll | [layout](systems/layout.md) | component |
 | ScenePaint / 失效 | [rendering · 管线](systems/rendering.md#管线与失效) | foundation |
-| **多图形 API** | [rendering · 多图形 API](systems/rendering.md#多图形-api) · [#162](decisions.md#d162) | platform, roadmap · P6 |
+| **多图形 API** | [rendering · 多图形 API](systems/rendering.md#多图形-api) · [#162](../decisions.md#d162) | platform, implementation · P6 |
 | Platform traits | [platform · Traits](systems/platform.md#traits-清单) | application |
 | Modal / Overlay | [overlay](systems/overlay.md) | event, component |
 | Settings | [data](systems/data.md) | application, theme-style |
-| 实现进度 / backlog | [roadmap · 实现进度总览](roadmap.md#实现进度总览) · [后续工作](roadmap.md#后续工作) | 各系统 · 实现注记 |
-| 术语 / API 名 | [glossary · 术语对照](glossary.md#术语对照) · [public-api](systems/public-api.md) | decisions #101–#104 |
-| 源码目录 | [roadmap · 源码目录详表](roadmap.md#源码目录详表) | 各系统 |
+| 实现进度 / backlog | [implementation · 实现进度总览](implementation.md#实现进度总览) · [后续工作](implementation.md#后续工作) | 各系统 · 实现注记 |
+| 术语 / API 名 | [glossary · 术语对照](../glossary.md#术语对照) · [public-api](systems/public-api.md) | decisions #101–#104 |
+| 源码目录 | [implementation · 源码目录详表](implementation.md#源码目录详表) | 各系统 |
 
 ---
 
@@ -102,19 +102,19 @@
 
 | 文档 | 用途 |
 |------|------|
-| [`AGENTS.md`](../AGENTS.md) | 硬约束 + Agent checklist（编码前必读） |
-| [`roadmap.md`](roadmap.md) | 实现进度、backlog、源码目录详表 |
-| [`decisions.md`](decisions.md) | 决策台账 #1–#162；新决策 #163+ |
-| [`glossary.md`](glossary.md) | 术语；[设计名 vs 源码](glossary.md#术语对照) |
-| [`CHANGELOG.md`](../CHANGELOG.md) | 版本与迁移锚点（含 AppState/Handle） |
-| [`demo/README.md`](../demo/README.md) | 演示程序模式与运行说明 |
+| [`AGENTS.md`](../../AGENTS.md) | 硬约束 + Agent checklist（编码前必读） |
+| [`implementation.md`](implementation.md) | 实现进度、backlog、源码目录详表 |
+| [`decisions.md`](../decisions.md) | 决策台账 #1–#162；新决策 #163+ |
+| [`glossary.md`](../glossary.md) | 术语；[设计名 vs 源码](../glossary.md#术语对照) |
+| [`CHANGELOG.md`](../../CHANGELOG.md) | 版本与迁移锚点（含 AppState/Handle） |
+| [`demo/README.md`](../../demo/README.md) | 演示程序模式与运行说明 |
 
 ---
 
 ## 维护约定
 
 - 新系统 → 更新「系统索引」→ 写 `systems/*.md`。
-- 新 `src/` 路径 → [roadmap · 源码目录详表](roadmap.md#源码目录详表) + 系统「源码模块」。
-- 落地/差距 → [roadmap · 实现进度总览](roadmap.md#实现进度总览) + 系统 `> **实现注记**`。
+- 新 `src/` 路径 → [implementation · 源码目录详表](implementation.md#源码目录详表) + 系统「源码模块」。
+- 落地/差距 → [implementation · 实现进度总览](implementation.md#实现进度总览) + 系统 `> **实现注记**`。
 - 跨系统主题 → 「主题索引」+ 最相关系统章节。
-- 新术语 → [`glossary.md`](glossary.md)；取舍 → [`decisions.md`](decisions.md) #163+。
+- 新术语 → [`glossary.md`](../glossary.md)；取舍 → [`decisions.md`](../decisions.md) #163+。
