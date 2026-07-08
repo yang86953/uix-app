@@ -44,7 +44,7 @@ P6 图形后端（规划）    ← #162，详见下文
 ├─ GraphicsBackend 枚举 + factory probe
 ├─ Windows D3D11/12
 ├─ Linux Vulkan
-└─ macOS Metal + platform
+└─ macOS AppKit SoftwareEngine bootstrap + Metal
 ```
 
 | 阶段 | 目标 | 关键决策 | 验收（已达成） |
@@ -81,7 +81,7 @@ P6 图形后端（规划）    ← #162，详见下文
 
 | 能力 | 要点 | 文档 |
 |------|------|------|
-| 生产后端 | Windows、Linux Wayland；`create_platform()` | [platform](systems/platform.md) |
+| 生产后端 | Windows、Linux Wayland；macOS AppKit SoftwareEngine bootstrap；`create_platform()` | [platform](systems/platform.md) |
 | 测试后端 | `FakePlatform` 完整 trait 实现 | [platform · 测试](systems/platform.md#测试平台) · [testing](systems/testing.md) |
 | 事件循环 | `IEventLoop`；`EventLoopWaker` 外部线程 wake | [platform · 事件模型](systems/platform.md#ieventloop) |
 | 窗口可选能力 | `WindowOps` 返回 `Result`；未支持记 `NotImplemented` | [platform · 窗口可选能力](systems/platform.md#窗口可选能力) |
@@ -150,7 +150,7 @@ P6 图形后端（规划）    ← #162，详见下文
 | P6.1 基线 | `GraphicsBackend` 枚举；factory probe 框架；诊断日志 | ✅ 已实现（Metal 后端仍在 P6.4+） |
 | P6.2 Windows | D3D11 `IGraphicsContext` + CPU upload present；WGL 作次选，D3D12 后续 | ✅ 已实现（D3D12 仍规划） |
 | P6.3 Linux | Vulkan `IGraphicsContext` + CPU upload present；EGL 作次选 | ✅ 已实现 |
-| P6.4 macOS | Metal + `create_platform` backend | 规划 |
+| P6.4 macOS | AppKit `create_platform` + SoftwareEngine CPU present 已接；Metal 与完整输入/事件映射后续 | 部分已实现 |
 | P6.5 配置 | App builder / env / Settings opt-in；公开 API 写入 public-api | ✅ 已实现 |
 | P6.6 WebGPU | 远期评估；非 v1 目标 |  backlog |
 
@@ -166,7 +166,7 @@ P6 图形后端（规划）    ← #162，详见下文
 |----|------|------|
 | 多图形 API（P6） | D3D12 / Metal；更完整 native GPU renderer | [P6 图形后端](#p6-图形后端) · [#162](../decisions.md#d162) |
 | 无障碍 v2 | #99：基础 role/name/state 快照元数据、静态 ARIA 映射与键盘导航已落地；屏幕阅读器桥待后续 | [component](systems/component.md#componentconfigsnapshot) |
-| macOS 平台 | `create_platform()` 无 macOS backend（含 Metal） | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
+| macOS 平台 | `create_platform()` / AppKit SoftwareEngine bootstrap 已接；Metal、完整输入/事件映射与原生 macOS 运行验证待后续 | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
 
 ---
 

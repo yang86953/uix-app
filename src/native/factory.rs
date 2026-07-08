@@ -3,6 +3,7 @@
 use crate::core::error::{Errc, Error};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext};
+#[cfg(windows)]
 use crate::native::traits::system::ISystemInfo;
 use std::ffi::c_void;
 
@@ -22,9 +23,8 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
 
 #[cfg(target_os = "macos")]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
-    Err(Error::new(
-        Errc::PlatformError,
-        unsupported_platform_message(),
+    Ok(Box::new(
+        crate::native::backends::macos::platform::MacosPlatform::new(),
     ))
 }
 
@@ -36,6 +36,7 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     ))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn unsupported_platform_message() -> String {
     #[cfg(target_os = "macos")]
     {
@@ -265,7 +266,12 @@ pub fn available_memory_bytes() -> u64 {
         .available_bytes
 }
 
-#[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
+#[cfg(target_os = "macos")]
+pub fn available_memory_bytes() -> u64 {
+    512 * 1024 * 1024
+}
+
+#[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
 pub fn available_memory_bytes() -> u64 {
     512 * 1024 * 1024
 }
