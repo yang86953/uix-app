@@ -46,6 +46,8 @@ Pointer（Down/Up/Move）、Wheel、Key（Down/Up）、TextInput、IME（Start/U
 
 ---
 
+<a id="传播--handlertable"></a>
+
 ## 传播 · HandlerTable
 
 ### 传播方向（#4、#25）
@@ -166,6 +168,8 @@ dispatch_semantic_event:
 
 单焦点 + `tab_index` 焦点链。`set_focus`：FocusOut 旧 → FocusIn 新 → lifecycle reconcile。
 
+<a id="pointermove-按需零闲置"></a>
+
 ### PointerMove（按需零闲置 #109）
 
 [demand-driven · 边界感知窄路径](demand-driven.md#pointermove-窄路径)：
@@ -195,6 +199,8 @@ Widget 可通过 `EventHandler::wants_continuous_pointer_move` opt-in（#121，�
 `platform.text_input().start/stop()` 仅在 **RegisteredActive**（IME 焦点 Input 会话）或 Active 派发 IME 相关事件时调用；DeepIdle 不调用（#111）。
 
 ---
+
+<a id="测试"></a>
 
 ## 测试
 
@@ -228,4 +234,4 @@ ui/core/widget/
 app/shell/application.rs map_ui_event（UiEvent → SystemEvent）
 ```
 
-详见 [Main · 源码目录详表](../Main.md#源码目录详表)。
+详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。

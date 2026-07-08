@@ -16,6 +16,7 @@
 use crate::native::traits::input::ScrollDirection;
 use crate::ui::layout::{FlexDirection, GridTrack};
 use crate::ui::style::{DisplayMode, Style};
+use crate::ui::core::widget::WidgetNode;
 use crate::ui::view::{View, ViewNode};
 
 use crate::core::{Constraints, Rect, Size};
@@ -27,6 +28,22 @@ use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, Widge
 use crate::ui::{ComponentId, WidgetTree};
 use std::any::Any;
 use std::sync::Arc;
+
+/// 将 `tree!` / widget-tree 节点嵌入 View DSL（组件库演示等高级 interop）。
+pub fn embed(node: impl crate::ui::IntoWidgetNode) -> ViewNode {
+    adopt_widget_node(node.into_node())
+}
+
+fn adopt_widget_node(node: WidgetNode) -> ViewNode {
+    ViewNode {
+        widget: node.widget,
+        children: node.children.into_iter().map(adopt_widget_node).collect(),
+        style: Style::default(),
+        z_index: node.z_index,
+        key: node.key.map(|k| k.to_string()),
+        handlers: node.handlers,
+    }
+}
 
 // ── 基础组合子 ──────────────────────────────────────────────
 

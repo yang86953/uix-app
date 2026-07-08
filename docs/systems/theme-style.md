@@ -18,6 +18,8 @@
 
 ---
 
+<a id="色板架构"></a>
+
 ## 色板架构
 
 设计两层，运行时合一：
@@ -78,7 +80,8 @@ Theme { Arc<dyn TokenProvider> }
 ### DynTokens（#74、#125）
 
 - `RwLock<DesignTokens>` + 运行时切换 `set_light` / `set_dark` / `set_custom`
-- **跟 OS**：App builder `.follow_system_theme(true)`（**opt-in**，默认 false）
+- **启动默认**（#74）：启动时可读 OS 初始明暗；App 可显式覆盖
+- **运行中跟 OS**（#125）：App builder `.follow_system_theme(true)`（**opt-in**，默认 false）
   - 框架收 `ThemeChanged` UiEvent → 读 `IDisplay::is_dark_mode()` → 切换 tokens → 全窗 palette invalidate（#128）
   - **不**后台 poll；无 ThemeChanged 不 wake
 - `.follow_system_theme(false)` 时：运行中仅 `.theme(...)` / App 显式切换生效
@@ -99,18 +102,26 @@ Theme { Arc<dyn TokenProvider> }
 
 ## 品牌与 Light/Dark
 
+> **启动 vs 运行中**（[#74](../decisions.md#d74) · [#125](../decisions.md#d125)）
+>
+> | 阶段 | 行为 |
+> |------|------|
+> | **启动** | 无 Settings → DefaultTheme；`theme_mode="system"` 或显式配置可读 OS 初始明暗 |
+> | **运行中** | 默认不跟 OS；须 `.follow_system_theme(true)` 才自动跟 OS 切换 |
+
 | 场景 | API |
 |------|-----|
 | 默认品牌 | Primary::BLUE 种子（#28） |
 | 换主色 | `with_brand_primary` |
 | 全定制 | `from_primaries([12])` |
 | 切换 invalidate | 仅 palette 引用组件（#9） |
-| 默认模式 | 启动时可读 OS（#74）；运行中 **opt-in** `.follow_system_theme(true)` 跟 OS（#125），否则 App `.theme()` |
+| 启动默认 | 启动时可读 OS 初始明暗（#74）；App 可显式 `.theme()` 覆盖 |
+| 运行中跟 OS | **opt-in** `.follow_system_theme(true)` 跟 OS（#125），否则 App `.theme()` |
 | Settings | `theme_mode` key → App 解析（见 [data](data.md)） |
 
-Settings 持久化 `theme_mode` / `brand_primary` key → App 解析（见 [data](data.md)）。
-
 ---
+
+<a id="style--styleset"></a>
 
 ## Style · StyleSet
 
@@ -188,4 +199,4 @@ ui/foundation/style/   Style, StyleSet, ColorValue, apply_style
 draw/painting/theme/   ThemeTokens（IColor / ITypography / ISpacing）
 ```
 
-详见 [Main · 源码目录详表](../Main.md#源码目录详表)。
+详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。

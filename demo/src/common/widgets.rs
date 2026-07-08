@@ -1,8 +1,7 @@
-//! 鑷畾涔?widget 绀轰緥 鈥?`component!` + `prelude` 缁樺埗 API銆?
+//! `component!` 自定义 widget 示例。
+
 use uix::prelude::*;
 use uix::ui::core::widget::WidgetTree;
-
-// 鈹€鈹€ Counter 鈥?鑷畾涔?widget 绀轰緥 鈹€鈹€
 
 component! {
     pub struct Counter { pub count: u32 }
@@ -13,18 +12,27 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        match event { SystemEvent::PointerDown { .. } => { self.count += 1; EventResult::Handled } _ => EventResult::NotHandled }
+        match event {
+            SystemEvent::PointerDown { .. } => {
+                self.count += 1;
+                EventResult::Handled
+            }
+            _ => EventResult::NotHandled,
+        }
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let bg = ctx.tokens().color_primary_bg();
         let color = ctx.tokens().color_primary();
         ctx.fill_rect(frame, bg, None);
-        ctx.draw_text(&format!("Count: {}", self.count), Point::new(frame.x + 8.0, frame.y + 8.0), color, 14.0);
+        ctx.draw_text(
+            &format!("Count: {}", self.count),
+            Point::new(frame.x + 8.0, frame.y + 8.0),
+            color,
+            14.0,
+        );
     }
 }
-
-// 鈹€鈹€ PulseRing 鈥?鑴夊啿鍔ㄧ敾 鈹€鈹€
 
 component! {
     pub struct PulseRing {
@@ -36,20 +44,17 @@ component! {
         constraints.clamp(Size::new(48.0, 48.0))
     }
 
-
-
-    // 鍙繑鍥炶剦鍐插渾瀹為檯瑕嗙洊鐨勫尯鍩燂紝閬垮厤娓呴櫎鏁翠釜 frame 瀵艰嚧鍥涜鐧界嚎
     dirty_rect => (&self, frame: Rect) -> Rect {
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.5;
-        let max_r = 24.0; // 鏈€澶ц剦鍐插崐寰?鈮?6 + 16 + 3(stroke)
+        let max_r = 24.0;
         Rect::new(cx - max_r, cy - max_r, max_r * 2.0, max_r * 2.0)
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let cx = frame.x + frame.w * 0.5;
         let cy = frame.y + frame.h * 0.5;
-        let phase = (self.time * 1.5).sin() * 0.5 + 0.5; // 0..1
+        let phase = (self.time * 1.5).sin() * 0.5 + 0.5;
         let r = 6.0 + phase * 16.0;
         let alpha = (1.0 - phase * 0.6) * 255.0;
         let base = ctx.tokens().color_primary();
@@ -62,8 +67,6 @@ component! {
     }
 }
 
-// 鈹€鈹€ BounceBall 鈥?寮硅烦鍔ㄧ敾 鈹€鈹€
-
 component! {
     pub struct BounceBall {
         pub time: f32,
@@ -74,9 +77,6 @@ component! {
         constraints.clamp(Size::new(200.0, 60.0))
     }
 
-
-
-    // 鍙繑鍥炵悆 + 闃村奖鐨勮竟鐣屾锛岄伩鍏嶆竻闄ゆ暣涓?frame
     dirty_rect => (&self, frame: Rect) -> Rect {
         let cx = frame.x + frame.w * 0.5;
         let ball_top = frame.y + frame.h - 50.0;
@@ -86,7 +86,7 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let t = self.time / 2.0; // 0..1
+        let t = self.time / 2.0;
         let bounce = if t < 0.5 {
             1.0 - (t * 2.0).powf(2.0)
         } else {
@@ -95,7 +95,6 @@ component! {
         let cy = frame.y + frame.h - 10.0 - bounce * 40.0;
         let cx = frame.x + frame.w * 0.5;
         let primary = ctx.tokens().color_primary();
-        // 褰卞瓙锛堟牴鎹珮搴﹀彉鍖栧ぇ灏忓拰閫忔槑搴︼級
         let shadow_alpha = (0.3 + bounce * 0.5 * 0.7) * 255.0;
         let shadow_r = 6.0 + bounce * 8.0;
         let shadow_c = Color::from_rgba(0, 0, 0, shadow_alpha as u8);

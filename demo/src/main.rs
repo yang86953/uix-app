@@ -1,13 +1,15 @@
 // ============================================================================
-// UIX 演示入口
+// UIX 演示入口 — 模式分派
 // ============================================================================
-//   cargo run --bin uix-demo              → 简化 API（prelude + App）
-//   cargo run --bin uix-demo -- --dashboard → 完整 GUI 组件库（高级 API）
+//   cargo run --bin uix-demo              → 入门演示（App + View DSL）
+//   cargo run --bin uix-demo -- --dashboard → 组件库全景
 //   cargo run --bin uix-demo -- --cli     → CLI 功能域演示
-//   cargo run --bin uix-demo -- --dashboard --gpu → GUI 组件库 + GPU 引擎
+//   cargo run --bin uix-demo -- --dashboard --gpu → 同上（App 默认优先 GPU）
 // ============================================================================
 
+mod common;
 mod demos;
+mod modes;
 
 use uix::core::log::{info_fn, Level, Logger};
 
@@ -33,15 +35,15 @@ fn main() {
 
     if is_cli {
         info_fn("UIX CLI 演示启动中...");
-        if let Err(e) = demos::cli::run_all_cli() {
+        if let Err(e) = modes::cli::run() {
             eprintln!("CLI 演示出错: {}", e.short_what());
             std::process::exit(1);
         }
     } else if is_dashboard {
-        info_fn("UIX GUI 组件库演示启动中...");
-        demos::dashboard::run_gui_demo();
+        info_fn("UIX 组件库演示启动中...");
+        modes::dashboard::run();
     } else {
-        info_fn("UIX 简化 API 演示启动中...");
-        demos::simplified::run_simplified_demo();
+        info_fn("UIX 入门演示启动中...");
+        modes::default::run();
     }
 }

@@ -17,6 +17,7 @@
 | Authoring | [Authoring](#authoring) | #20 #102 |
 | Button v1 | [Button v1](#button-v1) | #23 #30 #77 |
 | 标脏 | [标脏规则](#标脏规则) | #9 #105 #107 #122 |
+| 未实现或后续 | [未实现或后续](#未实现或后续) | #99 |
 | 模块图 | [ui 域模块图](#ui-域模块图) | — |
 
 **关联**：[view-reactive](view-reactive.md) · [layout](layout.md) · [event](event.md) · [theme-style](theme-style.md) · [rendering](rendering.md) · [demand-driven](demand-driven.md)
@@ -38,6 +39,8 @@
 **struct 不放**：业务闭包、`on_click` 字段、variant 枚举。
 
 ---
+
+<a id="能力"></a>
 
 ## 能力
 
@@ -79,6 +82,8 @@ Inactive 组件跳过大部分语义派发，Lifecycle 进入 inactive。
 > **实现注记**：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；`AppState` 内部 register/unregister、snapshot/invalidate 与 semantic queue 也已按 `ComponentId` 命名；live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均已接窄 Paint。`snapshot()` / `snapshot_fields()` 与只读配置 getter（`text` / `label` / `placeholder` / `disabled` / `checked` / `numeric_value`）已接，当前优先从 live widget 提取静态配置快照，必要时可回退到 `AppState` snapshot registry，并排除交互态。`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot、所属失效队列与当前 dirty rect，`AppState::get_handle` 已可返回 snapshot + invalidate + emit handle；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`，lookup handle `emit` 经 AppState semantic queue 唤醒并由主/副窗 drain 派发；当前 handler 仍可经 `State<T>` 闭包捕获访问业务数据。
 
 ---
+
+<a id="componentconfigsnapshot"></a>
 
 ## ComponentConfigSnapshot
 
@@ -188,6 +193,8 @@ component! {
 
 ---
 
+<a id="widgettree"></a>
+
 ## WidgetTree
 
 运行时中心结构（`src/ui/core/widget/`）：
@@ -214,6 +221,8 @@ WidgetTree
 
 ---
 
+<a id="manager-横切"></a>
+
 ## Manager 横切
 
 `WidgetManagers`（`src/ui/managers/`）为 per-tree 横切能力容器：
@@ -233,6 +242,8 @@ WidgetTree
 
 ---
 
+<a id="动画"></a>
+
 ## 动画
 
 设计（#83、#124）：组件实现 `Animatable`；动画开始/续帧由 **框架自动** register 到内部 ActiveWorkRegistry；`tree.update(dt)` 在 Active/RegisteredActive 推进；结束 **自动** unregister。
@@ -245,15 +256,19 @@ WidgetTree
 
 **App 不调用 register**。`Spin`、`ProgressBar` indeterminate、Dropdown fade、Select fade、AutoComplete fade、TreeSelect fade、Cascader fade、ColorPicker fade、Tooltip fade、Popover fade、Popconfirm fade、Modal、Drawer 与 Collapse 已作为内置 `WidgetAnimation` source 托管。
 
-> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入 event loop；动画 widget 每次 update 后按 `dirty_bounds` 窄 Paint 标脏，仍活跃时由 Registry 以 `Animation(id)` 登记下一帧 deadline；due 帧只推进到期 id，并只发现 active + visible 动画节点。`Spin`、`ProgressBar` indeterminate、Dropdown fade、Select fade、AutoComplete fade、TreeSelect fade、Cascader fade、ColorPicker fade、Tooltip fade、Popover fade、Popconfirm fade、Modal、Drawer 与 Collapse 已作为内置动画源接入；`Spin` / `ProgressBar` indeterminate 已收窄动画 dirty bounds。
+> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入 event loop；动画 widget 每次 update 后按 `dirty_bounds` 窄 Paint 标脏，仍活跃时由 Registry 以 `Animation(id)` 登记下一帧 deadline；due 帧只推进到期 id，并只发现 active + visible 动画节点。上述内置 Animation 源已接入；`Spin` / `ProgressBar` indeterminate 已收窄动画 dirty bounds。
 
 ---
+
+<a id="内置-widget-目录"></a>
 
 ## 内置 Widget 目录
 
 按 Ant Design 分类（#58 Big Bang）；`use uix::prelude::*` 导出完整清单如下。各 Widget 遵循本系统 trait 契约。
 
-**v1 共性**：除 Button 为 reference impl（[#58](../decisions.md#d58)）外，其余均为 Big Bang 落地（#80）；**无障碍 v2** 统一待 [#99](../decisions.md#d99)（v1 不做 ARIA / 屏幕阅读器 / 键盘导航扩展）。
+> 完整 **snapshot** 覆盖清单（约 80 个 `component!` widget）见 [ComponentConfigSnapshot · 实现注记](#componentconfigsnapshot)。
+
+**v1 共性**：除 Button 为 reference impl（[#58](../decisions.md#d58)）外，带 `component!` 的内置 widget 均为 Big Bang 落地（#80）；**Navigation** / **NavGroup** 等为 builder/compositor（无 `component!`、无 snapshot）。**无障碍 v2** 统一待 [#99](../decisions.md#d99)（v1 不做 ARIA / 屏幕阅读器 / 键盘导航扩展）。
 
 **浮层列**：✓ = 参与 [OverlayStack](overlay.md) 或 `overlay_entry` 调度。
 
@@ -268,6 +283,8 @@ WidgetTree
 | Divider | | Big Bang |
 | Space | | Big Bang |
 | SpaceSize | | 枚举辅助 |
+| FloatButton | | Big Bang |
+| FloatButtonBackTop | | Big Bang；回到顶部快捷入口 |
 
 ### 布局 containers（`widgets/containers/`）
 
@@ -275,7 +292,14 @@ WidgetTree
 |--------|:------------:|---------|
 | Container | | Big Bang |
 | Grid | | Big Bang |
+| Layout | | Big Bang |
+| Header | | 布局区段 |
+| Sider | | 布局区段 |
+| Content | | 布局区段 |
+| Footer | | 布局区段 |
 | Splitter | | Big Bang |
+| Affix | | Big Bang |
+| BackTop | | Big Bang |
 
 ### 导航 navigation（`widgets/navigation/`）
 
@@ -294,7 +318,9 @@ WidgetTree
 | StepStatus | | 枚举辅助 |
 | Anchor | | Big Bang |
 | AnchorItem | | 项辅助 |
-| Navigation | | Big Bang |
+| Navigation | | builder/compositor；无 `component!`、无 snapshot |
+| NavGroup | | builder/compositor；无 `component!`、无 snapshot；共享 NavItem 选中态 |
+| NavItem | | 项辅助 |
 | Dropdown | ✓ | Big Bang；下拉浮层 |
 
 ### 输入 input（`widgets/input/`）
@@ -310,6 +336,8 @@ WidgetTree
 | Slider | | Big Bang |
 | Rate | | Big Bang |
 | Form | | Big Bang |
+| FormItem | | Big Bang |
+| TreeSelect | | Big Bang |
 | DatePicker | | Big Bang |
 | DateValue | | 值辅助 |
 | TimePicker | | Big Bang |
@@ -347,6 +375,8 @@ WidgetTree
 | Timeline | | Big Bang |
 | TimelineItem | | 项辅助 |
 | Calendar | | Big Bang |
+| Table | | Big Bang |
+| SelectableList | | Big Bang |
 
 ### 反馈 feedback（`widgets/feedback/`）
 
@@ -358,6 +388,8 @@ WidgetTree
 | Popover | ✓ | Big Bang |
 | Popconfirm | ✓ | Big Bang |
 | Alert | | Big Bang；非 OverlayStack |
+| Message | | Big Bang |
+| Notification | | Big Bang |
 | ProgressBar | | Big Bang |
 | Spin | | Big Bang |
 
@@ -392,9 +424,11 @@ WidgetTree
 
 ---
 
+<a id="authoring"></a>
+
 ## Authoring
 
-设计决策 [#102](../decisions.md#d102)：设计态 **`component!`**（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已作为推荐 authoring 入口。少数手写 widget 仍可用低层 `impl_widget_component!` 显式声明能力；新组件默认优先 `component!`。
+设计决策 [#102](../decisions.md#d102)：**`component!`** 为推荐 authoring 入口（[#20](../decisions.md#d20)）；当前 `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已导出。少数手写 widget 仍可用低层 `impl_widget_component!` 显式声明能力；新组件默认优先 `component!`。
 
 ### component!（当前实现）
 
@@ -413,6 +447,8 @@ component! {
 ### prelude（#69）
 
 `use uix::prelude::*` 导出高频符号：App / AppHandle / TimerHandle、View 组合器与 Builder、State、Theme、ComponentId、常用 Widget、布局枚举、语义事件与 HandlerRegistration、ComponentHandle / AppState。
+
+完整分组清单 → [public-api.md](public-api.md)。
 
 ---
 
@@ -443,6 +479,8 @@ component! {
 
 ---
 
+<a id="picturepolicy-元数据122"></a>
+
 ### PicturePolicy 元数据（#122）
 
 内置 widget 在 authoring 时声明默认策略；运行时 LayerTree **再**按子树信号（handler、State bind、scroll…）推断，二者合并见 **#136**。
@@ -472,7 +510,15 @@ picture_policy: PicturePolicy::Never,  // 默认
 
 App / View **不**配置 Picture；调用方零维护。
 
-> **实现注记**：`WidgetComponent::picture_policy()` 与 `component!` 的 `picture_policy =>` 元数据方法已接；LayerTree 会合并 handler、dynamic content、interactive state、continuous pointer、overlay、focusable、clip、scroll 等运行时信号并套用 #129 阈值。当前 Container / Grid 首批声明 `Eligible`；未声明组件默认 `Never`。
+> **实现注记**：`WidgetComponent::picture_policy()` 与 `component!` 的 `picture_policy =>` 元数据方法已接；LayerTree 会合并 handler、dynamic content、interactive state、continuous pointer、overlay、focusable、clip、scroll 等运行时信号并套用 #129 阈值。当前已声明 `Eligible` 的静态高收益组件：Container、Grid、Empty、Tag、Descriptions、Result、Alert、Timeline、Skeleton、List、BarChart、LineChart、PieChart、QRCode、Watermark；未声明组件默认 `Never`，实际启用仍受运行时信号与 #129 阈值约束。
+
+**未实现**：更多静态 widget 的 `Eligible` 声明须按子树代价逐一评估 → [未实现或后续](#未实现或后续)。
+
+---
+
+## 未实现或后续
+
+本域相关项（无障碍 v2、PicturePolicy 扩展）→ [roadmap · 后续工作](../roadmap.md#后续工作)。设计细节见 [内置 Widget 目录](#内置-widget-目录)、[PicturePolicy 元数据](#picturepolicy-元数据122)。排期 → [roadmap · 后续工作](../roadmap.md#后续工作)。
 
 ---
 
@@ -487,9 +533,9 @@ ui/
 ├── theme/
 ├── foundation/    → theme-style, event (locale, focus_trap)
 ├── widgets/
-├── managers/      (design)
+├── managers/      FocusManager、InteractionManager、DragManager 等
 ├── overlay.rs
-├── animation/
+├── animation/     WidgetAnimation trait 与 easing
 └── macros.rs
 ```
 
@@ -504,10 +550,10 @@ ui/
 ├── core/widget/       WidgetTree, BoxedWidget, tree_*
 ├── traits/widget.rs   WidgetLayout / Render / Event / Lifecycle / Animation
 ├── widgets/           内置库（general / containers / …）
-├── managers/          横切 Manager（设计）
+├── managers/          FocusManager、InteractionManager、DragManager 等（已注入 WidgetTree）
 ├── view/              View DSL + ViewAdapter
 ├── overlay.rs         OverlayStack
-└── animation/         AnimationRegistry（设计）
+└── animation/         WidgetAnimation trait 与 easing
 ```
 
-详见 [Main · 源码目录详表](../Main.md#源码目录详表)。
+详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。

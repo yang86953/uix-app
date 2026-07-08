@@ -1,4 +1,4 @@
-﻿//! CLI 演示 — 按功能域展示 `core` / `native` / `draw` / `ui` / `app` / `data` 能力。
+//! CLI 演示 — 按功能域展示 `core` / `native` / `draw` / `ui` / `app` / `data` 能力。
 //!
 //! 运行：`cargo run --bin uix-demo -- --cli`
 
@@ -284,7 +284,7 @@ pub fn demo_di_container() {
 
 // ── 运行全部 ──────────────────────────────────────────────────────────────
 
-pub fn run_all_cli() -> Result<(), Error> {
+pub fn run() -> Result<(), Error> {
     println!("\n  ╔══════════════════════════════════╗");
     println!("  ║   UIX 框架 — CLI 功能域演示       ║");
     println!("  ╚══════════════════════════════════╝");

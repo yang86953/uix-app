@@ -83,7 +83,7 @@ pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowC
 // view
 
 pub use crate::ui::view::{
-    button, column, dynamic_label, grid, input, label, row, scroll, space, ButtonBuilder,
+    button, column, dynamic_label, embed, grid, input, label, row, scroll, space, ButtonBuilder,
     GridBuilder, InputBuilder, ScrollBuilder, StyleExt, Ui, View, ViewAdapter, ViewNode,
 };
 

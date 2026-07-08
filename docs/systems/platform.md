@@ -17,6 +17,7 @@
 | 工厂 | [工厂与后端](#工厂与后端) | AGENTS |
 | 测试 | [测试平台](#测试平台) | #40 |
 | 条件编译 | [条件编译](#条件编译) | AGENTS |
+| 平台贡献 | [平台贡献指南](#平台贡献指南) | AGENTS |
 
 **关联**：[application](application.md) · [event](event.md) · [rendering](rendering.md) · [foundation](foundation.md) · [demand-driven](demand-driven.md)
 
@@ -63,6 +64,8 @@ trait Platform {
 | `graphics_context()` | GPU 初始化（可选） |
 
 `Window`（app 层）是轻量包装；多窗 native 能力具备，app 编排见 [application · 多窗](application.md#appstate--多窗--settings)。
+
+<a id="窗口可选能力"></a>
 
 ### 窗口可选能力
 
@@ -116,16 +119,38 @@ trait Platform {
 
 工厂方法：`UiEvent::pointer_down`、`wheel`、`key_down`、`text_input`、`theme_changed`、`file_drop` 等。
 
+<a id="ieventloop"></a>
+
 ### IEventLoop
 
 ```rust
 fn poll_event(&mut self, callback: &dyn Fn(&UiEvent) -> bool) -> bool;
 fn wait_event(...);
 fn wait_timeout(timeout, ...);
-fn waker(&self) -> Option<Arc<dyn IEventLoopWaker>>;
+fn waker(&self) -> EventLoopWaker;
 ```
 
 Callback 返回 `false` → 请求退出循环。Backend 实现 `OsEventSource`；blanket impl 提供 `IEventLoop`。
+
+### EventLoopWaker
+
+跨线程唤醒 blocking `wait_event` / `wait_until`（#117、#132、#133）：
+
+```rust
+#[derive(Clone)]
+pub struct EventLoopWaker { /* Arc<dyn Fn() + Send + Sync> */ }
+
+impl EventLoopWaker {
+    pub fn new<F: Fn() + Send + Sync + 'static>(wake: F) -> Self;
+    pub fn wake(&self);
+}
+```
+
+| 规则 | 说明 |
+|------|------|
+| 注入 | `App::run_gui` 从 `platform.event_loop().waker()` 写入 `AppRuntime` 与 `AppState` |
+| 触发 | `post_to_ui` / Timer 注册 / semantic queue 等成功入队后调用 `wake()` |
+| 后端 | Windows / Linux Wayland / FakePlatform 提供真实 wake；`Default` 为 no-op |
 
 **DeepIdle**（#106）：App 主循环须 blocking `wait_event`。**RegisteredActive** 须 `wait_until(next_deadline)`（#117），**不**用固定 `wait_timeout` 探活。`wait_timeout` 仅作 App opt-in 或测试辅助。详见 [demand-driven · ActiveWorkRegistry](demand-driven.md#activeworkregistry) · [application · 事件轮询策略](application.md#事件轮询策略)。
 
@@ -173,6 +198,8 @@ UiEvent → map_ui_event (application.rs) → SystemEvent
 
 ---
 
+<a id="traits-清单"></a>
+
 ## Traits 清单
 
 ```text
@@ -186,7 +213,7 @@ native/traits/
 └── event/
     ├── types.rs     UiEvent, UiEventType, UiEventPayload
     ├── bus.rs       EventBus
-    └── mod.rs       IEventLoop
+    └── mod.rs       IEventLoop, EventLoopWaker
 ```
 
 ---
@@ -205,9 +232,13 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 |------|------|
 | Windows | ✅ |
 | Linux (Wayland) | ✅ |
-| macOS | 未实现 |
+| macOS | 未实现 — 见 [未实现或后续](#未实现或后续) |
 
----
+### 未实现或后续
+
+macOS backend → [roadmap · 后续工作](../roadmap.md#后续工作)。设计细节见 [工厂与后端](#工厂与后端)。
+
+<a id="测试平台"></a>
 
 ## 测试平台
 
@@ -274,6 +305,87 @@ step_frame(&mut clock);  // → drain_due + post_to_ui drain
 
 ---
 
+<a id="平台贡献指南"></a>
+
+## 平台贡献指南
+
+面向 Win32 / Wayland backend 贡献者。上层硬约束 → [AGENTS.md](../../AGENTS.md#架构硬约束)。
+
+### 目录结构
+
+```text
+native/
+├── factory.rs              ← 唯一对外 #[cfg] 分派（create_platform / create_gpu_context）
+├── traits/                 ← 上层唯一依赖面；新能力先加 trait
+├── shared/                 ← OsEventSource、WindowState、PlatformWindowCore
+├── backends/
+│   ├── windows/            ← Win32：wnd_proc、GDI present、Win32 输入
+│   │   ├── platform.rs     WindowsPlatform + Platform impl
+│   │   ├── wnd_proc.rs     消息泵 → UiEvent
+│   │   ├── gpu/            GDI / 可选 GPU
+│   │   └── …               clipboard, cursor, timer, …
+│   └── linux/
+│       ├── platform.rs     LinuxPlatform + Platform impl
+│       └── wayland/        连接、seat、shm、xdg_toplevel、EGL
+├── test_harness/           FakePlatform（#40）
+└── services/               file_service、notification（公开辅助）
+```
+
+**禁止**：在 `core` / `draw` / `ui` / `app` / `data` 写 `#[cfg(windows/unix)]`。
+
+### 接入 checklist
+
+| # | 步骤 |
+|---|------|
+| 1 | 在 `traits/` 定义或扩展 trait；能力差异用 `Result<()>` + `Errc::NotImplemented` |
+| 2 | 在对应 backend 子模块实现 struct + trait impl |
+| 3 | 在 `*Platform` 聚合 struct 中持有子系统；`Platform` 访问器返回 `&mut dyn Trait` |
+| 4 | 事件：backend 产出 `UiEvent` → `OsEventSource` 队列；实现 `IEventLoop::waker()` |
+| 5 | 呈现：`IPresenter::present` 或 `IGraphicsContext::swap_buffers` 接受 `PresentDamage` |
+| 6 | 若需 factory 分支：仅改 `factory.rs` 与 `backends/` |
+| 7 | FakePlatform 同步 stub + 调用历史（生产路径零分叉） |
+| 8 | 测试：`FakePlatform` 或 CI 目标平台；见 [testing · FakePlatform](testing.md#fakeplatform) |
+
+### Win32 vs Wayland 差异
+
+| 主题 | Windows | Linux Wayland |
+|------|---------|---------------|
+| 窗口句柄 | `HWND` + `wnd_proc` | `xdg_toplevel` + registry globals |
+| 事件泵 | `GetMessage` / 队列 | `wl_display` dispatch |
+| CPU 呈现 | GDI `BitBlt` | SHM buffer + `wl_surface` commit |
+| GPU | GDI 路径为主；factory GPU 当前 Err | EGL + `create_gpu_context` |
+| 可选窗口能力 | 多数原生 API `Ok(())` | 不支持则 `WindowOps` → `NotImplemented`（见 [窗口可选能力](#窗口可选能力)） |
+| IME | Win32 text input | `zwp_text_input_v3` |
+| Wake | 平台特定 wake 注入 `EventLoopWaker` | 同上 |
+
+共享逻辑放 `native/shared/`（如 `WindowState`、`PlatformWindowCore`），避免双份 drift。
+
+### factory.rs 接线
+
+```rust
+// 仅两处允许平台 cfg（AGENTS）
+#[cfg(windows)]
+pub fn create_platform() -> Result<Box<dyn Platform>, Error> { ... }
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn create_platform() -> Result<Box<dyn Platform>, Error> { ... }
+```
+
+新增 OS：增加 `backends/<os>/` + factory 分支；不支持平台返回明确 `PlatformError`。
+
+### 测试建议
+
+```text
+1. FakePlatform::new()
+2. fake.event_source.inject(UiEvent::...)
+3. run_widget_loop / dispatch
+4. 断言 presenter damage、window 状态、handler 副作用
+```
+
+Timer 测试分层 → [testing · 测试时钟分层](testing.md#测试时钟分层)（`FakeTimer` vs `TestClock`）。
+
+---
+
 ## Fail Fast
 
 - 平台错误 → `core::Error` + `Result`
@@ -297,4 +409,4 @@ native/
 └── test_harness/     FakePlatform, FakeEventSource（#40）
 ```
 
-详见 [Main · 源码目录详表](../Main.md#源码目录详表)。
+详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。

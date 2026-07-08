@@ -63,13 +63,23 @@ struct SettingsService {
 
 ---
 
+<a id="app-集成"></a>
+
 ## App 集成
 
-设计（#64）：
+> **启动 vs 运行中**（[#74](../decisions.md#d74) · [#125](../decisions.md#d125)）
+>
+> | 阶段 | 行为 |
+> |------|------|
+> | **启动** | 无 Settings → DefaultTheme；`theme_mode="system"` 或显式配置可读 OS 初始明暗 |
+> | **运行中** | 默认不跟 OS；须 `.follow_system_theme(true)` 才自动跟 OS 切换 |
+
+设计（#64）— opt-in 路径见 [roadmap · 实现进度总览](../roadmap.md#实现进度总览)：
 
 ```text
-App 启动（可选）
-    → settings.load(path)        // 非自动；业务显式调用
+App builder（opt-in）
+    → App::settings(path)        // 配置持久化路径
+    → run() 进入 GUI/CLI 前 load 一次，并注册 SettingsService 到 DI
     → 读 theme_mode / brand_primary
     → 构造 Theme::antd_* / with_brand_primary
     → App::theme(theme)
@@ -92,9 +102,11 @@ App 启动（可选）
 
 ## Key 约定
 
+> **theme_mode 仅影响启动**（#74）；运行中跟 OS 须 App `.follow_system_theme(true)`（#125），与 Settings 写入无关。
+
 | Key | 值示例 | 解析 |
 |-----|--------|------|
-| `theme_mode` | `"light"` / `"dark"` / `"system"` | Theme 构造 / DynTokens |
+| `theme_mode` | `"light"` / `"dark"` / `"system"` | 启动 Theme；`"system"` 读 OS 初始模式（#74）；运行中跟 OS 须 App `.follow_system_theme(true)`（#125） |
 | `brand_primary` | `"#1677ff"` | `with_brand_primary` |
 | 自定义 | 任意 string | 业务自行解析 |
 
@@ -152,4 +164,4 @@ data/
     └── settings.rs      SettingsService（扁平 JSON KV）
 ```
 
-详见 [Main · 源码目录详表](../Main.md#源码目录详表)。
+详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。

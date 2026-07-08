@@ -12,7 +12,7 @@
 | 盒模型 | [盒模型](#盒模型) | #38 #56 |
 | Flex | [Flex 布局](#flex-布局) | #53 #81 |
 | Grid | [Grid 布局](#grid-布局) | #53 #67 #84 |
-| Scroll | [Scroll](#scroll) | #45 #73 #107 |
+| Scroll | [Scroll](#scroll) · [VirtualScroll](#virtual-scroll) | #45 #73 #107 |
 | 布局管线 | [布局管线](#布局管线) | #19 |
 | Active | [Active 判定](#active-判定) | #19 |
 
@@ -156,6 +156,33 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获
 
 > **实现注记**：Wheel / Keyboard、滚动条拖拽与程序化 ScrollView 滚动已写入 `Invalidation::Composite` 并接 `scroll_region` memmove；新增滚动来源须复用该路径。
 
+<a id="virtual-scroll"></a>
+
+### VirtualScroll
+
+**路径**：`ui/foundation/virtual_scroll.rs`（**不经** `prelude`；`use uix::ui::foundation::VirtualScroll`）。
+
+| | ScrollView | VirtualScroll |
+|---|------------|---------------|
+| 层级 | 内置 Widget；View `scroll(...)` DSL | 底层 helper / 实验组件 |
+| 子项 | 全量 mount 于 WidgetTree | 仅 viewport ± overscan 索引经 `renderer` 构建 |
+| 滚动 | Wheel / Keyboard + Composite memmove（#107） | 内部 `scroll_offset` + Wheel（固定 viewport 300px 估算） |
+| 用途 | 通用可滚动容器 | 大列表（Select / Tree / Table 设计目标） |
+
+**API 概要**：
+
+| 方法 | 作用 |
+|------|------|
+| `item_count(n)` · `item_height(h)` · `overscan(n)` | 配置列表几何 |
+| `renderer(\|i\| -> WidgetNode)` | 按索引懒构建可见行 |
+| `scroll_range(viewport_h) -> (start, end)` | 可见索引区间（含 overscan） |
+| `build_visible_children(viewport_h)` | 当前帧应 mount 的节点 |
+| `scroll_ratio(viewport_h)` | 滚动条归一化位置 |
+
+**与 ScrollView 关系**：ScrollView 负责 clip、offset 变换与 Composite 失效；VirtualScroll **尚未**接入 ScrollView 或内置 Table/Tree 热路径，measure/render 为占位，生产列表仍走 ScrollView 全量子树。
+
+> **实现注记（v0.1.0）**：`scroll_range` / `build_visible_children` / Wheel 偏移逻辑已实现；`render` 空实现；未导出至 `prelude`；未与 `layout_viewports` 或 Composite memmove 集成。落地须：固定行高契约、与 ScrollView viewport 对齐、窄 Paint 仅 rebuild 可见索引。进度 → [roadmap · 后续工作](../roadmap.md#后续工作)。
+
 ---
 
 ## 布局管线
@@ -198,7 +225,8 @@ ui/layout/
 ├── flex.rs        FlexLayout
 ├── grid.rs        Grid 轨道与 auto-place
 └── box_model.rs   margin / padding / content rect
+ui/foundation/virtual_scroll.rs   VirtualScroll（大列表 helper，部分实现）
 ui/core/widget/tree_layout.rs   WidgetTree::layout, viewports, overlay rebuild
 ```
 
-详见 [Main · 源码目录详表](../Main.md#源码目录详表)。
+详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。

@@ -18,6 +18,8 @@
 
 ---
 
+<a id="几何"></a>
+
 ## 几何
 
 定义于 `core/geometry.rs`；**全域复用**，禁止在 native/draw/ui 重复定义（AGENTS.md）。
@@ -38,7 +40,16 @@
 
 `scale_factor = display.dpi_scale()`；engine resize 时应用。
 
+### 标识符
+
+| 类型 | 路径 | 用途 |
+|------|------|------|
+| **ComponentId** | `core/component_id.rs` | Generational 组件 ID：`tree_scope + slot + generation`（#35、#101）；跨 ui / app / draw 边界共享 |
+| **WindowId** | `core/window_id.rs` | 进程内窗口稳定 ID；`WindowId::ROOT` 为主窗；`AppHandle` 经 `app` 重导出 |
+
 ---
+
+<a id="damage-区域"></a>
 
 ## Damage 区域
 
@@ -140,6 +151,8 @@ struct Error {
 
 Fatal severity 收集 → crash log + `abort()`。
 
+<a id="与错误-ui-的关系89"></a>
+
 ### 与错误 UI 的关系（#89）
 
 裁决 [#89](../decisions.md#d89)：**默认 log**；可选 **Toast** 向用户展示非致命错误。
@@ -151,6 +164,8 @@ Fatal severity 收集 → crash log + `abort()`。
 
 业务在捕获 `Error` 后自行决定 log-only 或触发 Toast overlay；core 诊断链路不参与 WidgetTree 热路径。
 
+**未实现**：框架级非致命错误 → Toast 自动集成链（#89）待产品化；当前须业务显式触发 Message / Notification 等反馈组件。汇总 → [roadmap · 后续工作](../roadmap.md#后续工作)。
+
 ---
 
 ## core 模块图
@@ -158,6 +173,8 @@ Fatal severity 收集 → crash log + `abort()`。
 ```text
 core/
 ├── geometry.rs       Point, Size, Rect, EdgeInsets
+├── component_id.rs   ComponentId（Generational）
+├── window_id.rs      WindowId
 ├── damage.rs         DirtyRegion, DamageRegion, PresentDamage
 ├── error/            Errc, Error, Result, macros
 ├── log/              Logger, Sink, levels
