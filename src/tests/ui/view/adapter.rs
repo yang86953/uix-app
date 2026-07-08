@@ -4650,11 +4650,24 @@ fn input_on_change_is_registered_as_semantic_handler() {
 fn static_display_widgets_are_picture_eligible() {
     use crate::draw::compositor::PicturePolicy;
     use crate::ui::widgets::{
-        Alert, BarChart, Descriptions, Empty, LineChart, List, PieChart, QRCode,
-        Result as ResultWidget, ResultType, Skeleton, Tag, Timeline, Watermark,
+        Alert, Avatar, Badge, BarChart, Container, Content, Descriptions, Divider, Empty, Footer,
+        Grid, Header, Icon, Layout, LineChart, List, PieChart, QRCode, Result as ResultWidget,
+        ResultType, Sider, Skeleton, Space, Tag, Timeline, Watermark,
     };
 
     let widgets: Vec<Box<dyn WidgetComponent>> = vec![
+        Box::new(Space::new()),
+        Box::new(Container::new()),
+        Box::new(Grid::new()),
+        Box::new(Divider::new()),
+        Box::new(Icon::new("search")),
+        Box::new(Avatar::new("A")),
+        Box::new(Badge::new().count(8)),
+        Box::new(Layout::new()),
+        Box::new(Header::new(48.0)),
+        Box::new(Sider::new(200.0)),
+        Box::new(Content::new()),
+        Box::new(Footer::new(40.0)),
         Box::new(Empty::new()),
         Box::new(Tag::new("stable")),
         Box::new(Descriptions::new()),

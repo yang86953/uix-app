@@ -42,6 +42,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // 计算实际偏移：物理单位优先
         let (off_x, off_y) = if let Some((ux, uy)) = self.offset_unit {
