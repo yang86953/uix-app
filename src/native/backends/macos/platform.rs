@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -13,7 +13,7 @@ use crate::native::shared::{
 use crate::native::traits::display::{DisplayInfo, IDisplay};
 use crate::native::traits::event::{EventBus, EventLoopWaker, UiEvent};
 use crate::native::traits::input::{
-    CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode,
+    CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
 };
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::{IPresenter, PresentDamage};
@@ -50,7 +50,7 @@ impl MacosPlatform {
             display: MacosDisplay,
             file_dialog: MacosFileDialog,
             file_system: MacosFileSystem::new(),
-            keyboard: MacosKeyboard,
+            keyboard: MacosKeyboard::new(),
             text_input: MacosTextInput,
             timer: MacosTimer::new(),
             notification: MacosNotification,
@@ -71,7 +71,7 @@ impl OsEventSource for MacosPlatform {
     fn dispatch_pending(&mut self) -> bool {
         // SAFETY: Cocoa event dispatch stays on the caller's UI thread and uses
         // AppKit-owned singleton objects; no Rust references cross the FFI boundary.
-        unsafe { while cocoa::dispatch_one_event(cocoa::distant_past()) {} }
+        unsafe { while self.dispatch_cocoa_event(cocoa::distant_past()) {} }
         true
     }
 
@@ -79,7 +79,7 @@ impl OsEventSource for MacosPlatform {
         // SAFETY: See dispatch_pending; distantFuture is an autoreleased NSDate
         // owned by Foundation and valid for the duration of this message send.
         unsafe {
-            let _ = cocoa::dispatch_one_event(cocoa::distant_future());
+            let _ = self.dispatch_cocoa_event(cocoa::distant_future());
         }
         true
     }
@@ -89,7 +89,7 @@ impl OsEventSource for MacosPlatform {
         // nextEventMatchingMask and is not retained by Rust.
         unsafe {
             let until = cocoa::date_with_time_interval(timeout.as_secs_f64());
-            let _ = cocoa::dispatch_one_event(until);
+            let _ = self.dispatch_cocoa_event(until);
         }
         true
     }
@@ -100,6 +100,35 @@ impl OsEventSource for MacosPlatform {
 
     fn waker(&self) -> EventLoopWaker {
         EventLoopWaker::default()
+    }
+}
+
+impl MacosPlatform {
+    unsafe fn dispatch_cocoa_event(&mut self, until: cocoa::Id) -> bool {
+        let Some(event) = cocoa::dispatch_one_event(until) else {
+            return false;
+        };
+        for ui_event in event.into_ui_events() {
+            match ui_event.type_ {
+                crate::native::traits::event::UiEventType::KeyDown => {
+                    if let crate::native::traits::event::UiEventPayload::Key(data) =
+                        &ui_event.payload
+                    {
+                        self.keyboard.keys_down.insert(data.key);
+                    }
+                }
+                crate::native::traits::event::UiEventType::KeyUp => {
+                    if let crate::native::traits::event::UiEventPayload::Key(data) =
+                        &ui_event.payload
+                    {
+                        self.keyboard.keys_down.remove(&data.key);
+                    }
+                }
+                _ => {}
+            }
+            self.event_queue.push_back(ui_event);
+        }
+        true
     }
 }
 
@@ -304,6 +333,179 @@ impl IPresenter for MacosPresenter {
     }
 }
 
+#[derive(Debug, Clone)]
+struct MacosAppEvent {
+    kind: isize,
+    location: crate::core::Point,
+    button_number: isize,
+    delta_x: f64,
+    delta_y: f64,
+    key_code: u16,
+    modifiers: usize,
+    text: String,
+}
+
+impl MacosAppEvent {
+    fn into_ui_events(self) -> Vec<UiEvent> {
+        match self.kind {
+            cocoa::NSEVENT_TYPE_LEFT_MOUSE_DOWN => {
+                vec![UiEvent::pointer_down(self.location, MouseButton::Left)]
+            }
+            cocoa::NSEVENT_TYPE_LEFT_MOUSE_UP => {
+                vec![UiEvent::pointer_up(self.location, MouseButton::Left)]
+            }
+            cocoa::NSEVENT_TYPE_RIGHT_MOUSE_DOWN => {
+                vec![UiEvent::pointer_down(self.location, MouseButton::Right)]
+            }
+            cocoa::NSEVENT_TYPE_RIGHT_MOUSE_UP => {
+                vec![UiEvent::pointer_up(self.location, MouseButton::Right)]
+            }
+            cocoa::NSEVENT_TYPE_OTHER_MOUSE_DOWN => {
+                vec![UiEvent::pointer_down(
+                    self.location,
+                    macos_button_to_mouse_button(self.button_number),
+                )]
+            }
+            cocoa::NSEVENT_TYPE_OTHER_MOUSE_UP => {
+                vec![UiEvent::pointer_up(
+                    self.location,
+                    macos_button_to_mouse_button(self.button_number),
+                )]
+            }
+            cocoa::NSEVENT_TYPE_MOUSE_MOVED
+            | cocoa::NSEVENT_TYPE_LEFT_MOUSE_DRAGGED
+            | cocoa::NSEVENT_TYPE_RIGHT_MOUSE_DRAGGED
+            | cocoa::NSEVENT_TYPE_OTHER_MOUSE_DRAGGED => vec![UiEvent::pointer_move(self.location)],
+            cocoa::NSEVENT_TYPE_SCROLL_WHEEL => vec![UiEvent::wheel(
+                self.location,
+                -(self.delta_x as f32) / 120.0,
+                -(self.delta_y as f32) / 120.0,
+                macos_mods_to_key_mod(self.modifiers),
+            )],
+            cocoa::NSEVENT_TYPE_KEY_DOWN => {
+                let mut events = vec![UiEvent::key_down(
+                    macos_keycode_to_keycode(self.key_code),
+                    macos_mods_to_key_mod(self.modifiers),
+                )];
+                if is_text_input_payload(&self.text) {
+                    events.push(UiEvent::text_input(self.text));
+                }
+                events
+            }
+            cocoa::NSEVENT_TYPE_KEY_UP => vec![UiEvent::key_up(
+                macos_keycode_to_keycode(self.key_code),
+                macos_mods_to_key_mod(self.modifiers),
+            )],
+            _ => Vec::new(),
+        }
+    }
+}
+
+fn is_text_input_payload(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|ch| !ch.is_control())
+}
+
+fn macos_button_to_mouse_button(button: isize) -> MouseButton {
+    match button {
+        0 => MouseButton::Left,
+        1 => MouseButton::Right,
+        2 => MouseButton::Middle,
+        3 => MouseButton::X1,
+        4 => MouseButton::X2,
+        _ => MouseButton::None,
+    }
+}
+
+fn macos_mods_to_key_mod(modifiers: usize) -> KeyMod {
+    let mut mods = KeyMod::NONE;
+    if modifiers & cocoa::NSEVENT_MODIFIER_FLAG_SHIFT != 0 {
+        mods |= KeyMod::SHIFT;
+    }
+    if modifiers & cocoa::NSEVENT_MODIFIER_FLAG_CONTROL != 0 {
+        mods |= KeyMod::CTRL;
+    }
+    if modifiers & cocoa::NSEVENT_MODIFIER_FLAG_OPTION != 0 {
+        mods |= KeyMod::ALT;
+    }
+    if modifiers & cocoa::NSEVENT_MODIFIER_FLAG_COMMAND != 0 {
+        mods |= KeyMod::SUPER;
+    }
+    mods
+}
+
+fn macos_keycode_to_keycode(code: u16) -> KeyCode {
+    match code {
+        0 => KeyCode::A,
+        1 => KeyCode::S,
+        2 => KeyCode::D,
+        3 => KeyCode::F,
+        4 => KeyCode::H,
+        5 => KeyCode::G,
+        6 => KeyCode::Z,
+        7 => KeyCode::X,
+        8 => KeyCode::C,
+        9 => KeyCode::V,
+        11 => KeyCode::B,
+        12 => KeyCode::Q,
+        13 => KeyCode::W,
+        14 => KeyCode::E,
+        15 => KeyCode::R,
+        16 => KeyCode::Y,
+        17 => KeyCode::T,
+        18 => KeyCode::Num1,
+        19 => KeyCode::Num2,
+        20 => KeyCode::Num3,
+        21 => KeyCode::Num4,
+        22 => KeyCode::Num6,
+        23 => KeyCode::Num5,
+        25 => KeyCode::Num9,
+        26 => KeyCode::Num7,
+        28 => KeyCode::Num8,
+        29 => KeyCode::Num0,
+        31 => KeyCode::O,
+        32 => KeyCode::U,
+        34 => KeyCode::I,
+        35 => KeyCode::P,
+        36 => KeyCode::Enter,
+        37 => KeyCode::L,
+        38 => KeyCode::J,
+        40 => KeyCode::K,
+        45 => KeyCode::N,
+        46 => KeyCode::M,
+        48 => KeyCode::Tab,
+        49 => KeyCode::Space,
+        51 => KeyCode::Backspace,
+        53 => KeyCode::Escape,
+        55 => KeyCode::Super,
+        56 | 60 => KeyCode::Shift,
+        58 | 61 => KeyCode::Alt,
+        59 | 62 => KeyCode::Ctrl,
+        114 => KeyCode::Insert,
+        115 => KeyCode::Home,
+        116 => KeyCode::PageUp,
+        117 => KeyCode::Delete,
+        119 => KeyCode::End,
+        121 => KeyCode::PageDown,
+        122 => KeyCode::F1,
+        120 => KeyCode::F2,
+        99 => KeyCode::F3,
+        118 => KeyCode::F4,
+        96 => KeyCode::F5,
+        97 => KeyCode::F6,
+        98 => KeyCode::F7,
+        100 => KeyCode::F8,
+        101 => KeyCode::F9,
+        109 => KeyCode::F10,
+        103 => KeyCode::F11,
+        111 => KeyCode::F12,
+        123 => KeyCode::Left,
+        124 => KeyCode::Right,
+        125 => KeyCode::Down,
+        126 => KeyCode::Up,
+        _ => KeyCode::Unknown,
+    }
+}
+
 #[derive(Default)]
 struct MacosClipboard;
 
@@ -432,11 +634,21 @@ impl SpecialDirProvider for MacosSpecialDirs {
     }
 }
 
-struct MacosKeyboard;
+struct MacosKeyboard {
+    keys_down: HashSet<KeyCode>,
+}
+
+impl MacosKeyboard {
+    fn new() -> Self {
+        Self {
+            keys_down: HashSet::new(),
+        }
+    }
+}
 
 impl IKeyboard for MacosKeyboard {
-    fn is_down(&self, _key: KeyCode) -> bool {
-        false
+    fn is_down(&self, key: KeyCode) -> bool {
+        self.keys_down.contains(&key)
     }
 
     fn idle_ms(&self) -> u32 {
@@ -625,6 +837,23 @@ mod cocoa {
     const NSEVENT_MASK_ANY: usize = usize::MAX;
     const KCGIMAGE_ALPHA_PREMULTIPLIED_FIRST: u32 = 2;
     const KCGIMAGE_BYTE_ORDER_32_LITTLE: u32 = 2 << 12;
+    pub const NSEVENT_TYPE_LEFT_MOUSE_DOWN: isize = 1;
+    pub const NSEVENT_TYPE_LEFT_MOUSE_UP: isize = 2;
+    pub const NSEVENT_TYPE_RIGHT_MOUSE_DOWN: isize = 3;
+    pub const NSEVENT_TYPE_RIGHT_MOUSE_UP: isize = 4;
+    pub const NSEVENT_TYPE_MOUSE_MOVED: isize = 5;
+    pub const NSEVENT_TYPE_LEFT_MOUSE_DRAGGED: isize = 6;
+    pub const NSEVENT_TYPE_RIGHT_MOUSE_DRAGGED: isize = 7;
+    pub const NSEVENT_TYPE_KEY_DOWN: isize = 10;
+    pub const NSEVENT_TYPE_KEY_UP: isize = 11;
+    pub const NSEVENT_TYPE_SCROLL_WHEEL: isize = 22;
+    pub const NSEVENT_TYPE_OTHER_MOUSE_DOWN: isize = 25;
+    pub const NSEVENT_TYPE_OTHER_MOUSE_UP: isize = 26;
+    pub const NSEVENT_TYPE_OTHER_MOUSE_DRAGGED: isize = 27;
+    pub const NSEVENT_MODIFIER_FLAG_SHIFT: usize = 1 << 17;
+    pub const NSEVENT_MODIFIER_FLAG_CONTROL: usize = 1 << 18;
+    pub const NSEVENT_MODIFIER_FLAG_OPTION: usize = 1 << 19;
+    pub const NSEVENT_MODIFIER_FLAG_COMMAND: usize = 1 << 20;
 
     static INIT_APP: Once = Once::new();
     static mut RUN_LOOP_MODE: Id = std::ptr::null_mut();
@@ -838,7 +1067,7 @@ mod cocoa {
         CFRelease(data);
     }
 
-    pub unsafe fn dispatch_one_event(until: Id) -> bool {
+    pub unsafe fn dispatch_one_event(until: Id) -> Option<MacosAppEvent> {
         let event = msg_id_usize_id_id_bool(
             shared_application(),
             "nextEventMatchingMask:untilDate:inMode:dequeue:",
@@ -848,11 +1077,12 @@ mod cocoa {
             YES,
         );
         if event.is_null() {
-            return false;
+            return None;
         }
+        let app_event = macos_app_event_from_ns_event(event);
         msg_void_id(shared_application(), "sendEvent:", event);
         msg_void(shared_application(), "updateWindows");
-        true
+        Some(app_event)
     }
 
     pub unsafe fn distant_past() -> Id {
@@ -895,6 +1125,72 @@ mod cocoa {
 
     unsafe fn pasteboard_string_type() -> Id {
         ns_string("public.utf8-plain-text")
+    }
+
+    unsafe fn macos_app_event_from_ns_event(event: Id) -> MacosAppEvent {
+        let kind = msg_isize(event, "type");
+        MacosAppEvent {
+            kind,
+            location: event_location(event),
+            button_number: event_button_number(event, kind),
+            delta_x: event_f64(event, kind, "scrollingDeltaX"),
+            delta_y: event_f64(event, kind, "scrollingDeltaY"),
+            key_code: event_key_code(event, kind),
+            modifiers: msg_usize(event, "modifierFlags"),
+            text: event_text(event, kind),
+        }
+    }
+
+    unsafe fn event_location(event: Id) -> crate::core::Point {
+        let location = msg_point(event, "locationInWindow");
+        let mut x = location.x as f32;
+        let mut y = location.y as f32;
+        let window = msg_id(event, "window");
+        if !window.is_null() {
+            let content_view = msg_id(window, "contentView");
+            if !content_view.is_null() {
+                let frame = msg_rect(content_view, "frame");
+                x = x.clamp(0.0, frame.size.width as f32);
+                y = (frame.size.height as f32 - y).clamp(0.0, frame.size.height as f32);
+            }
+        }
+        crate::core::Point::new(x, y)
+    }
+
+    unsafe fn event_button_number(event: Id, kind: isize) -> isize {
+        match kind {
+            NSEVENT_TYPE_LEFT_MOUSE_DOWN
+            | NSEVENT_TYPE_LEFT_MOUSE_UP
+            | NSEVENT_TYPE_RIGHT_MOUSE_DOWN
+            | NSEVENT_TYPE_RIGHT_MOUSE_UP
+            | NSEVENT_TYPE_OTHER_MOUSE_DOWN
+            | NSEVENT_TYPE_OTHER_MOUSE_UP
+            | NSEVENT_TYPE_OTHER_MOUSE_DRAGGED => msg_isize(event, "buttonNumber"),
+            _ => 0,
+        }
+    }
+
+    unsafe fn event_key_code(event: Id, kind: isize) -> u16 {
+        match kind {
+            NSEVENT_TYPE_KEY_DOWN | NSEVENT_TYPE_KEY_UP => msg_u16(event, "keyCode"),
+            _ => 0,
+        }
+    }
+
+    unsafe fn event_text(event: Id, kind: isize) -> String {
+        match kind {
+            NSEVENT_TYPE_KEY_DOWN => {
+                ns_string_to_string(msg_id(event, "characters")).unwrap_or_default()
+            }
+            _ => String::new(),
+        }
+    }
+
+    unsafe fn event_f64(event: Id, kind: isize, selector: &str) -> f64 {
+        match kind {
+            NSEVENT_TYPE_SCROLL_WHEEL => msg_f64(event, selector),
+            _ => 0.0,
+        }
     }
 
     unsafe fn run_loop_mode() -> Id {
@@ -965,6 +1261,12 @@ mod cocoa {
         f(receiver, sel(selector), value)
     }
 
+    unsafe fn msg_f64(receiver: Id, selector: &str) -> f64 {
+        type FnType = unsafe extern "C" fn(Id, Sel) -> f64;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector))
+    }
+
     unsafe fn msg_id_rect_usize_isize_bool(
         receiver: Id,
         selector: &str,
@@ -1017,6 +1319,30 @@ mod cocoa {
 
     unsafe fn msg_isize(receiver: Id, selector: &str) -> isize {
         type FnType = unsafe extern "C" fn(Id, Sel) -> isize;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector))
+    }
+
+    unsafe fn msg_usize(receiver: Id, selector: &str) -> usize {
+        type FnType = unsafe extern "C" fn(Id, Sel) -> usize;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector))
+    }
+
+    unsafe fn msg_u16(receiver: Id, selector: &str) -> u16 {
+        type FnType = unsafe extern "C" fn(Id, Sel) -> u16;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector))
+    }
+
+    unsafe fn msg_point(receiver: Id, selector: &str) -> CGPoint {
+        type FnType = unsafe extern "C" fn(Id, Sel) -> CGPoint;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector))
+    }
+
+    unsafe fn msg_rect(receiver: Id, selector: &str) -> CGRect {
+        type FnType = unsafe extern "C" fn(Id, Sel) -> CGRect;
         let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(receiver, sel(selector))
     }

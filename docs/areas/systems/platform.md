@@ -265,7 +265,7 @@ create_gpu_context(surface, w, h)
 
 ### 未实现或后续
 
-macOS 完整输入/事件映射、D3D12、Metal → [implementation · P6 图形后端](../implementation.md#p6-图形后端) · [后续工作](../implementation.md#后续工作)。
+macOS 窗口 close/resize delegate、完整 IME、D3D12、Metal → [implementation · P6 图形后端](../implementation.md#p6-图形后端) · [后续工作](../implementation.md#后续工作)。
 
 <a id="测试平台"></a>
 
