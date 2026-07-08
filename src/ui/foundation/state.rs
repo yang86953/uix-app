@@ -551,6 +551,7 @@ impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for State<T> {
 /// assert_eq!(sum.get(), 12); // 自动重新计算
 /// ```
 pub struct Computed<T> {
+    slot_id: StateSlotId,
     compute_fn: Box<dyn Fn() -> T + Send + Sync>,
     cached: Arc<RwLock<Option<T>>>,
     /// 依赖的 generation 检查器列表：(检查器, 上次计算时的 generation)
@@ -574,6 +575,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
             .collect();
 
         Self {
+            slot_id: StateSlotId(NEXT_STATE_SLOT.fetch_add(1, Ordering::Relaxed)),
             compute_fn: Box::new(f),
             cached: Arc::new(RwLock::new(Some(initial))),
             deps: Arc::new(RwLock::new(dep_pairs)),
@@ -589,6 +591,18 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
         rect: Option<Rect>,
     ) {
         bind_paint_site(&self.paint_sites, component_id, queue, rect);
+    }
+
+    pub fn slot_id(&self) -> StateSlotId {
+        self.slot_id
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn capture_fingerprint(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        TypeId::of::<T>().hash(&mut hasher);
+        self.slot_id.hash(&mut hasher);
+        hasher.finish()
     }
 
     pub fn get(&self) -> T {
@@ -637,6 +651,7 @@ impl<T: Clone + Send + Sync + 'static> Computed<T> {
 impl<T: fmt::Debug + Clone + Send + Sync + 'static> fmt::Debug for Computed<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Computed")
+            .field("slot_id", &self.slot_id())
             .field("value", &self.get())
             .finish()
     }
