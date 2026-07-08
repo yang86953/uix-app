@@ -18,6 +18,10 @@ pub fn natural_measure_constraints() -> Constraints {
     Constraints::loose(Size::infinite())
 }
 
+fn frame_measure_constraints(frame: Rect) -> Option<Constraints> {
+    (frame.w > 0.0 && frame.h > 0.0).then(|| Constraints::loose(Size::new(frame.w, frame.h)))
+}
+
 // ── 统一盒模型 ────────────────────────────────────────────────────
 
 /// 统一盒模型 — 所有容器共享的 margin/border/padding 计算。
@@ -567,7 +571,23 @@ impl LayoutEngine for GridLayout {
 /// 这是自然尺寸 fallback；生产布局路径应优先使用
 /// [`child_from_tree_with_constraints`] 传入父级 content rect 约束。
 pub fn child_from_tree(component_id: ComponentId, tree: &WidgetTree) -> LayoutChild {
-    child_from_tree_with_constraints(component_id, tree, natural_measure_constraints())
+    child_from_tree_with_constraints(
+        component_id,
+        tree,
+        child_fallback_constraints(component_id, tree),
+    )
+}
+
+fn child_fallback_constraints(component_id: ComponentId, tree: &WidgetTree) -> Constraints {
+    let Some(node) = tree.get(component_id) else {
+        return natural_measure_constraints();
+    };
+
+    node.parent()
+        .and_then(|parent| tree.get(parent))
+        .and_then(|parent| frame_measure_constraints(parent.frame()))
+        .or_else(|| frame_measure_constraints(node.frame()))
+        .unwrap_or_else(natural_measure_constraints)
 }
 
 /// 从 WidgetTree 节点构建统一的 LayoutChild，并使用父级内容框约束测量。

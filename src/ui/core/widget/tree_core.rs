@@ -64,6 +64,8 @@ impl Default for WidgetTree {
 }
 
 impl WidgetTree {
+    pub(crate) const ROOT_BOOTSTRAP_SIZE: Size = Size { w: 800.0, h: 600.0 };
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -296,7 +298,7 @@ impl WidgetTree {
     }
 
     pub(crate) fn root_bootstrap_constraints() -> Constraints {
-        Constraints::loose(Size::infinite())
+        Constraints::loose(Self::ROOT_BOOTSTRAP_SIZE)
     }
 
     pub fn set_root(&mut self, widget: Box<dyn WidgetComponent>) -> ComponentId {

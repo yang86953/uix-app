@@ -52,7 +52,7 @@ fn measure(&self, constraints: Constraints) -> Size;
 | max | 最大尺寸（overflow 前 clamp） |
 | definite | 主轴有确定长度（如 stretch 填充） |
 
-> **实现注记**：Container / Grid / Card / Form 已按父级 content rect 或当前 frame 构造 `Constraints::loose(...)` 测量子项；Space 按 flex 方向约束交叉轴、允许主轴自然溢出；ScrollView 按方向处理，滚动轴允许内容自然溢出，非滚动轴受 viewport 约束。
+> **实现注记**：Container / Grid / Card / Form 已按父级 content rect 或当前 frame 构造 `Constraints::loose(...)` 测量子项；Space 按 flex 方向约束交叉轴、允许主轴自然溢出；ScrollView 按方向处理，滚动轴允许内容自然溢出，非滚动轴受 viewport 约束。`WidgetTree` root/bootstrap 使用有限 `ROOT_BOOTSTRAP_SIZE` 作为临时 loose 约束，窗口或 session 分配真实 viewport 后会覆盖该 frame；`child_from_tree` 仅作 fallback，默认优先用父节点有效 frame 约束，生产布局仍应调用 `child_from_tree_with_constraints(...)` 传入父级 content rect。
 
 ### LayoutChild
 
