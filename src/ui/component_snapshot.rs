@@ -48,6 +48,14 @@ impl ComponentConfigSnapshot {
     pub fn accessibility(&self) -> AccessibilitySnapshot {
         self.fields.accessibility()
     }
+
+    pub fn aria_role(&self) -> Option<&'static str> {
+        self.accessibility().aria_role()
+    }
+
+    pub fn aria_attributes(&self) -> Vec<AriaAttribute> {
+        self.accessibility().aria_attributes()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +84,34 @@ pub enum AccessibilityRole {
     Tree,
 }
 
+impl AccessibilityRole {
+    pub fn aria_role(self) -> Option<&'static str> {
+        match self {
+            Self::Generic | Self::Text => None,
+            Self::Alert => Some("alert"),
+            Self::Button => Some("button"),
+            Self::Checkbox => Some("checkbox"),
+            Self::Combobox => Some("combobox"),
+            Self::Dialog => Some("dialog"),
+            Self::Group => Some("group"),
+            Self::Image => Some("img"),
+            Self::List => Some("list"),
+            Self::Menu => Some("menu"),
+            Self::Navigation => Some("navigation"),
+            Self::ProgressBar => Some("progressbar"),
+            Self::RadioGroup => Some("radiogroup"),
+            Self::Slider => Some("slider"),
+            Self::SpinButton => Some("spinbutton"),
+            Self::Status => Some("status"),
+            Self::Switch => Some("switch"),
+            Self::Table => Some("table"),
+            Self::TabList => Some("tablist"),
+            Self::TextBox => Some("textbox"),
+            Self::Tree => Some("tree"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AccessibilityState {
     pub disabled: bool,
@@ -94,6 +130,21 @@ impl AccessibilityState {
         Self {
             disabled,
             ..Self::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AriaAttribute {
+    pub name: &'static str,
+    pub value: String,
+}
+
+impl AriaAttribute {
+    pub fn new(name: &'static str, value: impl Into<String>) -> Self {
+        Self {
+            name,
+            value: value.into(),
         }
     }
 }
@@ -125,6 +176,44 @@ impl AccessibilitySnapshot {
     pub fn with_state(mut self, state: AccessibilityState) -> Self {
         self.state = state;
         self
+    }
+
+    pub fn aria_role(&self) -> Option<&'static str> {
+        self.role.aria_role()
+    }
+
+    pub fn aria_attributes(&self) -> Vec<AriaAttribute> {
+        let mut attributes = Vec::new();
+
+        if let Some(name) = self.name.as_ref() {
+            attributes.push(AriaAttribute::new("aria-label", name.clone()));
+        }
+        if self.state.disabled {
+            attributes.push(AriaAttribute::new("aria-disabled", "true"));
+        }
+        if let Some(checked) = self.state.checked {
+            attributes.push(AriaAttribute::new("aria-checked", checked.to_string()));
+        }
+        if let Some(value) = self.state.value_now {
+            attributes.push(AriaAttribute::new("aria-valuenow", value.to_string()));
+        }
+        if let Some(value) = self.state.value_min {
+            attributes.push(AriaAttribute::new("aria-valuemin", value.to_string()));
+        }
+        if let Some(value) = self.state.value_max {
+            attributes.push(AriaAttribute::new("aria-valuemax", value.to_string()));
+        }
+        if let Some(value) = self.state.value_text.as_ref() {
+            attributes.push(AriaAttribute::new("aria-valuetext", value.clone()));
+        }
+        if self.state.multiline {
+            attributes.push(AriaAttribute::new("aria-multiline", "true"));
+        }
+        if self.state.required {
+            attributes.push(AriaAttribute::new("aria-required", "true"));
+        }
+
+        attributes
     }
 }
 

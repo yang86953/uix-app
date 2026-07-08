@@ -135,7 +135,7 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | `semantic_handler!` | 显式列出 `state` / `computed` / `window` capture 并生成稳定 fingerprint |
 | `AppState` · `ComponentHandle` | 跨窗共享 registry + lookup handle（[#145](../../decisions.md#d145)） |
 | `ComponentConfigSnapshot` · `SnapshotSource` · `SnapshotFields` · `SnapshotValue` 等 | 配置快照提取 |
-| `AccessibilityRole` · `AccessibilityState` · `AccessibilitySnapshot` | 无障碍 v2 基础元数据：由配置快照派生 role/name/state |
+| `AccessibilityRole` · `AccessibilityState` · `AccessibilitySnapshot` · `AriaAttribute` | 无障碍 v2 基础元数据：由配置快照派生 role/name/state，并导出静态 ARIA role/attribute |
 | `PaintContext` | 组件 render 上下文 |
 | `IntoWidgetNode` · `WidgetChildren` | 树节点转换 |
 

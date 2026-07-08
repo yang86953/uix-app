@@ -5,7 +5,7 @@ use std::sync::{Mutex, Weak as SyncWeak};
 use crate::core::ComponentId;
 use crate::ui::app_state::AppStateInner;
 use crate::ui::component_snapshot::{
-    AccessibilitySnapshot, ComponentConfigSnapshot, SnapshotFields,
+    AccessibilitySnapshot, AriaAttribute, ComponentConfigSnapshot, SnapshotFields,
 };
 use crate::ui::event::SemanticEvent;
 use crate::ui::widget::{EventResult, WidgetTree};
@@ -91,6 +91,15 @@ impl ComponentHandle {
 
     pub fn accessibility(&self) -> Option<AccessibilitySnapshot> {
         self.snapshot().map(|snapshot| snapshot.accessibility())
+    }
+
+    pub fn aria_role(&self) -> Option<&'static str> {
+        self.accessibility()?.aria_role()
+    }
+
+    pub fn aria_attributes(&self) -> Option<Vec<AriaAttribute>> {
+        self.accessibility()
+            .map(|accessibility| accessibility.aria_attributes())
     }
 
     pub fn text(&self) -> Option<String> {
