@@ -50,7 +50,7 @@ P6 图形后端（规划）    ← #162，详见下文
 | 阶段 | 目标 | 关键决策 | 验收（已达成） |
 |------|------|----------|----------------|
 | **P0** | DeepIdle 真休眠 | #106 #115 #127 #105 | 无事件无 present；DeepIdle 不 `tick_effects` |
-| **P1** | 热更新不上全量 build | #118 #153 #123 #143 | State 批次单次 reconcile；handler 智能重绑（不含宏层自动 fingerprint；普通闭包保守重绑，见 [后续工作](#后续工作) / #159/#160） |
+| **P1** | 热更新不上全量 build | #118 #153 #123 #143 | State 批次单次 reconcile；handler 智能重绑；显式 capture API 与 `semantic_handler!` 宏可生成 fingerprint，普通闭包仍保守重绑（#159/#160） |
 | **P2** | App 公开定时/投递 | #132–#137 #140 #139 | Timer cancel 回 DeepIdle；TestClock 测 drain / wait_until |
 | **P3** | L2 最小脏区 | #122 #129 #107 #109 | 滚动 Composite；Picture 自适应；PointerMove 窄路径 |
 | **P4** | 多窗编排 | #116 #148 #149 #150 | 副窗独立 tree/session；State fan-out 仅 wake 有关窗 |
@@ -118,7 +118,7 @@ P6 图形后端（规划）    ← #162，详见下文
 | View / Reconciler | keyed diff；同类型 patch；`view_factory` + `pending_root` | [view-reactive](systems/view-reactive.md) |
 | 响应式 | `State` / `Computed` / `Effect`；窄 paint；跨窗 paint site fan-out | [view-reactive · 响应式](systems/view-reactive.md#响应式) |
 | StateSlotId | `State::new` 单调 slot；capture 指纹 `TypeId + slot_id` | [view-reactive · StateSlotId](systems/view-reactive.md#stateslotid) · [#143](../decisions.md#d143) |
-| Handler 智能重绑 | 显式 capture fingerprint → generation；无指纹保守重绑（#160） | [view-reactive · Handler](systems/view-reactive.md#handler-变更判定-135) · [event](systems/event.md) |
+| Handler 智能重绑 | 显式 capture fingerprint / `semantic_handler!` → generation；无指纹保守重绑（#160） | [view-reactive · Handler](systems/view-reactive.md#handler-变更判定-135) · [event](systems/event.md) |
 | ComponentHandle | mount 自动 snapshot；getter / 窄 invalidate / emit | [component · ComponentHandle](systems/component.md#componenthandle6172145) |
 | component! | 推荐 authoring；`SnapshotSource` 自动提取；`#[snapshot(skip)]` | [component · Authoring](systems/component.md#authoring) |
 | Manager 横切 | Focus / Interaction / Drag per-tree | [component · Manager](systems/component.md#manager-横切) |
@@ -166,7 +166,6 @@ P6 图形后端（规划）    ← #162，详见下文
 | 多图形 API（P6） | D3D12 / Metal；更完整 native GPU renderer | [P6 图形后端](#p6-图形后端) · [#162](../decisions.md#d162) |
 | 无障碍 v2 | #99：ARIA / 屏幕阅读器 / 键盘导航扩展；v1 不做 | [component](systems/component.md#内置-widget-目录) |
 | macOS 平台 | `create_platform()` 无 macOS backend（含 Metal） | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
-| Handler 宏层 fingerprint | #159 / #160：语法层 fingerprint 待设计；普通闭包保守重绑 | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) |
 
 ---
 

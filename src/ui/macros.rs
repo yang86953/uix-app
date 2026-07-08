@@ -779,3 +779,44 @@ macro_rules! __component_grouped_impl {
         }
     };
 }
+
+/// Build a semantic handler with an explicit syntax-level capture list.
+///
+/// Listed captures use the same stable fingerprint path as
+/// `HandlerRegistration::with_*_capture`. Ordinary Rust closures still have no
+/// stable identity unless they use this macro or an explicit capture API.
+#[macro_export]
+macro_rules! semantic_handler {
+    (
+        $kind:expr,
+        $(state [$($state:ident),* $(,)?],)?
+        $(computed [$($computed:ident),* $(,)?],)?
+        $(window [$($window:ident),* $(,)?],)?
+        |$event:ident| $body:block
+    ) => {{
+        $(let __uix_state_captures = ($($state.clone(),)*);)?
+        $(let __uix_computed_captures = ($($computed.clone(),)*);)?
+        $(let __uix_window_captures = ($($window.clone(),)*);)?
+        let __uix_registration = $crate::ui::HandlerRegistration::new(
+            $kind,
+            Box::new(move |$event| {
+                $(#[allow(unused_variables)] let ($($state,)*) = __uix_state_captures.clone();)?
+                $(#[allow(unused_variables)] let ($($computed,)*) = __uix_computed_captures.clone();)?
+                $(#[allow(unused_variables)] let ($($window,)*) = __uix_window_captures.clone();)?
+                $body
+            }),
+        );
+        #[allow(unused_mut)]
+        let mut __uix_registration = __uix_registration;
+        $($(
+            __uix_registration = __uix_registration.with_state_capture(&$state);
+        )*)?
+        $($(
+            __uix_registration = __uix_registration.with_computed_capture(&$computed);
+        )*)?
+        $($(
+            __uix_registration = __uix_registration.with_window_capture($window);
+        )*)?
+        __uix_registration
+    }};
+}

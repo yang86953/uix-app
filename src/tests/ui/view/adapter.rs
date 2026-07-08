@@ -4464,6 +4464,46 @@ fn view_node_state_capture_preserves_handler_when_fingerprint_is_unchanged() {
 }
 
 #[test]
+fn semantic_handler_macro_preserves_handler_when_fingerprint_is_unchanged() {
+    use crate::ui::event::{SemanticEvent, SemanticKind};
+    use crate::ui::state::State;
+    use crate::ui::view::label;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let state = State::new(1);
+    let first_hits = Rc::new(Cell::new(0));
+    let second_hits = Rc::new(Cell::new(0));
+    let first_for_handler = first_hits.clone();
+    let second_for_handler = second_hits.clone();
+    let mut first = label("First").build();
+    first.handlers = vec![crate::semantic_handler!(
+        SemanticKind::Change,
+        state[state],
+        |_event| {
+            first_for_handler.set(first_for_handler.get() + 1);
+        }
+    )];
+    let mut tree = ViewAdapter::build_nodes(first);
+    let root_id = tree.root_id().unwrap();
+
+    let mut second = label("Second").build();
+    second.handlers = vec![crate::semantic_handler!(
+        SemanticKind::Change,
+        state[state],
+        |_event| {
+            second_for_handler.set(second_for_handler.get() + 1);
+        }
+    )];
+    ViewAdapter::reconcile_nodes(&mut tree, second);
+
+    let _ = tree.dispatch_semantic(SemanticEvent::change(root_id, "next"));
+
+    assert_eq!(first_hits.get(), 1);
+    assert_eq!(second_hits.get(), 0);
+}
+
+#[test]
 fn view_node_state_capture_reregisters_handler_when_fingerprint_changes() {
     use crate::ui::event::{SemanticEvent, SemanticKind};
     use crate::ui::state::State;

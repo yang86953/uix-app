@@ -28,6 +28,7 @@ pub use crate::draw::{colors, Color, FontService, ImageService, NullEngine, Soft
 
 pub use crate::component;
 pub use crate::impl_widget_component;
+pub use crate::semantic_handler;
 pub use crate::tree;
 pub use crate::ui::layout::{
     AlignItems, BoxModel, FlexDirection, FlexLayout, GridLayout, GridTrack, JustifyContent,
@@ -114,6 +115,7 @@ mod tests {
         let _registration = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
             .with_state_capture(&state);
         let _node = label("captured").on_semantic_capture(SemanticKind::Click, &state, |_| {});
+        let _macro_registration = semantic_handler!(SemanticKind::Click, state[state], |_event| {});
 
         fn assert_exported<T: ?Sized>() {}
         fn assert_style_ext<T: StyleExt>() {}
