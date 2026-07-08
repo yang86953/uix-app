@@ -1,72 +1,107 @@
-//! 组件库页面 — page_nav。
+//! 组件库页面 — page_nav（导航 + Overlay Dropdown）。
 
 use uix::prelude::*;
 
 use crate::common::page::{demo_row, PageBuilder, INNER_W};
+use crate::common::showcase::labeled_row;
+use crate::demos::context::DemoCtx;
 
-pub fn page_nav(tk: &DesignTokens) -> ViewNode {
+pub fn page_nav(ctx: &DemoCtx<'_>) -> ViewNode {
+    let tk = ctx.tk;
+
+    let nav_items = Navigation::new("Demo Nav")
+        .item("首页", "home")
+        .item("组件", "grid")
+        .item("设置", "settings")
+        .active_index(1)
+        .width(180.0)
+        .height(160.0)
+        .show_version(false)
+        .build(tk);
+
+    let group_items = NavGroup::new()
+        .item("概览", "layout-dashboard")
+        .item("详情", "file-text")
+        .item("统计", "bar-chart")
+        .active_index(0)
+        .build();
+
     PageBuilder::new(tk)
         .gap()
-        .section("标签页 Tabs — 顶部")
-        .push(tree! { Tabs::new().tab("用户", "u").tab("设置", "s").tab("分析", "a")
-            .active(0).position(TabPosition::Top).size(INNER_W, 180.0) => [
-            tree! { Container::new().size(INNER_W, 140.0) => [
-                Label::new("用户面板 — 管理团队成员").color(tk.color_text).font_size(14.0),
-                Label::new("邀请、移除或更改角色。").color(tk.color_text_tertiary).font_size(12.0),
-            ]},
-            tree! { Container::new().size(INNER_W, 140.0) => [
-                Label::new("设置面板 — 应用配置").color(tk.color_text).font_size(14.0),
-                Label::new("主题、通知、隐私设置。").color(tk.color_text_tertiary).font_size(12.0),
-            ]},
-            tree! { Container::new().size(INNER_W, 140.0) => [
-                Label::new("分析面板 — 使用指标").color(tk.color_text).font_size(14.0),
-                Label::new("图表、报告、导出选项。").color(tk.color_text_tertiary).font_size(12.0),
-            ]},
-        ]})
-        .section("横向菜单 Menu")
-        .push(tree! { Container::new().size(INNER_W, 40.0).dir(FlexDirection::Column)
-            .pad(EdgeInsets::uniform(4.0)) => [
+        .section("Navigation — builder/compositor")
+        .push(embed(nav_items))
+        .section("NavGroup + NavItem — 共享选中态")
+        .push({
+            let mut sp = Space::new()
+                .size(SpaceSize::Small)
+                .width(180.0)
+                .height(108.0)
+                .direction(FlexDirection::Column);
+            for item in group_items {
+                sp = sp.child(item);
+            }
+            sp
+        })
+        .section("Menu — Horizontal / Vertical")
+        .push(tree! { Container::new().size(INNER_W, 40.0) => [
             Menu::new()
-                .add_item(MenuItem { key: "home".into(), label: "首页".into(), icon: "".into(), disabled: false })
-                .add_item(MenuItem { key: "docs".into(), label: "文档".into(), icon: "".into(), disabled: false })
-                .add_item(MenuItem { key: "about".into(), label: "关于".into(), icon: "".into(), disabled: false })
+                .add_item(MenuItem { key: "home".into(), label: "首页".into(), icon: "home".into(), disabled: false })
+                .add_item(MenuItem { key: "docs".into(), label: "文档".into(), icon: "file-text".into(), disabled: false })
+                .add_item(MenuItem { key: "about".into(), label: "关于".into(), icon: "info".into(), disabled: false })
                 .mode(MenuMode::Horizontal).active_key("home").into_node(),
         ]})
-        .section("下拉菜单 Dropdown")
+        .push(tree! { Container::new().size(160.0, 120.0) => [
+            Menu::new()
+                .add_item(MenuItem { key: "a".into(), label: "菜单 A".into(), icon: "".into(), disabled: false })
+                .add_item(MenuItem { key: "b".into(), label: "菜单 B".into(), icon: "".into(), disabled: false })
+                .mode(MenuMode::Vertical).active_key("a").into_node(),
+        ]})
+        .section("Tabs — Top / Left")
+        .push(tree! { Tabs::new().tab("用户", "u").tab("设置", "s").tab("分析", "a")
+            .active(0).position(TabPosition::Top).size(INNER_W, 160.0) => [
+            tree! { Container::new().size(INNER_W, 120.0) => [
+                Label::new("用户面板").color(tk.color_text).font_size(14.0),
+            ]},
+            tree! { Container::new().size(INNER_W, 120.0) => [
+                Label::new("设置面板").color(tk.color_text).font_size(14.0),
+            ]},
+            tree! { Container::new().size(INNER_W, 120.0) => [
+                Label::new("分析面板").color(tk.color_text).font_size(14.0),
+            ]},
+        ]})
+        .section("Dropdown — Overlay ✓")
+        .push(labeled_row(
+            tk,
+            36.0,
+            "Dropdown",
+            Dropdown::new("Actions").items(vec!["编辑", "复制", "删除", "导出"]),
+        ))
+        .section("Breadcrumb")
         .push(
-            demo_row(36.0)
-                .child(Dropdown::new("Actions").items(vec!["编辑", "复制", "删除", "导出"])),
-        )
-        .section("面包屑 Breadcrumb")
-        .push(
-            demo_row(28.0)
-                .child(Breadcrumb::new()
+            demo_row(28.0).child(
+                Breadcrumb::new()
                     .item(BreadcrumbItem::new("首页"))
                     .item(BreadcrumbItem::new("组件"))
-                    .item(BreadcrumbItem::new("面包屑").active())),
+                    .item(BreadcrumbItem::new("导航").active()),
+            ),
         )
-        .section("锚点 Anchor")
-        .push(
-            Anchor::new(vec![
-                AnchorItem::new("基础用法", "#basic"),
-                AnchorItem::new("高级配置", "#advanced"),
-                AnchorItem::new("API 文档", "#api"),
-            ]),
-        )
-        .section("步骤条 Steps")
-        .push(tree! { Container::new().size(INNER_W, 80.0).dir(FlexDirection::Column)
-            .pad(EdgeInsets::uniform(4.0)) => [
+        .section("Anchor")
+        .push(Anchor::new(vec![
+            AnchorItem::new("基础", "#basic"),
+            AnchorItem::new("高级", "#advanced"),
+            AnchorItem::new("API", "#api"),
+        ]))
+        .section("Steps")
+        .push(tree! { Container::new().size(INNER_W, 80.0) => [
             Steps::new(vec![
                 Step::new("注册").status(StepStatus::Finish),
                 Step::new("验证").status(StepStatus::Process),
                 Step::new("完成").status(StepStatus::Wait),
             ]).current(1).into_node(),
         ]})
-        .section("分页 Pagination")
-        .push(tree! { Container::new().size(INNER_W, 40.0).dir(FlexDirection::Column)
-            .pad(EdgeInsets::uniform(4.0)) => [
+        .section("Pagination")
+        .push(tree! { Container::new().size(INNER_W, 40.0) => [
             Pagination::new(85, 10).into_node(),
         ]})
         .build()
-
 }

@@ -13,15 +13,11 @@ use uix::data::SettingsService;
 use uix::native::file_service::FileService;
 use uix::prelude::*;
 
-// ── Logger ────────────────────────────────────────────────────────────────
-
 #[allow(dead_code)]
 pub fn init_logger() {
     Logger::instance().set_level(Level::Info);
     info_fn("演示日志初始化完成");
 }
-
-// ── core：几何与错误 ──────────────────────────────────────────────────────
 
 pub fn demo_core_types() {
     println!("\n╔══ core：几何类型 ═══╗");
@@ -114,8 +110,6 @@ pub fn demo_middleware() {
     );
 }
 
-// ── ui：响应式状态与布局 ──────────────────────────────────────────────────
-
 pub fn demo_state() {
     println!("\n╔══ ui：响应式状态 ═══╗");
     let count = State::new(0i32);
@@ -196,8 +190,6 @@ pub fn demo_theme() {
     );
 }
 
-// ── data：配置持久化 ──────────────────────────────────────────────────────
-
 pub fn demo_settings() -> Result<(), Error> {
     println!("\n╔══ data：设置服务 ═══╗");
     let mut s = SettingsService::new();
@@ -223,8 +215,6 @@ pub fn demo_settings() -> Result<(), Error> {
     Ok(())
 }
 
-// ── native：文件服务 ──────────────────────────────────────────────────────
-
 pub fn demo_file_service() -> Result<(), Error> {
     println!("\n╔══ native：文件服务 ═══╗");
     let fs = FileService::new();
@@ -245,8 +235,6 @@ pub fn demo_file_service() -> Result<(), Error> {
     Ok(())
 }
 
-// ── draw：图形引擎 ────────────────────────────────────────────────────────
-
 pub fn demo_graphics_engine() -> Result<(), Error> {
     println!("\n╔══ draw：图形引擎 ═══╗");
     let mut e = NullEngine::new();
@@ -264,8 +252,6 @@ pub fn demo_graphics_engine() -> Result<(), Error> {
     Ok(())
 }
 
-// ── app：依赖注入 ────────────────────────────────────────────────────────
-
 pub fn demo_di_container() {
     println!("\n╔══ app：依赖注入容器 ═══╗");
     let mut c = DiContainer::new();
@@ -281,8 +267,6 @@ pub fn demo_di_container() {
     }
     println!("  has::<f64>: {}", c.has::<f64>());
 }
-
-// ── 运行全部 ──────────────────────────────────────────────────────────────
 
 pub fn run() -> Result<(), Error> {
     println!("\n  ╔══════════════════════════════════╗");

@@ -179,7 +179,7 @@ P4 多窗                P5 组件 Handle 体系
 | `src/ui/layout/*` | [layout](systems/layout.md) | |
 | `src/ui/theme/*` | [theme-style](systems/theme-style.md) | |
 | `src/ui/foundation/state.rs` | [view-reactive](systems/view-reactive.md) | State / Computed / Effect（经 `ui::state` 重导出） |
-| `src/ui/foundation/virtual_scroll.rs` | [layout · VirtualScroll](systems/layout.md#virtual-scroll) | 大列表虚拟滚动 helper（部分实现） |
+| `src/ui/foundation/virtual_scroll.rs` | [layout · VirtualScroll](systems/layout.md#virtual-scroll) | 大列表虚拟滚动 helper；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll |
 | `src/ui/foundation/*` | [theme-style](systems/theme-style.md), [view-reactive](systems/view-reactive.md), [event](systems/event.md) | style, config, locale, focus_trap, clipboard |
 | `src/ui/foundation/style/*` | [theme-style](systems/theme-style.md) | Style, StyleSet |
 | `src/ui/animation/*` | [component](systems/component.md) | WidgetAnimation, easing, transition |

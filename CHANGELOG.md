@@ -16,6 +16,7 @@
 - 演示文档 [`demo/README.md`](demo/README.md)
 - 平台贡献指南 [`docs/systems/platform.md#平台贡献指南`](docs/systems/platform.md#平台贡献指南)
 - `VirtualScroll` 设计/实现状态文档 → [`docs/systems/layout.md#virtual-scroll`](docs/systems/layout.md#virtual-scroll)
+- `VirtualScroll` / `VirtualListScroll` 已与 Table、Tree、SelectableList、Select、TreeSelect 集成 → [layout · VirtualScroll](docs/systems/layout.md#virtual-scroll)
 
 ### Changed
 
@@ -65,7 +66,6 @@
 ### Known limitations（v0.1.0）
 
 - macOS backend 未实现 → [roadmap · 后续工作](docs/roadmap.md#后续工作)
-- `VirtualScroll` 部分实现，未接 ScrollView 热路径 → [layout · VirtualScroll](docs/systems/layout.md#virtual-scroll)
 - crate 未发布 crates.io；API 仍可能按文档重构（冲突时 docs 为准，见 [AGENTS.md](AGENTS.md)）
 
 ---

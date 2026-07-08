@@ -165,6 +165,7 @@ impl WidgetTree {
 
         // 最终更新 viewport（确保收敛结束后的 content_bounds 正确）
         self.layout_viewports();
+        self.refresh_virtual_scroll_children();
         // Phase 6：layout 完成后用最新 frame 绑定 State → Paint rect
         self.bind_reactive_widget_states();
         self.rebuild_widget_overlays();
@@ -402,6 +403,46 @@ impl WidgetTree {
                 // 仅触发 content_bounds 副作用，丢弃返回的 child rects
                 let _ = node.layout_children(frame, &children, self);
             }
+        }
+    }
+
+    /// Rebuild VirtualScroll child windows when layout frame or scroll offset changes.
+    fn refresh_virtual_scroll_children(&mut self) {
+        use crate::ui::foundation::virtual_scroll::VirtualScroll;
+
+        let ids = self.traverse();
+        for id in ids {
+            let viewport_h = self
+                .get(id)
+                .map(|node| node.frame().h)
+                .unwrap_or(0.0);
+            if viewport_h <= 0.0 {
+                continue;
+            }
+            let needs_refresh = self
+                .get(id)
+                .and_then(|node| {
+                    node.component()
+                        .as_any()
+                        .downcast_ref::<VirtualScroll>()
+                })
+                .is_some_and(|vs| vs.needs_child_refresh(viewport_h));
+            if !needs_refresh {
+                continue;
+            }
+
+            let child_nodes = {
+                let node = match self.get(id) {
+                    Some(node) => node,
+                    None => continue,
+                };
+                let vs = match node.component().as_any().downcast_ref::<VirtualScroll>() {
+                    Some(vs) => vs,
+                    None => continue,
+                };
+                vs.build_visible_children(viewport_h)
+            };
+            self.set_children(id, child_nodes);
         }
     }
 

@@ -173,15 +173,16 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获
 
 | 方法 | 作用 |
 |------|------|
+| `VirtualListScroll` · `virtual_list_index_range` | 共享索引窗口与 Wheel 偏移（Table / Tree / SelectableList / Select / TreeSelect 热路径） |
 | `item_count(n)` · `item_height(h)` · `overscan(n)` | 配置列表几何 |
 | `renderer(\|i\| -> WidgetNode)` | 按索引懒构建可见行 |
 | `scroll_range(viewport_h) -> (start, end)` | 可见索引区间（含 overscan） |
 | `build_visible_children(viewport_h)` | 当前帧应 mount 的节点 |
 | `scroll_ratio(viewport_h)` | 滚动条归一化位置 |
 
-**与 ScrollView 关系**：ScrollView 负责 clip、offset 变换与 Composite 失效；VirtualScroll **尚未**接入 ScrollView 或内置 Table/Tree 热路径，measure/render 为占位，生产列表仍走 ScrollView 全量子树。
+**与 ScrollView 关系**：ScrollView 负责 clip、offset 变换与 Composite 失效；VirtualScroll widget 用于子树懒 mount；**Table / Tree / SelectableList / Select / TreeSelect** 等 Big Bang 组件经 `VirtualListScroll` 在 `render` 热路径只绘制 viewport ± overscan，Wheel 走 `scroll_delta_for_dirty` Composite memmove。
 
-> **实现注记（v0.1.0）**：`scroll_range` / `build_visible_children` / Wheel 偏移逻辑已实现；`render` 空实现；未导出至 `prelude`；未与 `layout_viewports` 或 Composite memmove 集成。落地须：固定行高契约、与 ScrollView viewport 对齐、窄 Paint 仅 rebuild 可见索引。进度 → [roadmap · 后续工作](../roadmap.md#后续工作)。
+> **实现注记（v0.1.0）**：`scroll_range` / `build_visible_children` / `prepare_for_build` / Wheel 偏移与 Composite delta 已实现；`render` 绘制 viewport 背景；`layout_children` 按绝对索引定位可见行；`children_clip` / `viewport_scroll_offset` / `scroll_delta_for_dirty` 已接 ScrollView 同类 viewport 路径。`WidgetComponent::build` 与 `layout()` 后 `refresh_virtual_scroll_children` 自动 `ensure_prepared`（viewport 高优先用 layout frame，否则 `size` 配置值）；滚动超出当前可见窗口由 layout 刷新子树。Table / Tree / SelectableList / Select / TreeSelect 已接 `VirtualListScroll` 绘制窗口与 Composite 滚动；仍不经 `prelude`。
 
 ---
 
@@ -225,7 +226,7 @@ ui/layout/
 ├── flex.rs        FlexLayout
 ├── grid.rs        Grid 轨道与 auto-place
 └── box_model.rs   margin / padding / content rect
-ui/foundation/virtual_scroll.rs   VirtualScroll（大列表 helper，部分实现）
+ui/foundation/virtual_scroll.rs   VirtualScroll / VirtualListScroll（Table/Tree/SelectableList/Select/TreeSelect 已接）
 ui/core/widget/tree_layout.rs   WidgetTree::layout, viewports, overlay rebuild
 ```
 

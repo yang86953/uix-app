@@ -1,10 +1,14 @@
-//! 组件库页面 — page_input。
+//! 组件库页面 — page_input（输入控件全覆盖）。
 
 use uix::prelude::*;
 
 use crate::common::page::{demo_row, PageBuilder, INNER_W};
+use crate::common::showcase::labeled_row;
+use crate::demos::context::DemoCtx;
 
-pub fn page_input(tk: &DesignTokens) -> ViewNode {
+pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
+    let tk = ctx.tk;
+
     let city_options = vec![
         CascaderOption::new("北京", "beijing").children(vec![
             CascaderOption::new("海淀", "haidian"),
@@ -15,58 +19,89 @@ pub fn page_input(tk: &DesignTokens) -> ViewNode {
             CascaderOption::new("徐汇", "xuhui"),
         ]),
     ];
+
+    let tree_nodes = vec![
+        TreeNode::new("前端", "fe").add(TreeNode::new("React", "react")),
+        TreeNode::new("后端", "be").add(TreeNode::new("Rust", "rust")),
+    ];
+
     PageBuilder::new(tk)
         .gap()
-        .section("输入框 Input — 3 种尺寸")
+        .section("Input — 尺寸")
         .push(
-            demo_row(28.0)
-                .child(Input::new("小型...").size(ControlSize::Small))
-                .child(Input::new("中型...").size(ControlSize::Medium))
-                .child(Input::new("大型...").size(ControlSize::Large)),
+            demo_row(32.0)
+                .child(Input::new("Small...").size(ControlSize::Small))
+                .child(Input::new("Medium...").size(ControlSize::Medium))
+                .child(Input::new("Large...").size(ControlSize::Large)),
         )
-        .section("数字输入 InputNumber")
+        .section("InputNumber")
         .push(
             demo_row(36.0)
                 .child(InputNumber::new("数量").min(0.0).max(100.0).step(1.0))
                 .child(InputNumber::new("价格").min(0.0).max(999.0).step(0.5)),
         )
-        .section("选择 Select")
-        .push(
-            demo_row(36.0).child(
-                Select::new()
-                    .options(vec!["选项 1", "选项 2", "选项 3"])
-                    .selected(2),
-            ),
-        )
-        .section("级联 Cascader")
-        .push(demo_row(36.0).child(Cascader::new(city_options, "选择地区")))
-        .section("提及 Mentions")
-        .push(
-            demo_row(36.0).child(Mentions::new("输入 @ 提及").options(vec!["Alice", "Bob", "Charlie"])),
-        )
-        .section("自动补全 AutoComplete")
-        .push(
-            tree! { Container::new().size(INNER_W, 40.0).dir(FlexDirection::Column)
-                .pad(EdgeInsets::uniform(4.0)) => [
-                AutoComplete::new().placeholder("输入城市名称...")
-                    .options(vec!["北京", "上海", "广州", "深圳"]).into_node(),
-            ]},
-        )
-        .section("开关 Switch")
-        .push(
-            demo_row(30.0)
-                .child(Switch::new().checked(true))
-                .child(Switch::new().checked(false))
-                .child(Switch::new().checked(true).disabled(true)),
-        )
-        .section("复选框 Checkbox")
+        .section("Select")
+        .push(demo_row(36.0).child(
+            Select::new()
+                .options(vec!["选项 1", "选项 2", "选项 3"])
+                .selected(1),
+        ))
+        .push(labeled_row(
+            tk,
+            36.0,
+            "Select (100)",
+            Select::new()
+                .options((0..100).map(|i| format!("选项 {i}")).collect::<Vec<_>>())
+                .selected(0),
+        ))
+        .section("TreeSelect")
+        .push(labeled_row(
+            tk,
+            36.0,
+            "TreeSelect",
+            TreeSelect::new().nodes(tree_nodes).placeholder("选择技术栈"),
+        ))
+        .push(labeled_row(
+            tk,
+            36.0,
+            "TreeSelect (80)",
+            TreeSelect::new()
+                .nodes(
+                    (0..80)
+                        .map(|i| TreeNode::new(&format!("节点 {i}"), &format!("n-{i}")))
+                        .collect(),
+                )
+                .placeholder("大列表树选择"),
+        ))
+        .section("Cascader")
+        .push(labeled_row(
+            tk,
+            36.0,
+            "Cascader",
+            Cascader::new(city_options, "选择地区"),
+        ))
+        .section("AutoComplete / Mentions")
+        .push(labeled_row(
+            tk,
+            36.0,
+            "AutoComplete",
+            AutoComplete::new()
+                .placeholder("输入城市...")
+                .options(vec!["北京", "上海", "广州", "深圳"]),
+        ))
+        .push(labeled_row(
+            tk,
+            36.0,
+            "Mentions",
+            Mentions::new("输入 @ 提及").options(vec!["Alice", "Bob", "Charlie"]),
+        ))
+        .section("Checkbox / Radio / Switch")
         .push(
             demo_row(30.0)
                 .child(Checkbox::new("选项 A").checked(true))
                 .child(Checkbox::new("选项 B"))
-                .child(Checkbox::new("选项 C").disabled(true)),
+                .child(Checkbox::new("禁用").disabled(true)),
         )
-        .section("单选框 Radio")
         .push(
             demo_row(32.0).child(
                 Radio::new()
@@ -74,19 +109,43 @@ pub fn page_input(tk: &DesignTokens) -> ViewNode {
                     .selected(1),
             ),
         )
-        .section("滑块 Slider")
+        .push(
+            demo_row(30.0)
+                .child(Switch::new().checked(true))
+                .child(Switch::new().checked(false))
+                .child(Switch::new().checked(true).disabled(true)),
+        )
+        .section("Slider / Rate")
         .push(demo_row(30.0).child(Slider::new().range(0.0, 100.0).step(5.0).value(42.0)))
-        .section("评分 Rate")
         .push(
             demo_row(30.0)
                 .child(Rate::new().value(3))
                 .child(Rate::new().count(7).value(5))
                 .child(Rate::new().value(2).allow_half()),
         )
-        .section("日期选择 DatePicker")
-        .push(demo_row(36.0).child(DatePicker::new("选择日期").value(DateValue::new(2026, 6, 20))))
-        .section("时间选择 TimePicker")
-        .push(demo_row(36.0).child(TimePicker::new("选择时间").value(TimeValue::new(14, 30))))
+        .section("DatePicker / TimePicker / ColorPicker")
+        .push(demo_row(36.0).child(
+            DatePicker::new("选择日期").value(DateValue::new(2026, 6, 20)),
+        ))
+        .push(demo_row(36.0).child(
+            TimePicker::new("选择时间").value(TimeValue::new(14, 30)),
+        ))
+        .push(labeled_row(
+            tk,
+            36.0,
+            "ColorPicker",
+            ColorPicker::new(tk.color_primary),
+        ))
+        .section("Segmented")
+        .push(demo_row(36.0).child(
+            Segmented::new().options(vec!["每日", "每周", "每月", "每年"]).selected(2),
+        ))
+        .section("Form / FormItem")
+        .push(tree! { Container::new().size(INNER_W, 200.0).dir(FlexDirection::Column).gap(8.0) => [
+            Form::new().label_width(80.0).gap(8.0).layout(FormLayout::Vertical).into_node(),
+            FormItem::new("用户名").name("user").required(true).help("必填").into_node(),
+            FormItem::new("邮箱").name("email").status(ValidateStatus::Success).into_node(),
+            FormItem::new("密码").name("pwd").status(ValidateStatus::Error).into_node(),
+        ]})
         .build()
-
 }

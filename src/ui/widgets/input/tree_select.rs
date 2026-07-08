@@ -3,12 +3,17 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::widgets::display::tree::TreeNode;
 use crate::ui::{
     ComponentId, EventResult, SemanticEvent, SnapshotFields, SnapshotTreeNode, SystemEvent,
     WidgetTree,
 };
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+
+const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
+const DROPDOWN_TRIGGER_HEIGHT: f32 = 32.0;
+const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
 
 component! {
     pub struct TreeSelect {
@@ -22,6 +27,8 @@ component! {
         transition_dirty: bool,
         hovered_option: Option<String>,
         pending_change: RefCell<Option<String>>,
+        dropdown_scroll: VirtualListScroll,
+        scroll_delta_strip: Cell<(f32, f32)>,
     }
 
 
@@ -30,11 +37,20 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
+        let delta = self.scroll_delta_strip.get();
+        if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
+            self.scroll_delta_strip.set((0.0, 0.0));
+            Some(delta)
+        } else {
+            None
+        }
+    }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, .. } => {
-                if pos.y >= 0.0 && pos.y <= 32.0 {
+                if pos.y >= 0.0 && pos.y <= DROPDOWN_TRIGGER_HEIGHT {
                     if self.open {
                         self.close();
                     } else {
@@ -42,30 +58,47 @@ component! {
                     }
                     return EventResult::Handled;
                 }
-                if self.is_present() && pos.y > 32.0 {
-                    let flat = self.flatten_nodes();
-                    let idx = ((pos.y - 32.0) / 28.0) as usize;
-                    if idx < flat.len() {
-                        let (key, title, _) = &flat[idx];
-                        self.value = title.clone();
-                        self.value_key = key.clone();
-                        self.close();
-                        self.pending_change.replace(Some(key.clone()));
-                        return EventResult::Handled;
+                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                    if let Some(idx) = self.dropdown_row_at_y(pos.y) {
+                        let flat = self.flatten_nodes();
+                        if let Some((key, title, _)) = flat.get(idx) {
+                            self.value = title.clone();
+                            self.value_key = key.clone();
+                            self.close();
+                            self.pending_change.replace(Some(key.clone()));
+                            return EventResult::Handled;
+                        }
                     }
                 }
                 self.close();
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if self.is_present() && pos.y > 32.0 {
+                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                    let idx = self.dropdown_row_at_y(pos.y);
                     let flat = self.flatten_nodes();
-                    let idx = ((pos.y - 32.0) / 28.0) as usize;
-                    self.hovered_option = flat.get(idx).map(|(k, _, _)| k.clone());
+                    self.hovered_option = idx.and_then(|i| flat.get(i).map(|(k, _, _)| k.clone()));
                 } else {
                     self.hovered_option = None;
                 }
                 EventResult::Handled
+            }
+            SystemEvent::Wheel { delta, pos, .. } => {
+                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                    let row_count = self.flatten_nodes().len();
+                    let viewport_h = self.dropdown_viewport_height(row_count);
+                    let dy = self.dropdown_scroll.scroll_by_wheel(
+                        delta.y,
+                        row_count,
+                        DROPDOWN_ROW_HEIGHT,
+                        viewport_h,
+                    );
+                    if dy.abs() > 0.01 {
+                        self.push_scroll_delta(0.0, dy);
+                        return EventResult::Handled;
+                    }
+                }
+                EventResult::NotHandled
             }
             _ => EventResult::NotHandled,
         }
@@ -88,7 +121,7 @@ component! {
         let text_sec = ctx.tokens().color_text_quaternary();
         let fill = ctx.tokens().color_fill_tertiary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius()));
-        let input_rect = Rect::new(frame.x, frame.y, frame.w, 32.0);
+        let input_rect = Rect::new(frame.x, frame.y, frame.w, DROPDOWN_TRIGGER_HEIGHT);
         let bc = if self.open { primary } else { border };
         ctx.fill_rect(input_rect, bg, r);
         ctx.stroke_rect(input_rect, bc, if self.open { 2.0 } else { 1.0 }, r);
@@ -99,41 +132,61 @@ component! {
         let arrow_y = ctx.visual_center_y(input_rect, 10.0);
         ctx.draw_text(if self.open { "▲" } else { "▼" }, Point::new(frame.x + frame.w - 18.0, arrow_y), text_sec, 10.0);
 
-        // 下拉树面板
-        if self.is_present() {
-            let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
-            let bg = fade_color(bg, opacity);
-            let border = fade_color(border, opacity);
-            let primary = fade_color(primary, opacity);
-            let text = fade_color(text, opacity);
-            let fill = fade_color(fill, opacity);
-            let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
-            let flat = self.flatten_nodes();
-            let list_h = flat.len() as f32 * 28.0;
-            let list_y = frame.y + 32.0;
-            let list_rect = Rect::new(frame.x, list_y, frame.w, list_h);
-            ctx.fill_rect(list_rect, bg, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
-            ctx.stroke_rect(list_rect, border, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
-
-            for (i, (key, title, depth)) in flat.iter().enumerate() {
-                let item_y = list_y + i as f32 * 28.0;
-                let item_rect = Rect::new(frame.x, item_y, frame.w, 28.0);
-                let indent = *depth as f32 * 20.0 + 8.0;
-                let is_hovered = self.hovered_option.as_ref() == Some(key);
-                let is_selected = *key == self.value_key;
-
-                if is_hovered || is_selected {
-                    ctx.fill_rect(item_rect, fill, None);
-                }
-                if is_selected {
-                    ctx.fill_rect(item_rect, primary_bg, None);
-                }
-
-                let row_y = ctx.visual_center_y(item_rect, 13.0);
-                let tc = if is_selected { primary } else { text };
-                ctx.draw_text(title, Point::new(frame.x + indent, row_y), tc, 13.0);
-            }
+        if !self.is_present() {
+            return;
         }
+
+        let opacity = self.transition.opacity_progress.clamp(0.0, 1.0);
+        let bg = fade_color(bg, opacity);
+        let border = fade_color(border, opacity);
+        let primary = fade_color(primary, opacity);
+        let text = fade_color(text, opacity);
+        let fill = fade_color(fill, opacity);
+        let primary_bg = fade_color(ctx.tokens().color_primary_bg(), opacity);
+        let flat = self.flatten_nodes();
+        let row_count = flat.len();
+        if row_count == 0 {
+            return;
+        }
+
+        let list_h = self.dropdown_viewport_height(row_count);
+        let list_y = frame.y + DROPDOWN_TRIGGER_HEIGHT;
+        let list_rect = Rect::new(frame.x, list_y, frame.w, list_h);
+        ctx.fill_rect(list_rect, bg, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
+        ctx.stroke_rect(list_rect, border, 1.0, Some(Radius::uniform(ctx.tokens().border_radius_sm())));
+
+        let scroll_offset = self.dropdown_scroll.scroll_offset();
+        let (start, end) = self.dropdown_scroll.scroll_range(
+            row_count,
+            DROPDOWN_ROW_HEIGHT,
+            list_h,
+        );
+        ctx.canvas_2d().push_clip(list_rect);
+
+        for i in start..end {
+            let (key, title, depth) = &flat[i];
+            let item_y = list_y + i as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
+            if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_h {
+                continue;
+            }
+            let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
+            let indent = *depth as f32 * 20.0 + 8.0;
+            let is_hovered = self.hovered_option.as_ref() == Some(key);
+            let is_selected = *key == self.value_key;
+
+            if is_hovered || is_selected {
+                ctx.fill_rect(item_rect, fill, None);
+            }
+            if is_selected {
+                ctx.fill_rect(item_rect, primary_bg, None);
+            }
+
+            let row_y = ctx.visual_center_y(item_rect, 13.0);
+            let tc = if is_selected { primary } else { text };
+            ctx.draw_text(title, Point::new(frame.x + indent, row_y), tc, 13.0);
+        }
+
+        ctx.canvas_2d().pop_clip();
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
@@ -168,7 +221,32 @@ component! {
 
 impl TreeSelect {
     fn intrinsic_size(&self) -> Size {
-        Size::new(200.0, 32.0)
+        Size::new(200.0, DROPDOWN_TRIGGER_HEIGHT)
+    }
+
+    fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
+        (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT)
+    }
+
+    fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
+        if pos_y <= DROPDOWN_TRIGGER_HEIGHT {
+            return None;
+        }
+        let local_y = pos_y - DROPDOWN_TRIGGER_HEIGHT + self.dropdown_scroll.scroll_offset();
+        if local_y < 0.0 {
+            return None;
+        }
+        let idx = (local_y / DROPDOWN_ROW_HEIGHT) as usize;
+        let flat_len = self.flatten_nodes().len();
+        if idx < flat_len { Some(idx) } else { None }
+    }
+
+    fn push_scroll_delta(&self, dx: f32, dy: f32) {
+        if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
+            return;
+        }
+        let current = self.scroll_delta_strip.get();
+        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
     }
 
     fn flatten_nodes(&self) -> Vec<(String, String, usize)> {
@@ -198,6 +276,8 @@ impl TreeSelect {
             transition_dirty: false,
             hovered_option: None,
             pending_change: RefCell::new(None),
+            dropdown_scroll: VirtualListScroll::new(),
+            scroll_delta_strip: Cell::new((0.0, 0.0)),
         }
     }
     pub fn placeholder(mut self, p: &str) -> Self {
@@ -226,6 +306,7 @@ impl TreeSelect {
     pub fn open(&mut self) {
         self.open = true;
         self.closing = false;
+        self.dropdown_scroll.set_scroll_offset(0.0);
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
         self.transition_dirty = true;
     }
@@ -240,6 +321,7 @@ impl TreeSelect {
 
         self.open = false;
         self.closing = true;
+        self.dropdown_scroll.set_scroll_offset(0.0);
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
     }
@@ -258,12 +340,18 @@ impl TreeSelect {
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.placeholder = next.placeholder;
         self.nodes = next.nodes;
+        let row_count = self.flatten_nodes().len();
+        self.dropdown_scroll.clamp_to_content(
+            row_count,
+            DROPDOWN_ROW_HEIGHT,
+            self.dropdown_viewport_height(row_count),
+        );
     }
 }
 
 fn tree_select_dirty_rect(frame: Rect, item_count: usize) -> Rect {
-    let list_h = item_count as f32 * 28.0;
-    let list = Rect::new(frame.x, frame.y + 32.0, frame.w, list_h);
+    let list_h = (item_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT);
+    let list = Rect::new(frame.x, frame.y + DROPDOWN_TRIGGER_HEIGHT, frame.w, list_h);
     frame.union(&list)
 }
 

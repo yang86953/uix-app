@@ -1,5 +1,5 @@
 use std::any::TypeId;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::fmt;
@@ -73,8 +73,11 @@ thread_local! {
     static PENDING_EFFECTS: RefCell<Vec<Effect>> = const { RefCell::new(Vec::new()) };
 }
 
-static STATE_CAPTURE_ACTIVE: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+// 须为 thread_local：并行测试/多窗口同时 capture View 时，全局标志会导致
+// 先结束的 capture 关闭捕获，使同线程其他 capture 中的 State::get 无法登记 pending。
+thread_local! {
+    static STATE_CAPTURE_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
 static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -92,14 +95,14 @@ mod tests;
 
 /// 开始捕获 `State::get` 依赖 / `Effect::new` 实例（View 构建期间调用）。
 pub fn begin_state_capture() {
-    STATE_CAPTURE_ACTIVE.store(true, std::sync::atomic::Ordering::SeqCst);
+    STATE_CAPTURE_ACTIVE.with(|active| active.set(true));
     PENDING_STATE_BINDS.with(|p| p.borrow_mut().clear());
     PENDING_EFFECTS.with(|p| p.borrow_mut().clear());
 }
 
 /// 结束 View 构建期的 State 捕获。
 pub fn end_state_capture() {
-    STATE_CAPTURE_ACTIVE.store(false, std::sync::atomic::Ordering::SeqCst);
+    STATE_CAPTURE_ACTIVE.with(|active| active.set(false));
 }
 
 /// 取出并清空未关联 widget 的 pending State 绑定（build 末兜底）。
@@ -167,7 +170,7 @@ fn try_capture_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
 }
 
 fn try_capture_pending_state_bind<T: Clone + Send + Sync + 'static>(state: &State<T>) {
-    if !STATE_CAPTURE_ACTIVE.load(Ordering::SeqCst) {
+    if !STATE_CAPTURE_ACTIVE.with(|active| active.get()) {
         return;
     }
     let slot_id = state.slot_id();
@@ -666,7 +669,7 @@ impl Effect {
             }),
         };
         effect.refresh_deps(deps);
-        if STATE_CAPTURE_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
+        if STATE_CAPTURE_ACTIVE.with(|active| active.get()) {
             PENDING_EFFECTS.with(|p| p.borrow_mut().push(effect.clone()));
         }
         effect
