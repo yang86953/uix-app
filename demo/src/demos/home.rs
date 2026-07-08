@@ -15,12 +15,10 @@ fn nav_button(active: &State<usize>, index: usize, label_text: &str) -> ViewNode
 
 pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
-    let ticks = ctx.timer_ticks;
     let active = ctx
         .active_page
         .expect("home page requires active_page for navigation");
 
-    let tick_display = ticks.clone();
     let nav_app = active.clone();
     let nav_general = active.clone();
     let nav_gallery = active.clone();
@@ -49,11 +47,6 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
             ])
             .gap(8.0)
         })
-        .push(
-            dynamic_label(move || format!("Timer tick: {}", tick_display.get()))
-                .font_size(14.0)
-                .color(tk.color_text_secondary),
-        )
         .section("快捷导航")
         .push(
             row([

@@ -3,5 +3,7 @@
 // ============================================================================
 
 pub mod gdi_presenter;
+pub mod wgl;
 
 pub use gdi_presenter::*;
+pub use wgl::WglContext;

@@ -254,6 +254,7 @@ pub fn dynamic_label<F: Fn() -> String + 'static>(f: F) -> ViewNode {
 pub(crate) struct DynamicLabel {
     text_fn: Box<dyn Fn() -> String>,
     state_sources: Vec<Arc<dyn StatePaintBind>>,
+    style: Option<Style>,
 }
 
 impl DynamicLabel {
@@ -261,7 +262,12 @@ impl DynamicLabel {
         Self {
             text_fn: Box::new(f),
             state_sources: Vec::new(),
+            style: None,
         }
+    }
+
+    pub(crate) fn set_style(&mut self, style: Style) {
+        self.style = Some(style);
     }
 
     /// 将关联 State 绑定到 widget 的 Paint 失效。
@@ -322,27 +328,70 @@ impl WidgetLayout for DynamicLabel {
     fn measure(&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
+
+    fn layout_margin(&self) -> crate::core::EdgeInsets {
+        self.style
+            .as_ref()
+            .map(|s| s.margin)
+            .unwrap_or_default()
+    }
+
+    fn align_self(&self) -> Option<crate::ui::layout::AlignItems> {
+        self.style.as_ref().and_then(|s| s.align_self)
+    }
+
+    fn flex_grow(&self) -> f32 {
+        self.style.as_ref().map(|s| s.flex_grow).unwrap_or(0.0)
+    }
+
+    fn flex_shrink(&self) -> f32 {
+        self.style.as_ref().map(|s| s.flex_shrink).unwrap_or(0.0)
+    }
 }
 
 impl DynamicLabel {
     fn intrinsic_size(&self) -> Size {
+        if let Some(style) = &self.style {
+            if let (Some(w), Some(h)) = (style.width, style.height) {
+                return Size::new(w, h);
+            }
+        }
         let text = (self.text_fn)();
-        let len = text.len() as f32;
-        Size::new(len * 7.0, 18.0)
+        let fs = self
+            .style
+            .as_ref()
+            .map(|s| s.font_size.default_size())
+            .unwrap_or(14.0);
+        let h = self.style.as_ref().and_then(|s| s.height).unwrap_or(fs * 1.5);
+        let w = self
+            .style
+            .as_ref()
+            .and_then(|s| s.width)
+            .unwrap_or(text.len() as f32 * 7.0);
+        Size::new(w, h)
     }
 }
 
 impl WidgetRender for DynamicLabel {
     fn render(&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let text = (self.text_fn)();
-        if !text.is_empty() {
-            ctx.draw_text(
-                &text,
-                crate::core::Point::new(frame.x, frame.y),
-                ctx.tokens().color_text(),
-                14.0,
-            );
+        if text.is_empty() {
+            return;
         }
+        let style = self.style.as_ref();
+        let color = style
+            .map(|s| s.resolve_color(ctx.tokens()))
+            .unwrap_or_else(|| ctx.tokens().color_text());
+        let font_size = style
+            .map(|s| s.resolve_font_size(ctx.tokens()))
+            .unwrap_or(14.0);
+        let padding = style.map(|s| s.padding).unwrap_or_default();
+        ctx.draw_text(
+            &text,
+            crate::core::Point::new(frame.x + padding.left, frame.y + padding.top),
+            color,
+            font_size,
+        );
     }
 }
 

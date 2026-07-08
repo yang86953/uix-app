@@ -104,13 +104,10 @@ impl<'a> PageBuilder<'a> {
     }
 
     pub fn build(self) -> ViewNode {
-        let mut children = self.items;
-        children.push(label("").flex_grow(1.0));
         scroll(
-            column(children)
+            column(self.items)
                 .gap(8.0)
-                .padding((20.0, 4.0, 20.0, 10.0))
-                .flex_grow(1.0),
+                .padding((20.0, 4.0, 20.0, 10.0)),
         )
         .flex_grow(1.0)
         .build()

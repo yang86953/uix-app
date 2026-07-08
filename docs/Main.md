@@ -22,6 +22,7 @@
 | 改样式 / Theme | [`theme-style.md#style--styleset`](systems/theme-style.md#style--styleset) → [`theme-style.md#色板架构`](systems/theme-style.md#色板架构) |
 | 改布局 / Scroll | [`layout.md`](systems/layout.md) → [`component.md`](systems/component.md) |
 | 接平台 / 窗口 / 输入 | [`platform.md#traits-清单`](systems/platform.md#traits-清单) → [`platform.md#平台贡献指南`](systems/platform.md#平台贡献指南) → [`application.md`](systems/application.md) |
+| 多图形 API / GPU 选型 | [`rendering.md#多图形-api`](systems/rendering.md#多图形-api) → [`platform.md#多图形-api-与-factory`](systems/platform.md#多图形-api-与-factory) → [#162](decisions.md#d162) |
 | Modal / Tooltip / 菜单 | [`overlay.md`](systems/overlay.md) → [`event.md`](systems/event.md) |
 | 持久化 Settings | [`data.md`](systems/data.md) → [`application.md#appstate--多窗--settings`](systems/application.md#appstate--多窗--settings) |
 | 写测试 | [`testing.md#fakeplatform`](systems/testing.md#fakeplatform) → [`event.md#测试`](systems/event.md#测试) |
@@ -60,7 +61,7 @@
 | 4 | 主题与样式 | [theme-style.md](systems/theme-style.md) | Theme、Style/StyleSet | #1–#3 #9 #14–#17 |
 | 5 | 事件 | [event.md](systems/event.md) | 三层事件、HandlerTable | #4–#7 #36 #68 |
 | 6 | 布局 | [layout.md](systems/layout.md) | measure、Flex/Grid、Scroll | #29 #38 #45 #53 |
-| 7 | 渲染 | [rendering.md](systems/rendering.md) | ScenePaint、合成、局部重绘 | #59 #70 #82 #122 #129 |
+| 7 | 渲染 | [rendering.md](systems/rendering.md) | ScenePaint、合成、局部重绘、多图形 API | #59 #70 #82 #122 #129 #162 |
 | 8 | 平台 | [platform.md](systems/platform.md) | OS 隔离、UiEvent | #40 #59 |
 | 9 | 浮层 | [overlay.md](systems/overlay.md) | OverlayStack、Modal/菜单 | #96–#98 #100 |
 | 10 | 基础设施 | [foundation.md](systems/foundation.md) | 几何、错误、日志 | #38 #56 #70 |
@@ -87,6 +88,7 @@
 | 事件传播 | [event · 传播](systems/event.md#传播--handlertable) | view-reactive |
 | measure / Scroll | [layout](systems/layout.md) | component |
 | ScenePaint / 失效 | [rendering · 管线](systems/rendering.md#管线与失效) | foundation |
+| **多图形 API** | [rendering · 多图形 API](systems/rendering.md#多图形-api) · [#162](decisions.md#d162) | platform, roadmap · P6 |
 | Platform traits | [platform · Traits](systems/platform.md#traits-清单) | application |
 | Modal / Overlay | [overlay](systems/overlay.md) | event, component |
 | Settings | [data](systems/data.md) | application, theme-style |
@@ -102,7 +104,7 @@
 |------|------|
 | [`AGENTS.md`](../AGENTS.md) | 硬约束 + Agent checklist（编码前必读） |
 | [`roadmap.md`](roadmap.md) | 实现进度、backlog、源码目录详表 |
-| [`decisions.md`](decisions.md) | 决策台账 #1–#161；新决策 #162+ |
+| [`decisions.md`](decisions.md) | 决策台账 #1–#162；新决策 #163+ |
 | [`glossary.md`](glossary.md) | 术语；[设计名 vs 源码](glossary.md#术语对照) |
 | [`CHANGELOG.md`](../CHANGELOG.md) | 版本与迁移锚点（含 AppState/Handle） |
 | [`demo/README.md`](../demo/README.md) | 演示程序模式与运行说明 |
@@ -115,4 +117,4 @@
 - 新 `src/` 路径 → [roadmap · 源码目录详表](roadmap.md#源码目录详表) + 系统「源码模块」。
 - 落地/差距 → [roadmap · 实现进度总览](roadmap.md#实现进度总览) + 系统 `> **实现注记**`。
 - 跨系统主题 → 「主题索引」+ 最相关系统章节。
-- 新术语 → [`glossary.md`](glossary.md)；取舍 → [`decisions.md`](decisions.md) #162+。
+- 新术语 → [`glossary.md`](glossary.md)；取舍 → [`decisions.md`](decisions.md) #163+。

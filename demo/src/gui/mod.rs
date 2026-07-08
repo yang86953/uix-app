@@ -1,5 +1,6 @@
 //! UIX 多页 GUI 演示 — `cargo run --bin uix-demo`
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use uix::prelude::*;
@@ -10,8 +11,12 @@ use crate::demos::{build_page, DemoCtx};
 fn sidebar_item(active: State<usize>, index: usize, label_text: &str) -> ViewNode {
     let active_set = active.clone();
     let text = label_text.to_string();
-    button(text)
-        .on_click(move || active_set.set(index))
+    let is_active = active.get() == index;
+    let mut builder = button(text).on_click(move || active_set.set(index));
+    if is_active {
+        builder = builder.primary();
+    }
+    builder
         .width(SIDEBAR_W - 16.0)
         .padding((8.0, 4.0, 8.0, 4.0))
 }
@@ -86,6 +91,24 @@ fn page_body(
     .bg(tk.color_bg_container)
 }
 
+fn page_shell(
+    idx: usize,
+    active: &State<usize>,
+    tk: &DesignTokens,
+    timer_ticks: &State<u32>,
+    anim_time: &State<f32>,
+) -> ViewNode {
+    let (icon, title) = PAGE_TITLES[idx];
+    let ctx = DemoCtx::new(tk, timer_ticks, anim_time, Some(active));
+    column([
+        page_heading(tk, icon, title.trim()).key(format!("heading-{idx}")),
+        build_page(idx, &ctx).key(format!("body-{idx}")),
+    ])
+    .key(format!("page-{idx}"))
+    .flex_grow(1.0)
+    .padding((0.0, 16.0, 0.0, 0.0))
+}
+
 fn page_content(
     active: State<usize>,
     tk: &DesignTokens,
@@ -93,15 +116,7 @@ fn page_content(
     anim_time: &State<f32>,
 ) -> ViewNode {
     let idx = active.get();
-    let (icon, title) = PAGE_TITLES[idx];
-    let ctx = DemoCtx::new(tk, timer_ticks, anim_time, Some(&active));
-    column([
-        page_heading(tk, icon, title.trim()),
-        build_page(idx, &ctx),
-    ])
-    .key(format!("page-{idx}"))
-    .flex_grow(1.0)
-    .padding((0.0, 16.0, 0.0, 0.0))
+    page_shell(idx, &active, tk, timer_ticks, anim_time)
 }
 
 fn app_shell(
@@ -117,13 +132,12 @@ fn app_shell(
         ])
         .flex_grow(1.0),
         embed(
-            tree! { Footer::new(24.0).bg(tk.color_fill_tertiary) => [
-                tree! { Container::new().pad(EdgeInsets::uniform(4.0)) => [
-                    Label::new("UIX GUI 演示 — 侧边栏切换页面 · --cli 查看无窗口 API")
-                        .color(tk.color_text_tertiary)
-                        .font_size(11.0),
-                ]},
-            ]},
+            label("UIX GUI 演示 — 侧边栏切换页面 · --cli 查看无窗口 API")
+                .font_size(11.0)
+                .color(tk.color_text_tertiary)
+                .padding((4.0, 8.0, 4.0, 8.0))
+                .height(24.0)
+                .bg(tk.color_fill_tertiary),
         ),
     ])
     .flex_grow(1.0)
@@ -141,20 +155,37 @@ pub fn run() {
 
     let timer_for_start = timer_ticks.clone();
     let anim_for_start = anim_time.clone();
+    // Interval timers are canceled when `TimerHandle` drops — keep alive for app lifetime.
+    let interval_handles = Arc::new(Mutex::new(Vec::<TimerHandle>::new()));
 
     App::new()
         .title("UIX Demo")
         .size(INIT_W, INIT_H)
         .theme(Theme::antd_light())
-        .on_start(move |handle| {
-            let ticks = timer_for_start.clone();
-            handle.run_interval(Duration::from_secs(1), move || {
-                ticks.set(ticks.get().wrapping_add(1));
-            });
-            let anim = anim_for_start.clone();
-            handle.run_interval(Duration::from_millis(16), move || {
-                anim.set(anim.get() + 0.016);
-            });
+        .on_start({
+            let interval_handles = interval_handles.clone();
+            move |handle| {
+                let ticks = timer_for_start.clone();
+                interval_handles
+                    .lock()
+                    .expect("timer keepalive")
+                    .push(handle.run_interval(
+                    Duration::from_secs(1),
+                    move || {
+                        ticks.set(ticks.get().wrapping_add(1));
+                    },
+                ));
+                let anim = anim_for_start.clone();
+                interval_handles
+                    .lock()
+                    .expect("timer keepalive")
+                    .push(handle.run_interval(
+                    Duration::from_millis(16),
+                    move || {
+                        anim.set(anim.get() + 0.016);
+                    },
+                ));
+            }
         })
         .root(move || {
             app_shell(

@@ -2,7 +2,7 @@
 // native/backends/windows/consts.rs — Windows 平台常量
 // ============================================================================
 
-pub(crate) const DEFAULT_CLASS_STYLE: u32 = 0x0008 | 0x0002 | 0x0001;
+pub(crate) const DEFAULT_CLASS_STYLE: u32 = 0x0008 | 0x0002 | 0x0001 | 0x0020; // + CS_OWNDC for WGL
 pub(crate) const GWLP_USERDATA: i32 = -21;
 pub(crate) const WM_NULL: u32 = 0x0000;
 pub(crate) const WM_QUIT: u32 = 0x0012;

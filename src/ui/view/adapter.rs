@@ -139,6 +139,13 @@ impl ViewAdapter {
             if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {
                 g.apply_style(style);
             }
+        } else if tid == std::any::TypeId::of::<crate::ui::view::combinators::DynamicLabel>() {
+            if let Some(dl) = widget
+                .as_any_mut()
+                .downcast_mut::<crate::ui::view::combinators::DynamicLabel>(
+            ) {
+                dl.set_style(style.clone());
+            }
         }
 
         widget

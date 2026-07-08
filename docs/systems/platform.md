@@ -9,7 +9,8 @@
 | 主题 | 章节 | 决策 |
 |------|------|------|
 | 聚合入口 | [Platform 聚合](#platform-聚合) | AGENTS |
-| 窗口与呈现 | [窗口与呈现](#窗口与呈现) | #59 #70 |
+| 窗口与呈现 | [窗口与呈现](#窗口与呈现) | #59 #70 #162 |
+| 多图形 API | [多图形 API 与 factory](#多图形-api-与-factory) | #162 |
 | 输入 | [输入](#输入) | #71 #75 |
 | 事件 | [事件模型](#事件模型) | — |
 | 系统服务 | [系统服务](#系统服务) | — |
@@ -87,6 +88,8 @@ trait Platform {
 | GPU | `IGraphicsContext::swap_buffers(PresentDamage)` | 同上 |
 
 `PresentDamage` 来自 `core::damage` — 物理像素矩形列表或全屏。
+
+GPU 路径：`PlatformWindow::graphics_context()` 返回 `Option<&mut dyn IGraphicsContext>`；`app` 启动层将其传入 `create_gpu_context` 等价流程（或直接持有 context）再构造 `GpuEngine`。具体 API（WGL/EGL/Vulkan/…）对上层 **不可见** — 见 [rendering · 多图形 API](rendering.md#多图形-api) · [#162](decisions.md#d162)。
 
 ### IDisplay
 
@@ -223,20 +226,45 @@ native/traits/
 | 入口 | 作用 |
 |------|------|
 | `create_platform()` | 当前 OS 的 Platform 实例 |
-| `create_gpu_context(window)` | GPU 上下文 |
-| `available_memory_bytes()` | 引擎选择参考 |
+| `create_gpu_context(surface, w, h)` | 按平台与 #162 选型创建 `Box<dyn IGraphicsContext>` |
+| `available_memory_bytes()` | 引擎选择参考（内存不足时可倾向 SoftwareEngine） |
 
 Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Wayland）。
 
-| 平台 | 状态 |
-|------|------|
-| Windows | ✅ |
-| Linux (Wayland) | ✅ |
-| macOS | 未实现 — 见 [未实现或后续](#未实现或后续) |
+| 平台 | Platform | GPU 上下文（当前） | GPU 上下文（规划） |
+|------|----------|-------------------|-------------------|
+| Windows | ✅ | ✅ WGL → OpenGL ES | D3D11 / D3D12 |
+| Linux (Wayland) | ✅ | ✅ EGL → OpenGL ES | Vulkan |
+| macOS | ❌ | — | Metal |
+
+<a id="多图形-api-与-factory"></a>
+
+### 多图形 API 与 factory
+
+`factory.rs` 是 **唯一** 对外 `#[cfg]` 分派点（AGENTS）；新增图形 API **只**在此与 `backends/<platform>/gpu/` 接线。
+
+**当前** `create_gpu_context` 行为：
+
+| `#[cfg]` | 实现 | 底层 API |
+|----------|------|----------|
+| `windows` | `WglContext::new` | OpenGL ES 3.x via WGL |
+| `unix`（非 macOS） | `EglContext::new` | OpenGL ES via EGL |
+| 其他 | `Err(PlatformError)` | — |
+
+**规划**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；opt-in 配置跳过 probe 直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。
+
+```text
+create_gpu_context(surface, w, h)
+    → [opt-in 指定 API?]
+    → 否则平台默认链 probe（见 rendering · 回退链）
+    → Ok(Box<dyn IGraphicsContext>) | Err → app 回退 SoftwareEngine
+```
+
+上层 **禁止** 区分 WGL/EGL/Vulkan：只持有 `dyn IGraphicsContext`。`IGraphicsContext::get_proc_address` 供 GL 系 backend 加载扩展；非 GL API 可返回 `None`，由对应 backend 自行链接。
 
 ### 未实现或后续
 
-macOS backend → [roadmap · 后续工作](../roadmap.md#后续工作)。设计细节见 [工厂与后端](#工厂与后端)。
+macOS backend、Vulkan/D3D/Metal → [roadmap · P6 图形后端](../roadmap.md#p6-图形后端) · [后续工作](../roadmap.md#后续工作)。
 
 <a id="测试平台"></a>
 
@@ -353,7 +381,7 @@ native/
 | 窗口句柄 | `HWND` + `wnd_proc` | `xdg_toplevel` + registry globals |
 | 事件泵 | `GetMessage` / 队列 | `wl_display` dispatch |
 | CPU 呈现 | GDI `BitBlt` | SHM buffer + `wl_surface` commit |
-| GPU | GDI 路径为主；factory GPU 当前 Err | EGL + `create_gpu_context` |
+| GPU | WGL + `create_gpu_context` → OpenGL ES；失败回退 GDI | EGL + `create_gpu_context` → OpenGL ES |
 | 可选窗口能力 | 多数原生 API `Ok(())` | 不支持则 `WindowOps` → `NotImplemented`（见 [窗口可选能力](#窗口可选能力)） |
 | IME | Win32 text input | `zwp_text_input_v3` |
 | Wake | 平台特定 wake 注入 `EventLoopWaker` | 同上 |

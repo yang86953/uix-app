@@ -142,6 +142,7 @@ extern "system" {
     pub(super) fn KillTimer(hwnd: *mut std::ffi::c_void, uIDEvent: u32) -> i32;
 
     pub(super) fn GetWindowRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
+    pub(super) fn GetClientRect(hwnd: *mut std::ffi::c_void, lpRect: *mut RECT) -> i32;
 
     // ── 剪贴板 ──
     pub(super) fn OpenClipboard(hwnd: *mut std::ffi::c_void) -> i32;

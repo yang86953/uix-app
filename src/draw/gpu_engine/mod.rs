@@ -70,8 +70,10 @@ impl GraphicsEngine for GpuEngine {
         self.session.initialize(w, h)?;
         if let Some(gpu) = self.session.gpu_backend_mut() {
             gpu.gpu_ctx.make_current();
+            let vw = gpu.gpu_ctx.width();
+            let vh = gpu.gpu_ctx.height();
             unsafe {
-                gpu.gl.viewport(0, 0, w, h);
+                gpu.gl.viewport(0, 0, vw, vh);
                 gpu.gl.enable(glow::BLEND);
                 gpu.gl
                     .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
@@ -89,7 +91,7 @@ impl GraphicsEngine for GpuEngine {
         if let Some(gpu) = self.session.gpu_backend_mut() {
             gpu.gpu_ctx.make_current();
             unsafe {
-                gpu.gl.viewport(0, 0, w, h);
+                gpu.gl.viewport(0, 0, gpu.gpu_ctx.width(), gpu.gpu_ctx.height());
             }
         }
     }
@@ -117,5 +119,12 @@ impl GraphicsEngine for GpuEngine {
 
     fn capabilities(&self) -> GraphicsCapabilities {
         self.session.graphics_capabilities()
+    }
+
+    fn device_pixel_ratio(&self) -> f32 {
+        self.session
+            .gpu_backend()
+            .map(|gpu| gpu.gpu_ctx.device_pixel_ratio())
+            .unwrap_or(1.0)
     }
 }

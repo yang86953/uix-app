@@ -1,6 +1,6 @@
 use super::*;
-use crate::common::page::{INIT_H, INIT_W, PAGE_COUNT, PAGE_GENERAL, PAGE_TITLES, SIDEBAR_W};
-use uix::prelude::{Button, DesignTokens, Label, Rect, State, ViewAdapter};
+use crate::common::page::{INIT_H, INIT_W, PAGE_APP, PAGE_COUNT, PAGE_GENERAL, PAGE_TITLES, SIDEBAR_W};
+use uix::prelude::{dynamic_label, Button, DesignTokens, Label, Rect, State, ViewAdapter};
 use uix::ui::core::widget::WidgetCore;
 
 #[test]
@@ -170,6 +170,123 @@ fn page_switch_reconcile_updates_content() {
         layout_labels.iter().any(|t| t.contains("Splitter")),
         "layout page content missing after second switch, got: {layout_labels:?}"
     );
+}
+
+#[test]
+fn page_switch_updates_heading_and_body_together() {
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+
+    let active_for_build = active.clone();
+    let timer_for_build = timer_ticks.clone();
+    let anim_for_build = anim_time.clone();
+    let root = ViewAdapter::capture_root(move || {
+        app_shell(
+            active_for_build.clone(),
+            timer_for_build.clone(),
+            anim_for_build.clone(),
+        )
+    });
+    let mut tree = ViewAdapter::build_nodes(root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    fn heading_title(labels: &[String]) -> Option<String> {
+        labels.iter().find(|t| PAGE_TITLES.iter().any(|(_, title)| title.trim() == t.trim())).cloned()
+    }
+
+    let initial_labels: Vec<String> = tree
+        .find_all_by_type::<Label>()
+        .into_iter()
+        .map(|(_, l)| l.text().to_string())
+        .collect();
+    assert_eq!(heading_title(&initial_labels).as_deref(), Some("首页"));
+
+    active.set(PAGE_APP);
+    assert!(tree.take_reconcile_requested());
+
+    let active_for_reconcile = active.clone();
+    let timer_for_reconcile = timer_ticks.clone();
+    let anim_for_reconcile = anim_time.clone();
+    let root = ViewAdapter::capture_root(move || {
+        app_shell(
+            active_for_reconcile.clone(),
+            timer_for_reconcile.clone(),
+            anim_for_reconcile.clone(),
+        )
+    });
+    ViewAdapter::reconcile_nodes(&mut tree, root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let labels: Vec<String> = tree
+        .find_all_by_type::<Label>()
+        .into_iter()
+        .map(|(_, l)| l.text().to_string())
+        .collect();
+    assert_eq!(heading_title(&labels).as_deref(), Some("应用能力"));
+    assert!(
+        labels.iter().any(|t| t.contains("响应式 State")),
+        "runtime body missing after switch to 应用能力, got: {labels:?}"
+    );
+    assert!(
+        !labels.iter().any(|t| t.contains("快捷导航")),
+        "home body leaked after switch to 应用能力"
+    );
+
+    active.set(PAGE_GENERAL);
+    assert!(tree.take_reconcile_requested());
+
+    let active_for_general = active.clone();
+    let timer_for_general = timer_ticks.clone();
+    let anim_for_general = anim_time.clone();
+    let root = ViewAdapter::capture_root(move || {
+        app_shell(
+            active_for_general.clone(),
+            timer_for_general.clone(),
+            anim_for_general.clone(),
+        )
+    });
+    ViewAdapter::reconcile_nodes(&mut tree, root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let labels: Vec<String> = tree
+        .find_all_by_type::<Label>()
+        .into_iter()
+        .map(|(_, l)| l.text().to_string())
+        .collect();
+    assert_eq!(heading_title(&labels).as_deref(), Some("通用"));
+    assert!(
+        labels.iter().any(|t| t.contains("Typography")),
+        "general body missing, got: {labels:?}"
+    );
+    assert!(
+        !labels.iter().any(|t| t.contains("响应式 State")),
+        "runtime body leaked after switch to 通用"
+    );
+}
+
+#[test]
+fn timer_state_update_requests_paint() {
+    let timer_ticks = State::new(0u32);
+    let ticks_for_label = timer_ticks.clone();
+    let mut tree = ViewAdapter::build(dynamic_label(move || format!("timer: {}", ticks_for_label.get())));
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, 120.0, 24.0));
+    }
+    tree.layout();
+    tree.reset_invalidation();
+
+    timer_ticks.set(3);
+    assert!(tree.has_render_work());
 }
 
 #[test]

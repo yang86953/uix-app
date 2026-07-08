@@ -46,6 +46,12 @@ component! {
             ctx.fill_rect(frame, bg, None);
         }
     }
+
+    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
+    {
+        children.iter().map(|&cid| (cid, frame)).collect()
+    }
 }
 
 component! {
@@ -120,6 +126,12 @@ component! {
         if let Some(bg) = self.bg_color {
             ctx.fill_rect(frame, bg, None);
         }
+    }
+
+    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+        -> Vec<(crate::ui::ComponentId, Rect)>
+    {
+        children.iter().map(|&cid| (cid, frame)).collect()
     }
 }
 

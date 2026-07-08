@@ -33,6 +33,11 @@ pub trait IGraphicsContext {
     fn width(&self) -> i32;
     fn height(&self) -> i32;
 
+    /// Drawable pixels per logical client pixel (HiDPI). Default `1.0`.
+    fn device_pixel_ratio(&self) -> f32 {
+        1.0
+    }
+
     fn get_proc_address(&self, name: &str) -> Option<*const std::ffi::c_void> {
         let _ = name;
         None
