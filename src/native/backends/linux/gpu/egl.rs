@@ -248,6 +248,10 @@ impl EglContext {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IGraphicsContext for EglContext {
+    fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
+        crate::native::traits::present::GraphicsBackend::OpenGlEs
+    }
+
     fn initialize(
         &mut self,
         _native_window: *mut c_void,

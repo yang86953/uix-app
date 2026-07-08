@@ -176,7 +176,10 @@ impl RenderBackend for GpuBackend {
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         self.gpu_ctx.make_current();
         if let Err(e) = self.surface.canvas.flush_soft_fallback() {
-            crate::core::log::error_fn(format!("GpuBackend soft_fallback flush failed: {}", e.short_what()));
+            crate::core::log::error_fn(format!(
+                "GpuBackend soft_fallback flush failed: {}",
+                e.short_what()
+            ));
         }
         present_graphics_context(self.gpu_ctx.as_mut(), damage);
         Ok(())
@@ -208,6 +211,10 @@ mod tests {
     }
 
     impl IGraphicsContext for RecordingGraphicsContext {
+        fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
+            crate::native::traits::present::GraphicsBackend::OpenGlEs
+        }
+
         fn initialize(
             &mut self,
             _native_window: *mut std::ffi::c_void,

@@ -224,7 +224,10 @@ impl WglContext {
         let hwnd = native_window;
         let hdc = unsafe { GetDC(hwnd) };
         if hdc.is_null() {
-            return Err(windows_diag(Errc::PlatformError, "WglContext: GetDC failed"));
+            return Err(windows_diag(
+                Errc::PlatformError,
+                "WglContext: GetDC failed",
+            ));
         }
 
         let result = (|| -> Result<Self, Error> {
@@ -299,6 +302,10 @@ impl WglContext {
 }
 
 impl IGraphicsContext for WglContext {
+    fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
+        crate::native::traits::present::GraphicsBackend::OpenGlEs
+    }
+
     fn initialize(
         &mut self,
         _native_window: *mut c_void,
@@ -367,7 +374,11 @@ impl IGraphicsContext for WglContext {
     fn get_proc_address(&self, name: &str) -> Option<*const c_void> {
         let c_name = CString::new(name).ok()?;
         let proc = unsafe { wglGetProcAddress(c_name.as_ptr()) };
-        if proc.is_null() { None } else { Some(proc) }
+        if proc.is_null() {
+            None
+        } else {
+            Some(proc)
+        }
     }
 }
 
@@ -404,7 +415,6 @@ mod tests {
     #[test]
     fn factory_create_gpu_context_on_real_window() {
         use crate::native::create_gpu_context;
-        use crate::native::traits::present::IGraphicsContext;
 
         let mut platform = crate::native::create_platform().expect("platform");
         let window = platform
@@ -412,7 +422,10 @@ mod tests {
             .create_window("GPU test", 640, 480)
             .expect("window");
         let surface = window.native_surface_ptr();
-        assert!(!surface.is_null(), "Windows HWND must be exposed as native_surface_ptr");
+        assert!(
+            !surface.is_null(),
+            "Windows HWND must be exposed as native_surface_ptr"
+        );
         let mut ctx = create_gpu_context(surface, 640, 480).expect("WglContext");
         assert!(ctx.width() > 0);
         assert!(ctx.height() > 0);

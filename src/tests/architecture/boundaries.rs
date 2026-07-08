@@ -84,10 +84,9 @@ fn platform_cfgs_stay_inside_native_boundary() {
         if platform_cfg_needles
             .iter()
             .any(|needle| text.contains(needle))
+            && !is_native_backend_boundary(&rel)
         {
-            if !is_native_backend_boundary(&rel) {
-                violations.push(rel);
-            }
+            violations.push(rel);
         }
     }
 
@@ -108,10 +107,8 @@ fn native_backend_symbols_stay_inside_native_boundary() {
             continue;
         }
         let text = fs::read_to_string(&file).unwrap();
-        if text.contains("native::backends") {
-            if !is_native_backend_boundary(&rel) {
-                violations.push(rel);
-            }
+        if text.contains("native::backends") && !is_native_backend_boundary(&rel) {
+            violations.push(rel);
         }
     }
 
@@ -261,6 +258,22 @@ fn active_work_registry_stays_internal() {
     assert!(
         violations.is_empty(),
         "ActiveWorkRegistry is framework-managed and must not be exposed to app code: {violations:?}"
+    );
+}
+
+#[test]
+fn graphics_backend_selection_stays_off_prelude_until_public_api_lands() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let prelude = fs::read_to_string(src.join("prelude.rs")).unwrap();
+    let forbidden = ["GraphicsBackend", "create_gpu_context_with_backend"];
+    let violations: Vec<_> = forbidden
+        .into_iter()
+        .filter(|term| prelude.contains(term))
+        .collect();
+
+    assert!(
+        violations.is_empty(),
+        "P6.1 graphics backend selection is diagnostic/native-only until P6.5 public API lands: {violations:?}"
     );
 }
 

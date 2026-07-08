@@ -10,6 +10,8 @@ pub mod traits;
 
 pub use crate::core::damage::*;
 pub use crate::core::error::*;
-pub use factory::{available_memory_bytes, create_gpu_context, create_platform};
+pub use factory::{
+    available_memory_bytes, create_gpu_context, create_gpu_context_with_backend, create_platform,
+};
 pub use services::file_service;
 pub use services::notification;

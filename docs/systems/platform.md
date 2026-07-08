@@ -247,11 +247,12 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 | `#[cfg]` | 实现 | 底层 API |
 |----------|------|----------|
-| `windows` | `WglContext::new` | OpenGL ES 3.x via WGL |
-| `unix`（非 macOS） | `EglContext::new` | OpenGL ES via EGL |
-| 其他 | `Err(PlatformError)` | — |
+| `windows` | `D3D12 → D3D11 → OpenGL ES` probe；仅 `OpenGL ES` 已接入 `WglContext::new` | OpenGL ES 3.x via WGL |
+| `unix`（非 macOS） | `Vulkan → OpenGL ES` probe；仅 `OpenGL ES` 已接入 `EglContext::new` | OpenGL ES via EGL |
+| `macOS` | `Metal` probe（后端未接入） | — |
+| 其他 | 无 GPU 候选，返回 `Err(PlatformError)` | — |
 
-**规划**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；opt-in 配置跳过 probe 直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。
+**P6.1 已落地**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；native opt-in 可跳过 Auto 链直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。App builder / env / Settings 配置入口仍属 P6.5。
 
 ```text
 create_gpu_context(surface, w, h)
