@@ -1,4 +1,4 @@
-﻿# 应用系统
+# 应用系统
 
 ← [Main](../Main.md) · 系统 **#1** · 功能域：`app`
 
@@ -207,7 +207,7 @@ Platform UiEvent
 
 **ComponentHandle**：只读配置字段；可 `invalidate` / `emit`；不可改 style 或读 hover/pressed 等交互态。
 
-> **实现注记**（#101）：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；`AppState` 内部 register/unregister、snapshot/invalidate 与 semantic queue 也已按 `ComponentId` 命名。live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均走窄 Paint；lookup handle 的 `emit()` 会写入 `AppState` semantic queue 并唤醒 loop，由主窗/副窗 `WindowSession` 按目标 ComponentId drain 后派发到 `WidgetTree::dispatch_semantic`。`ComponentConfigSnapshot` 类型与 80 个内置组件静态配置提取已接；`ComponentHandle::snapshot()` / `snapshot_fields()` 与首批只读配置 getter 已接。`AppState` 类型已导出，`WidgetTree::set_app_state` 后 mount/unmount 会自动注册/注销 snapshot，并记录所属失效队列与当前 dirty rect，`AppState::get_handle` 可返回 snapshot + invalidate + emit handle。App 默认持有同一 `AppState`，`AppHandle::app_state()` 可访问同一 registry，主窗与副窗 `WindowSession` 均已注入；运行时 ComponentId 带 tree scope，避免共享 AppState 下副窗根节点 slot/generation 碰撞。当前业务数据仍可直接经 `State<T>` 闭包捕获；WidgetTree 内部源码名仍保留 `WidgetId` 别名，draw 内部源码名仍保留 `NodeId` 别名。
+> **实现注记**（#101）：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；`AppState` 内部 register/unregister、snapshot/invalidate 与 semantic queue 也已按 `ComponentId` 命名。live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均走窄 Paint；lookup handle 的 `emit()` 会写入 `AppState` semantic queue 并唤醒 loop，由主窗/副窗 `WindowSession` 按目标 ComponentId drain 后派发到 `WidgetTree::dispatch_semantic`。`ComponentConfigSnapshot` 类型与 80 个内置组件静态配置提取已接；`ComponentHandle::snapshot()` / `snapshot_fields()` 与只读配置 getter（`text` / `label` / `placeholder` / `disabled` / `checked` / `numeric_value`）已接。`AppState` 类型已导出，`WidgetTree::set_app_state` 后 mount/unmount 会自动注册/注销 snapshot，并记录所属失效队列与当前 dirty rect，`AppState::get_handle` 可返回 snapshot + invalidate + emit handle。App 默认持有同一 `AppState`，`AppHandle::app_state()` 可访问同一 registry，主窗与副窗 `WindowSession` 均已注入；运行时 ComponentId 带 tree scope，避免共享 AppState 下副窗根节点 slot/generation 碰撞。当前业务数据仍可直接经 `State<T>` 闭包捕获；WidgetTree 内部源码名仍保留 `WidgetId` 别名，draw 内部源码名仍保留 `NodeId` 别名。
 
 ### AppState · ComponentHandle 规格（#32、#61、#72、#101、#145）
 
