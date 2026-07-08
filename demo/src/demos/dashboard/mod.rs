@@ -1,6 +1,6 @@
 ﻿//! Ant Design 5 全组件展示 — 分类多页面版。
 //!
-//! 运行：`cargo run --bin uix-demo`（可选 `--gpu`）
+//! 运行：`cargo run --bin uix-demo -- --dashboard`（可选 `--gpu`）
 //!
 //! 本演示使用**高级 API**（`WidgetTree` + `run_widget_loop`），展示多页面切换、
 //! 主题热重建与 GPU 引擎。入门路径见 `simplified` 演示（`prelude` + `App`）。

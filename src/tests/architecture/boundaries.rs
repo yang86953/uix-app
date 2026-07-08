@@ -382,6 +382,60 @@ fn widget_core_public_boundary_uses_invalidation_not_dirty_bit() {
 }
 
 #[test]
+fn state_public_boundary_uses_reconcile_invalidation_not_dirty_callback() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let text = fs::read_to_string(src.join("ui/foundation/state.rs")).unwrap();
+    let forbidden = [
+        "set_dirty_fn",
+        "set_current_view_dirty_fn",
+        "clear_current_view_dirty_fn",
+        "CURRENT_VIEW_DIRTY_FN",
+    ];
+    let violations: Vec<_> = forbidden
+        .into_iter()
+        .filter(|term| text.contains(term))
+        .collect();
+
+    assert!(
+        violations.is_empty(),
+        "State must expose reconcile invalidation naming instead of dirty callbacks: {violations:?}"
+    );
+}
+
+#[test]
+fn demo_default_entrypoint_stays_on_prelude_app_path() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let main = fs::read_to_string(root.join("demo/src/main.rs")).unwrap();
+    let demos_index = fs::read_to_string(root.join("demo/src/demos/mod.rs")).unwrap();
+
+    assert!(
+        main.contains("--dashboard") && !main.contains("is_simple"),
+        "demo default should be the prelude + App path; dashboard remains explicit"
+    );
+    assert!(
+        demos_index.contains("| 简化 API | （默认） |")
+            && demos_index.contains("| 组件库 | `--dashboard` |"),
+        "demo index should present prelude + App as the default path"
+    );
+}
+
+#[test]
+fn component_patch_downcast_path_has_no_hard_assertions() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let text = fs::read_to_string(src.join("ui/component_patch.rs")).unwrap();
+    let forbidden = [".expect(", ".unwrap("];
+    let violations: Vec<_> = forbidden
+        .into_iter()
+        .filter(|term| text.contains(term))
+        .collect();
+
+    assert!(
+        violations.is_empty(),
+        "component patching is a hot reconcile path and must not hard-assert downcasts: {violations:?}"
+    );
+}
+
+#[test]
 fn business_event_callbacks_stay_out_of_widget_fields() {
     let widgets = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/widgets");
     let mut violations = Vec::new();

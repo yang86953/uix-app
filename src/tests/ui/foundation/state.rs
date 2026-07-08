@@ -208,7 +208,7 @@ fn state_rebinding_same_reconcile_site_updates_in_place() {
 }
 
 #[test]
-fn state_set_dirty_fn_replaces_reconcile_sites() {
+fn state_set_reconcile_invalidation_fn_replaces_reconcile_sites() {
     let state = State::new(1);
     let first_hits = Arc::new(AtomicUsize::new(0));
     let second_hits = Arc::new(AtomicUsize::new(0));
@@ -221,7 +221,7 @@ fn state_set_dirty_fn_replaces_reconcile_sites() {
         }),
     );
     let second_for_callback = second_hits.clone();
-    state.set_dirty_fn(move || {
+    state.set_reconcile_invalidation_fn(move || {
         second_for_callback.fetch_add(1, Ordering::SeqCst);
     });
 

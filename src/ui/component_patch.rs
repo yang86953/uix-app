@@ -18,15 +18,13 @@ pub(crate) fn patch_builtin_widget(
     macro_rules! patch_as {
         ($ty:ty) => {
             if current.as_any().is::<$ty>() && next.as_any().is::<$ty>() {
-                let next = next
-                    .into_any()
-                    .downcast::<$ty>()
-                    .expect("type checked before downcast");
-                current
-                    .as_any_mut()
-                    .downcast_mut::<$ty>()
-                    .expect("type checked before downcast")
-                    .sync_from(*next);
+                let Some(current) = current.as_any_mut().downcast_mut::<$ty>() else {
+                    return Err(next);
+                };
+                let Ok(next) = next.into_any().downcast::<$ty>() else {
+                    return Ok(false);
+                };
+                current.sync_from(*next);
                 return Ok(true);
             }
         };
