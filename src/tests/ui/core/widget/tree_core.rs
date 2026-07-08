@@ -2937,6 +2937,51 @@ fn dispatch_key_to_focused_component() {
 }
 
 #[test]
+fn enter_and_space_emit_click_for_focused_component() {
+    let mut tree = WidgetTree::new();
+    let root_id = tree.set_root(Box::new(SpyWidget::new(200.0, 100.0)));
+    tree.get_mut(root_id)
+        .unwrap()
+        .set_frame(Rect::new(10.0, 20.0, 200.0, 100.0));
+    tree.managers_mut()
+        .focus
+        .set_focused_component(Some(root_id));
+
+    let clicks = Rc::new(RefCell::new(Vec::new()));
+    let clicks_for_handler = clicks.clone();
+    tree.handler_table()
+        .on(root_id, crate::ui::SemanticKind::Click, move |event| {
+            if let Some(click) = event.click_payload() {
+                clicks_for_handler.borrow_mut().push(*click);
+            }
+        });
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Enter,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::Space,
+            mods: KeyMod::SHIFT,
+        }),
+        EventResult::Handled
+    );
+
+    let clicks = clicks.borrow();
+    assert_eq!(clicks.len(), 2);
+    assert_eq!(clicks[0].button, MouseButton::Left);
+    assert_eq!(clicks[0].pos, Point::new(110.0, 70.0));
+    assert_eq!(clicks[0].modifiers, KeyMod::NONE);
+    assert_eq!(clicks[1].button, MouseButton::Left);
+    assert_eq!(clicks[1].pos, Point::new(110.0, 70.0));
+    assert_eq!(clicks[1].modifiers, KeyMod::SHIFT);
+}
+
+#[test]
 fn dispatch_pointer_move_triggers_hover_enter_leave() {
     let mut tree = WidgetTree::new();
     let root_id = tree.set_root(Box::new(PassThroughContainer::new(200.0, 200.0, vec![])));
