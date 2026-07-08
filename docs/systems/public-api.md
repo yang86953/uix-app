@@ -206,8 +206,8 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | 路径 | 符号 | 用途 |
 |------|------|------|
 | `uix::data` | `SettingsService` | 配置持久化 → [data](data.md) |
-| `uix::ui::foundation` | `VirtualScroll` | 虚拟列表 helper（部分实现）→ [layout · VirtualScroll](layout.md#virtual-scroll) |
-| `uix::ui::core::widget` | `WidgetTree` · `WidgetNode` | 高级 / dashboard 演示路径 |
+| `uix::ui::foundation` | `VirtualScroll` | 虚拟列表 helper（viewport/layout 已接）→ [layout · VirtualScroll](layout.md#virtual-scroll) |
+| `uix::ui::core::widget` | `WidgetTree` · `WidgetNode` | 高级 / demo GUI 演示路径 |
 | `uix::app::event_loop` | `run_widget_loop` | 绕过 `App` 的主循环入口 |
 | `uix::native::traits::*` | Platform traits | 平台集成测试；生产 UI **禁止** backends |
 

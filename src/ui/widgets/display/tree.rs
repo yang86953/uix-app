@@ -1,7 +1,11 @@
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
+use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::{EventResult, SnapshotFields, SnapshotTreeNode, SystemEvent, WidgetTree};
+use std::cell::Cell;
+
+const TREE_ROW_HEIGHT: f32 = 28.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TreeNode {
@@ -36,76 +40,122 @@ component! {
         selected_keys: Vec<String>,
         expanded_keys: Vec<String>,
         multiple: bool,
+        body_scroll: VirtualListScroll,
+        scroll_delta_strip: Cell<(f32, f32)>,
+        last_frame: Cell<Option<Rect>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
     }
 
-    on_event => (&mut self, event: &SystemEvent) -> EventResult {
-        if let SystemEvent::PointerDown { pos, .. } = event {
-            let idx = (pos.y / 28.0) as usize;
-            if idx < self.flat.len() {
-                let node_key = self.flat[idx].key.clone();
-                let node_disabled = self.flat[idx].disabled;
-
-                if node_disabled {
-                    return EventResult::NotHandled;
-                }
-
-                let indent = self.flat[idx].depth as f32 * 20.0;
-
-                let check_x = indent;
-                if self.flat[idx].checkable && pos.x >= check_x && pos.x < check_x + 20.0 {
-                    self.toggle_check(&node_key);
-                    return EventResult::Handled;
-                }
-
-                let arrow_x = indent + 20.0;
-                if pos.x >= arrow_x && pos.x < arrow_x + 20.0 && self.flat[idx].has_children {
-                    if let Some(ek_idx) = self.expanded_keys.iter().position(|k| *k == node_key) {
-                        self.expanded_keys.remove(ek_idx);
-                    } else {
-                        self.expanded_keys.push(node_key.clone());
-                    }
-                    self.flatten();
-                    return EventResult::Handled;
-                }
-
-                if self.multiple {
-                    if let Some(ex_idx) = self.selected_keys.iter().position(|k| *k == node_key) {
-                        self.selected_keys.remove(ex_idx);
-                    } else {
-                        self.selected_keys.push(node_key.clone());
-                    }
-                } else {
-                    self.selected_key = node_key.clone();
-                    self.selected_keys.clear();
-                    self.selected_keys.push(node_key);
-                }
-                return EventResult::Handled;
-            }
+    scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
+        let delta = self.scroll_delta_strip.get();
+        if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
+            self.scroll_delta_strip.set((0.0, 0.0));
+            Some(delta)
+        } else {
+            None
         }
-        EventResult::NotHandled
+    }
+
+    on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        match event {
+            SystemEvent::Wheel { delta, .. } => {
+                let viewport_h = self.body_viewport_height();
+                let dy = self.body_scroll.scroll_by_wheel(
+                    delta.y,
+                    self.flat.len(),
+                    TREE_ROW_HEIGHT,
+                    viewport_h,
+                );
+                if dy.abs() > 0.01 {
+                    self.push_scroll_delta(0.0, dy);
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
+            SystemEvent::PointerDown { pos, .. } => {
+                if let Some(idx) = self.row_index_at_y(pos.y) {
+                    let node_key = self.flat[idx].key.clone();
+                    let node_disabled = self.flat[idx].disabled;
+
+                    if node_disabled {
+                        return EventResult::NotHandled;
+                    }
+
+                    let indent = self.flat[idx].depth as f32 * 20.0;
+
+                    let check_x = indent;
+                    if self.flat[idx].checkable && pos.x >= check_x && pos.x < check_x + 20.0 {
+                        self.toggle_check(&node_key);
+                        return EventResult::Handled;
+                    }
+
+                    let arrow_x = indent + 20.0;
+                    if pos.x >= arrow_x && pos.x < arrow_x + 20.0 && self.flat[idx].has_children {
+                        if let Some(ek_idx) = self.expanded_keys.iter().position(|k| *k == node_key) {
+                            self.expanded_keys.remove(ek_idx);
+                        } else {
+                            self.expanded_keys.push(node_key.clone());
+                        }
+                        self.flatten();
+                        self.body_scroll.clamp_to_content(
+                            self.flat.len(),
+                            TREE_ROW_HEIGHT,
+                            self.body_viewport_height(),
+                        );
+                        return EventResult::Handled;
+                    }
+
+                    if self.multiple {
+                        if let Some(ex_idx) = self.selected_keys.iter().position(|k| *k == node_key) {
+                            self.selected_keys.remove(ex_idx);
+                        } else {
+                            self.selected_keys.push(node_key.clone());
+                        }
+                    } else {
+                        self.selected_key = node_key.clone();
+                        self.selected_keys.clear();
+                        self.selected_keys.push(node_key);
+                    }
+                    return EventResult::Handled;
+                }
+                EventResult::NotHandled
+            }
+            _ => EventResult::NotHandled,
+        }
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.last_frame.set(Some(frame));
         let primary = ctx.tokens().color_primary();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let fill = ctx.tokens().color_fill_tertiary();
 
-        for (i, node) in self.flat.iter().enumerate() {
-            let y = frame.y + i as f32 * 28.0;
+        let viewport_h = self.body_viewport_height();
+        let (start, end) = self
+            .body_scroll
+            .scroll_range(self.flat.len(), TREE_ROW_HEIGHT, viewport_h);
+        ctx.canvas_2d().push_clip(frame);
+
+        for i in start..end {
+            let node = &self.flat[i];
+            let y = frame.y + i as f32 * TREE_ROW_HEIGHT - self.body_scroll.scroll_offset();
+            if y + TREE_ROW_HEIGHT < frame.y || y > frame.y + viewport_h {
+                continue;
+            }
             let indent = node.depth as f32 * 20.0;
             let is_selected = self.multiple && self.selected_keys.contains(&node.key)
                 || (!self.multiple && node.key == self.selected_key);
 
             if is_selected {
-                ctx.fill_rect(Rect::new(frame.x, y, frame.w, 28.0), fill, None);
+                ctx.fill_rect(Rect::new(frame.x, y, frame.w, TREE_ROW_HEIGHT), fill, None);
             }
 
-            let row_rect = Rect::new(frame.x, y, frame.w, 28.0);
+            let row_rect = Rect::new(frame.x, y, frame.w, TREE_ROW_HEIGHT);
             let mut cursor = frame.x + indent;
 
             if node.checkable {
@@ -149,13 +199,39 @@ component! {
             let title_y = ctx.visual_center_y(row_rect, 13.0);
             ctx.draw_text(&node.title, Point::new(cursor, title_y), tc, 13.0);
         }
+
+        ctx.canvas_2d().pop_clip();
     }
 }
 
 impl Tree {
     fn intrinsic_size(&self) -> Size {
-        let h = self.flat.len() as f32 * 28.0;
-        Size::new(200.0, h.max(28.0))
+        let h = self.flat.len() as f32 * TREE_ROW_HEIGHT;
+        Size::new(200.0, h.max(TREE_ROW_HEIGHT))
+    }
+
+    fn body_viewport_height(&self) -> f32 {
+        self.last_frame
+            .get()
+            .map(|f| f.h.max(TREE_ROW_HEIGHT))
+            .unwrap_or(300.0)
+    }
+
+    fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
+        let local_y = pos_y + self.body_scroll.scroll_offset();
+        if local_y < 0.0 {
+            return None;
+        }
+        let idx = (local_y / TREE_ROW_HEIGHT) as usize;
+        if idx < self.flat.len() { Some(idx) } else { None }
+    }
+
+    fn push_scroll_delta(&self, dx: f32, dy: f32) {
+        if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
+            return;
+        }
+        let current = self.scroll_delta_strip.get();
+        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
     }
 
     pub fn new(nodes: Vec<TreeNode>) -> Self {
@@ -166,6 +242,9 @@ impl Tree {
             selected_keys: Vec::new(),
             expanded_keys: Vec::new(),
             multiple: false,
+            body_scroll: VirtualListScroll::new(),
+            scroll_delta_strip: Cell::new((0.0, 0.0)),
+            last_frame: Cell::new(None),
         };
         tree.flatten();
         tree
@@ -256,6 +335,11 @@ impl Tree {
         self.expanded_keys
             .retain(|key| Self::contains_key(nodes, key));
         self.flatten();
+        self.body_scroll.clamp_to_content(
+            self.flat.len(),
+            TREE_ROW_HEIGHT,
+            self.body_viewport_height(),
+        );
     }
 
     fn preserve_checked_state(old_nodes: &[TreeNode], new_nodes: &mut [TreeNode]) {
@@ -342,3 +426,7 @@ impl TreeNode {
         self
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/display/tree_virtual_scroll.rs"]
+mod tests;

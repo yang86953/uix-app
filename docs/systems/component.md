@@ -418,6 +418,8 @@ WidgetTree
 | ThemeToggle | | Big Bang |
 | SharedActive | | 共享态辅助 |
 
+> **实现注记**：Table / Tree / SelectableList / Select / TreeSelect 大列表热路径已接 [`VirtualListScroll`](layout.md#virtual-scroll)（viewport 绘制窗口、Wheel Composite memmove）。
+
 > **prelude 导出**：以上已实现组件及其常用辅助类型均应可通过 `use uix::prelude::*` 取得；`src/prelude.rs` 的断言测试负责防止公开入口再次落后于组件目录。
 >
 > Modal / Tooltip / Drawer / Popover / Popconfirm / Dropdown 同时见 [overlay](overlay.md)。

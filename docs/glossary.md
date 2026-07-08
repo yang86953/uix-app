@@ -32,7 +32,7 @@
 | component! | `component! { name: ..., struct ... }` / `component! { struct ... }` | [#102](decisions.md#d102) |
 | measure(constraints) | `WidgetLayout::measure(Constraints)` 唯一入口；旧 `preferred_size` 已移除 | [#103](decisions.md#d103) |
 | ScrollView | ScrollView（旧文档 ScrollContainer） | [#104](decisions.md#d104) |
-| VirtualScroll | `ui::foundation::VirtualScroll`；不经 prelude；部分实现 | [layout · VirtualScroll](systems/layout.md#virtual-scroll) |
+| VirtualScroll | `ui::foundation::VirtualScroll`；不经 prelude；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll | [layout · VirtualScroll](systems/layout.md#virtual-scroll) |
 | AppState + ComponentHandle | `AppState` registry + `ComponentHandle` snapshot/invalidate/emit | [#32](decisions.md#d32), [#101](decisions.md#d101) |
 | HandlerTable key ComponentId | `SemanticEvent` / `HandlerTable` 已用 `ComponentId`；`WidgetId` 为树内别名 | [#10](decisions.md#d10), [#101](decisions.md#d101) |
 
@@ -145,7 +145,7 @@
 | measure | 唯一测量入口 → [术语对照](#术语对照) · [#103](decisions.md#d103) |
 | preferred_size | 已废弃；见 measure |
 | ScrollView | 滚动容器 → [术语对照](#术语对照) · [#104](decisions.md#d104) |
-| VirtualScroll | 大列表虚拟滚动 helper；不经 prelude；部分实现 → [layout · VirtualScroll](systems/layout.md#virtual-scroll) |
+| VirtualScroll | 大列表虚拟滚动 helper；不经 prelude；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll → [layout · VirtualScroll](systems/layout.md#virtual-scroll) |
 | Constraints | `{ min, max, definite }` |
 | Active / Inactive | **Active**：有焦点 **或** 视口内仍有可见像素（与祖先 clip/scroll 求交）；Inactive 跳过大部分语义派发（#8、#19） |
 | BoxModel | margin → border → padding → content 盒模型 |

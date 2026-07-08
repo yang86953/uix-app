@@ -9,7 +9,21 @@ pub const CONTENT_W: f32 = (INIT_W as f32) - SIDEBAR_W;
 const CONTENT_PAD_H: f32 = 40.0;
 pub const INNER_W: f32 = CONTENT_W - CONTENT_PAD_H;
 
+pub const PAGE_HOME: usize = 0;
+pub const PAGE_APP: usize = 1;
+pub const PAGE_GENERAL: usize = 2;
+pub const PAGE_LAYOUT: usize = 3;
+pub const PAGE_NAV: usize = 4;
+pub const PAGE_INPUT: usize = 5;
+pub const PAGE_DATA: usize = 6;
+pub const PAGE_FEEDBACK: usize = 7;
+pub const PAGE_CHARTS: usize = 8;
+pub const PAGE_OTHER: usize = 9;
+pub const PAGE_GALLERY: usize = 10;
+
 pub const PAGE_TITLES: &[(&str, &str)] = &[
+    ("home", " 首页"),
+    ("cpu", " 应用能力"),
     ("type", " 通用"),
     ("layout", " 布局"),
     ("menu", " 导航"),
@@ -18,7 +32,47 @@ pub const PAGE_TITLES: &[(&str, &str)] = &[
     ("alert-circle", " 反馈"),
     ("bar-chart", " 图表"),
     ("settings", " 其他"),
+    ("list", " 覆盖清单"),
 ];
+
+pub const PAGE_COUNT: usize = PAGE_TITLES.len();
+
+const _: () = assert!(PAGE_COUNT > 0);
+
+/// 侧边栏分组：入门 | 组件（8 类）| 参考。
+pub const SIDEBAR_GROUPS: &[(&str, &[usize])] = &[
+    ("入门", &[PAGE_HOME, PAGE_APP]),
+    (
+        "组件",
+        &[
+            PAGE_GENERAL,
+            PAGE_LAYOUT,
+            PAGE_NAV,
+            PAGE_INPUT,
+            PAGE_DATA,
+            PAGE_FEEDBACK,
+            PAGE_CHARTS,
+            PAGE_OTHER,
+        ],
+    ),
+    ("参考", &[PAGE_GALLERY]),
+];
+
+/// 覆盖矩阵 / 文案中的页面名 → 侧边栏索引。
+pub fn page_index_by_label(label: &str) -> Option<usize> {
+    let key = label.trim();
+    PAGE_TITLES
+        .iter()
+        .position(|(_, title)| title.trim() == key)
+        .or_else(|| match key {
+            "运行时" | "App 能力" | "应用能力" => Some(PAGE_APP),
+            "目录" | "覆盖清单" => Some(PAGE_GALLERY),
+            "数据" | "数据展示" => Some(PAGE_DATA),
+            "--cli" => None,
+            "—" | "-" => None,
+            _ => None,
+        })
+}
 
 /// 声明式页面构建器：`section` + `push` + `scroll(column(...))`。
 pub struct PageBuilder<'a> {

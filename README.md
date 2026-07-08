@@ -17,9 +17,8 @@ Rust 跨平台原生桌面 UI 框架（Windows / Linux）。`use uix::prelude::*
 ## 快速开始
 
 ```bash
-cargo run --bin uix-demo                    # 入门演示（App + View DSL）
-cargo run --bin uix-demo -- --dashboard     # GUI 组件库演示
-cargo run --bin uix-demo -- --cli           # CLI
+cargo run --bin uix-demo              # GUI 多页演示（默认）
+cargo run --bin uix-demo -- --cli     # CLI
 RUST_LOG=debug cargo run --bin uix-demo
 cargo test
 ```
@@ -30,8 +29,7 @@ Linux GUI 需 Wayland 会话。
 
 | 模式 | 命令 | 说明 |
 |------|------|------|
-| 入门（默认） | `cargo run --bin uix-demo` | `App::new().root()` + View DSL + `State`，入门推荐 |
-| 组件库 | `--dashboard` | 内置 Widget 分类全景；`embed` 桥接 `tree!` 片段 |
+| GUI（默认） | `cargo run --bin uix-demo` | 11 页多页应用：Gallery 覆盖矩阵、App Timer/Theme、全部内置 Widget |
 | CLI | `--cli` | 各功能域 API 无 GUI 演示 |
 
 公开 API 清单 → [`docs/systems/public-api.md`](docs/systems/public-api.md) · 设计文档 → [`docs/Main.md`](docs/Main.md) · 变更记录 → [`CHANGELOG.md`](CHANGELOG.md)

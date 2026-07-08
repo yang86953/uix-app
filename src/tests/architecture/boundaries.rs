@@ -406,16 +406,14 @@ fn state_public_boundary_uses_reconcile_invalidation_not_dirty_callback() {
 fn demo_default_entrypoint_stays_on_prelude_app_path() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let main = fs::read_to_string(root.join("demo/src/main.rs")).unwrap();
-    let demos_index = fs::read_to_string(root.join("demo/src/demos/mod.rs")).unwrap();
 
     assert!(
-        main.contains("--dashboard") && !main.contains("is_simple"),
-        "demo default should be the prelude + App path; dashboard remains explicit"
+        main.contains("gui::run()") && main.contains("--cli"),
+        "demo main should dispatch GUI (default) vs --cli only"
     );
     assert!(
-        demos_index.contains("| 简化 API | （默认） |")
-            && demos_index.contains("| 组件库 | `--dashboard` |"),
-        "demo index should present prelude + App as the default path"
+        !main.contains("--dashboard"),
+        "demo should not expose legacy --dashboard alias"
     );
 }
 

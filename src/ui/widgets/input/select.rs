@@ -3,10 +3,15 @@ use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::animation::{presets, TransitionPlayer};
+use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree,
 };
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+
+const DROPDOWN_ROW_HEIGHT: f32 = 28.0;
+const DROPDOWN_TRIGGER_HEIGHT: f32 = 32.0;
+const MAX_DROPDOWN_VIEWPORT_HEIGHT: f32 = 280.0;
 
 /// 选项组。
 #[derive(Debug, Clone, PartialEq)]
@@ -47,6 +52,8 @@ component! {
         pending_change: RefCell<Option<String>>,
         multiple: bool,
         search: bool,
+        dropdown_scroll: VirtualListScroll,
+        scroll_delta_strip: Cell<(f32, f32)>,
     }
 
     tab_index => (&self) -> i32 { 1 }
@@ -55,6 +62,15 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
+        let delta = self.scroll_delta_strip.get();
+        if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
+            self.scroll_delta_strip.set((0.0, 0.0));
+            Some(delta)
+        } else {
+            None
+        }
+    }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if self.disabled {
@@ -64,7 +80,7 @@ component! {
         let all_opts: Vec<&str> = self.all_options();
         match event {
             SystemEvent::PointerDown { pos, .. } => {
-                if pos.y >= 0.0 && pos.y <= 32.0 {
+                if pos.y >= 0.0 && pos.y <= DROPDOWN_TRIGGER_HEIGHT {
                     if self.open {
                         self.close();
                     } else {
@@ -74,26 +90,27 @@ component! {
                     return EventResult::Handled;
                 }
 
-                if self.is_present() && pos.y > 32.0 {
-                    let idx = ((pos.y - 32.0) / 28.0) as usize;
-                    if idx < all_opts.len() {
-                        if self.multiple {
-                            if let Some(multi_idx) =
-                                self.selected_multi.iter().position(|&i| i == idx)
-                            {
-                                self.selected_multi.remove(multi_idx);
+                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                    if let Some(flat_idx) = self.dropdown_row_at_y(pos.y) {
+                        if let Some(opt_idx) = self.flat_row_option_index(flat_idx) {
+                            if self.multiple {
+                                if let Some(multi_idx) =
+                                    self.selected_multi.iter().position(|&i| i == opt_idx)
+                                {
+                                    self.selected_multi.remove(multi_idx);
+                                } else {
+                                    self.selected_multi.push(opt_idx);
+                                }
+                                self.pending_change.replace(Some(self.selected_multi_payload()));
                             } else {
-                                self.selected_multi.push(idx);
+                                if self.selected != opt_idx {
+                                    self.selected = opt_idx;
+                                    self.pending_change.replace(Some(opt_idx.to_string()));
+                                }
+                                self.close();
                             }
-                            self.pending_change.replace(Some(self.selected_multi_payload()));
-                        } else {
-                            if self.selected != idx {
-                                self.selected = idx;
-                                self.pending_change.replace(Some(idx.to_string()));
-                            }
-                            self.close();
+                            return EventResult::Handled;
                         }
-                        return EventResult::Handled;
                     }
                 }
 
@@ -101,13 +118,12 @@ component! {
                 EventResult::NotHandled
             }
             SystemEvent::PointerMove { pos, .. } => {
-                if self.is_present() && pos.y > 32.0 {
-                    let idx = ((pos.y - 32.0) / 28.0) as usize;
-                    self.hovered_option = if idx < all_opts.len() { Some(idx) } else { None };
+                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                    self.hovered_option = self.dropdown_row_at_y(pos.y);
                 } else {
                     self.hovered_option = None;
                 }
-                self.hovered = pos.y >= 0.0 && pos.y <= 32.0;
+                self.hovered = pos.y >= 0.0 && pos.y <= DROPDOWN_TRIGGER_HEIGHT;
                 EventResult::Handled
             }
             SystemEvent::PointerEnter => {
@@ -127,6 +143,23 @@ component! {
                 self.focused = false;
                 self.close();
                 EventResult::Handled
+            }
+            SystemEvent::Wheel { delta, pos, .. } => {
+                if self.is_present() && pos.y > DROPDOWN_TRIGGER_HEIGHT {
+                    let row_count = self.dropdown_row_count();
+                    let viewport_h = self.dropdown_viewport_height(row_count);
+                    let dy = self.dropdown_scroll.scroll_by_wheel(
+                        delta.y,
+                        row_count,
+                        DROPDOWN_ROW_HEIGHT,
+                        viewport_h,
+                    );
+                    if dy.abs() > 0.01 {
+                        self.push_scroll_delta(0.0, dy);
+                        return EventResult::Handled;
+                    }
+                }
+                EventResult::NotHandled
             }
             SystemEvent::KeyDown { key, .. } => match key {
                 KeyCode::Down => {
@@ -192,7 +225,7 @@ component! {
         let fill_quaternary = ctx.tokens().color_fill_quaternary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
 
-        let box_rect = Rect::new(frame.x, frame.y, frame.w, 32.0);
+        let box_rect = Rect::new(frame.x, frame.y, frame.w, DROPDOWN_TRIGGER_HEIGHT);
         let box_bg = if self.disabled {
             fill_quaternary
         } else if self.hovered || self.open {
@@ -210,7 +243,7 @@ component! {
         };
         ctx.stroke_rect(box_rect, border_color, if self.focused { 2.0 } else { 1.0 }, r);
 
-        let box_rect_v = Rect::new(frame.x, frame.y, frame.w, 32.0);
+        let box_rect_v = Rect::new(frame.x, frame.y, frame.w, DROPDOWN_TRIGGER_HEIGHT);
         let draw_y = ctx.visual_center_y(box_rect_v, 13.0);
         if self.multiple && !self.selected_multi.is_empty() {
             let all_opts: Vec<&str> = self.all_options();
@@ -264,7 +297,6 @@ component! {
         }
 
         let all_opts: Vec<&str> = self.all_options();
-        let flat_labels: Vec<String> = self.flat_labels();
         if all_opts.is_empty() {
             return;
         }
@@ -279,8 +311,9 @@ component! {
         let text_sec = fade_color(ctx.tokens().color_text_secondary(), opacity);
         let group_header = fade_color(ctx.tokens().color_fill_quaternary(), opacity);
 
-        let list_y = frame.y + 32.0;
-        let list_h = flat_labels.len() as f32 * 28.0;
+        let row_count = self.dropdown_row_count();
+        let list_y = frame.y + DROPDOWN_TRIGGER_HEIGHT;
+        let list_h = self.dropdown_viewport_height(row_count);
         let list_rect = Rect::new(frame.x, list_y, frame.w, list_h);
         let shadow = ctx.tokens().box_shadow_secondary();
         ctx.draw_box_shadow(
@@ -299,52 +332,56 @@ component! {
             Some(Radius::uniform(ctx.tokens().border_radius_sm())),
         );
 
-        let mut idx = 0;
-        if self.optgroups.is_empty() {
-            for (i, opt) in all_opts.iter().enumerate() {
-                self.render_option(
-                    frame,
-                    list_y,
-                    i,
-                    opt,
-                    i,
-                    ctx,
-                    text_color,
-                    primary,
-                    primary_bg,
-                    fill_tertiary,
-                );
-            }
-        } else {
-            for group in &self.optgroups {
-                let group_y = list_y + idx as f32 * 28.0;
-                ctx.fill_rect(Rect::new(frame.x, group_y, frame.w, 28.0), group_header, None);
-                let gy = ctx.visual_center_y(Rect::new(frame.x, group_y, frame.w, 28.0), 12.0);
-                ctx.draw_text(&group.label, Point::new(frame.x + 10.0, gy), text_sec, 12.0);
-                idx += 1;
+        let scroll_offset = self.dropdown_scroll.scroll_offset();
+        let (start, end) = self.dropdown_scroll.scroll_range(
+            row_count,
+            DROPDOWN_ROW_HEIGHT,
+            list_h,
+        );
+        ctx.canvas_2d().push_clip(list_rect);
 
-                for opt in &group.options {
-                    let opt_idx = self.option_index(&group.label, opt);
+        for flat_idx in start..end {
+            let item_y = list_y + flat_idx as f32 * DROPDOWN_ROW_HEIGHT - scroll_offset;
+            if item_y + DROPDOWN_ROW_HEIGHT < list_y || item_y > list_y + list_h {
+                continue;
+            }
+
+            if self.optgroups.is_empty() {
+                if let Some(opt) = all_opts.get(flat_idx) {
                     self.render_option(
                         frame,
-                        list_y,
-                        idx,
+                        item_y,
+                        flat_idx,
                         opt,
-                        opt_idx,
+                        flat_idx,
                         ctx,
                         text_color,
                         primary,
                         primary_bg,
                         fill_tertiary,
                     );
-                    idx += 1;
                 }
+            } else {
+                self.render_flat_row(
+                    frame,
+                    item_y,
+                    flat_idx,
+                    ctx,
+                    text_color,
+                    primary,
+                    primary_bg,
+                    fill_tertiary,
+                    text_sec,
+                    group_header,
+                );
             }
         }
+
+        ctx.canvas_2d().pop_clip();
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
-        select_dirty_rect(frame, self.flat_labels().len())
+        select_dirty_rect(frame, self.dropdown_row_count())
     }
 
     update_animation => (&mut self, dt: f64) -> bool {
@@ -366,7 +403,7 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
-            select_dirty_rect(frame, self.flat_labels().len())
+            select_dirty_rect(frame, self.dropdown_row_count())
         } else {
             Rect::zero()
         }
@@ -386,14 +423,122 @@ impl Select {
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(150.0)
             .max(120.0);
-        Size::new(w, 32.0)
+        Size::new(w, DROPDOWN_TRIGGER_HEIGHT)
+    }
+
+    fn dropdown_row_count(&self) -> usize {
+        if self.optgroups.is_empty() {
+            self.options.len()
+        } else {
+            self.optgroups
+                .iter()
+                .map(|g| 1 + g.options.len())
+                .sum()
+        }
+    }
+
+    fn dropdown_viewport_height(&self, row_count: usize) -> f32 {
+        (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT)
+    }
+
+    fn dropdown_row_at_y(&self, pos_y: f32) -> Option<usize> {
+        if pos_y <= DROPDOWN_TRIGGER_HEIGHT {
+            return None;
+        }
+        let local_y = pos_y - DROPDOWN_TRIGGER_HEIGHT + self.dropdown_scroll.scroll_offset();
+        if local_y < 0.0 {
+            return None;
+        }
+        let idx = (local_y / DROPDOWN_ROW_HEIGHT) as usize;
+        if idx < self.dropdown_row_count() {
+            Some(idx)
+        } else {
+            None
+        }
+    }
+
+    fn flat_row_option_index(&self, flat_idx: usize) -> Option<usize> {
+        if self.optgroups.is_empty() {
+            return if flat_idx < self.options.len() {
+                Some(flat_idx)
+            } else {
+                None
+            };
+        }
+        let mut idx = 0;
+        for group in &self.optgroups {
+            if idx == flat_idx {
+                return None;
+            }
+            idx += 1;
+            for opt in &group.options {
+                if idx == flat_idx {
+                    return Some(self.option_index(&group.label, opt));
+                }
+                idx += 1;
+            }
+        }
+        None
+    }
+
+    fn render_flat_row(
+        &self,
+        frame: Rect,
+        item_y: f32,
+        flat_idx: usize,
+        ctx: &mut PaintContext,
+        text_color: Color,
+        primary: Color,
+        primary_bg: Color,
+        fill_tertiary: Color,
+        text_sec: Color,
+        group_header: Color,
+    ) {
+        let mut idx = 0;
+        for group in &self.optgroups {
+            if idx == flat_idx {
+                let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
+                ctx.fill_rect(item_rect, group_header, None);
+                let gy = ctx.visual_center_y(item_rect, 12.0);
+                ctx.draw_text(&group.label, Point::new(frame.x + 10.0, gy), text_sec, 12.0);
+                return;
+            }
+            idx += 1;
+            for opt in &group.options {
+                if idx == flat_idx {
+                    let opt_idx = self.option_index(&group.label, opt);
+                    self.render_option(
+                        frame,
+                        item_y,
+                        flat_idx,
+                        opt,
+                        opt_idx,
+                        ctx,
+                        text_color,
+                        primary,
+                        primary_bg,
+                        fill_tertiary,
+                    );
+                    return;
+                }
+                idx += 1;
+            }
+        }
+    }
+
+    fn push_scroll_delta(&self, dx: f32, dy: f32) {
+        if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
+            return;
+        }
+        let current = self.scroll_delta_strip.get();
+        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
     }
 
     fn render_option(
         &self,
         frame: Rect,
-        list_y: f32,
-        idx: usize,
+        item_y: f32,
+        flat_idx: usize,
         label: &str,
         opt_idx: usize,
         ctx: &mut PaintContext,
@@ -402,9 +547,8 @@ impl Select {
         primary_bg: Color,
         fill_tertiary: Color,
     ) {
-        let item_y = list_y + idx as f32 * 28.0;
-        let item_rect = Rect::new(frame.x, item_y, frame.w, 28.0);
-        let is_hovered = self.hovered_option == Some(idx);
+        let item_rect = Rect::new(frame.x, item_y, frame.w, DROPDOWN_ROW_HEIGHT);
+        let is_hovered = self.hovered_option == Some(flat_idx);
         let is_selected = if self.multiple {
             self.selected_multi.contains(&opt_idx)
         } else {
@@ -443,21 +587,6 @@ impl Select {
                 .collect()
         } else {
             self.options.iter().map(|s| s.as_str()).collect()
-        }
-    }
-
-    fn flat_labels(&self) -> Vec<String> {
-        if !self.optgroups.is_empty() {
-            self.optgroups
-                .iter()
-                .flat_map(|g| {
-                    let mut v = vec![format!("[{}]", g.label)];
-                    v.extend(g.options.clone());
-                    v
-                })
-                .collect()
-        } else {
-            self.options.clone()
         }
     }
 
@@ -502,6 +631,8 @@ impl Select {
             pending_change: RefCell::new(None),
             multiple: false,
             search: false,
+            dropdown_scroll: VirtualListScroll::new(),
+            scroll_delta_strip: Cell::new((0.0, 0.0)),
         }
     }
 
@@ -551,6 +682,7 @@ impl Select {
     pub fn open(&mut self) {
         self.open = true;
         self.closing = false;
+        self.dropdown_scroll.set_scroll_offset(0.0);
         self.transition = TransitionPlayer::new(presets::tooltip_enter());
         self.transition_dirty = true;
     }
@@ -565,6 +697,7 @@ impl Select {
 
         self.open = false;
         self.closing = true;
+        self.dropdown_scroll.set_scroll_offset(0.0);
         self.transition = TransitionPlayer::new(presets::tooltip_exit());
         self.transition_dirty = true;
     }
@@ -587,12 +720,18 @@ impl Select {
         self.placeholder = next.placeholder;
         self.multiple = next.multiple;
         self.search = next.search;
+        let row_count = self.dropdown_row_count();
+        self.dropdown_scroll.clamp_to_content(
+            row_count,
+            DROPDOWN_ROW_HEIGHT,
+            self.dropdown_viewport_height(row_count),
+        );
     }
 }
 
-fn select_dirty_rect(frame: Rect, item_count: usize) -> Rect {
-    let list_h = item_count as f32 * 28.0;
-    let list = Rect::new(frame.x, frame.y + 32.0, frame.w, list_h);
+fn select_dirty_rect(frame: Rect, row_count: usize) -> Rect {
+    let list_h = (row_count as f32 * DROPDOWN_ROW_HEIGHT).min(MAX_DROPDOWN_VIEWPORT_HEIGHT);
+    let list = Rect::new(frame.x, frame.y + DROPDOWN_TRIGGER_HEIGHT, frame.w, list_h);
     let expanded = frame.union(&list);
     let expand = 8.0;
     Rect::new(

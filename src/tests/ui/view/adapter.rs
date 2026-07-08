@@ -155,6 +155,31 @@ fn state_get_during_view_build_binds_root_reconcile() {
 }
 
 #[test]
+fn state_get_before_dynamic_label_keeps_root_reconcile() {
+    use crate::ui::state::State;
+    use crate::ui::view::{column, dynamic_label, label};
+
+    let page = State::new(0usize);
+    let page_for_build = page.clone();
+    let page_for_label = page.clone();
+    let root = ViewAdapter::capture_root(move || {
+        let idx = page_for_build.get();
+        column([
+            label(format!("page-{idx}")),
+            dynamic_label(move || format!("detail-{}", page_for_label.get())),
+        ])
+    });
+    let mut tree = ViewAdapter::build_nodes(root);
+
+    tree.reset_invalidation();
+    assert!(!tree.take_reconcile_requested());
+
+    page.set(1);
+
+    assert!(tree.take_reconcile_requested());
+}
+
+#[test]
 fn grid_style_tracks_drive_layout() {
     use crate::core::Rect;
     use crate::ui::layout::GridTrack;

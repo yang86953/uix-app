@@ -23,7 +23,7 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::InvalidationQueueHandle;
-use crate::ui::state::{drain_pending_state_binds, StatePaintBind};
+use crate::ui::state::StatePaintBind;
 use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
 use crate::ui::{ComponentId, WidgetTree};
 use std::any::Any;
@@ -260,7 +260,7 @@ impl DynamicLabel {
     pub fn new<F: Fn() -> String + 'static>(f: F) -> Self {
         Self {
             text_fn: Box::new(f),
-            state_sources: drain_pending_state_binds(),
+            state_sources: Vec::new(),
         }
     }
 

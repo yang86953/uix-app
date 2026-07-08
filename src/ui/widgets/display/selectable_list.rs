@@ -6,9 +6,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::{ComponentId, EventResult, SemanticEvent, SnapshotFields, SystemEvent, WidgetTree};
-
-const DEFAULT_SCROLL_VIEWPORT_HEIGHT: f32 = 500.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectableItem {
@@ -33,29 +32,50 @@ impl SelectableList {
         }
     }
 
-    fn max_scroll_offset(&self) -> f32 {
-        let content_height = self.items.len() as f32 * (self.item_height + 2.0);
-        (content_height - DEFAULT_SCROLL_VIEWPORT_HEIGHT).max(0.0)
+    fn item_stride(&self) -> f32 {
+        self.item_height + 2.0
     }
 
-    fn push_scroll_delta(&self, dy: f32) {
-        if dy.abs() <= 0.01 {
+    fn list_body_top(&self) -> f32 {
+        if self.header_button_text.is_empty() {
+            0.0
+        } else {
+            48.0
+        }
+    }
+
+    fn list_body_viewport_height(&self) -> f32 {
+        let frame = self
+            .last_frame
+            .get()
+            .unwrap_or_else(|| Rect::new(0.0, 0.0, 220.0, 500.0));
+        let footer = if self.footer_text.is_empty() { 0.0 } else { 28.0 };
+        (frame.h - self.list_body_top() - footer).max(self.item_stride())
+    }
+
+    fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
+        let list_top = self.list_body_top();
+        if pos_y < list_top {
+            return None;
+        }
+        let local_y = pos_y - list_top + self.body_scroll.scroll_offset();
+        if local_y < 0.0 {
+            return None;
+        }
+        let row = (local_y / self.item_stride()) as usize;
+        if row < self.items.len() {
+            Some(row)
+        } else {
+            None
+        }
+    }
+
+    fn push_scroll_delta(&self, dx: f32, dy: f32) {
+        if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
             return;
         }
         let current = self.scroll_delta_strip.get();
-        self.scroll_delta_strip.set((current.0, current.1 + dy));
-    }
-
-    fn scroll_by(&self, dy: f32) -> bool {
-        let old_offset = -self.scroll_y.get();
-        let new_offset = (old_offset + dy).clamp(0.0, self.max_scroll_offset());
-        let actual_dy = new_offset - old_offset;
-        if actual_dy.abs() <= 0.01 {
-            return false;
-        }
-        self.scroll_y.set(-new_offset);
-        self.push_scroll_delta(actual_dy);
-        true
+        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
@@ -68,8 +88,11 @@ impl SelectableList {
         } else {
             self.active_index = self.active_index.min(self.items.len() - 1);
         }
-        self.scroll_y
-            .set(self.scroll_y.get().max(-self.max_scroll_offset()).min(0.0));
+        self.body_scroll.clamp_to_content(
+            self.items.len(),
+            self.item_stride(),
+            self.list_body_viewport_height(),
+        );
         self.hovered_index.set(
             self.hovered_index
                 .get()
@@ -104,8 +127,9 @@ component! {
 
         hovered_index: Cell<Option<usize>>,
         hovered_header: Cell<bool>,
-        scroll_y: Cell<f32>,
+        body_scroll: VirtualListScroll,
         scroll_delta_strip: Cell<(f32, f32)>,
+        last_frame: Cell<Option<Rect>>,
         pending_change: Cell<Option<usize>>,
     }
 
@@ -118,8 +142,9 @@ component! {
             item_height: 36.0,
             hovered_index: Cell::new(None),
             hovered_header: Cell::new(false),
-            scroll_y: Cell::new(0.0),
+            body_scroll: VirtualListScroll::new(),
             scroll_delta_strip: Cell::new((0.0, 0.0)),
+            last_frame: Cell::new(None),
             pending_change: Cell::new(None),
         }
     }
@@ -129,7 +154,7 @@ component! {
         if !self.header_button_text.is_empty() {
             h += 48.0;
         }
-        h += self.items.len() as f32 * (self.item_height + 2.0);
+        h += self.items.len() as f32 * self.item_stride();
         if !self.footer_text.is_empty() {
             h += 28.0;
         }
@@ -139,24 +164,17 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { pos, .. } => {
-                let mut y = 0.0;
-
                 if !self.header_button_text.is_empty() {
-                    let btn_rect = Rect::new(8.0, y, 204.0, 40.0);
+                    let btn_rect = Rect::new(8.0, 0.0, 204.0, 40.0);
                     if btn_rect.contains(*pos) {
                         return EventResult::Handled;
                     }
-                    y += 48.0;
                 }
 
-                for i in 0..self.items.len() {
-                    let iy = y + i as f32 * (self.item_height + 2.0) + self.scroll_y.get();
-                    let item_rect = Rect::new(0.0, iy, 220.0, self.item_height);
-                    if item_rect.contains(*pos) {
-                        self.active_index = i;
-                        self.pending_change.set(Some(i));
-                        return EventResult::Handled;
-                    }
+                if let Some(i) = self.row_index_at_y(pos.y) {
+                    self.active_index = i;
+                    self.pending_change.set(Some(i));
+                    return EventResult::Handled;
                 }
                 EventResult::NotHandled
             }
@@ -164,26 +182,13 @@ component! {
             SystemEvent::PointerMove { pos, .. } => {
                 let old_hover = self.hovered_index.get();
                 let old_btn = self.hovered_header.get();
-                let mut new_hover = None;
-                let mut new_btn = false;
 
-                let mut y = 0.0;
-                if !self.header_button_text.is_empty() {
-                    let btn_rect = Rect::new(8.0, y, 204.0, 40.0);
-                    if btn_rect.contains(*pos) {
-                        new_btn = true;
-                    }
-                    y += 48.0;
-                }
-
-                for i in 0..self.items.len() {
-                    let iy = y + i as f32 * (self.item_height + 2.0) + self.scroll_y.get();
-                    let item_rect = Rect::new(0.0, iy, 220.0, self.item_height);
-                    if item_rect.contains(*pos) {
-                        new_hover = Some(i);
-                        break;
-                    }
-                }
+                let new_btn = if !self.header_button_text.is_empty() {
+                    Rect::new(8.0, 0.0, 204.0, 40.0).contains(*pos)
+                } else {
+                    false
+                };
+                let new_hover = self.row_index_at_y(pos.y);
 
                 self.hovered_index.set(new_hover);
                 self.hovered_header.set(new_btn);
@@ -195,7 +200,15 @@ component! {
             }
 
             SystemEvent::Wheel { delta, .. } => {
-                if self.scroll_by(delta.y * 0.5) {
+                let viewport_h = self.list_body_viewport_height();
+                let dy = self.body_scroll.scroll_by_wheel(
+                    delta.y,
+                    self.items.len(),
+                    self.item_stride(),
+                    viewport_h,
+                );
+                if dy.abs() > 0.01 {
+                    self.push_scroll_delta(0.0, dy);
                     EventResult::Handled
                 } else {
                     EventResult::NotHandled
@@ -235,6 +248,7 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.last_frame.set(Some(frame));
         let bg = ctx.tokens().color_bg_layout();
         let border = Color::from_rgb(40, 40, 45);
         let t_sec = ctx.tokens().color_text_secondary();
@@ -269,13 +283,21 @@ component! {
             y = btn_frame.y + btn_frame.h + 16.0;
         }
 
-        let sy = self.scroll_y.get();
-        let list_clip = Rect::new(frame.x, y, frame.w, frame.h - y - 28.0);
+        let list_top = y;
+        let footer_h = if self.footer_text.is_empty() { 0.0 } else { 28.0 };
+        let list_viewport_h = frame.h - (list_top - frame.y) - footer_h;
+        let list_clip = Rect::new(frame.x, list_top, frame.w, list_viewport_h);
         ctx.canvas_2d().push_clip(list_clip);
 
-        for i in 0..self.items.len() {
-            let iy = y + i as f32 * (self.item_height + 2.0) + sy;
-            if iy + self.item_height < y || iy > y + list_clip.h {
+        let stride = self.item_stride();
+        let scroll_offset = self.body_scroll.scroll_offset();
+        let (start, end) = self
+            .body_scroll
+            .scroll_range(self.items.len(), stride, list_viewport_h);
+
+        for i in start..end {
+            let iy = list_top + i as f32 * stride - scroll_offset;
+            if iy + self.item_height < list_top || iy > list_top + list_viewport_h {
                 continue;
             }
 
@@ -318,5 +340,5 @@ component! {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/ui/widgets/display/selectable_list.rs"]
+#[path = "../../../tests/ui/widgets/display/selectable_list_virtual_scroll.rs"]
 mod tests;

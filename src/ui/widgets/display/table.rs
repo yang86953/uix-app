@@ -2,6 +2,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
+use crate::ui::foundation::virtual_scroll::VirtualListScroll;
 use crate::ui::{
     ComponentId, EventResult, SemanticEvent, SnapshotFields, SnapshotTableColumn, SystemEvent,
     WidgetTree,
@@ -83,22 +84,50 @@ component! {
         current_page: Cell<usize>,
         page_size: usize,
         pending_change: RefCell<Option<String>>,
+        body_scroll: VirtualListScroll,
+        scroll_delta_strip: Cell<(f32, f32)>,
+        last_frame: Cell<Option<Rect>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
         let w: f32 = self.columns.iter().map(|c| c.width).sum();
-        let data_rows = self.rows.len().min(self.page_size);
         let extra = if self.expanded_row.get().is_some() { self.expand_height } else { 0.0 };
-        let h = self.header_h + data_rows as f32 * self.row_h + extra;
+        let body_h = self.rows.len() as f32 * self.row_h + extra;
+        let h = self.header_h + body_h;
         constraints.clamp(Size::new(w, h.max(60.0)))
+    }
+
+    scroll_delta_for_dirty => (&self) -> Option<(f32, f32)> {
+        let delta = self.scroll_delta_strip.get();
+        if delta.0.abs() > 0.01 || delta.1.abs() > 0.01 {
+            self.scroll_delta_strip.set((0.0, 0.0));
+            Some(delta)
+        } else {
+            None
+        }
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
+            SystemEvent::Wheel { delta, .. } => {
+                let viewport_h = self.body_viewport_height();
+                let dy = self.body_scroll.scroll_by_wheel(
+                    delta.y,
+                    self.rows.len(),
+                    self.row_h,
+                    viewport_h,
+                );
+                if dy.abs() > 0.01 {
+                    self.push_scroll_delta(0.0, dy);
+                    EventResult::Handled
+                } else {
+                    EventResult::NotHandled
+                }
+            }
             SystemEvent::PointerDown { pos, .. } => {
                 if pos.x < 32.0 && pos.y >= self.header_h {
-                    let row = ((pos.y - self.header_h) / self.row_h) as usize;
-                    if row < self.rows.len() {
+                    let row = self.row_index_at_y(pos.y);
+                    if let Some(row) = row {
                         let idx = self.checked_rows.iter().position(|&r| r == row);
                         if let Some(i) = idx { self.checked_rows.remove(i); }
                         else { self.checked_rows.push(row); }
@@ -129,8 +158,7 @@ component! {
                     }
                 }
                 if pos.y >= self.header_h {
-                    let row = ((pos.y - self.header_h) / self.row_h) as usize;
-                    if row < self.rows.len() {
+                    if let Some(row) = self.row_index_at_y(pos.y) {
                         self.selected_row.set(Some(row));
                         return EventResult::Handled;
                     }
@@ -140,8 +168,8 @@ component! {
             }
             SystemEvent::PointerMove { pos, .. } => {
                 if pos.y >= self.header_h {
-                    let row = ((pos.y - self.header_h) / self.row_h) as usize;
-                    self.hover_row.set(if row < self.rows.len() { Some(row) } else { None });
+                    let row = self.row_index_at_y(pos.y);
+                    self.hover_row.set(row.filter(|&r| r < self.rows.len()));
                 } else {
                     self.hover_row.set(None);
                 }
@@ -161,6 +189,7 @@ component! {
     wants_continuous_pointer_move => (&self) -> bool { true }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.last_frame.set(Some(frame));
         let loc = crate::ui::locale::use_locale();
         let bg = ctx.tokens().color_bg_elevated();
         let header_bg = ctx.tokens().color_fill_tertiary();
@@ -215,19 +244,31 @@ component! {
         ctx.fill_rect(Rect::new(frame.x, y, frame.w, 1.0), border, None);
         y += 1.0;
 
-        // 数据行（分页截取）
-        let start = self.current_page.get() * self.page_size;
-        let visible_rows: Vec<(usize, &TableRow)> = self.rows.iter().enumerate().skip(start).take(self.page_size).collect();
+        // 数据行（虚拟滚动：仅绘制 viewport ± overscan）
+        let body_top = y;
+        let body_viewport_h = self.body_viewport_height();
+        let (start, end) = self
+            .body_scroll
+            .scroll_range(self.rows.len(), self.row_h, body_viewport_h);
+        let body_clip = Rect::new(frame.x, body_top, frame.w, body_viewport_h);
+        ctx.canvas_2d().push_clip(body_clip);
 
-        for (vi, row) in visible_rows.iter().enumerate() {
-            let actual_ri = start + vi;
+        for actual_ri in start..end {
+            let Some(row) = self.rows.get(actual_ri) else {
+                continue;
+            };
             let is_selected = sel == Some(actual_ri);
             let is_hovered = hover == Some(actual_ri);
             let is_checked = self.checked_rows.contains(&actual_ri);
             let is_expanded = expanded == Some(actual_ri);
 
+            let row_y = body_top + actual_ri as f32 * self.row_h - self.body_scroll.scroll_offset();
+            if row_y + self.row_h < body_top || row_y > body_top + body_viewport_h {
+                continue;
+            }
+
             let row_bg = if is_selected { sel_bg } else if is_hovered { hover_bg } else if actual_ri.is_multiple_of(2) { bg } else { ctx.tokens().color_bg_container() };
-            let row_rect = Rect::new(frame.x, y, frame.w, self.row_h);
+            let row_rect = Rect::new(frame.x, row_y, frame.w, self.row_h);
             ctx.fill_rect(row_rect, row_bg, None);
 
             // 复选框
@@ -237,7 +278,7 @@ component! {
             let mut x = frame.x + 32.0;
             let cell_y = ctx.visual_center_y(row_rect, 12.0);
             for (ci, col) in self.columns.iter().enumerate() {
-                let cell = row.1.get(ci).map(|s| s.as_str()).unwrap_or("");
+                let cell = row.get(ci).map(|s| s.as_str()).unwrap_or("");
                 let tc = if is_selected { primary } else { text_color };
                 ctx.draw_text(cell, Point::new(x + 8.0, cell_y), tc, 12.0);
                 x += col.width;
@@ -248,21 +289,21 @@ component! {
                 ctx.draw_text(if is_expanded { "▲" } else { "▼" }, Point::new(frame.x + frame.w - 20.0, cell_y), text_sec, 10.0);
             }
 
-            if vi < visible_rows.len().saturating_sub(1) || is_expanded {
-                ctx.fill_rect(Rect::new(frame.x, y + self.row_h, frame.w, 1.0), border, None);
+            if actual_ri + 1 < end || is_expanded {
+                ctx.fill_rect(Rect::new(frame.x, row_y + self.row_h, frame.w, 1.0), border, None);
             }
-            y += self.row_h;
 
             // 扩展行内容
             if is_expanded {
                 if let Some(ref renderer) = self.expand_renderer {
-                    let expand_rect = Rect::new(frame.x, y, frame.w, self.expand_height);
+                    let expand_rect = Rect::new(frame.x, row_y + self.row_h, frame.w, self.expand_height);
                     ctx.fill_rect(expand_rect, ctx.tokens().color_bg_container(), None);
                     renderer(actual_ri, ctx, expand_rect);
                 }
-                y += self.expand_height;
             }
         }
+
+        ctx.canvas_2d().pop_clip();
     }
 }
 
@@ -307,6 +348,9 @@ impl Table {
             current_page: Cell::new(0),
             page_size: 20,
             pending_change: RefCell::new(None),
+            body_scroll: VirtualListScroll::new(),
+            scroll_delta_strip: Cell::new((0.0, 0.0)),
+            last_frame: Cell::new(None),
         }
     }
     pub fn columns(mut self, cols: Vec<TableColumn>) -> Self {
@@ -348,6 +392,33 @@ impl Table {
         self
     }
 
+    fn body_viewport_height(&self) -> f32 {
+        self.last_frame
+            .get()
+            .map(|f| (f.h - self.header_h - 1.0).max(self.row_h))
+            .unwrap_or(300.0)
+    }
+
+    fn row_index_at_y(&self, pos_y: f32) -> Option<usize> {
+        if pos_y < self.header_h {
+            return None;
+        }
+        let local_y = pos_y - self.header_h + self.body_scroll.scroll_offset();
+        if local_y < 0.0 {
+            return None;
+        }
+        let row = (local_y / self.row_h) as usize;
+        if row < self.rows.len() { Some(row) } else { None }
+    }
+
+    fn push_scroll_delta(&self, dx: f32, dy: f32) {
+        if dx.abs() <= 0.01 && dy.abs() <= 0.01 {
+            return;
+        }
+        let current = self.scroll_delta_strip.get();
+        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
+    }
+
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
         SnapshotFields::Table {
             columns: self
@@ -373,6 +444,11 @@ impl Table {
         self.expand_renderer = next.expand_renderer;
         self.empty_text = next.empty_text;
         self.page_size = next.page_size;
+        self.body_scroll.clamp_to_content(
+            self.rows.len(),
+            self.row_h,
+            self.body_viewport_height(),
+        );
     }
 }
 
@@ -400,3 +476,7 @@ fn merge_table_columns(current: &[TableColumn], next: Vec<TableColumn>) -> Vec<T
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/display/table_virtual_scroll.rs"]
+mod tests;
