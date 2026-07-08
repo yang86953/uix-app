@@ -42,14 +42,15 @@ pub use crate::ui::style::{
 pub use crate::ui::theme::{
     DesignTokens, DynTokens, NeutralRole, ShadowToken, Theme, ThemePrimitives,
 };
-pub use crate::ui::{Animation, Easing};
 pub use crate::ui::{
-    AppState, ClickEvent, ComponentConfigSnapshot, ComponentHandle, EventResult, HandlerId,
-    HandlerOptions, HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, AppState, ClickEvent,
+    ComponentConfigSnapshot, ComponentHandle, EventResult, HandlerId, HandlerOptions,
+    HandlerRegistration, IntoWidgetNode, PaintContext, SemanticEvent, SemanticKind,
     SemanticPayload, SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource,
     SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
     SystemEventKind, WidgetChildren,
 };
+pub use crate::ui::{Animation, Easing};
 pub use crate::ui::{
     DragManager, FocusManager, InteractionManager, StateManager, TextManager, WidgetManagers,
 };
@@ -125,6 +126,9 @@ mod tests {
         assert_exported::<AppHandle>();
         assert_exported::<AppMode>();
         assert_exported::<WindowConfig>();
+        assert_exported::<AccessibilityRole>();
+        assert_exported::<AccessibilitySnapshot>();
+        assert_exported::<AccessibilityState>();
         assert_exported::<DiContainer>();
         assert_exported::<TimerHandle>();
         assert_exported::<ComponentId>();
