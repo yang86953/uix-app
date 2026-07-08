@@ -595,6 +595,31 @@ fn set_root_uses_named_bootstrap_constraints() {
 }
 
 #[test]
+fn root_bootstrap_constraints_are_finite() {
+    let constraints = WidgetTree::root_bootstrap_constraints();
+
+    assert_eq!(constraints.min, Size::zero());
+    assert_eq!(constraints.max, WidgetTree::ROOT_BOOTSTRAP_SIZE);
+    assert_ne!(constraints.max, Size::infinite());
+}
+
+#[test]
+fn set_root_clamps_oversized_root_to_bootstrap_constraints() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(SpyWidget::new(1200.0, 900.0)));
+
+    assert_eq!(
+        tree.get(root).unwrap().frame(),
+        Rect::new(
+            0.0,
+            0.0,
+            WidgetTree::ROOT_BOOTSTRAP_SIZE.w,
+            WidgetTree::ROOT_BOOTSTRAP_SIZE.h
+        )
+    );
+}
+
+#[test]
 fn layout_bootstrap_uses_named_bootstrap_constraints_for_missing_root_frame() {
     let seen = Rc::new(RefCell::new(Vec::new()));
     let mut tree = WidgetTree::new();
@@ -759,6 +784,17 @@ fn child_from_tree_with_constraints_clamps_measured_size() {
 
     let layout_child =
         child_from_tree_with_constraints(child, &tree, Constraints::loose(Size::new(40.0, 24.0)));
+
+    assert_eq!(layout_child.measured_size, Size::new(40.0, 24.0));
+}
+
+#[test]
+fn child_from_tree_falls_back_to_parent_frame_constraints() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(40.0, 24.0, vec![])));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(120.0, 80.0)));
+
+    let layout_child = child_from_tree(child, &tree);
 
     assert_eq!(layout_child.measured_size, Size::new(40.0, 24.0));
 }
