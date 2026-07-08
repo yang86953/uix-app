@@ -4517,17 +4517,19 @@ fn view_node_window_capture_reregisters_handler_when_fingerprint_changes() {
 }
 
 #[test]
-fn test_state_auto_dirty() {
+fn test_state_auto_reconcile_invalidation() {
     use crate::ui::state::State;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     let state = State::new(42);
-    let dirty_called = Arc::new(AtomicBool::new(false));
-    let dirty_called_clone = dirty_called.clone();
-    state.set_dirty_fn(move || dirty_called_clone.store(true, Ordering::SeqCst));
-    assert!(!dirty_called.load(Ordering::SeqCst));
+    let reconcile_called = Arc::new(AtomicBool::new(false));
+    let reconcile_called_clone = reconcile_called.clone();
+    state.set_reconcile_invalidation_fn(move || {
+        reconcile_called_clone.store(true, Ordering::SeqCst)
+    });
+    assert!(!reconcile_called.load(Ordering::SeqCst));
     state.set(100);
-    assert!(dirty_called.load(Ordering::SeqCst));
+    assert!(reconcile_called.load(Ordering::SeqCst));
 }
 
 #[test]

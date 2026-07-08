@@ -42,9 +42,9 @@ struct EffectDependency {
     subscribe_pending: Box<dyn Fn(Arc<AtomicBool>) + Send + Sync>,
 }
 
-// 当前 View 的脏标记回调——State::new 创建时自动读取并绑定。
+// 当前 View 的 reconcile invalidation 回调：State::new 创建时自动读取并绑定。
 thread_local! {
-    static CURRENT_VIEW_DIRTY_FN: RefCell<Option<Arc<dyn Fn() + Send + Sync>>> =
+    static CURRENT_VIEW_RECONCILE_FN: RefCell<Option<Arc<dyn Fn() + Send + Sync>>> =
         const { RefCell::new(None) };
 }
 
@@ -295,18 +295,18 @@ impl<T: Clone + Send + Sync + 'static> StatePaintBind for Computed<T> {
     }
 }
 
-/// 设置当前 View 的脏标记回调。此回调会被新创建的 `State` 自动绑定。
+/// 设置当前 View 的 reconcile invalidation 回调。此回调会被新创建的 `State` 自动绑定。
 /// 由 ViewAdapter 内部调用，用户不需要直接使用。
-pub fn set_current_view_dirty_fn<F: Fn() + Send + Sync + 'static>(f: F) {
-    CURRENT_VIEW_DIRTY_FN.with(|dirty| {
-        *dirty.borrow_mut() = Some(Arc::new(f));
+pub fn set_current_view_reconcile_fn<F: Fn() + Send + Sync + 'static>(f: F) {
+    CURRENT_VIEW_RECONCILE_FN.with(|reconcile| {
+        *reconcile.borrow_mut() = Some(Arc::new(f));
     });
 }
 
-/// 清除当前 View 的脏标记回调。
-pub fn clear_current_view_dirty_fn() {
-    CURRENT_VIEW_DIRTY_FN.with(|dirty| {
-        *dirty.borrow_mut() = None;
+/// 清除当前 View 的 reconcile invalidation 回调。
+pub fn clear_current_view_reconcile_fn() {
+    CURRENT_VIEW_RECONCILE_FN.with(|reconcile| {
+        *reconcile.borrow_mut() = None;
     });
 }
 
@@ -339,12 +339,12 @@ where
 /// A reactive state value that notifies watchers on change.
 /// Thread-safe: Send + Sync when T is Send + Sync.
 ///
-/// 支持自动脏标记：当通过 `set()` / `update()` 修改值时，自动调用注册的脏标记回调，
-/// 通知 WidgetTree 重新渲染所属 View。脏标记回调由 ViewAdapter 在 ViewNode 展开时自动绑定，
-/// 用户不需要手动调用 `mark_dirty`。
+/// 支持自动 reconcile invalidation：当通过 `set()` / `update()` 修改值时，自动调用注册的 reconcile 回调，
+/// 通知 WidgetTree 重新渲染所属 View。reconcile 回调由 ViewAdapter 在 ViewNode 展开时自动绑定，
+/// 用户不需要手动请求 reconcile。
 pub struct State<T> {
     inner: Arc<RwLock<StateInner<T>>>,
-    /// 脏标记回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
+    /// reconcile invalidation 回调——值变更时自动调用，通知 WidgetTree 重绘所属节点。
     reconcile_sites: Arc<std::sync::Mutex<Vec<ReconcileBindSite>>>,
     /// Phase 6：精确 Paint 失效绑定（ComponentId + 队列句柄）。
     paint_sites: Arc<std::sync::Mutex<Vec<PaintBindSite>>>,
@@ -360,11 +360,11 @@ struct StateInner<T> {
 
 impl<T: Clone + Send + Sync + 'static> State<T> {
     pub fn new(value: T) -> Self {
-        // 自动从线程局部上下文绑定脏标记回调
+        // 自动从线程局部上下文绑定 reconcile invalidation 回调。
         let reconcile_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
         let paint_sites = Arc::new(std::sync::Mutex::new(Vec::new()));
-        CURRENT_VIEW_DIRTY_FN.with(|dirty| {
-            let borrowed = dirty.borrow();
+        CURRENT_VIEW_RECONCILE_FN.with(|reconcile| {
+            let borrowed = reconcile.borrow();
             if let Some(ref f) = *borrowed {
                 bind_reconcile_site(&reconcile_sites, 0, f.clone());
             }
@@ -396,9 +396,9 @@ impl<T: Clone + Send + Sync + 'static> State<T> {
         bind_reconcile_site(&self.reconcile_sites, key, reconcile);
     }
 
-    /// 设置脏标记回调。此回调在值变更时（`set` / `update`）自动调用。
+    /// 设置 reconcile invalidation 回调。此回调在值变更时（`set` / `update`）自动调用。
     /// 由 ViewAdapter 内部使用，用户不需要调用此方法。
-    pub fn set_dirty_fn<F: Fn() + Send + Sync + 'static>(&self, f: F) {
+    pub fn set_reconcile_invalidation_fn<F: Fn() + Send + Sync + 'static>(&self, f: F) {
         if let Ok(mut guard) = self.reconcile_sites.lock() {
             guard.clear();
             guard.push(ReconcileBindSite {

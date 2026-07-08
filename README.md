@@ -21,9 +21,9 @@ Rust 跨平台原生桌面 UI 框架（Windows / Linux）。`use uix::prelude::*
 ## 快速开始
 
 ```bash
-cargo run --bin uix-demo              # GUI
-cargo run --bin uix-demo -- --simple  # 简化 View API
-cargo run --bin uix-demo -- --cli     # CLI
+cargo run --bin uix-demo                    # 简化 View API（prelude + App）
+cargo run --bin uix-demo -- --dashboard     # GUI 组件库高级演示
+cargo run --bin uix-demo -- --cli           # CLI
 RUST_LOG=debug cargo run --bin uix-demo
 cargo test
 ```

@@ -1,13 +1,13 @@
 //! 简化 API 演示 — `prelude` + `App::new()` 一键启动。
 //!
-//! 运行：`cargo run --bin uix-demo -- --simple`
+//! 运行：`cargo run --bin uix-demo`
 //!
 //! 本演示展示入门推荐路径：View DSL（`column` / `row` / `button`）+
 //! 响应式 `State` + `App` 生命周期，无需直接接触 `WidgetTree` 或平台 API。
 
 use uix::prelude::*;
 
-// ── 计数器 — State 自动脏标记 + dynamic_label ────────────────────────────
+// ── 计数器 — State 自动 reconcile invalidation + dynamic_label ────────────
 
 fn counter_section() -> ViewNode {
     let count = State::new(0);
