@@ -408,7 +408,11 @@ impl Table {
             return None;
         }
         let row = (local_y / self.row_h) as usize;
-        if row < self.rows.len() { Some(row) } else { None }
+        if row < self.rows.len() {
+            Some(row)
+        } else {
+            None
+        }
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -416,7 +420,8 @@ impl Table {
             return;
         }
         let current = self.scroll_delta_strip.get();
-        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
+        self.scroll_delta_strip
+            .set((current.0 + dx, current.1 + dy));
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {
@@ -444,11 +449,8 @@ impl Table {
         self.expand_renderer = next.expand_renderer;
         self.empty_text = next.empty_text;
         self.page_size = next.page_size;
-        self.body_scroll.clamp_to_content(
-            self.rows.len(),
-            self.row_h,
-            self.body_viewport_height(),
-        );
+        self.body_scroll
+            .clamp_to_content(self.rows.len(), self.row_h, self.body_viewport_height());
     }
 }
 

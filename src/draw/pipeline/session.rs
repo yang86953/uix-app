@@ -89,6 +89,8 @@ impl RenderSession {
         if self.backend.resize(width, height).is_err() {
             crate::core::log::error_fn("RenderSession::resize 失败");
         }
+        // swapchain/缓冲 resize 后内容丢失，下一帧须全帧重绘。
+        self.force_full_frame = true;
     }
 
     /// 运行时切换后端；下一帧将强制 FullRedraw。

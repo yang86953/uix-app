@@ -38,19 +38,32 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
         )
         .section("ProgressBar — 线形 / 圆形 / 不确定")
         .push(demo_row(24.0).child(ProgressBar::new().progress(45.0)))
-        .push(demo_row(24.0).child(
-            ProgressBar::new()
-                .progress(78.0)
-                .stroke_color(tk.color_success),
-        ))
+        .push(
+            demo_row(24.0).child(
+                ProgressBar::new()
+                    .progress(78.0)
+                    .stroke_color(tk.color_success),
+            ),
+        )
         .push(demo_row(60.0).child(ProgressBar::new().circle().progress(0.65)))
         .push(demo_row(24.0).child(ProgressBar::new().indeterminate()))
         .section("Skeleton / Empty")
         .push(
-            Space::new().size(SpaceSize::Small).width(INNER_W).height(56.0)
+            Space::new()
+                .size(SpaceSize::Small)
+                .width(INNER_W)
+                .height(56.0)
                 .direction(FlexDirection::Column)
-                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W, 14.0))
-                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W * 0.7, 14.0)),
+                .child(
+                    Skeleton::new()
+                        .shape(SkeletonShape::Rect)
+                        .size(INNER_W, 14.0),
+                )
+                .child(
+                    Skeleton::new()
+                        .shape(SkeletonShape::Rect)
+                        .size(INNER_W * 0.7, 14.0),
+                ),
         )
         .push(Empty::new().description("暂无反馈数据"))
         .section("Overlay — Modal / Drawer")
@@ -64,7 +77,9 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
             tk,
             36.0,
             "Drawer ✓",
-            Drawer::new("抽屉标题").closable(true).placement(DrawerPlacement::Right),
+            Drawer::new("抽屉标题")
+                .closable(true)
+                .placement(DrawerPlacement::Right),
         ))
         .section("Overlay — Tooltip / Popover / Popconfirm")
         .push(labeled_row(

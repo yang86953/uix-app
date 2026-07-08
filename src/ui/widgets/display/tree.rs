@@ -223,7 +223,11 @@ impl Tree {
             return None;
         }
         let idx = (local_y / TREE_ROW_HEIGHT) as usize;
-        if idx < self.flat.len() { Some(idx) } else { None }
+        if idx < self.flat.len() {
+            Some(idx)
+        } else {
+            None
+        }
     }
 
     fn push_scroll_delta(&self, dx: f32, dy: f32) {
@@ -231,7 +235,8 @@ impl Tree {
             return;
         }
         let current = self.scroll_delta_strip.get();
-        self.scroll_delta_strip.set((current.0 + dx, current.1 + dy));
+        self.scroll_delta_strip
+            .set((current.0 + dx, current.1 + dy));
     }
 
     pub fn new(nodes: Vec<TreeNode>) -> Self {

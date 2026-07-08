@@ -47,19 +47,64 @@ pub fn page_other(ctx: &DemoCtx<'_>) -> ViewNode {
         .section("DesignTokens — 语义色")
         .push(
             demo_row(44.0)
-                .child(Container::new().size(72.0, 28.0).bg(tk.color_primary_bg).rounded(4.0))
-                .child(Container::new().size(72.0, 28.0).bg(tk.color_success_bg).rounded(4.0))
-                .child(Container::new().size(72.0, 28.0).bg(tk.color_warning_bg).rounded(4.0))
-                .child(Container::new().size(72.0, 28.0).bg(tk.color_error_bg).rounded(4.0))
-                .child(Container::new().size(72.0, 28.0).bg(tk.color_info_bg).rounded(4.0)),
+                .child(
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_primary_bg)
+                        .rounded(4.0),
+                )
+                .child(
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_success_bg)
+                        .rounded(4.0),
+                )
+                .child(
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_warning_bg)
+                        .rounded(4.0),
+                )
+                .child(
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_error_bg)
+                        .rounded(4.0),
+                )
+                .child(
+                    Container::new()
+                        .size(72.0, 28.0)
+                        .bg(tk.color_info_bg)
+                        .rounded(4.0),
+                ),
         )
         .section("Fill / Border 层级")
         .push(
             demo_row(24.0)
-                .child(Container::new().size(50.0, 18.0).bg(tk.color_fill).rounded(2.0))
-                .child(Container::new().size(50.0, 18.0).bg(tk.color_fill_secondary).rounded(2.0))
-                .child(Container::new().size(50.0, 18.0).bg(tk.color_fill_tertiary).rounded(2.0))
-                .child(Container::new().size(50.0, 18.0).bg(tk.color_border).rounded(2.0)),
+                .child(
+                    Container::new()
+                        .size(50.0, 18.0)
+                        .bg(tk.color_fill)
+                        .rounded(2.0),
+                )
+                .child(
+                    Container::new()
+                        .size(50.0, 18.0)
+                        .bg(tk.color_fill_secondary)
+                        .rounded(2.0),
+                )
+                .child(
+                    Container::new()
+                        .size(50.0, 18.0)
+                        .bg(tk.color_fill_tertiary)
+                        .rounded(2.0),
+                )
+                .child(
+                    Container::new()
+                        .size(50.0, 18.0)
+                        .bg(tk.color_border)
+                        .rounded(2.0),
+                ),
         )
         .build()
 }

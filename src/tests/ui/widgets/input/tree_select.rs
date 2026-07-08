@@ -1,8 +1,8 @@
 use super::*;
 use crate::core::{Constraints, Point, Size};
 use crate::ui::traits::{EventHandler, WidgetAnimation, WidgetLayout};
-use crate::ui::{EventResult, SystemEvent};
 use crate::ui::widgets::display::TreeNode;
+use crate::ui::{EventResult, SystemEvent};
 
 fn large_tree_select() -> TreeSelect {
     let nodes: Vec<TreeNode> = (0..80)
@@ -59,7 +59,10 @@ fn tree_select_dropdown_scroll_range_limits_visible_rows() {
         .dropdown_scroll
         .scroll_range(row_count, 28.0, viewport_h);
     assert_eq!(start, 0);
-    assert!(end - start < 80, "virtual scroll should expose a small window");
+    assert!(
+        end - start < 80,
+        "virtual scroll should expose a small window"
+    );
 }
 
 #[test]

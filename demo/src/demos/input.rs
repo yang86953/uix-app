@@ -41,11 +41,13 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
                 .child(InputNumber::new("价格").min(0.0).max(999.0).step(0.5)),
         )
         .section("Select")
-        .push(demo_row(36.0).child(
-            Select::new()
-                .options(vec!["选项 1", "选项 2", "选项 3"])
-                .selected(1),
-        ))
+        .push(
+            demo_row(36.0).child(
+                Select::new()
+                    .options(vec!["选项 1", "选项 2", "选项 3"])
+                    .selected(1),
+            ),
+        )
         .push(labeled_row(
             tk,
             36.0,
@@ -59,7 +61,9 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
             tk,
             36.0,
             "TreeSelect",
-            TreeSelect::new().nodes(tree_nodes).placeholder("选择技术栈"),
+            TreeSelect::new()
+                .nodes(tree_nodes)
+                .placeholder("选择技术栈"),
         ))
         .push(labeled_row(
             tk,
@@ -124,12 +128,8 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
                 .child(Rate::new().value(2).allow_half()),
         )
         .section("DatePicker / TimePicker / ColorPicker")
-        .push(demo_row(36.0).child(
-            DatePicker::new("选择日期").value(DateValue::new(2026, 6, 20)),
-        ))
-        .push(demo_row(36.0).child(
-            TimePicker::new("选择时间").value(TimeValue::new(14, 30)),
-        ))
+        .push(demo_row(36.0).child(DatePicker::new("选择日期").value(DateValue::new(2026, 6, 20))))
+        .push(demo_row(36.0).child(TimePicker::new("选择时间").value(TimeValue::new(14, 30))))
         .push(labeled_row(
             tk,
             36.0,
@@ -137,15 +137,21 @@ pub fn page_input(ctx: &DemoCtx<'_>) -> ViewNode {
             ColorPicker::new(tk.color_primary),
         ))
         .section("Segmented")
-        .push(demo_row(36.0).child(
-            Segmented::new().options(vec!["每日", "每周", "每月", "每年"]).selected(2),
-        ))
+        .push(
+            demo_row(36.0).child(
+                Segmented::new()
+                    .options(vec!["每日", "每周", "每月", "每年"])
+                    .selected(2),
+            ),
+        )
         .section("Form / FormItem")
-        .push(tree! { Container::new().size(INNER_W, 200.0).dir(FlexDirection::Column).gap(8.0) => [
-            Form::new().label_width(80.0).gap(8.0).layout(FormLayout::Vertical).into_node(),
-            FormItem::new("用户名").name("user").required(true).help("必填").into_node(),
-            FormItem::new("邮箱").name("email").status(ValidateStatus::Success).into_node(),
-            FormItem::new("密码").name("pwd").status(ValidateStatus::Error).into_node(),
-        ]})
+        .push(
+            tree! { Container::new().size(INNER_W, 200.0).dir(FlexDirection::Column).gap(8.0) => [
+                Form::new().label_width(80.0).gap(8.0).layout(FormLayout::Vertical).into_node(),
+                FormItem::new("用户名").name("user").required(true).help("必填").into_node(),
+                FormItem::new("邮箱").name("email").status(ValidateStatus::Success).into_node(),
+                FormItem::new("密码").name("pwd").status(ValidateStatus::Error).into_node(),
+            ]},
+        )
         .build()
 }

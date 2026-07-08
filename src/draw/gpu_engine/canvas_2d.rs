@@ -309,7 +309,8 @@ impl GpuCanvas2D {
         unsafe {
             self.gl().disable(glow::SCISSOR_TEST);
             self.gl().active_texture(glow::TEXTURE0);
-            self.gl().bind_texture(glow::TEXTURE_2D, Some(self.fallback_texture));
+            self.gl()
+                .bind_texture(glow::TEXTURE_2D, Some(self.fallback_texture));
             let byte_len = (self.surface_w as usize)
                 .saturating_mul(self.surface_h as usize)
                 .saturating_mul(4);

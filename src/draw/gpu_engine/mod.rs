@@ -91,7 +91,8 @@ impl GraphicsEngine for GpuEngine {
         if let Some(gpu) = self.session.gpu_backend_mut() {
             gpu.gpu_ctx.make_current();
             unsafe {
-                gpu.gl.viewport(0, 0, gpu.gpu_ctx.width(), gpu.gpu_ctx.height());
+                gpu.gl
+                    .viewport(0, 0, gpu.gpu_ctx.width(), gpu.gpu_ctx.height());
             }
         }
     }

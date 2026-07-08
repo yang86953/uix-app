@@ -142,11 +142,8 @@ fn planned_backend_error(backend: GraphicsBackend) -> Error {
 
 #[cfg(windows)]
 fn platform_default_gpu_backends() -> Vec<GraphicsBackend> {
-    vec![
-        GraphicsBackend::D3d12,
-        GraphicsBackend::D3d11,
-        GraphicsBackend::OpenGlEs,
-    ]
+    // D3D12 尚未实现，待落地后再加入候选链首位（#162）。
+    vec![GraphicsBackend::D3d11, GraphicsBackend::OpenGlEs]
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -288,11 +285,7 @@ mod tests {
         #[cfg(windows)]
         assert_eq!(
             candidates,
-            vec![
-                GraphicsBackend::D3d12,
-                GraphicsBackend::D3d11,
-                GraphicsBackend::OpenGlEs
-            ]
+            vec![GraphicsBackend::D3d11, GraphicsBackend::OpenGlEs]
         );
 
         #[cfg(all(unix, not(target_os = "macos")))]
@@ -318,11 +311,7 @@ mod tests {
 
         let context = probe_gpu_context(
             GraphicsBackend::Auto,
-            vec![
-                GraphicsBackend::D3d12,
-                GraphicsBackend::D3d11,
-                GraphicsBackend::OpenGlEs,
-            ],
+            vec![GraphicsBackend::D3d11, GraphicsBackend::OpenGlEs],
             |candidate| {
                 attempts.push(candidate);
                 if candidate == GraphicsBackend::OpenGlEs {
@@ -337,11 +326,7 @@ mod tests {
         assert_eq!(context.graphics_backend(), GraphicsBackend::OpenGlEs);
         assert_eq!(
             attempts,
-            vec![
-                GraphicsBackend::D3d12,
-                GraphicsBackend::D3d11,
-                GraphicsBackend::OpenGlEs
-            ]
+            vec![GraphicsBackend::D3d11, GraphicsBackend::OpenGlEs]
         );
     }
 

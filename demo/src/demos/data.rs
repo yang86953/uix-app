@@ -14,16 +14,45 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
         .gap()
         .section("Card — elevation 0~3")
         .push(
-            Space::new().size(SpaceSize::Middle).width(INNER_W).height(130.0)
-                .direction(FlexDirection::Row).align(AlignItems::Stretch)
-                .child(Card::new().title("E0").elevation(0).bordered(true).size(c4, 120.0)
-                    .child(Label::new("有边框").color(tk.color_text_tertiary).font_size(12.0)))
-                .child(Card::new().title("E1").elevation(1).size(c4, 120.0)
-                    .child(Label::new("柔和阴影").color(tk.color_text_tertiary).font_size(12.0)))
-                .child(Card::new().title("E2").elevation(2).size(c4, 120.0)
-                    .child(Label::new("中等阴影").color(tk.color_text_tertiary).font_size(12.0)))
-                .child(Card::new().title("E3").elevation(3).size(c4, 120.0)
-                    .child(Label::new("深阴影").color(tk.color_text_tertiary).font_size(12.0))),
+            Space::new()
+                .size(SpaceSize::Middle)
+                .width(INNER_W)
+                .height(130.0)
+                .direction(FlexDirection::Row)
+                .align(AlignItems::Stretch)
+                .child(
+                    Card::new()
+                        .title("E0")
+                        .elevation(0)
+                        .bordered(true)
+                        .size(c4, 120.0)
+                        .child(
+                            Label::new("有边框")
+                                .color(tk.color_text_tertiary)
+                                .font_size(12.0),
+                        ),
+                )
+                .child(
+                    Card::new().title("E1").elevation(1).size(c4, 120.0).child(
+                        Label::new("柔和阴影")
+                            .color(tk.color_text_tertiary)
+                            .font_size(12.0),
+                    ),
+                )
+                .child(
+                    Card::new().title("E2").elevation(2).size(c4, 120.0).child(
+                        Label::new("中等阴影")
+                            .color(tk.color_text_tertiary)
+                            .font_size(12.0),
+                    ),
+                )
+                .child(
+                    Card::new().title("E3").elevation(3).size(c4, 120.0).child(
+                        Label::new("深阴影")
+                            .color(tk.color_text_tertiary)
+                            .font_size(12.0),
+                    ),
+                ),
         )
         .section("List")
         .push(tree! { Container::new().size(INNER_W, 180.0) => [
@@ -44,13 +73,11 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
             }).into_node(),
         ]})
         .section("Collapse")
-        .push(
-            Collapse::new().panels(vec![
-                CollapsePanel::new("面板 1", "常规内容。").expanded(),
-                CollapsePanel::new("面板 2", "设置内容。"),
-                CollapsePanel::new("面板 3", "高级内容。"),
-            ]),
-        )
+        .push(Collapse::new().panels(vec![
+            CollapsePanel::new("面板 1", "常规内容。").expanded(),
+            CollapsePanel::new("面板 2", "设置内容。"),
+            CollapsePanel::new("面板 3", "高级内容。"),
+        ]))
         .section("Descriptions")
         .push(tree! { Container::new().size(INNER_W, 100.0) => [
             Descriptions::new().title("用户信息")
@@ -88,21 +115,38 @@ pub fn page_data(ctx: &DemoCtx<'_>) -> ViewNode {
         .section("Image / Empty / Result")
         .push(
             demo_row(80.0)
-                .child(Image::new(80.0, 60.0).src("assets/images/demo.png").alt("demo"))
+                .child(
+                    Image::new(80.0, 60.0)
+                        .src("assets/images/demo.png")
+                        .alt("demo"),
+                )
                 .child(Image::new(80.0, 60.0).alt("placeholder")),
         )
         .push(Empty::new().description("暂无数据"))
-        .push(tree! { Container::new().size(INNER_W, 120.0).dir(FlexDirection::Row).gap(16.0) => [
-            Result::new(ResultType::Success).title("成功").into_node(),
-            Result::new(ResultType::Error).title("失败").into_node(),
-            Result::new(ResultType::Warning).title("警告").into_node(),
-        ]})
+        .push(
+            tree! { Container::new().size(INNER_W, 120.0).dir(FlexDirection::Row).gap(16.0) => [
+                Result::new(ResultType::Success).title("成功").into_node(),
+                Result::new(ResultType::Error).title("失败").into_node(),
+                Result::new(ResultType::Warning).title("警告").into_node(),
+            ]},
+        )
         .section("Skeleton")
         .push(
-            Space::new().size(SpaceSize::Small).width(INNER_W).height(60.0)
+            Space::new()
+                .size(SpaceSize::Small)
+                .width(INNER_W)
+                .height(60.0)
                 .direction(FlexDirection::Column)
-                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W, 16.0))
-                .child(Skeleton::new().shape(SkeletonShape::Rect).size(INNER_W * 0.6, 16.0)),
+                .child(
+                    Skeleton::new()
+                        .shape(SkeletonShape::Rect)
+                        .size(INNER_W, 16.0),
+                )
+                .child(
+                    Skeleton::new()
+                        .shape(SkeletonShape::Rect)
+                        .size(INNER_W * 0.6, 16.0),
+                ),
         )
         .section("Table")
         .push(tree! { Container::new().size(INNER_W, 200.0) => [

@@ -104,20 +104,14 @@ impl<'a> PageBuilder<'a> {
     }
 
     pub fn build(self) -> ViewNode {
-        scroll(
-            column(self.items)
-                .gap(8.0)
-                .padding((20.0, 4.0, 20.0, 10.0)),
-        )
-        .flex_grow(1.0)
-        .build()
+        scroll(column(self.items).gap(8.0).padding((20.0, 4.0, 20.0, 10.0)))
+            .flex_grow(1.0)
+            .build()
     }
 }
 
 pub fn section_title(tk: &DesignTokens, text: &str) -> ViewNode {
-    label(text)
-        .color(tk.color_text_secondary)
-        .font_size(12.0)
+    label(text).color(tk.color_text_secondary).font_size(12.0)
 }
 
 /// 固定高度水平 Space 行（与 View `row` 组合子区分）。

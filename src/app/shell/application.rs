@@ -82,6 +82,7 @@ impl SecondaryWindowSession {
                         self._window.resize_notify(d.width, d.height);
                         self.initial_size = (d.width, d.height);
                         self.window_visible = true;
+                        parts.tree.mark_full_frame_dirty();
                     }
                 }
             }
@@ -93,6 +94,7 @@ impl SecondaryWindowSession {
                     parts.engine.resize(w, h);
                     self._window.resize_notify(w, h);
                     self.window_visible = true;
+                    parts.tree.mark_full_frame_dirty();
                 }
             }
             UiEventType::WindowRestore => {
@@ -100,6 +102,7 @@ impl SecondaryWindowSession {
                 parts.engine.resize(w, h);
                 self._window.resize_notify(w, h);
                 self.window_visible = true;
+                parts.tree.mark_full_frame_dirty();
             }
             UiEventType::WindowMinimize => {
                 self.window_visible = false;

@@ -1,5 +1,7 @@
 use super::*;
-use crate::common::page::{INIT_H, INIT_W, PAGE_APP, PAGE_COUNT, PAGE_GENERAL, PAGE_TITLES, SIDEBAR_W};
+use crate::common::page::{
+    INIT_H, INIT_W, PAGE_APP, PAGE_COUNT, PAGE_GENERAL, PAGE_TITLES, SIDEBAR_W,
+};
 use uix::prelude::{dynamic_label, Button, DesignTokens, Label, Rect, State, ViewAdapter};
 use uix::ui::core::widget::WidgetCore;
 
@@ -55,7 +57,10 @@ fn general_page_has_buttons() {
     tree.layout();
 
     let buttons = tree.find_all_by_type::<Button>();
-    assert!(buttons.len() >= 4, "general page should showcase multiple buttons");
+    assert!(
+        buttons.len() >= 4,
+        "general page should showcase multiple buttons"
+    );
 }
 
 #[test]
@@ -195,7 +200,14 @@ fn page_switch_updates_heading_and_body_together() {
     tree.layout();
 
     fn heading_title(labels: &[String]) -> Option<String> {
-        labels.iter().find(|t| PAGE_TITLES.iter().any(|(_, title)| title.trim() == t.trim())).cloned()
+        labels
+            .iter()
+            .find(|t| {
+                PAGE_TITLES
+                    .iter()
+                    .any(|(_, title)| title.trim() == t.trim())
+            })
+            .cloned()
     }
 
     let initial_labels: Vec<String> = tree
@@ -278,7 +290,9 @@ fn page_switch_updates_heading_and_body_together() {
 fn timer_state_update_requests_paint() {
     let timer_ticks = State::new(0u32);
     let ticks_for_label = timer_ticks.clone();
-    let mut tree = ViewAdapter::build(dynamic_label(move || format!("timer: {}", ticks_for_label.get())));
+    let mut tree = ViewAdapter::build(dynamic_label(move || {
+        format!("timer: {}", ticks_for_label.get())
+    }));
     if let Some(r) = tree.root_mut() {
         r.set_frame(Rect::new(0.0, 0.0, 120.0, 24.0));
     }
