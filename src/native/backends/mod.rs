@@ -5,3 +5,6 @@ pub mod windows;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod linux;
+
+#[cfg(target_os = "macos")]
+pub mod macos;

@@ -229,13 +229,13 @@ native/traits/
 | `create_gpu_context(surface, w, h)` | 按平台与 #162 选型创建 `Box<dyn IGraphicsContext>` |
 | `available_memory_bytes()` | 引擎选择参考（内存不足时可倾向 SoftwareEngine） |
 
-Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Wayland）。
+Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Wayland）、`native/backends/macos/`（AppKit bootstrap）。
 
 | 平台 | Platform | GPU 上下文（当前） | GPU 上下文（规划） |
 |------|----------|-------------------|-------------------|
 | Windows | ✅ | ✅ D3D11 + WGL → OpenGL ES | D3D12 |
 | Linux (Wayland) | ✅ | ✅ Vulkan + EGL → OpenGL ES | — |
-| macOS | ❌（factory 返回明确 planned error） | — | Metal |
+| macOS | ✅ AppKit SoftwareEngine bootstrap | — | Metal |
 
 <a id="多图形-api-与-factory"></a>
 
@@ -249,7 +249,7 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 |----------|------|----------|
 | `windows` | `D3D12 → D3D11 → OpenGL ES` probe；D3D11 接入 `D3d11Context` + `PresentUploadEngine`，OpenGL ES 接入 `WglContext::new` | Direct3D 11 swapchain；OpenGL ES 3.x via WGL |
 | `unix`（非 macOS） | `Vulkan → OpenGL ES` probe；Vulkan 接入 `VulkanContext` + `PresentUploadEngine`，OpenGL ES 接入 `EglContext::new` | Vulkan swapchain；OpenGL ES via EGL |
-| `macOS` | `Metal` probe（后端未接入）；`create_platform()` 明确返回 macOS backend planned-not-implemented | — |
+| `macOS` | `Metal` probe（后端未接入）；`create_platform()` 返回 AppKit backend，GPU 失败后走 SoftwareEngine + CALayer CPU present bootstrap | AppKit / CoreGraphics |
 | 其他 | 无 GPU 候选，返回 `Err(PlatformError)` | — |
 
 **P6.1 / P6.2 / P6.3 / P6.5 已落地**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；Windows D3D11 与 Linux Vulkan 走 CPU upload present，WGL/EGL 作次选；App builder / env / Settings 可跳过 Auto 链直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。
@@ -265,7 +265,7 @@ create_gpu_context(surface, w, h)
 
 ### 未实现或后续
 
-macOS backend、D3D12、Metal → [implementation · P6 图形后端](../implementation.md#p6-图形后端) · [后续工作](../implementation.md#后续工作)。
+macOS 完整输入/事件映射、D3D12、Metal → [implementation · P6 图形后端](../implementation.md#p6-图形后端) · [后续工作](../implementation.md#后续工作)。
 
 <a id="测试平台"></a>
 

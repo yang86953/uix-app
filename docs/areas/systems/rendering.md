@@ -93,7 +93,7 @@ create_gpu_context 失败 → SoftwareEngine（CpuBackend + IPresenter）
 |------|-------------|-------------|----------------|----------|
 | **Windows** | Direct3D 11/12 | OpenGL ES（WGL） | ✅ D3D11（CPU upload present）+ OpenGL ES（WGL） | ✅ SoftwareEngine（GDI） |
 | **Linux** | Vulkan | OpenGL ES（EGL） | ✅ Vulkan（CPU upload present）+ OpenGL ES（EGL / Wayland） | ✅ SoftwareEngine（SHM） |
-| **macOS** | Metal | — | ❌ 无 backend | 规划 SoftwareEngine |
+| **macOS** | Metal | — | ✅ AppKit SoftwareEngine bootstrap（CALayer CPU present） | ✅ SoftwareEngine bootstrap |
 | **Web**（远期） | WebGPU | — | ❌ | — |
 
 图例：**✅ 已实现** · **规划** 为 backlog，见 [implementation · P6 图形后端](../implementation.md#p6-图形后端)。
@@ -113,7 +113,7 @@ create_gpu_context 失败 → SoftwareEngine（CpuBackend + IPresenter）
 5. 记录最终 GraphicsBackend（诊断 / 测试断言）
 ```
 
-P6.1 已落地 factory probe 基线：`create_gpu_context` 默认走 Auto 候选链；`create_gpu_context_with_backend` 可在 native 域内指定单个 `GraphicsBackend`，并记录每个候选失败原因与最终选型。P6.2 已落地 Windows D3D11 context 与 CPU upload present 路径；P6.3 已落地 Linux Vulkan context 与 CPU upload present 路径；D3D12 / Metal context 仍属后续。
+P6.1 已落地 factory probe 基线：`create_gpu_context` 默认走 Auto 候选链；`create_gpu_context_with_backend` 可在 native 域内指定单个 `GraphicsBackend`，并记录每个候选失败原因与最终选型。P6.2 已落地 Windows D3D11 context 与 CPU upload present 路径；P6.3 已落地 Linux Vulkan context 与 CPU upload present 路径；macOS 已接 AppKit SoftwareEngine bootstrap；D3D12 / Metal context 仍属后续。
 
 与现有 #59 一致：`App::run_gui` 在窗口 / 引擎初始化时按候选链创建 `IGraphicsContext`，OpenGL ES 走 `GpuEngine`，非 GL 且支持像素提交的 context 走 `PresentUploadEngine`；失败继续下一个候选，最后回退 `SoftwareEngine`。多 API 扩展 **只增** native `backends/` 内实现、factory 分支与 draw 内部 engine 适配，**不**改 `ui` 帧循环契约。
 
