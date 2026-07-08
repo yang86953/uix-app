@@ -37,6 +37,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let line_color = self.color.unwrap_or(ctx.tokens().color_border_secondary());
         let text_secondary = ctx.tokens().color_text_secondary();

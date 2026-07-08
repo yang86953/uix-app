@@ -21,6 +21,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let primary_bg = ctx.tokens().color_primary_bg();
         let primary = ctx.tokens().color_primary();

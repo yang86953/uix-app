@@ -51,6 +51,10 @@ component! {
         constraints.clamp(self.intrinsic_size())
     }
 
+    picture_policy => (&self) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
     flex_grow => (&self) -> f32 { self.flex_grow_val }
 
     flex_shrink => (&self) -> f32 { 0.0 }
