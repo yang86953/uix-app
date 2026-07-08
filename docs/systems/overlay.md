@@ -123,6 +123,8 @@ FileDrop / ContextMenu semantic 与 overlay 协作见 [event](event.md)。
 
 用户层通过 Widget 组件（Modal、Tooltip、Drawer）声明；运行时转为 `overlay_entry` 或由 dispatch 动态 `push`。业务 handler 仍在 HandlerTable，不在 overlay struct 内。
 
+> **实现注记**：`OverlayStack` / `OverlayEntry` / `OverlayKind` 已落地并由 `WidgetTree` 持有；layout 后 `rebuild_widget_overlays` 同步 widget 提供的 `overlay_entry`；`tree_events.rs` 已接 overlay 优先 hit_test、modal 外 pointer 拦截与 context menu push。Tooltip / Modal / Drawer / Popover 等内置 widget 已参与 overlay 调度。
+
 ---
 
 ## 源码模块
@@ -134,4 +136,4 @@ ui/core/widget/tree_layout.rs rebuild_widget_overlays
 ui/core/widget/tree_events.rs overlay 命中与 modal 外拦截
 ```
 
-详见 [Main · 源码目录详表](../Main.md#源码目录详表)。
+详见 [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。

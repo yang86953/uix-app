@@ -12,23 +12,29 @@ Rust 跨平台原生桌面 UI 框架（Windows / Linux）。`use uix::prelude::*
 
 细则 → [`docs/systems/demand-driven.md`](docs/systems/demand-driven.md) · [`AGENTS.md`](AGENTS.md)
 
-> **面向 AI Agent**：阅读顺序：
-> 1. **本页核心理念** + [`demand-driven.md`](docs/systems/demand-driven.md)
-> 2. [`AGENTS.md`](AGENTS.md) — 最高规则 + 架构硬约束（**编码前必读**）
-> 3. [`docs/Main.md`](docs/Main.md) — 架构地图 + 实现进度
-> 4. 按需 `docs/systems/*.md` · [`decisions.md`](docs/decisions.md) · [`glossary.md`](docs/glossary.md)
+> **面向 AI Agent**：编码前必读 [`AGENTS.md`](AGENTS.md)（硬约束 + checklist）；架构导航 [`docs/Main.md`](docs/Main.md)。
 
 ## 快速开始
 
 ```bash
-cargo run --bin uix-demo                    # 简化 View API（prelude + App）
-cargo run --bin uix-demo -- --dashboard     # GUI 组件库高级演示
+cargo run --bin uix-demo                    # 入门演示（App + View DSL）
+cargo run --bin uix-demo -- --dashboard     # GUI 组件库演示
 cargo run --bin uix-demo -- --cli           # CLI
 RUST_LOG=debug cargo run --bin uix-demo
 cargo test
 ```
 
 Linux GUI 需 Wayland 会话。
+
+演示模式、页面说明与 CLI 项 → [`demo/README.md`](demo/README.md)
+
+| 模式 | 命令 | 说明 |
+|------|------|------|
+| 入门（默认） | `cargo run --bin uix-demo` | `App::new().root()` + View DSL + `State`，入门推荐 |
+| 组件库 | `--dashboard` | 内置 Widget 分类全景；`embed` 桥接 `tree!` 片段 |
+| CLI | `--cli` | 各功能域 API 无 GUI 演示 |
+
+公开 API 清单 → [`docs/systems/public-api.md`](docs/systems/public-api.md) · 设计文档 → [`docs/Main.md`](docs/Main.md) · 变更记录 → [`CHANGELOG.md`](CHANGELOG.md)
 
 ## 示例
 

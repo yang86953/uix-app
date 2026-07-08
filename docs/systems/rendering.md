@@ -58,6 +58,8 @@ create_gpu_context → GpuEngine::new
 
 ---
 
+<a id="场景与合成"></a>
+
 ## 场景与合成
 
 ### ScenePaint
@@ -104,6 +106,8 @@ ensure_offscreen(w,h)
 `viewport_transform.rs`：累积 scroll offset → content rect 投影到屏幕 → 与 dirty_region 求交决定是否绘制。
 
 ---
+
+<a id="管线与失效"></a>
 
 ## 管线与失效
 
@@ -169,6 +173,8 @@ Debug：F12 切换 debug_mode；hover 链边框 + 帧指标 HUD。
 
 ---
 
+<a id="字体与图像"></a>
+
 ## 字体与图像
 
 | 服务 | 职责 |
@@ -182,6 +188,8 @@ Bitmap 字体（内置）用于 debug / 回退；正常路径走系统字体栈�
 
 ---
 
+<a id="空间几何"></a>
+
 ## 空间几何
 
 | 模块 | 用途 |
@@ -194,11 +202,13 @@ Bitmap 字体（内置）用于 debug / 回退；正常路径走系统字体栈�
 
 ---
 
+<a id="动画帧"></a>
+
 ## 动画帧
 
 设计（#83）：`AnimationRegistry` 持有 active node 集合；主循环在 `tick_effects` **之前**调用 `tree.update(dt)`，由各 widget 推进 `Animatable`（见 [component · 动画](component.md#动画)、[application · 主循环](application.md#主循环)）。
 
-> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入；动画更新会按 widget 的 `dirty_bounds` 做窄 Paint 标脏，单窗与副窗 event loop 在仍有动画时以 `Animation(id)` 登记下一帧 Registry deadline，due 帧只推进到期 id。`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源与多窗运行期 frame drain 已接；`Spin` / `ProgressBar` indeterminate 已收窄动画 dirty bounds。
+> **实现注记**：`WidgetAnimation` 能力与 `tree.update(dt)` 已接入；动画更新会按 widget 的 `dirty_bounds` 做窄 Paint 标脏，单窗与副窗 event loop 在仍有动画时以 `Animation(id)` 登记下一帧 Registry deadline，due 帧只推进到期 id。内置 Animation 源见 [component · 动画](component.md#动画)；多窗运行期 frame drain 已接。
 
 ---
 

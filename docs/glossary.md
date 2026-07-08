@@ -14,6 +14,27 @@
 | 平台 | [平台](#平台) |
 | 数据 | [持久化](#数据) |
 | 测试 | [测试](#测试) |
+| API 名对照 | [术语对照](#术语对照) |
+
+---
+
+<a id="术语对照"></a>
+
+## 术语对照（#101–#104）
+
+设计文档名 vs 当前源码；重构按「设计」列对齐。详情 → [#101–#104](decisions.md#d101)。
+
+| 设计（文档/重构目标） | 当前实现（源码） | 决策 |
+|----------------------|------------------|------|
+| ComponentId (Generational) | `core::ComponentId`；WidgetTree 带 tree scope + slot + generation；**公开边界**用 `ComponentId`；树内 `WidgetId`、draw 内 `NodeId` 为同型别名 | [#101](decisions.md#d101) |
+| WindowId | `core::WindowId`；`AppHandle` / `prelude` 重导出 | [#116](decisions.md#d116) |
+| EventLoopWaker | `native::traits::event::EventLoopWaker`；`IEventLoop::waker()` | [#117](decisions.md#d117) [#133](decisions.md#d133) |
+| component! | `component! { name: ..., struct ... }` / `component! { struct ... }` | [#102](decisions.md#d102) |
+| measure(constraints) | `WidgetLayout::measure(Constraints)` 唯一入口；旧 `preferred_size` 已移除 | [#103](decisions.md#d103) |
+| ScrollView | ScrollView（旧文档 ScrollContainer） | [#104](decisions.md#d104) |
+| VirtualScroll | `ui::foundation::VirtualScroll`；不经 prelude；部分实现 | [layout · VirtualScroll](systems/layout.md#virtual-scroll) |
+| AppState + ComponentHandle | `AppState` registry + `ComponentHandle` snapshot/invalidate/emit | [#32](decisions.md#d32), [#101](decisions.md#d101) |
+| HandlerTable key ComponentId | `SemanticEvent` / `HandlerTable` 已用 `ComponentId`；`WidgetId` 为树内别名 | [#10](decisions.md#d10), [#101](decisions.md#d101) |
 
 ---
 
@@ -24,6 +45,7 @@
 | 功能域 | 源码维度：`core` / `native` / `draw` / `ui` / `app` / `data` |
 | 系统 | 文档维度；与源码目录不一一对应；索引见 [Main · 系统索引](Main.md#系统索引) |
 | 按需零闲置 | **核心理念 / 最高规则**（#105）；框架 **零维护**（#130）；见 [demand-driven](systems/demand-driven.md) |
+| L0 / L1 / L2 | 零闲置三层目标（#105）：零像素 / 零帧循环 / 最小脏区；见 [demand-driven · 三层目标](systems/demand-driven.md#三层目标) |
 | 开发者零维护 | #130：调用方仅 State/View/opt-in API；Picture/Registry/标脏由框架自动 |
 | PicturePolicy | #122：框架按 widget 能力 **自动** Never/Eligible；**非**调用方黑名单 |
 | 核心理念 | 同「按需零闲置」— UIX **最重要的一条规则**；统领六域依赖 |
@@ -43,12 +65,15 @@
 |------|------|
 | App | 应用入口：GUI（View 根）或 CLI；见 [application](systems/application.md) |
 | AppHandle | 含 `window_id`；`run_after` / `post_to_ui`（#132–#133）已按 session 路由（#141）；session 关闭会清理对应 Timer（#134） |
+| AppRuntime | 内部 session 路由（Timer / post_to_ui / update_view / open_window）；见 [application · AppHandle](systems/application.md#apphandle-生命周期) |
+| EventLoopWaker | 跨线程唤醒 → [术语对照](#术语对照) · [platform · IEventLoop](systems/platform.md#ieventloop) |
+| WindowId | `core::WindowId`；进程内窗口 ID；`AppHandle` / `prelude` 重导出 |
 | on_start | #140：每 WindowSession 首帧前 `Fn(AppHandle)`；运行中 API 的 canonical 注入点 |
 | post_to_ui | #133：跨线程 `FnOnce + Send` 投递；路由见 #141 |
 | MainThreadQueue | #137：每 WindowSession FIFO；帧内 UiEvent → drain_due → drain_queue |
 | TimerHandle | #132：opaque；`cancel` / drop → unregister |
 | handler_generation | #135 / #138：View build 自动维护；Reconciler 比较以决定是否重绑 |
-| capture 指纹 | #142：`StateSlotId`（#143）+ TypeId + Copy 值 + AppHandle.window_id |
+| capture 指纹 | #142：`StateSlotId`（#143）+ TypeId + Copy 值 + `WindowId`（窗口作用域 / AppHandle） |
 | StateSlotId | #143：`State::new` 单调 id；clone 共享；**≠** `State::generation()` |
 | open_window | #144：运行中创建副窗；返回新 `AppHandle` |
 | AppState | #145：不替代 `State<T>`；mount 自动 register；跨窗共享；snapshot registry 与 semantic queue 已接 |
@@ -62,7 +87,7 @@
 | view_factory | #155：session 创建时固定 `Arc`；State reconcile 长期来源 |
 | update_view vs factory | #156：`update_view` 仅 `pending_root`；不替换 factory |
 | 实现路线图 | #154：P0–P5 分阶段落地；[roadmap · 分阶段路线图](roadmap.md#分阶段路线图) |
-| P0 落地清单 | #157：按 `src/app/*` 路径的 P0 接线表；[roadmap](roadmap.md#p0-落地清单) |
+| P0 落地清单 | #157：P0 阶段目标与验收（历史）；详见 [roadmap · 已落地阶段](roadmap.md#已落地阶段p0p5) |
 | State 跨窗标脏 | #150：`State::set` fan-out 至各 `PaintBindSite` |
 | SettingsService | 扁平字符串 KV 持久化；见 [data](systems/data.md) |
 | FakeTimer | 已有：`ITimer` 平台测试时钟；见 [testing · 测试时钟分层](systems/testing.md#测试时钟分层) |
@@ -75,13 +100,13 @@
 | View DSL | `column`、`row`、`button`、`dynamic_label` 等声明式 API |
 | ViewNode | View 构建产物；经 Reconciler 同步到组件树 |
 | Widget | UI 组件实例 |
-| ComponentId | Generational 稳定 ID（[#35](decisions.md#d35)、[#101](decisions.md#d101)）；布局 / 事件 / HandlerTable 语义键 |
-| WidgetId | WidgetTree 内部源码别名：`core::ComponentId`（[#101](decisions.md#d101)） |
-| component! | 推荐 authoring 宏（[#20](decisions.md#d20)、[#102](decisions.md#d102)）；支持 `name + struct` 与直接 `struct` 入口，低层能力声明仍可用 `impl_widget_component!` |
+| ComponentId | Generational 稳定 ID；设计 vs 源码 → [术语对照](#术语对照) · [#101](decisions.md#d101) |
+| WidgetId | WidgetTree 内部别名 → [术语对照](#术语对照) |
+| NodeId | draw / ScenePaint 内部别名 → [术语对照](#术语对照) |
+| component! | 推荐 authoring 宏 → [术语对照](#术语对照) · [#102](decisions.md#d102) |
 | WidgetTree | 运行时组件树容器 |
-| HandlerTable | 业务回调表；键/API 为 ComponentId；WidgetId 仅为 WidgetTree 内部同型别名（[#10](decisions.md#d10)、[#101](decisions.md#d101)） |
-| State / Computed / Effect | 响应式原语；Effect 禁止直接改 UI；周期可用 **Timer API**（#132） |
-| TimerHandle | #132：`run_after` / `run_interval` 返回值；cancel/drop 自动 unregister |
+| HandlerTable | 业务回调表 → [术语对照](#术语对照) · [#10](decisions.md#d10) |
+| State / Computed / Effect | 响应式原语；Effect 禁止直接改 UI；周期可用 **Timer API**（#132，见 [应用](#应用)） |
 | UI 主循环 vs 后台 | #131：禁止裸 Registry；**允许** #132 Timer 与 async→State |
 | OverlayStack | Modal / Tooltip / ContextMenu 统一调度 |
 | ViewAdapter | ViewNode ↔ WidgetTree build/reconcile 桥接 |
@@ -117,8 +142,10 @@
 
 | 术语 | 含义 |
 |------|------|
-| measure | **设计**：`measure(constraints) -> Size`（[#29](decisions.md#d29)、[#103](decisions.md#d103)） |
-| preferred_size | 旧测量入口，已由 `measure(constraints) -> Size` 取代（[#103](decisions.md#d103)） |
+| measure | 唯一测量入口 → [术语对照](#术语对照) · [#103](decisions.md#d103) |
+| preferred_size | 已废弃；见 measure |
+| ScrollView | 滚动容器 → [术语对照](#术语对照) · [#104](decisions.md#d104) |
+| VirtualScroll | 大列表虚拟滚动 helper；不经 prelude；部分实现 → [layout · VirtualScroll](systems/layout.md#virtual-scroll) |
 | Constraints | `{ min, max, definite }` |
 | Active / Inactive | **Active**：有焦点 **或** 视口内仍有可见像素（与祖先 clip/scroll 求交）；Inactive 跳过大部分语义派发（#8、#19） |
 | BoxModel | margin → border → padding → content 盒模型 |
@@ -151,6 +178,7 @@
 | FakePlatform | 测试用内存 Platform |
 | FakeEventSource | 注入 UiEvent 的 FIFO 队列 |
 | EventBus | UiEvent 发布订阅 |
+| EventLoopWaker | 跨线程唤醒 blocking `wait_event` / `wait_until`；见 [platform · 事件模型](systems/platform.md#ieventloop) |
 | PresentDamage | 物理像素上屏 damage |
 
 ## 数据

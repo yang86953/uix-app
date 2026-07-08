@@ -67,9 +67,11 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 ---
 
+<a id="主循环"></a>
+
 ## 主循环
 
-入口：`run_widget_loop`（`src/app/event_loop/event_loop.rs`）。
+入口：`run_widget_loop`（`src/app/event_loop/event_loop.rs`）。设计文档与 [#116](../decisions.md#d116) 中的进程级编排名 **`run_app_loop`** 指同一套多 session 调度；测试与 session 内部入口为 `run_window_session_loop_*`（见 [testing · 主循环测试](testing.md)）。
 
 ### 状态机（设计 #106、#110、#111）
 
@@ -79,24 +81,13 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 | **RegisteredActive** | Animation / Timer / IME **register** 中；窄 tick + 关联 paint |
 | **Active** | UiEvent 或 Invalidation → 按需 dispatch / layout / render |
 
-多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** `run_app_loop`；UiEvent 按 **window_id** 路由。
+多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** 进程级 loop（设计名 `run_app_loop`，源码 `run_widget_loop`）；UiEvent 按 **window_id** 路由。
 
 > **实现注记**：主窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait、Effect pending tick 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
 
 ### 单帧顺序（Active 态，设计 #106、#137）
 
-设计态 `run_active_frame` 顺序（修订 #118）：
-
-```text
-1. drain UiEvent → dispatch
-2. drain_due(now) — AppTimer / Animation / IME
-3. main_thread_queue.drain() — post_to_ui
-4. tick_effects
-5. reconcile（至多一次）
-6. layout → render → present?
-```
-
-主窗当前实现顺序：
+**`run_active_frame` 规格顺序与合并规则** → [demand-driven · 帧内合并](demand-driven.md#帧内合并)（#118）。本窗当前实现流程见下图。
 
 ```mermaid
 flowchart TD
@@ -140,13 +131,13 @@ flowchart TD
 
 设计（#106、#117）：**DeepIdle** 下 blocking `wait_event`（无 timeout）；**RegisteredActive** 由 `ActiveWorkRegistry::next_deadline` → `wait_until` 唤醒；**Active** 在事件 drain 后若无 pending 则回 DeepIdle。详见 [demand-driven · 唤醒源白名单](demand-driven.md#唤醒源白名单) · [ActiveWorkRegistry](demand-driven.md#activeworkregistry)。
 
-> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。AppTimer、内置 Timer、WidgetAnimation 下一帧 deadline 与 `Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接入；副窗 deadline wait 与三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
+> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。内置 Animation 源见 [component · 动画](component.md#动画)；副窗 deadline wait 与三态写回已接；外部线程 wake 已接入 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
 
 | 状态 | 设计 | 当前实现 |
 |------|------|----------|
 | DeepIdle | blocking `wait_event`；不 layout/render/tick Effect | 无 Registry deadline 时 blocking `wait_event` |
 | RegisteredActive | `wait_until(next_deadline)` 窄 tick | `ActiveWorkRegistry::next_deadline` → `wait_timeout(remaining)` |
-| Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline | Active 帧运行 `update`，且仅在 Effect pending 时运行 `tick_effects`；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 已作为内置 Animation 源接入 |
+| Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline | Active 帧运行 `update`，且仅在 Effect pending 时运行 `tick_effects`；内置 Animation 源见 [component · 动画](component.md#动画) |
 | 首帧 | 单次 `poll_event` | 同左 |
 
 ### 窗口生命周期事件
@@ -193,6 +184,8 @@ Platform UiEvent
 `TextRenderService` / `DebugRenderService`（`bridge/bridges.rs`）把 draw 层 FontService 适配为 ui trait，供需要文本测量的组件使用。
 
 ---
+
+<a id="appstate--多窗--settings"></a>
 
 ## AppState · 多窗 · Settings
 
@@ -275,7 +268,7 @@ button().on_click(move || count.set(count.get() + 1));
 |----|------|
 | 共享 | AppState + Theme 全局一份 |
 | 独立 | 每窗 **WindowSession**：WidgetTree + 引擎 + 三态 + **ActiveWorkRegistry** |
-| 编排 | 单 `run_app_loop`；UiEvent 带 **window_id** 路由至目标 session |
+| 编排 | 单进程 loop（设计名 `run_app_loop`，源码 `run_widget_loop`）；UiEvent 带 **window_id** 路由至目标 session |
 | Present | 各窗独立 presenter |
 
 ```rust
@@ -390,7 +383,7 @@ pub root: impl Fn() -> ViewNode + Send + Sync + 'static;
 
 `SettingsService` 由 App **可选**注入；**默认不**自动 load/save。`App::settings(path)` 会在 `run()` 进入 GUI/CLI 模式前加载一次并注册到 App DI；持久化 key 如 `theme_mode`、`brand_primary` 可由业务解析为 `Theme`；缺文件用 DefaultTheme（#48）。
 
-Light/Dark 默认跟 OS（#74）于**启动**（可读 Settings / OS）。
+**启动**（#74、#48）：无 Settings / 显式 `.theme(...)` 时用 **DefaultTheme**；Settings `theme_mode="system"` 或 App 显式配置时可读 OS 初始明暗。
 
 **运行中**（#125）：
 
@@ -404,6 +397,8 @@ App **无需**手写 ThemeChanged handler（opt-in 时）。
 **异步边界**（#131、#132、#133）：禁止裸 Registry 与轮询 Effect；允许 **`run_after` / `run_interval`**、**`post_to_ui`** 与 async→State。详见 [demand-driven · UI 主循环 vs 后台](demand-driven.md#ui-主循环-vs-后台) · [post_to_ui](#post_to_ui) · [App Timer API](#app-定时-api)。
 
 ---
+
+<a id="app-定时-api"></a>
 
 ## App 定时 API
 
@@ -553,16 +548,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 
 设计（#137）— 与 [demand-driven · MainThreadQueue](demand-driven.md#mainthreadqueue) 一致。
 
-每 `WindowSession` 持有一个 `MainThreadQueue`；`post_to_ui` 入队，`run_active_frame` 步骤 3 `drain`。
-
-| 阶段 | 内容 |
-|------|------|
-| 1 | UiEvent dispatch |
-| 2 | `drain_due` — AppTimer / Animation |
-| 3 | `main_thread_queue.drain` — post_to_ui |
-| 4+ | pending tick_effects → reconcile → layout → render |
-
-入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
+每 `WindowSession` 持有一个 `MainThreadQueue`；`post_to_ui` 入队，在 [帧内合并](demand-driven.md#帧内合并) 步骤 3 `drain`。入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
 
 > **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列；有效 session 成功入队后会唤醒事件循环，关闭后的 late post 不入队也不唤醒。副窗 session bootstrap、MainThreadQueue 消费、事件路由、运行期 frame drain 与 deadline wait 已接；Windows/fake/Linux Wayland 后端已接真实 wake。
 
@@ -690,6 +676,8 @@ inspector_handle.update_view(|| inspector_panel_v2(data.get()));
 
 ---
 
+<a id="cli-与-di"></a>
+
 ## CLI 与 DI
 
 ### CLI
@@ -724,19 +712,4 @@ API：`singleton<T>()`、`resolve<T>()`、`resolve_mut<T>()`、`has<T>()`、`rem
 
 ## 源码模块
 
-```text
-app/
-├── shell/
-│   ├── application.rs   App builder, run_gui, map_ui_event
-│   ├── cli.rs           CLI 解析与命令分派
-│   └── di.rs            Container 单例 DI
-├── event_loop/
-│   └── event_loop.rs    run_widget_loop, 帧调度
-├── bridge/
-│   ├── scene_paint.rs   WidgetTree → ScenePaint
-│   └── bridges.rs       TextRenderService, DebugRenderService
-└── window/
-    └── window.rs        Window 轻量包装
-```
-
-详见 [Main · 源码目录详表](../Main.md#源码目录详表)。
+`app/` 子路径映射 → [roadmap · 源码目录详表](../roadmap.md#源码目录详表)（`shell/`、`window_session.rs`、`event_loop/`、`bridge/` 等）。

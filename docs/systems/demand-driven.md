@@ -26,11 +26,14 @@
 | 分域要求 | [分域要求](#分域要求) | #105–#159 |
 | 豁免 | [豁免机制](#豁免机制) | #113 |
 | 审查 | [新 API 审查清单](#新-api-审查清单) | #105 #120 #130 |
-| 实现差距 | [实现差距](#实现差距) | — |
+| 已实现 | [roadmap · 实现进度总览](../roadmap.md#实现进度总览) | — |
+| 剩余差距 | [剩余差距](#剩余差距) | — |
 
 **关联**：[application](application.md) · [rendering](rendering.md) · [event](event.md) · [view-reactive](view-reactive.md) · [component](component.md) · [data](data.md) · [theme-style](theme-style.md)
 
 ---
+
+<a id="设计美学最高规则-105"></a>
 
 ## 设计美学（最高规则 #105）
 
@@ -47,6 +50,8 @@
 与六域依赖、API 设计冲突时 **以本节为准**；不得以兼容层或「每帧保底」规避。
 
 ---
+
+<a id="开发者契约零维护"></a>
 
 ## 开发者契约（零维护）
 
@@ -77,6 +82,8 @@
 PicturePolicy · ActiveWorkRegistry · 窄标脏 · Composite scroll · PointerMove 窄路径 · 帧内 reconcile · 多窗 Theme 广播 · Handler 智能重绑（#123）
 
 ---
+
+<a id="ui-主循环-vs-后台"></a>
 
 ## UI 主循环 vs 后台
 
@@ -194,17 +201,7 @@ impl MainThreadQueue {
 
 ### Active 帧顺序（修订 #118）
 
-```text
-run_active_frame(session):
-  1. drain 本窗 UiEvent → dispatch          // 输入优先
-  2. active_work.drain_due(now)             // AppTimer / Animation / IME
-  3. main_thread_queue.drain()              // post_to_ui 闭包
-  4. drain AppState semantic queue
-  5. update due animation + tick_effects（仅 Effect pending）
-  6. if reconcile_pending: reconcile 一次
-  7. layout → render → present?
-  8. 无 pending 且无 register → DeepIdle
-```
+Active 帧 **`run_active_frame` 完整顺序与合并规则** → [帧内合并](#帧内合并)（#118）。
 
 | 规则 | 说明 |
 |------|------|
@@ -308,7 +305,7 @@ impl TimerHandle {
 
 - 固定 interval `wait_timeout` 探活并 layout/render
 - DeepIdle 下 `tick_effects`
-- 框架后台 poll OS 主题（[#125](#d125) 仅 opt-in 时响应 ThemeChanged，不 poll）
+- 框架后台 poll OS 主题（[#125](../decisions.md#d125) 仅 opt-in 时响应 ThemeChanged，不 poll）
 - 无 register 的未托管周期工作 — 须 **内置组件**、**#132 Timer API** 或 async→State（#131）
 
 ---
@@ -348,6 +345,8 @@ impl TimerHandle {
 | 多窗 | **每窗独立状态**；A 窗 Active 不要求 B 窗 wake（#110） |
 | 进程级 sleep | 所有窗 DeepIdle 且全局 Registry 空 → blocking `wait_event`（#117） |
 | 有 register | app 层 **`wait_until(remaining)`** = 单次 `wait_timeout(remaining)`（#127）；**非**固定 interval 探活 |
+
+<a id="activeworkregistry"></a>
 
 ### ActiveWorkRegistry（#115、#124）
 
@@ -398,7 +397,9 @@ else → wait_timeout(remaining)   // 单次，非固定 100ms 探活
 
 每 **WindowSession** 持有一份 Registry（#116）。
 
-> **实现注记**：`ActiveWorkRegistry` 内部类型已落地，并由 `WindowSession` 持有；单窗/副窗 event loop 已接 `next_deadline` / `drain_due`、无 deadline 注册项、到期 `Timer` 定点派发到 widget scoped timer route、AppTimer 主线程回调执行、Tooltip 内置 timer 零维护托管、WidgetAnimation 以 `Animation(id)` 登记下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源与 IME composition session 托管。
+> **实现注记**：`ActiveWorkRegistry` 内部类型已落地，并由 `WindowSession` 持有；单窗/副窗 event loop 已接 `next_deadline` / `drain_due`、无 deadline 注册项、到期 `Timer` 定点派发到 widget scoped timer route、AppTimer 主线程回调执行、Tooltip 内置 timer 零维护托管、WidgetAnimation 以 `Animation(id)` 登记下一帧 deadline；内置 Animation 源见 [component · 动画](component.md#动画)；IME composition session 已托管。
+
+<a id="多窗单-loop"></a>
 
 ### 多窗单 loop（#116）
 
@@ -460,7 +461,7 @@ run_active_frame(session):
 | State::set | 帧内多次 set → `reconcile_pending`；帧末 **一次** reconcile（#118 #153） |
 | update_view | `pending_root` 优先于 `view_factory`（#149 #153） |
 | invalidate_paint | 同 node 多 rect → InvalidationQueue merge |
-| Effect | 在 reconcile **之前** tick（步骤 4）；Effect → State → 并入步骤 5 |
+| Effect | 在 reconcile **之前** tick（步骤 5）；Effect → State → 并入步骤 6 reconcile 批次 |
 | reconcile | 合并算法见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153） |
 
 > **实现注记**：单窗主循环已接帧末 reconcile；`update_view` 的 `pending_root` 与响应式 `State` 批次置位会合并到同一次 reconcile。副窗 `MainThreadQueue` / `update_view` root reconcile 消费已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
@@ -477,7 +478,7 @@ run_active_frame(session):
 
 未托管的周期工作 **不得**存在；须内置组件、**#132 Timer API** 或 async→State（#131）。
 
-> **实现注记**：当前已有 RegisteredActive deadline wait 骨架与无 deadline 注册项；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，并将 `update` 门控到 Active 帧、将 `tick_effects` 进一步收窄到 Effect pending；隐藏窗口不 layout/render，pending dirty 保留到恢复可见后消费；Tooltip 内置 timer、AppTimer 注册源、WidgetAnimation `Animation(id)` 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源与 IME composition session 已接。
+> **实现注记**：RegisteredActive deadline wait 与无 deadline 注册项已接；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，`update` 门控到 Active 帧、`tick_effects` 收窄到 Effect pending；隐藏窗口不 layout/render，pending dirty 保留到恢复可见后消费。内置 Animation / Timer 源见 [component · 动画](component.md#动画)；IME composition session 已接。
 
 ---
 
@@ -493,6 +494,8 @@ run_active_frame(session):
 | **Scroll** | `Composite` + memmove；exposed strip 补绘 | #107 |
 | **Picture** | **PicturePolicy 自动推断** + 自适应代价阈值（#122、#129） | #122 |
 | Reconcile | 增量 diff | #31 #49 |
+
+<a id="picturepolicy-自动推断122129"></a>
 
 ### PicturePolicy 自动推断（#122、#129、#136）
 
@@ -634,70 +637,17 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 ---
 
-## 实现差距
+<a id="剩余差距"></a>
 
-| 能力 | 设计 | 当前 | 文档 |
-|------|------|------|------|
-| 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 update / tick_effects；Active 帧仅在 Effect pending 时 tick；隐藏窗口不 layout/render 且保留 pending dirty；RegisteredActive deadline wait 与副窗三态写回已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#106](../decisions.md#d106) [#117](../decisions.md#d117) |
-| ActiveWorkRegistry | register / next_deadline / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due`、无 deadline 注册项、到期 `Timer` / `AppTimer` 消费、Tooltip widget scoped timer route 托管、WidgetAnimation `Animation(id)` 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源与 IME composition session 托管 | [#115](../decisions.md#d115) |
-| 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；副窗创建、独立 `WindowSession` bootstrap、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#116](../decisions.md#d116) |
-| 帧内 reconcile 合并 | 帧末一次 reconcile + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入主循环；同帧多次更新取最后一次并在 layout 前 reconcile；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#118](../decisions.md#d118) |
-| 每窗独立状态 | 每窗独立 DeepIdle/Active | 单窗 WindowSession 与副窗运行期 frame drain 已写回三态；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#110](../decisions.md#d110) |
-| Composite scroll | Composite + memmove | Wheel、键盘、滚动条拖拽与程序化 ScrollView 滚动已接 exposed strip + `scroll_region`；新增滚动来源须复用该路径 | [#107](../decisions.md#d107) |
-| PicturePolicy 自动推断 | 元数据 + 子树信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 与 Empty/Tag/Descriptions/Result/Alert/Timeline/Skeleton/List/Chart/QRCode/Watermark 等静态高收益组件已声明 Eligible，默认 Never | [#122](../decisions.md#d122) [#129](../decisions.md#d129) |
-| Registry 框架托管 | 内置组件/IME 自动 register | Registry 类型已建；Tooltip 内置 timer 已按 widget scoped key 托管，调用方无需维护唯一 id；单窗 AppTimer、WidgetAnimation `Animation(id)` 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源与 IME composition session 已托管 | [#124](../decisions.md#d124) |
-| follow_system_theme opt-in | false 默认；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](../decisions.md#d125) |
-| App Timer API | run_after / run_interval | `App` / `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出；`AppHandle` 已按 `window_id` 路由到所属 AppTimer 队列，成功注册会 wake event loop；副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#132](../decisions.md#d132) |
-| post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + `AppHandle::post_to_ui` + MainThreadQueue 已接；`AppHandle` 已按 `window_id` 路由；副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；有效入队会触发 `EventLoopWaker`，Windows/fake/Linux Wayland 后端已接真实 wake | [#133](../decisions.md#d133) |
-| MainThreadQueue | FIFO + 帧内 drain 顺序 | 每 WindowSession 队列已接；单窗 drain 顺序为 UiEvent → due work → post_to_ui；`AppHandle` 多窗队列路由、副窗 bootstrap、MainThreadQueue 消费、运行期 frame drain 与 deadline wait 已接；有效入队会触发 `EventLoopWaker`，Windows/fake/Linux Wayland 后端已接真实 wake | [#137](../decisions.md#d137) |
-| TestClock | App drain_due / wait_until 测试注入 | App 层 `AppClock` / `TestClock` 已接入 AppTimer deadline、RegisteredActive wait_until、drain_due；native `FakeTimer` 仍独立 | [#139](../decisions.md#d139) |
-| AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | `AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求；主窗 close 退出主循环，副窗真实 close 事件按 `window_id` 关闭对应 session | [#134](../decisions.md#d134) |
-| on_start / on_window_start | 每个 session 注入 AppHandle | 单窗 `.on_start(AppHandle)` 与副窗 `.on_window_start(AppHandle)` 已导出，并在对应 WindowSession 创建后、首帧前调用 | [#140](../decisions.md#d140) |
-| 多窗 post_to_ui | AppHandle.window_id 路由 | `AppRuntime` 路由表已接；`AppHandle` 投递仅进入自身 `window_id` 的队列，session 销毁后丢弃闭包 | [#141](../decisions.md#d141) |
-| open_window | 副窗 API | `WindowConfig` / `AppHandle::open_window` / `.on_window_start` 已导出；可分配新 `window_id`、独立队列/Timer/handle 并暂存副窗创建请求，成功入队会 wake event loop；GUI loop 可 drain 请求并创建 native 窗 | [#144](../decisions.md#d144) |
-| open_window 接线 | 副窗独立 build/reconcile | 副窗 native 创建、独立 `WindowSession` bootstrap、MainThreadQueue / `update_view` reconcile 消费、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#148](../decisions.md#d148) |
-| 平台窗口能力 | 平台差异用 trait + Result 表达 | `WindowOps` 可选窗口能力已返回 `Result<()>`；共享窗口层只在底层返回 `Ok(())` 后更新 `WindowState`，未支持能力以 `Errc::NotImplemented` 记录；`create_platform()` unsupported 分支返回 `Err`，`FileDrop` 映射已补测试 | [platform · 窗口可选能力](platform.md#窗口可选能力) |
-| AppState register | mount 自动 register Handle | `AppState` snapshot registry 已建；`WidgetTree::set_app_state` 后 mount/unmount 自动 register/unregister snapshot，并记录所属失效队列与当前 dirty rect；内部 register/unregister、snapshot/invalidate 与 semantic queue 均已按 `ComponentId` 命名；App 默认持有同一 `AppState` 并注入主窗与副窗 `WindowSession`；lookup handle `emit` 经 AppState semantic queue 唤醒并由主/副窗 drain 派发 | [#145](../decisions.md#d145) |
-| StateSlotId | State::new 单调 id | 已接；clone 共享，`generation()` 不参与身份 | [#143](../decisions.md#d143) |
-| Handler 智能重绑 | handler 变才重注册（#135、#160） | 稳定 signature 路径已跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的普通 handler 仍保守重绑 | [#123](../decisions.md#d123) [#135](../decisions.md#d135) [#160](../decisions.md#d160) |
-| handler_generation + 指纹 | 显式 fingerprint 才稳定复用（#142、#160） | 内部 generation 字段、State / WindowId capture 指纹基础与 fingerprint→generation 解析已接；多个 capture 会排序合并为顺序无关指纹；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接；任意 Rust handler 闭包不做运行时自动收集（#159），无 generation / fingerprint 时保守重绑（#160），未来宏 / DSL 只有在语法层生成 fingerprint 时才进入稳定复用 | [#138](../decisions.md#d138) [#142](../decisions.md#d142) [#159](../decisions.md#d159) [#160](../decisions.md#d160) |
-| PointerMove 边界窄路径 | 框内不 hit_test | 已接：`InteractionManager.pressed_component` / `DragManager.target` 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](../decisions.md#d109) [#121](../decisions.md#d121) |
-| Effect DeepIdle 跳过 | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 `Animation(id)` Registry deadline 唤醒，due 帧只推进到期 active + visible 节点；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接 | #105 |
-| ComponentConfigSnapshot | mount 提取配置 | 类型与 80 个内置组件静态配置提取已接；`ComponentHandle` 直接 snapshot getter 已接；AppState mount/unmount snapshot register 已接；reconcile patch update 已接 | [#146](../decisions.md#d146) |
-| Handle emit / invalidate / getter | dispatch_semantic + 窄 Paint + 只读配置 | `ComponentHandle::emit` 已导出；live handle 直接走 `WidgetTree::dispatch_semantic`，lookup handle 经 AppState semantic queue 唤醒并由主/副窗 drain 派发；live handle 与 lookup handle 的 `invalidate()` 均已接窄 Paint；`snapshot()` / `text()` / `label()` / `placeholder()` / `disabled()` / `checked()` / `numeric_value()` 已接；App 默认持有 `AppState`，`AppState::get_handle` 可查 snapshot handle | [#119](../decisions.md#d119) [#147](../decisions.md#d147) |
-| update_view | AppHandle 按 session reconcile | `AppHandle::update_view` / `set_root` 已导出；经 `AppRuntime` 按 `window_id` 写目标 MainThreadQueue 并在帧末 reconcile；副窗 session bootstrap、root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#149](../decisions.md#d149) |
-| State 跨窗标脏 | paint_sites fan-out | `State` / `Computed` 已支持多个 paint site fan-out；`State` reconcile callback 已支持按 site key fan-out 并原地更新重复绑定；副窗 session 路由与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#150](../decisions.md#d150) |
-| SnapshotSource | component! 自动快照 | `SnapshotSource` trait 已导出；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 手写提取已接；`component!` 自定义组件 pub 字段自动提取已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径 | [#151](../decisions.md#d151) |
-| snapshot(skip) | 字段属性排除 | `component!` 已解析并消费 `#[snapshot(skip)]`；首批手写内置提取已人工排除运行态字段；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该排除逻辑 | [#152](../decisions.md#d152) |
-| reconcile 合并 | pending_root 优先 | 单窗 `update_view` 路径与 State 批次自动置位已接；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#153](../decisions.md#d153) |
-| view_factory | session 固定 Arc | 单窗 `App::root(|| ...)` 与副窗 `WindowConfig::new(..., || ...)` 已安装 session factory | [#155](../decisions.md#d155) |
-| 豁免台账 | #162+ 条目 + 测试 | 已建立初始台账：#158 明确当前无豁免；新增豁免须从 #162+ 追加并补测试边界 | [#113](../decisions.md#d113) [#158](../decisions.md#d158) |
+## 剩余差距
+
+P0–P5 与按需零闲置主体机制 **已落地**；按域能力清单见 [roadmap · 实现进度总览](../roadmap.md#实现进度总览)。
+
+**未实现 backlog（权威清单）** → [roadmap · 后续工作](../roadmap.md#后续工作)。各条的设计细节与域内边界见 roadmap 表格「文档」列链至的系统章节（如 [view-reactive · 热更新](view-reactive.md#热更新设计)、[component · PicturePolicy](component.md#picturepolicy-元数据122)）。
 
 源码与「设计」列不一致时 **按文档重构**（[`AGENTS.md`](../../AGENTS.md)）。
-
 ---
 
 ## 源码模块（实现时参考）
 
-跨域；无独立 `src/` 顶层目录。主要落点：
-
-```text
-app/window_session.rs            WindowSession 壳、Registry 持有、三态字段（#106 #116）
-app/event_loop/event_loop.rs     run_app_loop、三态调度（#106 #117）
-app/main_thread_queue.rs        post_to_ui FIFO（#137）
-app/test_clock.rs                AppClock / TestClock 注入（#139）
-draw/compositor/scene_paint.rs  PicturePolicy 元数据与运行时信号 trait（#122）
-draw/compositor/layer_tree.rs   PicturePolicy 子树推断与 #129 阈值
-ui/traits/widget.rs             WidgetComponent::picture_policy 默认 Never（#122）
-ui/core/active_work.rs          ActiveWorkRegistry 内部（#124）
-ui/core/widget/tree_dirty.rs     失效队列
-ui/core/widget/tree_events.rs    PointerMove、scroll
-draw/pipeline/invalidation.rs    Invalidation
-ui/foundation/state.rs          StateSlotId（#143）落地
-ui/view/build_context.rs        handler_generation / capture 指纹（#138 #142）
-draw/pipeline/animation_registry.rs AnimationRegistry register
-ui/app_state.rs                 AppState snapshot registry（#145）
-ui/component_snapshot.rs         ComponentConfigSnapshot / SnapshotSource（#146 #151）
-```
-
-详见 [Main · 源码目录详表](../Main.md#源码目录详表)。
+跨域；无独立 `src/` 顶层目录。路径映射 → [roadmap · 源码目录详表](../roadmap.md#源码目录详表)。与本系统直接相关的关键文件：`app/window_session.rs`、`app/active_work_registry.rs`、`app/main_thread_queue.rs`、`app/event_loop/event_loop.rs`（#106 #115 #118 #137）。

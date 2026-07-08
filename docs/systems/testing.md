@@ -41,6 +41,8 @@
 
 ---
 
+<a id="fakeplatform"></a>
+
 ## FakePlatform
 
 `native/test_harness/FakePlatform` — 内存 `Platform` 聚合，各 Fake 子系统记录调用历史。

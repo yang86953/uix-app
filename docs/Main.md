@@ -1,91 +1,52 @@
 # UIX 设计文档
 
-> **唯一入口**。完整索引在此；正文按需打开链接，不必通读。
-
-## 核心理念（最高规则 #105）
-
-> **用最少资源，做最好效果。**
-
-UIX **最重要的一条规则** — 统领六域依赖、主循环、渲染、事件与一切 API。不是可选优化；与本文冲突时 **以本规则为准**。
-
-| 信条 | 一句话 |
-|------|--------|
-| 有触发才工作 | 无事件 / 无失效 / 无 register → DeepIdle |
-| 无 pending 零开销 | 不无条件 layout · render · present · tick Effect |
-| 变化尽量窄 | 最小 rect · Composite scroll · PicturePolicy 自动推断 |
-| 效果不妥协 | active 期交互须完整正确 |
-
-L0 零像素 · L1 零帧循环 · L2 最小脏区 · 三态主循环（DeepIdle / RegisteredActive / Active）。
-
-**细则** → [`systems/demand-driven.md`](systems/demand-driven.md) · [`AGENTS.md`](../AGENTS.md) · [#105–#159](decisions.md#d105)
+> **纯索引**。硬约束 → [`AGENTS.md`](../AGENTS.md)。**禁止通读** `docs/` — 按需打开链接即可。
 
 ---
 
-## 怎么用
+<a id="ai-按需阅读省-token"></a>
 
-> **AI Agent**：接到任务后，**先**确认改动符合上文 [核心理念](#核心理念最高规则-105)；再走「[实现进度总览](#实现进度总览)」对照设计 vs 当前实现。
+## AI 按需阅读（省 token）
 
-1. **查目录** — 在下文「系统索引」或「主题索引」定位目标；读源码或重构前先看「[实现进度总览](#实现进度总览)」对照设计 vs 当前实现。
-2. **按需读** — 只打开相关 `systems/*.md`；需要裁决时查 [`decisions.md`](decisions.md)，不懂术语查 [`glossary.md`](glossary.md)。
-3. **改设计** — 边界/数据流变更同步 [`AGENTS.md`](../AGENTS.md) 与对应系统文档；新决策追加 #162+。
-4. **写代码** — 先查「[术语对照（#101–#104）](#术语对照101104)」、[按需零闲置](systems/demand-driven.md) 与「[落地计划](roadmap.md)」；确认 API 与零闲置审查清单。
+> 路径：`AGENTS.md`（必读）→ 本页定位 → **仅**打开下列 1–3 篇（优先锚点章节，勿通读整篇）。
 
-```text
-Main（索引） ──按需──► systems/*.md（系统正文）
-     │                      ▲
-     ├── roadmap.md（落地）─┤
-     ├── decisions.md（裁决）│ 交叉引用
-     └── glossary.md（术语）─┘
-```
+| 任务 | 只读这些（顺序，≤4） |
+|------|---------------------|
+| 查 API / 设计名 vs 源码名 | [`public-api.md`](systems/public-api.md) → [`glossary.md#术语对照`](glossary.md#术语对照) → 相关 `#d{N}` in [`decisions.md`](decisions.md) |
+| 查实现是否已落地 | [`roadmap.md#实现进度总览`](roadmap.md#实现进度总览) → 对应系统 `> **实现注记**` |
+| 改主循环 / 帧调度 / 三态 | [`demand-driven.md#主循环状态机`](systems/demand-driven.md#主循环状态机) → [`application.md#主循环`](systems/application.md#主循环) |
+| 改标脏 / Picture / 局部重绘 | [`demand-driven.md#失效与窄标脏`](systems/demand-driven.md#失效与窄标脏) → [`rendering.md#管线与失效`](systems/rendering.md#管线与失效) |
+| 新 App API（Timer/post_to_ui/多窗） | [`demand-driven.md#开发者契约零维护`](systems/demand-driven.md#开发者契约零维护) → [`application.md#app-定时-api`](systems/application.md#app-定时-api) |
+| 写应用 / View | [`view-reactive.md`](systems/view-reactive.md) → [`theme-style.md`](systems/theme-style.md) → [`event.md#传播--handlertable`](systems/event.md#传播--handlertable) |
+| 改内置组件 | [`component.md#能力`](systems/component.md#能力) → [`layout.md`](systems/layout.md) → [`event.md`](systems/event.md) |
+| 改样式 / Theme | [`theme-style.md#style--styleset`](systems/theme-style.md#style--styleset) → [`theme-style.md#色板架构`](systems/theme-style.md#色板架构) |
+| 改布局 / Scroll | [`layout.md`](systems/layout.md) → [`component.md`](systems/component.md) |
+| 接平台 / 窗口 / 输入 | [`platform.md#traits-清单`](systems/platform.md#traits-清单) → [`platform.md#平台贡献指南`](systems/platform.md#平台贡献指南) → [`application.md`](systems/application.md) |
+| Modal / Tooltip / 菜单 | [`overlay.md`](systems/overlay.md) → [`event.md`](systems/event.md) |
+| 持久化 Settings | [`data.md`](systems/data.md) → [`application.md#appstate--多窗--settings`](systems/application.md#appstate--多窗--settings) |
+| 写测试 | [`testing.md#fakeplatform`](systems/testing.md#fakeplatform) → [`event.md#测试`](systems/event.md#测试) |
+| 改几何 / Damage / 日志 | [`foundation.md`](systems/foundation.md) |
+| 新 API 设计审查 | [`demand-driven.md#新-api-审查清单`](systems/demand-driven.md#新-api-审查清单) → [#105](decisions.md#d105) |
 
-## 文档分层
-
-| 层 | 文件 | 用途 | 何时读 |
-|----|------|------|--------|
-| 索引 | **Main.md**（本页） | 导航、域映射、协作图 | 始终从此开始 |
-| 落地 | [`roadmap.md`](roadmap.md) | P0–P5 分阶段接线与文件清单 | 写代码、排期时 |
-| 系统 | [`systems/*.md`](systems/) | 各子系统设计与行为 | 做该域功能/重构时 |
-| 裁决 | [`decisions.md`](decisions.md) | #1–#161 决策台账 | 争议、实现取舍 |
-| 术语 | [`glossary.md`](glossary.md) | 名词定义 | 遇到陌生词 |
-| 约束 | [`AGENTS.md`](../AGENTS.md) | **核心理念**（最高规则）+ 架构硬约束 | 改边界、写代码前 |
-
-## 按需阅读路径
-
-| 场景 | 阅读顺序 |
-|------|----------|
-| 首次了解 | glossary → decisions（实现顺序 #50）→ [application](systems/application.md) |
-| 写应用 / View | [view-reactive](systems/view-reactive.md) → [theme-style](systems/theme-style.md) → [event](systems/event.md) |
-| 做内置组件 | [component](systems/component.md) → theme-style → event → [layout](systems/layout.md) |
-| 改渲染 / 省资源 | [demand-driven](systems/demand-driven.md) → [rendering](systems/rendering.md) → [application · 主循环](systems/application.md#主循环) |
-| 接平台能力 | [platform](systems/platform.md) → [application](systems/application.md) → event |
-| 做 Modal/菜单 | [overlay](systems/overlay.md) → event → component |
-| 持久化配置 | [data](systems/data.md) → theme-style → application |
-| 写测试 | [testing](systems/testing.md) → [event](systems/event.md#测试) → platform → rendering |
+**人类读者**：首次了解 → [`glossary.md`](glossary.md) → [`decisions.md#d50`](decisions.md#d50) → [`application.md`](systems/application.md)。运行时协作图 → [`application.md#启动`](systems/application.md#启动)。
 
 ---
+
+<a id="功能域--系统"></a>
 
 ## 功能域 ↔ 系统
 
-功能域是**源码**维度（`src/`）；系统是**文档**维度。一对多、多对一均正常。
+| 功能域 | 路径 | 主要系统文档 |
+|--------|------|--------------|
+| `core` | `src/core/` | [foundation](systems/foundation.md) |
+| `native` | `src/native/` | [platform](systems/platform.md) |
+| `draw` | `src/draw/` | [rendering](systems/rendering.md) |
+| `ui` | `src/ui/` | [view-reactive](systems/view-reactive.md)、[component](systems/component.md)、[theme-style](systems/theme-style.md)、[event](systems/event.md)、[layout](systems/layout.md)、[overlay](systems/overlay.md) |
+| `app` | `src/app/` | [application](systems/application.md) |
+| `data` | `src/data/` | [data](systems/data.md) |
+| *(跨域)* | — | [public-api](systems/public-api.md)、[testing](systems/testing.md)、[**demand-driven**](systems/demand-driven.md)（#105） |
 
-| 功能域 | 路径 | 主要系统文档 | 说明 |
-|--------|------|--------------|------|
-| `core` | `src/core/` | [foundation](systems/foundation.md) | 几何、错误、日志、诊断、damage |
-| `native` | `src/native/` | [platform](systems/platform.md) | OS 抽象；上层只用 `native::traits` |
-| `draw` | `src/draw/` | [rendering](systems/rendering.md) | 引擎、管线、字体、合成、空间 |
-| `ui` | `src/ui/` | [view-reactive](systems/view-reactive.md)、[component](systems/component.md)、[theme-style](systems/theme-style.md)、[event](systems/event.md)、[layout](systems/layout.md)、[overlay](systems/overlay.md) | 界面能力拆为多系统 |
-| `app` | `src/app/` | [application](systems/application.md) | 启动、主循环、桥接 |
-| `data` | `src/data/` | [data](systems/data.md) | Settings 持久化 |
-| *(跨域)* | — | [testing](systems/testing.md) | FakePlatform、语义断言、paint snapshot |
-| *(跨域)* | — | [demand-driven](systems/demand-driven.md) | **按需零闲置**（核心理念 / 最高规则 #105） |
-
-依赖方向（硬约束，详见 AGENTS.md）：
-
-```text
-core ← native ← draw ← ui ← app
-  ↑      ↑               ↑
-  └──────┴─── data ──────┘
-```
+依赖方向 → [`AGENTS.md` · 架构硬约束](../AGENTS.md#架构硬约束)
 
 ---
 
@@ -93,231 +54,65 @@ core ← native ← draw ← ui ← app
 
 | # | 系统 | 文档 | 一句话 | 关键决策 |
 |---|------|------|--------|----------|
-| 1 | 应用 | [application.md](systems/application.md) | 启动、主循环、平台/View/渲染桥接 | #59 #64 #74 #88 #93 |
-| 2 | View 与响应式 | [view-reactive.md](systems/view-reactive.md) | 声明式 UI、State、Reconciler diff | #21 #24 #31 #49 #60 |
-| 3 | 组件 | [component.md](systems/component.md) | Widget 结构、trait 能力、生命周期 | #8 #20 #35 #58 #83 |
-| 4 | 主题与样式 | [theme-style.md](systems/theme-style.md) | Theme、Style/StyleSet、色板与排版 | #1–#3 #9 #14–#17 |
-| 5 | 事件 | [event.md](systems/event.md) | 系统/语义/自定义三层与 HandlerTable | #4–#7 #36 #68 |
+| 1 | 应用 | [application.md](systems/application.md) | 启动、主循环、桥接 | #59 #64 #74 #88 #93 |
+| 2 | View 与响应式 | [view-reactive.md](systems/view-reactive.md) | 声明式 UI、State、Reconciler | #21 #24 #31 #49 #60 |
+| 3 | 组件 | [component.md](systems/component.md) | Widget、trait、生命周期 | #8 #20 #35 #58 #83 |
+| 4 | 主题与样式 | [theme-style.md](systems/theme-style.md) | Theme、Style/StyleSet | #1–#3 #9 #14–#17 |
+| 5 | 事件 | [event.md](systems/event.md) | 三层事件、HandlerTable | #4–#7 #36 #68 |
 | 6 | 布局 | [layout.md](systems/layout.md) | measure、Flex/Grid、Scroll | #29 #38 #45 #53 |
 | 7 | 渲染 | [rendering.md](systems/rendering.md) | ScenePaint、合成、局部重绘 | #59 #70 #82 #122 #129 |
-| 8 | 平台 | [platform.md](systems/platform.md) | OS 隔离、UiEvent、呈现 | #40 #59 |
-| 9 | 浮层 | [overlay.md](systems/overlay.md) | OverlayStack、Modal/Tooltip/菜单 | #96–#98 #100 |
-| 10 | 基础设施 | [foundation.md](systems/foundation.md) | 几何、错误、日志、诊断 | #38 #56 #70 |
-| 11 | 数据 | [data.md](systems/data.md) | Settings KV 持久化 | #64 |
-| 12 | 测试 | [testing.md](systems/testing.md) | FakePlatform、语义断言、paint snapshot | #40 |
-| 13 | **按需零闲置** | [demand-driven.md](systems/demand-driven.md) | 核心理念；零维护；Timer / post_to_ui / open_window | #105–#159 |
+| 8 | 平台 | [platform.md](systems/platform.md) | OS 隔离、UiEvent | #40 #59 |
+| 9 | 浮层 | [overlay.md](systems/overlay.md) | OverlayStack、Modal/菜单 | #96–#98 #100 |
+| 10 | 基础设施 | [foundation.md](systems/foundation.md) | 几何、错误、日志 | #38 #56 #70 |
+| 11 | 数据 | [data.md](systems/data.md) | Settings KV | #64 |
+| 12 | 测试 | [testing.md](systems/testing.md) | FakePlatform、语义断言 | #40 |
+| 13 | **按需零闲置** | [demand-driven.md](systems/demand-driven.md) | 核心理念 #105 | #105–#159 |
+| 14 | **公开 API** | [public-api.md](systems/public-api.md) | prelude 导出单页 | #69 #101 |
 
 ---
 
 ## 主题索引
 
-跨系统话题 → 优先打开的章节（按需深入）。
+跨系统话题 → 优先章节（按需深入）。
 
 | 主题 | 主文档 · 章节 | 关联 |
 |------|---------------|------|
-| **按需零闲置（核心）** | [demand-driven · 开发者契约](systems/demand-driven.md#开发者契约零维护) | application, rendering, event, view-reactive |
-| 主循环与帧调度 | [application · 启动→主循环](systems/application.md#主循环) | rendering, event, demand-driven |
-| UI 主循环 vs 后台 | [demand-driven · 异步边界](systems/demand-driven.md#ui-主循环-vs-后台) | application, view-reactive |
-| App 定时 API | [application · App 定时](systems/application.md#app-定时-api) · [#132](decisions.md#d132) | demand-driven |
-| ActiveWorkRegistry / 多窗 | [demand-driven · Registry](systems/demand-driven.md#activeworkregistry) · [多窗单 loop](systems/demand-driven.md#多窗单-loop) | application |
-| AppState / 多窗 | [application · AppState](systems/application.md#appstate--多窗--settings) | view-reactive, data |
-| View DSL / Reconciler | [view-reactive](systems/view-reactive.md) | component, event |
-| Reconcile 热更新 | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) | application |
-| State / Computed / Effect | [view-reactive · 响应式](systems/view-reactive.md#响应式) | component |
-| Widget trait 能力 | [component · 能力](systems/component.md#能力) | layout, event, rendering |
-| Manager 横切 | [component · Manager](systems/component.md#manager-横切) | event, layout |
-| 内置 Widget 全表 | [component · 内置 Widget 目录](systems/component.md#内置-widget-目录) | theme-style, overlay |
-| 动画 | [component · 动画](systems/component.md#动画) | rendering |
-| 色板 / DesignTokens | [theme-style · 色板](systems/theme-style.md#色板架构) | rendering |
-| Style / StyleSet 五态 | [theme-style · Style](systems/theme-style.md#style--styleset) | component |
-| 事件传播 / Handler | [event · 传播](systems/event.md#传播--handlertable) | view-reactive |
-| IME / 剪贴板 / 拖放 | [event](systems/event.md) | platform, overlay |
-| measure / Constraints | [layout](systems/layout.md) | component |
-| Flex / Grid / Scroll | [layout](systems/layout.md) | view-reactive, theme-style |
-| ScenePaint / 合成 | [rendering · 场景与合成](systems/rendering.md#场景与合成) | application |
-| 失效队列 / Picture | [rendering · 管线](systems/rendering.md#管线与失效) | foundation |
-| 字体 / 图像 | [rendering · 字体与图像](systems/rendering.md#字体与图像) | platform |
-| 空间几何 (HiDPI) | [rendering · 空间](systems/rendering.md#空间几何) | foundation |
+| **按需零闲置** | [demand-driven · 开发者契约](systems/demand-driven.md#开发者契约零维护) | application, rendering, event |
+| 主循环 / 帧调度 | [application · 主循环](systems/application.md#主循环) | demand-driven, rendering |
+| Timer / post_to_ui | [application · App 定时](systems/application.md#app-定时-api) · [#132](decisions.md#d132) | demand-driven |
+| ActiveWorkRegistry / 多窗 | [demand-driven · Registry](systems/demand-driven.md#activeworkregistry) | application |
+| View / Reconcile | [view-reactive](systems/view-reactive.md) | component, event |
+| Widget trait | [component · 能力](systems/component.md#能力) | layout, event |
+| Style / 色板 | [theme-style · Style](systems/theme-style.md#style--styleset) | component, rendering |
+| 事件传播 | [event · 传播](systems/event.md#传播--handlertable) | view-reactive |
+| measure / Scroll | [layout](systems/layout.md) | component |
+| ScenePaint / 失效 | [rendering · 管线](systems/rendering.md#管线与失效) | foundation |
 | Platform traits | [platform · Traits](systems/platform.md#traits-清单) | application |
-| 测试设计 | [testing](systems/testing.md) | event, platform, rendering |
-| FakePlatform 测试 | [testing · FakePlatform](systems/testing.md#fakeplatform) · [platform · 测试](systems/platform.md#测试平台) | event |
-| Modal / Tooltip / 菜单 | [overlay](systems/overlay.md) | event, component |
-| 几何 / Damage | [foundation · 几何](systems/foundation.md#几何) | rendering, layout |
-| 错误 / 日志 / 诊断 | [foundation](systems/foundation.md) | platform |
-| Settings 持久化 | [data](systems/data.md) | application, theme-style |
-| CLI / DI | [application · CLI](systems/application.md#cli-与-di) | — |
-| 源码目录详表 | [源码目录详表](#源码目录详表) | 各系统文档 |
-| 实现进度总览 | [实现进度总览](#实现进度总览) | decisions、各系统 · 实现注记 |
-| 落地计划 | [roadmap.md](roadmap.md) | P0–P5 路线图 · 阶段文件清单 | #154 #157 · 写代码前 |
-| 术语对照 | [术语对照（#101–#104）](#术语对照101104) | decisions #101–#104 |
+| Modal / Overlay | [overlay](systems/overlay.md) | event, component |
+| Settings | [data](systems/data.md) | application, theme-style |
+| 实现进度 / backlog | [roadmap · 实现进度总览](roadmap.md#实现进度总览) · [后续工作](roadmap.md#后续工作) | 各系统 · 实现注记 |
+| 术语 / API 名 | [glossary · 术语对照](glossary.md#术语对照) · [public-api](systems/public-api.md) | decisions #101–#104 |
+| 源码目录 | [roadmap · 源码目录详表](roadmap.md#源码目录详表) | 各系统 |
 
 ---
 
 ## 参考索引
 
-| 文档 | 内容 | 何时查 |
-|------|------|--------|
-| `docs/decisions.md` | 决策全表 #1–#161；[按域索引](decisions.md#按域索引)；新决策 #162+ | 实现分歧、API 取舍 |
-| [`glossary.md`](glossary.md) | 术语定义（按域分组） | 名词不明 |
-| [术语对照（#101–#104）](#术语对照101104) | 设计名 vs 当前源码 API | 读源码、重构命名 |
-| [`AGENTS.md`](../AGENTS.md) | 六域依赖、平台隔离、文档维护 | 改架构、AI 协作 |
-
----
-
-## 术语对照（#101–#104）
-
-设计文档与当前源码命名不一致处；重构时按「设计」列对齐。裁决详情 → [#101–#104](decisions.md#d101)。
-
-| 设计（文档/重构目标） | 当前实现（源码） | 决策 |
-|----------------------|------------------|------|
-| ComponentId (Generational) | `core::ComponentId`；运行时 WidgetTree 分配的 ID 带 tree scope + slot + generation，避免多窗共享 AppState 时碰撞；公开事件/handle/snapshot/Reconciler、Widget trait 边界、managers、layout implementor 与 paint/debug 边界已按 `ComponentId` / `NodeId` 命名，WidgetTree 内部仍保留 `WidgetId` 同型别名，draw 内部保留 `NodeId` 同型别名 | [#101](decisions.md#d101) |
-| component! | `component! { name: ..., struct ... }` / `component! { struct ... }` | [#102](decisions.md#d102) |
-| measure(constraints) | `WidgetLayout::measure(Constraints)` 为唯一测量入口；旧 `preferred_size(engine)` 兼容桥已移除 | [#103](decisions.md#d103) |
-| ScrollView | ScrollView (was ScrollContainer in old docs) | [#104](decisions.md#d104) |
-| AppState + ComponentHandle | `AppState` registry + `ComponentHandle` snapshot / invalidate / emit；`State<T>` closure capture 仍可并用 | [#32](decisions.md#d32), [#101](decisions.md#d101) |
-| HandlerTable key ComponentId | `SemanticEvent` target/current_target、`EventHandler::semantic_event` target 参数与 `HandlerTable` key/API 已用 `ComponentId`；`WidgetId` 仍为树内别名 | [#10](decisions.md#d10), [#101](decisions.md#d101) |
-
----
-
-## 协作（运行时）
-
-```mermaid
-flowchart TB
-  subgraph foundation [基础设施]
-    geom[几何 / 错误 / 日志]
-  end
-
-  subgraph platform [平台]
-    os[窗口 / 输入 / 呈现]
-  end
-
-  subgraph app [应用]
-    loop[主循环]
-    bridge[ScenePaint 桥接]
-  end
-
-  subgraph ui [界面]
-    view[View / Reconciler]
-    widget[组件]
-    managers[Manager 横切]
-    layout[布局]
-    event[事件 / HandlerTable]
-    theme[主题 / Style]
-    overlay[OverlayStack]
-  end
-
-  subgraph draw [绘制]
-    pipeline[管线 / 失效]
-    compositor[合成 / Picture]
-  end
-
-  subgraph data [数据]
-    settings[Settings]
-  end
-
-  foundation --> platform & draw & ui & app
-  platform -->|UiEvent| app
-  settings -.->|可选注入| app
-  app --> loop
-  loop --> view --> widget
-  managers -.-> widget
-  widget --> layout & event
-  theme --> widget & compositor
-  widget -->|ScenePaint| bridge --> pipeline --> compositor
-  compositor -->|PresentDamage| platform
-  overlay --> event & app
-  settings -.-> theme
-```
-
----
-
-## 源码目录详表
-
-`src/` 子路径与系统文档的细粒度映射；功能域总览见上文「功能域 ↔ 系统」。
-
-| 路径 | 系统文档 | 说明 |
-|------|----------|------|
-| `src/core/*` | [foundation](systems/foundation.md) | geometry, damage, error, log, diagnostic |
-| `src/native/traits/*` | [platform](systems/platform.md) | public OS API |
-| `src/native/backends/*` | [platform](systems/platform.md) | impl only, no upper use |
-| `src/native/test_harness/*` | [platform](systems/platform.md), [testing](systems/testing.md) | FakePlatform |
-| `src/draw/pipeline/*` | [rendering](systems/rendering.md) | invalidation, FrameRenderer |
-| `src/draw/compositor/*` | [rendering](systems/rendering.md) | ScenePaint, LayerTree |
-| `src/app/event_loop/*` | [application](systems/application.md) | run_widget_loop |
-| `src/app/bridge/*` | [application](systems/application.md), [rendering](systems/rendering.md) | ScenePaint impl |
-| `src/ui/view/*` | [view-reactive](systems/view-reactive.md) | View DSL, adapter |
-| `src/ui/core/widget/*` | [component](systems/component.md), [event](systems/event.md) | WidgetTree |
-| `src/ui/event.rs` | [event](systems/event.md) | (single file) |
-| `src/ui/layout/*` | [layout](systems/layout.md) | |
-| `src/ui/theme/*` | [theme-style](systems/theme-style.md) | |
-| `src/ui/foundation/style/*` | [theme-style](systems/theme-style.md) | Style, StyleSet |
-| `src/ui/widgets/*` | [component](systems/component.md) | built-in widgets |
-| `src/ui/managers/*` | [component](systems/component.md) | per-tree manager container |
-| `src/ui/overlay.rs` | [overlay](systems/overlay.md) | |
-| `src/data/settings/*` | [data](systems/data.md) | |
-| `src/tests/**` | [testing](systems/testing.md) | mirror `src/` layout |
-| `src/prelude.rs`、`src/lib.rs` | — | 推荐入口 `uix::prelude::*`；导出 App、View、State、ComponentId、常用组件、事件、handle 与布局类型 |
-
----
-
-## 实现进度总览
-
-设计 ahead of code 的差异汇总；各系统正文以 `> **实现注记**` 标注细节。重构时以「设计」列与 [`decisions.md`](decisions.md) 为准。
-
-| 能力 | 设计 | 当前 | 文档 |
-|------|------|------|------|
-| ComponentId | Generational 稳定 ID | `core::ComponentId` 已落地并从 `ui::ComponentId` 与 `prelude` 重导出；WidgetTree 运行时分配带 tree scope 的 ComponentId，覆盖跨树唯一性测试；WidgetTree 内部 `WidgetId` 与 draw 内部 `NodeId` 为源码别名；`SemanticEvent`、`EventHandler::semantic_event`、`HandlerTable` 存储/API、Reconciler 热路径、State paint binding、Widget trait 边界、managers 与 layout implementor 已按 `ComponentId` 命名并覆盖 generation key 测试 | [component · WidgetTree](systems/component.md#widgettree) · [#10](decisions.md#d10) [#101](decisions.md#d101) |
-| component! | `component!` authoring 宏 | `component! { name: ..., struct ... }` 与 `component! { struct ... }` 已作为推荐 authoring 入口；少数手写 widget 仍可用低层 `impl_widget_component!` 显式声明能力；旧 `define_widget!` 兼容入口已移除 | [component · Authoring](systems/component.md#authoring) · [#102](decisions.md#d102) |
-| AppState / ComponentHandle | mount 自动 register | `AppState` snapshot registry 已接入 `WidgetTree::set_app_state` mount/unmount，主窗与副窗共享同一 AppState；`get_handle` / `get_snapshot` / `contains` 公开查找 API、内部 register/unregister、snapshot/invalidate 与 semantic queue 均已按 `ComponentId` 命名；`ComponentHandle::id` 已按 `ComponentId` 命名；lookup handle 可读 snapshot、窄 Paint invalidate，并通过 AppState semantic queue 触发 emit | [application · AppState](systems/application.md#appstate--多窗--settings) · [#145](decisions.md#d145) |
-| StateSlotId | new 时单调 id | `State::new` 已分配稳定 slot id，clone 共享；State capture 指纹基础已用 `TypeId + slot_id` 接入 | [#143](decisions.md#d143) |
-| open_window | 副窗 + 新 AppHandle | `WindowConfig` / `AppHandle::open_window` / `.on_window_start` 已导出；运行时可分配新 `window_id`、独立 AppTimer/MainThreadQueue/AppHandle 并暂存副窗创建请求，成功入队会 wake event loop；GUI loop 会在首窗启动后与活动轮次中 drain 请求，创建 native 窗与独立 `WindowSession` bootstrap；副窗 MainThreadQueue / `update_view` reconcile、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#144](decisions.md#d144) [#148](decisions.md#d148) |
-| 平台窗口能力 | 能力差异用 trait + Result 表达 | `WindowOps` 可选窗口能力已返回 `Result<()>`；共享 `PlatformWindowCore` 仅在底层返回 `Ok(())` 后写入 `WindowState`，未支持能力记录 `Errc::NotImplemented`；`create_platform()` 非支持平台返回 `Err`，不再编译期中断；`FileDrop` 平台映射已补回归测试 | [platform · 窗口可选能力](systems/platform.md#窗口可选能力) |
-| ComponentConfigSnapshot | mount 配置快照 | `ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已导出，`id` 字段与 `from_component` 构造参数已按 `ComponentId` 命名；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 静态配置提取已接；`ComponentHandle` 直接 snapshot getter 已接；`AppState` snapshot registry 与 `WidgetTree::set_app_state` mount/unmount 自动注册已接；reconcile patch 会刷新 snapshot；`component!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该提取路径 | [#146](decisions.md#d146) [#151](decisions.md#d151) [#152](decisions.md#d152) |
-| Handle emit / invalidate / getter | dispatch_semantic + 窄 Paint + 只读配置 | `ComponentHandle::emit` 已导出：live handle 直接走 `WidgetTree::dispatch_semantic`，lookup handle 入 AppState semantic queue 并由主窗/副窗 loop drain；live handle 与 lookup handle 的 `invalidate()` 均已接窄 Paint；`snapshot()` / `text()` / `label()` / `placeholder()` / `disabled()` / `checked()` / `numeric_value()` 已接 | [#119](decisions.md#d119) [#147](decisions.md#d147) |
-| update_view | AppHandle 按 session reconcile | `AppHandle::update_view` / `set_root` 已导出，经 `AppRuntime` 按 `window_id` 写入目标 MainThreadQueue；单窗 loop 已消费；副窗 session bootstrap、MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#149](decisions.md#d149) |
-| State 跨窗标脏 | paint_sites fan-out | `State` / `Computed` 已支持多个 paint site fan-out；`State` reconcile callback 已支持按 site key fan-out 并原地更新重复绑定；副窗 session 路由与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#150](decisions.md#d150) |
-| reconcile 合并 | pending_root + 帧末一次 | 单窗 `update_view` 路径已接；同帧多次更新取最后一次；State 批次自动置位已接；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#153](decisions.md#d153) |
-| 实现路线图 | P0–P5 分阶段 | 见 [roadmap.md](roadmap.md) | [#154](decisions.md#d154) [#157](decisions.md#d157) |
-| view_factory | session 固定 Arc factory | 单窗 `App::root(|| ...)` 与副窗 `WindowConfig::new(..., || ...)` 已安装 session factory | [#155](decisions.md#d155) |
-| 多窗口 | v1 多窗；共享 AppState + Theme | `run_gui` 已支持主窗 + 副窗单 loop 编排；副窗独立 `WindowSession`、AppState 共享、事件与队列按 `window_id` 路由 | [application · 多窗](systems/application.md#appstate--多窗--settings) · [#93](decisions.md#d93) |
-| Reconcile 热更新 | `reconcile` 增量更新 WidgetTree | 单窗主循环与副窗运行期 frame drain 已接帧末 reconcile；稳定 handler signature 与 fingerprint→generation 路径已接；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 `ViewNode` 与低层 `WidgetNode` 显式 State / WindowId capture 入口已接；任意闭包运行时自动收集按 #159 禁止，无 generation / fingerprint 的普通闭包按 #160 保守重绑；未来宏 / DSL 可在语法层生成 fingerprint | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) · [Reconciler](systems/view-reactive.md#reconciler) |
-| Manager 横切 | `WidgetManagers` 注入 WidgetTree | `WidgetTree` 已持有 per-tree `WidgetManagers`；`FocusManager` 已记录当前焦点与 Tab 顺序并驱动焦点导航；`InteractionManager` 已记录 hovered / pressed component 并作为事件目标解析的事实源；`DragManager` 已记录拖拽 target / start / last / button / mods / offset 并驱动基础 DragStart / DragMove / DragEnd 热路径；`WidgetTree` 旧交互镜像字段已移除；`state_for(id)` / `text_for(id)` override 会随节点移除清理；旧 `StyleManager` preset 不再从 `prelude` / `ui::*` 推荐入口导出，仅保留显式 manager 路径 | [component · Manager](systems/component.md#manager-横切) |
-| AnimationRegistry | Registry tick + `tree.update(dt)` | `WidgetAnimation` 能力、`tree.update(dt)` 窄 Paint 标脏、单窗/副窗 `Animation(id)` 下一帧 deadline、due id scoped tick、active + visible 发现门控与 `Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接入；`Spin` / `ProgressBar` indeterminate 已收窄 dirty bounds | [component · 动画](systems/component.md#动画) · [rendering · 动画帧](systems/rendering.md#动画帧) |
-| Composite scroll | `Invalidation::Composite` + scroll_region memmove | Wheel、键盘、滚动条拖拽与程序化 ScrollView 滚动已写 Composite exposed strip 并接 `scroll_region` memmove；新增滚动来源须复用该路径 | [rendering · 管线与失效](systems/rendering.md#管线与失效) |
-| App 内置 Settings load（opt-in） | builder 配置 path 后 `run()` 前代调 `load()` | `App::settings(path)` 已接；`run()` 前加载一次并注册 `SettingsService` 到 App DI；默认不 load/save | [data · App 集成](systems/data.md#app-集成) |
-| 主循环 DI | Container 可在运行时 resolve | `AppHandle::resolve<T: Send + Clone + 'static>()` 已可读取 builder / settings 注册的单例 clone；组件热路径仍不 resolve | [application · DI](systems/application.md#cli-与-di) |
-| 三态主循环 | DeepIdle / RegisteredActive / Active | 单窗 loop 已移除固定 100ms 探活并写回三态；DeepIdle 跳过 `tick_effects`，Active 帧仅在 Effect pending 时 tick；隐藏窗口不 layout/render 且保留 pending dirty；RegisteredActive deadline wait 与副窗三态写回已接；Windows `dispatch_blocking` 已移除固定 16ms 等待，外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [demand-driven · 主循环](systems/demand-driven.md#主循环状态机) · [#106](decisions.md#d106) [#117](decisions.md#d117) |
-| ActiveWorkRegistry | register / wait_until / drain_due | 内部类型已建并由 WindowSession 持有；event loop 已接 `next_deadline` / `drain_due`、到期 `Timer` / `AppTimer` 消费、Tooltip widget scoped timer route 托管、Animation `Animation(id)` 下一帧 deadline 与 IME composition session 无 deadline 托管 | [#115](decisions.md#d115) |
-| 多窗单 loop | WindowSession + window_id 路由 | 单窗 run_gui 已构造 WindowSession 并传入 session loop；副窗创建、独立 `WindowSession` bootstrap、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#116](decisions.md#d116) |
-| 帧内 reconcile | 帧末一次 + coalesce | 单窗 `update_view` / `pending_root` / State 批次路径已接入；同帧多次更新取最后一次并在 layout 前 reconcile；副窗 MainThreadQueue / root reconcile 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#118](decisions.md#d118) |
-| 每窗独立零闲置 | 每窗独立三态 | 单窗 WindowSession 与副窗运行期 frame drain 已写回三态；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#110](decisions.md#d110) |
-| PicturePolicy 自动推断 | 元数据+信号 → Never/Eligible | `PicturePolicy` 元数据、运行时信号 Never 合并、`node_count≥8 && est_pixels≥65536` 阈值已接；Container/Grid 与 Empty/Tag/Descriptions/Result/Alert/Timeline/Skeleton/List/Chart/QRCode/Watermark 等静态高收益组件已声明 Eligible，默认 Never | [#122](decisions.md#d122) [#129](decisions.md#d129) |
-| Registry 框架托管 | 内置/IME 自动 register | Registry 类型已建；Tooltip 内置 timer 已按 widget scoped key 托管；单窗 AppTimer、WidgetAnimation `Animation(id)` 下一帧 deadline、`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源与 IME composition session 已托管 | [#124](decisions.md#d124) |
-| follow_system_theme | opt-in；true 框架全自动 | App builder + ThemeChanged 事件路径已接；默认 false 忽略 ThemeChanged；无后台 poll | [#125](decisions.md#d125) |
-| App Timer API | run_after / run_interval | `App` / `AppHandle` 的 `run_after` / `run_interval` / `TimerHandle` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 session Timer，成功注册会 wake event loop；副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#132](decisions.md#d132) |
-| post_to_ui | App / AppHandle 主线程投递 | `App::post_to_ui` + `AppHandle::post_to_ui` + MainThreadQueue 已接；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由；副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#133](decisions.md#d133) |
-| MainThreadQueue | FIFO + 帧内 drain 顺序 | 每 WindowSession 队列已接；单窗 drain 顺序为 UiEvent → due work → post_to_ui；`AppHandle` 多窗队列路由、副窗 bootstrap、MainThreadQueue 消费、运行期 frame drain 与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端 | [#137](decisions.md#d137) |
-| TestClock | App drain_due 测试注入 | App 层 `AppClock` / `TestClock` 已接入 AppTimer deadline、RegisteredActive wait_until、drain_due；native `FakeTimer` 仍独立 | [#139](decisions.md#d139) |
-| handler_generation | 显式 fingerprint 才稳定复用 | 内部 signature/generation 字段与比较已接；State / WindowId capture 指纹基础与 fingerprint→generation 解析已接；多个 capture 会排序合并为顺序无关指纹；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 可复用 generation；无 generation / fingerprint 的普通 handler 按 #160 保守重绑，未来宏 / DSL 若生成 fingerprint 可进入稳定复用路径 | [#138](decisions.md#d138) [#142](decisions.md#d142) [#159](decisions.md#d159) [#160](decisions.md#d160) |
-| on_start / on_window_start | 每个 session 注入 AppHandle | 单窗 `.on_start(AppHandle)` 与副窗 `.on_window_start(AppHandle)` 已导出，并在对应 WindowSession 创建后、首帧前调用 | [#140](decisions.md#d140) |
-| 多窗 post_to_ui | window_id 路由 | `AppRuntime` 路由表已接；`AppHandle` 投递仅进入自身 `window_id` 的队列，session 销毁后丢弃闭包 | [#141](decisions.md#d141) |
-| AppHandle 生命周期 | 窗关闭/run 结束 cancel Timer | `AppRuntime::close_session` 会关闭指定 handle、cancel 该 session AppTimer、清空 MainThreadQueue 并移除待创建副窗请求；主窗 close 退出主循环，副窗真实 close 事件按 `window_id` 关闭对应 session | [#134](decisions.md#d134) |
-| AppHandle | cloneable；运行中 Timer / post_to_ui | `AppHandle` / `WindowId` 已导出；运行中 Timer、跨线程 `post_to_ui` 与 `update_view` 已按 `window_id` 路由；`open_window` 请求层与副窗 bootstrap 已接 | [#132](decisions.md#d132) [#133](decisions.md#d133) |
-| Handler 智能重绑 | handler 变才重注册 | 已按稳定 signature 跳过重绑；带 fingerprint 的 handler 可自动复用/递增 generation；无 generation/fingerprint 的普通 handler 按 #160 保守 clear+register，未来宏 / DSL 若生成 fingerprint 再进入稳定复用 | [#123](decisions.md#d123) [#135](decisions.md#d135) [#159](decisions.md#d159) [#160](decisions.md#d160) |
-| PointerMove 边界窄路径 | 框内不 hit_test | 已接：`InteractionManager.pressed_component` / `DragManager.target` 全 dispatch；hover hit frame 内跳过 hit_test 与默认 dispatch；`wants_continuous_pointer_move` opt-in 可连续 dispatch | [#109](decisions.md#d109) [#121](decisions.md#d121) |
-| Effect DeepIdle | 不 tick_effects | 单窗/副窗 loop 已门控到 Active 帧，且仅在 Effect pending 时 tick；动画续帧经 Registry deadline 唤醒，不回退固定探活；`Spin` / `ProgressBar` indeterminate / Dropdown fade / Select fade / AutoComplete fade / TreeSelect fade / Cascader fade / ColorPicker fade / Tooltip fade / Popover fade / Popconfirm fade / Modal / Drawer / Collapse 内置动画源已接 | #105 |
-
-落地计划（分阶段路线图、阶段文件清单）→ [`roadmap.md`](roadmap.md)（#154 #157）。
+| 文档 | 用途 |
+|------|------|
+| [`AGENTS.md`](../AGENTS.md) | 硬约束 + Agent checklist（编码前必读） |
+| [`roadmap.md`](roadmap.md) | 实现进度、backlog、源码目录详表 |
+| [`decisions.md`](decisions.md) | 决策台账 #1–#161；新决策 #162+ |
+| [`glossary.md`](glossary.md) | 术语；[设计名 vs 源码](glossary.md#术语对照) |
+| [`CHANGELOG.md`](../CHANGELOG.md) | 版本与迁移锚点（含 AppState/Handle） |
+| [`demo/README.md`](../demo/README.md) | 演示程序模式与运行说明 |
 
 ---
 
 ## 维护约定
 
-- 新增/重命名**系统** → 先更新本页「系统索引」，再写 `systems/*.md`。
-- 新增 `src/` 路径映射 → 更新「[源码目录详表](#源码目录详表)」与对应系统文档「源码模块」。
-- 设计落地或产生新差距 → 更新「[实现进度总览](#实现进度总览)」与各系统 `> **实现注记**`；阶段接线变更同步 [`roadmap.md`](roadmap.md)。
-- 新增**跨系统主题** → 更新「主题索引」；正文放在最相关系统文档的独立章节。
-- 新增**术语** → [`glossary.md`](glossary.md)；若涉及取舍 → [`decisions.md`](decisions.md) #162+。
-- 系统文档头部保持统一导航（← Main · 系统 # · 功能域），便于从索引跳回。
-- 正文采用 **设计规格 + 实现注记** 格式：设计 ahead of code 处用 `> **实现注记**` 标注，避免索引与源码脱节。
-- 协作图中 **虚线（`-.->`）** 表示横切协作边界；若某能力尚未完全接入运行时，须在「实现进度总览」或对应系统实现注记中明示。
+- 新系统 → 更新「系统索引」→ 写 `systems/*.md`。
+- 新 `src/` 路径 → [roadmap · 源码目录详表](roadmap.md#源码目录详表) + 系统「源码模块」。
+- 落地/差距 → [roadmap · 实现进度总览](roadmap.md#实现进度总览) + 系统 `> **实现注记**`。
+- 跨系统主题 → 「主题索引」+ 最相关系统章节。
+- 新术语 → [`glossary.md`](glossary.md)；取舍 → [`decisions.md`](decisions.md) #162+。

@@ -1,13 +1,10 @@
-//! 简化 API 演示 — `prelude` + `App::new()` 一键启动。
+//! 默认 GUI 演示 — `prelude` + `App::new().root()` 入门路径。
 //!
 //! 运行：`cargo run --bin uix-demo`
-//!
-//! 本演示展示入门推荐路径：View DSL（`column` / `row` / `button`）+
-//! 响应式 `State` + `App` 生命周期，无需直接接触 `WidgetTree` 或平台 API。
 
 use uix::prelude::*;
 
-// ── 计数器 — State 自动 reconcile invalidation + dynamic_label ────────────
+use crate::common::widgets::Counter;
 
 fn counter_section() -> ViewNode {
     let count = State::new(0);
@@ -22,9 +19,9 @@ fn counter_section() -> ViewNode {
             .font_size(28.0)
             .padding(8.0),
         row([
-            button("+1").primary().on_click(move || {
-                increment_count.set(increment_count.get() + 1);
-            }),
+            button("+1")
+                .primary()
+                .on_click(move || increment_count.set(increment_count.get() + 1)),
             button("-1").on_click(move || {
                 let current = decrement_count.get();
                 if current > 0 {
@@ -41,11 +38,23 @@ fn counter_section() -> ViewNode {
     .radius(8.0)
 }
 
-// ── 样式 — hex 颜色 + EdgeInsets 数字快捷构造 ────────────────────────────
-
-fn style_demo_section() -> ViewNode {
+fn component_section() -> ViewNode {
     column([
-        label("样式展示（hex 颜色 + 数字 EdgeInsets）")
+        label("component! 自定义 Widget").font_size(20.0).padding(8.0),
+        label("点击 Counter 区域递增（PointerDown）")
+            .font_size(12.0)
+            .color("#888888"),
+        embed(Counter { count: 0 }),
+    ])
+    .gap(8.0)
+    .padding(16.0)
+    .bg("#ffffff")
+    .radius(8.0)
+}
+
+fn style_section() -> ViewNode {
+    column([
+        label("样式 — hex 颜色与 EdgeInsets")
             .font_size(20.0)
             .padding((0.0, 0.0, 0.0, 8.0)),
         row([
@@ -58,7 +67,10 @@ fn style_demo_section() -> ViewNode {
                 .border(2.0, "#1677ff")
                 .radius(6.0)
                 .padding(12.0),
-            label("浅灰圆角").bg("#f5f5f5").padding(12.0).radius(12.0),
+            label("浅灰圆角")
+                .bg("#f5f5f5")
+                .padding(12.0)
+                .radius(12.0),
         ])
         .gap(8.0),
     ])
@@ -68,14 +80,11 @@ fn style_demo_section() -> ViewNode {
     .radius(8.0)
 }
 
-// ── 布局 — column/row/gap/flex_grow ──────────────────────────────────────
-
 fn layout_section() -> ViewNode {
     column([
-        label("布局展示（flex_grow 等宽分栏）")
+        label("布局 — flex_grow 等宽分栏")
             .font_size(20.0)
             .padding((0.0, 0.0, 0.0, 8.0)),
-        label("三列等宽："),
         row([
             label("A")
                 .bg("#1677ff")
@@ -104,25 +113,25 @@ fn layout_section() -> ViewNode {
     .radius(8.0)
 }
 
-// ── 入口 ──────────────────────────────────────────────────────────────────
-
-pub fn run_simplified_demo() {
+pub fn run() {
     App::new()
-        .title("UIX 简化 API 演示")
-        .size(500, 520)
+        .title("UIX 入门演示")
+        .size(520, 620)
         .theme(Theme::antd_light())
         .root(|| {
-            column([
-                label("UIX 简化 API 演示")
+            scroll(column([
+                label("UIX 入门演示")
                     .font_size(24.0)
                     .padding((16.0, 12.0, 16.0, 4.0)),
                 counter_section(),
                 space(8.0),
-                style_demo_section(),
+                component_section(),
+                space(8.0),
+                style_section(),
                 space(8.0),
                 layout_section(),
-            ])
-            .gap(0.0)
+            ]))
+            .build()
         })
         .run();
 }

@@ -12,7 +12,8 @@
 | 树同步 | [Reconciler](#reconciler) · [Handler 变更判定](#handler-变更判定-135) | #49 #60 #62 #101 #123 #135 #138 #142 #159 #160 #161 |
 | 响应式原语 | [响应式](#响应式) · [StateSlotId](#stateslotid) | #24 #78 #79 #143 |
 | 样式链 | [StyleExt](#styleext) | #21 |
-| 热更新 | [热更新（设计）](#热更新设计) · [reconcile 合并](#reconcile-合并) · [view_factory 生命周期](#view_factory-生命周期) · [多窗 Reconcile](#多窗-reconcile) · [State 跨窗标脏](#state-跨窗标脏) | #49 #60 #118 #148 #149 #150 #153 #155 #156 |
+| 热更新 | [热更新](#热更新设计) · [reconcile 合并](#reconcile-合并) · [view_factory 生命周期](#view_factory-生命周期) · [多窗 Reconcile](#多窗-reconcile) · [State 跨窗标脏](#state-跨窗标脏) | #49 #60 #118 #148 #149 #150 #153 #155 #156 |
+| 未实现或后续 | [未实现或后续](#未实现或后续) | #159 #160 |
 
 **关联**：[component](component.md) · [event](event.md) · [theme-style](theme-style.md) · [application](application.md) · [demand-driven](demand-driven.md)
 
@@ -66,6 +67,8 @@ ViewNode::new(widget, children)
 布局后 `bind_reactive_widget_states` 把 DynamicLabel 的 State 绑定到 paint invalidation。
 
 ---
+
+<a id="reconciler"></a>
 
 ## Reconciler
 
@@ -135,7 +138,7 @@ Style / 文本 / 静态 props 比较（#60）：Style 变 → paint invalidate�
 |------|----------|
 | 双方有 key | 字符串相等 |
 | 无 key | 同层索引 |
-| 类型不同 | 卸载旧 subtree，新建 设计态 ComponentId（#35、#101） |
+| 类型不同 | 卸载旧 subtree，分配新 ComponentId（#35、#101） |
 
 ---
 
@@ -241,6 +244,8 @@ fingerprint(kind, captures) :=
 
 设计（#143）— `State<T>` 的 **稳定身份**，供 capture 指纹（#142）、测试与调试；**不同于** `StateInner::generation`（值变更计数，供 Computed/Effect）。
 
+源码：`src/ui/foundation/state.rs`（经 `ui::state` / `prelude` 重导出）。
+
 ```rust
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct StateSlotId(u64);
@@ -261,21 +266,19 @@ static NEXT_STATE_SLOT: AtomicU64 = AtomicU64::new(1);
 | clone | `State::clone` **共享**同一 `slot_id`（同一逻辑状态） |
 | 指纹 | #142 使用 `TypeId::of::<T>() + slot_id.0` |
 | 不用 generation | `generation()` 随 `set` 变化；用于 Computed/Effect **依赖追踪**，非身份 |
-| Computed | 设计态可分配独立 slot id；v1 指纹以捕获的 `State` slot 为准 |
+| Computed | 未来可分配独立 slot id；v1 指纹以捕获的 `State` slot 为准 |
 
 ### 实现状态
 
-| 设计（#143） | 当前 `state.rs` |
-|--------------|-----------------|
-| `StateSlotId` 字段 | 已接；`State::new` 分配，clone 共享 |
-| 指纹用 slot id | State 侧 `TypeId + StateSlotId` 指纹基础已接，WindowId capture 侧使用 `TypeId<WindowId> + WindowId`；handler fingerprint 解析可消费这些值；`HandlerRegistration::with_state_capture` / `with_window_capture`、Button/Input DSL、通用 ViewNode 与低层 WidgetNode 显式 State / WindowId capture 已接；任意闭包运行时自动 capture 收集按 #159 禁止 |
-| `generation()` | 已有；用于 Computed/Effect |
+**已实现**（#143）：`StateSlotId` 字段；`State::new` 分配单调 slot，clone 共享；capture 指纹 `TypeId + slot_id`；`HandlerRegistration::with_state_capture` / Button·Input DSL 等显式 State capture 已接。
 
-实现 **保留** 现有 `generation()` 语义；`slot_id` 字段与 accessor 已接。
+**未实现**：`Computed` 独立 slot id（v1 指纹以捕获的 `State` slot 为准）→ [未实现或后续](#未实现或后续)。
 
 > **实现注记**：`StateSlotId` 已落地；`State::generation()` 保持值变更计数语义，不参与 State capture 指纹。
 
 ---
+
+<a id="响应式"></a>
 
 ## 响应式
 
@@ -326,7 +329,9 @@ column([...])
 
 ---
 
-## 热更新（设计）
+<a id="热更新设计"></a>
+
+## 热更新
 
 State / View 变更后，应用层应调用 **`ViewAdapter::reconcile(tree, view)`** 做增量 diff，而非每次 `build` 整树重建。
 
@@ -349,9 +354,13 @@ dispatch / drain_due / tick_effects
 
 禁止在 handler 或 Effect 内嵌套触发 reconcile；同帧多次 State 变更 coalesce 为单次 diff。合并算法见 [reconcile 合并](#reconcile-合并)（#153）。
 
+<a id="reconcile-合并"></a>
+
 ### reconcile 合并（#153）
 
 每 `WindowSession` 在帧末 **至多一次** reconcile；合并 `State::set` 批次与 `update_view` 的 `pending_root`。
+
+<a id="view_factory-生命周期"></a>
 
 ### view_factory 生命周期（#155–#156）
 
@@ -382,7 +391,7 @@ State::set        → session.reconcile_pending = true
 update_view(f)    → session.pending_root = Some(f())
                   → session.reconcile_pending = true
 
-// 步骤 5 — run_active_frame
+// 帧内合并步骤 6 — reconcile（见 demand-driven · 帧内合并 #118）
 if session.reconcile_pending {
     let view = session.pending_root.take()
         .unwrap_or_else(|| (session.view_factory)());
@@ -451,7 +460,7 @@ inspector_handle.update_view(|| inspector_view_v2());  // 仅 reconcile session 
 设计（#150）— 共享 `State<T>` 在 **多窗** 绑定时，一次 `set` **窄标脏** 所有绑定 widget，且 **仅 wake 有关 session**。
 
 ```rust
-// 设计态 — State 内部（修订单 slot paint_binding）
+// 规格 — State 内部（修订单 slot paint_binding）
 struct PaintBindSite {
     window_id: WindowId,
     component_id: ComponentId,
@@ -495,6 +504,12 @@ State::set(value)
 实现须 **保留** 窄 rect 标脏；多 site fan-out 已接，**禁止**回退为全树 invalidate。
 
 > **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(component_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调；副窗 session 路由与运行期 frame drain 已接，外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
+
+---
+
+## 未实现或后续
+
+本域相关项（Handler 宏层 fingerprint、Computed 独立 slot id）→ [roadmap · 后续工作](../roadmap.md#后续工作)。设计细节见 [热更新设计](#热更新设计)、[StateSlotId](#stateslotid)。排期 → [roadmap · 后续工作](../roadmap.md#后续工作)。
 
 ---
 

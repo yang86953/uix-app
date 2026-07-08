@@ -109,7 +109,7 @@
 | <a id="d71"></a>71 | 剪贴板 v1 | **SystemEvent → 语义事件** |
 | <a id="d72"></a>72 | Handle 可读 | **仅配置字段** |
 | <a id="d73"></a>73 | Scroll DSL | **`scroll(...).vertical().horizontal()`** |
-| <a id="d74"></a>74 | Light/Dark | **默认跟 OS**；App 可显式覆盖 |
+| <a id="d74"></a>74 | Light/Dark | **启动时**可读 OS 初始明暗；App 可显式覆盖；**运行中**跟 OS 须 opt-in `.follow_system_theme(true)`（[#125](#d125)） |
 | <a id="d75"></a>75 | 文本输入 v1 | **单行 + 多行 + 完整 IME** |
 | <a id="d76"></a>76 | OS 主题监听 | 运行中切换 Theme；**跟 OS** 须 App opt-in `.follow_system_theme(true)`（[#125](#d125)）；否则 App 显式 `.theme()` |
 | <a id="d77"></a>77 | button() 默认 | **`button_default()`**；链式 `.primary()` 等 |
@@ -137,7 +137,7 @@
 | <a id="d99"></a>99 | 无障碍 | **v2** |
 | <a id="d100"></a>100 | 浮层 | **`OverlayStack` 统一管理** |
 | <a id="d101"></a>101 | 组件 ID 命名 | **ComponentId**（Generational）已落地；WidgetTree 运行时分配带 tree scope 的 ComponentId，源码 `WidgetId` / `NodeId` 为 `core::ComponentId` 别名 |
-| <a id="d102"></a>102 | authoring 宏 | 设计态 **`component!`**；当前实现 **`component!` + `impl_widget_component!`**，重构对齐 [#20](#d20) |
+| <a id="d102"></a>102 | authoring 宏 | **`component!`** 为推荐 authoring 入口（`name + struct` 与直接 `struct`）；低层 **`impl_widget_component!`** 供手写 widget；旧 `define_widget!` 已移除 → 对齐 [#20](#d20) |
 | <a id="d103"></a>103 | measure API | **`measure(constraints)`** 为唯一测量入口；旧 `preferred_size(engine)` 兼容桥已移除，语义以 [#29](#d29) 为准 |
 | <a id="d104"></a>104 | 滚动容器 | 统一称 **ScrollView**；决策 [#45](#d45) 中 ScrollContainer 指 ScrollView 实现 |
 | <a id="d105"></a>105 | **核心理念（最高规则）** | **用最少资源，做最好效果** — Demand-Driven Zero Idle Work；**统领**六域依赖与一切设计；冲突以本规则为准；细则 [`demand-driven.md`](systems/demand-driven.md) |
@@ -151,7 +151,7 @@
 | <a id="d113"></a>113 | 零闲置豁免 | 无法框架托管的定时/轮询 → **`decisions.md` #162+** 公开条目 + 测试证明；默认不豁免；当前无豁免见 [#158](#d158) |
 | <a id="d114"></a>114 | Picture 启用 | **PicturePolicy 自动推断** + 自适应阈值（[#122](#d122) [#129](#d129) [#136](#d136)）；修订旧「黑名单+深度4」 |
 | <a id="d115"></a>115 | ActiveWorkRegistry | 框架内部注册表（**App 不可访问** [#124](#d124)）；`next_deadline` / `drain_due` |
-| <a id="d116"></a>116 | 多窗单 loop | **WindowSession** 每窗独立树+引擎+三态+Registry；**单** `run_app_loop`；UiEvent 带 **window_id** 路由 |
+| <a id="d116"></a>116 | 多窗单 loop | **WindowSession** 每窗独立树+引擎+三态+Registry；**单** 进程级 loop（设计名 `run_app_loop`，源码 `run_widget_loop` / 测试 `run_window_session_loop_*`）；UiEvent 带 **window_id** 路由 |
 | <a id="d117"></a>117 | 唤醒调度 | DeepIdle → blocking `wait_event`；有 register → app 层 **`wait_until`**（`wait_timeout(remaining)` [#127](#d127)） |
 | <a id="d118"></a>118 | 帧内合并 | Active 帧末 **一次** reconcile；同帧 State/标脏 **coalesce**；Effect 在 reconcile 前 tick |
 | <a id="d119"></a>119 | Handle invalidate | `ComponentHandle::invalidate` 默认 **窄 Paint**；Layout 仅结构/约束变更时 |
@@ -192,7 +192,7 @@
 | <a id="d154"></a>154 | 实现路线图 | 分阶段落地顺序；**#105 三态/Registry 优先**；详见 [roadmap · 分阶段路线图](roadmap.md#分阶段路线图) |
 | <a id="d155"></a>155 | view_factory 生命周期 | 每 `WindowSession` **创建时**从 `App::root` 或 `open_window` 根闭包生成 **`Arc<dyn Fn() -> ViewNode + Send + Sync>`**；**会话内不可变**；`State` 批次 reconcile **始终**调用该 factory |
 | <a id="d156"></a>156 | update_view 与 factory | `update_view` **仅**写 `pending_root`；**不**替换 `view_factory`；`take()` 消费后下一帧 State  reconcile 仍走原 factory |
-| <a id="d157"></a>157 | P0 落地清单 | 按文件路径的 P0 接线表；详见 [roadmap · P0 落地清单](roadmap.md#p0-落地清单) |
+| <a id="d157"></a>157 | P0 落地清单 | P0 阶段目标与验收摘要（历史 per-file 清单已归档）；详见 [roadmap · 已落地阶段](roadmap.md#已落地阶段p0p5) |
 | <a id="d158"></a>158 | 零闲置豁免台账 | 当前 **无豁免**；新增豁免必须追加公开条目（当前从 **#162+** 起），并写明触发源、wake 频率、允许工作范围、无法 register 的理由与测试边界 |
 | <a id="d159"></a>159 | Handler capture 自动收集边界 | 任意 Rust handler 闭包 **不做运行时自动捕获探测**；稳定复用仅通过显式 capture API，或未来宏 / DSL 在语法层生成 `capture_fingerprint`；禁止执行 handler 做 probe，避免业务副作用、错误事件语义与零闲置破坏 |
 | <a id="d160"></a>160 | 普通 handler 保守重绑 | 无显式 `handler_generation` / `capture_fingerprint` 的普通 Rust handler 闭包在 reconcile 时 **视为变更并重绑**；不得用调用点、闭包指针、堆地址或 `TypeId` 伪造稳定身份；显式 capture API 与未来语法层 fingerprint 仍可稳定复用 |

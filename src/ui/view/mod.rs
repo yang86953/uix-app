@@ -14,7 +14,7 @@ pub mod combinators;
 
 pub use adapter::ViewAdapter;
 pub use combinators::{
-    button, column, dynamic_label, grid, input, label, row, scroll, space, ButtonBuilder,
+    button, column, dynamic_label, embed, grid, input, label, row, scroll, space, ButtonBuilder,
     GridBuilder, InputBuilder, ScrollBuilder,
 };
 
