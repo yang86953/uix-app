@@ -112,12 +112,7 @@ impl VirtualListScroll {
         )
     }
 
-    pub fn clamp_to_content(
-        &mut self,
-        item_count: usize,
-        item_height: f32,
-        viewport_height: f32,
-    ) {
+    pub fn clamp_to_content(&mut self, item_count: usize, item_height: f32, viewport_height: f32) {
         let max = self.max_scroll_offset(item_count, item_height, viewport_height);
         self.scroll_offset = self.scroll_offset.min(max);
     }
@@ -493,6 +488,29 @@ mod tests {
     }
 
     #[test]
+    fn virtual_list_scroll_range_applies_overscan() {
+        let mut scroll = VirtualListScroll::new().overscan(1);
+        scroll.set_scroll_offset(64.0);
+
+        assert_eq!(scroll.scroll_range(100, 32.0, 96.0), (1, 6));
+    }
+
+    #[test]
+    fn virtual_list_scroll_wheel_delta_clamps_to_content() {
+        let mut scroll = VirtualListScroll::new();
+
+        assert_eq!(scroll.scroll_by_wheel(-10.0, 5, 20.0, 40.0), 60.0);
+        assert_eq!(scroll.scroll_offset(), 60.0);
+        assert_eq!(scroll.scroll_by_wheel(-1.0, 5, 20.0, 40.0), 0.0);
+        assert_eq!(scroll.scroll_by_wheel(10.0, 5, 20.0, 40.0), -60.0);
+        assert_eq!(scroll.scroll_offset(), 0.0);
+
+        scroll.set_scroll_offset(80.0);
+        scroll.clamp_to_content(3, 20.0, 40.0);
+        assert_eq!(scroll.scroll_offset(), 20.0);
+    }
+
+    #[test]
     fn measure_uses_configured_viewport_size() {
         let vs = VirtualScroll::new().size(240.0, 180.0);
         let size = vs.measure(Constraints::unconstrained());
@@ -501,9 +519,7 @@ mod tests {
 
     #[test]
     fn layout_children_positions_by_absolute_index() {
-        let vs = VirtualScroll::new()
-            .item_count(100)
-            .item_height(32.0);
+        let vs = VirtualScroll::new().item_count(100).item_height(32.0);
         vs.visible_start.set(5);
         let frame = Rect::new(0.0, 0.0, 200.0, 96.0);
         let ids = [
