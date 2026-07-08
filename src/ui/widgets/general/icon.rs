@@ -186,23 +186,22 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        let icon_str = icon_char(&self.name);
         let color = ctx.tokens().color_text();
         let saved = *ctx.font();
-        let has_lucide = lucide_handle().is_some();
         if let Some(fh) = lucide_handle() {
             ctx.set_font(fh);
+            let icon_str = icon_char(&self.name);
+            ctx.text_center(icon_str, frame, color, self.size * 0.85);
+        } else {
+            let fallback = self
+                .name
+                .chars()
+                .next()
+                .map(|c| c.to_uppercase().to_string())
+                .unwrap_or_else(|| "?".to_string());
+            ctx.text_center(&fallback, frame, color, self.size * 0.55);
         }
-        ctx.text_center(icon_str, frame, color, self.size * 0.85);
         ctx.set_font(saved);
-
-        if !has_lucide {
-            let fallback = ctx.measure_text(icon_str, self.size * 0.85);
-            if fallback.w < 1.0 {
-                let label = &self.name[..self.name.len().min(2)];
-                ctx.text_center(label, frame, color, self.size * 0.55);
-            }
-        }
     }
 }
 

@@ -11,6 +11,7 @@
 | [已落地阶段（P0–P5）](#已落地阶段p0p5) | 分阶段目标与验收摘要 |
 | [实现进度总览](#实现进度总览) | 已落地能力按域汇总 |
 | [后续工作](#后续工作) | 未实现 backlog（权威清单） |
+| [P6 图形后端](#p6-图形后端) | 多图形 API 落地阶段（#162） |
 | [源码目录详表](#源码目录详表) | `src/` 路径与系统文档映射 |
 | [维护](#维护) | 文档同步约定 |
 
@@ -38,6 +39,12 @@ P4 多窗                P5 组件 Handle 体系
 ├─ open_window #148    ├─ Snapshot #146 #151 #152
 ├─ update_view #149    ├─ Handle emit #147
 └─ State fan-out #150  └─ ComponentId #101
+
+P6 图形后端（规划）    ← #162，详见下文
+├─ GraphicsBackend 枚举 + factory probe
+├─ Windows D3D11/12
+├─ Linux Vulkan
+└─ macOS Metal + platform
 ```
 
 | 阶段 | 目标 | 关键决策 | 验收（已达成） |
@@ -78,11 +85,13 @@ P4 多窗                P5 组件 Handle 体系
 | 测试后端 | `FakePlatform` 完整 trait 实现 | [platform · 测试](systems/platform.md#测试平台) · [testing](systems/testing.md) |
 | 事件循环 | `IEventLoop`；`EventLoopWaker` 外部线程 wake | [platform · 事件模型](systems/platform.md#ieventloop) |
 | 窗口可选能力 | `WindowOps` 返回 `Result`；未支持记 `NotImplemented` | [platform · 窗口可选能力](systems/platform.md#窗口可选能力) |
+| GPU 上下文 | WGL/EGL → OpenGL ES；`create_gpu_context` | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [rendering · 多图形 API](systems/rendering.md#多图形-api) |
 
 #### 绘制 · `draw`
 
 | 能力 | 要点 | 文档 |
 |------|------|------|
+| GPU 引擎 | OpenGL ES：`GpuEngine` + WGL/EGL；失败回退 SoftwareEngine | [rendering · 引擎](systems/rendering.md#引擎) · [#59](decisions.md#d59) |
 | 失效管线 | `Invalidation::Paint` / `Layout` / `Composite`；脏区合并 | [rendering · 管线](systems/rendering.md#管线与失效) |
 | Composite 滚动 | Wheel / 键盘 / 拖拽 → `scroll_region` memmove | [rendering](systems/rendering.md) · [#107](decisions.md#d107) |
 | PicturePolicy | 元数据 + 运行时信号；`node_count≥8 && est_pixels≥65536`；部分静态 widget `Eligible` | [rendering](systems/rendering.md) · [component · PicturePolicy](systems/component.md#picturepolicy-元数据122) |
@@ -128,14 +137,35 @@ P4 多窗                P5 组件 Handle 体系
 
 ---
 
+<a id="p6-图形后端"></a>
+
+## P6 图形后端
+
+**目标**（#162）：在保持 `IGraphicsContext` / `GraphicsEngine` 契约不变的前提下，扩展 **多种 GPU API** 与 factory 选型；选型仅在初始化完成，符合 #105。
+
+| 里程碑 | 内容 | 状态 |
+|--------|------|------|
+| P6.0 设计 | 抽象分层、平台矩阵、回退链、术语 | ✅ 文档（本文 + rendering/platform/decisions） |
+| P6.1 基线 | `GraphicsBackend` 枚举；factory probe 框架；诊断日志 | 规划 |
+| P6.2 Windows | D3D11 或 D3D12 `IGraphicsContext`；WGL 作次选 | 规划 |
+| P6.3 Linux | Vulkan `IGraphicsContext`；EGL 作次选 | 规划 |
+| P6.4 macOS | Metal + `create_platform` backend | 规划 |
+| P6.5 配置 | App builder / env opt-in；公开 API 写入 public-api | 规划 |
+| P6.6 WebGPU | 远期评估；非 v1 目标 |  backlog |
+
+实现细节 → [rendering · 多图形 API](systems/rendering.md#多图形-api) · [platform · 多图形 API 与 factory](systems/platform.md#多图形-api-与-factory)。
+
+---
+
 ## 后续工作
 
-**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。推进前须人类决策或新决策 #162+。
+**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。P6 图形后端分项见 [P6 图形后端](#p6-图形后端)；其余推进前须人类决策或新决策 #163+。
 
 | 项 | 说明 | 文档 |
 |----|------|------|
+| 多图形 API（P6） | Vulkan / D3D / Metal；factory probe + opt-in 配置 | [P6 图形后端](#p6-图形后端) · [#162](decisions.md#d162) |
 | 无障碍 v2 | #99：ARIA / 屏幕阅读器 / 键盘导航扩展；v1 不做 | [component](systems/component.md#内置-widget-目录) |
-| macOS 平台 | `create_platform()` 无 macOS backend | [platform · 工厂与后端](systems/platform.md#工厂与后端) |
+| macOS 平台 | `create_platform()` 无 macOS backend（含 Metal） | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
 | Handler 宏层 fingerprint | #159 / #160：语法层 fingerprint 待设计；普通闭包保守重绑 | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) |
 | Computed 独立 slot id | v1 以捕获的 `State` slot 为准 | [view-reactive · StateSlotId](systems/view-reactive.md#stateslotid) |
 | PicturePolicy 扩展 | 更多静态 widget 可声明 `Eligible`；须逐一评估子树代价 | [component · PicturePolicy](systems/component.md#picturepolicy-元数据122) |
@@ -194,7 +224,7 @@ P4 多窗                P5 组件 Handle 体系
 
 ## 维护
 
-- 阶段划分或原则变更 → 同步 [decisions.md](decisions.md) #154（或 #162+ 新决策）与本文件。
+- 阶段划分或原则变更 → 同步 [decisions.md](decisions.md) #154（或 #163+ 新决策）与本文件。
 - 能力落地或产生新差距 → 更新 [实现进度总览](#实现进度总览) 与各系统 `> **实现注记**`；**不**在本文件恢复 per-file 接线 checklist。
 - 新 backlog 项追加到 [后续工作](#后续工作)；边界说明同步 [剩余差距](systems/demand-driven.md#剩余差距)。
 - 新增 `src/` 路径映射 → 更新 [源码目录详表](#源码目录详表) 与对应系统文档「源码模块」。

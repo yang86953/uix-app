@@ -439,6 +439,8 @@ run_app_loop(sessions):
 
 > **实现注记**：`run_gui` 已构造主窗 `WindowSession` 并在同一 loop 内编排副窗 `WindowSession`；native 多窗、window_id 路由、队列/Timer 与运行期 frame drain 已接。
 
+<a id="帧内合并"></a>
+
 ### 帧内合并（#118）
 
 Active 帧内 **合并** 多次变更，避免 reconcile / layout / present 抖动：
@@ -614,7 +616,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 若存在 **无法**通过 register 或事件驱动的定时/轮询需求（如极少数平台 API）：
 
-1. 在 [`decisions.md`](../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#162+** 起）；
+1. 在 [`decisions.md`](../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#163+** 起）；
 2. 说明触发源、wake 频率、允许的工作范围、为何无法 register；
 3. [testing · 零闲置验收](testing.md#测试策略) 须覆盖：无事件时 assert **不** present/layout（或豁免边界）；
 4. 默认 **不豁免**；从严审查。
@@ -633,7 +635,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 6. **多窗？** 是否仅影响本窗状态（#110）？
 7. **调用方能否零维护？** 是否须 App register/名单/手动标脏？（#130 应答「否」）
 
-无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（当前新豁免从 #162+ 起）。
+无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（当前新豁免从 #163+ 起）。
 
 ---
 

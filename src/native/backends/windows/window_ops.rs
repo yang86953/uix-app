@@ -311,6 +311,10 @@ impl WindowOps for WindowsWindowOps {
 
     // ── 原生句柄 ──────────────────────────────────────────
 
+    fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
+        self.hwnd
+    }
+
     fn native_handle(&self) -> *mut std::ffi::c_void {
         self.hwnd
     }

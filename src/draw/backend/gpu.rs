@@ -43,6 +43,7 @@ impl DrawSurface for GpuDrawSurface {
     }
 
     fn clear_all(&mut self) {
+        self.canvas.clear_soft_fallback();
         unsafe {
             self.gl().clear_color(0.0, 0.0, 0.0, 0.0);
             self.gl().clear(glow::COLOR_BUFFER_BIT);
@@ -145,14 +146,21 @@ impl RenderBackend for GpuBackend {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.width = width;
-        self.height = height;
-        self.surface.width = width;
-        self.surface.height = height;
-        self.surface.canvas = GpuCanvas2D::new(&self.gl, width, height)?;
-        self.gpu_ctx.resize(width, height);
+        let logical_w = width.max(1);
+        let logical_h = height.max(1);
+        self.gpu_ctx.resize(logical_w, logical_h);
+        let physical_w = self.gpu_ctx.width();
+        let physical_h = self.gpu_ctx.height();
+        let dpr = self.gpu_ctx.device_pixel_ratio().max(1.0);
+        self.width = logical_w;
+        self.height = logical_h;
+        self.surface.width = logical_w;
+        self.surface.height = logical_h;
+        self.surface.canvas.resize(logical_w, logical_h)?;
+        self.surface.canvas.set_device_pixel_ratio(dpr);
+        self.gpu_ctx.make_current();
         unsafe {
-            self.gl.viewport(0, 0, width, height);
+            self.gl.viewport(0, 0, physical_w, physical_h);
         }
         Ok(())
     }
@@ -166,6 +174,10 @@ impl RenderBackend for GpuBackend {
     }
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
+        self.gpu_ctx.make_current();
+        if let Err(e) = self.surface.canvas.flush_soft_fallback() {
+            crate::core::log::error_fn(format!("GpuBackend soft_fallback flush failed: {}", e.short_what()));
+        }
         present_graphics_context(self.gpu_ctx.as_mut(), damage);
         Ok(())
     }
@@ -242,5 +254,18 @@ mod tests {
             context.swap_damage,
             Some(PresentDamage::Partial(vec![(1, 2, 3, 4)]))
         );
+    }
+
+    #[test]
+    fn gpu_resize_uses_logical_dimensions_for_surface_coordinates() {
+        let logical_w = 800_i32;
+        let logical_h = 600_i32;
+        let physical_w = logical_w * 2;
+        let physical_h = logical_h * 2;
+        let dpr = physical_w as f32 / logical_w as f32;
+        assert!((dpr - 2.0).abs() < f32::EPSILON);
+        // GpuBackend::resize 以窗口 dip 尺寸作为画布坐标系，帧缓冲为 physical。
+        assert_eq!((physical_w as f32 / dpr).round() as i32, logical_w);
+        assert_eq!((physical_h as f32 / dpr).round() as i32, logical_h);
     }
 }

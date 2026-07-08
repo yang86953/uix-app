@@ -9,6 +9,7 @@
 | 主题 | 章节 | 决策 |
 |------|------|------|
 | 引擎 | [引擎](#引擎) | #59 #70 |
+| 多图形 API | [多图形 API](#多图形-api) | #162 |
 | 场景与合成 | [场景与合成](#场景与合成) | #82 #122 #129 |
 | 失效队列 | [管线与失效](#管线与失效) | #86 #87 #122 #129 |
 | 帧渲染 | [FrameRenderer](#framerenderer) | #59 |
@@ -55,6 +56,82 @@ create_gpu_context → GpuEngine::new
 | Paint/Composite 脏 + 非 Idle | `Present(damage)` → platform presenter |
 | 仅 Layout 脏 | 不 render、不 present |
 | 无脏区 | `RenderOutcome::Idle`，跳过 present |
+
+---
+
+<a id="多图形-api"></a>
+
+## 多图形 API
+
+> **设计目标**（#162）：在 `native::traits` / `draw::traits` 稳定契约之下，支持 **多种底层图形 API**；`app` / `draw` / `ui` **不得**依赖具体 API（OpenGL、Vulkan、D3D、Metal 等），仅通过 trait 与工厂选型。
+
+### 分层抽象
+
+```text
+app::run_gui
+    → native::create_gpu_context(surface) → Box<dyn IGraphicsContext>   // 平台 surface / swap / DPR
+    → draw::GpuEngine::new(ctx) → GraphicsEngine                        // 帧调度 + Canvas2D
+        → RenderSession + GpuBackend                                    // 光栅化 + present damage
+            → IGraphicsContext::swap_buffers(PresentDamage)
+
+create_gpu_context 失败 → SoftwareEngine（CpuBackend + IPresenter）
+```
+
+| 层 | 类型 | 职责 | 上层可见 |
+|----|------|------|----------|
+| **native** | `IGraphicsContext` | 窗口绑定、context 生命周期、`swap_buffers(damage)`、DPR、`get_proc_address` | `app` 启动时注入；`draw` 仅见 trait |
+| **native** | `IPresenter` | CPU 像素缓冲上屏（GDI / SHM） | `SoftwareEngine` 回退路径 |
+| **draw** | `GraphicsEngine` | `begin_frame` / `end_frame` / `UpdateStrategy` | `app` FrameRenderer |
+| **draw** | `RenderBackend` + `BackendKind` | Cpu / Gpu / Auto / Null；**不**暴露具体 GPU API | 引擎内部 |
+| **draw**（规划） | `GraphicsBackend` / `GpuBackendKind` | 枚举具体 GPU API（见下表） | 仅诊断 / 日志 / opt-in 配置；**非**公开稳定 API |
+
+`BackendKind::Gpu` 表示「走 GPU 管线」；具体 API 由 `create_gpu_context` 在 **native 工厂** 内选定并封装为 `IGraphicsContext` 实现（#162）。
+
+### 候选 API 与平台矩阵
+
+| 平台 | 主选（规划） | 次选（规划） | **当前已实现** | CPU 回退 |
+|------|-------------|-------------|----------------|----------|
+| **Windows** | Direct3D 11/12 | OpenGL ES（WGL） | ✅ OpenGL ES（WGL） | ✅ SoftwareEngine（GDI） |
+| **Linux** | Vulkan | OpenGL ES（EGL） | ✅ OpenGL ES（EGL / Wayland） | ✅ SoftwareEngine（SHM） |
+| **macOS** | Metal | — | ❌ 无 backend | 规划 SoftwareEngine |
+| **Web**（远期） | WebGPU | — | ❌ | — |
+
+图例：**✅ 已实现** · **规划** 为 backlog，见 [roadmap · P6 图形后端](../roadmap.md#p6-图形后端)。
+
+### 选型与回退链（#162）
+
+选型在 **窗口 / 引擎初始化时一次性完成**；**禁止**每帧探测或切换 API（#105 零闲置）。
+
+```text
+1. 读取 opt-in 配置（App builder / 环境变量 / Settings — API 待落地）
+2. 若指定 GraphicsBackend → 仅尝试该 API
+3. 否则按平台默认优先级依次 probe：
+       Windows:  D3D12 → D3D11 → OpenGL ES (WGL)
+       Linux:    Vulkan → OpenGL ES (EGL)
+       macOS:    Metal → SoftwareEngine
+4. 全部 GPU 失败 → gpu.shutdown → SoftwareEngine
+5. 记录最终 GraphicsBackend（诊断 / 测试断言）
+```
+
+与现有 #59 一致：`App::run_gui` 调用 `create_gpu_context` → `GpuEngine::new`；失败回退 `SoftwareEngine`。多 API 扩展 **只增** native `backends/` 内实现与 factory 分支，**不**改 `ui` / `app` 帧循环契约。
+
+### draw 域约束
+
+- `draw` **不** `use native::backends::*`；仅 `IGraphicsContext` trait object。
+- `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；Vulkan/D3D/Metal 实现应把 API 细节封在各自 backend 子模块，对上仍实现 `RenderBackend` + `IGraphicsContext`（或等价 present 路径）。
+- `ScenePaint`、LayerTree、InvalidationQueue **与** GPU API 无关；局部重绘 damage 几何仍来自 `core::damage`。
+
+### 配置入口（规划）
+
+| 入口 | 说明 |
+|------|------|
+| App builder | 如 `.graphics_backend(GraphicsBackend::Auto)` — **默认 Auto** |
+| 环境变量 | 如 `UIX_GRAPHICS_BACKEND=vulkan` — 开发 / CI 覆盖 |
+| 运行时只读 | 引擎创建后 `engine.graphics_backend()` 供日志；**不可**热切换 |
+
+公开 API 形状与命名在实现阶段写入 [public-api](public-api.md) 与 [#162](decisions.md#d162)；本文仅定架构与选型原则。
+
+**关联**：[platform · 窗口与呈现](platform.md#窗口与呈现) · [platform · 工厂与后端](platform.md#工厂与后端) · [roadmap · P6](../roadmap.md#p6-图形后端)
 
 ---
 

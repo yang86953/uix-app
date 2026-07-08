@@ -11,6 +11,7 @@
 | 事件 | [事件体系](#事件) |
 | 布局 | [布局](#布局) |
 | 渲染 | [绘制](#渲染) |
+| 图形 API | [多图形 API](#多图形-api) |
 | 平台 | [平台](#平台) |
 | 数据 | [持久化](#数据) |
 | 测试 | [测试](#测试) |
@@ -168,6 +169,24 @@
 | DamageRegion | 渲染 damage |
 | AnimationRegistry | 动画帧驱动 registry；位于 `draw::pipeline`，按需注册下一帧 deadline |
 | FontService / ImageService | 字体与图像资源服务 |
+| BackendKind | draw 引擎级后端：`Cpu` / `Gpu` / `Auto` / `Null`；**不**区分 Vulkan/D3D/GL |
+| GpuEngine | GPU 帧调度引擎；委托 `RenderSession` + `GpuBackend` + `IGraphicsContext` |
+| SoftwareEngine | CPU 回退引擎；`CpuBackend` + `IPresenter` |
+
+<a id="多图形-api"></a>
+
+## 多图形 API
+
+| 术语 | 含义 |
+|------|------|
+| GraphicsBackend | #162：规划中的 **具体 GPU API** 枚举（如 `OpenGlEs` / `Vulkan` / `D3D11` / `Metal`）；factory 选型结果；供诊断与 opt-in 配置 |
+| GpuBackendKind | 与 `GraphicsBackend` 同义的设计名；实现阶段二选一公开 |
+| IGraphicsContext | `native::traits::present`：surface 绑定、`swap_buffers(PresentDamage)`、DPR、`get_proc_address`；**各 GPU API 对上统一契约** |
+| IPresenter | CPU 像素 presenter；SoftwareEngine 回退路径 |
+| create_gpu_context | `native::factory`：按平台与 #162 创建 `Box<dyn IGraphicsContext>` |
+| 图形 API 回退链 | 初始化时按平台优先级 probe；全失败 → SoftwareEngine；**无**每帧切换 |
+
+详见 [rendering · 多图形 API](systems/rendering.md#多图形-api) · [#162](decisions.md#d162)。
 
 ## 平台
 
@@ -180,6 +199,7 @@
 | EventBus | UiEvent 发布订阅 |
 | EventLoopWaker | 跨线程唤醒 blocking `wait_event` / `wait_until`；见 [platform · 事件模型](systems/platform.md#ieventloop) |
 | PresentDamage | 物理像素上屏 damage |
+| WglContext / EglContext | Windows WGL / Linux EGL 的 `IGraphicsContext` 实现（**当前** OpenGL ES 路径） |
 
 ## 数据
 

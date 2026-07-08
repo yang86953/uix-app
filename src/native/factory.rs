@@ -1,6 +1,6 @@
 //! 平台工厂函数 — #[cfg] 只在此处与 backends/ 内。
 
-use crate::core::error::{Errc, Error};
+use crate::core::error::Error;
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::IGraphicsContext;
 use crate::native::traits::system::ISystemInfo;
@@ -22,12 +22,22 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     Err(Error::new(
-        Errc::PlatformError,
+        crate::core::error::Errc::PlatformError,
         "Unsupported platform: only Windows and Linux are supported".to_string(),
     ))
 }
 
 /// 创建 GPU 图形上下文。
+#[cfg(windows)]
+pub fn create_gpu_context(
+    native_surface: *mut std::ffi::c_void,
+    width: i32,
+    height: i32,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    let wgl = crate::native::backends::windows::gpu::WglContext::new(native_surface, width, height)?;
+    Ok(Box::new(wgl))
+}
+
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn create_gpu_context(
     native_surface: *mut std::ffi::c_void,
@@ -39,14 +49,14 @@ pub fn create_gpu_context(
     Ok(Box::new(egl))
 }
 
-#[cfg(not(all(unix, not(target_os = "macos"))))]
+#[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
 pub fn create_gpu_context(
     _native_surface: *mut std::ffi::c_void,
     _width: i32,
     _height: i32,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
     Err(Error::new(
-        Errc::PlatformError,
+        crate::core::error::Errc::PlatformError,
         "GPU rendering is not supported on this platform".to_string(),
     ))
 }

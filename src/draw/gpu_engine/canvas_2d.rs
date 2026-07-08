@@ -35,13 +35,21 @@ pub struct GpuCanvas2D {
     u_color_loc: Option<glow::UniformLocation>,
     u_radius_loc: Option<glow::UniformLocation>,
 
+    // ── CPU 回退合成 ──
+    blit_vao: glow::VertexArray,
+    blit_vbo: glow::Buffer,
+    blit_program: glow::Program,
+
     // ── 未实现 GPU 路径 → SharedRasterizer CPU 光栅化 ──
     soft_fallback: SharedRasterizer,
     fallback_texture: glow::Texture,
 
-    // ── 表面尺寸 ──
+    // ── 表面尺寸（dip / 逻辑坐标）──
     surface_w: i32,
     surface_h: i32,
+    /// 逻辑像素 → 帧缓冲像素（HiDPI viewport 缩放）。
+    device_pixel_ratio: f32,
+    u_tex_loc: Option<glow::UniformLocation>,
 }
 
 #[derive(Clone)]
@@ -64,20 +72,23 @@ impl GpuCanvas2D {
         Error::new(Errc::PlatformError, msg)
     }
 
-    fn scissor_for_clip(clip: Rect, surface_h: i32) -> (i32, i32, i32, i32) {
+    fn scissor_for_clip(clip: Rect, surface_h: i32, dpr: f32) -> (i32, i32, i32, i32) {
         if clip.w <= 0.0 || clip.h <= 0.0 {
             return (0, 0, 0, 0);
         }
-        (
-            clip.x as i32,
-            (surface_h as f32 - clip.y - clip.h).max(0.0) as i32,
-            clip.w as i32,
-            clip.h as i32,
-        )
+        let dpr = dpr.max(1.0);
+        let x = (clip.x * dpr).floor() as i32;
+        let w = (clip.w * dpr).ceil() as i32;
+        let h = (clip.h * dpr).ceil() as i32;
+        let y = (clip.y * dpr).floor() as i32;
+        let fb_h = (surface_h as f32 * dpr).ceil() as i32;
+        let sy = (fb_h - y - h).max(0);
+        (x, sy, w, h)
     }
 
     fn apply_clip_scissor(&self) {
-        let (x, y, w, h) = Self::scissor_for_clip(self.clip_rect, self.surface_h);
+        let (x, y, w, h) =
+            Self::scissor_for_clip(self.clip_rect, self.surface_h, self.device_pixel_ratio);
         unsafe {
             self.gl().enable(glow::SCISSOR_TEST);
             self.gl().scissor(x, y, w, h);
@@ -143,6 +154,43 @@ impl GpuCanvas2D {
         Self::link_program(gl, vs, fs, "RectProgram")
     }
 
+    unsafe fn compile_blit_shader(gl: &glow::Context) -> Result<glow::Program, Error> {
+        let vs = Self::compile_shader(
+            gl,
+            glow::VERTEX_SHADER,
+            crate::draw::gpu_engine::FULLSCREEN_VERT,
+            "BlitVS",
+        )?;
+        let fs = Self::compile_shader(
+            gl,
+            glow::FRAGMENT_SHADER,
+            crate::draw::gpu_engine::BLIT_FRAG,
+            "BlitFS",
+        )?;
+        Self::link_program(gl, vs, fs, "BlitProgram")
+    }
+
+    unsafe fn create_fullscreen_quad(
+        gl: &glow::Context,
+    ) -> Result<(glow::VertexArray, glow::Buffer), Error> {
+        let vao = gl
+            .create_vertex_array()
+            .map_err(|e| Self::glow_err(format!("create_vertex_array: {e}")))?;
+        let vbo = gl
+            .create_buffer()
+            .map_err(|e| Self::glow_err(format!("create_buffer: {e}")))?;
+        let vertices: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0];
+        gl.bind_vertex_array(Some(vao));
+        gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+        let data_bytes =
+            std::slice::from_raw_parts(vertices.as_ptr() as *const u8, vertices.len() * 4);
+        gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, data_bytes, glow::STATIC_DRAW);
+        gl.vertex_attrib_pointer_f32(0, 2, glow::FLOAT, false, 8, 0);
+        gl.enable_vertex_attrib_array(0);
+        gl.bind_vertex_array(None);
+        Ok((vao, vbo))
+    }
+
     unsafe fn create_rect_geom(
         gl: &glow::Context,
     ) -> Result<(glow::VertexArray, glow::Buffer), Error> {
@@ -201,6 +249,8 @@ impl GpuCanvas2D {
     pub fn new(gl: &glow::Context, width: i32, height: i32) -> Result<Self, Error> {
         let rect_program = unsafe { Self::compile_rect_shader(gl)? };
         let (rect_vao, rect_vbo) = unsafe { Self::create_rect_geom(gl)? };
+        let blit_program = unsafe { Self::compile_blit_shader(gl)? };
+        let (blit_vao, blit_vbo) = unsafe { Self::create_fullscreen_quad(gl)? };
 
         let u_viewport_loc = unsafe { gl.get_uniform_location(rect_program, "u_viewport") };
         let u_rect_loc = unsafe { gl.get_uniform_location(rect_program, "u_rect") };
@@ -208,6 +258,7 @@ impl GpuCanvas2D {
         let u_radius_loc = unsafe { gl.get_uniform_location(rect_program, "u_radius") };
 
         let fallback_texture = unsafe { Self::create_fallback_texture(gl, width, height)? };
+        let u_tex_loc = unsafe { gl.get_uniform_location(blit_program, "u_tex") };
 
         Ok(Self {
             gl_ptr: gl as *const glow::Context,
@@ -226,11 +277,68 @@ impl GpuCanvas2D {
             u_rect_loc,
             u_color_loc,
             u_radius_loc,
+            blit_vao,
+            blit_vbo,
+            blit_program,
             soft_fallback: SharedRasterizer::new(PixelSurface::new(width.max(1), height.max(1))),
             fallback_texture,
             surface_w: width,
             surface_h: height,
+            device_pixel_ratio: 1.0,
+            u_tex_loc,
         })
+    }
+
+    pub(crate) fn set_device_pixel_ratio(&mut self, dpr: f32) {
+        self.device_pixel_ratio = dpr.max(1.0);
+        self.apply_clip_scissor();
+    }
+
+    /// 清除 CPU 回退缓冲（与 GL clear 同步）。
+    pub(crate) fn clear_soft_fallback(&mut self) {
+        self.soft_fallback.surface_mut().clear_all();
+    }
+
+    /// 将 CPU 回退像素合成到当前 GL framebuffer。
+    pub(crate) fn flush_soft_fallback(&mut self) -> Result<(), Error> {
+        let pixels = self.soft_fallback.surface().pixels();
+        if pixels.is_empty() || self.surface_w <= 0 || self.surface_h <= 0 {
+            return Ok(());
+        }
+
+        unsafe {
+            self.gl().disable(glow::SCISSOR_TEST);
+            self.gl().active_texture(glow::TEXTURE0);
+            self.gl().bind_texture(glow::TEXTURE_2D, Some(self.fallback_texture));
+            let byte_len = (self.surface_w as usize)
+                .saturating_mul(self.surface_h as usize)
+                .saturating_mul(4);
+            self.gl().tex_sub_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                0,
+                0,
+                self.surface_w,
+                self.surface_h,
+                glow::BGRA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(Some(std::slice::from_raw_parts(
+                    pixels.as_ptr() as *const u8,
+                    byte_len.min(pixels.len().saturating_mul(4)),
+                ))),
+            );
+            self.gl().enable(glow::BLEND);
+            self.gl()
+                .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+            self.gl().use_program(Some(self.blit_program));
+            self.gl().uniform_1_i32(self.u_tex_loc.as_ref(), 0);
+            self.gl().bind_vertex_array(Some(self.blit_vao));
+            self.gl().draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
+            self.gl().bind_vertex_array(None);
+            self.gl().bind_texture(glow::TEXTURE_2D, None);
+        }
+        self.apply_clip_scissor();
+        Ok(())
     }
 
     /// 用 GL scissor 限定范围清屏，再恢复当前 clip scissor。
@@ -238,10 +346,15 @@ impl GpuCanvas2D {
         if w <= 0 || h <= 0 {
             return;
         }
+        self.soft_fallback.surface_mut().clear_rect_raw(x, y, w, h);
+        let dpr = self.device_pixel_ratio.max(1.0);
+        let sx = (x as f32 * dpr).floor() as i32;
+        let sy = ((self.surface_h - y - h).max(0) as f32 * dpr).floor() as i32;
+        let sw = (w as f32 * dpr).ceil() as i32;
+        let sh = (h as f32 * dpr).ceil() as i32;
         unsafe {
             self.gl().enable(glow::SCISSOR_TEST);
-            let sy = (self.surface_h - y - h).max(0);
-            self.gl().scissor(x, sy, w, h);
+            self.gl().scissor(sx, sy, sw, sh);
             self.gl().clear_color(0.0, 0.0, 0.0, 0.0);
             self.gl().clear(glow::COLOR_BUFFER_BIT);
         }
@@ -249,8 +362,8 @@ impl GpuCanvas2D {
     }
 
     pub fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.surface_w = width;
-        self.surface_h = height;
+        self.surface_w = width.max(1);
+        self.surface_h = height.max(1);
         self.clip_rect = Rect::new(0.0, 0.0, width as f32, height as f32);
         self.clip_stack.clear();
         self.state_stack.clear();
@@ -325,6 +438,9 @@ impl Drop for GpuCanvas2D {
             self.gl().delete_vertex_array(self.rect_vao);
             self.gl().delete_buffer(self.rect_vbo);
             self.gl().delete_program(self.rect_program);
+            self.gl().delete_vertex_array(self.blit_vao);
+            self.gl().delete_buffer(self.blit_vbo);
+            self.gl().delete_program(self.blit_program);
             self.gl().delete_texture(self.fallback_texture);
         }
     }
@@ -565,15 +681,23 @@ mod tests {
     #[test]
     fn scissor_for_clip_flips_y_to_gl_coordinates() {
         assert_eq!(
-            GpuCanvas2D::scissor_for_clip(Rect::new(10.0, 20.0, 30.0, 40.0), 100),
+            GpuCanvas2D::scissor_for_clip(Rect::new(10.0, 20.0, 30.0, 40.0), 100, 1.0),
             (10, 40, 30, 40)
+        );
+    }
+
+    #[test]
+    fn scissor_for_clip_scales_to_framebuffer_pixels_at_hidpi() {
+        assert_eq!(
+            GpuCanvas2D::scissor_for_clip(Rect::new(10.0, 20.0, 30.0, 40.0), 100, 2.0),
+            (20, 80, 60, 80)
         );
     }
 
     #[test]
     fn scissor_for_empty_clip_disables_area() {
         assert_eq!(
-            GpuCanvas2D::scissor_for_clip(Rect::new(0.0, 0.0, 0.0, 10.0), 100),
+            GpuCanvas2D::scissor_for_clip(Rect::new(0.0, 0.0, 0.0, 10.0), 100, 1.0),
             (0, 0, 0, 0)
         );
     }

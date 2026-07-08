@@ -2,7 +2,7 @@
 
 ← [Main](Main.md) · 按需查阅
 
-> **唯一决策台账**（#1–#100 定稿；#101–#161 术语收敛、核心理念、豁免治理与实现边界；新决策 #162+）。锚点 `#d{N}`。系统正文 → [`systems/`](systems/) · 完整索引 → [Main.md](Main.md)
+> **唯一决策台账**（#1–#100 定稿；#101–#162 术语收敛、核心理念、豁免治理、实现边界与多图形 API；新决策 #163+）。锚点 `#d{N}`。系统正文 → [`systems/`](systems/) · 完整索引 → [Main.md](Main.md)
 
 ## 实现顺序（[#50](#d50)）
 
@@ -148,7 +148,7 @@
 | <a id="d110"></a>110 | 多窗零闲置 | **每窗独立** DeepIdle/RegisteredActive/Active；A 窗 Active 不要求 B 窗 wake |
 | <a id="d111"></a>111 | RegisteredActive | 周期工作由**框架**在组件/IME 生命周期内 **自动 register/unregister**（[#124](#d124)）；unregister → DeepIdle |
 | <a id="d112"></a>112 | 运行中 Theme | 默认 **不**跟 OS；App **opt-in** `.follow_system_theme(true)` 后框架自动处理 ThemeChanged（[#125](#d125)） |
-| <a id="d113"></a>113 | 零闲置豁免 | 无法框架托管的定时/轮询 → **`decisions.md` #162+** 公开条目 + 测试证明；默认不豁免；当前无豁免见 [#158](#d158) |
+| <a id="d113"></a>113 | 零闲置豁免 | 无法框架托管的定时/轮询 → **`decisions.md` #163+** 公开条目 + 测试证明；默认不豁免；当前无豁免见 [#158](#d158) |
 | <a id="d114"></a>114 | Picture 启用 | **PicturePolicy 自动推断** + 自适应阈值（[#122](#d122) [#129](#d129) [#136](#d136)）；修订旧「黑名单+深度4」 |
 | <a id="d115"></a>115 | ActiveWorkRegistry | 框架内部注册表（**App 不可访问** [#124](#d124)）；`next_deadline` / `drain_due` |
 | <a id="d116"></a>116 | 多窗单 loop | **WindowSession** 每窗独立树+引擎+三态+Registry；**单** 进程级 loop（设计名 `run_app_loop`，源码 `run_widget_loop` / 测试 `run_window_session_loop_*`）；UiEvent 带 **window_id** 路由 |
@@ -193,9 +193,10 @@
 | <a id="d155"></a>155 | view_factory 生命周期 | 每 `WindowSession` **创建时**从 `App::root` 或 `open_window` 根闭包生成 **`Arc<dyn Fn() -> ViewNode + Send + Sync>`**；**会话内不可变**；`State` 批次 reconcile **始终**调用该 factory |
 | <a id="d156"></a>156 | update_view 与 factory | `update_view` **仅**写 `pending_root`；**不**替换 `view_factory`；`take()` 消费后下一帧 State  reconcile 仍走原 factory |
 | <a id="d157"></a>157 | P0 落地清单 | P0 阶段目标与验收摘要（历史 per-file 清单已归档）；详见 [roadmap · 已落地阶段](roadmap.md#已落地阶段p0p5) |
-| <a id="d158"></a>158 | 零闲置豁免台账 | 当前 **无豁免**；新增豁免必须追加公开条目（当前从 **#162+** 起），并写明触发源、wake 频率、允许工作范围、无法 register 的理由与测试边界 |
+| <a id="d158"></a>158 | 零闲置豁免台账 | 当前 **无豁免**；新增豁免必须追加公开条目（当前从 **#163+** 起），并写明触发源、wake 频率、允许工作范围、无法 register 的理由与测试边界 |
 | <a id="d159"></a>159 | Handler capture 自动收集边界 | 任意 Rust handler 闭包 **不做运行时自动捕获探测**；稳定复用仅通过显式 capture API，或未来宏 / DSL 在语法层生成 `capture_fingerprint`；禁止执行 handler 做 probe，避免业务副作用、错误事件语义与零闲置破坏 |
 | <a id="d160"></a>160 | 普通 handler 保守重绑 | 无显式 `handler_generation` / `capture_fingerprint` 的普通 Rust handler 闭包在 reconcile 时 **视为变更并重绑**；不得用调用点、闭包指针、堆地址或 `TypeId` 伪造稳定身份；显式 capture API 与未来语法层 fingerprint 仍可稳定复用 |
 | <a id="d161"></a>161 | capture 指纹域边界 | `ui` 不依赖 `app`，因此 AppHandle 捕获在 UI 层表达为 `WindowId` 指纹；任意 Copy / `&'static` 捕获须由未来语法层 API 明确生成，当前普通闭包不得自动推断 |
+| <a id="d162"></a>162 | 多图形 API 抽象与选型 | **目标**：Vulkan / D3D11·12 / Metal / OpenGL ES /（远期 WebGPU）经 `native::IGraphicsContext` + `draw::GraphicsEngine` 统一；**上层**（`app`/`ui`/`draw` 公开面）**禁止**依赖具体 API。**选型**：`create_gpu_context` / factory **仅初始化时** probe 或 opt-in 指定；失败链式回退至下一 API，终态 `SoftwareEngine`（#59）。**分层**：`BackendKind::Gpu` = GPU 管线；具体 API 用规划中的 `GraphicsBackend` 枚举诊断，封装在 `native/backends/`。**平台默认链**：Windows D3D12→D3D11→GL ES(WGL)；Linux Vulkan→GL ES(EGL)；macOS Metal→Software。**当前已实现**：Windows WGL、Linux EGL 的 OpenGL ES。**零闲置**：禁止每帧 probe 或热切换 API。详见 [rendering · 多图形 API](systems/rendering.md#多图形-api) · [roadmap · P6](roadmap.md#p6-图形后端) |
 
-新决策追加 **#162+**（含豁免条目）。
+新决策追加 **#163+**（含豁免条目）。
