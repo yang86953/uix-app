@@ -1,4 +1,5 @@
 use super::*;
+use crate::core::error::{Errc, Error, Result};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -82,6 +83,64 @@ fn test_info_convenience() {
     assert_eq!(t.title, "Info");
     assert_eq!(t.message, "details");
     assert!(t.duration_ms > 0);
+}
+
+#[test]
+fn test_notify_error_maps_info_warning_and_error_levels() {
+    let mut svc = NotificationService::new();
+
+    svc.notify_error(&Error::info(Errc::None, "background sync skipped"));
+    svc.notify_error(&Error::warn(Errc::InvalidState, "cache is stale"));
+    svc.notify_error(&Error::new(Errc::IoError, "save failed"));
+
+    let visible = svc.visible_toasts();
+    assert_eq!(visible.len(), 3);
+    assert_eq!(visible[0].level, StatusLevel::Info);
+    assert_eq!(visible[0].title, "Info");
+    assert!(visible[0].message.contains("background sync skipped"));
+    assert_eq!(visible[1].level, StatusLevel::Warning);
+    assert_eq!(visible[1].title, "Warning");
+    assert!(visible[1].duration_ms >= 5000);
+    assert_eq!(visible[2].level, StatusLevel::Error);
+    assert_eq!(visible[2].title, "Error");
+    assert!(visible[2].duration_ms >= 6000);
+}
+
+#[test]
+fn test_notify_error_includes_source_summary() {
+    let mut svc = NotificationService::new();
+    let err = Error::new(Errc::IoError, "save failed").with_source(Error::not_found("config.json"));
+
+    svc.notify_error(&err);
+
+    let toast = &svc.visible_toasts()[0];
+    assert!(toast.message.contains("save failed"));
+    assert!(toast.message.contains("config.json"));
+}
+
+#[test]
+fn test_notify_error_skips_fatal_errors() {
+    let mut svc = NotificationService::new();
+
+    let id = svc.notify_error(&Error::fatal(Errc::InvalidState, "must abort"));
+
+    assert_eq!(id, None);
+    assert!(svc.visible_toasts().is_empty());
+}
+
+#[test]
+fn test_notify_result_error_only_enqueues_err_side() {
+    let mut svc = NotificationService::new();
+    let ok: Result<u32> = Ok(7);
+    let err: Result<u32> = Err(Error::warn(Errc::InvalidArgument, "bad input"));
+
+    assert_eq!(svc.notify_result_error(&ok), None);
+    let id = svc.notify_result_error(&err);
+
+    assert!(id.is_some());
+    let visible = svc.visible_toasts();
+    assert_eq!(visible.len(), 1);
+    assert_eq!(visible[0].level, StatusLevel::Warning);
 }
 
 // ════════════════════════════════════════════════════════════════════

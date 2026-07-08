@@ -7,6 +7,7 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
+use crate::native::notification::ToastEntry;
 use crate::native::traits::system::StatusLevel;
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
@@ -26,6 +27,18 @@ pub struct NotificationItem {
     pub description: String,
     pub duration_ms: u64,
     pub closable: bool,
+}
+
+impl NotificationItem {
+    pub fn from_toast_entry(toast: &ToastEntry) -> Self {
+        Self {
+            type_: toast.level,
+            title: toast.title.clone(),
+            description: toast.message.clone(),
+            duration_ms: toast.duration_ms as u64,
+            closable: true,
+        }
+    }
 }
 
 component! {
@@ -165,6 +178,20 @@ impl Notification {
         self.queue.clone()
     }
 
+    pub fn replace_from_toasts<'a, I>(&self, toasts: I)
+    where
+        I: IntoIterator<Item = &'a ToastEntry>,
+    {
+        let mut queue = self.queue.borrow_mut();
+        queue.clear();
+        queue.extend(
+            toasts
+                .into_iter()
+                .filter(|toast| toast.visible)
+                .map(NotificationItem::from_toast_entry),
+        );
+    }
+
     fn intrinsic_size(&self) -> Size {
         Size::zero()
     }
@@ -184,11 +211,69 @@ impl Notification {
 mod tests {
     use super::*;
     use crate::ui::traits::WidgetLayout;
+    use std::time::Instant;
 
     #[test]
     fn measure_preserves_notification_zero_layout_footprint() {
         let measured = Notification::new().measure(Constraints::loose(Size::new(200.0, 80.0)));
 
         assert_eq!(measured, Size::zero());
+    }
+
+    #[test]
+    fn item_from_toast_entry_maps_visible_fields() {
+        let toast = ToastEntry {
+            id: 7,
+            title: "Save failed".to_string(),
+            message: "Disk is read-only".to_string(),
+            level: StatusLevel::Error,
+            duration_ms: 6000,
+            visible: true,
+            created_at: Instant::now(),
+        };
+
+        let item = NotificationItem::from_toast_entry(&toast);
+
+        assert_eq!(item.type_, StatusLevel::Error);
+        assert_eq!(item.title, "Save failed");
+        assert_eq!(item.description, "Disk is read-only");
+        assert_eq!(item.duration_ms, 6000);
+        assert!(item.closable);
+    }
+
+    #[test]
+    fn replace_from_toasts_keeps_only_visible_toasts() {
+        let notification = Notification::new();
+        notification.info("Old message", "will be replaced");
+        let now = Instant::now();
+        let toasts = vec![
+            ToastEntry {
+                id: 1,
+                title: "Visible".to_string(),
+                message: "shown".to_string(),
+                level: StatusLevel::Warning,
+                duration_ms: 5000,
+                visible: true,
+                created_at: now,
+            },
+            ToastEntry {
+                id: 2,
+                title: "Hidden".to_string(),
+                message: "skipped".to_string(),
+                level: StatusLevel::Info,
+                duration_ms: 4000,
+                visible: false,
+                created_at: now,
+            },
+        ];
+
+        notification.replace_from_toasts(&toasts);
+        let queue = notification.queue();
+        let queue = queue.borrow();
+
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].title, "Visible");
+        assert_eq!(queue[0].description, "shown");
+        assert_eq!(queue[0].type_, StatusLevel::Warning);
     }
 }

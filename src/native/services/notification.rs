@@ -10,6 +10,7 @@
 // 原位于 services crate，迁入 platform 层以消除服务层。
 // ============================================================================
 
+use crate::core::error::{Error, ErrorSeverity, Result};
 use crate::native::traits::system::StatusLevel;
 use std::collections::VecDeque;
 
@@ -120,6 +121,32 @@ impl NotificationService {
         self.notify(title, message, StatusLevel::Error, Self::DURATION_ERROR);
     }
 
+    /// Enqueue a non-fatal framework error as an app toast.
+    ///
+    /// Fatal errors stay on the diagnostic/crash path and deliberately do not
+    /// create UI toast entries.
+    pub fn notify_error(&mut self, error: &Error) -> Option<u64> {
+        if error.severity().is_fatal() {
+            return None;
+        }
+        let level = Self::toast_level_for_error(error);
+        let duration = Self::toast_duration_for_error(error);
+        Some(self.notify(
+            &Self::toast_title_for_error(error),
+            &Self::toast_message_for_error(error),
+            level,
+            duration,
+        ))
+    }
+
+    /// Enqueue the error side of a Result as a toast and leave Ok values silent.
+    pub fn notify_result_error<T>(&mut self, result: &Result<T>) -> Option<u64> {
+        result
+            .as_ref()
+            .err()
+            .and_then(|error| self.notify_error(error))
+    }
+
     /// 发送通知（完整控制）。
     pub fn notify(
         &mut self,
@@ -225,6 +252,40 @@ impl NotificationService {
                 true
             }
         });
+    }
+
+    fn toast_level_for_error(error: &Error) -> StatusLevel {
+        match error.severity() {
+            ErrorSeverity::Info => StatusLevel::Info,
+            ErrorSeverity::Warning => StatusLevel::Warning,
+            ErrorSeverity::Error | ErrorSeverity::Fatal => StatusLevel::Error,
+        }
+    }
+
+    fn toast_duration_for_error(error: &Error) -> u32 {
+        match error.severity() {
+            ErrorSeverity::Info => Self::DURATION_INFO,
+            ErrorSeverity::Warning => Self::DURATION_WARNING,
+            ErrorSeverity::Error | ErrorSeverity::Fatal => Self::DURATION_ERROR,
+        }
+    }
+
+    fn toast_title_for_error(error: &Error) -> String {
+        match error.severity() {
+            ErrorSeverity::Info => "Info".to_string(),
+            ErrorSeverity::Warning => "Warning".to_string(),
+            ErrorSeverity::Error => "Error".to_string(),
+            ErrorSeverity::Fatal => "Fatal".to_string(),
+        }
+    }
+
+    fn toast_message_for_error(error: &Error) -> String {
+        let mut message = error.message().to_string();
+        if let Some(source) = error.source_error() {
+            message.push_str(": ");
+            message.push_str(source.message());
+        }
+        message
     }
 }
 
