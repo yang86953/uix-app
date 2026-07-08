@@ -150,11 +150,12 @@ component! {
         );
         if inner.w <= 0.0 || inner.h <= 0.0 { return Vec::new(); }
 
+        let child_constraints = Constraints::loose(Size::new(inner.w, inner.h));
         let child_sizes: Vec<Size> = children
             .iter()
             .map(|&cid| {
                 tree.get(cid)
-                    .map(|c| c.measure(Constraints::unconstrained()))
+                    .map(|c| c.measure(child_constraints))
                     .unwrap_or_default()
             })
             .collect();
@@ -368,7 +369,36 @@ impl Card {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::traits::WidgetLayout;
+    use crate::ui::core::widget::WidgetCore;
+    use crate::ui::traits::{WidgetCapabilities, WidgetLayout};
+
+    struct FixedChild(Size);
+
+    impl WidgetComponent for FixedChild {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+            self
+        }
+
+        fn capabilities(&self) -> WidgetCapabilities {
+            WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT)
+        }
+
+        crate::wc_upcast!(FixedChild; WidgetLayout);
+    }
+
+    impl WidgetLayout for FixedChild {
+        fn measure(&self, constraints: Constraints) -> Size {
+            constraints.clamp(self.0)
+        }
+    }
 
     #[test]
     fn measure_clamps_card_size() {
@@ -377,5 +407,23 @@ mod tests {
             .measure(Constraints::loose(Size::new(100.0, 60.0)));
 
         assert_eq!(measured, Size::new(100.0, 60.0));
+    }
+
+    #[test]
+    fn layout_children_measure_children_with_inner_constraints() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(
+            Card::new()
+                .size(80.0, 80.0)
+                .padding(16.0)
+                .child(FixedChild(Size::new(200.0, 120.0))),
+        ));
+
+        tree.layout();
+
+        let child = tree.get(root).unwrap().children()[0];
+        let frame = tree.get(child).unwrap().frame();
+        assert_eq!(frame.w, 48.0);
+        assert_eq!(frame.h, 48.0);
     }
 }

@@ -1,4 +1,4 @@
-﻿use std::collections::HashMap;
+use std::collections::HashMap;
 
 use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
@@ -324,10 +324,11 @@ component! {
         match self.layout {
             FormLayout::Inline => {
                 let mut x = frame.x;
+                let child_constraints = Constraints::loose(Size::new(frame.w, frame.h));
                 for &cid in children {
                     let pref = tree
                         .get(cid)
-                        .map(|c| c.measure(Constraints::unconstrained()))
+                        .map(|c| c.measure(child_constraints))
                         .unwrap_or(Size::new(200.0, 44.0));
                     let item_w = pref.w.max(120.0);
                     result.push((cid, Rect::new(x, frame.y, item_w, frame.h)));
@@ -336,10 +337,11 @@ component! {
             }
             FormLayout::Horizontal | FormLayout::Vertical => {
                 let mut y = frame.y;
+                let child_constraints = Constraints::loose(Size::new(frame.w, frame.h));
                 for &cid in children {
                     let pref = tree
                         .get(cid)
-                        .map(|c| c.measure(Constraints::unconstrained()))
+                        .map(|c| c.measure(child_constraints))
                         .unwrap_or(Size::new(frame.w, 44.0));
                     let item_h = pref.h.max(44.0);
                     result.push((cid, Rect::new(frame.x, y, frame.w, item_h)));
@@ -525,7 +527,37 @@ fn simple_pattern_match(value: &str, pattern: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::traits::WidgetLayout;
+    use crate::ui::core::widget::WidgetCore;
+    use crate::ui::traits::{WidgetCapabilities, WidgetLayout};
+    use crate::ui::{WidgetComponent, WidgetTree};
+
+    struct FixedChild(Size);
+
+    impl WidgetComponent for FixedChild {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+            self
+        }
+
+        fn capabilities(&self) -> WidgetCapabilities {
+            WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT)
+        }
+
+        crate::wc_upcast!(FixedChild; WidgetLayout);
+    }
+
+    impl WidgetLayout for FixedChild {
+        fn measure(&self, constraints: Constraints) -> Size {
+            constraints.clamp(self.0)
+        }
+    }
 
     #[test]
     fn measure_clamps_form_item_size() {
@@ -539,5 +571,23 @@ mod tests {
         let measured = Form::new().measure(Constraints::loose(Size::new(160.0, 80.0)));
 
         assert_eq!(measured, Size::new(160.0, 80.0));
+    }
+
+    #[test]
+    fn layout_children_measure_children_with_frame_constraints() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(Form::new().layout(FormLayout::Horizontal)));
+        tree.add_child(root, Box::new(FixedChild(Size::new(240.0, 120.0))));
+        tree.get_mut(root)
+            .unwrap()
+            .set_frame(Rect::new(0.0, 0.0, 80.0, 60.0));
+
+        tree.layout();
+
+        let child = tree.get(root).unwrap().children()[0];
+        assert_eq!(
+            tree.get(child).unwrap().frame(),
+            Rect::new(0.0, 0.0, 80.0, 60.0)
+        );
     }
 }

@@ -274,10 +274,11 @@ component! {
         let mut max_right = frame.x;
         let mut max_bottom = frame.y;
         let mut cursor_y = 0.0f32;
+        let child_constraints = self.child_constraints(frame);
         for &cid in children {
             let pref = tree
                 .get(cid)
-                .map(|c| c.measure(Constraints::unconstrained()))
+                .map(|c| c.measure(child_constraints))
                 .unwrap_or_default();
             let w = if pref.w <= 0.0 { frame.w } else { pref.w };
             let current_h = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
@@ -308,6 +309,20 @@ impl ScrollView {
             self.fixed_width.unwrap_or(300.0),
             self.fixed_height.unwrap_or(200.0),
         )
+    }
+
+    fn child_constraints(&self, frame: Rect) -> Constraints {
+        let max_w = if self.direction.can_scroll_x() {
+            f32::MAX
+        } else {
+            frame.w
+        };
+        let max_h = if self.direction.can_scroll_y() {
+            f32::MAX
+        } else {
+            frame.h
+        };
+        Constraints::loose(Size::new(max_w, max_h))
     }
 
     pub fn new(direction: ScrollDirection) -> Self {

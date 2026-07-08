@@ -317,6 +317,8 @@ impl WidgetTree {
         let mut boxed = BoxedWidget::new(widget);
         boxed.set_id(id);
         boxed.set_tab_index(boxed.component().tab_index());
+        // Root has no parent content rect yet; window/session layout overwrites this
+        // natural fallback once a real viewport is available.
         let ps = boxed.measure(Constraints::unconstrained());
         boxed.set_frame(Rect::new(0.0, 0.0, ps.w, ps.h));
         let slot = id.slot();

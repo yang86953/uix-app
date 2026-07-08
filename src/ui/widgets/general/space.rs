@@ -68,11 +68,12 @@ component! {
     {
         if children.is_empty() { return Vec::new(); }
 
+        let child_constraints = self.child_constraints(frame);
         let child_sizes: Vec<Size> = children
             .iter()
             .map(|&cid| {
                 let pref = tree.get(cid)
-                    .map(|c| c.measure(Constraints::unconstrained()))
+                    .map(|c| c.measure(child_constraints))
                     .unwrap_or_default();
                 let actual_h = tree.get(cid)
                     .map(|c| c.frame().h)
@@ -191,6 +192,18 @@ impl Space {
             self.fixed_height.unwrap_or(0.0),
         )
     }
+
+    fn child_constraints(&self, frame: Rect) -> Constraints {
+        let max_w = match self.direction {
+            FlexDirection::Row | FlexDirection::RowReverse => f32::MAX,
+            FlexDirection::Column | FlexDirection::ColumnReverse => frame.w,
+        };
+        let max_h = match self.direction {
+            FlexDirection::Row | FlexDirection::RowReverse => frame.h,
+            FlexDirection::Column | FlexDirection::ColumnReverse => f32::MAX,
+        };
+        Constraints::loose(Size::new(max_w, max_h))
+    }
 }
 
 impl Space {
@@ -228,7 +241,35 @@ impl Default for Space {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::traits::WidgetLayout;
+    use crate::ui::traits::{WidgetCapabilities, WidgetLayout};
+
+    struct FixedChild(Size);
+
+    impl WidgetComponent for FixedChild {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+            self
+        }
+
+        fn capabilities(&self) -> WidgetCapabilities {
+            WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT)
+        }
+
+        crate::wc_upcast!(FixedChild; WidgetLayout);
+    }
+
+    impl WidgetLayout for FixedChild {
+        fn measure(&self, constraints: Constraints) -> Size {
+            constraints.clamp(self.0)
+        }
+    }
 
     #[test]
     fn measure_clamps_fixed_space_size() {
@@ -238,5 +279,22 @@ mod tests {
             .measure(Constraints::loose(Size::new(40.0, 32.0)));
 
         assert_eq!(measured, Size::new(40.0, 24.0));
+    }
+
+    #[test]
+    fn layout_children_allow_main_axis_overflow_and_clamp_cross_axis() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(
+            Space::new()
+                .width(40.0)
+                .height(20.0)
+                .child(FixedChild(Size::new(120.0, 30.0))),
+        ));
+
+        tree.layout();
+
+        let child = tree.get(root).unwrap().children()[0];
+        assert_eq!(tree.get(child).unwrap().frame().w, 120.0);
+        assert_eq!(tree.get(child).unwrap().frame().h, 20.0);
     }
 }

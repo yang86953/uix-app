@@ -177,6 +177,44 @@ fn scrollview_layout_children_uses_natural_coordinates() {
 }
 
 #[test]
+fn scrollview_child_constraints_are_axis_aware() {
+    let mut tree = WidgetTree::new();
+    let vertical = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(120.0, 80.0),
+    ));
+    tree.add_child(
+        vertical,
+        Box::new(FixedWidget {
+            size: Size::new(400.0, 300.0),
+            id: ComponentId::new(1),
+        }),
+    );
+    tree.layout();
+    let vertical_child = tree.get(vertical).unwrap().children()[0];
+    assert_eq!(
+        tree.get(vertical_child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 120.0, 300.0)
+    );
+
+    let horizontal = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Horizontal).size(120.0, 80.0),
+    ));
+    tree.add_child(
+        horizontal,
+        Box::new(FixedWidget {
+            size: Size::new(400.0, 300.0),
+            id: ComponentId::new(2),
+        }),
+    );
+    tree.layout();
+    let horizontal_child = tree.get(horizontal).unwrap().children()[0];
+    assert_eq!(
+        tree.get(horizontal_child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 400.0, 80.0)
+    );
+}
+
+#[test]
 fn scrollview_direction_flags() {
     assert!(ScrollDirection::Vertical.can_scroll_y());
     assert!(!ScrollDirection::Vertical.can_scroll_x());
