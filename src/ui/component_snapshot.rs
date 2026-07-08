@@ -44,6 +44,88 @@ impl ComponentConfigSnapshot {
             fields: component.snapshot_fields(),
         }
     }
+
+    pub fn accessibility(&self) -> AccessibilitySnapshot {
+        self.fields.accessibility()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessibilityRole {
+    Generic,
+    Alert,
+    Button,
+    Checkbox,
+    Combobox,
+    Dialog,
+    Group,
+    Image,
+    List,
+    Menu,
+    Navigation,
+    ProgressBar,
+    RadioGroup,
+    Slider,
+    SpinButton,
+    Status,
+    Switch,
+    Table,
+    TabList,
+    Text,
+    TextBox,
+    Tree,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AccessibilityState {
+    pub disabled: bool,
+    pub checked: Option<bool>,
+    pub value_text: Option<String>,
+    pub value_now: Option<f64>,
+    pub value_min: Option<f64>,
+    pub value_max: Option<f64>,
+    pub multiline: bool,
+    pub password: bool,
+    pub required: bool,
+}
+
+impl AccessibilityState {
+    pub fn disabled(disabled: bool) -> Self {
+        Self {
+            disabled,
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AccessibilitySnapshot {
+    pub role: AccessibilityRole,
+    pub name: Option<String>,
+    pub state: AccessibilityState,
+}
+
+impl AccessibilitySnapshot {
+    pub fn new(role: AccessibilityRole) -> Self {
+        Self {
+            role,
+            name: None,
+            state: AccessibilityState::default(),
+        }
+    }
+
+    pub fn named(role: AccessibilityRole, name: impl Into<String>) -> Self {
+        Self {
+            role,
+            name: non_empty(name.into()),
+            state: AccessibilityState::default(),
+        }
+    }
+
+    pub fn with_state(mut self, state: AccessibilityState) -> Self {
+        self.state = state;
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -658,6 +740,209 @@ pub enum SnapshotFields {
     Grid {
         style: Style,
     },
+}
+
+impl SnapshotFields {
+    pub fn accessibility(&self) -> AccessibilitySnapshot {
+        match self {
+            Self::Button { text, disabled, .. } => {
+                AccessibilitySnapshot::named(AccessibilityRole::Button, text.clone())
+                    .with_state(AccessibilityState::disabled(*disabled))
+            }
+            Self::Label { text, .. } => {
+                AccessibilitySnapshot::named(AccessibilityRole::Text, text.clone())
+            }
+            Self::Input {
+                placeholder,
+                disabled,
+                password,
+                search,
+                textarea,
+                ..
+            } => {
+                let role = if *search {
+                    AccessibilityRole::Combobox
+                } else {
+                    AccessibilityRole::TextBox
+                };
+                AccessibilitySnapshot::named(role, placeholder.clone()).with_state(
+                    AccessibilityState {
+                        disabled: *disabled,
+                        multiline: *textarea,
+                        password: *password,
+                        ..AccessibilityState::default()
+                    },
+                )
+            }
+            Self::Typography {
+                content, disabled, ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Text, content.clone())
+                .with_state(AccessibilityState::disabled(*disabled)),
+            Self::Checkbox {
+                checked,
+                disabled,
+                label,
+            } => AccessibilitySnapshot::named(AccessibilityRole::Checkbox, label.clone())
+                .with_state(AccessibilityState {
+                    disabled: *disabled,
+                    checked: Some(*checked),
+                    ..AccessibilityState::default()
+                }),
+            Self::Radio {
+                options,
+                selected,
+                disabled,
+                ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::RadioGroup).with_state(
+                AccessibilityState {
+                    disabled: *disabled,
+                    value_text: options.get(*selected).cloned(),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::Switch {
+                checked, disabled, ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::Switch).with_state(
+                AccessibilityState {
+                    disabled: *disabled,
+                    checked: Some(*checked),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::Slider {
+                min, max, value, ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::Slider).with_state(
+                AccessibilityState {
+                    value_now: Some(*value as f64),
+                    value_min: Some(*min as f64),
+                    value_max: Some(*max as f64),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::Rate {
+                count,
+                value,
+                disabled,
+                ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::Slider).with_state(
+                AccessibilityState {
+                    disabled: *disabled,
+                    value_now: Some(*value as f64),
+                    value_min: Some(0.0),
+                    value_max: Some(*count as f64),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::InputNumber {
+                value,
+                min,
+                max,
+                placeholder,
+                disabled,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::SpinButton, placeholder.clone())
+                .with_state(AccessibilityState {
+                    disabled: *disabled,
+                    value_now: Some(*value),
+                    value_min: Some(*min),
+                    value_max: Some(*max),
+                    ..AccessibilityState::default()
+                }),
+            Self::Image {
+                alt, fallback, src, ..
+            } => AccessibilitySnapshot::named(
+                AccessibilityRole::Image,
+                first_non_empty([alt.as_str(), fallback.as_str(), src.as_str()]),
+            ),
+            Self::ProgressBar { progress, .. } => AccessibilitySnapshot::new(
+                AccessibilityRole::ProgressBar,
+            )
+            .with_state(AccessibilityState {
+                value_now: Some((*progress).clamp(0.0, 1.0) as f64),
+                value_min: Some(0.0),
+                value_max: Some(1.0),
+                ..AccessibilityState::default()
+            }),
+            Self::Alert { message, .. } => {
+                AccessibilitySnapshot::named(AccessibilityRole::Alert, message.clone())
+            }
+            Self::Modal { title, .. } | Self::Drawer { title, .. } => {
+                AccessibilitySnapshot::named(AccessibilityRole::Dialog, title.clone())
+            }
+            Self::Pagination { .. } | Self::Anchor { .. } | Self::Breadcrumb { .. } => {
+                AccessibilitySnapshot::new(AccessibilityRole::Navigation)
+            }
+            Self::Menu { .. } | Self::Dropdown { .. } => {
+                AccessibilitySnapshot::new(AccessibilityRole::Menu)
+            }
+            Self::Tabs { .. } | Self::Steps { .. } => {
+                AccessibilitySnapshot::new(AccessibilityRole::TabList)
+            }
+            Self::Tree { .. } | Self::TreeSelect { .. } => {
+                AccessibilitySnapshot::new(AccessibilityRole::Tree)
+            }
+            Self::List { .. } | Self::SelectableList { .. } | Self::Transfer { .. } => {
+                AccessibilitySnapshot::new(AccessibilityRole::List)
+            }
+            Self::Table { .. } => AccessibilitySnapshot::new(AccessibilityRole::Table),
+            Self::Select {
+                placeholder,
+                disabled,
+                ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+                .with_state(AccessibilityState::disabled(*disabled)),
+            Self::AutoComplete { placeholder, .. }
+            | Self::Cascader { placeholder, .. }
+            | Self::DatePicker { placeholder }
+            | Self::TimePicker { placeholder }
+            | Self::Mentions { placeholder, .. } => {
+                AccessibilitySnapshot::named(AccessibilityRole::Combobox, placeholder.clone())
+            }
+            Self::Segmented {
+                disabled, options, ..
+            } => AccessibilitySnapshot::new(AccessibilityRole::RadioGroup).with_state(
+                AccessibilityState {
+                    disabled: *disabled,
+                    value_text: options.first().cloned(),
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::FormItem {
+                label, required, ..
+            } => AccessibilitySnapshot::named(AccessibilityRole::Group, label.clone()).with_state(
+                AccessibilityState {
+                    required: *required,
+                    ..AccessibilityState::default()
+                },
+            ),
+            Self::Result {
+                title, subtitle, ..
+            } => AccessibilitySnapshot::named(
+                AccessibilityRole::Status,
+                first_non_empty([title.as_str(), subtitle.as_str()]),
+            ),
+            Self::Spin { tip, .. } => {
+                AccessibilitySnapshot::named(AccessibilityRole::Status, tip.clone())
+            }
+            _ => AccessibilitySnapshot::new(AccessibilityRole::Generic),
+        }
+    }
+}
+
+fn non_empty(value: String) -> Option<String> {
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn first_non_empty<const N: usize>(values: [&str; N]) -> String {
+    values
+        .into_iter()
+        .find(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string()
 }
 
 pub trait SnapshotSource {

@@ -118,6 +118,8 @@ enum SnapshotFields {
 | **unmount** | `AppState.unregister(id)` |
 | Handle getter | `handle.label()` 读 snapshot；**不**读 live widget 交互态 |
 
+> **无障碍 v2 基础元数据**：`ComponentConfigSnapshot::accessibility()` / `ComponentHandle::accessibility()` 已从 `SnapshotFields` 派生 `AccessibilityRole`、可访问名称与状态（disabled / checked / value / required 等）。该层仍只读取 authoring 配置与可序列化 props，不纳入 hover / pressed / focused / live text；ARIA 映射、屏幕阅读器平台桥与键盘导航扩展仍属后续工作。
+
 自定义 widget：见 [SnapshotSource](#snapshotsource)（#151）。
 
 > **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出，`ComponentConfigSnapshot::id` 与 `from_component(id, ..)` 已按 `ComponentId` 命名；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event / layout cache / resource cache / queue / visible / transition / animation phase / scroll / current page / active tab / selected key / expanded panel / dragging / popup open / typed query / validation status / table sort/filter active state / selected transfer item / transfer runtime membership / upload file queue 等运行态。`ComponentHandle` 已可读取当前组件快照与类型化 getter（`text` / `label` / `placeholder` / `disabled` / `checked` / `numeric_value`）；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`component!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径。
@@ -520,7 +522,7 @@ App / View **不**配置 Picture；调用方零维护。
 
 ## 未实现或后续
 
-本域相关项（无障碍 v2）→ [implementation · 后续工作](../implementation.md#后续工作)。设计细节见 [内置 Widget 目录](#内置-widget-目录)、[PicturePolicy 元数据](#picturepolicy-元数据122)。排期 → [implementation · 后续工作](../implementation.md#后续工作)。
+本域相关项（无障碍 v2 剩余：ARIA 映射、屏幕阅读器平台桥、键盘导航扩展）→ [implementation · 后续工作](../implementation.md#后续工作)。设计细节见 [内置 Widget 目录](#内置-widget-目录)、[PicturePolicy 元数据](#picturepolicy-元数据122)。排期 → [implementation · 后续工作](../implementation.md#后续工作)。
 
 ---
 

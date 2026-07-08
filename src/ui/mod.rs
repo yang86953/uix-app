@@ -29,8 +29,9 @@ pub use children::WidgetChildren;
 pub use clipboard::copy_to_clipboard;
 pub use component_handle::ComponentHandle;
 pub use component_snapshot::{
-    ComponentConfigSnapshot, SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource,
-    SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
+    AccessibilityRole, AccessibilitySnapshot, AccessibilityState, ComponentConfigSnapshot,
+    SnapshotCollapsePanel, SnapshotField, SnapshotFields, SnapshotSource, SnapshotTableColumn,
+    SnapshotTransferItem, SnapshotTreeNode, SnapshotValue,
 };
 pub use core::widget;
 pub(crate) use core::widget::WidgetTree;

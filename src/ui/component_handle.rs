@@ -4,7 +4,9 @@ use std::sync::{Mutex, Weak as SyncWeak};
 
 use crate::core::ComponentId;
 use crate::ui::app_state::AppStateInner;
-use crate::ui::component_snapshot::{ComponentConfigSnapshot, SnapshotFields};
+use crate::ui::component_snapshot::{
+    AccessibilitySnapshot, ComponentConfigSnapshot, SnapshotFields,
+};
 use crate::ui::event::SemanticEvent;
 use crate::ui::widget::{EventResult, WidgetTree};
 
@@ -85,6 +87,10 @@ impl ComponentHandle {
 
     pub fn snapshot_fields(&self) -> Option<SnapshotFields> {
         self.snapshot().map(|snapshot| snapshot.fields)
+    }
+
+    pub fn accessibility(&self) -> Option<AccessibilitySnapshot> {
+        self.snapshot().map(|snapshot| snapshot.accessibility())
     }
 
     pub fn text(&self) -> Option<String> {
