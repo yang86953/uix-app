@@ -20,12 +20,32 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     Ok(Box::new(platform))
 }
 
-#[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
+#[cfg(target_os = "macos")]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
     Err(Error::new(
-        crate::core::error::Errc::PlatformError,
-        "Unsupported platform: only Windows and Linux are supported".to_string(),
+        Errc::PlatformError,
+        unsupported_platform_message(),
     ))
+}
+
+#[cfg(not(any(windows, unix)))]
+pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
+    Err(Error::new(
+        Errc::PlatformError,
+        unsupported_platform_message(),
+    ))
+}
+
+fn unsupported_platform_message() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        "Unsupported platform: macOS backend is planned but not implemented".to_string()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        "Unsupported platform: only Windows and Linux are supported".to_string()
+    }
 }
 
 /// 创建 GPU 图形上下文，使用平台默认候选链。
@@ -285,6 +305,17 @@ mod tests {
 
         #[cfg(target_os = "macos")]
         assert_eq!(candidates, vec![GraphicsBackend::Metal]);
+    }
+
+    #[test]
+    fn unsupported_platform_message_tracks_platform_boundary() {
+        let message = unsupported_platform_message();
+
+        #[cfg(target_os = "macos")]
+        assert!(message.contains("macOS backend is planned"));
+
+        #[cfg(not(target_os = "macos"))]
+        assert!(message.contains("only Windows and Linux"));
     }
 
     #[test]
