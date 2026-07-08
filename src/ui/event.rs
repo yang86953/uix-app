@@ -454,6 +454,14 @@ impl HandlerRegistration {
         self.with_capture_fingerprint(state.capture_fingerprint())
     }
 
+    /// Marks this handler as capturing `computed` for reconcile-time reuse.
+    pub fn with_computed_capture<T: Clone + Send + Sync + 'static>(
+        self,
+        computed: &crate::ui::foundation::state::Computed<T>,
+    ) -> Self {
+        self.with_capture_fingerprint(computed.capture_fingerprint())
+    }
+
     /// Marks this handler as capturing a window-scoped app handle.
     pub fn with_window_capture(self, window_id: WindowId) -> Self {
         self.with_capture_fingerprint(window_capture_fingerprint(window_id))

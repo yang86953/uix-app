@@ -1,7 +1,7 @@
 use super::*;
 use crate::core::{ComponentId, Rect, WindowId};
 use crate::ui::core::widget::{WidgetCore, WidgetNode};
-use crate::ui::state::State;
+use crate::ui::state::{Computed, State};
 use crate::ui::widgets::{
     Button, Checkbox, Input, InputNumber, Label, ProgressBar, Select, Slider, Switch,
 };
@@ -213,6 +213,33 @@ fn state_capture_authors_stable_signature_by_state_identity() {
 }
 
 #[test]
+fn computed_capture_authors_stable_signature_by_computed_identity() {
+    let source = State::new(1);
+    let source_for_computed = source.clone();
+    let computed = Computed::new(move || source_for_computed.get() * 2);
+    let first = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_computed_capture(&computed)
+        .authored_signature();
+
+    source.set(2);
+    assert_eq!(computed.get(), 4);
+
+    let same_computed = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_computed_capture(&computed)
+        .authored_signature();
+    let other_computed = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
+        .with_computed_capture(&Computed::new(|| 4))
+        .authored_signature();
+
+    assert_eq!(first.generation, Some(0));
+    assert_eq!(first.capture_fingerprint, same_computed.capture_fingerprint);
+    assert_ne!(
+        first.capture_fingerprint,
+        other_computed.capture_fingerprint
+    );
+}
+
+#[test]
 fn window_capture_authors_stable_signature_by_window_id() {
     let first = HandlerRegistration::new(SemanticKind::Click, Box::new(|_| {}))
         .with_window_capture(WindowId::new(7))
@@ -272,6 +299,30 @@ fn widget_node_on_semantic_capture_registers_captured_handler() {
     let root = tree.build(node);
 
     state.set(2);
+    let _ = tree.dispatch_semantic(SemanticEvent::change(root, "next"));
+
+    assert_eq!(calls.get(), 1);
+}
+
+#[test]
+fn widget_node_on_semantic_computed_capture_registers_captured_handler() {
+    let source = State::new(1);
+    let source_for_computed = source.clone();
+    let computed = Computed::new(move || source_for_computed.get() * 2);
+    let calls = Rc::new(Cell::new(0));
+    let calls_for_handler = calls.clone();
+    let node = WidgetNode::leaf(Box::new(Label::new("captured"))).on_semantic_computed_capture(
+        HandlerRegistration::new(
+            SemanticKind::Change,
+            Box::new(move |_| calls_for_handler.set(calls_for_handler.get() + 1)),
+        ),
+        &computed,
+    );
+    let mut tree = WidgetTree::new();
+    let root = tree.build(node);
+
+    source.set(2);
+    assert_eq!(computed.get(), 4);
     let _ = tree.dispatch_semantic(SemanticEvent::change(root, "next"));
 
     assert_eq!(calls.get(), 1);

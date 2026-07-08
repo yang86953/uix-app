@@ -182,6 +182,21 @@ impl ViewNode {
         self
     }
 
+    pub fn on_semantic_computed_capture<T>(
+        mut self,
+        kind: SemanticKind,
+        computed: &crate::ui::state::Computed<T>,
+        handler: impl FnMut(&mut SemanticEvent) + 'static,
+    ) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(kind, Box::new(handler)).with_computed_capture(computed),
+        );
+        self
+    }
+
     pub fn on_semantic_window_capture(
         mut self,
         kind: SemanticKind,
