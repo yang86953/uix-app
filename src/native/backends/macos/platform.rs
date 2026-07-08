@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::ffi::{c_char, c_void, CString};
+use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Once;
@@ -305,9 +305,7 @@ impl IPresenter for MacosPresenter {
 }
 
 #[derive(Default)]
-struct MacosClipboard {
-    text: String,
-}
+struct MacosClipboard;
 
 impl MacosClipboard {
     fn new() -> Self {
@@ -317,15 +315,23 @@ impl MacosClipboard {
 
 impl IClipboard for MacosClipboard {
     fn text(&self) -> String {
-        self.text.clone()
+        // SAFETY: NSPasteboard is an AppKit singleton; returned NSString data is
+        // copied into a Rust String before leaving the FFI boundary.
+        unsafe { cocoa::clipboard_text() }
     }
 
     fn set_text(&mut self, text: &str) {
-        self.text = text.to_string();
+        // SAFETY: text is converted to NSString and consumed synchronously by
+        // NSPasteboard's setter; Rust does not retain Objective-C pointers.
+        unsafe {
+            cocoa::set_clipboard_text(text);
+        }
     }
 
     fn has_text(&self) -> bool {
-        !self.text.is_empty()
+        // SAFETY: Same invariant as text(); this only checks whether the
+        // pasteboard currently has a string payload.
+        unsafe { cocoa::clipboard_has_text() }
     }
 }
 
@@ -747,6 +753,41 @@ mod cocoa {
         msg_void_rect_bool(window, "setFrame:display:", frame, YES);
     }
 
+    pub unsafe fn clipboard_text() -> String {
+        let pasteboard = general_pasteboard();
+        if pasteboard.is_null() {
+            return String::new();
+        }
+        let string = msg_id_id(pasteboard, "stringForType:", pasteboard_string_type());
+        ns_string_to_string(string).unwrap_or_default()
+    }
+
+    pub unsafe fn set_clipboard_text(text: &str) {
+        let pasteboard = general_pasteboard();
+        if pasteboard.is_null() {
+            return;
+        }
+        let _ = msg_isize(pasteboard, "clearContents");
+        let string = ns_string(text);
+        if string.is_null() {
+            return;
+        }
+        let _ = msg_bool_id_id(
+            pasteboard,
+            "setString:forType:",
+            string,
+            pasteboard_string_type(),
+        );
+    }
+
+    pub unsafe fn clipboard_has_text() -> bool {
+        let pasteboard = general_pasteboard();
+        if pasteboard.is_null() {
+            return false;
+        }
+        !msg_id_id(pasteboard, "stringForType:", pasteboard_string_type()).is_null()
+    }
+
     pub unsafe fn set_layer_pixels(layer: Id, pixels: &[u32], width: i32, height: i32) {
         if layer.is_null() || width <= 0 || height <= 0 || pixels.is_empty() {
             return;
@@ -848,6 +889,14 @@ mod cocoa {
         msg_id(class("NSApplication"), "sharedApplication")
     }
 
+    unsafe fn general_pasteboard() -> Id {
+        msg_id(class("NSPasteboard"), "generalPasteboard")
+    }
+
+    unsafe fn pasteboard_string_type() -> Id {
+        ns_string("public.utf8-plain-text")
+    }
+
     unsafe fn run_loop_mode() -> Id {
         if RUN_LOOP_MODE.is_null() {
             RUN_LOOP_MODE = ns_string("kCFRunLoopDefaultMode");
@@ -875,6 +924,17 @@ mod cocoa {
         )
     }
 
+    unsafe fn ns_string_to_string(value: Id) -> Option<String> {
+        if value.is_null() {
+            return None;
+        }
+        let ptr = msg_const_char_ptr(value, "UTF8String");
+        if ptr.is_null() {
+            return None;
+        }
+        Some(CStr::from_ptr(ptr).to_string_lossy().into_owned())
+    }
+
     unsafe fn msg_id(receiver: Id, selector: &str) -> Id {
         type FnType = unsafe extern "C" fn(Id, Sel) -> Id;
         let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
@@ -885,6 +945,18 @@ mod cocoa {
         type FnType = unsafe extern "C" fn(Id, Sel, *const c_void) -> Id;
         let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(receiver, sel(selector), ptr)
+    }
+
+    unsafe fn msg_id_id(receiver: Id, selector: &str, arg: Id) -> Id {
+        type FnType = unsafe extern "C" fn(Id, Sel, Id) -> Id;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector), arg)
+    }
+
+    unsafe fn msg_const_char_ptr(receiver: Id, selector: &str) -> *const c_char {
+        type FnType = unsafe extern "C" fn(Id, Sel) -> *const c_char;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector))
     }
 
     unsafe fn msg_id_f64(receiver: Id, selector: &str, value: f64) -> Id {
@@ -941,5 +1013,17 @@ mod cocoa {
         type FnType = unsafe extern "C" fn(Id, Sel, CGRect, Bool);
         let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(receiver, sel(selector), rect, value);
+    }
+
+    unsafe fn msg_isize(receiver: Id, selector: &str) -> isize {
+        type FnType = unsafe extern "C" fn(Id, Sel) -> isize;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector))
+    }
+
+    unsafe fn msg_bool_id_id(receiver: Id, selector: &str, first: Id, second: Id) -> Bool {
+        type FnType = unsafe extern "C" fn(Id, Sel, Id, Id) -> Bool;
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector), first, second)
     }
 }
