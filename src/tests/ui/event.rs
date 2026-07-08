@@ -407,6 +407,45 @@ fn app_state_lookup_handle_emit_drains_into_widget_tree() {
 }
 
 #[test]
+fn app_state_lookup_emit_is_retained_for_target_widget_tree() {
+    let app_state = AppState::new();
+    let mut unrelated_tree = WidgetTree::new();
+    unrelated_tree.set_root(Box::new(Button::new("unrelated")));
+    unrelated_tree.layout();
+    unrelated_tree.set_app_state(app_state.clone());
+
+    let mut target_tree = WidgetTree::new();
+    let target_root = target_tree.set_root(Box::new(Button::new("target-root")));
+    let target_child = target_tree.add_child(target_root, Box::new(Button::new("target-child")));
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    {
+        let calls = calls.clone();
+        target_tree
+            .handler_table()
+            .on(target_child, SemanticKind::Change, move |event| {
+                calls
+                    .borrow_mut()
+                    .push((event.target, event.current_target));
+            });
+    }
+    target_tree.layout();
+    target_tree.set_app_state(app_state.clone());
+
+    let handle = app_state
+        .get_handle(target_child)
+        .expect("target child should be registered");
+    assert_eq!(
+        handle.emit(SemanticEvent::change(target_child, "from-lookup")),
+        EventResult::Handled
+    );
+
+    assert!(!unrelated_tree.drain_app_state_semantic_events());
+    assert!(calls.borrow().is_empty());
+    assert!(target_tree.drain_app_state_semantic_events());
+    assert_eq!(calls.borrow().as_slice(), &[(target_child, target_child)]);
+}
+
+#[test]
 fn app_state_get_handle_panics_off_owner_thread() {
     let mut tree = WidgetTree::new();
     let app_state = AppState::new();
@@ -458,7 +497,7 @@ fn component_handle_invalidate_marks_narrow_paint_only() {
         tree.get_mut(child)
             .unwrap()
             .set_frame(Rect::new(12.0, 8.0, 32.0, 18.0));
-        tree.reset_dirty();
+        tree.reset_invalidation();
     }
 
     ComponentHandle::new(child, &tree).invalidate();

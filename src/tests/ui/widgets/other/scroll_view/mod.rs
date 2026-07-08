@@ -220,7 +220,7 @@ fn scrollview_wheel_registers_composite_scroll_strip() {
         .unwrap()
         .last_frame
         .set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
@@ -281,7 +281,7 @@ fn scrollview_wheel_at_scroll_boundary_does_not_fallback_invalidate() {
     sv.last_frame.set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
     sv.scroll_y = sv.max_scroll_y();
     sv.scroll_delta_strip.set((0.0, 0.0));
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::Wheel {
@@ -321,7 +321,7 @@ fn scrollview_keyboard_page_scroll_registers_composite_scroll_strip() {
         .last_frame
         .set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
     tree.managers_mut().focus.set_focused_component(Some(sv_id));
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::KeyDown {
@@ -366,7 +366,7 @@ fn scrollview_scrollbar_drag_registers_composite_scroll_strip() {
         .unwrap()
         .last_frame
         .set(Some(Rect::new(0.0, 0.0, 300.0, 200.0)));
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerDown {
@@ -376,7 +376,7 @@ fn scrollview_scrollbar_drag_registers_composite_scroll_strip() {
         }),
         EventResult::Handled
     );
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     assert_eq!(
         tree.dispatch_event(&SystemEvent::PointerMove {
@@ -413,7 +413,7 @@ fn scrollview_programmatic_scroll_invalidates_composite_strip() {
     );
 
     tree.layout();
-    tree.reset_dirty();
+    tree.reset_invalidation();
     tree.get_mut(sv_id)
         .unwrap()
         .component_mut()

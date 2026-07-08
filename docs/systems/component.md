@@ -208,9 +208,9 @@ WidgetTree
 | `tree_version` | Reconciler / layout 结构变更计数；LayerTree 同步依据 |
 | `cached_traversal` | 布局遍历缓存，version 不匹配时重建 |
 
-**ComponentId**（#35、#101）：`core::ComponentId { slot, generation }` 已作为 generational 稳定 ID 落地；公开事件 / handle / snapshot / Reconciler / Widget trait 边界 / managers / layout implementor 已按 `ComponentId` 命名，源码中 `WidgetId` 仍作为 WidgetTree 内部同型别名使用，`NodeId` 仍作为 draw 内部同型别名使用。
+**ComponentId**（#35、#101）：`core::ComponentId` 已作为 generational 稳定 ID 落地；运行时 WidgetTree 分配的 ID 带 tree scope + slot + generation，避免多窗共享 AppState 时 slot/generation 碰撞；公开事件 / handle / snapshot / Reconciler / Widget trait 边界 / managers / layout implementor 已按 `ComponentId` 命名，源码中 `WidgetId` 仍作为 WidgetTree 内部同型别名使用，`NodeId` 仍作为 draw 内部同型别名使用。
 
-**BoxedWidget** 持有：component、`parent/children` id、frame、visibility、lifecycle 标志、`is_dirty`、opacity、z_index、tab_idx。
+**BoxedWidget** 持有：component、`parent/children` id、frame、visibility、lifecycle 标志、opacity、z_index、tab_idx；渲染失效由 WidgetTree 的 InvalidationQueue 管理，不再暴露 widget dirty bit。
 
 ---
 

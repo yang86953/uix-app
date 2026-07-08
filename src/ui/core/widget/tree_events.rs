@@ -5,7 +5,7 @@ use crate::ui::{OverlayEntry, OverlayKind};
 
 impl WidgetTree {
     /// 2D 命中测试：根据屏幕坐标找到最深的 widget。
-    pub fn hit_test(&self, pos: Point) -> Option<WidgetId> {
+    pub fn hit_test(&self, pos: Point) -> Option<ComponentId> {
         self.root_id
             .and_then(|root| self.hit_test_internal(root, pos))
     }
@@ -18,7 +18,7 @@ impl WidgetTree {
         &self,
         ray: &crate::draw::spatial::Ray3D,
         spatial: &crate::draw::spatial::SpatialContext,
-    ) -> Option<WidgetId> {
+    ) -> Option<ComponentId> {
         self.root_id
             .and_then(|root| self.hit_test_3d_internal(root, ray, spatial))
     }

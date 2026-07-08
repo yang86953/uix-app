@@ -14,7 +14,7 @@ pub enum EventResult {
     Bubbled,
 }
 
-pub type WidgetId = ComponentId;
+pub(crate) type WidgetId = ComponentId;
 
 // 重新导出 api 中的 trait 定义
 pub use crate::ui::traits::{
@@ -97,18 +97,16 @@ impl WidgetNode {
 }
 
 pub trait WidgetCore {
-    fn id(&self) -> WidgetId;
-    fn set_id(&mut self, id: WidgetId);
-    fn parent(&self) -> Option<WidgetId>;
-    fn set_parent(&mut self, id: Option<WidgetId>);
-    fn children(&self) -> &[WidgetId];
-    fn children_mut(&mut self) -> &mut Vec<WidgetId>;
+    fn id(&self) -> ComponentId;
+    fn set_id(&mut self, id: ComponentId);
+    fn parent(&self) -> Option<ComponentId>;
+    fn set_parent(&mut self, id: Option<ComponentId>);
+    fn children(&self) -> &[ComponentId];
+    fn children_mut(&mut self) -> &mut Vec<ComponentId>;
     fn frame(&self) -> Rect;
     fn set_frame(&mut self, rect: Rect);
     fn visible(&self) -> bool;
     fn set_visible(&mut self, v: bool);
-    fn dirty(&self) -> bool;
-    fn set_dirty(&mut self, v: bool);
     fn opacity(&self) -> f32;
     fn set_opacity(&mut self, v: f32);
     fn z_index(&self) -> i32;
@@ -131,7 +129,6 @@ pub struct BoxedWidget {
     mounted: bool,
     active: bool,
     destroyed: bool,
-    is_dirty: bool,
     widget_opacity: f32,
     z: i32,
     /// Tab 键导航顺序（0=不可通过 Tab 导航聚焦）。
@@ -158,7 +155,6 @@ impl BoxedWidget {
             mounted: false,
             active: false,
             destroyed: false,
-            is_dirty: true,
             widget_opacity: 1.0,
             z: 0,
             tab_idx: 0,
@@ -444,22 +440,22 @@ impl BoxedWidget {
 }
 
 impl WidgetCore for BoxedWidget {
-    fn id(&self) -> WidgetId {
+    fn id(&self) -> ComponentId {
         self.id
     }
-    fn set_id(&mut self, id: WidgetId) {
+    fn set_id(&mut self, id: ComponentId) {
         self.id = id;
     }
-    fn parent(&self) -> Option<WidgetId> {
+    fn parent(&self) -> Option<ComponentId> {
         self.parent
     }
-    fn set_parent(&mut self, id: Option<WidgetId>) {
+    fn set_parent(&mut self, id: Option<ComponentId>) {
         self.parent = id;
     }
-    fn children(&self) -> &[WidgetId] {
+    fn children(&self) -> &[ComponentId] {
         &self.children
     }
-    fn children_mut(&mut self) -> &mut Vec<WidgetId> {
+    fn children_mut(&mut self) -> &mut Vec<ComponentId> {
         &mut self.children
     }
     fn frame(&self) -> Rect {
@@ -473,12 +469,6 @@ impl WidgetCore for BoxedWidget {
     }
     fn set_visible(&mut self, v: bool) {
         self.visible = v;
-    }
-    fn dirty(&self) -> bool {
-        self.is_dirty
-    }
-    fn set_dirty(&mut self, v: bool) {
-        self.is_dirty = v;
     }
     fn opacity(&self) -> f32 {
         self.widget_opacity

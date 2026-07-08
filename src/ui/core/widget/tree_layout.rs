@@ -6,7 +6,7 @@ impl WidgetTree {
     /// 返回 Layout 失效影响的子树先序遍历顺序。
     ///
     /// 全帧或含 Layout 根时遍历对应子树；无 Layout 失效时返回空（跳过 layout）。
-    pub fn layout_traverse(&self) -> Vec<WidgetId> {
+    pub fn layout_traverse(&self) -> Vec<ComponentId> {
         let inv = self.invalidation.lock().unwrap_or_else(|e| e.into_inner());
         if inv.needs_full_frame() {
             return self.traverse();

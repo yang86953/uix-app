@@ -170,7 +170,7 @@ fn widget_tree_update_advances_animation_and_marks_dirty_rect() {
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 100.0, 50.0));
     tree.get_mut(root).unwrap().set_active(true);
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     assert!(tree.update(0.016));
 
@@ -210,7 +210,7 @@ fn widget_tree_update_animation_nodes_advances_only_requested_ids() {
         .unwrap()
         .set_frame(Rect::new(0.0, 60.0, 100.0, 50.0));
     tree.get_mut(second).unwrap().set_active(true);
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     let updates = tree.update_animation_nodes([first], 0.016);
 
@@ -319,7 +319,7 @@ fn due_animation_work_advances_only_due_node() {
             .unwrap()
             .set_frame(Rect::new(0.0, 60.0, 100.0, 50.0));
         tree.get_mut(second).unwrap().set_active(true);
-        tree.reset_dirty();
+        tree.reset_invalidation();
         (first, second)
     };
     session
@@ -469,7 +469,7 @@ fn due_animation_frame_discovers_unregistered_animation_without_advancing_future
             .unwrap()
             .set_frame(Rect::new(0.0, 120.0, 100.0, 50.0));
         tree.get_mut(discovered_id).unwrap().set_active(true);
-        tree.reset_dirty();
+        tree.reset_invalidation();
         (due_id, future_id)
     };
     session
@@ -696,7 +696,7 @@ fn software_engine_first_frame_present_forwards_full_damage_to_fake_presenter() 
         |_| false,
         |tree, _, _| {
             let root = tree.root_id().expect("root should exist");
-            tree.reset_dirty();
+            tree.reset_invalidation();
             tree.invalidate_paint_rect(root, Rect::new(3.0, 4.0, 5.0, 6.0));
         },
     );

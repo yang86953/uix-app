@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 #[test]
 fn page_titles_and_build() {
@@ -239,7 +239,7 @@ fn demo_first_frame_renders_nav_sidebar() {
     );
 
     // 第二帧：节点已干净，依赖 DisplayList 重放，激活项文字/图标仍应可见
-    tree.reset_dirty();
+    tree.reset_invalidation();
     tree.mark_full_frame_dirty();
     let cached_region = tree.dirty_region();
     renderer.render_frame(
@@ -281,7 +281,7 @@ fn demo_first_frame_renders_nav_sidebar() {
         );
 
     // 模拟第二帧：仅内容区 partial dirty（滚动/局部更新常见路径）
-    tree.reset_dirty();
+    tree.reset_invalidation();
     tree.invalidate_paint_rect(
         tree.root_id().unwrap(),
         Rect::new(200.0, 0.0, 1000.0, 800.0),
@@ -375,7 +375,7 @@ fn demo_nav_hover_partial_repaint_no_top_seam() {
             metrics: None,
         },
     );
-    tree.reset_dirty();
+    tree.reset_invalidation();
 
     let nav_items: Vec<(ComponentId, Rect)> = tree
         .find_all_by_type::<NavItem>()

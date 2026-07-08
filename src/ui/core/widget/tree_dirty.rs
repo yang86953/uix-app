@@ -137,7 +137,7 @@ impl WidgetTree {
     }
 
     /// 标记节点 Paint 失效（精确 dirty_rect）。
-    pub fn invalidate_paint(&mut self, id: WidgetId) {
+    pub fn invalidate_paint(&mut self, id: ComponentId) {
         if self.get(id).is_none() {
             return;
         }
@@ -166,7 +166,7 @@ impl WidgetTree {
     }
 
     /// 标记指定矩形 Paint 失效。
-    pub fn invalidate_paint_rect(&mut self, id: WidgetId, rect: Rect) {
+    pub fn invalidate_paint_rect(&mut self, id: ComponentId, rect: Rect) {
         if self.get(id).is_none() {
             return;
         }
@@ -175,7 +175,7 @@ impl WidgetTree {
         }
     }
 
-    pub fn invalidate_paint_subtree(&mut self, id: WidgetId) {
+    pub fn invalidate_paint_subtree(&mut self, id: ComponentId) {
         let ids: Vec<WidgetId> = {
             let mut result = vec![id];
             if let Some(node) = self.get(id) {
@@ -199,8 +199,8 @@ impl WidgetTree {
         }
     }
 
-    /// 重置脏状态（帧末调用）。
-    pub fn reset_dirty(&mut self) {
+    /// 清空失效队列（帧末调用）。
+    pub fn reset_invalidation(&mut self) {
         self.invalidation
             .lock()
             .unwrap_or_else(|e| e.into_inner())

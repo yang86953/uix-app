@@ -197,6 +197,7 @@ fn removed_compatibility_terms_do_not_return_to_source() {
         "ScrollContainer",
         "LightIdle",
         "set_handler_generation",
+        "reset_dirty",
         "crate::ui::WidgetNode",
         "uix::ui::WidgetNode",
         "grid_col_span",
@@ -264,6 +265,17 @@ fn active_work_registry_stays_internal() {
 }
 
 #[test]
+fn low_level_widget_loop_stays_off_prelude() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let prelude = fs::read_to_string(src.join("prelude.rs")).unwrap();
+
+    assert!(
+        !prelude.contains("run_widget_loop"),
+        "prelude should route apps through App/View APIs, not the low-level WidgetTree loop"
+    );
+}
+
+#[test]
 fn internal_widget_tree_types_stay_off_user_entrypoints() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let checked = ["prelude.rs", "ui/mod.rs"];
@@ -291,6 +303,81 @@ fn internal_widget_tree_types_stay_off_user_entrypoints() {
     assert!(
         violations.is_empty(),
         "WidgetTree/WidgetNode/BoxedWidget are internal view adapter details, not user entrypoints: {violations:?}"
+    );
+}
+
+#[test]
+fn widget_id_stays_off_public_widget_boundary_signatures() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let checked = [
+        "ui/core/widget/mod.rs",
+        "ui/core/widget/tree_core.rs",
+        "ui/core/widget/tree_dirty.rs",
+        "ui/core/widget/tree_events.rs",
+        "ui/core/widget/tree_layout.rs",
+    ];
+    let mut violations = Vec::new();
+
+    for rel in checked {
+        let text = fs::read_to_string(src.join(rel)).unwrap();
+        if text.contains("pub type WidgetId") {
+            violations.push(format!("{rel} exposes WidgetId as a public alias"));
+        }
+        let mut in_public_fn = false;
+        let mut in_widget_core = false;
+        for (idx, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("pub trait WidgetCore") {
+                in_widget_core = true;
+            }
+            if trimmed.starts_with("pub fn ") {
+                in_public_fn = true;
+            }
+
+            if (in_public_fn || in_widget_core) && trimmed.contains("WidgetId") {
+                violations.push(format!("{rel}:{} exposes WidgetId in {trimmed}", idx + 1));
+            }
+
+            if in_public_fn && trimmed.contains('{') {
+                in_public_fn = false;
+            }
+            if in_widget_core && trimmed == "}" {
+                in_widget_core = false;
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "public widget boundaries use ComponentId; WidgetId stays an internal WidgetTree alias: {violations:?}"
+    );
+}
+
+#[test]
+fn widget_core_public_boundary_uses_invalidation_not_dirty_bit() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let text = fs::read_to_string(src.join("ui/core/widget/mod.rs")).unwrap();
+    let mut in_widget_core = false;
+    let mut violations = Vec::new();
+
+    for (idx, line) in text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("pub trait WidgetCore") {
+            in_widget_core = true;
+        }
+        if in_widget_core
+            && (trimmed.starts_with("fn dirty(") || trimmed.starts_with("fn set_dirty("))
+        {
+            violations.push(format!("ui/core/widget/mod.rs:{} has {trimmed}", idx + 1));
+        }
+        if in_widget_core && trimmed == "}" {
+            in_widget_core = false;
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "WidgetCore must expose invalidation/paint behavior through WidgetTree, not a dirty bit: {violations:?}"
     );
 }
 

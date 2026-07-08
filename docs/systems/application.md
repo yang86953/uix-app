@@ -120,7 +120,7 @@ flowchart TD
   K --> M{outcome}
   M -->|Present| N[presenter.present damage]
   M -->|Idle| L
-  N --> O[tree.reset_dirty]
+  N --> O[tree.reset_invalidation]
   L --> O
 ```
 
@@ -134,7 +134,7 @@ flowchart TD
 
 - Layout 失效 alone **不**触发 present。
 - 首帧强制 full-frame dirty + layout。
-- `reset_dirty()` 在帧末清空 InvalidationQueue。
+- `reset_invalidation()` 在帧末清空 InvalidationQueue。
 
 ### 事件轮询策略
 
@@ -182,7 +182,7 @@ Platform UiEvent
 | `hit_test` / `focused_node` | 事件与焦点环 |
 | `paint(id, frame, ctx)` | 委托 `WidgetRender::render` |
 
-`NodeId` 与 WidgetTree 内部 `WidgetId` 均同型于 `core::ComponentId`（generational）。
+`NodeId` 与 WidgetTree 内部 `WidgetId` 均同型于 `core::ComponentId`（generational）；运行时 WidgetTree 分配的 ComponentId 带 tree scope，避免共享 AppState 下多窗组件 ID 碰撞。
 
 ### 主题注入
 
@@ -207,7 +207,7 @@ Platform UiEvent
 
 **ComponentHandle**：只读配置字段；可 `invalidate` / `emit`；不可改 style 或读 hover/pressed 等交互态。
 
-> **实现注记**（#101）：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；`AppState` 内部 register/unregister、snapshot/invalidate 与 semantic queue 也已按 `ComponentId` 命名。live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均走窄 Paint；lookup handle 的 `emit()` 会写入 `AppState` semantic queue 并唤醒 loop，由主窗/副窗 `WindowSession` drain 后派发到 `WidgetTree::dispatch_semantic`。`ComponentConfigSnapshot` 类型与 80 个内置组件静态配置提取已接；`ComponentHandle::snapshot()` / `snapshot_fields()` 与首批只读配置 getter 已接。`AppState` 类型已导出，`WidgetTree::set_app_state` 后 mount/unmount 会自动注册/注销 snapshot，并记录所属失效队列与当前 dirty rect，`AppState::get_handle` 可返回 snapshot + invalidate + emit handle。App 默认持有同一 `AppState`，`AppHandle::app_state()` 可访问同一 registry，主窗与副窗 `WindowSession` 均已注入。当前业务数据仍可直接经 `State<T>` 闭包捕获；WidgetTree 内部源码名仍保留 `WidgetId` 别名，draw 内部源码名仍保留 `NodeId` 别名。
+> **实现注记**（#101）：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；`AppState` 内部 register/unregister、snapshot/invalidate 与 semantic queue 也已按 `ComponentId` 命名。live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均走窄 Paint；lookup handle 的 `emit()` 会写入 `AppState` semantic queue 并唤醒 loop，由主窗/副窗 `WindowSession` 按目标 ComponentId drain 后派发到 `WidgetTree::dispatch_semantic`。`ComponentConfigSnapshot` 类型与 80 个内置组件静态配置提取已接；`ComponentHandle::snapshot()` / `snapshot_fields()` 与首批只读配置 getter 已接。`AppState` 类型已导出，`WidgetTree::set_app_state` 后 mount/unmount 会自动注册/注销 snapshot，并记录所属失效队列与当前 dirty rect，`AppState::get_handle` 可返回 snapshot + invalidate + emit handle。App 默认持有同一 `AppState`，`AppHandle::app_state()` 可访问同一 registry，主窗与副窗 `WindowSession` 均已注入；运行时 ComponentId 带 tree scope，避免共享 AppState 下副窗根节点 slot/generation 碰撞。当前业务数据仍可直接经 `State<T>` 闭包捕获；WidgetTree 内部源码名仍保留 `WidgetId` 别名，draw 内部源码名仍保留 `NodeId` 别名。
 
 ### AppState · ComponentHandle 规格（#32、#61、#72、#101、#145）
 
