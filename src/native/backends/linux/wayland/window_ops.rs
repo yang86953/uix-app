@@ -17,8 +17,9 @@ use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::X
 use wayland_protocols::unstable::xdg_decoration::v1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
-use crate::core::error::Result;
+use crate::core::error::{Error, Result};
 use crate::core::WindowId;
+use crate::native::backends::linux::gpu::WaylandSurfaceHandle;
 use crate::native::shared::unimpl;
 use crate::native::shared::WindowOps;
 use crate::native::traits::event::UiEvent;
@@ -29,6 +30,7 @@ use crate::native::traits::event::UiEvent;
 /// 所有 `os_*` 方法通过 Wayland 协议操作窗口。
 pub(crate) struct WaylandWindowOps {
     pub(crate) window_id: WindowId,
+    native_surface: WaylandSurfaceHandle,
     pub(crate) surface: Option<Main<wl_surface::WlSurface>>,
     pub(crate) xdg_surface: Option<Main<xdg_surface::XdgSurface>>,
     pub(crate) toplevel: Option<Main<xdg_toplevel::XdgToplevel>>,
@@ -55,10 +57,16 @@ impl WaylandWindowOps {
             // Proxy 内的 inner (ProxyInner) 持有 *mut wl_proxy
             // 我们通过 id() 对应的方式获取指针：
             // 实际上 wayland 协议中 wl_proxy 指针就是 surface 指针
-            let s_ref: &Main<wl_surface::WlSurface> = s;
-            let ptr = s_ref as *const Main<wl_surface::WlSurface> as *const *const std::ffi::c_void;
-            unsafe { *ptr as *mut std::ffi::c_void }
+            s.as_ref().c_ptr() as *mut std::ffi::c_void
         })
+    }
+
+    fn native_surface_descriptor_ptr(&self) -> *mut std::ffi::c_void {
+        if self.native_surface.is_valid() {
+            &self.native_surface as *const WaylandSurfaceHandle as *mut std::ffi::c_void
+        } else {
+            std::ptr::null_mut()
+        }
     }
 
     pub(crate) fn new(
@@ -71,6 +79,7 @@ impl WaylandWindowOps {
     ) -> Self {
         Self {
             window_id,
+            native_surface: WaylandSurfaceHandle::default(),
             surface: None,
             xdg_surface: None,
             toplevel: None,
@@ -215,6 +224,8 @@ impl WaylandWindowOps {
         self.surface = Some(surface);
         self.xdg_surface = Some(xdg_surf);
         self.toplevel = Some(tl);
+        self.native_surface =
+            WaylandSurfaceHandle::new(display.get_display_ptr().cast(), self.surface_c_ptr());
 
         let _ = event_queue.dispatch(&mut (), |_, _, _| {});
         for _ in 0..5 {
@@ -359,7 +370,7 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
-        self.surface_c_ptr()
+        self.native_surface_descriptor_ptr()
     }
 
     // ── 窗口状态 ──────────────────────────────────────────
@@ -432,8 +443,6 @@ impl WindowOps for WaylandWindowOps {
     // ── 原生句柄 ──────────────────────────────────────────
 
     fn native_handle(&self) -> *mut std::ffi::c_void {
-        self.surface.as_ref().map_or(std::ptr::null_mut(), |s| {
-            s as *const Main<wl_surface::WlSurface> as *mut std::ffi::c_void
-        })
+        self.surface_c_ptr()
     }
 }

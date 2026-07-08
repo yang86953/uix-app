@@ -16,6 +16,8 @@ use super::wnd_proc::wnd_proc;
 use crate::core::Point;
 use crate::native::traits::*;
 use crate::native::{Errc, Error};
+
+const ERROR_CLASS_ALREADY_EXISTS: u32 = 1410;
 // ════════════════════════════════════════════════════════════════════════════
 // 窗口类注册
 // ════════════════════════════════════════════════════════════════════════════
@@ -54,6 +56,10 @@ impl WindowsPlatform {
 
             let atom = RegisterClassExW(&wc);
             if atom == 0 {
+                if GetLastError() == ERROR_CLASS_ALREADY_EXISTS {
+                    self.class_atom = 1;
+                    return Ok(());
+                }
                 return Err(windows_diag(
                     Errc::ClassRegistrationFailed,
                     "register_class: RegisterClassExW failed",

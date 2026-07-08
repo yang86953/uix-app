@@ -234,7 +234,7 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 | 平台 | Platform | GPU 上下文（当前） | GPU 上下文（规划） |
 |------|----------|-------------------|-------------------|
 | Windows | ✅ | ✅ D3D11 + WGL → OpenGL ES | D3D12 |
-| Linux (Wayland) | ✅ | ✅ EGL → OpenGL ES | Vulkan |
+| Linux (Wayland) | ✅ | ✅ Vulkan + EGL → OpenGL ES | — |
 | macOS | ❌ | — | Metal |
 
 <a id="多图形-api-与-factory"></a>
@@ -248,11 +248,11 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 | `#[cfg]` | 实现 | 底层 API |
 |----------|------|----------|
 | `windows` | `D3D12 → D3D11 → OpenGL ES` probe；D3D11 接入 `D3d11Context` + `PresentUploadEngine`，OpenGL ES 接入 `WglContext::new` | Direct3D 11 swapchain；OpenGL ES 3.x via WGL |
-| `unix`（非 macOS） | `Vulkan → OpenGL ES` probe；仅 `OpenGL ES` 已接入 `EglContext::new` | OpenGL ES via EGL |
+| `unix`（非 macOS） | `Vulkan → OpenGL ES` probe；Vulkan 接入 `VulkanContext` + `PresentUploadEngine`，OpenGL ES 接入 `EglContext::new` | Vulkan swapchain；OpenGL ES via EGL |
 | `macOS` | `Metal` probe（后端未接入） | — |
 | 其他 | 无 GPU 候选，返回 `Err(PlatformError)` | — |
 
-**P6.1 / P6.2 / P6.5 已落地**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；Windows D3D11 走 CPU upload present，WGL 作次选；App builder / env / Settings 可跳过 Auto 链直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。
+**P6.1 / P6.2 / P6.3 / P6.5 已落地**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；Windows D3D11 与 Linux Vulkan 走 CPU upload present，WGL/EGL 作次选；App builder / env / Settings 可跳过 Auto 链直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。
 
 ```text
 create_gpu_context(surface, w, h)
@@ -265,7 +265,7 @@ create_gpu_context(surface, w, h)
 
 ### 未实现或后续
 
-macOS backend、Vulkan、D3D12、Metal → [roadmap · P6 图形后端](../roadmap.md#p6-图形后端) · [后续工作](../roadmap.md#后续工作)。
+macOS backend、D3D12、Metal → [roadmap · P6 图形后端](../roadmap.md#p6-图形后端) · [后续工作](../roadmap.md#后续工作)。
 
 <a id="测试平台"></a>
 
@@ -355,7 +355,8 @@ native/
 │   │   └── …               clipboard, cursor, timer, …
 │   └── linux/
 │       ├── platform.rs     LinuxPlatform + Platform impl
-│       └── wayland/        连接、seat、shm、xdg_toplevel、EGL
+│       ├── gpu/            Vulkan / EGL
+│       └── wayland/        连接、seat、shm、xdg_toplevel
 ├── test_harness/           FakePlatform（#40）
 └── services/               file_service、notification（公开辅助）
 ```
@@ -382,7 +383,7 @@ native/
 | 窗口句柄 | `HWND` + `wnd_proc` | `xdg_toplevel` + registry globals |
 | 事件泵 | `GetMessage` / 队列 | `wl_display` dispatch |
 | CPU 呈现 | GDI `BitBlt` | SHM buffer + `wl_surface` commit |
-| GPU | WGL + `create_gpu_context` → OpenGL ES；失败回退 GDI | EGL + `create_gpu_context` → OpenGL ES |
+| GPU | D3D11/WGL + `create_gpu_context`；失败回退 GDI | Vulkan/EGL + `create_gpu_context`；失败回退 SHM |
 | 可选窗口能力 | 多数原生 API `Ok(())` | 不支持则 `WindowOps` → `NotImplemented`（见 [窗口可选能力](#窗口可选能力)） |
 | IME | Win32 text input | `zwp_text_input_v3` |
 | Wake | 平台特定 wake 注入 `EventLoopWaker` | 同上 |
@@ -431,7 +432,7 @@ native/
 ├── factory.rs        create_platform, create_gpu_context
 ├── backends/
 │   ├── windows/      Win32 窗口、GDI/GPU present、输入
-│   └── linux/        Wayland seat、shm、EGL
+│   └── linux/        Wayland seat、shm、Vulkan、EGL
 ├── shared/           跨 backend 共用（window state、event_loop）
 ├── services/         file_service, notification（公开辅助）
 ├── presenter.rs      PresentDamage 适配

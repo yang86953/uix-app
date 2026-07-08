@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::core::WindowId;
+use crate::core::{Error, WindowId};
 use crate::native::shared::{PlatformWindowCore, WindowState};
 use crate::native::traits::*;
 

@@ -85,13 +85,13 @@ P6 图形后端（规划）    ← #162，详见下文
 | 测试后端 | `FakePlatform` 完整 trait 实现 | [platform · 测试](systems/platform.md#测试平台) · [testing](systems/testing.md) |
 | 事件循环 | `IEventLoop`；`EventLoopWaker` 外部线程 wake | [platform · 事件模型](systems/platform.md#ieventloop) |
 | 窗口可选能力 | `WindowOps` 返回 `Result`；未支持记 `NotImplemented` | [platform · 窗口可选能力](systems/platform.md#窗口可选能力) |
-| GPU 上下文 | WGL/EGL → OpenGL ES；`create_gpu_context` | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [rendering · 多图形 API](systems/rendering.md#多图形-api) |
+| GPU 上下文 | Windows D3D11/WGL；Linux Vulkan/EGL；`create_gpu_context` | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [rendering · 多图形 API](systems/rendering.md#多图形-api) |
 
 #### 绘制 · `draw`
 
 | 能力 | 要点 | 文档 |
 |------|------|------|
-| GPU 引擎 | OpenGL ES：`GpuEngine` + WGL/EGL；失败回退 SoftwareEngine | [rendering · 引擎](systems/rendering.md#引擎) · [#59](decisions.md#d59) |
+| GPU 引擎 | OpenGL ES：`GpuEngine` + WGL/EGL；D3D11/Vulkan：`PresentUploadEngine`；失败回退 SoftwareEngine | [rendering · 引擎](systems/rendering.md#引擎) · [#59](decisions.md#d59) |
 | 失效管线 | `Invalidation::Paint` / `Layout` / `Composite`；脏区合并 | [rendering · 管线](systems/rendering.md#管线与失效) |
 | Composite 滚动 | Wheel / 键盘 / 拖拽 → `scroll_region` memmove | [rendering](systems/rendering.md) · [#107](decisions.md#d107) |
 | PicturePolicy | 元数据 + 运行时信号；`node_count≥8 && est_pixels≥65536`；部分静态 widget `Eligible` | [rendering](systems/rendering.md) · [component · PicturePolicy](systems/component.md#picturepolicy-元数据122) |
@@ -146,9 +146,9 @@ P6 图形后端（规划）    ← #162，详见下文
 | 里程碑 | 内容 | 状态 |
 |--------|------|------|
 | P6.0 设计 | 抽象分层、平台矩阵、回退链、术语 | ✅ 文档（本文 + rendering/platform/decisions） |
-| P6.1 基线 | `GraphicsBackend` 枚举；factory probe 框架；诊断日志 | ✅ 已实现（真实 D3D/Vulkan/Metal 后端仍在 P6.2+） |
+| P6.1 基线 | `GraphicsBackend` 枚举；factory probe 框架；诊断日志 | ✅ 已实现（Metal 后端仍在 P6.4+） |
 | P6.2 Windows | D3D11 `IGraphicsContext` + CPU upload present；WGL 作次选，D3D12 后续 | ✅ 已实现（D3D12 仍规划） |
-| P6.3 Linux | Vulkan `IGraphicsContext`；EGL 作次选 | 规划 |
+| P6.3 Linux | Vulkan `IGraphicsContext` + CPU upload present；EGL 作次选 | ✅ 已实现 |
 | P6.4 macOS | Metal + `create_platform` backend | 规划 |
 | P6.5 配置 | App builder / env / Settings opt-in；公开 API 写入 public-api | ✅ 已实现 |
 | P6.6 WebGPU | 远期评估；非 v1 目标 |  backlog |
@@ -163,7 +163,7 @@ P6 图形后端（规划）    ← #162，详见下文
 
 | 项 | 说明 | 文档 |
 |----|------|------|
-| 多图形 API（P6） | Vulkan / D3D / Metal；factory probe + opt-in 配置 | [P6 图形后端](#p6-图形后端) · [#162](decisions.md#d162) |
+| 多图形 API（P6） | D3D12 / Metal；更完整 native GPU renderer；factory probe + opt-in 配置 | [P6 图形后端](#p6-图形后端) · [#162](decisions.md#d162) |
 | 无障碍 v2 | #99：ARIA / 屏幕阅读器 / 键盘导航扩展；v1 不做 | [component](systems/component.md#内置-widget-目录) |
 | macOS 平台 | `create_platform()` 无 macOS backend（含 Metal） | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
 | Handler 宏层 fingerprint | #159 / #160：语法层 fingerprint 待设计；普通闭包保守重绑 | [view-reactive · 热更新](systems/view-reactive.md#热更新设计) |

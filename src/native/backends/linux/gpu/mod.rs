@@ -8,4 +8,8 @@
 #![cfg(all(unix, not(target_os = "macos")))]
 
 pub mod egl;
+mod surface;
+pub mod vulkan;
 pub use egl::EglContext;
+pub(crate) use surface::WaylandSurfaceHandle;
+pub use vulkan::VulkanContext;

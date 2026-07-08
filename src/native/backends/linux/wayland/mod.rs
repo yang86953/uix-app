@@ -23,7 +23,7 @@ pub(crate) mod window_ops;
 
 // ── 依赖 ────────────────────────────────────────────────────────
 use self::shm_buffer::ShmBuffer;
-use crate::core::{Point, WindowId};
+use crate::core::Point;
 use crate::native::traits::event::*;
 use crate::native::traits::input::{KeyCode, KeyMod};
 use std::collections::{HashSet, VecDeque};

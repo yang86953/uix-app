@@ -179,7 +179,7 @@
 
 | 术语 | 含义 |
 |------|------|
-| GraphicsBackend | #162 / P6.5：**具体 GPU API** 枚举（`Auto` / `OpenGlEs` / `Vulkan` / `D3D11` / `D3D12` / `Metal`）；factory 选型结果；供诊断、App builder、env、Settings opt-in。P6.2 已接入 Windows `D3D11` CPU upload present；`D3D12` 仍后续 |
+| GraphicsBackend | #162 / P6.5：**具体 GPU API** 枚举（`Auto` / `OpenGlEs` / `Vulkan` / `D3D11` / `D3D12` / `Metal`）；factory 选型结果；供诊断、App builder、env、Settings opt-in。P6.2 已接入 Windows `D3D11` CPU upload present；P6.3 已接入 Linux `Vulkan` CPU upload present；`D3D12` / `Metal` 仍后续 |
 | GpuBackendKind | 与 `GraphicsBackend` 同义的旧设计名；实现采用 `GraphicsBackend` |
 | IGraphicsContext | `native::traits::present`：surface 绑定、`swap_buffers(PresentDamage)`、DPR、`get_proc_address`；**各 GPU API 对上统一契约** |
 | IPresenter | CPU 像素 presenter；SoftwareEngine 回退路径 |
@@ -199,7 +199,7 @@
 | EventBus | UiEvent 发布订阅 |
 | EventLoopWaker | 跨线程唤醒 blocking `wait_event` / `wait_until`；见 [platform · 事件模型](systems/platform.md#ieventloop) |
 | PresentDamage | 物理像素上屏 damage |
-| WglContext / EglContext | Windows WGL / Linux EGL 的 `IGraphicsContext` 实现（**当前** OpenGL ES 路径） |
+| WglContext / EglContext / VulkanContext | Windows WGL / Linux EGL 的 OpenGL ES `IGraphicsContext` 实现；Linux Vulkan 的 CPU upload present `IGraphicsContext` 实现 |
 
 ## 数据
 

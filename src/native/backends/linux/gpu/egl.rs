@@ -12,6 +12,8 @@ use std::ptr;
 
 use crate::native::traits::present::{IGraphicsContext, PresentDamage};
 use crate::native::{Errc, Error};
+
+use super::WaylandSurfaceHandle;
 // ════════════════════════════════════════════════════════════════════════════
 // wl_egl_window FFI（wayland-egl 客户端库，Linux 系统自带）
 // ════════════════════════════════════════════════════════════════════════════
@@ -22,8 +24,8 @@ struct WlEglWindow {
     _private: [u8; 0],
 }
 
-/// 注意：wayland-egl 不是 khronos-egl 的一部分。
-/// 它在编译期通过 #[link] 与系统 libwayland-egl.so 链接。
+// 注意：wayland-egl 不是 khronos-egl 的一部分。
+// 它在编译期通过 #[link] 与系统 libwayland-egl.so 链接。
 #[link(name = "wayland-egl")]
 extern "C" {
     fn wl_egl_window_create(surface: *mut c_void, width: i32, height: i32) -> *mut WlEglWindow;
@@ -78,7 +80,7 @@ pub struct EglContext {
     /// khronos-egl v6 的静态 API 实例（static 链接到系统 libEGL）
     egl: khronos_egl::Instance<khronos_egl::Static>,
     display: khronos_egl::Display,
-    config: khronos_egl::Config,
+    _config: khronos_egl::Config,
     context: khronos_egl::Context,
     surface: khronos_egl::Surface,
     egl_window: *mut WlEglWindow,
@@ -96,10 +98,11 @@ impl EglContext {
     pub fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self, Error> {
         use khronos_egl as egl;
 
+        let wayland = unsafe { WaylandSurfaceHandle::from_native(native_surface)? };
         let egl = egl::Instance::new(egl::Static);
 
         // 1. 获取 display —— Wayland 下传入 display 连接指针
-        let display = unsafe { egl.get_display(native_surface as egl::NativeDisplayType) }
+        let display = unsafe { egl.get_display(wayland.display as egl::NativeDisplayType) }
             .ok_or_else(|| {
                 Error::new(
                     Errc::PlatformError,
@@ -114,7 +117,7 @@ impl EglContext {
                 format!("EglContext: eglInitialize 失败: {e:?}"),
             )
         })?;
-        crate::core::log::info_fn("EglContext: EGL {major}.{minor}");
+        crate::core::log::info_fn(format!("EglContext: EGL {major}.{minor}"));
 
         // 3. 绑定 API 到 OpenGL ES
         egl.bind_api(egl::OPENGL_ES_API).map_err(|e| {
@@ -156,7 +159,7 @@ impl EglContext {
             .ok_or_else(|| Error::new(Errc::PlatformError, "EglContext: 无可用 EGL 配置"))?;
 
         // 5. 创建 wl_egl_window（Wayland 原生窗口封装）
-        let egl_window = unsafe { wl_egl_window_create(native_surface, width, height) };
+        let egl_window = unsafe { wl_egl_window_create(wayland.surface, width, height) };
         if egl_window.is_null() {
             return Err(Error::new(
                 Errc::PlatformError,
@@ -232,7 +235,7 @@ impl EglContext {
         Ok(Self {
             egl,
             display,
-            config,
+            _config: config,
             context,
             surface,
             egl_window,
@@ -297,7 +300,7 @@ impl IGraphicsContext for EglContext {
                 if let Some(swap_with_damage) = self.swap_with_damage {
                     let mut flat = Vec::with_capacity(rects.len() * 4);
                     for (x, y, w, h) in &rects {
-                        flat.push(*x, *y, *w, *h);
+                        flat.extend_from_slice(&[*x, *y, *w, *h]);
                     }
                     let ok = unsafe {
                         swap_with_damage(

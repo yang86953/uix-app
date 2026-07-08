@@ -18,6 +18,7 @@ use super::bindings::{MSG, POINT, RECT, WNDCLASSEXW};
 #[link(name = "kernel32")]
 extern "system" {
     pub(super) fn GetModuleHandleW(lpModuleName: *const u16) -> *mut std::ffi::c_void;
+    pub(super) fn GetLastError() -> u32;
 
     pub(super) fn GlobalAlloc(uFlags: u32, dwBytes: usize) -> *mut std::ffi::c_void;
     pub(super) fn GlobalLock(hMem: *mut std::ffi::c_void) -> *mut std::ffi::c_void;

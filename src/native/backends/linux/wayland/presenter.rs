@@ -12,6 +12,7 @@ use std::os::unix::io::AsRawFd;
 use wayland_client::protocol::{wl_callback, wl_compositor, wl_shm, wl_surface};
 use wayland_client::Main;
 
+use crate::core::Error;
 use crate::native::traits::present::IPresenter;
 use crate::native::traits::present::PresentDamage;
 

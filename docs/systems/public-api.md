@@ -72,7 +72,7 @@ prelude **仅**导出平台工厂与跨层输入枚举；上层 **禁止** `use 
 
 `create_gpu_context_with_backend` 仍是 native factory 低层入口，不进入 prelude。
 
-`GraphicsBackend::D3d11` 在 Windows 上选择 D3D11 swapchain present 路径；对外仍只通过 `App::graphics_backend(...)` opt-in，不暴露 `native::backends::windows::*`。
+`GraphicsBackend::D3d11` 在 Windows 上选择 D3D11 swapchain present 路径；`GraphicsBackend::Vulkan` 在 Linux Wayland 上选择 Vulkan swapchain present 路径；对外仍只通过 `App::graphics_backend(...)` opt-in，不暴露 `native::backends::*`。
 
 ---
 
