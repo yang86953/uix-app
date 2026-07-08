@@ -30,9 +30,9 @@ use crate::ui::widgets::{
 };
 use crate::ui::ComponentId;
 use crate::ui::{
-    ComponentConfigSnapshot, EventHandler, SnapshotCollapsePanel, SnapshotFields, SnapshotSource,
-    SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode, SnapshotValue, SystemEvent,
-    WidgetAnimation, WidgetLayout,
+    AccessibilityRole, ComponentConfigSnapshot, EventHandler, SnapshotCollapsePanel,
+    SnapshotFields, SnapshotSource, SnapshotTableColumn, SnapshotTransferItem, SnapshotTreeNode,
+    SnapshotValue, SystemEvent, WidgetAnimation, WidgetLayout,
 };
 
 component! {
@@ -177,6 +177,32 @@ fn component_config_snapshot_uses_typed_fields_for_component_builtin() {
             error_level: 2,
         }
     );
+}
+
+#[test]
+fn component_config_snapshot_derives_accessibility_metadata() {
+    let button = Button::new("Save").disabled(true);
+    let snapshot = ComponentConfigSnapshot::from_component(ComponentId::new(10), &button);
+    let accessibility = snapshot.accessibility();
+
+    assert_eq!(accessibility.role, AccessibilityRole::Button);
+    assert_eq!(accessibility.name.as_deref(), Some("Save"));
+    assert!(accessibility.state.disabled);
+
+    let checkbox = Checkbox::new("Agree").checked(true);
+    let accessibility =
+        ComponentConfigSnapshot::from_component(ComponentId::new(11), &checkbox).accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Checkbox);
+    assert_eq!(accessibility.name.as_deref(), Some("Agree"));
+    assert_eq!(accessibility.state.checked, Some(true));
+
+    let slider = Slider::new().range(0.0, 10.0).value(4.0);
+    let accessibility =
+        ComponentConfigSnapshot::from_component(ComponentId::new(12), &slider).accessibility();
+    assert_eq!(accessibility.role, AccessibilityRole::Slider);
+    assert_eq!(accessibility.state.value_now, Some(4.0));
+    assert_eq!(accessibility.state.value_min, Some(0.0));
+    assert_eq!(accessibility.state.value_max, Some(10.0));
 }
 
 #[test]
