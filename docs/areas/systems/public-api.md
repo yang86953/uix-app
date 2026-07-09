@@ -8,6 +8,7 @@
 
 | 分组 | 章节 |
 |------|------|
+| 应用作者路径 | [从目标到代码](#从目标到代码) · [全栈最小路径](#应用作者--全栈最小路径) |
 | 入口与宏 | [入口](#入口) |
 | core | [core](#core) |
 | native | [native](#native) |
@@ -21,7 +22,59 @@
 | App | [App 与运行时](#app-与运行时) |
 | 域外符号 | [未经 prelude 导出](#未经-prelude-导出) |
 
-**关联**：[application](application.md) · [view-reactive](view-reactive.md) · [component](component.md) · [glossary · prelude](../../glossary.md#架构)
+**关联**：[application](application.md) · [view-reactive](view-reactive.md) · [component](component.md) · [glossary · prelude](../../glossary.md#架构) · [project · 产品愿景](../../project.md#产品愿景)
+
+---
+
+<a id="从目标到代码"></a>
+
+## 从目标到代码
+
+> **~15 分钟路径**：从 UIX 存在理由到可运行 Counter。愿景详述 → [project · 产品愿景](../../project.md#产品愿景)。
+
+| 步 | 读什么 | 做什么 |
+|----|--------|--------|
+| 1 | [#105 零闲置](../../decisions.md#d105) · [demand-driven · 设计美学](demand-driven.md#设计美学最高规则-105) | 理解「有触发才工作」— 空闲时主循环休眠，非轮询 |
+| 2 | [view-reactive · State](view-reactive.md) | `State::new(0)` 创建响应式状态；`.get()` / `.set()` 驱动 UI |
+| 3 | [layout · Column](layout.md) | `column([...]).gap(12).padding(16)` 垂直排列子 View |
+| 4 | [README Counter 示例](../../../README.md#示例) | 复制 `App::new().title(...).root(|| column([...])).run()` 跑通首屏 |
+| 5 | [application · App 定时](application.md#app-定时-api) | 需要周期更新 → `run_interval`；demo **应用能力** 页（`demo/runtime.rs`） |
+| 6 | 本页 [内置 Widget](#内置-widget) | 查 prelude 导出；自定义 → `component!` |
+
+**下一步**：完整 API 清单见下方各节；行为语义 → 对应系统文档；设计名 vs 源码名 → [glossary · 术语对照](../../glossary.md#术语对照)。
+
+<a id="应用作者--全栈最小路径"></a>
+
+### 应用作者 · 全栈最小路径
+
+> **全栈边界**（[#166](../../decisions.md#d166)）：客户端栈 = `ui` + `app` + `data`（Settings KV）；网络/同步不在当前范围。三域最小接线：
+
+```rust
+use uix::prelude::*;
+use std::time::Duration;
+
+fn main() {
+    let status = State::new(String::from("ready"));
+    App::new()
+        .title("全栈最小路径")
+        .settings("app.json")  // data：run() 前 opt-in 加载并注入 DI
+        .on_start(move |handle| {
+            // app：Timer 主线程周期任务
+            let _tick = handle.run_interval(Duration::from_secs(1), {
+                let h = handle.clone();
+                move || h.post_to_ui(move || status.set("tick".into()))
+            });
+        })
+        .root(move || label(&status.get()))
+        .run();
+}
+```
+
+| API | 域 | 说明 |
+|-----|-----|------|
+| `.settings(path)` | `data` | 启动前 load 一次；运行中 save 由业务显式调用 → [data · App 集成](data.md#app-集成) |
+| `run_interval` / `run_after` | `app` | 主线程 Timer；内部 register ActiveWork → [application · App 定时](application.md#app-定时-api) |
+| `post_to_ui` | `app` | 跨线程投递主线程闭包；成功入队 wake loop → [application · post_to_ui](application.md#post_to_ui) |
 
 ---
 
@@ -71,9 +124,9 @@ prelude **仅**导出平台工厂与跨层输入枚举；上层 **禁止** `use 
 
 窗口 / 事件 / 呈现 trait → [platform](platform.md#traits-清单)。
 
-`create_gpu_context_with_backend` 仍是 native factory 低层入口，不进入 prelude。
+`create_gpu_context_with_backend` 仍是 native factory **单条目**低层入口（无 probe 循环；`Auto` 须 bootstrap），不进入 prelude。
 
-`GraphicsBackend::D3d11` 在 Windows 上选择 D3D11 swapchain present 路径；`GraphicsBackend::Vulkan` 在 Linux Wayland 上选择 Vulkan swapchain present 路径；对外仍只通过 `App::graphics_backend(...)` opt-in，不暴露 `native::backends::*`。
+`GraphicsBackend::D3d11` 在 Windows 上选择 D3D11 context；`GraphicsBackend::Vulkan` 在 Linux Wayland 上选择 Vulkan context；`GraphicsBackend::Metal` 在 macOS 上选择 Metal context（feature `metal`）。各 context 声明 **默认预设** `caps().pipeline`（当前 D3D11/Vulkan/Metal → `CpuUploadPresent`；OpenGL ES → `NativeGpuRaster`）— **非** API 永久能力上限（#168）。选型由 `draw::bootstrap_graphics_engine` 完成；对外仍只通过 `App::graphics_backend(...)` opt-in，不暴露 `native::backends::*`。
 
 ---
 
@@ -135,7 +188,7 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | `semantic_handler!` | 显式列出 `state` / `computed` / `window` capture 并生成稳定 fingerprint |
 | `AppState` · `ComponentHandle` | 跨窗共享 registry + lookup handle（[#145](../../decisions.md#d145)） |
 | `ComponentConfigSnapshot` · `SnapshotSource` · `SnapshotFields` · `SnapshotValue` 等 | 配置快照提取 |
-| `AccessibilityRole` · `AccessibilityState` · `AccessibilitySnapshot` · `AriaAttribute` | 无障碍 v2 基础元数据：由配置快照派生 role/name/state，并导出静态 ARIA role/attribute |
+| `AccessibilityRole` · `AccessibilityState` · `AccessibilitySnapshot` · `AriaAttribute` | 无障碍基础元数据：由配置快照派生 role/name/state，并导出静态 ARIA role/attribute |
 | `PaintContext` | 组件 render 上下文 |
 | `IntoWidgetNode` · `WidgetChildren` | 树节点转换 |
 
@@ -221,4 +274,4 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | `uix::app::event_loop` | `run_widget_loop` | 绕过 `App` 的主循环入口 |
 | `uix::native::traits::*` | Platform traits | 平台集成测试；生产 UI **禁止** backends |
 
-功能域全貌 → [architecture · 功能域](../architecture.md#功能域--系统) · 迁移锚点 → [CHANGELOG](../../../CHANGELOG.md)。
+功能域全貌 → [architecture · 功能域](../architecture.md#功能域--系统)。

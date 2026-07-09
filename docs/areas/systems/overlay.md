@@ -28,7 +28,7 @@ struct OverlayEntry {
     id: OverlayId,
     owner: ComponentId,
     kind: OverlayKind,
-    bounds: Rect,
+    bounds: Option<Rect>,
     z_index: i32,
     modal: bool,
     dismiss_on_outside: bool,
@@ -65,7 +65,7 @@ struct OverlayEntry {
 |-------------|------|------|
 | **Modal** | #97 | `modal=true`, `focus_trap=true`；遮罩 + 独立子树 |
 | **Drawer** | — | 侧边滑出；默认可 dismiss outside |
-| **Tooltip** | #96 #111 | v1 完整组件；**框架内** Timer register 延迟显示；非 modal |
+| **Tooltip** | #96 #111 | 完整组件；**框架内** Timer register 延迟显示；非 modal |
 | **ContextMenu** | #98 | 右键 Semantic → 160×160 默认菜单 overlay |
 | **Popover** | — | 定位浮层 |
 | Message / Notification | — | 轻提示 |
