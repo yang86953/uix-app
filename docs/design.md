@@ -216,7 +216,7 @@ Active 帧的项目级顺序为：事件映射与派发 → 到期 Timer / 主�
 
 ## Rollout And Validation
 
-当前证据（2026-07-10，基于 `a517ac3` 后的未提交工作树）：`cargo test --all-targets` 为 lib **1021/1021**、demo **17/17**；Windows default/no-default/all-features 与 Linux/macOS default/all-features `cargo check` 全部通过；`cargo clippy --all-targets`、严格文档检查通过。详见 [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10)。自动化/编译 gate 已恢复，但 Windows GPU/Software 双路径 GUI smoke、硬件矩阵与 P0 生产阻塞清零仍未完成，因此 P6 尚未达到 `production`。
+当前证据（2026-07-10，基于当前工作树）：`cargo test --all-targets` 为 lib **1024/1024**、demo **17/17**；Windows default/no-default/all-features 与 Linux/macOS default/all-features `cargo check` 全部通过；`cargo clippy --all-targets`、严格文档检查通过。详见 [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10)。自动化/编译 gate 已恢复，但 Windows GPU/Software 双路径 GUI smoke、硬件矩阵与 P0 生产阻塞清零仍未完成，因此 P6 尚未达到 `production`。
 
 | 步骤 | 目的 | 验证 |
 |------|------|------|
