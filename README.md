@@ -1,6 +1,10 @@
 ﻿# UIX
 
-Rust 跨平台原生桌面 UI 框架（Windows / Linux）。`use uix::prelude::*;` 为推荐入口。
+Rust **跨平台（桌面 + 移动端）全栈 App 开发框架**。`use uix::prelude::*;` 为推荐入口。
+
+**Web 式声明 UI + 原生性能 + 零闲置 + 全栈** — 用 View + State 描述界面，跑在原生窗口与渲染管线上；`app` 运行时与 `data` 持久化构成客户端全栈；空闲时不空转（[#105](docs/decisions.md#d105)）。
+
+> **当前阶段**：桌面 **Windows / Linux / macOS** 已编码并在 P6 生产级对齐中（**Windows 优先**交付，[#167](docs/decisions.md#d167)）；**移动端尚未实现**。愿景与实现对照 → [`docs/project.md`](docs/project.md#当前阶段-vs-目标愿景) · 15 分钟上手 → [`public-api · 从目标到代码`](docs/areas/systems/public-api.md#从目标到代码)。
 
 ## 核心理念
 
@@ -32,7 +36,7 @@ Linux GUI 需 Wayland 会话。
 | GUI（默认） | `cargo run --bin uix-demo` | 11 页多页应用：Gallery 覆盖矩阵、App Timer/Theme、全部内置 Widget |
 | CLI | `--cli` | 各功能域 API 无 GUI 演示 |
 
-公开 API 清单 → [`docs/areas/systems/public-api.md`](docs/areas/systems/public-api.md) · 设计文档 → [`docs/areas/architecture.md`](docs/areas/architecture.md) · 变更记录 → [`CHANGELOG.md`](CHANGELOG.md)
+公开 API 清单 → [`docs/areas/systems/public-api.md`](docs/areas/systems/public-api.md) · 设计文档 → [`docs/areas/architecture.md`](docs/areas/architecture.md)
 
 ## 示例
 

@@ -15,7 +15,7 @@
 | 动画 | [动画](#动画) | #83 |
 | 内置库 | [内置 Widget 目录](#内置-widget-目录) | #58 #80 #99 |
 | Authoring | [Authoring](#authoring) | #20 #102 |
-| Button v1 | [Button v1](#button-v1) | #23 #30 #77 |
+| Button | [Button](#button) | #23 #30 #77 |
 | 标脏 | [标脏规则](#标脏规则) | #9 #105 #107 #122 |
 | 未实现或后续 | [未实现或后续](#未实现或后续) | #99 |
 | 模块图 | [ui 域模块图](#ui-域模块图) | — |
@@ -32,8 +32,8 @@
 | 颜色来自主题 | `ColorValue::palette` / `neutral`；Custom 仅 debug lint（#3） |
 | 回调不进 struct | 业务 handler 在 HandlerTable，不在组件字段（#10） |
 | 无 variant enum | 外观差异用 StyleSet 预设（#16） |
-| 能力拆分 trait | Layout / Render / Event / Lifecycle / Animation 按需 impl |
-| 无障碍 | **v2**（[#99](../../decisions.md#d99)）；v1 不做 ARIA、屏幕阅读器、键盘导航扩展 |
+| 能力拆分 trait | Layout / Render / Event / Lifecycle / Animation 按需 impl — **全框架可组合模型参照**（[#168](../../decisions.md#d168)） |
+| 无障碍 | 静态 ARIA 映射与键盘导航已落地（[#99](../../decisions.md#d99)）；屏幕阅读器平台桥待后续 |
 
 **struct 放**：配置、交互态（hover/pressed/disabled）、StyleSet。  
 **struct 不放**：业务闭包、`on_click` 字段、variant 枚举。
@@ -90,7 +90,7 @@ Inactive 组件跳过大部分语义派发，Lifecycle 进入 inactive。
 设计（#146）— mount 时从 widget 实例提取的 **只读配置快照**，供 `ComponentHandle` getter 与 AppState 注册表使用。
 
 ```rust
-// app/state/component_snapshot.rs（设计）
+// ui/component_snapshot.rs（设计）
 pub struct ComponentConfigSnapshot {
     pub id: ComponentId,
     pub widget_type: TypeId,
@@ -118,11 +118,11 @@ enum SnapshotFields {
 | **unmount** | `AppState.unregister(id)` |
 | Handle getter | `handle.label()` 读 snapshot；**不**读 live widget 交互态 |
 
-> **无障碍 v2 基础元数据**：`ComponentConfigSnapshot::accessibility()` / `ComponentHandle::accessibility()` 已从 `SnapshotFields` 派生 `AccessibilityRole`、可访问名称与状态（disabled / checked / value / required 等），并可通过 `aria_role()` / `aria_attributes()` 导出静态 ARIA role/attribute。键盘导航已复用 `FocusManager` 与 `tab_index`，支持 Tab / Shift+Tab 焦点链、浮层焦点陷阱以及 Enter / Space → `SemanticKind::Click`。该层仍只读取 authoring 配置与可序列化 props，不纳入 hover / pressed / focused / live text；屏幕阅读器平台桥仍属后续工作。
+> **无障碍基础元数据**：`ComponentConfigSnapshot::accessibility()` / `ComponentHandle::accessibility()` 已从 `SnapshotFields` 派生 `AccessibilityRole`、可访问名称与状态（disabled / checked / value / required 等），并可通过 `aria_role()` / `aria_attributes()` 导出静态 ARIA role/attribute。键盘导航已复用 `FocusManager` 与 `tab_index`，支持 Tab / Shift+Tab 焦点链、浮层焦点陷阱以及 Enter / Space → `SemanticKind::Click`。该层仍只读取 authoring 配置与可序列化 props，不纳入 hover / pressed / focused / live text；屏幕阅读器平台桥仍属后续工作。
 
 自定义 widget：见 [SnapshotSource](#snapshotsource)（#151）。
 
-> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出，`ComponentConfigSnapshot::id` 与 `from_component(id, ..)` 已按 `ComponentId` 命名；Button / Label / Input / Container / Grid / Space / Divider / Icon / Typography / Checkbox / Radio / Switch / Slider / Rate / InputNumber / Avatar / Badge / Card / Empty / Image / Tag / Timeline / Calendar / Skeleton / FloatButton / Alert / Message / Notification / ProgressBar / Spin / Tooltip / Popover / Popconfirm / Modal / Drawer / Layout / Header / Sider / Content / Footer / Splitter / Affix / BackTop / Breadcrumb / Pagination / Anchor / Menu / Dropdown / Tabs / Steps / NavItem / Tree / List / Collapse / Carousel / Select / AutoComplete / TreeSelect / Cascader / ColorPicker / DatePicker / TimePicker / Mentions / Segmented / FormItem / Form / Descriptions / Result / Table / SelectableList / ScrollView / BarChart / LineChart / PieChart / QRCode / RichText / ThemeToggle / Transfer / Upload / Watermark 已手写静态配置提取，并排除 hover / pressed / focused / cursor / selection / pending event / layout cache / resource cache / queue / visible / transition / animation phase / scroll / current page / active tab / selected key / expanded panel / dragging / popup open / typed query / validation status / table sort/filter active state / selected transfer item / transfer runtime membership / upload file queue 等运行态。`ComponentHandle` 已可读取当前组件快照与类型化 getter（`text` / `label` / `placeholder` / `disabled` / `checked` / `numeric_value`）；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`component!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接；`component! { name: ..., struct ... }` 与 `component! { struct ... }` 已直接复用该路径。
+> **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；全部 86 个内置 widget 均已手写静态配置提取（排除 hover、pressed、focused、scroll、animation phase 等运行态）。`ComponentHandle` 已可读取类型化 getter（`text` / `label` / `placeholder` / `disabled` / `checked` / `numeric_value`）；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`component!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接。覆盖清单 → [implementation · 组件 snapshot](../implementation.md#组件-snapshot-覆盖)。
 
 ### SnapshotSource（#151）
 
@@ -165,7 +165,7 @@ impl SnapshotSource for Rating {
 
 内置 widget：框架为各类型手写 `SnapshotFields` 变体；与 #146 `enum SnapshotFields` 对齐。
 
-> **实现注记**：内置提取已覆盖 Button、Label、Input、Container、Grid、Space、Divider、Icon、Typography、Checkbox、Radio、Switch、Slider、Rate、InputNumber、Avatar、Badge、Card、Empty、Image、Tag、Timeline、Calendar、Skeleton、FloatButton、Alert、Message、Notification、ProgressBar、Spin、Tooltip、Popover、Popconfirm、Modal、Drawer、Layout、Header、Sider、Content、Footer、Splitter、Affix、BackTop、Breadcrumb、Pagination、Anchor、Menu、Dropdown、Tabs、Steps、NavItem、Tree、List、Collapse、Carousel、Select、AutoComplete、TreeSelect、Cascader、ColorPicker、DatePicker、TimePicker、Mentions、Segmented、FormItem、Form、Descriptions、Result、Table、SelectableList、ScrollView、BarChart、LineChart、PieChart、QRCode、RichText、ThemeToggle、Transfer、Upload、Watermark；`component!` 自定义 widget 已自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，且支持 `#[snapshot(skip)]` 排除 pub 字段；`component!` 已支持文档示例的 `name: ..., struct ...` 入口和直接 `struct ...` 入口，并直接生成同一提取路径。
+> **实现注记**：全部 86 个内置 widget 已覆盖（清单同 [ComponentConfigSnapshot 实现注记](#componentconfigsnapshot)）；`component!` 自定义 widget 自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，支持 `#[snapshot(skip)]` 排除。
 
 ### #[snapshot(skip)]（#152）
 
@@ -268,15 +268,15 @@ WidgetTree
 
 按 Ant Design 分类（#58 Big Bang）；`use uix::prelude::*` 导出完整清单如下。各 Widget 遵循本系统 trait 契约。
 
-> 完整 **snapshot** 覆盖清单（约 80 个 `component!` widget）见 [ComponentConfigSnapshot · 实现注记](#componentconfigsnapshot)。
+> 完整 **snapshot** 覆盖清单（86 个 `component!` widget）见 [ComponentConfigSnapshot · 实现注记](#componentconfigsnapshot)。
 
-**v1 共性**：除 Button 为 reference impl（[#58](../../decisions.md#d58)）外，带 `component!` 的内置 widget 均为 Big Bang 落地（#80）；**Navigation** / **NavGroup** 等为 builder/compositor（无 `component!`、无 snapshot）。**无障碍 v2** 统一待 [#99](../../decisions.md#d99)（v1 不做 ARIA / 屏幕阅读器 / 键盘导航扩展；v2 已具备静态 ARIA 映射与键盘导航）。
+**共性**：除 Button 为 reference impl（[#58](../../decisions.md#d58)）外，带 `component!` 的内置 widget 均为 Big Bang 落地（#80）；**Navigation** / **NavGroup** 等为 builder/compositor（无 `component!`、无 snapshot）。**无障碍**见 [#99](../../decisions.md#d99)：静态 ARIA 映射与键盘导航已落地；屏幕阅读器平台桥待后续。
 
 **浮层列**：✓ = 参与 [OverlayStack](overlay.md) 或 `overlay_entry` 调度。
 
 ### 通用 general（`widgets/general/`）
 
-| Widget | 浮层/Overlay | v1 备注 |
+| Widget | 浮层/Overlay | 备注 |
 |--------|:------------:|---------|
 | Button | | reference impl（#58） |
 | Icon | | Big Bang |
@@ -290,7 +290,7 @@ WidgetTree
 
 ### 布局 containers（`widgets/containers/`）
 
-| Widget | 浮层/Overlay | v1 备注 |
+| Widget | 浮层/Overlay | 备注 |
 |--------|:------------:|---------|
 | Container | | Big Bang |
 | Grid | | Big Bang |
@@ -305,7 +305,7 @@ WidgetTree
 
 ### 导航 navigation（`widgets/navigation/`）
 
-| Widget | 浮层/Overlay | v1 备注 |
+| Widget | 浮层/Overlay | 备注 |
 |--------|:------------:|---------|
 | Menu | | Big Bang |
 | MenuItem | | 项辅助 |
@@ -327,7 +327,7 @@ WidgetTree
 
 ### 输入 input（`widgets/input/`）
 
-| Widget | 浮层/Overlay | v1 备注 |
+| Widget | 浮层/Overlay | 备注 |
 |--------|:------------:|---------|
 | Input | | Big Bang |
 | InputNumber | | Big Bang |
@@ -353,7 +353,7 @@ WidgetTree
 
 ### 数据展示 display（`widgets/display/`）
 
-| Widget | 浮层/Overlay | v1 备注 |
+| Widget | 浮层/Overlay | 备注 |
 |--------|:------------:|---------|
 | Card | | Big Bang |
 | List | | Big Bang |
@@ -382,7 +382,7 @@ WidgetTree
 
 ### 反馈 feedback（`widgets/feedback/`）
 
-| Widget | 浮层/Overlay | v1 备注 |
+| Widget | 浮层/Overlay | 备注 |
 |--------|:------------:|---------|
 | Modal | ✓ | Big Bang |
 | Drawer | ✓ | Big Bang |
@@ -397,7 +397,7 @@ WidgetTree
 
 ### 其他 other（`widgets/other/`）
 
-| Widget | 浮层/Overlay | v1 备注 |
+| Widget | 浮层/Overlay | 备注 |
 |--------|:------------:|---------|
 | ScrollView | | Big Bang（#73） |
 | ScrollDirection | | 枚举辅助 |
@@ -456,7 +456,9 @@ component! {
 
 ---
 
-## Button v1
+<a id="button"></a>
+
+## Button
 
 | 属性 | 规则 |
 |------|------|
@@ -522,7 +524,7 @@ App / View **不**配置 Picture；调用方零维护。
 
 ## 未实现或后续
 
-本域相关项（无障碍 v2 剩余：屏幕阅读器平台桥）→ [implementation · 后续工作](../implementation.md#后续工作)。设计细节见 [内置 Widget 目录](#内置-widget-目录)、[PicturePolicy 元数据](#picturepolicy-元数据122)。排期 → [implementation · 后续工作](../implementation.md#后续工作)。
+本域相关项（无障碍剩余：屏幕阅读器平台桥）→ [implementation · 后续工作](../implementation.md#后续工作)。设计细节见 [内置 Widget 目录](#内置-widget-目录)、[PicturePolicy 元数据](#picturepolicy-元数据122)。排期 → [implementation · 后续工作](../implementation.md#后续工作)。
 
 ---
 

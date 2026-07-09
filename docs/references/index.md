@@ -7,7 +7,6 @@
 | 参考 | 用途 |
 |------|------|
 | [README.md](../../README.md) | 面向用户的项目介绍、快速开始与示例 |
-| [CHANGELOG.md](../../CHANGELOG.md) | 版本与迁移锚点 |
 | [demo/README.md](../../demo/README.md) | 演示程序模式、页面和运行说明 |
 | [AGENTS.md](../../AGENTS.md) | AI 工作规则、架构硬约束和文档维护规则 |
 

@@ -19,7 +19,7 @@ demo/src/
 ├── main.rs          # 薄入口：gui | cli
 ├── gui/             # 多页 GUI 壳层：分组侧边栏、Timer、动画 time
 ├── cli/             # core/native/draw/ui/app/data CLI
-├── demos/           # 11 个内容页
+├── demos/           # 12 个内容页（含 dashboard/ 子页）
 │   ├── home.rs      # 首页：入门 + 快捷导航
 │   ├── runtime.rs   # 应用能力（State/Timer/Theme/View DSL）
 │   ├── general.rs   # 通用 widgets
@@ -42,7 +42,7 @@ demo/src/
 
 | 模式 | 命令 | 说明 |
 |------|------|------|
-| **GUI（默认）** | `cargo run --bin uix-demo` | 11 页多页应用：80+ Widget + App 能力全景 |
+| **GUI（默认）** | `cargo run --bin uix-demo` | 12 页多页应用：80+ Widget + App 能力全景 |
 | **CLI** | `--cli` | `core` / `native` / `draw` / `ui` / `app` / `data` 无 GUI API |
 
 ## 侧边栏分组
@@ -91,12 +91,22 @@ demo/src/
 
 | 项 | 原因 |
 |----|------|
-| 无障碍 v2 (#99) | v1 刻意不做 ARIA / 键盘导航扩展 |
-| macOS 平台 | `create_platform()` 无 macOS backend |
-| Handler 宏 fingerprint (#159) | 语法层待设计 |
+| 屏幕阅读器桥 (#99) | v1 基线（role/name/state、键盘导航）已落地；屏幕阅读器 **平台桥** 待后续 |
+| macOS 原生验证 | AppKit backend 与 Metal CpuUpload **已实现**；真机运行验证待完成（与 Win/Linux 对等目标） |
+| Handler 宏 fingerprint (#159) | `semantic_handler!` 语法层待完善；手写 capture list 可用 |
 | 错误 Toast 自动 overlay (#89) | Notification 数据与组件已落地；框架级自动 overlay 挂载待产品化 |
 | 多窗口 live demo | API 存在；单进程多窗 demo 待产品化，覆盖清单有说明 |
 | `follow_system_theme` 自动跟 OS | 可 demo 说明；默认 false，需 `.follow_system_theme(true)` 体验 live 切换 |
+
+## 从目标到代码（~15 分钟）
+
+应用作者快速路径（与 [public-api · 从目标到代码](../docs/areas/systems/public-api.md#从目标到代码) 一致）：
+
+1. **为什么** — [#105 零闲置](../docs/decisions.md#d105)：`App::run()` 空闲时不空转；Timer/动画由框架 register。
+2. **声明 UI** — `State::new` + `dynamic_label` + `button`；见 [README Counter 示例](../README.md#示例)。
+3. **布局** — `column([...]).gap(12).padding(16)`；更多 → [layout.md](../docs/areas/systems/layout.md)。
+4. **运行** — `App::new().title(...).root(|| ...).run()`；Timer/Theme → demo **应用能力** 页（`runtime.rs`）。
+5. **深入** — [view-reactive.md](../docs/areas/systems/view-reactive.md) · [application.md](../docs/areas/systems/application.md) · [component.md](../docs/areas/systems/component.md)。
 
 ## CLI 演示项
 
@@ -108,7 +118,7 @@ demo/src/
 cargo test --bin uix-demo
 ```
 
-- 全部 11 页 `build_page` smoke test
+- 全部 12 页 `build_page` smoke test
 - GUI 壳层 layout
 - Gallery 覆盖条目数量
 - 首页 build + 页面切换 reconcile

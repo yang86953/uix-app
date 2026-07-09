@@ -11,7 +11,7 @@
 | [已落地阶段（P0–P5）](#已落地阶段p0p5) | 分阶段目标与验收摘要 |
 | [实现进度总览](#实现进度总览) | 已落地能力按域汇总 |
 | [后续工作](#后续工作) | 未实现 backlog（权威清单） |
-| [P6 图形后端](#p6-图形后端) | 多图形 API 落地阶段（#162） |
+| [P6 生产级框架](#p6-生产级框架) | 生产级优先项、图形后端里程碑、P6.8 可组合渲染轴 |
 | [源码目录详表](#源码目录详表) | `src/` 路径与系统文档映射 |
 | [维护](#维护) | 文档同步约定 |
 
@@ -40,11 +40,11 @@ P4 多窗                P5 组件 Handle 体系
 ├─ update_view #149    ├─ Handle emit #147
 └─ State fan-out #150  └─ ComponentId #101
 
-P6 图形后端（规划）    ← #162，详见下文
-├─ GraphicsBackend 枚举 + factory probe
+P6 图形后端            ← #162 #163，详见下文
+├─ GraphicsBackend 枚举 + registry probe
 ├─ Windows D3D11/12
 ├─ Linux Vulkan
-└─ macOS AppKit SoftwareEngine bootstrap + Metal
+└─ macOS Metal + AppKit SoftwareEngine bootstrap
 ```
 
 | 阶段 | 目标 | 关键决策 | 验收（已达成） |
@@ -81,7 +81,7 @@ P6 图形后端（规划）    ← #162，详见下文
 
 | 能力 | 要点 | 文档 |
 |------|------|------|
-| 生产后端 | Windows、Linux Wayland；macOS AppKit SoftwareEngine bootstrap；`create_platform()` | [platform](systems/platform.md) |
+| 生产后端 | **Windows、Linux Wayland、macOS**（AppKit + Metal CpuUpload）；`create_platform()` 三平台 backend 均已编码；**交付优先级 Windows 优先**（[#167](../decisions.md#d167)） | [platform](systems/platform.md) |
 | 测试后端 | `FakePlatform` 完整 trait 实现 | [platform · 测试](systems/platform.md#测试平台) · [testing](systems/testing.md) |
 | 事件循环 | `IEventLoop`；`EventLoopWaker` 外部线程 wake | [platform · 事件模型](systems/platform.md#ieventloop) |
 | 窗口可选能力 | `WindowOps` 返回 `Result`；未支持记 `NotImplemented` | [platform · 窗口可选能力](systems/platform.md#窗口可选能力) |
@@ -123,7 +123,7 @@ P6 图形后端（规划）    ← #162，详见下文
 | component! | 推荐 authoring；`SnapshotSource` 自动提取；`#[snapshot(skip)]` | [component · Authoring](systems/component.md#authoring) |
 | 无障碍快照元数据 | `ComponentConfigSnapshot::accessibility()` / `ComponentHandle::accessibility()` 派生 role、name、state，并提供静态 ARIA role/attribute 导出 | [component · ComponentConfigSnapshot](systems/component.md#componentconfigsnapshot) · [#99](../decisions.md#d99) |
 | Manager 横切 | Focus / Interaction / Drag per-tree | [component · Manager](systems/component.md#manager-横切) |
-| 内置 Widget | 80+ Big Bang；OverlayStack（Modal / Tooltip / 菜单等） | [component · 内置 Widget](systems/component.md#内置-widget-目录) · [overlay](systems/overlay.md) |
+| 内置 Widget | 86 个 Big Bang；OverlayStack（Modal / Tooltip / 菜单等） | [component · 内置 Widget](systems/component.md#内置-widget-目录) · [overlay](systems/overlay.md) |
 | 事件 | HandlerTable（`ComponentId` key）；PointerMove 窄路径 | [event](systems/event.md) |
 | 主题样式 | Theme / StyleSet 五态；`follow_system_theme` opt-in | [theme-style](systems/theme-style.md) |
 
@@ -136,37 +136,109 @@ P6 图形后端（规划）    ← #162，详见下文
 | 帧内合并（#118） | UiEvent → due work → post_to_ui → reconcile → layout → render | [demand-driven · 帧内合并](systems/demand-driven.md#帧内合并) |
 | 开发者零维护（#130） | 调用方不维护 Picture 名单、Registry、标脏范围 | [demand-driven · 开发者契约](systems/demand-driven.md#开发者契约零维护) |
 
+<a id="组件-snapshot-覆盖"></a>
+
+### 组件 Snapshot 覆盖
+
+全部 86 个内置 widget 均已手写 `SnapshotSource` 静态配置提取，排除 hover / pressed / focused / scroll / animation phase 等运行态。
+
+| 分类 | 已覆盖 Widget |
+|------|---------------|
+| general | Button, Icon, Typography, Label, Divider, Space, FloatButton |
+| containers | Container, Grid, Layout, Header, Sider, Content, Footer, Splitter, Affix, BackTop |
+| navigation | Menu, MenuItem, Tabs, Breadcrumb, BreadcrumbItem, Pagination, Steps, Anchor, AnchorItem, Dropdown |
+| input | Input, InputNumber, Select, Checkbox, Radio, Switch, Slider, Rate, Form, FormItem, TreeSelect, DatePicker, TimePicker, ColorPicker, Cascader, AutoComplete, Mentions, Segmented |
+| display | Card, List, Tree, Carousel, Collapse, Descriptions, Avatar, Badge, Tag, Image, Empty, Result, Skeleton, Timeline, Calendar, Table, SelectableList |
+| feedback | Modal, Drawer, Tooltip, Popover, Popconfirm, Alert, Message, Notification, ProgressBar, Spin |
+| other | ScrollView, BarChart, LineChart, PieChart, QRCode, RichText, ThemeToggle, Transfer, Upload, Watermark |
+
+`component!` 自定义组件自动提取 pub 字段，`#[snapshot(skip)]` 可排除。
+
 ---
 
-<a id="p6-图形后端"></a>
+<a id="p6-生产级框架"></a>
 
-## P6 图形后端
+## P6：生产级框架
 
-**目标**（#162）：在保持 `IGraphicsContext` / `GraphicsEngine` 契约不变的前提下，扩展 **多种 GPU API** 与 factory 选型；选型仅在初始化完成，符合 #105。
+**当前优先级**（[#167](../decisions.md#d167)）：**Windows 优先** — 先把 Windows 端做到 **生产可用**；Linux / macOS parity 与 macOS 原生验证 **随后**；native raster 仍为性能增强 backlog。开发策略摘要 → [project · 开发策略](../project.md#开发策略)。
+
+**图形后端目标**（#162）：在保持 `IGraphicsContext` / `GraphicsEngine` 契约不变的前提下，扩展多种 GPU API 与 factory 选型；选型仅在初始化完成，符合 #105。架构原则 → [graphics-backend-pluggable · 架构原则](systems/graphics-backend-pluggable.md#图形-api-架构原则)（非 P6 任务不必通读全文）。
+
+### 生产级优先项
+
+| 优先 | 项 | 状态 | 说明 |
+|------|-----|------|------|
+| P0 | **Windows 生产可用** | 进行中 | 稳定性、阻塞项、demo/docs 同步；**当前主验证与交付环境**（[#167](../decisions.md#d167)） |
+| P0 | 平台层抹平差异 | 已确立 | 上层无 OS `#[cfg]`；差异仅在 `native` traits 实现 |
+| P1 | Linux / macOS parity | 持续 | backend 已编码；parity 与回归 **Windows 基线达标后**加大权重 |
+| P1 | macOS 原生运行验证 | 待验证 | AppKit backend、Metal CpuUpload、IME 已接；需真机验收 |
+| P1 | demo / docs 与实现同步 | 进行中 | 覆盖矩阵、backlog、公开 API 对齐 |
+| P2 | 无障碍 v1 基线 | 部分 | role/name/state 快照、键盘导航已落地；屏幕阅读器桥待后续 |
+| P1 | D3D11 GPU native raster | backlog | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；`RenderBackendRegistry` + caps 改 `RasterMode::GpuNative` |
+| P2 | native raster（非 Win） | backlog | Metal / D3D12 GPU 光栅 — **增强**，D3D11 之后 |
+| P2 | WebGPU 评估 | backlog | P6.6 远期 |
+
+### 图形后端里程碑
 
 | 里程碑 | 内容 | 状态 |
 |--------|------|------|
-| P6.0 设计 | 抽象分层、平台矩阵、回退链、术语 | ✅ 文档（本文 + rendering/platform/decisions） |
-| P6.1 基线 | `GraphicsBackend` 枚举；factory probe 框架；诊断日志 | ✅ 已实现（Metal 后端仍在 P6.4+） |
-| P6.2 Windows | D3D11 `IGraphicsContext` + CPU upload present；WGL 作次选，D3D12 后续 | ✅ 已实现（D3D12 仍规划） |
-| P6.3 Linux | Vulkan `IGraphicsContext` + CPU upload present；EGL 作次选 | ✅ 已实现 |
-| P6.4 macOS | AppKit `create_platform` + SoftwareEngine CPU present、剪贴板、指针/滚轮/键盘/文本输入事件已接；Metal 与窗口 delegate/完整 IME 后续 | 部分已实现 |
-| P6.5 配置 | App builder / env / Settings opt-in；公开 API 写入 public-api | ✅ 已实现 |
-| P6.6 WebGPU | 远期评估；非 v1 目标 |  backlog |
+| P6.0 设计 | 抽象分层、平台矩阵、回退链、术语 | ✅ |
+| P6.1 基线 | `GraphicsBackend` 枚举；registry 单条目创建 | ✅ |
+| P6.2 Windows | D3D11 CpuUpload + WGL native raster | ✅ |
+| P6.3 Linux | Vulkan CpuUpload + EGL native raster | ✅ |
+| P6.4 macOS | AppKit + Metal CpuUpload context；SoftwareEngine 回退 | 部分 — 原生验证待完成 |
+| P6.5 配置 | App builder / env / Settings opt-in | ✅ |
+| P6.6 WebGPU | 远期评估 | backlog |
+| P6.7 可插拔 registry | registry、Profile 预设分派、present 统一 | ✅ |
+| P6.8 可组合渲染轴 | `RasterMode` × `PresentMode` 替换 Profile；`BackendKind` 统一；表驱动装配 | backlog — [#169](../decisions.md#d169) |
 
-实现细节 → [rendering · 多图形 API](systems/rendering.md#多图形-api) · [platform · 多图形 API 与 factory](systems/platform.md#多图形-api-与-factory)。
+<a id="p68-可组合渲染轴"></a>
+
+### P6.8 可组合渲染轴（#169）
+
+**目标**：以 [#168](../decisions.md#d168) 正交三轴为 **唯一** mental model；`RenderPipelineProfile` **breaking 移除**，分派改 `RasterMode` × `PresentMode`（× `GraphicsBackend`）；`BackendKind` 与上述轴对齐；factory / engine **表驱动正交装配**。
+
+| 优先 | 项 | 状态 | 说明 |
+|------|-----|------|------|
+| P0 | Profile → 正交轴（breaking） | backlog | 删除 `RenderPipelineProfile`；`GraphicsContextCaps` 改 `raster` + `present`；`create_graphics_engine` 按轴 match |
+| P0 | 表驱动 factory / engine 装配 | backlog | registry 行表达 API + 光栅 + present 组合；**禁止** bundled profile 第二套分派 |
+| P1 | D3D11 GPU native raster | backlog | **Windows 优先**（[#167](../decisions.md#d167)）；扩展 `RenderBackendRegistry`；D3D11 context caps → `RasterMode::GpuNative` |
+| P2 | `BackendKind` 统一 | backlog | 与 `RasterMode` / `PresentMode` / `GraphicsBackend` 对齐；消除 Profile 遗留 bundled 语义 |
+| P2 | Metal / D3D12 GPU 光栅 | backlog | D3D11 之后；同 registry + caps 模式 |
+
+<a id="p67-图形后端架构"></a>
+<a id="p67-迁移验收-g1g11--m2m7"></a>
+
+### P6.7 图形后端架构
+
+可插拔 registry 与 **Profile 预设分派**（`RenderPipelineProfile`，#163）已落地；**Profile 已确认 breaking 移除**（[#169](../decisions.md#d169)），目标为 `RasterMode` × `PresentMode` — 见 [#168](../decisions.md#d168) · [P6.8](#p68-可组合渲染轴) · [graphics-backend-pluggable · 可组合渲染轴](systems/graphics-backend-pluggable.md#可组合渲染轴)。`draw::bootstrap_graphics_engine` 为唯一 probe 入口；`create_graphics_engine` **当前**按 profile 分派（过渡）；`native/graphics/<api>/` 为 API 对等实现根目录；`IGraphicsContext::present(PresentFrame)` 为统一 present 契约。
+
+**Backlog**（按 [#169](../decisions.md#d169) 排序；完整分项见 [P6.8](#p68-可组合渲染轴)）：
+
+| 项 | 说明 |
+|----|------|
+| **D3D11 GPU native raster** | **Windows 优先**；`RenderBackendRegistry` + caps → `RasterMode::GpuNative` |
+| Profile → 正交轴（breaking） | 删除 `RenderPipelineProfile`；`RasterMode` × `PresentMode` 分派 |
+| `BackendKind` 统一 | 纳入可组合 refactor，与正交轴对齐 |
+| 表驱动 factory / engine 装配 | registry 正交组合，替代 bundled profile |
+| Metal / D3D12 GPU 光栅 | D3D11 之后；扩展 `RenderBackendRegistry` |
+| D3D12 context | registry `Planned` |
+| WebGPU | P6.6 远期评估 |
+
+实现细节 → [rendering · 多图形 API](systems/rendering.md#多图形-api) · [platform · 多图形 API 与 factory](systems/platform.md#多图形-api-与-factory) · [graphics-backend-pluggable · 架构原则](systems/graphics-backend-pluggable.md#图形-api-架构原则)。
 
 ---
 
 ## 后续工作
 
-**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。P6 图形后端分项见 [P6 图形后端](#p6-图形后端)；其余推进前须人类决策或新决策 #163+。
+**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。P6 分项见 [P6 生产级框架](#p6-生产级框架)；可组合渲染轴见 [P6.8](#p68-可组合渲染轴)；其余推进前须人类决策或新决策 #170+。
 
 | 项 | 说明 | 文档 |
 |----|------|------|
-| 多图形 API（P6） | D3D12 / Metal；更完整 native GPU renderer | [P6 图形后端](#p6-图形后端) · [#162](../decisions.md#d162) |
-| 无障碍 v2 | #99：基础 role/name/state 快照元数据、静态 ARIA 映射与键盘导航已落地；屏幕阅读器桥待后续 | [component](systems/component.md#componentconfigsnapshot) |
-| macOS 平台 | `create_platform()` / AppKit SoftwareEngine bootstrap、剪贴板、基础输入事件已接；Metal、窗口 close/resize delegate、完整 IME 与原生 macOS 运行验证待后续 | [platform · 工厂与后端](systems/platform.md#工厂与后端) · [P6](#p6-图形后端) |
+| **生产级框架（P6 优先）** | **Windows 优先**生产可用；Linux/macOS parity 与 macOS 验证随后。子项含可组合渲染轴（[P6.8](#p68-可组合渲染轴)）、D3D11 GPU raster、macOS 真机验证 | [P6 生产级框架](#p6-生产级框架) |
+| **移动端（P7+ backlog）** | **未实现**。目标 iOS / Android 原生 backend；复用 `ui`/`app`/`draw` trait 与零闲置主循环；须 [#166](../decisions.md#d166) 后分阶段切片 | [project · 当前阶段 vs 目标](../project.md#当前阶段-vs-目标愿景) · [plan · P7+](../plan.md#里程碑与工作域) |
+| **全栈扩展（backlog）** | **部分**：`data` 仅 Settings KV（opt-in）。**未实现**：网络层、HTTP 客户端、数据同步、服务端集成 | [data](systems/data.md) · [#166](../decisions.md#d166) |
+| 无障碍（屏幕阅读器桥） | #99：v1 基线（role/name/state 快照、静态 ARIA 映射、键盘导航）已落地；屏幕阅读器平台桥待后续 | [component](systems/component.md#componentconfigsnapshot) |
 
 ---
 
@@ -178,16 +250,20 @@ P6 图形后端（规划）    ← #162，详见下文
 |------|----------|------|
 | `src/core/*` | [foundation](systems/foundation.md) | geometry, damage, error, log, diagnostic, **component_id**, **window_id** |
 | `src/native/traits/*` | [platform](systems/platform.md) | public OS API；含 `EventLoopWaker` |
-| `src/native/backends/*` | [platform](systems/platform.md) | impl only, no upper use |
+| `src/native/shared/*` | [platform](systems/platform.md) | `window_lifecycle`、`ime_events` 等跨后端 helper |
+| `src/native/backends/*` | [platform](systems/platform.md) | OS 壳：窗口、事件、CPU presenter（`gdi_presenter` 等）；**不含** GPU API 对等实现 |
+| `src/native/graphics/*` | [platform](systems/platform.md) · [graphics-backend-pluggable](systems/graphics-backend-pluggable.md) | **#164** IGraphicsContext 对等 API 实现（vulkan / opengl / d3d11 / metal / d3d12 stub） |
 | `src/native/test_harness/*` | [platform](systems/platform.md), [testing](systems/testing.md) | FakePlatform |
 | `src/draw/pipeline/*` | [rendering](systems/rendering.md) | invalidation, FrameRenderer, AnimationRegistry |
 | `src/draw/compositor/*` | [rendering](systems/rendering.md) | ScenePaint, LayerTree |
-| `src/draw/engine/*` | [rendering](systems/rendering.md) | SoftwareEngine（cpu） |
+| `src/draw/engine/*` | [rendering](systems/rendering.md) | `bootstrap.rs`（GPU probe）、`factory.rs`（profile 分派）、`SoftwareEngine`（cpu）、`PresentUploadEngine`（`present_upload.rs`） |
 | `src/draw/gpu_engine/*` | [rendering](systems/rendering.md) | GpuEngine |
+| `src/draw/backend/*` | [rendering](systems/rendering.md) | RenderBackend 抽象、`registry.rs`（backend 配对） |
 | `src/draw/font/*` | [rendering](systems/rendering.md) | FontService, text backends |
 | `src/draw/spatial/*` | [rendering](systems/rendering.md) | PhysicalBox, Mat4, 3D 命中 |
 | `src/app/shell/*` | [application](systems/application.md) | App builder, CLI, DI |
 | `src/app/window_session.rs` | [application](systems/application.md) | WindowSession、三态、Registry |
+| `src/app/window/*` | [application](systems/application.md) | Window — PlatformWindow 轻量包装 |
 | `src/app/session_runtime.rs` | [application](systems/application.md) | AppRuntime：window_id 路由、EventLoopWaker |
 | `src/app/app_handle.rs` | [application](systems/application.md) | AppHandle |
 | `src/app/app_timer.rs` | [application](systems/application.md), [demand-driven](systems/demand-driven.md) | Timer API |
@@ -221,7 +297,7 @@ P6 图形后端（规划）    ← #162，详见下文
 
 ## 维护
 
-- 阶段划分或原则变更 → 同步 [decisions.md](../decisions.md) #154（或 #163+ 新决策）与本文件。
+- 阶段划分或原则变更 → 同步 [decisions.md](../decisions.md) #154（或 #170+ 新决策）与本文件。
 - 能力落地或产生新差距 → 更新 [实现进度总览](#实现进度总览) 与各系统 `> **实现注记**`；**不**在本文件恢复 per-file 接线 checklist。
 - 新 backlog 项追加到 [后续工作](#后续工作)；边界说明同步 [剩余差距](systems/demand-driven.md#剩余差距)。
 - 新增 `src/` 路径映射 → 更新 [源码目录详表](#源码目录详表) 与对应系统文档「源码模块」。
