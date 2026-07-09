@@ -1,10 +1,11 @@
 //! Simple-polygon tessellation for GPU-native path fills/strokes (#169).
 //!
-//! - **Fill**: flatten → ear-clip simple rings (disjoint rings OK).
+//! - **Fill**: flatten → validate topology → ear-clip simple rings
+//!   (disjoint rings OK).
 //! - **Stroke**: flatten → thick-line segment quads (butt ends; joins overlap).
 //!
-//! Complex cases (self-intersections, holes, ear-clip failure) return `None`
-//! so callers can soft-fallback.
+//! Complex fill cases (self-intersections, intersecting/nested contours,
+//! holes, ear-clip failure) return `None` so callers can soft-fallback.
 
 use super::flattener;
 use super::path::{FillRule, Path};
@@ -13,6 +14,8 @@ use crate::core::Point;
 
 /// Max vertices in a ring we attempt to ear-clip (keeps GPU upload bounded).
 const MAX_RING_VERTS: usize = 512;
+/// Max flattened vertices across all rings before the topology guard falls back.
+const MAX_PATH_VERTS: usize = 2048;
 
 /// Tessellate a path into a triangle-list of xy pairs (`[x0,y0, x1,y1, …]`).
 ///
@@ -26,16 +29,24 @@ pub fn tessellate_fill(path: &Path, fill_rule: FillRule) -> Option<Vec<f32>> {
     if polys.is_empty() {
         return None;
     }
-    let mut tris: Vec<f32> = Vec::new();
+    let mut rings = Vec::with_capacity(polys.len());
+    let mut path_vertices = 0usize;
     for poly in &polys {
-        let ring = match clean_ring(poly) {
-            Some(r) => r,
-            None => continue,
+        let Some(ring) = clean_ring(poly) else {
+            continue;
         };
-        if ring.len() > MAX_RING_VERTS {
+        path_vertices = path_vertices.checked_add(ring.len())?;
+        if ring.len() > MAX_RING_VERTS || path_vertices > MAX_PATH_VERTS || !ring_is_simple(&ring) {
             return None;
         }
-        let ear = ear_clip(&ring)?;
+        rings.push(ring);
+    }
+    if rings.is_empty() || contours_overlap_or_nest(&rings) {
+        return None;
+    }
+    let mut tris: Vec<f32> = Vec::new();
+    for ring in &rings {
+        let ear = ear_clip(ring)?;
         tris.extend(ear);
     }
     if tris.len() < 6 {
@@ -94,6 +105,9 @@ fn clean_ring(pts: &[Point]) -> Option<Vec<Point>> {
     }
     let mut out: Vec<Point> = Vec::with_capacity(pts.len());
     for p in pts {
+        if !p.x.is_finite() || !p.y.is_finite() {
+            return None;
+        }
         if let Some(last) = out.last() {
             if (last.x - p.x).abs() < 1e-4 && (last.y - p.y).abs() < 1e-4 {
                 continue;
@@ -112,6 +126,127 @@ fn clean_ring(pts: &[Point]) -> Option<Vec<Point>> {
         return None;
     }
     Some(out)
+}
+
+fn ring_is_simple(ring: &[Point]) -> bool {
+    let len = ring.len();
+    for i in 0..len {
+        let a0 = ring[i];
+        let a1 = ring[(i + 1) % len];
+        for j in i + 1..len {
+            if edges_are_adjacent(i, j, len) {
+                continue;
+            }
+            let b0 = ring[j];
+            let b1 = ring[(j + 1) % len];
+            if segments_intersect_or_touch(a0, a1, b0, b1) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn contours_overlap_or_nest(rings: &[Vec<Point>]) -> bool {
+    let bounds: Vec<_> = rings.iter().map(|ring| ring_bounds(ring)).collect();
+    for i in 0..rings.len() {
+        for j in i + 1..rings.len() {
+            if !bounds_overlap(bounds[i], bounds[j]) {
+                continue;
+            }
+            if rings_intersect_or_touch(&rings[i], &rings[j])
+                || point_in_ring(rings[i][0], &rings[j])
+                || point_in_ring(rings[j][0], &rings[i])
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn ring_bounds(ring: &[Point]) -> (f32, f32, f32, f32) {
+    ring.iter().fold(
+        (
+            f32::INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NEG_INFINITY,
+        ),
+        |(min_x, min_y, max_x, max_y), point| {
+            (
+                min_x.min(point.x),
+                min_y.min(point.y),
+                max_x.max(point.x),
+                max_y.max(point.y),
+            )
+        },
+    )
+}
+
+fn bounds_overlap(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
+    const EPSILON: f32 = 1e-5;
+    a.0 <= b.2 + EPSILON && a.2 + EPSILON >= b.0 && a.1 <= b.3 + EPSILON && a.3 + EPSILON >= b.1
+}
+
+fn edges_are_adjacent(a: usize, b: usize, len: usize) -> bool {
+    a == b || (a + 1) % len == b || (b + 1) % len == a
+}
+
+fn rings_intersect_or_touch(a: &[Point], b: &[Point]) -> bool {
+    for i in 0..a.len() {
+        let a0 = a[i];
+        let a1 = a[(i + 1) % a.len()];
+        for j in 0..b.len() {
+            let b0 = b[j];
+            let b1 = b[(j + 1) % b.len()];
+            if segments_intersect_or_touch(a0, a1, b0, b1) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn segments_intersect_or_touch(a0: Point, a1: Point, b0: Point, b1: Point) -> bool {
+    const EPSILON: f32 = 1e-5;
+
+    let o1 = cross(a0, a1, b0);
+    let o2 = cross(a0, a1, b1);
+    let o3 = cross(b0, b1, a0);
+    let o4 = cross(b0, b1, a1);
+    let proper = ((o1 > EPSILON && o2 < -EPSILON) || (o1 < -EPSILON && o2 > EPSILON))
+        && ((o3 > EPSILON && o4 < -EPSILON) || (o3 < -EPSILON && o4 > EPSILON));
+    proper
+        || (o1.abs() <= EPSILON && point_on_segment(b0, a0, a1, EPSILON))
+        || (o2.abs() <= EPSILON && point_on_segment(b1, a0, a1, EPSILON))
+        || (o3.abs() <= EPSILON && point_on_segment(a0, b0, b1, EPSILON))
+        || (o4.abs() <= EPSILON && point_on_segment(a1, b0, b1, EPSILON))
+}
+
+fn point_on_segment(p: Point, a: Point, b: Point, epsilon: f32) -> bool {
+    p.x >= a.x.min(b.x) - epsilon
+        && p.x <= a.x.max(b.x) + epsilon
+        && p.y >= a.y.min(b.y) - epsilon
+        && p.y <= a.y.max(b.y) + epsilon
+}
+
+fn point_in_ring(point: Point, ring: &[Point]) -> bool {
+    let mut inside = false;
+    let mut j = ring.len() - 1;
+    for i in 0..ring.len() {
+        let a = ring[i];
+        let b = ring[j];
+        let crosses = (a.y > point.y) != (b.y > point.y);
+        if crosses {
+            let x = (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x;
+            if point.x < x {
+                inside = !inside;
+            }
+        }
+        j = i;
+    }
+    inside
 }
 
 fn polygon_area(pts: &[Point]) -> f32 {
@@ -249,6 +384,65 @@ mod tests {
             .close();
         let v = tessellate_fill(&pb.build(), FillRule::NonZero).expect("two");
         assert_eq!(v.len(), 12);
+    }
+
+    #[test]
+    fn nested_contours_require_soft_fallback_for_both_fill_rules() {
+        let mut pb = PathBuilder::new();
+        pb.move_to(0.0, 0.0)
+            .line_to(20.0, 0.0)
+            .line_to(20.0, 20.0)
+            .line_to(0.0, 20.0)
+            .close();
+        pb.move_to(5.0, 5.0)
+            .line_to(5.0, 15.0)
+            .line_to(15.0, 15.0)
+            .line_to(15.0, 5.0)
+            .close();
+        let path = pb.build();
+
+        assert!(tessellate_fill(&path, FillRule::EvenOdd).is_none());
+        assert!(tessellate_fill(&path, FillRule::NonZero).is_none());
+    }
+
+    #[test]
+    fn self_intersecting_ring_requires_soft_fallback() {
+        let ring = vec![
+            Point::new(0.0, 0.0),
+            Point::new(4.0, 0.0),
+            Point::new(0.0, 4.0),
+            Point::new(4.0, 4.0),
+            Point::new(2.0, 1.0),
+        ];
+        assert!(polygon_area(&ring).abs() > 1e-6);
+        assert!(!ring_is_simple(&ring));
+
+        let mut pb = PathBuilder::new();
+        pb.move_to(0.0, 0.0)
+            .line_to(4.0, 0.0)
+            .line_to(0.0, 4.0)
+            .line_to(4.0, 4.0)
+            .line_to(2.0, 1.0)
+            .close();
+
+        assert!(tessellate_fill(&pb.build(), FillRule::EvenOdd).is_none());
+    }
+
+    #[test]
+    fn intersecting_contours_require_soft_fallback() {
+        let mut pb = PathBuilder::new();
+        pb.move_to(0.0, 0.0)
+            .line_to(12.0, 0.0)
+            .line_to(12.0, 12.0)
+            .line_to(0.0, 12.0)
+            .close();
+        pb.move_to(8.0, 8.0)
+            .line_to(20.0, 8.0)
+            .line_to(20.0, 20.0)
+            .line_to(8.0, 20.0)
+            .close();
+
+        assert!(tessellate_fill(&pb.build(), FillRule::NonZero).is_none());
     }
 
     #[test]

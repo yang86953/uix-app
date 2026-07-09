@@ -1616,7 +1616,7 @@ mod tests {
     }
 
     #[test]
-    fn d3d11_backend_native_paths_without_soft_blit() {
+    fn d3d11_backend_routes_simple_and_nested_paths_by_topology() {
         let clear_calls = Rc::new(Cell::new(0usize));
         let clear_rect_calls = Rc::new(Cell::new(0usize));
         let draw_calls = Rc::new(Cell::new(0usize));
@@ -1687,6 +1687,35 @@ mod tests {
         assert_eq!(blit_calls.get(), 0);
         assert_eq!(upload_calls.get(), 0);
         assert_eq!(present_calls.get(), 1);
+
+        {
+            let canvas = backend.surface().canvas();
+            let mut nested = crate::draw::primitives::path::PathBuilder::new();
+            nested
+                .move_to(10.0, 10.0)
+                .line_to(90.0, 10.0)
+                .line_to(90.0, 80.0)
+                .line_to(10.0, 80.0)
+                .close();
+            nested
+                .move_to(30.0, 30.0)
+                .line_to(30.0, 60.0)
+                .line_to(70.0, 60.0)
+                .line_to(70.0, 30.0)
+                .close();
+            canvas.fill_path(
+                &nested.build(),
+                Color::from_rgba(64, 192, 255, 180),
+                FillRule::EvenOdd,
+            );
+        }
+        backend.present(&DamageRegion::full()).expect("present");
+        assert_eq!(clear_calls.get(), 1);
+        assert_eq!(mesh_calls.get(), 1, "nested contours must not queue a mesh");
+        assert_eq!(last_mesh_count.get(), 2);
+        assert_eq!(blit_calls.get(), 1);
+        assert_eq!(upload_calls.get(), 0);
+        assert_eq!(present_calls.get(), 2);
         let _ = (
             clear_rect_calls.get(),
             draw_calls.get(),
