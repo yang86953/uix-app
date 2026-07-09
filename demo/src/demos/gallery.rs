@@ -151,12 +151,27 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
         "--cli",
         true,
     ),
-    // ── Backlog / N/A ──
-    ("Backlog", "无障碍 v2 (ARIA / 键盘导航)", "—", false),
-    ("Backlog", "macOS create_platform()", "—", false),
-    ("Backlog", "Handler 宏层 fingerprint (#159)", "—", false),
-    ("Backlog", "Computed 独立 slot id", "—", false),
-    ("Backlog", "错误 UI Toast 链 (#89)", "—", false),
+    // ── 未实现 / 未单独展示 / 待验证（不得混为 Backlog） ──
+    ("Backlog", "屏幕阅读器平台桥 (#99)", "—", false),
+    ("待真机验证", "macOS AppKit + Metal CpuUpload", "—", false),
+    (
+        "已实现 / 未单独展示",
+        "semantic_handler! fingerprint (#159)",
+        "—",
+        false,
+    ),
+    (
+        "已实现 / 未单独展示",
+        "Computed 独立 StateSlotId",
+        "—",
+        false,
+    ),
+    (
+        "已实现 / 未单独展示",
+        "默认错误 Toast overlay (#89)",
+        "—",
+        false,
+    ),
 ];
 
 pub fn covered_count() -> (usize, usize) {
@@ -179,7 +194,11 @@ pub fn page_gallery(ctx: &DemoCtx<'_>) -> ViewNode {
         ))
         .push(backlog_note(
             tk,
-            "未 demo：无障碍 v2 (#99)、macOS 平台、Handler fingerprint 宏、Computed slot、错误 Toast 链 — 见 roadmap 后续工作。",
+            "本页列出的实现 backlog 仅含屏幕阅读器平台桥（#99）；静态 ARIA、键盘导航与焦点链已落地。",
+        ))
+        .push(info_note(
+            tk,
+            "已实现但未单独展示：semantic_handler! fingerprint、Computed StateSlotId、默认错误 Toast overlay；macOS AppKit + Metal CpuUpload 已编码，仍需真机验证。",
         ));
 
     let active = ctx.active_page;
@@ -208,5 +227,33 @@ mod tests {
             shown > 50,
             "expected most widgets covered, got {shown}/{total}"
         );
+    }
+
+    #[test]
+    fn coverage_distinguishes_backlog_from_implemented_and_unverified_items() {
+        let backlog: Vec<_> = COVERAGE
+            .iter()
+            .filter(|(category, _, _, _)| *category == "Backlog")
+            .map(|(_, name, _, _)| *name)
+            .collect();
+        assert_eq!(backlog, vec!["屏幕阅读器平台桥 (#99)"]);
+
+        for implemented in [
+            "semantic_handler! fingerprint (#159)",
+            "Computed 独立 StateSlotId",
+            "默认错误 Toast overlay (#89)",
+        ] {
+            let category = COVERAGE
+                .iter()
+                .find(|(_, name, _, _)| *name == implemented)
+                .map(|entry| entry.0);
+            assert_eq!(category, Some("已实现 / 未单独展示"));
+        }
+
+        let macos_category = COVERAGE
+            .iter()
+            .find(|(_, name, _, _)| *name == "macOS AppKit + Metal CpuUpload")
+            .map(|entry| entry.0);
+        assert_eq!(macos_category, Some("待真机验证"));
     }
 }
