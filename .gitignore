@@ -23,5 +23,8 @@ nul
 # Pi agent system files (auto-generated, per-session state)
 .pi/
 
+# Python cache
+__pycache__/
+
 # Rust documentation build
 # target/ already covers target/doc/
