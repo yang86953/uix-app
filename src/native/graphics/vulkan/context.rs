@@ -490,7 +490,7 @@ impl VulkanContext {
 
 impl IGraphicsContext for VulkanContext {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
-        GraphicsContextCaps::cpu_upload_present(GraphicsBackend::Vulkan, 1.0)
+        GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::Vulkan, 1.0)
     }
 
     fn graphics_backend(&self) -> GraphicsBackend {

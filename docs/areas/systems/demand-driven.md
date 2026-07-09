@@ -607,7 +607,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 | **ui / view** | State → 窄 paint；帧末 reconcile（#118）；Effect + #132 Timer | View 节点 = 可替换子树 |
 | **ui / layout** | Scroll → Composite（#107）；框架自动 | measure / arrange 分离；Flex/Grid 纯函数引擎 |
 | **ui / component** | PicturePolicy 元数据（#122）；Animatable 自动 register（#124）；内置周期 UI | capability trait 自由组合 |
-| **draw** | Picture 自适应（#129）；Composite memmove | 光栅 / present / API **正交**；Profile 为预设 |
+| **draw** | Picture 自适应（#129）；Composite memmove | 光栅 / present / API **正交**（`RasterMode` × `PresentMode` × `GraphicsBackend`） |
 | **native** | blocking wait；ThemeChanged 作 UiEvent 交付，不 poll | `Platform` 聚合子 trait；graphics API peer |
 | **data** | 冷路径（#64） | 不参与 UI 热路径 |
 | **core** | 诊断不进 UI 热路径（#89） | 共享几何 / damage 类型 |

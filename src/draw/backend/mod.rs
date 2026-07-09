@@ -1,6 +1,7 @@
 //! 渲染后端模块。
 
 pub mod cpu;
+pub mod d3d11;
 pub mod gpu;
 pub mod null;
 pub mod registry;
@@ -8,6 +9,7 @@ pub mod traits;
 
 pub use crate::core::DamageRegion;
 pub use cpu::CpuBackend;
+pub use d3d11::D3d11Backend;
 pub use gpu::GpuBackend;
 pub use null::NullBackend;
 pub use traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};

@@ -92,7 +92,7 @@ trait Platform {
 
 `PresentDamage` 来自 `core::damage` — 物理像素矩形列表或全屏。
 
-**Present 分派（当前）**：`create_graphics_engine` 读 `caps().pipeline` **预设** — `NativeGpuRaster` → `GpuEngine`，`CpuUploadPresent` → `PresentUploadEngine`。正交能力模型 → [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)（#168）。
+**Present 分派**：`create_graphics_engine` 按 `caps().raster` × `caps().present` 表驱动装配（`GpuNative` × `Swapchain` → `GpuEngine`；`Cpu` × `PixelUpload` → `PresentUploadEngine`）。设计 → [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)（#168 · #169）。
 
 GPU 路径：`PlatformWindow::graphics_context()` 返回 `Option<&mut dyn IGraphicsContext>`；`app::create_preferred_engine` 调用 `draw::bootstrap_graphics_engine`（**唯一** probe 循环）。`create_gpu_context*` 为 factory **单条目**低层入口（测试 / 直接调用；`Auto` 须走 bootstrap），**非** app 主路径。具体 API 对上层 **不可见** — 选型摘要见 [rendering · 多图形 API](rendering.md#多图形-api) · [graphics-backend-pluggable · 核心抽象](graphics-backend-pluggable.md#核心抽象) · [#162](../../decisions.md#d162)。
 
@@ -247,17 +247,17 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 ### 多图形 API 与 factory
 
-**架构原则**（#163、#164）→ [graphics-backend-pluggable · 图形 API 架构原则](graphics-backend-pluggable.md#图形-api-架构原则) · [源码目录](graphics-backend-pluggable.md#源码目录) · [核心抽象](graphics-backend-pluggable.md#核心抽象)（Auto 链、probe 流程、Present 分派）。
+**架构原则**（#163、#164）→ [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴) · [图形 API 架构原则](graphics-backend-pluggable.md#图形-api-架构原则) · [源码目录](graphics-backend-pluggable.md#源码目录) · [核心抽象](graphics-backend-pluggable.md#核心抽象)。
 
 `factory/`（`mod.rs` + `registry*.rs`）是 **唯一** 对外 factory 分派入口（`create_platform` / `create_gpu_context*`）；`#[cfg]` 还允许 `backends/`、`graphics/**/platform/`（见 [条件编译](#条件编译)）。新增图形 API 在 `native/graphics/<api>/` 实现 + registry 表登记一行。
 
 上层 **禁止** 区分 WGL/EGL/Vulkan：只持有 `dyn IGraphicsContext`。`IGraphicsContext::get_proc_address` 供 GL 系 backend 加载扩展；非 GL API 可返回 `None`，由对应 backend 自行链接。
 
-**P6 图形后端** 状态与 backlog → [implementation · P6 生产级框架](../implementation.md#p6-生产级框架)。
+**P6 图形后端** 状态与 backlog → [implementation · P6](../implementation.md#p6-生产级框架) · [P6.8 可组合渲染轴](../implementation.md#p68-可组合渲染轴)。
 
 ### 未实现或后续
 
-macOS 原生运行验证、D3D12、Metal **native raster** → [implementation · P6 生产级框架](../implementation.md#p6-生产级框架) · [后续工作](../implementation.md#后续工作)。
+macOS 原生运行验证、**D3D11 原生几何着色器**（soft GpuNative 垂直切片已落地，[#169](../../decisions.md#d169)）、随后 Metal / D3D12 native raster、D3D12 context → [implementation · P6](../implementation.md#p6-生产级框架) · [P6.8](../implementation.md#p68-可组合渲染轴)。
 
 <a id="测试平台"></a>
 

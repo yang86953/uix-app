@@ -1,8 +1,8 @@
-//! Metal graphics context — CALayer CPU upload path (M6 transition).
+//! Metal graphics context — CALayer CPU upload path.
 //!
-//! Native GPU raster via Metal RenderBackend is planned; this context uses
-//! [`RenderPipelineProfile::CpuUploadPresent`] so macOS can bootstrap a GPU
-//! engine without staying on pure SoftwareEngine.
+//! Native GPU raster via Metal RenderBackend is planned; this context declares
+//! [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`] so macOS can bootstrap a
+//! GPU present path without staying on pure SoftwareEngine.
 
 #![cfg(target_os = "macos")]
 
@@ -12,7 +12,6 @@ use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
 use crate::native::traits::present::{
     GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentFrame,
-    RenderPipelineProfile,
 };
 
 type LayerId = *mut c_void;
@@ -45,7 +44,7 @@ impl MetalContext {
 
 impl IGraphicsContext for MetalContext {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::cpu_upload_present(GraphicsBackend::Metal, self.device_pixel_ratio)
+        GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::Metal, self.device_pixel_ratio)
     }
 
     fn initialize(

@@ -126,7 +126,7 @@ prelude **仅**导出平台工厂与跨层输入枚举；上层 **禁止** `use 
 
 `create_gpu_context_with_backend` 仍是 native factory **单条目**低层入口（无 probe 循环；`Auto` 须 bootstrap），不进入 prelude。
 
-`GraphicsBackend::D3d11` 在 Windows 上选择 D3D11 context；`GraphicsBackend::Vulkan` 在 Linux Wayland 上选择 Vulkan context；`GraphicsBackend::Metal` 在 macOS 上选择 Metal context（feature `metal`）。各 context 声明 **默认预设** `caps().pipeline`（当前 D3D11/Vulkan/Metal → `CpuUploadPresent`；OpenGL ES → `NativeGpuRaster`）— **非** API 永久能力上限（#168）。选型由 `draw::bootstrap_graphics_engine` 完成；对外仍只通过 `App::graphics_backend(...)` opt-in，不暴露 `native::backends::*`。
+`GraphicsBackend::D3d11` 在 Windows 上选择 D3D11 context；`GraphicsBackend::Vulkan` 在 Linux Wayland 上选择 Vulkan context；`GraphicsBackend::Metal` 在 macOS 上选择 Metal context（feature `metal`）。各 context 经 `GraphicsContextCaps` 声明 `raster` + `present`（当前：D3D11 / OpenGL ES → `GpuNative` × `Swapchain`；Vulkan/Metal → `Cpu` × `PixelUpload`）— **非** API 永久能力上限（#168）。选型由 `draw::bootstrap_graphics_engine` 完成；对外仍只通过 `App::graphics_backend(...)` opt-in，不暴露 `native::backends::*`。
 
 ---
 

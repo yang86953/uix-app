@@ -2,13 +2,18 @@
 
 #[cfg(windows)]
 mod context;
+#[cfg(windows)]
+mod pipeline;
 
 #[cfg(windows)]
 pub use context::D3d11Context;
 
 use std::ffi::c_void;
 
+#[cfg(windows)]
 use crate::core::{Error, Result};
+#[cfg(not(windows))]
+use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::IGraphicsContext;
 
 #[cfg(windows)]

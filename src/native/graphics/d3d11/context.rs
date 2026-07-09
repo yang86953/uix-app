@@ -1,4 +1,8 @@
 //! Direct3D 11 graphics context for Windows.
+//!
+//! Caps: [`RasterMode::GpuNative`] × [`PresentMode::Swapchain`] (#169).
+//! Native solid/rounded fill + stroke + glyph atlas text; unsupported Canvas2D
+//! ops soft-raster and alpha-blit (same hybrid pattern as GL `GpuCanvas2D`).
 
 #![cfg(windows)]
 #![allow(nonstandard_style)]
@@ -6,9 +10,11 @@
 use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
+use crate::native::graphics::d3d11::pipeline::D3d11Pipeline;
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+    GraphicsBackend, GraphicsContextCaps, GpuGlyphBlit, GpuSolidRect, GpuStrokeRect,
+    IGraphicsContext, PresentDamage,
 };
 use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
 use ::windows::Win32::Graphics::Direct3D::{
@@ -16,8 +22,8 @@ use ::windows::Win32::Graphics::Direct3D::{
     D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
 };
 use ::windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
+    ID3D11Texture2D, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
@@ -65,9 +71,11 @@ fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
 
 pub struct D3d11Context {
     hwnd: HWND_PTR,
-    _device: ID3D11Device,
+    device: ID3D11Device,
     context: ID3D11DeviceContext,
     swap_chain: IDXGISwapChain,
+    rtv: Option<ID3D11RenderTargetView>,
+    pipeline: D3d11Pipeline,
     width: i32,
     height: i32,
 }
@@ -104,6 +112,61 @@ impl D3d11Context {
                 D3D_DRIVER_TYPE_WARP,
             )
         })
+    }
+
+    fn create_rtv(&mut self) -> Result<()> {
+        let back_buffer: ID3D11Texture2D = unsafe {
+            self.swap_chain
+                .GetBuffer(0)
+                .map_err(|err| d3d_error("IDXGISwapChain::GetBuffer", err))?
+        };
+        let mut rtv = None;
+        unsafe {
+            self.device
+                .CreateRenderTargetView(&back_buffer, None, Some(&mut rtv))
+                .map_err(|err| d3d_error("ID3D11Device::CreateRenderTargetView", err))?;
+        }
+        let rtv = rtv.ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "D3d11Context: CreateRenderTargetView returned no RTV",
+            )
+        })?;
+        unsafe {
+            self.context
+                .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
+        }
+        self.bind_viewport();
+        self.rtv = Some(rtv);
+        Ok(())
+    }
+
+    fn release_rtv(&mut self) {
+        unsafe {
+            self.context.OMSetRenderTargets(None, None);
+        }
+        self.rtv = None;
+    }
+
+    fn bind_viewport(&self) {
+        let vp = D3D11_VIEWPORT {
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: self.width.max(1) as f32,
+            Height: self.height.max(1) as f32,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
+        };
+        unsafe {
+            self.context.RSSetViewports(Some(&[vp]));
+        }
+    }
+
+    fn ensure_rtv(&mut self) -> Result<()> {
+        if self.rtv.is_none() {
+            self.create_rtv()?;
+        }
+        Ok(())
     }
 }
 
@@ -161,19 +224,24 @@ fn create_with_driver(
         selected_level
     ));
 
-    Ok(D3d11Context {
+    let pipeline = D3d11Pipeline::new(&device)?;
+    let mut ctx = D3d11Context {
         hwnd,
-        _device: device,
+        device,
         context,
         swap_chain,
+        rtv: None,
+        pipeline,
         width,
         height,
-    })
+    };
+    ctx.create_rtv()?;
+    Ok(ctx)
 }
 
 impl IGraphicsContext for D3d11Context {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
-        GraphicsContextCaps::cpu_upload_present(GraphicsBackend::D3d11, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
     }
 
     fn graphics_backend(&self) -> GraphicsBackend {
@@ -189,6 +257,7 @@ impl IGraphicsContext for D3d11Context {
         if client_w == self.width && client_h == self.height {
             return;
         }
+        self.release_rtv();
         if let Err(err) = unsafe {
             self.swap_chain.ResizeBuffers(
                 0,
@@ -203,15 +272,38 @@ impl IGraphicsContext for D3d11Context {
         }
         self.width = client_w;
         self.height = client_h;
+        if let Err(err) = self.create_rtv() {
+            crate::core::log::warn_fn(format!(
+                "D3d11Context: recreate RTV after resize failed: {}",
+                err.short_what()
+            ));
+        }
     }
 
-    fn make_current(&mut self) {}
+    fn make_current(&mut self) {
+        if let Err(err) = self.ensure_rtv() {
+            crate::core::log::warn_fn(format!(
+                "D3d11Context: make_current ensure_rtv failed: {}",
+                err.short_what()
+            ));
+            return;
+        }
+        if let Some(rtv) = self.rtv.as_ref() {
+            unsafe {
+                self.context
+                    .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
+            }
+            self.bind_viewport();
+        }
+    }
 
     fn swap_buffers(&mut self, _damage: PresentDamage) {
         let _ = unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) };
     }
 
-    fn shutdown(&mut self) {}
+    fn shutdown(&mut self) {
+        self.release_rtv();
+    }
 
     fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
         Vec::new()
@@ -225,13 +317,22 @@ impl IGraphicsContext for D3d11Context {
         self.height
     }
 
-    fn present_pixels(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-        _damage: PresentDamage,
-    ) -> Result<()> {
+    fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<()> {
+        self.ensure_rtv()?;
+        let Some(rtv) = self.rtv.as_ref() else {
+            return Err(Error::new(
+                Errc::PlatformError,
+                "D3d11Context: clear_render_target without RTV",
+            ));
+        };
+        unsafe {
+            self.context
+                .ClearRenderTargetView(rtv, &[r, g, b, a]);
+        }
+        Ok(())
+    }
+
+    fn upload_surface_pixels(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
         if width <= 0 || height <= 0 {
             return Ok(());
         }
@@ -248,6 +349,7 @@ impl IGraphicsContext for D3d11Context {
                 ),
             ));
         }
+        self.ensure_rtv()?;
         let back_buffer: ID3D11Texture2D = unsafe {
             self.swap_chain
                 .GetBuffer(0)
@@ -263,6 +365,89 @@ impl IGraphicsContext for D3d11Context {
                 0,
             );
         }
+        Ok(())
+    }
+
+    fn supports_native_geometry(&self) -> bool {
+        true
+    }
+
+    fn draw_solid_rects(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuSolidRect],
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current();
+        self.pipeline
+            .draw_solid_rects(&self.context, viewport_w, viewport_h, scissor, rects)
+    }
+
+    fn draw_stroke_rects(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuStrokeRect],
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current();
+        self.pipeline
+            .draw_stroke_rects(&self.context, viewport_w, viewport_h, scissor, rects)
+    }
+
+    fn supports_native_glyphs(&self) -> bool {
+        true
+    }
+
+    fn draw_glyphs(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        glyphs: &[GpuGlyphBlit],
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current();
+        self.pipeline
+            .draw_glyphs(&self.device, &self.context, viewport_w, viewport_h, scissor, glyphs)
+    }
+
+    fn blit_soft_fallback(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current();
+        self.pipeline
+            .blit_soft_fallback(&self.device, &self.context, pixels, width, height)
+    }
+
+    fn clear_rects(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        rects: &[GpuSolidRect],
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current();
+        self.pipeline
+            .clear_rects(&self.context, viewport_w, viewport_h, rects)
+    }
+
+    /// Kept for low-level tests; not advertised via caps (`PresentMode::Swapchain`).
+    fn present_pixels(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        _damage: PresentDamage,
+    ) -> Result<()> {
+        self.upload_surface_pixels(pixels, width, height)?;
         let hr = unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) };
         if hr.is_err() {
             return Err(Error::new(
@@ -280,6 +465,7 @@ unsafe impl Sync for D3d11Context {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native::traits::present::{PresentFrame, PresentMode, RasterMode};
 
     #[test]
     fn swap_chain_desc_uses_bgra_windowed_backbuffer() {
@@ -304,11 +490,11 @@ mod tests {
     }
 
     #[test]
-    fn factory_create_d3d11_context_on_real_window() {
+    fn factory_create_d3d11_gpu_native_swapchain_on_real_window() {
         let mut platform = crate::native::create_platform().expect("platform");
         let window = platform
             .window_manager()
-            .create_window("D3D11 GPU test", 320, 240)
+            .create_window("D3D11 GPU native test", 320, 240)
             .expect("window");
         let surface = window.native_surface_ptr();
         assert!(
@@ -318,10 +504,82 @@ mod tests {
 
         let mut ctx = D3d11Context::new(surface, 320, 240).expect("D3d11Context");
         assert_eq!(ctx.graphics_backend(), GraphicsBackend::D3d11);
-        assert!(ctx.supports_pixel_present());
-        let pixels = vec![0xFF00_0000; (ctx.width() * ctx.height()) as usize];
-        ctx.present_pixels(&pixels, ctx.width(), ctx.height(), PresentDamage::Full)
-            .expect("present");
+        let caps = ctx.caps();
+        assert_eq!(caps.raster, RasterMode::GpuNative);
+        assert_eq!(caps.present, PresentMode::Swapchain);
+        assert!(!ctx.supports_pixel_present());
+        assert!(!ctx.supports_gl_proc_address());
+
+        assert!(ctx.supports_native_geometry());
+        ctx.clear_render_target(0.1, 0.2, 0.3, 1.0)
+            .expect("clear_render_target");
+        ctx.draw_solid_rects(
+            ctx.width() as f32,
+            ctx.height() as f32,
+            None,
+            &[GpuSolidRect {
+                x: 16.0,
+                y: 24.0,
+                w: 80.0,
+                h: 40.0,
+                rgba: [1.0, 0.2, 0.1, 1.0],
+                radius: [8.0, 8.0, 8.0, 8.0],
+            }],
+        )
+        .expect("draw_solid_rects");
+        ctx.draw_stroke_rects(
+            ctx.width() as f32,
+            ctx.height() as f32,
+            None,
+            &[
+                GpuStrokeRect {
+                    x: 20.0,
+                    y: 80.0,
+                    w: 100.0,
+                    h: 48.0,
+                    rgba: [0.1, 0.8, 1.0, 1.0],
+                    radius: [6.0, 6.0, 6.0, 6.0],
+                    line_width: 2.0,
+                },
+                GpuStrokeRect {
+                    x: 200.0,
+                    y: 40.0,
+                    w: 64.0,
+                    h: 64.0,
+                    rgba: [1.0, 1.0, 0.2, 1.0],
+                    radius: [32.0, 32.0, 32.0, 32.0],
+                    line_width: 3.0,
+                },
+            ],
+        )
+        .expect("draw_stroke_rects");
+        // Glyph atlas: solid-color coverage blit (identity text path).
+        let cov = std::sync::Arc::<[u8]>::from(vec![255u8; 8 * 8]);
+        ctx.draw_glyphs(
+            ctx.width() as f32,
+            ctx.height() as f32,
+            None,
+            &[GpuGlyphBlit {
+                x: 40.0,
+                y: 160.0,
+                w: 8.0,
+                h: 8.0,
+                rgba: [1.0, 1.0, 1.0, 1.0],
+                coverage: cov,
+                cov_w: 8,
+                cov_h: 8,
+            }],
+        )
+        .expect("draw_glyphs");
+        // Soft overlay (transparent except one opaque pixel region via alpha).
+        let mut soft = vec![0u32; (ctx.width() * ctx.height()) as usize];
+        soft[0] = 0xFF00_FF00; // opaque green BGRA
+        ctx.blit_soft_fallback(&soft, ctx.width(), ctx.height())
+            .expect("blit_soft_fallback");
+        ctx.present(&PresentFrame::Swapchain {
+            damage: PresentDamage::Full,
+        })
+        .expect("swapchain present");
         ctx.shutdown();
     }
 }

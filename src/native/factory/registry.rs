@@ -1,9 +1,9 @@
-//! Backend registry types and table-driven context creation (P6.7 M4–M5).
+//! Backend registry types and table-driven context creation (P6.7 M4–M5 / P6.8).
 
 use std::ffi::c_void;
 
 use crate::core::error::{Errc, Error};
-use crate::native::traits::present::{GraphicsBackend, IGraphicsContext};
+use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, PresentMode, RasterMode};
 
 /// Compile-time availability of a registry row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,11 +15,18 @@ pub enum BackendStatus {
     Disabled,
 }
 
-/// One graphics API factory row.
+/// One graphics API factory row — API identity plus declared raster × present axes.
+///
+/// Engine assembly still reads live [`IGraphicsContext::caps`]; these fields document
+/// the combination this entry is expected to provide ([#169](docs/decisions.md#d169)).
 pub struct GraphicsBackendEntry {
     pub id: GraphicsBackend,
     pub priority: u8,
     pub status: BackendStatus,
+    /// Declared raster axis for this registry row.
+    pub raster: RasterMode,
+    /// Declared present axis for this registry row.
+    pub present: PresentMode,
     pub create: fn(*mut c_void, i32, i32) -> Result<Box<dyn IGraphicsContext>, Error>,
 }
 
@@ -68,7 +75,20 @@ pub fn try_create_context(
             format!("GraphicsBackend {} is disabled in this build", entry.id),
         ));
     }
-    (entry.create)(native_surface, width, height)
+    let ctx = (entry.create)(native_surface, width, height)?;
+    let caps = ctx.caps();
+    if caps.raster != entry.raster || caps.present != entry.present {
+        let msg = format!(
+            "GraphicsBackend {}: context caps {} × {} do not match registry row {} × {}",
+            entry.id, caps.raster, caps.present, entry.raster, entry.present
+        );
+        // Drop without calling shutdown — create failed before ownership transfer
+        // to a live engine; contexts that need teardown should still shut down.
+        let mut ctx = ctx;
+        ctx.shutdown();
+        return Err(Error::new(Errc::PlatformError, msg));
+    }
+    Ok(ctx)
 }
 
 /// Ordered probe candidates for a graphics backend request.
@@ -146,5 +166,26 @@ mod tests {
 
         #[cfg(target_os = "macos")]
         assert_eq!(candidates, vec![GraphicsBackend::Metal]);
+    }
+
+    #[test]
+    fn registry_rows_declare_orthogonal_axes() {
+        for entry in active_entries() {
+            match entry.id {
+                GraphicsBackend::OpenGlEs => {
+                    assert_eq!(entry.raster, RasterMode::GpuNative);
+                    assert_eq!(entry.present, PresentMode::Swapchain);
+                }
+                GraphicsBackend::D3d11 => {
+                    assert_eq!(entry.raster, RasterMode::GpuNative);
+                    assert_eq!(entry.present, PresentMode::Swapchain);
+                }
+                GraphicsBackend::Vulkan | GraphicsBackend::Metal => {
+                    assert_eq!(entry.raster, RasterMode::Cpu);
+                    assert_eq!(entry.present, PresentMode::PixelUpload);
+                }
+                GraphicsBackend::D3d12 | GraphicsBackend::Auto => {}
+            }
+        }
     }
 }

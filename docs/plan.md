@@ -27,7 +27,7 @@
 ## 下一步
 
 - **P6 优先（Windows 优先，[#167](decisions.md#d167)）**：Windows 端稳定性回归、生产阻塞项闭合、demo/docs 与实现同步；从 [implementation · 后续工作](areas/implementation.md#后续工作) 选取项时默认以 Windows 为主验证环境。
-- **P6 代码优先（[#169](decisions.md#d169)）**：可组合渲染轴落地 — 1) D3D11 GPU native raster（Windows）；2) `RasterMode` × `PresentMode` **breaking 替换** `RenderPipelineProfile`；3) `BackendKind` 统一 + 表驱动 factory/engine 装配。详见 [implementation · P6.8](areas/implementation.md#p68-可组合渲染轴) · [graphics-backend-pluggable · 可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴)。
+- **P6 代码优先（[#169](decisions.md#d169)）**：可组合渲染轴落地 — 1) D3D11 `GpuNative` × `Swapchain` 垂直切片（soft Canvas2D + RTV）✅；原生 D3D 几何着色器 backlog；2) `RasterMode` / `PresentMode` 类型与 caps + 表驱动装配 ✅；3) `BackendKind` 统一 ✅。详见 [implementation · P6.8](areas/implementation.md#p68-可组合渲染轴) · [graphics-backend-pluggable · 可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴)。
 - **P6 随后**：Linux / macOS parity、macOS 真机验证 — 上层代码不变，仅完善或验收 `native` backend。
 - 若改公开 API：同步 [areas/systems/public-api.md](areas/systems/public-api.md)、[glossary.md](glossary.md)，必要时追加 [decisions.md](decisions.md) #170+。
 
@@ -48,5 +48,5 @@
 - 移动端（[#166](decisions.md#d166)）：首批目标 OS（iOS / Android 优先级）、图形栈与 `native` backend 切片待确认。
 - 全栈（[#166](decisions.md#d166)）：网络/同步/API 客户端是否纳入 `data` 域或新域，待产品边界决策。
 - 无障碍（屏幕阅读器桥）需要先形成产品边界与设计决策。
-- Metal/D3D12 native raster 推进时机：D3D11 GPU raster（[#169](decisions.md#d169)）完成后再排。
-- `RenderPipelineProfile` 移除时机：与 P6.8 正交轴 refactor 同批 breaking 变更（[#169](decisions.md#d169)）。
+- Metal/D3D12 native raster 推进时机：D3D11 `GpuNative` 垂直切片已落地后可排；D3D11 原生几何着色器可并行深化。
+- 已废弃 bundled 管线枚举（`RenderPipelineProfile`）已随 P6.8 正交轴 refactor **删除**（[#169](decisions.md#d169)）；D3D11 soft `GpuNative` × `Swapchain` ✅；原生 D3D 几何着色器仍 backlog。

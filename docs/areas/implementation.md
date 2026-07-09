@@ -162,7 +162,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 **当前优先级**（[#167](../decisions.md#d167)）：**Windows 优先** — 先把 Windows 端做到 **生产可用**；Linux / macOS parity 与 macOS 原生验证 **随后**；native raster 仍为性能增强 backlog。开发策略摘要 → [project · 开发策略](../project.md#开发策略)。
 
-**图形后端目标**（#162）：在保持 `IGraphicsContext` / `GraphicsEngine` 契约不变的前提下，扩展多种 GPU API 与 factory 选型；选型仅在初始化完成，符合 #105。架构原则 → [graphics-backend-pluggable · 架构原则](systems/graphics-backend-pluggable.md#图形-api-架构原则)（非 P6 任务不必通读全文）。
+**图形后端目标**（#162）：在保持 `IGraphicsContext` / `GraphicsEngine` 契约不变的前提下，扩展多种 GPU API 与 factory 选型；选型仅在初始化完成，符合 #105。架构原则 → [graphics-backend-pluggable · 图形 API 架构原则](systems/graphics-backend-pluggable.md#图形-api-架构原则)（非 P6 任务不必通读全文）。
 
 ### 生产级优先项
 
@@ -174,7 +174,7 @@ P6 图形后端            ← #162 #163，详见下文
 | P1 | macOS 原生运行验证 | 待验证 | AppKit backend、Metal CpuUpload、IME 已接；需真机验收 |
 | P1 | demo / docs 与实现同步 | 进行中 | 覆盖矩阵、backlog、公开 API 对齐 |
 | P2 | 无障碍 v1 基线 | 部分 | role/name/state 快照、键盘导航已落地；屏幕阅读器桥待后续 |
-| P1 | D3D11 GPU native raster | backlog | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；`RenderBackendRegistry` + caps 改 `RasterMode::GpuNative` |
+| P1 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas；path/gradient/非 identity 文本仍 soft — 见 [P6.8](#p68-可组合渲染轴) |
 | P2 | native raster（非 Win） | backlog | Metal / D3D12 GPU 光栅 — **增强**，D3D11 之后 |
 | P2 | WebGPU 评估 | backlog | P6.6 远期 |
 
@@ -184,26 +184,28 @@ P6 图形后端            ← #162 #163，详见下文
 |--------|------|------|
 | P6.0 设计 | 抽象分层、平台矩阵、回退链、术语 | ✅ |
 | P6.1 基线 | `GraphicsBackend` 枚举；registry 单条目创建 | ✅ |
-| P6.2 Windows | D3D11 CpuUpload + WGL native raster | ✅ |
-| P6.3 Linux | Vulkan CpuUpload + EGL native raster | ✅ |
-| P6.4 macOS | AppKit + Metal CpuUpload context；SoftwareEngine 回退 | 部分 — 原生验证待完成 |
+| P6.2 Windows | D3D11 `GpuNative` × `Swapchain` + WGL `GpuNative` × `Swapchain` | ✅ |
+| P6.3 Linux | Vulkan `Cpu` × `PixelUpload` + EGL `GpuNative` × `Swapchain` | ✅ |
+| P6.4 macOS | AppKit + Metal `Cpu` × `PixelUpload` context；SoftwareEngine 回退 | 部分 — 原生验证待完成 |
 | P6.5 配置 | App builder / env / Settings opt-in | ✅ |
 | P6.6 WebGPU | 远期评估 | backlog |
-| P6.7 可插拔 registry | registry、Profile 预设分派、present 统一 | ✅ |
-| P6.8 可组合渲染轴 | `RasterMode` × `PresentMode` 替换 Profile；`BackendKind` 统一；表驱动装配 | backlog — [#169](../decisions.md#d169) |
+| P6.7 可插拔 registry | registry、probe、统一 present 契约 | ✅ |
+| P6.8 可组合渲染轴 | `RasterMode` × `PresentMode` 类型与表驱动装配；`BackendKind` 统一；D3D11 GpuNative 原生 fill/stroke/glyph | 部分 ✅ — 轴类型/分派/D3D11 原生 fill+stroke+glyph atlas ✅；gradient/path 与 Metal/D3D12 GpuNative backlog — [#169](../decisions.md#d169) |
 
 <a id="p68-可组合渲染轴"></a>
 
 ### P6.8 可组合渲染轴（#169）
 
-**目标**：以 [#168](../decisions.md#d168) 正交三轴为 **唯一** mental model；`RenderPipelineProfile` **breaking 移除**，分派改 `RasterMode` × `PresentMode`（× `GraphicsBackend`）；`BackendKind` 与上述轴对齐；factory / engine **表驱动正交装配**。
+**设计**（已确认）：以 [#168](../decisions.md#d168) 正交三轴为 **唯一** mental model；engine 分派 **仅** `RasterMode` × `PresentMode`（× `GraphicsBackend`）；`BackendKind` 与上述轴对齐；factory / engine **表驱动正交装配**。旧 bundled 管线枚举已拒绝，不作为设计面。
+
+**实现状态**：正交轴类型、caps、`create_graphics_engine` 轴分派、registry 行 `raster`/`present`、删除 `RenderPipelineProfile` ✅。D3D11 `GpuNative` × `Swapchain`：`D3d11Backend` + VS/PS solid/rounded fill + SDF stroke + identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ soft alpha blit + swapchain present ✅。Metal / D3D12 `GpuNative` 与 D3D11 path/gradient 原生路径仍 backlog。
 
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
-| P0 | Profile → 正交轴（breaking） | backlog | 删除 `RenderPipelineProfile`；`GraphicsContextCaps` 改 `raster` + `present`；`create_graphics_engine` 按轴 match |
-| P0 | 表驱动 factory / engine 装配 | backlog | registry 行表达 API + 光栅 + present 组合；**禁止** bundled profile 第二套分派 |
-| P1 | D3D11 GPU native raster | backlog | **Windows 优先**（[#167](../decisions.md#d167)）；扩展 `RenderBackendRegistry`；D3D11 context caps → `RasterMode::GpuNative` |
-| P2 | `BackendKind` 统一 | backlog | 与 `RasterMode` / `PresentMode` / `GraphicsBackend` 对齐；消除 Profile 遗留 bundled 语义 |
+| P0 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**；caps/registry → `GpuNative` × `Swapchain`；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas；其余 Canvas2D soft blit |
+| P0 | 正交轴类型与 caps（breaking） | ✅ | `RasterMode` / `PresentMode`；`GraphicsContextCaps` 用 `raster` + `present`；已删 `RenderPipelineProfile`；`create_graphics_engine` 按轴 match |
+| P1 | 表驱动 factory / engine 装配 | ✅ | `GraphicsBackendEntry` 含 `raster` + `present`；engine 按 caps 轴组合装配 |
+| P1 | `BackendKind` 统一 | ✅ | 文档与注释对齐正交轴；`Cpu`/`Gpu`/`Auto`/`Null` 为引擎级光栅偏好 |
 | P2 | Metal / D3D12 GPU 光栅 | backlog | D3D11 之后；同 registry + caps 模式 |
 
 <a id="p67-图形后端架构"></a>
@@ -211,21 +213,16 @@ P6 图形后端            ← #162 #163，详见下文
 
 ### P6.7 图形后端架构
 
-可插拔 registry 与 **Profile 预设分派**（`RenderPipelineProfile`，#163）已落地；**Profile 已确认 breaking 移除**（[#169](../decisions.md#d169)），目标为 `RasterMode` × `PresentMode` — 见 [#168](../decisions.md#d168) · [P6.8](#p68-可组合渲染轴) · [graphics-backend-pluggable · 可组合渲染轴](systems/graphics-backend-pluggable.md#可组合渲染轴)。`draw::bootstrap_graphics_engine` 为唯一 probe 入口；`create_graphics_engine` **当前**按 profile 分派（过渡）；`native/graphics/<api>/` 为 API 对等实现根目录；`IGraphicsContext::present(PresentFrame)` 为统一 present 契约。
+可插拔 registry、probe 与统一 present 契约（`IGraphicsContext::present(PresentFrame)`）已落地。**设计**为 `RasterMode` × `PresentMode` × `GraphicsBackend` — 见 [#168](../decisions.md#d168) · [#169](../decisions.md#d169) · [P6.8](#p68-可组合渲染轴) · [graphics-backend-pluggable · 可组合渲染轴](systems/graphics-backend-pluggable.md#可组合渲染轴)。`draw::bootstrap_graphics_engine` 为唯一 probe 入口；`native/graphics/<api>/` 为 API 对等实现根目录。正交轴类型与表驱动 `create_graphics_engine` → P6.8 **已落地**；D3D11 `GpuNative` × `Swapchain` 垂直切片 **已落地**。
 
-**Backlog**（按 [#169](../decisions.md#d169) 排序；完整分项见 [P6.8](#p68-可组合渲染轴)）：
+**Backlog**（权威分项与优先级见 [P6.8](#p68-可组合渲染轴)；另含 D3D12 context `Planned`、WebGPU 远期评估）：
 
 | 项 | 说明 |
 |----|------|
-| **D3D11 GPU native raster** | **Windows 优先**；`RenderBackendRegistry` + caps → `RasterMode::GpuNative` |
-| Profile → 正交轴（breaking） | 删除 `RenderPipelineProfile`；`RasterMode` × `PresentMode` 分派 |
-| `BackendKind` 统一 | 纳入可组合 refactor，与正交轴对齐 |
-| 表驱动 factory / engine 装配 | registry 正交组合，替代 bundled profile |
-| Metal / D3D12 GPU 光栅 | D3D11 之后；扩展 `RenderBackendRegistry` |
-| D3D12 context | registry `Planned` |
-| WebGPU | P6.6 远期评估 |
+| **D3D11 原生路径扩展** | path / gradient / shadow（fill+stroke+identity glyph atlas 已落地） |
+| Metal / D3D12 GPU 光栅 | 扩展 `RenderBackendRegistry` |
 
-实现细节 → [rendering · 多图形 API](systems/rendering.md#多图形-api) · [platform · 多图形 API 与 factory](systems/platform.md#多图形-api-与-factory) · [graphics-backend-pluggable · 架构原则](systems/graphics-backend-pluggable.md#图形-api-架构原则)。
+实现细节 → [rendering · 多图形 API](systems/rendering.md#多图形-api) · [platform · 多图形 API 与 factory](systems/platform.md#多图形-api-与-factory) · [graphics-backend-pluggable · 图形 API 架构原则](systems/graphics-backend-pluggable.md#图形-api-架构原则)。
 
 ---
 
@@ -253,6 +250,7 @@ P6 图形后端            ← #162 #163，详见下文
 | `src/native/shared/*` | [platform](systems/platform.md) | `window_lifecycle`、`ime_events` 等跨后端 helper |
 | `src/native/backends/*` | [platform](systems/platform.md) | OS 壳：窗口、事件、CPU presenter（`gdi_presenter` 等）；**不含** GPU API 对等实现 |
 | `src/native/graphics/*` | [platform](systems/platform.md) · [graphics-backend-pluggable](systems/graphics-backend-pluggable.md) | **#164** IGraphicsContext 对等 API 实现（vulkan / opengl / d3d11 / metal / d3d12 stub） |
+| `src/native/factory/*` | [platform](systems/platform.md) · [graphics-backend-pluggable](systems/graphics-backend-pluggable.md) | **#163** 唯一对外 factory 分派：`mod.rs` + `registry.rs` + `registry_<os>.rs`；`GraphicsBackendEntry` 表驱动 |
 | `src/native/test_harness/*` | [platform](systems/platform.md), [testing](systems/testing.md) | FakePlatform |
 | `src/draw/pipeline/*` | [rendering](systems/rendering.md) | invalidation, FrameRenderer, AnimationRegistry |
 | `src/draw/compositor/*` | [rendering](systems/rendering.md) | ScenePaint, LayerTree |
