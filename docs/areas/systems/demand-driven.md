@@ -178,7 +178,7 @@ impl AppHandle {
 
 与 #132 分工：**Timer** = 框架 register + deadline wake；**post_to_ui** = 外部完成信号 → 主线程一次性闭包。队列调度见 [MainThreadQueue](#mainthreadqueue)（#137）。
 
-> **实现注记**：`App::post_to_ui` 与 `AppHandle::post_to_ui` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 写入目标 `WindowSession` 的 `MainThreadQueue`，session 销毁后丢弃闭包；成功入队后会调用通用 `EventLoopWaker`。副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：`App::post_to_ui` / `AppHandle::post_to_ui` 已导出，按 `window_id` 路由到目标 session 的 `MainThreadQueue`；session 销毁后丢弃闭包。详见 [application · post_to_ui](application.md#post_to_ui)。
 
 ---
 
@@ -214,7 +214,7 @@ Active 帧 **`run_active_frame` 完整顺序与合并规则** → [帧内合并]
 
 `post_to_ui` 闭包内 `State::set` 并入步骤 6 的 reconcile 批次（#118）；禁止在步骤 3 直接改 WidgetTree。
 
-> **实现注记**：`MainThreadQueue` 已落地并在单窗 event loop 中按 UiEvent → due work → post_to_ui 顺序 drain；`AppRuntime` 已按 `window_id` 路由投递并在独立 session 关闭时清理队列；有效 session 成功入队后会唤醒事件循环，关闭后的 late post 不入队也不唤醒。副窗 session bootstrap、MainThreadQueue 消费、事件路由、运行期 frame drain 与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：`MainThreadQueue` 已落地，单窗 event loop 按 UiEvent → due work → post_to_ui 顺序 drain。详见 [application · MainThreadQueue](application.md#mainthreadqueue)。
 
 ### 周期可见 UI
 
@@ -275,7 +275,7 @@ impl TimerHandle {
 | 副作用 | 回调内 `State::set` → 按需 reconcile；**不**默认 layout/render |
 | 与内置 UI | 可见周期动画仍 **优先** 内置 widget；Timer API 用于 **业务逻辑**（保存、刷新、倒计时数据） |
 
-> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 AppTimer 队列，成功注册会 wake event loop，独立 session 关闭会批量 cancel。副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 已导出，按 `window_id` 路由到所属 AppTimer 队列。详见 [application · App 定时 API](application.md#app-定时-api)。
 
 ---
 
@@ -466,7 +466,7 @@ run_active_frame(session):
 | Effect | 在 reconcile **之前** tick（步骤 5）；Effect → State → 并入步骤 6 reconcile 批次 |
 | reconcile | 合并算法见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153） |
 
-> **实现注记**：单窗主循环已接帧末 reconcile；`update_view` 的 `pending_root` 与响应式 `State` 批次置位会合并到同一次 reconcile。副窗 `MainThreadQueue` / `update_view` root reconcile 消费已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：单窗主循环已接帧末 reconcile；`pending_root` 与 State 批次合并为同一次 reconcile。详见 [application · update_view](application.md#update_view)。
 
 ### 框架托管的周期工作（#111、#124）
 

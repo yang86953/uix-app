@@ -83,7 +83,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** 进程级 loop（设计名 `run_app_loop`，源码 `run_widget_loop`）；UiEvent 按 **window_id** 路由。
 
-> **实现注记**：主窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、默认 Notification overlay、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick。副窗 session bootstrap、事件路由、运行期 frame drain、deadline wait、Effect pending tick 与三态写回已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：主窗已接 `WindowSession`、`ActiveWorkRegistry`、AppTimer、MainThreadQueue、root factory、默认 Notification overlay、`pending_root` / State 批次 reconcile 与三态写回；DeepIdle 不再固定 100ms 探活且不跑 `tick_effects`，Active 帧仅在 Effect pending 时 tick。以下各节能力均已支持多窗（副窗独立 session、事件按 window_id 路由、运行期 frame drain、deadline wait 与三态写回）。
 
 ### 单帧顺序（Active 态，设计 #106、#137）
 
@@ -131,7 +131,7 @@ flowchart TD
 
 设计（#106、#117）：**DeepIdle** 下 blocking `wait_event`（无 timeout）；**RegisteredActive** 由 `ActiveWorkRegistry::next_deadline` → `wait_until` 唤醒；**Active** 在事件 drain 后若无 pending 则回 DeepIdle。详见 [demand-driven · 唤醒源白名单](demand-driven.md#唤醒源白名单) · [ActiveWorkRegistry](demand-driven.md#activeworkregistry)。
 
-> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。内置 Animation 源见 [component · 动画](component.md#动画)；副窗 deadline wait 与三态写回已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。内置 Animation 源见 [component · 动画](component.md#动画)。
 
 | 状态 | 行为 |
 |------|------|
@@ -200,7 +200,7 @@ Platform UiEvent
 
 **ComponentHandle**：只读配置字段；可 `invalidate` / `emit`；不可改 style 或读 hover/pressed 等交互态。
 
-> **实现注记**（#101）：`ComponentHandle` 类型与 `emit` / `invalidate` 已导出，`ComponentHandle::id` 与 `AppState::get_handle` / `get_snapshot` / `contains` 公开 API 已按 `ComponentId` 命名；`AppState` 内部 register/unregister、snapshot/invalidate 与 semantic queue 也已按 `ComponentId` 命名。live handle 与 `AppState::get_handle` lookup handle 的 `invalidate()` 均走窄 Paint；lookup handle 的 `emit()` 会写入 `AppState` semantic queue 并唤醒 loop，由主窗/副窗 `WindowSession` 按目标 ComponentId drain 后派发到 `WidgetTree::dispatch_semantic`。`ComponentConfigSnapshot` 类型与 80 个内置组件静态配置提取已接；`ComponentHandle::snapshot()` / `snapshot_fields()` 与只读配置 getter（`text` / `label` / `placeholder` / `disabled` / `checked` / `numeric_value`）已接。`AppState` 类型已导出，`WidgetTree::set_app_state` 后 mount/unmount 会自动注册/注销 snapshot，并记录所属失效队列与当前 dirty rect，`AppState::get_handle` 可返回 snapshot + invalidate + emit handle。App 默认持有同一 `AppState`，`AppHandle::app_state()` 可访问同一 registry，主窗与副窗 `WindowSession` 均已注入；运行时 ComponentId 带 tree scope，避免共享 AppState 下副窗根节点 slot/generation 碰撞。当前业务数据仍可直接经 `State<T>` 闭包捕获；WidgetTree 内部源码名仍保留 `WidgetId` 别名，draw 内部源码名仍保留 `NodeId` 别名。
+> **实现注记**（#101）：`ComponentHandle` / `AppState` / `ComponentConfigSnapshot` 类型与公开 API 已按 `ComponentId` 命名导出。live handle 的 `invalidate()` 走窄 Paint，`emit()` 经 `AppState` semantic queue 唤醒 loop 后由 `WidgetTree::dispatch_semantic` 派发。86 个内置组件的静态配置提取已接，`ComponentHandle` 可读取 `text` / `label` / `placeholder` / `disabled` / `checked` / `numeric_value` 等 getter。App 默认持有同一 `AppState` 并注入主窗/副窗 `WindowSession`；运行时 ComponentId 带 tree scope 避免跨窗碰撞。WidgetTree / draw 内部仍保留 `WidgetId` / `NodeId` 别名。
 
 ### AppState · ComponentHandle 规格（#32、#61、#72、#101、#145）
 
@@ -337,7 +337,7 @@ App::new()
     .run();
 ```
 
-> **实现注记**：`WindowConfig`、`AppHandle::open_window` 与 `.on_window_start` 已导出；`open_window` 当前会分配新 `window_id`、独立 AppTimer / MainThreadQueue / AppHandle，并把副窗创建请求暂存到 `AppRuntime`，成功入队后会 wake event loop。GUI loop 会在首窗 `.on_start` 后与活动轮次中 drain 请求，创建 native 窗、校验 native `window_id`、构造独立 `WindowSession` 并调用 `.on_window_start`；副窗 MainThreadQueue / `update_view` reconcile、事件按 `window_id` 路由、运行期 frame drain 与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：`WindowConfig`、`AppHandle::open_window` 与 `.on_window_start` 已导出；`open_window` 当前会分配新 `window_id`、独立 AppTimer / MainThreadQueue / AppHandle，并把副窗创建请求暂存到 `AppRuntime`，成功入队后会 wake event loop。GUI loop 会在首窗 `.on_start` 后与活动轮次中 drain 请求，创建 native 窗、校验 native `window_id`、构造独立 `WindowSession` 并调用 `.on_window_start`。
 
 ### 副窗 bootstrap（#148）
 
@@ -458,7 +458,7 @@ autosave.cancel();
 | 业务逻辑（保存、轮询刷新、倒计时数据） | **#132 Timer API** 或 async→State |
 | 耗时 IO | async / 线程 → 主线程 `State::set` |
 
-> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 session 的 AppTimer 队列，成功注册后会 wake event loop，并可在 session 关闭时批量 cancel。副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 session 的 AppTimer 队列，成功注册后会 wake event loop，并可在 session 关闭时批量 cancel。
 
 ### 调用入口
 
@@ -540,7 +540,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 // ✗ 禁止：用 A handle 期望更新 B 的树
 ```
 
-> **实现注记**：`App::post_to_ui`、`AppHandle::post_to_ui` 与 `WindowSession.main_thread_queue` 已落地；`AppHandle` 经 `AppRuntime` 按 `window_id` 仅写入目标 session 队列，并在 session 销毁后丢弃闭包；成功入队后会调用通用 `EventLoopWaker`。单窗 loop 已在 UiEvent / due work 后、`tick_effects` 前 drain；副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：`App::post_to_ui`、`AppHandle::post_to_ui` 与 `WindowSession.main_thread_queue` 已落地；`AppHandle` 经 `AppRuntime` 按 `window_id` 仅写入目标 session 队列，并在 session 销毁后丢弃闭包；成功入队后会调用通用 `EventLoopWaker`。单窗 loop 已在 UiEvent / due work 后、`tick_effects` 前 drain。
 
 > **实现注记**（#89）：`AppHandle::notify_error` 会把非致命 `core::Error` 写入本 App 默认 Notification overlay，并投递一次 UI wake 让下一帧 reconcile；Fatal 返回 `None`，仍保留在诊断/崩溃路径。
 
@@ -552,7 +552,7 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 
 每 `WindowSession` 持有一个 `MainThreadQueue`；`post_to_ui` 入队，在 [帧内合并](demand-driven.md#帧内合并) 步骤 3 `drain`。入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
 
-> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列；有效 session 成功入队后会唤醒事件循环，关闭后的 late post 不入队也不唤醒。副窗 session bootstrap、MainThreadQueue 消费、事件路由、运行期 frame drain 与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列；有效 session 成功入队后会唤醒事件循环，关闭后的 late post 不入队也不唤醒。
 
 ---
 
@@ -674,7 +674,7 @@ inspector_handle.update_view(|| inspector_panel_v2(data.get()));
 
 详见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153）与 [view_factory 生命周期](view-reactive.md#view_factory-生命周期)（#155–#156）。
 
-> **实现注记**：`AppHandle::update_view` / `set_root` 已导出，并经 `AppRuntime` 按 `window_id` 投递到目标 `MainThreadQueue` 写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 pending `tick_effects` 后、layout/render 前至多 reconcile 一次。副窗 session bootstrap、root reconcile 消费、运行期 frame drain 与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：`AppHandle::update_view` / `set_root` 已导出，并经 `AppRuntime` 按 `window_id` 投递到目标 `MainThreadQueue` 写入 `pending_root`；响应式 `State` 批次会自动置位；单窗主循环会在 pending `tick_effects` 后、layout/render 前至多 reconcile 一次。
 
 ---
 
