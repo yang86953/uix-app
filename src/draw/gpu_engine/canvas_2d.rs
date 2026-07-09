@@ -15,6 +15,7 @@ use crate::draw::traits::Canvas2D;
 /// GPU 2D 绘制上下文。
 pub struct GpuCanvas2D {
     gl_ptr: *const glow::Context,
+    resources_released: bool,
 
     // ── 渲染状态 ──
     clip_rect: Rect,
@@ -262,6 +263,7 @@ impl GpuCanvas2D {
 
         Ok(Self {
             gl_ptr: gl as *const glow::Context,
+            resources_released: false,
             clip_rect: Rect::new(0.0, 0.0, width as f32, height as f32),
             clip_stack: Vec::new(),
             opacity: 1.0,
@@ -287,6 +289,23 @@ impl GpuCanvas2D {
             device_pixel_ratio: 1.0,
             u_tex_loc,
         })
+    }
+
+    /// 在 GL context 仍然有效且 current 时释放本画布持有的 GPU 资源。
+    pub(crate) fn release_gpu_resources(&mut self) {
+        if self.resources_released {
+            return;
+        }
+        self.resources_released = true;
+        unsafe {
+            self.gl().delete_vertex_array(self.rect_vao);
+            self.gl().delete_buffer(self.rect_vbo);
+            self.gl().delete_program(self.rect_program);
+            self.gl().delete_vertex_array(self.blit_vao);
+            self.gl().delete_buffer(self.blit_vbo);
+            self.gl().delete_program(self.blit_program);
+            self.gl().delete_texture(self.fallback_texture);
+        }
     }
 
     pub(crate) fn set_device_pixel_ratio(&mut self, dpr: f32) {
@@ -435,15 +454,7 @@ impl GpuCanvas2D {
 
 impl Drop for GpuCanvas2D {
     fn drop(&mut self) {
-        unsafe {
-            self.gl().delete_vertex_array(self.rect_vao);
-            self.gl().delete_buffer(self.rect_vbo);
-            self.gl().delete_program(self.rect_program);
-            self.gl().delete_vertex_array(self.blit_vao);
-            self.gl().delete_buffer(self.blit_vbo);
-            self.gl().delete_program(self.blit_program);
-            self.gl().delete_texture(self.fallback_texture);
-        }
+        self.release_gpu_resources();
     }
 }
 

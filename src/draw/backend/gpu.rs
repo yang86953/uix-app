@@ -68,12 +68,14 @@ unsafe impl Send for GpuDrawSurface {}
 
 /// GPU 渲染后端。
 pub struct GpuBackend {
+    // surface 必须先于 gl/context 析构；GpuCanvas2D::Drop 会使用 gl_ptr。
+    surface: GpuDrawSurface,
     pub gl: Box<glow::Context>,
     pub gpu_ctx: Box<dyn IGraphicsContext>,
     width: i32,
     height: i32,
     pub readback: RefCell<Vec<u32>>,
-    surface: GpuDrawSurface,
+    shutdown: bool,
 }
 
 impl GpuBackend {
@@ -102,17 +104,18 @@ impl GpuBackend {
         };
         let gl_ptr = gl.as_ref() as *const glow::Context;
         Ok(Self {
-            gl,
-            gpu_ctx,
-            width: 0,
-            height: 0,
-            readback: RefCell::new(Vec::new()),
             surface: GpuDrawSurface {
                 gl_ptr,
                 canvas,
                 width: 1,
                 height: 1,
             },
+            gl,
+            gpu_ctx,
+            width: 0,
+            height: 0,
+            readback: RefCell::new(Vec::new()),
+            shutdown: false,
         })
     }
 
@@ -186,6 +189,12 @@ impl RenderBackend for GpuBackend {
     }
 
     fn shutdown(&mut self) {
+        if self.shutdown {
+            return;
+        }
+        self.shutdown = true;
+        self.gpu_ctx.make_current();
+        self.surface.canvas.release_gpu_resources();
         self.gpu_ctx.shutdown();
     }
 
@@ -211,6 +220,12 @@ impl RenderBackend for GpuBackend {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+impl Drop for GpuBackend {
+    fn drop(&mut self) {
+        <Self as RenderBackend>::shutdown(self);
     }
 }
 

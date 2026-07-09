@@ -88,6 +88,7 @@ pub struct EglContext {
     height: i32,
     /// `EGL_KHR_swap_buffers_with_damage`；不可用时回退全屏 swap。
     swap_with_damage: Option<SwapBuffersWithDamageFn>,
+    shutdown: bool,
 }
 
 impl EglContext {
@@ -242,6 +243,7 @@ impl EglContext {
             width,
             height,
             swap_with_damage,
+            shutdown: false,
         })
     }
 }
@@ -331,6 +333,10 @@ impl IGraphicsContext for EglContext {
     }
 
     fn shutdown(&mut self) {
+        if self.shutdown {
+            return;
+        }
+        self.shutdown = true;
         let _ = self.egl.make_current(self.display, None, None, None);
         let _ = self.egl.destroy_context(self.display, self.context);
         let _ = self.egl.destroy_surface(self.display, self.surface);

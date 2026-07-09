@@ -54,11 +54,8 @@ impl WindowsPlatform {
     pub(crate) fn handle_message(&mut self, msg: u32, wparam: usize, lparam: isize) -> isize {
         match msg {
             WM_CLOSE => {
+                // 先交给 app 关闭 engine/GL 资源；PlatformWindow::close 再销毁 HWND。
                 self.push_event(UiEvent::close());
-                unsafe {
-                    DestroyWindow(self.hwnd);
-                }
-                self.hwnd = std::ptr::null_mut();
                 0
             }
             WM_DESTROY => {

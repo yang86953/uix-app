@@ -153,6 +153,7 @@ pub struct PlatformWindowCore<O: WindowOps> {
     presenter: Box<dyn IPresenter>,
     /// GPU 图形上下文（GPU/Hybrid 模式时设置，CPU 模式为 None）。
     gpu_ctx: Option<Box<dyn IGraphicsContext>>,
+    closed: bool,
 }
 
 impl<O: WindowOps> PlatformWindowCore<O> {
@@ -162,6 +163,7 @@ impl<O: WindowOps> PlatformWindowCore<O> {
             ops,
             presenter,
             gpu_ctx: None,
+            closed: false,
         }
     }
 
@@ -177,6 +179,7 @@ impl<O: WindowOps> PlatformWindowCore<O> {
             ops,
             presenter,
             gpu_ctx: Some(gpu_ctx),
+            closed: false,
         }
     }
 
@@ -205,7 +208,14 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         Ok(())
     }
     fn close(&mut self) -> Result<()> {
+        if self.closed {
+            return Ok(());
+        }
+        if let Some(gpu_ctx) = self.gpu_ctx.as_mut() {
+            gpu_ctx.shutdown();
+        }
         self.ops.os_close()?;
+        self.closed = true;
         state_write!(self.state, visible, false);
         Ok(())
     }
@@ -388,6 +398,7 @@ impl<O: WindowOps> INativeHandle for PlatformWindowCore<O> {
 mod tests {
     use super::*;
     use crate::native::presenter::NullPresenter;
+    use std::cell::Cell;
 
     fn assert_error_code(result: Result<()>, expected: Errc) {
         match result {
@@ -406,6 +417,32 @@ mod tests {
             Ok(())
         }
         fn os_close(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn os_set_title(&mut self, _title: &str) -> Result<()> {
+            Ok(())
+        }
+        fn os_set_size(&mut self, _w: i32, _h: i32) -> Result<()> {
+            Ok(())
+        }
+        fn native_handle(&self) -> *mut std::ffi::c_void {
+            std::ptr::null_mut()
+        }
+    }
+
+    struct CloseTrackingOps {
+        close_calls: Rc<Cell<usize>>,
+    }
+
+    impl WindowOps for CloseTrackingOps {
+        fn os_show(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn os_hide(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn os_close(&mut self) -> Result<()> {
+            self.close_calls.set(self.close_calls.get() + 1);
             Ok(())
         }
         fn os_set_title(&mut self, _title: &str) -> Result<()> {
@@ -497,6 +534,21 @@ mod tests {
         assert_eq!(state.opacity, 1.0);
         assert!(!state.text_input_active);
         assert!(!state.file_drop_enabled);
+    }
+
+    #[test]
+    fn platform_window_close_is_idempotent() {
+        let close_calls = Rc::new(Cell::new(0));
+        let mut window = PlatformWindowCore::new(
+            Rc::new(RefCell::new(WindowState::default())),
+            CloseTrackingOps {
+                close_calls: close_calls.clone(),
+            },
+            Box::new(NullPresenter::new()),
+        );
+        window.close().unwrap();
+        window.close().unwrap();
+        assert_eq!(close_calls.get(), 1);
     }
 
     #[test]

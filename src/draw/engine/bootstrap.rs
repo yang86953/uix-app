@@ -23,10 +23,46 @@ pub struct ProbeReport {
 
 impl ProbeReport {
     pub fn record_failure(&mut self, backend: GraphicsBackend, err: &Error) {
+        self.record_failure_at(backend, ProbeStage::Unspecified, Some(backend), err);
+    }
+
+    fn record_failure_at(
+        &mut self,
+        candidate: GraphicsBackend,
+        stage: ProbeStage,
+        selected: Option<GraphicsBackend>,
+        err: &Error,
+    ) {
+        let selected = selected.map(GraphicsBackend::as_str).unwrap_or("none");
         self.failures.push(ProbeFailure {
-            backend,
-            message: err.short_what(),
+            backend: candidate,
+            message: format!(
+                "stage={}; selected={selected}; error={}",
+                stage.as_str(),
+                err.what()
+            ),
         });
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProbeStage {
+    Unspecified,
+    CandidateSelection,
+    ContextCreate,
+    EngineCreate,
+    EngineInitialize,
+}
+
+impl ProbeStage {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unspecified => "unspecified",
+            Self::CandidateSelection => "candidate_selection",
+            Self::ContextCreate => "context_create",
+            Self::EngineCreate => "engine_create",
+            Self::EngineInitialize => "engine_initialize",
+        }
     }
 }
 
@@ -65,8 +101,10 @@ where
     let mut report = ProbeReport::default();
 
     if candidates.is_empty() {
-        report.record_failure(
+        report.record_failure_at(
             request,
+            ProbeStage::CandidateSelection,
+            None,
             &Error::new(
                 Errc::PlatformError,
                 format!("Graphics bootstrap: no GPU backend candidates for {request}"),
@@ -82,9 +120,9 @@ where
             Err(err) => {
                 crate::core::log::warn_fn(format!(
                     "Graphics bootstrap: {candidate} unavailable: {}",
-                    err.short_what()
+                    err.what()
                 ));
-                report.record_failure(candidate, &err);
+                report.record_failure_at(candidate, ProbeStage::ContextCreate, None, &err);
                 continue;
             }
         };
@@ -95,9 +133,9 @@ where
             Err(err) => {
                 crate::core::log::warn_fn(format!(
                     "Graphics bootstrap: engine for {selected} unavailable: {}",
-                    err.short_what()
+                    err.what()
                 ));
-                report.record_failure(selected, &err);
+                report.record_failure_at(candidate, ProbeStage::EngineCreate, Some(selected), &err);
                 continue;
             }
         };
@@ -114,10 +152,15 @@ where
             Err(err) => {
                 crate::core::log::warn_fn(format!(
                     "Graphics bootstrap: engine init for {selected} failed: {}",
-                    err.short_what()
+                    err.what()
                 ));
                 engine.shutdown();
-                report.record_failure(selected, &err);
+                report.record_failure_at(
+                    candidate,
+                    ProbeStage::EngineInitialize,
+                    Some(selected),
+                    &err,
+                );
             }
         }
     }
@@ -241,7 +284,11 @@ mod tests {
             Ok(_) => panic!("CpuPresenter must fail engine creation"),
             Err(report) => {
                 assert!(shutdown_called.get());
-                assert!(!report.failures.is_empty());
+                let failure = report.failures.first().expect("engine failure");
+                assert_eq!(failure.backend, GraphicsBackend::D3d11);
+                assert!(failure.message.contains("stage=engine_create"));
+                assert!(failure.message.contains("selected=d3d11"));
+                assert!(failure.message.contains("CpuPresenter"));
             }
         }
     }
@@ -314,8 +361,29 @@ mod tests {
             Ok(_) => panic!("initialize failure must reject bootstrap"),
             Err(report) => {
                 assert!(shutdown_called.get());
-                assert!(!report.failures.is_empty());
+                let failure = report.failures.first().expect("init failure");
+                assert_eq!(failure.backend, GraphicsBackend::D3d11);
+                assert!(failure.message.contains("stage=engine_initialize"));
+                assert!(failure.message.contains("selected=d3d11"));
+                assert!(failure.message.contains("init failed for test"));
             }
         }
+    }
+
+    #[test]
+    fn probe_report_preserves_context_create_stage_and_message() {
+        let mut report = ProbeReport::default();
+        report.record_failure_at(
+            GraphicsBackend::OpenGlEs,
+            ProbeStage::ContextCreate,
+            None,
+            &Error::new(Errc::PlatformError, "WGL context creation failed"),
+        );
+
+        let failure = report.failures.first().expect("context failure");
+        assert_eq!(failure.backend, GraphicsBackend::OpenGlEs);
+        assert!(failure.message.contains("stage=context_create"));
+        assert!(failure.message.contains("selected=none"));
+        assert!(failure.message.contains("WGL context creation failed"));
     }
 }

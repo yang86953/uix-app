@@ -179,8 +179,12 @@ impl Window {
         }
         while self.running {
             let saw_event = Cell::new(false);
-            let collect = |_: &crate::native::traits::event::UiEvent| {
+            let close_requested = Cell::new(false);
+            let collect = |event: &crate::native::traits::event::UiEvent| {
                 saw_event.set(true);
+                if event.type_ == crate::native::traits::event::UiEventType::WindowClose {
+                    close_requested.set(true);
+                }
                 true
             };
 
@@ -196,8 +200,16 @@ impl Window {
                 continue;
             }
 
-            if !frame_fn(self.platform.as_mut()) {
+            if !frame_fn(self.platform.as_mut()) || close_requested.get() {
                 self.running = false;
+            }
+        }
+        if let Some(ref mut window) = self.window {
+            if let Err(error) = window.close() {
+                crate::core::log::warn_fn(format!(
+                    "Window::run: close failed: {}",
+                    error.short_what()
+                ));
             }
         }
         self.running = false;
