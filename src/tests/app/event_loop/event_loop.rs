@@ -204,11 +204,7 @@ fn window_resize_updates_root_and_flex_content() {
     engine.initialize(800, 600).expect("init engine");
 
     let root_view = column([
-        row([
-            label("nav").width(200.0),
-            label("content").flex_grow(1.0),
-        ])
-        .flex_grow(1.0),
+        row([label("nav").width(200.0), label("content").flex_grow(1.0)]).flex_grow(1.0),
         label("status"),
     ])
     .flex_grow(1.0);

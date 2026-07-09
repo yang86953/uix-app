@@ -4,8 +4,6 @@
 //! [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`] so macOS can bootstrap a
 //! GPU present path without staying on pure SoftwareEngine.
 
-#![cfg(target_os = "macos")]
-
 use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
@@ -47,12 +45,7 @@ impl IGraphicsContext for MetalContext {
         GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::Metal, self.device_pixel_ratio)
     }
 
-    fn initialize(
-        &mut self,
-        _native_window: *mut c_void,
-        width: i32,
-        height: i32,
-    ) -> Result<()> {
+    fn initialize(&mut self, _native_window: *mut c_void, width: i32, height: i32) -> Result<()> {
         self.width = width.max(1);
         self.height = height.max(1);
         self.initialized = true;
@@ -111,7 +104,7 @@ impl IGraphicsContext for MetalContext {
                 width,
                 height,
                 damage,
-            } => self.present_pixels(pixels, *width, *height, *damage),
+            } => self.present_pixels(pixels, *width, *height, damage.clone()),
             PresentFrame::Swapchain { .. } => Err(Error::new(
                 Errc::NotImplemented,
                 "MetalContext: swapchain present requires native Metal raster (planned)",

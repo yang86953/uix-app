@@ -5,17 +5,17 @@
 //! gradients + simple path meshes + box/ambient shadow; unsupported Canvas2D
 //! ops soft-raster and alpha-blit (same hybrid pattern as GL `GpuCanvas2D`).
 
-#![cfg(windows)]
 #![allow(nonstandard_style)]
 
 use std::ffi::c_void;
 
+use super::pipeline::D3d11Pipeline;
 use crate::core::{Errc, Error, Result};
-use crate::native::graphics::d3d11::pipeline::D3d11Pipeline;
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect,
-    GpuRadialGradient, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, PresentDamage,
+    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
+    PresentDamage,
 };
 use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
 use ::windows::Win32::Graphics::Direct3D::{
@@ -327,8 +327,7 @@ impl IGraphicsContext for D3d11Context {
             ));
         };
         unsafe {
-            self.context
-                .ClearRenderTargetView(rtv, &[r, g, b, a]);
+            self.context.ClearRenderTargetView(rtv, &[r, g, b, a]);
         }
         Ok(())
     }
@@ -412,8 +411,14 @@ impl IGraphicsContext for D3d11Context {
     ) -> Result<()> {
         self.ensure_rtv()?;
         self.make_current();
-        self.pipeline
-            .draw_glyphs(&self.device, &self.context, viewport_w, viewport_h, scissor, glyphs)
+        self.pipeline.draw_glyphs(
+            &self.device,
+            &self.context,
+            viewport_w,
+            viewport_h,
+            scissor,
+            glyphs,
+        )
     }
 
     fn draw_linear_gradients(
@@ -474,12 +479,7 @@ impl IGraphicsContext for D3d11Context {
             .draw_box_shadows(&self.context, viewport_w, viewport_h, scissor, shadows)
     }
 
-    fn blit_soft_fallback(
-        &mut self,
-        pixels: &[u32],
-        width: i32,
-        height: i32,
-    ) -> Result<()> {
+    fn blit_soft_fallback(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
         self.ensure_rtv()?;
         self.make_current();
         self.pipeline

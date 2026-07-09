@@ -1,6 +1,6 @@
 ﻿# 测试系统
 
-← [Main](../architecture.md) · 系统 **#12** · 功能域：跨域
+← [架构导航](../architecture.md) · 系统 **#12** · 功能域：跨域
 
 > 组件与集成测试策略；FakePlatform 驱动真实代码路径。
 
@@ -9,6 +9,7 @@
 | 主题 | 章节 | 决策 |
 |------|------|------|
 | 总策略 | [测试策略](#测试策略) | #40 |
+| 零闲置 | [L1 零帧循环验收](#l1-零帧循环验收) | #105 #173 |
 | 内存平台 | [FakePlatform](#fakeplatform) | #40 |
 | 行为断言 | [语义断言](#语义断言) | #40 |
 | 绘制断言 | [paint snapshot](#paint-snapshot) | #40 |
@@ -36,8 +37,37 @@
 - **三层事件**：优先断言 **SemanticEvent** 与 handler 副作用；SystemEvent 仅作中间态。
 - **局部绘制**：配合 `NullEngine` / `SoftwareEngine` + FakePresenter 记录 damage rects。
 - 生产 `deny(clippy::unwrap_used)`；**测试 crate 除外**。
-- **零闲置验收**（#105）：无 `UiEvent`、无标脏时 assert 无 `present`、无 `layout`（**L0**）；DeepIdle 下 assert 无 `tick_effects`、blocking wait（**L1**）。**Timer**：`run_interval` + `cancel` 后 assert 回 DeepIdle（#132）；到期行为见 [测试时钟分层](#测试时钟分层)。
-- **豁免**（#113）：须 `decisions.md` **#165+** 公开条目 + 测试覆盖豁免边界；默认不豁免。
+- **零闲置验收**（#105 #173）：L0 断言无 `present` / `layout`；L1 还必须证明无 timeout 探活、无 active frame / `tick_effects` / reconcile，且 wake 来源可定位。精确指标见 [L1 零帧循环验收](#l1-零帧循环验收)。**Timer**：`run_interval` + `cancel` 后 assert 回 DeepIdle（#132）；到期行为见 [测试时钟分层](#测试时钟分层)。
+- **豁免**（#113）：须 `decisions.md` **#174+** 公开条目 + 测试覆盖豁免边界；默认不豁免。
+
+---
+
+<a id="l1-零帧循环验收"></a>
+
+## L1 零帧循环验收
+
+L1 是可观测契约，不能用“看起来很闲”或仅断言 `present_calls == 0` 代替。测试 harness 须能记录 wait 选择、session 状态、active-frame 入口、Effect / reconcile / layout / render / present 计数，以及 wake 来源和目标 scope。
+
+| 场景 | 必须断言的指标（除首帧基线后的 delta） |
+|------|------------------------------------------------|
+| DeepIdle 稳态 | `loop_state == DeepIdle`；Registry / MainThreadQueue / semantic queue / invalidation 均空；选择 blocking `wait_event`；`wait_timeout_calls == 0`；`active_frame` / `tick_effects` / reconcile / layout / render / present delta 全为 0 |
+| RegisteredActive · 未到期 | Registry 非空且 `loop_state == RegisteredActive`；仅有一次 `wait_timeout(earliest_deadline - now)`；到期前上述 frame-work delta 全为 0，不重复固定间隔探活 |
+| RegisteredActive · 无 deadline | Registry 非空且保持 RegisteredActive；选择 `wait_event`；`wait_timeout_calls == 0`；无事件时 frame-work delta 全为 0 |
+| due Timer / Animation | TestClock 到 earliest deadline 时只 drain 到期项；只有所属 session 可进入 Active；无失效时 `present` / layout 仍为 0 |
+| `post_to_ui` / semantic queue | 每次成功入队记录一次进程 wake 与目标 `window_id` / `ComponentId` scope；只目标 session drain；其他 session 状态不变且 frame-work delta 全为 0 |
+| cancel / session close | Timer / queue 清空且 Registry unregister；无其他工作时下一状态为 DeepIdle；后续 TestClock advance 不再回调、不唤醒、不进帧 |
+| spurious / process-only wake | loop 可从 wait 返回，但若所有 session 均无定向工作，任一 session 都不标记 Active，frame-work delta 全为 0，随即重新 blocking wait |
+
+**wake 证据**至少包含 `source` + 可选 `window_id` / `ComponentId` scope；允许作为测试专用 trace 或计数器，不要为此暴露公开 Registry API。建议来源集：`OsEvent`、`Invalidation`、`State`、`RegisteredWork`、`MainThreadQueue`、`SemanticQueue`、`WindowLifecycle`。
+
+**当前自动化证据**（源码测试名）：
+
+| 证据 | 已覆盖 | 仍须补强 |
+|------|--------|------------|
+| `deep_idle_waits_without_fixed_timeout_or_extra_present` / `window_session_deep_idle_records_loop_state` | DeepIdle 状态、无固定 timeout、present 基线 | 显式 active-frame / Effect / reconcile / layout delta |
+| `registered_active_wait_until_uses_injected_test_clock` / `registered_active_due_work_drains_without_timeout` | 精确 remaining timeout、due 立即 drain | 多 session 最早 deadline 与非目标窗零工作 |
+| `ime_composition_start_registers_open_active_work_without_timeout` | 无 deadline register 会话 | 按上表固定断言 blocking wait 且 timeout delta 为 0 |
+| `post_to_ui_wakes_event_loop_after_enqueue` / `routed_post_to_ui_drains_target_queue` | 入队 wake 与目标队列路由 | 统一 wake source trace 与非目标 session 全计数为 0 |
 
 ---
 
@@ -102,21 +132,23 @@ Reconciler rebuild 后 handler **智能重绑**（#123、#135、#138、#160）�
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
-│  FakeTimer（已有，native/test_harness/fake_timer.rs）     │
+│  FakeTimer（已编码，native/test_harness/fake_timer.rs）   │
 │  ITimer 平台 API · pf.timer.advance(delta)              │
 │  用途：平台子系统 / 未来 native 定时能力测试              │
 │  ✗ 不驱动 App::run_after / ActiveWorkRegistry           │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
-│  TestClock（已接，app/test_clock.rs）                   │
+│  TestClock（已编码，app/test_clock.rs）               │
 │  注入 AppTimerQueue / session loop 的 now() 源            │
 │  test_clock.advance(delta) → drain_due(now)             │
 │  用途：#132 App Timer、Animation Registry、wait_until    │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### TestClock API（已接）
+### TestClock API
+
+**实现状态**：已编码并有 AppTimer / RegisteredActive 自动化测试；L1 完整证据仍以上述验收表为准。
 
 ```rust
 pub struct TestClock {

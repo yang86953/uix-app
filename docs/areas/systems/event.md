@@ -1,6 +1,6 @@
 ﻿# 事件系统
 
-← [Main](../architecture.md) · 系统 **#5** · 功能域：`ui` · `app`（UiEvent 映射）
+← [架构导航](../architecture.md) · 系统 **#5** · 功能域：`ui` · `app`（UiEvent 映射）
 
 > 输入 → 系统 / 语义 / 自定义 三层；业务只绑定后两层。
 

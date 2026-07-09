@@ -48,6 +48,7 @@ extern "system" {
         lpParam: *mut std::ffi::c_void,
     ) -> *mut std::ffi::c_void;
     pub(super) fn DestroyWindow(hwnd: *mut std::ffi::c_void) -> i32;
+    pub(super) fn IsWindow(hwnd: *mut std::ffi::c_void) -> i32;
     pub(super) fn AdjustWindowRectEx(
         lpRect: *mut RECT,
         dwStyle: u32,

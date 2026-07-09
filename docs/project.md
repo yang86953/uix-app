@@ -66,6 +66,7 @@
 
 - 主循环、渲染、事件和响应式状态满足 #105 零闲置约束。
 - 文档如实区分 **产品愿景**（跨平台含移动端 + 全栈）、**开发优先级**（Windows 优先，[#167](decisions.md#d167)）与 **当前交付**（桌面、Windows 主验证）。
-- 系统文档、roadmap、源码路径和公开 API 保持一致。
+- 系统文档、[plan](plan.md)、[implementation](areas/implementation.md)、源码路径和公开 API 保持一致；不得用单一 `✅` 混淆 coded、automated、compiled、hardware 与 production 证据。
+- 关键需求有编号，并能追踪到 [总设计](design.md)、执行步骤、精确测试/命令、验证提交和平台证据。
 - 新工作能从 [index.md](index.md) → [areas/architecture.md](areas/architecture.md) 或分区索引 → 叶子文档定位。
 - 局部改动有最小必要验证；跨模块、公共接口或发布前扩大验证。

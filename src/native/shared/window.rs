@@ -22,7 +22,7 @@ use crate::native::traits::window::{INativeHandle, IWindowProperties, PlatformWi
 // WindowOps — 平台特有的窗口操作
 //
 // 必须实现（6 个）：os_show, os_hide, os_close, os_set_title, os_set_size, native_handle
-// 其余可选能力有默认实现：返回 Err(NotImplemented) 并由共享层记录。
+// 其余可选能力有默认实现：返回 Err(NotImplemented)。
 //
 // 与 PlatformWindowCore<O> 组合使用，自动获得 PlatformWindow +
 // IWindowProperties + INativeHandle 三个 trait 的完整实现。
@@ -30,11 +30,11 @@ use crate::native::traits::window::{INativeHandle, IWindowProperties, PlatformWi
 
 pub trait WindowOps {
     // ── 必须实现（无默认，编译期强制）────────────────────────────
-    fn os_show(&mut self);
-    fn os_hide(&mut self);
-    fn os_close(&mut self);
-    fn os_set_title(&mut self, title: &str);
-    fn os_set_size(&mut self, w: i32, h: i32);
+    fn os_show(&mut self) -> Result<()>;
+    fn os_hide(&mut self) -> Result<()>;
+    fn os_close(&mut self) -> Result<()>;
+    fn os_set_title(&mut self, title: &str) -> Result<()>;
+    fn os_set_size(&mut self, w: i32, h: i32) -> Result<()>;
     fn native_handle(&self) -> *mut std::ffi::c_void;
 
     // ── 窗口外观 ─────────────────────────────────────────
@@ -103,7 +103,9 @@ pub trait WindowOps {
     }
 
     // ── 几何通知 ─────────────────────────────────────────
-    fn os_resize_notify(&mut self, _w: i32, _h: i32) {}
+    fn os_resize_notify(&mut self, _w: i32, _h: i32) -> Result<()> {
+        Ok(())
+    }
 
     /// Wayland wl_surface C 指针（EGL 初始化用）。非 Wayland 返回 null。
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
@@ -121,24 +123,6 @@ pub fn unimpl(method: &str) -> Result<()> {
         Errc::NotImplemented,
         format!("WindowOps::{method} is not supported on this platform"),
     ))
-}
-
-fn log_window_op_error(method: &str, error: Error) {
-    crate::core::log::warn_fn(format!(
-        "WindowOps::{} failed: {}",
-        method,
-        error.short_what()
-    ));
-}
-
-fn window_op_supported(method: &str, result: Result<()>) -> bool {
-    match result {
-        Ok(()) => true,
-        Err(error) => {
-            log_window_op_error(method, error);
-            false
-        }
-    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -210,61 +194,48 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
         state_read!(self.state, window_id)
     }
 
-    fn show(&mut self) {
+    fn show(&mut self) -> Result<()> {
+        self.ops.os_show()?;
         state_write!(self.state, visible, true);
-        self.ops.os_show();
+        Ok(())
     }
-    fn hide(&mut self) {
+    fn hide(&mut self) -> Result<()> {
+        self.ops.os_hide()?;
         state_write!(self.state, visible, false);
-        self.ops.os_hide();
+        Ok(())
     }
-    fn close(&mut self) {
+    fn close(&mut self) -> Result<()> {
+        self.ops.os_close()?;
         state_write!(self.state, visible, false);
-        self.ops.os_close();
+        Ok(())
     }
     fn is_visible(&self) -> bool {
         state_read!(self.state, visible)
     }
-    fn set_title(&mut self, title: &str) {
-        self.ops.os_set_title(title);
+    fn set_title(&mut self, title: &str) -> Result<()> {
+        self.ops.os_set_title(title)
     }
-    fn center_on_screen(&mut self) {
-        if let Err(e) = self.ops.os_center_on_screen() {
-            log_window_op_error("os_center_on_screen", e);
-        }
+    fn center_on_screen(&mut self) -> Result<()> {
+        self.ops.os_center_on_screen()
     }
-    fn raise(&mut self) {
-        if let Err(e) = self.ops.os_raise() {
-            log_window_op_error("os_raise", e);
-        }
+    fn raise(&mut self) -> Result<()> {
+        self.ops.os_raise()
     }
-    fn lower(&mut self) {
-        if let Err(e) = self.ops.os_lower() {
-            log_window_op_error("os_lower", e);
-        }
+    fn lower(&mut self) -> Result<()> {
+        self.ops.os_lower()
     }
-    fn set_window_icon(&mut self, icon_path: &str) {
-        if let Err(e) = self.ops.os_set_icon(icon_path) {
-            log_window_op_error("os_set_icon", e);
-        }
+    fn set_window_icon(&mut self, icon_path: &str) -> Result<()> {
+        self.ops.os_set_icon(icon_path)
     }
-    fn flash_window(&mut self) {
-        if let Err(e) = self.ops.os_flash() {
-            log_window_op_error("os_flash", e);
-        }
+    fn flash_window(&mut self) -> Result<()> {
+        self.ops.os_flash()
     }
-    fn resize_notify(&mut self, width: i32, height: i32) {
+    fn resize_notify(&mut self, width: i32, height: i32) -> Result<()> {
+        self.ops.os_resize_notify(width, height)?;
+        self.presenter.resize(width, height)?;
         state_write!(self.state, width, width);
         state_write!(self.state, height, height);
-        self.ops.os_resize_notify(width, height);
-        if let Err(e) = self.presenter.resize(width, height) {
-            crate::core::log::warn_fn(format!(
-                "resize_notify: presenter.resize({}, {}) failed: {}",
-                width,
-                height,
-                e.short_what()
-            ));
-        }
+        Ok(())
     }
     fn properties(&self) -> &dyn IWindowProperties {
         self
@@ -303,21 +274,18 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
         state_read!(self.state, height)
     }
 
-    fn set_size(&mut self, w: i32, h: i32) {
+    fn set_size(&mut self, w: i32, h: i32) -> Result<()> {
+        self.ops.os_set_size(w, h)?;
         state_write!(self.state, width, w);
         state_write!(self.state, height, h);
-        self.ops.os_set_size(w, h);
+        Ok(())
     }
 
-    fn set_minimum_size(&mut self, w: i32, h: i32) {
-        if let Err(e) = self.ops.os_set_min_size(w, h) {
-            log_window_op_error("os_set_min_size", e);
-        }
+    fn set_minimum_size(&mut self, w: i32, h: i32) -> Result<()> {
+        self.ops.os_set_min_size(w, h)
     }
-    fn set_maximum_size(&mut self, w: i32, h: i32) {
-        if let Err(e) = self.ops.os_set_max_size(w, h) {
-            log_window_op_error("os_set_max_size", e);
-        }
+    fn set_maximum_size(&mut self, w: i32, h: i32) -> Result<()> {
+        self.ops.os_set_max_size(w, h)
     }
 
     fn position(&self) -> crate::core::geometry::Point {
@@ -326,17 +294,17 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
             state_read!(self.state, pos_y) as f32,
         )
     }
-    fn set_position(&mut self, x: i32, y: i32) {
-        if window_op_supported("os_set_position", self.ops.os_set_position(x, y)) {
-            state_write!(self.state, pos_x, x);
-            state_write!(self.state, pos_y, y);
-        }
+    fn set_position(&mut self, x: i32, y: i32) -> Result<()> {
+        self.ops.os_set_position(x, y)?;
+        state_write!(self.state, pos_x, x);
+        state_write!(self.state, pos_y, y);
+        Ok(())
     }
 
-    fn set_resizable(&mut self, r: bool) {
-        if window_op_supported("os_set_resizable", self.ops.os_set_resizable(r)) {
-            state_write!(self.state, resizable, r);
-        }
+    fn set_resizable(&mut self, r: bool) -> Result<()> {
+        self.ops.os_set_resizable(r)?;
+        state_write!(self.state, resizable, r);
+        Ok(())
     }
     fn is_maximized(&self) -> bool {
         state_read!(self.state, maximized)
@@ -344,65 +312,65 @@ impl<O: WindowOps> IWindowProperties for PlatformWindowCore<O> {
     fn is_minimized(&self) -> bool {
         state_read!(self.state, minimized)
     }
-    fn maximize(&mut self) {
-        if window_op_supported("os_maximize", self.ops.os_maximize()) {
-            state_write!(self.state, maximized, true);
-            state_write!(self.state, minimized, false);
-        }
+    fn maximize(&mut self) -> Result<()> {
+        self.ops.os_maximize()?;
+        state_write!(self.state, maximized, true);
+        state_write!(self.state, minimized, false);
+        Ok(())
     }
-    fn minimize(&mut self) {
-        if window_op_supported("os_minimize", self.ops.os_minimize()) {
-            state_write!(self.state, minimized, true);
-            state_write!(self.state, maximized, false);
-        }
+    fn minimize(&mut self) -> Result<()> {
+        self.ops.os_minimize()?;
+        state_write!(self.state, minimized, true);
+        state_write!(self.state, maximized, false);
+        Ok(())
     }
-    fn restore(&mut self) {
-        if window_op_supported("os_restore", self.ops.os_restore()) {
-            state_write!(self.state, maximized, false);
-            state_write!(self.state, minimized, false);
-        }
+    fn restore(&mut self) -> Result<()> {
+        self.ops.os_restore()?;
+        state_write!(self.state, maximized, false);
+        state_write!(self.state, minimized, false);
+        Ok(())
     }
-    fn set_borderless(&mut self, b: bool) {
-        if window_op_supported("os_set_borderless", self.ops.os_set_borderless(b)) {
-            state_write!(self.state, borderless, b);
-        }
+    fn set_borderless(&mut self, b: bool) -> Result<()> {
+        self.ops.os_set_borderless(b)?;
+        state_write!(self.state, borderless, b);
+        Ok(())
     }
 
-    fn set_fullscreen(&mut self, f: bool) {
+    fn set_fullscreen(&mut self, f: bool) -> Result<()> {
         if f == state_read!(self.state, fullscreen) {
-            return;
+            return Ok(());
         }
-        if window_op_supported("os_set_fullscreen", self.ops.os_set_fullscreen(f)) {
-            state_write!(self.state, fullscreen, f);
-        }
+        self.ops.os_set_fullscreen(f)?;
+        state_write!(self.state, fullscreen, f);
+        Ok(())
     }
     fn is_fullscreen(&self) -> bool {
         state_read!(self.state, fullscreen)
     }
-    fn set_always_on_top(&mut self, on: bool) {
-        if window_op_supported("os_set_always_on_top", self.ops.os_set_always_on_top(on)) {
-            state_write!(self.state, always_on_top, on);
-        }
+    fn set_always_on_top(&mut self, on: bool) -> Result<()> {
+        self.ops.os_set_always_on_top(on)?;
+        state_write!(self.state, always_on_top, on);
+        Ok(())
     }
-    fn set_window_opacity(&mut self, opacity: f32) {
-        if window_op_supported("os_set_opacity", self.ops.os_set_opacity(opacity)) {
-            state_write!(self.state, opacity, opacity);
-        }
+    fn set_window_opacity(&mut self, opacity: f32) -> Result<()> {
+        self.ops.os_set_opacity(opacity)?;
+        state_write!(self.state, opacity, opacity);
+        Ok(())
     }
-    fn start_text_input(&mut self) {
-        if window_op_supported("os_start_text_input", self.ops.os_start_text_input()) {
-            state_write!(self.state, text_input_active, true);
-        }
+    fn start_text_input(&mut self) -> Result<()> {
+        self.ops.os_start_text_input()?;
+        state_write!(self.state, text_input_active, true);
+        Ok(())
     }
-    fn stop_text_input(&mut self) {
-        if window_op_supported("os_stop_text_input", self.ops.os_stop_text_input()) {
-            state_write!(self.state, text_input_active, false);
-        }
+    fn stop_text_input(&mut self) -> Result<()> {
+        self.ops.os_stop_text_input()?;
+        state_write!(self.state, text_input_active, false);
+        Ok(())
     }
-    fn enable_file_drop(&mut self, enable: bool) {
-        if window_op_supported("os_enable_file_drop", self.ops.os_enable_file_drop(enable)) {
-            state_write!(self.state, file_drop_enabled, enable);
-        }
+    fn enable_file_drop(&mut self, enable: bool) -> Result<()> {
+        self.ops.os_enable_file_drop(enable)?;
+        state_write!(self.state, file_drop_enabled, enable);
+        Ok(())
     }
 }
 
@@ -421,14 +389,66 @@ mod tests {
     use super::*;
     use crate::native::presenter::NullPresenter;
 
+    fn assert_error_code(result: Result<()>, expected: Errc) {
+        match result {
+            Ok(()) => panic!("window operation unexpectedly succeeded"),
+            Err(error) => assert_eq!(error.code(), expected),
+        }
+    }
+
     struct UnsupportedOptionalOps;
 
     impl WindowOps for UnsupportedOptionalOps {
-        fn os_show(&mut self) {}
-        fn os_hide(&mut self) {}
-        fn os_close(&mut self) {}
-        fn os_set_title(&mut self, _title: &str) {}
-        fn os_set_size(&mut self, _w: i32, _h: i32) {}
+        fn os_show(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn os_hide(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn os_close(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn os_set_title(&mut self, _title: &str) -> Result<()> {
+            Ok(())
+        }
+        fn os_set_size(&mut self, _w: i32, _h: i32) -> Result<()> {
+            Ok(())
+        }
+        fn native_handle(&self) -> *mut std::ffi::c_void {
+            std::ptr::null_mut()
+        }
+    }
+
+    struct FailingRequiredOps;
+
+    impl FailingRequiredOps {
+        fn fail(operation: &str) -> Result<()> {
+            Err(Error::new(
+                Errc::PlatformError,
+                format!("{operation} failed"),
+            ))
+        }
+    }
+
+    impl WindowOps for FailingRequiredOps {
+        fn os_show(&mut self) -> Result<()> {
+            Self::fail("os_show")
+        }
+        fn os_hide(&mut self) -> Result<()> {
+            Self::fail("os_hide")
+        }
+        fn os_close(&mut self) -> Result<()> {
+            Self::fail("os_close")
+        }
+        fn os_set_title(&mut self, _title: &str) -> Result<()> {
+            Self::fail("os_set_title")
+        }
+        fn os_set_size(&mut self, _w: i32, _h: i32) -> Result<()> {
+            Self::fail("os_set_size")
+        }
+        fn os_resize_notify(&mut self, _w: i32, _h: i32) -> Result<()> {
+            Self::fail("os_resize_notify")
+        }
         fn native_handle(&self) -> *mut std::ffi::c_void {
             std::ptr::null_mut()
         }
@@ -443,17 +463,27 @@ mod tests {
             Box::new(NullPresenter::new()),
         );
 
+        assert_error_code(window.center_on_screen(), Errc::NotImplemented);
+        assert_error_code(window.raise(), Errc::NotImplemented);
+        assert_error_code(window.lower(), Errc::NotImplemented);
+        assert_error_code(window.set_window_icon("icon.png"), Errc::NotImplemented);
+        assert_error_code(window.flash_window(), Errc::NotImplemented);
+
         let props = window.properties_mut();
-        props.set_position(40, 50);
-        props.set_resizable(false);
-        props.maximize();
-        props.minimize();
-        props.set_borderless(true);
-        props.set_fullscreen(true);
-        props.set_always_on_top(true);
-        props.set_window_opacity(0.5);
-        props.start_text_input();
-        props.enable_file_drop(true);
+        assert_error_code(props.set_minimum_size(100, 100), Errc::NotImplemented);
+        assert_error_code(props.set_maximum_size(1600, 1200), Errc::NotImplemented);
+        assert_error_code(props.set_position(40, 50), Errc::NotImplemented);
+        assert_error_code(props.set_resizable(false), Errc::NotImplemented);
+        assert_error_code(props.maximize(), Errc::NotImplemented);
+        assert_error_code(props.minimize(), Errc::NotImplemented);
+        assert_error_code(props.restore(), Errc::NotImplemented);
+        assert_error_code(props.set_borderless(true), Errc::NotImplemented);
+        assert_error_code(props.set_fullscreen(true), Errc::NotImplemented);
+        assert_error_code(props.set_always_on_top(true), Errc::NotImplemented);
+        assert_error_code(props.set_window_opacity(0.5), Errc::NotImplemented);
+        assert_error_code(props.start_text_input(), Errc::NotImplemented);
+        assert_error_code(props.stop_text_input(), Errc::NotImplemented);
+        assert_error_code(props.enable_file_drop(true), Errc::NotImplemented);
 
         let state = state.borrow();
         assert_eq!(state.pos_x, 0);
@@ -467,5 +497,30 @@ mod tests {
         assert_eq!(state.opacity, 1.0);
         assert!(!state.text_input_active);
         assert!(!state.file_drop_enabled);
+    }
+
+    #[test]
+    fn failed_required_window_ops_are_observable_and_do_not_mutate_shared_state() {
+        let state = Rc::new(RefCell::new(WindowState::default()));
+        let mut window = PlatformWindowCore::new(
+            Rc::clone(&state),
+            FailingRequiredOps,
+            Box::new(NullPresenter::new()),
+        );
+
+        assert_error_code(window.show(), Errc::PlatformError);
+        state.borrow_mut().visible = true;
+        assert_error_code(window.hide(), Errc::PlatformError);
+        assert_error_code(window.close(), Errc::PlatformError);
+        assert_error_code(window.set_title("new title"), Errc::PlatformError);
+        assert_error_code(
+            window.properties_mut().set_size(1024, 768),
+            Errc::PlatformError,
+        );
+        assert_error_code(window.resize_notify(1024, 768), Errc::PlatformError);
+
+        let state = state.borrow();
+        assert!(state.visible);
+        assert_eq!((state.width, state.height), (800, 600));
     }
 }

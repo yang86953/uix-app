@@ -8,15 +8,14 @@
 //! solid triangles), and identity box/ambient shadow (SDF outer glow).
 //! Soft blit for the rest (#169).
 
-#![cfg(windows)]
 #![allow(nonstandard_style)]
 
 use std::mem::size_of;
 
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
-    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh, GpuSolidRect,
-    GpuStrokeRect,
+    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuSolidRect, GpuStrokeRect,
 };
 use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, TRUE};
@@ -30,8 +29,8 @@ use ::windows::Win32::Graphics::Direct3D11::{
     ID3D11Texture2D, ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_SHADER_RESOURCE,
     D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE,
     D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BOX, D3D11_BUFFER_DESC,
-    D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE,
-    D3D11_CULL_NONE, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_INPUT_ELEMENT_DESC,
+    D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE,
+    D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_INPUT_ELEMENT_DESC,
     D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD,
     D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
     D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA,
@@ -554,7 +553,12 @@ fn create_static_vb(device: &ID3D11Device, vertices: &[f32]) -> Result<ID3D11Buf
             .CreateBuffer(&desc, Some(&data), Some(&mut vb))
             .map_err(|e| d3d_error("CreateBuffer(vb)", e))?;
     }
-    vb.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: CreateBuffer returned no VB"))
+    vb.ok_or_else(|| {
+        Error::new(
+            Errc::PlatformError,
+            "D3d11Pipeline: CreateBuffer returned no VB",
+        )
+    })
 }
 
 fn create_dynamic_vb(device: &ID3D11Device, byte_width: usize) -> Result<ID3D11Buffer> {
@@ -657,8 +661,8 @@ impl D3d11Pipeline {
                 )
                 .map_err(|e| d3d_error("CreateVertexShader(rect)", e))?;
         }
-        let vs_rect = vs_rect
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no rect VS"))?;
+        let vs_rect =
+            vs_rect.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no rect VS"))?;
 
         let mut ps_rect = None;
         unsafe {
@@ -673,8 +677,8 @@ impl D3d11Pipeline {
                 )
                 .map_err(|e| d3d_error("CreatePixelShader(rect)", e))?;
         }
-        let ps_rect = ps_rect
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no rect PS"))?;
+        let ps_rect =
+            ps_rect.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no rect PS"))?;
 
         let mut vs_blit = None;
         unsafe {
@@ -689,8 +693,8 @@ impl D3d11Pipeline {
                 )
                 .map_err(|e| d3d_error("CreateVertexShader(blit)", e))?;
         }
-        let vs_blit = vs_blit
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit VS"))?;
+        let vs_blit =
+            vs_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit VS"))?;
 
         let mut ps_blit = None;
         unsafe {
@@ -705,8 +709,8 @@ impl D3d11Pipeline {
                 )
                 .map_err(|e| d3d_error("CreatePixelShader(blit)", e))?;
         }
-        let ps_blit = ps_blit
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit PS"))?;
+        let ps_blit =
+            ps_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit PS"))?;
 
         let mut vs_glyph = None;
         unsafe {
@@ -753,8 +757,8 @@ impl D3d11Pipeline {
                 )
                 .map_err(|e| d3d_error("CreateVertexShader(grad)", e))?;
         }
-        let vs_grad = vs_grad
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad VS"))?;
+        let vs_grad =
+            vs_grad.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad VS"))?;
 
         let mut ps_grad = None;
         unsafe {
@@ -769,8 +773,8 @@ impl D3d11Pipeline {
                 )
                 .map_err(|e| d3d_error("CreatePixelShader(grad)", e))?;
         }
-        let ps_grad = ps_grad
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad PS"))?;
+        let ps_grad =
+            ps_grad.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad PS"))?;
 
         let mut vs_mesh = None;
         unsafe {
@@ -785,8 +789,8 @@ impl D3d11Pipeline {
                 )
                 .map_err(|e| d3d_error("CreateVertexShader(mesh)", e))?;
         }
-        let vs_mesh = vs_mesh
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh VS"))?;
+        let vs_mesh =
+            vs_mesh.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh VS"))?;
 
         let mut ps_mesh = None;
         unsafe {
@@ -801,8 +805,8 @@ impl D3d11Pipeline {
                 )
                 .map_err(|e| d3d_error("CreatePixelShader(mesh)", e))?;
         }
-        let ps_mesh = ps_mesh
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh PS"))?;
+        let ps_mesh =
+            ps_mesh.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh PS"))?;
 
         let mut vs_shadow = None;
         unsafe {
@@ -914,10 +918,7 @@ impl D3d11Pipeline {
         let vb_unit = create_static_vb(device, &unit)?;
         let vb_fullscreen = create_static_vb(device, &fullscreen)?;
         let vb_glyph_capacity = GLYPH_VB_INITIAL_GLYPHS;
-        let vb_glyph = create_dynamic_vb(
-            device,
-            vb_glyph_capacity * 6 * size_of::<GlyphVertex>(),
-        )?;
+        let vb_glyph = create_dynamic_vb(device, vb_glyph_capacity * 6 * size_of::<GlyphVertex>())?;
         let vb_mesh_capacity_floats = MESH_VB_INITIAL_FLOATS;
         let vb_mesh = create_dynamic_vb(device, vb_mesh_capacity_floats * size_of::<f32>())?;
 
@@ -968,8 +969,8 @@ impl D3d11Pipeline {
                 .CreateBuffer(&cb_grad_desc, None, Some(&mut cb_grad))
                 .map_err(|e| d3d_error("CreateBuffer(cb_grad)", e))?;
         }
-        let cb_grad = cb_grad
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad CB"))?;
+        let cb_grad =
+            cb_grad.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad CB"))?;
 
         let cb_mesh_desc = D3D11_BUFFER_DESC {
             ByteWidth: size_of::<MeshConstants>() as u32,
@@ -985,8 +986,8 @@ impl D3d11Pipeline {
                 .CreateBuffer(&cb_mesh_desc, None, Some(&mut cb_mesh))
                 .map_err(|e| d3d_error("CreateBuffer(cb_mesh)", e))?;
         }
-        let cb_mesh = cb_mesh
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh CB"))?;
+        let cb_mesh =
+            cb_mesh.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh CB"))?;
 
         let cb_shadow_desc = D3D11_BUFFER_DESC {
             ByteWidth: size_of::<ShadowConstants>() as u32,
@@ -1090,8 +1091,8 @@ impl D3d11Pipeline {
                 .CreateSamplerState(&samp_desc, Some(&mut sampler))
                 .map_err(|e| d3d_error("CreateSamplerState", e))?;
         }
-        let sampler = sampler
-            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no sampler"))?;
+        let sampler =
+            sampler.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no sampler"))?;
 
         Ok(Self {
             vs_rect,
@@ -1141,7 +1142,12 @@ impl D3d11Pipeline {
         })
     }
 
-    fn ensure_soft_texture(&mut self, device: &ID3D11Device, width: i32, height: i32) -> Result<()> {
+    fn ensure_soft_texture(
+        &mut self,
+        device: &ID3D11Device,
+        width: i32,
+        height: i32,
+    ) -> Result<()> {
         let w = width.max(1);
         let h = height.max(1);
         if self.soft_tex.is_some() && self.soft_w == w && self.soft_h == h {
@@ -1170,9 +1176,8 @@ impl D3d11Pipeline {
                 .CreateTexture2D(&desc, None, Some(&mut tex))
                 .map_err(|e| d3d_error("CreateTexture2D(soft)", e))?;
         }
-        let tex = tex.ok_or_else(|| {
-            Error::new(Errc::PlatformError, "D3d11Pipeline: no soft texture")
-        })?;
+        let tex =
+            tex.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no soft texture"))?;
         let srv_desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
             Format: DXGI_FORMAT_B8G8R8A8_UNORM,
             ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
@@ -1189,9 +1194,8 @@ impl D3d11Pipeline {
                 .CreateShaderResourceView(&tex, Some(&srv_desc), Some(&mut srv))
                 .map_err(|e| d3d_error("CreateShaderResourceView", e))?;
         }
-        let srv = srv.ok_or_else(|| {
-            Error::new(Errc::PlatformError, "D3d11Pipeline: no soft SRV")
-        })?;
+        let srv =
+            srv.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no soft SRV"))?;
         self.soft_tex = Some(tex);
         self.soft_srv = Some(srv);
         self.soft_w = w;
@@ -1233,9 +1237,8 @@ impl D3d11Pipeline {
                 .CreateTexture2D(&desc, None, Some(&mut tex))
                 .map_err(|e| d3d_error("CreateTexture2D(atlas)", e))?;
         }
-        let tex = tex.ok_or_else(|| {
-            Error::new(Errc::PlatformError, "D3d11Pipeline: no atlas texture")
-        })?;
+        let tex =
+            tex.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no atlas texture"))?;
         let srv_desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
             Format: DXGI_FORMAT_R8_UNORM,
             ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
@@ -1252,9 +1255,8 @@ impl D3d11Pipeline {
                 .CreateShaderResourceView(&tex, Some(&srv_desc), Some(&mut srv))
                 .map_err(|e| d3d_error("CreateShaderResourceView(atlas)", e))?;
         }
-        let srv = srv.ok_or_else(|| {
-            Error::new(Errc::PlatformError, "D3d11Pipeline: no atlas SRV")
-        })?;
+        let srv =
+            srv.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no atlas SRV"))?;
         self.atlas_tex = Some(tex);
         self.atlas_srv = Some(srv);
         self.atlas_w = w;
@@ -1492,12 +1494,8 @@ impl D3d11Pipeline {
 
         let stride = size_of::<GlyphVertex>() as u32;
         let offset = 0u32;
-        let (sx, sy, sw, sh) = scissor.unwrap_or((
-            0,
-            0,
-            viewport_w.ceil() as i32,
-            viewport_h.ceil() as i32,
-        ));
+        let (sx, sy, sw, sh) =
+            scissor.unwrap_or((0, 0, viewport_w.ceil() as i32, viewport_h.ceil() as i32));
         let rect = ::windows::Win32::Foundation::RECT {
             left: sx,
             top: sy,
@@ -1633,12 +1631,8 @@ impl D3d11Pipeline {
             } else {
                 context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
             }
-            let (sx, sy, sw, sh) = scissor.unwrap_or((
-                0,
-                0,
-                viewport_w.ceil() as i32,
-                viewport_h.ceil() as i32,
-            ));
+            let (sx, sy, sw, sh) =
+                scissor.unwrap_or((0, 0, viewport_w.ceil() as i32, viewport_h.ceil() as i32));
             let rect = ::windows::Win32::Foundation::RECT {
                 left: sx,
                 top: sy,
@@ -1676,13 +1670,7 @@ impl D3d11Pipeline {
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         unsafe {
             context
-                .Map(
-                    &self.cb,
-                    0,
-                    D3D11_MAP_WRITE_DISCARD,
-                    0,
-                    Some(&mut mapped),
-                )
+                .Map(&self.cb, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))
                 .map_err(|e| d3d_error("Map(cb)", e))?;
             std::ptr::copy_nonoverlapping(
                 (&constants as *const RectConstants).cast::<u8>(),
@@ -1786,7 +1774,6 @@ impl D3d11Pipeline {
         Ok(())
     }
 
-
     fn bind_grad_pipeline(
         &self,
         context: &ID3D11DeviceContext,
@@ -1812,12 +1799,8 @@ impl D3d11Pipeline {
             context.PSSetConstantBuffers(0, Some(&[Some(self.cb_grad.clone())]));
             context.RSSetState(&self.rasterizer);
             context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
-            let (sx, sy, sw, sh) = scissor.unwrap_or((
-                0,
-                0,
-                viewport_w.ceil() as i32,
-                viewport_h.ceil() as i32,
-            ));
+            let (sx, sy, sw, sh) =
+                scissor.unwrap_or((0, 0, viewport_w.ceil() as i32, viewport_h.ceil() as i32));
             let rect = ::windows::Win32::Foundation::RECT {
                 left: sx,
                 top: sy,
@@ -1968,12 +1951,8 @@ impl D3d11Pipeline {
         if meshes.is_empty() || viewport_w <= 0.0 || viewport_h <= 0.0 {
             return Ok(());
         }
-        let (sx, sy, sw, sh) = scissor.unwrap_or((
-            0,
-            0,
-            viewport_w.ceil() as i32,
-            viewport_h.ceil() as i32,
-        ));
+        let (sx, sy, sw, sh) =
+            scissor.unwrap_or((0, 0, viewport_w.ceil() as i32, viewport_h.ceil() as i32));
         let scissor_rect = ::windows::Win32::Foundation::RECT {
             left: sx,
             top: sy,
@@ -2067,12 +2046,8 @@ impl D3d11Pipeline {
         if shadows.is_empty() || viewport_w <= 0.0 || viewport_h <= 0.0 {
             return Ok(());
         }
-        let (sx, sy, sw, sh) = scissor.unwrap_or((
-            0,
-            0,
-            viewport_w.ceil() as i32,
-            viewport_h.ceil() as i32,
-        ));
+        let (sx, sy, sw, sh) =
+            scissor.unwrap_or((0, 0, viewport_w.ceil() as i32, viewport_h.ceil() as i32));
         let scissor_rect = ::windows::Win32::Foundation::RECT {
             left: sx,
             top: sy,
@@ -2176,14 +2151,7 @@ impl D3d11Pipeline {
         };
 
         unsafe {
-            context.UpdateSubresource(
-                tex,
-                0,
-                None,
-                pixels.as_ptr().cast(),
-                (width as u32) * 4,
-                0,
-            );
+            context.UpdateSubresource(tex, 0, None, pixels.as_ptr().cast(), (width as u32) * 4, 0);
 
             let stride = (2 * size_of::<f32>()) as u32;
             let offset = 0u32;

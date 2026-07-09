@@ -7,6 +7,33 @@ fn frame_constraints(frame: Rect) -> Constraints {
 }
 
 impl WidgetTree {
+    /// 返回最近 viewport 祖先允许内容溢出的轴。
+    ///
+    /// 最近 viewport 决定当前内容坐标系：嵌套 ScrollView 时不能越过内层
+    /// viewport，错误地继承外层的滚动方向。未知 viewport 保守地禁止溢出。
+    fn nearest_viewport_overflow_axes(&self, id: WidgetId) -> Option<(bool, bool)> {
+        let mut current = id;
+        while let Some(parent_id) = self.get(current).and_then(|node| node.parent()) {
+            let parent = self.get(parent_id)?;
+            if parent.children_clip(parent.frame()).is_some() {
+                let axes = parent
+                    .component()
+                    .as_any()
+                    .downcast_ref::<crate::ui::widgets::ScrollView>()
+                    .and_then(|scroll_view| match scroll_view.snapshot_fields() {
+                        crate::ui::SnapshotFields::ScrollView { direction, .. } => {
+                            Some((direction.can_scroll_x(), direction.can_scroll_y()))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or((false, false));
+                return Some(axes);
+            }
+            current = parent_id;
+        }
+        None
+    }
+
     /// 返回 Layout 失效影响的子树先序遍历顺序。
     ///
     /// 全帧或含 Layout 根时遍历对应子树；无 Layout 失效时返回空（跳过 layout）。
@@ -290,7 +317,7 @@ impl WidgetTree {
         Some(rect)
     }
 
-    /// 自下而上扩展：当子节点底部超出容器底部时，扩展容器高度。
+    /// 自下而上扩展：当子节点右侧/底部超出容器时，扩展容器宽度/高度。
     /// 后序遍历确保子节点先扩展、父节点后扩展。
     /// 返回是否有任何容器被扩展。
     fn layout_expand(&mut self, rev_order: &[WidgetId]) -> bool {
@@ -322,16 +349,26 @@ impl WidgetTree {
             // 检查是否有直接子节点在本趟中被扩展过
             let has_resized_child = children.iter().any(|cid| resized_children.contains(cid));
 
-            // 取所有可见子节点的最大下边界
+            // 取所有可见子节点的最大右/下边界
+            let mut max_right = node_frame.x + node_frame.w;
             let mut max_bottom = node_frame.y + node_frame.h;
             for &cid in &children {
                 if let Some(child) = self.get(cid) {
                     if child.visible() {
                         let cf = child.frame();
+                        let child_right = cf.x + cf.w;
                         let child_bottom = cf.y + cf.h;
+                        let rel_right = (cf.x - node_frame.x) + cf.w;
                         let rel_bottom = (cf.y - node_frame.y) + cf.h;
                         // 只考虑延伸到可见区域的子节点（防止滚动到视口上方时无限膨胀）
+                        let child_extends_right_of_parent = cf.x + cf.w > node_frame.x;
                         let child_extends_below_parent = cf.y + cf.h > node_frame.y;
+                        if child_right > 0.0
+                            && child_extends_right_of_parent
+                            && rel_right > node_frame.w
+                        {
+                            max_right = max_right.max(child_right);
+                        }
                         if child_bottom > 0.0
                             && child_extends_below_parent
                             && rel_bottom > node_frame.h
@@ -342,44 +379,67 @@ impl WidgetTree {
                 }
             }
 
+            let new_w = max_right - node_frame.x;
             let new_h = max_bottom - node_frame.y;
-            let needs_relayout = new_h > node_frame.h + 0.5 || has_resized_child;
+            let needs_relayout =
+                new_w > node_frame.w + 0.5 || new_h > node_frame.h + 0.5 || has_resized_child;
             if needs_relayout {
                 let old_frame = node_frame;
-                // 非根节点：扩展不得超过父级已分配 frame，避免窗口缩小后中间层撑破客户区。
-                // 根节点仍可扩展（bootstrap / 无窗口尺寸时由内容撑开）。
-                let parent_cap = if self.root_id == Some(id) {
+                // 非根节点默认不得超过父级已分配 frame，避免窗口缩小后中间层撑破客户区。
+                // 例外：最近 ScrollView 的滚动轴必须保留自然内容尺寸，否则这里的 cap
+                // 会覆盖 ScrollView::child_constraints 提供的 f32::MAX。
+                let (scrolls_horizontally, scrolls_vertically) = self
+                    .nearest_viewport_overflow_axes(id)
+                    .unwrap_or((false, false));
+                let parent_frame = if self.root_id == Some(id) {
                     None
                 } else {
                     self.get(id)
                         .and_then(|n| n.parent())
                         .and_then(|pid| self.get(pid).map(|p| p.frame()))
-                        .map(|pf| (pf.y + pf.h - old_frame.y).max(old_frame.h))
                 };
+                let parent_cap_w = parent_frame
+                    .filter(|_| !scrolls_horizontally)
+                    .map(|pf| (pf.x + pf.w - old_frame.x).max(old_frame.w));
+                let parent_cap_h = parent_frame
+                    .filter(|_| !scrolls_vertically)
+                    .map(|pf| (pf.y + pf.h - old_frame.y).max(old_frame.h));
+                let mut effective_w = new_w.max(node_frame.w);
                 let mut effective_h = new_h.max(node_frame.h);
-                if let Some(cap) = parent_cap {
+                if let Some(cap) = parent_cap_w {
+                    effective_w = effective_w.min(cap);
+                }
+                if let Some(cap) = parent_cap_h {
                     effective_h = effective_h.min(cap);
                 }
-                if effective_h > node_frame.h + 0.5 {
+                let expanded_w = effective_w > node_frame.w + 0.5;
+                let expanded_h = effective_h > node_frame.h + 0.5;
+                if expanded_w || expanded_h {
                     crate::core::log::debug_fn(format!(
-                        "[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
-                        id, node_frame.h, effective_h, max_bottom,
+                        "[Layout] Phase 2: id={} frame ({:.0},{:.0}) → ({:.0},{:.0}) (child right/bottom=({:.0},{:.0}))",
+                        id,
+                        node_frame.w,
+                        node_frame.h,
+                        effective_w,
+                        effective_h,
+                        max_right,
+                        max_bottom,
                     ));
                     if let Some(_node_mut) = self.get_mut(id) {
                         self.set_frame_dirty(
                             id,
-                            Rect::new(old_frame.x, old_frame.y, old_frame.w, effective_h),
+                            Rect::new(old_frame.x, old_frame.y, effective_w, effective_h),
                         );
                     }
                 } else if has_resized_child {
                     crate::core::log::debug_fn(format!(
-                        "[Layout] Phase 2: id={} re-layout siblings (child resized, frame_h={:.0})",
-                        id, node_frame.h,
+                        "[Layout] Phase 2: id={} re-layout siblings (child resized, frame=({:.0},{:.0}))",
+                        id, node_frame.w, node_frame.h,
                     ));
                 }
                 // 重新布局子节点（容器扩展后 or 子节点被扩展过）
-                let relayout_frame = if effective_h > node_frame.h + 0.5 {
-                    Rect::new(old_frame.x, old_frame.y, old_frame.w, effective_h)
+                let relayout_frame = if expanded_w || expanded_h {
+                    Rect::new(old_frame.x, old_frame.y, effective_w, effective_h)
                 } else {
                     old_frame
                 };

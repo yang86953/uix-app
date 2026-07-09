@@ -1,17 +1,17 @@
 //! 平台工厂函数 — #[cfg] 只在此处与 backends/ 内。
 
 mod registry;
-#[cfg(windows)]
-mod registry_windows;
 #[cfg(all(unix, not(target_os = "macos")))]
 mod registry_linux;
 #[cfg(target_os = "macos")]
 mod registry_macos;
+#[cfg(windows)]
+mod registry_windows;
 
 use crate::core::error::{Errc, Error};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext};
-#[cfg(windows)]
+#[cfg(any(windows, all(unix, not(target_os = "macos"))))]
 use crate::native::traits::system::ISystemInfo;
 use std::ffi::c_void;
 
@@ -127,20 +127,15 @@ mod tests {
 
     #[test]
     fn create_gpu_context_with_backend_creates_single_entry() {
-        let context = create_gpu_context_with_backend(
-            std::ptr::null_mut(),
-            1,
-            1,
-            GraphicsBackend::OpenGlEs,
-        );
+        let context =
+            create_gpu_context_with_backend(std::ptr::null_mut(), 1, 1, GraphicsBackend::OpenGlEs);
         // Null surface fails context creation, but factory must not iterate candidates.
         assert!(context.is_err());
     }
 
     #[test]
     fn planned_backend_returns_single_entry_error() {
-        let err = match try_create_gpu_context(GraphicsBackend::D3d12, std::ptr::null_mut(), 1, 1)
-        {
+        let err = match try_create_gpu_context(GraphicsBackend::D3d12, std::ptr::null_mut(), 1, 1) {
             Ok(_) => panic!("D3D12 is planned"),
             Err(err) => err,
         };

@@ -36,7 +36,7 @@ Linux GUI 需 Wayland 会话。
 | GUI（默认） | `cargo run --bin uix-demo` | 11 页多页应用：Gallery 覆盖矩阵、App Timer/Theme、全部内置 Widget |
 | CLI | `--cli` | 各功能域 API 无 GUI 演示 |
 
-公开 API 清单 → [`docs/areas/systems/public-api.md`](docs/areas/systems/public-api.md) · 设计文档 → [`docs/areas/architecture.md`](docs/areas/architecture.md)
+公开 API 清单 → [`docs/areas/systems/public-api.md`](docs/areas/systems/public-api.md) · 项目总设计 → [`docs/design.md`](docs/design.md) · 架构导航 → [`docs/areas/architecture.md`](docs/areas/architecture.md)
 
 ## 示例
 

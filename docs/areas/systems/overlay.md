@@ -1,6 +1,6 @@
 ﻿# 浮层系统
 
-← [Main](../architecture.md) · 系统 **#9** · 功能域：`ui`
+← [架构导航](../architecture.md) · 系统 **#9** · 功能域：`ui`
 
 > Modal、Tooltip、ContextMenu 等，由 **OverlayStack** 统一调度（#100）。周期性浮层（Tooltip 延迟、Spinner）须 **RegisteredActive register**（#111）。
 

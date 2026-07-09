@@ -1,6 +1,6 @@
 ﻿# 渲染系统
 
-← [Main](../architecture.md) · 系统 **#7** · 功能域：`draw` · `app`（ScenePaint 桥接）
+← [架构导航](../architecture.md) · 系统 **#7** · 功能域：`draw` · `app`（ScenePaint 桥接）
 
 > ScenePaint 契约绘制；局部重绘上屏。不知具体组件类型。**须符合** [按需零闲置](demand-driven.md) L0/L1/L2（#105、#107、#122、#129）。
 
@@ -69,7 +69,7 @@
 
 ### 分层抽象
 
-> **#168 · #169**：下列类型为 **正交组件**；Engine 类 = `RasterMode` × `PresentMode` 的组装结果。详见 [可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)。
+> **#168 · #169 · #172**：下列类型为 **正交组件**；Engine 类 = caps + registry 允许的 `RasterMode` × `PresentMode` 稀疏组合结果，“×”不表示所有组合都合法。详见 [可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)。
 
 | 层 | 类型 | 职责 | 上层可见 |
 |----|------|------|----------|
@@ -79,10 +79,10 @@
 | **native** | `IPresenter` | CPU 像素上屏（GDI / SHM / CALayer） | `SoftwareEngine` 回退 |
 | **draw** | `GraphicsEngine` | `begin_frame` / `end_frame` / `UpdateStrategy` | `app` FrameRenderer |
 | **draw** | `BackendKind` | `Cpu` / `Gpu` / `Auto` / `Null`；**不**暴露具体 GPU API | 引擎内部 / 测试 |
-| **native** | `GraphicsBackend` | API 身份枚举（诊断 / opt-in） | factory；**非** prelude 稳定 API |
+| **native** | `GraphicsBackend` | API 身份枚举（应用配置 / 诊断 / registry key） | prelude 配置面 + native factory + draw adapter registry；不向普通 pipeline 暴露实现类型 |
 | **native** | `RasterMode` / `PresentMode` | 光栅轴 / present 轴；`GraphicsContextCaps` 字段 | factory / engine 装配 |
 
-`BackendKind::Gpu` 表示「尝试 GPU 路径」；具体 API 由 registry probe；**光栅与 present 组合**由 `caps().raster` × `caps().present` 决定。
+`BackendKind::Gpu` 表示「尝试 GPU 路径」；具体 API 由 registry probe；**光栅与 present 组合**由 `caps().raster` × `caps().present` 决定。无合法 engine/backend 时返回包含 API/轴的诊断，关闭 context 并继续候选，禁止隐式改轴。
 
 ### 候选 API 与平台矩阵
 
@@ -106,6 +106,8 @@
 - `draw` **不** `use native::backends::*` 或 `native::graphics::*`；仅 `IGraphicsContext` trait object。
 - `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；非 GL **GPU 光栅** backend 经 `RenderBackendRegistry` 注册（OpenGL ES ✅；D3D11 ✅ 原生 fill/stroke/glyph/gradient/path/shadow + soft blit）。Vulkan/Metal 当前 caps 为 `Cpu` × `PixelUpload`；**下一代码优先**：D3D11 复杂 path；随后 Metal / D3D12。**非**「这些 API 只能 CPU 光栅」（#168）。
 - `ScenePaint`、LayerTree、InvalidationQueue **与** GPU API 无关；局部重绘 damage 几何仍来自 `core::damage`。
+
+<a id="配置入口-p65-已落地"></a>
 
 ### 配置入口（P6.5 已落地）
 
@@ -288,7 +290,7 @@ Bitmap 字体（内置）用于 debug / 回退；正常路径走系统字体栈�
 ```text
 draw/
 ├── traits/          GraphicsEngine, Canvas2D, TextBackend
-├── engine/          bootstrap.rs（GPU probe）、factory.rs（profile 分派）、SoftwareEngine (cpu)
+├── engine/          bootstrap.rs（GPU probe）、factory.rs（正交轴分派）、SoftwareEngine (cpu)
 ├── backend/         RenderBackend 抽象、registry.rs（backend 配对）
 ├── gpu_engine/      GpuEngine
 ├── pipeline/        InvalidationQueue, FrameRenderer, AnimationRegistry

@@ -286,6 +286,70 @@ fn scrollview_both_direction_allows_both_axes_to_overflow() {
     assert_eq!(both_sv.max_scroll_y(), 220.0);
 }
 
+fn assert_nested_content_axis_caps(
+    direction: ScrollDirection,
+    expected_frame: Rect,
+    expected_max_scroll: (f32, f32),
+) {
+    let mut tree = WidgetTree::new();
+    let scroll_view = tree.set_root(Box::new(ScrollView::new(direction).size(120.0, 80.0)));
+    let content = tree.add_child(
+        scroll_view,
+        Box::new(
+            Container::new()
+                .dir(FlexDirection::Column)
+                .align(AlignItems::Start)
+                .overflow_content(),
+        ),
+    );
+    tree.add_child(
+        content,
+        Box::new(FixedWidget {
+            size: Size::new(400.0, 300.0),
+            id: ComponentId::new(4),
+        }),
+    );
+
+    tree.layout();
+
+    assert_eq!(
+        tree.get(content).unwrap().frame(),
+        expected_frame,
+        "nested content frame must follow {direction:?} axis caps"
+    );
+    let scroll_view: &ScrollView = tree
+        .get(scroll_view)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert_eq!(
+        (scroll_view.max_scroll_x(), scroll_view.max_scroll_y()),
+        expected_max_scroll,
+        "nested content bounds must follow {direction:?} axis caps"
+    );
+}
+
+#[test]
+fn scrollview_nested_content_respects_directional_parent_caps() {
+    assert_nested_content_axis_caps(
+        ScrollDirection::Vertical,
+        Rect::new(0.0, 0.0, 120.0, 300.0),
+        (0.0, 220.0),
+    );
+    assert_nested_content_axis_caps(
+        ScrollDirection::Horizontal,
+        Rect::new(0.0, 0.0, 400.0, 80.0),
+        (280.0, 0.0),
+    );
+    assert_nested_content_axis_caps(
+        ScrollDirection::Both,
+        Rect::new(0.0, 0.0, 400.0, 300.0),
+        (280.0, 220.0),
+    );
+}
+
 #[test]
 fn scrollview_direction_flags() {
     assert!(ScrollDirection::Vertical.can_scroll_y());
@@ -695,9 +759,14 @@ fn collapse_expand_updates_scrollview_content_bounds() {
                 .map(|sv| sv.max_scroll_y())
         })
         .unwrap();
+    let content_height = tree.get(container_id).unwrap().frame().h;
 
     assert!(
         max_after > max_before,
         "expected max_scroll_y to increase after expand, before={max_before}, after={max_after}"
+    );
+    assert!(
+        content_height > 200.0,
+        "expanded content must exceed the vertical viewport, got {content_height}"
     );
 }

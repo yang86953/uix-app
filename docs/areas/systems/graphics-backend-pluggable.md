@@ -1,8 +1,8 @@
 # 可插拔图形后端
 
-← [Main](../architecture.md) · 域：`native` · `draw` · `app` · [#162](../../decisions.md#d162) [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169)
+← [架构导航](../architecture.md) · 域：`native` · `draw` · `app` · [#162](../../decisions.md#d162) [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)
 
-> **设计**：渲染 = `RasterMode` × `PresentMode` × `GraphicsBackend` 正交组装（[#168](../../decisions.md#d168) [#169](../../decisions.md#d169)）。  
+> **设计**：渲染以 `RasterMode` × `PresentMode` × `GraphicsBackend` 独立描述，并由 caps + registry 选择合法稀疏组合（[#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)）。
 > **实现状态**：P6.7 registry / probe / 统一 present ✅ · P6.8 正交轴类型与表驱动装配 ✅ · D3D11 `GpuNative` × `Swapchain` ✅（`fill_rect`/`fill_circle`/`stroke_rect`/`stroke_circle` + 轴对齐 `draw_line` + identity solid `blit_glyph` 字形 atlas + identity linear/radial gradient + identity 简单 `fill_path`/`stroke_path`（CPU tessellate → GPU triangles）；多轮廓/自交/非 identity/斜线等仍 soft + alpha blit）（[#169](../../decisions.md#d169)）→ [P6.8](../implementation.md#p68-可组合渲染轴)。非 P6 任务不必通读。
 
 ## 索引
@@ -26,7 +26,7 @@
 
 ## 可组合渲染轴
 
-> **唯一 mental model**（[#168](../../decisions.md#d168) [#169](../../decisions.md#d169)）：渲染 = 正交组件组装，不是「固定管线枚举」。
+> **唯一 mental model**（[#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)）：渲染 = 受 capability 约束的正交组件组装，不是「固定管线枚举」；“×”不承诺完整笛卡尔积。
 
 | 轴 | 类型 | 职责 | 域 |
 |----|------|------|-----|
@@ -40,7 +40,7 @@ pub enum RasterMode { Cpu, GpuNative }
 pub enum PresentMode { Swapchain, PixelUpload, CpuPresenter }
 ```
 
-**合法组合 → Engine**（表驱动装配，非硬编码 API）：
+**当前合法组合 → Engine**（caps + registry 表驱动装配，非硬编码 API）：
 
 | Raster × Present | Engine |
 |------------------|--------|
@@ -65,6 +65,13 @@ pub enum PresentMode { Swapchain, PixelUpload, CpuPresenter }
 
 **分派**：`create_graphics_engine` 按 `caps.raster × caps.present` 表驱动装配；`caps.backend` → `RenderBackendRegistry`（仅 `GpuNative`）。
 
+**非法组合与 fallback**（[#172](../../decisions.md#d172)）：
+
+1. registry 先筛选当前二进制已编译候选；显式选择未编译的 API 记录 `NotImplemented`/候选缺失诊断。
+2. context 创建成功后以 `GraphicsContextCaps` 声明唯一实际轴组合；engine factory 不猜测、补齐或热切换轴。
+3. caps 组合无对应 engine/backend 时返回包含 API identity、raster、present 的错误，关闭 context，再由 bootstrap 尝试下一候选。
+4. 所有 GPU 候选失败后才进入 `SoftwareEngine + IPresenter`；显式选择仍遵循同一可诊断 fallback，不跳过资源清理。
+
 ---
 
 <a id="图形-api-架构原则"></a>
@@ -81,7 +88,7 @@ Vulkan / OpenGL ES / D3D11 / Metal 是 `IGraphicsContext` 的 **对等实现**�
 | OS / `PlatformId` | **仅**决定：编进二进制的候选、`Auto` probe 顺序 |
 | `IGraphicsContext` / `GraphicsEngine` | 上层 **唯一** 图形抽象 |
 
-上层只见 trait 与 factory 返回值；禁止 `#[cfg(windows)]` / `match OS` 分支图形管线。配置入口选的是 **`GraphicsBackend`**，不是操作系统。
+框架内部上层只按 trait/caps 工作，禁止 `#[cfg(windows)]` / `match OS` / 散落的 `match GraphicsBackend` 构造 API 专属图形管线。应用配置、环境/Settings、诊断报告、native factory 候选表和 `draw::RenderBackendRegistry` 的表驱动 adapter 配对可以使用 **`GraphicsBackend` API identity**；该例外不允许向普通 pipeline 泄漏 backend 实现类型（[#172](../../decisions.md#d172)）。
 
 <a id="源码目录"></a>
 
@@ -187,7 +194,7 @@ native
 | `RenderBackendRegistry` | draw | `GpuNative` 时按 API 配对；OpenGL ES / D3D11 ✅；随后 Metal / D3D12 |
 | `bootstrap_graphics_engine` | draw | 唯一 probe + `create_graphics_engine` |
 
-**分派**：`caps.raster × caps.present` → 表驱动装配 engine；`caps.backend` → `RenderBackendRegistry`（仅 `GpuNative`）。
+**分派**：`caps.raster × caps.present` → 表驱动装配 engine；`caps.backend` → `RenderBackendRegistry`（仅 `GpuNative`）。找不到合法组合即返回诊断，bootstrap 关闭 context 后继续候选，不进行隐式轴变换。
 
 **统一 present 契约**：`IGraphicsContext::present(PresentFrame)`（`Swapchain` / `PixelUpload`）；`CpuPresenter` 走 `IPresenter`，无 context。
 
@@ -274,4 +281,4 @@ native
 - 落地 → [P6.7](../implementation.md#p67-图形后端架构)；正交轴 → [P6.8](../implementation.md#p68-可组合渲染轴)
 - 实现注记 → [rendering · 多图形 API](rendering.md#多图形-api)
 - 术语 → [glossary · 多图形 API](../../glossary.md#多图形-api)
-- 决策变更 → [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169)；新决策 **#170+**
+- 决策变更 → [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)；新决策 **#174+**

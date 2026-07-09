@@ -1,4 +1,4 @@
-﻿# UIX 设计文档
+﻿# UIX 架构导航
 
 > **纯索引**。硬约束 → [`AGENTS.md`](../../AGENTS.md)。**禁止通读** `docs/` — 按需打开链接即可。
 
@@ -8,10 +8,11 @@
 
 ## AI 按需阅读（省 token）
 
-> 路径：`AGENTS.md`（必读）→ 本页定位 → **仅**打开下列 1–3 篇（优先锚点章节，勿通读整篇）。
+> 路径：`AGENTS.md`（必读）→ 本页定位 → 常规任务**仅**打开下列 1–3 篇；P6 图形专项最多 4 篇（优先锚点章节，勿通读整篇）。
 
-| 任务 | 只读这些（顺序，≤4） |
+| 任务 | 只读这些（顺序；常规 ≤3，P6 ≤4） |
 |------|---------------------|
+| 查项目目标 / 需求 / 跨系统方案 | [`project.md`](../project.md) → [`requirements.md`](../requirements.md) → [`design.md`](../design.md) |
 | 查 API / 设计名 vs 源码名 | [`public-api.md`](systems/public-api.md) → [`glossary.md#术语对照`](../glossary.md#术语对照) → 相关 `#d{N}` in [`decisions.md`](../decisions.md) |
 | 查实现是否已落地 | [`implementation.md#实现进度总览`](implementation.md#实现进度总览) → 对应系统 `> **实现注记**` |
 | 改主循环 / 帧调度 / 三态 | [`demand-driven.md#主循环状态机`](systems/demand-driven.md#主循环状态机) → [`application.md#主循环`](systems/application.md#主循环) |
@@ -29,7 +30,7 @@
 | 改几何 / Damage / 日志 | [`foundation.md`](systems/foundation.md) |
 | 新 API 设计审查 | [`demand-driven.md#新-api-审查清单`](systems/demand-driven.md#新-api-审查清单) → [#105](../decisions.md#d105) |
 
-**人类读者**：首次了解 → [`project.md` · 产品愿景](../project.md#产品愿景)（含 [当前阶段 vs 目标](../project.md#当前阶段-vs-目标愿景)）→ [`demand-driven.md#设计美学最高规则-105`](systems/demand-driven.md#设计美学最高规则-105) → [`application.md#启动`](systems/application.md#启动) → [`public-api.md`](systems/public-api.md)。非 P6 图形后端任务 **不必** 通读 [`graphics-backend-pluggable.md`](systems/graphics-backend-pluggable.md)。
+**人类读者**：首次了解 → [`project.md` · 产品愿景](../project.md#产品愿景)（含 [当前阶段 vs 目标](../project.md#当前阶段-vs-目标愿景)）→ [`design.md`](../design.md) → [`demand-driven.md#设计美学最高规则-105`](systems/demand-driven.md#设计美学最高规则-105) → [`application.md#启动`](systems/application.md#启动) → [`public-api.md`](systems/public-api.md)。非 P6 图形后端任务 **不必** 通读 [`graphics-backend-pluggable.md`](systems/graphics-backend-pluggable.md)。
 
 ---
 
@@ -53,23 +54,7 @@
 
 ## 系统索引
 
-| # | 系统 | 文档 | 一句话 | 关键决策 |
-|---|------|------|--------|----------|
-| 1 | 应用 | [application.md](systems/application.md) | 启动、主循环、桥接 | #59 #64 #74 #88 #93 |
-| 2 | View 与响应式 | [view-reactive.md](systems/view-reactive.md) | 声明式 UI、State、Reconciler | #21 #24 #31 #49 #60 |
-| 3 | 组件 | [component.md](systems/component.md) | Widget、trait、生命周期 | #8 #20 #35 #58 #83 |
-| 4 | 主题与样式 | [theme-style.md](systems/theme-style.md) | Theme、Style/StyleSet | #1–#3 #9 #14–#17 |
-| 5 | 事件 | [event.md](systems/event.md) | 三层事件、HandlerTable | #4–#7 #36 #68 |
-| 6 | 布局 | [layout.md](systems/layout.md) | measure/arrange、Intrinsic、Flex/Grid、Scroll | #29 #38 #45 #53 #165 |
-| 7 | 渲染 | [rendering.md](systems/rendering.md) | ScenePaint、合成、局部重绘、多图形 API | #59 #70 #82 #122 #129 #162–#164 #168 #169 |
-| 8 | 平台 | [platform.md](systems/platform.md) | OS 隔离、UiEvent | #40 #59 |
-| 9 | 浮层 | [overlay.md](systems/overlay.md) | OverlayStack、Modal/菜单 | #96–#98 #100 |
-| 10 | 基础设施 | [foundation.md](systems/foundation.md) | 几何、错误、日志 | #38 #56 #70 |
-| 11 | 数据 | [data.md](systems/data.md) | Settings KV | #64 |
-| 12 | 测试 | [testing.md](systems/testing.md) | FakePlatform、语义断言 | #40 |
-| 13 | **按需零闲置** | [demand-driven.md](systems/demand-driven.md) | 核心理念 #105 | #105–#159 |
-| 14 | **公开 API** | [public-api.md](systems/public-api.md) | prelude 导出单页 | #69 #101 |
-| — | 可插拔图形后端（P6） | [graphics-backend-pluggable.md](systems/graphics-backend-pluggable.md#可组合渲染轴) | 正交渲染轴、registry、API 对等实现 | #162–#164 #168 #169 |
+系统列表、功能域、摘要和关键决策只在 [`systems/index.md`](systems/index.md) 维护；本页只负责按任务和跨系统主题路由，避免双份目录漂移。
 
 ---
 
@@ -105,8 +90,10 @@
 | 文档 | 用途 |
 |------|------|
 | [`AGENTS.md`](../../AGENTS.md) | 硬约束 + Agent checklist（编码前必读） |
+| [`requirements.md`](../requirements.md) | 编号需求、优先级、状态与验收检查 |
+| [`design.md`](../design.md) | 项目级端到端设计、追踪、质量属性、rollout 与风险 |
 | [`implementation.md`](implementation.md) | 实现进度、backlog、源码目录详表 |
-| [`decisions.md`](../decisions.md) | 决策台账 #1–#169；新决策 #170+ |
+| [`decisions.md`](../decisions.md) | 决策台账 #1–#173；新决策 #174+ |
 | [`glossary.md`](../glossary.md) | 术语；[设计名 vs 源码](../glossary.md#术语对照) |
 | [`demo/README.md`](../../demo/README.md) | 演示程序模式与运行说明 |
 
@@ -114,8 +101,8 @@
 
 ## 维护约定
 
-- 新系统 → 更新「系统索引」→ 写 `systems/*.md`。
+- 新系统 → 更新 [`systems/index.md`](systems/index.md) → 写 `systems/*.md` → 仅在需要新任务路由时更新本页。
 - 新 `src/` 路径 → [implementation · 源码目录详表](implementation.md#源码目录详表) + 系统「源码模块」。
 - 落地/差距 → [implementation · 实现进度总览](implementation.md#实现进度总览) + 系统 `> **实现注记**`。
 - 跨系统主题 → 「主题索引」+ 最相关系统章节。
-- 新术语 → [`glossary.md`](../glossary.md)；取舍 → [`decisions.md`](../decisions.md) #170+。
+- 新术语 → [`glossary.md`](../glossary.md)；取舍 → [`decisions.md`](../decisions.md) #174+。

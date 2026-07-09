@@ -1,6 +1,6 @@
 ﻿# 布局系统
 
-← [Main](../architecture.md) · 系统 **#6** · 功能域：`ui`
+← [架构导航](../architecture.md) · 系统 **#6** · 功能域：`ui`
 
 > **measure 定尺寸，arrange 定位置**；Flex + Grid 排布；Scroll 消化 Wheel。布局失效不 present（[#105](../../decisions.md#d105)）；Scroll 失效优先 Composite memmove（#107，见 [demand-driven](demand-driven.md#失效与窄标脏)）。
 
@@ -361,6 +361,16 @@ Style 字段：`grid_template_columns/rows`、`grid_gap`。
 
 Scroll 内容区在 `layout_viewports` 阶段单独处理；viewport 祖先不参与 shrink 循环。
 
+ScrollView 的 content 约束和 expand 上限都必须按轴处理：
+
+| `ScrollDirection` | X 轴 content | Y 轴 content |
+|-------------------|--------------|--------------|
+| `Vertical` | cap 到 viewport | 可超出 viewport |
+| `Horizontal` | 可超出 viewport | cap 到 viewport |
+| `Both` | 可超出 viewport | 可超出 viewport |
+
+非根节点通常不得 expand 超过父 frame；但若最近的 viewport 祖先在该轴可滚动，则该轴保留自然内容尺寸。嵌套 viewport 只服从最近一层，不能越过内层继承外层滚动方向。
+
 Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获得焦点的 ScrollView 消费。
 
 > Scroll offset 变更优先标 **`Invalidation::Composite`** + `scroll_region` memmove（#107）；框架在 ScrollView 内 **自动** 写入，App 不介入。
@@ -400,7 +410,7 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获
 ```text
 0. bootstrap root frame（无有效 viewport 时 measure 临时尺寸）
 1. layout_children        // 自顶向下分配 frame
-2. expand/shrink 内循环   // 容器随子项 grow/shrink（ScrollView 跳过 expand；根不 shrink；非根 expand 不超过父 frame）
+2. expand/shrink 内循环   // 容器随子项 grow/shrink（ScrollView 跳过 expand；根不 shrink；非根按轴受父 frame cap）
 3. layout_viewports       // ScrollView content_bounds
 4. bind_reactive_widget_states
 5. rebuild_widget_overlays
@@ -410,7 +420,7 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获
 | Phase | 方向 | 作用 |
 |-------|------|------|
 | 1 Top-down | 父→子 | `layout_children` 写子 frame（父级已分配确定主轴时 flex 须 shrink，即使 style 未写死尺寸） |
-| 2 Expand | 子→父 | 子 bottom 超出则增高父容器并重排（根仅在 bootstrap 高度 ≤1 时扩展；非根不超过父 frame） |
+| 2 Expand | 子→父 | 子 right / bottom 超出则增宽 / 增高父容器并重排（有效 viewport 根不扩展；非根默认不超过父 frame，最近 viewport 的滚动轴例外） |
 | 4 Shrink | 子→父 | 父过高则收缩（取子内容 vs measure 较大值；**跳过根**：根由窗口客户区锁定） |
 | 3 Viewports | — | ScrollView `content_bounds` |
 
@@ -437,10 +447,9 @@ Inactive → Lifecycle inactive；跳过大部分输入语义。
 
 ```text
 ui/layout/
-├── engine.rs      LayoutEngine, LayoutChild, layout 管线入口
+├── engine.rs      LayoutEngine, LayoutChild, BoxModel, layout 管线入口
 ├── flex.rs        compute_flex_layout
-├── grid.rs        Grid 轨道与 auto-place
-└── box_model.rs   margin / padding / content rect
+└── grid.rs        Grid 轨道与 auto-place
 ui/foundation/virtual_scroll.rs   VirtualScroll / VirtualListScroll
 ui/core/widget/tree_layout.rs     WidgetTree::layout, viewports, expand/shrink
 ui/widgets/containers/container.rs

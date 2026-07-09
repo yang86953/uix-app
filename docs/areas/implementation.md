@@ -4,12 +4,15 @@
 
 > **P0–P5 主体已落地**。本文保留 **阶段摘要**、**实现进度**、**后续 backlog** 与 **源码目录详表**；刻意保留或未决项边界 → [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。
 
+状态证据统一分级：`designed` → `coded` → `automated` → `compiled:<platform>` → `hardware:<platform>` → `production`。`✅` 仅用于局部代码/测试已闭合的分项，不代表跨平台或生产验收；平台交付以 [证据矩阵](#平台与后端证据矩阵) 为准。
+
 ## 索引
 
 | 章节 | 说明 |
 |------|------|
 | [已落地阶段（P0–P5）](#已落地阶段p0p5) | 分阶段目标与验收摘要 |
 | [实现进度总览](#实现进度总览) | 已落地能力按域汇总 |
+| [当前验证基线](#当前验证基线-2026-07-10) | 最近一次全量测试结果与剩余证据缺口 |
 | [后续工作](#后续工作) | 未实现 backlog（权威清单） |
 | [P6 生产级框架](#p6-生产级框架) | 生产级优先项、图形后端里程碑、P6.8 可组合渲染轴 |
 | [源码目录详表](#源码目录详表) | `src/` 路径与系统文档映射 |
@@ -91,7 +94,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 | 能力 | 要点 | 文档 |
 |------|------|------|
-| GPU 引擎 | OpenGL ES：`GpuEngine` + WGL/EGL；D3D11/Vulkan：`PresentUploadEngine`；失败回退 SoftwareEngine | [rendering · 引擎](systems/rendering.md#引擎) · [#59](../decisions.md#d59) |
+| GPU 引擎 | OpenGL ES / D3D11 `GpuNative × Swapchain` → `GpuEngine`；Vulkan/Metal `Cpu × PixelUpload` → `PresentUploadEngine`；失败回退 SoftwareEngine | [rendering · 引擎](systems/rendering.md#引擎) · [#59](../decisions.md#d59) · [#172](../decisions.md#d172) |
 | 失效管线 | `Invalidation::Paint` / `Layout` / `Composite`；脏区合并 | [rendering · 管线](systems/rendering.md#管线与失效) |
 | Composite 滚动 | Wheel / 键盘 / 拖拽 → `scroll_region` memmove | [rendering](systems/rendering.md) · [#107](../decisions.md#d107) |
 | PicturePolicy | 元数据 + 运行时信号；`node_count≥8 && est_pixels≥65536`；部分静态 widget `Eligible` | [rendering](systems/rendering.md) · [component · PicturePolicy](systems/component.md#picturepolicy-元数据122) |
@@ -156,6 +159,44 @@ P6 图形后端            ← #162 #163，详见下文
 
 ---
 
+<a id="当前验证基线-2026-07-10"></a>
+
+## 当前验证基线（2026-07-10）
+
+基于提交 `a517ac3` 后的当前未提交工作树完成复验：
+
+| 门禁 | 结果 | 证据范围 |
+|------|------|----------|
+| `cargo test --all-targets` | **通过** | lib **1021/1021**；demo **17/17** |
+| `cargo test --doc` | **通过** | 3 passed；20 ignored |
+| Windows compile | **通过** | default、`--no-default-features`、`--all-features` |
+| Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` default + all-features |
+| macOS cross-check | **通过** | `x86_64-apple-darwin` default + all-features |
+| `cargo clippy --all-targets` | **通过，有既存 warnings** | 无 hard error；warning-free 不作为已完成事实 |
+| 文档门禁 | **通过** | `check_project_docs.py --strict-design --json`：0 errors / 0 warnings；`git diff --check` 通过 |
+
+本轮闭合了两项历史失败：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过。Linux/macOS 仅完成 cross-check，未做真机运行；Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
+
+---
+
+<a id="平台与后端证据矩阵"></a>
+
+### 平台与后端证据矩阵
+
+矩阵只记录证据，不从“代码存在”推导“可交付”。`—` 表示该级别不适用，`待验证` 表示当前文档没有可复核证据；每次验证必须同步提交、命令与日期。
+
+| 平台 / 路径 | coded | automated | compiled | hardware / GUI | production |
+|-------------|:-----:|:---------:|:--------:|:--------------:|:----------:|
+| Windows D3D11 `GpuNative × Swapchain` | 是 | 单元/集成与 real-window factory 测试通过 | default/no-default/all-features | 待 GUI/GPU 矩阵 | 否 |
+| Windows OpenGL ES / Software fallback | 是 | 单元/集成与 real-window factory 测试通过 | default/no-default/all-features | 待双路径 GUI smoke | 否 |
+| Linux Vulkan / EGL | 是 | Windows 主机未运行目标测试 | cross-check default/all-features | 待 Wayland/GPU 真机 | 否 |
+| macOS Metal / Software fallback | 是 | Windows 主机未运行目标测试 | cross-check default/all-features | 待 AppKit/Metal 真机 | 否 |
+| iOS / Android | 否 | — | — | — | 否 |
+
+证据记录与当前完整命令见 [当前验证基线](#当前验证基线-2026-07-10)；平台矩阵未达到 `hardware` 前，文档只能写“backend 已编码”，不得写“平台 parity 已完成”。
+
+---
+
 <a id="p6-生产级框架"></a>
 
 ## P6：生产级框架
@@ -169,10 +210,11 @@ P6 图形后端            ← #162 #163，详见下文
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
 | P0 | **Windows 生产可用** | 进行中 | 稳定性、阻塞项、demo/docs 同步；**当前主验证与交付环境**（[#167](../decisions.md#d167)） |
-| P0 | 平台层抹平差异 | 已确立 | 上层无 OS `#[cfg]`；差异仅在 `native` traits 实现 |
-| P1 | Linux / macOS parity | 持续 | backend 已编码；parity 与回归 **Windows 基线达标后**加大权重 |
+| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1021/1021、demo 17/17；历史布局回归与扫描假阳性均闭合 |
+| P0 | 平台层抹平差异 | `coded + automated` | Result-only API、直接依赖与 cfg 守卫已收敛；上层无 OS cfg |
+| P1 | Linux / macOS parity | `coded + compiled` | 两目标 default/all-features cross-check 通过；运行/硬件 parity 待验证 |
 | P1 | macOS 原生运行验证 | 待验证 | AppKit backend、Metal CpuUpload、IME 已接；需真机验收 |
-| P1 | demo / docs 与实现同步 | 进行中 | 覆盖矩阵、backlog、公开 API 对齐 |
+| P1 | demo / docs 与实现同步 | `automated` 基线已完成 | demo 17/17；strict-design 与链接/锚点检查通过，后续持续维护 |
 | P2 | 无障碍 v1 基线 | 部分 | role/name/state 快照、键盘导航已落地；屏幕阅读器桥待后续 |
 | P1 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas + identity linear/radial gradient + identity 简单 path（CPU tessellate → GPU mesh）+ identity box/ambient shadow（SDF）；多轮廓/自交/非 identity 文本等仍 soft — 见 [P6.8](#p68-可组合渲染轴) |
 | P2 | native raster（非 Win） | backlog | Metal / D3D12 GPU 光栅 — **增强**，D3D11 之后 |
@@ -196,7 +238,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 ### P6.8 可组合渲染轴（#169）
 
-**设计**（已确认）：以 [#168](../decisions.md#d168) 正交三轴为 **唯一** mental model；engine 分派 **仅** `RasterMode` × `PresentMode`（× `GraphicsBackend`）；`BackendKind` 与上述轴对齐；factory / engine **表驱动正交装配**。旧 bundled 管线枚举已拒绝，不作为设计面。
+**设计**（已确认）：以 [#168](../decisions.md#d168) 正交三轴为 **唯一** mental model；engine 分派 **仅**按 caps + registry 裁决的 `RasterMode` × `PresentMode`（× `GraphicsBackend` identity）合法组合；“×”不表示完整笛卡尔积；`BackendKind` 与上述轴对齐；factory / engine **表驱动正交装配**。非法组合返回诊断并继续 fallback（[#172](../decisions.md#d172)）。旧 bundled 管线枚举已拒绝，不作为设计面。
 
 **实现状态**：正交轴类型、caps、`create_graphics_engine` 轴分派、registry 行 `raster`/`present`、删除 `RenderPipelineProfile` ✅。D3D11 `GpuNative` × `Swapchain`：`D3d11Backend` + VS/PS solid/rounded fill + SDF stroke + identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity 简单 path（flatten + ear-clip → `GpuSolidMesh`）+ identity box/ambient shadow（SDF outer glow → `GpuBoxShadow`）+ soft alpha blit + swapchain present ✅。复杂 path（多轮廓/自交/孔洞）与 Metal / D3D12 `GpuNative` 仍 backlog。
 
@@ -228,7 +270,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 ## 后续工作
 
-**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。P6 分项见 [P6 生产级框架](#p6-生产级框架)；可组合渲染轴见 [P6.8](#p68-可组合渲染轴)；其余推进前须人类决策或新决策 #170+。
+**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。P6 分项见 [P6 生产级框架](#p6-生产级框架)；可组合渲染轴见 [P6.8](#p68-可组合渲染轴)；其余推进前须人类决策或新决策 #174+。
 
 | 项 | 说明 | 文档 |
 |----|------|------|
@@ -254,7 +296,7 @@ P6 图形后端            ← #162 #163，详见下文
 | `src/native/test_harness/*` | [platform](systems/platform.md), [testing](systems/testing.md) | FakePlatform |
 | `src/draw/pipeline/*` | [rendering](systems/rendering.md) | invalidation, FrameRenderer, AnimationRegistry |
 | `src/draw/compositor/*` | [rendering](systems/rendering.md) | ScenePaint, LayerTree |
-| `src/draw/engine/*` | [rendering](systems/rendering.md) | `bootstrap.rs`（GPU probe）、`factory.rs`（profile 分派）、`SoftwareEngine`（cpu）、`PresentUploadEngine`（`present_upload.rs`） |
+| `src/draw/engine/*` | [rendering](systems/rendering.md) | `bootstrap.rs`（GPU probe）、`factory.rs`（正交轴分派）、`SoftwareEngine`（cpu）、`PresentUploadEngine`（`present_upload.rs`） |
 | `src/draw/gpu_engine/*` | [rendering](systems/rendering.md) | GpuEngine |
 | `src/draw/backend/*` | [rendering](systems/rendering.md) | RenderBackend 抽象、`registry.rs`（backend 配对） |
 | `src/draw/font/*` | [rendering](systems/rendering.md) | FontService, text backends |
@@ -295,7 +337,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 ## 维护
 
-- 阶段划分或原则变更 → 同步 [decisions.md](../decisions.md) #154（或 #170+ 新决策）与本文件。
+- 阶段划分或原则变更 → 同步 [decisions.md](../decisions.md) #154（或 #174+ 新决策）与本文件。
 - 能力落地或产生新差距 → 更新 [实现进度总览](#实现进度总览) 与各系统 `> **实现注记**`；**不**在本文件恢复 per-file 接线 checklist。
 - 新 backlog 项追加到 [后续工作](#后续工作)；边界说明同步 [剩余差距](systems/demand-driven.md#剩余差距)。
 - 新增 `src/` 路径映射 → 更新 [源码目录详表](#源码目录详表) 与对应系统文档「源码模块」。

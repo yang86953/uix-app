@@ -15,7 +15,7 @@
 
 use std::cell::Cell;
 
-use crate::core::Point;
+use crate::core::{Point, Result};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::window::PlatformWindow;
 /// Event-driven application window.
@@ -79,9 +79,31 @@ impl Window {
             .create_window(title, width, height)
         {
             Ok(mut w) => {
-                w.center_on_screen();
-                w.show();
-                w.raise();
+                if let Err(error) = w.center_on_screen() {
+                    crate::core::log::warn_fn(format!(
+                        "Window::create: center_on_screen failed: {}",
+                        error.short_what()
+                    ));
+                }
+                if let Err(error) = w.show() {
+                    crate::core::log::error_fn(format!(
+                        "Window::create: show failed: {}",
+                        error.short_what()
+                    ));
+                    if let Err(close_error) = w.close() {
+                        crate::core::log::warn_fn(format!(
+                            "Window::create: cleanup close failed: {}",
+                            close_error.short_what()
+                        ));
+                    }
+                    return false;
+                }
+                if let Err(error) = w.raise() {
+                    crate::core::log::warn_fn(format!(
+                        "Window::create: raise failed: {}",
+                        error.short_what()
+                    ));
+                }
                 crate::core::log::info_fn(format!(
                     "Window created and shown ({}x{}, title='{}')",
                     width, height, title
@@ -99,17 +121,19 @@ impl Window {
         }
     }
 
-    pub fn show(&mut self) {
+    pub fn show(&mut self) -> Result<()> {
         if let Some(ref mut w) = self.window {
-            w.show();
+            w.show()?;
         }
+        Ok(())
     }
 
-    pub fn close(&mut self) {
+    pub fn close(&mut self) -> Result<()> {
         self.running = false;
         if let Some(ref mut w) = self.window {
-            w.close();
+            w.close()?;
         }
+        Ok(())
     }
 
     pub fn is_running(&self) -> bool {
@@ -186,7 +210,12 @@ impl Drop for Window {
     fn drop(&mut self) {
         if self.running {
             if let Some(ref mut w) = self.window {
-                w.close();
+                if let Err(error) = w.close() {
+                    crate::core::log::warn_fn(format!(
+                        "Window::drop: close failed: {}",
+                        error.short_what()
+                    ));
+                }
             }
         }
         self.running = false;
