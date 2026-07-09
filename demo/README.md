@@ -87,16 +87,19 @@ demo/src/
 | 应用能力 | 8/8 | Timer 在 `on_start` 注册；多窗口见覆盖清单说明 |
 | CLI | 10 项 | `--cli` 模式 |
 
-## 无法 demo 的 gap（Backlog）
+## 演示与验证 gap
 
-| 项 | 原因 |
-|----|------|
-| 屏幕阅读器桥 (#99) | v1 基线（role/name/state、键盘导航）已落地；屏幕阅读器 **平台桥** 待后续 |
-| macOS 原生验证 | AppKit backend 与 Metal CpuUpload **已实现**；真机运行验证待完成（与 Win/Linux 对等目标） |
-| Handler 宏 fingerprint (#159) | `semantic_handler!` 语法层待完善；手写 capture list 可用 |
-| 错误 Toast 自动 overlay (#89) | Notification 数据与组件已落地；框架级自动 overlay 挂载待产品化 |
-| 多窗口 live demo | API 存在；单进程多窗 demo 待产品化，覆盖清单有说明 |
-| `follow_system_theme` 自动跟 OS | 可 demo 说明；默认 false，需 `.follow_system_theme(true)` 体验 live 切换 |
+> “未单独展示”与“待真机验证”不等同于实现 backlog；在本演示 gap 清单中，只有屏幕阅读器平台桥属于框架实现 backlog。
+
+| 项 | 实现状态 | 剩余 gap |
+|----|----------|----------|
+| 屏幕阅读器平台桥 (#99) | 静态 ARIA、role/name/state、键盘导航与焦点链已落地 | 平台屏幕阅读器桥待后续 |
+| macOS 原生验证 | AppKit backend 与 Metal `Cpu × PixelUpload` 已编码 | 需 macOS 真机运行与硬件证据 |
+| Handler fingerprint (#159) | `semantic_handler!` 显式 capture list 与稳定 fingerprint 已落地 | 无独立视觉演示；由自动化测试覆盖 |
+| Computed 独立 slot | `Computed::new` 分配独立 `StateSlotId`，clone 共享 | 内部身份契约，无独立视觉演示 |
+| 错误 Toast 自动 overlay (#89) | App 默认挂载 Notification overlay；`notify_error` 已接 | 无专用故障注入演示页 |
+| 多窗口 live demo | `open_window` / 多窗路由 API 已落地 | 单进程多窗 live demo 待补 |
+| `follow_system_theme` 自动跟 OS | `.follow_system_theme(true)` 已落地且默认关闭 | 跨 OS live 切换需真实桌面环境 |
 
 ## 从目标到代码（~15 分钟）
 
