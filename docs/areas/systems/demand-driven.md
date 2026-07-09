@@ -1,6 +1,6 @@
 ﻿# 按需零闲置
 
-← [Main](../architecture.md) · 系统 **#13** · 功能域：跨域
+← [架构导航](../architecture.md) · 系统 **#13** · 功能域：跨域
 
 > **UIX 核心理念的操作细则**（[#105](../../decisions.md#d105)）。
 > **最高规则**：**用最少资源，做最好效果** — 统领六域依赖与一切子系统；冲突时以本规则为准。  
@@ -291,15 +291,23 @@ impl TimerHandle {
 
 ## 唤醒源白名单
 
-**仅以下情况可离开 DeepIdle**（须有明确来源）：
+[#173](../../decisions.md#d173) 将“唤醒”拆成两层：
 
-| 唤醒源 | 进入状态 | 允许的工作 |
-|--------|----------|------------|
-| OS `UiEvent` | Active | dispatch → 按需 layout/render |
-| `InvalidationQueue` push | Active | layout / render |
-| **RegisteredActive** 注册项到期 | RegisteredActive → 可能 Active | Animation / 内置 UI Timer / **App Timer**（#132）/ IME；窄 tick |
-| 窗口 resize / 可见性 | Active | layout + 必要时 full-frame |
-| `State` 变更（含 Effect 间接） | Active | 窄 paint 标脏 |
+1. **进程 loop wake**：让唯一 event loop 从 blocking wait 返回，只表示“重新检查工作”。
+2. **窗口 session 激活**：只有命中 `window_id` / `ComponentId` tree scope 或确有 pending 的 session 才能离开 DeepIdle。
+
+`EventLoopWaker::wake()` **不等于**将所有窗口置为 Active。仅以下来源可唤醒进程 loop：
+
+| 唤醒源 | session 范围 | session 状态 | 允许的工作 |
+|--------|--------------|--------------|------------|
+| OS `UiEvent` | 事件 `window_id` 目标窗 | Active | dispatch → 按需 layout/render |
+| `InvalidationQueue` push / `State::set` | 仅有订阅或失效的 session | Active | reconcile / layout / render 均须再受 pending 门控 |
+| `MainThreadQueue` 入队（`post_to_ui` / `update_view`） | `AppHandle.window_id` 目标窗 | Active | 按 FIFO drain；闭包无副作用时不得制造 frame work |
+| AppState semantic queue 入队 | `ComponentId` 所属 tree scope | Active | 仅目标树 dispatch semantic event |
+| **RegisteredActive** 注册 / deadline 到期 | 拥有该 Registry 的 session | 注册后 RegisteredActive；到期后可能 Active | Animation / 内置 UI Timer / **App Timer**（#132）/ IME；窄 tick |
+| 窗口创建、关闭、resize / 可见性请求 | 目标窗；创建请求由进程 loop 处理 | 按请求决定 | 生命周期编排；必要时 layout + full-frame |
+
+进程 loop 被唤醒后，必须先检查每个 session 的定向队列、失效、semantic target 和 Registry；无命中的 session 保持 DeepIdle，不执行 `tick_effects` / reconcile / layout / render / present。
 
 **不在白名单内（禁止作为框架默认行为）**：
 
@@ -335,16 +343,17 @@ impl TimerHandle {
 | 状态 | 进入 | 允许 | 禁止 |
 |------|------|------|------|
 | **DeepIdle** | 无 Invalidation；RegisteredActive 为空 | blocking `wait_event`；更新 OS 级 cursor（O(1)） | `tick_effects`、layout、render、定时 wake |
-| **RegisteredActive** | AnimationRegistry / Timer / IME 会话等 **register** | 注册项 tick；仅关联节点 paint | 全树 layout；无关注册 |
+| **RegisteredActive** | Registry 非空；注册项可有 deadline，也可是 IME 这类无 deadline 会话 | 到期项窄 tick；仅关联节点 paint；无 deadline 时 blocking `wait_event` | 全树 layout；无关注册；固定间隔探活 |
 | **Active** | UiEvent 或 Invalidation pending | 完整按需管线 | 无条件全树 layout/render |
 
 | 规则 | 决策 |
 |------|------|
 | unregister 后 | 下一机会 **立即**回 DeepIdle（#111） |
 | `window_visible = false` | 该窗不 layout/render |
-| 多窗 | **每窗独立状态**；A 窗 Active 不要求 B 窗 wake（#110） |
+| 多窗 | **每窗独立状态**；A 窗的工作可唤醒进程 loop，但不得将 B 窗置 Active，也不执行 B 的 layout/render/present（#110 #173） |
 | 进程级 sleep | 所有窗 DeepIdle 且全局 Registry 空 → blocking `wait_event`（#117） |
-| 有 register | app 层 **`wait_until(remaining)`** = 单次 `wait_timeout(remaining)`（#127）；**非**固定 interval 探活 |
+| 有未到期 deadline | app 层 **`wait_until(deadline)`** = 单次 `wait_timeout(deadline - now)`（#127）；**非**固定 interval 探活 |
+| 有 register 但无 deadline | 状态仍为 RegisteredActive，但等待使用 blocking `wait_event`；不伪造 timeout |
 
 <a id="activeworkregistry"></a>
 
@@ -387,13 +396,13 @@ impl ActiveWorkRegistry {
 ### wait_until（#117、#127）
 
 ```text
-remaining = min(all next_deadline) - now
-if remaining <= 0 → drain_due + 继续帧
-else if all DeepIdle → blocking wait_event()
-else → wait_timeout(remaining)   // 单次，非固定 100ms 探活
+deadline = min(all sessions' next_deadline)
+if deadline <= now → drain_due(所属 session) + 继续帧
+else if deadline exists → wait_timeout(deadline - now)  // 单次，非固定探活
+else → wait_event()                                  // 可为 DeepIdle，也可为无 deadline RegisteredActive
 ```
 
-不要求 native 新增 API；用现有 `wait_timeout` + 计算 remaining 实现。
+不要求 native 新增 API；`wait_until` 是 app 层语义，用现有 `wait_timeout` + 计算 remaining 实现。`RegisteredActive` 描述“Registry 非空”，不代表一定使用 timeout。
 
 每 **WindowSession** 持有一份 Registry（#116）。
 
@@ -435,7 +444,7 @@ run_app_loop(sessions):
 | UiEvent 路由 | 平台事件带 **window_id** → 仅目标 session 进入 Active |
 | 共享资源 | AppState + Theme **全局一份**（#93–#94） |
 | 独立 present | 各 session 独立 `FrameRenderer` + presenter |
-| A 窗 Active | **不** wake B 窗（#110）；B 可仍 DeepIdle |
+| A 窗 Active | 可唤醒共享的进程 loop；**不**将 B 窗置 Active，B 保持 DeepIdle 且不跑 frame work（#110 #173） |
 
 > **实现注记**：`run_gui` 已构造主窗 `WindowSession` 并在同一 loop 内编排副窗 `WindowSession`；native 多窗、window_id 路由、队列/Timer 与运行期 frame drain 已接。
 
@@ -618,7 +627,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 若存在 **无法**通过 register 或事件驱动的定时/轮询需求（如极少数平台 API）：
 
-1. 在 [`decisions.md`](../../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#165+** 起）；
+1. 在 [`decisions.md`](../../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#174+** 起）；
 2. 说明触发源、wake 频率、允许的工作范围、为何无法 register；
 3. [testing · 零闲置验收](testing.md#测试策略) 须覆盖：无事件时 assert **不** present/layout（或豁免边界）；
 4. 默认 **不豁免**；从严审查。
@@ -637,7 +646,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 6. **多窗？** 是否仅影响本窗状态（#110）？
 7. **调用方能否零维护？** 是否须 App register/名单/手动标脏？（#130 应答「否」）
 
-无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（当前新豁免从 #165+ 起）。
+无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（当前新豁免从 #174+ 起）。
 
 ---
 

@@ -1,6 +1,6 @@
 ﻿# 平台系统
 
-← [Main](../architecture.md) · 系统 **#8** · 功能域：`native`
+← [架构导航](../architecture.md) · 系统 **#8** · 功能域：`native`
 
 > OS 差异**仅**在此域隔离；`native` **抹平**全部平台差异，使 `core` / `draw` / `ui` / `app` / `data` 代码跨 OS **完全一致**。traits 对外；Fail Fast。**当前开发优先级**：Windows 端先行打磨（[#167](../../decisions.md#d167)），Linux / macOS / 移动端复用同一上层、仅换 backend。
 
@@ -72,7 +72,27 @@ trait Platform {
 
 ### 窗口可选能力
 
-`WindowOps` 将平台可选窗口能力表达为 `Result<()>`：支持的后端返回 `Ok(())`，协议或 OS 不支持的能力返回 `Err(Errc::NotImplemented)`。`PlatformWindowCore` 保持公开 `PlatformWindow` / `IWindowProperties` 的无返回值兼容 API，但必须记录错误，并且只有底层能力返回 `Ok(())` 后才更新共享 `WindowState`，避免 Wayland 等平台把未支持操作误记为成功状态。
+[#170](../../decisions.md#d170) 规定 **Result-only**：所有可因 OS、协议、窗口管理器或运行时状态失败的窗口能力，在内部 `WindowOps` 与公开 `PlatformWindow` / `IWindowProperties` 上都以 `Result<()>` 为 **canonical API**。支持的后端返回 `Ok(())`；能力缺失返回 `Err(Errc::NotImplemented)`；其他运行时失败保留具体 `Errc`。
+
+```rust
+// 节选；完整方法集见 traits/window.rs。
+trait IWindowProperties {
+    fn set_position(&mut self, x: i32, y: i32) -> Result<()>;
+    fn set_resizable(&mut self, value: bool) -> Result<()>;
+    fn maximize(&mut self) -> Result<()>;
+    fn set_fullscreen(&mut self, value: bool) -> Result<()>;
+    fn set_window_opacity(&mut self, value: f32) -> Result<()>;
+}
+```
+
+**不保留**“记录日志然后返回 `()`”的公开兼容面，也不新增 `try_*` 并行 API。迁移要求：
+
+1. 直接修改原 trait 签名、后端 impl、Fake 与全部调用点；
+2. 调用方显式 `?`、分支处理或上报错误，不得靠日志猜测成功；
+3. 只有底层操作返回 `Ok(())` 后才更新共享 `WindowState`；
+4. 后端不支持测试同时断言 `Err(NotImplemented)` 与状态不变。
+
+> **实现状态**：`WindowOps`、`PlatformWindow`、`IWindowProperties`、三平台/Fake impl 与 app 调用点均已迁移为 Result-only；`PlatformWindowCore` 只在 backend/presenter 成功后提交 `WindowState`。不可向上传播的启动 cleanup、Drop 与事件 resize 路径会显式记录错误，不再静默吞掉。
 
 当前能力边界：
 
@@ -84,17 +104,21 @@ trait Platform {
 
 ### 呈现（#59、#70）
 
-| 路径 | 接口 | damage | 当前 engine |
-|------|------|--------|-------------|
-| CPU | `IPresenter::present(pixels, w, h, PresentDamage)` | Full / Partial rects | `SoftwareEngine` |
-| GPU · GL | `IGraphicsContext::swap_buffers(PresentDamage)` | 同上 | `GpuEngine` + `GpuBackend` |
-| GPU · D3D/Vulkan/Metal | `IGraphicsContext::present(PresentFrame)`（`present_pixels` 转发） | 全帧像素上传 | `PresentUploadEngine` + `CpuBackend` |
+| caps 组合 | 当前 API context | 接口 / damage | 当前 engine |
+|-----------|------------------|---------------|-------------|
+| `Cpu × CpuPresenter` | 无 `IGraphicsContext` | `IPresenter::present(pixels, w, h, PresentDamage)` | `SoftwareEngine` |
+| `GpuNative × Swapchain` | **D3D11 / OpenGL ES** | `IGraphicsContext::present(PresentFrame)` / swapchain damage | **`GpuEngine`** + native raster backend |
+| `Cpu × PixelUpload` | Vulkan / Metal | `IGraphicsContext::present(PresentFrame)` 全帧像素上传 | `PresentUploadEngine` + `CpuBackend` |
 
 `PresentDamage` 来自 `core::damage` — 物理像素矩形列表或全屏。
 
-**Present 分派**：`create_graphics_engine` 按 `caps().raster` × `caps().present` 表驱动装配（`GpuNative` × `Swapchain` → `GpuEngine`；`Cpu` × `PixelUpload` → `PresentUploadEngine`）。设计 → [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)（#168 · #169）。
+**Present 分派**：`create_graphics_engine` 只按 `caps().raster` × `caps().present` 装配（`GpuNative` × `Swapchain` → `GpuEngine`；`Cpu` × `PixelUpload` → `PresentUploadEngine`）。这些轴是正交描述维度，**不承诺完整笛卡尔积**；合法性由 live `GraphicsContextCaps` 与 factory registry 共同判定（[#172](../../decisions.md#d172)）。`GpuNative × PixelUpload`、`Cpu × Swapchain` 或带 `IGraphicsContext` 的 `CpuPresenter` 在当前能力集下均为非法组合，必须返回可诊断错误，不得猜测装配。设计 → [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)（#168 · #169 · #172）。
 
-GPU 路径：`PlatformWindow::graphics_context()` 返回 `Option<&mut dyn IGraphicsContext>`；`app::create_preferred_engine` 调用 `draw::bootstrap_graphics_engine`（**唯一** probe 循环）。`create_gpu_context*` 为 factory **单条目**低层入口（测试 / 直接调用；`Auto` 须走 bootstrap），**非** app 主路径。具体 API 对上层 **不可见** — 选型摘要见 [rendering · 多图形 API](rendering.md#多图形-api) · [graphics-backend-pluggable · 核心抽象](graphics-backend-pluggable.md#核心抽象) · [#162](../../decisions.md#d162)。
+GPU 路径：`PlatformWindow::graphics_context()` 返回 `Option<&mut dyn IGraphicsContext>`；`app::create_preferred_engine` 调用 `draw::bootstrap_graphics_engine`（**唯一** probe 循环）。`create_gpu_context*` 为 factory **单条目**低层入口（测试 / 直接调用；`Auto` 须走 bootstrap），**非** app 主路径。
+
+`GraphicsBackend` 具体 identity 只允许用于用户配置、诊断报告、`native::factory` 候选表与 `draw::RenderBackendRegistry` 的表驱动 adapter 配对；`app` / `ui` 及 `draw` 普通 engine/pipeline 不得散落 `match GraphicsBackend::*` 分支。装配只读 caps / capability trait。选型摘要见 [rendering · 多图形 API](rendering.md#多图形-api) · [graphics-backend-pluggable · 核心抽象](graphics-backend-pluggable.md#核心抽象) · [#162](../../decisions.md#d162) · [#172](../../decisions.md#d172)。
+
+显式候选未编译、context 初始化失败、caps 与 registry 不匹配或组合非法时，bootstrap 记录该候选原因并继续下一候选；所有 GPU 候选失败后，app 只回退到 `SoftwareEngine + IPresenter`。不进行热切换，不在帧内重新 probe。
 
 ### IDisplay
 
@@ -160,7 +184,7 @@ impl EventLoopWaker {
 | 触发 | `post_to_ui` / Timer 注册 / semantic queue 等成功入队后调用 `wake()` |
 | 后端 | Windows / Linux Wayland / macOS / FakePlatform 提供真实 wake；`Default` 为 no-op |
 
-**DeepIdle**（#106）：App 主循环须 blocking `wait_event`。**RegisteredActive** 须 `wait_until(next_deadline)`（#117），**不**用固定 `wait_timeout` 探活。`wait_timeout` 仅作 App opt-in 或测试辅助。详见 [demand-driven · ActiveWorkRegistry](demand-driven.md#activeworkregistry) · [application · 事件轮询策略](application.md#事件轮询策略)。
+**DeepIdle**（#106）：App 主循环须 blocking `wait_event`。**RegisteredActive** 表示 Registry 非空：有 deadline 时 `wait_until(next_deadline)` 以单次 `wait_timeout(remaining)` 实现，无 deadline 时同样 blocking `wait_event`。两者都 **不**允许固定 timeout 探活（#117 #173）。详见 [demand-driven · ActiveWorkRegistry](demand-driven.md#activeworkregistry) · [application · 事件轮询策略](application.md#事件轮询策略)。
 
 ### EventBus
 
@@ -237,11 +261,13 @@ native/traits/
 
 Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Wayland）、`native/backends/macos/`（AppKit bootstrap）。
 
-| 平台 | Platform | GPU 上下文 | 备注 |
-|------|----------|-----------|------|
-| Windows | ✅ | ✅ D3D11 + WGL → OpenGL ES | D3D12 Planned |
-| Linux (Wayland) | ✅ | ✅ Vulkan + EGL → OpenGL ES | — |
-| macOS | ✅ AppKit bootstrap | ✅ Metal（CpuUploadPresent，feature `metal`） | native raster backlog |
+状态标签不再用单个 `✅`：**已编码**只表示源码存在，不自动推导已编译、自动化通过、硬件验证或生产就绪。可变的验证数量以 [implementation · 当前验证基线](../implementation.md#当前验证基线-2026-07-10) 为准。
+
+| 平台 | backend 编码 | 编译证据 | 自动化测试 | 真机 / 硬件 | 生产就绪 |
+|------|-------------|----------|------------|-------------|----------|
+| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1021/1021、demo 17/17 | 待完整 GPU/驱动/窗口矩阵 | **否** |
+| Linux (Wayland) | **已编码**：Platform + Vulkan + EGL/OpenGL ES | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | 待 Wayland compositor/GPU 矩阵 | **否** |
+| macOS | **已编码**：AppKit + Metal `Cpu × PixelUpload` | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | **待真机验证** | **否** |
 
 <a id="多图形-api-与-factory"></a>
 
@@ -251,7 +277,11 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 `factory/`（`mod.rs` + `registry*.rs`）是 **唯一** 对外 factory 分派入口（`create_platform` / `create_gpu_context*`）；`#[cfg]` 还允许 `backends/`、`graphics/**/platform/`（见 [条件编译](#条件编译)）。新增图形 API 在 `native/graphics/<api>/` 实现 + registry 表登记一行。
 
-上层 **禁止** 区分 WGL/EGL/Vulkan：只持有 `dyn IGraphicsContext`。`IGraphicsContext::get_proc_address` 供 GL 系 backend 加载扩展；非 GL API 可返回 `None`，由对应 backend 自行链接。
+普通上层代码 **禁止**区分 WGL/EGL/Vulkan/D3D/Metal：只持有 `dyn IGraphicsContext`，并按 caps / capability trait 装配。`GraphicsBackend` identity 仅在配置、诊断、native 候选表和 draw adapter registry 中合法。`IGraphicsContext::get_proc_address` 供 GL 系 context 内部加载扩展；非 GL API 可返回 `None`，不得因此把 API 分支泄漏到普通 `app` / `draw` / `ui` 路径。
+
+候选处理顺序：读取用户请求 → native registry 产生有序候选 → 单条目创建 context → 校验 registry 声明与 live caps → 按 `RasterMode × PresentMode` 装配 engine。任一步失败都记录 backend identity + 原因并继续 fallback；最终 GPU 候选耗尽则返回 software path。
+
+`draw::RenderBackendRegistry` 以 `GraphicsBackend` 为 key 选择 native raster adapter，属于 #172 明确允许的表驱动组合边界；新增 API 只能增加 registry 条目，不得在 engine/pipeline 另建分支。
 
 **P6 图形后端** 状态与 backlog → [implementation · P6](../implementation.md#p6-生产级框架) · [P6.8 可组合渲染轴](../implementation.md#p68-可组合渲染轴)。
 
@@ -365,7 +395,7 @@ native/
 
 | # | 步骤 |
 |---|------|
-| 1 | 在 `traits/` 定义或扩展 trait；能力差异用 `Result<()>` + `Errc::NotImplemented` |
+| 1 | 在 `traits/` 定义或扩展 trait；可失败能力的公开与内部签名均直接使用 `Result<()>` + `Errc::NotImplemented`，不保留 void 包装 |
 | 2 | 在对应 backend 子模块实现 struct + trait impl |
 | 3 | 在 `*Platform` 聚合 struct 中持有子系统；`Platform` 访问器返回 `&mut dyn Trait` |
 | 4 | 事件：backend 产出 `UiEvent` → `OsEventSource` 队列；实现 `IEventLoop::waker()` |

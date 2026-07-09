@@ -6,7 +6,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
-use crate::core::{Error, Rect, WindowId};
+use crate::core::{Errc, Error, Rect, WindowId};
 use crate::native::shared::{
     FileSystemCore, OsEventSource, PlatformWindowCore, SpecialDirProvider, WindowOps, WindowState,
 };
@@ -162,7 +162,13 @@ impl IWindowManager for MacosPlatform {
         // and returns Objective-C object pointers managed by AppKit.
         let session_active = self.text_input.session_active_handle();
         let (window, content_layer) = unsafe {
-            cocoa::create_window(title, width, height, Arc::clone(&self.events), session_active)
+            cocoa::create_window(
+                title,
+                width,
+                height,
+                Arc::clone(&self.events),
+                session_active,
+            )
         };
         self.text_input.set_view(content_layer.view);
         let state = Rc::new(RefCell::new(WindowState::with_id_and_size(
@@ -254,43 +260,63 @@ impl MacosWindowOps {
     fn new(window: cocoa::Id, layer: cocoa::Id) -> Self {
         Self { window, layer }
     }
+
+    fn ensure_valid_window(&self, operation: &str) -> crate::core::Result<()> {
+        if self.window.is_null() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                format!("{operation}: invalid NSWindow handle"),
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl WindowOps for MacosWindowOps {
-    fn os_show(&mut self) {
+    fn os_show(&mut self) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_show")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
         unsafe {
             cocoa::show_window(self.window);
         }
+        Ok(())
     }
 
-    fn os_hide(&mut self) {
+    fn os_hide(&mut self) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_hide")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
         unsafe {
             cocoa::hide_window(self.window);
         }
+        Ok(())
     }
 
-    fn os_close(&mut self) {
+    fn os_close(&mut self) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_close")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
         unsafe {
             cocoa::close_window(self.window);
         }
+        Ok(())
     }
 
-    fn os_set_title(&mut self, title: &str) {
+    fn os_set_title(&mut self, title: &str) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_set_title")?;
         // SAFETY: self.window is valid and title is converted to a temporary
         // NSString before the synchronous AppKit setter call.
         unsafe {
             cocoa::set_window_title(self.window, title);
         }
+        Ok(())
     }
 
-    fn os_set_size(&mut self, w: i32, h: i32) {
+    fn os_set_size(&mut self, w: i32, h: i32) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_set_size")?;
         // SAFETY: self.window is valid and CGRect is repr(C), matching AppKit ABI.
         unsafe {
             cocoa::set_window_size(self.window, w, h);
         }
+        Ok(())
     }
 
     fn native_handle(&self) -> *mut c_void {
@@ -298,6 +324,7 @@ impl WindowOps for MacosWindowOps {
     }
 
     fn os_center_on_screen(&mut self) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_center_on_screen")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
         unsafe {
             cocoa::msg_void(self.window, "center");
@@ -306,6 +333,7 @@ impl WindowOps for MacosWindowOps {
     }
 
     fn os_raise(&mut self) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_raise")?;
         unsafe {
             cocoa::show_window(self.window);
         }
@@ -313,6 +341,7 @@ impl WindowOps for MacosWindowOps {
     }
 
     fn os_lower(&mut self) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_lower")?;
         unsafe {
             cocoa::hide_window(self.window);
         }
@@ -320,11 +349,13 @@ impl WindowOps for MacosWindowOps {
     }
 
     fn os_start_text_input(&mut self) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_start_text_input")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
         unsafe { text_input_view::make_window_text_input_active(self.window) }
     }
 
     fn os_stop_text_input(&mut self) -> crate::core::Result<()> {
+        self.ensure_valid_window("os_stop_text_input")?;
         // SAFETY: self.window is the NSWindow pointer returned by create_window.
         unsafe { text_input_view::make_window_text_input_inactive(self.window) }
     }
@@ -1012,7 +1043,12 @@ mod cocoa {
             NO,
         );
         set_window_title(window, title);
-        let content_view = super::text_input_view::create_content_view(rect, events, session_active);
+        let content_view = super::text_input_view::create_content_view(
+            rect.size.width,
+            rect.size.height,
+            events,
+            session_active,
+        );
         msg_void_id(window, "setContentView:", content_view);
         msg_void_bool(content_view, "setWantsLayer:", YES);
         let layer = msg_id(content_view, "layer");

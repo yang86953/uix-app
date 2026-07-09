@@ -95,29 +95,34 @@ impl IWindowProperties for FakeWindowProperties {
     fn height(&self) -> i32 {
         self.state.height
     }
-    fn set_size(&mut self, w: i32, h: i32) {
+    fn set_size(&mut self, w: i32, h: i32) -> Result<()> {
         self.state.width = w;
         self.state.height = h;
         self.state.set_size_calls.push((w, h));
+        Ok(())
     }
-    fn set_minimum_size(&mut self, w: i32, h: i32) {
+    fn set_minimum_size(&mut self, w: i32, h: i32) -> Result<()> {
         self.state.min_w = w;
         self.state.min_h = h;
+        Ok(())
     }
-    fn set_maximum_size(&mut self, w: i32, h: i32) {
+    fn set_maximum_size(&mut self, w: i32, h: i32) -> Result<()> {
         self.state.max_w = w;
         self.state.max_h = h;
+        Ok(())
     }
     fn position(&self) -> Point {
         Point::new(self.state.pos_x as f32, self.state.pos_y as f32)
     }
-    fn set_position(&mut self, x: i32, y: i32) {
+    fn set_position(&mut self, x: i32, y: i32) -> Result<()> {
         self.state.pos_x = x;
         self.state.pos_y = y;
         self.state.set_position_calls.push((x, y));
+        Ok(())
     }
-    fn set_resizable(&mut self, r: bool) {
+    fn set_resizable(&mut self, r: bool) -> Result<()> {
         self.state.resizable = r;
+        Ok(())
     }
     fn is_maximized(&self) -> bool {
         self.state.maximized
@@ -125,41 +130,51 @@ impl IWindowProperties for FakeWindowProperties {
     fn is_minimized(&self) -> bool {
         self.state.minimized
     }
-    fn maximize(&mut self) {
+    fn maximize(&mut self) -> Result<()> {
         self.state.maximized = true;
         self.state.minimized = false;
+        Ok(())
     }
-    fn minimize(&mut self) {
+    fn minimize(&mut self) -> Result<()> {
         self.state.minimized = true;
         self.state.maximized = false;
+        Ok(())
     }
-    fn restore(&mut self) {
+    fn restore(&mut self) -> Result<()> {
         self.state.maximized = false;
         self.state.minimized = false;
+        Ok(())
     }
-    fn set_borderless(&mut self, b: bool) {
+    fn set_borderless(&mut self, b: bool) -> Result<()> {
         self.state.borderless = b;
+        Ok(())
     }
-    fn set_fullscreen(&mut self, f: bool) {
+    fn set_fullscreen(&mut self, f: bool) -> Result<()> {
         self.state.fullscreen = f;
+        Ok(())
     }
     fn is_fullscreen(&self) -> bool {
         self.state.fullscreen
     }
-    fn set_always_on_top(&mut self, on: bool) {
+    fn set_always_on_top(&mut self, on: bool) -> Result<()> {
         self.state.always_on_top = on;
+        Ok(())
     }
-    fn set_window_opacity(&mut self, o: f32) {
+    fn set_window_opacity(&mut self, o: f32) -> Result<()> {
         self.state.opacity = o;
+        Ok(())
     }
-    fn start_text_input(&mut self) {
+    fn start_text_input(&mut self) -> Result<()> {
         self.state.text_input_active = true;
+        Ok(())
     }
-    fn stop_text_input(&mut self) {
+    fn stop_text_input(&mut self) -> Result<()> {
         self.state.text_input_active = false;
+        Ok(())
     }
-    fn enable_file_drop(&mut self, e: bool) {
+    fn enable_file_drop(&mut self, e: bool) -> Result<()> {
         self.state.file_drop_enabled = e;
+        Ok(())
     }
 }
 
@@ -286,44 +301,54 @@ impl PlatformWindow for FakeWindow {
         self.id
     }
 
-    fn show(&mut self) {
+    fn show(&mut self) -> Result<()> {
         self.state.visible = true;
         self.state.show_calls += 1;
+        Ok(())
     }
-    fn hide(&mut self) {
+    fn hide(&mut self) -> Result<()> {
         self.state.visible = false;
         self.state.hide_calls += 1;
+        Ok(())
     }
-    fn close(&mut self) {
+    fn close(&mut self) -> Result<()> {
         self.state.visible = false;
         self.state.close_called = true;
+        Ok(())
     }
     fn is_visible(&self) -> bool {
         self.state.visible
     }
-    fn set_title(&mut self, title: &str) {
+    fn set_title(&mut self, title: &str) -> Result<()> {
         self.state.title = title.to_string();
         self.state.set_title_calls.push(title.to_string());
+        Ok(())
     }
-    fn center_on_screen(&mut self) {
+    fn center_on_screen(&mut self) -> Result<()> {
         self.state.center_called = true;
+        Ok(())
     }
-    fn raise(&mut self) {
+    fn raise(&mut self) -> Result<()> {
         self.state.raise_calls += 1;
+        Ok(())
     }
-    fn lower(&mut self) {
+    fn lower(&mut self) -> Result<()> {
         self.state.lower_calls += 1;
+        Ok(())
     }
-    fn set_window_icon(&mut self, path: &str) {
+    fn set_window_icon(&mut self, path: &str) -> Result<()> {
         self.state.icon_path = path.to_string();
+        Ok(())
     }
-    fn flash_window(&mut self) {
+    fn flash_window(&mut self) -> Result<()> {
         self.state.flash_calls += 1;
+        Ok(())
     }
-    fn resize_notify(&mut self, w: i32, h: i32) {
+    fn resize_notify(&mut self, w: i32, h: i32) -> Result<()> {
         self.props.state.width = w;
         self.props.state.height = h;
         self.state.resize_notify_calls.push((w, h));
+        Ok(())
     }
     fn properties(&self) -> &dyn IWindowProperties {
         &self.props

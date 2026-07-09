@@ -1,6 +1,6 @@
 ﻿# 组件系统
 
-← [Main](../architecture.md) · 系统 **#3** · 功能域：`ui`
+← [架构导航](../architecture.md) · 系统 **#3** · 功能域：`ui`
 
 > 单个 UI 组件的结构、能力与生命周期。
 
@@ -124,6 +124,8 @@ enum SnapshotFields {
 
 > **实现注记**：`ComponentConfigSnapshot` / `SnapshotFields` / `SnapshotSource` 已在 `ui::component_snapshot` 导出；全部 86 个内置 widget 均已手写静态配置提取（排除 hover、pressed、focused、scroll、animation phase 等运行态）。`ComponentHandle` 已可读取类型化 getter（`text` / `label` / `placeholder` / `disabled` / `checked` / `numeric_value`）；`AppState` snapshot registry 已接入 `WidgetTree` mount/unmount，`ViewAdapter::reconcile` patch 后会刷新复用节点 snapshot；`component!` 自定义组件 pub 字段自动提取与 `#[snapshot(skip)]` 排除已接。覆盖清单 → [implementation · 组件 snapshot](../implementation.md#组件-snapshot-覆盖)。
 
+<a id="snapshotsource"></a>
+
 ### SnapshotSource（#151）
 
 自定义 / 内置 widget 向快照系统贡献 **静态配置**；App **不手写**字段列表。
@@ -166,6 +168,8 @@ impl SnapshotSource for Rating {
 内置 widget：框架为各类型手写 `SnapshotFields` 变体；与 #146 `enum SnapshotFields` 对齐。
 
 > **实现注记**：全部 86 个内置 widget 已覆盖（清单同 [ComponentConfigSnapshot 实现注记](#componentconfigsnapshot)）；`component!` 自定义 widget 自动生成 `SnapshotSource` 并提取 pub 字段为 `SnapshotFields::Custom`，支持 `#[snapshot(skip)]` 排除。
+
+<a id="snapshotskip"></a>
 
 ### #[snapshot(skip)]（#152）
 

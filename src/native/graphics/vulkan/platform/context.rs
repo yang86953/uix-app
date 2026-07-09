@@ -1,7 +1,5 @@
 //! Vulkan graphics context for Linux Wayland.
 
-#![cfg(all(unix, not(target_os = "macos")))]
-
 use std::ffi::{c_void, CStr};
 use std::ptr;
 

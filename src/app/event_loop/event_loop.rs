@@ -25,6 +25,12 @@ use std::time::{Duration, Instant};
 
 const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
+fn report_resize_notify_error(context: &str, result: crate::core::Result<()>) {
+    if let Err(error) = result {
+        crate::core::log::warn_fn(format!("{context}: {}", error.short_what()));
+    }
+}
+
 /// 运行完整的 widget 渲染事件循环。
 #[allow(clippy::too_many_arguments)]
 pub fn run_widget_loop<M, X, F>(
@@ -446,7 +452,10 @@ where
                     if let UiEventPayload::Resize(ref d) = ev.payload {
                         if d.width > 0 && d.height > 0 {
                             engine.resize(d.width, d.height);
-                            platform_window.resize_notify(d.width, d.height);
+                            report_resize_notify_error(
+                                "window resize_notify failed",
+                                platform_window.resize_notify(d.width, d.height),
+                            );
                             initial_size = (d.width, d.height);
                             tree.mark_full_frame_dirty();
                         }
@@ -463,7 +472,10 @@ where
                         let h = info.bounds.h as i32;
                         if w > 0 && h > 0 {
                             engine.resize(w, h);
-                            platform_window.resize_notify(w, h);
+                            report_resize_notify_error(
+                                "window maximize resize_notify failed",
+                                platform_window.resize_notify(w, h),
+                            );
                             tree.mark_full_frame_dirty();
                         }
                     }
@@ -471,7 +483,10 @@ where
                 UiEventType::WindowRestore => {
                     let (rw, rh) = initial_size;
                     engine.resize(rw, rh);
-                    platform_window.resize_notify(rw, rh);
+                    report_resize_notify_error(
+                        "window restore resize_notify failed",
+                        platform_window.resize_notify(rw, rh),
+                    );
                     window_visible = true;
                     tree.mark_full_frame_dirty();
                 }

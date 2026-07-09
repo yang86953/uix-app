@@ -1,6 +1,6 @@
 ﻿# 主题与样式系统
 
-← [Main](../architecture.md) · 系统 **#4** · 功能域：`ui`（Theme）· `draw`（token 解析）
+← [架构导航](../architecture.md) · 系统 **#4** · 功能域：`ui`（Theme）· `draw`（token 解析）
 
 > Theme 提供颜色与排版；Style / StyleSet 描述外观。
 

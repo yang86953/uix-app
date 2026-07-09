@@ -69,11 +69,16 @@ impl crate::native::traits::input::ITextInput for MacosTextInput {
 }
 
 pub(crate) unsafe fn create_content_view(
-    frame: cocoa::CGRect,
+    width: f64,
+    height: f64,
     events: Arc<Mutex<VecDeque<UiEvent>>>,
     session_active: Arc<AtomicBool>,
 ) -> cocoa::Id {
-    let class = content_view_class();
+    let frame = cocoa::CGRect {
+        origin: cocoa::CGPoint { x: 0.0, y: 0.0 },
+        size: cocoa::CGSize { width, height },
+    };
+    let class = cocoa::content_view_class();
     let view = cocoa::msg_id(class, "alloc");
     let view = cocoa::msg_id_rect(view, "initWithFrame:", frame);
     if view.is_null() {
@@ -156,12 +161,7 @@ mod cocoa {
         fn sel_registerName(name: *const c_char) -> Sel;
         fn objc_msgSend();
         fn objc_allocateClassPair(superclass: Id, name: *const c_char, extra_bytes: usize) -> Id;
-        fn class_addMethod(
-            cls: Id,
-            name: Sel,
-            imp: *const c_void,
-            types: *const c_char,
-        ) -> u8;
+        fn class_addMethod(cls: Id, name: Sel, imp: *const c_void, types: *const c_char) -> u8;
         fn objc_registerClassPair(cls: Id);
         fn objc_setAssociatedObject(object: Id, key: Sel, value: Id, policy: usize);
         fn objc_getAssociatedObject(object: Id, key: Sel) -> Id;
@@ -190,7 +190,11 @@ mod cocoa {
             );
             class_addMethod(
                 class_pair,
-                sel_registerName(CString::new("insertText:replacementRange:").unwrap().as_ptr()),
+                sel_registerName(
+                    CString::new("insertText:replacementRange:")
+                        .unwrap()
+                        .as_ptr(),
+                ),
                 insert_text as *const c_void,
                 enc_insert.as_ptr(),
             );
@@ -329,12 +333,7 @@ mod cocoa {
         on_marked_text(&ctx.events, &mut ctx.composition, &text);
     }
 
-    unsafe extern "C" fn insert_text(
-        view: Id,
-        _cmd: Sel,
-        string: Id,
-        _replacement_range: NSRange,
-    ) {
+    unsafe extern "C" fn insert_text(view: Id, _cmd: Sel, string: Id, _replacement_range: NSRange) {
         let Some(ctx) = view_context(view) else {
             return;
         };
@@ -371,11 +370,7 @@ mod cocoa {
         if ptr.is_null() {
             return None;
         }
-        Some(
-            std::ffi::CStr::from_ptr(ptr)
-                .to_string_lossy()
-                .into_owned(),
-        )
+        Some(std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned())
     }
 
     unsafe fn class(name: &str) -> Id {

@@ -34,8 +34,260 @@ fn is_native_backend_boundary(path: &str) -> bool {
         || path.starts_with("native/graphics/")
 }
 
+fn is_platform_cfg_boundary(path: &str) -> bool {
+    path == "native/factory.rs"
+        || path.starts_with("native/factory/")
+        || path.starts_with("native/backends/")
+        || (path.starts_with("native/graphics/")
+            && path.split('/').any(|component| component == "platform"))
+}
+
 fn is_architecture_guard(path: &str) -> bool {
     path == "tests/architecture/boundaries.rs"
+}
+
+fn rust_code_without_comments(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == b'r' {
+            let mut quote = index + 1;
+            while quote < bytes.len() && bytes[quote] == b'#' {
+                quote += 1;
+            }
+            if quote < bytes.len() && bytes[quote] == b'"' {
+                let hashes = quote - index - 1;
+                output.extend_from_slice(&bytes[index..=quote]);
+                index = quote + 1;
+                while index < bytes.len() {
+                    output.push(bytes[index]);
+                    if bytes[index] == b'"'
+                        && index + hashes < bytes.len()
+                        && (hashes == 0
+                            || bytes[index + 1..=index + hashes]
+                                .iter()
+                                .all(|byte| *byte == b'#'))
+                    {
+                        if hashes > 0 {
+                            output.extend_from_slice(&bytes[index + 1..=index + hashes]);
+                        }
+                        index += hashes + 1;
+                        break;
+                    }
+                    index += 1;
+                }
+                continue;
+            }
+        }
+
+        if bytes[index] == b'"' {
+            output.push(bytes[index]);
+            index += 1;
+            while index < bytes.len() {
+                output.push(bytes[index]);
+                if bytes[index] == b'\\' && index + 1 < bytes.len() {
+                    index += 1;
+                    output.push(bytes[index]);
+                } else if bytes[index] == b'"' {
+                    index += 1;
+                    break;
+                }
+                index += 1;
+            }
+            continue;
+        }
+
+        if bytes[index..].starts_with(b"//") {
+            while index < bytes.len() && bytes[index] != b'\n' {
+                output.push(b' ');
+                index += 1;
+            }
+            continue;
+        }
+
+        if bytes[index..].starts_with(b"/*") {
+            let mut depth = 1;
+            output.extend_from_slice(b"  ");
+            index += 2;
+            while index < bytes.len() && depth > 0 {
+                if bytes[index..].starts_with(b"/*") {
+                    depth += 1;
+                    output.extend_from_slice(b"  ");
+                    index += 2;
+                } else if bytes[index..].starts_with(b"*/") {
+                    depth -= 1;
+                    output.extend_from_slice(b"  ");
+                    index += 2;
+                } else {
+                    output.push(if bytes[index] == b'\n' { b'\n' } else { b' ' });
+                    index += 1;
+                }
+            }
+            continue;
+        }
+
+        output.push(bytes[index]);
+        index += 1;
+    }
+
+    String::from_utf8(output).expect("comment stripping must preserve UTF-8 source")
+}
+
+fn skip_string(bytes: &[u8], index: &mut usize) -> bool {
+    if bytes.get(*index) == Some(&b'r') {
+        let mut quote = *index + 1;
+        while quote < bytes.len() && bytes[quote] == b'#' {
+            quote += 1;
+        }
+        if quote < bytes.len() && bytes[quote] == b'"' {
+            let hashes = quote - *index - 1;
+            *index = quote + 1;
+            while *index < bytes.len() {
+                if bytes[*index] == b'"'
+                    && *index + hashes < bytes.len()
+                    && (hashes == 0
+                        || bytes[*index + 1..=*index + hashes]
+                            .iter()
+                            .all(|byte| *byte == b'#'))
+                {
+                    *index += hashes + 1;
+                    return true;
+                }
+                *index += 1;
+            }
+            return true;
+        }
+    }
+
+    if bytes.get(*index) != Some(&b'"') {
+        return false;
+    }
+    *index += 1;
+    while *index < bytes.len() {
+        if bytes[*index] == b'\\' && *index + 1 < bytes.len() {
+            *index += 2;
+        } else if bytes[*index] == b'"' {
+            *index += 1;
+            break;
+        } else {
+            *index += 1;
+        }
+    }
+    true
+}
+
+fn rust_code_without_comments_or_strings(text: &str) -> String {
+    let code = rust_code_without_comments(text);
+    let bytes = code.as_bytes();
+    let mut output = bytes.to_vec();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        let string_start = index;
+        if skip_string(bytes, &mut index) {
+            for byte in &mut output[string_start..index] {
+                if *byte != b'\n' {
+                    *byte = b' ';
+                }
+            }
+        } else {
+            index += 1;
+        }
+    }
+
+    String::from_utf8(output).expect("source masking must preserve UTF-8 source")
+}
+
+fn cfg_attribute_mentions_platform(attribute: &str) -> bool {
+    let bytes = attribute.as_bytes();
+    let mut identifiers = Vec::new();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if skip_string(bytes, &mut index) {
+            continue;
+        }
+        if bytes[index].is_ascii_alphabetic() || bytes[index] == b'_' {
+            let start = index;
+            index += 1;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
+            {
+                index += 1;
+            }
+            identifiers.push(&attribute[start..index]);
+        } else {
+            index += 1;
+        }
+    }
+
+    matches!(identifiers.first(), Some(&"cfg") | Some(&"cfg_attr"))
+        && identifiers.iter().skip(1).any(|identifier| {
+            matches!(
+                *identifier,
+                "windows" | "unix" | "target_os" | "target_family"
+            )
+        })
+}
+
+fn platform_cfg_attribute_lines(text: &str) -> Vec<usize> {
+    let code = rust_code_without_comments(text);
+    let bytes = code.as_bytes();
+    let mut lines = Vec::new();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if skip_string(bytes, &mut index) {
+            continue;
+        }
+        if bytes[index] != b'#' {
+            index += 1;
+            continue;
+        }
+
+        let attribute_offset = index;
+        index += 1;
+        if bytes.get(index) == Some(&b'!') {
+            index += 1;
+        }
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        if bytes.get(index) != Some(&b'[') {
+            continue;
+        }
+
+        let attribute_start = index + 1;
+        let mut depth = 1;
+        index += 1;
+        while index < bytes.len() && depth > 0 {
+            if skip_string(bytes, &mut index) {
+                continue;
+            }
+            match bytes[index] {
+                b'[' => depth += 1,
+                b']' => depth -= 1,
+                _ => {}
+            }
+            index += 1;
+        }
+
+        if depth == 0
+            && cfg_attribute_mentions_platform(&code[attribute_start..index.saturating_sub(1)])
+        {
+            lines.push(
+                code[..attribute_offset]
+                    .bytes()
+                    .filter(|byte| *byte == b'\n')
+                    .count()
+                    + 1,
+            );
+        }
+    }
+
+    lines
 }
 
 fn assert_domain_has_no_forbidden_dependencies(domain: &str, forbidden: &[&str]) {
@@ -44,7 +296,7 @@ fn assert_domain_has_no_forbidden_dependencies(domain: &str, forbidden: &[&str])
     let mut violations = Vec::new();
 
     for file in rust_files_under(&root) {
-        let text = fs::read_to_string(&file).unwrap();
+        let text = rust_code_without_comments_or_strings(&fs::read_to_string(&file).unwrap());
         let rel = relative_src_path(&file);
         for needle in forbidden {
             if text.contains(needle) {
@@ -62,41 +314,65 @@ fn assert_domain_has_no_forbidden_dependencies(domain: &str, forbidden: &[&str])
 #[test]
 fn platform_cfgs_stay_inside_native_boundary() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let platform_cfg_needles = [
-        "cfg(windows",
-        "cfg(unix",
-        "cfg(all(windows",
-        "cfg(all(unix",
-        "cfg(any(windows",
-        "cfg(any(unix",
-        "cfg(not(windows",
-        "cfg(not(unix",
-        "cfg_attr(windows",
-        "cfg_attr(unix",
-        "cfg(target_os",
-        "cfg(target_family",
-    ];
     let mut violations = Vec::new();
 
     for file in rust_files_under(&src) {
         let rel = relative_src_path(&file);
-        if is_architecture_guard(&rel) {
-            continue;
-        }
         let text = fs::read_to_string(&file).unwrap();
-        if platform_cfg_needles
-            .iter()
-            .any(|needle| text.contains(needle))
-            && !is_native_backend_boundary(&rel)
-        {
-            violations.push(rel);
+        let lines = platform_cfg_attribute_lines(&text);
+        if !lines.is_empty() && !is_platform_cfg_boundary(&rel) {
+            violations.push(format!(
+                "{rel}:{}",
+                lines
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
         }
     }
 
     assert!(
         violations.is_empty(),
-        "platform cfgs must stay in native/factory/**, native/backends/**, or native/graphics/**: {violations:?}"
+        "platform cfgs must stay in native/factory/**, native/backends/**, or native/graphics/**/platform/**: {violations:?}"
     );
+}
+
+#[test]
+fn architecture_scanner_ignores_comments_and_cfg_feature_values() {
+    let source = r###"
+// crate::app and #[cfg(windows)] are documentation only.
+/* nested /* crate::draw */ comments are ignored too. */
+const EXAMPLE: &str = "#[cfg(unix)]";
+#[cfg(feature = "windows")]
+fn feature_named_windows() {}
+#[cfg(
+    target_os = "windows"
+)]
+fn windows_only() {}
+"###;
+
+    let code = rust_code_without_comments(source);
+    assert!(!code.contains("crate::app"));
+    assert!(!code.contains("crate::draw"));
+    assert_eq!(platform_cfg_attribute_lines(source), vec![7]);
+}
+
+#[test]
+fn domain_dependency_scanner_ignores_string_literals() {
+    let source = r###"
+const NORMAL: &str = "crate::app";
+const RAW: &str = r#"crate::draw"#;
+const BYTE: &[u8] = b"crate::ui";
+const RAW_BYTE: &[u8] = br#"crate::native"#;
+"###;
+
+    let code = rust_code_without_comments_or_strings(source);
+    assert_eq!(code.len(), source.len());
+    assert_eq!(code.matches('\n').count(), source.matches('\n').count());
+    for forbidden in ["crate::app", "crate::draw", "crate::ui", "crate::native"] {
+        assert!(!code.contains(forbidden));
+    }
 }
 
 #[test]
@@ -471,8 +747,9 @@ fn business_event_callbacks_stay_out_of_widget_fields() {
 }
 
 #[test]
-fn main_md_remains_the_architecture_document() {
+fn architecture_document_stays_in_the_qualified_docs_tree() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let architecture_doc = root.join("docs/areas/architecture.md");
     let forbidden = ["ARCHITECTURE.md", "architecture.md"];
     let present: Vec<_> = forbidden
         .iter()
@@ -481,7 +758,13 @@ fn main_md_remains_the_architecture_document() {
         .collect();
 
     assert!(
+        architecture_doc.is_file(),
+        "qualified architecture navigation is missing: {}",
+        architecture_doc.display()
+    );
+
+    assert!(
         present.is_empty(),
-        "docs/Main.md is the project architecture document; do not add standalone architecture files: {present:?}"
+        "docs/areas/architecture.md is the project architecture navigation; do not add standalone root architecture files: {present:?}"
     );
 }

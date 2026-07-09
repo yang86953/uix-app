@@ -36,12 +36,12 @@ impl GraphicsBackendEntry {
     }
 }
 
-#[cfg(windows)]
-use crate::native::factory::registry_windows::PLATFORM_ENTRIES;
 #[cfg(all(unix, not(target_os = "macos")))]
 use crate::native::factory::registry_linux::PLATFORM_ENTRIES;
 #[cfg(target_os = "macos")]
 use crate::native::factory::registry_macos::PLATFORM_ENTRIES;
+#[cfg(windows)]
+use crate::native::factory::registry_windows::PLATFORM_ENTRIES;
 
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[];
@@ -66,7 +66,10 @@ pub fn try_create_context(
     if entry.status == BackendStatus::Planned {
         return Err(Error::new(
             Errc::PlatformError,
-            format!("GraphicsBackend {} is planned but not implemented", entry.id),
+            format!(
+                "GraphicsBackend {} is planned but not implemented",
+                entry.id
+            ),
         ));
     }
     if entry.status == BackendStatus::Disabled {

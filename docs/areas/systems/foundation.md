@@ -1,6 +1,6 @@
 ﻿# 基础设施系统
 
-← [Main](../architecture.md) · 系统 **#10** · 功能域：`core`
+← [架构导航](../architecture.md) · 系统 **#10** · 功能域：`core`
 
 > 错误、几何、日志、诊断。最底层，无平台依赖，Fail Fast。
 

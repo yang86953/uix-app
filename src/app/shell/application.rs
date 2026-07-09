@@ -20,19 +20,19 @@ use crate::app::window_config::WindowConfig;
 use crate::app::window_session::{WindowLoopState, WindowSession};
 use crate::core::{Point, WindowId};
 use crate::data::SettingsService;
+use crate::draw::engine::bootstrap::bootstrap_graphics_engine;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
 use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource, NodeId};
-use crate::draw::engine::bootstrap::bootstrap_graphics_engine;
 use crate::draw::traits::GraphicsEngine;
-use crate::draw::SoftwareEngine;
 use crate::draw::RenderOutcome;
+use crate::draw::SoftwareEngine;
+use crate::native::create_platform;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::GraphicsBackend;
 use crate::native::traits::window::PlatformWindow;
-use crate::native::{create_platform};
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::{ViewAdapter, ViewNode};
@@ -51,6 +51,12 @@ pub enum AppMode {
 
 const GRAPHICS_BACKEND_ENV: &str = "UIX_GRAPHICS_BACKEND";
 const GRAPHICS_BACKEND_SETTING_KEYS: [&str; 2] = ["graphics_backend", "uix.graphics_backend"];
+
+fn report_window_operation_error(context: &str, result: crate::core::Result<()>) {
+    if let Err(error) = result {
+        crate::core::log::warn_fn(format!("{context}: {}", error.short_what()));
+    }
+}
 
 struct SecondaryWindowSession {
     _window: Box<dyn PlatformWindow>,
@@ -80,7 +86,10 @@ impl SecondaryWindowSession {
                 if let UiEventPayload::Resize(ref d) = event.payload {
                     if d.width > 0 && d.height > 0 {
                         parts.engine.resize(d.width, d.height);
-                        self._window.resize_notify(d.width, d.height);
+                        report_window_operation_error(
+                            "secondary resize_notify failed",
+                            self._window.resize_notify(d.width, d.height),
+                        );
                         self.initial_size = (d.width, d.height);
                         self.window_visible = true;
                         parts.tree.mark_full_frame_dirty();
@@ -93,7 +102,10 @@ impl SecondaryWindowSession {
                 let h = info.bounds.h as i32;
                 if w > 0 && h > 0 {
                     parts.engine.resize(w, h);
-                    self._window.resize_notify(w, h);
+                    report_window_operation_error(
+                        "secondary maximize resize_notify failed",
+                        self._window.resize_notify(w, h),
+                    );
                     self.window_visible = true;
                     parts.tree.mark_full_frame_dirty();
                 }
@@ -101,7 +113,10 @@ impl SecondaryWindowSession {
             UiEventType::WindowRestore => {
                 let (w, h) = self.initial_size;
                 parts.engine.resize(w, h);
-                self._window.resize_notify(w, h);
+                report_window_operation_error(
+                    "secondary restore resize_notify failed",
+                    self._window.resize_notify(w, h),
+                );
                 self.window_visible = true;
                 parts.tree.mark_full_frame_dirty();
             }
@@ -660,9 +675,22 @@ impl App {
                 return 1;
             }
         };
-        platform_window.center_on_screen();
-        platform_window.show();
-        platform_window.raise();
+        report_window_operation_error(
+            "initial center_on_screen failed",
+            platform_window.center_on_screen(),
+        );
+        if let Err(error) = platform_window.show() {
+            crate::core::log::error_fn(format!(
+                "initial window show failed: {}",
+                error.short_what()
+            ));
+            report_window_operation_error(
+                "initial show failure cleanup close failed",
+                platform_window.close(),
+            );
+            return 1;
+        }
+        report_window_operation_error("initial window raise failed", platform_window.raise());
         let event_loop_waker = platform.event_loop().waker();
         self.runtime.set_event_loop_waker(event_loop_waker.clone());
         self.app_state.set_event_loop_waker(event_loop_waker);
@@ -670,7 +698,13 @@ impl App {
         let engine = match create_preferred_engine(platform_window.as_mut(), w, h, graphics_backend)
         {
             Some(engine) => engine,
-            None => return 1,
+            None => {
+                report_window_operation_error(
+                    "initial engine failure cleanup close failed",
+                    platform_window.close(),
+                );
+                return 1;
+            }
         };
 
         let mut font_service = FontService::new();
@@ -1031,7 +1065,10 @@ fn create_secondary_window(
     };
     if platform_window.window_id() != window_id {
         let actual = platform_window.window_id();
-        platform_window.close();
+        report_window_operation_error(
+            "window_id mismatch cleanup close failed",
+            platform_window.close(),
+        );
         runtime.close_session(window_id);
         crate::core::log::error_fn(format!(
             "open_window window_id mismatch: reserved={}, native={}",
@@ -1041,15 +1078,32 @@ fn create_secondary_window(
         return None;
     }
 
-    platform_window.center_on_screen();
-    platform_window.show();
-    platform_window.raise();
+    report_window_operation_error(
+        "secondary center_on_screen failed",
+        platform_window.center_on_screen(),
+    );
+    if let Err(error) = platform_window.show() {
+        crate::core::log::error_fn(format!(
+            "secondary window show failed: {}",
+            error.short_what()
+        ));
+        report_window_operation_error(
+            "secondary show failure cleanup close failed",
+            platform_window.close(),
+        );
+        runtime.close_session(window_id);
+        return None;
+    }
+    report_window_operation_error("secondary window raise failed", platform_window.raise());
 
     let engine =
         match create_preferred_engine(platform_window.as_mut(), width, height, graphics_backend) {
             Some(engine) => engine,
             None => {
-                platform_window.close();
+                report_window_operation_error(
+                    "secondary engine failure cleanup close failed",
+                    platform_window.close(),
+                );
                 runtime.close_session(window_id);
                 return None;
             }

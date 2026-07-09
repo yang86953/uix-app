@@ -1,6 +1,6 @@
 ﻿# 应用系统
 
-← [Main](../architecture.md) · 系统 **#1** · 功能域：`app`
+← [架构导航](../architecture.md) · 系统 **#1** · 功能域：`app`
 
 > 启动、主循环、桥接平台 / View / 渲染。编排者，不实现组件或绘制算法。
 
@@ -79,7 +79,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 | 状态 | 行为 |
 |------|------|
 | **DeepIdle** | blocking `wait_event`；不 layout/render/**不 tick Effect** |
-| **RegisteredActive** | Animation / Timer / IME **register** 中；窄 tick + 关联 paint |
+| **RegisteredActive** | Registry 非空；有 deadline 时定点等待并窄 tick，IME 等无 deadline 会话则 blocking `wait_event` |
 | **Active** | UiEvent 或 Invalidation → 按需 dispatch / layout / render |
 
 多窗（#110、#116）：**每窗独立** `WindowSession`（树 + 引擎 + 三态 + Registry）；**单** 进程级 loop（设计名 `run_app_loop`，源码 `run_widget_loop`）；UiEvent 按 **window_id** 路由。
@@ -92,7 +92,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 
 ```mermaid
 flowchart TD
-  A[wait_event / wait_timeout(deadline)] --> B[drain UiEvent]
+  A[wait_event / wait_until(deadline)] --> B[drain UiEvent]
   B --> C[drain_due AppTimer / Widget Timer]
   C --> D[main_thread_queue.drain]
   D --> Q[drain AppState semantic queue]
@@ -130,14 +130,21 @@ flowchart TD
 
 ### 事件轮询策略
 
-设计（#106、#117）：**DeepIdle** 下 blocking `wait_event`（无 timeout）；**RegisteredActive** 由 `ActiveWorkRegistry::next_deadline` → `wait_until` 唤醒；**Active** 在事件 drain 后若无 pending 则回 DeepIdle。详见 [demand-driven · 唤醒源白名单](demand-driven.md#唤醒源白名单) · [ActiveWorkRegistry](demand-driven.md#activeworkregistry)。
+设计（#106、#117、[#173](../../decisions.md#d173)）：等待方式由“是否有最早 deadline”决定，不由状态名直接决定：
+
+- 有未到期 deadline：`wait_until(deadline)`，以单次 `wait_timeout(deadline - now)` 实现。
+- 无 deadline：blocking `wait_event`；此时可能是 DeepIdle，也可能是含 IME 会话的 RegisteredActive。
+- deadline 已到：不等待，直接 drain 所属 session 的 due work。
+
+Active 在事件与定向队列 drain 后若无 pending 且 Registry 为空，则回 DeepIdle；Registry 仍非空则回 RegisteredActive。详见 [demand-driven · 唤醒源白名单](demand-driven.md#唤醒源白名单) · [ActiveWorkRegistry](demand-driven.md#activeworkregistry)。
 
 > **实现注记**：单窗 loop 已用 Registry deadline 决定 `wait_event` / `wait_timeout(remaining)`；无 deadline 时 DeepIdle blocking；IME composition session 作为无 deadline 注册项保持 RegisteredActive 但不制造定时探活。内置 Animation 源见 [component · 动画](component.md#动画)。
 
 | 状态 | 行为 |
 |------|------|
 | DeepIdle | blocking `wait_event`；不 layout/render/tick Effect |
-| RegisteredActive | `ActiveWorkRegistry::next_deadline` → `wait_timeout(remaining)` 窄 tick |
+| RegisteredActive · 有 deadline | `ActiveWorkRegistry::next_deadline` → 单次 `wait_timeout(remaining)`；到期才窄 tick |
+| RegisteredActive · 无 deadline | blocking `wait_event`；保持 RegisteredActive，不制造探活 timeout |
 | Active / 动画中 | `tree.update` 返回 true → Registry 登记下一帧 deadline；仅在 Effect pending 时 `tick_effects` |
 | 首帧 | 单次 `poll_event` |
 
@@ -374,7 +381,7 @@ pub root: impl Fn() -> ViewNode + Send + Sync + 'static;
 // 或 Box<dyn View>；expand 后走同一 ViewAdapter 路径
 ```
 
-详见 [view-reactive · 多窗 Reconcile](#多窗-reconcile)（#148）。
+详见 [view-reactive · 多窗 Reconcile](view-reactive.md#多窗-reconcile)（#148）。
 
 ---
 
@@ -513,9 +520,13 @@ std::thread::spawn({
 });
 ```
 
+<a id="多窗-post_to_ui"></a>
+
 ### 多窗 post_to_ui（#141）
 
 `AppHandle` 携带不可变 **`window_id`**；`post_to_ui` **仅**写入该窗 `MainThreadQueue`。
+
+`post_to_ui` 成功入队后会唤醒共享的**进程 event loop**，但调度器只把目标 `window_id` 对应的 session 视为有工作。其他窗口不因这次 wake 进入 Active，也不执行 `tick_effects` / reconcile / layout / render / present（[#173](../../decisions.md#d173)）。
 
 ```rust
 pub struct AppHandle {
@@ -552,6 +563,8 @@ handle_a.post_to_ui(move || state_for_a.set(v));
 设计（#137）— 与 [demand-driven · MainThreadQueue](demand-driven.md#mainthreadqueue) 一致。
 
 每 `WindowSession` 持有一个 `MainThreadQueue`；`post_to_ui` 入队，在 [帧内合并](demand-driven.md#帧内合并) 步骤 3 `drain`。入队 **不** register ActiveWork；队列空且其余 pending 清空后可回 DeepIdle。
+
+队列非空是目标 session 的一次性 Active 条件，不是 RegisteredActive；空闭包被 drain 后若未产生新 pending，必须立即恢复 DeepIdle。
 
 > **实现注记**：`MainThreadQueue` 已实现 FIFO drain，并由 `WindowSession` 持有；`AppRuntime` 已按 `window_id` 路由投递，独立 session 关闭会清空队列；有效 session 成功入队后会唤醒事件循环，关闭后的 late post 不入队也不唤醒。
 

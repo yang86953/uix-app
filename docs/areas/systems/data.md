@@ -1,6 +1,6 @@
 ﻿# 数据系统
 
-← [Main](../architecture.md) · 系统 **#11** · 功能域：`data`
+← [架构导航](../architecture.md) · 系统 **#11** · 功能域：`data`
 
 > 配置持久化；不参与 UI 热路径（符合核心理念 #105 冷路径边界）。**全栈客户端基线**（[#166](../../decisions.md#d166)）：当前 `data` 域为 Settings KV opt-in；网络/同步在 backlog。
 

@@ -1,6 +1,6 @@
 ﻿# View 与响应式系统
 
-← [Main](../architecture.md) · 系统 **#2** · 功能域：`ui`
+← [架构导航](../architecture.md) · 系统 **#2** · 功能域：`ui`
 
 > 声明式 View 描述 UI；State 驱动重建与 diff。业务**仅**通过 View DSL 创建 UI（#21）。
 
@@ -141,6 +141,8 @@ Style / 文本 / 静态 props 比较（#60）：Style 变 → paint invalidate�
 | 类型不同 | 卸载旧 subtree，分配新 ComponentId（#35、#101） |
 
 ---
+
+<a id="handler-变更判定-135"></a>
 
 ## Handler 变更判定（#135）
 

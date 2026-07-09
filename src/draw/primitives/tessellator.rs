@@ -103,7 +103,7 @@ fn clean_ring(pts: &[Point]) -> Option<Vec<Point>> {
     }
     if out.len() >= 2 {
         let first = out[0];
-        let last = *out.last().unwrap();
+        let &last = out.last()?;
         if (first.x - last.x).abs() < 1e-4 && (first.y - last.y).abs() < 1e-4 {
             out.pop();
         }

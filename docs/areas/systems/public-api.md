@@ -1,6 +1,6 @@
 ﻿# 公开 API 参考
 
-← [Main](../architecture.md) · 跨域 · 功能域：`prelude`
+← [架构导航](../architecture.md) · 跨域 · 功能域：`prelude`
 
 > **应用作者单页索引**：`use uix::prelude::*;` 的完整导出清单与分组说明。行为语义见各系统文档；设计名 vs 源码名 → [glossary · 术语对照](../../glossary.md#术语对照)。
 
@@ -55,26 +55,29 @@ use std::time::Duration;
 
 fn main() {
     let status = State::new(String::from("ready"));
-    App::new()
+    let app = App::new()
         .title("全栈最小路径")
-        .settings("app.json")  // data：run() 前 opt-in 加载并注入 DI
-        .on_start(move |handle| {
-            // app：Timer 主线程周期任务
-            let _tick = handle.run_interval(Duration::from_secs(1), {
-                let h = handle.clone();
-                move || h.post_to_ui(move || status.set("tick".into()))
-            });
-        })
-        .root(move || label(&status.get()))
+        .settings("app.json"); // data：run() 前 opt-in 加载并注入 DI
+
+    // TimerHandle 必须存活到 run() 结束；Timer 回调本就在 UI 主线程。
+    let status_for_timer = status.clone();
+    let _tick = app.run_interval(Duration::from_secs(1), move || {
+        status_for_timer.set(String::from("tick"));
+    });
+
+    let status_for_view = status.clone();
+    app.root(move || label(status_for_view.get()))
         .run();
 }
 ```
+
+`State` 分别 clone 给 Timer 与 root，避免重复 move；`_tick` 是函数作用域内的 keep-alive，`run()` 返回后 drop 才 cancel。Timer 回调已由主循环执行，因此直接 `State::set`；只有后台线程结果回传才使用 `post_to_ui`。
 
 | API | 域 | 说明 |
 |-----|-----|------|
 | `.settings(path)` | `data` | 启动前 load 一次；运行中 save 由业务显式调用 → [data · App 集成](data.md#app-集成) |
 | `run_interval` / `run_after` | `app` | 主线程 Timer；内部 register ActiveWork → [application · App 定时](application.md#app-定时-api) |
-| `post_to_ui` | `app` | 跨线程投递主线程闭包；成功入队 wake loop → [application · post_to_ui](application.md#post_to_ui) |
+| `post_to_ui` | `app` | 后台线程向目标窗投递主线程闭包；成功入队唤醒进程 loop，但只激活目标 session → [application · post_to_ui](application.md#post_to_ui) |
 
 ---
 
@@ -118,7 +121,7 @@ prelude **仅**导出平台工厂与跨层输入枚举；上层 **禁止** `use 
 | 符号 | 说明 |
 |------|------|
 | `create_platform()` | 当前 OS 的 `Platform` 实例 |
-| `GraphicsBackend` | P6.5 图形 API 选型枚举：`Auto` / `OpenGlEs` / `Vulkan` / `D3D11` / `D3D12` / `Metal` |
+| `GraphicsBackend` | 初始化期图形 API **配置 / 诊断 identity**：`Auto` / `OpenGlEs` / `Vulkan` / `D3d11` / `D3d12` / `Metal`；不是 engine 内部分派轴 |
 | `ControlSize` · `CursorType` · `KeyCode` · `KeyMod` · `MouseButton` · `ScrollDirection` | 输入枚举 |
 | `StatusLevel` | 系统通知级别 |
 
@@ -126,7 +129,9 @@ prelude **仅**导出平台工厂与跨层输入枚举；上层 **禁止** `use 
 
 `create_gpu_context_with_backend` 仍是 native factory **单条目**低层入口（无 probe 循环；`Auto` 须 bootstrap），不进入 prelude。
 
-`GraphicsBackend::D3d11` 在 Windows 上选择 D3D11 context；`GraphicsBackend::Vulkan` 在 Linux Wayland 上选择 Vulkan context；`GraphicsBackend::Metal` 在 macOS 上选择 Metal context（feature `metal`）。各 context 经 `GraphicsContextCaps` 声明 `raster` + `present`（当前：D3D11 / OpenGL ES → `GpuNative` × `Swapchain`；Vulkan/Metal → `Cpu` × `PixelUpload`）— **非** API 永久能力上限（#168）。选型由 `draw::bootstrap_graphics_engine` 完成；对外仍只通过 `App::graphics_backend(...)` opt-in，不暴露 `native::backends::*`。
+`GraphicsBackend::D3d11` 在 Windows 上配置 D3D11 context；`GraphicsBackend::Vulkan` 在 Linux Wayland 上配置 Vulkan context；`GraphicsBackend::Metal` 在 macOS 上配置 Metal context（feature `metal`）。各 context 经 `GraphicsContextCaps` 声明 `raster` + `present`：当前 **D3D11 / OpenGL ES = `GpuNative × Swapchain` → `GpuEngine`**，Vulkan / Metal = `Cpu × PixelUpload` → `PresentUploadEngine`。这是当前 caps，**非** API 永久能力上限（#168）。
+
+组合不是完整笛卡尔积；合法性由 registry 和 live caps 判定（[#172](../../decisions.md#d172)）。选型由 `draw::bootstrap_graphics_engine` 完成；具体 identity 只用于配置、probe 诊断以及 native/draw 两个表驱动 registry 的 adapter 配对，普通 `app` / `draw` / `ui` 路径不得按 API identity 选 engine 或 present。候选未编译、初始化失败或组合非法时记录原因并继续 fallback；GPU 候选耗尽后使用 `SoftwareEngine + IPresenter`。对外仍只通过 `App::graphics_backend(...)` opt-in，不暴露 `native::backends::*`。
 
 ---
 
@@ -254,7 +259,7 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 | `DiContainer` | DI 容器（`app::Container`） |
 | `map_ui_event` | `UiEvent` → `SystemEvent` 桥接 |
 
-`App::graphics_backend(GraphicsBackend)` 在窗口 / 引擎初始化时一次性指定 GPU API；未显式指定时依次读取 `UIX_GRAPHICS_BACKEND`、Settings key `graphics_backend` / `uix.graphics_backend`，最后回到 `Auto`。无热切换。
+`App::graphics_backend(GraphicsBackend)` 在窗口 / 引擎初始化时一次性设置 GPU API 偏好；未显式指定时依次读取 `UIX_GRAPHICS_BACKEND`、Settings key `graphics_backend` / `uix.graphics_backend`，最后回到 `Auto`。每个候选失败均进入 probe 诊断；最终可 fallback 至 software path。无热切换、无帧内 probe。
 
 生命周期、Timer、`post_to_ui`、多窗 → [application](application.md)。
 

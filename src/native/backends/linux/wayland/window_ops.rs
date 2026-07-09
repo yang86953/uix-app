@@ -17,7 +17,7 @@ use wayland_protocols::staging::xdg_activation::v1::client::xdg_activation_v1::X
 use wayland_protocols::unstable::xdg_decoration::v1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1;
 use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 
-use crate::core::error::{Error, Result};
+use crate::core::error::{Errc, Error, Result};
 use crate::core::WindowId;
 use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 use crate::native::shared::unimpl;
@@ -49,6 +49,13 @@ pub(crate) struct WaylandWindowOps {
 }
 
 impl WaylandWindowOps {
+    fn missing_proxy(operation: &str, proxy: &str) -> Error {
+        Error::new(
+            Errc::InvalidState,
+            format!("{operation}: Wayland {proxy} is unavailable"),
+        )
+    }
+
     /// 获取 wl_surface 的原始 C 指针（供 EGL wl_egl_window_create 使用）。
     /// 此指针仅在窗口生命周期内有效。
     pub(crate) fn surface_c_ptr(&self) -> *mut std::ffi::c_void {
@@ -251,70 +258,64 @@ impl WaylandWindowOps {
 impl WindowOps for WaylandWindowOps {
     // ── 窗口生命周期 ──────────────────────────────────────
 
-    fn os_show(&mut self) {
-        if let Some(ref s) = self.surface {
-            s.commit();
-        }
+    fn os_show(&mut self) -> Result<()> {
+        let surface = self
+            .surface
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_show", "wl_surface"))?;
+        surface.commit();
+        Ok(())
     }
 
-    fn os_hide(&mut self) {
-        if let Some(ref t) = self.toplevel {
-            t.set_minimized();
-        }
+    fn os_hide(&mut self) -> Result<()> {
+        let toplevel = self
+            .toplevel
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_hide", "xdg_toplevel"))?;
+        toplevel.set_minimized();
+        Ok(())
     }
 
-    fn os_close(&mut self) {
+    fn os_close(&mut self) -> Result<()> {
         self.toplevel = None;
         self.xdg_surface = None;
         self.surface = None;
         self.input_region = None;
+        Ok(())
     }
 
     // ── 窗口外观 ──────────────────────────────────────────
 
-    fn os_set_title(&mut self, title: &str) {
-        if let Some(ref t) = self.toplevel {
-            t.set_title(title.to_string());
-        }
+    fn os_set_title(&mut self, title: &str) -> Result<()> {
+        let toplevel = self
+            .toplevel
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_set_title", "xdg_toplevel"))?;
+        toplevel.set_title(title.to_string());
+        Ok(())
     }
 
     fn os_center_on_screen(&mut self) -> Result<()> {
-        // Wayland 不支持客户端设置窗口位置，compositor 自行决定放置。
-        // 但我们可以读取显示器几何信息，供调试和日志参考。
-        let outputs = self.outputs.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(primary) = outputs
-            .iter()
-            .find(|o| o.is_primary)
-            .or_else(|| outputs.first())
-        {
-            let cx = primary.x + primary.width / 2;
-            let cy = primary.y + primary.height / 2;
-            crate::core::log::info_fn(format!(
-                "窗口居中计算完成: 显示器 {}x{} @({},{}), 中心 ({},{})",
-                primary.width, primary.height, primary.x, primary.y, cx, cy,
-            ));
-        } else {
-            crate::core::log::info_fn("窗口居中: 未检测到显示器信息，由 compositor 自行放置");
-        }
-        Ok(())
+        unimpl("os_center_on_screen")
     }
 
     fn os_raise(&mut self) -> Result<()> {
         // 通过 xdg_activation_v1 请求窗口激活（提升聚焦）。
         // 注意：此协议需要异步 done 事件获取 token 字符串，在同步上下文中
         // 无法等待；携带空 token 的 activate 请求部分 compositor 仍会处理。
-        if let (Some(xa), Some(surface)) = (self.xdg_activation.as_ref(), self.surface.as_ref()) {
-            let token = xa.get_activation_token();
-            token.set_surface(surface);
-            token.set_app_id("belldandy".to_string());
-            token.commit();
-            xa.activate(String::new(), surface);
-            crate::core::log::info_fn("已请求窗口激活 (xdg_activation_v1)");
-        } else {
-            crate::core::log::info_fn(
-                "请求窗口提升: xdg_activation_v1 不可用，由 compositor 自行决定",
-            );
-        }
+        let xa = self
+            .xdg_activation
+            .as_ref()
+            .ok_or_else(|| Error::new(Errc::NotImplemented, "xdg_activation_v1 is unavailable"))?;
+        let surface = self
+            .surface
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_raise", "wl_surface"))?;
+        let token = xa.get_activation_token();
+        token.set_surface(surface);
+        token.set_app_id("belldandy".to_string());
+        token.commit();
+        xa.activate(String::new(), surface);
         Ok(())
     }
 
@@ -332,30 +333,39 @@ impl WindowOps for WaylandWindowOps {
 
     // ── 尺寸/位置 ─────────────────────────────────────────
 
-    fn os_set_size(&mut self, w: i32, h: i32) {
-        if let Some(ref xs) = self.xdg_surface {
-            xs.set_window_geometry(0, 0, w, h);
-        }
+    fn os_set_size(&mut self, w: i32, h: i32) -> Result<()> {
+        let xdg_surface = self
+            .xdg_surface
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_set_size", "xdg_surface"))?;
+        let surface = self
+            .surface
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_set_size", "wl_surface"))?;
+        xdg_surface.set_window_geometry(0, 0, w, h);
         self.input_region = None;
-        if let Some(ref s) = self.surface {
-            let region = self.compositor.create_region();
-            region.add(0, 0, w, h);
-            s.set_input_region(Some(&region));
-            self.input_region = Some(region);
-        }
+        let region = self.compositor.create_region();
+        region.add(0, 0, w, h);
+        surface.set_input_region(Some(&region));
+        self.input_region = Some(region);
+        Ok(())
     }
 
     fn os_set_min_size(&mut self, w: i32, h: i32) -> Result<()> {
-        if let Some(ref t) = self.toplevel {
-            t.set_min_size(w, h);
-        }
+        let toplevel = self
+            .toplevel
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_set_min_size", "xdg_toplevel"))?;
+        toplevel.set_min_size(w, h);
         Ok(())
     }
 
     fn os_set_max_size(&mut self, w: i32, h: i32) -> Result<()> {
-        if let Some(ref t) = self.toplevel {
-            t.set_max_size(w, h);
-        }
+        let toplevel = self
+            .toplevel
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_set_max_size", "xdg_toplevel"))?;
+        toplevel.set_max_size(w, h);
         Ok(())
     }
 
@@ -365,8 +375,8 @@ impl WindowOps for WaylandWindowOps {
 
     /// 窗口尺寸变化通知。更新 xdg_surface 窗口几何和输入区域，
     /// 确保 compositor（如 niri）的布局与窗口实际尺寸一致。
-    fn os_resize_notify(&mut self, w: i32, h: i32) {
-        self.os_set_size(w, h);
+    fn os_resize_notify(&mut self, w: i32, h: i32) -> Result<()> {
+        self.os_set_size(w, h)
     }
 
     fn native_surface_ptr(&self) -> *mut std::ffi::c_void {
@@ -380,24 +390,30 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_maximize(&mut self) -> Result<()> {
-        if let Some(ref t) = self.toplevel {
-            t.set_maximized();
-        }
+        let toplevel = self
+            .toplevel
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_maximize", "xdg_toplevel"))?;
+        toplevel.set_maximized();
         Ok(())
     }
 
     fn os_minimize(&mut self) -> Result<()> {
-        if let Some(ref t) = self.toplevel {
-            t.set_minimized();
-        }
+        let toplevel = self
+            .toplevel
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_minimize", "xdg_toplevel"))?;
+        toplevel.set_minimized();
         Ok(())
     }
 
     fn os_restore(&mut self) -> Result<()> {
-        if let Some(ref t) = self.toplevel {
-            t.unset_maximized();
-            t.unset_fullscreen();
-        }
+        let toplevel = self
+            .toplevel
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_restore", "xdg_toplevel"))?;
+        toplevel.unset_maximized();
+        toplevel.unset_fullscreen();
         Ok(())
     }
 
@@ -406,12 +422,14 @@ impl WindowOps for WaylandWindowOps {
     }
 
     fn os_set_fullscreen(&mut self, fullscreen: bool) -> Result<()> {
-        if let Some(ref t) = self.toplevel {
-            if fullscreen {
-                t.set_fullscreen(None);
-            } else {
-                t.unset_fullscreen();
-            }
+        let toplevel = self
+            .toplevel
+            .as_ref()
+            .ok_or_else(|| Self::missing_proxy("os_set_fullscreen", "xdg_toplevel"))?;
+        if fullscreen {
+            toplevel.set_fullscreen(None);
+        } else {
+            toplevel.unset_fullscreen();
         }
         Ok(())
     }

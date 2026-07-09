@@ -3,17 +3,16 @@
 //! Creates an ES profile context on the window HWND and implements
 //! [`IGraphicsContext`] for [`GpuEngine`].
 
-#![cfg(windows)]
 #![allow(nonstandard_style)]
 #![allow(clippy::missing_safety_doc)]
 
 use std::ffi::{c_void, CString};
 use std::ptr;
 
+use crate::native::backends::windows::util::windows_diag;
 use crate::native::graphics::platform::windows::{
     device_context, query_client_rect, release_device_context,
 };
-use crate::native::backends::windows::util::windows_diag;
 use crate::native::traits::present::{IGraphicsContext, PresentDamage};
 use crate::native::{Errc, Error};
 

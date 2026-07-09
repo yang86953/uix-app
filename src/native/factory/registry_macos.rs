@@ -10,13 +10,11 @@ const METAL_STATUS: BackendStatus = if cfg!(feature = "metal") {
     BackendStatus::Disabled
 };
 
-pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
-    GraphicsBackendEntry {
-        id: GraphicsBackend::Metal,
-        priority: 20,
-        status: METAL_STATUS,
-        raster: RasterMode::Cpu,
-        present: PresentMode::PixelUpload,
-        create: metal::create,
-    },
-];
+pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[GraphicsBackendEntry {
+    id: GraphicsBackend::Metal,
+    priority: 20,
+    status: METAL_STATUS,
+    raster: RasterMode::Cpu,
+    present: PresentMode::PixelUpload,
+    create: metal::create,
+}];
