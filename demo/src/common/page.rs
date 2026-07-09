@@ -7,6 +7,8 @@ pub const INIT_H: i32 = 800;
 pub const SIDEBAR_W: f32 = 220.0;
 pub const CONTENT_W: f32 = (INIT_W as f32) - SIDEBAR_W;
 const CONTENT_PAD_H: f32 = 48.0;
+/// 初始窗口下内容区内宽（演示页固定样例尺寸用）。
+/// **不要**拿它当「当前窗口内容宽」——窗口 resize 后仍是编译期常量。
 pub const INNER_W: f32 = CONTENT_W - CONTENT_PAD_H;
 
 pub const PAGE_HOME: usize = 0;
@@ -99,11 +101,15 @@ impl<'a> PageBuilder<'a> {
     }
 
     pub fn push(mut self, node: impl IntoWidgetNode) -> Self {
+        // 不写死宽度：父 Column 默认 Stretch，子项随 ScrollView 视口变宽。
+        // （调试 overlay：紫框=壳层已拉满；若再套 INNER_W 会多出一圈窄蓝框。）
         self.items.push(embed(node));
         self
     }
 
     pub fn build(self) -> ViewNode {
+        // 默认 AlignItems::Stretch：内容列宽 = ScrollView 非滚动轴（随窗口）。
+        // 卡片等样例可自带固定宽；提示条 / section 行应拉满内容区。
         scroll(
             column(self.items)
                 .gap(12.0)
@@ -116,16 +122,23 @@ impl<'a> PageBuilder<'a> {
 }
 
 pub fn section_title(tk: &DesignTokens, text: &str) -> ViewNode {
+    // 色条必须 flex_grow(0)：column() 默认 grow=1，在 row 主轴上会吞掉整行宽度。
+    // 行本身不设 width：由父 Column Stretch 拉满；右侧细线 flex_grow(1) 填剩余。
     row([
-        // 用空列容器画色条（Label 不适合承载纯色块）
         column(Vec::<ViewNode>::new())
             .width(3.0)
             .height(14.0)
+            .flex_grow(0.0)
             .bg(tk.color_primary)
             .radius(tk.border_radius_sm),
         label(text)
             .color(tk.color_text)
-            .font_size(13.0),
+            .font_size(13.0)
+            .flex_grow(0.0),
+        column(Vec::<ViewNode>::new())
+            .height(1.0)
+            .flex_grow(1.0)
+            .bg(tk.color_border_secondary),
     ])
     .align(AlignItems::Center)
     .gap(8.0)

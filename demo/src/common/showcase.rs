@@ -3,7 +3,7 @@
 use uix::prelude::*;
 use uix::ui::WidgetComponent;
 
-use super::page::{demo_row, INNER_W};
+use super::page::demo_row;
 
 /// 组件名小字标签（固定宽度列）。
 pub fn widget_caption(tk: &DesignTokens, name: &str) -> Label {
@@ -26,13 +26,13 @@ pub fn labeled_row(
 }
 
 /// 信息提示条（用于说明 backlog / 平台限制）。
+/// 不写死宽度：父级 Column 默认 Stretch 会拉满内容区。
 pub fn info_note(tk: &DesignTokens, text: &str) -> ViewNode {
     row([
         embed(Icon::new("info").size(16.0)),
         space(10.0),
         label(text).color(tk.color_info).font_size(12.0),
     ])
-    .width(INNER_W)
     .padding(EdgeInsets::new(12.0, 10.0, 12.0, 10.0))
     .bg(tk.color_info_bg)
     .radius(tk.border_radius)
@@ -46,7 +46,6 @@ pub fn backlog_note(tk: &DesignTokens, text: &str) -> ViewNode {
         space(10.0),
         label(text).color(tk.color_warning).font_size(12.0),
     ])
-    .width(INNER_W)
     .padding(EdgeInsets::new(12.0, 10.0, 12.0, 10.0))
     .bg(tk.color_warning_bg)
     .radius(tk.border_radius)

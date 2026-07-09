@@ -31,7 +31,7 @@ impl DebugRenderService {
         Color::from_rgba(180, 180, 60, 200),
     ];
 
-    /// 绘制节点调试边框。
+    /// 绘制节点调试边框（仅 hover 链调用；非 hover 直接跳过，避免满屏淡彩框）。
     pub fn draw_debug_border(
         &self,
         canvas: &mut dyn Canvas2D,
@@ -39,16 +39,11 @@ impl DebugRenderService {
         depth: usize,
         hovered: bool,
     ) {
-        if !self.debug_mode {
+        if !self.debug_mode || !hovered {
             return;
         }
         let base = Self::DEBUG_COLORS[depth % Self::DEBUG_COLORS.len()];
-        let color = if hovered {
-            base
-        } else {
-            Color::from_rgba(base.r, base.g, base.b, 30)
-        };
-        canvas.stroke_rect(rect, color, if hovered { 1.5 } else { 0.5 }, None);
+        canvas.stroke_rect(rect, base, 1.5, None);
     }
 
     /// 在节点左上角显示调试标签。
@@ -96,6 +91,14 @@ impl DebugRenderService {
         // draw_text 由 PaintContext 委托，此处由 PaintContext 调用 debug service 后自行绘制
     }
 
+    /// HUD 面板几何（与 `telemetry_hud_lines` / 文字绘制共用，避免错位）。
+    pub const HUD_PANEL_W: f32 = 228.0;
+    pub const HUD_PANEL_H: f32 = 118.0;
+    pub const HUD_MARGIN: f32 = 6.0;
+    pub const HUD_PAD_X: f32 = 10.0;
+    pub const HUD_LINE_H: f32 = 14.0;
+    pub const HUD_TEXT_TOP: f32 = 12.0;
+
     /// Debug overlay：右上角显示度量计数与 invalidation 来源。
     pub fn draw_telemetry_hud(
         &self,
@@ -106,12 +109,11 @@ impl DebugRenderService {
         if !self.debug_mode {
             return;
         }
-        let panel_w = 220.0;
-        let panel_h = 88.0;
-        let x = surface_w as f32 - panel_w - 6.0;
+        let x = surface_w as f32 - Self::HUD_PANEL_W - Self::HUD_MARGIN;
+        let y = Self::HUD_MARGIN;
         canvas.fill_rect(
-            Rect::new(x, 6.0, panel_w, panel_h),
-            Color::from_rgba(0, 0, 0, 200),
+            Rect::new(x, y, Self::HUD_PANEL_W, Self::HUD_PANEL_H),
+            Color::from_rgba(0, 0, 0, 210),
             None,
         );
         let source = metrics.last_invalidation;
@@ -122,57 +124,60 @@ impl DebugRenderService {
             InvalidationSource::AnimationPolling => Color::from_rgba(60, 140, 220, 255),
             InvalidationSource::LayoutEvent => Color::from_rgba(220, 80, 140, 255),
         };
-        canvas.fill_rect(Rect::new(x + 6.0, 10.0, 10.0, 10.0), indicator, None);
-        // 条形指示各计数相对量级（无字体时仍可见趋势）
-        let bar_max_w = panel_w - 20.0;
+        // 色条在文字左侧作次要指示；主信息靠 telemetry_hud_lines 文字。
+        let bar_x = x + Self::HUD_PAD_X;
+        let bar_w_max = 36.0;
         let scale = |v: u64| -> f32 {
-            let f = v as f32;
-            (f * 12.0).min(bar_max_w)
+            if v == 0 {
+                0.0
+            } else {
+                ((v as f32).ln_1p() * 8.0).min(bar_w_max).max(2.0)
+            }
         };
-        let bar_y = 26.0;
-        let bar_h = 4.0;
         let colors = [
+            indicator,
             Color::from_rgba(100, 200, 100, 255),
             Color::from_rgba(100, 160, 220, 255),
             Color::from_rgba(220, 160, 60, 255),
             Color::from_rgba(180, 180, 180, 255),
+            Color::from_rgba(140, 140, 160, 255),
         ];
         let values = [
+            1u64, // inv 指示点
             metrics.layout_calls,
             metrics.paint_calls,
             metrics.present_calls,
             metrics.idle_frames,
+            0, // 快捷键行无条
         ];
         for (i, (&v, &c)) in values.iter().zip(colors.iter()).enumerate() {
-            let y = bar_y + i as f32 * 14.0;
-            canvas.fill_rect(
-                Rect::new(
-                    x + 10.0,
-                    y,
-                    scale(v).max(if v > 0 { 2.0 } else { 0.0 }),
-                    bar_h,
-                ),
-                c,
-                None,
-            );
+            let line_y = y + Self::HUD_TEXT_TOP + i as f32 * Self::HUD_LINE_H;
+            if i == 0 {
+                canvas.fill_rect(Rect::new(bar_x, line_y, 8.0, 8.0), c, None);
+            } else if i < 5 {
+                canvas.fill_rect(
+                    Rect::new(bar_x, line_y + 4.0, scale(v), 3.0),
+                    c,
+                    None,
+                );
+            }
         }
-        // invalidation 来源标签区（细线编码字符长度）
-        let label_len = source.label().len() as f32;
-        canvas.fill_rect(
-            Rect::new(x + 22.0, 10.0, label_len * 3.0, 10.0),
-            Color::from_rgba(255, 255, 255, 120),
-            None,
-        );
     }
 
-    /// 返回 HUD 文本行（供 PaintContext 绘制标签）。
-    pub fn telemetry_hud_lines(metrics: &RenderMetrics) -> [String; 5] {
+    /// HUD 面板左上角 x（与 `draw_telemetry_hud` 一致）。
+    pub fn hud_panel_x(surface_w: i32) -> f32 {
+        surface_w as f32 - Self::HUD_PANEL_W - Self::HUD_MARGIN
+    }
+
+    /// 返回 HUD 文本行（供 FrameRenderer 绘制标签）。
+    pub fn telemetry_hud_lines(metrics: &RenderMetrics) -> [String; 6] {
         [
             format!("inv: {}", metrics.last_invalidation.label()),
             format!("layout: {}", metrics.layout_calls),
             format!("paint: {}", metrics.paint_calls),
             format!("present: {}", metrics.present_calls),
             format!("idle: {}", metrics.idle_frames),
+            "toggle: Ctrl+Shift+D".to_string(),
         ]
     }
 }

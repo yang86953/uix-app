@@ -235,8 +235,10 @@ fn compute_single_line(
     total_flex_grow: f32,
 ) -> FlexOutput {
     let count = base_main_sizes.len();
+    // 仅 bootstrap（主轴尚未由父级/窗口给出确定尺寸）时跳过 shrink；
+    // 父级已分配确定 frame 时即使 style 未写死 width/height，也须 shrink 以适配窗口。
     let bootstrap_main = container_main <= 1.0;
-    let skip_shrink = intrinsic_main || bootstrap_main;
+    let skip_shrink = bootstrap_main;
     let max_child_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
     let effective_cross = if container_cross > 0.0 {
         container_cross
@@ -330,10 +332,15 @@ fn compute_single_line(
     for i in 0..count {
         let margin = child_margin(input, i);
         let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
+        // Stretch：父级交叉轴已确定（>1）时填满父级，允许小于 measure（窗口缩小）；
+        // bootstrap（交叉轴仍 ≤1）时取 max(measured)，以便子项撑开容器。
         let child_cross_size = if cross_align == AlignItems::Stretch {
-            (effective_cross - margin_cross(margin, is_row))
-                .max(cross_sizes[i])
-                .max(0.0)
+            let filled = (effective_cross - margin_cross(margin, is_row)).max(0.0);
+            if container_cross <= 1.0 {
+                filled.max(cross_sizes[i])
+            } else {
+                filled
+            }
         } else {
             cross_sizes[i]
         };

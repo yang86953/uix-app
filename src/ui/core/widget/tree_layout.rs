@@ -298,6 +298,14 @@ impl WidgetTree {
         // 收集本趟中被扩展过的子节点，用于触发其父容器重排
         let mut resized_children = std::collections::HashSet::new();
         for &id in rev_order {
+            // 根已有确定客户区高度时不得被内容撑开（窗口缩小场景）；
+            // bootstrap（高度仍 ≤1）仍允许 expand，以便无窗口尺寸时由子项撑开。
+            if self.root_id == Some(id) {
+                let root_h = self.get(id).map(|n| n.frame().h).unwrap_or(0.0);
+                if root_h > 1.0 {
+                    continue;
+                }
+            }
             let (children, is_viewport, node_frame) = match self.get(id) {
                 Some(n) if !n.children().is_empty() => (
                     n.children().to_vec(),
@@ -338,7 +346,20 @@ impl WidgetTree {
             let needs_relayout = new_h > node_frame.h + 0.5 || has_resized_child;
             if needs_relayout {
                 let old_frame = node_frame;
-                let effective_h = new_h.max(node_frame.h);
+                // 非根节点：扩展不得超过父级已分配 frame，避免窗口缩小后中间层撑破客户区。
+                // 根节点仍可扩展（bootstrap / 无窗口尺寸时由内容撑开）。
+                let parent_cap = if self.root_id == Some(id) {
+                    None
+                } else {
+                    self.get(id)
+                        .and_then(|n| n.parent())
+                        .and_then(|pid| self.get(pid).map(|p| p.frame()))
+                        .map(|pf| (pf.y + pf.h - old_frame.y).max(old_frame.h))
+                };
+                let mut effective_h = new_h.max(node_frame.h);
+                if let Some(cap) = parent_cap {
+                    effective_h = effective_h.min(cap);
+                }
                 if effective_h > node_frame.h + 0.5 {
                     crate::core::log::debug_fn(format!(
                         "[Layout] Phase 2: id={} frame_h {:.0} → {:.0} (child bottom={:.0})",
@@ -476,6 +497,10 @@ impl WidgetTree {
             let mut ops: Vec<ShrinkOp> = Vec::new();
 
             for &id in rev_order {
+                // 根 frame 由窗口客户区锁定，shrink 同样不得改写。
+                if self.root_id == Some(id) {
+                    continue;
+                }
                 let is_viewport = self
                     .get(id)
                     .map(|n| n.children_clip(n.frame()).is_some())

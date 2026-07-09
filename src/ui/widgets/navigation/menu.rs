@@ -3,7 +3,7 @@
 //! Supports hover highlight, active selection, disabled items, icons, and
 //! keyboard navigation.
 use crate::component;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::SnapshotFields;
@@ -190,27 +190,32 @@ component! {
             }
             MenuMode::Vertical => {
                 for (i, item) in self.items.iter().enumerate() {
-                    let item_rect = Rect::new(frame.x, frame.y + i as f32 * self.item_h, frame.w, self.item_h);
+                    let item_y = frame.y + i as f32 * self.item_h;
+                    let item_rect = Rect::new(frame.x, item_y, frame.w, self.item_h);
                     let is_active = item.key == *active_key;
                     let is_hover = i == hovered && hovered < self.items.len();
                     let item_c = if item.disabled { text_sec } else if is_active { primary } else { text };
                     if is_active || is_hover {
                         ctx.fill_rect(item_rect, fill, Some(r));
                     }
-                    let item_y = frame.y + i as f32 * self.item_h;
-                    let item_rect = Rect::new(frame.x, item_y, frame.w, self.item_h);
-                    let text_y = ctx.visual_center_y(item_rect, 14.0);
+                    let label_pad = if item.icon.is_empty() { 16.0 } else { 36.0 };
                     if !item.icon.is_empty() {
                         let icon_str = crate::ui::widgets::icon::icon_char(&item.icon);
                         let saved = *ctx.font();
                         if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
                             ctx.set_font(fh);
                         }
-                        ctx.draw_text(icon_str, Point::new(frame.x + 12.0, text_y), item_c, 14.0);
+                        let icon_rect = Rect::new(frame.x + 12.0, item_y, 16.0, self.item_h);
+                        ctx.draw_text_in_frame(icon_str, icon_rect, item_c, 14.0);
                         ctx.set_font(saved);
                     }
-                    let label_x = frame.x + if item.icon.is_empty() { 16.0 } else { 36.0 };
-                    ctx.draw_text(&item.label, Point::new(label_x, text_y), item_c, 14.0);
+                    let label_rect = Rect::new(
+                        frame.x + label_pad,
+                        item_y,
+                        (frame.w - label_pad - 8.0).max(0.0),
+                        self.item_h,
+                    );
+                    ctx.draw_text_in_frame(&item.label, label_rect, item_c, 14.0);
                 }
             }
         }

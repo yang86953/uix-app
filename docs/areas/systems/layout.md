@@ -247,7 +247,7 @@ Wrap 模式：按行拆分，每行独立 justify；交叉轴累加行高 + gap�
 |------|----------|---------------------|------|
 | **Container** | `FlexLayout` | Web 式；`cached_content_size` + `intrinsic_main` | 默认 Column；通用 flex 容器 |
 | **Space** | 内联 `compute_flex_layout` | 固定 `width/height` 或 0；`flex_shrink: 0` | 均匀 gap；交叉轴受约束、主轴可溢出 |
-| **ScrollView** | 垂直流式堆叠（非 Flex） | 默认 300×200；`.size(w,h)` 定 viewport | 滚动轴 `f32::MAX` 约束；`children_clip`；不参与 expand |
+| **ScrollView** | 垂直流式堆叠（非 Flex） | 默认 300×200；`.size(w,h)` 定 viewport | 非滚动轴填满 viewport；滚动轴允许子项超出 |
 | **Grid** | `GridLayout` | 仅 `style.width/height`；无则 0 | 须父级分配 frame；`grid_template_columns` 必填 |
 | **Card** | 内联 Column flex | `fixed_width` 默认 200；`fixed_height` 默认 0 | 无 `cached_content_size`；标题/actions 占固定区 |
 | **Form** / **FormItem** | 自定义 label+content | 硬编码（Form 400×200 等） | 业务表单项；非通用 flex 容器 |
@@ -400,7 +400,7 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获
 ```text
 0. bootstrap root frame（无有效 viewport 时 measure 临时尺寸）
 1. layout_children        // 自顶向下分配 frame
-2. expand/shrink 内循环   // 容器随子项 grow/shrink（ScrollView 跳过 expand）
+2. expand/shrink 内循环   // 容器随子项 grow/shrink（ScrollView 跳过 expand；根不 shrink；非根 expand 不超过父 frame）
 3. layout_viewports       // ScrollView content_bounds
 4. bind_reactive_widget_states
 5. rebuild_widget_overlays
@@ -409,9 +409,9 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获
 
 | Phase | 方向 | 作用 |
 |-------|------|------|
-| 1 Top-down | 父→子 | `layout_children` 写子 frame |
-| 2 Expand | 子→父 | 子 bottom 超出则增高父容器并重排 |
-| 4 Shrink | 子→父 | 父过高则收缩（取子内容 vs measure 较大值） |
+| 1 Top-down | 父→子 | `layout_children` 写子 frame（父级已分配确定主轴时 flex 须 shrink，即使 style 未写死尺寸） |
+| 2 Expand | 子→父 | 子 bottom 超出则增高父容器并重排（根仅在 bootstrap 高度 ≤1 时扩展；非根不超过父 frame） |
+| 4 Shrink | 子→父 | 父过高则收缩（取子内容 vs measure 较大值；**跳过根**：根由窗口客户区锁定） |
 | 3 Viewports | — | ScrollView `content_bounds` |
 
 结构变更（Reconciler / add_child / remove）→ `push_layout_invalidation` + 向上 `propagate_layout_invalidation`。

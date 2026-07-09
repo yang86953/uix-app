@@ -2,7 +2,7 @@
 
 use uix::prelude::*;
 
-use crate::common::page::{demo_row, PageBuilder, INNER_W};
+use crate::common::page::{demo_row, PageBuilder};
 use crate::common::showcase::{info_note, labeled_row};
 use crate::common::widgets::{BounceBall, Counter, PulseRing};
 use crate::demos::context::DemoCtx;
@@ -28,7 +28,7 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
             let display = counter.clone();
             let inc = counter.clone();
             let dec = counter.clone();
-            tree! { Container::new().size(INNER_W, 80.0).dir(FlexDirection::Column).gap(8.0) => [
+            tree! { Container::new().dir(FlexDirection::Column).gap(8.0) => [
                 embed(
                     dynamic_label(move || format!("本地计数: {}", display.get()))
                         .font_size(18.0)

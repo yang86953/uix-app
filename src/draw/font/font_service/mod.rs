@@ -514,10 +514,10 @@ impl FontService {
             let layout = self.layout_text(&f, text, opts);
             Size::new(layout.width, layout.height.max(opts.font_size))
         } else {
-            // 回退到简单度量（无后端字体可用时）
+            // 回退到简单度量（无后端字体可用时）：按字符数，非字节
             let cw = 6.0;
             let lh = 10.0;
-            let len = text.len() as f32;
+            let len = text.chars().count() as f32;
             Size::new(len * cw, lh)
         }
     }
@@ -529,9 +529,12 @@ impl FontService {
         glyph_id: u32,
         pixel_size: f32,
     ) -> GlyphRaster {
+        // 缺字 tofu：合成空心方框，避免静默丢字。
+        if glyph_id == tb::TOFU_GLYPH_ID {
+            return Self::rasterize_tofu(pixel_size);
+        }
+
         if !self.text_backend.is_valid(font) {
-            // 无效字体 → 尝试 BitmapFont 回退
-            // BitmapFont 只支持 ASCII 32-126，这里不做具体字符映射
             return GlyphRaster {
                 width: 0,
                 height: 0,
@@ -581,7 +584,31 @@ impl FontService {
         raster
     }
 
-    /// 命中测试。
+    /// 合成缺字 tofu（空心方框），相对基线的 bearing 与常规字形一致。
+    fn rasterize_tofu(pixel_size: f32) -> GlyphRaster {
+        let fs = pixel_size.max(1.0);
+        let w = ((fs * 0.5).round() as usize).max(4);
+        let h = ((fs * 0.7).round() as usize).max(5);
+        let mut coverage = vec![0u8; w * h];
+        for x in 0..w {
+            coverage[x] = 220;
+            coverage[(h - 1) * w + x] = 220;
+        }
+        for y in 0..h {
+            coverage[y * w] = 220;
+            coverage[y * w + (w - 1)] = 220;
+        }
+        GlyphRaster {
+            width: w,
+            height: h,
+            coverage: Arc::new(coverage),
+            bearing_x: (fs * 0.05).max(0.0),
+            // 相对布局 y（≈ ascent）：方框顶落在 ascent 下方一点
+            bearing_y: -(fs * 0.75),
+        }
+    }
+
+    /// 命中测试，返回 **字符下标**（`chars()` 序）。
     pub fn hit_test_text(
         &self,
         font: &FontHandle,
@@ -595,29 +622,35 @@ impl FontService {
         if self.text_backend.is_valid(font) {
             let f = *font;
             let layout = self.layout_text(&f, text, opts);
+            let total_chars = text.chars().count();
             for li in &layout.lines {
                 if point.y >= li.y && point.y < li.y + li.height {
                     let end = li.glyph_start + li.glyph_count;
                     let glyphs = &layout.glyphs[li.glyph_start..end.min(layout.glyphs.len())];
                     if glyphs.is_empty() {
-                        return Some(li.glyph_start);
+                        return Some(li.start_char.min(total_chars));
                     }
-                    for (i, g) in glyphs.iter().enumerate() {
+                    for g in glyphs {
                         if point.x < g.x + g.width * 0.5 {
-                            return Some(li.glyph_start + i);
+                            return Some(g.char_index.min(total_chars));
                         }
                     }
-                    return Some(li.glyph_start + glyphs.len() - 1);
+                    return Some(
+                        glyphs
+                            .last()
+                            .map(|g| (g.char_index + 1).min(total_chars))
+                            .unwrap_or(li.end_char.min(total_chars)),
+                    );
                 }
             }
             if let Some(last) = layout.lines.last() {
-                return Some(last.glyph_start + last.glyph_count);
+                return Some(last.end_char.min(total_chars));
             }
         }
         Some(0)
     }
 
-    /// 获取指定字符索引的光标 x 位置。
+    /// 获取指定 **字符下标** 的光标 x 位置。
     pub fn text_cursor_x(
         &self,
         font: &FontHandle,
@@ -630,10 +663,16 @@ impl FontService {
         }
         let f = *font;
         let layout = self.layout_text(&f, text, opts);
-        if char_index < layout.glyphs.len() {
-            return layout.glyphs[char_index].x;
+        if let Some(g) = layout.glyphs.iter().find(|g| g.char_index == char_index) {
+            return g.x;
         }
-        layout.glyphs.last().map_or(0.0, |g| g.x + g.width.max(0.0))
+        // 落在末尾或缺口：取最后一个 char_index < 目标 的右缘
+        layout
+            .glyphs
+            .iter()
+            .rev()
+            .find(|g| g.char_index < char_index)
+            .map_or(0.0, |g| g.x + g.width.max(0.0))
     }
 
     /// 获取水平行度量。

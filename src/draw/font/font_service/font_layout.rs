@@ -140,9 +140,11 @@ impl FontService {
 
             let baseline_offset = primary_ascent - seg_ascent;
 
+            // 后端 layout 的 char_index 是段内相对值，合并时映射到全文下标。
             for mut g in seg_layout.glyphs {
                 g.x += cx;
                 g.y += cy + baseline_offset;
+                g.char_index = char_idx + g.char_index;
                 g.font = seg.font;
                 line.glyphs.push(g);
             }

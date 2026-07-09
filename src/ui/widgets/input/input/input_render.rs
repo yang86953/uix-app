@@ -122,19 +122,18 @@ impl Input {
                 }
             }
 
-            ctx.draw_text(
-                line,
-                Point::new(text_area.x, y + 2.0),
-                disp_color,
-                FONT_SIZE,
-            );
+            // 行内光学居中：用 visual_center_y，去掉魔法 +2.0
+            let text_y = ctx.visual_center_y(Rect::new(text_area.x, y, text_area.w, line_h), FONT_SIZE);
+            ctx.draw_text(line, Point::new(text_area.x, text_y), disp_color, FONT_SIZE);
 
             // 光标（在当前行且 focused）
             if self.focused && self.selection.get().is_none() && li == cursor_line {
                 let col = self.cursor_line_col().1;
                 let before: String = line.chars().take(col).collect();
                 let cx = text_area.x + ctx.measure_text(&before, FONT_SIZE).w;
-                ctx.fill_rect(Rect::new(cx, y + 2.0, 1.5, line_h - 4.0), primary, None);
+                let caret_h = (line_h - 4.0).max(FONT_SIZE * 0.8);
+                let caret_y = y + (line_h - caret_h) * 0.5;
+                ctx.fill_rect(Rect::new(cx, caret_y, 1.5, caret_h), primary, None);
             }
 
             y += line_h;
@@ -142,8 +141,10 @@ impl Input {
 
         // 如果没有任何行且 focused，在顶部画光标
         if self.focused && lines.is_empty() {
+            let caret_h = (line_h - 4.0).max(FONT_SIZE * 0.8);
+            let caret_y = text_area.y + (line_h - caret_h) * 0.5;
             ctx.fill_rect(
-                Rect::new(text_area.x, text_area.y + 2.0, 1.5, line_h - 4.0),
+                Rect::new(text_area.x, caret_y, 1.5, caret_h),
                 primary,
                 None,
             );

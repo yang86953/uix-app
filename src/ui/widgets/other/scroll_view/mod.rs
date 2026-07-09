@@ -275,17 +275,33 @@ component! {
         let mut max_bottom = frame.y;
         let mut cursor_y = 0.0f32;
         let child_constraints = self.child_constraints(frame);
+        let can_scroll_x = self.direction.can_scroll_x();
+        let can_scroll_y = self.direction.can_scroll_y();
         for &cid in children {
             let pref = tree
                 .get(cid)
                 .map(|c| c.measure(child_constraints))
                 .unwrap_or_default();
-            let w = if pref.w <= 0.0 { frame.w } else { pref.w };
+            // 非滚动轴填满 viewport：垂直滚动时宽度随窗口变化，避免内容卡在 measure 固有宽。
+            // 滚动轴保留子项自然尺寸（可超出 viewport）。
+            let w = if can_scroll_x {
+                if pref.w <= 0.0 {
+                    frame.w
+                } else {
+                    pref.w
+                }
+            } else {
+                frame.w
+            };
             let current_h = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
-            let h = if pref.h > 0.0 {
-                pref.h
-            } else if current_h > 0.0 {
-                current_h
+            let h = if can_scroll_y {
+                if pref.h > 0.0 {
+                    pref.h
+                } else if current_h > 0.0 {
+                    current_h
+                } else {
+                    frame.h
+                }
             } else {
                 frame.h
             };

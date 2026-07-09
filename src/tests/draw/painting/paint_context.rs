@@ -50,3 +50,37 @@ fn resolve_font_size_with_px_unit() {
     // px 直接返回其值
     assert_eq!(result, 20.0);
 }
+
+/// PaintContext 默认 debug=false；未 set_debug_mode(true) 时边框绘制为 no-op。
+/// LayerTree::draw_debug_for_widget 必须先打开，否则 debug overlay 不可见。
+#[test]
+fn paint_context_debug_mode_defaults_off_until_enabled() {
+    use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::font::font_service::FontService;
+    use crate::draw::image::ImageService;
+    use crate::draw::spatial::Orientation;
+    use crate::draw::FontHandle;
+    use crate::ui::theme::DesignTokens;
+
+    let mut canvas = NoopCanvas2D;
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new(
+        &mut canvas,
+        FontHandle::default(),
+        &fs,
+        &img,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        100,
+        100,
+    );
+    assert!(!ctx.debug_mode());
+    ctx.set_debug_mode(true);
+    assert!(ctx.debug_mode());
+    // 打开后边框路径可走通（NoopCanvas 不记录，仅防 panic）
+    ctx.draw_debug_border(Rect::new(0.0, 0.0, 40.0, 20.0), 0, false);
+}

@@ -29,7 +29,7 @@ pub struct Window {
     exit_code: i32,
     /// 窗口初始尺寸（用于最大化还原时恢复）
     initial_size: (i32, i32),
-    /// 调试模式开关（F12 切换）。
+    /// 调试模式开关（Ctrl+Shift+D 切换；勿用 F12，见 event_loop）。
     debug_mode: Cell<bool>,
     /// 当前光标位置（用于调试模式悬浮高亮）。
     cursor_pos: Cell<Point>,

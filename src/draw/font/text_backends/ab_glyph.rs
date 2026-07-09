@@ -1,9 +1,10 @@
 //! ab_glyph 后端：纯 advance 定位。字形缓存已统一移到 FontService。
 
 use crate::core::{Errc, Error};
-use crate::draw::font::text_backend::*;
+use crate::draw::font::text_backend::{self, *};
 use crate::draw::FontHandle;
 use crate::draw::TextBackend;
+use text_backend::TOFU_GLYPH_ID;
 use ab_glyph::*;
 use std::sync::Arc;
 
@@ -96,45 +97,55 @@ impl TextBackend for AbGlyphBackend {
             font_h
         };
         let max_w = opts.max_width.is_finite() && opts.max_width > 0.0;
+        let tofu_adv = (fs * 0.55).max(4.0);
 
         let mut out = Vec::new();
         let mut cx = 0.0f32;
         let mut cy = asc;
         let mut prev = GlyphId(0);
+        let mut char_index = 0usize;
 
         for ch in text.chars() {
             if ch == '\n' {
                 cx = 0.0;
                 cy += line_h;
                 prev = GlyphId(0);
+                char_index += 1;
                 continue;
             }
             let gid = f.glyph_id(ch);
-            if gid == GlyphId(0) {
-                continue;
-            }
-            if prev != GlyphId(0) {
-                cx += sf.kern(prev, gid);
-            }
-            let adv = sf.h_advance(gid);
+            let (glyph_id, adv) = if gid == GlyphId(0) {
+                // 缺字：保留占位 advance，避免字符消失与索引错位
+                (TOFU_GLYPH_ID, tofu_adv)
+            } else {
+                if prev != GlyphId(0) {
+                    cx += sf.kern(prev, gid);
+                }
+                (gid.0 as u32, sf.h_advance(gid))
+            };
 
             if max_w && cx > 0.0 && cx + adv > opts.max_width {
                 cx = 0.0;
                 cy += line_h;
             }
 
-            let glyph_top = cy;
             out.push(PositionedGlyph {
                 x: cx,
-                y: glyph_top,
+                y: cy,
                 width: adv,
                 height: font_h,
-                glyph_id: gid.0 as u32,
+                glyph_id,
+                char_index,
                 font: *font,
             });
 
             cx += adv;
-            prev = gid;
+            prev = if glyph_id == TOFU_GLYPH_ID {
+                GlyphId(0)
+            } else {
+                gid
+            };
+            char_index += 1;
         }
 
         let text_h = cy - asc + font_h;
@@ -166,7 +177,7 @@ impl TextBackend for AbGlyphBackend {
                 height: max_h.max(text_h),
                 width: tw,
                 start_char: 0,
-                end_char: text.len(),
+                end_char: text.chars().count(),
                 glyph_start: 0,
                 glyph_count: n_glyphs,
             }],

@@ -15,7 +15,7 @@ use crate::ui::overlay::OverlayKind;
 use crate::ui::theme::{DesignTokens, DynTokens};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::combinators::{button, dynamic_label, label};
-use crate::ui::view::{View, ViewNode};
+use crate::ui::view::{column, row, View, ViewNode};
 use crate::ui::widgets::container::Container;
 use crate::ui::widgets::feedback::Tooltip;
 use crate::ui::widgets::Label;
@@ -138,11 +138,11 @@ fn sync_root_frame_mismatch() {
     if let Some(root) = tree.get_mut(rid) {
         root.set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
     }
+    // NullEngine canvas 恒为 0×0：不得把已有根尺寸压空。
     let mut engine = NullEngine::new();
     sync_root_frame_to_engine(&mut tree, &mut engine);
     let root = tree.get(rid).unwrap();
-    assert!(root.frame().w < 800.0);
-    assert!(root.frame().h < 600.0);
+    assert_eq!(root.frame(), Rect::new(0.0, 0.0, 800.0, 600.0));
 }
 
 #[test]
@@ -155,6 +155,107 @@ fn sync_root_frame_already_matched() {
         let root = tree.get(rid).unwrap();
         assert_eq!(root.frame(), Rect::new(0.0, 0.0, 0.0, 0.0));
     }
+}
+
+#[test]
+fn sync_root_frame_follows_software_engine_size() {
+    let mut tree = WidgetTree::new();
+    let rid = tree.set_root(Box::new(Container::new()));
+    // bootstrap：根近空时才从引擎补齐
+    if let Some(root) = tree.get_mut(rid) {
+        root.set_frame(Rect::new(0.0, 0.0, 0.0, 0.0));
+    }
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(1000, 800).expect("init");
+    sync_root_frame_to_engine(&mut tree, &mut engine);
+    let root = tree.get(rid).unwrap();
+    assert_eq!(root.frame(), Rect::new(0.0, 0.0, 1000.0, 800.0));
+}
+
+#[test]
+fn sync_root_frame_does_not_overwrite_valid_root() {
+    let mut tree = WidgetTree::new();
+    let rid = tree.set_root(Box::new(Container::new()));
+    if let Some(root) = tree.get_mut(rid) {
+        root.set_frame(Rect::new(0.0, 0.0, 1000.0, 800.0));
+    }
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(800, 600).expect("init");
+    sync_root_frame_to_engine(&mut tree, &mut engine);
+    let root = tree.get(rid).unwrap();
+    assert_eq!(
+        root.frame(),
+        Rect::new(0.0, 0.0, 1000.0, 800.0),
+        "valid root must not be overwritten by engine size"
+    );
+}
+
+/// 窗口 Resize 后根 frame 与 flex 内容区须跟随新尺寸，且不被 sync/layout_shrink 压回。
+#[test]
+fn window_resize_updates_root_and_flex_content() {
+    let mut platform = FakePlatform::new();
+    // 首帧 poll 即消费 Resize，避免只断言到初始 800×600。
+    platform.event_source.inject(UiEvent::resize(1000, 800));
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(800, 600).expect("init engine");
+
+    let root_view = column([
+        row([
+            label("nav").width(200.0),
+            label("content").flex_grow(1.0),
+        ])
+        .flex_grow(1.0),
+        label("status"),
+    ])
+    .flex_grow(1.0);
+    let mut session = WindowSession::from_root(root_view, Box::new(engine), 800, 600);
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+    let observed = Cell::new((0.0f32, 0.0f32, 0.0f32));
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |tree, engine, _| {
+            let rid = tree.root_id().expect("root");
+            let rf = tree.get(rid).unwrap().frame();
+            let main = tree.get(rid).unwrap().children()[0];
+            let content = tree.get(main).unwrap().children()[1];
+            let cf = tree.get(content).unwrap().frame();
+            observed.set((rf.w, rf.h, cf.w));
+            assert_eq!(engine.canvas_2d().width(), 1000);
+            assert_eq!(engine.canvas_2d().height(), 800);
+        },
+    );
+
+    assert_eq!(status, 0);
+    let (rw, rh, cw) = observed.get();
+    assert!(
+        (rw - 1000.0).abs() < 0.5 && (rh - 800.0).abs() < 0.5,
+        "root should follow window resize, got {rw}x{rh}"
+    );
+    assert!(
+        cw > 700.0,
+        "flex content should grow with window, got width {cw}"
+    );
 }
 
 #[test]
@@ -1024,7 +1125,7 @@ fn hidden_window_preserves_dirty_until_restore() {
         .event_source
         .state
         .blocking_events
-        .push_back(UiEvent::key_down(KeyCode::F12, KeyMod::NONE));
+        .push_back(UiEvent::key_down(KeyCode::D, KeyMod::CTRL | KeyMod::SHIFT));
     platform
         .event_source
         .state
@@ -2147,4 +2248,114 @@ fn state_set_reconciles_from_factory_once_before_frame() {
     assert!(!session.reconcile_pending());
     assert!(session.take_pending_root().is_none());
     assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
+}
+
+/// Ctrl+Shift+D 切换 debug_mode，并标脏以重绘 overlay。
+#[test]
+fn ctrl_shift_d_toggles_debug_mode_and_marks_dirty() {
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::key_down(KeyCode::D, KeyMod::CTRL | KeyMod::SHIFT));
+    platform.event_source.state.exit_after_blocking_calls = Some(2);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert!(
+        debug_mode.get(),
+        "Ctrl+Shift+D should enable debug_mode for overlay borders / HUD"
+    );
+}
+
+/// debug 开启后：同一 hit 上连续 PointerMove 不得每帧全脏；换目标才标脏。
+#[test]
+fn debug_pointer_move_dirties_only_when_hover_target_changes() {
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::key_down(KeyCode::D, KeyMod::CTRL | KeyMod::SHIFT));
+    // 同一根 Container 上的两点 → hit 不变，第二次 move 不应再标脏。
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::pointer_move(Point::new(40.0, 40.0)));
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::pointer_move(Point::new(48.0, 42.0)));
+    platform.event_source.state.exit_after_blocking_calls = Some(4);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert!(debug_mode.get());
+    let presents = metrics.get().present_calls;
+    // 首帧 + 开 debug + 首次 hover 变化 ≤ 3；若每 move 都脏会 ≥ 4。
+    assert!(
+        presents <= 3,
+        "same-hit moves must not full-dirty each time, present_calls={presents}"
+    );
 }

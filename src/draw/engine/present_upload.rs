@@ -53,12 +53,13 @@ impl PresentUploadEngine {
 
 impl GraphicsEngine for PresentUploadEngine {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        let logical_w = width.max(1);
+        let logical_h = height.max(1);
         self.gpu_ctx
-            .initialize(std::ptr::null_mut(), width.max(1), height.max(1))?;
-        let surface_w = self.gpu_ctx.width().max(1);
-        let surface_h = self.gpu_ctx.height().max(1);
+            .initialize(std::ptr::null_mut(), logical_w, logical_h)?;
+        // Canvas2D / 布局使用逻辑像素；物理尺寸仅由 GPU present 路径消费。
         self.sync_clear_color();
-        self.session.initialize(surface_w, surface_h)
+        self.session.initialize(logical_w, logical_h)
     }
 
     fn shutdown(&mut self) {
@@ -67,11 +68,11 @@ impl GraphicsEngine for PresentUploadEngine {
     }
 
     fn resize(&mut self, width: i32, height: i32) {
-        self.gpu_ctx.resize(width.max(1), height.max(1));
-        let surface_w = self.gpu_ctx.width().max(1);
-        let surface_h = self.gpu_ctx.height().max(1);
+        let logical_w = width.max(1);
+        let logical_h = height.max(1);
+        self.gpu_ctx.resize(logical_w, logical_h);
         self.sync_clear_color();
-        self.session.resize(surface_w, surface_h);
+        self.session.resize(logical_w, logical_h);
     }
 
     fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {

@@ -19,7 +19,7 @@ use crate::native::traits::window::PlatformWindow;
 use crate::ui::clipboard;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::theme::{DynTokens, Theme};
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetTree};
 use std::cell::{Cell, RefCell};
 use std::time::{Duration, Instant};
 
@@ -358,6 +358,8 @@ where
     let mut last_frame = clock.now();
     let mut window_visible = true;
     let mut frame_renderer = FrameRenderer::new();
+    // debug overlay：仅当 hit 目标变化时全帧标脏（非每 move）。
+    let last_debug_hover = Cell::new(None::<ComponentId>);
     let mut initial_size = (
         platform_window.properties().width(),
         platform_window.properties().height(),
@@ -479,13 +481,31 @@ where
                 UiEventType::PointerMove => {
                     if let UiEventPayload::PointerMove(ref data) = ev.payload {
                         cursor_pos.set(data.pos);
+                        // debug hover 链：仅 hit 目标变化时标脏（#105；非每 move 全帧）。
+                        if debug_mode.get() {
+                            let hit = tree.hit_test(data.pos);
+                            if hit != last_debug_hover.get() {
+                                last_debug_hover.set(hit);
+                                tree.mark_full_frame_dirty();
+                            }
+                        }
                     }
                 }
                 UiEventType::KeyDown => {
-                    use crate::native::traits::input::KeyCode;
+                    use crate::native::traits::input::{KeyCode, KeyMod};
                     if let UiEventPayload::Key(ref data) = ev.payload {
-                        if data.key == KeyCode::F12 {
-                            debug_mode.set(!debug_mode.get());
+                        // Ctrl+Shift+D：切换 debug overlay。
+                        // 不用 F12：Windows 调试器下 F12 会触发系统 DebugBreak（DbgBreakPoint/int3），
+                        // 表现为「一按 F12 就停在异常」——与应用无关（MS KB Q130667）。
+                        let toggle_debug = data.key == KeyCode::D
+                            && data.mods.contains(KeyMod::CTRL)
+                            && data.mods.contains(KeyMod::SHIFT);
+                        if toggle_debug {
+                            let next = !debug_mode.get();
+                            debug_mode.set(next);
+                            if !next {
+                                last_debug_hover.set(None);
+                            }
                             tree.mark_full_frame_dirty();
                             continue;
                         }
@@ -885,24 +905,27 @@ fn record_idle(metrics: Option<&Cell<RenderMetrics>>, source: InvalidationSource
 }
 
 fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEngine) {
+    let (ew, eh) = {
+        let canvas = engine.canvas_2d();
+        (canvas.width() as f32, canvas.height() as f32)
+    };
+    if ew <= 0.0 || eh <= 0.0 {
+        return;
+    }
+    // 根已有有效客户区时以 SystemEvent::Resize / 会话初始尺寸为准，
+    // 不得用可能滞后的引擎尺寸覆盖（否则放大/缩小后内容卡在旧几何）。
+    // 仅 bootstrap（根仍近空）时从引擎补齐。
     let need_sync = tree
         .root_id()
         .and_then(|rid| tree.get(rid))
         .is_some_and(|root| {
-            let ew = engine.canvas_2d().width() as f32;
-            let eh = engine.canvas_2d().height() as f32;
             let rf = root.frame();
-            (rf.w - ew).abs() > 0.5 || (rf.h - eh).abs() > 0.5
+            rf.w <= 1.0 || rf.h <= 1.0
         });
     if need_sync {
         if let Some(rid) = tree.root_id() {
             if let Some(root_mut) = tree.get_mut(rid) {
-                root_mut.set_frame(Rect::new(
-                    0.0,
-                    0.0,
-                    engine.canvas_2d().width() as f32,
-                    engine.canvas_2d().height() as f32,
-                ));
+                root_mut.set_frame(Rect::new(0.0, 0.0, ew, eh));
             }
         }
         tree.mark_full_frame_dirty();
