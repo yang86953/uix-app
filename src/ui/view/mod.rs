@@ -28,6 +28,10 @@ pub struct ViewNode {
     pub(crate) widget: Box<dyn WidgetComponent>,
     pub(crate) children: Vec<ViewNode>,
     pub(crate) style: Style,
+    /// DSL 显式设置的 flex_grow（含 0.0）；与 Style::default 区分，避免被 apply 吞掉。
+    pub(crate) flex_grow_override: Option<f32>,
+    /// DSL 显式设置的 flex_shrink（含 1.0）。
+    pub(crate) flex_shrink_override: Option<f32>,
     pub(crate) z_index: i32,
     pub(crate) key: Option<String>,
     pub(crate) handlers: Vec<HandlerRegistration>,
@@ -49,6 +53,8 @@ impl ViewNode {
             widget: Box::new(widget),
             children: vec![],
             style: Style::default(),
+            flex_grow_override: None,
+            flex_shrink_override: None,
             z_index: 0,
             key: None,
             handlers: Vec::new(),
@@ -60,6 +66,8 @@ impl ViewNode {
             widget: Box::new(widget),
             children,
             style: Style::default(),
+            flex_grow_override: None,
+            flex_shrink_override: None,
             z_index: 0,
             key: None,
             handlers: Vec::new(),
@@ -103,11 +111,19 @@ impl ViewNode {
 
     pub fn flex_grow(mut self, g: f32) -> Self {
         self.style.flex_grow = g;
+        self.flex_grow_override = Some(g);
         self
     }
 
     pub fn flex_shrink(mut self, s: f32) -> Self {
         self.style.flex_shrink = s;
+        self.flex_shrink_override = Some(s);
+        self
+    }
+
+    /// 交叉轴对齐（flex `align-items`）。
+    pub fn align(mut self, a: crate::ui::layout::AlignItems) -> Self {
+        self.style.align_items = a;
         self
     }
 
@@ -262,12 +278,20 @@ pub trait StyleExt: Into<ViewNode> + Sized {
     fn flex_grow(self, g: f32) -> ViewNode {
         let mut node: ViewNode = self.into();
         node.style.flex_grow = g;
+        node.flex_grow_override = Some(g);
         node
     }
 
     fn flex_shrink(self, s: f32) -> ViewNode {
         let mut node: ViewNode = self.into();
         node.style.flex_shrink = s;
+        node.flex_shrink_override = Some(s);
+        node
+    }
+
+    fn align(self, a: crate::ui::layout::AlignItems) -> ViewNode {
+        let mut node: ViewNode = self.into();
+        node.style.align_items = a;
         node
     }
 

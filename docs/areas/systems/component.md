@@ -279,9 +279,9 @@ WidgetTree
 | Widget | 浮层/Overlay | 备注 |
 |--------|:------------:|---------|
 | Button | | reference impl（#58） |
-| Icon | | Big Bang |
+| Icon | | Big Bang；`App::run` 嵌入加载 `assets/fonts/lucide.ttf` |
 | Typography | | Big Bang |
-| Label | | Big Bang |
+| Label | | Big Bang；默认不可选中，`.selectable()` 开启拖选 |
 | Divider | | Big Bang |
 | Space | | Big Bang |
 | SpaceSize | | 枚举辅助 |

@@ -90,7 +90,12 @@ impl ViewAdapter {
     pub(crate) fn expand(node: ViewNode) -> WidgetNode {
         let children: Vec<WidgetNode> = node.children.into_iter().map(Self::expand).collect();
 
-        let widget = Self::apply_style(node.widget, &node.style);
+        let widget = Self::apply_style(
+            node.widget,
+            &node.style,
+            node.flex_grow_override,
+            node.flex_shrink_override,
+        );
 
         let mut wnode = if children.is_empty() {
             WidgetNode::leaf(widget)
@@ -116,8 +121,11 @@ impl ViewAdapter {
     fn apply_style(
         mut widget: Box<dyn WidgetComponent>,
         style: &Style,
+        flex_grow_override: Option<f32>,
+        flex_shrink_override: Option<f32>,
     ) -> Box<dyn WidgetComponent> {
-        if style == &Style::default() {
+        let style_is_default = style == &Style::default();
+        if style_is_default && flex_grow_override.is_none() && flex_shrink_override.is_none() {
             return widget;
         }
 
@@ -125,15 +133,44 @@ impl ViewAdapter {
 
         if tid == std::any::TypeId::of::<Container>() {
             if let Some(c) = widget.as_any_mut().downcast_mut::<Container>() {
-                c.style = c.style.clone().apply(style.clone());
+                if !style_is_default {
+                    c.style = c.style.clone().apply(style.clone());
+                }
+                // View DSL 显式 flex 覆盖（含 0.0），Style::apply 无法表达「设为默认值」
+                if let Some(g) = flex_grow_override {
+                    c.style.flex_grow = g;
+                }
+                if let Some(s) = flex_shrink_override {
+                    c.style.flex_shrink = s;
+                }
             }
         } else if tid == std::any::TypeId::of::<Label>() {
             if let Some(l) = widget.as_any_mut().downcast_mut::<Label>() {
-                l.style = Some(style.clone());
+                let mut merged = l.style.clone().unwrap_or_default().apply(style.clone());
+                if let Some(g) = flex_grow_override {
+                    merged.flex_grow = g;
+                }
+                if let Some(s) = flex_shrink_override {
+                    merged.flex_shrink = s;
+                }
+                // ViewNode width/height → Label 固定尺寸（section 色条等）
+                if let Some(w) = style.width {
+                    l.fixed_width = Some(w);
+                }
+                if let Some(h) = style.height {
+                    l.fixed_height = Some(h);
+                }
+                l.style = Some(merged);
             }
         } else if tid == std::any::TypeId::of::<Button>() {
             if let Some(b) = widget.as_any_mut().downcast_mut::<Button>() {
                 b.style = style.clone();
+                if let Some(g) = flex_grow_override {
+                    b.style.flex_grow = g;
+                }
+                if let Some(s) = flex_shrink_override {
+                    b.style.flex_shrink = s;
+                }
             }
         } else if tid == std::any::TypeId::of::<Grid>() {
             if let Some(g) = widget.as_any_mut().downcast_mut::<Grid>() {
@@ -161,11 +198,13 @@ impl ViewAdapter {
             widget,
             children,
             style,
+            flex_grow_override,
+            flex_shrink_override,
             z_index,
             key,
             handlers,
         } = node;
-        let widget = Self::apply_style(widget, &style);
+        let widget = Self::apply_style(widget, &style, flex_grow_override, flex_shrink_override);
         let widget_changed = Self::patch_widget(tree, id, widget);
         tree.register_app_state_snapshot(id);
 

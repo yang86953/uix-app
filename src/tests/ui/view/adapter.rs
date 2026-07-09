@@ -32,7 +32,7 @@ fn test_apply_style_container() {
     let mut style = Style::default();
     style.background = Some(crate::ui::style::ColorValue::Custom(Color::red()));
     let widget: Box<dyn WidgetComponent> = Box::new(Container::new());
-    let styled = ViewAdapter::apply_style(widget, &style);
+    let styled = ViewAdapter::apply_style(widget, &style, None, None);
     if let Some(c) = styled.as_any().downcast_ref::<Container>() {
         assert_eq!(
             c.style.background,
@@ -4726,4 +4726,57 @@ fn static_display_widgets_are_picture_eligible() {
     for widget in widgets {
         assert_eq!(widget.picture_policy(), PicturePolicy::Eligible);
     }
+}
+
+#[test]
+fn layout_bootstraps_after_invalidation_cleared_with_nonzero_measure_children() {
+    use crate::core::Rect;
+    use crate::ui::view::{column, label, row};
+    use crate::ui::widgets::Container;
+
+    // 与 demo shell 同构：水平 row = 侧栏 + 内容
+    let root = row([
+        column([label("侧栏项")]).width(120.0).flex_grow(0.0),
+        column([label("内容"), label("页脚")]).flex_grow(1.0),
+    ])
+    .flex_grow(1.0);
+    let mut tree = ViewAdapter::build_nodes(root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, 400.0, 300.0));
+    }
+    // 模拟 bind_invalidation / 帧末 reset：清空队列后子树仍为 zero frame
+    tree.reset_invalidation();
+    assert!(tree.layout_traverse().is_empty());
+
+    tree.layout();
+
+    let root_id = tree.root_id().expect("root");
+    let main_children = tree.get(root_id).unwrap().children().to_vec();
+    assert_eq!(main_children.len(), 2);
+    let sidebar = tree.get(main_children[0]).unwrap().frame();
+    let content = tree.get(main_children[1]).unwrap().frame();
+    assert!(
+        sidebar.w > 0.0 && sidebar.h > 0.0,
+        "sidebar still zero: {sidebar:?}"
+    );
+    assert!(
+        content.w > 0.0 && content.h > 0.0,
+        "content still zero: {content:?}"
+    );
+    assert!(
+        content.x >= sidebar.w - 0.5,
+        "content should sit right of sidebar: sidebar={sidebar:?} content={content:?}"
+    );
+
+    let sidebar_container = tree
+        .get(main_children[0])
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Container>()
+        .expect("sidebar column is Container");
+    assert_eq!(
+        sidebar_container.style.flex_grow, 0.0,
+        "explicit flex_grow(0) must survive Style::apply"
+    );
 }

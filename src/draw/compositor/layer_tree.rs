@@ -987,4 +987,285 @@ mod tests {
             Some(LayerNode::ClipRect { node_id, .. }) if *node_id == NodeId::new(1)
         ));
     }
+
+    /// 悬停窄标脏：Picture 离屏全清后，未与屏幕 dirty 相交的 Direct 子节点仍须重绘。
+    #[test]
+    fn picture_partial_dirty_rerasterize_repaints_all_direct_children() {
+        use crate::draw::SoftwareEngine;
+        use crate::draw::font::font_service::FontService;
+        use crate::draw::image::ImageService;
+        use crate::draw::painting::ThemeSnapshot;
+        use std::cell::RefCell;
+        use std::collections::HashSet;
+
+        struct PaintCountScene {
+            base: TestScene,
+            painted: RefCell<HashSet<NodeId>>,
+            dirty_ids: HashSet<NodeId>,
+            region: DirtyRegion,
+        }
+
+        impl ScenePaint for PaintCountScene {
+            fn root_id(&self) -> Option<NodeId> {
+                self.base.root_id()
+            }
+            fn tree_version(&self) -> u64 {
+                1
+            }
+            fn dirty_region(&self) -> DirtyRegion {
+                self.region.clone()
+            }
+            fn node_visible(&self, id: NodeId) -> bool {
+                self.base.node_visible(id)
+            }
+            fn node_frame(&self, id: NodeId) -> Rect {
+                // 子节点纵向错开，便于构造「仅一项与 dirty 相交」
+                match id {
+                    id if id == NodeId::new(1) => Rect::new(0.0, 0.0, 220.0, 400.0),
+                    id if id.slot() >= 2 => {
+                        let i = (id.slot() - 2) as f32;
+                        Rect::new(8.0, 40.0 + i * 40.0, 200.0, 36.0)
+                    }
+                    _ => Rect::zero(),
+                }
+            }
+            fn node_dirty(&self, id: NodeId) -> bool {
+                self.dirty_ids.contains(&id)
+            }
+            fn node_z_index(&self, id: NodeId) -> i32 {
+                self.base.node_z_index(id)
+            }
+            fn node_children(&self, id: NodeId) -> &[NodeId] {
+                self.base.node_children(id)
+            }
+            fn node_picture_policy(&self, id: NodeId) -> PicturePolicy {
+                self.base.node_picture_policy(id)
+            }
+            fn children_clip(&self, id: NodeId, frame: Rect) -> Option<Rect> {
+                self.base.children_clip(id, frame)
+            }
+            fn dirty_rect(&self, _id: NodeId, frame: Rect) -> Rect {
+                frame
+            }
+            fn scroll_offset(&self, id: NodeId) -> Option<(f32, f32)> {
+                self.base.scroll_offset(id)
+            }
+            fn focused_node(&self) -> Option<NodeId> {
+                None
+            }
+            fn node_focusable(&self, id: NodeId) -> bool {
+                self.base.node_focusable(id)
+            }
+            fn hit_test(&self, _: Point) -> Option<NodeId> {
+                None
+            }
+            fn parent(&self, id: NodeId) -> Option<NodeId> {
+                if id.slot() >= 2 {
+                    Some(NodeId::new(1))
+                } else {
+                    None
+                }
+            }
+            fn paint(&self, id: NodeId, _: Rect, _: &mut PaintContext<'_>) {
+                self.painted.borrow_mut().insert(id);
+            }
+        }
+
+        // 8 节点：根成 Picture，子项各自未达阈值 → Direct（与侧栏 Column+Label 同构）
+        let base = TestScene::static_tree(8);
+        let mut tree = base.build_layer_tree();
+        assert!(matches!(tree.root_node(), Some(LayerNode::Picture { .. })));
+
+        // 仅标脏第 2 项（y≈80），与第 7 项（y≈280）不相交
+        let hover_child = NodeId::new(3);
+        let far_child = NodeId::new(8);
+        let mut region = DirtyRegion::empty();
+        region.add_rect(Rect::new(8.0, 80.0, 200.0, 36.0));
+        let scene = PaintCountScene {
+            base,
+            painted: RefCell::new(HashSet::new()),
+            dirty_ids: HashSet::from([hover_child]),
+            region: region.clone(),
+        };
+
+        let mut engine = SoftwareEngine::new();
+        engine.initialize(256, 512).expect("init");
+        tree.update_dirty(&scene);
+        // 最小 ThemeTokens，供 LayerTree.render 使用
+        struct Tok;
+        impl crate::draw::painting::IColorTokens for Tok {
+            fn color_primary(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_primary_hover(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_primary_active(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_primary_bg(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_primary_border(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_bg_container(&self) -> crate::draw::Color {
+                crate::draw::Color::white()
+            }
+            fn color_bg_elevated(&self) -> crate::draw::Color {
+                crate::draw::Color::white()
+            }
+            fn color_bg_raised(&self) -> crate::draw::Color {
+                crate::draw::Color::white()
+            }
+            fn color_bg_overlay(&self) -> crate::draw::Color {
+                crate::draw::Color::white()
+            }
+            fn color_bg_layout(&self) -> crate::draw::Color {
+                crate::draw::Color::white()
+            }
+            fn color_bg_spotlight(&self) -> crate::draw::Color {
+                crate::draw::Color::white()
+            }
+            fn color_bg_mask(&self) -> crate::draw::Color {
+                crate::draw::Color::white()
+            }
+            fn color_border(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_border_secondary(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_fill(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_fill_secondary(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_fill_tertiary(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_fill_quaternary(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_text(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_text_secondary(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_text_tertiary(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_text_quaternary(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_white(&self) -> crate::draw::Color {
+                crate::draw::Color::white()
+            }
+            fn color_black(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_shadow(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_shadow_secondary(&self) -> crate::draw::Color {
+                crate::draw::Color::black()
+            }
+            fn color_success(&self) -> crate::draw::Color {
+                crate::draw::Color::green()
+            }
+            fn color_success_bg(&self) -> crate::draw::Color {
+                crate::draw::Color::green()
+            }
+            fn color_success_border(&self) -> crate::draw::Color {
+                crate::draw::Color::green()
+            }
+            fn color_warning(&self) -> crate::draw::Color {
+                crate::draw::Color::from_rgb(255, 200, 0)
+            }
+            fn color_warning_bg(&self) -> crate::draw::Color {
+                crate::draw::Color::from_rgb(255, 200, 0)
+            }
+            fn color_warning_border(&self) -> crate::draw::Color {
+                crate::draw::Color::from_rgb(255, 200, 0)
+            }
+            fn color_error(&self) -> crate::draw::Color {
+                crate::draw::Color::red()
+            }
+            fn color_error_bg(&self) -> crate::draw::Color {
+                crate::draw::Color::red()
+            }
+            fn color_error_border(&self) -> crate::draw::Color {
+                crate::draw::Color::red()
+            }
+            fn color_info(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_info_bg(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_info_border(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_link(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_link_hover(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+            fn color_link_active(&self) -> crate::draw::Color {
+                crate::draw::Color::blue()
+            }
+        }
+        impl crate::draw::painting::ITypographyTokens for Tok {
+            fn font_family(&self) -> &str {
+                "sans"
+            }
+        }
+        impl crate::draw::painting::IBoxShadowTokens for Tok {
+            fn box_shadow(&self) -> crate::draw::painting::ShadowToken {
+                crate::draw::painting::ShadowToken::none()
+            }
+            fn box_shadow_secondary(&self) -> crate::draw::painting::ShadowToken {
+                crate::draw::painting::ShadowToken::none()
+            }
+        }
+        impl crate::draw::painting::ISpacingTokens for Tok {}
+        impl crate::draw::painting::ThemeTokens for Tok {}
+
+        let tok = Tok;
+        let theme = ThemeSnapshot::new(&tok);
+        let fs = FontService::new();
+        let img = ImageService::new();
+
+        engine.begin_frame(crate::draw::traits::UpdateStrategy::FullRedraw);
+        tree.render(
+            &mut engine,
+            &scene,
+            &region,
+            &theme,
+            FontHandle::default(),
+            &fs,
+            &img,
+            false,
+            None,
+            None,
+        );
+        engine.end_frame(&crate::draw::backend::DamageRegion::full());
+
+        let painted = scene.painted.borrow().clone();
+        assert!(
+            painted.contains(&hover_child),
+            "hovered child must repaint"
+        );
+        assert!(
+            painted.contains(&far_child),
+            "sibling outside screen dirty must still repaint after Picture clear"
+        );
+        assert!(
+            painted.contains(&NodeId::new(1)),
+            "picture root content must repaint"
+        );
+    }
 }

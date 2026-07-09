@@ -4,6 +4,8 @@ use crate::common::page::{
 };
 use uix::prelude::{dynamic_label, Button, DesignTokens, Label, Rect, State, ViewAdapter};
 use uix::ui::core::widget::WidgetCore;
+use uix::ui::traits::WidgetLayout;
+use uix::ui::widgets::ScrollView;
 
 #[test]
 fn page_titles_match_modules() {
@@ -73,6 +75,104 @@ fn gallery_page_lists_coverage() {
     let root = crate::demos::gallery::page_gallery(&ctx);
     let tree = ViewAdapter::build(root);
     assert!(tree.root_id().is_some());
+}
+
+/// 模拟主循环：reconcile → layout（不手动重设 root frame），断言内容区 ScrollView 仍有高度。
+#[test]
+fn page_switch_keeps_content_scrollview_height() {
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+
+    let active_for_build = active.clone();
+    let timer_for_build = timer_ticks.clone();
+    let anim_for_build = anim_time.clone();
+    let root = ViewAdapter::capture_root(move || {
+        app_shell(
+            active_for_build.clone(),
+            timer_for_build.clone(),
+            anim_for_build.clone(),
+        )
+    });
+    let mut tree = ViewAdapter::build_nodes(root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let before: Vec<Rect> = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .filter_map(|(id, _)| tree.get(id).map(|n| n.frame()))
+        .filter(|f| f.x >= SIDEBAR_W - 2.0)
+        .collect();
+    assert!(
+        before.iter().any(|f| f.h > 200.0),
+        "home content ScrollView should be tall, got {before:?}"
+    );
+    let header_before = tree
+        .find_all_by_type::<uix::ui::widgets::Container>()
+        .into_iter()
+        .filter_map(|(id, c)| {
+            let frame = tree.get(id)?.frame();
+            // 顶栏：内容区左侧对齐、窄高
+            if (frame.x - SIDEBAR_W).abs() < 2.0 && frame.y < 5.0 && frame.h < 80.0 {
+                Some((c.flex_grow(), frame))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        header_before.iter().any(|(g, _)| *g == 0.0),
+        "header_bar must not flex-grow, got {header_before:?}"
+    );
+
+    active.set(PAGE_GENERAL);
+    assert!(tree.take_reconcile_requested());
+    let active_for_reconcile = active.clone();
+    let timer_for_reconcile = timer_ticks.clone();
+    let anim_for_reconcile = anim_time.clone();
+    let root = ViewAdapter::capture_root(move || {
+        app_shell(
+            active_for_reconcile.clone(),
+            timer_for_reconcile.clone(),
+            anim_for_reconcile.clone(),
+        )
+    });
+    ViewAdapter::reconcile_nodes(&mut tree, root);
+    // 主循环不会在 reconcile 后重设 root；只跑 layout
+    tree.layout();
+
+    let after: Vec<Rect> = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .filter_map(|(id, _)| tree.get(id).map(|n| n.frame()))
+        .filter(|f| f.x >= SIDEBAR_W - 2.0)
+        .collect();
+    assert!(
+        after.iter().any(|f| f.h > 400.0 && f.y < 200.0),
+        "after page switch content ScrollView must stay in viewport, got {after:?}"
+    );
+
+    let body_labels: Vec<(String, Rect)> = tree
+        .find_all_by_type::<Label>()
+        .into_iter()
+        .filter_map(|(id, l)| {
+            let text = l.text().to_string();
+            let frame = tree.get(id)?.frame();
+            if frame.x < SIDEBAR_W || text.trim().is_empty() {
+                return None;
+            }
+            Some((text, frame))
+        })
+        .collect();
+    assert!(
+        body_labels
+            .iter()
+            .any(|(t, f)| t.contains("Typography") && f.h > 0.0 && f.w > 0.0),
+        "general body labels must have non-zero frames, got {body_labels:?}"
+    );
 }
 
 #[test]
@@ -310,4 +410,123 @@ fn home_page_builds() {
     let root = crate::demos::home::page_home(&ctx);
     let tree = ViewAdapter::build(root);
     assert!(tree.root_id().is_some());
+}
+
+#[test]
+fn shell_labels_are_vertically_spaced() {
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let labels: Vec<(String, Rect)> = tree
+        .find_all_by_type::<Label>()
+        .into_iter()
+        .filter_map(|(id, l)| {
+            let text = l.text().to_string();
+            if text.trim().is_empty() {
+                return None;
+            }
+            let frame = tree.get(id)?.frame();
+            Some((text, frame))
+        })
+        .collect();
+
+    let brand = labels
+        .iter()
+        .find(|(t, _)| t == "UIX Demo")
+        .expect("brand label");
+    let home_nav = labels
+        .iter()
+        .find(|(t, f)| t.trim() == "首页" && f.x < SIDEBAR_W)
+        .expect("sidebar home");
+    let page_heading = labels
+        .iter()
+        .find(|(t, f)| t.trim() == "首页" && f.x >= SIDEBAR_W)
+        .expect("page heading");
+
+    assert!(
+        home_nav.1.y > brand.1.y + 20.0,
+        "sidebar stacked: brand y={} nav y={}",
+        brand.1.y,
+        home_nav.1.y
+    );
+    assert!(
+        page_heading.1.y > 20.0,
+        "page heading stuck near top: y={}",
+        page_heading.1.y
+    );
+    assert!(
+        page_heading.1.x >= SIDEBAR_W - 2.0,
+        "page heading should be in content area, x={}",
+        page_heading.1.x
+    );
+}
+
+#[test]
+fn sidebar_nav_icon_and_label_vertically_centered() {
+    use uix::ui::widgets::Icon;
+
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let home_label = tree
+        .find_all_by_type::<Label>()
+        .into_iter()
+        .find(|(id, l)| {
+            l.text().trim() == "首页"
+                && tree
+                    .get(*id)
+                    .map(|n| n.frame().x < SIDEBAR_W)
+                    .unwrap_or(false)
+        })
+        .expect("sidebar home label");
+    let home_frame = tree.get(home_label.0).expect("label node").frame();
+
+    // 同排 Icon：在 Label 左侧、同一侧栏行内（y 接近）
+    let icon = tree
+        .find_all_by_type::<Icon>()
+        .into_iter()
+        .find(|(id, _)| {
+            let f = tree.get(*id).map(|n| n.frame()).unwrap_or_default();
+            f.x < home_frame.x
+                && f.x > 0.0
+                && (f.y - home_frame.y).abs() < 20.0
+                && (f.h - 16.0).abs() < 1.0
+        })
+        .expect("sidebar home icon");
+    let icon_frame = tree.get(icon.0).expect("icon node").frame();
+
+    let icon_mid = icon_frame.y + icon_frame.h * 0.5;
+    let label_mid = home_frame.y + home_frame.h * 0.5;
+    assert!(
+        (icon_mid - label_mid).abs() < 2.0,
+        "icon/label mid mismatch: icon_mid={icon_mid} label_mid={label_mid} icon={icon_frame:?} label={home_frame:?}"
+    );
+
+    // 分组标题左缘与导航项图标对齐（item margin+padding = 24）
+    let group = tree
+        .find_all_by_type::<Label>()
+        .into_iter()
+        .find(|(_, l)| l.text() == "入门")
+        .expect("group label");
+    let group_frame = tree.get(group.0).expect("group node").frame();
+    assert!(
+        (group_frame.x - icon_frame.x).abs() < 2.0,
+        "group label x={} should align with icon x={}",
+        group_frame.x,
+        icon_frame.x
+    );
 }

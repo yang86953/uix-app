@@ -492,6 +492,45 @@ fn rendered_frame_with_partial_dirty_outputs_padded_partial_damage() {
 }
 
 #[test]
+fn multi_rect_dirty_expands_to_union_for_paint_and_damage() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = NullEngine::new();
+    let _ = engine.initialize(64, 64);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut region = DirtyRegion::empty();
+    // 悬停项 + 远处定时器标脏 → 并集须覆盖中间侧栏项
+    region.add_rect(Rect::new(0.0, 0.0, 20.0, 20.0));
+    region.add_rect(Rect::new(0.0, 80.0, 20.0, 20.0));
+
+    let out = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &region,
+            tree_version: 0,
+            scroll_move: None,
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    // for_paint_clear → [0,0,20,100]，再 pad ±1
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::Present(DamageRegion::partial(vec![Rect::new(0.0, 0.0, 22.0, 102.0)]))
+    );
+}
+
+#[test]
 fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
     let mut renderer = FrameRenderer::new();
     let mut engine = NullEngine::new();

@@ -140,7 +140,7 @@ ComponentHandle::emit(event)
 | 事件 | 目标选择 | 阶段 |
 |------|----------|------|
 | PointerDown | overlay 命中 **或** hit_test | modal 外拦截 → capture → bubble → focus |
-| PointerUp | 同上 | capture → bubble → 同目标 Click；右键 → ContextMenu overlay |
+| PointerUp | 同上 | capture → bubble → **同目标即发 Click**（不要求 `PointerUp` Handled）；右键 → ContextMenu overlay |
 | PointerMove | drag（5px 阈值）/ hover enter-leave | capture → bubble |
 | Wheel | overlay **或** hit **或** hover **或** root | capture 优先（ScrollView 消化，#45） |
 | KeyDown | Tab → focus_next；否则 focused | capture → bubble → Enter/Space → Click |
@@ -176,11 +176,11 @@ dispatch_semantic_event:
 
 1. `DragManager` active/potential 或 `InteractionManager.pressed_component` → **全 dispatch**
 2. `pos` 仍在 `InteractionManager.hovered_component` 扩大 hit 框内 → 仅更新拖拽/hover 状态；**不 hit_test**；默认 **不 dispatch**
-3. 否则 `hit_test`；`target ≠ hovered_component` → enter/leave + 窄标脏，并对新 target dispatch
+3. 否则 `hit_test`；`target ≠ hovered_component` → enter/leave；**仅当组件 `Handled` enter/leave 时窄标脏**，并对新 target dispatch
 
 Widget 可通过 `EventHandler::wants_continuous_pointer_move` opt-in（#121，默认 false）。实现见 [component · 能力](component.md#能力)。
 
-> **实现注记**：`tree_events.rs` 已按 #109 接入：pointer capture/drag 路径全 dispatch；hover hit frame 内跳过 `hit_test` 与默认 dispatch；opt-in widget 保留连续 `PointerMove`。
+> **实现注记**：`tree_events.rs` 已按 #109 接入：pointer capture/drag 路径全 dispatch；hover hit frame 内跳过 `hit_test` 与默认 dispatch；opt-in widget 保留连续 `PointerMove`。无 hover 视觉态的叶子（Label/Icon 等对 enter/leave 返回 `NotHandled`）不标脏，避免局部清屏挖掉父背景。
 
 ---
 

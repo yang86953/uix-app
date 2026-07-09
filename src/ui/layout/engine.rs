@@ -41,28 +41,24 @@ impl BoxModel {
         padding: EdgeInsets::zero(),
     };
 
-    /// 从 frame 计算内框（扣除 margin + border + padding）。
+    /// 从子项 frame 计算内容区（扣除 border + padding）。
+    ///
+    /// `frame` 是父级 flex/grid 分配的 border-box：**不含 margin**
+    ///（margin 已由父级在放置时计入间距）。此处再扣 margin 会双重缩进。
     pub fn content_rect(&self, frame: Rect) -> Rect {
-        let mh = self.margin.horizontal();
-        let mv = self.margin.vertical();
         let bh = self.border_width.horizontal();
         let bv = self.border_width.vertical();
         Rect::new(
-            frame.x + self.margin.left + self.border_width.left + self.padding.left,
-            frame.y + self.margin.top + self.border_width.top + self.padding.top,
-            (frame.w - mh - bh - self.padding.horizontal()).max(0.0),
-            (frame.h - mv - bv - self.padding.vertical()).max(0.0),
+            frame.x + self.border_width.left + self.padding.left,
+            frame.y + self.border_width.top + self.padding.top,
+            (frame.w - bh - self.padding.horizontal()).max(0.0),
+            (frame.h - bv - self.padding.vertical()).max(0.0),
         )
     }
 
-    /// 从 frame 计算视觉区域（仅扣除 margin，供渲染用）。
+    /// 视觉区域 = border-box（与 frame 同；margin 在 frame 外由父级留白）。
     pub fn visual_rect(&self, frame: Rect) -> Rect {
-        Rect::new(
-            frame.x + self.margin.left,
-            frame.y + self.margin.top,
-            (frame.w - self.margin.horizontal()).max(0.0),
-            (frame.h - self.margin.vertical()).max(0.0),
-        )
+        frame
     }
 }
 

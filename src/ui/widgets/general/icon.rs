@@ -104,9 +104,13 @@ pub fn icon_char(name: &str) -> &'static str {
         "book" => "\u{E05E}",
         "box" => "\u{E061}",
         "briefcase" => "\u{E062}",
+        "bar-chart" => "\u{E06A}",
         "chart-bar" => "\u{E2A2}",
         "chart-line" => "\u{E2A5}",
         "chart-pie" => "\u{E06B}",
+        "cpu" => "\u{E0A9}",
+        "layers" => "\u{E529}",
+        "alert-triangle" => "\u{E193}",
         "check-circle" => "\u{E07C}",
         "check-square" => "\u{E16A}",
         "circle" => "\u{E076}",
@@ -258,5 +262,13 @@ mod tests {
             .measure(Constraints::loose(Size::new(20.0, 24.0)));
 
         assert_eq!(measured, Size::new(20.0, 24.0));
+    }
+
+    #[test]
+    fn sidebar_icon_names_map_to_pua() {
+        assert_eq!(icon_char("home"), "\u{E0F5}");
+        assert_eq!(icon_char("cpu"), "\u{E0A9}");
+        assert_eq!(icon_char("bar-chart"), "\u{E06A}");
+        assert_eq!(icon_char("layers"), "\u{E529}");
     }
 }

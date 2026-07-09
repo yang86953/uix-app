@@ -47,6 +47,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
       GPU: draw::bootstrap_graphics_engine → create_graphics_engine
       失败 → SoftwareEngine 回退                          (#59)
 4. FontService::load_default_system_font
+   init_lucide_font（嵌入 `assets/fonts/lucide.ttf`，供 Icon）
    ImageService::new
 5. WindowSession::from_root_factory(root + 默认 Notification overlay)
       → WidgetTree::build → layout → mark_full_frame_dirty

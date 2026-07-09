@@ -79,25 +79,22 @@ impl WidgetTree {
 
         let mut order = self.layout_traverse();
         if order.is_empty() {
-            // 根节点已有有效 frame 但子树尚未布局时（如 resize 后 invalidation 被 reset），
-            // 标记 Layout 失效并重新收集遍历顺序，避免组件堆叠在 (0,0)。
+            // 根节点已有有效 frame 但子树尚未布局时（如 bind_invalidation / reset 清空队列），
+            // 只要仍有可见节点 frame 为 0 就重新标脏，避免组件堆叠在 (0,0)。
+            // 不可用 measure().h<=0 作门槛：有 intrinsic 高度的子项也会卡在零 frame。
             let needs_bootstrap = self.root_id.is_some_and(|root_id| {
-                self.get(root_id)
-                    .map(|root| {
-                        let rf = root.frame();
-                        if rf.w <= 0.0 || rf.h <= 0.0 {
-                            return true;
-                        }
-                        root.children().iter().any(|&cid| {
-                            self.get(cid).is_some_and(|c| {
-                                c.visible()
-                                    && c.frame().w <= 0.0
-                                    && c.frame().h <= 0.0
-                                    && c.measure(frame_constraints(rf)).h <= 0.0
+                self.get(root_id).is_some_and(|root| {
+                    let rf = root.frame();
+                    if rf.w <= 0.0 || rf.h <= 0.0 {
+                        return true;
+                    }
+                    self.traverse().into_iter().any(|cid| {
+                        cid != root_id
+                            && self.get(cid).is_some_and(|c| {
+                                c.visible() && (c.frame().w <= 0.0 || c.frame().h <= 0.0)
                             })
-                        })
                     })
-                    .unwrap_or(false)
+                })
             });
             if !needs_bootstrap {
                 return;

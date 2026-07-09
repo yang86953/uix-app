@@ -67,16 +67,19 @@ pub fn begin_frame(
                 surface.clear_all();
             }
             UpdateStrategy::DirtyRects(rects) => {
-                for r in rects {
-                    let x0 = (r.x + 0.5).floor().max(0.0) as i32;
-                    let y0 = (r.y + 0.5).floor().max(0.0) as i32;
-                    let x1 = (r.x + r.w + 0.5).floor().max(0.0) as i32;
-                    let y1 = (r.y + r.h + 0.5).floor().max(0.0) as i32;
-                    let cw = (x1 - x0).min(w - x0).max(0);
-                    let ch = (y1 - y0).min(h - y0).max(0);
-                    if cw > 0 && ch > 0 {
-                        surface.clear_rect_raw(x0, y0, cw, ch);
-                    }
+                // 与 push_clip 一致：清并集 AABB，避免只清离散条带而父背景画满空隙
+                let mut bounds = rects[0];
+                for r in &rects[1..] {
+                    bounds = bounds.union(r);
+                }
+                let x0 = (bounds.x + 0.5).floor().max(0.0) as i32;
+                let y0 = (bounds.y + 0.5).floor().max(0.0) as i32;
+                let x1 = (bounds.x + bounds.w + 0.5).floor().max(0.0) as i32;
+                let y1 = (bounds.y + bounds.h + 0.5).floor().max(0.0) as i32;
+                let cw = (x1 - x0).min(w - x0).max(0);
+                let ch = (y1 - y0).min(h - y0).max(0);
+                if cw > 0 && ch > 0 {
+                    surface.clear_rect_raw(x0, y0, cw, ch);
                 }
             }
         }

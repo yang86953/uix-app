@@ -74,6 +74,21 @@ impl DirtyRegion {
         bounds
     }
 
+    /// 绘制/清屏用脏区：多块 dirty 时升为并集 AABB。
+    ///
+    /// `begin_frame` 的 clip 已是并集；若仍按离散 rect 清屏与剪枝，
+    /// 父节点背景会画进中间空隙而子节点不重绘（悬停 + 定时器双脏区时侧栏项消失）。
+    pub fn for_paint_clear(&self) -> DirtyRegion {
+        if self.full_frame || self.rects.len() <= 1 {
+            return self.clone();
+        }
+        let bounds = self.bounds();
+        if bounds.w <= 0.0 || bounds.h <= 0.0 {
+            return DirtyRegion::empty();
+        }
+        DirtyRegion::area(bounds)
+    }
+
     pub fn intersects(&self, rect: Rect) -> bool {
         if self.full_frame {
             return true;
@@ -179,5 +194,30 @@ impl PresentDamage {
 
     pub fn is_full(&self) -> bool {
         matches!(self, Self::Full)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn for_paint_clear_keeps_single_rect() {
+        let region = DirtyRegion::area(Rect::new(10.0, 20.0, 30.0, 40.0));
+        let paint = region.for_paint_clear();
+        assert_eq!(paint.rects(), &[Rect::new(10.0, 20.0, 30.0, 40.0)]);
+        assert!(!paint.full_frame);
+    }
+
+    #[test]
+    fn for_paint_clear_unions_disjoint_rects() {
+        let mut region = DirtyRegion::empty();
+        region.add_rect(Rect::new(0.0, 0.0, 10.0, 10.0));
+        region.add_rect(Rect::new(0.0, 90.0, 10.0, 10.0));
+        let paint = region.for_paint_clear();
+        assert_eq!(paint.rects().len(), 1);
+        assert_eq!(paint.rects()[0], Rect::new(0.0, 0.0, 10.0, 100.0));
+        // 并集覆盖中间空隙，子节点剪枝与清屏一致
+        assert!(paint.intersects(Rect::new(0.0, 40.0, 10.0, 10.0)));
     }
 }

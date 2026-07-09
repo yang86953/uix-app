@@ -60,6 +60,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     retry_count: &mut u8,
     env: &LayerRenderEnv<'_>,
 ) {
+    // 嵌套 Picture 仍按屏幕脏区决定是否重栅格化；一旦进入栅格化则内部全量重绘。
     prepare_nested_pictures(engine, children, scene, paint_region, env);
 
     if !ensure_offscreen(engine, offscreen_handle, w, h) {
@@ -97,6 +98,9 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
         let Some(off_canvas) = engine.offscreen_canvas(&handle) else {
             return;
         };
+        // 离屏缓冲整块清透明后，必须完整重绘子树；不可沿用屏幕 dirty_region 剪枝，
+        // 否则悬停窄标脏时未相交的兄弟节点（侧栏其它项）会永久消失。
+        let full_offscreen = DirtyRegion::full();
         off_canvas.fill_rect(
             Rect::new(0.0, 0.0, w as f32, h as f32),
             Color::transparent(),
@@ -123,7 +127,8 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             cached.replay(&mut off_ctx);
         }
         if scene.node_visible(node_id) {
-            render_non_picture_subtree(children, &mut off_ctx, scene, paint_region);
+            // 屏幕 dirty 仅用于主表面剪枝；离屏已全清，子树必须完整重绘
+            render_non_picture_subtree(children, &mut off_ctx, scene, &full_offscreen);
         }
         for (child_bounds, pixels, pw) in nested_pixels {
             let local = Rect::new(

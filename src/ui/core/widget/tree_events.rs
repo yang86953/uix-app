@@ -196,7 +196,10 @@ impl WidgetTree {
                         return EventResult::Handled;
                     }
                     result = self.dispatch_to(t, event);
-                    if result == EventResult::Handled && hold == Some(t) {
+                    // 同目标 up→Click：不要求 PointerUp Handled。
+                    // 侧栏 row 空白/padding 命中 Container/Space/Label 时它们不处理 Up，
+                    // 但父级 on_semantic(Click) 仍须触发（#36 语义层）。
+                    if hold == Some(t) {
                         let click = ClickEvent {
                             button: *button,
                             pos: *pos,
@@ -284,13 +287,21 @@ impl WidgetTree {
                 let old_hover = current_hover;
                 let new_hover = self.overlay_target_at(*pos).or_else(|| self.hit_test(*pos));
                 if new_hover != current_hover {
+                    // 仅当组件实际处理了 enter/leave（有 hover 视觉态）才窄标脏。
+                    // Label/Icon 等叶子 NotHandled 时若仍 invalidate，局部清屏会挖掉父背景。
                     if let Some(old) = current_hover {
-                        let _ = self.dispatch_to(old, &SystemEvent::PointerLeave);
-                        self.invalidate_paint(old);
+                        if self.dispatch_to(old, &SystemEvent::PointerLeave)
+                            == EventResult::Handled
+                        {
+                            self.invalidate_paint(old);
+                        }
                     }
                     if let Some(new) = new_hover {
-                        let _ = self.dispatch_to(new, &SystemEvent::PointerEnter);
-                        self.invalidate_paint(new);
+                        if self.dispatch_to(new, &SystemEvent::PointerEnter)
+                            == EventResult::Handled
+                        {
+                            self.invalidate_paint(new);
+                        }
                     }
                     self.managers_mut()
                         .interaction
