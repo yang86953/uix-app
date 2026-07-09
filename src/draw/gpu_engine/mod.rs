@@ -7,7 +7,7 @@ use std::cell::RefCell;
 
 use crate::core::Error;
 use crate::draw::backend::registry::create_native_raster_backend;
-use crate::draw::backend::{DamageRegion, RenderBackend};
+use crate::draw::backend::DamageRegion;
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::RenderSession;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
@@ -18,7 +18,7 @@ pub use shaders::*;
 mod canvas_2d;
 mod shaders;
 
-/// GPU 渲染引擎 — 委托 `RenderSession` + `GpuBackend`。
+/// GPU 渲染引擎 — 委托 `RenderSession` + `RenderBackend`（GL / D3D11 / …）。
 pub struct GpuEngine {
     session: RenderSession,
     empty_readback: RefCell<Vec<u32>>,
@@ -67,13 +67,21 @@ impl GpuEngine {
             gpu.read_pixels();
         }
     }
+
+    fn make_current(&mut self) {
+        if let Some(gpu) = self.session.gpu_backend_mut() {
+            gpu.gpu_ctx.make_current();
+        } else if let Some(d3d) = self.session.d3d11_backend_mut() {
+            d3d.gpu_ctx.make_current();
+        }
+    }
 }
 
 impl GraphicsEngine for GpuEngine {
     fn initialize(&mut self, w: i32, h: i32) -> Result<(), Error> {
         self.session.initialize(w, h)?;
+        self.make_current();
         if let Some(gpu) = self.session.gpu_backend_mut() {
-            gpu.gpu_ctx.make_current();
             let vw = gpu.gpu_ctx.width();
             let vh = gpu.gpu_ctx.height();
             unsafe {
@@ -92,8 +100,8 @@ impl GraphicsEngine for GpuEngine {
 
     fn resize(&mut self, w: i32, h: i32) {
         self.session.resize(w, h);
+        self.make_current();
         if let Some(gpu) = self.session.gpu_backend_mut() {
-            gpu.gpu_ctx.make_current();
             unsafe {
                 gpu.gl
                     .viewport(0, 0, gpu.gpu_ctx.width(), gpu.gpu_ctx.height());
@@ -102,18 +110,14 @@ impl GraphicsEngine for GpuEngine {
     }
 
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
-        if let Some(gpu) = self.session.gpu_backend_mut() {
-            gpu.gpu_ctx.make_current();
-        }
+        self.make_current();
         self.session.begin_frame(strategy)
     }
 
     fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
         let outcome = self.session.end_frame();
-        if let Some(gpu) = self.session.gpu_backend_mut() {
-            if gpu.present(present_damage).is_err() {
-                crate::core::log::error_fn("GpuEngine present 失败");
-            }
+        if self.session.backend_mut().present(present_damage).is_err() {
+            crate::core::log::error_fn("GpuEngine present 失败");
         }
         outcome
     }
@@ -127,9 +131,12 @@ impl GraphicsEngine for GpuEngine {
     }
 
     fn device_pixel_ratio(&self) -> f32 {
-        self.session
-            .gpu_backend()
-            .map(|gpu| gpu.gpu_ctx.device_pixel_ratio())
-            .unwrap_or(1.0)
+        if let Some(gpu) = self.session.gpu_backend() {
+            return gpu.gpu_ctx.device_pixel_ratio();
+        }
+        if let Some(d3d) = self.session.d3d11_backend() {
+            return d3d.gpu_ctx.device_pixel_ratio();
+        }
+        1.0
     }
 }

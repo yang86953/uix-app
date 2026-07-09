@@ -7,16 +7,21 @@ use crate::core::{DamageRegion, Error, Point, Rect, Size};
 use crate::draw::traits::{Canvas2D, PresentationMode};
 use crate::draw::ImageHandle;
 
-/// 后端种类。
+/// Engine-level raster preference ([#169](docs/decisions.md#d169)).
+///
+/// Aligned with orthogonal axes: `Cpu` / `Gpu` select raster path preference;
+/// concrete API is [`crate::native::traits::GraphicsBackend`]. Not a bundled
+/// pipeline enum — see `RasterMode` × `PresentMode` × `GraphicsBackend`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendKind {
-    /// CPU 软件光栅化。
+    /// Prefer CPU software raster (`RasterMode::Cpu`).
     Cpu,
-    /// GPU 加速（需平台图形上下文）。
+    /// Prefer GPU path (`RasterMode::GpuNative` when context supports it).
     Gpu,
-    /// 自动选择：无平台 GPU context 时等价于 Cpu；App 启动层负责 GPU 优先回退。
+    /// Auto: without a platform GPU context, equivalent to Cpu; app bootstrap
+    /// owns GPU-first fallback via `bootstrap_graphics_engine`.
     Auto,
-    /// 空后端，用于测试。
+    /// Null backend for tests.
     Null,
 }
 

@@ -129,21 +129,23 @@ where
 mod tests {
     use super::*;
     use crate::native::traits::present::{
-        GraphicsContextCaps, IGraphicsContext, PresentDamage, RenderPipelineProfile,
+        GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentMode, RasterMode,
     };
     use std::cell::Cell;
     use std::rc::Rc;
 
     struct ShutdownTrackingContext {
         shutdown_called: Rc<Cell<bool>>,
-        pipeline: RenderPipelineProfile,
+        raster: RasterMode,
+        present: PresentMode,
     }
 
     impl IGraphicsContext for ShutdownTrackingContext {
         fn caps(&self) -> GraphicsContextCaps {
             GraphicsContextCaps {
                 backend: GraphicsBackend::D3d11,
-                pipeline: self.pipeline,
+                raster: self.raster,
+                present: self.present,
                 partial_present: false,
                 device_pixel_ratio: 1.0,
             }
@@ -192,15 +194,16 @@ mod tests {
     }
 
     #[test]
-    fn create_graphics_engine_shuts_down_context_on_cpu_presenter_profile() {
+    fn create_graphics_engine_shuts_down_context_on_cpu_presenter() {
         let shutdown_called = Rc::new(Cell::new(false));
         let context = ShutdownTrackingContext {
             shutdown_called: Rc::clone(&shutdown_called),
-            pipeline: RenderPipelineProfile::CpuPresenter,
+            raster: RasterMode::Cpu,
+            present: PresentMode::CpuPresenter,
         };
 
         let err = match create_graphics_engine(Box::new(context)) {
-            Ok(_) => panic!("CpuPresenter profile must be rejected"),
+            Ok(_) => panic!("CpuPresenter must be rejected"),
             Err(err) => err,
         };
 
@@ -209,10 +212,11 @@ mod tests {
     }
 
     #[test]
-    fn caps_pipeline_forwards_to_legacy_supports_pixel_present() {
+    fn caps_axes_drive_supports_helpers() {
         let context = ShutdownTrackingContext {
             shutdown_called: Rc::new(Cell::new(false)),
-            pipeline: RenderPipelineProfile::CpuUploadPresent,
+            raster: RasterMode::Cpu,
+            present: PresentMode::PixelUpload,
         };
         assert!(context.supports_pixel_present());
         assert!(!context.supports_gl_proc_address());
@@ -229,7 +233,8 @@ mod tests {
             |_candidate| {
                 Ok(Box::new(ShutdownTrackingContext {
                     shutdown_called: Rc::clone(&shutdown_called),
-                    pipeline: RenderPipelineProfile::CpuPresenter,
+                    raster: RasterMode::Cpu,
+                    present: PresentMode::CpuPresenter,
                 }) as Box<dyn IGraphicsContext>)
             },
         ) {
@@ -247,7 +252,7 @@ mod tests {
 
     impl IGraphicsContext for InitFailingContext {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::cpu_upload_present(GraphicsBackend::D3d11, 1.0)
+            GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0)
         }
 
         fn initialize(

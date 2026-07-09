@@ -252,7 +252,7 @@ impl EglContext {
 
 impl IGraphicsContext for EglContext {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
-        crate::native::traits::present::GraphicsContextCaps::native_gpu_raster(
+        crate::native::traits::present::GraphicsContextCaps::gpu_native_swapchain(
             crate::native::traits::present::GraphicsBackend::OpenGlEs,
             self.swap_with_damage.is_some(),
             1.0,

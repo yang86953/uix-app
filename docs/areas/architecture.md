@@ -22,7 +22,7 @@
 | 改样式 / Theme | [`theme-style.md#style--styleset`](systems/theme-style.md#style--styleset) → [`theme-style.md#色板架构`](systems/theme-style.md#色板架构) |
 | 改布局 / Scroll | [`layout.md`](systems/layout.md) → [`component.md`](systems/component.md) |
 | 接平台 / 窗口 / 输入 | [`platform.md#traits-清单`](systems/platform.md#traits-清单) → [`platform.md#平台贡献指南`](systems/platform.md#平台贡献指南) → [`application.md`](systems/application.md) |
-| 多图形 API / GPU 选型（**P6 专项**） | [`graphics-backend-pluggable.md#可组合渲染轴`](systems/graphics-backend-pluggable.md#可组合渲染轴) → [`rendering.md#多图形-api`](systems/rendering.md#多图形-api) → [implementation · P6 图形后端](implementation.md#p67-图形后端架构) → [#162](../decisions.md#d162) [#163](../decisions.md#d163) [#168](../decisions.md#d168) |
+| 多图形 API / GPU 选型（**P6 专项**） | [`graphics-backend-pluggable.md#可组合渲染轴`](systems/graphics-backend-pluggable.md#可组合渲染轴) → [`rendering.md#多图形-api`](systems/rendering.md#多图形-api) → [implementation · P6.7](implementation.md#p67-图形后端架构) / [P6.8](implementation.md#p68-可组合渲染轴) → [#162](../decisions.md#d162) [#163](../decisions.md#d163) [#168](../decisions.md#d168) [#169](../decisions.md#d169) |
 | Modal / Tooltip / 菜单 | [`overlay.md`](systems/overlay.md) → [`event.md`](systems/event.md) |
 | 持久化 Settings | [`data.md`](systems/data.md) → [`application.md#appstate--多窗--settings`](systems/application.md#appstate--多窗--settings) |
 | 写测试 | [`testing.md#fakeplatform`](systems/testing.md#fakeplatform) → [`event.md#测试`](systems/event.md#测试) |
@@ -61,7 +61,7 @@
 | 4 | 主题与样式 | [theme-style.md](systems/theme-style.md) | Theme、Style/StyleSet | #1–#3 #9 #14–#17 |
 | 5 | 事件 | [event.md](systems/event.md) | 三层事件、HandlerTable | #4–#7 #36 #68 |
 | 6 | 布局 | [layout.md](systems/layout.md) | measure/arrange、Intrinsic、Flex/Grid、Scroll | #29 #38 #45 #53 #165 |
-| 7 | 渲染 | [rendering.md](systems/rendering.md) | ScenePaint、合成、局部重绘、多图形 API | #59 #70 #82 #122 #129 #162 |
+| 7 | 渲染 | [rendering.md](systems/rendering.md) | ScenePaint、合成、局部重绘、多图形 API | #59 #70 #82 #122 #129 #162–#164 #168 #169 |
 | 8 | 平台 | [platform.md](systems/platform.md) | OS 隔离、UiEvent | #40 #59 |
 | 9 | 浮层 | [overlay.md](systems/overlay.md) | OverlayStack、Modal/菜单 | #96–#98 #100 |
 | 10 | 基础设施 | [foundation.md](systems/foundation.md) | 几何、错误、日志 | #38 #56 #70 |
@@ -69,6 +69,7 @@
 | 12 | 测试 | [testing.md](systems/testing.md) | FakePlatform、语义断言 | #40 |
 | 13 | **按需零闲置** | [demand-driven.md](systems/demand-driven.md) | 核心理念 #105 | #105–#159 |
 | 14 | **公开 API** | [public-api.md](systems/public-api.md) | prelude 导出单页 | #69 #101 |
+| — | 可插拔图形后端（P6） | [graphics-backend-pluggable.md](systems/graphics-backend-pluggable.md#可组合渲染轴) | 正交渲染轴、registry、API 对等实现 | #162–#164 #168 #169 |
 
 ---
 
@@ -88,8 +89,8 @@
 | 事件传播 | [event · 传播](systems/event.md#传播--handlertable) | view-reactive |
 | measure / Scroll | [layout · 总览](systems/layout.md#布局设计总览) · [Measure/Arrange](systems/layout.md#measure--arrange-两阶段) | component |
 | ScenePaint / 失效 | [rendering · 管线](systems/rendering.md#管线与失效) | foundation |
-| **多图形 API / 可插拔后端** | [graphics-backend-pluggable · 可组合渲染轴](systems/graphics-backend-pluggable.md#可组合渲染轴) · [rendering · 多图形 API](systems/rendering.md#多图形-api) · [implementation · P6 图形后端](implementation.md#p67-图形后端架构) · [#162](../decisions.md#d162) [#163](../decisions.md#d163) [#168](../decisions.md#d168) | platform |
-| **可组合组件模型** | [#168](../decisions.md#d168) · [component · 能力](systems/component.md#能力) · [demand-driven · 分域要求](systems/demand-driven.md#分域要求) | 全域 |
+| **多图形 API / 可插拔后端** | [graphics-backend-pluggable · 可组合渲染轴](systems/graphics-backend-pluggable.md#可组合渲染轴) · [rendering · 多图形 API](systems/rendering.md#多图形-api) · [implementation · P6.7](implementation.md#p67-图形后端架构) / [P6.8](implementation.md#p68-可组合渲染轴) · [#162](../decisions.md#d162) [#163](../decisions.md#d163) [#168](../decisions.md#d168) [#169](../decisions.md#d169) | platform |
+| **可组合组件模型** | [#168](../decisions.md#d168) · [#169](../decisions.md#d169) · [component · 能力](systems/component.md#能力) · [demand-driven · 分域要求](systems/demand-driven.md#分域要求) | 全域 |
 | Platform traits | [platform · Traits](systems/platform.md#traits-清单) | application |
 | Modal / Overlay | [overlay](systems/overlay.md) | event, component |
 | Settings | [data](systems/data.md) | application, theme-style |

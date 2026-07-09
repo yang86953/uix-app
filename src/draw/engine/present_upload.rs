@@ -195,7 +195,7 @@ mod tests {
 
     impl IGraphicsContext for RecordingPixelContext {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::cpu_upload_present(GraphicsBackend::D3d11, 1.0)
+            GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0)
         }
 
         fn graphics_backend(&self) -> GraphicsBackend {

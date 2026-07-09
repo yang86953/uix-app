@@ -234,7 +234,7 @@ mod tests {
 
     impl IGraphicsContext for RecordingGraphicsContext {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::native_gpu_raster(GraphicsBackend::OpenGlEs, false, 1.0)
+            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::OpenGlEs, false, 1.0)
         }
 
         fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
@@ -306,7 +306,7 @@ mod tests {
 
     impl IGraphicsContext for NonGlGraphicsContext {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::cpu_upload_present(GraphicsBackend::D3d11, 1.0)
+            GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0)
         }
 
         fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {

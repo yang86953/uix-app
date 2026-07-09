@@ -9,7 +9,7 @@
 | 主题 | 章节 | 决策 |
 |------|------|------|
 | 引擎 | [引擎](#引擎) | #59 #70 #163 |
-| 多图形 API | [多图形 API](#多图形-api) | #162 #163 #164 |
+| 多图形 API | [多图形 API](#多图形-api) | #162 #163 #164 #168 #169 |
 | 场景与合成 | [场景与合成](#场景与合成) | #82 #122 #129 |
 | 失效队列 | [管线与失效](#管线与失效) | #86 #87 #122 #129 |
 | 帧渲染 | [FrameRenderer](#framerenderer) | #59 |
@@ -27,16 +27,16 @@
 
 ### 选择与回退（#59）
 
-> 引擎种类 **当前**由 `RenderPipelineProfile` **过渡预设**分派（#163）；**deprecated for removal**（[#169](../../decisions.md#d169)）。目标：`RasterMode` × `PresentMode` — 见 [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)（#168 · #169）。
+> 引擎由 `RasterMode` × `PresentMode` 表驱动装配（[#168](../../decisions.md#d168) [#169](../../decisions.md#d169)）— 见 [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)。
 
-| Engine | 预设 Profile | 光栅组件 | Present 组件 | 备注 |
-|--------|--------------|----------|--------------|------|
-| **PresentUploadEngine** | `CpuUploadPresent` | `CpuBackend` | `IGraphicsContext::present(PixelBuffer)` | **当前** D3D11 / Vulkan / Metal 默认预设 |
-| **GpuEngine** | `NativeGpuRaster` | `RenderBackendRegistry` → GL `GpuBackend` | `swap_buffers` | **当前** OpenGL ES 默认预设 |
-| **SoftwareEngine** | `CpuPresenter` | `CpuBackend` | `IPresenter` | GPU probe 全失败回退 |
+| Engine | Raster × Present | 光栅组件 | Present 组件 | 备注 |
+|--------|------------------|----------|--------------|------|
+| **GpuEngine** | `GpuNative` × `Swapchain` | `RenderBackendRegistry` → `GpuBackend` / `D3d11Backend` | `swap_buffers` / swapchain | OpenGL ES ✅；D3D11 ✅（原生 fill/stroke/glyph atlas + soft blit） |
+| **PresentUploadEngine** | `Cpu` × `PixelUpload` | `CpuBackend` | `IGraphicsContext::present(PixelBuffer)` | Vulkan / Metal ✅ |
+| **SoftwareEngine** | `Cpu` × `CpuPresenter` | `CpuBackend` | `IPresenter` | GPU probe 全失败回退 |
 | **NullEngine** | — | 无 | 无 | 测试 |
 
-`App::run_gui` 经 `create_preferred_engine` 完成 probe + 预设分派；绘图层裸 `RenderSession::new(BackendKind::Auto)` 在没有平台 GPU context 注入时等价于 `Cpu`；需要 GPU 时须先绑定平台图形上下文再切换 `BackendKind::Gpu`。
+`App::run_gui` 经 `create_preferred_engine` 完成 probe + 按 caps 轴组合装配；绘图层裸 `RenderSession::new(BackendKind::Auto)` 在没有平台 GPU context 注入时等价于 `Cpu`；需要 GPU 时须先绑定平台图形上下文再切换 `BackendKind::Gpu`。
 
 ### GraphicsEngine 契约
 
@@ -69,29 +69,30 @@
 
 ### 分层抽象
 
-> **#168 · #169**：下列类型为 **正交组件**；Engine 类为当前 bundled 组装。Profile **breaking 移除**后仅 `RasterMode` × `PresentMode` 分派。详见 [可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)。
+> **#168 · #169**：下列类型为 **正交组件**；Engine 类 = `RasterMode` × `PresentMode` 的组装结果。详见 [可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)。
 
 | 层 | 类型 | 职责 | 上层可见 |
 |----|------|------|----------|
 | **native** | `IGraphicsContext` | 图形 API peer：surface、`present(PresentFrame)`、DPR | draw bootstrap；app **不**直接持有 |
 | **draw** | `RenderBackend` + `CpuBackend` / `GpuBackend` | **光栅**组件（CPU / GPU 对等） | 引擎内部 |
-| **draw** | `PresentUploadEngine` / `GpuEngine` / `SoftwareEngine` | 预设 engine：组装光栅 + present | `app` FrameRenderer |
+| **draw** | `PresentUploadEngine` / `GpuEngine` / `SoftwareEngine` | 按轴组合装配的 engine | `app` FrameRenderer |
 | **native** | `IPresenter` | CPU 像素上屏（GDI / SHM / CALayer） | `SoftwareEngine` 回退 |
 | **draw** | `GraphicsEngine` | `begin_frame` / `end_frame` / `UpdateStrategy` | `app` FrameRenderer |
 | **draw** | `BackendKind` | `Cpu` / `Gpu` / `Auto` / `Null`；**不**暴露具体 GPU API | 引擎内部 / 测试 |
 | **native** | `GraphicsBackend` | API 身份枚举（诊断 / opt-in） | factory；**非** prelude 稳定 API |
+| **native** | `RasterMode` / `PresentMode` | 光栅轴 / present 轴；`GraphicsContextCaps` 字段 | factory / engine 装配 |
 
-`BackendKind::Gpu` 表示「尝试 GPU 路径」；具体 API 由 registry probe；**光栅与 present 组合** **当前**由 context `caps().pipeline` 过渡预设；**目标**（#169）：`caps().raster` × `caps().present` 正交 caps。
+`BackendKind::Gpu` 表示「尝试 GPU 路径」；具体 API 由 registry probe；**光栅与 present 组合**由 `caps().raster` × `caps().present` 决定。
 
 ### 候选 API 与平台矩阵
 
-> 下表为 **各 OS 编译收录**；**Auto 顺序**由 registry 表驱动。非上层架构轴。Auto 链与 pipeline 摘要 → [graphics-backend-pluggable · 核心抽象](graphics-backend-pluggable.md#核心抽象)。
+> 下表为 **各 OS 编译收录**；**Auto 顺序**由 registry 表驱动。非上层架构轴。Auto 链与正交轴摘要 → [graphics-backend-pluggable · 核心抽象](graphics-backend-pluggable.md#核心抽象)。
 
 | 平台 | 主选 | 次选 | **当前已实现** | CPU 回退 |
 |------|------|------|----------------|----------|
-| **Windows** | Direct3D 11 | OpenGL ES（WGL） | ✅ D3D11（CPU upload present）+ OpenGL ES（WGL） | ✅ SoftwareEngine（GDI） |
-| **Linux** | Vulkan | OpenGL ES（EGL） | ✅ Vulkan（CPU upload present）+ OpenGL ES（EGL / Wayland） | ✅ SoftwareEngine（SHM） |
-| **macOS** | Metal | — | ✅ Metal（CpuUploadPresent，feature `metal`）+ AppKit SoftwareEngine bootstrap | ✅ SoftwareEngine bootstrap |
+| **Windows** | Direct3D 11 | OpenGL ES（WGL） | ✅ D3D11（`GpuNative` × `Swapchain`，原生 fill/stroke/glyph）+ OpenGL ES（`GpuNative` × `Swapchain`，WGL） | ✅ SoftwareEngine（GDI） |
+| **Linux** | Vulkan | OpenGL ES（EGL） | ✅ Vulkan（`Cpu` × `PixelUpload`）+ OpenGL ES（`GpuNative` × `Swapchain`，EGL / Wayland） | ✅ SoftwareEngine（SHM） |
+| **macOS** | Metal | — | ✅ Metal（`Cpu` × `PixelUpload`，feature `metal`）+ AppKit SoftwareEngine bootstrap | ✅ SoftwareEngine bootstrap |
 | **Web**（远期） | WebGPU | — | ❌ | — |
 
 图例：**✅ 已实现** · **规划** 为 backlog，见 [implementation · P6 生产级框架](../implementation.md#p6-生产级框架)。
@@ -103,7 +104,7 @@
 ### draw 域约束
 
 - `draw` **不** `use native::backends::*` 或 `native::graphics::*`；仅 `IGraphicsContext` trait object。
-- `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；非 GL **GPU 光栅** backend 经 `RenderBackendRegistry` 注册（当前仅 OpenGL ES）。Vulkan/D3D/Metal **当前默认过渡预设**为 `CpuUploadPresent`；**下一代码优先**（[#167](../../decisions.md#d167) [#169](../../decisions.md#d169)）：D3D11 GPU native raster。**非**「这些 API 只能 CPU 光栅」（#168）。
+- `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；非 GL **GPU 光栅** backend 经 `RenderBackendRegistry` 注册（OpenGL ES ✅；D3D11 ✅ 原生 fill/stroke rect·circle + identity solid glyph atlas + soft blit）。Vulkan/Metal 当前 caps 为 `Cpu` × `PixelUpload`；**下一代码优先**：D3D11 gradient/path 原生路径；随后 Metal / D3D12。**非**「这些 API 只能 CPU 光栅」（#168）。
 - `ScenePaint`、LayerTree、InvalidationQueue **与** GPU API 无关；局部重绘 damage 几何仍来自 `core::damage`。
 
 ### 配置入口（P6.5 已落地）

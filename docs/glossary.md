@@ -174,7 +174,7 @@
 | DamageRegion | 渲染 damage |
 | AnimationRegistry | 动画帧驱动 registry；位于 `draw::pipeline`，按需注册下一帧 deadline |
 | FontService / ImageService | 字体与图像资源服务 |
-| BackendKind | draw 引擎级后端：`Cpu` / `Gpu` / `Auto` / `Null`；**#169 统一** — 与 `RasterMode` / `PresentMode` / `GraphicsBackend` 正交轴对齐，消除 Profile bundled 语义。见 [可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴) |
+| BackendKind | draw 引擎级后端：`Cpu` / `Gpu` / `Auto` / `Null`；与 `RasterMode` / `PresentMode` / `GraphicsBackend` 正交轴对齐（#169）。见 [可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴) |
 | GpuEngine | GPU 帧调度引擎；委托 `RenderSession` + `GpuBackend` + `IGraphicsContext` |
 | SoftwareEngine | CPU 回退引擎；`CpuBackend` + `IPresenter` |
 
@@ -184,15 +184,15 @@
 
 | 术语 | 含义 |
 |------|------|
-| GraphicsBackend | #162 / P6.5：**图形 API 身份**枚举（`Auto` / `OpenGlEs` / `Vulkan` / `D3D11` / `D3D12` / `Metal`）；**非**操作系统；各值为 `IGraphicsContext` 对等实现的标识。factory 选型结果；供诊断、App builder、env、Settings opt-in。详见 [graphics-backend-pluggable · 架构原则](areas/systems/graphics-backend-pluggable.md#图形-api-架构原则) |
+| GraphicsBackend | #162 / P6.5：**图形 API 身份**枚举（`Auto` / `OpenGlEs` / `Vulkan` / `D3D11` / `D3D12` / `Metal`）；**非**操作系统；各值为 `IGraphicsContext` 对等实现的标识。factory 选型结果；供诊断、App builder、env、Settings opt-in。详见 [graphics-backend-pluggable · 图形 API 架构原则](areas/systems/graphics-backend-pluggable.md#图形-api-架构原则) |
 | native/graphics | #164：`IGraphicsContext` 对等实现根目录；按 API 分树（`vulkan/`、`opengl/`、`d3d11/`、`metal/` …） |
-| RenderPipelineProfile | #163 / #168 / **#169 deprecated for removal**：bundled **过渡**预设（光栅 + present）；当前 `create_graphics_engine` 便利分派；**breaking 删除**，目标 **仅** `RasterMode` × `PresentMode`。见 [可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴) |
-| RasterMode | #169：光栅轴 — `Cpu` / `GpuNative`；映射 `CpuBackend` 或 `RenderBackendRegistry`；与 `PresentMode`、`GraphicsBackend` **正交** |
-| PresentMode | #169：Present 轴 — `Swapchain` / `PixelUpload` / `CpuPresenter`；与 `RasterMode`、`GraphicsBackend` **正交** |
-| RenderBackendRegistry | #163：`draw/backend/registry.rs`；`GraphicsBackend` → GPU `RenderBackend` 构造表；`RasterMode::GpuNative` 时使用。**下一优先**（[#167](decisions.md#d167) [#169](decisions.md#d169)）：**D3D11 GPU 光栅**；随后 Metal / D3D12 |
-| GraphicsContextCaps | #163：native 侧能力（`backend`、`pipeline`、`partial_present`、DPR）；**不**替代 `GraphicsCapabilities`；见 [graphics-backend-pluggable · 能力模型与映射](areas/systems/graphics-backend-pluggable.md#能力模型与映射) |
-| 可组合组件模型 | #168 / #169：各层正交能力 + trait/registry 自由组装；Profile **deprecated for removal**；目标 `RasterMode` × `PresentMode`。见 [decisions · #168](decisions.md#d168) · [#169](decisions.md#d169) |
-| GraphicsBackendEntry | #163：registry 表行；含 `id`、`priority`、`create` 函数指针与 `BackendStatus`（`Active` / `Planned` / `Disabled`）；见 [graphics-backend-pluggable](areas/systems/graphics-backend-pluggable.md) |
+| RenderPipelineProfile | **已删除**（#169）：旧 bundled 管线枚举；**不是**架构 mental model。分派 = `RasterMode` × `PresentMode`。见 [可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴) |
+| RasterMode | #169：光栅轴 — `Cpu` / `GpuNative`（`native::traits::present`）；映射 `CpuBackend` 或 `RenderBackendRegistry`；与 `PresentMode`、`GraphicsBackend` **正交** |
+| PresentMode | #169：Present 轴 — `Swapchain` / `PixelUpload` / `CpuPresenter`（`native::traits::present`）；与 `RasterMode`、`GraphicsBackend` **正交** |
+| RenderBackendRegistry | #163：`draw/backend/registry.rs`；`GraphicsBackend` → GPU `RenderBackend` 构造表；`RasterMode::GpuNative` 时使用。OpenGL ES / D3D11 ✅；随后 Metal / D3D12 |
+| GraphicsContextCaps | #163 / #169：native 侧能力快照 — `backend` + `raster` + `present` + `partial_present` + DPR。**不**替代 `GraphicsCapabilities`。见 [核心抽象](areas/systems/graphics-backend-pluggable.md#核心抽象) |
+| 可组合组件模型 | #168 / #169：各层正交能力 + trait/registry 自由组装；渲染 = `RasterMode` × `PresentMode` × `GraphicsBackend`。见 [decisions · #168](decisions.md#d168) · [#169](decisions.md#d169) |
+| GraphicsBackendEntry | #163 / #169：registry 表行；含 `id`、`priority`、`raster`、`present`、`create` 与 `BackendStatus`（`Active` / `Planned` / `Disabled`）；见 [核心抽象](areas/systems/graphics-backend-pluggable.md#核心抽象) |
 | bootstrap_graphics_engine | #163 / P6.7：`draw` 域 GPU 初始化**唯一** probe 入口；成功返回 `GpuBootstrap`；失败返回 `ProbeReport` 由 app 建 `SoftwareEngine` |
 | GpuBackendKind | 与 `GraphicsBackend` 同义的旧设计名；实现采用 `GraphicsBackend` |
 | IGraphicsContext | `native::traits::present`：surface 绑定、`swap_buffers(PresentDamage)`、`present(PresentFrame)`、DPR、`get_proc_address`；**各 GPU API 对上统一契约** |
@@ -200,7 +200,7 @@
 | create_gpu_context | `native::factory`：单条目 `try_create_gpu_context`；**无** probe 循环；`Auto` 须 `draw::bootstrap_graphics_engine` |
 | 图形 API 回退链 | 初始化时 probe：`draw::bootstrap_graphics_engine` 读 registry `gpu_probe_candidates` Auto 顺序；全失败 → SoftwareEngine；**无**每帧切换 |
 
-详见 [rendering · 多图形 API](areas/systems/rendering.md#多图形-api) · [#162](decisions.md#d162) · [graphics-backend-pluggable · 架构原则](areas/systems/graphics-backend-pluggable.md#图形-api-架构原则)。
+详见 [rendering · 多图形 API](areas/systems/rendering.md#多图形-api) · [#162](decisions.md#d162) · [graphics-backend-pluggable · 图形 API 架构原则](areas/systems/graphics-backend-pluggable.md#图形-api-架构原则)。
 
 ## 平台
 
@@ -215,7 +215,7 @@
 | EventLoopWaker | 跨线程唤醒 blocking `wait_event` / `wait_until`；见 [platform · 事件模型](areas/systems/platform.md#ieventloop) |
 | PresentDamage | 物理像素上屏 damage |
 | WglContext / EglContext / VulkanContext | OpenGL ES / Vulkan 的 `IGraphicsContext` 实现；位于 `native/graphics/opengl/`（wgl、egl）与 `native/graphics/vulkan/` |
-| D3d11Context | Windows D3D11 CPU upload present 的 `IGraphicsContext` 实现；位于 `native/graphics/d3d11/` |
+| D3d11Context | Windows D3D11 的 `IGraphicsContext`；caps `GpuNative` × `Swapchain`（soft Canvas2D + RTV；原生几何着色器 backlog）；位于 `native/graphics/d3d11/` |
 
 ## 数据
 

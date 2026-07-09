@@ -299,7 +299,7 @@ impl WglContext {
 
 impl IGraphicsContext for WglContext {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
-        crate::native::traits::present::GraphicsContextCaps::native_gpu_raster(
+        crate::native::traits::present::GraphicsContextCaps::gpu_native_swapchain(
             crate::native::traits::present::GraphicsBackend::OpenGlEs,
             false,
             self.device_pixel_ratio(),
