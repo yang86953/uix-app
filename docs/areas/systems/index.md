@@ -20,5 +20,6 @@
 | 12 | 测试 | [testing.md](testing.md) | 跨域 |
 | 13 | 按需零闲置 | [demand-driven.md](demand-driven.md) | 跨域 |
 | 14 | 公开 API | [public-api.md](public-api.md) | `prelude` |
+| — | 可插拔图形后端（**P6 专项**） | [graphics-backend-pluggable.md](graphics-backend-pluggable.md) | `native` / `draw` / `app` |
 
 维护系统文档时，同步 [architecture.md](../architecture.md) 的任务路由和 [implementation.md](../implementation.md) 的实现状态。

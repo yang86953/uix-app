@@ -115,6 +115,7 @@ component! {
             child_margins: vec![crate::core::EdgeInsets::zero(); children.len()],
             justify_content: self.justify,
             align_items: self.align,
+            intrinsic_main: false,
         };
 
         let output = compute_flex_layout(&input);

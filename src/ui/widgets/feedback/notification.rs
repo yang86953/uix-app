@@ -59,71 +59,60 @@ component! {
             return;
         }
 
-        let notif_w = 384.0;
-        let start_x = frame.x
-            + match self.placement {
-                NotifPlacement::TopRight | NotifPlacement::BottomRight => frame.w - notif_w - 24.0,
-                NotifPlacement::TopLeft | NotifPlacement::BottomLeft => 24.0,
-            };
-        let mut y = frame.y
-            + match self.placement {
-                NotifPlacement::TopRight | NotifPlacement::TopLeft => 12.0,
-                NotifPlacement::BottomRight | NotifPlacement::BottomLeft => frame.h - 12.0,
-            };
-        let grows_up = matches!(
-            self.placement,
-            NotifPlacement::BottomRight | NotifPlacement::BottomLeft
-        );
-
         let bg = ctx.tokens().color_bg_elevated();
         let border = ctx.tokens().color_border_secondary();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_secondary();
         let r = Some(Radius::uniform(ctx.tokens().border_radius_lg()));
 
-        for item in queue.iter() {
-            let desc_h = if item.description.is_empty() { 0.0 } else { 18.0 };
-            let notif_h = 48.0 + desc_h;
-            let notif_y = if grows_up { y - notif_h } else { y };
+        for (notif_rect, item) in self.toast_rects(frame, &queue) {
             let (icon, accent) = match item.type_ {
                 StatusLevel::Success => ("+", ctx.tokens().color_success()),
                 StatusLevel::Info => ("i", ctx.tokens().color_info()),
                 StatusLevel::Warning => ("!", ctx.tokens().color_warning()),
                 StatusLevel::Error => ("x", ctx.tokens().color_error()),
             };
-            let notif_rect = Rect::new(start_x, notif_y, notif_w, notif_h);
             ctx.draw_box_shadow(notif_rect, 8.0, 0.0, 4.0, Color::from_rgba(0, 0, 0, 40), r);
             ctx.fill_rect(notif_rect, bg, r);
             ctx.stroke_rect(notif_rect, border, 1.0, r);
             ctx.fill_rect(
-                Rect::new(start_x, notif_y + 6.0, 3.0, notif_h - 12.0),
+                Rect::new(notif_rect.x, notif_rect.y + 6.0, 3.0, notif_rect.h - 12.0),
                 accent,
                 Some(Radius::uniform(1.5)),
             );
 
             let icon_y = ctx.visual_center_y(notif_rect, 16.0);
-            ctx.draw_text(icon, Point::new(start_x + 16.0, icon_y), accent, 16.0);
+            ctx.draw_text(icon, Point::new(notif_rect.x + 16.0, icon_y), accent, 16.0);
             let title_y = ctx.visual_center_y(notif_rect, 14.0);
-            ctx.draw_text(&item.title, Point::new(start_x + 42.0, title_y), text, 14.0);
+            ctx.draw_text(
+                &item.title,
+                Point::new(notif_rect.x + 42.0, title_y),
+                text,
+                14.0,
+            );
             if !item.description.is_empty() {
                 ctx.draw_text(
                     &item.description,
-                    Point::new(start_x + 42.0, notif_y + 28.0),
+                    Point::new(notif_rect.x + 42.0, notif_rect.y + 28.0),
                     text_sec,
                     12.0,
                 );
             }
             if item.closable {
                 let close_y = ctx.visual_center_y(notif_rect, 12.0);
-                ctx.draw_text("x", Point::new(start_x + notif_w - 22.0, close_y), text_sec, 12.0);
-            }
-
-            if grows_up {
-                y -= notif_h + 12.0;
-            } else {
-                y += notif_h + 12.0;
+                ctx.draw_text(
+                    "x",
+                    Point::new(notif_rect.x + notif_rect.w - 22.0, close_y),
+                    text_sec,
+                    12.0,
+                );
             }
         }
+    }
+
+    hit_test_frame => (&self, frame: Rect) -> Rect {
+        self.hit_bounds(frame)
+            .unwrap_or_else(|| Rect::new(0.0, 0.0, 0.0, 0.0))
     }
 }
 
@@ -221,6 +210,48 @@ impl Notification {
 
     fn intrinsic_size(&self) -> Size {
         Size::zero()
+    }
+
+    fn toast_rects<'a>(
+        &self,
+        frame: Rect,
+        queue: &'a [NotificationItem],
+    ) -> impl Iterator<Item = (Rect, &'a NotificationItem)> + 'a {
+        let notif_w = 384.0;
+        let start_x = frame.x
+            + match self.placement {
+                NotifPlacement::TopRight | NotifPlacement::BottomRight => frame.w - notif_w - 24.0,
+                NotifPlacement::TopLeft | NotifPlacement::BottomLeft => 24.0,
+            };
+        let mut y = frame.y
+            + match self.placement {
+                NotifPlacement::TopRight | NotifPlacement::TopLeft => 12.0,
+                NotifPlacement::BottomRight | NotifPlacement::BottomLeft => frame.h - 12.0,
+            };
+        let grows_up = matches!(
+            self.placement,
+            NotifPlacement::BottomRight | NotifPlacement::BottomLeft
+        );
+
+        queue.iter().map(move |item| {
+            let desc_h = if item.description.is_empty() { 0.0 } else { 18.0 };
+            let notif_h = 48.0 + desc_h;
+            let notif_y = if grows_up { y - notif_h } else { y };
+            let notif_rect = Rect::new(start_x, notif_y, notif_w, notif_h);
+            if grows_up {
+                y -= notif_h + 12.0;
+            } else {
+                y += notif_h + 12.0;
+            }
+            (notif_rect, item)
+        })
+    }
+
+    fn hit_bounds(&self, frame: Rect) -> Option<Rect> {
+        let queue = self.queue.borrow();
+        self.toast_rects(frame, &queue)
+            .map(|(rect, _)| rect)
+            .reduce(|acc, rect| acc.union(&rect))
     }
 
     pub(crate) fn sync_from(&mut self, next: Self) {
@@ -342,5 +373,26 @@ mod tests {
 
         assert!(notification.queue().borrow().is_empty());
         assert!(service.visible_toasts().is_empty());
+    }
+
+    #[test]
+    fn empty_notification_does_not_block_hit_test() {
+        let notification = Notification::new();
+        let frame = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let hit = notification.hit_bounds(frame).unwrap_or_default();
+        assert_eq!(hit, Rect::new(0.0, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn visible_notification_hit_bounds_cover_toast_stack() {
+        let notification = Notification::new();
+        notification.info("Saved", "done");
+        let frame = Rect::new(0.0, 0.0, 800.0, 600.0);
+        let hit = notification.hit_bounds(frame).expect("toast hit bounds");
+        assert!(hit.w > 0.0 && hit.h > 0.0);
+        assert!(hit.x >= frame.x);
+        assert!(hit.y >= frame.y);
+        assert!(hit.x + hit.w <= frame.x + frame.w);
+        assert!(hit.y + hit.h <= frame.y + frame.h);
     }
 }

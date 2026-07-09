@@ -4,7 +4,9 @@
 
 use crate::draw::backend::DamageRegion;
 
+pub mod bootstrap;
 pub mod cpu;
+pub mod factory;
 pub mod present_upload;
 
 /// 帧渲染结果。

@@ -3,7 +3,7 @@ use std::collections::{HashSet, VecDeque};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Once;
+use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
 use crate::core::{Error, Rect, WindowId};
@@ -23,8 +23,11 @@ use crate::native::traits::system::{
 };
 use crate::native::traits::window::{IWindowManager, PlatformWindow};
 
+use super::text_input_view::{self, MacosTextInput};
+use super::window_delegate::{self, WindowDelegateContext};
+
 pub struct MacosPlatform {
-    event_queue: VecDeque<UiEvent>,
+    events: Arc<Mutex<VecDeque<UiEvent>>>,
     event_bus: EventBus,
     clipboard: MacosClipboard,
     cursor: MacosCursor,
@@ -43,7 +46,7 @@ pub struct MacosPlatform {
 impl MacosPlatform {
     pub fn new() -> Self {
         Self {
-            event_queue: VecDeque::new(),
+            events: Arc::new(Mutex::new(VecDeque::new())),
             event_bus: EventBus::new(),
             clipboard: MacosClipboard::new(),
             cursor: MacosCursor::new(),
@@ -51,7 +54,7 @@ impl MacosPlatform {
             file_dialog: MacosFileDialog,
             file_system: MacosFileSystem::new(),
             keyboard: MacosKeyboard::new(),
-            text_input: MacosTextInput,
+            text_input: MacosTextInput::new(),
             timer: MacosTimer::new(),
             notification: MacosNotification,
             console: MacosConsole,
@@ -95,11 +98,21 @@ impl OsEventSource for MacosPlatform {
     }
 
     fn next_event(&mut self) -> Option<UiEvent> {
-        self.event_queue.pop_front()
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pop_front()
     }
 
     fn waker(&self) -> EventLoopWaker {
-        EventLoopWaker::default()
+        EventLoopWaker::new(|| {
+            // SAFETY: CFRunLoopGetMain returns the process main run loop and
+            // CFRunLoopWakeUp is safe to call from any thread to unblock
+            // nextEventMatchingMask waits on the UI thread.
+            unsafe {
+                cocoa::wake_main_run_loop();
+            }
+        })
     }
 }
 
@@ -108,7 +121,8 @@ impl MacosPlatform {
         let Some(event) = cocoa::dispatch_one_event(until) else {
             return false;
         };
-        for ui_event in event.into_ui_events() {
+        let suppress_keydown_text = self.text_input.suppress_keydown_text();
+        for ui_event in event.into_ui_events(suppress_keydown_text) {
             match ui_event.type_ {
                 crate::native::traits::event::UiEventType::KeyDown => {
                     if let crate::native::traits::event::UiEventPayload::Key(data) =
@@ -126,7 +140,10 @@ impl MacosPlatform {
                 }
                 _ => {}
             }
-            self.event_queue.push_back(ui_event);
+            self.events
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push_back(ui_event);
         }
         true
     }
@@ -143,12 +160,28 @@ impl IWindowManager for MacosPlatform {
         self.next_window_id += 1;
         // SAFETY: create_window constructs AppKit objects on the current thread
         // and returns Objective-C object pointers managed by AppKit.
-        let (window, content_layer) = unsafe { cocoa::create_window(title, width, height) };
+        let session_active = self.text_input.session_active_handle();
+        let (window, content_layer) = unsafe {
+            cocoa::create_window(title, width, height, Arc::clone(&self.events), session_active)
+        };
+        self.text_input.set_view(content_layer.view);
         let state = Rc::new(RefCell::new(WindowState::with_id_and_size(
             window_id, width, height,
         )));
-        let ops = MacosWindowOps::new(window);
-        let presenter = MacosPresenter::new(content_layer, width, height);
+        // SAFETY: delegate callbacks only read the leaked context for the window
+        // lifetime and push tagged UiEvent values into the shared queue.
+        unsafe {
+            window_delegate::install(
+                window,
+                WindowDelegateContext {
+                    events: Arc::clone(&self.events),
+                    window_id,
+                    state: Rc::clone(&state),
+                },
+            );
+        }
+        let ops = MacosWindowOps::new(window, content_layer.layer);
+        let presenter = MacosPresenter::new(content_layer.layer, width, height);
         let core = PlatformWindowCore::new(state, ops, Box::new(presenter));
         Ok(Box::new(core))
     }
@@ -214,11 +247,12 @@ impl Platform for MacosPlatform {
 
 struct MacosWindowOps {
     window: cocoa::Id,
+    layer: cocoa::Id,
 }
 
 impl MacosWindowOps {
-    fn new(window: cocoa::Id) -> Self {
-        Self { window }
+    fn new(window: cocoa::Id, layer: cocoa::Id) -> Self {
+        Self { window, layer }
     }
 }
 
@@ -284,6 +318,20 @@ impl WindowOps for MacosWindowOps {
         }
         Ok(())
     }
+
+    fn os_start_text_input(&mut self) -> crate::core::Result<()> {
+        // SAFETY: self.window is the NSWindow pointer returned by create_window.
+        unsafe { text_input_view::make_window_text_input_active(self.window) }
+    }
+
+    fn os_stop_text_input(&mut self) -> crate::core::Result<()> {
+        // SAFETY: self.window is the NSWindow pointer returned by create_window.
+        unsafe { text_input_view::make_window_text_input_inactive(self.window) }
+    }
+
+    fn native_surface_ptr(&self) -> *mut c_void {
+        self.layer
+    }
 }
 
 struct MacosPresenter {
@@ -319,7 +367,7 @@ impl IPresenter for MacosPresenter {
         // SAFETY: pixels is a live Rust slice for the duration of this call, and
         // set_layer_pixels copies it into CFData/CGImage before returning.
         unsafe {
-            cocoa::set_layer_pixels(self.layer, pixels, width, height);
+            present_layer_pixels(self.layer, pixels, width, height, _damage);
         }
         Ok(())
     }
@@ -346,7 +394,7 @@ struct MacosAppEvent {
 }
 
 impl MacosAppEvent {
-    fn into_ui_events(self) -> Vec<UiEvent> {
+    fn into_ui_events(self, suppress_keydown_text: bool) -> Vec<UiEvent> {
         match self.kind {
             cocoa::NSEVENT_TYPE_LEFT_MOUSE_DOWN => {
                 vec![UiEvent::pointer_down(self.location, MouseButton::Left)]
@@ -387,7 +435,7 @@ impl MacosAppEvent {
                     macos_keycode_to_keycode(self.key_code),
                     macos_mods_to_key_mod(self.modifiers),
                 )];
-                if is_text_input_payload(&self.text) {
+                if !suppress_keydown_text && is_text_input_payload(&self.text) {
                     events.push(UiEvent::text_input(self.text));
                 }
                 events
@@ -668,14 +716,6 @@ impl IKeyboard for MacosKeyboard {
     }
 }
 
-struct MacosTextInput;
-
-impl ITextInput for MacosTextInput {
-    fn start(&mut self) {}
-
-    fn stop(&mut self) {}
-}
-
 struct MacosTimer {
     next_id: u32,
 }
@@ -912,6 +952,8 @@ mod cocoa {
     unsafe extern "C" {
         fn CFDataCreate(allocator: Id, bytes: *const u8, length: isize) -> Id;
         fn CFRelease(cf: Id);
+        fn CFRunLoopGetMain() -> Id;
+        fn CFRunLoopWakeUp(run_loop: Id);
     }
 
     #[link(name = "CoreGraphics", kind = "framework")]
@@ -933,7 +975,18 @@ mod cocoa {
         ) -> Id;
     }
 
-    pub unsafe fn create_window(title: &str, width: i32, height: i32) -> (Id, Id) {
+    pub struct CreatedWindow {
+        pub view: Id,
+        pub layer: Id,
+    }
+
+    pub unsafe fn create_window(
+        title: &str,
+        width: i32,
+        height: i32,
+        events: Arc<Mutex<VecDeque<UiEvent>>>,
+        session_active: Arc<std::sync::atomic::AtomicBool>,
+    ) -> (Id, CreatedWindow) {
         initialize_app();
         let width = width.max(1);
         let height = height.max(1);
@@ -959,11 +1012,18 @@ mod cocoa {
             NO,
         );
         set_window_title(window, title);
-        let content_view = msg_id(window, "contentView");
+        let content_view = super::text_input_view::create_content_view(rect, events, session_active);
+        msg_void_id(window, "setContentView:", content_view);
         msg_void_bool(content_view, "setWantsLayer:", YES);
         let layer = msg_id(content_view, "layer");
         msg_void_bool(layer, "setNeedsDisplayOnBoundsChange:", YES);
-        (window, layer)
+        (
+            window,
+            CreatedWindow {
+                view: content_view,
+                layer,
+            },
+        )
     }
 
     pub unsafe fn show_window(window: Id) {
@@ -1147,6 +1207,13 @@ mod cocoa {
 
     pub unsafe fn distant_past() -> Id {
         msg_id(class("NSDate"), "distantPast")
+    }
+
+    pub unsafe fn wake_main_run_loop() {
+        let run_loop = CFRunLoopGetMain();
+        if !run_loop.is_null() {
+            CFRunLoopWakeUp(run_loop);
+        }
     }
 
     pub unsafe fn distant_future() -> Id {
@@ -1441,4 +1508,14 @@ mod cocoa {
         let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(receiver, sel(selector), first, second)
     }
+}
+
+pub(crate) unsafe fn present_layer_pixels(
+    layer: cocoa::Id,
+    pixels: &[u32],
+    width: i32,
+    height: i32,
+    _damage: PresentDamage,
+) {
+    cocoa::set_layer_pixels(layer, pixels, width, height);
 }

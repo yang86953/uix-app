@@ -8,8 +8,8 @@
 
 | 主题 | 章节 | 决策 |
 |------|------|------|
-| 引擎 | [引擎](#引擎) | #59 #70 |
-| 多图形 API | [多图形 API](#多图形-api) | #162 |
+| 引擎 | [引擎](#引擎) | #59 #70 #163 |
+| 多图形 API | [多图形 API](#多图形-api) | #162 #163 #164 |
 | 场景与合成 | [场景与合成](#场景与合成) | #82 #122 #129 |
 | 失效队列 | [管线与失效](#管线与失效) | #86 #87 #122 #129 |
 | 帧渲染 | [FrameRenderer](#framerenderer) | #59 |
@@ -23,20 +23,20 @@
 
 ## 引擎
 
+> GPU 选型与 probe 流程 → [graphics-backend-pluggable · 架构总览](graphics-backend-pluggable.md#架构总览) · [核心抽象](graphics-backend-pluggable.md#核心抽象)。下文列 **draw 侧 engine 种类**。
+
 ### 选择与回退（#59）
 
-```text
-create_gpu_context → GpuEngine::new
-    失败 → gpu.shutdown → SoftwareEngine
-```
+> 引擎种类 **当前**由 `RenderPipelineProfile` **过渡预设**分派（#163）；**deprecated for removal**（[#169](../../decisions.md#d169)）。目标：`RasterMode` × `PresentMode` — 见 [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)（#168 · #169）。
 
-| 引擎 | 后端 | 特点 |
-|------|------|------|
-| GpuEngine | GPU swapchain + damage | App 启动默认优先 |
-| SoftwareEngine | CPU 像素缓冲 | 回退 |
-| NullEngine | 无操作 | 测试 |
+| Engine | 预设 Profile | 光栅组件 | Present 组件 | 备注 |
+|--------|--------------|----------|--------------|------|
+| **PresentUploadEngine** | `CpuUploadPresent` | `CpuBackend` | `IGraphicsContext::present(PixelBuffer)` | **当前** D3D11 / Vulkan / Metal 默认预设 |
+| **GpuEngine** | `NativeGpuRaster` | `RenderBackendRegistry` → GL `GpuBackend` | `swap_buffers` | **当前** OpenGL ES 默认预设 |
+| **SoftwareEngine** | `CpuPresenter` | `CpuBackend` | `IPresenter` | GPU probe 全失败回退 |
+| **NullEngine** | — | 无 | 无 | 测试 |
 
-`App::run_gui` 按 #59 优先创建 GPU 上下文，失败时回退 `SoftwareEngine`。绘图层裸 `RenderSession::new(BackendKind::Auto)` 在没有平台 GPU context 注入时等价于 `Cpu`；需要 GPU 时先绑定平台图形上下文再切换 `BackendKind::Gpu`。
+`App::run_gui` 经 `create_preferred_engine` 完成 probe + 预设分派；绘图层裸 `RenderSession::new(BackendKind::Auto)` 在没有平台 GPU context 注入时等价于 `Cpu`；需要 GPU 时须先绑定平台图形上下文再切换 `BackendKind::Gpu`。
 
 ### GraphicsEngine 契约
 
@@ -64,63 +64,46 @@ create_gpu_context → GpuEngine::new
 ## 多图形 API
 
 > **设计目标**（#162）：在 `native::traits` / `draw::traits` 稳定契约之下，支持 **多种底层图形 API**；`app` / `draw` / `ui` **不得**依赖具体 API（OpenGL、Vulkan、D3D、Metal 等），仅通过 trait 与工厂选型。
+>
+> **可插拔 registry**（#163、#164）与架构原则 → [graphics-backend-pluggable.md](graphics-backend-pluggable.md#图形-api-架构原则)。初始化数据流见 [架构总览](graphics-backend-pluggable.md#架构总览)。
 
 ### 分层抽象
 
-```text
-app::run_gui
-    → native::create_gpu_context(surface) → Box<dyn IGraphicsContext>   // 平台 surface / swap / DPR
-    → draw::GpuEngine::new(ctx) → GraphicsEngine                        // 帧调度 + Canvas2D
-        → RenderSession + GpuBackend                                    // 光栅化 + present damage
-            → IGraphicsContext::swap_buffers(PresentDamage)
-
-create_gpu_context 失败 → SoftwareEngine（CpuBackend + IPresenter）
-```
+> **#168 · #169**：下列类型为 **正交组件**；Engine 类为当前 bundled 组装。Profile **breaking 移除**后仅 `RasterMode` × `PresentMode` 分派。详见 [可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)。
 
 | 层 | 类型 | 职责 | 上层可见 |
 |----|------|------|----------|
-| **native** | `IGraphicsContext` | 窗口绑定、context 生命周期、`swap_buffers(damage)`、DPR、`get_proc_address` | `app` 启动时注入；`draw` 仅见 trait |
-| **native** | `IPresenter` | CPU 像素缓冲上屏（GDI / SHM） | `SoftwareEngine` 回退路径 |
+| **native** | `IGraphicsContext` | 图形 API peer：surface、`present(PresentFrame)`、DPR | draw bootstrap；app **不**直接持有 |
+| **draw** | `RenderBackend` + `CpuBackend` / `GpuBackend` | **光栅**组件（CPU / GPU 对等） | 引擎内部 |
+| **draw** | `PresentUploadEngine` / `GpuEngine` / `SoftwareEngine` | 预设 engine：组装光栅 + present | `app` FrameRenderer |
+| **native** | `IPresenter` | CPU 像素上屏（GDI / SHM / CALayer） | `SoftwareEngine` 回退 |
 | **draw** | `GraphicsEngine` | `begin_frame` / `end_frame` / `UpdateStrategy` | `app` FrameRenderer |
-| **draw** | `RenderBackend` + `BackendKind` | Cpu / Gpu / Auto / Null；**不**暴露具体 GPU API | 引擎内部 |
-| **native** | `GraphicsBackend` | 枚举具体 GPU API（见下表） | factory 诊断 / 日志 / native opt-in；**非**prelude 稳定 API |
+| **draw** | `BackendKind` | `Cpu` / `Gpu` / `Auto` / `Null`；**不**暴露具体 GPU API | 引擎内部 / 测试 |
+| **native** | `GraphicsBackend` | API 身份枚举（诊断 / opt-in） | factory；**非** prelude 稳定 API |
 
-`BackendKind::Gpu` 表示「走 GPU 管线」；具体 API 由 `create_gpu_context` 在 **native 工厂** 内选定并封装为 `IGraphicsContext` 实现（#162）。
+`BackendKind::Gpu` 表示「尝试 GPU 路径」；具体 API 由 registry probe；**光栅与 present 组合** **当前**由 context `caps().pipeline` 过渡预设；**目标**（#169）：`caps().raster` × `caps().present` 正交 caps。
 
 ### 候选 API 与平台矩阵
 
-| 平台 | 主选（规划） | 次选（规划） | **当前已实现** | CPU 回退 |
-|------|-------------|-------------|----------------|----------|
-| **Windows** | Direct3D 11/12 | OpenGL ES（WGL） | ✅ D3D11（CPU upload present）+ OpenGL ES（WGL） | ✅ SoftwareEngine（GDI） |
+> 下表为 **各 OS 编译收录**；**Auto 顺序**由 registry 表驱动。非上层架构轴。Auto 链与 pipeline 摘要 → [graphics-backend-pluggable · 核心抽象](graphics-backend-pluggable.md#核心抽象)。
+
+| 平台 | 主选 | 次选 | **当前已实现** | CPU 回退 |
+|------|------|------|----------------|----------|
+| **Windows** | Direct3D 11 | OpenGL ES（WGL） | ✅ D3D11（CPU upload present）+ OpenGL ES（WGL） | ✅ SoftwareEngine（GDI） |
 | **Linux** | Vulkan | OpenGL ES（EGL） | ✅ Vulkan（CPU upload present）+ OpenGL ES（EGL / Wayland） | ✅ SoftwareEngine（SHM） |
-| **macOS** | Metal | — | ✅ AppKit SoftwareEngine bootstrap（CALayer CPU present） | ✅ SoftwareEngine bootstrap |
+| **macOS** | Metal | — | ✅ Metal（CpuUploadPresent，feature `metal`）+ AppKit SoftwareEngine bootstrap | ✅ SoftwareEngine bootstrap |
 | **Web**（远期） | WebGPU | — | ❌ | — |
 
-图例：**✅ 已实现** · **规划** 为 backlog，见 [implementation · P6 图形后端](../implementation.md#p6-图形后端)。
+图例：**✅ 已实现** · **规划** 为 backlog，见 [implementation · P6 生产级框架](../implementation.md#p6-生产级框架)。
 
 ### 选型与回退链（#162）
 
-选型在 **窗口 / 引擎初始化时一次性完成**；**禁止**每帧探测或切换 API（#105 零闲置）。
-
-```text
-1. 读取 opt-in 配置（App builder / 环境变量 / Settings）
-2. 若指定 GraphicsBackend → 仅尝试该 API
-3. 否则按平台默认优先级依次 probe：
-       Windows:  D3D12 → D3D11 → OpenGL ES (WGL)
-       Linux:    Vulkan → OpenGL ES (EGL)
-       macOS:    Metal → SoftwareEngine
-4. 全部 GPU 失败 → gpu.shutdown → SoftwareEngine
-5. 记录最终 GraphicsBackend（诊断 / 测试断言）
-```
-
-P6.1 已落地 factory probe 基线：`create_gpu_context` 默认走 Auto 候选链；`create_gpu_context_with_backend` 可在 native 域内指定单个 `GraphicsBackend`，并记录每个候选失败原因与最终选型。P6.2 已落地 Windows D3D11 context 与 CPU upload present 路径；P6.3 已落地 Linux Vulkan context 与 CPU upload present 路径；macOS 已接 AppKit SoftwareEngine bootstrap；D3D12 / Metal context 仍属后续。
-
-与现有 #59 一致：`App::run_gui` 在窗口 / 引擎初始化时按候选链创建 `IGraphicsContext`，OpenGL ES 走 `GpuEngine`，非 GL 且支持像素提交的 context 走 `PresentUploadEngine`；失败继续下一个候选，最后回退 `SoftwareEngine`。多 API 扩展 **只增** native `backends/` 内实现、factory 分支与 draw 内部 engine 适配，**不**改 `ui` 帧循环契约。
+选型在 **窗口 / 引擎初始化时一次性完成**；**禁止**每帧探测或切换 API（#105）。probe 流程、Auto 链、配置优先级 → [graphics-backend-pluggable · 核心抽象](graphics-backend-pluggable.md#核心抽象) · [配置入口](#配置入口-p65-已落地)。D3D12 context 与 Metal **native raster** → [implementation · P6](../implementation.md#p6-生产级框架)。
 
 ### draw 域约束
 
-- `draw` **不** `use native::backends::*`；仅 `IGraphicsContext` trait object。
-- `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；非 GL context **不得**进入该路径。Vulkan/D3D/Metal 实现应把 API 细节封在各自 backend 子模块，对上仍实现 `RenderBackend` + `IGraphicsContext`（或等价 present 路径）。P6.2 的 D3D11 与 P6.3 的 Vulkan 采用 `PresentUploadEngine`：CPU `Canvas2D` 光栅化，全帧上传到对应 swapchain 后 present。
+- `draw` **不** `use native::backends::*` 或 `native::graphics::*`；仅 `IGraphicsContext` trait object。
+- `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；非 GL **GPU 光栅** backend 经 `RenderBackendRegistry` 注册（当前仅 OpenGL ES）。Vulkan/D3D/Metal **当前默认过渡预设**为 `CpuUploadPresent`；**下一代码优先**（[#167](../../decisions.md#d167) [#169](../../decisions.md#d169)）：D3D11 GPU native raster。**非**「这些 API 只能 CPU 光栅」（#168）。
 - `ScenePaint`、LayerTree、InvalidationQueue **与** GPU API 无关；局部重绘 damage 几何仍来自 `core::damage`。
 
 ### 配置入口（P6.5 已落地）
@@ -136,7 +119,7 @@ P6.1 已落地 factory probe 基线：`create_gpu_context` 默认走 Auto 候选
 
 公开 API 形状见 [public-api](public-api.md) 与 [#162](../../decisions.md#d162)。
 
-**关联**：[platform · 窗口与呈现](platform.md#窗口与呈现) · [platform · 工厂与后端](platform.md#工厂与后端) · [implementation · P6](../implementation.md#p6-图形后端)
+**关联**：[platform · 窗口与呈现](platform.md#窗口与呈现) · [platform · 工厂与后端](platform.md#工厂与后端) · [implementation · P6](../implementation.md#p6-生产级框架)
 
 ---
 
@@ -299,7 +282,8 @@ Bitmap 字体（内置）用于 debug / 回退；正常路径走系统字体栈�
 ```text
 draw/
 ├── traits/          GraphicsEngine, Canvas2D, TextBackend
-├── engine/          SoftwareEngine (cpu)
+├── engine/          bootstrap.rs（GPU probe）、factory.rs（profile 分派）、SoftwareEngine (cpu)
+├── backend/         RenderBackend 抽象、registry.rs（backend 配对）
 ├── gpu_engine/      GpuEngine
 ├── pipeline/        InvalidationQueue, FrameRenderer, AnimationRegistry
 ├── compositor/      ScenePaint, LayerTree, Picture, viewport_transform
@@ -307,8 +291,7 @@ draw/
 ├── font/            FontService, text backends
 ├── image/           ImageService
 ├── painting/        PaintContext, ThemeTokens
-├── spatial/         Mat4, PhysicalBox
-└── backend/         RenderBackend 抽象
+└── spatial/         Mat4, PhysicalBox
 ```
 
 `draw` **不依赖** `ui` 或 `app`；ScenePaint 是唯一向上暴露的树只读接口。

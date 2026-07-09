@@ -143,11 +143,16 @@
 
 | 术语 | 含义 |
 |------|------|
+| measure / arrange | 布局两阶段：measure 定 intrinsic 尺寸，layout_children 定子项位置 → [layout · Measure/Arrange](areas/systems/layout.md#measure--arrange-两阶段) |
 | measure | 唯一测量入口 → [术语对照](#术语对照) · [#103](decisions.md#d103) |
 | preferred_size | 已废弃；见 measure |
 | ScrollView | 滚动容器 → [术语对照](#术语对照) · [#104](decisions.md#d104) |
 | VirtualScroll | 大列表虚拟滚动 helper；不经 prelude；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll → [layout · VirtualScroll](areas/systems/layout.md#virtual-scroll) |
 | Constraints | `{ min, max, definite }` |
+| intrinsic size | 组件在约束下的自然尺寸；Container 无显式 `width`/`height` 时由 `cached_content_size` 推导 → [layout · Intrinsic](areas/systems/layout.md#intrinsic-尺寸) · [#165](decisions.md#d165) |
+| intrinsic_main | Flex 输入：主轴未显式指定时由子项撑开、跳过 shrink → [layout · Intrinsic](areas/systems/layout.md#intrinsic-尺寸) |
+| effective_cross | Flex 交叉轴有效尺寸：容器 cross>0 用容器，否则 max(子项 cross) → [layout · Flex](areas/systems/layout.md#flex-布局) |
+| cached_content_size | Container 布局后缓存的子 content 尺寸；供 `measure` fallback → [layout · Intrinsic](areas/systems/layout.md#intrinsic-尺寸) |
 | Active / Inactive | **Active**：有焦点 **或** 视口内仍有可见像素（与祖先 clip/scroll 求交）；Inactive 跳过大部分语义派发（#8、#19） |
 | BoxModel | margin → border → padding → content 盒模型 |
 | FlexLayout / GridLayout | Flex / Grid 布局引擎 |
@@ -169,7 +174,7 @@
 | DamageRegion | 渲染 damage |
 | AnimationRegistry | 动画帧驱动 registry；位于 `draw::pipeline`，按需注册下一帧 deadline |
 | FontService / ImageService | 字体与图像资源服务 |
-| BackendKind | draw 引擎级后端：`Cpu` / `Gpu` / `Auto` / `Null`；**不**区分 Vulkan/D3D/GL |
+| BackendKind | draw 引擎级后端：`Cpu` / `Gpu` / `Auto` / `Null`；**#169 统一** — 与 `RasterMode` / `PresentMode` / `GraphicsBackend` 正交轴对齐，消除 Profile bundled 语义。见 [可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴) |
 | GpuEngine | GPU 帧调度引擎；委托 `RenderSession` + `GpuBackend` + `IGraphicsContext` |
 | SoftwareEngine | CPU 回退引擎；`CpuBackend` + `IPresenter` |
 
@@ -179,27 +184,38 @@
 
 | 术语 | 含义 |
 |------|------|
-| GraphicsBackend | #162 / P6.5：**具体 GPU API** 枚举（`Auto` / `OpenGlEs` / `Vulkan` / `D3D11` / `D3D12` / `Metal`）；factory 选型结果；供诊断、App builder、env、Settings opt-in。P6.2 已接入 Windows `D3D11` CPU upload present；P6.3 已接入 Linux `Vulkan` CPU upload present；`D3D12` / `Metal` 仍后续 |
+| GraphicsBackend | #162 / P6.5：**图形 API 身份**枚举（`Auto` / `OpenGlEs` / `Vulkan` / `D3D11` / `D3D12` / `Metal`）；**非**操作系统；各值为 `IGraphicsContext` 对等实现的标识。factory 选型结果；供诊断、App builder、env、Settings opt-in。详见 [graphics-backend-pluggable · 架构原则](areas/systems/graphics-backend-pluggable.md#图形-api-架构原则) |
+| native/graphics | #164：`IGraphicsContext` 对等实现根目录；按 API 分树（`vulkan/`、`opengl/`、`d3d11/`、`metal/` …） |
+| RenderPipelineProfile | #163 / #168 / **#169 deprecated for removal**：bundled **过渡**预设（光栅 + present）；当前 `create_graphics_engine` 便利分派；**breaking 删除**，目标 **仅** `RasterMode` × `PresentMode`。见 [可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴) |
+| RasterMode | #169：光栅轴 — `Cpu` / `GpuNative`；映射 `CpuBackend` 或 `RenderBackendRegistry`；与 `PresentMode`、`GraphicsBackend` **正交** |
+| PresentMode | #169：Present 轴 — `Swapchain` / `PixelUpload` / `CpuPresenter`；与 `RasterMode`、`GraphicsBackend` **正交** |
+| RenderBackendRegistry | #163：`draw/backend/registry.rs`；`GraphicsBackend` → GPU `RenderBackend` 构造表；`RasterMode::GpuNative` 时使用。**下一优先**（[#167](decisions.md#d167) [#169](decisions.md#d169)）：**D3D11 GPU 光栅**；随后 Metal / D3D12 |
+| GraphicsContextCaps | #163：native 侧能力（`backend`、`pipeline`、`partial_present`、DPR）；**不**替代 `GraphicsCapabilities`；见 [graphics-backend-pluggable · 能力模型与映射](areas/systems/graphics-backend-pluggable.md#能力模型与映射) |
+| 可组合组件模型 | #168 / #169：各层正交能力 + trait/registry 自由组装；Profile **deprecated for removal**；目标 `RasterMode` × `PresentMode`。见 [decisions · #168](decisions.md#d168) · [#169](decisions.md#d169) |
+| GraphicsBackendEntry | #163：registry 表行；含 `id`、`priority`、`create` 函数指针与 `BackendStatus`（`Active` / `Planned` / `Disabled`）；见 [graphics-backend-pluggable](areas/systems/graphics-backend-pluggable.md) |
+| bootstrap_graphics_engine | #163 / P6.7：`draw` 域 GPU 初始化**唯一** probe 入口；成功返回 `GpuBootstrap`；失败返回 `ProbeReport` 由 app 建 `SoftwareEngine` |
 | GpuBackendKind | 与 `GraphicsBackend` 同义的旧设计名；实现采用 `GraphicsBackend` |
-| IGraphicsContext | `native::traits::present`：surface 绑定、`swap_buffers(PresentDamage)`、DPR、`get_proc_address`；**各 GPU API 对上统一契约** |
+| IGraphicsContext | `native::traits::present`：surface 绑定、`swap_buffers(PresentDamage)`、`present(PresentFrame)`、DPR、`get_proc_address`；**各 GPU API 对上统一契约** |
 | IPresenter | CPU 像素 presenter；SoftwareEngine 回退路径 |
-| create_gpu_context | `native::factory`：按平台与 #162 创建 `Box<dyn IGraphicsContext>` |
-| 图形 API 回退链 | 初始化时按平台优先级 probe；全失败 → SoftwareEngine；**无**每帧切换 |
+| create_gpu_context | `native::factory`：单条目 `try_create_gpu_context`；**无** probe 循环；`Auto` 须 `draw::bootstrap_graphics_engine` |
+| 图形 API 回退链 | 初始化时 probe：`draw::bootstrap_graphics_engine` 读 registry `gpu_probe_candidates` Auto 顺序；全失败 → SoftwareEngine；**无**每帧切换 |
 
-详见 [rendering · 多图形 API](areas/systems/rendering.md#多图形-api) · [#162](decisions.md#d162)。
+详见 [rendering · 多图形 API](areas/systems/rendering.md#多图形-api) · [#162](decisions.md#d162) · [graphics-backend-pluggable · 架构原则](areas/systems/graphics-backend-pluggable.md#图形-api-架构原则)。
 
 ## 平台
 
 | 术语 | 含义 |
 |------|------|
 | Platform | OS 能力聚合 trait |
+| PlatformId | registry 元数据：标识**当前二进制目标 OS**；用于过滤 `GraphicsBackendEntry` 与 Auto probe 顺序。**非** `GraphicsBackend`（API 身份）；上层不可见 |
 | Platform traits | `native::traits` 对外接口集合 |
 | FakePlatform | 测试用内存 Platform |
 | FakeEventSource | 注入 UiEvent 的 FIFO 队列 |
 | EventBus | UiEvent 发布订阅 |
 | EventLoopWaker | 跨线程唤醒 blocking `wait_event` / `wait_until`；见 [platform · 事件模型](areas/systems/platform.md#ieventloop) |
 | PresentDamage | 物理像素上屏 damage |
-| WglContext / EglContext / VulkanContext | Windows WGL / Linux EGL 的 OpenGL ES `IGraphicsContext` 实现；Linux Vulkan 的 CPU upload present `IGraphicsContext` 实现 |
+| WglContext / EglContext / VulkanContext | OpenGL ES / Vulkan 的 `IGraphicsContext` 实现；位于 `native/graphics/opengl/`（wgl、egl）与 `native/graphics/vulkan/` |
+| D3d11Context | Windows D3D11 CPU upload present 的 `IGraphicsContext` 实现；位于 `native/graphics/d3d11/` |
 
 ## 数据
 

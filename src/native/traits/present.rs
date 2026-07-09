@@ -5,6 +5,22 @@ pub use crate::core::PresentDamage;
 use std::fmt;
 use std::str::FromStr;
 
+/// Unified present payload for [`IGraphicsContext::present`] (M7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PresentFrame<'a> {
+    /// GPU swapchain / equivalent (native raster path).
+    Swapchain {
+        damage: PresentDamage,
+    },
+    /// CPU raster upload (upload-present path).
+    PixelBuffer {
+        pixels: &'a [u32],
+        width: i32,
+        height: i32,
+        damage: PresentDamage,
+    },
+}
+
 /// CPU pixel presenter.
 pub trait IPresenter {
     fn present(
@@ -16,6 +32,71 @@ pub trait IPresenter {
     ) -> Result<(), Error>;
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
+}
+
+/// How a graphics context participates in the render/present pipeline.
+///
+/// **Deprecated for removal** ([#169](docs/decisions.md#d169)): bundled preset bundling
+/// raster + present. Target dispatch is `RasterMode` × `PresentMode` only — do not
+/// add variants or aliases.
+///
+/// Distinct from [`GraphicsBackend`] (which API) — answers how frames are rasterized
+/// and presented. Defined in native so `caps()` does not depend on draw types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RenderPipelineProfile {
+    /// GPU-native raster + swapchain / equivalent present.
+    NativeGpuRaster,
+    /// CPU Canvas2D raster uploaded via [`IGraphicsContext::present_pixels`].
+    CpuUploadPresent,
+    /// Pure CPU + [`IPresenter`]; no [`IGraphicsContext`] (app/bootstrap only).
+    CpuPresenter,
+}
+
+impl fmt::Display for RenderPipelineProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::NativeGpuRaster => "native_gpu_raster",
+            Self::CpuUploadPresent => "cpu_upload_present",
+            Self::CpuPresenter => "cpu_presenter",
+        })
+    }
+}
+
+/// Native-side capability snapshot for a live [`IGraphicsContext`].
+///
+/// Does not replace draw's `GraphicsCapabilities`; engine code derives
+/// presentation scheduling from [`RenderPipelineProfile`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GraphicsContextCaps {
+    pub backend: GraphicsBackend,
+    pub pipeline: RenderPipelineProfile,
+    /// Whether this context can present partial damage regions natively.
+    pub partial_present: bool,
+    pub device_pixel_ratio: f32,
+}
+
+impl GraphicsContextCaps {
+    pub fn native_gpu_raster(
+        backend: GraphicsBackend,
+        partial_present: bool,
+        device_pixel_ratio: f32,
+    ) -> Self {
+        Self {
+            backend,
+            pipeline: RenderPipelineProfile::NativeGpuRaster,
+            partial_present,
+            device_pixel_ratio,
+        }
+    }
+
+    pub fn cpu_upload_present(backend: GraphicsBackend, device_pixel_ratio: f32) -> Self {
+        Self {
+            backend,
+            pipeline: RenderPipelineProfile::CpuUploadPresent,
+            partial_present: false,
+            device_pixel_ratio,
+        }
+    }
 }
 
 /// Concrete GPU API selected by the native factory.
@@ -76,7 +157,11 @@ impl FromStr for GraphicsBackend {
 
 /// GPU graphics context lifecycle and presentation contract.
 pub trait IGraphicsContext {
-    fn graphics_backend(&self) -> GraphicsBackend;
+    fn caps(&self) -> GraphicsContextCaps;
+
+    fn graphics_backend(&self) -> GraphicsBackend {
+        self.caps().backend
+    }
 
     fn initialize(
         &mut self,
@@ -94,11 +179,11 @@ pub trait IGraphicsContext {
     fn height(&self) -> i32;
 
     fn supports_gl_proc_address(&self) -> bool {
-        self.graphics_backend() == GraphicsBackend::OpenGlEs
+        self.caps().pipeline == RenderPipelineProfile::NativeGpuRaster
     }
 
     fn supports_pixel_present(&self) -> bool {
-        false
+        self.caps().pipeline == RenderPipelineProfile::CpuUploadPresent
     }
 
     fn present_pixels(
@@ -115,6 +200,23 @@ pub trait IGraphicsContext {
                 self.graphics_backend()
             ),
         ))
+    }
+
+    /// Unified present entry (M7). Default forwards to legacy methods.
+    fn present(&mut self, frame: &PresentFrame) -> Result<(), Error> {
+        match frame {
+            PresentFrame::Swapchain { damage } => {
+                self.make_current();
+                self.swap_buffers(damage.clone());
+                Ok(())
+            }
+            PresentFrame::PixelBuffer {
+                pixels,
+                width,
+                height,
+                damage,
+            } => self.present_pixels(pixels, *width, *height, damage.clone()),
+        }
     }
 
     /// Drawable pixels per logical client pixel (HiDPI). Default `1.0`.

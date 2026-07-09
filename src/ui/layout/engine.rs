@@ -225,6 +225,8 @@ pub struct FlexLayout {
     pub wrap: bool,
     /// 允许内容溢出（跳过 flex-shrink，子节点按自然尺寸流式堆叠）
     pub overflow_content: bool,
+    /// 主轴无显式尺寸时由子项撑开，仍走标准 flex-grow 路径。
+    pub intrinsic_main: bool,
 }
 
 impl FlexLayout {
@@ -236,6 +238,7 @@ impl FlexLayout {
             align: AlignItems::Stretch,
             wrap: false,
             overflow_content: false,
+            intrinsic_main: false,
         }
     }
 
@@ -315,6 +318,7 @@ impl LayoutEngine for FlexLayout {
             child_margins,
             justify_content: self.justify,
             align_items: self.align,
+            intrinsic_main: self.intrinsic_main,
         };
 
         let output = compute_flex_layout(&input);

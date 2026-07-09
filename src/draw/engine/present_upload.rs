@@ -10,7 +10,7 @@ use crate::draw::pipeline::RenderSession;
 use crate::draw::primitives::color::Color;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::draw::ImageHandle;
-use crate::native::traits::present::IGraphicsContext;
+use crate::native::traits::present::{IGraphicsContext, PresentFrame};
 
 pub struct PresentUploadEngine {
     session: RenderSession,
@@ -20,7 +20,14 @@ pub struct PresentUploadEngine {
 
 impl PresentUploadEngine {
     pub fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
-        let session = RenderSession::new(BackendKind::Cpu)?;
+        let session = match RenderSession::new(BackendKind::Cpu) {
+            Ok(session) => session,
+            Err(err) => {
+                let mut ctx = gpu_ctx;
+                ctx.shutdown();
+                return Err(err);
+            }
+        };
         Ok(Self {
             session,
             gpu_ctx,
@@ -75,12 +82,13 @@ impl GraphicsEngine for PresentUploadEngine {
     fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
         let outcome = self.session.end_frame();
         if let Some(cpu) = self.session.cpu_backend() {
-            if let Err(err) = self.gpu_ctx.present_pixels(
-                cpu.pixels(),
-                cpu.width(),
-                cpu.height(),
-                present_damage.to_present_damage(),
-            ) {
+            let frame = PresentFrame::PixelBuffer {
+                pixels: cpu.pixels(),
+                width: cpu.width(),
+                height: cpu.height(),
+                damage: present_damage.to_present_damage(),
+            };
+            if let Err(err) = self.gpu_ctx.present(&frame) {
                 crate::core::log::error_fn(format!(
                     "PresentUploadEngine {} present failed: {}",
                     self.backend_name(),
@@ -155,7 +163,9 @@ impl GraphicsEngine for PresentUploadEngine {
 mod tests {
     use super::*;
     use crate::core::Result;
-    use crate::native::traits::present::{GraphicsBackend, PresentDamage};
+    use crate::native::traits::present::{
+        GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+    };
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone, Debug, PartialEq)]
@@ -184,6 +194,10 @@ mod tests {
     }
 
     impl IGraphicsContext for RecordingPixelContext {
+        fn caps(&self) -> GraphicsContextCaps {
+            GraphicsContextCaps::cpu_upload_present(GraphicsBackend::D3d11, 1.0)
+        }
+
         fn graphics_backend(&self) -> GraphicsBackend {
             GraphicsBackend::D3d11
         }
@@ -220,10 +234,6 @@ mod tests {
 
         fn height(&self) -> i32 {
             self.height
-        }
-
-        fn supports_pixel_present(&self) -> bool {
-            true
         }
 
         fn present_pixels(

@@ -824,6 +824,45 @@ fn container_layout_measures_children_with_content_constraints() {
 }
 
 #[test]
+fn column_container_intrinsic_height_from_children() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().w(200.0)));
+    let first = tree.add_child(root, Box::new(SpyWidget::new(80.0, 20.0)));
+    let second = tree.add_child(root, Box::new(SpyWidget::new(80.0, 30.0)));
+
+    tree.layout();
+
+    assert!(
+        tree.get(root).unwrap().frame().h >= 50.0,
+        "column should grow to sum of child heights, got {}",
+        tree.get(root).unwrap().frame().h
+    );
+    assert_eq!(tree.get(first).unwrap().frame().h, 20.0);
+    assert_eq!(tree.get(second).unwrap().frame().h, 30.0);
+}
+
+#[test]
+fn row_container_intrinsic_height_from_children() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Container::new()
+            .dir(crate::ui::layout::FlexDirection::Row)
+            .w(200.0),
+    ));
+    let short = tree.add_child(root, Box::new(SpyWidget::new(40.0, 16.0)));
+    let tall = tree.add_child(root, Box::new(SpyWidget::new(40.0, 28.0)));
+
+    tree.layout();
+
+    assert!(
+        tree.get(root).unwrap().frame().h >= 28.0,
+        "row should grow to tallest child"
+    );
+    assert_eq!(tree.get(short).unwrap().frame().h, 28.0);
+    assert_eq!(tree.get(tall).unwrap().frame().h, 28.0);
+}
+
+#[test]
 fn flex_layout_uses_child_align_self_over_container_align() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(Container::new().size(100.0, 50.0)));
@@ -927,7 +966,11 @@ fn layout_margin_offsets_child_frame() {
 #[test]
 fn layout_margin_occupies_space_between_siblings() {
     let mut tree = WidgetTree::new();
-    let root = tree.set_root(Box::new(Container::new().size(200.0, 100.0)));
+    let root = tree.set_root(Box::new(
+        Container::new()
+            .size(200.0, 100.0)
+            .dir(crate::ui::layout::FlexDirection::Row),
+    ));
     let first = tree.add_child(
         root,
         Box::new(
@@ -971,7 +1014,11 @@ fn layout_margin_occupies_space_in_column_direction() {
 #[test]
 fn layout_margin_reduces_stretched_cross_axis_size() {
     let mut tree = WidgetTree::new();
-    let root = tree.set_root(Box::new(Container::new().size(200.0, 100.0)));
+    let root = tree.set_root(Box::new(
+        Container::new()
+            .size(200.0, 100.0)
+            .dir(crate::ui::layout::FlexDirection::Row),
+    ));
     let child = tree.add_child(
         root,
         Box::new(
@@ -992,7 +1039,10 @@ fn layout_margin_reduces_stretched_cross_axis_size() {
 fn overflow_layout_margin_occupies_space_between_siblings() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(
-        Container::new().size(200.0, 100.0).overflow_content(),
+        Container::new()
+            .size(200.0, 100.0)
+            .dir(crate::ui::layout::FlexDirection::Row)
+            .overflow_content(),
     ));
     tree.add_child(
         root,

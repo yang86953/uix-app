@@ -177,6 +177,17 @@ disabled > focused > pressed > hover > normal
 | `button_ghost()` | 透明底 + Primary 边框/文字（#47） |
 | `button_danger()` | Primary::RED（#34） |
 
+**Flex 容器预设**（#81、#165）：
+
+| 预设 | `display` | `flex_direction` | 典型用途 |
+|------|-----------|------------------|----------|
+| `Style::default()` / `Style::new()` | Flex | **Row**（枚举 `FlexDirection::default()`） | 通用样式基线；默认 flex 容器 |
+| `Style::container()` | Flex | **Column** | `Container::new()` 默认；垂直堆叠、子项撑高 |
+| `Style::row()` | Flex | Row | 水平 flex 容器 |
+| `Style::column()` | Flex | **Column** | 与 `container()` 同方向；`container()` 为 `Container::new()` 专用预设 |
+
+> **注意**：`FlexDirection` 枚举 default 为 Row；**Container 默认 Column** 来自 `Style::container()`，非 `Style::default()`。见 [layout · Intrinsic 尺寸](layout.md#intrinsic-尺寸)。
+
 View DSL：`button("...").primary()` 等价于切换 StyleSet 预设。无 variant enum。
 
 ---

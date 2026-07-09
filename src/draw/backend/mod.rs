@@ -3,6 +3,7 @@
 pub mod cpu;
 pub mod gpu;
 pub mod null;
+pub mod registry;
 pub mod traits;
 
 pub use crate::core::DamageRegion;

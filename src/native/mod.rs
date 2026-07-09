@@ -2,6 +2,7 @@
 
 mod backends;
 pub mod factory;
+pub(crate) mod graphics;
 pub mod presenter;
 pub mod services;
 pub mod shared;

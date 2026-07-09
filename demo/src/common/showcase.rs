@@ -26,21 +26,52 @@ pub fn labeled_row(
 }
 
 /// 信息提示条（用于说明 backlog / 平台限制）。
-pub fn info_note(tk: &DesignTokens, text: &str) -> impl IntoWidgetNode {
-    tree! { Container::new().size(INNER_W, 40.0)
-        .bg(tk.color_info_bg)
-        .rounded(tk.border_radius_sm)
-        .pad(EdgeInsets::uniform(8.0)) => [
-        Label::new(text).color(tk.color_info).font_size(12.0),
-    ]}
+pub fn info_note(tk: &DesignTokens, text: &str) -> ViewNode {
+    row([
+        embed(Icon::new("info").size(16.0)),
+        space(10.0),
+        label(text).color(tk.color_info).font_size(12.0),
+    ])
+    .width(INNER_W)
+    .padding(EdgeInsets::new(12.0, 10.0, 12.0, 10.0))
+    .bg(tk.color_info_bg)
+    .radius(tk.border_radius)
+    .border(1.0, tk.color_info_border)
 }
 
 /// 警告提示条（未 demo 的 backlog 项）。
-pub fn backlog_note(tk: &DesignTokens, text: &str) -> impl IntoWidgetNode {
-    tree! { Container::new().size(INNER_W, 40.0)
-        .bg(tk.color_warning_bg)
-        .rounded(tk.border_radius_sm)
-        .pad(EdgeInsets::uniform(8.0)) => [
-        Label::new(text).color(tk.color_warning).font_size(12.0),
-    ]}
+pub fn backlog_note(tk: &DesignTokens, text: &str) -> ViewNode {
+    row([
+        embed(Icon::new("alert-triangle").size(16.0)),
+        space(10.0),
+        label(text).color(tk.color_warning).font_size(12.0),
+    ])
+    .width(INNER_W)
+    .padding(EdgeInsets::new(12.0, 10.0, 12.0, 10.0))
+    .bg(tk.color_warning_bg)
+    .radius(tk.border_radius)
+    .border(1.0, tk.color_warning_border)
+}
+
+/// 带标题的内容卡片（用于首页等展示区块）。
+pub fn demo_card(
+    tk: &DesignTokens,
+    title: &str,
+    width: f32,
+    height: f32,
+    body: ViewNode,
+) -> ViewNode {
+    column([
+        label(title)
+            .color(tk.color_text)
+            .font_size(14.0),
+        space(10.0),
+        body,
+    ])
+    .width(width)
+    .height(height)
+    .padding(EdgeInsets::uniform(16.0))
+    .bg(tk.color_bg_elevated)
+    .radius(tk.border_radius_lg)
+    .border(1.0, tk.color_border_secondary)
 }

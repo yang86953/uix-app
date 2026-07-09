@@ -192,9 +192,9 @@ Widget 可通过 `EventHandler::wants_continuous_pointer_move` opt-in（#121，�
 | 单行 / 多行 / IME | TextInput + Ime* 事件 | #75 |
 | 拖放 | FileDrop semantic | #95 |
 | 右键菜单 | ContextMenu → OverlayStack | #98 |
-| i18n 事件 | LocaleChanged 预留 | #46 v1 不做用户 i18n |
+| i18n 事件 | LocaleChanged 预留 | #46 不做用户 i18n |
 
-**Locale 与 #46**：裁决 [#46](../../decisions.md#d46) 指 **用户-facing 应用级 i18n 系统**（资源文件、运行时语言切换 API、`LocaleChanged` 业务联动）v1 **不做**；`LocaleChanged` 仅平台事件预留。与之区分：`ui/foundation/locale.rs` 的 **`Locale` struct** 为内置 Widget **默认文案表**（如分页「上一页」、空状态提示），由 `use_locale()` 读取，**不是**应用级 i18n API，也不替代 #46 设计。
+**Locale 与 #46**：裁决 [#46](../../decisions.md#d46) 指 **用户-facing 应用级 i18n 系统**（资源文件、运行时语言切换 API、`LocaleChanged` 业务联动）**不做**；`LocaleChanged` 仅平台事件预留。与之区分：`ui/foundation/locale.rs` 的 **`Locale` struct** 为内置 Widget **默认文案表**（如分页「上一页」、空状态提示），由 `use_locale()` 读取，**不是**应用级 i18n API，也不替代 #46 设计。
 
 `platform.text_input().start/stop()` 仅在 **RegisteredActive**（IME 焦点 Input 会话）或 Active 派发 IME 相关事件时调用；DeepIdle 不调用（#111）。
 

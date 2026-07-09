@@ -8,18 +8,18 @@
 
 | 文档 | 何时阅读 |
 |------|----------|
-| [project.md](project.md) | 了解项目目的、范围、约束和成功标准 |
+| [project.md](project.md) | **首次了解 UIX 为什么存在** — 产品愿景（跨平台含移动端 + 全栈）、开发策略（Windows 优先）、当前阶段 vs 目标、范围、约束和成功标准 |
 | [plan.md](plan.md) | 查看当前状态、里程碑、下一步、风险和开放问题 |
 | [areas/architecture.md](areas/architecture.md) | 按任务定位架构、系统设计、API、术语和实现状态 |
 | [areas/implementation.md](areas/implementation.md) | 对照已落地能力、后续 backlog 和源码目录映射 |
-| [decisions.md](decisions.md) | 查询或追加持久设计决策；新决策从 #163+ 起 |
+| [decisions.md](decisions.md) | 查询或追加持久设计决策；新决策从 #170+ 起 |
 | [glossary.md](glossary.md) | 查询术语、设计名和源码名对照 |
 
 ## 分区索引
 
 | 分区 | 内容 |
 |------|------|
-| [systems/index.md](areas/systems/index.md) | 14 个系统设计文档的目录索引 |
+| [systems/index.md](areas/systems/index.md) | 14 个核心系统设计文档 + P6 专项（graphics-backend-pluggable）索引 |
 | [areas/index.md](areas/index.md) | 当前项目工作域索引；具体技术域由 `systems/` 承载 |
 | [references/index.md](references/index.md) | 可复用参考资料索引；当前主要引用仓内规范文档 |
 

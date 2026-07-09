@@ -501,7 +501,7 @@ State::set(value)
 
 实现须 **保留** 窄 rect 标脏；多 site fan-out 已接，**禁止**回退为全树 invalidate。
 
-> **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(component_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调；副窗 session 路由与运行期 frame drain 已接，外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
+> **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(component_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调；副窗 session 路由与运行期 frame drain 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
 
 ---
 

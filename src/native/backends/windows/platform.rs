@@ -22,7 +22,7 @@ use super::display::WindowsDisplay;
 use super::ffi::*;
 use super::file_dialog::WindowsFileDialog;
 use super::filesystem::WindowsFileSystem;
-use super::gpu::GdiPresenter;
+use super::gdi_presenter::GdiPresenter;
 use super::keyboard::WindowsKeyboard;
 use super::notification::WindowsNotification;
 use super::system_info::WindowsSystemInfo;

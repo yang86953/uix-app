@@ -36,6 +36,7 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
 
     let container_main = main_size(&Size::new(inner.w, inner.h));
     let container_cross = cross_size(&Size::new(inner.w, inner.h));
+    let intrinsic_main = input.intrinsic_main;
 
     // Phase 1: determine flex basis and cross sizes
     let mut base_main_sizes = vec![0.0f32; count];
@@ -74,6 +75,7 @@ pub fn compute_flex_layout(input: &FlexInput) -> FlexOutput {
             is_reverse,
             container_main,
             container_cross,
+            intrinsic_main,
             &mut base_main_sizes,
             &mut cross_sizes,
             total_flex_grow,
@@ -227,11 +229,20 @@ fn compute_single_line(
     is_reverse: bool,
     container_main: f32,
     container_cross: f32,
+    intrinsic_main: bool,
     base_main_sizes: &mut [f32],
     cross_sizes: &mut [f32],
     total_flex_grow: f32,
 ) -> FlexOutput {
     let count = base_main_sizes.len();
+    let bootstrap_main = container_main <= 1.0;
+    let skip_shrink = intrinsic_main || bootstrap_main;
+    let max_child_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
+    let effective_cross = if container_cross > 0.0 {
+        container_cross
+    } else {
+        max_child_cross
+    };
 
     // Phase 2: distribute flex-grow/shrink
     let total_margin_main: f32 = (0..count)
@@ -239,18 +250,30 @@ fn compute_single_line(
         .sum();
     let total_base: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
     let gaps = input.gap * (count as f32 - 1.0);
-    let overflow = total_base + gaps - container_main;
+    let overflow = if skip_shrink {
+        0.0
+    } else {
+        (total_base + gaps - container_main).max(0.0)
+    };
 
     if overflow > 0.0 {
         distribute_shrink(base_main_sizes, overflow, &input.children);
     }
     let total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
-    let mut remaining = (container_main - total_after - gaps).max(0.0);
+    let mut remaining = if container_main > 0.0 {
+        (container_main - total_after - gaps).max(0.0)
+    } else {
+        0.0
+    };
     distribute_flex_grow(base_main_sizes, remaining, &input.children, total_flex_grow);
 
     // Apply Stretch justify-content: distribute remaining space as growth
     let mut total_after: f32 = base_main_sizes.iter().sum::<f32>() + total_margin_main;
-    remaining = (container_main - total_after - gaps).max(0.0);
+    remaining = if container_main > 0.0 {
+        (container_main - total_after - gaps).max(0.0)
+    } else {
+        0.0
+    };
     if input.justify_content == JustifyContent::Stretch && remaining > 0.0 {
         let extra = remaining / count as f32;
         for b in base_main_sizes.iter_mut() {
@@ -267,7 +290,11 @@ fn compute_single_line(
     // to handle cascading clamp effects until all space is consumed.
     for _round in 0..3 {
         let current_total = base_main_sizes.iter().sum::<f32>() + total_margin_main;
-        let leftover = (container_main - current_total - gaps).max(0.0);
+        let leftover = if container_main > 0.0 {
+            (container_main - current_total - gaps).max(0.0)
+        } else {
+            0.0
+        };
         if leftover > 0.0 && total_flex_grow > 0.0 {
             distribute_flex_grow(base_main_sizes, leftover, &input.children, total_flex_grow);
             clamp_sizes(base_main_sizes, cross_sizes, &input.children, is_row);
@@ -279,7 +306,11 @@ fn compute_single_line(
     // Phase 3: justify-content positioning
     // Reuse the most recent total to avoid an extra sum() traversal
     let total_final = base_main_sizes.iter().sum::<f32>() + total_margin_main;
-    remaining = (container_main - total_final - gaps).max(0.0);
+    remaining = if container_main > 0.0 {
+        (container_main - total_final - gaps).max(0.0)
+    } else {
+        0.0
+    };
     let (effective_gap, start_offset) = compute_justify(
         remaining,
         count,
@@ -300,15 +331,17 @@ fn compute_single_line(
         let margin = child_margin(input, i);
         let cross_align = input.children[i].align_self.unwrap_or(input.align_items);
         let child_cross_size = if cross_align == AlignItems::Stretch {
-            (container_cross - margin_cross(margin, is_row)).max(0.0)
+            (effective_cross - margin_cross(margin, is_row))
+                .max(cross_sizes[i])
+                .max(0.0)
         } else {
             cross_sizes[i]
         };
 
         let cross_offset = match cross_align {
             AlignItems::Start => 0.0,
-            AlignItems::Center => (container_cross - child_cross_size) / 2.0,
-            AlignItems::End => container_cross - child_cross_size,
+            AlignItems::Center => (effective_cross - child_cross_size) / 2.0,
+            AlignItems::End => effective_cross - child_cross_size,
             AlignItems::Stretch => 0.0,
         };
 
@@ -340,20 +373,25 @@ fn compute_single_line(
         };
     }
 
-    // total_size 主轴 = 容器内部尺寸 + padding（非 wrap 模式始终占满主轴）
-    // 交叉轴 = max(子节点最大交叉轴 + padding, 容器交叉轴含 padding)
+    // total_size：bootstrap/无确定主轴时用子项撑开；否则占满父级分配的主轴空间。
+    let main_total = if intrinsic_main && bootstrap_main {
+        total_final + gaps
+    } else if is_row {
+        inner.w
+    } else {
+        inner.h
+    };
     let (total_w, total_h) = if is_row {
-        let max_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
+        let cross_total = effective_cross.max(max_child_cross);
         (
-            inner.w + input.padding.horizontal(),
-            (max_cross + input.padding.vertical()).max(container_cross + input.padding.vertical()),
+            main_total + input.padding.horizontal(),
+            cross_total + input.padding.vertical(),
         )
     } else {
-        let max_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
+        let cross_total = effective_cross.max(max_child_cross);
         (
-            (max_cross + input.padding.horizontal())
-                .max(container_cross + input.padding.horizontal()),
-            inner.h + input.padding.vertical(),
+            cross_total + input.padding.horizontal(),
+            main_total + input.padding.vertical(),
         )
     };
 

@@ -38,6 +38,12 @@ khronos-egl = { version = "6", features = ["static", "no-pkg-config"] }
 ash = { version = "0.38", default-features = false, features = ["loaded", "std"] }
 
 [features]
+default = ["d3d11", "d3d12", "opengles", "vulkan", "metal"]
+d3d11 = []
+d3d12 = []
+opengles = []
+vulkan = []
+metal = []
 test-harness = []
 
 [lib]
