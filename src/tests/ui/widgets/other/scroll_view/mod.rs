@@ -1,5 +1,5 @@
 use super::*;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{ComponentId, Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::layout::{AlignItems, FlexDirection};
 use crate::ui::traits::{EventHandler, WidgetCapabilities, WidgetLayout, WidgetRender};
@@ -174,6 +174,28 @@ fn scrollview_layout_children_uses_natural_coordinates() {
     let (_, rect) = result.first().expect("expected child rect");
     assert_eq!(rect.x, frame.x);
     assert_eq!(rect.y, frame.y);
+}
+
+#[test]
+fn scrollview_vertical_fills_viewport_width_even_when_child_measures_narrower() {
+    let mut tree = WidgetTree::new();
+    let vertical = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(400.0, 200.0),
+    ));
+    tree.add_child(
+        vertical,
+        Box::new(FixedWidget {
+            size: Size::new(120.0, 80.0),
+            id: ComponentId::new(9),
+        }),
+    );
+    tree.layout();
+    let child = tree.get(vertical).unwrap().children()[0];
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 400.0, 80.0),
+        "vertical ScrollView must stretch child to viewport width"
+    );
 }
 
 #[test]

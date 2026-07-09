@@ -365,10 +365,71 @@ fn list_row_optical_center_not_stuck_to_top() {
     let em_top = row.y + (row.h - m.ascent - m.descent) * 0.5;
     let pad_top = top + min_y - row.y;
 
-    // 相对旧 em-box 居中，光学原点更靠下 → 上边距更大，不再贴顶
     assert!(top > em_top + 1.0, "optical top={top} em_top={em_top}");
     assert!(
         pad_top > 12.0,
         "text still too close to row top: pad_top={pad_top}"
     );
+}
+
+#[test]
+fn missing_glyph_emits_tofu_with_char_index() {
+    use crate::draw::font::text_backend::{TextLayoutOptions, TOFU_GLYPH_ID};
+    use crate::draw::{HAlign, VAlign};
+
+    let mut fs = FontService::new();
+    // 仅加载拉丁字体，不含 CJK → 「中」应走 tofu
+    let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
+        return;
+    };
+    fs.loaded_font_handle = segoe;
+
+    let opts = TextLayoutOptions {
+        max_width: f32::MAX,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: false,
+        h_align: HAlign::Left,
+        v_align: VAlign::Top,
+        font_size: 14.0,
+    };
+    let layout = fs.layout_text(&segoe, "A中B", &opts);
+    assert_eq!(layout.glyphs.len(), 3, "must keep one glyph per char");
+    assert_eq!(layout.glyphs[0].char_index, 0);
+    assert_eq!(layout.glyphs[1].char_index, 1);
+    assert_eq!(layout.glyphs[2].char_index, 2);
+    assert_eq!(layout.glyphs[1].glyph_id, TOFU_GLYPH_ID);
+
+    let tofu = fs.rasterize_glyph(&segoe, TOFU_GLYPH_ID, 14.0);
+    assert!(tofu.width > 0 && tofu.height > 0, "tofu must rasterize");
+
+    // 光标按字符下标：索引 1 应对齐「中」的 x
+    let x1 = fs.text_cursor_x(&segoe, "A中B", &opts, 1);
+    assert!((x1 - layout.glyphs[1].x).abs() < 0.5);
+}
+
+#[test]
+fn hit_test_returns_char_index_not_glyph_slot() {
+    use crate::draw::font::text_backend::TextLayoutOptions;
+    use crate::draw::{HAlign, VAlign};
+
+    let mut fs = FontService::new();
+    let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
+        return;
+    };
+    fs.loaded_font_handle = segoe;
+    let opts = TextLayoutOptions {
+        max_width: f32::MAX,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: false,
+        h_align: HAlign::Left,
+        v_align: VAlign::Top,
+        font_size: 14.0,
+    };
+    let layout = fs.layout_text(&segoe, "Hi", &opts);
+    assert!(layout.glyphs.len() >= 2);
+    let mid = Point::new(layout.glyphs[1].x + 0.1, layout.glyphs[1].y);
+    let hit = fs.hit_test_text(&segoe, "Hi", &opts, mid).expect("hit");
+    assert_eq!(hit, layout.glyphs[1].char_index);
 }

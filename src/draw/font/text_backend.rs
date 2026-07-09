@@ -1,5 +1,8 @@
 //! 字体文本后端类型定义（TextBackend trait 已迁移至 `crate::draw::traits::text`）。
 
+/// 缺字占位（tofu）字形 ID。后端无真实轮廓时由 `FontService::rasterize_glyph` 合成方框。
+pub const TOFU_GLYPH_ID: u32 = u32::MAX - 1;
+
 /// A single glyph positioned by text layout.
 #[derive(Debug, Clone, Copy)]
 pub struct PositionedGlyph {
@@ -8,6 +11,8 @@ pub struct PositionedGlyph {
     pub width: f32,
     pub height: f32,
     pub glyph_id: u32,
+    /// 对应源文本中的 Unicode 标量下标（`chars()` 序），与 glyph 下标解耦。
+    pub char_index: usize,
     pub font: crate::draw::FontHandle,
 }
 

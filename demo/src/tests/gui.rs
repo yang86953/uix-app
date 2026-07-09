@@ -1,8 +1,10 @@
 use super::*;
 use crate::common::page::{
-    INIT_H, INIT_W, PAGE_APP, PAGE_COUNT, PAGE_GENERAL, PAGE_TITLES, SIDEBAR_W,
+    INIT_H, INIT_W, INNER_W, PAGE_APP, PAGE_COUNT, PAGE_GENERAL, PAGE_TITLES, SIDEBAR_W,
 };
-use uix::prelude::{dynamic_label, Button, DesignTokens, Label, Rect, State, ViewAdapter};
+use uix::prelude::{
+    dynamic_label, Button, DesignTokens, Label, Rect, State, SystemEvent, ViewAdapter,
+};
 use uix::ui::core::widget::WidgetCore;
 use uix::ui::traits::WidgetLayout;
 use uix::ui::widgets::ScrollView;
@@ -41,6 +43,233 @@ fn gui_shell_layout() {
         content_frame.w > 900.0,
         "content too narrow: {}",
         content_frame.w
+    );
+}
+
+/// 首页：放大后 ScrollView/内容列/提示条须跟窗口；section 色条不得吞满整行。
+/// 调试 overlay：紫框=壳层，蓝框=内容列——二者宽度应接近（不再卡 INNER_W）。
+#[test]
+fn home_page_banners_fill_content_width_after_resize() {
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    tree.dispatch_event(&SystemEvent::Resize {
+        width: 1600.0,
+        height: 1000.0,
+    });
+    tree.layout();
+
+    let scroll = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .find(|(id, _)| {
+            tree.get(*id)
+                .is_some_and(|n| n.frame().x >= SIDEBAR_W - 2.0 && n.frame().w > 900.0)
+        })
+        .expect("content ScrollView");
+    let scroll_w = tree.get(scroll.0).unwrap().frame().w;
+    let page_col = tree.get(scroll.0).unwrap().children()[0];
+    let page_col_w = tree.get(page_col).unwrap().frame().w;
+    assert!(
+        page_col_w > 1200.0 && (page_col_w - scroll_w).abs() < 2.0,
+        "page column should match ScrollView width, col={page_col_w} scroll={scroll_w}"
+    );
+
+    let child_frames: Vec<_> = tree
+        .get(page_col)
+        .unwrap()
+        .children()
+        .iter()
+        .filter_map(|&cid| tree.get(cid).map(|n| n.frame()))
+        .collect();
+    let max_banner_w = child_frames
+        .iter()
+        .map(|f| f.w)
+        .filter(|&w| w > 200.0)
+        .fold(0.0f32, f32::max);
+    assert!(
+        max_banner_w > INNER_W + 50.0 && max_banner_w > page_col_w * 0.85,
+        "banners should fill page column, banner={max_banner_w} col={page_col_w}"
+    );
+
+    // section 色条：约 3×14，不得变成整行蓝带
+    let accents: Vec<_> = tree
+        .find_all_by_type::<uix::ui::widgets::Container>()
+        .into_iter()
+        .filter_map(|(id, _)| {
+            let f = tree.get(id)?.frame();
+            if f.x >= SIDEBAR_W && f.h > 10.0 && f.h < 20.0 && f.w > 0.0 && f.w < 12.0 {
+                Some(f)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        !accents.is_empty(),
+        "expected narrow section accent bars (~3px), got none — likely still flex_grow=1"
+    );
+}
+
+/// 应用能力页：放大后 info_note 须接近内容列宽度（Stretch），不能卡在 INNER_W。
+#[test]
+fn app_page_info_notes_fill_content_width_after_resize() {
+    let active = State::new(PAGE_APP);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    tree.dispatch_event(&SystemEvent::Resize {
+        width: 1600.0,
+        height: 1000.0,
+    });
+    tree.layout();
+
+    let scroll = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .find(|(id, _)| {
+            tree.get(*id)
+                .is_some_and(|n| n.frame().x >= SIDEBAR_W - 2.0 && n.frame().w > 900.0)
+        })
+        .expect("content ScrollView");
+    let page_col = tree.get(scroll.0).unwrap().children()[0];
+    let page_col_w = tree.get(page_col).unwrap().frame().w;
+    assert!(
+        page_col_w > 1200.0,
+        "page column should follow wide viewport, got {page_col_w}"
+    );
+
+    let max_note_w = tree
+        .get(page_col)
+        .unwrap()
+        .children()
+        .iter()
+        .filter_map(|&cid| tree.get(cid).map(|n| n.frame()))
+        .filter(|f| f.w > 200.0 && f.h > 20.0 && f.h < 80.0)
+        .map(|f| f.w)
+        .fold(0.0f32, f32::max);
+    assert!(
+        max_note_w > INNER_W + 50.0 && max_note_w > page_col_w * 0.85,
+        "info_note should fill page column, note={max_note_w} col={page_col_w}"
+    );
+}
+
+/// 改变窗口大小后，侧栏固定宽、内容区与 ScrollView 须跟随新客户区。
+#[test]
+fn window_resize_updates_shell_content() {
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    let root_id = tree.root_id().expect("root");
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let scroll_h0 = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .filter_map(|(id, _)| tree.get(id).map(|n| n.frame()))
+        .filter(|f| f.x >= SIDEBAR_W - 2.0)
+        .map(|f| f.h)
+        .fold(0.0f32, f32::max);
+
+    tree.dispatch_event(&SystemEvent::Resize {
+        width: 1600.0,
+        height: 1000.0,
+    });
+    tree.layout();
+
+    let root_frame = tree.get(root_id).expect("root").frame();
+    assert!(
+        (root_frame.w - 1600.0).abs() < 0.5 && (root_frame.h - 1000.0).abs() < 0.5,
+        "root should follow resize, got {}x{}",
+        root_frame.w,
+        root_frame.h
+    );
+
+    let main_row = tree.get(root_id).unwrap().children()[0];
+    let children = tree.get(main_row).unwrap().children().to_vec();
+    let nav_frame = tree.get(children[0]).unwrap().frame();
+    let content_frame = tree.get(children[1]).unwrap().frame();
+    assert!(
+        (nav_frame.w - SIDEBAR_W).abs() < 2.0,
+        "sidebar width after resize: {}",
+        nav_frame.w
+    );
+    assert!(
+        content_frame.w > 1300.0,
+        "content should widen with window, got {}",
+        content_frame.w
+    );
+
+    // 页面内容列（ScrollView 子项）须随 viewport 变宽，不能卡在 INNER_W。
+    let page_col_w = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .filter_map(|(id, _)| {
+            let frame = tree.get(id)?.frame();
+            if frame.x < SIDEBAR_W - 2.0 {
+                return None;
+            }
+            let child = tree.get(id)?.children().first().copied()?;
+            Some(tree.get(child)?.frame().w)
+        })
+        .fold(0.0f32, f32::max);
+    assert!(
+        page_col_w > 1300.0,
+        "scroll content column should fill viewport width, got {page_col_w}"
+    );
+
+    let scroll_h1 = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .filter_map(|(id, _)| tree.get(id).map(|n| n.frame()))
+        .filter(|f| f.x >= SIDEBAR_W - 2.0)
+        .map(|f| f.h)
+        .fold(0.0f32, f32::max);
+    assert!(
+        scroll_h1 > scroll_h0 + 50.0,
+        "content ScrollView should grow with window, {scroll_h1} vs {scroll_h0}"
+    );
+
+    tree.dispatch_event(&SystemEvent::Resize {
+        width: 900.0,
+        height: 600.0,
+    });
+    tree.layout();
+    let root_frame2 = tree.get(root_id).expect("root").frame();
+    assert!(
+        (root_frame2.w - 900.0).abs() < 0.5 && (root_frame2.h - 600.0).abs() < 0.5,
+        "root should shrink with window, got {}x{}",
+        root_frame2.w,
+        root_frame2.h
+    );
+    let scroll_h2 = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .filter_map(|(id, _)| tree.get(id).map(|n| n.frame()))
+        .filter(|f| f.x >= SIDEBAR_W - 2.0)
+        .map(|f| f.h)
+        .fold(0.0f32, f32::max);
+    assert!(
+        scroll_h2 < scroll_h1 - 50.0,
+        "content ScrollView should shrink with window, {scroll_h2} vs {scroll_h1}"
     );
 }
 

@@ -39,6 +39,7 @@ component! {
         copyable: bool,
         color_override: Option<Color>,
         glyph_xs: RefCell<Vec<f32>>,
+        glyph_char_indices: RefCell<Vec<usize>>,
         /// 每行的 (相对 y, 字形数量)，用于 y 轴命中测试。
         line_info: RefCell<Vec<(f32, usize)>>,
         selection: Cell<Option<(usize, usize)>>,
@@ -143,16 +144,17 @@ component! {
         let abs_pos = crate::core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
 
         if !self.content.is_empty() {
-            // 缓存 glyph x 位置
             {
                 let mut xs = self.glyph_xs.borrow_mut();
+                let mut cis = self.glyph_char_indices.borrow_mut();
                 xs.clear();
+                cis.clear();
                 for g in &layout.glyphs {
                     xs.push(g.x);
+                    cis.push(g.char_index);
                 }
             }
 
-            // 缓存行信息（用于 y 轴命中测试）
             {
                 let mut li = self.line_info.borrow_mut();
                 li.clear();
@@ -161,31 +163,28 @@ component! {
                 }
             }
 
-            // 绘制选中背景（与文字使用同一布局，保证完全对齐）
             if let Some((sel_s, sel_e)) = self.selection.get() {
                 if sel_s < sel_e {
-                    // 文字实际视觉高度（ascent + descent），而非行间距
                     let visual_h = ctx.font_service()
                         .horizontal_line_metrics(&fh, fs)
                         .map(|m| m.ascent + m.descent)
                         .unwrap_or(fs * 1.2);
-                    let end = sel_e.min(layout.glyphs.len());
-                    let start = sel_s.min(end);
                     for line in &layout.lines {
                         let gs = line.glyph_start;
-                        let gc = line.glyph_count;
-                        let ge = gs + gc;
-                        let ls = start.max(gs);
-                        let le = end.min(ge);
-                        if ls >= le { continue; }
-                        let glyphs = &layout.glyphs[ls..le];
+                        let ge = (gs + line.glyph_count).min(layout.glyphs.len());
+                        let glyphs: Vec<_> = layout.glyphs[gs..ge]
+                            .iter()
+                            .filter(|g| g.char_index >= sel_s && g.char_index < sel_e)
+                            .collect();
+                        if glyphs.is_empty() {
+                            continue;
+                        }
                         let x0 = abs_pos.x + glyphs[0].x;
                         let last = glyphs[glyphs.len() - 1];
                         let x1 = abs_pos.x + last.x + last.width.max(0.0);
                         let y0 = abs_pos.y + line.y;
-                        let h = visual_h;
                         ctx.fill_rect(
-                            Rect::new(x0, y0, (x1 - x0).max(0.0), h),
+                            Rect::new(x0, y0, (x1 - x0).max(0.0), visual_h),
                             ctx.tokens().color_primary().with_alpha(64),
                             None,
                         );
@@ -193,7 +192,6 @@ component! {
                 }
             }
 
-            // 绘制文本（使用同一布局）
             ctx.blit_glyph_layout(&layout, abs_pos, text_c, fs);
         }
 
@@ -222,6 +220,7 @@ impl Typography {
             copyable: false,
             color_override: None,
             glyph_xs: RefCell::new(Vec::new()),
+            glyph_char_indices: RefCell::new(Vec::new()),
             line_info: RefCell::new(Vec::new()),
             selection: Cell::new(None),
             sel_anchor: Cell::new(0),
@@ -300,32 +299,35 @@ impl Typography {
 
     fn intrinsic_size(&self) -> Size {
         let (fs, _fw) = self.compute_font_style();
-        let w = self.content.len() as f32 * fs * 0.6;
-        let h = fs * 1.5;
+        let w = self.content.chars().count() as f32 * fs * 0.6;
+        // 与 Label 一致：单行用视觉字高，避免光学居中后量高偏大
+        let h = fs * 1.2;
         Size::new(w, h)
     }
 
     fn char_at_xy(&self, text_x: f32, text_y: f32) -> usize {
         let xs = self.glyph_xs.borrow();
+        let cis = self.glyph_char_indices.borrow();
         let li = self.line_info.borrow();
         if xs.is_empty() {
             return 0;
         }
         if li.is_empty() {
-            for (i, &gx) in xs.iter().enumerate() {
-                if text_x < gx {
-                    return i;
+            for i in 0..xs.len() {
+                if text_x < xs[i] {
+                    return cis.get(i).copied().unwrap_or(i);
                 }
             }
-            return xs.len();
+            return cis
+                .last()
+                .map(|c| c + 1)
+                .unwrap_or(self.content.chars().count());
         }
-        // 将 text_y 钳制到有效行区间，点击在文本上/下方时落在首/末行
         let mut target_y = text_y;
         let first_ly = li.first().map(|(ly, _)| *ly).unwrap_or(0.0);
         if target_y < first_ly {
             target_y = first_ly;
         }
-        // 根据 y 坐标找到所在行
         let mut global_off = 0usize;
         let mut line_gc = 0usize;
         for (i, &(ly, gc)) in li.iter().enumerate() {
@@ -336,14 +338,17 @@ impl Typography {
             }
             global_off += gc;
         }
-        // 在所在行内按 x 查找
         let end = (global_off + line_gc).min(xs.len());
         for i in global_off..end {
             if text_x < xs[i] {
-                return i;
+                return cis.get(i).copied().unwrap_or(i);
             }
         }
-        end
+        if end > 0 {
+            cis.get(end - 1).map(|c| c + 1).unwrap_or(end)
+        } else {
+            0
+        }
     }
 
     fn set_selection_range(&self, a: usize, b: usize) {
@@ -367,6 +372,7 @@ impl Typography {
         if self.content != next.content {
             self.content = next.content;
             self.glyph_xs.borrow_mut().clear();
+            self.glyph_char_indices.borrow_mut().clear();
             self.line_info.borrow_mut().clear();
             self.selection.set(None);
             self.sel_anchor.set(0);

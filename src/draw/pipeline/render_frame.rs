@@ -210,12 +210,17 @@ fn draw_debug_telemetry(
     hud.draw_telemetry_hud(canvas, m, sw);
     let lines = DebugRenderService::telemetry_hud_lines(m);
     let mut text_svc = TextRenderService::new(font, font_service, 300.0);
-    let panel_x = sw as f32 - 214.0;
+    // 文字在色条右侧，与 HUD 面板几何对齐。
+    let text_x = DebugRenderService::hud_panel_x(sw) + DebugRenderService::HUD_PAD_X + 42.0;
+    let text_top = DebugRenderService::HUD_MARGIN + DebugRenderService::HUD_TEXT_TOP;
     for (i, line) in lines.iter().enumerate() {
         text_svc.draw_text(
             canvas,
             line,
-            Point::new(panel_x, 12.0 + i as f32 * 14.0),
+            Point::new(
+                text_x,
+                text_top + i as f32 * DebugRenderService::HUD_LINE_H,
+            ),
             Color::from_rgba(220, 220, 220, 255),
             11.0,
         );

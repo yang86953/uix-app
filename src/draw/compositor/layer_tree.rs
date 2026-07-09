@@ -21,6 +21,12 @@ use crate::draw::render_object::RenderObjectTree;
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::FontHandle;
 
+/// Debug overlay：当前指针下的祖先链 + 最深命中节点。
+struct DebugHover {
+    chain: HashSet<NodeId>,
+    leaf: NodeId,
+}
+
 /// 图层节点。
 pub enum LayerNode {
     /// 图片图层：缓存被 ScenePaint 边界选中的子树栅格结果。
@@ -256,17 +262,18 @@ impl LayerTree {
             orientation,
         };
 
-        let hovered_chain: Option<HashSet<NodeId>> = if debug_mode {
+        // 仅 hover 祖先链画边框；leaf = hit_test 最深节点（尺寸标签只贴它）。
+        let debug_hover: Option<DebugHover> = if debug_mode {
             hover_pos.and_then(|pos| {
-                let deepest = scene.hit_test(pos)?;
+                let leaf = scene.hit_test(pos)?;
                 let mut chain = HashSet::new();
-                let mut current = deepest;
+                let mut current = leaf;
                 chain.insert(current);
                 while let Some(pid) = scene.parent(current) {
                     chain.insert(pid);
                     current = pid;
                 }
-                Some(chain)
+                Some(DebugHover { chain, leaf })
             })
         } else {
             None
@@ -282,7 +289,7 @@ impl LayerTree {
                 surface_w,
                 surface_h,
                 debug_mode,
-                &hovered_chain,
+                &debug_hover,
                 0,
                 render_objects,
             );
@@ -517,7 +524,7 @@ impl LayerTree {
         surface_w: i32,
         surface_h: i32,
         debug_mode: bool,
-        hovered_chain: &Option<HashSet<NodeId>>,
+        debug_hover: &Option<DebugHover>,
         depth: usize,
         mut render_objects: Option<&mut RenderObjectTree>,
     ) {
@@ -583,7 +590,7 @@ impl LayerTree {
                         scene,
                         *node_id,
                         debug_mode,
-                        hovered_chain,
+                        debug_hover,
                         depth,
                     );
                 }
@@ -601,7 +608,7 @@ impl LayerTree {
                         surface_w,
                         surface_h,
                         debug_mode,
-                        hovered_chain,
+                        debug_hover,
                         depth + 1,
                         render_objects.as_deref_mut(),
                     );
@@ -626,7 +633,7 @@ impl LayerTree {
                     surface_w,
                     surface_h,
                     debug_mode,
-                    hovered_chain,
+                    debug_hover,
                     depth,
                     render_objects,
                 );
@@ -664,16 +671,25 @@ impl LayerTree {
         scene: &impl ScenePaint,
         node_id: NodeId,
         debug_mode: bool,
-        hovered_chain: &Option<HashSet<NodeId>>,
+        debug_hover: &Option<DebugHover>,
         depth: usize,
     ) {
         if !debug_mode || !scene.node_visible(node_id) {
             return;
         }
+        let Some(hover) = debug_hover.as_ref() else {
+            return;
+        };
+        // 默认不画满屏淡彩框：仅 hover 祖先链。
+        if !hover.chain.contains(&node_id) {
+            return;
+        }
+        // PaintContext 默认 debug=false；须显式打开，否则 draw_debug_* 全部 no-op。
+        ctx.set_debug_mode(true);
         let frame = scene.node_frame(node_id);
-        let hovered = hovered_chain.as_ref().is_some_and(|c| c.contains(&node_id));
-        ctx.draw_debug_border(frame, depth, hovered);
-        if hovered {
+        ctx.draw_debug_border(frame, depth, true);
+        // 尺寸标签只贴最深命中节点，避免祖先链叠多块黑条。
+        if node_id == hover.leaf {
             ctx.draw_debug_frame_info(node_id.slot(), frame);
         }
     }
@@ -698,7 +714,7 @@ impl LayerTree {
         surface_w: i32,
         surface_h: i32,
         debug_mode: bool,
-        hovered_chain: &Option<HashSet<NodeId>>,
+        debug_hover: &Option<DebugHover>,
         depth: usize,
         mut render_objects: Option<&mut RenderObjectTree>,
     ) {
@@ -714,7 +730,7 @@ impl LayerTree {
                 PaintPass::Content,
                 render_objects.as_deref_mut(),
             );
-            Self::draw_debug_for_widget(&mut ctx, scene, id, debug_mode, hovered_chain, depth);
+            Self::draw_debug_for_widget(&mut ctx, scene, id, debug_mode, debug_hover, depth);
         }
 
         if scene.node_visible(id) {
@@ -728,7 +744,7 @@ impl LayerTree {
                     surface_w,
                     surface_h,
                     debug_mode,
-                    hovered_chain,
+                    debug_hover,
                     depth + 1,
                     render_objects.as_deref_mut(),
                 );

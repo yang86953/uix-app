@@ -233,7 +233,12 @@ InvalidationQueue.dirty_region()
 10. FrameRenderOutput { outcome: Present(damage), inv_source, tree_version }
 ```
 
-Debug：F12 切换 debug_mode；hover 链边框 + 帧指标 HUD。
+Debug：`Ctrl+Shift+D` 切换 debug_mode（`UIX_DEBUG` 启动即开）。
+- **边框**：仅绘制指针下的 hover 祖先链；尺寸标签只贴最深命中节点（避免满屏彩框与叠标签）。
+- **标脏**：debug 下 `PointerMove` 仅在 `hit_test` 目标变化时全帧标脏（非每 move）。
+- **HUD**：右上角可读计数 + `toggle: Ctrl+Shift+D` 提示。
+不用 F12：Windows 调试器下 F12 会触发系统 `DebugBreak`（`DbgBreakPoint`），与应用无关。
+`LayerTree` 绘制前须 `PaintContext::set_debug_mode(true)`，否则边框路径 no-op。
 
 > **实现注记**：`FrameRenderer` 已在 `rendered_first && dirty_region.is_empty() && scroll_move.is_none()` 时直接返回 `RenderOutcome::Idle`，避免空 dirty 被提升为全帧 present；首帧仍强制 full redraw。
 
@@ -245,7 +250,7 @@ Debug：F12 切换 debug_mode；hover 链边框 + 帧指标 HUD。
 
 | 服务 | 职责 |
 |------|------|
-| **FontService** | 系统字体加载（#65）、glyph 光栅化、TextLayout |
+| **FontService** | 系统字体加载（#65）、glyph 光栅化、TextLayout；缺字 tofu（`TOFU_GLYPH_ID`）；命中/光标按 **字符下标** |
 | **ImageService** | 解码、BitmapHandle / ImageSlot 管理 |
 
 文本绘制：`TextBackend` trait；ColorValue + TypographyToken 在 render 时 resolve。

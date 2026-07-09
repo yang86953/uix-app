@@ -734,8 +734,10 @@ impl App {
         drain_secondary_window_queues(&mut secondary_windows.borrow_mut());
 
         let theme = RefCell::new(self.theme);
-        let debug_mode = Cell::new(false);
+        // UIX_DEBUG=1 启动即开调试 overlay（与 Window::new 一致）。
+        let debug_mode = Cell::new(std::env::var("UIX_DEBUG").is_ok());
         let cursor_pos = Cell::new(Point::new(0.0, 0.0));
+        let metrics = Cell::new(crate::draw::pipeline::RenderMetrics::default());
         drain_secondary_window_frames(
             &mut secondary_windows.borrow_mut(),
             &font_service,
@@ -764,7 +766,7 @@ impl App {
             system_theme_tokens.as_deref(),
             &debug_mode,
             &cursor_pos,
-            None,
+            Some(&metrics),
             map_ui_event,
             |ev| on_exit(ev),
             |platform| {
@@ -1155,24 +1157,24 @@ fn sync_secondary_animation_deadlines(
 }
 
 fn sync_secondary_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEngine) {
+    let (ew, eh) = {
+        let canvas = engine.canvas_2d();
+        (canvas.width() as f32, canvas.height() as f32)
+    };
+    if ew <= 0.0 || eh <= 0.0 {
+        return;
+    }
     let need_sync = tree
         .root_id()
         .and_then(|rid| tree.get(rid))
         .is_some_and(|root| {
-            let ew = engine.canvas_2d().width() as f32;
-            let eh = engine.canvas_2d().height() as f32;
             let rf = root.frame();
-            (rf.w - ew).abs() > 0.5 || (rf.h - eh).abs() > 0.5
+            rf.w <= 1.0 || rf.h <= 1.0
         });
     if need_sync {
         if let Some(rid) = tree.root_id() {
             if let Some(root_mut) = tree.get_mut(rid) {
-                root_mut.set_frame(crate::core::Rect::new(
-                    0.0,
-                    0.0,
-                    engine.canvas_2d().width() as f32,
-                    engine.canvas_2d().height() as f32,
-                ));
+                root_mut.set_frame(crate::core::Rect::new(0.0, 0.0, ew, eh));
             }
         }
         tree.mark_full_frame_dirty();

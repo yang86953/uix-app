@@ -6,6 +6,8 @@ use crate::native::traits::input::{KeyCode, KeyMod, MouseButton};
 use crate::ui::core::widget::tree_core::*;
 use crate::ui::layout::engine::{child_from_tree, child_from_tree_with_constraints};
 use crate::ui::managers::StyleManager;
+use crate::ui::view::combinators::label;
+use crate::ui::view::{column, row, ViewAdapter};
 use crate::ui::{
     AppState, Button, Container, Drawer, Grid, Label, Modal, OverlayEntry, OverlayKind, QRCode,
     SnapshotFields, Style, TextManager, Tooltip,
@@ -3281,6 +3283,48 @@ fn dispatch_resize_goes_to_root() {
         Rect::new(0.0, 0.0, 400.0, 300.0)
     );
     assert_eq!(tree.layout_traverse(), vec![root, child]);
+}
+
+/// Resize 后 layout 不得把根 frame 收缩回内容固有高度（窗口客户区是权威尺寸）。
+#[test]
+fn resize_root_survives_layout_without_engine_sync() {
+    let root_view = column([
+        row([
+            label("nav").width(200.0),
+            label("content").flex_grow(1.0),
+        ])
+        .flex_grow(1.0),
+        label("status"),
+    ])
+    .flex_grow(1.0);
+    let mut tree = ViewAdapter::build(root_view);
+    let rid = tree.root_id().expect("root");
+    tree.get_mut(rid)
+        .expect("root mut")
+        .set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+    tree.layout();
+
+    tree.dispatch_event(&SystemEvent::Resize {
+        width: 1000.0,
+        height: 800.0,
+    });
+    tree.layout();
+
+    let root_frame = tree.get(rid).expect("root").frame();
+    assert!(
+        (root_frame.w - 1000.0).abs() < 0.5 && (root_frame.h - 800.0).abs() < 0.5,
+        "root should stay at window size after layout, got {}x{}",
+        root_frame.w,
+        root_frame.h
+    );
+
+    let main = tree.get(rid).expect("root").children()[0];
+    let content = tree.get(main).expect("main").children()[1];
+    let content_w = tree.get(content).expect("content").frame().w;
+    assert!(
+        content_w > 700.0,
+        "flex content should grow with window, got {content_w}"
+    );
 }
 
 // Capture phase tests.
