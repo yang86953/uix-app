@@ -89,7 +89,7 @@ ViewNode::new(widget, children)
 | `build(view)` | 捕获 → 新建 WidgetTree → expand → build |
 | `reconcile(tree, view)` | 增量更新或整树重建 |
 
-> **实现注记**：`reconcile` 已实现；单窗 `App::root(|| ...)` 会安装 session factory，`AppHandle::update_view` / `set_root` 与响应式 `State` 批次已接入帧末一次 reconcile。副窗 `WindowSession` bootstrap、`MainThreadQueue` / `update_view` root reconcile 消费、事件按 `window_id` 路由与运行期 frame drain 已接。
+> **实现注记**：`reconcile` 已实现；单窗 `App::root(|| ...)` 会安装 session factory，`AppHandle::update_view` / `set_root` 与响应式 `State` 批次已接入帧末一次 reconcile。多窗支持见 [application · 主循环](application.md#主循环)。
 
 ### 根节点决策
 
@@ -236,7 +236,7 @@ fingerprint(kind, captures) :=
 | 稳定性 | 同源码 rebuild、同 capture 集 → **同指纹**（测试可断言） |
 | 算法 | 框架内部固定（如 `FxHasher` → `u64`）；App **不可配** |
 
-> **实现注记**：内部 `HandlerSignature` / `handler_generation` / `HandlerOptions` 存储与 reconcile 比较已接；带稳定 generation 且 options 未变的 handler 可跳过 `clear_component` + 重注册。State / Computed / WindowId capture 指纹基础与 `fingerprint -> generation` 解析管线已接：同 fingerprint 复用上一代 generation，fingerprint 变化时 bump；多个 capture 会合并为顺序无关的稳定指纹。`HandlerRegistration::with_state_capture` / `with_computed_capture` / `with_window_capture` 已公开；Button/Input DSL 已提供显式 State capture 入口（`on_click_capture` / `on_click_event_capture` / `on_change_capture`）与 WindowId capture 入口（`on_click_window_capture` / `on_click_event_window_capture` / `on_change_window_capture`），通用 `ViewNode::on_semantic_capture` / `on_semantic_window_capture` 与低层 `WidgetNode::on_semantic_capture` / `on_semantic_window_capture` 也已复用该路径；`semantic_handler!` 宏可在语法层显式 capture list 生成 fingerprint 并进入稳定复用；任意 Rust handler 闭包不做运行时自动收集（#159）；无 generation / fingerprint 的 DSL handler 仍保守全清重绑，指纹实现不得误用 `generation()`。
+> **实现注记**：内部 `HandlerSignature` / `handler_generation` 存储与 reconcile 比较已接；稳定 generation 且 options 未变的 handler 可跳过重注册。State / Computed / WindowId capture 指纹管线已接（同 fingerprint 复用 generation，变化时 bump，多个 capture 合并为顺序无关指纹）。公开 API：`HandlerRegistration::with_state_capture` / `with_computed_capture` / `with_window_capture`；Button/Input DSL 显式 capture 入口；`semantic_handler!` 宏语法层 capture。任意 Rust 闭包不做运行时自动收集（#159）；无 fingerprint 的 handler 保守全清重绑。
 
 ---
 
@@ -408,7 +408,7 @@ if session.reconcile_pending {
 | 多窗 | 各 session **独立** factory / `pending_root` / `reconcile_pending`（#148） |
 | layout | reconcile 后若结构变 → layout 标脏；仅 paint 变 → 窄 paint |
 
-> **实现注记**：单窗 `WindowSession` 已持有 `view_factory` / `pending_root` / `reconcile_pending`，`App::root(|| ...)` 会安装长期 factory；`AppHandle::update_view` 会经 MainThreadQueue 写入一次性 `pending_root`。响应式 `State` 批次会自动置位并在无 `pending_root` 时调用 factory；副窗独立 `WindowSession`、MainThreadQueue / root reconcile 消费与运行期 frame drain 已接。
+> **实现注记**：单窗 `WindowSession` 已持有 `view_factory` / `pending_root` / `reconcile_pending`；`AppHandle::update_view` 经 MainThreadQueue 写入一次性 `pending_root`，State 批次在无 `pending_root` 时调用 factory。
 
 ### 与 build 的关系
 
@@ -449,7 +449,7 @@ WindowSession A                    WindowSession B
 inspector_handle.update_view(|| inspector_view_v2());  // 仅 reconcile session B（#149）
 ```
 
-> **实现注记**：单窗 `update_view` 已接入主循环帧末 reconcile；副窗 `update_view` 已经按 `window_id` 路由到目标 session 的 MainThreadQueue，并在副窗运行期 frame drain 中消费。
+> **实现注记**：单窗 `update_view` 已接入主循环帧末 reconcile。多窗路由见 [application · update_view](application.md#update_view)。
 
 ---
 
@@ -501,7 +501,7 @@ State::set(value)
 
 实现须 **保留** 窄 rect 标脏；多 site fan-out 已接，**禁止**回退为全树 invalidate。
 
-> **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，并在 `set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(component_id, queue)` 重复绑定会原地更新 rect。`State` reconcile callback 也已按 site key fan-out，同一 key 重复绑定会原地更新，避免 layout 重复探测累积回调；副窗 session 路由与运行期 frame drain 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
+> **实现注记**：`State` / `Computed` 已将单个 paint binding 扩展为多个 paint site，`set` / `update` / recompute 时 fan-out 到所有已绑定 queue；同一 `(component_id, queue)` 重复绑定原地更新 rect。`State` reconcile callback 也按 site key fan-out。
 
 ---
 
