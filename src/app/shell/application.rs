@@ -675,6 +675,11 @@ impl App {
 
         let mut font_service = FontService::new();
         font_service.load_default_system_font(14.0, platform.system_info());
+        // Icon 依赖 Lucide PUA 字形；未加载时会回退为首字母。
+        crate::ui::widgets::icon::init_lucide_font(
+            include_bytes!("../../../assets/fonts/lucide.ttf"),
+            &mut font_service,
+        );
         let image_service = ImageService::new();
 
         let system_theme_tokens = if self.follow_system_theme {

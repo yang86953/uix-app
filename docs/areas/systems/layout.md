@@ -192,8 +192,8 @@ Web 式容器尺寸：**未设** `width` / `height` 时由子项撑开；Column 
 └──────────────────────────────────────┘
 ```
 
-- `Style.margin` — 布局引擎读取，参与 flex/grid 分配
-- `Style.padding` / `border_width: EdgeInsets`（#56）— `BoxModel::content_rect()` 计算内容区
+- `Style.margin` — 布局引擎读取，参与 flex/grid 分配；子项 `frame` **不含** margin（父级放置时已偏移）
+- `Style.padding` / `border_width: EdgeInsets`（#56）— `BoxModel::content_rect(frame)` 仅从 border-box 扣除 border + padding（**不再扣 margin**，避免双重缩进）
 - 四边 border 独立（#43）
 
 ---

@@ -25,12 +25,15 @@ fn sidebar_item(
         tk.color_text_secondary
     };
 
+    // Center：避免默认 Stretch 把 Label 拉高后顶对齐，导致文字相对图标偏上。
+    // margin 12：左右对称，高亮不贴边；gap 替代 space(10)（后者在 row 中宽为 0）。
     let mut item = row([
         embed(Icon::new(icon).size(16.0)),
-        space(10.0),
         label(title).font_size(13.0).color(text_color),
     ])
-    .width(SIDEBAR_W - 24.0)
+    .align(AlignItems::Center)
+    .gap(10.0)
+    .margin(EdgeInsets::new(12.0, 0.0, 12.0, 0.0))
     .padding(EdgeInsets::new(12.0, 8.0, 12.0, 8.0))
     .radius(tk.border_radius_sm);
 
@@ -42,10 +45,11 @@ fn sidebar_item(
 }
 
 fn sidebar_group_label(tk: &DesignTokens, text: &str) -> ViewNode {
+    // 左缘与导航项图标对齐：item.margin(12) + item.padding(12) = 24
     label(text)
         .font_size(11.0)
         .color(tk.color_text_quaternary)
-        .padding(EdgeInsets::new(16.0, 16.0, 4.0, 8.0))
+        .margin(EdgeInsets::new(24.0, 16.0, 12.0, 8.0))
 }
 
 fn sidebar_brand(tk: &DesignTokens) -> ViewNode {
@@ -54,7 +58,6 @@ fn sidebar_brand(tk: &DesignTokens) -> ViewNode {
             Icon::new("box")
                 .size(22.0),
         ),
-        space(10.0),
         column([
             label("UIX Demo")
                 .font_size(17.0)
@@ -65,6 +68,8 @@ fn sidebar_brand(tk: &DesignTokens) -> ViewNode {
         ])
         .flex_grow(0.0),
     ])
+    .align(AlignItems::Center)
+    .gap(10.0)
     .padding(EdgeInsets::new(16.0, 20.0, 12.0, 16.0))
 }
 
@@ -100,6 +105,8 @@ fn sidebar(active: State<usize>, tk: &DesignTokens) -> ViewNode {
 fn header_bar(active: &State<usize>, tk: &DesignTokens, timer_ticks: &State<u32>) -> ViewNode {
     let active_for_title = active.clone();
     let ticks = timer_ticks.clone();
+    // 顶栏不可 flex_grow：column() 默认 grow=1 会与 page_shell 对半分高，
+    // 切到内容更高的页后顶栏被撑开，正文被推到窗口外（表现为空白页）。
     column([
         row([
             dynamic_label(move || {
@@ -120,6 +127,7 @@ fn header_bar(active: &State<usize>, tk: &DesignTokens, timer_ticks: &State<u32>
         .bg(tk.color_bg_container),
         embed(Divider::new()),
     ])
+    .flex_grow(0.0)
 }
 
 fn page_body(

@@ -25,9 +25,10 @@ component! {
     /// 读取外边距参与盒模型计算。方向默认 Column（垂直堆叠）。
     ///
     /// 盒模型（与 Web CSS 一致）：
-    /// - margin：外边距，布局时占用空间，推开兄弟节点
-    /// - padding：内边距，子内容在其内部排列
+    /// - margin：外边距，由**父级** flex/grid 占用空间并偏移本节点 frame
+    /// - padding：内边距，子内容在其内部排列（`content_rect` 从 frame 扣除）
     /// - border + border_radius：边框与圆角
+    /// - frame = border-box（不含 margin）；勿在 content_rect 中再扣 margin
     /// - background：背景色（支持 hover/active 状态色）
     /// - box_shadow：盒阴影/辉光
     pub struct Container {
@@ -59,14 +60,14 @@ component! {
     picture_policy => (&self) -> PicturePolicy { PicturePolicy::Eligible }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
-        // Visual area excludes margin (margin is transparent per CSS box model)
+        // frame 已是 border-box（父级已处理 margin）；背景画满 frame。
         let s = &self.style;
-        let visual = Rect::new(
-            frame.x + s.margin.left,
-            frame.y + s.margin.top,
-            (frame.w - s.margin.horizontal()).max(0.0),
-            (frame.h - s.margin.vertical()).max(0.0),
-        );
+        let visual = BoxModel {
+            margin: s.margin,
+            border_width: s.border_width,
+            padding: s.padding,
+        }
+        .visual_rect(frame);
         if visual.w <= 0.0 || visual.h <= 0.0 { return; }
 
         // 统一样式——绘制背景/边框/阴影/透明度
@@ -87,7 +88,9 @@ component! {
             padding: s.padding,
         };
         let content_rect = box_model.content_rect(frame);
-        if content_rect.w <= 0.0 || content_rect.h <= 0.0 { return Vec::new(); }
+        // 允许 0 尺寸 content_rect：首帧 / 未设高的 Row·Column 需走 Flex
+        // bootstrap（intrinsic_main）才能用子项撑开并写入 cached_content_size（#165）。
+        // 若此处直接 return，子节点 frame 会停在 (0,0)，表现为文字重叠。
 
         // 过滤不可见子节点
         let visible_children: Vec<ComponentId> = children.iter().copied()
@@ -453,6 +456,22 @@ mod tests {
     }
 
     #[test]
+    fn content_rect_does_not_subtract_margin_again() {
+        // 父级已把 margin 算进子项 frame 起点；content_rect 只扣 border+padding。
+        let box_model = BoxModel {
+            margin: EdgeInsets::new(12.0, 0.0, 12.0, 0.0),
+            border_width: EdgeInsets::zero(),
+            padding: EdgeInsets::new(8.0, 4.0, 8.0, 4.0),
+        };
+        let frame = Rect::new(12.0, 10.0, 100.0, 32.0);
+        assert_eq!(
+            box_model.content_rect(frame),
+            Rect::new(20.0, 14.0, 84.0, 24.0)
+        );
+        assert_eq!(box_model.visual_rect(frame), frame);
+    }
+
+    #[test]
     fn measure_uses_cached_content_height_without_explicit_height() {
         let container = Container::new().w(120.0);
         container.cached_content_size.set(Size::new(100.0, 48.0));
@@ -460,5 +479,40 @@ mod tests {
         let measured = container.measure(Constraints::unconstrained());
 
         assert_eq!(measured, Size::new(120.0, 48.0));
+    }
+
+    #[test]
+    fn zero_height_row_bootstraps_from_children() {
+        use crate::ui::core::widget::WidgetCore;
+        use crate::ui::view::adapter::ViewAdapter;
+        use crate::ui::view::{label, row};
+
+        // 未设高的 Row 在 frame.h=0 时仍须布局子项并缓存 intrinsic 高度
+        let mut tree = ViewAdapter::build(row([label("A"), label("B")]));
+        let root_id = tree.root_id().expect("root");
+        if let Some(root) = tree.get_mut(root_id) {
+            root.set_frame(Rect::new(0.0, 0.0, 200.0, 0.0));
+        }
+        let children = tree.get(root_id).expect("root").children().to_vec();
+        let positions = tree
+            .get(root_id)
+            .expect("root")
+            .layout_children(Rect::new(0.0, 0.0, 200.0, 0.0), &children, &tree);
+        assert_eq!(positions.len(), 2, "zero-height row must place children");
+        assert!(
+            positions.iter().all(|(_, r)| r.h > 0.0),
+            "children should get intrinsic height, got {positions:?}"
+        );
+        let container = tree
+            .get(root_id)
+            .expect("root")
+            .component()
+            .as_any()
+            .downcast_ref::<Container>()
+            .expect("Container");
+        assert!(
+            container.cached_content_size.get().h > 0.0,
+            "cached_content_size must update after zero-height bootstrap"
+        );
     }
 }

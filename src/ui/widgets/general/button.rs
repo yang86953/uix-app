@@ -40,6 +40,14 @@ impl WidgetLayout for Button {
         constraints.clamp(self.intrinsic_size())
     }
 
+    fn flex_grow(&self) -> f32 {
+        self.style.flex_grow
+    }
+
+    fn flex_shrink(&self) -> f32 {
+        self.style.flex_shrink
+    }
+
     fn layout_margin(&self) -> crate::core::EdgeInsets {
         self.style.margin
     }

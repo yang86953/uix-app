@@ -39,6 +39,8 @@ fn adopt_widget_node(node: WidgetNode) -> ViewNode {
         widget: node.widget,
         children: node.children.into_iter().map(adopt_widget_node).collect(),
         style: Style::default(),
+        flex_grow_override: None,
+        flex_shrink_override: None,
         z_index: node.z_index,
         key: node.key.map(|k| k.to_string()),
         handlers: node.handlers,
@@ -348,6 +350,11 @@ impl WidgetLayout for DynamicLabel {
 
 impl DynamicLabel {
     fn intrinsic_size(&self) -> Size {
+        let pad = self
+            .style
+            .as_ref()
+            .map(|s| s.padding)
+            .unwrap_or_default();
         if let Some(style) = &self.style {
             if let (Some(w), Some(h)) = (style.width, style.height) {
                 return Size::new(w, h);
@@ -363,12 +370,12 @@ impl DynamicLabel {
             .style
             .as_ref()
             .and_then(|s| s.height)
-            .unwrap_or(fs * 1.5);
+            .unwrap_or(fs * 1.5 + pad.vertical());
         let w = self
             .style
             .as_ref()
             .and_then(|s| s.width)
-            .unwrap_or(text.len() as f32 * 7.0);
+            .unwrap_or(text.len() as f32 * 7.0 + pad.horizontal());
         Size::new(w, h)
     }
 }

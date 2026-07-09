@@ -411,12 +411,18 @@ impl<'a> TextRenderService<'a> {
 
     // ── 辅助 ──
 
-    /// 计算文字视觉中心与 rect 中心对齐时的 y 位置。
+    /// 计算文字视觉中心与 rect 中心对齐时的 y 位置（布局原点 = 行顶）。
+    ///
+    /// em-box（ascent+descent）几何居中后，descent 多为空白，墨水主体在 ascent，
+    /// 观感会偏上。再下移约 `0.75 * descent`，使 List/Button 等行内文字光学居中。
     pub fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 {
         let fs = font_size.max(1.0);
         match self.font_service.horizontal_line_metrics(&self.font, fs) {
-            Some(m) => rect.y + (rect.h - m.ascent - m.descent) * 0.5,
-            None => rect.y + rect.h * 0.5,
+            Some(m) => {
+                let em_top = rect.y + (rect.h - m.ascent - m.descent) * 0.5;
+                em_top + m.descent * 0.75
+            }
+            None => rect.y + (rect.h - fs) * 0.5,
         }
     }
 

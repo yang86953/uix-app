@@ -117,16 +117,18 @@ impl<'a> PageBuilder<'a> {
 
 pub fn section_title(tk: &DesignTokens, text: &str) -> ViewNode {
     row([
-        label("")
+        // 用空列容器画色条（Label 不适合承载纯色块）
+        column(Vec::<ViewNode>::new())
             .width(3.0)
             .height(14.0)
             .bg(tk.color_primary)
             .radius(tk.border_radius_sm),
-        space(8.0),
         label(text)
             .color(tk.color_text)
             .font_size(13.0),
     ])
+    .align(AlignItems::Center)
+    .gap(8.0)
     .padding(EdgeInsets::new(0.0, 0.0, 4.0, 0.0))
 }
 
@@ -143,11 +145,12 @@ pub fn page_heading(tk: &DesignTokens, icon: &str, title: &str) -> ViewNode {
     column([
         row([
             embed(Icon::new(icon).size(24.0)),
-            space(12.0),
             label(title)
                 .color(tk.color_text)
                 .font_size(24.0),
-        ]),
+        ])
+        .align(AlignItems::Center)
+        .gap(12.0),
         space(12.0),
         embed(Divider::new()),
     ])

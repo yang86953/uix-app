@@ -3,7 +3,7 @@
 //! 支持列表项渲染、header/footer、bordered、size 等选项。
 
 use crate::component;
-use crate::core::{Constraints, Point, Rect, Size};
+use crate::core::{Constraints, EdgeInsets, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::native::traits::input::ControlSize;
@@ -54,18 +54,18 @@ component! {
 
         // Header
         if !self.header.is_empty() {
-            let header_rect = Rect::new(frame.x, y, frame.w, item_h);
-            let hy = ctx.visual_center_y(header_rect, 13.0);
-            ctx.draw_text(&self.header, Point::new(frame.x + 16.0, hy), text_sec, 13.0);
+            let header_rect = Rect::new(frame.x, y, frame.w, item_h)
+                .inset(EdgeInsets::new(16.0, 0.0, 16.0, 0.0));
+            ctx.draw_text_in_frame(&self.header, header_rect, text_sec, 13.0);
             ctx.fill_rect(Rect::new(frame.x, y + item_h, frame.w, 1.0), border, None);
             y += item_h;
         }
 
         // Items
         for (i, item) in self.items.iter().enumerate() {
-            let item_rect = Rect::new(frame.x, y, frame.w, item_h);
-            let iy = ctx.visual_center_y(item_rect, 14.0);
-            ctx.draw_text(item, Point::new(frame.x + 16.0, iy), text, 14.0);
+            let item_rect = Rect::new(frame.x, y, frame.w, item_h)
+                .inset(EdgeInsets::new(16.0, 0.0, 16.0, 0.0));
+            ctx.draw_text_in_frame(item, item_rect, text, 14.0);
             if i < self.items.len() - 1 {
                 ctx.fill_rect(Rect::new(frame.x + 16.0, y + item_h - 1.0, frame.w - 32.0, 1.0), border, None);
             }
@@ -77,20 +77,18 @@ component! {
             if !self.items.is_empty() {
                 ctx.fill_rect(Rect::new(frame.x, y, frame.w, 1.0), border, None);
             }
-            let footer_rect = Rect::new(frame.x, y, frame.w, item_h);
-            let fy = ctx.visual_center_y(footer_rect, 13.0);
-            ctx.draw_text(&self.footer, Point::new(frame.x + 16.0, fy), text_sec, 13.0);
+            let footer_rect = Rect::new(frame.x, y, frame.w, item_h)
+                .inset(EdgeInsets::new(16.0, 0.0, 16.0, 0.0));
+            ctx.draw_text_in_frame(&self.footer, footer_rect, text_sec, 13.0);
             y += item_h;
         }
 
         // Load more
         if !self.load_more_text.is_empty() {
             let load_rect = Rect::new(frame.x, y, frame.w, 40.0);
-            let ly = ctx.visual_center_y(load_rect, 14.0);
             ctx.fill_rect(load_rect, bg, None);
             ctx.stroke_rect(load_rect, border, 1.0, Some(r));
-            let text_w = ctx.measure_text(&self.load_more_text, 14.0).w;
-            ctx.draw_text(&self.load_more_text, Point::new(frame.x + (frame.w - text_w) * 0.5, ly), ctx.tokens().color_primary(), 14.0);
+            ctx.text_center(&self.load_more_text, load_rect, ctx.tokens().color_primary(), 14.0);
         }
     }
 }

@@ -296,3 +296,79 @@ fn blit_to_with_empty_layout_no_panic() {
         14.0,
     );
 }
+
+#[test]
+fn visual_center_y_optical_height_below_em_box_center() {
+    let mut fs = FontService::new();
+    let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
+        return;
+    };
+    let m = fs
+        .horizontal_line_metrics(&segoe, 14.0)
+        .expect("metrics");
+    let mut trs = TextRenderService::new(segoe, &fs, 500.0);
+    let row = Rect::new(0.0, 0.0, 200.0, 40.0);
+    let optical = trs.visual_center_y(row, 14.0);
+    let em_box = row.y + (row.h - m.ascent - m.descent) * 0.5;
+    // 光学居中应比 em-box 居中更靠下，纠正行内文字偏上
+    assert!(
+        optical > em_box + 1.0,
+        "optical y={optical} should be below em-box y={em_box}"
+    );
+    // 下移量约 0.75 * descent（Segoe UI @14 ≈ 2px）
+    assert!(
+        (optical - em_box - m.descent * 0.75).abs() < 0.1,
+        "optical nudge should be 0.75*descent: optical={optical} em={em_box} d={}",
+        m.descent
+    );
+}
+
+#[test]
+fn list_row_optical_center_not_stuck_to_top() {
+    use crate::draw::font::text_backend::TextLayoutOptions;
+    use crate::draw::{HAlign, VAlign};
+
+    let mut fs = FontService::new();
+    let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
+        return;
+    };
+    if let Some(h) = fs.load_font_from_path(r"C:\Windows\Fonts\msyh.ttc", 14.0) {
+        fs.add_fallback(h);
+        fs.set_fallback_chain(&[h]);
+    }
+    fs.loaded_font_handle = segoe;
+
+    let m = fs.horizontal_line_metrics(&segoe, 14.0).expect("metrics");
+    let opts = TextLayoutOptions {
+        max_width: f32::MAX,
+        max_height: 0.0,
+        line_height: 21.0,
+        word_wrap: false,
+        h_align: HAlign::Left,
+        v_align: VAlign::Top,
+        font_size: 14.0,
+    };
+    let layout = fs.layout_text(&segoe, "Alice — 设计师", &opts);
+
+    let mut min_y = f32::MAX;
+    for g in &layout.glyphs {
+        let r = fs.rasterize_glyph(&g.font, g.glyph_id, 14.0);
+        if r.width == 0 || r.height == 0 {
+            continue;
+        }
+        min_y = min_y.min(g.y + r.bearing_y);
+    }
+
+    let row = Rect::new(0.0, 0.0, 200.0, 40.0);
+    let mut trs = TextRenderService::new(segoe, &fs, 500.0);
+    let top = trs.visual_center_y(row, 14.0);
+    let em_top = row.y + (row.h - m.ascent - m.descent) * 0.5;
+    let pad_top = top + min_y - row.y;
+
+    // 相对旧 em-box 居中，光学原点更靠下 → 上边距更大，不再贴顶
+    assert!(top > em_top + 1.0, "optical top={top} em_top={em_top}");
+    assert!(
+        pad_top > 12.0,
+        "text still too close to row top: pad_top={pad_top}"
+    );
+}

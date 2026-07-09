@@ -34,6 +34,38 @@ fn normalize_strategy_keeps_dirty_for_gpu_partial() {
 }
 
 #[test]
+fn begin_frame_multi_dirty_clears_union_aabb() {
+    // 两块不相交 dirty：清屏须覆盖并集，避免中间空隙只被父背景盖住
+    let mut surface = CpuDrawSurface::new(20, 120);
+    // 先铺不透明底色
+    surface.canvas_mut().fill_rect(
+        Rect::new(0.0, 0.0, 20.0, 120.0),
+        crate::draw::Color::from_rgb(255, 0, 0),
+        None,
+    );
+    let _ = begin_frame(
+        UpdateStrategy::DirtyRects(vec![
+            Rect::new(0.0, 0.0, 20.0, 10.0),
+            Rect::new(0.0, 100.0, 20.0, 10.0),
+        ]),
+        &mut surface,
+        20,
+        120,
+        BackendCapabilities::cpu(),
+    );
+    let pixels = surface.surface().pixels();
+    // 中间 y=50 应被并集清屏（默认透明），而非残留红
+    let mid = (50 * 20 + 5) as usize;
+    let red = crate::draw::Color::from_rgb(255, 0, 0).to_rgba();
+    assert_ne!(
+        pixels[mid], red,
+        "union clear must wipe gap between dirty strips, got {:#x}",
+        pixels[mid]
+    );
+    end_frame(&mut surface);
+}
+
+#[test]
 fn begin_frame_partial_dirty_returns_partial_damage() {
     let rects = vec![Rect::new(1.0, 2.0, 10.0, 10.0)];
     let mut surface = CpuDrawSurface::new(20, 20);

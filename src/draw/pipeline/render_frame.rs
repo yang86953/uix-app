@@ -88,7 +88,8 @@ impl FrameRenderer {
         {
             DirtyRegion::full()
         } else {
-            input.dirty_region.clone()
+            // 多块 dirty 升为并集，与 begin_frame clip 一致，避免空隙被父背景盖住
+            input.dirty_region.for_paint_clear()
         };
 
         if self.last_tree_version != cur_version {

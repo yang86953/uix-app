@@ -777,3 +777,41 @@ fn component_handle_snapshot_excludes_button_interaction_state() {
 
     assert_eq!(handle.snapshot_fields(), before);
 }
+
+#[test]
+fn pointer_up_on_container_padding_emits_semantic_click() {
+    // 侧栏 row 空白/padding 命中 Container（不处理 PointerUp），
+    // 同目标 down/up 仍须触发父级 on_semantic(Click)。
+    use crate::ui::view::{label, row, ViewAdapter};
+    use crate::core::EdgeInsets;
+
+    let clicked = Rc::new(Cell::new(false));
+    let clicked_flag = clicked.clone();
+    let root = row([label("导航")])
+        .width(196.0)
+        .padding(EdgeInsets::new(12.0, 8.0, 12.0, 8.0))
+        .on_semantic(SemanticKind::Click, move |_| clicked_flag.set(true));
+    let mut tree = ViewAdapter::build(root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, 196.0, 40.0));
+    }
+    tree.layout();
+
+    // 点在右侧空白（文字右侧 padding 区），不落在 Label 字形上
+    let pos = Point::new(170.0, 20.0);
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert!(
+        clicked.get(),
+        "Click on container blank/padding must fire semantic Click"
+    );
+}

@@ -1,4 +1,7 @@
 //! Label widget — displays text with optional selection support.
+//!
+//! 默认不可选中：导航/标题等 UI 文案不应出现拖选高亮。
+//! 需要复制选区时调用 `.selectable()`。
 
 use std::cell::Cell;
 use std::cell::RefCell;
@@ -22,6 +25,8 @@ component! {
         pub color: Option<crate::draw::Color>,
         pub fixed_width: Option<f32>,
         pub fixed_height: Option<f32>,
+        /// 是否允许拖选 / Ctrl+A / Ctrl+C 选区。默认 false。
+        selectable: bool,
         /// 渲染时缓存的字形 x 位置（文本局部坐标）。
         glyph_xs: RefCell<Vec<f32>>,
         /// 每行的 (相对 y, 字形数量)，用于 y 轴命中测试。
@@ -37,6 +42,14 @@ component! {
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
+    }
+
+    flex_grow => (&self) -> f32 {
+        self.style.as_ref().map(|s| s.flex_grow).unwrap_or(0.0)
+    }
+
+    flex_shrink => (&self) -> f32 {
+        self.style.as_ref().map(|s| s.flex_shrink).unwrap_or(1.0)
     }
 
     layout_margin => (&self) -> crate::core::EdgeInsets {
@@ -60,6 +73,9 @@ component! {
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
+        if !self.selectable {
+            return EventResult::NotHandled;
+        }
         match event {
             SystemEvent::PointerDown { pos, mods, .. } => {
                 let dp = self.draw_pos.get();
@@ -119,6 +135,11 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        // 统一样式优先：背景/边框（section 色条等）再绘制文字
+        if let Some(style) = self.style.as_ref() {
+            crate::ui::style::apply_style(ctx, frame, style);
+        }
+
         // 统一样式优先：style.color > self.color > theme default
         let c = if let Some(style) = self.style.as_ref() {
             style.resolve_color(ctx.tokens())
@@ -148,10 +169,13 @@ component! {
         let fh = *ctx.font();
         let layout = ctx.font_service().layout_text(&fh, &self.text, &backend_opts);
 
-        // 左上对齐（frame-relative，用于 on_event 命中测试）
-        let x = 0.0;
-        let y = 0.0;
-        let draw_pos = crate::core::Point::new(x, y);
+        // 左上对齐；内边距计入绘制原点（与 measure 一致）
+        let pad = self
+            .style
+            .as_ref()
+            .map(|s| s.padding)
+            .unwrap_or_default();
+        let draw_pos = crate::core::Point::new(pad.left, pad.top);
         self.draw_pos.set(draw_pos);
         let abs_pos = crate::core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
 
@@ -236,6 +260,7 @@ impl Label {
             color: None,
             fixed_width: None,
             fixed_height: None,
+            selectable: false,
             glyph_xs: RefCell::new(Vec::new()),
             line_info: RefCell::new(Vec::new()),
             selection: Cell::new(None),
@@ -244,6 +269,12 @@ impl Label {
             draw_pos: Cell::new(crate::core::Point::new(0.0, 0.0)),
             style: None,
         }
+    }
+
+    /// 允许拖选与快捷键复制选区（导航/标题等默认关闭）。
+    pub fn selectable(mut self) -> Self {
+        self.selectable = true;
+        self
     }
 
     /// 设置统一样式（覆盖文字颜色/字号等视觉属性）。
@@ -274,6 +305,11 @@ impl Label {
         self.color = next.color;
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
+        self.selectable = next.selectable;
+        if !self.selectable {
+            self.selection.set(None);
+            self.sel_dragging.set(false);
+        }
         self.style = next.style;
     }
 
@@ -306,11 +342,33 @@ impl Label {
     }
 
     fn intrinsic_size(&self) -> Size {
-        if let (Some(w), Some(h)) = (self.fixed_width, self.fixed_height) {
+        let style_w = self.style.as_ref().and_then(|s| s.width);
+        let style_h = self.style.as_ref().and_then(|s| s.height);
+        let pad = self
+            .style
+            .as_ref()
+            .map(|s| s.padding)
+            .unwrap_or_default();
+        let w = self.fixed_width.or(style_w);
+        let h = self.fixed_height.or(style_h);
+        if let (Some(w), Some(h)) = (w, h) {
             Size::new(w, h)
         } else {
             let len = self.text.len() as f32;
-            Size::new(len * 7.0, self.font_size * 1.5)
+            let fs = self
+                .style
+                .as_ref()
+                .map(|s| match s.font_size {
+                    crate::ui::style::TypographyToken::Custom(v) => v,
+                    _ => self.font_size,
+                })
+                .unwrap_or(self.font_size);
+            // 单行固有高度用视觉字高（≈ ascent+descent），勿用 1.5 行距：
+            // 顶对齐绘制时多余空白会让文字相对同行 Icon 偏上。
+            Size::new(
+                w.unwrap_or(len * 7.0 + pad.horizontal()),
+                h.unwrap_or(fs * 1.2 + pad.vertical()),
+            )
         }
     }
 
@@ -374,6 +432,9 @@ impl Label {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::Point;
+    use crate::native::traits::input::MouseButton;
+    use crate::ui::traits::widget::EventHandler;
     use crate::ui::traits::WidgetLayout;
 
     #[test]
@@ -381,5 +442,28 @@ mod tests {
         let measured = Label::new("abcdef").measure(Constraints::loose(Size::new(30.0, 12.0)));
 
         assert_eq!(measured, Size::new(30.0, 12.0));
+    }
+
+    #[test]
+    fn label_ignores_pointer_when_not_selectable() {
+        let mut label = Label::new("首页");
+        let down = SystemEvent::PointerDown {
+            pos: Point::new(4.0, 4.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        };
+        assert_eq!(label.on_event(&down), EventResult::NotHandled);
+        assert_eq!(label.selected_text(), None);
+    }
+
+    #[test]
+    fn selectable_label_handles_pointer_down() {
+        let mut label = Label::new("首页").selectable();
+        let down = SystemEvent::PointerDown {
+            pos: Point::new(4.0, 4.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        };
+        assert_eq!(label.on_event(&down), EventResult::Handled);
     }
 }

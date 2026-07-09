@@ -1858,6 +1858,58 @@ fn interaction_manager_tracks_hover_changes() {
 }
 
 #[test]
+fn hover_over_label_does_not_invalidate_paint() {
+    // 侧栏 Label 无 hover 视觉态；enter/leave NotHandled 时不得窄标脏，
+    // 否则局部清屏会挖掉父 Container 背景，表现为悬停时文字/图标消失。
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(220.0, 400.0)));
+    let label = tree.add_child(root, Box::new(Label::new("导航")));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 220.0, 400.0));
+    tree.get_mut(label)
+        .unwrap()
+        .set_frame(Rect::new(12.0, 80.0, 180.0, 36.0));
+    tree.reset_invalidation();
+
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(40.0, 90.0),
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(tree.managers().interaction.hovered_component(), Some(label));
+    assert!(
+        !tree.has_render_work(),
+        "Label hover must not enqueue paint invalidation"
+    );
+}
+
+#[test]
+fn hover_over_button_still_invalidates_paint() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(Container::new().size(220.0, 100.0)));
+    let button = tree.add_child(root, Box::new(Button::new("OK")));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 220.0, 100.0));
+    tree.get_mut(button)
+        .unwrap()
+        .set_frame(Rect::new(10.0, 10.0, 80.0, 32.0));
+    tree.reset_invalidation();
+
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(20.0, 20.0),
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(tree.managers().interaction.hovered_component(), Some(button));
+    assert!(
+        tree.has_render_work(),
+        "Button hover must invalidate paint for hover style"
+    );
+}
+
+#[test]
 fn interaction_manager_tracks_pressed_changes() {
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
