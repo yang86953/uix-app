@@ -1,5 +1,8 @@
 use super::*;
 use crate::app::main_thread_queue::MainThreadContext;
+use crate::core::Error;
+use crate::draw::engine::RenderOutcome;
+use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::draw::NullEngine;
 use crate::ui::core::widget::WidgetCore;
 use crate::ui::view::combinators::{dynamic_label, label};
@@ -8,6 +11,53 @@ use crate::ui::view::ViewNode;
 use crate::ui::widgets::container::Container;
 use crate::ui::widgets::Label;
 use crate::ui::{AppState, State};
+use std::cell::Cell;
+use std::rc::Rc;
+
+struct ShutdownTrackingEngine {
+    inner: NullEngine,
+    shutdown_calls: Rc<Cell<usize>>,
+}
+
+impl ShutdownTrackingEngine {
+    fn new(shutdown_calls: Rc<Cell<usize>>) -> Self {
+        Self {
+            inner: NullEngine::new(),
+            shutdown_calls,
+        }
+    }
+}
+
+impl GraphicsEngine for ShutdownTrackingEngine {
+    fn initialize(&mut self, w: i32, h: i32) -> Result<(), Error> {
+        self.inner.initialize(w, h)
+    }
+
+    fn shutdown(&mut self) {
+        self.shutdown_calls.set(self.shutdown_calls.get() + 1);
+        self.inner.shutdown();
+    }
+
+    fn resize(&mut self, w: i32, h: i32) {
+        self.inner.resize(w, h);
+    }
+
+    fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
+        self.inner.begin_frame(strategy)
+    }
+
+    fn end_frame(&mut self, present_damage: &crate::draw::backend::DamageRegion) -> RenderOutcome {
+        self.inner.end_frame(present_damage)
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        self.inner.canvas_2d()
+    }
+
+    fn capabilities(&self) -> GraphicsCapabilities {
+        self.inner.capabilities()
+    }
+}
 
 fn root_label_text(root: ViewNode) -> String {
     let tree = ViewAdapter::build_nodes(root);
@@ -146,4 +196,36 @@ fn window_session_pending_root_is_one_shot_and_overrides_factory() {
         root_label_text(session.view_factory().build().unwrap()),
         "factory"
     );
+}
+
+#[test]
+fn window_session_shutdown_is_idempotent_and_drop_does_not_repeat_it() {
+    let shutdown_calls = Rc::new(Cell::new(0));
+    {
+        let mut session = WindowSession::from_root(
+            label("root"),
+            Box::new(ShutdownTrackingEngine::new(shutdown_calls.clone())),
+            320,
+            240,
+        );
+
+        session.shutdown();
+        session.shutdown();
+        assert_eq!(shutdown_calls.get(), 1);
+    }
+    assert_eq!(shutdown_calls.get(), 1);
+}
+
+#[test]
+fn window_session_drop_shuts_engine_down_once() {
+    let shutdown_calls = Rc::new(Cell::new(0));
+    {
+        let _session = WindowSession::from_root(
+            label("root"),
+            Box::new(ShutdownTrackingEngine::new(shutdown_calls.clone())),
+            320,
+            240,
+        );
+    }
+    assert_eq!(shutdown_calls.get(), 1);
 }

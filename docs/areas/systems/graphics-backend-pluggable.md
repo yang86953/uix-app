@@ -176,7 +176,9 @@ native
   backends/<os>/ — 窗口 / presenter / surface 句柄
 ```
 
-**Bootstrap（选项 B）**：`draw::bootstrap_graphics_engine` 只走 GPU 路径；`PresentMode::CpuPresenter` / `SoftwareEngine` + `IPresenter` 留在 **app + native 窗口**。Probe **唯一**循环在 draw bootstrap；engine 失败须 `ctx.shutdown()` 再试下一候选。
+**Bootstrap（选项 B）**：`draw::bootstrap_graphics_engine` 只走 GPU 路径；`PresentMode::CpuPresenter` / `SoftwareEngine` + `IPresenter` 留在 **app + native 窗口**。Probe **唯一**循环在 draw bootstrap；每次失败保留 candidate、stage、selected 与完整错误，app 按原顺序记录报告；engine 失败须 `ctx.shutdown()` 再试下一候选。
+
+**关闭顺序**：`WindowSession` 幂等 shutdown engine；OpenGL 后端先 make current 并释放 canvas GL 资源，再关闭 WGL/EGL context；最后由 app 显式关闭 native window。engine/backend/context 的 Drop 只作幂等兜底，禁止让 raw GL 资源晚于 context 析构。
 
 ---
 

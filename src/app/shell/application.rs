@@ -20,7 +20,7 @@ use crate::app::window_config::WindowConfig;
 use crate::app::window_session::{WindowLoopState, WindowSession};
 use crate::core::{Point, WindowId};
 use crate::data::SettingsService;
-use crate::draw::engine::bootstrap::bootstrap_graphics_engine;
+use crate::draw::engine::bootstrap::{bootstrap_graphics_engine, ProbeReport};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
@@ -59,8 +59,9 @@ fn report_window_operation_error(context: &str, result: crate::core::Result<()>)
 }
 
 struct SecondaryWindowSession {
-    _window: Box<dyn PlatformWindow>,
+    // session 必须先于原生窗口析构，确保 engine/GL 资源先释放。
     session: WindowSession,
+    _window: Box<dyn PlatformWindow>,
     handle: AppHandle,
     frame_renderer: FrameRenderer,
     rendered_first: bool,
@@ -374,7 +375,9 @@ impl SecondaryWindowSession {
         parts.active_work.next_deadline()
     }
 
-    fn close(self) {
+    fn close(mut self) {
+        self.session.shutdown();
+        report_window_operation_error("secondary close failed", self._window.close());
         self.handle.mark_closed();
     }
 }
@@ -844,6 +847,9 @@ impl App {
             |_, _, _| {},
         );
 
+        session.shutdown();
+        report_window_operation_error("main close failed", platform_window.close());
+
         let mut secondary_windows = secondary_windows.into_inner();
         for window in secondary_windows.drain(..) {
             window.close();
@@ -1006,7 +1012,7 @@ fn dispatch_secondary_window_event(
     if secondary_windows[index].handle_event(platform, event) {
         true
     } else {
-        secondary_windows.remove(index);
+        secondary_windows.remove(index).close();
         true
     }
 }
@@ -1131,8 +1137,8 @@ fn create_secondary_window(
     );
 
     Some(SecondaryWindowSession {
-        _window: platform_window,
         session,
+        _window: platform_window,
         handle,
         frame_renderer: FrameRenderer::new(),
         rendered_first: false,
@@ -1263,19 +1269,19 @@ fn create_preferred_engine(
     let surface = platform_window.native_surface_ptr();
     match bootstrap_graphics_engine(surface, width, height, graphics_backend) {
         Ok(gpu) => {
-            crate::core::log::info_fn(format!("GPU engine initialized ({})", gpu.selected));
+            if gpu.report.failures.is_empty() {
+                crate::core::log::info_fn(format!("GPU engine initialized ({})", gpu.selected));
+            } else {
+                crate::core::log::warn_fn(format!(
+                    "GPU engine initialized after probe fallback; selected={}; failures=[{}]",
+                    gpu.selected,
+                    format_probe_failures(&gpu.report)
+                ));
+            }
             Some(gpu.engine)
         }
-        Err(_report) => {
-            if graphics_backend != GraphicsBackend::Auto {
-                crate::core::log::warn_fn(format!(
-                    "GPU engine unavailable for requested {graphics_backend}, falling back to CPU"
-                ));
-            } else {
-                crate::core::log::warn_fn(
-                    "GPU engine unavailable for every auto candidate, falling back to CPU",
-                );
-            }
+        Err(report) => {
+            crate::core::log::warn_fn(format_gpu_probe_fallback(graphics_backend, &report));
 
             let mut engine = SoftwareEngine::new();
             match engine.initialize(width, height) {
@@ -1284,15 +1290,39 @@ fn create_preferred_engine(
                     Some(Box::new(engine))
                 }
                 Err(e) => {
-                    crate::core::log::error_fn(format!(
-                        "SoftwareEngine 初始化失败: {}",
-                        e.short_what()
-                    ));
+                    engine.shutdown();
+                    crate::core::log::error_fn(format!("SoftwareEngine 初始化失败: {}", e.what()));
                     None
                 }
             }
         }
     }
+}
+
+fn format_probe_failures(report: &ProbeReport) -> String {
+    if report.failures.is_empty() {
+        return "none".to_string();
+    }
+
+    report
+        .failures
+        .iter()
+        .enumerate()
+        .map(|(index, failure)| {
+            format!(
+                "failure[{index}]={{candidate={}, detail={:?}}}",
+                failure.backend, failure.message
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn format_gpu_probe_fallback(request: GraphicsBackend, report: &ProbeReport) -> String {
+    format!(
+        "GPU probe exhausted; request={request}; failures=[{}]; falling_back=cpu",
+        format_probe_failures(report)
+    )
 }
 
 // ════════════════════════════════════════════════════════════════════════════

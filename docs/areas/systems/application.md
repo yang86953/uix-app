@@ -150,7 +150,7 @@ Active 在事件与定向队列 drain 后若无 pending 且 Registry 为空，�
 
 ### 窗口生命周期事件
 
-Resize → `engine.resize` + layout invalidation。Maximize/Restore/Minimize → 更新可见性标志；Minimize 跳过后续 layout/render。
+Resize → `engine.resize` + layout invalidation。Maximize/Restore/Minimize → 更新可见性标志；Minimize 跳过后续 layout/render。Close 先进入 app 事件队列；`WindowSession::shutdown` 幂等关闭 engine，随后才销毁 native window，`Drop` 仅作漏调用兜底。
 
 ---
 
@@ -597,7 +597,7 @@ TimerHandle drop / cancel
 |------|----------------|
 | `TimerHandle` | cancel + unregister（#132） |
 | `AppHandle` | 无 side effect；Timer 仍存活直至 cancel 或 session 结束 |
-| `WindowSession` | cancel 本 session 全部 AppTimer |
+| `WindowSession` | cancel 本 session 全部 AppTimer；幂等 shutdown engine；App 随后关闭对应 native window |
 | `App::run()` 结束 | cancel 所有未结束 AppTimer |
 
 多窗：A 窗关闭 **不** cancel B 窗 Timer；各 session Registry 独立（#116）。

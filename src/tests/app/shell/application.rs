@@ -5,6 +5,7 @@ use crate::app::test_clock::system_clock;
 use crate::app::window_session::WindowLoopState;
 use crate::core::{Point, Rect};
 use crate::data::SettingsService;
+use crate::draw::engine::bootstrap::ProbeFailure;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::native::test_harness::FakePlatform;
@@ -283,6 +284,36 @@ fn app_graphics_backend_falls_back_from_invalid_env_to_settings() {
         resolve_graphics_backend(None, Some("not-a-backend"), Some(&settings)),
         GraphicsBackend::OpenGlEs
     );
+}
+
+#[test]
+fn gpu_probe_fallback_format_preserves_request_failures_and_order() {
+    let report = ProbeReport {
+        failures: vec![
+            ProbeFailure {
+                backend: GraphicsBackend::D3d11,
+                message: "stage=context_create; selected=none; error=device unavailable".into(),
+            },
+            ProbeFailure {
+                backend: GraphicsBackend::OpenGlEs,
+                message: "stage=engine_initialize; selected=opengles; error=shader failed".into(),
+            },
+        ],
+    };
+
+    let message = format_gpu_probe_fallback(GraphicsBackend::Auto, &report);
+    assert!(message.contains("request=auto"));
+    assert!(message.contains("falling_back=cpu"));
+    let d3d11 = message.find("candidate=d3d11");
+    let opengles = message.find("candidate=opengles");
+    assert!(matches!(
+        (d3d11, opengles),
+        (Some(d3d11), Some(opengles)) if d3d11 < opengles
+    ));
+    assert!(message.contains("stage=context_create"));
+    assert!(message.contains("device unavailable"));
+    assert!(message.contains("stage=engine_initialize"));
+    assert!(message.contains("shader failed"));
 }
 
 #[test]

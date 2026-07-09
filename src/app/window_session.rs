@@ -40,6 +40,7 @@ pub(crate) struct WindowSession {
     window_id: WindowId,
     tree: WidgetTree,
     engine: Box<dyn GraphicsEngine>,
+    engine_shutdown: bool,
     loop_state: WindowLoopState,
     active_work: ActiveWorkRegistry,
     app_timers: AppTimerQueue,
@@ -90,6 +91,7 @@ impl WindowSession {
             window_id,
             tree,
             engine,
+            engine_shutdown: false,
             loop_state: WindowLoopState::Active,
             active_work: ActiveWorkRegistry::new(),
             app_timers: AppTimerQueue::new(),
@@ -134,6 +136,14 @@ impl WindowSession {
 
     pub(crate) fn tree_and_engine_mut(&mut self) -> (&mut WidgetTree, &mut dyn GraphicsEngine) {
         (&mut self.tree, self.engine.as_mut())
+    }
+
+    pub(crate) fn shutdown(&mut self) {
+        if self.engine_shutdown {
+            return;
+        }
+        self.engine_shutdown = true;
+        self.engine.shutdown();
     }
 
     pub(crate) fn window_id(&self) -> WindowId {
@@ -200,6 +210,12 @@ impl WindowSession {
 
     pub(crate) fn view_factory(&self) -> &ViewFactorySlot {
         &self.view_factory
+    }
+}
+
+impl Drop for WindowSession {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 
