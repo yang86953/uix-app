@@ -6,7 +6,7 @@
 
 
 
-> **状态**：可插拔图形后端架构（#163、#164）已落地。**非 P6 任务不必通读本文** — 原则见下节，backlog → [implementation · P6](../implementation.md#p6-生产级框架)。
+> **状态**：P6.7 可插拔 registry 与 probe 已落地；P6.8 可组合渲染轴（`RasterMode × PresentMode` 替换 `RenderPipelineProfile`）为 backlog（[#169](../../decisions.md#d169)）。**非 P6 任务不必通读本文** — 原则见下节，backlog → [implementation · P6](../implementation.md#p6-生产级框架)。
 
 
 
@@ -194,14 +194,39 @@ flowchart TB
 | **Present** | `PresentMode` → `swap_buffers` · `present(PixelBuffer)` · `IPresenter` | 像素如何上屏；与光栅 **正交** | `native` traits + engine |
 | **图形 API** | `IGraphicsContext` + `GraphicsBackend` | surface、swapchain、统一 `present(PresentFrame)` | `native/graphics/<api>/` |
 
-**目标组合**（任意 API 理论上均可）：
+**类型定义**（目标态，替换 `RenderPipelineProfile`）：
 
-| RasterMode | PresentMode | 典型 Engine | 当前实现 |
-|------------|-------------|-------------|----------|
-| GPU native | Swapchain | `GpuEngine` | ✅ OpenGL ES |
-| GPU native | Pixel upload | （未来） | ❌ backlog |
-| CPU | Pixel upload | `PresentUploadEngine` | ✅ D3D11 / Vulkan / Metal |
-| CPU | `IPresenter` | `SoftwareEngine` | ✅ 全平台回退 |
+```rust
+// native/traits/present.rs（目标态）
+pub enum RasterMode {
+    /// CPU Canvas2D 光栅（CpuBackend）。
+    Cpu,
+    /// GPU 原生光栅（RenderBackendRegistry 按 GraphicsBackend 配对）。
+    GpuNative,
+}
+
+pub enum PresentMode {
+    /// GPU swapchain / equivalent（swap_buffers）。
+    Swapchain,
+    /// CPU 像素上传（present_pixels / PresentFrame::PixelBuffer）。
+    PixelUpload,
+    /// 纯 CPU presenter（IPresenter），无需 IGraphicsContext。
+    CpuPresenter,
+}
+```
+
+迁移对照：`RenderPipelineProfile::NativeGpuRaster` → `RasterMode::GpuNative + PresentMode::Swapchain`；`CpuUploadPresent` → `RasterMode::Cpu + PresentMode::PixelUpload`；`CpuPresenter` → `RasterMode::Cpu + PresentMode::CpuPresenter`。
+
+**目标组合**（任意 API 理论上均可，✅=已实现，🔧=当前过渡预设，❌=backlog）：
+
+| RasterMode | PresentMode | 典型 Engine | OpenGL ES | D3D11 | Vulkan | Metal |
+|------------|-------------|-------------|:---:|:---:|:---:|:---:|
+| `GpuNative` | `Swapchain` | `GpuEngine` | ✅ | ❌ | ❌ | ❌ |
+| `Cpu` | `PixelUpload` | `PresentUploadEngine` | — | 🔧 | 🔧 | 🔧 |
+| `Cpu` | `CpuPresenter` | `SoftwareEngine` | ✅ | ✅ | ✅ | ✅ |
+
+> 🔧 = 当前 `RenderPipelineProfile` 过渡预设，迁移后改为直接声明 `RasterMode × PresentMode`。
+> D3D11 `GpuNative` 为下一优先（[#169](../../decisions.md#d169)）；Metal/D3D12 随后。
 
 **错误表述**：「D3D11 只能 CpuUploadPresent」「只有 GL 能 GPU 光栅」— 应写：**当前** D3D11 context 声明 `CpuUploadPresent` **过渡预设**；**下一代码优先**（[#167](../../decisions.md#d167) [#169](../../decisions.md#d169)）为 D3D11 **GPU native raster**（registry + caps）。
 
@@ -309,43 +334,21 @@ native
 
 ## 核心抽象
 
+| 设计轴 | 类型 | 域 | 职责 | 目标态（#169） |
+|--------|------|-----|------|---------------|
+| API 身份 | `GraphicsBackend` | native | 图形 API 枚举（`D3D11` / `Vulkan` / …）；诊断与 opt-in | 与光栅 / present **正交**；probe 候选 + `RenderBackendRegistry` 键 |
+| 光栅 | `RasterMode` | native / draw | `Cpu`（`CpuBackend`）/ `GpuNative`（`RenderBackendRegistry` 按 API 配对） | 替换 `RenderPipelineProfile` 的 bundled 语义 |
+| Present | `PresentMode` | native / draw | `Swapchain` / `PixelUpload`（`PresentFrame::PixelBuffer`）/ `CpuPresenter`（`IPresenter`） | 同上；与光栅正交组合 |
+| 过渡预设 | `RenderPipelineProfile` | native | **Deprecated**：bundled 过渡预设（`NativeGpuRaster` / `CpuUploadPresent` / `CpuPresenter`） | **breaking 删除**，由 `RasterMode × PresentMode` 替代 |
+| 引擎级后端 | `BackendKind` | draw | `Cpu` / `Gpu` / `Auto` / `Null` | **#169 统一**：`Gpu` 重新定义为"尝试 GPU 路径"（不绑定具体 API），`Auto` 由 registry probe 决定；消除与 Profile 的 bundled 语义 |
+| 能力快照 | `GraphicsContextCaps` | native | 当前：`backend + pipeline + partial_present + DPR` | 目标：`backend + raster + present + partial_present + DPR`；`pipeline` 字段移除 |
+| Registry 行 | `GraphicsBackendEntry` | native/factory | `id`、`priority`、`status`（Active / Planned / Disabled）、`create` | 不变；表驱动 |
+| 光栅注册表 | `RenderBackendRegistry` | draw | `GpuNative` 时按 `GraphicsBackend` 配对光栅 backend | 不变；当前仅 GL，下一优先 D3D11 |
+| Bootstrap | `bootstrap_graphics_engine` | draw | **唯一** probe 循环 + `create_graphics_engine` | 不变；probe 循环唯一 |
 
+**分派规则（当前 → 目标）**：**当前** `caps.pipeline`（Profile）→ bundled engine；**目标**（#169）`caps.raster × caps.present` → 表驱动 engine 装配；`caps.backend` → `RenderBackendRegistry`（`RasterMode::GpuNative` 时）。
 
-| 类型 | 域 | 职责 |
-
-|------|-----|------|
-
-| `RenderPipelineProfile` | native | **Deprecated for removal**（#169）：bundled 过渡预设；**目标** `RasterMode` + `PresentMode` 正交 caps / registry 行 |
-| `RasterMode` | native / draw | 光栅轴：`Cpu` / `GpuNative`；映射 `CpuBackend` 或 `RenderBackendRegistry` |
-| `PresentMode` | native / draw | Present 轴：`Swapchain` / `PixelUpload` / `CpuPresenter` |
-
-| `GraphicsContextCaps` | native | `backend` + `pipeline` + `partial_present` + DPR；**不**重复 draw 侧 caps |
-
-| `GraphicsBackendEntry` | native/factory | registry 行：`id`、`platforms`、`priority`、`status`、`create` |
-
-| `RenderBackendRegistry` | draw | `NativeGpuRaster` 时按 `caps.backend` 配对光栅 backend |
-
-| `bootstrap_graphics_engine` | draw | **唯一** probe 循环 + `create_graphics_engine` |
-
-
-
-**分派规则（当前 → 目标）**：**当前** `caps.pipeline`（Profile）→ bundled engine；**目标**（#169）`caps.raster` × `caps.present` → 表驱动 engine 装配；`caps.backend` → `RenderBackendRegistry`（`RasterMode::GpuNative` 时）。`CpuUploadPresent` 过渡预设 = `RasterMode::Cpu` + `PresentMode::PixelUpload` — 实现细节，非永久约束。
-
-**Present 组件**（正交于光栅）：Swapchain · Pixel upload（`PresentFrame::PixelBuffer`）· `IPresenter`（无 `IGraphicsContext`）。统一 GPU 契约：`IGraphicsContext::present(PresentFrame)`。
-
-**BackendKind**（draw）：`Cpu` / `Gpu` / `Auto` / `Null` — **纳入 #169 统一**，与 `RasterMode` / `PresentMode` / `GraphicsBackend` 对齐，消除 Profile bundled 语义。
-
-<a id="能力模型与映射"></a>
-
-### 能力模型与映射
-
-| 设计轴 | 类型 | 与 Profile 关系 |
-|--------|------|-----------------|
-| API 身份 | `GraphicsBackend` | 与光栅 / present **正交**；probe 候选与 `RenderBackendRegistry` 键 |
-| 光栅 | `RasterMode` → `RenderBackend` trait | CPU：`CpuBackend`；GPU：按 backend 注册（当前仅 GL；**下一优先** D3D11） |
-| Present | `PresentMode` → `PresentFrame` / `IPresenter` | engine 在 `end_frame` 选择路径；与 API 名 **不**绑定 |
-| 过渡预设 | `RenderPipelineProfile` | **Deprecated**（#169）：当前 `pipeline` 一次决定 engine；**breaking 删除** |
-| draw 引擎级 | `BackendKind` | **#169 统一**：与正交轴对齐，非 bundled profile 语义 |
+**Present 组件**（正交于光栅）：`Swapchain` · `PixelUpload`（`PresentFrame::PixelBuffer`）· `CpuPresenter`（`IPresenter`，无 `IGraphicsContext`）。统一 GPU 契约：`IGraphicsContext::present(PresentFrame)`。
 
 
 
@@ -385,7 +388,7 @@ native
 
 |------|------|------|
 
-| 1 | `native/graphics/metal/context.rs` | 实现 `IGraphicsContext`；`caps().pipeline = NativeGpuRaster` |
+| 1 | `native/graphics/metal/context.rs` | 实现 `IGraphicsContext`；`caps()` 声明 `raster: RasterMode::GpuNative`、`present: PresentMode::Swapchain` |
 
 | 2 | `native/factory/registry_macos.rs` | 添加 `GraphicsBackendEntry` |
 
@@ -401,11 +404,15 @@ native
 
 
 
+> **过渡期**（`RenderPipelineProfile` 移除前）：步骤 1 同时填写 `pipeline: RenderPipelineProfile::NativeGpuRaster` 以兼容当前分派。Profile 移除后仅需 `raster + present`。
+
+
+
 **禁止**：在 `app`/`ui` 增加 `#[cfg]` 或 API 分支；在 `FrameRenderer` 增加 backend 特判；在 `create_graphics_engine` 写硬编码 `match`；保留第二套并行 factory。
 
 
 
-**CpuUploadPresent 扩展路径**：仅完成步骤 1–2，`pipeline = CpuUploadPresent`，跳过 4–5 — D3D11/Vulkan/Metal 均采用此路径。
+**CPU 光栅 + Pixel upload 扩展路径**（如 D3D11/Vulkan/Metal 当前预设）：仅完成步骤 1–2，声明 `raster: RasterMode::Cpu`、`present: PresentMode::PixelUpload`，跳过 4–5。
 
 
 
