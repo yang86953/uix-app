@@ -573,7 +573,12 @@ impl D3d11Canvas2D {
             return Ok(());
         }
         let pixels = self.soft_fallback.surface().pixels();
-        gpu_ctx.blit_soft_fallback(pixels, self.surface_w, self.surface_h)
+        gpu_ctx.blit_soft_fallback(pixels, self.surface_w, self.surface_h)?;
+        // Soft content was composited; reset so the next frame starts clean
+        // (clear_all already wipes, but DirtyRects may skip a full clear).
+        self.soft_fallback.surface_mut().clear_all();
+        self.soft_has_content = false;
+        Ok(())
     }
 }
 
@@ -1365,6 +1370,24 @@ mod tests {
         assert_eq!(present_calls.get(), 1);
         let _ = PresentMode::Swapchain;
         let _ = (clear_rect_calls.get(), last_stroke_count.get(), last_glyph_count.get());
+    }
+
+    #[test]
+    fn d3d11_soft_clear_is_transparent_so_blit_does_not_wipe_native() {
+        // Soft fallback PixelSurface must clear to A=0; opaque black would
+        // SRC_ALPHA-overwrite GPU-native fills/glyphs on blit.
+        let mut canvas = D3d11Canvas2D::new(8, 8);
+        canvas.clear_soft();
+        assert!(
+            canvas
+                .soft_fallback
+                .surface()
+                .pixels()
+                .iter()
+                .all(|&p| p == 0x0000_0000),
+            "soft clear must be transparent"
+        );
+        assert!(!canvas.soft_has_content);
     }
 
     #[test]

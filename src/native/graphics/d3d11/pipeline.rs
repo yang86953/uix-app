@@ -138,7 +138,8 @@ float4 PSMain(VSOut input) : SV_Target
     }
     if (mask <= 0.0)
         discard;
-    return u_color * mask;
+    // Straight-alpha output for SRC_ALPHA blend (do not premul RGB by mask).
+    return float4(u_color.rgb, u_color.a * mask);
 }
 "#;
 
@@ -206,7 +207,9 @@ VSOut VSMain(VSIn input)
 float4 PSMain(VSOut input) : SV_Target
 {
     float a = u_atlas.Sample(u_samp, input.uv);
-    return input.color * a;
+    // Coverage modulates alpha only — RGB stays straight for SRC_ALPHA blend.
+    // Premul (`color * a`) washed glyphs out to near-invisible gray.
+    return float4(input.color.rgb, input.color.a * a);
 }
 "#;
 
@@ -408,7 +411,8 @@ float4 PSMain(VSOut input) : SV_Target
     }
     if (coverage <= 0.0)
         discard;
-    return u_color * coverage;
+    // Straight-alpha for SRC_ALPHA blend (matches glyph / rounded-rect path).
+    return float4(u_color.rgb, u_color.a * coverage);
 }
 "#;
 
