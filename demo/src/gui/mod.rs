@@ -8,73 +8,118 @@ use uix::prelude::*;
 use crate::common::page::{page_heading, INIT_H, INIT_W, PAGE_TITLES, SIDEBAR_GROUPS, SIDEBAR_W};
 use crate::demos::{build_page, DemoCtx};
 
-fn sidebar_item(active: State<usize>, index: usize, label_text: &str) -> ViewNode {
+fn sidebar_item(
+    active: State<usize>,
+    index: usize,
+    icon: &str,
+    label_text: &str,
+    tk: &DesignTokens,
+) -> ViewNode {
     let active_set = active.clone();
-    let text = label_text.to_string();
+    let title = label_text.trim().to_string();
     let is_active = active.get() == index;
-    let mut builder = button(text).on_click(move || active_set.set(index));
+
+    let text_color = if is_active {
+        tk.color_primary
+    } else {
+        tk.color_text_secondary
+    };
+
+    let mut item = row([
+        embed(Icon::new(icon).size(16.0)),
+        space(10.0),
+        label(title).font_size(13.0).color(text_color),
+    ])
+    .width(SIDEBAR_W - 24.0)
+    .padding(EdgeInsets::new(12.0, 8.0, 12.0, 8.0))
+    .radius(tk.border_radius_sm);
+
     if is_active {
-        builder = builder.primary();
+        item = item.bg(tk.color_primary_bg);
     }
-    builder
-        .width(SIDEBAR_W - 16.0)
-        .padding((8.0, 4.0, 8.0, 4.0))
+
+    item.on_semantic(SemanticKind::Click, move |_| active_set.set(index))
 }
 
 fn sidebar_group_label(tk: &DesignTokens, text: &str) -> ViewNode {
     label(text)
         .font_size(11.0)
         .color(tk.color_text_quaternary)
-        .padding((16.0, 12.0, 4.0, 8.0))
+        .padding(EdgeInsets::new(16.0, 16.0, 4.0, 8.0))
+}
+
+fn sidebar_brand(tk: &DesignTokens) -> ViewNode {
+    row([
+        embed(
+            Icon::new("box")
+                .size(22.0),
+        ),
+        space(10.0),
+        column([
+            label("UIX Demo")
+                .font_size(17.0)
+                .color(tk.color_text),
+            label("Component Showcase")
+                .font_size(11.0)
+                .color(tk.color_text_tertiary),
+        ])
+        .flex_grow(0.0),
+    ])
+    .padding(EdgeInsets::new(16.0, 20.0, 12.0, 16.0))
 }
 
 fn sidebar(active: State<usize>, tk: &DesignTokens) -> ViewNode {
-    let mut items = vec![
-        label("UIX Demo")
-            .font_size(16.0)
-            .padding((12.0, 16.0, 8.0, 8.0))
-            .color(tk.color_text),
-        embed(Divider::new()),
-    ];
+    let mut items = vec![sidebar_brand(tk), embed(Divider::new())];
     for (group_name, indices) in SIDEBAR_GROUPS {
         items.push(sidebar_group_label(tk, group_name));
         for &i in *indices {
-            let (_, title) = PAGE_TITLES[i];
-            items.push(sidebar_item(active.clone(), i, title.trim()));
+            let (icon, title) = PAGE_TITLES[i];
+            items.push(sidebar_item(active.clone(), i, icon, title, tk));
         }
     }
     items.push(label("").flex_grow(1.0));
+    items.push(embed(Divider::new()));
     items.push(
         label("cargo run --bin uix-demo")
             .font_size(10.0)
             .color(tk.color_text_quaternary)
-            .padding((4.0, 8.0, 4.0, 8.0)),
+            .padding(EdgeInsets::new(12.0, 16.0, 2.0, 8.0)),
     );
     items.push(
         label("UIX v0.1.0")
             .font_size(11.0)
             .color(tk.color_text_quaternary)
-            .padding((4.0, 8.0, 12.0, 8.0)),
+            .padding(EdgeInsets::new(2.0, 16.0, 16.0, 8.0)),
     );
     column(items)
         .width(SIDEBAR_W)
         .bg(tk.color_bg_elevated)
-        .flex_grow(1.0)
+        .flex_grow(0.0)
 }
 
-fn header_bar(tk: &DesignTokens, timer_ticks: &State<u32>) -> ViewNode {
+fn header_bar(active: &State<usize>, tk: &DesignTokens, timer_ticks: &State<u32>) -> ViewNode {
+    let active_for_title = active.clone();
     let ticks = timer_ticks.clone();
-    row([
-        label("").flex_grow(1.0).height(44.0),
-        dynamic_label(move || format!("timer: {}", ticks.get()))
-            .font_size(11.0)
-            .color(tk.color_text_tertiary)
-            .width(80.0)
-            .height(44.0),
-        embed(ThemeToggle::new()),
+    column([
+        row([
+            dynamic_label(move || {
+                let idx = active_for_title.get();
+                let (_, title) = PAGE_TITLES[idx];
+                title.trim().to_string()
+            })
+            .font_size(15.0)
+            .color(tk.color_text_secondary)
+            .padding(EdgeInsets::new(24.0, 0.0, 0.0, 0.0)),
+            label("").flex_grow(1.0),
+            dynamic_label(move || format!("⏱ {}", ticks.get()))
+                .font_size(11.0)
+                .color(tk.color_text_tertiary)
+                .padding(EdgeInsets::new(0.0, 0.0, 0.0, 12.0)),
+            embed(ThemeToggle::new()),
+        ])
+        .bg(tk.color_bg_container),
+        embed(Divider::new()),
     ])
-    .height(44.0)
-    .bg(tk.color_bg_container)
 }
 
 fn page_body(
@@ -84,11 +129,11 @@ fn page_body(
     anim_time: &State<f32>,
 ) -> ViewNode {
     column([
-        header_bar(tk, timer_ticks),
+        header_bar(&active, tk, timer_ticks),
         page_content(active, tk, timer_ticks, anim_time),
     ])
     .flex_grow(1.0)
-    .bg(tk.color_bg_container)
+    .bg(tk.color_bg_layout)
 }
 
 fn page_shell(
@@ -106,7 +151,7 @@ fn page_shell(
     ])
     .key(format!("page-{idx}"))
     .flex_grow(1.0)
-    .padding((0.0, 16.0, 0.0, 0.0))
+    .padding(EdgeInsets::new(8.0, 24.0, 16.0, 24.0))
 }
 
 fn page_content(
@@ -127,14 +172,16 @@ fn app_shell(active: State<usize>, timer_ticks: State<u32>, anim_time: State<f32
             page_body(active, &tk, &timer_ticks, &anim_time),
         ])
         .flex_grow(1.0),
-        embed(
+        row([
+            embed(Icon::new("terminal").size(12.0)),
+            space(6.0),
             label("UIX GUI 演示 — 侧边栏切换页面 · --cli 查看无窗口 API")
                 .font_size(11.0)
-                .color(tk.color_text_tertiary)
-                .padding((4.0, 8.0, 4.0, 8.0))
-                .height(24.0)
-                .bg(tk.color_fill_tertiary),
-        ),
+                .color(tk.color_text_tertiary),
+        ])
+        .padding(EdgeInsets::new(6.0, 12.0, 6.0, 12.0))
+        .bg(tk.color_fill_tertiary)
+        .border(1.0, tk.color_border_secondary),
     ])
     .flex_grow(1.0)
     .bg(tk.color_bg_layout)

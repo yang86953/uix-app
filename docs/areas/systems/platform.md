@@ -2,7 +2,7 @@
 
 ← [Main](../architecture.md) · 系统 **#8** · 功能域：`native`
 
-> OS 差异隔离；traits 对外；Fail Fast。
+> OS 差异**仅**在此域隔离；`native` **抹平**全部平台差异，使 `core` / `draw` / `ui` / `app` / `data` 代码跨 OS **完全一致**。traits 对外；Fail Fast。**当前开发优先级**：Windows 端先行打磨（[#167](../../decisions.md#d167)），Linux / macOS / 移动端复用同一上层、仅换 backend。
 
 ## 索引
 
@@ -10,7 +10,7 @@
 |------|------|------|
 | 聚合入口 | [Platform 聚合](#platform-聚合) | AGENTS |
 | 窗口与呈现 | [窗口与呈现](#窗口与呈现) | #59 #70 #162 |
-| 多图形 API | [多图形 API 与 factory](#多图形-api-与-factory) | #162 |
+| 多图形 API | [多图形 API 与 factory](#多图形-api-与-factory) | #162 #164 |
 | 输入 | [输入](#输入) | #71 #75 |
 | 事件 | [事件模型](#事件模型) | — |
 | 系统服务 | [系统服务](#系统服务) | — |
@@ -49,6 +49,8 @@ trait Platform {
 
 **硬约束**：`core` / `draw` / `ui` / `app` 只依赖 `native::traits` 与公开 services；**禁止** `use native::backends::*`。`data` 仅依赖 `core`（见 [data](data.md)）。
 
+**平台层职责**（[#167](../../decisions.md#d167)）：**唯一**允许 OS 差异的代码域。窗口、事件、呈现、输入、系统服务等全部差异封装在 `native/backends/`、`native/graphics/` 与 `factory/`；上层 **不得** 感知 Win32 / Wayland / AppKit 等实现细节，只通过 trait + `Result` 交互。
+
 能力差异用 trait + `Result` 表达，不用上层 `#[cfg]`。
 
 ---
@@ -74,22 +76,25 @@ trait Platform {
 
 当前能力边界：
 
-| 能力 | Windows | Linux Wayland |
-|------|---------|---------------|
-| position / resizable / borderless / always_on_top / opacity / file_drop | 原生或窗口管理 API 支持则 `Ok(())` | 协议不支持或由 compositor 控制，返回 `Err(NotImplemented)` |
-| maximize / minimize / restore / fullscreen | `Ok(())` | xdg_toplevel 支持，返回 `Ok(())` |
-| text_input | 由平台 IME/text-input 通道管理，返回 `Ok(())` | 由 Wayland text-input manager 管理，返回 `Ok(())` |
+| 能力 | Windows | Linux Wayland | macOS |
+|------|---------|---------------|-------|
+| position / resizable / borderless / always_on_top / opacity / file_drop | 原生或窗口管理 API 支持则 `Ok(())` | 协议不支持或由 compositor 控制，返回 `Err(NotImplemented)` | 多数未接，返回 `Err(NotImplemented)` |
+| maximize / minimize / restore / fullscreen | `Ok(())` | xdg_toplevel 支持，返回 `Ok(())` | 未接 |
+| text_input | 由平台 IME/text-input 通道管理，返回 `Ok(())` | 由 Wayland text-input manager 管理，返回 `Ok(())` | `UixContentView`（NSTextInputClient）+ `ITextInput`，返回 `Ok(())` |
 
 ### 呈现（#59、#70）
 
-| 路径 | 接口 | damage |
-|------|------|--------|
-| CPU | `IPresenter::present(pixels, w, h, PresentDamage)` | Full / Partial rects |
-| GPU | `IGraphicsContext::swap_buffers(PresentDamage)` | 同上 |
+| 路径 | 接口 | damage | 当前 engine |
+|------|------|--------|-------------|
+| CPU | `IPresenter::present(pixels, w, h, PresentDamage)` | Full / Partial rects | `SoftwareEngine` |
+| GPU · GL | `IGraphicsContext::swap_buffers(PresentDamage)` | 同上 | `GpuEngine` + `GpuBackend` |
+| GPU · D3D/Vulkan/Metal | `IGraphicsContext::present(PresentFrame)`（`present_pixels` 转发） | 全帧像素上传 | `PresentUploadEngine` + `CpuBackend` |
 
 `PresentDamage` 来自 `core::damage` — 物理像素矩形列表或全屏。
 
-GPU 路径：`PlatformWindow::graphics_context()` 返回 `Option<&mut dyn IGraphicsContext>`；`app` 启动层将其传入 `create_gpu_context` 等价流程（或直接持有 context）再构造 `GpuEngine`。具体 API（WGL/EGL/Vulkan/…）对上层 **不可见** — 见 [rendering · 多图形 API](rendering.md#多图形-api) · [#162](../../decisions.md#d162)。
+**Present 分派（当前）**：`create_graphics_engine` 读 `caps().pipeline` **预设** — `NativeGpuRaster` → `GpuEngine`，`CpuUploadPresent` → `PresentUploadEngine`。正交能力模型 → [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)（#168）。
+
+GPU 路径：`PlatformWindow::graphics_context()` 返回 `Option<&mut dyn IGraphicsContext>`；`app::create_preferred_engine` 调用 `draw::bootstrap_graphics_engine`（**唯一** probe 循环）。`create_gpu_context*` 为 factory **单条目**低层入口（测试 / 直接调用；`Auto` 须走 bootstrap），**非** app 主路径。具体 API 对上层 **不可见** — 选型摘要见 [rendering · 多图形 API](rendering.md#多图形-api) · [graphics-backend-pluggable · 核心抽象](graphics-backend-pluggable.md#核心抽象) · [#162](../../decisions.md#d162)。
 
 ### IDisplay
 
@@ -153,7 +158,7 @@ impl EventLoopWaker {
 |------|------|
 | 注入 | `App::run_gui` 从 `platform.event_loop().waker()` 写入 `AppRuntime` 与 `AppState` |
 | 触发 | `post_to_ui` / Timer 注册 / semantic queue 等成功入队后调用 `wake()` |
-| 后端 | Windows / Linux Wayland / FakePlatform 提供真实 wake；`Default` 为 no-op |
+| 后端 | Windows / Linux Wayland / macOS / FakePlatform 提供真实 wake；`Default` 为 no-op |
 
 **DeepIdle**（#106）：App 主循环须 blocking `wait_event`。**RegisteredActive** 须 `wait_until(next_deadline)`（#117），**不**用固定 `wait_timeout` 探活。`wait_timeout` 仅作 App opt-in 或测试辅助。详见 [demand-driven · ActiveWorkRegistry](demand-driven.md#activeworkregistry) · [application · 事件轮询策略](application.md#事件轮询策略)。
 
@@ -226,46 +231,33 @@ native/traits/
 | 入口 | 作用 |
 |------|------|
 | `create_platform()` | 当前 OS 的 Platform 实例 |
-| `create_gpu_context(surface, w, h)` | 按平台与 #162 选型创建 `Box<dyn IGraphicsContext>` |
+| `create_gpu_context(surface, w, h)` | **单条目** `try_create_gpu_context`；`Auto` 返回错误（须 `draw::bootstrap_graphics_engine`）；供测试 / 低层直接调用 |
+| `create_gpu_context_with_backend(..., backend)` | 同上，显式指定 API；**无** probe 循环 |
 | `available_memory_bytes()` | 引擎选择参考（内存不足时可倾向 SoftwareEngine） |
 
 Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Wayland）、`native/backends/macos/`（AppKit bootstrap）。
 
-| 平台 | Platform | GPU 上下文（当前） | GPU 上下文（规划） |
-|------|----------|-------------------|-------------------|
-| Windows | ✅ | ✅ D3D11 + WGL → OpenGL ES | D3D12 |
+| 平台 | Platform | GPU 上下文 | 备注 |
+|------|----------|-----------|------|
+| Windows | ✅ | ✅ D3D11 + WGL → OpenGL ES | D3D12 Planned |
 | Linux (Wayland) | ✅ | ✅ Vulkan + EGL → OpenGL ES | — |
-| macOS | ✅ AppKit SoftwareEngine bootstrap | — | Metal |
+| macOS | ✅ AppKit bootstrap | ✅ Metal（CpuUploadPresent，feature `metal`） | native raster backlog |
 
 <a id="多图形-api-与-factory"></a>
 
 ### 多图形 API 与 factory
 
-`factory.rs` 是 **唯一** 对外 `#[cfg]` 分派点（AGENTS）；新增图形 API **只**在此与 `backends/<platform>/gpu/` 接线。
+**架构原则**（#163、#164）→ [graphics-backend-pluggable · 图形 API 架构原则](graphics-backend-pluggable.md#图形-api-架构原则) · [源码目录](graphics-backend-pluggable.md#源码目录) · [核心抽象](graphics-backend-pluggable.md#核心抽象)（Auto 链、probe 流程、Present 分派）。
 
-**当前** `create_gpu_context` 行为：
-
-| `#[cfg]` | 实现 | 底层 API |
-|----------|------|----------|
-| `windows` | `D3D12 → D3D11 → OpenGL ES` probe；D3D11 接入 `D3d11Context` + `PresentUploadEngine`，OpenGL ES 接入 `WglContext::new` | Direct3D 11 swapchain；OpenGL ES 3.x via WGL |
-| `unix`（非 macOS） | `Vulkan → OpenGL ES` probe；Vulkan 接入 `VulkanContext` + `PresentUploadEngine`，OpenGL ES 接入 `EglContext::new` | Vulkan swapchain；OpenGL ES via EGL |
-| `macOS` | `Metal` probe（后端未接入）；`create_platform()` 返回 AppKit backend，GPU 失败后走 SoftwareEngine + CALayer CPU present bootstrap | AppKit / CoreGraphics |
-| 其他 | 无 GPU 候选，返回 `Err(PlatformError)` | — |
-
-**P6.1 / P6.2 / P6.3 / P6.5 已落地**（#162）：factory 内按优先级 probe 多个 `IGraphicsContext` 实现；Windows D3D11 与 Linux Vulkan 走 CPU upload present，WGL/EGL 作次选；App builder / env / Settings 可跳过 Auto 链直接指定 API。选型结果映射为 `GraphicsBackend` 枚举供诊断；`draw::BackendKind::Gpu` 不变。
-
-```text
-create_gpu_context(surface, w, h)
-    → [opt-in 指定 API?]
-    → 否则平台默认链 probe（见 rendering · 回退链）
-    → Ok(Box<dyn IGraphicsContext>) | Err → app 回退 SoftwareEngine
-```
+`factory/`（`mod.rs` + `registry*.rs`）是 **唯一** 对外 factory 分派入口（`create_platform` / `create_gpu_context*`）；`#[cfg]` 还允许 `backends/`、`graphics/**/platform/`（见 [条件编译](#条件编译)）。新增图形 API 在 `native/graphics/<api>/` 实现 + registry 表登记一行。
 
 上层 **禁止** 区分 WGL/EGL/Vulkan：只持有 `dyn IGraphicsContext`。`IGraphicsContext::get_proc_address` 供 GL 系 backend 加载扩展；非 GL API 可返回 `None`，由对应 backend 自行链接。
 
+**P6 图形后端** 状态与 backlog → [implementation · P6 生产级框架](../implementation.md#p6-生产级框架)。
+
 ### 未实现或后续
 
-macOS 窗口 close/resize delegate、完整 IME、D3D12、Metal → [implementation · P6 图形后端](../implementation.md#p6-图形后端) · [后续工作](../implementation.md#后续工作)。
+macOS 原生运行验证、D3D12、Metal **native raster** → [implementation · P6 生产级框架](../implementation.md#p6-生产级框架) · [后续工作](../implementation.md#后续工作)。
 
 <a id="测试平台"></a>
 
@@ -328,7 +320,8 @@ step_frame(&mut clock);  // → drain_due + post_to_ui drain
 **唯一**允许 `#[cfg(windows/unix)]` 的位置：
 
 - `src/native/backends/**`
-- `src/native/factory.rs`
+- `src/native/graphics/**/platform/**`（surface 绑定等 OS 薄适配，#164）
+- `src/native/factory/`（`mod.rs` + `registry*.rs`）
 
 `core` / `draw` / `ui` / `app` / `data` **不写**平台条件编译。
 
@@ -338,25 +331,30 @@ step_frame(&mut clock);  // → drain_due + post_to_ui drain
 
 ## 平台贡献指南
 
-面向 Win32 / Wayland backend 贡献者。上层硬约束 → [AGENTS.md](../../../AGENTS.md#架构硬约束)。
+面向 Win32 / Wayland / macOS backend 贡献者。**新 backend 能力先在 Windows 验证**（[#167](../../decisions.md#d167)），再推广至其他 OS。上层硬约束 → [AGENTS.md](../../../AGENTS.md#架构硬约束)。
 
 ### 目录结构
 
 ```text
 native/
-├── factory.rs              ← 唯一对外 #[cfg] 分派（create_platform / create_gpu_context）
+├── factory/                ← 唯一对外 factory 分派（mod.rs + registry*.rs）
+│   ├── mod.rs              create_platform / create_gpu_context*
+│   ├── registry.rs         GraphicsBackendEntry 表驱动
+│   └── registry_windows.rs / registry_linux.rs / registry_macos.rs
 ├── traits/                 ← 上层唯一依赖面；新能力先加 trait
 ├── shared/                 ← OsEventSource、WindowState、PlatformWindowCore
+├── graphics/               ← 【#164 已落地】IGraphicsContext 对等 API 实现（vulkan/ opengl/ d3d11/ metal/ …）
 ├── backends/
 │   ├── windows/            ← Win32：wnd_proc、GDI present、Win32 输入
 │   │   ├── platform.rs     WindowsPlatform + Platform impl
 │   │   ├── wnd_proc.rs     消息泵 → UiEvent
-│   │   ├── gpu/            GDI / 可选 GPU
 │   │   └── …               clipboard, cursor, timer, …
-│   └── linux/
-│       ├── platform.rs     LinuxPlatform + Platform impl
-│       ├── gpu/            Vulkan / EGL
-│       └── wayland/        连接、seat、shm、xdg_toplevel
+│   ├── linux/
+│   │   ├── platform.rs     LinuxPlatform + Platform impl
+│   │   └── wayland/        连接、seat、shm、xdg_toplevel
+│   └── macos/              ← AppKit bootstrap + Metal CpuUpload
+│       ├── platform.rs     MacosPlatform + Platform impl
+│       └── …               window_delegate, text_input_view, …
 ├── test_harness/           FakePlatform（#40）
 └── services/               file_service、notification（公开辅助）
 ```
@@ -372,36 +370,48 @@ native/
 | 3 | 在 `*Platform` 聚合 struct 中持有子系统；`Platform` 访问器返回 `&mut dyn Trait` |
 | 4 | 事件：backend 产出 `UiEvent` → `OsEventSource` 队列；实现 `IEventLoop::waker()` |
 | 5 | 呈现：`IPresenter::present` 或 `IGraphicsContext::swap_buffers` 接受 `PresentDamage` |
-| 6 | 若需 factory 分支：仅改 `factory.rs` 与 `backends/` |
+| 6 | 若需 factory 分支：改 `factory/` registry 与 `native/graphics/<api>/` |
 | 7 | FakePlatform 同步 stub + 调用历史（生产路径零分叉） |
 | 8 | 测试：`FakePlatform` 或 CI 目标平台；见 [testing · FakePlatform](testing.md#fakeplatform) |
 
-### Win32 vs Wayland 差异
+### Win32 / Wayland / macOS 差异
 
-| 主题 | Windows | Linux Wayland |
-|------|---------|---------------|
-| 窗口句柄 | `HWND` + `wnd_proc` | `xdg_toplevel` + registry globals |
-| 事件泵 | `GetMessage` / 队列 | `wl_display` dispatch |
-| CPU 呈现 | GDI `BitBlt` | SHM buffer + `wl_surface` commit |
-| GPU | D3D11/WGL + `create_gpu_context`；失败回退 GDI | Vulkan/EGL + `create_gpu_context`；失败回退 SHM |
-| 可选窗口能力 | 多数原生 API `Ok(())` | 不支持则 `WindowOps` → `NotImplemented`（见 [窗口可选能力](#窗口可选能力)） |
-| IME | Win32 text input | `zwp_text_input_v3` |
-| Wake | 平台特定 wake 注入 `EventLoopWaker` | 同上 |
+| 主题 | Windows | Linux Wayland | macOS |
+|------|---------|---------------|-------|
+| 窗口句柄 | `HWND` + `wnd_proc` | `xdg_toplevel` + registry globals | `NSWindow` + `UixContentView` |
+| 事件泵 | `GetMessage` / 队列 | `wl_display` dispatch | `NSApplication` run loop |
+| CPU 呈现 | GDI `BitBlt` | SHM buffer + `wl_surface` commit | CALayer `present_layer_pixels` |
+| GPU | D3D11/WGL + `bootstrap_graphics_engine`；低层测试 `create_gpu_context_with_backend`；失败回退 GDI | Vulkan/EGL + bootstrap；低层测试 `create_gpu_context_with_backend`；失败回退 SHM | Metal + bootstrap（`CpuUploadPresent`，feature `metal`）；失败回退 CPU present |
+| 可选窗口能力 | 多数原生 API `Ok(())` | 不支持则 `WindowOps` → `NotImplemented`（见 [窗口可选能力](#窗口可选能力)） | 多数未接，`NotImplemented` |
+| IME | Win32 text input | `zwp_text_input_v3` | `NSTextInputClient` + `ITextInput` |
+| Wake | 平台特定 wake 注入 `EventLoopWaker` | 同上 | 同上 |
 
 共享逻辑放 `native/shared/`（如 `WindowState`、`PlatformWindowCore`），避免双份 drift。
 
-### factory.rs 接线
+### factory/ 接线
+
+`create_platform()` 在 `factory/mod.rs` 按 OS `#[cfg]` 分派；图形 API 由 **registry 表**驱动（`registry.rs` + `registry_<os>.rs`），新增 API 只登记一行。Windows 表示例 → [`factory/registry_windows.rs`](../../../src/native/factory/registry_windows.rs)：
 
 ```rust
-// 仅两处允许平台 cfg（AGENTS）
-#[cfg(windows)]
-pub fn create_platform() -> Result<Box<dyn Platform>, Error> { ... }
-
-#[cfg(all(unix, not(target_os = "macos")))]
-pub fn create_platform() -> Result<Box<dyn Platform>, Error> { ... }
+// registry_windows.rs — GraphicsBackendEntry 表
+pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
+    GraphicsBackendEntry {
+        id: GraphicsBackend::D3d11,
+        priority: 20,
+        status: D3D11_STATUS,
+        create: d3d11::create,
+    },
+    GraphicsBackendEntry {
+        id: GraphicsBackend::OpenGlEs,
+        priority: 10,
+        status: OPENGL_STATUS,
+        create: opengl::create,
+    },
+    // …
+];
 ```
 
-新增 OS：增加 `backends/<os>/` + factory 分支；不支持平台返回明确 `PlatformError`。
+新增 OS：增加 `backends/<os>/` + `registry_<os>.rs` 表；`create_platform()` 加 `#[cfg]` 分支；不支持平台返回明确 `PlatformError`。Probe 循环 **仅** `draw::bootstrap_graphics_engine`（#163）。
 
 ### 测试建议
 
@@ -422,21 +432,5 @@ Timer 测试分层 → [testing · 测试时钟分层](testing.md#测试时钟�
 - 生产代码 `deny(clippy::unwrap_used)`（测试除外）
 - 致命错误 → `diagnostic::Collector` + crash log（见 [foundation](foundation.md)）
 
----
 
-## 源码模块
-
-```text
-native/
-├── traits/           Platform, IWindowManager, UiEvent, …（上层唯一依赖面）
-├── factory.rs        create_platform, create_gpu_context
-├── backends/
-│   ├── windows/      Win32 窗口、GDI/GPU present、输入
-│   └── linux/        Wayland seat、shm、Vulkan、EGL
-├── shared/           跨 backend 共用（window state、event_loop）
-├── services/         file_service, notification（公开辅助）
-├── presenter.rs      PresentDamage 适配
-└── test_harness/     FakePlatform, FakeEventSource（#40）
-```
-
-详见 [implementation · 源码目录详表](../implementation.md#源码目录详表)。
+源码目录映射 → [implementation · 源码目录详表](../implementation.md#源码目录详表) · [平台贡献指南 · 目录结构](#平台贡献指南)。

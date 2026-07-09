@@ -55,6 +55,14 @@ impl Default for FakeGraphicsContext {
 }
 
 impl IGraphicsContext for FakeGraphicsContext {
+    fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
+        crate::native::traits::present::GraphicsContextCaps::native_gpu_raster(
+            crate::native::traits::present::GraphicsBackend::OpenGlEs,
+            false,
+            1.0,
+        )
+    }
+
     fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
         crate::native::traits::present::GraphicsBackend::OpenGlEs
     }

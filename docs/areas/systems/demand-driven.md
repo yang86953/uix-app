@@ -178,7 +178,7 @@ impl AppHandle {
 
 与 #132 分工：**Timer** = 框架 register + deadline wake；**post_to_ui** = 外部完成信号 → 主线程一次性闭包。队列调度见 [MainThreadQueue](#mainthreadqueue)（#137）。
 
-> **实现注记**：`App::post_to_ui` 与 `AppHandle::post_to_ui` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 写入目标 `WindowSession` 的 `MainThreadQueue`，session 销毁后丢弃闭包；成功入队后会调用通用 `EventLoopWaker`。副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；Windows/fake/Linux Wayland 后端已提供真实 wake。
+> **实现注记**：`App::post_to_ui` 与 `AppHandle::post_to_ui` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 写入目标 `WindowSession` 的 `MainThreadQueue`，session 销毁后丢弃闭包；成功入队后会调用通用 `EventLoopWaker`。副窗 MainThreadQueue、事件路由、运行期 frame drain 与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
 
 ---
 
@@ -214,7 +214,7 @@ Active 帧 **`run_active_frame` 完整顺序与合并规则** → [帧内合并]
 
 `post_to_ui` 闭包内 `State::set` 并入步骤 6 的 reconcile 批次（#118）；禁止在步骤 3 直接改 WidgetTree。
 
-> **实现注记**：`MainThreadQueue` 已落地并在单窗 event loop 中按 UiEvent → due work → post_to_ui 顺序 drain；`AppRuntime` 已按 `window_id` 路由投递并在独立 session 关闭时清理队列；有效 session 成功入队后会唤醒事件循环，关闭后的 late post 不入队也不唤醒。副窗 session bootstrap、MainThreadQueue 消费、事件路由、运行期 frame drain 与 deadline wait 已接；Windows/fake/Linux Wayland 后端已接真实 wake。
+> **实现注记**：`MainThreadQueue` 已落地并在单窗 event loop 中按 UiEvent → due work → post_to_ui 顺序 drain；`AppRuntime` 已按 `window_id` 路由投递并在独立 session 关闭时清理队列；有效 session 成功入队后会唤醒事件循环，关闭后的 late post 不入队也不唤醒。副窗 session bootstrap、MainThreadQueue 消费、事件路由、运行期 frame drain 与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
 
 ### 周期可见 UI
 
@@ -275,7 +275,7 @@ impl TimerHandle {
 | 副作用 | 回调内 `State::set` → 按需 reconcile；**不**默认 layout/render |
 | 与内置 UI | 可见周期动画仍 **优先** 内置 widget；Timer API 用于 **业务逻辑**（保存、刷新、倒计时数据） |
 
-> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 AppTimer 队列，成功注册会 wake event loop，独立 session 关闭会批量 cancel。副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
+> **实现注记**：`App::run_after` / `run_interval` / `TimerHandle` 与 `AppHandle::run_after` / `run_interval` 已导出；`AppHandle` 经 `AppRuntime` 按 `window_id` 路由到所属 AppTimer 队列，成功注册会 wake event loop，独立 session 关闭会批量 cancel。副窗 session bootstrap、运行期 Timer 消费与 deadline wait 已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
 
 ---
 
@@ -466,7 +466,7 @@ run_active_frame(session):
 | Effect | 在 reconcile **之前** tick（步骤 5）；Effect → State → 并入步骤 6 reconcile 批次 |
 | reconcile | 合并算法见 [view-reactive · reconcile 合并](view-reactive.md#reconcile-合并)（#153） |
 
-> **实现注记**：单窗主循环已接帧末 reconcile；`update_view` 的 `pending_root` 与响应式 `State` 批次置位会合并到同一次 reconcile。副窗 `MainThreadQueue` / `update_view` root reconcile 消费已接；外部线程投递 wake 已接入通用 `EventLoopWaker` 与 Windows/fake/Linux Wayland 后端。
+> **实现注记**：单窗主循环已接帧末 reconcile；`update_view` 的 `pending_root` 与响应式 `State` 批次置位会合并到同一次 reconcile。副窗 `MainThreadQueue` / `update_view` root reconcile 消费已接；wake → [implementation · 平台能力](../implementation.md#实现进度总览)。
 
 ### 框架托管的周期工作（#111、#124）
 
@@ -598,17 +598,19 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 ## 分域要求
 
-| 域 / 系统 | 按需零闲置要求 |
-|-----------|----------------|
-| **app** | WindowSession + 单 loop；#132 Timer；`post_to_ui`（#133 #141）；`on_start`（#140）；`.follow_system_theme`（#125） |
-| **ui / event** | PointerMove 窄路径；`when` O(1)（#120）；handler 智能重绑（#123） |
-| **ui / view** | State → 窄 paint；帧末 reconcile（#118）；Effect + #132 Timer |
-| **ui / layout** | Scroll → Composite（#107）；框架自动 |
-| **ui / component** | PicturePolicy 元数据（#122）；Animatable 自动 register（#124）；内置周期 UI |
-| **draw** | Picture 自适应（#129）；Composite memmove |
-| **native** | blocking wait；ThemeChanged 作 UiEvent 交付，不 poll |
-| **data** | 冷路径（#64） |
-| **core** | 诊断不进 UI 热路径（#89） |
+> **可组合组件**（[#168](../../decisions.md#d168)）：各域按正交能力划分、trait/registry 组装；bundled 分派仅作便利入口。渲染轴 → [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)。
+
+| 域 / 系统 | 按需零闲置要求 | 可组合要点（#168） |
+|-----------|----------------|-------------------|
+| **app** | WindowSession + 单 loop；#132 Timer；`post_to_ui`（#133 #141）；`on_start`（#140）；`.follow_system_theme`（#125） | 编排 probe + engine，**不**硬编码 API 分支 |
+| **ui / event** | PointerMove 窄路径；`when` O(1)（#120）；handler 智能重绑（#123） | 平台·系统·语义三层；HandlerTable 按组件绑定 |
+| **ui / view** | State → 窄 paint；帧末 reconcile（#118）；Effect + #132 Timer | View 节点 = 可替换子树 |
+| **ui / layout** | Scroll → Composite（#107）；框架自动 | measure / arrange 分离；Flex/Grid 纯函数引擎 |
+| **ui / component** | PicturePolicy 元数据（#122）；Animatable 自动 register（#124）；内置周期 UI | capability trait 自由组合 |
+| **draw** | Picture 自适应（#129）；Composite memmove | 光栅 / present / API **正交**；Profile 为预设 |
+| **native** | blocking wait；ThemeChanged 作 UiEvent 交付，不 poll | `Platform` 聚合子 trait；graphics API peer |
+| **data** | 冷路径（#64） | 不参与 UI 热路径 |
+| **core** | 诊断不进 UI 热路径（#89） | 共享几何 / damage 类型 |
 
 ---
 
@@ -616,7 +618,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 若存在 **无法**通过 register 或事件驱动的定时/轮询需求（如极少数平台 API）：
 
-1. 在 [`decisions.md`](../../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#163+** 起）；
+1. 在 [`decisions.md`](../../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#165+** 起）；
 2. 说明触发源、wake 频率、允许的工作范围、为何无法 register；
 3. [testing · 零闲置验收](testing.md#测试策略) 须覆盖：无事件时 assert **不** present/layout（或豁免边界）；
 4. 默认 **不豁免**；从严审查。
@@ -635,7 +637,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 6. **多窗？** 是否仅影响本窗状态（#110）？
 7. **调用方能否零维护？** 是否须 App register/名单/手动标脏？（#130 应答「否」）
 
-无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（当前新豁免从 #163+ 起）。
+无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（当前新豁免从 #165+ 起）。
 
 ---
 
@@ -648,8 +650,5 @@ P0–P5 与按需零闲置主体机制 **已落地**；按域能力清单见 [im
 **未实现 backlog（权威清单）** → [implementation · 后续工作](../implementation.md#后续工作)。各条的设计细节与域内边界见 implementation 表格「文档」列链至的系统章节（如 [view-reactive · 热更新](view-reactive.md#热更新设计)、[component · PicturePolicy](component.md#picturepolicy-元数据122)）。
 
 源码与「设计」列不一致时 **按文档重构**（[`AGENTS.md`](../../../AGENTS.md)）。
----
 
-## 源码模块（实现时参考）
-
-跨域；无独立 `src/` 顶层目录。路径映射 → [implementation · 源码目录详表](../implementation.md#源码目录详表)。与本系统直接相关的关键文件：`app/window_session.rs`、`app/active_work_registry.rs`、`app/main_thread_queue.rs`、`app/event_loop/event_loop.rs`（#106 #115 #118 #137）。
+与本系统直接相关的关键文件 → [implementation · 源码目录详表](../implementation.md#源码目录详表)（`app/window_session.rs`、`app/active_work_registry.rs`、`app/main_thread_queue.rs`、`app/event_loop/event_loop.rs` 等）。

@@ -2,7 +2,7 @@
 
 ← [Main](../architecture.md) · 系统 **#11** · 功能域：`data`
 
-> 配置持久化；不参与 UI 热路径（符合核心理念 #105 冷路径边界）。
+> 配置持久化；不参与 UI 热路径（符合核心理念 #105 冷路径边界）。**全栈客户端基线**（[#166](../../decisions.md#d166)）：当前 `data` 域为 Settings KV opt-in；网络/同步在 backlog。
 
 ## 索引
 
@@ -48,7 +48,7 @@ struct SettingsService {
 ## JSON 格式
 
 - **扁平对象**：`{"key": "value", ...}`
-- 值类型 v1 **均为 string**
+- 值类型 **均为 string**
 - 自定义 parser（无 serde 依赖）
 - save 时 pretty-print（2 空格缩进）
 
@@ -120,7 +120,7 @@ Theme 相关 key 变更后应触发 palette-only invalidate（#9），不强制 
 |------|------|
 | 不参与 UI 热路径 | data 域职责边界（AGENTS.md） |
 | 不自动 load/save | 避免隐式 IO；测试可控（#64） |
-| v1 值均 string | 简单 KV；复杂结构由 App 序列化进 string |
+| 值均为 string | 简单 KV；复杂结构由 App 序列化进 string |
 | 只用 core::Error | 跨域错误统一 |
 
 ---

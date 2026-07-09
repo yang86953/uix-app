@@ -24,14 +24,15 @@ use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
 use crate::draw::pipeline::{FrameRenderInput, FrameRenderer, InvalidationSource, NodeId};
+use crate::draw::engine::bootstrap::bootstrap_graphics_engine;
 use crate::draw::traits::GraphicsEngine;
-use crate::draw::{GpuEngine, PresentUploadEngine, RenderOutcome, SoftwareEngine};
-use crate::native::factory::gpu_probe_candidates;
+use crate::draw::SoftwareEngine;
+use crate::draw::RenderOutcome;
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::GraphicsBackend;
 use crate::native::traits::window::PlatformWindow;
-use crate::native::{create_gpu_context_with_backend, create_platform};
+use crate::native::{create_platform};
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::{ViewAdapter, ViewNode};
@@ -1199,54 +1200,36 @@ fn create_preferred_engine(
     graphics_backend: GraphicsBackend,
 ) -> Option<Box<dyn GraphicsEngine>> {
     let surface = platform_window.native_surface_ptr();
-    for candidate in gpu_probe_candidates(graphics_backend) {
-        let context = match create_gpu_context_with_backend(surface, width, height, candidate) {
-            Ok(context) => context,
-            Err(e) => {
-                crate::core::log::warn_fn(format!(
-                    "GPU context {candidate} unavailable: {}",
-                    e.short_what()
-                ));
-                continue;
-            }
-        };
-        let selected = context.graphics_backend();
-        match create_engine_for_context(context).and_then(|mut engine| {
-            engine.initialize(width, height)?;
-            Ok(engine)
-        }) {
-            Ok(engine) => {
-                crate::core::log::info_fn(format!("GPU engine initialized ({selected})"));
-                return Some(engine);
-            }
-            Err(e) => {
-                crate::core::log::warn_fn(format!(
-                    "GPU engine {selected} unavailable: {}",
-                    e.short_what()
-                ));
-            }
+    match bootstrap_graphics_engine(surface, width, height, graphics_backend) {
+        Ok(gpu) => {
+            crate::core::log::info_fn(format!("GPU engine initialized ({})", gpu.selected));
+            Some(gpu.engine)
         }
-    }
+        Err(_report) => {
+            if graphics_backend != GraphicsBackend::Auto {
+                crate::core::log::warn_fn(format!(
+                    "GPU engine unavailable for requested {graphics_backend}, falling back to CPU"
+                ));
+            } else {
+                crate::core::log::warn_fn(
+                    "GPU engine unavailable for every auto candidate, falling back to CPU",
+                );
+            }
 
-    if graphics_backend != GraphicsBackend::Auto {
-        crate::core::log::warn_fn(format!(
-            "GPU engine unavailable for requested {graphics_backend}, falling back to CPU"
-        ));
-    } else {
-        crate::core::log::warn_fn(
-            "GPU engine unavailable for every auto candidate, falling back to CPU",
-        );
-    }
-
-    let mut engine = SoftwareEngine::new();
-    match engine.initialize(width, height) {
-        Ok(()) => {
-            crate::core::log::info_fn("CPU software engine initialized");
-            Some(Box::new(engine))
-        }
-        Err(e) => {
-            crate::core::log::error_fn(format!("SoftwareEngine 初始化失败: {}", e.short_what()));
-            None
+            let mut engine = SoftwareEngine::new();
+            match engine.initialize(width, height) {
+                Ok(()) => {
+                    crate::core::log::info_fn("CPU software engine initialized");
+                    Some(Box::new(engine))
+                }
+                Err(e) => {
+                    crate::core::log::error_fn(format!(
+                        "SoftwareEngine 初始化失败: {}",
+                        e.short_what()
+                    ));
+                    None
+                }
+            }
         }
     }
 }
@@ -1256,15 +1239,6 @@ fn create_preferred_engine(
 // ════════════════════════════════════════════════════════════════════════════
 
 /// 将平台 `UiEvent` 转换为 `SystemEvent`。
-fn create_engine_for_context(
-    context: Box<dyn crate::native::traits::present::IGraphicsContext>,
-) -> Result<Box<dyn GraphicsEngine>, crate::core::Error> {
-    if context.supports_pixel_present() {
-        return Ok(Box::new(PresentUploadEngine::new(context)?));
-    }
-    Ok(Box::new(GpuEngine::new(context)?))
-}
-
 pub fn map_ui_event(ev: &UiEvent) -> Option<SystemEvent> {
     match ev.type_ {
         UiEventType::PointerDown => {

@@ -405,6 +405,7 @@ impl Style {
     pub fn column() -> Self {
         Self {
             display: DisplayMode::Flex,
+            flex_direction: FlexDirection::Column,
             ..Self::default()
         }
     }
@@ -441,6 +442,7 @@ impl Style {
     pub fn container() -> Self {
         Self {
             display: DisplayMode::Flex,
+            flex_direction: FlexDirection::Column,
             ..Self::default()
         }
     }

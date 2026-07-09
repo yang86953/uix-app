@@ -94,6 +94,8 @@ pub(crate) struct FlexInput {
     pub child_margins: Vec<EdgeInsets>,
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
+    /// 主轴无显式尺寸时由子项撑开（Web 式 intrinsic），仍保留 flex-grow 分配。
+    pub intrinsic_main: bool,
 }
 
 impl Default for FlexInput {
@@ -109,6 +111,7 @@ impl Default for FlexInput {
             child_margins: Vec::new(),
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
+            intrinsic_main: false,
         }
     }
 }

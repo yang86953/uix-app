@@ -2,21 +2,100 @@
 
 ← [Main](../architecture.md) · 系统 **#6** · 功能域：`ui`
 
-> measure 定尺寸；Flex + Grid 排布；Scroll 消化 Wheel。Scroll 失效优先 Composite memmove（#107，见 [demand-driven](demand-driven.md#失效与窄标脏)）。
+> **measure 定尺寸，arrange 定位置**；Flex + Grid 排布；Scroll 消化 Wheel。布局失效不 present（[#105](../../decisions.md#d105)）；Scroll 失效优先 Composite memmove（#107，见 [demand-driven](demand-driven.md#失效与窄标脏)）。
 
 ## 索引
 
 | 主题 | 章节 | 决策 |
 |------|------|------|
+| 总览 | [布局设计总览](#布局设计总览) | #105 #165 |
+| 两阶段 | [Measure / Arrange](#measure--arrange-两阶段) | #19 #29 #103 |
 | 测量 | [测量](#测量) | #29 #38 #103 |
+| Intrinsic | [Intrinsic 尺寸](#intrinsic-尺寸) | #165 |
 | 盒模型 | [盒模型](#盒模型) | #38 #56 |
-| Flex | [Flex 布局](#flex-布局) | #53 #81 |
+| Flex | [Flex 布局](#flex-布局) | #53 #81 #165 |
+| 容器 | [容器层级](#容器层级) | #45 #53 #165 |
+| Style 预设 | [Style 预设](#style-预设) | #81 #165 |
+| 模式 | [常见模式与反模式](#常见模式与反模式) | #165 |
+| CSS 对照 | [与 Web Flexbox 对照](#与-web-css-flexbox-对照) | — |
 | Grid | [Grid 布局](#grid-布局) | #53 #67 #84 |
 | Scroll | [Scroll](#scroll) · [VirtualScroll](#virtual-scroll) | #45 #73 #107 |
 | 布局管线 | [布局管线](#布局管线) | #19 |
 | Active | [Active 判定](#active-判定) | #19 |
 
 **关联**：[component](component.md) · [theme-style](theme-style.md) · [view-reactive](view-reactive.md) · [rendering](rendering.md) · [demand-driven](demand-driven.md)
+
+---
+
+<a id="布局设计总览"></a>
+
+## 布局设计总览
+
+### 目标
+
+| 原则 | 说明 |
+|------|------|
+| **Web 式 Flex** | Column 默认垂直堆叠；未设 `width`/`height` 时子项撑开父级（[#165](../../decisions.md#d165)） |
+| **两阶段分离** | `measure(constraints)` 回答「要多大」；`layout_children(frame)` 回答「放哪里」 |
+| **按需收敛** | 结构变更才 `push_layout_invalidation`；layout 不触发 present（[#105](../../decisions.md#d105)） |
+| **纯函数引擎** | `compute_flex_layout` / `compute_grid_layout` 无副作用；容器 widget 组装 `LayoutChild` 后委托 |
+
+### 数据流
+
+```text
+父级 frame / Constraints
+    → child measure（自下而上收集 intrinsic）
+    → layout_children（自上而下分配子 frame）
+    → expand/shrink 收敛（容器随子项 grow/shrink）
+    → layout_viewports（ScrollView content_bounds）
+```
+
+几何类型一律来自 `core`（见 [foundation](foundation.md)）。
+
+---
+
+<a id="measure--arrange-两阶段"></a>
+
+## Measure / Arrange 两阶段
+
+### 职责划分
+
+| 阶段 | API | 输入 | 输出 | 时机 |
+|------|-----|------|------|------|
+| **Measure** | `WidgetLayout::measure` | `Constraints { min, max, definite }` | `Size`（intrinsic，经 clamp） | 父级分配约束后、layout 前 |
+| **Arrange** | `WidgetLayout::layout_children` | 父级 `frame` + 子 id 列表 | `Vec<(ComponentId, Rect)>` | `WidgetTree::layout()` Phase 1 |
+
+Measure 不读写子 frame；Arrange 不递归 measure（子项尺寸已在 `LayoutChild.measured_size` 中）。
+
+### 流程
+
+```mermaid
+flowchart TD
+    A[结构变更 / resize] --> B[push_layout_invalidation]
+    B --> C[WidgetTree::layout]
+    C --> D[Phase 1: layout_children 自顶向下]
+    D --> E[child_from_tree_with_constraints → measure]
+    E --> F[FlexLayout / GridLayout → 子 Rect]
+    F --> G[Phase 2/4: expand ↔ shrink 收敛]
+    G --> H[Phase 3: layout_viewports]
+    H --> I[bind_reactive / overlay / lifecycle]
+```
+
+### Constraints（#38）
+
+```rust
+Constraints { min, max, definite }
+```
+
+| 概念 | 含义 |
+|------|------|
+| `min` | 最小尺寸（flex shrink 下限） |
+| `max` | 最大尺寸（overflow 前 clamp） |
+| `definite` | 主轴有确定长度（stretch 填充；逐步接入） |
+
+工厂方法：`loose(max)`、`unconstrained()`、`clamp(size)`。
+
+> **实现注记**：管线仍多处通过父级 `Rect` 传递可用空间，逐步收敛到显式 Constraints。Container 对**未显式指定**的主轴/交叉轴在 `child_measure_constraints` 中传 `f32::MAX` loose max；ScrollView 滚动轴允许 `f32::MAX`，非滚动轴受 viewport 约束。
 
 ---
 
@@ -30,29 +109,9 @@
 fn measure(&self, constraints: Constraints) -> Size;
 ```
 
-在父级分配的 **content rect** 约束下测量 intrinsic size。旧 `preferred_size(engine)` 兼容桥已移除。
+在父级分配的约束下计算 intrinsic size。旧 `preferred_size(engine)` 兼容桥已移除（[#103](../../decisions.md#d103)）。
 
-### measure 入口（#103）
-
-| | 设计（#29） | 当前实现 |
-|---|------------|----------|
-| API | `measure(constraints) -> Size` | 已接；旧 `preferred_size(engine)` 兼容桥已移除 |
-| 约束 | `Constraints { min, max, definite }`（#38） | `core::Constraints` 已接，含 `loose` / `unconstrained` / `clamp` |
-| 语义 | 在约束下计算 intrinsic size | 等同 |
-
-组件必须实现 `measure`；默认实现返回 `constraints.clamp(Size::zero())`，不再经旧 `preferred_size` 桥接（[#103](../../decisions.md#d103)）。
-
-### Constraints（#38）
-
-实现规格 `{ min, max, definite }`；当前布局管线仍多处通过父级 `Rect` 传递可用空间，逐步收敛到显式 Constraints：
-
-| 概念 | 含义 |
-|------|------|
-| min | 最小尺寸（flex shrink 下限） |
-| max | 最大尺寸（overflow 前 clamp） |
-| definite | 主轴有确定长度（如 stretch 填充） |
-
-> **实现注记**：Container / Grid / Card / Form 已按父级 content rect 或当前 frame 构造 `Constraints::loose(...)` 测量子项；Space 按 flex 方向约束交叉轴、允许主轴自然溢出；ScrollView 按方向处理，滚动轴允许内容自然溢出，非滚动轴受 viewport 约束。`WidgetTree` root/bootstrap 使用有限 `ROOT_BOOTSTRAP_SIZE` 作为临时 loose 约束，窗口或 session 分配真实 viewport 后会覆盖该 frame；`child_from_tree` 仅作 fallback，默认优先用父节点有效 frame 约束，生产布局仍应调用 `child_from_tree_with_constraints(...)` 传入父级 content rect。
+默认实现返回 `constraints.clamp(Size::zero())`。
 
 ### LayoutChild
 
@@ -64,11 +123,60 @@ LayoutChild {
     measured_size: Size,
     flex_grow, flex_shrink,
     margin: EdgeInsets,
+    align_self,
     grid_cell, grid_column_span, grid_row_span,
 }
 ```
 
-由 `child_from_tree(component_id, tree)` 从 WidgetTree 构建；WidgetTree 内部 `WidgetId` 仍为同型别名。
+由 `child_from_tree_with_constraints(id, tree, constraints)` 构建：对子节点调用 `measure`，并读取 `flex_grow` / `flex_shrink` / `margin` / `align_self` / grid 字段。
+
+---
+
+<a id="intrinsic-尺寸"></a>
+
+## Intrinsic 尺寸
+
+Web 式容器尺寸：**未设** `width` / `height` 时由子项撑开；Column 容器**无需**显式设高即可随子项增高（[#165](../../decisions.md#d165)）。
+
+### 何时需要显式尺寸
+
+| 场景 | 建议 |
+|------|------|
+| 根 / 全屏内容区 | 父级（窗口 viewport）分配 frame，通常 `.w(...)` 或 `flex_grow(1)` |
+| Column 垂直堆叠 | **不必**设 `height`；子项自然撑高 |
+| Row 水平排列 | **不必**设 `height`（交叉轴 = max 子项高）；常需 `.w(...)` 或 grow 占满宽度 |
+| ScrollView | **必须**设 viewport 尺寸（`.size(w,h)` 或父级约束）；内容区可超出 |
+| Grid | `measure` 仅读 `style.width/height`；未设则 0，**依赖父级 frame** |
+| Card / Form | 组件级固定 intrinsic（见 [容器层级](#容器层级)），非 Web 式撑开 |
+
+### Container（完整 intrinsic 路径）
+
+1. `layout_children` → `FlexLayout`（`intrinsic_main` 见下）→ 写入 `cached_content_size`
+2. `measure(constraints)` → `constraints.clamp(intrinsic_size())`
+3. `intrinsic_size()`：`style.width` / `style.height` 有值则用固定值 + border；否则 fallback 到 `cached_content_size` + padding + border
+
+首帧 bootstrap 时 cache 可能为 0；`expand/shrink` 内循环在子项 layout 后更新容器 frame，后续 `measure` 即可读到缓存。
+
+#### Web 式主轴 / 交叉轴
+
+| 方向 | 主轴未显式指定 | 交叉轴未显式指定 |
+|------|----------------|------------------|
+| **Column**（`Container::new()` 默认） | 高度 = 子项主轴之和 + gap | 宽度 = 子项交叉轴 max |
+| **Row** | 宽度 = 子项主轴之和 + gap | 高度 = 子项交叉轴 max |
+
+`Container::new()` 使用 `Style::container()`（`flex_direction: Column`）；Row 布局须 `.dir(Row)` 或 `Style::row()`。
+
+#### Flex `intrinsic_main`
+
+主轴尺寸未显式指定时（Column 无 `height` / Row 无 `width`），Container 向 `FlexLayout` 传入 `intrinsic_main: true`：
+
+| 行为 | 说明 |
+|------|------|
+| 跳过 flex-shrink | 内容不被压扁以适配父级 |
+| bootstrap 撑开 | 容器主轴 ≤1px 时 `total_size` 由子项之和撑开 |
+| `effective_cross` | 交叉轴为 0 时用 `max(child_cross)`；`AlignItems::Stretch` 不在空交叉轴上压扁子项 |
+
+仍保留 `flex-grow` 分配：父级有剩余空间时子项可 grow。
 
 ---
 
@@ -88,13 +196,11 @@ LayoutChild {
 - `Style.padding` / `border_width: EdgeInsets`（#56）— `BoxModel::content_rect()` 计算内容区
 - 四边 border 独立（#43）
 
-几何类型一律来自 `core`（见 [foundation](foundation.md)）。
-
 ---
 
 ## Flex 布局
 
-v1 支持（#53）。配置来自容器 **Style**（#81）：
+支持（#53）。配置来自容器 **Style**（#81）：
 
 | Style 字段 | 对应 |
 |------------|------|
@@ -105,16 +211,115 @@ v1 支持（#53）。配置来自容器 **Style**（#81）：
 | `gap` | 间距 |
 | `overflow_content` | 溢出堆叠（不 shrink） |
 
-子项：`flex_grow` / `flex_shrink`（WidgetLayout 默认 0/1）；`align_self` 覆盖容器 align。
+子项：`flex_grow` / `flex_shrink`（`WidgetLayout` 默认 **0 / 1**）；`align_self` 覆盖容器 `align_items`。
+
+### 主轴与交叉轴
+
+| `flex_direction` | 主轴（main） | 交叉轴（cross） |
+|------------------|-------------|----------------|
+| Row / RowReverse | 宽度 | 高度 |
+| Column / ColumnReverse | 高度 | 宽度 |
 
 ### 算法概要（`layout/flex.rs`）
 
-1. 主轴分配 flex-basis（measured_size）
-2. 剩余空间 flex-grow 分配 / 超出 flex-shrink（最多 3 轮 redistribution）
-3. 交叉轴 align（Stretch 拉伸至容器高/宽）
-4. Wrap 模式多行：每行独立 justify
+`compute_flex_layout(FlexInput)` 四阶段（单行）：
 
-引擎：`FlexLayout::layout(content_rect, children) -> LayoutOutput`。
+1. **Basis**：`flex_basis` 或 `measured_size` 主轴分量；累计 `flex_grow`
+2. **Grow / Shrink**：剩余空间按 grow 比例分配；超出时按 `shrink × size` 权重收缩（**`intrinsic_main` 或 bootstrap 时跳过 shrink**，#165）
+3. **Cross**：`effective_cross = container_cross` 若 >0，否则 `max(child_cross)`；`Stretch` 拉伸至 `effective_cross`（空交叉轴不压扁）
+4. **Justify**：`Start` / `Center` / `End` / `SpaceBetween` / `SpaceAround` / `SpaceEvenly` / `Stretch` 定位主轴
+
+`total_size`：`intrinsic_main && bootstrap_main` 时主轴 = 子项之和 + gap；否则占满父级 content 主轴。
+
+Wrap 模式：按行拆分，每行独立 justify；交叉轴累加行高 + gap。
+
+`overflow_content: true`：走 `overflow_layout` 流式堆叠，**不 shrink、不 grow**（ScrollView 内容区常用）。
+
+引擎封装：`FlexLayout::layout(content_rect, children) -> LayoutOutput`。
+
+---
+
+<a id="容器层级"></a>
+
+## 容器层级
+
+| 容器 | 布局引擎 | Intrinsic / measure | 备注 |
+|------|----------|---------------------|------|
+| **Container** | `FlexLayout` | Web 式；`cached_content_size` + `intrinsic_main` | 默认 Column；通用 flex 容器 |
+| **Space** | 内联 `compute_flex_layout` | 固定 `width/height` 或 0；`flex_shrink: 0` | 均匀 gap；交叉轴受约束、主轴可溢出 |
+| **ScrollView** | 垂直流式堆叠（非 Flex） | 默认 300×200；`.size(w,h)` 定 viewport | 滚动轴 `f32::MAX` 约束；`children_clip`；不参与 expand |
+| **Grid** | `GridLayout` | 仅 `style.width/height`；无则 0 | 须父级分配 frame；`grid_template_columns` 必填 |
+| **Card** | 内联 Column flex | `fixed_width` 默认 200；`fixed_height` 默认 0 | 无 `cached_content_size`；标题/actions 占固定区 |
+| **Form** / **FormItem** | 自定义 label+content | 硬编码（Form 400×200 等） | 业务表单项；非通用 flex 容器 |
+
+**ScrollView 与 Container 组合**：外层 Container/Column 分配 ScrollView viewport 尺寸；ScrollView 内子项在 content 坐标自然增高，超出部分滚动。
+
+---
+
+<a id="style-预设"></a>
+
+## Style 预设
+
+Flex 容器预设详见 [theme-style · Flex 容器预设](theme-style.md#style--styleset)（#81、#165）：
+
+| 预设 | `display` | `flex_direction` | 典型用途 |
+|------|-----------|------------------|----------|
+| `Style::default()` | Flex | **Row**（枚举 default） | 样式基线；子项默认 |
+| `Style::container()` | Flex | **Column** | `Container::new()` |
+| `Style::row()` | Flex | Row | 水平 flex |
+| `Style::column()` | Flex | **Column** | 列 flex（与 `container()` 同方向） |
+
+> `FlexDirection::default()` 为 Row；**Container 默认 Column** 来自 `Style::container()`，非 `Style::default()`。
+
+链式：`.dir(Row)`、`.w()`、`.h()`、`.flex_grow()`、`.overflow_content()`。
+
+---
+
+<a id="常见模式与反模式"></a>
+
+## 常见模式与反模式
+
+### 推荐
+
+| 模式 | 写法 |
+|------|------|
+| 页面主 Column | `Container::new()` + 子项，不设 `height` |
+| 工具栏 Row | `.dir(Row).gap(8)`，交叉轴随子项 |
+| 填满剩余空间 | 子项 `.flex_grow(1)`（grow 默认 0，须显式设） |
+| 可滚动列表 | `ScrollView::new(Vertical).size(w, h).child(...)` |
+| 防止内容被压扁 | 父级不设固定主轴尺寸，或子级 `overflow_content()` |
+
+### 反模式
+
+| 反模式 | 问题 | 替代 |
+|--------|------|------|
+| 每个 Row 都 `.h(40)` | 交叉轴无法随内容增高 | 去掉 `height`，让 intrinsic 生效 |
+| Column 内多层嵌套都设固定高 | 与 #165 撑开语义冲突 | 仅最外层或 ScrollView 定高 |
+| 期望 Grid 子项撑开 Grid | Grid `measure` 不读子项 | 父级给 Grid 明确 frame 或 `style.width/height` |
+| 期望 Card 随内容增高 | `fixed_height` 默认 0，无 cache | `.size(w, h)` 或外包 Container |
+| ScrollView 不设尺寸 | intrinsic 300×200 可能不符设计 | 显式 `.size()` 或 `flex_grow(1)` 占满 |
+| 子项需要占满却不设 grow | 默认 `flex_grow: 0` 不扩展 | `.flex_grow(1)` |
+
+---
+
+<a id="与-web-css-flexbox-对照"></a>
+
+## 与 Web CSS Flexbox 对照
+
+| 概念 | Web CSS | UIX |
+|------|---------|-----|
+| 默认方向 | `flex-direction: row` | `Style::default()` → Row；**Container → Column**（#165） |
+| 默认 align-items | `stretch` | `AlignItems::Stretch`（同） |
+| 默认 flex-grow | `0` | `0`（同） |
+| 默认 flex-shrink | `1` | `1`（同） |
+| 隐式主轴尺寸 | `auto` 由内容决定 | `intrinsic_main` + 无 `width`/`height` |
+| 盒模型 | margin / border / padding / content | `BoxModel::content_rect`（同序） |
+| gap | `gap` | `Style.gap` |
+| overflow 滚动 | `overflow: auto` + 定高 | ScrollView 组件（非 CSS overflow） |
+| Grid | `display: grid` | `Grid` widget + `GridTrack` |
+| measure 阶段 | 无独立 API（浏览器内部） | 显式 `measure(Constraints)` |
+
+差异摘要：UIX 将 measure/arrange 拆为显式 trait 方法；滚动由 ScrollView 承担而非 `overflow` 样式；Container 默认 Column 对齐常见 UI 框架（Ant Design 式垂直页面）而非 CSS 默认 row。
 
 ---
 
@@ -131,6 +336,10 @@ View DSL：`grid([...]).columns([GridTrack::Fr(2.0), GridTrack::Px(120.0)])`（#
 | `Auto` | 由内容决定 |
 
 Style 字段：`grid_template_columns/rows`、`grid_gap`。
+
+### Intrinsic 注记
+
+`Grid::measure` 仅返回 `style.width/height`（未设则为 0），**不**像 Container 那样由子项撑开。实际尺寸依赖父级 `layout_children` 分配的 frame；`Auto` 轨道在 arrange 阶段读子项 `measured_size`。
 
 ### 算法概要（`layout/grid.rs`）
 
@@ -155,8 +364,6 @@ Scroll 内容区在 `layout_viewports` 阶段单独处理；viewport 祖先不�
 Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获得焦点的 ScrollView 消费。
 
 > Scroll offset 变更优先标 **`Invalidation::Composite`** + `scroll_region` memmove（#107）；框架在 ScrollView 内 **自动** 写入，App 不介入。
-
-> **实现注记**：Wheel / Keyboard、滚动条拖拽与程序化 ScrollView 滚动已写入 `Invalidation::Composite` 并接 `scroll_region` memmove；新增滚动来源须复用该路径。
 
 <a id="virtual-scroll"></a>
 
@@ -184,22 +391,28 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获
 
 **与 ScrollView 关系**：ScrollView 负责 clip、offset 变换与 Composite 失效；VirtualScroll widget 用于子树懒 mount；**Table / Tree / SelectableList / Select / TreeSelect** 等 Big Bang 组件经 `VirtualListScroll` 在 `render` 热路径只绘制 viewport ± overscan，Wheel 走 `scroll_delta_for_dirty` Composite memmove。
 
-> **实现注记（v0.1.0）**：`scroll_range` / `build_visible_children` / `prepare_for_build` / Wheel 偏移与 Composite delta 已实现；`render` 绘制 viewport 背景；`layout_children` 按绝对索引定位可见行；`children_clip` / `viewport_scroll_offset` / `scroll_delta_for_dirty` 已接 ScrollView 同类 viewport 路径。`WidgetComponent::build` 与 `layout()` 后 `refresh_virtual_scroll_children` 自动 `ensure_prepared`（viewport 高优先用 layout frame，否则 `size` 配置值）；滚动超出当前可见窗口由 layout 刷新子树。Table / Tree / SelectableList / Select / TreeSelect 已接 `VirtualListScroll` 绘制窗口与 Composite 滚动；仍不经 `prelude`。
-
 ---
 
 ## 布局管线
 
-`WidgetTree::layout()`（`tree_layout.rs`）— 最多 **10** 轮收敛：
+`WidgetTree::layout()`（`tree_layout.rs`）— 最多 **10** 轮外收敛，内层 expand/shrink 最多 **3** 轮：
 
 ```text
+0. bootstrap root frame（无有效 viewport 时 measure 临时尺寸）
 1. layout_children        // 自顶向下分配 frame
-2. expand/shrink 内循环   // 容器随子项 grow/shrink
-3. layout_viewports       // ScrollView content bounds
+2. expand/shrink 内循环   // 容器随子项 grow/shrink（ScrollView 跳过 expand）
+3. layout_viewports       // ScrollView content_bounds
 4. bind_reactive_widget_states
 5. rebuild_widget_overlays
 6. reconcile_lifecycle_after_layout
 ```
+
+| Phase | 方向 | 作用 |
+|-------|------|------|
+| 1 Top-down | 父→子 | `layout_children` 写子 frame |
+| 2 Expand | 子→父 | 子 bottom 超出则增高父容器并重排 |
+| 4 Shrink | 子→父 | 父过高则收缩（取子内容 vs measure 较大值） |
+| 3 Viewports | — | ScrollView `content_bounds` |
 
 结构变更（Reconciler / add_child / remove）→ `push_layout_invalidation` + 向上 `propagate_layout_invalidation`。
 
@@ -225,11 +438,13 @@ Inactive → Lifecycle inactive；跳过大部分输入语义。
 ```text
 ui/layout/
 ├── engine.rs      LayoutEngine, LayoutChild, layout 管线入口
-├── flex.rs        FlexLayout
+├── flex.rs        compute_flex_layout
 ├── grid.rs        Grid 轨道与 auto-place
 └── box_model.rs   margin / padding / content rect
-ui/foundation/virtual_scroll.rs   VirtualScroll / VirtualListScroll（Table/Tree/SelectableList/Select/TreeSelect 已接）
-ui/core/widget/tree_layout.rs   WidgetTree::layout, viewports, overlay rebuild
+ui/foundation/virtual_scroll.rs   VirtualScroll / VirtualListScroll
+ui/core/widget/tree_layout.rs     WidgetTree::layout, viewports, expand/shrink
+ui/widgets/containers/container.rs
+ui/widgets/other/scroll_view/
 ```
 
 详见 [implementation · 源码目录详表](../implementation.md#源码目录详表)。

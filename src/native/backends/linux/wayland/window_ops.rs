@@ -19,7 +19,7 @@ use wayland_protocols::xdg_shell::client::{xdg_surface, xdg_toplevel, xdg_wm_bas
 
 use crate::core::error::{Error, Result};
 use crate::core::WindowId;
-use crate::native::backends::linux::gpu::WaylandSurfaceHandle;
+use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 use crate::native::shared::unimpl;
 use crate::native::shared::WindowOps;
 use crate::native::traits::event::UiEvent;

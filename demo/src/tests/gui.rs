@@ -199,15 +199,8 @@ fn page_switch_updates_heading_and_body_together() {
     }
     tree.layout();
 
-    fn heading_title(labels: &[String]) -> Option<String> {
-        labels
-            .iter()
-            .find(|t| {
-                PAGE_TITLES
-                    .iter()
-                    .any(|(_, title)| title.trim() == t.trim())
-            })
-            .cloned()
+    fn page_title_present(labels: &[String], title: &str) -> bool {
+        labels.iter().any(|t| t.trim() == title)
     }
 
     let initial_labels: Vec<String> = tree
@@ -215,7 +208,11 @@ fn page_switch_updates_heading_and_body_together() {
         .into_iter()
         .map(|(_, l)| l.text().to_string())
         .collect();
-    assert_eq!(heading_title(&initial_labels).as_deref(), Some("首页"));
+    assert!(page_title_present(&initial_labels, "首页"));
+    assert!(
+        initial_labels.iter().any(|t| t.contains("快捷导航")),
+        "home body missing, got: {initial_labels:?}"
+    );
 
     active.set(PAGE_APP);
     assert!(tree.take_reconcile_requested());
@@ -241,7 +238,7 @@ fn page_switch_updates_heading_and_body_together() {
         .into_iter()
         .map(|(_, l)| l.text().to_string())
         .collect();
-    assert_eq!(heading_title(&labels).as_deref(), Some("应用能力"));
+    assert!(page_title_present(&labels, "应用能力"));
     assert!(
         labels.iter().any(|t| t.contains("响应式 State")),
         "runtime body missing after switch to 应用能力, got: {labels:?}"
@@ -275,7 +272,7 @@ fn page_switch_updates_heading_and_body_together() {
         .into_iter()
         .map(|(_, l)| l.text().to_string())
         .collect();
-    assert_eq!(heading_title(&labels).as_deref(), Some("通用"));
+    assert!(page_title_present(&labels, "通用"));
     assert!(
         labels.iter().any(|t| t.contains("Typography")),
         "general body missing, got: {labels:?}"

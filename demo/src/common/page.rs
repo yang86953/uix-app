@@ -4,9 +4,9 @@ use uix::prelude::*;
 
 pub const INIT_W: i32 = 1200;
 pub const INIT_H: i32 = 800;
-pub const SIDEBAR_W: f32 = 200.0;
+pub const SIDEBAR_W: f32 = 220.0;
 pub const CONTENT_W: f32 = (INIT_W as f32) - SIDEBAR_W;
-const CONTENT_PAD_H: f32 = 40.0;
+const CONTENT_PAD_H: f32 = 48.0;
 pub const INNER_W: f32 = CONTENT_W - CONTENT_PAD_H;
 
 pub const PAGE_HOME: usize = 0;
@@ -104,14 +104,30 @@ impl<'a> PageBuilder<'a> {
     }
 
     pub fn build(self) -> ViewNode {
-        scroll(column(self.items).gap(8.0).padding((20.0, 4.0, 20.0, 10.0)))
-            .flex_grow(1.0)
-            .build()
+        scroll(
+            column(self.items)
+                .gap(12.0)
+                .padding((24.0, 8.0, 24.0, 16.0))
+                .flex_grow(0.0),
+        )
+        .flex_grow(1.0)
+        .build()
     }
 }
 
 pub fn section_title(tk: &DesignTokens, text: &str) -> ViewNode {
-    label(text).color(tk.color_text_secondary).font_size(12.0)
+    row([
+        label("")
+            .width(3.0)
+            .height(14.0)
+            .bg(tk.color_primary)
+            .radius(tk.border_radius_sm),
+        space(8.0),
+        label(text)
+            .color(tk.color_text)
+            .font_size(13.0),
+    ])
+    .padding(EdgeInsets::new(0.0, 0.0, 4.0, 0.0))
 }
 
 /// 固定高度水平 Space 行（与 View `row` 组合子区分）。
@@ -124,11 +140,17 @@ pub fn demo_row(h: f32) -> Space {
 }
 
 pub fn page_heading(tk: &DesignTokens, icon: &str, title: &str) -> ViewNode {
-    row([
-        embed(Icon::new(icon).size(22.0)),
-        space(8.0),
-        label(title).color(tk.color_text).font_size(22.0),
+    column([
+        row([
+            embed(Icon::new(icon).size(24.0)),
+            space(12.0),
+            label(title)
+                .color(tk.color_text)
+                .font_size(24.0),
+        ]),
+        space(12.0),
+        embed(Divider::new()),
     ])
-    .height(30.0)
-    .padding((0.0, 4.0, 0.0, 0.0))
+    .flex_grow(0.0)
+    .padding(EdgeInsets::new(0.0, 0.0, 8.0, 0.0))
 }

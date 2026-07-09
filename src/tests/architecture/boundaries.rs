@@ -28,7 +28,10 @@ fn relative_src_path(path: &Path) -> String {
 }
 
 fn is_native_backend_boundary(path: &str) -> bool {
-    path == "native/factory.rs" || path.starts_with("native/backends/")
+    path == "native/factory.rs"
+        || path.starts_with("native/factory/")
+        || path.starts_with("native/backends/")
+        || path.starts_with("native/graphics/")
 }
 
 fn is_architecture_guard(path: &str) -> bool {
@@ -92,7 +95,7 @@ fn platform_cfgs_stay_inside_native_boundary() {
 
     assert!(
         violations.is_empty(),
-        "platform cfgs must stay in native/factory.rs or native/backends/**: {violations:?}"
+        "platform cfgs must stay in native/factory/**, native/backends/**, or native/graphics/**: {violations:?}"
     );
 }
 

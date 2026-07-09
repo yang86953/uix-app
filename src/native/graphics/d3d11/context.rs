@@ -6,46 +6,29 @@
 use std::ffi::c_void;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::backends::windows::bindings::RECT;
-use crate::native::backends::windows::ffi::GetClientRect;
-use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, PresentDamage};
-use windows::Win32::Foundation::{HMODULE, HWND, TRUE};
-use windows::Win32::Graphics::Direct3D::{
+use crate::native::graphics::platform::windows as win_surface;
+use crate::native::traits::present::{
+    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+};
+use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
+use ::windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0,
     D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
 };
-use windows::Win32::Graphics::Direct3D11::{
+use ::windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
 };
-use windows::Win32::Graphics::Dxgi::Common::{
+use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
-use windows::Win32::Graphics::Dxgi::{
+use ::windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG,
     DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
 type HWND_PTR = *mut c_void;
-
-fn client_size(hwnd: HWND_PTR, fallback_w: i32, fallback_h: i32) -> (i32, i32) {
-    unsafe {
-        let mut rect = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        if GetClientRect(hwnd, &mut rect) == 0 {
-            return (fallback_w.max(1), fallback_h.max(1));
-        }
-        (
-            (rect.right - rect.left).max(1),
-            (rect.bottom - rect.top).max(1),
-        )
-    }
-}
 
 fn swap_chain_desc(hwnd: HWND_PTR, width: i32, height: i32) -> DXGI_SWAP_CHAIN_DESC {
     DXGI_SWAP_CHAIN_DESC {
@@ -73,7 +56,7 @@ fn swap_chain_desc(hwnd: HWND_PTR, width: i32, height: i32) -> DXGI_SWAP_CHAIN_D
     }
 }
 
-fn d3d_error(operation: &str, err: windows::core::Error) -> Error {
+fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
     Error::new(
         Errc::PlatformError,
         format!("D3d11Context: {operation} failed: {err}"),
@@ -97,7 +80,7 @@ impl D3d11Context {
                 "D3d11Context: native window handle is null",
             ));
         }
-        let (client_w, client_h) = client_size(native_window, width, height);
+        let (client_w, client_h) = win_surface::client_size(native_window, width, height);
         let feature_levels = [
             D3D_FEATURE_LEVEL_11_1,
             D3D_FEATURE_LEVEL_11_0,
@@ -129,7 +112,7 @@ fn create_with_driver(
     width: i32,
     height: i32,
     feature_levels: &[D3D_FEATURE_LEVEL],
-    driver_type: windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE,
+    driver_type: ::windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE,
 ) -> Result<D3d11Context> {
     let mut swap_chain = None;
     let mut device = None;
@@ -189,6 +172,10 @@ fn create_with_driver(
 }
 
 impl IGraphicsContext for D3d11Context {
+    fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
+        GraphicsContextCaps::cpu_upload_present(GraphicsBackend::D3d11, 1.0)
+    }
+
     fn graphics_backend(&self) -> GraphicsBackend {
         GraphicsBackend::D3d11
     }
@@ -198,7 +185,7 @@ impl IGraphicsContext for D3d11Context {
     }
 
     fn resize(&mut self, width: i32, height: i32) {
-        let (client_w, client_h) = client_size(self.hwnd, width, height);
+        let (client_w, client_h) = win_surface::client_size(self.hwnd, width, height);
         if client_w == self.width && client_h == self.height {
             return;
         }
@@ -236,10 +223,6 @@ impl IGraphicsContext for D3d11Context {
 
     fn height(&self) -> i32 {
         self.height
-    }
-
-    fn supports_pixel_present(&self) -> bool {
-        true
     }
 
     fn present_pixels(

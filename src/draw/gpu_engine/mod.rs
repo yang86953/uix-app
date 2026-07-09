@@ -6,7 +6,8 @@ use glow::HasContext as _;
 use std::cell::RefCell;
 
 use crate::core::Error;
-use crate::draw::backend::{DamageRegion, GpuBackend, RenderBackend};
+use crate::draw::backend::registry::create_native_raster_backend;
+use crate::draw::backend::{DamageRegion, RenderBackend};
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::RenderSession;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
@@ -25,7 +26,10 @@ pub struct GpuEngine {
 
 impl GpuEngine {
     pub fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
-        let session = RenderSession::with_backend(Box::new(GpuBackend::new(gpu_ctx)?));
+        let session = match create_native_raster_backend(gpu_ctx) {
+            Ok(backend) => RenderSession::with_backend(backend),
+            Err(err) => return Err(err),
+        };
         Ok(Self {
             session,
             empty_readback: RefCell::new(Vec::new()),

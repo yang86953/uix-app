@@ -1,5 +1,5 @@
 // ============================================================================
-// platform/linux/gpu/egl.rs — EGL + GLES 3.0 图形上下文
+// native/graphics/opengl/egl.rs — EGL + GLES 3.0 图形上下文
 //
 // 通过 EGL 创建 OpenGL ES 3.0 上下文，对接 Wayland surface（wl_egl_window）。
 // 实现 IGraphicsContext trait，供 GpuEngine 使用。
@@ -13,7 +13,7 @@ use std::ptr;
 use crate::native::traits::present::{IGraphicsContext, PresentDamage};
 use crate::native::{Errc, Error};
 
-use super::WaylandSurfaceHandle;
+use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 // ════════════════════════════════════════════════════════════════════════════
 // wl_egl_window FFI（wayland-egl 客户端库，Linux 系统自带）
 // ════════════════════════════════════════════════════════════════════════════
@@ -251,6 +251,14 @@ impl EglContext {
 // ════════════════════════════════════════════════════════════════════════════
 
 impl IGraphicsContext for EglContext {
+    fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
+        crate::native::traits::present::GraphicsContextCaps::native_gpu_raster(
+            crate::native::traits::present::GraphicsBackend::OpenGlEs,
+            self.swap_with_damage.is_some(),
+            1.0,
+        )
+    }
+
     fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
         crate::native::traits::present::GraphicsBackend::OpenGlEs
     }

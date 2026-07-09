@@ -204,6 +204,47 @@ fn app_overlay_root_keeps_app_root_and_mounts_notification() {
 }
 
 #[test]
+fn app_overlay_root_passes_clicks_to_app_when_notifications_empty() {
+    use crate::core::Point;
+    use crate::core::Rect;
+    use crate::native::traits::input::{KeyMod, MouseButton};
+    use crate::ui::core::widget::WidgetCore;
+    use crate::ui::SystemEvent;
+    use crate::ui::view::button;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let clicks = Rc::new(Cell::new(0));
+    let clicks_for_handler = clicks.clone();
+    let mut tree = ViewAdapter::build_nodes(wrap_root_with_notification_overlay(
+        button("Navigate")
+            .on_click(move || {
+                clicks_for_handler.set(clicks_for_handler.get() + 1);
+            })
+            .build(),
+        AppNotificationState::new(),
+    ));
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+    }
+    tree.layout();
+
+    let pos = Point::new(40.0, 40.0);
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(clicks.get(), 1);
+}
+
+#[test]
 fn app_handle_run_after_registers_timer_while_alive() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();

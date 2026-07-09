@@ -6,10 +6,14 @@
 
 pub mod event_loop;
 pub mod filesystem;
+pub mod ime_events;
 pub mod state;
 pub mod window;
+pub mod window_lifecycle;
 
 pub use event_loop::OsEventSource;
 pub use filesystem::{FileSystemCore, SpecialDirProvider};
 pub use state::WindowState;
 pub use window::{unimpl, PlatformWindowCore, WindowOps};
+pub use ime_events::{on_committed_text, on_marked_text, on_unmark_text, ImeCompositionState};
+pub use window_lifecycle::{push_window_close, push_window_resize};

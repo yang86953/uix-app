@@ -10,8 +10,9 @@
 use std::ffi::{c_void, CString};
 use std::ptr;
 
-use crate::native::backends::windows::bindings::RECT;
-use crate::native::backends::windows::ffi::{GetClientRect, GetDC};
+use crate::native::graphics::platform::windows::{
+    device_context, query_client_rect, release_device_context,
+};
 use crate::native::backends::windows::util::windows_diag;
 use crate::native::traits::present::{IGraphicsContext, PresentDamage};
 use crate::native::{Errc, Error};
@@ -174,15 +175,10 @@ fn create_es_context(
 /// framebuffer is allocated at monitor DPI, so we scale by `GetDeviceCaps(LOGPIXELSX)`.
 fn drawable_size(hwnd: HWND, hdc: HDC) -> (i32, i32, i32, i32) {
     unsafe {
-        let mut rect = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
+        let rect = match query_client_rect(hwnd) {
+            Some(rect) => rect,
+            None => return (1, 1, 1, 1),
         };
-        if GetClientRect(hwnd, &mut rect) == 0 {
-            return (1, 1, 1, 1);
-        }
         let logical_w = (rect.right - rect.left).max(1);
         let logical_h = (rect.bottom - rect.top).max(1);
         let dpi = GetDeviceCaps(hdc, LOGPIXELSX).max(96);
@@ -222,7 +218,7 @@ impl WglContext {
         }
 
         let hwnd = native_window;
-        let hdc = unsafe { GetDC(hwnd) };
+        let hdc = unsafe { device_context(hwnd) };
         if hdc.is_null() {
             return Err(windows_diag(
                 Errc::PlatformError,
@@ -294,7 +290,7 @@ impl WglContext {
 
         if result.is_err() {
             unsafe {
-                crate::native::backends::windows::ffi::ReleaseDC(hwnd, hdc);
+                release_device_context(hwnd, hdc);
             }
         }
         result
@@ -302,6 +298,14 @@ impl WglContext {
 }
 
 impl IGraphicsContext for WglContext {
+    fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
+        crate::native::traits::present::GraphicsContextCaps::native_gpu_raster(
+            crate::native::traits::present::GraphicsBackend::OpenGlEs,
+            false,
+            self.device_pixel_ratio(),
+        )
+    }
+
     fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
         crate::native::traits::present::GraphicsBackend::OpenGlEs
     }
@@ -346,7 +350,7 @@ impl IGraphicsContext for WglContext {
                 self.hglrc = ptr::null_mut();
             }
             if !self.hdc.is_null() {
-                crate::native::backends::windows::ffi::ReleaseDC(self.hwnd, self.hdc);
+                release_device_context(self.hwnd, self.hdc);
                 self.hdc = ptr::null_mut();
             }
         }
@@ -414,7 +418,8 @@ mod tests {
 
     #[test]
     fn factory_create_gpu_context_on_real_window() {
-        use crate::native::create_gpu_context;
+        use crate::native::create_gpu_context_with_backend;
+        use crate::native::traits::present::GraphicsBackend;
 
         let mut platform = crate::native::create_platform().expect("platform");
         let window = platform
@@ -426,7 +431,8 @@ mod tests {
             !surface.is_null(),
             "Windows HWND must be exposed as native_surface_ptr"
         );
-        let mut ctx = create_gpu_context(surface, 640, 480).expect("WglContext");
+        let mut ctx = create_gpu_context_with_backend(surface, 640, 480, GraphicsBackend::OpenGlEs)
+            .expect("WglContext");
         assert!(ctx.width() > 0);
         assert!(ctx.height() > 0);
         ctx.shutdown();

@@ -4,7 +4,7 @@
 // 架构：
 //   platform.rs    — WindowsPlatform（OsEventSource + IWindowManager + Platform + wnd_proc）
 //   window_ops.rs  — WindowsWindowOps（实现 WindowOps trait）
-//   gpu/           — GDI 像素呈现
+//   gdi_presenter/ — GDI 像素呈现
 //   system_info/   — 系统信息
 //   infra/         — FFI 绑定、常量、工具函数（bindings/consts/ffi/helpers/util）
 //   其余文件为各子系统实现。
@@ -22,7 +22,7 @@ pub mod display;
 pub mod ffi;
 pub mod file_dialog;
 pub mod filesystem;
-pub mod gpu;
+pub mod gdi_presenter;
 pub mod helpers;
 pub mod keyboard;
 pub mod notification;

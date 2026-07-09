@@ -34,7 +34,7 @@ component! {
         /// 统一样式（所有视觉属性的唯一来源）
         pub style: Style,
         /// 缓存子节点内容尺寸（layout_children 后更新），
-        /// 使 measure 在无固定尺寸时能基于子节点内容估算宽度。
+        /// 使 measure 在无固定 width/height 时能基于子节点内容估算尺寸。
         cached_content_size: Cell<Size>,
     }
 
@@ -104,11 +104,21 @@ component! {
         if visible_children.is_empty() { return Vec::new(); }
 
         // 构建统一子节点信息
-        let child_constraints = Constraints::loose(Size::new(content_rect.w, content_rect.h));
+        let child_constraints = self.child_measure_constraints(content_rect);
         let layout_children: Vec<LayoutChild> = visible_children
             .iter()
             .map(|&cid| child_from_tree_with_constraints(cid, tree, child_constraints))
             .collect();
+
+        let main_axis_indefinite = matches!(
+            s.flex_direction,
+            crate::ui::style::FlexDirection::Column
+                | crate::ui::style::FlexDirection::ColumnReverse
+        ) && s.height.is_none()
+            || matches!(
+                s.flex_direction,
+                crate::ui::style::FlexDirection::Row | crate::ui::style::FlexDirection::RowReverse
+            ) && s.width.is_none();
 
         // 委托给统一的 FlexLayout 布局引擎
         let engine = FlexLayout {
@@ -118,6 +128,7 @@ component! {
             align: convert_align(s.align_items),
             wrap: s.flex_wrap,
             overflow_content: s.overflow_content,
+            intrinsic_main: main_axis_indefinite,
         };
         let output = engine.layout(content_rect, &layout_children);
 
@@ -365,6 +376,36 @@ impl Container {
         self
     }
 
+    fn child_measure_constraints(&self, content_rect: Rect) -> Constraints {
+        let is_row = matches!(
+            self.style.flex_direction,
+            crate::ui::style::FlexDirection::Row
+                | crate::ui::style::FlexDirection::RowReverse
+        );
+        let main_indefinite = if is_row {
+            self.style.width.is_none()
+        } else {
+            self.style.height.is_none()
+        };
+        let cross_indefinite = if is_row {
+            self.style.height.is_none()
+        } else {
+            self.style.width.is_none()
+        };
+
+        let max_w = if (is_row && main_indefinite) || (!is_row && cross_indefinite) {
+            f32::MAX
+        } else {
+            content_rect.w
+        };
+        let max_h = if (!is_row && main_indefinite) || (is_row && cross_indefinite) {
+            f32::MAX
+        } else {
+            content_rect.h
+        };
+        Constraints::loose(Size::new(max_w, max_h))
+    }
+
     fn intrinsic_size(&self) -> Size {
         let bh = self.style.border_width.horizontal();
         let bv = self.style.border_width.vertical();
@@ -376,10 +417,14 @@ impl Container {
                 0.0
             }
         });
-        Size::new(
-            effective_w + bh,
-            self.style.height.map(|h| h + bv).unwrap_or(0.0),
-        )
+        let effective_h = self.style.height.unwrap_or_else(|| {
+            if cached.h > 0.0 {
+                cached.h + self.style.padding.vertical()
+            } else {
+                0.0
+            }
+        });
+        Size::new(effective_w + bh, effective_h + bv)
     }
 }
 
@@ -405,5 +450,15 @@ mod tests {
             .measure(Constraints::unconstrained());
 
         assert_eq!(measured, Size::new(80.0, 24.0));
+    }
+
+    #[test]
+    fn measure_uses_cached_content_height_without_explicit_height() {
+        let container = Container::new().w(120.0);
+        container.cached_content_size.set(Size::new(100.0, 48.0));
+
+        let measured = container.measure(Constraints::unconstrained());
+
+        assert_eq!(measured, Size::new(120.0, 48.0));
     }
 }

@@ -4,7 +4,7 @@ use std::any::Any;
 use std::cell::RefCell;
 
 use crate::core::{DamageRegion, Errc, Error, Point, Rect};
-use crate::native::traits::present::IGraphicsContext;
+use crate::native::traits::present::{IGraphicsContext, PresentFrame};
 use glow::HasContext as _;
 
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
@@ -77,8 +77,9 @@ pub struct GpuBackend {
 }
 
 impl GpuBackend {
-    pub fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+    pub fn new(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         if !gpu_ctx.supports_gl_proc_address() {
+            gpu_ctx.shutdown();
             return Err(Error::new(
                 Errc::InvalidArgument,
                 format!(
@@ -92,7 +93,13 @@ impl GpuBackend {
                 gpu_ctx.get_proc_address(s).unwrap_or(std::ptr::null())
             })
         });
-        let canvas = GpuCanvas2D::new(&gl, 1, 1)?;
+        let canvas = match GpuCanvas2D::new(&gl, 1, 1) {
+            Ok(canvas) => canvas,
+            Err(err) => {
+                gpu_ctx.shutdown();
+                return Err(err);
+            }
+        };
         let gl_ptr = gl.as_ref() as *const glow::Context;
         Ok(Self {
             gl,
@@ -141,8 +148,12 @@ impl GpuBackend {
 }
 
 fn present_graphics_context(gpu_ctx: &mut dyn IGraphicsContext, damage: &DamageRegion) {
-    gpu_ctx.make_current();
-    gpu_ctx.swap_buffers(damage.to_present_damage());
+    let frame = PresentFrame::Swapchain {
+        damage: damage.to_present_damage(),
+    };
+    if let Err(err) = gpu_ctx.present(&frame) {
+        crate::core::log::error_fn(format!("GpuBackend present failed: {}", err.short_what()));
+    }
 }
 
 impl RenderBackend for GpuBackend {
@@ -211,7 +222,9 @@ unsafe impl Sync for GpuBackend {}
 mod tests {
     use super::*;
     use crate::core::Rect;
-    use crate::native::traits::present::PresentDamage;
+    use crate::native::traits::present::{
+        GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+    };
 
     #[derive(Default)]
     struct RecordingGraphicsContext {
@@ -220,6 +233,10 @@ mod tests {
     }
 
     impl IGraphicsContext for RecordingGraphicsContext {
+        fn caps(&self) -> GraphicsContextCaps {
+            GraphicsContextCaps::native_gpu_raster(GraphicsBackend::OpenGlEs, false, 1.0)
+        }
+
         fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
             crate::native::traits::present::GraphicsBackend::OpenGlEs
         }
@@ -288,6 +305,10 @@ mod tests {
     struct NonGlGraphicsContext;
 
     impl IGraphicsContext for NonGlGraphicsContext {
+        fn caps(&self) -> GraphicsContextCaps {
+            GraphicsContextCaps::cpu_upload_present(GraphicsBackend::D3d11, 1.0)
+        }
+
         fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
             crate::native::traits::present::GraphicsBackend::D3d11
         }

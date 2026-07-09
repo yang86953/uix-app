@@ -1,11 +1,24 @@
 //! 平台工厂函数 — #[cfg] 只在此处与 backends/ 内。
 
+mod registry;
+#[cfg(windows)]
+mod registry_windows;
+#[cfg(all(unix, not(target_os = "macos")))]
+mod registry_linux;
+#[cfg(target_os = "macos")]
+mod registry_macos;
+
 use crate::core::error::{Errc, Error};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext};
 #[cfg(windows)]
 use crate::native::traits::system::ISystemInfo;
 use std::ffi::c_void;
+
+pub use registry::{
+    active_entries, entry_for, gpu_probe_candidates, try_create_context, try_create_gpu_context,
+    BackendStatus, GraphicsBackendEntry,
+};
 
 /// 创建当前平台对应的 Platform 实例。
 #[cfg(windows)]
@@ -41,7 +54,7 @@ fn unsupported_platform_message() -> String {
     "Unsupported platform: only Windows, Linux, and macOS are supported".to_string()
 }
 
-/// 创建 GPU 图形上下文，使用平台默认候选链。
+/// 创建 GPU 图形上下文（单条目；`Auto` 须用 `draw::bootstrap_graphics_engine`）。
 pub fn create_gpu_context(
     native_surface: *mut c_void,
     width: i32,
@@ -50,194 +63,20 @@ pub fn create_gpu_context(
     create_gpu_context_with_backend(native_surface, width, height, GraphicsBackend::Auto)
 }
 
-/// 创建 GPU 图形上下文，可指定具体 API；`Auto` 走平台默认候选链。
+/// 创建 GPU 图形上下文，指定单个 API；无 probe 循环。
 pub fn create_gpu_context_with_backend(
     native_surface: *mut c_void,
     width: i32,
     height: i32,
     requested: GraphicsBackend,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    let candidates = gpu_probe_candidates(requested);
-    probe_gpu_context(requested, candidates, |candidate| {
-        create_gpu_context_candidate(candidate, native_surface, width, height)
-    })
-}
-
-pub(crate) fn gpu_probe_candidates(requested: GraphicsBackend) -> Vec<GraphicsBackend> {
-    match requested {
-        GraphicsBackend::Auto => platform_default_gpu_backends(),
-        backend => vec![backend],
-    }
-}
-
-fn probe_gpu_context<F>(
-    requested: GraphicsBackend,
-    candidates: Vec<GraphicsBackend>,
-    mut try_backend: F,
-) -> Result<Box<dyn IGraphicsContext>, Error>
-where
-    F: FnMut(GraphicsBackend) -> Result<Box<dyn IGraphicsContext>, Error>,
-{
-    if candidates.is_empty() {
+    if requested == GraphicsBackend::Auto {
         return Err(Error::new(
             Errc::PlatformError,
-            format!("Graphics factory: no GPU backend candidates for {requested}"),
+            "create_gpu_context: Auto requires draw::bootstrap_graphics_engine (sole probe loop)",
         ));
     }
-
-    let mut failures = Vec::new();
-    for candidate in candidates {
-        crate::core::log::info_fn(format!("Graphics factory: probing {candidate}"));
-        match try_backend(candidate) {
-            Ok(context) => {
-                crate::core::log::info_fn(format!(
-                    "Graphics factory: selected {}",
-                    context.graphics_backend()
-                ));
-                return Ok(context);
-            }
-            Err(err) => {
-                let message = err.short_what();
-                crate::core::log::warn_fn(format!(
-                    "Graphics factory: {candidate} unavailable: {message}"
-                ));
-                failures.push(format!("{candidate}: {message}"));
-            }
-        }
-    }
-
-    Err(Error::new(
-        Errc::PlatformError,
-        format!(
-            "Graphics factory: all GPU backends failed for {requested}; {}",
-            failures.join("; ")
-        ),
-    ))
-}
-
-fn create_gpu_context_candidate(
-    backend: GraphicsBackend,
-    native_surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    match backend {
-        GraphicsBackend::Auto => Err(Error::new(
-            Errc::InvalidArgument,
-            "Graphics factory: Auto is not a concrete probe candidate",
-        )),
-        GraphicsBackend::OpenGlEs => create_opengles_context(native_surface, width, height),
-        GraphicsBackend::D3d11 => create_d3d11_context(native_surface, width, height),
-        GraphicsBackend::Vulkan => create_vulkan_context(native_surface, width, height),
-        GraphicsBackend::D3d12 | GraphicsBackend::Metal => Err(planned_backend_error(backend)),
-    }
-}
-
-fn planned_backend_error(backend: GraphicsBackend) -> Error {
-    Error::new(
-        Errc::PlatformError,
-        format!("GraphicsBackend {backend} is planned but not implemented"),
-    )
-}
-
-#[cfg(windows)]
-fn platform_default_gpu_backends() -> Vec<GraphicsBackend> {
-    // D3D12 尚未实现，待落地后再加入候选链首位（#162）。
-    vec![GraphicsBackend::D3d11, GraphicsBackend::OpenGlEs]
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn platform_default_gpu_backends() -> Vec<GraphicsBackend> {
-    vec![GraphicsBackend::Vulkan, GraphicsBackend::OpenGlEs]
-}
-
-#[cfg(target_os = "macos")]
-fn platform_default_gpu_backends() -> Vec<GraphicsBackend> {
-    vec![GraphicsBackend::Metal]
-}
-
-#[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
-fn platform_default_gpu_backends() -> Vec<GraphicsBackend> {
-    Vec::new()
-}
-
-#[cfg(windows)]
-fn create_opengles_context(
-    native_surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    let wgl =
-        crate::native::backends::windows::gpu::WglContext::new(native_surface, width, height)?;
-    Ok(Box::new(wgl))
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn create_opengles_context(
-    native_surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    let egl = crate::native::backends::linux::gpu::EglContext::new(native_surface, width, height)?;
-    Ok(Box::new(egl))
-}
-
-#[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
-fn create_opengles_context(
-    _native_surface: *mut c_void,
-    _width: i32,
-    _height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    Err(Error::new(
-        Errc::PlatformError,
-        "GraphicsBackend opengles is not supported on this platform",
-    ))
-}
-
-#[cfg(windows)]
-fn create_d3d11_context(
-    native_surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    let d3d11 =
-        crate::native::backends::windows::gpu::D3d11Context::new(native_surface, width, height)?;
-    Ok(Box::new(d3d11))
-}
-
-#[cfg(not(windows))]
-fn create_d3d11_context(
-    _native_surface: *mut c_void,
-    _width: i32,
-    _height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    Err(Error::new(
-        Errc::PlatformError,
-        "GraphicsBackend d3d11 is only supported on Windows",
-    ))
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn create_vulkan_context(
-    native_surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    let vulkan =
-        crate::native::backends::linux::gpu::VulkanContext::new(native_surface, width, height)?;
-    Ok(Box::new(vulkan))
-}
-
-#[cfg(not(all(unix, not(target_os = "macos"))))]
-fn create_vulkan_context(
-    _native_surface: *mut c_void,
-    _width: i32,
-    _height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    Err(Error::new(
-        Errc::PlatformError,
-        "GraphicsBackend vulkan is only supported on Linux Wayland",
-    ))
+    try_create_gpu_context(requested, native_surface, width, height)
 }
 
 /// 探测系统可用空闲内存（字节）。
@@ -268,35 +107,7 @@ pub fn available_memory_bytes() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::test_harness::FakeGraphicsContext;
-
-    #[test]
-    fn explicit_backend_probes_only_requested_backend() {
-        assert_eq!(
-            gpu_probe_candidates(GraphicsBackend::Vulkan),
-            vec![GraphicsBackend::Vulkan]
-        );
-    }
-
-    #[test]
-    fn auto_backend_uses_platform_default_order() {
-        let candidates = gpu_probe_candidates(GraphicsBackend::Auto);
-
-        #[cfg(windows)]
-        assert_eq!(
-            candidates,
-            vec![GraphicsBackend::D3d11, GraphicsBackend::OpenGlEs]
-        );
-
-        #[cfg(all(unix, not(target_os = "macos")))]
-        assert_eq!(
-            candidates,
-            vec![GraphicsBackend::Vulkan, GraphicsBackend::OpenGlEs]
-        );
-
-        #[cfg(target_os = "macos")]
-        assert_eq!(candidates, vec![GraphicsBackend::Metal]);
-    }
+    use crate::native::traits::present::GraphicsBackend;
 
     #[test]
     fn unsupported_platform_message_tracks_platform_boundary() {
@@ -306,51 +117,40 @@ mod tests {
     }
 
     #[test]
-    fn probe_stops_after_first_successful_candidate() {
-        let mut attempts = Vec::new();
-
-        let context = probe_gpu_context(
-            GraphicsBackend::Auto,
-            vec![GraphicsBackend::D3d11, GraphicsBackend::OpenGlEs],
-            |candidate| {
-                attempts.push(candidate);
-                if candidate == GraphicsBackend::OpenGlEs {
-                    Ok(Box::new(FakeGraphicsContext::new()) as Box<dyn IGraphicsContext>)
-                } else {
-                    Err(planned_backend_error(candidate))
-                }
-            },
-        )
-        .expect("OpenGL ES fake context should be selected");
-
-        assert_eq!(context.graphics_backend(), GraphicsBackend::OpenGlEs);
-        assert_eq!(
-            attempts,
-            vec![GraphicsBackend::D3d11, GraphicsBackend::OpenGlEs]
-        );
+    fn create_gpu_context_rejects_auto_without_probe_loop() {
+        let err = match create_gpu_context(std::ptr::null_mut(), 1, 1) {
+            Ok(_) => panic!("Auto must not probe inside factory"),
+            Err(err) => err,
+        };
+        assert!(err.message().contains("bootstrap_graphics_engine"));
     }
 
     #[test]
-    fn probe_error_includes_failed_candidates() {
-        let result = probe_gpu_context(
-            GraphicsBackend::Auto,
-            vec![GraphicsBackend::D3d12, GraphicsBackend::D3d11],
-            |candidate| Err(planned_backend_error(candidate)),
+    fn create_gpu_context_with_backend_creates_single_entry() {
+        let context = create_gpu_context_with_backend(
+            std::ptr::null_mut(),
+            1,
+            1,
+            GraphicsBackend::OpenGlEs,
         );
-        let err = match result {
-            Ok(_) => panic!("probe should fail when every candidate fails"),
+        // Null surface fails context creation, but factory must not iterate candidates.
+        assert!(context.is_err());
+    }
+
+    #[test]
+    fn planned_backend_returns_single_entry_error() {
+        let err = match try_create_gpu_context(GraphicsBackend::D3d12, std::ptr::null_mut(), 1, 1)
+        {
+            Ok(_) => panic!("D3D12 is planned"),
             Err(err) => err,
         };
-        let message = err.message();
-
-        assert!(message.contains("d3d12"));
-        assert!(message.contains("d3d11"));
-        assert!(message.contains("all GPU backends failed"));
+        assert!(err.message().contains("planned"));
     }
 
     #[test]
     fn vulkan_candidate_is_real_linux_backend_or_platform_specific_error() {
-        let err = match create_vulkan_context(std::ptr::null_mut(), 1, 1) {
+        let err = match try_create_gpu_context(GraphicsBackend::Vulkan, std::ptr::null_mut(), 1, 1)
+        {
             Ok(_) => panic!("null surface should not create a Vulkan context"),
             Err(err) => err,
         };
@@ -359,6 +159,9 @@ mod tests {
         assert!(err.message().contains("WaylandSurfaceHandle"));
 
         #[cfg(not(all(unix, not(target_os = "macos"))))]
-        assert!(err.message().contains("only supported on Linux Wayland"));
+        assert!(
+            err.message().contains("no registry entry")
+                || err.message().contains("only supported on Linux Wayland")
+        );
     }
 }

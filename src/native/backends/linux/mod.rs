@@ -7,7 +7,6 @@
 pub mod console;
 pub mod file_dialog;
 pub mod filesystem;
-pub mod gpu;
 pub mod notification;
 pub mod platform;
 pub mod system_info;

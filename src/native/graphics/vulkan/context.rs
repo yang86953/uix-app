@@ -8,9 +8,11 @@ use std::ptr;
 use ash::{vk, Entry};
 
 use crate::core::{Errc, Error, Result};
-use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, PresentDamage};
+use crate::native::traits::present::{
+    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+};
 
-use super::WaylandSurfaceHandle;
+use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 
 fn vk_err(operation: &str, err: impl std::fmt::Debug) -> Error {
     Error::new(
@@ -487,6 +489,10 @@ impl VulkanContext {
 }
 
 impl IGraphicsContext for VulkanContext {
+    fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
+        GraphicsContextCaps::cpu_upload_present(GraphicsBackend::Vulkan, 1.0)
+    }
+
     fn graphics_backend(&self) -> GraphicsBackend {
         GraphicsBackend::Vulkan
     }
@@ -533,10 +539,6 @@ impl IGraphicsContext for VulkanContext {
 
     fn height(&self) -> i32 {
         self.height
-    }
-
-    fn supports_pixel_present(&self) -> bool {
-        true
     }
 
     fn present_pixels(
