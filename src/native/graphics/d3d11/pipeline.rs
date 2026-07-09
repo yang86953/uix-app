@@ -1,8 +1,12 @@
-//! D3D11 native geometry pipeline — solid/stroke rects + glyph atlas + soft blit.
+//! D3D11 native geometry pipeline — solid/stroke rects + glyph atlas +
+//! path meshes + box shadow + soft blit.
 //!
 //! Hot Canvas2D paths: `fill_rect` / `fill_circle` / `stroke_rect` /
-//! `stroke_circle` (+ axis-aligned `draw_line` via solid fill) and identity
-//! solid `blit_glyph` via coverage atlas. Soft blit for the rest (#169).
+//! `stroke_circle` (+ axis-aligned `draw_line` via solid fill), identity
+//! solid `blit_glyph` via coverage atlas, identity linear/radial gradient
+//! fills, identity simple `fill_path` / `stroke_path` (CPU tessellate →
+//! solid triangles), and identity box/ambient shadow (SDF outer glow).
+//! Soft blit for the rest (#169).
 
 #![cfg(windows)]
 #![allow(nonstandard_style)]
@@ -10,7 +14,10 @@
 use std::mem::size_of;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::traits::present::{GpuGlyphBlit, GpuSolidRect, GpuStrokeRect};
+use crate::native::traits::present::{
+    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh, GpuSolidRect,
+    GpuStrokeRect,
+};
 use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -203,6 +210,208 @@ float4 PSMain(VSOut input) : SV_Target
 }
 "#;
 
+const GRADIENT_HLSL: &str = r#"
+cbuffer GradCB : register(b0)
+{
+    float2 u_viewport;
+    float2 _pad0;
+    float4 u_rect;      // xy = top-left, zw = size (AABB)
+    float4 u_color_a;
+    float4 u_color_b;
+    // x = mode (0=linear, 1=radial)
+    // y = linear dir (0..3) OR radial inner_r
+    // z = radial outer_r (unused for linear)
+    // w unused
+    float4 u_params;
+};
+
+struct VSIn {
+    float2 pos : POSITION;
+};
+
+struct VSOut {
+    float4 pos : SV_POSITION;
+    float2 local : TEXCOORD0;
+    float2 rect_size : TEXCOORD1;
+};
+
+VSOut VSMain(VSIn input)
+{
+    VSOut o;
+    float2 draw_xy = u_rect.xy;
+    float2 draw_wh = u_rect.zw;
+    float2 pos = draw_xy + input.pos * draw_wh;
+    float2 ndc = (pos / u_viewport) * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    o.pos = float4(ndc, 0.0, 1.0);
+    o.local = input.pos * draw_wh;
+    o.rect_size = draw_wh;
+    return o;
+}
+
+float4 PSMain(VSOut input) : SV_Target
+{
+    float mode = u_params.x;
+    if (mode < 0.5)
+    {
+        // Linear — matches CPU fill_linear_gradient t calculation.
+        float dir = u_params.y;
+        float t;
+        float2 local = input.local;
+        float2 size = input.rect_size;
+        if (dir < 0.5)
+            t = local.x / max(size.x, 1.0);
+        else if (dir < 1.5)
+            t = local.y / max(size.y, 1.0);
+        else if (dir < 2.5)
+            t = (local.x + local.y) / max(size.x + size.y, 1.0);
+        else
+            t = (local.x - local.y + size.y) / max(size.x + size.y, 1.0);
+        t = saturate(t);
+        return lerp(u_color_a, u_color_b, t);
+    }
+    else
+    {
+        // Radial — AABB is (cx-outer, cy-outer, 2*outer, 2*outer).
+        float2 center = u_rect.xy + u_rect.zw * 0.5;
+        float2 world = u_rect.xy + input.local;
+        float dist = length(world - center);
+        float outer_r = u_params.z;
+        float inner_r = u_params.y;
+        if (dist > outer_r)
+            discard;
+        float range = max(outer_r - inner_r, 1e-6);
+        float t = saturate((dist - inner_r) / range);
+        return lerp(u_color_a, u_color_b, t);
+    }
+}
+"#;
+
+const MESH_HLSL: &str = r#"
+cbuffer MeshCB : register(b0)
+{
+    float2 u_viewport;
+    float2 _pad0;
+    float4 u_color;
+};
+
+struct VSIn {
+    float2 pos : POSITION;
+};
+
+struct VSOut {
+    float4 pos : SV_POSITION;
+};
+
+VSOut VSMain(VSIn input)
+{
+    VSOut o;
+    float2 ndc = (input.pos / u_viewport) * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    o.pos = float4(ndc, 0.0, 1.0);
+    return o;
+}
+
+float4 PSMain(VSOut input) : SV_Target
+{
+    return u_color;
+}
+"#;
+
+// Box / ambient shadow — ports CPU `shadow_coverage` / `shadow_coverage_ambient`.
+const SHADOW_HLSL: &str = r#"
+cbuffer ShadowCB : register(b0)
+{
+    float2 u_viewport;
+    float2 _pad0;
+    // Shadow shape rect (after offset), not the expanded draw quad.
+    float4 u_rect;
+    float4 u_color;
+    float4 u_radius;
+    // x = blur, y = ambient (0/1), zw unused
+    float4 u_params;
+};
+
+struct VSIn {
+    float2 pos : POSITION;
+};
+
+struct VSOut {
+    float4 pos : SV_POSITION;
+    float2 local : TEXCOORD0;
+    float2 rect_size : TEXCOORD1;
+};
+
+VSOut VSMain(VSIn input)
+{
+    VSOut o;
+    float blur = max(u_params.x, 0.0);
+    float expand = blur + 1.0;
+    float2 draw_xy = u_rect.xy - expand;
+    float2 draw_wh = u_rect.zw + expand * 2.0;
+    float2 pos = draw_xy + input.pos * draw_wh;
+    float2 ndc = (pos / u_viewport) * 2.0 - 1.0;
+    ndc.y = -ndc.y;
+    o.pos = float4(ndc, 0.0, 1.0);
+    o.local = input.pos * draw_wh;
+    o.rect_size = u_rect.zw;
+    return o;
+}
+
+float rounded_rect_sdf(float2 local, float2 size, float4 radius)
+{
+    float2 half_size = size * 0.5;
+    float2 q = local - half_size;
+    float cr;
+    if (q.x < 0.0)
+        cr = (q.y < 0.0) ? radius.x : radius.w;
+    else
+        cr = (q.y < 0.0) ? radius.y : radius.z;
+    float2 d = abs(q) - half_size + cr;
+    float outside = length(max(d, 0.0));
+    float inside = min(max(d.x, d.y), 0.0);
+    return outside + inside - cr;
+}
+
+float shadow_coverage(float sd, float blur)
+{
+    float t = saturate((blur - sd) / (2.0 * blur));
+    return t * t * (3.0 - 2.0 * t);
+}
+
+float shadow_coverage_ambient(float sd, float blur)
+{
+    float halfb = blur * 0.5;
+    float t = saturate((halfb - sd) / (blur + halfb));
+    float t2 = t * t;
+    return t2 * t2 * (5.0 - 4.0 * t);
+}
+
+float4 PSMain(VSOut input) : SV_Target
+{
+    float blur = max(u_params.x, 0.0);
+    float expand = blur + 1.0;
+    float2 shape_local = input.local - float2(expand, expand);
+    float sd = rounded_rect_sdf(shape_local, input.rect_size, u_radius);
+    float coverage;
+    if (blur > 0.5)
+    {
+        if (u_params.y > 0.5)
+            coverage = shadow_coverage_ambient(sd, blur);
+        else
+            coverage = shadow_coverage(sd, blur);
+    }
+    else
+    {
+        // Matches CPU sdf_to_coverage when blur is negligible.
+        coverage = saturate(0.5 - sd);
+    }
+    if (coverage <= 0.0)
+        discard;
+    return u_color * coverage;
+}
+"#;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct RectConstants {
@@ -221,6 +430,40 @@ struct GlyphConstants {
     viewport: [f32; 2],
     _pad0: [f32; 2],
 }
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct GradientConstants {
+    viewport: [f32; 2],
+    _pad0: [f32; 2],
+    rect: [f32; 4],
+    color_a: [f32; 4],
+    color_b: [f32; 4],
+    /// x=mode (0 linear / 1 radial), y=dir|inner_r, z=outer_r, w unused.
+    params: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MeshConstants {
+    viewport: [f32; 2],
+    _pad0: [f32; 2],
+    color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ShadowConstants {
+    viewport: [f32; 2],
+    _pad0: [f32; 2],
+    rect: [f32; 4],
+    color: [f32; 4],
+    radius: [f32; 4],
+    /// x = blur, y = ambient (0/1).
+    params: [f32; 4],
+}
+
+const MESH_VB_INITIAL_FLOATS: usize = 1024;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -346,12 +589,23 @@ pub struct D3d11Pipeline {
     vs_glyph: ID3D11VertexShader,
     ps_glyph: ID3D11PixelShader,
     layout_glyph: ID3D11InputLayout,
+    vs_grad: ID3D11VertexShader,
+    ps_grad: ID3D11PixelShader,
+    vs_mesh: ID3D11VertexShader,
+    ps_mesh: ID3D11PixelShader,
+    vs_shadow: ID3D11VertexShader,
+    ps_shadow: ID3D11PixelShader,
     vb_unit: ID3D11Buffer,
     vb_fullscreen: ID3D11Buffer,
     vb_glyph: ID3D11Buffer,
     vb_glyph_capacity: usize,
+    vb_mesh: ID3D11Buffer,
+    vb_mesh_capacity_floats: usize,
     cb: ID3D11Buffer,
     cb_glyph: ID3D11Buffer,
+    cb_grad: ID3D11Buffer,
+    cb_mesh: ID3D11Buffer,
+    cb_shadow: ID3D11Buffer,
     blend_alpha: ID3D11BlendState,
     blend_replace: ID3D11BlendState,
     rasterizer: ID3D11RasterizerState,
@@ -379,6 +633,12 @@ impl D3d11Pipeline {
         let blit_ps_blob = compile_shader(BLIT_HLSL, "PSMain\0", "ps_4_0\0")?;
         let glyph_vs_blob = compile_shader(GLYPH_HLSL, "VSMain\0", "vs_4_0\0")?;
         let glyph_ps_blob = compile_shader(GLYPH_HLSL, "PSMain\0", "ps_4_0\0")?;
+        let grad_vs_blob = compile_shader(GRADIENT_HLSL, "VSMain\0", "vs_4_0\0")?;
+        let grad_ps_blob = compile_shader(GRADIENT_HLSL, "PSMain\0", "ps_4_0\0")?;
+        let mesh_vs_blob = compile_shader(MESH_HLSL, "VSMain\0", "vs_4_0\0")?;
+        let mesh_ps_blob = compile_shader(MESH_HLSL, "PSMain\0", "ps_4_0\0")?;
+        let shadow_vs_blob = compile_shader(SHADOW_HLSL, "VSMain\0", "vs_4_0\0")?;
+        let shadow_ps_blob = compile_shader(SHADOW_HLSL, "PSMain\0", "ps_4_0\0")?;
 
         let mut vs_rect = None;
         unsafe {
@@ -476,6 +736,102 @@ impl D3d11Pipeline {
         let ps_glyph = ps_glyph
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no glyph PS"))?;
 
+        let mut vs_grad = None;
+        unsafe {
+            device
+                .CreateVertexShader(
+                    std::slice::from_raw_parts(
+                        grad_vs_blob.GetBufferPointer() as *const u8,
+                        grad_vs_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut vs_grad),
+                )
+                .map_err(|e| d3d_error("CreateVertexShader(grad)", e))?;
+        }
+        let vs_grad = vs_grad
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad VS"))?;
+
+        let mut ps_grad = None;
+        unsafe {
+            device
+                .CreatePixelShader(
+                    std::slice::from_raw_parts(
+                        grad_ps_blob.GetBufferPointer() as *const u8,
+                        grad_ps_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut ps_grad),
+                )
+                .map_err(|e| d3d_error("CreatePixelShader(grad)", e))?;
+        }
+        let ps_grad = ps_grad
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad PS"))?;
+
+        let mut vs_mesh = None;
+        unsafe {
+            device
+                .CreateVertexShader(
+                    std::slice::from_raw_parts(
+                        mesh_vs_blob.GetBufferPointer() as *const u8,
+                        mesh_vs_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut vs_mesh),
+                )
+                .map_err(|e| d3d_error("CreateVertexShader(mesh)", e))?;
+        }
+        let vs_mesh = vs_mesh
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh VS"))?;
+
+        let mut ps_mesh = None;
+        unsafe {
+            device
+                .CreatePixelShader(
+                    std::slice::from_raw_parts(
+                        mesh_ps_blob.GetBufferPointer() as *const u8,
+                        mesh_ps_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut ps_mesh),
+                )
+                .map_err(|e| d3d_error("CreatePixelShader(mesh)", e))?;
+        }
+        let ps_mesh = ps_mesh
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh PS"))?;
+
+        let mut vs_shadow = None;
+        unsafe {
+            device
+                .CreateVertexShader(
+                    std::slice::from_raw_parts(
+                        shadow_vs_blob.GetBufferPointer() as *const u8,
+                        shadow_vs_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut vs_shadow),
+                )
+                .map_err(|e| d3d_error("CreateVertexShader(shadow)", e))?;
+        }
+        let vs_shadow = vs_shadow
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no shadow VS"))?;
+
+        let mut ps_shadow = None;
+        unsafe {
+            device
+                .CreatePixelShader(
+                    std::slice::from_raw_parts(
+                        shadow_ps_blob.GetBufferPointer() as *const u8,
+                        shadow_ps_blob.GetBufferSize(),
+                    ),
+                    None,
+                    Some(&mut ps_shadow),
+                )
+                .map_err(|e| d3d_error("CreatePixelShader(shadow)", e))?;
+        }
+        let ps_shadow = ps_shadow
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no shadow PS"))?;
+
         let input_elems = [D3D11_INPUT_ELEMENT_DESC {
             SemanticName: PCSTR::from_raw(b"POSITION\0".as_ptr()),
             SemanticIndex: 0,
@@ -558,6 +914,8 @@ impl D3d11Pipeline {
             device,
             vb_glyph_capacity * 6 * size_of::<GlyphVertex>(),
         )?;
+        let vb_mesh_capacity_floats = MESH_VB_INITIAL_FLOATS;
+        let vb_mesh = create_dynamic_vb(device, vb_mesh_capacity_floats * size_of::<f32>())?;
 
         let cb_desc = D3D11_BUFFER_DESC {
             ByteWidth: size_of::<RectConstants>() as u32,
@@ -591,6 +949,57 @@ impl D3d11Pipeline {
         }
         let cb_glyph = cb_glyph
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no glyph CB"))?;
+
+        let cb_grad_desc = D3D11_BUFFER_DESC {
+            ByteWidth: size_of::<GradientConstants>() as u32,
+            Usage: D3D11_USAGE_DYNAMIC,
+            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
+            MiscFlags: 0,
+            StructureByteStride: 0,
+        };
+        let mut cb_grad = None;
+        unsafe {
+            device
+                .CreateBuffer(&cb_grad_desc, None, Some(&mut cb_grad))
+                .map_err(|e| d3d_error("CreateBuffer(cb_grad)", e))?;
+        }
+        let cb_grad = cb_grad
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no grad CB"))?;
+
+        let cb_mesh_desc = D3D11_BUFFER_DESC {
+            ByteWidth: size_of::<MeshConstants>() as u32,
+            Usage: D3D11_USAGE_DYNAMIC,
+            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
+            MiscFlags: 0,
+            StructureByteStride: 0,
+        };
+        let mut cb_mesh = None;
+        unsafe {
+            device
+                .CreateBuffer(&cb_mesh_desc, None, Some(&mut cb_mesh))
+                .map_err(|e| d3d_error("CreateBuffer(cb_mesh)", e))?;
+        }
+        let cb_mesh = cb_mesh
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no mesh CB"))?;
+
+        let cb_shadow_desc = D3D11_BUFFER_DESC {
+            ByteWidth: size_of::<ShadowConstants>() as u32,
+            Usage: D3D11_USAGE_DYNAMIC,
+            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
+            MiscFlags: 0,
+            StructureByteStride: 0,
+        };
+        let mut cb_shadow = None;
+        unsafe {
+            device
+                .CreateBuffer(&cb_shadow_desc, None, Some(&mut cb_shadow))
+                .map_err(|e| d3d_error("CreateBuffer(cb_shadow)", e))?;
+        }
+        let cb_shadow = cb_shadow
+            .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no shadow CB"))?;
 
         let mut blend_alpha = None;
         let alpha_desc = D3D11_BLEND_DESC {
@@ -689,12 +1098,23 @@ impl D3d11Pipeline {
             vs_glyph,
             ps_glyph,
             layout_glyph,
+            vs_grad,
+            ps_grad,
+            vs_mesh,
+            ps_mesh,
+            vs_shadow,
+            ps_shadow,
             vb_unit,
             vb_fullscreen,
             vb_glyph,
             vb_glyph_capacity,
+            vb_mesh,
+            vb_mesh_capacity_floats,
             cb,
             cb_glyph,
+            cb_grad,
+            cb_mesh,
+            cb_shadow,
             blend_alpha,
             blend_replace,
             rasterizer,
@@ -1358,6 +1778,360 @@ impl D3d11Pipeline {
                 rect.radius,
                 0.0,
             )?;
+        }
+        Ok(())
+    }
+
+
+    fn bind_grad_pipeline(
+        &self,
+        context: &ID3D11DeviceContext,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+    ) {
+        let stride = (2 * size_of::<f32>()) as u32;
+        let offset = 0u32;
+        unsafe {
+            context.IASetInputLayout(&self.layout);
+            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            context.IASetVertexBuffers(
+                0,
+                1,
+                Some(&Some(self.vb_unit.clone())),
+                Some(&stride),
+                Some(&offset),
+            );
+            context.VSSetShader(&self.vs_grad, None);
+            context.PSSetShader(&self.ps_grad, None);
+            context.VSSetConstantBuffers(0, Some(&[Some(self.cb_grad.clone())]));
+            context.PSSetConstantBuffers(0, Some(&[Some(self.cb_grad.clone())]));
+            context.RSSetState(&self.rasterizer);
+            context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+            let (sx, sy, sw, sh) = scissor.unwrap_or((
+                0,
+                0,
+                viewport_w.ceil() as i32,
+                viewport_h.ceil() as i32,
+            ));
+            let rect = ::windows::Win32::Foundation::RECT {
+                left: sx,
+                top: sy,
+                right: sx + sw.max(0),
+                bottom: sy + sh.max(0),
+            };
+            context.RSSetScissorRects(Some(&[rect]));
+        }
+    }
+
+    fn draw_grad_constants(
+        &self,
+        context: &ID3D11DeviceContext,
+        viewport_w: f32,
+        viewport_h: f32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        color_a: [f32; 4],
+        color_b: [f32; 4],
+        params: [f32; 4],
+    ) -> Result<()> {
+        if w <= 0.0 || h <= 0.0 {
+            return Ok(());
+        }
+        let constants = GradientConstants {
+            viewport: [viewport_w, viewport_h],
+            _pad0: [0.0, 0.0],
+            rect: [x, y, w, h],
+            color_a,
+            color_b,
+            params,
+        };
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            context
+                .Map(
+                    &self.cb_grad,
+                    0,
+                    D3D11_MAP_WRITE_DISCARD,
+                    0,
+                    Some(&mut mapped),
+                )
+                .map_err(|e| d3d_error("Map(cb_grad)", e))?;
+            std::ptr::copy_nonoverlapping(
+                (&constants as *const GradientConstants).cast::<u8>(),
+                mapped.pData.cast(),
+                size_of::<GradientConstants>(),
+            );
+            context.Unmap(&self.cb_grad, 0);
+            context.Draw(6, 0);
+        }
+        Ok(())
+    }
+
+    pub fn draw_linear_gradients(
+        &mut self,
+        context: &ID3D11DeviceContext,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuLinearGradientRect],
+    ) -> Result<()> {
+        if rects.is_empty() || viewport_w <= 0.0 || viewport_h <= 0.0 {
+            return Ok(());
+        }
+        self.bind_grad_pipeline(context, viewport_w, viewport_h, scissor);
+        for rect in rects {
+            if rect.w <= 0.0 || rect.h <= 0.0 {
+                continue;
+            }
+            self.draw_grad_constants(
+                context,
+                viewport_w,
+                viewport_h,
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                rect.color_a,
+                rect.color_b,
+                [0.0, rect.dir as f32, 0.0, 0.0],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn draw_radial_gradients(
+        &mut self,
+        context: &ID3D11DeviceContext,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        grads: &[GpuRadialGradient],
+    ) -> Result<()> {
+        if grads.is_empty() || viewport_w <= 0.0 || viewport_h <= 0.0 {
+            return Ok(());
+        }
+        self.bind_grad_pipeline(context, viewport_w, viewport_h, scissor);
+        for g in grads {
+            let outer = g.outer_r.max(0.0);
+            if outer <= 0.0 {
+                continue;
+            }
+            let x = g.cx - outer;
+            let y = g.cy - outer;
+            let size = outer * 2.0;
+            self.draw_grad_constants(
+                context,
+                viewport_w,
+                viewport_h,
+                x,
+                y,
+                size,
+                size,
+                g.color_inner,
+                g.color_outer,
+                [1.0, g.inner_r.max(0.0), outer, 0.0],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn ensure_mesh_vb(&mut self, device: &ID3D11Device, float_count: usize) -> Result<()> {
+        if float_count <= self.vb_mesh_capacity_floats {
+            return Ok(());
+        }
+        let mut cap = self.vb_mesh_capacity_floats.max(MESH_VB_INITIAL_FLOATS);
+        while cap < float_count {
+            cap = cap.saturating_mul(2);
+        }
+        self.vb_mesh = create_dynamic_vb(device, cap * size_of::<f32>())?;
+        self.vb_mesh_capacity_floats = cap;
+        Ok(())
+    }
+
+    /// Draw CPU-tessellated solid triangle meshes (path fill/stroke).
+    pub fn draw_solid_meshes(
+        &mut self,
+        device: &ID3D11Device,
+        context: &ID3D11DeviceContext,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        meshes: &[GpuSolidMesh],
+    ) -> Result<()> {
+        if meshes.is_empty() || viewport_w <= 0.0 || viewport_h <= 0.0 {
+            return Ok(());
+        }
+        let (sx, sy, sw, sh) = scissor.unwrap_or((
+            0,
+            0,
+            viewport_w.ceil() as i32,
+            viewport_h.ceil() as i32,
+        ));
+        let scissor_rect = ::windows::Win32::Foundation::RECT {
+            left: sx,
+            top: sy,
+            right: sx + sw.max(0),
+            bottom: sy + sh.max(0),
+        };
+        for mesh in meshes {
+            let verts = mesh.vertices.as_ref();
+            if verts.len() < 6 || verts.len() % 2 != 0 {
+                continue;
+            }
+            let vert_count = (verts.len() / 2) as u32;
+            if vert_count % 3 != 0 {
+                continue;
+            }
+            self.ensure_mesh_vb(device, verts.len())?;
+            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            unsafe {
+                context
+                    .Map(
+                        &self.vb_mesh,
+                        0,
+                        D3D11_MAP_WRITE_DISCARD,
+                        0,
+                        Some(&mut mapped),
+                    )
+                    .map_err(|e| d3d_error("Map(vb_mesh)", e))?;
+                std::ptr::copy_nonoverlapping(
+                    verts.as_ptr().cast::<u8>(),
+                    mapped.pData.cast(),
+                    verts.len() * size_of::<f32>(),
+                );
+                context.Unmap(&self.vb_mesh, 0);
+            }
+            let constants = MeshConstants {
+                viewport: [viewport_w, viewport_h],
+                _pad0: [0.0, 0.0],
+                color: mesh.rgba,
+            };
+            let mut mapped_cb = D3D11_MAPPED_SUBRESOURCE::default();
+            unsafe {
+                context
+                    .Map(
+                        &self.cb_mesh,
+                        0,
+                        D3D11_MAP_WRITE_DISCARD,
+                        0,
+                        Some(&mut mapped_cb),
+                    )
+                    .map_err(|e| d3d_error("Map(cb_mesh)", e))?;
+                std::ptr::copy_nonoverlapping(
+                    (&constants as *const MeshConstants).cast::<u8>(),
+                    mapped_cb.pData.cast(),
+                    size_of::<MeshConstants>(),
+                );
+                context.Unmap(&self.cb_mesh, 0);
+
+                let stride = (2 * size_of::<f32>()) as u32;
+                let offset = 0u32;
+                context.IASetInputLayout(&self.layout);
+                context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                context.IASetVertexBuffers(
+                    0,
+                    1,
+                    Some(&Some(self.vb_mesh.clone())),
+                    Some(&stride),
+                    Some(&offset),
+                );
+                context.VSSetShader(&self.vs_mesh, None);
+                context.PSSetShader(&self.ps_mesh, None);
+                context.VSSetConstantBuffers(0, Some(&[Some(self.cb_mesh.clone())]));
+                context.PSSetConstantBuffers(0, Some(&[Some(self.cb_mesh.clone())]));
+                context.RSSetState(&self.rasterizer);
+                context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+                context.RSSetScissorRects(Some(&[scissor_rect]));
+                context.Draw(vert_count, 0);
+            }
+        }
+        Ok(())
+    }
+
+    /// Draw axis-aligned box / ambient shadows (SDF coverage, matches CPU).
+    pub fn draw_box_shadows(
+        &mut self,
+        context: &ID3D11DeviceContext,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        shadows: &[GpuBoxShadow],
+    ) -> Result<()> {
+        if shadows.is_empty() || viewport_w <= 0.0 || viewport_h <= 0.0 {
+            return Ok(());
+        }
+        let (sx, sy, sw, sh) = scissor.unwrap_or((
+            0,
+            0,
+            viewport_w.ceil() as i32,
+            viewport_h.ceil() as i32,
+        ));
+        let scissor_rect = ::windows::Win32::Foundation::RECT {
+            left: sx,
+            top: sy,
+            right: sx + sw.max(0),
+            bottom: sy + sh.max(0),
+        };
+        let stride = (2 * size_of::<f32>()) as u32;
+        let offset = 0u32;
+        unsafe {
+            context.IASetInputLayout(&self.layout);
+            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            context.IASetVertexBuffers(
+                0,
+                1,
+                Some(&Some(self.vb_unit.clone())),
+                Some(&stride),
+                Some(&offset),
+            );
+            context.VSSetShader(&self.vs_shadow, None);
+            context.PSSetShader(&self.ps_shadow, None);
+            context.VSSetConstantBuffers(0, Some(&[Some(self.cb_shadow.clone())]));
+            context.PSSetConstantBuffers(0, Some(&[Some(self.cb_shadow.clone())]));
+            context.RSSetState(&self.rasterizer);
+            context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+            context.RSSetScissorRects(Some(&[scissor_rect]));
+        }
+        for shadow in shadows {
+            if shadow.w <= 0.0 || shadow.h <= 0.0 || shadow.rgba[3] <= 0.0 {
+                continue;
+            }
+            let blur = shadow.blur.max(0.0);
+            let constants = ShadowConstants {
+                viewport: [viewport_w, viewport_h],
+                _pad0: [0.0, 0.0],
+                rect: [
+                    shadow.x + shadow.offset_x,
+                    shadow.y + shadow.offset_y,
+                    shadow.w,
+                    shadow.h,
+                ],
+                color: shadow.rgba,
+                radius: shadow.radius,
+                params: [blur, if shadow.ambient { 1.0 } else { 0.0 }, 0.0, 0.0],
+            };
+            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            unsafe {
+                context
+                    .Map(
+                        &self.cb_shadow,
+                        0,
+                        D3D11_MAP_WRITE_DISCARD,
+                        0,
+                        Some(&mut mapped),
+                    )
+                    .map_err(|e| d3d_error("Map(cb_shadow)", e))?;
+                std::ptr::copy_nonoverlapping(
+                    (&constants as *const ShadowConstants).cast::<u8>(),
+                    mapped.pData.cast(),
+                    size_of::<ShadowConstants>(),
+                );
+                context.Unmap(&self.cb_shadow, 0);
+                context.Draw(6, 0);
+            }
         }
         Ok(())
     }

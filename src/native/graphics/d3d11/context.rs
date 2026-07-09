@@ -1,7 +1,8 @@
 //! Direct3D 11 graphics context for Windows.
 //!
 //! Caps: [`RasterMode::GpuNative`] × [`PresentMode::Swapchain`] (#169).
-//! Native solid/rounded fill + stroke + glyph atlas text; unsupported Canvas2D
+//! Native solid/rounded fill + stroke + glyph atlas text + linear/radial
+//! gradients + simple path meshes + box/ambient shadow; unsupported Canvas2D
 //! ops soft-raster and alpha-blit (same hybrid pattern as GL `GpuCanvas2D`).
 
 #![cfg(windows)]
@@ -13,8 +14,8 @@ use crate::core::{Errc, Error, Result};
 use crate::native::graphics::d3d11::pipeline::D3d11Pipeline;
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, GpuGlyphBlit, GpuSolidRect, GpuStrokeRect,
-    IGraphicsContext, PresentDamage,
+    GraphicsBackend, GraphicsContextCaps, GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect,
+    GpuRadialGradient, GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, PresentDamage,
 };
 use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
 use ::windows::Win32::Graphics::Direct3D::{
@@ -415,6 +416,64 @@ impl IGraphicsContext for D3d11Context {
             .draw_glyphs(&self.device, &self.context, viewport_w, viewport_h, scissor, glyphs)
     }
 
+    fn draw_linear_gradients(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuLinearGradientRect],
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current();
+        self.pipeline
+            .draw_linear_gradients(&self.context, viewport_w, viewport_h, scissor, rects)
+    }
+
+    fn draw_radial_gradients(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        grads: &[GpuRadialGradient],
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current();
+        self.pipeline
+            .draw_radial_gradients(&self.context, viewport_w, viewport_h, scissor, grads)
+    }
+
+    fn draw_solid_meshes(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        meshes: &[GpuSolidMesh],
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current();
+        self.pipeline.draw_solid_meshes(
+            &self.device,
+            &self.context,
+            viewport_w,
+            viewport_h,
+            scissor,
+            meshes,
+        )
+    }
+
+    fn draw_box_shadows(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        shadows: &[GpuBoxShadow],
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current();
+        self.pipeline
+            .draw_box_shadows(&self.context, viewport_w, viewport_h, scissor, shadows)
+    }
+
     fn blit_soft_fallback(
         &mut self,
         pixels: &[u32],
@@ -465,7 +524,9 @@ unsafe impl Sync for D3d11Context {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::traits::present::{PresentFrame, PresentMode, RasterMode};
+    use crate::native::traits::present::{
+        GpuBoxShadow, GpuSolidMesh, PresentFrame, PresentMode, RasterMode,
+    };
 
     #[test]
     fn swap_chain_desc_uses_bgra_windowed_backbuffer() {
@@ -571,6 +632,80 @@ mod tests {
             }],
         )
         .expect("draw_glyphs");
+        ctx.draw_linear_gradients(
+            ctx.width() as f32,
+            ctx.height() as f32,
+            None,
+            &[GpuLinearGradientRect {
+                x: 120.0,
+                y: 16.0,
+                w: 80.0,
+                h: 24.0,
+                color_a: [1.0, 0.0, 0.0, 1.0],
+                color_b: [0.0, 0.0, 1.0, 1.0],
+                dir: 0,
+            }],
+        )
+        .expect("draw_linear_gradients");
+        ctx.draw_radial_gradients(
+            ctx.width() as f32,
+            ctx.height() as f32,
+            None,
+            &[GpuRadialGradient {
+                cx: 260.0,
+                cy: 180.0,
+                inner_r: 4.0,
+                outer_r: 28.0,
+                color_inner: [1.0, 1.0, 0.0, 1.0],
+                color_outer: [0.0, 0.5, 0.0, 0.0],
+            }],
+        )
+        .expect("draw_radial_gradients");
+        // Simple triangle mesh (CPU-tessellated path fill).
+        ctx.draw_solid_meshes(
+            ctx.width() as f32,
+            ctx.height() as f32,
+            None,
+            &[GpuSolidMesh {
+                vertices: std::sync::Arc::<[f32]>::from(vec![
+                    180.0, 80.0, 220.0, 80.0, 200.0, 120.0,
+                ]),
+                rgba: [0.2, 1.0, 0.4, 1.0],
+            }],
+        )
+        .expect("draw_solid_meshes");
+        ctx.draw_box_shadows(
+            ctx.width() as f32,
+            ctx.height() as f32,
+            None,
+            &[
+                GpuBoxShadow {
+                    x: 40.0,
+                    y: 100.0,
+                    w: 64.0,
+                    h: 32.0,
+                    offset_x: 4.0,
+                    offset_y: 6.0,
+                    blur: 8.0,
+                    rgba: [0.0, 0.0, 0.0, 0.45],
+                    radius: [6.0, 6.0, 6.0, 6.0],
+                    ambient: false,
+                },
+                GpuBoxShadow {
+                    x: 200.0,
+                    y: 100.0,
+                    w: 48.0,
+                    h: 48.0,
+                    offset_x: 0.0,
+                    offset_y: 0.0,
+                    blur: 12.0,
+                    rgba: [0.0, 0.0, 0.0, 0.3],
+                    radius: [24.0, 24.0, 24.0, 24.0],
+                    ambient: true,
+                },
+            ],
+        )
+        .expect("draw_box_shadows");
         // Soft overlay (transparent except one opaque pixel region via alpha).
         let mut soft = vec![0u32; (ctx.width() * ctx.height()) as usize];
         soft[0] = 0xFF00_FF00; // opaque green BGRA

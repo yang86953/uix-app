@@ -174,7 +174,7 @@ P6 图形后端            ← #162 #163，详见下文
 | P1 | macOS 原生运行验证 | 待验证 | AppKit backend、Metal CpuUpload、IME 已接；需真机验收 |
 | P1 | demo / docs 与实现同步 | 进行中 | 覆盖矩阵、backlog、公开 API 对齐 |
 | P2 | 无障碍 v1 基线 | 部分 | role/name/state 快照、键盘导航已落地；屏幕阅读器桥待后续 |
-| P1 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas；path/gradient/非 identity 文本仍 soft — 见 [P6.8](#p68-可组合渲染轴) |
+| P1 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas + identity linear/radial gradient + identity 简单 path（CPU tessellate → GPU mesh）+ identity box/ambient shadow（SDF）；多轮廓/自交/非 identity 文本等仍 soft — 见 [P6.8](#p68-可组合渲染轴) |
 | P2 | native raster（非 Win） | backlog | Metal / D3D12 GPU 光栅 — **增强**，D3D11 之后 |
 | P2 | WebGPU 评估 | backlog | P6.6 远期 |
 
@@ -190,7 +190,7 @@ P6 图形后端            ← #162 #163，详见下文
 | P6.5 配置 | App builder / env / Settings opt-in | ✅ |
 | P6.6 WebGPU | 远期评估 | backlog |
 | P6.7 可插拔 registry | registry、probe、统一 present 契约 | ✅ |
-| P6.8 可组合渲染轴 | `RasterMode` × `PresentMode` 类型与表驱动装配；`BackendKind` 统一；D3D11 GpuNative 原生 fill/stroke/glyph | 部分 ✅ — 轴类型/分派/D3D11 原生 fill+stroke+glyph atlas ✅；gradient/path 与 Metal/D3D12 GpuNative backlog — [#169](../decisions.md#d169) |
+| P6.8 可组合渲染轴 | `RasterMode` × `PresentMode` 类型与表驱动装配；`BackendKind` 统一；D3D11 GpuNative 原生 fill/stroke/glyph/gradient/path/shadow | 部分 ✅ — 轴类型/分派/D3D11 原生 fill+stroke+glyph atlas+gradient+简单 path+box/ambient shadow ✅；复杂 path / Metal/D3D12 GpuNative backlog — [#169](../decisions.md#d169) |
 
 <a id="p68-可组合渲染轴"></a>
 
@@ -198,11 +198,11 @@ P6 图形后端            ← #162 #163，详见下文
 
 **设计**（已确认）：以 [#168](../decisions.md#d168) 正交三轴为 **唯一** mental model；engine 分派 **仅** `RasterMode` × `PresentMode`（× `GraphicsBackend`）；`BackendKind` 与上述轴对齐；factory / engine **表驱动正交装配**。旧 bundled 管线枚举已拒绝，不作为设计面。
 
-**实现状态**：正交轴类型、caps、`create_graphics_engine` 轴分派、registry 行 `raster`/`present`、删除 `RenderPipelineProfile` ✅。D3D11 `GpuNative` × `Swapchain`：`D3d11Backend` + VS/PS solid/rounded fill + SDF stroke + identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ soft alpha blit + swapchain present ✅。Metal / D3D12 `GpuNative` 与 D3D11 path/gradient 原生路径仍 backlog。
+**实现状态**：正交轴类型、caps、`create_graphics_engine` 轴分派、registry 行 `raster`/`present`、删除 `RenderPipelineProfile` ✅。D3D11 `GpuNative` × `Swapchain`：`D3d11Backend` + VS/PS solid/rounded fill + SDF stroke + identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity 简单 path（flatten + ear-clip → `GpuSolidMesh`）+ identity box/ambient shadow（SDF outer glow → `GpuBoxShadow`）+ soft alpha blit + swapchain present ✅。复杂 path（多轮廓/自交/孔洞）与 Metal / D3D12 `GpuNative` 仍 backlog。
 
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
-| P0 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**；caps/registry → `GpuNative` × `Swapchain`；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas；其余 Canvas2D soft blit |
+| P0 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**；caps/registry → `GpuNative` × `Swapchain`；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas + identity linear/radial gradient + identity 简单 path mesh + identity box/ambient shadow；其余 Canvas2D soft blit |
 | P0 | 正交轴类型与 caps（breaking） | ✅ | `RasterMode` / `PresentMode`；`GraphicsContextCaps` 用 `raster` + `present`；已删 `RenderPipelineProfile`；`create_graphics_engine` 按轴 match |
 | P1 | 表驱动 factory / engine 装配 | ✅ | `GraphicsBackendEntry` 含 `raster` + `present`；engine 按 caps 轴组合装配 |
 | P1 | `BackendKind` 统一 | ✅ | 文档与注释对齐正交轴；`Cpu`/`Gpu`/`Auto`/`Null` 为引擎级光栅偏好 |
@@ -219,7 +219,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 | 项 | 说明 |
 |----|------|
-| **D3D11 原生路径扩展** | path / gradient / shadow（fill+stroke+identity glyph atlas 已落地） |
+| **D3D11 原生路径扩展** | 复杂 path（简单 fill_path/stroke_path + fill+stroke+identity glyph atlas+linear/radial gradient+box/ambient shadow 已落地） |
 | Metal / D3D12 GPU 光栅 | 扩展 `RenderBackendRegistry` |
 
 实现细节 → [rendering · 多图形 API](systems/rendering.md#多图形-api) · [platform · 多图形 API 与 factory](systems/platform.md#多图形-api-与-factory) · [graphics-backend-pluggable · 图形 API 架构原则](systems/graphics-backend-pluggable.md#图形-api-架构原则)。
