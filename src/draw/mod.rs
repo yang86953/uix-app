@@ -39,7 +39,7 @@ pub use primitives::types::{
     BlendMode, FontHandle, GradientDirection, HAlign, ImageHandle, Radius, TextLayoutOptions,
     Transform, VAlign,
 };
-pub use primitives::{blur, color, flattener, path, stroker, types};
+pub use primitives::{blur, color, flattener, path, stroker, tessellator, types};
 pub use spatial::unit::AngleExt;
 pub use spatial::{
     DirtyRegion3D, IntoAABB3D, Mat4, Orientation, PhysicalBox, PhysicalUnit, PhysicalUnitExt,

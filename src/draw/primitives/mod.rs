@@ -5,4 +5,5 @@ pub mod color;
 pub mod flattener;
 pub mod path;
 pub mod stroker;
+pub mod tessellator;
 pub mod types;

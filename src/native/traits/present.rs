@@ -53,6 +53,69 @@ pub struct GpuGlyphBlit {
     pub cov_h: u32,
 }
 
+/// Axis-aligned linear gradient fill for GPU-native Canvas2D (#169).
+///
+/// Matches CPU `fill_linear_gradient`: sharp rect (no corner radius),
+/// straight (non-premultiplied) colors, `dir` = Horizontal/Vertical/
+/// DiagonalTLBR/DiagonalBLTR as 0..=3.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GpuLinearGradientRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub color_a: [f32; 4],
+    pub color_b: [f32; 4],
+    /// 0=Horizontal, 1=Vertical, 2=DiagonalTLBR, 3=DiagonalBLTR.
+    pub dir: u32,
+}
+
+/// Radial gradient fill (disk) for GPU-native Canvas2D (#169).
+///
+/// Matches CPU `fill_radial_gradient`: center `(cx,cy)`, inner/outer radius,
+/// colors lerp by distance. Pixels outside `outer_r` are discarded.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GpuRadialGradient {
+    pub cx: f32,
+    pub cy: f32,
+    pub inner_r: f32,
+    pub outer_r: f32,
+    pub color_inner: [f32; 4],
+    pub color_outer: [f32; 4],
+}
+
+/// Solid-color triangle mesh for GPU-native path fills/strokes (#169).
+///
+/// `vertices` is an interleaved xy triangle-list in logical (dip) top-left
+/// coordinates (same as Canvas2D). Tessellation is CPU-side; the GPU only
+/// draws the triangles. Complex paths soft-fallback instead of using this.
+#[derive(Debug, Clone)]
+pub struct GpuSolidMesh {
+    pub vertices: std::sync::Arc<[f32]>,
+    pub rgba: [f32; 4],
+}
+
+/// Axis-aligned box / drop shadow for GPU-native Canvas2D (#169).
+///
+/// Matches CPU `draw_box_shadow` / `draw_box_shadow_ambient`: shadow is drawn
+/// at `(x+offset_x, y+offset_y)` with the same size / corner radii, soft edge
+/// via SDF coverage (`blur`). `rgba` is straight (non-premultiplied) 0..1.
+/// Non-identity transforms and exotic blends soft-fallback.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GpuBoxShadow {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub blur: f32,
+    pub rgba: [f32; 4],
+    pub radius: [f32; 4],
+    /// `true` → ambient (softer) coverage curve.
+    pub ambient: bool,
+}
+
 /// Unified present payload for [`IGraphicsContext::present`] (M7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresentFrame<'a> {
@@ -406,6 +469,88 @@ pub trait IGraphicsContext {
     ///
     /// Same role as GL `GpuCanvas2D::flush_soft_fallback`: unsupported Canvas2D
     /// ops stay on CPU and composite on top of native geometry.
+    /// Draw axis-aligned linear gradient rects into the current RTV.
+    ///
+    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
+    /// `GpuNative` for identity-transform `fill_linear_gradient`.
+    fn draw_linear_gradients(
+        &mut self,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        _scissor: Option<(i32, i32, i32, i32)>,
+        _rects: &[GpuLinearGradientRect],
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support draw_linear_gradients",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// Draw radial gradient disks into the current RTV.
+    ///
+    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
+    /// `GpuNative` for identity-transform `fill_radial_gradient`.
+    fn draw_radial_gradients(
+        &mut self,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        _scissor: Option<(i32, i32, i32, i32)>,
+        _grads: &[GpuRadialGradient],
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support draw_radial_gradients",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// Draw solid-color triangle meshes into the current RTV.
+    ///
+    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
+    /// `GpuNative` for identity-transform simple `fill_path` / `stroke_path`
+    /// (CPU tessellate → GPU triangles).
+    fn draw_solid_meshes(
+        &mut self,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        _scissor: Option<(i32, i32, i32, i32)>,
+        _meshes: &[GpuSolidMesh],
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support draw_solid_meshes",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// Draw axis-aligned box / ambient shadows into the current RTV.
+    ///
+    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
+    /// `GpuNative` for identity-transform `draw_box_shadow` /
+    /// `draw_box_shadow_ambient` (SDF outer glow; matches CPU coverage).
+    fn draw_box_shadows(
+        &mut self,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        _scissor: Option<(i32, i32, i32, i32)>,
+        _shadows: &[GpuBoxShadow],
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support draw_box_shadows",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
     fn blit_soft_fallback(
         &mut self,
         _pixels: &[u32],

@@ -104,7 +104,7 @@
 ### draw 域约束
 
 - `draw` **不** `use native::backends::*` 或 `native::graphics::*`；仅 `IGraphicsContext` trait object。
-- `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；非 GL **GPU 光栅** backend 经 `RenderBackendRegistry` 注册（OpenGL ES ✅；D3D11 ✅ 原生 fill/stroke rect·circle + identity solid glyph atlas + soft blit）。Vulkan/Metal 当前 caps 为 `Cpu` × `PixelUpload`；**下一代码优先**：D3D11 gradient/path 原生路径；随后 Metal / D3D12。**非**「这些 API 只能 CPU 光栅」（#168）。
+- `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；非 GL **GPU 光栅** backend 经 `RenderBackendRegistry` 注册（OpenGL ES ✅；D3D11 ✅ 原生 fill/stroke/glyph/gradient/path/shadow + soft blit）。Vulkan/Metal 当前 caps 为 `Cpu` × `PixelUpload`；**下一代码优先**：D3D11 复杂 path；随后 Metal / D3D12。**非**「这些 API 只能 CPU 光栅」（#168）。
 - `ScenePaint`、LayerTree、InvalidationQueue **与** GPU API 无关；局部重绘 damage 几何仍来自 `core::damage`。
 
 ### 配置入口（P6.5 已落地）
