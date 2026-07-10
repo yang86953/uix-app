@@ -107,7 +107,7 @@ trait IWindowProperties {
 | caps 组合 | 当前 API context | 接口 / damage | 当前 engine |
 |-----------|------------------|---------------|-------------|
 | `Cpu × CpuPresenter` | 无 `IGraphicsContext` | `IPresenter::present(pixels, w, h, PresentDamage)` | `SoftwareEngine` |
-| `GpuNative × Swapchain` | **D3D11 / OpenGL ES** | `IGraphicsContext::present(PresentFrame)` / swapchain damage | **`GpuEngine`** + native raster backend |
+| `GpuNative × Swapchain` | **D3D11 / OpenGL ES / bounded D3D12** | `IGraphicsContext::present(PresentFrame)` / swapchain damage | **`GpuEngine`** + API-paired native raster backend |
 | `Cpu × PixelUpload` | Vulkan / Metal | `IGraphicsContext::present(PresentFrame)` 全帧像素上传 | `PresentUploadEngine` + `CpuBackend` |
 
 `PresentDamage` 来自 `core::damage` — 物理像素矩形列表或全屏。平台 presenter 必须把局部矩形裁剪到当前 surface 后再执行像素拷贝与 blit，完全在 surface 外的矩形才可跳过。
@@ -269,11 +269,13 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 > **Windows D3D11 硬件诊断注记**：context 记录 Hardware/WARP 与 DXGI adapter 名称、vendor/device ID、专用显存；Hardware 创建失败会先记录完整原因再尝试 WARP，双失败错误保留两次尝试。真实 HWND 自动化已分别创建 Hardware 与 WARP swapchain，并验证 adapter identity、clear/readback 与 present。当前单机 hardware 证据为 RTX 4070 Ti SUPER / 驱动 `32.0.16.1062`，真实主副窗 light↔dark 操作由四组 swapchain backbuffer 图像验收；自动截图链路无法读取 GPU 前台组合内容，故前台 capture 与多 GPU/驱动矩阵仍未完成。
 
+> **Windows D3D12 bounded 注记**：`feature=d3d12` 下 registry 状态为 `Active`、priority 5，Auto 顺序保持 `D3D11 → OpenGL ES → D3D12`；context 以 `GpuNative × Swapchain` 精确声明 `clear_target + solid_rects + soft_blit`，由共享 `NativeGpuBackend` 承接，未声明能力确定性转 premultiplied soft-blit。WARP real HWND 强制覆盖生命周期、rounded/scissor、BGRA row-pitch、多次 soft upload 与 mixed 像素，并验证 readback-before-present；当前主机 Hardware 在 context 层完成同级 rounded+soft 像素验证。该证据不代表完整 engine frame/present、前台 GUI、多驱动矩阵或 device-loss 恢复。
+
 > **Windows IME 实现注记**：每个 HWND 另持有独立 composition/UTF-16 decoder 状态；`WM_IME_STARTCOMPOSITION` / `WM_IME_COMPOSITION` / `WM_IME_ENDCOMPOSITION` 产出路由后的 `ImeComposition*` 与提交文本事件，`WM_CHAR` 按代理对聚合，候选窗与 composition window 使用逻辑 caret rect 经 DPI 换算定位。Input 通过 `WidgetTextInput` capability 在焦点期间自动维持 Result-only 会话，预编辑串独立于提交值并以内联文本、primary underline 与尾随 caret 绘制。真实 HWND 自动化覆盖 start/stop、候选矩形、composition start/end 与 emoji 代理对；SoftwareEngine 像素回归覆盖 placeholder/value/preedit 及 DisplayList replay。Microsoft Pinyin 真机已验证候选窗跟随 caret 与提交文本；当前系统的 IMM32 `GCS_COMPSTR` 仅返回空白占位而读音由系统候选 UI 持有，因此 phonetic preedit 的应用内显示仍需 TSF/UI-less text store 级能力后才能标记 production。
 
 | 平台 | backend 编码 | 编译证据 | 自动化测试 | 真机 / 硬件 | 生产就绪 |
 |------|-------------|----------|------------|-------------|----------|
-| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1070/1070、demo 19/19；真实双 HWND 状态/事件隔离、native IME/UTF-16、焦点会话、预编辑/缓存像素、全窗主题广播、D3D11 Hardware/WARP adapter identity + BGRA staging readback 及 WGL 原生 + soft fallback 精确 readback 通过 | D3D11/Software 基础 GUI smoke、Software 与单机 D3D11 主副窗全局主题双向切换、Microsoft Pinyin 候选窗定位与提交通过；待 OpenGL ES 屏幕呈现、TSF phonetic preedit、D3D11 前台 capture、GPU/驱动矩阵 | **否** |
+| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES + bounded D3D12 | default/no-default/all-features、D3D12-only 通过 | lib 1096/1096、demo 19/19；真实双 HWND 状态/事件隔离、native IME/UTF-16、焦点会话、预编辑/缓存像素、全窗主题广播、D3D11 Hardware/WARP adapter identity + BGRA staging readback、WGL 原生 + soft fallback 精确 readback，以及 D3D12 WARP bounded native+soft mixed readback-before-present 通过 | D3D11/Software 基础 GUI smoke、Software 与单机 D3D11 主副窗全局主题双向切换、Microsoft Pinyin 候选窗定位与提交通过；D3D12 当前主机 Hardware context 像素验证通过；待 OpenGL ES 屏幕呈现、TSF phonetic preedit、D3D11/D3D12 前台 capture、GPU/驱动矩阵 | **否** |
 | Linux (Wayland) | **已编码**：Platform + Vulkan + EGL/OpenGL ES | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | 待 Wayland compositor/GPU 矩阵 | **否** |
 | macOS | **已编码**：AppKit + Metal `Cpu × PixelUpload` | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | **待真机验证** | **否** |
 
@@ -295,7 +297,7 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 ### 未实现或后续
 
-macOS 原生运行验证、**D3D11 原生几何着色器**（soft GpuNative 垂直切片已落地，[#169](../../decisions.md#d169)）、随后 Metal / D3D12 native raster、D3D12 context → [implementation · P6](../implementation.md#p6-生产级框架) · [P6.8](../implementation.md#p68-可组合渲染轴)。
+macOS 原生运行验证、Metal `GpuNative`（下一 native raster 切片），以及 D3D12 stroke/glyph/gradient/path/shadow 等额外原生能力 → [implementation · P6](../implementation.md#p6-生产级框架) · [P6.8](../implementation.md#p68-可组合渲染轴)。
 
 <a id="测试平台"></a>
 
@@ -419,7 +421,7 @@ native/
 | 窗口句柄 | `HWND` + `wnd_proc` | `xdg_toplevel` + registry globals | `NSWindow` + `UixContentView` |
 | 事件泵 | `GetMessage` / 队列 | `wl_display` dispatch | `NSApplication` run loop |
 | CPU 呈现 | GDI `BitBlt` | SHM buffer + `wl_surface` commit | CALayer `present_layer_pixels` |
-| GPU | D3D11/WGL + `bootstrap_graphics_engine`；低层测试 `create_gpu_context_with_backend`；失败回退 GDI | Vulkan/EGL + bootstrap；低层测试 `create_gpu_context_with_backend`；失败回退 SHM | Metal + bootstrap（`CpuUploadPresent`，feature `metal`）；失败回退 CPU present |
+| GPU | D3D11/WGL/bounded D3D12 + `bootstrap_graphics_engine`；低层测试 `create_gpu_context_with_backend`；失败回退 GDI | Vulkan/EGL + bootstrap；低层测试 `create_gpu_context_with_backend`；失败回退 SHM | Metal + bootstrap（`CpuUploadPresent`，feature `metal`）；失败回退 CPU present |
 | 可选窗口能力 | 多数原生 API `Ok(())` | 不支持则 `WindowOps` → `NotImplemented`（见 [窗口可选能力](#窗口可选能力)） | 多数未接，`NotImplemented` |
 | IME | IMM32 composition/result + UTF-16 decoder + candidate rect | `zwp_text_input_v3` | `NSTextInputClient` + `ITextInput`；cursor rect 待接 |
 | Wake | 平台特定 wake 注入 `EventLoopWaker` | 同上 | 同上 |
