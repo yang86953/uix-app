@@ -275,7 +275,7 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 | 平台 | backend 编码 | 编译证据 | 自动化测试 | 真机 / 硬件 | 生产就绪 |
 |------|-------------|----------|------------|-------------|----------|
-| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES + bounded D3D12 | default/no-default/all-features、D3D12-only 通过 | lib 1096/1096、demo 19/19；真实双 HWND 状态/事件隔离、native IME/UTF-16、焦点会话、预编辑/缓存像素、全窗主题广播、D3D11 Hardware/WARP adapter identity + BGRA staging readback、WGL 原生 + soft fallback 精确 readback，以及 D3D12 WARP bounded native+soft mixed readback-before-present 通过 | D3D11/Software 基础 GUI smoke、Software 与单机 D3D11 主副窗全局主题双向切换、Microsoft Pinyin 候选窗定位与提交通过；D3D12 当前主机 Hardware context 像素验证通过；待 OpenGL ES 屏幕呈现、TSF phonetic preedit、D3D11/D3D12 前台 capture、GPU/驱动矩阵 | **否** |
+| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES + bounded D3D12 | default/no-default/all-features、D3D12-only 通过 | lib 1097/1097、demo 19/19；真实双 HWND 状态/事件隔离、native IME/UTF-16、焦点会话、预编辑/缓存像素、全窗主题广播、D3D11 `PresentFrame::Swapchain` DXGI 错误传播、D3D11 Hardware/WARP adapter identity + BGRA staging readback、WGL 原生 + soft fallback 精确 readback，以及 D3D12 WARP bounded native+soft mixed readback-before-present 通过 | D3D11/Software 基础 GUI smoke、Software 与单机 D3D11 主副窗全局主题双向切换、Microsoft Pinyin 候选窗定位与提交通过；D3D12 当前主机 Hardware context 像素验证通过；待 OpenGL ES 屏幕呈现、TSF phonetic preedit、D3D11/D3D12 前台 capture、GPU/驱动矩阵 | **否** |
 | Linux (Wayland) | **已编码**：Platform + Vulkan + EGL/OpenGL ES | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | 待 Wayland compositor/GPU 矩阵 | **否** |
 | macOS | **已编码**：AppKit + Metal `Cpu × PixelUpload` | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | **待真机验证** | **否** |
 
