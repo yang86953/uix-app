@@ -711,10 +711,7 @@ mod tests {
                 color_space: vk::ColorSpaceKHR::SRGB_NONLINEAR,
             },
         ];
-        assert_eq!(
-            choose_surface_format(&formats).format,
-            vk::Format::B8G8R8A8_UNORM
-        );
+        assert!(choose_surface_format(&formats).format == vk::Format::B8G8R8A8_UNORM);
     }
 
     #[test]

@@ -170,8 +170,8 @@ P6 图形后端            ← #162 #163，详见下文
 | `cargo test --all-targets` | **通过** | lib **1070/1070**；demo **19/19** |
 | `cargo test --doc` | **通过** | 3 passed；20 ignored |
 | Windows compile | **通过** | default、`--no-default-features`、`--all-features` |
-| Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` default + all-features |
-| macOS cross-check | **通过** | `x86_64-apple-darwin` default + all-features |
+| Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` `--all-targets` default + all-features；Vulkan 测试断言不再隐式要求 target 依赖提供 `Debug` |
+| macOS cross-check | **通过** | `x86_64-apple-darwin` `--all-targets` default + all-features |
 | `cargo clippy --all-targets` | **通过，有既存 warnings** | 无 hard error；warning-free 不作为已完成事实 |
 | 文档门禁 | **通过** | `check_project_docs.py --strict-design --json`：0 errors / 0 warnings；`git diff --check` 通过 |
 
@@ -201,8 +201,8 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 |-------------|:-----:|:---------:|:--------:|:--------------:|:----------:|
 | Windows D3D11 `GpuNative × Swapchain` | 是 | 单元/集成与 real-window factory + BGRA staging readback 测试通过 | default/no-default/all-features | 基础 GUI smoke 通过；discard swapchain 按全帧契约运行；待输入/IME/主题/多窗与 GPU 矩阵 | 否 |
 | Windows OpenGL ES / Software fallback | 是 | 单元/集成与 real-window ES 3 engine 绘制/readback 测试通过 | default/no-default/all-features | Software 基础 GUI smoke 通过；OpenGL ES 屏幕呈现与完整交互矩阵待验 | 否 |
-| Linux Vulkan / EGL | 是 | Windows 主机未运行目标测试 | cross-check default/all-features | 待 Wayland/GPU 真机 | 否 |
-| macOS Metal / Software fallback | 是 | Windows 主机未运行目标测试 | cross-check default/all-features | 待 AppKit/Metal 真机 | 否 |
+| Linux Vulkan / EGL | 是 | Windows 主机未运行目标测试 | `--all-targets` cross-check default/all-features | 待 Wayland/GPU 真机 | 否 |
+| macOS Metal / Software fallback | 是 | Windows 主机未运行目标测试 | `--all-targets` cross-check default/all-features | 待 AppKit/Metal 真机 | 否 |
 | iOS / Android | 否 | — | — | — | 否 |
 
 证据记录与当前完整命令见 [当前验证基线](#当前验证基线-2026-07-10)；平台矩阵未达到 `hardware` 前，文档只能写“backend 已编码”，不得写“平台 parity 已完成”。
@@ -225,7 +225,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1070/1070、demo 19/19；历史布局回归、扫描假阳性、D3D11 复杂拓扑、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、DisplayList glyph/clip、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误均闭合 |
 | P0 | probe 诊断与资源关闭 | `coded + partial automated` | 候选/阶段/selected/完整错误进入有序报告并有自动化守卫；WindowSession/native window 幂等性分层测试通过；GL 资源/context/window 组合顺序待 GUI/驱动 smoke |
 | P0 | 平台层抹平差异 | `coded + automated` | Window 与 ITextInput Result-only API、直接依赖与 cfg 守卫已收敛；上层无 OS cfg |
-| P1 | Linux / macOS parity | `coded + compiled` | 两目标 default/all-features cross-check 通过；运行/硬件 parity 待验证 |
+| P1 | Linux / macOS parity | `coded + compiled` | 两目标 `--all-targets` default/all-features cross-check 通过；运行/硬件 parity 待验证 |
 | P1 | macOS 原生运行验证 | 待验证 | AppKit backend、Metal CpuUpload、IME 已接；需真机验收 |
 | P1 | demo / docs 与实现同步 | `automated` 基线已完成 | demo 19/19；覆盖状态语义守卫、局部 State reconcile 守卫、strict-design 与链接/锚点检查通过，后续持续维护 |
 | P2 | 无障碍 v1 基线 | 部分 | role/name/state 快照、键盘导航已落地；屏幕阅读器桥待后续 |
