@@ -40,6 +40,13 @@ use ::windows::Win32::Graphics::Dxgi::{
 
 type HWND_PTR = *mut c_void;
 
+const D3D11_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
+    D3D_FEATURE_LEVEL_11_1,
+    D3D_FEATURE_LEVEL_11_0,
+    D3D_FEATURE_LEVEL_10_1,
+    D3D_FEATURE_LEVEL_10_0,
+];
+
 fn swap_chain_desc(hwnd: HWND_PTR, width: i32, height: i32) -> DXGI_SWAP_CHAIN_DESC {
     DXGI_SWAP_CHAIN_DESC {
         BufferDesc: DXGI_MODE_DESC {
@@ -171,18 +178,11 @@ impl D3d11Context {
             ));
         }
         let (client_w, client_h) = win_surface::client_size(native_window, width, height);
-        let feature_levels = [
-            D3D_FEATURE_LEVEL_11_1,
-            D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_10_1,
-            D3D_FEATURE_LEVEL_10_0,
-        ];
-
         match create_with_driver(
             native_window,
             client_w,
             client_h,
-            &feature_levels,
+            &D3D11_FEATURE_LEVELS,
             D3d11DriverKind::Hardware,
         ) {
             Ok(context) => Ok(context),
@@ -195,7 +195,7 @@ impl D3d11Context {
                     native_window,
                     client_w,
                     client_h,
-                    &feature_levels,
+                    &D3D11_FEATURE_LEVELS,
                     D3d11DriverKind::Warp,
                 )
                 .map_err(|warp_error| {
@@ -918,5 +918,38 @@ mod tests {
         })
         .expect("swapchain present");
         ctx.shutdown();
+        drop(ctx);
+
+        let mut warp_ctx = create_with_driver(
+            surface,
+            320,
+            240,
+            &D3D11_FEATURE_LEVELS,
+            D3d11DriverKind::Warp,
+        )
+        .expect("D3D11 WARP context");
+        assert_eq!(warp_ctx.adapter_info.driver, D3d11DriverKind::Warp);
+        assert_ne!(warp_ctx.adapter_info.description, "unavailable");
+        println!(
+            "D3D11 WARP real-window adapter: {}",
+            warp_ctx.adapter_info.diagnostic_summary()
+        );
+
+        warp_ctx
+            .clear_render_target(0.25, 0.5, 0.75, 1.0)
+            .expect("clear WARP render target");
+        let pixels = warp_ctx.read_pixels(0, 0, warp_ctx.width(), warp_ctx.height());
+        assert_eq!(
+            pixels.len(),
+            (warp_ctx.width() * warp_ctx.height()) as usize
+        );
+        assert_eq!(pixels[0] >> 24, 0xFF);
+        assert_ne!(pixels[0] & 0x00FF_FFFF, 0);
+        warp_ctx
+            .present(&PresentFrame::Swapchain {
+                damage: PresentDamage::Full,
+            })
+            .expect("WARP swapchain present");
+        warp_ctx.shutdown();
     }
 }
