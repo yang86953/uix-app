@@ -19,7 +19,7 @@ demo/src/
 ├── main.rs          # 薄入口：gui | cli
 ├── gui/             # 多页 GUI 壳层：分组侧边栏、Timer、动画 time
 ├── cli/             # core/native/draw/ui/app/data CLI
-├── demos/           # 12 个内容页（含 dashboard/ 子页）
+├── demos/           # 11 个内容页（含 dashboard/ 子页）
 │   ├── home.rs      # 首页：入门 + 快捷导航
 │   ├── runtime.rs   # 应用能力（State/Timer/Theme/View DSL）
 │   ├── general.rs   # 通用 widgets
@@ -42,7 +42,7 @@ demo/src/
 
 | 模式 | 命令 | 说明 |
 |------|------|------|
-| **GUI（默认）** | `cargo run --bin uix-demo` | 12 页多页应用：80+ Widget + App 能力全景 |
+| **GUI（默认）** | `cargo run --bin uix-demo` | 11 页多页应用：80+ Widget + App 能力全景 |
 | **CLI** | `--cli` | `core` / `native` / `draw` / `ui` / `app` / `data` 无 GUI API |
 
 ## 侧边栏分组
@@ -121,7 +121,7 @@ demo/src/
 cargo test --bin uix-demo
 ```
 
-- 全部 12 页 `build_page` smoke test
+- 全部 11 页 `build_page` smoke test
 - GUI 壳层 layout
 - Gallery 覆盖条目数量
 - 首页 build + 页面切换 reconcile

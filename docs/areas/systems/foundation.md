@@ -132,6 +132,7 @@ struct Error {
 
 级别：Trace < Debug < Info < Warn < Error < Fatal。  
 默认全局级别 **Warn**（Logger 初始化前）。
+Logger 自带的 `ConsoleSink` 不再追加阈值，始终服从全局级别；调用方新增的 sink 仍可用各自级别做二次过滤。
 
 帧指标、启动失败、引擎回退等走日志；**不进 UI 热路径**。
 
