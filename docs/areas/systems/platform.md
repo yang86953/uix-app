@@ -267,13 +267,13 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 > **Windows WGL 初始化注记**：扩展入口必须先由隐藏 bootstrap HWND/context 加载，真实 HWND 再通过 `wglChoosePixelFormatARB` 选择并校验 `PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER` 格式，随后创建 ES 3 context；主窗与副窗均先完成 engine/context 初始化再 show，show 失败时先 shutdown engine 再关闭 native window。real-window 自动化覆盖 GPU 原生绘制、CPU soft fallback 精确像素、GL 零错误与 present 调用；屏幕可见呈现仍须独立 hardware/GUI 证据。
 
-> **Windows D3D11 硬件诊断注记**：context 记录 Hardware/WARP 与 DXGI adapter 名称、vendor/device ID、专用显存；Hardware 创建失败会先记录完整原因再尝试 WARP，双失败错误保留两次尝试。当前单机 hardware 证据为 RTX 4070 Ti SUPER / 驱动 `32.0.16.1062`，真实主副窗 light↔dark 操作由四组 swapchain backbuffer 图像验收；自动截图链路无法读取 GPU 前台组合内容，故前台 capture 与多 GPU/驱动矩阵仍未完成。
+> **Windows D3D11 硬件诊断注记**：context 记录 Hardware/WARP 与 DXGI adapter 名称、vendor/device ID、专用显存；Hardware 创建失败会先记录完整原因再尝试 WARP，双失败错误保留两次尝试。真实 HWND 自动化已分别创建 Hardware 与 WARP swapchain，并验证 adapter identity、clear/readback 与 present。当前单机 hardware 证据为 RTX 4070 Ti SUPER / 驱动 `32.0.16.1062`，真实主副窗 light↔dark 操作由四组 swapchain backbuffer 图像验收；自动截图链路无法读取 GPU 前台组合内容，故前台 capture 与多 GPU/驱动矩阵仍未完成。
 
 > **Windows IME 实现注记**：每个 HWND 另持有独立 composition/UTF-16 decoder 状态；`WM_IME_STARTCOMPOSITION` / `WM_IME_COMPOSITION` / `WM_IME_ENDCOMPOSITION` 产出路由后的 `ImeComposition*` 与提交文本事件，`WM_CHAR` 按代理对聚合，候选窗与 composition window 使用逻辑 caret rect 经 DPI 换算定位。Input 通过 `WidgetTextInput` capability 在焦点期间自动维持 Result-only 会话，预编辑串独立于提交值并以内联文本、primary underline 与尾随 caret 绘制。真实 HWND 自动化覆盖 start/stop、候选矩形、composition start/end 与 emoji 代理对；SoftwareEngine 像素回归覆盖 placeholder/value/preedit 及 DisplayList replay。Microsoft Pinyin 真机已验证候选窗跟随 caret 与提交文本；当前系统的 IMM32 `GCS_COMPSTR` 仅返回空白占位而读音由系统候选 UI 持有，因此 phonetic preedit 的应用内显示仍需 TSF/UI-less text store 级能力后才能标记 production。
 
 | 平台 | backend 编码 | 编译证据 | 自动化测试 | 真机 / 硬件 | 生产就绪 |
 |------|-------------|----------|------------|-------------|----------|
-| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1070/1070、demo 19/19；真实双 HWND 状态/事件隔离、native IME/UTF-16、焦点会话、预编辑/缓存像素、全窗主题广播、D3D11 adapter identity + BGRA staging readback 及 WGL 原生 + soft fallback 精确 readback 通过 | D3D11/Software 基础 GUI smoke、Software 与单机 D3D11 主副窗全局主题双向切换、Microsoft Pinyin 候选窗定位与提交通过；待 OpenGL ES 屏幕呈现、TSF phonetic preedit、D3D11 前台 capture、GPU/驱动矩阵 | **否** |
+| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1070/1070、demo 19/19；真实双 HWND 状态/事件隔离、native IME/UTF-16、焦点会话、预编辑/缓存像素、全窗主题广播、D3D11 Hardware/WARP adapter identity + BGRA staging readback 及 WGL 原生 + soft fallback 精确 readback 通过 | D3D11/Software 基础 GUI smoke、Software 与单机 D3D11 主副窗全局主题双向切换、Microsoft Pinyin 候选窗定位与提交通过；待 OpenGL ES 屏幕呈现、TSF phonetic preedit、D3D11 前台 capture、GPU/驱动矩阵 | **否** |
 | Linux (Wayland) | **已编码**：Platform + Vulkan + EGL/OpenGL ES | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | 待 Wayland compositor/GPU 矩阵 | **否** |
 | macOS | **已编码**：AppKit + Metal `Cpu × PixelUpload` | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | **待真机验证** | **否** |
 
