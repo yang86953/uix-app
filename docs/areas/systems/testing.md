@@ -38,7 +38,7 @@
 - **局部绘制**：配合 `NullEngine` / `SoftwareEngine` + FakePresenter 记录 damage rects。
 - 生产 `deny(clippy::unwrap_used)`；**测试 crate 除外**。
 - **零闲置验收**（#105 #173）：L0 断言无 `present` / `layout`；L1 还必须证明无 timeout 探活、无 active frame / `tick_effects` / reconcile，且 wake 来源可定位。精确指标见 [L1 零帧循环验收](#l1-零帧循环验收)。**Timer**：`run_interval` + `cancel` 后 assert 回 DeepIdle（#132）；到期行为见 [测试时钟分层](#测试时钟分层)。
-- **豁免**（#113）：须 `decisions.md` **#175+** 公开条目 + 测试覆盖豁免边界；默认不豁免。
+- **豁免**（#113）：须 `decisions.md` **#176+** 公开条目 + 测试覆盖豁免边界；默认不豁免。
 
 ---
 

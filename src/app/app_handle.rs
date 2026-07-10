@@ -16,7 +16,7 @@ use crate::ui::state::State;
 use crate::ui::traits::WidgetLayout;
 use crate::ui::view::{View, ViewAdapter, ViewNode};
 use crate::ui::widgets::feedback::notification::{Notification, NotificationItem};
-use crate::ui::AppState;
+use crate::ui::{AppState, Theme};
 
 #[derive(Default)]
 pub(crate) struct AppOverlayRoot;
@@ -152,6 +152,19 @@ impl AppHandle {
         if self.alive.load(Ordering::Acquire) {
             self.runtime.post_to_ui(self.window_id, f);
         }
+    }
+
+    /// Replaces the app-wide theme and schedules palette-only repaint work for
+    /// every live window.
+    pub fn set_theme(&self, theme: Theme) -> Result<()> {
+        if !self.alive.load(Ordering::Acquire) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "cannot set the theme from a closed AppHandle",
+            ));
+        }
+        self.runtime.set_theme(theme);
+        Ok(())
     }
 
     pub fn notify_error(&self, error: &Error) -> Option<u64> {

@@ -78,7 +78,7 @@ where
         metrics,
         map_event,
         on_exit,
-        |_| {},
+        |_, _| {},
         |_, _| {},
         || None,
         on_frame,
@@ -158,7 +158,7 @@ where
         metrics,
         map_event,
         on_exit,
-        |_| {},
+        |_, _| {},
         |_, _| {},
         || None,
         on_frame,
@@ -187,7 +187,7 @@ pub(crate) fn run_window_session_loop_with_system_theme_and_tasks<M, X, T, R, D,
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    T: FnMut(&mut dyn Platform),
+    T: FnMut(&mut dyn Platform, &mut WidgetTree),
     R: FnMut(&UiEvent, &mut dyn Platform),
     D: FnMut() -> Option<Instant>,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
@@ -249,7 +249,7 @@ where
         metrics,
         map_event,
         on_exit,
-        |_| {},
+        |_, _| {},
         |_, _| {},
         || None,
         on_frame,
@@ -279,7 +279,7 @@ fn run_window_session_loop_with_system_theme_and_clock<M, X, T, R, D, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    T: FnMut(&mut dyn Platform),
+    T: FnMut(&mut dyn Platform, &mut WidgetTree),
     R: FnMut(&UiEvent, &mut dyn Platform),
     D: FnMut() -> Option<Instant>,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
@@ -345,7 +345,7 @@ fn run_widget_loop_with_active_work<M, X, T, R, D, F>(
 where
     M: Fn(&UiEvent) -> Option<SystemEvent>,
     X: Fn(&UiEvent) -> bool,
-    T: FnMut(&mut dyn Platform),
+    T: FnMut(&mut dyn Platform, &mut WidgetTree),
     R: FnMut(&UiEvent, &mut dyn Platform),
     D: FnMut() -> Option<Instant>,
     F: Fn(&mut WidgetTree, &mut dyn GraphicsEngine, &mut dyn Platform),
@@ -538,6 +538,7 @@ where
                     if let Some(tokens) = system_theme_tokens {
                         let is_dark = platform.display().is_dark_mode();
                         tokens.set_mode(is_dark);
+                        *theme.borrow_mut() = Theme::new(tokens.snapshot());
                         tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark });
                         let normalized_event = UiEvent::theme_changed(is_dark);
                         on_foreign_event(&normalized_event, platform);
@@ -580,7 +581,7 @@ where
         let had_app_state_semantic_work = tree.drain_app_state_semantic_events();
         active_work.sync_timers(tree.active_timers(), clock.now());
         active_work.sync_app_timers(app_timers.deadlines());
-        on_runtime_tasks(platform);
+        on_runtime_tasks(platform, tree);
         if tree.take_reconcile_requested() {
             *reconcile_pending = true;
         }

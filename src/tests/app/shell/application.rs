@@ -718,6 +718,73 @@ fn dispatch_secondary_system_theme_changed_reports_no_work_for_empty_list() {
 }
 
 #[test]
+fn apply_runtime_theme_change_updates_theme_and_broadcasts_to_every_tree() {
+    let mut platform = FakePlatform::new();
+    let _root_window = platform
+        .window_manager()
+        .create_window("Root", 800, 600)
+        .unwrap();
+    let runtime = AppRuntime::new();
+    runtime.register_session(
+        WindowId::new(1),
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let root_events = Arc::new(AtomicUsize::new(0));
+    let child_events = Arc::new(AtomicUsize::new(0));
+    let mut root_tree = ViewAdapter::build_nodes(ViewNode::leaf(ThemeRecordingWidget::new(
+        root_events.clone(),
+    )));
+    runtime.request_open_window(WindowConfig::new("Child", 320, 240, {
+        let child_events = child_events.clone();
+        move || ViewNode::leaf(ThemeRecordingWidget::new(child_events.clone()))
+    }));
+    let mut secondary_windows = Vec::new();
+    drain_pending_open_windows(
+        &mut platform,
+        &runtime,
+        &AppState::new(),
+        &Container::new(),
+        None,
+        &mut secondary_windows,
+    );
+    let theme = RefCell::new(Theme::antd_light());
+
+    apply_runtime_theme_change(
+        &theme,
+        &mut root_tree,
+        &mut secondary_windows,
+        Theme::antd_dark(),
+    );
+
+    assert!(theme.borrow().is_dark());
+    assert_eq!(root_events.load(Ordering::Relaxed), 1);
+    assert_eq!(child_events.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn apply_runtime_theme_change_invalidates_palette_without_layout() {
+    let mut root_tree = ViewAdapter::build_nodes(ViewNode::leaf(PaletteWidget));
+    root_tree
+        .root_mut()
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 320.0, 240.0));
+    root_tree.bind_invalidation();
+    root_tree.reset_invalidation();
+    let theme = RefCell::new(Theme::antd_light());
+
+    apply_runtime_theme_change(&theme, &mut root_tree, &mut [], Theme::antd_dark());
+
+    assert!(root_tree.has_render_work());
+    assert!(!root_tree
+        .invalidation
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .has_layout());
+}
+
+#[test]
 fn dispatch_secondary_window_close_removes_session() {
     let mut platform = FakePlatform::new();
     let _root_window = platform

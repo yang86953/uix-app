@@ -107,7 +107,7 @@ P6 图形后端            ← #162 #163，详见下文
 | 三态主循环 | DeepIdle / RegisteredActive / Active；`wait_until`；Effect 仅 Active 且 pending 时 tick | [demand-driven · 主循环](systems/demand-driven.md#主循环状态机) · [application](systems/application.md#主循环) |
 | WindowSession | 每窗独立 tree / Registry / 三态 / MainThreadQueue | [application](systems/application.md) |
 | 多窗单 loop | `open_window`；`window_id` 路由；共享 AppState + Theme | [application · 多窗](systems/application.md#appstate--多窗--settings) |
-| App 运行时 API | `run_after` / `run_interval`；`post_to_ui`；`update_view` / `set_root` | [application](systems/application.md) · [demand-driven](systems/demand-driven.md) |
+| App 运行时 API | `run_after` / `run_interval`；`post_to_ui`；`update_view` / `set_root`；全局 `set_theme` | [application](systems/application.md) · [demand-driven](systems/demand-driven.md) · [#175](../decisions.md#d175) |
 | AppHandle 生命周期 | cloneable；close 时 cancel Timer、清空队列 | [application · AppHandle](systems/application.md#apphandle-生命周期) |
 | reconcile 帧内合并 | `pending_root` + State 批次；layout 前至多一次 | [view-reactive · reconcile](systems/view-reactive.md#reconcile-合并) |
 | on_start 回调 | `.on_start` / `.on_window_start` 首帧前注入 handle | [application · on_start](systems/application.md#on_start) |
@@ -167,7 +167,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 | 门禁 | 结果 | 证据范围 |
 |------|------|----------|
-| `cargo test --all-targets` | **通过** | lib **1064/1064**；demo **19/19** |
+| `cargo test --all-targets` | **通过** | lib **1070/1070**；demo **19/19** |
 | `cargo test --doc` | **通过** | 3 passed；20 ignored |
 | Windows compile | **通过** | default、`--no-default-features`、`--all-features` |
 | Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` default + all-features |
@@ -177,11 +177,13 @@ P6 图形后端            ← #162 #163，详见下文
 
 此前两项历史失败已闭合：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过；Horizontal 多直接子项现沿 X 轴流式排列并封口非滚动 Y 轴。Space 不再复用 stale 子 frame，Form/FormItem 的固定最小尺寸、label/padding/status 区均受窄父 frame 上限约束；Card body 现排除 actions 固定区，极小尺寸下以零 frame 清除旧布局，actions 也不会越出卡片。Container/Grid/ScrollView/Space/Form/FormItem/Card 已统一为 pass-local `LayoutChild` preparation → arrange，Arrange 不再递归 measure，通用 helper 也不再以旧 frame 污染零高度测量（[#174](../decisions.md#d174)）。FrameRenderer 现以“版本变化或 LayerTree 尚未构建”触发 build，合法初始版本 `0` 不再跳过首帧；Picture 在 backend 无 offscreen 能力时同帧直绘子树，不再吞掉完整静态 UI。D3D11 复杂填充已有自交、嵌套、相交/接触轮廓拓扑守卫与端到端 soft fallback 回归；demo 覆盖清单现以语义测试区分未实现、已实现但未单独展示与待真机验证。graphics probe 现保留候选、失败阶段、选中 API 与完整错误；窗口关闭已编码为 session/GL 资源/context/native window 顺序，session 与 native window 幂等性有分层测试，real-window factory 测试覆盖 context 创建/关闭。Linux/macOS 仅完成 cross-check，未做真机运行；完整 GL/context/window 组合顺序、Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
 
-Windows D3D11 real-window smoke 曾暴露 demo 页面内 `State::new` 在根 reconcile 后重置、以及 `ButtonBuilder::widget()` 丢弃 HandlerTable 注册两项真实交互缺陷；首页与应用能力页计数 State 已提升到应用生命周期，交互改用保留 handler 的 View DSL，并由根 reconcile 回归守卫覆盖。随后 D3D11 与无 GPU feature 的 SoftwareEngine 均完成首帧、颜色、按钮点击即时更新、最大化/恢复和标题栏关闭 smoke；Software 路径额外暴露并修复 `Color` 未按 `AARRGGBB` 编码、GDI 因 1px damage padding 越界而跳过局部拷贝两项缺陷。WGL 现能从 `opengl32.dll` 加载 core GL export，完整 real-window 测试覆盖 ES 3 engine 初始化、红色像素绘制/readback 与 present 调用；这属于 `automated` 证据，OpenGL ES 屏幕呈现、主题切换、多窗口与 GPU/驱动矩阵仍待验证。
+Windows D3D11 real-window smoke 曾暴露 demo 页面内 `State::new` 在根 reconcile 后重置、以及 `ButtonBuilder::widget()` 丢弃 HandlerTable 注册两项真实交互缺陷；首页与应用能力页计数 State 已提升到应用生命周期，交互改用保留 handler 的 View DSL，并由根 reconcile 回归守卫覆盖。随后 D3D11 与无 GPU feature 的 SoftwareEngine 均完成首帧、颜色、按钮点击即时更新、最大化/恢复和标题栏关闭 smoke；Software 路径额外暴露并修复 `Color` 未按 `AARRGGBB` 编码、GDI 因 1px damage padding 越界而跳过局部拷贝两项缺陷。WGL 现能从 `opengl32.dll` 加载 core GL export，完整 real-window 测试覆盖 ES 3 engine 初始化、红色像素绘制/readback 与 present 调用；这属于 `automated` 证据，OpenGL ES 屏幕呈现、D3D11 主题与双窗联合 GUI、GPU/驱动矩阵仍待验证。
 
 Windows native IME 现按 HWND 隔离 composition 与 UTF-16 decoder 状态，处理 `WM_IME_STARTCOMPOSITION` / `WM_IME_COMPOSITION` / `WM_IME_ENDCOMPOSITION`，并从 IMM32 读取预编辑/结果串；`WM_CHAR` 会聚合代理对，不再丢失 emoji。`ITextInput` 的 start/stop/cursor rect 已统一为 Result-only；`WidgetTextInput` capability 让 event loop 在文本组件聚焦期间自动持有无 deadline IME session，并在失焦、禁用、移除时停止。Input 现区分 preedit 与 committed value，支持 FocusIn、内联预编辑、primary underline、尾随 caret 与候选窗 rect；SoftwareEngine 自动化覆盖偏移裁剪和 DisplayList replay，真实 GUI 覆盖 placeholder、`abc` 提交与 Microsoft Pinyin 候选窗跟随 caret。当前 Microsoft Pinyin 的 IMM32 `GCS_COMPSTR` 只暴露空白占位，读音由系统候选 UI 持有；应用内 phonetic preedit 仍需 TSF/UI-less text store，故 IME 不能标记 production。
 
 DisplayList 现完整记录 Input 使用的 clip stack 与预布局 glyph；Canvas offset 在 CPU/OpenGL/D3D11 三条路径均同步作用于 clip。RenderObject 脏帧边直绘边录制，列表只供后续 clean frame 重放，不再同帧二次覆盖或重复 alpha；遇到底层直绘绕过 PaintOp 时主动判定录制不完整并回退 live paint。自动化覆盖偏移 clip、placeholder/value/preedit 缓存重放与单帧半透明绘制一次。
+
+运行时全局主题已由 `AppHandle::set_theme(Theme) -> Result<()>` 落地：App 级 pending 命令合并连续请求并仅 wake 一次，主循环在帧门控前替换主题、向主窗和全部副窗广播 `ThemeChanged`，新窗继承当前主题；关闭 handle 明确返回 `InvalidState`。自动化覆盖最终值合并、主副窗广播及 palette-only Paint / 零 Layout；SoftwareEngine 真实窗口已完成顶栏 light→dark 切换、暗色语义面、选中态、文字对比和裁剪验收。暗色 token 的语义背景与次级边框已改为向暗色基底混合；demo shell、首页和共享提示/卡片改用 `ColorValue` 语义色。D3D11 与双窗联合主题 GUI 仍属于后续矩阵。
 
 `embed()` 现会在进入 View Reconciler 前递归物化 `WidgetComponent::build()` 的组件持有子树；`Space::child` 等 legacy interop 子节点不再只在冷启动展开、随后因 `ViewNode.children` 为空而被 reconcile 删除。自动化覆盖同类型 `Space` 从 Label 子树切换为 Input 子树，真实 SoftwareEngine demo 的“输入”页控件缺失问题由此闭合。
 
@@ -220,7 +222,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
 | P0 | **Windows 生产可用** | 进行中 | 稳定性、阻塞项、demo/docs 同步；**当前主验证与交付环境**（[#167](../decisions.md#d167)） |
-| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1064/1064、demo 19/19；历史布局回归、扫描假阳性、D3D11 复杂拓扑、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、DisplayList glyph/clip、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误均闭合 |
+| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1070/1070、demo 19/19；历史布局回归、扫描假阳性、D3D11 复杂拓扑、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、DisplayList glyph/clip、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误均闭合 |
 | P0 | probe 诊断与资源关闭 | `coded + partial automated` | 候选/阶段/selected/完整错误进入有序报告并有自动化守卫；WindowSession/native window 幂等性分层测试通过；GL 资源/context/window 组合顺序待 GUI/驱动 smoke |
 | P0 | 平台层抹平差异 | `coded + automated` | Window 与 ITextInput Result-only API、直接依赖与 cfg 守卫已收敛；上层无 OS cfg |
 | P1 | Linux / macOS parity | `coded + compiled` | 两目标 default/all-features cross-check 通过；运行/硬件 parity 待验证 |
@@ -281,7 +283,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 
 ## 后续工作
 
-**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。P6 分项见 [P6 生产级框架](#p6-生产级框架)；可组合渲染轴见 [P6.8](#p68-可组合渲染轴)；其余推进前须人类决策或新决策 #175+。
+**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。P6 分项见 [P6 生产级框架](#p6-生产级框架)；可组合渲染轴见 [P6.8](#p68-可组合渲染轴)；其余推进前须人类决策或新决策 #176+。
 
 | 项 | 说明 | 文档 |
 |----|------|------|
@@ -348,7 +350,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 
 ## 维护
 
-- 阶段划分或原则变更 → 同步 [decisions.md](../decisions.md) #154（或 #175+ 新决策）与本文件。
+- 阶段划分或原则变更 → 同步 [decisions.md](../decisions.md) #154（或 #176+ 新决策）与本文件。
 - 能力落地或产生新差距 → 更新 [实现进度总览](#实现进度总览) 与各系统 `> **实现注记**`；**不**在本文件恢复 per-file 接线 checklist。
 - 新 backlog 项追加到 [后续工作](#后续工作)；边界说明同步 [剩余差距](systems/demand-driven.md#剩余差距)。
 - 新增 `src/` 路径映射 → 更新 [源码目录详表](#源码目录详表) 与对应系统文档「源码模块」。

@@ -2,7 +2,7 @@
 
 ← [架构导航](areas/architecture.md) · 按需查阅
 
-> **唯一决策台账**（#1–#100 定稿；#101–#169 术语收敛、核心理念与主要实现边界；#170–#174 收敛 Result-only、直接依赖/cfg、图形合法组合、零闲置证据与布局两阶段输入；新决策 #175+）。锚点 `#d{N}`。系统正文 → [`areas/systems/`](areas/systems/) · 完整索引 → [areas/architecture.md](areas/architecture.md)
+> **唯一决策台账**（#1–#100 定稿；#101–#169 术语收敛、核心理念与主要实现边界；#170–#175 收敛 Result-only、直接依赖/cfg、图形合法组合、零闲置证据、布局两阶段输入与运行时全局主题命令；新决策 #176+）。锚点 `#d{N}`。系统正文 → [`areas/systems/`](areas/systems/) · 完整索引 → [areas/architecture.md](areas/architecture.md)
 
 ## 实现顺序（[#50](#d50)）
 
@@ -113,7 +113,7 @@
 | <a id="d73"></a>73 | Scroll DSL | **`scroll(...).vertical().horizontal()`** |
 | <a id="d74"></a>74 | Light/Dark | **启动时**可读 OS 初始明暗；App 可显式覆盖；**运行中**跟 OS 须 opt-in `.follow_system_theme(true)`（[#125](#d125)） |
 | <a id="d75"></a>75 | 文本输入 | **单行 + 多行 + 完整 IME** |
-| <a id="d76"></a>76 | OS 主题监听 | 运行中切换 Theme；**跟 OS** 须 App opt-in `.follow_system_theme(true)`（[#125](#d125)）；否则 App 显式 `.theme()` |
+| <a id="d76"></a>76 | OS 主题监听 | 运行中切换 Theme；**跟 OS** 须 App opt-in `.follow_system_theme(true)`（[#125](#d125)）；否则 App 显式 `AppHandle::set_theme()`（[#175](#d175)） |
 | <a id="d77"></a>77 | button() 默认 | **`button_default()`**；链式 `.primary()` 等 |
 | <a id="d78"></a>78 | Computed | **保留** |
 | <a id="d79"></a>79 | Effect | **保留**；禁止 Effect 内直接改 UI |
@@ -150,7 +150,7 @@
 | <a id="d110"></a>110 | 多窗零闲置 | **每窗独立** DeepIdle/RegisteredActive/Active；A 窗 Active 不要求 B 窗 wake |
 | <a id="d111"></a>111 | RegisteredActive | 周期工作由**框架**在组件/IME 生命周期内 **自动 register/unregister**（[#124](#d124)）；unregister → DeepIdle |
 | <a id="d112"></a>112 | 运行中 Theme | 默认 **不**跟 OS；App **opt-in** `.follow_system_theme(true)` 后框架自动处理 ThemeChanged（[#125](#d125)） |
-| <a id="d113"></a>113 | 零闲置豁免 | 无法框架托管的定时/轮询 → **`decisions.md` #175+** 公开条目 + 测试证明；默认不豁免；当前无豁免见 [#158](#d158) |
+| <a id="d113"></a>113 | 零闲置豁免 | 无法框架托管的定时/轮询 → **`decisions.md` #176+** 公开条目 + 测试证明；默认不豁免；当前无豁免见 [#158](#d158) |
 | <a id="d114"></a>114 | Picture 启用 | **PicturePolicy 自动推断** + 自适应阈值（[#122](#d122) [#129](#d129) [#136](#d136)）；修订旧「黑名单+深度4」 |
 | <a id="d115"></a>115 | ActiveWorkRegistry | 框架内部注册表（**App 不可访问** [#124](#d124)）；`next_deadline` / `drain_due` |
 | <a id="d116"></a>116 | 多窗单 loop | **WindowSession** 每窗独立树+引擎+三态+Registry；**单** 进程级 loop（设计名 `run_app_loop`，源码 `run_widget_loop` / 测试 `run_window_session_loop_*`）；UiEvent 带 **window_id** 路由 |
@@ -165,7 +165,7 @@
 | <a id="d125"></a>125 | follow_system_theme | App builder **opt-in** `.follow_system_theme(bool)`，默认 **false**；**true** 时框架监听 ThemeChanged→切换+全窗 palette invalidate |
 | <a id="d126"></a>126 | RegisteredActive 脏区 | 关联 paint = `dirty_bounds()` / 目标 component frame / IME caret rect 并集；框架自动 push Invalidation |
 | <a id="d127"></a>127 | wait_until 实现 | app 层 `min(next_deadline)-now` → **单次** `wait_timeout(remaining)`；不要求 native 新 API |
-| <a id="d128"></a>128 | 多窗 Theme 广播 | `.theme()` 或 follow_system_theme 切换时，框架 **遍历 WindowSession** 逐树 palette-only invalidate |
+| <a id="d128"></a>128 | 多窗 Theme 广播 | `AppHandle::set_theme()` 或 follow_system_theme 切换时，框架 **遍历 WindowSession** 逐树 palette-only invalidate |
 | <a id="d129"></a>129 | Picture 自适应阈值 | 替代固定深度4：`node_count≥8` 且 `est_pixels≥65536` 且 PicturePolicy=Eligible（框架常量，非 App 配置） |
 | <a id="d130"></a>130 | 开发者零维护 | 调用方 **State/View/opt-in/Timer API**；Picture/Registry/invalidate 由框架自动 |
 | <a id="d131"></a>131 | 定时约束 | **禁止**裸 Registry、轮询 Effect、固定 interval 主循环探活；**允许** #132 Timer API 与 async→State |
@@ -195,7 +195,7 @@
 | <a id="d155"></a>155 | view_factory 生命周期 | 每 `WindowSession` **创建时**从 `App::root` 或 `open_window` 根闭包生成 **`Arc<dyn Fn() -> ViewNode + Send + Sync>`**；**会话内不可变**；`State` 批次 reconcile **始终**调用该 factory |
 | <a id="d156"></a>156 | update_view 与 factory | `update_view` **仅**写 `pending_root`；**不**替换 `view_factory`；`take()` 消费后下一帧 State  reconcile 仍走原 factory |
 | <a id="d157"></a>157 | P0 落地清单 | P0 阶段目标与验收摘要（历史 per-file 清单已归档）；详见 [implementation · 已落地阶段](areas/implementation.md#已落地阶段p0p5) |
-| <a id="d158"></a>158 | 零闲置豁免台账 | 当前 **无豁免**；新增豁免必须追加公开条目（当前从 **#175+** 起），并写明触发源、wake 频率、允许工作范围、无法 register 的理由与测试边界 |
+| <a id="d158"></a>158 | 零闲置豁免台账 | 当前 **无豁免**；新增豁免必须追加公开条目（当前从 **#176+** 起），并写明触发源、wake 频率、允许工作范围、无法 register 的理由与测试边界 |
 | <a id="d159"></a>159 | Handler capture 自动收集边界 | 任意 Rust handler 闭包 **不做运行时自动捕获探测**；稳定复用仅通过显式 capture API，或未来宏 / DSL 在语法层生成 `capture_fingerprint`；禁止执行 handler 做 probe，避免业务副作用、错误事件语义与零闲置破坏 |
 | <a id="d160"></a>160 | 普通 handler 保守重绑 | 无显式 `handler_generation` / `capture_fingerprint` 的普通 Rust handler 闭包在 reconcile 时 **视为变更并重绑**；不得用调用点、闭包指针、堆地址或 `TypeId` 伪造稳定身份；显式 capture API 与未来语法层 fingerprint 仍可稳定复用 |
 | <a id="d161"></a>161 | capture 指纹域边界 | `ui` 不依赖 `app`，因此 AppHandle 捕获在 UI 层表达为 `WindowId` 指纹；任意 Copy / `&'static` 捕获须由未来语法层 API 明确生成，当前普通闭包不得自动推断 |
@@ -212,5 +212,6 @@
 | <a id="d172"></a>172 | 图形 identity 与合法组合边界 | `GraphicsBackend` 具体 API identity **允许**出现在用户配置、诊断、`native::factory` 候选表与 `draw::RenderBackendRegistry` 的表驱动 adapter 配对边界；`app`/`ui` 及 `draw` 的普通 engine/pipeline 代码不得散落 API 专属分支。`RasterMode × PresentMode × GraphicsBackend` 是正交描述维度，不是全组合承诺；合法组合由 `GraphicsContextCaps` 与 registry 决定。显式候选未编译、初始化失败或组合非法时记录原因并继续 bootstrap 候选；全部失败后回退 `SoftwareEngine + IPresenter`。 |
 | <a id="d173"></a>173 | 零闲置 wake 与 L1 证据 | 进程 event loop 可被 OS 事件、目标 session 的 invalidation/State、到期 registered work、`MainThreadQueue`、AppState semantic queue 或窗口生命周期请求唤醒；“A 窗不 wake B 窗”精确定义为不把 B 标记 Active、不执行 B 的 layout/render/present。L1 验收除无 present/layout 外，还须证明无 registry 时不使用 timeout 探活、无 `tick_effects`/reconcile/active frame，并记录 wake 来源。 |
 | <a id="d174"></a>174 | 布局子项两阶段快照契约 | `WidgetLayout::measure_children(frame, ids, tree)` 在每次父级重排前按当前约束生成 pass-local `Vec<LayoutChild>`；`WidgetLayout::layout_children(frame, &[LayoutChild], tree)` 从快照读取子项测量结果/metadata 并返回子 frame，禁止递归 `measure`。Arrange 可读取非测量 tree 状态；ScrollView 在动态后代尚未把展开高度传播到 `measure` 时可用上一轮 arranged height 推进 viewport 收敛，但不得把它写回 `LayoutChild.measured_size`。快照不跨 convergence pass 持久缓存，resize、内容变化与 expand/shrink 重排均重新测量；默认 preparation 只把 id 包装成零尺寸 `LayoutChild`，避免 exact-fill 容器无谓测量（[#105](#d105)）。`LayoutChild.measured_size` 忠实等于约束下的 `measure` 结果，不回退旧 frame。旧 `layout_children(frame, &[ComponentId], tree)` 签名直接替换，不保留兼容桥。详见 [layout · Measure / Arrange](areas/systems/layout.md#measure--arrange-两阶段)。 |
+| <a id="d175"></a>175 | 运行时全局主题命令 | 启动主题仍由 `App::theme(Theme)` builder 指定；运行中由任意存活窗口的 `AppHandle::set_theme(Theme) -> Result<()>` 替换 **App 全局**主题。连续未消费请求合并为最终值且只制造一次 event-loop wake；消费时主窗与全部存活副窗各派发一次 `ThemeChanged`，仅 palette 节点 Paint invalidate，禁止 Layout / reconcile 与调用方逐窗标脏。切换后新建窗口直接读取当前主题，不补发历史事件；关闭 handle 返回 `Errc::InvalidState`。与 OS 跟随同时启用时，显式主题保持到下一次真实 `ThemeChanged`，届时重新采用系统模式；全程无后台 poll。详见 [theme-style](areas/systems/theme-style.md) · [application](areas/systems/application.md#appstate--多窗--settings)。 |
 
-新决策追加 **#175+**（含豁免条目）。
+新决策追加 **#176+**（含豁免条目）。

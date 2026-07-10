@@ -863,7 +863,7 @@ fn software_engine_after_first_frame_forwards_partial_damage_to_fake_presenter()
         Some(&metrics),
         |_| None,
         |_| false,
-        |_| {
+        |_, _| {
             if runtime_ticks.get() == 1 {
                 handle.invalidate();
             }
@@ -1828,7 +1828,7 @@ fn theme_changed_opt_in_notifies_runtime_task_with_display_mode() {
         None,
         |_| Some(SystemEvent::ThemeChanged { is_dark: false }),
         |_| false,
-        |_| {},
+        |_, _| {},
         |event, _| {
             if let UiEventPayload::ThemeChanged(data) = &event.payload {
                 observed.set(Some(data.is_dark));
@@ -1879,7 +1879,7 @@ fn theme_changed_without_system_theme_does_not_notify_runtime_task() {
         None,
         |_| Some(SystemEvent::ThemeChanged { is_dark: true }),
         |_| false,
-        |_| {},
+        |_, _| {},
         |event, _| {
             if matches!(event.payload, UiEventPayload::ThemeChanged(_)) {
                 observed.set(true);

@@ -21,19 +21,19 @@ fn nav_tile(
         column([
             label(title)
                 .font_size(14.0)
-                .color(tk.color_text),
+                .color(ColorValue::Neutral(NeutralRole::Text)),
             space(4.0),
             label(desc)
                 .font_size(11.0)
-                .color(tk.color_text_tertiary),
+                .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
         ])
         .flex_grow(0.0),
     ])
     .width(210.0)
     .padding(EdgeInsets::uniform(14.0))
-    .bg(tk.color_bg_elevated)
+    .bg(ColorValue::Neutral(NeutralRole::BgElevated))
     .radius(tk.border_radius_lg)
-    .border(1.0, tk.color_border_secondary)
+    .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
     .on_semantic(SemanticKind::Click, move |_| nav.set(index))
 }
 
@@ -69,7 +69,7 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                     column([
                         dynamic_label(move || format!("计数: {}", display.get()))
                             .font_size(28.0)
-                            .color(tk.color_primary),
+                            .color(ColorValue::Palette(PaletteColor::Primary)),
                         space(12.0),
                         row([
                             button("+1")
@@ -94,11 +94,11 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                     column([
                         label(format!("{PAGE_COUNT} 个演示页"))
                             .font_size(28.0)
-                            .color(tk.color_success),
+                            .color(ColorValue::Palette(PaletteColor::Success)),
                         space(4.0),
                         label("8 类组件 + 参考")
                             .font_size(11.0)
-                            .color(tk.color_text_tertiary),
+                            .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
                     ])
                     .flex_grow(0.0),
                 ),

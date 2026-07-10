@@ -22,3 +22,20 @@ fn from_primaries_uses_blue_seed_slot() {
     assert_eq!(tokens.color_info, blue);
     assert!(tokens.is_dark);
 }
+
+#[test]
+fn dark_semantic_surfaces_stay_dark_and_borders_remain_subtle() {
+    let tokens = DesignTokens::antd_dark();
+
+    for color in [
+        tokens.color_primary_bg,
+        tokens.color_success_bg,
+        tokens.color_warning_bg,
+        tokens.color_error_bg,
+        tokens.color_info_bg,
+    ] {
+        assert!(!color.is_light(), "dark semantic surface was {color}");
+        assert!(color.luminance() > tokens.color_bg_layout.luminance());
+    }
+    assert!(tokens.color_border_secondary.luminance() < 80);
+}

@@ -250,3 +250,22 @@ fn close_session_removes_pending_open_window_request() {
 
     assert!(runtime.take_next_open_window().is_none());
 }
+
+#[test]
+fn theme_changes_coalesce_to_the_latest_value_with_one_wake() {
+    let runtime = AppRuntime::new();
+    let wake_calls = Arc::new(AtomicUsize::new(0));
+    runtime.set_event_loop_waker(EventLoopWaker::new({
+        let wake_calls = wake_calls.clone();
+        move || {
+            wake_calls.fetch_add(1, Ordering::Relaxed);
+        }
+    }));
+
+    runtime.set_theme(Theme::antd_dark());
+    runtime.set_theme(Theme::antd_light());
+
+    assert_eq!(wake_calls.load(Ordering::Relaxed), 1);
+    assert!(!runtime.take_pending_theme().unwrap().is_dark());
+    assert!(runtime.take_pending_theme().is_none());
+}

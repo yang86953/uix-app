@@ -64,7 +64,7 @@
 | **View + State** | 声明 UI；`State::set` 驱动更新 |
 | **Effect** | 业务副作用；**禁止**轮询式 Effect（#131） |
 | **Timer API** | `run_after` / `run_interval`（#132）；框架内 register，主线程回调 |
-| **opt-in API** | `.follow_system_theme(true)`（#125）；`.theme(...)`；`EventHandler::wants_continuous_pointer_move`（#121） |
+| **opt-in API** | `.follow_system_theme(true)`（#125）；启动 `.theme(...)`；运行中 `AppHandle::set_theme(...)`（#175）；`EventHandler::wants_continuous_pointer_move`（#121） |
 
 ### 调用方禁止
 
@@ -75,7 +75,7 @@
 | 轮询式 Effect | Timer API、async→State，或内置周期 UI |
 | 维护 Picture 名单 / 手动推断 | 框架 **PicturePolicy 自动推断**（#122） |
 | 手动全树 invalidate | `State` 绑定或 `ComponentHandle::invalidate`（窄 Paint，#119） |
-| 后台 poll OS 主题 | opt-in `.follow_system_theme(true)` 或显式 `.theme()`（#125） |
+| 后台 poll OS 主题 | opt-in `.follow_system_theme(true)` 或显式 `AppHandle::set_theme()`（#125 #175） |
 
 ### 框架自动负责
 
@@ -596,12 +596,14 @@ Effect **不得**作为 DeepIdle 的定时 wake 源。**禁止**轮询式 Effect
 
 | 模式 | 行为 |
 |------|------|
-| **默认** | `.follow_system_theme(false)`（默认）；运行中 **不**跟 OS；App 调用 `.theme(...)` 切换 |
+| **默认** | `.follow_system_theme(false)`（默认）；运行中 **不**跟 OS；App 调用 `AppHandle::set_theme(...)` 切换（#175） |
 | **opt-in 跟 OS** | `.follow_system_theme(true)` → 框架监听 `ThemeChanged` → 读 `IDisplay::is_dark_mode()` → 更新 DynTokens → **遍历所有 WindowSession** palette-only invalidate（#128） |
 | **启动** | 可读 OS 初始明暗（#74）；Settings `theme_mode` 优先 |
 | **禁止** | 框架后台 poll（无 UiEvent 不 wake）；`follow_system_theme` 仅在 opt-in 时响应 ThemeChanged |
 
 App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐窗 invalidate。
+
+> **实现注记**（#175）：显式主题请求以 App 级单槽命令合并；pending 从空变为非空时只 wake 一次。主循环在 active-frame 判定前消费最终主题并让各 WindowSession 仅执行 palette Paint 失效；不轮询、不触发 Layout / reconcile，新窗读取当前主题。
 
 ---
 
@@ -627,7 +629,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 
 若存在 **无法**通过 register 或事件驱动的定时/轮询需求（如极少数平台 API）：
 
-1. 在 [`decisions.md`](../../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#175+** 起）；
+1. 在 [`decisions.md`](../../decisions.md) 追加公开豁免条目（#158 记录当前无豁免；当前新豁免从 **#176+** 起）；
 2. 说明触发源、wake 频率、允许的工作范围、为何无法 register；
 3. [testing · 零闲置验收](testing.md#测试策略) 须覆盖：无事件时 assert **不** present/layout（或豁免边界）；
 4. 默认 **不豁免**；从严审查。
@@ -646,7 +648,7 @@ App **无需**手写 ThemeChanged handler（opt-in 时）；**无需**手动逐�
 6. **多窗？** 是否仅影响本窗状态（#110）？
 7. **调用方能否零维护？** 是否须 App register/名单/手动标脏？（#130 应答「否」）
 
-无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（当前新豁免从 #175+ 起）。
+无法回答 → 不得合并，或走 [豁免机制](#豁免机制)（当前新豁免从 #176+ 起）。
 
 ---
 
