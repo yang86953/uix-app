@@ -142,7 +142,7 @@ Compositor 只通过 ScenePaint 读树：frame、children、clip、scroll、dirt
 
 | LayerNode | 条件 | 渲染 |
 |-----------|------|------|
-| **Picture** | `PicturePolicy::Eligible` **且** `node_count≥8` **且** `est_pixels≥65536`（#122、#129） | 离屏光栅化 → blit |
+| **Picture** | `PicturePolicy::Eligible` **且** `node_count≥8` **且** `est_pixels≥65536`（#122、#129） | 后端支持 offscreen 时离屏光栅化 → blit；不支持时同帧直绘子树 |
 | **ClipRect** | `children_clip` 存在 | Content → clip+scroll → children → AfterChildren |
 | **Direct** | 不满足 Picture 条件 | Content → children |
 
@@ -224,7 +224,7 @@ InvalidationQueue.dirty_region()
 
 ```text
 1. 归一化 dirty（首帧 / full_frame / 无 partial 能力 → full；首帧后空 dirty 且无 Composite → Idle）
-2. tree_version 变 → LayerTree.build + sweep_orphaned_offscreens
+2. tree_version 变或 LayerTree 尚未构建 → LayerTree.build + sweep_orphaned_offscreens
 3. LayerTree.update_dirty(scene)
 4. RenderObjectTree.sync(scene)
 5. scroll_region memmove（如有 Composite scroll）

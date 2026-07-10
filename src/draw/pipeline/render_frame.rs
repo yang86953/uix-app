@@ -92,7 +92,7 @@ impl FrameRenderer {
             input.dirty_region.for_paint_clear()
         };
 
-        if self.last_tree_version != cur_version {
+        if self.last_tree_version != cur_version || !self.layer_tree.is_ready() {
             self.layer_tree.build(scene);
             self.layer_tree.sweep_orphaned_offscreens(engine);
             self.last_tree_version = cur_version;
@@ -217,10 +217,7 @@ fn draw_debug_telemetry(
         text_svc.draw_text(
             canvas,
             line,
-            Point::new(
-                text_x,
-                text_top + i as f32 * DebugRenderService::HUD_LINE_H,
-            ),
+            Point::new(text_x, text_top + i as f32 * DebugRenderService::HUD_LINE_H),
             Color::from_rgba(220, 220, 220, 255),
             11.0,
         );

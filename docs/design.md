@@ -216,7 +216,7 @@ Active 帧的项目级顺序为：事件映射与派发 → 到期 Timer / 主�
 
 ## Rollout And Validation
 
-当前证据（2026-07-10，基于当前工作树）：`cargo test --all-targets` 为 lib **1049/1049**、demo **19/19**；Windows default/no-default/all-features 与 Linux/macOS default/all-features `cargo check` 全部通过；`cargo clippy --all-targets`、严格文档检查通过。Windows D3D11 与无 GPU feature 的 SoftwareEngine 已完成首帧、颜色、按钮点击、最大化/恢复和关闭基础 GUI smoke；Win32 双真实窗口的独立状态、resize 事件路由与非全局退出已有自动化守卫。详见 [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10)。自动化/编译 gate 已恢复，但 OpenGL ES、输入/IME、主题、多窗口完整 GUI、硬件矩阵与 P0 生产阻塞清零仍未完成，因此 P6 尚未达到 `production`。
+当前证据（2026-07-10，基于当前工作树）：`cargo test --all-targets` 为 lib **1050/1050**、demo **19/19**；Windows default/no-default/all-features 与 Linux/macOS default/all-features `cargo check` 全部通过；`cargo clippy --all-targets`、严格文档检查通过。FrameRenderer 的版本 `0` 首帧与无 offscreen Picture 直绘回退已有自动化守卫，并经 SoftwareEngine GUI 首帧与按钮 `0→1` 复验。Windows D3D11 与无 GPU feature 的 SoftwareEngine 已完成首帧、颜色、按钮点击、最大化/恢复和关闭基础 GUI smoke；Win32 双真实窗口的独立状态、resize 事件路由与非全局退出已有自动化守卫。详见 [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10)。自动化/编译 gate 已恢复，但 OpenGL ES、输入/IME、主题、多窗口完整 GUI、硬件矩阵与 P0 生产阻塞清零仍未完成，因此 P6 尚未达到 `production`。
 
 | 步骤 | 目的 | 验证 |
 |------|------|------|

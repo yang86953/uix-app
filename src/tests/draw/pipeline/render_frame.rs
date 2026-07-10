@@ -423,6 +423,104 @@ fn mock_scene_render_frame_does_not_panic() {
 }
 
 #[test]
+fn first_frame_builds_layer_tree_when_scene_version_is_zero() {
+    struct ZeroVersionScene {
+        painted: std::cell::Cell<usize>,
+    }
+
+    impl ScenePaint for ZeroVersionScene {
+        fn root_id(&self) -> Option<crate::draw::pipeline::NodeId> {
+            Some(crate::draw::pipeline::NodeId::new(1))
+        }
+        fn tree_version(&self) -> u64 {
+            0
+        }
+        fn dirty_region(&self) -> DirtyRegion {
+            DirtyRegion::full()
+        }
+        fn node_visible(&self, _: crate::draw::pipeline::NodeId) -> bool {
+            true
+        }
+        fn node_frame(&self, _: crate::draw::pipeline::NodeId) -> Rect {
+            Rect::new(0.0, 0.0, 64.0, 64.0)
+        }
+        fn node_dirty(&self, _: crate::draw::pipeline::NodeId) -> bool {
+            true
+        }
+        fn node_z_index(&self, _: crate::draw::pipeline::NodeId) -> i32 {
+            0
+        }
+        fn node_children(
+            &self,
+            _: crate::draw::pipeline::NodeId,
+        ) -> &[crate::draw::pipeline::NodeId] {
+            &[]
+        }
+        fn children_clip(&self, _: crate::draw::pipeline::NodeId, _: Rect) -> Option<Rect> {
+            None
+        }
+        fn dirty_rect(&self, _: crate::draw::pipeline::NodeId, frame: Rect) -> Rect {
+            frame
+        }
+        fn scroll_offset(&self, _: crate::draw::pipeline::NodeId) -> Option<(f32, f32)> {
+            None
+        }
+        fn focused_node(&self) -> Option<crate::draw::pipeline::NodeId> {
+            None
+        }
+        fn node_focusable(&self, _: crate::draw::pipeline::NodeId) -> bool {
+            false
+        }
+        fn hit_test(&self, _: Point) -> Option<crate::draw::pipeline::NodeId> {
+            None
+        }
+        fn parent(
+            &self,
+            _: crate::draw::pipeline::NodeId,
+        ) -> Option<crate::draw::pipeline::NodeId> {
+            None
+        }
+        fn paint(&self, _: crate::draw::pipeline::NodeId, _: Rect, _: &mut PaintContext<'_>) {
+            self.painted.set(self.painted.get() + 1);
+        }
+    }
+
+    let mut renderer = FrameRenderer::new();
+    let mut engine = NullEngine::new();
+    let _ = engine.initialize(64, 64);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let scene = ZeroVersionScene {
+        painted: std::cell::Cell::new(0),
+    };
+    let region = DirtyRegion::full();
+
+    let out = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &region,
+            tree_version: 0,
+            scroll_move: None,
+            theme,
+            font: FontHandle::default(),
+            font_service: &font_service,
+            image_service: &image_service,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(scene.painted.get(), 1);
+    assert!(renderer.layer_tree().is_ready());
+}
+
+#[test]
 fn rendered_frame_with_empty_dirty_region_is_idle() {
     let mut renderer = FrameRenderer::new();
     let mut engine = NullEngine::new();
@@ -526,7 +624,9 @@ fn multi_rect_dirty_expands_to_union_for_paint_and_damage() {
     // for_paint_clear → [0,0,20,100]，再 pad ±1
     assert_eq!(
         out.outcome,
-        RenderOutcome::Present(DamageRegion::partial(vec![Rect::new(0.0, 0.0, 22.0, 102.0)]))
+        RenderOutcome::Present(DamageRegion::partial(vec![Rect::new(
+            0.0, 0.0, 22.0, 102.0
+        )]))
     );
 }
 

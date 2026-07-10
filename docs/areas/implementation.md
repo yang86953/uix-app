@@ -167,7 +167,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 | 门禁 | 结果 | 证据范围 |
 |------|------|----------|
-| `cargo test --all-targets` | **通过** | lib **1049/1049**；demo **19/19** |
+| `cargo test --all-targets` | **通过** | lib **1050/1050**；demo **19/19** |
 | `cargo test --doc` | **通过** | 3 passed；20 ignored |
 | Windows compile | **通过** | default、`--no-default-features`、`--all-features` |
 | Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` default + all-features |
@@ -175,7 +175,7 @@ P6 图形后端            ← #162 #163，详见下文
 | `cargo clippy --all-targets` | **通过，有既存 warnings** | 无 hard error；warning-free 不作为已完成事实 |
 | 文档门禁 | **通过** | `check_project_docs.py --strict-design --json`：0 errors / 0 warnings；`git diff --check` 通过 |
 
-此前两项历史失败已闭合：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过；Horizontal 多直接子项现沿 X 轴流式排列并封口非滚动 Y 轴。Space 不再复用 stale 子 frame，Form/FormItem 的固定最小尺寸、label/padding/status 区均受窄父 frame 上限约束；Card body 现排除 actions 固定区，极小尺寸下以零 frame 清除旧布局，actions 也不会越出卡片。Container/Grid/ScrollView/Space/Form/FormItem/Card 已统一为 pass-local `LayoutChild` preparation → arrange，Arrange 不再递归 measure，通用 helper 也不再以旧 frame 污染零高度测量（[#174](../decisions.md#d174)）。D3D11 复杂填充已有自交、嵌套、相交/接触轮廓拓扑守卫与端到端 soft fallback 回归；demo 覆盖清单现以语义测试区分未实现、已实现但未单独展示与待真机验证。graphics probe 现保留候选、失败阶段、选中 API 与完整错误；窗口关闭已编码为 session/GL 资源/context/native window 顺序，session 与 native window 幂等性有分层测试，real-window factory 测试覆盖 context 创建/关闭。Linux/macOS 仅完成 cross-check，未做真机运行；完整 GL/context/window 组合顺序、Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
+此前两项历史失败已闭合：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过；Horizontal 多直接子项现沿 X 轴流式排列并封口非滚动 Y 轴。Space 不再复用 stale 子 frame，Form/FormItem 的固定最小尺寸、label/padding/status 区均受窄父 frame 上限约束；Card body 现排除 actions 固定区，极小尺寸下以零 frame 清除旧布局，actions 也不会越出卡片。Container/Grid/ScrollView/Space/Form/FormItem/Card 已统一为 pass-local `LayoutChild` preparation → arrange，Arrange 不再递归 measure，通用 helper 也不再以旧 frame 污染零高度测量（[#174](../decisions.md#d174)）。FrameRenderer 现以“版本变化或 LayerTree 尚未构建”触发 build，合法初始版本 `0` 不再跳过首帧；Picture 在 backend 无 offscreen 能力时同帧直绘子树，不再吞掉完整静态 UI。D3D11 复杂填充已有自交、嵌套、相交/接触轮廓拓扑守卫与端到端 soft fallback 回归；demo 覆盖清单现以语义测试区分未实现、已实现但未单独展示与待真机验证。graphics probe 现保留候选、失败阶段、选中 API 与完整错误；窗口关闭已编码为 session/GL 资源/context/native window 顺序，session 与 native window 幂等性有分层测试，real-window factory 测试覆盖 context 创建/关闭。Linux/macOS 仅完成 cross-check，未做真机运行；完整 GL/context/window 组合顺序、Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
 
 Windows D3D11 real-window smoke 曾暴露 demo 页面内 `State::new` 在根 reconcile 后重置、以及 `ButtonBuilder::widget()` 丢弃 HandlerTable 注册两项真实交互缺陷；首页与应用能力页计数 State 已提升到应用生命周期，交互改用保留 handler 的 View DSL，并由根 reconcile 回归守卫覆盖。随后 D3D11 与无 GPU feature 的 SoftwareEngine 均完成首帧、颜色、按钮点击即时更新、最大化/恢复和标题栏关闭 smoke；Software 路径额外暴露并修复 `Color` 未按 `AARRGGBB` 编码、GDI 因 1px damage padding 越界而跳过局部拷贝两项缺陷。OpenGL ES、输入/IME、主题切换、多窗口与 GPU/驱动矩阵仍待验证。
 
@@ -214,7 +214,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
 | P0 | **Windows 生产可用** | 进行中 | 稳定性、阻塞项、demo/docs 同步；**当前主验证与交付环境**（[#167](../decisions.md#d167)） |
-| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1049/1049、demo 19/19；历史布局回归、扫描假阳性、D3D11 复杂拓扑、颜色通道、GDI damage 越界与 Win32 多窗状态串用错误均闭合 |
+| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1050/1050、demo 19/19；历史布局回归、扫描假阳性、D3D11 复杂拓扑、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退与 Win32 多窗状态串用错误均闭合 |
 | P0 | probe 诊断与资源关闭 | `coded + partial automated` | 候选/阶段/selected/完整错误进入有序报告并有自动化守卫；WindowSession/native window 幂等性分层测试通过；GL 资源/context/window 组合顺序待 GUI/驱动 smoke |
 | P0 | 平台层抹平差异 | `coded + automated` | Result-only API、直接依赖与 cfg 守卫已收敛；上层无 OS cfg |
 | P1 | Linux / macOS parity | `coded + compiled` | 两目标 default/all-features cross-check 通过；运行/硬件 parity 待验证 |
