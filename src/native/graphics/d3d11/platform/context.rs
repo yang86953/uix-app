@@ -17,10 +17,11 @@ use crate::native::traits::present::{
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
     PresentDamage,
 };
+use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
 use ::windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_10_0,
-    D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
+    D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
+    D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
 };
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
@@ -33,7 +34,7 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use ::windows::Win32::Graphics::Dxgi::{
-    IDXGISwapChain, DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG,
+    IDXGIDevice, IDXGISwapChain, DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG,
     DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
@@ -72,6 +73,83 @@ fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum D3d11DriverKind {
+    Hardware,
+    Warp,
+}
+
+impl D3d11DriverKind {
+    fn native(self) -> D3D_DRIVER_TYPE {
+        match self {
+            Self::Hardware => D3D_DRIVER_TYPE_HARDWARE,
+            Self::Warp => D3D_DRIVER_TYPE_WARP,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Hardware => "hardware",
+            Self::Warp => "warp",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct D3d11AdapterInfo {
+    pub driver: D3d11DriverKind,
+    pub description: String,
+    pub vendor_id: u32,
+    pub device_id: u32,
+    pub dedicated_video_memory: u64,
+}
+
+impl D3d11AdapterInfo {
+    fn unavailable(driver: D3d11DriverKind) -> Self {
+        Self {
+            driver,
+            description: "unavailable".to_string(),
+            vendor_id: 0,
+            device_id: 0,
+            dedicated_video_memory: 0,
+        }
+    }
+
+    pub fn diagnostic_summary(&self) -> String {
+        format!(
+            "driver={}; adapter=\"{}\"; vendor={:#06X}; device={:#06X}; dedicated_vram_mb={}",
+            self.driver.as_str(),
+            self.description,
+            self.vendor_id,
+            self.device_id,
+            self.dedicated_video_memory / (1024 * 1024)
+        )
+    }
+}
+
+fn query_adapter_info(device: &ID3D11Device, driver: D3d11DriverKind) -> Result<D3d11AdapterInfo> {
+    let dxgi_device: IDXGIDevice = device
+        .cast()
+        .map_err(|err| d3d_error("ID3D11Device::cast<IDXGIDevice>", err))?;
+    let adapter = unsafe { dxgi_device.GetAdapter() }
+        .map_err(|err| d3d_error("IDXGIDevice::GetAdapter", err))?;
+    let desc =
+        unsafe { adapter.GetDesc() }.map_err(|err| d3d_error("IDXGIAdapter::GetDesc", err))?;
+    let description_len = desc
+        .Description
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(desc.Description.len());
+    let description = String::from_utf16_lossy(&desc.Description[..description_len]);
+    Ok(D3d11AdapterInfo {
+        driver,
+        description,
+        vendor_id: desc.VendorId,
+        device_id: desc.DeviceId,
+        dedicated_video_memory: desc.DedicatedVideoMemory as u64,
+    })
+}
+
 pub struct D3d11Context {
     hwnd: HWND_PTR,
     device: ID3D11Device,
@@ -79,6 +157,7 @@ pub struct D3d11Context {
     swap_chain: IDXGISwapChain,
     rtv: Option<ID3D11RenderTargetView>,
     pipeline: D3d11Pipeline,
+    adapter_info: D3d11AdapterInfo,
     width: i32,
     height: i32,
 }
@@ -99,22 +178,38 @@ impl D3d11Context {
             D3D_FEATURE_LEVEL_10_0,
         ];
 
-        create_with_driver(
+        match create_with_driver(
             native_window,
             client_w,
             client_h,
             &feature_levels,
-            D3D_DRIVER_TYPE_HARDWARE,
-        )
-        .or_else(|_| {
-            create_with_driver(
-                native_window,
-                client_w,
-                client_h,
-                &feature_levels,
-                D3D_DRIVER_TYPE_WARP,
-            )
-        })
+            D3d11DriverKind::Hardware,
+        ) {
+            Ok(context) => Ok(context),
+            Err(hardware_error) => {
+                crate::core::log::warn_fn(format!(
+                    "D3d11Context: hardware device unavailable; retrying with WARP: {}",
+                    hardware_error.what()
+                ));
+                create_with_driver(
+                    native_window,
+                    client_w,
+                    client_h,
+                    &feature_levels,
+                    D3d11DriverKind::Warp,
+                )
+                .map_err(|warp_error| {
+                    Error::new(
+                        Errc::PlatformError,
+                        format!(
+                            "D3d11Context: hardware and WARP creation failed; hardware=[{}]; warp=[{}]",
+                            hardware_error.what(),
+                            warp_error.what()
+                        ),
+                    )
+                })
+            }
+        }
     }
 
     fn create_rtv(&mut self) -> Result<()> {
@@ -178,7 +273,7 @@ fn create_with_driver(
     width: i32,
     height: i32,
     feature_levels: &[D3D_FEATURE_LEVEL],
-    driver_type: ::windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE,
+    driver: D3d11DriverKind,
 ) -> Result<D3d11Context> {
     let mut swap_chain = None;
     let mut device = None;
@@ -189,7 +284,7 @@ fn create_with_driver(
     unsafe {
         D3D11CreateDeviceAndSwapChain(
             None,
-            driver_type,
+            driver.native(),
             HMODULE::default(),
             D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             Some(feature_levels),
@@ -222,11 +317,13 @@ fn create_with_driver(
         )
     })?;
 
-    crate::core::log::info_fn(format!(
-        "D3d11Context: created {width}x{height} swapchain at feature level {:?}",
-        selected_level
-    ));
-
+    let adapter_info = query_adapter_info(&device, driver).unwrap_or_else(|error| {
+        crate::core::log::warn_fn(format!(
+            "D3d11Context: adapter diagnostics unavailable: {}",
+            error.what()
+        ));
+        D3d11AdapterInfo::unavailable(driver)
+    });
     let pipeline = D3d11Pipeline::new(&device)?;
     let mut ctx = D3d11Context {
         hwnd,
@@ -235,9 +332,15 @@ fn create_with_driver(
         swap_chain,
         rtv: None,
         pipeline,
+        adapter_info,
         width,
         height,
     };
+    crate::core::log::info_fn(format!(
+        "D3d11Context: created {width}x{height} swapchain at feature level {:?}; {}",
+        selected_level,
+        ctx.adapter_info.diagnostic_summary()
+    ));
     ctx.create_rtv()?;
     Ok(ctx)
 }
@@ -651,6 +754,15 @@ mod tests {
 
         let mut ctx = D3d11Context::new(surface, 320, 240).expect("D3d11Context");
         assert_eq!(ctx.graphics_backend(), GraphicsBackend::D3d11);
+        let adapter_info = &ctx.adapter_info;
+        assert_ne!(adapter_info.description, "unavailable");
+        assert!(!adapter_info.description.trim().is_empty());
+        assert_ne!(adapter_info.vendor_id, 0);
+        assert_ne!(adapter_info.device_id, 0);
+        println!(
+            "D3D11 real-window adapter: {}",
+            adapter_info.diagnostic_summary()
+        );
         let caps = ctx.caps();
         assert_eq!(caps.raster, RasterMode::GpuNative);
         assert_eq!(caps.present, PresentMode::Swapchain);
