@@ -167,7 +167,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 | 门禁 | 结果 | 证据范围 |
 |------|------|----------|
-| `cargo test --all-targets` | **通过** | lib **1057/1057**；demo **19/19** |
+| `cargo test --all-targets` | **通过** | lib **1058/1058**；demo **19/19** |
 | `cargo test --doc` | **通过** | 3 passed；20 ignored |
 | Windows compile | **通过** | default、`--no-default-features`、`--all-features` |
 | Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` default + all-features |
@@ -180,6 +180,8 @@ P6 图形后端            ← #162 #163，详见下文
 Windows D3D11 real-window smoke 曾暴露 demo 页面内 `State::new` 在根 reconcile 后重置、以及 `ButtonBuilder::widget()` 丢弃 HandlerTable 注册两项真实交互缺陷；首页与应用能力页计数 State 已提升到应用生命周期，交互改用保留 handler 的 View DSL，并由根 reconcile 回归守卫覆盖。随后 D3D11 与无 GPU feature 的 SoftwareEngine 均完成首帧、颜色、按钮点击即时更新、最大化/恢复和标题栏关闭 smoke；Software 路径额外暴露并修复 `Color` 未按 `AARRGGBB` 编码、GDI 因 1px damage padding 越界而跳过局部拷贝两项缺陷。WGL 现能从 `opengl32.dll` 加载 core GL export，完整 real-window 测试覆盖 ES 3 engine 初始化、红色像素绘制/readback 与 present 调用；这属于 `automated` 证据，OpenGL ES 屏幕呈现、主题切换、多窗口与 GPU/驱动矩阵仍待验证。
 
 Windows native IME 现按 HWND 隔离 composition 与 UTF-16 decoder 状态，处理 `WM_IME_STARTCOMPOSITION` / `WM_IME_COMPOSITION` / `WM_IME_ENDCOMPOSITION`，并从 IMM32 读取预编辑/结果串；`WM_CHAR` 会聚合代理对，不再丢失 emoji。`ITextInput` 的 start/stop/cursor rect 已统一为 Result-only，Windows 还会把逻辑 caret rect 经 DPI 换算后同步 composition/candidate window；真实 HWND 自动化覆盖会话、候选矩形、composition start/end 与 `😀` 路由。Input 焦点驱动会话、预编辑模型/渲染和 Microsoft Pinyin GUI 仍待下一批闭合，不能据此标记 IME production。
+
+`embed()` 现会在进入 View Reconciler 前递归物化 `WidgetComponent::build()` 的组件持有子树；`Space::child` 等 legacy interop 子节点不再只在冷启动展开、随后因 `ViewNode.children` 为空而被 reconcile 删除。自动化覆盖同类型 `Space` 从 Label 子树切换为 Input 子树，真实 SoftwareEngine demo 的“输入”页控件缺失问题由此闭合。
 
 Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，事件按该绑定写入对应 `WindowId`；从队列取事件时再选择对应窗口的输入/系统服务句柄。真实双 HWND 回归已覆盖独立 resize 状态与事件路由，销毁副窗也不再发送线程级 `WM_QUIT`。App/demo 的完整多窗口 GUI 交互仍待 smoke，不能据此标记 production。
 
@@ -216,7 +218,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
 | P0 | **Windows 生产可用** | 进行中 | 稳定性、阻塞项、demo/docs 同步；**当前主验证与交付环境**（[#167](../decisions.md#d167)） |
-| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1057/1057、demo 19/19；历史布局回归、扫描假阳性、D3D11 复杂拓扑、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、WGL core loader/caps、Win32 多窗状态串用与 UTF-16 代理对错误均闭合 |
+| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1058/1058、demo 19/19；历史布局回归、扫描假阳性、D3D11 复杂拓扑、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误均闭合 |
 | P0 | probe 诊断与资源关闭 | `coded + partial automated` | 候选/阶段/selected/完整错误进入有序报告并有自动化守卫；WindowSession/native window 幂等性分层测试通过；GL 资源/context/window 组合顺序待 GUI/驱动 smoke |
 | P0 | 平台层抹平差异 | `coded + automated` | Window 与 ITextInput Result-only API、直接依赖与 cfg 守卫已收敛；上层无 OS cfg |
 | P1 | Linux / macOS parity | `coded + compiled` | 两目标 default/all-features cross-check 通过；运行/硬件 parity 待验证 |

@@ -35,15 +35,48 @@ pub fn embed(node: impl crate::ui::IntoWidgetNode) -> ViewNode {
 }
 
 fn adopt_widget_node(node: WidgetNode) -> ViewNode {
+    // Materialize component-owned children into the declarative View tree.
+    // Otherwise the initial WidgetTree build expands them, but a later View
+    // reconcile sees an empty child list and removes the live subtree.
+    let mut children: Vec<WidgetNode> = node
+        .widget
+        .build()
+        .into_iter()
+        .map(WidgetNode::leaf)
+        .collect();
+    children.extend(node.children);
     ViewNode {
         widget: node.widget,
-        children: node.children.into_iter().map(adopt_widget_node).collect(),
+        children: children.into_iter().map(adopt_widget_node).collect(),
         style: Style::default(),
         flex_grow_override: None,
         flex_shrink_override: None,
         z_index: node.z_index,
         key: node.key.map(|k| k.to_string()),
         handlers: node.handlers,
+    }
+}
+
+#[cfg(test)]
+mod embed_tests {
+    use super::*;
+    use crate::ui::view::ViewAdapter;
+    use crate::ui::widgets::{Input, Label, Space};
+
+    #[test]
+    fn embedded_component_children_survive_view_reconcile() {
+        let mut tree = ViewAdapter::build_nodes(embed(
+            Space::new().child(Label::new("before reconcile")),
+        ));
+        assert_eq!(tree.find_all_by_type::<Label>().len(), 1);
+
+        ViewAdapter::reconcile_nodes(
+            &mut tree,
+            embed(Space::new().child(Input::new("after reconcile"))),
+        );
+
+        assert!(tree.find_all_by_type::<Label>().is_empty());
+        assert_eq!(tree.find_all_by_type::<Input>().len(), 1);
     }
 }
 
