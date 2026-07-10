@@ -7,7 +7,8 @@ use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::ui::children::WidgetChildren;
 use crate::ui::layout::{
-    flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
+    child_from_tree_with_constraints, flex::compute_flex_layout, AlignItems, FlexChild,
+    FlexDirection, FlexInput, JustifyContent, LayoutChild,
 };
 use crate::ui::SnapshotFields;
 use crate::ui::{ComponentId, EventResult, SystemEvent, WidgetComponent, WidgetTree};
@@ -149,57 +150,46 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<LayoutChild>
+    {
+        let inner = self.body_rect(frame);
+        let constraints = Constraints::loose(Size::new(inner.w, inner.h));
+        children
+            .iter()
+            .map(|&id| {
+                let mut child = child_from_tree_with_constraints(id, tree, constraints);
+                child.measured_size = constraints.clamp(child.measured_size);
+                if tree.get(id).and_then(|node| node.as_layout()).is_none() {
+                    child.flex_shrink = 0.0;
+                }
+                child
+            })
+            .collect()
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
 
-        // 标题和 actions 为固定区，body 只使用二者之间的剩余空间。
-        let frame_w = frame.w.max(0.0);
-        let frame_h = frame.h.max(0.0);
-        let padding = self.padding.max(0.0);
-        let title_offset = if self.title.is_some() { 56.0 } else { padding }.min(frame_h);
-        let action_top = self
-            .action_rect(frame)
-            .map(|rect| rect.y)
-            .unwrap_or(frame.y + frame_h);
-        let body_y = (frame.y + title_offset).min(action_top);
-        let left_padding = padding.min(frame_w);
-        let right_padding = padding.min((frame_w - left_padding).max(0.0));
-        let bottom_padding = padding.min((action_top - body_y).max(0.0));
-        let inner = Rect::new(
-            frame.x + left_padding,
-            body_y,
-            (frame_w - left_padding - right_padding).max(0.0),
-            (action_top - body_y - bottom_padding).max(0.0),
-        );
+        let inner = self.body_rect(frame);
         if inner.w <= 0.0 || inner.h <= 0.0 {
             return children
                 .iter()
-                .map(|&cid| (cid, Rect::new(inner.x, inner.y, 0.0, 0.0)))
+                .map(|child| (child.id, Rect::new(inner.x, inner.y, 0.0, 0.0)))
                 .collect();
         }
 
-        let child_constraints = Constraints::loose(Size::new(inner.w, inner.h));
-        let child_sizes: Vec<Size> = children
-            .iter()
-            .map(|&cid| {
-                tree.get(cid)
-                    .map(|c| c.measure(child_constraints))
-                    .unwrap_or_default()
-            })
-            .collect();
+        let child_sizes: Vec<Size> = children.iter().map(|child| child.measured_size).collect();
 
         let flex_children: Vec<FlexChild> = children
             .iter()
-            .map(|&cid| {
-                let w = tree.get(cid);
-                FlexChild {
-                    flex_grow: w.and_then(|c| c.as_layout()).map(|l| l.flex_grow()).unwrap_or(0.0),
-                    flex_shrink: w.and_then(|c| c.as_layout()).map(|l| l.flex_shrink()).unwrap_or(0.0),
-                    align_self: w.and_then(|c| c.as_layout()).and_then(|l| l.align_self()),
-                    ..FlexChild::default()
-                }
+            .map(|child| FlexChild {
+                flex_grow: child.flex_grow,
+                flex_shrink: child.flex_shrink,
+                align_self: child.align_self,
+                ..FlexChild::default()
             })
             .collect();
 
@@ -219,7 +209,7 @@ component! {
         children
             .iter()
             .zip(output.child_rects)
-            .map(|(&cid, rect)| (cid, rect))
+            .map(|(child, rect)| (child.id, rect))
             .collect()
     }
 }
@@ -305,6 +295,28 @@ impl Default for Card {
 
 impl Card {
     const ACTION_HEIGHT: f32 = 40.0;
+
+    fn body_rect(&self, frame: Rect) -> Rect {
+        // 标题和 actions 为固定区，body 只使用二者之间的剩余空间。
+        let frame_w = frame.w.max(0.0);
+        let frame_h = frame.h.max(0.0);
+        let padding = self.padding.max(0.0);
+        let title_offset = if self.title.is_some() { 56.0 } else { padding }.min(frame_h);
+        let action_top = self
+            .action_rect(frame)
+            .map(|rect| rect.y)
+            .unwrap_or(frame.y + frame_h);
+        let body_y = (frame.y + title_offset).min(action_top);
+        let left_padding = padding.min(frame_w);
+        let right_padding = padding.min((frame_w - left_padding).max(0.0));
+        let bottom_padding = padding.min((action_top - body_y).max(0.0));
+        Rect::new(
+            frame.x + left_padding,
+            body_y,
+            (frame_w - left_padding - right_padding).max(0.0),
+            (action_top - body_y - bottom_padding).max(0.0),
+        )
+    }
 
     fn action_rect(&self, frame: Rect) -> Option<Rect> {
         if self.actions.is_empty() {
@@ -417,6 +429,8 @@ mod tests {
     use super::*;
     use crate::ui::core::widget::WidgetCore;
     use crate::ui::traits::{WidgetCapabilities, WidgetLayout};
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     struct FixedChild(Size);
 
@@ -443,6 +457,38 @@ mod tests {
     impl WidgetLayout for FixedChild {
         fn measure(&self, constraints: Constraints) -> Size {
             constraints.clamp(self.0)
+        }
+    }
+
+    struct CountingChild {
+        size: Size,
+        measure_calls: Rc<Cell<usize>>,
+    }
+
+    impl WidgetComponent for CountingChild {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+            self
+        }
+
+        fn capabilities(&self) -> WidgetCapabilities {
+            WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT)
+        }
+
+        crate::wc_upcast!(CountingChild; WidgetLayout);
+    }
+
+    impl WidgetLayout for CountingChild {
+        fn measure(&self, constraints: Constraints) -> Size {
+            self.measure_calls.set(self.measure_calls.get() + 1);
+            constraints.clamp(self.size)
         }
     }
 
@@ -504,10 +550,9 @@ mod tests {
             .unwrap()
             .set_frame(Rect::new(16.0, 56.0, 48.0, 20.0));
 
-        let placements =
-            tree.get(narrow_root)
-                .unwrap()
-                .layout_children(narrow_frame, &[narrow_child], &tree);
+        let widget = tree.get(narrow_root).unwrap().as_layout().unwrap();
+        let measured = widget.measure_children(narrow_frame, &[narrow_child], &tree);
+        let placements = widget.layout_children(narrow_frame, &measured, &tree);
         assert_eq!(placements[0].1, Rect::new(16.0, 0.0, 0.0, 0.0));
     }
 
@@ -519,5 +564,28 @@ mod tests {
             card.action_rect(Rect::new(4.0, 6.0, 80.0, 24.0)),
             Some(Rect::new(4.0, 6.0, 80.0, 24.0))
         );
+    }
+
+    #[test]
+    fn card_arrange_uses_precomputed_measurements() {
+        let calls = Rc::new(Cell::new(0));
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(Card::new().size(120.0, 80.0).padding(16.0)));
+        let child = tree.add_child(
+            root,
+            Box::new(CountingChild {
+                size: Size::new(200.0, 120.0),
+                measure_calls: Rc::clone(&calls),
+            }),
+        );
+        let frame = Rect::new(0.0, 0.0, 120.0, 80.0);
+        let widget = tree.get(root).unwrap().as_layout().unwrap();
+        let measured = widget.measure_children(frame, &[child], &tree);
+
+        assert_eq!(calls.get(), 1);
+        let placements = widget.layout_children(frame, &measured, &tree);
+
+        assert_eq!(calls.get(), 1, "arrange must not measure children again");
+        assert_eq!(placements[0].1, Rect::new(16.0, 16.0, 88.0, 48.0));
     }
 }

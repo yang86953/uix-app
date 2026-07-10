@@ -53,10 +53,10 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
-        children.iter().map(|&cid| (cid, frame)).collect()
+        children.iter().map(|child| (child.id, frame)).collect()
     }
 }
 
@@ -84,11 +84,11 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
         // Sider 作为布局容器，将其 frame 直接传递给所有子节点
-        children.iter().map(|&cid| (cid, frame)).collect()
+        children.iter().map(|child| (child.id, frame)).collect()
     }
 }
 
@@ -114,11 +114,11 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
         // Content 作为布局容器，将其 frame 直接传递给所有子节点
-        children.iter().map(|&cid| (cid, frame)).collect()
+        children.iter().map(|child| (child.id, frame)).collect()
     }
 }
 
@@ -143,10 +143,10 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
-        children.iter().map(|&cid| (cid, frame)).collect()
+        children.iter().map(|child| (child.id, frame)).collect()
     }
 }
 

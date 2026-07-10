@@ -36,7 +36,7 @@ component! {
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
-    layout_children => (&self, _frame: Rect, _children: &[crate::ui::ComponentId],
+    layout_children => (&self, _frame: Rect, _children: &[crate::ui::LayoutChild],
         _tree: &crate::ui::core::widget::WidgetTree) -> Vec<(crate::ui::ComponentId, Rect)>
     {
         Vec::new()

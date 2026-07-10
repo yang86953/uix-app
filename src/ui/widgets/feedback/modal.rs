@@ -151,7 +151,7 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
         if !self.is_present() || children.is_empty() {
@@ -192,9 +192,9 @@ component! {
         let padding = 24.0;
         children
             .iter()
-            .map(|&cid| {
+            .map(|child| {
                 (
-                    cid,
+                    child.id,
                     Rect::new(
                         dialog.x + padding,
                         body_y + padding,

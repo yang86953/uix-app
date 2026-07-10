@@ -598,11 +598,6 @@ pub fn child_from_tree_with_constraints(
 ) -> LayoutChild {
     let node = tree.get(component_id);
     let pref = node.map(|c| c.measure(constraints)).unwrap_or_default();
-    let h = if pref.h > 0.0 {
-        pref.h
-    } else {
-        node.map(|c| c.frame().h).unwrap_or(0.0)
-    };
 
     let grow = node
         .and_then(|c| c.as_layout())
@@ -631,7 +626,7 @@ pub fn child_from_tree_with_constraints(
 
     LayoutChild {
         id: component_id,
-        measured_size: Size::new(pref.w, h),
+        measured_size: pref,
         flex_grow: grow,
         flex_shrink: shrink,
         margin,

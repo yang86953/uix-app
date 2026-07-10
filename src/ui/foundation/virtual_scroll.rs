@@ -202,17 +202,17 @@ component! {
         ctx.fill_rect(frame, bg, None);
     }
 
-    layout_children => (&self, frame: Rect, children: &[ComponentId], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
         let start = self.visible_start.get();
         children
             .iter()
             .enumerate()
-            .map(|(local_i, &cid)| {
+            .map(|(local_i, child)| {
                 let abs_i = start + local_i;
                 let y = frame.y + abs_i as f32 * self.item_height - self.scroll_offset;
-                (cid, Rect::new(frame.x, y, frame.w, self.item_height))
+                (child.id, Rect::new(frame.x, y, frame.w, self.item_height))
             })
             .collect()
     }
@@ -527,7 +527,12 @@ mod tests {
             ComponentId::new(2),
             ComponentId::new(3),
         ];
-        let positions = vs.layout_children(frame, &ids, &WidgetTree::new());
+        let children: Vec<_> = ids
+            .iter()
+            .copied()
+            .map(|id| crate::ui::LayoutChild::new(id, Size::zero()))
+            .collect();
+        let positions = vs.layout_children(frame, &children, &WidgetTree::new());
         assert_eq!(positions.len(), 3);
         assert_eq!(positions[0].1.y, 160.0);
         assert_eq!(positions[1].1.y, 192.0);

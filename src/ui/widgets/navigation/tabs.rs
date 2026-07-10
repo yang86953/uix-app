@@ -124,7 +124,7 @@ component! {
         ctx.fill_rect(Rect::new(frame.x, content_y, frame.w, frame.h - tab_bar_h), bg_container, None);
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
@@ -135,7 +135,7 @@ component! {
         };
         let content_h = frame.h - tab_bar_h;
         if self.active_index < children.len() {
-            let cid = children[self.active_index];
+            let cid = children[self.active_index].id;
             vec![(cid, Rect::new(frame.x + 16.0, content_y + 8.0, frame.w - 32.0, content_h - 16.0))]
         } else {
             Vec::new()

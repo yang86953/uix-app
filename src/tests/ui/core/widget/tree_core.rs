@@ -327,23 +327,36 @@ impl WidgetLayout for ClipContainer {
         constraints.clamp(self.size)
     }
 
-    fn layout_children(
+    fn measure_children(
         &self,
-        frame: Rect,
+        _frame: Rect,
         children: &[ComponentId],
         tree: &WidgetTree,
-    ) -> Vec<(ComponentId, Rect)> {
+    ) -> Vec<crate::ui::LayoutChild> {
         children
             .iter()
             .copied()
-            .map(|id| {
-                let size = tree
-                    .get(id)
-                    .map(|node| node.measure(Constraints::unconstrained()))
-                    .unwrap_or_default();
+            .map(|id| child_from_tree_with_constraints(id, tree, Constraints::unconstrained()))
+            .collect()
+    }
+
+    fn layout_children(
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        _tree: &WidgetTree,
+    ) -> Vec<(ComponentId, Rect)> {
+        children
+            .iter()
+            .map(|child| {
                 (
-                    id,
-                    Rect::new(frame.x, frame.y + self.child_y, size.w, size.h),
+                    child.id,
+                    Rect::new(
+                        frame.x,
+                        frame.y + self.child_y,
+                        child.measured_size.w,
+                        child.measured_size.h,
+                    ),
                 )
             })
             .collect()
@@ -414,23 +427,36 @@ impl WidgetLayout for ScrollClipContainer {
         constraints.clamp(self.size)
     }
 
-    fn layout_children(
+    fn measure_children(
         &self,
-        frame: Rect,
+        _frame: Rect,
         children: &[ComponentId],
         tree: &WidgetTree,
-    ) -> Vec<(ComponentId, Rect)> {
+    ) -> Vec<crate::ui::LayoutChild> {
         children
             .iter()
             .copied()
-            .map(|id| {
-                let size = tree
-                    .get(id)
-                    .map(|node| node.measure(Constraints::unconstrained()))
-                    .unwrap_or_default();
+            .map(|id| child_from_tree_with_constraints(id, tree, Constraints::unconstrained()))
+            .collect()
+    }
+
+    fn layout_children(
+        &self,
+        frame: Rect,
+        children: &[crate::ui::LayoutChild],
+        _tree: &WidgetTree,
+    ) -> Vec<(ComponentId, Rect)> {
+        children
+            .iter()
+            .map(|child| {
                 (
-                    id,
-                    Rect::new(frame.x, frame.y + self.child_y, size.w, size.h),
+                    child.id,
+                    Rect::new(
+                        frame.x,
+                        frame.y + self.child_y,
+                        child.measured_size.w,
+                        child.measured_size.h,
+                    ),
                 )
             })
             .collect()
@@ -788,6 +814,21 @@ fn child_from_tree_with_constraints_clamps_measured_size() {
         child_from_tree_with_constraints(child, &tree, Constraints::loose(Size::new(40.0, 24.0)));
 
     assert_eq!(layout_child.measured_size, Size::new(40.0, 24.0));
+}
+
+#[test]
+fn child_from_tree_with_constraints_preserves_zero_height_measurement() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(200.0, 100.0, vec![])));
+    let child = tree.add_child(root, Box::new(SpyWidget::new(120.0, 0.0)));
+    tree.get_mut(child)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 120.0, 80.0));
+
+    let layout_child =
+        child_from_tree_with_constraints(child, &tree, Constraints::loose(Size::new(200.0, 100.0)));
+
+    assert_eq!(layout_child.measured_size, Size::new(120.0, 0.0));
 }
 
 #[test]
@@ -1904,7 +1945,10 @@ fn hover_over_button_still_invalidates_paint() {
         mods: KeyMod::NONE,
     });
 
-    assert_eq!(tree.managers().interaction.hovered_component(), Some(button));
+    assert_eq!(
+        tree.managers().interaction.hovered_component(),
+        Some(button)
+    );
     assert!(
         tree.has_render_work(),
         "Button hover must invalidate paint for hover style"
@@ -3289,11 +3333,7 @@ fn dispatch_resize_goes_to_root() {
 #[test]
 fn resize_root_survives_layout_without_engine_sync() {
     let root_view = column([
-        row([
-            label("nav").width(200.0),
-            label("content").flex_grow(1.0),
-        ])
-        .flex_grow(1.0),
+        row([label("nav").width(200.0), label("content").flex_grow(1.0)]).flex_grow(1.0),
         label("status"),
     ])
     .flex_grow(1.0);

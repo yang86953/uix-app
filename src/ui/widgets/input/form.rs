@@ -4,7 +4,8 @@ use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Color;
-use crate::ui::{SnapshotFields, WidgetTree};
+use crate::ui::layout::{child_from_tree_with_constraints, LayoutChild};
+use crate::ui::{ComponentId, SnapshotFields, WidgetTree};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValidateStatus {
@@ -141,65 +142,74 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<LayoutChild>
     {
-        if children.is_empty() {
-            return Vec::new();
-        }
+        let content = self.content_rect(frame);
+        let constraints = Constraints::loose(Size::new(content.w, content.h));
+        children
+            .iter()
+            .map(|&id| {
+                let mut child = child_from_tree_with_constraints(id, tree, constraints);
+                child.measured_size = constraints.clamp(child.measured_size);
+                child
+            })
+            .collect()
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
+    {
+        let content = self.content_rect(frame);
+        children.iter().map(|child| (child.id, content)).collect()
+    }
+}
+
+impl FormItem {
+    fn content_rect(&self, frame: Rect) -> Rect {
+        let frame_w = frame.w.max(0.0);
+        let frame_h = frame.h.max(0.0);
         match self.layout {
             FormLayout::Vertical => {
-                let frame_w = frame.w.max(0.0);
-                let frame_h = frame.h.max(0.0);
                 let label_h = 18.0f32.min(frame_h);
-                let content_y = frame.y + label_h;
-                let content_h = (frame_h - label_h).max(0.0);
-                children
-                    .iter()
-                    .map(|&cid| (cid, Rect::new(frame.x, content_y, frame_w, content_h)))
-                    .collect()
+                Rect::new(
+                    frame.x,
+                    frame.y + label_h,
+                    frame_w,
+                    (frame_h - label_h).max(0.0),
+                )
             }
             FormLayout::Inline => {
-                let frame_w = frame.w.max(0.0);
-                let frame_h = frame.h.max(0.0);
                 let label_w = if self.label.is_empty() {
                     0.0
                 } else {
                     60.0f32.min(frame_w)
                 };
                 let pad = 8.0f32.min((frame_w - label_w).max(0.0));
-                let content_x = frame.x + label_w + pad;
-                let content_y = frame.y + 2.0f32.min(frame_h);
-                let content_w = (frame_w - label_w - pad).max(0.0);
-                let content_h = (frame_h - 4.0).max(0.0);
-                children
-                    .iter()
-                    .map(|&cid| (cid, Rect::new(content_x, content_y, content_w, content_h)))
-                    .collect()
+                Rect::new(
+                    frame.x + label_w + pad,
+                    frame.y + 2.0f32.min(frame_h),
+                    (frame_w - label_w - pad).max(0.0),
+                    (frame_h - 4.0).max(0.0),
+                )
             }
             FormLayout::Horizontal => {
-                let frame_w = frame.w.max(0.0);
-                let frame_h = frame.h.max(0.0);
                 let label_w = if self.label.is_empty() {
                     0.0
                 } else {
                     self.label_width.max(60.0).min(frame_w)
                 };
                 let pad = 8.0f32.min((frame_w - label_w).max(0.0));
-                let content_x = frame.x + label_w + pad;
-                let content_y = frame.y + 2.0f32.min(frame_h);
-                let content_w = (frame_w - label_w - pad).max(0.0);
-                let content_h = (frame_h - 18.0).max(0.0);
-                children
-                    .iter()
-                    .map(|&cid| (cid, Rect::new(content_x, content_y, content_w, content_h)))
-                    .collect()
+                Rect::new(
+                    frame.x + label_w + pad,
+                    frame.y + 2.0f32.min(frame_h),
+                    (frame_w - label_w - pad).max(0.0),
+                    (frame_h - 18.0).max(0.0),
+                )
             }
         }
     }
-}
 
-impl FormItem {
     fn intrinsic_size(&self) -> Size {
         match self.layout {
             FormLayout::Vertical => Size::new(400.0, 56.0),
@@ -335,10 +345,10 @@ component! {
 
     render => (&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], tree: &WidgetTree)
-        -> Vec<(crate::ui::ComponentId, Rect)>
+    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<LayoutChild>
     {
-        let mut result = Vec::new();
+        let mut measured = Vec::with_capacity(children.len());
         match self.layout {
             FormLayout::Inline => {
                 let mut x = frame.x;
@@ -352,12 +362,14 @@ component! {
                         max,
                         None,
                     );
-                    let pref = tree
-                        .get(cid)
-                        .map(|c| c.measure(child_constraints))
-                        .unwrap_or_else(|| child_constraints.clamp(Size::new(200.0, 44.0)));
-                    result.push((cid, Rect::new(item_x, frame.y, pref.w, max.h)));
-                    x = (item_x + pref.w + self.gap).min(right);
+                    let mut child = child_from_tree_with_constraints(cid, tree, child_constraints);
+                    child.measured_size = if tree.get(cid).is_some() {
+                        child_constraints.clamp(child.measured_size)
+                    } else {
+                        child_constraints.clamp(Size::new(200.0, 44.0))
+                    };
+                    x = (item_x + child.measured_size.w + self.gap).min(right);
+                    measured.push(child);
                 }
             }
             FormLayout::Horizontal | FormLayout::Vertical => {
@@ -372,12 +384,51 @@ component! {
                         max,
                         None,
                     );
-                    let pref = tree
-                        .get(cid)
-                        .map(|c| c.measure(child_constraints))
-                        .unwrap_or_else(|| child_constraints.clamp(Size::new(frame.w, 44.0)));
-                    result.push((cid, Rect::new(frame.x, item_y, max.w, pref.h)));
-                    y = (item_y + pref.h + self.gap).min(bottom);
+                    let mut child = child_from_tree_with_constraints(cid, tree, child_constraints);
+                    child.measured_size = if tree.get(cid).is_some() {
+                        child_constraints.clamp(child.measured_size)
+                    } else {
+                        child_constraints.clamp(Size::new(frame.w, 44.0))
+                    };
+                    y = (item_y + child.measured_size.h + self.gap).min(bottom);
+                    measured.push(child);
+                }
+            }
+        }
+        measured
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
+        -> Vec<(ComponentId, Rect)>
+    {
+        let mut result = Vec::with_capacity(children.len());
+        match self.layout {
+            FormLayout::Inline => {
+                let mut x = frame.x;
+                let right = frame.x + frame.w.max(0.0);
+                for child in children {
+                    let item_x = x.min(right);
+                    let remaining_w = (right - item_x).max(0.0);
+                    let item_w = child.measured_size.w.max(0.0).min(remaining_w);
+                    result.push((
+                        child.id,
+                        Rect::new(item_x, frame.y, item_w, frame.h.max(0.0)),
+                    ));
+                    x = (item_x + item_w + self.gap).min(right);
+                }
+            }
+            FormLayout::Horizontal | FormLayout::Vertical => {
+                let mut y = frame.y;
+                let bottom = frame.y + frame.h.max(0.0);
+                for child in children {
+                    let item_y = y.min(bottom);
+                    let remaining_h = (bottom - item_y).max(0.0);
+                    let item_h = child.measured_size.h.max(0.0).min(remaining_h);
+                    result.push((
+                        child.id,
+                        Rect::new(frame.x, item_y, frame.w.max(0.0), item_h),
+                    ));
+                    y = (item_y + item_h + self.gap).min(bottom);
                 }
             }
         }
@@ -563,6 +614,8 @@ mod tests {
     use crate::ui::core::widget::WidgetCore;
     use crate::ui::traits::{WidgetCapabilities, WidgetLayout};
     use crate::ui::{WidgetComponent, WidgetTree};
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     struct FixedChild(Size);
 
@@ -589,6 +642,38 @@ mod tests {
     impl WidgetLayout for FixedChild {
         fn measure(&self, constraints: Constraints) -> Size {
             constraints.clamp(self.0)
+        }
+    }
+
+    struct CountingChild {
+        size: Size,
+        measure_calls: Rc<Cell<usize>>,
+    }
+
+    impl WidgetComponent for CountingChild {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+
+        fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+            self
+        }
+
+        fn capabilities(&self) -> WidgetCapabilities {
+            WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT)
+        }
+
+        crate::wc_upcast!(CountingChild; WidgetLayout);
+    }
+
+    impl WidgetLayout for CountingChild {
+        fn measure(&self, constraints: Constraints) -> Size {
+            self.measure_calls.set(self.measure_calls.get() + 1);
+            constraints.clamp(self.size)
         }
     }
 
@@ -652,10 +737,9 @@ mod tests {
             let first = tree.add_child(root, Box::new(FixedChild(Size::new(10.0, 10.0))));
             let second = tree.add_child(root, Box::new(FixedChild(Size::new(10.0, 10.0))));
 
-            let placements =
-                tree.get(root)
-                    .unwrap()
-                    .layout_children(frame, &[first, second], &tree);
+            let widget = tree.get(root).unwrap().as_layout().unwrap();
+            let measured = widget.measure_children(frame, &[first, second], &tree);
+            let placements = widget.layout_children(frame, &measured, &tree);
 
             assert_eq!(placements.len(), 2);
             for &(_, rect) in &placements {
@@ -676,13 +760,58 @@ mod tests {
             let root = tree.set_root(Box::new(FormItem::new("Name").layout(layout)));
             let child = tree.add_child(root, Box::new(FixedChild(Size::new(20.0, 8.0))));
 
-            let placements = tree
-                .get(root)
-                .unwrap()
-                .layout_children(frame, &[child], &tree);
+            let widget = tree.get(root).unwrap().as_layout().unwrap();
+            let measured = widget.measure_children(frame, &[child], &tree);
+            let placements = widget.layout_children(frame, &measured, &tree);
 
             assert_eq!(placements.len(), 1);
             assert_rect_within(frame, placements[0].1);
         }
+    }
+
+    #[test]
+    fn form_arrange_uses_precomputed_measurements() {
+        let calls = Rc::new(Cell::new(0));
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(Form::new().layout(FormLayout::Inline)));
+        let child = tree.add_child(
+            root,
+            Box::new(CountingChild {
+                size: Size::new(160.0, 20.0),
+                measure_calls: Rc::clone(&calls),
+            }),
+        );
+        let frame = Rect::new(0.0, 0.0, 200.0, 40.0);
+        let widget = tree.get(root).unwrap().as_layout().unwrap();
+        let measured = widget.measure_children(frame, &[child], &tree);
+
+        assert_eq!(calls.get(), 1);
+        let placements = widget.layout_children(frame, &measured, &tree);
+
+        assert_eq!(calls.get(), 1, "arrange must not measure children again");
+        assert_eq!(placements[0].1, Rect::new(0.0, 0.0, 160.0, 40.0));
+    }
+
+    #[test]
+    fn form_item_arrange_uses_precomputed_measurements() {
+        let calls = Rc::new(Cell::new(0));
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(FormItem::new("Name")));
+        let child = tree.add_child(
+            root,
+            Box::new(CountingChild {
+                size: Size::new(80.0, 32.0),
+                measure_calls: Rc::clone(&calls),
+            }),
+        );
+        let frame = Rect::new(0.0, 0.0, 100.0, 44.0);
+        let widget = tree.get(root).unwrap().as_layout().unwrap();
+        let measured = widget.measure_children(frame, &[child], &tree);
+
+        assert_eq!(calls.get(), 1);
+        let placements = widget.layout_children(frame, &measured, &tree);
+
+        assert_eq!(calls.get(), 1, "arrange must not measure children again");
+        assert_eq!(placements[0].1, Rect::new(88.0, 2.0, 12.0, 26.0));
     }
 }

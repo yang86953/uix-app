@@ -284,4 +284,4 @@ native
 - 落地 → [P6.7](../implementation.md#p67-图形后端架构)；正交轴 → [P6.8](../implementation.md#p68-可组合渲染轴)
 - 实现注记 → [rendering · 多图形 API](rendering.md#多图形-api)
 - 术语 → [glossary · 多图形 API](../../glossary.md#多图形-api)
-- 决策变更 → [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)；新决策 **#174+**
+- 决策变更 → [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)；新决策 **#175+**

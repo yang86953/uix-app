@@ -171,7 +171,7 @@ component! {
         )
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::ComponentId], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
         if !self.is_present() || children.is_empty() {
@@ -192,9 +192,9 @@ component! {
         let pad = 24.0;
         children
             .iter()
-            .map(|&cid| {
+            .map(|child| {
                 (
-                    cid,
+                    child.id,
                     Rect::new(
                         drawer_x + pad,
                         body_y + pad,

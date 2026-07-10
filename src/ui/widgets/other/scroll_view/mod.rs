@@ -12,6 +12,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::{PaintContext, PaintPass};
 use crate::ui::children::WidgetChildren;
+use crate::ui::layout::engine::{child_from_tree_with_constraints, LayoutChild};
 use crate::ui::{
     ComponentId, EventResult, KeyCode, SnapshotFields, SystemEvent, WidgetComponent, WidgetTree,
 };
@@ -262,7 +263,18 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<LayoutChild>
+    {
+        let constraints = self.child_constraints(frame);
+        children
+            .iter()
+            .copied()
+            .map(|id| child_from_tree_with_constraints(id, tree, constraints))
+            .collect()
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
         let mut result = Vec::new();
@@ -275,15 +287,12 @@ component! {
         let mut max_bottom = frame.y;
         let mut cursor_x = 0.0f32;
         let mut cursor_y = 0.0f32;
-        let child_constraints = self.child_constraints(frame);
         let can_scroll_x = self.direction.can_scroll_x();
         let can_scroll_y = self.direction.can_scroll_y();
         let horizontal_flow = can_scroll_x && !can_scroll_y;
-        for &cid in children {
-            let pref = tree
-                .get(cid)
-                .map(|c| c.measure(child_constraints))
-                .unwrap_or_default();
+        for child in children {
+            let cid = child.id;
+            let pref = child.measured_size;
             // 非滚动轴填满 viewport：垂直滚动时宽度随窗口变化，避免内容卡在 measure 固有宽。
             // 滚动轴保留子项自然尺寸（可超出 viewport）。
             let w = if can_scroll_x {
@@ -295,6 +304,10 @@ component! {
             } else {
                 frame.w
             };
+            // Dynamic descendants such as Collapse can measure to zero before the
+            // convergence loop has propagated their expanded content. Preserve the
+            // previous arranged height as viewport state; measured_size itself stays
+            // the exact result of this pass and is never overwritten with the frame.
             let current_h = tree.get(cid).map(|c| c.frame().h).unwrap_or(0.0);
             let h = if can_scroll_y {
                 if pref.h > 0.0 {
