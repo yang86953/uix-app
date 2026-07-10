@@ -167,7 +167,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 | 门禁 | 结果 | 证据范围 |
 |------|------|----------|
-| `cargo test --all-targets` | **通过** | lib **1085/1085**；demo **19/19** |
+| `cargo test --all-targets` | **通过** | lib **1088/1088**；demo **19/19** |
 | `cargo test --doc` | **通过** | 3 passed；20 ignored |
 | Windows compile | **通过** | default、`--no-default-features`、`--all-features` |
 | Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` `--all-targets` default + all-features；Vulkan 测试断言不再隐式要求 target 依赖提供 `Debug` |
@@ -200,6 +200,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | 平台 / 路径 | coded | automated | compiled | hardware / GUI | production |
 |-------------|:-----:|:---------:|:--------:|:--------------:|:----------:|
 | Windows D3D11 `GpuNative × Swapchain` | 是 | 单元/集成与 real-window Hardware/WARP factory + adapter identity + BGRA staging readback 测试通过 | default/no-default/all-features | RTX 4070 Ti SUPER hardware context；主副窗 light↔dark backbuffer GUI 通过；待前台 capture、输入/IME 与多 GPU/驱动矩阵 | 否 |
+| Windows D3D12 context foundation | 是（`feature=d3d12`；registry 仍 `Planned`） | real-window WARP 强制覆盖 clear/crop row-pitch readback/多帧 present/真实 resize/故障锁死与可 drain 幂等 shutdown；Hardware 可用时做 identity + clear/readback/present smoke | default/`--features d3d12`；no-default 走 disabled stub | 当前主机 RTX 4070 Ti SUPER Hardware smoke 与 Microsoft Basic Render Driver WARP 完整自动化通过；持续 device-loss/同步失败保守保活，尚无 draw backend/GUI/驱动矩阵 | 否 |
 | Windows OpenGL ES / Software fallback | 是 | 单元/集成与 real-window ES 3 engine 原生绘制 + soft fallback 精确 readback / GL 零错误测试通过 | default/no-default/all-features | Software 基础 GUI smoke 通过；OpenGL ES 屏幕呈现与完整交互矩阵待验 | 否 |
 | Linux Vulkan / EGL | 是 | Windows 主机未运行目标测试 | `--all-targets` cross-check default/all-features | 待 Wayland/GPU 真机 | 否 |
 | macOS Metal / Software fallback | 是 | Windows 主机未运行目标测试 | `--all-targets` cross-check default/all-features | 待 AppKit/Metal 真机 | 否 |
@@ -222,7 +223,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
 | P0 | **Windows 生产可用** | 进行中 | 稳定性、阻塞项、demo/docs 同步；**当前主验证与交付环境**（[#167](../decisions.md#d167)） |
-| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1085/1085、demo 19/19；历史布局回归、扫描假阳性、CPU fill 采样、D3D11 复杂拓扑与精确描边、native GPU capability/顺序/offset/RenderBackend 边界错误传播与重试/生命周期/registry/factory identity 守卫、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、DisplayList glyph/clip、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误均闭合 |
+| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1088/1088、demo 19/19；历史布局回归、扫描假阳性、CPU fill 采样、D3D11 复杂拓扑与精确描边、D3D12 context 同步/readback/resize/shutdown、native GPU capability/顺序/offset/RenderBackend 边界错误传播与重试/生命周期/registry/factory identity 守卫、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、DisplayList glyph/clip、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误均闭合 |
 | P0 | probe 诊断与资源关闭 | `coded + partial automated` | 候选/阶段/selected/完整错误进入有序报告并有自动化守卫；WindowSession/native window 幂等性分层测试通过；GL 资源/context/window 组合顺序待 GUI/驱动 smoke |
 | P0 | 平台层抹平差异 | `coded + automated` | Window 与 ITextInput Result-only API、直接依赖与 cfg 守卫已收敛；上层无 OS cfg |
 | P1 | Linux / macOS parity | `coded + compiled` | 两目标 `--all-targets` default/all-features cross-check 通过；运行/硬件 parity 待验证 |
@@ -230,7 +231,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | P1 | demo / docs 与实现同步 | `automated` 基线已完成 | demo 19/19；覆盖状态语义守卫、局部 State reconcile 守卫、strict-design 与链接/锚点检查通过，后续持续维护 |
 | P2 | 无障碍 v1 基线 | 部分 | role/name/state 快照、键盘导航已落地；屏幕阅读器桥待后续 |
 | P1 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；原生 fill/stroke/glyph/gradient/shadow + identity 完整 fill topology mesh + 完整 `StrokeOptions` cap/join stroke mesh；非 identity transform、不支持 blend/text 与失败保护路径仍走既有 soft fallback — 见 [P6.8](#p68-可组合渲染轴) |
-| P2 | D3D12 / Metal GPU 光栅 | backlog | **增强**；D3D12 Windows 优先，随后 Metal |
+| P2 | D3D12 / Metal GPU 光栅 | 部分 ✅ | **增强**；D3D12 context foundation 已落地但仍 `Planned`，rounded solid/soft-blit/draw registry 待接入；随后 Metal |
 | P2 | WebGPU 评估 | backlog | P6.6 远期 |
 
 ### 图形后端里程碑
@@ -245,7 +246,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | P6.5 配置 | App builder / env / Settings opt-in | ✅ |
 | P6.6 WebGPU | 远期评估 | backlog |
 | P6.7 可插拔 registry | registry、probe、统一 present 契约 | ✅ |
-| P6.8 可组合渲染轴 | `RasterMode` × `PresentMode` 类型与表驱动装配；`BackendKind` 统一；`NativeGpuBackend` + 逐操作 `NativeRasterCaps`；D3D11 GpuNative 原生 fill/stroke/glyph/gradient/path/shadow | 部分 ✅ — API-neutral native adapter、轴类型/分派与 D3D11 identity fill/stroke path ✅；D3D12/Metal GpuNative backlog — [#169](../decisions.md#d169) |
+| P6.8 可组合渲染轴 | `RasterMode` × `PresentMode` 类型与表驱动装配；`BackendKind` 统一；`NativeGpuBackend` + 逐操作 `NativeRasterCaps`；D3D11 GpuNative；D3D12 context foundation | 部分 ✅ — API-neutral native adapter、轴类型/分派、D3D11 identity fill/stroke path 与 D3D12 context 生命周期 ✅；D3D12 draw/Metal GpuNative backlog — [#169](../decisions.md#d169) |
 
 <a id="p68-可组合渲染轴"></a>
 
@@ -253,9 +254,9 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 
 **设计**（已确认）：以 [#168](../decisions.md#d168) 正交三轴为 **唯一** mental model；engine 分派 **仅**按 caps + registry 裁决的 `RasterMode` × `PresentMode`（× `GraphicsBackend` identity）合法组合；“×”不表示完整笛卡尔积；`BackendKind` 与上述轴对齐；factory / engine **表驱动正交装配**。非法组合返回诊断并继续 fallback（[#172](../decisions.md#d172)）。旧 bundled 管线枚举已拒绝，不作为设计面。
 
-**实现状态**：正交轴类型、caps、`create_graphics_engine` 轴分派、registry 行 `raster`/`present`、删除 `RenderPipelineProfile` ✅。D3D11 `GpuNative` × `Swapchain`：`NativeGpuBackend` + VS/PS solid/rounded fill + SDF stroke + identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity path（bounded flatten → strict contour-forest/earcut fast path 或 fill-rule-aware continuous y-band 梯形分解 → `GpuSolidMesh`）+ identity box/ambient shadow（SDF outer glow → `GpuBoxShadow`）+ soft alpha blit + swapchain present ✅。Identity `fill_path` 在既有 flatten tolerance、数值容差与顶点/事件/三角/累计工作量预算内支持简单 ring、非相交 contour forest、相交轮廓、边界接触、自交、完全/部分重合边及空布尔结果；y-band 内按 `EvenOdd` parity / `NonZero` 累计 winding 聚合重合 directed edge，每个 filled interval 生成 interior 不重叠的梯形三角。数值歧义、非有限输入、预算超限或 tessellation 失败仍确定性转 soft。Identity `stroke_path` 按 `StrokeOptions` tessellate 为 `GpuSolidMesh`，支持 `Butt`/`Round`/`Square` cap、`Miter`/`Bevel`/`Round` join，以及 `miter_limit` 超限时的 bevel fallback；closed subpath 不生成 cap，Round 在既有 0.25px tolerance 内近似，并复用同一通用 fill tessellator。D3D11 identity fill/stroke path 子项据此闭合；D3D12 / Metal `GpuNative` 仍 backlog。解析自动化覆盖 canonical 交叉/接触/重合/自交、两种 fill rule、方向/空结果、近似但不共线的确定性 fallback、累计工作量 guard、48 组确定性随机 directed ring、CPU/reference/mesh 三方 coverage 与 triangle-interior 单命中；真实 HWND 自动化走 `Path → NativeGpuBackend → GpuSolidMesh`，覆盖双孔/四层嵌套、重叠、自交、整边接触 fill 与半透明 90° Miter stroke，回读像素数和单次 alpha 后 present。
+**实现状态**：正交轴类型、caps、`create_graphics_engine` 轴分派、registry 行 `raster`/`present`、删除 `RenderPipelineProfile` ✅。D3D11 `GpuNative` × `Swapchain`：`NativeGpuBackend` + VS/PS solid/rounded fill + SDF stroke + identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity path（bounded flatten → strict contour-forest/earcut fast path 或 fill-rule-aware continuous y-band 梯形分解 → `GpuSolidMesh`）+ identity box/ambient shadow（SDF outer glow → `GpuBoxShadow`）+ soft alpha blit + swapchain present ✅。Identity `fill_path` 在既有 flatten tolerance、数值容差与顶点/事件/三角/累计工作量预算内支持简单 ring、非相交 contour forest、相交轮廓、边界接触、自交、完全/部分重合边及空布尔结果；y-band 内按 `EvenOdd` parity / `NonZero` 累计 winding 聚合重合 directed edge，每个 filled interval 生成 interior 不重叠的梯形三角。数值歧义、非有限输入、预算超限或 tessellation 失败仍确定性转 soft。Identity `stroke_path` 按 `StrokeOptions` tessellate 为 `GpuSolidMesh`，支持 `Butt`/`Round`/`Square` cap、`Miter`/`Bevel`/`Round` join，以及 `miter_limit` 超限时的 bevel fallback；closed subpath 不生成 cap，Round 在既有 0.25px tolerance 内近似，并复用同一通用 fill tessellator。D3D11 identity fill/stroke path 子项据此闭合；D3D12 context foundation 已落地但 draw/registry 仍 backlog，Metal `GpuNative` 仍 backlog。解析自动化覆盖 canonical 交叉/接触/重合/自交、两种 fill rule、方向/空结果、近似但不共线的确定性 fallback、累计工作量 guard、48 组确定性随机 directed ring、CPU/reference/mesh 三方 coverage 与 triangle-interior 单命中；真实 HWND 自动化走 `Path → NativeGpuBackend → GpuSolidMesh`，覆盖双孔/四层嵌套、重叠、自交、整边接触 fill 与半透明 90° Miter stroke，回读像素数和单次 alpha 后 present。
 
-非 GL 原生光栅 draw adapter 现已从 D3D11 具体类型收敛为 `NativeGpuBackend`：context 通过 `NativeRasterCaps` 精确声明 clear/soft blit/solid/stroke/glyph/gradient/mesh/shadow 能力，每种 Canvas2D 操作在入队前按 capability 与状态裁决 native 或 soft；原生操作按 Canvas 录制顺序提交，仅合并相邻同类/同 scissor batch，首次 soft 后同帧后续操作保持 soft，offset 只在 native payload 或 soft rasterizer 中应用一次。构造器要求 `GpuNative × Swapchain` 且具备 clear + soft-blit 基线；context 以 `Result` 返回的各阶段错误传播到 `RenderBackend` 边界，native/soft 录制仅在最终 present 成功后提交清理，失败帧保留内容供下一次 present attempt 以 full-clear 完整重放，shutdown/Drop 幂等；这不代表 engine 已保证自动调度恢复帧，且现有 D3D11 legacy `swap_buffers` 的 DXGI Present 失败仍仅记录日志。`RenderBackend` 直接暴露 `make_current` / DPR，所有 `BackendKind::Gpu` 创建统一经过 `RenderBackendRegistry`，普通 pipeline 不再 downcast D3D11。factory 同时校验 registry row 与 live context 的 backend/raster/present identity，并在不匹配时 shutdown。D3D12 context/backend 仍未接入，状态保持 `Planned`。
+非 GL 原生光栅 draw adapter 现已从 D3D11 具体类型收敛为 `NativeGpuBackend`：context 通过 `NativeRasterCaps` 精确声明 clear/soft blit/solid/stroke/glyph/gradient/mesh/shadow 能力，每种 Canvas2D 操作在入队前按 capability 与状态裁决 native 或 soft；原生操作按 Canvas 录制顺序提交，仅合并相邻同类/同 scissor batch，首次 soft 后同帧后续操作保持 soft，offset 只在 native payload 或 soft rasterizer 中应用一次。构造器要求 `GpuNative × Swapchain` 且具备 clear + soft-blit 基线；context 以 `Result` 返回的各阶段错误传播到 `RenderBackend` 边界，native/soft 录制仅在最终 present 成功后提交清理，失败帧保留内容供下一次 present attempt 以 full-clear 完整重放，shutdown/Drop 幂等；这不代表 engine 已保证自动调度恢复帧，且现有 D3D11 legacy `swap_buffers` 的 DXGI Present 失败仍仅记录日志。`RenderBackend` 直接暴露 `make_current` / DPR，所有 `BackendKind::Gpu` 创建统一经过 `RenderBackendRegistry`，普通 pipeline 不再 downcast D3D11。factory 同时校验 registry row 与 live context 的 backend/raster/present identity，并在不匹配时 shutdown。D3D12 context foundation 已接通 device/queue/flip-discard swapchain/RTV/allocator-list/fence、barrier、crop row-pitch readback、真实 resize与 shutdown；故障后拒绝新工作，terminal fence 可用时 drain 并释放，持续 device-loss/同步失败则保守保活。当前只声明 `clear_target`，未满足 hybrid baseline，因此 factory 状态仍为 `Planned`，draw backend 尚未接入。
 
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
@@ -263,7 +264,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | P0 | 正交轴类型与 caps（breaking） | ✅ | `RasterMode` / `PresentMode`；`GraphicsContextCaps` 用 `raster` + `present`；已删 `RenderPipelineProfile`；`create_graphics_engine` 按轴 match |
 | P1 | 表驱动 factory / engine 装配 | ✅ | `GraphicsBackendEntry` 含 `raster` + `present`；engine 按 caps 轴组合装配 |
 | P1 | `BackendKind` 统一 | ✅ | 文档与注释对齐正交轴；`Cpu`/`Gpu`/`Auto`/`Null` 为引擎级光栅偏好 |
-| P2 | D3D12 / Metal GPU 光栅 | backlog | D3D12 Windows 优先，随后 Metal；同 registry + caps 模式 |
+| P2 | D3D12 / Metal GPU 光栅 | 部分 ✅ | D3D12 context foundation 已落地；下一步 rounded solid + soft-blit + draw registry，随后 Metal |
 
 <a id="p67-图形后端架构"></a>
 <a id="p67-迁移验收-g1g11--m2m7"></a>
@@ -272,11 +273,11 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 
 可插拔 registry、probe 与统一 present 契约（`IGraphicsContext::present(PresentFrame)`）已落地。**设计**为 `RasterMode` × `PresentMode` × `GraphicsBackend` — 见 [#168](../decisions.md#d168) · [#169](../decisions.md#d169) · [P6.8](#p68-可组合渲染轴) · [graphics-backend-pluggable · 可组合渲染轴](systems/graphics-backend-pluggable.md#可组合渲染轴)。`draw::bootstrap_graphics_engine` 为唯一 probe 入口；诊断报告保留 candidate/stage/selected/完整错误并由 app 消费；`native/graphics/<api>/` 为 API 对等实现根目录。正交轴类型与表驱动 `create_graphics_engine` → P6.8 **已落地**；D3D11 `GpuNative` × `Swapchain` 垂直切片 **已落地**。
 
-**Backlog**（权威分项与优先级见 [P6.8](#p68-可组合渲染轴)；另含 D3D12 context `Planned`、WebGPU 远期评估）：
+**Backlog**（权威分项与优先级见 [P6.8](#p68-可组合渲染轴)；D3D12 registry 仍为 `Planned`，另含 WebGPU 远期评估）：
 
 | 项 | 说明 |
 |----|------|
-| D3D12 `GpuNative` | Windows 优先；复用 `RenderBackendRegistry`、caps 与统一 mesh/present 契约 |
+| D3D12 `GpuNative` | context foundation ✅；Windows 优先补 rounded solid + soft-blit、接入 `RenderBackendRegistry`；激活时单独裁决 Auto priority 并同步 #162 与 registry 顺序测试 |
 | Metal `GpuNative` | D3D12 后推进；复用同一 registry/caps 模式 |
 
 实现细节 → [rendering · 多图形 API](systems/rendering.md#多图形-api) · [platform · 多图形 API 与 factory](systems/platform.md#多图形-api-与-factory) · [graphics-backend-pluggable · 图形 API 架构原则](systems/graphics-backend-pluggable.md#图形-api-架构原则)。
@@ -306,7 +307,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | `src/native/traits/*` | [platform](systems/platform.md) | public OS API；含 `EventLoopWaker` |
 | `src/native/shared/*` | [platform](systems/platform.md) | `window_lifecycle`、`ime_events` 等跨后端 helper |
 | `src/native/backends/*` | [platform](systems/platform.md) | OS 壳：窗口、事件、CPU presenter（`gdi_presenter` 等）；**不含** GPU API 对等实现 |
-| `src/native/graphics/*` | [platform](systems/platform.md) · [graphics-backend-pluggable](systems/graphics-backend-pluggable.md) | **#164** IGraphicsContext 对等 API 实现（vulkan / opengl / d3d11 / metal / d3d12 stub） |
+| `src/native/graphics/*` | [platform](systems/platform.md) · [graphics-backend-pluggable](systems/graphics-backend-pluggable.md) | **#164** IGraphicsContext 对等 API 实现（vulkan / opengl / d3d11 / metal / d3d12 context foundation） |
 | `src/native/factory/*` | [platform](systems/platform.md) · [graphics-backend-pluggable](systems/graphics-backend-pluggable.md) | **#163** 唯一对外 factory 分派：`mod.rs` + `registry.rs` + `registry_<os>.rs`；`GraphicsBackendEntry` 表驱动 |
 | `src/native/test_harness/*` | [platform](systems/platform.md), [testing](systems/testing.md) | FakePlatform |
 | `src/draw/pipeline/*` | [rendering](systems/rendering.md) | invalidation, FrameRenderer, AnimationRegistry |

@@ -1,21 +1,16 @@
-//! Direct3D 12 graphics context (planned).
+//! Direct3D 12 graphics context.
 
 use std::ffi::c_void;
 
-use crate::core::{Errc, Error, Result};
-use crate::native::traits::present::GraphicsBackend;
+use crate::core::{Error, Result};
+use crate::native::traits::present::IGraphicsContext;
 
-/// Placeholder until D3D12 `IGraphicsContext` lands (M6+).
+mod platform;
+
 pub fn create(
-    _surface: *mut c_void,
-    _width: i32,
-    _height: i32,
-) -> Result<Box<dyn crate::native::traits::present::IGraphicsContext>, Error> {
-    Err(Error::new(
-        Errc::PlatformError,
-        format!(
-            "GraphicsBackend {} is planned but not implemented",
-            GraphicsBackend::D3d12
-        ),
-    ))
+    surface: *mut c_void,
+    width: i32,
+    height: i32,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    platform::create(surface, width, height)
 }
