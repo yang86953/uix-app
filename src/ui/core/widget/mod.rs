@@ -283,7 +283,10 @@ impl BoxedWidget {
     ) -> Vec<(ComponentId, Rect)> {
         self.component()
             .as_layout()
-            .map(|l| l.layout_children(frame, children, tree))
+            .map(|layout| {
+                let measured = layout.measure_children(frame, children, tree);
+                layout.layout_children(frame, &measured, tree)
+            })
             .unwrap_or_default()
     }
     pub fn children_clip(&self, frame: Rect) -> Option<Rect> {

@@ -25,7 +25,7 @@ use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::spatial::{Ray3D, SpatialContext};
 use crate::ui::event::SemanticEvent;
-use crate::ui::layout::AlignItems;
+use crate::ui::layout::{AlignItems, LayoutChild};
 use crate::ui::overlay::OverlayEntry;
 use crate::ui::widget::{EventResult, SystemEvent, WidgetNode, WidgetTree};
 use std::any::Any;
@@ -144,10 +144,28 @@ pub trait WidgetLayout: WidgetComponent {
     fn layout_margin(&self) -> EdgeInsets {
         EdgeInsets::zero()
     }
+    /// Prepare a pass-local measurement snapshot for the next child arrange.
+    ///
+    /// Exact-fill containers keep the default zero-sized descriptors so they do
+    /// not measure children they will stretch unconditionally.
+    fn measure_children(
+        &self,
+        _frame: Rect,
+        children: &[ComponentId],
+        _tree: &WidgetTree,
+    ) -> Vec<LayoutChild> {
+        children
+            .iter()
+            .copied()
+            .map(|id| LayoutChild::new(id, Size::zero()))
+            .collect()
+    }
+    /// Arrange children from the snapshot produced by [`Self::measure_children`].
+    /// Implementations must not call child `measure` recursively here.
     fn layout_children(
         &self,
         frame: Rect,
-        children: &[ComponentId],
+        children: &[LayoutChild],
         tree: &WidgetTree,
     ) -> Vec<(ComponentId, Rect)> {
         let _ = (frame, children, tree);

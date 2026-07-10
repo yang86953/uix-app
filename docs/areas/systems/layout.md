@@ -36,7 +36,7 @@
 | 原则 | 说明 |
 |------|------|
 | **Web 式 Flex** | Column 默认垂直堆叠；未设 `width`/`height` 时子项撑开父级（[#165](../../decisions.md#d165)） |
-| **两阶段分离** | `measure(constraints)` 回答「要多大」；`layout_children(frame)` 回答「放哪里」 |
+| **两阶段分离** | `measure_children(frame, ids, tree)` 生成本轮测量快照；`layout_children(frame, &[LayoutChild], tree)` 只回答「放哪里」 |
 | **按需收敛** | 结构变更才 `push_layout_invalidation`；layout 不触发 present（[#105](../../decisions.md#d105)） |
 | **纯函数引擎** | `compute_flex_layout` / `compute_grid_layout` 无副作用；容器 widget 组装 `LayoutChild` 后委托 |
 
@@ -62,12 +62,11 @@
 
 | 阶段 | API | 输入 | 输出 | 时机 |
 |------|-----|------|------|------|
-| **Measure** | `WidgetLayout::measure` | `Constraints { min, max, definite }` | `Size`（intrinsic，经 clamp） | 父级分配约束后、layout 前 |
-| **Arrange** | `WidgetLayout::layout_children` | 父级 `frame` + 子 id 列表 | `Vec<(ComponentId, Rect)>` | `WidgetTree::layout()` Phase 1 |
+| **Intrinsic Measure** | `WidgetLayout::measure` | `Constraints { min, max, definite }` | `Size`（intrinsic，经 clamp） | 父级准备子项输入时 |
+| **Child Measure** | `WidgetLayout::measure_children` | 父级 `frame` + 子 id 列表 | pass-local `Vec<LayoutChild>` | 每次父级 arrange 前 |
+| **Arrange** | `WidgetLayout::layout_children` | 父级 `frame` + `&[LayoutChild]` | `Vec<(ComponentId, Rect)>` | `WidgetTree::layout()` Phase 1 |
 
-Measure 不读写子 frame；Arrange 不递归 measure（子项尺寸应来自 Phase 1 的 `LayoutChild.measured_size`）。
-
-> **实现差距**：通用 Flex/Grid 已通过 `LayoutChild.measured_size` 传递尺寸；部分自定义容器（ScrollView、Space、Form/Card）仍在 `layout_children` 内按父 frame 约束重新 measure。尺寸约束已收敛，但彻底改为 Phase 1 缓存消费仍属 [implementation · 布局两阶段缓存收敛](../implementation.md#后续工作) backlog。
+Measure 不读写子 frame；Arrange 不递归 measure。`WidgetTree` 每次调用先 preparation、后 arrange；快照只在单次调用内存活，不跨 convergence pass 缓存，避免 resize、内容变化或 expand/shrink 后复用陈旧测量（[#174](../../decisions.md#d174)）。Container、Grid、ScrollView、Space、Form/FormItem 与 Card 均在 preparation 阶段按各自内容区/滚动轴约束生成 `LayoutChild`；exact-fill 容器沿用默认零测量 preparation。Arrange 仍可读取非测量 tree 状态：ScrollView 对 `measure.h == 0` 的动态后代使用上一轮 arranged height 推进 viewport 收敛，但不修改 `LayoutChild.measured_size`。
 
 ### 流程
 
@@ -75,9 +74,9 @@ Measure 不读写子 frame；Arrange 不递归 measure（子项尺寸应来自 P
 flowchart TD
     A[结构变更 / resize] --> B[push_layout_invalidation]
     B --> C[WidgetTree::layout]
-    C --> D[Phase 1: layout_children 自顶向下]
-    D --> E[child_from_tree_with_constraints → measure]
-    E --> F[FlexLayout / GridLayout → 子 Rect]
+    C --> D[Phase 1: measure_children 自顶向下]
+    D --> E[child_from_tree_with_constraints → LayoutChild 快照]
+    E --> F[layout_children 纯 arrange → 子 Rect]
     F --> G[Phase 2/4: expand ↔ shrink 收敛]
     G --> H[Phase 3: layout_viewports]
     H --> I[bind_reactive / overlay / lifecycle]
@@ -130,7 +129,7 @@ LayoutChild {
 }
 ```
 
-由 `child_from_tree_with_constraints(id, tree, constraints)` 构建：对子节点调用 `measure`，并读取 `flex_grow` / `flex_shrink` / `margin` / `align_self` / grid 字段。
+由父级 `measure_children` 通过 `child_from_tree_with_constraints(id, tree, constraints)` 构建：对子节点调用 `measure`，并读取 `flex_grow` / `flex_shrink` / `margin` / `align_self` / grid 字段。`measured_size` 不读取旧 frame 兜底；整个 `LayoutChild` 仅作为本次 arrange 的不可变输入。
 
 ---
 
@@ -153,7 +152,7 @@ Web 式容器尺寸：**未设** `width` / `height` 时由子项撑开；Column 
 
 ### Container（完整 intrinsic 路径）
 
-1. `layout_children` → `FlexLayout`（`intrinsic_main` 见下）→ 写入 `cached_content_size`
+1. `measure_children` 生成本轮 `LayoutChild` → `layout_children` 委托 `FlexLayout`（`intrinsic_main` 见下）→ 写入 `cached_content_size`
 2. `measure(constraints)` → `constraints.clamp(intrinsic_size())`
 3. `intrinsic_size()`：`style.width` / `style.height` 有值则用固定值 + border；否则 fallback 到 `cached_content_size` + padding + border
 
@@ -411,7 +410,7 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获
 
 ```text
 0. bootstrap root frame（无有效 viewport 时 measure 临时尺寸）
-1. layout_children        // 自顶向下分配 frame
+1. measure_children → layout_children // 自顶向下测量快照并分配 frame
 2. expand/shrink 内循环   // 容器随子项 grow/shrink（ScrollView 跳过 expand；根不 shrink；非根按轴受父 frame cap）
 3. layout_viewports       // ScrollView content_bounds
 4. bind_reactive_widget_states
@@ -421,7 +420,7 @@ Wheel 未被子 Scroll 消费时可 bubble 至父级 Scroll；键盘滚动由获
 
 | Phase | 方向 | 作用 |
 |-------|------|------|
-| 1 Top-down | 父→子 | `layout_children` 写子 frame（父级已分配确定主轴时 flex 须 shrink，即使 style 未写死尺寸） |
+| 1 Top-down | 父→子 | `measure_children` 生成当前 frame 对应快照，`layout_children` 写子 frame（父级已分配确定主轴时 flex 须 shrink，即使 style 未写死尺寸） |
 | 2 Expand | 子→父 | 子 right / bottom 超出则增宽 / 增高父容器并重排（有效 viewport 根不扩展；非根默认不超过父 frame，最近 viewport 的滚动轴例外） |
 | 4 Shrink | 子→父 | 父过高则收缩（取子内容 vs measure 较大值；**跳过根**：根由窗口客户区锁定） |
 | 3 Viewports | — | ScrollView `content_bounds` |

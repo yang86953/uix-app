@@ -6,6 +6,7 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::children::WidgetChildren;
+use crate::ui::layout::engine::{child_from_tree_with_constraints, LayoutChild};
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
@@ -66,39 +67,39 @@ component! {
         self.children.take()
     }
 
-    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<LayoutChild>
+    {
+        let constraints = self.child_constraints(frame);
+        children
+            .iter()
+            .copied()
+            .map(|cid| child_from_tree_with_constraints(cid, tree, constraints))
+            .collect()
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
 
-        let child_constraints = self.child_constraints(frame);
-        let child_sizes: Vec<Size> = children
-            .iter()
-            .map(|&cid| {
-                tree.get(cid)
-                    .map(|c| c.measure(child_constraints))
-                    .unwrap_or_default()
-            })
-            .collect();
+        let child_sizes: Vec<Size> = children.iter().map(|child| child.measured_size).collect();
 
         let flex_children: Vec<FlexChild> = children
             .iter()
-            .map(|&cid| {
-                let w = tree.get(cid);
-                FlexChild {
-                    flex_grow: w.and_then(|c| c.as_layout()).map(|l| l.flex_grow()).unwrap_or(0.0),
+            .map(|child| FlexChild {
+                    flex_grow: child.flex_grow,
                     // 禁止子节点收缩——Phase 2 负责扩展容器适应内容
                     flex_shrink: 0.0,
-                    align_self: w.and_then(|c| c.as_layout()).and_then(|l| l.align_self()),
+                    align_self: child.align_self,
                     ..FlexChild::default()
-                }
             })
             .collect();
 
-            let input = FlexInput {
-                direction: self.direction,
-                wrap: self.wrap,
-                gap: self.space_size.value(),
+        let input = FlexInput {
+            direction: self.direction,
+            wrap: self.wrap,
+            gap: self.space_size.value(),
             padding: crate::core::EdgeInsets::zero(),
             container: frame,
             children: flex_children,
@@ -113,7 +114,7 @@ component! {
         children
             .iter()
             .zip(output.child_rects)
-            .map(|(&cid, rect)| (cid, rect))
+            .map(|(child, rect)| (child.id, rect))
             .collect()
     }
 }
@@ -266,6 +267,18 @@ mod tests {
         fn measure(&self, constraints: Constraints) -> Size {
             constraints.clamp(self.0)
         }
+
+        fn flex_grow(&self) -> f32 {
+            2.0
+        }
+
+        fn flex_shrink(&self) -> f32 {
+            0.25
+        }
+
+        fn align_self(&self) -> Option<AlignItems> {
+            Some(AlignItems::End)
+        }
     }
 
     #[test]
@@ -276,6 +289,24 @@ mod tests {
             .measure(Constraints::loose(Size::new(40.0, 32.0)));
 
         assert_eq!(measured, Size::new(40.0, 24.0));
+    }
+
+    #[test]
+    fn measure_children_respects_axes_and_preserves_flex_metadata() {
+        let mut tree = WidgetTree::new();
+        let child = tree.set_root(Box::new(FixedChild(Size::new(120.0, 30.0))));
+        let frame = Rect::new(0.0, 0.0, 40.0, 20.0);
+
+        let row = Space::new().measure_children(frame, &[child], &tree);
+        assert_eq!(row[0].measured_size, Size::new(120.0, 20.0));
+        assert_eq!(row[0].flex_grow, 2.0);
+        assert_eq!(row[0].flex_shrink, 0.25);
+        assert_eq!(row[0].align_self, Some(AlignItems::End));
+
+        let column = Space::new()
+            .vertical()
+            .measure_children(frame, &[child], &tree);
+        assert_eq!(column[0].measured_size, Size::new(40.0, 30.0));
     }
 
     #[test]
@@ -296,24 +327,16 @@ mod tests {
     }
 
     #[test]
-    fn layout_children_do_not_reuse_stale_zero_cross_axis_frame() {
+    fn layout_children_consumes_snapshot_instead_of_tree_measure_or_frame() {
         let mut tree = WidgetTree::new();
-        let root = tree.set_root(Box::new(
-            Space::new()
-                .width(40.0)
-                .height(20.0)
-                .child(FixedChild(Size::new(120.0, 0.0))),
-        ));
-        let child = tree.get(root).unwrap().children()[0];
+        let child = tree.set_root(Box::new(FixedChild(Size::new(12.0, 12.0))));
         tree.get_mut(child)
             .unwrap()
             .set_frame(Rect::new(0.0, -20.0, 120.0, 60.0));
+        let snapshot = LayoutChild::new(child, Size::new(120.0, 0.0));
 
-        let placements = tree.get(root).unwrap().layout_children(
-            Rect::new(0.0, 0.0, 40.0, 20.0),
-            &[child],
-            &tree,
-        );
+        let placements =
+            Space::new().layout_children(Rect::new(0.0, 0.0, 40.0, 20.0), &[snapshot], &tree);
 
         assert_eq!(placements[0].1, Rect::new(0.0, 10.0, 120.0, 0.0));
     }

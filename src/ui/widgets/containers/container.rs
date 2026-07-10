@@ -74,7 +74,36 @@ component! {
         apply_style(ctx, visual, s);
     }
 
-    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<LayoutChild>
+    {
+        let s = &self.style;
+        let content_rect = BoxModel {
+            margin: s.margin,
+            border_width: s.border_width,
+            padding: s.padding,
+        }
+        .content_rect(frame);
+        let child_constraints = self.child_measure_constraints(content_rect);
+
+        children
+            .iter()
+            .copied()
+            .filter(|&cid| {
+                let visible = tree.get(cid).map(|node| node.visible()).unwrap_or(true);
+                if !visible {
+                    crate::core::log::debug_fn(format!(
+                        "[Container::measure_children] child {} is invisible, skipping",
+                        cid
+                    ));
+                }
+                visible
+            })
+            .map(|cid| child_from_tree_with_constraints(cid, tree, child_constraints))
+            .collect()
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
         if children.is_empty() { return Vec::new(); }
@@ -91,27 +120,6 @@ component! {
         // 允许 0 尺寸 content_rect：首帧 / 未设高的 Row·Column 需走 Flex
         // bootstrap（intrinsic_main）才能用子项撑开并写入 cached_content_size（#165）。
         // 若此处直接 return，子节点 frame 会停在 (0,0)，表现为文字重叠。
-
-        // 过滤不可见子节点
-        let visible_children: Vec<ComponentId> = children.iter().copied()
-            .filter(|&cid| {
-                let visible = tree.get(cid)
-                    .map(|n| n.visible())
-                    .unwrap_or(true);
-                if !visible {
-                    crate::core::log::debug_fn(format!("[Container::layout_children] child {} is invisible, skipping", cid));
-                }
-                visible
-            })
-            .collect();
-        if visible_children.is_empty() { return Vec::new(); }
-
-        // 构建统一子节点信息
-        let child_constraints = self.child_measure_constraints(content_rect);
-        let layout_children: Vec<LayoutChild> = visible_children
-            .iter()
-            .map(|&cid| child_from_tree_with_constraints(cid, tree, child_constraints))
-            .collect();
 
         let main_axis_indefinite = matches!(
             s.flex_direction,
@@ -133,7 +141,7 @@ component! {
             overflow_content: s.overflow_content,
             intrinsic_main: main_axis_indefinite,
         };
-        let output = engine.layout(content_rect, &layout_children);
+        let output = engine.layout(content_rect, children);
 
         // 缓存子节点内容尺寸
         self.cached_content_size.set(Size::new(
@@ -141,10 +149,10 @@ component! {
             output.total_size.h.max(0.0),
         ));
 
-        visible_children
+        children
             .iter()
             .zip(output.positions)
-            .map(|(&cid, rect)| (cid, rect))
+            .map(|(child, rect)| (child.id, rect))
             .collect()
     }
 }
@@ -382,8 +390,7 @@ impl Container {
     fn child_measure_constraints(&self, content_rect: Rect) -> Constraints {
         let is_row = matches!(
             self.style.flex_direction,
-            crate::ui::style::FlexDirection::Row
-                | crate::ui::style::FlexDirection::RowReverse
+            crate::ui::style::FlexDirection::Row | crate::ui::style::FlexDirection::RowReverse
         );
         let main_indefinite = if is_row {
             self.style.width.is_none()
@@ -434,6 +441,7 @@ impl Container {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::core::widget::WidgetCore;
     use crate::ui::traits::WidgetLayout;
 
     #[test]
@@ -482,8 +490,45 @@ mod tests {
     }
 
     #[test]
+    fn measure_children_filters_hidden_and_preserves_layout_metadata() {
+        let mut tree = WidgetTree::new();
+        let host = tree.set_root(Box::new(Container::new()));
+        let visible = tree.add_child(
+            host,
+            Box::new(
+                Container::new()
+                    .style(
+                        Style::container()
+                            .with_grid_cell(2)
+                            .with_grid_column_span(3)
+                            .with_grid_row_span(4),
+                    )
+                    .size(20.0, 10.0)
+                    .flex_grow(2.0)
+                    .flex_shrink(0.25),
+            ),
+        );
+        let hidden = tree.add_child(host, Box::new(Container::new().size(30.0, 12.0)));
+        tree.get_mut(hidden).unwrap().set_visible(false);
+
+        let measured = Container::new().size(100.0, 60.0).measure_children(
+            Rect::new(0.0, 0.0, 100.0, 60.0),
+            &[visible, hidden],
+            &tree,
+        );
+
+        assert_eq!(measured.len(), 1);
+        assert_eq!(measured[0].id, visible);
+        assert_eq!(measured[0].measured_size, Size::new(20.0, 10.0));
+        assert_eq!(measured[0].flex_grow, 2.0);
+        assert_eq!(measured[0].flex_shrink, 0.25);
+        assert_eq!(measured[0].grid_cell, Some(2));
+        assert_eq!(measured[0].grid_column_span, 3);
+        assert_eq!(measured[0].grid_row_span, 4);
+    }
+
+    #[test]
     fn zero_height_row_bootstraps_from_children() {
-        use crate::ui::core::widget::WidgetCore;
         use crate::ui::view::adapter::ViewAdapter;
         use crate::ui::view::{label, row};
 
@@ -494,10 +539,11 @@ mod tests {
             root.set_frame(Rect::new(0.0, 0.0, 200.0, 0.0));
         }
         let children = tree.get(root_id).expect("root").children().to_vec();
-        let positions = tree
-            .get(root_id)
-            .expect("root")
-            .layout_children(Rect::new(0.0, 0.0, 200.0, 0.0), &children, &tree);
+        let positions = tree.get(root_id).expect("root").layout_children(
+            Rect::new(0.0, 0.0, 200.0, 0.0),
+            &children,
+            &tree,
+        );
         assert_eq!(positions.len(), 2, "zero-height row must place children");
         assert!(
             positions.iter().all(|(_, r)| r.h > 0.0),

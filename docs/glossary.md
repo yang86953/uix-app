@@ -32,6 +32,7 @@
 | EventLoopWaker | `native::traits::event::EventLoopWaker`；`IEventLoop::waker()` | [#117](decisions.md#d117) [#133](decisions.md#d133) |
 | component! | `component! { name: ..., struct ... }` / `component! { struct ... }` | [#102](decisions.md#d102) |
 | measure(constraints) | `WidgetLayout::measure(Constraints)` 唯一入口；旧 `preferred_size` 已移除 | [#103](decisions.md#d103) |
+| measure_children / layout_children | `WidgetLayout` 子项 preparation / arrange；前者生成 `Vec<LayoutChild>`，后者只消费快照 | [#174](decisions.md#d174) |
 | ScrollView | ScrollView（旧文档 ScrollContainer） | [#104](decisions.md#d104) |
 | VirtualScroll | `ui::foundation::VirtualScroll`；不经 prelude；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll | [layout · VirtualScroll](areas/systems/layout.md#virtual-scroll) |
 | AppState + ComponentHandle | `AppState` registry + `ComponentHandle` snapshot/invalidate/emit | [#32](decisions.md#d32), [#101](decisions.md#d101) |
@@ -143,12 +144,13 @@
 
 | 术语 | 含义 |
 |------|------|
-| measure / arrange | 布局两阶段：measure 定 intrinsic 尺寸，layout_children 定子项位置 → [layout · Measure/Arrange](areas/systems/layout.md#measure--arrange-两阶段) |
+| measure / arrange | 布局两阶段：`measure_children` 按当前父 frame 生成 pass-local `LayoutChild`，`layout_children` 只定子项位置 → [layout · Measure/Arrange](areas/systems/layout.md#measure--arrange-两阶段) · [#174](decisions.md#d174) |
 | measure | 唯一测量入口 → [术语对照](#术语对照) · [#103](decisions.md#d103) |
 | preferred_size | 已废弃；见 measure |
 | ScrollView | 滚动容器 → [术语对照](#术语对照) · [#104](decisions.md#d104) |
 | VirtualScroll | 大列表虚拟滚动 helper；不经 prelude；Table/Tree/SelectableList/Select/TreeSelect 已接 VirtualListScroll → [layout · VirtualScroll](areas/systems/layout.md#virtual-scroll) |
 | Constraints | `{ min, max, definite }` |
+| LayoutChild | 单次父级 arrange 的不可变测量快照；不跨 convergence pass 缓存，`measured_size` 不回退旧 frame |
 | intrinsic size | 组件在约束下的自然尺寸；Container 无显式 `width`/`height` 时由 `cached_content_size` 推导 → [layout · Intrinsic](areas/systems/layout.md#intrinsic-尺寸) · [#165](decisions.md#d165) |
 | intrinsic_main | Flex 输入：主轴未显式指定时由子项撑开、跳过 shrink → [layout · Intrinsic](areas/systems/layout.md#intrinsic-尺寸) |
 | effective_cross | Flex 交叉轴有效尺寸：容器 cross>0 用容器，否则 max(子项 cross) → [layout · Flex](areas/systems/layout.md#flex-布局) |

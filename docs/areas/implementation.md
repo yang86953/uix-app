@@ -167,7 +167,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 | 门禁 | 结果 | 证据范围 |
 |------|------|----------|
-| `cargo test --all-targets` | **通过** | lib **1035/1035**；demo **18/18** |
+| `cargo test --all-targets` | **通过** | lib **1043/1043**；demo **18/18** |
 | `cargo test --doc` | **通过** | 3 passed；20 ignored |
 | Windows compile | **通过** | default、`--no-default-features`、`--all-features` |
 | Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` default + all-features |
@@ -175,7 +175,7 @@ P6 图形后端            ← #162 #163，详见下文
 | `cargo clippy --all-targets` | **通过，有既存 warnings** | 无 hard error；warning-free 不作为已完成事实 |
 | 文档门禁 | **通过** | `check_project_docs.py --strict-design --json`：0 errors / 0 warnings；`git diff --check` 通过 |
 
-此前两项历史失败已闭合：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过；Horizontal 多直接子项现沿 X 轴流式排列并封口非滚动 Y 轴。Space 不再复用 stale 子 frame，Form/FormItem 的固定最小尺寸、label/padding/status 区均受窄父 frame 上限约束；Card body 现排除 actions 固定区，极小尺寸下以零 frame 清除旧布局，actions 也不会越出卡片。D3D11 复杂填充已有自交、嵌套、相交/接触轮廓拓扑守卫与端到端 soft fallback 回归；demo 覆盖清单现以语义测试区分未实现、已实现但未单独展示与待真机验证。graphics probe 现保留候选、失败阶段、选中 API 与完整错误；窗口关闭已编码为 session/GL 资源/context/native window 顺序，session 与 native window 幂等性有分层测试，real-window factory 测试覆盖 context 创建/关闭。Linux/macOS 仅完成 cross-check，未做真机运行；完整 GL/context/window 组合顺序、Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
+此前两项历史失败已闭合：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过；Horizontal 多直接子项现沿 X 轴流式排列并封口非滚动 Y 轴。Space 不再复用 stale 子 frame，Form/FormItem 的固定最小尺寸、label/padding/status 区均受窄父 frame 上限约束；Card body 现排除 actions 固定区，极小尺寸下以零 frame 清除旧布局，actions 也不会越出卡片。Container/Grid/ScrollView/Space/Form/FormItem/Card 已统一为 pass-local `LayoutChild` preparation → arrange，Arrange 不再递归 measure，通用 helper 也不再以旧 frame 污染零高度测量（[#174](../decisions.md#d174)）。D3D11 复杂填充已有自交、嵌套、相交/接触轮廓拓扑守卫与端到端 soft fallback 回归；demo 覆盖清单现以语义测试区分未实现、已实现但未单独展示与待真机验证。graphics probe 现保留候选、失败阶段、选中 API 与完整错误；窗口关闭已编码为 session/GL 资源/context/native window 顺序，session 与 native window 幂等性有分层测试，real-window factory 测试覆盖 context 创建/关闭。Linux/macOS 仅完成 cross-check，未做真机运行；完整 GL/context/window 组合顺序、Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
 
 ---
 
@@ -210,7 +210,7 @@ P6 图形后端            ← #162 #163，详见下文
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
 | P0 | **Windows 生产可用** | 进行中 | 稳定性、阻塞项、demo/docs 同步；**当前主验证与交付环境**（[#167](../decisions.md#d167)） |
-| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1035/1035、demo 18/18；历史布局回归、扫描假阳性与 D3D11 复杂拓扑错误均闭合 |
+| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1043/1043、demo 18/18；历史布局回归、扫描假阳性与 D3D11 复杂拓扑错误均闭合 |
 | P0 | probe 诊断与资源关闭 | `coded + partial automated` | 候选/阶段/selected/完整错误进入有序报告并有自动化守卫；WindowSession/native window 幂等性分层测试通过；GL 资源/context/window 组合顺序待 GUI/驱动 smoke |
 | P0 | 平台层抹平差异 | `coded + automated` | Result-only API、直接依赖与 cfg 守卫已收敛；上层无 OS cfg |
 | P1 | Linux / macOS parity | `coded + compiled` | 两目标 default/all-features cross-check 通过；运行/硬件 parity 待验证 |
@@ -271,7 +271,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 ## 后续工作
 
-**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。P6 分项见 [P6 生产级框架](#p6-生产级框架)；可组合渲染轴见 [P6.8](#p68-可组合渲染轴)；其余推进前须人类决策或新决策 #174+。
+**权威 backlog 清单**（下列表为唯一完整枚举；其他文档仅链接至此）。明细与边界见 [demand-driven · 剩余差距](systems/demand-driven.md#剩余差距)。P6 分项见 [P6 生产级框架](#p6-生产级框架)；可组合渲染轴见 [P6.8](#p68-可组合渲染轴)；其余推进前须人类决策或新决策 #175+。
 
 | 项 | 说明 | 文档 |
 |----|------|------|
@@ -279,7 +279,6 @@ P6 图形后端            ← #162 #163，详见下文
 | **移动端（P7+ backlog）** | **未实现**。目标 iOS / Android 原生 backend；复用 `ui`/`app`/`draw` trait 与零闲置主循环；须 [#166](../decisions.md#d166) 后分阶段切片 | [project · 当前阶段 vs 目标](../project.md#当前阶段-vs-目标愿景) · [plan · P7+](../plan.md#里程碑与工作域) |
 | **全栈扩展（backlog）** | **部分**：`data` 仅 Settings KV（opt-in）。**未实现**：网络层、HTTP 客户端、数据同步、服务端集成 | [data](systems/data.md) · [#166](../decisions.md#d166) |
 | 无障碍（屏幕阅读器桥） | #99：v1 基线（role/name/state 快照、静态 ARIA 映射、键盘导航）已落地；屏幕阅读器平台桥待后续 | [component](systems/component.md#componentconfigsnapshot) |
-| 布局两阶段缓存收敛 | 通用 Flex/Grid 已消费 `LayoutChild.measured_size`；ScrollView、Space、Form/Card 等自定义 arrange 仍会按父 frame 重新 measure，须统一改为 Phase 1 缓存输入 | [layout · Measure / Arrange](systems/layout.md#measure--arrange-两阶段) |
 
 ---
 
@@ -339,7 +338,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 ## 维护
 
-- 阶段划分或原则变更 → 同步 [decisions.md](../decisions.md) #154（或 #174+ 新决策）与本文件。
+- 阶段划分或原则变更 → 同步 [decisions.md](../decisions.md) #154（或 #175+ 新决策）与本文件。
 - 能力落地或产生新差距 → 更新 [实现进度总览](#实现进度总览) 与各系统 `> **实现注记**`；**不**在本文件恢复 per-file 接线 checklist。
 - 新 backlog 项追加到 [后续工作](#后续工作)；边界说明同步 [剩余差距](systems/demand-driven.md#剩余差距)。
 - 新增 `src/` 路径映射 → 更新 [源码目录详表](#源码目录详表) 与对应系统文档「源码模块」。

@@ -31,10 +31,10 @@ impl WidgetLayout for AppOverlayRoot {
     fn layout_children(
         &self,
         frame: Rect,
-        children: &[ComponentId],
+        children: &[crate::ui::LayoutChild],
         _tree: &crate::ui::WidgetTree,
     ) -> Vec<(ComponentId, Rect)> {
-        children.iter().map(|&child| (child, frame)).collect()
+        children.iter().map(|child| (child.id, frame)).collect()
     }
 }
 

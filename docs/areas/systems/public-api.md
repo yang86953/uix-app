@@ -171,7 +171,8 @@ prelude **仅**导出平台工厂与跨层输入枚举；上层 **禁止** `use 
 | 符号 | 说明 |
 |------|------|
 | `FlexLayout` · `GridLayout` · `LayoutEngine` · `LayoutOutput` | 布局引擎 |
-| `LayoutChild` | 布局输入单元 |
+| `WidgetLayout` | 两阶段组件布局契约：`measure_children` 生成 pass-local 输入，`layout_children` 仅 arrange（[#174](../../decisions.md#d174)） |
+| `LayoutChild` | 单次 arrange 的不可变布局输入单元；`measured_size` 不回退旧 frame |
 | `FlexDirection` · `JustifyContent` · `AlignItems` · `GridTrack` | Flex / Grid 配置 |
 | `BoxModel` | margin / padding / content rect |
 

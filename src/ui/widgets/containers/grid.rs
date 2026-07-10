@@ -54,7 +54,32 @@ component! {
         paint_style(ctx, visual, &self.style);
     }
 
-    layout_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+    measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
+        -> Vec<LayoutChild>
+    {
+        if self.style.grid_template_columns.is_empty() || children.is_empty() {
+            return Vec::new();
+        }
+
+        let content_rect = BoxModel {
+            margin: self.style.margin,
+            border_width: self.style.border_width,
+            padding: self.style.padding,
+        }
+        .content_rect(frame);
+        if content_rect.w <= 0.0 || content_rect.h <= 0.0 {
+            return Vec::new();
+        }
+
+        let constraints = Constraints::loose(Size::new(content_rect.w, content_rect.h));
+        children
+            .iter()
+            .copied()
+            .map(|cid| child_from_tree_with_constraints(cid, tree, constraints))
+            .collect()
+    }
+
+    layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
         if self.style.grid_template_columns.is_empty() || children.is_empty() {
@@ -71,17 +96,6 @@ component! {
             return Vec::new();
         }
 
-        let layout_children: Vec<LayoutChild> = children
-            .iter()
-            .map(|&cid| {
-                child_from_tree_with_constraints(
-                    cid,
-                    tree,
-                    Constraints::loose(Size::new(content_rect.w, content_rect.h)),
-                )
-            })
-            .collect();
-
         let engine = GridLayout {
             columns: self.style.grid_template_columns.clone(),
             rows: self.style.grid_template_rows.clone(),
@@ -91,12 +105,12 @@ component! {
             justify_items: self.style.justify_content,
         };
 
-        let output = engine.layout(content_rect, &layout_children);
+        let output = engine.layout(content_rect, children);
 
         children
             .iter()
             .zip(output.positions)
-            .map(|(&cid, rect)| (cid, rect))
+            .map(|(child, rect)| (child.id, rect))
             .collect()
     }
 }
@@ -226,5 +240,38 @@ impl Grid {
         } else {
             self.style.gap
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::foundation::style::Style;
+    use crate::ui::traits::WidgetLayout;
+    use crate::ui::widgets::Container;
+
+    #[test]
+    fn measure_children_clamps_size_and_preserves_grid_metadata() {
+        let mut tree = WidgetTree::new();
+        let child = tree.set_root(Box::new(
+            Container::new()
+                .style(
+                    Style::container()
+                        .with_grid_cell(2)
+                        .with_grid_column_span(3)
+                        .with_grid_row_span(4),
+                )
+                .size(140.0, 90.0),
+        ));
+        let grid = Grid::new().columns(vec![GridTrack::Auto]).size(100.0, 80.0);
+
+        let measured = grid.measure_children(Rect::new(0.0, 0.0, 100.0, 80.0), &[child], &tree);
+
+        assert_eq!(measured.len(), 1);
+        assert_eq!(measured[0].id, child);
+        assert_eq!(measured[0].measured_size, Size::new(100.0, 80.0));
+        assert_eq!(measured[0].grid_cell, Some(2));
+        assert_eq!(measured[0].grid_column_span, 3);
+        assert_eq!(measured[0].grid_row_span, 4);
     }
 }

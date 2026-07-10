@@ -42,7 +42,7 @@
 | Windows 是 P6 的主开发、回归和生产验收环境。 | 高 | [plan.md](plan.md) 与 #167；Windows demo/测试矩阵。 |
 | Linux/macOS backend 的“已编码”不等于生产 parity 或真机验收完成。 | 高 | 分平台编译、Linux 运行、macOS 真机验收；未验证前保持 backlog 状态。 |
 | 现有系统叶子文档可继续承载细节，总设计只维护跨系统契约和追踪。 | 高 | 文档可达性检查与变更评审。 |
-| 网络、同步与凭据管理不在当前 `data` 范围，扩展前需要新的产品边界决策。 | 高 | [plan.md · 开放问题](plan.md#开放问题)；新增 #174+ 决策。 |
+| 网络、同步与凭据管理不在当前 `data` 范围，扩展前需要新的产品边界决策。 | 高 | [plan.md · 开放问题](plan.md#开放问题)；新增 #175+ 决策。 |
 | 移动端可复用上层域，但事件循环、窗口/surface 和应用生命周期仍需独立 backend 设计验证。 | 中 | P7 切片前做 iOS/Android spike 与 trait 缺口审计。 |
 
 ## Evaluation Criteria
@@ -103,7 +103,7 @@ canonical 直接依赖集合由 [AGENTS.md](../AGENTS.md#架构硬约束) 定义
 ### 3. 可组合组件模型
 
 - UI widget 按 Layout、Render、Event、Lifecycle、Animation 等能力按需实现，WidgetTree 负责托管与组合。
-- 布局以 `measure(Constraints)` / arrange 两阶段处理；事件以平台、系统、语义三层隔离。
+- 布局以 pass-local `measure_children → LayoutChild → layout_children` 两阶段处理，不跨收敛轮缓存（[#174](decisions.md#d174)）；事件以平台、系统、语义三层隔离。
 - 平台以 `Platform` 聚合子 trait；可选能力用 `Result` 表达，而不是让上层识别具体 OS。
 - 渲染以 `RasterMode × PresentMode × GraphicsBackend` 独立描述能力；registry 行与 caps 共同给出**合法稀疏组合**，engine 是合法装配结果而不是架构枚举（[#172](decisions.md#d172)）。
 
@@ -216,14 +216,14 @@ Active 帧的项目级顺序为：事件映射与派发 → 到期 Timer / 主�
 
 ## Rollout And Validation
 
-当前证据（2026-07-10，基于当前工作树）：`cargo test --all-targets` 为 lib **1035/1035**、demo **18/18**；Windows default/no-default/all-features 与 Linux/macOS default/all-features `cargo check` 全部通过；`cargo clippy --all-targets`、严格文档检查通过。详见 [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10)。自动化/编译 gate 已恢复，但 Windows GPU/Software 双路径 GUI smoke、硬件矩阵与 P0 生产阻塞清零仍未完成，因此 P6 尚未达到 `production`。
+当前证据（2026-07-10，基于当前工作树）：`cargo test --all-targets` 为 lib **1043/1043**、demo **18/18**；Windows default/no-default/all-features 与 Linux/macOS default/all-features `cargo check` 全部通过；`cargo clippy --all-targets`、严格文档检查通过。详见 [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10)。自动化/编译 gate 已恢复，但 Windows GPU/Software 双路径 GUI smoke、硬件矩阵与 P0 生产阻塞清零仍未完成，因此 P6 尚未达到 `production`。
 
 | 步骤 | 目的 | 验证 |
 |------|------|------|
 | 1. 保持 P0–P5 设计不回退 | 防止新功能破坏零闲置、多窗、响应式和 handle 体系 | 相关单测、架构边界、DeepIdle/Timer/TestClock 回归 |
 | 2. 完成 P6 Windows 生产基线 | 闭合稳定性、原生 D3D11 raster、demo/docs 与错误诊断 | [P6 退出门槛](plan.md#p6-退出门槛默认工程-gate)：全量零失败、双路径 smoke、边界与文档 gate |
 | 3. Linux/macOS parity | 验证 native 扩展不需要上层分叉 | 分平台编译、Linux 运行、macOS 真机生命周期/输入/present 验收 |
-| 4. P7 移动端 spike 与切片 | 验证 traits 对移动生命周期、surface 和输入足够 | iOS/Android 最小窗口+事件+present 原型；缺口决策 #174+ |
+| 4. P7 移动端 spike 与切片 | 验证 traits 对移动生命周期、surface 和输入足够 | iOS/Android 最小窗口+事件+present 原型；缺口决策 #175+ |
 | 5. 全栈扩展决策 | 明确网络/同步/服务端边界与域归属 | 产品需求、威胁模型、API/存储设计评审后再排期 |
 | 6. 每次文档变更门禁 | 保持结构、链接、追踪和设计内容合格 | `check_project_docs.py <root> --strict-design` + 旧路径搜索 |
 
@@ -249,7 +249,7 @@ Active 帧的项目级顺序为：事件映射与派发 → 到期 Timer / 主�
 | Windows “生产可用”是否还需产品级 SLA/兼容矩阵？ | 决定默认工程 gate 之外的发布承诺 | 先采用 [plan · P6 退出门槛](plan.md#p6-退出门槛默认工程-gate)；SLA、Windows 版本与硬件矩阵由主人补充 | 主人 |
 | macOS 真机验收矩阵包含哪些版本、输入和 GPU 路径？ | 当前“已编码”不足以证明 parity | 先验收主流 macOS + AppKit/Metal CpuUpload 生命周期、输入、resize/present | 主人 / 平台维护者 |
 | P7 首批 iOS 还是 Android？ | 影响事件循环、surface、图形 API 和工具链切片 | P6 完成前不默认选边；先做 trait 缺口审计 | 主人 |
-| 网络/同步属于 `data` 扩展还是新域？ | 会改变依赖图、安全边界和公开 API | 当前不纳入；形成独立需求与 #174+ 决策后再设计 | 主人 |
+| 网络/同步属于 `data` 扩展还是新域？ | 会改变依赖图、安全边界和公开 API | 当前不纳入；形成独立需求与 #175+ 决策后再设计 | 主人 |
 | 屏幕阅读器桥的 v1 平台和验收范围？ | 影响 native accessibility trait 与组件语义映射 | 保持现有快照/键盘基线，平台桥暂不进入 P6 阻塞项 | 主人 |
 | D3D11 复杂 path 与 Metal/D3D12 原生 raster 的排序？ | 决定 GPU 覆盖与跨平台投资 | 先完成 Windows 生产阻塞的 D3D11 缺口，再按 parity 价值排序 | draw/native 维护者 |
 
@@ -257,5 +257,5 @@ Active 帧的项目级顺序为：事件映射与派发 → 到期 Timer / 主�
 
 | 日期 | 变更 | 原因 | 后续 |
 |------|------|------|------|
-| 2026-07-10 | 新增项目级总设计、需求追踪、替代方案、质量属性、rollout、风险与开放问题。 | 原文档已有完整系统细节，但缺少跨系统 `design.md` 与独立需求 → 设计 → 验证链。 | 以 [plan.md](plan.md) 推进 P6；新事实同步 requirements/design/implementation，持久取舍写入 #174+。 |
+| 2026-07-10 | 新增项目级总设计、需求追踪、替代方案、质量属性、rollout、风险与开放问题。 | 原文档已有完整系统细节，但缺少跨系统 `design.md` 与独立需求 → 设计 → 验证链。 | 以 [plan.md](plan.md) 推进 P6；新事实同步 requirements/design/implementation，持久取舍写入 #175+。 |
 | 2026-07-10 | 收敛依赖/cfg、Result-only、wake/L1、caps 合法组合和证据状态语义。 | 设计审查发现文档间存在可执行契约冲突，且部分守卫弱于文档。 | 以 [#170–#173](decisions.md#d170) 为统一裁决；实现、测试和系统叶子同步收敛。 |

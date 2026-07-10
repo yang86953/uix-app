@@ -109,10 +109,10 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[ComponentId], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
-        children.iter().map(|&cid| (cid, frame)).collect()
+        children.iter().map(|child| (child.id, frame)).collect()
     }
 }
 

@@ -102,7 +102,7 @@ component! {
         }
     }
 
-    layout_children => (&self, frame: Rect, children: &[ComponentId], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
         let mut result = Vec::new();
@@ -121,7 +121,7 @@ component! {
             } else {
                 Rect::new(pos, frame.y, size, frame.h)
             };
-            result.push((children[i], child_frame));
+            result.push((children[i].id, child_frame));
             pos += size + self.handle_size;
         }
         result

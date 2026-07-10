@@ -5,6 +5,8 @@ use crate::ui::layout::{AlignItems, FlexDirection};
 use crate::ui::traits::{EventHandler, WidgetCapabilities, WidgetLayout, WidgetRender};
 use crate::ui::widgets::{Collapse, CollapsePanel, Container, Space};
 use crate::ui::EventResult;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 struct FixedWidget {
     size: Size,
@@ -41,6 +43,38 @@ impl WidgetLayout for FixedWidget {
 
 impl WidgetRender for FixedWidget {
     fn render(&self, _frame: Rect, _ctx: &mut PaintContext, _tree: &WidgetTree) {}
+}
+
+struct MeasureProbeWidget {
+    size: Size,
+    seen: Rc<RefCell<Vec<Constraints>>>,
+}
+
+impl WidgetComponent for MeasureProbeWidget {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn into_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self
+    }
+
+    fn capabilities(&self) -> WidgetCapabilities {
+        WidgetCapabilities::from_bits(WidgetCapabilities::LAYOUT)
+    }
+
+    crate::wc_upcast!(MeasureProbeWidget; WidgetLayout);
+}
+
+impl WidgetLayout for MeasureProbeWidget {
+    fn measure(&self, constraints: Constraints) -> Size {
+        self.seen.borrow_mut().push(constraints);
+        constraints.clamp(self.size)
+    }
 }
 
 #[test]
@@ -252,6 +286,62 @@ fn scrollview_child_constraints_are_axis_aware() {
         .unwrap();
     assert_eq!(horizontal_sv.max_scroll_x(), 280.0);
     assert_eq!(horizontal_sv.max_scroll_y(), 0.0);
+}
+
+fn assert_two_stage_measurement(
+    direction: ScrollDirection,
+    expected_constraints: Constraints,
+    expected_rect: Rect,
+) {
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let mut tree = WidgetTree::new();
+    let scroll_view = tree.set_root(Box::new(ScrollView::new(direction).size(120.0, 80.0)));
+    let child = tree.add_child(
+        scroll_view,
+        Box::new(MeasureProbeWidget {
+            size: Size::new(400.0, 300.0),
+            seen: Rc::clone(&seen),
+        }),
+    );
+    let frame = Rect::new(0.0, 0.0, 120.0, 80.0);
+    let scroll_view: &ScrollView = tree
+        .get(scroll_view)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+
+    let measured = scroll_view.measure_children(frame, &[child], &tree);
+    assert_eq!(&*seen.borrow(), &[expected_constraints]);
+    assert_eq!(measured.len(), 1);
+
+    let placements = scroll_view.layout_children(frame, &measured, &tree);
+    assert_eq!(placements, vec![(child, expected_rect)]);
+    assert_eq!(
+        seen.borrow().len(),
+        1,
+        "arrange must consume LayoutChild.measured_size without re-measuring"
+    );
+}
+
+#[test]
+fn scrollview_two_stage_measurement_is_axis_aware_and_arrange_does_not_measure() {
+    assert_two_stage_measurement(
+        ScrollDirection::Vertical,
+        Constraints::loose(Size::new(120.0, f32::MAX)),
+        Rect::new(0.0, 0.0, 120.0, 300.0),
+    );
+    assert_two_stage_measurement(
+        ScrollDirection::Horizontal,
+        Constraints::loose(Size::new(f32::MAX, 80.0)),
+        Rect::new(0.0, 0.0, 400.0, 80.0),
+    );
+    assert_two_stage_measurement(
+        ScrollDirection::Both,
+        Constraints::loose(Size::new(f32::MAX, f32::MAX)),
+        Rect::new(0.0, 0.0, 400.0, 300.0),
+    );
 }
 
 #[test]
