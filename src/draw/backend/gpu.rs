@@ -150,13 +150,22 @@ impl GpuBackend {
     }
 }
 
-fn present_graphics_context(gpu_ctx: &mut dyn IGraphicsContext, damage: &DamageRegion) {
+fn capabilities_for_context(gpu_ctx: &dyn IGraphicsContext) -> BackendCapabilities {
+    if gpu_ctx.caps().partial_present {
+        BackendCapabilities::gpu()
+    } else {
+        BackendCapabilities::gpu_full_redraw()
+    }
+}
+
+fn present_graphics_context(
+    gpu_ctx: &mut dyn IGraphicsContext,
+    damage: &DamageRegion,
+) -> Result<(), Error> {
     let frame = PresentFrame::Swapchain {
         damage: damage.to_present_damage(),
     };
-    if let Err(err) = gpu_ctx.present(&frame) {
-        crate::core::log::error_fn(format!("GpuBackend present failed: {}", err.short_what()));
-    }
+    gpu_ctx.present(&frame)
 }
 
 impl RenderBackend for GpuBackend {
@@ -165,7 +174,7 @@ impl RenderBackend for GpuBackend {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        BackendCapabilities::gpu()
+        capabilities_for_context(self.gpu_ctx.as_ref())
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -204,14 +213,8 @@ impl RenderBackend for GpuBackend {
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         self.gpu_ctx.make_current();
-        if let Err(e) = self.surface.canvas.flush_soft_fallback() {
-            crate::core::log::error_fn(format!(
-                "GpuBackend soft_fallback flush failed: {}",
-                e.short_what()
-            ));
-        }
-        present_graphics_context(self.gpu_ctx.as_mut(), damage);
-        Ok(())
+        self.surface.canvas.flush_soft_fallback()?;
+        present_graphics_context(self.gpu_ctx.as_mut(), damage)
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -295,13 +298,66 @@ mod tests {
         let mut context = RecordingGraphicsContext::default();
         let damage = DamageRegion::partial(vec![Rect::new(1.0, 2.0, 3.0, 4.0)]);
 
-        present_graphics_context(&mut context, &damage);
+        present_graphics_context(&mut context, &damage).expect("swapchain present");
 
         assert_eq!(context.make_current_calls, 1);
         assert_eq!(
             context.swap_damage,
             Some(PresentDamage::Partial(vec![(1, 2, 3, 4)]))
         );
+    }
+
+    #[test]
+    fn gpu_capabilities_follow_native_partial_present_support() {
+        let context = RecordingGraphicsContext::default();
+        assert_eq!(
+            capabilities_for_context(&context),
+            BackendCapabilities::gpu_full_redraw()
+        );
+    }
+
+    #[cfg(feature = "opengles")]
+    #[test]
+    fn opengles_gpu_engine_draws_on_real_window() {
+        use crate::draw::gpu_engine::GpuEngine;
+        use crate::draw::{Color, GraphicsEngine, UpdateStrategy};
+        use crate::native::traits::present::GraphicsBackend;
+
+        if std::env::consts::OS != "windows" {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("GPU test", 640, 480)
+            .expect("window");
+        let surface = window.native_surface_ptr();
+        assert!(
+            !surface.is_null(),
+            "Windows HWND must be exposed as native_surface_ptr"
+        );
+        let context = crate::native::create_gpu_context_with_backend(
+            surface,
+            640,
+            480,
+            GraphicsBackend::OpenGlEs,
+        )
+        .expect("WglContext");
+        let mut engine = GpuEngine::new(context).expect("OpenGL ES GpuEngine");
+        engine.initialize(640, 480).expect("initialize GL engine");
+        let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+        engine
+            .canvas_2d()
+            .fill_rect(Rect::new(0.0, 0.0, 640.0, 480.0), Color::red(), None);
+        engine.read_pixels();
+        let pixels = engine.pixels();
+        let center = pixels[(240 * 640 + 320) as usize];
+        assert_eq!(center & 0xFF, 0xFF, "center pixel must contain red");
+        assert_eq!(center >> 24, 0xFF, "center pixel must be opaque");
+        let _ = engine.end_frame(&DamageRegion::full());
+        engine.shutdown();
+        window.close().expect("close native window");
     }
 
     #[test]

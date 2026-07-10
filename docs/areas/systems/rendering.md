@@ -104,7 +104,7 @@
 ### draw 域约束
 
 - `draw` **不** `use native::backends::*` 或 `native::graphics::*`；仅 `IGraphicsContext` trait object。
-- `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；非 GL **GPU 光栅** backend 经 `RenderBackendRegistry` 注册（OpenGL ES ✅；D3D11 ✅ 原生 fill/stroke/glyph/gradient/path/shadow + soft blit）。Vulkan/Metal 当前 caps 为 `Cpu` × `PixelUpload`；D3D11 复杂填充拓扑已有 soft fallback 守卫，**下一代码优先**是其原生 path 扩展，随后 Metal / D3D12。**非**「这些 API 只能 CPU 光栅」（#168）。
+- `GpuBackend` / `canvas_2d` 通过 `get_proc_address` 加载 GL 函数；Windows WGL 对扩展函数使用 `wglGetProcAddress`，对 OpenGL 1.1 core export 回退 `opengl32.dll`，并只接受渲染器所需的 ES 3.0 context。`GpuBackend` 的 partial redraw 能力服从 native context 的 `partial_present`，不支持时提升为全帧，soft fallback 与 present 错误按 `Result` 向上传播。非 GL **GPU 光栅** backend 经 `RenderBackendRegistry` 注册（OpenGL ES ✅；D3D11 ✅ 原生 fill/stroke/glyph/gradient/path/shadow + soft blit）。Vulkan/Metal 当前 caps 为 `Cpu` × `PixelUpload`；D3D11 复杂填充拓扑已有 soft fallback 守卫，**下一代码优先**是其原生 path 扩展，随后 Metal / D3D12。**非**「这些 API 只能 CPU 光栅」（#168）。
 - `ScenePaint`、LayerTree、InvalidationQueue **与** GPU API 无关；局部重绘 damage 几何仍来自 `core::damage`。
 
 <a id="配置入口-p65-已落地"></a>
