@@ -54,7 +54,7 @@ ViewNode::new(widget, children)
     .on_semantic(SemanticKind::Click, handler)
 ```
 
-`IntoWidgetNode` 实现调用 `ViewAdapter::expand` 递归展开子树。
+`embed()` 先经 `IntoWidgetNode` 接收 widget-tree 节点，并把 `WidgetComponent::build()` 持有的子组件递归物化为 `ViewNode.children`，再交给 `ViewAdapter::expand`。这样冷启动与后续 reconcile 读取的是同一份声明子树，不会把 `Space` / `Card` / `ScrollView` 等组件持有的 live children 误判为“新声明为空”后删除。
 
 ### DynamicLabel 与 State 捕获
 
