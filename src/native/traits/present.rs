@@ -116,13 +116,53 @@ pub struct GpuBoxShadow {
     pub ambient: bool,
 }
 
+/// Fine-grained native raster capabilities exposed by a GPU context.
+///
+/// The draw-side native backend uses this table to route every Canvas2D
+/// operation either to a supported native command or to deterministic CPU
+/// soft fallback. A context must not advertise an operation whose trait method
+/// still returns `NotImplemented`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NativeRasterCaps {
+    pub clear_target: bool,
+    pub clear_rects: bool,
+    pub soft_blit: bool,
+    pub solid_rects: bool,
+    pub stroke_rects: bool,
+    pub glyphs: bool,
+    pub linear_gradients: bool,
+    pub radial_gradients: bool,
+    pub solid_meshes: bool,
+    pub box_shadows: bool,
+}
+
+impl NativeRasterCaps {
+    /// Complete capability set currently implemented by the D3D11 context.
+    pub const fn d3d11_full() -> Self {
+        Self {
+            clear_target: true,
+            clear_rects: true,
+            soft_blit: true,
+            solid_rects: true,
+            stroke_rects: true,
+            glyphs: true,
+            linear_gradients: true,
+            radial_gradients: true,
+            solid_meshes: true,
+            box_shadows: true,
+        }
+    }
+
+    pub const fn has_hybrid_baseline(self) -> bool {
+        self.clear_target && self.soft_blit
+    }
+}
+
 /// Unified present payload for [`IGraphicsContext::present`] (M7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PresentFrame<'a> {
     /// GPU swapchain / equivalent (native raster path).
-    Swapchain {
-        damage: PresentDamage,
-    },
+    Swapchain { damage: PresentDamage },
     /// CPU raster upload (upload-present path).
     PixelBuffer {
         pixels: &'a [u32],
@@ -291,6 +331,11 @@ impl FromStr for GraphicsBackend {
 pub trait IGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps;
 
+    /// Per-operation native raster support for `GpuNative` contexts.
+    fn native_raster_caps(&self) -> NativeRasterCaps {
+        NativeRasterCaps::default()
+    }
+
     fn graphics_backend(&self) -> GraphicsBackend {
         self.caps().backend
     }
@@ -364,8 +409,8 @@ pub trait IGraphicsContext {
 
     /// Clear the current GPU render target (GpuNative × Swapchain).
     ///
-    /// Default: not implemented. OpenGL ES clears via the draw GL backend;
-    /// D3D11 implements this on the swapchain RTV.
+    /// Default: not implemented. Non-GL native contexts advertise this through
+    /// [`NativeRasterCaps`].
     fn clear_render_target(&mut self, _r: f32, _g: f32, _b: f32, _a: f32) -> Result<(), Error> {
         Err(Error::new(
             crate::core::error::Errc::NotImplemented,
@@ -395,15 +440,11 @@ pub trait IGraphicsContext {
         ))
     }
 
-    /// Whether this context can draw solid/rounded rects on the GPU.
-    fn supports_native_geometry(&self) -> bool {
-        false
-    }
-
     /// Draw solid-color (optionally rounded) quads into the current RTV.
     ///
     /// `scissor` is optional logical-pixel AABB `(x, y, w, h)` top-left origin.
-    /// Used by D3D11 `GpuNative` for hot Canvas2D `fill_rect` / `fill_circle`.
+    /// Used by the capability-driven native GPU backend for hot Canvas2D
+    /// `fill_rect` / `fill_circle`.
     fn draw_solid_rects(
         &mut self,
         _viewport_w: f32,
@@ -422,8 +463,7 @@ pub trait IGraphicsContext {
 
     /// Draw stroked (optionally rounded) rects into the current RTV.
     ///
-    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
-    /// `GpuNative` for hot Canvas2D `stroke_rect` / `stroke_circle`.
+    /// Same scissor convention as [`Self::draw_solid_rects`].
     fn draw_stroke_rects(
         &mut self,
         _viewport_w: f32,
@@ -440,15 +480,9 @@ pub trait IGraphicsContext {
         ))
     }
 
-    /// Whether this context can draw glyph coverage via an atlas.
-    fn supports_native_glyphs(&self) -> bool {
-        false
-    }
-
     /// Pack CPU glyph coverage into a GPU atlas and draw textured quads.
     ///
-    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
-    /// `GpuNative` for identity-transform solid `blit_glyph` / text.
+    /// Same scissor convention as [`Self::draw_solid_rects`].
     fn draw_glyphs(
         &mut self,
         _viewport_w: f32,
@@ -471,8 +505,7 @@ pub trait IGraphicsContext {
     /// ops stay on CPU and composite on top of native geometry.
     /// Draw axis-aligned linear gradient rects into the current RTV.
     ///
-    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
-    /// `GpuNative` for identity-transform `fill_linear_gradient`.
+    /// Same scissor convention as [`Self::draw_solid_rects`].
     fn draw_linear_gradients(
         &mut self,
         _viewport_w: f32,
@@ -491,8 +524,7 @@ pub trait IGraphicsContext {
 
     /// Draw radial gradient disks into the current RTV.
     ///
-    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
-    /// `GpuNative` for identity-transform `fill_radial_gradient`.
+    /// Same scissor convention as [`Self::draw_solid_rects`].
     fn draw_radial_gradients(
         &mut self,
         _viewport_w: f32,
@@ -511,9 +543,8 @@ pub trait IGraphicsContext {
 
     /// Draw solid-color triangle meshes into the current RTV.
     ///
-    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
-    /// `GpuNative` for identity-transform simple `fill_path` / `stroke_path`
-    /// (CPU tessellate → GPU triangles).
+    /// Same scissor convention as [`Self::draw_solid_rects`]. Used for
+    /// identity-transform `fill_path` / `stroke_path` when advertised.
     fn draw_solid_meshes(
         &mut self,
         _viewport_w: f32,
@@ -532,9 +563,7 @@ pub trait IGraphicsContext {
 
     /// Draw axis-aligned box / ambient shadows into the current RTV.
     ///
-    /// Same scissor convention as [`Self::draw_solid_rects`]. Used by D3D11
-    /// `GpuNative` for identity-transform `draw_box_shadow` /
-    /// `draw_box_shadow_ambient` (SDF outer glow; matches CPU coverage).
+    /// Same scissor convention as [`Self::draw_solid_rects`].
     fn draw_box_shadows(
         &mut self,
         _viewport_w: f32,

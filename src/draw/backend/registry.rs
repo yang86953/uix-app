@@ -1,8 +1,8 @@
 //! Table-driven pairing of [`GraphicsBackend`] to [`RenderBackend`] (P6.7 M6 / P6.8).
 
 use crate::core::{Errc, Error, Result};
-use crate::draw::backend::d3d11::D3d11Backend;
 use crate::draw::backend::gpu::GpuBackend;
+use crate::draw::backend::native_gpu::NativeGpuBackend;
 use crate::draw::backend::traits::RenderBackend;
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, RasterMode};
 
@@ -24,7 +24,7 @@ pub fn create_native_raster_backend(
 
     match ctx.caps().backend {
         GraphicsBackend::OpenGlEs => GpuBackend::new(ctx).map(|backend| Box::new(backend) as _),
-        GraphicsBackend::D3d11 => D3d11Backend::new(ctx).map(|backend| Box::new(backend) as _),
+        GraphicsBackend::D3d11 => NativeGpuBackend::new(ctx).map(|backend| Box::new(backend) as _),
         GraphicsBackend::Metal => {
             ctx.shutdown();
             Err(Error::new(
@@ -52,7 +52,7 @@ pub fn create_native_raster_backend(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::traits::present::{GraphicsContextCaps, PresentDamage};
+    use crate::native::traits::present::{GraphicsContextCaps, NativeRasterCaps, PresentDamage};
     use std::ffi::c_void;
 
     struct UploadOnlyContext;
@@ -102,6 +102,10 @@ mod tests {
             GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
         }
 
+        fn native_raster_caps(&self) -> NativeRasterCaps {
+            NativeRasterCaps::d3d11_full()
+        }
+
         fn initialize(
             &mut self,
             _native_window: *mut c_void,
@@ -129,10 +133,7 @@ mod tests {
     #[test]
     fn creates_d3d11_backend_for_gpu_native_caps() {
         let backend = create_native_raster_backend(Box::new(FakeD3d11GpuNative))
-            .expect("D3D11 GpuNative should assemble D3d11Backend");
-        assert_eq!(
-            backend.kind(),
-            crate::draw::backend::BackendKind::Gpu
-        );
+            .expect("D3D11 GpuNative should assemble NativeGpuBackend");
+        assert_eq!(backend.kind(), crate::draw::backend::BackendKind::Gpu);
     }
 }

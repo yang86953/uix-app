@@ -69,11 +69,7 @@ impl GpuEngine {
     }
 
     fn make_current(&mut self) {
-        if let Some(gpu) = self.session.gpu_backend_mut() {
-            gpu.gpu_ctx.make_current();
-        } else if let Some(d3d) = self.session.d3d11_backend_mut() {
-            d3d.gpu_ctx.make_current();
-        }
+        self.session.backend_mut().make_current();
     }
 }
 
@@ -131,12 +127,6 @@ impl GraphicsEngine for GpuEngine {
     }
 
     fn device_pixel_ratio(&self) -> f32 {
-        if let Some(gpu) = self.session.gpu_backend() {
-            return gpu.gpu_ctx.device_pixel_ratio();
-        }
-        if let Some(d3d) = self.session.d3d11_backend() {
-            return d3d.gpu_ctx.device_pixel_ratio();
-        }
-        1.0
+        self.session.backend().device_pixel_ratio()
     }
 }

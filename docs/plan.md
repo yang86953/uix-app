@@ -11,7 +11,7 @@
 | P0–P5 按需零闲置主体 | 主体已落地；全量自动化回归已恢复零失败 | [implementation · 已落地阶段](areas/implementation.md#已落地阶段p0p5) · [当前验证基线](areas/implementation.md#当前验证基线-2026-07-10) |
 | **P6 生产级框架** | 项目级设计基线 **Executable**；实现中，Windows 生产 gate 尚未闭合 | [design.md](design.md) · [implementation · P6 生产级框架](areas/implementation.md#p6-生产级框架) |
 | 文档合格化与契约收敛 | 结构、追踪、依赖/cfg、Result-only、wake/L1、caps 组合、证据等级、布局两阶段输入与全局主题命令已在 2026-07-10 审计修复 | [requirements.md](requirements.md) · [design.md](design.md) · [#170–#175](decisions.md#d170) |
-| 验证基线 | lib 1076/1076、demo 19/19、doc 3/3；三目标 compile、Clippy 与严格文档检查通过 | [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10) |
+| 验证基线 | lib 1085/1085、demo 19/19、doc 3/3；三目标 compile、Clippy 与严格文档检查通过 | [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10) |
 | 后续 backlog | 以 implementation 为权威清单 | [implementation · 后续工作](areas/implementation.md#后续工作) |
 
 ## 里程碑与工作域
@@ -29,7 +29,7 @@
 
 在主人补充产品级 SLA/兼容矩阵前，Windows “生产可用”至少同时满足：
 
-1. `cargo test --all-targets` 零失败；当前 lib 1076/1076、demo 19/19，历史两项红测、D3D11 完整 fill topology 与完整 `StrokeOptions` cap/join 原生 tessellation、CPU fill 的 clipped 斜边采样/开放子路径闭合、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、DisplayList glyph/clip、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误已用代码与守卫修复，未使用豁免。
+1. `cargo test --all-targets` 零失败；当前 lib 1085/1085、demo 19/19，历史两项红测、D3D11 完整 fill topology 与完整 `StrokeOptions` cap/join 原生 tessellation、API-neutral `NativeGpuBackend` 的逐操作 capability/soft fallback 路由、原生录制顺序、单次 offset、context `Result` 到 `RenderBackend` 边界的错误传播/重试重放与幂等 shutdown、统一 backend registry 路由及 factory backend identity 守卫、CPU fill 的 clipped 斜边采样/开放子路径闭合、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、DisplayList glyph/clip、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误已用代码与守卫修复，未使用豁免。
 2. Windows 默认 D3D11 路径与无 GPU feature 的 SoftwareEngine 回退已完成首帧、颜色、按钮点击、最大化/恢复、关闭及 Input placeholder/提交文本 smoke；SoftwareEngine 已完成运行时全局 light/dark 与真实双窗口双向主题联动视觉验收，D3D11 真实窗口已补 BGRA staging readback 且 discard swapchain 按全帧契约运行，Microsoft Pinyin 候选窗定位已验证。但 TSF phonetic preedit、D3D11 主题/多窗联合 GUI 仍待完整回归，因此本项未闭合。
 3. 架构边界测试无真实违规，也不因注释/Rustdoc 文本产生假阳性。
 4. P0 生产阻塞项归零；错误日志、graphics probe report 与资源 shutdown 路径可诊断。probe 候选/阶段/选中 API/完整错误已有自动化守卫；session 与 native window 幂等性已有分层测试，GL 资源 → context → native window 的组合顺序仍须真实 GUI smoke 与驱动矩阵验证。
@@ -41,7 +41,7 @@ Linux/macOS parity 和移动端不属于 Windows gate，但不得通过上层平
 
 - **P6 优先（Windows 优先，[#167](decisions.md#d167)）**：Windows 端稳定性回归、生产阻塞项闭合、demo/docs 与实现同步；从 [implementation · 后续工作](areas/implementation.md#后续工作) 选取项时默认以 Windows 为主验证环境。
 - **下一生产证据**：在已完成 D3D11/Software 基础 GUI smoke、Software 双窗口全局主题双向切换、D3D11/WGL real-window readback、native IME/UTF-16、Input 焦点会话/缓存预编辑像素与 Microsoft Pinyin 候选定位上，补齐 Windows OpenGL ES 屏幕呈现、TSF phonetic preedit、D3D11 主题/多窗联合 GUI、GPU/驱动矩阵，并留存可复核记录。
-- **P6 代码优先（[#169](decisions.md#d169)）**：可组合渲染轴落地 — 1) D3D11 `GpuNative` × `Swapchain` 垂直切片、完整 fill topology，以及遵循 `StrokeOptions` cap/join 的 identity path mesh ✅；数值异常、预算超限、不支持 transform/blend 等保留确定性 soft fallback；2) `RasterMode` / `PresentMode` 类型与 caps + 表驱动装配 ✅；3) `BackendKind` 统一 ✅。下一原生 raster backlog 为 D3D12 `GpuNative`（Windows 优先），随后 Metal `GpuNative`。详见 [implementation · P6.8](areas/implementation.md#p68-可组合渲染轴) · [graphics-backend-pluggable · 可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴)。
+- **P6 代码优先（[#169](decisions.md#d169)）**：可组合渲染轴落地 — 1) D3D11 `GpuNative` × `Swapchain` 垂直切片、完整 fill topology，以及遵循 `StrokeOptions` cap/join 的 identity path mesh ✅；2) 非 GL 原生光栅已收敛为 API-neutral `NativeGpuBackend` + `NativeRasterCaps` 逐操作路由，未支持操作确定性 soft fallback，普通 pipeline 不再下转 D3D11 具体类型 ✅；3) `RasterMode` / `PresentMode` 类型与 caps + 表驱动装配、`BackendKind` 统一 ✅。下一原生 raster backlog 为 D3D12 `GpuNative`（Windows 优先），随后 Metal `GpuNative`。详见 [implementation · P6.8](areas/implementation.md#p68-可组合渲染轴) · [graphics-backend-pluggable · 可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴)。
 - **P6 随后**：Linux / macOS parity、macOS 真机验证 — 上层代码不变，仅完善或验收 `native` backend。
 - **布局契约收敛**：父级上限违规、Card actions/body 重叠与 `WidgetLayout` pass-local `LayoutChild` 两阶段输入均已闭合（[#174](decisions.md#d174)）；Arrange 不再递归 measure，也不跨收敛轮缓存陈旧尺寸。
 - 若改公开 API：同步 [areas/systems/public-api.md](areas/systems/public-api.md)、[glossary.md](glossary.md)，必要时追加 [decisions.md](decisions.md) #176+。

@@ -4,8 +4,8 @@ use crate::core::Error;
 use crate::native::traits::present::IGraphicsContext;
 
 use crate::draw::backend::{
-    create_backend, BackendCapabilities, BackendKind, CpuBackend, D3d11Backend, GpuBackend,
-    NullBackend, RenderBackend,
+    create_backend, BackendCapabilities, BackendKind, CpuBackend, GpuBackend, NullBackend,
+    RenderBackend,
 };
 use crate::draw::engine::RenderOutcome;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
@@ -152,20 +152,16 @@ impl RenderSession {
         self.backend.as_any_mut().downcast_mut()
     }
 
-    pub fn d3d11_backend(&self) -> Option<&D3d11Backend> {
-        self.backend.as_any().downcast_ref()
-    }
-
-    pub fn d3d11_backend_mut(&mut self) -> Option<&mut D3d11Backend> {
-        self.backend.as_any_mut().downcast_mut()
-    }
-
     pub fn null_backend_mut(&mut self) -> Option<&mut NullBackend> {
         self.backend.as_any_mut().downcast_mut()
     }
 
     pub fn backend_mut(&mut self) -> &mut dyn RenderBackend {
         &mut *self.backend
+    }
+
+    pub fn backend(&self) -> &dyn RenderBackend {
+        &*self.backend
     }
 }
 
