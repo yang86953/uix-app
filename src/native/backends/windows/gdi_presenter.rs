@@ -69,6 +69,29 @@ const BI_RGB: u32 = 0;
 const DIB_RGB_COLORS: u32 = 0;
 const SRCCOPY: u32 = 0x00CC0020;
 
+fn clip_damage_rect(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    surface_width: i32,
+    surface_height: i32,
+) -> Option<(i32, i32, i32, i32)> {
+    if width <= 0 || height <= 0 || surface_width <= 0 || surface_height <= 0 {
+        return None;
+    }
+    let surface_width = i64::from(surface_width);
+    let surface_height = i64::from(surface_height);
+    let x0 = i64::from(x).clamp(0, surface_width);
+    let y0 = i64::from(y).clamp(0, surface_height);
+    let x1 = (i64::from(x) + i64::from(width)).clamp(0, surface_width);
+    let y1 = (i64::from(y) + i64::from(height)).clamp(0, surface_height);
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    Some((x0 as i32, y0 as i32, (x1 - x0) as i32, (y1 - y0) as i32))
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // DibHandle — own s a GDI DIB section + memory DC (RAII)
 // ════════════════════════════════════════════════════════════════════════════
@@ -219,10 +242,15 @@ impl GdiPresenter {
     }
 
     /// 将像素缓冲中的局部区域复制到 DIB。
-    fn copy_partial_rect(&self, pixels: &[u32], dx: i32, dy: i32, dw: i32, dh: i32) {
-        if dx < 0 || dy < 0 || dw <= 0 || dh <= 0 || dx + dw > self.width || dy + dh > self.height {
-            return;
-        }
+    fn copy_partial_rect(
+        &self,
+        pixels: &[u32],
+        dx: i32,
+        dy: i32,
+        dw: i32,
+        dh: i32,
+    ) -> Option<(i32, i32, i32, i32)> {
+        let (dx, dy, dw, dh) = clip_damage_rect(dx, dy, dw, dh, self.width, self.height)?;
         unsafe {
             let src_row_start = (dy * self.width + dx) as usize;
             let dst_row_start = src_row_start;
@@ -238,6 +266,7 @@ impl GdiPresenter {
                 }
             }
         }
+        Some((dx, dy, dw, dh))
     }
 }
 
@@ -270,8 +299,11 @@ impl IPresenter for GdiPresenter {
             match damage {
                 PresentDamage::Partial(ref rects) if !rects.is_empty() => {
                     for &(dx, dy, dw, dh) in rects {
-                        self.copy_partial_rect(pixels, dx, dy, dw, dh);
-                        self.blit_rect(dx, dy, dw, dh);
+                        if let Some((dx, dy, dw, dh)) =
+                            self.copy_partial_rect(pixels, dx, dy, dw, dh)
+                        {
+                            self.blit_rect(dx, dy, dw, dh);
+                        }
                     }
                     return Ok(());
                 }
@@ -306,5 +338,27 @@ impl IPresenter for GdiPresenter {
         self.width = width;
         self.height = height;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clip_damage_rect;
+
+    #[test]
+    fn damage_padding_is_clipped_to_the_gdi_surface() {
+        assert_eq!(
+            clip_damage_rect(0, 0, 1202, 802, 1200, 800),
+            Some((0, 0, 1200, 800))
+        );
+    }
+
+    #[test]
+    fn negative_and_outside_damage_is_clipped_or_dropped() {
+        assert_eq!(
+            clip_damage_rect(-2, -3, 10, 11, 120, 80),
+            Some((0, 0, 8, 8))
+        );
+        assert_eq!(clip_damage_rect(121, 0, 4, 4, 120, 80), None);
     }
 }
