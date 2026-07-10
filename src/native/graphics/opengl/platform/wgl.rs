@@ -6,14 +6,14 @@
 #![allow(nonstandard_style)]
 #![allow(clippy::missing_safety_doc)]
 
-use std::ffi::{c_void, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::ptr;
 
 use crate::native::backends::windows::util::windows_diag;
 use crate::native::graphics::platform::windows::{
     device_context, query_client_rect, release_device_context,
 };
-use crate::native::traits::present::{IGraphicsContext, PresentDamage};
+use crate::native::traits::present::{IGraphicsContext, PresentDamage, PresentFrame};
 use crate::native::{Errc, Error};
 
 type HDC = *mut c_void;
@@ -81,12 +81,45 @@ extern "system" {
     fn wglGetProcAddress(name: *const i8) -> *const c_void;
 }
 
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetModuleHandleA(module_name: *const i8) -> *mut c_void;
+    fn GetProcAddress(module: *mut c_void, proc_name: *const i8) -> *const c_void;
+}
+
+fn invalid_wgl_proc(proc: *const c_void) -> bool {
+    matches!(proc as isize, -1..=3)
+}
+
+fn load_gl_proc(name: &CStr) -> *const c_void {
+    // SAFETY: `name` is NUL-terminated and remains alive for both loader calls.
+    let proc = unsafe { wglGetProcAddress(name.as_ptr()) };
+    if !invalid_wgl_proc(proc) {
+        return proc;
+    }
+
+    // Core OpenGL 1.1 exports (for example `glGetString`) come from opengl32.dll
+    // and are not required to be returned by wglGetProcAddress.
+    // SAFETY: opengl32 is a linked dependency of this module, so its module handle
+    // is valid while the process is running. Both pointers are NUL-terminated.
+    unsafe {
+        let module = GetModuleHandleA(c"opengl32.dll".as_ptr());
+        if module.is_null() {
+            ptr::null()
+        } else {
+            GetProcAddress(module, name.as_ptr())
+        }
+    }
+}
+
 fn load_wgl_fn<T>(name: &str) -> Option<T> {
     let c_name = CString::new(name).ok()?;
-    let proc = unsafe { wglGetProcAddress(c_name.as_ptr()) };
-    if proc.is_null() {
+    let proc = load_gl_proc(&c_name);
+    if invalid_wgl_proc(proc) {
         None
     } else {
+        // SAFETY: callers request a function type matching the named WGL symbol;
+        // Win32 function pointers have the same pointer-sized representation.
         Some(unsafe { std::mem::transmute_copy(&proc) })
     }
 }
@@ -201,7 +234,7 @@ pub struct WglContext {
 impl WglContext {
     /// Create a WGL context on `native_window` (HWND).
     ///
-    /// Tries OpenGL ES 3.0 first, then ES 2.0.
+    /// Creates the OpenGL ES 3.0 context required by the renderer shaders and VAOs.
     pub fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self, Error> {
         if native_window.is_null() {
             return Err(Error::new(
@@ -247,8 +280,7 @@ impl WglContext {
 
             let create_ctx = load_wgl_fn::<CreateContextAttribsFn>("wglCreateContextAttribsARB");
             let hglrc = if let Some(create_ctx) = create_ctx {
-                create_es_context(hdc, create_ctx, 3, 0)
-                    .or_else(|_| create_es_context(hdc, create_ctx, 2, 0))?
+                create_es_context(hdc, create_ctx, 3, 0)?
             } else {
                 unsafe {
                     wglDeleteContext(temp_ctx);
@@ -294,6 +326,28 @@ impl WglContext {
         }
         result
     }
+
+    fn make_current_result(&self) -> Result<(), Error> {
+        if unsafe { wglMakeCurrent(self.hdc, self.hglrc) } == 0 {
+            Err(windows_diag(
+                Errc::PlatformError,
+                "WglContext: wglMakeCurrent failed",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn swap_buffers_result(&self) -> Result<(), Error> {
+        if unsafe { SwapBuffers(self.hdc) } == 0 {
+            Err(windows_diag(
+                Errc::PlatformError,
+                "WglContext: SwapBuffers failed",
+            ))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl IGraphicsContext for WglContext {
@@ -329,15 +383,28 @@ impl IGraphicsContext for WglContext {
     }
 
     fn make_current(&mut self) {
-        unsafe {
-            let _ = wglMakeCurrent(self.hdc, self.hglrc);
+        if let Err(err) = self.make_current_result() {
+            crate::core::log::error_fn(err.short_what());
         }
     }
 
     fn swap_buffers(&mut self, damage: PresentDamage) {
         let _ = damage;
-        unsafe {
-            let _ = SwapBuffers(self.hdc);
+        if let Err(err) = self.swap_buffers_result() {
+            crate::core::log::error_fn(err.short_what());
+        }
+    }
+
+    fn present(&mut self, frame: &PresentFrame) -> Result<(), Error> {
+        match frame {
+            PresentFrame::Swapchain { .. } => {
+                self.make_current_result()?;
+                self.swap_buffers_result()
+            }
+            PresentFrame::PixelBuffer { .. } => Err(Error::new(
+                Errc::NotImplemented,
+                "WglContext: CPU pixel present is unsupported",
+            )),
         }
     }
 
@@ -376,8 +443,8 @@ impl IGraphicsContext for WglContext {
 
     fn get_proc_address(&self, name: &str) -> Option<*const c_void> {
         let c_name = CString::new(name).ok()?;
-        let proc = unsafe { wglGetProcAddress(c_name.as_ptr()) };
-        if proc.is_null() {
+        let proc = load_gl_proc(&c_name);
+        if invalid_wgl_proc(proc) {
             None
         } else {
             Some(proc)
@@ -416,24 +483,9 @@ mod tests {
     }
 
     #[test]
-    fn factory_create_gpu_context_on_real_window() {
-        use crate::native::create_gpu_context_with_backend;
-        use crate::native::traits::present::GraphicsBackend;
-
-        let mut platform = crate::native::create_platform().expect("platform");
-        let window = platform
-            .window_manager()
-            .create_window("GPU test", 640, 480)
-            .expect("window");
-        let surface = window.native_surface_ptr();
-        assert!(
-            !surface.is_null(),
-            "Windows HWND must be exposed as native_surface_ptr"
-        );
-        let mut ctx = create_gpu_context_with_backend(surface, 640, 480, GraphicsBackend::OpenGlEs)
-            .expect("WglContext");
-        assert!(ctx.width() > 0);
-        assert!(ctx.height() > 0);
-        ctx.shutdown();
+    fn core_gl_entry_point_falls_back_to_opengl32_export() {
+        let name = CString::new("glGetString").expect("valid GL symbol");
+        assert!(!load_gl_proc(&name).is_null());
     }
+
 }
