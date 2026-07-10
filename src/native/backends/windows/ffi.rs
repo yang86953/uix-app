@@ -84,7 +84,6 @@ extern "system" {
     ) -> u32;
     pub(super) fn TranslateMessage(lpMsg: *const MSG) -> i32;
     pub(super) fn DispatchMessageW(lpMsg: *const MSG) -> isize;
-    pub(super) fn PostQuitMessage(nExitCode: i32);
     pub(super) fn ShowWindow(hwnd: *mut std::ffi::c_void, nCmdShow: i32) -> i32;
     pub(super) fn SetWindowTextW(hwnd: *mut std::ffi::c_void, lpString: *const u16) -> i32;
     pub(super) fn SetWindowPos(

@@ -10,17 +10,23 @@
 use crate::core::error::{Errc, Error, Result};
 use crate::native::shared::WindowOps;
 
+use super::platform::WindowBinding;
+
 /// Windows 平台窗口操作句柄。
 ///
 /// 持有原生窗口句柄 HWND，所有 `os_*` 方法通过 Win32 API 操作窗口。
 /// 不持有窗口状态（状态通过 PlatformWindowCore 的共享引用管理）。
 pub(crate) struct WindowsWindowOps {
     hwnd: *mut std::ffi::c_void,
+    _binding: Box<WindowBinding>,
 }
 
 impl WindowsWindowOps {
-    pub(crate) fn new(hwnd: *mut std::ffi::c_void) -> Self {
-        Self { hwnd }
+    pub(crate) fn new(hwnd: *mut std::ffi::c_void, binding: Box<WindowBinding>) -> Self {
+        Self {
+            hwnd,
+            _binding: binding,
+        }
     }
 
     fn ensure_valid_window(&self, operation: &str) -> Result<()> {

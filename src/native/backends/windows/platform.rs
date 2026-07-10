@@ -9,7 +9,7 @@
 #![allow(non_snake_case)]
 
 use std::cell::RefCell;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -39,8 +39,12 @@ use crate::native::{Errc, Error};
 // WindowsPlatform
 // ════════════════════════════════════════════════════════════════════════════
 
+pub(crate) struct WindowBinding {
+    pub(crate) platform: *mut WindowsPlatform,
+    pub(crate) state: Rc<RefCell<WindowState>>,
+}
+
 pub struct WindowsPlatform {
-    pub(crate) window: Rc<RefCell<WindowState>>,
     pub(crate) event_queue: VecDeque<UiEvent>,
     pub(crate) event_bus: EventBus,
     pub(crate) hwnd: *mut std::ffi::c_void,
@@ -58,6 +62,7 @@ pub struct WindowsPlatform {
     pub(crate) console_subsys: WindowsConsole,
     pub(crate) system_info_subsys: WindowsSystemInfo,
     pub(crate) single_shot_timers: Arc<Mutex<HashSet<u32>>>,
+    window_handles: BTreeMap<WindowId, usize>,
     next_window_id: u64,
 }
 
@@ -72,7 +77,6 @@ impl WindowsPlatform {
         let timer_subsys = WindowsTimer::new();
         let single_shot = timer_subsys.non_repeating_set();
         Self {
-            window: Rc::new(RefCell::new(WindowState::default())),
             event_queue: VecDeque::new(),
             hwnd: std::ptr::null_mut(),
             hinstance: std::ptr::null_mut(),
@@ -91,6 +95,31 @@ impl WindowsPlatform {
             event_bus: EventBus::new(),
             console_subsys: WindowsConsole::new(),
             system_info_subsys: WindowsSystemInfo::new(),
+            window_handles: BTreeMap::new(),
+        }
+    }
+
+    pub(crate) fn select_window(&mut self, hwnd: *mut std::ffi::c_void) {
+        if hwnd.is_null() {
+            return;
+        }
+        self.hwnd = hwnd;
+        self.clipboard_subsys.set_hwnd(hwnd);
+        self.cursor_subsys.set_hwnd(hwnd);
+        self.file_dialog_subsys.set_hwnd(hwnd);
+        self.text_input_subsys.set_hwnd(hwnd);
+        self.timer_subsys.set_hwnd(hwnd);
+        self.notification_subsys.set_hwnd(hwnd);
+    }
+
+    pub(crate) fn forget_window(&mut self, window_id: WindowId) {
+        let removed = self.window_handles.remove(&window_id);
+        if removed == Some(self.hwnd as usize) {
+            if let Some(hwnd) = self.window_handles.values().next().copied() {
+                self.select_window(hwnd as *mut std::ffi::c_void);
+            } else {
+                self.hwnd = std::ptr::null_mut();
+            }
         }
     }
 }
@@ -159,7 +188,13 @@ impl OsEventSource for WindowsPlatform {
     }
 
     fn next_event(&mut self) -> Option<UiEvent> {
-        self.event_queue.pop_front()
+        let event = self.event_queue.pop_front()?;
+        if let Some(window_id) = event.window_id {
+            if let Some(hwnd) = self.window_handles.get(&window_id).copied() {
+                self.select_window(hwnd as *mut std::ffi::c_void);
+            }
+        }
+        Some(event)
     }
 }
 
@@ -177,13 +212,14 @@ impl IWindowManager for WindowsPlatform {
         if self.class_atom == 0 {
             self.register_class()?;
         }
-        {
-            let mut state = self.window.borrow_mut();
-            state.window_id = WindowId::new(self.next_window_id);
-            state.width = width;
-            state.height = height;
-        }
+        let window_id = WindowId::new(self.next_window_id);
         self.next_window_id += 1;
+        let state = Rc::new(RefCell::new(WindowState {
+            window_id,
+            width,
+            height,
+            ..WindowState::default()
+        }));
         let wide_title = to_wide(title);
         let class_name = self.class_name();
         let style = WS_OVERLAPPEDWINDOW;
@@ -199,6 +235,12 @@ impl IWindowManager for WindowsPlatform {
             let win_w = rect.right - rect.left;
             let win_h = rect.bottom - rect.top;
 
+            let binding = Box::new(WindowBinding {
+                platform: self as *mut WindowsPlatform,
+                state: Rc::clone(&state),
+            });
+            let binding_ptr = Box::into_raw(binding);
+
             let hwnd = CreateWindowExW(
                 WS_EX_APPWINDOW,
                 class_name.as_ptr(),
@@ -211,22 +253,18 @@ impl IWindowManager for WindowsPlatform {
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 self.hinstance,
-                self as *mut WindowsPlatform as *mut std::ffi::c_void,
+                binding_ptr as *mut std::ffi::c_void,
             );
             if hwnd.is_null() {
+                drop(Box::from_raw(binding_ptr));
                 return Err(windows_diag(
                     Errc::WindowCreationFailed,
                     "CreateWindowExW returned null",
                 ));
             }
-            self.hwnd = hwnd;
-
-            self.clipboard_subsys.set_hwnd(hwnd);
-            self.cursor_subsys.set_hwnd(hwnd);
-            self.file_dialog_subsys.set_hwnd(hwnd);
-            self.text_input_subsys.set_hwnd(hwnd);
-            self.timer_subsys.set_hwnd(hwnd);
-            self.notification_subsys.set_hwnd(hwnd);
+            let binding = Box::from_raw(binding_ptr);
+            self.window_handles.insert(window_id, hwnd as usize);
+            self.select_window(hwnd);
 
             let presenter: Box<dyn IPresenter> = match GdiPresenter::new(hwnd, width, height) {
                 Ok(p) => Box::new(p),
@@ -239,8 +277,8 @@ impl IWindowManager for WindowsPlatform {
                 }
             };
 
-            let ops = WindowsWindowOps::new(hwnd);
-            let core = PlatformWindowCore::new(Rc::clone(&self.window), ops, presenter);
+            let ops = WindowsWindowOps::new(hwnd, binding);
+            let core = PlatformWindowCore::new(state, ops, presenter);
             Ok(Box::new(core))
         }
     }
@@ -298,5 +336,86 @@ impl Platform for WindowsPlatform {
 impl Drop for WindowsPlatform {
     fn drop(&mut self) {
         self.notification_subsys.remove_icon();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::traits::event::{UiEventPayload, UiEventType};
+
+    fn size_lparam(width: u16, height: u16) -> isize {
+        (u32::from(width) | (u32::from(height) << 16)) as isize
+    }
+
+    #[test]
+    fn native_windows_keep_independent_state_and_route_resize_events() {
+        let mut platform = WindowsPlatform::new();
+        let mut first = platform
+            .create_window("UIX multi-window route A", 320, 200)
+            .expect("first native window");
+        let mut second = platform
+            .create_window("UIX multi-window route B", 480, 300)
+            .expect("second native window");
+
+        let first_id = first.window_id();
+        let second_id = second.window_id();
+        assert_ne!(first_id, second_id);
+        assert_eq!(
+            (first.properties().width(), first.properties().height()),
+            (320, 200)
+        );
+        assert_eq!(
+            (second.properties().width(), second.properties().height()),
+            (480, 300)
+        );
+
+        let first_hwnd = first.native_handle().native_window();
+        let second_hwnd = second.native_handle().native_window();
+        assert!(!first_hwnd.is_null());
+        assert!(!second_hwnd.is_null());
+
+        platform.dispatch_pending();
+        while platform.next_event().is_some() {}
+
+        unsafe {
+            assert_ne!(
+                PostMessageW(first_hwnd, WM_SIZE, SIZE_RESTORED, size_lparam(321, 222)),
+                0
+            );
+            assert_ne!(
+                PostMessageW(second_hwnd, WM_SIZE, SIZE_RESTORED, size_lparam(654, 333),),
+                0
+            );
+        }
+        assert!(platform.dispatch_pending());
+
+        let mut resize_events = BTreeMap::new();
+        while let Some(event) = platform.next_event() {
+            if event.type_ == UiEventType::WindowResize {
+                let UiEventPayload::Resize(data) = event.payload else {
+                    panic!("WindowResize must carry ResizeData");
+                };
+                resize_events.insert(event.window_id.expect("routed window id"), data);
+            }
+        }
+
+        let first_resize = resize_events.get(&first_id).expect("first resize event");
+        let second_resize = resize_events.get(&second_id).expect("second resize event");
+        assert_eq!((first_resize.width, first_resize.height), (321, 222));
+        assert_eq!((second_resize.width, second_resize.height), (654, 333));
+        assert_eq!(
+            (first.properties().width(), first.properties().height()),
+            (321, 222)
+        );
+        assert_eq!(
+            (second.properties().width(), second.properties().height()),
+            (654, 333)
+        );
+
+        second.close().expect("close secondary window");
+        assert!(platform.dispatch_pending());
+        first.close().expect("close primary window");
+        assert!(platform.dispatch_pending());
     }
 }

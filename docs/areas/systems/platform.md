@@ -263,9 +263,11 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 状态标签不再用单个 `✅`：**已编码**只表示源码存在，不自动推导已编译、自动化通过、硬件验证或生产就绪。可变的验证数量以 [implementation · 当前验证基线](../implementation.md#当前验证基线-2026-07-10) 为准。
 
+> **Windows 多窗口实现注记**：每个 HWND 通过独立 callback binding 持有自己的 `WindowState`，Win32 消息直接路由到该状态对应的 `WindowId`；事件出队时同步选择相应窗口的输入/系统服务句柄。销毁单个窗口只移除自身绑定，不发送线程级退出消息。真实双 HWND resize 路由已有自动化守卫；完整 App/demo 多窗 GUI 仍待验收。
+
 | 平台 | backend 编码 | 编译证据 | 自动化测试 | 真机 / 硬件 | 生产就绪 |
 |------|-------------|----------|------------|-------------|----------|
-| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1048/1048、demo 19/19 | D3D11/Software 基础 GUI smoke 通过；待 OpenGL ES、输入/IME/主题/多窗与 GPU/驱动矩阵 | **否** |
+| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1049/1049、demo 19/19；真实双 HWND 状态/事件隔离通过 | D3D11/Software 基础 GUI smoke 通过；待 OpenGL ES、输入/IME/主题/完整多窗与 GPU/驱动矩阵 | **否** |
 | Linux (Wayland) | **已编码**：Platform + Vulkan + EGL/OpenGL ES | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | 待 Wayland compositor/GPU 矩阵 | **否** |
 | macOS | **已编码**：AppKit + Metal `Cpu × PixelUpload` | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | **待真机验证** | **否** |
 

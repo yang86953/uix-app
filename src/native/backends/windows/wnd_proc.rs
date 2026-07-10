@@ -14,7 +14,7 @@ use crate::native::traits::*;
 use super::bindings::*;
 use super::consts::*;
 use super::ffi::*;
-use super::platform::WindowsPlatform;
+use super::platform::{WindowBinding, WindowsPlatform};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 窗口过程回调
@@ -36,8 +36,9 @@ pub(crate) unsafe extern "system" fn wnd_proc(
     if ptr == 0 {
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     }
-    let platform = &mut *(ptr as *mut WindowsPlatform);
-    platform.handle_message(msg, wparam, lparam)
+    let binding = &*(ptr as *const WindowBinding);
+    let platform = &mut *binding.platform;
+    platform.handle_message(hwnd, &binding.state, msg, wparam, lparam)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -45,23 +46,29 @@ pub(crate) unsafe extern "system" fn wnd_proc(
 // ════════════════════════════════════════════════════════════════════════════
 
 impl WindowsPlatform {
-    pub(crate) fn push_event(&mut self, event: UiEvent) {
-        let event = event.for_window(self.window.borrow().window_id);
+    pub(crate) fn push_event(&mut self, window_id: crate::core::WindowId, event: UiEvent) {
+        let event = event.for_window(window_id);
         self.event_queue.push_back(event);
     }
 
     /// 处理窗口消息（由 wnd_proc 回调转发至此）。
-    pub(crate) fn handle_message(&mut self, msg: u32, wparam: usize, lparam: isize) -> isize {
+    pub(crate) fn handle_message(
+        &mut self,
+        hwnd: *mut std::ffi::c_void,
+        window: &std::rc::Rc<std::cell::RefCell<crate::native::shared::WindowState>>,
+        msg: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> isize {
+        let window_id = window.borrow().window_id;
         match msg {
             WM_CLOSE => {
                 // 先交给 app 关闭 engine/GL 资源；PlatformWindow::close 再销毁 HWND。
-                self.push_event(UiEvent::close());
+                self.push_event(window_id, UiEvent::close());
                 0
             }
             WM_DESTROY => {
-                unsafe {
-                    PostQuitMessage(0);
-                }
+                self.forget_window(window_id);
                 0
             }
             WM_SIZE => {
@@ -75,7 +82,7 @@ impl WindowsPlatform {
                     Resized,
                 }
                 let actions = {
-                    let mut state = self.window.borrow_mut();
+                    let mut state = window.borrow_mut();
                     state.width = w;
                     state.height = h;
                     let mut acts = Vec::new();
@@ -109,100 +116,115 @@ impl WindowsPlatform {
                 for action in actions {
                     match action {
                         SizeAction::Minimized => {
-                            self.push_event(UiEvent {
-                                window_id: None,
-                                type_: UiEventType::WindowMinimize,
-                                payload: UiEventPayload::None,
-                            });
+                            self.push_event(
+                                window_id,
+                                UiEvent {
+                                    window_id: None,
+                                    type_: UiEventType::WindowMinimize,
+                                    payload: UiEventPayload::None,
+                                },
+                            );
                         }
                         SizeAction::Maximized => {
-                            self.push_event(UiEvent {
-                                window_id: None,
-                                type_: UiEventType::WindowMaximize,
-                                payload: UiEventPayload::None,
-                            });
+                            self.push_event(
+                                window_id,
+                                UiEvent {
+                                    window_id: None,
+                                    type_: UiEventType::WindowMaximize,
+                                    payload: UiEventPayload::None,
+                                },
+                            );
                         }
                         SizeAction::Restored => {
-                            self.push_event(UiEvent {
-                                window_id: None,
-                                type_: UiEventType::WindowRestore,
-                                payload: UiEventPayload::None,
-                            });
+                            self.push_event(
+                                window_id,
+                                UiEvent {
+                                    window_id: None,
+                                    type_: UiEventType::WindowRestore,
+                                    payload: UiEventPayload::None,
+                                },
+                            );
                         }
                         SizeAction::Resized => {
-                            self.push_event(UiEvent::resize(w, h));
+                            self.push_event(window_id, UiEvent::resize(w, h));
                         }
                     }
                 }
                 0
             }
             WM_MOVE => {
-                let mut state = self.window.borrow_mut();
+                let mut state = window.borrow_mut();
                 state.pos_x = Self::loword(lparam) as i32;
                 state.pos_y = Self::hiword(lparam) as i32;
                 0
             }
             WM_SETFOCUS => {
-                self.push_event(UiEvent {
-                    window_id: None,
-                    type_: UiEventType::WindowFocus,
-                    payload: UiEventPayload::None,
-                });
+                self.push_event(
+                    window_id,
+                    UiEvent {
+                        window_id: None,
+                        type_: UiEventType::WindowFocus,
+                        payload: UiEventPayload::None,
+                    },
+                );
                 0
             }
             WM_KILLFOCUS => {
-                self.push_event(UiEvent {
-                    window_id: None,
-                    type_: UiEventType::WindowBlur,
-                    payload: UiEventPayload::None,
-                });
+                self.push_event(
+                    window_id,
+                    UiEvent {
+                        window_id: None,
+                        type_: UiEventType::WindowBlur,
+                        payload: UiEventPayload::None,
+                    },
+                );
                 0
             }
             WM_KEYDOWN | WM_SYSKEYDOWN => {
                 let key = Self::vk_to_keycode(wparam as u32);
                 let mods = Self::get_modifier_state();
-                self.push_event(UiEvent::key_down(key, mods));
+                self.push_event(window_id, UiEvent::key_down(key, mods));
                 0
             }
             WM_KEYUP | WM_SYSKEYUP => {
                 let key = Self::vk_to_keycode(wparam as u32);
                 let mods = Self::get_modifier_state();
-                self.push_event(UiEvent::key_up(key, mods));
+                self.push_event(window_id, UiEvent::key_up(key, mods));
                 0
             }
             WM_CHAR => {
                 if let Some(ch) = std::char::from_u32(wparam as u32) {
-                    self.push_event(UiEvent::text_input(ch.to_string()));
+                    self.push_event(window_id, UiEvent::text_input(ch.to_string()));
                 }
                 0
             }
             WM_LBUTTONDOWN => {
-                self.handle_mouse_down(lparam, MouseButton::Left);
+                self.handle_mouse_down(hwnd, window_id, lparam, MouseButton::Left);
                 0
             }
             WM_LBUTTONUP => {
-                self.handle_mouse_up(lparam, MouseButton::Left);
+                self.handle_mouse_up(window_id, lparam, MouseButton::Left);
                 0
             }
             WM_RBUTTONDOWN => {
-                self.handle_mouse_down(lparam, MouseButton::Right);
+                self.handle_mouse_down(hwnd, window_id, lparam, MouseButton::Right);
                 0
             }
             WM_RBUTTONUP => {
-                self.handle_mouse_up(lparam, MouseButton::Right);
+                self.handle_mouse_up(window_id, lparam, MouseButton::Right);
                 0
             }
             WM_MBUTTONDOWN => {
-                self.handle_mouse_down(lparam, MouseButton::Middle);
+                self.handle_mouse_down(hwnd, window_id, lparam, MouseButton::Middle);
                 0
             }
             WM_MBUTTONUP => {
-                self.handle_mouse_up(lparam, MouseButton::Middle);
+                self.handle_mouse_up(window_id, lparam, MouseButton::Middle);
                 0
             }
             WM_MOUSEMOVE => {
                 let pos = self.mouse_pos_from_lparam(lparam);
-                self.push_event(UiEvent::pointer_move(pos));
+                self.push_event(window_id, UiEvent::pointer_move(pos));
                 0
             }
             WM_MOUSEWHEEL => {
@@ -212,13 +234,13 @@ impl WindowsPlatform {
                 };
                 let mut client_pt = screen_pt;
                 unsafe {
-                    ScreenToClient(self.hwnd, &mut client_pt);
+                    ScreenToClient(hwnd, &mut client_pt);
                 }
                 let pos = Point::new(client_pt.x as f32, client_pt.y as f32);
                 let delta = (Self::hiword_usize(wparam) as i16) as i32;
                 let delta_y = -(delta as f32) / 120.0;
                 let mods = Self::get_modifier_state();
-                self.push_event(UiEvent::wheel(pos, 0.0, delta_y, mods));
+                self.push_event(window_id, UiEvent::wheel(pos, 0.0, delta_y, mods));
                 0
             }
             WM_TIMER => {
@@ -226,16 +248,16 @@ impl WindowsPlatform {
                 if let Ok(mut set) = self.single_shot_timers.lock() {
                     if set.remove(&timer_id) {
                         unsafe {
-                            KillTimer(self.hwnd, timer_id);
+                            KillTimer(hwnd, timer_id);
                         }
                     }
                 }
-                self.push_event(UiEvent::timer(timer_id));
+                self.push_event(window_id, UiEvent::timer(timer_id));
                 0
             }
             WM_DROPFILES => {
                 let hdrop = lparam as *mut std::ffi::c_void;
-                self.handle_file_drop(hdrop);
+                self.handle_file_drop(window_id, hdrop);
                 0
             }
             WM_ERASEBKGND => {
@@ -251,9 +273,9 @@ impl WindowsPlatform {
                     }
                     return 1;
                 }
-                self.def_window_proc(msg, wparam, lparam)
+                self.def_window_proc(hwnd, msg, wparam, lparam)
             }
-            _ => self.def_window_proc(msg, wparam, lparam),
+            _ => self.def_window_proc(hwnd, msg, wparam, lparam),
         }
     }
 }

@@ -196,33 +196,48 @@ impl WindowsPlatform {
         Point::new(x, y)
     }
 
-    pub(crate) fn handle_mouse_down(&mut self, lparam: isize, btn: MouseButton) {
+    pub(crate) fn handle_mouse_down(
+        &mut self,
+        hwnd: *mut std::ffi::c_void,
+        window_id: crate::core::WindowId,
+        lparam: isize,
+        btn: MouseButton,
+    ) {
         let pos = self.mouse_pos_from_lparam(lparam);
         let mods = Self::get_modifier_state();
         let mut ev = UiEvent::pointer_down(pos, btn);
         if let UiEventPayload::PointerButton(ref mut data) = ev.payload {
             data.mods = mods;
         }
-        self.push_event(ev);
+        self.push_event(window_id, ev);
         unsafe {
-            SetCapture(self.hwnd);
+            SetCapture(hwnd);
         }
     }
 
-    pub(crate) fn handle_mouse_up(&mut self, lparam: isize, btn: MouseButton) {
+    pub(crate) fn handle_mouse_up(
+        &mut self,
+        window_id: crate::core::WindowId,
+        lparam: isize,
+        btn: MouseButton,
+    ) {
         let pos = self.mouse_pos_from_lparam(lparam);
         let mods = Self::get_modifier_state();
         let mut ev = UiEvent::pointer_up(pos, btn);
         if let UiEventPayload::PointerButton(ref mut data) = ev.payload {
             data.mods = mods;
         }
-        self.push_event(ev);
+        self.push_event(window_id, ev);
         unsafe {
             ReleaseCapture();
         }
     }
 
-    pub(crate) fn handle_file_drop(&mut self, hdrop: *mut std::ffi::c_void) {
+    pub(crate) fn handle_file_drop(
+        &mut self,
+        window_id: crate::core::WindowId,
+        hdrop: *mut std::ffi::c_void,
+    ) {
         unsafe {
             let count = DragQueryFileW(hdrop, 0xFFFFFFFF, std::ptr::null_mut(), 0);
             let mut files = Vec::with_capacity(count as usize);
@@ -238,11 +253,17 @@ impl WindowsPlatform {
             }
             DragFinish(hdrop);
             let position = Point::new(pt.x as f32, pt.y as f32);
-            self.push_event(UiEvent::file_drop(files, position));
+            self.push_event(window_id, UiEvent::file_drop(files, position));
         }
     }
 
-    pub(crate) fn def_window_proc(&self, msg: u32, wparam: usize, lparam: isize) -> isize {
-        unsafe { DefWindowProcW(self.hwnd, msg, wparam, lparam) }
+    pub(crate) fn def_window_proc(
+        &self,
+        hwnd: *mut std::ffi::c_void,
+        msg: u32,
+        wparam: usize,
+        lparam: isize,
+    ) -> isize {
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
 }
