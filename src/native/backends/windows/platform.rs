@@ -26,7 +26,7 @@ use super::gdi_presenter::GdiPresenter;
 use super::keyboard::WindowsKeyboard;
 use super::notification::WindowsNotification;
 use super::system_info::WindowsSystemInfo;
-use super::text_input::WindowsTextInput;
+use super::text_input::{WindowsImeState, WindowsTextInput};
 use super::timer::WindowsTimer;
 use super::util::{to_wide, windows_diag};
 use super::window_ops::WindowsWindowOps;
@@ -42,6 +42,7 @@ use crate::native::{Errc, Error};
 pub(crate) struct WindowBinding {
     pub(crate) platform: *mut WindowsPlatform,
     pub(crate) state: Rc<RefCell<WindowState>>,
+    pub(crate) ime: RefCell<WindowsImeState>,
 }
 
 pub struct WindowsPlatform {
@@ -238,6 +239,7 @@ impl IWindowManager for WindowsPlatform {
             let binding = Box::new(WindowBinding {
                 platform: self as *mut WindowsPlatform,
                 state: Rc::clone(&state),
+                ime: RefCell::new(WindowsImeState::default()),
             });
             let binding_ptr = Box::into_raw(binding);
 
@@ -342,6 +344,7 @@ impl Drop for WindowsPlatform {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::Rect;
     use crate::native::traits::event::{UiEventPayload, UiEventType};
 
     fn size_lparam(width: u16, height: u16) -> isize {
@@ -416,6 +419,56 @@ mod tests {
         second.close().expect("close secondary window");
         assert!(platform.dispatch_pending());
         first.close().expect("close primary window");
+        assert!(platform.dispatch_pending());
+    }
+
+    #[test]
+    fn native_text_input_routes_ime_lifecycle_and_surrogate_pair() {
+        let mut platform = WindowsPlatform::new();
+        let mut window = platform
+            .create_window("UIX text input route", 320, 200)
+            .expect("native window");
+        let window_id = window.window_id();
+        let hwnd = window.native_handle().native_window();
+        assert!(!hwnd.is_null());
+
+        assert!(platform.dispatch_pending());
+        while platform.next_event().is_some() {}
+
+        platform.text_input().start().expect("start text input");
+        platform
+            .text_input()
+            .set_cursor_rect(Rect::new(12.0, 16.0, 2.0, 18.0))
+            .expect("position IME candidate window");
+
+        unsafe {
+            assert_ne!(PostMessageW(hwnd, WM_IME_STARTCOMPOSITION, 0, 0), 0);
+            assert_ne!(PostMessageW(hwnd, WM_CHAR, 0xD83D, 0), 0);
+            assert_ne!(PostMessageW(hwnd, WM_CHAR, 0xDE00, 0), 0);
+            assert_ne!(PostMessageW(hwnd, WM_IME_ENDCOMPOSITION, 0, 0), 0);
+        }
+        assert!(platform.dispatch_pending());
+
+        let events: Vec<_> = std::iter::from_fn(|| platform.next_event()).collect();
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.type_)
+                .collect::<Vec<_>>(),
+            vec![
+                UiEventType::ImeCompositionStart,
+                UiEventType::TextInput,
+                UiEventType::ImeCompositionEnd,
+            ]
+        );
+        assert!(events.iter().all(|event| event.window_id == Some(window_id)));
+        let UiEventPayload::TextInput(text) = &events[1].payload else {
+            panic!("expected text payload");
+        };
+        assert_eq!(text.text, "😀");
+
+        platform.text_input().stop().expect("stop text input");
+        window.close().expect("close native window");
         assert!(platform.dispatch_pending());
     }
 }

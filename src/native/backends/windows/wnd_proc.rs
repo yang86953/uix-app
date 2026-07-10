@@ -15,6 +15,7 @@ use super::bindings::*;
 use super::consts::*;
 use super::ffi::*;
 use super::platform::{WindowBinding, WindowsPlatform};
+use super::text_input::{composition_string, result_string, WindowsImeState};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 窗口过程回调
@@ -38,7 +39,7 @@ pub(crate) unsafe extern "system" fn wnd_proc(
     }
     let binding = &*(ptr as *const WindowBinding);
     let platform = &mut *binding.platform;
-    platform.handle_message(hwnd, &binding.state, msg, wparam, lparam)
+    platform.handle_message(hwnd, &binding.state, &binding.ime, msg, wparam, lparam)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -56,6 +57,7 @@ impl WindowsPlatform {
         &mut self,
         hwnd: *mut std::ffi::c_void,
         window: &std::rc::Rc<std::cell::RefCell<crate::native::shared::WindowState>>,
+        ime: &std::cell::RefCell<WindowsImeState>,
         msg: u32,
         wparam: usize,
         lparam: isize,
@@ -170,6 +172,11 @@ impl WindowsPlatform {
                 0
             }
             WM_KILLFOCUS => {
+                let mut ime = ime.borrow_mut();
+                if ime.end_composition() {
+                    self.push_event(window_id, UiEvent::ime_composition_end(""));
+                }
+                ime.reset_text_decoder();
                 self.push_event(
                     window_id,
                     UiEvent {
@@ -193,8 +200,70 @@ impl WindowsPlatform {
                 0
             }
             WM_CHAR => {
-                if let Some(ch) = std::char::from_u32(wparam as u32) {
-                    self.push_event(window_id, UiEvent::text_input(ch.to_string()));
+                if let Some(text) = ime.borrow_mut().decode_utf16_unit(wparam as u16) {
+                    self.push_event(window_id, UiEvent::text_input(text));
+                }
+                0
+            }
+            WM_IME_STARTCOMPOSITION => {
+                if ime.borrow_mut().begin_composition() {
+                    self.push_event(window_id, UiEvent::ime_composition_start());
+                }
+                0
+            }
+            WM_IME_COMPOSITION => {
+                let flags = lparam as u32;
+                let mut handled = false;
+
+                if flags & GCS_RESULTSTR != 0 {
+                    match result_string(hwnd) {
+                        Ok(Some(text)) => {
+                            let was_active = ime.borrow_mut().end_composition();
+                            if was_active {
+                                self.push_event(
+                                    window_id,
+                                    UiEvent::ime_composition_end(text.clone()),
+                                );
+                            }
+                            if !text.is_empty() {
+                                self.push_event(window_id, UiEvent::text_input(text));
+                            }
+                            handled = true;
+                        }
+                        Ok(None) => {}
+                        Err(err) => crate::core::log::error_fn(err.short_what()),
+                    }
+                }
+
+                if flags & GCS_COMPSTR != 0 {
+                    match composition_string(hwnd) {
+                        Ok(Some(text)) => {
+                            let mut ime = ime.borrow_mut();
+                            let should_update = !text.is_empty() || ime.composition_active();
+                            let started = !text.is_empty() && ime.begin_composition();
+                            drop(ime);
+                            if started {
+                                self.push_event(window_id, UiEvent::ime_composition_start());
+                            }
+                            if should_update {
+                                self.push_event(window_id, UiEvent::ime_composition_update(text));
+                            }
+                            handled = true;
+                        }
+                        Ok(None) => {}
+                        Err(err) => crate::core::log::error_fn(err.short_what()),
+                    }
+                }
+
+                if handled {
+                    0
+                } else {
+                    self.def_window_proc(hwnd, msg, wparam, lparam)
+                }
+            }
+            WM_IME_ENDCOMPOSITION => {
+                if ime.borrow_mut().end_composition() {
+                    self.push_event(window_id, UiEvent::ime_composition_end(""));
                 }
                 0
             }

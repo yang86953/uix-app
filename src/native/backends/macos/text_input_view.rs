@@ -43,28 +43,41 @@ impl MacosTextInput {
 }
 
 impl crate::native::traits::input::ITextInput for MacosTextInput {
-    fn start(&mut self) {
+    fn start(&mut self) -> crate::core::Result<()> {
         self.session_active.store(true, Ordering::Relaxed);
         let view = self.view.get();
         if view.is_null() {
-            return;
+            self.session_active.store(false, Ordering::Relaxed);
+            return Err(crate::core::Error::new(
+                crate::core::Errc::InvalidOperation,
+                "macOS text input: no active content view",
+            ));
         }
         // SAFETY: view is the window content view installed at creation time.
         unsafe {
             cocoa::make_view_first_responder(view);
         }
+        Ok(())
     }
 
-    fn stop(&mut self) {
+    fn stop(&mut self) -> crate::core::Result<()> {
         self.session_active.store(false, Ordering::Relaxed);
         let view = self.view.get();
         if view.is_null() {
-            return;
+            return Ok(());
         }
         // SAFETY: view is the window content view installed at creation time.
         unsafe {
             cocoa::resign_view_first_responder(view);
         }
+        Ok(())
+    }
+
+    fn set_cursor_rect(&mut self, _rect: crate::core::Rect) -> crate::core::Result<()> {
+        Err(crate::core::Error::new(
+            crate::core::Errc::NotImplemented,
+            "macOS text input cursor rect is not connected to NSTextInputClient",
+        ))
     }
 }
 

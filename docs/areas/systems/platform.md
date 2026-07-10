@@ -136,7 +136,7 @@ GPU 路径：`PlatformWindow::graphics_context()` 返回 `Option<&mut dyn IGraph
 |-------|----------|
 | `IClipboard` | `text()`, `set_text()` |
 | `ICursor` | `set_cursor`, `cursor_position`, `capture_mouse` |
-| `ITextInput` | `start()`, `stop()` — IME 会话 |
+| `ITextInput` | `start()`, `stop()`, `set_cursor_rect(rect)` → `Result<()>` — IME 会话与候选窗定位 |
 | `IKeyboard` | `is_down(key)`, `double_click_ms()` |
 
 ---
@@ -265,9 +265,11 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 > **Windows 多窗口实现注记**：每个 HWND 通过独立 callback binding 持有自己的 `WindowState`，Win32 消息直接路由到该状态对应的 `WindowId`；事件出队时同步选择相应窗口的输入/系统服务句柄。销毁单个窗口只移除自身绑定，不发送线程级退出消息。真实双 HWND resize 路由已有自动化守卫；完整 App/demo 多窗 GUI 仍待验收。
 
+> **Windows IME 实现注记**：每个 HWND 另持有独立 composition/UTF-16 decoder 状态；`WM_IME_STARTCOMPOSITION` / `WM_IME_COMPOSITION` / `WM_IME_ENDCOMPOSITION` 产出路由后的 `ImeComposition*` 与提交文本事件，`WM_CHAR` 按代理对聚合，候选窗与 composition window 使用逻辑 caret rect 经 DPI 换算定位。真实 HWND 自动化覆盖 start/stop、候选矩形、composition start/end 与 emoji 代理对；Input 焦点会话、预编辑渲染和真实输入法 GUI 仍待闭合。
+
 | 平台 | backend 编码 | 编译证据 | 自动化测试 | 真机 / 硬件 | 生产就绪 |
 |------|-------------|----------|------------|-------------|----------|
-| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1049/1049、demo 19/19；真实双 HWND 状态/事件隔离通过 | D3D11/Software 基础 GUI smoke 通过；待 OpenGL ES、输入/IME/主题/完整多窗与 GPU/驱动矩阵 | **否** |
+| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1057/1057、demo 19/19；真实双 HWND 状态/事件隔离及 native IME/UTF-16 路由通过 | D3D11/Software 基础 GUI smoke 通过；待 OpenGL ES、Input 预编辑/真实 IME、主题/完整多窗与 GPU/驱动矩阵 | **否** |
 | Linux (Wayland) | **已编码**：Platform + Vulkan + EGL/OpenGL ES | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | 待 Wayland compositor/GPU 矩阵 | **否** |
 | macOS | **已编码**：AppKit + Metal `Cpu × PixelUpload` | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | **待真机验证** | **否** |
 
@@ -415,7 +417,7 @@ native/
 | CPU 呈现 | GDI `BitBlt` | SHM buffer + `wl_surface` commit | CALayer `present_layer_pixels` |
 | GPU | D3D11/WGL + `bootstrap_graphics_engine`；低层测试 `create_gpu_context_with_backend`；失败回退 GDI | Vulkan/EGL + bootstrap；低层测试 `create_gpu_context_with_backend`；失败回退 SHM | Metal + bootstrap（`CpuUploadPresent`，feature `metal`）；失败回退 CPU present |
 | 可选窗口能力 | 多数原生 API `Ok(())` | 不支持则 `WindowOps` → `NotImplemented`（见 [窗口可选能力](#窗口可选能力)） | 多数未接，`NotImplemented` |
-| IME | Win32 text input | `zwp_text_input_v3` | `NSTextInputClient` + `ITextInput` |
+| IME | IMM32 composition/result + UTF-16 decoder + candidate rect | `zwp_text_input_v3` | `NSTextInputClient` + `ITextInput`；cursor rect 待接 |
 | Wake | 平台特定 wake 注入 `EventLoopWaker` | 同上 | 同上 |
 
 共享逻辑放 `native/shared/`（如 `WindowState`、`PlatformWindowCore`），避免双份 drift。
