@@ -3,7 +3,7 @@
 ← [架构导航](../architecture.md) · 域：`native` · `draw` · `app` · [#162](../../decisions.md#d162) [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)
 
 > **设计**：渲染以 `RasterMode` × `PresentMode` × `GraphicsBackend` 独立描述，并由 caps + registry 选择合法稀疏组合（[#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)）。
-> **实现状态**：P6.7 registry / probe / 统一 present ✅ · P6.8 正交轴类型与表驱动装配 ✅ · D3D11 `GpuNative` × `Swapchain` ✅（`fill_rect`/`fill_circle`/`stroke_rect`/`stroke_circle` + 轴对齐 `draw_line` + identity solid `blit_glyph` 字形 atlas + identity linear/radial gradient + identity 简单 `fill_path`/`stroke_path`及单一严格嵌套孔洞（CPU tessellate → GPU triangles）；多孔/深层嵌套、相交/接触轮廓、自交由拓扑守卫转 soft，非 identity/斜线等走既有 soft + alpha blit）（[#169](../../decisions.md#d169)）→ [P6.8](../implementation.md#p68-可组合渲染轴)。非 P6 任务不必通读。
+> **实现状态**：P6.7 registry / probe / 统一 present ✅ · P6.8 正交轴类型与表驱动装配 ✅ · D3D11 `GpuNative` × `Swapchain` ✅（`fill_rect`/`fill_circle`/`stroke_rect`/`stroke_circle` + 轴对齐 `draw_line` + identity solid `blit_glyph` 字形 atlas + identity linear/radial gradient + identity 简单 `fill_path`/`stroke_path`，以及互不相交且不接触的多孔/深层嵌套/多岛 `fill_path`（CPU tessellate → GPU triangles）；相交〔含边界接触〕/自交 fill、精确 stroke cap/join、非 identity/斜线等走既有 soft + alpha blit）（[#169](../../decisions.md#d169)）→ [P6.8](../implementation.md#p68-可组合渲染轴)。非 P6 任务不必通读。
 
 ## 索引
 
@@ -56,11 +56,11 @@ pub enum PresentMode { Swapchain, PixelUpload, CpuPresenter }
 | `Cpu` × `PixelUpload` | `PresentUploadEngine` | — | —² | ✅ | ✅ |
 | `Cpu` × `CpuPresenter` | `SoftwareEngine` | ✅ | ✅ | ✅ | ✅ |
 
-¹ D3D11：device/swapchain/RTV + 原生 solid/rounded fill + stroke（VS/PS SDF）+ identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity 简单 path（CPU flatten/ear-clip fill + thick-line stroke mesh）及单一严格嵌套孔洞（fill-rule/winding 分类 + hole-aware tessellate）+ identity box/ambient shadow（SDF outer glow，匹配 CPU coverage）+ soft 回退 alpha blit + present；多孔/深层嵌套、相交/接触轮廓、自交仍由拓扑守卫保守转 soft，斜线/非 identity 文本等仍 soft。
+¹ D3D11：device/swapchain/RTV + 原生 solid/rounded fill + stroke（VS/PS SDF）+ identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity 简单 path，以及在既有 flatten tolerance/顶点预算内、互不相交且不接触的 contour forest（fill-rule/winding 分类 + contour-tree/hole-aware tessellate，覆盖多孔、深层嵌套、多岛）+ identity box/ambient shadow（SDF outer glow，匹配 CPU coverage）+ soft 回退 alpha blit + present；相交（含边界接触）/自交 fill、精确 stroke cap/join、斜线/非 identity 文本等仍 soft。
 
 ² D3D11 优先路径已切到 `GpuNative` × `Swapchain`；`present_pixels` / `upload_surface_pixels` 仍保留作低层测试 helper，主路径不再全帧 upload。
 
-**下一代码优先**（[#167](../../decisions.md#d167) [#169](../../decisions.md#d169)）：D3D11 剩余原生路径扩展（多孔/深层嵌套、相交/自交 fill 与精确 stroke cap/join）；随后 Metal / D3D12 `GpuNative`。
+**下一代码优先**（[#167](../../decisions.md#d167) [#169](../../decisions.md#d169)）：D3D11 剩余原生路径扩展（相交〔含边界接触〕/自交 fill 与精确 `stroke_path` cap/join）；随后 Metal / D3D12 `GpuNative`。
 
 **禁止写成永久约束**：「D3D11 只能 CpuUpload」「只有 GL 能 GPU 光栅」。正确写法：某 API 的 context **当前 caps** 声明了哪些轴组合；架构上任意 API 均可组装任意合法轴组合。
 
@@ -219,7 +219,7 @@ native
 | `RasterMode` / `PresentMode` 类型与 caps 字段 | ✅ P6.8 |
 | `create_graphics_engine` 按轴表驱动 | ✅ P6.8 |
 | `BackendKind` 与正交轴对齐 | ✅ P6.8 |
-| D3D11 `GpuNative` × `Swapchain` | ✅ 原生 fill/stroke rect + circle + 轴对齐 line + identity solid glyph atlas + identity linear/radial gradient + identity 简单 path / 单一严格嵌套孔洞 mesh + soft blit；其余复杂 `fill_path` 拓扑守卫保证 fallback，原生扩展与非 identity 文本仍 backlog |
+| D3D11 `GpuNative` × `Swapchain` | ✅ 原生 fill/stroke rect + circle + 轴对齐 line + identity solid glyph atlas + identity linear/radial gradient + identity 简单 path / 非相交多孔·深层嵌套·多岛 mesh + soft blit；相交/自交 fill、精确 stroke cap/join 与非 identity 文本仍 backlog |
 
 权威分项 → [implementation · P6.8](../implementation.md#p68-可组合渲染轴)。
 

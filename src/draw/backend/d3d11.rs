@@ -2,8 +2,8 @@
 //!
 //! Hot Canvas2D paths (`fill_rect` / `fill_circle` / `stroke_rect` /
 //! `stroke_circle`, axis-aligned `draw_line`, identity solid `blit_glyph`,
-//! identity linear/radial gradients, identity simple `fill_path` /
-//! `stroke_path`, and identity box/ambient shadow) draw via
+//! identity linear/radial gradients, identity strict-contour-forest
+//! `fill_path`, simple `stroke_path`, and identity box/ambient shadow) draw via
 //! [`IGraphicsContext`] native geometry / glyph atlas / gradient / mesh /
 //! shadow APIs. Unsupported ops soft-raster into a CPU buffer and alpha-blit
 //! at present (same hybrid pattern as GL `GpuCanvas2D`).
@@ -1256,6 +1256,31 @@ mod tests {
         }
     }
 
+    fn add_test_rect(
+        builder: &mut crate::draw::primitives::path::PathBuilder,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        positive_area: bool,
+    ) {
+        if positive_area {
+            builder
+                .move_to(x0, y0)
+                .line_to(x1, y0)
+                .line_to(x1, y1)
+                .line_to(x0, y1)
+                .close();
+        } else {
+            builder
+                .move_to(x0, y0)
+                .line_to(x0, y1)
+                .line_to(x1, y1)
+                .line_to(x1, y0)
+                .close();
+        }
+    }
+
     #[test]
     fn d3d11_backend_rejects_non_d3d11_context() {
         struct GlCaps;
@@ -1685,29 +1710,50 @@ mod tests {
 
         {
             let canvas = backend.surface().canvas();
-            let mut nested = crate::draw::primitives::path::PathBuilder::new();
-            nested
-                .move_to(10.0, 10.0)
-                .line_to(90.0, 10.0)
-                .line_to(90.0, 80.0)
-                .line_to(10.0, 80.0)
-                .close();
-            nested
-                .move_to(30.0, 30.0)
-                .line_to(30.0, 60.0)
-                .line_to(70.0, 60.0)
-                .line_to(70.0, 30.0)
-                .close();
+            let mut two_holes = crate::draw::primitives::path::PathBuilder::new();
+            add_test_rect(&mut two_holes, 4.0, 4.0, 92.0, 92.0, true);
+            add_test_rect(&mut two_holes, 12.0, 12.0, 36.0, 36.0, true);
+            add_test_rect(&mut two_holes, 60.0, 12.0, 84.0, 36.0, true);
             canvas.fill_path(
-                &nested.build(),
+                &two_holes.build(),
                 Color::from_rgba(64, 192, 255, 180),
                 FillRule::EvenOdd,
+            );
+
+            let mut deep = crate::draw::primitives::path::PathBuilder::new();
+            for (rect, positive) in [
+                ((4.0, 4.0, 92.0, 92.0), true),
+                ((12.0, 12.0, 84.0, 84.0), true),
+                ((28.0, 28.0, 68.0, 68.0), false),
+                ((36.0, 36.0, 60.0, 60.0), false),
+            ] {
+                add_test_rect(&mut deep, rect.0, rect.1, rect.2, rect.3, positive);
+            }
+            canvas.fill_path(
+                &deep.build(),
+                Color::from_rgba(192, 96, 255, 180),
+                FillRule::NonZero,
+            );
+
+            let mut islands = crate::draw::primitives::path::PathBuilder::new();
+            add_test_rect(&mut islands, 80.0, 16.0, 112.0, 48.0, true);
+            add_test_rect(&mut islands, 4.0, 4.0, 60.0, 60.0, true);
+            add_test_rect(&mut islands, 68.0, 4.0, 124.0, 60.0, false);
+            add_test_rect(&mut islands, 16.0, 16.0, 48.0, 48.0, false);
+            canvas.fill_path(
+                &islands.build(),
+                Color::from_rgba(96, 255, 160, 180),
+                FillRule::NonZero,
             );
         }
         backend.present(&DamageRegion::full()).expect("present");
         assert_eq!(clear_calls.get(), 1);
-        assert_eq!(mesh_calls.get(), 2, "single hole must queue a native mesh");
-        assert_eq!(last_mesh_count.get(), 1);
+        assert_eq!(
+            mesh_calls.get(),
+            2,
+            "contour forests must queue native meshes"
+        );
+        assert_eq!(last_mesh_count.get(), 3);
         assert_eq!(blit_calls.get(), 0);
         assert_eq!(upload_calls.get(), 0);
         assert_eq!(present_calls.get(), 2);
@@ -1749,11 +1795,11 @@ mod tests {
         );
 
         #[cfg(feature = "d3d11")]
-        assert_single_hole_on_real_window();
+        assert_contour_forest_on_real_window();
     }
 
     #[cfg(feature = "d3d11")]
-    fn assert_single_hole_on_real_window() {
+    fn assert_contour_forest_on_real_window() {
         if std::env::consts::OS != "windows" {
             return;
         }
@@ -1761,38 +1807,35 @@ mod tests {
         let mut platform = crate::native::create_platform().expect("platform");
         let mut window = platform
             .window_manager()
-            .create_window("D3D11 path test", 128, 96)
+            .create_window("D3D11 path test", 256, 128)
             .expect("window");
         let surface = window.native_surface_ptr();
         assert!(!surface.is_null(), "Windows HWND must be available");
         let context = crate::native::create_gpu_context_with_backend(
             surface,
+            256,
             128,
-            96,
             GraphicsBackend::D3d11,
         )
         .expect("D3D11 context");
         let mut backend = D3d11Backend::new(context).expect("D3D11 backend");
-        backend.resize(128, 96).expect("resize backend");
+        backend.resize(256, 128).expect("resize backend");
         backend
             .gpu_ctx
-            .clear_render_target(0.0, 0.0, 0.0, 0.0)
+            .clear_render_target(0.0, 0.0, 0.0, 1.0)
             .expect("clear render target");
 
         let mut path = crate::draw::primitives::path::PathBuilder::new();
-        path.move_to(16.0, 8.0)
-            .line_to(112.0, 8.0)
-            .line_to(112.0, 88.0)
-            .line_to(16.0, 88.0)
-            .close();
-        path.move_to(48.0, 32.0)
-            .line_to(48.0, 64.0)
-            .line_to(80.0, 64.0)
-            .line_to(80.0, 32.0)
-            .close();
+        add_test_rect(&mut path, 8.0, 8.0, 112.0, 120.0, true);
+        add_test_rect(&mut path, 16.0, 16.0, 40.0, 40.0, true);
+        add_test_rect(&mut path, 64.0, 16.0, 96.0, 40.0, false);
+        add_test_rect(&mut path, 136.0, 8.0, 248.0, 120.0, true);
+        add_test_rect(&mut path, 144.0, 16.0, 240.0, 112.0, true);
+        add_test_rect(&mut path, 168.0, 40.0, 216.0, 88.0, false);
+        add_test_rect(&mut path, 176.0, 48.0, 208.0, 80.0, true);
         backend.surface.canvas.fill_path(
             &path.build(),
-            Color::from_rgb(255, 0, 0),
+            Color::from_rgba(0, 255, 0, 128),
             FillRule::EvenOdd,
         );
         assert!(!backend.surface.canvas.soft_has_content);
@@ -1805,19 +1848,40 @@ mod tests {
             surface
                 .canvas
                 .flush_native(gpu_ctx.as_mut())
-                .expect("flush native single-hole mesh");
+                .expect("flush native contour-forest mesh");
         }
-        let pixels = backend.gpu_ctx.read_pixels(0, 0, 128, 96);
-        assert_eq!(pixels.len(), 128 * 96);
-        assert_eq!(pixels[24 * 128 + 24], 0xFFFF_0000, "filled ring pixel");
-        assert_eq!(pixels[48 * 128 + 64], 0, "hole center must stay clear");
-        assert_eq!(pixels[4 * 128 + 4], 0, "outside must stay clear");
+        let pixels = backend.gpu_ctx.read_pixels(0, 0, 256, 128);
+        assert_eq!(pixels.len(), 256 * 128);
+        let pixel = |x: usize, y: usize| pixels[y * 256 + x];
+        let green = pixel(12, 12);
+        assert_eq!(green >> 24, 0xFF);
+        assert!((127..=129).contains(&((green >> 8) & 0xFF)));
+        assert_eq!(pixel(4, 4), 0xFF00_0000, "outside must stay black");
+        assert_eq!(pixel(24, 24), 0xFF00_0000, "first hole must stay black");
+        assert_eq!(pixel(80, 24), 0xFF00_0000, "second hole must stay black");
+        assert_ne!(pixel(52, 24), 0xFF00_0000, "left outer must remain filled");
+        assert_ne!(pixel(140, 12), 0xFF00_0000, "deep outer must be filled");
+        assert_eq!(pixel(152, 24), 0xFF00_0000, "deep hole must stay black");
+        assert_ne!(pixel(172, 44), 0xFF00_0000, "nested island must be filled");
+        assert_eq!(pixel(192, 64), 0xFF00_0000, "island hole must stay black");
+        let green_pixels = pixels
+            .iter()
+            .filter(|pixel| ((**pixel >> 8) & 0xFF) != 0)
+            .count();
+        assert_eq!(
+            green_pixels, 14_912,
+            "filled pixel count must match geometry"
+        );
+        assert!(
+            pixels.iter().all(|pixel| ((pixel >> 8) & 0xFF) <= 129),
+            "triangles must not overlap and blend twice"
+        );
         backend
             .gpu_ctx
             .present(&PresentFrame::Swapchain {
                 damage: PresentDamage::Full,
             })
-            .expect("present single-hole frame");
+            .expect("present contour-forest frame");
 
         backend.shutdown();
         drop(backend);

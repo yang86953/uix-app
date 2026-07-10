@@ -1,20 +1,19 @@
 //! Conservative tessellation for GPU-native path fills/strokes (#169).
 //!
-//! - **Fill**: flatten → validate topology → ear-clip simple rings
-//!   (disjoint rings OK), with one strictly nested ring handled as either a
-//!   fill-rule-neutral contour or a hole through `earcut`.
+//! - **Fill**: flatten → validate a strict contour forest → classify
+//!   `EvenOdd` parity / `NonZero` winding transitions → tessellate each filled
+//!   component and all of its holes through ear clipping / `earcut`.
 //! - **Stroke**: flatten → thick-line segment quads (butt ends; joins overlap).
 //!
-//! Complex fill cases outside that narrow slice (self-intersections,
-//! intersecting/touching contours, multiple holes or deeper nesting, ear-clip
-//! failure) return `None` so callers can soft-fallback.
+//! Self-intersections, intersecting/touching contours, invalid topology or
+//! tessellation failure return `None` so callers can soft-fallback.
 
 use super::flattener;
 use super::path::{FillRule, Path};
 use super::stroker::StrokeOptions;
 use crate::core::Point;
 
-/// Max vertices in a ring we attempt to ear-clip (keeps GPU upload bounded).
+/// Max vertices in a ring we attempt to tessellate (keeps GPU upload bounded).
 const MAX_RING_VERTS: usize = 512;
 /// Max flattened vertices across all rings before the topology guard falls back.
 const MAX_PATH_VERTS: usize = 2048;
@@ -24,9 +23,9 @@ const MAX_PATH_VERTS: usize = 2048;
 /// Native slice constraints:
 /// - identity caller (transform applied upstream)
 /// - simple polygon rings after flatten (self-intersections rejected)
-/// - disjoint rings, or exactly one strictly nested inner ring
-/// - `EvenOdd` always treats that inner ring as a hole
-/// - `NonZero` treats opposite winding as a hole and same winding as redundant
+/// - every pair of contours is strictly disjoint or strictly nested
+/// - arbitrary contour order, hole count, nesting depth and disjoint islands
+/// - exact `EvenOdd` parity and `NonZero` accumulated-winding transitions
 pub fn tessellate_fill(path: &Path, fill_rule: FillRule) -> Option<Vec<f32>> {
     let polys = flattener::flatten(path.segments(), 0.25);
     if polys.is_empty() {
@@ -35,7 +34,7 @@ pub fn tessellate_fill(path: &Path, fill_rule: FillRule) -> Option<Vec<f32>> {
     let mut rings = Vec::with_capacity(polys.len());
     let mut path_vertices = 0usize;
     for poly in &polys {
-        let Some(ring) = clean_ring(poly) else {
+        let Some(ring) = clean_ring(poly).ok()? else {
             continue;
         };
         path_vertices = path_vertices.checked_add(ring.len())?;
@@ -48,15 +47,10 @@ pub fn tessellate_fill(path: &Path, fill_rule: FillRule) -> Option<Vec<f32>> {
         return None;
     }
 
-    let nested = classify_single_nested_pair(&rings)?;
-    if let Some((outer, inner)) = nested {
-        return tessellate_single_nested(&rings[outer], &rings[inner], fill_rule);
-    }
-
-    let mut tris: Vec<f32> = Vec::new();
-    for ring in &rings {
-        let ear = ear_clip(ring)?;
-        tris.extend(ear);
+    let groups = classify_fill_groups(&rings, fill_rule)?;
+    let mut tris = Vec::new();
+    for group in &groups {
+        tris.extend(tessellate_fill_group(&rings, group)?);
     }
     if tris.len() < 6 {
         return None;
@@ -108,14 +102,14 @@ pub fn tessellate_stroke(path: &Path, opts: &StrokeOptions) -> Option<Vec<f32>> 
     Some(tris)
 }
 
-fn clean_ring(pts: &[Point]) -> Option<Vec<Point>> {
+fn clean_ring(pts: &[Point]) -> Result<Option<Vec<Point>>, ()> {
     if pts.len() < 3 {
-        return None;
+        return Ok(None);
     }
     let mut out: Vec<Point> = Vec::with_capacity(pts.len());
     for p in pts {
         if !p.x.is_finite() || !p.y.is_finite() {
-            return None;
+            return Err(());
         }
         if let Some(last) = out.last() {
             if (last.x - p.x).abs() < 1e-4 && (last.y - p.y).abs() < 1e-4 {
@@ -126,15 +120,15 @@ fn clean_ring(pts: &[Point]) -> Option<Vec<Point>> {
     }
     if out.len() >= 2 {
         let first = out[0];
-        let &last = out.last()?;
+        let &last = out.last().ok_or(())?;
         if (first.x - last.x).abs() < 1e-4 && (first.y - last.y).abs() < 1e-4 {
             out.pop();
         }
     }
     if out.len() < 3 {
-        return None;
+        return Ok(None);
     }
-    Some(out)
+    Ok(Some(out))
 }
 
 fn ring_is_simple(ring: &[Point]) -> bool {
@@ -156,12 +150,24 @@ fn ring_is_simple(ring: &[Point]) -> bool {
     true
 }
 
-/// Validate pairwise contour topology and identify the only nested shape this
-/// native slice accepts: exactly one outer ring plus one strictly inner ring.
-/// `Some(None)` means all rings are disjoint; `None` means fallback.
-fn classify_single_nested_pair(rings: &[Vec<Point>]) -> Option<Option<(usize, usize)>> {
+#[derive(Debug)]
+struct FillGroup {
+    outer: usize,
+    holes: Vec<usize>,
+}
+
+/// Build a strict containment forest, then classify every ring by the fill
+/// state immediately outside and inside that boundary.
+fn classify_fill_groups(rings: &[Vec<Point>], fill_rule: FillRule) -> Option<Vec<FillGroup>> {
+    let areas: Vec<f64> = rings.iter().map(|ring| polygon_area_f64(ring)).collect();
+    if areas
+        .iter()
+        .any(|area| !area.is_finite() || area.abs() <= 1e-8)
+    {
+        return None;
+    }
     let bounds: Vec<_> = rings.iter().map(|ring| ring_bounds(ring)).collect();
-    let mut nested = None;
+    let mut parents = vec![None; rings.len()];
     for i in 0..rings.len() {
         for j in i + 1..rings.len() {
             if !bounds_overlap(bounds[i], bounds[j]) {
@@ -172,69 +178,173 @@ fn classify_single_nested_pair(rings: &[Vec<Point>]) -> Option<Option<(usize, us
             }
             let i_in_j = point_in_ring(rings[i][0], &rings[j]);
             let j_in_i = point_in_ring(rings[j][0], &rings[i]);
-            if i_in_j || j_in_i {
-                if nested.is_some() {
-                    return None;
-                }
-                nested = Some(if i_in_j { (j, i) } else { (i, j) });
+            if i_in_j && j_in_i {
+                return None;
+            }
+            if i_in_j {
+                update_parent(&mut parents, &areas, i, j)?;
+            } else if j_in_i {
+                update_parent(&mut parents, &areas, j, i)?;
             }
         }
     }
 
-    if nested.is_some() && rings.len() != 2 {
-        return None;
+    let mut order: Vec<usize> = (0..rings.len()).collect();
+    order.sort_by(|&a, &b| {
+        areas[b]
+            .abs()
+            .total_cmp(&areas[a].abs())
+            .then_with(|| a.cmp(&b))
+    });
+
+    let mut inside_winding = vec![None::<i32>; rings.len()];
+    let mut inside_parity = vec![None::<bool>; rings.len()];
+    let mut active_group = vec![None::<usize>; rings.len()];
+    let mut groups = Vec::<FillGroup>::new();
+
+    for ring in order {
+        let (outside_winding, outside_parity, outside_group) = match parents[ring] {
+            Some(parent) => (
+                inside_winding[parent]?,
+                inside_parity[parent]?,
+                active_group[parent],
+            ),
+            None => (0, false, None),
+        };
+        let winding_delta = if areas[ring] > 0.0 { 1 } else { -1 };
+        let winding = outside_winding.checked_add(winding_delta)?;
+        let parity = !outside_parity;
+        let outside_filled = match fill_rule {
+            FillRule::EvenOdd => outside_parity,
+            FillRule::NonZero => outside_winding != 0,
+        };
+        let inside_filled = match fill_rule {
+            FillRule::EvenOdd => parity,
+            FillRule::NonZero => winding != 0,
+        };
+
+        let group = match (outside_filled, inside_filled) {
+            (false, true) => {
+                if outside_group.is_some() {
+                    return None;
+                }
+                let group = groups.len();
+                groups.push(FillGroup {
+                    outer: ring,
+                    holes: Vec::new(),
+                });
+                Some(group)
+            }
+            (true, false) => {
+                let group = outside_group?;
+                groups.get_mut(group)?.holes.push(ring);
+                None
+            }
+            (true, true) => Some(outside_group?),
+            (false, false) => return None,
+        };
+
+        inside_winding[ring] = Some(winding);
+        inside_parity[ring] = Some(parity);
+        active_group[ring] = group;
     }
-    Some(nested)
+
+    if groups.is_empty() {
+        None
+    } else {
+        Some(groups)
+    }
 }
 
-fn tessellate_single_nested(
-    outer: &[Point],
-    inner: &[Point],
-    fill_rule: FillRule,
-) -> Option<Vec<f32>> {
-    let outer_area = polygon_area(outer);
-    let inner_area = polygon_area(inner);
-    if outer_area.abs() < 1e-8 || inner_area.abs() < 1e-8 {
+fn update_parent(
+    parents: &mut [Option<usize>],
+    areas: &[f64],
+    child: usize,
+    candidate: usize,
+) -> Option<()> {
+    if areas[candidate].abs() <= areas[child].abs() {
         return None;
     }
-
-    if fill_rule == FillRule::NonZero && outer_area.signum() == inner_area.signum() {
-        return ear_clip(outer);
+    match parents[child] {
+        Some(current) if areas[current].abs() <= areas[candidate].abs() => {}
+        _ => parents[child] = Some(candidate),
     }
-
-    tessellate_single_hole(outer, inner)
+    Some(())
 }
 
-fn tessellate_single_hole(outer: &[Point], inner: &[Point]) -> Option<Vec<f32>> {
-    let vertices: Vec<[f32; 2]> = outer
-        .iter()
-        .chain(inner.iter())
-        .map(|point| [point.x, point.y])
-        .collect();
-    let hole_indices = [outer.len()];
-    let mut indices = Vec::<usize>::new();
-    earcut::Earcut::<f32>::new().earcut(vertices.iter().copied(), &hole_indices, &mut indices);
-    if indices.len() < 3 || !indices.len().is_multiple_of(3) {
+fn tessellate_fill_group(rings: &[Vec<Point>], group: &FillGroup) -> Option<Vec<f32>> {
+    let outer = rings.get(group.outer)?;
+    let expected_area =
+        group
+            .holes
+            .iter()
+            .try_fold(polygon_area_f64(outer).abs(), |area, &hole| {
+                let remaining = area - polygon_area_f64(rings.get(hole)?).abs();
+                remaining.is_finite().then_some(remaining)
+            })?;
+    if expected_area <= 1e-8 {
         return None;
     }
 
-    let mut tris = Vec::with_capacity(indices.len() * 2);
-    let mut triangulated_area = 0.0f32;
-    for triangle in indices.chunks_exact(3) {
-        let a = *vertices.get(triangle[0])?;
-        let b = *vertices.get(triangle[1])?;
-        let c = *vertices.get(triangle[2])?;
-        triangulated_area +=
-            ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])).abs() * 0.5;
-        tris.extend_from_slice(&[a[0], a[1], b[0], b[1], c[0], c[1]]);
-    }
+    let tris = if group.holes.is_empty() {
+        ear_clip(outer)?
+    } else {
+        let vertex_count = group.holes.iter().try_fold(outer.len(), |count, &hole| {
+            count.checked_add(rings.get(hole)?.len())
+        })?;
+        let mut vertices = Vec::<[f32; 2]>::with_capacity(vertex_count);
+        vertices.extend(outer.iter().map(|point| [point.x, point.y]));
+        let mut hole_indices = Vec::with_capacity(group.holes.len());
+        for &hole in &group.holes {
+            hole_indices.push(vertices.len());
+            vertices.extend(rings.get(hole)?.iter().map(|point| [point.x, point.y]));
+        }
 
-    let expected_area = polygon_area(outer).abs() - polygon_area(inner).abs();
+        let mut indices = Vec::<usize>::new();
+        earcut::Earcut::<f32>::new().earcut(vertices.iter().copied(), &hole_indices, &mut indices);
+        if indices.len() < 3 || !indices.chunks_exact(3).remainder().is_empty() {
+            return None;
+        }
+
+        let mut triangles = Vec::with_capacity(indices.len().checked_mul(2)?);
+        for triangle in indices.chunks_exact(3) {
+            let a = *vertices.get(triangle[0])?;
+            let b = *vertices.get(triangle[1])?;
+            let c = *vertices.get(triangle[2])?;
+            triangles.extend_from_slice(&[a[0], a[1], b[0], b[1], c[0], c[1]]);
+        }
+        triangles
+    };
+
+    validate_triangle_area(&tris, expected_area).then_some(tris)
+}
+
+fn validate_triangle_area(tris: &[f32], expected_area: f64) -> bool {
+    if tris.len() < 6 || !tris.chunks_exact(6).remainder().is_empty() {
+        return false;
+    }
+    let mut triangulated_area = 0.0f64;
+    for triangle in tris.chunks_exact(6) {
+        if triangle.iter().any(|coordinate| !coordinate.is_finite()) {
+            return false;
+        }
+        let (ax, ay) = (triangle[0] as f64, triangle[1] as f64);
+        let (bx, by) = (triangle[2] as f64, triangle[3] as f64);
+        let (cx, cy) = (triangle[4] as f64, triangle[5] as f64);
+        triangulated_area += ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)).abs() * 0.5;
+    }
     let tolerance = expected_area.max(1.0) * 1e-4;
-    if expected_area <= 1e-8 || (triangulated_area - expected_area).abs() > tolerance {
-        return None;
+    (triangulated_area - expected_area).abs() <= tolerance
+}
+
+fn polygon_area_f64(pts: &[Point]) -> f64 {
+    let mut area = 0.0f64;
+    for i in 0..pts.len() {
+        let point = pts[i];
+        let next = pts[(i + 1) % pts.len()];
+        area += point.x as f64 * next.y as f64 - next.x as f64 * point.y as f64;
     }
-    Some(tris)
+    area * 0.5
 }
 
 fn ring_bounds(ring: &[Point]) -> (f32, f32, f32, f32) {
@@ -418,33 +528,43 @@ fn ear_clip(ring: &[Point]) -> Option<Vec<f32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+    use crate::draw::primitives::color::Color;
     use crate::draw::primitives::path::PathBuilder;
+    use crate::draw::traits::Canvas2D;
 
-    fn add_outer(builder: &mut PathBuilder) {
-        builder
-            .move_to(0.0, 0.0)
-            .line_to(20.0, 0.0)
-            .line_to(20.0, 20.0)
-            .line_to(0.0, 20.0)
-            .close();
-    }
-
-    fn add_inner(builder: &mut PathBuilder, clockwise: bool) {
-        if clockwise {
+    fn add_rect(
+        builder: &mut PathBuilder,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        positive_area: bool,
+    ) {
+        if positive_area {
             builder
-                .move_to(5.0, 5.0)
-                .line_to(5.0, 15.0)
-                .line_to(15.0, 15.0)
-                .line_to(15.0, 5.0)
+                .move_to(x0, y0)
+                .line_to(x1, y0)
+                .line_to(x1, y1)
+                .line_to(x0, y1)
                 .close();
         } else {
             builder
-                .move_to(5.0, 5.0)
-                .line_to(15.0, 5.0)
-                .line_to(15.0, 15.0)
-                .line_to(5.0, 15.0)
+                .move_to(x0, y0)
+                .line_to(x0, y1)
+                .line_to(x1, y1)
+                .line_to(x1, y0)
                 .close();
         }
+    }
+
+    fn add_outer(builder: &mut PathBuilder) {
+        add_rect(builder, 0.0, 0.0, 20.0, 20.0, true);
+    }
+
+    fn add_inner(builder: &mut PathBuilder, clockwise: bool) {
+        add_rect(builder, 5.0, 5.0, 15.0, 15.0, !clockwise);
     }
 
     fn nested_path(clockwise_inner: bool, inner_first: bool) -> Path {
@@ -488,6 +608,39 @@ mod tests {
         assert!(!triangle_mesh_contains(vertices, Point::new(10.0, 10.0)));
     }
 
+    fn assert_mesh_matches_cpu(
+        path: &Path,
+        fill_rule: FillRule,
+        width: i32,
+        height: i32,
+        expected_area: f32,
+    ) {
+        let vertices = tessellate_fill(path, fill_rule).expect("native contour forest mesh");
+        assert!(!vertices.is_empty());
+        assert!(vertices.chunks_exact(6).remainder().is_empty());
+        assert!(vertices.iter().all(|coordinate| coordinate.is_finite()));
+        assert!((triangle_mesh_area(&vertices) - expected_area).abs() < 1e-3);
+
+        let mut cpu = SharedRasterizer::new(PixelSurface::new(width, height));
+        cpu.fill_path(path, Color::white(), fill_rule);
+        let pixels = cpu.surface().pixels();
+        let mut cpu_covered = 0usize;
+        for y in 0..height {
+            for x in 0..width {
+                let index = (y * width + x) as usize;
+                let cpu_contains = pixels[index] >> 24 != 0;
+                let mesh_contains =
+                    triangle_mesh_contains(&vertices, Point::new(x as f32 + 0.5, y as f32 + 0.5));
+                assert_eq!(
+                    mesh_contains, cpu_contains,
+                    "coverage mismatch at ({x}, {y}) for {fill_rule:?}"
+                );
+                cpu_covered += usize::from(cpu_contains);
+            }
+        }
+        assert_eq!(cpu_covered, expected_area as usize);
+    }
+
     #[test]
     fn tessellates_triangle() {
         let mut pb = PathBuilder::new();
@@ -527,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn tessellates_single_nested_hole_for_fill_rules_winding_and_path_order() {
+    fn tessellates_strict_contour_forests_for_fill_rules_winding_and_path_order() {
         for path in [
             nested_path(true, false),
             nested_path(false, false),
@@ -550,41 +703,76 @@ mod tests {
             assert!(triangle_mesh_contains(&same, Point::new(10.0, 10.0)));
         }
 
-        assert_unsupported_nested_topologies_fall_back();
+        let mut two_holes = PathBuilder::new();
+        add_rect(&mut two_holes, 4.0, 4.0, 92.0, 92.0, true);
+        add_rect(&mut two_holes, 12.0, 12.0, 36.0, 36.0, true);
+        add_rect(&mut two_holes, 60.0, 12.0, 84.0, 36.0, true);
+        assert_mesh_matches_cpu(&two_holes.build(), FillRule::EvenOdd, 96, 96, 6592.0);
+
+        let mut two_holes_scrambled = PathBuilder::new();
+        add_rect(&mut two_holes_scrambled, 60.0, 12.0, 84.0, 36.0, false);
+        add_rect(&mut two_holes_scrambled, 4.0, 4.0, 92.0, 92.0, true);
+        add_rect(&mut two_holes_scrambled, 12.0, 12.0, 36.0, 36.0, false);
+        let path = two_holes_scrambled.build();
+        assert_mesh_matches_cpu(&path, FillRule::EvenOdd, 96, 96, 6592.0);
+        assert_mesh_matches_cpu(&path, FillRule::NonZero, 96, 96, 6592.0);
+
+        let mut two_holes_reversed = PathBuilder::new();
+        add_rect(&mut two_holes_reversed, 12.0, 12.0, 36.0, 36.0, true);
+        add_rect(&mut two_holes_reversed, 60.0, 12.0, 84.0, 36.0, true);
+        add_rect(&mut two_holes_reversed, 4.0, 4.0, 92.0, 92.0, false);
+        assert_mesh_matches_cpu(
+            &two_holes_reversed.build(),
+            FillRule::NonZero,
+            96,
+            96,
+            6592.0,
+        );
+
+        let mut deep_even_odd = PathBuilder::new();
+        for (x0, y0, x1, y1) in [
+            (4.0, 4.0, 92.0, 92.0),
+            (12.0, 12.0, 84.0, 84.0),
+            (28.0, 28.0, 68.0, 68.0),
+            (36.0, 36.0, 60.0, 60.0),
+        ] {
+            add_rect(&mut deep_even_odd, x0, y0, x1, y1, true);
+        }
+        assert_mesh_matches_cpu(&deep_even_odd.build(), FillRule::EvenOdd, 96, 96, 3584.0);
+
+        let mut deep_nonzero = PathBuilder::new();
+        for (rect, positive) in [
+            ((4.0, 4.0, 92.0, 92.0), true),
+            ((12.0, 12.0, 84.0, 84.0), false),
+            ((28.0, 28.0, 68.0, 68.0), true),
+            ((36.0, 36.0, 60.0, 60.0), false),
+        ] {
+            add_rect(&mut deep_nonzero, rect.0, rect.1, rect.2, rect.3, positive);
+        }
+        assert_mesh_matches_cpu(&deep_nonzero.build(), FillRule::NonZero, 96, 96, 3584.0);
+
+        let mut deep_neutral = PathBuilder::new();
+        for (rect, positive) in [
+            ((36.0, 36.0, 60.0, 60.0), false),
+            ((4.0, 4.0, 92.0, 92.0), true),
+            ((28.0, 28.0, 68.0, 68.0), false),
+            ((12.0, 12.0, 84.0, 84.0), true),
+        ] {
+            add_rect(&mut deep_neutral, rect.0, rect.1, rect.2, rect.3, positive);
+        }
+        assert_mesh_matches_cpu(&deep_neutral.build(), FillRule::NonZero, 96, 96, 7168.0);
+
+        let mut islands = PathBuilder::new();
+        add_rect(&mut islands, 80.0, 16.0, 112.0, 48.0, true);
+        add_rect(&mut islands, 4.0, 4.0, 60.0, 60.0, true);
+        add_rect(&mut islands, 68.0, 4.0, 124.0, 60.0, false);
+        add_rect(&mut islands, 16.0, 16.0, 48.0, 48.0, false);
+        assert_mesh_matches_cpu(&islands.build(), FillRule::NonZero, 128, 64, 4224.0);
+
+        assert_unsupported_topologies_fall_back();
     }
 
-    fn assert_unsupported_nested_topologies_fall_back() {
-        let mut multiple_holes = PathBuilder::new();
-        add_outer(&mut multiple_holes);
-        add_inner(&mut multiple_holes, true);
-        multiple_holes
-            .move_to(2.0, 2.0)
-            .line_to(2.0, 4.0)
-            .line_to(4.0, 4.0)
-            .line_to(4.0, 2.0)
-            .close();
-        assert!(tessellate_fill(&multiple_holes.build(), FillRule::EvenOdd).is_none());
-
-        let mut hole_and_island = PathBuilder::new();
-        add_outer(&mut hole_and_island);
-        add_inner(&mut hole_and_island, true);
-        hole_and_island
-            .move_to(30.0, 0.0)
-            .line_to(35.0, 0.0)
-            .line_to(32.5, 5.0)
-            .close();
-        assert!(tessellate_fill(&hole_and_island.build(), FillRule::EvenOdd).is_none());
-
-        let mut deep = PathBuilder::new();
-        add_outer(&mut deep);
-        add_inner(&mut deep, true);
-        deep.move_to(7.0, 7.0)
-            .line_to(13.0, 7.0)
-            .line_to(13.0, 13.0)
-            .line_to(7.0, 13.0)
-            .close();
-        assert!(tessellate_fill(&deep.build(), FillRule::EvenOdd).is_none());
-
+    fn assert_unsupported_topologies_fall_back() {
         let mut touching = PathBuilder::new();
         add_outer(&mut touching);
         touching
@@ -594,6 +782,44 @@ mod tests {
             .line_to(10.0, 5.0)
             .close();
         assert!(tessellate_fill(&touching.build(), FillRule::EvenOdd).is_none());
+
+        let mut intersecting_holes = PathBuilder::new();
+        add_rect(&mut intersecting_holes, 0.0, 0.0, 40.0, 40.0, true);
+        add_rect(&mut intersecting_holes, 5.0, 5.0, 25.0, 25.0, false);
+        add_rect(&mut intersecting_holes, 15.0, 15.0, 35.0, 35.0, false);
+        assert!(tessellate_fill(&intersecting_holes.build(), FillRule::NonZero).is_none());
+
+        let mut nonfinite = PathBuilder::new();
+        nonfinite
+            .move_to(0.0, 0.0)
+            .line_to(f32::NAN, 0.0)
+            .line_to(0.0, 10.0)
+            .close();
+        assert!(tessellate_fill(&nonfinite.build(), FillRule::NonZero).is_none());
+
+        let mut oversized_ring = PathBuilder::new();
+        for i in 0..513 {
+            let angle = std::f32::consts::TAU * i as f32 / 513.0;
+            let (x, y) = (100.0 + 80.0 * angle.cos(), 100.0 + 80.0 * angle.sin());
+            if i == 0 {
+                oversized_ring.move_to(x, y);
+            } else {
+                oversized_ring.line_to(x, y);
+            }
+        }
+        oversized_ring.close();
+        assert!(tessellate_fill(&oversized_ring.build(), FillRule::NonZero).is_none());
+
+        let mut oversized_path = PathBuilder::new();
+        for i in 0..683 {
+            let x = i as f32 * 4.0;
+            oversized_path
+                .move_to(x, 0.0)
+                .line_to(x + 1.0, 0.0)
+                .line_to(x, 1.0)
+                .close();
+        }
+        assert!(tessellate_fill(&oversized_path.build(), FillRule::NonZero).is_none());
     }
 
     #[test]
