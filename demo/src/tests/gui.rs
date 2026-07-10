@@ -651,6 +651,7 @@ fn demo_local_counters_survive_root_reconcile() {
     let anim_time = State::new(0.0f32);
     let home_count = State::new(0i32);
     let runtime_count = State::new(0i32);
+    let theme_control = ThemeControl::default();
 
     let root = ViewAdapter::capture_root(|| {
         app_shell_with_counters(
@@ -659,6 +660,7 @@ fn demo_local_counters_survive_root_reconcile() {
             anim_time.clone(),
             &home_count,
             &runtime_count,
+            &theme_control,
         )
     });
     let mut tree = ViewAdapter::build_nodes(root);
@@ -695,6 +697,7 @@ fn demo_local_counters_survive_root_reconcile() {
             anim_time.clone(),
             &home_count,
             &runtime_count,
+            &theme_control,
         )
     });
     ViewAdapter::reconcile_nodes(&mut tree, next);
@@ -711,6 +714,7 @@ fn demo_local_counters_survive_root_reconcile() {
             anim_time.clone(),
             &home_count,
             &runtime_count,
+            &theme_control,
         )
     });
     ViewAdapter::reconcile_nodes(&mut tree, runtime_root);

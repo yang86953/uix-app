@@ -31,12 +31,14 @@ pub fn info_note(tk: &DesignTokens, text: &str) -> ViewNode {
     row([
         embed(Icon::new("info").size(16.0)),
         space(10.0),
-        label(text).color(tk.color_info).font_size(12.0),
+        label(text)
+            .color(ColorValue::Palette(PaletteColor::Info))
+            .font_size(12.0),
     ])
     .padding(EdgeInsets::new(12.0, 10.0, 12.0, 10.0))
-    .bg(tk.color_info_bg)
+    .bg(ColorValue::Palette(PaletteColor::InfoBg))
     .radius(tk.border_radius)
-    .border(1.0, tk.color_info_border)
+    .border(1.0, ColorValue::Palette(PaletteColor::InfoBorder))
 }
 
 /// 警告提示条（未 demo 的 backlog 项）。
@@ -44,12 +46,14 @@ pub fn backlog_note(tk: &DesignTokens, text: &str) -> ViewNode {
     row([
         embed(Icon::new("alert-triangle").size(16.0)),
         space(10.0),
-        label(text).color(tk.color_warning).font_size(12.0),
+        label(text)
+            .color(ColorValue::Palette(PaletteColor::Warning))
+            .font_size(12.0),
     ])
     .padding(EdgeInsets::new(12.0, 10.0, 12.0, 10.0))
-    .bg(tk.color_warning_bg)
+    .bg(ColorValue::Palette(PaletteColor::WarningBg))
     .radius(tk.border_radius)
-    .border(1.0, tk.color_warning_border)
+    .border(1.0, ColorValue::Palette(PaletteColor::WarningBorder))
 }
 
 /// 带标题的内容卡片（用于首页等展示区块）。
@@ -62,7 +66,7 @@ pub fn demo_card(
 ) -> ViewNode {
     column([
         label(title)
-            .color(tk.color_text)
+            .color(ColorValue::Neutral(NeutralRole::Text))
             .font_size(14.0),
         space(10.0),
         body,
@@ -70,7 +74,7 @@ pub fn demo_card(
     .width(width)
     .height(height)
     .padding(EdgeInsets::uniform(16.0))
-    .bg(tk.color_bg_elevated)
+    .bg(ColorValue::Neutral(NeutralRole::BgElevated))
     .radius(tk.border_radius_lg)
-    .border(1.0, tk.color_border_secondary)
+    .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
 }

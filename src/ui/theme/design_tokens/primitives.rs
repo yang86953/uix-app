@@ -84,8 +84,16 @@ impl ThemePrimitives {
             color_primary: p.primary,
             color_primary_hover: p.primary.lighten(0.15),
             color_primary_active: p.primary.darken(0.15),
-            color_primary_bg: p.primary.mix(&w, 0.85),
-            color_primary_border: p.primary.mix(&w, 0.55),
+            color_primary_bg: if is_dark {
+                p.primary.mix(&p.bg, 0.80)
+            } else {
+                p.primary.mix(&w, 0.85)
+            },
+            color_primary_border: if is_dark {
+                p.primary.mix(&p.bg, 0.45)
+            } else {
+                p.primary.mix(&w, 0.55)
+            },
 
             // ── 中性背景 ──
             color_bg_container: if is_dark {
@@ -114,7 +122,11 @@ impl ThemePrimitives {
 
             // ── 边框 ──
             color_border: p.border,
-            color_border_secondary: p.border.mix(&w, 0.5),
+            color_border_secondary: if is_dark {
+                p.border.mix(&p.bg, 0.45)
+            } else {
+                p.border.mix(&w, 0.5)
+            },
 
             // ── 填充（用于 hover/pressed/disabled 背景色，以 text 为基乘以小 alpha）──
             color_fill: p.text.with_alpha(31),
@@ -136,17 +148,49 @@ impl ThemePrimitives {
 
             // ── 语义色 ──
             color_success: p.success,
-            color_success_bg: p.success.mix(&w, 0.85),
-            color_success_border: p.success.mix(&w, 0.55),
+            color_success_bg: if is_dark {
+                p.success.mix(&p.bg, 0.80)
+            } else {
+                p.success.mix(&w, 0.85)
+            },
+            color_success_border: if is_dark {
+                p.success.mix(&p.bg, 0.45)
+            } else {
+                p.success.mix(&w, 0.55)
+            },
             color_warning: p.warning,
-            color_warning_bg: p.warning.mix(&w, 0.80),
-            color_warning_border: p.warning.mix(&w, 0.50),
+            color_warning_bg: if is_dark {
+                p.warning.mix(&p.bg, 0.80)
+            } else {
+                p.warning.mix(&w, 0.80)
+            },
+            color_warning_border: if is_dark {
+                p.warning.mix(&p.bg, 0.45)
+            } else {
+                p.warning.mix(&w, 0.50)
+            },
             color_error: p.error,
-            color_error_bg: p.error.mix(&w, 0.82),
-            color_error_border: p.error.mix(&w, 0.50),
+            color_error_bg: if is_dark {
+                p.error.mix(&p.bg, 0.80)
+            } else {
+                p.error.mix(&w, 0.82)
+            },
+            color_error_border: if is_dark {
+                p.error.mix(&p.bg, 0.45)
+            } else {
+                p.error.mix(&w, 0.50)
+            },
             color_info: p.primary,
-            color_info_bg: p.primary.mix(&w, 0.85),
-            color_info_border: p.primary.mix(&w, 0.55),
+            color_info_bg: if is_dark {
+                p.primary.mix(&p.bg, 0.80)
+            } else {
+                p.primary.mix(&w, 0.85)
+            },
+            color_info_border: if is_dark {
+                p.primary.mix(&p.bg, 0.45)
+            } else {
+                p.primary.mix(&w, 0.55)
+            },
 
             // ── 链接（与 primary 一致）──
             color_link: p.primary,

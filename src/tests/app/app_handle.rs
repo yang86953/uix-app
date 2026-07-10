@@ -101,6 +101,54 @@ fn app_handle_post_to_ui_drops_after_close() {
 }
 
 #[test]
+fn app_handle_set_theme_updates_the_app_wide_runtime() {
+    let runtime = AppRuntime::new();
+    let alive = Arc::new(AtomicBool::new(true));
+    runtime.register_session(
+        WindowId::ROOT,
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        alive.clone(),
+    );
+    let handle = AppHandle::new(
+        WindowId::ROOT,
+        AppState::new(),
+        runtime.clone(),
+        Container::new(),
+        alive,
+    );
+
+    handle.set_theme(Theme::antd_dark()).unwrap();
+
+    assert!(runtime.take_pending_theme().unwrap().is_dark());
+}
+
+#[test]
+fn app_handle_set_theme_rejects_closed_handles() {
+    let runtime = AppRuntime::new();
+    let alive = Arc::new(AtomicBool::new(true));
+    runtime.register_session(
+        WindowId::ROOT,
+        AppTimerQueue::new(),
+        MainThreadQueue::new(),
+        alive.clone(),
+    );
+    let handle = AppHandle::new(
+        WindowId::ROOT,
+        AppState::new(),
+        runtime.clone(),
+        Container::new(),
+        alive,
+    );
+    handle.mark_closed();
+
+    let error = handle.set_theme(Theme::antd_dark()).unwrap_err();
+
+    assert_eq!(error.code(), Errc::InvalidState);
+    assert!(runtime.take_pending_theme().is_none());
+}
+
+#[test]
 fn app_handle_post_to_ui_can_be_sent_from_background_thread() {
     let timers = AppTimerQueue::new();
     let queue = MainThreadQueue::new();

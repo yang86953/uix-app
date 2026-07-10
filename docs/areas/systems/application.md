@@ -60,7 +60,7 @@ GUI 必须调用 `.root(|| view)`；CLI 须 `.cli(Cli)` 注册 handler。
 | 方法 | 作用 |
 |------|------|
 | `.title()` / `.size()` | 窗口标题与初始尺寸 |
-| `.theme(Theme)` | 全局 Theme；框架 **自动** 全窗 palette-only invalidate（#128） |
+| `.theme(Theme)` | 设置启动时全局 Theme；运行中使用 `AppHandle::set_theme`（#175） |
 | `.follow_system_theme(bool)` | 默认 **false**；**true** 时框架监听 ThemeChanged 自动跟 OS（#125） |
 | `.root(|| view)` | 捕获为 session **`view_factory`**（#155）；冷启动 `build` + 热路径 reconcile 共用 |
 | `.on_exit(Fn(&UiEvent) -> bool)` | 返回 `true` 退出主循环 |
@@ -395,10 +395,12 @@ pub root: impl Fn() -> ViewNode + Send + Sync + 'static;
 
 | `.follow_system_theme` | 行为 |
 |------------------------|------|
-| **false**（默认） | 不跟 OS；仅 `.theme(...)` 切换；ThemeChanged **忽略** |
+| **false**（默认） | 不跟 OS；仅 `AppHandle::set_theme(...)` 切换；OS ThemeChanged **忽略** |
 | **true** | 框架收 ThemeChanged → 更新 DynTokens → **全 WindowSession** palette invalidate |
 
 App **无需**手写 ThemeChanged handler（opt-in 时）。
+
+> **实现注记**（#175）：`AppHandle::set_theme(Theme) -> Result<()>` 可由任意存活窗口调用，写入 App 级合并命令并唤醒 event loop；关闭 handle 返回 `Errc::InvalidState`。同一轮内连续请求只保留最终主题且只 wake 一次；主循环在帧门控前替换主题并向主窗和全部副窗派发 `ThemeChanged`，新建窗口直接继承当前主题。失效由 `WidgetTree` 计算为 palette-only Paint，调用方无需逐窗 invalidate。
 
 **异步边界**（#131、#132、#133）：禁止裸 Registry 与轮询 Effect；允许 **`run_after` / `run_interval`**、**`post_to_ui`** 与 async→State。详见 [demand-driven · UI 主循环 vs 后台](demand-driven.md#ui-主循环-vs-后台) · [post_to_ui](#post_to_ui) · [App Timer API](#app-定时-api)。
 

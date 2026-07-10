@@ -76,6 +76,7 @@ Theme { Arc<dyn TokenProvider> }
 | `Theme::antd_light()` / `antd_dark()` | 内置 DefaultTheme（#48） |
 | `Theme::new(provider)` | 包装自定义 TokenProvider |
 | `tokens() -> &dyn TokenProvider` | 绘制时注入 PaintContext |
+| `AppHandle::set_theme(theme)` | 运行中替换 App 全局 Theme；关闭 handle 返回 `InvalidState`（#175） |
 
 ### DynTokens（#74、#125）
 
@@ -84,7 +85,7 @@ Theme { Arc<dyn TokenProvider> }
 - **运行中跟 OS**（#125）：App builder `.follow_system_theme(true)`（**opt-in**，默认 false）
   - 框架收 `ThemeChanged` UiEvent → 读 `IDisplay::is_dark_mode()` → 切换 tokens → 全窗 palette invalidate（#128）
   - **不**后台 poll；无 ThemeChanged 不 wake
-- `.follow_system_theme(false)` 时：运行中仅 `.theme(...)` / App 显式切换生效
+- `.follow_system_theme(false)` 时：运行中仅 `AppHandle::set_theme(...)` 显式切换生效；builder `.theme(...)` 只设置启动主题
 
 ---
 
@@ -116,7 +117,8 @@ Theme { Arc<dyn TokenProvider> }
 | 全定制 | `from_primaries([12])` |
 | 切换 invalidate | 仅 palette 引用组件（#9） |
 | 启动默认 | 启动时可读 OS 初始明暗（#74）；App 可显式 `.theme()` 覆盖 |
-| 运行中跟 OS | **opt-in** `.follow_system_theme(true)` 跟 OS（#125），否则 App `.theme()` |
+| 运行中显式切换 | `AppHandle::set_theme(Theme)`；请求合并、单 wake、全窗 palette-only（#175） |
+| 运行中跟 OS | **opt-in** `.follow_system_theme(true)` 跟 OS（#125），否则仅响应显式切换 |
 | Settings | `theme_mode` key → App 解析（见 [data](data.md)） |
 
 ---
@@ -199,6 +201,8 @@ View DSL：`button("...").primary()` 等价于切换 StyleSet 预设。无 varia
 - 浮层子树继承同一 Theme
 
 切换 Theme 时组件 `on_theme_changed` → palette-only paint invalidate，不触发 layout。
+
+> **实现注记**（#175）：`AppRuntime` 持有唯一的待应用主题命令；连续请求覆盖为最终值且 pending 期间不重复 wake。主循环在 active-frame 判定前消费命令，替换当前 `Theme` 并向主窗与全部副窗广播 `ThemeChanged`；新窗首帧共享当前主题。`WidgetTree::notify_theme_changed` 仅标脏 `uses_palette()` 节点，不产生 Layout 或 reconcile。`antd_dark()` 的语义背景与次级边框按暗色基底混合，避免沿用亮色向白混合规则。
 
 ---
 

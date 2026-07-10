@@ -93,7 +93,7 @@
 | [`requirements.md`](../requirements.md) | 编号需求、优先级、状态与验收检查 |
 | [`design.md`](../design.md) | 项目级端到端设计、追踪、质量属性、rollout 与风险 |
 | [`implementation.md`](implementation.md) | 实现进度、backlog、源码目录详表 |
-| [`decisions.md`](../decisions.md) | 决策台账 #1–#174；新决策 #175+ |
+| [`decisions.md`](../decisions.md) | 决策台账 #1–#175；新决策 #176+ |
 | [`glossary.md`](../glossary.md) | 术语；[设计名 vs 源码](../glossary.md#术语对照) |
 | [`demo/README.md`](../../demo/README.md) | 演示程序模式与运行说明 |
 
@@ -105,4 +105,4 @@
 - 新 `src/` 路径 → [implementation · 源码目录详表](implementation.md#源码目录详表) + 系统「源码模块」。
 - 落地/差距 → [implementation · 实现进度总览](implementation.md#实现进度总览) + 系统 `> **实现注记**`。
 - 跨系统主题 → 「主题索引」+ 最相关系统章节。
-- 新术语 → [`glossary.md`](../glossary.md)；取舍 → [`decisions.md`](../decisions.md) #175+。
+- 新术语 → [`glossary.md`](../glossary.md)；取舍 → [`decisions.md`](../decisions.md) #176+。

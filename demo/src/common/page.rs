@@ -129,16 +129,16 @@ pub fn section_title(tk: &DesignTokens, text: &str) -> ViewNode {
             .width(3.0)
             .height(14.0)
             .flex_grow(0.0)
-            .bg(tk.color_primary)
+            .bg(ColorValue::Palette(PaletteColor::Primary))
             .radius(tk.border_radius_sm),
         label(text)
-            .color(tk.color_text)
+            .color(ColorValue::Neutral(NeutralRole::Text))
             .font_size(13.0)
             .flex_grow(0.0),
         column(Vec::<ViewNode>::new())
             .height(1.0)
             .flex_grow(1.0)
-            .bg(tk.color_border_secondary),
+            .bg(ColorValue::Neutral(NeutralRole::BorderSecondary)),
     ])
     .align(AlignItems::Center)
     .gap(8.0)
@@ -154,12 +154,12 @@ pub fn demo_row(h: f32) -> Space {
         .align(AlignItems::Center)
 }
 
-pub fn page_heading(tk: &DesignTokens, icon: &str, title: &str) -> ViewNode {
+pub fn page_heading(icon: &str, title: &str) -> ViewNode {
     column([
         row([
             embed(Icon::new(icon).size(24.0)),
             label(title)
-                .color(tk.color_text)
+                .color(ColorValue::Neutral(NeutralRole::Text))
                 .font_size(24.0),
         ])
         .align(AlignItems::Center)

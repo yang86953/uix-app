@@ -15,6 +15,17 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
     let tick_label = ticks.clone();
     let anim_for_ball = anim.clone();
     let anim_for_ring = anim.clone();
+    let theme_toggle = if let Some(control) = ctx.theme_control() {
+        let toggle_control = control.clone();
+        embed(ThemeToggle::new().dark(control.is_dark())).on_semantic(
+            SemanticKind::Click,
+            move |_| {
+                toggle_control.toggle();
+            },
+        )
+    } else {
+        embed(ThemeToggle::new())
+    };
 
     PageBuilder::new(tk)
         .gap()
@@ -91,13 +102,15 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
         ))
         .section("Theme — light/dark + follow_system_theme")
         .push(
-            demo_row(40.0)
-                .child(ThemeToggle::new())
-                .child(
-                    Label::new("点击切换暗色/亮色 (ThemeToggle)")
-                        .color(tk.color_text_secondary)
-                        .font_size(12.0),
-                ),
+            row([
+                theme_toggle,
+                label("点击切换 App 全局暗色/亮色 (AppHandle::set_theme)")
+                    .color(ColorValue::Neutral(NeutralRole::TextSecondary))
+                    .font_size(12.0),
+            ])
+            .height(40.0)
+            .align(AlignItems::Center)
+            .gap(8.0),
         )
         .push(info_note(
             tk,

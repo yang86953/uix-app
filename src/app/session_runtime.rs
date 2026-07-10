@@ -10,12 +10,14 @@ use crate::app::main_thread_queue::{MainThreadContext, MainThreadQueue};
 use crate::app::window_config::WindowConfig;
 use crate::core::WindowId;
 use crate::native::traits::event::EventLoopWaker;
+use crate::ui::Theme;
 use std::collections::VecDeque;
 
 #[derive(Clone, Default)]
 pub(crate) struct AppRuntime {
     sessions: Arc<Mutex<BTreeMap<WindowId, SessionRuntime>>>,
     pending_open_windows: Arc<Mutex<VecDeque<OpenWindowRequest>>>,
+    pending_theme: Arc<Mutex<Option<Theme>>>,
     next_window_id: Arc<Mutex<u64>>,
     event_loop_waker: Arc<Mutex<EventLoopWaker>>,
 }
@@ -98,6 +100,23 @@ impl AppRuntime {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .pop_front()
+    }
+
+    pub(crate) fn set_theme(&self, theme: Theme) {
+        let mut pending = self.pending_theme.lock().unwrap_or_else(|e| e.into_inner());
+        let should_wake = pending.is_none();
+        *pending = Some(theme);
+        drop(pending);
+        if should_wake {
+            self.wake_event_loop();
+        }
+    }
+
+    pub(crate) fn take_pending_theme(&self) -> Option<Theme> {
+        self.pending_theme
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
     }
 
     pub(crate) fn set_event_loop_waker(&self, waker: EventLoopWaker) {

@@ -269,7 +269,7 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 | 平台 | backend 编码 | 编译证据 | 自动化测试 | 真机 / 硬件 | 生产就绪 |
 |------|-------------|----------|------------|-------------|----------|
-| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1064/1064、demo 19/19；真实双 HWND 状态/事件隔离、native IME/UTF-16、焦点会话与预编辑/缓存像素路由通过 | D3D11/Software 基础 GUI smoke、Microsoft Pinyin 候选窗定位与提交通过；待 OpenGL ES、TSF phonetic preedit、主题/完整多窗与 GPU/驱动矩阵 | **否** |
+| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1070/1070、demo 19/19；真实双 HWND 状态/事件隔离、native IME/UTF-16、焦点会话、预编辑/缓存像素与全窗主题广播通过 | D3D11/Software 基础 GUI smoke、Software 全局主题切换、Microsoft Pinyin 候选窗定位与提交通过；待 OpenGL ES、TSF phonetic preedit、D3D11 主题与双窗联合 GUI、GPU/驱动矩阵 | **否** |
 | Linux (Wayland) | **已编码**：Platform + Vulkan + EGL/OpenGL ES | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | 待 Wayland compositor/GPU 矩阵 | **否** |
 | macOS | **已编码**：AppKit + Metal `Cpu × PixelUpload` | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | **待真机验证** | **否** |
 

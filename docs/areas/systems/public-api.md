@@ -256,13 +256,15 @@ Scroll 组件与虚拟列表 → [layout · Scroll](layout.md#scroll) · [Virtua
 
 | 符号 | 说明 |
 |------|------|
-| `App` · `AppHandle` · `AppMode` · `WindowConfig` · `TimerHandle` | 应用入口与运行中句柄（[#132–#144](../../decisions.md#d132)） |
+| `App` · `AppHandle` · `AppMode` · `WindowConfig` · `TimerHandle` | 应用入口与运行中句柄（[#132–#144](../../decisions.md#d132) · [#175](../../decisions.md#d175)） |
 | `DiContainer` | DI 容器（`app::Container`） |
 | `map_ui_event` | `UiEvent` → `SystemEvent` 桥接 |
 
 `App::graphics_backend(GraphicsBackend)` 在窗口 / 引擎初始化时一次性设置 GPU API 偏好；未显式指定时依次读取 `UIX_GRAPHICS_BACKEND`、Settings key `graphics_backend` / `uix.graphics_backend`，最后回到 `Auto`。每个候选失败均进入 probe 诊断；最终可 fallback 至 software path。无热切换、无帧内 probe。
 
 生命周期、Timer、`post_to_ui`、多窗 → [application](application.md)。
+
+`App::theme(Theme)` 设置启动主题；运行中调用 `AppHandle::set_theme(Theme) -> Result<()>`。该 API 作用于 App 全局并自动广播全部 WindowSession 的 palette-only Paint 失效；关闭 handle 返回 `Errc::InvalidState`。
 
 ---
 

@@ -770,7 +770,7 @@ impl App {
         );
         drain_secondary_window_queues(&mut secondary_windows.borrow_mut());
 
-        let theme = RefCell::new(self.theme);
+        let theme = RefCell::new(self.runtime.take_pending_theme().unwrap_or(self.theme));
         // UIX_DEBUG=1 启动即开调试 overlay（与 Window::new 一致）。
         let debug_mode = Cell::new(std::env::var("UIX_DEBUG").is_ok());
         let cursor_pos = Cell::new(Point::new(0.0, 0.0));
@@ -806,7 +806,15 @@ impl App {
             Some(&metrics),
             map_ui_event,
             |ev| on_exit(ev),
-            |platform| {
+            |platform, tree| {
+                if let Some(next_theme) = runtime.take_pending_theme() {
+                    apply_runtime_theme_change(
+                        &theme,
+                        tree,
+                        &mut secondary_windows.borrow_mut(),
+                        next_theme,
+                    );
+                }
                 drain_pending_open_windows_with_backend(
                     platform,
                     &runtime,
@@ -1031,6 +1039,18 @@ fn dispatch_secondary_system_theme_changed(
         dispatched = true;
     }
     dispatched
+}
+
+fn apply_runtime_theme_change(
+    theme: &RefCell<Theme>,
+    root_tree: &mut WidgetTree,
+    secondary_windows: &mut [SecondaryWindowSession],
+    next_theme: Theme,
+) {
+    let is_dark = next_theme.is_dark();
+    *theme.borrow_mut() = next_theme;
+    root_tree.dispatch_event(&SystemEvent::ThemeChanged { is_dark });
+    dispatch_secondary_system_theme_changed(secondary_windows, is_dark);
 }
 
 fn create_secondary_window(

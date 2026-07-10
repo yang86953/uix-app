@@ -14,7 +14,7 @@
 | [plan.md](plan.md) | 查看当前状态、里程碑、下一步、风险和开放问题 |
 | [areas/architecture.md](areas/architecture.md) | 按任务定位架构、系统设计、API、术语和实现状态 |
 | [areas/implementation.md](areas/implementation.md) | 对照已落地能力、后续 backlog 和源码目录映射 |
-| [decisions.md](decisions.md) | 查询或追加持久设计决策；新决策从 #175+ 起 |
+| [decisions.md](decisions.md) | 查询或追加持久设计决策；新决策从 #176+ 起 |
 | [glossary.md](glossary.md) | 查询术语、设计名和源码名对照 |
 
 ## 分区索引

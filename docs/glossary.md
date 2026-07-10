@@ -66,8 +66,8 @@
 | 术语 | 含义 |
 |------|------|
 | App | 应用入口：GUI（View 根）或 CLI；见 [application](areas/systems/application.md) |
-| AppHandle | 含 `window_id`；`run_after` / `post_to_ui`（#132–#133）已按 session 路由（#141）；session 关闭会清理对应 Timer（#134） |
-| AppRuntime | 内部 session 路由（Timer / post_to_ui / update_view / open_window）；见 [application · AppHandle](areas/systems/application.md#apphandle-生命周期) |
+| AppHandle | 含 `window_id`；`run_after` / `post_to_ui`（#132–#133）已按 session 路由（#141）；`set_theme` 替换 App 全局主题（#175）；session 关闭会清理对应 Timer（#134） |
+| AppRuntime | 内部 session 路由（Timer / post_to_ui / update_view / open_window）与 App 级合并主题命令；见 [application · AppHandle](areas/systems/application.md#apphandle-生命周期) |
 | EventLoopWaker | 跨线程唤醒 → [术语对照](#术语对照) · [platform · IEventLoop](areas/systems/platform.md#ieventloop) |
 | WindowId | `core::WindowId`；进程内窗口 ID；`AppHandle` / `prelude` 重导出 |
 | on_start | #140：每 WindowSession 首帧前 `Fn(AppHandle)`；运行中 API 的 canonical 注入点 |
