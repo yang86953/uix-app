@@ -6,7 +6,6 @@ use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::ui::children::WidgetChildren;
-use crate::ui::core::widget::WidgetCore;
 use crate::ui::layout::{
     flex::compute_flex_layout, AlignItems, FlexChild, FlexDirection, FlexInput, JustifyContent,
 };
@@ -76,17 +75,9 @@ component! {
         let child_sizes: Vec<Size> = children
             .iter()
             .map(|&cid| {
-                let pref = tree.get(cid)
+                tree.get(cid)
                     .map(|c| c.measure(child_constraints))
-                    .unwrap_or_default();
-                let actual_h = tree.get(cid)
-                    .map(|c| c.frame().h)
-                    .unwrap_or(0.0);
-                // 有明确 measured_size 的子节点优先用 pref.h，
-                // 避免面板折叠后 Phase 2 的扩展高度被误保留。
-                // 对于 pref.h=0 的弹性子节点，保留实际 frame 高度。
-                let h = if pref.h > 0.0 { pref.h } else { actual_h };
-                Size::new(pref.w, h)
+                    .unwrap_or_default()
             })
             .collect();
 
@@ -246,6 +237,7 @@ impl Default for Space {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::core::widget::WidgetCore;
     use crate::ui::traits::{WidgetCapabilities, WidgetLayout};
 
     struct FixedChild(Size);
@@ -301,5 +293,28 @@ mod tests {
         let child = tree.get(root).unwrap().children()[0];
         assert_eq!(tree.get(child).unwrap().frame().w, 120.0);
         assert_eq!(tree.get(child).unwrap().frame().h, 20.0);
+    }
+
+    #[test]
+    fn layout_children_do_not_reuse_stale_zero_cross_axis_frame() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(
+            Space::new()
+                .width(40.0)
+                .height(20.0)
+                .child(FixedChild(Size::new(120.0, 0.0))),
+        ));
+        let child = tree.get(root).unwrap().children()[0];
+        tree.get_mut(child)
+            .unwrap()
+            .set_frame(Rect::new(0.0, -20.0, 120.0, 60.0));
+
+        let placements = tree.get(root).unwrap().layout_children(
+            Rect::new(0.0, 0.0, 40.0, 20.0),
+            &[child],
+            &tree,
+        );
+
+        assert_eq!(placements[0].1, Rect::new(0.0, 10.0, 120.0, 0.0));
     }
 }

@@ -65,7 +65,9 @@
 | **Measure** | `WidgetLayout::measure` | `Constraints { min, max, definite }` | `Size`（intrinsic，经 clamp） | 父级分配约束后、layout 前 |
 | **Arrange** | `WidgetLayout::layout_children` | 父级 `frame` + 子 id 列表 | `Vec<(ComponentId, Rect)>` | `WidgetTree::layout()` Phase 1 |
 
-Measure 不读写子 frame；Arrange 不递归 measure（子项尺寸已在 `LayoutChild.measured_size` 中）。
+Measure 不读写子 frame；Arrange 不递归 measure（子项尺寸应来自 Phase 1 的 `LayoutChild.measured_size`）。
+
+> **实现差距**：通用 Flex/Grid 已通过 `LayoutChild.measured_size` 传递尺寸；部分自定义容器（ScrollView、Space、Form/Card）仍在 `layout_children` 内按父 frame 约束重新 measure。尺寸约束已收敛，但彻底改为 Phase 1 缓存消费仍属 [implementation · 布局两阶段缓存收敛](../implementation.md#后续工作) backlog。
 
 ### 流程
 
@@ -247,12 +249,12 @@ Wrap 模式：按行拆分，每行独立 justify；交叉轴累加行高 + gap�
 |------|----------|---------------------|------|
 | **Container** | `FlexLayout` | Web 式；`cached_content_size` + `intrinsic_main` | 默认 Column；通用 flex 容器 |
 | **Space** | 内联 `compute_flex_layout` | 固定 `width/height` 或 0；`flex_shrink: 0` | 均匀 gap；交叉轴受约束、主轴可溢出 |
-| **ScrollView** | 垂直流式堆叠（非 Flex） | 默认 300×200；`.size(w,h)` 定 viewport | 非滚动轴填满 viewport；滚动轴允许子项超出 |
+| **ScrollView** | 单轴按滚动方向流式堆叠（非 Flex；Both 默认纵向） | 默认 300×200；`.size(w,h)` 定 viewport | 非滚动轴填满 viewport；滚动轴允许子项超出 |
 | **Grid** | `GridLayout` | 仅 `style.width/height`；无则 0 | 须父级分配 frame；`grid_template_columns` 必填 |
 | **Card** | 内联 Column flex | `fixed_width` 默认 200；`fixed_height` 默认 0 | 无 `cached_content_size`；标题/actions 占固定区 |
 | **Form** / **FormItem** | 自定义 label+content | 硬编码（Form 400×200 等） | 业务表单项；非通用 flex 容器 |
 
-**ScrollView 与 Container 组合**：外层 Container/Column 分配 ScrollView viewport 尺寸；ScrollView 内子项在 content 坐标自然增高，超出部分滚动。
+**ScrollView 与 Container 组合**：外层 Container/Column 分配 ScrollView viewport 尺寸；Vertical/Both 的直接子项在 Y 轴流式排列，Horizontal 的直接子项在 X 轴流式排列。复杂二维内容仍以单个 Container/Grid 作为 content root。
 
 ---
 

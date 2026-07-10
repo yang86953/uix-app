@@ -255,6 +255,87 @@ fn scrollview_child_constraints_are_axis_aware() {
 }
 
 #[test]
+fn scrollview_multi_child_flow_respects_direction_and_non_scroll_axis() {
+    let mut horizontal_tree = WidgetTree::new();
+    let horizontal = horizontal_tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Horizontal).size(120.0, 80.0),
+    ));
+    horizontal_tree.add_child(
+        horizontal,
+        Box::new(FixedWidget {
+            size: Size::new(70.0, 30.0),
+            id: ComponentId::new(10),
+        }),
+    );
+    horizontal_tree.add_child(
+        horizontal,
+        Box::new(FixedWidget {
+            size: Size::new(90.0, 40.0),
+            id: ComponentId::new(11),
+        }),
+    );
+    horizontal_tree.layout();
+
+    let horizontal_children = horizontal_tree.get(horizontal).unwrap().children().to_vec();
+    assert_eq!(
+        horizontal_tree.get(horizontal_children[0]).unwrap().frame(),
+        Rect::new(0.0, 0.0, 70.0, 80.0)
+    );
+    assert_eq!(
+        horizontal_tree.get(horizontal_children[1]).unwrap().frame(),
+        Rect::new(70.0, 0.0, 90.0, 80.0)
+    );
+    let horizontal_sv: &ScrollView = horizontal_tree
+        .get(horizontal)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert_eq!(horizontal_sv.max_scroll_x(), 40.0);
+    assert_eq!(horizontal_sv.max_scroll_y(), 0.0);
+
+    let mut vertical_tree = WidgetTree::new();
+    let vertical = vertical_tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(120.0, 80.0),
+    ));
+    vertical_tree.add_child(
+        vertical,
+        Box::new(FixedWidget {
+            size: Size::new(30.0, 30.0),
+            id: ComponentId::new(12),
+        }),
+    );
+    vertical_tree.add_child(
+        vertical,
+        Box::new(FixedWidget {
+            size: Size::new(40.0, 70.0),
+            id: ComponentId::new(13),
+        }),
+    );
+    vertical_tree.layout();
+
+    let vertical_children = vertical_tree.get(vertical).unwrap().children().to_vec();
+    assert_eq!(
+        vertical_tree.get(vertical_children[0]).unwrap().frame(),
+        Rect::new(0.0, 0.0, 120.0, 30.0)
+    );
+    assert_eq!(
+        vertical_tree.get(vertical_children[1]).unwrap().frame(),
+        Rect::new(0.0, 30.0, 120.0, 70.0)
+    );
+    let vertical_sv: &ScrollView = vertical_tree
+        .get(vertical)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert_eq!(vertical_sv.max_scroll_x(), 0.0);
+    assert_eq!(vertical_sv.max_scroll_y(), 20.0);
+}
+
+#[test]
 fn scrollview_both_direction_allows_both_axes_to_overflow() {
     let mut tree = WidgetTree::new();
     let both = tree.set_root(Box::new(

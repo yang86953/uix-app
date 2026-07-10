@@ -273,10 +273,12 @@ component! {
 
         let mut max_right = frame.x;
         let mut max_bottom = frame.y;
+        let mut cursor_x = 0.0f32;
         let mut cursor_y = 0.0f32;
         let child_constraints = self.child_constraints(frame);
         let can_scroll_x = self.direction.can_scroll_x();
         let can_scroll_y = self.direction.can_scroll_y();
+        let horizontal_flow = can_scroll_x && !can_scroll_y;
         for &cid in children {
             let pref = tree
                 .get(cid)
@@ -305,15 +307,33 @@ component! {
             } else {
                 frame.h
             };
-            let r = Rect::new(frame.x, frame.y + cursor_y, w, h);
+            let r = if horizontal_flow {
+                Rect::new(frame.x + cursor_x, frame.y, w, h)
+            } else {
+                Rect::new(frame.x, frame.y + cursor_y, w, h)
+            };
             result.push((cid, r));
             max_right = max_right.max(r.x + r.w);
             max_bottom = max_bottom.max(r.y + r.h);
-            cursor_y += h;
+            if horizontal_flow {
+                cursor_x += w;
+            } else {
+                cursor_y += h;
+            }
         }
 
-        let content_w = (max_right - frame.x).max(frame.w);
-        let content_h = (max_bottom - frame.y).max(frame.h);
+        let raw_content_w = (max_right - frame.x).max(frame.w);
+        let raw_content_h = (max_bottom - frame.y).max(frame.h);
+        let content_w = if can_scroll_x {
+            raw_content_w
+        } else {
+            frame.w
+        };
+        let content_h = if can_scroll_y {
+            raw_content_h
+        } else {
+            frame.h
+        };
         self.content_bounds.set(Some(Size::new(content_w, content_h)));
         result
     }
