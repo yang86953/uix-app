@@ -22,8 +22,8 @@ use crate::draw::primitives::tessellator;
 use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
 use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
-    GraphicsBackend, GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient,
-    GpuSolidMesh, GpuSolidRect, GpuStrokeRect, IGraphicsContext, PresentFrame, RasterMode,
+    GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
+    GpuSolidRect, GpuStrokeRect, GraphicsBackend, IGraphicsContext, PresentFrame, RasterMode,
 };
 
 #[derive(Clone)]
@@ -240,13 +240,7 @@ impl D3d11Canvas2D {
         });
     }
 
-    fn queue_linear_gradient(
-        &mut self,
-        rect: Rect,
-        ca: Color,
-        cb: Color,
-        dir: GradientDirection,
-    ) {
+    fn queue_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
@@ -280,15 +274,7 @@ impl D3d11Canvas2D {
         });
     }
 
-    fn queue_radial_gradient(
-        &mut self,
-        cx: f32,
-        cy: f32,
-        ir: f32,
-        or: f32,
-        ic: Color,
-        oc: Color,
-    ) {
+    fn queue_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
         if or <= 0.0 {
             return;
         }
@@ -449,10 +435,7 @@ impl D3d11Canvas2D {
         }
     }
 
-    fn flush_native(
-        &mut self,
-        gpu_ctx: &mut dyn IGraphicsContext,
-    ) -> Result<(), Error> {
+    fn flush_native(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
         let pending_shadows = std::mem::take(&mut self.pending_shadows);
         let pending = std::mem::take(&mut self.pending_rects);
         let pending_strokes = std::mem::take(&mut self.pending_strokes);
@@ -1377,7 +1360,11 @@ mod tests {
         assert_eq!(upload_calls.get(), 0);
         assert_eq!(present_calls.get(), 1);
         let _ = PresentMode::Swapchain;
-        let _ = (clear_rect_calls.get(), last_stroke_count.get(), last_glyph_count.get());
+        let _ = (
+            clear_rect_calls.get(),
+            last_stroke_count.get(),
+            last_glyph_count.get(),
+        );
     }
 
     #[test]
@@ -1624,7 +1611,7 @@ mod tests {
     }
 
     #[test]
-    fn d3d11_backend_routes_simple_and_nested_paths_by_topology() {
+    fn d3d11_backend_routes_supported_and_unsupported_paths_by_topology() {
         let clear_calls = Rc::new(Cell::new(0usize));
         let clear_rect_calls = Rc::new(Cell::new(0usize));
         let draw_calls = Rc::new(Cell::new(0usize));
@@ -1719,11 +1706,37 @@ mod tests {
         }
         backend.present(&DamageRegion::full()).expect("present");
         assert_eq!(clear_calls.get(), 1);
-        assert_eq!(mesh_calls.get(), 1, "nested contours must not queue a mesh");
-        assert_eq!(last_mesh_count.get(), 2);
-        assert_eq!(blit_calls.get(), 1);
+        assert_eq!(mesh_calls.get(), 2, "single hole must queue a native mesh");
+        assert_eq!(last_mesh_count.get(), 1);
+        assert_eq!(blit_calls.get(), 0);
         assert_eq!(upload_calls.get(), 0);
         assert_eq!(present_calls.get(), 2);
+
+        {
+            let canvas = backend.surface().canvas();
+            let mut intersecting = crate::draw::primitives::path::PathBuilder::new();
+            intersecting
+                .move_to(10.0, 10.0)
+                .line_to(70.0, 10.0)
+                .line_to(70.0, 70.0)
+                .line_to(10.0, 70.0)
+                .close();
+            intersecting
+                .move_to(50.0, 50.0)
+                .line_to(110.0, 50.0)
+                .line_to(110.0, 90.0)
+                .line_to(50.0, 90.0)
+                .close();
+            canvas.fill_path(
+                &intersecting.build(),
+                Color::from_rgba(255, 160, 32, 180),
+                FillRule::NonZero,
+            );
+        }
+        backend.present(&DamageRegion::full()).expect("present");
+        assert_eq!(mesh_calls.get(), 2, "intersecting contours stay soft");
+        assert_eq!(blit_calls.get(), 1);
+        assert_eq!(present_calls.get(), 3);
         let _ = (
             clear_rect_calls.get(),
             draw_calls.get(),
@@ -1734,6 +1747,81 @@ mod tests {
             shadow_calls.get(),
             last_shadow_count.get(),
         );
+
+        #[cfg(feature = "d3d11")]
+        assert_single_hole_on_real_window();
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn assert_single_hole_on_real_window() {
+        if std::env::consts::OS != "windows" {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("D3D11 path test", 128, 96)
+            .expect("window");
+        let surface = window.native_surface_ptr();
+        assert!(!surface.is_null(), "Windows HWND must be available");
+        let context = crate::native::create_gpu_context_with_backend(
+            surface,
+            128,
+            96,
+            GraphicsBackend::D3d11,
+        )
+        .expect("D3D11 context");
+        let mut backend = D3d11Backend::new(context).expect("D3D11 backend");
+        backend.resize(128, 96).expect("resize backend");
+        backend
+            .gpu_ctx
+            .clear_render_target(0.0, 0.0, 0.0, 0.0)
+            .expect("clear render target");
+
+        let mut path = crate::draw::primitives::path::PathBuilder::new();
+        path.move_to(16.0, 8.0)
+            .line_to(112.0, 8.0)
+            .line_to(112.0, 88.0)
+            .line_to(16.0, 88.0)
+            .close();
+        path.move_to(48.0, 32.0)
+            .line_to(48.0, 64.0)
+            .line_to(80.0, 64.0)
+            .line_to(80.0, 32.0)
+            .close();
+        backend.surface.canvas.fill_path(
+            &path.build(),
+            Color::from_rgb(255, 0, 0),
+            FillRule::EvenOdd,
+        );
+        assert!(!backend.surface.canvas.soft_has_content);
+        assert_eq!(backend.surface.canvas.pending_meshes.len(), 1);
+
+        {
+            let D3d11Backend {
+                gpu_ctx, surface, ..
+            } = &mut backend;
+            surface
+                .canvas
+                .flush_native(gpu_ctx.as_mut())
+                .expect("flush native single-hole mesh");
+        }
+        let pixels = backend.gpu_ctx.read_pixels(0, 0, 128, 96);
+        assert_eq!(pixels.len(), 128 * 96);
+        assert_eq!(pixels[24 * 128 + 24], 0xFFFF_0000, "filled ring pixel");
+        assert_eq!(pixels[48 * 128 + 64], 0, "hole center must stay clear");
+        assert_eq!(pixels[4 * 128 + 4], 0, "outside must stay clear");
+        backend
+            .gpu_ctx
+            .present(&PresentFrame::Swapchain {
+                damage: PresentDamage::Full,
+            })
+            .expect("present single-hole frame");
+
+        backend.shutdown();
+        drop(backend);
+        window.close().expect("close native window");
     }
 
     #[test]
