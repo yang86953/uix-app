@@ -135,10 +135,19 @@ fn page_body(
     tk: &DesignTokens,
     timer_ticks: &State<u32>,
     anim_time: &State<f32>,
+    home_count: &State<i32>,
+    runtime_count: &State<i32>,
 ) -> ViewNode {
     column([
         header_bar(&active, tk, timer_ticks),
-        page_content(active, tk, timer_ticks, anim_time),
+        page_content(
+            active,
+            tk,
+            timer_ticks,
+            anim_time,
+            home_count,
+            runtime_count,
+        ),
     ])
     .flex_grow(1.0)
     .bg(tk.color_bg_layout)
@@ -150,9 +159,12 @@ fn page_shell(
     tk: &DesignTokens,
     timer_ticks: &State<u32>,
     anim_time: &State<f32>,
+    home_count: &State<i32>,
+    runtime_count: &State<i32>,
 ) -> ViewNode {
     let (icon, title) = PAGE_TITLES[idx];
-    let ctx = DemoCtx::new(tk, timer_ticks, anim_time, Some(active));
+    let ctx = DemoCtx::new(tk, timer_ticks, anim_time, Some(active))
+        .with_counters(home_count, runtime_count);
     column([
         page_heading(tk, icon, title.trim()).key(format!("heading-{idx}")),
         build_page(idx, &ctx).key(format!("body-{idx}")),
@@ -167,17 +179,40 @@ fn page_content(
     tk: &DesignTokens,
     timer_ticks: &State<u32>,
     anim_time: &State<f32>,
+    home_count: &State<i32>,
+    runtime_count: &State<i32>,
 ) -> ViewNode {
     let idx = active.get();
-    page_shell(idx, &active, tk, timer_ticks, anim_time)
+    page_shell(
+        idx,
+        &active,
+        tk,
+        timer_ticks,
+        anim_time,
+        home_count,
+        runtime_count,
+    )
 }
 
-fn app_shell(active: State<usize>, timer_ticks: State<u32>, anim_time: State<f32>) -> ViewNode {
+fn app_shell_with_counters(
+    active: State<usize>,
+    timer_ticks: State<u32>,
+    anim_time: State<f32>,
+    home_count: &State<i32>,
+    runtime_count: &State<i32>,
+) -> ViewNode {
     let tk = DesignTokens::antd_light();
     column([
         row([
             sidebar(active.clone(), &tk),
-            page_body(active, &tk, &timer_ticks, &anim_time),
+            page_body(
+                active,
+                &tk,
+                &timer_ticks,
+                &anim_time,
+                home_count,
+                runtime_count,
+            ),
         ])
         .flex_grow(1.0),
         row([
@@ -195,14 +230,25 @@ fn app_shell(active: State<usize>, timer_ticks: State<u32>, anim_time: State<f32
     .bg(tk.color_bg_layout)
 }
 
+#[cfg(test)]
+fn app_shell(active: State<usize>, timer_ticks: State<u32>, anim_time: State<f32>) -> ViewNode {
+    let home_count = State::new(0i32);
+    let runtime_count = State::new(0i32);
+    app_shell_with_counters(active, timer_ticks, anim_time, &home_count, &runtime_count)
+}
+
 pub fn run() {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
     let anim_time = State::new(0.0f32);
+    let home_count = State::new(0i32);
+    let runtime_count = State::new(0i32);
 
     let active_root = active.clone();
     let timer_for_root = timer_ticks.clone();
     let anim_for_root = anim_time.clone();
+    let home_count_for_root = home_count.clone();
+    let runtime_count_for_root = runtime_count.clone();
 
     let timer_for_start = timer_ticks.clone();
     let anim_for_start = anim_time.clone();
@@ -233,10 +279,12 @@ pub fn run() {
             }
         })
         .root(move || {
-            app_shell(
+            app_shell_with_counters(
                 active_root.clone(),
                 timer_for_root.clone(),
                 anim_for_root.clone(),
+                &home_count_for_root,
+                &runtime_count_for_root,
             )
         })
         .run();

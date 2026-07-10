@@ -47,7 +47,7 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
     let nav_general = active.clone();
     let nav_gallery = active.clone();
 
-    let count = State::new(0i32);
+    let count = ctx.home_count();
     let display = count.clone();
     let inc = count.clone();
     let dec = count.clone();
@@ -74,8 +74,8 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                         row([
                             button("+1")
                                 .primary()
-                                .on_click(move || inc.set(inc.get() + 1)),
-                            button("-1").on_click(move || {
+                                .on_click_capture(&count, move || inc.set(inc.get() + 1)),
+                            button("-1").on_click_capture(&count, move || {
                                 let v = dec.get();
                                 if v > 0 {
                                     dec.set(v - 1);
