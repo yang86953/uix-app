@@ -149,35 +149,50 @@ component! {
         }
         match self.layout {
             FormLayout::Vertical => {
-                let content_y = frame.y + 18.0;
-                let content_h = (frame.h - 18.0).max(28.0);
+                let frame_w = frame.w.max(0.0);
+                let frame_h = frame.h.max(0.0);
+                let label_h = 18.0f32.min(frame_h);
+                let content_y = frame.y + label_h;
+                let content_h = (frame_h - label_h).max(0.0);
                 children
                     .iter()
-                    .map(|&cid| (cid, Rect::new(frame.x, content_y, frame.w, content_h)))
+                    .map(|&cid| (cid, Rect::new(frame.x, content_y, frame_w, content_h)))
                     .collect()
             }
             FormLayout::Inline => {
-                let label_w = if self.label.is_empty() { 0.0 } else { 60.0 };
-                let pad = 8.0;
-                let content_x = frame.x + label_w + pad;
-                let content_w = (frame.w - label_w - pad).max(80.0);
-                children
-                    .iter()
-                    .map(|&cid| (cid, Rect::new(content_x, frame.y + 2.0, content_w, frame.h - 4.0)))
-                    .collect()
-            }
-            FormLayout::Horizontal => {
-                let pad = 8.0;
+                let frame_w = frame.w.max(0.0);
+                let frame_h = frame.h.max(0.0);
                 let label_w = if self.label.is_empty() {
                     0.0
                 } else {
-                    self.label_width.max(60.0)
+                    60.0f32.min(frame_w)
                 };
+                let pad = 8.0f32.min((frame_w - label_w).max(0.0));
                 let content_x = frame.x + label_w + pad;
-                let content_w = (frame.w - label_w - pad).max(100.0);
+                let content_y = frame.y + 2.0f32.min(frame_h);
+                let content_w = (frame_w - label_w - pad).max(0.0);
+                let content_h = (frame_h - 4.0).max(0.0);
                 children
                     .iter()
-                    .map(|&cid| (cid, Rect::new(content_x, frame.y + 2.0, content_w, frame.h - 18.0)))
+                    .map(|&cid| (cid, Rect::new(content_x, content_y, content_w, content_h)))
+                    .collect()
+            }
+            FormLayout::Horizontal => {
+                let frame_w = frame.w.max(0.0);
+                let frame_h = frame.h.max(0.0);
+                let label_w = if self.label.is_empty() {
+                    0.0
+                } else {
+                    self.label_width.max(60.0).min(frame_w)
+                };
+                let pad = 8.0f32.min((frame_w - label_w).max(0.0));
+                let content_x = frame.x + label_w + pad;
+                let content_y = frame.y + 2.0f32.min(frame_h);
+                let content_w = (frame_w - label_w - pad).max(0.0);
+                let content_h = (frame_h - 18.0).max(0.0);
+                children
+                    .iter()
+                    .map(|&cid| (cid, Rect::new(content_x, content_y, content_w, content_h)))
                     .collect()
             }
         }
@@ -327,28 +342,42 @@ component! {
         match self.layout {
             FormLayout::Inline => {
                 let mut x = frame.x;
-                let child_constraints = Constraints::loose(Size::new(frame.w, frame.h));
+                let right = frame.x + frame.w.max(0.0);
                 for &cid in children {
+                    let item_x = x.min(right);
+                    let remaining_w = (right - item_x).max(0.0);
+                    let max = Size::new(remaining_w, frame.h.max(0.0));
+                    let child_constraints = Constraints::new(
+                        Size::new(120.0f32.min(remaining_w), 0.0),
+                        max,
+                        None,
+                    );
                     let pref = tree
                         .get(cid)
                         .map(|c| c.measure(child_constraints))
-                        .unwrap_or(Size::new(200.0, 44.0));
-                    let item_w = pref.w.max(120.0);
-                    result.push((cid, Rect::new(x, frame.y, item_w, frame.h)));
-                    x += item_w + self.gap;
+                        .unwrap_or_else(|| child_constraints.clamp(Size::new(200.0, 44.0)));
+                    result.push((cid, Rect::new(item_x, frame.y, pref.w, max.h)));
+                    x = (item_x + pref.w + self.gap).min(right);
                 }
             }
             FormLayout::Horizontal | FormLayout::Vertical => {
                 let mut y = frame.y;
-                let child_constraints = Constraints::loose(Size::new(frame.w, frame.h));
+                let bottom = frame.y + frame.h.max(0.0);
                 for &cid in children {
+                    let item_y = y.min(bottom);
+                    let remaining_h = (bottom - item_y).max(0.0);
+                    let max = Size::new(frame.w.max(0.0), remaining_h);
+                    let child_constraints = Constraints::new(
+                        Size::new(0.0, 44.0f32.min(remaining_h)),
+                        max,
+                        None,
+                    );
                     let pref = tree
                         .get(cid)
                         .map(|c| c.measure(child_constraints))
-                        .unwrap_or(Size::new(frame.w, 44.0));
-                    let item_h = pref.h.max(44.0);
-                    result.push((cid, Rect::new(frame.x, y, frame.w, item_h)));
-                    y += item_h + self.gap;
+                        .unwrap_or_else(|| child_constraints.clamp(Size::new(frame.w, 44.0)));
+                    result.push((cid, Rect::new(frame.x, item_y, max.w, pref.h)));
+                    y = (item_y + pref.h + self.gap).min(bottom);
                 }
             }
         }
@@ -563,6 +592,15 @@ mod tests {
         }
     }
 
+    fn assert_rect_within(parent: Rect, child: Rect) {
+        assert!(child.w >= 0.0);
+        assert!(child.h >= 0.0);
+        assert!(child.x >= parent.x);
+        assert!(child.y >= parent.y);
+        assert!(child.x + child.w <= parent.x + parent.w);
+        assert!(child.y + child.h <= parent.y + parent.h);
+    }
+
     #[test]
     fn measure_clamps_form_item_size() {
         let measured = FormItem::new("Name").measure(Constraints::loose(Size::new(120.0, 20.0)));
@@ -599,5 +637,52 @@ mod tests {
             tree.get(child).unwrap().frame(),
             Rect::new(0.0, 0.0, 80.0, 60.0)
         );
+    }
+
+    #[test]
+    fn form_layout_children_keep_all_items_within_narrow_frame() {
+        let frame = Rect::new(10.0, 20.0, 80.0, 20.0);
+        for layout in [
+            FormLayout::Vertical,
+            FormLayout::Inline,
+            FormLayout::Horizontal,
+        ] {
+            let mut tree = WidgetTree::new();
+            let root = tree.set_root(Box::new(Form::new().layout(layout)));
+            let first = tree.add_child(root, Box::new(FixedChild(Size::new(10.0, 10.0))));
+            let second = tree.add_child(root, Box::new(FixedChild(Size::new(10.0, 10.0))));
+
+            let placements =
+                tree.get(root)
+                    .unwrap()
+                    .layout_children(frame, &[first, second], &tree);
+
+            assert_eq!(placements.len(), 2);
+            for &(_, rect) in &placements {
+                assert_rect_within(frame, rect);
+            }
+        }
+    }
+
+    #[test]
+    fn form_item_layout_children_clamp_label_padding_and_status_regions() {
+        let frame = Rect::new(10.0, 20.0, 40.0, 10.0);
+        for layout in [
+            FormLayout::Vertical,
+            FormLayout::Inline,
+            FormLayout::Horizontal,
+        ] {
+            let mut tree = WidgetTree::new();
+            let root = tree.set_root(Box::new(FormItem::new("Name").layout(layout)));
+            let child = tree.add_child(root, Box::new(FixedChild(Size::new(20.0, 8.0))));
+
+            let placements = tree
+                .get(root)
+                .unwrap()
+                .layout_children(frame, &[child], &tree);
+
+            assert_eq!(placements.len(), 1);
+            assert_rect_within(frame, placements[0].1);
+        }
     }
 }
