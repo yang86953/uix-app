@@ -66,6 +66,9 @@ macro_rules! impl_widget_component {
     (@insert_cap $caps:ident Animation) => {
         $caps.insert($crate::ui::traits::WidgetCapabilities::ANIMATION);
     };
+    (@insert_cap $caps:ident TextInput) => {
+        $caps.insert($crate::ui::traits::WidgetCapabilities::TEXT_INPUT);
+    };
     (@upcast Layout) => {
         fn as_layout(&self) -> Option<&dyn $crate::ui::traits::WidgetLayout> {
             Some(self)
@@ -100,6 +103,11 @@ macro_rules! impl_widget_component {
             Some(self)
         }
         fn as_animation_mut(&mut self) -> Option<&mut dyn $crate::ui::traits::WidgetAnimation> {
+            Some(self)
+        }
+    };
+    (@upcast TextInput) => {
+        fn as_text_input(&self) -> Option<&dyn $crate::ui::traits::WidgetTextInput> {
             Some(self)
         }
     };
@@ -159,6 +167,20 @@ macro_rules! wc_upcast {
             Some(self)
         }
     };
+    ($T:ty; WidgetTextInput) => {
+        fn as_text_input(&self) -> Option<&dyn $crate::ui::traits::WidgetTextInput> {
+            Some(self)
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __component_text_input_upcast_method {
+    (text_input_cursor_rect; $T:ty) => {
+        $crate::wc_upcast!($T; WidgetTextInput);
+    };
+    ($other:ident; $T:ty) => {};
 }
 
 // ── 辅助宏：build 方法和 upcast ──
@@ -294,6 +316,8 @@ macro_rules! component {
                             c.insert($crate::ui::traits::WidgetCapabilities::LIFECYCLE),
                         "update_animation" | "dirty_bounds" =>
                             c.insert($crate::ui::traits::WidgetCapabilities::ANIMATION),
+                        "text_input_cursor_rect" =>
+                            c.insert($crate::ui::traits::WidgetCapabilities::TEXT_INPUT),
                         _ => {}
                     }
                 )*
@@ -301,6 +325,9 @@ macro_rules! component {
             }
             $(
                 $crate::__component_build_method!($method; ($($params)*) $(-> $ret)? $body);
+            )*
+            $(
+                $crate::__component_text_input_upcast_method!($method; $name);
             )*
 
             $crate::wc_upcast!($name; WidgetLayout);
@@ -346,6 +373,14 @@ macro_rules! component {
             WidgetAnimation,
             $name,
             [update_animation dirty_bounds],
+            [$(
+                ($method, ($($params)*) $(-> $ret)? $body)
+            )*]
+        }
+        $crate::__component_grouped_impl! {
+            WidgetTextInput,
+            $name,
+            [accepts_text_input text_input_cursor_rect],
             [$(
                 ($method, ($($params)*) $(-> $ret)? $body)
             )*]
@@ -736,6 +771,12 @@ macro_rules! __match_trait_method {
     (WidgetAnimation, dirty_bounds, ($($p:tt)*) -> $ret:ty $body:block) => {
         fn dirty_bounds($($p)*) -> $ret $body
     };
+    (WidgetTextInput, accepts_text_input, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn accepts_text_input($($p)*) -> $ret $body
+    };
+    (WidgetTextInput, text_input_cursor_rect, ($($p:tt)*) -> $ret:ty $body:block) => {
+        fn text_input_cursor_rect($($p)*) -> $ret $body
+    };
     // ── 不属于此 trait：跳过 ──
     ($trait:ident, $method:ident, $($rest:tt)*) => {};
 }
@@ -782,6 +823,13 @@ macro_rules! __component_grouped_impl {
         impl $crate::ui::traits::WidgetAnimation for $T {
             $(
                 $crate::__match_trait_method!(WidgetAnimation, $method, ($($p)*) $(-> $ret)? $body);
+            )*
+        }
+    };
+    (WidgetTextInput, $T:ty, [$($allowed:ident)*], [$(($method:ident, ($($p:tt)*) $(-> $ret:ty)? $body:block))*]) => {
+        impl $crate::ui::traits::WidgetTextInput for $T {
+            $(
+                $crate::__match_trait_method!(WidgetTextInput, $method, ($($p)*) $(-> $ret)? $body);
             )*
         }
     };

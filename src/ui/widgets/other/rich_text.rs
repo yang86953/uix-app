@@ -309,7 +309,7 @@ component! {
 
         let (layout_lines, _total_h, _max_line_w) = if need_relayout {
             let font = *ctx.font();
-            let fs = self.resolved_font_size_px(ctx.spatial().dpi());
+            let fs = self.resolved_font_size_px(ctx.dpi());
             let (lines, h, w) = layout_rich_text_real(
                 &self.segments, max_w, fs, self.default_color,
                 ctx.font_service(), &font,

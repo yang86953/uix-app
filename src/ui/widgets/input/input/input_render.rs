@@ -46,20 +46,22 @@ impl Input {
             (inner_frame.w - PAD * 2.0).max(20.0),
             (inner_frame.h - 12.0).max(20.0),
         );
-        ctx.canvas_2d().push_clip(text_area);
+        ctx.push_clip(text_area);
 
-        let display_text = if self.value.is_empty() && !self.focused {
-            &self.placeholder
+        let composed_value = self.value_with_composition();
+        let has_composition = !self.composition.is_empty();
+        let display_text = if self.value.is_empty() && !has_composition && !self.focused {
+            self.placeholder.as_str()
         } else {
-            &self.value
+            composed_value.as_ref()
         };
-        let disp_color = if self.value.is_empty() && !self.focused {
+        let disp_color = if self.value.is_empty() && !has_composition && !self.focused {
             text_tertiary
         } else {
             text_color
         };
 
-        let lines: Vec<&str> = if display_text == &self.placeholder {
+        let lines: Vec<&str> = if display_text == self.placeholder.as_str() {
             vec![self.placeholder.as_str()]
         } else {
             display_text.lines().collect()
@@ -97,43 +99,66 @@ impl Input {
             let line_end = line_start + line.chars().count();
 
             // 选中高亮
-            if let Some((sel_s, sel_e)) = self.selection.get() {
-                if sel_s < sel_e && sel_s < line_end && sel_e > line_start {
-                    let sel_in_line_start = sel_s.saturating_sub(line_start);
-                    let sel_in_line_end = if sel_e < line_end {
-                        sel_e - line_start
-                    } else {
-                        line.chars().count()
-                    };
-                    // 估算选中区域的 x 位置
-                    let before_sel: String = line.chars().take(sel_in_line_start).collect();
-                    let sel_text: String = line
-                        .chars()
-                        .skip(sel_in_line_start)
-                        .take(sel_in_line_end - sel_in_line_start)
-                        .collect();
-                    let x0 = text_area.x + ctx.measure_text(&before_sel, FONT_SIZE).w;
-                    let sel_w = ctx.measure_text(&sel_text, FONT_SIZE).w;
-                    ctx.fill_rect(
-                        Rect::new(x0, y, sel_w, line_h),
-                        primary.with_alpha(64),
-                        None,
-                    );
+            if !has_composition {
+                if let Some((sel_s, sel_e)) = self.selection.get() {
+                    if sel_s < sel_e && sel_s < line_end && sel_e > line_start {
+                        let sel_in_line_start = sel_s.saturating_sub(line_start);
+                        let sel_in_line_end = if sel_e < line_end {
+                            sel_e - line_start
+                        } else {
+                            line.chars().count()
+                        };
+                        // 估算选中区域的 x 位置
+                        let before_sel: String = line.chars().take(sel_in_line_start).collect();
+                        let sel_text: String = line
+                            .chars()
+                            .skip(sel_in_line_start)
+                            .take(sel_in_line_end - sel_in_line_start)
+                            .collect();
+                        let x0 = text_area.x + ctx.measure_text(&before_sel, FONT_SIZE).w;
+                        let sel_w = ctx.measure_text(&sel_text, FONT_SIZE).w;
+                        ctx.fill_rect(
+                            Rect::new(x0, y, sel_w, line_h),
+                            primary.with_alpha(64),
+                            None,
+                        );
+                    }
                 }
             }
 
             // 行内光学居中：用 visual_center_y，去掉魔法 +2.0
-            let text_y = ctx.visual_center_y(Rect::new(text_area.x, y, text_area.w, line_h), FONT_SIZE);
+            let text_y =
+                ctx.visual_center_y(Rect::new(text_area.x, y, text_area.w, line_h), FONT_SIZE);
             ctx.draw_text(line, Point::new(text_area.x, text_y), disp_color, FONT_SIZE);
 
-            // 光标（在当前行且 focused）
-            if self.focused && self.selection.get().is_none() && li == cursor_line {
+            if li == cursor_line {
                 let col = self.cursor_line_col().1;
-                let before: String = line.chars().take(col).collect();
+                let composition_chars = if has_composition {
+                    self.composition.chars().count()
+                } else {
+                    0
+                };
+                let before: String = line.chars().take(col + composition_chars).collect();
                 let cx = text_area.x + ctx.measure_text(&before, FONT_SIZE).w;
                 let caret_h = (line_h - 4.0).max(FONT_SIZE * 0.8);
                 let caret_y = y + (line_h - caret_h) * 0.5;
-                ctx.fill_rect(Rect::new(cx, caret_y, 1.5, caret_h), primary, None);
+                self.caret_rect.set(Rect::new(cx, caret_y, 1.5, caret_h));
+
+                if has_composition {
+                    let before_composition: String = line.chars().take(col).collect();
+                    let composition_x =
+                        text_area.x + ctx.measure_text(&before_composition, FONT_SIZE).w;
+                    let composition_w = ctx.measure_text(&self.composition, FONT_SIZE).w;
+                    ctx.fill_rect(
+                        Rect::new(composition_x, y + line_h - 2.0, composition_w.max(1.5), 1.5),
+                        primary,
+                        None,
+                    );
+                }
+
+                if self.focused && self.selection.get().is_none() {
+                    ctx.fill_rect(Rect::new(cx, caret_y, 1.5, caret_h), primary, None);
+                }
             }
 
             y += line_h;
@@ -143,14 +168,12 @@ impl Input {
         if self.focused && lines.is_empty() {
             let caret_h = (line_h - 4.0).max(FONT_SIZE * 0.8);
             let caret_y = text_area.y + (line_h - caret_h) * 0.5;
-            ctx.fill_rect(
-                Rect::new(text_area.x, caret_y, 1.5, caret_h),
-                primary,
-                None,
-            );
+            let caret = Rect::new(text_area.x, caret_y, 1.5, caret_h);
+            self.caret_rect.set(caret);
+            ctx.fill_rect(caret, primary, None);
         }
 
-        ctx.canvas_2d().pop_clip();
+        ctx.pop_clip();
     }
 }
 
@@ -289,12 +312,14 @@ impl Input {
             ctx.set_font(saved);
         }
 
-        let display_text = if self.value.is_empty() {
-            &self.placeholder
+        let composed_value = self.value_with_composition();
+        let has_composition = !self.composition.is_empty();
+        let display_text = if self.value.is_empty() && !has_composition {
+            self.placeholder.as_str()
         } else {
-            &self.value
+            composed_value.as_ref()
         };
-        let disp_color = if self.value.is_empty() && !self.focused {
+        let disp_color = if self.value.is_empty() && !has_composition && !self.focused {
             text_tertiary
         } else {
             text_color
@@ -306,11 +331,11 @@ impl Input {
             return;
         }
         let text_area = Rect::new(text_area_x, inner_frame.y, text_area_w, inner_frame.h);
-        ctx.canvas_2d().push_clip(text_area);
+        ctx.push_clip(text_area);
 
         let mut scroll_off = self.scroll_offset_x.get();
-        let total_text_w = if !self.value.is_empty() {
-            ctx.measure_text(&self.value, FONT_SIZE).w
+        let total_text_w = if !display_text.is_empty() {
+            ctx.measure_text(display_text, FONT_SIZE).w
         } else {
             0.0
         };
@@ -327,13 +352,19 @@ impl Input {
         } else {
             0.0
         };
+        let composition_w = if has_composition {
+            ctx.measure_text(&self.composition, FONT_SIZE).w
+        } else {
+            0.0
+        };
+        let caret_text_w = text_before_w + composition_w;
 
         let right_margin = 10.0;
-        if text_before_w - scroll_off > text_area_w - right_margin {
-            scroll_off = text_before_w - text_area_w + right_margin;
+        if caret_text_w - scroll_off > text_area_w - right_margin {
+            scroll_off = caret_text_w - text_area_w + right_margin;
         }
-        if text_before_w - scroll_off < 0.0 {
-            scroll_off = text_before_w;
+        if caret_text_w - scroll_off < 0.0 {
+            scroll_off = caret_text_w;
         }
         scroll_off = scroll_off.min(total_text_w - 1.0).max(0.0);
         self.scroll_offset_x.set(scroll_off);
@@ -365,7 +396,7 @@ impl Input {
                     xs.push(g.x);
                 }
             }
-            if !self.value.is_empty() {
+            if !self.value.is_empty() && !has_composition {
                 if let Some((sel_s, sel_e)) = self.selection.get() {
                     if sel_s < sel_e {
                         let visual_h = ctx
@@ -400,15 +431,27 @@ impl Input {
             ctx.blit_glyph_layout(&layout, abs_pos, disp_color, FONT_SIZE);
         }
 
-        ctx.canvas_2d().pop_clip();
-
-        if self.focused && self.selection.get().is_none() {
-            let cursor_x = text_area_x + text_before_w - scroll_off;
+        if has_composition {
+            let composition_x = text_area_x + text_before_w - scroll_off;
             ctx.fill_rect(
-                Rect::new(cursor_x, inner_frame.y + 4.0, 1.5, inner_frame.h - 8.0),
+                Rect::new(
+                    composition_x,
+                    inner_frame.y + inner_frame.h - 3.0,
+                    composition_w.max(1.5),
+                    1.5,
+                ),
                 primary,
                 None,
             );
+        }
+
+        ctx.pop_clip();
+
+        let cursor_x = text_area_x + caret_text_w - scroll_off;
+        let caret = Rect::new(cursor_x, inner_frame.y + 4.0, 1.5, inner_frame.h - 8.0);
+        self.caret_rect.set(caret);
+        if self.focused && self.selection.get().is_none() {
+            ctx.fill_rect(caret, primary, None);
         }
 
         if self.clearable && !self.value.is_empty() && self.focused {

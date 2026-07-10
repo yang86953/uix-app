@@ -84,3 +84,38 @@ fn paint_context_debug_mode_defaults_off_until_enabled() {
     // 打开后边框路径可走通（NoopCanvas 不记录，仅防 panic）
     ctx.draw_debug_border(Rect::new(0.0, 0.0, 40.0, 20.0), 0, false);
 }
+
+#[test]
+fn display_list_recording_rejects_untracked_canvas_access() {
+    use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::font::font_service::FontService;
+    use crate::draw::image::ImageService;
+    use crate::draw::painting::DisplayList;
+    use crate::draw::spatial::Orientation;
+    use crate::draw::{Color, FontHandle};
+    use crate::ui::theme::DesignTokens;
+
+    let mut canvas = NoopCanvas2D;
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new(
+        &mut canvas,
+        FontHandle::default(),
+        &fs,
+        &img,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        100,
+        100,
+    );
+    let mut list = DisplayList::new();
+    ctx.set_recorder(Some(&mut list));
+    ctx.fill_rect(Rect::new(0.0, 0.0, 10.0, 10.0), Color::red(), None);
+    assert!(ctx.recording_complete());
+
+    let _ = ctx.canvas_2d();
+    assert!(!ctx.recording_complete());
+}

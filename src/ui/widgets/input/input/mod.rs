@@ -4,6 +4,7 @@
 //! textarea mode: Enter emits a submit semantic event, Shift+Enter inserts a newline.
 //! 支持文字选择、粘贴、键盘导航、前缀/后缀图标等。
 
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 
 use crate::component;
@@ -36,6 +37,8 @@ component! {
         disabled: bool,
         focused: bool,
         hovered: bool,
+        composition: String,
+        caret_rect: Cell<Rect>,
         /// 当前光标所在的字符索引（全文本平展）
         cursor_char: usize,
         /// 水平滚动偏移（单行模式）
@@ -64,6 +67,10 @@ component! {
     }
 
     tab_index => (&self) -> i32 { 1 }
+
+    accepts_text_input => (&self) -> bool { !self.disabled }
+
+    text_input_cursor_rect => (&self) -> Rect { self.caret_rect.get() }
 
     measure => (&self, constraints: Constraints) -> Size {
         constraints.clamp(self.intrinsic_size())
@@ -114,8 +121,14 @@ component! {
             }
             SystemEvent::PointerEnter => { self.hovered = true; EventResult::Handled }
             SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
+            SystemEvent::FocusIn => {
+                self.focused = true;
+                EventResult::Handled
+            }
             SystemEvent::FocusOut => {
-                self.focused = false; self.selection.set(None);
+                self.focused = false;
+                self.composition.clear();
+                self.selection.set(None);
                 EventResult::Handled
             }
             SystemEvent::KeyDown { key, mods } => {
@@ -234,6 +247,7 @@ component! {
                 }
             }
             SystemEvent::TextInput { text } => {
+                self.composition.clear();
                 if self.insert_text_at_cursor(text) {
                     EventResult::Handled
                 } else {
@@ -246,6 +260,18 @@ component! {
                 } else {
                     EventResult::NotHandled
                 }
+            }
+            SystemEvent::ImeCompositionStart => {
+                self.composition.clear();
+                EventResult::Handled
+            }
+            SystemEvent::ImeCompositionUpdate { text } => {
+                self.composition.clone_from(text);
+                EventResult::Handled
+            }
+            SystemEvent::ImeCompositionEnd { .. } => {
+                self.composition.clear();
+                EventResult::Handled
             }
             _ => EventResult::NotHandled,
         }
@@ -295,6 +321,8 @@ impl Input {
             disabled: false,
             focused: false,
             hovered: false,
+            composition: String::new(),
+            caret_rect: Cell::new(Rect::zero()),
             cursor_char: 0,
             scroll_offset_x: Cell::new(0.0),
             scroll_line: Cell::new(0),
@@ -335,6 +363,7 @@ impl Input {
     }
     pub fn set_value(&mut self, v: impl Into<String>) {
         self.value = v.into();
+        self.composition.clear();
         self.cursor_char = self.value.chars().count();
         self.scroll_offset_x.set(0.0);
         self.scroll_line.set(0);
@@ -398,6 +427,23 @@ impl Input {
     pub fn textarea_rows(mut self, n: usize) -> Self {
         self.textarea_rows = n;
         self
+    }
+
+    fn value_with_composition(&self) -> Cow<'_, str> {
+        if self.composition.is_empty() {
+            return Cow::Borrowed(&self.value);
+        }
+        let byte_pos = self
+            .value
+            .char_indices()
+            .nth(self.cursor_char)
+            .map(|(index, _)| index)
+            .unwrap_or(self.value.len());
+        let mut value = String::with_capacity(self.value.len() + self.composition.len());
+        value.push_str(&self.value[..byte_pos]);
+        value.push_str(&self.composition);
+        value.push_str(&self.value[byte_pos..]);
+        Cow::Owned(value)
     }
     // ── 内部：光标移动 ──
 
@@ -600,10 +646,16 @@ impl SnapshotSource for Input {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+    use crate::draw::font::font_service::FontService;
+    use crate::draw::image::ImageService;
+    use crate::draw::painting::{DisplayList, PaintContext};
+    use crate::draw::spatial::Orientation;
     use crate::native::test_harness::FakeClipboard;
     use crate::native::traits::input::IClipboard;
-    use crate::ui::traits::EventHandler;
-    use crate::ui::traits::WidgetLayout;
+    use crate::ui::theme::DesignTokens;
+    use crate::ui::traits::{EventHandler, WidgetComponent, WidgetLayout, WidgetRender};
 
     fn install_clipboard(clipboard: &mut FakeClipboard) {
         let c: &mut dyn IClipboard = clipboard;
@@ -653,5 +705,156 @@ mod tests {
         let measured = Input::new("Search").measure(Constraints::loose(Size::new(60.0, 20.0)));
 
         assert_eq!(measured, Size::new(60.0, 20.0));
+    }
+
+    #[test]
+    fn focus_and_ime_events_keep_preedit_separate_from_committed_value() {
+        let mut input = Input::new("type here");
+
+        assert_eq!(input.on_event(&SystemEvent::FocusIn), EventResult::Handled);
+        assert!(input.focused);
+        assert_eq!(
+            input.on_event(&SystemEvent::ImeCompositionStart),
+            EventResult::Handled
+        );
+        assert_eq!(
+            input.on_event(&SystemEvent::ImeCompositionUpdate {
+                text: "zhong".to_string(),
+            }),
+            EventResult::Handled
+        );
+        assert_eq!(input.composition, "zhong");
+        assert_eq!(input.value(), "");
+
+        assert_eq!(
+            input.on_event(&SystemEvent::ImeCompositionEnd {
+                text: "中".to_string(),
+            }),
+            EventResult::Handled
+        );
+        assert!(input.composition.is_empty());
+        assert_eq!(input.value(), "");
+        assert_eq!(
+            input.on_event(&SystemEvent::TextInput {
+                text: "中".to_string(),
+            }),
+            EventResult::Handled
+        );
+        assert_eq!(input.value(), "中");
+    }
+
+    #[test]
+    fn text_input_capability_reports_enabled_state_and_caret_rect() {
+        let input = Input::new("type here");
+        input.caret_rect.set(Rect::new(10.0, 20.0, 1.5, 18.0));
+
+        assert!(input
+            .capabilities()
+            .contains(crate::ui::traits::WidgetCapabilities::TEXT_INPUT));
+        let client = input.as_text_input().expect("Input text capability");
+        assert!(client.accepts_text_input());
+        assert_eq!(
+            client.text_input_cursor_rect(),
+            Rect::new(10.0, 20.0, 1.5, 18.0)
+        );
+
+        let disabled = Input::new("type here").disabled(true);
+        assert!(!disabled
+            .as_text_input()
+            .expect("Input text capability")
+            .accepts_text_input());
+    }
+
+    #[test]
+    fn translated_software_render_keeps_placeholder_and_value_glyphs_visible() {
+        fn render(input: Option<&Input>, replay: Option<&DisplayList>) -> (Vec<u32>, DisplayList) {
+            let mut canvas = SharedRasterizer::new(PixelSurface::new(120, 40));
+            let mut fonts = FontService::new();
+            let font = fonts
+                .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+                .expect("load deterministic test font");
+            let images = ImageService::new();
+            let tokens = DesignTokens::antd_light();
+            let tree = WidgetTree::new();
+            let frame = Rect::new(240.0, 160.0, 100.0, 32.0);
+            let mut list = DisplayList::new();
+
+            {
+                let mut ctx = PaintContext::new(
+                    &mut canvas,
+                    font,
+                    &fonts,
+                    &images,
+                    &tokens,
+                    96.0,
+                    1.0,
+                    Orientation::YDown,
+                    120,
+                    40,
+                );
+                ctx.canvas_2d().translate(-frame.x, -frame.y);
+                if let Some(input) = input {
+                    ctx.set_recorder(Some(&mut list));
+                    WidgetRender::render(input, frame, &mut ctx, &tree);
+                    ctx.set_recorder(None);
+                    assert!(ctx.recording_complete());
+                } else if let Some(replay) = replay {
+                    replay.replay(&mut ctx);
+                }
+            }
+
+            (canvas.surface().pixels().to_vec(), list)
+        }
+
+        const GLYPH: &str = "\u{E151}";
+        let (baseline, _) = render(Some(&Input::new("")), None);
+        let (placeholder, placeholder_list) = render(Some(&Input::new(GLYPH)), None);
+        let (committed, committed_list) = render(Some(&Input::new("").with_value(GLYPH)), None);
+        let mut focused_empty = Input::new("");
+        focused_empty.on_event(&SystemEvent::FocusIn);
+        let (focused_empty_pixels, _) = render(Some(&focused_empty), None);
+        let mut preedit = Input::new("");
+        preedit.on_event(&SystemEvent::FocusIn);
+        preedit.on_event(&SystemEvent::ImeCompositionStart);
+        preedit.on_event(&SystemEvent::ImeCompositionUpdate {
+            text: GLYPH.to_string(),
+        });
+        let (preedit_pixels, preedit_list) = render(Some(&preedit), None);
+        let changed = |pixels: &[u32]| {
+            pixels
+                .iter()
+                .zip(&baseline)
+                .filter(|(actual, base)| actual != base)
+                .count()
+        };
+
+        assert!(
+            changed(&placeholder) > 0,
+            "placeholder glyph must reach pixels"
+        );
+        assert!(changed(&committed) > 0, "committed glyph must reach pixels");
+        assert_ne!(
+            preedit_pixels, focused_empty_pixels,
+            "preedit glyph and underline must reach pixels"
+        );
+        assert!(
+            preedit.caret_rect.get().x > 240.0 + PAD,
+            "preedit caret must follow the composed glyph"
+        );
+        assert_eq!(
+            render(None, Some(&placeholder_list)).0,
+            placeholder,
+            "cached replay must preserve placeholder glyph and clip"
+        );
+        assert_eq!(
+            render(None, Some(&committed_list)).0,
+            committed,
+            "cached replay must preserve committed glyph and clip"
+        );
+        assert_eq!(
+            render(None, Some(&preedit_list)).0,
+            preedit_pixels,
+            "cached replay must preserve preedit glyph, underline, and caret"
+        );
     }
 }

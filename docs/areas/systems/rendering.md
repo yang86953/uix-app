@@ -154,7 +154,9 @@ Build 时子节点按 `z_index` 排序。旧 Picture offscreen 按 node_id+bound
 
 并行 DisplayList 缓存（`render_object/tree.rs`）：
 
-- 首帧后 Content pass 可 record+replay DisplayList
+- Content pass 在脏帧边直绘边 record；录制结果仅供后续 clean frame replay，当前帧不再立即重复重放
+- `PushClip` / `PopClip` 与预布局 glyph 均为可重放 PaintOp；Canvas offset 同样作用于 clip
+- PaintContext 检测到底层直绘绕过 PaintOp 时，本次列表判为不完整并回退 live paint，不缓存残缺列表
 - `sync(scene)` 刷新 dirty 节点
 - 与 LayerTree 协同：`paint_content` 走 cache，AfterChildren 仍 live paint
 

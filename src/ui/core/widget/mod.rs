@@ -19,7 +19,7 @@ pub(crate) type WidgetId = ComponentId;
 // 重新导出 api 中的 trait 定义
 pub use crate::ui::traits::{
     EventHandler, IntoWidgetNode, WidgetCapabilities, WidgetComponent, WidgetLayout,
-    WidgetLifecycle, WidgetRender,
+    WidgetLifecycle, WidgetRender, WidgetTextInput,
 };
 
 pub struct WidgetNode {
@@ -244,6 +244,10 @@ impl BoxedWidget {
     }
     pub fn as_layout(&self) -> Option<&dyn WidgetLayout> {
         self.component.as_layout()
+    }
+
+    pub fn as_text_input(&self) -> Option<&dyn WidgetTextInput> {
+        self.component.as_text_input()
     }
 
     pub fn as_lifecycle(&self) -> Option<&dyn WidgetLifecycle> {

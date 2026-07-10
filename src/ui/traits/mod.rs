@@ -12,5 +12,5 @@ pub use render::{DebugRenderer, TextRenderer};
 pub use theme::TokenProvider;
 pub use widget::{
     EventHandler, IntoWidgetNode, WidgetAnimation, WidgetCapabilities, WidgetComponent,
-    WidgetLayout, WidgetLifecycle, WidgetRender,
+    WidgetLayout, WidgetLifecycle, WidgetRender, WidgetTextInput,
 };

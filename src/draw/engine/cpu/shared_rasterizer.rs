@@ -307,7 +307,9 @@ impl Canvas2D for SharedRasterizer {
         self.renderer.restore();
     }
     fn push_clip(&mut self, rect: Rect) {
-        self.renderer.push_clip(rect);
+        let (ox, oy) = self.renderer.offset();
+        self.renderer
+            .push_clip(Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h));
     }
     fn pop_clip(&mut self) {
         self.renderer.pop_clip();
@@ -349,3 +351,7 @@ impl Canvas2D for SharedRasterizer {
         RenderingBackend::copy_region(&mut self.surface, src, viewport.x as i32, viewport.y as i32);
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/draw/engine/cpu/shared_rasterizer.rs"]
+mod tests;

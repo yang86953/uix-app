@@ -110,8 +110,7 @@ impl RenderObjectTree {
         ctx.set_recorder(Some(&mut list));
         scene.paint(id, frame, ctx);
         ctx.set_recorder(None);
-        list.replay(ctx);
-        entry.display_list = Some(list);
+        entry.display_list = ctx.recording_complete().then_some(list);
     }
 
     fn rebuild(&mut self, scene: &impl ScenePaint) {
@@ -165,3 +164,7 @@ impl RenderObjectTree {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/draw/render_object/tree.rs"]
+mod tests;

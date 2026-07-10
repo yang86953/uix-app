@@ -385,7 +385,7 @@ impl ActiveWorkRegistry {
 | `Animatable` 动画开始/续帧 | 组件 / Registry tick | 动画结束 |
 | Tooltip 等内置周期 UI | 组件 mount / show | hide / unmount |
 | **App Timer**（#132） | `run_after` / `run_interval` | 触发一次 / `cancel` / drop |
-| IME 焦点 Input | `text_input.start` | 失焦 / `stop` |
+| IME 焦点 `WidgetTextInput` | capability 接受文本 + `text_input.start` | 窗口/组件失焦、禁用、移除 / `stop` |
 
 | 规则 | 说明 |
 |------|------|
@@ -406,7 +406,7 @@ else → wait_event()                                  // 可为 DeepIdle，也�
 
 每 **WindowSession** 持有一份 Registry（#116）。
 
-> **实现注记**：`ActiveWorkRegistry` 内部类型已落地，并由 `WindowSession` 持有；单窗/副窗 event loop 已接 `next_deadline` / `drain_due`、无 deadline 注册项、到期 `Timer` 定点派发到 widget scoped timer route、AppTimer 主线程回调执行、Tooltip 内置 timer 零维护托管、WidgetAnimation 以 `Animation(id)` 登记下一帧 deadline；内置 Animation 源见 [component · 动画](component.md#动画)；IME composition session 已托管。
+> **实现注记**：`ActiveWorkRegistry` 内部类型已落地，并由 `WindowSession` 持有；单窗/副窗 event loop 已接 `next_deadline` / `drain_due`、无 deadline 注册项、到期 `Timer` 定点派发到 widget scoped timer route、AppTimer 主线程回调执行、Tooltip 内置 timer 零维护托管、WidgetAnimation 以 `Animation(id)` 登记下一帧 deadline；内置 Animation 源见 [component · 动画](component.md#动画)；IME 会话现由焦点组件 `WidgetTextInput` capability 自动托管，并仅在 caret rect 变化时同步平台。
 
 <a id="多窗单-loop"></a>
 
@@ -485,11 +485,11 @@ run_active_frame(session):
 |------|------|----------------------|
 | Animation | `Animatable` / Spin 等 **内置动画**开始 | 动画结束 / hide / unmount |
 | Timer | Tooltip 等 **内置**组件 | hide / unmount / 触发 |
-| IME | 焦点 Input + `text_input.start` | 失焦 |
+| IME | 焦点 `WidgetTextInput` + `text_input.start` | 窗口/组件失焦、禁用、移除 |
 
 未托管的周期工作 **不得**存在；须内置组件、**#132 Timer API** 或 async→State（#131）。
 
-> **实现注记**：RegisteredActive deadline wait 与无 deadline 注册项已接；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，`update` 门控到 Active 帧、`tick_effects` 收窄到 Effect pending；隐藏窗口不 layout/render，pending dirty 保留到恢复可见后消费。内置 Animation / Timer 源见 [component · 动画](component.md#动画)；IME composition session 已接。
+> **实现注记**：RegisteredActive deadline wait 与无 deadline 注册项已接；单窗 loop 已移除固定 `wait_timeout(100ms)` 探活、写回 `WindowLoopState`，`update` 门控到 Active 帧、`tick_effects` 收窄到 Effect pending；隐藏窗口不 layout/render，pending dirty 保留到恢复可见后消费。内置 Animation / Timer 源见 [component · 动画](component.md#动画)；IME 焦点会话、失焦清理与 caret rect 窄同步已接。
 
 ---
 
