@@ -98,19 +98,32 @@ component! {
         }
 
         // Actions
-        if !self.actions.is_empty() {
-            let action_h = 40.0;
-            let action_y = frame.y + frame.h - action_h;
-            ctx.fill_rect(Rect::new(frame.x, action_y, frame.w, action_h), bg_container, None);
-            ctx.stroke_rect(Rect::new(frame.x, action_y, frame.w, action_h), border_secondary, 1.0, None);
-            let btn_w = frame.w / self.actions.len() as f32;
+        if let Some(action_rect) = self.action_rect(frame) {
+            ctx.fill_rect(action_rect, bg_container, None);
+            ctx.stroke_rect(action_rect, border_secondary, 1.0, None);
+            let btn_w = action_rect.w / self.actions.len() as f32;
             for (i, action) in self.actions.iter().enumerate() {
-                let btn_rect = Rect::new(frame.x + i as f32 * btn_w, action_y, btn_w, action_h);
+                let btn_rect = Rect::new(
+                    action_rect.x + i as f32 * btn_w,
+                    action_rect.y,
+                    btn_w,
+                    action_rect.h,
+                );
                 let ay = ctx.visual_center_y(btn_rect, 13.0);
                 let text_w = ctx.measure_text(action, 13.0).w;
                 ctx.draw_text(action, Point::new(btn_rect.x + (btn_w - text_w) * 0.5, ay), primary, 13.0);
                 if i < self.actions.len() - 1 {
-                    ctx.fill_rect(Rect::new(btn_rect.x + btn_w - 1.0, action_y + 8.0, 1.0, action_h - 16.0), border_secondary, None);
+                    let divider_h = (action_rect.h - 16.0).max(0.0);
+                    ctx.fill_rect(
+                        Rect::new(
+                            btn_rect.x + btn_w - 1.0,
+                            action_rect.y + 8.0f32.min(action_rect.h),
+                            1.0,
+                            divider_h,
+                        ),
+                        border_secondary,
+                        None,
+                    );
                 }
             }
         }
@@ -141,14 +154,31 @@ component! {
     {
         if children.is_empty() { return Vec::new(); }
 
-        // 标题区域占用顶部空间，剩余部分作为 flex column 容器
-        let title_offset = if self.title.is_some() { 56.0 } else { self.padding };
+        // 标题和 actions 为固定区，body 只使用二者之间的剩余空间。
+        let frame_w = frame.w.max(0.0);
+        let frame_h = frame.h.max(0.0);
+        let padding = self.padding.max(0.0);
+        let title_offset = if self.title.is_some() { 56.0 } else { padding }.min(frame_h);
+        let action_top = self
+            .action_rect(frame)
+            .map(|rect| rect.y)
+            .unwrap_or(frame.y + frame_h);
+        let body_y = (frame.y + title_offset).min(action_top);
+        let left_padding = padding.min(frame_w);
+        let right_padding = padding.min((frame_w - left_padding).max(0.0));
+        let bottom_padding = padding.min((action_top - body_y).max(0.0));
         let inner = Rect::new(
-            frame.x + self.padding, frame.y + title_offset,
-            (frame.w - self.padding * 2.0).max(0.0),
-            (frame.h - title_offset - self.padding).max(0.0),
+            frame.x + left_padding,
+            body_y,
+            (frame_w - left_padding - right_padding).max(0.0),
+            (action_top - body_y - bottom_padding).max(0.0),
         );
-        if inner.w <= 0.0 || inner.h <= 0.0 { return Vec::new(); }
+        if inner.w <= 0.0 || inner.h <= 0.0 {
+            return children
+                .iter()
+                .map(|&cid| (cid, Rect::new(inner.x, inner.y, 0.0, 0.0)))
+                .collect();
+        }
 
         let child_constraints = Constraints::loose(Size::new(inner.w, inner.h));
         let child_sizes: Vec<Size> = children
@@ -274,6 +304,22 @@ impl Default for Card {
 }
 
 impl Card {
+    const ACTION_HEIGHT: f32 = 40.0;
+
+    fn action_rect(&self, frame: Rect) -> Option<Rect> {
+        if self.actions.is_empty() {
+            return None;
+        }
+        let frame_h = frame.h.max(0.0);
+        let action_h = Self::ACTION_HEIGHT.min(frame_h);
+        Some(Rect::new(
+            frame.x,
+            frame.y + frame_h - action_h,
+            frame.w.max(0.0),
+            action_h,
+        ))
+    }
+
     fn intrinsic_size(&self) -> Size {
         Size::new(
             self.fixed_width.unwrap_or(200.0),
@@ -425,5 +471,53 @@ mod tests {
         let frame = tree.get(child).unwrap().frame();
         assert_eq!(frame.w, 48.0);
         assert_eq!(frame.h, 48.0);
+    }
+
+    #[test]
+    fn layout_children_reserve_actions_and_zero_exhausted_body() {
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(
+            Card::new()
+                .size(80.0, 80.0)
+                .padding(16.0)
+                .actions(vec!["Save"])
+                .child(FixedChild(Size::new(200.0, 120.0))),
+        ));
+
+        tree.layout();
+
+        let child = tree.get(root).unwrap().children()[0];
+        assert_eq!(
+            tree.get(child).unwrap().frame(),
+            Rect::new(16.0, 16.0, 48.0, 8.0)
+        );
+
+        let narrow_frame = Rect::new(0.0, 0.0, 80.0, 30.0);
+        let narrow_root = tree.set_root(Box::new(
+            Card::new()
+                .title("Title")
+                .actions(vec!["Save"])
+                .padding(16.0),
+        ));
+        let narrow_child = tree.add_child(narrow_root, Box::new(FixedChild(Size::new(40.0, 20.0))));
+        tree.get_mut(narrow_child)
+            .unwrap()
+            .set_frame(Rect::new(16.0, 56.0, 48.0, 20.0));
+
+        let placements =
+            tree.get(narrow_root)
+                .unwrap()
+                .layout_children(narrow_frame, &[narrow_child], &tree);
+        assert_eq!(placements[0].1, Rect::new(16.0, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn action_rect_stays_inside_short_card() {
+        let card = Card::new().actions(vec!["Save", "Cancel"]);
+
+        assert_eq!(
+            card.action_rect(Rect::new(4.0, 6.0, 80.0, 24.0)),
+            Some(Rect::new(4.0, 6.0, 80.0, 24.0))
+        );
     }
 }
