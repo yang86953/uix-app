@@ -15,7 +15,7 @@ use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
-    PresentDamage,
+    NativeRasterCaps, PresentDamage,
 };
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
@@ -354,6 +354,10 @@ impl IGraphicsContext for D3d11Context {
         GraphicsBackend::D3d11
     }
 
+    fn native_raster_caps(&self) -> NativeRasterCaps {
+        NativeRasterCaps::d3d11_full()
+    }
+
     fn initialize(&mut self, _native_window: *mut c_void, _width: i32, _height: i32) -> Result<()> {
         Ok(())
     }
@@ -557,10 +561,6 @@ impl IGraphicsContext for D3d11Context {
         Ok(())
     }
 
-    fn supports_native_geometry(&self) -> bool {
-        true
-    }
-
     fn draw_solid_rects(
         &mut self,
         viewport_w: f32,
@@ -585,10 +585,6 @@ impl IGraphicsContext for D3d11Context {
         self.make_current();
         self.pipeline
             .draw_stroke_rects(&self.context, viewport_w, viewport_h, scissor, rects)
-    }
-
-    fn supports_native_glyphs(&self) -> bool {
-        true
     }
 
     fn draw_glyphs(
@@ -769,7 +765,7 @@ mod tests {
         assert!(!ctx.supports_pixel_present());
         assert!(!ctx.supports_gl_proc_address());
 
-        assert!(ctx.supports_native_geometry());
+        assert_eq!(ctx.native_raster_caps(), NativeRasterCaps::d3d11_full());
         ctx.clear_render_target(0.1, 0.2, 0.3, 1.0)
             .expect("clear_render_target");
         ctx.draw_solid_rects(

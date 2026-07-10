@@ -114,6 +114,13 @@ pub trait RenderBackend: Send {
 
     fn surface(&mut self) -> &mut dyn DrawSurface;
 
+    /// Bind or begin recording against the backend's current graphics target.
+    fn make_current(&mut self) {}
+
+    fn device_pixel_ratio(&self) -> f32 {
+        1.0
+    }
+
     fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
         let _ = (width, height);
         None

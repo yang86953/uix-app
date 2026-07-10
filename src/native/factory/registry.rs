@@ -80,13 +80,13 @@ pub fn try_create_context(
     }
     let ctx = (entry.create)(native_surface, width, height)?;
     let caps = ctx.caps();
-    if caps.raster != entry.raster || caps.present != entry.present {
+    if caps.backend != entry.id || caps.raster != entry.raster || caps.present != entry.present {
         let msg = format!(
-            "GraphicsBackend {}: context caps {} × {} do not match registry row {} × {}",
-            entry.id, caps.raster, caps.present, entry.raster, entry.present
+            "GraphicsBackend {}: context identity {} with caps {} × {} does not match registry row {} × {}",
+            entry.id, caps.backend, caps.raster, caps.present, entry.raster, entry.present
         );
-        // Drop without calling shutdown — create failed before ownership transfer
-        // to a live engine; contexts that need teardown should still shut down.
+        // Creation succeeded, so a context whose live caps do not match the
+        // registry row must be shut down before returning the mismatch.
         let mut ctx = ctx;
         ctx.shutdown();
         return Err(Error::new(Errc::PlatformError, msg));
@@ -125,6 +125,48 @@ pub fn try_create_gpu_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static IDENTITY_MISMATCH_SHUTDOWNS: AtomicUsize = AtomicUsize::new(0);
+
+    struct D3d11IdentityContext;
+
+    impl IGraphicsContext for D3d11IdentityContext {
+        fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
+            crate::native::traits::present::GraphicsContextCaps::gpu_native_swapchain(
+                GraphicsBackend::D3d11,
+                false,
+                1.0,
+            )
+        }
+
+        fn initialize(&mut self, _: *mut c_void, _: i32, _: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn resize(&mut self, _: i32, _: i32) {}
+        fn make_current(&mut self) {}
+        fn swap_buffers(&mut self, _: crate::core::PresentDamage) {}
+        fn shutdown(&mut self) {
+            IDENTITY_MISMATCH_SHUTDOWNS.fetch_add(1, Ordering::SeqCst);
+        }
+        fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
+            Vec::new()
+        }
+        fn width(&self) -> i32 {
+            1
+        }
+        fn height(&self) -> i32 {
+            1
+        }
+    }
+
+    fn create_d3d11_identity(
+        _: *mut c_void,
+        _: i32,
+        _: i32,
+    ) -> Result<Box<dyn IGraphicsContext>, Error> {
+        Ok(Box::new(D3d11IdentityContext))
+    }
 
     #[test]
     fn auto_candidates_follow_registry_priority_order() {
@@ -143,6 +185,42 @@ mod tests {
             gpu_probe_candidates(GraphicsBackend::Vulkan),
             vec![GraphicsBackend::Vulkan]
         );
+    }
+
+    #[test]
+    fn registry_rejects_context_with_wrong_backend_identity() {
+        IDENTITY_MISMATCH_SHUTDOWNS.store(0, Ordering::SeqCst);
+        let entry = GraphicsBackendEntry {
+            id: GraphicsBackend::D3d12,
+            priority: 1,
+            status: BackendStatus::Active,
+            raster: RasterMode::GpuNative,
+            present: PresentMode::Swapchain,
+            create: create_d3d11_identity,
+        };
+        let err = match try_create_context(&entry, std::ptr::null_mut(), 1, 1) {
+            Ok(_) => panic!("wrong backend identity must be rejected"),
+            Err(err) => err,
+        };
+        assert!(err.message().contains("identity d3d11"));
+        assert_eq!(IDENTITY_MISMATCH_SHUTDOWNS.load(Ordering::SeqCst), 1);
+
+        IDENTITY_MISMATCH_SHUTDOWNS.store(0, Ordering::SeqCst);
+        let entry = GraphicsBackendEntry {
+            id: GraphicsBackend::D3d11,
+            priority: 1,
+            status: BackendStatus::Active,
+            raster: RasterMode::Cpu,
+            present: PresentMode::Swapchain,
+            create: create_d3d11_identity,
+        };
+        let err = match try_create_context(&entry, std::ptr::null_mut(), 1, 1) {
+            Ok(_) => panic!("wrong raster axis must be rejected"),
+            Err(err) => err,
+        };
+        assert!(err.message().contains("caps gpu_native"));
+        assert!(err.message().contains("registry row cpu"));
+        assert_eq!(IDENTITY_MISMATCH_SHUTDOWNS.load(Ordering::SeqCst), 1);
     }
 
     #[test]

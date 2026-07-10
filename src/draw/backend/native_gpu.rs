@@ -1,12 +1,12 @@
-//! D3D11 GPU-native raster backend (`RasterMode::GpuNative` × `PresentMode::Swapchain`).
+//! API-neutral non-GL GPU-native raster backend.
 //!
 //! Hot Canvas2D paths (`fill_rect` / `fill_circle` / `stroke_rect` /
 //! `stroke_circle`, axis-aligned `draw_line`, identity solid `blit_glyph`,
 //! identity linear/radial gradients, identity fill-rule-aware `fill_path`,
 //! cap/join-aware `stroke_path`, and identity box/ambient shadow) draw via
-//! [`IGraphicsContext`] native geometry / glyph atlas / gradient / mesh /
-//! shadow APIs. Unsupported ops soft-raster into a CPU buffer and alpha-blit
-//! at present (same hybrid pattern as GL `GpuCanvas2D`).
+//! [`IGraphicsContext`] operations advertised by [`NativeRasterCaps`]. Every
+//! unsupported operation deterministically soft-rasterizes into a CPU buffer
+//! and alpha-blits at present.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -23,7 +23,8 @@ use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Trans
 use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect, GraphicsBackend, IGraphicsContext, PresentFrame, RasterMode,
+    GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps, PresentFrame, PresentMode,
+    RasterMode,
 };
 
 #[derive(Clone)]
@@ -72,18 +73,50 @@ struct PendingNativeShadow {
     scissor: (i32, i32, i32, i32),
 }
 
+enum PendingNativeOp {
+    SolidRect(PendingNativeRect),
+    StrokeRect(PendingNativeStroke),
+    Glyph(PendingNativeGlyph),
+    LinearGradient(PendingNativeLinearGrad),
+    RadialGradient(PendingNativeRadialGrad),
+    SolidMesh(PendingNativeMesh),
+    BoxShadow(PendingNativeShadow),
+}
+
+impl PendingNativeOp {
+    fn scissor(&self) -> (i32, i32, i32, i32) {
+        match self {
+            Self::SolidRect(op) => op.scissor,
+            Self::StrokeRect(op) => op.scissor,
+            Self::Glyph(op) => op.scissor,
+            Self::LinearGradient(op) => op.scissor,
+            Self::RadialGradient(op) => op.scissor,
+            Self::SolidMesh(op) => op.scissor,
+            Self::BoxShadow(op) => op.scissor,
+        }
+    }
+
+    fn same_kind(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::SolidRect(_), Self::SolidRect(_))
+                | (Self::StrokeRect(_), Self::StrokeRect(_))
+                | (Self::Glyph(_), Self::Glyph(_))
+                | (Self::LinearGradient(_), Self::LinearGradient(_))
+                | (Self::RadialGradient(_), Self::RadialGradient(_))
+                | (Self::SolidMesh(_), Self::SolidMesh(_))
+                | (Self::BoxShadow(_), Self::BoxShadow(_))
+        )
+    }
+}
+
 /// Hybrid Canvas2D: native solid/stroke/glyphs/gradients/paths/shadows + soft fallback.
-pub struct D3d11Canvas2D {
+pub struct NativeGpuCanvas2D {
+    native_caps: NativeRasterCaps,
     soft_fallback: SharedRasterizer,
     /// Soft buffer has content that must be composited (until full clear).
     soft_has_content: bool,
-    pending_rects: Vec<PendingNativeRect>,
-    pending_strokes: Vec<PendingNativeStroke>,
-    pending_glyphs: Vec<PendingNativeGlyph>,
-    pending_linear: Vec<PendingNativeLinearGrad>,
-    pending_radial: Vec<PendingNativeRadialGrad>,
-    pending_meshes: Vec<PendingNativeMesh>,
-    pending_shadows: Vec<PendingNativeShadow>,
+    pending_native: Vec<PendingNativeOp>,
     clip_rect: Rect,
     clip_stack: Vec<Rect>,
     opacity: f32,
@@ -96,20 +129,15 @@ pub struct D3d11Canvas2D {
     surface_h: i32,
 }
 
-impl D3d11Canvas2D {
-    fn new(width: i32, height: i32) -> Self {
+impl NativeGpuCanvas2D {
+    fn new(width: i32, height: i32, native_caps: NativeRasterCaps) -> Self {
         let w = width.max(1);
         let h = height.max(1);
         Self {
+            native_caps,
             soft_fallback: SharedRasterizer::new(PixelSurface::new(w, h)),
             soft_has_content: false,
-            pending_rects: Vec::new(),
-            pending_strokes: Vec::new(),
-            pending_glyphs: Vec::new(),
-            pending_linear: Vec::new(),
-            pending_radial: Vec::new(),
-            pending_meshes: Vec::new(),
-            pending_shadows: Vec::new(),
+            pending_native: Vec::new(),
             clip_rect: Rect::new(0.0, 0.0, w as f32, h as f32),
             clip_stack: Vec::new(),
             opacity: 1.0,
@@ -123,6 +151,14 @@ impl D3d11Canvas2D {
         }
     }
 
+    #[cfg(all(test, feature = "d3d11"))]
+    fn pending_mesh_count(&self) -> usize {
+        self.pending_native
+            .iter()
+            .filter(|op| matches!(op, PendingNativeOp::SolidMesh(_)))
+            .count()
+    }
+
     fn resize(&mut self, width: i32, height: i32) {
         let w = width.max(1);
         let h = height.max(1);
@@ -131,13 +167,7 @@ impl D3d11Canvas2D {
         self.clip_rect = Rect::new(0.0, 0.0, w as f32, h as f32);
         self.clip_stack.clear();
         self.state_stack.clear();
-        self.pending_rects.clear();
-        self.pending_strokes.clear();
-        self.pending_glyphs.clear();
-        self.pending_linear.clear();
-        self.pending_radial.clear();
-        self.pending_meshes.clear();
-        self.pending_shadows.clear();
+        self.pending_native.clear();
         self.soft_fallback = SharedRasterizer::new(PixelSurface::new(w, h));
         self.soft_has_content = false;
     }
@@ -145,13 +175,7 @@ impl D3d11Canvas2D {
     fn clear_soft(&mut self) {
         self.soft_fallback.surface_mut().clear_all();
         self.soft_has_content = false;
-        self.pending_rects.clear();
-        self.pending_strokes.clear();
-        self.pending_glyphs.clear();
-        self.pending_linear.clear();
-        self.pending_radial.clear();
-        self.pending_meshes.clear();
-        self.pending_shadows.clear();
+        self.pending_native.clear();
     }
 
     fn mark_soft(&mut self) {
@@ -173,9 +197,10 @@ impl D3d11Canvas2D {
         if rect.w <= 0.0 || rect.h <= 0.0 {
             return;
         }
-        // Non-identity transform → soft path (matches GL limitation for now).
+        // Unsupported capability/state routes to soft fallback before enqueue.
         let identity = self.transform.m == Transform::identity().m;
-        if !identity {
+        let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        if self.soft_has_content || !self.native_caps.solid_rects || !identity || !native_blend {
             self.sync_fallback_state();
             self.soft_fallback.push_clip(self.clip_rect);
             self.soft_fallback.fill_rect(rect, color, radius);
@@ -188,17 +213,18 @@ impl D3d11Canvas2D {
             None => [0.0; 4],
         };
         let scissor = self.scissor_aabb();
-        self.pending_rects.push(PendingNativeRect {
-            rect: GpuSolidRect {
-                x: rect.x,
-                y: rect.y,
-                w: rect.w,
-                h: rect.h,
-                rgba: self.rgba(color),
-                radius: r,
-            },
-            scissor,
-        });
+        self.pending_native
+            .push(PendingNativeOp::SolidRect(PendingNativeRect {
+                rect: GpuSolidRect {
+                    x: rect.x + self.offset_x,
+                    y: rect.y + self.offset_y,
+                    w: rect.w,
+                    h: rect.h,
+                    rgba: self.rgba(color),
+                    radius: r,
+                },
+                scissor,
+            }));
     }
 
     fn queue_stroke_rect(
@@ -213,7 +239,8 @@ impl D3d11Canvas2D {
             return;
         }
         let identity = self.transform.m == Transform::identity().m;
-        if !identity {
+        let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
+        if self.soft_has_content || !self.native_caps.stroke_rects || !identity || !native_blend {
             self.sync_fallback_state();
             self.soft_fallback.push_clip(self.clip_rect);
             self.soft_fallback.stroke_rect(rect, color, lw, radius);
@@ -226,18 +253,19 @@ impl D3d11Canvas2D {
             None => [0.0; 4],
         };
         let scissor = self.scissor_aabb();
-        self.pending_strokes.push(PendingNativeStroke {
-            rect: GpuStrokeRect {
-                x: rect.x,
-                y: rect.y,
-                w: rect.w,
-                h: rect.h,
-                rgba: self.rgba(color),
-                radius: r,
-                line_width: lw,
-            },
-            scissor,
-        });
+        self.pending_native
+            .push(PendingNativeOp::StrokeRect(PendingNativeStroke {
+                rect: GpuStrokeRect {
+                    x: rect.x + self.offset_x,
+                    y: rect.y + self.offset_y,
+                    w: rect.w,
+                    h: rect.h,
+                    rgba: self.rgba(color),
+                    radius: r,
+                    line_width: lw,
+                },
+                scissor,
+            }));
     }
 
     fn queue_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
@@ -246,7 +274,8 @@ impl D3d11Canvas2D {
         }
         let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if !identity || !native_blend {
+        if self.soft_has_content || !self.native_caps.linear_gradients || !identity || !native_blend
+        {
             self.sync_fallback_state();
             self.soft_fallback.push_clip(self.clip_rect);
             self.soft_fallback.fill_linear_gradient(rect, ca, cb, dir);
@@ -260,18 +289,19 @@ impl D3d11Canvas2D {
             GradientDirection::DiagonalTLBR => 2,
             GradientDirection::DiagonalBLTR => 3,
         };
-        self.pending_linear.push(PendingNativeLinearGrad {
-            rect: GpuLinearGradientRect {
-                x: rect.x,
-                y: rect.y,
-                w: rect.w,
-                h: rect.h,
-                color_a: self.rgba(ca),
-                color_b: self.rgba(cb),
-                dir: dir_u,
-            },
-            scissor: self.scissor_aabb(),
-        });
+        self.pending_native
+            .push(PendingNativeOp::LinearGradient(PendingNativeLinearGrad {
+                rect: GpuLinearGradientRect {
+                    x: rect.x + self.offset_x,
+                    y: rect.y + self.offset_y,
+                    w: rect.w,
+                    h: rect.h,
+                    color_a: self.rgba(ca),
+                    color_b: self.rgba(cb),
+                    dir: dir_u,
+                },
+                scissor: self.scissor_aabb(),
+            }));
     }
 
     fn queue_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
@@ -280,7 +310,8 @@ impl D3d11Canvas2D {
         }
         let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if !identity || !native_blend {
+        if self.soft_has_content || !self.native_caps.radial_gradients || !identity || !native_blend
+        {
             self.sync_fallback_state();
             self.soft_fallback.push_clip(self.clip_rect);
             self.soft_fallback
@@ -289,17 +320,18 @@ impl D3d11Canvas2D {
             self.mark_soft();
             return;
         }
-        self.pending_radial.push(PendingNativeRadialGrad {
-            grad: GpuRadialGradient {
-                cx,
-                cy,
-                inner_r: ir.max(0.0),
-                outer_r: or,
-                color_inner: self.rgba(ic),
-                color_outer: self.rgba(oc),
-            },
-            scissor: self.scissor_aabb(),
-        });
+        self.pending_native
+            .push(PendingNativeOp::RadialGradient(PendingNativeRadialGrad {
+                grad: GpuRadialGradient {
+                    cx: cx + self.offset_x,
+                    cy: cy + self.offset_y,
+                    inner_r: ir.max(0.0),
+                    outer_r: or,
+                    color_inner: self.rgba(ic),
+                    color_outer: self.rgba(oc),
+                },
+                scissor: self.scissor_aabb(),
+            }));
     }
 
     /// Queue a CPU-tessellated solid mesh, or soft-fallback on failure.
@@ -312,7 +344,7 @@ impl D3d11Canvas2D {
     ) {
         let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if !identity || !native_blend {
+        if self.soft_has_content || !self.native_caps.solid_meshes || !identity || !native_blend {
             self.sync_fallback_state();
             self.soft_fallback.push_clip(self.clip_rect);
             if let Some(opts) = stroke {
@@ -351,13 +383,14 @@ impl D3d11Canvas2D {
         if verts.len() < 6 {
             return;
         }
-        self.pending_meshes.push(PendingNativeMesh {
-            mesh: GpuSolidMesh {
-                vertices: Arc::<[f32]>::from(verts),
-                rgba: self.rgba(color),
-            },
-            scissor: self.scissor_aabb(),
-        });
+        self.pending_native
+            .push(PendingNativeOp::SolidMesh(PendingNativeMesh {
+                mesh: GpuSolidMesh {
+                    vertices: Arc::<[f32]>::from(verts),
+                    rgba: self.rgba(color),
+                },
+                scissor: self.scissor_aabb(),
+            }));
     }
 
     fn queue_box_shadow(
@@ -375,7 +408,7 @@ impl D3d11Canvas2D {
         }
         let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
-        if !identity || !native_blend {
+        if self.soft_has_content || !self.native_caps.box_shadows || !identity || !native_blend {
             self.sync_fallback_state();
             self.soft_fallback.push_clip(self.clip_rect);
             if ambient {
@@ -395,21 +428,22 @@ impl D3d11Canvas2D {
         };
         // Apply canvas offset to the source rect (shadow offset is separate).
         let (cox, coy) = (self.offset_x, self.offset_y);
-        self.pending_shadows.push(PendingNativeShadow {
-            shadow: GpuBoxShadow {
-                x: rect.x + cox,
-                y: rect.y + coy,
-                w: rect.w,
-                h: rect.h,
-                offset_x: ox,
-                offset_y: oy,
-                blur: blur.max(0.0),
-                rgba: self.rgba(color),
-                radius: r,
-                ambient,
-            },
-            scissor: self.scissor_aabb(),
-        });
+        self.pending_native
+            .push(PendingNativeOp::BoxShadow(PendingNativeShadow {
+                shadow: GpuBoxShadow {
+                    x: rect.x + cox,
+                    y: rect.y + coy,
+                    w: rect.w,
+                    h: rect.h,
+                    offset_x: ox,
+                    offset_y: oy,
+                    blur: blur.max(0.0),
+                    rgba: self.rgba(color),
+                    radius: r,
+                    ambient,
+                },
+                scissor: self.scissor_aabb(),
+            }));
     }
 
     fn rgba(&self, color: Color) -> [f32; 4] {
@@ -435,136 +469,116 @@ impl D3d11Canvas2D {
         }
     }
 
-    fn flush_native(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
-        let pending_shadows = std::mem::take(&mut self.pending_shadows);
-        let pending = std::mem::take(&mut self.pending_rects);
-        let pending_strokes = std::mem::take(&mut self.pending_strokes);
-        let pending_glyphs = std::mem::take(&mut self.pending_glyphs);
-        let pending_linear = std::mem::take(&mut self.pending_linear);
-        let pending_radial = std::mem::take(&mut self.pending_radial);
-        let pending_meshes = std::mem::take(&mut self.pending_meshes);
+    fn submit_native(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
         let vw = self.surface_w as f32;
         let vh = self.surface_h as f32;
-        // Shadows first so they sit under fills/strokes queued in the same frame.
-        if !pending_shadows.is_empty() {
-            let mut i = 0;
-            while i < pending_shadows.len() {
-                let scissor = pending_shadows[i].scissor;
-                let start = i;
-                i += 1;
-                while i < pending_shadows.len() && pending_shadows[i].scissor == scissor {
-                    i += 1;
-                }
-                let batch: Vec<GpuBoxShadow> =
-                    pending_shadows[start..i].iter().map(|p| p.shadow).collect();
-                gpu_ctx.draw_box_shadows(vw, vh, Some(scissor), &batch)?;
+        let mut start = 0;
+        while start < self.pending_native.len() {
+            let scissor = self.pending_native[start].scissor();
+            let mut end = start + 1;
+            while end < self.pending_native.len()
+                && self.pending_native[start].same_kind(&self.pending_native[end])
+                && self.pending_native[end].scissor() == scissor
+            {
+                end += 1;
             }
-        }
-        if !pending.is_empty() {
-            let mut i = 0;
-            while i < pending.len() {
-                let scissor = pending[i].scissor;
-                let start = i;
-                i += 1;
-                while i < pending.len() && pending[i].scissor == scissor {
-                    i += 1;
+
+            match &self.pending_native[start] {
+                PendingNativeOp::SolidRect(_) => {
+                    let batch = self.pending_native[start..end]
+                        .iter()
+                        .map(|op| match op {
+                            PendingNativeOp::SolidRect(op) => op.rect,
+                            _ => unreachable!("native batch kind changed"),
+                        })
+                        .collect::<Vec<_>>();
+                    gpu_ctx.draw_solid_rects(vw, vh, Some(scissor), &batch)?;
                 }
-                let batch: Vec<GpuSolidRect> = pending[start..i].iter().map(|p| p.rect).collect();
-                gpu_ctx.draw_solid_rects(vw, vh, Some(scissor), &batch)?;
-            }
-        }
-        if !pending_strokes.is_empty() {
-            let mut i = 0;
-            while i < pending_strokes.len() {
-                let scissor = pending_strokes[i].scissor;
-                let start = i;
-                i += 1;
-                while i < pending_strokes.len() && pending_strokes[i].scissor == scissor {
-                    i += 1;
+                PendingNativeOp::StrokeRect(_) => {
+                    let batch = self.pending_native[start..end]
+                        .iter()
+                        .map(|op| match op {
+                            PendingNativeOp::StrokeRect(op) => op.rect,
+                            _ => unreachable!("native batch kind changed"),
+                        })
+                        .collect::<Vec<_>>();
+                    gpu_ctx.draw_stroke_rects(vw, vh, Some(scissor), &batch)?;
                 }
-                let batch: Vec<GpuStrokeRect> =
-                    pending_strokes[start..i].iter().map(|p| p.rect).collect();
-                gpu_ctx.draw_stroke_rects(vw, vh, Some(scissor), &batch)?;
-            }
-        }
-        if !pending_linear.is_empty() {
-            let mut i = 0;
-            while i < pending_linear.len() {
-                let scissor = pending_linear[i].scissor;
-                let start = i;
-                i += 1;
-                while i < pending_linear.len() && pending_linear[i].scissor == scissor {
-                    i += 1;
+                PendingNativeOp::Glyph(_) => {
+                    let batch = self.pending_native[start..end]
+                        .iter()
+                        .map(|op| match op {
+                            PendingNativeOp::Glyph(op) => op.glyph.clone(),
+                            _ => unreachable!("native batch kind changed"),
+                        })
+                        .collect::<Vec<_>>();
+                    gpu_ctx.draw_glyphs(vw, vh, Some(scissor), &batch)?;
                 }
-                let batch: Vec<GpuLinearGradientRect> =
-                    pending_linear[start..i].iter().map(|p| p.rect).collect();
-                gpu_ctx.draw_linear_gradients(vw, vh, Some(scissor), &batch)?;
-            }
-        }
-        if !pending_radial.is_empty() {
-            let mut i = 0;
-            while i < pending_radial.len() {
-                let scissor = pending_radial[i].scissor;
-                let start = i;
-                i += 1;
-                while i < pending_radial.len() && pending_radial[i].scissor == scissor {
-                    i += 1;
+                PendingNativeOp::LinearGradient(_) => {
+                    let batch = self.pending_native[start..end]
+                        .iter()
+                        .map(|op| match op {
+                            PendingNativeOp::LinearGradient(op) => op.rect,
+                            _ => unreachable!("native batch kind changed"),
+                        })
+                        .collect::<Vec<_>>();
+                    gpu_ctx.draw_linear_gradients(vw, vh, Some(scissor), &batch)?;
                 }
-                let batch: Vec<GpuRadialGradient> =
-                    pending_radial[start..i].iter().map(|p| p.grad).collect();
-                gpu_ctx.draw_radial_gradients(vw, vh, Some(scissor), &batch)?;
-            }
-        }
-        if !pending_glyphs.is_empty() {
-            let mut i = 0;
-            while i < pending_glyphs.len() {
-                let scissor = pending_glyphs[i].scissor;
-                let start = i;
-                i += 1;
-                while i < pending_glyphs.len() && pending_glyphs[i].scissor == scissor {
-                    i += 1;
+                PendingNativeOp::RadialGradient(_) => {
+                    let batch = self.pending_native[start..end]
+                        .iter()
+                        .map(|op| match op {
+                            PendingNativeOp::RadialGradient(op) => op.grad,
+                            _ => unreachable!("native batch kind changed"),
+                        })
+                        .collect::<Vec<_>>();
+                    gpu_ctx.draw_radial_gradients(vw, vh, Some(scissor), &batch)?;
                 }
-                let batch: Vec<GpuGlyphBlit> = pending_glyphs[start..i]
-                    .iter()
-                    .map(|p| p.glyph.clone())
-                    .collect();
-                gpu_ctx.draw_glyphs(vw, vh, Some(scissor), &batch)?;
-            }
-        }
-        if !pending_meshes.is_empty() {
-            let mut i = 0;
-            while i < pending_meshes.len() {
-                let scissor = pending_meshes[i].scissor;
-                let start = i;
-                i += 1;
-                while i < pending_meshes.len() && pending_meshes[i].scissor == scissor {
-                    i += 1;
+                PendingNativeOp::SolidMesh(_) => {
+                    let batch = self.pending_native[start..end]
+                        .iter()
+                        .map(|op| match op {
+                            PendingNativeOp::SolidMesh(op) => op.mesh.clone(),
+                            _ => unreachable!("native batch kind changed"),
+                        })
+                        .collect::<Vec<_>>();
+                    gpu_ctx.draw_solid_meshes(vw, vh, Some(scissor), &batch)?;
                 }
-                let batch: Vec<GpuSolidMesh> = pending_meshes[start..i]
-                    .iter()
-                    .map(|p| p.mesh.clone())
-                    .collect();
-                gpu_ctx.draw_solid_meshes(vw, vh, Some(scissor), &batch)?;
+                PendingNativeOp::BoxShadow(_) => {
+                    let batch = self.pending_native[start..end]
+                        .iter()
+                        .map(|op| match op {
+                            PendingNativeOp::BoxShadow(op) => op.shadow,
+                            _ => unreachable!("native batch kind changed"),
+                        })
+                        .collect::<Vec<_>>();
+                    gpu_ctx.draw_box_shadows(vw, vh, Some(scissor), &batch)?;
+                }
             }
+            start = end;
         }
         Ok(())
     }
 
-    fn flush_soft(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
+    fn submit_soft(&mut self, gpu_ctx: &mut dyn IGraphicsContext) -> Result<(), Error> {
         if !self.soft_has_content {
             return Ok(());
         }
         let pixels = self.soft_fallback.surface().pixels();
         gpu_ctx.blit_soft_fallback(pixels, self.surface_w, self.surface_h)?;
-        // Soft content was composited; reset so the next frame starts clean
-        // (clear_all already wipes, but DirtyRects may skip a full clear).
-        self.soft_fallback.surface_mut().clear_all();
-        self.soft_has_content = false;
         Ok(())
+    }
+
+    fn commit_presented_frame(&mut self) {
+        self.pending_native.clear();
+        if self.soft_has_content {
+            self.soft_fallback.surface_mut().clear_all();
+            self.soft_has_content = false;
+        }
     }
 }
 
-impl Canvas2D for D3d11Canvas2D {
+impl Canvas2D for NativeGpuCanvas2D {
     fn offset(&self) -> (f32, f32) {
         (self.offset_x, self.offset_y)
     }
@@ -575,18 +589,11 @@ impl Canvas2D for D3d11Canvas2D {
     }
 
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
-        let (ox, oy) = (self.offset_x, self.offset_y);
-        let rect = if ox != 0.0 || oy != 0.0 {
-            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
-        } else {
-            rect
-        };
         self.queue_solid_rect(rect, color, radius);
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
-        let (ox, oy) = (self.offset_x, self.offset_y);
-        let rect = Rect::new(cx - r + ox, cy - r + oy, r * 2.0, r * 2.0);
+        let rect = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
         self.queue_solid_rect(rect, color, Some(Radius::uniform(r)));
     }
 
@@ -611,18 +618,11 @@ impl Canvas2D for D3d11Canvas2D {
     }
 
     fn stroke_rect(&mut self, rect: Rect, color: Color, lw: f32, radius: Option<Radius>) {
-        let (ox, oy) = (self.offset_x, self.offset_y);
-        let rect = if ox != 0.0 || oy != 0.0 {
-            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
-        } else {
-            rect
-        };
         self.queue_stroke_rect(rect, color, lw, radius);
     }
 
     fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, lw: f32) {
-        let (ox, oy) = (self.offset_x, self.offset_y);
-        let rect = Rect::new(cx - r + ox, cy - r + oy, r * 2.0, r * 2.0);
+        let rect = Rect::new(cx - r, cy - r, r * 2.0, r * 2.0);
         self.queue_stroke_rect(rect, color, lw, Some(Radius::uniform(r)));
     }
 
@@ -635,22 +635,17 @@ impl Canvas2D for D3d11Canvas2D {
         if lw <= 0.0 {
             return;
         }
-        let (ox, oy) = (self.offset_x, self.offset_y);
-        let ax1 = x1 + ox;
-        let ay1 = y1 + oy;
-        let ax2 = x2 + ox;
-        let ay2 = y2 + oy;
         let identity = self.transform.m == Transform::identity().m;
         // Axis-aligned lines → solid fill rect (matches CPU fast path).
-        if identity && (ax1 - ax2).abs() < 1e-6 {
+        if identity && (x1 - x2).abs() < 1e-6 {
             let half = lw * 0.5;
-            let rect = Rect::new(ax1 - half, ay1.min(ay2), lw, (ay1 - ay2).abs());
+            let rect = Rect::new(x1 - half, y1.min(y2), lw, (y1 - y2).abs());
             self.queue_solid_rect(rect, color, None);
             return;
         }
-        if identity && (ay1 - ay2).abs() < 1e-6 {
+        if identity && (y1 - y2).abs() < 1e-6 {
             let half = lw * 0.5;
-            let rect = Rect::new(ax1.min(ax2), ay1 - half, (ax1 - ax2).abs(), lw);
+            let rect = Rect::new(x1.min(x2), y1 - half, (x1 - x2).abs(), lw);
             self.queue_solid_rect(rect, color, None);
             return;
         }
@@ -662,18 +657,11 @@ impl Canvas2D for D3d11Canvas2D {
     }
 
     fn fill_linear_gradient(&mut self, rect: Rect, ca: Color, cb: Color, dir: GradientDirection) {
-        let (ox, oy) = (self.offset_x, self.offset_y);
-        let rect = if ox != 0.0 || oy != 0.0 {
-            Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
-        } else {
-            rect
-        };
         self.queue_linear_gradient(rect, ca, cb, dir);
     }
 
     fn fill_radial_gradient(&mut self, cx: f32, cy: f32, ir: f32, or: f32, ic: Color, oc: Color) {
-        let (ox, oy) = (self.offset_x, self.offset_y);
-        self.queue_radial_gradient(cx + ox, cy + oy, ir, or, ic, oc);
+        self.queue_radial_gradient(cx, cy, ir, or, ic, oc);
     }
 
     fn draw_box_shadow(
@@ -716,7 +704,7 @@ impl Canvas2D for D3d11Canvas2D {
         let identity = self.transform.m == Transform::identity().m;
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         // Soft path for transforms / exotic blend; identity solid text → atlas.
-        if !identity || !native_blend {
+        if self.soft_has_content || !self.native_caps.glyphs || !identity || !native_blend {
             self.sync_fallback_state();
             self.soft_fallback.push_clip(self.clip_rect);
             self.soft_fallback.blit_glyph(x, y, coverage, w, h, color);
@@ -728,19 +716,20 @@ impl Canvas2D for D3d11Canvas2D {
         let dx = x as f32 + ox;
         let dy = y as f32 + oy;
         let cov = Arc::<[u8]>::from(coverage.to_vec());
-        self.pending_glyphs.push(PendingNativeGlyph {
-            glyph: GpuGlyphBlit {
-                x: dx,
-                y: dy,
-                w: w as f32,
-                h: h as f32,
-                rgba: self.rgba(color),
-                coverage: cov,
-                cov_w: w as u32,
-                cov_h: h as u32,
-            },
-            scissor: self.scissor_aabb(),
-        });
+        self.pending_native
+            .push(PendingNativeOp::Glyph(PendingNativeGlyph {
+                glyph: GpuGlyphBlit {
+                    x: dx,
+                    y: dy,
+                    w: w as f32,
+                    h: h as f32,
+                    rgba: self.rgba(color),
+                    coverage: cov,
+                    cov_w: w as u32,
+                    cov_h: h as u32,
+                },
+                scissor: self.scissor_aabb(),
+            }));
     }
 
     fn push_clip_path(&mut self, _path: &Path) {}
@@ -814,9 +803,10 @@ impl Canvas2D for D3d11Canvas2D {
     }
 }
 
-/// DrawSurface for D3D11 GpuNative path.
-pub struct D3d11DrawSurface {
-    canvas: D3d11Canvas2D,
+/// DrawSurface for an API-neutral `GpuNative × Swapchain` path.
+pub struct NativeGpuDrawSurface {
+    canvas: NativeGpuCanvas2D,
+    native_caps: NativeRasterCaps,
     width: i32,
     height: i32,
     /// Full clear pending (ClearRenderTargetView).
@@ -825,7 +815,7 @@ pub struct D3d11DrawSurface {
     pending_clear_rects: Vec<GpuSolidRect>,
 }
 
-impl DrawSurface for D3d11DrawSurface {
+impl DrawSurface for NativeGpuDrawSurface {
     fn size(&self) -> crate::core::Size {
         crate::core::Size::new(self.width as f32, self.height as f32)
     }
@@ -852,6 +842,11 @@ impl DrawSurface for D3d11DrawSurface {
         if self.needs_gpu_clear {
             return;
         }
+        if !self.native_caps.clear_rects {
+            self.pending_clear_rects.clear();
+            self.needs_gpu_clear = true;
+            return;
+        }
         self.pending_clear_rects.push(GpuSolidRect {
             x: x as f32,
             y: y as f32,
@@ -871,25 +866,31 @@ impl DrawSurface for D3d11DrawSurface {
     }
 }
 
-/// D3D11 `RenderBackend` — native solid/stroke rects + soft fallback + swapchain present.
-pub struct D3d11Backend {
+/// Capability-driven non-GL `RenderBackend` with deterministic soft fallback.
+pub struct NativeGpuBackend {
     pub gpu_ctx: Box<dyn IGraphicsContext>,
     width: i32,
     height: i32,
-    surface: D3d11DrawSurface,
+    surface: NativeGpuDrawSurface,
+    shutdown: bool,
 }
 
-impl D3d11Backend {
+impl NativeGpuBackend {
     pub fn new(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         let caps = gpu_ctx.caps();
-        if caps.raster != RasterMode::GpuNative || caps.backend != GraphicsBackend::D3d11 {
+        let native_caps = gpu_ctx.native_raster_caps();
+        if caps.raster != RasterMode::GpuNative
+            || caps.present != PresentMode::Swapchain
+            || !native_caps.has_hybrid_baseline()
+        {
             let backend = caps.backend;
             let raster = caps.raster;
+            let present = caps.present;
             gpu_ctx.shutdown();
             return Err(Error::new(
                 Errc::InvalidArgument,
                 format!(
-                    "D3d11Backend requires D3D11 GpuNative context, got {backend} raster={raster}"
+                    "NativeGpuBackend requires GpuNative × Swapchain plus clear/soft-blit baseline, got {backend} raster={raster} present={present} native={native_caps:?}"
                 ),
             ));
         }
@@ -897,8 +898,10 @@ impl D3d11Backend {
             gpu_ctx,
             width: 0,
             height: 0,
-            surface: D3d11DrawSurface {
-                canvas: D3d11Canvas2D::new(1, 1),
+            shutdown: false,
+            surface: NativeGpuDrawSurface {
+                canvas: NativeGpuCanvas2D::new(1, 1, native_caps),
+                native_caps,
                 width: 1,
                 height: 1,
                 needs_gpu_clear: true,
@@ -908,15 +911,17 @@ impl D3d11Backend {
     }
 }
 
-impl RenderBackend for D3d11Backend {
+impl RenderBackend for NativeGpuBackend {
     fn kind(&self) -> BackendKind {
         BackendKind::Gpu
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        // DXGI_SWAP_EFFECT_DISCARD does not preserve backbuffer contents after
-        // Present, so a later active frame must redraw the full surface.
-        BackendCapabilities::gpu_full_redraw()
+        if self.gpu_ctx.caps().partial_present && self.surface.native_caps.clear_rects {
+            BackendCapabilities::gpu()
+        } else {
+            BackendCapabilities::gpu_full_redraw()
+        }
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -934,6 +939,11 @@ impl RenderBackend for D3d11Backend {
     }
 
     fn shutdown(&mut self) {
+        if self.shutdown {
+            return;
+        }
+        self.shutdown = true;
+        self.gpu_ctx.make_current();
         self.gpu_ctx.shutdown();
     }
 
@@ -941,54 +951,50 @@ impl RenderBackend for D3d11Backend {
         &mut self.surface
     }
 
+    fn make_current(&mut self) {
+        self.gpu_ctx.make_current();
+    }
+
+    fn device_pixel_ratio(&self) -> f32 {
+        self.gpu_ctx.device_pixel_ratio()
+    }
+
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         self.gpu_ctx.make_current();
 
         if self.surface.needs_gpu_clear {
-            if let Err(err) = self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0) {
-                crate::core::log::error_fn(format!(
-                    "D3d11Backend clear_render_target failed: {}",
-                    err.short_what()
-                ));
-            }
+            self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
             self.surface.needs_gpu_clear = false;
             self.surface.pending_clear_rects.clear();
         } else if !self.surface.pending_clear_rects.is_empty() {
-            let clears = std::mem::take(&mut self.surface.pending_clear_rects);
             if let Err(err) = self.gpu_ctx.clear_rects(
                 self.surface.width as f32,
                 self.surface.height as f32,
-                &clears,
+                &self.surface.pending_clear_rects,
             ) {
-                crate::core::log::error_fn(format!(
-                    "D3d11Backend clear_rects failed: {}",
-                    err.short_what()
-                ));
+                self.surface.needs_gpu_clear = true;
+                return Err(err);
             }
+            self.surface.pending_clear_rects.clear();
         }
 
-        if let Err(err) = self.surface.canvas.flush_native(self.gpu_ctx.as_mut()) {
-            crate::core::log::error_fn(format!(
-                "D3d11Backend flush_native failed: {}",
-                err.short_what()
-            ));
+        if let Err(err) = self.surface.canvas.submit_native(self.gpu_ctx.as_mut()) {
+            self.surface.needs_gpu_clear = true;
+            return Err(err);
         }
-        if let Err(err) = self.surface.canvas.flush_soft(self.gpu_ctx.as_mut()) {
-            crate::core::log::error_fn(format!(
-                "D3d11Backend flush_soft failed: {}",
-                err.short_what()
-            ));
+        if let Err(err) = self.surface.canvas.submit_soft(self.gpu_ctx.as_mut()) {
+            self.surface.needs_gpu_clear = true;
+            return Err(err);
         }
 
         let frame = PresentFrame::Swapchain {
             damage: damage.to_present_damage(),
         };
         if let Err(err) = self.gpu_ctx.present(&frame) {
-            crate::core::log::error_fn(format!(
-                "D3d11Backend present failed: {}",
-                err.short_what()
-            ));
+            self.surface.needs_gpu_clear = true;
+            return Err(err);
         }
+        self.surface.canvas.commit_presented_frame();
         Ok(())
     }
 
@@ -1001,14 +1007,22 @@ impl RenderBackend for D3d11Backend {
     }
 }
 
-unsafe impl Send for D3d11Backend {}
-unsafe impl Sync for D3d11Backend {}
+impl Drop for NativeGpuBackend {
+    fn drop(&mut self) {
+        <Self as RenderBackend>::shutdown(self);
+    }
+}
+
+unsafe impl Send for NativeGpuBackend {}
+unsafe impl Sync for NativeGpuBackend {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::native::traits::present::{GraphicsContextCaps, PresentDamage, PresentMode};
-    use std::cell::Cell;
+    use crate::native::traits::present::{
+        GraphicsBackend, GraphicsContextCaps, PresentDamage, PresentMode,
+    };
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
     struct FakeD3d11Context {
@@ -1038,6 +1052,10 @@ mod tests {
     impl IGraphicsContext for FakeD3d11Context {
         fn caps(&self) -> GraphicsContextCaps {
             GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        }
+
+        fn native_raster_caps(&self) -> NativeRasterCaps {
+            NativeRasterCaps::d3d11_full()
         }
 
         fn initialize(
@@ -1085,10 +1103,6 @@ mod tests {
             Ok(())
         }
 
-        fn supports_native_geometry(&self) -> bool {
-            true
-        }
-
         fn draw_solid_rects(
             &mut self,
             _viewport_w: f32,
@@ -1111,10 +1125,6 @@ mod tests {
             self.stroke_calls.set(self.stroke_calls.get() + 1);
             self.last_stroke_count.set(rects.len());
             Ok(())
-        }
-
-        fn supports_native_glyphs(&self) -> bool {
-            true
         }
 
         fn draw_glyphs(
@@ -1256,6 +1266,280 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum FailStage {
+        None,
+        ClearTarget,
+        ClearRects,
+        Native,
+        Soft,
+        Present,
+    }
+
+    struct RecordingContext {
+        fail_stage: Rc<Cell<FailStage>>,
+        stages: Rc<RefCell<Vec<&'static str>>>,
+        shutdown_calls: Rc<Cell<usize>>,
+        make_current_calls: Rc<Cell<usize>>,
+        width: i32,
+        height: i32,
+    }
+
+    impl RecordingContext {
+        fn record(&self, stage: &'static str) {
+            self.stages.borrow_mut().push(stage);
+        }
+
+        fn fail_if(&self, stage: FailStage) -> crate::core::Result<()> {
+            if self.fail_stage.get() == stage {
+                Err(Error::new(
+                    Errc::InvalidState,
+                    format!("injected {stage:?} failure"),
+                ))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    impl IGraphicsContext for RecordingContext {
+        fn caps(&self) -> GraphicsContextCaps {
+            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        }
+
+        fn native_raster_caps(&self) -> NativeRasterCaps {
+            NativeRasterCaps::d3d11_full()
+        }
+
+        fn initialize(
+            &mut self,
+            _native_window: *mut std::ffi::c_void,
+            width: i32,
+            height: i32,
+        ) -> crate::core::Result<()> {
+            self.resize(width, height);
+            Ok(())
+        }
+
+        fn resize(&mut self, width: i32, height: i32) {
+            self.width = width.max(1);
+            self.height = height.max(1);
+        }
+
+        fn make_current(&mut self) {
+            self.make_current_calls
+                .set(self.make_current_calls.get() + 1);
+        }
+
+        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+
+        fn shutdown(&mut self) {
+            self.shutdown_calls.set(self.shutdown_calls.get() + 1);
+        }
+
+        fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
+            Vec::new()
+        }
+
+        fn width(&self) -> i32 {
+            self.width
+        }
+
+        fn height(&self) -> i32 {
+            self.height
+        }
+
+        fn clear_render_target(
+            &mut self,
+            _r: f32,
+            _g: f32,
+            _b: f32,
+            _a: f32,
+        ) -> crate::core::Result<()> {
+            self.record("clear");
+            self.fail_if(FailStage::ClearTarget)
+        }
+
+        fn clear_rects(
+            &mut self,
+            _viewport_w: f32,
+            _viewport_h: f32,
+            _rects: &[GpuSolidRect],
+        ) -> crate::core::Result<()> {
+            self.record("clear_rects");
+            self.fail_if(FailStage::ClearRects)
+        }
+
+        fn draw_solid_rects(
+            &mut self,
+            _viewport_w: f32,
+            _viewport_h: f32,
+            _scissor: Option<(i32, i32, i32, i32)>,
+            _rects: &[GpuSolidRect],
+        ) -> crate::core::Result<()> {
+            self.record("solid");
+            self.fail_if(FailStage::Native)
+        }
+
+        fn draw_stroke_rects(
+            &mut self,
+            _viewport_w: f32,
+            _viewport_h: f32,
+            _scissor: Option<(i32, i32, i32, i32)>,
+            _rects: &[GpuStrokeRect],
+        ) -> crate::core::Result<()> {
+            self.record("stroke");
+            Ok(())
+        }
+
+        fn draw_glyphs(
+            &mut self,
+            _viewport_w: f32,
+            _viewport_h: f32,
+            _scissor: Option<(i32, i32, i32, i32)>,
+            _glyphs: &[GpuGlyphBlit],
+        ) -> crate::core::Result<()> {
+            self.record("glyph");
+            Ok(())
+        }
+
+        fn draw_linear_gradients(
+            &mut self,
+            _viewport_w: f32,
+            _viewport_h: f32,
+            _scissor: Option<(i32, i32, i32, i32)>,
+            _rects: &[GpuLinearGradientRect],
+        ) -> crate::core::Result<()> {
+            self.record("linear");
+            Ok(())
+        }
+
+        fn draw_radial_gradients(
+            &mut self,
+            _viewport_w: f32,
+            _viewport_h: f32,
+            _scissor: Option<(i32, i32, i32, i32)>,
+            _grads: &[GpuRadialGradient],
+        ) -> crate::core::Result<()> {
+            self.record("radial");
+            Ok(())
+        }
+
+        fn draw_solid_meshes(
+            &mut self,
+            _viewport_w: f32,
+            _viewport_h: f32,
+            _scissor: Option<(i32, i32, i32, i32)>,
+            _meshes: &[GpuSolidMesh],
+        ) -> crate::core::Result<()> {
+            self.record("mesh");
+            Ok(())
+        }
+
+        fn draw_box_shadows(
+            &mut self,
+            _viewport_w: f32,
+            _viewport_h: f32,
+            _scissor: Option<(i32, i32, i32, i32)>,
+            _shadows: &[GpuBoxShadow],
+        ) -> crate::core::Result<()> {
+            self.record("shadow");
+            Ok(())
+        }
+
+        fn blit_soft_fallback(
+            &mut self,
+            _pixels: &[u32],
+            _width: i32,
+            _height: i32,
+        ) -> crate::core::Result<()> {
+            self.record("soft");
+            self.fail_if(FailStage::Soft)
+        }
+
+        fn present(&mut self, _frame: &PresentFrame) -> crate::core::Result<()> {
+            self.record("present");
+            self.fail_if(FailStage::Present)
+        }
+    }
+
+    fn recording_context(
+        fail_stage: &Rc<Cell<FailStage>>,
+        stages: &Rc<RefCell<Vec<&'static str>>>,
+        shutdown_calls: &Rc<Cell<usize>>,
+        make_current_calls: &Rc<Cell<usize>>,
+    ) -> RecordingContext {
+        RecordingContext {
+            fail_stage: Rc::clone(fail_stage),
+            stages: Rc::clone(stages),
+            shutdown_calls: Rc::clone(shutdown_calls),
+            make_current_calls: Rc::clone(make_current_calls),
+            width: 1,
+            height: 1,
+        }
+    }
+
+    struct RecordingFixture {
+        backend: NativeGpuBackend,
+        fail_stage: Rc<Cell<FailStage>>,
+        stages: Rc<RefCell<Vec<&'static str>>>,
+        shutdown_calls: Rc<Cell<usize>>,
+        make_current_calls: Rc<Cell<usize>>,
+    }
+
+    fn recording_backend(fail: FailStage) -> RecordingFixture {
+        let fail_stage = Rc::new(Cell::new(fail));
+        let stages = Rc::new(RefCell::new(Vec::new()));
+        let shutdown_calls = Rc::new(Cell::new(0));
+        let make_current_calls = Rc::new(Cell::new(0));
+        let backend = NativeGpuBackend::new(Box::new(recording_context(
+            &fail_stage,
+            &stages,
+            &shutdown_calls,
+            &make_current_calls,
+        )))
+        .expect("recording native backend");
+        RecordingFixture {
+            backend,
+            fail_stage,
+            stages,
+            shutdown_calls,
+            make_current_calls,
+        }
+    }
+
+    fn assert_soft_offset<F>(draw: F, hit: (usize, usize), miss: (usize, usize))
+    where
+        F: FnOnce(&mut NativeGpuCanvas2D),
+    {
+        let caps = NativeRasterCaps {
+            clear_target: true,
+            soft_blit: true,
+            ..NativeRasterCaps::default()
+        };
+        let mut canvas = NativeGpuCanvas2D::new(64, 64, caps);
+        canvas.set_offset(20.0, 20.0);
+        draw(&mut canvas);
+        let pixels = canvas.soft_fallback.surface().pixels();
+        assert_ne!(pixels[hit.1 * 64 + hit.0] >> 24, 0, "shifted pixel");
+        assert_eq!(pixels[miss.1 * 64 + miss.0] >> 24, 0, "unshifted pixel");
+    }
+
+    fn assert_soft_only<F>(draw: F)
+    where
+        F: FnOnce(&mut NativeGpuCanvas2D),
+    {
+        let caps = NativeRasterCaps {
+            clear_target: true,
+            soft_blit: true,
+            ..NativeRasterCaps::default()
+        };
+        let mut canvas = NativeGpuCanvas2D::new(32, 32, caps);
+        draw(&mut canvas);
+        assert!(canvas.soft_has_content);
+        assert!(canvas.pending_native.is_empty());
+    }
+
     fn add_test_rect(
         builder: &mut crate::draw::primitives::path::PathBuilder,
         x0: f32,
@@ -1282,7 +1566,7 @@ mod tests {
     }
 
     #[test]
-    fn d3d11_backend_rejects_non_d3d11_context() {
+    fn native_gpu_backend_rejects_context_without_hybrid_baseline() {
         struct GlCaps;
         impl IGraphicsContext for GlCaps {
             fn caps(&self) -> GraphicsContextCaps {
@@ -1310,11 +1594,50 @@ mod tests {
                 1
             }
         }
-        let err = match D3d11Backend::new(Box::new(GlCaps)) {
+        let err = match NativeGpuBackend::new(Box::new(GlCaps)) {
             Ok(_) => panic!("expected reject"),
             Err(err) => err,
         };
         assert_eq!(err.code(), Errc::InvalidArgument);
+
+        struct LimitedD3d12;
+        impl IGraphicsContext for LimitedD3d12 {
+            fn caps(&self) -> GraphicsContextCaps {
+                GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d12, false, 1.0)
+            }
+            fn native_raster_caps(&self) -> NativeRasterCaps {
+                NativeRasterCaps {
+                    clear_target: true,
+                    soft_blit: true,
+                    solid_rects: true,
+                    ..NativeRasterCaps::default()
+                }
+            }
+            fn initialize(
+                &mut self,
+                _: *mut std::ffi::c_void,
+                _: i32,
+                _: i32,
+            ) -> crate::core::Result<()> {
+                Ok(())
+            }
+            fn resize(&mut self, _: i32, _: i32) {}
+            fn make_current(&mut self) {}
+            fn swap_buffers(&mut self, _: PresentDamage) {}
+            fn shutdown(&mut self) {}
+            fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
+                Vec::new()
+            }
+            fn width(&self) -> i32 {
+                1
+            }
+            fn height(&self) -> i32 {
+                1
+            }
+        }
+        let backend = NativeGpuBackend::new(Box::new(LimitedD3d12))
+            .expect("API-neutral backend must accept a bounded D3D12 capability set");
+        assert_eq!(backend.kind(), BackendKind::Gpu);
     }
 
     #[test]
@@ -1338,7 +1661,7 @@ mod tests {
         let last_radial_count = Rc::new(Cell::new(0usize));
         let last_mesh_count = Rc::new(Cell::new(0usize));
         let last_shadow_count = Rc::new(Cell::new(0usize));
-        let mut backend = D3d11Backend::new(Box::new(fake_ctx(
+        let mut backend = NativeGpuBackend::new(Box::new(fake_ctx(
             &clear_calls,
             &clear_rect_calls,
             &draw_calls,
@@ -1396,7 +1719,7 @@ mod tests {
     fn d3d11_soft_clear_is_transparent_so_blit_does_not_wipe_native() {
         // Soft fallback PixelSurface must clear to A=0; opaque black would
         // SRC_ALPHA-overwrite GPU-native fills/glyphs on blit.
-        let mut canvas = D3d11Canvas2D::new(8, 8);
+        let mut canvas = NativeGpuCanvas2D::new(8, 8, NativeRasterCaps::d3d11_full());
         canvas.clear_soft();
         assert!(
             canvas
@@ -1408,6 +1731,296 @@ mod tests {
             "soft clear must be transparent"
         );
         assert!(!canvas.soft_has_content);
+    }
+
+    #[test]
+    fn native_gpu_canvas_stops_native_recording_after_first_soft_operation() {
+        let caps = NativeRasterCaps {
+            clear_target: true,
+            soft_blit: true,
+            solid_rects: true,
+            ..NativeRasterCaps::default()
+        };
+        let mut canvas = NativeGpuCanvas2D::new(32, 32, caps);
+        canvas.fill_rect(Rect::new(1.0, 1.0, 8.0, 8.0), Color::white(), None);
+        canvas.stroke_rect(Rect::new(2.0, 2.0, 10.0, 10.0), Color::white(), 1.0, None);
+        canvas.fill_linear_gradient(
+            Rect::new(0.0, 0.0, 12.0, 12.0),
+            Color::white(),
+            Color::black(),
+            GradientDirection::Horizontal,
+        );
+        let mut path = crate::draw::primitives::path::PathBuilder::new();
+        path.move_to(2.0, 2.0)
+            .line_to(12.0, 2.0)
+            .line_to(2.0, 12.0)
+            .close();
+        canvas.fill_path(&path.build(), Color::white(), FillRule::NonZero);
+        canvas.fill_rect(Rect::new(16.0, 16.0, 8.0, 8.0), Color::white(), None);
+
+        // Once a soft operation appears, later otherwise-native commands stay
+        // soft so Canvas2D draw order is preserved.
+        assert_eq!(canvas.pending_native.len(), 1);
+        assert!(matches!(
+            canvas.pending_native.first(),
+            Some(PendingNativeOp::SolidRect(_))
+        ));
+        assert!(canvas.soft_has_content);
+    }
+
+    #[test]
+    fn native_gpu_canvas_routes_each_unadvertised_operation_to_soft_fallback() {
+        assert_soft_only(|canvas| {
+            canvas.fill_rect(Rect::new(1.0, 1.0, 8.0, 8.0), Color::white(), None)
+        });
+        assert_soft_only(|canvas| {
+            canvas.stroke_rect(Rect::new(1.0, 1.0, 8.0, 8.0), Color::white(), 1.0, None)
+        });
+        assert_soft_only(|canvas| {
+            canvas.fill_linear_gradient(
+                Rect::new(1.0, 1.0, 8.0, 8.0),
+                Color::white(),
+                Color::black(),
+                GradientDirection::Horizontal,
+            )
+        });
+        assert_soft_only(|canvas| {
+            canvas.fill_radial_gradient(8.0, 8.0, 0.0, 6.0, Color::white(), Color::black())
+        });
+        assert_soft_only(|canvas| canvas.blit_glyph(2, 2, &[255; 16], 4, 4, Color::white()));
+        assert_soft_only(|canvas| {
+            let mut path = crate::draw::primitives::path::PathBuilder::new();
+            path.move_to(2.0, 2.0)
+                .line_to(12.0, 2.0)
+                .line_to(2.0, 12.0)
+                .close();
+            canvas.fill_path(&path.build(), Color::white(), FillRule::NonZero);
+        });
+        assert_soft_only(|canvas| {
+            canvas.draw_box_shadow(
+                Rect::new(4.0, 4.0, 8.0, 8.0),
+                2.0,
+                1.0,
+                1.0,
+                Color::white(),
+                None,
+            )
+        });
+    }
+
+    #[test]
+    fn soft_fallback_applies_canvas_offset_exactly_once() {
+        assert_soft_offset(
+            |canvas| canvas.fill_rect(Rect::new(2.0, 2.0, 6.0, 6.0), Color::white(), None),
+            (24, 24),
+            (4, 4),
+        );
+        assert_soft_offset(
+            |canvas| canvas.fill_circle(5.0, 5.0, 3.0, Color::white()),
+            (25, 25),
+            (5, 5),
+        );
+        assert_soft_offset(
+            |canvas| canvas.stroke_rect(Rect::new(2.0, 2.0, 8.0, 8.0), Color::white(), 2.0, None),
+            (22, 25),
+            (2, 5),
+        );
+        assert_soft_offset(
+            |canvas| {
+                canvas.fill_linear_gradient(
+                    Rect::new(2.0, 2.0, 8.0, 8.0),
+                    Color::white(),
+                    Color::black(),
+                    GradientDirection::Horizontal,
+                )
+            },
+            (24, 24),
+            (4, 4),
+        );
+        assert_soft_offset(
+            |canvas| {
+                canvas.fill_radial_gradient(6.0, 6.0, 0.0, 4.0, Color::white(), Color::black())
+            },
+            (26, 26),
+            (6, 6),
+        );
+    }
+
+    #[test]
+    fn native_gpu_canvas_flushes_native_operations_in_recorded_order() {
+        let fail_stage = Rc::new(Cell::new(FailStage::None));
+        let stages = Rc::new(RefCell::new(Vec::new()));
+        let shutdown_calls = Rc::new(Cell::new(0));
+        let make_current_calls = Rc::new(Cell::new(0));
+        let mut context =
+            recording_context(&fail_stage, &stages, &shutdown_calls, &make_current_calls);
+        let mut canvas = NativeGpuCanvas2D::new(32, 32, NativeRasterCaps::d3d11_full());
+        canvas.stroke_rect(Rect::new(1.0, 1.0, 8.0, 8.0), Color::white(), 1.0, None);
+        canvas.fill_rect(Rect::new(2.0, 2.0, 8.0, 8.0), Color::white(), None);
+        canvas.fill_linear_gradient(
+            Rect::new(3.0, 3.0, 8.0, 8.0),
+            Color::white(),
+            Color::black(),
+            GradientDirection::Horizontal,
+        );
+        canvas.fill_rect(Rect::new(4.0, 4.0, 8.0, 8.0), Color::white(), None);
+
+        canvas.submit_native(&mut context).expect("submit native");
+
+        assert_eq!(
+            stages.borrow().as_slice(),
+            ["stroke", "solid", "linear", "solid"]
+        );
+        assert_eq!(canvas.pending_native.len(), 4);
+        canvas.commit_presented_frame();
+        assert!(canvas.pending_native.is_empty());
+    }
+
+    #[test]
+    fn native_gpu_backend_propagates_each_present_stage_error() {
+        let RecordingFixture {
+            mut backend,
+            fail_stage,
+            stages,
+            ..
+        } = recording_backend(FailStage::ClearTarget);
+        backend.resize(16, 16).expect("resize");
+        assert!(backend.present(&DamageRegion::full()).is_err());
+        assert_eq!(stages.borrow().as_slice(), ["clear"]);
+        assert!(backend.surface.needs_gpu_clear);
+        fail_stage.set(FailStage::None);
+        stages.borrow_mut().clear();
+        backend.present(&DamageRegion::full()).expect("retry clear");
+        assert_eq!(stages.borrow().as_slice(), ["clear", "present"]);
+
+        let RecordingFixture {
+            mut backend,
+            fail_stage,
+            stages,
+            ..
+        } = recording_backend(FailStage::None);
+        backend.resize(16, 16).expect("resize");
+        backend.present(&DamageRegion::full()).expect("prime frame");
+        stages.borrow_mut().clear();
+        backend.surface.clear_rect_raw(1, 1, 4, 4);
+        fail_stage.set(FailStage::ClearRects);
+        assert!(backend.present(&DamageRegion::full()).is_err());
+        assert_eq!(stages.borrow().as_slice(), ["clear_rects"]);
+        assert!(backend.surface.needs_gpu_clear);
+        assert_eq!(backend.surface.pending_clear_rects.len(), 1);
+        fail_stage.set(FailStage::None);
+        stages.borrow_mut().clear();
+        backend
+            .present(&DamageRegion::full())
+            .expect("retry clear rects as full clear");
+        assert_eq!(stages.borrow().as_slice(), ["clear", "present"]);
+        assert!(backend.surface.pending_clear_rects.is_empty());
+
+        let RecordingFixture {
+            mut backend,
+            fail_stage,
+            stages,
+            ..
+        } = recording_backend(FailStage::Native);
+        backend.resize(16, 16).expect("resize");
+        backend
+            .surface
+            .canvas
+            .fill_rect(Rect::new(1.0, 1.0, 4.0, 4.0), Color::white(), None);
+        assert!(backend.present(&DamageRegion::full()).is_err());
+        assert_eq!(stages.borrow().as_slice(), ["clear", "solid"]);
+        assert!(backend.surface.needs_gpu_clear);
+        assert_eq!(backend.surface.canvas.pending_native.len(), 1);
+        fail_stage.set(FailStage::None);
+        stages.borrow_mut().clear();
+        backend
+            .present(&DamageRegion::full())
+            .expect("retry native submission");
+        assert_eq!(stages.borrow().as_slice(), ["clear", "solid", "present"]);
+        assert!(backend.surface.canvas.pending_native.is_empty());
+
+        let RecordingFixture {
+            mut backend,
+            fail_stage,
+            stages,
+            ..
+        } = recording_backend(FailStage::Soft);
+        backend.resize(16, 16).expect("resize");
+        backend
+            .surface
+            .canvas
+            .fill_rect(Rect::new(0.0, 0.0, 8.0, 8.0), Color::white(), None);
+        backend
+            .surface
+            .canvas
+            .fill_ellipse(Rect::new(1.0, 1.0, 4.0, 4.0), Color::white());
+        assert!(backend.present(&DamageRegion::full()).is_err());
+        assert_eq!(stages.borrow().as_slice(), ["clear", "solid", "soft"]);
+        assert!(backend.surface.needs_gpu_clear);
+        assert_eq!(backend.surface.canvas.pending_native.len(), 1);
+        assert!(backend.surface.canvas.soft_has_content);
+        fail_stage.set(FailStage::None);
+        stages.borrow_mut().clear();
+        backend
+            .present(&DamageRegion::full())
+            .expect("retry native plus soft submission");
+        assert_eq!(
+            stages.borrow().as_slice(),
+            ["clear", "solid", "soft", "present"]
+        );
+        assert!(backend.surface.canvas.pending_native.is_empty());
+        assert!(!backend.surface.canvas.soft_has_content);
+
+        let RecordingFixture {
+            mut backend,
+            fail_stage,
+            stages,
+            ..
+        } = recording_backend(FailStage::Present);
+        backend.resize(16, 16).expect("resize");
+        backend
+            .surface
+            .canvas
+            .fill_rect(Rect::new(0.0, 0.0, 8.0, 8.0), Color::white(), None);
+        backend
+            .surface
+            .canvas
+            .fill_ellipse(Rect::new(1.0, 1.0, 4.0, 4.0), Color::white());
+        assert!(backend.present(&DamageRegion::full()).is_err());
+        assert_eq!(
+            stages.borrow().as_slice(),
+            ["clear", "solid", "soft", "present"]
+        );
+        assert!(backend.surface.needs_gpu_clear);
+        assert_eq!(backend.surface.canvas.pending_native.len(), 1);
+        assert!(backend.surface.canvas.soft_has_content);
+        fail_stage.set(FailStage::None);
+        stages.borrow_mut().clear();
+        backend
+            .present(&DamageRegion::full())
+            .expect("retry after present failure");
+        assert_eq!(
+            stages.borrow().as_slice(),
+            ["clear", "solid", "soft", "present"]
+        );
+        assert!(backend.surface.canvas.pending_native.is_empty());
+        assert!(!backend.surface.canvas.soft_has_content);
+    }
+
+    #[test]
+    fn native_gpu_backend_shutdown_is_idempotent_across_drop() {
+        let RecordingFixture {
+            mut backend,
+            shutdown_calls,
+            make_current_calls,
+            ..
+        } = recording_backend(FailStage::None);
+        backend.shutdown();
+        backend.shutdown();
+        drop(backend);
+
+        assert_eq!(shutdown_calls.get(), 1);
+        assert_eq!(make_current_calls.get(), 1);
     }
 
     #[test]
@@ -1431,7 +2044,7 @@ mod tests {
         let last_radial_count = Rc::new(Cell::new(0usize));
         let last_mesh_count = Rc::new(Cell::new(0usize));
         let last_shadow_count = Rc::new(Cell::new(0usize));
-        let mut backend = D3d11Backend::new(Box::new(fake_ctx(
+        let mut backend = NativeGpuBackend::new(Box::new(fake_ctx(
             &clear_calls,
             &clear_rect_calls,
             &draw_calls,
@@ -1500,7 +2113,7 @@ mod tests {
         let last_radial_count = Rc::new(Cell::new(0usize));
         let last_mesh_count = Rc::new(Cell::new(0usize));
         let last_shadow_count = Rc::new(Cell::new(0usize));
-        let mut backend = D3d11Backend::new(Box::new(fake_ctx(
+        let mut backend = NativeGpuBackend::new(Box::new(fake_ctx(
             &clear_calls,
             &clear_rect_calls,
             &draw_calls,
@@ -1567,7 +2180,7 @@ mod tests {
         let last_radial_count = Rc::new(Cell::new(0usize));
         let last_mesh_count = Rc::new(Cell::new(0usize));
         let last_shadow_count = Rc::new(Cell::new(0usize));
-        let mut backend = D3d11Backend::new(Box::new(fake_ctx(
+        let mut backend = NativeGpuBackend::new(Box::new(fake_ctx(
             &clear_calls,
             &clear_rect_calls,
             &draw_calls,
@@ -1656,7 +2269,7 @@ mod tests {
         let last_radial_count = Rc::new(Cell::new(0usize));
         let last_mesh_count = Rc::new(Cell::new(0usize));
         let last_shadow_count = Rc::new(Cell::new(0usize));
-        let mut backend = D3d11Backend::new(Box::new(fake_ctx(
+        let mut backend = NativeGpuBackend::new(Box::new(fake_ctx(
             &clear_calls,
             &clear_rect_calls,
             &draw_calls,
@@ -1920,7 +2533,7 @@ mod tests {
             GraphicsBackend::D3d11,
         )
         .expect("D3D11 context");
-        let mut backend = D3d11Backend::new(context).expect("D3D11 backend");
+        let mut backend = NativeGpuBackend::new(context).expect("D3D11 backend");
         backend.resize(256, 128).expect("resize backend");
         backend
             .gpu_ctx
@@ -1941,16 +2554,16 @@ mod tests {
             FillRule::EvenOdd,
         );
         assert!(!backend.surface.canvas.soft_has_content);
-        assert_eq!(backend.surface.canvas.pending_meshes.len(), 1);
+        assert_eq!(backend.surface.canvas.pending_mesh_count(), 1);
 
         {
-            let D3d11Backend {
+            let NativeGpuBackend {
                 gpu_ctx, surface, ..
             } = &mut backend;
             surface
                 .canvas
-                .flush_native(gpu_ctx.as_mut())
-                .expect("flush native contour-forest mesh");
+                .submit_native(gpu_ctx.as_mut())
+                .expect("submit native contour-forest mesh");
         }
         let pixels = backend.gpu_ctx.read_pixels(0, 0, 256, 128);
         assert_eq!(pixels.len(), 256 * 128);
@@ -1984,6 +2597,7 @@ mod tests {
                 damage: PresentDamage::Full,
             })
             .expect("present contour-forest frame");
+        backend.surface.canvas.commit_presented_frame();
 
         backend
             .gpu_ctx
@@ -2005,15 +2619,15 @@ mod tests {
             },
         );
         assert!(!backend.surface.canvas.soft_has_content);
-        assert_eq!(backend.surface.canvas.pending_meshes.len(), 1);
+        assert_eq!(backend.surface.canvas.pending_mesh_count(), 1);
         {
-            let D3d11Backend {
+            let NativeGpuBackend {
                 gpu_ctx, surface, ..
             } = &mut backend;
             surface
                 .canvas
-                .flush_native(gpu_ctx.as_mut())
-                .expect("flush native stroke mesh");
+                .submit_native(gpu_ctx.as_mut())
+                .expect("submit native stroke mesh");
         }
         let pixels = backend.gpu_ctx.read_pixels(0, 0, 256, 128);
         let pixel = |x: usize, y: usize| pixels[y * 256 + x];
@@ -2049,6 +2663,7 @@ mod tests {
                 damage: PresentDamage::Full,
             })
             .expect("present stroke frame");
+        backend.surface.canvas.commit_presented_frame();
 
         let mut overlapping = crate::draw::primitives::path::PathBuilder::new();
         add_test_rect(&mut overlapping, 8.0, 8.0, 48.0, 40.0, true);
@@ -2104,7 +2719,7 @@ mod tests {
 
     #[cfg(feature = "d3d11")]
     fn assert_complex_fill_frame(
-        backend: &mut D3d11Backend,
+        backend: &mut NativeGpuBackend,
         path: &Path,
         fill_rule: FillRule,
         expected_green_pixels: usize,
@@ -2125,18 +2740,18 @@ mod tests {
             "{label} must stay native"
         );
         assert_eq!(
-            backend.surface.canvas.pending_meshes.len(),
+            backend.surface.canvas.pending_mesh_count(),
             1,
             "{label} must queue one mesh"
         );
         {
-            let D3d11Backend {
+            let NativeGpuBackend {
                 gpu_ctx, surface, ..
             } = backend;
             surface
                 .canvas
-                .flush_native(gpu_ctx.as_mut())
-                .unwrap_or_else(|error| panic!("flush {label} mesh: {error}"));
+                .submit_native(gpu_ctx.as_mut())
+                .unwrap_or_else(|error| panic!("submit {label} mesh: {error}"));
         }
         let pixels = backend.gpu_ctx.read_pixels(0, 0, 256, 128);
         let pixel = |x: usize, y: usize| pixels[y * 256 + x];
@@ -2165,6 +2780,7 @@ mod tests {
                 damage: PresentDamage::Full,
             })
             .unwrap_or_else(|error| panic!("present {label} frame: {error}"));
+        backend.surface.canvas.commit_presented_frame();
     }
 
     #[test]
@@ -2188,7 +2804,7 @@ mod tests {
         let last_radial_count = Rc::new(Cell::new(0usize));
         let last_mesh_count = Rc::new(Cell::new(0usize));
         let last_shadow_count = Rc::new(Cell::new(0usize));
-        let mut backend = D3d11Backend::new(Box::new(fake_ctx(
+        let mut backend = NativeGpuBackend::new(Box::new(fake_ctx(
             &clear_calls,
             &clear_rect_calls,
             &draw_calls,
@@ -2275,7 +2891,7 @@ mod tests {
         let last_radial_count = Rc::new(Cell::new(0usize));
         let last_mesh_count = Rc::new(Cell::new(0usize));
         let last_shadow_count = Rc::new(Cell::new(0usize));
-        let mut backend = D3d11Backend::new(Box::new(fake_ctx(
+        let mut backend = NativeGpuBackend::new(Box::new(fake_ctx(
             &clear_calls,
             &clear_rect_calls,
             &draw_calls,

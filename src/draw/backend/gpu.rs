@@ -211,6 +211,14 @@ impl RenderBackend for GpuBackend {
         &mut self.surface
     }
 
+    fn make_current(&mut self) {
+        self.gpu_ctx.make_current();
+    }
+
+    fn device_pixel_ratio(&self) -> f32 {
+        self.gpu_ctx.device_pixel_ratio()
+    }
+
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         self.gpu_ctx.make_current();
         self.surface.canvas.flush_soft_fallback()?;

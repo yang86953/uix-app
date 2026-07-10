@@ -3,7 +3,7 @@
 ← [架构导航](../architecture.md) · 域：`native` · `draw` · `app` · [#162](../../decisions.md#d162) [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)
 
 > **设计**：渲染以 `RasterMode` × `PresentMode` × `GraphicsBackend` 独立描述，并由 caps + registry 选择合法稀疏组合（[#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)）。
-> **实现状态**：P6.7 registry / probe / 统一 present ✅ · P6.8 正交轴类型与表驱动装配 ✅ · D3D11 `GpuNative` × `Swapchain` ✅（原生 fill/stroke/glyph/gradient/shadow，identity 完整 fill topology 与完整 `StrokeOptions` cap/join stroke path〔CPU tessellate → GPU triangles〕；不支持 transform/blend、数值异常或预算超限走 soft + alpha blit）（[#169](../../decisions.md#d169)）→ [P6.8](../implementation.md#p68-可组合渲染轴)。非 P6 任务不必通读。
+> **实现状态**：P6.7 registry / probe / 统一 present ✅ · P6.8 正交轴类型与表驱动装配 ✅ · 非 GL 原生光栅已统一为 API-neutral `NativeGpuBackend` + 逐操作 `NativeRasterCaps`，普通 pipeline 不泄漏 D3D11 具体类型 ✅ · D3D11 `GpuNative` × `Swapchain` ✅（原生 fill/stroke/glyph/gradient/shadow，identity 完整 fill topology 与完整 `StrokeOptions` cap/join stroke path〔CPU tessellate → GPU triangles〕；不支持 transform/blend、数值异常或预算超限走 soft + alpha blit）（[#169](../../decisions.md#d169)）→ [P6.8](../implementation.md#p68-可组合渲染轴)。非 P6 任务不必通读。
 
 ## 索引
 
@@ -193,8 +193,9 @@ native
 | `PresentMode` | native/draw | `Swapchain` / `PixelUpload` / `CpuPresenter`；caps 显式字段 |
 | `BackendKind` | draw | `Cpu` / `Gpu` / `Auto` / `Null`；与正交轴对齐；`Gpu` = 尝试 GPU 路径，不绑具体 API |
 | `GraphicsContextCaps` | native | `backend` + `raster` + `present` + `partial_present` + DPR |
+| `NativeRasterCaps` | native | 非 GL `GpuNative` 的逐操作 clear / soft-blit / solid / stroke / glyph / gradient / mesh / shadow capability；未声明即 soft |
 | `GraphicsBackendEntry` | factory | `id` / `priority` / `status` / `raster` / `present` / `create`；表驱动 |
-| `RenderBackendRegistry` | draw | `GpuNative` 时按 API 配对；OpenGL ES / D3D11 ✅；随后 D3D12 / Metal |
+| `RenderBackendRegistry` | draw | `GpuNative` 时按 API 配对；OpenGL ES → `GpuBackend`，非 GL API → `NativeGpuBackend`；D3D11 ✅，随后 D3D12 / Metal |
 | `bootstrap_graphics_engine` | draw | 唯一 probe + `create_graphics_engine` |
 
 **分派**：`caps.raster × caps.present` → 表驱动装配 engine；`caps.backend` → `RenderBackendRegistry`（仅 `GpuNative`）。找不到合法组合即返回诊断，bootstrap 关闭 context 后继续候选，不进行隐式轴变换。
@@ -219,6 +220,7 @@ native
 | `RasterMode` / `PresentMode` 类型与 caps 字段 | ✅ P6.8 |
 | `create_graphics_engine` 按轴表驱动 | ✅ P6.8 |
 | `BackendKind` 与正交轴对齐 | ✅ P6.8 |
+| API-neutral `NativeGpuBackend` + `NativeRasterCaps` | ✅ 逐操作 native/soft 路由；录制顺序与单次 offset；context `Result` → `RenderBackend` 边界错误传播、成功后提交与后续 present attempt 的 full-clear 重放；幂等生命周期；clear + soft-blit 为 hybrid 基线；`BackendKind::Gpu` 统一走 registry |
 | D3D11 `GpuNative` × `Swapchain` | ✅ 原生 fill/stroke/glyph/gradient/shadow + identity 完整 fill/stroke path mesh + soft fallback；非 identity transform、不支持 blend/text 与保护性失败路径仍 soft |
 
 权威分项 → [implementation · P6.8](../implementation.md#p68-可组合渲染轴)。
@@ -237,7 +239,7 @@ native
 | 1 | `native/graphics/<api>/context.rs` | 实现 `IGraphicsContext`；caps 声明 `raster` + `present` |
 | 2 | `native/factory/registry_*.rs` | 添加 `GraphicsBackendEntry` |
 | 3 | `Cargo.toml` | feature gating |
-| 4 | `draw/backend/<api>.rs` | `RenderBackend` + `Canvas2D`（仅 `GpuNative`） |
+| 4 | `draw/backend/registry.rs` + `native_gpu.rs` | 非 GL `GpuNative` 配对到 capability 驱动的共享 `RenderBackend` + `Canvas2D`；API 差异留在 context |
 | 5 | `draw/backend/registry.rs` | 登记 API → backend 构造 |
 | 6 | docs | 更新 [implementation · P6](../implementation.md#p6-生产级框架) |
 | 7 | 测试 | registry + bootstrap 单测；不要求真 GPU CI |

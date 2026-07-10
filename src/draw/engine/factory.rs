@@ -53,7 +53,7 @@ pub fn create_graphics_engine(
 mod tests {
     use super::*;
     use crate::native::traits::present::{
-        GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+        GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PresentDamage,
     };
     use std::ffi::c_void;
 
@@ -62,6 +62,10 @@ mod tests {
     impl IGraphicsContext for FakeD3d11GpuNative {
         fn caps(&self) -> GraphicsContextCaps {
             GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        }
+
+        fn native_raster_caps(&self) -> NativeRasterCaps {
+            NativeRasterCaps::d3d11_full()
         }
 
         fn initialize(
