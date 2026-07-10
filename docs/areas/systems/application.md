@@ -400,7 +400,7 @@ pub root: impl Fn() -> ViewNode + Send + Sync + 'static;
 
 App **无需**手写 ThemeChanged handler（opt-in 时）。
 
-> **实现注记**（#175）：`AppHandle::set_theme(Theme) -> Result<()>` 可由任意存活窗口调用，写入 App 级合并命令并唤醒 event loop；关闭 handle 返回 `Errc::InvalidState`。同一轮内连续请求只保留最终主题且只 wake 一次；主循环在帧门控前替换主题并向主窗和全部副窗派发 `ThemeChanged`，新建窗口直接继承当前主题。失效由 `WidgetTree` 计算为 palette-only Paint，调用方无需逐窗 invalidate。
+> **实现注记**（#175）：`AppHandle::set_theme(Theme) -> Result<()>` 可由任意存活窗口调用，写入 App 级合并命令并唤醒 event loop；关闭 handle 返回 `Errc::InvalidState`。同一轮内连续请求只保留最终主题且只 wake 一次；主循环在帧门控前替换主题并向主窗和全部副窗派发 `ThemeChanged`，新建窗口直接继承当前主题。失效由 `WidgetTree` 计算为 palette-only Paint，调用方无需逐窗 invalidate。demo 的应用能力页可创建独立 `WindowSession`，主窗与副窗各自的 `ThemeToggle` 均调用同一 App 级命令；SoftwareEngine 真实双窗口已验证双向切换同步、语义暗色与无裁切布局。
 
 **异步边界**（#131、#132、#133）：禁止裸 Registry 与轮询 Effect；允许 **`run_after` / `run_interval`**、**`post_to_ui`** 与 async→State。详见 [demand-driven · UI 主循环 vs 后台](demand-driven.md#ui-主循环-vs-后台) · [post_to_ui](#post_to_ui) · [App Timer API](#app-定时-api)。
 

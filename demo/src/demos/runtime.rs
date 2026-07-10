@@ -7,6 +7,51 @@ use crate::common::showcase::{info_note, labeled_row};
 use crate::common::widgets::{BounceBall, Counter, PulseRing};
 use crate::demos::context::DemoCtx;
 
+fn theme_window(control: crate::demos::context::ThemeControl) -> ViewNode {
+    let toggle_control = control.clone();
+    column([
+        row([
+            embed(Icon::new("layers").size(24.0)),
+            label("UIX 多窗口主题联动")
+                .font_size(22.0)
+                .color(ColorValue::Neutral(NeutralRole::Text)),
+            label("").flex_grow(1.0),
+            embed(ThemeToggle::new().dark(control.is_dark())).on_semantic(
+                SemanticKind::Click,
+                move |_| {
+                    toggle_control.toggle();
+                },
+            ),
+        ])
+        .align(AlignItems::Center)
+        .gap(12.0),
+        label("此窗口拥有独立 WindowSession，与主窗共享 AppState 和 Theme。")
+            .font_size(13.0)
+            .color(ColorValue::Neutral(NeutralRole::TextSecondary)),
+        column([
+            label("palette-only 广播")
+                .font_size(15.0)
+                .color(ColorValue::Palette(PaletteColor::Primary)),
+            label("任一窗口切换主题后，两个 WidgetTree 仅重绘使用语义色的节点。")
+                .font_size(12.0)
+                .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
+        ])
+        .gap(8.0)
+        .padding(EdgeInsets::uniform(18.0))
+        .bg(ColorValue::Neutral(NeutralRole::BgElevated))
+        .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
+        .radius(8.0),
+        label("").flex_grow(1.0),
+        label("AppHandle::open_window + AppHandle::set_theme")
+            .font_size(11.0)
+            .color(ColorValue::Neutral(NeutralRole::TextQuaternary)),
+    ])
+    .gap(18.0)
+    .padding(EdgeInsets::uniform(24.0))
+    .bg(ColorValue::Neutral(NeutralRole::BgLayout))
+    .flex_grow(1.0)
+}
+
 pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
     let tk = ctx.tk;
     let ticks = ctx.timer_ticks;
@@ -25,6 +70,26 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
         )
     } else {
         embed(ThemeToggle::new())
+    };
+    let open_window = if let Some(control) = ctx.theme_control() {
+        let open_control = control.clone();
+        button("打开主题联动窗口")
+            .on_click(move || {
+                let Some(handle) = open_control.handle() else {
+                    return;
+                };
+                let window_control = open_control.clone();
+                if let Err(error) =
+                    handle.open_window(WindowConfig::new("UIX Theme Window", 520, 320, move || {
+                        theme_window(window_control.clone())
+                    }))
+                {
+                    handle.notify_error(&error);
+                }
+            })
+            .build()
+    } else {
+        button("打开主题联动窗口").disabled(true).build()
     };
 
     PageBuilder::new(tk)
@@ -142,9 +207,10 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
             "AppHandle::post_to_ui(FnOnce) 将闭包入队到当前 WindowSession 主线程；跨线程 State 更新须经此路径。见 application.md #133。",
         ))
         .section("多窗口")
+        .push(open_window)
         .push(info_note(
             tk,
-            "App 支持多 WindowSession（AppHandle 含 window_id）；post_to_ui 仅入目标 session 队列。单进程多窗 live demo 待产品化 — 见覆盖清单说明。",
+            "AppHandle::open_window 创建独立 WindowSession；主题全局共享，post_to_ui 仍仅进入目标 session 队列。",
         ))
         .build()
 }

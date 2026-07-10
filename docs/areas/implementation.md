@@ -177,17 +177,17 @@ P6 图形后端            ← #162 #163，详见下文
 
 此前两项历史失败已闭合：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过；Horizontal 多直接子项现沿 X 轴流式排列并封口非滚动 Y 轴。Space 不再复用 stale 子 frame，Form/FormItem 的固定最小尺寸、label/padding/status 区均受窄父 frame 上限约束；Card body 现排除 actions 固定区，极小尺寸下以零 frame 清除旧布局，actions 也不会越出卡片。Container/Grid/ScrollView/Space/Form/FormItem/Card 已统一为 pass-local `LayoutChild` preparation → arrange，Arrange 不再递归 measure，通用 helper 也不再以旧 frame 污染零高度测量（[#174](../decisions.md#d174)）。FrameRenderer 现以“版本变化或 LayerTree 尚未构建”触发 build，合法初始版本 `0` 不再跳过首帧；Picture 在 backend 无 offscreen 能力时同帧直绘子树，不再吞掉完整静态 UI。D3D11 复杂填充已有自交、嵌套、相交/接触轮廓拓扑守卫与端到端 soft fallback 回归；demo 覆盖清单现以语义测试区分未实现、已实现但未单独展示与待真机验证。graphics probe 现保留候选、失败阶段、选中 API 与完整错误；窗口关闭已编码为 session/GL 资源/context/native window 顺序，session 与 native window 幂等性有分层测试，real-window factory 测试覆盖 context 创建/关闭。Linux/macOS 仅完成 cross-check，未做真机运行；完整 GL/context/window 组合顺序、Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
 
-Windows D3D11 real-window smoke 曾暴露 demo 页面内 `State::new` 在根 reconcile 后重置、以及 `ButtonBuilder::widget()` 丢弃 HandlerTable 注册两项真实交互缺陷；首页与应用能力页计数 State 已提升到应用生命周期，交互改用保留 handler 的 View DSL，并由根 reconcile 回归守卫覆盖。随后 D3D11 与无 GPU feature 的 SoftwareEngine 均完成首帧、颜色、按钮点击即时更新、最大化/恢复和标题栏关闭 smoke；Software 路径额外暴露并修复 `Color` 未按 `AARRGGBB` 编码、GDI 因 1px damage padding 越界而跳过局部拷贝两项缺陷。WGL 现能从 `opengl32.dll` 加载 core GL export，完整 real-window 测试覆盖 ES 3 engine 初始化、红色像素绘制/readback 与 present 调用；这属于 `automated` 证据，OpenGL ES 屏幕呈现、D3D11 主题与双窗联合 GUI、GPU/驱动矩阵仍待验证。
+Windows D3D11 real-window smoke 曾暴露 demo 页面内 `State::new` 在根 reconcile 后重置、以及 `ButtonBuilder::widget()` 丢弃 HandlerTable 注册两项真实交互缺陷；首页与应用能力页计数 State 已提升到应用生命周期，交互改用保留 handler 的 View DSL，并由根 reconcile 回归守卫覆盖。随后 D3D11 与无 GPU feature 的 SoftwareEngine 均完成首帧、颜色、按钮点击即时更新、最大化/恢复和标题栏关闭 smoke；Software 路径额外暴露并修复 `Color` 未按 `AARRGGBB` 编码、GDI 因 1px damage padding 越界而跳过局部拷贝两项缺陷。D3D11 真实窗口自动化现通过 staging texture 执行 row-pitch aware BGRA readback，并断言首帧像素内容；`DXGI_SWAP_EFFECT_DISCARD` 不保证 present 后的 backbuffer，因此 backend 不再错误声明 partial redraw，而是在既有 Active 帧内提升为全帧。WGL 现能从 `opengl32.dll` 加载 core GL export，完整 real-window 测试覆盖 ES 3 engine 初始化、红色像素绘制/readback 与 present 调用；这些属于 `automated` 证据，OpenGL ES 屏幕呈现、D3D11 主题 GUI 与 GPU/驱动矩阵仍待验证。
 
 Windows native IME 现按 HWND 隔离 composition 与 UTF-16 decoder 状态，处理 `WM_IME_STARTCOMPOSITION` / `WM_IME_COMPOSITION` / `WM_IME_ENDCOMPOSITION`，并从 IMM32 读取预编辑/结果串；`WM_CHAR` 会聚合代理对，不再丢失 emoji。`ITextInput` 的 start/stop/cursor rect 已统一为 Result-only；`WidgetTextInput` capability 让 event loop 在文本组件聚焦期间自动持有无 deadline IME session，并在失焦、禁用、移除时停止。Input 现区分 preedit 与 committed value，支持 FocusIn、内联预编辑、primary underline、尾随 caret 与候选窗 rect；SoftwareEngine 自动化覆盖偏移裁剪和 DisplayList replay，真实 GUI 覆盖 placeholder、`abc` 提交与 Microsoft Pinyin 候选窗跟随 caret。当前 Microsoft Pinyin 的 IMM32 `GCS_COMPSTR` 只暴露空白占位，读音由系统候选 UI 持有；应用内 phonetic preedit 仍需 TSF/UI-less text store，故 IME 不能标记 production。
 
 DisplayList 现完整记录 Input 使用的 clip stack 与预布局 glyph；Canvas offset 在 CPU/OpenGL/D3D11 三条路径均同步作用于 clip。RenderObject 脏帧边直绘边录制，列表只供后续 clean frame 重放，不再同帧二次覆盖或重复 alpha；遇到底层直绘绕过 PaintOp 时主动判定录制不完整并回退 live paint。自动化覆盖偏移 clip、placeholder/value/preedit 缓存重放与单帧半透明绘制一次。
 
-运行时全局主题已由 `AppHandle::set_theme(Theme) -> Result<()>` 落地：App 级 pending 命令合并连续请求并仅 wake 一次，主循环在帧门控前替换主题、向主窗和全部副窗广播 `ThemeChanged`，新窗继承当前主题；关闭 handle 明确返回 `InvalidState`。自动化覆盖最终值合并、主副窗广播及 palette-only Paint / 零 Layout；SoftwareEngine 真实窗口已完成顶栏 light→dark 切换、暗色语义面、选中态、文字对比和裁剪验收。暗色 token 的语义背景与次级边框已改为向暗色基底混合；demo shell、首页和共享提示/卡片改用 `ColorValue` 语义色。D3D11 与双窗联合主题 GUI 仍属于后续矩阵。
+运行时全局主题已由 `AppHandle::set_theme(Theme) -> Result<()>` 落地：App 级 pending 命令合并连续请求并仅 wake 一次，主循环在帧门控前替换主题、向主窗和全部副窗广播 `ThemeChanged`，新窗继承当前主题；关闭 handle 明确返回 `InvalidState`。自动化覆盖最终值合并、主副窗广播及 palette-only Paint / 零 Layout；demo 应用能力页现提供真实副窗入口，主副窗各自的 `ThemeToggle` 均可反向驱动同一全局主题。SoftwareEngine 真实双窗口已完成 light↔dark 双向同步、暗色语义面、选中态、文字对比和裁剪验收。暗色 token 的语义背景与次级边框已改为向暗色基底混合；demo shell、首页和共享提示/卡片改用 `ColorValue` 语义色。D3D11 主题 GUI 仍属于后续硬件矩阵。
 
 `embed()` 现会在进入 View Reconciler 前递归物化 `WidgetComponent::build()` 的组件持有子树；`Space::child` 等 legacy interop 子节点不再只在冷启动展开、随后因 `ViewNode.children` 为空而被 reconcile 删除。自动化覆盖同类型 `Space` 从 Label 子树切换为 Input 子树，真实 SoftwareEngine demo 的“输入”页控件缺失问题由此闭合。
 
-Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，事件按该绑定写入对应 `WindowId`；从队列取事件时再选择对应窗口的输入/系统服务句柄。真实双 HWND 回归已覆盖独立 resize 状态与事件路由，销毁副窗也不再发送线程级 `WM_QUIT`。App/demo 的完整多窗口 GUI 交互仍待 smoke，不能据此标记 production。
+Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，事件按该绑定写入对应 `WindowId`；从队列取事件时再选择对应窗口的输入/系统服务句柄。真实双 HWND 回归已覆盖独立 resize 状态与事件路由，销毁副窗也不再发送线程级 `WM_QUIT`。App/demo 已通过 SoftwareEngine 完成副窗创建、主副窗双向主题交互与分别关闭的真实 GUI smoke；D3D11 联合 GUI 与多 GPU/驱动矩阵仍待验收，不能据此标记 production。
 
 ---
 
@@ -199,7 +199,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 
 | 平台 / 路径 | coded | automated | compiled | hardware / GUI | production |
 |-------------|:-----:|:---------:|:--------:|:--------------:|:----------:|
-| Windows D3D11 `GpuNative × Swapchain` | 是 | 单元/集成与 real-window factory 测试通过 | default/no-default/all-features | 基础 GUI smoke 通过；待输入/IME/主题/多窗与 GPU 矩阵 | 否 |
+| Windows D3D11 `GpuNative × Swapchain` | 是 | 单元/集成与 real-window factory + BGRA staging readback 测试通过 | default/no-default/all-features | 基础 GUI smoke 通过；discard swapchain 按全帧契约运行；待输入/IME/主题/多窗与 GPU 矩阵 | 否 |
 | Windows OpenGL ES / Software fallback | 是 | 单元/集成与 real-window ES 3 engine 绘制/readback 测试通过 | default/no-default/all-features | Software 基础 GUI smoke 通过；OpenGL ES 屏幕呈现与完整交互矩阵待验 | 否 |
 | Linux Vulkan / EGL | 是 | Windows 主机未运行目标测试 | cross-check default/all-features | 待 Wayland/GPU 真机 | 否 |
 | macOS Metal / Software fallback | 是 | Windows 主机未运行目标测试 | cross-check default/all-features | 待 AppKit/Metal 真机 | 否 |

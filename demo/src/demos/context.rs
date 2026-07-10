@@ -17,6 +17,13 @@ impl ThemeControl {
         *self.handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
     }
 
+    pub fn handle(&self) -> Option<AppHandle> {
+        self.handle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
     pub fn is_dark(&self) -> bool {
         self.dark.load(Ordering::Acquire)
     }

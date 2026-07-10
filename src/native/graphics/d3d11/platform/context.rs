@@ -24,7 +24,9 @@ use ::windows::Win32::Graphics::Direct3D::{
 };
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
-    ID3D11Texture2D, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_VIEWPORT,
+    ID3D11Texture2D, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
+    D3D11_USAGE_STAGING, D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
@@ -299,15 +301,99 @@ impl IGraphicsContext for D3d11Context {
     }
 
     fn swap_buffers(&mut self, _damage: PresentDamage) {
-        let _ = unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) };
+        let result = unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) };
+        if result.is_err() {
+            crate::core::log::error_fn(format!("D3d11Context: Present failed: {result:?}"));
+        }
     }
 
     fn shutdown(&mut self) {
         self.release_rtv();
     }
 
-    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-        Vec::new()
+    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32> {
+        let x0 = x.clamp(0, self.width);
+        let y0 = y.clamp(0, self.height);
+        let x1 = x.saturating_add(width).clamp(x0, self.width);
+        let y1 = y.saturating_add(height).clamp(y0, self.height);
+        let read_w = x1 - x0;
+        let read_h = y1 - y0;
+        if read_w <= 0 || read_h <= 0 {
+            return Vec::new();
+        }
+
+        let result = (|| -> Result<Vec<u32>> {
+            let back_buffer: ID3D11Texture2D = unsafe {
+                self.swap_chain
+                    .GetBuffer(0)
+                    .map_err(|err| d3d_error("IDXGISwapChain::GetBuffer(read_pixels)", err))?
+            };
+            let desc = D3D11_TEXTURE2D_DESC {
+                Width: self.width as u32,
+                Height: self.height as u32,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
+                Usage: D3D11_USAGE_STAGING,
+                BindFlags: 0,
+                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                MiscFlags: 0,
+            };
+            let mut staging = None;
+            unsafe {
+                self.device
+                    .CreateTexture2D(&desc, None, Some(&mut staging))
+                    .map_err(|err| d3d_error("ID3D11Device::CreateTexture2D(read_pixels)", err))?;
+            }
+            let staging = staging.ok_or_else(|| {
+                Error::new(
+                    Errc::PlatformError,
+                    "D3d11Context: read_pixels staging texture was not created",
+                )
+            })?;
+            unsafe {
+                self.context.CopyResource(&staging, &back_buffer);
+            }
+            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            unsafe {
+                self.context
+                    .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
+                    .map_err(|err| d3d_error("ID3D11DeviceContext::Map(read_pixels)", err))?;
+            }
+            let mut pixels = vec![0u32; (read_w as usize).saturating_mul(read_h as usize)];
+            for row in 0..read_h as usize {
+                let src = unsafe {
+                    mapped
+                        .pData
+                        .cast::<u8>()
+                        .add((y0 as usize + row) * mapped.RowPitch as usize + x0 as usize * 4)
+                        .cast::<u32>()
+                };
+                let dst = pixels[row * read_w as usize..].as_mut_ptr();
+                unsafe {
+                    std::ptr::copy_nonoverlapping(src, dst, read_w as usize);
+                }
+            }
+            unsafe {
+                self.context.Unmap(&staging, 0);
+            }
+            Ok(pixels)
+        })();
+
+        match result {
+            Ok(pixels) => pixels,
+            Err(err) => {
+                crate::core::log::warn_fn(format!(
+                    "D3d11Context: read_pixels failed: {}",
+                    err.short_what()
+                ));
+                Vec::new()
+            }
+        }
     }
 
     fn width(&self) -> i32 {
@@ -711,6 +797,10 @@ mod tests {
         soft[0] = 0xFF00_FF00; // opaque green BGRA
         ctx.blit_soft_fallback(&soft, ctx.width(), ctx.height())
             .expect("blit_soft_fallback");
+        let pixels = ctx.read_pixels(0, 0, ctx.width(), ctx.height());
+        assert_eq!(pixels.len(), (ctx.width() * ctx.height()) as usize);
+        assert_eq!(pixels[0], 0xFF00_FF00);
+        assert!(pixels.iter().any(|pixel| *pixel != pixels[0]));
         ctx.present(&PresentFrame::Swapchain {
             damage: PresentDamage::Full,
         })
