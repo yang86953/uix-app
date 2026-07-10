@@ -50,16 +50,21 @@ pub struct Logger {
 }
 
 impl Logger {
+    fn with_default_console() -> Self {
+        let logger = Self {
+            inner: RwLock::new(LoggerInner { sinks: Vec::new() }),
+            level: RwLock::new(Level::Warn),
+            sequence: AtomicU64::new(0),
+        };
+        // 默认 sink 不额外抬高阈值；全局 Logger 级别仍默认为 Warn。
+        logger.add_sink(Arc::new(super::sink::ConsoleSink::new_trace(true)));
+        logger
+    }
+
     pub fn instance() -> &'static Self {
         static LOGGER: std::sync::OnceLock<Logger> = std::sync::OnceLock::new();
         LOGGER.get_or_init(|| {
-            let logger = Logger {
-                inner: RwLock::new(LoggerInner { sinks: Vec::new() }),
-                level: RwLock::new(Level::Warn),
-                sequence: AtomicU64::new(0),
-            };
-            // 默认输出：控制台
-            logger.add_sink(Arc::new(super::sink::ConsoleSink::new(true)));
+            let logger = Logger::with_default_console();
             // 注册为 platform 全局日志处理器
             crate::core::log::set_handler(Box::new(LoggerHandler));
             logger
@@ -165,5 +170,20 @@ impl Logger {
             error.line(),
             Vec::new(),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_console_obeys_the_global_logger_level() {
+        let logger = Logger::with_default_console();
+        let inner = logger.inner.read().unwrap_or_else(|e| e.into_inner());
+
+        assert_eq!(logger.get_level(), Level::Warn);
+        assert_eq!(inner.sinks.len(), 1);
+        assert_eq!(inner.sinks[0].level(), Level::Trace);
     }
 }
