@@ -167,7 +167,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 | 门禁 | 结果 | 证据范围 |
 |------|------|----------|
-| `cargo test --all-targets` | **通过** | lib **1070/1070**；demo **19/19** |
+| `cargo test --all-targets` | **通过** | lib **1074/1074**；demo **19/19** |
 | `cargo test --doc` | **通过** | 3 passed；20 ignored |
 | Windows compile | **通过** | default、`--no-default-features`、`--all-features` |
 | Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` `--all-targets` default + all-features；Vulkan 测试断言不再隐式要求 target 依赖提供 `Debug` |
@@ -175,7 +175,7 @@ P6 图形后端            ← #162 #163，详见下文
 | `cargo clippy --all-targets` | **通过，有既存 warnings** | 无 hard error；warning-free 不作为已完成事实 |
 | 文档门禁 | **通过** | `check_project_docs.py --strict-design --json`：0 errors / 0 warnings；`git diff --check` 通过 |
 
-此前两项历史失败已闭合：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过；Horizontal 多直接子项现沿 X 轴流式排列并封口非滚动 Y 轴。Space 不再复用 stale 子 frame，Form/FormItem 的固定最小尺寸、label/padding/status 区均受窄父 frame 上限约束；Card body 现排除 actions 固定区，极小尺寸下以零 frame 清除旧布局，actions 也不会越出卡片。Container/Grid/ScrollView/Space/Form/FormItem/Card 已统一为 pass-local `LayoutChild` preparation → arrange，Arrange 不再递归 measure，通用 helper 也不再以旧 frame 污染零高度测量（[#174](../decisions.md#d174)）。FrameRenderer 现以“版本变化或 LayerTree 尚未构建”触发 build，合法初始版本 `0` 不再跳过首帧；Picture 在 backend 无 offscreen 能力时同帧直绘子树，不再吞掉完整静态 UI。D3D11 复杂填充现于既有 flatten tolerance 与顶点预算内，原生覆盖轮廓彼此不相交且不接触的 contour forest，包括多孔、深层嵌套与多岛，并保持 `EvenOdd` parity / `NonZero` winding 语义；相交（含边界接触）和自交仍由拓扑守卫转端到端 soft fallback。真实 HWND 自动化已用同一 path 覆盖双孔 root 与 outer→hole→island→hole，并回读代表像素、完整填充像素数及半透明三角无重叠后 present；demo 覆盖清单现以语义测试区分未实现、已实现但未单独展示与待真机验证。graphics probe 现保留候选、失败阶段、选中 API 与完整错误；窗口关闭已编码为 session/GL 资源/context/native window 顺序，session 与 native window 幂等性有分层测试，real-window factory 测试覆盖 context 创建/关闭。Linux/macOS 仅完成 cross-check，未做真机运行；完整 GL/context/window 组合顺序、Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
+此前两项历史失败已闭合：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过；Horizontal 多直接子项现沿 X 轴流式排列并封口非滚动 Y 轴。Space 不再复用 stale 子 frame，Form/FormItem 的固定最小尺寸、label/padding/status 区均受窄父 frame 上限约束；Card body 现排除 actions 固定区，极小尺寸下以零 frame 清除旧布局，actions 也不会越出卡片。Container/Grid/ScrollView/Space/Form/FormItem/Card 已统一为 pass-local `LayoutChild` preparation → arrange，Arrange 不再递归 measure，通用 helper 也不再以旧 frame 污染零高度测量（[#174](../decisions.md#d174)）。FrameRenderer 现以“版本变化或 LayerTree 尚未构建”触发 build，合法初始版本 `0` 不再跳过首帧；Picture 在 backend 无 offscreen 能力时同帧直绘子树，不再吞掉完整静态 UI。D3D11 复杂填充现于既有 flatten tolerance 与顶点预算内，原生覆盖轮廓彼此不相交且不接触的 contour forest，包括多孔、深层嵌套与多岛，并保持 `EvenOdd` parity / `NonZero` winding 语义；相交（含边界接触）和自交仍由拓扑守卫转端到端 soft fallback。Identity `stroke_path` 现以保留 open/closed 语义的共享轮廓完整处理 `Butt`/`Round`/`Square` cap、`Miter`/`Bevel`/`Round` join 与 `miter_limit` bevel fallback，再经同一严格拓扑 tessellator 生成无分段重叠 mesh；Round 受 0.25px arc tessellation tolerance 约束，生成轮廓相交、接触或自交时仍转 soft。真实 HWND 自动化已覆盖 contour forest 与半透明 90° Miter stroke，回读代表像素、完整像素数及三角无重叠后 present；demo 覆盖清单现以语义测试区分未实现、已实现但未单独展示与待真机验证。graphics probe 现保留候选、失败阶段、选中 API 与完整错误；窗口关闭已编码为 session/GL 资源/context/native window 顺序，session 与 native window 幂等性有分层测试，real-window factory 测试覆盖 context 创建/关闭。Linux/macOS 仅完成 cross-check，未做真机运行；完整 GL/context/window 组合顺序、Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
 
 Windows D3D11 real-window smoke 曾暴露 demo 页面内 `State::new` 在根 reconcile 后重置、以及 `ButtonBuilder::widget()` 丢弃 HandlerTable 注册两项真实交互缺陷；首页与应用能力页计数 State 已提升到应用生命周期，交互改用保留 handler 的 View DSL，并由根 reconcile 回归守卫覆盖。随后 D3D11 与无 GPU feature 的 SoftwareEngine 均完成首帧、颜色、按钮点击即时更新、最大化/恢复和标题栏关闭 smoke；Software 路径额外暴露并修复 `Color` 未按 `AARRGGBB` 编码、GDI 因 1px damage padding 越界而跳过局部拷贝两项缺陷。D3D11 真实窗口自动化现通过 staging texture 执行 row-pitch aware BGRA readback，并断言首帧像素内容；同一真实 HWND 测试依次验证 Hardware 与显式 WARP context、adapter identity、clear/readback 和 present，WARP 为 Microsoft Basic Render Driver（vendor `0x1414`、device `0x008C`）。context 初始化会记录 Hardware/WARP、adapter 名称、vendor/device ID 与专用显存，Hardware 失败会明确记录原因再尝试 WARP，两者均失败时保留双错误。2026-07-10 当前主机验证为 `hardware`：NVIDIA GeForce RTX 4070 Ti SUPER（驱动 `32.0.16.1062`、vendor `0x10DE`、device `0x2705`、D3D11 报告 16061 MiB VRAM）；真实 GUI 操作完成副窗创建、副窗触发 light→dark、主窗触发 dark→light及分别关闭，1200×800 主窗与 520×320 副窗的四组 swapchain backbuffer 均完成视觉验收。当前自动截图链路不能读取 GPU 前台组合内容，因此该项只计为单 GPU 的 hardware + backbuffer GUI 证据，前台 capture 与多驱动矩阵仍待补。`DXGI_SWAP_EFFECT_DISCARD` 不保证 present 后的 backbuffer，因此 backend 不再错误声明 partial redraw，而是在既有 Active 帧内提升为全帧。WGL 现以隐藏 bootstrap HWND/context 加载 `wglChoosePixelFormatARB`，再为真实 HWND 选择并校验可绘制、支持 OpenGL 的双缓冲格式。OpenGL soft fallback 不再依赖 GLES 可选 BGRA 上传，而是使用 core RGBA 上传并在 blit shader 交换 R/B。完整 real-window 测试现同时覆盖 ES 3 engine 初始化、GPU 原生红色背景、CPU 回退蓝色图元的精确 readback、GL 零错误与 present 调用；这些属于 `automated` 证据，OpenGL ES 屏幕呈现与 GPU/驱动矩阵仍待验证。
 
@@ -222,14 +222,14 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
 | P0 | **Windows 生产可用** | 进行中 | 稳定性、阻塞项、demo/docs 同步；**当前主验证与交付环境**（[#167](../decisions.md#d167)） |
-| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1070/1070、demo 19/19；历史布局回归、扫描假阳性、D3D11 复杂拓扑、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、DisplayList glyph/clip、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误均闭合 |
+| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1074/1074、demo 19/19；历史布局回归、扫描假阳性、D3D11 复杂拓扑与精确描边、颜色通道、GDI damage 越界、首帧 LayerTree/Picture 回退、DisplayList glyph/clip、WGL core loader/caps、Win32 多窗状态串用、embedded build 子树删除与 UTF-16 代理对错误均闭合 |
 | P0 | probe 诊断与资源关闭 | `coded + partial automated` | 候选/阶段/selected/完整错误进入有序报告并有自动化守卫；WindowSession/native window 幂等性分层测试通过；GL 资源/context/window 组合顺序待 GUI/驱动 smoke |
 | P0 | 平台层抹平差异 | `coded + automated` | Window 与 ITextInput Result-only API、直接依赖与 cfg 守卫已收敛；上层无 OS cfg |
 | P1 | Linux / macOS parity | `coded + compiled` | 两目标 `--all-targets` default/all-features cross-check 通过；运行/硬件 parity 待验证 |
 | P1 | macOS 原生运行验证 | 待验证 | AppKit backend、Metal CpuUpload、IME 已接；需真机验收 |
 | P1 | demo / docs 与实现同步 | `automated` 基线已完成 | demo 19/19；覆盖状态语义守卫、局部 State reconcile 守卫、strict-design 与链接/锚点检查通过，后续持续维护 |
 | P2 | 无障碍 v1 基线 | 部分 | role/name/state 快照、键盘导航已落地；屏幕阅读器桥待后续 |
-| P1 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas + identity linear/radial gradient + identity 简单 path，以及互不相交且不接触的多孔/深层嵌套/多岛 fill path（CPU tessellate → GPU mesh）+ identity box/ambient shadow（SDF）；相交（含边界接触）/自交 fill、精确 stroke cap/join 与非 identity 文本等仍走既有 soft 路径 — 见 [P6.8](#p68-可组合渲染轴) |
+| P1 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；原生 fill/stroke rect·circle + 轴对齐 line + identity glyph/gradient + 非相交多轮廓 `fill_path` + 完整 `StrokeOptions` cap/join `stroke_path` mesh + identity box/ambient shadow；相交、边界接触和自交 fill、非 identity 文本等仍走既有 soft 路径 — 见 [P6.8](#p68-可组合渲染轴) |
 | P2 | native raster（非 Win） | backlog | Metal / D3D12 GPU 光栅 — **增强**，D3D11 之后 |
 | P2 | WebGPU 评估 | backlog | P6.6 远期 |
 
@@ -245,7 +245,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 | P6.5 配置 | App builder / env / Settings opt-in | ✅ |
 | P6.6 WebGPU | 远期评估 | backlog |
 | P6.7 可插拔 registry | registry、probe、统一 present 契约 | ✅ |
-| P6.8 可组合渲染轴 | `RasterMode` × `PresentMode` 类型与表驱动装配；`BackendKind` 统一；D3D11 GpuNative 原生 fill/stroke/glyph/gradient/path/shadow | 部分 ✅ — 轴类型/分派/D3D11 原生 fill+stroke+glyph atlas+gradient+非相交多轮廓 path+box/ambient shadow ✅；相交/自交 path、精确 stroke 与 Metal/D3D12 GpuNative backlog — [#169](../decisions.md#d169) |
+| P6.8 可组合渲染轴 | `RasterMode` × `PresentMode` 类型与表驱动装配；`BackendKind` 统一；D3D11 GpuNative 原生 fill/stroke/glyph/gradient/path/shadow | 部分 ✅ — 轴类型/分派/D3D11 原生 fill+stroke+glyph atlas+gradient+非相交多轮廓 fill path+完整 cap/join stroke path+box/ambient shadow ✅；相交/接触/自交 fill 与 Metal/D3D12 GpuNative backlog — [#169](../decisions.md#d169) |
 
 <a id="p68-可组合渲染轴"></a>
 
@@ -253,11 +253,11 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 
 **设计**（已确认）：以 [#168](../decisions.md#d168) 正交三轴为 **唯一** mental model；engine 分派 **仅**按 caps + registry 裁决的 `RasterMode` × `PresentMode`（× `GraphicsBackend` identity）合法组合；“×”不表示完整笛卡尔积；`BackendKind` 与上述轴对齐；factory / engine **表驱动正交装配**。非法组合返回诊断并继续 fallback（[#172](../decisions.md#d172)）。旧 bundled 管线枚举已拒绝，不作为设计面。
 
-**实现状态**：正交轴类型、caps、`create_graphics_engine` 轴分派、registry 行 `raster`/`present`、删除 `RenderPipelineProfile` ✅。D3D11 `GpuNative` × `Swapchain`：`D3d11Backend` + VS/PS solid/rounded fill + SDF stroke + identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity path（flatten + strict containment forest + fill-state transition grouping + ear-clip/hole-aware tessellate → `GpuSolidMesh`）+ identity box/ambient shadow（SDF outer glow → `GpuBoxShadow`）+ soft alpha blit + swapchain present ✅。原生 path 现覆盖 identity 简单 ring，以及在既有 flatten tolerance 与顶点预算内、轮廓彼此不相交且不接触的 contour forest；contour-tree 分类支持 `EvenOdd` parity、`NonZero` 累计 winding 与 neutral ring，覆盖多个孔洞、任意深度嵌套、多岛及轮廓顺序无关性。相交（含边界接触）和自交仍由拓扑守卫转 soft；精确 `stroke_path` cap/join 与 Metal / D3D12 `GpuNative` 仍 backlog。CPU scanline 逐像素 oracle 覆盖 canonical 多孔/深层/多岛组合；真实 HWND 自动化走 `Path → D3d11Backend → GpuSolidMesh`，覆盖双孔 root 与四层嵌套并回读像素后 present。
+**实现状态**：正交轴类型、caps、`create_graphics_engine` 轴分派、registry 行 `raster`/`present`、删除 `RenderPipelineProfile` ✅。D3D11 `GpuNative` × `Swapchain`：`D3d11Backend` + VS/PS solid/rounded fill + SDF stroke + identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity path（flatten + strict containment forest + fill-state transition grouping + ear-clip/hole-aware tessellate → `GpuSolidMesh`）+ identity box/ambient shadow（SDF outer glow → `GpuBoxShadow`）+ soft alpha blit + swapchain present ✅。原生 fill path 现覆盖 identity 简单 ring，以及在既有 flatten tolerance 与顶点预算内、轮廓彼此不相交且不接触的 contour forest；contour-tree 分类支持 `EvenOdd` parity、`NonZero` 累计 winding 与 neutral ring，覆盖多个孔洞、任意深度嵌套、多岛及轮廓顺序无关性。Identity `stroke_path` 现按 `StrokeOptions` tessellate 为 `GpuSolidMesh`，支持 `Butt`/`Round`/`Square` cap、`Miter`/`Bevel`/`Round` join，以及 `miter_limit` 超限时的 bevel fallback；closed subpath 不生成 cap，Round 在既有 0.25px tolerance 内近似。生成的 stroke outline 须通过同一严格拓扑与顶点预算守卫，否则转 soft。相交、边界接触和自交 `fill_path` 仍由拓扑守卫转 soft；Metal / D3D12 `GpuNative` 仍 backlog。解析自动化覆盖开路径端帽、闭路径无端帽、三类 join、miter-limit fallback、退化点清理与多子路径；真实 HWND 自动化走 `Path → D3d11Backend → GpuSolidMesh`，覆盖双孔/四层嵌套 fill 与半透明 90° Miter stroke，回读像素数和单次 alpha 后 present。
 
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
-| P0 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**；caps/registry → `GpuNative` × `Swapchain`；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas + identity linear/radial gradient + identity 简单 path / 非相交多孔·深层嵌套·多岛 mesh + identity box/ambient shadow；相交/自交 fill、精确 stroke cap/join 与其余 Canvas2D 操作 soft blit |
+| P0 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**；caps/registry → `GpuNative` × `Swapchain`；原生 fill/stroke/glyph/gradient + 非相交多轮廓 fill mesh + 完整 cap/join stroke mesh + shadow；相交/接触/自交 fill 与其余不支持的 Canvas2D 操作 soft blit |
 | P0 | 正交轴类型与 caps（breaking） | ✅ | `RasterMode` / `PresentMode`；`GraphicsContextCaps` 用 `raster` + `present`；已删 `RenderPipelineProfile`；`create_graphics_engine` 按轴 match |
 | P1 | 表驱动 factory / engine 装配 | ✅ | `GraphicsBackendEntry` 含 `raster` + `present`；engine 按 caps 轴组合装配 |
 | P1 | `BackendKind` 统一 | ✅ | 文档与注释对齐正交轴；`Cpu`/`Gpu`/`Auto`/`Null` 为引擎级光栅偏好 |
@@ -274,7 +274,7 @@ Windows 原生窗口过程现为每个 HWND 持有独立 `WindowState` 绑定，
 
 | 项 | 说明 |
 |----|------|
-| **D3D11 原生路径扩展** | 剩余相交（含边界接触）轮廓与自交 `fill_path`，以及精确 `stroke_path` cap/join；简单 fill/stroke 与互不相交且不接触的多孔/深层嵌套/多岛 fill path 已落地 |
+| **D3D11 原生路径扩展** | 剩余相交轮廓、边界接触轮廓与自交 `fill_path`；非相交多孔/深层嵌套/多岛 fill 和完整 `StrokeOptions` cap/join stroke 已落地 |
 | Metal / D3D12 GPU 光栅 | 扩展 `RenderBackendRegistry` |
 
 实现细节 → [rendering · 多图形 API](systems/rendering.md#多图形-api) · [platform · 多图形 API 与 factory](systems/platform.md#多图形-api-与-factory) · [graphics-backend-pluggable · 图形 API 架构原则](systems/graphics-backend-pluggable.md#图形-api-架构原则)。

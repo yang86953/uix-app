@@ -3,14 +3,15 @@
 //! - **Fill**: flatten → validate a strict contour forest → classify
 //!   `EvenOdd` parity / `NonZero` winding transitions → tessellate each filled
 //!   component and all of its holes through ear clipping / `earcut`.
-//! - **Stroke**: flatten → thick-line segment quads (butt ends; joins overlap).
+//! - **Stroke**: build a shared cap/join-aware stroke outline → validate the
+//!   resulting strict contour forest → tessellate it through the fill path.
 //!
 //! Self-intersections, intersecting/touching contours, invalid topology or
 //! tessellation failure return `None` so callers can soft-fallback.
 
 use super::flattener;
 use super::path::{FillRule, Path};
-use super::stroker::StrokeOptions;
+use super::stroker::{self, StrokeOptions};
 use crate::core::Point;
 
 /// Max vertices in a ring we attempt to tessellate (keeps GPU upload bounded).
@@ -58,48 +59,16 @@ pub fn tessellate_fill(path: &Path, fill_rule: FillRule) -> Option<Vec<f32>> {
     Some(tris)
 }
 
-/// Tessellate a stroke as thick-line segment quads (triangle list).
+/// Tessellate a stroke outline into a non-overlapping triangle list.
 ///
-/// Uses butt-style segment ends; adjacent segments overlap at joins (fine for
-/// opaque Alpha/SrcOver). Round/Square caps are not modeled exactly.
+/// Cap/join geometry is shared with the CPU rasterizer. Unsupported outline
+/// topology returns `None`, so callers retain the existing soft fallback.
 pub fn tessellate_stroke(path: &Path, opts: &StrokeOptions) -> Option<Vec<f32>> {
-    let half = opts.width * 0.5;
-    if half < 1e-4 {
-        return None;
+    let rings = stroker::stroke_outline_rings(path, opts)?;
+    if rings.is_empty() {
+        return Some(Vec::new());
     }
-    let polys = flattener::flatten(path.segments(), 0.25);
-    if polys.is_empty() {
-        return None;
-    }
-    let mut tris: Vec<f32> = Vec::new();
-    for poly in &polys {
-        if poly.len() < 2 {
-            continue;
-        }
-        for i in 0..poly.len() - 1 {
-            let p0 = poly[i];
-            let p1 = poly[i + 1];
-            let dx = p1.x - p0.x;
-            let dy = p1.y - p0.y;
-            let len = (dx * dx + dy * dy).sqrt();
-            if len < 1e-4 {
-                continue;
-            }
-            let nx = -dy / len * half;
-            let ny = dx / len * half;
-            let a = Point::new(p0.x + nx, p0.y + ny);
-            let b = Point::new(p1.x + nx, p1.y + ny);
-            let c = Point::new(p1.x - nx, p1.y - ny);
-            let d = Point::new(p0.x - nx, p0.y - ny);
-            // Two triangles: a-b-c, a-c-d
-            tris.extend_from_slice(&[a.x, a.y, b.x, b.y, c.x, c.y]);
-            tris.extend_from_slice(&[a.x, a.y, c.x, c.y, d.x, d.y]);
-        }
-    }
-    if tris.len() < 6 {
-        return None;
-    }
-    Some(tris)
+    tessellate_fill(&stroker::path_from_outline_rings(rings), FillRule::NonZero)
 }
 
 fn clean_ring(pts: &[Point]) -> Result<Option<Vec<Point>>, ()> {
@@ -863,14 +832,100 @@ mod tests {
     }
 
     #[test]
-    fn stroke_line_tessellates() {
+    fn stroke_caps_and_joins_tessellate_without_gaps_or_area_overlap() {
         let mut pb = PathBuilder::new();
-        pb.move_to(0.0, 0.0).line_to(40.0, 0.0);
-        let opts = StrokeOptions {
-            width: 4.0,
-            ..Default::default()
-        };
-        let v = tessellate_stroke(&pb.build(), &opts).expect("stroke");
-        assert_eq!(v.len(), 12); // one segment → 2 tris
+        pb.move_to(24.0, 24.0)
+            .line_to(72.0, 24.0)
+            .line_to(72.0, 72.0);
+        let path = pb.build();
+        for (join, limit, expected_area) in [
+            (super::super::path::LineJoin::Miter, 2.0, 1_536.0),
+            (super::super::path::LineJoin::Miter, 1.0, 1_504.0),
+            (super::super::path::LineJoin::Bevel, 4.0, 1_504.0),
+        ] {
+            let vertices = tessellate_stroke(
+                &path,
+                &StrokeOptions {
+                    width: 16.0,
+                    cap: super::super::path::LineCap::Butt,
+                    join,
+                    miter_limit: limit,
+                },
+            )
+            .expect("stroke mesh");
+            assert!((triangle_mesh_area(&vertices) - expected_area).abs() < 0.01);
+            if expected_area == 1_536.0 {
+                let covered = (0..96)
+                    .flat_map(|y| (0..96).map(move |x| (x, y)))
+                    .filter(|&(x, y)| {
+                        triangle_mesh_contains(
+                            &vertices,
+                            Point::new(x as f32 + 0.5, y as f32 + 0.5),
+                        )
+                    })
+                    .count();
+                assert_eq!(covered, expected_area as usize);
+            }
+        }
+
+        let mut line = PathBuilder::new();
+        line.move_to(24.0, 48.0).line_to(88.0, 48.0);
+        for cap in [
+            super::super::path::LineCap::Butt,
+            super::super::path::LineCap::Round,
+            super::super::path::LineCap::Square,
+        ] {
+            assert!(tessellate_stroke(
+                &line.build(),
+                &StrokeOptions {
+                    width: 16.0,
+                    cap,
+                    join: super::super::path::LineJoin::Round,
+                    miter_limit: 4.0,
+                },
+            )
+            .is_some());
+        }
+
+        let mut closed = PathBuilder::new();
+        closed
+            .move_to(24.0, 24.0)
+            .line_to(88.0, 24.0)
+            .line_to(88.0, 72.0)
+            .line_to(24.0, 72.0)
+            .close();
+        for join in [
+            super::super::path::LineJoin::Miter,
+            super::super::path::LineJoin::Bevel,
+            super::super::path::LineJoin::Round,
+        ] {
+            assert!(tessellate_stroke(
+                &closed.build(),
+                &StrokeOptions {
+                    width: 8.0,
+                    cap: super::super::path::LineCap::Square,
+                    join,
+                    miter_limit: 4.0,
+                },
+            )
+            .is_some());
+        }
+
+        let mut reversed = PathBuilder::new();
+        reversed
+            .move_to(72.0, 72.0)
+            .line_to(72.0, 24.0)
+            .line_to(24.0, 24.0);
+        let reversed_mesh = tessellate_stroke(
+            &reversed.build(),
+            &StrokeOptions {
+                width: 16.0,
+                cap: super::super::path::LineCap::Butt,
+                join: super::super::path::LineJoin::Miter,
+                miter_limit: 2.0,
+            },
+        )
+        .expect("reversed stroke mesh");
+        assert!((triangle_mesh_area(&reversed_mesh) - 1_536.0).abs() < 0.01);
     }
 }

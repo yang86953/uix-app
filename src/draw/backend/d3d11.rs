@@ -3,7 +3,7 @@
 //! Hot Canvas2D paths (`fill_rect` / `fill_circle` / `stroke_rect` /
 //! `stroke_circle`, axis-aligned `draw_line`, identity solid `blit_glyph`,
 //! identity linear/radial gradients, identity strict-contour-forest
-//! `fill_path`, simple `stroke_path`, and identity box/ambient shadow) draw via
+//! `fill_path`, cap/join-aware `stroke_path`, and identity box/ambient shadow) draw via
 //! [`IGraphicsContext`] native geometry / glyph atlas / gradient / mesh /
 //! shadow APIs. Unsupported ops soft-raster into a CPU buffer and alpha-blit
 //! at present (same hybrid pattern as GL `GpuCanvas2D`).
@@ -1690,20 +1690,67 @@ mod tests {
             canvas.fill_path(&fill.build(), Color::from_rgb(255, 0, 0), FillRule::NonZero);
 
             let mut stroke = crate::draw::primitives::path::PathBuilder::new();
-            stroke.move_to(60.0, 20.0).line_to(110.0, 60.0);
+            stroke
+                .move_to(24.0, 24.0)
+                .line_to(72.0, 24.0)
+                .line_to(72.0, 72.0);
             canvas.stroke_path(
                 &stroke.build(),
-                Color::from_rgb(0, 128, 255),
+                Color::from_rgba(0, 128, 255, 128),
                 &StrokeOptions {
-                    width: 3.0,
-                    ..Default::default()
+                    width: 16.0,
+                    cap: crate::draw::primitives::path::LineCap::Butt,
+                    join: crate::draw::primitives::path::LineJoin::Miter,
+                    miter_limit: 2.0,
+                },
+            );
+
+            for (y, cap, join) in [
+                (
+                    12.0,
+                    crate::draw::primitives::path::LineCap::Square,
+                    crate::draw::primitives::path::LineJoin::Bevel,
+                ),
+                (
+                    44.0,
+                    crate::draw::primitives::path::LineCap::Round,
+                    crate::draw::primitives::path::LineJoin::Round,
+                ),
+            ] {
+                let mut variant = crate::draw::primitives::path::PathBuilder::new();
+                variant
+                    .move_to(84.0, y)
+                    .line_to(108.0, y)
+                    .line_to(116.0, y + 8.0);
+                canvas.stroke_path(
+                    &variant.build(),
+                    Color::from_rgba(64, 192, 255, 128),
+                    &StrokeOptions {
+                        width: 6.0,
+                        cap,
+                        join,
+                        miter_limit: 4.0,
+                    },
+                );
+            }
+
+            let mut empty = crate::draw::primitives::path::PathBuilder::new();
+            empty.move_to(20.0, 80.0).line_to(20.0, 80.0);
+            canvas.stroke_path(
+                &empty.build(),
+                Color::from_rgba(255, 255, 255, 128),
+                &StrokeOptions {
+                    width: 8.0,
+                    cap: crate::draw::primitives::path::LineCap::Round,
+                    join: crate::draw::primitives::path::LineJoin::Round,
+                    miter_limit: 4.0,
                 },
             );
         }
         backend.present(&DamageRegion::full()).expect("present");
         assert_eq!(clear_calls.get(), 1);
         assert_eq!(mesh_calls.get(), 1);
-        assert_eq!(last_mesh_count.get(), 2);
+        assert_eq!(last_mesh_count.get(), 4);
         assert_eq!(blit_calls.get(), 0);
         assert_eq!(upload_calls.get(), 0);
         assert_eq!(present_calls.get(), 1);
@@ -1882,6 +1929,71 @@ mod tests {
                 damage: PresentDamage::Full,
             })
             .expect("present contour-forest frame");
+
+        backend
+            .gpu_ctx
+            .clear_render_target(0.0, 0.0, 0.0, 1.0)
+            .expect("clear stroke frame");
+        let mut stroke = crate::draw::primitives::path::PathBuilder::new();
+        stroke
+            .move_to(24.0, 24.0)
+            .line_to(72.0, 24.0)
+            .line_to(72.0, 72.0);
+        backend.surface.canvas.stroke_path(
+            &stroke.build(),
+            Color::from_rgba(0, 255, 0, 128),
+            &StrokeOptions {
+                width: 16.0,
+                cap: crate::draw::primitives::path::LineCap::Butt,
+                join: crate::draw::primitives::path::LineJoin::Miter,
+                miter_limit: 2.0,
+            },
+        );
+        assert!(!backend.surface.canvas.soft_has_content);
+        assert_eq!(backend.surface.canvas.pending_meshes.len(), 1);
+        {
+            let D3d11Backend {
+                gpu_ctx, surface, ..
+            } = &mut backend;
+            surface
+                .canvas
+                .flush_native(gpu_ctx.as_mut())
+                .expect("flush native stroke mesh");
+        }
+        let pixels = backend.gpu_ctx.read_pixels(0, 0, 256, 128);
+        let pixel = |x: usize, y: usize| pixels[y * 256 + x];
+        for (x, y) in [(32, 24), (76, 20), (68, 28)] {
+            let sample = pixel(x, y);
+            assert_eq!(sample >> 24, 0xFF);
+            assert!(
+                (127..=129).contains(&((sample >> 8) & 0xFF)),
+                "stroke sample ({x}, {y}) must blend exactly once"
+            );
+        }
+        assert_eq!(pixel(8, 8), 0xFF00_0000, "outside must stay black");
+        assert_eq!(
+            pixel(60, 36),
+            0xFF00_0000,
+            "inside the elbow exterior must stay black"
+        );
+        let green_pixels = pixels
+            .iter()
+            .filter(|pixel| ((**pixel >> 8) & 0xFF) != 0)
+            .count();
+        assert_eq!(
+            green_pixels, 1_536,
+            "stroke pixel count must match geometry"
+        );
+        assert!(
+            pixels.iter().all(|pixel| ((pixel >> 8) & 0xFF) <= 129),
+            "stroke triangles must not overlap and blend twice"
+        );
+        backend
+            .gpu_ctx
+            .present(&PresentFrame::Swapchain {
+                damage: PresentDamage::Full,
+            })
+            .expect("present stroke frame");
 
         backend.shutdown();
         drop(backend);
