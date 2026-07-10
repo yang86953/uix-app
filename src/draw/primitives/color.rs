@@ -42,12 +42,12 @@ impl Color {
         let r = (self.r as u32 * a / 255) & 0xFF;
         let g = (self.g as u32 * a / 255) & 0xFF;
         let b = (self.b as u32 * a / 255) & 0xFF;
-        (a << 24) | (b << 16) | (g << 8) | r
+        (a << 24) | (r << 16) | (g << 8) | b
     }
 
     /// Returns the RGBA value as u32 (AARRGGBB).
     pub fn to_rgba(&self) -> u32 {
-        (self.a as u32) << 24 | (self.b as u32) << 16 | (self.g as u32) << 8 | self.r as u32
+        (self.a as u32) << 24 | (self.r as u32) << 16 | (self.g as u32) << 8 | self.b as u32
     }
 
     /// Linear interpolation toward white. factor=0 → self, factor=1 → white.
@@ -101,6 +101,27 @@ impl Color {
 impl Default for Color {
     fn default() -> Self {
         Self::black()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Color;
+
+    #[test]
+    fn rgba_encoding_uses_documented_aarrggbb_channel_order() {
+        assert_eq!(
+            Color::from_rgba(0x11, 0x22, 0x33, 0x44).to_rgba(),
+            0x4411_2233
+        );
+    }
+
+    #[test]
+    fn premultiplied_encoding_keeps_aarrggbb_channel_order() {
+        assert_eq!(
+            Color::from_rgba(255, 128, 0, 128).premultiplied(),
+            0x8080_4000
+        );
     }
 }
 

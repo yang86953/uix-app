@@ -110,7 +110,7 @@ trait IWindowProperties {
 | `GpuNative × Swapchain` | **D3D11 / OpenGL ES** | `IGraphicsContext::present(PresentFrame)` / swapchain damage | **`GpuEngine`** + native raster backend |
 | `Cpu × PixelUpload` | Vulkan / Metal | `IGraphicsContext::present(PresentFrame)` 全帧像素上传 | `PresentUploadEngine` + `CpuBackend` |
 
-`PresentDamage` 来自 `core::damage` — 物理像素矩形列表或全屏。
+`PresentDamage` 来自 `core::damage` — 物理像素矩形列表或全屏。平台 presenter 必须把局部矩形裁剪到当前 surface 后再执行像素拷贝与 blit，完全在 surface 外的矩形才可跳过。
 
 **Present 分派**：`create_graphics_engine` 只按 `caps().raster` × `caps().present` 装配（`GpuNative` × `Swapchain` → `GpuEngine`；`Cpu` × `PixelUpload` → `PresentUploadEngine`）。这些轴是正交描述维度，**不承诺完整笛卡尔积**；合法性由 live `GraphicsContextCaps` 与 factory registry 共同判定（[#172](../../decisions.md#d172)）。`GpuNative × PixelUpload`、`Cpu × Swapchain` 或带 `IGraphicsContext` 的 `CpuPresenter` 在当前能力集下均为非法组合，必须返回可诊断错误，不得猜测装配。设计 → [graphics-backend-pluggable · 可组合渲染轴](graphics-backend-pluggable.md#可组合渲染轴)（#168 · #169 · #172）。
 
@@ -265,7 +265,7 @@ Backend 实现位于 `native/backends/windows/`、`native/backends/linux/`（Way
 
 | 平台 | backend 编码 | 编译证据 | 自动化测试 | 真机 / 硬件 | 生产就绪 |
 |------|-------------|----------|------------|-------------|----------|
-| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1044/1044、demo 19/19 | 待完整 GPU/驱动/窗口矩阵 | **否** |
+| Windows | **已编码**：Platform + D3D11 + WGL/OpenGL ES；D3D12 规划中 | default/no-default/all-features 通过 | lib 1048/1048、demo 19/19 | D3D11/Software 基础 GUI smoke 通过；待 OpenGL ES、输入/IME/主题/多窗与 GPU/驱动矩阵 | **否** |
 | Linux (Wayland) | **已编码**：Platform + Vulkan + EGL/OpenGL ES | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | 待 Wayland compositor/GPU 矩阵 | **否** |
 | macOS | **已编码**：AppKit + Metal `Cpu × PixelUpload` | cross-check default/all-features 通过 | 当前 Windows 主机未运行目标测试 | **待真机验证** | **否** |
 

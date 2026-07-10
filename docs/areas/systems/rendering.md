@@ -212,7 +212,7 @@ InvalidationQueue.dirty_region()
     → IPresenter / IGraphicsContext
 ```
 
-几何类型定义在 `core::damage`（见 [foundation](foundation.md)）。
+几何类型定义在 `core::damage`（见 [foundation](foundation.md)）。CPU 像素缓冲的 `u32` 数值契约为 `AARRGGBB`；在 little-endian Windows 上传到 GDI/D3D 内存时自然呈现为 BGRA 字节序，颜色构造与 presenter 不得各自交换 R/B 通道。
 
 > **实现注记**：`Invalidation::Composite` 与 `FrameRenderer` 的 scroll_region **memmove** API（`tree.drain_scroll_region_move`、`Canvas2D::scroll_region`）已存在；Wheel、键盘、滚动条拖拽与程序化 ScrollView 滚动已写入 Composite exposed strip，并避免整 viewport Paint invalidate；新增滚动来源须复用该路径。
 
