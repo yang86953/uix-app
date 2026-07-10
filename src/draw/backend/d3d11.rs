@@ -931,7 +931,9 @@ impl RenderBackend for D3d11Backend {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        BackendCapabilities::gpu()
+        // DXGI_SWAP_EFFECT_DISCARD does not preserve backbuffer contents after
+        // Present, so a later active frame must redraw the full surface.
+        BackendCapabilities::gpu_full_redraw()
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -1350,6 +1352,7 @@ mod tests {
             &last_shadow_count,
         )))
         .expect("backend");
+        assert!(!backend.capabilities().partial_redraw);
         backend.resize(64, 48).expect("resize");
         {
             let canvas = backend.surface().canvas();
