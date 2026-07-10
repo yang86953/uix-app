@@ -642,6 +642,111 @@ fn home_page_builds() {
 }
 
 #[test]
+fn demo_local_counters_survive_root_reconcile() {
+    use uix::core::Point;
+    use uix::native::traits::input::{KeyMod, MouseButton};
+
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let home_count = State::new(0i32);
+    let runtime_count = State::new(0i32);
+
+    let root = ViewAdapter::capture_root(|| {
+        app_shell_with_counters(
+            active.clone(),
+            timer_ticks.clone(),
+            anim_time.clone(),
+            &home_count,
+            &runtime_count,
+        )
+    });
+    let mut tree = ViewAdapter::build_nodes(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let plus = tree
+        .find_all_by_type::<Button>()
+        .into_iter()
+        .find(|(_, button)| button.text() == "+1")
+        .expect("home increment button");
+    let frame = tree.get(plus.0).expect("increment button node").frame();
+    let pos = Point::new(frame.x + frame.w * 0.5, frame.y + frame.h * 0.5);
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+        pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(home_count.get(), 1);
+    assert!(tree.take_reconcile_requested());
+
+    let next = ViewAdapter::capture_root(|| {
+        app_shell_with_counters(
+            active.clone(),
+            timer_ticks.clone(),
+            anim_time.clone(),
+            &home_count,
+            &runtime_count,
+        )
+    });
+    ViewAdapter::reconcile_nodes(&mut tree, next);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    active.set(PAGE_APP);
+    let runtime_root = ViewAdapter::capture_root(|| {
+        app_shell_with_counters(
+            active.clone(),
+            timer_ticks.clone(),
+            anim_time.clone(),
+            &home_count,
+            &runtime_count,
+        )
+    });
+    ViewAdapter::reconcile_nodes(&mut tree, runtime_root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    let runtime_plus = tree
+        .find_all_by_type::<Button>()
+        .into_iter()
+        .find(|(_, button)| button.text() == "+1")
+        .expect("runtime increment button");
+    let runtime_frame = tree
+        .get(runtime_plus.0)
+        .expect("runtime increment button node")
+        .frame();
+    let runtime_pos = Point::new(
+        runtime_frame.x + runtime_frame.w * 0.5,
+        runtime_frame.y + runtime_frame.h * 0.5,
+    );
+    let _ = tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: runtime_pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    let _ = tree.dispatch_event(&SystemEvent::PointerUp {
+        pos: runtime_pos,
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+
+    assert_eq!(runtime_count.get(), 1);
+}
+
+#[test]
 fn shell_labels_are_vertically_spaced() {
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);

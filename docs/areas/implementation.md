@@ -167,7 +167,7 @@ P6 图形后端            ← #162 #163，详见下文
 
 | 门禁 | 结果 | 证据范围 |
 |------|------|----------|
-| `cargo test --all-targets` | **通过** | lib **1044/1044**；demo **18/18** |
+| `cargo test --all-targets` | **通过** | lib **1044/1044**；demo **19/19** |
 | `cargo test --doc` | **通过** | 3 passed；20 ignored |
 | Windows compile | **通过** | default、`--no-default-features`、`--all-features` |
 | Linux cross-check | **通过** | `x86_64-unknown-linux-gnu` default + all-features |
@@ -176,6 +176,8 @@ P6 图形后端            ← #162 #163，详见下文
 | 文档门禁 | **通过** | `check_project_docs.py --strict-design --json`：0 errors / 0 warnings；`git diff --check` 通过 |
 
 此前两项历史失败已闭合：架构扫描现忽略注释/Rustdoc/字符串并收紧 graphics cfg 路径；ScrollView content expand 按最近 viewport 的 X/Y 滚动轴分别处理，Vertical/Horizontal/Both 与 Collapse 动态展开测试均通过；Horizontal 多直接子项现沿 X 轴流式排列并封口非滚动 Y 轴。Space 不再复用 stale 子 frame，Form/FormItem 的固定最小尺寸、label/padding/status 区均受窄父 frame 上限约束；Card body 现排除 actions 固定区，极小尺寸下以零 frame 清除旧布局，actions 也不会越出卡片。Container/Grid/ScrollView/Space/Form/FormItem/Card 已统一为 pass-local `LayoutChild` preparation → arrange，Arrange 不再递归 measure，通用 helper 也不再以旧 frame 污染零高度测量（[#174](../decisions.md#d174)）。D3D11 复杂填充已有自交、嵌套、相交/接触轮廓拓扑守卫与端到端 soft fallback 回归；demo 覆盖清单现以语义测试区分未实现、已实现但未单独展示与待真机验证。graphics probe 现保留候选、失败阶段、选中 API 与完整错误；窗口关闭已编码为 session/GL 资源/context/native window 顺序，session 与 native window 幂等性有分层测试，real-window factory 测试覆盖 context 创建/关闭。Linux/macOS 仅完成 cross-check，未做真机运行；完整 GL/context/window 组合顺序、Windows GUI 视觉/GPU 驱动矩阵、IME/无障碍真实设备与打包流程仍未验证。
+
+Windows D3D11 real-window smoke 曾暴露 demo 页面内 `State::new` 在根 reconcile 后重置、以及 `ButtonBuilder::widget()` 丢弃 HandlerTable 注册两项真实交互缺陷；首页与应用能力页计数 State 已提升到应用生命周期，交互改用保留 handler 的 View DSL，并由根 reconcile 回归守卫覆盖。
 
 ---
 
@@ -210,12 +212,12 @@ P6 图形后端            ← #162 #163，详见下文
 | 优先 | 项 | 状态 | 说明 |
 |------|-----|------|------|
 | P0 | **Windows 生产可用** | 进行中 | 稳定性、阻塞项、demo/docs 同步；**当前主验证与交付环境**（[#167](../decisions.md#d167)） |
-| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1044/1044、demo 18/18；历史布局回归、扫描假阳性与 D3D11 复杂拓扑错误均闭合 |
+| P0 | 全量测试恢复零失败 | `automated` 已完成 | lib 1044/1044、demo 19/19；历史布局回归、扫描假阳性与 D3D11 复杂拓扑错误均闭合 |
 | P0 | probe 诊断与资源关闭 | `coded + partial automated` | 候选/阶段/selected/完整错误进入有序报告并有自动化守卫；WindowSession/native window 幂等性分层测试通过；GL 资源/context/window 组合顺序待 GUI/驱动 smoke |
 | P0 | 平台层抹平差异 | `coded + automated` | Result-only API、直接依赖与 cfg 守卫已收敛；上层无 OS cfg |
 | P1 | Linux / macOS parity | `coded + compiled` | 两目标 default/all-features cross-check 通过；运行/硬件 parity 待验证 |
 | P1 | macOS 原生运行验证 | 待验证 | AppKit backend、Metal CpuUpload、IME 已接；需真机验收 |
-| P1 | demo / docs 与实现同步 | `automated` 基线已完成 | demo 18/18；覆盖状态语义守卫、strict-design 与链接/锚点检查通过，后续持续维护 |
+| P1 | demo / docs 与实现同步 | `automated` 基线已完成 | demo 19/19；覆盖状态语义守卫、局部 State reconcile 守卫、strict-design 与链接/锚点检查通过，后续持续维护 |
 | P2 | 无障碍 v1 基线 | 部分 | role/name/state 快照、键盘导航已落地；屏幕阅读器桥待后续 |
 | P1 | D3D11 GPU native raster | 部分 ✅ | **Windows 优先**（[#167](../decisions.md#d167) [#169](../decisions.md#d169)）；fill/stroke rect·circle + 轴对齐 line + identity solid glyph atlas + identity linear/radial gradient + identity 简单 path（CPU tessellate → GPU mesh）+ identity box/ambient shadow（SDF）；复杂 `fill_path` 的嵌套/相交多轮廓（含孔洞）、自交由拓扑守卫转 soft，非 identity 文本等仍走既有 soft 路径 — 见 [P6.8](#p68-可组合渲染轴) |
 | P2 | native raster（非 Win） | backlog | Metal / D3D12 GPU 光栅 — **增强**，D3D11 之后 |

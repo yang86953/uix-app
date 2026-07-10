@@ -24,23 +24,27 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
             "State 变更触发 reconcile；dynamic_label 绑定闭包读取最新值。",
         ))
         .push({
-            let counter = State::new(0i32);
+            let counter = ctx.runtime_count();
             let display = counter.clone();
             let inc = counter.clone();
             let dec = counter.clone();
-            tree! { Container::new().dir(FlexDirection::Column).gap(8.0) => [
-                embed(
-                    dynamic_label(move || format!("本地计数: {}", display.get()))
-                        .font_size(18.0)
-                        .color(tk.color_primary),
-                ),
-                embed(demo_row(36.0)
-                    .child(button("+1").primary().on_click(move || inc.set(inc.get() + 1)).widget())
-                    .child(button("-1").on_click(move || {
+            column([
+                dynamic_label(move || format!("本地计数: {}", display.get()))
+                    .font_size(18.0)
+                    .color(tk.color_primary),
+                row([
+                    button("+1")
+                        .primary()
+                        .on_click_capture(&counter, move || inc.set(inc.get() + 1)),
+                    button("-1").on_click_capture(&counter, move || {
                         let v = dec.get();
                         if v > 0 { dec.set(v - 1); }
-                    }).widget())),
-            ]}
+                    }),
+                ])
+                .height(36.0)
+                .gap(8.0),
+            ])
+            .gap(8.0)
         })
         .section("App Timer — run_interval (on_start 注册)")
         .push(

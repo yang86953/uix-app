@@ -125,6 +125,7 @@ cargo test --bin uix-demo
 - GUI 壳层 layout
 - Gallery 覆盖条目数量
 - 首页 build + 页面切换 reconcile
+- 首页 / 应用能力页局部 State 在根 reconcile 后保持
 
 ## 对应文档
 
