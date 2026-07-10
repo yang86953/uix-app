@@ -15,7 +15,7 @@ use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, PresentDamage,
+    NativeRasterCaps, PresentDamage, PresentFrame,
 };
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
@@ -78,6 +78,16 @@ fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
         Errc::PlatformError,
         format!("D3d11Context: {operation} failed: {err}"),
     )
+}
+
+fn map_dxgi_present_result(result: ::windows::core::HRESULT) -> Result<()> {
+    if result.is_err() {
+        return Err(Error::new(
+            Errc::PlatformError,
+            format!("D3d11Context: IDXGISwapChain::Present failed: {result:?}"),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -266,6 +276,12 @@ impl D3d11Context {
         }
         Ok(())
     }
+
+    fn present_result(&mut self) -> Result<()> {
+        // SAFETY: the swap chain belongs to this context and is used only on
+        // its owning UI thread while the context remains alive.
+        map_dxgi_present_result(unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) })
+    }
 }
 
 fn create_with_driver(
@@ -408,9 +424,11 @@ impl IGraphicsContext for D3d11Context {
     }
 
     fn swap_buffers(&mut self, _damage: PresentDamage) {
-        let result = unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) };
-        if result.is_err() {
-            crate::core::log::error_fn(format!("D3d11Context: Present failed: {result:?}"));
+        if let Err(error) = self.present_result() {
+            crate::core::log::error_fn(format!(
+                "D3d11Context: Present failed: {}",
+                error.short_what()
+            ));
         }
     }
 
@@ -683,6 +701,21 @@ impl IGraphicsContext for D3d11Context {
             .clear_rects(&self.context, viewport_w, viewport_h, rects)
     }
 
+    fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
+        match frame {
+            PresentFrame::Swapchain { .. } => {
+                self.make_current();
+                self.present_result()
+            }
+            PresentFrame::PixelBuffer {
+                pixels,
+                width,
+                height,
+                damage,
+            } => self.present_pixels(pixels, *width, *height, damage.clone()),
+        }
+    }
+
     /// Kept for low-level tests; not advertised via caps (`PresentMode::Swapchain`).
     fn present_pixels(
         &mut self,
@@ -692,14 +725,7 @@ impl IGraphicsContext for D3d11Context {
         _damage: PresentDamage,
     ) -> Result<()> {
         self.upload_surface_pixels(pixels, width, height)?;
-        let hr = unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) };
-        if hr.is_err() {
-            return Err(Error::new(
-                Errc::PlatformError,
-                format!("D3d11Context: Present failed: {hr:?}"),
-            ));
-        }
-        Ok(())
+        self.present_result()
     }
 }
 
@@ -733,6 +759,15 @@ mod tests {
             Err(err) => err,
         };
         assert_eq!(err.code(), Errc::PlatformError);
+    }
+
+    #[test]
+    fn dxgi_present_failure_is_a_platform_error() {
+        let error = map_dxgi_present_result(::windows::core::HRESULT(0x887A_0005u32 as i32))
+            .expect_err("DXGI present failure must propagate");
+
+        assert_eq!(error.code(), Errc::PlatformError);
+        assert!(error.what().contains("IDXGISwapChain::Present"));
     }
 
     #[test]
