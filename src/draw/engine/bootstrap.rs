@@ -171,10 +171,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]
+    use crate::native::traits::present::NativeRasterCaps;
     use crate::native::traits::present::{
         GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentMode, RasterMode,
     };
     use std::cell::Cell;
+    #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]
+    use std::cell::RefCell;
     use std::rc::Rc;
 
     struct ShutdownTrackingContext {
@@ -368,6 +372,94 @@ mod tests {
                 assert!(failure.message.contains("init failed for test"));
             }
         }
+    }
+
+    #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]
+    struct BootstrapD3d12Context;
+
+    #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]
+    impl IGraphicsContext for BootstrapD3d12Context {
+        fn caps(&self) -> GraphicsContextCaps {
+            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d12, false, 1.0)
+        }
+
+        fn native_raster_caps(&self) -> NativeRasterCaps {
+            NativeRasterCaps {
+                clear_target: true,
+                soft_blit: true,
+                solid_rects: true,
+                ..NativeRasterCaps::default()
+            }
+        }
+
+        fn initialize(
+            &mut self,
+            _native_window: *mut c_void,
+            _width: i32,
+            _height: i32,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        fn resize(&mut self, _width: i32, _height: i32) {}
+        fn make_current(&mut self) {}
+        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn shutdown(&mut self) {}
+        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
+            Vec::new()
+        }
+        fn width(&self) -> i32 {
+            64
+        }
+        fn height(&self) -> i32 {
+            48
+        }
+    }
+
+    #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]
+    #[test]
+    fn auto_falls_through_established_backends_to_low_priority_d3d12() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let calls_for_probe = Rc::clone(&calls);
+        let mut bootstrap = bootstrap_graphics_engine_with(
+            std::ptr::null_mut(),
+            64,
+            48,
+            GraphicsBackend::Auto,
+            move |candidate| {
+                calls_for_probe.borrow_mut().push(candidate);
+                if candidate == GraphicsBackend::D3d12 {
+                    Ok(Box::new(BootstrapD3d12Context) as Box<dyn IGraphicsContext>)
+                } else {
+                    Err(Error::new(
+                        Errc::PlatformError,
+                        format!("{candidate} unavailable for ordered probe test"),
+                    ))
+                }
+            },
+        )
+        .expect("D3D12 should be selected after established candidates fail");
+        assert_eq!(
+            calls.borrow().as_slice(),
+            &[
+                GraphicsBackend::D3d11,
+                GraphicsBackend::OpenGlEs,
+                GraphicsBackend::D3d12,
+            ]
+        );
+        assert_eq!(bootstrap.selected, GraphicsBackend::D3d12);
+        assert_eq!(bootstrap.report.failures.len(), 2);
+        assert_eq!(bootstrap.report.failures[0].backend, GraphicsBackend::D3d11);
+        assert_eq!(
+            bootstrap.report.failures[1].backend,
+            GraphicsBackend::OpenGlEs
+        );
+        assert!(bootstrap
+            .report
+            .failures
+            .iter()
+            .all(|failure| failure.message.contains("stage=context_create")));
+        bootstrap.engine.shutdown();
     }
 
     #[test]

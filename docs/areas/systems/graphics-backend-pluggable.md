@@ -3,7 +3,7 @@
 ← [架构导航](../architecture.md) · 域：`native` · `draw` · `app` · [#162](../../decisions.md#d162) [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)
 
 > **设计**：渲染以 `RasterMode` × `PresentMode` × `GraphicsBackend` 独立描述，并由 caps + registry 选择合法稀疏组合（[#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)）。
-> **实现状态**：P6.7 registry / probe / 统一 present ✅ · P6.8 正交轴类型与表驱动装配 ✅ · 非 GL 原生光栅已统一为 API-neutral `NativeGpuBackend` + 逐操作 `NativeRasterCaps`，普通 pipeline 不泄漏 D3D11 具体类型 ✅ · D3D11 `GpuNative` × `Swapchain` ✅（原生 fill/stroke/glyph/gradient/shadow，identity 完整 fill topology 与完整 `StrokeOptions` cap/join stroke path〔CPU tessellate → GPU triangles〕；不支持 transform/blend、数值异常或预算超限走 soft + alpha blit）· D3D12 context foundation ✅（registry 仍 `Planned`，尚无 draw/soft-blit）（[#169](../../decisions.md#d169)）→ [P6.8](../implementation.md#p68-可组合渲染轴)。非 P6 任务不必通读。
+> **实现状态**：P6.7 registry / probe / 统一 present ✅ · P6.8 正交轴类型与表驱动装配 ✅ · 非 GL 原生光栅已统一为 API-neutral `NativeGpuBackend` + 逐操作 `NativeRasterCaps`，普通 pipeline 不泄漏具体 API 类型 ✅ · D3D11 完整 `GpuNative` × `Swapchain` ✅ · D3D12 bounded `GpuNative` × `Swapchain` ✅（原生 clear/rounded solid + premultiplied soft-blit；其余操作按 caps soft；低优先级 Active）（[#169](../../decisions.md#d169)）→ [P6.8](../implementation.md#p68-可组合渲染轴)。非 P6 任务不必通读。
 
 ## 索引
 
@@ -50,17 +50,19 @@ pub enum PresentMode { Swapchain, PixelUpload, CpuPresenter }
 
 **实现矩阵**（✅ 已落地 · ❌ 尚未实现）：
 
-| Raster × Present | Engine | OpenGL ES | D3D11 | Vulkan | Metal |
-|------------------|--------|:---------:|:-----:|:------:|:-----:|
-| `GpuNative` × `Swapchain` | `GpuEngine` | ✅ | ✅¹ | ❌ | ❌ |
-| `Cpu` × `PixelUpload` | `PresentUploadEngine` | — | —² | ✅ | ✅ |
-| `Cpu` × `CpuPresenter` | `SoftwareEngine` | ✅ | ✅ | ✅ | ✅ |
+| Raster × Present | Engine | OpenGL ES | D3D11 | D3D12 | Vulkan | Metal |
+|------------------|--------|:---------:|:-----:|:-----:|:------:|:-----:|
+| `GpuNative` × `Swapchain` | `GpuEngine` | ✅ | ✅¹ | ✅² | ❌ | ❌ |
+| `Cpu` × `PixelUpload` | `PresentUploadEngine` | — | —³ | — | ✅ | ✅ |
+| `Cpu` × `CpuPresenter` | `SoftwareEngine` | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ¹ D3D11：device/swapchain/RTV + 原生 solid/rounded fill + stroke（VS/PS SDF）+ identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity fill mesh（strict contour forest + 相交/边界接触/自交，保持 `EvenOdd` / `NonZero` 语义）+ identity `stroke_path` mesh（完整 cap/join 与 `miter_limit` fallback）+ identity box/ambient shadow（SDF outer glow，匹配 CPU coverage）+ soft 回退 alpha blit + present；path tessellation 受 flatten tolerance、数值容差与顶点/事件/三角/累计工作量预算约束，失败时 soft fallback。
 
-² D3D11 优先路径已切到 `GpuNative` × `Swapchain`；`present_pixels` / `upload_surface_pixels` 仍保留作低层测试 helper，主路径不再全帧 upload。
+² D3D12：原生 clear/solid/rounded + premultiplied soft-blit；stroke/glyph/gradient/path/mesh/shadow 等未声明能力走 CPU soft 后全帧透明 overlay；`partial_present=false`。
 
-**下一代码优先**（[#167](../../decisions.md#d167) [#169](../../decisions.md#d169)）：D3D12 rounded solid + soft-blit 后接入 `NativeGpuBackend`（Windows 优先）；随后 Metal `GpuNative`。
+³ D3D11 优先路径已切到 `GpuNative` × `Swapchain`；`present_pixels` / `upload_surface_pixels` 仍保留作低层测试 helper，主路径不再全帧 upload。
+
+**下一代码优先**（[#167](../../decisions.md#d167) [#169](../../decisions.md#d169)）：Metal `GpuNative`；D3D12 额外原生能力按后续需求扩展。
 
 **禁止写成永久约束**：「D3D11 只能 CpuUpload」「只有 GL 能 GPU 光栅」。正确写法：某 API 的 context **当前 caps** 声明了哪些轴组合；架构上任意 API 均可组装任意合法轴组合。
 
@@ -97,7 +99,7 @@ Vulkan / OpenGL ES / D3D11 / Metal 是 `IGraphicsContext` 的 **对等实现**�
 
 | 维度 | 落点 |
 |------|------|
-| API 实现 | `native/graphics/<api>/`（vulkan、opengl、d3d11、metal、d3d12 context foundation） |
+| API 实现 | `native/graphics/<api>/`（vulkan、opengl、d3d11、metal、d3d12 bounded native raster） |
 | OS 壳 | `backends/<os>/` — 窗口、presenter、输入、`NativeSurface` |
 | Surface 绑定 | `graphics/<api>/platform/<os>.rs` 薄适配，或 backends 委托 |
 | Registry | `factory/registry*.rs` → `graphics/<api>::create` |
@@ -195,7 +197,7 @@ native
 | `GraphicsContextCaps` | native | `backend` + `raster` + `present` + `partial_present` + DPR |
 | `NativeRasterCaps` | native | 非 GL `GpuNative` 的逐操作 clear / soft-blit / solid / stroke / glyph / gradient / mesh / shadow capability；未声明即 soft |
 | `GraphicsBackendEntry` | factory | `id` / `priority` / `status` / `raster` / `present` / `create`；表驱动 |
-| `RenderBackendRegistry` | draw | `GpuNative` 时按 API 配对；OpenGL ES → `GpuBackend`，非 GL API → `NativeGpuBackend`；D3D11 ✅，D3D12/Metal 待接入 |
+| `RenderBackendRegistry` | draw | `GpuNative` 时按 API 配对；OpenGL ES → `GpuBackend`，非 GL API → `NativeGpuBackend`；D3D11/D3D12 ✅，Metal 待接入 |
 | `bootstrap_graphics_engine` | draw | 唯一 probe + `create_graphics_engine` |
 
 **分派**：`caps.raster × caps.present` → 表驱动装配 engine；`caps.backend` → `RenderBackendRegistry`（仅 `GpuNative`）。找不到合法组合即返回诊断，bootstrap 关闭 context 后继续候选，不进行隐式轴变换。
@@ -206,7 +208,7 @@ native
 
 | 平台 | Auto 链 |
 |------|---------|
-| Windows | D3D11 → OpenGL ES |
+| Windows | D3D11 → OpenGL ES → D3D12（priority 20 → 10 → 5） |
 | Linux | Vulkan → OpenGL ES |
 | macOS | Metal →（全失败）`SoftwareEngine` |
 
@@ -222,7 +224,7 @@ native
 | `BackendKind` 与正交轴对齐 | ✅ P6.8 |
 | API-neutral `NativeGpuBackend` + `NativeRasterCaps` | ✅ 逐操作 native/soft 路由；录制顺序与单次 offset；context `Result` → `RenderBackend` 边界错误传播、成功后提交与后续 present attempt 的 full-clear 重放；幂等生命周期；clear + soft-blit 为 hybrid 基线；`BackendKind::Gpu` 统一走 registry |
 | D3D11 `GpuNative` × `Swapchain` | ✅ 原生 fill/stroke/glyph/gradient/shadow + identity 完整 fill/stroke path mesh + soft fallback；非 identity transform、不支持 blend/text 与保护性失败路径仍 soft |
-| D3D12 context foundation | ✅ `feature=d3d12` 下提供 device/queue/flip-discard swapchain/RTV/每帧 allocator + 单递增 fence/per-frame fence value/barrier/crop row-pitch readback/resize/shutdown；关闭 feature 时公开 create 走 disabled stub；故障锁死新工作，terminal fence 可 drain 时释放，持续同步失败保守保活；只声明 `clear_target`，registry 仍 `Planned` |
+| D3D12 bounded `GpuNative` × `Swapchain` | ✅ context foundation + `SV_VertexID` rounded-solid PSO + BGRA8 premultiplied soft-blit；每 frame 多 upload slot 避免同 recording 覆写；精确 caps=`clear_target + solid_rects + soft_blit`；registry `Active` priority 5；关闭 feature 走 disabled stub；持续同步失败锁死并保守保活 |
 
 权威分项 → [implementation · P6.8](../implementation.md#p68-可组合渲染轴)。
 
@@ -263,7 +265,7 @@ native
 | 最少资源 | feature 裁剪；registry priority 定 Auto 顺序 |
 | 单 factory | registry 表驱动 |
 
-`Cpu` × `PixelUpload` 是合法轴组合，不是「这些 API 架构上只能 CPU 光栅」。`GpuNative` + registry：OpenGL ES ✅；D3D11 ✅（原生 solid rect + soft 回退）；D3D12 context foundation 已编码但尚未接 registry；随后完成 D3D12 draw / Metal。
+`Cpu` × `PixelUpload` 是合法轴组合，不是「这些 API 架构上只能 CPU 光栅」。`GpuNative` + registry：OpenGL ES ✅；D3D11 完整能力 ✅；D3D12 bounded clear/rounded solid + soft-blit ✅；Metal 待接入。
 
 ---
 
@@ -278,7 +280,7 @@ native
 | 渲染分派 | **仅** `RasterMode` × `PresentMode`（× `GraphicsBackend`）；bundled 管线枚举已拒绝（#169） |
 | Probe 循环 | **仅** `draw::bootstrap` |
 | WebGPU | 远期 P6.6 |
-| 交付优先级 | Windows 先行（#167）；D3D11 GPU raster 先于 D3D12/Metal（#169）；当前 D3D12 Windows 优先 |
+| 交付优先级 | Windows 先行（#167）；D3D11 完整、D3D12 bounded GPU raster 已落地；下一 native raster 为 Metal（#169） |
 
 ---
 

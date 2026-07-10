@@ -12,8 +12,8 @@ use std::mem::ManuallyDrop;
 use crate::core::{Errc, Error, Result};
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PresentDamage,
-    PresentFrame,
+    GpuSolidRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
+    PresentDamage, PresentFrame,
 };
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
@@ -33,6 +33,8 @@ use ::windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INF
 type HWND_PTR = *mut c_void;
 
 const FRAME_COUNT: usize = 2;
+
+use super::pipeline::D3d12Pipeline;
 
 fn d3d12_error(operation: &str, error: ::windows::core::Error) -> Error {
     Error::new(
@@ -312,6 +314,7 @@ pub struct D3d12Context {
     allocators: Vec<ID3D12CommandAllocator>,
     command_list: ID3D12GraphicsCommandList,
     command_list_base: ID3D12CommandList,
+    pipeline: Option<D3d12Pipeline>,
     fence: ID3D12Fence,
     fence_event: Option<HANDLE>,
     fence_values: [u64; FRAME_COUNT],
@@ -365,7 +368,7 @@ impl D3d12Context {
     }
 
     #[cfg(test)]
-    fn new_with_driver(
+    pub(super) fn new_with_driver(
         native_window: *mut c_void,
         width: i32,
         height: i32,
@@ -448,6 +451,7 @@ impl D3d12Context {
         let command_list_base: ID3D12CommandList = command_list
             .cast()
             .map_err(|error| d3d12_error("command list cast", error))?;
+        let pipeline = D3d12Pipeline::new(&device, FRAME_COUNT)?;
         let fence: ID3D12Fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }
             .map_err(|error| d3d12_error("ID3D12Device::CreateFence", error))?;
         let fence_event = unsafe { CreateEventW(None, false, false, None) }
@@ -467,6 +471,7 @@ impl D3d12Context {
             allocators,
             command_list,
             command_list_base,
+            pipeline: Some(pipeline),
             fence,
             fence_event: Some(fence_event),
             fence_values: [0; FRAME_COUNT],
@@ -582,6 +587,9 @@ impl D3d12Context {
         if let Err(error) = self.wait_for_fence(self.fence_values[self.frame_index]) {
             self.latch_fault("wait_for_frame", &error);
             return Err(error);
+        }
+        if let Some(pipeline) = self.pipeline.as_mut() {
+            pipeline.begin_frame(self.frame_index);
         }
         let allocator = &self.allocators[self.frame_index];
         if let Err(error) = unsafe { allocator.Reset() } {
@@ -904,6 +912,9 @@ impl D3d12Context {
         for resource in &self.pending_gpu_resources {
             std::mem::forget(resource.clone());
         }
+        if let Some(pipeline) = self.pipeline.as_ref() {
+            pipeline.retain_gpu_objects_after_undrained_drop();
+        }
         std::mem::forget(self.command_list.clone());
         std::mem::forget(self.command_list_base.clone());
         std::mem::forget(self.fence.clone());
@@ -918,6 +929,7 @@ impl D3d12Context {
             return Err(error);
         }
         self.pending_gpu_resources.clear();
+        self.pipeline.take();
         self.back_buffers.clear();
         if let Some(event) = self.fence_event.take() {
             unsafe {
@@ -937,6 +949,8 @@ impl IGraphicsContext for D3d12Context {
     fn native_raster_caps(&self) -> NativeRasterCaps {
         NativeRasterCaps {
             clear_target: true,
+            soft_blit: true,
+            solid_rects: true,
             ..NativeRasterCaps::default()
         }
     }
@@ -1023,6 +1037,60 @@ impl IGraphicsContext for D3d12Context {
         }
         Ok(())
     }
+
+    fn draw_solid_rects(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuSolidRect],
+    ) -> Result<()> {
+        if rects.is_empty() {
+            return Ok(());
+        }
+        self.begin_commands()?;
+        self.pipeline
+            .as_ref()
+            .ok_or_else(|| platform_error("D3d12Context: raster pipeline is shut down"))?
+            .draw_solid_rects(&self.command_list, viewport_w, viewport_h, scissor, rects)
+    }
+
+    fn blit_soft_fallback(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
+        self.ensure_healthy()?;
+        if width != self.width || height != self.height {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "D3d12Context: soft blit dimensions {width}x{height} do not match drawable {}x{}",
+                    self.width, self.height
+                ),
+            ));
+        }
+        let expected = (width as usize)
+            .checked_mul(height as usize)
+            .ok_or_else(|| Error::new(Errc::InvalidArgument, "soft blit pixel count overflow"))?;
+        if pixels.len() < expected {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "D3d12Context: soft blit buffer too small, got {}, need {expected}",
+                    pixels.len()
+                ),
+            ));
+        }
+        self.begin_commands()?;
+        self.pipeline
+            .as_mut()
+            .ok_or_else(|| platform_error("D3d12Context: raster pipeline is shut down"))?
+            .blit_soft_fallback(
+                &self.device,
+                &self.command_list,
+                self.frame_index,
+                pixels,
+                width,
+                height,
+            )
+    }
 }
 
 impl Drop for D3d12Context {
@@ -1097,6 +1165,8 @@ mod tests {
             context.native_raster_caps(),
             NativeRasterCaps {
                 clear_target: true,
+                soft_blit: true,
+                solid_rects: true,
                 ..NativeRasterCaps::default()
             }
         );
@@ -1116,11 +1186,107 @@ mod tests {
         assert!((0xBE..=0xC0).contains(&(pixel & 0xFF)));
         assert!((0x7F..=0x81).contains(&((pixel >> 8) & 0xFF)));
         assert!((0x3F..=0x41).contains(&((pixel >> 16) & 0xFF)));
+
+        context
+            .clear_render_target(0.0, 0.0, 1.0, 1.0)
+            .expect("clear pipeline scene");
+        let scene_w = context.width();
+        let scene_h = context.height();
+        context
+            .draw_solid_rects(
+                scene_w as f32,
+                scene_h as f32,
+                Some((6, 4, 28, 26)),
+                &[
+                    GpuSolidRect {
+                        x: 8.0,
+                        y: 6.0,
+                        w: 32.0,
+                        h: 24.0,
+                        rgba: [1.0, 0.0, 0.0, 1.0],
+                        radius: [10.0, 0.0, 6.0, 0.0],
+                    },
+                    GpuSolidRect {
+                        x: 12.0,
+                        y: 10.0,
+                        w: 8.0,
+                        h: 8.0,
+                        rgba: [0.0, 1.0, 0.0, 0.5],
+                        radius: [0.0; 4],
+                    },
+                ],
+            )
+            .expect("draw rounded/scissored solid rects");
+        let mut soft_a = vec![0u32; (scene_w * scene_h) as usize];
+        soft_a[0] = 0xFF11_22CC;
+        soft_a[16 * scene_w as usize + 24] = 0x8000_0080;
+        context
+            .blit_soft_fallback(&soft_a, scene_w, scene_h)
+            .expect("first soft blit");
+        let mut soft_b = vec![0u32; (scene_w * scene_h) as usize];
+        soft_b[(scene_w * scene_h) as usize - 1] = 0xFFCC_2211;
+        context
+            .blit_soft_fallback(&soft_b, scene_w, scene_h)
+            .expect("second soft blit in one recording");
+        let mixed = context
+            .read_pixels_result(0, 0, scene_w, scene_h)
+            .expect("mixed readback");
+        let mixed_pixel = |x: usize, y: usize| mixed[y * scene_w as usize + x];
+        assert_eq!(
+            mixed_pixel(0, 0),
+            0xFF11_22CC,
+            "top-left texture orientation"
+        );
+        assert_eq!(
+            mixed_pixel(scene_w as usize - 1, scene_h as usize - 1),
+            0xFFCC_2211,
+            "bottom-right texture orientation"
+        );
+        assert_eq!(mixed_pixel(8, 6), 0xFF00_00FF, "rounded corner stays blue");
+        assert_eq!(
+            mixed_pixel(32, 7),
+            0xFFFF_0000,
+            "sharp corner stays native red"
+        );
+        assert_eq!(
+            mixed_pixel(36, 16),
+            0xFF00_00FF,
+            "scissor clips native rect"
+        );
+        assert_eq!(
+            mixed_pixel(24, 16),
+            0xFF7F_0080,
+            "premultiplied soft alpha-over"
+        );
+        let solid_alpha = mixed_pixel(14, 12);
+        assert_eq!(solid_alpha >> 24, 0xFF);
+        assert!((127..=128).contains(&((solid_alpha >> 16) & 0xFF)));
+        assert!((127..=128).contains(&((solid_alpha >> 8) & 0xFF)));
+        assert_eq!(solid_alpha & 0xFF, 0);
+        assert_eq!(
+            mixed_pixel(28, 16),
+            0xFFFF_0000,
+            "transparent soft keeps native"
+        );
         context
             .present(&PresentFrame::Swapchain {
                 damage: PresentDamage::Full,
             })
             .expect("present");
+        assert_eq!(
+            context
+                .blit_soft_fallback(&[], scene_w, scene_h)
+                .expect_err("short soft input must fail")
+                .code(),
+            Errc::InvalidArgument
+        );
+        assert_eq!(
+            context
+                .blit_soft_fallback(&soft_a, scene_w - 1, scene_h)
+                .expect_err("mismatched soft dimensions must fail")
+                .code(),
+            Errc::InvalidArgument
+        );
 
         let original_size = (context.width(), context.height());
         context
@@ -1209,13 +1375,47 @@ mod tests {
                     "D3D12 hardware real-window adapter: {}",
                     hardware.adapter_info.diagnostic_summary()
                 );
-                hardware
-                    .clear_render_target(0.0, 1.0, 0.0, 1.0)
-                    .expect("hardware clear");
                 assert_eq!(
-                    hardware.read_pixels_result(0, 0, 1, 1),
-                    Ok(vec![0xFF00_FF00])
+                    hardware.native_raster_caps(),
+                    NativeRasterCaps {
+                        clear_target: true,
+                        soft_blit: true,
+                        solid_rects: true,
+                        ..NativeRasterCaps::default()
+                    }
                 );
+                hardware
+                    .clear_render_target(0.0, 0.0, 1.0, 1.0)
+                    .expect("hardware clear");
+                let hardware_w = hardware.width();
+                let hardware_h = hardware.height();
+                hardware
+                    .draw_solid_rects(
+                        hardware_w as f32,
+                        hardware_h as f32,
+                        None,
+                        &[GpuSolidRect {
+                            x: 10.0,
+                            y: 10.0,
+                            w: 30.0,
+                            h: 20.0,
+                            rgba: [1.0, 0.0, 0.0, 1.0],
+                            radius: [6.0; 4],
+                        }],
+                    )
+                    .expect("hardware rounded solid");
+                let mut hardware_soft = vec![0u32; (hardware_w * hardware_h) as usize];
+                hardware_soft[15 * hardware_w as usize + 20] = 0x8000_8000;
+                hardware
+                    .blit_soft_fallback(&hardware_soft, hardware_w, hardware_h)
+                    .expect("hardware soft blit");
+                let hardware_pixels = hardware
+                    .read_pixels_result(0, 0, hardware_w, hardware_h)
+                    .expect("hardware mixed readback");
+                let hardware_pixel =
+                    |x: usize, y: usize| hardware_pixels[y * hardware_w as usize + x];
+                assert_eq!(hardware_pixel(10, 10), 0xFF00_00FF);
+                assert_eq!(hardware_pixel(20, 15), 0xFF7F_8000);
                 hardware
                     .present(&PresentFrame::Swapchain {
                         damage: PresentDamage::Full,
