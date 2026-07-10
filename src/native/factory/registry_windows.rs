@@ -5,7 +5,7 @@ use crate::native::graphics::{d3d11, d3d12, opengl};
 use crate::native::traits::present::{GraphicsBackend, PresentMode, RasterMode};
 
 const D3D12_STATUS: BackendStatus = if cfg!(feature = "d3d12") {
-    BackendStatus::Planned
+    BackendStatus::Active
 } else {
     BackendStatus::Disabled
 };
@@ -25,9 +25,9 @@ const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
     GraphicsBackendEntry {
         id: GraphicsBackend::D3d12,
-        priority: 30,
+        // First native slice stays behind the established D3D11/WGL paths.
+        priority: 5,
         status: D3D12_STATUS,
-        // Planned: GpuNative × Swapchain when implemented.
         raster: RasterMode::GpuNative,
         present: PresentMode::Swapchain,
         create: d3d12::create,

@@ -57,15 +57,24 @@ mod tests {
     };
     use std::ffi::c_void;
 
-    struct FakeD3d11GpuNative;
+    struct FakeGpuNative(GraphicsBackend);
 
-    impl IGraphicsContext for FakeD3d11GpuNative {
+    impl IGraphicsContext for FakeGpuNative {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+            GraphicsContextCaps::gpu_native_swapchain(self.0, false, 1.0)
         }
 
         fn native_raster_caps(&self) -> NativeRasterCaps {
-            NativeRasterCaps::d3d11_full()
+            if self.0 == GraphicsBackend::D3d12 {
+                NativeRasterCaps {
+                    clear_target: true,
+                    soft_blit: true,
+                    solid_rects: true,
+                    ..NativeRasterCaps::default()
+                }
+            } else {
+                NativeRasterCaps::d3d11_full()
+            }
         }
 
         fn initialize(
@@ -94,8 +103,16 @@ mod tests {
 
     #[test]
     fn gpu_native_swapchain_assembles_gpu_engine_for_d3d11() {
-        let mut engine =
-            create_graphics_engine(Box::new(FakeD3d11GpuNative)).expect("GpuEngine for D3D11");
+        let mut engine = create_graphics_engine(Box::new(FakeGpuNative(GraphicsBackend::D3d11)))
+            .expect("GpuEngine for D3D11");
+        engine.initialize(64, 48).expect("initialize");
+        engine.shutdown();
+    }
+
+    #[test]
+    fn gpu_native_swapchain_assembles_gpu_engine_for_d3d12() {
+        let mut engine = create_graphics_engine(Box::new(FakeGpuNative(GraphicsBackend::D3d12)))
+            .expect("GpuEngine for D3D12");
         engine.initialize(64, 48).expect("initialize");
         engine.shutdown();
     }

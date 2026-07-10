@@ -20,6 +20,20 @@ pub use registry::{
     BackendStatus, GraphicsBackendEntry,
 };
 
+#[cfg(all(test, feature = "d3d12"))]
+pub(crate) fn create_d3d12_warp_test_context(
+    surface: *mut std::ffi::c_void,
+    width: i32,
+    height: i32,
+) -> crate::core::Result<Box<dyn crate::native::traits::present::IGraphicsContext>> {
+    crate::native::graphics::d3d12::create_warp_test_context(surface, width, height)
+}
+
+#[cfg(all(test, feature = "d3d12"))]
+pub(crate) fn d3d12_warp_test_context_available() -> bool {
+    crate::native::graphics::d3d12::warp_test_context_available()
+}
+
 /// 创建当前平台对应的 Platform 实例。
 #[cfg(windows)]
 pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
@@ -134,12 +148,50 @@ mod tests {
     }
 
     #[test]
-    fn planned_backend_returns_single_entry_error() {
+    fn d3d12_explicit_request_reports_build_state_or_surface_error() {
         let err = match try_create_gpu_context(GraphicsBackend::D3d12, std::ptr::null_mut(), 1, 1) {
-            Ok(_) => panic!("D3D12 is planned"),
+            Ok(_) => panic!("null surface must not create D3D12"),
             Err(err) => err,
         };
-        assert!(err.message().contains("planned"));
+
+        #[cfg(all(windows, feature = "d3d12"))]
+        assert!(err.message().contains("native window handle is null"));
+
+        #[cfg(all(windows, not(feature = "d3d12")))]
+        assert!(err.message().contains("disabled"));
+
+        #[cfg(not(windows))]
+        assert!(err.message().contains("no registry entry"));
+    }
+
+    #[cfg(all(windows, feature = "d3d12"))]
+    #[test]
+    fn d3d12_explicit_factory_creates_active_real_window_context() {
+        use crate::native::traits::present::{NativeRasterCaps, PresentMode, RasterMode};
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("D3D12 factory test", 120, 80)
+            .expect("window");
+        let surface = window.native_surface_ptr();
+        let mut context = try_create_gpu_context(GraphicsBackend::D3d12, surface, 120, 80)
+            .expect("active D3D12 factory row");
+        assert_eq!(context.graphics_backend(), GraphicsBackend::D3d12);
+        assert_eq!(context.caps().raster, RasterMode::GpuNative);
+        assert_eq!(context.caps().present, PresentMode::Swapchain);
+        assert_eq!(
+            context.native_raster_caps(),
+            NativeRasterCaps {
+                clear_target: true,
+                soft_blit: true,
+                solid_rects: true,
+                ..NativeRasterCaps::default()
+            }
+        );
+        context.shutdown();
+        drop(context);
+        window.close().expect("close factory test window");
     }
 
     #[test]

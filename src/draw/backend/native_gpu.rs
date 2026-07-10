@@ -2939,4 +2939,122 @@ mod tests {
             last_shadow_count.get(),
         );
     }
+
+    #[cfg(feature = "d3d12")]
+    #[test]
+    fn d3d12_warp_real_context_flows_through_gpu_engine_with_mixed_native_and_soft() {
+        use crate::draw::gpu_engine::GpuEngine;
+        use crate::draw::traits::GraphicsEngine;
+
+        if !crate::native::factory::d3d12_warp_test_context_available() {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("D3D12 mixed native/soft test", 120, 80)
+            .expect("window");
+        let surface = window.native_surface_ptr();
+        assert!(!surface.is_null());
+        let context = crate::native::factory::create_d3d12_warp_test_context(surface, 120, 80)
+            .expect("mandatory D3D12 WARP context");
+        let width = context.width();
+        let height = context.height();
+        assert_eq!(context.graphics_backend(), GraphicsBackend::D3d12);
+        assert_eq!(
+            context.native_raster_caps(),
+            NativeRasterCaps {
+                clear_target: true,
+                soft_blit: true,
+                solid_rects: true,
+                ..NativeRasterCaps::default()
+            }
+        );
+
+        let mut engine = GpuEngine::new(context).expect("D3D12 GpuEngine");
+        GraphicsEngine::initialize(&mut engine, width, height).expect("initialize D3D12 engine");
+        {
+            let backend = engine
+                .session_mut()
+                .backend_mut()
+                .as_any_mut()
+                .downcast_mut::<NativeGpuBackend>()
+                .expect("D3D12 must use shared NativeGpuBackend");
+            assert_eq!(backend.kind(), BackendKind::Gpu);
+            assert_eq!(
+                backend.capabilities(),
+                BackendCapabilities::gpu_full_redraw()
+            );
+            backend
+                .gpu_ctx
+                .clear_render_target(0.0, 0.0, 0.0, 1.0)
+                .expect("clear real D3D12 backbuffer");
+            backend.surface.needs_gpu_clear = false;
+
+            let canvas = &mut backend.surface.canvas;
+            canvas.fill_rect(
+                Rect::new(0.0, 0.0, width as f32, height as f32),
+                Color::from_rgba(0, 0, 0, 255),
+                None,
+            );
+            canvas.push_clip(Rect::new(25.0, 10.0, 45.0, 50.0));
+            canvas.fill_rect(
+                Rect::new(20.0, 15.0, 60.0, 40.0),
+                Color::from_rgba(255, 0, 0, 255),
+                Some(Radius::uniform(12.0)),
+            );
+            canvas.pop_clip();
+            canvas.fill_ellipse(
+                Rect::new(42.0, 27.0, 16.0, 16.0),
+                Color::from_rgba(0, 0, 255, 128),
+            );
+            assert_eq!(canvas.pending_native.len(), 2);
+            assert!(canvas.soft_has_content);
+
+            let NativeGpuBackend {
+                gpu_ctx, surface, ..
+            } = backend;
+            surface
+                .canvas
+                .submit_native(gpu_ctx.as_mut())
+                .expect("submit D3D12 native rounded solids");
+            surface
+                .canvas
+                .submit_soft(gpu_ctx.as_mut())
+                .expect("submit D3D12 unsupported ellipse through soft blit");
+            let pixels = gpu_ctx.read_pixels(0, 0, width, height);
+            assert_eq!(pixels.len(), (width * height) as usize);
+            let pixel = |x: usize, y: usize| pixels[y * width as usize + x];
+            assert_eq!(pixel(5, 5), 0xFF00_0000, "outside stays background");
+            assert_eq!(
+                pixel(25, 15),
+                0xFF00_0000,
+                "rounded corner stays background"
+            );
+            assert_eq!(pixel(75, 35), 0xFF00_0000, "clip excludes native rect");
+            assert_eq!(
+                pixel(35, 35),
+                0xFFFF_0000,
+                "transparent soft keeps native red"
+            );
+            let mixed = pixel(50, 35);
+            assert_eq!(mixed >> 24, 0xFF);
+            assert!((127..=128).contains(&((mixed >> 16) & 0xFF)));
+            assert_eq!((mixed >> 8) & 0xFF, 0);
+            assert!((127..=128).contains(&(mixed & 0xFF)));
+
+            gpu_ctx
+                .present(&PresentFrame::Swapchain {
+                    damage: PresentDamage::Full,
+                })
+                .expect("present verified D3D12 mixed frame");
+            surface.canvas.commit_presented_frame();
+            assert!(surface.canvas.pending_native.is_empty());
+            assert!(!surface.canvas.soft_has_content);
+        }
+        GraphicsEngine::shutdown(&mut engine);
+        drop(engine);
+        window.close().expect("close window after D3D12 engine");
+    }
 }

@@ -46,7 +46,7 @@ use crate::native::factory::registry_windows::PLATFORM_ENTRIES;
 #[cfg(not(any(windows, all(unix, not(target_os = "macos")), target_os = "macos")))]
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[];
 
-/// All Active rows for the current platform, sorted by descending priority.
+/// All registry rows for the current platform in declaration order.
 pub fn active_entries() -> &'static [GraphicsBackendEntry] {
     PLATFORM_ENTRIES
 }
@@ -95,13 +95,19 @@ pub fn try_create_context(
 }
 
 /// Ordered probe candidates for a graphics backend request.
+fn active_backends_by_priority(entries: &[GraphicsBackendEntry]) -> Vec<GraphicsBackend> {
+    let mut entries = entries
+        .iter()
+        .filter(|entry| entry.is_probe_candidate())
+        .collect::<Vec<_>>();
+    // Stable sort preserves declaration order for equal priorities.
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.priority));
+    entries.into_iter().map(|entry| entry.id).collect()
+}
+
 pub fn gpu_probe_candidates(requested: GraphicsBackend) -> Vec<GraphicsBackend> {
     match requested {
-        GraphicsBackend::Auto => active_entries()
-            .iter()
-            .filter(|entry| entry.is_probe_candidate())
-            .map(|entry| entry.id)
-            .collect(),
+        GraphicsBackend::Auto => active_backends_by_priority(active_entries()),
         backend => vec![backend],
     }
 }
@@ -171,12 +177,65 @@ mod tests {
     #[test]
     fn auto_candidates_follow_registry_priority_order() {
         let candidates = gpu_probe_candidates(GraphicsBackend::Auto);
-        let entries: Vec<_> = active_entries()
+        let mut entries: Vec<_> = active_entries()
             .iter()
             .filter(|entry| entry.is_probe_candidate())
-            .map(|entry| entry.id)
             .collect();
-        assert_eq!(candidates, entries);
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.priority));
+        assert_eq!(
+            candidates,
+            entries
+                .into_iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn candidate_sort_uses_numeric_priority_and_is_stable_for_ties() {
+        let entries = [
+            GraphicsBackendEntry {
+                id: GraphicsBackend::D3d12,
+                priority: 5,
+                status: BackendStatus::Active,
+                raster: RasterMode::GpuNative,
+                present: PresentMode::Swapchain,
+                create: create_d3d11_identity,
+            },
+            GraphicsBackendEntry {
+                id: GraphicsBackend::D3d11,
+                priority: 20,
+                status: BackendStatus::Active,
+                raster: RasterMode::GpuNative,
+                present: PresentMode::Swapchain,
+                create: create_d3d11_identity,
+            },
+            GraphicsBackendEntry {
+                id: GraphicsBackend::OpenGlEs,
+                priority: 10,
+                status: BackendStatus::Active,
+                raster: RasterMode::GpuNative,
+                present: PresentMode::Swapchain,
+                create: create_d3d11_identity,
+            },
+            GraphicsBackendEntry {
+                id: GraphicsBackend::Vulkan,
+                priority: 20,
+                status: BackendStatus::Active,
+                raster: RasterMode::Cpu,
+                present: PresentMode::PixelUpload,
+                create: create_d3d11_identity,
+            },
+        ];
+        assert_eq!(
+            active_backends_by_priority(&entries),
+            vec![
+                GraphicsBackend::D3d11,
+                GraphicsBackend::Vulkan,
+                GraphicsBackend::OpenGlEs,
+                GraphicsBackend::D3d12,
+            ]
+        );
     }
 
     #[test]
@@ -224,9 +283,13 @@ mod tests {
     }
 
     #[test]
-    fn planned_backend_is_skipped_in_auto_chain() {
+    fn inactive_backend_is_skipped_in_auto_chain() {
         let candidates = gpu_probe_candidates(GraphicsBackend::Auto);
-        assert!(!candidates.contains(&GraphicsBackend::D3d12));
+        if entry_for(GraphicsBackend::D3d12).is_some_and(|entry| entry.is_probe_candidate()) {
+            assert!(candidates.contains(&GraphicsBackend::D3d12));
+        } else {
+            assert!(!candidates.contains(&GraphicsBackend::D3d12));
+        }
     }
 
     #[test]
@@ -234,10 +297,19 @@ mod tests {
         let candidates = gpu_probe_candidates(GraphicsBackend::Auto);
 
         #[cfg(windows)]
-        assert_eq!(
-            candidates,
-            vec![GraphicsBackend::D3d11, GraphicsBackend::OpenGlEs]
-        );
+        {
+            let mut expected = Vec::new();
+            if cfg!(feature = "d3d11") {
+                expected.push(GraphicsBackend::D3d11);
+            }
+            if cfg!(feature = "opengles") {
+                expected.push(GraphicsBackend::OpenGlEs);
+            }
+            if cfg!(feature = "d3d12") {
+                expected.push(GraphicsBackend::D3d12);
+            }
+            assert_eq!(candidates, expected);
+        }
 
         #[cfg(all(unix, not(target_os = "macos")))]
         assert_eq!(
@@ -265,7 +337,11 @@ mod tests {
                     assert_eq!(entry.raster, RasterMode::Cpu);
                     assert_eq!(entry.present, PresentMode::PixelUpload);
                 }
-                GraphicsBackend::D3d12 | GraphicsBackend::Auto => {}
+                GraphicsBackend::D3d12 => {
+                    assert_eq!(entry.raster, RasterMode::GpuNative);
+                    assert_eq!(entry.present, PresentMode::Swapchain);
+                }
+                GraphicsBackend::Auto => {}
             }
         }
     }
