@@ -2,8 +2,8 @@
 //!
 //! Hot Canvas2D paths (`fill_rect` / `fill_circle` / `stroke_rect` /
 //! `stroke_circle`, axis-aligned `draw_line`, identity solid `blit_glyph`,
-//! identity linear/radial gradients, identity strict-contour-forest
-//! `fill_path`, cap/join-aware `stroke_path`, and identity box/ambient shadow) draw via
+//! identity linear/radial gradients, identity fill-rule-aware `fill_path`,
+//! cap/join-aware `stroke_path`, and identity box/ambient shadow) draw via
 //! [`IGraphicsContext`] native geometry / glyph atlas / gradient / mesh /
 //! shadow APIs. Unsupported ops soft-raster into a CPU buffer and alpha-blit
 //! at present (same hybrid pattern as GL `GpuCanvas2D`).
@@ -1808,28 +1808,83 @@ mod tests {
         {
             let canvas = backend.surface().canvas();
             let mut intersecting = crate::draw::primitives::path::PathBuilder::new();
-            intersecting
-                .move_to(10.0, 10.0)
-                .line_to(70.0, 10.0)
-                .line_to(70.0, 70.0)
-                .line_to(10.0, 70.0)
-                .close();
-            intersecting
-                .move_to(50.0, 50.0)
-                .line_to(110.0, 50.0)
-                .line_to(110.0, 90.0)
-                .line_to(50.0, 90.0)
-                .close();
+            add_test_rect(&mut intersecting, 8.0, 8.0, 48.0, 40.0, true);
+            add_test_rect(&mut intersecting, 32.0, 24.0, 72.0, 56.0, true);
             canvas.fill_path(
                 &intersecting.build(),
+                Color::from_rgba(0, 255, 0, 128),
+                FillRule::NonZero,
+            );
+
+            let mut self_intersecting = crate::draw::primitives::path::PathBuilder::new();
+            self_intersecting
+                .move_to(8.0, 8.0)
+                .line_to(56.0, 8.0)
+                .line_to(56.0, 40.0)
+                .line_to(24.0, 40.0)
+                .line_to(24.0, 24.0)
+                .line_to(72.0, 24.0)
+                .line_to(72.0, 56.0)
+                .line_to(8.0, 56.0)
+                .close();
+            canvas.fill_path(
+                &self_intersecting.build(),
+                Color::from_rgba(0, 255, 0, 128),
+                FillRule::EvenOdd,
+            );
+
+            let mut touching = crate::draw::primitives::path::PathBuilder::new();
+            add_test_rect(&mut touching, 8.0, 8.0, 32.0, 32.0, true);
+            add_test_rect(&mut touching, 32.0, 8.0, 56.0, 32.0, true);
+            canvas.fill_path(
+                &touching.build(),
+                Color::from_rgba(0, 255, 0, 128),
+                FillRule::NonZero,
+            );
+
+            let mut cancelled = crate::draw::primitives::path::PathBuilder::new();
+            add_test_rect(&mut cancelled, 8.0, 8.0, 32.0, 32.0, true);
+            add_test_rect(&mut cancelled, 8.0, 8.0, 32.0, 32.0, false);
+            canvas.fill_path(
+                &cancelled.build(),
+                Color::from_rgba(0, 255, 0, 128),
+                FillRule::NonZero,
+            );
+        }
+        backend.present(&DamageRegion::full()).expect("present");
+        assert_eq!(
+            mesh_calls.get(),
+            3,
+            "complex paths must queue native meshes"
+        );
+        assert_eq!(last_mesh_count.get(), 3);
+        assert_eq!(blit_calls.get(), 0);
+        assert_eq!(present_calls.get(), 3);
+
+        {
+            let canvas = backend.surface().canvas();
+            let mut oversized = crate::draw::primitives::path::PathBuilder::new();
+            for index in 0..513 {
+                let angle = std::f32::consts::TAU * index as f32 / 513.0;
+                let x = 64.0 + angle.cos() * 48.0;
+                let y = 48.0 + angle.sin() * 40.0;
+                if index == 0 {
+                    oversized.move_to(x, y);
+                } else {
+                    oversized.line_to(x, y);
+                }
+            }
+            oversized.close();
+            canvas.fill_path(
+                &oversized.build(),
                 Color::from_rgba(255, 160, 32, 180),
                 FillRule::NonZero,
             );
         }
         backend.present(&DamageRegion::full()).expect("present");
-        assert_eq!(mesh_calls.get(), 2, "intersecting contours stay soft");
+        assert_eq!(mesh_calls.get(), 3, "oversized path must stay soft");
         assert_eq!(blit_calls.get(), 1);
-        assert_eq!(present_calls.get(), 3);
+        assert_eq!(present_calls.get(), 4);
         let _ = (
             clear_rect_calls.get(),
             draw_calls.get(),
@@ -1995,9 +2050,121 @@ mod tests {
             })
             .expect("present stroke frame");
 
+        let mut overlapping = crate::draw::primitives::path::PathBuilder::new();
+        add_test_rect(&mut overlapping, 8.0, 8.0, 48.0, 40.0, true);
+        add_test_rect(&mut overlapping, 32.0, 24.0, 72.0, 56.0, true);
+        assert_complex_fill_frame(
+            &mut backend,
+            &overlapping.build(),
+            FillRule::NonZero,
+            2_304,
+            &[(16, 16), (40, 32), (64, 48)],
+            &[(4, 4)],
+            "intersecting contours",
+        );
+
+        let mut self_intersecting = crate::draw::primitives::path::PathBuilder::new();
+        self_intersecting
+            .move_to(8.0, 8.0)
+            .line_to(56.0, 8.0)
+            .line_to(56.0, 40.0)
+            .line_to(24.0, 40.0)
+            .line_to(24.0, 24.0)
+            .line_to(72.0, 24.0)
+            .line_to(72.0, 56.0)
+            .line_to(8.0, 56.0)
+            .close();
+        assert_complex_fill_frame(
+            &mut backend,
+            &self_intersecting.build(),
+            FillRule::EvenOdd,
+            2_304,
+            &[(16, 16), (64, 32), (16, 48)],
+            &[(32, 32)],
+            "self-intersecting contour",
+        );
+
+        let mut touching = crate::draw::primitives::path::PathBuilder::new();
+        add_test_rect(&mut touching, 8.0, 8.0, 32.0, 32.0, true);
+        add_test_rect(&mut touching, 32.0, 8.0, 56.0, 32.0, true);
+        assert_complex_fill_frame(
+            &mut backend,
+            &touching.build(),
+            FillRule::NonZero,
+            1_152,
+            &[(31, 16), (32, 16)],
+            &[(4, 4)],
+            "edge-touching contours",
+        );
+
         backend.shutdown();
         drop(backend);
         window.close().expect("close native window");
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn assert_complex_fill_frame(
+        backend: &mut D3d11Backend,
+        path: &Path,
+        fill_rule: FillRule,
+        expected_green_pixels: usize,
+        filled_samples: &[(usize, usize)],
+        empty_samples: &[(usize, usize)],
+        label: &str,
+    ) {
+        backend
+            .gpu_ctx
+            .clear_render_target(0.0, 0.0, 0.0, 1.0)
+            .unwrap_or_else(|error| panic!("clear {label} frame: {error}"));
+        backend
+            .surface
+            .canvas
+            .fill_path(path, Color::from_rgba(0, 255, 0, 128), fill_rule);
+        assert!(
+            !backend.surface.canvas.soft_has_content,
+            "{label} must stay native"
+        );
+        assert_eq!(
+            backend.surface.canvas.pending_meshes.len(),
+            1,
+            "{label} must queue one mesh"
+        );
+        {
+            let D3d11Backend {
+                gpu_ctx, surface, ..
+            } = backend;
+            surface
+                .canvas
+                .flush_native(gpu_ctx.as_mut())
+                .unwrap_or_else(|error| panic!("flush {label} mesh: {error}"));
+        }
+        let pixels = backend.gpu_ctx.read_pixels(0, 0, 256, 128);
+        let pixel = |x: usize, y: usize| pixels[y * 256 + x];
+        for &(x, y) in filled_samples {
+            let green = (pixel(x, y) >> 8) & 0xFF;
+            assert!(
+                (127..=129).contains(&green),
+                "{label} sample ({x}, {y}) must blend exactly once"
+            );
+        }
+        for &(x, y) in empty_samples {
+            assert_eq!(pixel(x, y), 0xFF00_0000, "{label} empty sample");
+        }
+        let green_pixels = pixels
+            .iter()
+            .filter(|pixel| ((**pixel >> 8) & 0xFF) != 0)
+            .count();
+        assert_eq!(green_pixels, expected_green_pixels, "{label} pixel count");
+        assert!(
+            pixels.iter().all(|pixel| ((pixel >> 8) & 0xFF) <= 129),
+            "{label} triangles must not overlap and blend twice"
+        );
+        backend
+            .gpu_ctx
+            .present(&PresentFrame::Swapchain {
+                damage: PresentDamage::Full,
+            })
+            .unwrap_or_else(|error| panic!("present {label} frame: {error}"));
     }
 
     #[test]

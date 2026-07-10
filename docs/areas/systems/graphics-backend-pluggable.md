@@ -3,7 +3,7 @@
 ← [架构导航](../architecture.md) · 域：`native` · `draw` · `app` · [#162](../../decisions.md#d162) [#163](../../decisions.md#d163) [#164](../../decisions.md#d164) [#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)
 
 > **设计**：渲染以 `RasterMode` × `PresentMode` × `GraphicsBackend` 独立描述，并由 caps + registry 选择合法稀疏组合（[#168](../../decisions.md#d168) [#169](../../decisions.md#d169) [#172](../../decisions.md#d172)）。
-> **实现状态**：P6.7 registry / probe / 统一 present ✅ · P6.8 正交轴类型与表驱动装配 ✅ · D3D11 `GpuNative` × `Swapchain` ✅（原生 fill/stroke/glyph/gradient/shadow，identity 简单/非相交多轮廓 `fill_path`，以及完整遵循 `StrokeOptions` cap/join 的 identity `stroke_path`〔CPU tessellate → GPU triangles〕；相交/接触/自交 fill、非 identity/不支持 blend 等走既有 soft + alpha blit）（[#169](../../decisions.md#d169)）→ [P6.8](../implementation.md#p68-可组合渲染轴)。非 P6 任务不必通读。
+> **实现状态**：P6.7 registry / probe / 统一 present ✅ · P6.8 正交轴类型与表驱动装配 ✅ · D3D11 `GpuNative` × `Swapchain` ✅（原生 fill/stroke/glyph/gradient/shadow，identity 完整 fill topology 与完整 `StrokeOptions` cap/join stroke path〔CPU tessellate → GPU triangles〕；不支持 transform/blend、数值异常或预算超限走 soft + alpha blit）（[#169](../../decisions.md#d169)）→ [P6.8](../implementation.md#p68-可组合渲染轴)。非 P6 任务不必通读。
 
 ## 索引
 
@@ -56,11 +56,11 @@ pub enum PresentMode { Swapchain, PixelUpload, CpuPresenter }
 | `Cpu` × `PixelUpload` | `PresentUploadEngine` | — | —² | ✅ | ✅ |
 | `Cpu` × `CpuPresenter` | `SoftwareEngine` | ✅ | ✅ | ✅ | ✅ |
 
-¹ D3D11：device/swapchain/RTV + 原生 solid/rounded fill + stroke（VS/PS SDF）+ identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity 非相交 contour-forest fill mesh + identity `stroke_path` mesh（`Butt`/`Round`/`Square` cap，`Miter`/`Bevel`/`Round` join，`miter_limit` fallback；Round 受 tessellation tolerance 约束）+ identity box/ambient shadow（SDF outer glow，匹配 CPU coverage）+ soft 回退 alpha blit + present；相交、边界接触和自交 fill，以及非 identity/不支持 blend 等仍 soft。
+¹ D3D11：device/swapchain/RTV + 原生 solid/rounded fill + stroke（VS/PS SDF）+ identity solid glyph atlas（CPU coverage → R8 atlas → textured quads）+ identity linear/radial gradient + identity fill mesh（strict contour forest + 相交/边界接触/自交，保持 `EvenOdd` / `NonZero` 语义）+ identity `stroke_path` mesh（完整 cap/join 与 `miter_limit` fallback）+ identity box/ambient shadow（SDF outer glow，匹配 CPU coverage）+ soft 回退 alpha blit + present；path tessellation 受 flatten tolerance、数值容差与顶点/事件/三角/累计工作量预算约束，失败时 soft fallback。
 
 ² D3D11 优先路径已切到 `GpuNative` × `Swapchain`；`present_pixels` / `upload_surface_pixels` 仍保留作低层测试 helper，主路径不再全帧 upload。
 
-**下一代码优先**（[#167](../../decisions.md#d167) [#169](../../decisions.md#d169)）：D3D11 剩余原生 fill-path 扩展（相交、边界接触和自交）；随后 Metal / D3D12 `GpuNative`。
+**下一代码优先**（[#167](../../decisions.md#d167) [#169](../../decisions.md#d169)）：D3D12 `GpuNative`（Windows 优先）；随后 Metal `GpuNative`。
 
 **禁止写成永久约束**：「D3D11 只能 CpuUpload」「只有 GL 能 GPU 光栅」。正确写法：某 API 的 context **当前 caps** 声明了哪些轴组合；架构上任意 API 均可组装任意合法轴组合。
 
@@ -194,7 +194,7 @@ native
 | `BackendKind` | draw | `Cpu` / `Gpu` / `Auto` / `Null`；与正交轴对齐；`Gpu` = 尝试 GPU 路径，不绑具体 API |
 | `GraphicsContextCaps` | native | `backend` + `raster` + `present` + `partial_present` + DPR |
 | `GraphicsBackendEntry` | factory | `id` / `priority` / `status` / `raster` / `present` / `create`；表驱动 |
-| `RenderBackendRegistry` | draw | `GpuNative` 时按 API 配对；OpenGL ES / D3D11 ✅；随后 Metal / D3D12 |
+| `RenderBackendRegistry` | draw | `GpuNative` 时按 API 配对；OpenGL ES / D3D11 ✅；随后 D3D12 / Metal |
 | `bootstrap_graphics_engine` | draw | 唯一 probe + `create_graphics_engine` |
 
 **分派**：`caps.raster × caps.present` → 表驱动装配 engine；`caps.backend` → `RenderBackendRegistry`（仅 `GpuNative`）。找不到合法组合即返回诊断，bootstrap 关闭 context 后继续候选，不进行隐式轴变换。
@@ -219,7 +219,7 @@ native
 | `RasterMode` / `PresentMode` 类型与 caps 字段 | ✅ P6.8 |
 | `create_graphics_engine` 按轴表驱动 | ✅ P6.8 |
 | `BackendKind` 与正交轴对齐 | ✅ P6.8 |
-| D3D11 `GpuNative` × `Swapchain` | ✅ 原生 fill/stroke/glyph/gradient + 非相交多孔·深层嵌套·多岛 fill mesh + 完整 `StrokeOptions` cap/join stroke mesh + soft blit；相交/接触/自交 fill 与非 identity 文本仍 backlog |
+| D3D11 `GpuNative` × `Swapchain` | ✅ 原生 fill/stroke/glyph/gradient/shadow + identity 完整 fill/stroke path mesh + soft fallback；非 identity transform、不支持 blend/text 与保护性失败路径仍 soft |
 
 权威分项 → [implementation · P6.8](../implementation.md#p68-可组合渲染轴)。
 
@@ -260,7 +260,7 @@ native
 | 最少资源 | feature 裁剪；registry priority 定 Auto 顺序 |
 | 单 factory | registry 表驱动 |
 
-`Cpu` × `PixelUpload` 是合法轴组合，不是「这些 API 架构上只能 CPU 光栅」。`GpuNative` + registry：OpenGL ES ✅；D3D11 ✅（原生 solid rect + soft 回退）；随后 Metal / D3D12。
+`Cpu` × `PixelUpload` 是合法轴组合，不是「这些 API 架构上只能 CPU 光栅」。`GpuNative` + registry：OpenGL ES ✅；D3D11 ✅（原生 solid rect + soft 回退）；随后 D3D12 / Metal。
 
 ---
 
@@ -275,7 +275,7 @@ native
 | 渲染分派 | **仅** `RasterMode` × `PresentMode`（× `GraphicsBackend`）；bundled 管线枚举已拒绝（#169） |
 | Probe 循环 | **仅** `draw::bootstrap` |
 | WebGPU | 远期 P6.6 |
-| 交付优先级 | Windows 先行（#167）；D3D11 GPU raster 先于 Metal/D3D12（#169） |
+| 交付优先级 | Windows 先行（#167）；D3D11 GPU raster 先于 D3D12/Metal（#169）；当前 D3D12 Windows 优先 |
 
 ---
 
