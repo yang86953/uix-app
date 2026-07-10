@@ -369,7 +369,7 @@ mod tests {
             let center = pixels[(240 * 640 + 320) as usize];
             assert_eq!(center, 0xFFFF_0000, "center pixel must contain blue");
             assert!(
-                pixels.iter().any(|pixel| *pixel == 0xFF00_00FF),
+                pixels.contains(&0xFF00_00FF),
                 "native red background must remain visible"
             );
         }
