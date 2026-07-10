@@ -8,6 +8,7 @@
 use std::sync::atomic::Ordering;
 use wayland_protocols::unstable::text_input::v3::client::zwp_text_input_v3;
 
+use crate::core::{Errc, Error, Rect, Result};
 use crate::native::traits::event::UiEvent;
 use crate::native::traits::input::ITextInput;
 
@@ -18,22 +19,24 @@ use super::WaylandBackend;
 // ════════════════════════════════════════════════════════════════════════════
 
 impl ITextInput for WaylandBackend {
-    fn start(&mut self) {
+    fn start(&mut self) -> Result<()> {
         let seat = match self.seat.as_ref() {
             Some(s) => s,
             None => {
-                crate::core::log::warn_fn(
-                    "Wayland text_input: no seat available, IME not activated",
-                );
-                return;
+                return Err(Error::new(
+                    Errc::InvalidOperation,
+                    "Wayland text_input: no seat available",
+                ));
             }
         };
 
         let manager = match self.text_input_manager.as_ref() {
             Some(m) => m,
             None => {
-                crate::core::log::warn_fn("Wayland text_input: no zwp_text_input_manager_v3, compositor may not support IME");
-                return;
+                return Err(Error::new(
+                    Errc::NotImplemented,
+                    "Wayland text_input: compositor has no zwp_text_input_manager_v3",
+                ));
             }
         };
 
@@ -59,14 +62,33 @@ impl ITextInput for WaylandBackend {
         ti.commit();
         self.text_input = Some(ti);
         self.text_input_enabled.store(true, Ordering::SeqCst);
+        Ok(())
     }
 
-    fn stop(&mut self) {
+    fn stop(&mut self) -> Result<()> {
         if let Some(ref ti) = self.text_input {
             ti.disable();
             ti.commit();
         }
         self.text_input = None;
         self.text_input_enabled.store(false, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn set_cursor_rect(&mut self, rect: Rect) -> Result<()> {
+        let Some(text_input) = self.text_input.as_ref() else {
+            return Err(Error::new(
+                Errc::InvalidOperation,
+                "Wayland text_input: no active IME session",
+            ));
+        };
+        text_input.set_cursor_rectangle(
+            rect.x.round() as i32,
+            rect.y.round() as i32,
+            rect.w.max(0.0).round() as i32,
+            rect.h.max(0.0).round() as i32,
+        );
+        text_input.commit();
+        Ok(())
     }
 }

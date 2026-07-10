@@ -880,9 +880,20 @@ fn sync_ime_session(
             if *current_session != Some(target) {
                 if let Some(previous) = *current_session {
                     active_work.unregister(ActiveWorkKind::ImeSession(previous));
-                    platform.text_input().stop();
+                    if let Err(err) = platform.text_input().stop() {
+                        crate::core::log::error_fn(format!(
+                            "IME session stop failed: {}",
+                            err.short_what()
+                        ));
+                    }
                 }
-                platform.text_input().start();
+                if let Err(err) = platform.text_input().start() {
+                    crate::core::log::error_fn(format!(
+                        "IME session start failed: {}",
+                        err.short_what()
+                    ));
+                    return;
+                }
                 *current_session = Some(target);
             }
             active_work.register_open(ActiveWorkKind::ImeSession(target));
@@ -890,7 +901,12 @@ fn sync_ime_session(
         UiEventType::ImeCompositionEnd | UiEventType::WindowBlur => {
             if let Some(target) = current_session.take() {
                 active_work.unregister(ActiveWorkKind::ImeSession(target));
-                platform.text_input().stop();
+                if let Err(err) = platform.text_input().stop() {
+                    crate::core::log::error_fn(format!(
+                        "IME session stop failed: {}",
+                        err.short_what()
+                    ));
+                }
             }
         }
         _ => {}

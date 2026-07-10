@@ -9,7 +9,7 @@
 #![cfg(windows)]
 #![allow(nonstandard_style)]
 
-use super::bindings::{MSG, POINT, RECT, WNDCLASSEXW};
+use super::bindings::{CANDIDATEFORM, COMPOSITIONFORM, MSG, POINT, RECT, WNDCLASSEXW};
 
 // ════════════════════════════════════════════════════════════════════════════
 // kernel32
@@ -223,6 +223,23 @@ extern "system" {
         himc: *mut std::ffi::c_void,
         dwFlags: u32,
     ) -> i32;
-    // ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow
-    // 已在 ime.rs 中声明（使用具体类型）
+    pub(super) fn ImmGetContext(hwnd: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    pub(super) fn ImmReleaseContext(
+        hwnd: *mut std::ffi::c_void,
+        himc: *mut std::ffi::c_void,
+    ) -> i32;
+    pub(super) fn ImmGetCompositionStringW(
+        himc: *mut std::ffi::c_void,
+        index: u32,
+        buffer: *mut std::ffi::c_void,
+        buffer_len: u32,
+    ) -> i32;
+    pub(super) fn ImmSetCompositionWindow(
+        himc: *mut std::ffi::c_void,
+        form: *const COMPOSITIONFORM,
+    ) -> i32;
+    pub(super) fn ImmSetCandidateWindow(
+        himc: *mut std::ffi::c_void,
+        form: *const CANDIDATEFORM,
+    ) -> i32;
 }

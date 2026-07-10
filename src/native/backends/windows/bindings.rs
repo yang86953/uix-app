@@ -30,6 +30,21 @@ pub(super) struct RECT {
 }
 
 #[repr(C)]
+pub(super) struct COMPOSITIONFORM {
+    pub dwStyle: u32,
+    pub ptCurrentPos: POINT,
+    pub rcArea: RECT,
+}
+
+#[repr(C)]
+pub(super) struct CANDIDATEFORM {
+    pub dwIndex: u32,
+    pub dwStyle: u32,
+    pub ptCurrentPos: POINT,
+    pub rcArea: RECT,
+}
+
+#[repr(C)]
 pub(super) struct MSG {
     pub hwnd: *mut std::ffi::c_void,
     pub message: u32,

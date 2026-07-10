@@ -1,6 +1,7 @@
 ﻿//! 输入协议 — 键盘、鼠标、光标、剪贴板与 IME。
 
-use crate::core::geometry::Point;
+use crate::core::error::Result;
+use crate::core::geometry::{Point, Rect};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 鼠标按钮 — 跨层共享
@@ -202,8 +203,9 @@ pub trait ICursor {
 }
 
 pub trait ITextInput {
-    fn start(&mut self);
-    fn stop(&mut self);
+    fn start(&mut self) -> Result<()>;
+    fn stop(&mut self) -> Result<()>;
+    fn set_cursor_rect(&mut self, rect: Rect) -> Result<()>;
 }
 
 pub trait IKeyboard {
