@@ -18,6 +18,7 @@ use crate::ui::view::combinators::{button, dynamic_label, label};
 use crate::ui::view::{column, row, View, ViewNode};
 use crate::ui::widgets::container::Container;
 use crate::ui::widgets::feedback::Tooltip;
+use crate::ui::widgets::input::input::Input;
 use crate::ui::widgets::Label;
 use crate::ui::{
     AppState, EventResult, SemanticEvent, SemanticKind, WidgetAnimation, WidgetCapabilities,
@@ -1366,26 +1367,21 @@ fn registered_active_wait_until_uses_injected_test_clock() {
 }
 
 #[test]
-fn ime_composition_start_registers_open_active_work_without_timeout() {
+fn focused_input_registers_open_ime_work_without_timeout() {
     let mut platform = FakePlatform::new();
     platform
         .event_source
-        .inject(UiEvent::ime_composition_start());
+        .inject(UiEvent::key_down(KeyCode::Tab, KeyMod::NONE));
     platform.event_source.state.exit_after_blocking_calls = Some(1);
     platform.event_source.state.exit_after_timeout_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
-        ViewNode::leaf(Container::new()),
+        ViewNode::leaf(Input::new("type here")),
         Box::new(NullEngine::new()),
         800,
         600,
     );
-    {
-        let (tree, _) = session.tree_and_engine_mut();
-        let root = tree.root_id().unwrap();
-        tree.managers_mut().focus.set_focused_component(Some(root));
-    }
     let font_service = FontService::new();
     let image_service = ImageService::new();
     let theme = RefCell::new(Theme::default());
@@ -1411,27 +1407,32 @@ fn ime_composition_start_registers_open_active_work_without_timeout() {
     assert_eq!(status, 0);
     assert_eq!(platform.event_source.state.dispatch_timeout_calls, 0);
     assert_eq!(platform.event_source.state.dispatch_blocking_calls, 1);
-    assert!(!session.active_work().is_empty());
-    assert_eq!(session.active_work().next_deadline(), None);
+    assert!(session.active_work().is_empty());
     assert_eq!(session.loop_state(), WindowLoopState::RegisteredActive);
     assert_eq!(platform.text_input.state.start_calls, 1);
-    assert_eq!(platform.text_input.state.stop_calls, 0);
-    assert!(platform.text_input.state.active);
+    assert_eq!(platform.text_input.state.stop_calls, 1);
+    assert!(!platform.text_input.state.active);
+    assert!(platform.text_input.state.cursor_rect.is_some());
 }
 
 #[test]
-fn ime_composition_end_unregisters_active_work() {
+fn window_blur_unregisters_focused_input_ime_work() {
     let mut platform = FakePlatform::new();
     platform.event_source.inject_all([
         UiEvent::ime_composition_start(),
         UiEvent::ime_composition_end("done"),
+        UiEvent {
+            window_id: None,
+            type_: UiEventType::WindowBlur,
+            payload: UiEventPayload::None,
+        },
     ]);
     platform.event_source.state.exit_after_blocking_calls = Some(1);
     platform.event_source.state.exit_after_timeout_calls = Some(1);
 
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
-        ViewNode::leaf(Container::new()),
+        ViewNode::leaf(Input::new("type here")),
         Box::new(NullEngine::new()),
         800,
         600,

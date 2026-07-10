@@ -43,6 +43,9 @@ pub struct PaintContext<'a> {
 
     /// 是否向 recorder 写入（replay 时关闭）。
     record_ops: bool,
+
+    /// 当前录制是否完整；底层直绘一旦绕过 PaintOp 就不可缓存。
+    recording_complete: bool,
 }
 
 impl<'a> PaintContext<'a> {
@@ -81,6 +84,7 @@ impl<'a> PaintContext<'a> {
             paint_pass: PaintPass::Content,
             recorder: None,
             record_ops: true,
+            recording_complete: true,
         }
     }
 
@@ -96,7 +100,15 @@ impl<'a> PaintContext<'a> {
 
     /// 绑定 DisplayList 录制目标。
     pub fn set_recorder(&mut self, recorder: Option<&mut DisplayList>) {
+        if recorder.is_some() {
+            self.recording_complete = true;
+        }
         self.recorder = recorder.map(NonNull::from);
+    }
+
+    /// 当前一次 DisplayList 录制是否覆盖了全部绘制操作。
+    pub fn recording_complete(&self) -> bool {
+        self.recording_complete
     }
 
     /// 暂停/恢复指令录制（replay 时使用）。
@@ -115,6 +127,12 @@ impl<'a> PaintContext<'a> {
         }
     }
 
+    fn mark_recording_incomplete(&mut self) {
+        if self.record_ops && self.recorder.is_some() {
+            self.recording_complete = false;
+        }
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // 空间路径入口
     // ════════════════════════════════════════════════════════════════════
@@ -122,7 +140,13 @@ impl<'a> PaintContext<'a> {
     /// 获取空间上下文（3D 变换/物理单位绘制）。
     #[inline(always)]
     pub fn spatial(&mut self) -> &mut SpatialContext<'a> {
+        self.mark_recording_incomplete();
         &mut self.spatial
+    }
+
+    /// 当前逻辑 DPI；只读查询不会使 DisplayList 录制失效。
+    pub fn dpi(&self) -> f32 {
+        self.spatial.dpi()
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -150,6 +174,7 @@ impl<'a> PaintContext<'a> {
     /// 填充椭圆。
     #[inline(always)]
     pub fn fill_ellipse(&mut self, rect: Rect, color: Color) {
+        self.mark_recording_incomplete();
         self.spatial.canvas_2d().fill_ellipse(rect, color);
     }
 
@@ -164,6 +189,7 @@ impl<'a> PaintContext<'a> {
         end_angle: f32,
         color: Color,
     ) {
+        self.mark_recording_incomplete();
         self.spatial
             .canvas_2d()
             .fill_sector(cx, cy, r, start_angle, end_angle, color);
@@ -172,6 +198,7 @@ impl<'a> PaintContext<'a> {
     /// 填充路径。
     #[inline(always)]
     pub fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
+        self.mark_recording_incomplete();
         self.spatial.canvas_2d().fill_path(path, color, fill_rule);
     }
 
@@ -198,6 +225,7 @@ impl<'a> PaintContext<'a> {
     /// 描边圆形。
     #[inline(always)]
     pub fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32) {
+        self.mark_recording_incomplete();
         self.spatial
             .canvas_2d()
             .stroke_circle(cx, cy, r, color, line_width);
@@ -206,12 +234,14 @@ impl<'a> PaintContext<'a> {
     /// 描边路径。
     #[inline(always)]
     pub fn stroke_path(&mut self, path: &Path, color: Color, opts: &StrokeOptions) {
+        self.mark_recording_incomplete();
         self.spatial.canvas_2d().stroke_path(path, color, opts);
     }
 
     /// 画直线。
     #[inline(always)]
     pub fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
+        self.mark_recording_incomplete();
         self.spatial
             .canvas_2d()
             .draw_line(x1, y1, x2, y2, color, width);
@@ -250,6 +280,7 @@ impl<'a> PaintContext<'a> {
         inner_color: Color,
         outer_color: Color,
     ) {
+        self.mark_recording_incomplete();
         self.spatial.canvas_2d().fill_radial_gradient(
             cx,
             cy,
@@ -302,6 +333,7 @@ impl<'a> PaintContext<'a> {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
+        self.mark_recording_incomplete();
         self.spatial.canvas_2d().draw_box_shadow_ambient(
             rect,
             blur_radius,
@@ -328,6 +360,18 @@ impl<'a> PaintContext<'a> {
         self.spatial.canvas_2d().restore();
     }
 
+    /// 推入局部裁剪，并保持 DisplayList 的状态栈顺序。
+    pub fn push_clip(&mut self, rect: Rect) {
+        self.record_op(PaintOp::PushClip { rect });
+        self.spatial.canvas_2d().push_clip(rect);
+    }
+
+    /// 弹出最近一次局部裁剪。
+    pub fn pop_clip(&mut self) {
+        self.record_op(PaintOp::PopClip);
+        self.spatial.canvas_2d().pop_clip();
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // 文本绘制（委托给 TextRenderService）
     // ════════════════════════════════════════════════════════════════════
@@ -343,6 +387,7 @@ impl<'a> PaintContext<'a> {
         if text.is_empty() {
             return;
         }
+        self.mark_recording_incomplete();
         let (sx, sy) = self.spatial.project(&pos);
         let fs = font_size.to_dip(self.spatial.dpi());
         let canvas = self.spatial.canvas_2d();
@@ -361,6 +406,7 @@ impl<'a> PaintContext<'a> {
         if text.is_empty() {
             return;
         }
+        self.mark_recording_incomplete();
         let fs = font_size.to_dip(self.spatial.dpi());
         let quad = self.spatial.project_aabb(&box_3d);
         let bounds = quad.bounds();
@@ -393,6 +439,7 @@ impl<'a> PaintContext<'a> {
         color: Color,
         font_size: f32,
     ) {
+        self.mark_recording_incomplete();
         self.text.draw_text_baseline(
             self.spatial.canvas_2d(),
             text,
@@ -431,6 +478,7 @@ impl<'a> PaintContext<'a> {
 
     /// 在矩形内绘制自动换行文本。
     pub fn draw_text_wrapped(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
+        self.mark_recording_incomplete();
         self.text
             .draw_text_wrapped(self.spatial.canvas_2d(), text, rect, color, font_size);
     }
@@ -445,6 +493,7 @@ impl<'a> PaintContext<'a> {
         selection: Option<(usize, usize)>,
         selection_bg: Color,
     ) {
+        self.mark_recording_incomplete();
         self.text.draw_text_with_selection(
             self.spatial.canvas_2d(),
             text,
@@ -507,6 +556,12 @@ impl<'a> PaintContext<'a> {
         color: Color,
         font_size: f32,
     ) {
+        self.record_op(PaintOp::BlitGlyphLayout {
+            layout: layout.clone(),
+            pos,
+            color,
+            font_size,
+        });
         self.text
             .blit_to(self.spatial.canvas_2d(), layout, pos, color, font_size);
     }
@@ -572,6 +627,7 @@ impl<'a> PaintContext<'a> {
     /// 获取底面 Canvas2D 引用（用于底层操作）。
     #[inline(always)]
     pub fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        self.mark_recording_incomplete();
         self.spatial.canvas_2d()
     }
 

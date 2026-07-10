@@ -150,7 +150,7 @@ component! {
         };
         // 分辨率：物理单位优先 > style > self.font_size
         let fs = if let Some(unit) = self.font_size_unit {
-            unit.to_dip(ctx.spatial().dpi())
+            unit.to_dip(ctx.dpi())
         } else if let Some(style) = self.style.as_ref() {
             style.resolve_font_size(ctx.tokens())
         } else {

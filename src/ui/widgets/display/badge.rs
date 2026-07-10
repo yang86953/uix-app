@@ -49,7 +49,7 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         // 计算实际偏移：物理单位优先
         let (off_x, off_y) = if let Some((ux, uy)) = self.offset_unit {
-            let dpi = ctx.spatial().dpi();
+            let dpi = ctx.dpi();
             (ux.to_dip(dpi), uy.to_dip(dpi))
         } else {
             (self.offset_x, self.offset_y)

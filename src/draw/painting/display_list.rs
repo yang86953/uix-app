@@ -66,6 +66,12 @@ pub enum PaintOp {
         color: Color,
         font_size: f32,
     },
+    BlitGlyphLayout {
+        layout: crate::draw::font::text_backend::TextLayout,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+    },
     SetFont {
         font: FontHandle,
     },
@@ -80,6 +86,10 @@ pub enum PaintOp {
         bounds: Rect,
         fit: bool,
     },
+    PushClip {
+        rect: Rect,
+    },
+    PopClip,
     Save,
     Restore,
 }
@@ -157,6 +167,12 @@ impl DisplayList {
                     color,
                     font_size,
                 } => ctx.draw_text_in_frame(text, *rect, *color, *font_size),
+                PaintOp::BlitGlyphLayout {
+                    layout,
+                    pos,
+                    color,
+                    font_size,
+                } => ctx.blit_glyph_layout(layout, *pos, *color, *font_size),
                 PaintOp::SetFont { font } => ctx.set_font(*font),
                 PaintOp::FillLinearGradient {
                     rect,
@@ -175,6 +191,8 @@ impl DisplayList {
                         ctx.draw_image_fill(*handle, *bounds);
                     }
                 }
+                PaintOp::PushClip { rect } => ctx.push_clip(*rect),
+                PaintOp::PopClip => ctx.pop_clip(),
                 PaintOp::Save => ctx.save(),
                 PaintOp::Restore => ctx.restore(),
             }
@@ -247,6 +265,12 @@ impl DisplayList {
                 } => {
                     text.draw_text_in_frame(canvas, s, *rect, *color, *font_size);
                 }
+                PaintOp::BlitGlyphLayout {
+                    layout,
+                    pos,
+                    color,
+                    font_size,
+                } => text.blit_to(canvas, layout, *pos, *color, *font_size),
                 PaintOp::SetFont { font } => {
                     text.set_font(*font);
                 }
@@ -265,6 +289,8 @@ impl DisplayList {
                         blit_handle(svc, canvas, *handle, *bounds, *fit);
                     }
                 }
+                PaintOp::PushClip { rect } => canvas.push_clip(*rect),
+                PaintOp::PopClip => canvas.pop_clip(),
                 PaintOp::Save => canvas.save(),
                 PaintOp::Restore => canvas.restore(),
             }

@@ -93,6 +93,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     } else {
         None
     };
+    let mut fresh_list_complete = true;
 
     {
         let Some(off_canvas) = engine.offscreen_canvas(&handle) else {
@@ -123,6 +124,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             off_ctx.set_recorder(Some(list));
             LayerTree::render_widget_self(node_id, &mut off_ctx, scene);
             off_ctx.set_recorder(None);
+            fresh_list_complete = off_ctx.recording_complete();
         } else if let Some(cached) = display_list.as_ref() {
             cached.replay(&mut off_ctx);
         }
@@ -143,7 +145,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     }
 
     if let Some(list) = fresh_list {
-        *display_list = Some(list);
+        *display_list = fresh_list_complete.then_some(list);
     }
 
     *is_dirty = false;

@@ -363,6 +363,7 @@ where
     let mut rendered_first = false;
     let mut last_frame = clock.now();
     let mut window_visible = true;
+    let mut window_focused = true;
     let mut frame_renderer = FrameRenderer::new();
     // debug overlay：仅当 hit 目标变化时全帧标脏（非每 move）。
     let last_debug_hover = Cell::new(None::<ComponentId>);
@@ -381,6 +382,7 @@ where
     let running = Cell::new(true);
     active_work.sync_app_timers(app_timers.deadlines());
     let mut ime_session = None;
+    let mut ime_cursor_rect = None;
 
     let collect = |ev: &UiEvent| {
         if ev.window_id.is_some_and(|target| target != window_id) {
@@ -493,6 +495,12 @@ where
                 UiEventType::WindowMinimize => {
                     window_visible = false;
                 }
+                UiEventType::WindowFocus => {
+                    window_focused = true;
+                }
+                UiEventType::WindowBlur => {
+                    window_focused = false;
+                }
                 UiEventType::PointerMove => {
                     if let UiEventPayload::PointerMove(ref data) = ev.payload {
                         cursor_pos.set(data.pos);
@@ -542,10 +550,17 @@ where
                 _ => {}
             }
 
-            sync_ime_session(tree, active_work, &mut ime_session, &ev, platform);
             if let Some(we) = map_event(&ev) {
                 tree.dispatch_event(&we);
             }
+            sync_ime_session(
+                tree,
+                active_work,
+                &mut ime_session,
+                &mut ime_cursor_rect,
+                window_focused,
+                platform,
+            );
 
             unsafe {
                 (*bus_ptr).event_bus().publish(&ev);
@@ -692,6 +707,15 @@ where
             (frame_out.outcome, frame_out.inv_source)
         };
 
+        sync_ime_session(
+            tree,
+            active_work,
+            &mut ime_session,
+            &mut ime_cursor_rect,
+            window_focused,
+            platform,
+        );
+
         if window_visible && (needs_work || has_layout_work || need_render) {
             // 每帧末尾清空已消费的失效队列，隐藏窗口保留 pending dirty 到恢复可见。
             tree.reset_invalidation();
@@ -726,6 +750,14 @@ where
         set_loop_state(&mut loop_state, next_state);
     }
 
+    sync_ime_session(
+        tree,
+        active_work,
+        &mut ime_session,
+        &mut ime_cursor_rect,
+        false,
+        platform,
+    );
     0
 }
 
@@ -869,48 +901,59 @@ fn sync_ime_session(
     tree: &WidgetTree,
     active_work: &mut ActiveWorkRegistry,
     current_session: &mut Option<NodeId>,
-    ev: &UiEvent,
+    current_cursor_rect: &mut Option<Rect>,
+    window_focused: bool,
     platform: &mut dyn Platform,
 ) {
-    match ev.type_ {
-        UiEventType::ImeCompositionStart | UiEventType::ImeCompositionUpdate => {
-            let Some(target) = tree.managers().focus.focused_component() else {
+    let requested = window_focused.then(|| {
+        let target = tree.managers().focus.focused_component()?;
+        let client = tree.get(target)?.as_text_input()?;
+        client
+            .accepts_text_input()
+            .then(|| (target, client.text_input_cursor_rect()))
+    });
+    let requested = requested.flatten();
+    let requested_target = requested.map(|(target, _)| target);
+
+    if *current_session != requested_target {
+        if let Some(previous) = current_session.take() {
+            active_work.unregister(ActiveWorkKind::ImeSession(previous));
+            if let Err(err) = platform.text_input().stop() {
+                crate::core::log::error_fn(format!(
+                    "IME session stop failed: {}",
+                    err.short_what()
+                ));
+            }
+        }
+        *current_cursor_rect = None;
+
+        if let Some((target, _)) = requested {
+            if let Err(err) = platform.text_input().start() {
+                crate::core::log::error_fn(format!(
+                    "IME session start failed: {}",
+                    err.short_what()
+                ));
                 return;
-            };
-            if *current_session != Some(target) {
-                if let Some(previous) = *current_session {
-                    active_work.unregister(ActiveWorkKind::ImeSession(previous));
-                    if let Err(err) = platform.text_input().stop() {
-                        crate::core::log::error_fn(format!(
-                            "IME session stop failed: {}",
-                            err.short_what()
-                        ));
-                    }
-                }
-                if let Err(err) = platform.text_input().start() {
-                    crate::core::log::error_fn(format!(
-                        "IME session start failed: {}",
-                        err.short_what()
-                    ));
-                    return;
-                }
-                *current_session = Some(target);
             }
             active_work.register_open(ActiveWorkKind::ImeSession(target));
+            *current_session = Some(target);
         }
-        UiEventType::ImeCompositionEnd | UiEventType::WindowBlur => {
-            if let Some(target) = current_session.take() {
-                active_work.unregister(ActiveWorkKind::ImeSession(target));
-                if let Err(err) = platform.text_input().stop() {
-                    crate::core::log::error_fn(format!(
-                        "IME session stop failed: {}",
-                        err.short_what()
-                    ));
-                }
-            }
-        }
-        _ => {}
     }
+
+    let Some((target, cursor_rect)) = requested else {
+        return;
+    };
+    active_work.register_open(ActiveWorkKind::ImeSession(target));
+    if cursor_rect.w <= 0.0 || cursor_rect.h <= 0.0 || *current_cursor_rect == Some(cursor_rect) {
+        return;
+    }
+    if let Err(err) = platform.text_input().set_cursor_rect(cursor_rect) {
+        crate::core::log::warn_fn(format!(
+            "IME cursor rect update failed: {}",
+            err.short_what()
+        ));
+    }
+    *current_cursor_rect = Some(cursor_rect);
 }
 
 fn set_loop_state(state_slot: &mut Option<&mut WindowLoopState>, state: WindowLoopState) {

@@ -632,6 +632,12 @@ impl Canvas2D for GpuCanvas2D {
     }
 
     fn push_clip(&mut self, rect: Rect) {
+        let rect = Rect::new(
+            rect.x + self.offset_x,
+            rect.y + self.offset_y,
+            rect.w,
+            rect.h,
+        );
         self.clip_stack.push(self.clip_rect);
         if let Some(intersection) = self.clip_rect.intersect(&rect) {
             self.clip_rect = intersection;

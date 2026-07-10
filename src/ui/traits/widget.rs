@@ -41,6 +41,7 @@ impl WidgetCapabilities {
     pub const EVENT: u16 = 0b0_0100;
     pub const LIFECYCLE: u16 = 0b0_1000;
     pub const ANIMATION: u16 = 0b1_0000;
+    pub const TEXT_INPUT: u16 = 0b10_0000;
 
     pub const fn new() -> Self {
         Self(0)
@@ -115,6 +116,24 @@ pub trait WidgetComponent: 'static {
     }
     fn as_animation_mut(&mut self) -> Option<&mut dyn WidgetAnimation> {
         None
+    }
+    fn as_text_input(&self) -> Option<&dyn WidgetTextInput> {
+        None
+    }
+}
+
+/// Optional platform-neutral text-input capability.
+///
+/// `app` uses this trait to activate the platform IME only for the focused
+/// text editor and to position the native composition/candidate UI without
+/// depending on a concrete widget type.
+pub trait WidgetTextInput: WidgetComponent {
+    fn accepts_text_input(&self) -> bool {
+        true
+    }
+
+    fn text_input_cursor_rect(&self) -> Rect {
+        Rect::zero()
     }
 }
 
