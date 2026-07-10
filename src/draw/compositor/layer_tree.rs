@@ -565,6 +565,24 @@ impl LayerTree {
                     );
                 }
 
+                if offscreen_handle.is_none() {
+                    Self::render_widget_and_children(
+                        engine,
+                        *node_id,
+                        children,
+                        scene,
+                        dirty_region,
+                        env,
+                        surface_w,
+                        surface_h,
+                        debug_mode,
+                        debug_hover,
+                        depth,
+                        render_objects,
+                    );
+                    return;
+                }
+
                 if needs_blit {
                     if let Some(handle) = offscreen_handle.as_ref() {
                         blit_picture_cache(engine, handle, bounds, w, h);
@@ -1007,10 +1025,10 @@ mod tests {
     /// 悬停窄标脏：Picture 离屏全清后，未与屏幕 dirty 相交的 Direct 子节点仍须重绘。
     #[test]
     fn picture_partial_dirty_rerasterize_repaints_all_direct_children() {
-        use crate::draw::SoftwareEngine;
         use crate::draw::font::font_service::FontService;
         use crate::draw::image::ImageService;
         use crate::draw::painting::ThemeSnapshot;
+        use crate::draw::SoftwareEngine;
         use std::cell::RefCell;
         use std::collections::HashSet;
 
@@ -1271,10 +1289,7 @@ mod tests {
         engine.end_frame(&crate::draw::backend::DamageRegion::full());
 
         let painted = scene.painted.borrow().clone();
-        assert!(
-            painted.contains(&hover_child),
-            "hovered child must repaint"
-        );
+        assert!(painted.contains(&hover_child), "hovered child must repaint");
         assert!(
             painted.contains(&far_child),
             "sibling outside screen dirty must still repaint after Picture clear"
