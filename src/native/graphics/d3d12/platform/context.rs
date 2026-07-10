@@ -688,9 +688,21 @@ impl D3d12Context {
         };
         self.fence_values[buffer_index] = fence_value;
         self.frame_index = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
-        present
-            .ok()
-            .map_err(|error| d3d12_error("IDXGISwapChain::Present", error))
+        self.latch_present_result(
+            present
+                .ok()
+                .map_err(|error| d3d12_error("IDXGISwapChain::Present", error)),
+        )
+    }
+
+    /// A failed DXGI Present leaves the submitted command list in an uncertain
+    /// display state. Keep the context alive only long enough for terminal
+    /// cleanup; all later recording, resize, and readback work must fail.
+    fn latch_present_result(&mut self, result: Result<()>) -> Result<()> {
+        if let Err(error) = &result {
+            self.latch_fault("present", error);
+        }
+        result
     }
 
     fn resize_result(&mut self, width: i32, height: i32) -> Result<()> {
@@ -1344,11 +1356,27 @@ mod tests {
         })
         .expect("WARP present");
         warp.clear_render_target(0.0, 0.0, 1.0, 1.0)
-            .expect("record work before injected fault");
-        warp.fault = Some("injected persistent fault".to_string());
+            .expect("record work before injected present failure");
+        let error = warp
+            .latch_present_result(Err(Error::new(
+                Errc::PlatformError,
+                "injected present failure",
+            )))
+            .expect_err("failed Present must propagate its error");
+        assert_eq!(error.code(), Errc::PlatformError);
+        assert!(
+            warp.fault
+                .as_deref()
+                .is_some_and(|fault| fault.starts_with("present:")),
+            "failed Present must latch the context before later work"
+        );
         let error = warp
             .clear_render_target(1.0, 0.0, 0.0, 1.0)
             .expect_err("faulted context must reject new recording");
+        assert_eq!(error.code(), Errc::InvalidState);
+        let error = warp
+            .resize_result(warp.width() + 1, warp.height() + 1)
+            .expect_err("faulted context must reject resize");
         assert_eq!(error.code(), Errc::InvalidState);
         assert!(warp
             .present(&PresentFrame::Swapchain {
