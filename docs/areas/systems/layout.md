@@ -251,7 +251,7 @@ Wrap 模式：按行拆分，每行独立 justify；交叉轴累加行高 + gap�
 | **Space** | 内联 `compute_flex_layout` | 固定 `width/height` 或 0；`flex_shrink: 0` | 均匀 gap；交叉轴受约束、主轴可溢出 |
 | **ScrollView** | 单轴按滚动方向流式堆叠（非 Flex；Both 默认纵向） | 默认 300×200；`.size(w,h)` 定 viewport | 非滚动轴填满 viewport；滚动轴允许子项超出 |
 | **Grid** | `GridLayout` | 仅 `style.width/height`；无则 0 | 须父级分配 frame；`grid_template_columns` 必填 |
-| **Card** | 内联 Column flex | `fixed_width` 默认 200；`fixed_height` 默认 0 | 无 `cached_content_size`；标题/actions 占固定区 |
+| **Card** | 内联 Column flex | `fixed_width` 默认 200；`fixed_height` 默认 0 | 无 `cached_content_size`；body 仅使用标题与 actions 之间的剩余区，空间耗尽时子项归零以清除旧 frame |
 | **Form** / **FormItem** | 自定义 label+content | 硬编码（Form 400×200 等） | 业务表单项；非通用 flex 容器 |
 
 **ScrollView 与 Container 组合**：外层 Container/Column 分配 ScrollView viewport 尺寸；Vertical/Both 的直接子项在 Y 轴流式排列，Horizontal 的直接子项在 X 轴流式排列。复杂二维内容仍以单个 Container/Grid 作为 content root。

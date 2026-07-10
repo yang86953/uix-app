@@ -11,7 +11,7 @@
 | P0–P5 按需零闲置主体 | 主体已落地；全量自动化回归已恢复零失败 | [implementation · 已落地阶段](areas/implementation.md#已落地阶段p0p5) · [当前验证基线](areas/implementation.md#当前验证基线-2026-07-10) |
 | **P6 生产级框架** | 项目级设计基线 **Executable**；实现中，Windows 生产 gate 尚未闭合 | [design.md](design.md) · [implementation · P6 生产级框架](areas/implementation.md#p6-生产级框架) |
 | 文档合格化与契约收敛 | 结构、追踪、依赖/cfg、Result-only、wake/L1、caps 组合与证据等级已在 2026-07-10 审计修复 | [requirements.md](requirements.md) · [design.md](design.md) · [#170–#173](decisions.md#d170) |
-| 验证基线 | lib 1033/1033、demo 18/18、doc 3/3；三目标 compile、Clippy 与严格文档检查通过 | [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10) |
+| 验证基线 | lib 1035/1035、demo 18/18、doc 3/3；三目标 compile、Clippy 与严格文档检查通过 | [implementation · 当前验证基线](areas/implementation.md#当前验证基线-2026-07-10) |
 | 后续 backlog | 以 implementation 为权威清单 | [implementation · 后续工作](areas/implementation.md#后续工作) |
 
 ## 里程碑与工作域
@@ -29,7 +29,7 @@
 
 在主人补充产品级 SLA/兼容矩阵前，Windows “生产可用”至少同时满足：
 
-1. `cargo test --all-targets` 零失败；当前 lib 1033/1033、demo 18/18，历史两项红测与 D3D11 复杂填充拓扑错误已用代码与守卫修复，未使用豁免。
+1. `cargo test --all-targets` 零失败；当前 lib 1035/1035、demo 18/18，历史两项红测与 D3D11 复杂填充拓扑错误已用代码与守卫修复，未使用豁免。
 2. Windows 默认 GPU 路径与强制 SoftwareEngine 回退均完成 demo smoke；resize、输入、IME、主题切换和多窗无阻塞级回归。
 3. 架构边界测试无真实违规，也不因注释/Rustdoc 文本产生假阳性。
 4. P0 生产阻塞项归零；错误日志、graphics probe report 与资源 shutdown 路径可诊断。probe 候选/阶段/选中 API/完整错误已有自动化守卫；session 与 native window 幂等性已有分层测试，GL 资源 → context → native window 的组合顺序仍须真实 GUI smoke 与驱动矩阵验证。
@@ -43,7 +43,7 @@ Linux/macOS parity 和移动端不属于 Windows gate，但不得通过上层平
 - **下一生产证据**：完成 Windows 默认 D3D11、OpenGL ES/Software fallback 的 GUI smoke 与 GPU/驱动矩阵；对 resize、输入、IME、主题切换和多窗留存可复核记录。
 - **P6 代码优先（[#169](decisions.md#d169)）**：可组合渲染轴落地 — 1) D3D11 `GpuNative` × `Swapchain` 垂直切片（soft Canvas2D + RTV）✅；原生 D3D 几何着色器 backlog；2) `RasterMode` / `PresentMode` 类型与 caps + 表驱动装配 ✅；3) `BackendKind` 统一 ✅。详见 [implementation · P6.8](areas/implementation.md#p68-可组合渲染轴) · [graphics-backend-pluggable · 可组合渲染轴](areas/systems/graphics-backend-pluggable.md#可组合渲染轴)。
 - **P6 随后**：Linux / macOS parity、macOS 真机验证 — 上层代码不变，仅完善或验收 `native` backend。
-- **布局契约收敛**：ScrollView/Form/FormItem/Space 的父级上限违规已闭合；下一批修复 Card actions/body 重叠，再统一自定义容器的 Phase 1 measured-size 缓存输入。
+- **布局契约收敛**：ScrollView/Form/FormItem/Space 的父级上限违规与 Card actions/body 重叠已闭合；下一批统一自定义容器的 Phase 1 measured-size 缓存输入。
 - 若改公开 API：同步 [areas/systems/public-api.md](areas/systems/public-api.md)、[glossary.md](glossary.md)，必要时追加 [decisions.md](decisions.md) #174+。
 
 ## 风险与阻塞
