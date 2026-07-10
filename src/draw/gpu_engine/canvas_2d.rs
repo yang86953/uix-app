@@ -340,7 +340,11 @@ impl GpuCanvas2D {
                 0,
                 self.surface_w,
                 self.surface_h,
-                glow::BGRA,
+                // CPU pixels are AARRGGBB u32 values. On the supported
+                // little-endian desktop targets their bytes are BGRA; upload
+                // through the GLES-core RGBA format and swap R/B in the blit
+                // shader instead of relying on the optional BGRA extension.
+                glow::RGBA,
                 glow::UNSIGNED_BYTE,
                 glow::PixelUnpackData::Slice(Some(std::slice::from_raw_parts(
                     pixels.as_ptr() as *const u8,

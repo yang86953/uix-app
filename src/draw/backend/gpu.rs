@@ -350,12 +350,35 @@ mod tests {
         engine
             .canvas_2d()
             .fill_rect(Rect::new(0.0, 0.0, 640.0, 480.0), Color::red(), None);
-        engine.read_pixels();
-        let pixels = engine.pixels();
-        let center = pixels[(240 * 640 + 320) as usize];
-        assert_eq!(center & 0xFF, 0xFF, "center pixel must contain red");
-        assert_eq!(center >> 24, 0xFF, "center pixel must be opaque");
+        engine
+            .canvas_2d()
+            .fill_ellipse(Rect::new(220.0, 140.0, 200.0, 200.0), Color::blue());
+        {
+            let backend = engine
+                .session_mut()
+                .gpu_backend_mut()
+                .expect("OpenGL ES backend");
+            backend
+                .surface
+                .canvas_mut()
+                .flush_soft_fallback()
+                .expect("soft fallback upload");
+            assert_eq!(unsafe { backend.gl.get_error() }, glow::NO_ERROR);
+            backend.read_pixels();
+            let pixels = backend.pixels_ref();
+            let center = pixels[(240 * 640 + 320) as usize];
+            assert_eq!(center, 0xFFFF_0000, "center pixel must contain blue");
+            assert!(
+                pixels.iter().any(|pixel| *pixel == 0xFF00_00FF),
+                "native red background must remain visible"
+            );
+        }
         let _ = engine.end_frame(&DamageRegion::full());
+        let backend = engine
+            .session_mut()
+            .gpu_backend_mut()
+            .expect("OpenGL ES backend");
+        assert_eq!(unsafe { backend.gl.get_error() }, glow::NO_ERROR);
         engine.shutdown();
         window.close().expect("close native window");
     }

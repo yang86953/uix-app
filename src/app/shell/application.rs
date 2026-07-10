@@ -682,11 +682,23 @@ impl App {
             "initial center_on_screen failed",
             platform_window.center_on_screen(),
         );
+        let mut engine =
+            match create_preferred_engine(platform_window.as_mut(), w, h, graphics_backend) {
+                Some(engine) => engine,
+                None => {
+                    report_window_operation_error(
+                        "initial engine failure cleanup close failed",
+                        platform_window.close(),
+                    );
+                    return 1;
+                }
+            };
         if let Err(error) = platform_window.show() {
             crate::core::log::error_fn(format!(
                 "initial window show failed: {}",
                 error.short_what()
             ));
+            engine.shutdown();
             report_window_operation_error(
                 "initial show failure cleanup close failed",
                 platform_window.close(),
@@ -697,18 +709,6 @@ impl App {
         let event_loop_waker = platform.event_loop().waker();
         self.runtime.set_event_loop_waker(event_loop_waker.clone());
         self.app_state.set_event_loop_waker(event_loop_waker);
-
-        let engine = match create_preferred_engine(platform_window.as_mut(), w, h, graphics_backend)
-        {
-            Some(engine) => engine,
-            None => {
-                report_window_operation_error(
-                    "initial engine failure cleanup close failed",
-                    platform_window.close(),
-                );
-                return 1;
-            }
-        };
 
         let mut font_service = FontService::new();
         font_service.load_default_system_font(14.0, platform.system_info());
@@ -1108,21 +1108,7 @@ fn create_secondary_window(
         "secondary center_on_screen failed",
         platform_window.center_on_screen(),
     );
-    if let Err(error) = platform_window.show() {
-        crate::core::log::error_fn(format!(
-            "secondary window show failed: {}",
-            error.short_what()
-        ));
-        report_window_operation_error(
-            "secondary show failure cleanup close failed",
-            platform_window.close(),
-        );
-        runtime.close_session(window_id);
-        return None;
-    }
-    report_window_operation_error("secondary window raise failed", platform_window.raise());
-
-    let engine =
+    let mut engine =
         match create_preferred_engine(platform_window.as_mut(), width, height, graphics_backend) {
             Some(engine) => engine,
             None => {
@@ -1134,6 +1120,20 @@ fn create_secondary_window(
                 return None;
             }
         };
+    if let Err(error) = platform_window.show() {
+        crate::core::log::error_fn(format!(
+            "secondary window show failed: {}",
+            error.short_what()
+        ));
+        engine.shutdown();
+        report_window_operation_error(
+            "secondary show failure cleanup close failed",
+            platform_window.close(),
+        );
+        runtime.close_session(window_id);
+        return None;
+    }
+    report_window_operation_error("secondary window raise failed", platform_window.raise());
 
     let notifications = container.resolve_clone::<AppNotificationState>();
     let wrapped_root = move || {
