@@ -21,17 +21,26 @@ type HGLRC = *mut c_void;
 type HWND = *mut c_void;
 
 type CreateContextAttribsFn = unsafe extern "system" fn(HDC, HGLRC, *const i32) -> HGLRC;
+type ChoosePixelFormatArbFn =
+    unsafe extern "system" fn(HDC, *const i32, *const f32, u32, *mut i32, *mut u32) -> i32;
 
 const WGL_CONTEXT_MAJOR_VERSION_ARB: i32 = 0x2091;
 const WGL_CONTEXT_MINOR_VERSION_ARB: i32 = 0x2092;
 const WGL_CONTEXT_PROFILE_MASK_ARB: i32 = 0x9126;
 const WGL_CONTEXT_OPENGL_ES_PROFILE_BIT_EXT: i32 = 0x0000_0004;
+const WGL_DRAW_TO_WINDOW_ARB: i32 = 0x2001;
+const WGL_SUPPORT_OPENGL_ARB: i32 = 0x2010;
+const WGL_DOUBLE_BUFFER_ARB: i32 = 0x2011;
+const WGL_PIXEL_TYPE_ARB: i32 = 0x2013;
+const WGL_COLOR_BITS_ARB: i32 = 0x2014;
+const WGL_TYPE_RGBA_ARB: i32 = 0x202B;
 
 const PFD_DRAW_TO_WINDOW: u32 = 0x0000_0004;
 const PFD_SUPPORT_OPENGL: u32 = 0x0000_0020;
 const PFD_DOUBLEBUFFER: u32 = 0x0000_0001;
 const PFD_TYPE_RGBA: u8 = 0;
 const PFD_MAIN_PLANE: u8 = 0;
+const WS_POPUP: u32 = 0x8000_0000;
 
 #[repr(C)]
 struct PIXELFORMATDESCRIPTOR {
@@ -68,6 +77,12 @@ const LOGPIXELSX: i32 = 88;
 #[link(name = "gdi32")]
 extern "system" {
     fn ChoosePixelFormat(hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR) -> i32;
+    fn DescribePixelFormat(
+        hdc: HDC,
+        format: i32,
+        bytes: u32,
+        ppfd: *mut PIXELFORMATDESCRIPTOR,
+    ) -> i32;
     fn SetPixelFormat(hdc: HDC, format: i32, ppfd: *const PIXELFORMATDESCRIPTOR) -> i32;
     fn SwapBuffers(hdc: HDC) -> i32;
     fn GetDeviceCaps(hdc: HDC, index: i32) -> i32;
@@ -84,7 +99,27 @@ extern "system" {
 #[link(name = "kernel32")]
 extern "system" {
     fn GetModuleHandleA(module_name: *const i8) -> *mut c_void;
+    fn GetModuleHandleW(module_name: *const u16) -> *mut c_void;
     fn GetProcAddress(module: *mut c_void, proc_name: *const i8) -> *const c_void;
+}
+
+#[link(name = "user32")]
+extern "system" {
+    fn CreateWindowExW(
+        ex_style: u32,
+        class_name: *const u16,
+        window_name: *const u16,
+        style: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        parent: HWND,
+        menu: *mut c_void,
+        instance: *mut c_void,
+        param: *mut c_void,
+    ) -> HWND;
+    fn DestroyWindow(hwnd: HWND) -> i32;
 }
 
 fn invalid_wgl_proc(proc: *const c_void) -> bool {
@@ -155,24 +190,183 @@ fn default_pfd() -> PIXELFORMATDESCRIPTOR {
     }
 }
 
-fn setup_pixel_format(hdc: HDC) -> Result<(), Error> {
-    let pfd = default_pfd();
+fn describe_pixel_format(hdc: HDC, format: i32) -> Result<PIXELFORMATDESCRIPTOR, Error> {
+    let mut actual = default_pfd();
     unsafe {
-        let format = ChoosePixelFormat(hdc, &pfd);
-        if format == 0 {
+        if DescribePixelFormat(
+            hdc,
+            format,
+            std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u32,
+            &mut actual,
+        ) == 0
+        {
             return Err(windows_diag(
                 Errc::PlatformError,
-                "WglContext: ChoosePixelFormat failed",
-            ));
-        }
-        if SetPixelFormat(hdc, format, &pfd) == 0 {
-            return Err(windows_diag(
-                Errc::PlatformError,
-                "WglContext: SetPixelFormat failed",
+                "WglContext: DescribePixelFormat failed",
             ));
         }
     }
-    Ok(())
+    Ok(actual)
+}
+
+fn set_selected_pixel_format(hdc: HDC, format: i32) -> Result<(i32, u32), Error> {
+    let actual = describe_pixel_format(hdc, format)?;
+    let required = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    if actual.dwFlags & required != required {
+        return Err(Error::new(
+            Errc::PlatformError,
+            format!(
+                "WglContext: selected pixel format {format} lacks required flags; actual={:#010X}, required={required:#010X}",
+                actual.dwFlags
+            ),
+        ));
+    }
+    if unsafe { SetPixelFormat(hdc, format, &actual) } == 0 {
+        return Err(windows_diag(
+            Errc::PlatformError,
+            "WglContext: SetPixelFormat failed",
+        ));
+    }
+    Ok((format, actual.dwFlags))
+}
+
+fn setup_legacy_pixel_format(hdc: HDC) -> Result<(i32, u32), Error> {
+    let pfd = default_pfd();
+    let format = unsafe { ChoosePixelFormat(hdc, &pfd) };
+    if format == 0 {
+        return Err(windows_diag(
+            Errc::PlatformError,
+            "WglContext: ChoosePixelFormat failed",
+        ));
+    }
+    set_selected_pixel_format(hdc, format)
+}
+
+fn setup_arb_pixel_format(
+    hdc: HDC,
+    choose_pixel_format: ChoosePixelFormatArbFn,
+) -> Result<(i32, u32), Error> {
+    let attributes = [
+        WGL_DRAW_TO_WINDOW_ARB,
+        1,
+        WGL_SUPPORT_OPENGL_ARB,
+        1,
+        WGL_DOUBLE_BUFFER_ARB,
+        1,
+        WGL_PIXEL_TYPE_ARB,
+        WGL_TYPE_RGBA_ARB,
+        WGL_COLOR_BITS_ARB,
+        24,
+        0,
+    ];
+    let mut format = 0;
+    let mut count = 0;
+    let ok = unsafe {
+        choose_pixel_format(
+            hdc,
+            attributes.as_ptr(),
+            ptr::null(),
+            1,
+            &mut format,
+            &mut count,
+        )
+    };
+    if ok == 0 || count == 0 || format == 0 {
+        return Err(windows_diag(
+            Errc::PlatformError,
+            "WglContext: wglChoosePixelFormatARB found no displayable format",
+        ));
+    }
+    set_selected_pixel_format(hdc, format)
+}
+
+struct BootstrapContext {
+    hwnd: HWND,
+    hdc: HDC,
+    hglrc: HGLRC,
+}
+
+impl BootstrapContext {
+    fn new() -> Result<Self, Error> {
+        const STATIC_CLASS: [u16; 7] = [83, 84, 65, 84, 73, 67, 0];
+        const EMPTY_TITLE: [u16; 1] = [0];
+        let instance = unsafe { GetModuleHandleW(ptr::null()) };
+        if instance.is_null() {
+            return Err(windows_diag(
+                Errc::PlatformError,
+                "WglContext: bootstrap GetModuleHandleW failed",
+            ));
+        }
+        let hwnd = unsafe {
+            CreateWindowExW(
+                0,
+                STATIC_CLASS.as_ptr(),
+                EMPTY_TITLE.as_ptr(),
+                WS_POPUP,
+                0,
+                0,
+                1,
+                1,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                instance,
+                ptr::null_mut(),
+            )
+        };
+        if hwnd.is_null() {
+            return Err(windows_diag(
+                Errc::PlatformError,
+                "WglContext: bootstrap CreateWindowExW failed",
+            ));
+        }
+        let hdc = unsafe { device_context(hwnd) };
+        let mut context = Self {
+            hwnd,
+            hdc,
+            hglrc: ptr::null_mut(),
+        };
+        if hdc.is_null() {
+            return Err(windows_diag(
+                Errc::PlatformError,
+                "WglContext: bootstrap GetDC failed",
+            ));
+        }
+        setup_legacy_pixel_format(hdc)?;
+        context.hglrc = unsafe { wglCreateContext(hdc) };
+        if context.hglrc.is_null() {
+            return Err(windows_diag(
+                Errc::PlatformError,
+                "WglContext: bootstrap wglCreateContext failed",
+            ));
+        }
+        if unsafe { wglMakeCurrent(hdc, context.hglrc) } == 0 {
+            return Err(windows_diag(
+                Errc::PlatformError,
+                "WglContext: bootstrap wglMakeCurrent failed",
+            ));
+        }
+        Ok(context)
+    }
+}
+
+impl Drop for BootstrapContext {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.hglrc.is_null() {
+                wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
+                wglDeleteContext(self.hglrc);
+                self.hglrc = ptr::null_mut();
+            }
+            if !self.hdc.is_null() {
+                release_device_context(self.hwnd, self.hdc);
+                self.hdc = ptr::null_mut();
+            }
+            if !self.hwnd.is_null() {
+                DestroyWindow(self.hwnd);
+                self.hwnd = ptr::null_mut();
+            }
+        }
+    }
 }
 
 fn create_es_context(
@@ -259,41 +453,29 @@ impl WglContext {
         }
 
         let result = (|| -> Result<Self, Error> {
-            setup_pixel_format(hdc)?;
-
-            let temp_ctx = unsafe { wglCreateContext(hdc) };
-            if temp_ctx.is_null() {
-                return Err(windows_diag(
+            let bootstrap = BootstrapContext::new()?;
+            let choose_pixel_format = load_wgl_fn::<ChoosePixelFormatArbFn>(
+                "wglChoosePixelFormatARB",
+            )
+            .ok_or_else(|| {
+                Error::new(
                     Errc::PlatformError,
-                    "WglContext: wglCreateContext (temp) failed",
-                ));
-            }
-            if unsafe { wglMakeCurrent(hdc, temp_ctx) } == 0 {
-                unsafe {
-                    wglDeleteContext(temp_ctx);
-                }
-                return Err(windows_diag(
-                    Errc::PlatformError,
-                    "WglContext: wglMakeCurrent (temp) failed",
-                ));
-            }
-
+                    "WglContext: wglChoosePixelFormatARB unavailable",
+                )
+            })?;
             let create_ctx = load_wgl_fn::<CreateContextAttribsFn>("wglCreateContextAttribsARB");
+            let (pixel_format, pixel_format_flags) =
+                setup_arb_pixel_format(hdc, choose_pixel_format)?;
             let hglrc = if let Some(create_ctx) = create_ctx {
                 create_es_context(hdc, create_ctx, 3, 0)?
             } else {
-                unsafe {
-                    wglDeleteContext(temp_ctx);
-                }
                 return Err(Error::new(
                     Errc::PlatformError,
                     "WglContext: wglCreateContextAttribsARB unavailable",
                 ));
             };
-
+            drop(bootstrap);
             unsafe {
-                wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
-                wglDeleteContext(temp_ctx);
                 if wglMakeCurrent(hdc, hglrc) == 0 {
                     wglDeleteContext(hglrc);
                     return Err(windows_diag(
@@ -306,7 +488,7 @@ impl WglContext {
             let (logical_w, logical_h, physical_w, physical_h) = drawable_size(hwnd, hdc);
             let _ = (width, height);
             crate::core::log::info_fn(format!(
-                "WglContext: OpenGL ES context created ({physical_w}x{physical_h} drawable, logical {logical_w}x{logical_h})"
+                "WglContext: OpenGL ES context created ({physical_w}x{physical_h} drawable, logical {logical_w}x{logical_h}, pixel_format={pixel_format}, flags={pixel_format_flags:#010X})"
             ));
             Ok(Self {
                 hwnd,
@@ -487,5 +669,4 @@ mod tests {
         let name = CString::new("glGetString").expect("valid GL symbol");
         assert!(!load_gl_proc(&name).is_null());
     }
-
 }

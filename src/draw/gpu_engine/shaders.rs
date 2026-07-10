@@ -100,7 +100,9 @@ uniform sampler2D u_tex;
 out vec4 fragColor;
 
 void main() {
-    fragColor = texture(u_tex, v_uv);
+    // CPU AARRGGBB pixels arrive as BGRA bytes on little-endian targets, while
+    // GLES 3 guarantees RGBA uploads but does not guarantee BGRA uploads.
+    fragColor = texture(u_tex, v_uv).bgra;
 }
 "#;
 
