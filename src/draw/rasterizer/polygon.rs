@@ -32,7 +32,7 @@ fn make_edge(p0: Point, p1: Point) -> Edge {
     let dy = p1.y - p0.y;
     let (top, bottom) = if p0.y <= p1.y { (p0, p1) } else { (p1, p0) };
     // 排除完全水平的边
-    let dxdy = if dy.abs() > 0.0001 { dx / dy } else { 0.0 };
+    let dxdy = if dy != 0.0 { dx / dy } else { 0.0 };
     // 缠绕方向：从上往下看，向右为正
     let winding = if p1.y > p0.y { 1 } else { -1 };
 
@@ -87,7 +87,7 @@ pub fn fill_polygons(
             let p0 = poly[i];
             let p1 = poly[(i + 1) % poly.len()];
             // 跳过水平边（dy=0）
-            if (p1.y - p0.y).abs() < 0.0001 {
+            if p1.y == p0.y {
                 continue;
             }
             let edge = make_edge(p0, p1);
