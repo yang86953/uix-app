@@ -113,9 +113,12 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                             .color(ColorValue::Neutral(NeutralRole::Text)),
                         space(10.0),
                         embed(
+                            // 卡片内容宽 ≈ 220−32；三 Tag+gap 超出时须换行，否则 Space
+                            // flex_shrink=0 会把子项画到固定宽父容器外。
                             Space::new()
                                 .size(SpaceSize::Small)
                                 .direction(FlexDirection::Row)
+                                .wrap(true)
                                 .child(Tag::new("组件").color(TagColor::Success))
                                 .child(Tag::new("运行时").color(TagColor::Info))
                                 .child(Tag::new("主题").color(TagColor::Warning)),

@@ -2,6 +2,8 @@
 //!
 //! Provides consistent spacing for a row or column of child widgets.
 
+use std::cell::Cell;
+
 use crate::component;
 use crate::core::{Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
@@ -45,6 +47,8 @@ component! {
         fixed_width: Option<f32>,
         fixed_height: Option<f32>,
         flex_grow_val: f32,
+        /// layout_children 后缓存子树内容尺寸，供无固定宽高时的 measure。
+        cached_content_size: Cell<Size>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -81,7 +85,10 @@ component! {
     layout_children => (&self, frame: Rect, children: &[LayoutChild], _tree: &WidgetTree)
         -> Vec<(ComponentId, Rect)>
     {
-        if children.is_empty() { return Vec::new(); }
+        if children.is_empty() {
+            self.cached_content_size.set(Size::zero());
+            return Vec::new();
+        }
 
         let child_sizes: Vec<Size> = children.iter().map(|child| child.measured_size).collect();
 
@@ -96,6 +103,11 @@ component! {
             })
             .collect();
 
+        let intrinsic_main = match self.direction {
+            FlexDirection::Row | FlexDirection::RowReverse => self.fixed_width.is_none(),
+            FlexDirection::Column | FlexDirection::ColumnReverse => self.fixed_height.is_none(),
+        };
+
         let input = FlexInput {
             direction: self.direction,
             wrap: self.wrap,
@@ -107,10 +119,14 @@ component! {
             child_margins: vec![crate::core::EdgeInsets::zero(); children.len()],
             justify_content: self.justify,
             align_items: self.align,
-            intrinsic_main: false,
+            intrinsic_main,
         };
 
         let output = compute_flex_layout(&input);
+        self.cached_content_size.set(Size::new(
+            output.total_size.w.max(0.0),
+            output.total_size.h.max(0.0),
+        ));
         children
             .iter()
             .zip(output.child_rects)
@@ -131,6 +147,7 @@ impl Space {
             fixed_width: None,
             fixed_height: None,
             flex_grow_val: 0.0,
+            cached_content_size: Cell::new(Size::zero()),
         }
     }
 
@@ -184,20 +201,47 @@ impl Space {
     }
 
     fn intrinsic_size(&self) -> Size {
-        Size::new(
-            self.fixed_width.unwrap_or(0.0),
-            self.fixed_height.unwrap_or(0.0),
-        )
+        let cached = self.cached_content_size.get();
+        // flex_grow 子项以 0 为 basis，避免窗口缩小时仍用旧缓存撑破父级。
+        let grow = self.flex_grow_val > 0.0;
+        let w = self.fixed_width.unwrap_or_else(|| {
+            if grow {
+                0.0
+            } else if cached.w > 0.0 {
+                cached.w
+            } else {
+                0.0
+            }
+        });
+        let h = self.fixed_height.unwrap_or_else(|| {
+            if grow {
+                0.0
+            } else if cached.h > 0.0 {
+                cached.h
+            } else {
+                0.0
+            }
+        });
+        Size::new(w, h)
     }
 
     fn child_constraints(&self, frame: Rect) -> Constraints {
-        let max_w = match self.direction {
-            FlexDirection::Row | FlexDirection::RowReverse => f32::MAX,
-            FlexDirection::Column | FlexDirection::ColumnReverse => frame.w,
+        let is_row = matches!(
+            self.direction,
+            FlexDirection::Row | FlexDirection::RowReverse
+        );
+        // 主轴始终 MAX：允许内容溢出，由 Phase 2 layout_expand 撑开。
+        // 交叉轴：有固定尺寸时用 frame；否则 MAX（避免无固定宽的 Column 在
+        // frame.w=0 时把 Label 等压成 0 宽）。
+        let max_w = if is_row || self.fixed_width.is_none() {
+            f32::MAX
+        } else {
+            frame.w
         };
-        let max_h = match self.direction {
-            FlexDirection::Row | FlexDirection::RowReverse => frame.h,
-            FlexDirection::Column | FlexDirection::ColumnReverse => f32::MAX,
+        let max_h = if !is_row || self.fixed_height.is_none() {
+            f32::MAX
+        } else {
+            frame.h
         };
         Constraints::loose(Size::new(max_w, max_h))
     }
@@ -226,6 +270,7 @@ impl Space {
         self.fixed_width = next.fixed_width;
         self.fixed_height = next.fixed_height;
         self.flex_grow_val = next.flex_grow_val;
+        // 保留 cached_content_size：reconcile 不重建布局缓存。
     }
 }
 
@@ -292,12 +337,21 @@ mod tests {
     }
 
     #[test]
+    fn measure_uses_cached_content_size_without_fixed_axes() {
+        let space = Space::new();
+        space.cached_content_size.set(Size::new(96.0, 40.0));
+
+        let measured = space.measure(Constraints::unconstrained());
+        assert_eq!(measured, Size::new(96.0, 40.0));
+    }
+
+    #[test]
     fn measure_children_respects_axes_and_preserves_flex_metadata() {
         let mut tree = WidgetTree::new();
         let child = tree.set_root(Box::new(FixedChild(Size::new(120.0, 30.0))));
         let frame = Rect::new(0.0, 0.0, 40.0, 20.0);
 
-        let row = Space::new().measure_children(frame, &[child], &tree);
+        let row = Space::new().height(20.0).measure_children(frame, &[child], &tree);
         assert_eq!(row[0].measured_size, Size::new(120.0, 20.0));
         assert_eq!(row[0].flex_grow, 2.0);
         assert_eq!(row[0].flex_shrink, 0.25);
@@ -305,8 +359,45 @@ mod tests {
 
         let column = Space::new()
             .vertical()
+            .width(40.0)
             .measure_children(frame, &[child], &tree);
         assert_eq!(column[0].measured_size, Size::new(40.0, 30.0));
+    }
+
+    #[test]
+    fn nested_sample_block_bootstraps_from_zero_frame() {
+        // 复现 showcase::sample_block：无固定尺寸的 Column Space 嵌在 Row 里。
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(
+            Space::new()
+                .height(48.0)
+                .direction(FlexDirection::Row)
+                .align(AlignItems::Start)
+                .child(
+                    Space::new()
+                        .vertical()
+                        .align(AlignItems::Start)
+                        .child(FixedChild(Size::new(40.0, 12.0)))
+                        .child(FixedChild(Size::new(56.0, 14.0))),
+                ),
+        ));
+        if let Some(node) = tree.get_mut(root) {
+            node.set_frame(Rect::new(0.0, 0.0, 400.0, 48.0));
+        }
+        tree.layout();
+
+        let sample = tree.get(root).unwrap().children()[0];
+        let sample_frame = tree.get(sample).unwrap().frame();
+        assert!(
+            sample_frame.w > 0.0 && sample_frame.h > 0.0,
+            "sample_block Space must expand from children, got {sample_frame:?}"
+        );
+        let kids = tree.get(sample).unwrap().children().to_vec();
+        assert_eq!(kids.len(), 2);
+        for kid in kids {
+            let f = tree.get(kid).unwrap().frame();
+            assert!(f.w > 0.0 && f.h > 0.0, "child collapsed: {f:?}");
+        }
     }
 
     #[test]
