@@ -156,18 +156,24 @@ fn app_page_info_notes_fill_content_width_after_resize() {
         "page column should follow wide viewport, got {page_col_w}"
     );
 
-    let max_note_w = tree
+    // 直接子节点含 gap / section_title / panel；info_note 在 panel 内。
+    // 断言抬升面板（或任意内容块）在宽视口下被 Stretch 拉满，而不是依赖
+    // 脆弱的高度启发式（sample_block 修好后短面板不再落入 20..80）。
+    let child_frames: Vec<Rect> = tree
         .get(page_col)
         .unwrap()
         .children()
         .iter()
         .filter_map(|&cid| tree.get(cid).map(|n| n.frame()))
-        .filter(|f| f.w > 200.0 && f.h > 20.0 && f.h < 80.0)
+        .collect();
+    let max_block_w = child_frames
+        .iter()
+        .filter(|f| f.h > 40.0)
         .map(|f| f.w)
         .fold(0.0f32, f32::max);
     assert!(
-        max_note_w > INNER_W + 50.0 && max_note_w > page_col_w * 0.85,
-        "info_note should fill page column, note={max_note_w} col={page_col_w}"
+        max_block_w > INNER_W + 50.0 && max_block_w > page_col_w * 0.85,
+        "content blocks should fill page column, block={max_block_w} col={page_col_w}, children={child_frames:?}"
     );
 }
 
@@ -296,6 +302,39 @@ fn general_page_has_buttons() {
         buttons.len() >= 4,
         "general page should showcase multiple buttons"
     );
+}
+
+/// sample_block（嵌套无固定尺寸 Space）不得把 Label 压成 0×0。
+#[test]
+fn general_page_label_color_samples_have_frames() {
+    let tk = DesignTokens::antd_light();
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let active = State::new(PAGE_GENERAL);
+    let ctx = crate::demos::DemoCtx::new(&tk, &timer_ticks, &anim_time, Some(&active));
+    let root = crate::demos::general::page_general(&ctx);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(r) = tree.root_mut() {
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, INIT_H as f32));
+    }
+    tree.layout();
+
+    for name in ["Primary", "Secondary", "Tertiary"] {
+        let frames: Vec<Rect> = tree
+            .find_all_by_type::<Label>()
+            .into_iter()
+            .filter_map(|(id, l)| {
+                if l.text() != name {
+                    return None;
+                }
+                tree.get(id).map(|n| n.frame())
+            })
+            .collect();
+        assert!(
+            frames.iter().any(|f| f.w > 0.0 && f.h > 0.0),
+            "Label sample `{name}` must be visible, got frames {frames:?}"
+        );
+    }
 }
 
 #[test]
