@@ -120,7 +120,9 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                 .height(36.0)
                 .gap(8.0),
             ])
+            // 局部内容组保持 intrinsic 高度，不占用页面内容列的剩余空间。
             .gap(8.0)
+            .flex_grow(0.0)
         })
         .section("App Timer — run_interval (on_start 注册)")
         .push(

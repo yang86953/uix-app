@@ -148,6 +148,12 @@ impl ViewNode {
         self
     }
 
+    /// 保留子项的自然主轴尺寸，用于 ScrollView 的内容容器。
+    pub fn overflow_content(mut self) -> Self {
+        self.style.overflow_content = true;
+        self
+    }
+
     pub fn border(mut self, width: f32, color: impl Into<ColorValue>) -> Self {
         self.style.border_width = EdgeInsets::uniform(width);
         self.style.border_color = Some(color.into());
@@ -317,6 +323,13 @@ pub trait StyleExt: Into<ViewNode> + Sized {
     fn gap(self, g: f32) -> ViewNode {
         let mut node: ViewNode = self.into();
         node.style.gap = g;
+        node
+    }
+
+    /// 保留子项的自然主轴尺寸，用于 ScrollView 的内容容器。
+    fn overflow_content(self) -> ViewNode {
+        let mut node: ViewNode = self.into();
+        node.style.overflow_content = true;
         node
     }
 
