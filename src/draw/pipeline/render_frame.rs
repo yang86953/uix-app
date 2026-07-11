@@ -93,7 +93,8 @@ impl FrameRenderer {
         };
 
         if self.last_tree_version != cur_version || !self.layer_tree.is_ready() {
-            self.layer_tree.build(scene);
+            self.layer_tree
+                .build(scene, engine.capabilities().supports_offscreen());
             self.layer_tree.sweep_orphaned_offscreens(engine);
             self.last_tree_version = cur_version;
         }

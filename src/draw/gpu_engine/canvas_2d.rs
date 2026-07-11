@@ -40,6 +40,8 @@ pub struct GpuCanvas2D {
     blit_vao: glow::VertexArray,
     blit_vbo: glow::Buffer,
     blit_program: glow::Program,
+    /// FBO / native texture blit（无 BGRA swizzle）。
+    blit_rgba_program: glow::Program,
 
     // ── 未实现 GPU 路径 → SharedRasterizer CPU 光栅化 ──
     soft_fallback: SharedRasterizer,
@@ -51,6 +53,7 @@ pub struct GpuCanvas2D {
     /// 逻辑像素 → 帧缓冲像素（HiDPI viewport 缩放）。
     device_pixel_ratio: f32,
     u_tex_loc: Option<glow::UniformLocation>,
+    u_tex_rgba_loc: Option<glow::UniformLocation>,
 }
 
 #[derive(Clone)]
@@ -171,6 +174,22 @@ impl GpuCanvas2D {
         Self::link_program(gl, vs, fs, "BlitProgram")
     }
 
+    unsafe fn compile_blit_rgba_shader(gl: &glow::Context) -> Result<glow::Program, Error> {
+        let vs = Self::compile_shader(
+            gl,
+            glow::VERTEX_SHADER,
+            crate::draw::gpu_engine::FULLSCREEN_VERT,
+            "BlitRgbaVS",
+        )?;
+        let fs = Self::compile_shader(
+            gl,
+            glow::FRAGMENT_SHADER,
+            crate::draw::gpu_engine::BLIT_RGBA_FRAG,
+            "BlitRgbaFS",
+        )?;
+        Self::link_program(gl, vs, fs, "BlitRgbaProgram")
+    }
+
     unsafe fn create_fullscreen_quad(
         gl: &glow::Context,
     ) -> Result<(glow::VertexArray, glow::Buffer), Error> {
@@ -251,6 +270,7 @@ impl GpuCanvas2D {
         let rect_program = unsafe { Self::compile_rect_shader(gl)? };
         let (rect_vao, rect_vbo) = unsafe { Self::create_rect_geom(gl)? };
         let blit_program = unsafe { Self::compile_blit_shader(gl)? };
+        let blit_rgba_program = unsafe { Self::compile_blit_rgba_shader(gl)? };
         let (blit_vao, blit_vbo) = unsafe { Self::create_fullscreen_quad(gl)? };
 
         let u_viewport_loc = unsafe { gl.get_uniform_location(rect_program, "u_viewport") };
@@ -260,6 +280,7 @@ impl GpuCanvas2D {
 
         let fallback_texture = unsafe { Self::create_fallback_texture(gl, width, height)? };
         let u_tex_loc = unsafe { gl.get_uniform_location(blit_program, "u_tex") };
+        let u_tex_rgba_loc = unsafe { gl.get_uniform_location(blit_rgba_program, "u_tex") };
 
         Ok(Self {
             gl_ptr: gl as *const glow::Context,
@@ -282,12 +303,14 @@ impl GpuCanvas2D {
             blit_vao,
             blit_vbo,
             blit_program,
+            blit_rgba_program,
             soft_fallback: SharedRasterizer::new(PixelSurface::new(width.max(1), height.max(1))),
             fallback_texture,
             surface_w: width,
             surface_h: height,
             device_pixel_ratio: 1.0,
             u_tex_loc,
+            u_tex_rgba_loc,
         })
     }
 
@@ -304,6 +327,7 @@ impl GpuCanvas2D {
             self.gl().delete_vertex_array(self.blit_vao);
             self.gl().delete_buffer(self.blit_vbo);
             self.gl().delete_program(self.blit_program);
+            self.gl().delete_program(self.blit_rgba_program);
             self.gl().delete_texture(self.fallback_texture);
         }
     }
@@ -363,6 +387,41 @@ impl GpuCanvas2D {
         }
         self.apply_clip_scissor();
         Ok(())
+    }
+
+    /// Sample an external GL texture into the current framebuffer covering `dst`
+    /// (logical pixels). Uses a temporary viewport; restores clip scissor after.
+    pub(crate) fn blit_external_texture(&self, texture: glow::Texture, dst: Rect) {
+        if dst.w <= 0.0 || dst.h <= 0.0 {
+            return;
+        }
+        let dpr = self.device_pixel_ratio.max(1.0);
+        let vx = (dst.x * dpr).floor() as i32;
+        let vy = ((self.surface_h as f32 - dst.y - dst.h).max(0.0) * dpr).floor() as i32;
+        let vw = (dst.w * dpr).ceil().max(1.0) as i32;
+        let vh = (dst.h * dpr).ceil().max(1.0) as i32;
+        unsafe {
+            self.gl().disable(glow::SCISSOR_TEST);
+            self.gl().viewport(vx, vy, vw, vh);
+            self.gl().active_texture(glow::TEXTURE0);
+            self.gl().bind_texture(glow::TEXTURE_2D, Some(texture));
+            self.gl().enable(glow::BLEND);
+            self.gl()
+                .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+            self.gl().use_program(Some(self.blit_rgba_program));
+            self.gl().uniform_1_i32(self.u_tex_rgba_loc.as_ref(), 0);
+            self.gl().bind_vertex_array(Some(self.blit_vao));
+            self.gl().draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
+            self.gl().bind_vertex_array(None);
+            self.gl().bind_texture(glow::TEXTURE_2D, None);
+            self.gl().viewport(
+                0,
+                0,
+                (self.surface_w as f32 * dpr).ceil() as i32,
+                (self.surface_h as f32 * dpr).ceil() as i32,
+            );
+        }
+        // Caller restores scissor if needed; main path re-applies via surface.
     }
 
     /// 用 GL scissor 限定范围清屏，再恢复当前 clip scissor。

@@ -15,7 +15,7 @@ use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, PresentDamage, PresentFrame,
+    NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame,
 };
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
@@ -25,9 +25,10 @@ use ::windows::Win32::Graphics::Direct3D::{
 };
 use ::windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
-    ID3D11Texture2D, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_RENDER_TARGET,
+    D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
     D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
-    D3D11_USAGE_STAGING, D3D11_VIEWPORT,
+    D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
@@ -39,6 +40,15 @@ use ::windows::Win32::Graphics::Dxgi::{
 };
 
 type HWND_PTR = *mut c_void;
+
+struct OffscreenTarget {
+    #[allow(dead_code)] // kept alive for RTV/SRV; not read directly after create
+    texture: ID3D11Texture2D,
+    rtv: ID3D11RenderTargetView,
+    srv: ID3D11ShaderResourceView,
+    width: i32,
+    height: i32,
+}
 
 const D3D11_FEATURE_LEVELS: [D3D_FEATURE_LEVEL; 4] = [
     D3D_FEATURE_LEVEL_11_1,
@@ -177,6 +187,11 @@ pub struct D3d11Context {
     adapter_info: D3d11AdapterInfo,
     width: i32,
     height: i32,
+    offscreens: Vec<Option<OffscreenTarget>>,
+    free_offscreen_ids: Vec<u32>,
+    next_offscreen_id: u32,
+    /// When set, draw/clear target the offscreen instead of the swapchain.
+    bound_offscreen: Option<u32>,
 }
 
 impl D3d11Context {
@@ -257,11 +272,15 @@ impl D3d11Context {
     }
 
     fn bind_viewport(&self) {
+        self.bind_viewport_size(self.width, self.height);
+    }
+
+    fn bind_viewport_size(&self, width: i32, height: i32) {
         let vp = D3D11_VIEWPORT {
             TopLeftX: 0.0,
             TopLeftY: 0.0,
-            Width: self.width.max(1) as f32,
-            Height: self.height.max(1) as f32,
+            Width: width.max(1) as f32,
+            Height: height.max(1) as f32,
             MinDepth: 0.0,
             MaxDepth: 1.0,
         };
@@ -273,6 +292,41 @@ impl D3d11Context {
     fn ensure_rtv(&mut self) -> Result<()> {
         if self.rtv.is_none() {
             self.create_rtv()?;
+        }
+        Ok(())
+    }
+
+    fn current_target_size(&self) -> (i32, i32) {
+        if let Some(id) = self.bound_offscreen {
+            if let Some(Some(t)) = self.offscreens.get(id as usize) {
+                return (t.width, t.height);
+            }
+        }
+        (self.width, self.height)
+    }
+
+    fn bind_current_draw_target(&mut self) -> Result<()> {
+        if let Some(id) = self.bound_offscreen {
+            let Some(Some(target)) = self.offscreens.get(id as usize) else {
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    format!("D3d11Context: bind_current_draw_target unknown offscreen {id}"),
+                ));
+            };
+            unsafe {
+                self.context
+                    .OMSetRenderTargets(Some(&[Some(target.rtv.clone())]), None);
+            }
+            self.bind_viewport_size(target.width, target.height);
+            return Ok(());
+        }
+        self.ensure_rtv()?;
+        if let Some(rtv) = self.rtv.as_ref() {
+            unsafe {
+                self.context
+                    .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
+            }
+            self.bind_viewport();
         }
         Ok(())
     }
@@ -360,6 +414,10 @@ fn create_with_driver(
         adapter_info,
         width,
         height,
+        offscreens: Vec::new(),
+        free_offscreen_ids: Vec::new(),
+        next_offscreen_id: 0,
+        bound_offscreen: None,
     };
     crate::core::log::info_fn(format!(
         "D3d11Context: created {width}x{height} swapchain at feature level {:?}; {}",
@@ -416,19 +474,11 @@ impl IGraphicsContext for D3d11Context {
     }
 
     fn make_current(&mut self) {
-        if let Err(err) = self.ensure_rtv() {
+        if let Err(err) = self.bind_current_draw_target() {
             crate::core::log::warn_fn(format!(
-                "D3d11Context: make_current ensure_rtv failed: {}",
+                "D3d11Context: make_current failed: {}",
                 err.short_what()
             ));
-            return;
-        }
-        if let Some(rtv) = self.rtv.as_ref() {
-            unsafe {
-                self.context
-                    .OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
-            }
-            self.bind_viewport();
         }
     }
 
@@ -442,6 +492,10 @@ impl IGraphicsContext for D3d11Context {
     }
 
     fn shutdown(&mut self) {
+        self.bound_offscreen = None;
+        self.offscreens.clear();
+        self.free_offscreen_ids.clear();
+        self.next_offscreen_id = 0;
         self.release_rtv();
     }
 
@@ -539,7 +593,20 @@ impl IGraphicsContext for D3d11Context {
     }
 
     fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<()> {
-        self.ensure_rtv()?;
+        self.bind_current_draw_target()?;
+        if let Some(id) = self.bound_offscreen {
+            let Some(Some(target)) = self.offscreens.get(id as usize) else {
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    format!("D3d11Context: clear_render_target unknown offscreen {id}"),
+                ));
+            };
+            unsafe {
+                self.context
+                    .ClearRenderTargetView(&target.rtv, &[r, g, b, a]);
+            }
+            return Ok(());
+        }
         let Some(rtv) = self.rtv.as_ref() else {
             return Err(Error::new(
                 Errc::PlatformError,
@@ -704,16 +771,147 @@ impl IGraphicsContext for D3d11Context {
         viewport_h: f32,
         rects: &[GpuSolidRect],
     ) -> Result<()> {
-        self.ensure_rtv()?;
-        self.make_current();
+        self.bind_current_draw_target()?;
         self.pipeline
             .clear_rects(&self.context, viewport_w, viewport_h, rects)
+    }
+
+    fn create_offscreen_target(&mut self, width: i32, height: i32) -> Result<OffscreenTargetId, Error> {
+        let w = width.max(1);
+        let h = height.max(1);
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: w as u32,
+            Height: h as u32,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
+            CPUAccessFlags: 0,
+            MiscFlags: 0,
+        };
+        let mut texture = None;
+        unsafe {
+            self.device
+                .CreateTexture2D(&desc, None, Some(&mut texture))
+                .map_err(|err| d3d_error("CreateTexture2D(offscreen)", err))?;
+        }
+        let texture = texture.ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "D3d11Context: CreateTexture2D(offscreen) returned no texture",
+            )
+        })?;
+        let mut rtv = None;
+        unsafe {
+            self.device
+                .CreateRenderTargetView(&texture, None, Some(&mut rtv))
+                .map_err(|err| d3d_error("CreateRenderTargetView(offscreen)", err))?;
+        }
+        let rtv = rtv.ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "D3d11Context: CreateRenderTargetView(offscreen) returned no RTV",
+            )
+        })?;
+        let mut srv = None;
+        unsafe {
+            self.device
+                .CreateShaderResourceView(&texture, None, Some(&mut srv))
+                .map_err(|err| d3d_error("CreateShaderResourceView(offscreen)", err))?;
+        }
+        let srv = srv.ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "D3d11Context: CreateShaderResourceView(offscreen) returned no SRV",
+            )
+        })?;
+
+        let id = if let Some(id) = self.free_offscreen_ids.pop() {
+            id
+        } else {
+            let id = self.next_offscreen_id;
+            self.next_offscreen_id = self.next_offscreen_id.saturating_add(1);
+            id
+        };
+        let idx = id as usize;
+        while self.offscreens.len() <= idx {
+            self.offscreens.push(None);
+        }
+        self.offscreens[idx] = Some(OffscreenTarget {
+            texture,
+            rtv,
+            srv,
+            width: w,
+            height: h,
+        });
+        Ok(OffscreenTargetId(id))
+    }
+
+    fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) {
+        if self.bound_offscreen == Some(id.0) {
+            self.bound_offscreen = None;
+            let _ = self.bind_swapchain_target();
+        }
+        let idx = id.0 as usize;
+        if idx < self.offscreens.len() && self.offscreens[idx].take().is_some() {
+            self.free_offscreen_ids.push(id.0);
+        }
+    }
+
+    fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+        let idx = id.0 as usize;
+        if self.offscreens.get(idx).and_then(|o| o.as_ref()).is_none() {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!("D3d11Context: bind_offscreen_target unknown id {}", id.0),
+            ));
+        }
+        self.bound_offscreen = Some(id.0);
+        self.bind_current_draw_target()
+    }
+
+    fn bind_swapchain_target(&mut self) -> Result<(), Error> {
+        self.bound_offscreen = None;
+        self.bind_current_draw_target()
+    }
+
+    fn blit_offscreen_target(
+        &mut self,
+        id: OffscreenTargetId,
+        src: crate::core::Rect,
+        dst: crate::core::Rect,
+    ) -> Result<(), Error> {
+        let idx = id.0 as usize;
+        let Some(Some(target)) = self.offscreens.get(idx) else {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!("D3d11Context: blit_offscreen_target unknown id {}", id.0),
+            ));
+        };
+        // Full-texture stretch into dst (Picture always uses full src today).
+        let _ = src;
+        if self.bound_offscreen == Some(id.0) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "D3d11Context: cannot blit offscreen while it is the bound RT",
+            ));
+        }
+        let srv = target.srv.clone();
+        let (tw, th) = self.current_target_size();
+        self.bind_current_draw_target()?;
+        self.pipeline
+            .blit_srv_to_rect(&self.context, &srv, tw as f32, th as f32, dst)
     }
 
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
         match frame {
             PresentFrame::Swapchain { .. } => {
-                self.make_current();
+                self.bind_swapchain_target()?;
                 self.present_result()
             }
             PresentFrame::PixelBuffer {
@@ -991,6 +1189,94 @@ mod tests {
             })
             .expect("WARP swapchain present");
         warp_ctx.shutdown();
+    }
+
+    #[test]
+    fn d3d11_resize_grows_backbuffer_and_fills_far_corner() {
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("D3D11 resize grow", 320, 240)
+            .expect("window");
+        let surface = window.native_surface_ptr();
+        let mut ctx = D3d11Context::new(surface, 320, 240).expect("D3d11Context");
+        assert_eq!((ctx.width(), ctx.height()), (320, 240));
+
+        // Grow the HWND; D3D11 resize reads GetClientRect.
+        window
+            .properties_mut()
+            .set_size(900, 700)
+            .expect("set_size");
+        // Pump messages so WM_SIZE updates the client rect before GetClientRect.
+        let _ = platform.event_loop().poll_event(&|_| true);
+
+        let (cw, ch) = win_surface::client_size(surface, 1, 1);
+        assert!(
+            cw > 320 && ch > 240,
+            "client should grow after set_size, got {cw}x{ch}"
+        );
+
+        ctx.resize(cw, ch);
+        assert_eq!(
+            (ctx.width(), ctx.height()),
+            (cw, ch),
+            "D3D11 context must adopt GetClientRect after resize"
+        );
+
+        ctx.clear_render_target(1.0, 0.0, 0.0, 1.0)
+            .expect("clear full RT after resize");
+        let px = ctx.read_pixels(cw - 2, ch - 2, 1, 1);
+        assert_eq!(px.len(), 1, "far-corner readback");
+        assert_eq!(
+            px[0] >> 24,
+            0xFF,
+            "far corner must be opaque after clear; got {:#010X}",
+            px[0]
+        );
+        assert_ne!(
+            px[0] & 0x00FF_FFFF,
+            0,
+            "far corner must not stay black after resize clear"
+        );
+
+        ctx.present(&PresentFrame::Swapchain {
+            damage: PresentDamage::Full,
+        })
+        .expect("present after resize");
+        ctx.shutdown();
+    }
+
+    #[test]
+    fn d3d11_offscreen_target_create_bind_clear_blit_destroy() {
+        let mut platform = crate::native::create_platform().expect("platform");
+        let window = platform
+            .window_manager()
+            .create_window("D3D11 offscreen RT", 160, 120)
+            .expect("window");
+        let mut ctx = D3d11Context::new(window.native_surface_ptr(), 160, 120).expect("ctx");
+        assert!(ctx.native_raster_caps().offscreen_targets);
+
+        let id = ctx
+            .create_offscreen_target(32, 24)
+            .expect("create_offscreen_target");
+        ctx.bind_offscreen_target(id).expect("bind offscreen");
+        ctx.clear_render_target(1.0, 0.0, 0.0, 1.0)
+            .expect("clear offscreen");
+        ctx.bind_swapchain_target().expect("bind swapchain");
+        ctx.clear_render_target(0.0, 0.0, 0.0, 1.0)
+            .expect("clear swapchain");
+        ctx.blit_offscreen_target(
+            id,
+            crate::core::Rect::new(0.0, 0.0, 32.0, 24.0),
+            crate::core::Rect::new(8.0, 8.0, 32.0, 24.0),
+        )
+        .expect("blit offscreen");
+        ctx.destroy_offscreen_target(id);
+        ctx.present(&PresentFrame::Swapchain {
+            damage: PresentDamage::Full,
+        })
+        .expect("present");
+        ctx.shutdown();
     }
 
     #[test]

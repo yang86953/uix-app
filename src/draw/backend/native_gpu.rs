@@ -19,12 +19,12 @@ use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::primitives::tessellator;
-use crate::draw::primitives::types::{BlendMode, GradientDirection, Radius, Transform};
+use crate::draw::primitives::types::{BlendMode, GradientDirection, ImageHandle, Radius, Transform};
 use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps, PresentFrame, PresentMode,
-    RasterMode,
+    GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId,
+    PresentFrame, PresentMode, RasterMode,
 };
 
 #[derive(Clone)]
@@ -912,7 +912,17 @@ pub struct NativeGpuBackend {
     width: i32,
     height: i32,
     surface: NativeGpuDrawSurface,
+    offscreens: Vec<Option<NativeGpuOffscreen>>,
+    free_offscreen_ids: Vec<u32>,
+    next_offscreen_id: u32,
+    /// Picture paint currently targeting this offscreen handle id.
+    active_offscreen: Option<u32>,
     shutdown: bool,
+}
+
+struct NativeGpuOffscreen {
+    target: OffscreenTargetId,
+    canvas: NativeGpuCanvas2D,
 }
 
 impl NativeGpuBackend {
@@ -939,6 +949,10 @@ impl NativeGpuBackend {
             width: 0,
             height: 0,
             shutdown: false,
+            offscreens: Vec::new(),
+            free_offscreen_ids: Vec::new(),
+            next_offscreen_id: 0,
+            active_offscreen: None,
             surface: NativeGpuDrawSurface {
                 canvas: NativeGpuCanvas2D::new(1, 1, native_caps),
                 native_caps,
@@ -949,6 +963,19 @@ impl NativeGpuBackend {
             },
         })
     }
+
+    fn destroy_all_offscreens(&mut self) {
+        self.active_offscreen = None;
+        let _ = self.gpu_ctx.bind_swapchain_target();
+        for slot in self.offscreens.iter_mut() {
+            if let Some(off) = slot.take() {
+                self.gpu_ctx.destroy_offscreen_target(off.target);
+            }
+        }
+        self.offscreens.clear();
+        self.free_offscreen_ids.clear();
+        self.next_offscreen_id = 0;
+    }
 }
 
 impl RenderBackend for NativeGpuBackend {
@@ -957,22 +984,29 @@ impl RenderBackend for NativeGpuBackend {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        if self.gpu_ctx.caps().partial_present && self.surface.native_caps.clear_rects {
+        let partial = self.gpu_ctx.caps().partial_present && self.surface.native_caps.clear_rects;
+        let mut caps = if partial {
             BackendCapabilities::gpu()
         } else {
             BackendCapabilities::gpu_full_redraw()
-        }
+        };
+        caps.offscreen = self.surface.native_caps.offscreen_targets;
+        caps
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         let logical_w = width.max(1);
         let logical_h = height.max(1);
         self.gpu_ctx.resize(logical_w, logical_h);
-        self.width = logical_w;
-        self.height = logical_h;
-        self.surface.width = logical_w;
-        self.surface.height = logical_h;
-        self.surface.canvas.resize(logical_w, logical_h);
+        // D3D11/D3D12 等会按 HWND GetClientRect 校正缓冲尺寸；canvas/布局必须跟
+        // 实际 RT 一致，否则清出更大黑底而 UI 仍画旧几何 → 窗口黑边。
+        let actual_w = self.gpu_ctx.width().max(1);
+        let actual_h = self.gpu_ctx.height().max(1);
+        self.width = actual_w;
+        self.height = actual_h;
+        self.surface.width = actual_w;
+        self.surface.height = actual_h;
+        self.surface.canvas.resize(actual_w, actual_h);
         self.surface.needs_gpu_clear = true;
         self.surface.pending_clear_rects.clear();
         Ok(())
@@ -983,6 +1017,7 @@ impl RenderBackend for NativeGpuBackend {
             return;
         }
         self.shutdown = true;
+        self.destroy_all_offscreens();
         self.gpu_ctx.make_current();
         self.gpu_ctx.shutdown();
     }
@@ -999,7 +1034,136 @@ impl RenderBackend for NativeGpuBackend {
         self.gpu_ctx.device_pixel_ratio()
     }
 
+    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
+        if !self.surface.native_caps.offscreen_targets || width <= 0 || height <= 0 {
+            return None;
+        }
+        let target = self
+            .gpu_ctx
+            .create_offscreen_target(width, height)
+            .map_err(|err| {
+                crate::core::log::warn_fn(format!(
+                    "NativeGpuBackend: create_offscreen_target failed: {}",
+                    err.short_what()
+                ));
+                err
+            })
+            .ok()?;
+        let id = if let Some(id) = self.free_offscreen_ids.pop() {
+            id
+        } else {
+            let id = self.next_offscreen_id;
+            self.next_offscreen_id = self.next_offscreen_id.saturating_add(1);
+            id
+        };
+        let idx = id as usize;
+        while self.offscreens.len() <= idx {
+            self.offscreens.push(None);
+        }
+        self.offscreens[idx] = Some(NativeGpuOffscreen {
+            target,
+            canvas: NativeGpuCanvas2D::new(width, height, self.surface.native_caps),
+        });
+        Some(ImageHandle(id))
+    }
+
+    fn destroy_offscreen(&mut self, handle: ImageHandle) {
+        if self.active_offscreen == Some(handle.0) {
+            self.active_offscreen = None;
+            let _ = self.gpu_ctx.bind_swapchain_target();
+        }
+        let idx = handle.0 as usize;
+        if idx < self.offscreens.len() {
+            if let Some(off) = self.offscreens[idx].take() {
+                self.gpu_ctx.destroy_offscreen_target(off.target);
+                self.free_offscreen_ids.push(handle.0);
+            }
+        }
+    }
+
+    fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
+        let idx = handle.0 as usize;
+        self.offscreens
+            .get_mut(idx)?
+            .as_mut()
+            .map(|o| &mut o.canvas as &mut dyn Canvas2D)
+    }
+
+    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        let idx = handle.0 as usize;
+        let Some(Some(off)) = self.offscreens.get(idx) else {
+            return false;
+        };
+        let target = off.target;
+        if self.gpu_ctx.bind_offscreen_target(target).is_err() {
+            return false;
+        }
+        if self
+            .gpu_ctx
+            .clear_render_target(0.0, 0.0, 0.0, 0.0)
+            .is_err()
+        {
+            let _ = self.gpu_ctx.bind_swapchain_target();
+            return false;
+        }
+        self.active_offscreen = Some(handle.0);
+        true
+    }
+
+    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
+        let idx = handle.0 as usize;
+        let Some(Some(off)) = self.offscreens.get_mut(idx) else {
+            return;
+        };
+        let target = off.target;
+        if self.gpu_ctx.bind_offscreen_target(target).is_err() {
+            return;
+        }
+        if off.canvas.submit_native(self.gpu_ctx.as_mut()).is_err() {
+            crate::core::log::warn_fn("NativeGpuBackend: offscreen submit_native failed");
+        }
+        if off.canvas.submit_soft(self.gpu_ctx.as_mut()).is_err() {
+            crate::core::log::warn_fn("NativeGpuBackend: offscreen submit_soft failed");
+        }
+        off.canvas.commit_presented_frame();
+    }
+
+    fn end_offscreen_paint(&mut self) {
+        self.active_offscreen = None;
+        if let Err(err) = self.gpu_ctx.bind_swapchain_target() {
+            crate::core::log::warn_fn(format!(
+                "NativeGpuBackend: bind_swapchain_target failed: {}",
+                err.short_what()
+            ));
+        }
+    }
+
+    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
+        let src = Rect::new(0.0, 0.0, dst_rect.w, dst_rect.h);
+        self.blit_offscreen_src(handle, src, dst_rect);
+    }
+
+    fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
+        let idx = handle.0 as usize;
+        let Some(Some(off)) = self.offscreens.get(idx) else {
+            return;
+        };
+        let target = off.target;
+        if let Err(err) = self
+            .gpu_ctx
+            .blit_offscreen_target(target, src_rect, dst_rect)
+        {
+            crate::core::log::warn_fn(format!(
+                "NativeGpuBackend: blit_offscreen_target failed: {}",
+                err.short_what()
+            ));
+        }
+    }
+
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
+        if self.active_offscreen.is_some() {
+            self.end_offscreen_paint();
+        }
         self.gpu_ctx.make_current();
 
         if self.surface.needs_gpu_clear {
@@ -1095,7 +1259,10 @@ mod tests {
         }
 
         fn native_raster_caps(&self) -> NativeRasterCaps {
-            NativeRasterCaps::d3d11_full()
+            let mut caps = NativeRasterCaps::d3d11_full();
+            // Fake has no GPU RT; do not advertise Picture offscreen.
+            caps.offscreen_targets = false;
+            caps
         }
 
         fn initialize(
@@ -1348,7 +1515,10 @@ mod tests {
         }
 
         fn native_raster_caps(&self) -> NativeRasterCaps {
-            NativeRasterCaps::d3d11_full()
+            let mut caps = NativeRasterCaps::d3d11_full();
+            // Fake has no GPU RT; do not advertise Picture offscreen.
+            caps.offscreen_targets = false;
+            caps
         }
 
         fn initialize(
@@ -1548,6 +1718,83 @@ mod tests {
         }
     }
 
+    /// 模拟 D3D11 `GetClientRect` 大于 WM_SIZE 事件尺寸。
+    struct ClientRectLargerContext {
+        width: i32,
+        height: i32,
+        bias_w: i32,
+        bias_h: i32,
+    }
+
+    impl IGraphicsContext for ClientRectLargerContext {
+        fn caps(&self) -> GraphicsContextCaps {
+            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, true, 1.0)
+        }
+
+        fn native_raster_caps(&self) -> NativeRasterCaps {
+            NativeRasterCaps::d3d11_full()
+        }
+
+        fn initialize(
+            &mut self,
+            _native_window: *mut std::ffi::c_void,
+            width: i32,
+            height: i32,
+        ) -> crate::core::Result<()> {
+            self.width = (width + self.bias_w).max(1);
+            self.height = (height + self.bias_h).max(1);
+            Ok(())
+        }
+
+        fn resize(&mut self, width: i32, height: i32) {
+            self.width = (width + self.bias_w).max(1);
+            self.height = (height + self.bias_h).max(1);
+        }
+
+        fn make_current(&mut self) {}
+        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn shutdown(&mut self) {}
+        fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
+            Vec::new()
+        }
+        fn width(&self) -> i32 {
+            self.width
+        }
+        fn height(&self) -> i32 {
+            self.height
+        }
+        fn clear_render_target(
+            &mut self,
+            _r: f32,
+            _g: f32,
+            _b: f32,
+            _a: f32,
+        ) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn present(&mut self, _frame: &PresentFrame) -> crate::core::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn native_gpu_resize_aligns_canvas_to_actual_gpu_client_size() {
+        let mut backend = NativeGpuBackend::new(Box::new(ClientRectLargerContext {
+            width: 800,
+            height: 600,
+            bias_w: 120,
+            bias_h: 80,
+        }))
+        .expect("backend");
+        backend.resize(800, 600).expect("resize");
+        assert_eq!(backend.width, 920);
+        assert_eq!(backend.height, 680);
+        assert_eq!(backend.surface.width, 920);
+        assert_eq!(backend.surface.height, 680);
+        let sz = backend.surface.canvas.surface_size();
+        assert_eq!((sz.w as i32, sz.h as i32), (920, 680));
+    }
+
     fn assert_soft_offset<F>(draw: F, hit: (usize, usize), miss: (usize, usize))
     where
         F: FnOnce(&mut NativeGpuCanvas2D),
@@ -1603,6 +1850,202 @@ mod tests {
                 .line_to(x1, y0)
                 .close();
         }
+    }
+
+    #[test]
+    fn native_gpu_backend_offscreen_follows_native_caps() {
+        let clear_calls = Rc::new(Cell::new(0));
+        let clear_rect_calls = Rc::new(Cell::new(0));
+        let draw_calls = Rc::new(Cell::new(0));
+        let stroke_calls = Rc::new(Cell::new(0));
+        let glyph_calls = Rc::new(Cell::new(0));
+        let linear_calls = Rc::new(Cell::new(0));
+        let radial_calls = Rc::new(Cell::new(0));
+        let mesh_calls = Rc::new(Cell::new(0));
+        let shadow_calls = Rc::new(Cell::new(0));
+        let blit_calls = Rc::new(Cell::new(0));
+        let upload_calls = Rc::new(Cell::new(0));
+        let present_calls = Rc::new(Cell::new(0));
+        let last_draw_count = Rc::new(Cell::new(0));
+        let last_stroke_count = Rc::new(Cell::new(0));
+        let last_glyph_count = Rc::new(Cell::new(0));
+        let last_linear_count = Rc::new(Cell::new(0));
+        let last_radial_count = Rc::new(Cell::new(0));
+        let last_mesh_count = Rc::new(Cell::new(0));
+        let last_shadow_count = Rc::new(Cell::new(0));
+        let mut backend = NativeGpuBackend::new(Box::new(fake_ctx(
+            &clear_calls,
+            &clear_rect_calls,
+            &draw_calls,
+            &stroke_calls,
+            &glyph_calls,
+            &linear_calls,
+            &radial_calls,
+            &mesh_calls,
+            &shadow_calls,
+            &blit_calls,
+            &upload_calls,
+            &present_calls,
+            &last_draw_count,
+            &last_stroke_count,
+            &last_glyph_count,
+            &last_linear_count,
+            &last_radial_count,
+            &last_mesh_count,
+            &last_shadow_count,
+        )))
+        .expect("backend");
+        assert!(
+            !backend.capabilities().offscreen,
+            "fake D3D11 must not advertise GPU offscreen without RT API"
+        );
+        assert!(backend.create_offscreen(8, 8).is_none());
+    }
+
+    #[test]
+    fn native_gpu_backend_gpu_offscreen_create_bind_blit() {
+        struct OffscreenFake {
+            next_id: Cell<u32>,
+            targets: RefCell<Vec<Option<(i32, i32)>>>,
+            bound: Cell<Option<u32>>,
+            blits: Rc<Cell<usize>>,
+            clears: Rc<Cell<usize>>,
+        }
+        impl IGraphicsContext for OffscreenFake {
+            fn caps(&self) -> GraphicsContextCaps {
+                GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+            }
+            fn native_raster_caps(&self) -> NativeRasterCaps {
+                NativeRasterCaps::d3d11_full()
+            }
+            fn initialize(
+                &mut self,
+                _: *mut std::ffi::c_void,
+                _: i32,
+                _: i32,
+            ) -> crate::core::Result<()> {
+                Ok(())
+            }
+            fn resize(&mut self, _: i32, _: i32) {}
+            fn make_current(&mut self) {}
+            fn swap_buffers(&mut self, _: PresentDamage) {}
+            fn shutdown(&mut self) {}
+            fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
+                Vec::new()
+            }
+            fn width(&self) -> i32 {
+                64
+            }
+            fn height(&self) -> i32 {
+                64
+            }
+            fn clear_render_target(&mut self, _: f32, _: f32, _: f32, _: f32) -> Result<(), Error> {
+                self.clears.set(self.clears.get() + 1);
+                Ok(())
+            }
+            fn draw_solid_rects(
+                &mut self,
+                _: f32,
+                _: f32,
+                _: Option<(i32, i32, i32, i32)>,
+                _: &[GpuSolidRect],
+            ) -> Result<(), Error> {
+                Ok(())
+            }
+            fn blit_soft_fallback(&mut self, _: &[u32], _: i32, _: i32) -> Result<(), Error> {
+                Ok(())
+            }
+            fn create_offscreen_target(
+                &mut self,
+                width: i32,
+                height: i32,
+            ) -> Result<OffscreenTargetId, Error> {
+                let id = self.next_id.get();
+                self.next_id.set(id + 1);
+                let mut targets = self.targets.borrow_mut();
+                while targets.len() <= id as usize {
+                    targets.push(None);
+                }
+                targets[id as usize] = Some((width, height));
+                Ok(OffscreenTargetId(id))
+            }
+            fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) {
+                if let Some(slot) = self.targets.borrow_mut().get_mut(id.0 as usize) {
+                    *slot = None;
+                }
+                if self.bound.get() == Some(id.0) {
+                    self.bound.set(None);
+                }
+            }
+            fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+                if self
+                    .targets
+                    .borrow()
+                    .get(id.0 as usize)
+                    .and_then(|t| t.as_ref())
+                    .is_none()
+                {
+                    return Err(Error::new(Errc::InvalidArgument, "unknown offscreen"));
+                }
+                self.bound.set(Some(id.0));
+                Ok(())
+            }
+            fn bind_swapchain_target(&mut self) -> Result<(), Error> {
+                self.bound.set(None);
+                Ok(())
+            }
+            fn blit_offscreen_target(
+                &mut self,
+                id: OffscreenTargetId,
+                _src: Rect,
+                _dst: Rect,
+            ) -> Result<(), Error> {
+                if self
+                    .targets
+                    .borrow()
+                    .get(id.0 as usize)
+                    .and_then(|t| t.as_ref())
+                    .is_none()
+                {
+                    return Err(Error::new(Errc::InvalidArgument, "unknown offscreen"));
+                }
+                self.blits.set(self.blits.get() + 1);
+                Ok(())
+            }
+        }
+
+        let clears = Rc::new(Cell::new(0));
+        let blits = Rc::new(Cell::new(0));
+        let fake = OffscreenFake {
+            next_id: Cell::new(0),
+            targets: RefCell::new(Vec::new()),
+            bound: Cell::new(None),
+            blits: Rc::clone(&blits),
+            clears: Rc::clone(&clears),
+        };
+        let mut backend = NativeGpuBackend::new(Box::new(fake)).expect("backend");
+        assert!(backend.capabilities().offscreen);
+
+        let handle = backend.create_offscreen(16, 16).expect("offscreen");
+        assert!(backend.begin_offscreen_paint(&handle));
+        assert_eq!(clears.get(), 1);
+        {
+            let canvas = backend.offscreen_canvas(&handle).expect("canvas");
+            canvas.fill_rect(
+                Rect::new(0.0, 0.0, 16.0, 16.0),
+                Color::from_rgb(10, 20, 30),
+                None,
+            );
+        }
+        backend.flush_offscreen_paint(&handle);
+        backend.end_offscreen_paint();
+        backend.blit_offscreen_src(
+            &handle,
+            Rect::new(0.0, 0.0, 16.0, 16.0),
+            Rect::new(1.0, 2.0, 16.0, 16.0),
+        );
+        assert_eq!(blits.get(), 1);
+        backend.destroy_offscreen(handle);
     }
 
     #[test]

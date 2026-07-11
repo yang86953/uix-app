@@ -16,7 +16,7 @@ use crate::draw::spatial::Orientation;
 use crate::draw::traits::GraphicsEngine;
 use crate::draw::FontHandle;
 
-/// 离屏创建连续失败上限（超过后本帧跳过栅格化，下帧 rebuild 重置）。
+/// 离屏创建连续失败上限（超过后放弃离屏、改走直绘；仅 WARN 一次）。
 const MAX_OFFSCREEN_RETRY: u8 = 8;
 
 /// 图层渲染环境（绘制资源，供 Picture 离屏路径复用）。
@@ -39,9 +39,7 @@ pub(crate) fn blit_picture_cache(
     h: i32,
 ) {
     let src = Rect::new(0.0, 0.0, w as f32, h as f32);
-    if let Some((pixels, pw)) = engine.copy_offscreen_pixels(handle) {
-        engine.canvas_2d().blit_image(&pixels, pw, src, *bounds);
-    }
+    engine.blit_offscreen_src(handle, src, *bounds);
 }
 
 /// 将脏 Picture 栅格化到离屏缓冲。
@@ -63,11 +61,15 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     // 嵌套 Picture 仍按屏幕脏区决定是否重栅格化；一旦进入栅格化则内部全量重绘。
     prepare_nested_pictures(engine, children, scene, paint_region, env);
 
+    // 已放弃：不再重试、不再刷 WARN（rebuild 会重置 retry_count）。
+    if *retry_count >= MAX_OFFSCREEN_RETRY {
+        return;
+    }
     if !ensure_offscreen(engine, offscreen_handle, w, h) {
         *retry_count = retry_count.saturating_add(1);
-        if *retry_count >= MAX_OFFSCREEN_RETRY {
+        if *retry_count == MAX_OFFSCREEN_RETRY {
             crate::core::log::warn_fn(format!(
-                "Picture 离屏创建失败已达 {MAX_OFFSCREEN_RETRY} 次，node_id={node_id}"
+                "Picture 离屏创建失败已达 {MAX_OFFSCREEN_RETRY} 次，改走直绘，node_id={node_id}"
             ));
         }
         return;
@@ -78,14 +80,11 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
         None => return,
     };
 
+    if !engine.begin_offscreen_paint(&handle) {
+        return;
+    }
+
     let nested_blits = collect_picture_blit_info(children, bounds);
-    let nested_pixels: Vec<(Rect, Vec<u32>, i32)> = nested_blits
-        .iter()
-        .filter_map(|(child_bounds, child_handle)| {
-            let (pixels, pw) = engine.copy_offscreen_pixels(child_handle)?;
-            Some((*child_bounds, pixels, pw))
-        })
-        .collect();
 
     let self_dirty = scene.node_dirty(node_id);
     let mut fresh_list = if self_dirty || display_list.is_none() {
@@ -97,10 +96,12 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
 
     {
         let Some(off_canvas) = engine.offscreen_canvas(&handle) else {
+            engine.end_offscreen_paint();
             return;
         };
         // 离屏缓冲整块清透明后，必须完整重绘子树；不可沿用屏幕 dirty_region 剪枝，
         // 否则悬停窄标脏时未相交的兄弟节点（侧栏其它项）会永久消失。
+        // GPU begin_offscreen_paint 已 Clear RT；CPU 仍用 fill 清像素。
         let full_offscreen = DirtyRegion::full();
         off_canvas.fill_rect(
             Rect::new(0.0, 0.0, w as f32, h as f32),
@@ -132,17 +133,22 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             // 屏幕 dirty 仅用于主表面剪枝；离屏已全清，子树必须完整重绘
             render_non_picture_subtree(children, &mut off_ctx, scene, &full_offscreen);
         }
-        for (child_bounds, pixels, pw) in nested_pixels {
-            let local = Rect::new(
-                child_bounds.x - bounds.x,
-                child_bounds.y - bounds.y,
-                child_bounds.w,
-                child_bounds.h,
-            );
-            let src = Rect::new(0.0, 0.0, child_bounds.w, child_bounds.h);
-            off_ctx.canvas_2d().blit_image(&pixels, pw, src, local);
-        }
     }
+
+    engine.flush_offscreen_paint(&handle);
+
+    for (child_bounds, child_handle) in nested_blits {
+        let local = Rect::new(
+            child_bounds.x - bounds.x,
+            child_bounds.y - bounds.y,
+            child_bounds.w,
+            child_bounds.h,
+        );
+        let src = Rect::new(0.0, 0.0, child_bounds.w, child_bounds.h);
+        engine.blit_offscreen_src(&child_handle, src, local);
+    }
+
+    engine.end_offscreen_paint();
 
     if let Some(list) = fresh_list {
         *display_list = fresh_list_complete.then_some(list);

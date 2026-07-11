@@ -420,15 +420,22 @@ impl Container {
         let bh = self.style.border_width.horizontal();
         let bv = self.style.border_width.vertical();
         let cached = self.cached_content_size.get();
+        // flex_grow 子项必须以 0 为 basis，让父级分配确定空间；
+        // 否则窗口缩小后仍用上一轮 cached 内容高/宽，ScrollView 视口被撑满 → 无滚动条。
+        let grow = self.style.flex_grow > 0.0;
         let effective_w = self.style.width.unwrap_or_else(|| {
-            if cached.w > 0.0 {
+            if grow {
+                0.0
+            } else if cached.w > 0.0 {
                 cached.w + self.style.padding.horizontal()
             } else {
                 0.0
             }
         });
         let effective_h = self.style.height.unwrap_or_else(|| {
-            if cached.h > 0.0 {
+            if grow {
+                0.0
+            } else if cached.h > 0.0 {
                 cached.h + self.style.padding.vertical()
             } else {
                 0.0

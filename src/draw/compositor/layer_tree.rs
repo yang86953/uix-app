@@ -190,9 +190,11 @@ impl LayerTree {
     /// 自动复用已缓存离屏缓冲——按 node_id 匹配旧 Picture 节点。
     /// 子节点按 z_index 预排序，渲染时无需再排序（#97）。
     ///
+    /// `supports_offscreen`：引擎无离屏能力时不提升为 Picture（避免每帧 create 失败刷 WARN）。
+    ///
     /// 注意：build 后未复用的旧离屏缓冲句柄暂存在 `orphaned_handles` 中，
     /// 调用者需在合适的时机调用 `sweep_orphaned_offscreens` 释放。
-    pub fn build(&mut self, scene: &impl ScenePaint) {
+    pub fn build(&mut self, scene: &impl ScenePaint, supports_offscreen: bool) {
         // 收集旧 Picture 节点的离屏缓冲与 DisplayList（按 node_id 索引）
         let mut old_cache: std::collections::HashMap<
             NodeId,
@@ -202,9 +204,9 @@ impl LayerTree {
             Self::collect_picture_handles(root, &mut old_cache);
         }
 
-        self.root = scene
-            .root_id()
-            .and_then(|root_id| Self::build_node_cached(scene, root_id, 0, &old_cache));
+        self.root = scene.root_id().and_then(|root_id| {
+            Self::build_node_cached(scene, root_id, 0, &old_cache, supports_offscreen)
+        });
 
         // 收集未复用的旧句柄（需要在引擎上下文中释放）
         self.orphaned_handles.clear();
@@ -369,6 +371,7 @@ impl LayerTree {
         id: NodeId,
         depth: usize,
         cache: &std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
+        supports_offscreen: bool,
     ) -> Option<LayerNode> {
         if !scene.node_visible(id) {
             return None;
@@ -377,7 +380,7 @@ impl LayerTree {
 
         let stats = Self::picture_subtree_stats(scene, id);
 
-        if stats.eligible() {
+        if supports_offscreen && stats.eligible() {
             // frame 是绝对坐标，直接用作 bounds
             let bounds = frame;
             // 检查旧缓存：如果 bounds 相同，复用离屏句柄
@@ -391,7 +394,7 @@ impl LayerTree {
                     }
                 })
                 .unwrap_or((None, None));
-            let children = Self::build_children_cached(scene, id, depth, cache);
+            let children = Self::build_children_cached(scene, id, depth, cache, supports_offscreen);
             Some(LayerNode::Picture {
                 node_id: id,
                 bounds,
@@ -406,14 +409,14 @@ impl LayerTree {
         } else if let Some(clip) = scene.children_clip(id, frame) {
             // clip 由 children_clip 基于 frame（绝对坐标）计算，直接使用
             let adj = Rect::new(clip.x, clip.y, clip.w, clip.h);
-            let children = Self::build_children_cached(scene, id, depth, cache);
+            let children = Self::build_children_cached(scene, id, depth, cache, supports_offscreen);
             Some(LayerNode::ClipRect {
                 node_id: id,
                 rect: adj,
                 children,
             })
         } else {
-            let children = Self::build_children_cached(scene, id, depth, cache);
+            let children = Self::build_children_cached(scene, id, depth, cache, supports_offscreen);
             Some(LayerNode::Direct {
                 node_id: id,
                 children,
@@ -457,12 +460,15 @@ impl LayerTree {
         id: NodeId,
         depth: usize,
         cache: &std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
+        supports_offscreen: bool,
     ) -> Vec<LayerNode> {
         let mut children: Vec<LayerNode> = scene
             .node_children(id)
             .iter()
             .copied()
-            .filter_map(|cid| Self::build_node_cached(scene, cid, depth + 1, cache))
+            .filter_map(|cid| {
+                Self::build_node_cached(scene, cid, depth + 1, cache, supports_offscreen)
+            })
             .collect();
         // 预排序：render 时无需再排序
         children.sort_by_key(|child| scene.node_z_index(child.node_id()));
@@ -478,22 +484,43 @@ impl LayerTree {
         match node {
             LayerNode::Picture {
                 node_id,
+                bounds,
                 is_dirty,
                 children,
                 ..
             } => {
+                // 窗口放大后若未 rebuild，仍须刷新 bounds，否则离屏/blit 卡在旧几何。
+                let frame = scene.node_frame(*node_id);
+                if *bounds != frame {
+                    *bounds = frame;
+                    *is_dirty = true;
+                }
                 // Picture 自身脏标记 + 子节点传播的脏标记
                 let self_dirty = scene.node_dirty(*node_id);
                 let child_dirty = children
                     .iter_mut()
                     .any(|child| Self::update_dirty_node(child, scene));
-                *is_dirty = self_dirty || child_dirty;
+                *is_dirty = *is_dirty || self_dirty || child_dirty;
                 *is_dirty
             }
             LayerNode::ClipRect {
-                node_id, children, ..
+                node_id,
+                rect,
+                children,
+            } => {
+                let frame = scene.node_frame(*node_id);
+                if let Some(clip) = scene.children_clip(*node_id, frame) {
+                    if *rect != clip {
+                        *rect = clip;
+                    }
+                }
+                let self_dirty = scene.node_dirty(*node_id);
+                let child_dirty = children
+                    .iter_mut()
+                    .any(|child| Self::update_dirty_node(child, scene));
+                self_dirty || child_dirty
             }
-            | LayerNode::Direct {
+            LayerNode::Direct {
                 node_id, children, ..
             } => {
                 // 检查自身 dirty + 子节点传播的脏标记
@@ -855,7 +882,7 @@ mod tests {
 
         fn build_layer_tree(&self) -> LayerTree {
             let mut tree = LayerTree::new();
-            tree.build(self);
+            tree.build(self, true);
             tree
         }
     }
@@ -946,6 +973,18 @@ mod tests {
         }
 
         fn paint(&self, _id: NodeId, _frame: Rect, _ctx: &mut PaintContext<'_>) {}
+    }
+
+    #[test]
+    fn eligible_subtree_stays_direct_without_offscreen_support() {
+        let scene = TestScene::static_tree(8);
+        let mut tree = LayerTree::new();
+        tree.build(&scene, false);
+
+        assert!(matches!(
+            tree.root_node(),
+            Some(LayerNode::Direct { node_id, .. }) if *node_id == NodeId::new(1)
+        ));
     }
 
     #[test]

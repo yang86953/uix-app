@@ -106,6 +106,20 @@ void main() {
 }
 "#;
 
+/// FBO / native GL 纹理合成（无 BGRA swizzle）。
+pub const BLIT_RGBA_FRAG: &str = r#"#version 300 es
+precision highp float;
+
+in vec2 v_uv;
+uniform sampler2D u_tex;
+
+out vec4 fragColor;
+
+void main() {
+    fragColor = texture(u_tex, v_uv);
+}
+"#;
+
 /// 全屏 quad 的顶点着色器（用于模糊 pass / CPU 回退合成）
 pub const FULLSCREEN_VERT: &str = r#"#version 300 es
 precision highp float;

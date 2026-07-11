@@ -35,7 +35,7 @@ use ::windows::Win32::Graphics::Direct3D11::{
     D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
     D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA,
     D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT,
-    D3D11_USAGE_DYNAMIC,
+    D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
@@ -2173,6 +2173,63 @@ impl D3d11Pipeline {
             context.Draw(6, 0);
             // Unbind SRV so the texture can be updated next frame.
             context.PSSetShaderResources(0, Some(&[None]));
+        }
+        Ok(())
+    }
+
+    /// Stretch-sample `srv` into `dst` on the current RT (full texture → dst rect).
+    ///
+    /// Sets a temporary viewport to `dst` and draws the fullscreen blit quad so the
+    /// entire SRV covers that rect. Caller must not have `srv`'s texture bound as RTV.
+    pub fn blit_srv_to_rect(
+        &self,
+        context: &ID3D11DeviceContext,
+        srv: &ID3D11ShaderResourceView,
+        target_w: f32,
+        target_h: f32,
+        dst: crate::core::Rect,
+    ) -> Result<()> {
+        if dst.w <= 0.0 || dst.h <= 0.0 || target_w <= 0.0 || target_h <= 0.0 {
+            return Ok(());
+        }
+        let vp = D3D11_VIEWPORT {
+            TopLeftX: dst.x,
+            TopLeftY: dst.y,
+            Width: dst.w.max(0.0),
+            Height: dst.h.max(0.0),
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
+        };
+        let restore = D3D11_VIEWPORT {
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: target_w,
+            Height: target_h,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
+        };
+        unsafe {
+            context.RSSetViewports(Some(&[vp]));
+            let stride = (2 * size_of::<f32>()) as u32;
+            let offset = 0u32;
+            context.IASetInputLayout(&self.layout);
+            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            context.IASetVertexBuffers(
+                0,
+                1,
+                Some(&Some(self.vb_fullscreen.clone())),
+                Some(&stride),
+                Some(&offset),
+            );
+            context.VSSetShader(&self.vs_blit, None);
+            context.PSSetShader(&self.ps_blit, None);
+            context.PSSetShaderResources(0, Some(&[Some(srv.clone())]));
+            context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+            context.RSSetState(&self.rasterizer);
+            context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+            context.Draw(6, 0);
+            context.PSSetShaderResources(0, Some(&[None]));
+            context.RSSetViewports(Some(&[restore]));
         }
         Ok(())
     }

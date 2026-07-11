@@ -400,10 +400,10 @@ impl WidgetTree {
                 };
                 let parent_cap_w = parent_frame
                     .filter(|_| !scrolls_horizontally)
-                    .map(|pf| (pf.x + pf.w - old_frame.x).max(old_frame.w));
+                    .map(|pf| (pf.x + pf.w - old_frame.x).max(0.0));
                 let parent_cap_h = parent_frame
                     .filter(|_| !scrolls_vertically)
-                    .map(|pf| (pf.y + pf.h - old_frame.y).max(old_frame.h));
+                    .map(|pf| (pf.y + pf.h - old_frame.y).max(0.0));
                 let mut effective_w = new_w.max(node_frame.w);
                 let mut effective_h = new_h.max(node_frame.h);
                 if let Some(cap) = parent_cap_w {

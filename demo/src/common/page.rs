@@ -151,7 +151,7 @@ impl<'a> PageBuilder<'a> {
 
     pub fn build(mut self) -> ViewNode {
         self.flush_section();
-        // 默认 AlignItems::Stretch：内容列宽 = ScrollView 非滚动轴（随窗口）。
+        // Both：纵向滚动为主；固定宽行溢出时出横向条。宽窗下内容列仍拉满视口。
         scroll(
             column_fit(self.items)
                 .gap(16.0)
@@ -160,6 +160,7 @@ impl<'a> PageBuilder<'a> {
                 // shrink，会为了匹配 viewport 而把后续演示项压缩到 0 高度。
                 .overflow_content(),
         )
+        .both()
         .flex_grow(1.0)
         .build()
     }

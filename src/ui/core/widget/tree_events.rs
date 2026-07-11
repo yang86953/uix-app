@@ -584,12 +584,15 @@ impl WidgetTree {
         }
     }
 
-    /// 计算从目标到根路径上所有 ScrollView 的累计滚动偏移。
+    /// 计算目标**祖先**链上所有 ScrollView 的累计滚动偏移。
+    ///
+    /// 从 parent 起算：目标自身若是 ScrollView，其 viewport 偏移只作用于子内容坐标，
+    /// 不应补偿到滑块命中/拖动（滑块在视口 gutter，非内容坐标系）。
     pub(crate) fn cumulative_scroll_offset(&self, target: WidgetId) -> Option<(f32, f32)> {
         let mut sx = 0.0f32;
         let mut sy = 0.0f32;
         let mut found = false;
-        let mut current = Some(target);
+        let mut current = self.get(target).and_then(|n| n.parent());
         while let Some(id) = current {
             if let Some((ox, oy)) = Self::get_scroll_offset(self, id) {
                 sx += ox;

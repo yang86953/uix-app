@@ -187,7 +187,25 @@ fn sync_root_frame_does_not_overwrite_valid_root() {
     assert_eq!(
         root.frame(),
         Rect::new(0.0, 0.0, 1000.0, 800.0),
-        "valid root must not be overwritten by engine size"
+        "valid root must not be shrunk by a lagging smaller engine size"
+    );
+}
+
+#[test]
+fn sync_root_frame_grows_stale_root_to_larger_engine() {
+    let mut tree = WidgetTree::new();
+    let rid = tree.set_root(Box::new(Container::new()));
+    if let Some(root) = tree.get_mut(rid) {
+        root.set_frame(Rect::new(0.0, 0.0, 800.0, 600.0));
+    }
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(1200, 900).expect("init");
+    sync_root_frame_to_engine(&mut tree, &mut engine);
+    let root = tree.get(rid).unwrap();
+    assert_eq!(
+        root.frame(),
+        Rect::new(0.0, 0.0, 1200.0, 900.0),
+        "stale root must grow when engine/swapchain already enlarged"
     );
 }
 

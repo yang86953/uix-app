@@ -129,4 +129,53 @@ impl GraphicsEngine for GpuEngine {
     fn device_pixel_ratio(&self) -> f32 {
         self.session.backend().device_pixel_ratio()
     }
+
+    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<crate::draw::ImageHandle> {
+        self.session.backend_mut().create_offscreen(width, height)
+    }
+
+    fn destroy_offscreen(&mut self, handle: crate::draw::ImageHandle) {
+        self.session.backend_mut().destroy_offscreen(handle);
+    }
+
+    fn offscreen_canvas(
+        &mut self,
+        handle: &crate::draw::ImageHandle,
+    ) -> Option<&mut dyn Canvas2D> {
+        self.session.backend_mut().offscreen_canvas(handle)
+    }
+
+    fn copy_offscreen_pixels(
+        &self,
+        handle: &crate::draw::ImageHandle,
+    ) -> Option<(Vec<u32>, i32)> {
+        self.session.backend().copy_offscreen_pixels(handle)
+    }
+
+    fn begin_offscreen_paint(&mut self, handle: &crate::draw::ImageHandle) -> bool {
+        self.session.backend_mut().begin_offscreen_paint(handle)
+    }
+
+    fn flush_offscreen_paint(&mut self, handle: &crate::draw::ImageHandle) {
+        self.session.backend_mut().flush_offscreen_paint(handle);
+    }
+
+    fn end_offscreen_paint(&mut self) {
+        self.session.backend_mut().end_offscreen_paint();
+    }
+
+    fn blit_offscreen(&mut self, handle: &crate::draw::ImageHandle, dst_rect: crate::core::Rect) {
+        self.session.backend_mut().blit_offscreen(handle, dst_rect);
+    }
+
+    fn blit_offscreen_src(
+        &mut self,
+        handle: &crate::draw::ImageHandle,
+        src_rect: crate::core::Rect,
+        dst_rect: crate::core::Rect,
+    ) {
+        self.session
+            .backend_mut()
+            .blit_offscreen_src(handle, src_rect, dst_rect);
+    }
 }

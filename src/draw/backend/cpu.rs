@@ -3,6 +3,7 @@
 use crate::core::{Error, Point, Rect};
 
 use crate::core::DamageRegion;
+use crate::draw::backend::offscreen_pool::CpuOffscreenPool;
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
@@ -74,10 +75,8 @@ pub struct CpuBackend {
     height: i32,
     clear_color: Color,
     main: CpuDrawSurface,
-    offscreens: Vec<Option<CpuCanvas2D>>,
-    /// Freed handle ids available for reuse (#105 — avoid unbounded Vec growth).
-    free_offscreen_ids: Vec<u32>,
-    next_offscreen_id: u32,
+    offscreens: CpuOffscreenPool,
+    active_offscreen: Option<u32>,
 }
 
 impl CpuBackend {
@@ -87,9 +86,8 @@ impl CpuBackend {
             height: 0,
             clear_color: Color::from_rgba(0, 0, 0, 0),
             main: CpuDrawSurface::new(1, 1),
-            offscreens: Vec::new(),
-            free_offscreen_ids: Vec::new(),
-            next_offscreen_id: 0,
+            offscreens: CpuOffscreenPool::new(),
+            active_offscreen: None,
         }
     }
 
@@ -115,31 +113,28 @@ impl CpuBackend {
     }
 
     fn blit_offscreen_impl(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
-        let idx = handle.0 as usize;
-        if idx >= self.offscreens.len() {
+        let Some(offscreen_canvas) = self.offscreens.get(handle) else {
             return;
-        }
-        if let Some(ref offscreen_canvas) = self.offscreens[idx] {
-            let surf = offscreen_canvas.surface();
-            let src_pixels = surf.pixels();
-            let src_w = surf.width();
-            let main = self.main.canvas_mut();
-            let size = main.width();
-            let h = main.height();
-            let clip = main.current_clip();
-            let opacity = main.opacity();
-            blit_image(
-                main.pixels_mut(),
-                size,
-                h,
-                clip,
-                opacity,
-                src_pixels,
-                src_w,
-                src_rect,
-                dst_rect,
-            );
-        }
+        };
+        let surf = offscreen_canvas.surface();
+        let src_pixels = surf.pixels();
+        let src_w = surf.width();
+        let main = self.main.canvas_mut();
+        let size = main.width();
+        let h = main.height();
+        let clip = main.current_clip();
+        let opacity = main.opacity();
+        blit_image(
+            main.pixels_mut(),
+            size,
+            h,
+            clip,
+            opacity,
+            src_pixels,
+            src_w,
+            src_rect,
+            dst_rect,
+        );
     }
 }
 
@@ -169,9 +164,8 @@ impl RenderBackend for CpuBackend {
         self.width = 0;
         self.height = 0;
         self.main = CpuDrawSurface::new(1, 1);
+        self.active_offscreen = None;
         self.offscreens.clear();
-        self.free_offscreen_ids.clear();
-        self.next_offscreen_id = 0;
     }
 
     fn surface(&mut self) -> &mut dyn DrawSurface {
@@ -179,40 +173,63 @@ impl RenderBackend for CpuBackend {
     }
 
     fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
-        if width <= 0 || height <= 0 {
-            return None;
-        }
-        let id = if let Some(id) = self.free_offscreen_ids.pop() {
-            id
-        } else {
-            let id = self.next_offscreen_id;
-            self.next_offscreen_id = self.next_offscreen_id.saturating_add(1);
-            id
-        };
-        let idx = id as usize;
-        while self.offscreens.len() <= idx {
-            self.offscreens.push(None);
-        }
-        let canvas = CpuCanvas2D::new(PixelSurface::new(width, height));
-        self.offscreens[idx] = Some(canvas);
-        Some(ImageHandle(id))
+        self.offscreens.create(width, height)
     }
 
     fn destroy_offscreen(&mut self, handle: ImageHandle) {
-        let idx = handle.0 as usize;
-        if idx < self.offscreens.len() && self.offscreens[idx].take().is_some() {
-            self.free_offscreen_ids.push(handle.0);
+        if self.active_offscreen == Some(handle.0) {
+            self.active_offscreen = None;
         }
+        self.offscreens.destroy(handle);
     }
 
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
-        let idx = handle.0 as usize;
-        if idx < self.offscreens.len() {
-            if let Some(ref mut canvas) = self.offscreens[idx] {
-                return Some(canvas as &mut dyn Canvas2D);
-            }
+        self.offscreens.canvas_mut(handle)
+    }
+
+    fn copy_offscreen_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
+        self.offscreens.copy_pixels(handle)
+    }
+
+    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        if self.offscreens.get(handle).is_some() {
+            self.active_offscreen = Some(handle.0);
+            true
+        } else {
+            false
         }
-        None
+    }
+
+    fn flush_offscreen_paint(&mut self, _handle: &ImageHandle) {}
+
+    fn end_offscreen_paint(&mut self) {
+        self.active_offscreen = None;
+    }
+
+    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
+        let Some(offscreen_canvas) = self.offscreens.get(handle) else {
+            return;
+        };
+        let surf = offscreen_canvas.surface();
+        let src_rect = Rect::new(0.0, 0.0, surf.width() as f32, surf.height() as f32);
+        self.blit_offscreen_src(handle, src_rect, dst_rect);
+    }
+
+    fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
+        if let Some(dst_id) = self.active_offscreen {
+            if dst_id == handle.0 {
+                return;
+            }
+            let Some((pixels, pw)) = self.offscreens.copy_pixels(handle) else {
+                return;
+            };
+            let dst_handle = ImageHandle(dst_id);
+            if let Some(dst_canvas) = self.offscreens.canvas_mut(&dst_handle) {
+                dst_canvas.blit_image(&pixels, pw, src_rect, dst_rect);
+            }
+            return;
+        }
+        self.blit_offscreen_impl(handle, src_rect, dst_rect);
     }
 
     fn present(&mut self, _damage: &DamageRegion) -> Result<(), Error> {
@@ -230,19 +247,11 @@ impl RenderBackend for CpuBackend {
 
 impl CpuBackend {
     pub fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
-        let idx = handle.0 as usize;
-        if idx >= self.offscreens.len() {
-            return;
-        }
-        if let Some(ref offscreen_canvas) = self.offscreens[idx] {
-            let surf = offscreen_canvas.surface();
-            let src_rect = Rect::new(0.0, 0.0, surf.width() as f32, surf.height() as f32);
-            self.blit_offscreen_impl(handle, src_rect, dst_rect);
-        }
+        RenderBackend::blit_offscreen(self, handle, dst_rect);
     }
 
     pub fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
-        self.blit_offscreen_impl(handle, src_rect, dst_rect);
+        RenderBackend::blit_offscreen_src(self, handle, src_rect, dst_rect);
     }
 
     /// 将离屏缓冲内容 blit 到任意 Canvas2D（支持嵌套 Picture 合成）。
@@ -253,38 +262,22 @@ impl CpuBackend {
         dst_rect: Rect,
         canvas: &mut dyn crate::draw::traits::Canvas2D,
     ) {
-        let idx = handle.0 as usize;
-        if idx >= self.offscreens.len() {
+        let Some(offscreen_canvas) = self.offscreens.get(handle) else {
             return;
-        }
-        if let Some(ref offscreen_canvas) = self.offscreens[idx] {
-            let surf = offscreen_canvas.surface();
-            canvas.blit_image(surf.pixels(), surf.width(), src_rect, dst_rect);
-        }
+        };
+        let surf = offscreen_canvas.surface();
+        canvas.blit_image(surf.pixels(), surf.width(), src_rect, dst_rect);
     }
 
     /// 复制离屏像素（避免与 offscreen_canvas 可变借用冲突）。
     pub fn copy_offscreen_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
-        let idx = handle.0 as usize;
-        let canvas = self.offscreens.get(idx)?.as_ref()?;
-        let surf = canvas.surface();
-        Some((surf.pixels().to_vec(), surf.width()))
+        self.offscreens.copy_pixels(handle)
     }
 
     pub fn memory_usage(&self) -> usize {
         let surf = self.main.surface();
         let main_bytes = (surf.width() * surf.height() * 4) as usize;
-        let offscreen_bytes: usize = self
-            .offscreens
-            .iter()
-            .filter_map(|o| {
-                o.as_ref().map(|c| {
-                    let s = c.surface();
-                    (s.width() * s.height() * 4) as usize
-                })
-            })
-            .sum();
-        main_bytes + offscreen_bytes
+        main_bytes + self.offscreens.memory_usage()
     }
 }
 
@@ -303,7 +296,11 @@ mod tests {
         backend.destroy_offscreen(a);
         let c = backend.create_offscreen(8, 8).expect("c");
         assert_eq!(c.0, a.0, "destroyed id must be reused");
-        assert_eq!(backend.offscreens.len(), 2, "slot vec must not grow on reuse");
+        assert_eq!(
+            backend.offscreens.slot_len(),
+            2,
+            "slot vec must not grow on reuse"
+        );
         backend.destroy_offscreen(b);
         backend.destroy_offscreen(c);
     }

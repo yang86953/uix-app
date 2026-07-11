@@ -492,6 +492,74 @@ fn scrollview_both_direction_allows_both_axes_to_overflow() {
     assert_eq!(both_sv.max_scroll_y(), 220.0);
 }
 
+#[test]
+fn scrollview_both_shows_horizontal_scrollbar_when_content_wider() {
+    let mut tree = WidgetTree::new();
+    let both = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Both).size(120.0, 200.0),
+    ));
+    tree.add_child(
+        both,
+        Box::new(FixedWidget {
+            size: Size::new(400.0, 80.0),
+            id: ComponentId::new(30),
+        }),
+    );
+    tree.layout();
+
+    let frame = Rect::new(0.0, 0.0, 120.0, 200.0);
+    let both_sv: &ScrollView = tree
+        .get(both)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert!(
+        both_sv.max_scroll_x() > 0.0,
+        "wide content must enable horizontal scroll, max_x={}",
+        both_sv.max_scroll_x()
+    );
+    assert!(
+        both_sv.needs_h_scrollbar(frame, &[]),
+        "Both ScrollView must reserve/show horizontal scrollbar when content overflows X"
+    );
+}
+
+#[test]
+fn scrollview_both_stretches_narrow_content_to_viewport_width() {
+    let mut tree = WidgetTree::new();
+    let both = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Both).size(200.0, 120.0),
+    ));
+    tree.add_child(
+        both,
+        Box::new(FixedWidget {
+            size: Size::new(80.0, 40.0),
+            id: ComponentId::new(31),
+        }),
+    );
+    tree.layout();
+
+    let child = tree.get(both).unwrap().children()[0];
+    let child_frame = tree.get(child).unwrap().frame();
+    // No overflow → no gutters; child must fill viewport width (not stay at natural 80).
+    assert_eq!(
+        child_frame,
+        Rect::new(0.0, 0.0, 200.0, 40.0),
+        "Both must stretch narrow content to viewport width"
+    );
+    let both_sv: &ScrollView = tree
+        .get(both)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert_eq!(both_sv.max_scroll_x(), 0.0);
+    assert_eq!(both_sv.max_scroll_y(), 0.0);
+}
+
 fn assert_nested_content_axis_caps(
     direction: ScrollDirection,
     expected_frame: Rect,
@@ -776,6 +844,212 @@ fn scrollview_scrollbar_drag_registers_composite_scroll_strip() {
     let dirty = tree.dirty_region();
     assert!(!dirty.full_frame);
     assert_eq!(dirty.rects(), &[Rect::new(0.0, 200.0 - dy, 300.0, dy)]);
+}
+
+#[test]
+fn scrollview_thumb_drag_preserves_grab_offset_no_jump() {
+    let mut tree = WidgetTree::new();
+    let sv_id = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(300.0, 200.0),
+    ));
+    tree.add_child(
+        sv_id,
+        Box::new(FixedWidget {
+            size: Size::new(300.0, 800.0),
+            id: ComponentId::new(1),
+        }),
+    );
+    tree.layout();
+
+    let frame = Rect::new(0.0, 0.0, 300.0, 200.0);
+    {
+        let sv = tree
+            .get_mut(sv_id)
+            .unwrap()
+            .component_mut()
+            .as_any_mut()
+            .downcast_mut::<ScrollView>()
+            .unwrap();
+        sv.last_frame.set(Some(frame));
+        sv.set_scroll_y(200.0);
+    }
+
+    let (thumb, scroll_before, max_y) = {
+        let sv = tree
+            .get(sv_id)
+            .unwrap()
+            .component()
+            .as_any()
+            .downcast_ref::<ScrollView>()
+            .unwrap();
+        let max_y = sv.max_scroll_y();
+        let thumb = ScrollBar::new(ScrollbarOrientation::Vertical)
+            .thumb_rect_rel(frame, sv.scroll_y(), max_y)
+            .expect("thumb");
+        (thumb, sv.scroll_y(), max_y)
+    };
+    assert!(max_y > 100.0);
+    // Grab near the bottom of the thumb — without grab offset this would jump hard.
+    let grab = Point::new(thumb.x + thumb.w * 0.5, thumb.y + thumb.h * 0.85);
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: grab,
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let move_by = 6.0;
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(grab.x, grab.y + move_by),
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let scroll_after = tree
+        .get(sv_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .unwrap()
+        .scroll_y();
+    let delta = scroll_after - scroll_before;
+    // Track usable ≈ 200 - thumb_h; 6px pointer move → small scroll fraction of max_y.
+    assert!(
+        delta > 0.0 && delta < max_y * 0.15,
+        "thumb should follow grab (small move → small scroll), before={scroll_before} after={scroll_after} max={max_y}"
+    );
+}
+
+#[test]
+fn scrollview_gutter_hit_targets_scrollbar_not_overflowing_content() {
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(
+        Container::new()
+            .dir(FlexDirection::Column)
+            .size(500.0, 400.0),
+    ));
+    let sv_id = tree.add_child(
+        root,
+        Box::new(ScrollView::new(ScrollDirection::Both).size(300.0, 200.0)),
+    );
+    tree.add_child(
+        sv_id,
+        Box::new(FixedWidget {
+            // 宽/高均超出视口：内容 frame 会盖住 gutter 区域（内容坐标）。
+            size: Size::new(600.0, 600.0),
+            id: ComponentId::new(1),
+        }),
+    );
+    tree.layout();
+
+    let sv_frame = tree.get(sv_id).unwrap().frame();
+    tree.get_mut(sv_id)
+        .unwrap()
+        .component_mut()
+        .as_any_mut()
+        .downcast_mut::<ScrollView>()
+        .unwrap()
+        .last_frame
+        .set(Some(sv_frame));
+
+    // 纵向滑块约在 gutter 顶部
+    let v_thumb_x = sv_frame.x + sv_frame.w - ScrollBar::gutter() / 2.0;
+    let v_thumb_y = sv_frame.y + 12.0;
+    assert_eq!(
+        tree.hit_test(Point::new(v_thumb_x, v_thumb_y)),
+        Some(sv_id),
+        "vertical gutter must hit ScrollView, not overflowing content child"
+    );
+
+    // 横向滑块约在 gutter 左侧
+    let h_thumb_x = sv_frame.x + 20.0;
+    let h_thumb_y = sv_frame.y + sv_frame.h - ScrollBar::gutter() / 2.0;
+    assert_eq!(
+        tree.hit_test(Point::new(h_thumb_x, h_thumb_y)),
+        Some(sv_id),
+        "horizontal gutter must hit ScrollView, not overflowing content child"
+    );
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(v_thumb_x, v_thumb_y),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let before_y = tree
+        .get(sv_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .unwrap()
+        .scroll_y();
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(v_thumb_x, v_thumb_y + 40.0),
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let after_y = tree
+        .get(sv_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .unwrap()
+        .scroll_y();
+    assert!(
+        after_y > before_y + 1.0,
+        "vertical thumb drag must change scroll_y ({before_y} → {after_y})"
+    );
+
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos: Point::new(v_thumb_x, v_thumb_y + 40.0),
+        button: crate::ui::MouseButton::Left,
+        mods: crate::native::traits::input::KeyMod::NONE,
+    });
+
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(h_thumb_x, h_thumb_y),
+            button: crate::ui::MouseButton::Left,
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let before_x = tree
+        .get(sv_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .unwrap()
+        .scroll_x();
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(h_thumb_x + 50.0, h_thumb_y),
+            mods: crate::native::traits::input::KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let after_x = tree
+        .get(sv_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .unwrap()
+        .scroll_x();
+    assert!(
+        after_x > before_x + 1.0,
+        "horizontal thumb drag must change scroll_x ({before_x} → {after_x})"
+    );
 }
 
 #[test]

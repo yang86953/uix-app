@@ -24,6 +24,9 @@ pub struct ScrollBar {
     pub hover: bool,
     /// Which axis this scrollbar controls.
     pub orientation: ScrollbarOrientation,
+    /// Pointer offset from thumb leading edge along the scroll axis (relative coords).
+    /// Kept while [`Self::dragging`] so the thumb follows the grab point, not jumps.
+    drag_grab: f32,
 }
 
 impl ScrollBar {
@@ -45,6 +48,7 @@ impl ScrollBar {
             dragging: false,
             hover: false,
             orientation,
+            drag_grab: 0.0,
         }
     }
 
@@ -159,11 +163,32 @@ impl ScrollBar {
 
     // ── Drag calculation ────────────────────────────────────────────────────
 
+    /// Start a thumb drag at `pos` (relative to viewport), remembering the grab
+    /// offset inside the thumb so subsequent moves do not jump.
+    pub fn begin_drag(&mut self, frame: Rect, pos: Point, scroll: f32, max_scroll: f32) {
+        self.dragging = true;
+        self.drag_grab = self
+            .thumb_rect_rel(frame, scroll, max_scroll)
+            .map(|thumb| match self.orientation {
+                ScrollbarOrientation::Vertical => pos.y - thumb.y,
+                ScrollbarOrientation::Horizontal => pos.x - thumb.x,
+            })
+            .unwrap_or(0.0);
+    }
+
+    /// End an active thumb drag.
+    pub fn end_drag(&mut self) {
+        self.dragging = false;
+        self.drag_grab = 0.0;
+    }
+
     /// Compute the new scroll value from a drag position in **relative**
     /// coordinates.
     ///
     /// `axis_pos` is the mouse coordinate along the scroll axis
     /// (e.g. `pos.y` for vertical, `pos.x` for horizontal).
+    /// Uses [`Self::drag_grab`] from [`Self::begin_drag`] so the thumb tracks
+    /// the grab point instead of snapping its leading edge to the pointer.
     pub fn scroll_from_drag(
         &self,
         frame: Rect,
@@ -185,7 +210,8 @@ impl ScrollBar {
         if usable <= 0.0 {
             return scroll;
         }
-        ((axis_pos - track_start) / usable).clamp(0.0, 1.0) * max_scroll
+        let thumb_leading = axis_pos - self.drag_grab;
+        ((thumb_leading - track_start) / usable).clamp(0.0, 1.0) * max_scroll
     }
 
     // ── Rendering ───────────────────────────────────────────────────────────
