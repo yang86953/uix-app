@@ -41,6 +41,11 @@ pub fn blit_image(
     let dy = dst_rect.y as i32;
     let dw = dst_rect.w as i32;
     let dh = dst_rect.h as i32;
+    // An empty destination has no pixels to rasterize.  Returning before the
+    // scaled source-coordinate calculation also avoids division by zero.
+    if dw <= 0 || dh <= 0 {
+        return;
+    }
     let (cx0, cy0, cx1, cy1) = clip_to_int(&clip);
     let scaled = dw != sw || dh != sh;
 
@@ -68,5 +73,43 @@ pub fn blit_image(
                 put_pixel(pixels, surface_w, dx + col, dy + row, cx0, cy0, cx1, cy1, p);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_destination_is_a_noop() {
+        let source = [0xFF_11_22_33; 4];
+        let mut pixels = vec![0xDE_AD_BE_EF; 4];
+        let clip = Rect::new(0.0, 0.0, 2.0, 2.0);
+        let source_rect = Rect::new(0.0, 0.0, 2.0, 2.0);
+
+        blit_image(
+            &mut pixels,
+            2,
+            2,
+            clip,
+            1.0,
+            &source,
+            2,
+            source_rect,
+            Rect::new(0.0, 0.0, 0.0, 2.0),
+        );
+        blit_image(
+            &mut pixels,
+            2,
+            2,
+            clip,
+            1.0,
+            &source,
+            2,
+            source_rect,
+            Rect::new(0.0, 0.0, 2.0, 0.0),
+        );
+
+        assert_eq!(pixels, vec![0xDE_AD_BE_EF; 4]);
     }
 }

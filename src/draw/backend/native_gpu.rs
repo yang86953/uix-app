@@ -19,7 +19,9 @@ use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::primitives::tessellator;
-use crate::draw::primitives::types::{BlendMode, GradientDirection, ImageHandle, Radius, Transform};
+use crate::draw::primitives::types::{
+    BlendMode, GradientDirection, ImageHandle, Radius, Transform,
+};
 use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
@@ -161,15 +163,10 @@ impl NativeGpuCanvas2D {
     }
 
     fn ensure_soft(&mut self) -> &mut SharedRasterizer {
-        if self.soft_fallback.is_none() {
-            self.soft_fallback = Some(SharedRasterizer::new(PixelSurface::new(
-                self.surface_w,
-                self.surface_h,
-            )));
-        }
+        let width = self.surface_w;
+        let height = self.surface_h;
         self.soft_fallback
-            .as_mut()
-            .expect("soft_fallback just ensured")
+            .get_or_insert_with(|| SharedRasterizer::new(PixelSurface::new(width, height)))
     }
 
     fn resize(&mut self, width: i32, height: i32) {
@@ -369,7 +366,8 @@ impl NativeGpuCanvas2D {
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         if self.soft_has_content || !self.native_caps.solid_meshes || !identity || !native_blend {
             self.sync_fallback_state();
-            let _soft_clip = self.clip_rect; self.ensure_soft().push_clip(_soft_clip);
+            let _soft_clip = self.clip_rect;
+            self.ensure_soft().push_clip(_soft_clip);
             if let Some(opts) = stroke {
                 self.ensure_soft().stroke_path(path, color, opts);
             } else {
@@ -393,7 +391,8 @@ impl NativeGpuCanvas2D {
         };
         let Some(verts) = verts else {
             self.sync_fallback_state();
-            let _soft_clip = self.clip_rect; self.ensure_soft().push_clip(_soft_clip);
+            let _soft_clip = self.clip_rect;
+            self.ensure_soft().push_clip(_soft_clip);
             if let Some(opts) = stroke {
                 self.ensure_soft().stroke_path(path, color, opts);
             } else {
@@ -433,7 +432,8 @@ impl NativeGpuCanvas2D {
         let native_blend = matches!(self.blend_mode, BlendMode::Alpha | BlendMode::SrcOver);
         if self.soft_has_content || !self.native_caps.box_shadows || !identity || !native_blend {
             self.sync_fallback_state();
-            let _soft_clip = self.clip_rect; self.ensure_soft().push_clip(_soft_clip);
+            let _soft_clip = self.clip_rect;
+            self.ensure_soft().push_clip(_soft_clip);
             if ambient {
                 self.ensure_soft()
                     .draw_box_shadow_ambient(rect, blur, ox, oy, color, rad);
@@ -624,7 +624,8 @@ impl Canvas2D for NativeGpuCanvas2D {
 
     fn fill_ellipse(&mut self, rect: Rect, color: Color) {
         self.sync_fallback_state();
-        let _soft_clip = self.clip_rect; self.ensure_soft().push_clip(_soft_clip);
+        let _soft_clip = self.clip_rect;
+        self.ensure_soft().push_clip(_soft_clip);
         self.ensure_soft().fill_ellipse(rect, color);
         self.ensure_soft().pop_clip();
         self.mark_soft();
@@ -632,7 +633,8 @@ impl Canvas2D for NativeGpuCanvas2D {
 
     fn fill_sector(&mut self, cx: f32, cy: f32, r: f32, sa: f32, ea: f32, color: Color) {
         self.sync_fallback_state();
-        let _soft_clip = self.clip_rect; self.ensure_soft().push_clip(_soft_clip);
+        let _soft_clip = self.clip_rect;
+        self.ensure_soft().push_clip(_soft_clip);
         self.ensure_soft().fill_sector(cx, cy, r, sa, ea, color);
         self.ensure_soft().pop_clip();
         self.mark_soft();
@@ -675,7 +677,8 @@ impl Canvas2D for NativeGpuCanvas2D {
             return;
         }
         self.sync_fallback_state();
-        let _soft_clip = self.clip_rect; self.ensure_soft().push_clip(_soft_clip);
+        let _soft_clip = self.clip_rect;
+        self.ensure_soft().push_clip(_soft_clip);
         self.ensure_soft().draw_line(x1, y1, x2, y2, color, lw);
         self.ensure_soft().pop_clip();
         self.mark_soft();
@@ -715,7 +718,8 @@ impl Canvas2D for NativeGpuCanvas2D {
 
     fn blit_image(&mut self, src: &[u32], src_w: i32, src_rect: Rect, dst_rect: Rect) {
         self.sync_fallback_state();
-        let _soft_clip = self.clip_rect; self.ensure_soft().push_clip(_soft_clip);
+        let _soft_clip = self.clip_rect;
+        self.ensure_soft().push_clip(_soft_clip);
         self.ensure_soft()
             .blit_image(src, src_w, src_rect, dst_rect);
         self.ensure_soft().pop_clip();
@@ -746,7 +750,8 @@ impl Canvas2D for NativeGpuCanvas2D {
         // Soft path for transforms / exotic blend; identity solid text → atlas.
         if self.soft_has_content || !self.native_caps.glyphs || !identity || !native_blend {
             self.sync_fallback_state();
-            let _soft_clip = self.clip_rect; self.ensure_soft().push_clip(_soft_clip);
+            let _soft_clip = self.clip_rect;
+            self.ensure_soft().push_clip(_soft_clip);
             self.ensure_soft()
                 .blit_glyph(x, y, coverage.as_ref(), w, h, color);
             self.ensure_soft().pop_clip();

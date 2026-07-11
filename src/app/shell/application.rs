@@ -878,6 +878,7 @@ impl App {
         for window in secondary_windows.drain(..) {
             window.close();
         }
+        self.runtime.shutdown_all();
         app_handle.mark_closed();
 
         0

@@ -1,6 +1,6 @@
 use super::*;
 use crate::common::page::{
-    INIT_H, INIT_W, INNER_W, PAGE_APP, PAGE_COUNT, PAGE_GENERAL, PAGE_TITLES, SIDEBAR_W,
+    INIT_H, INIT_W, INNER_W, PAGE_APP, PAGE_COUNT, PAGE_GENERAL, PAGE_OTHER, PAGE_TITLES, SIDEBAR_W,
 };
 use uix::prelude::{
     dynamic_label, Button, DesignTokens, Label, Rect, State, SystemEvent, ViewAdapter,
@@ -424,6 +424,155 @@ fn home_narrow_window_enables_horizontal_scroll() {
         sv.max_scroll_x() > 0.0,
         "narrow home nav tiles must enable horizontal scroll, max_x={}",
         sv.max_scroll_x()
+    );
+}
+
+/// 640×480 的「其他」页必须保留 Transfer/Upload，并能用纵向滚动条抵达溢出内容。
+#[test]
+fn other_page_narrow_window_keeps_content_and_vertical_scrollbar_interactive() {
+    use uix::core::Point;
+    use uix::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use uix::draw::font::font_service::FontService;
+    use uix::draw::image::ImageService;
+    use uix::draw::painting::{PaintContext, PaintPass};
+    use uix::draw::spatial::Orientation;
+    use uix::draw::FontHandle;
+    use uix::native::traits::input::{KeyMod, MouseButton};
+    use uix::ui::theme::DesignTokens;
+    use uix::ui::traits::WidgetRender;
+    use uix::ui::{EventResult, Transfer, Upload};
+
+    let active = State::new(PAGE_OTHER);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(root) = tree.root_mut() {
+        root.set_frame(Rect::new(0.0, 0.0, 640.0, 480.0));
+    }
+    tree.layout();
+
+    let scroll = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .find(|(id, _)| {
+            tree.get(*id)
+                .is_some_and(|node| node.frame().x >= SIDEBAR_W - 2.0)
+        })
+        .expect("other-page content ScrollView");
+    let scroll_id = scroll.0;
+    let scroll_frame = tree.get(scroll_id).expect("ScrollView node").frame();
+
+    for (name, id) in [
+        (
+            "Transfer",
+            tree.find_all_by_type::<Transfer>()
+                .into_iter()
+                .map(|(id, _)| id)
+                .next()
+                .expect("Transfer subtree"),
+        ),
+        (
+            "Upload",
+            tree.find_all_by_type::<Upload>()
+                .into_iter()
+                .map(|(id, _)| id)
+                .next()
+                .expect("Upload subtree"),
+        ),
+    ] {
+        let frame = tree.get(id).expect("component node").frame();
+        assert!(
+            frame.w > 0.0 && frame.h > 0.0,
+            "{name} must be laid out and locatable, got {frame:?}"
+        );
+    }
+
+    // 真实帧会先走此渲染路径；它记录 ScrollView 的当前 viewport，供拖拽命中使用。
+    let mut canvas = NoopCanvas2D;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new(
+        &mut canvas,
+        FontHandle::default(),
+        &fonts,
+        &images,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        640,
+        480,
+    );
+    let scroll_view = tree
+        .get(scroll_id)
+        .expect("ScrollView node")
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .expect("ScrollView component");
+    WidgetRender::render(scroll_view, scroll_frame, &mut ctx, &tree);
+    ctx.set_paint_pass(PaintPass::AfterChildren);
+    WidgetRender::render(scroll_view, scroll_frame, &mut ctx, &tree);
+
+    let (max_x, max_y) = tree
+        .get(scroll_id)
+        .expect("ScrollView node")
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .map(|view| (view.max_scroll_x(), view.max_scroll_y()))
+        .expect("ScrollView component");
+    assert!(
+        max_y > 0.0,
+        "640×480 other page must retain vertical access to overflow content, got y={max_y}"
+    );
+    assert!(
+        max_x <= 0.5,
+        "Transfer must fit the narrow content viewport instead of leaving a false horizontal overflow, got x={max_x}"
+    );
+
+    let vertical_thumb = Point::new(scroll_frame.x + scroll_frame.w - 4.0, scroll_frame.y + 12.0);
+    assert_eq!(
+        tree.hit_test(vertical_thumb),
+        Some(scroll_id),
+        "vertical scrollbar gutter must target the content ScrollView"
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: vertical_thumb,
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(vertical_thumb.x, vertical_thumb.y + 48.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    let scroll_y = tree
+        .get(scroll_id)
+        .expect("ScrollView node")
+        .component()
+        .as_any()
+        .downcast_ref::<ScrollView>()
+        .expect("ScrollView component")
+        .scroll_y();
+    assert!(
+        scroll_y > 0.0,
+        "vertical scrollbar drag must change scroll_y"
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(vertical_thumb.x, vertical_thumb.y + 48.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
     );
 }
 

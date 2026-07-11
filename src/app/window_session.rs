@@ -142,6 +142,7 @@ impl WindowSession {
         if self.engine_shutdown {
             return;
         }
+        self.tree.shutdown();
         self.engine_shutdown = true;
         self.engine.shutdown();
     }

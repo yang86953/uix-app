@@ -274,11 +274,12 @@ impl GpuBackend {
 }
 
 fn capabilities_for_context(gpu_ctx: &dyn IGraphicsContext) -> BackendCapabilities {
-    // GL path owns FBO offscreen.
+    // Picture offscreen is available only on the native partial-present path.
+    // A full-present context must keep the full-redraw capability baseline.
     if gpu_ctx.caps().partial_present {
         BackendCapabilities::gpu_with_offscreen()
     } else {
-        BackendCapabilities::gpu_full_redraw_with_offscreen()
+        BackendCapabilities::gpu_full_redraw()
     }
 }
 
@@ -499,11 +500,16 @@ mod tests {
     struct RecordingGraphicsContext {
         make_current_calls: usize,
         swap_damage: Option<PresentDamage>,
+        partial_present: bool,
     }
 
     impl IGraphicsContext for RecordingGraphicsContext {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::OpenGlEs, false, 1.0)
+            GraphicsContextCaps::gpu_native_swapchain(
+                GraphicsBackend::OpenGlEs,
+                self.partial_present,
+                1.0,
+            )
         }
 
         fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
@@ -564,6 +570,15 @@ mod tests {
         assert_eq!(
             capabilities_for_context(&context),
             BackendCapabilities::gpu_full_redraw()
+        );
+
+        let partial_context = RecordingGraphicsContext {
+            partial_present: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            capabilities_for_context(&partial_context),
+            BackendCapabilities::gpu_with_offscreen()
         );
     }
 

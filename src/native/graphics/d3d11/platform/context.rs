@@ -1192,6 +1192,44 @@ mod tests {
     }
 
     #[test]
+    fn d3d11_soft_blit_ignores_a_previous_native_scissor() {
+        let mut platform = crate::native::create_platform().expect("platform");
+        let window = platform
+            .window_manager()
+            .create_window("D3D11 soft scissor", 96, 64)
+            .expect("window");
+        let mut ctx = D3d11Context::new(window.native_surface_ptr(), 96, 64).expect("context");
+        ctx.clear_render_target(0.0, 0.0, 0.0, 1.0)
+            .expect("clear target");
+        ctx.draw_solid_rects(
+            96.0,
+            64.0,
+            Some((24, 16, 32, 24)),
+            &[GpuSolidRect {
+                x: 24.0,
+                y: 16.0,
+                w: 32.0,
+                h: 24.0,
+                rgba: [1.0, 1.0, 1.0, 1.0],
+                radius: [0.0; 4],
+            }],
+        )
+        .expect("draw clipped native rect");
+
+        let mut soft = vec![0u32; 96 * 64];
+        soft[2 * 96 + 2] = 0xFF00_FF00; // BGRA opaque green, outside the native scissor.
+        ctx.blit_soft_fallback(&soft, 96, 64)
+            .expect("blit full soft surface");
+
+        assert_eq!(
+            ctx.read_pixels(2, 2, 1, 1),
+            vec![0xFF00_FF00],
+            "soft fallback must not inherit the previous native draw scissor"
+        );
+        ctx.shutdown();
+    }
+
+    #[test]
     fn d3d11_resize_grows_backbuffer_and_fills_far_corner() {
         let mut platform = crate::native::create_platform().expect("platform");
         let mut window = platform

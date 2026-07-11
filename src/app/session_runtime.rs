@@ -18,6 +18,7 @@ pub(crate) struct AppRuntime {
     sessions: Arc<Mutex<BTreeMap<WindowId, SessionRuntime>>>,
     pending_open_windows: Arc<Mutex<VecDeque<OpenWindowRequest>>>,
     pending_theme: Arc<Mutex<Option<Theme>>>,
+    shutting_down: Arc<AtomicBool>,
     next_window_id: Arc<Mutex<u64>>,
     event_loop_waker: Arc<Mutex<EventLoopWaker>>,
 }
@@ -55,19 +56,23 @@ impl AppRuntime {
         main_thread_queue: MainThreadQueue,
         alive: Arc<AtomicBool>,
     ) {
-        alive.store(true, Ordering::Release);
         self.reserve_after(window_id);
-        self.sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(
-                window_id,
-                SessionRuntime {
-                    app_timers,
-                    main_thread_queue,
-                    alive,
-                },
-            );
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        if self.shutting_down.load(Ordering::Acquire) {
+            alive.store(false, Ordering::Release);
+            app_timers.cancel_all();
+            main_thread_queue.clear();
+            return;
+        }
+        alive.store(true, Ordering::Release);
+        sessions.insert(
+            window_id,
+            SessionRuntime {
+                app_timers,
+                main_thread_queue,
+                alive,
+            },
+        );
     }
 
     pub(crate) fn request_open_window(&self, config: WindowConfig) -> ReservedWindowSession {
@@ -81,17 +86,25 @@ impl AppRuntime {
             main_thread_queue.clone(),
             alive.clone(),
         );
-        self.pending_open_windows
+        let mut pending = self
+            .pending_open_windows
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push_back(OpenWindowRequest {
+            .unwrap_or_else(|e| e.into_inner());
+        if alive.load(Ordering::Acquire) && !self.shutting_down.load(Ordering::Acquire) {
+            pending.push_back(OpenWindowRequest {
                 window_id,
                 config,
                 app_timers: app_timers.clone(),
                 main_thread_queue: main_thread_queue.clone(),
                 alive: alive.clone(),
             });
-        self.wake_event_loop();
+        }
+        drop(pending);
+        if alive.load(Ordering::Acquire) {
+            self.wake_event_loop();
+        } else {
+            self.close_session(window_id);
+        }
         ReservedWindowSession { window_id, alive }
     }
 
@@ -141,6 +154,27 @@ impl AppRuntime {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .retain(|request| request.window_id != window_id);
+    }
+
+    /// Terminal app shutdown: no window session, queued open request, or pending
+    /// theme update may outlive the native event loop.
+    pub(crate) fn shutdown_all(&self) {
+        self.shutting_down.store(true, Ordering::Release);
+        let sessions =
+            std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
+        for session in sessions.into_values() {
+            session.alive.store(false, Ordering::Release);
+            session.app_timers.cancel_all();
+            session.main_thread_queue.clear();
+        }
+        self.pending_open_windows
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.pending_theme
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
     }
 
     pub(crate) fn run_after<F>(&self, window_id: WindowId, delay: Duration, f: F) -> TimerHandle

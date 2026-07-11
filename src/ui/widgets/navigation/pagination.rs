@@ -30,6 +30,9 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if let SystemEvent::PointerDown { pos, .. } = event {
             let total_pages = self.total.div_ceil(self.page_size);
+            if total_pages == 0 {
+                return EventResult::NotHandled;
+            }
             let cur = self.current.get();
             let item_w = self.size;
             let gap = 4.0;
@@ -59,7 +62,7 @@ component! {
             }
             // 下一页
             if x >= btn_x && x < btn_x + item_w {
-                let next = (cur + 1).min(total_pages);
+                let next = cur.saturating_add(1).min(total_pages);
                 if next != cur {
                     self.current.set(next);
                     self.pending_change.set(Some(next));
@@ -147,7 +150,7 @@ impl Pagination {
     pub fn new(total: usize, page_size: usize) -> Self {
         Self {
             total,
-            page_size,
+            page_size: page_size.max(1),
             current: Cell::new(1),
             show_size_changer: false,
             show_total: true,
@@ -157,14 +160,15 @@ impl Pagination {
         }
     }
     pub fn current(self, v: usize) -> Self {
-        self.current.set(v);
+        self.current.set(self.clamp_current(v));
         self
     }
     pub fn get_current(&self) -> usize {
         self.current.get()
     }
     pub fn page_size(mut self, v: usize) -> Self {
-        self.page_size = v;
+        self.page_size = v.max(1);
+        self.current.set(self.clamp_current(self.current.get()));
         self
     }
     pub fn show_total(mut self, v: bool) -> Self {
@@ -176,7 +180,7 @@ impl Pagination {
         self
     }
     pub fn set_current(&self, v: usize) {
-        self.current.set(v);
+        self.current.set(self.clamp_current(v));
     }
     pub fn total_pages(&self) -> usize {
         self.total.div_ceil(self.page_size)
@@ -192,7 +196,8 @@ impl Pagination {
 
     pub(crate) fn sync_from(&mut self, next: Self) {
         self.total = next.total;
-        self.page_size = next.page_size;
+        self.page_size = next.page_size.max(1);
+        self.current.set(self.clamp_current(self.current.get()));
         self.show_size_changer = next.show_size_changer;
         self.show_total = next.show_total;
         self.size = next.size;
@@ -207,6 +212,9 @@ impl Pagination {
 
     /// 计算可见页码范围（含省略号逻辑，最多 7 个按钮）。
     fn visible_range(&self, total_pages: usize, cur: usize) -> Vec<usize> {
+        if total_pages == 0 {
+            return Vec::new();
+        }
         if total_pages <= 7 {
             return (1..=total_pages).collect();
         }
@@ -216,7 +224,7 @@ impl Pagination {
             pages.push(0);
         } // 省略号用 0 表示
         let start = (cur.saturating_sub(1)).max(2);
-        let end = (cur + 1).min(total_pages - 1);
+        let end = cur.saturating_add(1).min(total_pages - 1);
         for p in start..=end {
             pages.push(p);
         }
@@ -225,6 +233,15 @@ impl Pagination {
         }
         pages.push(total_pages);
         pages
+    }
+
+    fn clamp_current(&self, current: usize) -> usize {
+        let total_pages = self.total_pages();
+        if total_pages == 0 {
+            1
+        } else {
+            current.clamp(1, total_pages)
+        }
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

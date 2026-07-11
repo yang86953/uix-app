@@ -252,6 +252,42 @@ fn close_session_removes_pending_open_window_request() {
 }
 
 #[test]
+fn shutdown_all_cancels_pending_and_live_window_sessions() {
+    let runtime = AppRuntime::new();
+    let root_timers = AppTimerQueue::new();
+    let root_queue = MainThreadQueue::new();
+    let root_alive = Arc::new(AtomicBool::new(true));
+    runtime.register_session(
+        WindowId::ROOT,
+        root_timers.clone(),
+        root_queue.clone(),
+        root_alive.clone(),
+    );
+    runtime.post_to_ui(WindowId::ROOT, || {});
+    let _root_timer = runtime.run_after(WindowId::ROOT, Duration::from_secs(1), || {});
+    let child =
+        runtime.request_open_window(WindowConfig::new("Inspector", 320, 600, || label("child")));
+    let _child_timer = runtime.run_after(child.window_id, Duration::from_secs(1), || {});
+
+    runtime.shutdown_all();
+
+    assert!(!root_alive.load(Ordering::Acquire));
+    assert!(!child.alive.load(Ordering::Acquire));
+    assert_eq!(root_timers.len(), 0);
+    assert_eq!(root_queue.len(), 0);
+    assert!(runtime
+        .sessions
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_empty());
+    assert!(runtime.take_next_open_window().is_none());
+
+    let late = runtime.request_open_window(WindowConfig::new("Late", 320, 600, || label("late")));
+    assert!(!late.alive.load(Ordering::Acquire));
+    assert!(runtime.take_next_open_window().is_none());
+}
+
+#[test]
 fn theme_changes_coalesce_to_the_latest_value_with_one_wake() {
     let runtime = AppRuntime::new();
     let wake_calls = Arc::new(AtomicUsize::new(0));

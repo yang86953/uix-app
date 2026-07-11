@@ -4088,3 +4088,126 @@ fn typography_cross_selection_copy_aggregates_sibling_lines() {
     assert_eq!(clipboard2.last_set_text(), Some(aggregated.as_str()));
     clipboard::set_clipboard_parts(0, 0);
 }
+
+#[test]
+fn rendered_typography_drag_selection_copies_the_actual_cross_node_range() {
+    use crate::core::Rect;
+    use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+    use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+    use crate::draw::font::font_service::FontService;
+    use crate::draw::image::ImageService;
+    use crate::draw::painting::PaintContext;
+    use crate::draw::spatial::Orientation;
+    use crate::native::test_harness::FakeClipboard;
+    use crate::native::traits::input::IClipboard;
+    use crate::ui::clipboard;
+    use crate::ui::theme::DesignTokens;
+    use crate::ui::traits::WidgetRender;
+    use crate::ui::Typography;
+
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(400.0, 160.0, vec![])));
+    let h1 = tree.add_child(root, Box::new(Typography::heading("Heading 1", 1)));
+    let h2 = tree.add_child(root, Box::new(Typography::heading("Heading 2", 2)));
+    let h3 = tree.add_child(root, Box::new(Typography::heading("Heading 3", 3)));
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 400.0, 160.0));
+    for (id, y) in [(h1, 0.0), (h2, 40.0), (h3, 80.0)] {
+        tree.get_mut(id)
+            .unwrap()
+            .set_frame(Rect::new(0.0, y, 400.0, 40.0));
+    }
+
+    // Populate the same glyph hit-test cache used by the live renderer before
+    // sending pointer events; this makes the selection range fully observable.
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(400, 160));
+    let mut fonts = FontService::new();
+    let font = fonts
+        .load_font(include_bytes!("../../../../../assets/fonts/lucide.ttf"))
+        .expect("load deterministic test font");
+    let images = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    {
+        let mut ctx = PaintContext::new(
+            &mut canvas,
+            font,
+            &fonts,
+            &images,
+            &tokens,
+            96.0,
+            1.0,
+            Orientation::YDown,
+            400,
+            160,
+        );
+        for id in [h1, h2, h3] {
+            let node = tree.get(id).expect("Typography node");
+            let typography = node
+                .component()
+                .as_any()
+                .downcast_ref::<Typography>()
+                .expect("Typography component");
+            WidgetRender::render(typography, node.frame(), &mut ctx, &tree);
+        }
+    }
+
+    // Drag from after Heading 3 to just left of Heading 1. The tree's
+    // nearest-line fallback clamps that endpoint to Heading 1 char 0.
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(399.0, 100.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(-1.0, 20.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerUp {
+            pos: Point::new(0.0, 20.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+
+    let selected = |id| {
+        tree.get(id)
+            .expect("Typography node")
+            .component()
+            .as_any()
+            .downcast_ref::<Typography>()
+            .expect("Typography component")
+            .selected_text()
+    };
+    assert_eq!(selected(h1).as_deref(), Some("Heading 1"));
+    assert_eq!(selected(h2).as_deref(), Some("Heading 2"));
+    assert_eq!(selected(h3).as_deref(), Some("Heading 3"));
+
+    let mut clipboard = FakeClipboard::new();
+    {
+        let clipboard_ref: &mut dyn IClipboard = &mut clipboard;
+        let wide: *mut dyn IClipboard = clipboard_ref;
+        let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
+        clipboard::set_clipboard_parts(parts.0, parts.1);
+    }
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::C,
+            mods: KeyMod::CTRL,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(
+        clipboard.last_set_text(),
+        Some("Heading 1\nHeading 2\nHeading 3")
+    );
+    clipboard::set_clipboard_parts(0, 0);
+}

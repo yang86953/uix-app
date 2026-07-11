@@ -211,6 +211,22 @@ impl WidgetTree {
             .filter(|entry| entry.traps_focus())
             .map(|entry| entry.owner())
             .collect();
+        let previous_widget_overlays: Vec<_> = self
+            .overlay_stack
+            .iter()
+            .filter(|entry| !entry.is_managed())
+            .map(|entry| {
+                (
+                    entry.owner(),
+                    entry.kind(),
+                    entry.bounds_rect(),
+                    entry.z_index_value(),
+                    entry.is_modal(),
+                    entry.dismisses_on_outside(),
+                    entry.traps_focus(),
+                )
+            })
+            .collect();
         let entries: Vec<_> = self
             .traverse()
             .into_iter()
@@ -222,6 +238,22 @@ impl WidgetTree {
                 node.overlay_entry(id, node.frame())
             })
             .collect();
+        let widget_overlays_changed = previous_widget_overlays
+            != entries
+                .iter()
+                .filter(|entry| !entry.is_managed())
+                .map(|entry| {
+                    (
+                        entry.owner(),
+                        entry.kind(),
+                        entry.bounds_rect(),
+                        entry.z_index_value(),
+                        entry.is_modal(),
+                        entry.dismisses_on_outside(),
+                        entry.traps_focus(),
+                    )
+                })
+                .collect::<Vec<_>>();
 
         self.overlay_stack
             .retain_entries(|entry| entry.is_managed());
@@ -239,6 +271,12 @@ impl WidgetTree {
             if !active_trap_owners.contains(&owner) {
                 self.restore_focus_after_trap_owner(owner);
             }
+        }
+
+        if widget_overlays_changed {
+            // Overlay membership changes the compositor's clipping/cache topology.
+            self.tree_version = self.tree_version.wrapping_add(1);
+            self.mark_full_frame_dirty();
         }
     }
 
@@ -774,6 +812,9 @@ impl WidgetTree {
                 self.invalidate_paint_rect(id, dirty);
             }
             updates.push((id, still_active));
+        }
+        if updates.iter().any(|(_, still_active)| !still_active) {
+            self.rebuild_widget_overlays();
         }
         updates
     }

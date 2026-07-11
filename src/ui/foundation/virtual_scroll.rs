@@ -15,10 +15,18 @@ pub fn virtual_list_index_range(
     if item_count == 0 || item_height <= 0.0 {
         return (0, 0);
     }
+    // A public scroll offset can come from restored state or external input.
+    // Keep invalid values at the safe origin instead of converting infinity or
+    // NaN into implementation-defined indices.
+    let scroll_offset = if scroll_offset.is_finite() {
+        scroll_offset.max(0.0)
+    } else {
+        0.0
+    };
     let first = (scroll_offset / item_height).floor() as usize;
     let last = ((scroll_offset + viewport_height) / item_height).ceil() as usize;
-    let start = first.saturating_sub(overscan);
-    let end = (last + overscan).min(item_count);
+    let start = first.saturating_sub(overscan).min(item_count);
+    let end = last.saturating_add(overscan).min(item_count).max(start);
     (start, end)
 }
 
@@ -55,7 +63,11 @@ impl VirtualListScroll {
     }
 
     pub fn set_scroll_offset(&mut self, offset: f32) {
-        self.scroll_offset = offset.max(0.0);
+        self.scroll_offset = if offset.is_finite() {
+            offset.max(0.0)
+        } else {
+            0.0
+        };
     }
 
     pub fn max_scroll_offset(
@@ -493,6 +505,28 @@ mod tests {
         scroll.set_scroll_offset(64.0);
 
         assert_eq!(scroll.scroll_range(100, 32.0, 96.0), (1, 6));
+    }
+
+    #[test]
+    fn virtual_list_range_clamps_invalid_offsets_and_overscan_overflow() {
+        assert_eq!(
+            virtual_list_index_range(10, 20.0, f32::INFINITY, 40.0, 1),
+            (0, 3)
+        );
+        assert_eq!(
+            virtual_list_index_range(10, 20.0, f32::NAN, 40.0, usize::MAX),
+            (0, 10)
+        );
+        assert_eq!(
+            virtual_list_index_range(10, 20.0, f32::MAX, 40.0, 1),
+            (10, 10)
+        );
+
+        let mut scroll = VirtualListScroll::new();
+        scroll.set_scroll_offset(f32::INFINITY);
+        assert_eq!(scroll.scroll_offset(), 0.0);
+        scroll.set_scroll_offset(f32::NAN);
+        assert_eq!(scroll.scroll_offset(), 0.0);
     }
 
     #[test]

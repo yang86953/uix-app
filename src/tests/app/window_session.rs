@@ -1,18 +1,66 @@
 use super::*;
 use crate::app::main_thread_queue::MainThreadContext;
-use crate::core::Error;
+use crate::core::{Constraints, Error, Size};
 use crate::draw::engine::RenderOutcome;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::draw::NullEngine;
+use crate::impl_widget_component;
 use crate::ui::core::widget::WidgetCore;
+use crate::ui::traits::{WidgetLayout, WidgetLifecycle};
 use crate::ui::view::combinators::{dynamic_label, label};
 use crate::ui::view::ViewAdapter;
 use crate::ui::view::ViewNode;
 use crate::ui::widgets::container::Container;
 use crate::ui::widgets::Label;
 use crate::ui::{AppState, State};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+
+struct SessionLifecycleProbe {
+    events: Rc<RefCell<Vec<&'static str>>>,
+}
+
+impl_widget_component!(SessionLifecycleProbe; Layout, Lifecycle);
+
+impl WidgetLayout for SessionLifecycleProbe {
+    fn measure(&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(24.0, 16.0))
+    }
+}
+
+impl WidgetLifecycle for SessionLifecycleProbe {
+    fn on_init(&mut self) {
+        self.events.borrow_mut().push("init");
+    }
+
+    fn on_attach(&mut self) {
+        self.events.borrow_mut().push("attach");
+    }
+
+    fn on_mount(&mut self) {
+        self.events.borrow_mut().push("mount");
+    }
+
+    fn on_active(&mut self) {
+        self.events.borrow_mut().push("active");
+    }
+
+    fn on_inactive(&mut self) {
+        self.events.borrow_mut().push("inactive");
+    }
+
+    fn on_unmount(&mut self) {
+        self.events.borrow_mut().push("unmount");
+    }
+
+    fn on_detach(&mut self) {
+        self.events.borrow_mut().push("detach");
+    }
+
+    fn on_destroy(&mut self) {
+        self.events.borrow_mut().push("destroy");
+    }
+}
 
 struct ShutdownTrackingEngine {
     inner: NullEngine,
@@ -228,4 +276,27 @@ fn window_session_drop_shuts_engine_down_once() {
         );
     }
     assert_eq!(shutdown_calls.get(), 1);
+}
+
+#[test]
+fn window_session_shutdown_tears_down_widget_lifecycle_once() {
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(SessionLifecycleProbe {
+            events: events.clone(),
+        }),
+        Box::new(NullEngine::new()),
+        320,
+        240,
+    );
+
+    assert_eq!(*events.borrow(), ["init", "attach", "mount", "active"]);
+
+    session.shutdown();
+    session.shutdown();
+
+    assert_eq!(
+        *events.borrow(),
+        ["init", "attach", "mount", "active", "inactive", "unmount", "detach", "destroy"]
+    );
 }
