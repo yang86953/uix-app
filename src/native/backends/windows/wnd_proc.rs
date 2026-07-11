@@ -196,13 +196,23 @@ impl WindowsPlatform {
                 let key = Self::vk_to_keycode(wparam as u32);
                 let mods = Self::get_modifier_state();
                 self.push_event(window_id, UiEvent::key_down(key, mods));
-                0
+                // 系统组合键仍须交由 DefWindowProc 处理：例如 Alt+F4 会生成
+                // WM_SYSCOMMAND/WM_CLOSE，随后再经上面的安全 teardown 路径关闭窗口。
+                if msg == WM_SYSKEYDOWN {
+                    self.def_window_proc(hwnd, msg, wparam, lparam)
+                } else {
+                    0
+                }
             }
             WM_KEYUP | WM_SYSKEYUP => {
                 let key = Self::vk_to_keycode(wparam as u32);
                 let mods = Self::get_modifier_state();
                 self.push_event(window_id, UiEvent::key_up(key, mods));
-                0
+                if msg == WM_SYSKEYUP {
+                    self.def_window_proc(hwnd, msg, wparam, lparam)
+                } else {
+                    0
+                }
             }
             WM_CHAR => {
                 if let Some(text) = ime.borrow_mut().decode_utf16_unit(wparam as u16) {

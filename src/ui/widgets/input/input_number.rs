@@ -17,6 +17,7 @@ component! {
         min: f64,
         max: f64,
         step: f64,
+        value_configured: bool,
         placeholder: String,
         focused: bool,
         hovered: bool,
@@ -156,6 +157,7 @@ impl InputNumber {
             min: f64::MIN,
             max: f64::MAX,
             step: 1.0,
+            value_configured: false,
             placeholder: placeholder.into(),
             focused: false,
             hovered: false,
@@ -167,6 +169,7 @@ impl InputNumber {
 
     pub fn value(mut self, v: f64) -> Self {
         self.value = v.clamp(self.min, self.max);
+        self.value_configured = true;
         self
     }
     pub fn min(mut self, v: f64) -> Self {
@@ -222,7 +225,11 @@ impl InputNumber {
         self.placeholder = next.placeholder;
         self.disabled = next.disabled;
 
-        let next_value = next.value.clamp(self.min, self.max);
+        let next_value = if next.value_configured {
+            next.value.clamp(self.min, self.max)
+        } else {
+            self.value.clamp(self.min, self.max)
+        };
         if (self.value - next_value).abs() > f64::EPSILON {
             self.value = next_value;
             self.text_buffer = self.value.to_string();
@@ -240,5 +247,26 @@ mod tests {
         let measured = InputNumber::new("0").measure(Constraints::loose(Size::new(60.0, 24.0)));
 
         assert_eq!(measured, Size::new(60.0, 24.0));
+    }
+
+    #[test]
+    fn uncontrolled_value_survives_reconcile() {
+        use crate::native::traits::input::{KeyMod, MouseButton};
+        use crate::ui::traits::EventHandler;
+
+        let mut input = InputNumber::new("Count").min(0.0).max(100.0).step(1.0);
+        let _ = input.on_event(&SystemEvent::PointerDown {
+            pos: Point::new(1.0, 1.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        });
+        let _ = input.on_event(&SystemEvent::KeyDown {
+            key: KeyCode::Up,
+            mods: KeyMod::NONE,
+        });
+
+        input.sync_from(InputNumber::new("Count").min(0.0).max(100.0).step(1.0));
+
+        assert_eq!(input.get_value(), 1.0);
     }
 }
