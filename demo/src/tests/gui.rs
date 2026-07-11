@@ -732,6 +732,10 @@ fn demo_local_counters_survive_root_reconcile() {
         .get(runtime_plus.0)
         .expect("runtime increment button node")
         .frame();
+    assert!(
+        runtime_frame.h > 0.0 && runtime_frame.y < 280.0,
+        "runtime counter controls must remain visible near the top of the scroll page, got {runtime_frame:?}"
+    );
     let runtime_pos = Point::new(
         runtime_frame.x + runtime_frame.w * 0.5,
         runtime_frame.y + runtime_frame.h * 0.5,

@@ -12,6 +12,7 @@
 | [requirements.md](requirements.md) | 查询编号需求、优先级、当前满足状态和验收检查 |
 | [design.md](design.md) | 阅读跨系统总设计、需求追踪、替代方案、质量属性、rollout、风险和开放问题 |
 | [plan.md](plan.md) | 查看当前状态、里程碑、下一步、风险和开放问题 |
+| [bugs.md](bugs.md) | 查看 GUI/软件测试确认或待确认的去重产品缺陷、证据与验证状态 |
 | [areas/architecture.md](areas/architecture.md) | 按任务定位架构、系统设计、API、术语和实现状态 |
 | [areas/implementation.md](areas/implementation.md) | 对照已落地能力、后续 backlog 和源码目录映射 |
 | [decisions.md](decisions.md) | 查询或追加持久设计决策；新决策从 #176+ 起 |
@@ -31,4 +32,5 @@
 - 改产品需求或验收：同步 [requirements.md](requirements.md)；改跨系统方案或质量属性：同步 [design.md](design.md)。
 - 新增/删除系统：只在 [systems/index.md](areas/systems/index.md) 维护系统清单；仅当任务路由或跨系统主题变化时更新 [areas/architecture.md](areas/architecture.md)。
 - 改实现状态、backlog 或源码路径：同步 [plan.md](plan.md)、[areas/implementation.md](areas/implementation.md) 与对应系统文档的实现注记。
+- GUI/软件测试报告发现产品缺陷：按复现路径去重后更新 [bugs.md](bugs.md)；只有已承诺或阻塞里程碑的缺陷才以 BUG-ID 关联 [plan.md](plan.md)。
 - 新增活跃文档目录时必须添加该目录的 `index.md`，并确保能从本页或相邻索引到达。

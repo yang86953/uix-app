@@ -42,6 +42,13 @@ fn view_node_direct_style_methods_cover_margin_and_opacity() {
 }
 
 #[test]
+fn view_node_overflow_content_preserves_natural_flow() {
+    let node = column([label("content")]).overflow_content();
+
+    assert!(node.style.overflow_content);
+}
+
+#[test]
 fn dynamic_label_measure_clamps_current_text() {
     let label = DynamicLabel::new(|| "abcdef".to_string());
 

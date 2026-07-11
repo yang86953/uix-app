@@ -114,6 +114,9 @@ impl<'a> PageBuilder<'a> {
             column(self.items)
                 .gap(12.0)
                 .padding((24.0, 8.0, 24.0, 16.0))
+                // ScrollView 的内容列必须按自然尺寸流式排布；若参与普通 flex
+                // shrink，会为了匹配 viewport 而把后续演示项压缩到 0 高度。
+                .overflow_content()
                 .flex_grow(0.0),
         )
         .flex_grow(1.0)

@@ -1,0 +1,32 @@
+# Bug 清单
+
+← [文档入口](index.md)
+
+> 本文件维护跨 GUI/软件测试轮次去重后的产品缺陷生命周期。单次测试报告负责记录构建、环境、覆盖、场景结果和完整证据；本清单只链接报告与关键证据，不复制测试日志。只有已承诺或阻塞里程碑的 BUG-ID 才进入 [plan.md](plan.md)。
+
+## 状态与入账规则
+
+- 状态流：`待确认 -> 已确认 -> 修复中 -> 待验证 -> 已关闭`；无法继续时使用 `阻塞`。
+- `待确认` 需要直接证据；`已确认` 需要从已知基线完成最小复现。
+- 代码已修改只进入 `待验证`；原始复现和至少一个相邻场景通过后才进入 `已关闭`。
+- 工具限制、环境/驱动问题和测试数据问题保留在单次报告的限制章节，不作为产品缺陷入账。
+- 重复、非缺陷、无法复现或明确不修复的条目保留原 BUG-ID，并在关闭记录中注明原因。
+- 严重度按用户影响判断，不按修复难度判断；禁止把单机或单后端结果外推为跨平台结论。
+
+## 活跃缺陷
+
+| ID | 严重度 | 置信度 | 状态 | 影响范围 | 摘要 | 报告/证据 | 下一步 | 最后更新 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| BUG-20260711-001 | High | 高 | 已确认 | Windows D3D11/OpenGL ES；主窗/副窗 | 动态刷新时完整帧与大片黑块/空白帧持续交替 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-001-gpu-窗口持续交替出现大片黑块空白帧) · [完整帧](../test-reports/20260711-082208-uix-demo/evidence/15-restart-screen-1.png) · [黑块帧](../test-reports/20260711-082208-uix-demo/evidence/15-restart-screen-2.png) | 检查交换链双缓冲、partial damage 与 clear/preserve 契约 | 2026-07-11 |
+| BUG-20260711-002 | High | 高 | 已确认 | Windows 输入页自绘 Input | Input 获得焦点后不接收文本，Tab 也不移动焦点 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-002-输入控件键盘路径失效) · [文本输入](../test-reports/20260711-082208-uix-demo/evidence/22-input-text-2.png) · [Tab](../test-reports/20260711-082208-uix-demo/evidence/24-input-tab-1.png) | 分离验证 TextInput/KeyDown 转换与 focus traversal | 2026-07-11 |
+| BUG-20260711-003 | Medium | 高 | 已确认 | 暗色主题；应用能力页等固定 token 节点 | 暗色背景上仍使用接近黑色的固定浅色主题文字 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-003-暗色主题存在不可读的固定浅色主题文本) · [证据](../test-reports/20260711-082208-uix-demo/evidence/17-runtime-top-1.png) | 将主题敏感色改为 palette 引用并补暗色视觉回归 | 2026-07-11 |
+| BUG-20260711-004 | Medium | 高 | 已确认 | 其他页 Transfer | 点击可见第一行 A 实际选中第二行 B | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-004-transfer-可见行与点击命中行错位) · [证据](../test-reports/20260711-082208-uix-demo/evidence/26-transfer-click-a-2.png) | 统一绘制起点与 hit-test 行索引偏移 | 2026-07-11 |
+| BUG-20260711-005 | Medium | 高 | 已确认 | 640×480 窄窗；固定宽 Demo 页面 | 主内容被横向裁切且无滚动或其他访问路径 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-005-640480-窄窗下主内容横向裁切且不可达) · [证据](../test-reports/20260711-082208-uix-demo/evidence/29-narrow-640x480-1.png) | 定义最小窗口或增加响应式/横向访问策略 | 2026-07-11 |
+| BUG-20260711-006 | Low | 高 | 已确认 | 其他页 Upload Demo | 声明仅接受 `.png,.jpg`，点击却新增 `.txt` | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-006-upload-的-accept-声明与实际新增文件扩展名冲突) · [证据](../test-reports/20260711-082208-uix-demo/evidence/28-upload-click-2.png) | 让模拟文件与 accept 规则一致并补拒绝路径 | 2026-07-11 |
+| BUG-20260711-007 | Low | 高 | 已确认 | 反馈页 Demo 覆盖完整性 | Modal/Drawer 标记为已覆盖但没有可操作入口 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-007-反馈页将-modaldrawer-标记为已覆盖但没有可操作入口) · [证据](../test-reports/20260711-082208-uix-demo/evidence/30-feedback-bottom-1.png) | 增加 live trigger 与开关/遮罩/焦点恢复验证 | 2026-07-11 |
+
+## 已关闭
+
+| ID | 摘要 | 关闭原因/修复 | 验证证据 | 关闭日期 |
+| --- | --- | --- | --- | --- |
+| — | 当前没有已关闭记录 | — | — | — |
