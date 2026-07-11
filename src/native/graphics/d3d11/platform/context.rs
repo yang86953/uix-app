@@ -280,7 +280,16 @@ impl D3d11Context {
     fn present_result(&mut self) -> Result<()> {
         // SAFETY: the swap chain belongs to this context and is used only on
         // its owning UI thread while the context remains alive.
-        map_dxgi_present_result(unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) })
+        //
+        // Release all back-buffer refs *before* Present. Holding an RTV (or any
+        // GetBuffer view) across Present with DXGI_SWAP_EFFECT_DISCARD lets DXGI
+        // allocate extra swapchain buffers — unbounded GPU/system memory growth.
+        // Recreate RTV *after* Present so the next frame targets the current
+        // back buffer (stale RTV → alternating good/black frames, BUG-001).
+        self.release_rtv();
+        map_dxgi_present_result(unsafe { self.swap_chain.Present(1, DXGI_PRESENT(0)) })?;
+        self.create_rtv()?;
+        Ok(())
     }
 }
 
@@ -982,5 +991,36 @@ mod tests {
             })
             .expect("WARP swapchain present");
         warp_ctx.shutdown();
+    }
+
+    #[test]
+    fn repeated_present_keeps_single_rtv_and_stays_drawable() {
+        // Regression: Present while holding RTV caused DXGI to allocate extra
+        // buffers (memory growth). Release-before-Present + recreate-after must
+        // keep drawing stable across many frames.
+        let mut platform = crate::native::create_platform().expect("platform");
+        let window = platform
+            .window_manager()
+            .create_window("D3D11 present memory", 160, 120)
+            .expect("window");
+        let surface = window.native_surface_ptr();
+        let mut ctx = D3d11Context::new(surface, 160, 120).expect("D3d11Context");
+        for i in 0..64 {
+            let t = (i as f32) / 64.0;
+            ctx.clear_render_target(t, 0.2, 1.0 - t, 1.0)
+                .expect("clear");
+            ctx.present(&PresentFrame::Swapchain {
+                damage: PresentDamage::Full,
+            })
+            .expect("present");
+            assert!(
+                ctx.rtv.is_some(),
+                "RTV must be recreated after Present for the next frame"
+            );
+        }
+        let pixels = ctx.read_pixels(0, 0, 1, 1);
+        assert_eq!(pixels.len(), 1);
+        assert_eq!(pixels[0] >> 24, 0xFF, "final frame must remain opaque");
+        ctx.shutdown();
     }
 }

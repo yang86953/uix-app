@@ -285,6 +285,30 @@ impl Typography {
         self.selection.get().map(|(s, e)| self.slice_range(s, e))
     }
 
+    pub(crate) fn is_cross_text_dragging(&self) -> bool {
+        self.sel_dragging.get()
+    }
+
+    pub(crate) fn cross_text_len(&self) -> usize {
+        self.content.chars().count()
+    }
+
+    pub(crate) fn cross_text_anchor(&self) -> usize {
+        self.sel_anchor.get()
+    }
+
+    pub(crate) fn set_cross_text_range(&self, range: Option<(usize, usize)>) {
+        match range {
+            Some((a, b)) if a != b => self.selection.set(Some((a.min(b), a.max(b)))),
+            _ => self.selection.set(None),
+        }
+    }
+
+    pub(crate) fn cross_text_char_at(&self, frame_local: crate::core::Point) -> usize {
+        let dp = self.draw_pos.get();
+        self.char_at_xy(frame_local.x - dp.x, frame_local.y - dp.y)
+    }
+
     fn compute_font_style(&self) -> (f32, f32) {
         match self.type_ {
             TypographyType::Heading1 => (38.0, 600.0),

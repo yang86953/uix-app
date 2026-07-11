@@ -357,6 +357,37 @@ impl Label {
         self.selection.get().map(|(s, e)| self.slice_range(s, e))
     }
 
+    pub(crate) fn participates_in_cross_text_selection(&self) -> bool {
+        self.selectable
+    }
+
+    pub(crate) fn is_cross_text_dragging(&self) -> bool {
+        self.selectable && self.sel_dragging.get()
+    }
+
+    pub(crate) fn cross_text_len(&self) -> usize {
+        self.text.chars().count()
+    }
+
+    pub(crate) fn cross_text_anchor(&self) -> usize {
+        self.sel_anchor.get()
+    }
+
+    pub(crate) fn set_cross_text_range(&self, range: Option<(usize, usize)>) {
+        if !self.selectable {
+            return;
+        }
+        match range {
+            Some((a, b)) if a != b => self.selection.set(Some((a.min(b), a.max(b)))),
+            _ => self.selection.set(None),
+        }
+    }
+
+    pub(crate) fn cross_text_char_at(&self, frame_local: crate::core::Point) -> usize {
+        let dp = self.draw_pos.get();
+        self.char_at_xy(frame_local.x - dp.x, frame_local.y - dp.y)
+    }
+
     fn intrinsic_size(&self) -> Size {
         let style_w = self.style.as_ref().and_then(|s| s.width);
         let style_h = self.style.as_ref().and_then(|s| s.height);

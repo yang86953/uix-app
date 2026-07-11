@@ -99,6 +99,36 @@ fn content_to_viewport_maps_scroll_child_into_visible_strip() {
 }
 
 #[test]
+fn node_viewport_frame_follows_scroll_offset() {
+    let scene = ScrollScene::with_strip_at_viewport_bottom();
+    // content (0,140) − scroll 50 → viewport (0,90)
+    assert_eq!(
+        node_viewport_frame(&scene, CHILD),
+        Rect::new(0.0, 90.0, 100.0, 20.0)
+    );
+}
+
+#[test]
+fn visible_viewport_rect_clips_to_scroll_viewport() {
+    let scene = ScrollScene::with_strip_at_viewport_bottom();
+    // child 投影 [90,110)，viewport clip [0,100) → 可见 [90,100)
+    assert_eq!(
+        visible_viewport_rect(&scene, CHILD),
+        Some(Rect::new(0.0, 90.0, 100.0, 10.0))
+    );
+}
+
+#[test]
+fn visible_viewport_rect_none_when_fully_scrolled_out() {
+    let scene = ScrollScene {
+        region: DirtyRegion::full(),
+        scroll_y: 200.0,
+    };
+    // child y=140 − 200 = -60，与 viewport [0,100) 无交
+    assert!(visible_viewport_rect(&scene, CHILD).is_none());
+}
+
+#[test]
 fn content_frame_without_transform_misses_strip() {
     let scene = ScrollScene::with_strip_at_viewport_bottom();
     let frame = scene.node_frame(CHILD);

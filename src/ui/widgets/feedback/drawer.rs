@@ -42,6 +42,12 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if !self.is_present() {
+            if let SystemEvent::PointerDown { pos, .. } = event {
+                if pos.x >= 0.0 && pos.x <= 96.0 && pos.y >= 0.0 && pos.y <= 32.0 {
+                    self.open();
+                    return EventResult::Handled;
+                }
+            }
             return EventResult::NotHandled;
         }
 
@@ -81,6 +87,10 @@ component! {
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         let loc = crate::ui::locale::use_locale();
         if !self.is_present() {
+            let primary = ctx.tokens().color_primary();
+            let trigger = Rect::new(frame.x, frame.y, 96.0, 32.0);
+            ctx.fill_rect(trigger, primary, Some(Radius::uniform(ctx.tokens().border_radius())));
+            ctx.text_center("打开 Drawer", trigger, Color::white(), 13.0);
             return;
         }
 
@@ -398,12 +408,17 @@ impl Drawer {
 
     fn intrinsic_size(&self) -> Size {
         if self.is_present() {
-            match self.placement {
-                DrawerPlacement::Right | DrawerPlacement::Left => Size::new(self.width, 600.0),
-                DrawerPlacement::Top | DrawerPlacement::Bottom => Size::new(400.0, self.height),
+            if self.mask {
+                // Masked drawer paints in overlay space; keep layout slot empty.
+                Size::zero()
+            } else {
+                match self.placement {
+                    DrawerPlacement::Right | DrawerPlacement::Left => Size::new(self.width, 600.0),
+                    DrawerPlacement::Top | DrawerPlacement::Bottom => Size::new(400.0, self.height),
+                }
             }
         } else {
-            Size::zero()
+            Size::new(96.0, 32.0)
         }
     }
 

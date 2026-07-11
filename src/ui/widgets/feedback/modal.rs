@@ -46,6 +46,13 @@ component! {
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if !self.is_present() {
+            // Gallery / demo: closed Modal still exposes a clickable trigger.
+            if let SystemEvent::PointerDown { pos, .. } = event {
+                if pos.x >= 0.0 && pos.x <= 96.0 && pos.y >= 0.0 && pos.y <= 32.0 {
+                    self.open();
+                    return EventResult::Handled;
+                }
+            }
             return EventResult::NotHandled;
         }
 
@@ -77,6 +84,10 @@ component! {
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
         if !self.is_present() {
+            let primary = ctx.tokens().color_primary();
+            let trigger = Rect::new(frame.x, frame.y, 96.0, 32.0);
+            ctx.fill_rect(trigger, primary, Some(Radius::uniform(ctx.tokens().border_radius())));
+            ctx.text_center("打开 Modal", trigger, Color::white(), 13.0);
             return;
         }
 
@@ -395,12 +406,15 @@ impl Modal {
     }
 
     fn intrinsic_size(&self) -> Size {
-        if self.overlay {
-            Size::zero()
-        } else if self.is_present() {
-            Size::new(self.width, self.height)
+        if self.is_present() {
+            if self.overlay {
+                Size::zero()
+            } else {
+                Size::new(self.width, self.height)
+            }
         } else {
-            Size::zero()
+            // Closed: reserve a trigger slot for gallery / live demos.
+            Size::new(96.0, 32.0)
         }
     }
 

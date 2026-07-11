@@ -37,6 +37,44 @@ pub fn content_to_viewport(content: Rect, scroll_x: f32, scroll_y: f32) -> Rect 
     )
 }
 
+/// 节点 frame 映射到 viewport/screen 坐标（累计祖先 scroll，不含 clip）。
+pub fn node_viewport_frame(scene: &impl ScenePaint, node_id: NodeId) -> Rect {
+    let frame = scene.node_frame(node_id);
+    let (sx, sy) = cumulative_scroll(scene, node_id);
+    content_to_viewport(frame, sx, sy)
+}
+
+/// 节点在 viewport/screen 空间的可见矩形（累计祖先 scroll 与 children_clip）。
+/// 完全滚出可视区或不可见时返回 `None`。与 `WidgetTree::visible_rect_for` 同语义。
+pub fn visible_viewport_rect(scene: &impl ScenePaint, node_id: NodeId) -> Option<Rect> {
+    if !scene.node_visible(node_id) {
+        return None;
+    }
+    let mut rect = scene.node_frame(node_id);
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        return None;
+    }
+
+    let mut current = node_id;
+    while let Some(parent_id) = scene.parent(current) {
+        if !scene.node_visible(parent_id) {
+            return None;
+        }
+        if is_viewport(scene, parent_id) {
+            if let Some((ox, oy)) = scene.scroll_offset(parent_id) {
+                rect = content_to_viewport(rect, ox, oy);
+            }
+        }
+        let parent_frame = scene.node_frame(parent_id);
+        if let Some(clip) = scene.children_clip(parent_id, parent_frame) {
+            rect = rect.intersect(&clip)?;
+        }
+        current = parent_id;
+    }
+
+    Some(rect)
+}
+
 /// 节点是否需绘制：自身脏，或其 viewport 投影与 dirty_region 相交。
 pub fn needs_paint(scene: &impl ScenePaint, node_id: NodeId, dirty_region: &DirtyRegion) -> bool {
     if scene.node_dirty(node_id) {

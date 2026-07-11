@@ -45,6 +45,8 @@ impl DrawSurface for GpuDrawSurface {
     fn clear_all(&mut self) {
         self.canvas.clear_soft_fallback();
         unsafe {
+            // Full-frame clear must ignore any leftover scissor from prior clips.
+            self.gl().disable(glow::SCISSOR_TEST);
             self.gl().clear_color(0.0, 0.0, 0.0, 0.0);
             self.gl().clear(glow::COLOR_BUFFER_BIT);
         }

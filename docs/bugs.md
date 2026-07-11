@@ -17,13 +17,23 @@
 
 | ID | 严重度 | 置信度 | 状态 | 影响范围 | 摘要 | 来源报告 | 下一步 | 最后更新 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| BUG-20260711-001 | High | 高 | 已确认 | Windows D3D11/OpenGL ES；主窗/副窗 | 动态刷新时完整帧与大片黑块/空白帧持续交替 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-001-gpu-窗口持续交替出现大片黑块空白帧) | 检查交换链双缓冲、partial damage 与 clear/preserve 契约 | 2026-07-11 |
-| BUG-20260711-002 | High | 高 | 已确认 | Windows 输入页自绘 Input | Input 获得焦点后不接收文本，Tab 也不移动焦点 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-002-输入控件键盘路径失效) | 分离验证 TextInput/KeyDown 转换与 focus traversal | 2026-07-11 |
-| BUG-20260711-003 | Medium | 高 | 已确认 | 暗色主题；应用能力页等固定 token 节点 | 暗色背景上仍使用接近黑色的固定浅色主题文字 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-003-暗色主题存在不可读的固定浅色主题文本) | 将主题敏感色改为 palette 引用并补暗色视觉回归 | 2026-07-11 |
-| BUG-20260711-004 | Medium | 高 | 已确认 | 其他页 Transfer | 点击可见第一行 A 实际选中第二行 B | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-004-transfer-可见行与点击命中行错位) | 统一绘制起点与 hit-test 行索引偏移 | 2026-07-11 |
-| BUG-20260711-005 | Medium | 高 | 已确认 | 640×480 窄窗；固定宽 Demo 页面 | 主内容被横向裁切且无滚动或其他访问路径 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-005-640480-窄窗下主内容横向裁切且不可达) | 定义最小窗口或增加响应式/横向访问策略 | 2026-07-11 |
-| BUG-20260711-006 | Low | 高 | 已确认 | 其他页 Upload Demo | 声明仅接受 `.png,.jpg`，点击却新增 `.txt` | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-006-upload-的-accept-声明与实际新增文件扩展名冲突) | 让模拟文件与 accept 规则一致并补拒绝路径 | 2026-07-11 |
-| BUG-20260711-007 | Low | 高 | 已确认 | 反馈页 Demo 覆盖完整性 | Modal/Drawer 标记为已覆盖但没有可操作入口 | [报告](../test-reports/20260711-082208-uix-demo/report.md#bug-20260711-007-反馈页将-modaldrawer-标记为已覆盖但没有可操作入口) | 增加 live trigger 与开关/遮罩/焦点恢复验证 | 2026-07-11 |
+| — | — | — | — | — | 当前无活跃缺陷；见下方待验证/已关闭 | — | — | — |
+
+## 待验证
+
+| ID | 严重度 | 置信度 | 状态 | 影响范围 | 摘要 | 修复要点 | 自动化证据 | 下一步 | 最后更新 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| BUG-20260711-001 | High | 高 | 待验证 | Windows D3D11/OpenGL ES；主窗/副窗 | 动态刷新时完整帧与大片黑块/空白帧持续交替 | D3D11 `Present` 后重建 RTV；GL `clear_all` 禁用 scissor | `cargo test --bin uix-demo` 19/19；lib 相关路径编译通过 | GUI：D3D11/OpenGL ES 连续 tick 采样相邻帧 | 2026-07-11 |
+| BUG-20260711-002 | High | 高 | 待验证 | Windows 输入页自绘 Input | Input 获得焦点后不接收文本，Tab 也不移动焦点 | `Input::sync_from` 保留 runtime value；PointerDown 不再本地抢焦点；remove 时派发 FocusOut | `reconcile_input_preserves_typed_value_*`；`sync_from_preserves_runtime_value` | GUI：输入页键入 + Tab 焦点遍历 | 2026-07-11 |
+| BUG-20260711-003 | Medium | 高 | 待验证 | 暗色主题；应用能力页等固定 token 节点 | 暗色背景上仍使用接近黑色的固定浅色主题文字 | demo 主题敏感色改为 `ColorValue::Neutral` / `Palette` | demo 19/19 | GUI：暗色应用能力页对比度 | 2026-07-11 |
+| BUG-20260711-004 | Medium | 高 | 待验证 | 其他页 Transfer | 点击可见第一行 A 实际选中第二行 B | hit-test 与绘制统一减去 24px 列表头偏移 | demo 19/19；Transfer 编译 | GUI：点击「选项 A」只切换 A | 2026-07-11 |
+| BUG-20260711-005 | Medium | 高 | 待验证 | 640×480 窄窗；固定宽 Demo 页面 | 主内容被横向裁切且无滚动或其他访问路径 | Transfer `measure` 受 constraints 约束并按 frame 宽布局；其他页 Transfer/Upload 改为纵向全宽 | demo resize 相关 3 测通过 | GUI：640×480 其他页 Transfer/Upload 可达 | 2026-07-11 |
+| BUG-20260711-006 | Low | 高 | 待验证 | 其他页 Upload Demo | 声明仅接受 `.png,.jpg`，点击却新增 `.txt` | 模拟文件名取自 `accept` 首个扩展名 | demo 19/19 | GUI：点击 Upload 得到 `.png` | 2026-07-11 |
+| BUG-20260711-007 | Low | 高 | 待验证 | 反馈页 Demo 覆盖完整性 | Modal/Drawer 标记为已覆盖但没有可操作入口 | 关闭态绘制「打开」触发器；Modal demo 启用 `overlay(true)` | modal/drawer 单元 6/6；demo 19/19 | GUI：反馈页打开/关闭/遮罩 | 2026-07-11 |
+| BUG-20260711-008 | High | 高 | 待验证 | Windows D3D11；长会话 / 连续 Present | 内存消耗过大：Present 时仍持有 RTV 导致 DXGI 额外分配 swapchain 缓冲；soft CPU 缓冲与 offscreen 句柄亦浪费 | Present 前释放 RTV、成功后再重建；NativeGpu soft 按需分配；glyph `Arc` 共享；CpuBackend 复用 offscreen id | `repeated_present_keeps_single_rtv`；`soft_fallback_is_lazy`；`create_offscreen_reuses_destroyed_ids`；demo 19/19 | GUI：长跑观察工作集/专用显存是否稳定 | 2026-07-11 |
+| BUG-20260711-009 | Medium | 高 | 待验证 | ScrollView 内可聚焦控件；焦点环 | 点击按钮后焦点环停在原屏位置，滚动后不随控件移动 | 焦点环用 `node_viewport_frame` / `visible_viewport_rect`（累计 scroll + clip）替代裸 `node_frame` | `node_viewport_frame_follows_scroll_offset`；`visible_viewport_rect_*` | GUI：点「取消」后滚动，环应贴合按钮并裁剪 | 2026-07-11 |
+| BUG-20260711-010 | Medium | 高 | 待验证 | 通用页 Typography 等连续文字行 | 在下行按下拖选后无法向上扩展到上行；选区停在起点节点 | `pressed_component` 捕获 Move 时树层协调同父级跨节点选区（`text_selection`） | `typography_drag_selection_extends_to_sibling_above`；`typography_drag_selection_extends_through_middle_sibling` | GUI：Heading 3 按下拖到 Heading 2，两行均应高亮 | 2026-07-11 |
+| BUG-20260711-011 | Medium | 高 | 待验证 | 通用页跨 Typography 拖选后复制 | 多行已视觉选中，Ctrl+C / 复制只得到焦点节点一行 | 树层 `aggregate_cross_text_selection`；KeyDown Ctrl+C 与 `SystemEvent::Copy` 写入聚合文本 | `typography_cross_selection_copy_aggregates_sibling_lines` | GUI：跨 Heading+正文选中后复制，粘贴应含全部行 | 2026-07-11 |
 
 ## 已关闭
 

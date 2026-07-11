@@ -42,7 +42,7 @@ pub struct TextLayout {
 pub struct GlyphRaster {
     pub width: usize,
     pub height: usize,
-    pub coverage: std::sync::Arc<Vec<u8>>,
+    pub coverage: std::sync::Arc<[u8]>,
     pub bearing_x: f32,
     pub bearing_y: f32,
 }

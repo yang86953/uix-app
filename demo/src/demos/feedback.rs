@@ -71,7 +71,7 @@ pub fn page_feedback(ctx: &DemoCtx<'_>) -> ViewNode {
             tk,
             36.0,
             "Modal ✓",
-            Modal::new("弹窗标题").closable(true),
+            Modal::new("弹窗标题").closable(true).overlay(true),
         ))
         .push(labeled_row(
             tk,

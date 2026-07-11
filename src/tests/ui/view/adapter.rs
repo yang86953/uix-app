@@ -3635,6 +3635,43 @@ fn reconcile_autocomplete_preserves_open_value_and_syncs_options() {
 }
 
 #[test]
+fn reconcile_input_preserves_typed_value_and_syncs_placeholder() {
+    use crate::ui::widgets::Input;
+
+    let mut tree = ViewAdapter::build_nodes(ViewNode::leaf(Input::new("old")));
+    let root_id = tree.root_id().expect("input root should exist");
+    {
+        let input = tree
+            .get_mut(root_id)
+            .unwrap()
+            .component_mut()
+            .as_any_mut()
+            .downcast_mut::<Input>()
+            .unwrap();
+        input.set_value("typed");
+        input.set_focused(true);
+    }
+
+    ViewAdapter::reconcile_nodes(&mut tree, ViewNode::leaf(Input::new("new")));
+
+    let input = tree
+        .get(root_id)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Input>()
+        .unwrap();
+    assert_eq!(input.value(), "typed");
+    assert!(matches!(
+        input.snapshot_fields(),
+        SnapshotFields::Input {
+            placeholder,
+            ..
+        } if placeholder == "new"
+    ));
+}
+
+#[test]
 fn reconcile_date_picker_preserves_open_value_and_syncs_placeholder() {
     use crate::ui::widgets::{DatePicker, DateValue};
 

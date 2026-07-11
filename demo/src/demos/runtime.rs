@@ -107,7 +107,7 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
             column([
                 dynamic_label(move || format!("本地计数: {}", display.get()))
                     .font_size(18.0)
-                    .color(tk.color_primary),
+                    .color(ColorValue::Palette(PaletteColor::Primary)),
                 row([
                     button("+1")
                         .primary()
@@ -128,7 +128,7 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(
             dynamic_label(move || format!("全局 tick 计数: {} (每秒 +1)", tick_label.get()))
                 .font_size(16.0)
-                .color(tk.color_text),
+                .color(ColorValue::Neutral(NeutralRole::Text)),
         )
         .push(info_note(
             tk,
@@ -137,11 +137,15 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
         .section("View DSL + embed + component! 自定义")
         .push(
             row([
-                label("View DSL row/column").font_size(13.0).color(tk.color_text),
+                label("View DSL row/column")
+                    .font_size(13.0)
+                    .color(ColorValue::Neutral(NeutralRole::Text)),
                 space(8.0),
                 embed(Icon::new("layers").size(16.0)),
                 space(4.0),
-                label("+ embed(widget-tree)").font_size(13.0).color(tk.color_text_secondary),
+                label("+ embed(widget-tree)")
+                    .font_size(13.0)
+                    .color(ColorValue::Neutral(NeutralRole::TextSecondary)),
             ])
             .padding(8.0),
         )
@@ -193,13 +197,19 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                 .child(Spin::new())
                 .child(
                     Label::new("Spin = 动态")
-                        .color(tk.color_text_tertiary)
+                        .style(Style {
+                            color: ColorValue::Neutral(NeutralRole::TextTertiary),
+                            ..Style::default()
+                        })
                         .font_size(11.0),
                 )
                 .child(Card::new().title("Card").elevation(1).size(120.0, 36.0))
                 .child(
                     Label::new("Card = 静态候选")
-                        .color(tk.color_text_tertiary)
+                        .style(Style {
+                            color: ColorValue::Neutral(NeutralRole::TextTertiary),
+                            ..Style::default()
+                        })
                         .font_size(11.0),
                 ),
         )

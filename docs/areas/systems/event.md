@@ -180,7 +180,7 @@ dispatch_semantic_event:
 
 Widget 可通过 `EventHandler::wants_continuous_pointer_move` opt-in（#121，默认 false）。实现见 [component · 能力](component.md#能力)。
 
-> **实现注记**：`tree_events.rs` 已按 #109 接入：pointer capture/drag 路径全 dispatch；hover hit frame 内跳过 `hit_test` 与默认 dispatch；opt-in widget 保留连续 `PointerMove`。无 hover 视觉态的叶子（Label/Icon 等对 enter/leave 返回 `NotHandled`）不标脏，避免局部清屏挖掉父背景。
+> **实现注记**：`tree_events.rs` 已按 #109 接入：pointer capture/drag 路径全 dispatch；hover hit frame 内跳过 `hit_test` 与默认 dispatch；opt-in widget 保留连续 `PointerMove`。无 hover 视觉态的叶子（Label/Icon 等对 enter/leave 返回 `NotHandled`）不标脏，避免局部清屏挖掉父背景。文字拖选例外：`pressed_component` 为 Typography / selectable Label / RichText 且正在拖选时，由 `text_selection` 按同父级文档序协调跨节点选区（否则 Move 锁在起点节点，无法向上/下行扩展）。跨节点选区复制：`Ctrl+C` / `SystemEvent::Copy` 在派发到焦点节点前由树层 `aggregate_cross_text_selection` 按文档序拼接各兄弟选区（`\n`），避免只复制起点行。
 
 ---
 

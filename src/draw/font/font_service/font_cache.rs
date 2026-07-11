@@ -40,7 +40,7 @@ pub(crate) struct GlyphCacheKey {
 pub(crate) struct CachedRaster {
     pub(crate) width: usize,
     pub(crate) height: usize,
-    pub(crate) coverage: Arc<Vec<u8>>,
+    pub(crate) coverage: Arc<[u8]>,
     pub(crate) bearing_x: f32,
     pub(crate) bearing_y: f32,
 }
