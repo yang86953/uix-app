@@ -2607,6 +2607,17 @@ fn reconcile_transfer_preserves_live_membership_and_syncs_initial_items() {
             crate::ui::EventHandler::on_event(
                 transfer,
                 &SystemEvent::PointerDown {
+                    pos: crate::core::Point::new(10.0, 30.0),
+                    button: MouseButton::Left,
+                    mods: KeyMod::NONE,
+                },
+            ),
+            EventResult::Handled
+        );
+        assert_eq!(
+            crate::ui::EventHandler::on_event(
+                transfer,
+                &SystemEvent::PointerDown {
                     pos: crate::core::Point::new(240.0, 90.0),
                     button: MouseButton::Left,
                     mods: KeyMod::NONE,
@@ -2614,6 +2625,8 @@ fn reconcile_transfer_preserves_live_membership_and_syncs_initial_items() {
             ),
             EventResult::Handled
         );
+        assert_eq!(transfer.source_count(), 0);
+        assert_eq!(transfer.target_count(), 1);
     }
 
     ViewAdapter::reconcile_nodes(

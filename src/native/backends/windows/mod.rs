@@ -32,6 +32,7 @@ pub mod system_info;
 pub mod text_input;
 pub mod timer;
 pub mod tsf_session;
+pub mod tsf_text_store;
 pub mod util;
 pub mod window_ops;
 pub mod wnd_proc;
