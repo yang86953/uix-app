@@ -87,8 +87,10 @@ pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowC
 
 pub use crate::ui::view::{
     button, column, dynamic_label, embed, grid, input, label, row, scroll, space, ButtonBuilder,
-    GridBuilder, InputBuilder, ScrollBuilder, StyleExt, Ui, View, ViewAdapter, ViewNode,
+    GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder, StyleExt, Ui,
+    View, ViewAdapter, ViewNode,
 };
+pub use crate::views;
 
 #[cfg(test)]
 mod tests {

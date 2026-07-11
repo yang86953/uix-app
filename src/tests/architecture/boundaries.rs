@@ -749,7 +749,8 @@ fn business_event_callbacks_stay_out_of_widget_fields() {
 #[test]
 fn architecture_document_stays_in_the_qualified_docs_tree() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let architecture_doc = root.join("docs/areas/architecture.md");
+    let architecture_doc = root.join("docs/架构.md");
+    let domain_dir = root.join("docs/领域");
     let forbidden = ["ARCHITECTURE.md", "architecture.md"];
     let present: Vec<_> = forbidden
         .iter()
@@ -757,14 +758,59 @@ fn architecture_document_stays_in_the_qualified_docs_tree() {
         .filter(|name| root.join(name).exists())
         .collect();
 
+    let required_generic = [
+        "产品.md",
+        "决策.md",
+        "进度.md",
+        "问题.md",
+        "架构.md",
+    ];
+    for name in required_generic {
+        let path = root.join("docs").join(name);
+        assert!(
+            path.is_file(),
+            "generic docs skeleton missing: {}",
+            path.display()
+        );
+    }
+
     assert!(
         architecture_doc.is_file(),
         "qualified architecture navigation is missing: {}",
         architecture_doc.display()
     );
+    assert!(
+        !domain_dir.exists(),
+        "docs/领域/ must not exist; project depth lives in AGENTS + 决策 + 架构 + source: {}",
+        domain_dir.display()
+    );
+
+    let forbidden_root_domain = [
+        "按需驱动.md",
+        "公开API.md",
+        "ui.md",
+        "界面.md",
+        "运行时.md",
+        "渲染.md",
+        "缺陷.md",
+    ];
+    let leaked: Vec<_> = forbidden_root_domain
+        .iter()
+        .copied()
+        .filter(|name| root.join("docs").join(name).exists())
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "removed domain encyclopedias must not reappear under docs/: {leaked:?}"
+    );
+
+    assert!(
+        root.join("AGENTS.md").is_file(),
+        "AGENTS.md hard-constraint contract is missing"
+    );
 
     assert!(
         present.is_empty(),
-        "docs/areas/architecture.md is the project architecture navigation; do not add standalone root architecture files: {present:?}"
+        "docs/架构.md is the project architecture navigation; do not add standalone root architecture files: {present:?}"
     );
 }

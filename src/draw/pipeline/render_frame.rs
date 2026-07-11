@@ -64,7 +64,7 @@ impl FrameRenderer {
         &mut self.layer_tree
     }
 
-    /// 执行单 Pass 渲染（Content + AfterChildren + 焦点环）；返回 Present damage 与 invalidation 来源。
+    /// 执行单 Pass 渲染（Content + AfterChildren）；返回 Present damage 与 invalidation 来源。
     pub fn render_frame<S: ScenePaint>(
         &mut self,
         engine: &mut dyn GraphicsEngine,

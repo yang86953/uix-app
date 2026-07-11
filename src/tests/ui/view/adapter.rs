@@ -270,7 +270,7 @@ fn reconcile_reregisters_root_handlers() {
     let old_for_handler = old_hits.clone();
     let new_for_handler = new_hits.clone();
 
-    let mut tree = ViewAdapter::build(button("Old").on_click(move || {
+    let mut tree = ViewAdapter::build(button("Old").on_click_fn(move || {
         old_for_handler.set(old_for_handler.get() + 1);
     }));
     let root_id = tree.root_id().expect("button root should exist");
@@ -292,7 +292,7 @@ fn reconcile_reregisters_root_handlers() {
 
     ViewAdapter::reconcile(
         &mut tree,
-        button("New").on_click(move || {
+        button("New").on_click_fn(move || {
             new_for_handler.set(new_for_handler.get() + 1);
         }),
     );
@@ -4672,7 +4672,7 @@ fn button_on_click_is_registered_as_semantic_handler() {
 
     let clicks = Rc::new(Cell::new(0));
     let clicks_for_handler = clicks.clone();
-    let mut tree = ViewAdapter::build(button("OK").on_click(move || {
+    let mut tree = ViewAdapter::build(button("OK").on_click_fn(move || {
         clicks_for_handler.set(clicks_for_handler.get() + 1);
     }));
 

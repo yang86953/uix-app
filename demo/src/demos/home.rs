@@ -48,9 +48,6 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
     let nav_gallery = active.clone();
 
     let count = ctx.home_count();
-    let display = count.clone();
-    let inc = count.clone();
-    let dec = count.clone();
 
     PageBuilder::new(tk)
         .gap()
@@ -66,24 +63,25 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                     "响应式 State",
                     280.0,
                     120.0,
-                    column([
-                        dynamic_label(move || format!("计数: {}", display.get()))
+                    column((
+                        count
+                            .map_text(|n| format!("计数: {n}"))
                             .font_size(28.0)
                             .color(ColorValue::Palette(PaletteColor::Primary)),
                         space(12.0),
-                        row([
+                        row((
                             button("+1")
                                 .primary()
-                                .on_click_capture(&count, move || inc.set(inc.get() + 1)),
-                            button("-1").on_click_capture(&count, move || {
-                                let v = dec.get();
+                                .on_click(&count, |c| c.set(c.get() + 1)),
+                            button("-1").on_click(&count, |c| {
+                                let v = c.get();
                                 if v > 0 {
-                                    dec.set(v - 1);
+                                    c.set(v - 1);
                                 }
                             }),
-                        ])
+                        ))
                         .gap(8.0),
-                    ])
+                    ))
                     .flex_grow(0.0),
                 ),
                 demo_card(

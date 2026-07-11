@@ -3,7 +3,6 @@
 use super::Style;
 use super::{ColorValue, PaletteColor, TypographyToken};
 use crate::core::EdgeInsets;
-use crate::draw::Color;
 use crate::ui::theme::NeutralRole;
 
 /// 组件交互态，用于从 `StyleSet` 中解析最终样式。
@@ -95,26 +94,13 @@ impl StyleSet {
     }
 
     pub fn button_default() -> Self {
+        // focused/pressed 不改 fill/border/text（#176）：点击反馈仅 Material ripple。
         let normal = Style::button_default();
         Self::new(normal.clone())
             .hover(Style {
+                background: Some(ColorValue::Palette(PaletteColor::PrimaryBg)),
                 border_color: Some(ColorValue::Palette(PaletteColor::Primary)),
                 color: ColorValue::Palette(PaletteColor::Primary),
-                ..Style::default()
-            })
-            .pressed(Style {
-                border_color: Some(ColorValue::Palette(PaletteColor::PrimaryActive)),
-                color: ColorValue::Palette(PaletteColor::PrimaryActive),
-                ..Style::default()
-            })
-            .focused(Style {
-                border_color: Some(ColorValue::Palette(PaletteColor::Primary)),
-                box_shadow: Some(super::BoxShadowDef::new(
-                    Color::from_rgba(22, 119, 255, 80),
-                    4.0,
-                    0.0,
-                    0.0,
-                )),
                 ..Style::default()
             })
             .disabled(Style {
@@ -132,21 +118,6 @@ impl StyleSet {
                 background: Some(ColorValue::Palette(PaletteColor::PrimaryHover)),
                 border_color: Some(ColorValue::Palette(PaletteColor::PrimaryHover)),
                 color: ColorValue::Palette(PaletteColor::White),
-                ..Style::default()
-            })
-            .pressed(Style {
-                background: Some(ColorValue::Palette(PaletteColor::PrimaryActive)),
-                border_color: Some(ColorValue::Palette(PaletteColor::PrimaryActive)),
-                color: ColorValue::Palette(PaletteColor::White),
-                ..Style::default()
-            })
-            .focused(Style {
-                box_shadow: Some(super::BoxShadowDef::new(
-                    Color::from_rgba(22, 119, 255, 90),
-                    4.0,
-                    0.0,
-                    0.0,
-                )),
                 ..Style::default()
             })
             .disabled(Style {
@@ -173,20 +144,6 @@ impl StyleSet {
             background: Some(ColorValue::Palette(PaletteColor::PrimaryBg)),
             ..Style::default()
         })
-        .pressed(Style {
-            border_color: Some(ColorValue::Palette(PaletteColor::PrimaryActive)),
-            color: ColorValue::Palette(PaletteColor::PrimaryActive),
-            ..Style::default()
-        })
-        .focused(Style {
-            box_shadow: Some(super::BoxShadowDef::new(
-                Color::from_rgba(22, 119, 255, 80),
-                4.0,
-                0.0,
-                0.0,
-            )),
-            ..Style::default()
-        })
         .disabled(Style {
             border_color: Some(ColorValue::Neutral(NeutralRole::Border)),
             color: ColorValue::Neutral(NeutralRole::TextQuaternary),
@@ -209,20 +166,6 @@ impl StyleSet {
         .hover(Style {
             background: Some(ColorValue::Palette(PaletteColor::ErrorBorder)),
             border_color: Some(ColorValue::Palette(PaletteColor::ErrorBorder)),
-            ..Style::default()
-        })
-        .pressed(Style {
-            background: Some(ColorValue::Palette(PaletteColor::Error)),
-            border_color: Some(ColorValue::Palette(PaletteColor::Error)),
-            ..Style::default()
-        })
-        .focused(Style {
-            box_shadow: Some(super::BoxShadowDef::new(
-                Color::from_rgba(255, 77, 79, 80),
-                4.0,
-                0.0,
-                0.0,
-            )),
             ..Style::default()
         })
         .disabled(Style {

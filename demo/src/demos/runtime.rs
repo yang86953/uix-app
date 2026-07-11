@@ -57,7 +57,6 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
     let ticks = ctx.timer_ticks;
     let anim = ctx.anim_time;
 
-    let tick_label = ticks.clone();
     let anim_for_ball = anim.clone();
     let anim_for_ring = anim.clone();
     let theme_toggle = if let Some(control) = ctx.theme_control() {
@@ -74,7 +73,7 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
     let open_window = if let Some(control) = ctx.theme_control() {
         let open_control = control.clone();
         button("打开主题联动窗口")
-            .on_click(move || {
+            .on_click_fn(move || {
                 let Some(handle) = open_control.handle() else {
                     return;
                 };
@@ -94,39 +93,40 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
 
     PageBuilder::new(tk)
         .gap()
-        .section("响应式 State + dynamic_label")
+        .section("响应式 State + label")
         .push(info_note(
             tk,
-            "State 变更触发 reconcile；dynamic_label 绑定闭包读取最新值。",
+            "State 变更触发 reconcile；label(闭包) / State::map_text 读取最新值。",
         ))
         .push({
             let counter = ctx.runtime_count();
-            let display = counter.clone();
-            let inc = counter.clone();
-            let dec = counter.clone();
-            column([
-                dynamic_label(move || format!("本地计数: {}", display.get()))
+            column((
+                counter
+                    .map_text(|n| format!("本地计数: {n}"))
                     .font_size(18.0)
                     .color(ColorValue::Palette(PaletteColor::Primary)),
-                row([
+                row((
                     button("+1")
                         .primary()
-                        .on_click_capture(&counter, move || inc.set(inc.get() + 1)),
-                    button("-1").on_click_capture(&counter, move || {
-                        let v = dec.get();
-                        if v > 0 { dec.set(v - 1); }
+                        .on_click(&counter, |c| c.set(c.get() + 1)),
+                    button("-1").on_click(&counter, |c| {
+                        let v = c.get();
+                        if v > 0 {
+                            c.set(v - 1);
+                        }
                     }),
-                ])
+                ))
                 .height(36.0)
                 .gap(8.0),
-            ])
+            ))
             // 局部内容组保持 intrinsic 高度，不占用页面内容列的剩余空间。
             .gap(8.0)
             .flex_grow(0.0)
         })
         .section("App Timer — run_interval (on_start 注册)")
         .push(
-            dynamic_label(move || format!("全局 tick 计数: {} (每秒 +1)", tick_label.get()))
+            ticks
+                .map_text(|n| format!("全局 tick 计数: {n} (每秒 +1)"))
                 .font_size(16.0)
                 .color(ColorValue::Neutral(NeutralRole::Text)),
         )

@@ -1,16 +1,16 @@
 # UIX 演示程序
 
-> 可运行示例：验证 API、对照设计文档、回归 GUI 行为。设计权威 → [`docs/index.md`](../docs/index.md)。
+> **AI 何时打开**：跑 demo / 对照页面覆盖。设计权威 → [`docs/架构.md`](../docs/架构.md)；落地硬约束 → [`AGENTS.md`](../AGENTS.md)。
 
 ## 快速运行
 
 ```bash
-cargo run --bin uix-demo              # GUI 多页应用（默认）
-cargo run --bin uix-demo -- --cli     # 无窗口 CLI 功能域演示
+cargo run --bin uix-demo              # GUI（默认）
+cargo run --bin uix-demo -- --cli     # CLI
 RUST_LOG=debug cargo run --bin uix-demo
 ```
 
-Linux GUI 需 Wayland 会话。
+Linux GUI 需 Wayland。页面与 CLI 细节见下；上手 → [`架构 · 应用作者入口`](../docs/架构.md#应用作者入口)。
 
 ## 目录结构
 
@@ -69,7 +69,7 @@ demo/src/
 | 9 | 其他 | `other.rs` | Transfer、Upload、QRCode、Watermark、DesignTokens |
 | 10 | 覆盖清单 | `gallery.rs` | 交互式覆盖矩阵；点击 ✓ 行跳转对应页 |
 
-权威 widget 清单 → [`docs/areas/systems/component.md`](../docs/areas/systems/component.md#内置-widget-目录)。
+权威 widget 清单 → `src/ui/widgets/` · demo Gallery；导航 → [`架构 · 源码入口`](../docs/架构.md#源码入口)。
 机器可读矩阵 → [`demos/gallery.rs`](src/demos/gallery.rs) 中 `COVERAGE` 常量。
 
 ## 覆盖矩阵摘要
@@ -103,13 +103,13 @@ demo/src/
 
 ## 从目标到代码（~15 分钟）
 
-应用作者快速路径（与 [public-api · 从目标到代码](../docs/areas/systems/public-api.md#从目标到代码) 一致）：
+应用作者快速路径（与 [架构 · 应用作者入口](../docs/架构.md#应用作者入口) 一致）：
 
-1. **为什么** — [#105 零闲置](../docs/decisions.md#d105)：`App::run()` 空闲时不空转；Timer/动画由框架 register。
-2. **声明 UI** — `State::new` + `dynamic_label` + `button`；见 [README Counter 示例](../README.md#示例)。
-3. **布局** — `column([...]).gap(12).padding(16)`；更多 → [layout.md](../docs/areas/systems/layout.md)。
+1. **为什么** — [#105 零闲置](../docs/决策.md#d105)：`App::run()` 空闲时不空转；Timer/动画由框架 register。
+2. **声明 UI** — `State::new` + `label` / `map_text` + `button(…).on_click(&state, …)`；见 [README Counter 示例](../README.md#示例)。
+3. **布局** — `column([...]).gap(12).padding(16)`；更多 → `src/ui/layout/` · [#165](../docs/决策.md#d165)。
 4. **运行** — `App::new().title(...).root(|| ...).run()`；Timer/Theme → demo **应用能力** 页（`runtime.rs`）。
-5. **深入** — [view-reactive.md](../docs/areas/systems/view-reactive.md) · [application.md](../docs/areas/systems/application.md) · [component.md](../docs/areas/systems/component.md)。
+5. **深入** — [架构 · 源码入口](../docs/架构.md#源码入口) · [#178](../docs/决策.md#d178)–[#180](../docs/决策.md#d180)。
 
 ## CLI 演示项
 
@@ -131,8 +131,8 @@ cargo test --bin uix-demo
 
 | 想学 | 读 |
 |------|-----|
-| 公开 API | [`public-api.md`](../docs/areas/systems/public-api.md) |
-| View / State | [`view-reactive.md`](../docs/areas/systems/view-reactive.md) |
-| App / Timer / 多窗 | [`application.md`](../docs/areas/systems/application.md) |
-| 组件目录 | [`component.md`](../docs/areas/systems/component.md) |
-| Overlay | [`overlay.md`](../docs/areas/systems/overlay.md) |
+| 上手 / 公开面 | [`架构 · 应用作者入口`](../docs/架构.md#应用作者入口) · [#178](../docs/决策.md#d178)–[#180](../docs/决策.md#d180) |
+| View / State | `src/ui/view/` · `src/ui/foundation/state.rs` |
+| App / Timer / 多窗 | `src/app/` · [#132](../docs/决策.md#d132) |
+| 组件目录 | `src/ui/widgets/` · Gallery |
+| Overlay | `src/ui/overlay.rs` · [#96](../docs/决策.md#d96)–[#100](../docs/决策.md#d100) |

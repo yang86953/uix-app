@@ -875,3 +875,23 @@ macro_rules! semantic_handler {
         __uix_registration
     }};
 }
+
+/// 将异质 View 子节点收成 `Vec<ViewNode>`，供 `column` / `row` / `grid` 使用（[#178]）。
+///
+/// ```ignore
+/// column(views![
+///     label("Hello"),
+///     button("+1").primary().on_click(&count, |c| c.set(c.get() + 1)),
+/// ])
+/// ```
+///
+/// 两三个子节点时优先元组：`column((a, b))`。
+#[macro_export]
+macro_rules! views {
+    ($($child:expr),* $(,)?) => {{
+        {
+            use $crate::ui::view::View;
+            vec![$(View::build($child),)*]
+        }
+    }};
+}
