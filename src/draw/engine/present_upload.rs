@@ -71,8 +71,11 @@ impl GraphicsEngine for PresentUploadEngine {
         let logical_w = width.max(1);
         let logical_h = height.max(1);
         self.gpu_ctx.resize(logical_w, logical_h);
+        // 与 NativeGpuBackend 一致：CPU 表面跟 GPU 实际客户区对齐。
+        let actual_w = self.gpu_ctx.width().max(1);
+        let actual_h = self.gpu_ctx.height().max(1);
         self.sync_clear_color();
-        self.session.resize(logical_w, logical_h);
+        self.session.resize(actual_w, actual_h);
     }
 
     fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
@@ -105,7 +108,8 @@ impl GraphicsEngine for PresentUploadEngine {
     }
 
     fn capabilities(&self) -> GraphicsCapabilities {
-        GraphicsCapabilities::engine_managed_full_redraw()
+        // CPU 栅格 + GPU upload：离屏走 CpuBackend。
+        GraphicsCapabilities::engine_managed_with_offscreen()
     }
 
     fn device_pixel_ratio(&self) -> f32 {
@@ -150,6 +154,18 @@ impl GraphicsEngine for PresentUploadEngine {
 
     fn copy_offscreen_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
         self.session.cpu_backend()?.copy_offscreen_pixels(handle)
+    }
+
+    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        self.session.backend_mut().begin_offscreen_paint(handle)
+    }
+
+    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
+        self.session.backend_mut().flush_offscreen_paint(handle);
+    }
+
+    fn end_offscreen_paint(&mut self) {
+        self.session.backend_mut().end_offscreen_paint();
     }
 
     fn memory_usage(&self) -> usize {
@@ -275,7 +291,7 @@ mod tests {
         );
         assert_eq!(
             engine.capabilities(),
-            GraphicsCapabilities::engine_managed_full_redraw()
+            GraphicsCapabilities::engine_managed_with_offscreen()
         );
     }
 }

@@ -90,7 +90,8 @@ component! {
                         .scrollbar_v
                         .hit_test_thumb(frame, *pos, self.scroll_y, self.max_scroll_y())
                 {
-                    self.scrollbar_v.dragging = true;
+                    self.scrollbar_v
+                        .begin_drag(frame, *pos, self.scroll_y, self.max_scroll_y());
                     return EventResult::Handled;
                 }
                 if self.direction.can_scroll_x()
@@ -99,7 +100,8 @@ component! {
                         .scrollbar_h
                         .hit_test_thumb(frame, *pos, self.scroll_x, self.max_scroll_x())
                 {
-                    self.scrollbar_h.dragging = true;
+                    self.scrollbar_h
+                        .begin_drag(frame, *pos, self.scroll_x, self.max_scroll_x());
                     return EventResult::Handled;
                 }
                 EventResult::NotHandled
@@ -165,8 +167,8 @@ component! {
             }
             SystemEvent::PointerUp { .. } => {
                 let was_dragging = self.scrollbar_v.dragging || self.scrollbar_h.dragging;
-                self.scrollbar_v.dragging = false;
-                self.scrollbar_h.dragging = false;
+                self.scrollbar_v.end_drag();
+                self.scrollbar_h.end_drag();
                 if was_dragging {
                     EventResult::Handled
                 } else {
@@ -229,7 +231,10 @@ component! {
     }
 
     children_clip => (&self, frame: Rect) -> Option<Rect> {
-        Some(frame)
+        // 裁剪/命中子项时扣除滚动条 gutter，避免点滑块落到内容子树上。
+        let need_v = self.needs_v_scrollbar(frame, &[]);
+        let need_h = self.needs_h_scrollbar(frame, &[]);
+        Some(self.content_frame(frame, need_v, need_h))
     }
 
     dirty_rect => (&self, frame: Rect) -> Rect {
@@ -298,9 +303,12 @@ component! {
             let cid = child.id;
             let pref = child.measured_size;
             // 非滚动轴填满 content（已扣除 gutter）；滚动轴保留自然尺寸。
+            // Both：自然宽与视口取 max —— 窄于视口时拉满，宽于视口时允许横向滚动。
             let w = if can_scroll_x {
                 if pref.w <= 0.0 {
                     content.w
+                } else if can_scroll_y {
+                    pref.w.max(content.w)
                 } else {
                     pref.w
                 }
@@ -358,9 +366,14 @@ component! {
 
 impl ScrollView {
     fn intrinsic_size(&self) -> Size {
+        // flex_grow 视口：未固定边以 0 为 basis，由父级分得剩余客户区；
+        // 否则默认 300×200 会阻止窗口缩小时收缩，内容被窗口裁切且 max_scroll=0。
+        let grow = self.flex_grow_val > 0.0;
         Size::new(
-            self.fixed_width.unwrap_or(300.0),
-            self.fixed_height.unwrap_or(200.0),
+            self.fixed_width
+                .unwrap_or(if grow { 0.0 } else { 300.0 }),
+            self.fixed_height
+                .unwrap_or(if grow { 0.0 } else { 200.0 }),
         )
     }
 

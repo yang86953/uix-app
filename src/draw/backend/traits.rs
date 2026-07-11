@@ -44,7 +44,7 @@ impl BackendCapabilities {
         }
     }
 
-    /// GPU 默认能力：支持局部 clear 与 partial present damage。
+    /// GPU 默认能力：局部 clear / partial present；离屏由具体后端声明。
     pub fn gpu() -> Self {
         Self {
             presentation_mode: PresentationMode::EngineManaged,
@@ -64,6 +64,26 @@ impl BackendCapabilities {
         }
     }
 
+    /// GPU + 真正的离屏 RT/FBO（非 CPU 像素池）。
+    pub fn gpu_with_offscreen() -> Self {
+        Self {
+            presentation_mode: PresentationMode::EngineManaged,
+            partial_redraw: true,
+            offscreen: true,
+            scroll_memmove: false,
+        }
+    }
+
+    /// GPU 全帧重绘 + 离屏 RT/FBO。
+    pub fn gpu_full_redraw_with_offscreen() -> Self {
+        Self {
+            presentation_mode: PresentationMode::EngineManaged,
+            partial_redraw: false,
+            offscreen: true,
+            scroll_memmove: false,
+        }
+    }
+
     pub fn null() -> Self {
         Self {
             presentation_mode: PresentationMode::ExternalPresenter,
@@ -79,6 +99,7 @@ impl From<BackendCapabilities> for crate::draw::traits::GraphicsCapabilities {
         Self {
             presentation_mode: caps.presentation_mode,
             partial_redraw: caps.partial_redraw,
+            offscreen: caps.offscreen,
         }
     }
 }
@@ -131,6 +152,36 @@ pub trait RenderBackend: Send {
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
         let _ = handle;
         None
+    }
+    fn copy_offscreen_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
+        let _ = handle;
+        None
+    }
+
+    /// Bind + clear offscreen for Picture rasterize. CPU: no-op success if handle valid.
+    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        let _ = handle;
+        false
+    }
+
+    /// Flush pending Canvas2D ops into the bound GPU RT (CPU: no-op).
+    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
+        let _ = handle;
+    }
+
+    /// Unbind offscreen; restore swapchain / main target.
+    fn end_offscreen_paint(&mut self) {}
+
+    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
+        self.blit_offscreen_src(
+            handle,
+            Rect::new(0.0, 0.0, dst_rect.w, dst_rect.h),
+            dst_rect,
+        );
+    }
+
+    fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
+        let _ = (handle, src_rect, dst_rect);
     }
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {

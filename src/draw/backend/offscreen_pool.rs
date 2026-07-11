@@ -1,0 +1,119 @@
+//! CPU 像素离屏池 — 仅供 CPU / PresentUpload 栅格路径的 Picture 缓存。
+//!
+//! GPU 后端使用各自的 RT/FBO，不得挂接本池。
+
+use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
+use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::primitives::types::ImageHandle;
+use crate::draw::traits::Canvas2D;
+
+#[derive(Default)]
+pub struct CpuOffscreenPool {
+    offscreens: Vec<Option<CpuCanvas2D>>,
+    free_ids: Vec<u32>,
+    next_id: u32,
+}
+
+impl CpuOffscreenPool {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn clear(&mut self) {
+        self.offscreens.clear();
+        self.free_ids.clear();
+        self.next_id = 0;
+    }
+
+    pub fn create(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
+        if width <= 0 || height <= 0 {
+            return None;
+        }
+        let id = if let Some(id) = self.free_ids.pop() {
+            id
+        } else {
+            let id = self.next_id;
+            self.next_id = self.next_id.saturating_add(1);
+            id
+        };
+        let idx = id as usize;
+        while self.offscreens.len() <= idx {
+            self.offscreens.push(None);
+        }
+        self.offscreens[idx] = Some(CpuCanvas2D::new(PixelSurface::new(width, height)));
+        Some(ImageHandle(id))
+    }
+
+    pub fn destroy(&mut self, handle: ImageHandle) {
+        let idx = handle.0 as usize;
+        if idx < self.offscreens.len() && self.offscreens[idx].take().is_some() {
+            self.free_ids.push(handle.0);
+        }
+    }
+
+    pub fn canvas_mut(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
+        let idx = handle.0 as usize;
+        self.offscreens
+            .get_mut(idx)?
+            .as_mut()
+            .map(|c| c as &mut dyn Canvas2D)
+    }
+
+    pub fn copy_pixels(&self, handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
+        let idx = handle.0 as usize;
+        let canvas = self.offscreens.get(idx)?.as_ref()?;
+        let surf = canvas.surface();
+        Some((surf.pixels().to_vec(), surf.width()))
+    }
+
+    pub fn get(&self, handle: &ImageHandle) -> Option<&CpuCanvas2D> {
+        let idx = handle.0 as usize;
+        self.offscreens.get(idx)?.as_ref()
+    }
+
+    pub fn memory_usage(&self) -> usize {
+        self.offscreens
+            .iter()
+            .filter_map(|o| {
+                o.as_ref().map(|c| {
+                    let s = c.surface();
+                    (s.width() * s.height() * 4) as usize
+                })
+            })
+            .sum()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn slot_len(&self) -> usize {
+        self.offscreens.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::draw::Color;
+
+    #[test]
+    fn pool_create_draw_copy_and_reuse() {
+        let mut pool = CpuOffscreenPool::new();
+        let a = pool.create(4, 4).expect("a");
+        {
+            let canvas = pool.canvas_mut(&a).expect("canvas");
+            canvas.fill_rect(
+                crate::core::Rect::new(0.0, 0.0, 4.0, 4.0),
+                Color::from_rgb(255, 0, 0),
+                None,
+            );
+        }
+        let (pixels, w) = pool.copy_pixels(&a).expect("pixels");
+        assert_eq!(w, 4);
+        assert_eq!(pixels.len(), 16);
+        assert_ne!(pixels[0] >> 24, 0);
+
+        pool.destroy(a);
+        let b = pool.create(2, 2).expect("b");
+        assert_eq!(b.0, a.0);
+        assert_eq!(pool.slot_len(), 1);
+    }
+}

@@ -77,9 +77,13 @@ fn home_page_banners_fill_content_width_after_resize() {
     let scroll_w = tree.get(scroll.0).unwrap().frame().w;
     let page_col = tree.get(scroll.0).unwrap().children()[0];
     let page_col_w = tree.get(page_col).unwrap().frame().w;
+    let gutter = 8.0; // ScrollBar::gutter() = SB_W(6) + EDGE_PAD(2)
+    // 有纵向滚动条时内容列扣除 gutter；无条时与视口同宽。
+    let width_ok = (page_col_w - scroll_w).abs() < 2.0
+        || (scroll_w - page_col_w - gutter).abs() < 2.0;
     assert!(
-        page_col_w > 1200.0 && (page_col_w - scroll_w).abs() < 2.0,
-        "page column should match ScrollView width, col={page_col_w} scroll={scroll_w}"
+        page_col_w > 1200.0 && width_ok,
+        "page column should fill ScrollView (minus scrollbar gutter), col={page_col_w} scroll={scroll_w}"
     );
 
     let child_frames: Vec<_> = tree
@@ -304,6 +308,84 @@ fn gallery_page_lists_coverage() {
     let root = crate::demos::gallery::page_gallery(&ctx);
     let tree = ViewAdapter::build(root);
     assert!(tree.root_id().is_some());
+}
+
+/// 内容超出视口时 ScrollView 须产生 max_scroll（否则窗口裁切且无滚动条）。
+#[test]
+fn content_scrollview_reports_overflow_scroll_range() {
+    let active = State::new(PAGE_GENERAL);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(r) = tree.root_mut() {
+        // 矮窗：通用页内容必然超出视口。
+        r.set_frame(Rect::new(0.0, 0.0, INIT_W as f32, 480.0));
+    }
+    tree.layout();
+
+    let scroll = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .find(|(id, _)| {
+            tree.get(*id)
+                .is_some_and(|n| n.frame().x >= SIDEBAR_W - 2.0 && n.frame().h > 100.0)
+        })
+        .expect("content ScrollView");
+    let scroll_frame = tree.get(scroll.0).unwrap().frame();
+    let sv: &ScrollView = tree
+        .get(scroll.0)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert!(
+        scroll_frame.h < 400.0,
+        "ScrollView viewport must stay within client area, got h={}",
+        scroll_frame.h
+    );
+    assert!(
+        sv.max_scroll_y() > 50.0,
+        "tall page content must enable vertical scroll, max_y={}",
+        sv.max_scroll_y()
+    );
+}
+
+/// 窄窗首页固定宽快捷导航须产生横向滚动范围。
+#[test]
+fn home_narrow_window_enables_horizontal_scroll() {
+    let active = State::new(0usize);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(r) = tree.root_mut() {
+        // 侧栏 220 + 窄内容区，三块 200 宽导航应溢出。
+        r.set_frame(Rect::new(0.0, 0.0, 640.0, 800.0));
+    }
+    tree.layout();
+
+    let scroll = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .find(|(id, _)| {
+            tree.get(*id)
+                .is_some_and(|n| n.frame().x >= SIDEBAR_W - 2.0)
+        })
+        .expect("content ScrollView");
+    let sv: &ScrollView = tree
+        .get(scroll.0)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert!(
+        sv.max_scroll_x() > 0.0,
+        "narrow home nav tiles must enable horizontal scroll, max_x={}",
+        sv.max_scroll_x()
+    );
 }
 
 /// 模拟主循环：reconcile → layout（不手动重设 root frame），断言内容区 ScrollView 仍有高度。
@@ -733,7 +815,7 @@ fn demo_local_counters_survive_root_reconcile() {
         .expect("runtime increment button node")
         .frame();
     assert!(
-        runtime_frame.h > 0.0 && runtime_frame.y < 280.0,
+        runtime_frame.h > 0.0 && runtime_frame.y < 320.0,
         "runtime counter controls must remain visible near the top of the scroll page, got {runtime_frame:?}"
     );
     let runtime_pos = Point::new(

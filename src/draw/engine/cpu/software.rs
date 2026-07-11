@@ -129,6 +129,18 @@ impl GraphicsEngine for SoftwareEngine {
         self.session.cpu_backend()?.copy_offscreen_pixels(handle)
     }
 
+    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        self.session.backend_mut().begin_offscreen_paint(handle)
+    }
+
+    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
+        self.session.backend_mut().flush_offscreen_paint(handle);
+    }
+
+    fn end_offscreen_paint(&mut self) {
+        self.session.backend_mut().end_offscreen_paint();
+    }
+
     fn memory_usage(&self) -> usize {
         self.session
             .cpu_backend()

@@ -59,6 +59,7 @@ impl GraphicsEngine for RecordingEngine {
         GraphicsCapabilities {
             presentation_mode: crate::draw::traits::PresentationMode::ExternalPresenter,
             partial_redraw: self.partial_redraw,
+            offscreen: true,
         }
     }
 }

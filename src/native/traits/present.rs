@@ -134,6 +134,8 @@ pub struct NativeRasterCaps {
     pub radial_gradients: bool,
     pub solid_meshes: bool,
     pub box_shadows: bool,
+    /// GPU texture RT + blit（Picture 离屏）；非 CPU 像素池。
+    pub offscreen_targets: bool,
 }
 
 impl NativeRasterCaps {
@@ -150,6 +152,7 @@ impl NativeRasterCaps {
             radial_gradients: true,
             solid_meshes: true,
             box_shadows: true,
+            offscreen_targets: true,
         }
     }
 
@@ -157,6 +160,10 @@ impl NativeRasterCaps {
         self.clear_target && self.soft_blit
     }
 }
+
+/// Opaque GPU offscreen render-target id ([`IGraphicsContext`] Picture cache).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OffscreenTargetId(pub u32);
 
 /// Unified present payload for [`IGraphicsContext::present`] (M7).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -609,6 +616,54 @@ pub trait IGraphicsContext {
             crate::core::error::Errc::NotImplemented,
             format!(
                 "GraphicsBackend {} does not support clear_rects",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// Create a GPU offscreen color target (RTV+SRV). Default: not implemented.
+    fn create_offscreen_target(&mut self, _width: i32, _height: i32) -> Result<OffscreenTargetId, Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support create_offscreen_target",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    fn destroy_offscreen_target(&mut self, _id: OffscreenTargetId) {}
+
+    /// Bind offscreen as the current draw target (viewport = target size).
+    fn bind_offscreen_target(&mut self, _id: OffscreenTargetId) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support bind_offscreen_target",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// Restore swapchain / default backbuffer as the draw target.
+    fn bind_swapchain_target(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// Sample offscreen SRV into the **current** RT as an alpha-blended textured quad.
+    ///
+    /// `src` / `dst` are in logical pixels (top-left origin), relative to the
+    /// offscreen and current target respectively.
+    fn blit_offscreen_target(
+        &mut self,
+        _id: OffscreenTargetId,
+        _src: crate::core::Rect,
+        _dst: crate::core::Rect,
+    ) -> Result<(), Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support blit_offscreen_target",
                 self.graphics_backend()
             ),
         ))

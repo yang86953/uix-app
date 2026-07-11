@@ -43,6 +43,8 @@ pub enum PresentationMode {
 pub struct GraphicsCapabilities {
     pub presentation_mode: PresentationMode,
     pub partial_redraw: bool,
+    /// 是否支持 Picture 离屏缓存（`create_offscreen` / blit）。
+    pub offscreen: bool,
 }
 
 impl GraphicsCapabilities {
@@ -50,6 +52,7 @@ impl GraphicsCapabilities {
         Self {
             presentation_mode: PresentationMode::ExternalPresenter,
             partial_redraw: true,
+            offscreen: true,
         }
     }
 
@@ -57,6 +60,16 @@ impl GraphicsCapabilities {
         Self {
             presentation_mode: PresentationMode::EngineManaged,
             partial_redraw: false,
+            offscreen: false,
+        }
+    }
+
+    /// Engine-managed present + CPU 离屏（PresentUpload 等）。
+    pub fn engine_managed_with_offscreen() -> Self {
+        Self {
+            presentation_mode: PresentationMode::EngineManaged,
+            partial_redraw: false,
+            offscreen: true,
         }
     }
 
@@ -66,6 +79,10 @@ impl GraphicsCapabilities {
 
     pub fn supports_partial_redraw(self) -> bool {
         self.partial_redraw
+    }
+
+    pub fn supports_offscreen(self) -> bool {
+        self.offscreen
     }
 }
 
@@ -119,6 +136,18 @@ pub trait GraphicsEngine: 'static {
     fn copy_offscreen_pixels(&self, _handle: &ImageHandle) -> Option<(Vec<u32>, i32)> {
         None
     }
+
+    /// Bind/clear offscreen before Picture paint (GPU RT or CPU buffer).
+    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        let _ = handle;
+        true
+    }
+
+    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
+        let _ = handle;
+    }
+
+    fn end_offscreen_paint(&mut self) {}
 
     fn memory_usage(&self) -> usize {
         0

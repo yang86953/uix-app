@@ -4,6 +4,7 @@ pub mod cpu;
 pub mod gpu;
 pub mod native_gpu;
 pub mod null;
+pub mod offscreen_pool;
 pub mod registry;
 pub mod traits;
 

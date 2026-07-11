@@ -9,6 +9,7 @@ use glow::HasContext as _;
 
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::gpu_engine::GpuCanvas2D;
+use crate::draw::primitives::types::ImageHandle;
 use crate::draw::traits::Canvas2D;
 
 /// GPU DrawSurface 适配器。
@@ -68,6 +69,14 @@ impl DrawSurface for GpuDrawSurface {
 // GL 上下文仅在主线程使用。
 unsafe impl Send for GpuDrawSurface {}
 
+struct GlOffscreen {
+    fbo: glow::Framebuffer,
+    texture: glow::Texture,
+    canvas: GpuCanvas2D,
+    width: i32,
+    height: i32,
+}
+
 /// GPU 渲染后端。
 pub struct GpuBackend {
     // surface 必须先于 gl/context 析构；GpuCanvas2D::Drop 会使用 gl_ptr。
@@ -77,6 +86,10 @@ pub struct GpuBackend {
     width: i32,
     height: i32,
     pub readback: RefCell<Vec<u32>>,
+    offscreens: Vec<Option<GlOffscreen>>,
+    free_offscreen_ids: Vec<u32>,
+    next_offscreen_id: u32,
+    active_offscreen: Option<u32>,
     shutdown: bool,
 }
 
@@ -117,6 +130,10 @@ impl GpuBackend {
             width: 0,
             height: 0,
             readback: RefCell::new(Vec::new()),
+            offscreens: Vec::new(),
+            free_offscreen_ids: Vec::new(),
+            next_offscreen_id: 0,
+            active_offscreen: None,
             shutdown: false,
         })
     }
@@ -150,13 +167,118 @@ impl GpuBackend {
     pub fn pixels_ref(&self) -> std::cell::Ref<'_, Vec<u32>> {
         self.readback.borrow()
     }
+
+    unsafe fn create_gl_offscreen(
+        gl: &glow::Context,
+        width: i32,
+        height: i32,
+    ) -> Result<GlOffscreen, Error> {
+        let w = width.max(1);
+        let h = height.max(1);
+        let texture = gl.create_texture().map_err(|e| {
+            Error::new(Errc::PlatformError, format!("GpuBackend: create_texture: {e}"))
+        })?;
+        gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+        gl.tex_image_2d(
+            glow::TEXTURE_2D,
+            0,
+            glow::RGBA as i32,
+            w,
+            h,
+            0,
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            glow::PixelUnpackData::Slice(None),
+        );
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_MIN_FILTER,
+            glow::NEAREST as i32,
+        );
+        gl.tex_parameter_i32(
+            glow::TEXTURE_2D,
+            glow::TEXTURE_MAG_FILTER,
+            glow::NEAREST as i32,
+        );
+        gl.bind_texture(glow::TEXTURE_2D, None);
+
+        let fbo = gl.create_framebuffer().map_err(|e| {
+            Error::new(
+                Errc::PlatformError,
+                format!("GpuBackend: create_framebuffer: {e}"),
+            )
+        })?;
+        gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+        gl.framebuffer_texture_2d(
+            glow::FRAMEBUFFER,
+            glow::COLOR_ATTACHMENT0,
+            glow::TEXTURE_2D,
+            Some(texture),
+            0,
+        );
+        let status = gl.check_framebuffer_status(glow::FRAMEBUFFER);
+        gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+        if status != glow::FRAMEBUFFER_COMPLETE {
+            gl.delete_framebuffer(fbo);
+            gl.delete_texture(texture);
+            return Err(Error::new(
+                Errc::PlatformError,
+                format!("GpuBackend: incomplete FBO status={status}"),
+            ));
+        }
+
+        let canvas = GpuCanvas2D::new(gl, w, h)?;
+        Ok(GlOffscreen {
+            fbo,
+            texture,
+            canvas,
+            width: w,
+            height: h,
+        })
+    }
+
+    fn destroy_gl_offscreen(&mut self, mut off: GlOffscreen) {
+        off.canvas.release_gpu_resources();
+        unsafe {
+            self.gl.delete_framebuffer(off.fbo);
+            self.gl.delete_texture(off.texture);
+        }
+    }
+
+    fn bind_default_framebuffer(&mut self) {
+        unsafe {
+            self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            let dpr = self.gpu_ctx.device_pixel_ratio().max(1.0);
+            self.gl.viewport(
+                0,
+                0,
+                self.gpu_ctx.width().max(1),
+                self.gpu_ctx.height().max(1),
+            );
+            let _ = dpr;
+        }
+    }
+
+    fn destroy_all_offscreens(&mut self) {
+        self.active_offscreen = None;
+        self.bind_default_framebuffer();
+        let slots = std::mem::take(&mut self.offscreens);
+        for slot in slots {
+            if let Some(off) = slot {
+                self.destroy_gl_offscreen(off);
+            }
+        }
+        self.free_offscreen_ids.clear();
+        self.next_offscreen_id = 0;
+    }
 }
 
 fn capabilities_for_context(gpu_ctx: &dyn IGraphicsContext) -> BackendCapabilities {
+    // GL path owns FBO offscreen.
     if gpu_ctx.caps().partial_present {
-        BackendCapabilities::gpu()
+        BackendCapabilities::gpu_with_offscreen()
     } else {
-        BackendCapabilities::gpu_full_redraw()
+        BackendCapabilities::gpu_full_redraw_with_offscreen()
     }
 }
 
@@ -204,6 +326,7 @@ impl RenderBackend for GpuBackend {
             return;
         }
         self.shutdown = true;
+        self.destroy_all_offscreens();
         self.gpu_ctx.make_current();
         self.surface.canvas.release_gpu_resources();
         self.gpu_ctx.shutdown();
@@ -221,8 +344,126 @@ impl RenderBackend for GpuBackend {
         self.gpu_ctx.device_pixel_ratio()
     }
 
+    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
+        if width <= 0 || height <= 0 {
+            return None;
+        }
+        self.gpu_ctx.make_current();
+        let off = unsafe { Self::create_gl_offscreen(&self.gl, width, height) }.ok()?;
+        let id = if let Some(id) = self.free_offscreen_ids.pop() {
+            id
+        } else {
+            let id = self.next_offscreen_id;
+            self.next_offscreen_id = self.next_offscreen_id.saturating_add(1);
+            id
+        };
+        let idx = id as usize;
+        while self.offscreens.len() <= idx {
+            self.offscreens.push(None);
+        }
+        self.offscreens[idx] = Some(off);
+        Some(ImageHandle(id))
+    }
+
+    fn destroy_offscreen(&mut self, handle: ImageHandle) {
+        if self.active_offscreen == Some(handle.0) {
+            self.active_offscreen = None;
+            self.bind_default_framebuffer();
+        }
+        let idx = handle.0 as usize;
+        if idx < self.offscreens.len() {
+            if let Some(off) = self.offscreens[idx].take() {
+                self.gpu_ctx.make_current();
+                self.destroy_gl_offscreen(off);
+                self.free_offscreen_ids.push(handle.0);
+            }
+        }
+    }
+
+    fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
+        let idx = handle.0 as usize;
+        self.offscreens
+            .get_mut(idx)?
+            .as_mut()
+            .map(|o| &mut o.canvas as &mut dyn Canvas2D)
+    }
+
+    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        let idx = handle.0 as usize;
+        let Some(Some(off)) = self.offscreens.get(idx) else {
+            return false;
+        };
+        let fbo = off.fbo;
+        let w = off.width;
+        let h = off.height;
+        self.gpu_ctx.make_current();
+        unsafe {
+            self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+            self.gl.viewport(0, 0, w, h);
+            self.gl.disable(glow::SCISSOR_TEST);
+            self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
+            self.gl.clear(glow::COLOR_BUFFER_BIT);
+        }
+        self.active_offscreen = Some(handle.0);
+        true
+    }
+
+    fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
+        let idx = handle.0 as usize;
+        let Some(Some(off)) = self.offscreens.get_mut(idx) else {
+            return;
+        };
+        let fbo = off.fbo;
+        let w = off.width;
+        let h = off.height;
+        self.gpu_ctx.make_current();
+        unsafe {
+            self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+            self.gl.viewport(0, 0, w, h);
+        }
+        if let Err(err) = off.canvas.flush_soft_fallback() {
+            crate::core::log::warn_fn(format!(
+                "GpuBackend: offscreen flush_soft_fallback failed: {}",
+                err.short_what()
+            ));
+        }
+    }
+
+    fn end_offscreen_paint(&mut self) {
+        self.active_offscreen = None;
+        self.bind_default_framebuffer();
+    }
+
+    fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
+        let src = Rect::new(0.0, 0.0, dst_rect.w, dst_rect.h);
+        self.blit_offscreen_src(handle, src, dst_rect);
+    }
+
+    fn blit_offscreen_src(&mut self, handle: &ImageHandle, _src_rect: Rect, dst_rect: Rect) {
+        let idx = handle.0 as usize;
+        let texture = match self.offscreens.get(idx).and_then(|o| o.as_ref()) {
+            Some(off) => off.texture,
+            None => return,
+        };
+        if let Some(dst_id) = self.active_offscreen {
+            if dst_id == handle.0 {
+                return;
+            }
+            if let Some(Some(dst_off)) = self.offscreens.get(dst_id as usize) {
+                dst_off.canvas.blit_external_texture(texture, dst_rect);
+            }
+            return;
+        }
+        self.gpu_ctx.make_current();
+        self.bind_default_framebuffer();
+        self.surface
+            .canvas
+            .blit_external_texture(texture, dst_rect);
+    }
+
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         self.gpu_ctx.make_current();
+        self.bind_default_framebuffer();
         self.surface.canvas.flush_soft_fallback()?;
         present_graphics_context(self.gpu_ctx.as_mut(), damage)
     }

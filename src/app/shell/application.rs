@@ -91,6 +91,22 @@ impl SecondaryWindowSession {
                             "secondary resize_notify failed",
                             self._window.resize_notify(d.width, d.height),
                         );
+                        let (cw, ch) = {
+                            let canvas = parts.engine.canvas_2d();
+                            (canvas.width() as f32, canvas.height() as f32)
+                        };
+                        if cw > 0.0 && ch > 0.0 {
+                            if let Some(rid) = parts.tree.root_id() {
+                                if let Some(root_mut) = parts.tree.get_mut(rid) {
+                                    let rf = root_mut.frame();
+                                    if (rf.w - cw).abs() > 0.5 || (rf.h - ch).abs() > 0.5 {
+                                        root_mut.set_frame(crate::core::Rect::new(0.0, 0.0, cw, ch));
+                                        parts.tree.tree_version =
+                                            parts.tree.tree_version.wrapping_add(1);
+                                    }
+                                }
+                            }
+                        }
                         self.initial_size = (d.width, d.height);
                         self.window_visible = true;
                         parts.tree.mark_full_frame_dirty();
@@ -1244,12 +1260,15 @@ fn sync_secondary_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn G
     if ew <= 0.0 || eh <= 0.0 {
         return;
     }
+    // 与主窗 sync_root_frame_to_engine 同策略：bootstrap 或引擎已更大时对齐根 frame。
     let need_sync = tree
         .root_id()
         .and_then(|rid| tree.get(rid))
         .is_some_and(|root| {
             let rf = root.frame();
-            rf.w <= 1.0 || rf.h <= 1.0
+            let bootstrap = rf.w <= 1.0 || rf.h <= 1.0;
+            let engine_larger = ew > rf.w + 0.5 || eh > rf.h + 0.5;
+            bootstrap || engine_larger
         });
     if need_sync {
         if let Some(rid) = tree.root_id() {
@@ -1257,6 +1276,7 @@ fn sync_secondary_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn G
                 root_mut.set_frame(crate::core::Rect::new(0.0, 0.0, ew, eh));
             }
         }
+        tree.tree_version = tree.tree_version.wrapping_add(1);
         tree.mark_full_frame_dirty();
         tree.layout();
     }

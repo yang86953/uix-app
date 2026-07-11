@@ -458,6 +458,23 @@ where
                                 "window resize_notify failed",
                                 platform_window.resize_notify(d.width, d.height),
                             );
+                            // 以 engine 实际 canvas（可能已按 GetClientRect 校正）锁定根 frame，
+                            // 避免仅依赖后续 SystemEvent::Resize 的事件尺寸。
+                            let (cw, ch) = {
+                                let canvas = engine.canvas_2d();
+                                (canvas.width() as f32, canvas.height() as f32)
+                            };
+                            if cw > 0.0 && ch > 0.0 {
+                                if let Some(rid) = tree.root_id() {
+                                    if let Some(root_mut) = tree.get_mut(rid) {
+                                        let rf = root_mut.frame();
+                                        if (rf.w - cw).abs() > 0.5 || (rf.h - ch).abs() > 0.5 {
+                                            root_mut.set_frame(Rect::new(0.0, 0.0, cw, ch));
+                                            tree.tree_version = tree.tree_version.wrapping_add(1);
+                                        }
+                                    }
+                                }
+                            }
                             initial_size = (d.width, d.height);
                             tree.mark_full_frame_dirty();
                         }
@@ -640,13 +657,19 @@ where
             *reconcile_pending = false;
         }
 
+        // 每帧用窗口客户区校正 engine/根：WM_SIZE 入队与 Present 之间若有缺口，
+        // 仅靠单次 WindowResize 仍可能留下「swapchain 已大、UI 仍旧」的黑边。
+        let surface_corrected = window_visible
+            && ensure_surface_matches_window(tree, engine, platform_window);
+
         let has_layout_work = tree
             .invalidation
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .has_layout();
 
-        let needs_work = window_visible && (had_layout_event || !rendered_first);
+        let needs_work =
+            window_visible && (had_layout_event || surface_corrected || !rendered_first);
 
         if window_visible && (needs_work || has_layout_work) {
             let before_version = tree.tree_version();
@@ -979,6 +1002,55 @@ fn record_idle(metrics: Option<&Cell<RenderMetrics>>, source: InvalidationSource
     }
 }
 
+fn ensure_surface_matches_window(
+    tree: &mut WidgetTree,
+    engine: &mut dyn GraphicsEngine,
+    platform_window: &dyn PlatformWindow,
+) -> bool {
+    let pw = platform_window.properties().width();
+    let ph = platform_window.properties().height();
+    if pw <= 0 || ph <= 0 {
+        return false;
+    }
+
+    let (cw, ch) = {
+        let canvas = engine.canvas_2d();
+        (canvas.width(), canvas.height())
+    };
+    let mut changed = false;
+    if cw != pw || ch != ph {
+        engine.resize(pw, ph);
+        changed = true;
+    }
+
+    let (ew, eh) = {
+        let canvas = engine.canvas_2d();
+        (canvas.width() as f32, canvas.height() as f32)
+    };
+    if ew <= 0.0 || eh <= 0.0 {
+        return changed;
+    }
+
+    let root_mismatch = tree
+        .root_id()
+        .and_then(|rid| tree.get(rid))
+        .is_some_and(|root| {
+            let rf = root.frame();
+            (rf.w - ew).abs() > 0.5 || (rf.h - eh).abs() > 0.5
+        });
+    if root_mismatch {
+        if let Some(rid) = tree.root_id() {
+            if let Some(root_mut) = tree.get_mut(rid) {
+                root_mut.set_frame(Rect::new(0.0, 0.0, ew, eh));
+            }
+        }
+        tree.tree_version = tree.tree_version.wrapping_add(1);
+        tree.mark_full_frame_dirty();
+        changed = true;
+    }
+    changed
+}
+
 fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEngine) {
     let (ew, eh) = {
         let canvas = engine.canvas_2d();
@@ -987,15 +1059,18 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
     if ew <= 0.0 || eh <= 0.0 {
         return;
     }
-    // 根已有有效客户区时以 SystemEvent::Resize / 会话初始尺寸为准，
-    // 不得用可能滞后的引擎尺寸覆盖（否则放大/缩小后内容卡在旧几何）。
-    // 仅 bootstrap（根仍近空）时从引擎补齐。
+    // bootstrap（根近空）：从引擎补齐。
+    // 引擎已大于根：WindowResize 先 engine.resize 再派发 SystemEvent::Resize；
+    // 若树侧滞后，Present 会清出更大 swapchain 而 UI 仍画旧几何 → 黑边。
+    // 引擎小于根：可能短暂滞后，勿把已更新的根压回旧引擎尺寸。
     let need_sync = tree
         .root_id()
         .and_then(|rid| tree.get(rid))
         .is_some_and(|root| {
             let rf = root.frame();
-            rf.w <= 1.0 || rf.h <= 1.0
+            let bootstrap = rf.w <= 1.0 || rf.h <= 1.0;
+            let engine_larger = ew > rf.w + 0.5 || eh > rf.h + 0.5;
+            bootstrap || engine_larger
         });
     if need_sync {
         if let Some(rid) = tree.root_id() {
@@ -1003,6 +1078,9 @@ fn sync_root_frame_to_engine(tree: &mut WidgetTree, engine: &mut dyn GraphicsEng
                 root_mut.set_frame(Rect::new(0.0, 0.0, ew, eh));
             }
         }
+        // LayerTree 缓存 ClipRect/Picture bounds；不 bump 则只 update_dirty 标志，
+        // 裁剪区仍停在旧尺寸 → 内容画不全、四周黑边。
+        tree.tree_version = tree.tree_version.wrapping_add(1);
         tree.mark_full_frame_dirty();
         tree.layout();
     }
