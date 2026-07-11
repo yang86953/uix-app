@@ -14,6 +14,9 @@
 //! | [`app`] | 应用能力 — 生命周期、主循环、CLI、DI |
 //! | [`data`] | 数据能力 — 配置持久化 |
 
+// `windows::core::implement` 宏展开依赖 crate 根的 `windows_core`（无平台 cfg：依赖在各目标可用）。
+extern crate windows_core;
+
 pub mod app;
 pub mod core;
 pub mod data;

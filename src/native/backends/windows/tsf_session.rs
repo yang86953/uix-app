@@ -1,12 +1,11 @@
-//! Windows TSF session — `ITfThreadMgr` + `AssociateFocus`（P6 phonetic 前置）。
+//! Windows TSF session — ThreadMgr + DocumentMgr + `ITextStoreACP`（P6 phonetic）。
 //!
-//! 现代 TIP（微软拼音等）优先走 TSF；将 HWND 与 DocumentMgr 关联后，IMM32
-//! `WM_IME_*` 桥接更可靠。完整 `ITfTextEditSink` / `ITextStoreACP` 仍待后续切片；
-//! composition → `UiEvent` 辅助见 [`tsf_composition_events`]。
+//! `AssociateFocus` 将 HWND 交给 TIP；composition sink 经共享队列投递 `UiEvent`。
 
 #![cfg(windows)]
 
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 
 use windows::core::{Interface, Type};
 use windows::Win32::Foundation::HWND;
@@ -17,17 +16,28 @@ use windows::Win32::UI::TextServices::{
     CLSID_TF_ThreadMgr, ITfContext, ITfDocumentMgr, ITfThreadMgr, TF_POPF_ALL,
 };
 
-use crate::core::{Errc, Error, Result};
+use crate::core::{Errc, Error, Result, WindowId};
+use crate::native::backends::windows::tsf_text_store::{TsfEventSink, TsfStoreState, TsfTextStore};
 use crate::native::backends::windows::util::windows_diag;
 use crate::native::shared::ime_events::{
     on_committed_text, on_marked_text, on_unmark_text, ImeCompositionState,
 };
 use crate::native::traits::event::UiEvent;
 
+/// 激活参数：共享事件队列由 `WindowsPlatform` 持有并在 `next_event` 排空。
+pub(crate) struct TsfActivateParams {
+    pub hwnd: *mut std::ffi::c_void,
+    pub window_id: WindowId,
+    pub events: Arc<Mutex<VecDeque<UiEvent>>>,
+}
+
 /// TSF 线程/文档焦点会话（与 IMM32 `ITextInput` 并存）。
 pub(crate) struct TsfSession {
     thread_mgr: ITfThreadMgr,
     doc_mgr: ITfDocumentMgr,
+    _context: ITfContext,
+    _text_store: windows::core::ComObject<TsfTextStore>,
+    store_state: Arc<Mutex<TsfStoreState>>,
     hwnd: HWND,
     client_id: u32,
 }
@@ -37,11 +47,33 @@ impl TsfSession {
         self.client_id
     }
 
-    pub(crate) fn activate(hwnd: *mut std::ffi::c_void) -> Result<Self> {
-        if hwnd.is_null() {
+    pub(crate) fn composition_active(&self) -> bool {
+        self.store_state
+            .lock()
+            .map(|s| s.composition_active())
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn set_cursor_rect(&self, rect: windows::Win32::Foundation::RECT) {
+        if let Ok(mut state) = self.store_state.lock() {
+            state.set_cursor_rect(rect);
+        }
+    }
+
+    pub(crate) fn activate(params: TsfActivateParams) -> Result<Self> {
+        if params.hwnd.is_null() {
             return Err(Error::new(Errc::InvalidArgument, "TSF: null HWND"));
         }
         ensure_com_apartment();
+
+        let hwnd = HWND(params.hwnd);
+        let event_sink = TsfEventSink {
+            events: params.events,
+            window_id: params.window_id,
+            hwnd,
+        };
+        let (text_store, store_state) = TsfTextStore::create(event_sink);
+        let punk: windows::core::IUnknown = text_store.to_interface();
 
         // SAFETY: CLSID_TF_ThreadMgr is a system in-proc COM class.
         let thread_mgr: ITfThreadMgr = unsafe {
@@ -70,14 +102,13 @@ impl TsfSession {
 
         let mut context: Option<ITfContext> = None;
         let mut edit_cookie = 0u32;
-        // 空 context（无 ITextStoreACP）：先完成 focus 关联；sink/store 后续切片补齐。
         if let Err(err) = unsafe {
-            doc_mgr.CreateContext(client_id, 0, None, &mut context, &mut edit_cookie)
+            doc_mgr.CreateContext(client_id, 0, &punk, &mut context, &mut edit_cookie)
         } {
             let _ = unsafe { thread_mgr.Deactivate() };
             return Err(windows_diag(
                 Errc::PlatformError,
-                &format!("TSF: CreateContext failed: {err}"),
+                &format!("TSF: CreateContext(store) failed: {err}"),
             ));
         }
         let Some(context) = context else {
@@ -95,7 +126,6 @@ impl TsfSession {
             ));
         }
 
-        let hwnd = HWND(hwnd);
         if let Err(err) = associate_focus(&thread_mgr, hwnd, Some(&doc_mgr)) {
             let _ = unsafe { doc_mgr.Pop(TF_POPF_ALL) };
             let _ = unsafe { thread_mgr.Deactivate() };
@@ -114,6 +144,9 @@ impl TsfSession {
         Ok(Self {
             thread_mgr,
             doc_mgr,
+            _context: context,
+            _text_store: text_store,
+            store_state,
             hwnd,
             client_id,
         })
@@ -152,7 +185,6 @@ fn associate_focus(
             )
         })?;
         if !prev.is_null() {
-            // 释放先前 DocumentMgr（若有）。
             let _: ITfDocumentMgr = Type::from_abi(prev).map_err(|err| {
                 windows_diag(
                     Errc::PlatformError,
@@ -165,13 +197,10 @@ fn associate_focus(
 }
 
 fn ensure_com_apartment() {
-    // S_OK / S_FALSE → Ok；已是 MTA 等 → Err，忽略（ThreadMgr 仍可能可用）。
     let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
 }
 
 /// TSF sink / TIP 回调侧：把 marked / committed / unmark 收成 `UiEvent` 队列。
-///
-/// 与 macOS `ime_events` 同形，供未来 `ITfTextEditSink` 复用（[#75](docs/决策.md#d75)）。
 pub(crate) fn tsf_composition_events(
     state: &mut ImeCompositionState,
     marked: Option<&str>,
@@ -188,7 +217,10 @@ pub(crate) fn tsf_composition_events(
     if unmark {
         on_unmark_text(&queue, state);
     }
-    queue.lock().map(|mut q| q.drain(..).collect()).unwrap_or_default()
+    queue
+        .lock()
+        .map(|mut q| q.drain(..).collect())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -212,25 +244,36 @@ mod tests {
 
     #[test]
     fn activate_rejects_null_hwnd() {
-        match TsfSession::activate(std::ptr::null_mut()) {
+        match TsfSession::activate(TsfActivateParams {
+            hwnd: std::ptr::null_mut(),
+            window_id: WindowId::new(1),
+            events: Arc::new(Mutex::new(VecDeque::new())),
+        }) {
             Err(err) => assert_eq!(err.code(), Errc::InvalidArgument),
             Ok(_) => panic!("null hwnd must fail"),
         }
     }
 
     #[test]
-    fn activate_on_real_window_associates_focus() {
+    fn activate_on_real_window_with_text_store() {
         if std::env::consts::OS != "windows" {
             return;
         }
         let mut platform = crate::native::create_platform().expect("platform");
         let mut window = platform
             .window_manager()
-            .create_window("TSF focus test", 320, 240)
+            .create_window("TSF store test", 320, 240)
             .expect("window");
         let hwnd = window.native_surface_ptr();
-        let session = TsfSession::activate(hwnd).expect("TSF activate");
-        assert_ne!(session.client_id(), 0, "Activate must assign a client id");
+        let events = Arc::new(Mutex::new(VecDeque::new()));
+        let session = TsfSession::activate(TsfActivateParams {
+            hwnd,
+            window_id: WindowId::new(1),
+            events,
+        })
+        .expect("TSF activate with store");
+        assert_ne!(session.client_id(), 0);
+        assert!(!session.composition_active());
         session.deactivate();
         window.close().expect("close");
     }

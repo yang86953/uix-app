@@ -52,7 +52,9 @@ pub(crate) unsafe extern "system" fn wnd_proc(
 impl WindowsPlatform {
     pub(crate) fn push_event(&mut self, window_id: crate::core::WindowId, event: UiEvent) {
         let event = event.for_window(window_id);
-        self.event_queue.push_back(event);
+        if let Ok(mut queue) = self.event_queue.lock() {
+            queue.push_back(event);
+        }
     }
 
     /// 处理窗口消息（由 wnd_proc 回调转发至此）。
@@ -209,12 +211,19 @@ impl WindowsPlatform {
                 0
             }
             WM_IME_STARTCOMPOSITION => {
+                if self.text_input_subsys.tsf_session_active() {
+                    return 0;
+                }
                 if let Some(event) = ime_start_composition_event(&mut ime.borrow_mut()) {
                     self.push_event(window_id, event);
                 }
                 0
             }
             WM_IME_COMPOSITION => {
+                // TSF TextStore 已接管时跳过 IMM32，避免双发。
+                if self.text_input_subsys.tsf_session_active() {
+                    return 0;
+                }
                 let flags = lparam as u32;
                 let result_read = if flags & GCS_RESULTSTR != 0 {
                     match result_string(hwnd) {
@@ -251,6 +260,9 @@ impl WindowsPlatform {
                 }
             }
             WM_IME_ENDCOMPOSITION => {
+                if self.text_input_subsys.tsf_session_active() {
+                    return 0;
+                }
                 if let Some(event) = ime_end_composition_event(&mut ime.borrow_mut()) {
                     self.push_event(window_id, event);
                 }

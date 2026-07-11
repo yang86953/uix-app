@@ -1023,4 +1023,61 @@ mod tests {
         assert_eq!(pixels[0] >> 24, 0xFF, "final frame must remain opaque");
         ctx.shutdown();
     }
+
+    #[test]
+    fn dual_hwnd_theme_palette_clear_present_and_readback() {
+        // P6 joint slice: two real HWNDs × D3D11 × light/dark layout palette
+        // clear + Present + readback. Theme broadcast itself is covered by
+        // FakePlatform; this closes the D3D11 multi-window present gap.
+        let mut platform = crate::native::create_platform().expect("platform");
+        let primary = platform
+            .window_manager()
+            .create_window("D3D11 theme primary", 160, 120)
+            .expect("primary window");
+        let secondary = platform
+            .window_manager()
+            .create_window("D3D11 theme secondary", 160, 120)
+            .expect("secondary window");
+
+        let mut ctx_a =
+            D3d11Context::new(primary.native_surface_ptr(), 160, 120).expect("primary D3D11");
+        let mut ctx_b =
+            D3d11Context::new(secondary.native_surface_ptr(), 160, 120).expect("secondary D3D11");
+
+        // Mirrors ThemePrimitives antd light/dark `color_bg_layout` (native
+        // must not import `ui::Theme`).
+        let light = (247.0 / 255.0, 247.0 / 255.0, 248.0 / 255.0, 1.0);
+        let dark = (20.0 / 255.0, 20.0 / 255.0, 20.0 / 255.0, 1.0);
+
+        let sample = |ctx: &mut D3d11Context, rgba: (f32, f32, f32, f32)| -> u32 {
+            ctx.clear_render_target(rgba.0, rgba.1, rgba.2, rgba.3)
+                .expect("clear");
+            // Read before Present: DXGI_SWAP_EFFECT_DISCARD may drop contents.
+            let pixels = ctx.read_pixels(0, 0, 1, 1);
+            assert_eq!(pixels.len(), 1);
+            ctx.present(&PresentFrame::Swapchain {
+                damage: PresentDamage::Full,
+            })
+            .expect("present");
+            assert!(ctx.rtv.is_some(), "RTV must exist after Present");
+            pixels[0]
+        };
+
+        let a_light = sample(&mut ctx_a, light);
+        let b_light = sample(&mut ctx_b, light);
+        assert_eq!(a_light, b_light, "both windows must share light palette");
+        assert_eq!(a_light >> 24, 0xFF);
+
+        let a_dark = sample(&mut ctx_a, dark);
+        let b_dark = sample(&mut ctx_b, dark);
+        assert_eq!(a_dark, b_dark, "both windows must share dark palette");
+        assert_ne!(
+            a_light & 0x00FF_FFFF,
+            a_dark & 0x00FF_FFFF,
+            "light and dark layout palettes must differ on GPU"
+        );
+
+        ctx_a.shutdown();
+        ctx_b.shutdown();
+    }
 }

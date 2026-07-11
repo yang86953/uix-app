@@ -46,7 +46,7 @@ pub(crate) struct WindowBinding {
 }
 
 pub struct WindowsPlatform {
-    pub(crate) event_queue: VecDeque<UiEvent>,
+    pub(crate) event_queue: Arc<Mutex<VecDeque<UiEvent>>>,
     pub(crate) event_bus: EventBus,
     pub(crate) hwnd: *mut std::ffi::c_void,
     pub(crate) hinstance: *mut std::ffi::c_void,
@@ -77,8 +77,9 @@ impl WindowsPlatform {
     pub fn new() -> Self {
         let timer_subsys = WindowsTimer::new();
         let single_shot = timer_subsys.non_repeating_set();
+        let event_queue = Arc::new(Mutex::new(VecDeque::new()));
         Self {
-            event_queue: VecDeque::new(),
+            event_queue: Arc::clone(&event_queue),
             hwnd: std::ptr::null_mut(),
             hinstance: std::ptr::null_mut(),
             class_atom: 0,
@@ -90,7 +91,7 @@ impl WindowsPlatform {
             file_dialog_subsys: WindowsFileDialog::new(),
             file_system_subsys: WindowsFileSystem::new(),
             keyboard_subsys: WindowsKeyboard::new(),
-            text_input_subsys: WindowsTextInput::new(),
+            text_input_subsys: WindowsTextInput::new(event_queue),
             timer_subsys,
             notification_subsys: WindowsNotification::new(),
             event_bus: EventBus::new(),
@@ -189,7 +190,7 @@ impl OsEventSource for WindowsPlatform {
     }
 
     fn next_event(&mut self) -> Option<UiEvent> {
-        let event = self.event_queue.pop_front()?;
+        let event = self.event_queue.lock().ok()?.pop_front()?;
         if let Some(window_id) = event.window_id {
             if let Some(hwnd) = self.window_handles.get(&window_id).copied() {
                 self.select_window(hwnd as *mut std::ffi::c_void);
@@ -267,6 +268,7 @@ impl IWindowManager for WindowsPlatform {
             let binding = Box::from_raw(binding_ptr);
             self.window_handles.insert(window_id, hwnd as usize);
             self.select_window(hwnd);
+            self.text_input_subsys.set_window_id(window_id);
 
             let presenter: Box<dyn IPresenter> = match GdiPresenter::new(hwnd, width, height) {
                 Ok(p) => Box::new(p),
@@ -449,20 +451,17 @@ mod tests {
         }
         assert!(platform.dispatch_pending());
 
+        // TSF 会话激活后 IMM32 composition 消息被跳过（避免双发）；WM_CHAR 仍走 TextInput。
         let events: Vec<_> = std::iter::from_fn(|| platform.next_event()).collect();
         assert_eq!(
             events
                 .iter()
                 .map(|event| event.type_)
                 .collect::<Vec<_>>(),
-            vec![
-                UiEventType::ImeCompositionStart,
-                UiEventType::TextInput,
-                UiEventType::ImeCompositionEnd,
-            ]
+            vec![UiEventType::TextInput]
         );
         assert!(events.iter().all(|event| event.window_id == Some(window_id)));
-        let UiEventPayload::TextInput(text) = &events[1].payload else {
+        let UiEventPayload::TextInput(text) = &events[0].payload else {
             panic!("expected text payload");
         };
         assert_eq!(text.text, "😀");

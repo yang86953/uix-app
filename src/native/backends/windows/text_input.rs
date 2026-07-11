@@ -7,15 +7,18 @@ use super::ffi::*;
 // native/backends/windows/text_input.rs — Windows IME text input (ITextInput)
 //
 // IMM32：关联上下文 + caret/candidate 窗；composition 字符串由 wnd_proc 读取后
-// 经 `ime_dispatch` 合成 UiEvent。TSF：`tsf_session` 在 start/stop 做 AssociateFocus；
-// `ITfTextEditSink` / TextStore 仍待（`tsf_composition_events` 已预留事件形）。
+// 经 `ime_dispatch` 合成 UiEvent。TSF：`tsf_session` 在 start/stop 做 AssociateFocus，
+// 并挂最小 `ITextStoreACP` + `ITfContextOwnerCompositionSink`（composition → 共享队列）。
 // ============================================================================
 
-use crate::core::{Errc, Error, Rect, Result};
-use crate::native::backends::windows::tsf_session::TsfSession;
+use crate::core::{Errc, Error, Rect, Result, WindowId};
+use crate::native::backends::windows::tsf_session::{TsfActivateParams, TsfSession};
 use crate::native::backends::windows::util::windows_diag;
+use crate::native::traits::event::UiEvent;
 use crate::native::traits::input::ITextInput;
+use std::collections::VecDeque;
 use std::ptr;
+use std::sync::{Arc, Mutex};
 
 const IACE_DEFAULT: u32 = 0x0010;
 const CFS_POINT: u32 = 0x0002;
@@ -140,18 +143,30 @@ pub(crate) fn result_string(hwnd: *mut std::ffi::c_void) -> Result<Option<String
 
 pub struct WindowsTextInput {
     hwnd: *mut std::ffi::c_void,
+    window_id: Option<WindowId>,
+    events: Arc<Mutex<VecDeque<UiEvent>>>,
     tsf: Option<TsfSession>,
 }
 
 impl WindowsTextInput {
-    pub fn new() -> Self {
+    pub fn new(events: Arc<Mutex<VecDeque<UiEvent>>>) -> Self {
         Self {
             hwnd: ptr::null_mut(),
+            window_id: None,
+            events,
             tsf: None,
         }
     }
     pub fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
         self.hwnd = hwnd;
+    }
+
+    pub(crate) fn set_window_id(&mut self, window_id: WindowId) {
+        self.window_id = Some(window_id);
+    }
+
+    pub(crate) fn tsf_session_active(&self) -> bool {
+        self.tsf.is_some()
     }
 
     #[cfg(test)]
@@ -191,10 +206,17 @@ impl WindowsTextInput {
         if self.tsf.is_some() {
             return;
         }
-        match TsfSession::activate(hwnd) {
+        let Some(window_id) = self.window_id else {
+            crate::core::log::warn_fn("Windows text input: TSF skipped (no window_id)");
+            return;
+        };
+        match TsfSession::activate(TsfActivateParams {
+            hwnd,
+            window_id,
+            events: Arc::clone(&self.events),
+        }) {
             Ok(session) => self.tsf = Some(session),
             Err(err) => {
-                // IMM32 仍可用；TSF 失败不阻断输入启动。
                 crate::core::log::warn_fn(err.short_what());
             }
         }
@@ -209,7 +231,7 @@ impl WindowsTextInput {
 
 impl Default for WindowsTextInput {
     fn default() -> Self {
-        Self::new()
+        Self::new(Arc::new(Mutex::new(VecDeque::new())))
     }
 }
 
@@ -295,6 +317,14 @@ impl ITextInput for WindowsTextInput {
             let candidate_ok = ImmSetCandidateWindow(himc, &candidate) != 0;
             let _ = ImmReleaseContext(hwnd, himc);
             if composition_ok && candidate_ok {
+                if let Some(tsf) = self.tsf.as_ref() {
+                    tsf.set_cursor_rect(windows::Win32::Foundation::RECT {
+                        left,
+                        top,
+                        right,
+                        bottom,
+                    });
+                }
                 Ok(())
             } else {
                 Err(windows_diag(
@@ -342,7 +372,7 @@ mod tests {
 
     #[test]
     fn start_without_selected_window_reports_error() {
-        let mut input = WindowsTextInput::new();
+        let mut input = WindowsTextInput::default();
         let err = input.start().expect_err("start without HWND must fail");
         assert_eq!(err.code(), Errc::InvalidOperation);
     }
@@ -358,8 +388,10 @@ mod tests {
             .create_window("TSF text input start", 320, 240)
             .expect("window");
         let hwnd = window.native_surface_ptr();
-        let mut input = WindowsTextInput::new();
+        let events = Arc::new(Mutex::new(VecDeque::new()));
+        let mut input = WindowsTextInput::new(Arc::clone(&events));
         input.set_hwnd(hwnd);
+        input.set_window_id(WindowId::new(1));
         input.start().expect("start");
         assert!(
             input.tsf_client_id().unwrap_or(0) != 0,
