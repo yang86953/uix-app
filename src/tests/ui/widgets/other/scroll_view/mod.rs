@@ -228,7 +228,39 @@ fn scrollview_vertical_fills_viewport_width_even_when_child_measures_narrower() 
     assert_eq!(
         tree.get(child).unwrap().frame(),
         Rect::new(0.0, 0.0, 400.0, 80.0),
-        "vertical ScrollView must stretch child to viewport width"
+        "vertical ScrollView must stretch child to viewport width when no overflow"
+    );
+}
+
+#[test]
+fn scrollview_vertical_reserves_gutter_when_content_overflows() {
+    let mut tree = WidgetTree::new();
+    let vertical = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Vertical).size(400.0, 200.0),
+    ));
+    tree.add_child(
+        vertical,
+        Box::new(FixedWidget {
+            size: Size::new(120.0, 500.0),
+            id: ComponentId::new(10),
+        }),
+    );
+    tree.layout();
+    let child = tree.get(vertical).unwrap().children()[0];
+    let gutter = ScrollBar::gutter();
+    assert_eq!(
+        tree.get(child).unwrap().frame(),
+        Rect::new(0.0, 0.0, 400.0 - gutter, 500.0),
+        "overflowing vertical ScrollView must reserve scrollbar gutter"
+    );
+    let track = ScrollBar::new(ScrollbarOrientation::Vertical).track_rect_abs(Rect::new(
+        0.0, 0.0, 400.0, 200.0,
+    ));
+    let child_right = tree.get(child).unwrap().frame().x + tree.get(child).unwrap().frame().w;
+    assert!(
+        child_right <= track.x + 0.5,
+        "content must not overlap scrollbar track: child_right={child_right} track.x={}",
+        track.x
     );
 }
 
@@ -249,7 +281,7 @@ fn scrollview_child_constraints_are_axis_aware() {
     let vertical_child = tree.get(vertical).unwrap().children()[0];
     assert_eq!(
         tree.get(vertical_child).unwrap().frame(),
-        Rect::new(0.0, 0.0, 120.0, 300.0)
+        Rect::new(0.0, 0.0, 120.0 - ScrollBar::gutter(), 300.0)
     );
     let vertical_sv: &ScrollView = tree
         .get(vertical)
@@ -275,7 +307,7 @@ fn scrollview_child_constraints_are_axis_aware() {
     let horizontal_child = tree.get(horizontal).unwrap().children()[0];
     assert_eq!(
         tree.get(horizontal_child).unwrap().frame(),
-        Rect::new(0.0, 0.0, 400.0, 80.0)
+        Rect::new(0.0, 0.0, 400.0, 80.0 - ScrollBar::gutter())
     );
     let horizontal_sv: &ScrollView = tree
         .get(horizontal)
@@ -327,15 +359,16 @@ fn assert_two_stage_measurement(
 
 #[test]
 fn scrollview_two_stage_measurement_is_axis_aware_and_arrange_does_not_measure() {
+    let g = ScrollBar::gutter();
     assert_two_stage_measurement(
         ScrollDirection::Vertical,
         Constraints::loose(Size::new(120.0, f32::MAX)),
-        Rect::new(0.0, 0.0, 120.0, 300.0),
+        Rect::new(0.0, 0.0, 120.0 - g, 300.0),
     );
     assert_two_stage_measurement(
         ScrollDirection::Horizontal,
         Constraints::loose(Size::new(f32::MAX, 80.0)),
-        Rect::new(0.0, 0.0, 400.0, 80.0),
+        Rect::new(0.0, 0.0, 400.0, 80.0 - g),
     );
     assert_two_stage_measurement(
         ScrollDirection::Both,
@@ -367,13 +400,14 @@ fn scrollview_multi_child_flow_respects_direction_and_non_scroll_axis() {
     horizontal_tree.layout();
 
     let horizontal_children = horizontal_tree.get(horizontal).unwrap().children().to_vec();
+    let h_gutter = ScrollBar::gutter();
     assert_eq!(
         horizontal_tree.get(horizontal_children[0]).unwrap().frame(),
-        Rect::new(0.0, 0.0, 70.0, 80.0)
+        Rect::new(0.0, 0.0, 70.0, 80.0 - h_gutter)
     );
     assert_eq!(
         horizontal_tree.get(horizontal_children[1]).unwrap().frame(),
-        Rect::new(70.0, 0.0, 90.0, 80.0)
+        Rect::new(70.0, 0.0, 90.0, 80.0 - h_gutter)
     );
     let horizontal_sv: &ScrollView = horizontal_tree
         .get(horizontal)
@@ -406,13 +440,14 @@ fn scrollview_multi_child_flow_respects_direction_and_non_scroll_axis() {
     vertical_tree.layout();
 
     let vertical_children = vertical_tree.get(vertical).unwrap().children().to_vec();
+    let v_gutter = ScrollBar::gutter();
     assert_eq!(
         vertical_tree.get(vertical_children[0]).unwrap().frame(),
-        Rect::new(0.0, 0.0, 120.0, 30.0)
+        Rect::new(0.0, 0.0, 120.0 - v_gutter, 30.0)
     );
     assert_eq!(
         vertical_tree.get(vertical_children[1]).unwrap().frame(),
-        Rect::new(0.0, 30.0, 120.0, 70.0)
+        Rect::new(0.0, 30.0, 120.0 - v_gutter, 70.0)
     );
     let vertical_sv: &ScrollView = vertical_tree
         .get(vertical)

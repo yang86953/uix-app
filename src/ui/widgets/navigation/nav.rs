@@ -6,15 +6,15 @@
 //! NavItem 使用共享的 `Rc<Cell<usize>>` 管理选中索引，
 //! 点击任一 NavItem 自动更新共享状态，其他项自动取消选中。
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::component;
-use crate::core::{Constraints, Rect, Size};
+use crate::core::{ComponentId, Constraints, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::Radius;
 use crate::ui::SnapshotFields;
-use crate::ui::{EventResult, SystemEvent, WidgetTree};
+use crate::ui::{EventResult, SemanticEvent, SystemEvent, WidgetTree};
 
 /// 共享的导航选中索引 —— 多个 NavItem 持有同一份 Rc 即可联动。
 pub type SharedActive = Rc<Cell<usize>>;
@@ -55,6 +55,7 @@ component! {
         index: usize,
         active_shared: SharedActive,
         compact: bool,
+        pending_change: RefCell<Option<usize>>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -67,10 +68,18 @@ component! {
             SystemEvent::PointerLeave => { self.hovered = false; EventResult::Handled }
             SystemEvent::PointerDown { .. } => {
                 self.active_shared.set(self.index);
+                self.pending_change.replace(Some(self.index));
                 EventResult::Handled
             }
             _ => EventResult::NotHandled,
         }
+    }
+
+    semantic_event => (&self, id: ComponentId, _event: &SystemEvent) -> Option<SemanticEvent> {
+        self.pending_change
+            .borrow_mut()
+            .take()
+            .map(|index| SemanticEvent::change(id, index.to_string()))
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
@@ -100,22 +109,34 @@ component! {
             };
             paint_nav_item_bg(ctx, item_frame, base, overlay);
 
-            let display = if !self.icon.is_empty() {
-                crate::ui::widgets::icon::icon_char(&self.icon)
-            } else if !self.label.is_empty() {
-                // 取 label 的第一个字符作为图标展示
-                &self.label[..self.label.char_indices().nth(1).map(|(i, _)| i).unwrap_or(self.label.len())]
-            } else {
-                ""
-            };
-            let saved_font = *ctx.font();
             if !self.icon.is_empty() {
-                if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
-                    ctx.set_font(fh);
-                }
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx,
+                    &self.icon,
+                    item_frame,
+                    text_color,
+                    18.0,
+                );
+            } else if !self.label.is_empty() {
+                let display = &self.label[..self
+                    .label
+                    .char_indices()
+                    .nth(1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(self.label.len())];
+                let fs = 18.0;
+                let tw = ctx.measure_text(display, fs).w;
+                let th = ctx.line_box_height(fs);
+                ctx.draw_text(
+                    display,
+                    crate::core::Point::new(
+                        item_frame.x + (item_frame.w - tw) * 0.5,
+                        item_frame.y + (item_frame.h - th) * 0.5,
+                    ),
+                    text_color,
+                    fs,
+                );
             }
-            ctx.text_center(display, item_frame, text_color, 18.0);
-            ctx.set_font(saved_font);
             return;
         }
 
@@ -139,28 +160,24 @@ component! {
 
         let mut cursor_x = frame.x + indicator_w;
 
+        let row_h = frame.h.max(self.fixed_height);
         if !self.icon.is_empty() {
-            let icon_x = cursor_x + 10.0;
-            let icon_str = crate::ui::widgets::icon::icon_char(&self.icon);
-            let saved_font = *ctx.font();
-            if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
-                ctx.set_font(fh);
-            }
-            ctx.text_center(
-                icon_str,
-                Rect::new(icon_x, frame.y, 20.0, frame.h.max(self.fixed_height)),
+            let icon_slot = Rect::new(cursor_x + 10.0, frame.y, 20.0, row_h);
+            // 先用 UI 字体光学中心画图标，再画标签（见 paint_icon_in_frame）
+            crate::ui::widgets::icon::paint_icon_in_frame(
+                ctx,
+                &self.icon,
+                icon_slot,
                 icon_color,
                 14.0,
             );
-            ctx.set_font(saved_font);
             cursor_x += 28.0;
         } else {
             cursor_x += if active { 12.0 } else { 15.0 };
         }
 
         let label_w = (frame.x + frame.w - cursor_x).max(0.0);
-        let label_h = frame.h.max(self.fixed_height);
-        let label_area = Rect::new(cursor_x, frame.y, label_w, label_h);
+        let label_area = Rect::new(cursor_x, frame.y, label_w, row_h);
         ctx.draw_text_in_frame(&self.label, label_area, label_color, 14.0);
     }
 }
@@ -180,12 +197,21 @@ impl NavItem {
             index,
             active_shared,
             compact: false,
+            pending_change: RefCell::new(None),
         }
     }
 
     pub fn icon(mut self, icon: &str) -> Self {
         self.icon = icon.to_string();
         self
+    }
+
+    pub fn label_text(&self) -> &str {
+        &self.label
+    }
+
+    pub fn nav_index(&self) -> usize {
+        self.index
     }
 
     pub fn width(mut self, w: f32) -> Self {
@@ -211,6 +237,8 @@ impl NavItem {
         self.fixed_height = next.fixed_height;
         self.index = next.index;
         self.compact = next.compact;
+        // 同步选中值（不替换 Rc），使 State 驱动的重建能刷新高亮。
+        self.active_shared.set(next.active_shared.get());
     }
 
     pub(crate) fn snapshot_fields(&self) -> SnapshotFields {

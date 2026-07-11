@@ -2,8 +2,8 @@
 
 use uix::prelude::*;
 
-use crate::common::page::{demo_row, PageBuilder};
-use crate::common::showcase::{info_note, labeled_row};
+use crate::common::page::PageBuilder;
+use crate::common::showcase::{flow_row, info_note, sample_block};
 use crate::common::widgets::{BounceBall, Counter, PulseRing};
 use crate::demos::context::DemoCtx;
 
@@ -90,136 +90,140 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
 
     PageBuilder::new(tk)
         .gap()
-        .section("响应式 State + label")
-        .push(info_note(
-            tk,
-            "State 变更触发 reconcile；label(闭包) / State::map_text 读取最新值。",
-        ))
-        .push({
-            let counter = ctx.runtime_count();
-            column_fit((
-                counter
-                    .map_text(|n| format!("本地计数: {n}"))
-                    .font_size(18.0)
-                    .color(ColorValue::Palette(PaletteColor::Primary)),
-                row((
-                    button("+1")
-                        .primary()
-                        .on_click(&counter, |c| c.update(|v| *v += 1)),
-                    button("-1").on_click(&counter, |c| {
-                        c.update(|v| {
-                            if *v > 0 {
-                                *v -= 1;
-                            }
-                        });
-                    }),
-                ))
-                .height(36.0)
-                .gap(8.0),
-            ))
-            // 局部内容组：column_fit 保持 intrinsic 高度。
-            .gap(8.0)
-        })
-        .section("App Timer — run_interval (on_start 注册)")
-        .push(
-            ticks
-                .map_text(|n| format!("全局 tick 计数: {n} (每秒 +1)"))
-                .font_size(16.0)
-                .color(ColorValue::Neutral(NeutralRole::Text)),
-        )
-        .push(info_note(
-            tk,
-            "本应用在 App.on_start 中调用 handle.run_interval(Duration::from_secs(1), …) 更新 timer_ticks State。",
-        ))
-        .section("View DSL + embed + component! 自定义")
-        .push(
-            row([
-                label("View DSL row/column")
-                    .font_size(13.0)
-                    .color(ColorValue::Neutral(NeutralRole::Text)),
-                space(8.0),
-                embed(Icon::new("layers").size(16.0)),
-                space(4.0),
-                label("+ embed(widget-tree)")
-                    .font_size(13.0)
-                    .color(ColorValue::Neutral(NeutralRole::TextSecondary)),
-            ])
-            .padding(8.0),
-        )
-        .push(labeled_row(tk, 40.0, "Counter", Counter { count: 0 }))
-        .section("动画 time (State 驱动)")
-        .push(labeled_row(
-            tk,
-            52.0,
-            "PulseRing",
-            PulseRing {
-                time: anim_for_ring.get(),
-            },
-        ))
-        .push(labeled_row(
-            tk,
-            64.0,
-            "BounceBall",
-            BounceBall {
-                time: anim_for_ball.get(),
-            },
-        ))
-        .push(info_note(
-            tk,
-            "anim_time 由 run_interval(16ms) 更新；内置 Spin/ProgressBar 则通过 WidgetAnimation 自驱动。",
-        ))
-        .section("Theme — light/dark + follow_system_theme")
-        .push(
-            row([
-                theme_toggle,
-                label("点击切换 App 全局暗色/亮色 (AppHandle::set_theme)")
-                    .color(ColorValue::Neutral(NeutralRole::TextSecondary))
-                    .font_size(12.0),
-            ])
-            .height(40.0)
-            .align(AlignItems::Center)
-            .gap(8.0),
-        )
-        .push(info_note(
-            tk,
-            "App.follow_system_theme(true) 为 opt-in：运行中自动跟 OS 明暗切换。本 Demo 默认 false。",
-        ))
-        .section("PicturePolicy — 静态 vs 动态")
-        .push(info_note(
-            tk,
-            "Eligible 静态子树可 Picture 缓存；Spin/ProgressBar/动画 widget 走窄 paint。见 rendering.md #122。",
-        ))
-        .push(
-            demo_row(40.0)
-                .child(Spin::new())
-                .child(
-                    Label::new("Spin = 动态")
-                        .style(Style {
-                            color: ColorValue::Neutral(NeutralRole::TextTertiary),
-                            ..Style::default()
-                        })
-                        .font_size(11.0),
-                )
-                .child(Card::new().title("Card").elevation(1).size(120.0, 36.0))
-                .child(
-                    Label::new("Card = 静态候选")
-                        .style(Style {
-                            color: ColorValue::Neutral(NeutralRole::TextTertiary),
-                            ..Style::default()
-                        })
-                        .font_size(11.0),
+        .block(
+            "响应式 State",
+            column_fit([
+                info_note(
+                    tk,
+                    "State 变更触发 reconcile；label(闭包) / State::map_text 读取最新值。",
                 ),
+                {
+                    let counter = ctx.runtime_count();
+                    column_fit((
+                        counter
+                            .map_text(|n| format!("本地计数: {n}"))
+                            .font_size(22.0)
+                            .color(ColorValue::Palette(PaletteColor::Primary)),
+                        row((
+                            button("+1")
+                                .primary()
+                                .on_click(&counter, |c| c.update(|v| *v += 1)),
+                            button("-1").on_click(&counter, |c| {
+                                c.update(|v| {
+                                    if *v > 0 {
+                                        *v -= 1;
+                                    }
+                                });
+                            }),
+                        ))
+                        .gap(8.0),
+                    ))
+                    .gap(10.0)
+                },
+            ])
+            .gap(12.0),
         )
-        .section("post_to_ui — 跨线程投递主线程闭包")
-        .push(info_note(
-            tk,
-            "AppHandle::post_to_ui(FnOnce) 将闭包入队到当前 WindowSession 主线程；跨线程 State 更新须经此路径。见 application.md #133。",
-        ))
-        .section("多窗口")
-        .push(open_window)
-        .push(info_note(
-            tk,
-            "AppHandle::open_window 创建独立 WindowSession；主题全局共享，post_to_ui 仍仅进入目标 session 队列。",
-        ))
+        .block(
+            "App Timer — run_interval",
+            column_fit([
+                ticks
+                    .map_text(|n| format!("全局 tick: {n}（每秒 +1）"))
+                    .font_size(16.0)
+                    .color(ColorValue::Neutral(NeutralRole::Text)),
+                info_note(
+                    tk,
+                    "App.on_start 中 handle.run_interval(1s) 更新 timer_ticks；回调已 detach。",
+                ),
+            ])
+            .gap(12.0),
+        )
+        .block(
+            "View DSL + component!",
+            column_fit([
+                row([
+                    embed(Tag::new("views").color(TagColor::Info)),
+                    embed(Tag::new("embed").color(TagColor::Success)),
+                    embed(Tag::new("component!").color(TagColor::Warning)),
+                ])
+                .gap(8.0),
+                embed(sample_block(tk, "Counter", Counter { count: 0 })),
+            ])
+            .gap(12.0),
+        )
+        .block(
+            "动画 time（State 驱动）",
+            column_fit([
+                embed(
+                    flow_row(72.0)
+                        .child(sample_block(
+                            tk,
+                            "PulseRing",
+                            PulseRing {
+                                time: anim_for_ring.get(),
+                            },
+                        ))
+                        .child(sample_block(
+                            tk,
+                            "BounceBall",
+                            BounceBall {
+                                time: anim_for_ball.get(),
+                            },
+                        )),
+                ),
+                info_note(
+                    tk,
+                    "anim_time 由 run_interval(16ms) 更新；Spin/ProgressBar 走 WidgetAnimation。",
+                ),
+            ])
+            .gap(12.0),
+        )
+        .block(
+            "Theme",
+            column_fit([
+                row([
+                    theme_toggle,
+                    label("AppHandle::set_theme — 全局亮/暗")
+                        .color(ColorValue::Neutral(NeutralRole::TextSecondary))
+                        .font_size(12.0),
+                ])
+                .align(AlignItems::Center)
+                .gap(12.0),
+                info_note(
+                    tk,
+                    "follow_system_theme(true) 为 opt-in；本 Demo 默认 false。",
+                ),
+            ])
+            .gap(12.0),
+        )
+        .block(
+            "PicturePolicy",
+            column_fit([
+                info_note(
+                    tk,
+                    "Eligible 静态子树可 Picture 缓存；动态 widget 走窄 paint。见决策 #122。",
+                ),
+                embed(
+                    flow_row(56.0)
+                        .child(sample_block(tk, "Spin=动态", Spin::new()))
+                        .child(sample_block(
+                            tk,
+                            "Card=静态",
+                            Card::new().title("Card").elevation(1).size(120.0, 40.0),
+                        )),
+                ),
+            ])
+            .gap(12.0),
+        )
+        .block(
+            "多窗口 / post_to_ui",
+            column_fit([
+                open_window,
+                info_note(
+                    tk,
+                    "open_window 独立 WindowSession；post_to_ui 仅入目标 session（决策 #133）。",
+                ),
+            ])
+            .gap(12.0),
+        )
         .build()
 }

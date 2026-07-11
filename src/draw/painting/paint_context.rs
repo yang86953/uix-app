@@ -523,6 +523,11 @@ impl<'a> PaintContext<'a> {
         self.text.measure_text(text, font_size)
     }
 
+    /// 单行行盒高度（ascent + descent）。
+    pub fn line_box_height(&mut self, font_size: f32) -> f32 {
+        self.text.line_box_height(font_size)
+    }
+
     /// 测量文本尺寸（换行模式）。
     pub fn measure_text_wrapped(&mut self, text: &str, font_size: f32, max_width: f32) -> Size {
         self.text.measure_text_wrapped(text, font_size, max_width)
@@ -538,7 +543,7 @@ impl<'a> PaintContext<'a> {
         self.text.text_cursor_x(text, font_size, char_index)
     }
 
-    /// 计算文字视觉中心与 rect 中心对齐时的 y 位置。
+    /// 行盒在 rect 内几何居中时的 layout 原点 y（过渡；优先布局算盒再 draw_text）。
     pub fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 {
         self.text.visual_center_y(rect, font_size)
     }

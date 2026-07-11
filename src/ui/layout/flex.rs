@@ -235,10 +235,13 @@ fn compute_single_line(
     total_flex_grow: f32,
 ) -> FlexOutput {
     let count = base_main_sizes.len();
-    // 仅 bootstrap（主轴尚未由父级/窗口给出确定尺寸）时跳过 shrink；
-    // 父级已分配确定 frame 时即使 style 未写死 width/height，也须 shrink 以适配窗口。
+    // intrinsic_main（#165：未设主轴尺寸，由子项撑开）必须跳过 shrink：
+    // 父级常先按 measure=0 分到过小 frame；若此时 shrink，Label 等会被压成 h=0，
+    // 文字仍绘制 → 标题/描述重叠（首页快捷导航复现）。
+    // bootstrap（container_main≈0）同样跳过，以便零高 frame 首次撑开。
+    // 有明确主轴尺寸（style 设宽/高）时仍 shrink，以适配窗口/固定卡片。
     let bootstrap_main = container_main <= 1.0;
-    let skip_shrink = bootstrap_main;
+    let skip_shrink = intrinsic_main || bootstrap_main;
     let max_child_cross = cross_sizes.iter().cloned().fold(0.0, f32::max);
     let effective_cross = if container_cross > 0.0 {
         container_cross
@@ -380,8 +383,9 @@ fn compute_single_line(
         };
     }
 
-    // total_size：bootstrap/无确定主轴时用子项撑开；否则占满父级分配的主轴空间。
-    let main_total = if intrinsic_main && bootstrap_main {
+    // total_size：intrinsic_main 始终用子项撑开（写入 cached_content_size，供下次 measure）；
+    // 否则占满父级分配的主轴空间。
+    let main_total = if intrinsic_main {
         total_final + gaps
     } else if is_row {
         inner.w

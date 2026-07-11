@@ -76,10 +76,12 @@ pub fn page_index_by_label(label: &str) -> Option<usize> {
         })
 }
 
-/// 声明式页面构建器：`section` + `push` + `scroll(column(...))`。
+/// 声明式页面构建器：`section` + `push` 自动收入抬升面板；或显式 `block`。
 pub struct PageBuilder<'a> {
     tk: &'a DesignTokens,
     items: Vec<ViewNode>,
+    open_section: Option<String>,
+    section_body: Vec<ViewNode>,
 }
 
 impl<'a> PageBuilder<'a> {
@@ -87,33 +89,73 @@ impl<'a> PageBuilder<'a> {
         Self {
             tk,
             items: Vec::new(),
+            open_section: None,
+            section_body: Vec::new(),
         }
     }
 
+    fn flush_section(&mut self) {
+        let Some(title) = self.open_section.take() else {
+            return;
+        };
+        let body = std::mem::take(&mut self.section_body);
+        self.items.push(section_title(self.tk, &title));
+        let panel_body = if body.len() == 1 {
+            body.into_iter().next().expect("one body node")
+        } else {
+            column_fit(body).gap(12.0)
+        };
+        self.items
+            .push(crate::common::showcase::panel(self.tk, panel_body));
+    }
+
     pub fn gap(mut self) -> Self {
+        self.flush_section();
         self.items.push(space(12.0));
         self
     }
 
     pub fn section(mut self, title: &str) -> Self {
+        self.flush_section();
+        self.open_section = Some(title.to_string());
+        self
+    }
+
+    /// 分区标题 + 抬升面板（画廊主模式）。
+    pub fn block(mut self, title: &str, body: ViewNode) -> Self {
+        self.flush_section();
         self.items.push(section_title(self.tk, title));
+        self.items.push(crate::common::showcase::panel(self.tk, body));
         self
     }
 
     pub fn push(mut self, node: impl IntoWidgetNode) -> Self {
         // 不写死宽度：父 Column 默认 Stretch，子项随 ScrollView 视口变宽。
-        // （调试 overlay：紫框=壳层已拉满；若再套 INNER_W 会多出一圈窄蓝框。）
-        self.items.push(embed(node));
+        let node = embed(node);
+        if self.open_section.is_some() {
+            self.section_body.push(node);
+        } else {
+            self.items.push(node);
+        }
         self
     }
 
-    pub fn build(self) -> ViewNode {
+    pub fn push_view(mut self, node: ViewNode) -> Self {
+        if self.open_section.is_some() {
+            self.section_body.push(node);
+        } else {
+            self.items.push(node);
+        }
+        self
+    }
+
+    pub fn build(mut self) -> ViewNode {
+        self.flush_section();
         // 默认 AlignItems::Stretch：内容列宽 = ScrollView 非滚动轴（随窗口）。
-        // 卡片等样例可自带固定宽；提示条 / section 行应拉满内容区。
         scroll(
             column_fit(self.items)
-                .gap(12.0)
-                .padding((24.0, 8.0, 24.0, 16.0))
+                .gap(16.0)
+                .padding((20.0, 8.0, 28.0, 20.0))
                 // ScrollView 的内容列必须按自然尺寸流式排布；若参与普通 flex
                 // shrink，会为了匹配 viewport 而把后续演示项压缩到 0 高度。
                 .overflow_content(),

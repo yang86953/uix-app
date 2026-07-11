@@ -78,14 +78,36 @@ component! {
         } else if !self.text.is_empty() {
             let r = Some(Radius::uniform(actual_frame.h * 0.5));
             ctx.fill_rect(actual_frame, bg, r);
-            ctx.text_center(&self.text, actual_frame, Color::white(), 11.0);
+            let fs = 11.0;
+            let tw = ctx.measure_text(&self.text, fs).w;
+            let th = ctx.line_box_height(fs);
+            ctx.draw_text(
+                &self.text,
+                crate::core::Point::new(
+                    actual_frame.x + (actual_frame.w - tw) * 0.5,
+                    actual_frame.y + (actual_frame.h - th) * 0.5,
+                ),
+                Color::white(),
+                fs,
+            );
         } else {
             let r = Some(Radius::uniform(actual_frame.h * 0.5));
             ctx.fill_rect(actual_frame, bg, r);
             let text = format!("{}", display);
             let over = if self.count > self.max { "+" } else { "" };
             let label = format!("{}{}", text, over);
-            ctx.text_center(&label, actual_frame, Color::white(), 11.0);
+            let fs = 11.0;
+            let tw = ctx.measure_text(&label, fs).w;
+            let th = ctx.line_box_height(fs);
+            ctx.draw_text(
+                &label,
+                crate::core::Point::new(
+                    actual_frame.x + (actual_frame.w - tw) * 0.5,
+                    actual_frame.y + (actual_frame.h - th) * 0.5,
+                ),
+                Color::white(),
+                fs,
+            );
         }
     }
 }

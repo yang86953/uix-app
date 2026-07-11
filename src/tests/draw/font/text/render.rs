@@ -298,7 +298,7 @@ fn blit_to_with_empty_layout_no_panic() {
 }
 
 #[test]
-fn visual_center_y_optical_height_below_em_box_center() {
+fn visual_center_y_is_em_box_geometry_without_optical_nudge() {
     let mut fs = FontService::new();
     let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
         return;
@@ -308,26 +308,35 @@ fn visual_center_y_optical_height_below_em_box_center() {
         .expect("metrics");
     let mut trs = TextRenderService::new(segoe, &fs, 500.0);
     let row = Rect::new(0.0, 0.0, 200.0, 40.0);
-    let optical = trs.visual_center_y(row, 14.0);
-    let em_box = row.y + (row.h - m.ascent - m.descent) * 0.5;
-    // 光学居中应比 em-box 居中更靠下，纠正行内文字偏上
+    let y = trs.visual_center_y(row, 14.0);
+    let em_top = row.y + (row.h - m.ascent - m.descent) * 0.5;
     assert!(
-        optical > em_box + 1.0,
-        "optical y={optical} should be below em-box y={em_box}"
-    );
-    // 下移量约 0.75 * descent（Segoe UI @14 ≈ 2px）
-    assert!(
-        (optical - em_box - m.descent * 0.75).abs() < 0.1,
-        "optical nudge should be 0.75*descent: optical={optical} em={em_box} d={}",
-        m.descent
+        (y - em_top).abs() < 0.1,
+        "visual_center_y must be pure em-box top, got {y} em_top={em_top}"
     );
 }
 
 #[test]
-fn list_row_optical_center_not_stuck_to_top() {
-    use crate::draw::font::text_backend::TextLayoutOptions;
-    use crate::draw::{HAlign, VAlign};
+fn line_box_height_matches_ascent_plus_descent() {
+    let mut fs = FontService::new();
+    let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
+        return;
+    };
+    let m = fs
+        .horizontal_line_metrics(&segoe, 14.0)
+        .expect("metrics");
+    let mut trs = TextRenderService::new(segoe, &fs, 500.0);
+    let h = trs.line_box_height(14.0);
+    assert!(
+        (h - (m.ascent + m.descent)).abs() < 0.1,
+        "line_box_height={h} ascent+descent={}",
+        m.ascent + m.descent
+    );
+}
 
+#[test]
+fn button_content_centers_line_box_not_optical_ink() {
+    // 布局契约：content 内居中行盒 (ascent+descent)，draw_text 顶对齐。
     let mut fs = FontService::new();
     let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
         return;
@@ -337,38 +346,29 @@ fn list_row_optical_center_not_stuck_to_top() {
         fs.set_fallback_chain(&[h]);
     }
     fs.loaded_font_handle = segoe;
-
-    let m = fs.horizontal_line_metrics(&segoe, 14.0).expect("metrics");
-    let opts = TextLayoutOptions {
-        max_width: f32::MAX,
-        max_height: 0.0,
-        line_height: 21.0,
-        word_wrap: false,
-        h_align: HAlign::Left,
-        v_align: VAlign::Top,
-        font_size: 14.0,
-    };
-    let layout = fs.layout_text(&segoe, "Alice — 设计师", &opts);
-
-    let mut min_y = f32::MAX;
-    for g in &layout.glyphs {
-        let r = fs.rasterize_glyph(&g.font, g.glyph_id, 14.0);
-        if r.width == 0 || r.height == 0 {
-            continue;
-        }
-        min_y = min_y.min(g.y + r.bearing_y);
-    }
-
-    let row = Rect::new(0.0, 0.0, 200.0, 40.0);
     let mut trs = TextRenderService::new(segoe, &fs, 500.0);
-    let top = trs.visual_center_y(row, 14.0);
-    let em_top = row.y + (row.h - m.ascent - m.descent) * 0.5;
-    let pad_top = top + min_y - row.y;
-
-    assert!(top > em_top + 1.0, "optical top={top} em_top={em_top}");
+    let content = Rect::new(0.0, 0.0, 60.0, 32.0);
+    let fs_px = 14.0;
+    let line_h = trs.line_box_height(fs_px);
+    let text_w = trs.measure_text("+1", fs_px).w;
+    let text_rect = Rect::new(
+        content.x + (content.w - text_w) * 0.5,
+        content.y + (content.h - line_h) * 0.5,
+        text_w,
+        line_h,
+    );
+    let box_cy = text_rect.y + text_rect.h * 0.5;
+    let content_cy = content.y + content.h * 0.5;
     assert!(
-        pad_top > 12.0,
-        "text still too close to row top: pad_top={pad_top}"
+        (box_cy - content_cy).abs() < 0.1,
+        "line box center must match content center: box={box_cy} content={content_cy}"
+    );
+    // 行顶 = visual_center_y（纯 em-box）
+    let y = trs.visual_center_y(content, fs_px);
+    assert!(
+        (y - text_rect.y).abs() < 0.1,
+        "draw origin y={y} should equal text_rect.y={}",
+        text_rect.y
     );
 }
 

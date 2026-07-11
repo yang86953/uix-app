@@ -3,7 +3,7 @@
 use uix::prelude::*;
 
 use crate::common::page::{PageBuilder, PAGE_APP, PAGE_COUNT, PAGE_GALLERY, PAGE_GENERAL};
-use crate::common::showcase::{demo_card, info_note};
+use crate::common::showcase::{demo_card, panel};
 use crate::demos::context::DemoCtx;
 
 fn nav_tile(
@@ -14,23 +14,24 @@ fn nav_tile(
     desc: &str,
     tk: &DesignTokens,
 ) -> ViewNode {
-    row([
-        embed(Icon::new(icon).size(22.0)),
-        space(12.0),
-        column_fit([
+    column_fit([
+        row([
+            embed(Icon::new(icon).size(20.0)),
             label(title)
                 .font_size(14.0)
                 .color(ColorValue::Neutral(NeutralRole::Text)),
-            space(4.0),
-            label(desc)
-                .font_size(11.0)
-                .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
-        ]),
+        ])
+        .align(AlignItems::Center)
+        .gap(10.0),
+        space(8.0),
+        label(desc)
+            .font_size(12.0)
+            .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
     ])
-    .width(210.0)
-    .padding(EdgeInsets::uniform(14.0))
-    .bg(ColorValue::Neutral(NeutralRole::BgElevated))
-    .radius(tk.border_radius_lg)
+    .width(200.0)
+    .padding(EdgeInsets::uniform(16.0))
+    .bg(ColorValue::Neutral(NeutralRole::BgContainer))
+    .radius(tk.border_radius)
     .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
     .on_click(active, move |n| n.set(index))
 }
@@ -49,18 +50,32 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
 
     PageBuilder::new(tk)
         .gap()
-        .push(info_note(
+        .push_view(panel(
             tk,
-            "UIX 官方 GUI Demo — 侧边栏浏览组件；CLI API 见 `cargo run --bin uix-demo -- --cli`。",
+            column_fit([
+                row([
+                    embed(Icon::new("star").size(18.0)),
+                    label("UIX 组件全景")
+                        .font_size(16.0)
+                        .color(ColorValue::Neutral(NeutralRole::Text)),
+                    embed(Tag::new("Demo").color(TagColor::Info)),
+                ])
+                .align(AlignItems::Center)
+                .gap(10.0),
+                space(8.0),
+                label("侧边栏浏览内置组件；CLI API：`cargo run --bin uix-demo -- --cli`")
+                    .font_size(12.0)
+                    .color(ColorValue::Neutral(NeutralRole::TextSecondary)),
+            ]),
         ))
-        .section("快速体验")
-        .push(
+        .block(
+            "快速体验",
             row([
                 demo_card(
                     tk,
                     "响应式 State",
-                    280.0,
-                    120.0,
+                    300.0,
+                    140.0,
                     column_fit((
                         count
                             .map_text(|n| format!("计数: {n}"))
@@ -78,37 +93,47 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                                     }
                                 });
                             }),
+                            button("重置").ghost().on_click(&count, |c| c.set(0)),
                         ))
                         .gap(8.0),
                     )),
                 ),
                 demo_card(
                     tk,
-                    "组件覆盖",
-                    200.0,
-                    120.0,
+                    "覆盖范围",
+                    220.0,
+                    140.0,
                     column_fit([
-                        label(format!("{PAGE_COUNT} 个演示页"))
-                            .font_size(28.0)
+                        label(format!("{PAGE_COUNT}"))
+                            .font_size(36.0)
                             .color(ColorValue::Palette(PaletteColor::Success)),
                         space(4.0),
-                        label("8 类组件 + 参考")
-                            .font_size(11.0)
-                            .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
+                        label("个演示页")
+                            .font_size(13.0)
+                            .color(ColorValue::Neutral(NeutralRole::Text)),
+                        space(10.0),
+                        embed(
+                            Space::new()
+                                .size(SpaceSize::Small)
+                                .direction(FlexDirection::Row)
+                                .child(Tag::new("组件").color(TagColor::Success))
+                                .child(Tag::new("运行时").color(TagColor::Info))
+                                .child(Tag::new("主题").color(TagColor::Warning)),
+                        ),
                     ]),
                 ),
             ])
-            .gap(12.0),
+            .gap(16.0),
         )
-        .section("快捷导航")
-        .push(
+        .block(
+            "快捷导航",
             row([
                 nav_tile(
                     &nav_app,
                     PAGE_APP,
                     "cpu",
                     "应用能力",
-                    "State · Timer · View DSL",
+                    "State · Timer · Theme · 多窗",
                     tk,
                 ),
                 nav_tile(
@@ -116,7 +141,7 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                     PAGE_GENERAL,
                     "type",
                     "通用组件",
-                    "Button · Label · Tag",
+                    "Button · Tag · Icon",
                     tk,
                 ),
                 nav_tile(
@@ -124,7 +149,7 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                     PAGE_GALLERY,
                     "list",
                     "覆盖清单",
-                    "组件矩阵与 backlog",
+                    "矩阵与 backlog",
                     tk,
                 ),
             ])

@@ -7,10 +7,10 @@
 use std::sync::OnceLock;
 
 use crate::component;
-use crate::core::{Constraints, Rect, Size};
+use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::font::font_service::FontService;
 use crate::draw::painting::PaintContext;
-use crate::draw::FontHandle;
+use crate::draw::{Color, FontHandle};
 use crate::ui::core::widget::WidgetTree;
 use crate::ui::SnapshotFields;
 
@@ -37,6 +37,33 @@ pub fn init_lucide_font(data: &[u8], font_service: &mut FontService) {
 /// 获取 Lucide 字体句柄（若已加载）。
 pub fn lucide_handle() -> Option<FontHandle> {
     LUCIDE_FONT.get().copied()
+}
+
+/// 在 `rect` 内绘制 Lucide 图标，垂直对齐到**当前 UI 字体行盒**几何中心。
+///
+/// 调用时须仍持有标签/正文所用字体。先取行盒 `visual_center_y`，再切 Lucide
+/// 绘制——避免用图标字体 metrics 重新算 Y（与旁路文字错位）。
+pub fn paint_icon_in_frame(
+    ctx: &mut PaintContext,
+    name: &str,
+    rect: Rect,
+    color: Color,
+    font_size: f32,
+) {
+    if name.is_empty() {
+        return;
+    }
+    let line_h = ctx.line_box_height(font_size);
+    let y = rect.y + (rect.h - line_h) * 0.5;
+    let icon_str = icon_char(name);
+    let saved = *ctx.font();
+    if let Some(fh) = lucide_handle() {
+        ctx.set_font(fh);
+    }
+    let w = ctx.measure_text(icon_str, font_size).w;
+    let x = rect.x + ((rect.w - w) * 0.5).max(0.0);
+    ctx.draw_text(icon_str, Point::new(x, y), color, font_size);
+    ctx.set_font(saved);
 }
 
 /// Map icon name → Lucide PUA codepoint character.
@@ -270,5 +297,36 @@ mod tests {
         assert_eq!(icon_char("cpu"), "\u{E0A9}");
         assert_eq!(icon_char("bar-chart"), "\u{E06A}");
         assert_eq!(icon_char("layers"), "\u{E529}");
+    }
+
+    /// 根因回归：混排图标须用 UI 字体行盒定位，再切 Lucide 绘制。
+    #[test]
+    fn paint_icon_uses_ui_font_line_box_not_lucide_metrics() {
+        use crate::draw::font::text::render::TextRenderService;
+
+        let mut fs = FontService::new();
+        let Some(segoe) = fs.load_font_from_path(r"C:\Windows\Fonts\segoeui.ttf", 14.0) else {
+            return;
+        };
+        let Some(lucide) = fs.load_font_from_path(r"assets/fonts/lucide.ttf", 14.0) else {
+            return;
+        };
+        let row = Rect::new(0.0, 0.0, 200.0, 36.0);
+        let ui_h = TextRenderService::new(segoe, &fs, 500.0).line_box_height(14.0);
+        let lucide_h = TextRenderService::new(lucide, &fs, 500.0).line_box_height(14.0);
+        let y_ui = row.y + (row.h - ui_h) * 0.5;
+        // 与 paint_icon_in_frame 相同：先按 UI 行盒算 y
+        assert!(
+            (y_ui - (row.y + (row.h - ui_h) * 0.5)).abs() < 0.01,
+            "icon slot y must follow UI line box"
+        );
+        let m = fs
+            .horizontal_line_metrics(&lucide, 14.0)
+            .expect("lucide metrics");
+        assert!(
+            m.descent.abs() < 0.5,
+            "Lucide descent ~0 (got {}); switching font before measuring Y still risks mismatch when em sizes differ (ui_h={ui_h} lucide_h={lucide_h})",
+            m.descent
+        );
     }
 }

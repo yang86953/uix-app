@@ -246,16 +246,12 @@ component! {
                 ctx.fill_rect(frame, bg, None);
             }
             PaintPass::AfterChildren => {
-                let bg = ctx.tokens().color_bg_container();
-                if self.scrollbar_v.show && self.direction.can_scroll_y() {
-                    let tr = self.scrollbar_v.track_rect_abs(frame);
-                    ctx.fill_rect(tr, bg, None);
+                // 仅在需要滚动时绘制 gutter 内轨道/滑块（与 layout 预留一致）。
+                if self.needs_v_scrollbar(frame, &[]) {
                     self.scrollbar_v
                         .render(frame, ctx, self.scroll_y, self.max_scroll_y());
                 }
-                if self.scrollbar_h.show && self.direction.can_scroll_x() {
-                    let tr = self.scrollbar_h.track_rect_abs(frame);
-                    ctx.fill_rect(tr, bg, None);
+                if self.needs_h_scrollbar(frame, &[]) {
                     self.scrollbar_h
                         .render(frame, ctx, self.scroll_x, self.max_scroll_x());
                 }
@@ -266,7 +262,11 @@ component! {
     measure_children => (&self, frame: Rect, children: &[ComponentId], tree: &WidgetTree)
         -> Vec<LayoutChild>
     {
-        let constraints = self.child_constraints(frame);
+        // gutter 依据上一轮 content_bounds / max_scroll；首帧无溢出信息时先满宽，
+        // layout_children 仍会按子项高度决定是否缩进，收敛循环下一轮即可对齐 measure。
+        let need_v = self.needs_v_scrollbar(frame, &[]);
+        let need_h = self.needs_h_scrollbar(frame, &[]);
+        let constraints = self.child_constraints(frame, need_v, need_h);
         children
             .iter()
             .copied()
@@ -283,8 +283,12 @@ component! {
             return result;
         }
 
-        let mut max_right = frame.x;
-        let mut max_bottom = frame.y;
+        let need_v = self.needs_v_scrollbar(frame, children);
+        let need_h = self.needs_h_scrollbar(frame, children);
+        let content = self.content_frame(frame, need_v, need_h);
+
+        let mut max_right = content.x;
+        let mut max_bottom = content.y;
         let mut cursor_x = 0.0f32;
         let mut cursor_y = 0.0f32;
         let can_scroll_x = self.direction.can_scroll_x();
@@ -293,16 +297,15 @@ component! {
         for child in children {
             let cid = child.id;
             let pref = child.measured_size;
-            // 非滚动轴填满 viewport：垂直滚动时宽度随窗口变化，避免内容卡在 measure 固有宽。
-            // 滚动轴保留子项自然尺寸（可超出 viewport）。
+            // 非滚动轴填满 content（已扣除 gutter）；滚动轴保留自然尺寸。
             let w = if can_scroll_x {
                 if pref.w <= 0.0 {
-                    frame.w
+                    content.w
                 } else {
                     pref.w
                 }
             } else {
-                frame.w
+                content.w
             };
             // Dynamic descendants such as Collapse can measure to zero before the
             // convergence loop has propagated their expanded content. Preserve the
@@ -315,15 +318,15 @@ component! {
                 } else if current_h > 0.0 {
                     current_h
                 } else {
-                    frame.h
+                    content.h
                 }
             } else {
-                frame.h
+                content.h
             };
             let r = if horizontal_flow {
-                Rect::new(frame.x + cursor_x, frame.y, w, h)
+                Rect::new(content.x + cursor_x, content.y, w, h)
             } else {
-                Rect::new(frame.x, frame.y + cursor_y, w, h)
+                Rect::new(content.x, content.y + cursor_y, w, h)
             };
             result.push((cid, r));
             max_right = max_right.max(r.x + r.w);
@@ -335,11 +338,12 @@ component! {
             }
         }
 
-        let raw_content_w = (max_right - frame.x).max(frame.w);
-        let raw_content_h = (max_bottom - frame.y).max(frame.h);
+        let raw_content_w = (max_right - content.x).max(content.w);
+        let raw_content_h = (max_bottom - content.y).max(content.h);
         let content_w = if can_scroll_x {
             raw_content_w
         } else {
+            // 非横向滚动：content_bounds 宽记视口宽（含 gutter），max_scroll_x 仍为 0。
             frame.w
         };
         let content_h = if can_scroll_y {
@@ -360,16 +364,75 @@ impl ScrollView {
         )
     }
 
-    fn child_constraints(&self, frame: Rect) -> Constraints {
+    /// 内容排布区域：需要滚动条时从视口扣除 gutter，避免卡片与滑块重叠。
+    fn content_frame(&self, frame: Rect, need_v: bool, need_h: bool) -> Rect {
+        let mut w = frame.w;
+        let mut h = frame.h;
+        if need_v {
+            w = (w - ScrollBar::gutter()).max(0.0);
+        }
+        if need_h {
+            h = (h - ScrollBar::gutter()).max(0.0);
+        }
+        Rect::new(frame.x, frame.y, w, h)
+    }
+
+    fn needs_v_scrollbar(&self, frame: Rect, children: &[LayoutChild]) -> bool {
+        if !(self.scrollbar_v.show && self.direction.can_scroll_y()) {
+            return false;
+        }
+        if self.max_scroll_y() > 0.0 {
+            return true;
+        }
+        if self
+            .content_bounds
+            .get()
+            .is_some_and(|b| b.h > frame.h + 0.5)
+        {
+            return true;
+        }
+        let content_h: f32 = children.iter().map(|c| c.measured_size.h.max(0.0)).sum();
+        content_h > frame.h + 0.5
+    }
+
+    fn needs_h_scrollbar(&self, frame: Rect, children: &[LayoutChild]) -> bool {
+        if !(self.scrollbar_h.show && self.direction.can_scroll_x()) {
+            return false;
+        }
+        if self.max_scroll_x() > 0.0 {
+            return true;
+        }
+        if self
+            .content_bounds
+            .get()
+            .is_some_and(|b| b.w > frame.w + 0.5)
+        {
+            return true;
+        }
+        let content_w: f32 = children.iter().map(|c| c.measured_size.w.max(0.0)).sum();
+        // 仅横向流时用子项宽之和；Both 模式取 max 更稳妥
+        let content_w = if self.direction.can_scroll_y() {
+            children
+                .iter()
+                .map(|c| c.measured_size.w.max(0.0))
+                .fold(0.0f32, f32::max)
+        } else {
+            content_w
+        };
+        content_w > frame.w + 0.5
+    }
+
+    fn child_constraints(&self, frame: Rect, need_v: bool, need_h: bool) -> Constraints {
+        let content = self.content_frame(frame, need_v, need_h);
         let max_w = if self.direction.can_scroll_x() {
             f32::MAX
         } else {
-            frame.w
+            content.w
         };
         let max_h = if self.direction.can_scroll_y() {
             f32::MAX
         } else {
-            frame.h
+            content.h
         };
         Constraints::loose(Size::new(max_w, max_h))
     }
