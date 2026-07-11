@@ -4,6 +4,11 @@
 //! ```ignore
 //! use uix::prelude::*;
 //! ```
+//!
+//! Macro tiers ([#180](docs/决策.md#d180)):
+//! - daily: `views!`, `with_cloned!`
+//! - advanced: `component!`
+//! - framework: `tree!`, `impl_widget_component!`, `semantic_handler!`
 
 // core
 
@@ -86,11 +91,12 @@ pub use crate::app::{map_ui_event, App, AppHandle, AppMode, TimerHandle, WindowC
 // view
 
 pub use crate::ui::view::{
-    button, column, dynamic_label, embed, grid, input, label, row, scroll, space, ButtonBuilder,
-    GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder, StyleExt, Ui,
-    View, ViewAdapter, ViewNode,
+    button, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll, show, space,
+    ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
+    StyleExt, Ui, View, ViewAdapter, ViewNode,
 };
 pub use crate::views;
+pub use crate::with_cloned;
 
 #[cfg(test)]
 mod tests {

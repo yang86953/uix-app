@@ -18,6 +18,9 @@ cargo test
 
 ## 示例
 
+最小可运行应用（入门复制此处；demo 是能力全景，见 [`demo/README.md`](demo/README.md)）。
+门面速查 → [`docs/架构.md` · 应用作者入口](docs/架构.md#应用作者入口)。
+
 ```rust
 use uix::prelude::*;
 
@@ -31,7 +34,7 @@ fn main() {
             column((
                 count.map_text(|n| format!("当前值: {n}")).font_size(24.0),
                 button("+1").primary().on_click(&count, |c| {
-                    c.set(c.get() + 1);
+                    c.update(|v| *v += 1);
                 }),
             ))
             .gap(12.0)

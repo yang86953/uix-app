@@ -5,9 +5,14 @@ use super::ffi::*;
 
 // ============================================================================
 // native/backends/windows/text_input.rs — Windows IME text input (ITextInput)
+//
+// IMM32：关联上下文 + caret/candidate 窗；composition 字符串由 wnd_proc 读取后
+// 经 `ime_dispatch` 合成 UiEvent。TSF：`tsf_session` 在 start/stop 做 AssociateFocus；
+// `ITfTextEditSink` / TextStore 仍待（`tsf_composition_events` 已预留事件形）。
 // ============================================================================
 
 use crate::core::{Errc, Error, Rect, Result};
+use crate::native::backends::windows::tsf_session::TsfSession;
 use crate::native::backends::windows::util::windows_diag;
 use crate::native::traits::input::ITextInput;
 use std::ptr;
@@ -135,16 +140,23 @@ pub(crate) fn result_string(hwnd: *mut std::ffi::c_void) -> Result<Option<String
 
 pub struct WindowsTextInput {
     hwnd: *mut std::ffi::c_void,
+    tsf: Option<TsfSession>,
 }
 
 impl WindowsTextInput {
     pub fn new() -> Self {
         Self {
             hwnd: ptr::null_mut(),
+            tsf: None,
         }
     }
     pub fn set_hwnd(&mut self, hwnd: *mut std::ffi::c_void) {
         self.hwnd = hwnd;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tsf_client_id(&self) -> Option<u32> {
+        self.tsf.as_ref().map(TsfSession::client_id)
     }
 
     fn require_hwnd(&self, operation: &str) -> Result<*mut std::ffi::c_void> {
@@ -174,6 +186,25 @@ impl WindowsTextInput {
             }
         }
     }
+
+    fn activate_tsf(&mut self, hwnd: *mut std::ffi::c_void) {
+        if self.tsf.is_some() {
+            return;
+        }
+        match TsfSession::activate(hwnd) {
+            Ok(session) => self.tsf = Some(session),
+            Err(err) => {
+                // IMM32 仍可用；TSF 失败不阻断输入启动。
+                crate::core::log::warn_fn(err.short_what());
+            }
+        }
+    }
+
+    fn deactivate_tsf(&mut self) {
+        if let Some(session) = self.tsf.take() {
+            session.deactivate();
+        }
+    }
 }
 
 impl Default for WindowsTextInput {
@@ -187,16 +218,17 @@ impl ITextInput for WindowsTextInput {
         let hwnd = self.require_hwnd("start")?;
         // SAFETY: HWND is the selected live platform window.
         if unsafe { ImmAssociateContextEx(hwnd, ptr::null_mut(), IACE_DEFAULT) } == 0 {
-            Err(windows_diag(
+            return Err(windows_diag(
                 Errc::PlatformError,
                 "Windows text input: ImmAssociateContextEx(start) failed",
-            ))
-        } else {
-            Ok(())
+            ));
         }
+        self.activate_tsf(hwnd);
+        Ok(())
     }
 
     fn stop(&mut self) -> Result<()> {
+        self.deactivate_tsf();
         if self.hwnd.is_null() {
             return Ok(());
         }
@@ -313,5 +345,28 @@ mod tests {
         let mut input = WindowsTextInput::new();
         let err = input.start().expect_err("start without HWND must fail");
         assert_eq!(err.code(), Errc::InvalidOperation);
+    }
+
+    #[test]
+    fn start_on_real_window_activates_tsf_session() {
+        if std::env::consts::OS != "windows" {
+            return;
+        }
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("TSF text input start", 320, 240)
+            .expect("window");
+        let hwnd = window.native_surface_ptr();
+        let mut input = WindowsTextInput::new();
+        input.set_hwnd(hwnd);
+        input.start().expect("start");
+        assert!(
+            input.tsf_client_id().unwrap_or(0) != 0,
+            "start must activate TSF AssociateFocus session"
+        );
+        input.stop().expect("stop");
+        assert!(input.tsf_client_id().is_none());
+        window.close().expect("close");
     }
 }

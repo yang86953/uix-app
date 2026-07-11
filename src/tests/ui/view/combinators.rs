@@ -100,18 +100,89 @@ fn state_map_text_builds_dynamic_label() {
 #[test]
 fn button_on_click_attaches_state_capture_fingerprint() {
     let count = crate::ui::state::State::new(0);
-    let node = View::build(button("+1").on_click(&count, |c| c.set(c.get() + 1)));
+    let node = View::build(button("+1").on_click(&count, |c| c.update(|v| *v += 1)));
     assert_eq!(node.handlers.len(), 1);
     assert!(node.handlers[0].signature().capture_fingerprint.is_some());
 }
 
+#[test]
+fn view_node_on_click_attaches_state_capture_fingerprint() {
+    let count = crate::ui::state::State::new(0);
+    let node = label("tap").on_click(&count, |c| c.update(|v| *v += 1));
+    assert_eq!(node.handlers.len(), 1);
+    assert!(node.handlers[0].signature().capture_fingerprint.is_some());
+}
+
+#[test]
+fn show_omits_child_when_false() {
+    assert!(show(false, label("hidden")).is_empty());
+    assert_eq!(show(true, label("visible")).len(), 1);
+}
+
+#[test]
+fn option_view_builds_space_when_none() {
+    let some = View::build(Some(label("ok")));
+    assert!(some
+        .widget
+        .as_any()
+        .downcast_ref::<crate::ui::widgets::Label>()
+        .is_some());
+    let none = View::build(None::<ViewNode>);
+    assert!(none
+        .widget
+        .as_any()
+        .downcast_ref::<crate::ui::widgets::Space>()
+        .is_some());
+}
+
+#[test]
+fn column_fit_keeps_intrinsic_flex_grow() {
+    use crate::ui::traits::WidgetLayout;
+    use crate::ui::widgets::Container;
+
+    let grow = column([label("fill")]);
+    let fit = column_fit([label("intrinsic")]);
+
+    let grow_w = grow
+        .widget
+        .as_any()
+        .downcast_ref::<Container>()
+        .expect("column widget");
+    let fit_w = fit
+        .widget
+        .as_any()
+        .downcast_ref::<Container>()
+        .expect("column_fit widget");
+
+    assert_eq!(grow_w.flex_grow(), 1.0);
+    assert_eq!(fit_w.flex_grow(), 0.0);
+}
+
+#[test]
+fn with_cloned_captures_states_for_static_root() {
+    let a = crate::ui::state::State::new(1i32);
+    let b = crate::ui::state::State::new(2i32);
+    let root = crate::with_cloned!(a, b; {
+        column((
+            a.map_text(|n| format!("{n}")),
+            b.map_text(|n| format!("{n}")),
+        ))
+    });
+    let node = root();
+    assert_eq!(node.children.len(), 2);
+    a.set(10);
+    let node2 = root();
+    assert_eq!(node2.children.len(), 2);
+}
+
+/// README Counter 的编译探针（[#180](docs/决策.md#d180) · [README · 示例](../../../../../README.md#示例)）。
 #[test]
 fn counter_facade_compiles_without_manual_into_or_clone_aliases() {
     let count = crate::ui::state::State::new(0);
     let _view = column((
         count.map_text(|n| format!("当前值: {n}")).font_size(24.0),
         button("+1").primary().on_click(&count, |c| {
-            c.set(c.get() + 1);
+            c.update(|v| *v += 1);
         }),
     ))
     .gap(12.0)

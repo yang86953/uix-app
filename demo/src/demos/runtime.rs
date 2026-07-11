@@ -16,12 +16,9 @@ fn theme_window(control: crate::demos::context::ThemeControl) -> ViewNode {
                 .font_size(22.0)
                 .color(ColorValue::Neutral(NeutralRole::Text)),
             label("").flex_grow(1.0),
-            embed(ThemeToggle::new().dark(control.is_dark())).on_semantic(
-                SemanticKind::Click,
-                move |_| {
-                    toggle_control.toggle();
-                },
-            ),
+            embed(ThemeToggle::new().dark(control.is_dark())).on_click_fn(move || {
+                toggle_control.toggle();
+            }),
         ])
         .align(AlignItems::Center)
         .gap(12.0),
@@ -100,7 +97,7 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
         ))
         .push({
             let counter = ctx.runtime_count();
-            column((
+            column_fit((
                 counter
                     .map_text(|n| format!("本地计数: {n}"))
                     .font_size(18.0)
@@ -108,20 +105,20 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                 row((
                     button("+1")
                         .primary()
-                        .on_click(&counter, |c| c.set(c.get() + 1)),
+                        .on_click(&counter, |c| c.update(|v| *v += 1)),
                     button("-1").on_click(&counter, |c| {
-                        let v = c.get();
-                        if v > 0 {
-                            c.set(v - 1);
-                        }
+                        c.update(|v| {
+                            if *v > 0 {
+                                *v -= 1;
+                            }
+                        });
                     }),
                 ))
                 .height(36.0)
                 .gap(8.0),
             ))
-            // 局部内容组保持 intrinsic 高度，不占用页面内容列的剩余空间。
+            // 局部内容组：column_fit 保持 intrinsic 高度。
             .gap(8.0)
-            .flex_grow(0.0)
         })
         .section("App Timer — run_interval (on_start 注册)")
         .push(

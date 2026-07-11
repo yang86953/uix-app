@@ -111,13 +111,12 @@ impl<'a> PageBuilder<'a> {
         // 默认 AlignItems::Stretch：内容列宽 = ScrollView 非滚动轴（随窗口）。
         // 卡片等样例可自带固定宽；提示条 / section 行应拉满内容区。
         scroll(
-            column(self.items)
+            column_fit(self.items)
                 .gap(12.0)
                 .padding((24.0, 8.0, 24.0, 16.0))
                 // ScrollView 的内容列必须按自然尺寸流式排布；若参与普通 flex
                 // shrink，会为了匹配 viewport 而把后续演示项压缩到 0 高度。
-                .overflow_content()
-                .flex_grow(0.0),
+                .overflow_content(),
         )
         .flex_grow(1.0)
         .build()
@@ -125,13 +124,12 @@ impl<'a> PageBuilder<'a> {
 }
 
 pub fn section_title(tk: &DesignTokens, text: &str) -> ViewNode {
-    // 色条必须 flex_grow(0)：column() 默认 grow=1，在 row 主轴上会吞掉整行宽度。
+    // 色条必须 column_fit：column() 默认 grow=1，在 row 主轴上会吞掉整行宽度。
     // 行本身不设 width：由父 Column Stretch 拉满；右侧细线 flex_grow(1) 填剩余。
     row([
-        column(Vec::<ViewNode>::new())
+        column_fit(Vec::<ViewNode>::new())
             .width(3.0)
             .height(14.0)
-            .flex_grow(0.0)
             .bg(ColorValue::Palette(PaletteColor::Primary))
             .radius(tk.border_radius_sm),
         label(text)
@@ -158,7 +156,7 @@ pub fn demo_row(h: f32) -> Space {
 }
 
 pub fn page_heading(icon: &str, title: &str) -> ViewNode {
-    column([
+    column_fit([
         row([
             embed(Icon::new(icon).size(24.0)),
             label(title)
@@ -170,6 +168,5 @@ pub fn page_heading(icon: &str, title: &str) -> ViewNode {
         space(12.0),
         embed(Divider::new()),
     ])
-    .flex_grow(0.0)
     .padding(EdgeInsets::new(0.0, 0.0, 8.0, 0.0))
 }

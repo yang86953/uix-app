@@ -14,11 +14,10 @@ fn nav_tile(
     desc: &str,
     tk: &DesignTokens,
 ) -> ViewNode {
-    let nav = active.clone();
     row([
         embed(Icon::new(icon).size(22.0)),
         space(12.0),
-        column([
+        column_fit([
             label(title)
                 .font_size(14.0)
                 .color(ColorValue::Neutral(NeutralRole::Text)),
@@ -26,15 +25,14 @@ fn nav_tile(
             label(desc)
                 .font_size(11.0)
                 .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
-        ])
-        .flex_grow(0.0),
+        ]),
     ])
     .width(210.0)
     .padding(EdgeInsets::uniform(14.0))
     .bg(ColorValue::Neutral(NeutralRole::BgElevated))
     .radius(tk.border_radius_lg)
     .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
-    .on_semantic(SemanticKind::Click, move |_| nav.set(index))
+    .on_click(active, move |n| n.set(index))
 }
 
 pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
@@ -63,7 +61,7 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                     "响应式 State",
                     280.0,
                     120.0,
-                    column((
+                    column_fit((
                         count
                             .map_text(|n| format!("计数: {n}"))
                             .font_size(28.0)
@@ -72,24 +70,24 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                         row((
                             button("+1")
                                 .primary()
-                                .on_click(&count, |c| c.set(c.get() + 1)),
+                                .on_click(&count, |c| c.update(|v| *v += 1)),
                             button("-1").on_click(&count, |c| {
-                                let v = c.get();
-                                if v > 0 {
-                                    c.set(v - 1);
-                                }
+                                c.update(|v| {
+                                    if *v > 0 {
+                                        *v -= 1;
+                                    }
+                                });
                             }),
                         ))
                         .gap(8.0),
-                    ))
-                    .flex_grow(0.0),
+                    )),
                 ),
                 demo_card(
                     tk,
                     "组件覆盖",
                     200.0,
                     120.0,
-                    column([
+                    column_fit([
                         label(format!("{PAGE_COUNT} 个演示页"))
                             .font_size(28.0)
                             .color(ColorValue::Palette(PaletteColor::Success)),
@@ -97,8 +95,7 @@ pub fn page_home(ctx: &DemoCtx<'_>) -> ViewNode {
                         label("8 类组件 + 参考")
                             .font_size(11.0)
                             .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
-                    ])
-                    .flex_grow(0.0),
+                    ]),
                 ),
             ])
             .gap(12.0),

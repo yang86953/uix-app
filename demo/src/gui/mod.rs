@@ -1,6 +1,5 @@
 //! UIX 多页 GUI 演示 — `cargo run --bin uix-demo`
 
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use uix::prelude::*;
@@ -16,7 +15,6 @@ fn sidebar_item(
     label_text: &str,
     tk: &DesignTokens,
 ) -> ViewNode {
-    let active_set = active.clone();
     let title = label_text.trim().to_string();
     let is_active = active.get() == index;
 
@@ -42,7 +40,7 @@ fn sidebar_item(
         item = item.bg(ColorValue::Palette(PaletteColor::PrimaryBg));
     }
 
-    item.on_semantic(SemanticKind::Click, move |_| active_set.set(index))
+    item.on_click(&active, move |a| a.set(index))
 }
 
 fn sidebar_group_label(_tk: &DesignTokens, text: &str) -> ViewNode {
@@ -59,15 +57,14 @@ fn sidebar_brand(_tk: &DesignTokens) -> ViewNode {
             Icon::new("box")
                 .size(22.0),
         ),
-        column([
+        column_fit([
             label("UIX Demo")
                 .font_size(17.0)
                 .color(ColorValue::Neutral(NeutralRole::Text)),
             label("Component Showcase")
                 .font_size(11.0)
                 .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
-        ])
-        .flex_grow(0.0),
+        ]),
     ])
     .align(AlignItems::Center)
     .gap(10.0)
@@ -97,10 +94,9 @@ fn sidebar(active: State<usize>, tk: &DesignTokens) -> ViewNode {
             .color(ColorValue::Neutral(NeutralRole::TextQuaternary))
             .padding(EdgeInsets::new(2.0, 16.0, 16.0, 8.0)),
     );
-    column(items)
+    column_fit(items)
         .width(SIDEBAR_W)
         .bg(ColorValue::Neutral(NeutralRole::BgElevated))
-        .flex_grow(0.0)
 }
 
 fn header_bar(
@@ -110,9 +106,8 @@ fn header_bar(
 ) -> ViewNode {
     let active_for_title = active.clone();
     let ticks = timer_ticks.clone();
-    // 顶栏不可 flex_grow：column() 默认 grow=1 会与 page_shell 对半分高，
-    // 切到内容更高的页后顶栏被撑开，正文被推到窗口外（表现为空白页）。
-    column([
+    // 顶栏用 column_fit：column() 默认 grow=1 会与 page_shell 对半分高。
+    column_fit([
         row([
             dynamic_label(move || {
                 let idx = active_for_title.get();
@@ -127,20 +122,16 @@ fn header_bar(
                 .font_size(11.0)
                 .color(ColorValue::Neutral(NeutralRole::TextTertiary))
                 .padding(EdgeInsets::new(0.0, 0.0, 0.0, 12.0)),
-            embed(ThemeToggle::new().dark(theme_control.is_dark())).on_semantic(
-                SemanticKind::Click,
-                {
-                    let theme_control = theme_control.clone();
-                    move |_| {
-                        theme_control.toggle();
-                    }
-                },
-            ),
+            embed(ThemeToggle::new().dark(theme_control.is_dark())).on_click_fn({
+                let theme_control = theme_control.clone();
+                move || {
+                    theme_control.toggle();
+                }
+            }),
         ])
         .bg(ColorValue::Neutral(NeutralRole::BgContainer)),
         embed(Divider::new()),
     ])
-    .flex_grow(0.0)
 }
 
 fn page_body(
@@ -273,53 +264,43 @@ pub fn run() {
     let runtime_count = State::new(0i32);
     let theme_control = ThemeControl::default();
 
-    let active_root = active.clone();
-    let timer_for_root = timer_ticks.clone();
-    let anim_for_root = anim_time.clone();
-    let home_count_for_root = home_count.clone();
-    let runtime_count_for_root = runtime_count.clone();
-    let theme_control_for_root = theme_control.clone();
-
-    let timer_for_start = timer_ticks.clone();
-    let anim_for_start = anim_time.clone();
-    // Interval timers are canceled when `TimerHandle` drops — keep alive for app lifetime.
-    let interval_handles = Arc::new(Mutex::new(Vec::<TimerHandle>::new()));
-
     App::new()
         .title("UIX Demo")
         .size(INIT_W, INIT_H)
         .theme(Theme::antd_light())
-        .on_start({
-            let interval_handles = interval_handles.clone();
-            let theme_control = theme_control.clone();
-            move |handle| {
-                theme_control.set_handle(handle.clone());
-                let ticks = timer_for_start.clone();
-                interval_handles
-                    .lock()
-                    .expect("timer keepalive")
-                    .push(handle.run_interval(Duration::from_secs(1), move || {
-                        ticks.set(ticks.get().wrapping_add(1));
-                    }));
-                let anim = anim_for_start.clone();
-                interval_handles
-                    .lock()
-                    .expect("timer keepalive")
-                    .push(handle.run_interval(Duration::from_millis(16), move || {
-                        anim.set(anim.get() + 0.016);
-                    }));
+        .on_start(with_cloned!(theme_control, timer_ticks, anim_time; |handle| {
+            theme_control.set_handle(handle.clone());
+            let ticks = timer_ticks.clone();
+            handle
+                .run_interval(Duration::from_secs(1), move || {
+                    ticks.update(|v| *v = v.wrapping_add(1));
+                })
+                .detach();
+            let anim = anim_time.clone();
+            handle
+                .run_interval(Duration::from_millis(16), move || {
+                    anim.update(|v| *v += 0.016);
+                })
+                .detach();
+        }))
+        .root(with_cloned!(
+            active,
+            timer_ticks,
+            anim_time,
+            home_count,
+            runtime_count,
+            theme_control;
+            {
+                app_shell_with_counters(
+                    active,
+                    timer_ticks,
+                    anim_time,
+                    &home_count,
+                    &runtime_count,
+                    &theme_control,
+                )
             }
-        })
-        .root(move || {
-            app_shell_with_counters(
-                active_root.clone(),
-                timer_for_root.clone(),
-                anim_for_root.clone(),
-                &home_count_for_root,
-                &runtime_count_for_root,
-                &theme_control_for_root,
-            )
-        })
+        ))
         .run();
 }
 
