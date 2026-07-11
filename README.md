@@ -4,15 +4,7 @@ Rust **跨平台（桌面 + 移动端）全栈 App 开发框架**。入口：`us
 
 **Web 式声明 UI + 原生性能 + 零闲置 + 全栈**（[#105](docs/决策.md#d105)）。应用作者 API 继续打磨 Rust 门面，现阶段不另起 UI DSL（[#179](docs/决策.md#d179)）。
 
-> **当前**：桌面 Win/Linux/macOS 已编码；**Windows 优先**（[#167](docs/决策.md#d167)）；移动端未实现。愿景 → [`产品`](docs/产品.md) · 上手 → [`架构 · 应用作者入口`](docs/架构.md#应用作者入口)。
-
-## 核心理念
-
-> **用最少资源，做最好效果。**
-
-有触发才工作；空闲 DeepIdle。硬约束 → [`AGENTS.md`](AGENTS.md) · [#105](docs/决策.md#d105)。
-
-> **AI Agent**：落地前必读 [`AGENTS.md`](AGENTS.md) → 按任务只开 [`架构`](docs/架构.md) 列出的 1–3 篇。
+> **当前**：桌面 Win/Linux/macOS 已编码；**Windows 优先**（[#167](docs/决策.md#d167)）；移动端未实现。愿景 → [`产品`](docs/产品.md) · 上手 → [`架构 · 应用作者入口`](docs/架构.md#应用作者入口) · 硬约束 → [`架构 · #105`](docs/架构.md#核心理念最高规则-105)。
 
 ## 快速开始
 
@@ -22,7 +14,7 @@ cargo run --bin uix-demo -- --cli     # CLI
 cargo test
 ```
 
-演示说明 → [`demo/README.md`](demo/README.md) · 上手 → [`架构 · 应用作者入口`](docs/架构.md#应用作者入口) · 架构 → [`架构`](docs/架构.md)
+演示 → [`demo/README.md`](demo/README.md)
 
 ## 示例
 

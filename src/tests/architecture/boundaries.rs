@@ -781,7 +781,7 @@ fn architecture_document_stays_in_the_qualified_docs_tree() {
     );
     assert!(
         !domain_dir.exists(),
-        "docs/领域/ must not exist; project depth lives in AGENTS + 决策 + 架构 + source: {}",
+        "docs/领域/ must not exist; project depth lives in 架构 + 决策 + 产品: {}",
         domain_dir.display()
     );
 
@@ -806,7 +806,7 @@ fn architecture_document_stays_in_the_qualified_docs_tree() {
 
     assert!(
         root.join("AGENTS.md").is_file(),
-        "AGENTS.md hard-constraint contract is missing"
+        "AGENTS.md AI guidance contract is missing"
     );
 
     assert!(
