@@ -178,14 +178,10 @@ component! {
             cursor += 20.0;
 
             if !node.icon.is_empty() {
-                let icon_str = crate::ui::widgets::icon::icon_char(&node.icon);
-                let saved = *ctx.font();
-                if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
-                    ctx.set_font(fh);
-                }
-                let icon_y = ctx.visual_center_y(row_rect, 12.0);
-                ctx.draw_text(icon_str, Point::new(cursor, icon_y), text_sec, 12.0);
-                ctx.set_font(saved);
+                let icon_rect = Rect::new(cursor, row_rect.y, 16.0, row_rect.h);
+                crate::ui::widgets::icon::paint_icon_in_frame(
+                    ctx, &node.icon, icon_rect, text_sec, 12.0,
+                );
                 cursor += 20.0;
             }
 

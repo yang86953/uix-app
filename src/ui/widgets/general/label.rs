@@ -171,24 +171,14 @@ component! {
         let fh = *ctx.font();
         let layout = ctx.font_service().layout_text(&fh, &self.text, &backend_opts);
 
-        // 内边距 + 单行在 frame 内光学居中（与 Icon/List 同行时对齐）
+        // 内边距 + 顶对齐绘制。过高 frame 时的垂直居中由父级 AlignItems 负责，
+        // 不在此用 visual_center_y 二次修正。
         let pad = self
             .style
             .as_ref()
             .map(|s| s.padding)
             .unwrap_or_default();
-        let content = Rect::new(
-            frame.x + pad.left,
-            frame.y + pad.top,
-            (frame.w - pad.horizontal()).max(0.0),
-            (frame.h - pad.vertical()).max(0.0),
-        );
-        let text_y = if content.h > fs * 1.25 {
-            ctx.visual_center_y(content, fs) - frame.y
-        } else {
-            pad.top
-        };
-        let draw_pos = crate::core::Point::new(pad.left, text_y);
+        let draw_pos = crate::core::Point::new(pad.left, pad.top);
         self.draw_pos.set(draw_pos);
         let abs_pos = crate::core::Point::new(frame.x + draw_pos.x, frame.y + draw_pos.y);
 
@@ -410,8 +400,8 @@ impl Label {
                     _ => self.font_size,
                 })
                 .unwrap_or(self.font_size);
-            // 单行固有高度用视觉字高（≈ ascent+descent），勿用 1.5 行距：
-            // 顶对齐绘制时多余空白会让文字相对同行 Icon 偏上。
+            // 单行固有高度 = 行盒（≈ ascent+descent）；与顶对齐绘制一致。
+            // 与 Icon 同行时由父级 AlignItems::Center 对齐，勿在 paint 里二次居中。
             // 宽度按字符数估算（非 UTF-8 字节），避免 CJK 量宽偏大。
             Size::new(
                 w.unwrap_or(char_count * fs * 0.6 + pad.horizontal()),

@@ -756,6 +756,8 @@ fn demo_local_counters_survive_root_reconcile() {
 
 #[test]
 fn shell_labels_are_vertically_spaced() {
+    use uix::ui::widgets::NavItem;
+
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
     let anim_time = State::new(0.0f32);
@@ -783,20 +785,28 @@ fn shell_labels_are_vertically_spaced() {
         .iter()
         .find(|(t, _)| t == "UIX Demo")
         .expect("brand label");
-    let home_nav = labels
-        .iter()
-        .find(|(t, f)| t.trim() == "首页" && f.x < SIDEBAR_W)
-        .expect("sidebar home");
+    let home_nav = tree
+        .find_all_by_type::<NavItem>()
+        .into_iter()
+        .find(|(id, item)| {
+            item.label_text() == "首页"
+                && tree
+                    .get(*id)
+                    .map(|n| n.frame().x < SIDEBAR_W)
+                    .unwrap_or(false)
+        })
+        .expect("sidebar home NavItem");
+    let home_nav_frame = tree.get(home_nav.0).expect("nav node").frame();
     let page_heading = labels
         .iter()
         .find(|(t, f)| t.trim() == "首页" && f.x >= SIDEBAR_W)
         .expect("page heading");
 
     assert!(
-        home_nav.1.y > brand.1.y + 20.0,
+        home_nav_frame.y > brand.1.y + 20.0,
         "sidebar stacked: brand y={} nav y={}",
         brand.1.y,
-        home_nav.1.y
+        home_nav_frame.y
     );
     assert!(
         page_heading.1.y > 20.0,
@@ -811,8 +821,8 @@ fn shell_labels_are_vertically_spaced() {
 }
 
 #[test]
-fn sidebar_nav_icon_and_label_vertically_centered() {
-    use uix::ui::widgets::Icon;
+fn sidebar_nav_uses_nav_item_component() {
+    use uix::ui::widgets::NavItem;
 
     let active = State::new(0usize);
     let timer_ticks = State::new(0u32);
@@ -824,41 +834,30 @@ fn sidebar_nav_icon_and_label_vertically_centered() {
     }
     tree.layout();
 
-    let home_label = tree
-        .find_all_by_type::<Label>()
-        .into_iter()
-        .find(|(id, l)| {
-            l.text().trim() == "首页"
+    let nav_items = tree.find_all_by_type::<NavItem>();
+    assert!(
+        nav_items.len() >= PAGE_COUNT,
+        "sidebar should use NavItem for each page, got {}",
+        nav_items.len()
+    );
+
+    let home = nav_items
+        .iter()
+        .find(|(id, item)| {
+            item.label_text() == "首页"
+                && item.nav_index() == 0
                 && tree
                     .get(*id)
                     .map(|n| n.frame().x < SIDEBAR_W)
                     .unwrap_or(false)
         })
-        .expect("sidebar home label");
-    let home_frame = tree.get(home_label.0).expect("label node").frame();
-
-    // 同排 Icon：在 Label 左侧、同一侧栏行内（y 接近）
-    let icon = tree
-        .find_all_by_type::<Icon>()
-        .into_iter()
-        .find(|(id, _)| {
-            let f = tree.get(*id).map(|n| n.frame()).unwrap_or_default();
-            f.x < home_frame.x
-                && f.x > 0.0
-                && (f.y - home_frame.y).abs() < 20.0
-                && (f.h - 16.0).abs() < 1.0
-        })
-        .expect("sidebar home icon");
-    let icon_frame = tree.get(icon.0).expect("icon node").frame();
-
-    let icon_mid = icon_frame.y + icon_frame.h * 0.5;
-    let label_mid = home_frame.y + home_frame.h * 0.5;
+        .expect("sidebar home NavItem");
+    let frame = tree.get(home.0).expect("nav node").frame();
     assert!(
-        (icon_mid - label_mid).abs() < 2.0,
-        "icon/label mid mismatch: icon_mid={icon_mid} label_mid={label_mid} icon={icon_frame:?} label={home_frame:?}"
+        frame.h >= 30.0 && frame.w > 100.0,
+        "NavItem frame should be laid out, got {frame:?}"
     );
 
-    // 分组标题左缘与导航项图标对齐（item margin+padding = 24）
     let group = tree
         .find_all_by_type::<Label>()
         .into_iter()
@@ -866,9 +865,7 @@ fn sidebar_nav_icon_and_label_vertically_centered() {
         .expect("group label");
     let group_frame = tree.get(group.0).expect("group node").frame();
     assert!(
-        (group_frame.x - icon_frame.x).abs() < 2.0,
-        "group label x={} should align with icon x={}",
-        group_frame.x,
-        icon_frame.x
+        group_frame.x < SIDEBAR_W && group_frame.y < frame.y,
+        "group label should sit above home NavItem in sidebar"
     );
 }

@@ -47,7 +47,18 @@ component! {
         // 阴影
         ctx.draw_box_shadow(btn_rect, 8.0, 0.0, 4.0, Color::from_rgba(0, 0, 0, 40), Some(r));
         ctx.fill_rect(btn_rect, bg, Some(r));
-        ctx.text_center(&self.icon, btn_rect, white, 16.0);
+        let icon_fs = 16.0;
+        let tw = ctx.measure_text(&self.icon, icon_fs).w;
+        let th = ctx.line_box_height(icon_fs);
+        ctx.draw_text(
+            &self.icon,
+            Point::new(
+                btn_rect.x + (btn_rect.w - tw) * 0.5,
+                btn_rect.y + (btn_rect.h - th) * 0.5,
+            ),
+            white,
+            icon_fs,
+        );
         // Badge
         if self.badge_count > 0 {
             let badge = if self.badge_count > 99 { loc.float_badge_overflow } else { &self.badge_count.to_string() };

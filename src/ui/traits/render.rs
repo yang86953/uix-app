@@ -90,6 +90,7 @@ pub trait TextRenderer {
     fn text_cursor_x(&mut self, text: &str, font_size: f32, char_index: usize) -> f32;
 
     // ── 辅助 ──
+    /// 行盒在 rect 内几何居中的 layout 原点 y（过渡；优先布局算盒再 draw_text）。
     fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32;
 
     // ── 3D 空间文本 ──

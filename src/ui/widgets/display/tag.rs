@@ -51,11 +51,25 @@ component! {
         ctx.fill_rect(frame, bg, r);
         let text_x = frame.x + 8.0;
         let text_w = frame.w - 16.0 - if self.closable { 20.0 } else { 0.0 };
-        let text_frame = Rect::new(text_x, frame.y, text_w, frame.h);
-        ctx.text_center(&self.text, text_frame, fg, self.font_size);
+        let content = Rect::new(text_x, frame.y, text_w, frame.h);
+        let tw = ctx.measure_text(&self.text, self.font_size).w;
+        let th = ctx.line_box_height(self.font_size);
+        let text_rect = Rect::new(
+            content.x + (content.w - tw) * 0.5,
+            content.y + (content.h - th) * 0.5,
+            tw.max(0.0),
+            th.max(0.0),
+        );
+        ctx.draw_text(
+            &self.text,
+            crate::core::Point::new(text_rect.x, text_rect.y),
+            fg,
+            self.font_size,
+        );
         if self.closable {
             let cx = frame.x + frame.w - 14.0;
-            let cy = ctx.visual_center_y(frame, 10.0);
+            let close_h = ctx.line_box_height(10.0);
+            let cy = frame.y + (frame.h - close_h) * 0.5;
             ctx.draw_text("✕", crate::core::Point::new(cx, cy), fg, 10.0);
         }
     }

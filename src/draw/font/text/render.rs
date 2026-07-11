@@ -99,6 +99,15 @@ impl<'a> TextRenderService<'a> {
         self.blit_glyph_layout(canvas, layout, pos, color, font_size);
     }
 
+    /// 单行行盒高度 = ascent + descent（与 `layout_text` 行盒一致）。
+    pub fn line_box_height(&mut self, font_size: f32) -> f32 {
+        let fs = font_size.max(1.0);
+        self.font_service
+            .horizontal_line_metrics(&self.font, fs)
+            .map(|m| m.ascent + m.descent)
+            .unwrap_or(fs * 1.2)
+    }
+
     // ── 2D 文本绘制 ──
 
     /// 绘制文本（左对齐，顶部对齐）。
@@ -147,7 +156,10 @@ impl<'a> TextRenderService<'a> {
         self.draw_text(canvas, text, Point::new(x, top_y), color, fs);
     }
 
-    /// 在矩形内居中绘制文本。
+    /// 在矩形内居中绘制文本（过渡 helper：行盒几何居中，无光学系数）。
+    ///
+    /// 控件主路径应先由布局算出 `text_rect`，再 [`draw_text`] 顶对齐；
+    /// 勿在此叠加观感修正。
     pub fn text_center(
         &mut self,
         canvas: &mut dyn Canvas2D,
@@ -176,7 +188,7 @@ impl<'a> TextRenderService<'a> {
         self.blit_glyph_layout(canvas, &layout, Point::new(x, y), color, font_size);
     }
 
-    /// 左对齐、垂直居中的文本绘制。
+    /// 左对齐、垂直居中（过渡 helper：行盒几何居中，无光学系数）。
     pub fn draw_text_in_frame(
         &mut self,
         canvas: &mut dyn Canvas2D,
@@ -418,17 +430,13 @@ impl<'a> TextRenderService<'a> {
 
     // ── 辅助 ──
 
-    /// 计算文字视觉中心与 rect 中心对齐时的 y 位置（布局原点 = 行顶）。
+    /// 行盒（ascent+descent）在 `rect` 内几何居中时的 layout 原点 y（行顶）。
     ///
-    /// em-box（ascent+descent）几何居中后，descent 多为空白，墨水主体在 ascent，
-    /// 观感会偏上。再下移约 `0.75 * descent`，使 List/Button 等行内文字光学居中。
+    /// 无光学下移。优先用布局把文字盒放好，再 `draw_text`；本函数仅过渡/简单控件。
     pub fn visual_center_y(&mut self, rect: Rect, font_size: f32) -> f32 {
         let fs = font_size.max(1.0);
         match self.font_service.horizontal_line_metrics(&self.font, fs) {
-            Some(m) => {
-                let em_top = rect.y + (rect.h - m.ascent - m.descent) * 0.5;
-                em_top + m.descent * 0.75
-            }
+            Some(m) => rect.y + (rect.h - m.ascent - m.descent) * 0.5,
             None => rect.y + (rect.h - fs) * 0.5,
         }
     }

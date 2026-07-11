@@ -211,11 +211,22 @@ impl WidgetRender for Button {
         self.paint_ripple(frame, ctx, &style);
         if !self.text.is_empty() {
             let content = frame.inset(style.padding);
-            ctx.text_center(
+            let font_size = style.resolve_font_size(ctx.tokens());
+            let color = style.resolve_color(ctx.tokens());
+            // 布局职责：在 content 内交叉轴居中行盒；绘制只顶对齐 blit。
+            let text_w = ctx.measure_text(&self.text, font_size).w;
+            let text_h = ctx.line_box_height(font_size);
+            let text_rect = Rect::new(
+                content.x + (content.w - text_w) * 0.5,
+                content.y + (content.h - text_h) * 0.5,
+                text_w.max(0.0),
+                text_h.max(0.0),
+            );
+            ctx.draw_text(
                 &self.text,
-                content,
-                style.resolve_color(ctx.tokens()),
-                style.resolve_font_size(ctx.tokens()),
+                Point::new(text_rect.x, text_rect.y),
+                color,
+                font_size,
             );
         }
     }
@@ -339,7 +350,9 @@ impl Button {
     fn intrinsic_size(&self) -> Size {
         let base = self.style_set.normal.clone().apply(self.style.clone());
         let font_size = base.font_size.default_size().max(1.0);
+        // 按钮外框高度由 Style 固定；文字行盒在 render 时于 content 内居中。
         let height = base.height.unwrap_or(32.0);
+        // 无 FontService 时用字符估算宽；真实宽在 paint 用 measure_text。
         let text_w = self.text.chars().count() as f32 * font_size * 0.55;
         let width = base
             .width

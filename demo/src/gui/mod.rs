@@ -7,56 +7,19 @@ use uix::prelude::*;
 use crate::common::page::{page_heading, INIT_H, INIT_W, PAGE_TITLES, SIDEBAR_GROUPS, SIDEBAR_W};
 use crate::demos::context::ThemeControl;
 use crate::demos::{build_page, DemoCtx};
-
-fn sidebar_item(
-    active: State<usize>,
-    index: usize,
-    icon: &str,
-    label_text: &str,
-    tk: &DesignTokens,
-) -> ViewNode {
-    let title = label_text.trim().to_string();
-    let is_active = active.get() == index;
-
-    let text_color = if is_active {
-        ColorValue::Palette(PaletteColor::Primary)
-    } else {
-        ColorValue::Neutral(NeutralRole::TextSecondary)
-    };
-
-    // Center：避免默认 Stretch 把 Label 拉高后顶对齐，导致文字相对图标偏上。
-    // margin 12：左右对称，高亮不贴边；gap 替代 space(10)（后者在 row 中宽为 0）。
-    let mut item = row([
-        embed(Icon::new(icon).size(16.0)),
-        label(title).font_size(13.0).color(text_color),
-    ])
-    .align(AlignItems::Center)
-    .gap(10.0)
-    .margin(EdgeInsets::new(12.0, 0.0, 12.0, 0.0))
-    .padding(EdgeInsets::new(12.0, 8.0, 12.0, 8.0))
-    .radius(tk.border_radius_sm);
-
-    if is_active {
-        item = item.bg(ColorValue::Palette(PaletteColor::PrimaryBg));
-    }
-
-    item.on_click(&active, move |a| a.set(index))
-}
+use std::cell::Cell;
+use std::rc::Rc;
 
 fn sidebar_group_label(_tk: &DesignTokens, text: &str) -> ViewNode {
-    // 左缘与导航项图标对齐：item.margin(12) + item.padding(12) = 24
     label(text)
         .font_size(11.0)
         .color(ColorValue::Neutral(NeutralRole::TextQuaternary))
-        .margin(EdgeInsets::new(24.0, 16.0, 12.0, 8.0))
+        .margin(EdgeInsets::new(16.0, 14.0, 12.0, 6.0))
 }
 
 fn sidebar_brand(_tk: &DesignTokens) -> ViewNode {
     row([
-        embed(
-            Icon::new("box")
-                .size(22.0),
-        ),
+        embed(Icon::new("box").size(22.0)),
         column_fit([
             label("UIX Demo")
                 .font_size(17.0)
@@ -71,13 +34,37 @@ fn sidebar_brand(_tk: &DesignTokens) -> ViewNode {
     .padding(EdgeInsets::new(16.0, 20.0, 12.0, 16.0))
 }
 
+fn sidebar_nav_item(
+    active: &State<usize>,
+    shared: &SharedActive,
+    page_idx: usize,
+    icon: &str,
+    title: &str,
+) -> ViewNode {
+    let page = active.clone();
+    let item = NavItem::new(title.trim(), page_idx, shared.clone())
+        .icon(icon)
+        .width(SIDEBAR_W - 16.0)
+        .height(36.0);
+    embed(item)
+        .margin(EdgeInsets::new(8.0, 0.0, 8.0, 0.0))
+        .on_semantic(SemanticKind::Change, move |event| {
+            if let Some(value) = event.text_payload() {
+                if let Ok(index) = value.parse::<usize>() {
+                    page.set(index);
+                }
+            }
+        })
+}
+
 fn sidebar(active: State<usize>, tk: &DesignTokens) -> ViewNode {
+    let shared: SharedActive = Rc::new(Cell::new(active.get()));
     let mut items = vec![sidebar_brand(tk), embed(Divider::new())];
     for (group_name, indices) in SIDEBAR_GROUPS {
         items.push(sidebar_group_label(tk, group_name));
-        for &i in *indices {
-            let (icon, title) = PAGE_TITLES[i];
-            items.push(sidebar_item(active.clone(), i, icon, title, tk));
+        for &page_idx in *indices {
+            let (icon, title) = PAGE_TITLES[page_idx];
+            items.push(sidebar_nav_item(&active, &shared, page_idx, icon, title));
         }
     }
     items.push(label("").flex_grow(1.0));
@@ -106,7 +93,6 @@ fn header_bar(
 ) -> ViewNode {
     let active_for_title = active.clone();
     let ticks = timer_ticks.clone();
-    // 顶栏用 column_fit：column() 默认 grow=1 会与 page_shell 对半分高。
     column_fit([
         row([
             dynamic_label(move || {
@@ -114,14 +100,13 @@ fn header_bar(
                 let (_, title) = PAGE_TITLES[idx];
                 title.trim().to_string()
             })
-            .font_size(15.0)
-            .color(ColorValue::Neutral(NeutralRole::TextSecondary))
-            .padding(EdgeInsets::new(24.0, 0.0, 0.0, 0.0)),
+            .font_size(16.0)
+            .color(ColorValue::Neutral(NeutralRole::Text)),
             label("").flex_grow(1.0),
-            dynamic_label(move || format!("⏱ {}", ticks.get()))
-                .font_size(11.0)
-                .color(ColorValue::Neutral(NeutralRole::TextTertiary))
-                .padding(EdgeInsets::new(0.0, 0.0, 0.0, 12.0)),
+            embed(Tag::new("live").color(TagColor::Success)),
+            dynamic_label(move || format!("{}s", ticks.get()))
+                .font_size(12.0)
+                .color(ColorValue::Neutral(NeutralRole::TextTertiary)),
             embed(ThemeToggle::new().dark(theme_control.is_dark())).on_click_fn({
                 let theme_control = theme_control.clone();
                 move || {
@@ -129,6 +114,10 @@ fn header_bar(
                 }
             }),
         ])
+        .align(AlignItems::Center)
+        .gap(12.0)
+        .height(48.0)
+        .padding(EdgeInsets::new(20.0, 0.0, 16.0, 0.0))
         .bg(ColorValue::Neutral(NeutralRole::BgContainer)),
         embed(Divider::new()),
     ])

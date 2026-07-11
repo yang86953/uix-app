@@ -561,4 +561,68 @@ mod tests {
             "cached_content_size must update after zero-height bootstrap"
         );
     }
+
+    /// 复现首页快捷导航：不定高 column_fit 放在 row 里时，标题/描述不得重叠。
+    #[test]
+    fn column_fit_nav_tile_in_row_does_not_overlap_labels() {
+        use crate::ui::layout::AlignItems;
+        use crate::ui::view::adapter::ViewAdapter;
+        use crate::ui::view::{column_fit, embed, label, row, space};
+        use crate::ui::widgets::{Icon, Label};
+
+        let tile = |title: &str, desc: &str| {
+            column_fit([
+                row([
+                    embed(Icon::new("cpu").size(20.0)),
+                    label(title).font_size(14.0),
+                ])
+                .align(AlignItems::Center)
+                .gap(10.0),
+                space(8.0),
+                label(desc).font_size(12.0),
+            ])
+            .width(200.0)
+            .padding(EdgeInsets::uniform(16.0))
+        };
+
+        let mut tree = ViewAdapter::build(row([
+            tile("应用能力", "State · Timer · Theme · 多窗"),
+            tile("通用组件", "Button · Tag · Icon"),
+        ]));
+        let root_id = tree.root_id().expect("root");
+        // 模拟页面行：先给一个偏矮的 frame，依赖 expand 撑开
+        tree.get_mut(root_id)
+            .expect("root")
+            .set_frame(Rect::new(0.0, 0.0, 800.0, 40.0));
+        tree.push_layout_invalidation(root_id);
+        tree.layout();
+
+        let mut frames = Vec::new();
+        for id in tree.traverse() {
+            let node = tree.get(id).expect("node");
+            if let Some(l) = node.component().as_any().downcast_ref::<Label>() {
+                frames.push((l.text().to_string(), node.frame()));
+            }
+        }
+        let title = frames
+            .iter()
+            .find(|(t, _)| t == "应用能力")
+            .expect("title");
+        let desc = frames
+            .iter()
+            .find(|(t, _)| t.contains("State"))
+            .expect("desc");
+        assert!(
+            desc.1.y + 0.5 >= title.1.y + title.1.h,
+            "desc must sit below title (no overlap): title={:?} desc={:?} all={frames:?}",
+            title.1,
+            desc.1
+        );
+        assert!(
+            desc.1.y + 0.5 >= title.1.y + title.1.h + 6.0,
+            "expected ~8px spacer between title and desc: title.bottom={} desc.y={} all={frames:?}",
+            title.1.y + title.1.h,
+            desc.1.y
+        );
+    }
 }

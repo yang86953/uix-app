@@ -1,7 +1,7 @@
-//! ScrollBar — overlay scrollbar for one axis (vertical or horizontal).
+//! ScrollBar — classic gutter scrollbar for one axis (vertical or horizontal).
 //!
-//! Used by [`ScrollView`](super::ScrollView) to render draggable scrollbar
-//! tracks and thumbs. Each axis gets its own [`ScrollBar`] instance.
+//! Used by [`ScrollView`](super::ScrollView). Track sits in a reserved gutter so
+//! content is not painted underneath the thumb (not overlay-on-content).
 
 use crate::core::{Point, Rect};
 use crate::draw::painting::PaintContext;
@@ -13,7 +13,7 @@ pub enum ScrollbarOrientation {
     Horizontal,
 }
 
-/// State and rendering for a single-axis overlay scrollbar.
+/// State and rendering for a single-axis scrollbar.
 #[derive(Debug, Clone)]
 pub struct ScrollBar {
     /// Whether the scrollbar is visible at all.
@@ -27,8 +27,16 @@ pub struct ScrollBar {
 }
 
 impl ScrollBar {
-    const SB_W: f32 = 6.0;
+    /// Thumb / track thickness.
+    pub const SB_W: f32 = 6.0;
+    /// Margin between track and viewport outer edge.
+    const EDGE_PAD: f32 = 2.0;
     const THUMB_MIN: f32 = 18.0;
+
+    /// Layout gutter reserved for this axis when the bar is shown (track + edge pad).
+    pub const fn gutter() -> f32 {
+        Self::SB_W + Self::EDGE_PAD
+    }
 
     /// Create a new scrollbar for the given orientation (visible by default).
     pub fn new(orientation: ScrollbarOrientation) -> Self {
@@ -46,15 +54,15 @@ impl ScrollBar {
     pub fn track_rect_abs(&self, abs_frame: Rect) -> Rect {
         match self.orientation {
             ScrollbarOrientation::Vertical => Rect::new(
-                abs_frame.x + abs_frame.w - Self::SB_W - 2.0,
-                abs_frame.y + 2.0,
+                abs_frame.x + abs_frame.w - Self::gutter(),
+                abs_frame.y + Self::EDGE_PAD,
                 Self::SB_W,
-                abs_frame.h - 4.0,
+                (abs_frame.h - Self::EDGE_PAD * 2.0).max(0.0),
             ),
             ScrollbarOrientation::Horizontal => Rect::new(
-                abs_frame.x + 2.0,
-                abs_frame.y + abs_frame.h - Self::SB_W - 2.0,
-                abs_frame.w - 4.0,
+                abs_frame.x + Self::EDGE_PAD,
+                abs_frame.y + abs_frame.h - Self::gutter(),
+                (abs_frame.w - Self::EDGE_PAD * 2.0).max(0.0),
                 Self::SB_W,
             ),
         }
@@ -64,12 +72,18 @@ impl ScrollBar {
     /// mouse positions that are relative to the viewport frame).
     pub fn track_rect_rel(&self, frame: Rect) -> Rect {
         match self.orientation {
-            ScrollbarOrientation::Vertical => {
-                Rect::new(frame.w - Self::SB_W - 2.0, 2.0, Self::SB_W, frame.h - 4.0)
-            }
-            ScrollbarOrientation::Horizontal => {
-                Rect::new(2.0, frame.h - Self::SB_W - 2.0, frame.w - 4.0, Self::SB_W)
-            }
+            ScrollbarOrientation::Vertical => Rect::new(
+                frame.w - Self::gutter(),
+                Self::EDGE_PAD,
+                Self::SB_W,
+                (frame.h - Self::EDGE_PAD * 2.0).max(0.0),
+            ),
+            ScrollbarOrientation::Horizontal => Rect::new(
+                Self::EDGE_PAD,
+                frame.h - Self::gutter(),
+                (frame.w - Self::EDGE_PAD * 2.0).max(0.0),
+                Self::SB_W,
+            ),
         }
     }
 

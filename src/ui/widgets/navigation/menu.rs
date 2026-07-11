@@ -200,14 +200,10 @@ component! {
                     }
                     let label_pad = if item.icon.is_empty() { 16.0 } else { 36.0 };
                     if !item.icon.is_empty() {
-                        let icon_str = crate::ui::widgets::icon::icon_char(&item.icon);
-                        let saved = *ctx.font();
-                        if let Some(fh) = crate::ui::widgets::icon::lucide_handle() {
-                            ctx.set_font(fh);
-                        }
                         let icon_rect = Rect::new(frame.x + 12.0, item_y, 16.0, self.item_h);
-                        ctx.draw_text_in_frame(icon_str, icon_rect, item_c, 14.0);
-                        ctx.set_font(saved);
+                        crate::ui::widgets::icon::paint_icon_in_frame(
+                            ctx, &item.icon, icon_rect, item_c, 14.0,
+                        );
                     }
                     let label_rect = Rect::new(
                         frame.x + label_pad,
