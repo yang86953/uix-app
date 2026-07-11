@@ -538,7 +538,7 @@ impl FontService {
             return GlyphRaster {
                 width: 0,
                 height: 0,
-                coverage: Arc::new(vec![]),
+                coverage: Arc::from([]),
                 bearing_x: 0.0,
                 bearing_y: 0.0,
             };
@@ -601,7 +601,7 @@ impl FontService {
         GlyphRaster {
             width: w,
             height: h,
-            coverage: Arc::new(coverage),
+            coverage: Arc::<[u8]>::from(coverage),
             bearing_x: (fs * 0.05).max(0.0),
             // 相对布局 y（≈ ascent）：方框顶落在 ascent 下方一点
             bearing_y: -(fs * 0.75),

@@ -337,6 +337,20 @@ pub trait Canvas2D {
         );
     }
 
+    /// Shared-coverage glyph blit — default copies via [`blit_glyph`]; GPU-native
+    /// backends may retain the `Arc` without cloning coverage bytes (#105).
+    fn blit_glyph_shared(
+        &mut self,
+        x: i32,
+        y: i32,
+        coverage: std::sync::Arc<[u8]>,
+        width: usize,
+        height: usize,
+        color: Color,
+    ) {
+        self.blit_glyph(x, y, coverage.as_ref(), width, height, color);
+    }
+
     // ── 渲染状态栈（必须自行实现）──
     fn save(&mut self);
     fn restore(&mut self);

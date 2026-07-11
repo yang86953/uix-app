@@ -158,6 +158,10 @@ impl WidgetTree {
                     }
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
+                        // 文字拖选起点：清掉同父级其他行的旧选区，避免残留高亮。
+                        if self.get(t).is_some_and(super::text_selection::participates) {
+                            self.clear_sibling_cross_text_selections(t);
+                        }
                         self.invalidate_nav_siblings(t);
                         self.set_focus(Some(t));
                     } else {
@@ -262,6 +266,14 @@ impl WidgetTree {
                 }
 
                 if let Some(drag_target) = self.managers().interaction.pressed_component() {
+                    // 文字拖选：pressed 捕获会把 Move 锁在起点节点，须在树层
+                    // 协调同父级兄弟行，才能向上/向下扩展选区。
+                    if self.get(drag_target).is_some_and(super::text_selection::is_dragging)
+                        && self.apply_cross_text_selection_drag(drag_target, *pos)
+                    {
+                        self.rebuild_widget_overlays();
+                        return EventResult::Handled;
+                    }
                     let result = self.dispatch_to(drag_target, event);
                     self.rebuild_widget_overlays();
                     return result;
@@ -365,6 +377,13 @@ impl WidgetTree {
                 }
 
                 if let Some(t) = self.managers().focus.focused_component() {
+                    // 跨节点文字选区：Ctrl+C 须聚合兄弟选区，不能只读焦点节点。
+                    if *key == KeyCode::C
+                        && mods.contains(KeyMod::CTRL)
+                        && self.try_copy_cross_text_selection(t)
+                    {
+                        return EventResult::Handled;
+                    }
                     // 捕获阶段：root → target，用于全局快捷键
                     if self.capture_to(t, event) == EventResult::Handled {
                         return EventResult::Handled;
@@ -444,6 +463,11 @@ impl WidgetTree {
             SystemEvent::Copy | SystemEvent::Cut | SystemEvent::Paste { .. } => {
                 if let Some(t) = self.managers().focus.focused_component() {
                     self.invalidate_paint(t);
+                    if matches!(event, SystemEvent::Copy) && self.try_copy_cross_text_selection(t)
+                    {
+                        let _ = self.dispatch_semantic(SemanticEvent::copy(t));
+                        return EventResult::Handled;
+                    }
                     let result = self.dispatch_to(t, event);
                     if result == EventResult::Handled {
                         let semantic = match event {
@@ -561,7 +585,7 @@ impl WidgetTree {
     }
 
     /// 计算从目标到根路径上所有 ScrollView 的累计滚动偏移。
-    fn cumulative_scroll_offset(&self, target: WidgetId) -> Option<(f32, f32)> {
+    pub(crate) fn cumulative_scroll_offset(&self, target: WidgetId) -> Option<(f32, f32)> {
         let mut sx = 0.0f32;
         let mut sy = 0.0f32;
         let mut found = false;

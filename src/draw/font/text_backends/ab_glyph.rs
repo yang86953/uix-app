@@ -191,7 +191,7 @@ impl TextBackend for AbGlyphBackend {
             return GlyphRaster {
                 width: 0,
                 height: 0,
-                coverage: Arc::new(vec![]),
+                coverage: Arc::from([]),
                 bearing_x: 0.0,
                 bearing_y: 0.0,
             };
@@ -223,7 +223,7 @@ impl TextBackend for AbGlyphBackend {
         GlyphRaster {
             width: w,
             height: h,
-            coverage: Arc::new(data),
+            coverage: Arc::<[u8]>::from(data),
             bearing_x: bx,
             bearing_y: by,
         }

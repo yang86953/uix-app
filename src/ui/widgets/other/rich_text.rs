@@ -528,6 +528,38 @@ impl RichText {
             .map(|(s, e)| self.extract_text_range(s, e))
     }
 
+    pub(crate) fn is_cross_text_dragging(&self) -> bool {
+        self.sel_dragging.get()
+    }
+
+    pub(crate) fn cross_text_len(&self) -> usize {
+        self.segments
+            .iter()
+            .map(|s| match s {
+                RichTextSegment::Text { content, .. } => content.chars().count(),
+                RichTextSegment::Code { content } => content.chars().count(),
+                RichTextSegment::Link { content, .. } => content.chars().count(),
+                RichTextSegment::NewLine => 1,
+            })
+            .sum()
+    }
+
+    pub(crate) fn cross_text_anchor(&self) -> usize {
+        self.sel_anchor.get()
+    }
+
+    pub(crate) fn set_cross_text_range(&self, range: Option<(usize, usize)>) {
+        match range {
+            Some((a, b)) if a != b => self.selection.set(Some((a.min(b), a.max(b)))),
+            _ => self.selection.set(None),
+        }
+    }
+
+    pub(crate) fn cross_text_char_at(&self, frame_local: Point) -> usize {
+        let lines = self.layout_lines.borrow();
+        self.char_at_pos(frame_local, &lines)
+    }
+
     /// 获取待复制的代码内容（由主循环调用）
     pub fn take_pending_copy(&self) -> Option<String> {
         self.pending_copy.lock().ok().and_then(|mut pc| pc.take())

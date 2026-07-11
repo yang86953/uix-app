@@ -60,13 +60,22 @@ pub fn page_nav(ctx: &DemoCtx<'_>) -> ViewNode {
         .push(tree! { Tabs::new().tab("用户", "u").tab("设置", "s").tab("分析", "a")
             .active(0).position(TabPosition::Top).size(INNER_W, 160.0) => [
             tree! { Container::new().size(INNER_W, 120.0) => [
-                Label::new("用户面板").color(tk.color_text).font_size(14.0),
+                Label::new("用户面板").style(Style {
+                    color: ColorValue::Neutral(NeutralRole::Text),
+                    ..Style::default()
+                }).font_size(14.0),
             ]},
             tree! { Container::new().size(INNER_W, 120.0) => [
-                Label::new("设置面板").color(tk.color_text).font_size(14.0),
+                Label::new("设置面板").style(Style {
+                    color: ColorValue::Neutral(NeutralRole::Text),
+                    ..Style::default()
+                }).font_size(14.0),
             ]},
             tree! { Container::new().size(INNER_W, 120.0) => [
-                Label::new("分析面板").color(tk.color_text).font_size(14.0),
+                Label::new("分析面板").style(Style {
+                    color: ColorValue::Neutral(NeutralRole::Text),
+                    ..Style::default()
+                }).font_size(14.0),
             ]},
         ]})
         .section("Dropdown — Overlay ✓")

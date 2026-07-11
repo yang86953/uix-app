@@ -75,6 +75,8 @@ pub struct CpuBackend {
     clear_color: Color,
     main: CpuDrawSurface,
     offscreens: Vec<Option<CpuCanvas2D>>,
+    /// Freed handle ids available for reuse (#105 — avoid unbounded Vec growth).
+    free_offscreen_ids: Vec<u32>,
     next_offscreen_id: u32,
 }
 
@@ -86,6 +88,7 @@ impl CpuBackend {
             clear_color: Color::from_rgba(0, 0, 0, 0),
             main: CpuDrawSurface::new(1, 1),
             offscreens: Vec::new(),
+            free_offscreen_ids: Vec::new(),
             next_offscreen_id: 0,
         }
     }
@@ -167,6 +170,8 @@ impl RenderBackend for CpuBackend {
         self.height = 0;
         self.main = CpuDrawSurface::new(1, 1);
         self.offscreens.clear();
+        self.free_offscreen_ids.clear();
+        self.next_offscreen_id = 0;
     }
 
     fn surface(&mut self) -> &mut dyn DrawSurface {
@@ -177,8 +182,13 @@ impl RenderBackend for CpuBackend {
         if width <= 0 || height <= 0 {
             return None;
         }
-        let id = self.next_offscreen_id;
-        self.next_offscreen_id += 1;
+        let id = if let Some(id) = self.free_offscreen_ids.pop() {
+            id
+        } else {
+            let id = self.next_offscreen_id;
+            self.next_offscreen_id = self.next_offscreen_id.saturating_add(1);
+            id
+        };
         let idx = id as usize;
         while self.offscreens.len() <= idx {
             self.offscreens.push(None);
@@ -190,8 +200,8 @@ impl RenderBackend for CpuBackend {
 
     fn destroy_offscreen(&mut self, handle: ImageHandle) {
         let idx = handle.0 as usize;
-        if idx < self.offscreens.len() {
-            self.offscreens[idx] = None;
+        if idx < self.offscreens.len() && self.offscreens[idx].take().is_some() {
+            self.free_offscreen_ids.push(handle.0);
         }
     }
 
@@ -275,5 +285,26 @@ impl CpuBackend {
             })
             .sum();
         main_bytes + offscreen_bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::draw::backend::traits::RenderBackend;
+
+    #[test]
+    fn create_offscreen_reuses_destroyed_ids() {
+        let mut backend = CpuBackend::new();
+        backend.resize(64, 64).expect("resize");
+        let a = backend.create_offscreen(16, 16).expect("a");
+        let b = backend.create_offscreen(16, 16).expect("b");
+        assert_ne!(a.0, b.0);
+        backend.destroy_offscreen(a);
+        let c = backend.create_offscreen(8, 8).expect("c");
+        assert_eq!(c.0, a.0, "destroyed id must be reused");
+        assert_eq!(backend.offscreens.len(), 2, "slot vec must not grow on reuse");
+        backend.destroy_offscreen(b);
+        backend.destroy_offscreen(c);
     }
 }

@@ -3849,3 +3849,242 @@ fn file_drop_targets_overlay_owner_before_main_tree() {
 
     assert_eq!(&*files.borrow(), &vec!["overlay.txt".to_string()]);
 }
+
+#[test]
+fn typography_drag_selection_extends_to_sibling_above() {
+    use crate::core::Rect;
+    use crate::ui::Typography;
+
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(400.0, 200.0, vec![])));
+    let h2 = tree.add_child(
+        root,
+        Box::new(Typography::heading("Heading 2 — 二级标题", 2)),
+    );
+    let h3 = tree.add_child(
+        root,
+        Box::new(Typography::heading("Heading 3 — 三级标题", 3)),
+    );
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 400.0, 200.0));
+    tree.get_mut(h2)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 400.0, 40.0));
+    tree.get_mut(h3)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 40.0, 400.0, 40.0));
+
+    // 在 Heading 3 按下开始拖选
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerDown {
+            pos: Point::new(20.0, 55.0),
+            button: MouseButton::Left,
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(tree.managers().interaction.pressed_component(), Some(h3));
+    assert!(tree.get(h3).unwrap().component().as_any()
+        .downcast_ref::<Typography>()
+        .unwrap()
+        .is_cross_text_dragging());
+
+    // 不松手，拖到上方 Heading 2
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::PointerMove {
+            pos: Point::new(20.0, 20.0),
+            mods: KeyMod::NONE,
+        }),
+        EventResult::Handled
+    );
+
+    let h2_sel = tree
+        .get(h2)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref::<Typography>()
+        .unwrap()
+        .selected_text();
+    assert!(
+        h2_sel.is_some(),
+        "拖到上方行后 Heading 2 应进入选区，got {h2_sel:?}"
+    );
+    assert!(h2_sel.as_deref().unwrap().contains("Heading 2"));
+}
+
+#[test]
+fn typography_drag_selection_extends_through_middle_sibling() {
+    use crate::core::Rect;
+    use crate::ui::Typography;
+
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(400.0, 240.0, vec![])));
+    let h1 = tree.add_child(
+        root,
+        Box::new(Typography::heading("Heading 1", 1)),
+    );
+    let h2 = tree.add_child(
+        root,
+        Box::new(Typography::heading("Heading 2", 2)),
+    );
+    let h3 = tree.add_child(
+        root,
+        Box::new(Typography::heading("Heading 3", 3)),
+    );
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 400.0, 240.0));
+    tree.get_mut(h1)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 400.0, 40.0));
+    tree.get_mut(h2)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 40.0, 400.0, 40.0));
+    tree.get_mut(h3)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 80.0, 400.0, 40.0));
+
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(10.0, 95.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(10.0, 15.0),
+        mods: KeyMod::NONE,
+    });
+
+    let selected = |id| {
+        tree.get(id)
+            .unwrap()
+            .component()
+            .as_any()
+            .downcast_ref::<Typography>()
+            .unwrap()
+            .selected_text()
+    };
+    assert!(selected(h1).is_some(), "最上行应在选区");
+    assert!(selected(h2).is_some(), "中间行应整行选中");
+    assert_eq!(selected(h2).as_deref(), Some("Heading 2"));
+}
+
+#[test]
+fn typography_cross_selection_copy_aggregates_sibling_lines() {
+    use crate::core::Rect;
+    use crate::native::test_harness::FakeClipboard;
+    use crate::native::traits::input::IClipboard;
+    use crate::ui::clipboard;
+    use crate::ui::Typography;
+
+    let mut tree = WidgetTree::new();
+    let root = tree.set_root(Box::new(PassThroughContainer::new(400.0, 240.0, vec![])));
+    let h1 = tree.add_child(
+        root,
+        Box::new(Typography::heading("Heading 1 — 一级标题", 1)),
+    );
+    let h2 = tree.add_child(
+        root,
+        Box::new(Typography::heading("Heading 2 — 二级标题", 2)),
+    );
+    let h3 = tree.add_child(
+        root,
+        Box::new(Typography::heading("Heading 3 — 三级标题", 3)),
+    );
+    let body = tree.add_child(
+        root,
+        Box::new(Typography::paragraph(
+            "正文段落：UIX Rust 原生 UI — 响应式布局、主题",
+        )),
+    );
+    tree.get_mut(root)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 400.0, 240.0));
+    tree.get_mut(h1)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 0.0, 400.0, 40.0));
+    tree.get_mut(h2)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 40.0, 400.0, 40.0));
+    tree.get_mut(h3)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 80.0, 400.0, 40.0));
+    tree.get_mut(body)
+        .unwrap()
+        .set_frame(Rect::new(0.0, 120.0, 400.0, 40.0));
+
+    // 在正文按下并拖到 Heading 1：焦点留在起点，上行进入跨节点选区
+    tree.dispatch_event(&SystemEvent::PointerDown {
+        pos: Point::new(10.0, 135.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerMove {
+        pos: Point::new(10.0, 15.0),
+        mods: KeyMod::NONE,
+    });
+    tree.dispatch_event(&SystemEvent::PointerUp {
+        pos: Point::new(10.0, 15.0),
+        button: MouseButton::Left,
+        mods: KeyMod::NONE,
+    });
+    assert_eq!(tree.managers().focus.focused_component(), Some(body));
+
+    // 无 glyph 缓存时 hit 落在 char 0，锚点行可能未入选；补齐与 GUI 一致的整行选区。
+    let select_all = |id: ComponentId| {
+        let node = tree.get(id).unwrap();
+        let t = node
+            .component()
+            .as_any()
+            .downcast_ref::<Typography>()
+            .unwrap();
+        let len = t.cross_text_len();
+        t.set_cross_text_range(Some((0, len)));
+    };
+    select_all(h1);
+    select_all(h2);
+    select_all(h3);
+    select_all(body);
+
+    let aggregated = tree
+        .aggregate_cross_text_selection(body)
+        .expect("跨节点选区应可聚合");
+    assert_eq!(
+        aggregated,
+        "Heading 1 — 一级标题\nHeading 2 — 二级标题\nHeading 3 — 三级标题\n正文段落：UIX Rust 原生 UI — 响应式布局、主题"
+    );
+
+    // 焦点在起点（正文）时 Ctrl+C 须写入聚合文本，而非仅一行
+    let mut clipboard = FakeClipboard::new();
+    {
+        let c: &mut dyn IClipboard = &mut clipboard;
+        let wide: *mut dyn IClipboard = c;
+        let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
+        clipboard::set_clipboard_parts(parts.0, parts.1);
+    }
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::KeyDown {
+            key: KeyCode::C,
+            mods: KeyMod::CTRL,
+        }),
+        EventResult::Handled
+    );
+    assert_eq!(clipboard.last_set_text(), Some(aggregated.as_str()));
+    clipboard::set_clipboard_parts(0, 0);
+
+    // 菜单/系统 Copy 事件同样走聚合路径
+    let mut clipboard2 = FakeClipboard::new();
+    {
+        let c: &mut dyn IClipboard = &mut clipboard2;
+        let wide: *mut dyn IClipboard = c;
+        let parts: (usize, usize) = unsafe { std::mem::transmute(wide) };
+        clipboard::set_clipboard_parts(parts.0, parts.1);
+    }
+    assert_eq!(
+        tree.dispatch_event(&SystemEvent::Copy),
+        EventResult::Handled
+    );
+    assert_eq!(clipboard2.last_set_text(), Some(aggregated.as_str()));
+    clipboard::set_clipboard_parts(0, 0);
+}

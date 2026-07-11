@@ -235,6 +235,7 @@ InvalidationQueue.dirty_region()
 6. compute_damage → UpdateStrategy
 7. engine.begin_frame → Idle? early exit
 8. LayerTree.render (Content + focus ring + debug HUD)
+   - 焦点环：`node_frame` 为 content 坐标，经 `cumulative_scroll` → viewport 后再描边，并按祖先 `children_clip` 裁剪（滚出可视区则不绘）
 9. engine.end_frame(damage)
 10. FrameRenderOutput { outcome: Present(damage), inv_source, tree_version }
 ```

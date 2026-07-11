@@ -81,7 +81,8 @@ component! {
         if self.disabled { return EventResult::NotHandled; }
         match event {
             SystemEvent::PointerDown { pos, mods, .. } => {
-                self.focused = true;
+                // Visual focus comes from FocusIn via WidgetTree::set_focus;
+                // do not set local `focused` here or it can desync from FocusManager.
                 let ci = if self.textarea {
                     self.char_at_xy(pos.x - PAD, pos.y)
                 } else {
@@ -374,9 +375,9 @@ impl Input {
         self.focused = v;
     }
     pub(crate) fn sync_from(&mut self, next: Self) {
-        if self.value != next.value {
-            self.set_value(next.value);
-        }
+        // Preserve runtime text/caret/focus across reconcile (demo anim tick
+        // rebuilds Input::new("") every frame). Config props only — same
+        // pattern as AutoComplete/Select.
         self.placeholder = next.placeholder;
         self.input_size = next.input_size;
         self.disabled = next.disabled;
@@ -666,6 +667,16 @@ mod tests {
 
     fn clear_clipboard() {
         clipboard::set_clipboard_parts(0, 0);
+    }
+
+    #[test]
+    fn sync_from_preserves_runtime_value() {
+        let mut input = Input::new("old").with_value("kept");
+        input.cursor_char = 2;
+        input.sync_from(Input::new("new"));
+        assert_eq!(input.value(), "kept");
+        assert_eq!(input.placeholder, "new");
+        assert_eq!(input.cursor_char, 2);
     }
 
     #[test]

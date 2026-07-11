@@ -6,9 +6,12 @@ use uix::ui::WidgetComponent;
 use super::page::demo_row;
 
 /// 组件名小字标签（固定宽度列）。
-pub fn widget_caption(tk: &DesignTokens, name: &str) -> Label {
+pub fn widget_caption(_tk: &DesignTokens, name: &str) -> Label {
     Label::new(name)
-        .color(tk.color_text_tertiary)
+        .style(Style {
+            color: ColorValue::Neutral(NeutralRole::TextTertiary),
+            ..Style::default()
+        })
         .font_size(11.0)
         .size(120.0, 18.0)
 }

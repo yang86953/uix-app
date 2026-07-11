@@ -509,6 +509,7 @@ impl WidgetCore for BoxedWidget {
     }
 }
 
+mod text_selection;
 mod tree_core;
 mod tree_dirty;
 mod tree_events;

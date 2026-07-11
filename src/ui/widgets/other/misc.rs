@@ -6,7 +6,7 @@ use crate::ui::{
     ComponentId, EventResult, SemanticEvent, SnapshotFields, SnapshotTransferItem, SystemEvent,
     WidgetTree,
 };
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 // ════════════════════════════════════════════════════════════════════════════
 // QRCode
@@ -116,24 +116,51 @@ component! {
         target: Vec<TransferItem>,
         initial_source: Vec<TransferItem>,
         initial_target: Vec<TransferItem>,
+        last_frame_w: Cell<f32>,
+        last_frame_h: Cell<f32>,
     }
 
-    measure => (&self, _constraints: Constraints) -> Size {
-        Size::new(500.0, 200.0)
+    measure => (&self, constraints: Constraints) -> Size {
+        constraints.clamp(Size::new(500.0, 200.0))
     }
 
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         if let SystemEvent::PointerDown { pos, .. } = event {
-            let half = 220.0;
+            const LIST_HEADER_H: f32 = 24.0;
+            const BTN_COL_W: f32 = 60.0;
             let item_h = 28.0;
+            let half = {
+                let w = self.last_frame_w.get();
+                let w = if w > 0.0 { w } else { 500.0 };
+                ((w - BTN_COL_W) * 0.5).max(40.0)
+            };
+            let frame_h = {
+                let h = self.last_frame_h.get();
+                if h > 0.0 { h } else { 200.0 }
+            };
+            let list_idx = |y: f32| -> Option<usize> {
+                if y < LIST_HEADER_H {
+                    return None;
+                }
+                Some(((y - LIST_HEADER_H) / item_h) as usize)
+            };
             if pos.x < half {
-                let idx = (pos.y / item_h) as usize;
-                if idx < self.source.len() { self.source[idx].selected = !self.source[idx].selected; }
-            } else if pos.x > half + 60.0 {
-                let idx = (pos.y / item_h) as usize;
-                if idx < self.target.len() { self.target[idx].selected = !self.target[idx].selected; }
+                if let Some(idx) = list_idx(pos.y) {
+                    if idx < self.source.len() {
+                        self.source[idx].selected = !self.source[idx].selected;
+                        return EventResult::Handled;
+                    }
+                }
+            } else if pos.x > half + BTN_COL_W {
+                if let Some(idx) = list_idx(pos.y) {
+                    if idx < self.target.len() {
+                        self.target[idx].selected = !self.target[idx].selected;
+                        return EventResult::Handled;
+                    }
+                }
             } else {
-                if pos.y >= 80.0 && pos.y < 100.0 {
+                let btn_y = frame_h * 0.5 - 20.0;
+                if pos.y >= btn_y && pos.y < btn_y + 20.0 {
                     let mut i = 0;
                     while i < self.source.len() {
                         if self.source[i].selected {
@@ -144,7 +171,7 @@ component! {
                     }
                     return EventResult::Handled;
                 }
-                if pos.y >= 100.0 && pos.y < 120.0 {
+                if pos.y >= btn_y + 24.0 && pos.y < btn_y + 44.0 {
                     let mut i = 0;
                     while i < self.target.len() {
                         if self.target[i].selected {
@@ -161,13 +188,17 @@ component! {
     }
 
     render => (&self, frame: Rect, ctx: &mut PaintContext, _tree: &WidgetTree) {
+        self.last_frame_w.set(frame.w);
+        self.last_frame_h.set(frame.h);
         let bg = ctx.tokens().color_bg_container();
         let border = ctx.tokens().color_border();
         let text = ctx.tokens().color_text();
         let text_sec = ctx.tokens().color_text_quaternary();
         let primary = ctx.tokens().color_primary();
         let fill = ctx.tokens().color_fill_tertiary();
-        let half = 220.0;
+        const LIST_HEADER_H: f32 = 24.0;
+        const BTN_COL_W: f32 = 60.0;
+        let half = ((frame.w - BTN_COL_W) * 0.5).max(40.0);
         let item_h = 28.0;
         let r = Some(Radius::uniform(ctx.tokens().border_radius_sm()));
         let left_rect = Rect::new(frame.x, frame.y, half, frame.h);
@@ -176,7 +207,7 @@ component! {
         let loc = crate::ui::locale::use_locale();
         ctx.draw_text(&format!("{} ({}项)", loc.transfer_source, self.source.len()), Point::new(frame.x + 8.0, frame.y + 6.0), text_sec, 12.0);
         for (i, item) in self.source.iter().enumerate() {
-            let y = frame.y + 24.0 + i as f32 * item_h;
+            let y = frame.y + LIST_HEADER_H + i as f32 * item_h;
             let row_rect = Rect::new(frame.x, y, half, item_h);
             let row_y = ctx.visual_center_y(row_rect, 13.0);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
@@ -190,13 +221,13 @@ component! {
         ctx.text_center("→", rbtn_rect, Color::white(), 14.0);
         ctx.fill_rect(lbtn_rect, border, Some(Radius::uniform(3.0)));
         ctx.text_center("←", lbtn_rect, text, 14.0);
-        let right_x = frame.x + half + 60.0;
+        let right_x = frame.x + half + BTN_COL_W;
         let right_rect = Rect::new(right_x, frame.y, half, frame.h);
         ctx.fill_rect(right_rect, bg, r);
         ctx.stroke_rect(right_rect, border, 1.0, r);
         ctx.draw_text(&format!("{} ({}项)", loc.transfer_target, self.target.len()), Point::new(right_x + 8.0, frame.y + 6.0), text_sec, 12.0);
         for (i, item) in self.target.iter().enumerate() {
-            let y = frame.y + 24.0 + i as f32 * item_h;
+            let y = frame.y + LIST_HEADER_H + i as f32 * item_h;
             let row_rect = Rect::new(right_x, y, half, item_h);
             let row_y = ctx.visual_center_y(row_rect, 13.0);
             if item.selected { ctx.fill_rect(row_rect, fill, None); }
@@ -212,6 +243,8 @@ impl Transfer {
             target: Vec::new(),
             initial_source: Vec::new(),
             initial_target: Vec::new(),
+            last_frame_w: Cell::new(500.0),
+            last_frame_h: Cell::new(200.0),
         }
     }
     pub fn source(mut self, items: Vec<TransferItem>) -> Self {
@@ -300,7 +333,7 @@ component! {
     on_event => (&mut self, event: &SystemEvent) -> EventResult {
         match event {
             SystemEvent::PointerDown { .. } => {
-                let file_name = format!("upload_{}.txt", self.file_list.len() + 1);
+                let file_name = Self::simulated_file_name(&self.accept, self.file_list.len() + 1);
                 self.add_file(&file_name);
                 self.pending_change
                     .replace(Some(format!("{}:pending", file_name)));
@@ -368,6 +401,15 @@ component! {
     }
 }
 impl Upload {
+    fn simulated_file_name(accept: &str, index: usize) -> String {
+        let ext = accept
+            .split(',')
+            .map(|s| s.trim().trim_start_matches('.'))
+            .find(|s| !s.is_empty() && *s != "*")
+            .unwrap_or("bin");
+        format!("upload_{index}.{ext}")
+    }
+
     pub fn new() -> Self {
         Self {
             accept: "*".into(),

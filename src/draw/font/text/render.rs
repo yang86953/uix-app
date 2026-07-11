@@ -76,7 +76,14 @@ impl<'a> TextRenderService<'a> {
             }
             let gx = (pos.x + gp.x + raster.bearing_x) as i32;
             let gy = (pos.y + gp.y + raster.bearing_y) as i32;
-            canvas.blit_glyph(gx, gy, &raster.coverage, raster.width, raster.height, color);
+            canvas.blit_glyph_shared(
+                gx,
+                gy,
+                std::sync::Arc::clone(&raster.coverage),
+                raster.width,
+                raster.height,
+                color,
+            );
         }
     }
 
