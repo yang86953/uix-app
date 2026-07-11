@@ -14,6 +14,9 @@ use crate::native::traits::*;
 use super::bindings::*;
 use super::consts::*;
 use super::ffi::*;
+use super::ime_dispatch::{
+    ime_composition_events, ime_end_composition_event, ime_start_composition_event, ImmStringRead,
+};
 use super::platform::{WindowBinding, WindowsPlatform};
 use super::text_input::{composition_string, result_string, WindowsImeState};
 
@@ -173,8 +176,8 @@ impl WindowsPlatform {
             }
             WM_KILLFOCUS => {
                 let mut ime = ime.borrow_mut();
-                if ime.end_composition() {
-                    self.push_event(window_id, UiEvent::ime_composition_end(""));
+                if let Some(event) = ime_end_composition_event(&mut ime) {
+                    self.push_event(window_id, event);
                 }
                 ime.reset_text_decoder();
                 self.push_event(
@@ -206,55 +209,41 @@ impl WindowsPlatform {
                 0
             }
             WM_IME_STARTCOMPOSITION => {
-                if ime.borrow_mut().begin_composition() {
-                    self.push_event(window_id, UiEvent::ime_composition_start());
+                if let Some(event) = ime_start_composition_event(&mut ime.borrow_mut()) {
+                    self.push_event(window_id, event);
                 }
                 0
             }
             WM_IME_COMPOSITION => {
                 let flags = lparam as u32;
-                let mut handled = false;
-
-                if flags & GCS_RESULTSTR != 0 {
+                let result_read = if flags & GCS_RESULTSTR != 0 {
                     match result_string(hwnd) {
-                        Ok(Some(text)) => {
-                            let was_active = ime.borrow_mut().end_composition();
-                            if was_active {
-                                self.push_event(
-                                    window_id,
-                                    UiEvent::ime_composition_end(text.clone()),
-                                );
-                            }
-                            if !text.is_empty() {
-                                self.push_event(window_id, UiEvent::text_input(text));
-                            }
-                            handled = true;
+                        Ok(value) => ImmStringRead::from_flagged_result(true, Ok(value)),
+                        Err(err) => {
+                            crate::core::log::error_fn(err.short_what());
+                            ImmStringRead::Skipped
                         }
-                        Ok(None) => {}
-                        Err(err) => crate::core::log::error_fn(err.short_what()),
                     }
-                }
-
-                if flags & GCS_COMPSTR != 0 {
+                } else {
+                    ImmStringRead::Skipped
+                };
+                let comp_read = if flags & GCS_COMPSTR != 0 {
                     match composition_string(hwnd) {
-                        Ok(Some(text)) => {
-                            let mut ime = ime.borrow_mut();
-                            let should_update = !text.is_empty() || ime.composition_active();
-                            let started = !text.is_empty() && ime.begin_composition();
-                            drop(ime);
-                            if started {
-                                self.push_event(window_id, UiEvent::ime_composition_start());
-                            }
-                            if should_update {
-                                self.push_event(window_id, UiEvent::ime_composition_update(text));
-                            }
-                            handled = true;
+                        Ok(value) => ImmStringRead::from_flagged_result(true, Ok(value)),
+                        Err(err) => {
+                            crate::core::log::error_fn(err.short_what());
+                            ImmStringRead::Skipped
                         }
-                        Ok(None) => {}
-                        Err(err) => crate::core::log::error_fn(err.short_what()),
                     }
-                }
+                } else {
+                    ImmStringRead::Skipped
+                };
 
+                let (handled, events) =
+                    ime_composition_events(&mut ime.borrow_mut(), result_read, comp_read);
+                for event in events {
+                    self.push_event(window_id, event);
+                }
                 if handled {
                     0
                 } else {
@@ -262,8 +251,8 @@ impl WindowsPlatform {
                 }
             }
             WM_IME_ENDCOMPOSITION => {
-                if ime.borrow_mut().end_composition() {
-                    self.push_event(window_id, UiEvent::ime_composition_end(""));
+                if let Some(event) = ime_end_composition_event(&mut ime.borrow_mut()) {
+                    self.push_event(window_id, event);
                 }
                 0
             }

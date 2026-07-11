@@ -14,8 +14,8 @@ pub mod combinators;
 
 pub use adapter::ViewAdapter;
 pub use combinators::{
-    button, column, dynamic_label, embed, grid, input, label, row, scroll, space, ButtonBuilder,
-    GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
+    button, column, column_fit, dynamic_label, embed, grid, input, label, row, scroll, show, space,
+    ButtonBuilder, GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
 };
 
 /// 用户层 UI 声明 trait。
@@ -229,6 +229,88 @@ impl ViewNode {
             .push(HandlerRegistration::new(kind, Box::new(handler)).with_window_capture(window_id));
         self
     }
+
+    /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（[#178](docs/决策.md#d178) · [#180](docs/决策.md#d180)）。
+    ///
+    /// 与 [`button`](combinators::button) 的 `on_click` 对齐，可用于 `label` / `embed` 等任意 View。
+    pub fn on_click<T, F>(mut self, state: &crate::ui::state::State<T>, mut f: F) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+        F: FnMut(&crate::ui::state::State<T>) + 'static,
+    {
+        let captured = state.clone();
+        self.handlers.push(
+            HandlerRegistration::new(SemanticKind::Click, Box::new(move |_| f(&captured)))
+                .with_state_capture(state),
+        );
+        self
+    }
+
+    /// 无 State 的点击闭包；每次 reconcile **保守重绑**（[#160](docs/决策.md#d160)）。
+    ///
+    /// 命名保留 `_fn`：Rust 无法与 [`Self::on_click`] 重载；有 State 时优先 `on_click(&state, …)`（[#180](docs/决策.md#d180)）。
+    pub fn on_click_fn<F: FnMut() + 'static>(mut self, mut f: F) -> Self {
+        self.handlers.push(HandlerRegistration::new(
+            SemanticKind::Click,
+            Box::new(move |_| f()),
+        ));
+        self
+    }
+
+    /// 兼容别名：指纹同 [`Self::on_click`]，闭包不接收 `&State`。
+    ///
+    /// 新代码优先 `on_click(&state, |s| …)`；无 State 用 [`Self::on_click_fn`]。
+    #[doc(alias = "on_click")]
+    pub fn on_click_capture<T, F>(self, state: &crate::ui::state::State<T>, mut f: F) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+        F: FnMut() + 'static,
+    {
+        self.on_click(state, move |_| f())
+    }
+
+    pub fn on_click_window_capture<F>(mut self, window_id: crate::core::WindowId, mut f: F) -> Self
+    where
+        F: FnMut() + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(SemanticKind::Click, Box::new(move |_| f()))
+                .with_window_capture(window_id),
+        );
+        self
+    }
+
+    pub fn on_click_event<F: FnMut(&mut SemanticEvent) + 'static>(mut self, f: F) -> Self {
+        self.handlers
+            .push(HandlerRegistration::new(SemanticKind::Click, Box::new(f)));
+        self
+    }
+
+    pub fn on_click_event_capture<T, F>(mut self, state: &crate::ui::state::State<T>, f: F) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+        F: FnMut(&mut SemanticEvent) + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(SemanticKind::Click, Box::new(f)).with_state_capture(state),
+        );
+        self
+    }
+
+    pub fn on_click_event_window_capture<F>(
+        mut self,
+        window_id: crate::core::WindowId,
+        f: F,
+    ) -> Self
+    where
+        F: FnMut(&mut SemanticEvent) + 'static,
+    {
+        self.handlers.push(
+            HandlerRegistration::new(SemanticKind::Click, Box::new(f))
+                .with_window_capture(window_id),
+        );
+        self
+    }
 }
 
 impl crate::ui::IntoWidgetNode for ViewNode {
@@ -237,119 +319,83 @@ impl crate::ui::IntoWidgetNode for ViewNode {
     }
 }
 
-/// 为所有实现了 `Into<ViewNode>` 的类型提供链式样式设置方法。
+/// 为所有 `Into<ViewNode>` 类型提供样式链（[#180](docs/决策.md#d180)）。
+///
+/// 实现委托 [`ViewNode`] 同名方法，避免双份逻辑漂移。
+/// **链式顺序**：先写 builder 专有方法（如 `button(…).primary().on_click(…)`），再写本 trait
+/// （`bg` / `padding`…）——一旦进入 `ViewNode`，`primary` 等 builder 方法不可再调。
 pub trait StyleExt: Into<ViewNode> + Sized {
     fn color(self, color: impl Into<ColorValue>) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.color = color.into();
-        node
+        self.into().color(color)
     }
 
     fn font_size(self, size: impl Into<TypographyToken>) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.font_size = size.into();
-        node
+        self.into().font_size(size)
     }
 
     fn bg(self, color: impl Into<ColorValue>) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.background = Some(color.into());
-        node
+        self.into().bg(color)
     }
 
     fn padding(self, p: impl Into<EdgeInsets>) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.padding = p.into();
-        node
+        self.into().padding(p)
     }
 
     fn margin(self, m: impl Into<EdgeInsets>) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.margin = m.into();
-        node
+        self.into().margin(m)
     }
 
     fn width(self, w: f32) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.width = Some(w);
-        node
+        self.into().width(w)
     }
 
     fn height(self, h: f32) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.height = Some(h);
-        node
+        self.into().height(h)
     }
 
     fn flex_grow(self, g: f32) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.flex_grow = g;
-        node.flex_grow_override = Some(g);
-        node
+        self.into().flex_grow(g)
     }
 
     fn flex_shrink(self, s: f32) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.flex_shrink = s;
-        node.flex_shrink_override = Some(s);
-        node
+        self.into().flex_shrink(s)
     }
 
     fn align(self, a: crate::ui::layout::AlignItems) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.align_items = a;
-        node
+        self.into().align(a)
     }
 
     fn align_self(self, a: crate::ui::layout::AlignItems) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.align_self = Some(a);
-        node
+        self.into().align_self(a)
     }
 
     fn grid_cell(self, cell: usize) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.grid_cell = Some(cell);
-        node
+        self.into().grid_cell(cell)
     }
 
     fn grid_span(self, columns: u32, rows: u32) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.grid_column_span = columns.max(1);
-        node.style.grid_row_span = rows.max(1);
-        node
+        self.into().grid_span(columns, rows)
     }
 
     fn gap(self, g: f32) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.gap = g;
-        node
+        self.into().gap(g)
     }
 
     /// 保留子项的自然主轴尺寸，用于 ScrollView 的内容容器。
     fn overflow_content(self) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.overflow_content = true;
-        node
+        self.into().overflow_content()
     }
 
     fn border(self, width: f32, color: impl Into<ColorValue>) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.border_width = EdgeInsets::uniform(width);
-        node.style.border_color = Some(color.into());
-        node
+        self.into().border(width, color)
     }
 
     fn radius(self, r: f32) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.border_radius = r;
-        node
+        self.into().radius(r)
     }
 
     fn opacity(self, o: f32) -> ViewNode {
-        let mut node: ViewNode = self.into();
-        node.style.opacity = o;
-        node
+        self.into().opacity(o)
     }
 }
 

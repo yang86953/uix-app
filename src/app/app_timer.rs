@@ -35,6 +35,8 @@ pub struct TimerHandle {
     id: TimerId,
     queue: Weak<Mutex<AppTimerQueueInner>>,
     cancelled: bool,
+    /// When true, [`Drop`] does not cancel — timer lives until [`Self::cancel`] or session teardown.
+    detach_on_drop: bool,
 }
 
 impl AppTimerQueue {
@@ -138,6 +140,7 @@ impl AppTimerQueue {
             id,
             queue: Arc::downgrade(&self.inner),
             cancelled: false,
+            detach_on_drop: false,
         }
     }
 }
@@ -148,10 +151,20 @@ impl TimerHandle {
             id: 0,
             queue: Weak::new(),
             cancelled: true,
+            detach_on_drop: false,
         }
     }
 
+    /// Keep the timer until explicit [`Self::cancel`] or window/session teardown.
+    ///
+    /// Drop no longer cancels — use for `on_start` interval timers so callers need not
+    /// stash handles in `Arc<Mutex<Vec<_>>>`（[#180](docs/决策.md#d180)）。
+    pub fn detach(mut self) {
+        self.detach_on_drop = true;
+    }
+
     pub fn cancel(mut self) {
+        self.detach_on_drop = false;
         self.cancel_inner();
     }
 
@@ -172,7 +185,9 @@ impl TimerHandle {
 
 impl Drop for TimerHandle {
     fn drop(&mut self) {
-        self.cancel_inner();
+        if !self.detach_on_drop {
+            self.cancel_inner();
+        }
     }
 }
 

@@ -383,12 +383,65 @@ mod tests {
                 "native red background must remain visible"
             );
         }
+        // end_frame → GpuBackend::present → WGL SwapBuffers（屏幕呈现路径）
         let _ = engine.end_frame(&DamageRegion::full());
-        let backend = engine
-            .session_mut()
-            .gpu_backend_mut()
-            .expect("OpenGL ES backend");
-        assert_eq!(unsafe { backend.gl.get_error() }, glow::NO_ERROR);
+        {
+            let backend = engine
+                .session_mut()
+                .gpu_backend_mut()
+                .expect("OpenGL ES backend");
+            assert_eq!(
+                unsafe { backend.gl.get_error() },
+                glow::NO_ERROR,
+                "SwapBuffers present must leave GL context healthy"
+            );
+        }
+
+        // 多帧 present：证明连续 SwapBuffers 后仍可绘制（对齐 D3D11 repeated_present）
+        for i in 0..16 {
+            let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+            let shade = ((i * 15) % 256) as u8;
+            engine.canvas_2d().fill_rect(
+                Rect::new(0.0, 0.0, 640.0, 480.0),
+                Color::from_rgba(shade, 40, 255 - shade, 255),
+                None,
+            );
+            let _ = engine.end_frame(&DamageRegion::full());
+            let backend = engine
+                .session_mut()
+                .gpu_backend_mut()
+                .expect("OpenGL ES backend");
+            assert_eq!(
+                unsafe { backend.gl.get_error() },
+                glow::NO_ERROR,
+                "frame {i}: present must not raise GL error"
+            );
+        }
+
+        // 末帧再画一次并在 present 前 readback，证明 present 循环后仍可写 framebuffer
+        let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+        engine
+            .canvas_2d()
+            .fill_rect(Rect::new(0.0, 0.0, 640.0, 480.0), Color::green(), None);
+        {
+            let backend = engine
+                .session_mut()
+                .gpu_backend_mut()
+                .expect("OpenGL ES backend");
+            backend
+                .surface
+                .canvas_mut()
+                .flush_soft_fallback()
+                .expect("soft fallback upload");
+            backend.read_pixels();
+            let pixels = backend.pixels_ref();
+            assert!(
+                pixels.iter().any(|p| *p == 0xFF00_FF00 || (*p & 0x00FF_0000) != 0),
+                "post-present loop must still write drawable pixels"
+            );
+        }
+        let _ = engine.end_frame(&DamageRegion::full());
+
         engine.shutdown();
         window.close().expect("close native window");
     }

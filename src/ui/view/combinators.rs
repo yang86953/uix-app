@@ -50,6 +50,33 @@ impl<T: View> IntoViewChildren for Vec<T> {
     }
 }
 
+/// 条件子节点：`true` 时包含 `child`，否则为空列表。
+///
+/// ```ignore
+/// column(show(visible, label("详情")))
+/// ```
+pub fn show(when: bool, child: impl View) -> Vec<ViewNode> {
+    if when {
+        vec![child.build()]
+    } else {
+        Vec::new()
+    }
+}
+
+/// 条件子节点（`Option`）：`Some` 构建为子项，`None` 跳过。
+///
+/// ```ignore
+/// column((label("标题"), optional_banner))
+/// ```
+impl<T: View> View for Option<T> {
+    fn build(self) -> ViewNode {
+        match self {
+            Some(child) => child.build(),
+            None => ViewNode::leaf(crate::ui::widgets::Space::new()),
+        }
+    }
+}
+
 macro_rules! impl_into_view_children_tuple {
     () => {
         impl IntoViewChildren for () {
@@ -138,12 +165,24 @@ mod embed_tests {
 
 /// 列容器（Flex 方向为 Column），默认 flex_grow(1.0) 填满父容器高度。
 ///
+/// 嵌套内容组若只需 intrinsic 高度，用 [`column_fit`]（[#180](docs/决策.md#d180)）。
+///
 /// 同质数组 / `Vec`，或异质元组 / [`views!`]（[#178](docs/决策.md#d178)）。
 pub fn column(children: impl IntoViewChildren) -> ViewNode {
     ViewNode::new(
         crate::ui::widgets::Container::new()
             .dir(FlexDirection::Column)
             .flex_grow(1.0),
+        children.into_view_children(),
+    )
+}
+
+/// 列容器，保持 intrinsic 高度（flex_grow = 0）。
+///
+/// 用于顶栏、侧栏品牌区、卡片内文案组等不应吞掉父列剩余空间的局部内容。
+pub fn column_fit(children: impl IntoViewChildren) -> ViewNode {
+    ViewNode::new(
+        crate::ui::widgets::Container::new().dir(FlexDirection::Column),
         children.into_view_children(),
     )
 }
@@ -605,7 +644,8 @@ impl ButtonBuilder {
     }
 
     /// 无 State 的点击闭包；每次 reconcile **保守重绑**（[#160](docs/决策.md#d160)）。
-    /// 有 State 时请用 [`Self::on_click`]。
+    ///
+    /// 命名保留 `_fn`：Rust 无法与 [`Self::on_click`] 重载；有 State 时优先 `on_click(&state, …)`（[#180](docs/决策.md#d180)）。
     pub fn on_click_fn<F: FnMut() + 'static>(mut self, mut f: F) -> Self {
         self.handlers.push(HandlerRegistration::new(
             SemanticKind::Click,
@@ -614,7 +654,10 @@ impl ButtonBuilder {
         self
     }
 
-    /// 兼容别名：等价于 `on_click`，但闭包不接收 `&State`（仍须自行 clone 进闭包）。
+    /// 兼容别名：指纹同 [`Self::on_click`]，闭包不接收 `&State`。
+    ///
+    /// 新代码优先 `on_click(&state, |s| …)`；无 State 用 [`Self::on_click_fn`]。
+    #[doc(alias = "on_click")]
     pub fn on_click_capture<T, F>(self, state: &State<T>, mut f: F) -> Self
     where
         T: Clone + Send + Sync + 'static,

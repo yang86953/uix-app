@@ -895,3 +895,35 @@ macro_rules! views {
         }
     }};
 }
+
+/// 一次捕获多个 `Clone` 值，生成 `'static` 闭包（`App::root` / `on_start` 等）。
+///
+/// 外层 clone 进闭包；每次调用再 clone 供 body 使用（root 重建需要）。
+/// 不消除 Rust `'static` 固有 clone，只去掉手写 `*_for_root` 样板（[#180]）。
+///
+/// ```ignore
+/// .root(with_cloned!(active, count, theme; {
+///     shell(active, &count, &theme)
+/// }))
+/// .on_start(with_cloned!(theme, ticks; |handle| {
+///     theme.set_handle(handle.clone());
+///     // …
+/// }))
+/// ```
+#[macro_export]
+macro_rules! with_cloned {
+    ($($name:ident),+ $(,)? ; |$arg:ident| $body:expr) => {{
+        $(let $name = $name.clone();)+
+        move |$arg| {
+            $(let $name = $name.clone();)+
+            $body
+        }
+    }};
+    ($($name:ident),+ $(,)? ; $body:expr) => {{
+        $(let $name = $name.clone();)+
+        move || {
+            $(let $name = $name.clone();)+
+            $body
+        }
+    }};
+}

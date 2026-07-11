@@ -643,6 +643,9 @@ impl Drop for WglContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native::traits::present::{
+        GraphicsBackend, PresentDamage, PresentFrame, PresentMode, RasterMode,
+    };
 
     #[test]
     fn drawable_size_scales_logical_client_by_monitor_dpi() {
@@ -668,5 +671,54 @@ mod tests {
     fn core_gl_entry_point_falls_back_to_opengl32_export() {
         let name = CString::new("glGetString").expect("valid GL symbol");
         assert!(!load_gl_proc(&name).is_null());
+    }
+
+    /// 对齐 D3D11 `factory_create_d3d11_gpu_native_swapchain_on_real_window`：
+    /// 真实 HWND + caps + SwapBuffers present + 多帧稳定。
+    #[test]
+    fn factory_create_wgl_gpu_native_swapchain_on_real_window() {
+        if std::env::consts::OS != "windows" {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("WGL GPU native test", 320, 240)
+            .expect("window");
+        let surface = window.native_surface_ptr();
+        assert!(
+            !surface.is_null(),
+            "Windows HWND must be exposed as native_surface_ptr"
+        );
+
+        let mut ctx = crate::native::create_gpu_context_with_backend(
+            surface,
+            320,
+            240,
+            GraphicsBackend::OpenGlEs,
+        )
+        .expect("WglContext via factory");
+        assert_eq!(ctx.graphics_backend(), GraphicsBackend::OpenGlEs);
+        let caps = ctx.caps();
+        assert_eq!(caps.raster, RasterMode::GpuNative);
+        assert_eq!(caps.present, PresentMode::Swapchain);
+        assert!(!ctx.supports_pixel_present());
+        assert!(ctx.supports_gl_proc_address());
+
+        ctx.present(&PresentFrame::Swapchain {
+            damage: PresentDamage::Full,
+        })
+        .expect("first swapchain present");
+
+        for _ in 0..16 {
+            ctx.present(&PresentFrame::Swapchain {
+                damage: PresentDamage::Full,
+            })
+            .expect("repeated swapchain present");
+        }
+
+        ctx.shutdown();
+        window.close().expect("close native window");
     }
 }

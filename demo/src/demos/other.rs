@@ -12,7 +12,7 @@ pub fn page_other(ctx: &DemoCtx<'_>) -> ViewNode {
         .gap()
         .section("Transfer")
         .push(
-            column([
+            column_fit([
                 label("Transfer")
                     .color(ColorValue::Neutral(NeutralRole::TextTertiary))
                     .font_size(11.0),
@@ -36,19 +36,17 @@ pub fn page_other(ctx: &DemoCtx<'_>) -> ViewNode {
                     ]),
                 ),
             ])
-            .gap(8.0)
-            .flex_grow(0.0),
+            .gap(8.0),
         )
         .section("Upload")
         .push(
-            column([
+            column_fit([
                 label("Upload")
                     .color(ColorValue::Neutral(NeutralRole::TextTertiary))
                     .font_size(11.0),
                 embed(Upload::new().accept(".png,.jpg").drag(true).multiple(true)),
             ])
-            .gap(8.0)
-            .flex_grow(0.0),
+            .gap(8.0),
         )
         .section("QRCode / Watermark")
         .push(demo_row(80.0).child(QRCode::new("https://uix.dev")))
