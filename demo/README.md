@@ -1,7 +1,5 @@
 # UIX 演示程序
 
-> **AI 何时打开**：跑 demo / 对照页面覆盖。设计权威 → [`docs/架构.md`](../docs/架构.md)；落地硬约束 → [`AGENTS.md`](../AGENTS.md)。
-
 ## 快速运行
 
 ```bash
@@ -10,7 +8,7 @@ cargo run --bin uix-demo -- --cli     # CLI
 RUST_LOG=debug cargo run --bin uix-demo
 ```
 
-Linux GUI 需 Wayland。页面与 CLI 细节见下；上手 → [`架构 · 应用作者入口`](../docs/架构.md#应用作者入口)。
+Linux GUI 需 Wayland。
 
 ## 目录结构
 
@@ -19,7 +17,7 @@ demo/src/
 ├── main.rs          # 薄入口：gui | cli
 ├── gui/             # 多页 GUI 壳层：分组侧边栏、Timer、动画 time
 ├── cli/             # core/native/draw/ui/app/data CLI
-├── demos/           # 11 个内容页（含 dashboard/ 子页）
+├── demos/           # 11 个内容页
 │   ├── home.rs      # 首页：入门 + 快捷导航
 │   ├── runtime.rs   # 应用能力（State/Timer/Theme/View DSL）
 │   ├── general.rs   # 通用 widgets
@@ -69,7 +67,6 @@ demo/src/
 | 9 | 其他 | `other.rs` | Transfer、Upload、QRCode、Watermark、DesignTokens |
 | 10 | 覆盖清单 | `gallery.rs` | 交互式覆盖矩阵；点击 ✓ 行跳转对应页 |
 
-权威 widget 清单 → `src/ui/widgets/` · demo Gallery；导航 → [`架构 · 源码入口`](../docs/架构.md#源码入口)。
 机器可读矩阵 → [`demos/gallery.rs`](src/demos/gallery.rs) 中 `COVERAGE` 常量。
 
 ## 覆盖矩阵摘要
@@ -87,29 +84,9 @@ demo/src/
 | 应用能力 | 8/8 | Timer 在 `on_start` 注册；多窗口见覆盖清单说明 |
 | CLI | 10 项 | `--cli` 模式 |
 
-## 演示与验证 gap
+## 演示 gap
 
-> “未单独展示”与“待真机验证”不等同于实现 backlog；在本演示 gap 清单中，只有屏幕阅读器平台桥属于框架实现 backlog。
-
-| 项 | 实现状态 | 剩余 gap |
-|----|----------|----------|
-| 屏幕阅读器平台桥 (#99) | 静态 ARIA、role/name/state、键盘导航与焦点链已落地 | 平台屏幕阅读器桥待后续 |
-| macOS 原生验证 | AppKit backend 与 Metal `Cpu × PixelUpload` 已编码 | 需 macOS 真机运行与硬件证据 |
-| Handler fingerprint (#159) | `semantic_handler!` 显式 capture list 与稳定 fingerprint 已落地 | 无独立视觉演示；由自动化测试覆盖 |
-| Computed 独立 slot | `Computed::new` 分配独立 `StateSlotId`，clone 共享 | 内部身份契约，无独立视觉演示 |
-| 错误 Toast 自动 overlay (#89) | App 默认挂载 Notification overlay；`notify_error` 已接 | 无专用故障注入演示页 |
-| 多窗口 live demo | `open_window` / 多窗路由 API 已落地 | 单进程多窗 live demo 待补 |
-| `follow_system_theme` 自动跟 OS | `.follow_system_theme(true)` 已落地且默认关闭 | 跨 OS live 切换需真实桌面环境 |
-
-## 从目标到代码（~15 分钟）
-
-应用作者快速路径（与 [架构 · 应用作者入口](../docs/架构.md#应用作者入口) 一致）：
-
-1. **为什么** — [#105 零闲置](../docs/决策.md#d105)：`App::run()` 空闲时不空转；Timer/动画由框架 register。
-2. **声明 UI** — `State::new` + `label` / `map_text` + `button(…).on_click(&state, …)`；见 [README Counter 示例](../README.md#示例)。
-3. **布局** — `column([...]).gap(12).padding(16)`；更多 → `src/ui/layout/` · [#165](../docs/决策.md#d165)。
-4. **运行** — `App::new().title(...).root(|| ...).run()`；Timer/Theme → demo **应用能力** 页（`runtime.rs`）。
-5. **深入** — [架构 · 源码入口](../docs/架构.md#源码入口) · [#178](../docs/决策.md#d178)–[#180](../docs/决策.md#d180)。
+本 demo 缺：多窗口 live 演示页、故障注入页、跨 OS `follow_system_theme` 实机切换。框架 backlog → [`进度 · 后续工作`](../docs/进度.md#后续工作)。
 
 ## CLI 演示项
 
@@ -126,13 +103,3 @@ cargo test --bin uix-demo
 - Gallery 覆盖条目数量
 - 首页 build + 页面切换 reconcile
 - 首页 / 应用能力页局部 State 在根 reconcile 后保持
-
-## 对应文档
-
-| 想学 | 读 |
-|------|-----|
-| 上手 / 公开面 | [`架构 · 应用作者入口`](../docs/架构.md#应用作者入口) · [#178](../docs/决策.md#d178)–[#180](../docs/决策.md#d180) |
-| View / State | `src/ui/view/` · `src/ui/foundation/state.rs` |
-| App / Timer / 多窗 | `src/app/` · [#132](../docs/决策.md#d132) |
-| 组件目录 | `src/ui/widgets/` · Gallery |
-| Overlay | `src/ui/overlay.rs` · [#96](../docs/决策.md#d96)–[#100](../docs/决策.md#d100) |
