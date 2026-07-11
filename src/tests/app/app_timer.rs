@@ -2,7 +2,7 @@ use super::*;
 use crate::app::test_clock::TestClock;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 
@@ -105,4 +105,51 @@ fn run_interval_reschedules_from_injected_fire_time() {
         timers.deadlines()[0].1,
         fire_time + Duration::from_millis(10)
     );
+}
+
+#[test]
+fn interval_cancelled_by_its_callback_is_not_rescheduled() {
+    let timers = AppTimerQueue::new();
+    let handle_slot = Arc::new(Mutex::new(None::<TimerHandle>));
+    let handle = timers.run_interval(Duration::from_millis(10), {
+        let handle_slot = handle_slot.clone();
+        move || {
+            handle_slot
+                .lock()
+                .unwrap()
+                .take()
+                .expect("timer handle must be installed before firing")
+                .cancel();
+        }
+    });
+    let id = timers.deadlines()[0].0;
+    *handle_slot.lock().unwrap() = Some(handle);
+
+    assert!(timers.fire(id, Instant::now()));
+    assert_eq!(timers.len(), 0);
+}
+
+#[test]
+fn interval_is_not_rescheduled_after_queue_teardown_during_callback() {
+    let timers = AppTimerQueue::new();
+    let callback_timers = timers.clone();
+    let _handle = timers.run_interval(Duration::from_millis(10), move || {
+        callback_timers.cancel_all();
+    });
+    let id = timers.deadlines()[0].0;
+
+    assert!(timers.fire(id, Instant::now()));
+    assert_eq!(timers.len(), 0);
+}
+
+#[test]
+fn zero_interval_is_normalized_away_from_same_tick_busy_loop() {
+    let start = Instant::now();
+    let clock = TestClock::new(start);
+    let timers = AppTimerQueue::with_clock(clock);
+    let _handle = timers.run_interval(Duration::ZERO, || {});
+    let id = timers.deadlines()[0].0;
+
+    assert!(timers.fire(id, start));
+    assert!(timers.deadlines()[0].1 > start);
 }

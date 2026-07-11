@@ -147,6 +147,7 @@ impl LayerNode {
 /// 子节点在 build 时按 z_index 预排序，渲染时直接遍历无需额外排序。
 pub struct LayerTree {
     root: Option<LayerNode>,
+    overlays: Vec<LayerNode>,
     /// build 后未复用的旧离屏句柄（等待 sweep 释放）。
     orphaned_handles: Vec<ImageHandle>,
 }
@@ -173,6 +174,7 @@ impl std::fmt::Debug for LayerTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LayerTree")
             .field("has_root", &self.root.is_some())
+            .field("overlay_count", &self.overlays.len())
             .finish()
     }
 }
@@ -181,6 +183,7 @@ impl LayerTree {
     pub fn new() -> Self {
         Self {
             root: None,
+            overlays: Vec::new(),
             orphaned_handles: Vec::new(),
         }
     }
@@ -203,10 +206,29 @@ impl LayerTree {
         if let Some(ref root) = self.root {
             Self::collect_picture_handles(root, &mut old_cache);
         }
+        for overlay in &self.overlays {
+            Self::collect_picture_handles(overlay, &mut old_cache);
+        }
 
-        self.root = scene.root_id().and_then(|root_id| {
-            Self::build_node_cached(scene, root_id, 0, &old_cache, supports_offscreen)
-        });
+        let mut overlay_ids = Vec::new();
+        if let Some(root_id) = scene.root_id() {
+            Self::collect_overlay_node_ids(scene, root_id, &mut overlay_ids);
+        }
+
+        self.root = scene
+            .root_id()
+            .filter(|id| !scene.node_is_overlay(*id))
+            .and_then(|root_id| {
+                Self::build_node_cached(scene, root_id, 0, &old_cache, supports_offscreen)
+            });
+        self.overlays = overlay_ids
+            .into_iter()
+            .filter_map(|id| {
+                Self::build_overlay_node_cached(scene, id, 0, &old_cache, supports_offscreen)
+            })
+            .collect();
+        self.overlays
+            .sort_by_key(|overlay| scene.node_z_index(overlay.node_id()));
 
         // 收集未复用的旧句柄（需要在引擎上下文中释放）
         self.orphaned_handles.clear();
@@ -230,6 +252,9 @@ impl LayerTree {
         if let Some(ref mut root) = self.root {
             Self::update_dirty_node(root, scene);
         }
+        for overlay in &mut self.overlays {
+            Self::update_dirty_node(overlay, scene);
+        }
     }
 
     /// 单 Pass 渲染：按 z-order 合成 widget 绘制与调试覆盖（Phase 7）。
@@ -249,7 +274,7 @@ impl LayerTree {
         image_service: &ImageService,
         debug_mode: bool,
         hover_pos: Option<Point>,
-        render_objects: Option<&mut RenderObjectTree>,
+        mut render_objects: Option<&mut RenderObjectTree>,
     ) {
         let dpi = engine.dpi();
         let dpr = engine.device_pixel_ratio();
@@ -284,6 +309,10 @@ impl LayerTree {
         };
 
         if let Some(ref mut root) = self.root {
+            // The normal tree may establish viewport clips or scroll translations.
+            // Root-level overlays must start from the frame's original canvas state,
+            // even if a backend retains state after the normal-tree traversal.
+            engine.canvas_2d().save();
             Self::render_node(
                 root,
                 engine,
@@ -295,9 +324,30 @@ impl LayerTree {
                 debug_mode,
                 &debug_hover,
                 0,
-                render_objects,
+                render_objects.as_deref_mut(),
             );
+            engine.canvas_2d().restore();
             root.mark_clean();
+        }
+        for overlay in &mut self.overlays {
+            // Isolate sibling overlays too: one overlay cannot clip or translate
+            // the next one, and neither can inherit normal-tree state.
+            engine.canvas_2d().save();
+            Self::render_node(
+                overlay,
+                engine,
+                scene,
+                paint_region,
+                &env,
+                surface_w,
+                surface_h,
+                debug_mode,
+                &debug_hover,
+                0,
+                render_objects.as_deref_mut(),
+            );
+            engine.canvas_2d().restore();
+            overlay.mark_clean();
         }
     }
 
@@ -326,10 +376,13 @@ impl LayerTree {
         if let Some(ref mut root) = self.root {
             root.mark_cache_dirty();
         }
+        for overlay in &mut self.overlays {
+            overlay.mark_cache_dirty();
+        }
     }
 
     pub fn is_ready(&self) -> bool {
-        self.root.is_some()
+        self.root.is_some() || !self.overlays.is_empty()
     }
 
     // ── 内部 ──
@@ -358,6 +411,18 @@ impl LayerTree {
                     Self::collect_picture_handles(child, cache);
                 }
             }
+        }
+    }
+
+    fn collect_overlay_node_ids(scene: &impl ScenePaint, id: NodeId, ids: &mut Vec<NodeId>) {
+        if !scene.node_visible(id) {
+            return;
+        }
+        if scene.node_is_overlay(id) {
+            ids.push(id);
+        }
+        for child in scene.node_children(id) {
+            Self::collect_overlay_node_ids(scene, *child, ids);
         }
     }
 
@@ -424,6 +489,22 @@ impl LayerTree {
         }
     }
 
+    fn build_overlay_node_cached(
+        scene: &impl ScenePaint,
+        id: NodeId,
+        depth: usize,
+        cache: &std::collections::HashMap<NodeId, (Rect, Option<ImageHandle>, Option<DisplayList>)>,
+        supports_offscreen: bool,
+    ) -> Option<LayerNode> {
+        if !scene.node_visible(id) {
+            return None;
+        }
+        Some(LayerNode::Direct {
+            node_id: id,
+            children: Self::build_children_cached(scene, id, depth, cache, supports_offscreen),
+        })
+    }
+
     fn picture_subtree_stats(scene: &impl ScenePaint, id: NodeId) -> PictureSubtreeStats {
         let frame = scene.node_frame(id);
         let mut stats = PictureSubtreeStats {
@@ -433,6 +514,9 @@ impl LayerTree {
         };
 
         for child in scene.node_children(id) {
+            if scene.node_is_overlay(*child) {
+                continue;
+            }
             let child_stats = Self::picture_subtree_stats(scene, *child);
             stats.node_count += child_stats.node_count;
             stats.estimated_pixels += child_stats.estimated_pixels;
@@ -466,6 +550,7 @@ impl LayerTree {
             .node_children(id)
             .iter()
             .copied()
+            .filter(|cid| !scene.node_is_overlay(*cid))
             .filter_map(|cid| {
                 Self::build_node_cached(scene, cid, depth + 1, cache, supports_offscreen)
             })
@@ -613,7 +698,7 @@ impl LayerTree {
                 rect,
                 children,
             } => {
-                if needs_paint(scene, *node_id, dirty_region) {
+                if Self::should_paint_node(scene, *node_id, dirty_region) {
                     let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
                     Self::paint_widget(
                         *node_id,
@@ -654,7 +739,7 @@ impl LayerTree {
                     engine.canvas_2d().translate(sx, sy);
                 }
                 engine.canvas_2d().pop_clip();
-                if needs_paint(scene, *node_id, dirty_region) {
+                if Self::should_paint_node(scene, *node_id, dirty_region) {
                     let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
                     Self::paint_widget(*node_id, &mut ctx, scene, PaintPass::AfterChildren, None);
                 }
@@ -758,7 +843,7 @@ impl LayerTree {
         if !scene.node_visible(id) {
             return;
         }
-        if needs_paint(scene, id, dirty_region) {
+        if Self::should_paint_node(scene, id, dirty_region) {
             let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
             Self::paint_widget(
                 id,
@@ -796,6 +881,18 @@ impl LayerTree {
     ) -> Option<(f32, f32)> {
         scene.scroll_offset(node_id)
     }
+
+    /// A root-level overlay may intentionally have a zero layout slot (for
+    /// example, a masked Drawer). Its visual bounds live in overlay space, so
+    /// normal frame-based dirty culling would incorrectly skip it after the
+    /// opening animation settles or another root widget repaints.
+    fn should_paint_node(
+        scene: &impl ScenePaint,
+        node_id: NodeId,
+        dirty_region: &DirtyRegion,
+    ) -> bool {
+        scene.node_is_overlay(node_id) || needs_paint(scene, node_id, dirty_region)
+    }
 }
 
 impl Default for LayerTree {
@@ -808,6 +905,10 @@ impl Default for LayerTree {
 impl LayerTree {
     pub fn root_node(&self) -> Option<&LayerNode> {
         self.root.as_ref()
+    }
+
+    pub fn overlay_nodes(&self) -> &[LayerNode] {
+        &self.overlays
     }
 
     pub fn orphaned_handles(&self) -> &[ImageHandle] {
@@ -860,6 +961,8 @@ mod tests {
 
     struct TestScene {
         nodes: Vec<TestNode>,
+        dirty_ids: HashSet<NodeId>,
+        paint: Option<for<'a> fn(NodeId, &mut PaintContext<'a>)>,
     }
 
     impl TestScene {
@@ -869,7 +972,11 @@ mod tests {
             for id in 2..=node_count {
                 nodes.push(TestNode::eligible(NodeId::new(id), Vec::new()));
             }
-            Self { nodes }
+            Self {
+                nodes,
+                dirty_ids: HashSet::new(),
+                paint: None,
+            }
         }
 
         fn node_mut(&mut self, id: NodeId) -> &mut TestNode {
@@ -908,8 +1015,8 @@ mod tests {
             self.node(id).frame
         }
 
-        fn node_dirty(&self, _id: NodeId) -> bool {
-            false
+        fn node_dirty(&self, id: NodeId) -> bool {
+            self.dirty_ids.contains(&id)
         }
 
         fn node_z_index(&self, _id: NodeId) -> i32 {
@@ -972,8 +1079,89 @@ mod tests {
             None
         }
 
-        fn paint(&self, _id: NodeId, _frame: Rect, _ctx: &mut PaintContext<'_>) {}
+        fn paint(&self, id: NodeId, _frame: Rect, ctx: &mut PaintContext<'_>) {
+            if let Some(paint) = self.paint {
+                paint(id, ctx);
+            }
+        }
     }
+
+    struct TestTokens;
+
+    macro_rules! test_color_tokens {
+        ($($name:ident),+ $(,)?) => {
+            $(
+                fn $name(&self) -> crate::draw::Color {
+                    crate::draw::Color::black()
+                }
+            )+
+        };
+    }
+
+    impl crate::draw::painting::IColorTokens for TestTokens {
+        test_color_tokens!(
+            color_primary,
+            color_primary_hover,
+            color_primary_active,
+            color_primary_bg,
+            color_primary_border,
+            color_bg_container,
+            color_bg_elevated,
+            color_bg_raised,
+            color_bg_overlay,
+            color_bg_layout,
+            color_bg_spotlight,
+            color_bg_mask,
+            color_border,
+            color_border_secondary,
+            color_fill,
+            color_fill_secondary,
+            color_fill_tertiary,
+            color_fill_quaternary,
+            color_text,
+            color_text_secondary,
+            color_text_tertiary,
+            color_text_quaternary,
+            color_white,
+            color_black,
+            color_shadow,
+            color_shadow_secondary,
+            color_success,
+            color_success_bg,
+            color_success_border,
+            color_warning,
+            color_warning_bg,
+            color_warning_border,
+            color_error,
+            color_error_bg,
+            color_error_border,
+            color_info,
+            color_info_bg,
+            color_info_border,
+            color_link,
+            color_link_hover,
+            color_link_active,
+        );
+    }
+
+    impl crate::draw::painting::ITypographyTokens for TestTokens {
+        fn font_family(&self) -> &str {
+            "sans"
+        }
+    }
+
+    impl crate::draw::painting::IBoxShadowTokens for TestTokens {
+        fn box_shadow(&self) -> crate::draw::painting::ShadowToken {
+            crate::draw::painting::ShadowToken::none()
+        }
+
+        fn box_shadow_secondary(&self) -> crate::draw::painting::ShadowToken {
+            crate::draw::painting::ShadowToken::none()
+        }
+    }
+
+    impl crate::draw::painting::ISpacingTokens for TestTokens {}
+    impl crate::draw::painting::ThemeTokens for TestTokens {}
 
     #[test]
     fn eligible_subtree_stays_direct_without_offscreen_support() {
@@ -1053,7 +1241,185 @@ mod tests {
         ));
     }
 
-    /// 悬停窄标脏：Picture 离屏全清后，未与屏幕 dirty 相交的 Direct 子节点仍须重绘。
+    #[test]
+    fn overlay_children_are_detached_from_clipped_ancestor_layers() {
+        let mut scene = TestScene::static_tree(2);
+        scene.node_mut(NodeId::new(1)).clip = true;
+        scene.node_mut(NodeId::new(2)).overlay = true;
+        let tree = scene.build_layer_tree();
+
+        let Some(LayerNode::ClipRect { children, .. }) = tree.root_node() else {
+            panic!("root should remain a clip layer");
+        };
+        assert!(
+            children
+                .iter()
+                .all(|child| child.node_id() != NodeId::new(2)),
+            "active overlays must not inherit an ancestor clip layer"
+        );
+        assert!(matches!(
+            tree.overlay_nodes(),
+            [LayerNode::Direct { node_id, .. }] if *node_id == NodeId::new(2)
+        ));
+    }
+
+    /// Simulates a native canvas whose viewport `pop_clip` leaves its scissor in
+    /// effect. LayerTree must restore the root canvas state before painting a
+    /// detached overlay, otherwise a full-window overlay is cut to the normal
+    /// tree's ScrollView viewport.
+    struct LeakyClipCanvas {
+        pixels: Vec<u32>,
+        clip: Rect,
+        clip_stack: Vec<Rect>,
+        state_stack: Vec<Rect>,
+    }
+
+    impl LeakyClipCanvas {
+        fn new(width: i32, height: i32) -> Self {
+            Self {
+                pixels: vec![0; (width * height) as usize],
+                clip: Rect::new(0.0, 0.0, width as f32, height as f32),
+                clip_stack: Vec::new(),
+                state_stack: Vec::new(),
+            }
+        }
+    }
+
+    impl crate::draw::traits::Canvas2D for LeakyClipCanvas {
+        fn save(&mut self) {
+            self.state_stack.push(self.clip);
+        }
+
+        fn restore(&mut self) {
+            self.clip = self
+                .state_stack
+                .pop()
+                .expect("restore must follow a matching save");
+        }
+
+        fn push_clip(&mut self, rect: Rect) {
+            self.clip_stack.push(self.clip);
+            self.clip = self.clip.intersect(&rect).unwrap_or_else(Rect::zero);
+        }
+
+        fn pop_clip(&mut self) {
+            // Deliberately reproduce a backend clip-state leak.
+        }
+
+        fn set_opacity(&mut self, _: f32) {}
+
+        fn opacity(&self) -> f32 {
+            1.0
+        }
+
+        fn set_blend_mode(&mut self, _: crate::draw::BlendMode) {}
+
+        fn push_clip_path(&mut self, _: &crate::draw::Path) {}
+
+        fn pixels_mut(&mut self) -> &mut [u32] {
+            &mut self.pixels
+        }
+
+        fn surface_size(&self) -> crate::core::Size {
+            crate::core::Size::new(256.0, 256.0)
+        }
+
+        fn current_clip(&self) -> Rect {
+            self.clip
+        }
+    }
+
+    struct LeakyClipEngine {
+        canvas: LeakyClipCanvas,
+    }
+
+    impl LeakyClipEngine {
+        fn new() -> Self {
+            Self {
+                canvas: LeakyClipCanvas::new(256, 256),
+            }
+        }
+    }
+
+    impl GraphicsEngine for LeakyClipEngine {
+        fn initialize(&mut self, _: i32, _: i32) -> Result<(), crate::core::Error> {
+            Ok(())
+        }
+
+        fn shutdown(&mut self) {}
+
+        fn resize(&mut self, _: i32, _: i32) {}
+
+        fn begin_frame(
+            &mut self,
+            _: crate::draw::traits::UpdateStrategy,
+        ) -> crate::draw::engine::RenderOutcome {
+            crate::draw::engine::RenderOutcome::Present(crate::draw::backend::DamageRegion::full())
+        }
+
+        fn end_frame(
+            &mut self,
+            damage: &crate::draw::backend::DamageRegion,
+        ) -> crate::draw::engine::RenderOutcome {
+            crate::draw::engine::RenderOutcome::Present(damage.clone())
+        }
+
+        fn canvas_2d(&mut self) -> &mut dyn crate::draw::traits::Canvas2D {
+            &mut self.canvas
+        }
+    }
+
+    fn paint_overlay_outside_viewport(id: NodeId, ctx: &mut PaintContext<'_>) {
+        if id == NodeId::new(2) {
+            ctx.fill_rect(
+                Rect::new(180.0, 24.0, 32.0, 32.0),
+                crate::draw::Color::red(),
+                None,
+            );
+        }
+    }
+
+    #[test]
+    fn detached_overlay_restores_canvas_state_after_a_clipped_root() {
+        use crate::draw::font::font_service::FontService;
+        use crate::draw::image::ImageService;
+        use crate::draw::painting::ThemeSnapshot;
+
+        let mut scene = TestScene::static_tree(2);
+        scene.node_mut(NodeId::new(1)).frame = Rect::new(0.0, 0.0, 100.0, 100.0);
+        scene.node_mut(NodeId::new(1)).clip = true;
+        scene.node_mut(NodeId::new(2)).frame = Rect::zero();
+        scene.node_mut(NodeId::new(2)).overlay = true;
+        scene.dirty_ids.insert(NodeId::new(2));
+        scene.paint = Some(paint_overlay_outside_viewport);
+
+        let mut tree = scene.build_layer_tree();
+        let mut engine = LeakyClipEngine::new();
+        let tokens = TestTokens;
+        let theme = ThemeSnapshot::new(&tokens);
+        let fonts = FontService::new();
+        let images = ImageService::new();
+
+        tree.render(
+            &mut engine,
+            &scene,
+            &DirtyRegion::full(),
+            &theme,
+            FontHandle::default(),
+            &fonts,
+            &images,
+            false,
+            None,
+            None,
+        );
+
+        assert_ne!(
+            engine.canvas.pixels[24 * 256 + 180],
+            0,
+            "detached overlay must paint outside the normal tree's viewport clip"
+        );
+    }
+
     #[test]
     fn picture_partial_dirty_rerasterize_repaints_all_direct_children() {
         use crate::draw::font::font_service::FontService;

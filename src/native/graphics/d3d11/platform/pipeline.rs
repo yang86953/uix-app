@@ -2153,6 +2153,26 @@ impl D3d11Pipeline {
         unsafe {
             context.UpdateSubresource(tex, 0, None, pixels.as_ptr().cast(), (width as u32) * 4, 0);
 
+            // The soft texture represents the entire surface. Native draws
+            // before it may have narrowed the D3D scissor to a ScrollView, so
+            // never inherit that state when compositing this fallback layer.
+            let viewport = D3D11_VIEWPORT {
+                TopLeftX: 0.0,
+                TopLeftY: 0.0,
+                Width: width as f32,
+                Height: height as f32,
+                MinDepth: 0.0,
+                MaxDepth: 1.0,
+            };
+            let scissor = ::windows::Win32::Foundation::RECT {
+                left: 0,
+                top: 0,
+                right: width,
+                bottom: height,
+            };
+            context.RSSetViewports(Some(&[viewport]));
+            context.RSSetScissorRects(Some(&[scissor]));
+
             let stride = (2 * size_of::<f32>()) as u32;
             let offset = 0u32;
             context.IASetInputLayout(&self.layout);

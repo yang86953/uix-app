@@ -560,6 +560,47 @@ fn scrollview_both_stretches_narrow_content_to_viewport_width() {
     assert_eq!(both_sv.max_scroll_y(), 0.0);
 }
 
+#[test]
+fn scrollview_both_reserves_vertical_gutter_without_horizontal_overflow() {
+    let mut tree = WidgetTree::new();
+    let both = tree.set_root(Box::new(
+        ScrollView::new(ScrollDirection::Both).size(120.0, 80.0),
+    ));
+    tree.add_child(
+        both,
+        Box::new(FixedWidget {
+            size: Size::new(120.0, 300.0),
+            id: ComponentId::new(32),
+        }),
+    );
+
+    tree.layout();
+
+    let child = tree.get(both).unwrap().children()[0];
+    let child_frame = tree.get(child).unwrap().frame();
+    assert_eq!(
+        child_frame,
+        Rect::new(0.0, 0.0, 120.0 - ScrollBar::gutter(), 300.0),
+        "vertical-only overflow must keep Both content out of the scrollbar gutter"
+    );
+    let both_sv: &ScrollView = tree
+        .get(both)
+        .unwrap()
+        .component()
+        .as_any()
+        .downcast_ref()
+        .unwrap();
+    assert_eq!(both_sv.max_scroll_x(), 0.0);
+    assert_eq!(both_sv.max_scroll_y(), 220.0);
+
+    let track = ScrollBar::new(ScrollbarOrientation::Vertical)
+        .track_rect_abs(Rect::new(0.0, 0.0, 120.0, 80.0));
+    assert!(
+        child_frame.x + child_frame.w <= track.x + 0.5,
+        "Both content must not overlap the vertical scrollbar track"
+    );
+}
+
 fn assert_nested_content_axis_caps(
     direction: ScrollDirection,
     expected_frame: Rect,

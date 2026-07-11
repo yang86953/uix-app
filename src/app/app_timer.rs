@@ -1,5 +1,8 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, Weak,
+};
 use std::time::{Duration, Instant};
 
 use crate::app::active_work_registry::TimerId;
@@ -13,6 +16,7 @@ pub(crate) struct AppTimerQueue {
 
 struct AppTimerQueueInner {
     next_id: TimerId,
+    cancellation_epoch: u64,
     entries: BTreeMap<TimerId, AppTimerEntry>,
 }
 
@@ -20,6 +24,7 @@ impl Default for AppTimerQueueInner {
     fn default() -> Self {
         Self {
             next_id: 1,
+            cancellation_epoch: 0,
             entries: BTreeMap::new(),
         }
     }
@@ -29,17 +34,22 @@ struct AppTimerEntry {
     deadline: Instant,
     interval: Option<Duration>,
     callback: Box<dyn FnMut() + Send>,
+    cancellation_epoch: u64,
+    active: Arc<AtomicBool>,
 }
 
 pub struct TimerHandle {
     id: TimerId,
     queue: Weak<Mutex<AppTimerQueueInner>>,
+    active: Arc<AtomicBool>,
     cancelled: bool,
     /// When true, [`Drop`] does not cancel — timer lives until [`Self::cancel`] or session teardown.
     detach_on_drop: bool,
 }
 
 impl AppTimerQueue {
+    const MIN_INTERVAL: Duration = Duration::from_millis(1);
+
     pub(crate) fn new() -> Self {
         Self::with_clock(system_clock())
     }
@@ -67,6 +77,7 @@ impl AppTimerQueue {
     where
         F: FnMut() + Send + 'static,
     {
+        let interval = interval.max(Self::MIN_INTERVAL);
         self.insert(interval, Some(interval), f)
     }
 
@@ -81,11 +92,12 @@ impl AppTimerQueue {
     }
 
     pub(crate) fn cancel_all(&self) {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .entries
-            .clear();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner.cancellation_epoch = inner.cancellation_epoch.wrapping_add(1);
+        for entry in inner.entries.values() {
+            entry.active.store(false, Ordering::Release);
+        }
+        inner.entries.clear();
     }
 
     pub(crate) fn fire(&self, id: TimerId, now: Instant) -> bool {
@@ -102,11 +114,12 @@ impl AppTimerQueue {
 
         if let Some(interval) = entry.interval {
             entry.deadline = now + interval;
-            self.inner
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .entries
-                .insert(id, entry);
+            let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if entry.active.load(Ordering::Acquire)
+                && entry.cancellation_epoch == inner.cancellation_epoch
+            {
+                inner.entries.insert(id, entry);
+            }
         }
 
         true
@@ -128,17 +141,22 @@ impl AppTimerQueue {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1).max(1);
+        let cancellation_epoch = inner.cancellation_epoch;
+        let active = Arc::new(AtomicBool::new(true));
         inner.entries.insert(
             id,
             AppTimerEntry {
                 deadline: self.clock.now() + delay,
                 interval,
                 callback: Box::new(f),
+                cancellation_epoch,
+                active: active.clone(),
             },
         );
         TimerHandle {
             id,
             queue: Arc::downgrade(&self.inner),
+            active,
             cancelled: false,
             detach_on_drop: false,
         }
@@ -150,6 +168,7 @@ impl TimerHandle {
         Self {
             id: 0,
             queue: Weak::new(),
+            active: Arc::new(AtomicBool::new(false)),
             cancelled: true,
             detach_on_drop: false,
         }
@@ -173,6 +192,7 @@ impl TimerHandle {
             return;
         }
         self.cancelled = true;
+        self.active.store(false, Ordering::Release);
         if let Some(queue) = self.queue.upgrade() {
             queue
                 .lock()

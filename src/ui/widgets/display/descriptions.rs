@@ -124,7 +124,7 @@ impl Descriptions {
         self
     }
     pub fn column(mut self, v: usize) -> Self {
-        self.column = v;
+        self.column = v.max(1);
         self
     }
     pub fn label_width(mut self, w: f32) -> Self {
@@ -151,7 +151,7 @@ impl Descriptions {
         self.title = next.title;
         self.items = next.items;
         self.bordered = next.bordered;
-        self.column = next.column;
+        self.column = next.column.max(1);
         self.label_width = next.label_width;
         self.size = next.size;
     }
@@ -176,3 +176,7 @@ impl DescriptionsItem {
         self
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/ui/widgets/display/descriptions.rs"]
+mod tests;

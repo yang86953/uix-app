@@ -1028,7 +1028,7 @@ fn ensure_surface_matches_window(
         (canvas.width() as f32, canvas.height() as f32)
     };
     if ew <= 0.0 || eh <= 0.0 {
-        return changed;
+        return false;
     }
 
     let root_mismatch = tree

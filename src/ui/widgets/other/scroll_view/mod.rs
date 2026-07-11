@@ -307,8 +307,13 @@ component! {
             let w = if can_scroll_x {
                 if pref.w <= 0.0 {
                     content.w
-                } else if can_scroll_y {
+                } else if can_scroll_y && need_h {
                     pref.w.max(content.w)
+                } else if can_scroll_y {
+                    // Both + only vertical overflow: the vertical gutter reduces
+                    // the usable cross axis. Keeping the pre-gutter measured width
+                    // here would place content underneath the scrollbar.
+                    content.w
                 } else {
                     pref.w
                 }

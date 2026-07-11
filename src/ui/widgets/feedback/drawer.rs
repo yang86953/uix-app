@@ -1,9 +1,12 @@
-﻿use crate::component;
+use std::cell::Cell;
+
+use crate::component;
 use crate::core::{Constraints, Point, Rect, Size};
 use crate::draw::painting::PaintContext;
 use crate::draw::{Color, Radius};
 use crate::native::traits::input::ControlSize;
 use crate::ui::animation::{presets, SlideDirection, TransitionPlayer};
+use crate::ui::core::widget::WidgetCore;
 use crate::ui::SnapshotFields;
 use crate::ui::{EventResult, SystemEvent, WidgetTree};
 
@@ -32,6 +35,8 @@ component! {
         transition: TransitionPlayer,
         closing: bool,
         transition_dirty: bool,
+        last_surface_w: Cell<f32>,
+        last_surface_h: Cell<f32>,
     }
 
     measure => (&self, constraints: Constraints) -> Size {
@@ -109,11 +114,23 @@ component! {
         let text_sec = ctx.tokens().color_text_secondary();
         let r = Radius::uniform(ctx.tokens().border_radius_lg());
 
-        let (drawer_x, drawer_y, drawer_w, drawer_h) = match self.placement {
-            DrawerPlacement::Right | DrawerPlacement::Left => (frame.x, frame.y, self.width, frame.h),
-            DrawerPlacement::Top | DrawerPlacement::Bottom => (frame.x, frame.y, frame.w, self.height),
+        let drawer_rect = if self.mask {
+            let surface_w = ctx.canvas_2d().width() as f32;
+            let surface_h = ctx.canvas_2d().height() as f32;
+            self.last_surface_w.set(surface_w);
+            self.last_surface_h.set(surface_h);
+            self.overlay_rect_for_surface(surface_w, surface_h)
+        } else {
+            match self.placement {
+                DrawerPlacement::Right | DrawerPlacement::Left => {
+                    Rect::new(frame.x, frame.y, self.width, frame.h)
+                }
+                DrawerPlacement::Top | DrawerPlacement::Bottom => {
+                    Rect::new(frame.x, frame.y, frame.w, self.height)
+                }
+            }
         };
-        let drawer_rect = self.apply_transition_to_rect(Rect::new(drawer_x, drawer_y, drawer_w, drawer_h));
+        let drawer_rect = self.apply_transition_to_rect(drawer_rect);
         let drawer_x = drawer_rect.x;
         let drawer_y = drawer_rect.y;
         let drawer_w = drawer_rect.w;
@@ -181,17 +198,31 @@ component! {
         )
     }
 
-    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], _tree: &WidgetTree)
+    layout_children => (&self, frame: Rect, children: &[crate::ui::LayoutChild], tree: &WidgetTree)
         -> Vec<(crate::ui::ComponentId, Rect)>
     {
         if !self.is_present() || children.is_empty() {
             return Vec::new();
         }
-        let (drawer_x, drawer_y, drawer_w, drawer_h) = match self.placement {
-            DrawerPlacement::Right | DrawerPlacement::Left => (frame.x, frame.y, self.width, frame.h),
-            DrawerPlacement::Top | DrawerPlacement::Bottom => (frame.x, frame.y, frame.w, self.height),
+        let drawer_rect = if self.mask {
+            let (surface_w, surface_h) = tree
+                .root_id()
+                .and_then(|root_id| tree.get(root_id))
+                .map(|root| (root.frame().w, root.frame().h))
+                .filter(|(w, h)| *w > 0.0 && *h > 0.0)
+                .unwrap_or((1200.0, 760.0));
+            self.overlay_rect_for_surface(surface_w, surface_h)
+        } else {
+            match self.placement {
+                DrawerPlacement::Right | DrawerPlacement::Left => {
+                    Rect::new(frame.x, frame.y, self.width, frame.h)
+                }
+                DrawerPlacement::Top | DrawerPlacement::Bottom => {
+                    Rect::new(frame.x, frame.y, frame.w, self.height)
+                }
+            }
         };
-        let drawer_rect = self.apply_transition_to_rect(Rect::new(drawer_x, drawer_y, drawer_w, drawer_h));
+        let drawer_rect = self.apply_transition_to_rect(drawer_rect);
         let drawer_x = drawer_rect.x;
         let drawer_y = drawer_rect.y;
         let drawer_w = drawer_rect.w;
@@ -235,6 +266,13 @@ component! {
 
     dirty_bounds => (&self, frame: Rect) -> Rect {
         if self.transition_dirty {
+            if self.mask {
+                let surface_w = self.last_surface_w.get();
+                let surface_h = self.last_surface_h.get();
+                if surface_w > 0.0 && surface_h > 0.0 {
+                    return Rect::new(0.0, 0.0, surface_w, surface_h);
+                }
+            }
             frame
         } else {
             Rect::zero()
@@ -261,6 +299,8 @@ impl Drawer {
             ))),
             closing: false,
             transition_dirty: false,
+            last_surface_w: Cell::new(0.0),
+            last_surface_h: Cell::new(0.0),
         }
     }
 
@@ -395,6 +435,17 @@ impl Drawer {
             rect.w,
             rect.h,
         )
+    }
+
+    fn overlay_rect_for_surface(&self, surface_w: f32, surface_h: f32) -> Rect {
+        match self.placement {
+            DrawerPlacement::Right => Rect::new(surface_w - self.width, 0.0, self.width, surface_h),
+            DrawerPlacement::Left => Rect::new(0.0, 0.0, self.width, surface_h),
+            DrawerPlacement::Top => Rect::new(0.0, 0.0, surface_w, self.height),
+            DrawerPlacement::Bottom => {
+                Rect::new(0.0, surface_h - self.height, surface_w, self.height)
+            }
+        }
     }
 
     fn slide_direction_for(placement: DrawerPlacement) -> SlideDirection {

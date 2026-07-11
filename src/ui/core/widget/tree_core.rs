@@ -285,6 +285,13 @@ impl WidgetTree {
         }
     }
 
+    /// Ends the tree's mounted lifecycle before its owning window releases
+    /// rendering resources. Repeated shutdown is harmless because each node's
+    /// lifecycle flags suppress duplicate callbacks.
+    pub(crate) fn shutdown(&mut self) {
+        self.teardown_all();
+    }
+
     pub fn notify_theme_changed(&mut self) {
         let ids = self.traverse();
         for id in ids {

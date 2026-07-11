@@ -1434,6 +1434,84 @@ fn focused_input_registers_open_ime_work_without_timeout() {
 }
 
 #[test]
+fn fake_platform_tab_then_text_input_targets_second_input_only() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.inject_all([
+        UiEvent::key_down(KeyCode::Tab, KeyMod::NONE),
+        UiEvent::text_input("after-tab"),
+    ]);
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::new(
+            Container::new(),
+            vec![
+                ViewNode::leaf(Input::new("first")),
+                ViewNode::leaf(Input::new("second")),
+            ],
+        ),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let input_ids = {
+        let (tree, _) = session.tree_and_engine_mut();
+        tree.find_all_by_type::<Input>()
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(input_ids.len(), 2);
+    {
+        let (tree, _) = session.tree_and_engine_mut();
+        tree.set_focus(Some(input_ids[0]));
+    }
+
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    let (tree, _) = session.tree_and_engine_mut();
+    assert_eq!(
+        tree.managers().focus.focused_component(),
+        Some(input_ids[1])
+    );
+    let input_value = |id| {
+        tree.get(id)
+            .expect("input node")
+            .component()
+            .as_any()
+            .downcast_ref::<Input>()
+            .expect("Input component")
+            .value()
+            .to_string()
+    };
+    assert_eq!(input_value(input_ids[0]), "");
+    assert_eq!(input_value(input_ids[1]), "after-tab");
+}
+
+#[test]
 fn window_blur_unregisters_focused_input_ime_work() {
     let mut platform = FakePlatform::new();
     platform.event_source.inject_all([
