@@ -15,7 +15,7 @@ pub mod combinators;
 pub use adapter::ViewAdapter;
 pub use combinators::{
     button, column, dynamic_label, embed, grid, input, label, row, scroll, space, ButtonBuilder,
-    GridBuilder, InputBuilder, ScrollBuilder,
+    GridBuilder, InputBuilder, IntoLabelContent, IntoViewChildren, ScrollBuilder,
 };
 
 /// 用户层 UI 声明 trait。

@@ -1020,7 +1020,7 @@ fn fake_platform_pointer_click_reaches_handler_table() {
     let mut window = FakeWindow::new(1, "test", 800, 600);
     let mut session = WindowSession::from_root(
         button("Hit")
-            .on_click(move || {
+            .on_click_fn(move || {
                 hits_for_handler.fetch_add(1, Ordering::Relaxed);
             })
             .build(),

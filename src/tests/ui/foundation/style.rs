@@ -380,9 +380,19 @@ fn style_set_resolve_fallback() {
 
 #[test]
 fn button_presets_cover_focused_and_disabled_states() {
-    for preset in [StyleSet::button_ghost(), StyleSet::button_danger()] {
+    // #176/#177：focused 与 idle 同色，无 box_shadow / 全局焦点环。
+    for preset in [
+        StyleSet::button_default(),
+        StyleSet::button_primary(),
+        StyleSet::button_ghost(),
+        StyleSet::button_danger(),
+    ] {
+        let idle = preset.resolve_flags(false, false, false, false);
         let focused = preset.resolve_flags(false, false, true, false);
-        assert!(focused.box_shadow.is_some());
+        assert_eq!(focused.background, idle.background);
+        assert_eq!(focused.border_color, idle.border_color);
+        assert_eq!(focused.color, idle.color);
+        assert!(focused.box_shadow.is_none());
 
         let disabled = preset.resolve_flags(true, true, true, true);
         assert_eq!(disabled.opacity, 0.45);
@@ -394,6 +404,24 @@ fn button_presets_cover_focused_and_disabled_states() {
             disabled.color,
             ColorValue::Neutral(NeutralRole::TextQuaternary)
         );
+    }
+}
+
+#[test]
+fn button_presets_pressed_keeps_idle_colors() {
+    // #176：pressed 不改 fill/border/text；点击反馈仅 ripple。
+    for preset in [
+        StyleSet::button_default(),
+        StyleSet::button_primary(),
+        StyleSet::button_ghost(),
+        StyleSet::button_danger(),
+    ] {
+        let idle = preset.resolve_flags(false, false, false, false);
+        let pressed = preset.resolve_flags(false, true, false, false);
+        assert_eq!(pressed.background, idle.background);
+        assert_eq!(pressed.border_color, idle.border_color);
+        assert_eq!(pressed.color, idle.color);
+        assert_eq!(pressed.opacity, idle.opacity);
     }
 }
 

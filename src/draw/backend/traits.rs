@@ -7,7 +7,7 @@ use crate::core::{DamageRegion, Error, Point, Rect, Size};
 use crate::draw::traits::{Canvas2D, PresentationMode};
 use crate::draw::ImageHandle;
 
-/// Engine-level raster preference ([#169](docs/decisions.md#d169)).
+/// Engine-level raster preference ([#169](docs/决策.md#d169)).
 ///
 /// Aligned with orthogonal axes: `Cpu` / `Gpu` select raster path preference;
 /// concrete API is [`crate::native::traits::GraphicsBackend`]. Not a bundled

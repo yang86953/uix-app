@@ -266,7 +266,7 @@ fn app_overlay_root_passes_clicks_to_app_when_notifications_empty() {
     let clicks_for_handler = clicks.clone();
     let mut tree = ViewAdapter::build_nodes(wrap_root_with_notification_overlay(
         button("Navigate")
-            .on_click(move || {
+            .on_click_fn(move || {
                 clicks_for_handler.set(clicks_for_handler.get() + 1);
             })
             .build(),

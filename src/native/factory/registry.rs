@@ -18,7 +18,7 @@ pub enum BackendStatus {
 /// One graphics API factory row — API identity plus declared raster × present axes.
 ///
 /// Engine assembly still reads live [`IGraphicsContext::caps`]; these fields document
-/// the combination this entry is expected to provide ([#169](docs/decisions.md#d169)).
+/// the combination this entry is expected to provide ([#169](docs/决策.md#d169)).
 pub struct GraphicsBackendEntry {
     pub id: GraphicsBackend,
     pub priority: u8,

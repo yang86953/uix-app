@@ -1,16 +1,17 @@
 //! 组合子函数 — column, row, label, button, space, input 等。
 //!
-//! 提供函数式声明式 API，让用户用 `column([label("..."), button("...")])` 方式组合 UI。
+//! 提供函数式声明式 API。异质子节点用元组或 [`views!`]：
+//! `column((label("..."), button("...")))` / `column(views![...])`。
 //!
 //! # 使用示例
 //!
 //! ```ignore
 //! use crate::ui::view::*;
 //!
-//! let ui = column([
+//! let ui = column((
 //!     label("Hello").font_size(24.0).color(Color::blue()),
-//!     button("Click").primary().on_click(|| println!("clicked")),
-//! ]).padding(16.0);
+//!     button("Click").primary().on_click_fn(|| println!("clicked")),
+//! )).padding(16.0);
 //! ```
 
 use crate::native::traits::input::ScrollDirection;
@@ -23,11 +24,64 @@ use crate::core::{Constraints, Rect, Size};
 use crate::draw::compositor::PicturePolicy;
 use crate::draw::painting::PaintContext;
 use crate::draw::pipeline::InvalidationQueueHandle;
-use crate::ui::state::StatePaintBind;
+use crate::ui::state::{State, StatePaintBind};
 use crate::ui::traits::{WidgetCapabilities, WidgetComponent, WidgetLayout, WidgetRender};
 use crate::ui::{ComponentId, WidgetTree};
 use std::any::Any;
 use std::sync::Arc;
+
+/// 将异质 / 同质子节点收成 `Vec<ViewNode>`（[#178](docs/决策.md#d178)）。
+///
+/// - 同质：`column([label("a"), label("b")])`、`Vec<_>`
+/// - 异质：`column((label("a"), button("b")))` 或 `column(views![...])`
+pub trait IntoViewChildren {
+    fn into_view_children(self) -> Vec<ViewNode>;
+}
+
+impl<T: View, const N: usize> IntoViewChildren for [T; N] {
+    fn into_view_children(self) -> Vec<ViewNode> {
+        self.into_iter().map(View::build).collect()
+    }
+}
+
+impl<T: View> IntoViewChildren for Vec<T> {
+    fn into_view_children(self) -> Vec<ViewNode> {
+        self.into_iter().map(View::build).collect()
+    }
+}
+
+macro_rules! impl_into_view_children_tuple {
+    () => {
+        impl IntoViewChildren for () {
+            fn into_view_children(self) -> Vec<ViewNode> {
+                Vec::new()
+            }
+        }
+    };
+    ($($T:ident),+) => {
+        impl<$($T: View),+> IntoViewChildren for ($($T,)+) {
+            fn into_view_children(self) -> Vec<ViewNode> {
+                #[allow(non_snake_case)]
+                let ($($T,)+) = self;
+                vec![$($T.build(),)+]
+            }
+        }
+    };
+}
+
+impl_into_view_children_tuple!();
+impl_into_view_children_tuple!(A);
+impl_into_view_children_tuple!(A, B);
+impl_into_view_children_tuple!(A, B, C);
+impl_into_view_children_tuple!(A, B, C, D);
+impl_into_view_children_tuple!(A, B, C, D, E);
+impl_into_view_children_tuple!(A, B, C, D, E, F);
+impl_into_view_children_tuple!(A, B, C, D, E, F, G);
+impl_into_view_children_tuple!(A, B, C, D, E, F, G, H);
+impl_into_view_children_tuple!(A, B, C, D, E, F, G, H, I);
+impl_into_view_children_tuple!(A, B, C, D, E, F, G, H, I, J);
+impl_into_view_children_tuple!(A, B, C, D, E, F, G, H, I, J, K);
+impl_into_view_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 
 /// 将 `tree!` / widget-tree 节点嵌入 View DSL（组件库演示等高级 interop）。
 pub fn embed(node: impl crate::ui::IntoWidgetNode) -> ViewNode {
@@ -84,46 +138,32 @@ mod embed_tests {
 
 /// 列容器（Flex 方向为 Column），默认 flex_grow(1.0) 填满父容器高度。
 ///
-/// 接受数组或 Vec 作为子节点，支持混合传入任意 `View` 实现。
-pub fn column<I>(children: I) -> ViewNode
-where
-    I: IntoIterator,
-    I::Item: View,
-{
-    let children: Vec<ViewNode> = children.into_iter().map(|v| v.build()).collect();
+/// 同质数组 / `Vec`，或异质元组 / [`views!`]（[#178](docs/决策.md#d178)）。
+pub fn column(children: impl IntoViewChildren) -> ViewNode {
     ViewNode::new(
         crate::ui::widgets::Container::new()
             .dir(FlexDirection::Column)
             .flex_grow(1.0),
-        children,
+        children.into_view_children(),
     )
 }
 
 /// 行容器（Flex 方向为 Row）。
 ///
-/// 接受数组或 Vec 作为子节点，支持混合传入任意 `View` 实现。
-pub fn row<I>(children: I) -> ViewNode
-where
-    I: IntoIterator,
-    I::Item: View,
-{
-    let children: Vec<ViewNode> = children.into_iter().map(|v| v.build()).collect();
+/// 同质数组 / `Vec`，或异质元组 / [`views!`]（[#178](docs/决策.md#d178)）。
+pub fn row(children: impl IntoViewChildren) -> ViewNode {
     ViewNode::new(
         crate::ui::widgets::Container::new().dir(FlexDirection::Row),
-        children,
+        children.into_view_children(),
     )
 }
 
 /// Grid 容器。
 ///
 /// 默认不预设轨道；调用 `.columns(...)` / `.rows(...)` 明确声明轨道。
-pub fn grid<I>(children: I) -> GridBuilder
-where
-    I: IntoIterator,
-    I::Item: View,
-{
+pub fn grid(children: impl IntoViewChildren) -> GridBuilder {
     GridBuilder {
-        children: children.into_iter().map(|v| v.build()).collect(),
+        children: children.into_view_children(),
         widget: crate::ui::widgets::Grid::new(),
         style: Style::default().with_display(DisplayMode::Grid),
     }
@@ -266,23 +306,63 @@ impl From<ScrollBuilder> for ViewNode {
     }
 }
 
-/// 文本标签（静态文本）。
-pub fn label(text: impl Into<String>) -> ViewNode {
-    ViewNode::leaf(crate::ui::widgets::Label::new(text))
+/// 文本内容：静态字符串或动态闭包（[#178](docs/决策.md#d178)）。
+pub trait IntoLabelContent {
+    fn into_label_node(self) -> ViewNode;
 }
 
-/// 响应式文本标签——每次渲染时调用闭包获取最新文本。
-/// 配合 `State` 使用时，状态变更自动触发重绘，标签文本自动更新。
-///
-/// # 示例
+impl IntoLabelContent for String {
+    fn into_label_node(self) -> ViewNode {
+        ViewNode::leaf(crate::ui::widgets::Label::new(self))
+    }
+}
+
+impl IntoLabelContent for &str {
+    fn into_label_node(self) -> ViewNode {
+        ViewNode::leaf(crate::ui::widgets::Label::new(self))
+    }
+}
+
+impl IntoLabelContent for &String {
+    fn into_label_node(self) -> ViewNode {
+        ViewNode::leaf(crate::ui::widgets::Label::new(self.as_str()))
+    }
+}
+
+impl<F> IntoLabelContent for F
+where
+    F: Fn() -> String + 'static,
+{
+    fn into_label_node(self) -> ViewNode {
+        ViewNode::leaf(DynamicLabel::new(self))
+    }
+}
+
+/// 文本标签 — 静态或动态统一入口。
 ///
 /// ```ignore
-/// let count = State::new(0);
-/// label(move || format!("计数: {}", count.get()))  // count 变化时自动刷新
-///     .font_size(24.0);
+/// label("Hello");
+/// label(move || format!("计数: {}", count.get()));
+/// count.map_text(|n| format!("计数: {n}")); // 等价，少手写 clone
 /// ```
+pub fn label(content: impl IntoLabelContent) -> ViewNode {
+    content.into_label_node()
+}
+
+/// 响应式文本标签（`label(closure)` 的别名，保留兼容）。
 pub fn dynamic_label<F: Fn() -> String + 'static>(f: F) -> ViewNode {
-    ViewNode::leaf(DynamicLabel::new(f))
+    label(f)
+}
+
+impl<T: Clone + Send + Sync + 'static> State<T> {
+    /// 由 State 生成响应式文本节点；内部 clone 句柄，调用方只保留一个名字。
+    pub fn map_text<F>(&self, f: F) -> ViewNode
+    where
+        F: Fn(&T) -> String + 'static,
+    {
+        let state = self.clone();
+        label(move || f(&state.get()))
+    }
 }
 
 /// 响应式标签的内部 Widget 实现。
@@ -451,7 +531,7 @@ use crate::ui::event::{HandlerRegistration, SemanticEvent, SemanticKind};
 use crate::ui::style::StyleSet;
 use crate::ui::widgets::Button;
 
-/// 按钮构建器 — 通过 `button("text").primary().on_click(fn)` 创建。
+/// 按钮构建器 — `button("text").primary().on_click(&state, |s| …)`。
 ///
 /// 样式（背景、颜色、边距等）在 builder 之后链式调用 `StyleExt` 方法：
 /// `button("保存").primary().bg(color).padding(8.0)`。
@@ -508,7 +588,25 @@ impl ButtonBuilder {
         self
     }
 
-    pub fn on_click<F: FnMut() + 'static>(mut self, mut f: F) -> Self {
+    /// 默认点击路径：绑定 `State` 指纹，reconcile 可稳定复用（[#178](docs/决策.md#d178) · [#159](docs/决策.md#d159)）。
+    ///
+    /// 框架传入 `&State<T>`，调用方无需再 clone 句柄进闭包。
+    pub fn on_click<T, F>(mut self, state: &State<T>, mut f: F) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+        F: FnMut(&State<T>) + 'static,
+    {
+        let captured = state.clone();
+        self.handlers.push(
+            HandlerRegistration::new(SemanticKind::Click, Box::new(move |_| f(&captured)))
+                .with_state_capture(state),
+        );
+        self
+    }
+
+    /// 无 State 的点击闭包；每次 reconcile **保守重绑**（[#160](docs/决策.md#d160)）。
+    /// 有 State 时请用 [`Self::on_click`]。
+    pub fn on_click_fn<F: FnMut() + 'static>(mut self, mut f: F) -> Self {
         self.handlers.push(HandlerRegistration::new(
             SemanticKind::Click,
             Box::new(move |_| f()),
@@ -516,16 +614,13 @@ impl ButtonBuilder {
         self
     }
 
-    pub fn on_click_capture<T, F>(mut self, state: &crate::ui::state::State<T>, mut f: F) -> Self
+    /// 兼容别名：等价于 `on_click`，但闭包不接收 `&State`（仍须自行 clone 进闭包）。
+    pub fn on_click_capture<T, F>(self, state: &State<T>, mut f: F) -> Self
     where
         T: Clone + Send + Sync + 'static,
         F: FnMut() + 'static,
     {
-        self.handlers.push(
-            HandlerRegistration::new(SemanticKind::Click, Box::new(move |_| f()))
-                .with_state_capture(state),
-        );
-        self
+        self.on_click(state, move |_| f())
     }
 
     pub fn on_click_window_capture<F>(mut self, window_id: crate::core::WindowId, mut f: F) -> Self
@@ -545,7 +640,7 @@ impl ButtonBuilder {
         self
     }
 
-    pub fn on_click_event_capture<T, F>(mut self, state: &crate::ui::state::State<T>, f: F) -> Self
+    pub fn on_click_event_capture<T, F>(mut self, state: &State<T>, f: F) -> Self
     where
         T: Clone + Send + Sync + 'static,
         F: FnMut(&mut SemanticEvent) + 'static,
@@ -590,7 +685,8 @@ impl From<ButtonBuilder> for ViewNode {
 /// 创建按钮。
 ///
 /// ```ignore
-/// button("保存").primary().on_click(|| save())
+/// button("保存").primary().on_click(&state, |s| save(s));
+/// button("关闭").on_click_fn(|| close());
 /// ```
 pub fn button(text: impl Into<String>) -> ButtonBuilder {
     ButtonBuilder {

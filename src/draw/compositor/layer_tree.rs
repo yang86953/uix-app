@@ -10,9 +10,7 @@ use crate::core::DirtyRegion;
 use crate::draw::compositor::picture::{
     blit_picture_cache, rasterize_picture_to_offscreen, LayerRenderEnv,
 };
-use crate::draw::compositor::viewport_transform::{
-    needs_paint, needs_paint_rect, node_viewport_frame, visible_viewport_rect,
-};
+use crate::draw::compositor::viewport_transform::{needs_paint, needs_paint_rect};
 use crate::draw::compositor::{PicturePolicy, ScenePaint};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
@@ -232,7 +230,9 @@ impl LayerTree {
         }
     }
 
-    /// 单 Pass 渲染：按 z-order 合成 widget 绘制、调试覆盖与焦点环（Phase 7）。
+    /// 单 Pass 渲染：按 z-order 合成 widget 绘制与调试覆盖（Phase 7）。
+    ///
+    /// 不绘制全局焦点环（#177）；交互反馈由控件自身（如 Button Material ripple）负责。
     ///
     /// `paint_region` 为实际绘制剪枝区域（可与 `scene.dirty_region()` 不同，
     /// 例如首帧强制全帧重绘时由 FrameRenderer 传入 `DirtyRegion::full()`）。
@@ -296,30 +296,6 @@ impl LayerTree {
                 render_objects,
             );
             root.mark_clean();
-        }
-
-        // 焦点环：node_frame 为 content 坐标，须映射到 viewport 并按祖先 clip 裁剪
-        // （与绘制时 canvas translate(-scroll) 同空间，否则滚动后环会停在原屏位置）。
-        if let Some(focused_id) = scene.focused_node() {
-            if scene.node_visible(focused_id) && scene.node_focusable(focused_id) {
-                if let Some(visible) = visible_viewport_rect(scene, focused_id) {
-                    let vp_frame = node_viewport_frame(scene, focused_id);
-                    let focus_color = theme.tokens().color_primary();
-                    // stroke 以边为中心外扩，clip 略放大以免满可见时环被裁半。
-                    const RING_W: f32 = 2.0;
-                    let clip = Rect::new(
-                        visible.x - RING_W,
-                        visible.y - RING_W,
-                        visible.w + RING_W * 2.0,
-                        visible.h + RING_W * 2.0,
-                    );
-                    let mut ctx = Self::paint_context(engine, &env, surface_w, surface_h);
-                    let canvas = ctx.canvas_2d();
-                    canvas.push_clip(clip);
-                    canvas.stroke_rect(vp_frame, focus_color, RING_W, None);
-                    canvas.pop_clip();
-                }
-            }
         }
     }
 

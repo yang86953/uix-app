@@ -25,7 +25,7 @@ fn coverage_row(
         if let (Some(active_state), Some(target)) = (active, page_index_by_label(page)) {
             let nav = active_state.clone();
             return button(line)
-                .on_click(move || nav.set(target))
+                .on_click(&nav, move |nav| nav.set(target))
                 .font_size(12.0)
                 .color(color)
                 .padding((2.0, 0.0, 2.0, 0.0))
@@ -121,7 +121,7 @@ pub const COVERAGE: &[(&str, &str, &str, bool)] = &[
     ("其他", "component! 自定义", "其他", true),
     ("其他", "RichText", "数据展示", true),
     // ── App 能力 ──
-    ("应用能力", "State / dynamic_label", "应用能力", true),
+    ("应用能力", "State / label / on_click", "应用能力", true),
     (
         "应用能力",
         "View DSL / embed / component!",

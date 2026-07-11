@@ -1,4 +1,4 @@
-//! 组件库分类页面 — 对照 [`component.md`](../../docs/systems/component.md) 与 Gallery 覆盖矩阵。
+//! 组件库分类页面 — 对照 `src/ui/widgets/` 与 Gallery 覆盖矩阵；导航 → [`架构 · 源码入口`](../../docs/架构.md#源码入口)。
 
 pub mod charts;
 pub mod context;
