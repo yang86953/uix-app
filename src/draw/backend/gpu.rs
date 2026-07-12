@@ -4,6 +4,7 @@ use std::any::Any;
 use std::cell::RefCell;
 
 use crate::core::{DamageRegion, Errc, Error, Point, Rect};
+use crate::native::graphics::opengl::NativeOpenGlRuntime;
 use crate::native::traits::present::{IGraphicsContext, PresentDamage, PresentFrame};
 use glow::HasContext as _;
 
@@ -77,9 +78,11 @@ struct GlOffscreen {
 
 /// GPU 渲染后端。
 pub struct GpuBackend {
-    // surface 必须先于 gl/context 析构；GpuCanvas2D::Drop 会使用 gl_ptr。
+    // surface 必须先于 native runtime/context 析构；GpuCanvas2D::Drop 会使用 gl_ptr。
     surface: GpuDrawSurface,
-    pub(crate) gl: Box<glow::Context>,
+    // The loader and owning glow context stay inside native. Draw receives an
+    // opaque thread-bound runtime and only borrows it while rendering.
+    gl_runtime: NativeOpenGlRuntime,
     pub(crate) gpu_ctx: Box<dyn IGraphicsContext>,
     width: i32,
     height: i32,
@@ -93,7 +96,9 @@ pub struct GpuBackend {
 
 impl GpuBackend {
     pub(crate) fn new(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
-        if !gpu_ctx.supports_gl_proc_address() {
+        if gpu_ctx.graphics_backend() != crate::native::traits::present::GraphicsBackend::OpenGlEs
+            || !gpu_ctx.supports_gl_proc_address()
+        {
             gpu_ctx.shutdown();
             return Err(Error::new(
                 Errc::InvalidArgument,
@@ -103,19 +108,24 @@ impl GpuBackend {
                 ),
             ));
         }
-        let gl = Box::new(unsafe {
-            glow::Context::from_loader_function(|s| {
-                gpu_ctx.get_proc_address(s).unwrap_or(std::ptr::null())
-            })
-        });
-        let canvas = match GpuCanvas2D::new(&gl, 1, 1) {
+        let gl_runtime = match gpu_ctx
+            .acquire_native_runtime()
+            .and_then(|runtime| runtime.into_opengles())
+        {
+            Ok(runtime) => runtime,
+            Err(err) => {
+                gpu_ctx.shutdown();
+                return Err(err);
+            }
+        };
+        let canvas = match GpuCanvas2D::new(gl_runtime.context(), 1, 1) {
             Ok(canvas) => canvas,
             Err(err) => {
                 gpu_ctx.shutdown();
                 return Err(err);
             }
         };
-        let gl_ptr = gl.as_ref() as *const glow::Context;
+        let gl_ptr = gl_runtime.context() as *const glow::Context;
         Ok(Self {
             surface: GpuDrawSurface {
                 gl_ptr,
@@ -123,7 +133,7 @@ impl GpuBackend {
                 width: 1,
                 height: 1,
             },
-            gl,
+            gl_runtime,
             gpu_ctx,
             width: 0,
             height: 0,
@@ -134,6 +144,10 @@ impl GpuBackend {
             active_offscreen: None,
             shutdown: false,
         })
+    }
+
+    pub(crate) fn gl(&self) -> &glow::Context {
+        self.gl_runtime.context()
     }
 
     fn adopt_prepared_draw_surface(
@@ -154,7 +168,7 @@ impl GpuBackend {
         self.surface.canvas.set_device_pixel_ratio(dpr);
         self.gpu_ctx.make_current()?;
         unsafe {
-            self.gl.viewport(0, 0, physical_w, physical_h);
+            self.gl().viewport(0, 0, physical_w, physical_h);
         }
         Ok((logical_w, logical_h))
     }
@@ -166,7 +180,7 @@ impl GpuBackend {
             rb.resize(len, 0);
         }
         unsafe {
-            self.gl.read_pixels(
+            self.gl().read_pixels(
                 0,
                 0,
                 self.width,
@@ -264,16 +278,16 @@ impl GpuBackend {
     fn destroy_gl_offscreen(&mut self, mut off: GlOffscreen) {
         off.canvas.release_gpu_resources();
         unsafe {
-            self.gl.delete_framebuffer(off.fbo);
-            self.gl.delete_texture(off.texture);
+            self.gl().delete_framebuffer(off.fbo);
+            self.gl().delete_texture(off.texture);
         }
     }
 
     fn bind_default_framebuffer(&mut self) {
         unsafe {
-            self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            self.gl().bind_framebuffer(glow::FRAMEBUFFER, None);
             let dpr = self.gpu_ctx.device_pixel_ratio().max(1.0);
-            self.gl.viewport(
+            self.gl().viewport(
                 0,
                 0,
                 self.gpu_ctx.width().max(1),
@@ -375,7 +389,7 @@ impl RenderBackend for GpuBackend {
             return None;
         }
         let _ = self.gpu_ctx.make_current();
-        let off = unsafe { Self::create_gl_offscreen(&self.gl, width, height) }.ok()?;
+        let off = unsafe { Self::create_gl_offscreen(self.gl(), width, height) }.ok()?;
         let id = if let Some(id) = self.free_offscreen_ids.pop() {
             id
         } else {
@@ -438,11 +452,11 @@ impl RenderBackend for GpuBackend {
         let h = off.height;
         self.gpu_ctx.make_current()?;
         unsafe {
-            self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
-            self.gl.viewport(0, 0, w, h);
-            self.gl.disable(glow::SCISSOR_TEST);
-            self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
-            self.gl.clear(glow::COLOR_BUFFER_BIT);
+            self.gl().bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+            self.gl().viewport(0, 0, w, h);
+            self.gl().disable(glow::SCISSOR_TEST);
+            self.gl().clear_color(0.0, 0.0, 0.0, 0.0);
+            self.gl().clear(glow::COLOR_BUFFER_BIT);
         }
         self.active_offscreen = Some(handle.0);
         Ok(())
@@ -459,6 +473,7 @@ impl RenderBackend for GpuBackend {
 
     fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         let idx = handle.0 as usize;
+        let gl = self.gl_runtime.context() as *const glow::Context;
         let Some(Some(off)) = self.offscreens.get_mut(idx) else {
             return Err(Error::new(
                 Errc::InvalidState,
@@ -470,8 +485,10 @@ impl RenderBackend for GpuBackend {
         let h = off.height;
         self.gpu_ctx.make_current()?;
         unsafe {
-            self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
-            self.gl.viewport(0, 0, w, h);
+            // `gl_runtime` is a disjoint field that remains alive while the
+            // mutable offscreen slot is borrowed.
+            (&*gl).bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+            (&*gl).viewport(0, 0, w, h);
         }
         off.canvas.flush_soft_fallback()
     }
@@ -755,7 +772,7 @@ mod tests {
                 backend.surface.canvas_mut().last_soft_upload_bytes() < 640 * 480 * 4,
                 "a localized CPU fallback must not upload the entire 640x480 texture"
             );
-            assert_eq!(unsafe { backend.gl.get_error() }, glow::NO_ERROR);
+            assert_eq!(unsafe { backend.gl().get_error() }, glow::NO_ERROR);
             backend.read_pixels();
             let pixels = backend.pixels_ref();
             let center = pixels[(240 * 640 + 320) as usize];
@@ -773,7 +790,7 @@ mod tests {
                 .gpu_backend_mut()
                 .expect("OpenGL ES backend");
             assert_eq!(
-                unsafe { backend.gl.get_error() },
+                unsafe { backend.gl().get_error() },
                 glow::NO_ERROR,
                 "SwapBuffers present must leave GL context healthy"
             );
@@ -794,7 +811,7 @@ mod tests {
                 .gpu_backend_mut()
                 .expect("OpenGL ES backend");
             assert_eq!(
-                unsafe { backend.gl.get_error() },
+                unsafe { backend.gl().get_error() },
                 glow::NO_ERROR,
                 "frame {i}: present must not raise GL error"
             );
