@@ -1380,7 +1380,7 @@ fn recreate_exact_graphics_recipe(
     height: i32,
     recipe: GraphicsRecipe,
 ) -> Result<Box<dyn GraphicsEngine>, Error> {
-    let context = try_create_gpu_recipe(recipe, surface.as_raw(), width, height)?;
+    let context = try_create_gpu_recipe(recipe, surface, width, height)?;
     assemble_graphics_engine(context, width, height).map_err(|failure| failure.into_error())
 }
 
