@@ -12,7 +12,7 @@ use std::ptr;
 use crate::native::backends::windows::util::windows_diag;
 use crate::native::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::graphics::platform::windows::{
-    device_context, query_client_rect, release_device_context,
+    device_context, drawable_size_from_hdc, release_device_context,
 };
 use crate::native::traits::present::{
     GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentDamage,
@@ -76,8 +76,6 @@ struct PIXELFORMATDESCRIPTOR {
     dwDamageMask: u32,
 }
 
-const LOGPIXELSX: i32 = 88;
-
 #[link(name = "gdi32")]
 extern "system" {
     fn ChoosePixelFormat(hdc: HDC, ppfd: *const PIXELFORMATDESCRIPTOR) -> i32;
@@ -89,7 +87,6 @@ extern "system" {
     ) -> i32;
     fn SetPixelFormat(hdc: HDC, format: i32, ppfd: *const PIXELFORMATDESCRIPTOR) -> i32;
     fn SwapBuffers(hdc: HDC) -> i32;
-    fn GetDeviceCaps(hdc: HDC, index: i32) -> i32;
 }
 
 #[link(name = "opengl32")]
@@ -399,25 +396,6 @@ fn create_es_context(
     }
 }
 
-/// Query logical client size and physical drawable pixels for HiDPI monitors.
-///
-/// On DPI-unaware processes `GetClientRect` stays logical while the WGL default
-/// framebuffer is allocated at monitor DPI, so we scale by `GetDeviceCaps(LOGPIXELSX)`.
-fn drawable_size(hwnd: HWND, hdc: HDC) -> (i32, i32, i32, i32) {
-    unsafe {
-        let rect = match query_client_rect(hwnd) {
-            Some(rect) => rect,
-            None => return (1, 1, 1, 1),
-        };
-        let logical_w = (rect.right - rect.left).max(1);
-        let logical_h = (rect.bottom - rect.top).max(1);
-        let dpi = GetDeviceCaps(hdc, LOGPIXELSX).max(96);
-        let physical_w = ((logical_w as i64 * dpi as i64 + 48) / 96).max(1) as i32;
-        let physical_h = ((logical_h as i64 * dpi as i64 + 48) / 96).max(1) as i32;
-        (logical_w, logical_h, physical_w, physical_h)
-    }
-}
-
 /// WGL + OpenGL ES graphics context bound to a Win32 HWND.
 pub struct WglContext {
     hwnd: HWND,
@@ -490,8 +468,7 @@ impl WglContext {
                 }
             }
 
-            let (logical_w, logical_h, physical_w, physical_h) = drawable_size(hwnd, hdc);
-            let _ = (width, height);
+            let drawable = drawable_size_from_hdc(hwnd, hdc, width, height);
             let runtime =
                 crate::native::graphics::opengl::NativeOpenGlRuntime::from_loader(|name| {
                     let Some(name) = CString::new(name).ok() else {
@@ -505,7 +482,11 @@ impl WglContext {
                     }
                 });
             let pipeline = match OpenGlRasterPipeline::new(
-                runtime, logical_w, logical_h, physical_w, physical_h,
+                runtime,
+                drawable.logical_width,
+                drawable.logical_height,
+                drawable.width,
+                drawable.height,
             ) {
                 Ok(pipeline) => pipeline,
                 Err(error) => {
@@ -517,16 +498,17 @@ impl WglContext {
                 }
             };
             crate::core::log::info_fn(format!(
-                "WglContext: OpenGL ES context created ({physical_w}x{physical_h} drawable, logical {logical_w}x{logical_h}, pixel_format={pixel_format}, flags={pixel_format_flags:#010X})"
+                "WglContext: OpenGL ES context created ({}x{} drawable, logical {}x{}, pixel_format={pixel_format}, flags={pixel_format_flags:#010X})",
+                drawable.width, drawable.height, drawable.logical_width, drawable.logical_height,
             ));
             Ok(Self {
                 hwnd,
                 hdc,
                 hglrc,
-                logical_width: logical_w,
-                logical_height: logical_h,
-                width: physical_w,
-                height: physical_h,
+                logical_width: drawable.logical_width,
+                logical_height: drawable.logical_height,
+                width: drawable.width,
+                height: drawable.height,
                 pipeline,
             })
         })();
@@ -596,15 +578,18 @@ impl IGraphicsContext for WglContext {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        let _ = (width, height);
         self.make_current()?;
-        let (logical_w, logical_h, physical_w, physical_h) = drawable_size(self.hwnd, self.hdc);
-        self.logical_width = logical_w;
-        self.logical_height = logical_h;
-        self.width = physical_w;
-        self.height = physical_h;
-        self.pipeline
-            .resize_swapchain(logical_w, logical_h, physical_w, physical_h);
+        let drawable = drawable_size_from_hdc(self.hwnd, self.hdc, width, height);
+        self.logical_width = drawable.logical_width;
+        self.logical_height = drawable.logical_height;
+        self.width = drawable.width;
+        self.height = drawable.height;
+        self.pipeline.resize_swapchain(
+            drawable.logical_width,
+            drawable.logical_height,
+            drawable.width,
+            drawable.height,
+        );
         Ok(())
     }
 
@@ -762,20 +747,16 @@ impl Drop for WglContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native::graphics::platform::windows::drawable_size_from_dpi;
     use crate::native::traits::present::{
         GraphicsBackend, PresentDamage, PresentFrame, PresentMode, RasterMode,
     };
 
     #[test]
     fn drawable_size_scales_logical_client_by_monitor_dpi() {
-        let dpi = 192_i32;
-        let logical_w = 1200_i32;
-        let logical_h = 800_i32;
-        let physical_w = ((logical_w as i64 * dpi as i64 + 48) / 96).max(1) as i32;
-        let physical_h = ((logical_h as i64 * dpi as i64 + 48) / 96).max(1) as i32;
-        assert_eq!(physical_w, 2400);
-        assert_eq!(physical_h, 1600);
-        assert!(((physical_w as f32 / logical_w as f32) - 2.0).abs() < f32::EPSILON);
+        let drawable = drawable_size_from_dpi(1200, 800, 192);
+        assert_eq!((drawable.width, drawable.height), (2400, 1600));
+        assert!((drawable.width as f32 / drawable.logical_width as f32 - 2.0).abs() < f32::EPSILON);
     }
 
     #[test]

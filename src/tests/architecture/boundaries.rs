@@ -97,6 +97,38 @@ fn raw_gpu_factory_creation_stays_inside_the_native_factory_bridge() {
     );
 }
 
+#[test]
+fn windows_graphics_contexts_share_the_drawable_dpr_contract() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics");
+    let platform = fs::read_to_string(src.join("platform/windows.rs"))
+        .expect("read shared Windows graphics platform helper");
+    let d3d11 = fs::read_to_string(src.join("d3d11/platform/context.rs"))
+        .expect("read D3D11 graphics context");
+    let d3d12 = fs::read_to_string(src.join("d3d12/platform/context.rs"))
+        .expect("read D3D12 graphics context");
+    let wgl =
+        fs::read_to_string(src.join("opengl/platform/wgl.rs")).expect("read WGL graphics context");
+
+    assert!(
+        platform.contains("pub(crate) struct DrawableSize")
+            && platform.contains("pub(crate) fn drawable_size")
+            && platform.contains("pub(crate) fn drawable_size_from_hdc"),
+        "Windows graphics APIs must share one logical-to-drawable DPR calculation"
+    );
+    for (name, context) in [("D3D11", d3d11), ("D3D12", d3d12)] {
+        assert!(
+            context.contains("win_surface::drawable_size")
+                && context.contains("self.device_pixel_ratio()")
+                && context.contains("fn device_pixel_ratio(&self) -> f32"),
+            "{name} must create, resize, and report caps from the shared drawable DPR"
+        );
+    }
+    assert!(
+        wgl.contains("drawable_size_from_hdc") && !wgl.contains("fn drawable_size("),
+        "WGL must not retain a divergent local DPI calculation"
+    );
+}
+
 fn rust_code_without_comments(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut output = Vec::with_capacity(bytes.len());

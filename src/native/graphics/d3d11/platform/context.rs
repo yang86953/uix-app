@@ -198,6 +198,8 @@ pub struct D3d11Context {
     rtv: Option<ID3D11RenderTargetView>,
     pipeline: D3d11Pipeline,
     adapter_info: D3d11AdapterInfo,
+    logical_width: i32,
+    logical_height: i32,
     width: i32,
     height: i32,
     offscreens: Vec<Option<OffscreenTarget>>,
@@ -215,11 +217,10 @@ impl D3d11Context {
                 "D3d11Context: native window handle is null",
             ));
         }
-        let (client_w, client_h) = win_surface::client_size(native_window, width, height);
-        match create_with_driver(
+        let drawable = win_surface::drawable_size(native_window, width, height);
+        match create_with_drawable(
             native_window,
-            client_w,
-            client_h,
+            drawable,
             &D3D11_FEATURE_LEVELS,
             D3d11DriverKind::Hardware,
         ) {
@@ -229,10 +230,9 @@ impl D3d11Context {
                     "D3d11Context: hardware device unavailable; retrying with WARP: {}",
                     hardware_error.what()
                 ));
-                create_with_driver(
+                create_with_drawable(
                     native_window,
-                    client_w,
-                    client_h,
+                    drawable,
                     &D3D11_FEATURE_LEVELS,
                     D3d11DriverKind::Warp,
                 )
@@ -267,11 +267,10 @@ impl D3d11Context {
                 "D3d11Context: native window handle is null",
             ));
         }
-        let (client_w, client_h) = win_surface::client_size(native_window, width, height);
-        create_with_driver(
+        let drawable = win_surface::drawable_size(native_window, width, height);
+        create_with_drawable(
             native_window,
-            client_w,
-            client_h,
+            drawable,
             &D3D11_FEATURE_LEVELS,
             D3d11DriverKind::Warp,
         )
@@ -452,6 +451,8 @@ fn create_with_driver(
         rtv: None,
         pipeline,
         adapter_info,
+        logical_width: width,
+        logical_height: height,
         width,
         height,
         offscreens: Vec::new(),
@@ -468,9 +469,31 @@ fn create_with_driver(
     Ok(ctx)
 }
 
+fn create_with_drawable(
+    hwnd: HWND_PTR,
+    drawable: win_surface::DrawableSize,
+    feature_levels: &[D3D_FEATURE_LEVEL],
+    driver: D3d11DriverKind,
+) -> Result<D3d11Context> {
+    let mut context = create_with_driver(
+        hwnd,
+        drawable.width,
+        drawable.height,
+        feature_levels,
+        driver,
+    )?;
+    context.logical_width = drawable.logical_width;
+    context.logical_height = drawable.logical_height;
+    Ok(context)
+}
+
 impl IGraphicsContext for D3d11Context {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d11,
+            false,
+            self.device_pixel_ratio(),
+        )
     }
 
     fn graphics_backend(&self) -> GraphicsBackend {
@@ -486,16 +509,16 @@ impl IGraphicsContext for D3d11Context {
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<()> {
-        let (client_w, client_h) = win_surface::client_size(self.hwnd, width, height);
-        if client_w == self.width && client_h == self.height {
+        let drawable = win_surface::drawable_size(self.hwnd, width, height);
+        if drawable.width == self.width && drawable.height == self.height {
             return Ok(());
         }
         self.release_rtv();
         unsafe {
             self.swap_chain.ResizeBuffers(
                 0,
-                client_w as u32,
-                client_h as u32,
+                drawable.width as u32,
+                drawable.height as u32,
                 DXGI_FORMAT_B8G8R8A8_UNORM,
                 DXGI_SWAP_CHAIN_FLAG(0),
             )
@@ -506,8 +529,10 @@ impl IGraphicsContext for D3d11Context {
                 format!("D3d11Context: ResizeBuffers failed: {err}"),
             )
         })?;
-        self.width = client_w;
-        self.height = client_h;
+        self.logical_width = drawable.logical_width;
+        self.logical_height = drawable.logical_height;
+        self.width = drawable.width;
+        self.height = drawable.height;
         self.create_rtv()
     }
 
@@ -618,6 +643,10 @@ impl IGraphicsContext for D3d11Context {
 
     fn height(&self) -> i32 {
         self.height
+    }
+
+    fn device_pixel_ratio(&self) -> f32 {
+        self.width as f32 / self.logical_width.max(1) as f32
     }
 
     fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<()> {
@@ -1345,7 +1374,11 @@ mod tests {
             .expect("window");
         let surface = window.native_surface_ptr();
         let mut ctx = D3d11Context::new(surface, 320, 240).expect("D3d11Context");
-        assert_eq!((ctx.width(), ctx.height()), (320, 240));
+        let initial_drawable = win_surface::drawable_size(surface, 320, 240);
+        assert_eq!(
+            (ctx.width(), ctx.height()),
+            (initial_drawable.width, initial_drawable.height)
+        );
 
         // Grow the HWND; D3D11 resize reads GetClientRect.
         window
@@ -1355,17 +1388,27 @@ mod tests {
         // Pump messages so WM_SIZE updates the client rect before GetClientRect.
         let _ = platform.event_loop().poll_event(&|_| true);
 
-        let (cw, ch) = win_surface::client_size(surface, 1, 1);
+        let drawable = win_surface::drawable_size(surface, 1, 1);
         assert!(
-            cw > 320 && ch > 240,
-            "client should grow after set_size, got {cw}x{ch}"
+            drawable.logical_width > 320 && drawable.logical_height > 240,
+            "client should grow after set_size, got {}x{}",
+            drawable.logical_width,
+            drawable.logical_height
         );
 
-        ctx.resize(cw, ch).expect("resize after client-size change");
+        let (cw, ch) = (drawable.width, drawable.height);
+        ctx.resize(drawable.logical_width, drawable.logical_height)
+            .expect("resize after client-size change");
         assert_eq!(
             (ctx.width(), ctx.height()),
             (cw, ch),
-            "D3D11 context must adopt GetClientRect after resize"
+            "D3D11 context must adopt the shared physical drawable extent after resize"
+        );
+        assert!(
+            (ctx.caps().device_pixel_ratio - drawable.width as f32 / drawable.logical_width as f32)
+                .abs()
+                < f32::EPSILON,
+            "D3D11 caps must report the drawable-to-logical DPR"
         );
 
         ctx.clear_render_target(1.0, 0.0, 0.0, 1.0)

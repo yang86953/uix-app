@@ -353,6 +353,8 @@ pub struct D3d12Context {
     recording: bool,
     pending_gpu_resources: Vec<ID3D12Resource>,
     adapter_info: D3d12AdapterInfo,
+    logical_width: i32,
+    logical_height: i32,
     width: i32,
     height: i32,
     fault: Option<String>,
@@ -419,7 +421,7 @@ impl D3d12Context {
         factory: IDXGIFactory4,
         driver: D3d12DriverKind,
     ) -> Result<Self> {
-        let (client_w, client_h) = win_surface::client_size(native_window, width, height);
+        let drawable = win_surface::drawable_size(native_window, width, height);
         let (adapter, device, adapter_info) = match driver {
             D3d12DriverKind::Hardware => select_hardware_adapter(&factory)?,
             D3d12DriverKind::Warp => select_warp_adapter(&factory)?,
@@ -432,7 +434,7 @@ impl D3d12Context {
         };
         let queue: ID3D12CommandQueue = unsafe { device.CreateCommandQueue(&queue_desc) }
             .map_err(|error| d3d12_error("ID3D12Device::CreateCommandQueue", error))?;
-        let desc = swap_chain_desc(client_w, client_h);
+        let desc = swap_chain_desc(drawable.width, drawable.height);
         let swap_chain1 = unsafe {
             factory.CreateSwapChainForHwnd(
                 &queue,
@@ -510,16 +512,18 @@ impl D3d12Context {
             recording: false,
             pending_gpu_resources: Vec::new(),
             adapter_info,
-            width: client_w,
-            height: client_h,
+            logical_width: drawable.logical_width,
+            logical_height: drawable.logical_height,
+            width: drawable.width,
+            height: drawable.height,
             fault: None,
             shutdown: false,
         };
         context.rebuild_back_buffers()?;
         crate::core::log::info_fn(format!(
             "D3d12Context: created {}x{} flip-discard swapchain; {}",
-            client_w,
-            client_h,
+            drawable.width,
+            drawable.height,
             context.adapter_info.diagnostic_summary()
         ));
         Ok(context)
@@ -737,8 +741,8 @@ impl D3d12Context {
 
     fn resize_result(&mut self, width: i32, height: i32) -> Result<()> {
         self.ensure_healthy()?;
-        let (client_w, client_h) = win_surface::client_size(self.hwnd, width, height);
-        if client_w == self.width && client_h == self.height {
+        let drawable = win_surface::drawable_size(self.hwnd, width, height);
+        if drawable.width == self.width && drawable.height == self.height {
             return Ok(());
         }
         // ResizeBuffers requires every reference released. Normalize the current
@@ -751,8 +755,8 @@ impl D3d12Context {
         let resize_result = unsafe {
             self.swap_chain.ResizeBuffers(
                 FRAME_COUNT as u32,
-                client_w as u32,
-                client_h as u32,
+                drawable.width as u32,
+                drawable.height as u32,
                 DXGI_FORMAT_B8G8R8A8_UNORM,
                 DXGI_SWAP_CHAIN_FLAG(0),
             )
@@ -772,8 +776,10 @@ impl D3d12Context {
             }
             return Err(resize_error);
         }
-        self.width = client_w;
-        self.height = client_h;
+        self.logical_width = drawable.logical_width;
+        self.logical_height = drawable.logical_height;
+        self.width = drawable.width;
+        self.height = drawable.height;
         self.fence_values = [0; FRAME_COUNT];
         if let Err(error) = self.rebuild_back_buffers() {
             self.latch_fault("rebuild resized back buffers", &error);
@@ -985,7 +991,11 @@ impl D3d12Context {
 
 impl IGraphicsContext for D3d12Context {
     fn caps(&self) -> GraphicsContextCaps {
-        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d12, false, 1.0)
+        GraphicsContextCaps::gpu_native_swapchain(
+            GraphicsBackend::D3d12,
+            false,
+            self.device_pixel_ratio(),
+        )
     }
 
     fn native_raster_caps(&self) -> NativeRasterCaps {
@@ -1051,6 +1061,10 @@ impl IGraphicsContext for D3d12Context {
 
     fn height(&self) -> i32 {
         self.height
+    }
+
+    fn device_pixel_ratio(&self) -> f32 {
+        self.width as f32 / self.logical_width.max(1) as f32
     }
 
     fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<()> {
@@ -1232,6 +1246,18 @@ mod tests {
         assert_eq!(context.caps().raster, RasterMode::GpuNative);
         assert_eq!(context.caps().present, PresentMode::Swapchain);
         assert!(!context.caps().partial_present);
+        let drawable = win_surface::drawable_size(surface, 65, 37);
+        assert_eq!(
+            (context.width(), context.height()),
+            (drawable.width, drawable.height)
+        );
+        assert!(
+            (context.caps().device_pixel_ratio
+                - drawable.width as f32 / drawable.logical_width as f32)
+                .abs()
+                < f32::EPSILON,
+            "D3D12 caps must report the drawable-to-logical DPR"
+        );
         assert_eq!(
             context.native_raster_caps(),
             NativeRasterCaps {
