@@ -567,7 +567,7 @@ fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_prese
     let images = ImageService::new();
 
     let mut direct_renderer = FrameRenderer::new();
-    let direct_scene = EligiblePictureScene::mixed_direct();
+    let direct_scene = EligiblePictureScene::mixed_direct_overlay();
     let direct = direct_renderer.render_frame(
         &mut engine,
         &direct_scene,
@@ -607,7 +607,7 @@ fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_prese
     assert_eq!(
         direct_pixels[150 * 300 + 150],
         Color::from_rgb(30, 180, 80).premultiplied(),
-        "direct CPU fallback must reach the real FrameEncoder executor"
+        "direct root-level overlay must reach the real FrameEncoder executor"
     );
 
     let mut picture_renderer = FrameRenderer::new();
@@ -703,7 +703,7 @@ fn frame_renderer_wgl_executes_direct_and_picture_recordings_before_present() {
     };
 
     let mut direct_renderer = FrameRenderer::new();
-    let direct_scene = EligiblePictureScene::mixed_direct();
+    let direct_scene = EligiblePictureScene::mixed_direct_overlay();
     let direct = direct_renderer.render_frame(
         &mut engine,
         &direct_scene,
@@ -739,7 +739,7 @@ fn frame_renderer_wgl_executes_direct_and_picture_recordings_before_present() {
     assert_eq!(
         rgba_to_aarrggbb(logical_pixel(direct_pixels, 150, 150)),
         Color::from_rgb(30, 180, 80).premultiplied(),
-        "direct CPU fallback must reach the real FrameEncoder executor"
+        "direct root-level overlay must reach the real FrameEncoder executor"
     );
 
     let mut picture_renderer = FrameRenderer::new();
@@ -987,6 +987,7 @@ struct EligiblePictureScene {
     root_dirty: Cell<bool>,
     child_dirty: Cell<bool>,
     include_cpu_fallback: bool,
+    cpu_fallback_is_overlay: bool,
     picture_policy: crate::draw::compositor::PicturePolicy,
 }
 
@@ -996,6 +997,7 @@ impl EligiblePictureScene {
             root_dirty: Cell::new(true),
             child_dirty: Cell::new(false),
             include_cpu_fallback: false,
+            cpu_fallback_is_overlay: false,
             picture_policy: crate::draw::compositor::PicturePolicy::Eligible,
         }
     }
@@ -1022,6 +1024,14 @@ impl EligiblePictureScene {
             ..Self::mixed()
         }
     }
+
+    #[cfg(any(feature = "d3d11", feature = "opengles"))]
+    fn mixed_direct_overlay() -> Self {
+        Self {
+            cpu_fallback_is_overlay: true,
+            ..Self::mixed_direct()
+        }
+    }
 }
 
 impl ScenePaint for EligiblePictureScene {
@@ -1039,6 +1049,10 @@ impl ScenePaint for EligiblePictureScene {
 
     fn node_visible(&self, id: crate::draw::pipeline::NodeId) -> bool {
         (1..=8).any(|slot| id == crate::draw::pipeline::NodeId::new(slot))
+    }
+
+    fn node_is_overlay(&self, id: crate::draw::pipeline::NodeId) -> bool {
+        self.cpu_fallback_is_overlay && id == crate::draw::pipeline::NodeId::new(3)
     }
 
     fn node_frame(&self, _: crate::draw::pipeline::NodeId) -> Rect {
