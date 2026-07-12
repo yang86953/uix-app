@@ -5,21 +5,23 @@
 
 use crate::core::{Error, Rect};
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
-use crate::draw::engine::RenderOutcome;
+use crate::draw::engine::{GraphicsFailure, RenderOutcome};
 use crate::draw::pipeline::RenderSession;
+use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::draw::ImageHandle;
-use crate::native::traits::present::{IGraphicsContext, PresentFrame};
+use crate::native::traits::present::{IGraphicsContext, PresentDamage, PresentFrame};
 
 pub struct PresentUploadEngine {
     session: RenderSession,
     gpu_ctx: Box<dyn IGraphicsContext>,
     pub clear_color: Color,
+    shutdown: bool,
 }
 
 impl PresentUploadEngine {
-    pub fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+    pub(crate) fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         let session = match RenderSession::new(BackendKind::Cpu) {
             Ok(session) => session,
             Err(err) => {
@@ -32,6 +34,7 @@ impl PresentUploadEngine {
             session,
             gpu_ctx,
             clear_color: Color::from_rgba(0, 0, 0, 0),
+            shutdown: false,
         })
     }
 
@@ -63,19 +66,23 @@ impl GraphicsEngine for PresentUploadEngine {
     }
 
     fn shutdown(&mut self) {
+        if self.shutdown {
+            return;
+        }
+        self.shutdown = true;
         self.session.shutdown();
         self.gpu_ctx.shutdown();
     }
 
-    fn resize(&mut self, width: i32, height: i32) {
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         let logical_w = width.max(1);
         let logical_h = height.max(1);
-        self.gpu_ctx.resize(logical_w, logical_h);
+        self.gpu_ctx.resize(logical_w, logical_h)?;
         // 与 NativeGpuBackend 一致：CPU 表面跟 GPU 实际客户区对齐。
         let actual_w = self.gpu_ctx.width().max(1);
         let actual_h = self.gpu_ctx.height().max(1);
         self.sync_clear_color();
-        self.session.resize(actual_w, actual_h);
+        self.session.resize(actual_w, actual_h)
     }
 
     fn begin_frame(&mut self, _strategy: UpdateStrategy) -> RenderOutcome {
@@ -85,12 +92,22 @@ impl GraphicsEngine for PresentUploadEngine {
 
     fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
         let outcome = self.session.end_frame();
+        if matches!(outcome, RenderOutcome::Failed(_)) {
+            return outcome;
+        }
         if let Some(cpu) = self.session.cpu_backend() {
             let frame = PresentFrame::PixelBuffer {
                 pixels: cpu.pixels(),
                 width: cpu.width(),
                 height: cpu.height(),
-                damage: present_damage.to_present_damage(),
+                // CPU upload has the same preservation precondition as a
+                // swapchain present. Do not let a caller turn an unproven
+                // partial-present context into a partial redraw path.
+                damage: if self.gpu_ctx.caps().partial_present {
+                    present_damage.to_present_damage()
+                } else {
+                    PresentDamage::Full
+                },
             };
             if let Err(err) = self.gpu_ctx.present(&frame) {
                 crate::core::log::error_fn(format!(
@@ -98,6 +115,7 @@ impl GraphicsEngine for PresentUploadEngine {
                     self.backend_name(),
                     err.short_what()
                 ));
+                return RenderOutcome::Failed(GraphicsFailure::from_error(err));
             }
         }
         outcome
@@ -156,16 +174,49 @@ impl GraphicsEngine for PresentUploadEngine {
         self.session.cpu_backend()?.copy_offscreen_pixels(handle)
     }
 
+    fn try_execute_encoded_picture(
+        &mut self,
+        handle: &ImageHandle,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedPictureExecution, Error> {
+        self.session
+            .backend_mut()
+            .try_execute_encoded_picture(handle, encoder)
+    }
+
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
         self.session.backend_mut().begin_offscreen_paint(handle)
+    }
+
+    fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        self.session.backend_mut().try_begin_offscreen_paint(handle)
     }
 
     fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
         self.session.backend_mut().flush_offscreen_paint(handle);
     }
 
+    fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        self.session.backend_mut().try_flush_offscreen_paint(handle)
+    }
+
     fn end_offscreen_paint(&mut self) {
         self.session.backend_mut().end_offscreen_paint();
+    }
+
+    fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
+        self.session.backend_mut().try_end_offscreen_paint()
+    }
+
+    fn try_blit_offscreen_src(
+        &mut self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) -> Result<(), Error> {
+        self.session
+            .backend_mut()
+            .try_blit_offscreen_src(handle, src_rect, dst_rect)
     }
 
     fn memory_usage(&self) -> usize {
@@ -176,6 +227,12 @@ impl GraphicsEngine for PresentUploadEngine {
     }
 }
 
+impl Drop for PresentUploadEngine {
+    fn drop(&mut self) {
+        <Self as GraphicsEngine>::shutdown(self);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,7 +240,10 @@ mod tests {
     use crate::native::traits::present::{
         GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
     };
-    use std::sync::{Arc, Mutex};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    };
 
     #[derive(Clone, Debug, PartialEq)]
     struct PresentedFrame {
@@ -198,6 +258,10 @@ mod tests {
         frame: Arc<Mutex<Option<PresentedFrame>>>,
         width: i32,
         height: i32,
+        fail_present: bool,
+        fail_resize: bool,
+        partial_present: bool,
+        shutdowns: Arc<AtomicUsize>,
     }
 
     impl RecordingPixelContext {
@@ -206,13 +270,19 @@ mod tests {
                 frame,
                 width: 0,
                 height: 0,
+                fail_present: false,
+                fail_resize: false,
+                partial_present: false,
+                shutdowns: Arc::new(AtomicUsize::new(0)),
             }
         }
     }
 
     impl IGraphicsContext for RecordingPixelContext {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0)
+            let mut caps = GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0);
+            caps.partial_present = self.partial_present;
+            caps
         }
 
         fn graphics_backend(&self) -> GraphicsBackend {
@@ -230,16 +300,30 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, width: i32, height: i32) {
+        fn resize(&mut self, width: i32, height: i32) -> crate::core::Result<()> {
+            if self.fail_resize {
+                return Err(Error::new(
+                    crate::core::error::Errc::GraphicsSurfaceLost,
+                    "injected resize failure",
+                ));
+            }
             self.width = width;
             self.height = height;
+
+            Ok(())
         }
 
-        fn make_current(&mut self) {}
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
 
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
 
-        fn shutdown(&mut self) {}
+        fn shutdown(&mut self) {
+            self.shutdowns.fetch_add(1, Ordering::SeqCst);
+        }
 
         fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
             Vec::new()
@@ -260,6 +344,12 @@ mod tests {
             height: i32,
             damage: PresentDamage,
         ) -> Result<()> {
+            if self.fail_present {
+                return Err(Error::new(
+                    crate::core::error::Errc::PlatformError,
+                    "injected pixel-present failure",
+                ));
+            }
             *self.frame.lock().unwrap() = Some(PresentedFrame {
                 width,
                 height,
@@ -268,6 +358,38 @@ mod tests {
             });
             Ok(())
         }
+    }
+
+    #[test]
+    fn present_upload_engine_does_not_report_present_after_context_failure() {
+        let frame = Arc::new(Mutex::new(None));
+        let mut context = RecordingPixelContext::new(frame.clone());
+        context.fail_present = true;
+        let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
+
+        engine.initialize(4, 3).unwrap();
+        let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+
+        assert!(matches!(
+            engine.end_frame(&DamageRegion::full()),
+            RenderOutcome::Failed(GraphicsFailure::Other(error))
+                if error.code() == crate::core::error::Errc::PlatformError
+        ));
+        assert_eq!(*frame.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn present_upload_engine_propagates_resize_failure_without_committing_new_extent() {
+        let frame = Arc::new(Mutex::new(None));
+        let mut context = RecordingPixelContext::new(frame);
+        context.fail_resize = true;
+        let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
+        engine.initialize(4, 3).unwrap();
+
+        let error = engine.resize(8, 6).expect_err("resize must be observable");
+
+        assert_eq!(error.code(), crate::core::error::Errc::GraphicsSurfaceLost);
+        assert_eq!((engine.session.width(), engine.session.height()), (4, 3));
     }
 
     #[test]
@@ -293,5 +415,59 @@ mod tests {
             engine.capabilities(),
             GraphicsCapabilities::engine_managed_with_offscreen()
         );
+    }
+
+    #[test]
+    fn present_upload_upgrades_partial_damage_when_context_does_not_prove_preservation() {
+        let frame = Arc::new(Mutex::new(None));
+        let context = RecordingPixelContext::new(frame.clone());
+        let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
+
+        engine.initialize(4, 3).unwrap();
+        let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+        let _ = engine.end_frame(&DamageRegion::partial(vec![Rect::new(1.0, 1.0, 2.0, 1.0)]));
+
+        assert_eq!(
+            frame
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|presented| &presented.damage),
+            Some(&PresentDamage::Full)
+        );
+    }
+
+    #[test]
+    fn present_upload_forwards_partial_damage_only_when_context_proves_preservation() {
+        let frame = Arc::new(Mutex::new(None));
+        let mut context = RecordingPixelContext::new(frame.clone());
+        context.partial_present = true;
+        let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
+
+        engine.initialize(4, 3).unwrap();
+        let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+        let _ = engine.end_frame(&DamageRegion::partial(vec![Rect::new(1.0, 1.0, 2.0, 1.0)]));
+
+        assert_eq!(
+            frame
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|presented| &presented.damage),
+            Some(&PresentDamage::Partial(vec![(1, 1, 2, 1)]))
+        );
+    }
+
+    #[test]
+    fn present_upload_shutdown_and_drop_release_context_once() {
+        let frame = Arc::new(Mutex::new(None));
+        let context = RecordingPixelContext::new(frame);
+        let shutdowns = context.shutdowns.clone();
+        let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
+
+        engine.shutdown();
+        drop(engine);
+
+        assert_eq!(shutdowns.load(Ordering::SeqCst), 1);
     }
 }

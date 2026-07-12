@@ -86,8 +86,9 @@ impl GraphicsEngine for ShutdownTrackingEngine {
         self.inner.shutdown();
     }
 
-    fn resize(&mut self, w: i32, h: i32) {
-        self.inner.resize(w, h);
+    fn resize(&mut self, w: i32, h: i32) -> Result<(), Error> {
+        self.inner.resize(w, h)?;
+        Ok(())
     }
 
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {

@@ -15,10 +15,10 @@ use std::mem::size_of;
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
-    GpuSolidRect, GpuStrokeRect,
+    GpuSolidRect, GpuStrokeRect, SoftFallbackTile,
 };
 use ::windows::core::PCSTR;
-use ::windows::Win32::Foundation::{FALSE, TRUE};
+use ::windows::Win32::Foundation::{FALSE, RECT, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use ::windows::Win32::Graphics::Direct3D::{
     ID3DBlob, D3D11_SRV_DIMENSION_TEXTURE2D, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
@@ -146,6 +146,12 @@ const BLIT_HLSL: &str = r#"
 Texture2D u_tex : register(t0);
 SamplerState u_samp : register(s0);
 
+cbuffer BlitCB : register(b0)
+{
+    // xy = source top-left; zw = source size, both normalized to the SRV.
+    float4 u_uv_rect;
+};
+
 struct VSIn {
     float2 pos : POSITION;
 };
@@ -160,7 +166,8 @@ VSOut VSMain(VSIn input)
     VSOut o;
     o.pos = float4(input.pos, 0.0, 1.0);
     // D3D texture (0,0) is top-left; CPU soft buffer is top-left row-major.
-    o.uv = float2(input.pos.x * 0.5 + 0.5, 0.5 - input.pos.y * 0.5);
+    float2 unit_uv = float2(input.pos.x * 0.5 + 0.5, 0.5 - input.pos.y * 0.5);
+    o.uv = u_uv_rect.xy + unit_uv * u_uv_rect.zw;
     return o;
 }
 
@@ -427,6 +434,28 @@ struct RectConstants {
     stroke: [f32; 4],
 }
 
+#[cfg(test)]
+mod tests {
+    use super::visible_pixel_bounds;
+
+    #[test]
+    fn soft_upload_bounds_is_tight_and_ignores_transparent_pixels() {
+        let mut pixels = vec![0u32; 8 * 6];
+        pixels[8 + 2] = 0xFF00_0001;
+        pixels[3 * 8 + 5] = 0x8000_0002;
+        pixels[5 * 8 + 7] = 0x0000_00FF;
+
+        assert_eq!(visible_pixel_bounds(&pixels, 8, 6), Some((2, 1, 4, 3)));
+        assert_eq!(visible_pixel_bounds(&[0; 4], 2, 2), None);
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct BlitConstants {
+    uv_rect: [f32; 4],
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct GlyphConstants {
@@ -480,6 +509,45 @@ struct AtlasCursor {
     x: u32,
     y: u32,
     row_h: u32,
+}
+
+struct RasterState {
+    viewports: Vec<D3D11_VIEWPORT>,
+    scissors: Vec<RECT>,
+}
+
+impl RasterState {
+    fn capture(context: &ID3D11DeviceContext) -> Self {
+        unsafe {
+            let mut viewport_count = 0;
+            context.RSGetViewports(&mut viewport_count, None);
+            let mut viewports = vec![D3D11_VIEWPORT::default(); viewport_count as usize];
+            if !viewports.is_empty() {
+                context.RSGetViewports(&mut viewport_count, Some(viewports.as_mut_ptr()));
+                viewports.truncate(viewport_count as usize);
+            }
+
+            let mut scissor_count = 0;
+            context.RSGetScissorRects(&mut scissor_count, None);
+            let mut scissors = vec![RECT::default(); scissor_count as usize];
+            if !scissors.is_empty() {
+                context.RSGetScissorRects(&mut scissor_count, Some(scissors.as_mut_ptr()));
+                scissors.truncate(scissor_count as usize);
+            }
+
+            Self {
+                viewports,
+                scissors,
+            }
+        }
+    }
+
+    fn restore(&self, context: &ID3D11DeviceContext) {
+        unsafe {
+            context.RSSetViewports((!self.viewports.is_empty()).then_some(&self.viewports));
+            context.RSSetScissorRects((!self.scissors.is_empty()).then_some(&self.scissors));
+        }
+    }
 }
 
 fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
@@ -588,6 +656,46 @@ fn next_pow2_u32(v: u32) -> u32 {
     v.next_power_of_two().max(1)
 }
 
+/// Tight top-left pixel bounds of visible straight-alpha CPU fallback data.
+///
+/// The native soft texture persists between ordered segments, so callers must
+/// upload and sample exactly this box; sampling a fullscreen quad would draw
+/// stale texture contents outside the current CPU segment.
+fn visible_pixel_bounds(pixels: &[u32], width: i32, height: i32) -> Option<(i32, i32, i32, i32)> {
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    let width = width as usize;
+    let count = pixels.len().min(width.saturating_mul(height as usize));
+    let mut min_x = width;
+    let mut min_y = height as usize;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    let mut any = false;
+
+    for (index, pixel) in pixels.iter().take(count).enumerate() {
+        if (pixel >> 24) == 0 {
+            continue;
+        }
+        let x = index % width;
+        let y = index / width;
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+        any = true;
+    }
+
+    any.then(|| {
+        (
+            min_x as i32,
+            min_y as i32,
+            (max_x - min_x + 1) as i32,
+            (max_y - min_y + 1) as i32,
+        )
+    })
+}
+
 pub struct D3d11Pipeline {
     vs_rect: ID3D11VertexShader,
     ps_rect: ID3D11PixelShader,
@@ -610,6 +718,7 @@ pub struct D3d11Pipeline {
     vb_mesh: ID3D11Buffer,
     vb_mesh_capacity_floats: usize,
     cb: ID3D11Buffer,
+    cb_blit: ID3D11Buffer,
     cb_glyph: ID3D11Buffer,
     cb_grad: ID3D11Buffer,
     cb_mesh: ID3D11Buffer,
@@ -938,6 +1047,23 @@ impl D3d11Pipeline {
         }
         let cb = cb.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no CB"))?;
 
+        let cb_blit_desc = D3D11_BUFFER_DESC {
+            ByteWidth: size_of::<BlitConstants>() as u32,
+            Usage: D3D11_USAGE_DYNAMIC,
+            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
+            MiscFlags: 0,
+            StructureByteStride: 0,
+        };
+        let mut cb_blit = None;
+        unsafe {
+            device
+                .CreateBuffer(&cb_blit_desc, None, Some(&mut cb_blit))
+                .map_err(|e| d3d_error("CreateBuffer(cb_blit)", e))?;
+        }
+        let cb_blit =
+            cb_blit.ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blit CB"))?;
+
         let cb_glyph_desc = D3D11_BUFFER_DESC {
             ByteWidth: size_of::<GlyphConstants>() as u32,
             Usage: D3D11_USAGE_DYNAMIC,
@@ -1116,6 +1242,7 @@ impl D3d11Pipeline {
             vb_mesh,
             vb_mesh_capacity_floats,
             cb,
+            cb_blit,
             cb_glyph,
             cb_grad,
             cb_mesh,
@@ -2136,6 +2263,63 @@ impl D3d11Pipeline {
                 ),
             ));
         }
+        let Some((x, y, upload_w, upload_h)) = visible_pixel_bounds(pixels, width, height) else {
+            return Ok(());
+        };
+        self.blit_soft_fallback_tile(
+            device,
+            context,
+            pixels,
+            width,
+            height,
+            SoftFallbackTile::new(x, y, upload_w, upload_h),
+        )
+    }
+
+    pub fn blit_soft_fallback_tile(
+        &mut self,
+        device: &ID3D11Device,
+        context: &ID3D11DeviceContext,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        tile: SoftFallbackTile,
+    ) -> Result<()> {
+        if width <= 0 || height <= 0 {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!("D3d11Pipeline: invalid soft surface {width}x{height}"),
+            ));
+        }
+        let expected = (width as usize).saturating_mul(height as usize);
+        if pixels.len() < expected {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "D3d11Pipeline: soft blit buffer too small, got {}, need {expected}",
+                    pixels.len()
+                ),
+            ));
+        }
+        if tile.x < 0
+            || tile.y < 0
+            || tile.width <= 0
+            || tile.height <= 0
+            || tile.x.saturating_add(tile.width) > width
+            || tile.y.saturating_add(tile.height) > height
+        {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "D3d11Pipeline: invalid soft tile {}x{}+{},{} for {width}x{height}",
+                    tile.width, tile.height, tile.x, tile.y
+                ),
+            ));
+        }
+        let x = tile.x;
+        let y = tile.y;
+        let upload_w = tile.width;
+        let upload_h = tile.height;
         self.ensure_soft_texture(device, width, height)?;
         let Some(tex) = self.soft_tex.as_ref() else {
             return Err(Error::new(
@@ -2149,26 +2333,53 @@ impl D3d11Pipeline {
                 "D3d11Pipeline: soft SRV missing",
             ));
         };
+        let constants = BlitConstants {
+            uv_rect: [
+                x as f32 / width as f32,
+                y as f32 / height as f32,
+                upload_w as f32 / width as f32,
+                upload_h as f32 / height as f32,
+            ],
+        };
+        let upload_box = D3D11_BOX {
+            left: x as u32,
+            top: y as u32,
+            front: 0,
+            right: (x + upload_w) as u32,
+            bottom: (y + upload_h) as u32,
+            back: 1,
+        };
+        let source_start = (y as usize)
+            .saturating_mul(width as usize)
+            .saturating_add(x as usize);
 
         unsafe {
-            context.UpdateSubresource(tex, 0, None, pixels.as_ptr().cast(), (width as u32) * 4, 0);
+            context.UpdateSubresource(
+                tex,
+                0,
+                Some(&upload_box),
+                pixels[source_start..].as_ptr().cast(),
+                (width as u32) * 4,
+                0,
+            );
 
-            // The soft texture represents the entire surface. Native draws
-            // before it may have narrowed the D3D scissor to a ScrollView, so
-            // never inherit that state when compositing this fallback layer.
+            // Native draws before this segment may have narrowed the D3D
+            // scissor to a ScrollView. Set the exact soft bounds explicitly,
+            // both to avoid inheriting that state and to avoid sampling stale
+            // pixels from prior ordered CPU segments.
             let viewport = D3D11_VIEWPORT {
-                TopLeftX: 0.0,
-                TopLeftY: 0.0,
-                Width: width as f32,
-                Height: height as f32,
+                TopLeftX: x as f32,
+                TopLeftY: y as f32,
+                Width: upload_w as f32,
+                Height: upload_h as f32,
                 MinDepth: 0.0,
                 MaxDepth: 1.0,
             };
             let scissor = ::windows::Win32::Foundation::RECT {
-                left: 0,
-                top: 0,
-                right: width,
-                bottom: height,
+                left: x,
+                top: y,
+                right: x + upload_w,
+                bottom: y + upload_h,
             };
             context.RSSetViewports(Some(&[viewport]));
             context.RSSetScissorRects(Some(&[scissor]));
@@ -2186,6 +2397,23 @@ impl D3d11Pipeline {
             );
             context.VSSetShader(&self.vs_blit, None);
             context.PSSetShader(&self.ps_blit, None);
+            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            context
+                .Map(
+                    &self.cb_blit,
+                    0,
+                    D3D11_MAP_WRITE_DISCARD,
+                    0,
+                    Some(&mut mapped),
+                )
+                .map_err(|e| d3d_error("Map(cb_blit soft fallback)", e))?;
+            std::ptr::copy_nonoverlapping(
+                (&constants as *const BlitConstants).cast::<u8>(),
+                mapped.pData.cast(),
+                size_of::<BlitConstants>(),
+            );
+            context.Unmap(&self.cb_blit, 0);
+            context.VSSetConstantBuffers(0, Some(&[Some(self.cb_blit.clone())]));
             context.PSSetShaderResources(0, Some(&[Some(srv.clone())]));
             context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
             context.RSSetState(&self.rasterizer);
@@ -2205,12 +2433,39 @@ impl D3d11Pipeline {
         &self,
         context: &ID3D11DeviceContext,
         srv: &ID3D11ShaderResourceView,
+        source_w: f32,
+        source_h: f32,
         target_w: f32,
         target_h: f32,
+        src: crate::core::Rect,
         dst: crate::core::Rect,
     ) -> Result<()> {
-        if dst.w <= 0.0 || dst.h <= 0.0 || target_w <= 0.0 || target_h <= 0.0 {
+        if dst.w <= 0.0
+            || dst.h <= 0.0
+            || source_w <= 0.0
+            || source_h <= 0.0
+            || target_w <= 0.0
+            || target_h <= 0.0
+        {
             return Ok(());
+        }
+        let src_right = src.x + src.w;
+        let src_bottom = src.y + src.h;
+        if !src.x.is_finite()
+            || !src.y.is_finite()
+            || !src.w.is_finite()
+            || !src.h.is_finite()
+            || src.w <= 0.0
+            || src.h <= 0.0
+            || src.x < 0.0
+            || src.y < 0.0
+            || src_right > source_w
+            || src_bottom > source_h
+        {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                "D3d11Pipeline: source crop lies outside the offscreen target",
+            ));
         }
         let vp = D3D11_VIEWPORT {
             TopLeftX: dst.x,
@@ -2220,37 +2475,65 @@ impl D3d11Pipeline {
             MinDepth: 0.0,
             MaxDepth: 1.0,
         };
-        let restore = D3D11_VIEWPORT {
-            TopLeftX: 0.0,
-            TopLeftY: 0.0,
-            Width: target_w,
-            Height: target_h,
-            MinDepth: 0.0,
-            MaxDepth: 1.0,
+        let full_scissor = RECT {
+            left: 0,
+            top: 0,
+            right: target_w.ceil() as i32,
+            bottom: target_h.ceil() as i32,
         };
-        unsafe {
-            context.RSSetViewports(Some(&[vp]));
-            let stride = (2 * size_of::<f32>()) as u32;
-            let offset = 0u32;
-            context.IASetInputLayout(&self.layout);
-            context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            context.IASetVertexBuffers(
-                0,
-                1,
-                Some(&Some(self.vb_fullscreen.clone())),
-                Some(&stride),
-                Some(&offset),
-            );
-            context.VSSetShader(&self.vs_blit, None);
-            context.PSSetShader(&self.ps_blit, None);
-            context.PSSetShaderResources(0, Some(&[Some(srv.clone())]));
-            context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
-            context.RSSetState(&self.rasterizer);
-            context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
-            context.Draw(6, 0);
-            context.PSSetShaderResources(0, Some(&[None]));
-            context.RSSetViewports(Some(&[restore]));
-        }
-        Ok(())
+        let constants = BlitConstants {
+            uv_rect: [
+                src.x / source_w,
+                src.y / source_h,
+                src.w / source_w,
+                src.h / source_h,
+            ],
+        };
+        let previous_raster_state = RasterState::capture(context);
+        let result = (|| -> Result<()> {
+            unsafe {
+                context.RSSetViewports(Some(&[vp]));
+                context.RSSetScissorRects(Some(&[full_scissor]));
+                let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                context
+                    .Map(
+                        &self.cb_blit,
+                        0,
+                        D3D11_MAP_WRITE_DISCARD,
+                        0,
+                        Some(&mut mapped),
+                    )
+                    .map_err(|e| d3d_error("Map(cb_blit)", e))?;
+                std::ptr::copy_nonoverlapping(
+                    (&constants as *const BlitConstants).cast::<u8>(),
+                    mapped.pData.cast(),
+                    size_of::<BlitConstants>(),
+                );
+                context.Unmap(&self.cb_blit, 0);
+                let stride = (2 * size_of::<f32>()) as u32;
+                let offset = 0u32;
+                context.IASetInputLayout(&self.layout);
+                context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                context.IASetVertexBuffers(
+                    0,
+                    1,
+                    Some(&Some(self.vb_fullscreen.clone())),
+                    Some(&stride),
+                    Some(&offset),
+                );
+                context.VSSetShader(&self.vs_blit, None);
+                context.PSSetShader(&self.ps_blit, None);
+                context.VSSetConstantBuffers(0, Some(&[Some(self.cb_blit.clone())]));
+                context.PSSetShaderResources(0, Some(&[Some(srv.clone())]));
+                context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+                context.RSSetState(&self.rasterizer);
+                context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+                context.Draw(6, 0);
+                context.PSSetShaderResources(0, Some(&[None]));
+            }
+            Ok(())
+        })();
+        previous_raster_state.restore(context);
+        result
     }
 }

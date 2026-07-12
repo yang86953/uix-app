@@ -16,7 +16,7 @@ use crate::native::traits::present::{IGraphicsContext, PresentMode, RasterMode};
 /// (app builds [`crate::draw::SoftwareEngine`] + [`crate::native::traits::IPresenter`]).
 ///
 /// On failure the context is shut down before the error is returned (M3).
-pub fn create_graphics_engine(
+pub(crate) fn create_graphics_engine(
     mut context: Box<dyn IGraphicsContext>,
 ) -> Result<Box<dyn GraphicsEngine>, Error> {
     let caps = context.caps();
@@ -86,9 +86,15 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
-        fn make_current(&mut self) {}
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
         fn shutdown(&mut self) {}
         fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
             Vec::new()

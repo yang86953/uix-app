@@ -1,6 +1,6 @@
 ﻿//! Picture 离屏缓存栅格化与合成（Phase 4）。
 
-use crate::core::Rect;
+use crate::core::{Errc, Error, Point, Rect};
 
 use super::layer_tree::{LayerNode, LayerTree};
 use crate::core::DirtyRegion;
@@ -10,7 +10,6 @@ use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, ThemeTokens};
 use crate::draw::pipeline::NodeId;
-use crate::draw::primitives::color::Color;
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::GraphicsEngine;
@@ -37,9 +36,9 @@ pub(crate) fn blit_picture_cache(
     bounds: &Rect,
     w: i32,
     h: i32,
-) {
+) -> Result<(), Error> {
     let src = Rect::new(0.0, 0.0, w as f32, h as f32);
-    engine.blit_offscreen_src(handle, src, *bounds);
+    engine.try_blit_offscreen_src(handle, src, *bounds)
 }
 
 /// 将脏 Picture 栅格化到离屏缓冲。
@@ -57,13 +56,13 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     h: i32,
     retry_count: &mut u8,
     env: &LayerRenderEnv<'_>,
-) {
+) -> Result<(), Error> {
     // 嵌套 Picture 仍按屏幕脏区决定是否重栅格化；一旦进入栅格化则内部全量重绘。
-    prepare_nested_pictures(engine, children, scene, paint_region, env);
+    prepare_nested_pictures(engine, children, scene, paint_region, env)?;
 
     // 已放弃：不再重试、不再刷 WARN（rebuild 会重置 retry_count）。
     if *retry_count >= MAX_OFFSCREEN_RETRY {
-        return;
+        return Ok(());
     }
     if !ensure_offscreen(engine, offscreen_handle, w, h) {
         *retry_count = retry_count.saturating_add(1);
@@ -72,17 +71,15 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
                 "Picture 离屏创建失败已达 {MAX_OFFSCREEN_RETRY} 次，改走直绘，node_id={node_id}"
             ));
         }
-        return;
+        return Ok(());
     }
     *retry_count = 0;
     let handle = match offscreen_handle {
         Some(h) => *h,
-        None => return,
+        None => return Ok(()),
     };
 
-    if !engine.begin_offscreen_paint(&handle) {
-        return;
-    }
+    engine.try_begin_offscreen_paint(&handle)?;
 
     let nested_blits = collect_picture_blit_info(children, bounds);
 
@@ -94,20 +91,37 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     };
     let mut fresh_list_complete = true;
 
-    {
+    // This is the first production FrameEncoder consumer. It is intentionally
+    // narrow: only an already-cached, lossless sharp-rect DisplayList may be
+    // executed this way, and only a backend that explicitly supports encoded
+    // CPU Picture execution accepts it. Every other list/backend uses the
+    // established full DisplayList replay path below.
+    let encoded_cached_picture = if fresh_list.is_none() {
+        if let Some(cached) = display_list.as_ref() {
+            match cached.encode_sharp_rect_picture(w, h, Point::new(bounds.x, bounds.y)) {
+                Ok(encoder) => matches!(
+                    engine.try_execute_encoded_picture(&handle, &encoder)?,
+                    crate::draw::pipeline::EncodedPictureExecution::Executed
+                ),
+                Err(_) => false,
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    let raster_result = (|| -> Result<(), Error> {
         let Some(off_canvas) = engine.offscreen_canvas(&handle) else {
-            engine.end_offscreen_paint();
-            return;
+            return Err(Error::new(
+                Errc::InvalidState,
+                "Picture offscreen target disappeared after bind",
+            ));
         };
-        // 离屏缓冲整块清透明后，必须完整重绘子树；不可沿用屏幕 dirty_region 剪枝，
+        // 离屏缓冲已由 checked begin 以 replace 语义清透明；必须完整重绘子树，不能沿用屏幕 dirty_region 剪枝，
         // 否则悬停窄标脏时未相交的兄弟节点（侧栏其它项）会永久消失。
-        // GPU begin_offscreen_paint 已 Clear RT；CPU 仍用 fill 清像素。
         let full_offscreen = DirtyRegion::full();
-        off_canvas.fill_rect(
-            Rect::new(0.0, 0.0, w as f32, h as f32),
-            Color::transparent(),
-            None,
-        );
         let mut off_ctx = PaintContext::new(
             off_canvas,
             env.font,
@@ -121,40 +135,49 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
             h,
         );
         off_ctx.canvas_2d().translate(-bounds.x, -bounds.y);
-        if let Some(list) = fresh_list.as_mut() {
-            off_ctx.set_recorder(Some(list));
-            LayerTree::render_widget_self(node_id, &mut off_ctx, scene);
-            off_ctx.set_recorder(None);
-            fresh_list_complete = off_ctx.recording_complete();
-        } else if let Some(cached) = display_list.as_ref() {
-            cached.replay(&mut off_ctx);
+        if !encoded_cached_picture {
+            if let Some(list) = fresh_list.as_mut() {
+                off_ctx.set_recorder(Some(list));
+                LayerTree::render_widget_self(node_id, &mut off_ctx, scene);
+                off_ctx.set_recorder(None);
+                fresh_list_complete = off_ctx.recording_complete();
+            } else if let Some(cached) = display_list.as_ref() {
+                cached.replay(&mut off_ctx);
+            }
         }
         if scene.node_visible(node_id) {
             // 屏幕 dirty 仅用于主表面剪枝；离屏已全清，子树必须完整重绘
             render_non_picture_subtree(children, &mut off_ctx, scene, &full_offscreen);
         }
-    }
+        Ok(())
+    })();
+    let raster_result = raster_result.and_then(|()| {
+        engine.try_flush_offscreen_paint(&handle)?;
 
-    engine.flush_offscreen_paint(&handle);
-
-    for (child_bounds, child_handle) in nested_blits {
-        let local = Rect::new(
-            child_bounds.x - bounds.x,
-            child_bounds.y - bounds.y,
-            child_bounds.w,
-            child_bounds.h,
-        );
-        let src = Rect::new(0.0, 0.0, child_bounds.w, child_bounds.h);
-        engine.blit_offscreen_src(&child_handle, src, local);
-    }
-
-    engine.end_offscreen_paint();
+        for (child_bounds, child_handle) in nested_blits {
+            let local = Rect::new(
+                child_bounds.x - bounds.x,
+                child_bounds.y - bounds.y,
+                child_bounds.w,
+                child_bounds.h,
+            );
+            let src = Rect::new(0.0, 0.0, child_bounds.w, child_bounds.h);
+            engine.try_blit_offscreen_src(&child_handle, src, local)?;
+        }
+        Ok(())
+    });
+    let restore_result = engine.try_end_offscreen_paint();
+    // Target restoration is still attempted above, but the original recording
+    // failure is the frame result and leaves this Picture dirty.
+    raster_result?;
+    restore_result?;
 
     if let Some(list) = fresh_list {
         *display_list = fresh_list_complete.then_some(list);
     }
 
     *is_dirty = false;
+    Ok(())
 }
 
 fn ensure_offscreen(
@@ -185,7 +208,7 @@ fn prepare_nested_pictures<S: ScenePaint>(
     scene: &S,
     paint_region: &DirtyRegion,
     env: &LayerRenderEnv<'_>,
-) {
+) -> Result<(), Error> {
     for child in children.iter_mut() {
         if let LayerNode::Picture {
             node_id,
@@ -215,16 +238,17 @@ fn prepare_nested_pictures<S: ScenePaint>(
                     h,
                     retry_count,
                     env,
-                );
+                )?;
             }
         }
         let (LayerNode::Picture { children: sub, .. }
         | LayerNode::ClipRect { children: sub, .. }
         | LayerNode::Direct { children: sub, .. }) = child;
         {
-            prepare_nested_pictures(engine, sub, scene, paint_region, env);
+            prepare_nested_pictures(engine, sub, scene, paint_region, env)?;
         }
     }
+    Ok(())
 }
 
 fn collect_picture_blit_info(

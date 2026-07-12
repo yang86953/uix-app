@@ -7,6 +7,7 @@ use crate::draw::backend::offscreen_pool::CpuOffscreenPool;
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
+use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::rasterizer::image::blit_image;
@@ -191,19 +192,75 @@ impl RenderBackend for CpuBackend {
         self.offscreens.copy_pixels(handle)
     }
 
-    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
-        if self.offscreens.get(handle).is_some() {
-            self.active_offscreen = Some(handle.0);
-            true
-        } else {
-            false
+    fn try_execute_encoded_picture(
+        &mut self,
+        handle: &ImageHandle,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedPictureExecution, Error> {
+        let target = self.offscreens.get_mut(handle).ok_or_else(|| {
+            Error::new(
+                crate::core::Errc::InvalidState,
+                "Picture offscreen target disappeared before FrameEncoder execution",
+            )
+        })?;
+        let surface = target.surface_mut();
+        if surface.width() != encoder.width() || surface.height() != encoder.height() {
+            return Err(Error::new(
+                crate::core::Errc::InvalidState,
+                format!(
+                    "FrameEncoder {}x{} does not match Picture target {}x{}",
+                    encoder.width(),
+                    encoder.height(),
+                    surface.width(),
+                    surface.height()
+                ),
+            ));
         }
+        surface
+            .pixels_mut()
+            .copy_from_slice(encoder.render_reference().pixels());
+        Ok(EncodedPictureExecution::Executed)
+    }
+
+    fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        self.try_begin_offscreen_paint(handle).is_ok()
+    }
+
+    fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        let Some(canvas) = self.offscreens.get_mut(handle) else {
+            return Err(Error::new(
+                crate::core::Errc::InvalidState,
+                "Picture offscreen target does not exist",
+            ));
+        };
+        // Picture rasterization is replace semantics even for transparent
+        // pixels. Filling with transparent through Canvas2D would be an
+        // alpha-over no-op and could retain stale cached content.
+        canvas.surface_mut().clear_all();
+        self.active_offscreen = Some(handle.0);
+        Ok(())
     }
 
     fn flush_offscreen_paint(&mut self, _handle: &ImageHandle) {}
 
+    fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        if self.offscreens.get(handle).is_some() {
+            Ok(())
+        } else {
+            Err(Error::new(
+                crate::core::Errc::InvalidState,
+                "Picture offscreen target disappeared before flush",
+            ))
+        }
+    }
+
     fn end_offscreen_paint(&mut self) {
         self.active_offscreen = None;
+    }
+
+    fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
+        self.active_offscreen = None;
+        Ok(())
     }
 
     fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
@@ -230,6 +287,45 @@ impl RenderBackend for CpuBackend {
             return;
         }
         self.blit_offscreen_impl(handle, src_rect, dst_rect);
+    }
+
+    fn try_blit_offscreen_src(
+        &mut self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) -> Result<(), Error> {
+        if self.offscreens.get(handle).is_none() {
+            return Err(Error::new(
+                crate::core::Errc::InvalidState,
+                "Picture offscreen target does not exist before blit",
+            ));
+        }
+        if let Some(dst_id) = self.active_offscreen {
+            if dst_id == handle.0 {
+                return Err(Error::new(
+                    crate::core::Errc::InvalidArgument,
+                    "Picture offscreen target cannot blit into itself",
+                ));
+            }
+            let dst_handle = ImageHandle(dst_id);
+            let Some((pixels, pw)) = self.offscreens.copy_pixels(handle) else {
+                return Err(Error::new(
+                    crate::core::Errc::InvalidState,
+                    "Picture offscreen pixels disappeared before nested blit",
+                ));
+            };
+            let Some(dst_canvas) = self.offscreens.canvas_mut(&dst_handle) else {
+                return Err(Error::new(
+                    crate::core::Errc::InvalidState,
+                    "active Picture offscreen target disappeared before blit",
+                ));
+            };
+            dst_canvas.blit_image(&pixels, pw, src_rect, dst_rect);
+            return Ok(());
+        }
+        self.blit_offscreen_impl(handle, src_rect, dst_rect);
+        Ok(())
     }
 
     fn present(&mut self, _damage: &DamageRegion) -> Result<(), Error> {
@@ -303,5 +399,54 @@ mod tests {
         );
         backend.destroy_offscreen(b);
         backend.destroy_offscreen(c);
+    }
+
+    #[test]
+    fn encoded_picture_replaces_cpu_offscreen_pixels_and_begin_clears_stale_content() {
+        use crate::draw::pipeline::{
+            EncodedPictureExecution, FrameEncoder, FrameRasterOp, FrameRect,
+        };
+
+        let mut backend = CpuBackend::new();
+        let handle = backend.create_offscreen(4, 3).expect("Picture target");
+        {
+            let canvas = backend.offscreen_canvas(&handle).expect("offscreen canvas");
+            canvas.fill_rect(
+                Rect::new(0.0, 0.0, 4.0, 3.0),
+                Color::from_rgb(220, 10, 10),
+                None,
+            );
+        }
+        backend
+            .try_begin_offscreen_paint(&handle)
+            .expect("replace clear");
+        assert!(backend
+            .copy_offscreen_pixels(&handle)
+            .expect("cleared pixels")
+            .0
+            .iter()
+            .all(|&pixel| pixel == Color::transparent().premultiplied()));
+
+        let mut encoder = FrameEncoder::new(4, 3).expect("encoder");
+        encoder.clear(Color::transparent());
+        encoder.cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(1, 1, 2, 1),
+            color: Color::from_rgba(20, 40, 200, 128),
+        }]);
+        assert_eq!(
+            backend
+                .try_execute_encoded_picture(&handle, &encoder)
+                .expect("FrameEncoder execution"),
+            EncodedPictureExecution::Executed
+        );
+        let pixels = backend
+            .copy_offscreen_pixels(&handle)
+            .expect("encoded pixels")
+            .0;
+        assert_eq!(
+            pixels[1 + 4],
+            Color::from_rgba(20, 40, 200, 128).premultiplied()
+        );
+        assert_eq!(pixels[0], Color::transparent().premultiplied());
     }
 }

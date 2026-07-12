@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Validate markdown links under docs/, AGENTS.md, README.md, demo/README.md."""
+"""Validate local Markdown links in core docs, reports, and project READMEs."""
 from __future__ import annotations
 
 import re
@@ -31,7 +31,9 @@ SCAN = [
     ROOT / "AGENTS.md",
     ROOT / "README.md",
     ROOT / "demo" / "README.md",
+    *sorted((ROOT / "assets").rglob("*.md")),
     *sorted((ROOT / "docs").rglob("*.md")),
+    *sorted((ROOT / "test-reports").rglob("*.md")),
 ]
 
 
@@ -51,6 +53,19 @@ def collect_anchors(path: Path) -> set[str]:
     return anchors
 
 
+def duplicate_explicit_anchors(path: Path) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for anchor in HTML_ID_RE.findall(text):
+        key = anchor.casefold()
+        if key in seen:
+            duplicates.add(anchor)
+        else:
+            seen.add(key)
+    return sorted(duplicates, key=str.casefold)
+
+
 def split_target(target: str) -> tuple[str, str | None]:
     target = target.strip()
     if target.startswith("<") and target.endswith(">"):
@@ -66,9 +81,29 @@ def split_target(target: str) -> tuple[str, str | None]:
     return target, None
 
 
+def validate_local_target(
+    md: Path, raw: str, anchor_cache: dict[Path, set[str]]
+) -> str | None:
+    path_part, frag = split_target(raw)
+    target = md if path_part == "" else (md.parent / path_part).resolve()
+    if not target.is_file():
+        return f"{md.relative_to(ROOT).as_posix()}: broken link -> {raw}"
+    if not frag:
+        return None
+    if target not in anchor_cache:
+        anchor_cache[target] = collect_anchors(target)
+    anchors = anchor_cache[target]
+    frag_l = frag.lower()
+    if frag not in anchors and frag_l not in {a.lower() for a in anchors}:
+        return (
+            f"{md.relative_to(ROOT).as_posix()}: missing anchor #{frag} "
+            f"in {target.relative_to(ROOT).as_posix()}"
+        )
+    return None
+
+
 def main() -> int:
     errors: list[str] = []
-    warnings: list[str] = []
     anchor_cache: dict[Path, set[str]] = {}
 
     required = [
@@ -108,36 +143,19 @@ def main() -> int:
     for md in SCAN:
         if not md.is_file():
             continue
+        for anchor in duplicate_explicit_anchors(md):
+            errors.append(
+                f"{md.relative_to(ROOT).as_posix()}: duplicate explicit anchor #{anchor}"
+            )
         text = md.read_text(encoding="utf-8")
         for m in LINK_RE.finditer(text):
             raw = m.group(1).strip()
             if raw.startswith(("http://", "https://", "mailto:", "data:")):
                 continue
-            path_part, frag = split_target(raw)
-            if path_part == "":
-                target = md
-            else:
-                target = (md.parent / path_part).resolve()
-            if not target.is_file():
-                errors.append(f"{md.relative_to(ROOT).as_posix()}: broken link -> {raw}")
-                continue
-            if frag:
-                if target not in anchor_cache:
-                    anchor_cache[target] = collect_anchors(target)
-                anchors = anchor_cache[target]
-                frag_l = frag.lower()
-                if frag not in anchors and frag_l not in {a.lower() for a in anchors}:
-                    warnings.append(
-                        f"{md.relative_to(ROOT).as_posix()}: missing anchor #{frag} in {target.relative_to(ROOT).as_posix()}"
-                    )
+            if error := validate_local_target(md, raw, anchor_cache):
+                errors.append(error)
 
     print(f"scanned {len(SCAN)} files")
-    if warnings:
-        print(f"WARN: {len(warnings)} missing-anchor(s) (non-fatal)")
-        for w in warnings[:30]:
-            print(" ", w)
-        if len(warnings) > 30:
-            print(f"  ... and {len(warnings) - 30} more")
     if errors:
         print(f"FAIL: {len(errors)} issue(s)")
         for e in errors:

@@ -554,27 +554,24 @@ impl IGraphicsContext for WglContext {
         Ok(())
     }
 
-    fn resize(&mut self, width: i32, height: i32) {
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         let _ = (width, height);
-        self.make_current();
+        self.make_current()?;
         let (logical_w, logical_h, physical_w, physical_h) = drawable_size(self.hwnd, self.hdc);
         self.logical_width = logical_w;
         self.logical_height = logical_h;
         self.width = physical_w;
         self.height = physical_h;
+        Ok(())
     }
 
-    fn make_current(&mut self) {
-        if let Err(err) = self.make_current_result() {
-            crate::core::log::error_fn(err.short_what());
-        }
+    fn make_current(&mut self) -> Result<(), Error> {
+        self.make_current_result()
     }
 
-    fn swap_buffers(&mut self, damage: PresentDamage) {
+    fn swap_buffers(&mut self, damage: PresentDamage) -> Result<(), Error> {
         let _ = damage;
-        if let Err(err) = self.swap_buffers_result() {
-            crate::core::log::error_fn(err.short_what());
-        }
+        self.swap_buffers_result()
     }
 
     fn present(&mut self, frame: &PresentFrame) -> Result<(), Error> {
@@ -675,6 +672,7 @@ mod tests {
 
     /// 对齐 D3D11 `factory_create_d3d11_gpu_native_swapchain_on_real_window`：
     /// 真实 HWND + caps + SwapBuffers present + 多帧稳定。
+    #[cfg(feature = "opengles")]
     #[test]
     fn factory_create_wgl_gpu_native_swapchain_on_real_window() {
         if std::env::consts::OS != "windows" {

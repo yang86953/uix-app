@@ -113,12 +113,49 @@ impl FrameRenderer {
             UpdateStrategy::DirtyRects(region.rects().to_vec())
         };
         let begin_outcome = engine.begin_frame(strategy);
-        if begin_outcome == RenderOutcome::Idle {
-            return FrameRenderOutput {
-                outcome: RenderOutcome::Idle,
-                inv_source: InvalidationSource::None,
-                tree_version: cur_version,
-            };
+        match begin_outcome {
+            RenderOutcome::FrameReady(_) => {}
+            RenderOutcome::Present(_) => {
+                return FrameRenderOutput {
+                    outcome: RenderOutcome::Failed(
+                        crate::draw::engine::GraphicsFailure::from_error(crate::core::Error::new(
+                            crate::core::Errc::InvalidState,
+                            "begin_frame reported a final presentation",
+                        )),
+                    ),
+                    inv_source: InvalidationSource::None,
+                    tree_version: cur_version,
+                };
+            }
+            RenderOutcome::PresentPending(_) => {
+                return FrameRenderOutput {
+                    outcome: RenderOutcome::Failed(
+                        crate::draw::engine::GraphicsFailure::from_error(crate::core::Error::new(
+                            crate::core::Errc::InvalidState,
+                            "begin_frame reported an external presentation pending result",
+                        )),
+                    ),
+                    inv_source: InvalidationSource::None,
+                    tree_version: cur_version,
+                };
+            }
+            RenderOutcome::Idle => {
+                return FrameRenderOutput {
+                    outcome: RenderOutcome::Idle,
+                    inv_source: InvalidationSource::None,
+                    tree_version: cur_version,
+                };
+            }
+            RenderOutcome::Failed(error) => {
+                // A failed begin has no valid recording target.  Continuing
+                // into scene paint/end_frame can clear dirty state or report a
+                // later success for a frame that never began.
+                return FrameRenderOutput {
+                    outcome: RenderOutcome::Failed(error),
+                    inv_source: InvalidationSource::None,
+                    tree_version: cur_version,
+                };
+            }
         }
         // 首帧绕过 DisplayList 缓存，避免空缓存重放导致侧栏等节点漏绘
         let render_objects = if input.rendered_first {
@@ -126,7 +163,7 @@ impl FrameRenderer {
         } else {
             None
         };
-        self.layer_tree.render(
+        if let Err(error) = self.layer_tree.render(
             engine,
             scene,
             &region,
@@ -137,18 +174,59 @@ impl FrameRenderer {
             input.debug_mode,
             input.hover_pos,
             render_objects,
-        );
+        ) {
+            // An offscreen bind/flush/blit failure occurred while recording.
+            // Do not call end_frame: that could submit a partial frame or turn
+            // the failure into a final present. LayerTree leaves the affected
+            // Picture dirty, and the caller retains invalidation for recovery.
+            return FrameRenderOutput {
+                outcome: RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(
+                    error,
+                )),
+                inv_source: InvalidationSource::None,
+                tree_version: cur_version,
+            };
+        }
 
         if input.debug_mode {
             draw_debug_telemetry(engine, input.metrics, input.font, input.font_service);
         }
 
-        engine.end_frame(&damage);
-
-        let inv_source = classify_invalidation(input.rendered_first, &region);
+        let end_outcome = engine.end_frame(&damage);
+        let outcome = match end_outcome {
+            RenderOutcome::Present(_) if caps.uses_external_presenter() => {
+                RenderOutcome::PresentPending(damage)
+            }
+            RenderOutcome::Present(_) => RenderOutcome::Present(damage),
+            RenderOutcome::PresentPending(_) if caps.uses_external_presenter() => {
+                RenderOutcome::PresentPending(damage)
+            }
+            RenderOutcome::PresentPending(_) => RenderOutcome::Failed(
+                crate::draw::engine::GraphicsFailure::from_error(crate::core::Error::new(
+                    crate::core::Errc::InvalidState,
+                    "engine-managed backend returned an external presentation pending result",
+                )),
+            ),
+            RenderOutcome::FrameReady(_) => RenderOutcome::Failed(
+                crate::draw::engine::GraphicsFailure::from_error(crate::core::Error::new(
+                    crate::core::Errc::InvalidState,
+                    "end_frame returned FrameReady instead of final presentation",
+                )),
+            ),
+            RenderOutcome::Idle => RenderOutcome::Idle,
+            RenderOutcome::Failed(error) => RenderOutcome::Failed(error),
+        };
+        let inv_source = match outcome {
+            RenderOutcome::Present(_) | RenderOutcome::PresentPending(_) => {
+                classify_invalidation(input.rendered_first, &region)
+            }
+            RenderOutcome::Idle | RenderOutcome::FrameReady(_) | RenderOutcome::Failed(_) => {
+                InvalidationSource::None
+            }
+        };
 
         FrameRenderOutput {
-            outcome: RenderOutcome::Present(damage),
+            outcome,
             inv_source,
             tree_version: cur_version,
         }

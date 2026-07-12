@@ -33,23 +33,25 @@ impl GraphicsEngine for NullEngine {
 
     fn shutdown(&mut self) {}
 
-    fn resize(&mut self, _width: i32, _height: i32) {}
+    fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+        Ok(())
+    }
 
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         match strategy {
-            UpdateStrategy::FullRedraw => RenderOutcome::Present(DamageRegion::full()),
+            UpdateStrategy::FullRedraw => RenderOutcome::FrameReady(DamageRegion::full()),
             UpdateStrategy::DirtyRects(rects) => {
                 if rects.is_empty() {
                     RenderOutcome::Idle
                 } else {
-                    RenderOutcome::Present(DamageRegion::partial(rects))
+                    RenderOutcome::FrameReady(DamageRegion::partial(rects))
                 }
             }
         }
     }
 
     fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
-        RenderOutcome::Present(present_damage.clone())
+        RenderOutcome::PresentPending(present_damage.clone())
     }
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {

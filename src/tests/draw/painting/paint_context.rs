@@ -119,3 +119,60 @@ fn display_list_recording_rejects_untracked_canvas_access() {
     let _ = ctx.canvas_2d();
     assert!(!ctx.recording_complete());
 }
+
+#[test]
+fn display_list_recording_covers_extended_2d_paint_operations() {
+    use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+    use crate::draw::font::font_service::FontService;
+    use crate::draw::image::ImageService;
+    use crate::draw::painting::DisplayList;
+    use crate::draw::primitives::path::{FillRule, PathBuilder};
+    use crate::draw::primitives::stroker::StrokeOptions;
+    use crate::draw::spatial::Orientation;
+    use crate::draw::{Color, FontHandle};
+    use crate::ui::theme::DesignTokens;
+
+    let mut canvas = NoopCanvas2D;
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let tokens = DesignTokens::antd_light();
+    let mut ctx = PaintContext::new(
+        &mut canvas,
+        FontHandle::default(),
+        &fs,
+        &img,
+        &tokens,
+        96.0,
+        1.0,
+        Orientation::YDown,
+        100,
+        100,
+    );
+    let mut list = DisplayList::new();
+    ctx.set_recorder(Some(&mut list));
+    let path = PathBuilder::new()
+        .move_to(1.0, 1.0)
+        .line_to(8.0, 1.0)
+        .line_to(1.0, 8.0)
+        .close()
+        .build();
+
+    ctx.fill_ellipse(Rect::new(1.0, 1.0, 8.0, 6.0), Color::red());
+    ctx.fill_sector(5.0, 5.0, 3.0, 0.0, 1.0, Color::green());
+    ctx.fill_path(&path, Color::blue(), FillRule::NonZero);
+    ctx.stroke_circle(5.0, 5.0, 3.0, Color::white(), 1.0);
+    ctx.stroke_path(&path, Color::black(), &StrokeOptions::default());
+    ctx.draw_line(1.0, 1.0, 8.0, 8.0, Color::white(), 1.0);
+    ctx.fill_radial_gradient(5.0, 5.0, 0.0, 4.0, Color::white(), Color::black());
+    ctx.draw_box_shadow_ambient(
+        Rect::new(1.0, 1.0, 6.0, 6.0),
+        2.0,
+        1.0,
+        1.0,
+        Color::black(),
+        None,
+    );
+
+    assert!(ctx.recording_complete());
+    assert_eq!(list.len(), 8);
+}

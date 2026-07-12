@@ -7,6 +7,7 @@ mod registry_linux;
 mod registry_macos;
 #[cfg(windows)]
 mod registry_windows;
+mod thread_bound;
 
 use crate::core::error::{Errc, Error};
 use crate::native::traits::platform::Platform;
@@ -16,8 +17,9 @@ use crate::native::traits::system::ISystemInfo;
 use std::ffi::c_void;
 
 pub use registry::{
-    active_entries, entry_for, gpu_probe_candidates, try_create_context, try_create_gpu_context,
-    BackendStatus, GraphicsBackendEntry,
+    active_entries, entry_for, entry_for_recipe, gpu_probe_candidates, gpu_recipe_candidates,
+    try_create_context, try_create_gpu_context, try_create_gpu_recipe, BackendStatus,
+    GraphicsBackendEntry, GraphicsRecipe,
 };
 
 #[cfg(all(test, feature = "d3d12"))]
@@ -27,6 +29,7 @@ pub(crate) fn create_d3d12_warp_test_context(
     height: i32,
 ) -> crate::core::Result<Box<dyn crate::native::traits::present::IGraphicsContext>> {
     crate::native::graphics::d3d12::create_warp_test_context(surface, width, height)
+        .map(thread_bound::bind_to_current_thread)
 }
 
 #[cfg(all(test, feature = "d3d12"))]
@@ -66,15 +69,6 @@ pub fn create_platform() -> Result<Box<dyn Platform>, Error> {
 #[cfg_attr(not(test), allow(dead_code))]
 fn unsupported_platform_message() -> String {
     "Unsupported platform: only Windows, Linux, and macOS are supported".to_string()
-}
-
-/// 创建 GPU 图形上下文（单条目；`Auto` 须用 `draw::bootstrap_graphics_engine`）。
-pub fn create_gpu_context(
-    native_surface: *mut c_void,
-    width: i32,
-    height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    create_gpu_context_with_backend(native_surface, width, height, GraphicsBackend::Auto)
 }
 
 /// 创建 GPU 图形上下文，指定单个 API；无 probe 循环。
@@ -128,15 +122,6 @@ mod tests {
         let message = unsupported_platform_message();
 
         assert!(message.contains("only Windows, Linux, and macOS"));
-    }
-
-    #[test]
-    fn create_gpu_context_rejects_auto_without_probe_loop() {
-        let err = match create_gpu_context(std::ptr::null_mut(), 1, 1) {
-            Ok(_) => panic!("Auto must not probe inside factory"),
-            Err(err) => err,
-        };
-        assert!(err.message().contains("bootstrap_graphics_engine"));
     }
 
     #[test]

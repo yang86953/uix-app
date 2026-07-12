@@ -5,6 +5,11 @@ use std::ffi::c_void;
 use crate::core::{Error, Result};
 use crate::native::traits::present::IGraphicsContext;
 
+/// The damage extension alone does not prove buffer preservation or buffer-age
+/// semantics, so EGL must not advertise partial present yet.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub(crate) const EGL_PARTIAL_PRESENT: bool = false;
+
 #[cfg(all(unix, not(target_os = "macos")))]
 pub mod egl;
 #[cfg(windows)]
@@ -22,6 +27,17 @@ pub(super) fn create(
     height: i32,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
     WglContext::new(surface, width, height).map(|ctx| Box::new(ctx) as _)
+}
+
+#[cfg(all(test, unix, not(target_os = "macos")))]
+mod tests {
+    #[test]
+    fn egl_damage_extension_does_not_imply_partial_present() {
+        assert!(
+            !super::EGL_PARTIAL_PRESENT,
+            "partial present requires a proven preservation/buffer-age contract"
+        );
+    }
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]

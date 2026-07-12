@@ -47,7 +47,7 @@ impl SharedRasterizer {
     }
 
     pub fn set_blend_mode(&mut self, mode: BlendMode) {
-        let _ = mode;
+        self.renderer.set_blend_mode(mode);
     }
 
     pub fn set_offset(&mut self, dx: f32, dy: f32) {
@@ -321,7 +321,7 @@ impl Canvas2D for SharedRasterizer {
         self.renderer.opacity()
     }
     fn set_blend_mode(&mut self, mode: BlendMode) {
-        let _ = mode;
+        self.renderer.set_blend_mode(mode);
     }
     fn push_clip_path(&mut self, _path: &Path) {}
 

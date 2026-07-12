@@ -135,6 +135,10 @@ impl RasterRenderer {
         self.opacity = opacity.clamp(0.0, 1.0);
     }
 
+    pub fn set_blend_mode(&mut self, mode: BlendMode) {
+        self.blend_mode = mode;
+    }
+
     // ═══ 变换工具 ═══
 
     pub(crate) fn is_identity(t: &Transform) -> bool {
@@ -221,6 +225,11 @@ impl RasterRenderer {
             return;
         }
         let dst = pixels[idx];
+        if self.blend_mode == BlendMode::Additive {
+            let add = |shift: u32| (((color >> shift) & 0xFF) + ((dst >> shift) & 0xFF)).min(0xFF);
+            pixels[idx] = (add(24) << 24) | (add(16) << 16) | (add(8) << 8) | add(0);
+            return;
+        }
         let dst_a = (dst >> 24) & 0xFF;
         if src_a == 0xFF && dst_a == 0 {
             pixels[idx] = color;
@@ -280,6 +289,13 @@ impl RasterRenderer {
         let dst_r_p = ((dst >> 16) & 0xFF) as f32;
         let dst_g_p = ((dst >> 8) & 0xFF) as f32;
         let dst_b_p = (dst & 0xFF) as f32;
+        if self.blend_mode == BlendMode::Additive {
+            pixels[idx] = ((src_a_s + dst_a).round().min(255.0) as u32) << 24
+                | ((src_r_p + dst_r_p).round().min(255.0) as u32) << 16
+                | ((src_g_p + dst_g_p).round().min(255.0) as u32) << 8
+                | (src_b_p + dst_b_p).round().min(255.0) as u32;
+            return;
+        }
         let inv = 1.0 - (src_a_s / 255.0);
         let out_a = src_a_s + dst_a * inv;
         let out_r_p = src_r_p + dst_r_p * inv;
@@ -301,7 +317,7 @@ impl RasterRenderer {
         span_w: i32,
         color: u32,
     ) {
-        if (color >> 24) == 0xFF {
+        if (color >> 24) == 0xFF && self.blend_mode != BlendMode::Additive {
             let (cx0, cy0, cx1, cy1) = self.clip_int;
             let x0 = x.max(cx0).max(0);
             let x1 = (x + span_w).min(cx1).min(w);

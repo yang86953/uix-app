@@ -85,7 +85,7 @@ pub fn begin_frame(
         }
     }
 
-    RenderOutcome::Present(present_damage_for_strategy(&strategy))
+    RenderOutcome::FrameReady(present_damage_for_strategy(&strategy))
 }
 
 /// 帧结束：恢复裁剪栈。

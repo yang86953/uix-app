@@ -6,7 +6,7 @@ use std::ffi::c_void;
 use std::mem::ManuallyDrop;
 
 use crate::core::{Errc, Error, Result};
-use crate::native::traits::present::GpuSolidRect;
+use crate::native::traits::present::{GpuSolidRect, SoftFallbackTile};
 use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, RECT, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -83,6 +83,11 @@ const BLIT_HLSL: &str = r#"
 Texture2D u_tex : register(t0);
 SamplerState u_samp : register(s0);
 
+cbuffer BlitCB : register(b0)
+{
+    float4 u_uv_rect;
+};
+
 static const float2 CLIP_POS[6] = {
     float2(-1.0, -1.0), float2(1.0, -1.0), float2(-1.0, 1.0),
     float2(-1.0, 1.0), float2(1.0, -1.0), float2(1.0, 1.0)
@@ -98,7 +103,8 @@ VSOut VSMain(uint vertex_id : SV_VertexID)
     VSOut o;
     float2 pos = CLIP_POS[vertex_id];
     o.pos = float4(pos, 0.0, 1.0);
-    o.uv = float2(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
+    float2 unit = float2(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
+    o.uv = u_uv_rect.xy + unit * u_uv_rect.zw;
     return o;
 }
 
@@ -764,7 +770,62 @@ impl D3d12Pipeline {
         width: i32,
         height: i32,
     ) -> Result<()> {
-        let (row_pitch, total_bytes) = validated_soft_layout(width, height, pixels.len())?;
+        let expected = (width as usize)
+            .checked_mul(height as usize)
+            .ok_or_else(|| invalid_input("soft fallback pixel count overflow"))?;
+        if pixels.len() < expected {
+            return Err(invalid_input(format!(
+                "soft fallback buffer too small, got {}, need {expected}",
+                pixels.len()
+            )));
+        }
+        let Some(tile) = visible_pixel_bounds(pixels, width, height) else {
+            return Ok(());
+        };
+        self.blit_soft_fallback_tile(device, list, frame_index, pixels, width, height, tile)
+    }
+
+    #[allow(clippy::too_many_arguments)] // D3D12 command recording needs the device/list/frame plus API-neutral tile payload.
+    pub(super) fn blit_soft_fallback_tile(
+        &mut self,
+        device: &ID3D12Device,
+        list: &ID3D12GraphicsCommandList,
+        frame_index: usize,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        tile: SoftFallbackTile,
+    ) -> Result<()> {
+        if width <= 0 || height <= 0 {
+            return Err(invalid_input(format!(
+                "invalid soft surface {width}x{height}"
+            )));
+        }
+        let expected = (width as usize)
+            .checked_mul(height as usize)
+            .ok_or_else(|| invalid_input("soft fallback pixel count overflow"))?;
+        if pixels.len() < expected {
+            return Err(invalid_input(format!(
+                "soft fallback buffer too small, got {}, need {expected}",
+                pixels.len()
+            )));
+        }
+        if tile.x < 0
+            || tile.y < 0
+            || tile.width <= 0
+            || tile.height <= 0
+            || tile.x.saturating_add(tile.width) > width
+            || tile.y.saturating_add(tile.height) > height
+        {
+            return Err(invalid_input(format!(
+                "invalid soft tile {}x{}+{},{} for {width}x{height}",
+                tile.width, tile.height, tile.x, tile.y
+            )));
+        }
+        let tile_pixels = (tile.width as usize)
+            .checked_mul(tile.height as usize)
+            .ok_or_else(|| invalid_input("soft fallback tile pixel count overflow"))?;
+        let (row_pitch, total_bytes) = validated_soft_layout(tile.width, tile.height, tile_pixels)?;
         self.ensure_soft_texture(device, width, height)?;
         let upload = self.acquire_upload(device, frame_index, total_bytes)?;
 
@@ -779,11 +840,14 @@ impl D3d12Pipeline {
                 "D3d12Pipeline: soft upload Map returned null",
             ));
         }
-        let row_bytes = width as usize * std::mem::size_of::<u32>();
-        for row in 0..height as usize {
+        let row_bytes = tile.width as usize * std::mem::size_of::<u32>();
+        for row in 0..tile.height as usize {
+            let source = (tile.y as usize + row)
+                .saturating_mul(width as usize)
+                .saturating_add(tile.x as usize);
             unsafe {
                 std::ptr::copy_nonoverlapping(
-                    pixels.as_ptr().add(row * width as usize).cast::<u8>(),
+                    pixels.as_ptr().add(source).cast::<u8>(),
                     mapped.cast::<u8>().add(row * row_pitch),
                     row_bytes,
                 );
@@ -811,8 +875,8 @@ impl D3d12Pipeline {
             Offset: 0,
             Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
                 Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                Width: width as u32,
-                Height: height as u32,
+                Width: tile.width as u32,
+                Height: tile.height as u32,
                 Depth: 1,
                 RowPitch: row_pitch as u32,
             },
@@ -820,7 +884,7 @@ impl D3d12Pipeline {
         let mut destination = texture_copy_location_subresource(&texture);
         let mut source = texture_copy_location_footprint(&upload, footprint);
         unsafe {
-            list.CopyTextureRegion(&destination, 0, 0, 0, &source, None);
+            list.CopyTextureRegion(&destination, tile.x as u32, tile.y as u32, 0, &source, None);
         }
         release_copy_location(&mut destination);
         release_copy_location(&mut source);
@@ -833,24 +897,36 @@ impl D3d12Pipeline {
         self.soft_texture_state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
         let viewport = D3D12_VIEWPORT {
-            TopLeftX: 0.0,
-            TopLeftY: 0.0,
-            Width: width as f32,
-            Height: height as f32,
+            TopLeftX: tile.x as f32,
+            TopLeftY: tile.y as f32,
+            Width: tile.width as f32,
+            Height: tile.height as f32,
             MinDepth: 0.0,
             MaxDepth: 1.0,
         };
         let scissor = RECT {
-            left: 0,
-            top: 0,
-            right: width,
-            bottom: height,
+            left: tile.x,
+            top: tile.y,
+            right: tile.x + tile.width,
+            bottom: tile.y + tile.height,
         };
         let gpu_handle = unsafe { self.srv_heap.GetGPUDescriptorHandleForHeapStart() };
         unsafe {
             list.SetDescriptorHeaps(&[Some(self.srv_heap.clone())]);
             list.SetGraphicsRootSignature(&self.root_signature);
             list.SetPipelineState(&self.soft_pso);
+            let uv_rect = [
+                tile.x as f32 / width as f32,
+                tile.y as f32 / height as f32,
+                tile.width as f32 / width as f32,
+                tile.height as f32 / height as f32,
+            ];
+            list.SetGraphicsRoot32BitConstants(
+                0,
+                uv_rect.len() as u32,
+                uv_rect.as_ptr().cast::<c_void>(),
+                0,
+            );
             list.SetGraphicsRootDescriptorTable(1, gpu_handle);
             list.RSSetViewports(&[viewport]);
             list.RSSetScissorRects(&[scissor]);
@@ -874,6 +950,35 @@ impl D3d12Pipeline {
             }
         }
     }
+}
+
+fn visible_pixel_bounds(pixels: &[u32], width: i32, height: i32) -> Option<SoftFallbackTile> {
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    let expected = (width as usize).checked_mul(height as usize)?;
+    if pixels.len() < expected {
+        return None;
+    }
+    let mut left = width;
+    let mut top = height;
+    let mut right = 0;
+    let mut bottom = 0;
+    let mut visible = false;
+    for y in 0..height {
+        let row = y as usize * width as usize;
+        for x in 0..width {
+            if pixels[row + x as usize] & 0xff00_0000 == 0 {
+                continue;
+            }
+            visible = true;
+            left = left.min(x);
+            top = top.min(y);
+            right = right.max(x + 1);
+            bottom = bottom.max(y + 1);
+        }
+    }
+    visible.then(|| SoftFallbackTile::new(left, top, right - left, bottom - top))
 }
 
 #[cfg(test)]

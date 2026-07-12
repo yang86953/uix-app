@@ -74,18 +74,24 @@ impl IGraphicsContext for FakeGraphicsContext {
         Ok(())
     }
 
-    fn resize(&mut self, w: i32, h: i32) {
+    fn resize(&mut self, w: i32, h: i32) -> crate::core::Result<()> {
         self.state.width.set(w);
         self.state.height.set(h);
+
+        Ok(())
     }
 
-    fn make_current(&mut self) {
+    fn make_current(&mut self) -> crate::core::Result<()> {
         self.state.make_current_calls += 1;
+
+        Ok(())
     }
 
-    fn swap_buffers(&mut self, damage: PresentDamage) {
+    fn swap_buffers(&mut self, damage: PresentDamage) -> crate::core::Result<()> {
         self.state.swap_buffers_calls += 1;
         self.state.last_swap_damage = Some(damage);
+
+        Ok(())
     }
 
     fn shutdown(&mut self) {
@@ -114,7 +120,9 @@ mod tests {
         let mut context = FakeGraphicsContext::new();
         let damage = PresentDamage::Partial(vec![(1, 2, 3, 4)]);
 
-        context.swap_buffers(damage.clone());
+        context
+            .swap_buffers(damage.clone())
+            .expect("fake swap_buffers must succeed");
 
         assert_eq!(context.state.swap_buffers_calls, 1);
         assert_eq!(context.state.last_swap_damage, Some(damage));

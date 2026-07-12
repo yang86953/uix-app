@@ -4,6 +4,7 @@ pub use crate::draw::engine::RenderOutcome;
 
 use super::canvas::Canvas2D;
 use crate::core::{Error, Rect};
+use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::types::ImageHandle;
 
 /// 帧更新策略。
@@ -90,11 +91,22 @@ impl GraphicsCapabilities {
 pub trait GraphicsEngine: 'static {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error>;
     fn shutdown(&mut self);
-    fn resize(&mut self, width: i32, height: i32);
+    /// Resize is a graphics lifecycle operation and must propagate a typed
+    /// failure. Callers retain invalidation and enter bounded recovery.
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome;
     /// `present_damage` 为合成层计算的呈现损伤；EngineManaged 后端用于 swap/present。
     fn end_frame(&mut self, present_damage: &crate::draw::backend::DamageRegion) -> RenderOutcome;
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D;
+
+    /// The sole external platform presenter has accepted the pending frame.
+    /// Engine-managed paths must never receive this callback.
+    fn external_present_succeeded(&mut self) {}
+
+    /// The external platform presenter rejected a pending frame. The default
+    /// is intentionally inert; recovery wrappers record this typed failure at
+    /// the next frame boundary while ordinary software engines retain dirty.
+    fn external_present_failed(&mut self, _error: Error) {}
 
     fn capabilities(&self) -> GraphicsCapabilities {
         GraphicsCapabilities::cpu_pixels()
@@ -137,17 +149,67 @@ pub trait GraphicsEngine: 'static {
         None
     }
 
+    /// Executes a lossless API-neutral encoded Picture on a backend that
+    /// explicitly supports it. `Unsupported` is a normal fallback result;
+    /// compositor code then uses full DisplayList replay.
+    fn try_execute_encoded_picture(
+        &mut self,
+        _handle: &ImageHandle,
+        _encoder: &FrameEncoder,
+    ) -> Result<EncodedPictureExecution, Error> {
+        Ok(EncodedPictureExecution::Unsupported)
+    }
+
     /// Bind/clear offscreen before Picture paint (GPU RT or CPU buffer).
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
         let _ = handle;
         true
     }
 
+    /// Checked Picture offscreen boundary.  Implementations backed by native
+    /// APIs override this to propagate bind/clear failures to FrameRenderer;
+    /// the legacy bool method remains for compatibility with old callers.
+    fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        if self.begin_offscreen_paint(handle) {
+            Ok(())
+        } else {
+            Err(Error::new(
+                crate::core::Errc::InvalidState,
+                "graphics engine could not begin Picture offscreen paint",
+            ))
+        }
+    }
+
     fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
         let _ = handle;
     }
 
+    /// Checked counterpart of [`Self::flush_offscreen_paint`].
+    fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        self.flush_offscreen_paint(handle);
+        Ok(())
+    }
+
     fn end_offscreen_paint(&mut self) {}
+
+    /// Checked counterpart of [`Self::end_offscreen_paint`].
+    fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
+        self.end_offscreen_paint();
+        Ok(())
+    }
+
+    /// Checked ordered Picture blit boundary.  The default preserves legacy
+    /// engines; native implementations must override it when their blit can
+    /// fail.
+    fn try_blit_offscreen_src(
+        &mut self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) -> Result<(), Error> {
+        self.blit_offscreen_src(handle, src_rect, dst_rect);
+        Ok(())
+    }
 
     fn memory_usage(&self) -> usize {
         0

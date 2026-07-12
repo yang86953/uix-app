@@ -4,11 +4,18 @@ use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
 use crate::draw::null_engine::NullEngine;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
+use crate::draw::SoftwareEngine;
+use std::cell::Cell;
 
 struct RecordingEngine {
     canvas: NoopCanvas2D,
     events: Vec<&'static str>,
     partial_redraw: bool,
+    begin_failure: Option<crate::draw::engine::GraphicsFailure>,
+    begin_outcome: Option<RenderOutcome>,
+    offscreen_failure: Option<Error>,
+    end_outcome: RenderOutcome,
+    presentation_mode: crate::draw::traits::PresentationMode,
 }
 
 impl RecordingEngine {
@@ -17,11 +24,41 @@ impl RecordingEngine {
             canvas: NoopCanvas2D,
             events: Vec::new(),
             partial_redraw: true,
+            begin_failure: None,
+            begin_outcome: None,
+            offscreen_failure: None,
+            end_outcome: RenderOutcome::Present(DamageRegion::full()),
+            presentation_mode: crate::draw::traits::PresentationMode::EngineManaged,
         }
     }
 
     fn without_partial_redraw(mut self) -> Self {
         self.partial_redraw = false;
+        self
+    }
+
+    fn with_end_outcome(mut self, outcome: RenderOutcome) -> Self {
+        self.end_outcome = outcome;
+        self
+    }
+
+    fn with_begin_failure(mut self, failure: crate::draw::engine::GraphicsFailure) -> Self {
+        self.begin_failure = Some(failure);
+        self
+    }
+
+    fn with_begin_outcome(mut self, outcome: RenderOutcome) -> Self {
+        self.begin_outcome = Some(outcome);
+        self
+    }
+
+    fn with_external_presenter(mut self) -> Self {
+        self.presentation_mode = crate::draw::traits::PresentationMode::ExternalPresenter;
+        self
+    }
+
+    fn with_offscreen_failure(mut self, error: Error) -> Self {
+        self.offscreen_failure = Some(error);
         self
     }
 }
@@ -33,21 +70,37 @@ impl GraphicsEngine for RecordingEngine {
 
     fn shutdown(&mut self) {}
 
-    fn resize(&mut self, _width: i32, _height: i32) {}
+    fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+        Ok(())
+    }
 
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         self.events.push("begin");
+        if let Some(failure) = &self.begin_failure {
+            return RenderOutcome::Failed(failure.clone());
+        }
+        if let Some(outcome) = &self.begin_outcome {
+            return outcome.clone();
+        }
         match strategy {
-            UpdateStrategy::FullRedraw => RenderOutcome::Present(DamageRegion::full()),
+            UpdateStrategy::FullRedraw => RenderOutcome::FrameReady(DamageRegion::full()),
             UpdateStrategy::DirtyRects(rects) => {
-                RenderOutcome::Present(DamageRegion::partial(rects))
+                RenderOutcome::FrameReady(DamageRegion::partial(rects))
             }
         }
     }
 
     fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
         self.events.push("end");
-        RenderOutcome::Present(present_damage.clone())
+        match &self.end_outcome {
+            RenderOutcome::Idle => RenderOutcome::Idle,
+            RenderOutcome::FrameReady(_) => RenderOutcome::FrameReady(present_damage.clone()),
+            RenderOutcome::PresentPending(_) => {
+                RenderOutcome::PresentPending(present_damage.clone())
+            }
+            RenderOutcome::Present(_) => RenderOutcome::Present(present_damage.clone()),
+            RenderOutcome::Failed(error) => RenderOutcome::Failed(error.clone()),
+        }
     }
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
@@ -57,11 +110,403 @@ impl GraphicsEngine for RecordingEngine {
 
     fn capabilities(&self) -> GraphicsCapabilities {
         GraphicsCapabilities {
-            presentation_mode: crate::draw::traits::PresentationMode::ExternalPresenter,
+            presentation_mode: self.presentation_mode,
             partial_redraw: self.partial_redraw,
             offscreen: true,
         }
     }
+
+    fn try_begin_offscreen_paint(
+        &mut self,
+        _handle: &crate::draw::ImageHandle,
+    ) -> Result<(), Error> {
+        self.events.push("offscreen_begin");
+        match &self.offscreen_failure {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
+        }
+    }
+
+    fn create_offscreen(&mut self, _width: i32, _height: i32) -> Option<crate::draw::ImageHandle> {
+        Some(crate::draw::ImageHandle(1))
+    }
+
+    fn offscreen_canvas(
+        &mut self,
+        _handle: &crate::draw::ImageHandle,
+    ) -> Option<&mut dyn Canvas2D> {
+        Some(&mut self.canvas)
+    }
+}
+
+struct EncodedSoftwareEngine {
+    inner: SoftwareEngine,
+    encoded_picture_executions: usize,
+}
+
+impl EncodedSoftwareEngine {
+    fn new() -> Self {
+        Self {
+            inner: SoftwareEngine::new(),
+            encoded_picture_executions: 0,
+        }
+    }
+}
+
+impl GraphicsEngine for EncodedSoftwareEngine {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.initialize(width, height)
+    }
+
+    fn shutdown(&mut self) {
+        self.inner.shutdown();
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.resize(width, height)
+    }
+
+    fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
+        self.inner.begin_frame(strategy)
+    }
+
+    fn end_frame(&mut self, damage: &DamageRegion) -> RenderOutcome {
+        self.inner.end_frame(damage)
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        self.inner.canvas_2d()
+    }
+
+    fn capabilities(&self) -> GraphicsCapabilities {
+        self.inner.capabilities()
+    }
+
+    fn create_offscreen(&mut self, width: i32, height: i32) -> Option<crate::draw::ImageHandle> {
+        self.inner.create_offscreen(width, height)
+    }
+
+    fn destroy_offscreen(&mut self, handle: crate::draw::ImageHandle) {
+        self.inner.destroy_offscreen(handle);
+    }
+
+    fn offscreen_canvas(&mut self, handle: &crate::draw::ImageHandle) -> Option<&mut dyn Canvas2D> {
+        self.inner.offscreen_canvas(handle)
+    }
+
+    fn begin_offscreen_paint(&mut self, handle: &crate::draw::ImageHandle) -> bool {
+        self.inner.begin_offscreen_paint(handle)
+    }
+
+    fn flush_offscreen_paint(&mut self, handle: &crate::draw::ImageHandle) {
+        self.inner.flush_offscreen_paint(handle);
+    }
+
+    fn end_offscreen_paint(&mut self) {
+        self.inner.end_offscreen_paint();
+    }
+
+    fn blit_offscreen_src(
+        &mut self,
+        handle: &crate::draw::ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) {
+        self.inner.blit_offscreen_src(handle, src_rect, dst_rect);
+    }
+
+    fn try_execute_encoded_picture(
+        &mut self,
+        handle: &crate::draw::ImageHandle,
+        encoder: &crate::draw::pipeline::FrameEncoder,
+    ) -> Result<crate::draw::pipeline::EncodedPictureExecution, Error> {
+        let result = self.inner.try_execute_encoded_picture(handle, encoder)?;
+        if matches!(
+            result,
+            crate::draw::pipeline::EncodedPictureExecution::Executed
+        ) {
+            self.encoded_picture_executions += 1;
+        }
+        Ok(result)
+    }
+}
+
+#[test]
+fn frame_renderer_stops_before_paint_or_end_when_begin_frame_fails() {
+    let failure = crate::draw::engine::GraphicsFailure::SurfaceLost(Error::new(
+        crate::core::error::Errc::GraphicsSurfaceLost,
+        "injected begin failure",
+    ));
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new().with_begin_failure(failure);
+    let scene = EmptyScene::new();
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let output = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 0,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert!(matches!(output.outcome, RenderOutcome::Failed(_)));
+    assert_eq!(output.inv_source, InvalidationSource::None);
+    assert_eq!(engine.events, ["begin"]);
+}
+
+#[test]
+fn frame_renderer_does_not_report_present_when_engine_declines_frame_completion() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new().with_end_outcome(RenderOutcome::Idle);
+    let scene = EmptyScene::new();
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let output = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 0,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert_eq!(output.outcome, RenderOutcome::Idle);
+    assert_eq!(engine.events.last(), Some(&"end"));
+}
+
+#[test]
+fn frame_renderer_rejects_final_presentation_from_begin_frame() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine =
+        RecordingEngine::new().with_begin_outcome(RenderOutcome::Present(DamageRegion::full()));
+    let scene = EmptyScene::new();
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let output = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 0,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert!(matches!(output.outcome, RenderOutcome::Failed(_)));
+    assert_eq!(engine.events, ["begin"]);
+}
+
+#[test]
+fn frame_renderer_rejects_ready_result_from_end_frame() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine =
+        RecordingEngine::new().with_end_outcome(RenderOutcome::FrameReady(DamageRegion::full()));
+    let scene = EmptyScene::new();
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let output = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 0,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert!(matches!(output.outcome, RenderOutcome::Failed(_)));
+    assert_eq!(engine.events.last(), Some(&"end"));
+}
+
+#[test]
+fn frame_renderer_preserves_typed_graphics_failure() {
+    let failure = crate::draw::engine::GraphicsFailure::SurfaceLost(Error::new(
+        crate::core::error::Errc::GraphicsSurfaceLost,
+        "injected surface loss",
+    ));
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new().with_end_outcome(RenderOutcome::Failed(failure));
+    let scene = EmptyScene::new();
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let output = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 0,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert!(matches!(
+        output.outcome,
+        RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::SurfaceLost(error))
+            if error.code() == crate::core::error::Errc::GraphicsSurfaceLost
+    ));
+    assert_eq!(output.inv_source, InvalidationSource::None);
+}
+
+#[test]
+fn picture_offscreen_failure_aborts_before_end_frame_or_final_present() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new().with_offscreen_failure(Error::new(
+        crate::core::Errc::GraphicsSurfaceLost,
+        "injected Picture bind failure",
+    ));
+    let scene = EligiblePictureScene::new();
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let output = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert!(matches!(
+        output.outcome,
+        RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::SurfaceLost(error))
+            if error.code() == crate::core::Errc::GraphicsSurfaceLost
+    ));
+    assert_eq!(output.inv_source, InvalidationSource::None);
+    assert!(engine.events.contains(&"offscreen_begin"));
+    assert!(!engine.events.contains(&"end"));
+}
+
+#[test]
+fn cached_cpu_picture_executes_frame_encoder_before_its_existing_present_boundary() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = EncodedSoftwareEngine::new();
+    engine.initialize(300, 300).expect("software init");
+    let scene = EligiblePictureScene::new();
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let first = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(matches!(first.outcome, RenderOutcome::PresentPending(_)));
+    assert_eq!(engine.encoded_picture_executions, 0);
+
+    // Root itself is now cacheable; a child invalidation requires the Picture
+    // to re-rasterize while reusing its root DisplayList. That is the narrow
+    // production path that must consume FrameEncoder rather than only tests.
+    scene.root_dirty.set(false);
+    scene.child_dirty.set(true);
+    let second = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert!(matches!(second.outcome, RenderOutcome::PresentPending(_)));
+    assert_eq!(engine.encoded_picture_executions, 1);
+    let pixels = engine
+        .inner
+        .session()
+        .cpu_backend()
+        .expect("CPU backend")
+        .pixels();
+    assert_eq!(pixels[0], Color::from_rgb(160, 20, 20).premultiplied());
+    assert_eq!(
+        pixels[8 * 300 + 8],
+        Color::from_rgb(20, 40, 220).premultiplied()
+    );
 }
 
 struct EmptyScene {
@@ -123,6 +568,120 @@ impl ScenePaint for EmptyScene {
         None
     }
     fn paint(&self, _: crate::draw::pipeline::NodeId, _: Rect, _: &mut PaintContext<'_>) {}
+}
+
+struct EligiblePictureScene {
+    root_dirty: Cell<bool>,
+    child_dirty: Cell<bool>,
+}
+
+impl EligiblePictureScene {
+    fn new() -> Self {
+        Self {
+            root_dirty: Cell::new(true),
+            child_dirty: Cell::new(false),
+        }
+    }
+}
+
+impl ScenePaint for EligiblePictureScene {
+    fn root_id(&self) -> Option<crate::draw::pipeline::NodeId> {
+        Some(crate::draw::pipeline::NodeId::new(1))
+    }
+
+    fn tree_version(&self) -> u64 {
+        1
+    }
+
+    fn dirty_region(&self) -> DirtyRegion {
+        DirtyRegion::full()
+    }
+
+    fn node_visible(&self, id: crate::draw::pipeline::NodeId) -> bool {
+        (1..=8).any(|slot| id == crate::draw::pipeline::NodeId::new(slot))
+    }
+
+    fn node_frame(&self, _: crate::draw::pipeline::NodeId) -> Rect {
+        Rect::new(0.0, 0.0, 300.0, 300.0)
+    }
+
+    fn node_dirty(&self, id: crate::draw::pipeline::NodeId) -> bool {
+        if id == crate::draw::pipeline::NodeId::new(1) {
+            self.root_dirty.get()
+        } else if id == crate::draw::pipeline::NodeId::new(2) {
+            self.child_dirty.get()
+        } else {
+            false
+        }
+    }
+
+    fn node_z_index(&self, _: crate::draw::pipeline::NodeId) -> i32 {
+        0
+    }
+
+    fn node_children(&self, id: crate::draw::pipeline::NodeId) -> &[crate::draw::pipeline::NodeId] {
+        static CHILDREN: [crate::draw::pipeline::NodeId; 7] = [
+            crate::draw::pipeline::NodeId::new(2),
+            crate::draw::pipeline::NodeId::new(3),
+            crate::draw::pipeline::NodeId::new(4),
+            crate::draw::pipeline::NodeId::new(5),
+            crate::draw::pipeline::NodeId::new(6),
+            crate::draw::pipeline::NodeId::new(7),
+            crate::draw::pipeline::NodeId::new(8),
+        ];
+        if id == crate::draw::pipeline::NodeId::new(1) {
+            &CHILDREN
+        } else {
+            &[]
+        }
+    }
+
+    fn node_picture_policy(
+        &self,
+        _: crate::draw::pipeline::NodeId,
+    ) -> crate::draw::compositor::PicturePolicy {
+        crate::draw::compositor::PicturePolicy::Eligible
+    }
+
+    fn children_clip(&self, _: crate::draw::pipeline::NodeId, _: Rect) -> Option<Rect> {
+        None
+    }
+
+    fn dirty_rect(&self, _: crate::draw::pipeline::NodeId, frame: Rect) -> Rect {
+        frame
+    }
+
+    fn scroll_offset(&self, _: crate::draw::pipeline::NodeId) -> Option<(f32, f32)> {
+        None
+    }
+
+    fn focused_node(&self) -> Option<crate::draw::pipeline::NodeId> {
+        None
+    }
+
+    fn node_focusable(&self, _: crate::draw::pipeline::NodeId) -> bool {
+        false
+    }
+
+    fn hit_test(&self, _: Point) -> Option<crate::draw::pipeline::NodeId> {
+        None
+    }
+
+    fn parent(&self, _: crate::draw::pipeline::NodeId) -> Option<crate::draw::pipeline::NodeId> {
+        None
+    }
+
+    fn paint(&self, id: crate::draw::pipeline::NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
+        if id == crate::draw::pipeline::NodeId::new(1) {
+            ctx.fill_rect(frame, Color::from_rgb(160, 20, 20), None);
+        } else if id == crate::draw::pipeline::NodeId::new(2) {
+            ctx.fill_rect(
+                Rect::new(8.0, 8.0, 16.0, 16.0),
+                Color::from_rgb(20, 40, 220),
+                None,
+            );
+        }
+    }
 }
 
 struct MockTokens;
@@ -390,7 +949,10 @@ fn first_frame_expands_partial_dirty_to_full_paint_region() {
             metrics: None,
         },
     );
-    assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::PresentPending(DamageRegion::full())
+    );
 }
 
 #[test]
@@ -420,7 +982,10 @@ fn mock_scene_render_frame_does_not_panic() {
             metrics: None,
         },
     );
-    assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::PresentPending(DamageRegion::full())
+    );
 }
 
 #[test]
@@ -516,7 +1081,10 @@ fn first_frame_builds_layer_tree_when_scene_version_is_zero() {
         },
     );
 
-    assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::PresentPending(DamageRegion::full())
+    );
     assert_eq!(scene.painted.get(), 1);
     assert!(renderer.layer_tree().is_ready());
 }
@@ -585,7 +1153,7 @@ fn rendered_frame_with_partial_dirty_outputs_padded_partial_damage() {
 
     assert_eq!(
         out.outcome,
-        RenderOutcome::Present(DamageRegion::partial(vec![Rect::new(2.0, 3.0, 7.0, 8.0)]))
+        RenderOutcome::PresentPending(DamageRegion::partial(vec![Rect::new(2.0, 3.0, 7.0, 8.0)]))
     );
     assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
 }
@@ -625,7 +1193,7 @@ fn multi_rect_dirty_expands_to_union_for_paint_and_damage() {
     // for_paint_clear → [0,0,20,100]，再 pad ±1
     assert_eq!(
         out.outcome,
-        RenderOutcome::Present(DamageRegion::partial(vec![Rect::new(
+        RenderOutcome::PresentPending(DamageRegion::partial(vec![Rect::new(
             0.0, 0.0, 22.0, 102.0
         )]))
     );
@@ -663,7 +1231,7 @@ fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
 
     assert_eq!(
         out.outcome,
-        RenderOutcome::Present(DamageRegion::partial(vec![
+        RenderOutcome::PresentPending(DamageRegion::partial(vec![
             Rect::new(9.0, 19.0, 6.0, 7.0),
             Rect::new(29.0, 39.0, 52.0, 62.0),
         ]))
@@ -735,7 +1303,10 @@ fn first_frame_with_scroll_move_still_uses_full_damage() {
         },
     );
 
-    assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::PresentPending(DamageRegion::full())
+    );
     assert_eq!(out.inv_source, InvalidationSource::FirstFrame);
 }
 
@@ -784,4 +1355,37 @@ fn debug_telemetry_draws_before_end_frame() {
         "debug HUD must be drawn before end_frame"
     );
     assert_eq!(out.outcome, RenderOutcome::Present(DamageRegion::full()));
+}
+
+#[test]
+fn frame_renderer_marks_external_presenter_output_as_pending() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new().with_external_presenter();
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let output = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 0,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert_eq!(
+        output.outcome,
+        RenderOutcome::PresentPending(DamageRegion::full())
+    );
+    assert_eq!(output.inv_source, InvalidationSource::FirstFrame);
 }

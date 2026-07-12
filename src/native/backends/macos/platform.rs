@@ -16,7 +16,7 @@ use crate::native::traits::input::{
     CursorType, IClipboard, ICursor, IKeyboard, ITextInput, KeyCode, KeyMod, MouseButton,
 };
 use crate::native::traits::platform::Platform;
-use crate::native::traits::present::{IPresenter, PresentDamage};
+use crate::native::traits::present::{validate_pixel_buffer, IPresenter, PresentDamage};
 use crate::native::traits::system::{
     ConsoleColor, IConsole, IFileDialog, IFileSystem, INotification, ISystemInfo, ITimer,
     MemoryInfo, OsInfo, SpecialDir, TerminalCapabilities,
@@ -392,6 +392,7 @@ impl IPresenter for MacosPresenter {
         if width <= 0 || height <= 0 {
             return Ok(());
         }
+        validate_pixel_buffer(pixels, width, height)?;
         if width != self.width || height != self.height {
             self.resize(width, height)?;
         }

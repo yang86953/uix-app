@@ -4,7 +4,7 @@ use std::any::Any;
 use std::cell::RefCell;
 
 use crate::core::{DamageRegion, Errc, Error, Point, Rect};
-use crate::native::traits::present::{IGraphicsContext, PresentFrame};
+use crate::native::traits::present::{IGraphicsContext, PresentDamage, PresentFrame};
 use glow::HasContext as _;
 
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
@@ -67,8 +67,6 @@ impl DrawSurface for GpuDrawSurface {
 }
 
 // GL 上下文仅在主线程使用。
-unsafe impl Send for GpuDrawSurface {}
-
 struct GlOffscreen {
     fbo: glow::Framebuffer,
     texture: glow::Texture,
@@ -81,8 +79,8 @@ struct GlOffscreen {
 pub struct GpuBackend {
     // surface 必须先于 gl/context 析构；GpuCanvas2D::Drop 会使用 gl_ptr。
     surface: GpuDrawSurface,
-    pub gl: Box<glow::Context>,
-    pub gpu_ctx: Box<dyn IGraphicsContext>,
+    pub(crate) gl: Box<glow::Context>,
+    pub(crate) gpu_ctx: Box<dyn IGraphicsContext>,
     width: i32,
     height: i32,
     pub readback: RefCell<Vec<u32>>,
@@ -94,7 +92,7 @@ pub struct GpuBackend {
 }
 
 impl GpuBackend {
-    pub fn new(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+    pub(crate) fn new(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         if !gpu_ctx.supports_gl_proc_address() {
             gpu_ctx.shutdown();
             return Err(Error::new(
@@ -176,7 +174,10 @@ impl GpuBackend {
         let w = width.max(1);
         let h = height.max(1);
         let texture = gl.create_texture().map_err(|e| {
-            Error::new(Errc::PlatformError, format!("GpuBackend: create_texture: {e}"))
+            Error::new(
+                Errc::PlatformError,
+                format!("GpuBackend: create_texture: {e}"),
+            )
         })?;
         gl.bind_texture(glow::TEXTURE_2D, Some(texture));
         gl.tex_image_2d(
@@ -288,7 +289,14 @@ fn present_graphics_context(
     damage: &DamageRegion,
 ) -> Result<(), Error> {
     let frame = PresentFrame::Swapchain {
-        damage: damage.to_present_damage(),
+        // A partial redraw request is sound only when the context has proven
+        // preserved-buffer semantics.  EGL deliberately does not, so do not
+        // leak a damage hint into a path that must redraw/present as full.
+        damage: if gpu_ctx.caps().partial_present {
+            damage.to_present_damage()
+        } else {
+            PresentDamage::Full
+        },
     };
     gpu_ctx.present(&frame)
 }
@@ -305,7 +313,7 @@ impl RenderBackend for GpuBackend {
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         let logical_w = width.max(1);
         let logical_h = height.max(1);
-        self.gpu_ctx.resize(logical_w, logical_h);
+        self.gpu_ctx.resize(logical_w, logical_h)?;
         let physical_w = self.gpu_ctx.width();
         let physical_h = self.gpu_ctx.height();
         let dpr = self.gpu_ctx.device_pixel_ratio().max(1.0);
@@ -315,7 +323,7 @@ impl RenderBackend for GpuBackend {
         self.surface.height = logical_h;
         self.surface.canvas.resize(logical_w, logical_h)?;
         self.surface.canvas.set_device_pixel_ratio(dpr);
-        self.gpu_ctx.make_current();
+        self.gpu_ctx.make_current()?;
         unsafe {
             self.gl.viewport(0, 0, physical_w, physical_h);
         }
@@ -328,7 +336,7 @@ impl RenderBackend for GpuBackend {
         }
         self.shutdown = true;
         self.destroy_all_offscreens();
-        self.gpu_ctx.make_current();
+        let _ = self.gpu_ctx.make_current();
         self.surface.canvas.release_gpu_resources();
         self.gpu_ctx.shutdown();
     }
@@ -337,8 +345,8 @@ impl RenderBackend for GpuBackend {
         &mut self.surface
     }
 
-    fn make_current(&mut self) {
-        self.gpu_ctx.make_current();
+    fn make_current(&mut self) -> Result<(), Error> {
+        self.gpu_ctx.make_current()
     }
 
     fn device_pixel_ratio(&self) -> f32 {
@@ -349,7 +357,7 @@ impl RenderBackend for GpuBackend {
         if width <= 0 || height <= 0 {
             return None;
         }
-        self.gpu_ctx.make_current();
+        let _ = self.gpu_ctx.make_current();
         let off = unsafe { Self::create_gl_offscreen(&self.gl, width, height) }.ok()?;
         let id = if let Some(id) = self.free_offscreen_ids.pop() {
             id
@@ -374,7 +382,7 @@ impl RenderBackend for GpuBackend {
         let idx = handle.0 as usize;
         if idx < self.offscreens.len() {
             if let Some(off) = self.offscreens[idx].take() {
-                self.gpu_ctx.make_current();
+                let _ = self.gpu_ctx.make_current();
                 self.destroy_gl_offscreen(off);
                 self.free_offscreen_ids.push(handle.0);
             }
@@ -390,14 +398,28 @@ impl RenderBackend for GpuBackend {
     }
 
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        if let Err(error) = self.try_begin_offscreen_paint(handle) {
+            crate::core::log::error_fn(format!(
+                "GpuBackend: begin Picture offscreen failed: {}",
+                error.short_what()
+            ));
+            return false;
+        }
+        true
+    }
+
+    fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         let idx = handle.0 as usize;
         let Some(Some(off)) = self.offscreens.get(idx) else {
-            return false;
+            return Err(Error::new(
+                Errc::InvalidState,
+                "Picture offscreen target does not exist",
+            ));
         };
         let fbo = off.fbo;
         let w = off.width;
         let h = off.height;
-        self.gpu_ctx.make_current();
+        self.gpu_ctx.make_current()?;
         unsafe {
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
             self.gl.viewport(0, 0, w, h);
@@ -406,64 +428,131 @@ impl RenderBackend for GpuBackend {
             self.gl.clear(glow::COLOR_BUFFER_BIT);
         }
         self.active_offscreen = Some(handle.0);
-        true
+        Ok(())
     }
 
     fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
-        let idx = handle.0 as usize;
-        let Some(Some(off)) = self.offscreens.get_mut(idx) else {
-            return;
-        };
-        let fbo = off.fbo;
-        let w = off.width;
-        let h = off.height;
-        self.gpu_ctx.make_current();
-        unsafe {
-            self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
-            self.gl.viewport(0, 0, w, h);
-        }
-        if let Err(err) = off.canvas.flush_soft_fallback() {
-            crate::core::log::warn_fn(format!(
-                "GpuBackend: offscreen flush_soft_fallback failed: {}",
-                err.short_what()
+        if let Err(error) = self.try_flush_offscreen_paint(handle) {
+            crate::core::log::error_fn(format!(
+                "GpuBackend: offscreen flush failed: {}",
+                error.short_what()
             ));
         }
     }
 
+    fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        let idx = handle.0 as usize;
+        let Some(Some(off)) = self.offscreens.get_mut(idx) else {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "Picture offscreen target disappeared before flush",
+            ));
+        };
+        let fbo = off.fbo;
+        let w = off.width;
+        let h = off.height;
+        self.gpu_ctx.make_current()?;
+        unsafe {
+            self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+            self.gl.viewport(0, 0, w, h);
+        }
+        off.canvas.flush_soft_fallback()
+    }
+
     fn end_offscreen_paint(&mut self) {
+        if let Err(error) = self.try_end_offscreen_paint() {
+            crate::core::log::error_fn(format!(
+                "GpuBackend: end Picture offscreen failed: {}",
+                error.short_what()
+            ));
+        }
+    }
+
+    fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
+        self.gpu_ctx.make_current()?;
         self.active_offscreen = None;
         self.bind_default_framebuffer();
+        Ok(())
     }
 
     fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
-        let src = Rect::new(0.0, 0.0, dst_rect.w, dst_rect.h);
+        let Some(off) = self
+            .offscreens
+            .get(handle.0 as usize)
+            .and_then(|off| off.as_ref())
+        else {
+            return;
+        };
+        let src = Rect::new(0.0, 0.0, off.width as f32, off.height as f32);
         self.blit_offscreen_src(handle, src, dst_rect);
     }
 
-    fn blit_offscreen_src(&mut self, handle: &ImageHandle, _src_rect: Rect, dst_rect: Rect) {
+    fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
+        if let Err(error) = self.try_blit_offscreen_src(handle, src_rect, dst_rect) {
+            crate::core::log::error_fn(format!(
+                "GpuBackend: ordered Picture blit failed: {}",
+                error.short_what()
+            ));
+        }
+    }
+
+    fn try_blit_offscreen_src(
+        &mut self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) -> Result<(), Error> {
         let idx = handle.0 as usize;
-        let texture = match self.offscreens.get(idx).and_then(|o| o.as_ref()) {
-            Some(off) => off.texture,
-            None => return,
-        };
+        let (texture, source_width, source_height) =
+            match self.offscreens.get(idx).and_then(|o| o.as_ref()) {
+                Some(off) => (off.texture, off.width, off.height),
+                None => {
+                    return Err(Error::new(
+                        Errc::InvalidState,
+                        "Picture offscreen target does not exist before blit",
+                    ))
+                }
+            };
         if let Some(dst_id) = self.active_offscreen {
             if dst_id == handle.0 {
-                return;
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    "Picture offscreen target cannot blit into itself",
+                ));
             }
-            if let Some(Some(dst_off)) = self.offscreens.get(dst_id as usize) {
-                dst_off.canvas.blit_external_texture(texture, dst_rect);
-            }
-            return;
+            let Some(Some(dst_off)) = self.offscreens.get(dst_id as usize) else {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "active Picture offscreen target disappeared before blit",
+                ));
+            };
+            dst_off.canvas.blit_external_texture(
+                texture,
+                src_rect,
+                source_width,
+                source_height,
+                dst_rect,
+            );
+            return Ok(());
         }
-        self.gpu_ctx.make_current();
+        self.gpu_ctx.make_current()?;
         self.bind_default_framebuffer();
-        self.surface
-            .canvas
-            .blit_external_texture(texture, dst_rect);
+        // Picture blit is immediate GL work. Commit the preceding bounded CPU
+        // fallback segment first so it cannot leapfrog this painter-order
+        // boundary at final present.
+        self.surface.canvas.flush_soft_fallback()?;
+        self.surface.canvas.blit_external_texture(
+            texture,
+            src_rect,
+            source_width,
+            source_height,
+            dst_rect,
+        );
+        Ok(())
     }
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
-        self.gpu_ctx.make_current();
+        self.gpu_ctx.make_current()?;
         self.bind_default_framebuffer();
         self.surface.canvas.flush_soft_fallback()?;
         present_graphics_context(self.gpu_ctx.as_mut(), damage)
@@ -485,9 +574,6 @@ impl Drop for GpuBackend {
 }
 
 // GL 上下文仅在主线程使用，与旧 GpuEngine 一致。
-unsafe impl Send for GpuBackend {}
-unsafe impl Sync for GpuBackend {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,14 +611,20 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
-
-        fn make_current(&mut self) {
-            self.make_current_calls += 1;
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
         }
 
-        fn swap_buffers(&mut self, damage: PresentDamage) {
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            self.make_current_calls += 1;
+
+            Ok(())
+        }
+
+        fn swap_buffers(&mut self, damage: PresentDamage) -> crate::core::Result<()> {
             self.swap_damage = Some(damage);
+
+            Ok(())
         }
 
         fn shutdown(&mut self) {}
@@ -551,13 +643,26 @@ mod tests {
     }
 
     #[test]
-    fn gpu_present_forwards_partial_damage_to_graphics_context() {
+    fn gpu_present_upgrades_damage_to_full_without_partial_present_cap() {
         let mut context = RecordingGraphicsContext::default();
         let damage = DamageRegion::partial(vec![Rect::new(1.0, 2.0, 3.0, 4.0)]);
 
         present_graphics_context(&mut context, &damage).expect("swapchain present");
 
         assert_eq!(context.make_current_calls, 1);
+        assert_eq!(context.swap_damage, Some(PresentDamage::Full));
+    }
+
+    #[test]
+    fn gpu_present_forwards_partial_damage_only_when_context_proves_it() {
+        let mut context = RecordingGraphicsContext {
+            partial_present: true,
+            ..Default::default()
+        };
+        let damage = DamageRegion::partial(vec![Rect::new(1.0, 2.0, 3.0, 4.0)]);
+
+        present_graphics_context(&mut context, &damage).expect("swapchain present");
+
         assert_eq!(
             context.swap_damage,
             Some(PresentDamage::Partial(vec![(1, 2, 3, 4)]))
@@ -629,6 +734,10 @@ mod tests {
                 .canvas_mut()
                 .flush_soft_fallback()
                 .expect("soft fallback upload");
+            assert!(
+                backend.surface.canvas_mut().last_soft_upload_bytes() < 640 * 480 * 4,
+                "a localized CPU fallback must not upload the entire 640x480 texture"
+            );
             assert_eq!(unsafe { backend.gl.get_error() }, glow::NO_ERROR);
             backend.read_pixels();
             let pixels = backend.pixels_ref();
@@ -692,12 +801,208 @@ mod tests {
             backend.read_pixels();
             let pixels = backend.pixels_ref();
             assert!(
-                pixels.iter().any(|p| *p == 0xFF00_FF00 || (*p & 0x00FF_0000) != 0),
+                pixels
+                    .iter()
+                    .any(|p| *p == 0xFF00_FF00 || (*p & 0x00FF_0000) != 0),
                 "post-present loop must still write drawable pixels"
             );
         }
         let _ = engine.end_frame(&DamageRegion::full());
 
+        engine.shutdown();
+        window.close().expect("close native window");
+    }
+
+    #[cfg(feature = "opengles")]
+    #[test]
+    fn opengles_soft_picture_native_preserves_painter_order() {
+        use crate::draw::gpu_engine::GpuEngine;
+        use crate::draw::{Color, GraphicsEngine, UpdateStrategy};
+        use crate::native::traits::present::GraphicsBackend;
+
+        if std::env::consts::OS != "windows" {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("GPU painter-order test", 128, 128)
+            .expect("window");
+        let context = crate::native::create_gpu_context_with_backend(
+            window.native_surface_ptr(),
+            128,
+            128,
+            GraphicsBackend::OpenGlEs,
+        )
+        .expect("WglContext");
+        let mut engine = GpuEngine::new(context).expect("OpenGL ES GpuEngine");
+        engine.initialize(128, 128).expect("initialize GL engine");
+        let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+
+        let picture = engine.create_offscreen(32, 32).expect("offscreen picture");
+        assert!(engine.begin_offscreen_paint(&picture));
+        engine
+            .offscreen_canvas(&picture)
+            .expect("offscreen canvas")
+            .fill_rect(Rect::new(0.0, 0.0, 32.0, 32.0), Color::blue(), None);
+        engine.flush_offscreen_paint(&picture);
+        engine.end_offscreen_paint();
+
+        // Unsupported ellipse records a CPU segment. Picture is immediate,
+        // then the green rectangle is immediate native work. The old path
+        // uploaded the red segment only at final present and covered both.
+        engine
+            .canvas_2d()
+            .fill_ellipse(Rect::new(0.0, 0.0, 128.0, 128.0), Color::red());
+        engine.blit_offscreen(&picture, Rect::new(32.0, 32.0, 64.0, 64.0));
+        engine
+            .canvas_2d()
+            .fill_rect(Rect::new(60.0, 60.0, 8.0, 8.0), Color::green(), None);
+
+        {
+            let backend = engine
+                .session_mut()
+                .gpu_backend_mut()
+                .expect("OpenGL ES backend");
+            backend.read_pixels();
+            let pixels = backend.pixels_ref();
+            let pixel = |x: usize, y: usize| pixels[y * 128 + x];
+            assert_eq!(
+                pixel(20, 64),
+                0xFF00_00FF,
+                "CPU segment remains before Picture"
+            );
+            assert_eq!(
+                pixel(40, 40),
+                0xFFFF_0000,
+                "Picture overwrites prior CPU segment"
+            );
+            assert_eq!(
+                pixel(62, 62),
+                0xFF00_FF00,
+                "native draw remains after Picture"
+            );
+        }
+
+        assert!(matches!(
+            engine.end_frame(&DamageRegion::full()),
+            crate::draw::RenderOutcome::Present(_)
+        ));
+        engine.destroy_offscreen(picture);
+        engine.shutdown();
+        window.close().expect("close native window");
+    }
+
+    #[cfg(feature = "opengles")]
+    #[test]
+    fn opengles_picture_blit_honors_source_crop_and_full_source_extent() {
+        use crate::draw::gpu_engine::GpuEngine;
+        use crate::draw::{Color, GraphicsEngine, UpdateStrategy};
+        use crate::native::traits::present::GraphicsBackend;
+
+        if std::env::consts::OS != "windows" {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("GPU picture crop test", 128, 128)
+            .expect("window");
+        let context = crate::native::create_gpu_context_with_backend(
+            window.native_surface_ptr(),
+            128,
+            128,
+            GraphicsBackend::OpenGlEs,
+        )
+        .expect("WglContext");
+        let mut engine = GpuEngine::new(context).expect("OpenGL ES GpuEngine");
+        engine.initialize(128, 128).expect("initialize GL engine");
+        let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+
+        let picture = engine.create_offscreen(32, 32).expect("offscreen picture");
+        assert!(engine.begin_offscreen_paint(&picture));
+        let picture_canvas = engine.offscreen_canvas(&picture).expect("offscreen canvas");
+        picture_canvas.fill_rect(Rect::new(0.0, 0.0, 32.0, 32.0), Color::green(), None);
+        picture_canvas.fill_rect(Rect::new(0.0, 0.0, 16.0, 32.0), Color::red(), None);
+        engine.flush_offscreen_paint(&picture);
+        engine.end_offscreen_paint();
+
+        engine.blit_offscreen_src(
+            &picture,
+            Rect::new(0.0, 0.0, 16.0, 32.0),
+            Rect::new(0.0, 0.0, 48.0, 48.0),
+        );
+        engine.blit_offscreen_src(
+            &picture,
+            Rect::new(16.0, 0.0, 16.0, 32.0),
+            Rect::new(64.0, 0.0, 48.0, 48.0),
+        );
+        // The convenience form must sample the complete 32x32 source, not
+        // infer source dimensions from this 64x64 destination.
+        engine.blit_offscreen(&picture, Rect::new(0.0, 64.0, 64.0, 64.0));
+
+        {
+            let backend = engine
+                .session_mut()
+                .gpu_backend_mut()
+                .expect("OpenGL ES backend");
+            backend.read_pixels();
+            let pixels = backend.pixels_ref();
+            let pixel = |x: usize, y: usize| pixels[y * 128 + x];
+            assert_eq!(
+                (pixel(24, 104), pixel(88, 104), pixel(16, 24), pixel(48, 24)),
+                (0xFF00_00FF, 0xFF00_FF00, 0xFF00_00FF, 0xFF00_FF00),
+                "source crop and full source extent must both preserve Picture pixels"
+            );
+        }
+
+        assert!(matches!(
+            engine.end_frame(&DamageRegion::full()),
+            crate::draw::RenderOutcome::Present(_)
+        ));
+        engine.destroy_offscreen(picture);
+        engine.shutdown();
+        window.close().expect("close native window");
+    }
+
+    #[cfg(feature = "opengles")]
+    #[test]
+    fn opengles_rejects_cpu_additive_fallback_instead_of_alpha_over_approximation() {
+        use crate::draw::engine::GraphicsFailure;
+        use crate::draw::gpu_engine::GpuEngine;
+        use crate::draw::{BlendMode, Color, GraphicsEngine, UpdateStrategy};
+        use crate::native::traits::present::GraphicsBackend;
+
+        if std::env::consts::OS != "windows" {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("GPU additive fallback test", 96, 96)
+            .expect("window");
+        let context = crate::native::create_gpu_context_with_backend(
+            window.native_surface_ptr(),
+            96,
+            96,
+            GraphicsBackend::OpenGlEs,
+        )
+        .expect("WglContext");
+        let mut engine = GpuEngine::new(context).expect("OpenGL ES GpuEngine");
+        engine.initialize(96, 96).expect("initialize GL engine");
+        let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+        let canvas = engine.canvas_2d();
+        canvas.set_blend_mode(BlendMode::Additive);
+        canvas.fill_ellipse(Rect::new(8.0, 8.0, 64.0, 64.0), Color::blue());
+
+        assert!(matches!(
+            engine.end_frame(&DamageRegion::full()),
+            crate::draw::RenderOutcome::Failed(GraphicsFailure::Other(error))
+                if error.code() == crate::core::Errc::NotImplemented
+        ));
         engine.shutdown();
         window.close().expect("close native window");
     }
@@ -735,11 +1040,17 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
 
-        fn make_current(&mut self) {}
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
 
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
 
         fn shutdown(&mut self) {}
 

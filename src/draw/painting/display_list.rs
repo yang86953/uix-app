@@ -7,6 +7,9 @@ use crate::core::{Point, Rect};
 use crate::draw::font::text::TextRenderService;
 use crate::draw::image::{blit_handle, BitmapHandle, ImageService};
 use crate::draw::painting::PaintContext;
+use crate::draw::pipeline::{FrameEncoder, FrameEncoderError, FrameRasterOp, FrameRect};
+use crate::draw::primitives::path::{FillRule, Path};
+use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::traits::Canvas2D;
 use crate::draw::{Color, FontHandle, GradientDirection, Radius};
 
@@ -40,7 +43,52 @@ pub enum PaintOp {
         r: f32,
         color: Color,
     },
+    FillEllipse {
+        rect: Rect,
+        color: Color,
+    },
+    FillSector {
+        cx: f32,
+        cy: f32,
+        r: f32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+    },
+    FillPath {
+        path: Path,
+        color: Color,
+        fill_rule: FillRule,
+    },
+    StrokeCircle {
+        cx: f32,
+        cy: f32,
+        r: f32,
+        color: Color,
+        line_width: f32,
+    },
+    StrokePath {
+        path: Path,
+        color: Color,
+        options: StrokeOptions,
+    },
+    DrawLine {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        color: Color,
+        width: f32,
+    },
     DrawBoxShadow {
+        rect: Rect,
+        blur_radius: f32,
+        offset_x: f32,
+        offset_y: f32,
+        color: Color,
+        corner_radius: Option<Radius>,
+    },
+    DrawBoxShadowAmbient {
         rect: Rect,
         blur_radius: f32,
         offset_x: f32,
@@ -66,6 +114,27 @@ pub enum PaintOp {
         color: Color,
         font_size: f32,
     },
+    DrawTextBaseline {
+        text: String,
+        x: f32,
+        baseline_y: f32,
+        color: Color,
+        font_size: f32,
+    },
+    DrawTextWrapped {
+        text: String,
+        rect: Rect,
+        color: Color,
+        font_size: f32,
+    },
+    DrawTextWithSelection {
+        text: String,
+        pos: Point,
+        color: Color,
+        font_size: f32,
+        selection: Option<(usize, usize)>,
+        selection_bg: Color,
+    },
     BlitGlyphLayout {
         layout: crate::draw::font::text_backend::TextLayout,
         pos: Point,
@@ -80,6 +149,14 @@ pub enum PaintOp {
         color_a: Color,
         color_b: Color,
         dir: GradientDirection,
+    },
+    FillRadialGradient {
+        cx: f32,
+        cy: f32,
+        inner_r: f32,
+        outer_r: f32,
+        inner_color: Color,
+        outer_color: Color,
     },
     DrawImage {
         handle: BitmapHandle,
@@ -100,6 +177,15 @@ pub struct DisplayList {
     ops: Vec<PaintOp>,
 }
 
+/// Why a cached Picture cannot use the deliberately narrow CPU
+/// `FrameEncoder` executor. The caller must replay the complete DisplayList
+/// on its existing canvas instead of approximating these operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PictureEncodingError {
+    InvalidExtent(FrameEncoderError),
+    Unsupported(&'static str),
+}
+
 impl DisplayList {
     pub fn new() -> Self {
         Self::default()
@@ -115,6 +201,51 @@ impl DisplayList {
 
     pub fn push(&mut self, op: PaintOp) {
         self.ops.push(op);
+    }
+
+    /// Builds an actual ordered `FrameEncoder` for the lossless CPU Picture
+    /// subset: save/restore plus sharp solid rectangles. Coordinates are
+    /// translated into the Picture-local target exactly as Canvas2D receives
+    /// them after `translate(-origin)`. Every other operation deliberately
+    /// returns `Unsupported`, so GPU and richer CPU Pictures retain normal
+    /// DisplayList replay rather than being rasterized approximately.
+    pub(crate) fn encode_sharp_rect_picture(
+        &self,
+        width: i32,
+        height: i32,
+        origin: Point,
+    ) -> Result<FrameEncoder, PictureEncodingError> {
+        let mut encoder =
+            FrameEncoder::new(width, height).map_err(PictureEncodingError::InvalidExtent)?;
+        encoder.clear(Color::transparent());
+
+        let mut operations = Vec::new();
+        for op in &self.ops {
+            match op {
+                PaintOp::Save | PaintOp::Restore => {}
+                PaintOp::FillRect {
+                    rect,
+                    color,
+                    radius,
+                } if radius
+                    .is_none_or(|r| r.tl == 0.0 && r.tr == 0.0 && r.br == 0.0 && r.bl == 0.0) =>
+                {
+                    let local = Rect::new(rect.x - origin.x, rect.y - origin.y, rect.w, rect.h);
+                    let (x, y, width, height) =
+                        crate::draw::rasterizer::core::rect_to_pixels(&local);
+                    operations.push(FrameRasterOp::FillRect {
+                        rect: FrameRect::new(x, y, width, height),
+                        color: *color,
+                    });
+                }
+                PaintOp::FillRect { .. } => {
+                    return Err(PictureEncodingError::Unsupported("rounded FillRect"));
+                }
+                _ => return Err(PictureEncodingError::Unsupported("non-rect PaintOp")),
+            }
+        }
+        encoder.cpu_segment(operations);
+        Ok(encoder)
     }
 
     /// 重放到 `PaintContext`（不再二次录制）。
@@ -134,6 +265,40 @@ impl DisplayList {
                     radius,
                 } => ctx.stroke_rect(*rect, *color, *line_width, *radius),
                 PaintOp::FillCircle { cx, cy, r, color } => ctx.fill_circle(*cx, *cy, *r, *color),
+                PaintOp::FillEllipse { rect, color } => ctx.fill_ellipse(*rect, *color),
+                PaintOp::FillSector {
+                    cx,
+                    cy,
+                    r,
+                    start_angle,
+                    end_angle,
+                    color,
+                } => ctx.fill_sector(*cx, *cy, *r, *start_angle, *end_angle, *color),
+                PaintOp::FillPath {
+                    path,
+                    color,
+                    fill_rule,
+                } => ctx.fill_path(path, *color, *fill_rule),
+                PaintOp::StrokeCircle {
+                    cx,
+                    cy,
+                    r,
+                    color,
+                    line_width,
+                } => ctx.stroke_circle(*cx, *cy, *r, *color, *line_width),
+                PaintOp::StrokePath {
+                    path,
+                    color,
+                    options,
+                } => ctx.stroke_path(path, *color, options),
+                PaintOp::DrawLine {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    color,
+                    width,
+                } => ctx.draw_line(*x1, *y1, *x2, *y2, *color, *width),
                 PaintOp::DrawBoxShadow {
                     rect,
                     blur_radius,
@@ -142,6 +307,21 @@ impl DisplayList {
                     color,
                     corner_radius,
                 } => ctx.draw_box_shadow(
+                    *rect,
+                    *blur_radius,
+                    *offset_x,
+                    *offset_y,
+                    *color,
+                    *corner_radius,
+                ),
+                PaintOp::DrawBoxShadowAmbient {
+                    rect,
+                    blur_radius,
+                    offset_x,
+                    offset_y,
+                    color,
+                    corner_radius,
+                } => ctx.draw_box_shadow_ambient(
                     *rect,
                     *blur_radius,
                     *offset_x,
@@ -167,6 +347,34 @@ impl DisplayList {
                     color,
                     font_size,
                 } => ctx.draw_text_in_frame(text, *rect, *color, *font_size),
+                PaintOp::DrawTextBaseline {
+                    text,
+                    x,
+                    baseline_y,
+                    color,
+                    font_size,
+                } => ctx.draw_text_baseline(text, *x, *baseline_y, *color, *font_size),
+                PaintOp::DrawTextWrapped {
+                    text,
+                    rect,
+                    color,
+                    font_size,
+                } => ctx.draw_text_wrapped(text, *rect, *color, *font_size),
+                PaintOp::DrawTextWithSelection {
+                    text,
+                    pos,
+                    color,
+                    font_size,
+                    selection,
+                    selection_bg,
+                } => ctx.draw_text_with_selection(
+                    text,
+                    *pos,
+                    *color,
+                    *font_size,
+                    *selection,
+                    *selection_bg,
+                ),
                 PaintOp::BlitGlyphLayout {
                     layout,
                     pos,
@@ -180,6 +388,21 @@ impl DisplayList {
                     color_b,
                     dir,
                 } => ctx.fill_linear_gradient(*rect, *color_a, *color_b, *dir),
+                PaintOp::FillRadialGradient {
+                    cx,
+                    cy,
+                    inner_r,
+                    outer_r,
+                    inner_color,
+                    outer_color,
+                } => ctx.fill_radial_gradient(
+                    *cx,
+                    *cy,
+                    *inner_r,
+                    *outer_r,
+                    *inner_color,
+                    *outer_color,
+                ),
                 PaintOp::DrawImage {
                     handle,
                     bounds,
@@ -226,6 +449,40 @@ impl DisplayList {
                 PaintOp::FillCircle { cx, cy, r, color } => {
                     canvas.fill_circle(*cx, *cy, *r, *color)
                 }
+                PaintOp::FillEllipse { rect, color } => canvas.fill_ellipse(*rect, *color),
+                PaintOp::FillSector {
+                    cx,
+                    cy,
+                    r,
+                    start_angle,
+                    end_angle,
+                    color,
+                } => canvas.fill_sector(*cx, *cy, *r, *start_angle, *end_angle, *color),
+                PaintOp::FillPath {
+                    path,
+                    color,
+                    fill_rule,
+                } => canvas.fill_path(path, *color, *fill_rule),
+                PaintOp::StrokeCircle {
+                    cx,
+                    cy,
+                    r,
+                    color,
+                    line_width,
+                } => canvas.stroke_circle(*cx, *cy, *r, *color, *line_width),
+                PaintOp::StrokePath {
+                    path,
+                    color,
+                    options,
+                } => canvas.stroke_path(path, *color, options),
+                PaintOp::DrawLine {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    color,
+                    width,
+                } => canvas.draw_line(*x1, *y1, *x2, *y2, *color, *width),
                 PaintOp::DrawBoxShadow {
                     rect,
                     blur_radius,
@@ -234,6 +491,21 @@ impl DisplayList {
                     color,
                     corner_radius,
                 } => canvas.draw_box_shadow(
+                    *rect,
+                    *blur_radius,
+                    *offset_x,
+                    *offset_y,
+                    *color,
+                    *corner_radius,
+                ),
+                PaintOp::DrawBoxShadowAmbient {
+                    rect,
+                    blur_radius,
+                    offset_x,
+                    offset_y,
+                    color,
+                    corner_radius,
+                } => canvas.draw_box_shadow_ambient(
                     *rect,
                     *blur_radius,
                     *offset_x,
@@ -265,6 +537,35 @@ impl DisplayList {
                 } => {
                     text.draw_text_in_frame(canvas, s, *rect, *color, *font_size);
                 }
+                PaintOp::DrawTextBaseline {
+                    text: s,
+                    x,
+                    baseline_y,
+                    color,
+                    font_size,
+                } => text.draw_text_baseline(canvas, s, *x, *baseline_y, *color, *font_size),
+                PaintOp::DrawTextWrapped {
+                    text: s,
+                    rect,
+                    color,
+                    font_size,
+                } => text.draw_text_wrapped(canvas, s, *rect, *color, *font_size),
+                PaintOp::DrawTextWithSelection {
+                    text: s,
+                    pos,
+                    color,
+                    font_size,
+                    selection,
+                    selection_bg,
+                } => text.draw_text_with_selection(
+                    canvas,
+                    s,
+                    *pos,
+                    *color,
+                    *font_size,
+                    *selection,
+                    *selection_bg,
+                ),
                 PaintOp::BlitGlyphLayout {
                     layout,
                     pos,
@@ -280,6 +581,21 @@ impl DisplayList {
                     color_b,
                     dir,
                 } => canvas.fill_linear_gradient(*rect, *color_a, *color_b, *dir),
+                PaintOp::FillRadialGradient {
+                    cx,
+                    cy,
+                    inner_r,
+                    outer_r,
+                    inner_color,
+                    outer_color,
+                } => canvas.fill_radial_gradient(
+                    *cx,
+                    *cy,
+                    *inner_r,
+                    *outer_r,
+                    *inner_color,
+                    *outer_color,
+                ),
                 PaintOp::DrawImage {
                     handle,
                     bounds,

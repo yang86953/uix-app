@@ -71,6 +71,11 @@ impl CpuOffscreenPool {
         self.offscreens.get(idx)?.as_ref()
     }
 
+    pub fn get_mut(&mut self, handle: &ImageHandle) -> Option<&mut CpuCanvas2D> {
+        let idx = handle.0 as usize;
+        self.offscreens.get_mut(idx)?.as_mut()
+    }
+
     pub fn memory_usage(&self) -> usize {
         self.offscreens
             .iter()

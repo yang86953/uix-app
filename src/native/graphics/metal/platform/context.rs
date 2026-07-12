@@ -9,7 +9,8 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
 use crate::native::traits::present::{
-    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentFrame,
+    validate_pixel_buffer, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+    PresentFrame,
 };
 
 type LayerId = *mut c_void;
@@ -52,14 +53,19 @@ impl IGraphicsContext for MetalContext {
         Ok(())
     }
 
-    fn resize(&mut self, width: i32, height: i32) {
+    fn resize(&mut self, width: i32, height: i32) -> Result<()> {
         self.width = width.max(1);
         self.height = height.max(1);
+        Ok(())
     }
 
-    fn make_current(&mut self) {}
+    fn make_current(&mut self) -> Result<()> {
+        Ok(())
+    }
 
-    fn swap_buffers(&mut self, _damage: PresentDamage) {}
+    fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
+        Ok(())
+    }
 
     fn shutdown(&mut self) {
         self.initialized = false;
@@ -90,6 +96,7 @@ impl IGraphicsContext for MetalContext {
                 "MetalContext: present before initialize",
             ));
         }
+        validate_pixel_buffer(pixels, width, height)?;
         // SAFETY: layer pointer comes from AppKit-owned CALayer on the UI thread.
         unsafe {
             platform::present_layer_pixels(self.layer, pixels, width, height, damage);
