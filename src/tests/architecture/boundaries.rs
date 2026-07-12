@@ -95,6 +95,21 @@ fn raw_gpu_factory_creation_stays_inside_the_native_factory_bridge() {
             && registry.contains("pub(crate) fn try_create_gpu_context"),
         "registry raw-surface constructors must stay inside the factory bridge"
     );
+    for relative in [
+        "native/graphics/d3d11/platform/context.rs",
+        "native/graphics/d3d11/platform/pipeline.rs",
+        "native/graphics/d3d12/platform/context.rs",
+        "native/graphics/metal/platform/context.rs",
+        "native/graphics/vulkan/platform/context.rs",
+        "native/graphics/opengl/platform/wgl.rs",
+        "native/graphics/opengl/platform/egl.rs",
+    ] {
+        let source = fs::read_to_string(src.join(relative)).expect("read native API object source");
+        assert!(
+            !source.contains("pub fn new("),
+            "{relative} must not expose a raw native API constructor outside the crate"
+        );
+    }
 }
 
 #[test]

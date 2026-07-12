@@ -362,7 +362,7 @@ pub struct D3d12Context {
 }
 
 impl D3d12Context {
-    pub fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
+    pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
         if native_window.is_null() {
             return Err(platform_error("D3d12Context: native window handle is null"));
         }
