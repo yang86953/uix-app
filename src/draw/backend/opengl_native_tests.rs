@@ -1,9 +1,10 @@
 #![cfg(feature = "opengles")]
 
 use crate::core::{DamageRegion, Rect};
+use crate::draw::backend::RenderBackend;
 use crate::draw::engine::GraphicsFailure;
 use crate::draw::gpu_engine::GpuEngine;
-use crate::draw::{BlendMode, Color, GraphicsEngine, UpdateStrategy};
+use crate::draw::{BlendMode, Color, GraphicsEngine, SoftwareEngine, UpdateStrategy};
 use crate::native::traits::present::GraphicsBackend;
 
 fn open_engine(
@@ -79,6 +80,63 @@ fn opengles_native_path_keeps_order_and_bounded_soft_upload() {
         crate::draw::RenderOutcome::Present(_)
     ));
     engine.destroy_offscreen(picture);
+    engine.shutdown();
+    window.close().expect("close native window");
+}
+
+fn record_half_blue_soft_tile(canvas: &mut dyn crate::draw::traits::Canvas2D) {
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 96.0, 96.0),
+        Color::from_rgba(0, 255, 0, 255),
+        None,
+    );
+    canvas.push_clip(Rect::new(32.0, 32.0, 32.0, 32.0));
+    canvas.fill_ellipse(
+        Rect::new(24.0, 24.0, 48.0, 48.0),
+        Color::from_rgba(0, 0, 255, 128),
+    );
+    canvas.pop_clip();
+}
+
+#[test]
+fn opengles_native_path_matches_software_for_premultiplied_soft_tile() {
+    if std::env::consts::OS != "windows" {
+        return;
+    }
+
+    let mut software = SoftwareEngine::new();
+    software.initialize(96, 96).expect("initialize software");
+    let _ = software.begin_frame(UpdateStrategy::FullRedraw);
+    record_half_blue_soft_tile(software.canvas_2d());
+    let reference = software
+        .session()
+        .cpu_backend()
+        .expect("software CPU backend")
+        .pixels()[48 * 96 + 48];
+
+    let (_platform, mut window, mut engine) = open_engine("native GL premultiplied tile", 96, 96);
+    let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+    record_half_blue_soft_tile(engine.canvas_2d());
+    let (pixels, stride) = {
+        let backend = engine
+            .session_mut()
+            .native_gpu_backend_mut()
+            .expect("OpenGL ES NativeGpu backend");
+        let stride = backend.surface().size().w as usize;
+        let pixels = backend
+            .try_readback()
+            .expect("read back premultiplied soft tile");
+        (pixels, stride)
+    };
+    assert_eq!(pixels[8 * stride + 8], 0xFF00_FF00, "native base rect");
+    let rgba_to_aarrggbb = |pixel: u32| {
+        (pixel & 0xFF00_0000)
+            | ((pixel & 0x0000_00FF) << 16)
+            | (pixel & 0x0000_FF00)
+            | ((pixel & 0x00FF_0000) >> 16)
+    };
+    assert_eq!(rgba_to_aarrggbb(pixels[48 * stride + 48]), reference);
+
     engine.shutdown();
     window.close().expect("close native window");
 }

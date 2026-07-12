@@ -307,7 +307,10 @@ impl OpenGlRasterPipeline {
             }
             self.gl().enable(glow::BLEND);
             self.gl()
-                .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+                // CPU fallback storage is premultiplied AARRGGBB. Its sampled
+                // RGB already contains alpha, so SRC_ALPHA would darken the
+                // segment a second time.
+                .blend_func(glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
             self.gl().use_program(Some(self.blit_bgra_program));
             self.gl().uniform_1_i32(self.blit_bgra_texture.as_ref(), 0);
             self.gl().uniform_4_f32(
