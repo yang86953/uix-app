@@ -1071,7 +1071,7 @@ impl NativeGpuBackend {
         self.flush_main_segment_before_ordered_boundary()?;
         let width = self.gpu_ctx.width().max(1);
         let height = self.gpu_ctx.height().max(1);
-        self.gpu_ctx.try_read_pixels(0, 0, width, height)
+        self.gpu_ctx.read_pixels(0, 0, width, height)
     }
 
     #[cfg(all(test, any(feature = "opengles", feature = "d3d11", feature = "d3d12")))]
@@ -1657,8 +1657,14 @@ mod tests {
 
         fn shutdown(&mut self) {}
 
-        fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _w: i32,
+            _h: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
 
         fn width(&self) -> i32 {
@@ -1931,8 +1937,14 @@ mod tests {
             self.shutdown_calls.set(self.shutdown_calls.get() + 1);
         }
 
-        fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _w: i32,
+            _h: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
 
         fn width(&self) -> i32 {
@@ -2181,8 +2193,14 @@ mod tests {
             Ok(())
         }
         fn shutdown(&mut self) {}
-        fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _w: i32,
+            _h: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
         fn width(&self) -> i32 {
             self.width
@@ -2390,8 +2408,14 @@ mod tests {
                 Ok(())
             }
             fn shutdown(&mut self) {}
-            fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
-                Vec::new()
+            fn read_pixels(
+                &mut self,
+                _: i32,
+                _: i32,
+                _: i32,
+                _: i32,
+            ) -> crate::core::Result<Vec<u32>> {
+                Ok(Vec::new())
             }
             fn width(&self) -> i32 {
                 64
@@ -2599,8 +2623,14 @@ mod tests {
                 Ok(())
             }
             fn shutdown(&mut self) {}
-            fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
-                Vec::new()
+            fn read_pixels(
+                &mut self,
+                _: i32,
+                _: i32,
+                _: i32,
+                _: i32,
+            ) -> crate::core::Result<Vec<u32>> {
+                Ok(Vec::new())
             }
             fn width(&self) -> i32 {
                 1
@@ -2646,8 +2676,14 @@ mod tests {
                 Ok(())
             }
             fn shutdown(&mut self) {}
-            fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
-                Vec::new()
+            fn read_pixels(
+                &mut self,
+                _: i32,
+                _: i32,
+                _: i32,
+                _: i32,
+            ) -> crate::core::Result<Vec<u32>> {
+                Ok(Vec::new())
             }
             fn width(&self) -> i32 {
                 1
@@ -3703,7 +3739,10 @@ mod tests {
                 .submit_native(gpu_ctx.as_mut())
                 .expect("submit native contour-forest mesh");
         }
-        let pixels = backend.gpu_ctx.read_pixels(0, 0, 256, 128);
+        let pixels = backend
+            .gpu_ctx
+            .read_pixels(0, 0, 256, 128)
+            .expect("D3D11 readback");
         assert_eq!(pixels.len(), 256 * 128);
         let pixel = |x: usize, y: usize| pixels[y * 256 + x];
         let green = pixel(12, 12);
@@ -3767,7 +3806,10 @@ mod tests {
                 .submit_native(gpu_ctx.as_mut())
                 .expect("submit native stroke mesh");
         }
-        let pixels = backend.gpu_ctx.read_pixels(0, 0, 256, 128);
+        let pixels = backend
+            .gpu_ctx
+            .read_pixels(0, 0, 256, 128)
+            .expect("D3D11 readback");
         let pixel = |x: usize, y: usize| pixels[y * 256 + x];
         for (x, y) in [(32, 24), (76, 20), (68, 28)] {
             let sample = pixel(x, y);
@@ -3891,7 +3933,10 @@ mod tests {
                 .submit_native(gpu_ctx.as_mut())
                 .unwrap_or_else(|error| panic!("submit {label} mesh: {error}"));
         }
-        let pixels = backend.gpu_ctx.read_pixels(0, 0, 256, 128);
+        let pixels = backend
+            .gpu_ctx
+            .read_pixels(0, 0, 256, 128)
+            .expect("D3D11 readback");
         let pixel = |x: usize, y: usize| pixels[y * 256 + x];
         for &(x, y) in filled_samples {
             let green = (pixel(x, y) >> 8) & 0xFF;
@@ -4161,7 +4206,9 @@ mod tests {
                 .canvas
                 .submit_soft(gpu_ctx.as_mut())
                 .expect("submit D3D12 unsupported ellipse through soft blit");
-            let pixels = gpu_ctx.read_pixels(0, 0, width, height);
+            let pixels = gpu_ctx
+                .read_pixels(0, 0, width, height)
+                .expect("D3D12 readback");
             assert_eq!(pixels.len(), (width * height) as usize);
             let pixel = |x: usize, y: usize| pixels[y * width as usize + x];
             assert_eq!(pixel(5, 5), 0xFF00_0000, "outside stays background");

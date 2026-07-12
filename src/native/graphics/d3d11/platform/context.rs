@@ -17,29 +17,29 @@ use crate::native::traits::present::{
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
     NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame, SoftFallbackTile,
 };
-use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{E_OUTOFMEMORY, HMODULE, HWND, TRUE};
 use ::windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
 };
 use ::windows::Win32::Graphics::Direct3D11::{
+    D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION,
+    D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
-    ID3D11ShaderResourceView, ID3D11Texture2D, D3D11_BIND_RENDER_TARGET,
-    D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
-    D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING, D3D11_VIEWPORT,
+    ID3D11ShaderResourceView, ID3D11Texture2D,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use ::windows::Win32::Graphics::Dxgi::{
-    IDXGIDevice, IDXGISwapChain, DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED,
-    DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY,
-    DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
+    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_PRESENT,
+    DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_DISCARD,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIDevice, IDXGISwapChain,
 };
+use ::windows::core::Interface;
 
 type HWND_PTR = *mut c_void;
 
@@ -552,7 +552,7 @@ impl IGraphicsContext for D3d11Context {
         self.release_rtv();
     }
 
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32> {
+    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
         let x0 = x.clamp(0, self.width);
         let y0 = y.clamp(0, self.height);
         let x1 = x.saturating_add(width).clamp(x0, self.width);
@@ -560,10 +560,10 @@ impl IGraphicsContext for D3d11Context {
         let read_w = x1 - x0;
         let read_h = y1 - y0;
         if read_w <= 0 || read_h <= 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
-        let result = (|| -> Result<Vec<u32>> {
+        (|| -> Result<Vec<u32>> {
             let back_buffer: ID3D11Texture2D = unsafe {
                 self.swap_chain
                     .GetBuffer(0)
@@ -623,18 +623,7 @@ impl IGraphicsContext for D3d11Context {
                 self.context.Unmap(&staging, 0);
             }
             Ok(pixels)
-        })();
-
-        match result {
-            Ok(pixels) => pixels,
-            Err(err) => {
-                crate::core::log::warn_fn(format!(
-                    "D3d11Context: read_pixels failed: {}",
-                    err.short_what()
-                ));
-                Vec::new()
-            }
-        }
+        })()
     }
 
     fn width(&self) -> i32 {
@@ -1240,7 +1229,9 @@ mod tests {
         soft[0] = 0xFF00_FF00; // opaque green BGRA
         ctx.blit_soft_fallback(&soft, ctx.width(), ctx.height())
             .expect("blit_soft_fallback");
-        let pixels = ctx.read_pixels(0, 0, ctx.width(), ctx.height());
+        let pixels = ctx
+            .read_pixels(0, 0, ctx.width(), ctx.height())
+            .expect("hardware D3D11 readback");
         assert_eq!(pixels.len(), (ctx.width() * ctx.height()) as usize);
         assert_eq!(pixels[0], 0xFF00_FF00);
         assert!(pixels.iter().any(|pixel| *pixel != pixels[0]));
@@ -1269,7 +1260,9 @@ mod tests {
         warp_ctx
             .clear_render_target(0.25, 0.5, 0.75, 1.0)
             .expect("clear WARP render target");
-        let pixels = warp_ctx.read_pixels(0, 0, warp_ctx.width(), warp_ctx.height());
+        let pixels = warp_ctx
+            .read_pixels(0, 0, warp_ctx.width(), warp_ctx.height())
+            .expect("WARP D3D11 readback");
         assert_eq!(
             pixels.len(),
             (warp_ctx.width() * warp_ctx.height()) as usize
@@ -1315,7 +1308,7 @@ mod tests {
             .expect("blit full soft surface");
 
         assert_eq!(
-            ctx.read_pixels(2, 2, 1, 1),
+            ctx.read_pixels(2, 2, 1, 1).expect("soft-scissor readback"),
             vec![0xFF00_FF00],
             "soft fallback must not inherit the previous native draw scissor"
         );
@@ -1344,7 +1337,9 @@ mod tests {
         first[5 * 64 + 4] = 0x80FF_0000;
         ctx.blit_soft_fallback(&first, 64, 48)
             .expect("first partial soft segment");
-        let first_before = ctx.read_pixels(4, 5, 1, 1)[0];
+        let first_before = ctx
+            .read_pixels(4, 5, 1, 1)
+            .expect("first soft segment readback")[0];
         assert_ne!(first_before, 0, "first segment must reach the target");
 
         let mut second = vec![0u32; 64 * 48];
@@ -1353,12 +1348,14 @@ mod tests {
             .expect("second partial soft segment");
 
         assert_eq!(
-            ctx.read_pixels(4, 5, 1, 1)[0],
+            ctx.read_pixels(4, 5, 1, 1)
+                .expect("first soft segment readback")[0],
             first_before,
             "a later partial upload must not re-blend stale texture data"
         );
         assert_ne!(
-            ctx.read_pixels(36, 19, 1, 1)[0],
+            ctx.read_pixels(36, 19, 1, 1)
+                .expect("second soft segment readback")[0],
             0,
             "second segment must reach its own target pixel"
         );
@@ -1413,7 +1410,9 @@ mod tests {
 
         ctx.clear_render_target(1.0, 0.0, 0.0, 1.0)
             .expect("clear full RT after resize");
-        let px = ctx.read_pixels(cw - 2, ch - 2, 1, 1);
+        let px = ctx
+            .read_pixels(cw - 2, ch - 2, 1, 1)
+            .expect("far-corner readback");
         assert_eq!(px.len(), 1, "far-corner readback");
         assert_eq!(
             px[0] >> 24,
@@ -1536,7 +1535,8 @@ mod tests {
         .expect("blit nonzero source crop");
 
         assert_eq!(
-            ctx.read_pixels(55, 31, 1, 1),
+            ctx.read_pixels(55, 31, 1, 1)
+                .expect("offscreen crop readback"),
             vec![0xFFFF_0000],
             "the destination outside the old narrow scissor must sample the requested red source crop"
         );
@@ -1598,7 +1598,9 @@ mod tests {
                 "RTV must be recreated after Present for the next frame"
             );
         }
-        let pixels = ctx.read_pixels(0, 0, 1, 1);
+        let pixels = ctx
+            .read_pixels(0, 0, 1, 1)
+            .expect("repeated present readback");
         assert_eq!(pixels.len(), 1);
         assert_eq!(pixels[0] >> 24, 0xFF, "final frame must remain opaque");
         ctx.shutdown();
@@ -1633,7 +1635,7 @@ mod tests {
             ctx.clear_render_target(rgba.0, rgba.1, rgba.2, rgba.3)
                 .expect("clear");
             // Read before Present: DXGI_SWAP_EFFECT_DISCARD may drop contents.
-            let pixels = ctx.read_pixels(0, 0, 1, 1);
+            let pixels = ctx.read_pixels(0, 0, 1, 1).expect("theme palette readback");
             assert_eq!(pixels.len(), 1);
             ctx.present(&PresentFrame::Swapchain {
                 damage: PresentDamage::Full,

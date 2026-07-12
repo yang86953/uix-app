@@ -15,7 +15,6 @@ use crate::native::traits::present::{
     GpuSolidRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
     PresentDamage, PresentFrame, SoftFallbackTile,
 };
-use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{CloseHandle, E_OUTOFMEMORY, HANDLE, HWND, WAIT_OBJECT_0};
 use ::windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use ::windows::Win32::Graphics::Direct3D12::*;
@@ -23,14 +22,15 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
 };
 use ::windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory2, IDXGIAdapter1, IDXGIFactory4, IDXGIOutput, IDXGISwapChain3,
-    DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS, DXGI_ERROR_DEVICE_HUNG,
-    DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR,
-    DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_MWA_NO_ALT_ENTER, DXGI_PRESENT, DXGI_SCALING_STRETCH,
-    DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    CreateDXGIFactory2, DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS,
+    DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
+    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_MWA_NO_ALT_ENTER,
+    DXGI_PRESENT, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
+    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter1, IDXGIFactory4,
+    IDXGIOutput, IDXGISwapChain3,
 };
-use ::windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFINITE};
+use ::windows::Win32::System::Threading::{CreateEventW, INFINITE, WaitForSingleObject};
+use ::windows::core::Interface;
 
 type HWND_PTR = *mut c_void;
 
@@ -1042,17 +1042,8 @@ impl IGraphicsContext for D3d12Context {
         }
     }
 
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32> {
-        match self.read_pixels_result(x, y, width, height) {
-            Ok(pixels) => pixels,
-            Err(error) => {
-                crate::core::log::error_fn(format!(
-                    "D3d12Context: read_pixels failed: {}",
-                    error.short_what()
-                ));
-                Vec::new()
-            }
-        }
+    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+        self.read_pixels_result(x, y, width, height)
     }
 
     fn width(&self) -> i32 {
@@ -1275,7 +1266,9 @@ mod tests {
         context
             .clear_render_target(0.25, 0.5, 0.75, 1.0)
             .expect("clear");
-        let pixels = context.read_pixels(3, 5, 17, 11);
+        let pixels = context
+            .read_pixels(3, 5, 17, 11)
+            .expect("D3D12 hardware readback");
         assert_eq!(pixels.len(), 17 * 11);
         assert!(pixels.iter().all(|pixel| *pixel == pixels[0]));
         let pixel = pixels[0];
@@ -1398,7 +1391,9 @@ mod tests {
         context
             .clear_render_target(1.0, 0.0, 0.0, 1.0)
             .expect("clear after resize");
-        let resized = context.read_pixels(0, 0, context.width(), context.height());
+        let resized = context
+            .read_pixels(0, 0, context.width(), context.height())
+            .expect("D3D12 resized readback");
         assert_eq!(resized.len(), (context.width() * context.height()) as usize);
         assert!(resized.iter().all(|pixel| *pixel == 0xFFFF_0000));
         context
@@ -1434,7 +1429,9 @@ mod tests {
         );
         warp.clear_render_target(0.0, 1.0, 0.0, 1.0)
             .expect("WARP clear");
-        let warp_pixels = warp.read_pixels(0, 0, warp.width(), warp.height());
+        let warp_pixels = warp
+            .read_pixels(0, 0, warp.width(), warp.height())
+            .expect("D3D12 WARP readback");
         assert_eq!(warp_pixels.first().copied(), Some(0xFF00_FF00));
         warp.present(&PresentFrame::Swapchain {
             damage: PresentDamage::Full,
@@ -1463,11 +1460,12 @@ mod tests {
             .resize_result(warp.width() + 1, warp.height() + 1)
             .expect_err("faulted context must reject resize");
         assert_eq!(error.code(), Errc::InvalidState);
-        assert!(warp
-            .present(&PresentFrame::Swapchain {
+        assert!(
+            warp.present(&PresentFrame::Swapchain {
                 damage: PresentDamage::Full,
             })
-            .is_err());
+            .is_err()
+        );
         assert!(warp.read_pixels_result(0, 0, 1, 1).is_err());
         warp.shutdown_result()
             .expect("faulted context should still terminal-fence drain");

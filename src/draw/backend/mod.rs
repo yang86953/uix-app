@@ -43,8 +43,8 @@ mod tests {
         GraphicsBackend, GraphicsContextCaps, NativeRasterCaps, PresentDamage,
     };
     use std::ffi::c_void;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct FakeGpuContext {
         backend: GraphicsBackend,
@@ -84,8 +84,14 @@ mod tests {
             self.shutdowns.fetch_add(1, Ordering::SeqCst);
         }
 
-        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _width: i32,
+            _height: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
 
         fn width(&self) -> i32 {

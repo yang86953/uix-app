@@ -9,8 +9,8 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 use crate::native::backends::macos::platform;
 use crate::native::traits::present::{
-    validate_pixel_buffer, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
-    PresentFrame,
+    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentFrame,
+    validate_pixel_buffer,
 };
 
 type LayerId = *mut c_void;
@@ -71,8 +71,8 @@ impl IGraphicsContext for MetalPixelUploadContext {
         self.initialized = false;
     }
 
-    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-        Vec::new()
+    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u32>> {
+        Ok(Vec::new())
     }
 
     fn width(&self) -> i32 {

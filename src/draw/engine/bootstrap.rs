@@ -3,7 +3,7 @@
 use crate::core::{Errc, Error, Result};
 use crate::draw::engine::factory::create_graphics_engine;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::factory::{gpu_recipe_candidates, try_create_gpu_recipe, GraphicsRecipe};
+use crate::native::factory::{GraphicsRecipe, gpu_recipe_candidates, try_create_gpu_recipe};
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, NativeSurfaceHandle};
 
 /// One failed probe attempt recorded for diagnostics and tests.
@@ -299,8 +299,14 @@ mod tests {
             self.shutdown_called.set(true);
         }
 
-        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _width: i32,
+            _height: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
 
         fn width(&self) -> i32 {
@@ -374,9 +380,11 @@ mod tests {
                 let failure = report.failures.first().expect("engine failure");
                 assert_eq!(failure.backend, GraphicsBackend::D3d11);
                 assert!(failure.message.contains("stage=engine_create"));
-                assert!(failure
-                    .message
-                    .contains("selected=backend=d3d11; raster=cpu; present=cpu_presenter"));
+                assert!(
+                    failure
+                        .message
+                        .contains("selected=backend=d3d11; raster=cpu; present=cpu_presenter")
+                );
                 assert!(failure.message.contains("CpuPresenter"));
             }
         }
@@ -425,8 +433,14 @@ mod tests {
             self.shutdown_called.set(true);
         }
 
-        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _width: i32,
+            _height: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
 
         fn width(&self) -> i32 {
@@ -469,9 +483,11 @@ mod tests {
                 let failure = report.failures.first().expect("init failure");
                 assert_eq!(failure.backend, GraphicsBackend::D3d11);
                 assert!(failure.message.contains("stage=engine_initialize"));
-                assert!(failure
-                    .message
-                    .contains("selected=backend=d3d11; raster=gpu_native; present=swapchain"));
+                assert!(
+                    failure
+                        .message
+                        .contains("selected=backend=d3d11; raster=gpu_native; present=swapchain")
+                );
                 assert!(failure.message.contains("make-current failed for test"));
             }
         }
@@ -514,8 +530,14 @@ mod tests {
             Ok(())
         }
         fn shutdown(&mut self) {}
-        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _width: i32,
+            _height: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
         fn width(&self) -> i32 {
             64
@@ -583,11 +605,13 @@ mod tests {
             bootstrap.report.failures[1].backend,
             GraphicsBackend::OpenGlEs
         );
-        assert!(bootstrap
-            .report
-            .failures
-            .iter()
-            .all(|failure| failure.message.contains("stage=context_create")));
+        assert!(
+            bootstrap
+                .report
+                .failures
+                .iter()
+                .all(|failure| failure.message.contains("stage=context_create"))
+        );
         bootstrap.engine.shutdown();
     }
 
@@ -633,9 +657,11 @@ mod tests {
         assert_eq!(bootstrap.selected_recipe, upload_recipe);
         assert_eq!(bootstrap.report.failures.len(), 1);
         assert_eq!(bootstrap.report.failures[0].backend, GraphicsBackend::D3d11);
-        assert!(bootstrap.report.failures[0]
-            .message
-            .contains("recipe=backend=d3d11; raster=gpu_native; present=swapchain"));
+        assert!(
+            bootstrap.report.failures[0]
+                .message
+                .contains("recipe=backend=d3d11; raster=gpu_native; present=swapchain")
+        );
         bootstrap.engine.shutdown();
     }
 
@@ -656,9 +682,11 @@ mod tests {
         let failure = report.failures.first().expect("context failure");
         assert_eq!(failure.backend, GraphicsBackend::OpenGlEs);
         assert!(failure.message.contains("stage=context_create"));
-        assert!(failure
-            .message
-            .contains("recipe=backend=opengles; raster=gpu_native; present=swapchain"));
+        assert!(
+            failure
+                .message
+                .contains("recipe=backend=opengles; raster=gpu_native; present=swapchain")
+        );
         assert!(failure.message.contains("selected=none"));
         assert!(failure.message.contains("WGL context creation failed"));
     }

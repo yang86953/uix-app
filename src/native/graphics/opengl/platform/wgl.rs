@@ -632,20 +632,9 @@ impl IGraphicsContext for WglContext {
         }
     }
 
-    fn try_read_pixels(
-        &mut self,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-    ) -> Result<Vec<u32>, Error> {
+    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>, Error> {
         self.make_current_result()?;
         self.pipeline.read_pixels(x, y, width, height)
-    }
-
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32> {
-        self.try_read_pixels(x, y, width, height)
-            .unwrap_or_default()
     }
 
     fn width(&self) -> i32 {
