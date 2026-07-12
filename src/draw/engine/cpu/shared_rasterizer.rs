@@ -2,7 +2,7 @@
 //!
 //! GPU 未实现路径与 CPU 后端共用，避免 API-specific canvas 内嵌 CPU 后端。
 
-use crate::core::Rect;
+use crate::core::{Errc, Error, Rect};
 
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::raster_renderer::RasterRenderer;
@@ -16,6 +16,7 @@ use crate::draw::traits::Canvas2D;
 pub struct SharedRasterizer {
     renderer: RasterRenderer,
     surface: PixelSurface,
+    deferred_error: Option<Error>,
 }
 
 impl SharedRasterizer {
@@ -25,6 +26,20 @@ impl SharedRasterizer {
         Self {
             renderer: RasterRenderer::new(w, h),
             surface,
+            deferred_error: None,
+        }
+    }
+
+    pub(crate) fn take_deferred_error(&mut self) -> Option<Error> {
+        self.deferred_error.take()
+    }
+
+    fn reject_path_clip(&mut self) {
+        if self.deferred_error.is_none() {
+            self.deferred_error = Some(Error::new(
+                Errc::NotImplemented,
+                "CPU rasterizer does not implement path clip",
+            ));
         }
     }
 
@@ -323,7 +338,9 @@ impl Canvas2D for SharedRasterizer {
     fn set_blend_mode(&mut self, mode: BlendMode) {
         self.renderer.set_blend_mode(mode);
     }
-    fn push_clip_path(&mut self, _path: &Path) {}
+    fn push_clip_path(&mut self, _path: &Path) {
+        self.reject_path_clip();
+    }
 
     fn pixels_mut(&mut self) -> &mut [u32] {
         self.surface.pixels_mut()

@@ -91,6 +91,9 @@ pub fn begin_frame(
 /// 帧结束：恢复裁剪栈。
 pub fn end_frame(surface: &mut dyn DrawSurface) -> RenderOutcome {
     surface.pop_clip();
+    if let Some(error) = surface.take_deferred_error() {
+        return RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(error));
+    }
     RenderOutcome::Present(DamageRegion::full())
 }
 

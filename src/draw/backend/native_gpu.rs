@@ -126,6 +126,9 @@ pub struct NativeGpuCanvas2D {
     /// Destination-dependent blend cannot be faithfully composed from a
     /// transparent CPU segment over native output.
     soft_uses_destination_blend: bool,
+    /// Immediate Canvas2D calls that have no `Result` return channel record
+    /// an error here. The frame boundary consumes it before any present.
+    deferred_error: Option<Error>,
     pending_native: Vec<PendingNativeOp>,
     clip_rect: Rect,
     clip_stack: Vec<Rect>,
@@ -150,6 +153,7 @@ impl NativeGpuCanvas2D {
             soft_fallback: None,
             soft_has_content: false,
             soft_uses_destination_blend: false,
+            deferred_error: None,
             pending_native: Vec::new(),
             clip_rect: Rect::new(0.0, 0.0, w as f32, h as f32),
             clip_stack: Vec::new(),
@@ -194,6 +198,7 @@ impl NativeGpuCanvas2D {
         self.soft_fallback = None;
         self.soft_has_content = false;
         self.soft_uses_destination_blend = false;
+        self.deferred_error = None;
     }
 
     fn clear_soft(&mut self) {
@@ -207,6 +212,19 @@ impl NativeGpuCanvas2D {
 
     fn mark_soft(&mut self) {
         self.soft_has_content = true;
+    }
+
+    fn take_deferred_error(&mut self) -> Option<Error> {
+        self.deferred_error.take()
+    }
+
+    fn reject_path_clip(&mut self) {
+        if self.deferred_error.is_none() {
+            self.deferred_error = Some(Error::new(
+                Errc::NotImplemented,
+                "NativeGpuCanvas2D does not implement path clip",
+            ));
+        }
     }
 
     fn clear_soft_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
@@ -856,7 +874,9 @@ impl Canvas2D for NativeGpuCanvas2D {
             }));
     }
 
-    fn push_clip_path(&mut self, _path: &Path) {}
+    fn push_clip_path(&mut self, _path: &Path) {
+        self.reject_path_clip();
+    }
 
     fn save(&mut self) {
         self.state_stack.push(StateSnapshot {
@@ -988,6 +1008,10 @@ impl DrawSurface for NativeGpuDrawSurface {
 
     fn canvas(&mut self) -> &mut dyn Canvas2D {
         &mut self.canvas
+    }
+
+    fn take_deferred_error(&mut self) -> Option<Error> {
+        self.canvas.take_deferred_error()
     }
 }
 
@@ -1529,6 +1553,9 @@ impl RenderBackend for NativeGpuBackend {
                     "offscreen target disappeared before flush",
                 )
             })?;
+        if let Some(error) = off.canvas.take_deferred_error() {
+            return Err(error);
+        }
         let target = off.target;
         self.gpu_ctx.bind_offscreen_target(target)?;
         off.canvas.submit_native(self.gpu_ctx.as_mut())?;
@@ -1686,6 +1713,48 @@ mod tests {
         assert_eq!(packed[0], 0xFF00_0001);
         assert_eq!(packed[11], 0x8000_0002);
         assert_eq!(pack_visible_soft_fallback_tile(&[0; 4], 2, 2), None);
+    }
+
+    #[test]
+    fn native_gpu_canvas_defers_path_clip_failure_to_the_frame_boundary() {
+        let mut canvas = NativeGpuCanvas2D::new(16, 16, NativeRasterCaps::d3d11_full());
+        let mut builder = crate::draw::primitives::path::PathBuilder::new();
+        builder
+            .move_to(2.0, 2.0)
+            .line_to(14.0, 2.0)
+            .line_to(8.0, 14.0)
+            .close();
+        canvas.push_clip_path(&builder.build());
+
+        let error = canvas
+            .take_deferred_error()
+            .expect("path clip must retain a deferred failure");
+        assert_eq!(error.code(), Errc::NotImplemented);
+    }
+
+    #[test]
+    fn native_gpu_checked_picture_flush_rejects_an_unimplemented_path_clip() {
+        let RecordingFixture { mut backend, .. } = recording_backend(FailStage::None);
+        backend.resize(16, 16).expect("resize native backend");
+        let handle = backend.create_offscreen(16, 16).expect("Picture target");
+        backend
+            .try_begin_offscreen_paint(&handle)
+            .expect("begin Picture paint");
+        let mut builder = crate::draw::primitives::path::PathBuilder::new();
+        builder
+            .move_to(2.0, 2.0)
+            .line_to(14.0, 2.0)
+            .line_to(8.0, 14.0)
+            .close();
+        backend
+            .offscreen_canvas(&handle)
+            .expect("Picture canvas")
+            .push_clip_path(&builder.build());
+
+        let error = backend
+            .try_flush_offscreen_paint(&handle)
+            .expect_err("unsupported Picture path clip must not flush successfully");
+        assert_eq!(error.code(), Errc::NotImplemented);
     }
 
     struct FakeD3d11Context {
