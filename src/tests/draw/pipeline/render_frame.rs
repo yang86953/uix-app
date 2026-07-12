@@ -506,7 +506,7 @@ fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_prese
     let images = ImageService::new();
 
     let mut direct_renderer = FrameRenderer::new();
-    let direct_scene = EligiblePictureScene::direct();
+    let direct_scene = EligiblePictureScene::mixed_direct();
     let direct = direct_renderer.render_frame(
         &mut engine,
         &direct_scene,
@@ -543,9 +543,14 @@ fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_prese
         Color::from_rgb(20, 40, 220).premultiplied(),
         "direct child must retain painter order on the real target"
     );
+    assert_eq!(
+        direct_pixels[150 * 300 + 150],
+        Color::from_rgb(30, 180, 80).premultiplied(),
+        "direct CPU fallback must reach the real FrameEncoder executor"
+    );
 
     let mut picture_renderer = FrameRenderer::new();
-    let picture_scene = EligiblePictureScene::new();
+    let picture_scene = EligiblePictureScene::mixed();
     let picture = picture_renderer.render_frame(
         &mut engine,
         &picture_scene,
@@ -581,6 +586,11 @@ fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_prese
         picture_pixels[8 * 300 + 8],
         Color::from_rgb(20, 40, 220).premultiplied(),
         "Picture child must retain painter order on the real target"
+    );
+    assert_eq!(
+        picture_pixels[150 * 300 + 150],
+        Color::from_rgb(30, 180, 80).premultiplied(),
+        "Picture CPU fallback must retain painter order on the real target"
     );
 
     engine.shutdown();
@@ -787,6 +797,7 @@ impl ScenePaint for EmptyScene {
 struct EligiblePictureScene {
     root_dirty: Cell<bool>,
     child_dirty: Cell<bool>,
+    include_cpu_fallback: bool,
     picture_policy: crate::draw::compositor::PicturePolicy,
 }
 
@@ -795,6 +806,7 @@ impl EligiblePictureScene {
         Self {
             root_dirty: Cell::new(true),
             child_dirty: Cell::new(false),
+            include_cpu_fallback: false,
             picture_policy: crate::draw::compositor::PicturePolicy::Eligible,
         }
     }
@@ -803,6 +815,22 @@ impl EligiblePictureScene {
         Self {
             picture_policy: crate::draw::compositor::PicturePolicy::Never,
             ..Self::new()
+        }
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn mixed() -> Self {
+        Self {
+            include_cpu_fallback: true,
+            ..Self::new()
+        }
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn mixed_direct() -> Self {
+        Self {
+            picture_policy: crate::draw::compositor::PicturePolicy::Never,
+            ..Self::mixed()
         }
     }
 }
@@ -903,6 +931,8 @@ impl ScenePaint for EligiblePictureScene {
                 Color::from_rgb(20, 40, 220),
                 None,
             );
+        } else if id == crate::draw::pipeline::NodeId::new(3) && self.include_cpu_fallback {
+            ctx.fill_circle(150.0, 150.0, 24.0, Color::from_rgb(30, 180, 80));
         }
     }
 }
