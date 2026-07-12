@@ -722,6 +722,36 @@ fn egl_checked_shutdown_cannot_fall_back_to_the_void_hook() {
 }
 
 #[test]
+fn vulkan_checked_shutdown_cannot_fall_back_to_the_void_hook() {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/native/graphics/vulkan/platform/context.rs"),
+    )
+    .expect("read Vulkan context");
+
+    assert!(
+        source.contains(
+            "fn try_shutdown(&mut self) -> Result<()> {\n        self.shutdown_result()\n    }"
+        ),
+        "Vulkan checked shutdown must return shutdown_result instead of the legacy void hook"
+    );
+}
+
+#[test]
+fn vulkan_readback_cannot_report_an_empty_success() {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/native/graphics/vulkan/platform/context.rs"),
+    )
+    .expect("read Vulkan context");
+
+    assert!(
+        source.contains("VulkanContext: native readback is not supported"),
+        "Vulkan must return a typed readback failure instead of an empty pixel buffer"
+    );
+}
+
+#[test]
 fn low_level_widget_loop_stays_off_prelude() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let prelude = fs::read_to_string(src.join("prelude.rs")).unwrap();
