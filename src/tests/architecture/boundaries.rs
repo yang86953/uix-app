@@ -752,6 +752,19 @@ fn vulkan_readback_cannot_report_an_empty_success() {
 }
 
 #[test]
+fn metal_pixel_upload_readback_cannot_report_an_empty_success() {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics/metal/platform/context.rs"),
+    )
+    .expect("read Metal PixelUpload context");
+
+    assert!(
+        source.contains("MetalPixelUploadContext: native readback is not supported"),
+        "Metal PixelUpload must return a typed readback failure instead of an empty pixel buffer"
+    );
+}
+
+#[test]
 fn low_level_widget_loop_stays_off_prelude() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let prelude = fs::read_to_string(src.join("prelude.rs")).unwrap();
