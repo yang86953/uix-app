@@ -267,27 +267,70 @@ impl FrameEncoder {
     /// Production API renderers must preserve this command order; they do not
     /// use this executor as their rendering implementation.
     pub fn render_reference(&self) -> ReferenceFrame {
-        let mut frame = ReferenceFrame {
-            width: self.width,
-            height: self.height,
-            pixels: vec![Color::transparent().premultiplied(); self.pixel_count],
-        };
+        let mut frame = self.transparent_reference();
+        self.execute_into_pixels(&mut frame.pixels);
+        frame
+    }
+
+    /// Executes the ordered command stream into a CPU target of this
+    /// encoder's extent. This is used by the CPU backend; API-native backends
+    /// consume the same [`FrameCommand`] variants at their own boundaries.
+    pub(crate) fn execute_into_pixels(&self, pixels: &mut [u32]) {
+        assert_eq!(
+            pixels.len(),
+            self.pixel_count,
+            "FrameEncoder target must match its recorded extent"
+        );
+        pixels.fill(Color::transparent().premultiplied());
         for command in &self.commands {
             match command {
                 // Clear is a replace operation, never transparent source-over.
-                FrameCommand::Clear { color } => frame.pixels.fill(color.premultiplied()),
-                FrameCommand::Native { operation } => apply_raster_op(&mut frame, operation),
+                FrameCommand::Clear { color } => pixels.fill(color.premultiplied()),
+                FrameCommand::Native { operation } => {
+                    apply_raster_op_pixels(self.width, self.height, pixels, operation)
+                }
                 FrameCommand::CpuSegment { operations } => {
                     for operation in operations {
-                        apply_raster_op(&mut frame, operation);
+                        apply_raster_op_pixels(self.width, self.height, pixels, operation);
                     }
                 }
                 FrameCommand::PictureBlit { image, src, dst } => {
-                    blit_image(&mut frame, image, *src, *dst)
+                    blit_image_pixels(self.width, self.height, pixels, image, *src, *dst)
                 }
             }
         }
+    }
+
+    /// Rasterizes one CPU fallback segment into a transparent frame-sized
+    /// source. Native executors alpha-blit this exact segment at its recorded
+    /// point in the command order instead of uploading the completed frame.
+    pub(crate) fn cpu_segment_reference(&self, operations: &[FrameRasterOp]) -> ReferenceFrame {
+        let mut frame = self.transparent_reference();
+        for operation in operations {
+            apply_raster_op_pixels(self.width, self.height, &mut frame.pixels, operation);
+        }
         frame
+    }
+
+    /// Rasterizes one Picture blit into a transparent frame-sized source for
+    /// API-native execution at its exact painter-order boundary.
+    pub(crate) fn picture_blit_reference(
+        &self,
+        image: &FrameImage,
+        src: FrameRect,
+        dst: FrameRect,
+    ) -> ReferenceFrame {
+        let mut frame = self.transparent_reference();
+        blit_image_pixels(self.width, self.height, &mut frame.pixels, image, src, dst);
+        frame
+    }
+
+    fn transparent_reference(&self) -> ReferenceFrame {
+        ReferenceFrame {
+            width: self.width,
+            height: self.height,
+            pixels: vec![Color::transparent().premultiplied(); self.pixel_count],
+        }
     }
 
     /// Final submission consumes the encoder so the public command model has
@@ -305,39 +348,48 @@ fn pixel_len(width: i32, height: i32) -> Result<usize, FrameEncoderError> {
     usize::try_from(pixels).map_err(|_| FrameEncoderError::InvalidExtent { width, height })
 }
 
-fn apply_raster_op(frame: &mut ReferenceFrame, operation: &FrameRasterOp) {
+fn apply_raster_op_pixels(width: i32, height: i32, pixels: &mut [u32], operation: &FrameRasterOp) {
     match operation {
-        FrameRasterOp::FillRect { rect, color } => fill_rect(frame, *rect, *color),
+        FrameRasterOp::FillRect { rect, color } => {
+            fill_rect_pixels(width, height, pixels, *rect, *color)
+        }
     }
 }
 
-fn fill_rect(frame: &mut ReferenceFrame, rect: FrameRect, color: Color) {
+fn fill_rect_pixels(width: i32, height: i32, pixels: &mut [u32], rect: FrameRect, color: Color) {
     if rect.is_empty() {
         return;
     }
     let x0 = rect.x.max(0);
     let y0 = rect.y.max(0);
-    let x1 = rect.x.saturating_add(rect.width).min(frame.width);
-    let y1 = rect.y.saturating_add(rect.height).min(frame.height);
+    let x1 = rect.x.saturating_add(rect.width).min(width);
+    let y1 = rect.y.saturating_add(rect.height).min(height);
     if x0 >= x1 || y0 >= y1 {
         return;
     }
     for y in y0..y1 {
         for x in x0..x1 {
-            let index = y as usize * frame.width as usize + x as usize;
-            frame.pixels[index] = blend_pixel_src_over(color.premultiplied(), frame.pixels[index]);
+            let index = y as usize * width as usize + x as usize;
+            pixels[index] = blend_pixel_src_over(color.premultiplied(), pixels[index]);
         }
     }
 }
 
-fn blit_image(frame: &mut ReferenceFrame, image: &FrameImage, src: FrameRect, dst: FrameRect) {
+fn blit_image_pixels(
+    width: i32,
+    height: i32,
+    pixels: &mut [u32],
+    image: &FrameImage,
+    src: FrameRect,
+    dst: FrameRect,
+) {
     if src.is_empty() || dst.is_empty() {
         return;
     }
     let x0 = dst.x.max(0);
     let y0 = dst.y.max(0);
-    let x1 = dst.x.saturating_add(dst.width).min(frame.width);
-    let y1 = dst.y.saturating_add(dst.height).min(frame.height);
+    let x1 = dst.x.saturating_add(dst.width).min(width);
+    let y1 = dst.y.saturating_add(dst.height).min(height);
     if x0 >= x1 || y0 >= y1 {
         return;
     }
@@ -352,8 +404,8 @@ fn blit_image(frame: &mut ReferenceFrame, image: &FrameImage, src: FrameRect, ds
                 continue;
             }
             let source = image.pixels[source_y as usize * image.width as usize + source_x as usize];
-            let index = y as usize * frame.width as usize + x as usize;
-            frame.pixels[index] = blend_pixel_src_over(source, frame.pixels[index]);
+            let index = y as usize * width as usize + x as usize;
+            pixels[index] = blend_pixel_src_over(source, pixels[index]);
         }
     }
 }
