@@ -607,11 +607,11 @@ impl NativeGpuCanvas2D {
         }
         let w = self.surface_w;
         let h = self.surface_h;
-        let tile = {
+        let packed = {
             let pixels = self.ensure_soft().surface().pixels();
-            visible_soft_fallback_tile(pixels, w, h)
+            pack_visible_soft_fallback_tile(pixels, w, h)
         };
-        let Some(tile) = tile else {
+        let Some((pixels, tile)) = packed else {
             return Ok(());
         };
         #[cfg(test)]
@@ -620,8 +620,7 @@ impl NativeGpuCanvas2D {
                 .saturating_mul(tile.height as usize)
                 .saturating_mul(std::mem::size_of::<u32>());
         }
-        let pixels = self.ensure_soft().surface().pixels();
-        gpu_ctx.blit_soft_fallback_tile(pixels, w, h, tile)?;
+        gpu_ctx.blit_soft_fallback_tile(&pixels, tile)?;
         Ok(())
     }
 
@@ -638,7 +637,11 @@ impl NativeGpuCanvas2D {
 /// Computes the smallest alpha-visible source tile for one retained CPU
 /// segment. Transparent RGB is deliberately ignored: it cannot affect the
 /// alpha-blended target and must not force a texture upload.
-fn visible_soft_fallback_tile(pixels: &[u32], width: i32, height: i32) -> Option<SoftFallbackTile> {
+fn pack_visible_soft_fallback_tile(
+    pixels: &[u32],
+    width: i32,
+    height: i32,
+) -> Option<(Vec<u32>, SoftFallbackTile)> {
     if width <= 0 || height <= 0 {
         return None;
     }
@@ -664,7 +667,16 @@ fn visible_soft_fallback_tile(pixels: &[u32], width: i32, height: i32) -> Option
             bottom = bottom.max(y + 1);
         }
     }
-    visible.then(|| SoftFallbackTile::new(left, top, right - left, bottom - top))
+    if !visible {
+        return None;
+    }
+    let tile = SoftFallbackTile::at_destination(left, top, right - left, bottom - top);
+    let mut packed = Vec::with_capacity(tile.required_pixels()?);
+    for y in top..bottom {
+        let row = y as usize * width as usize;
+        packed.extend_from_slice(&pixels[row + left as usize..row + right as usize]);
+    }
+    Some((packed, tile))
 }
 
 impl Canvas2D for NativeGpuCanvas2D {
@@ -1316,15 +1328,10 @@ impl RenderBackend for NativeGpuBackend {
         let frame = encoder.render_reference();
         self.gpu_ctx.bind_offscreen_target(off.target)?;
         self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
-        if let Some(tile) =
-            visible_soft_fallback_tile(frame.pixels(), frame.width(), frame.height())
+        if let Some((pixels, tile)) =
+            pack_visible_soft_fallback_tile(frame.pixels(), frame.width(), frame.height())
         {
-            self.gpu_ctx.blit_soft_fallback_tile(
-                frame.pixels(),
-                frame.width(),
-                frame.height(),
-                tile,
-            )?;
+            self.gpu_ctx.blit_soft_fallback_tile(&pixels, tile)?;
         }
         Ok(EncodedPictureExecution::Executed)
     }
@@ -1361,15 +1368,10 @@ impl RenderBackend for NativeGpuBackend {
             self.gpu_ctx.make_current()?;
             self.gpu_ctx.bind_swapchain_target()?;
             self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
-            if let Some(tile) =
-                visible_soft_fallback_tile(frame.pixels(), frame.width(), frame.height())
+            if let Some((pixels, tile)) =
+                pack_visible_soft_fallback_tile(frame.pixels(), frame.width(), frame.height())
             {
-                self.gpu_ctx.blit_soft_fallback_tile(
-                    frame.pixels(),
-                    frame.width(),
-                    frame.height(),
-                    tile,
-                )?;
+                self.gpu_ctx.blit_soft_fallback_tile(&pixels, tile)?;
             }
             Ok(())
         })();
@@ -1586,11 +1588,13 @@ mod tests {
         pixels[3 * 8 + 5] = 0x8000_0002;
         pixels[5 * 8 + 7] = 0x0000_00FF;
 
-        assert_eq!(
-            visible_soft_fallback_tile(&pixels, 8, 6),
-            Some(SoftFallbackTile::new(2, 1, 4, 3))
-        );
-        assert_eq!(visible_soft_fallback_tile(&[0; 4], 2, 2), None);
+        let (packed, tile) = pack_visible_soft_fallback_tile(&pixels, 8, 6)
+            .expect("visible pixels must produce one compact tile");
+        assert_eq!(tile, SoftFallbackTile::at_destination(2, 1, 4, 3));
+        assert_eq!(packed.len(), 12);
+        assert_eq!(packed[0], 0xFF00_0001);
+        assert_eq!(packed[11], 0x8000_0002);
+        assert_eq!(pack_visible_soft_fallback_tile(&[0; 4], 2, 2), None);
     }
 
     struct FakeD3d11Context {
@@ -1783,11 +1787,11 @@ mod tests {
         fn blit_soft_fallback_tile(
             &mut self,
             pixels: &[u32],
-            width: i32,
-            height: i32,
             _tile: SoftFallbackTile,
         ) -> crate::core::Result<()> {
-            self.blit_soft_fallback(pixels, width, height)
+            self.blit_calls.set(self.blit_calls.get() + 1);
+            let _ = pixels;
+            Ok(())
         }
 
         fn clear_rects(
@@ -2065,12 +2069,11 @@ mod tests {
 
         fn blit_soft_fallback_tile(
             &mut self,
-            pixels: &[u32],
-            width: i32,
-            height: i32,
+            _pixels: &[u32],
             _tile: SoftFallbackTile,
         ) -> crate::core::Result<()> {
-            self.blit_soft_fallback(pixels, width, height)
+            self.record("soft");
+            self.fail_if(FailStage::Soft)
         }
 
         fn create_offscreen_target(
@@ -2447,12 +2450,10 @@ mod tests {
             }
             fn blit_soft_fallback_tile(
                 &mut self,
-                pixels: &[u32],
-                width: i32,
-                height: i32,
+                _pixels: &[u32],
                 _tile: SoftFallbackTile,
             ) -> Result<(), Error> {
-                self.blit_soft_fallback(pixels, width, height)
+                Ok(())
             }
             fn create_offscreen_target(
                 &mut self,

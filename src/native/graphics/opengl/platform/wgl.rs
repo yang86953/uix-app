@@ -665,13 +665,12 @@ impl IGraphicsContext for WglContext {
     fn blit_soft_fallback_tile(
         &mut self,
         pixels: &[u32],
-        width: i32,
-        height: i32,
         tile: SoftFallbackTile,
     ) -> Result<(), Error> {
         self.make_current_result()?;
+        let (target_width, target_height) = self.pipeline.current_target_size();
         self.pipeline
-            .blit_soft_fallback_tile(pixels, width, height, tile)
+            .blit_soft_fallback_tile(pixels, target_width, target_height, tile)
     }
 
     fn clear_rects(

@@ -17,30 +17,30 @@ use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, SoftFallbackTile,
 };
-use ::windows::core::PCSTR;
 use ::windows::Win32::Foundation::{FALSE, RECT, TRUE};
 use ::windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use ::windows::Win32::Graphics::Direct3D::{
-    ID3DBlob, D3D11_SRV_DIMENSION_TEXTURE2D, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+    D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, D3D11_SRV_DIMENSION_TEXTURE2D, ID3DBlob,
 };
 use ::windows::Win32::Graphics::Direct3D11::{
-    ID3D11BlendState, ID3D11Buffer, ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout,
-    ID3D11PixelShader, ID3D11RasterizerState, ID3D11SamplerState, ID3D11ShaderResourceView,
-    ID3D11Texture2D, ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_SHADER_RESOURCE,
-    D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE,
-    D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BOX, D3D11_BUFFER_DESC,
+    D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_VERTEX_BUFFER,
+    D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD,
+    D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BOX, D3D11_BUFFER_DESC,
     D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_NEVER, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE,
     D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_POINT, D3D11_INPUT_ELEMENT_DESC,
-    D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD,
+    D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE,
     D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
     D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_SUBRESOURCE_DATA,
-    D3D11_TEX2D_SRV, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT,
-    D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
+    D3D11_TEX2D_SRV, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
+    D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11BlendState, ID3D11Buffer, ID3D11Device,
+    ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState,
+    ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
 };
 use ::windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_R32G32_FLOAT,
-    DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8_UNORM, DXGI_FORMAT_R32G32_FLOAT,
+    DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_SAMPLE_DESC,
 };
+use ::windows::core::PCSTR;
 
 const ATLAS_MIN: u32 = 256;
 const ATLAS_MAX: u32 = 2048;
@@ -2295,13 +2295,18 @@ impl D3d11Pipeline {
         let Some((x, y, upload_w, upload_h)) = visible_pixel_bounds(pixels, width, height) else {
             return Ok(());
         };
+        let mut packed = Vec::with_capacity((upload_w as usize).saturating_mul(upload_h as usize));
+        for row in y..y + upload_h {
+            let start = row as usize * width as usize + x as usize;
+            packed.extend_from_slice(&pixels[start..start + upload_w as usize]);
+        }
         self.blit_soft_fallback_tile(
             device,
             context,
-            pixels,
+            &packed,
             width,
             height,
-            SoftFallbackTile::new(x, y, upload_w, upload_h),
+            SoftFallbackTile::at_destination(x, y, upload_w, upload_h),
         )
     }
 
@@ -2310,46 +2315,31 @@ impl D3d11Pipeline {
         device: &ID3D11Device,
         context: &ID3D11DeviceContext,
         pixels: &[u32],
-        width: i32,
-        height: i32,
+        target_width: i32,
+        target_height: i32,
         tile: SoftFallbackTile,
     ) -> Result<()> {
-        if width <= 0 || height <= 0 {
+        if target_width <= 0 || target_height <= 0 {
             return Err(Error::new(
                 Errc::InvalidArgument,
-                format!("D3d11Pipeline: invalid soft surface {width}x{height}"),
+                format!("D3d11Pipeline: invalid soft target {target_width}x{target_height}"),
             ));
         }
-        let expected = (width as usize).saturating_mul(height as usize);
-        if pixels.len() < expected {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!(
-                    "D3d11Pipeline: soft blit buffer too small, got {}, need {expected}",
-                    pixels.len()
-                ),
-            ));
-        }
-        if tile.x < 0
-            || tile.y < 0
-            || tile.width <= 0
-            || tile.height <= 0
-            || tile.x.saturating_add(tile.width) > width
-            || tile.y.saturating_add(tile.height) > height
+        tile.validate_payload(pixels)?;
+        if tile.dst_x.saturating_add(tile.width) > target_width
+            || tile.dst_y.saturating_add(tile.height) > target_height
         {
             return Err(Error::new(
                 Errc::InvalidArgument,
                 format!(
-                    "D3d11Pipeline: invalid soft tile {}x{}+{},{} for {width}x{height}",
-                    tile.width, tile.height, tile.x, tile.y
+                    "D3d11Pipeline: soft tile {}x{} at {},{} exceeds {target_width}x{target_height}",
+                    tile.width, tile.height, tile.dst_x, tile.dst_y
                 ),
             ));
         }
-        let x = tile.x;
-        let y = tile.y;
         let upload_w = tile.width;
         let upload_h = tile.height;
-        self.ensure_soft_texture(device, width, height)?;
+        self.ensure_soft_texture(device, target_width, target_height)?;
         let Some(tex) = self.soft_tex.as_ref() else {
             return Err(Error::new(
                 Errc::PlatformError,
@@ -2364,31 +2354,28 @@ impl D3d11Pipeline {
         };
         let constants = BlitConstants {
             uv_rect: [
-                x as f32 / width as f32,
-                y as f32 / height as f32,
-                upload_w as f32 / width as f32,
-                upload_h as f32 / height as f32,
+                tile.dst_x as f32 / target_width as f32,
+                tile.dst_y as f32 / target_height as f32,
+                upload_w as f32 / target_width as f32,
+                upload_h as f32 / target_height as f32,
             ],
         };
         let upload_box = D3D11_BOX {
-            left: x as u32,
-            top: y as u32,
+            left: tile.dst_x as u32,
+            top: tile.dst_y as u32,
             front: 0,
-            right: (x + upload_w) as u32,
-            bottom: (y + upload_h) as u32,
+            right: (tile.dst_x + upload_w) as u32,
+            bottom: (tile.dst_y + upload_h) as u32,
             back: 1,
         };
-        let source_start = (y as usize)
-            .saturating_mul(width as usize)
-            .saturating_add(x as usize);
 
         unsafe {
             context.UpdateSubresource(
                 tex,
                 0,
                 Some(&upload_box),
-                pixels[source_start..].as_ptr().cast(),
-                (width as u32) * 4,
+                pixels.as_ptr().cast(),
+                (upload_w as u32) * 4,
                 0,
             );
 
@@ -2397,18 +2384,18 @@ impl D3d11Pipeline {
             // both to avoid inheriting that state and to avoid sampling stale
             // pixels from prior ordered CPU segments.
             let viewport = D3D11_VIEWPORT {
-                TopLeftX: x as f32,
-                TopLeftY: y as f32,
+                TopLeftX: tile.dst_x as f32,
+                TopLeftY: tile.dst_y as f32,
                 Width: upload_w as f32,
                 Height: upload_h as f32,
                 MinDepth: 0.0,
                 MaxDepth: 1.0,
             };
             let scissor = ::windows::Win32::Foundation::RECT {
-                left: x,
-                top: y,
-                right: x + upload_w,
-                bottom: y + upload_h,
+                left: tile.dst_x,
+                top: tile.dst_y,
+                right: tile.dst_x + upload_w,
+                bottom: tile.dst_y + upload_h,
             };
             context.RSSetViewports(Some(&[viewport]));
             context.RSSetScissorRects(Some(&[scissor]));
