@@ -12,9 +12,9 @@ use std::os::unix::io::AsRawFd;
 use wayland_client::protocol::{wl_callback, wl_compositor, wl_shm, wl_surface};
 use wayland_client::Main;
 
-use crate::core::Error;
-use crate::native::traits::present::IPresenter;
+use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::PresentDamage;
+use crate::native::traits::present::{validate_pixel_buffer, IPresenter};
 
 use super::shm_buffer::ShmBuffer;
 
@@ -53,7 +53,14 @@ impl WaylandPresenter {
     }
 
     /// 将像素数据提交到 Wayland surface。
-    fn present_impl(&mut self, pixels: &[u32], width: i32, height: i32, damage: PresentDamage) {
+    fn present_impl(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        damage: PresentDamage,
+    ) -> Result<()> {
+        validate_pixel_buffer(pixels, width, height)?;
         let needs_resize = width != self.width
             || height != self.height
             || self.shm_buffers[0].is_none()
@@ -65,8 +72,10 @@ impl WaylandPresenter {
                 match self.create_shm_buffer(width, height, i) {
                     Ok(b) => *buf = Some(b),
                     Err(e) => {
-                        crate::core::log::warn_fn(format!("Wayland SHM[{}] fail: {}", i, e));
-                        return;
+                        return Err(Error::new(
+                            Errc::PlatformError,
+                            format!("WaylandPresenter: create SHM buffer {i} failed: {e}"),
+                        ));
                     }
                 }
             }
@@ -76,25 +85,37 @@ impl WaylandPresenter {
         }
 
         let write_idx = 1 - self.active_buffer;
-        let shm = match self.shm_buffers[write_idx].as_mut() {
-            Some(s) => s,
-            None => return,
+        let shm = self.shm_buffers[write_idx].as_mut().ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "WaylandPresenter: selected SHM buffer is unavailable",
+            )
+        })?;
+
+        let pixel_count = shm.size / 4;
+        let bytes = unsafe {
+            std::slice::from_raw_parts(pixels[..pixel_count].as_ptr().cast::<u8>(), shm.size)
         };
 
-        let byte_len = pixels.len().min(shm.size / 4) * 4;
-        let bytes = unsafe { std::slice::from_raw_parts(pixels.as_ptr() as *const u8, byte_len) };
+        shm.file.seek(SeekFrom::Start(0)).map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("WaylandPresenter: seek SHM buffer failed: {error}"),
+            )
+        })?;
+        shm.file.write_all(bytes).map_err(|error| {
+            Error::new(
+                Errc::PlatformError,
+                format!("WaylandPresenter: write SHM buffer failed: {error}"),
+            )
+        })?;
 
-        if shm.file.seek(SeekFrom::Start(0)).is_err() {
-            return;
-        }
-        if shm.file.write(bytes).is_err() {
-            return;
-        }
-
-        let surface = match self.surface.as_ref() {
-            Some(s) => s,
-            None => return,
-        };
+        let surface = self.surface.as_ref().ok_or_else(|| {
+            Error::new(
+                Errc::InvalidState,
+                "WaylandPresenter: Wayland surface is unavailable",
+            )
+        })?;
 
         surface.attach(Some(&shm.buffer), 0, 0);
         match damage {
@@ -115,6 +136,7 @@ impl WaylandPresenter {
         if !self.shown {
             self.shown = true;
         }
+        Ok(())
     }
 
     /// 创建 SHM 缓冲区。
@@ -126,8 +148,18 @@ impl WaylandPresenter {
     ) -> Result<ShmBuffer, String> {
         use wayland_client::protocol::wl_shm as wl_shm_proto;
 
-        let stride = width * 4;
-        let size = (stride * height) as usize;
+        if width <= 0 || height <= 0 {
+            return Err(format!("invalid SHM extent {width}x{height}"));
+        }
+        let stride = width
+            .checked_mul(4)
+            .ok_or_else(|| format!("SHM stride overflow for width {width}"))?;
+        let size = stride
+            .checked_mul(height)
+            .ok_or_else(|| format!("SHM size overflow for {width}x{height}"))?
+            as usize;
+        let pool_size = i32::try_from(size)
+            .map_err(|_| format!("SHM size exceeds Wayland i32 limit: {size}"))?;
         let tmp =
             std::env::temp_dir().join(format!("uix-shm-{}-{}", std::process::id(), buffer_index));
 
@@ -141,12 +173,14 @@ impl WaylandPresenter {
 
         f.set_len(size as u64)
             .map_err(|e| format!("shm len: {}", e))?;
-        f.seek(SeekFrom::Start((size - 1) as u64)).ok();
-        f.write_all(&[0u8]).ok();
-        f.flush().ok();
+        f.seek(SeekFrom::Start((size - 1) as u64))
+            .map_err(|e| format!("shm seek: {e}"))?;
+        f.write_all(&[0u8])
+            .map_err(|e| format!("shm initialize: {e}"))?;
+        f.flush().map_err(|e| format!("shm flush: {e}"))?;
 
         let fd = f.as_raw_fd();
-        let pool = self.shm.create_pool(fd, size as i32);
+        let pool = self.shm.create_pool(fd, pool_size);
         let buf = pool.create_buffer(0, width, height, stride, wl_shm_proto::Format::Argb8888);
 
         let _ = std::fs::remove_file(&tmp);
@@ -171,8 +205,7 @@ impl IPresenter for WaylandPresenter {
         height: i32,
         damage: PresentDamage,
     ) -> Result<(), Error> {
-        self.present_impl(pixels, width, height, damage);
-        Ok(())
+        self.present_impl(pixels, width, height, damage)
     }
 
     fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
