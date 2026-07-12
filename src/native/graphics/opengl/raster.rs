@@ -8,11 +8,12 @@ use glow::HasContext as _;
 use crate::core::{Errc, Error, Rect, Result};
 use crate::native::traits::present::{GpuSolidRect, OffscreenTargetId, SoftFallbackTile};
 
-use super::{shaders, NativeOpenGlRuntime};
+use super::{NativeOpenGlRuntime, shaders};
 
 #[derive(Clone, Copy)]
 struct TargetState {
     framebuffer: Option<glow::Framebuffer>,
+    logical_width: i32,
     logical_height: i32,
     drawable_width: i32,
     drawable_height: i32,
@@ -32,6 +33,7 @@ impl TargetState {
         let drawable_height = drawable_height.max(1);
         Self {
             framebuffer: None,
+            logical_width,
             logical_height,
             drawable_width,
             drawable_height,
@@ -44,6 +46,7 @@ impl TargetState {
         let height = height.max(1);
         Self {
             framebuffer: Some(framebuffer),
+            logical_width: width,
             logical_height: height,
             drawable_width: width,
             drawable_height: height,
@@ -201,6 +204,10 @@ impl OpenGlRasterPipeline {
         self.check_gl_error("clear_render_target")
     }
 
+    pub(crate) fn current_target_size(&self) -> (i32, i32) {
+        (self.current.logical_width, self.current.logical_height)
+    }
+
     pub(crate) fn clear_rects(&mut self, rects: &[GpuSolidRect]) -> Result<()> {
         for rect in rects {
             if rect.w <= 0.0 || rect.h <= 0.0 {
@@ -270,24 +277,22 @@ impl OpenGlRasterPipeline {
     pub(crate) fn blit_soft_fallback_tile(
         &mut self,
         pixels: &[u32],
-        surface_width: i32,
-        surface_height: i32,
+        target_width: i32,
+        target_height: i32,
         tile: SoftFallbackTile,
     ) -> Result<()> {
-        validate_tile(pixels, surface_width, surface_height, tile)?;
-        self.ensure_soft_texture(surface_width, surface_height)?;
+        validate_tile(pixels, target_width, target_height, tile)?;
+        self.ensure_soft_texture(target_width, target_height)?;
         unsafe {
             self.gl().disable(glow::SCISSOR_TEST);
             self.gl().active_texture(glow::TEXTURE0);
             self.gl()
                 .bind_texture(glow::TEXTURE_2D, Some(self.soft_texture));
-            // GLES has no portable unpack-row-length state. Preserve the
-            // full-surface pitch by uploading the visible tile one row at a
-            // time; its BGRA bytes are swizzled by BLIT_FRAG.
-            for row in tile.y..tile.y + tile.height {
-                let start = (row as usize)
-                    .saturating_mul(surface_width as usize)
-                    .saturating_add(tile.x as usize);
+            // GLES has no portable unpack-row-length state. The compact
+            // API-neutral tile is therefore uploaded one row at a time; its
+            // BGRA bytes are swizzled by BLIT_FRAG.
+            for row in 0..tile.height {
+                let start = row as usize * tile.width as usize;
                 let end = start + tile.width as usize;
                 let bytes = std::slice::from_raw_parts(
                     pixels[start..end].as_ptr() as *const u8,
@@ -296,8 +301,8 @@ impl OpenGlRasterPipeline {
                 self.gl().tex_sub_image_2d(
                     glow::TEXTURE_2D,
                     0,
-                    tile.x,
-                    row,
+                    tile.dst_x,
+                    tile.dst_y + row,
                     tile.width,
                     1,
                     glow::RGBA,
@@ -315,14 +320,14 @@ impl OpenGlRasterPipeline {
             self.gl().uniform_1_i32(self.blit_bgra_texture.as_ref(), 0);
             self.gl().uniform_4_f32(
                 self.blit_bgra_uv.as_ref(),
-                tile.x as f32 / surface_width as f32,
-                tile.y as f32 / surface_height as f32,
-                tile.width as f32 / surface_width as f32,
-                tile.height as f32 / surface_height as f32,
+                tile.dst_x as f32 / target_width as f32,
+                tile.dst_y as f32 / target_height as f32,
+                tile.width as f32 / target_width as f32,
+                tile.height as f32 / target_height as f32,
             );
             self.set_destination_viewport(
-                tile.x as f32,
-                tile.y as f32,
+                tile.dst_x as f32,
+                tile.dst_y as f32,
                 tile.width as f32,
                 tile.height as f32,
             );
@@ -764,40 +769,23 @@ unsafe fn compile_shader(
 
 fn validate_tile(
     pixels: &[u32],
-    surface_width: i32,
-    surface_height: i32,
+    target_width: i32,
+    target_height: i32,
     tile: SoftFallbackTile,
 ) -> Result<()> {
-    if surface_width <= 0 || surface_height <= 0 {
+    if target_width <= 0 || target_height <= 0 {
         return Err(Error::new(
             Errc::InvalidArgument,
-            "OpenGL soft surface extent must be positive",
+            "OpenGL soft target extent must be positive",
         ));
     }
-    let required = (surface_width as usize)
-        .checked_mul(surface_height as usize)
-        .ok_or_else(|| {
-            Error::new(
-                Errc::InvalidArgument,
-                "OpenGL soft surface extent overflows",
-            )
-        })?;
-    if pixels.len() < required {
-        return Err(Error::new(
-            Errc::InvalidArgument,
-            "OpenGL soft surface pixels are truncated",
-        ));
-    }
-    if tile.width <= 0
-        || tile.height <= 0
-        || tile.x < 0
-        || tile.y < 0
-        || tile.x.saturating_add(tile.width) > surface_width
-        || tile.y.saturating_add(tile.height) > surface_height
+    tile.validate_payload(pixels)?;
+    if tile.dst_x.saturating_add(tile.width) > target_width
+        || tile.dst_y.saturating_add(tile.height) > target_height
     {
         return Err(Error::new(
             Errc::InvalidArgument,
-            "OpenGL soft fallback tile is outside its source surface",
+            "OpenGL soft fallback tile is outside its destination target",
         ));
     }
     Ok(())
@@ -815,17 +803,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn soft_tile_validation_preserves_full_surface_pitch() {
-        let pixels = vec![0u32; 8 * 6];
-        assert!(validate_tile(&pixels, 8, 6, SoftFallbackTile::new(2, 1, 4, 3)).is_ok());
-        assert!(validate_tile(&pixels, 8, 6, SoftFallbackTile::new(6, 1, 4, 3)).is_err());
-        assert!(validate_tile(&pixels[..10], 8, 6, SoftFallbackTile::new(0, 0, 1, 1)).is_err());
+    fn soft_tile_validation_uses_compact_payload_at_destination() {
+        let pixels = vec![0u32; 4 * 3];
+        assert!(validate_tile(&pixels, 8, 6, SoftFallbackTile::at_destination(2, 1, 4, 3)).is_ok());
+        assert!(
+            validate_tile(&pixels, 8, 6, SoftFallbackTile::at_destination(6, 1, 4, 3)).is_err()
+        );
+        assert!(
+            validate_tile(
+                &pixels[..10],
+                8,
+                6,
+                SoftFallbackTile::at_destination(0, 0, 4, 3)
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn target_state_keeps_swapchain_dpr_and_offscreen_at_one() {
         let swapchain = TargetState::swapchain(800, 600, 1600, 1200);
         assert_eq!(swapchain.dpr, 2.0);
+        assert_eq!(swapchain.logical_width, 800);
         assert_eq!(swapchain.logical_height, 600);
     }
 
@@ -842,6 +841,7 @@ mod tests {
             logical_scissor_to_drawable(
                 TargetState {
                     framebuffer: None,
+                    logical_width: 80,
                     logical_height: 60,
                     drawable_width: 80,
                     drawable_height: 60,

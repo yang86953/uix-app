@@ -1124,35 +1124,8 @@ impl IGraphicsContext for D3d12Context {
             )
     }
 
-    fn blit_soft_fallback_tile(
-        &mut self,
-        pixels: &[u32],
-        surface_width: i32,
-        surface_height: i32,
-        tile: SoftFallbackTile,
-    ) -> Result<()> {
+    fn blit_soft_fallback_tile(&mut self, pixels: &[u32], tile: SoftFallbackTile) -> Result<()> {
         self.ensure_healthy()?;
-        if surface_width != self.width || surface_height != self.height {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!(
-                    "D3d12Context: soft tile surface {surface_width}x{surface_height} does not match drawable {}x{}",
-                    self.width, self.height
-                ),
-            ));
-        }
-        let expected = (surface_width as usize)
-            .checked_mul(surface_height as usize)
-            .ok_or_else(|| Error::new(Errc::InvalidArgument, "soft tile pixel count overflow"))?;
-        if pixels.len() < expected {
-            return Err(Error::new(
-                Errc::InvalidArgument,
-                format!(
-                    "D3d12Context: soft tile buffer too small, got {}, need {expected}",
-                    pixels.len()
-                ),
-            ));
-        }
         self.begin_commands()?;
         self.pipeline
             .as_mut()
@@ -1162,8 +1135,8 @@ impl IGraphicsContext for D3d12Context {
                 &self.command_list,
                 self.frame_index,
                 pixels,
-                surface_width,
-                surface_height,
+                self.width,
+                self.height,
                 tile,
             )
     }

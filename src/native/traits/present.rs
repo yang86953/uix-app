@@ -209,28 +209,66 @@ pub fn validate_pixel_buffer(pixels: &[u32], width: i32, height: i32) -> Result<
     Ok(())
 }
 
-/// Bounded visible portion of a CPU soft-raster segment.
+/// Bounded, tightly packed CPU soft-raster segment.
 ///
-/// Coordinates are in the full logical CPU surface. The source buffer passed
-/// to [`IGraphicsContext::blit_soft_fallback_tile`] remains full-surface so a
-/// native implementation can preserve its source pitch without making a
-/// per-frame copy. Native backends must upload and sample only this rectangle.
+/// `pixels` passed to [`IGraphicsContext::blit_soft_fallback_tile`] contain
+/// exactly this tile in top-left row-major order. The destination is separate
+/// from that compact source so callers never need to retain or upload a full
+/// frame merely to place one fallback segment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SoftFallbackTile {
-    pub x: i32,
-    pub y: i32,
+    pub dst_x: i32,
+    pub dst_y: i32,
     pub width: i32,
     pub height: i32,
 }
 
 impl SoftFallbackTile {
-    pub const fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
+    pub const fn at_destination(dst_x: i32, dst_y: i32, width: i32, height: i32) -> Self {
         Self {
-            x,
-            y,
+            dst_x,
+            dst_y,
             width,
             height,
         }
+    }
+
+    pub fn required_pixels(self) -> Option<usize> {
+        if self.width <= 0 || self.height <= 0 {
+            return None;
+        }
+        usize::try_from(i64::from(self.width) * i64::from(self.height)).ok()
+    }
+
+    pub fn validate_payload(self, pixels: &[u32]) -> Result<()> {
+        if self.dst_x < 0 || self.dst_y < 0 {
+            return Err(Error::new(
+                crate::core::error::Errc::InvalidArgument,
+                format!(
+                    "soft fallback destination must be nonnegative, got {},{}",
+                    self.dst_x, self.dst_y
+                ),
+            ));
+        }
+        let Some(required) = self.required_pixels() else {
+            return Err(Error::new(
+                crate::core::error::Errc::InvalidArgument,
+                format!(
+                    "soft fallback tile extent must be positive, got {}x{}",
+                    self.width, self.height
+                ),
+            ));
+        };
+        if pixels.len() != required {
+            return Err(Error::new(
+                crate::core::error::Errc::InvalidArgument,
+                format!(
+                    "soft fallback tile payload has {} pixels, need {required}",
+                    pixels.len()
+                ),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -720,29 +758,24 @@ pub trait IGraphicsContext {
 
     /// Alpha-blend one bounded CPU fallback segment without presenting.
     ///
-    /// The default rejects a partial tile instead of silently expanding it to
-    /// a full texture transfer. That makes an unimplemented damage path a
-    /// typed failure, not a false performance capability. Full-surface tiles
-    /// retain compatibility with contexts that only implement the legacy API.
+    /// The payload is tightly packed to the tile extent; the implementation
+    /// must validate both its byte count and its destination against the
+    /// currently bound target. The default rejects the new compact protocol
+    /// rather than silently expanding it to a full texture transfer.
     fn blit_soft_fallback_tile(
         &mut self,
-        pixels: &[u32],
-        surface_width: i32,
-        surface_height: i32,
+        _pixels: &[u32],
         tile: SoftFallbackTile,
     ) -> Result<(), Error> {
-        if tile.x == 0
-            && tile.y == 0
-            && tile.width == surface_width
-            && tile.height == surface_height
-        {
-            return self.blit_soft_fallback(pixels, surface_width, surface_height);
-        }
         Err(Error::new(
             crate::core::error::Errc::NotImplemented,
             format!(
-                "GraphicsBackend {} does not support bounded CPU soft fallback uploads",
-                self.graphics_backend()
+                "GraphicsBackend {} does not support compact CPU soft fallback uploads to {},{} {}x{}",
+                self.graphics_backend(),
+                tile.dst_x,
+                tile.dst_y,
+                tile.width,
+                tile.height
             ),
         ))
     }
@@ -829,7 +862,7 @@ pub trait IGraphicsContext {
 mod tests {
     use super::{
         GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PresentDamage,
-        PresentFrame, validate_pixel_buffer,
+        PresentFrame, SoftFallbackTile, validate_pixel_buffer,
     };
     use crate::core::{Errc, Error, Result};
     use std::str::FromStr;
@@ -884,6 +917,22 @@ mod tests {
                 .code(),
             Errc::InvalidArgument
         );
+    }
+
+    #[test]
+    fn compact_soft_tile_has_an_independent_destination_and_exact_payload_size() {
+        let tile = SoftFallbackTile::at_destination(37, 19, 4, 3);
+
+        assert_eq!((tile.dst_x, tile.dst_y), (37, 19));
+        assert_eq!((tile.width, tile.height), (4, 3));
+        assert_eq!(tile.required_pixels(), Some(12));
+        assert_eq!(
+            tile.validate_payload(&[0; 11])
+                .expect_err("short tile payload")
+                .code(),
+            Errc::InvalidArgument
+        );
+        assert!(tile.validate_payload(&[0; 12]).is_ok());
     }
 
     struct DefaultPresentFailure {

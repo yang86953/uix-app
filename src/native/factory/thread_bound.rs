@@ -200,7 +200,7 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(draw_solid_meshes(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, meshes: &[GpuSolidMesh]) -> ());
     forward_result!(draw_box_shadows(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, shadows: &[GpuBoxShadow]) -> ());
     forward_result!(blit_soft_fallback(pixels: &[u32], width: i32, height: i32) -> ());
-    forward_result!(blit_soft_fallback_tile(pixels: &[u32], surface_width: i32, surface_height: i32, tile: SoftFallbackTile) -> ());
+    forward_result!(blit_soft_fallback_tile(pixels: &[u32], tile: SoftFallbackTile) -> ());
     forward_result!(clear_rects(viewport_w: f32, viewport_h: f32, rects: &[GpuSolidRect]) -> ());
     forward_result!(create_offscreen_target(width: i32, height: i32) -> OffscreenTargetId);
 

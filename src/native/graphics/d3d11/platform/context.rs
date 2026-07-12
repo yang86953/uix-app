@@ -811,21 +811,16 @@ impl IGraphicsContext for D3d11Context {
             .blit_soft_fallback(&self.device, &self.context, pixels, width, height)
     }
 
-    fn blit_soft_fallback_tile(
-        &mut self,
-        pixels: &[u32],
-        surface_width: i32,
-        surface_height: i32,
-        tile: SoftFallbackTile,
-    ) -> Result<()> {
-        self.ensure_rtv()?;
+    fn blit_soft_fallback_tile(&mut self, pixels: &[u32], tile: SoftFallbackTile) -> Result<()> {
+        self.bind_current_draw_target()?;
         self.make_current()?;
+        let (target_width, target_height) = self.current_target_size();
         self.pipeline.blit_soft_fallback_tile(
             &self.device,
             &self.context,
             pixels,
-            surface_width,
-            surface_height,
+            target_width,
+            target_height,
             tile,
         )
     }
@@ -1333,19 +1328,18 @@ mod tests {
         ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)
             .expect("clear transparent target");
 
-        let mut first = vec![0u32; 64 * 48];
-        first[5 * 64 + 4] = 0x80FF_0000;
-        ctx.blit_soft_fallback(&first, 64, 48)
-            .expect("first partial soft segment");
+        ctx.blit_soft_fallback_tile(&[0x80FF_0000], SoftFallbackTile::at_destination(4, 5, 1, 1))
+            .expect("first compact soft segment");
         let first_before = ctx
             .read_pixels(4, 5, 1, 1)
             .expect("first soft segment readback")[0];
         assert_ne!(first_before, 0, "first segment must reach the target");
 
-        let mut second = vec![0u32; 64 * 48];
-        second[19 * 64 + 36] = 0x8000_00FF;
-        ctx.blit_soft_fallback(&second, 64, 48)
-            .expect("second partial soft segment");
+        ctx.blit_soft_fallback_tile(
+            &[0x8000_00FF],
+            SoftFallbackTile::at_destination(36, 19, 1, 1),
+        )
+        .expect("second compact soft segment");
 
         assert_eq!(
             ctx.read_pixels(4, 5, 1, 1)
