@@ -175,6 +175,24 @@ fn end_frame_rejects_an_unimplemented_path_clip_instead_of_reporting_present() {
 }
 
 #[test]
+fn legacy_cpu_present_rejects_a_deferred_path_clip() {
+    let mut backend = CpuBackend::new();
+    backend.resize(16, 16).expect("resize CPU backend");
+    let mut builder = PathBuilder::new();
+    builder
+        .move_to(2.0, 2.0)
+        .line_to(14.0, 2.0)
+        .line_to(8.0, 14.0)
+        .close();
+    backend.surface().canvas().push_clip_path(&builder.build());
+
+    let error = backend
+        .present(&DamageRegion::full())
+        .expect_err("legacy final present must not hide a deferred canvas failure");
+    assert_eq!(error.code(), crate::core::Errc::NotImplemented);
+}
+
+#[test]
 fn checked_picture_flush_rejects_an_unimplemented_path_clip() {
     let mut backend = CpuBackend::new();
     backend.resize(16, 16).expect("resize CPU backend");
