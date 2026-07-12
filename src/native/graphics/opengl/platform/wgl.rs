@@ -10,11 +10,13 @@ use std::ffi::{c_void, CStr, CString};
 use std::ptr;
 
 use crate::native::backends::windows::util::windows_diag;
+use crate::native::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::graphics::platform::windows::{
     device_context, query_client_rect, release_device_context,
 };
 use crate::native::traits::present::{
-    IGraphicsContext, NativeGraphicsRuntime, PresentDamage, PresentFrame,
+    GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentDamage,
+    PresentFrame, SoftFallbackTile,
 };
 use crate::native::{Errc, Error};
 
@@ -425,6 +427,7 @@ pub struct WglContext {
     logical_height: i32,
     width: i32,
     height: i32,
+    pipeline: OpenGlRasterPipeline,
 }
 
 impl WglContext {
@@ -489,6 +492,30 @@ impl WglContext {
 
             let (logical_w, logical_h, physical_w, physical_h) = drawable_size(hwnd, hdc);
             let _ = (width, height);
+            let runtime =
+                crate::native::graphics::opengl::NativeOpenGlRuntime::from_loader(|name| {
+                    let Some(name) = CString::new(name).ok() else {
+                        return ptr::null();
+                    };
+                    let proc = load_gl_proc(&name);
+                    if invalid_wgl_proc(proc) {
+                        ptr::null()
+                    } else {
+                        proc
+                    }
+                });
+            let pipeline = match OpenGlRasterPipeline::new(
+                runtime, logical_w, logical_h, physical_w, physical_h,
+            ) {
+                Ok(pipeline) => pipeline,
+                Err(error) => {
+                    unsafe {
+                        wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
+                        wglDeleteContext(hglrc);
+                    }
+                    return Err(error);
+                }
+            };
             crate::core::log::info_fn(format!(
                 "WglContext: OpenGL ES context created ({physical_w}x{physical_h} drawable, logical {logical_w}x{logical_h}, pixel_format={pixel_format}, flags={pixel_format_flags:#010X})"
             ));
@@ -500,6 +527,7 @@ impl WglContext {
                 logical_height: logical_h,
                 width: physical_w,
                 height: physical_h,
+                pipeline,
             })
         })();
 
@@ -543,6 +571,17 @@ impl IGraphicsContext for WglContext {
         )
     }
 
+    fn native_raster_caps(&self) -> NativeRasterCaps {
+        NativeRasterCaps {
+            clear_target: true,
+            clear_rects: true,
+            soft_blit: true,
+            solid_rects: true,
+            offscreen_targets: true,
+            ..NativeRasterCaps::default()
+        }
+    }
+
     fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
         crate::native::traits::present::GraphicsBackend::OpenGlEs
     }
@@ -564,6 +603,8 @@ impl IGraphicsContext for WglContext {
         self.logical_height = logical_h;
         self.width = physical_w;
         self.height = physical_h;
+        self.pipeline
+            .resize_swapchain(logical_w, logical_h, physical_w, physical_h);
         Ok(())
     }
 
@@ -592,6 +633,9 @@ impl IGraphicsContext for WglContext {
     fn shutdown(&mut self) {
         unsafe {
             if !self.hglrc.is_null() {
+                if wglMakeCurrent(self.hdc, self.hglrc) != 0 {
+                    self.pipeline.release();
+                }
                 wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
                 wglDeleteContext(self.hglrc);
                 self.hglrc = ptr::null_mut();
@@ -603,8 +647,20 @@ impl IGraphicsContext for WglContext {
         }
     }
 
-    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-        Vec::new()
+    fn try_read_pixels(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<Vec<u32>, Error> {
+        self.make_current_result()?;
+        self.pipeline.read_pixels(x, y, width, height)
+    }
+
+    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32> {
+        self.try_read_pixels(x, y, width, height)
+            .unwrap_or_default()
     }
 
     fn width(&self) -> i32 {
@@ -615,20 +671,78 @@ impl IGraphicsContext for WglContext {
         self.height
     }
 
-    fn acquire_native_runtime(&mut self) -> Result<NativeGraphicsRuntime, Error> {
+    fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<(), Error> {
         self.make_current_result()?;
-        let runtime = crate::native::graphics::opengl::NativeOpenGlRuntime::from_loader(|name| {
-            let Some(name) = CString::new(name).ok() else {
-                return ptr::null();
-            };
-            let proc = load_gl_proc(&name);
-            if invalid_wgl_proc(proc) {
-                ptr::null()
-            } else {
-                proc
-            }
-        });
-        Ok(NativeGraphicsRuntime::opengles(runtime))
+        self.pipeline.clear_render_target([r, g, b, a])
+    }
+
+    fn draw_solid_rects(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuSolidRect],
+    ) -> Result<(), Error> {
+        self.make_current_result()?;
+        self.pipeline
+            .draw_solid_rects(viewport_w, viewport_h, scissor, rects)
+    }
+
+    fn blit_soft_fallback_tile(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        tile: SoftFallbackTile,
+    ) -> Result<(), Error> {
+        self.make_current_result()?;
+        self.pipeline
+            .blit_soft_fallback_tile(pixels, width, height, tile)
+    }
+
+    fn clear_rects(
+        &mut self,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        rects: &[GpuSolidRect],
+    ) -> Result<(), Error> {
+        self.make_current_result()?;
+        self.pipeline.clear_rects(rects)
+    }
+
+    fn create_offscreen_target(
+        &mut self,
+        width: i32,
+        height: i32,
+    ) -> Result<OffscreenTargetId, Error> {
+        self.make_current_result()?;
+        self.pipeline.create_offscreen_target(width, height)
+    }
+
+    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+        self.make_current_result()?;
+        self.pipeline.destroy_offscreen_target(id)
+    }
+
+    fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+        self.make_current_result()?;
+        self.pipeline.bind_offscreen_target(id)
+    }
+
+    fn bind_swapchain_target(&mut self) -> Result<(), Error> {
+        self.make_current_result()?;
+        self.pipeline.bind_swapchain_target();
+        Ok(())
+    }
+
+    fn blit_offscreen_target(
+        &mut self,
+        id: OffscreenTargetId,
+        src: crate::core::Rect,
+        dst: crate::core::Rect,
+    ) -> Result<(), Error> {
+        self.make_current_result()?;
+        self.pipeline.blit_offscreen_target(id, src, dst)
     }
 
     fn device_pixel_ratio(&self) -> f32 {
@@ -711,12 +825,6 @@ mod tests {
         assert_eq!(caps.present, PresentMode::Swapchain);
         assert!(!ctx.supports_pixel_present());
         assert!(ctx.supports_gl_proc_address());
-        let runtime = ctx
-            .acquire_native_runtime()
-            .expect("native runtime lease must be created under WGL");
-        assert_eq!(runtime.backend(), GraphicsBackend::OpenGlEs);
-        drop(runtime);
-
         ctx.present(&PresentFrame::Swapchain {
             damage: PresentDamage::Full,
         })
@@ -730,6 +838,44 @@ mod tests {
         }
 
         ctx.shutdown();
+        window.close().expect("close native window");
+    }
+
+    #[cfg(feature = "opengles")]
+    #[test]
+    fn wgl_exposes_only_the_native_raster_operations_it_implements() {
+        if std::env::consts::OS != "windows" {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("WGL native raster caps", 320, 240)
+            .expect("window");
+        let mut context = crate::native::create_gpu_context_with_backend(
+            window.native_surface_ptr(),
+            320,
+            240,
+            GraphicsBackend::OpenGlEs,
+        )
+        .expect("WglContext via factory");
+
+        let caps = context.native_raster_caps();
+        assert!(caps.clear_target);
+        assert!(caps.clear_rects);
+        assert!(caps.soft_blit);
+        assert!(caps.solid_rects);
+        assert!(caps.offscreen_targets);
+        assert!(!caps.stroke_rects);
+        assert!(!caps.glyphs);
+        assert!(!caps.linear_gradients);
+        assert!(!caps.radial_gradients);
+        assert!(!caps.solid_meshes);
+        assert!(!caps.box_shadows);
+
+        assert!(caps.has_hybrid_baseline());
+        context.try_shutdown().expect("WGL checked shutdown");
         window.close().expect("close native window");
     }
 }

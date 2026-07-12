@@ -23,7 +23,7 @@ use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
-    NativeGraphicsRuntime, OffscreenTargetId, PresentDamage, PresentFrame, SoftFallbackTile,
+    OffscreenTargetId, PresentDamage, PresentFrame, SoftFallbackTile,
 };
 
 pub(crate) fn bind_to_current_thread(
@@ -200,8 +200,6 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         self.device_pixel_ratio
     }
 
-    forward_result!(acquire_native_runtime() -> NativeGraphicsRuntime);
-
     forward_result!(clear_render_target(r: f32, g: f32, b: f32, a: f32) -> ());
     forward_result!(upload_surface_pixels(pixels: &[u32], width: i32, height: i32) -> ());
     forward_result!(draw_solid_rects(viewport_w: f32, viewport_h: f32, scissor: Option<(i32, i32, i32, i32)>, rects: &[GpuSolidRect]) -> ());
@@ -290,12 +288,6 @@ mod tests {
             panic!("foreign thread must not call the native context")
         }
 
-        fn acquire_native_runtime(
-            &mut self,
-        ) -> Result<crate::native::traits::present::NativeGraphicsRuntime> {
-            panic!("foreign thread must not call the native context")
-        }
-
         fn destroy_offscreen_target(
             &mut self,
             _id: crate::native::traits::present::OffscreenTargetId,
@@ -341,12 +333,6 @@ mod tests {
             .expect_err("owner mismatch");
         assert_eq!(readback.code(), Errc::InvalidState);
         assert!(readback.message().contains("try_read_pixels"));
-
-        let runtime = context
-            .acquire_native_runtime()
-            .expect_err("owner mismatch");
-        assert_eq!(runtime.code(), Errc::InvalidState);
-        assert!(runtime.message().contains("acquire_native_runtime"));
 
         let destroy = context
             .try_destroy_offscreen_target(crate::native::traits::present::OffscreenTargetId(7))

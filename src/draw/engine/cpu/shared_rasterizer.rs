@@ -1,6 +1,6 @@
 //! SharedRasterizer — RasterRenderer + PixelSurface 共享 CPU 光栅化（Phase 8）。
 //!
-//! GPU 未实现路径与 CPU 后端共用，避免 GpuCanvas2D 内嵌 CpuCanvas2D。
+//! GPU 未实现路径与 CPU 后端共用，避免 API-specific canvas 内嵌 CPU 后端。
 
 use crate::core::Rect;
 

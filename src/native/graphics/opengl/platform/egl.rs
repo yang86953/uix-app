@@ -10,7 +10,11 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use crate::native::traits::present::{IGraphicsContext, NativeGraphicsRuntime, PresentDamage};
+use crate::native::graphics::opengl::raster::OpenGlRasterPipeline;
+use crate::native::traits::present::{
+    GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentDamage,
+    SoftFallbackTile,
+};
 use crate::native::{Errc, Error};
 
 use super::EGL_PARTIAL_PRESENT;
@@ -56,6 +60,7 @@ pub struct EglContext {
     egl_window: *mut WlEglWindow,
     width: i32,
     height: i32,
+    pipeline: OpenGlRasterPipeline,
     shutdown: bool,
 }
 
@@ -225,6 +230,22 @@ impl EglContext {
                 )
             })?;
 
+        let runtime = crate::native::graphics::opengl::NativeOpenGlRuntime::from_loader(|name| {
+            egl.get_proc_address(name)
+                .map(|function| function as *const std::ffi::c_void)
+                .unwrap_or(std::ptr::null())
+        });
+        let pipeline =
+            OpenGlRasterPipeline::new(runtime, width, height, width, height).map_err(|error| {
+                unsafe {
+                    let _ = egl.destroy_context(display, context);
+                    let _ = egl.destroy_surface(display, surface);
+                    wl_egl_window_destroy(egl_window);
+                }
+                let _ = egl.terminate(display);
+                error
+            })?;
+
         Ok(Self {
             egl,
             display,
@@ -234,6 +255,7 @@ impl EglContext {
             egl_window,
             width,
             height,
+            pipeline,
             shutdown: false,
         })
     }
@@ -254,6 +276,17 @@ impl IGraphicsContext for EglContext {
 
     fn graphics_backend(&self) -> crate::native::traits::present::GraphicsBackend {
         crate::native::traits::present::GraphicsBackend::OpenGlEs
+    }
+
+    fn native_raster_caps(&self) -> NativeRasterCaps {
+        NativeRasterCaps {
+            clear_target: true,
+            clear_rects: true,
+            soft_blit: true,
+            solid_rects: true,
+            offscreen_targets: true,
+            ..NativeRasterCaps::default()
+        }
     }
 
     fn initialize(
@@ -277,6 +310,7 @@ impl IGraphicsContext for EglContext {
                 wl_egl_window_resize(self.egl_window, width, height, 0, 0);
             }
         }
+        self.pipeline.resize_swapchain(width, height, width, height);
         Ok(())
     }
 
@@ -329,6 +363,9 @@ impl IGraphicsContext for EglContext {
             return;
         }
         self.shutdown = true;
+        if self.make_current().is_ok() {
+            self.pipeline.release();
+        }
         let _ = self.egl.make_current(self.display, None, None, None);
         let _ = self.egl.destroy_context(self.display, self.context);
         let _ = self.egl.destroy_surface(self.display, self.surface);
@@ -341,10 +378,20 @@ impl IGraphicsContext for EglContext {
         }
     }
 
-    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-        // 通过 glow::Context::read_pixels 实现，由 GpuEngine 调用。
-        // EglContext 只负责上下文管理，不直接调用 GL 函数。
-        Vec::new()
+    fn try_read_pixels(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<Vec<u32>, Error> {
+        self.make_current()?;
+        self.pipeline.read_pixels(x, y, width, height)
+    }
+
+    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32> {
+        self.try_read_pixels(x, y, width, height)
+            .unwrap_or_default()
     }
 
     fn width(&self) -> i32 {
@@ -355,15 +402,78 @@ impl IGraphicsContext for EglContext {
         self.height
     }
 
-    fn acquire_native_runtime(&mut self) -> Result<NativeGraphicsRuntime, Error> {
+    fn clear_render_target(&mut self, r: f32, g: f32, b: f32, a: f32) -> Result<(), Error> {
         self.make_current()?;
-        let egl = &self.egl;
-        let runtime = crate::native::graphics::opengl::NativeOpenGlRuntime::from_loader(|name| {
-            egl.get_proc_address(name)
-                .map(|function| function as *const std::ffi::c_void)
-                .unwrap_or(std::ptr::null())
-        });
-        Ok(NativeGraphicsRuntime::opengles(runtime))
+        self.pipeline.clear_render_target([r, g, b, a])
+    }
+
+    fn draw_solid_rects(
+        &mut self,
+        viewport_w: f32,
+        viewport_h: f32,
+        scissor: Option<(i32, i32, i32, i32)>,
+        rects: &[GpuSolidRect],
+    ) -> Result<(), Error> {
+        self.make_current()?;
+        self.pipeline
+            .draw_solid_rects(viewport_w, viewport_h, scissor, rects)
+    }
+
+    fn blit_soft_fallback_tile(
+        &mut self,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+        tile: SoftFallbackTile,
+    ) -> Result<(), Error> {
+        self.make_current()?;
+        self.pipeline
+            .blit_soft_fallback_tile(pixels, width, height, tile)
+    }
+
+    fn clear_rects(
+        &mut self,
+        _viewport_w: f32,
+        _viewport_h: f32,
+        rects: &[GpuSolidRect],
+    ) -> Result<(), Error> {
+        self.make_current()?;
+        self.pipeline.clear_rects(rects)
+    }
+
+    fn create_offscreen_target(
+        &mut self,
+        width: i32,
+        height: i32,
+    ) -> Result<OffscreenTargetId, Error> {
+        self.make_current()?;
+        self.pipeline.create_offscreen_target(width, height)
+    }
+
+    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+        self.make_current()?;
+        self.pipeline.destroy_offscreen_target(id)
+    }
+
+    fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+        self.make_current()?;
+        self.pipeline.bind_offscreen_target(id)
+    }
+
+    fn bind_swapchain_target(&mut self) -> Result<(), Error> {
+        self.make_current()?;
+        self.pipeline.bind_swapchain_target();
+        Ok(())
+    }
+
+    fn blit_offscreen_target(
+        &mut self,
+        id: OffscreenTargetId,
+        src: crate::core::Rect,
+        dst: crate::core::Rect,
+    ) -> Result<(), Error> {
+        self.make_current()?;
+        self.pipeline.blit_offscreen_target(id, src, dst)
     }
 }
 

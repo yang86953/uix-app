@@ -2,10 +2,6 @@
 // draw/gpu_engine/mod.rs — GPU 渲染引擎（GLES 3.0）
 // ============================================================================
 
-#[cfg(feature = "opengles")]
-use glow::HasContext as _;
-use std::cell::RefCell;
-
 use crate::core::Error;
 use crate::draw::backend::registry::create_native_raster_backend;
 use crate::draw::backend::DamageRegion;
@@ -14,21 +10,15 @@ use crate::draw::pipeline::RenderSession;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::native::traits::present::IGraphicsContext;
 
-#[cfg(feature = "opengles")]
-pub use canvas_2d::GpuCanvas2D;
 // Compatibility names retain their former public draw path while the source
 // of truth is native OpenGL ES. They do not expose a GL object or loader.
 #[cfg(feature = "opengles")]
 pub use crate::native::graphics::opengl::shaders::{
     BLIT_FRAG, BLIT_RGBA_FRAG, BLUR_FRAG, FULLSCREEN_VERT, RECT_FRAG, RECT_VERT,
 };
-#[cfg(feature = "opengles")]
-mod canvas_2d;
-
 /// GPU 渲染引擎 — 委托 `RenderSession` + `RenderBackend`（GL / D3D11 / …）。
 pub struct GpuEngine {
     session: RenderSession,
-    empty_readback: RefCell<Vec<u32>>,
 }
 
 impl GpuEngine {
@@ -37,10 +27,7 @@ impl GpuEngine {
             Ok(backend) => RenderSession::with_backend(backend),
             Err(err) => return Err(err),
         };
-        Ok(Self {
-            session,
-            empty_readback: RefCell::new(Vec::new()),
-        })
+        Ok(Self { session })
     }
 
     pub fn session(&self) -> &RenderSession {
@@ -49,43 +36,6 @@ impl GpuEngine {
 
     pub fn session_mut(&mut self) -> &mut RenderSession {
         &mut self.session
-    }
-
-    /// 返回像素缓冲的克隆（每次调用分配，仅用于读回）。
-    pub fn pixels(&self) -> Vec<u32> {
-        #[cfg(feature = "opengles")]
-        {
-            return self
-                .session
-                .gpu_backend()
-                .map(|g| g.pixels())
-                .unwrap_or_default();
-        }
-        #[cfg(not(feature = "opengles"))]
-        {
-            Vec::new()
-        }
-    }
-
-    /// 返回像素缓冲的引用（避免分配）。
-    pub fn pixels_ref(&self) -> std::cell::Ref<'_, Vec<u32>> {
-        #[cfg(feature = "opengles")]
-        {
-            if let Some(gpu) = self.session.gpu_backend() {
-                return gpu.pixels_ref();
-            }
-        }
-        self.empty_readback.borrow()
-    }
-
-    /// 从 GL 前端缓冲读回像素数据（填充 readback）。
-    pub fn read_pixels(&self) {
-        #[cfg(feature = "opengles")]
-        {
-            if let Some(gpu) = self.session.gpu_backend() {
-                gpu.read_pixels();
-            }
-        }
     }
 
     fn make_current(&mut self) -> Result<(), Error> {
@@ -97,17 +47,6 @@ impl GraphicsEngine for GpuEngine {
     fn initialize(&mut self, w: i32, h: i32) -> Result<(), Error> {
         self.session.initialize_prepared(w, h)?;
         self.make_current()?;
-        #[cfg(feature = "opengles")]
-        if let Some(gpu) = self.session.gpu_backend_mut() {
-            let vw = gpu.gpu_ctx.width();
-            let vh = gpu.gpu_ctx.height();
-            unsafe {
-                gpu.gl().viewport(0, 0, vw, vh);
-                gpu.gl().enable(glow::BLEND);
-                gpu.gl()
-                    .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
-            }
-        }
         Ok(())
     }
 
@@ -118,13 +57,6 @@ impl GraphicsEngine for GpuEngine {
     fn resize(&mut self, w: i32, h: i32) -> Result<(), Error> {
         self.session.resize(w, h)?;
         self.make_current()?;
-        #[cfg(feature = "opengles")]
-        if let Some(gpu) = self.session.gpu_backend_mut() {
-            unsafe {
-                gpu.gl()
-                    .viewport(0, 0, gpu.gpu_ctx.width(), gpu.gpu_ctx.height());
-            }
-        }
         Ok(())
     }
 

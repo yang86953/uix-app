@@ -133,6 +133,8 @@ pub struct NativeGpuCanvas2D {
     state_stack: Vec<StateSnapshot>,
     surface_w: i32,
     surface_h: i32,
+    #[cfg(test)]
+    last_soft_upload_bytes: usize,
 }
 
 impl NativeGpuCanvas2D {
@@ -155,6 +157,8 @@ impl NativeGpuCanvas2D {
             state_stack: Vec::new(),
             surface_w: w,
             surface_h: h,
+            #[cfg(test)]
+            last_soft_upload_bytes: 0,
         }
     }
 
@@ -602,10 +606,20 @@ impl NativeGpuCanvas2D {
         }
         let w = self.surface_w;
         let h = self.surface_h;
-        let pixels = self.ensure_soft().surface().pixels();
-        let Some(tile) = visible_soft_fallback_tile(pixels, w, h) else {
+        let tile = {
+            let pixels = self.ensure_soft().surface().pixels();
+            visible_soft_fallback_tile(pixels, w, h)
+        };
+        let Some(tile) = tile else {
             return Ok(());
         };
+        #[cfg(test)]
+        {
+            self.last_soft_upload_bytes = (tile.width as usize)
+                .saturating_mul(tile.height as usize)
+                .saturating_mul(std::mem::size_of::<u32>());
+        }
+        let pixels = self.ensure_soft().surface().pixels();
         gpu_ctx.blit_soft_fallback_tile(pixels, w, h, tile)?;
         Ok(())
     }
@@ -987,6 +1001,20 @@ struct NativeGpuOffscreen {
     height: i32,
 }
 
+/// Canvas coordinates are logical pixels. Native contexts report their
+/// drawable extent through `width`/`height`, so derive the matching logical
+/// extent from their single DPR source before allocating draw-side state.
+fn logical_extent_from_context(gpu_ctx: &dyn IGraphicsContext) -> (i32, i32) {
+    let dpr = gpu_ctx.device_pixel_ratio();
+    let dpr = if dpr.is_finite() && dpr > 0.0 {
+        dpr
+    } else {
+        1.0
+    };
+    let logical = |drawable: i32| ((drawable.max(1) as f32 / dpr).round() as i32).max(1);
+    (logical(gpu_ctx.width()), logical(gpu_ctx.height()))
+}
+
 impl NativeGpuBackend {
     pub(crate) fn new(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         let caps = gpu_ctx.caps();
@@ -1006,12 +1034,11 @@ impl NativeGpuBackend {
                 ),
             ));
         }
-        let actual_w = gpu_ctx.width().max(1);
-        let actual_h = gpu_ctx.height().max(1);
+        let (logical_w, logical_h) = logical_extent_from_context(gpu_ctx.as_ref());
         Ok(Self {
             gpu_ctx,
-            width: actual_w,
-            height: actual_h,
+            width: logical_w,
+            height: logical_h,
             shutdown: false,
             offscreens: Vec::new(),
             free_offscreen_ids: Vec::new(),
@@ -1019,14 +1046,36 @@ impl NativeGpuBackend {
             active_offscreen: None,
             frame_failure: None,
             surface: NativeGpuDrawSurface {
-                canvas: NativeGpuCanvas2D::new(actual_w, actual_h, native_caps),
+                canvas: NativeGpuCanvas2D::new(logical_w, logical_h, native_caps),
                 native_caps,
-                width: actual_w,
-                height: actual_h,
+                width: logical_w,
+                height: logical_h,
                 needs_gpu_clear: true,
                 pending_clear_rects: Vec::new(),
             },
         })
+    }
+
+    /// Flushes the current ordered segment without presenting, then reads the
+    /// native drawable. This is a crate-local diagnostic/test boundary; it
+    /// deliberately uses the same command ordering as a final present.
+    #[cfg(all(test, feature = "opengles"))]
+    pub(crate) fn try_readback(&mut self) -> Result<Vec<u32>, Error> {
+        if self.active_offscreen.is_some() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "cannot read the swapchain while an offscreen target is active",
+            ));
+        }
+        self.flush_main_segment_before_ordered_boundary()?;
+        let width = self.gpu_ctx.width().max(1);
+        let height = self.gpu_ctx.height().max(1);
+        self.gpu_ctx.try_read_pixels(0, 0, width, height)
+    }
+
+    #[cfg(all(test, feature = "opengles"))]
+    pub(crate) fn last_soft_upload_bytes(&self) -> usize {
+        self.surface.canvas.last_soft_upload_bytes
     }
 
     fn destroy_all_offscreens(&mut self) -> Result<(), Error> {
@@ -1054,16 +1103,15 @@ impl NativeGpuBackend {
     }
 
     fn adopt_factory_drawable_extent(&mut self) -> (i32, i32) {
-        let actual_w = self.gpu_ctx.width().max(1);
-        let actual_h = self.gpu_ctx.height().max(1);
-        self.width = actual_w;
-        self.height = actual_h;
-        self.surface.width = actual_w;
-        self.surface.height = actual_h;
-        self.surface.canvas.resize(actual_w, actual_h);
+        let (logical_w, logical_h) = logical_extent_from_context(self.gpu_ctx.as_ref());
+        self.width = logical_w;
+        self.height = logical_h;
+        self.surface.width = logical_w;
+        self.surface.height = logical_h;
+        self.surface.canvas.resize(logical_w, logical_h);
         self.surface.needs_gpu_clear = true;
         self.surface.pending_clear_rects.clear();
-        (actual_w, actual_h)
+        (logical_w, logical_h)
     }
 
     /// Submit all commands that precede an immediate ordered operation such
@@ -1174,12 +1222,11 @@ impl RenderBackend for NativeGpuBackend {
         let target = self
             .gpu_ctx
             .create_offscreen_target(width, height)
-            .map_err(|err| {
+            .inspect_err(|err| {
                 crate::core::log::warn_fn(format!(
                     "NativeGpuBackend: create_offscreen_target failed: {}",
                     err.short_what()
                 ));
-                err
             })
             .ok()?;
         let id = if let Some(id) = self.free_offscreen_ids.pop() {
@@ -1323,11 +1370,27 @@ impl RenderBackend for NativeGpuBackend {
             ));
         };
         let target = off.target;
-        // `blit_offscreen_target` is immediate on native APIs.  Flush clear,
-        // native work and any bounded CPU segment before it so Picture does
-        // not leapfrog preceding painter-order commands.  The subsequent
-        // commands remain queued and are committed by the same final present.
-        self.flush_main_segment_before_ordered_boundary()?;
+        if let Some(active) = self.active_offscreen {
+            if active == handle.0 {
+                return Err(Error::new(
+                    Errc::InvalidArgument,
+                    "Picture offscreen target cannot blit into itself",
+                ));
+            }
+            // The destination is the currently bound Picture target. Submit
+            // its queued native/soft commands before the immediate source
+            // blit so painter order remains destination commands → blit.
+            // Flushing the main swapchain here would clear/submit the wrong
+            // target and invert that order.
+            self.try_flush_offscreen_paint(&ImageHandle(active))?;
+        } else {
+            // `blit_offscreen_target` is immediate on native APIs. Flush
+            // clear, native work and any bounded CPU segment before it so
+            // Picture does not leapfrog preceding painter-order commands.
+            // The subsequent commands remain queued and are committed by the
+            // same final present.
+            self.flush_main_segment_before_ordered_boundary()?;
+        }
         self.gpu_ctx
             .blit_offscreen_target(target, src_rect, dst_rect)
     }
@@ -1967,11 +2030,12 @@ mod tests {
         height: i32,
         bias_w: i32,
         bias_h: i32,
+        dpr: f32,
     }
 
     impl IGraphicsContext for ClientRectLargerContext {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, true, 1.0)
+            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, true, self.dpr)
         }
 
         fn native_raster_caps(&self) -> NativeRasterCaps {
@@ -2012,6 +2076,9 @@ mod tests {
         fn height(&self) -> i32 {
             self.height
         }
+        fn device_pixel_ratio(&self) -> f32 {
+            self.dpr
+        }
         fn clear_render_target(
             &mut self,
             _r: f32,
@@ -2033,6 +2100,7 @@ mod tests {
             height: 600,
             bias_w: 120,
             bias_h: 80,
+            dpr: 1.0,
         }))
         .expect("backend");
         backend.resize(800, 600).expect("resize");
@@ -2042,6 +2110,23 @@ mod tests {
         assert_eq!(backend.surface.height, 680);
         let sz = backend.surface.canvas.surface_size();
         assert_eq!((sz.w as i32, sz.h as i32), (920, 680));
+    }
+
+    #[test]
+    fn native_gpu_canvas_uses_logical_extent_when_drawable_has_dpr() {
+        let backend = NativeGpuBackend::new(Box::new(ClientRectLargerContext {
+            width: 1600,
+            height: 1200,
+            bias_w: 0,
+            bias_h: 0,
+            dpr: 2.0,
+        }))
+        .expect("backend");
+
+        assert_eq!((backend.width, backend.height), (800, 600));
+        assert_eq!((backend.surface.width, backend.surface.height), (800, 600));
+        let size = backend.surface.canvas.surface_size();
+        assert_eq!((size.w as i32, size.h as i32), (800, 600));
     }
 
     fn assert_soft_offset<F>(draw: F, hit: (usize, usize), miss: (usize, usize))

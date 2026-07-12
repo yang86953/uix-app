@@ -3,7 +3,7 @@
 //! Caps: [`RasterMode::GpuNative`] × [`PresentMode::Swapchain`] (#169).
 //! Native solid/rounded fill + stroke + glyph atlas text + linear/radial
 //! gradients + simple path meshes + box/ambient shadow; unsupported Canvas2D
-//! ops soft-raster and alpha-blit (same hybrid pattern as GL `GpuCanvas2D`).
+//! ops soft-raster and alpha-blit (same hybrid pattern as the native GL path).
 
 #![allow(nonstandard_style)]
 
