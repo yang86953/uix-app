@@ -130,7 +130,13 @@ impl RenderSession {
         }
         self.backend.shutdown();
         if let Some(mut staged_context) = self.gpu_ctx.take() {
-            staged_context.shutdown();
+            if let Err(error) = staged_context.try_shutdown() {
+                crate::core::log::error_fn(format!(
+                    "RenderSession: staged context shutdown failed; retaining it for retry: {}",
+                    error.short_what()
+                ));
+                self.gpu_ctx = Some(staged_context);
+            }
         }
         self.width = 0;
         self.height = 0;

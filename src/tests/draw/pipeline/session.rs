@@ -185,6 +185,23 @@ fn failed_staged_context_shutdown_keeps_the_old_context_and_closes_the_replaceme
 }
 
 #[test]
+fn session_shutdown_retries_a_staged_checked_shutdown_failure() {
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let mut session = RenderSession::new(BackendKind::Cpu).expect("Cpu session");
+    session
+        .set_gpu_context(Box::new(FailingShutdownGraphicsContext {
+            attempts: Arc::clone(&attempts),
+        }))
+        .expect("stage context");
+
+    session.shutdown();
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+
+    session.shutdown();
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn cpu_or_null_switch_keeps_staged_context_until_session_shutdown() {
     let shutdowns = Arc::new(AtomicUsize::new(0));
     let mut session = RenderSession::new(BackendKind::Cpu).expect("Cpu 会话");
