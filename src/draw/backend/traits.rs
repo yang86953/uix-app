@@ -187,9 +187,9 @@ pub trait RenderBackend {
     }
 
     /// Executes a lossless API-neutral encoded Picture into an existing
-    /// offscreen target. Non-CPU backends currently return `Unsupported` so
-    /// compositor code can retain direct DisplayList replay without changing
-    /// their GPU command semantics.
+    /// offscreen target. A backend that cannot prove this operation preserves
+    /// the encoded order returns `Unsupported`, so compositor code retains the
+    /// complete DisplayList replay rather than approximating it.
     fn try_execute_encoded_picture(
         &mut self,
         _handle: &ImageHandle,

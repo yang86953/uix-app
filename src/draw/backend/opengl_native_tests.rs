@@ -4,6 +4,7 @@ use crate::core::{DamageRegion, Rect};
 use crate::draw::backend::RenderBackend;
 use crate::draw::engine::GraphicsFailure;
 use crate::draw::gpu_engine::GpuEngine;
+use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder, FrameRasterOp, FrameRect};
 use crate::draw::{BlendMode, Color, GraphicsEngine, SoftwareEngine, UpdateStrategy};
 use crate::native::traits::present::GraphicsBackend;
 
@@ -137,6 +138,66 @@ fn opengles_native_path_matches_software_for_premultiplied_soft_tile() {
     };
     assert_eq!(rgba_to_aarrggbb(pixels[48 * stride + 48]), reference);
 
+    engine.shutdown();
+    window.close().expect("close native window");
+}
+
+#[test]
+fn opengles_native_path_executes_encoded_cached_picture_in_bound_offscreen() {
+    if std::env::consts::OS != "windows" {
+        return;
+    }
+
+    let (_platform, mut window, mut engine) = open_engine("native GL encoded Picture", 128, 128);
+    let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+    let picture = engine.create_offscreen(32, 32).expect("offscreen picture");
+    engine
+        .try_begin_offscreen_paint(&picture)
+        .expect("bind Picture target");
+
+    let mut encoder = FrameEncoder::new(32, 32).expect("FrameEncoder");
+    encoder.clear(Color::transparent());
+    encoder.cpu_segment([FrameRasterOp::FillRect {
+        rect: FrameRect::new(8, 8, 16, 16),
+        color: Color::blue(),
+    }]);
+    assert_eq!(
+        engine
+            .try_execute_encoded_picture(&picture, &encoder)
+            .expect("execute encoded Picture"),
+        EncodedPictureExecution::Executed,
+        "GpuNative must execute the API-neutral FrameEncoder while its Picture target is bound"
+    );
+    engine
+        .try_flush_offscreen_paint(&picture)
+        .expect("flush encoded Picture");
+    engine
+        .try_end_offscreen_paint()
+        .expect("restore swapchain after encoded Picture");
+    engine.blit_offscreen(&picture, Rect::new(32.0, 32.0, 64.0, 64.0));
+
+    let (pixels, stride) = {
+        let backend = engine
+            .session_mut()
+            .native_gpu_backend_mut()
+            .expect("OpenGL ES NativeGpu backend");
+        let stride = backend.surface().size().w as usize;
+        let pixels = backend
+            .try_readback()
+            .expect("read back encoded Picture frame");
+        (pixels, stride)
+    };
+    assert_eq!(
+        pixels[64 * stride + 64],
+        0xFFFF_0000,
+        "FrameEncoder Picture must reach the native target in painter order"
+    );
+
+    assert!(matches!(
+        engine.end_frame(&DamageRegion::full()),
+        crate::draw::RenderOutcome::Present(_)
+    ));
+    engine.destroy_offscreen(picture);
     engine.shutdown();
     window.close().expect("close native window");
 }

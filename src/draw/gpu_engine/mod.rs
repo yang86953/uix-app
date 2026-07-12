@@ -6,7 +6,7 @@ use crate::core::Error;
 use crate::draw::backend::registry::create_native_raster_backend;
 use crate::draw::backend::DamageRegion;
 use crate::draw::engine::{GraphicsFailure, RenderOutcome};
-use crate::draw::pipeline::RenderSession;
+use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder, RenderSession};
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 use crate::native::traits::present::IGraphicsContext;
 
@@ -105,6 +105,16 @@ impl GraphicsEngine for GpuEngine {
 
     fn copy_offscreen_pixels(&self, handle: &crate::draw::ImageHandle) -> Option<(Vec<u32>, i32)> {
         self.session.backend().copy_offscreen_pixels(handle)
+    }
+
+    fn try_execute_encoded_picture(
+        &mut self,
+        handle: &crate::draw::ImageHandle,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedPictureExecution, Error> {
+        self.session
+            .backend_mut()
+            .try_execute_encoded_picture(handle, encoder)
     }
 
     fn begin_offscreen_paint(&mut self, handle: &crate::draw::ImageHandle) -> bool {
