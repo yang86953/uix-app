@@ -1128,7 +1128,7 @@ impl NativeGpuBackend {
 
     fn destroy_all_offscreens(&mut self) -> Result<(), Error> {
         self.active_offscreen = None;
-        let _ = self.gpu_ctx.bind_swapchain_target();
+        self.gpu_ctx.bind_swapchain_target()?;
         let handles = self
             .offscreens
             .iter()
@@ -1337,20 +1337,21 @@ impl RenderBackend for NativeGpuBackend {
         if self.shutdown {
             return;
         }
-        self.shutdown = true;
         if let Err(error) = self.destroy_all_offscreens() {
             crate::core::log::error_fn(format!(
                 "NativeGpuBackend: offscreen shutdown failed: {}",
                 error.short_what()
             ));
+            return;
         }
-        let _ = self.gpu_ctx.make_current();
         if let Err(error) = self.gpu_ctx.try_shutdown() {
             crate::core::log::error_fn(format!(
                 "NativeGpuBackend: context shutdown failed: {}",
                 error.short_what()
             ));
+            return;
         }
+        self.shutdown = true;
     }
 
     fn surface(&mut self) -> &mut dyn DrawSurface {
@@ -2077,6 +2078,7 @@ mod tests {
         Soft,
         Picture,
         Present,
+        Shutdown,
     }
 
     struct RecordingContext {
@@ -2144,6 +2146,11 @@ mod tests {
 
         fn shutdown(&mut self) {
             self.shutdown_calls.set(self.shutdown_calls.get() + 1);
+        }
+
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
+            self.shutdown_calls.set(self.shutdown_calls.get() + 1);
+            self.fail_if(FailStage::Shutdown)
         }
 
         fn read_pixels(
@@ -3474,7 +3481,27 @@ mod tests {
         drop(backend);
 
         assert_eq!(shutdown_calls.get(), 1);
-        assert_eq!(make_current_calls.get(), 1);
+        assert_eq!(make_current_calls.get(), 0);
+    }
+
+    #[test]
+    fn native_gpu_backend_retries_a_checked_context_shutdown_failure() {
+        let RecordingFixture {
+            mut backend,
+            fail_stage,
+            shutdown_calls,
+            ..
+        } = recording_backend(FailStage::Shutdown);
+
+        backend.shutdown();
+        assert_eq!(shutdown_calls.get(), 1);
+
+        fail_stage.set(FailStage::None);
+        backend.shutdown();
+        assert_eq!(shutdown_calls.get(), 2);
+
+        drop(backend);
+        assert_eq!(shutdown_calls.get(), 2);
     }
 
     #[test]
