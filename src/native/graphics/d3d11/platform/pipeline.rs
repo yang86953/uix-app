@@ -744,7 +744,7 @@ pub struct D3d11Pipeline {
 }
 
 impl D3d11Pipeline {
-    pub fn new(device: &ID3D11Device) -> Result<Self> {
+    pub(crate) fn new(device: &ID3D11Device) -> Result<Self> {
         let vs_blob = compile_shader(RECT_HLSL, "VSMain\0", "vs_4_0\0")?;
         let ps_blob = compile_shader(RECT_HLSL, "PSMain\0", "ps_4_0\0")?;
         let blit_vs_blob = compile_shader(BLIT_HLSL, "VSMain\0", "vs_4_0\0")?;

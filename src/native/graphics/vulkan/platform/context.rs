@@ -76,7 +76,7 @@ pub struct VulkanContext {
 }
 
 impl VulkanContext {
-    pub fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self> {
+    pub(crate) fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self> {
         let wayland = unsafe { WaylandSurfaceHandle::from_native(native_surface)? };
         let width = width.max(1);
         let height = height.max(1);

@@ -72,7 +72,7 @@ impl EglContext {
     ///
     /// `native_surface` 必须是 `*mut wl_surface`（Wayland surface 的 C 指针）。
     /// Requires GLES 3.0 because the native pipeline owns GLSL ES 3 shaders.
-    pub fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self, Error> {
+    pub(crate) fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self, Error> {
         use khronos_egl as egl;
 
         let wayland = unsafe { WaylandSurfaceHandle::from_native(native_surface)? };

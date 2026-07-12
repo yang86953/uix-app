@@ -210,7 +210,7 @@ pub struct D3d11Context {
 }
 
 impl D3d11Context {
-    pub fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
+    pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self> {
         if native_window.is_null() {
             return Err(Error::new(
                 Errc::PlatformError,

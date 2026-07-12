@@ -24,7 +24,7 @@ pub struct MetalPixelUploadContext {
 }
 
 impl MetalPixelUploadContext {
-    pub fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self> {
+    pub(crate) fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self> {
         if native_surface.is_null() {
             return Err(Error::new(
                 Errc::PlatformError,

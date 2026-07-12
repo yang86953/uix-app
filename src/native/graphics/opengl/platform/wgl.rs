@@ -412,7 +412,7 @@ impl WglContext {
     /// Create a WGL context on `native_window` (HWND).
     ///
     /// Creates the OpenGL ES 3.0 context required by the renderer shaders and VAOs.
-    pub fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self, Error> {
+    pub(crate) fn new(native_window: *mut c_void, width: i32, height: i32) -> Result<Self, Error> {
         if native_window.is_null() {
             return Err(Error::new(
                 Errc::PlatformError,
