@@ -9,6 +9,7 @@ use crate::core::{Error, Result};
 use crate::native::traits::present::IGraphicsContext;
 
 mod platform;
+pub(crate) mod raster;
 
 // Shader sources are API artefacts: they live with the native GL runtime even
 // while the transitional draw-side canvas still owns program/FBO lifetime.

@@ -1,8 +1,6 @@
 //! Table-driven pairing of [`GraphicsBackend`] to [`RenderBackend`] (P6.7 M6 / P6.8).
 
 use crate::core::{Errc, Error, Result};
-#[cfg(feature = "opengles")]
-use crate::draw::backend::gpu::GpuBackend;
 use crate::draw::backend::native_gpu::NativeGpuBackend;
 use crate::draw::backend::traits::RenderBackend;
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, RasterMode};
@@ -24,21 +22,7 @@ pub(crate) fn create_native_raster_backend(
     }
 
     match ctx.caps().backend {
-        GraphicsBackend::OpenGlEs => {
-            #[cfg(feature = "opengles")]
-            {
-                GpuBackend::new(ctx).map(|backend| Box::new(backend) as _)
-            }
-            #[cfg(not(feature = "opengles"))]
-            {
-                ctx.try_shutdown()?;
-                Err(Error::new(
-                    Errc::NotImplemented,
-                    "RenderBackendRegistry: OpenGL ES is disabled by feature=opengles",
-                ))
-            }
-        }
-        GraphicsBackend::D3d11 | GraphicsBackend::D3d12 => {
+        GraphicsBackend::OpenGlEs | GraphicsBackend::D3d11 | GraphicsBackend::D3d12 => {
             NativeGpuBackend::new(ctx).map(|backend| Box::new(backend) as _)
         }
         GraphicsBackend::Metal => {

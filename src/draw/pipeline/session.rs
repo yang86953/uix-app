@@ -4,8 +4,8 @@ use crate::core::Error;
 use crate::native::traits::present::IGraphicsContext;
 use std::thread::ThreadId;
 
-#[cfg(feature = "opengles")]
-use crate::draw::backend::GpuBackend;
+#[cfg(all(test, feature = "opengles"))]
+use crate::draw::backend::NativeGpuBackend;
 use crate::draw::backend::{
     create_backend, BackendCapabilities, BackendKind, CpuBackend, NullBackend, RenderBackend,
 };
@@ -212,13 +212,8 @@ impl RenderSession {
         self.backend.as_any_mut().downcast_mut()
     }
 
-    #[cfg(feature = "opengles")]
-    pub fn gpu_backend(&self) -> Option<&GpuBackend> {
-        self.backend.as_any().downcast_ref()
-    }
-
-    #[cfg(feature = "opengles")]
-    pub fn gpu_backend_mut(&mut self) -> Option<&mut GpuBackend> {
+    #[cfg(all(test, feature = "opengles"))]
+    pub(crate) fn native_gpu_backend_mut(&mut self) -> Option<&mut NativeGpuBackend> {
         self.backend.as_any_mut().downcast_mut()
     }
 

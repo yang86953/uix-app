@@ -465,6 +465,19 @@ fn domain_dependencies_stay_layered() {
 }
 
 #[test]
+fn draw_keeps_api_graphics_objects_inside_native() {
+    assert_domain_has_no_forbidden_dependencies(
+        "draw",
+        &[
+            "glow::",
+            "NativeOpenGlRuntime",
+            "NativeGraphicsRuntime",
+            "acquire_native_runtime",
+        ],
+    );
+}
+
+#[test]
 fn removed_compatibility_terms_do_not_return_to_source() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let removed_terms = [
@@ -758,13 +771,7 @@ fn architecture_document_stays_in_the_qualified_docs_tree() {
         .filter(|name| root.join(name).exists())
         .collect();
 
-    let required_generic = [
-        "产品.md",
-        "决策.md",
-        "进度.md",
-        "问题.md",
-        "架构.md",
-    ];
+    let required_generic = ["产品.md", "决策.md", "进度.md", "问题.md", "架构.md"];
     for name in required_generic {
         let path = root.join("docs").join(name);
         assert!(

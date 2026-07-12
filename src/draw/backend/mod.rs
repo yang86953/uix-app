@@ -1,18 +1,17 @@
 //! 渲染后端模块。
 
 pub mod cpu;
-#[cfg(feature = "opengles")]
-pub mod gpu;
 pub mod native_gpu;
 pub mod null;
 pub mod offscreen_pool;
 pub mod registry;
 pub mod traits;
 
+#[cfg(all(test, feature = "opengles"))]
+mod opengl_native_tests;
+
 pub use crate::core::DamageRegion;
 pub use cpu::CpuBackend;
-#[cfg(feature = "opengles")]
-pub use gpu::GpuBackend;
 pub use native_gpu::NativeGpuBackend;
 pub use null::NullBackend;
 pub use traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
@@ -50,7 +49,6 @@ mod tests {
     struct FakeGpuContext {
         backend: GraphicsBackend,
         native_caps: NativeRasterCaps,
-        gl_compatible: bool,
         shutdowns: Arc<AtomicUsize>,
     }
 
@@ -61,10 +59,6 @@ mod tests {
 
         fn native_raster_caps(&self) -> NativeRasterCaps {
             self.native_caps
-        }
-
-        fn supports_gl_proc_address(&self) -> bool {
-            self.gl_compatible
         }
 
         fn initialize(
@@ -108,7 +102,6 @@ mod tests {
         let context = FakeGpuContext {
             backend: GraphicsBackend::D3d11,
             native_caps: NativeRasterCaps::d3d11_full(),
-            gl_compatible: false,
             shutdowns: Arc::new(AtomicUsize::new(0)),
         };
 
@@ -120,23 +113,20 @@ mod tests {
 
     #[cfg(feature = "opengles")]
     #[test]
-    fn gpu_factory_routes_opengles_context_to_gl_backend() {
+    fn gpu_factory_rejects_opengles_context_without_native_hybrid_baseline() {
         let shutdowns = Arc::new(AtomicUsize::new(0));
         let context = FakeGpuContext {
             backend: GraphicsBackend::OpenGlEs,
             native_caps: NativeRasterCaps::default(),
-            // Stop before glow initialization while retaining a GL-specific
-            // observable error, so the test does not need a live GL driver.
-            gl_compatible: false,
             shutdowns: Arc::clone(&shutdowns),
         };
 
         let error = match create_backend(BackendKind::Gpu, Some(Box::new(context))) {
-            Ok(_) => panic!("incompatible fake GL context must fail GL backend construction"),
+            Ok(_) => panic!("context without hybrid baseline must be rejected"),
             Err(error) => error,
         };
 
-        assert!(error.message().contains("requires a GL-compatible"));
+        assert!(error.message().contains("requires GpuNative"));
         assert_eq!(shutdowns.load(Ordering::SeqCst), 1);
     }
 }
