@@ -142,6 +142,67 @@ impl GraphicsEngine for RecordingEngine {
     }
 }
 
+/// Captures the real WGL drawable immediately after the sole main
+/// `FrameEncoder` execution. `SwapBuffers` does not promise that the next
+/// back buffer remains readable, so post-present readback would test buffer
+/// ownership rather than the producer-to-present contract.
+#[cfg(feature = "opengles")]
+struct CaptureBeforePresentEngine {
+    inner: crate::draw::gpu_engine::GpuEngine,
+    encoded_frames: Vec<Vec<u32>>,
+}
+
+#[cfg(feature = "opengles")]
+impl GraphicsEngine for CaptureBeforePresentEngine {
+    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.initialize(width, height)
+    }
+
+    fn shutdown(&mut self) {
+        self.inner.shutdown();
+    }
+
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.inner.resize(width, height)
+    }
+
+    fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
+        self.inner.begin_frame(strategy)
+    }
+
+    fn end_frame(&mut self, damage: &DamageRegion) -> RenderOutcome {
+        self.inner.end_frame(damage)
+    }
+
+    fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        self.inner.canvas_2d()
+    }
+
+    fn capabilities(&self) -> GraphicsCapabilities {
+        self.inner.capabilities()
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &crate::draw::pipeline::FrameEncoder,
+    ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+        let execution = self.inner.try_execute_encoded_frame(encoder)?;
+        if matches!(
+            execution,
+            crate::draw::pipeline::EncodedFrameExecution::Executed
+        ) {
+            let pixels = self
+                .inner
+                .session_mut()
+                .native_gpu_backend_mut()
+                .expect("WGL must retain the native backend")
+                .try_readback()?;
+            self.encoded_frames.push(pixels);
+        }
+        Ok(execution)
+    }
+}
+
 struct EncodedSoftwareEngine {
     inner: SoftwareEngine,
     encoded_picture_executions: usize,
@@ -597,6 +658,134 @@ fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_prese
     window.close().expect("close WARP window");
 }
 
+#[cfg(feature = "opengles")]
+#[test]
+fn frame_renderer_wgl_executes_direct_and_picture_recordings_before_present() {
+    use crate::draw::gpu_engine::GpuEngine;
+    use crate::native::traits::present::GraphicsBackend;
+
+    if std::env::consts::OS != "windows" {
+        return;
+    }
+
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("FrameRenderer WGL recording test", 300, 300)
+        .expect("window");
+    let context = crate::native::factory::create_gpu_context_with_backend(
+        window.native_surface_ptr(),
+        300,
+        300,
+        GraphicsBackend::OpenGlEs,
+    )
+    .expect("WGL context");
+    let mut engine = CaptureBeforePresentEngine {
+        inner: GpuEngine::new(context).expect("native WGL engine"),
+        encoded_frames: Vec::new(),
+    };
+    engine
+        .initialize(300, 300)
+        .expect("initialize native WGL engine");
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let rgba_to_aarrggbb = |pixel: u32| {
+        (pixel & 0xFF00_0000)
+            | ((pixel & 0x0000_00FF) << 16)
+            | (pixel & 0x0000_FF00)
+            | ((pixel & 0x00FF_0000) >> 16)
+    };
+    let logical_pixel = |pixels: &[u32], x: usize, y: usize| {
+        // WGL readback has a bottom-left origin; FrameEncoder coordinates are
+        // top-left logical pixels.
+        pixels[(299 - y) * 300 + x]
+    };
+
+    let mut direct_renderer = FrameRenderer::new();
+    let direct_scene = EligiblePictureScene::mixed_direct();
+    let direct = direct_renderer.render_frame(
+        &mut engine,
+        &direct_scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(matches!(direct.outcome, RenderOutcome::Present(_)));
+    let direct_pixels = engine
+        .encoded_frames
+        .last()
+        .expect("capture direct WGL frame before present");
+    assert_eq!(
+        rgba_to_aarrggbb(logical_pixel(direct_pixels, 0, 0)),
+        Color::from_rgb(160, 20, 20).premultiplied(),
+        "direct root must reach the real FrameEncoder executor"
+    );
+    assert_eq!(
+        rgba_to_aarrggbb(logical_pixel(direct_pixels, 8, 8)),
+        Color::from_rgb(20, 40, 220).premultiplied(),
+        "direct child must retain painter order on the real target"
+    );
+    assert_eq!(
+        rgba_to_aarrggbb(logical_pixel(direct_pixels, 150, 150)),
+        Color::from_rgb(30, 180, 80).premultiplied(),
+        "direct CPU fallback must reach the real FrameEncoder executor"
+    );
+
+    let mut picture_renderer = FrameRenderer::new();
+    let picture_scene = EligiblePictureScene::mixed();
+    let picture = picture_renderer.render_frame(
+        &mut engine,
+        &picture_scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(matches!(picture.outcome, RenderOutcome::Present(_)));
+    let picture_pixels = engine
+        .encoded_frames
+        .last()
+        .expect("capture Picture WGL frame before present");
+    assert_eq!(
+        rgba_to_aarrggbb(logical_pixel(picture_pixels, 0, 0)),
+        Color::from_rgb(160, 20, 20).premultiplied(),
+        "Picture root must reach the real FrameEncoder executor"
+    );
+    assert_eq!(
+        rgba_to_aarrggbb(logical_pixel(picture_pixels, 8, 8)),
+        Color::from_rgb(20, 40, 220).premultiplied(),
+        "Picture child must retain painter order on the real target"
+    );
+    assert_eq!(
+        rgba_to_aarrggbb(logical_pixel(picture_pixels, 150, 150)),
+        Color::from_rgb(30, 180, 80).premultiplied(),
+        "Picture CPU fallback must retain painter order on the real target"
+    );
+
+    engine.shutdown();
+    window.close().expect("close WGL window");
+}
+
 #[test]
 fn main_frame_encoder_failure_skips_final_present_and_preserves_retry() {
     let mut renderer = FrameRenderer::new();
@@ -818,7 +1007,7 @@ impl EligiblePictureScene {
         }
     }
 
-    #[cfg(feature = "d3d11")]
+    #[cfg(any(feature = "d3d11", feature = "opengles"))]
     fn mixed() -> Self {
         Self {
             include_cpu_fallback: true,
@@ -826,7 +1015,7 @@ impl EligiblePictureScene {
         }
     }
 
-    #[cfg(feature = "d3d11")]
+    #[cfg(any(feature = "d3d11", feature = "opengles"))]
     fn mixed_direct() -> Self {
         Self {
             picture_policy: crate::draw::compositor::PicturePolicy::Never,
