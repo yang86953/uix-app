@@ -196,13 +196,13 @@ impl GpuCanvas2D {
         let vs = Self::compile_shader(
             gl,
             glow::VERTEX_SHADER,
-            crate::draw::gpu_engine::RECT_VERT,
+            crate::native::graphics::opengl::shaders::RECT_VERT,
             "RectVS",
         )?;
         let fs = Self::compile_shader(
             gl,
             glow::FRAGMENT_SHADER,
-            crate::draw::gpu_engine::RECT_FRAG,
+            crate::native::graphics::opengl::shaders::RECT_FRAG,
             "RectFS",
         )?;
         Self::link_program(gl, vs, fs, "RectProgram")
@@ -212,13 +212,13 @@ impl GpuCanvas2D {
         let vs = Self::compile_shader(
             gl,
             glow::VERTEX_SHADER,
-            crate::draw::gpu_engine::FULLSCREEN_VERT,
+            crate::native::graphics::opengl::shaders::FULLSCREEN_VERT,
             "BlitVS",
         )?;
         let fs = Self::compile_shader(
             gl,
             glow::FRAGMENT_SHADER,
-            crate::draw::gpu_engine::BLIT_FRAG,
+            crate::native::graphics::opengl::shaders::BLIT_FRAG,
             "BlitFS",
         )?;
         Self::link_program(gl, vs, fs, "BlitProgram")
@@ -228,13 +228,13 @@ impl GpuCanvas2D {
         let vs = Self::compile_shader(
             gl,
             glow::VERTEX_SHADER,
-            crate::draw::gpu_engine::FULLSCREEN_VERT,
+            crate::native::graphics::opengl::shaders::FULLSCREEN_VERT,
             "BlitRgbaVS",
         )?;
         let fs = Self::compile_shader(
             gl,
             glow::FRAGMENT_SHADER,
-            crate::draw::gpu_engine::BLIT_RGBA_FRAG,
+            crate::native::graphics::opengl::shaders::BLIT_RGBA_FRAG,
             "BlitRgbaFS",
         )?;
         Self::link_program(gl, vs, fs, "BlitRgbaProgram")

@@ -16,12 +16,14 @@ use crate::native::traits::present::IGraphicsContext;
 
 #[cfg(feature = "opengles")]
 pub use canvas_2d::GpuCanvas2D;
+// Compatibility names retain their former public draw path while the source
+// of truth is native OpenGL ES. They do not expose a GL object or loader.
 #[cfg(feature = "opengles")]
-pub use shaders::*;
+pub use crate::native::graphics::opengl::shaders::{
+    BLIT_FRAG, BLIT_RGBA_FRAG, BLUR_FRAG, FULLSCREEN_VERT, RECT_FRAG, RECT_VERT,
+};
 #[cfg(feature = "opengles")]
 mod canvas_2d;
-#[cfg(feature = "opengles")]
-mod shaders;
 
 /// GPU 渲染引擎 — 委托 `RenderSession` + `RenderBackend`（GL / D3D11 / …）。
 pub struct GpuEngine {
@@ -318,5 +320,18 @@ mod tests {
             (engine.session().width(), engine.session().height()),
             (8, 6)
         );
+    }
+
+    #[cfg(feature = "opengles")]
+    #[test]
+    fn legacy_draw_module_reexports_native_shader_sources() {
+        use crate::native::graphics::opengl::shaders;
+
+        assert_eq!(RECT_VERT, shaders::RECT_VERT);
+        assert_eq!(RECT_FRAG, shaders::RECT_FRAG);
+        assert_eq!(BLUR_FRAG, shaders::BLUR_FRAG);
+        assert_eq!(BLIT_FRAG, shaders::BLIT_FRAG);
+        assert_eq!(BLIT_RGBA_FRAG, shaders::BLIT_RGBA_FRAG);
+        assert_eq!(FULLSCREEN_VERT, shaders::FULLSCREEN_VERT);
     }
 }
