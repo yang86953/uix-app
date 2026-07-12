@@ -1,4 +1,4 @@
-//! Metal graphics context (macOS).
+//! Metal identity CPU PixelUpload context (macOS).
 
 use std::ffi::c_void;
 
