@@ -27,7 +27,7 @@ pub(crate) fn create_graphics_engine(
             GpuEngine::new(context).map(|engine| Box::new(engine) as Box<dyn GraphicsEngine>)
         }
         (raster, PresentMode::CpuPresenter) => {
-            context.shutdown();
+            context.try_shutdown()?;
             Err(Error::new(
                 Errc::InvalidArgument,
                 format!(
@@ -37,7 +37,7 @@ pub(crate) fn create_graphics_engine(
             ))
         }
         (raster, present) => {
-            context.shutdown();
+            context.try_shutdown()?;
             Err(Error::new(
                 Errc::InvalidArgument,
                 format!(

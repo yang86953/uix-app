@@ -26,7 +26,7 @@ impl PresentUploadEngine {
             Ok(session) => session,
             Err(err) => {
                 let mut ctx = gpu_ctx;
-                ctx.shutdown();
+                ctx.try_shutdown()?;
                 return Err(err);
             }
         };

@@ -11,6 +11,10 @@ struct CountingGraphicsContext {
     shutdowns: Arc<AtomicUsize>,
 }
 
+struct FailingShutdownGraphicsContext {
+    attempts: Arc<AtomicUsize>,
+}
+
 impl IGraphicsContext for CountingGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps {
         GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
@@ -58,6 +62,58 @@ fn counting_context(shutdowns: Arc<AtomicUsize>) -> Box<dyn IGraphicsContext> {
     Box::new(CountingGraphicsContext { shutdowns })
 }
 
+impl IGraphicsContext for FailingShutdownGraphicsContext {
+    fn caps(&self) -> GraphicsContextCaps {
+        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+    }
+
+    fn initialize(
+        &mut self,
+        _native_window: *mut c_void,
+        _width: i32,
+        _height: i32,
+    ) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn make_current(&mut self) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn try_shutdown(&mut self) -> crate::core::Result<()> {
+        self.attempts.fetch_add(1, Ordering::SeqCst);
+        Err(crate::core::Error::new(
+            crate::core::Errc::PlatformError,
+            "injected shutdown failure",
+        ))
+    }
+
+    fn shutdown(&mut self) {
+        // RenderSession::Drop is a legacy no-return path. The regression
+        // asserts that the fallible replacement path itself never uses it.
+    }
+
+    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
+        Vec::new()
+    }
+
+    fn width(&self) -> i32 {
+        1
+    }
+
+    fn height(&self) -> i32 {
+        1
+    }
+}
+
 #[test]
 fn set_backend_to_null_forces_full_frame_once() {
     let mut session = RenderSession::new(BackendKind::Cpu).expect("Cpu 会话");
@@ -94,6 +150,26 @@ fn replacing_staged_context_shuts_the_previous_context_once() {
     assert_eq!(current_shutdowns.load(Ordering::SeqCst), 0);
     session.shutdown();
     assert_eq!(current_shutdowns.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn failed_staged_context_shutdown_keeps_the_old_context_and_closes_the_replacement() {
+    let failed_attempts = Arc::new(AtomicUsize::new(0));
+    let replacement_shutdowns = Arc::new(AtomicUsize::new(0));
+    let mut session = RenderSession::new(BackendKind::Cpu).expect("Cpu session");
+
+    session
+        .set_gpu_context(Box::new(FailingShutdownGraphicsContext {
+            attempts: Arc::clone(&failed_attempts),
+        }))
+        .expect("stage context");
+
+    let error = session
+        .set_gpu_context(counting_context(Arc::clone(&replacement_shutdowns)))
+        .expect_err("shutdown failure must be propagated");
+    assert_eq!(error.code(), crate::core::Errc::PlatformError);
+    assert_eq!(failed_attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(replacement_shutdowns.load(Ordering::SeqCst), 1);
 }
 
 #[test]
