@@ -1189,6 +1189,72 @@ fn hidden_window_preserves_dirty_until_restore() {
 }
 
 #[test]
+fn hidden_window_repaints_on_maximize() {
+    // Win32：最小化后再最大化发 SIZE_MAXIMIZED（WindowMaximize + Resize），
+    // 不发 WindowRestore；须恢复可见并 Present，否则客户区黑屏。
+    let mut platform = FakePlatform::new();
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::new(
+            UiEventType::WindowMinimize,
+            UiEventPayload::None,
+        ));
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::new(
+            UiEventType::WindowMaximize,
+            UiEventPayload::None,
+        ));
+    platform
+        .event_source
+        .state
+        .blocking_events
+        .push_back(UiEvent::resize(1920, 1080));
+    platform.event_source.state.exit_after_blocking_calls = Some(4);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 800, 600);
+    let mut session = WindowSession::from_root(
+        ViewNode::leaf(Container::new()),
+        Box::new(NullEngine::new()),
+        800,
+        600,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        map_ui_event,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    let stats = metrics.get();
+    assert_eq!(status, 0);
+    // 首帧 + Maximize 恢复可见 + Resize 校正：Fake 源分次投递故为 3 次 Present。
+    assert_eq!(stats.present_calls, 3);
+    assert_eq!(window.presenter.state.present_calls.len(), 3);
+    assert_eq!(session.loop_state(), WindowLoopState::DeepIdle);
+}
+
+#[test]
 fn ime_events_without_focused_component_do_not_start_text_input_or_force_frame() {
     let mut platform = FakePlatform::new();
     platform
