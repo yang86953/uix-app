@@ -916,14 +916,25 @@ impl IGraphicsContext for D3d11Context {
         Ok(OffscreenTargetId(id))
     }
 
-    fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) {
-        if self.bound_offscreen == Some(id.0) {
-            self.bound_offscreen = None;
-            let _ = self.bind_swapchain_target();
-        }
+    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+        // Do this for every checked destroy, not only when our cached marker
+        // says the target is bound: a failed previous restore leaves the real
+        // D3D target unknown. Do not release the offscreen slot until the
+        // swapchain target is confirmed, so callers can retry safely.
+        self.bind_swapchain_target()?;
         let idx = id.0 as usize;
         if idx < self.offscreens.len() && self.offscreens[idx].take().is_some() {
             self.free_offscreen_ids.push(id.0);
+        }
+        Ok(())
+    }
+
+    fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) {
+        if let Err(error) = self.try_destroy_offscreen_target(id) {
+            crate::core::log::error_fn(format!(
+                "D3d11Context: destroy offscreen target failed: {}",
+                error.short_what()
+            ));
         }
     }
 
