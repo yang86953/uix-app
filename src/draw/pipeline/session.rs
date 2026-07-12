@@ -71,13 +71,10 @@ impl RenderSession {
                 // teardown. Keep it owned by this session and close the
                 // incoming resource before returning the typed failure.
                 self.gpu_ctx = Some(previous);
-                if let Err(cleanup_error) = ctx.try_shutdown() {
-                    crate::core::log::error_fn(format!(
-                        "RenderSession: replacement context cleanup failed after retained context shutdown error: {}",
-                        cleanup_error.short_what()
-                    ));
-                }
-                return Err(error);
+                return match ctx.try_shutdown() {
+                    Ok(()) => Err(error),
+                    Err(cleanup_error) => Err(cleanup_error.with_source(error)),
+                };
             }
         }
         self.gpu_ctx = Some(ctx);
