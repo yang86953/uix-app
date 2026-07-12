@@ -62,6 +62,9 @@ pub struct EglContext {
     height: i32,
     pipeline: OpenGlRasterPipeline,
     shutdown: bool,
+    context_destroyed: bool,
+    surface_destroyed: bool,
+    display_terminated: bool,
 }
 
 impl EglContext {
@@ -236,7 +239,77 @@ impl EglContext {
             height,
             pipeline,
             shutdown: false,
+            context_destroyed: false,
+            surface_destroyed: false,
+            display_terminated: false,
         })
+    }
+
+    fn shutdown_result(&mut self) -> Result<(), Error> {
+        if self.shutdown {
+            return Ok(());
+        }
+        if !self.context_destroyed {
+            self.egl
+                .make_current(
+                    self.display,
+                    Some(self.surface),
+                    Some(self.surface),
+                    Some(self.context),
+                )
+                .map_err(|err| {
+                    Error::new(
+                        Errc::PlatformError,
+                        format!("EglContext: eglMakeCurrent during shutdown failed: {err:?}"),
+                    )
+                })?;
+            self.pipeline.release();
+            self.egl
+                .make_current(self.display, None, None, None)
+                .map_err(|err| {
+                    Error::new(
+                        Errc::PlatformError,
+                        format!("EglContext: eglMakeCurrent(NULL) during shutdown failed: {err:?}"),
+                    )
+                })?;
+            self.egl
+                .destroy_context(self.display, self.context)
+                .map_err(|err| {
+                    Error::new(
+                        Errc::PlatformError,
+                        format!("EglContext: eglDestroyContext failed: {err:?}"),
+                    )
+                })?;
+            self.context_destroyed = true;
+        }
+        if !self.surface_destroyed {
+            self.egl
+                .destroy_surface(self.display, self.surface)
+                .map_err(|err| {
+                    Error::new(
+                        Errc::PlatformError,
+                        format!("EglContext: eglDestroySurface failed: {err:?}"),
+                    )
+                })?;
+            self.surface_destroyed = true;
+        }
+        if !self.display_terminated {
+            self.egl.terminate(self.display).map_err(|err| {
+                Error::new(
+                    Errc::PlatformError,
+                    format!("EglContext: eglTerminate failed: {err:?}"),
+                )
+            })?;
+            self.display_terminated = true;
+        }
+        if !self.egl_window.is_null() {
+            unsafe {
+                wl_egl_window_destroy(self.egl_window);
+            }
+            self.egl_window = ptr::null_mut();
+        }
+        self.shutdown = true;
+        Ok(())
     }
 }
 
@@ -337,23 +410,16 @@ impl IGraphicsContext for EglContext {
         }
     }
 
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.shutdown_result()
+    }
+
     fn shutdown(&mut self) {
-        if self.shutdown {
-            return;
-        }
-        self.shutdown = true;
-        if self.make_current().is_ok() {
-            self.pipeline.release();
-        }
-        let _ = self.egl.make_current(self.display, None, None, None);
-        let _ = self.egl.destroy_context(self.display, self.context);
-        let _ = self.egl.destroy_surface(self.display, self.surface);
-        let _ = self.egl.terminate(self.display);
-        if !self.egl_window.is_null() {
-            unsafe {
-                wl_egl_window_destroy(self.egl_window);
-            }
-            self.egl_window = ptr::null_mut();
+        if let Err(error) = self.shutdown_result() {
+            crate::core::log::error_fn(format!(
+                "EglContext: shutdown failed: {}",
+                error.short_what()
+            ));
         }
     }
 
