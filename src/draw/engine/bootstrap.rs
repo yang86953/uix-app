@@ -1,12 +1,10 @@
 //! GPU graphics bootstrap — sole owner of the init-time backend probe loop (P6.7 M3).
 
-use std::ffi::c_void;
-
 use crate::core::{Errc, Error, Result};
 use crate::draw::engine::factory::create_graphics_engine;
 use crate::draw::traits::GraphicsEngine;
 use crate::native::factory::{gpu_recipe_candidates, try_create_gpu_recipe, GraphicsRecipe};
-use crate::native::traits::present::{GraphicsBackend, IGraphicsContext};
+use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, NativeSurfaceHandle};
 
 /// One failed probe attempt recorded for diagnostics and tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,18 +142,18 @@ pub(crate) fn assemble_graphics_engine(
 ///
 /// CPU fallback (`SoftwareEngine`) stays in app; this function only handles GPU paths.
 pub fn bootstrap_graphics_engine(
-    surface: *mut c_void,
+    surface: NativeSurfaceHandle,
     width: i32,
     height: i32,
     request: GraphicsBackend,
 ) -> Result<GpuBootstrap, ProbeReport> {
     bootstrap_graphics_engine_with(surface, width, height, request, |candidate| {
-        try_create_gpu_recipe(candidate, surface, width, height)
+        try_create_gpu_recipe(candidate, surface.as_raw(), width, height)
     })
 }
 
 fn bootstrap_graphics_engine_with<F>(
-    _surface: *mut c_void,
+    _surface: NativeSurfaceHandle,
     width: i32,
     height: i32,
     request: GraphicsBackend,
@@ -249,7 +247,15 @@ mod tests {
         GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentMode, RasterMode,
     };
     use std::cell::{Cell, RefCell};
+    use std::ffi::c_void;
     use std::rc::Rc;
+
+    #[cfg(feature = "d3d11")]
+    fn null_surface() -> NativeSurfaceHandle {
+        // SAFETY: probe tests deliberately exercise context creation failure
+        // without a real platform surface and never dereference this handle.
+        unsafe { NativeSurfaceHandle::from_raw(std::ptr::null_mut()) }
+    }
 
     struct ShutdownTrackingContext {
         shutdown_called: Rc<Cell<bool>>,
@@ -350,7 +356,7 @@ mod tests {
     fn bootstrap_shuts_down_context_when_engine_creation_fails() {
         let shutdown_called = Rc::new(Cell::new(false));
         match bootstrap_graphics_engine_with(
-            std::ptr::null_mut(),
+            null_surface(),
             640,
             480,
             GraphicsBackend::D3d11,
@@ -447,7 +453,7 @@ mod tests {
     fn bootstrap_shuts_down_context_when_engine_initialize_fails() {
         let shutdown_called = Rc::new(Cell::new(false));
         match bootstrap_graphics_engine_with(
-            std::ptr::null_mut(),
+            null_surface(),
             640,
             480,
             GraphicsBackend::D3d11,
@@ -525,7 +531,7 @@ mod tests {
         let calls = Rc::new(RefCell::new(Vec::new()));
         let calls_for_probe = Rc::clone(&calls);
         let mut bootstrap = bootstrap_graphics_engine_with(
-            std::ptr::null_mut(),
+            null_surface(),
             64,
             48,
             GraphicsBackend::Auto,
