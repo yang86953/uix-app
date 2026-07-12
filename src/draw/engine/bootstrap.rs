@@ -87,6 +87,59 @@ pub struct GpuBootstrap {
     pub report: ProbeReport,
 }
 
+/// Engine-assembly stages shared by initial probe and runtime recipe recovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GraphicsEngineAssemblyStage {
+    Create,
+    Initialize,
+}
+
+impl GraphicsEngineAssemblyStage {
+    fn probe_stage(self) -> ProbeStage {
+        match self {
+            Self::Create => ProbeStage::EngineCreate,
+            Self::Initialize => ProbeStage::EngineInitialize,
+        }
+    }
+}
+
+/// A typed engine-assembly failure that preserves the lifecycle stage for
+/// probe diagnostics while letting recovery return the underlying error.
+pub(crate) struct GraphicsEngineAssemblyFailure {
+    stage: GraphicsEngineAssemblyStage,
+    error: Error,
+}
+
+impl GraphicsEngineAssemblyFailure {
+    pub(crate) fn into_error(self) -> Error {
+        self.error
+    }
+}
+
+/// Assembles and starts an engine from one factory-created context.
+///
+/// Both bootstrap and runtime recovery use this one path so engine-creation
+/// failures, startup failures, and their checked cleanup cannot drift.
+pub(crate) fn assemble_graphics_engine(
+    context: Box<dyn IGraphicsContext>,
+    width: i32,
+    height: i32,
+) -> Result<Box<dyn GraphicsEngine>, GraphicsEngineAssemblyFailure> {
+    let mut engine =
+        create_graphics_engine(context).map_err(|error| GraphicsEngineAssemblyFailure {
+            stage: GraphicsEngineAssemblyStage::Create,
+            error,
+        })?;
+    if let Err(error) = engine.initialize(width, height) {
+        engine.shutdown();
+        return Err(GraphicsEngineAssemblyFailure {
+            stage: GraphicsEngineAssemblyStage::Initialize,
+            error,
+        });
+    }
+    Ok(engine)
+}
+
 /// Probes GPU backends in platform order and returns the first working engine.
 ///
 /// CPU fallback (`SoftwareEngine`) stays in app; this function only handles GPU paths.
@@ -159,44 +212,29 @@ where
         let caps = context.caps();
         let selected = GraphicsRecipe::new(caps.backend, caps.raster, caps.present);
 
-        let mut engine = match create_graphics_engine(context) {
+        let engine = match assemble_graphics_engine(context, width, height) {
             Ok(engine) => engine,
-            Err(err) => {
+            Err(failure) => {
                 crate::core::log::warn_fn(format!(
-                    "Graphics bootstrap: engine for recipe {selected} unavailable: {}",
-                    err.what()
+                    "Graphics bootstrap: engine assembly for recipe {selected} unavailable: {}",
+                    failure.error.what()
                 ));
-                report.record_failure_at(candidate, ProbeStage::EngineCreate, Some(selected), &err);
+                report.record_failure_at(
+                    candidate,
+                    failure.stage.probe_stage(),
+                    Some(selected),
+                    &failure.error,
+                );
                 continue;
             }
         };
-
-        match engine.initialize(width, height) {
-            Ok(()) => {
-                crate::core::log::info_fn(format!(
-                    "Graphics bootstrap: selected recipe {selected}"
-                ));
-                return Ok(GpuBootstrap {
-                    engine,
-                    selected: selected.backend,
-                    selected_recipe: selected,
-                    report,
-                });
-            }
-            Err(err) => {
-                crate::core::log::warn_fn(format!(
-                    "Graphics bootstrap: engine init for recipe {selected} failed: {}",
-                    err.what()
-                ));
-                engine.shutdown();
-                report.record_failure_at(
-                    candidate,
-                    ProbeStage::EngineInitialize,
-                    Some(selected),
-                    &err,
-                );
-            }
-        }
+        crate::core::log::info_fn(format!("Graphics bootstrap: selected recipe {selected}"));
+        return Ok(GpuBootstrap {
+            engine,
+            selected: selected.backend,
+            selected_recipe: selected,
+            report,
+        });
     }
 
     Err(report)
