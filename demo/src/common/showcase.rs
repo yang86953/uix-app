@@ -26,13 +26,14 @@ pub fn panel(tk: &DesignTokens, body: ViewNode) -> ViewNode {
         .border(1.0, ColorValue::Neutral(NeutralRole::BorderSecondary))
 }
 
-/// 可换行的水平样例流（不写死 INNER_W，靠父级 Stretch 定宽）。
+/// 可换行的水平样例流（不写死 INNER_W；flex_grow 吃满父级宽，窄窗下 wrap）。
 pub fn flow_row(min_h: f32) -> Space {
     Space::new()
         .size(SpaceSize::Middle)
         .height(min_h)
         .direction(FlexDirection::Row)
         .wrap(true)
+        .flex_grow(1.0)
         .align(AlignItems::Start)
 }
 
