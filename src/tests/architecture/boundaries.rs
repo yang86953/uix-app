@@ -782,6 +782,26 @@ fn d3d11_checked_offscreen_destroy_cannot_ignore_swapchain_restore_failure() {
 }
 
 #[test]
+fn pixel_upload_contexts_cannot_report_swapchain_present_success() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics");
+    let vulkan =
+        fs::read_to_string(src.join("vulkan/platform/context.rs")).expect("read Vulkan context");
+    let metal = fs::read_to_string(src.join("metal/platform/context.rs"))
+        .expect("read Metal PixelUpload context");
+
+    assert!(
+        vulkan.contains(
+            "VulkanContext: swapchain present is not supported for the PixelUpload recipe"
+        ),
+        "Vulkan PixelUpload must reject the legacy swapchain present hook"
+    );
+    assert!(
+        metal.contains("MetalPixelUploadContext: swapchain present requires native Metal raster"),
+        "Metal PixelUpload must reject the legacy swapchain present hook"
+    );
+}
+
+#[test]
 fn low_level_widget_loop_stays_off_prelude() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let prelude = fs::read_to_string(src.join("prelude.rs")).unwrap();
