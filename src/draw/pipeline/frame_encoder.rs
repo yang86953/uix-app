@@ -97,7 +97,9 @@ pub enum FrameCommand {
         operation: FrameRasterOp,
     },
     CpuSegment {
-        operations: Vec<FrameRasterOp>,
+        image: FrameImage,
+        src: FrameRect,
+        dst: FrameRect,
     },
     PictureBlit {
         image: FrameImage,
@@ -247,14 +249,40 @@ impl FrameEncoder {
         self.commands.push(FrameCommand::Native { operation });
     }
 
-    /// Records one bounded CPU fallback segment at its exact painter-order
-    /// position.  Empty segments are ignored so they cannot create a second
-    /// presentation boundary.
+    /// Records a small API-neutral CPU-raster subset as one bounded fallback
+    /// segment. The operation stream is immediately rasterized to a
+    /// transparent source image so executors need no software raster API
+    /// objects and can alpha-compose it at its exact painter-order position.
     pub fn cpu_segment(&mut self, operations: impl IntoIterator<Item = FrameRasterOp>) {
         let operations = operations.into_iter().collect::<Vec<_>>();
-        if !operations.is_empty() {
-            self.commands.push(FrameCommand::CpuSegment { operations });
+        if operations.is_empty() {
+            return;
         }
+        let mut image = self.transparent_reference();
+        for operation in &operations {
+            apply_raster_op_pixels(self.width, self.height, &mut image.pixels, operation);
+        }
+        let full = FrameRect::new(0, 0, self.width, self.height);
+        self.commands.push(FrameCommand::CpuSegment {
+            image: FrameImage {
+                width: image.width,
+                height: image.height,
+                pixels: image.pixels,
+            },
+            src: full,
+            dst: full,
+        });
+    }
+
+    /// Records an exact CPU-rasterized source segment. The payload is
+    /// immutable, API-neutral pixels; the destination is part of the command
+    /// rather than an implicit full-frame carrier.
+    pub fn cpu_image_segment(&mut self, image: FrameImage, src: FrameRect, dst: FrameRect) {
+        if src.is_empty() || dst.is_empty() {
+            return;
+        }
+        self.commands
+            .push(FrameCommand::CpuSegment { image, src, dst });
     }
 
     pub fn blit_picture(&mut self, image: FrameImage, src: FrameRect, dst: FrameRect) {
@@ -289,10 +317,8 @@ impl FrameEncoder {
                 FrameCommand::Native { operation } => {
                     apply_raster_op_pixels(self.width, self.height, pixels, operation)
                 }
-                FrameCommand::CpuSegment { operations } => {
-                    for operation in operations {
-                        apply_raster_op_pixels(self.width, self.height, pixels, operation);
-                    }
+                FrameCommand::CpuSegment { image, src, dst } => {
+                    blit_image_pixels(self.width, self.height, pixels, image, *src, *dst)
                 }
                 FrameCommand::PictureBlit { image, src, dst } => {
                     blit_image_pixels(self.width, self.height, pixels, image, *src, *dst)
@@ -301,14 +327,17 @@ impl FrameEncoder {
         }
     }
 
-    /// Rasterizes one CPU fallback segment into a transparent frame-sized
-    /// source. Native executors alpha-blit this exact segment at its recorded
-    /// point in the command order instead of uploading the completed frame.
-    pub(crate) fn cpu_segment_reference(&self, operations: &[FrameRasterOp]) -> ReferenceFrame {
+    /// Rasterizes one image segment into a transparent frame-sized source.
+    /// Native executors alpha-blit this exact segment at its recorded point in
+    /// the command order instead of uploading the completed frame.
+    pub(crate) fn cpu_segment_reference(
+        &self,
+        image: &FrameImage,
+        src: FrameRect,
+        dst: FrameRect,
+    ) -> ReferenceFrame {
         let mut frame = self.transparent_reference();
-        for operation in operations {
-            apply_raster_op_pixels(self.width, self.height, &mut frame.pixels, operation);
-        }
+        blit_image_pixels(self.width, self.height, &mut frame.pixels, image, src, dst);
         frame
     }
 
@@ -491,6 +520,35 @@ mod tests {
                 Color::red().to_rgba(),
             ]
         );
+    }
+
+    #[test]
+    fn cpu_image_segment_preserves_its_source_crop_and_destination() {
+        let mut encoder = FrameEncoder::new(5, 2).unwrap();
+        encoder.clear(Color::black());
+        let image = FrameImage::new(
+            3,
+            2,
+            vec![
+                Color::red().premultiplied(),
+                Color::green().premultiplied(),
+                Color::blue().premultiplied(),
+                Color::white().premultiplied(),
+                Color::transparent().premultiplied(),
+                Color::red().premultiplied(),
+            ],
+        )
+        .unwrap();
+        encoder.cpu_image_segment(
+            image,
+            FrameRect::new(1, 0, 1, 2),
+            FrameRect::new(2, 0, 2, 2),
+        );
+
+        let frame = encoder.render_reference();
+        assert_eq!(frame.pixel(1, 0), Some(Color::black().premultiplied()));
+        assert_eq!(frame.pixel(2, 0), Some(Color::green().premultiplied()));
+        assert_eq!(frame.pixel(3, 1), Some(Color::black().premultiplied()));
     }
 
     struct RecordingPresenter {

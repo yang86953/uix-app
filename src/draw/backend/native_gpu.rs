@@ -1186,9 +1186,9 @@ impl NativeGpuBackend {
                         operation,
                     )?;
                 }
-                FrameCommand::CpuSegment { operations } => {
+                FrameCommand::CpuSegment { image, src, dst } => {
                     self.ensure_frame_encoder_target(&mut target_initialized)?;
-                    let source = encoder.cpu_segment_reference(operations);
+                    let source = encoder.cpu_segment_reference(image, *src, *dst);
                     self.alpha_blit_frame_encoder_source(&source)?;
                 }
                 FrameCommand::PictureBlit { image, src, dst } => {
