@@ -275,7 +275,7 @@ impl LayerTree {
         debug_mode: bool,
         hover_pos: Option<Point>,
         mut render_objects: Option<&mut RenderObjectTree>,
-    ) {
+    ) -> Result<(), crate::core::Error> {
         let dpi = engine.dpi();
         let dpr = engine.device_pixel_ratio();
         let orientation = engine.orientation();
@@ -313,7 +313,7 @@ impl LayerTree {
             // Root-level overlays must start from the frame's original canvas state,
             // even if a backend retains state after the normal-tree traversal.
             engine.canvas_2d().save();
-            Self::render_node(
+            let render_result = Self::render_node(
                 root,
                 engine,
                 scene,
@@ -327,13 +327,14 @@ impl LayerTree {
                 render_objects.as_deref_mut(),
             );
             engine.canvas_2d().restore();
+            render_result?;
             root.mark_clean();
         }
         for overlay in &mut self.overlays {
             // Isolate sibling overlays too: one overlay cannot clip or translate
             // the next one, and neither can inherit normal-tree state.
             engine.canvas_2d().save();
-            Self::render_node(
+            let render_result = Self::render_node(
                 overlay,
                 engine,
                 scene,
@@ -347,8 +348,10 @@ impl LayerTree {
                 render_objects.as_deref_mut(),
             );
             engine.canvas_2d().restore();
+            render_result?;
             overlay.mark_clean();
         }
+        Ok(())
     }
 
     /// 创建短生命周期绘制上下文（避免与 Picture 离屏路径争用 engine 借用）。
@@ -631,7 +634,7 @@ impl LayerTree {
         debug_hover: &Option<DebugHover>,
         depth: usize,
         mut render_objects: Option<&mut RenderObjectTree>,
-    ) {
+    ) -> Result<(), crate::core::Error> {
         match node {
             LayerNode::Picture {
                 node_id,
@@ -645,7 +648,7 @@ impl LayerTree {
                 let w = bounds.w.ceil() as i32;
                 let h = bounds.h.ceil() as i32;
                 if w <= 0 || h <= 0 {
-                    return;
+                    return Ok(());
                 }
 
                 let needs_blit =
@@ -666,7 +669,7 @@ impl LayerTree {
                         h,
                         retry_count,
                         env,
-                    );
+                    )?;
                 }
 
                 if offscreen_handle.is_none() {
@@ -683,13 +686,13 @@ impl LayerTree {
                         debug_hover,
                         depth,
                         render_objects,
-                    );
-                    return;
+                    )?;
+                    return Ok(());
                 }
 
                 if needs_blit {
                     if let Some(handle) = offscreen_handle.as_ref() {
-                        blit_picture_cache(engine, handle, bounds, w, h);
+                        blit_picture_cache(engine, handle, bounds, w, h)?;
                     }
                 }
             }
@@ -733,7 +736,7 @@ impl LayerTree {
                         debug_hover,
                         depth + 1,
                         render_objects.as_deref_mut(),
-                    );
+                    )?;
                 }
                 if let Some((sx, sy)) = Self::get_scroll_offset(scene, *node_id) {
                     engine.canvas_2d().translate(sx, sy);
@@ -758,9 +761,10 @@ impl LayerTree {
                     debug_hover,
                     depth,
                     render_objects,
-                );
+                )?;
             }
         }
+        Ok(())
     }
 
     /// 按绘制阶段调用 widget `paint`；Content 阶段可走 RenderObject DisplayList 缓存。
@@ -839,9 +843,9 @@ impl LayerTree {
         debug_hover: &Option<DebugHover>,
         depth: usize,
         mut render_objects: Option<&mut RenderObjectTree>,
-    ) {
+    ) -> Result<(), crate::core::Error> {
         if !scene.node_visible(id) {
-            return;
+            return Ok(());
         }
         if Self::should_paint_node(scene, id, dirty_region) {
             let mut ctx = Self::paint_context(engine, env, surface_w, surface_h);
@@ -869,9 +873,10 @@ impl LayerTree {
                     debug_hover,
                     depth + 1,
                     render_objects.as_deref_mut(),
-                );
+                )?;
             }
         }
+        Ok(())
     }
 
     /// 获取滚动容器的 content 偏移（viewport → content）。
@@ -1348,13 +1353,17 @@ mod tests {
 
         fn shutdown(&mut self) {}
 
-        fn resize(&mut self, _: i32, _: i32) {}
+        fn resize(&mut self, _: i32, _: i32) -> Result<(), crate::core::Error> {
+            Ok(())
+        }
 
         fn begin_frame(
             &mut self,
             _: crate::draw::traits::UpdateStrategy,
         ) -> crate::draw::engine::RenderOutcome {
-            crate::draw::engine::RenderOutcome::Present(crate::draw::backend::DamageRegion::full())
+            crate::draw::engine::RenderOutcome::FrameReady(
+                crate::draw::backend::DamageRegion::full(),
+            )
         }
 
         fn end_frame(
@@ -1411,7 +1420,8 @@ mod tests {
             false,
             None,
             None,
-        );
+        )
+        .expect("test tree rendering");
 
         assert_ne!(
             engine.canvas.pixels[24 * 256 + 180],
@@ -1682,7 +1692,8 @@ mod tests {
             false,
             None,
             None,
-        );
+        )
+        .expect("test tree rendering");
         engine.end_frame(&crate::draw::backend::DamageRegion::full());
 
         let painted = scene.painted.borrow().clone();

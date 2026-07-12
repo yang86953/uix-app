@@ -4,6 +4,7 @@ use std::any::Any;
 
 use crate::core::{DamageRegion, Error, Point, Rect, Size};
 
+use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
 use crate::draw::traits::{Canvas2D, PresentationMode};
 use crate::draw::ImageHandle;
 
@@ -105,7 +106,7 @@ impl From<BackendCapabilities> for crate::draw::traits::GraphicsCapabilities {
 }
 
 /// 可绘制 surface — Backend 提供，Pipeline 通过此接口写入。
-pub trait DrawSurface: Send {
+pub trait DrawSurface {
     fn size(&self) -> Size;
     fn width(&self) -> i32 {
         self.size().w as i32
@@ -126,7 +127,20 @@ pub trait DrawSurface: Send {
 }
 
 /// 渲染后端 — 只负责 surface 与像素提交。
-pub trait RenderBackend: Send {
+///
+/// Live backends may own thread-affine graphics contexts and therefore cannot
+/// cross threads through safe Rust.
+///
+/// ```compile_fail
+/// use uix::draw::backend::RenderBackend;
+///
+/// fn needs_send<T: Send>(_value: T) {}
+///
+/// fn backend_cannot_cross_threads(backend: Box<dyn RenderBackend>) {
+///     needs_send(backend);
+/// }
+/// ```
+pub trait RenderBackend {
     fn kind(&self) -> BackendKind;
     fn capabilities(&self) -> BackendCapabilities;
 
@@ -136,7 +150,9 @@ pub trait RenderBackend: Send {
     fn surface(&mut self) -> &mut dyn DrawSurface;
 
     /// Bind or begin recording against the backend's current graphics target.
-    fn make_current(&mut self) {}
+    fn make_current(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 
     fn device_pixel_ratio(&self) -> f32 {
         1.0
@@ -158,10 +174,37 @@ pub trait RenderBackend: Send {
         None
     }
 
+    /// Executes a lossless API-neutral encoded Picture into an existing
+    /// offscreen target. Non-CPU backends currently return `Unsupported` so
+    /// compositor code can retain direct DisplayList replay without changing
+    /// their GPU command semantics.
+    fn try_execute_encoded_picture(
+        &mut self,
+        _handle: &ImageHandle,
+        _encoder: &FrameEncoder,
+    ) -> Result<EncodedPictureExecution, Error> {
+        Ok(EncodedPictureExecution::Unsupported)
+    }
+
     /// Bind + clear offscreen for Picture rasterize. CPU: no-op success if handle valid.
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
         let _ = handle;
         false
+    }
+
+    /// Checked counterpart of [`Self::begin_offscreen_paint`].  New compositor
+    /// code must use this boundary so an invalid target or a native bind/clear
+    /// failure can abort the frame before it is reported as presented.  The
+    /// bool method remains only for compatibility with existing backend tests.
+    fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        if self.begin_offscreen_paint(handle) {
+            Ok(())
+        } else {
+            Err(Error::new(
+                crate::core::Errc::InvalidState,
+                "backend could not begin Picture offscreen paint",
+            ))
+        }
     }
 
     /// Flush pending Canvas2D ops into the bound GPU RT (CPU: no-op).
@@ -169,8 +212,21 @@ pub trait RenderBackend: Send {
         let _ = handle;
     }
 
+    /// Checked counterpart of [`Self::flush_offscreen_paint`].  Implementors
+    /// that call native APIs override this rather than logging and continuing.
+    fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        self.flush_offscreen_paint(handle);
+        Ok(())
+    }
+
     /// Unbind offscreen; restore swapchain / main target.
     fn end_offscreen_paint(&mut self) {}
+
+    /// Checked counterpart of [`Self::end_offscreen_paint`].
+    fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
+        self.end_offscreen_paint();
+        Ok(())
+    }
 
     fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
         self.blit_offscreen_src(
@@ -182,6 +238,18 @@ pub trait RenderBackend: Send {
 
     fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
         let _ = (handle, src_rect, dst_rect);
+    }
+
+    /// Checked ordered Picture boundary.  A failed blit must stop the frame;
+    /// it cannot be deferred to a later final present as a successful frame.
+    fn try_blit_offscreen_src(
+        &mut self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) -> Result<(), Error> {
+        self.blit_offscreen_src(handle, src_rect, dst_rect);
+        Ok(())
     }
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {

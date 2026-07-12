@@ -50,6 +50,9 @@ pub enum Errc {
     WindowCreationFailed = 501,
     ClassRegistrationFailed = 502,
     GdiOperationFailed = 503,
+    GraphicsSurfaceLost = 504,
+    GraphicsDeviceLost = 505,
+    GraphicsOutOfMemory = 506,
 
     AppDomainBase = 1000,
 }
@@ -137,6 +140,9 @@ impl fmt::Display for Errc {
             Errc::WindowCreationFailed => "window_creation_failed",
             Errc::ClassRegistrationFailed => "class_registration_failed",
             Errc::GdiOperationFailed => "gdi_operation_failed",
+            Errc::GraphicsSurfaceLost => "graphics_surface_lost",
+            Errc::GraphicsDeviceLost => "graphics_device_lost",
+            Errc::GraphicsOutOfMemory => "graphics_out_of_memory",
             Errc::AppDomainBase => "app_domain_base",
         };
         write!(f, "{}", name)

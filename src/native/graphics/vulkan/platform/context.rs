@@ -166,21 +166,24 @@ impl VulkanContext {
             shutdown: false,
         };
         ctx.recreate_swapchain(extent)?;
-        ctx.recreate_upload_buffer(staging_size(width, height))?;
-        crate::core::log::info_fn(format!("VulkanContext: created {width}x{height} swapchain"));
+        ctx.width = ctx.extent.width as i32;
+        ctx.height = ctx.extent.height as i32;
+        ctx.recreate_upload_buffer(staging_size(ctx.width, ctx.height))?;
+        crate::core::log::info_fn(format!(
+            "VulkanContext: created {}x{} swapchain",
+            ctx.width, ctx.height
+        ));
         Ok(ctx)
     }
 
     fn recreate_swapchain(&mut self, extent: vk::Extent2D) -> Result<()> {
-        unsafe {
-            let _ = self.device.device_wait_idle();
-        }
-        if self.swapchain != vk::SwapchainKHR::null() {
+        let old_swapchain = self.swapchain;
+        if old_swapchain != vk::SwapchainKHR::null() {
             unsafe {
-                self.swapchain_loader
-                    .destroy_swapchain(self.swapchain, None);
+                self.device
+                    .device_wait_idle()
+                    .map_err(|err| vk_err("vkDeviceWaitIdle before swapchain recreate", err))?;
             }
-            self.swapchain = vk::SwapchainKHR::null();
         }
 
         let caps = unsafe {
@@ -202,6 +205,22 @@ impl VulkanContext {
         let surface_format = choose_surface_format(&formats);
         let present_mode = choose_present_mode(&present_modes);
         let extent = choose_extent(caps, extent);
+        if !caps
+            .supported_usage_flags
+            .contains(vk::ImageUsageFlags::TRANSFER_DST)
+        {
+            return Err(Error::new(
+                Errc::PlatformError,
+                "VulkanContext: surface swapchain images do not support TRANSFER_DST",
+            ));
+        }
+        let composite_alpha =
+            choose_composite_alpha(caps.supported_composite_alpha).ok_or_else(|| {
+                Error::new(
+                    Errc::PlatformError,
+                    "VulkanContext: surface has no supported composite alpha mode",
+                )
+            })?;
         let desired_images = caps.min_image_count.saturating_add(1).max(2);
         let image_count = if caps.max_image_count > 0 {
             desired_images.min(caps.max_image_count)
@@ -226,14 +245,29 @@ impl VulkanContext {
             .image_usage(vk::ImageUsageFlags::TRANSFER_DST)
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
             .pre_transform(pre_transform)
-            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .composite_alpha(composite_alpha)
             .present_mode(present_mode)
+            .old_swapchain(old_swapchain)
             .clipped(true);
-        self.swapchain = unsafe { self.swapchain_loader.create_swapchain(&create_info, None) }
+        let new_swapchain = unsafe { self.swapchain_loader.create_swapchain(&create_info, None) }
             .map_err(|err| vk_err("vkCreateSwapchainKHR", err))?;
-        self.swapchain_images =
-            unsafe { self.swapchain_loader.get_swapchain_images(self.swapchain) }
-                .map_err(|err| vk_err("vkGetSwapchainImagesKHR", err))?;
+        let new_images = match unsafe { self.swapchain_loader.get_swapchain_images(new_swapchain) }
+        {
+            Ok(images) => images,
+            Err(err) => {
+                unsafe {
+                    self.swapchain_loader.destroy_swapchain(new_swapchain, None);
+                }
+                return Err(vk_err("vkGetSwapchainImagesKHR", err));
+            }
+        };
+        if old_swapchain != vk::SwapchainKHR::null() {
+            unsafe {
+                self.swapchain_loader.destroy_swapchain(old_swapchain, None);
+            }
+        }
+        self.swapchain = new_swapchain;
+        self.swapchain_images = new_images;
         self.image_layouts = vec![vk::ImageLayout::UNDEFINED; self.swapchain_images.len()];
         self.swapchain_format = surface_format.format;
         self.extent = extent;
@@ -244,14 +278,6 @@ impl VulkanContext {
         if self.upload.size >= size && self.upload.buffer != vk::Buffer::null() {
             return Ok(());
         }
-        unsafe {
-            if self.upload.buffer != vk::Buffer::null() {
-                self.device.destroy_buffer(self.upload.buffer, None);
-            }
-            if self.upload.memory != vk::DeviceMemory::null() {
-                self.device.free_memory(self.upload.memory, None);
-            }
-        }
         let buffer_info = vk::BufferCreateInfo::default()
             .size(size)
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
@@ -259,31 +285,64 @@ impl VulkanContext {
         let buffer = unsafe { self.device.create_buffer(&buffer_info, None) }
             .map_err(|err| vk_err("vkCreateBuffer", err))?;
         let requirements = unsafe { self.device.get_buffer_memory_requirements(buffer) };
-        let memory_index = find_memory_type(
+        let memory_index = match find_memory_type(
             &self.instance,
             self.physical_device,
             requirements.memory_type_bits,
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-        )?;
+        ) {
+            Ok(index) => index,
+            Err(error) => {
+                unsafe { self.device.destroy_buffer(buffer, None) };
+                return Err(error);
+            }
+        };
         let alloc = vk::MemoryAllocateInfo::default()
             .allocation_size(requirements.size)
             .memory_type_index(memory_index);
-        let memory = unsafe { self.device.allocate_memory(&alloc, None) }
-            .map_err(|err| vk_err("vkAllocateMemory staging", err))?;
-        unsafe {
-            self.device
-                .bind_buffer_memory(buffer, memory, 0)
-                .map_err(|err| vk_err("vkBindBufferMemory", err))?;
-        }
-        self.upload = UploadBuffer {
-            buffer,
-            memory,
-            size: requirements.size,
+        let memory = match unsafe { self.device.allocate_memory(&alloc, None) } {
+            Ok(memory) => memory,
+            Err(err) => {
+                unsafe { self.device.destroy_buffer(buffer, None) };
+                return Err(vk_err("vkAllocateMemory staging", err));
+            }
         };
+        if let Err(err) = unsafe { self.device.bind_buffer_memory(buffer, memory, 0) } {
+            unsafe {
+                self.device.free_memory(memory, None);
+                self.device.destroy_buffer(buffer, None);
+            }
+            return Err(vk_err("vkBindBufferMemory", err));
+        }
+        let previous = std::mem::replace(
+            &mut self.upload,
+            UploadBuffer {
+                buffer,
+                memory,
+                size: requirements.size,
+            },
+        );
+        unsafe {
+            if previous.buffer != vk::Buffer::null() {
+                self.device.destroy_buffer(previous.buffer, None);
+            }
+            if previous.memory != vk::DeviceMemory::null() {
+                self.device.free_memory(previous.memory, None);
+            }
+        }
         Ok(())
     }
 
     fn upload_pixels(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
+        if width != self.extent.width as i32 || height != self.extent.height as i32 {
+            return Err(Error::new(
+                Errc::GraphicsSurfaceLost,
+                format!(
+                    "VulkanContext: pixel extent {width}x{height} no longer matches swapchain {}x{}",
+                    self.extent.width, self.extent.height
+                ),
+            ));
+        }
         let needed_pixels = (width as usize).saturating_mul(height as usize);
         if pixels.len() < needed_pixels {
             return Err(invalid(format!(
@@ -318,11 +377,8 @@ impl VulkanContext {
             self.device
                 .wait_for_fences(&[self.frame_fence], true, u64::MAX)
                 .map_err(|err| vk_err("vkWaitForFences", err))?;
-            self.device
-                .reset_fences(&[self.frame_fence])
-                .map_err(|err| vk_err("vkResetFences", err))?;
         }
-        let image_index = match unsafe {
+        let (image_index, acquire_suboptimal) = match unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
                 u64::MAX,
@@ -330,7 +386,7 @@ impl VulkanContext {
                 vk::Fence::null(),
             )
         } {
-            Ok((index, _suboptimal)) => index,
+            Ok((index, suboptimal)) => (index, suboptimal),
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                 self.recreate_swapchain(self.extent)?;
                 return Ok(());
@@ -339,23 +395,34 @@ impl VulkanContext {
         };
 
         self.record_upload_commands(image_index as usize)?;
+        unsafe {
+            self.device
+                .reset_fences(&[self.frame_fence])
+                .map_err(|err| vk_err("vkResetFences", err))?;
+        }
         let wait_stages = [vk::PipelineStageFlags::TRANSFER];
         let submit = vk::SubmitInfo::default()
             .wait_semaphores(std::slice::from_ref(&self.image_available))
             .wait_dst_stage_mask(&wait_stages)
             .command_buffers(std::slice::from_ref(&self.command_buffer))
             .signal_semaphores(std::slice::from_ref(&self.render_finished));
-        unsafe {
+        if let Err(err) = unsafe {
             self.device
                 .queue_submit(self.queue, std::slice::from_ref(&submit), self.frame_fence)
-                .map_err(|err| vk_err("vkQueueSubmit", err))?;
+        } {
+            self.restore_signaled_frame_fence()?;
+            return Err(vk_err("vkQueueSubmit", err));
         }
+        self.image_layouts[image_index as usize] = vk::ImageLayout::PRESENT_SRC_KHR;
         let present = vk::PresentInfoKHR::default()
             .wait_semaphores(std::slice::from_ref(&self.render_finished))
             .swapchains(std::slice::from_ref(&self.swapchain))
             .image_indices(std::slice::from_ref(&image_index));
         match unsafe { self.swapchain_loader.queue_present(self.queue, &present) } {
-            Ok(_suboptimal) => Ok(()),
+            Ok(present_suboptimal) if acquire_suboptimal || present_suboptimal => {
+                self.recreate_swapchain(self.extent)
+            }
+            Ok(_) => Ok(()),
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => {
                 self.recreate_swapchain(self.extent)
             }
@@ -444,7 +511,24 @@ impl VulkanContext {
                 .end_command_buffer(self.command_buffer)
                 .map_err(|err| vk_err("vkEndCommandBuffer", err))?;
         }
-        self.image_layouts[image_index] = vk::ImageLayout::PRESENT_SRC_KHR;
+        Ok(())
+    }
+
+    /// `vkResetFences` makes the fence unsignaled before submit. If submit
+    /// itself fails, no queue operation will signal it, so replace it with a
+    /// fresh signaled fence before returning a typed failure.
+    fn restore_signaled_frame_fence(&mut self) -> Result<()> {
+        let replacement = unsafe {
+            self.device.create_fence(
+                &vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED),
+                None,
+            )
+        }
+        .map_err(|err| vk_err("vkCreateFence after failed submit", err))?;
+        let previous = std::mem::replace(&mut self.frame_fence, replacement);
+        unsafe {
+            self.device.destroy_fence(previous, None);
+        }
         Ok(())
     }
 
@@ -499,29 +583,29 @@ impl IGraphicsContext for VulkanContext {
         Ok(())
     }
 
-    fn resize(&mut self, width: i32, height: i32) {
+    fn resize(&mut self, width: i32, height: i32) -> Result<()> {
         let width = width.max(1);
         let height = height.max(1);
         if width == self.width && height == self.height {
-            return;
+            return Ok(());
         }
-        self.width = width;
-        self.height = height;
         let extent = vk::Extent2D {
             width: width as u32,
             height: height as u32,
         };
-        if let Err(err) = self.recreate_swapchain(extent) {
-            crate::core::log::warn_fn(format!(
-                "VulkanContext: resize failed: {}",
-                err.short_what()
-            ));
-        }
+        self.recreate_swapchain(extent)?;
+        self.width = self.extent.width as i32;
+        self.height = self.extent.height as i32;
+        Ok(())
     }
 
-    fn make_current(&mut self) {}
+    fn make_current(&mut self) -> Result<()> {
+        Ok(())
+    }
 
-    fn swap_buffers(&mut self, _damage: PresentDamage) {}
+    fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
+        Ok(())
+    }
 
     fn shutdown(&mut self) {
         self.cleanup();
@@ -550,7 +634,7 @@ impl IGraphicsContext for VulkanContext {
             return Ok(());
         }
         if width != self.width || height != self.height {
-            self.resize(width, height);
+            self.resize(width, height)?;
         }
         self.upload_pixels(pixels, width, height)?;
         self.present_uploaded_pixels()
@@ -562,9 +646,6 @@ impl Drop for VulkanContext {
         self.cleanup();
     }
 }
-
-unsafe impl Send for VulkanContext {}
-unsafe impl Sync for VulkanContext {}
 
 fn select_queue(
     instance: &ash::Instance,
@@ -644,6 +725,19 @@ fn choose_present_mode(modes: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
         .unwrap_or(vk::PresentModeKHR::FIFO)
 }
 
+fn choose_composite_alpha(
+    supported: vk::CompositeAlphaFlagsKHR,
+) -> Option<vk::CompositeAlphaFlagsKHR> {
+    [
+        vk::CompositeAlphaFlagsKHR::OPAQUE,
+        vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED,
+        vk::CompositeAlphaFlagsKHR::POST_MULTIPLIED,
+        vk::CompositeAlphaFlagsKHR::INHERIT,
+    ]
+    .into_iter()
+    .find(|candidate| supported.contains(*candidate))
+}
+
 fn choose_extent(caps: vk::SurfaceCapabilitiesKHR, requested: vk::Extent2D) -> vk::Extent2D {
     if caps.current_extent.width != u32::MAX {
         return caps.current_extent;
@@ -718,5 +812,18 @@ mod tests {
     fn staging_size_is_full_rgba_frame() {
         assert_eq!(staging_size(4, 3), 48);
         assert_eq!(staging_size(0, 0), 4);
+    }
+
+    #[test]
+    fn composite_alpha_prefers_opaque_but_uses_a_supported_fallback() {
+        assert!(choose_composite_alpha(
+            vk::CompositeAlphaFlagsKHR::OPAQUE | vk::CompositeAlphaFlagsKHR::INHERIT
+        )
+        .is_some_and(|mode| mode == vk::CompositeAlphaFlagsKHR::OPAQUE));
+        assert!(
+            choose_composite_alpha(vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED)
+                .is_some_and(|mode| mode == vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED)
+        );
+        assert!(choose_composite_alpha(vk::CompositeAlphaFlagsKHR::empty()).is_none());
     }
 }

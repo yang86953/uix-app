@@ -31,6 +31,19 @@ fn report_resize_notify_error(context: &str, result: crate::core::Result<()>) {
     }
 }
 
+/// Graphics resize failure is a retained-dirty frame failure, not a best-effort
+/// warning.  The event loop keeps the tree invalidated for recovery instead of
+/// continuing as if the surface had adopted the new extent.
+fn report_graphics_resize_error(context: &str, result: crate::core::Result<()>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            crate::core::log::warn_fn(format!("{context}: {}", error.short_what()));
+            false
+        }
+    }
+}
+
 /// 运行完整的 widget 渲染事件循环。
 #[allow(clippy::too_many_arguments)]
 pub fn run_widget_loop<M, X, F>(
@@ -453,24 +466,30 @@ where
                 UiEventType::WindowResize => {
                     if let UiEventPayload::Resize(ref d) = ev.payload {
                         if d.width > 0 && d.height > 0 {
-                            engine.resize(d.width, d.height);
+                            let resized = report_graphics_resize_error(
+                                "window graphics resize failed",
+                                engine.resize(d.width, d.height),
+                            );
                             report_resize_notify_error(
                                 "window resize_notify failed",
                                 platform_window.resize_notify(d.width, d.height),
                             );
                             // 以 engine 实际 canvas（可能已按 GetClientRect 校正）锁定根 frame，
                             // 避免仅依赖后续 SystemEvent::Resize 的事件尺寸。
-                            let (cw, ch) = {
-                                let canvas = engine.canvas_2d();
-                                (canvas.width() as f32, canvas.height() as f32)
-                            };
-                            if cw > 0.0 && ch > 0.0 {
-                                if let Some(rid) = tree.root_id() {
-                                    if let Some(root_mut) = tree.get_mut(rid) {
-                                        let rf = root_mut.frame();
-                                        if (rf.w - cw).abs() > 0.5 || (rf.h - ch).abs() > 0.5 {
-                                            root_mut.set_frame(Rect::new(0.0, 0.0, cw, ch));
-                                            tree.tree_version = tree.tree_version.wrapping_add(1);
+                            if resized {
+                                let (cw, ch) = {
+                                    let canvas = engine.canvas_2d();
+                                    (canvas.width() as f32, canvas.height() as f32)
+                                };
+                                if cw > 0.0 && ch > 0.0 {
+                                    if let Some(rid) = tree.root_id() {
+                                        if let Some(root_mut) = tree.get_mut(rid) {
+                                            let rf = root_mut.frame();
+                                            if (rf.w - cw).abs() > 0.5 || (rf.h - ch).abs() > 0.5 {
+                                                root_mut.set_frame(Rect::new(0.0, 0.0, cw, ch));
+                                                tree.tree_version =
+                                                    tree.tree_version.wrapping_add(1);
+                                            }
                                         }
                                     }
                                 }
@@ -496,7 +515,10 @@ where
                         let w = info.bounds.w as i32;
                         let h = info.bounds.h as i32;
                         if w > 0 && h > 0 {
-                            engine.resize(w, h);
+                            report_graphics_resize_error(
+                                "window graphics maximize resize failed",
+                                engine.resize(w, h),
+                            );
                             report_resize_notify_error(
                                 "window maximize resize_notify failed",
                                 platform_window.resize_notify(w, h),
@@ -507,7 +529,10 @@ where
                 }
                 UiEventType::WindowRestore => {
                     let (rw, rh) = initial_size;
-                    engine.resize(rw, rh);
+                    report_graphics_resize_error(
+                        "window graphics restore resize failed",
+                        engine.resize(rw, rh),
+                    );
                     report_resize_notify_error(
                         "window restore resize_notify failed",
                         platform_window.resize_notify(rw, rh),
@@ -665,8 +690,8 @@ where
 
         // 每帧用窗口客户区校正 engine/根：WM_SIZE 入队与 Present 之间若有缺口，
         // 仅靠单次 WindowResize 仍可能留下「swapchain 已大、UI 仍旧」的黑边。
-        let surface_corrected = window_visible
-            && ensure_surface_matches_window(tree, engine, platform_window);
+        let surface_corrected =
+            window_visible && ensure_surface_matches_window(tree, engine, platform_window);
 
         let has_layout_work = tree
             .invalidation
@@ -733,7 +758,6 @@ where
                     metrics: metrics_ref.as_ref(),
                 },
             );
-            rendered_first = true;
             (frame_out.outcome, frame_out.inv_source)
         };
 
@@ -746,34 +770,74 @@ where
             platform,
         );
 
-        if window_visible && (needs_work || has_layout_work || need_render) {
-            // 每帧末尾清空已消费的失效队列，隐藏窗口保留 pending dirty 到恢复可见。
-            tree.reset_invalidation();
-        }
-
+        let mut frame_committed = false;
         match outcome {
-            RenderOutcome::Present(damage) => {
-                record_present(metrics, outcome_source);
+            RenderOutcome::Present(_) => {
                 if engine_capabilities.uses_external_presenter() {
+                    crate::core::log::error_fn(
+                        "[EventLoop] external presenter path reported final Present before platform submission",
+                    );
+                    rendered_first = false;
+                } else {
+                    record_present(metrics, outcome_source);
+                    rendered_first = true;
+                    frame_committed = true;
+                }
+            }
+            RenderOutcome::PresentPending(damage) => {
+                if !engine_capabilities.uses_external_presenter() {
+                    crate::core::log::error_fn(
+                        "[EventLoop] engine-managed path returned external presentation pending",
+                    );
+                    rendered_first = false;
+                } else {
                     let canvas = engine.canvas_2d();
                     let cw = canvas.width();
                     let ch = canvas.height();
-                    if let Err(e) = platform_window.presenter().present(
+                    match platform_window.presenter().present(
                         canvas.pixels_mut(),
                         cw,
                         ch,
                         damage.to_present_damage(),
                     ) {
-                        crate::core::log::error_fn(format!(
-                            "[EventLoop] present failed: {}",
-                            e.short_what()
-                        ));
+                        Ok(()) => {
+                            engine.external_present_succeeded();
+                            record_present(metrics, outcome_source);
+                            rendered_first = true;
+                            frame_committed = true;
+                        }
+                        Err(error) => {
+                            engine.external_present_failed(error.clone());
+                            crate::core::log::error_fn(format!(
+                                "[EventLoop] external present failed: {}",
+                                error.short_what()
+                            ));
+                            rendered_first = false;
+                        }
                     }
                 }
             }
             RenderOutcome::Idle => {
                 record_idle(metrics, outcome_source);
             }
+            RenderOutcome::FrameReady(_) => {
+                crate::core::log::error_fn(
+                    "[EventLoop] frame renderer returned FrameReady without final presentation",
+                );
+                rendered_first = false;
+            }
+            RenderOutcome::Failed(error) => {
+                crate::core::log::error_fn(format!(
+                    "[EventLoop] graphics frame failed: {}",
+                    error.error().short_what()
+                ));
+                rendered_first = false;
+            }
+        }
+
+        if window_visible && frame_committed && (needs_work || has_layout_work || need_render) {
+            // 只有真实提交成功后才能消费失效；失败帧保留 dirty 以供恢复或重试。
+            tree.reset_invalidation();
         }
 
         let next_state = next_loop_state(tree, active_work, next_external_deadline());
@@ -1025,7 +1089,13 @@ fn ensure_surface_matches_window(
     };
     let mut changed = false;
     if cw != pw || ch != ph {
-        engine.resize(pw, ph);
+        if !report_graphics_resize_error(
+            "window graphics size reconciliation failed",
+            engine.resize(pw, ph),
+        ) {
+            tree.mark_full_frame_dirty();
+            return false;
+        }
         changed = true;
     }
 

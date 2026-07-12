@@ -1,6 +1,7 @@
 //! 渲染后端模块。
 
 pub mod cpu;
+#[cfg(feature = "opengles")]
 pub mod gpu;
 pub mod native_gpu;
 pub mod null;
@@ -10,6 +11,7 @@ pub mod traits;
 
 pub use crate::core::DamageRegion;
 pub use cpu::CpuBackend;
+#[cfg(feature = "opengles")]
 pub use gpu::GpuBackend;
 pub use native_gpu::NativeGpuBackend;
 pub use null::NullBackend;
@@ -19,7 +21,7 @@ use crate::core::{Errc, Error};
 use crate::native::traits::present::IGraphicsContext;
 
 /// 按种类创建后端实例。
-pub fn create_backend(
+pub(crate) fn create_backend(
     kind: BackendKind,
     gpu_ctx: Option<Box<dyn IGraphicsContext>>,
 ) -> Result<Box<dyn RenderBackend>, Error> {
@@ -74,9 +76,15 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
-        fn make_current(&mut self) {}
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
 
         fn shutdown(&mut self) {
             self.shutdowns.fetch_add(1, Ordering::SeqCst);
@@ -110,6 +118,7 @@ mod tests {
         assert!(backend.as_any().is::<NativeGpuBackend>());
     }
 
+    #[cfg(feature = "opengles")]
     #[test]
     fn gpu_factory_routes_opengles_context_to_gl_backend() {
         let shutdowns = Arc::new(AtomicUsize::new(0));

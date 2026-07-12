@@ -1,8 +1,37 @@
 //! Linux backend registry table.
 
 use crate::native::factory::registry::{BackendStatus, GraphicsBackendEntry};
-use crate::native::graphics::{opengl, vulkan};
 use crate::native::traits::present::{GraphicsBackend, PresentMode, RasterMode};
+
+#[cfg(any(not(feature = "opengles"), not(feature = "vulkan")))]
+use crate::core::{Errc, Error};
+#[cfg(any(not(feature = "opengles"), not(feature = "vulkan")))]
+use crate::native::traits::present::IGraphicsContext;
+#[cfg(any(not(feature = "opengles"), not(feature = "vulkan")))]
+use std::ffi::c_void;
+
+#[cfg(feature = "opengles")]
+use crate::native::graphics::opengl::create as create_opengles;
+#[cfg(feature = "vulkan")]
+use crate::native::graphics::vulkan::create as create_vulkan;
+
+#[cfg(not(feature = "opengles"))]
+fn create_opengles(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
+    Err(feature_disabled("opengles"))
+}
+
+#[cfg(not(feature = "vulkan"))]
+fn create_vulkan(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
+    Err(feature_disabled("vulkan"))
+}
+
+#[cfg(any(not(feature = "opengles"), not(feature = "vulkan")))]
+fn feature_disabled(feature: &str) -> Error {
+    Error::new(
+        Errc::PlatformError,
+        format!("graphics feature `{feature}` is disabled in this build"),
+    )
+}
 
 const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
     BackendStatus::Active
@@ -23,7 +52,7 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         status: VULKAN_STATUS,
         raster: RasterMode::Cpu,
         present: PresentMode::PixelUpload,
-        create: vulkan::create,
+        create: create_vulkan,
     },
     GraphicsBackendEntry {
         id: GraphicsBackend::OpenGlEs,
@@ -31,6 +60,6 @@ pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
         status: OPENGL_STATUS,
         raster: RasterMode::GpuNative,
         present: PresentMode::Swapchain,
-        create: opengl::create,
+        create: create_opengles,
     },
 ];

@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use crate::core::{Errc, Error, Result};
 use crate::draw::engine::factory::create_graphics_engine;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::factory::{gpu_probe_candidates, try_create_gpu_context};
+use crate::native::factory::{gpu_recipe_candidates, try_create_gpu_recipe, GraphicsRecipe};
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext};
 
 /// One failed probe attempt recorded for diagnostics and tests.
@@ -22,23 +22,36 @@ pub struct ProbeReport {
 }
 
 impl ProbeReport {
-    pub fn record_failure(&mut self, backend: GraphicsBackend, err: &Error) {
-        self.record_failure_at(backend, ProbeStage::Unspecified, Some(backend), err);
+    pub fn record_failure(&mut self, recipe: GraphicsRecipe, err: &Error) {
+        self.record_failure_at(recipe, ProbeStage::Unspecified, Some(recipe), err);
     }
 
     fn record_failure_at(
         &mut self,
-        candidate: GraphicsBackend,
+        candidate: GraphicsRecipe,
         stage: ProbeStage,
-        selected: Option<GraphicsBackend>,
+        selected: Option<GraphicsRecipe>,
         err: &Error,
     ) {
-        let selected = selected.map(GraphicsBackend::as_str).unwrap_or("none");
+        let selected = selected
+            .map(|recipe| recipe.to_string())
+            .unwrap_or_else(|| "none".to_string());
         self.failures.push(ProbeFailure {
-            backend: candidate,
+            backend: candidate.backend,
             message: format!(
-                "stage={}; selected={selected}; error={}",
+                "stage={}; recipe={candidate}; selected={selected}; error={}",
                 stage.as_str(),
+                err.what()
+            ),
+        });
+    }
+
+    fn record_no_candidates(&mut self, request: GraphicsBackend, err: &Error) {
+        self.failures.push(ProbeFailure {
+            backend: request,
+            message: format!(
+                "stage={}; recipe=none; selected=none; error={}",
+                ProbeStage::CandidateSelection.as_str(),
                 err.what()
             ),
         });
@@ -70,6 +83,7 @@ impl ProbeStage {
 pub struct GpuBootstrap {
     pub engine: Box<dyn GraphicsEngine>,
     pub selected: GraphicsBackend,
+    pub selected_recipe: GraphicsRecipe,
     pub report: ProbeReport,
 }
 
@@ -83,7 +97,7 @@ pub fn bootstrap_graphics_engine(
     request: GraphicsBackend,
 ) -> Result<GpuBootstrap, ProbeReport> {
     bootstrap_graphics_engine_with(surface, width, height, request, |candidate| {
-        try_create_gpu_context(candidate, surface, width, height)
+        try_create_gpu_recipe(candidate, surface, width, height)
     })
 }
 
@@ -92,19 +106,35 @@ fn bootstrap_graphics_engine_with<F>(
     width: i32,
     height: i32,
     request: GraphicsBackend,
+    try_create: F,
+) -> Result<GpuBootstrap, ProbeReport>
+where
+    F: FnMut(GraphicsRecipe) -> Result<Box<dyn IGraphicsContext>, Error>,
+{
+    bootstrap_graphics_engine_with_candidates(
+        width,
+        height,
+        request,
+        gpu_recipe_candidates(request),
+        try_create,
+    )
+}
+
+fn bootstrap_graphics_engine_with_candidates<F>(
+    width: i32,
+    height: i32,
+    request: GraphicsBackend,
+    candidates: Vec<GraphicsRecipe>,
     mut try_create: F,
 ) -> Result<GpuBootstrap, ProbeReport>
 where
-    F: FnMut(GraphicsBackend) -> Result<Box<dyn IGraphicsContext>, Error>,
+    F: FnMut(GraphicsRecipe) -> Result<Box<dyn IGraphicsContext>, Error>,
 {
-    let candidates = gpu_probe_candidates(request);
     let mut report = ProbeReport::default();
 
     if candidates.is_empty() {
-        report.record_failure_at(
+        report.record_no_candidates(
             request,
-            ProbeStage::CandidateSelection,
-            None,
             &Error::new(
                 Errc::PlatformError,
                 format!("Graphics bootstrap: no GPU backend candidates for {request}"),
@@ -114,25 +144,26 @@ where
     }
 
     for candidate in candidates {
-        crate::core::log::info_fn(format!("Graphics bootstrap: probing {candidate}"));
+        crate::core::log::info_fn(format!("Graphics bootstrap: probing recipe {candidate}"));
         let context = match try_create(candidate) {
             Ok(context) => context,
             Err(err) => {
                 crate::core::log::warn_fn(format!(
-                    "Graphics bootstrap: {candidate} unavailable: {}",
+                    "Graphics bootstrap: recipe {candidate} unavailable: {}",
                     err.what()
                 ));
                 report.record_failure_at(candidate, ProbeStage::ContextCreate, None, &err);
                 continue;
             }
         };
-        let selected = context.graphics_backend();
+        let caps = context.caps();
+        let selected = GraphicsRecipe::new(caps.backend, caps.raster, caps.present);
 
         let mut engine = match create_graphics_engine(context) {
             Ok(engine) => engine,
             Err(err) => {
                 crate::core::log::warn_fn(format!(
-                    "Graphics bootstrap: engine for {selected} unavailable: {}",
+                    "Graphics bootstrap: engine for recipe {selected} unavailable: {}",
                     err.what()
                 ));
                 report.record_failure_at(candidate, ProbeStage::EngineCreate, Some(selected), &err);
@@ -142,16 +173,19 @@ where
 
         match engine.initialize(width, height) {
             Ok(()) => {
-                crate::core::log::info_fn(format!("Graphics bootstrap: selected {selected}"));
+                crate::core::log::info_fn(format!(
+                    "Graphics bootstrap: selected recipe {selected}"
+                ));
                 return Ok(GpuBootstrap {
                     engine,
-                    selected,
+                    selected: selected.backend,
+                    selected_recipe: selected,
                     report,
                 });
             }
             Err(err) => {
                 crate::core::log::warn_fn(format!(
-                    "Graphics bootstrap: engine init for {selected} failed: {}",
+                    "Graphics bootstrap: engine init for recipe {selected} failed: {}",
                     err.what()
                 ));
                 engine.shutdown();
@@ -176,9 +210,7 @@ mod tests {
     use crate::native::traits::present::{
         GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentMode, RasterMode,
     };
-    use std::cell::Cell;
-    #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
     struct ShutdownTrackingContext {
@@ -207,11 +239,17 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
 
-        fn make_current(&mut self) {}
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
 
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
 
         fn shutdown(&mut self) {
             self.shutdown_called.set(true);
@@ -269,6 +307,7 @@ mod tests {
         assert!(!context.supports_gl_proc_address());
     }
 
+    #[cfg(feature = "d3d11")]
     #[test]
     fn bootstrap_shuts_down_context_when_engine_creation_fails() {
         let shutdown_called = Rc::new(Cell::new(false));
@@ -291,7 +330,9 @@ mod tests {
                 let failure = report.failures.first().expect("engine failure");
                 assert_eq!(failure.backend, GraphicsBackend::D3d11);
                 assert!(failure.message.contains("stage=engine_create"));
-                assert!(failure.message.contains("selected=d3d11"));
+                assert!(failure
+                    .message
+                    .contains("selected=backend=d3d11; raster=cpu; present=cpu_presenter"));
                 assert!(failure.message.contains("CpuPresenter"));
             }
         }
@@ -315,11 +356,17 @@ mod tests {
             Err(Error::new(Errc::PlatformError, "init failed for test"))
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
 
-        fn make_current(&mut self) {}
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
 
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
 
         fn shutdown(&mut self) {
             self.shutdown_called.set(true);
@@ -348,6 +395,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "d3d11")]
     #[test]
     fn bootstrap_shuts_down_context_when_engine_initialize_fails() {
         let shutdown_called = Rc::new(Cell::new(false));
@@ -368,7 +416,9 @@ mod tests {
                 let failure = report.failures.first().expect("init failure");
                 assert_eq!(failure.backend, GraphicsBackend::D3d11);
                 assert!(failure.message.contains("stage=engine_initialize"));
-                assert!(failure.message.contains("selected=d3d11"));
+                assert!(failure
+                    .message
+                    .contains("selected=backend=d3d11; raster=cpu; present=pixel_upload"));
                 assert!(failure.message.contains("init failed for test"));
             }
         }
@@ -401,9 +451,15 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
-        fn make_current(&mut self) {}
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
         fn shutdown(&mut self) {}
         fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
             Vec::new()
@@ -428,7 +484,7 @@ mod tests {
             GraphicsBackend::Auto,
             move |candidate| {
                 calls_for_probe.borrow_mut().push(candidate);
-                if candidate == GraphicsBackend::D3d12 {
+                if candidate.backend == GraphicsBackend::D3d12 {
                     Ok(Box::new(BootstrapD3d12Context) as Box<dyn IGraphicsContext>)
                 } else {
                     Err(Error::new(
@@ -442,12 +498,32 @@ mod tests {
         assert_eq!(
             calls.borrow().as_slice(),
             &[
-                GraphicsBackend::D3d11,
-                GraphicsBackend::OpenGlEs,
-                GraphicsBackend::D3d12,
+                GraphicsRecipe::new(
+                    GraphicsBackend::D3d11,
+                    RasterMode::GpuNative,
+                    PresentMode::Swapchain
+                ),
+                GraphicsRecipe::new(
+                    GraphicsBackend::OpenGlEs,
+                    RasterMode::GpuNative,
+                    PresentMode::Swapchain
+                ),
+                GraphicsRecipe::new(
+                    GraphicsBackend::D3d12,
+                    RasterMode::GpuNative,
+                    PresentMode::Swapchain
+                ),
             ]
         );
         assert_eq!(bootstrap.selected, GraphicsBackend::D3d12);
+        assert_eq!(
+            bootstrap.selected_recipe,
+            GraphicsRecipe::new(
+                GraphicsBackend::D3d12,
+                RasterMode::GpuNative,
+                PresentMode::Swapchain
+            )
+        );
         assert_eq!(bootstrap.report.failures.len(), 2);
         assert_eq!(bootstrap.report.failures[0].backend, GraphicsBackend::D3d11);
         assert_eq!(
@@ -463,10 +539,62 @@ mod tests {
     }
 
     #[test]
+    fn same_api_recipe_probe_falls_through_to_later_recipe() {
+        let native_recipe = GraphicsRecipe::new(
+            GraphicsBackend::D3d11,
+            RasterMode::GpuNative,
+            PresentMode::Swapchain,
+        );
+        let upload_recipe = GraphicsRecipe::new(
+            GraphicsBackend::D3d11,
+            RasterMode::Cpu,
+            PresentMode::PixelUpload,
+        );
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let calls_for_probe = Rc::clone(&calls);
+
+        let mut bootstrap = bootstrap_graphics_engine_with_candidates(
+            64,
+            48,
+            GraphicsBackend::D3d11,
+            vec![native_recipe, upload_recipe],
+            move |candidate| {
+                calls_for_probe.borrow_mut().push(candidate);
+                if candidate == native_recipe {
+                    return Err(Error::new(
+                        Errc::PlatformError,
+                        "native recipe intentionally unavailable",
+                    ));
+                }
+                Ok(Box::new(ShutdownTrackingContext {
+                    shutdown_called: Rc::new(Cell::new(false)),
+                    raster: RasterMode::Cpu,
+                    present: PresentMode::PixelUpload,
+                }) as Box<dyn IGraphicsContext>)
+            },
+        )
+        .expect("second recipe for the same API should be selected");
+
+        assert_eq!(calls.borrow().as_slice(), &[native_recipe, upload_recipe]);
+        assert_eq!(bootstrap.selected, GraphicsBackend::D3d11);
+        assert_eq!(bootstrap.selected_recipe, upload_recipe);
+        assert_eq!(bootstrap.report.failures.len(), 1);
+        assert_eq!(bootstrap.report.failures[0].backend, GraphicsBackend::D3d11);
+        assert!(bootstrap.report.failures[0]
+            .message
+            .contains("recipe=backend=d3d11; raster=gpu_native; present=swapchain"));
+        bootstrap.engine.shutdown();
+    }
+
+    #[test]
     fn probe_report_preserves_context_create_stage_and_message() {
         let mut report = ProbeReport::default();
         report.record_failure_at(
-            GraphicsBackend::OpenGlEs,
+            GraphicsRecipe::new(
+                GraphicsBackend::OpenGlEs,
+                RasterMode::GpuNative,
+                PresentMode::Swapchain,
+            ),
             ProbeStage::ContextCreate,
             None,
             &Error::new(Errc::PlatformError, "WGL context creation failed"),
@@ -475,6 +603,9 @@ mod tests {
         let failure = report.failures.first().expect("context failure");
         assert_eq!(failure.backend, GraphicsBackend::OpenGlEs);
         assert!(failure.message.contains("stage=context_create"));
+        assert!(failure
+            .message
+            .contains("recipe=backend=opengles; raster=gpu_native; present=swapchain"));
         assert!(failure.message.contains("selected=none"));
         assert!(failure.message.contains("WGL context creation failed"));
     }

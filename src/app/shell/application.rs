@@ -18,9 +18,11 @@ use crate::app::shell::di::Container;
 use crate::app::test_clock::{system_clock, AppClock};
 use crate::app::window_config::WindowConfig;
 use crate::app::window_session::{WindowLoopState, WindowSession};
-use crate::core::{Point, WindowId};
+use crate::core::{Errc, Error, Point, WindowId};
 use crate::data::SettingsService;
 use crate::draw::engine::bootstrap::{bootstrap_graphics_engine, ProbeReport};
+use crate::draw::engine::factory::create_graphics_engine;
+use crate::draw::engine::{GraphicsEngineRebuilder, RecoveringGraphicsEngine, RecoveryAction};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
@@ -29,6 +31,7 @@ use crate::draw::traits::GraphicsEngine;
 use crate::draw::RenderOutcome;
 use crate::draw::SoftwareEngine;
 use crate::native::create_platform;
+use crate::native::factory::{gpu_recipe_candidates, try_create_gpu_recipe, GraphicsRecipe};
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
 use crate::native::traits::present::GraphicsBackend;
@@ -55,6 +58,16 @@ const GRAPHICS_BACKEND_SETTING_KEYS: [&str; 2] = ["graphics_backend", "uix.graph
 fn report_window_operation_error(context: &str, result: crate::core::Result<()>) {
     if let Err(error) = result {
         crate::core::log::warn_fn(format!("{context}: {}", error.short_what()));
+    }
+}
+
+fn report_graphics_resize_error(context: &str, result: crate::core::Result<()>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            crate::core::log::warn_fn(format!("{context}: {}", error.short_what()));
+            false
+        }
     }
 }
 
@@ -86,23 +99,30 @@ impl SecondaryWindowSession {
             UiEventType::WindowResize => {
                 if let UiEventPayload::Resize(ref d) = event.payload {
                     if d.width > 0 && d.height > 0 {
-                        parts.engine.resize(d.width, d.height);
+                        let resized = report_graphics_resize_error(
+                            "secondary graphics resize failed",
+                            parts.engine.resize(d.width, d.height),
+                        );
                         report_window_operation_error(
                             "secondary resize_notify failed",
                             self._window.resize_notify(d.width, d.height),
                         );
-                        let (cw, ch) = {
-                            let canvas = parts.engine.canvas_2d();
-                            (canvas.width() as f32, canvas.height() as f32)
-                        };
-                        if cw > 0.0 && ch > 0.0 {
-                            if let Some(rid) = parts.tree.root_id() {
-                                if let Some(root_mut) = parts.tree.get_mut(rid) {
-                                    let rf = root_mut.frame();
-                                    if (rf.w - cw).abs() > 0.5 || (rf.h - ch).abs() > 0.5 {
-                                        root_mut.set_frame(crate::core::Rect::new(0.0, 0.0, cw, ch));
-                                        parts.tree.tree_version =
-                                            parts.tree.tree_version.wrapping_add(1);
+                        if resized {
+                            let (cw, ch) = {
+                                let canvas = parts.engine.canvas_2d();
+                                (canvas.width() as f32, canvas.height() as f32)
+                            };
+                            if cw > 0.0 && ch > 0.0 {
+                                if let Some(rid) = parts.tree.root_id() {
+                                    if let Some(root_mut) = parts.tree.get_mut(rid) {
+                                        let rf = root_mut.frame();
+                                        if (rf.w - cw).abs() > 0.5 || (rf.h - ch).abs() > 0.5 {
+                                            root_mut.set_frame(crate::core::Rect::new(
+                                                0.0, 0.0, cw, ch,
+                                            ));
+                                            parts.tree.tree_version =
+                                                parts.tree.tree_version.wrapping_add(1);
+                                        }
                                     }
                                 }
                             }
@@ -118,7 +138,10 @@ impl SecondaryWindowSession {
                 let w = info.bounds.w as i32;
                 let h = info.bounds.h as i32;
                 if w > 0 && h > 0 {
-                    parts.engine.resize(w, h);
+                    report_graphics_resize_error(
+                        "secondary graphics maximize resize failed",
+                        parts.engine.resize(w, h),
+                    );
                     report_window_operation_error(
                         "secondary maximize resize_notify failed",
                         self._window.resize_notify(w, h),
@@ -129,7 +152,10 @@ impl SecondaryWindowSession {
             }
             UiEventType::WindowRestore => {
                 let (w, h) = self.initial_size;
-                parts.engine.resize(w, h);
+                report_graphics_resize_error(
+                    "secondary graphics restore resize failed",
+                    parts.engine.resize(w, h),
+                );
                 report_window_operation_error(
                     "secondary restore resize_notify failed",
                     self._window.resize_notify(w, h),
@@ -351,32 +377,78 @@ impl SecondaryWindowSession {
                     metrics: None,
                 },
             );
-            self.rendered_first = true;
             (frame_out.outcome, frame_out.inv_source)
         };
 
-        if self.window_visible && (!self.rendered_first || has_layout_work || need_render) {
-            parts.tree.reset_invalidation();
-        }
-
-        if let RenderOutcome::Present(damage) = outcome {
-            let _ = outcome_source;
-            if engine_capabilities.uses_external_presenter() {
-                let canvas = parts.engine.canvas_2d();
-                let cw = canvas.width();
-                let ch = canvas.height();
-                if let Err(e) = self._window.presenter().present(
-                    canvas.pixels_mut(),
-                    cw,
-                    ch,
-                    damage.to_present_damage(),
-                ) {
-                    crate::core::log::error_fn(format!(
-                        "[Application] secondary present failed: {}",
-                        e.short_what()
-                    ));
+        let mut frame_committed = false;
+        match outcome {
+            RenderOutcome::Present(_) => {
+                let _ = outcome_source;
+                if engine_capabilities.uses_external_presenter() {
+                    crate::core::log::error_fn(
+                        "[Application] external secondary presenter reported final Present before platform submission",
+                    );
+                    self.rendered_first = false;
+                } else {
+                    self.rendered_first = true;
+                    frame_committed = true;
                 }
             }
+            RenderOutcome::PresentPending(damage) => {
+                let _ = outcome_source;
+                if !engine_capabilities.uses_external_presenter() {
+                    crate::core::log::error_fn(
+                        "[Application] engine-managed secondary path returned external presentation pending",
+                    );
+                    self.rendered_first = false;
+                } else {
+                    let canvas = parts.engine.canvas_2d();
+                    let cw = canvas.width();
+                    let ch = canvas.height();
+                    match self._window.presenter().present(
+                        canvas.pixels_mut(),
+                        cw,
+                        ch,
+                        damage.to_present_damage(),
+                    ) {
+                        Ok(()) => {
+                            parts.engine.external_present_succeeded();
+                            self.rendered_first = true;
+                            frame_committed = true;
+                        }
+                        Err(error) => {
+                            parts.engine.external_present_failed(error.clone());
+                            crate::core::log::error_fn(format!(
+                                "[Application] secondary external present failed: {}",
+                                error.short_what()
+                            ));
+                            self.rendered_first = false;
+                        }
+                    }
+                }
+            }
+            RenderOutcome::Idle => {}
+            RenderOutcome::FrameReady(_) => {
+                crate::core::log::error_fn(
+                    "[Application] frame renderer returned FrameReady without final presentation",
+                );
+                self.rendered_first = false;
+            }
+            RenderOutcome::Failed(error) => {
+                crate::core::log::error_fn(format!(
+                    "[Application] secondary graphics frame failed: {}",
+                    error.error().short_what()
+                ));
+                self.rendered_first = false;
+            }
+        }
+
+        if self.window_visible
+            && frame_committed
+            && (!self.rendered_first || has_layout_work || need_render)
+        {
+            // Failed external presentation must retain the invalidation for a retry.
+            parts.tree.reset_invalidation();
         }
 
         *parts.loop_state = secondary_next_loop_state(parts.tree, parts.active_work);
@@ -1301,6 +1373,70 @@ fn secondary_next_loop_state(
     }
 }
 
+fn recreate_exact_graphics_recipe(
+    surface: *mut std::ffi::c_void,
+    width: i32,
+    height: i32,
+    recipe: GraphicsRecipe,
+) -> Result<Box<dyn GraphicsEngine>, Error> {
+    let context = try_create_gpu_recipe(recipe, surface, width, height)?;
+    let mut engine = create_graphics_engine(context)?;
+    if let Err(error) = engine.initialize(width, height) {
+        engine.shutdown();
+        return Err(error);
+    }
+    Ok(engine)
+}
+
+fn create_software_recovery_engine(
+    width: i32,
+    height: i32,
+) -> Result<Box<dyn GraphicsEngine>, Error> {
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(width, height)?;
+    Ok(Box::new(engine))
+}
+
+fn graphics_recovery_rebuilder(
+    surface: *mut std::ffi::c_void,
+    requested: GraphicsBackend,
+    selected_recipe: GraphicsRecipe,
+) -> GraphicsEngineRebuilder {
+    let candidates = gpu_recipe_candidates(requested);
+    let mut current_recipe = selected_recipe;
+    Box::new(move |action, width, height| match action {
+        RecoveryAction::RebuildSurface | RecoveryAction::RebuildRecipe => {
+            recreate_exact_graphics_recipe(surface, width, height, current_recipe)
+        }
+        RecoveryAction::TryNextRecipe => {
+            let start = candidates
+                .iter()
+                .position(|recipe| *recipe == current_recipe)
+                .map(|index| index + 1)
+                .unwrap_or(0);
+            let mut last_error = Error::new(
+                Errc::PlatformError,
+                format!("graphics recovery: no next recipe after {current_recipe}"),
+            );
+            for candidate in candidates.iter().copied().skip(start) {
+                match recreate_exact_graphics_recipe(surface, width, height, candidate) {
+                    Ok(engine) => {
+                        current_recipe = candidate;
+                        return Ok(engine);
+                    }
+                    Err(error) => last_error = error,
+                }
+            }
+            Err(last_error)
+        }
+        RecoveryAction::UseSoftware => create_software_recovery_engine(width, height),
+        RecoveryAction::Abort | RecoveryAction::AbortOutOfMemory => Err(Error::new(
+            Errc::InvalidState,
+            format!("graphics recovery: forbidden action {action:?}"),
+        )),
+    })
+}
+
 fn create_preferred_engine(
     platform_window: &mut dyn PlatformWindow,
     width: i32,
@@ -1319,7 +1455,12 @@ fn create_preferred_engine(
                     format_probe_failures(&gpu.report)
                 ));
             }
-            Some(gpu.engine)
+            let engine = RecoveringGraphicsEngine::new(
+                gpu.engine,
+                graphics_recovery_rebuilder(surface, graphics_backend, gpu.selected_recipe),
+            )
+            .with_extent(width, height);
+            Some(Box::new(engine))
         }
         Err(report) => {
             crate::core::log::warn_fn(format_gpu_probe_fallback(graphics_backend, &report));

@@ -2,6 +2,7 @@
 
 pub mod animation_registry;
 pub mod frame;
+pub mod frame_encoder;
 pub mod invalidation;
 pub mod metrics;
 pub mod render_frame;
@@ -9,6 +10,10 @@ pub mod session;
 
 pub use animation_registry::AnimationRegistry;
 pub use frame::{begin_frame, end_frame, normalize_strategy};
+pub use frame_encoder::{
+    EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError, FrameImage,
+    FramePresenter, FrameRasterOp, FrameRect, PresentOutcome, ReferenceFrame,
+};
 pub use invalidation::{
     invalidate_paint_handle, Invalidation, InvalidationQueue, InvalidationQueueHandle, NodeId,
     ScrollDelta,

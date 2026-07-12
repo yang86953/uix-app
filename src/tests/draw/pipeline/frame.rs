@@ -78,7 +78,7 @@ fn begin_frame_partial_dirty_returns_partial_damage() {
     );
     assert_eq!(
         outcome,
-        RenderOutcome::Present(DamageRegion::partial(rects))
+        RenderOutcome::FrameReady(DamageRegion::partial(rects))
     );
     end_frame(&mut surface);
 }
@@ -93,7 +93,7 @@ fn begin_frame_dirty_clip_intersects_surface_bounds() {
         20,
         BackendCapabilities::cpu(),
     );
-    assert!(matches!(outcome, RenderOutcome::Present(_)));
+    assert!(matches!(outcome, RenderOutcome::FrameReady(_)));
     assert_eq!(
         surface.canvas_mut().current_clip(),
         Rect::new(0.0, 0.0, 2.0, 3.0)
@@ -115,7 +115,7 @@ fn begin_frame_empty_dirty_returns_idle() {
 }
 
 #[test]
-fn begin_frame_full_redraw_presents() {
+fn begin_frame_full_redraw_returns_ready_target() {
     let mut surface = CpuDrawSurface::new(10, 10);
     let outcome = begin_frame(
         UpdateStrategy::FullRedraw,
@@ -124,7 +124,7 @@ fn begin_frame_full_redraw_presents() {
         10,
         BackendCapabilities::cpu(),
     );
-    assert_eq!(outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(outcome, RenderOutcome::FrameReady(DamageRegion::full()));
     end_frame(&mut surface);
 }
 
@@ -138,6 +138,6 @@ fn gpu_caps_force_full_clear_on_dirty_rects() {
         20,
         BackendCapabilities::gpu_full_redraw(),
     );
-    assert_eq!(outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(outcome, RenderOutcome::FrameReady(DamageRegion::full()));
     end_frame(&mut surface);
 }

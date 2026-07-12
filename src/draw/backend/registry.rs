@@ -1,6 +1,7 @@
 //! Table-driven pairing of [`GraphicsBackend`] to [`RenderBackend`] (P6.7 M6 / P6.8).
 
 use crate::core::{Errc, Error, Result};
+#[cfg(feature = "opengles")]
 use crate::draw::backend::gpu::GpuBackend;
 use crate::draw::backend::native_gpu::NativeGpuBackend;
 use crate::draw::backend::traits::RenderBackend;
@@ -10,7 +11,7 @@ use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, RasterMo
 ///
 /// Only used when `caps().raster == GpuNative`; upload-present paths
 /// keep a fixed CPU raster backend.
-pub fn create_native_raster_backend(
+pub(crate) fn create_native_raster_backend(
     mut ctx: Box<dyn IGraphicsContext>,
 ) -> Result<Box<dyn RenderBackend>, Error> {
     if ctx.caps().raster != RasterMode::GpuNative {
@@ -23,7 +24,20 @@ pub fn create_native_raster_backend(
     }
 
     match ctx.caps().backend {
-        GraphicsBackend::OpenGlEs => GpuBackend::new(ctx).map(|backend| Box::new(backend) as _),
+        GraphicsBackend::OpenGlEs => {
+            #[cfg(feature = "opengles")]
+            {
+                GpuBackend::new(ctx).map(|backend| Box::new(backend) as _)
+            }
+            #[cfg(not(feature = "opengles"))]
+            {
+                ctx.shutdown();
+                Err(Error::new(
+                    Errc::NotImplemented,
+                    "RenderBackendRegistry: OpenGL ES is disabled by feature=opengles",
+                ))
+            }
+        }
         GraphicsBackend::D3d11 | GraphicsBackend::D3d12 => {
             NativeGpuBackend::new(ctx).map(|backend| Box::new(backend) as _)
         }
@@ -68,9 +82,15 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
-        fn make_current(&mut self) {}
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
         fn shutdown(&mut self) {}
         fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
             Vec::new()
@@ -112,9 +132,15 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
-        fn make_current(&mut self) {}
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
         fn shutdown(&mut self) {}
         fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
             Vec::new()
@@ -157,9 +183,15 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, _width: i32, _height: i32) {}
-        fn make_current(&mut self) {}
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
         fn shutdown(&mut self) {
             self.shutdowns.set(self.shutdowns.get() + 1);
         }

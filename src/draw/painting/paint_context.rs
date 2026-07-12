@@ -174,7 +174,7 @@ impl<'a> PaintContext<'a> {
     /// 填充椭圆。
     #[inline(always)]
     pub fn fill_ellipse(&mut self, rect: Rect, color: Color) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::FillEllipse { rect, color });
         self.spatial.canvas_2d().fill_ellipse(rect, color);
     }
 
@@ -189,7 +189,14 @@ impl<'a> PaintContext<'a> {
         end_angle: f32,
         color: Color,
     ) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::FillSector {
+            cx,
+            cy,
+            r,
+            start_angle,
+            end_angle,
+            color,
+        });
         self.spatial
             .canvas_2d()
             .fill_sector(cx, cy, r, start_angle, end_angle, color);
@@ -198,7 +205,11 @@ impl<'a> PaintContext<'a> {
     /// 填充路径。
     #[inline(always)]
     pub fn fill_path(&mut self, path: &Path, color: Color, fill_rule: FillRule) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::FillPath {
+            path: path.clone(),
+            color,
+            fill_rule,
+        });
         self.spatial.canvas_2d().fill_path(path, color, fill_rule);
     }
 
@@ -225,7 +236,13 @@ impl<'a> PaintContext<'a> {
     /// 描边圆形。
     #[inline(always)]
     pub fn stroke_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color, line_width: f32) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::StrokeCircle {
+            cx,
+            cy,
+            r,
+            color,
+            line_width,
+        });
         self.spatial
             .canvas_2d()
             .stroke_circle(cx, cy, r, color, line_width);
@@ -234,14 +251,25 @@ impl<'a> PaintContext<'a> {
     /// 描边路径。
     #[inline(always)]
     pub fn stroke_path(&mut self, path: &Path, color: Color, opts: &StrokeOptions) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::StrokePath {
+            path: path.clone(),
+            color,
+            options: *opts,
+        });
         self.spatial.canvas_2d().stroke_path(path, color, opts);
     }
 
     /// 画直线。
     #[inline(always)]
     pub fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: Color, width: f32) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::DrawLine {
+            x1,
+            y1,
+            x2,
+            y2,
+            color,
+            width,
+        });
         self.spatial
             .canvas_2d()
             .draw_line(x1, y1, x2, y2, color, width);
@@ -280,7 +308,14 @@ impl<'a> PaintContext<'a> {
         inner_color: Color,
         outer_color: Color,
     ) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::FillRadialGradient {
+            cx,
+            cy,
+            inner_r,
+            outer_r,
+            inner_color,
+            outer_color,
+        });
         self.spatial.canvas_2d().fill_radial_gradient(
             cx,
             cy,
@@ -333,7 +368,14 @@ impl<'a> PaintContext<'a> {
         color: Color,
         corner_radius: Option<Radius>,
     ) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::DrawBoxShadowAmbient {
+            rect,
+            blur_radius,
+            offset_x,
+            offset_y,
+            color,
+            corner_radius,
+        });
         self.spatial.canvas_2d().draw_box_shadow_ambient(
             rect,
             blur_radius,
@@ -439,7 +481,13 @@ impl<'a> PaintContext<'a> {
         color: Color,
         font_size: f32,
     ) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::DrawTextBaseline {
+            text: text.to_string(),
+            x,
+            baseline_y,
+            color,
+            font_size,
+        });
         self.text.draw_text_baseline(
             self.spatial.canvas_2d(),
             text,
@@ -478,7 +526,12 @@ impl<'a> PaintContext<'a> {
 
     /// 在矩形内绘制自动换行文本。
     pub fn draw_text_wrapped(&mut self, text: &str, rect: Rect, color: Color, font_size: f32) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::DrawTextWrapped {
+            text: text.to_string(),
+            rect,
+            color,
+            font_size,
+        });
         self.text
             .draw_text_wrapped(self.spatial.canvas_2d(), text, rect, color, font_size);
     }
@@ -493,7 +546,14 @@ impl<'a> PaintContext<'a> {
         selection: Option<(usize, usize)>,
         selection_bg: Color,
     ) {
-        self.mark_recording_incomplete();
+        self.record_op(PaintOp::DrawTextWithSelection {
+            text: text.to_string(),
+            pos,
+            color,
+            font_size,
+            selection,
+            selection_bg,
+        });
         self.text.draw_text_with_selection(
             self.spatial.canvas_2d(),
             text,

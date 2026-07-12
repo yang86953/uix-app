@@ -7,6 +7,7 @@ use crate::core::{Error, Rect};
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::RenderSession;
+use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 use crate::draw::ImageHandle;
@@ -71,9 +72,9 @@ impl GraphicsEngine for SoftwareEngine {
         self.session.shutdown();
     }
 
-    fn resize(&mut self, width: i32, height: i32) {
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.sync_clear_color();
-        self.session.resize(width, height);
+        self.session.resize(width, height)
     }
 
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
@@ -82,7 +83,10 @@ impl GraphicsEngine for SoftwareEngine {
     }
 
     fn end_frame(&mut self, _present_damage: &DamageRegion) -> RenderOutcome {
-        self.session.end_frame()
+        match self.session.end_frame() {
+            RenderOutcome::Present(damage) => RenderOutcome::PresentPending(damage),
+            outcome => outcome,
+        }
     }
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
@@ -129,16 +133,49 @@ impl GraphicsEngine for SoftwareEngine {
         self.session.cpu_backend()?.copy_offscreen_pixels(handle)
     }
 
+    fn try_execute_encoded_picture(
+        &mut self,
+        handle: &ImageHandle,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedPictureExecution, Error> {
+        self.session
+            .backend_mut()
+            .try_execute_encoded_picture(handle, encoder)
+    }
+
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
         self.session.backend_mut().begin_offscreen_paint(handle)
+    }
+
+    fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        self.session.backend_mut().try_begin_offscreen_paint(handle)
     }
 
     fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
         self.session.backend_mut().flush_offscreen_paint(handle);
     }
 
+    fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
+        self.session.backend_mut().try_flush_offscreen_paint(handle)
+    }
+
     fn end_offscreen_paint(&mut self) {
         self.session.backend_mut().end_offscreen_paint();
+    }
+
+    fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
+        self.session.backend_mut().try_end_offscreen_paint()
+    }
+
+    fn try_blit_offscreen_src(
+        &mut self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) -> Result<(), Error> {
+        self.session
+            .backend_mut()
+            .try_blit_offscreen_src(handle, src_rect, dst_rect)
     }
 
     fn memory_usage(&self) -> usize {

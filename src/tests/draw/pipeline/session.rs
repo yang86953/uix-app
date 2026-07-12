@@ -1,5 +1,62 @@
 use super::*;
 use crate::draw::backend::DamageRegion;
+use crate::native::traits::present::{
+    GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
+};
+use std::ffi::c_void;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
+struct CountingGraphicsContext {
+    shutdowns: Arc<AtomicUsize>,
+}
+
+impl IGraphicsContext for CountingGraphicsContext {
+    fn caps(&self) -> GraphicsContextCaps {
+        GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+    }
+
+    fn initialize(
+        &mut self,
+        _native_window: *mut c_void,
+        _width: i32,
+        _height: i32,
+    ) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn make_current(&mut self) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+        Ok(())
+    }
+
+    fn shutdown(&mut self) {
+        self.shutdowns.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
+        Vec::new()
+    }
+
+    fn width(&self) -> i32 {
+        1
+    }
+
+    fn height(&self) -> i32 {
+        1
+    }
+}
+
+fn counting_context(shutdowns: Arc<AtomicUsize>) -> Box<dyn IGraphicsContext> {
+    Box::new(CountingGraphicsContext { shutdowns })
+}
 
 #[test]
 fn set_backend_to_null_forces_full_frame_once() {
@@ -8,7 +65,7 @@ fn set_backend_to_null_forces_full_frame_once() {
     session.set_backend(BackendKind::Null).expect("switch");
     assert_eq!(session.backend_kind(), BackendKind::Null);
     let outcome = session.begin_frame(UpdateStrategy::DirtyRects(vec![]));
-    assert_eq!(outcome, RenderOutcome::Present(DamageRegion::full()));
+    assert_eq!(outcome, RenderOutcome::FrameReady(DamageRegion::full()));
     session.end_frame();
     let outcome = session.begin_frame(UpdateStrategy::DirtyRects(vec![]));
     assert_eq!(outcome, RenderOutcome::Idle);
@@ -18,4 +75,52 @@ fn set_backend_to_null_forces_full_frame_once() {
 fn auto_resolves_to_cpu() {
     let session = RenderSession::new(BackendKind::Auto).expect("Auto 会话");
     assert_eq!(session.backend_kind(), BackendKind::Cpu);
+}
+
+#[test]
+fn replacing_staged_context_shuts_the_previous_context_once() {
+    let previous_shutdowns = Arc::new(AtomicUsize::new(0));
+    let current_shutdowns = Arc::new(AtomicUsize::new(0));
+    let mut session = RenderSession::new(BackendKind::Cpu).expect("Cpu 会话");
+
+    session
+        .set_gpu_context(counting_context(Arc::clone(&previous_shutdowns)))
+        .expect("stage first context");
+    session
+        .set_gpu_context(counting_context(Arc::clone(&current_shutdowns)))
+        .expect("replace staged context");
+
+    assert_eq!(previous_shutdowns.load(Ordering::SeqCst), 1);
+    assert_eq!(current_shutdowns.load(Ordering::SeqCst), 0);
+    session.shutdown();
+    assert_eq!(current_shutdowns.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn cpu_or_null_switch_keeps_staged_context_until_session_shutdown() {
+    let shutdowns = Arc::new(AtomicUsize::new(0));
+    let mut session = RenderSession::new(BackendKind::Cpu).expect("Cpu 会话");
+    session
+        .set_gpu_context(counting_context(Arc::clone(&shutdowns)))
+        .expect("stage context");
+
+    session
+        .set_backend(BackendKind::Null)
+        .expect("switch to null");
+    assert_eq!(shutdowns.load(Ordering::SeqCst), 0);
+
+    session.shutdown();
+    assert_eq!(shutdowns.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn dropping_session_closes_a_staged_context_once() {
+    let shutdowns = Arc::new(AtomicUsize::new(0));
+    {
+        let mut session = RenderSession::new(BackendKind::Cpu).expect("Cpu 会话");
+        session
+            .set_gpu_context(counting_context(Arc::clone(&shutdowns)))
+            .expect("stage context");
+    }
+    assert_eq!(shutdowns.load(Ordering::SeqCst), 1);
 }

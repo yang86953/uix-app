@@ -13,6 +13,8 @@ use std::ptr;
 use crate::native::traits::present::{IGraphicsContext, PresentDamage};
 use crate::native::{Errc, Error};
 
+use super::EGL_PARTIAL_PRESENT;
+
 use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 // ════════════════════════════════════════════════════════════════════════════
 // wl_egl_window FFI（wayland-egl 客户端库，Linux 系统自带）
@@ -36,38 +38,6 @@ extern "C" {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// EGL_KHR_swap_buffers_with_damage
-// ════════════════════════════════════════════════════════════════════════════
-
-type SwapBuffersWithDamageFn = unsafe extern "system" fn(
-    khronos_egl::Display,
-    khronos_egl::Surface,
-    *const i32,
-    i32,
-) -> khronos_egl::Boolean;
-
-fn load_swap_buffers_with_damage(
-    egl: &khronos_egl::Instance<khronos_egl::Static>,
-    display: khronos_egl::Display,
-) -> Option<SwapBuffersWithDamageFn> {
-    use khronos_egl as egl;
-
-    let extensions = egl
-        .query_string(Some(display), egl::EXTENSIONS)
-        .ok()?
-        .to_str()
-        .ok()?;
-    if !extensions
-        .split_whitespace()
-        .any(|ext| ext == "EGL_KHR_swap_buffers_with_damage")
-    {
-        return None;
-    }
-    let proc = egl.get_proc_address("eglSwapBuffersWithDamageKHR")?;
-    Some(unsafe { std::mem::transmute(proc) })
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 // EglContext
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -86,8 +56,6 @@ pub struct EglContext {
     egl_window: *mut WlEglWindow,
     width: i32,
     height: i32,
-    /// `EGL_KHR_swap_buffers_with_damage`；不可用时回退全屏 swap。
-    swap_with_damage: Option<SwapBuffersWithDamageFn>,
     shutdown: bool,
 }
 
@@ -121,47 +89,73 @@ impl EglContext {
         crate::core::log::info_fn(format!("EglContext: EGL {major}.{minor}"));
 
         // 3. 绑定 API 到 OpenGL ES
-        egl.bind_api(egl::OPENGL_ES_API).map_err(|e| {
-            Error::new(
+        if let Err(e) = egl.bind_api(egl::OPENGL_ES_API) {
+            let _ = egl.terminate(display);
+            return Err(Error::new(
                 Errc::PlatformError,
                 format!("EglContext: eglBindAPI 失败: {e:?}"),
-            )
-        })?;
+            ));
+        }
 
         // 4. 选择配置：RGBA 8888, depth 24, stencil 8, GLES 3
-        let config_attribs = [
-            egl::SURFACE_TYPE,
-            egl::WINDOW_BIT,
-            egl::RENDERABLE_TYPE,
-            egl::OPENGL_ES3_BIT,
-            egl::RED_SIZE,
-            8,
-            egl::GREEN_SIZE,
-            8,
-            egl::BLUE_SIZE,
-            8,
-            egl::ALPHA_SIZE,
-            8,
-            egl::DEPTH_SIZE,
-            24,
-            egl::STENCIL_SIZE,
-            8,
-            egl::NONE,
-        ];
+        let choose_config = |renderable_type| {
+            let config_attribs = [
+                egl::SURFACE_TYPE,
+                egl::WINDOW_BIT,
+                egl::RENDERABLE_TYPE,
+                renderable_type,
+                egl::RED_SIZE,
+                8,
+                egl::GREEN_SIZE,
+                8,
+                egl::BLUE_SIZE,
+                8,
+                egl::ALPHA_SIZE,
+                8,
+                egl::DEPTH_SIZE,
+                24,
+                egl::STENCIL_SIZE,
+                8,
+                egl::NONE,
+            ];
+            egl.choose_first_config(display, &config_attribs)
+        };
 
-        let config = egl
-            .choose_first_config(display, &config_attribs)
-            .map_err(|e| {
-                Error::new(
+        let config = match choose_config(egl::OPENGL_ES3_BIT) {
+            Ok(Some(config)) => config,
+            Ok(None) => {
+                crate::core::log::warn_fn("EglContext: 无 GLES 3 配置，重试 GLES 2 EGL 配置");
+                match choose_config(egl::OPENGL_ES2_BIT) {
+                    Ok(Some(config)) => config,
+                    Ok(None) => {
+                        let _ = egl.terminate(display);
+                        return Err(Error::new(
+                            Errc::PlatformError,
+                            "EglContext: 无可用 GLES 3/2 EGL 配置",
+                        ));
+                    }
+                    Err(e) => {
+                        let _ = egl.terminate(display);
+                        return Err(Error::new(
+                            Errc::PlatformError,
+                            format!("EglContext: GLES 2 choose_config 失败: {e:?}"),
+                        ));
+                    }
+                }
+            }
+            Err(e) => {
+                let _ = egl.terminate(display);
+                return Err(Error::new(
                     Errc::PlatformError,
-                    format!("EglContext: choose_config 失败: {e:?}"),
-                )
-            })?
-            .ok_or_else(|| Error::new(Errc::PlatformError, "EglContext: 无可用 EGL 配置"))?;
+                    format!("EglContext: GLES 3 choose_config 失败: {e:?}"),
+                ));
+            }
+        };
 
         // 5. 创建 wl_egl_window（Wayland 原生窗口封装）
         let egl_window = unsafe { wl_egl_window_create(wayland.surface, width, height) };
         if egl_window.is_null() {
+            let _ = egl.terminate(display);
             return Err(Error::new(
                 Errc::PlatformError,
                 "EglContext: wl_egl_window_create 返回 null",
@@ -176,6 +170,7 @@ impl EglContext {
             unsafe {
                 wl_egl_window_destroy(egl_window);
             }
+            let _ = egl.terminate(display);
             Error::new(
                 Errc::PlatformError,
                 format!("EglContext: eglCreateWindowSurface 失败: {e:?}"),
@@ -205,6 +200,7 @@ impl EglContext {
                                 let _ = egl.destroy_surface(display, surface);
                                 wl_egl_window_destroy(egl_window);
                             }
+                            let _ = egl.terminate(display);
                             Error::new(
                                 Errc::PlatformError,
                                 format!("EglContext: GLES 2.0 上下文也失败: {e:?}"),
@@ -222,16 +218,12 @@ impl EglContext {
                     let _ = egl.destroy_surface(display, surface);
                     wl_egl_window_destroy(egl_window);
                 }
+                let _ = egl.terminate(display);
                 Error::new(
                     Errc::PlatformError,
                     format!("EglContext: eglMakeCurrent 失败: {e:?}"),
                 )
             })?;
-
-        let swap_with_damage = load_swap_buffers_with_damage(&egl, display);
-        if swap_with_damage.is_some() {
-            crate::core::log::info_fn("EglContext: EGL_KHR_swap_buffers_with_damage 可用");
-        }
 
         Ok(Self {
             egl,
@@ -242,7 +234,6 @@ impl EglContext {
             egl_window,
             width,
             height,
-            swap_with_damage,
             shutdown: false,
         })
     }
@@ -256,7 +247,7 @@ impl IGraphicsContext for EglContext {
     fn caps(&self) -> crate::native::traits::present::GraphicsContextCaps {
         crate::native::traits::present::GraphicsContextCaps::gpu_native_swapchain(
             crate::native::traits::present::GraphicsBackend::OpenGlEs,
-            self.swap_with_damage.is_some(),
+            EGL_PARTIAL_PRESENT,
             1.0,
         )
     }
@@ -275,9 +266,9 @@ impl IGraphicsContext for EglContext {
         Ok(())
     }
 
-    fn resize(&mut self, width: i32, height: i32) {
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         if width == self.width && height == self.height {
-            return;
+            return Ok(());
         }
         self.width = width;
         self.height = height;
@@ -286,48 +277,49 @@ impl IGraphicsContext for EglContext {
                 wl_egl_window_resize(self.egl_window, width, height, 0, 0);
             }
         }
+        Ok(())
     }
 
-    fn make_current(&mut self) {
-        let _ = self.egl.make_current(
-            self.display,
-            Some(self.surface),
-            Some(self.surface),
-            Some(self.context),
-        );
+    fn make_current(&mut self) -> Result<(), Error> {
+        self.egl
+            .make_current(
+                self.display,
+                Some(self.surface),
+                Some(self.surface),
+                Some(self.context),
+            )
+            .map_err(|err| {
+                Error::new(
+                    Errc::PlatformError,
+                    format!("EglContext: eglMakeCurrent failed: {err:?}"),
+                )
+            })
     }
 
-    fn swap_buffers(&mut self, damage: PresentDamage) {
+    fn swap_buffers(&mut self, damage: PresentDamage) -> Result<(), Error> {
         match damage {
             PresentDamage::Full => {
-                let _ = self.egl.swap_buffers(self.display, self.surface);
-            }
-            PresentDamage::Partial(rects) => {
-                if rects.is_empty() {
-                    let _ = self.egl.swap_buffers(self.display, self.surface);
-                    return;
-                }
-                if let Some(swap_with_damage) = self.swap_with_damage {
-                    let mut flat = Vec::with_capacity(rects.len() * 4);
-                    for (x, y, w, h) in &rects {
-                        flat.extend_from_slice(&[*x, *y, *w, *h]);
-                    }
-                    let ok = unsafe {
-                        swap_with_damage(
-                            self.display,
-                            self.surface,
-                            flat.as_ptr(),
-                            rects.len() as i32,
+                self.egl
+                    .swap_buffers(self.display, self.surface)
+                    .map_err(|err| {
+                        Error::new(
+                            Errc::PlatformError,
+                            format!("EglContext: eglSwapBuffers failed: {err:?}"),
                         )
-                    };
-                    if ok == khronos_egl::TRUE {
-                        return;
-                    }
-                    crate::core::log::warn_fn(
-                        "EglContext: eglSwapBuffersWithDamageKHR 失败，回退全屏 swap",
-                    );
-                }
-                let _ = self.egl.swap_buffers(self.display, self.surface);
+                    })
+            }
+            PresentDamage::Partial(_) => {
+                // `EGL_KHR_swap_buffers_with_damage` is only a compositor hint.  Until
+                // buffer preservation and age are verified, a partial input must not
+                // choose an untyped extension ABI or claim partial-redraw semantics.
+                self.egl
+                    .swap_buffers(self.display, self.surface)
+                    .map_err(|err| {
+                        Error::new(
+                            Errc::PlatformError,
+                            format!("EglContext: eglSwapBuffers failed: {err:?}"),
+                        )
+                    })
             }
         }
     }
@@ -340,6 +332,7 @@ impl IGraphicsContext for EglContext {
         let _ = self.egl.make_current(self.display, None, None, None);
         let _ = self.egl.destroy_context(self.display, self.context);
         let _ = self.egl.destroy_surface(self.display, self.surface);
+        let _ = self.egl.terminate(self.display);
         if !self.egl_window.is_null() {
             unsafe {
                 wl_egl_window_destroy(self.egl_window);
@@ -380,11 +373,8 @@ impl Drop for EglContext {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Send + Sync
+// Thread affinity
 //
-// EGL 上下文并非线程安全，但 UIX 架构保证所有 GPU 操作在单一
-// 事件循环线程上执行。Send + Sync 标记服务于 IGraphicsContext trait object。
+// EGL contexts remain on their creating event-loop thread; no Send/Sync
+// marker may make them transferable.
 // ════════════════════════════════════════════════════════════════════════════
-
-unsafe impl Send for EglContext {}
-unsafe impl Sync for EglContext {}

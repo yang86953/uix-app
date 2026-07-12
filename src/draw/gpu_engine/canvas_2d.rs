@@ -46,6 +46,12 @@ pub struct GpuCanvas2D {
     // ── 未实现 GPU 路径 → SharedRasterizer CPU 光栅化 ──
     soft_fallback: SharedRasterizer,
     fallback_texture: glow::Texture,
+    /// The CPU fallback is an ordered segment, not a persistent overlay.
+    soft_dirty: bool,
+    /// Additive needs the destination framebuffer. A transparent CPU segment
+    /// cannot reproduce it, so keep a typed failure pending instead of alpha-
+    /// compositing an approximation at a later boundary.
+    soft_uses_destination_blend: bool,
 
     // ── 表面尺寸（dip / 逻辑坐标）──
     surface_w: i32,
@@ -53,7 +59,11 @@ pub struct GpuCanvas2D {
     /// 逻辑像素 → 帧缓冲像素（HiDPI viewport 缩放）。
     device_pixel_ratio: f32,
     u_tex_loc: Option<glow::UniformLocation>,
+    u_tex_uv_rect_loc: Option<glow::UniformLocation>,
     u_tex_rgba_loc: Option<glow::UniformLocation>,
+    u_tex_rgba_rect_loc: Option<glow::UniformLocation>,
+    #[cfg(test)]
+    last_soft_upload_bytes: usize,
 }
 
 #[derive(Clone)]
@@ -88,6 +98,46 @@ impl GpuCanvas2D {
         let fb_h = (surface_h as f32 * dpr).ceil() as i32;
         let sy = (fb_h - y - h).max(0);
         (x, sy, w, h)
+    }
+
+    /// Returns the tight logical-pixel bounding box of visible CPU fallback
+    /// pixels. The soft buffer is cleared after every ordered commit, so its
+    /// transparent area cannot affect the current framebuffer and must not be
+    /// transferred again.
+    fn soft_upload_bounds(pixels: &[u32], width: i32, height: i32) -> Option<(i32, i32, i32, i32)> {
+        if width <= 0 || height <= 0 {
+            return None;
+        }
+        let width = width as usize;
+        let expected = width.saturating_mul(height as usize);
+        let count = pixels.len().min(expected);
+        let mut min_x = width;
+        let mut min_y = height as usize;
+        let mut max_x = 0usize;
+        let mut max_y = 0usize;
+        let mut any = false;
+
+        for (index, pixel) in pixels.iter().take(count).enumerate() {
+            if (pixel >> 24) == 0 {
+                continue;
+            }
+            let x = index % width;
+            let y = index / width;
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+            any = true;
+        }
+
+        any.then(|| {
+            (
+                min_x as i32,
+                min_y as i32,
+                (max_x - min_x + 1) as i32,
+                (max_y - min_y + 1) as i32,
+            )
+        })
     }
 
     fn apply_clip_scissor(&self) {
@@ -280,7 +330,10 @@ impl GpuCanvas2D {
 
         let fallback_texture = unsafe { Self::create_fallback_texture(gl, width, height)? };
         let u_tex_loc = unsafe { gl.get_uniform_location(blit_program, "u_tex") };
+        let u_tex_uv_rect_loc = unsafe { gl.get_uniform_location(blit_program, "u_uv_rect") };
         let u_tex_rgba_loc = unsafe { gl.get_uniform_location(blit_rgba_program, "u_tex") };
+        let u_tex_rgba_rect_loc =
+            unsafe { gl.get_uniform_location(blit_rgba_program, "u_uv_rect") };
 
         Ok(Self {
             gl_ptr: gl as *const glow::Context,
@@ -306,11 +359,17 @@ impl GpuCanvas2D {
             blit_rgba_program,
             soft_fallback: SharedRasterizer::new(PixelSurface::new(width.max(1), height.max(1))),
             fallback_texture,
+            soft_dirty: false,
+            soft_uses_destination_blend: false,
             surface_w: width,
             surface_h: height,
             device_pixel_ratio: 1.0,
             u_tex_loc,
+            u_tex_uv_rect_loc,
             u_tex_rgba_loc,
+            u_tex_rgba_rect_loc,
+            #[cfg(test)]
+            last_soft_upload_bytes: 0,
         })
     }
 
@@ -340,13 +399,42 @@ impl GpuCanvas2D {
     /// 清除 CPU 回退缓冲（与 GL clear 同步）。
     pub(crate) fn clear_soft_fallback(&mut self) {
         self.soft_fallback.surface_mut().clear_all();
+        self.soft_dirty = false;
+        self.soft_uses_destination_blend = false;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn last_soft_upload_bytes(&self) -> usize {
+        self.last_soft_upload_bytes
     }
 
     /// 将 CPU 回退像素合成到当前 GL framebuffer。
     pub(crate) fn flush_soft_fallback(&mut self) -> Result<(), Error> {
+        if !self.soft_dirty {
+            return Ok(());
+        }
+        if self.soft_uses_destination_blend {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "GpuCanvas2D: CPU fallback cannot emulate destination-dependent Additive blend",
+            ));
+        }
         let pixels = self.soft_fallback.surface().pixels();
         if pixels.is_empty() || self.surface_w <= 0 || self.surface_h <= 0 {
             return Ok(());
+        }
+        let Some((x, y, width, height)) =
+            Self::soft_upload_bounds(pixels, self.surface_w, self.surface_h)
+        else {
+            self.clear_soft_fallback();
+            return Ok(());
+        };
+        let dpr = self.device_pixel_ratio.max(1.0);
+        #[cfg(test)]
+        {
+            self.last_soft_upload_bytes = (width as usize)
+                .saturating_mul(height as usize)
+                .saturating_mul(4);
         }
 
         unsafe {
@@ -354,47 +442,97 @@ impl GpuCanvas2D {
             self.gl().active_texture(glow::TEXTURE0);
             self.gl()
                 .bind_texture(glow::TEXTURE_2D, Some(self.fallback_texture));
-            let byte_len = (self.surface_w as usize)
-                .saturating_mul(self.surface_h as usize)
-                .saturating_mul(4);
-            self.gl().tex_sub_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                0,
-                0,
-                self.surface_w,
-                self.surface_h,
-                // CPU pixels are AARRGGBB u32 values. On the supported
-                // little-endian desktop targets their bytes are BGRA; upload
-                // through the GLES-core RGBA format and swap R/B in the blit
-                // shader instead of relying on the optional BGRA extension.
-                glow::RGBA,
-                glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(Some(std::slice::from_raw_parts(
-                    pixels.as_ptr() as *const u8,
-                    byte_len.min(pixels.len().saturating_mul(4)),
-                ))),
-            );
+            // GLES has no portable unpack-row-length setting. Upload the
+            // tight rectangle row-by-row so each source slice is contiguous.
+            for row in y..(y + height) {
+                let start = (row as usize)
+                    .saturating_mul(self.surface_w as usize)
+                    .saturating_add(x as usize);
+                let end = start.saturating_add(width as usize).min(pixels.len());
+                let row_bytes = std::slice::from_raw_parts(
+                    pixels[start..end].as_ptr() as *const u8,
+                    (end - start).saturating_mul(4),
+                );
+                self.gl().tex_sub_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    x,
+                    row,
+                    width,
+                    1,
+                    // CPU pixels are AARRGGBB u32 values. On the supported
+                    // little-endian desktop targets their bytes are BGRA;
+                    // upload through GLES-core RGBA and swap R/B in shader.
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(Some(row_bytes)),
+                );
+            }
             self.gl().enable(glow::BLEND);
             self.gl()
                 .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
             self.gl().use_program(Some(self.blit_program));
             self.gl().uniform_1_i32(self.u_tex_loc.as_ref(), 0);
+            self.gl().uniform_4_f32(
+                self.u_tex_uv_rect_loc.as_ref(),
+                x as f32 / self.surface_w as f32,
+                y as f32 / self.surface_h as f32,
+                width as f32 / self.surface_w as f32,
+                height as f32 / self.surface_h as f32,
+            );
+            self.gl().viewport(
+                (x as f32 * dpr).floor() as i32,
+                ((self.surface_h - y - height) as f32 * dpr).floor() as i32,
+                (width as f32 * dpr).ceil() as i32,
+                (height as f32 * dpr).ceil() as i32,
+            );
             self.gl().bind_vertex_array(Some(self.blit_vao));
             self.gl().draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             self.gl().bind_vertex_array(None);
             self.gl().bind_texture(glow::TEXTURE_2D, None);
+            self.gl().viewport(
+                0,
+                0,
+                (self.surface_w as f32 * dpr).ceil() as i32,
+                (self.surface_h as f32 * dpr).ceil() as i32,
+            );
         }
         self.apply_clip_scissor();
+        // This segment has been committed at the current painter-order
+        // boundary. Keeping it would draw it again at the final present and
+        // would move it across a later Picture/native operation.
+        self.clear_soft_fallback();
         Ok(())
     }
 
     /// Sample an external GL texture into the current framebuffer covering `dst`
     /// (logical pixels). Uses a temporary viewport; restores clip scissor after.
-    pub(crate) fn blit_external_texture(&self, texture: glow::Texture, dst: Rect) {
-        if dst.w <= 0.0 || dst.h <= 0.0 {
+    pub(crate) fn blit_external_texture(
+        &self,
+        texture: glow::Texture,
+        src: Rect,
+        source_width: i32,
+        source_height: i32,
+        dst: Rect,
+    ) {
+        if dst.w <= 0.0 || dst.h <= 0.0 || source_width <= 0 || source_height <= 0 {
             return;
         }
+        let max_x = source_width as f32;
+        let max_y = source_height as f32;
+        let src_x = src.x.clamp(0.0, max_x);
+        let src_y = src.y.clamp(0.0, max_y);
+        let src_end_x = (src.x + src.w).clamp(src_x, max_x);
+        let src_end_y = (src.y + src.h).clamp(src_y, max_y);
+        if src_end_x <= src_x || src_end_y <= src_y {
+            return;
+        }
+        let uv_rect = [
+            src_x / max_x,
+            src_y / max_y,
+            (src_end_x - src_x) / max_x,
+            (src_end_y - src_y) / max_y,
+        ];
         let dpr = self.device_pixel_ratio.max(1.0);
         let vx = (dst.x * dpr).floor() as i32;
         let vy = ((self.surface_h as f32 - dst.y - dst.h).max(0.0) * dpr).floor() as i32;
@@ -410,6 +548,8 @@ impl GpuCanvas2D {
                 .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
             self.gl().use_program(Some(self.blit_rgba_program));
             self.gl().uniform_1_i32(self.u_tex_rgba_loc.as_ref(), 0);
+            self.gl()
+                .uniform_4_f32_slice(self.u_tex_rgba_rect_loc.as_ref(), &uv_rect);
             self.gl().bind_vertex_array(Some(self.blit_vao));
             self.gl().draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
             self.gl().bind_vertex_array(None);
@@ -429,6 +569,7 @@ impl GpuCanvas2D {
         if w <= 0 || h <= 0 {
             return;
         }
+        self.flush_soft_before_immediate();
         self.soft_fallback.surface_mut().clear_rect_raw(x, y, w, h);
         let dpr = self.device_pixel_ratio.max(1.0);
         let sx = (x as f32 * dpr).floor() as i32;
@@ -451,6 +592,8 @@ impl GpuCanvas2D {
         self.clip_stack.clear();
         self.state_stack.clear();
         self.soft_fallback = SharedRasterizer::new(PixelSurface::new(width.max(1), height.max(1)));
+        self.soft_dirty = false;
+        self.soft_uses_destination_blend = false;
         let new_tex = unsafe { Self::create_fallback_texture(self.gl(), width, height)? };
         unsafe {
             self.gl().delete_texture(self.fallback_texture);
@@ -510,6 +653,21 @@ impl GpuCanvas2D {
         self.soft_fallback.set_opacity(self.opacity);
         self.soft_fallback.set_blend_mode(self.blend_mode);
         self.soft_fallback.set_offset(self.offset_x, self.offset_y);
+        self.soft_dirty = true;
+        self.soft_uses_destination_blend |= matches!(self.blend_mode, BlendMode::Additive);
+    }
+
+    /// Immediate GL operations form a command boundary.  Canvas2D cannot
+    /// return `Result`, so an impossible CPU blend remains pending and will
+    /// turn the enclosing present into a typed failure; successful segments
+    /// are committed before the immediate operation.
+    fn flush_soft_before_immediate(&mut self) {
+        if let Err(error) = self.flush_soft_fallback() {
+            crate::core::log::error_fn(format!(
+                "GpuCanvas2D: ordered CPU segment cannot be committed: {}",
+                error.short_what()
+            ));
+        }
     }
 }
 
@@ -532,6 +690,7 @@ impl Canvas2D for GpuCanvas2D {
     }
 
     fn fill_rect(&mut self, rect: Rect, color: Color, radius: Option<Radius>) {
+        self.flush_soft_before_immediate();
         let (ox, oy) = (self.offset_x, self.offset_y);
         let rect = if ox != 0.0 || oy != 0.0 {
             Rect::new(rect.x + ox, rect.y + oy, rect.w, rect.h)
@@ -544,6 +703,7 @@ impl Canvas2D for GpuCanvas2D {
     }
 
     fn fill_circle(&mut self, cx: f32, cy: f32, r: f32, color: Color) {
+        self.flush_soft_before_immediate();
         let (ox, oy) = (self.offset_x, self.offset_y);
         let rect = Rect::new(cx - r + ox, cy - r + oy, r * 2.0, r * 2.0);
         unsafe {
@@ -743,6 +903,8 @@ impl Canvas2D for GpuCanvas2D {
     }
 
     fn pixels_mut(&mut self) -> &mut [u32] {
+        self.soft_dirty = true;
+        self.soft_uses_destination_blend |= matches!(self.blend_mode, BlendMode::Additive);
         self.soft_fallback.pixels_mut()
     }
 
@@ -781,5 +943,20 @@ mod tests {
             GpuCanvas2D::scissor_for_clip(Rect::new(0.0, 0.0, 0.0, 10.0), 100, 1.0),
             (0, 0, 0, 0)
         );
+    }
+
+    #[test]
+    fn soft_upload_bounds_skips_transparent_pixels_and_is_tight() {
+        let mut pixels = vec![0u32; 8 * 6];
+        pixels[8 + 2] = 0xFF00_0001;
+        pixels[3 * 8 + 5] = 0x8000_0002;
+        // RGB without alpha is transparent and must not increase transfer.
+        pixels[5 * 8 + 7] = 0x0000_00FF;
+
+        assert_eq!(
+            GpuCanvas2D::soft_upload_bounds(&pixels, 8, 6),
+            Some((2, 1, 4, 3))
+        );
+        assert_eq!(GpuCanvas2D::soft_upload_bounds(&[0; 4], 2, 2), None);
     }
 }

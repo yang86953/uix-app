@@ -168,7 +168,8 @@ impl<O: WindowOps> PlatformWindowCore<O> {
     }
 
     /// 创建带 GPU 上下文的窗口（GPU/Hybrid 渲染模式）。
-    pub fn with_gpu(
+    #[allow(dead_code)] // Reserved for crate-local platform assembly only (#187).
+    pub(crate) fn with_gpu(
         state: Rc<RefCell<WindowState>>,
         ops: O,
         presenter: Box<dyn IPresenter>,

@@ -13,7 +13,7 @@ use crate::core::{Errc, Error, Result};
 use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
     GpuSolidRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps,
-    PresentDamage, PresentFrame,
+    PresentDamage, PresentFrame, SoftFallbackTile,
 };
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
@@ -971,31 +971,16 @@ impl IGraphicsContext for D3d12Context {
         Ok(())
     }
 
-    fn resize(&mut self, width: i32, height: i32) {
-        if let Err(error) = self.resize_result(width, height) {
-            crate::core::log::error_fn(format!(
-                "D3d12Context: resize failed: {}",
-                error.short_what()
-            ));
-        }
+    fn resize(&mut self, width: i32, height: i32) -> Result<()> {
+        self.resize_result(width, height)
     }
 
-    fn make_current(&mut self) {
-        if let Err(error) = self.begin_commands() {
-            crate::core::log::error_fn(format!(
-                "D3d12Context: begin commands failed: {}",
-                error.short_what()
-            ));
-        }
+    fn make_current(&mut self) -> Result<()> {
+        self.begin_commands()
     }
 
-    fn swap_buffers(&mut self, _damage: PresentDamage) {
-        if let Err(error) = self.present_result() {
-            crate::core::log::error_fn(format!(
-                "D3d12Context: Present failed: {}",
-                error.short_what()
-            ));
-        }
+    fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
+        self.present_result()
     }
 
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
@@ -1101,6 +1086,50 @@ impl IGraphicsContext for D3d12Context {
                 pixels,
                 width,
                 height,
+            )
+    }
+
+    fn blit_soft_fallback_tile(
+        &mut self,
+        pixels: &[u32],
+        surface_width: i32,
+        surface_height: i32,
+        tile: SoftFallbackTile,
+    ) -> Result<()> {
+        self.ensure_healthy()?;
+        if surface_width != self.width || surface_height != self.height {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "D3d12Context: soft tile surface {surface_width}x{surface_height} does not match drawable {}x{}",
+                    self.width, self.height
+                ),
+            ));
+        }
+        let expected = (surface_width as usize)
+            .checked_mul(surface_height as usize)
+            .ok_or_else(|| Error::new(Errc::InvalidArgument, "soft tile pixel count overflow"))?;
+        if pixels.len() < expected {
+            return Err(Error::new(
+                Errc::InvalidArgument,
+                format!(
+                    "D3d12Context: soft tile buffer too small, got {}, need {expected}",
+                    pixels.len()
+                ),
+            ));
+        }
+        self.begin_commands()?;
+        self.pipeline
+            .as_mut()
+            .ok_or_else(|| platform_error("D3d12Context: raster pipeline is shut down"))?
+            .blit_soft_fallback_tile(
+                &self.device,
+                &self.command_list,
+                self.frame_index,
+                pixels,
+                surface_width,
+                surface_height,
+                tile,
             )
     }
 }

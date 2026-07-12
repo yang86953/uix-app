@@ -26,7 +26,7 @@ use crate::draw::traits::Canvas2D;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId,
-    PresentFrame, PresentMode, RasterMode,
+    PresentFrame, PresentMode, RasterMode, SoftFallbackTile,
 };
 
 #[derive(Clone)]
@@ -119,6 +119,9 @@ pub struct NativeGpuCanvas2D {
     soft_fallback: Option<SharedRasterizer>,
     /// Soft buffer has content that must be composited (until full clear).
     soft_has_content: bool,
+    /// Destination-dependent blend cannot be faithfully composed from a
+    /// transparent CPU segment over native output.
+    soft_uses_destination_blend: bool,
     pending_native: Vec<PendingNativeOp>,
     clip_rect: Rect,
     clip_stack: Vec<Rect>,
@@ -140,6 +143,7 @@ impl NativeGpuCanvas2D {
             native_caps,
             soft_fallback: None,
             soft_has_content: false,
+            soft_uses_destination_blend: false,
             pending_native: Vec::new(),
             clip_rect: Rect::new(0.0, 0.0, w as f32, h as f32),
             clip_stack: Vec::new(),
@@ -181,6 +185,7 @@ impl NativeGpuCanvas2D {
         // Drop soft buffer on resize; recreate lazily at the new size.
         self.soft_fallback = None;
         self.soft_has_content = false;
+        self.soft_uses_destination_blend = false;
     }
 
     fn clear_soft(&mut self) {
@@ -188,6 +193,7 @@ impl NativeGpuCanvas2D {
             soft.surface_mut().clear_all();
         }
         self.soft_has_content = false;
+        self.soft_uses_destination_blend = false;
         self.pending_native.clear();
     }
 
@@ -212,6 +218,7 @@ impl NativeGpuCanvas2D {
         soft.set_opacity(opacity);
         soft.set_blend_mode(blend_mode);
         soft.set_offset(offset_x, offset_y);
+        self.soft_uses_destination_blend |= matches!(blend_mode, BlendMode::Additive);
     }
 
     fn with_soft_clip<F>(&mut self, f: F)
@@ -587,10 +594,19 @@ impl NativeGpuCanvas2D {
         if !self.soft_has_content {
             return Ok(());
         }
+        if self.soft_uses_destination_blend {
+            return Err(Error::new(
+                Errc::NotImplemented,
+                "NativeGpuCanvas2D: CPU fallback cannot emulate destination-dependent Additive blend",
+            ));
+        }
         let w = self.surface_w;
         let h = self.surface_h;
         let pixels = self.ensure_soft().surface().pixels();
-        gpu_ctx.blit_soft_fallback(pixels, w, h)?;
+        let Some(tile) = visible_soft_fallback_tile(pixels, w, h) else {
+            return Ok(());
+        };
+        gpu_ctx.blit_soft_fallback_tile(pixels, w, h, tile)?;
         Ok(())
     }
 
@@ -599,8 +615,41 @@ impl NativeGpuCanvas2D {
         if self.soft_has_content {
             self.ensure_soft().surface_mut().clear_all();
             self.soft_has_content = false;
+            self.soft_uses_destination_blend = false;
         }
     }
+}
+
+/// Computes the smallest alpha-visible source tile for one retained CPU
+/// segment. Transparent RGB is deliberately ignored: it cannot affect the
+/// alpha-blended target and must not force a texture upload.
+fn visible_soft_fallback_tile(pixels: &[u32], width: i32, height: i32) -> Option<SoftFallbackTile> {
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    let expected = (width as usize).checked_mul(height as usize)?;
+    if pixels.len() < expected {
+        return None;
+    }
+    let mut left = width;
+    let mut top = height;
+    let mut right = 0;
+    let mut bottom = 0;
+    let mut visible = false;
+    for y in 0..height {
+        let row = y as usize * width as usize;
+        for x in 0..width {
+            if pixels[row + x as usize] & 0xff00_0000 == 0 {
+                continue;
+            }
+            visible = true;
+            left = left.min(x);
+            top = top.min(y);
+            right = right.max(x + 1);
+            bottom = bottom.max(y + 1);
+        }
+    }
+    visible.then(|| SoftFallbackTile::new(left, top, right - left, bottom - top))
 }
 
 impl Canvas2D for NativeGpuCanvas2D {
@@ -836,6 +885,7 @@ impl Canvas2D for NativeGpuCanvas2D {
 
     fn pixels_mut(&mut self) -> &mut [u32] {
         self.mark_soft();
+        self.soft_uses_destination_blend |= matches!(self.blend_mode, BlendMode::Additive);
         self.ensure_soft().pixels_mut()
     }
 
@@ -913,7 +963,7 @@ impl DrawSurface for NativeGpuDrawSurface {
 
 /// Capability-driven non-GL `RenderBackend` with deterministic soft fallback.
 pub struct NativeGpuBackend {
-    pub gpu_ctx: Box<dyn IGraphicsContext>,
+    gpu_ctx: Box<dyn IGraphicsContext>,
     width: i32,
     height: i32,
     surface: NativeGpuDrawSurface,
@@ -922,16 +972,23 @@ pub struct NativeGpuBackend {
     next_offscreen_id: u32,
     /// Picture paint currently targeting this offscreen handle id.
     active_offscreen: Option<u32>,
+    /// A draw-time operation without a `Result` return path (for example an
+    /// immediate Picture blit) failed.  The failure is reported from the sole
+    /// final present boundary, so callers keep the frame dirty instead of
+    /// treating an incomplete command stream as committed.
+    frame_failure: Option<Error>,
     shutdown: bool,
 }
 
 struct NativeGpuOffscreen {
     target: OffscreenTargetId,
     canvas: NativeGpuCanvas2D,
+    width: i32,
+    height: i32,
 }
 
 impl NativeGpuBackend {
-    pub fn new(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
+    pub(crate) fn new(mut gpu_ctx: Box<dyn IGraphicsContext>) -> Result<Self, Error> {
         let caps = gpu_ctx.caps();
         let native_caps = gpu_ctx.native_raster_caps();
         if caps.raster != RasterMode::GpuNative
@@ -958,6 +1015,7 @@ impl NativeGpuBackend {
             free_offscreen_ids: Vec::new(),
             next_offscreen_id: 0,
             active_offscreen: None,
+            frame_failure: None,
             surface: NativeGpuDrawSurface {
                 canvas: NativeGpuCanvas2D::new(1, 1, native_caps),
                 native_caps,
@@ -981,6 +1039,51 @@ impl NativeGpuBackend {
         self.free_offscreen_ids.clear();
         self.next_offscreen_id = 0;
     }
+
+    fn remember_frame_failure(&mut self, error: Error) {
+        if self.frame_failure.is_none() {
+            self.frame_failure = Some(error);
+        }
+        // Commands before an immediate boundary may already have reached the
+        // target.  The next retained-dirty retry must start from a known full
+        // clear rather than alpha-blending on that partial target.
+        self.surface.needs_gpu_clear = true;
+    }
+
+    /// Submit all commands that precede an immediate ordered operation such
+    /// as a Picture/offscreen blit.  This is deliberately *not* a present:
+    /// it only establishes the exact painter-order boundary inside the one
+    /// frame and leaves final swap/present to [`RenderBackend::present`].
+    fn flush_main_segment_before_ordered_boundary(&mut self) -> Result<(), Error> {
+        self.gpu_ctx.make_current()?;
+
+        if self.surface.needs_gpu_clear {
+            self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
+            self.surface.needs_gpu_clear = false;
+            self.surface.pending_clear_rects.clear();
+        } else if !self.surface.pending_clear_rects.is_empty() {
+            if let Err(err) = self.gpu_ctx.clear_rects(
+                self.surface.width as f32,
+                self.surface.height as f32,
+                &self.surface.pending_clear_rects,
+            ) {
+                self.surface.needs_gpu_clear = true;
+                return Err(err);
+            }
+            self.surface.pending_clear_rects.clear();
+        }
+
+        if let Err(err) = self.surface.canvas.submit_native(self.gpu_ctx.as_mut()) {
+            self.surface.needs_gpu_clear = true;
+            return Err(err);
+        }
+        if let Err(err) = self.surface.canvas.submit_soft(self.gpu_ctx.as_mut()) {
+            self.surface.needs_gpu_clear = true;
+            return Err(err);
+        }
+        self.surface.canvas.commit_presented_frame();
+        Ok(())
+    }
 }
 
 impl RenderBackend for NativeGpuBackend {
@@ -1002,7 +1105,7 @@ impl RenderBackend for NativeGpuBackend {
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         let logical_w = width.max(1);
         let logical_h = height.max(1);
-        self.gpu_ctx.resize(logical_w, logical_h);
+        self.gpu_ctx.resize(logical_w, logical_h)?;
         // D3D11/D3D12 等会按 HWND GetClientRect 校正缓冲尺寸；canvas/布局必须跟
         // 实际 RT 一致，否则清出更大黑底而 UI 仍画旧几何 → 窗口黑边。
         let actual_w = self.gpu_ctx.width().max(1);
@@ -1023,7 +1126,7 @@ impl RenderBackend for NativeGpuBackend {
         }
         self.shutdown = true;
         self.destroy_all_offscreens();
-        self.gpu_ctx.make_current();
+        let _ = self.gpu_ctx.make_current();
         self.gpu_ctx.shutdown();
     }
 
@@ -1031,8 +1134,8 @@ impl RenderBackend for NativeGpuBackend {
         &mut self.surface
     }
 
-    fn make_current(&mut self) {
-        self.gpu_ctx.make_current();
+    fn make_current(&mut self) -> Result<(), Error> {
+        self.gpu_ctx.make_current()
     }
 
     fn device_pixel_ratio(&self) -> f32 {
@@ -1068,6 +1171,8 @@ impl RenderBackend for NativeGpuBackend {
         self.offscreens[idx] = Some(NativeGpuOffscreen {
             target,
             canvas: NativeGpuCanvas2D::new(width, height, self.surface.native_caps),
+            width,
+            height,
         });
         Some(ImageHandle(id))
     }
@@ -1095,81 +1200,120 @@ impl RenderBackend for NativeGpuBackend {
     }
 
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
+        match self.try_begin_offscreen_paint(handle) {
+            Ok(()) => true,
+            Err(error) => {
+                self.remember_frame_failure(error);
+                false
+            }
+        }
+    }
+
+    fn try_begin_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         let idx = handle.0 as usize;
         let Some(Some(off)) = self.offscreens.get(idx) else {
-            return false;
+            return Err(Error::new(
+                Errc::InvalidState,
+                "Picture offscreen target does not exist",
+            ));
         };
         let target = off.target;
-        if self.gpu_ctx.bind_offscreen_target(target).is_err() {
-            return false;
-        }
-        if self
-            .gpu_ctx
-            .clear_render_target(0.0, 0.0, 0.0, 0.0)
-            .is_err()
-        {
+        self.gpu_ctx.bind_offscreen_target(target)?;
+        if let Err(error) = self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0) {
             let _ = self.gpu_ctx.bind_swapchain_target();
-            return false;
+            return Err(error);
         }
         self.active_offscreen = Some(handle.0);
-        true
+        Ok(())
     }
 
     fn flush_offscreen_paint(&mut self, handle: &ImageHandle) {
+        if let Err(error) = self.try_flush_offscreen_paint(handle) {
+            // The legacy void entry remains for old callers.  The production
+            // compositor uses `try_*` and therefore returns this failure
+            // before a final present can be reported as success.
+            self.remember_frame_failure(error);
+        }
+    }
+
+    fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
         let idx = handle.0 as usize;
-        let Some(Some(off)) = self.offscreens.get_mut(idx) else {
-            return;
-        };
+        let off = self
+            .offscreens
+            .get_mut(idx)
+            .and_then(Option::as_mut)
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidState,
+                    "offscreen target disappeared before flush",
+                )
+            })?;
         let target = off.target;
-        if self.gpu_ctx.bind_offscreen_target(target).is_err() {
-            return;
-        }
-        if off.canvas.submit_native(self.gpu_ctx.as_mut()).is_err() {
-            crate::core::log::warn_fn("NativeGpuBackend: offscreen submit_native failed");
-        }
-        if off.canvas.submit_soft(self.gpu_ctx.as_mut()).is_err() {
-            crate::core::log::warn_fn("NativeGpuBackend: offscreen submit_soft failed");
-        }
+        self.gpu_ctx.bind_offscreen_target(target)?;
+        off.canvas.submit_native(self.gpu_ctx.as_mut())?;
+        off.canvas.submit_soft(self.gpu_ctx.as_mut())?;
         off.canvas.commit_presented_frame();
+        Ok(())
     }
 
     fn end_offscreen_paint(&mut self) {
         self.active_offscreen = None;
-        if let Err(err) = self.gpu_ctx.bind_swapchain_target() {
-            crate::core::log::warn_fn(format!(
-                "NativeGpuBackend: bind_swapchain_target failed: {}",
-                err.short_what()
-            ));
+        if let Err(error) = self.try_end_offscreen_paint() {
+            self.remember_frame_failure(error);
         }
     }
 
+    fn try_end_offscreen_paint(&mut self) -> Result<(), Error> {
+        self.active_offscreen = None;
+        self.gpu_ctx.bind_swapchain_target()
+    }
+
     fn blit_offscreen(&mut self, handle: &ImageHandle, dst_rect: Rect) {
-        let src = Rect::new(0.0, 0.0, dst_rect.w, dst_rect.h);
+        let Some(Some(off)) = self.offscreens.get(handle.0 as usize) else {
+            return;
+        };
+        let src = Rect::new(0.0, 0.0, off.width as f32, off.height as f32);
         self.blit_offscreen_src(handle, src, dst_rect);
     }
 
     fn blit_offscreen_src(&mut self, handle: &ImageHandle, src_rect: Rect, dst_rect: Rect) {
+        if let Err(error) = self.try_blit_offscreen_src(handle, src_rect, dst_rect) {
+            self.remember_frame_failure(error);
+        }
+    }
+
+    fn try_blit_offscreen_src(
+        &mut self,
+        handle: &ImageHandle,
+        src_rect: Rect,
+        dst_rect: Rect,
+    ) -> Result<(), Error> {
         let idx = handle.0 as usize;
         let Some(Some(off)) = self.offscreens.get(idx) else {
-            return;
+            return Err(Error::new(
+                Errc::InvalidState,
+                "Picture offscreen target does not exist before blit",
+            ));
         };
         let target = off.target;
-        if let Err(err) = self
-            .gpu_ctx
+        // `blit_offscreen_target` is immediate on native APIs.  Flush clear,
+        // native work and any bounded CPU segment before it so Picture does
+        // not leapfrog preceding painter-order commands.  The subsequent
+        // commands remain queued and are committed by the same final present.
+        self.flush_main_segment_before_ordered_boundary()?;
+        self.gpu_ctx
             .blit_offscreen_target(target, src_rect, dst_rect)
-        {
-            crate::core::log::warn_fn(format!(
-                "NativeGpuBackend: blit_offscreen_target failed: {}",
-                err.short_what()
-            ));
-        }
     }
 
     fn present(&mut self, damage: &DamageRegion) -> Result<(), Error> {
         if self.active_offscreen.is_some() {
             self.end_offscreen_paint();
         }
-        self.gpu_ctx.make_current();
+        if let Some(error) = self.frame_failure.take() {
+            self.surface.needs_gpu_clear = true;
+            return Err(error);
+        }
+        self.gpu_ctx.make_current()?;
 
         if self.surface.needs_gpu_clear {
             self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
@@ -1222,9 +1366,6 @@ impl Drop for NativeGpuBackend {
     }
 }
 
-unsafe impl Send for NativeGpuBackend {}
-unsafe impl Sync for NativeGpuBackend {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1233,6 +1374,20 @@ mod tests {
     };
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
+
+    #[test]
+    fn soft_fallback_tile_is_tight_and_ignores_transparent_rgb() {
+        let mut pixels = vec![0u32; 8 * 6];
+        pixels[8 + 2] = 0xFF00_0001;
+        pixels[3 * 8 + 5] = 0x8000_0002;
+        pixels[5 * 8 + 7] = 0x0000_00FF;
+
+        assert_eq!(
+            visible_soft_fallback_tile(&pixels, 8, 6),
+            Some(SoftFallbackTile::new(2, 1, 4, 3))
+        );
+        assert_eq!(visible_soft_fallback_tile(&[0; 4], 2, 2), None);
+    }
 
     struct FakeD3d11Context {
         clear_calls: Rc<Cell<usize>>,
@@ -1279,15 +1434,21 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, width: i32, height: i32) {
+        fn resize(&mut self, width: i32, height: i32) -> crate::core::Result<()> {
             self.width = width.max(1);
             self.height = height.max(1);
+
+            Ok(())
         }
 
-        fn make_current(&mut self) {}
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
 
-        fn swap_buffers(&mut self, _damage: PresentDamage) {
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
             self.present_calls.set(self.present_calls.get() + 1);
+
+            Ok(())
         }
 
         fn shutdown(&mut self) {}
@@ -1409,6 +1570,16 @@ mod tests {
             Ok(())
         }
 
+        fn blit_soft_fallback_tile(
+            &mut self,
+            pixels: &[u32],
+            width: i32,
+            height: i32,
+            _tile: SoftFallbackTile,
+        ) -> crate::core::Result<()> {
+            self.blit_soft_fallback(pixels, width, height)
+        }
+
         fn clear_rects(
             &mut self,
             _viewport_w: f32,
@@ -1485,6 +1656,7 @@ mod tests {
         ClearRects,
         Native,
         Soft,
+        Picture,
         Present,
     }
 
@@ -1520,10 +1692,7 @@ mod tests {
         }
 
         fn native_raster_caps(&self) -> NativeRasterCaps {
-            let mut caps = NativeRasterCaps::d3d11_full();
-            // Fake has no GPU RT; do not advertise Picture offscreen.
-            caps.offscreen_targets = false;
-            caps
+            NativeRasterCaps::d3d11_full()
         }
 
         fn initialize(
@@ -1532,21 +1701,27 @@ mod tests {
             width: i32,
             height: i32,
         ) -> crate::core::Result<()> {
-            self.resize(width, height);
+            self.resize(width, height)?;
             Ok(())
         }
 
-        fn resize(&mut self, width: i32, height: i32) {
+        fn resize(&mut self, width: i32, height: i32) -> crate::core::Result<()> {
             self.width = width.max(1);
             self.height = height.max(1);
+
+            Ok(())
         }
 
-        fn make_current(&mut self) {
+        fn make_current(&mut self) -> crate::core::Result<()> {
             self.make_current_calls
                 .set(self.make_current_calls.get() + 1);
+
+            Ok(())
         }
 
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
 
         fn shutdown(&mut self) {
             self.shutdown_calls.set(self.shutdown_calls.get() + 1);
@@ -1672,6 +1847,42 @@ mod tests {
             self.fail_if(FailStage::Soft)
         }
 
+        fn blit_soft_fallback_tile(
+            &mut self,
+            pixels: &[u32],
+            width: i32,
+            height: i32,
+            _tile: SoftFallbackTile,
+        ) -> crate::core::Result<()> {
+            self.blit_soft_fallback(pixels, width, height)
+        }
+
+        fn create_offscreen_target(
+            &mut self,
+            _width: i32,
+            _height: i32,
+        ) -> crate::core::Result<OffscreenTargetId> {
+            Ok(OffscreenTargetId(0))
+        }
+
+        fn bind_offscreen_target(&mut self, _id: OffscreenTargetId) -> crate::core::Result<()> {
+            Ok(())
+        }
+
+        fn bind_swapchain_target(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+
+        fn blit_offscreen_target(
+            &mut self,
+            _id: OffscreenTargetId,
+            _src: Rect,
+            _dst: Rect,
+        ) -> crate::core::Result<()> {
+            self.record("picture");
+            self.fail_if(FailStage::Picture)
+        }
+
         fn present(&mut self, _frame: &PresentFrame) -> crate::core::Result<()> {
             self.record("present");
             self.fail_if(FailStage::Present)
@@ -1751,13 +1962,19 @@ mod tests {
             Ok(())
         }
 
-        fn resize(&mut self, width: i32, height: i32) {
+        fn resize(&mut self, width: i32, height: i32) -> crate::core::Result<()> {
             self.width = (width + self.bias_w).max(1);
             self.height = (height + self.bias_h).max(1);
+
+            Ok(())
         }
 
-        fn make_current(&mut self) {}
-        fn swap_buffers(&mut self, _damage: PresentDamage) {}
+        fn make_current(&mut self) -> crate::core::Result<()> {
+            Ok(())
+        }
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
+            Ok(())
+        }
         fn shutdown(&mut self) {}
         fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
             Vec::new()
@@ -1908,20 +2125,26 @@ mod tests {
     }
 
     #[test]
-    fn native_gpu_backend_gpu_offscreen_create_bind_blit() {
+    fn native_gpu_backend_offscreen_create_bind_blit_when_caps_prove_support() {
         struct OffscreenFake {
             next_id: Cell<u32>,
             targets: RefCell<Vec<Option<(i32, i32)>>>,
             bound: Cell<Option<u32>>,
             blits: Rc<Cell<usize>>,
             clears: Rc<Cell<usize>>,
+            fail_native: Rc<Cell<bool>>,
+            presents: Rc<Cell<usize>>,
         }
         impl IGraphicsContext for OffscreenFake {
             fn caps(&self) -> GraphicsContextCaps {
                 GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
             }
             fn native_raster_caps(&self) -> NativeRasterCaps {
-                NativeRasterCaps::d3d11_full()
+                let mut caps = NativeRasterCaps::d3d11_full();
+                // This is a dedicated in-memory RT fixture, not D3D11's
+                // advertised production capability.
+                caps.offscreen_targets = true;
+                caps
             }
             fn initialize(
                 &mut self,
@@ -1931,9 +2154,15 @@ mod tests {
             ) -> crate::core::Result<()> {
                 Ok(())
             }
-            fn resize(&mut self, _: i32, _: i32) {}
-            fn make_current(&mut self) {}
-            fn swap_buffers(&mut self, _: PresentDamage) {}
+            fn resize(&mut self, _: i32, _: i32) -> crate::core::Result<()> {
+                Ok(())
+            }
+            fn make_current(&mut self) -> crate::core::Result<()> {
+                Ok(())
+            }
+            fn swap_buffers(&mut self, _: PresentDamage) -> crate::core::Result<()> {
+                Ok(())
+            }
             fn shutdown(&mut self) {}
             fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
                 Vec::new()
@@ -1955,10 +2184,25 @@ mod tests {
                 _: Option<(i32, i32, i32, i32)>,
                 _: &[GpuSolidRect],
             ) -> Result<(), Error> {
+                if self.fail_native.get() {
+                    return Err(Error::new(
+                        Errc::PlatformError,
+                        "injected offscreen native failure",
+                    ));
+                }
                 Ok(())
             }
             fn blit_soft_fallback(&mut self, _: &[u32], _: i32, _: i32) -> Result<(), Error> {
                 Ok(())
+            }
+            fn blit_soft_fallback_tile(
+                &mut self,
+                pixels: &[u32],
+                width: i32,
+                height: i32,
+                _tile: SoftFallbackTile,
+            ) -> Result<(), Error> {
+                self.blit_soft_fallback(pixels, width, height)
             }
             fn create_offscreen_target(
                 &mut self,
@@ -2017,16 +2261,24 @@ mod tests {
                 self.blits.set(self.blits.get() + 1);
                 Ok(())
             }
+            fn present(&mut self, _: &PresentFrame<'_>) -> Result<(), Error> {
+                self.presents.set(self.presents.get() + 1);
+                Ok(())
+            }
         }
 
         let clears = Rc::new(Cell::new(0));
         let blits = Rc::new(Cell::new(0));
+        let fail_native = Rc::new(Cell::new(false));
+        let presents = Rc::new(Cell::new(0));
         let fake = OffscreenFake {
             next_id: Cell::new(0),
             targets: RefCell::new(Vec::new()),
             bound: Cell::new(None),
             blits: Rc::clone(&blits),
             clears: Rc::clone(&clears),
+            fail_native: Rc::clone(&fail_native),
+            presents: Rc::clone(&presents),
         };
         let mut backend = NativeGpuBackend::new(Box::new(fake)).expect("backend");
         assert!(backend.capabilities().offscreen);
@@ -2050,6 +2302,49 @@ mod tests {
             Rect::new(1.0, 2.0, 16.0, 16.0),
         );
         assert_eq!(blits.get(), 1);
+
+        // The checked production boundary must surface this failure before
+        // FrameRenderer reaches end_frame/final present. The old void method
+        // remains only for legacy callers and is not used by LayerTree.
+        backend
+            .try_begin_offscreen_paint(&handle)
+            .expect("offscreen begin");
+        {
+            let canvas = backend.offscreen_canvas(&handle).expect("canvas");
+            canvas.fill_rect(
+                Rect::new(2.0, 2.0, 4.0, 4.0),
+                Color::from_rgb(30, 20, 10),
+                None,
+            );
+        }
+        fail_native.set(true);
+        let error = backend
+            .try_flush_offscreen_paint(&handle)
+            .expect_err("checked offscreen failure must abort recording");
+        assert_eq!(error.code(), Errc::PlatformError);
+        backend
+            .try_end_offscreen_paint()
+            .expect("restore swapchain target");
+        assert_eq!(presents.get(), 0, "no final present after checked failure");
+        assert!(
+            backend.offscreens[handle.0 as usize]
+                .as_ref()
+                .is_some_and(|off| !off.canvas.pending_native.is_empty()),
+            "failed offscreen commands must remain uncommitted for recovery"
+        );
+
+        // Legacy callers still retain the failure until final present, rather
+        // than silently dropping the Picture contents.
+        fail_native.set(false);
+        assert!(backend.begin_offscreen_paint(&handle));
+        fail_native.set(true);
+        backend.flush_offscreen_paint(&handle);
+        backend.end_offscreen_paint();
+        let error = backend
+            .present(&DamageRegion::full())
+            .expect_err("offscreen failure must reach final present");
+        assert_eq!(error.code(), Errc::PlatformError);
+        assert_eq!(presents.get(), 0, "no swapchain present after failure");
         backend.destroy_offscreen(handle);
     }
 
@@ -2068,9 +2363,15 @@ mod tests {
             ) -> crate::core::Result<()> {
                 Ok(())
             }
-            fn resize(&mut self, _: i32, _: i32) {}
-            fn make_current(&mut self) {}
-            fn swap_buffers(&mut self, _: PresentDamage) {}
+            fn resize(&mut self, _: i32, _: i32) -> crate::core::Result<()> {
+                Ok(())
+            }
+            fn make_current(&mut self) -> crate::core::Result<()> {
+                Ok(())
+            }
+            fn swap_buffers(&mut self, _: PresentDamage) -> crate::core::Result<()> {
+                Ok(())
+            }
             fn shutdown(&mut self) {}
             fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
                 Vec::new()
@@ -2109,9 +2410,15 @@ mod tests {
             ) -> crate::core::Result<()> {
                 Ok(())
             }
-            fn resize(&mut self, _: i32, _: i32) {}
-            fn make_current(&mut self) {}
-            fn swap_buffers(&mut self, _: PresentDamage) {}
+            fn resize(&mut self, _: i32, _: i32) -> crate::core::Result<()> {
+                Ok(())
+            }
+            fn make_current(&mut self) -> crate::core::Result<()> {
+                Ok(())
+            }
+            fn swap_buffers(&mut self, _: PresentDamage) -> crate::core::Result<()> {
+                Ok(())
+            }
             fn shutdown(&mut self) {}
             fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
                 Vec::new()
@@ -2521,6 +2828,95 @@ mod tests {
         );
         assert!(backend.surface.canvas.pending_native.is_empty());
         assert!(!backend.surface.canvas.soft_has_content);
+    }
+
+    #[test]
+    fn native_gpu_rejects_cpu_additive_fallback_instead_of_alpha_over_approximation() {
+        let RecordingFixture {
+            mut backend,
+            stages,
+            ..
+        } = recording_backend(FailStage::None);
+        backend.resize(32, 32).expect("resize");
+        {
+            let canvas = backend.surface().canvas();
+            canvas.set_blend_mode(BlendMode::Additive);
+            canvas.fill_ellipse(Rect::new(4.0, 4.0, 16.0, 16.0), Color::blue());
+        }
+
+        let error = backend
+            .present(&DamageRegion::full())
+            .expect_err("transparent CPU overlay must not approximate Additive");
+        assert_eq!(error.code(), Errc::NotImplemented);
+        assert!(
+            !stages.borrow().contains(&"present"),
+            "final present must not run after unsupported hybrid blend"
+        );
+        assert!(backend.surface.canvas.soft_has_content);
+    }
+
+    #[test]
+    fn native_picture_boundary_commits_prior_native_work_without_an_extra_present() {
+        let RecordingFixture {
+            mut backend,
+            stages,
+            ..
+        } = recording_backend(FailStage::None);
+        backend.resize(16, 16).expect("resize");
+        let picture = backend.create_offscreen(4, 4).expect("picture target");
+
+        // Native -> Picture -> Native is the exact mixed sequence that used
+        // to reorder: the old code performed Picture immediately but delayed
+        // both native batches and the clear until final present.
+        backend
+            .surface
+            .canvas
+            .fill_rect(Rect::new(0.0, 0.0, 4.0, 4.0), Color::red(), None);
+        backend.blit_offscreen_src(
+            &picture,
+            Rect::new(0.0, 0.0, 4.0, 4.0),
+            Rect::new(2.0, 2.0, 4.0, 4.0),
+        );
+        backend
+            .surface
+            .canvas
+            .fill_rect(Rect::new(4.0, 4.0, 4.0, 4.0), Color::blue(), None);
+        backend
+            .present(&DamageRegion::full())
+            .expect("one final present");
+
+        assert_eq!(
+            stages.borrow().as_slice(),
+            ["clear", "solid", "picture", "solid", "present"],
+            "Picture is an ordered frame command, not an independent present boundary"
+        );
+    }
+
+    #[test]
+    fn native_picture_failure_is_reported_from_the_final_present_boundary() {
+        let RecordingFixture {
+            mut backend,
+            stages,
+            ..
+        } = recording_backend(FailStage::Picture);
+        backend.resize(16, 16).expect("resize");
+        let picture = backend.create_offscreen(4, 4).expect("picture target");
+        backend.blit_offscreen_src(
+            &picture,
+            Rect::new(0.0, 0.0, 4.0, 4.0),
+            Rect::new(0.0, 0.0, 4.0, 4.0),
+        );
+
+        let error = backend
+            .present(&DamageRegion::full())
+            .expect_err("draw-time Picture failure must fail the frame");
+
+        assert_eq!(error.code(), Errc::InvalidState);
+        assert_eq!(stages.borrow().as_slice(), ["clear", "picture"]);
+        assert!(
+            backend.surface.needs_gpu_clear,
+            "retry must restart from clear"
+        );
     }
 
     #[test]

@@ -7,12 +7,12 @@
 
 use crate::core::Error;
 use crate::native::traits::present::{IGraphicsContext, IPresenter, PresentDamage};
-pub struct GpuPresenter {
+pub(crate) struct GpuPresenter {
     gpu_ctx: Box<dyn IGraphicsContext>,
 }
 
 impl GpuPresenter {
-    pub fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Self {
+    pub(crate) fn new(gpu_ctx: Box<dyn IGraphicsContext>) -> Self {
         Self { gpu_ctx }
     }
 }
@@ -25,12 +25,10 @@ impl IPresenter for GpuPresenter {
         _height: i32,
         damage: PresentDamage,
     ) -> Result<(), Error> {
-        self.gpu_ctx.swap_buffers(damage);
-        Ok(())
+        self.gpu_ctx.swap_buffers(damage)
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        self.gpu_ctx.resize(width, height);
-        Ok(())
+        self.gpu_ctx.resize(width, height)
     }
 }

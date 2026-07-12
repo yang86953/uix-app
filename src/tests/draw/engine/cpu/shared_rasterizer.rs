@@ -1,6 +1,7 @@
 use crate::core::Rect;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::primitives::color::Color;
+use crate::draw::primitives::types::BlendMode;
 use crate::draw::traits::Canvas2D;
 
 use super::SharedRasterizer;
@@ -29,4 +30,18 @@ fn clip_rect_follows_canvas_offset() {
     );
     assert_eq!(at(14, 6), 0, "clip width must still be enforced");
     assert_eq!(at(13, 7), 0, "clip height must still be enforced");
+}
+
+#[test]
+fn additive_blend_mode_combines_cpu_fallback_pixels_instead_of_alpha_replacing_them() {
+    let mut canvas = SharedRasterizer::new(PixelSurface::new(1, 1));
+    canvas.fill_rect(Rect::new(0.0, 0.0, 1.0, 1.0), Color::red(), None);
+    canvas.set_blend_mode(BlendMode::Additive);
+    canvas.fill_rect(Rect::new(0.0, 0.0, 1.0, 1.0), Color::blue(), None);
+
+    assert_eq!(
+        canvas.surface().pixels()[0],
+        Color::from_rgb(255, 0, 255).to_rgba(),
+        "Additive must be a real CPU blend, not an alpha-over approximation"
+    );
 }

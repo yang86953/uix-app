@@ -70,13 +70,16 @@ impl PixelSurface {
 
     /// 清空整个表面。
     pub fn clear_all(&mut self) {
-        let c = self.clear_color.to_rgba();
+        // All CPU raster pixels are premultiplied AARRGGBB. A straight-alpha
+        // clear color would poison subsequent source-over blends, especially
+        // when a Picture cache is cleared to a translucent color.
+        let c = self.clear_color.premultiplied();
         self.pixels.fill(c);
     }
 
     /// 清除指定矩形区域。
     pub fn clear_rect_raw(&mut self, x: i32, y: i32, w: i32, h: i32) {
-        let c = self.clear_color.to_rgba();
+        let c = self.clear_color.premultiplied();
         let surf_w = self.width;
         let surf_h = self.height;
 
@@ -217,7 +220,20 @@ mod tests {
             surface.pixels().first()
         );
         surface.clear_rect_raw(1, 1, 2, 2);
-        let idx = (1 * 4 + 1) as usize;
+        let idx = 5usize;
         assert_eq!(surface.pixels()[idx], 0x0000_0000);
+    }
+
+    #[test]
+    fn translucent_clear_color_is_written_premultiplied() {
+        let mut surface = PixelSurface::new(2, 1);
+        let clear = Color::from_rgba(240, 120, 60, 128);
+        surface.set_clear_color(clear);
+        surface.clear_all();
+
+        assert_eq!(
+            surface.pixels(),
+            [clear.premultiplied(), clear.premultiplied()]
+        );
     }
 }

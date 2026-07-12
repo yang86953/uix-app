@@ -179,6 +179,61 @@ pub enum PresentFrame<'a> {
     },
 }
 
+/// Validates a CPU pixel payload before it crosses a native presentation
+/// boundary.  A short slice must be a typed error: native image constructors
+/// cannot infer the intended row layout safely from missing pixels.
+pub fn validate_pixel_buffer(pixels: &[u32], width: i32, height: i32) -> Result<(), Error> {
+    if width <= 0 || height <= 0 {
+        return Err(Error::new(
+            crate::core::error::Errc::InvalidArgument,
+            format!("pixel buffer extent must be positive, got {width}x{height}"),
+        ));
+    }
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or_else(|| {
+            Error::new(
+                crate::core::error::Errc::InvalidArgument,
+                format!("pixel buffer extent overflows usize: {width}x{height}"),
+            )
+        })?;
+    if pixels.len() < expected {
+        return Err(Error::new(
+            crate::core::error::Errc::InvalidArgument,
+            format!(
+                "pixel buffer too small, got {} pixels for {width}x{height}, need {expected}",
+                pixels.len()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Bounded visible portion of a CPU soft-raster segment.
+///
+/// Coordinates are in the full logical CPU surface. The source buffer passed
+/// to [`IGraphicsContext::blit_soft_fallback_tile`] remains full-surface so a
+/// native implementation can preserve its source pitch without making a
+/// per-frame copy. Native backends must upload and sample only this rectangle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoftFallbackTile {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl SoftFallbackTile {
+    pub const fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+}
+
 /// CPU pixel presenter.
 pub trait IPresenter {
     fn present(
@@ -354,9 +409,9 @@ pub trait IGraphicsContext {
         height: i32,
     ) -> Result<(), Error>;
 
-    fn resize(&mut self, width: i32, height: i32);
-    fn make_current(&mut self);
-    fn swap_buffers(&mut self, damage: PresentDamage);
+    fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
+    fn make_current(&mut self) -> Result<(), Error>;
+    fn swap_buffers(&mut self, damage: PresentDamage) -> Result<(), Error>;
     fn shutdown(&mut self);
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32>;
     fn width(&self) -> i32;
@@ -391,9 +446,8 @@ pub trait IGraphicsContext {
     fn present(&mut self, frame: &PresentFrame) -> Result<(), Error> {
         match frame {
             PresentFrame::Swapchain { damage } => {
-                self.make_current();
-                self.swap_buffers(damage.clone());
-                Ok(())
+                self.make_current()?;
+                self.swap_buffers(damage.clone())
             }
             PresentFrame::PixelBuffer {
                 pixels,
@@ -602,6 +656,35 @@ pub trait IGraphicsContext {
         ))
     }
 
+    /// Alpha-blend one bounded CPU fallback segment without presenting.
+    ///
+    /// The default rejects a partial tile instead of silently expanding it to
+    /// a full texture transfer. That makes an unimplemented damage path a
+    /// typed failure, not a false performance capability. Full-surface tiles
+    /// retain compatibility with contexts that only implement the legacy API.
+    fn blit_soft_fallback_tile(
+        &mut self,
+        pixels: &[u32],
+        surface_width: i32,
+        surface_height: i32,
+        tile: SoftFallbackTile,
+    ) -> Result<(), Error> {
+        if tile.x == 0
+            && tile.y == 0
+            && tile.width == surface_width
+            && tile.height == surface_height
+        {
+            return self.blit_soft_fallback(pixels, surface_width, surface_height);
+        }
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not support bounded CPU soft fallback uploads",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
     /// Replace-blend clear of logical rects (partial dirty clear).
     ///
     /// Default: not implemented. D3D11 uses this because `ClearRenderTargetView`
@@ -622,7 +705,11 @@ pub trait IGraphicsContext {
     }
 
     /// Create a GPU offscreen color target (RTV+SRV). Default: not implemented.
-    fn create_offscreen_target(&mut self, _width: i32, _height: i32) -> Result<OffscreenTargetId, Error> {
+    fn create_offscreen_target(
+        &mut self,
+        _width: i32,
+        _height: i32,
+    ) -> Result<OffscreenTargetId, Error> {
         Err(Error::new(
             crate::core::error::Errc::NotImplemented,
             format!(
@@ -672,7 +759,11 @@ pub trait IGraphicsContext {
 
 #[cfg(test)]
 mod tests {
-    use super::GraphicsBackend;
+    use super::{
+        validate_pixel_buffer, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
+        NativeRasterCaps, PresentDamage, PresentFrame,
+    };
+    use crate::core::{Errc, Error, Result};
     use std::str::FromStr;
 
     #[test]
@@ -700,5 +791,115 @@ mod tests {
         assert_eq!(GraphicsBackend::Auto.to_string(), "auto");
         assert_eq!(GraphicsBackend::OpenGlEs.to_string(), "opengles");
         assert_eq!(GraphicsBackend::Metal.as_str(), "metal");
+    }
+
+    #[test]
+    fn d3d11_caps_advertise_offscreen_after_crop_and_scissor_are_correct() {
+        assert!(
+            NativeRasterCaps::d3d11_full().offscreen_targets,
+            "D3D11 Picture offscreen support requires source crop and scissor restoration"
+        );
+    }
+
+    #[test]
+    fn pixel_buffer_validation_rejects_invalid_extent_and_short_payload() {
+        assert!(validate_pixel_buffer(&[0; 4], 2, 2).is_ok());
+        assert_eq!(
+            validate_pixel_buffer(&[0; 3], 2, 2)
+                .expect_err("short payload")
+                .code(),
+            Errc::InvalidArgument
+        );
+        assert_eq!(
+            validate_pixel_buffer(&[], 0, 1)
+                .expect_err("empty width")
+                .code(),
+            Errc::InvalidArgument
+        );
+    }
+
+    struct DefaultPresentFailure {
+        fail_make_current: bool,
+        swap_calls: usize,
+    }
+
+    impl IGraphicsContext for DefaultPresentFailure {
+        fn caps(&self) -> GraphicsContextCaps {
+            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        }
+
+        fn initialize(
+            &mut self,
+            _native_window: *mut std::ffi::c_void,
+            _width: i32,
+            _height: i32,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        fn resize(&mut self, _width: i32, _height: i32) -> Result<()> {
+            Ok(())
+        }
+
+        fn make_current(&mut self) -> Result<()> {
+            if self.fail_make_current {
+                Err(Error::new(Errc::PlatformError, "make current failed"))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
+            self.swap_calls += 1;
+            Err(Error::new(Errc::PlatformError, "swap failed"))
+        }
+
+        fn shutdown(&mut self) {}
+
+        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
+            Vec::new()
+        }
+
+        fn width(&self) -> i32 {
+            1
+        }
+
+        fn height(&self) -> i32 {
+            1
+        }
+    }
+
+    #[test]
+    fn default_present_propagates_make_current_failure_without_swapping() {
+        let mut context = DefaultPresentFailure {
+            fail_make_current: true,
+            swap_calls: 0,
+        };
+
+        let error = context
+            .present(&PresentFrame::Swapchain {
+                damage: PresentDamage::Full,
+            })
+            .expect_err("make_current failure must escape default present");
+
+        assert!(error.message().contains("make current failed"));
+        assert_eq!(context.swap_calls, 0);
+    }
+
+    #[test]
+    fn default_present_propagates_swap_failure() {
+        let mut context = DefaultPresentFailure {
+            fail_make_current: false,
+            swap_calls: 0,
+        };
+
+        let error = context
+            .present(&PresentFrame::Swapchain {
+                damage: PresentDamage::Full,
+            })
+            .expect_err("swap failure must escape default present");
+
+        assert!(error.message().contains("swap failed"));
+        assert_eq!(context.swap_calls, 1);
     }
 }

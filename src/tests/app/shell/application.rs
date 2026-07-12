@@ -6,6 +6,7 @@ use crate::app::window_session::WindowLoopState;
 use crate::core::{Point, Rect};
 use crate::data::SettingsService;
 use crate::draw::engine::bootstrap::ProbeFailure;
+use crate::draw::engine::RecoveryAction;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::native::test_harness::FakePlatform;
@@ -29,6 +30,28 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::time::Duration;
+
+#[test]
+fn graphics_recovery_rebuilder_uses_initialized_software_only_at_final_fallback() {
+    let mut rebuilder = graphics_recovery_rebuilder(
+        std::ptr::null_mut(),
+        GraphicsBackend::Auto,
+        GraphicsRecipe::new(
+            GraphicsBackend::D3d11,
+            crate::native::traits::present::RasterMode::GpuNative,
+            crate::native::traits::present::PresentMode::Swapchain,
+        ),
+    );
+
+    let mut engine = rebuilder(RecoveryAction::UseSoftware, 7, 5)
+        .expect("software is the defined final recovery action");
+
+    assert!(engine.capabilities().uses_external_presenter());
+    assert_eq!(
+        (engine.canvas_2d().width(), engine.canvas_2d().height()),
+        (7, 5)
+    );
+}
 
 struct RecordingWidget {
     focus_events: Arc<AtomicBool>,

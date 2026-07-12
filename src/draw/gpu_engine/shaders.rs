@@ -96,13 +96,14 @@ precision highp float;
 
 in vec2 v_uv;
 uniform sampler2D u_tex;
+uniform vec4 u_uv_rect;
 
 out vec4 fragColor;
 
 void main() {
     // CPU AARRGGBB pixels arrive as BGRA bytes on little-endian targets, while
     // GLES 3 guarantees RGBA uploads but does not guarantee BGRA uploads.
-    fragColor = texture(u_tex, v_uv).bgra;
+    fragColor = texture(u_tex, u_uv_rect.xy + v_uv * u_uv_rect.zw).bgra;
 }
 "#;
 
@@ -112,11 +113,12 @@ precision highp float;
 
 in vec2 v_uv;
 uniform sampler2D u_tex;
+uniform vec4 u_uv_rect;
 
 out vec4 fragColor;
 
 void main() {
-    fragColor = texture(u_tex, v_uv);
+    fragColor = texture(u_tex, u_uv_rect.xy + v_uv * u_uv_rect.zw);
 }
 "#;
 

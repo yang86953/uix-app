@@ -15,7 +15,7 @@ use crate::native::graphics::platform::windows as win_surface;
 use crate::native::traits::present::{
     GpuBoxShadow, GpuGlyphBlit, GpuLinearGradientRect, GpuRadialGradient, GpuSolidMesh,
     GpuSolidRect, GpuStrokeRect, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
-    NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame,
+    NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame, SoftFallbackTile,
 };
 use ::windows::core::Interface;
 use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
@@ -445,13 +445,13 @@ impl IGraphicsContext for D3d11Context {
         Ok(())
     }
 
-    fn resize(&mut self, width: i32, height: i32) {
+    fn resize(&mut self, width: i32, height: i32) -> Result<()> {
         let (client_w, client_h) = win_surface::client_size(self.hwnd, width, height);
         if client_w == self.width && client_h == self.height {
-            return;
+            return Ok(());
         }
         self.release_rtv();
-        if let Err(err) = unsafe {
+        unsafe {
             self.swap_chain.ResizeBuffers(
                 0,
                 client_w as u32,
@@ -459,36 +459,24 @@ impl IGraphicsContext for D3d11Context {
                 DXGI_FORMAT_B8G8R8A8_UNORM,
                 DXGI_SWAP_CHAIN_FLAG(0),
             )
-        } {
-            crate::core::log::warn_fn(format!("D3d11Context: ResizeBuffers failed: {err}"));
-            return;
         }
+        .map_err(|err| {
+            Error::new(
+                Errc::PlatformError,
+                format!("D3d11Context: ResizeBuffers failed: {err}"),
+            )
+        })?;
         self.width = client_w;
         self.height = client_h;
-        if let Err(err) = self.create_rtv() {
-            crate::core::log::warn_fn(format!(
-                "D3d11Context: recreate RTV after resize failed: {}",
-                err.short_what()
-            ));
-        }
+        self.create_rtv()
     }
 
-    fn make_current(&mut self) {
-        if let Err(err) = self.bind_current_draw_target() {
-            crate::core::log::warn_fn(format!(
-                "D3d11Context: make_current failed: {}",
-                err.short_what()
-            ));
-        }
+    fn make_current(&mut self) -> Result<()> {
+        self.bind_current_draw_target()
     }
 
-    fn swap_buffers(&mut self, _damage: PresentDamage) {
-        if let Err(error) = self.present_result() {
-            crate::core::log::error_fn(format!(
-                "D3d11Context: Present failed: {}",
-                error.short_what()
-            ));
-        }
+    fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
+        self.present_result()
     }
 
     fn shutdown(&mut self) {
@@ -624,7 +612,7 @@ impl IGraphicsContext for D3d11Context {
             return Ok(());
         }
         if width != self.width || height != self.height {
-            self.resize(width, height);
+            self.resize(width, height)?;
         }
         let expected = (width as usize).saturating_mul(height as usize);
         if pixels.len() < expected {
@@ -663,7 +651,7 @@ impl IGraphicsContext for D3d11Context {
         rects: &[GpuSolidRect],
     ) -> Result<()> {
         self.ensure_rtv()?;
-        self.make_current();
+        self.make_current()?;
         self.pipeline
             .draw_solid_rects(&self.context, viewport_w, viewport_h, scissor, rects)
     }
@@ -676,7 +664,7 @@ impl IGraphicsContext for D3d11Context {
         rects: &[GpuStrokeRect],
     ) -> Result<()> {
         self.ensure_rtv()?;
-        self.make_current();
+        self.make_current()?;
         self.pipeline
             .draw_stroke_rects(&self.context, viewport_w, viewport_h, scissor, rects)
     }
@@ -689,7 +677,7 @@ impl IGraphicsContext for D3d11Context {
         glyphs: &[GpuGlyphBlit],
     ) -> Result<()> {
         self.ensure_rtv()?;
-        self.make_current();
+        self.make_current()?;
         self.pipeline.draw_glyphs(
             &self.device,
             &self.context,
@@ -708,7 +696,7 @@ impl IGraphicsContext for D3d11Context {
         rects: &[GpuLinearGradientRect],
     ) -> Result<()> {
         self.ensure_rtv()?;
-        self.make_current();
+        self.make_current()?;
         self.pipeline
             .draw_linear_gradients(&self.context, viewport_w, viewport_h, scissor, rects)
     }
@@ -721,7 +709,7 @@ impl IGraphicsContext for D3d11Context {
         grads: &[GpuRadialGradient],
     ) -> Result<()> {
         self.ensure_rtv()?;
-        self.make_current();
+        self.make_current()?;
         self.pipeline
             .draw_radial_gradients(&self.context, viewport_w, viewport_h, scissor, grads)
     }
@@ -734,7 +722,7 @@ impl IGraphicsContext for D3d11Context {
         meshes: &[GpuSolidMesh],
     ) -> Result<()> {
         self.ensure_rtv()?;
-        self.make_current();
+        self.make_current()?;
         self.pipeline.draw_solid_meshes(
             &self.device,
             &self.context,
@@ -753,16 +741,35 @@ impl IGraphicsContext for D3d11Context {
         shadows: &[GpuBoxShadow],
     ) -> Result<()> {
         self.ensure_rtv()?;
-        self.make_current();
+        self.make_current()?;
         self.pipeline
             .draw_box_shadows(&self.context, viewport_w, viewport_h, scissor, shadows)
     }
 
     fn blit_soft_fallback(&mut self, pixels: &[u32], width: i32, height: i32) -> Result<()> {
         self.ensure_rtv()?;
-        self.make_current();
+        self.make_current()?;
         self.pipeline
             .blit_soft_fallback(&self.device, &self.context, pixels, width, height)
+    }
+
+    fn blit_soft_fallback_tile(
+        &mut self,
+        pixels: &[u32],
+        surface_width: i32,
+        surface_height: i32,
+        tile: SoftFallbackTile,
+    ) -> Result<()> {
+        self.ensure_rtv()?;
+        self.make_current()?;
+        self.pipeline.blit_soft_fallback_tile(
+            &self.device,
+            &self.context,
+            pixels,
+            surface_width,
+            surface_height,
+            tile,
+        )
     }
 
     fn clear_rects(
@@ -776,7 +783,11 @@ impl IGraphicsContext for D3d11Context {
             .clear_rects(&self.context, viewport_w, viewport_h, rects)
     }
 
-    fn create_offscreen_target(&mut self, width: i32, height: i32) -> Result<OffscreenTargetId, Error> {
+    fn create_offscreen_target(
+        &mut self,
+        width: i32,
+        height: i32,
+    ) -> Result<OffscreenTargetId, Error> {
         let w = width.max(1);
         let h = height.max(1);
         let desc = D3D11_TEXTURE2D_DESC {
@@ -893,8 +904,6 @@ impl IGraphicsContext for D3d11Context {
                 format!("D3d11Context: blit_offscreen_target unknown id {}", id.0),
             ));
         };
-        // Full-texture stretch into dst (Picture always uses full src today).
-        let _ = src;
         if self.bound_offscreen == Some(id.0) {
             return Err(Error::new(
                 Errc::InvalidState,
@@ -902,10 +911,20 @@ impl IGraphicsContext for D3d11Context {
             ));
         }
         let srv = target.srv.clone();
+        let source_w = target.width as f32;
+        let source_h = target.height as f32;
         let (tw, th) = self.current_target_size();
         self.bind_current_draw_target()?;
-        self.pipeline
-            .blit_srv_to_rect(&self.context, &srv, tw as f32, th as f32, dst)
+        self.pipeline.blit_srv_to_rect(
+            &self.context,
+            &srv,
+            source_w,
+            source_h,
+            tw as f32,
+            th as f32,
+            src,
+            dst,
+        )
     }
 
     fn present(&mut self, frame: &PresentFrame<'_>) -> Result<()> {
@@ -935,9 +954,6 @@ impl IGraphicsContext for D3d11Context {
         self.present_result()
     }
 }
-
-unsafe impl Send for D3d11Context {}
-unsafe impl Sync for D3d11Context {}
 
 #[cfg(test)]
 mod tests {
@@ -1230,6 +1246,49 @@ mod tests {
     }
 
     #[test]
+    fn d3d11_soft_blit_does_not_resample_a_prior_partial_segment() {
+        let mut platform = crate::native::create_platform().expect("platform");
+        let window = platform
+            .window_manager()
+            .create_window("D3D11 WARP soft damage", 64, 48)
+            .expect("window");
+        let mut ctx = create_with_driver(
+            window.native_surface_ptr(),
+            64,
+            48,
+            &D3D11_FEATURE_LEVELS,
+            D3d11DriverKind::Warp,
+        )
+        .expect("D3D11 WARP context");
+        ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)
+            .expect("clear transparent target");
+
+        let mut first = vec![0u32; 64 * 48];
+        first[5 * 64 + 4] = 0x80FF_0000;
+        ctx.blit_soft_fallback(&first, 64, 48)
+            .expect("first partial soft segment");
+        let first_before = ctx.read_pixels(4, 5, 1, 1)[0];
+        assert_ne!(first_before, 0, "first segment must reach the target");
+
+        let mut second = vec![0u32; 64 * 48];
+        second[19 * 64 + 36] = 0x8000_00FF;
+        ctx.blit_soft_fallback(&second, 64, 48)
+            .expect("second partial soft segment");
+
+        assert_eq!(
+            ctx.read_pixels(4, 5, 1, 1)[0],
+            first_before,
+            "a later partial upload must not re-blend stale texture data"
+        );
+        assert_ne!(
+            ctx.read_pixels(36, 19, 1, 1)[0],
+            0,
+            "second segment must reach its own target pixel"
+        );
+        ctx.shutdown();
+    }
+
+    #[test]
     fn d3d11_resize_grows_backbuffer_and_fills_far_corner() {
         let mut platform = crate::native::create_platform().expect("platform");
         let mut window = platform
@@ -1254,7 +1313,7 @@ mod tests {
             "client should grow after set_size, got {cw}x{ch}"
         );
 
-        ctx.resize(cw, ch);
+        ctx.resize(cw, ch).expect("resize after client-size change");
         assert_eq!(
             (ctx.width(), ctx.height()),
             (cw, ch),
@@ -1292,7 +1351,10 @@ mod tests {
             .create_window("D3D11 offscreen RT", 160, 120)
             .expect("window");
         let mut ctx = D3d11Context::new(window.native_surface_ptr(), 160, 120).expect("ctx");
-        assert!(ctx.native_raster_caps().offscreen_targets);
+        assert!(
+            ctx.native_raster_caps().offscreen_targets,
+            "D3D11 advertises Picture offscreen only after crop/scissor semantics are fixed"
+        );
 
         let id = ctx
             .create_offscreen_target(32, 24)
@@ -1314,6 +1376,109 @@ mod tests {
             damage: PresentDamage::Full,
         })
         .expect("present");
+        ctx.shutdown();
+    }
+
+    #[test]
+    fn d3d11_warp_offscreen_crop_ignores_and_restores_previous_raster_state() {
+        let mut platform = crate::native::create_platform().expect("platform");
+        let window = platform
+            .window_manager()
+            .create_window("D3D11 WARP offscreen crop", 96, 64)
+            .expect("window");
+        let mut ctx = create_with_driver(
+            window.native_surface_ptr(),
+            96,
+            64,
+            &D3D11_FEATURE_LEVELS,
+            D3d11DriverKind::Warp,
+        )
+        .expect("D3D11 WARP context");
+        assert_eq!(ctx.adapter_info.driver, D3d11DriverKind::Warp);
+        assert!(ctx.native_raster_caps().offscreen_targets);
+
+        let offscreen = ctx
+            .create_offscreen_target(64, 48)
+            .expect("create offscreen target");
+        ctx.bind_offscreen_target(offscreen)
+            .expect("bind offscreen target");
+        ctx.clear_render_target(0.0, 0.0, 1.0, 1.0)
+            .expect("clear source blue");
+        ctx.draw_solid_rects(
+            64.0,
+            48.0,
+            None,
+            &[GpuSolidRect {
+                x: 16.0,
+                y: 8.0,
+                w: 16.0,
+                h: 16.0,
+                rgba: [1.0, 0.0, 0.0, 1.0],
+                radius: [0.0; 4],
+            }],
+        )
+        .expect("paint source crop red");
+
+        ctx.bind_swapchain_target().expect("bind swapchain target");
+        ctx.clear_render_target(0.0, 0.0, 0.0, 1.0)
+            .expect("clear swapchain black");
+        ctx.draw_solid_rects(
+            96.0,
+            64.0,
+            Some((0, 0, 4, 4)),
+            &[GpuSolidRect {
+                x: 0.0,
+                y: 0.0,
+                w: 96.0,
+                h: 64.0,
+                rgba: [0.0, 0.0, 0.0, 1.0],
+                radius: [0.0; 4],
+            }],
+        )
+        .expect("preset narrow scissor");
+
+        ctx.blit_offscreen_target(
+            offscreen,
+            crate::core::Rect::new(16.0, 8.0, 16.0, 16.0),
+            crate::core::Rect::new(48.0, 24.0, 16.0, 16.0),
+        )
+        .expect("blit nonzero source crop");
+
+        assert_eq!(
+            ctx.read_pixels(55, 31, 1, 1),
+            vec![0xFFFF_0000],
+            "the destination outside the old narrow scissor must sample the requested red source crop"
+        );
+
+        let mut viewport_count = 1;
+        let mut viewport = D3D11_VIEWPORT::default();
+        let mut scissor_count = 1;
+        let mut scissor = ::windows::Win32::Foundation::RECT::default();
+        unsafe {
+            ctx.context
+                .RSGetViewports(&mut viewport_count, Some(&mut viewport));
+            ctx.context
+                .RSGetScissorRects(&mut scissor_count, Some(&mut scissor));
+        }
+        assert_eq!(viewport_count, 1);
+        assert_eq!(
+            (
+                viewport.TopLeftX,
+                viewport.TopLeftY,
+                viewport.Width,
+                viewport.Height
+            ),
+            (0.0, 0.0, 96.0, 64.0),
+            "offscreen blit must restore the caller viewport"
+        );
+        assert_eq!(scissor_count, 1);
+        assert_eq!(
+            (scissor.left, scissor.top, scissor.right, scissor.bottom),
+            (0, 0, 4, 4),
+            "offscreen blit must restore the caller scissor"
+        );
+
+        ctx.destroy_offscreen_target(offscreen);
         ctx.shutdown();
     }
 

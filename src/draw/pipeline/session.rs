@@ -2,10 +2,12 @@
 
 use crate::core::Error;
 use crate::native::traits::present::IGraphicsContext;
+use std::thread::ThreadId;
 
+#[cfg(feature = "opengles")]
+use crate::draw::backend::GpuBackend;
 use crate::draw::backend::{
-    create_backend, BackendCapabilities, BackendKind, CpuBackend, GpuBackend, NullBackend,
-    RenderBackend,
+    create_backend, BackendCapabilities, BackendKind, CpuBackend, NullBackend, RenderBackend,
 };
 use crate::draw::engine::RenderOutcome;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, UpdateStrategy};
@@ -19,6 +21,10 @@ pub struct RenderSession {
     force_full_frame: bool,
     /// 保留 GPU 上下文以便 Cpu ↔ Gpu 切换。
     gpu_ctx: Option<Box<dyn IGraphicsContext>>,
+    /// The construction thread owns every live backend/context beneath this
+    /// session. Backends are non-Send; this makes the affinity explicit at
+    /// lifecycle boundaries as well.
+    owner_thread: ThreadId,
 }
 
 impl RenderSession {
@@ -32,6 +38,7 @@ impl RenderSession {
             height: 0,
             force_full_frame: false,
             gpu_ctx: None,
+            owner_thread: std::thread::current().id(),
         })
     }
 
@@ -43,12 +50,22 @@ impl RenderSession {
             height: 0,
             force_full_frame: false,
             gpu_ctx: None,
+            owner_thread: std::thread::current().id(),
         }
     }
 
-    /// 绑定 GPU 上下文，供后续 `set_backend(Gpu)` 使用。
-    pub fn set_gpu_context(&mut self, ctx: Box<dyn IGraphicsContext>) {
-        self.gpu_ctx = Some(ctx);
+    /// Binds a GPU context for a later `set_backend(Gpu)` call.
+    ///
+    /// A staged context is still a live thread-affine native resource. Replacing
+    /// it therefore closes the old one on the owner thread rather than letting
+    /// `Drop` silently skip its native shutdown protocol.
+    #[allow(dead_code)] // Retained for crate-local staged recipe transitions and regression coverage.
+    pub(crate) fn set_gpu_context(&mut self, ctx: Box<dyn IGraphicsContext>) -> Result<(), Error> {
+        self.require_owner("set_gpu_context")?;
+        if let Some(mut previous) = self.gpu_ctx.replace(ctx) {
+            previous.shutdown();
+        }
+        Ok(())
     }
 
     pub fn backend_kind(&self) -> BackendKind {
@@ -72,33 +89,49 @@ impl RenderSession {
     }
 
     pub fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.require_owner("initialize")?;
         self.width = width;
         self.height = height;
         self.backend.resize(width, height)
     }
 
     pub fn shutdown(&mut self) {
+        if let Err(error) = self.require_owner("shutdown") {
+            crate::core::log::error_fn(format!("RenderSession: {}", error.short_what()));
+            return;
+        }
         self.backend.shutdown();
+        if let Some(mut staged_context) = self.gpu_ctx.take() {
+            staged_context.shutdown();
+        }
         self.width = 0;
         self.height = 0;
     }
 
-    pub fn resize(&mut self, width: i32, height: i32) {
+    pub fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.require_owner("resize")?;
+        self.backend.resize(width, height)?;
         self.width = width;
         self.height = height;
-        if self.backend.resize(width, height).is_err() {
-            crate::core::log::error_fn("RenderSession::resize 失败");
-        }
         // swapchain/缓冲 resize 后内容丢失，下一帧须全帧重绘。
         self.force_full_frame = true;
+        Ok(())
     }
 
     /// 运行时切换后端；下一帧将强制 FullRedraw。
     pub fn set_backend(&mut self, kind: BackendKind) -> Result<(), Error> {
+        self.require_owner("set_backend")?;
         let resolved = resolve_kind(kind);
-        let gpu_ctx = self.gpu_ctx.take();
+        // CPU/Null backends do not consume a staged GPU context. Keep it
+        // alive for a later explicit GPU switch; shutdown owns it otherwise.
+        let gpu_ctx = if resolved == BackendKind::Gpu {
+            self.gpu_ctx.take()
+        } else {
+            None
+        };
+        let replacement = create_backend(resolved, gpu_ctx)?;
         self.backend.shutdown();
-        self.backend = create_backend(resolved, gpu_ctx)?;
+        self.backend = replacement;
         if self.width > 0 && self.height > 0 {
             self.backend.resize(self.width, self.height)?;
         }
@@ -107,6 +140,9 @@ impl RenderSession {
     }
 
     pub fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
+        if let Err(error) = self.require_owner("begin_frame") {
+            return RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(error));
+        }
         if self.force_full_frame {
             self.force_full_frame = false;
             let caps = self.backend.capabilities();
@@ -129,10 +165,14 @@ impl RenderSession {
     }
 
     pub fn end_frame(&mut self) -> RenderOutcome {
+        if let Err(error) = self.require_owner("end_frame") {
+            return RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(error));
+        }
         crate::draw::pipeline::frame::end_frame(self.backend.surface())
     }
 
     pub fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
+        debug_assert!(self.require_owner("canvas_2d").is_ok());
         self.backend.surface().canvas()
     }
 
@@ -144,10 +184,12 @@ impl RenderSession {
         self.backend.as_any_mut().downcast_mut()
     }
 
+    #[cfg(feature = "opengles")]
     pub fn gpu_backend(&self) -> Option<&GpuBackend> {
         self.backend.as_any().downcast_ref()
     }
 
+    #[cfg(feature = "opengles")]
     pub fn gpu_backend_mut(&mut self) -> Option<&mut GpuBackend> {
         self.backend.as_any_mut().downcast_mut()
     }
@@ -157,11 +199,30 @@ impl RenderSession {
     }
 
     pub fn backend_mut(&mut self) -> &mut dyn RenderBackend {
+        debug_assert!(self.require_owner("backend_mut").is_ok());
         &mut *self.backend
     }
 
     pub fn backend(&self) -> &dyn RenderBackend {
+        debug_assert!(self.require_owner("backend").is_ok());
         &*self.backend
+    }
+
+    fn require_owner(&self, operation: &str) -> Result<(), Error> {
+        if std::thread::current().id() == self.owner_thread {
+            Ok(())
+        } else {
+            Err(Error::new(
+                crate::core::Errc::InvalidState,
+                format!("RenderSession::{operation} must run on its owning graphics thread"),
+            ))
+        }
+    }
+}
+
+impl Drop for RenderSession {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 

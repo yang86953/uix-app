@@ -7,7 +7,7 @@ use crate::native::traits::present::IGraphicsContext;
 
 mod platform;
 
-pub fn create(
+pub(crate) fn create(
     surface: *mut c_void,
     width: i32,
     height: i32,
