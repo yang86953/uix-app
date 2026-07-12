@@ -13,7 +13,7 @@ use crate::native::test_harness::FakePlatform;
 use crate::native::traits::event::{
     ClipboardData, FileDropData, ImeCompositionData, LocaleChangeData, ThemeChangeData,
 };
-use crate::native::traits::present::GraphicsBackend;
+use crate::native::traits::present::{GraphicsBackend, NativeSurfaceHandle};
 use crate::ui::state::State;
 use crate::ui::theme::Theme;
 use crate::ui::view::combinators::{dynamic_label, label};
@@ -34,7 +34,9 @@ use std::time::Duration;
 #[test]
 fn graphics_recovery_rebuilder_uses_initialized_software_only_at_final_fallback() {
     let mut rebuilder = graphics_recovery_rebuilder(
-        std::ptr::null_mut(),
+        // SAFETY: this test takes the Software-only recovery branch and
+        // never dereferences the placeholder native surface.
+        unsafe { NativeSurfaceHandle::from_raw(std::ptr::null_mut()) },
         GraphicsBackend::Auto,
         GraphicsRecipe::new(
             GraphicsBackend::D3d11,

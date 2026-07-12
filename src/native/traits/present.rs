@@ -389,6 +389,56 @@ impl FromStr for GraphicsBackend {
     }
 }
 
+/// Opaque, thread-affine native surface handle used for graphics assembly.
+///
+/// Platform windows create the underlying pointer. Crossing that pointer into
+/// the graphics lifecycle requires this explicit unsafe conversion, and the
+/// marker prevents safe transfer to another thread.
+///
+/// ```compile_fail
+/// use uix::native::traits::present::NativeSurfaceHandle;
+///
+/// fn needs_send<T: Send>(_value: T) {}
+///
+/// let handle = unsafe { NativeSurfaceHandle::from_raw(std::ptr::null_mut()) };
+/// needs_send(handle);
+/// ```
+#[derive(Clone, Copy)]
+pub struct NativeSurfaceHandle {
+    raw: *mut std::ffi::c_void,
+    _thread_bound: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl NativeSurfaceHandle {
+    /// # Safety
+    ///
+    /// `raw` must remain a valid native surface for the whole graphics
+    /// assembly/recovery use, and the handle must stay on its creating thread.
+    pub unsafe fn from_raw(raw: *mut std::ffi::c_void) -> Self {
+        Self {
+            raw,
+            _thread_bound: std::marker::PhantomData,
+        }
+    }
+
+    pub fn is_null(self) -> bool {
+        self.raw.is_null()
+    }
+
+    pub(crate) fn as_raw(self) -> *mut std::ffi::c_void {
+        self.raw
+    }
+}
+
+impl std::fmt::Debug for NativeSurfaceHandle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("NativeSurfaceHandle")
+            .field("is_null", &self.raw.is_null())
+            .finish()
+    }
+}
+
 /// Opaque native runtime lease acquired from a graphics context.
 ///
 /// Its public surface exposes only API-neutral identity. API objects and

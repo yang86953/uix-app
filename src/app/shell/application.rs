@@ -35,7 +35,7 @@ use crate::native::create_platform;
 use crate::native::factory::{gpu_recipe_candidates, try_create_gpu_recipe, GraphicsRecipe};
 use crate::native::traits::event::{UiEvent, UiEventPayload, UiEventType};
 use crate::native::traits::platform::Platform;
-use crate::native::traits::present::GraphicsBackend;
+use crate::native::traits::present::{GraphicsBackend, NativeSurfaceHandle};
 use crate::native::traits::window::PlatformWindow;
 use crate::ui::theme::{DesignTokens, DynTokens, Theme};
 use crate::ui::traits::TokenProvider;
@@ -1375,12 +1375,12 @@ fn secondary_next_loop_state(
 }
 
 fn recreate_exact_graphics_recipe(
-    surface: *mut std::ffi::c_void,
+    surface: NativeSurfaceHandle,
     width: i32,
     height: i32,
     recipe: GraphicsRecipe,
 ) -> Result<Box<dyn GraphicsEngine>, Error> {
-    let context = try_create_gpu_recipe(recipe, surface, width, height)?;
+    let context = try_create_gpu_recipe(recipe, surface.as_raw(), width, height)?;
     assemble_graphics_engine(context, width, height).map_err(|failure| failure.into_error())
 }
 
@@ -1394,7 +1394,7 @@ fn create_software_recovery_engine(
 }
 
 fn graphics_recovery_rebuilder(
-    surface: *mut std::ffi::c_void,
+    surface: NativeSurfaceHandle,
     requested: GraphicsBackend,
     selected_recipe: GraphicsRecipe,
 ) -> GraphicsEngineRebuilder {
@@ -1439,7 +1439,10 @@ fn create_preferred_engine(
     height: i32,
     graphics_backend: GraphicsBackend,
 ) -> Option<Box<dyn GraphicsEngine>> {
-    let surface = platform_window.native_surface_ptr();
+    // SAFETY: PlatformWindow owns this surface for the complete synchronous
+    // window session. Graphics bootstrap/recovery execute on the same event
+    // loop thread, and `NativeSurfaceHandle` is !Send + !Sync.
+    let surface = unsafe { NativeSurfaceHandle::from_raw(platform_window.native_surface_ptr()) };
     match bootstrap_graphics_engine(surface, width, height, graphics_backend) {
         Ok(gpu) => {
             if gpu.report.failures.is_empty() {
