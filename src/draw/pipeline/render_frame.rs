@@ -91,24 +91,13 @@ impl FrameRenderer {
         }
 
         let caps = engine.capabilities();
-        let region = if !input.rendered_first
-            || input.dirty_region.full_frame
-            || input.dirty_region.is_empty()
-            || !caps.supports_partial_redraw()
-        {
-            DirtyRegion::full()
-        } else {
-            // 多块 dirty 升为并集，与 begin_frame clip 一致，避免空隙被父背景盖住
-            input.dirty_region.for_paint_clear()
-        };
-
-        let damage = compute_damage(&region, input.scroll_move, input.rendered_first);
-
-        let strategy = if !input.rendered_first || region.full_frame {
-            UpdateStrategy::FullRedraw
-        } else {
-            UpdateStrategy::DirtyRects(region.rects().to_vec())
-        };
+        // FrameRecordingEngine rebuilds a complete ordered command stream and
+        // clears/replaces the whole target. Until R6 provides retained,
+        // damage-aware recording, neither begin-frame clipping nor a partial
+        // final present can truthfully describe that work (#181, #197).
+        let region = DirtyRegion::full();
+        let damage = DamageRegion::full();
+        let strategy = UpdateStrategy::FullRedraw;
         let begin_outcome = engine.begin_frame(strategy.clone());
         match begin_outcome {
             RenderOutcome::FrameReady(_) => {}
@@ -369,41 +358,6 @@ impl Default for FrameRenderer {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn compute_damage(
-    region: &DirtyRegion,
-    scroll_move: Option<(Rect, f32, f32)>,
-    rendered_first: bool,
-) -> DamageRegion {
-    if !rendered_first || region.full_frame {
-        return DamageRegion::full();
-    }
-    let mut rects: Vec<Rect> = region
-        .rects()
-        .iter()
-        .filter(|r| r.w > 0.0 && r.h > 0.0)
-        .map(pad_damage_rect)
-        .collect();
-    if let Some((frame, _, _)) = scroll_move {
-        if frame.w > 0.0 && frame.h > 0.0 {
-            rects.push(pad_damage_rect(&frame));
-        }
-    }
-    if rects.is_empty() {
-        DamageRegion::full()
-    } else {
-        DamageRegion::partial(rects)
-    }
-}
-
-fn pad_damage_rect(r: &Rect) -> Rect {
-    Rect::new(
-        (r.x - 1.0).max(0.0),
-        (r.y - 1.0).max(0.0),
-        r.w + 2.0,
-        r.h + 2.0,
-    )
 }
 
 fn draw_debug_telemetry(

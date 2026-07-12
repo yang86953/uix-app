@@ -1375,7 +1375,7 @@ fn rendered_frame_with_empty_dirty_region_is_idle() {
 }
 
 #[test]
-fn rendered_frame_with_partial_dirty_outputs_padded_partial_damage() {
+fn full_frame_recorder_promotes_partial_dirty_to_full_present_damage() {
     let mut renderer = FrameRenderer::new();
     let mut engine = NullEngine::new();
     let _ = engine.initialize(64, 64);
@@ -1406,13 +1406,13 @@ fn rendered_frame_with_partial_dirty_outputs_padded_partial_damage() {
 
     assert_eq!(
         out.outcome,
-        RenderOutcome::PresentPending(DamageRegion::partial(vec![Rect::new(2.0, 3.0, 7.0, 8.0)]))
+        RenderOutcome::PresentPending(DamageRegion::full())
     );
     assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
 }
 
 #[test]
-fn multi_rect_dirty_expands_to_union_for_paint_and_damage() {
+fn full_frame_recorder_promotes_multi_rect_dirty_to_full_present_damage() {
     let mut renderer = FrameRenderer::new();
     let mut engine = NullEngine::new();
     let _ = engine.initialize(64, 64);
@@ -1446,14 +1446,12 @@ fn multi_rect_dirty_expands_to_union_for_paint_and_damage() {
     // for_paint_clear → [0,0,20,100]，再 pad ±1
     assert_eq!(
         out.outcome,
-        RenderOutcome::PresentPending(DamageRegion::partial(vec![Rect::new(
-            0.0, 0.0, 22.0, 102.0
-        )]))
+        RenderOutcome::PresentPending(DamageRegion::full())
     );
 }
 
 #[test]
-fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
+fn full_frame_recorder_promotes_scroll_move_to_full_present_damage() {
     let mut renderer = FrameRenderer::new();
     let mut engine = NullEngine::new();
     let _ = engine.initialize(128, 128);
@@ -1484,10 +1482,7 @@ fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
 
     assert_eq!(
         out.outcome,
-        RenderOutcome::PresentPending(DamageRegion::partial(vec![
-            Rect::new(9.0, 19.0, 6.0, 7.0),
-            Rect::new(29.0, 39.0, 52.0, 62.0),
-        ]))
+        RenderOutcome::PresentPending(DamageRegion::full())
     );
     assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
 }

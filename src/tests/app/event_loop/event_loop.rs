@@ -15,11 +15,11 @@ use crate::ui::overlay::OverlayKind;
 use crate::ui::theme::{DesignTokens, DynTokens};
 use crate::ui::traits::TokenProvider;
 use crate::ui::view::combinators::{button, dynamic_label, label};
-use crate::ui::view::{column, row, View, ViewNode};
+use crate::ui::view::{View, ViewNode, column, row};
+use crate::ui::widgets::Label;
 use crate::ui::widgets::container::Container;
 use crate::ui::widgets::feedback::Tooltip;
 use crate::ui::widgets::input::input::Input;
-use crate::ui::widgets::Label;
 use crate::ui::{
     AppState, EventResult, SemanticEvent, SemanticKind, WidgetAnimation, WidgetCapabilities,
     WidgetComponent, WidgetRender,
@@ -832,7 +832,7 @@ fn software_engine_first_frame_present_forwards_full_damage_to_fake_presenter() 
 }
 
 #[test]
-fn software_engine_after_first_frame_forwards_partial_damage_to_fake_presenter() {
+fn software_engine_full_recorder_forwards_full_damage_to_fake_presenter() {
     let mut platform = FakePlatform::new();
     platform
         .event_source
@@ -899,11 +899,10 @@ fn software_engine_after_first_frame_forwards_partial_damage_to_fake_presenter()
         window.presenter.state.present_calls[0].damage,
         PresentDamage::Full
     );
-    assert!(matches!(
+    assert_eq!(
         window.presenter.state.present_calls[1].damage,
-        PresentDamage::Partial(ref rects)
-            if rects.len() == 1 && rects[0].2 > 0 && rects[0].3 > 0
-    ));
+        PresentDamage::Full
+    );
 }
 
 #[test]
