@@ -218,13 +218,17 @@ impl NativeGpuCanvas2D {
         self.deferred_error.take()
     }
 
-    fn reject_path_clip(&mut self) {
+    fn reject_unsupported(&mut self, operation: &str) {
         if self.deferred_error.is_none() {
             self.deferred_error = Some(Error::new(
                 Errc::NotImplemented,
-                "NativeGpuCanvas2D does not implement path clip",
+                format!("NativeGpuCanvas2D does not implement {operation}"),
             ));
         }
+    }
+
+    fn reject_path_clip(&mut self) {
+        self.reject_unsupported("path clip");
     }
 
     fn clear_soft_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
@@ -946,6 +950,10 @@ impl Canvas2D for NativeGpuCanvas2D {
     fn current_clip(&self) -> Rect {
         self.clip_rect
     }
+
+    fn scroll_region(&mut self, _viewport: Rect, _dx: f32, _dy: f32) {
+        self.reject_unsupported("scroll-region copy");
+    }
 }
 
 /// DrawSurface for an API-neutral `GpuNative × Swapchain` path.
@@ -1003,7 +1011,7 @@ impl DrawSurface for NativeGpuDrawSurface {
     }
 
     fn copy_region(&mut self, _src: Rect, _dst: Point) {
-        // GPU backends do not support scroll memmove.
+        self.canvas.reject_unsupported("scroll-region copy");
     }
 
     fn canvas(&mut self) -> &mut dyn Canvas2D {
@@ -1633,6 +1641,10 @@ impl RenderBackend for NativeGpuBackend {
         if self.active_offscreen.is_some() {
             self.end_offscreen_paint();
         }
+        if let Some(error) = self.surface.canvas.take_deferred_error() {
+            self.surface.needs_gpu_clear = true;
+            return Err(error);
+        }
         if let Some(error) = self.frame_failure.take() {
             self.surface.needs_gpu_clear = true;
             return Err(error);
@@ -1733,6 +1745,17 @@ mod tests {
     }
 
     #[test]
+    fn native_gpu_canvas_defers_scroll_copy_failure_to_the_frame_boundary() {
+        let mut canvas = NativeGpuCanvas2D::new(16, 16, NativeRasterCaps::d3d11_full());
+        canvas.scroll_region(Rect::new(0.0, 0.0, 16.0, 16.0), 0.0, 1.0);
+
+        let error = canvas
+            .take_deferred_error()
+            .expect("scroll copy must retain a deferred failure");
+        assert_eq!(error.code(), Errc::NotImplemented);
+    }
+
+    #[test]
     fn native_gpu_checked_picture_flush_rejects_an_unimplemented_path_clip() {
         let RecordingFixture { mut backend, .. } = recording_backend(FailStage::None);
         backend.resize(16, 16).expect("resize native backend");
@@ -1755,6 +1778,28 @@ mod tests {
             .try_flush_offscreen_paint(&handle)
             .expect_err("unsupported Picture path clip must not flush successfully");
         assert_eq!(error.code(), Errc::NotImplemented);
+    }
+
+    #[test]
+    fn native_gpu_legacy_present_rejects_an_unimplemented_scroll_copy() {
+        let RecordingFixture {
+            mut backend,
+            stages,
+            ..
+        } = recording_backend(FailStage::None);
+        backend.resize(16, 16).expect("resize native backend");
+        backend
+            .surface()
+            .copy_region(Rect::new(0.0, 0.0, 8.0, 8.0), Point::new(0.0, 1.0));
+
+        let error = backend
+            .present(&DamageRegion::full())
+            .expect_err("legacy final present must not hide an unsupported scroll copy");
+        assert_eq!(error.code(), Errc::NotImplemented);
+        assert!(
+            !stages.borrow().contains(&"present"),
+            "unsupported scroll copy must stop before final present"
+        );
     }
 
     struct FakeD3d11Context {

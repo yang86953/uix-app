@@ -353,6 +353,9 @@ impl RenderBackend for CpuBackend {
     }
 
     fn present(&mut self, _damage: &DamageRegion) -> Result<(), Error> {
+        if let Some(error) = self.main.take_deferred_error() {
+            return Err(error);
+        }
         Ok(())
     }
 
