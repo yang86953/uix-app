@@ -1,8 +1,8 @@
-//! Metal graphics context — CALayer CPU upload path.
+//! Metal identity PixelUpload context — CALayer CPU upload path.
 //!
-//! Native GPU raster via Metal RenderBackend is planned; this context declares
-//! [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`] so macOS can bootstrap a
-//! GPU present path without staying on pure SoftwareEngine.
+//! Native GPU raster via Metal remains planned. This context declares
+//! [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`] and does not own a Metal
+//! device, command queue, or raster pipeline.
 
 use std::ffi::c_void;
 
@@ -15,7 +15,7 @@ use crate::native::traits::present::{
 
 type LayerId = *mut c_void;
 
-pub struct MetalContext {
+pub struct MetalPixelUploadContext {
     layer: LayerId,
     width: i32,
     height: i32,
@@ -23,12 +23,12 @@ pub struct MetalContext {
     initialized: bool,
 }
 
-impl MetalContext {
+impl MetalPixelUploadContext {
     pub fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self> {
         if native_surface.is_null() {
             return Err(Error::new(
                 Errc::PlatformError,
-                "MetalContext: native CALayer surface is null",
+                "MetalPixelUploadContext: native CALayer surface is null",
             ));
         }
         Ok(Self {
@@ -41,7 +41,7 @@ impl MetalContext {
     }
 }
 
-impl IGraphicsContext for MetalContext {
+impl IGraphicsContext for MetalPixelUploadContext {
     fn caps(&self) -> GraphicsContextCaps {
         GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::Metal, self.device_pixel_ratio)
     }
@@ -93,7 +93,7 @@ impl IGraphicsContext for MetalContext {
         if !self.initialized {
             return Err(Error::new(
                 Errc::InvalidArgument,
-                "MetalContext: present before initialize",
+                "MetalPixelUploadContext: present before initialize",
             ));
         }
         validate_pixel_buffer(pixels, width, height)?;
@@ -114,7 +114,7 @@ impl IGraphicsContext for MetalContext {
             } => self.present_pixels(pixels, *width, *height, damage.clone()),
             PresentFrame::Swapchain { .. } => Err(Error::new(
                 Errc::NotImplemented,
-                "MetalContext: swapchain present requires native Metal raster (planned)",
+                "MetalPixelUploadContext: swapchain present requires native Metal raster (planned)",
             )),
         }
     }

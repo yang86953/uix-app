@@ -1,4 +1,4 @@
-//! Platform selection for the Metal context.
+//! Platform selection for the Metal identity PixelUpload context.
 
 use std::ffi::c_void;
 
@@ -9,7 +9,7 @@ use crate::native::traits::present::IGraphicsContext;
 mod context;
 
 #[cfg(target_os = "macos")]
-pub use context::MetalContext;
+pub use context::MetalPixelUploadContext;
 
 #[cfg(target_os = "macos")]
 pub(super) fn create(
@@ -17,7 +17,7 @@ pub(super) fn create(
     width: i32,
     height: i32,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
-    MetalContext::new(surface, width, height).map(|ctx| Box::new(ctx) as _)
+    MetalPixelUploadContext::new(surface, width, height).map(|ctx| Box::new(ctx) as _)
 }
 
 #[cfg(not(target_os = "macos"))]

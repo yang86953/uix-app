@@ -46,6 +46,33 @@ fn is_architecture_guard(path: &str) -> bool {
     path == "tests/architecture/boundaries.rs"
 }
 
+#[test]
+fn metal_identity_stays_named_as_cpu_pixel_upload() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let context = fs::read_to_string(src.join("native/graphics/metal/platform/context.rs"))
+        .expect("read Metal PixelUpload context");
+    let registry = fs::read_to_string(src.join("native/factory/registry_macos.rs"))
+        .expect("read macOS graphics registry");
+
+    assert!(
+        context.contains("pub struct MetalPixelUploadContext"),
+        "the CPU PixelUpload implementation must not be named like a Metal native raster context"
+    );
+    assert!(
+        context.contains("GraphicsContextCaps::cpu_pixel_upload"),
+        "Metal identity must retain CPU PixelUpload caps"
+    );
+    assert!(
+        registry.contains("raster: RasterMode::Cpu")
+            && registry.contains("present: PresentMode::PixelUpload"),
+        "macOS Metal identity recipe must remain Cpu × PixelUpload"
+    );
+    assert!(
+        !registry.contains("raster: RasterMode::GpuNative"),
+        "Metal identity must not claim unimplemented native raster"
+    );
+}
+
 fn rust_code_without_comments(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut output = Vec::with_capacity(bytes.len());
