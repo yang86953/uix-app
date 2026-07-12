@@ -102,9 +102,9 @@ impl TsfSession {
 
         let mut context: Option<ITfContext> = None;
         let mut edit_cookie = 0u32;
-        if let Err(err) = unsafe {
-            doc_mgr.CreateContext(client_id, 0, &punk, &mut context, &mut edit_cookie)
-        } {
+        if let Err(err) =
+            unsafe { doc_mgr.CreateContext(client_id, 0, &punk, &mut context, &mut edit_cookie) }
+        {
             let _ = unsafe { thread_mgr.Deactivate() };
             return Err(windows_diag(
                 Errc::PlatformError,

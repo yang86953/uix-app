@@ -37,7 +37,9 @@ impl ImmStringRead {
 
 /// `WM_IME_STARTCOMPOSITION`：仅在首次进入 composition 时发出 Start。
 pub(crate) fn ime_start_composition_event(state: &mut WindowsImeState) -> Option<UiEvent> {
-    state.begin_composition().then(UiEvent::ime_composition_start)
+    state
+        .begin_composition()
+        .then(UiEvent::ime_composition_start)
 }
 
 /// `WM_IME_ENDCOMPOSITION` / kill-focus：仅在仍有 active composition 时发出 End。
@@ -187,11 +189,8 @@ mod tests {
     #[test]
     fn no_data_reads_do_not_mark_handled() {
         let mut state = WindowsImeState::default();
-        let (handled, events) = ime_composition_events(
-            &mut state,
-            ImmStringRead::NoData,
-            ImmStringRead::NoData,
-        );
+        let (handled, events) =
+            ime_composition_events(&mut state, ImmStringRead::NoData, ImmStringRead::NoData);
         assert!(!handled);
         assert!(events.is_empty());
     }

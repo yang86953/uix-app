@@ -7,10 +7,7 @@ use crate::core::WindowId;
 use crate::native::shared::WindowState;
 use crate::native::traits::event::UiEvent;
 
-pub fn push_window_close(
-    events: &Arc<Mutex<VecDeque<UiEvent>>>,
-    window_id: WindowId,
-) {
+pub fn push_window_close(events: &Arc<Mutex<VecDeque<UiEvent>>>, window_id: WindowId) {
     let _ = events
         .lock()
         .map(|mut queue| queue.push_back(UiEvent::close().for_window(window_id)));
@@ -58,7 +55,10 @@ mod tests {
         assert_eq!(queue.len(), 1);
         let event = queue.front().expect("resize event");
         assert_eq!(event.window_id, Some(WindowId::new(3)));
-        assert_eq!(event.type_, crate::native::traits::event::UiEventType::WindowResize);
+        assert_eq!(
+            event.type_,
+            crate::native::traits::event::UiEventType::WindowResize
+        );
     }
 
     #[test]
@@ -71,7 +71,10 @@ mod tests {
         assert_eq!(queue.len(), 1);
         let event = queue.front().expect("close event");
         assert_eq!(event.window_id, Some(WindowId::new(9)));
-        assert_eq!(event.type_, crate::native::traits::event::UiEventType::WindowClose);
+        assert_eq!(
+            event.type_,
+            crate::native::traits::event::UiEventType::WindowClose
+        );
     }
 
     #[test]
