@@ -1534,8 +1534,10 @@ impl RenderBackend for NativeGpuBackend {
         let target = off.target;
         self.gpu_ctx.bind_offscreen_target(target)?;
         if let Err(error) = self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0) {
-            let _ = self.gpu_ctx.bind_swapchain_target();
-            return Err(error);
+            return match self.gpu_ctx.bind_swapchain_target() {
+                Ok(()) => Err(error),
+                Err(restore_error) => Err(restore_error.with_source(error)),
+            };
         }
         self.active_offscreen = Some(handle.0);
         Ok(())
@@ -2079,6 +2081,7 @@ mod tests {
         Picture,
         Present,
         Shutdown,
+        RestoreSwapchainAfterClear,
     }
 
     struct RecordingContext {
@@ -2086,6 +2089,7 @@ mod tests {
         stages: Rc<RefCell<Vec<&'static str>>>,
         shutdown_calls: Rc<Cell<usize>>,
         make_current_calls: Rc<Cell<usize>>,
+        active_offscreen: bool,
         width: i32,
         height: i32,
     }
@@ -2179,6 +2183,12 @@ mod tests {
             _a: f32,
         ) -> crate::core::Result<()> {
             self.record("clear");
+            if self.fail_stage.get() == FailStage::RestoreSwapchainAfterClear {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "injected offscreen clear failure",
+                ));
+            }
             self.fail_if(FailStage::ClearTarget)
         }
 
@@ -2297,10 +2307,20 @@ mod tests {
         }
 
         fn bind_offscreen_target(&mut self, _id: OffscreenTargetId) -> crate::core::Result<()> {
+            self.active_offscreen = true;
             Ok(())
         }
 
         fn bind_swapchain_target(&mut self) -> crate::core::Result<()> {
+            if self.active_offscreen
+                && self.fail_stage.get() == FailStage::RestoreSwapchainAfterClear
+            {
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "injected swapchain restore failure",
+                ));
+            }
+            self.active_offscreen = false;
             Ok(())
         }
 
@@ -2331,6 +2351,7 @@ mod tests {
             stages: Rc::clone(stages),
             shutdown_calls: Rc::clone(shutdown_calls),
             make_current_calls: Rc::clone(make_current_calls),
+            active_offscreen: false,
             width: 1,
             height: 1,
         }
@@ -3502,6 +3523,33 @@ mod tests {
 
         drop(backend);
         assert_eq!(shutdown_calls.get(), 2);
+    }
+
+    #[test]
+    fn native_gpu_backend_surfaces_swapchain_restore_failure_after_offscreen_clear_fails() {
+        let RecordingFixture {
+            mut backend,
+            fail_stage,
+            ..
+        } = recording_backend(FailStage::RestoreSwapchainAfterClear);
+        let handle = backend
+            .create_offscreen(16, 16)
+            .expect("create Picture target");
+
+        let error = backend
+            .try_begin_offscreen_paint(&handle)
+            .expect_err("swapchain restoration failure must be surfaced");
+
+        assert_eq!(error.code(), Errc::InvalidState);
+        assert_eq!(error.message(), "injected swapchain restore failure");
+        assert_eq!(
+            error.root_cause().message(),
+            "injected offscreen clear failure"
+        );
+        assert!(backend.active_offscreen.is_none());
+
+        fail_stage.set(FailStage::None);
+        backend.shutdown();
     }
 
     #[test]
