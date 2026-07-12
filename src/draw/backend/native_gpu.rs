@@ -15,7 +15,7 @@ use crate::core::{DamageRegion, Errc, Error, Point, Rect};
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
+use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
@@ -1327,6 +1327,64 @@ impl RenderBackend for NativeGpuBackend {
             )?;
         }
         Ok(EncodedPictureExecution::Executed)
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        if self.active_offscreen.is_some() {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "main FrameEncoder execution cannot run while a Picture target is bound",
+            ));
+        }
+        if (self.width, self.height) != (encoder.width(), encoder.height()) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                format!(
+                    "FrameEncoder {}x{} does not match main native target {}x{}",
+                    encoder.width(),
+                    encoder.height(),
+                    self.width,
+                    self.height
+                ),
+            ));
+        }
+
+        // The main surface consumes the same complete API-neutral reference
+        // image as cached Pictures. No Canvas2D native/soft queue is allowed
+        // to race this ordered boundary; `present` below remains the only
+        // swap operation.
+        let frame = encoder.render_reference();
+        let execute = (|| {
+            self.gpu_ctx.make_current()?;
+            self.gpu_ctx.bind_swapchain_target()?;
+            self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
+            if let Some(tile) =
+                visible_soft_fallback_tile(frame.pixels(), frame.width(), frame.height())
+            {
+                self.gpu_ctx.blit_soft_fallback_tile(
+                    frame.pixels(),
+                    frame.width(),
+                    frame.height(),
+                    tile,
+                )?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = execute {
+            self.surface.needs_gpu_clear = true;
+            return Err(error);
+        }
+
+        // `begin_frame` may have prepared a clear or retained Canvas2D state.
+        // The FrameEncoder has replaced the target, so final `present` must
+        // not submit a second clear/draw sequence over it.
+        self.surface.needs_gpu_clear = false;
+        self.surface.pending_clear_rects.clear();
+        self.surface.canvas.commit_presented_frame();
+        Ok(EncodedFrameExecution::Executed)
     }
 
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
@@ -4313,6 +4371,62 @@ mod tests {
         native.destroy_offscreen(picture);
         native.shutdown();
         window.close().expect("close encoded Picture WARP window");
+    }
+
+    #[cfg(feature = "d3d11")]
+    #[test]
+    fn d3d11_warp_executes_main_frame_encoder_before_its_only_present() {
+        use crate::draw::pipeline::{FrameRasterOp, FrameRect};
+
+        if !crate::native::factory::d3d11_warp_test_context_available() {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("main FrameEncoder WARP test", 96, 64)
+            .expect("window");
+        let context = crate::native::factory::create_d3d11_warp_test_context(
+            window.native_surface_ptr(),
+            96,
+            64,
+        )
+        .expect("D3D11 WARP context");
+        let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
+        native.resize(96, 64).expect("resize native WARP backend");
+        let (frame_w, frame_h) = (native.width, native.height);
+
+        let mut encoder = FrameEncoder::new(frame_w, frame_h).expect("main FrameEncoder");
+        encoder.clear(Color::from_rgba(10, 20, 30, 255));
+        encoder.cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(24, 16, 32, 24),
+            color: Color::from_rgba(220, 40, 80, 192),
+        }]);
+        assert_eq!(
+            native
+                .try_execute_encoded_frame(&encoder)
+                .expect("execute main FrameEncoder"),
+            EncodedFrameExecution::Executed
+        );
+
+        let reference = encoder.render_reference();
+        let stride = native.gpu_ctx.width() as usize;
+        let pixels = native.try_readback().expect("read main FrameEncoder frame");
+        assert_premultiplied_probes_match(
+            &[
+                reference.pixel(4, 4).expect("background probe"),
+                reference.pixel(40, 28).expect("fill probe"),
+            ],
+            &[pixels[4 * stride + 4], pixels[28 * stride + 40]],
+            "D3D11 WARP main FrameEncoder before present",
+        );
+
+        native
+            .present(&DamageRegion::full())
+            .expect("single final present after main FrameEncoder");
+        native.shutdown();
+        window.close().expect("close main FrameEncoder WARP window");
     }
 
     #[cfg(feature = "d3d11")]

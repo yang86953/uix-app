@@ -4,7 +4,7 @@ pub use crate::draw::engine::RenderOutcome;
 
 use super::canvas::Canvas2D;
 use crate::core::{Error, Rect};
-use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
+use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::types::ImageHandle;
 
 /// 帧更新策略。
@@ -158,6 +158,17 @@ pub trait GraphicsEngine: 'static {
         _encoder: &FrameEncoder,
     ) -> Result<EncodedPictureExecution, Error> {
         Ok(EncodedPictureExecution::Unsupported)
+    }
+
+    /// Executes the complete API-neutral main frame without presenting it.
+    /// A backend that does not implement this contract must report
+    /// `Unsupported`; FrameRenderer deliberately treats that as a typed frame
+    /// failure rather than resuming a direct backend-canvas path.
+    fn try_execute_encoded_frame(
+        &mut self,
+        _encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        Ok(EncodedFrameExecution::Unsupported)
     }
 
     /// Bind/clear offscreen before Picture paint (GPU RT or CPU buffer).

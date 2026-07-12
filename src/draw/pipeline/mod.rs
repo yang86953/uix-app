@@ -11,8 +11,8 @@ pub mod session;
 pub use animation_registry::AnimationRegistry;
 pub use frame::{begin_frame, end_frame, normalize_strategy};
 pub use frame_encoder::{
-    EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError, FrameImage,
-    FramePresenter, FrameRasterOp, FrameRect, PresentOutcome, ReferenceFrame,
+    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameEncoderError,
+    FrameImage, FramePresenter, FrameRasterOp, FrameRect, PresentOutcome, ReferenceFrame,
 };
 pub use invalidation::{
     invalidate_paint_handle, Invalidation, InvalidationQueue, InvalidationQueueHandle, NodeId,

@@ -4,9 +4,9 @@ use std::any::Any;
 
 use crate::core::{DamageRegion, Error, Point, Rect, Size};
 
-use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
-use crate::draw::traits::{Canvas2D, PresentationMode};
 use crate::draw::ImageHandle;
+use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
+use crate::draw::traits::{Canvas2D, PresentationMode};
 
 /// Engine-level raster preference ([#169](docs/决策.md#d169)).
 ///
@@ -196,6 +196,16 @@ pub trait RenderBackend {
         _encoder: &FrameEncoder,
     ) -> Result<EncodedPictureExecution, Error> {
         Ok(EncodedPictureExecution::Unsupported)
+    }
+
+    /// Executes the complete ordered main frame. This operation never owns
+    /// presentation; [`RenderBackend::present`] remains the only final
+    /// submission boundary.
+    fn try_execute_encoded_frame(
+        &mut self,
+        _encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        Ok(EncodedFrameExecution::Unsupported)
     }
 
     /// Bind + clear offscreen for Picture rasterize. CPU: no-op success if handle valid.

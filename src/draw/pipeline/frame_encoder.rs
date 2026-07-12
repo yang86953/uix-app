@@ -122,6 +122,15 @@ pub enum EncodedPictureExecution {
     Unsupported,
 }
 
+/// Result of asking a backend to execute the complete main-surface command
+/// stream. Unlike [`EncodedPictureExecution`], this target is the frame that
+/// will reach the sole final presenter; execution itself must not present.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncodedFrameExecution {
+    Executed,
+    Unsupported,
+}
+
 /// The sole final-submission boundary for an encoded frame.
 pub trait FramePresenter {
     type Error;

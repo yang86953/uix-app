@@ -4,13 +4,13 @@
 
 use crate::core::{Error, Rect};
 
+use crate::draw::ImageHandle;
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
 use crate::draw::engine::RenderOutcome;
 use crate::draw::pipeline::RenderSession;
-use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
+use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
-use crate::draw::ImageHandle;
 
 /// CPU 软件渲染引擎。
 pub struct SoftwareEngine {
@@ -141,6 +141,15 @@ impl GraphicsEngine for SoftwareEngine {
         self.session
             .backend_mut()
             .try_execute_encoded_picture(handle, encoder)
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        self.session
+            .backend_mut()
+            .try_execute_encoded_frame(encoder)
     }
 
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
