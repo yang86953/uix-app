@@ -3,7 +3,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod layer_tree;
-mod picture;
+pub(crate) mod picture;
 pub mod scene_paint;
 mod viewport_transform;
 

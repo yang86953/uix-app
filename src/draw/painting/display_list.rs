@@ -5,9 +5,8 @@
 use crate::core::{Point, Rect};
 
 use crate::draw::font::text::TextRenderService;
-use crate::draw::image::{blit_handle, BitmapHandle, ImageService};
+use crate::draw::image::{BitmapHandle, ImageService, blit_handle};
 use crate::draw::painting::PaintContext;
-use crate::draw::pipeline::{FrameEncoder, FrameEncoderError, FrameRasterOp, FrameRect};
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::traits::Canvas2D;
@@ -177,15 +176,6 @@ pub struct DisplayList {
     ops: Vec<PaintOp>,
 }
 
-/// Why a cached Picture cannot use the deliberately narrow CPU
-/// `FrameEncoder` executor. The caller must replay the complete DisplayList
-/// on its existing canvas instead of approximating these operations.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PictureEncodingError {
-    InvalidExtent(FrameEncoderError),
-    Unsupported(&'static str),
-}
-
 impl DisplayList {
     pub fn new() -> Self {
         Self::default()
@@ -201,51 +191,6 @@ impl DisplayList {
 
     pub fn push(&mut self, op: PaintOp) {
         self.ops.push(op);
-    }
-
-    /// Builds an actual ordered `FrameEncoder` for the lossless CPU Picture
-    /// subset: save/restore plus sharp solid rectangles. Coordinates are
-    /// translated into the Picture-local target exactly as Canvas2D receives
-    /// them after `translate(-origin)`. Every other operation deliberately
-    /// returns `Unsupported`, so GPU and richer CPU Pictures retain normal
-    /// DisplayList replay rather than being rasterized approximately.
-    pub(crate) fn encode_sharp_rect_picture(
-        &self,
-        width: i32,
-        height: i32,
-        origin: Point,
-    ) -> Result<FrameEncoder, PictureEncodingError> {
-        let mut encoder =
-            FrameEncoder::new(width, height).map_err(PictureEncodingError::InvalidExtent)?;
-        encoder.clear(Color::transparent());
-
-        let mut operations = Vec::new();
-        for op in &self.ops {
-            match op {
-                PaintOp::Save | PaintOp::Restore => {}
-                PaintOp::FillRect {
-                    rect,
-                    color,
-                    radius,
-                } if radius
-                    .is_none_or(|r| r.tl == 0.0 && r.tr == 0.0 && r.br == 0.0 && r.bl == 0.0) =>
-                {
-                    let local = Rect::new(rect.x - origin.x, rect.y - origin.y, rect.w, rect.h);
-                    let (x, y, width, height) =
-                        crate::draw::rasterizer::core::rect_to_pixels(&local);
-                    operations.push(FrameRasterOp::FillRect {
-                        rect: FrameRect::new(x, y, width, height),
-                        color: *color,
-                    });
-                }
-                PaintOp::FillRect { .. } => {
-                    return Err(PictureEncodingError::Unsupported("rounded FillRect"));
-                }
-                _ => return Err(PictureEncodingError::Unsupported("non-rect PaintOp")),
-            }
-        }
-        encoder.cpu_segment(operations);
-        Ok(encoder)
     }
 
     /// 重放到 `PaintContext`（不再二次录制）。
