@@ -6,7 +6,7 @@
 #![allow(nonstandard_style)]
 #![allow(clippy::missing_safety_doc)]
 
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::ptr;
 
 use crate::native::backends::windows::util::windows_diag;
@@ -812,7 +812,7 @@ mod tests {
             "Windows HWND must be exposed as native_surface_ptr"
         );
 
-        let mut ctx = crate::native::create_gpu_context_with_backend(
+        let mut ctx = crate::native::factory::create_gpu_context_with_backend(
             surface,
             320,
             240,
@@ -853,7 +853,7 @@ mod tests {
             .window_manager()
             .create_window("WGL native raster caps", 320, 240)
             .expect("window");
-        let mut context = crate::native::create_gpu_context_with_backend(
+        let mut context = crate::native::factory::create_gpu_context_with_backend(
             window.native_surface_ptr(),
             320,
             240,

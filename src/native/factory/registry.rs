@@ -107,7 +107,7 @@ pub fn entry_for_recipe(recipe: GraphicsRecipe) -> Option<&'static GraphicsBacke
 }
 
 /// Creates a context for one registry row (no probe loop).
-pub fn try_create_context(
+pub(crate) fn try_create_context(
     entry: &GraphicsBackendEntry,
     native_surface: *mut c_void,
     width: i32,
@@ -203,7 +203,8 @@ pub fn try_create_gpu_recipe(
 ///
 /// New bootstrap code must use [`try_create_gpu_recipe`] so it can continue to
 /// later recipe rows for the same API.
-pub fn try_create_gpu_context(
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn try_create_gpu_context(
     backend: GraphicsBackend,
     native_surface: *mut c_void,
     width: i32,
@@ -458,9 +459,10 @@ mod tests {
             Ok(_) => panic!("wrong raster axis must be rejected"),
             Err(err) => err,
         };
-        assert!(err
-            .message()
-            .contains("reported backend=d3d11; raster=gpu_native"));
+        assert!(
+            err.message()
+                .contains("reported backend=d3d11; raster=gpu_native")
+        );
         assert!(err.message().contains("recipe backend=d3d11; raster=cpu"));
         assert_eq!(IDENTITY_MISMATCH_SHUTDOWNS.load(Ordering::SeqCst), 1);
     }

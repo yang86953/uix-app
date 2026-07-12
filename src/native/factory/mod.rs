@@ -17,9 +17,8 @@ use crate::native::traits::system::ISystemInfo;
 use std::ffi::c_void;
 
 pub use registry::{
-    active_entries, entry_for, entry_for_recipe, gpu_probe_candidates, gpu_recipe_candidates,
-    try_create_context, try_create_gpu_context, try_create_gpu_recipe, BackendStatus,
-    GraphicsBackendEntry, GraphicsRecipe,
+    BackendStatus, GraphicsBackendEntry, GraphicsRecipe, active_entries, entry_for,
+    entry_for_recipe, gpu_probe_candidates, gpu_recipe_candidates, try_create_gpu_recipe,
 };
 
 #[cfg(all(test, feature = "d3d11"))]
@@ -87,7 +86,8 @@ fn unsupported_platform_message() -> String {
 }
 
 /// 创建 GPU 图形上下文，指定单个 API；无 probe 循环。
-pub fn create_gpu_context_with_backend(
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn create_gpu_context_with_backend(
     native_surface: *mut c_void,
     width: i32,
     height: i32,
@@ -99,7 +99,7 @@ pub fn create_gpu_context_with_backend(
             "create_gpu_context: Auto requires draw::bootstrap_graphics_engine (sole probe loop)",
         ));
     }
-    try_create_gpu_context(requested, native_surface, width, height)
+    registry::try_create_gpu_context(requested, native_surface, width, height)
 }
 
 /// 探测系统可用空闲内存（字节）。
@@ -149,7 +149,12 @@ mod tests {
 
     #[test]
     fn d3d12_explicit_request_reports_build_state_or_surface_error() {
-        let err = match try_create_gpu_context(GraphicsBackend::D3d12, std::ptr::null_mut(), 1, 1) {
+        let err = match registry::try_create_gpu_context(
+            GraphicsBackend::D3d12,
+            std::ptr::null_mut(),
+            1,
+            1,
+        ) {
             Ok(_) => panic!("null surface must not create D3D12"),
             Err(err) => err,
         };
@@ -200,8 +205,9 @@ mod tests {
             .create_window("D3D12 factory test", 120, 80)
             .expect("window");
         let surface = window.native_surface_ptr();
-        let mut context = try_create_gpu_context(GraphicsBackend::D3d12, surface, 120, 80)
-            .expect("active D3D12 factory row");
+        let mut context =
+            registry::try_create_gpu_context(GraphicsBackend::D3d12, surface, 120, 80)
+                .expect("active D3D12 factory row");
         assert_eq!(context.graphics_backend(), GraphicsBackend::D3d12);
         assert_eq!(context.caps().raster, RasterMode::GpuNative);
         assert_eq!(context.caps().present, PresentMode::Swapchain);
@@ -221,8 +227,12 @@ mod tests {
 
     #[test]
     fn vulkan_candidate_is_real_linux_backend_or_platform_specific_error() {
-        let err = match try_create_gpu_context(GraphicsBackend::Vulkan, std::ptr::null_mut(), 1, 1)
-        {
+        let err = match registry::try_create_gpu_context(
+            GraphicsBackend::Vulkan,
+            std::ptr::null_mut(),
+            1,
+            1,
+        ) {
             Ok(_) => panic!("null surface should not create a Vulkan context"),
             Err(err) => err,
         };
