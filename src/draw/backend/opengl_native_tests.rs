@@ -99,6 +99,87 @@ fn record_half_blue_soft_tile(canvas: &mut dyn crate::draw::traits::Canvas2D) {
     canvas.pop_clip();
 }
 
+fn record_common_hybrid_clip_scene(canvas: &mut dyn crate::draw::traits::Canvas2D) {
+    canvas.fill_rect(
+        Rect::new(0.0, 0.0, 96.0, 64.0),
+        Color::from_rgba(0, 0, 0, 255),
+        None,
+    );
+    canvas.fill_rect(
+        Rect::new(16.0, 12.0, 48.0, 32.0),
+        Color::from_rgba(255, 0, 0, 255),
+        None,
+    );
+    canvas.push_clip(Rect::new(28.0, 18.0, 24.0, 20.0));
+    canvas.fill_ellipse(
+        Rect::new(20.0, 10.0, 40.0, 40.0),
+        Color::from_rgba(0, 0, 255, 128),
+    );
+    canvas.pop_clip();
+}
+
+fn wgl_rgba_to_aarrggbb(pixel: u32) -> u32 {
+    (pixel & 0xFF00_0000)
+        | ((pixel & 0x0000_00FF) << 16)
+        | (pixel & 0x0000_FF00)
+        | ((pixel & 0x00FF_0000) >> 16)
+}
+
+#[test]
+fn opengles_native_path_matches_software_for_hybrid_clip_and_bounded_tile() {
+    if std::env::consts::OS != "windows" {
+        return;
+    }
+
+    let mut software = SoftwareEngine::new();
+    software.initialize(96, 64).expect("initialize software");
+    let _ = software.begin_frame(UpdateStrategy::FullRedraw);
+    record_common_hybrid_clip_scene(software.canvas_2d());
+    let reference = software
+        .session()
+        .cpu_backend()
+        .expect("software CPU backend")
+        .pixels()
+        .to_vec();
+
+    let (_platform, mut window, mut engine) = open_engine("native GL hybrid parity", 96, 64);
+    let _ = engine.begin_frame(UpdateStrategy::FullRedraw);
+    record_common_hybrid_clip_scene(engine.canvas_2d());
+    let (pixels, stride, upload_bytes) = {
+        let backend = engine
+            .session_mut()
+            .native_gpu_backend_mut()
+            .expect("OpenGL ES NativeGpu backend");
+        let stride = backend.surface().size().w as usize;
+        let pixels = backend.try_readback().expect("read back hybrid clip frame");
+        (pixels, stride, backend.last_soft_upload_bytes())
+    };
+
+    for (x, y) in [(4usize, 4usize), (20, 16), (22, 12), (40, 28), (85, 55)] {
+        let expected = reference[y * 96 + x];
+        let actual = wgl_rgba_to_aarrggbb(pixels[(64 - 1 - y) * stride + x]);
+        for shift in [24, 16, 8, 0] {
+            let expected_channel = ((expected >> shift) & 0xFF) as i16;
+            let actual_channel = ((actual >> shift) & 0xFF) as i16;
+            assert!(
+                (expected_channel - actual_channel).abs() <= 1,
+                "probe ({x}, {y}), channel {shift}: expected {expected:#010X}, got {actual:#010X}"
+            );
+        }
+    }
+    assert!(
+        upload_bytes > 0 && upload_bytes < 96 * 64 * 4,
+        "bounded WGL soft fallback must not upload a full frame"
+    );
+
+    assert!(matches!(
+        engine.end_frame(&DamageRegion::full()),
+        crate::draw::RenderOutcome::Present(_)
+    ));
+    engine.shutdown();
+    window.close().expect("close native window");
+}
+
 #[test]
 fn opengles_native_path_matches_software_for_premultiplied_soft_tile() {
     if std::env::consts::OS != "windows" {
