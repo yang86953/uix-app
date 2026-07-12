@@ -22,6 +22,21 @@ pub use registry::{
     GraphicsBackendEntry, GraphicsRecipe,
 };
 
+#[cfg(all(test, feature = "d3d11"))]
+pub(crate) fn create_d3d11_warp_test_context(
+    surface: *mut std::ffi::c_void,
+    width: i32,
+    height: i32,
+) -> crate::core::Result<Box<dyn crate::native::traits::present::IGraphicsContext>> {
+    crate::native::graphics::d3d11::create_warp_test_context(surface, width, height)
+        .map(thread_bound::bind_to_current_thread)
+}
+
+#[cfg(all(test, feature = "d3d11"))]
+pub(crate) fn d3d11_warp_test_context_available() -> bool {
+    crate::native::graphics::d3d11::warp_test_context_available()
+}
+
 #[cfg(all(test, feature = "d3d12"))]
 pub(crate) fn create_d3d12_warp_test_context(
     surface: *mut std::ffi::c_void,
@@ -147,6 +162,31 @@ mod tests {
 
         #[cfg(not(windows))]
         assert!(err.message().contains("no registry entry"));
+    }
+
+    #[cfg(all(windows, feature = "d3d11"))]
+    #[test]
+    fn d3d11_warp_test_factory_returns_a_gpu_native_context() {
+        use crate::native::traits::present::{NativeRasterCaps, PresentMode, RasterMode};
+
+        assert!(d3d11_warp_test_context_available());
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("D3D11 WARP test factory", 120, 80)
+            .expect("window");
+        let mut context = create_d3d11_warp_test_context(window.native_surface_ptr(), 120, 80)
+            .expect("D3D11 WARP context");
+
+        assert_eq!(context.graphics_backend(), GraphicsBackend::D3d11);
+        assert_eq!(context.caps().raster, RasterMode::GpuNative);
+        assert_eq!(context.caps().present, PresentMode::Swapchain);
+        assert_eq!(context.native_raster_caps(), NativeRasterCaps::d3d11_full());
+
+        context
+            .try_shutdown()
+            .expect("thread-bound D3D11 WARP shutdown");
+        window.close().expect("close WARP test window");
     }
 
     #[cfg(all(windows, feature = "d3d12"))]

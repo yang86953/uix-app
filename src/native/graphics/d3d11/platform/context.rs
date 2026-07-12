@@ -250,6 +250,33 @@ impl D3d11Context {
         }
     }
 
+    /// Deterministic WARP-only constructor for crate tests.
+    ///
+    /// Production construction deliberately keeps the hardware-then-WARP
+    /// policy in [`Self::new`]. Tests that compare backend pixels must not
+    /// inherit a machine-specific hardware adapter instead.
+    #[cfg(test)]
+    pub(super) fn new_warp_test_context(
+        native_window: *mut c_void,
+        width: i32,
+        height: i32,
+    ) -> Result<Self> {
+        if native_window.is_null() {
+            return Err(Error::new(
+                Errc::PlatformError,
+                "D3d11Context: native window handle is null",
+            ));
+        }
+        let (client_w, client_h) = win_surface::client_size(native_window, width, height);
+        create_with_driver(
+            native_window,
+            client_w,
+            client_h,
+            &D3D11_FEATURE_LEVELS,
+            D3d11DriverKind::Warp,
+        )
+    }
+
     fn create_rtv(&mut self) -> Result<()> {
         let back_buffer: ID3D11Texture2D = unsafe {
             self.swap_chain
