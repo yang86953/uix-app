@@ -12,7 +12,7 @@ use std::ptr;
 use crate::native::backends::windows::util::windows_diag;
 use crate::native::graphics::opengl::raster::OpenGlRasterPipeline;
 use crate::native::graphics::platform::windows::{
-    device_context, drawable_size_from_hdc, release_device_context,
+    device_context, drawable_size_from_hdc, release_device_context, release_device_context_checked,
 };
 use crate::native::traits::present::{
     GpuSolidRect, IGraphicsContext, NativeRasterCaps, OffscreenTargetId, PresentDamage,
@@ -542,6 +542,41 @@ impl WglContext {
             Ok(())
         }
     }
+
+    fn shutdown_result(&mut self) -> Result<(), Error> {
+        if !self.hglrc.is_null() {
+            if unsafe { wglMakeCurrent(self.hdc, self.hglrc) } == 0 {
+                return Err(windows_diag(
+                    Errc::PlatformError,
+                    "WglContext: wglMakeCurrent during shutdown failed",
+                ));
+            }
+            self.pipeline.release();
+            if unsafe { wglMakeCurrent(ptr::null_mut(), ptr::null_mut()) } == 0 {
+                return Err(windows_diag(
+                    Errc::PlatformError,
+                    "WglContext: wglMakeCurrent(NULL) during shutdown failed",
+                ));
+            }
+            if unsafe { wglDeleteContext(self.hglrc) } == 0 {
+                return Err(windows_diag(
+                    Errc::PlatformError,
+                    "WglContext: wglDeleteContext failed",
+                ));
+            }
+            self.hglrc = ptr::null_mut();
+        }
+        if !self.hdc.is_null() {
+            if !unsafe { release_device_context_checked(self.hwnd, self.hdc) } {
+                return Err(windows_diag(
+                    Errc::PlatformError,
+                    "WglContext: ReleaseDC failed",
+                ));
+            }
+            self.hdc = ptr::null_mut();
+        }
+        Ok(())
+    }
 }
 
 impl IGraphicsContext for WglContext {
@@ -615,20 +650,16 @@ impl IGraphicsContext for WglContext {
         }
     }
 
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.shutdown_result()
+    }
+
     fn shutdown(&mut self) {
-        unsafe {
-            if !self.hglrc.is_null() {
-                if wglMakeCurrent(self.hdc, self.hglrc) != 0 {
-                    self.pipeline.release();
-                }
-                wglMakeCurrent(ptr::null_mut(), ptr::null_mut());
-                wglDeleteContext(self.hglrc);
-                self.hglrc = ptr::null_mut();
-            }
-            if !self.hdc.is_null() {
-                release_device_context(self.hwnd, self.hdc);
-                self.hdc = ptr::null_mut();
-            }
+        if let Err(error) = self.shutdown_result() {
+            crate::core::log::error_fn(format!(
+                "WglContext: shutdown failed: {}",
+                error.short_what()
+            ));
         }
     }
 

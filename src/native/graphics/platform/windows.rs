@@ -120,6 +120,13 @@ pub(crate) unsafe fn release_device_context(hwnd: *mut c_void, hdc: *mut c_void)
     let _ = ReleaseDC(hwnd, hdc);
 }
 
+/// Checked release used by a `Result`-returning graphics lifecycle path.
+/// Callers retain the HDC on failure so teardown can report and retry rather
+/// than silently discarding the last native error.
+pub(crate) unsafe fn release_device_context_checked(hwnd: *mut c_void, hdc: *mut c_void) -> bool {
+    ReleaseDC(hwnd, hdc) != 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
