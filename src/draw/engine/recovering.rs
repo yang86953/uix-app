@@ -306,6 +306,7 @@ mod tests {
     struct EndFailingEngine {
         inner: NullEngine,
         failure: GraphicsFailure,
+        frame_failure: Option<Error>,
         shutdowns: Option<Rc<std::cell::Cell<usize>>>,
     }
 
@@ -314,12 +315,18 @@ mod tests {
             Self {
                 inner: NullEngine::new(),
                 failure,
+                frame_failure: None,
                 shutdowns: None,
             }
         }
 
         fn with_shutdown_counter(mut self, shutdowns: Rc<std::cell::Cell<usize>>) -> Self {
             self.shutdowns = Some(shutdowns);
+            self
+        }
+
+        fn with_frame_failure(mut self, failure: Error) -> Self {
+            self.frame_failure = Some(failure);
             self
         }
     }
@@ -350,6 +357,16 @@ mod tests {
 
         fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
             self.inner.canvas_2d()
+        }
+
+        fn try_execute_encoded_frame(
+            &mut self,
+            encoder: &FrameEncoder,
+        ) -> Result<EncodedFrameExecution, Error> {
+            match &self.frame_failure {
+                Some(error) => Err(error.clone()),
+                None => self.inner.try_execute_encoded_frame(encoder),
+            }
         }
     }
 
@@ -402,6 +419,37 @@ mod tests {
             "injected external presenter failure",
         ));
 
+        assert!(matches!(
+            engine.begin_frame(UpdateStrategy::FullRedraw),
+            RenderOutcome::FrameReady(_)
+        ));
+        assert_eq!(
+            actions.borrow().as_slice(),
+            [RecoveryAction::RebuildSurface]
+        );
+    }
+
+    #[test]
+    fn main_frame_encoder_failure_is_retained_until_the_next_frame_boundary() {
+        let actions = Rc::new(RefCell::new(Vec::new()));
+        let recorded_actions = Rc::clone(&actions);
+        let mut engine = RecoveringGraphicsEngine::new(
+            Box::new(EndFailingEngine::new(surface_lost()).with_frame_failure(Error::new(
+                Errc::GraphicsSurfaceLost,
+                "injected main FrameEncoder failure",
+            ))),
+            Box::new(move |action, _, _| {
+                recorded_actions.borrow_mut().push(action);
+                Ok(Box::new(NullEngine::new()))
+            }),
+        );
+        engine.initialize(4, 3).expect("initial engine");
+        let encoder = FrameEncoder::new(4, 3).expect("main FrameEncoder");
+
+        let error = engine
+            .try_execute_encoded_frame(&encoder)
+            .expect_err("injected main frame failure");
+        assert_eq!(error.code(), Errc::GraphicsSurfaceLost);
         assert!(matches!(
             engine.begin_frame(UpdateStrategy::FullRedraw),
             RenderOutcome::FrameReady(_)
