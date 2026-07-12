@@ -68,7 +68,7 @@ impl EglContext {
     /// 创建 EGL 上下文，绑定到指定的 Wayland surface 指针。
     ///
     /// `native_surface` 必须是 `*mut wl_surface`（Wayland surface 的 C 指针）。
-    /// 优先尝试 GLES 3.0，失败时降级到 GLES 2.0。
+    /// Requires GLES 3.0 because the native pipeline owns GLSL ES 3 shaders.
     pub fn new(native_surface: *mut c_void, width: i32, height: i32) -> Result<Self, Error> {
         use khronos_egl as egl;
 
@@ -102,7 +102,9 @@ impl EglContext {
             ));
         }
 
-        // 4. 选择配置：RGBA 8888, depth 24, stencil 8, GLES 3
+        // 4. 选择配置：RGBA 8888, depth 24, stencil 8, GLES 3。
+        // The native pipeline uses GLSL ES 3 sources; accepting an ES2 config
+        // would only defer a guaranteed shader failure until after setup.
         let choose_config = |renderable_type| {
             let config_attribs = [
                 egl::SURFACE_TYPE,
@@ -129,24 +131,11 @@ impl EglContext {
         let config = match choose_config(egl::OPENGL_ES3_BIT) {
             Ok(Some(config)) => config,
             Ok(None) => {
-                crate::core::log::warn_fn("EglContext: 无 GLES 3 配置，重试 GLES 2 EGL 配置");
-                match choose_config(egl::OPENGL_ES2_BIT) {
-                    Ok(Some(config)) => config,
-                    Ok(None) => {
-                        let _ = egl.terminate(display);
-                        return Err(Error::new(
-                            Errc::PlatformError,
-                            "EglContext: 无可用 GLES 3/2 EGL 配置",
-                        ));
-                    }
-                    Err(e) => {
-                        let _ = egl.terminate(display);
-                        return Err(Error::new(
-                            Errc::PlatformError,
-                            format!("EglContext: GLES 2 choose_config 失败: {e:?}"),
-                        ));
-                    }
-                }
+                let _ = egl.terminate(display);
+                return Err(Error::new(
+                    Errc::NotImplemented,
+                    "EglContext: native raster requires a GLES 3 EGL config",
+                ));
             }
             Err(e) => {
                 let _ = egl.terminate(display);
@@ -182,38 +171,28 @@ impl EglContext {
             )
         })?;
 
-        // 7. 创建 GLES 上下文（优先 3.0，降级 2.0）
-        let context = {
-            let ctx3_attribs = [
-                egl::CONTEXT_MAJOR_VERSION,
-                3,
-                egl::CONTEXT_MINOR_VERSION,
-                0,
-                egl::NONE,
-            ];
-            match egl.create_context(display, config, None, &ctx3_attribs) {
-                Ok(ctx) => {
-                    crate::core::log::info_fn("EglContext: GLES 3.0 上下文创建成功");
-                    ctx
+        // 7. 创建 GLES 3.0 上下文；没有等价 ES2 pipeline 时不得降级。
+        let ctx3_attribs = [
+            egl::CONTEXT_MAJOR_VERSION,
+            3,
+            egl::CONTEXT_MINOR_VERSION,
+            0,
+            egl::NONE,
+        ];
+        let context = egl
+            .create_context(display, config, None, &ctx3_attribs)
+            .map_err(|e| {
+                unsafe {
+                    let _ = egl.destroy_surface(display, surface);
+                    wl_egl_window_destroy(egl_window);
                 }
-                Err(_) => {
-                    crate::core::log::warn_fn("EglContext: GLES 3.0 不可用，降级到 2.0");
-                    let ctx2_attribs = [egl::CONTEXT_CLIENT_VERSION, 2, egl::NONE];
-                    egl.create_context(display, config, None, &ctx2_attribs)
-                        .map_err(|e| {
-                            unsafe {
-                                let _ = egl.destroy_surface(display, surface);
-                                wl_egl_window_destroy(egl_window);
-                            }
-                            let _ = egl.terminate(display);
-                            Error::new(
-                                Errc::PlatformError,
-                                format!("EglContext: GLES 2.0 上下文也失败: {e:?}"),
-                            )
-                        })?
-                }
-            }
-        };
+                let _ = egl.terminate(display);
+                Error::new(
+                    Errc::NotImplemented,
+                    format!("EglContext: native raster requires GLES 3.0: {e:?}"),
+                )
+            })?;
+        crate::core::log::info_fn("EglContext: GLES 3.0 上下文创建成功");
 
         // 8. make current
         egl.make_current(display, Some(surface), Some(surface), Some(context))

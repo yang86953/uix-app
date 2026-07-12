@@ -478,6 +478,21 @@ fn draw_keeps_api_graphics_objects_inside_native() {
 }
 
 #[test]
+fn egl_native_pipeline_does_not_claim_an_unimplemented_gles2_fallback() {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics/opengl/platform/egl.rs"),
+    )
+    .expect("EGL context source");
+
+    assert!(source.contains("OPENGL_ES3_BIT"));
+    assert!(source.contains("CONTEXT_MAJOR_VERSION"));
+    assert!(
+        !source.contains("OPENGL_ES2_BIT") && !source.contains("CONTEXT_CLIENT_VERSION, 2"),
+        "the native raster pipeline uses #version 300 es shaders, so GLES2 must fail initialization rather than be advertised as a fallback"
+    );
+}
+
+#[test]
 fn removed_compatibility_terms_do_not_return_to_source() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let removed_terms = [
