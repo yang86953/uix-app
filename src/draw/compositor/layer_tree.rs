@@ -1340,6 +1340,10 @@ mod tests {
         fn current_clip(&self) -> Rect {
             self.clip
         }
+
+        fn scroll_region(&mut self, _: Rect, _: f32, _: f32) {
+            // Test double: this regression isolates clip-stack restoration.
+        }
     }
 
     struct LeakyClipEngine {

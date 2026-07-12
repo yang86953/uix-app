@@ -56,4 +56,8 @@ impl Canvas2D for NoopCanvas2D {
     fn current_clip(&self) -> Rect {
         Rect::new(0.0, 0.0, 1.0, 1.0)
     }
+    // NullEngine intentionally has no pixel target; making this explicit
+    // prevents a production Canvas2D implementation from inheriting no-op
+    // scroll-copy semantics by accident.
+    fn scroll_region(&mut self, _: Rect, _: f32, _: f32) {}
 }
