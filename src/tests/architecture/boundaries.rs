@@ -765,6 +765,23 @@ fn metal_pixel_upload_readback_cannot_report_an_empty_success() {
 }
 
 #[test]
+fn d3d11_checked_offscreen_destroy_cannot_ignore_swapchain_restore_failure() {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics/d3d11/platform/context.rs"),
+    )
+    .expect("read D3D11 context");
+
+    assert!(
+        source.contains("fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error>"),
+        "D3D11 checked offscreen destroy must not fall back to the void hook"
+    );
+    assert!(
+        source.contains("self.bind_swapchain_target()?;"),
+        "D3D11 checked offscreen destroy must propagate the swapchain restore failure"
+    );
+}
+
+#[test]
 fn low_level_widget_loop_stays_off_prelude() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let prelude = fs::read_to_string(src.join("prelude.rs")).unwrap();
