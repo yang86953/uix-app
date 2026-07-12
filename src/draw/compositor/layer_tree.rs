@@ -7,8 +7,9 @@ use std::collections::HashSet;
 use crate::core::{Point, Rect};
 
 use crate::core::DirtyRegion;
+use crate::draw::FontHandle;
 use crate::draw::compositor::picture::{
-    blit_picture_cache, rasterize_picture_to_offscreen, LayerRenderEnv,
+    LayerRenderEnv, blit_picture_cache, rasterize_picture_to_offscreen,
 };
 use crate::draw::compositor::viewport_transform::{needs_paint, needs_paint_rect};
 use crate::draw::compositor::{PicturePolicy, ScenePaint};
@@ -19,7 +20,6 @@ use crate::draw::pipeline::NodeId;
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::render_object::RenderObjectTree;
 use crate::draw::traits::GraphicsEngine;
-use crate::draw::FontHandle;
 
 /// Debug overlay：当前指针下的祖先链 + 最深命中节点。
 struct DebugHover {
@@ -241,10 +241,18 @@ impl LayerTree {
 
     /// 释放 build 后未复用的旧离屏缓冲。
     /// 必须在 build 之后、下一帧渲染之前调用。
-    pub fn sweep_orphaned_offscreens(&mut self, engine: &mut dyn GraphicsEngine) {
-        for handle in self.orphaned_handles.drain(..) {
-            engine.destroy_offscreen(handle);
+    pub fn sweep_orphaned_offscreens(
+        &mut self,
+        engine: &mut dyn GraphicsEngine,
+    ) -> Result<(), crate::core::Error> {
+        let handles = std::mem::take(&mut self.orphaned_handles);
+        for (index, handle) in handles.iter().copied().enumerate() {
+            if let Err(error) = engine.try_destroy_offscreen(handle) {
+                self.orphaned_handles.extend_from_slice(&handles[index..]);
+                return Err(error);
+            }
         }
+        Ok(())
     }
 
     /// 增量更新脏状态。
@@ -1336,12 +1344,16 @@ mod tests {
 
     struct LeakyClipEngine {
         canvas: LeakyClipCanvas,
+        destroy_error: Option<crate::core::Error>,
+        destroy_attempts: usize,
     }
 
     impl LeakyClipEngine {
         fn new() -> Self {
             Self {
                 canvas: LeakyClipCanvas::new(256, 256),
+                destroy_error: None,
+                destroy_attempts: 0,
             }
         }
     }
@@ -1376,6 +1388,42 @@ mod tests {
         fn canvas_2d(&mut self) -> &mut dyn crate::draw::traits::Canvas2D {
             &mut self.canvas
         }
+
+        fn try_destroy_offscreen(
+            &mut self,
+            _handle: ImageHandle,
+        ) -> Result<(), crate::core::Error> {
+            self.destroy_attempts += 1;
+            match &self.destroy_error {
+                Some(error) => Err(error.clone()),
+                None => Ok(()),
+            }
+        }
+    }
+
+    #[test]
+    fn orphaned_offscreen_sweep_preserves_unreleased_handles_after_checked_failure() {
+        let mut tree = LayerTree::new();
+        tree.orphaned_handles_mut()
+            .extend([ImageHandle(7), ImageHandle(11)]);
+        let mut engine = LeakyClipEngine::new();
+        engine.destroy_error = Some(crate::core::Error::new(
+            crate::core::Errc::GraphicsDeviceLost,
+            "injected orphaned Picture destroy failure",
+        ));
+
+        let error = tree
+            .sweep_orphaned_offscreens(&mut engine)
+            .expect_err("orphan sweep must propagate its first checked destroy failure");
+        assert_eq!(error.code(), crate::core::Errc::GraphicsDeviceLost);
+        assert_eq!(tree.orphaned_handles(), &[ImageHandle(7), ImageHandle(11)]);
+        assert_eq!(engine.destroy_attempts, 1);
+
+        engine.destroy_error = None;
+        tree.sweep_orphaned_offscreens(&mut engine)
+            .expect("retained orphan handles must be retryable");
+        assert!(tree.orphaned_handles().is_empty());
+        assert_eq!(engine.destroy_attempts, 3);
     }
 
     fn paint_overlay_outside_viewport(id: NodeId, ctx: &mut PaintContext<'_>) {
@@ -1432,10 +1480,10 @@ mod tests {
 
     #[test]
     fn picture_partial_dirty_rerasterize_repaints_all_direct_children() {
+        use crate::draw::SoftwareEngine;
         use crate::draw::font::font_service::FontService;
         use crate::draw::image::ImageService;
         use crate::draw::painting::ThemeSnapshot;
-        use crate::draw::SoftwareEngine;
         use std::cell::RefCell;
         use std::collections::HashSet;
 

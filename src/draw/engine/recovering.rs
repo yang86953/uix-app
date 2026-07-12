@@ -200,6 +200,10 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
         self.engine.destroy_offscreen(handle);
     }
 
+    fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
+        self.engine.try_destroy_offscreen(handle)
+    }
+
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
         self.engine.offscreen_canvas(handle)
     }
@@ -434,10 +438,12 @@ mod tests {
         let actions = Rc::new(RefCell::new(Vec::new()));
         let recorded_actions = Rc::clone(&actions);
         let mut engine = RecoveringGraphicsEngine::new(
-            Box::new(EndFailingEngine::new(surface_lost()).with_frame_failure(Error::new(
-                Errc::GraphicsSurfaceLost,
-                "injected main FrameEncoder failure",
-            ))),
+            Box::new(
+                EndFailingEngine::new(surface_lost()).with_frame_failure(Error::new(
+                    Errc::GraphicsSurfaceLost,
+                    "injected main FrameEncoder failure",
+                )),
+            ),
             Box::new(move |action, _, _| {
                 recorded_actions.borrow_mut().push(action);
                 Ok(Box::new(NullEngine::new()))

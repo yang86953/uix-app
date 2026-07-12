@@ -177,6 +177,15 @@ pub trait RenderBackend {
     fn destroy_offscreen(&mut self, handle: ImageHandle) {
         let _ = handle;
     }
+
+    /// Checked destruction boundary for an offscreen target. New compositor
+    /// paths must use this method so native failures retain ownership for
+    /// retry instead of being converted into a legacy void operation.
+    fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
+        self.destroy_offscreen(handle);
+        Ok(())
+    }
+
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
         let _ = handle;
         None

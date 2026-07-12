@@ -171,8 +171,18 @@ impl FrameRenderer {
             // direct paths are both included before the one real main-surface
             // FrameEncoder is executed.
             self.layer_tree.build(scene, true);
-            self.layer_tree
-                .sweep_orphaned_offscreens(&mut self.recording_engine);
+            if let Err(error) = self
+                .layer_tree
+                .sweep_orphaned_offscreens(&mut self.recording_engine)
+            {
+                return FrameRenderOutput {
+                    outcome: RenderOutcome::Failed(
+                        crate::draw::engine::GraphicsFailure::from_error(error),
+                    ),
+                    inv_source: InvalidationSource::None,
+                    tree_version: cur_version,
+                };
+            }
             self.last_tree_version = cur_version;
         }
         self.layer_tree.update_dirty(scene);
