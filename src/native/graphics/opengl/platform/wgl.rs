@@ -13,7 +13,9 @@ use crate::native::backends::windows::util::windows_diag;
 use crate::native::graphics::platform::windows::{
     device_context, query_client_rect, release_device_context,
 };
-use crate::native::traits::present::{IGraphicsContext, PresentDamage, PresentFrame};
+use crate::native::traits::present::{
+    IGraphicsContext, NativeGraphicsRuntime, PresentDamage, PresentFrame,
+};
 use crate::native::{Errc, Error};
 
 type HDC = *mut c_void;
@@ -613,21 +615,27 @@ impl IGraphicsContext for WglContext {
         self.height
     }
 
+    fn acquire_native_runtime(&mut self) -> Result<NativeGraphicsRuntime, Error> {
+        self.make_current_result()?;
+        let runtime = crate::native::graphics::opengl::NativeOpenGlRuntime::from_loader(|name| {
+            let Some(name) = CString::new(name).ok() else {
+                return ptr::null();
+            };
+            let proc = load_gl_proc(&name);
+            if invalid_wgl_proc(proc) {
+                ptr::null()
+            } else {
+                proc
+            }
+        });
+        Ok(NativeGraphicsRuntime::opengles(runtime))
+    }
+
     fn device_pixel_ratio(&self) -> f32 {
         if self.logical_width <= 0 {
             return 1.0;
         }
         self.width as f32 / self.logical_width as f32
-    }
-
-    fn get_proc_address(&self, name: &str) -> Option<*const c_void> {
-        let c_name = CString::new(name).ok()?;
-        let proc = load_gl_proc(&c_name);
-        if invalid_wgl_proc(proc) {
-            None
-        } else {
-            Some(proc)
-        }
     }
 }
 
@@ -703,6 +711,11 @@ mod tests {
         assert_eq!(caps.present, PresentMode::Swapchain);
         assert!(!ctx.supports_pixel_present());
         assert!(ctx.supports_gl_proc_address());
+        let runtime = ctx
+            .acquire_native_runtime()
+            .expect("native runtime lease must be created under WGL");
+        assert_eq!(runtime.backend(), GraphicsBackend::OpenGlEs);
+        drop(runtime);
 
         ctx.present(&PresentFrame::Swapchain {
             damage: PresentDamage::Full,

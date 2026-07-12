@@ -389,6 +389,58 @@ impl FromStr for GraphicsBackend {
     }
 }
 
+/// Opaque native runtime lease acquired from a graphics context.
+///
+/// Its public surface exposes only API-neutral identity. API objects and
+/// symbol loading remain private to `native/graphics/<api>`; crate-local draw
+/// adapters can consume the lease only through the matching native module.
+pub struct NativeGraphicsRuntime {
+    backend: GraphicsBackend,
+    #[cfg(feature = "opengles")]
+    opengles: Option<crate::native::graphics::opengl::NativeOpenGlRuntime>,
+}
+
+impl std::fmt::Debug for NativeGraphicsRuntime {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("NativeGraphicsRuntime")
+            .field("backend", &self.backend)
+            .finish_non_exhaustive()
+    }
+}
+
+impl NativeGraphicsRuntime {
+    pub fn backend(&self) -> GraphicsBackend {
+        self.backend
+    }
+
+    #[cfg(feature = "opengles")]
+    pub(crate) fn opengles(runtime: crate::native::graphics::opengl::NativeOpenGlRuntime) -> Self {
+        Self {
+            backend: GraphicsBackend::OpenGlEs,
+            opengles: Some(runtime),
+        }
+    }
+
+    #[cfg(feature = "opengles")]
+    pub(crate) fn into_opengles(
+        self,
+    ) -> Result<crate::native::graphics::opengl::NativeOpenGlRuntime, Error> {
+        if self.backend != GraphicsBackend::OpenGlEs {
+            return Err(Error::new(
+                crate::core::error::Errc::InvalidArgument,
+                format!("native graphics runtime is {}, not opengles", self.backend),
+            ));
+        }
+        self.opengles.ok_or_else(|| {
+            Error::new(
+                crate::core::error::Errc::InvalidState,
+                "opengles runtime lease did not contain a native runtime",
+            )
+        })
+    }
+}
+
 /// GPU graphics context lifecycle and presentation contract.
 pub trait IGraphicsContext {
     fn caps(&self) -> GraphicsContextCaps;
@@ -442,6 +494,24 @@ pub trait IGraphicsContext {
     fn width(&self) -> i32;
     fn height(&self) -> i32;
 
+    /// Acquire an opaque native runtime for the context's selected API.
+    ///
+    /// Draw code must not receive raw API symbol loaders through this trait.
+    /// Context implementations that do not expose a runtime keep the default
+    /// typed rejection; API-specific implementations create the runtime under
+    /// `native/graphics/<api>/` after making the context current.
+    fn acquire_native_runtime(&mut self) -> Result<NativeGraphicsRuntime, Error> {
+        Err(Error::new(
+            crate::core::error::Errc::NotImplemented,
+            format!(
+                "GraphicsBackend {} does not expose a native runtime",
+                self.graphics_backend()
+            ),
+        ))
+    }
+
+    /// Legacy capability query retained for tests and diagnostics during the
+    /// runtime-lease migration. It never exposes a raw proc loader.
     fn supports_gl_proc_address(&self) -> bool {
         self.caps().raster == RasterMode::GpuNative
             && self.caps().backend == GraphicsBackend::OpenGlEs
@@ -486,17 +556,6 @@ pub trait IGraphicsContext {
     /// Drawable pixels per logical client pixel (HiDPI). Default `1.0`.
     fn device_pixel_ratio(&self) -> f32 {
         1.0
-    }
-
-    /// Checked GL proc-loader boundary.  It is transitional: the GL object
-    /// itself still lives in `draw` until the R4 native raster split.
-    fn try_get_proc_address(&self, name: &str) -> Result<Option<*const std::ffi::c_void>, Error> {
-        Ok(self.get_proc_address(name))
-    }
-
-    fn get_proc_address(&self, name: &str) -> Option<*const std::ffi::c_void> {
-        let _ = name;
-        None
     }
 
     /// Clear the current GPU render target (GpuNative × Swapchain).

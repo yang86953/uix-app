@@ -10,7 +10,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use crate::native::traits::present::{IGraphicsContext, PresentDamage};
+use crate::native::traits::present::{IGraphicsContext, NativeGraphicsRuntime, PresentDamage};
 use crate::native::{Errc, Error};
 
 use super::EGL_PARTIAL_PRESENT;
@@ -355,10 +355,15 @@ impl IGraphicsContext for EglContext {
         self.height
     }
 
-    fn get_proc_address(&self, name: &str) -> Option<*const std::ffi::c_void> {
-        self.egl
-            .get_proc_address(name)
-            .map(|f| f as *const std::ffi::c_void)
+    fn acquire_native_runtime(&mut self) -> Result<NativeGraphicsRuntime, Error> {
+        self.make_current()?;
+        let egl = &self.egl;
+        let runtime = crate::native::graphics::opengl::NativeOpenGlRuntime::from_loader(|name| {
+            egl.get_proc_address(name)
+                .map(|function| function as *const std::ffi::c_void)
+                .unwrap_or(std::ptr::null())
+        });
+        Ok(NativeGraphicsRuntime::opengles(runtime))
     }
 }
 

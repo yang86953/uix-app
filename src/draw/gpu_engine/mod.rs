@@ -100,9 +100,9 @@ impl GraphicsEngine for GpuEngine {
             let vw = gpu.gpu_ctx.width();
             let vh = gpu.gpu_ctx.height();
             unsafe {
-                gpu.gl.viewport(0, 0, vw, vh);
-                gpu.gl.enable(glow::BLEND);
-                gpu.gl
+                gpu.gl().viewport(0, 0, vw, vh);
+                gpu.gl().enable(glow::BLEND);
+                gpu.gl()
                     .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
             }
         }
@@ -119,7 +119,7 @@ impl GraphicsEngine for GpuEngine {
         #[cfg(feature = "opengles")]
         if let Some(gpu) = self.session.gpu_backend_mut() {
             unsafe {
-                gpu.gl
+                gpu.gl()
                     .viewport(0, 0, gpu.gpu_ctx.width(), gpu.gpu_ctx.height());
             }
         }
