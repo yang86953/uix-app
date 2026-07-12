@@ -68,6 +68,10 @@ impl DrawSurface for CpuDrawSurface {
     fn canvas(&mut self) -> &mut dyn Canvas2D {
         &mut self.canvas
     }
+
+    fn take_deferred_error(&mut self) -> Option<Error> {
+        self.canvas.take_deferred_error()
+    }
 }
 
 /// CPU 软件渲染后端。
@@ -262,14 +266,16 @@ impl RenderBackend for CpuBackend {
     fn flush_offscreen_paint(&mut self, _handle: &ImageHandle) {}
 
     fn try_flush_offscreen_paint(&mut self, handle: &ImageHandle) -> Result<(), Error> {
-        if self.offscreens.get(handle).is_some() {
-            Ok(())
-        } else {
-            Err(Error::new(
+        let canvas = self.offscreens.get_mut(handle).ok_or_else(|| {
+            Error::new(
                 crate::core::Errc::InvalidState,
                 "Picture offscreen target disappeared before flush",
-            ))
+            )
+        })?;
+        if let Some(error) = canvas.take_deferred_error() {
+            return Err(error);
         }
+        Ok(())
     }
 
     fn end_offscreen_paint(&mut self) {

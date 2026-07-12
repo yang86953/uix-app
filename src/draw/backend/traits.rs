@@ -4,9 +4,9 @@ use std::any::Any;
 
 use crate::core::{DamageRegion, Error, Point, Rect, Size};
 
-use crate::draw::ImageHandle;
 use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::traits::{Canvas2D, PresentationMode};
+use crate::draw::ImageHandle;
 
 /// Engine-level raster preference ([#169](docs/决策.md#d169)).
 ///
@@ -124,6 +124,13 @@ pub trait DrawSurface {
     fn copy_region(&mut self, src: Rect, dst: Point);
 
     fn canvas(&mut self) -> &mut dyn Canvas2D;
+
+    /// Canvas2D keeps its immediate-mode compatibility surface, so operations
+    /// without a `Result` return channel store an error here. The sole frame
+    /// boundary consumes it before reporting `Present`.
+    fn take_deferred_error(&mut self) -> Option<Error> {
+        None
+    }
 }
 
 /// 渲染后端 — 只负责 surface 与像素提交。

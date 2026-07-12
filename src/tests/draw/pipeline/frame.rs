@@ -1,6 +1,7 @@
 use super::*;
-use crate::draw::backend::cpu::CpuDrawSurface;
-use crate::draw::backend::traits::BackendCapabilities;
+use crate::draw::backend::cpu::{CpuBackend, CpuDrawSurface};
+use crate::draw::backend::traits::{BackendCapabilities, RenderBackend};
+use crate::draw::primitives::path::PathBuilder;
 use crate::draw::traits::Canvas2D;
 
 #[test]
@@ -140,4 +141,60 @@ fn gpu_caps_force_full_clear_on_dirty_rects() {
     );
     assert_eq!(outcome, RenderOutcome::FrameReady(DamageRegion::full()));
     end_frame(&mut surface);
+}
+
+#[test]
+fn end_frame_rejects_an_unimplemented_path_clip_instead_of_reporting_present() {
+    let mut surface = CpuDrawSurface::new(16, 16);
+    let _ = begin_frame(
+        UpdateStrategy::FullRedraw,
+        &mut surface,
+        16,
+        16,
+        BackendCapabilities::cpu(),
+    );
+    let mut builder = PathBuilder::new();
+    builder
+        .move_to(2.0, 2.0)
+        .line_to(14.0, 2.0)
+        .line_to(8.0, 14.0)
+        .close();
+    surface.canvas_mut().push_clip_path(&builder.build());
+    surface.canvas_mut().fill_rect(
+        Rect::new(0.0, 0.0, 16.0, 16.0),
+        crate::draw::Color::red(),
+        None,
+    );
+
+    let outcome = end_frame(&mut surface);
+    assert!(matches!(
+        outcome,
+        RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::Other(error))
+            if error.code() == crate::core::Errc::NotImplemented
+    ));
+}
+
+#[test]
+fn checked_picture_flush_rejects_an_unimplemented_path_clip() {
+    let mut backend = CpuBackend::new();
+    backend.resize(16, 16).expect("resize CPU backend");
+    let handle = backend.create_offscreen(16, 16).expect("Picture target");
+    backend
+        .try_begin_offscreen_paint(&handle)
+        .expect("begin Picture paint");
+    let mut builder = PathBuilder::new();
+    builder
+        .move_to(2.0, 2.0)
+        .line_to(14.0, 2.0)
+        .line_to(8.0, 14.0)
+        .close();
+    backend
+        .offscreen_canvas(&handle)
+        .expect("Picture canvas")
+        .push_clip_path(&builder.build());
+
+    let error = backend
+        .try_flush_offscreen_paint(&handle)
+        .expect_err("unsupported Picture path clip must not flush successfully");
+    assert_eq!(error.code(), crate::core::Errc::NotImplemented);
 }
