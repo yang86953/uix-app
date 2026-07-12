@@ -205,7 +205,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]
+    #[cfg(feature = "d3d11")]
     use crate::native::traits::present::NativeRasterCaps;
     use crate::native::traits::present::{
         GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentMode, RasterMode,
@@ -338,13 +338,19 @@ mod tests {
         }
     }
 
-    struct InitFailingContext {
+    #[cfg(feature = "d3d11")]
+    struct ResizeFailingNativeContext {
         shutdown_called: Rc<Cell<bool>>,
     }
 
-    impl IGraphicsContext for InitFailingContext {
+    #[cfg(feature = "d3d11")]
+    impl IGraphicsContext for ResizeFailingNativeContext {
         fn caps(&self) -> GraphicsContextCaps {
-            GraphicsContextCaps::cpu_pixel_upload(GraphicsBackend::D3d11, 1.0)
+            GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
+        }
+
+        fn native_raster_caps(&self) -> NativeRasterCaps {
+            NativeRasterCaps::d3d11_full()
         }
 
         fn initialize(
@@ -353,11 +359,11 @@ mod tests {
             _width: i32,
             _height: i32,
         ) -> Result<()> {
-            Err(Error::new(Errc::PlatformError, "init failed for test"))
+            Ok(())
         }
 
         fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
-            Ok(())
+            Err(Error::new(Errc::PlatformError, "resize failed for test"))
         }
 
         fn make_current(&mut self) -> crate::core::Result<()> {
@@ -405,12 +411,12 @@ mod tests {
             480,
             GraphicsBackend::D3d11,
             |_candidate| {
-                Ok(Box::new(InitFailingContext {
+                Ok(Box::new(ResizeFailingNativeContext {
                     shutdown_called: Rc::clone(&shutdown_called),
                 }) as Box<dyn IGraphicsContext>)
             },
         ) {
-            Ok(_) => panic!("initialize failure must reject bootstrap"),
+            Ok(_) => panic!("engine initialization failure must reject bootstrap"),
             Err(report) => {
                 assert!(shutdown_called.get());
                 let failure = report.failures.first().expect("init failure");
@@ -418,8 +424,8 @@ mod tests {
                 assert!(failure.message.contains("stage=engine_initialize"));
                 assert!(failure
                     .message
-                    .contains("selected=backend=d3d11; raster=cpu; present=pixel_upload"));
-                assert!(failure.message.contains("init failed for test"));
+                    .contains("selected=backend=d3d11; raster=gpu_native; present=swapchain"));
+                assert!(failure.message.contains("resize failed for test"));
             }
         }
     }

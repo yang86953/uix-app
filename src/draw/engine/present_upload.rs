@@ -55,14 +55,15 @@ impl PresentUploadEngine {
 }
 
 impl GraphicsEngine for PresentUploadEngine {
-    fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error> {
-        let logical_w = width.max(1);
-        let logical_h = height.max(1);
-        self.gpu_ctx
-            .initialize(std::ptr::null_mut(), logical_w, logical_h)?;
-        // Canvas2D / 布局使用逻辑像素；物理尺寸仅由 GPU present 路径消费。
+    fn initialize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
+        // The native factory owns creation against the real surface. Calling
+        // `IGraphicsContext::initialize` here would reinitialize a live
+        // context with a null surface, so this stage only creates the CPU
+        // draw session at the factory-reported drawable size.
+        let actual_w = self.gpu_ctx.width().max(1);
+        let actual_h = self.gpu_ctx.height().max(1);
         self.sync_clear_color();
-        self.session.initialize(logical_w, logical_h)
+        self.session.initialize(actual_w, actual_h)
     }
 
     fn shutdown(&mut self) {
@@ -258,6 +259,7 @@ mod tests {
         frame: Arc<Mutex<Option<PresentedFrame>>>,
         width: i32,
         height: i32,
+        initialize_calls: Arc<AtomicUsize>,
         fail_present: bool,
         fail_resize: bool,
         partial_present: bool,
@@ -266,10 +268,15 @@ mod tests {
 
     impl RecordingPixelContext {
         fn new(frame: Arc<Mutex<Option<PresentedFrame>>>) -> Self {
+            Self::with_extent(frame, 4, 3)
+        }
+
+        fn with_extent(frame: Arc<Mutex<Option<PresentedFrame>>>, width: i32, height: i32) -> Self {
             Self {
                 frame,
-                width: 0,
-                height: 0,
+                width,
+                height,
+                initialize_calls: Arc::new(AtomicUsize::new(0)),
                 fail_present: false,
                 fail_resize: false,
                 partial_present: false,
@@ -295,6 +302,7 @@ mod tests {
             width: i32,
             height: i32,
         ) -> Result<()> {
+            self.initialize_calls.fetch_add(1, Ordering::SeqCst);
             self.width = width;
             self.height = height;
             Ok(())
@@ -358,6 +366,19 @@ mod tests {
             });
             Ok(())
         }
+    }
+
+    #[test]
+    fn present_upload_engine_uses_factory_initialized_context_without_second_initialize() {
+        let frame = Arc::new(Mutex::new(None));
+        let context = RecordingPixelContext::with_extent(frame, 7, 5);
+        let initialize_calls = Arc::clone(&context.initialize_calls);
+        let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
+
+        engine.initialize(64, 48).unwrap();
+
+        assert_eq!(initialize_calls.load(Ordering::SeqCst), 0);
+        assert_eq!((engine.session.width(), engine.session.height()), (7, 5));
     }
 
     #[test]
