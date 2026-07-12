@@ -99,7 +99,7 @@ impl IGraphicsContext for MetalContext {
         validate_pixel_buffer(pixels, width, height)?;
         // SAFETY: layer pointer comes from AppKit-owned CALayer on the UI thread.
         unsafe {
-            platform::present_layer_pixels(self.layer, pixels, width, height, damage);
+            platform::present_layer_pixels(self.layer, pixels, width, height, damage)?;
         }
         Ok(())
     }

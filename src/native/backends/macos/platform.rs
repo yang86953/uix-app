@@ -399,7 +399,7 @@ impl IPresenter for MacosPresenter {
         // SAFETY: pixels is a live Rust slice for the duration of this call, and
         // set_layer_pixels copies it into CFData/CGImage before returning.
         unsafe {
-            present_layer_pixels(self.layer, pixels, width, height, _damage);
+            present_layer_pixels(self.layer, pixels, width, height, _damage)?;
         }
         Ok(())
     }
@@ -1174,32 +1174,43 @@ mod cocoa {
             .unwrap_or(false)
     }
 
-    pub unsafe fn set_layer_pixels(layer: Id, pixels: &[u32], width: i32, height: i32) {
+    pub unsafe fn set_layer_pixels(
+        layer: Id,
+        pixels: &[u32],
+        width: i32,
+        height: i32,
+    ) -> std::result::Result<(), String> {
         if layer.is_null() || width <= 0 || height <= 0 || pixels.is_empty() {
-            return;
+            return Err("invalid CALayer pixel payload".to_owned());
         }
         let len = (width as usize)
-            .saturating_mul(height as usize)
-            .min(pixels.len());
-        let byte_len = len.saturating_mul(std::mem::size_of::<u32>());
-        let data = CFDataCreate(
-            std::ptr::null_mut(),
-            pixels.as_ptr() as *const u8,
-            byte_len as isize,
-        );
+            .checked_mul(height as usize)
+            .ok_or_else(|| format!("CALayer pixel extent overflows usize: {width}x{height}"))?;
+        if pixels.len() < len {
+            return Err(format!(
+                "CALayer pixel payload too short: got {}, need {len} for {width}x{height}",
+                pixels.len()
+            ));
+        }
+        let byte_len = len
+            .checked_mul(std::mem::size_of::<u32>())
+            .ok_or_else(|| format!("CALayer byte length overflows for {width}x{height}"))?;
+        let byte_len = isize::try_from(byte_len)
+            .map_err(|_| format!("CALayer byte length exceeds CFData limit: {byte_len}"))?;
+        let data = CFDataCreate(std::ptr::null_mut(), pixels.as_ptr() as *const u8, byte_len);
         if data.is_null() {
-            return;
+            return Err("CFDataCreate for CALayer pixels failed".to_owned());
         }
         let provider = CGDataProviderCreateWithCFData(data);
         if provider.is_null() {
             CFRelease(data);
-            return;
+            return Err("CGDataProviderCreateWithCFData for CALayer pixels failed".to_owned());
         }
         let color_space = CGColorSpaceCreateDeviceRGB();
         if color_space.is_null() {
             CFRelease(provider);
             CFRelease(data);
-            return;
+            return Err("CGColorSpaceCreateDeviceRGB for CALayer pixels failed".to_owned());
         }
         let image = CGImageCreate(
             width as usize,
@@ -1214,14 +1225,19 @@ mod cocoa {
             NO,
             0,
         );
-        if !image.is_null() {
-            msg_void_id(layer, "setContents:", image);
-            msg_void(layer, "setNeedsDisplay");
-            CFRelease(image);
+        if image.is_null() {
+            CFRelease(color_space);
+            CFRelease(provider);
+            CFRelease(data);
+            return Err("CGImageCreate for CALayer pixels failed".to_owned());
         }
+        msg_void_id(layer, "setContents:", image);
+        msg_void(layer, "setNeedsDisplay");
+        CFRelease(image);
         CFRelease(color_space);
         CFRelease(provider);
         CFRelease(data);
+        Ok(())
     }
 
     pub unsafe fn dispatch_one_event(until: Id) -> Option<MacosAppEvent> {
@@ -1553,6 +1569,11 @@ pub(crate) unsafe fn present_layer_pixels(
     width: i32,
     height: i32,
     _damage: PresentDamage,
-) {
-    cocoa::set_layer_pixels(layer, pixels, width, height);
+) -> crate::core::Result<(), Error> {
+    cocoa::set_layer_pixels(layer, pixels, width, height).map_err(|message| {
+        Error::new(
+            Errc::PlatformError,
+            format!("MacosPresenter: CALayer pixel present failed: {message}"),
+        )
+    })
 }
