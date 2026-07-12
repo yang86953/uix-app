@@ -15,7 +15,10 @@ use crate::core::{DamageRegion, Errc, Error, Point, Rect};
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
-use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
+use crate::draw::pipeline::{
+    EncodedFrameExecution, EncodedPictureExecution, FrameCommand, FrameEncoder, FrameRasterOp,
+    ReferenceFrame,
+};
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
@@ -1161,6 +1164,104 @@ impl NativeGpuBackend {
         self.surface.canvas.commit_presented_frame();
         Ok(())
     }
+
+    /// Executes the API-neutral stream at each recorded command boundary.
+    /// `Native` maps to the GPU-native DTO, while CPU segments and Picture
+    /// blits produce isolated transparent sources and are alpha-uploaded at
+    /// their original painter-order position. This deliberately does not
+    /// upload a completed `render_reference()` frame.
+    fn execute_frame_encoder(&mut self, encoder: &FrameEncoder) -> Result<(), Error> {
+        let mut target_initialized = false;
+        for command in encoder.commands() {
+            match command {
+                FrameCommand::Clear { color } => {
+                    self.clear_frame_encoder_target(*color)?;
+                    target_initialized = true;
+                }
+                FrameCommand::Native { operation } => {
+                    self.ensure_frame_encoder_target(&mut target_initialized)?;
+                    self.execute_native_frame_operation(
+                        encoder.width(),
+                        encoder.height(),
+                        operation,
+                    )?;
+                }
+                FrameCommand::CpuSegment { operations } => {
+                    self.ensure_frame_encoder_target(&mut target_initialized)?;
+                    let source = encoder.cpu_segment_reference(operations);
+                    self.alpha_blit_frame_encoder_source(&source)?;
+                }
+                FrameCommand::PictureBlit { image, src, dst } => {
+                    self.ensure_frame_encoder_target(&mut target_initialized)?;
+                    let source = encoder.picture_blit_reference(image, *src, *dst);
+                    self.alpha_blit_frame_encoder_source(&source)?;
+                }
+            }
+        }
+        if !target_initialized {
+            self.clear_frame_encoder_target(Color::transparent())?;
+        }
+        Ok(())
+    }
+
+    fn ensure_frame_encoder_target(&mut self, target_initialized: &mut bool) -> Result<(), Error> {
+        if !*target_initialized {
+            self.clear_frame_encoder_target(Color::transparent())?;
+            *target_initialized = true;
+        }
+        Ok(())
+    }
+
+    fn clear_frame_encoder_target(&mut self, color: Color) -> Result<(), Error> {
+        self.gpu_ctx.clear_render_target(
+            color.r as f32 / 255.0,
+            color.g as f32 / 255.0,
+            color.b as f32 / 255.0,
+            color.a as f32 / 255.0,
+        )
+    }
+
+    fn execute_native_frame_operation(
+        &mut self,
+        target_width: i32,
+        target_height: i32,
+        operation: &FrameRasterOp,
+    ) -> Result<(), Error> {
+        match operation {
+            FrameRasterOp::FillRect { rect, color } => {
+                if rect.width <= 0 || rect.height <= 0 {
+                    return Ok(());
+                }
+                self.gpu_ctx.draw_solid_rects(
+                    target_width as f32,
+                    target_height as f32,
+                    None,
+                    &[GpuSolidRect {
+                        x: rect.x as f32,
+                        y: rect.y as f32,
+                        w: rect.width as f32,
+                        h: rect.height as f32,
+                        rgba: [
+                            color.r as f32 / 255.0,
+                            color.g as f32 / 255.0,
+                            color.b as f32 / 255.0,
+                            color.a as f32 / 255.0,
+                        ],
+                        radius: [0.0; 4],
+                    }],
+                )
+            }
+        }
+    }
+
+    fn alpha_blit_frame_encoder_source(&mut self, source: &ReferenceFrame) -> Result<(), Error> {
+        if let Some((pixels, tile)) =
+            pack_visible_soft_fallback_tile(source.pixels(), source.width(), source.height())
+        {
+            self.gpu_ctx.blit_soft_fallback_tile(&pixels, tile)?;
+        }
+        Ok(())
+    }
 }
 
 impl RenderBackend for NativeGpuBackend {
@@ -1297,7 +1398,7 @@ impl RenderBackend for NativeGpuBackend {
                 "FrameEncoder Picture execution requires its bound offscreen target",
             ));
         }
-        let off = self
+        let target = self
             .offscreens
             .get(handle.0 as usize)
             .and_then(Option::as_ref)
@@ -1307,32 +1408,22 @@ impl RenderBackend for NativeGpuBackend {
                     "Picture offscreen target disappeared before FrameEncoder execution",
                 )
             })?;
-        if (off.width, off.height) != (encoder.width(), encoder.height()) {
+        if (target.width, target.height) != (encoder.width(), encoder.height()) {
             return Err(Error::new(
                 Errc::InvalidState,
                 format!(
                     "FrameEncoder {}x{} does not match Picture target {}x{}",
                     encoder.width(),
                     encoder.height(),
-                    off.width,
-                    off.height
+                    target.width,
+                    target.height
                 ),
             ));
         }
+        let target = target.target;
 
-        // `FrameEncoder` is the source of truth for this cached Picture: replay
-        // it into a CPU reference, clear the already-bound native target with
-        // replace semantics, then submit only the alpha-visible tile. This
-        // preserves its complete painter order without exposing API objects to
-        // draw or silently falling back to an unrelated DisplayList path.
-        let frame = encoder.render_reference();
-        self.gpu_ctx.bind_offscreen_target(off.target)?;
-        self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
-        if let Some((pixels, tile)) =
-            pack_visible_soft_fallback_tile(frame.pixels(), frame.width(), frame.height())
-        {
-            self.gpu_ctx.blit_soft_fallback_tile(&pixels, tile)?;
-        }
+        self.gpu_ctx.bind_offscreen_target(target)?;
+        self.execute_frame_encoder(encoder)?;
         Ok(EncodedPictureExecution::Executed)
     }
 
@@ -1359,21 +1450,10 @@ impl RenderBackend for NativeGpuBackend {
             ));
         }
 
-        // The main surface consumes the same complete API-neutral reference
-        // image as cached Pictures. No Canvas2D native/soft queue is allowed
-        // to race this ordered boundary; `present` below remains the only
-        // swap operation.
-        let frame = encoder.render_reference();
         let execute = (|| {
             self.gpu_ctx.make_current()?;
             self.gpu_ctx.bind_swapchain_target()?;
-            self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
-            if let Some((pixels, tile)) =
-                pack_visible_soft_fallback_tile(frame.pixels(), frame.width(), frame.height())
-            {
-                self.gpu_ctx.blit_soft_fallback_tile(&pixels, tile)?;
-            }
-            Ok(())
+            self.execute_frame_encoder(encoder)
         })();
         if let Err(error) = execute {
             self.surface.needs_gpu_clear = true;
@@ -3156,6 +3236,46 @@ mod tests {
     }
 
     #[test]
+    fn main_frame_encoder_executes_each_command_at_its_recorded_boundary() {
+        use crate::draw::pipeline::{FrameImage, FrameRasterOp, FrameRect};
+
+        let RecordingFixture {
+            mut backend,
+            stages,
+            ..
+        } = recording_backend(FailStage::None);
+        backend.resize(16, 16).expect("resize");
+
+        let mut encoder = FrameEncoder::new(16, 16).expect("encoder");
+        encoder.clear(Color::from_rgb(12, 20, 32));
+        encoder.native(FrameRasterOp::FillRect {
+            rect: FrameRect::new(1, 2, 3, 4),
+            color: Color::from_rgb(220, 40, 80),
+        });
+        encoder.cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(5, 6, 3, 4),
+            color: Color::from_rgba(20, 180, 240, 160),
+        }]);
+        encoder.blit_picture(
+            FrameImage::solid(2, 2, Color::from_rgba(180, 220, 40, 192)).expect("picture image"),
+            FrameRect::new(0, 0, 2, 2),
+            FrameRect::new(9, 10, 2, 2),
+        );
+
+        assert_eq!(
+            backend
+                .try_execute_encoded_frame(&encoder)
+                .expect("execute encoded main frame"),
+            EncodedFrameExecution::Executed
+        );
+        assert_eq!(
+            stages.borrow().as_slice(),
+            ["clear", "solid", "soft", "soft"],
+            "each encoded command must reach its matching native boundary in painter order"
+        );
+    }
+
+    #[test]
     fn native_picture_failure_is_reported_from_the_final_present_boundary() {
         let RecordingFixture {
             mut backend,
@@ -4351,7 +4471,7 @@ mod tests {
     #[cfg(feature = "d3d11")]
     #[test]
     fn d3d11_warp_executes_encoded_picture_in_its_bound_offscreen_target() {
-        use crate::draw::pipeline::{FrameRasterOp, FrameRect};
+        use crate::draw::pipeline::{FrameImage, FrameRasterOp, FrameRect};
 
         if !crate::native::factory::d3d11_warp_test_context_available() {
             return;
@@ -4377,10 +4497,19 @@ mod tests {
             .expect("bind Picture target");
         let mut encoder = FrameEncoder::new(32, 24).expect("FrameEncoder");
         encoder.clear(Color::transparent());
+        encoder.native(FrameRasterOp::FillRect {
+            rect: FrameRect::new(2, 2, 4, 4),
+            color: Color::red(),
+        });
         encoder.cpu_segment([FrameRasterOp::FillRect {
             rect: FrameRect::new(8, 4, 16, 12),
             color: Color::blue(),
         }]);
+        encoder.blit_picture(
+            FrameImage::solid(2, 2, Color::green()).expect("Picture image"),
+            FrameRect::new(0, 0, 2, 2),
+            FrameRect::new(26, 18, 2, 2),
+        );
         assert_eq!(
             native
                 .try_execute_encoded_picture(&picture, &encoder)
@@ -4401,15 +4530,20 @@ mod tests {
             )
             .expect("blit encoded Picture");
 
-        let expected = encoder
-            .render_reference()
-            .pixel(12, 8)
-            .expect("encoded blue pixel");
+        let reference = encoder.render_reference();
         let stride = native.gpu_ctx.width() as usize;
         let pixels = native.try_readback().expect("read encoded Picture frame");
         assert_premultiplied_probes_match(
-            &[expected],
-            &[pixels[24 * stride + 44]],
+            &[
+                reference.pixel(3, 3).expect("encoded native pixel"),
+                reference.pixel(12, 8).expect("encoded CPU pixel"),
+                reference.pixel(26, 18).expect("encoded Picture pixel"),
+            ],
+            &[
+                pixels[19 * stride + 35],
+                pixels[24 * stride + 44],
+                pixels[34 * stride + 58],
+            ],
             "D3D11 WARP encoded Picture",
         );
 
@@ -4424,7 +4558,7 @@ mod tests {
     #[cfg(feature = "d3d11")]
     #[test]
     fn d3d11_warp_executes_main_frame_encoder_before_its_only_present() {
-        use crate::draw::pipeline::{FrameRasterOp, FrameRect};
+        use crate::draw::pipeline::{FrameImage, FrameRasterOp, FrameRect};
 
         if !crate::native::factory::d3d11_warp_test_context_available() {
             return;
@@ -4447,10 +4581,20 @@ mod tests {
 
         let mut encoder = FrameEncoder::new(frame_w, frame_h).expect("main FrameEncoder");
         encoder.clear(Color::from_rgba(10, 20, 30, 255));
+        encoder.native(FrameRasterOp::FillRect {
+            rect: FrameRect::new(8, 8, 12, 12),
+            color: Color::from_rgba(40, 220, 80, 255),
+        });
         encoder.cpu_segment([FrameRasterOp::FillRect {
             rect: FrameRect::new(24, 16, 32, 24),
             color: Color::from_rgba(220, 40, 80, 192),
         }]);
+        encoder.blit_picture(
+            FrameImage::solid(2, 2, Color::from_rgba(40, 120, 240, 255))
+                .expect("main Picture image"),
+            FrameRect::new(0, 0, 2, 2),
+            FrameRect::new(72, 48, 2, 2),
+        );
         assert_eq!(
             native
                 .try_execute_encoded_frame(&encoder)
@@ -4464,9 +4608,16 @@ mod tests {
         assert_premultiplied_probes_match(
             &[
                 reference.pixel(4, 4).expect("background probe"),
+                reference.pixel(10, 10).expect("native probe"),
                 reference.pixel(40, 28).expect("fill probe"),
+                reference.pixel(72, 48).expect("Picture probe"),
             ],
-            &[pixels[4 * stride + 4], pixels[28 * stride + 40]],
+            &[
+                pixels[4 * stride + 4],
+                pixels[10 * stride + 10],
+                pixels[28 * stride + 40],
+                pixels[48 * stride + 72],
+            ],
             "D3D11 WARP main FrameEncoder before present",
         );
 

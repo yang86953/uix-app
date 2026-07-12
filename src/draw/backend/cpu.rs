@@ -216,9 +216,7 @@ impl RenderBackend for CpuBackend {
                 ),
             ));
         }
-        surface
-            .pixels_mut()
-            .copy_from_slice(encoder.render_reference().pixels());
+        encoder.execute_into_pixels(surface.pixels_mut());
         Ok(EncodedPictureExecution::Executed)
     }
 
@@ -238,10 +236,7 @@ impl RenderBackend for CpuBackend {
                 ),
             ));
         }
-        self.main
-            .canvas_mut()
-            .pixels_mut()
-            .copy_from_slice(encoder.render_reference().pixels());
+        encoder.execute_into_pixels(self.main.canvas_mut().pixels_mut());
         Ok(EncodedFrameExecution::Executed)
     }
 
