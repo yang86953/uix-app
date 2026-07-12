@@ -282,12 +282,11 @@ impl IPresenter for GdiPresenter {
         height: i32,
         damage: PresentDamage,
     ) -> Result<(), Error> {
-        // Auto-resize if dimensions changed
-        if (width != self.width || height != self.height) && self.resize(width, height).is_err() {
-            crate::core::log::debug_fn(format!(
-                "GdiPresenter: resize to {}x{} failed, fallback to {}x{}",
-                width, height, self.width, self.height
-            ));
+        // A mismatched DIB cannot safely represent this frame. Propagate the
+        // resize failure so the window session retains dirty state instead of
+        // copying the new payload through the old extent.
+        if width != self.width || height != self.height {
+            self.resize(width, height)?;
         }
         unsafe {
             if self.dib.bits.is_null() {
@@ -343,7 +342,9 @@ impl IPresenter for GdiPresenter {
 
 #[cfg(test)]
 mod tests {
-    use super::clip_damage_rect;
+    use super::{clip_damage_rect, GdiPresenter};
+    use crate::core::Errc;
+    use crate::native::traits::present::{IPresenter, PresentDamage};
 
     #[test]
     fn damage_padding_is_clipped_to_the_gdi_surface() {
@@ -360,5 +361,22 @@ mod tests {
             Some((0, 0, 8, 8))
         );
         assert_eq!(clip_damage_rect(121, 0, 4, 4, 120, 80), None);
+    }
+
+    #[test]
+    fn present_propagates_rejected_resize_instead_of_using_the_old_dib() {
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("GDI resize failure", 16, 16)
+            .expect("window");
+        let mut presenter =
+            unsafe { GdiPresenter::new(window.native_surface_ptr(), 16, 16) }.expect("presenter");
+
+        let error = presenter
+            .present(&[0], 0, 1, PresentDamage::Full)
+            .expect_err("invalid replacement extent must fail");
+        assert_eq!(error.code(), Errc::InvalidArgument);
+        window.close().expect("close window");
     }
 }
