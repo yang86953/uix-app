@@ -1,11 +1,12 @@
 use super::*;
+use crate::draw::NullEngine;
+use crate::draw::compositor::picture::encode_cached_picture;
 use crate::draw::font::font_service::FontService;
 use crate::draw::painting::PaintContext;
 use crate::draw::primitives::path::{FillRule, PathBuilder};
 use crate::draw::primitives::stroker::StrokeOptions;
 use crate::draw::spatial::Orientation;
 use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
-use crate::draw::NullEngine;
 use crate::draw::{Color, FontHandle, SoftwareEngine};
 use crate::ui::theme::DesignTokens;
 
@@ -43,7 +44,7 @@ fn display_list_stores_draw_text_in_frame_and_set_font() {
 }
 
 #[test]
-fn sharp_rect_picture_encoder_preserves_local_painter_order() {
+fn complete_picture_encoder_preserves_local_painter_order() {
     let mut list = DisplayList::new();
     list.push(PaintOp::Save);
     list.push(PaintOp::FillRect {
@@ -58,9 +59,18 @@ fn sharp_rect_picture_encoder_preserves_local_painter_order() {
     });
     list.push(PaintOp::Restore);
 
-    let encoder = list
-        .encode_sharp_rect_picture(6, 5, Point::new(10.0, 20.0))
-        .expect("sharp rect subset");
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let encoder = encode_cached_picture(
+        &list,
+        6,
+        5,
+        Point::new(10.0, 20.0),
+        FontHandle::default(),
+        &fonts,
+        &images,
+    )
+    .expect("complete cached Picture");
     let frame = encoder.render_reference();
 
     assert_eq!(
@@ -80,14 +90,17 @@ fn sharp_rect_picture_encoder_preserves_local_painter_order() {
 }
 
 #[test]
-fn sharp_rect_picture_encoder_refuses_clip_and_rounded_operations() {
+fn complete_picture_encoder_preserves_clip_and_rounded_operations() {
     let mut clip = DisplayList::new();
     clip.push(PaintOp::PushClip {
-        rect: Rect::new(0.0, 0.0, 4.0, 4.0),
+        rect: Rect::new(0.0, 0.0, 2.0, 2.0),
     });
-    assert!(clip
-        .encode_sharp_rect_picture(4, 4, Point::new(0.0, 0.0))
-        .is_err());
+    clip.push(PaintOp::FillRect {
+        rect: Rect::new(0.0, 0.0, 4.0, 4.0),
+        color: Color::red(),
+        radius: None,
+    });
+    clip.push(PaintOp::PopClip);
 
     let mut rounded = DisplayList::new();
     rounded.push(PaintOp::FillRect {
@@ -95,9 +108,40 @@ fn sharp_rect_picture_encoder_refuses_clip_and_rounded_operations() {
         color: Color::red(),
         radius: Some(crate::draw::Radius::uniform(2.0)),
     });
-    assert!(rounded
-        .encode_sharp_rect_picture(4, 4, Point::new(0.0, 0.0))
-        .is_err());
+    let fonts = FontService::new();
+    let images = ImageService::new();
+    let clip_frame = encode_cached_picture(
+        &clip,
+        4,
+        4,
+        Point::new(0.0, 0.0),
+        FontHandle::default(),
+        &fonts,
+        &images,
+    )
+    .expect("clip Picture must be encoded")
+    .render_reference();
+    let rounded_frame = encode_cached_picture(
+        &rounded,
+        4,
+        4,
+        Point::new(0.0, 0.0),
+        FontHandle::default(),
+        &fonts,
+        &images,
+    )
+    .expect("rounded Picture must be encoded")
+    .render_reference();
+
+    assert_eq!(clip_frame.pixel(1, 1), Some(Color::red().premultiplied()));
+    assert_eq!(
+        clip_frame.pixel(3, 3),
+        Some(Color::transparent().premultiplied())
+    );
+    assert_eq!(
+        rounded_frame.pixel(2, 2),
+        Some(Color::red().premultiplied())
+    );
 }
 
 #[test]

@@ -4,16 +4,17 @@ use crate::core::{Errc, Error, Point, Rect};
 
 use super::layer_tree::{LayerNode, LayerTree};
 use crate::core::DirtyRegion;
-use crate::draw::compositor::viewport_transform::needs_paint;
+use crate::draw::FontHandle;
+use crate::draw::backend::cpu::CpuDrawSurface;
 use crate::draw::compositor::ScenePaint;
+use crate::draw::compositor::viewport_transform::needs_paint;
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::{DisplayList, PaintContext, ThemeTokens};
-use crate::draw::pipeline::NodeId;
+use crate::draw::pipeline::{FrameEncoder, FrameEncoderError, FrameImage, FrameRect, NodeId};
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::spatial::Orientation;
-use crate::draw::traits::GraphicsEngine;
-use crate::draw::FontHandle;
+use crate::draw::traits::{Canvas2D, GraphicsEngine};
 
 /// 离屏创建连续失败上限（超过后放弃离屏、改走直绘；仅 WARN 一次）。
 const MAX_OFFSCREEN_RETRY: u8 = 8;
@@ -91,14 +92,21 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     };
     let mut fresh_list_complete = true;
 
-    // This is the first production FrameEncoder consumer. It is intentionally
-    // narrow: only an already-cached, lossless sharp-rect DisplayList may be
-    // executed this way, and only a backend that explicitly supports encoded
-    // CPU Picture execution accepts it. Every other list/backend uses the
-    // established full DisplayList replay path below.
+    // A cached Picture always becomes one complete, API-neutral FrameEncoder
+    // before it reaches a backend. The CPU raster pass preserves every
+    // DisplayList operation as premultiplied pixels; native backends consume
+    // that ordered image instead of silently selecting a separate replay path.
     let encoded_cached_picture = if fresh_list.is_none() {
         if let Some(cached) = display_list.as_ref() {
-            match cached.encode_sharp_rect_picture(w, h, Point::new(bounds.x, bounds.y)) {
+            match encode_cached_picture(
+                cached,
+                w,
+                h,
+                Point::new(bounds.x, bounds.y),
+                env.font,
+                env.font_service,
+                env.image_service,
+            ) {
                 Ok(encoder) => matches!(
                     engine.try_execute_encoded_picture(&handle, &encoder)?,
                     crate::draw::pipeline::EncodedPictureExecution::Executed
@@ -200,6 +208,81 @@ fn ensure_offscreen(
     }
     *handle = engine.create_offscreen(w, h);
     handle.is_some()
+}
+
+/// Turns a complete cached DisplayList into the only actual Picture submission
+/// format. The temporary CPU surface is deliberately private: it is a
+/// reference raster step, while CPU and native backends both receive the same
+/// `FrameEncoder` and retain one ordered write into the bound Picture target.
+pub(crate) fn encode_cached_picture(
+    list: &DisplayList,
+    width: i32,
+    height: i32,
+    origin: Point,
+    font: FontHandle,
+    font_service: &FontService,
+    image_service: &ImageService,
+) -> Result<FrameEncoder, FrameEncoderError> {
+    let mut encoder = FrameEncoder::new(width, height)?;
+    let mut source = CpuDrawSurface::new(width, height);
+    {
+        let canvas = source.canvas_mut();
+        canvas.translate(-origin.x, -origin.y);
+        list.replay_canvas(
+            canvas,
+            font,
+            font_service,
+            Some(image_service),
+            width as f32,
+        );
+    }
+
+    let image = FrameImage::new(width, height, source.surface().pixels().to_vec())?;
+    let full = FrameRect::new(0, 0, width, height);
+    encoder.clear(crate::draw::Color::transparent());
+    encoder.blit_picture(image, full, full);
+    Ok(encoder)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::draw::image::ImageService;
+    use crate::draw::painting::PaintOp;
+
+    #[test]
+    fn cached_picture_frame_encoder_preserves_non_rect_display_list_pixels() {
+        let mut list = DisplayList::new();
+        list.push(PaintOp::FillCircle {
+            cx: 18.0,
+            cy: 18.0,
+            r: 4.0,
+            color: crate::draw::Color::red(),
+        });
+
+        let fonts = FontService::new();
+        let images = ImageService::new();
+        let encoder = encode_cached_picture(
+            &list,
+            16,
+            16,
+            Point::new(10.0, 10.0),
+            FontHandle::default(),
+            &fonts,
+            &images,
+        )
+        .expect("non-rect cached Picture must have an ordered FrameEncoder");
+        let frame = encoder.render_reference();
+
+        assert_eq!(
+            frame.pixel(8, 8),
+            Some(crate::draw::Color::red().premultiplied())
+        );
+        assert_eq!(
+            frame.pixel(1, 1),
+            Some(crate::draw::Color::transparent().premultiplied())
+        );
+    }
 }
 
 fn prepare_nested_pictures<S: ScenePaint>(
