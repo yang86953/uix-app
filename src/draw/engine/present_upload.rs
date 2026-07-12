@@ -70,9 +70,16 @@ impl GraphicsEngine for PresentUploadEngine {
         if self.shutdown {
             return;
         }
-        self.shutdown = true;
         self.session.shutdown();
-        self.gpu_ctx.shutdown();
+        if let Err(error) = self.gpu_ctx.try_shutdown() {
+            crate::core::log::error_fn(format!(
+                "PresentUploadEngine {} checked shutdown failed: {}",
+                self.backend_name(),
+                error.short_what()
+            ));
+            return;
+        }
+        self.shutdown = true;
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -277,6 +284,7 @@ mod tests {
         fail_resize: bool,
         partial_present: bool,
         shutdowns: Arc<AtomicUsize>,
+        checked_shutdowns: Arc<AtomicUsize>,
     }
 
     impl RecordingPixelContext {
@@ -294,6 +302,7 @@ mod tests {
                 fail_resize: false,
                 partial_present: false,
                 shutdowns: Arc::new(AtomicUsize::new(0)),
+                checked_shutdowns: Arc::new(AtomicUsize::new(0)),
             }
         }
     }
@@ -344,6 +353,11 @@ mod tests {
 
         fn shutdown(&mut self) {
             self.shutdowns.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn try_shutdown(&mut self) -> Result<()> {
+            self.checked_shutdowns.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
 
         fn read_pixels(
@@ -499,15 +513,17 @@ mod tests {
     }
 
     #[test]
-    fn present_upload_shutdown_and_drop_release_context_once() {
+    fn present_upload_shutdown_and_drop_use_checked_context_release_once() {
         let frame = Arc::new(Mutex::new(None));
         let context = RecordingPixelContext::new(frame);
         let shutdowns = context.shutdowns.clone();
+        let checked_shutdowns = context.checked_shutdowns.clone();
         let mut engine = PresentUploadEngine::new(Box::new(context)).unwrap();
 
         engine.shutdown();
         drop(engine);
 
-        assert_eq!(shutdowns.load(Ordering::SeqCst), 1);
+        assert_eq!(checked_shutdowns.load(Ordering::SeqCst), 1);
+        assert_eq!(shutdowns.load(Ordering::SeqCst), 0);
     }
 }
