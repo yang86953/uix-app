@@ -12,7 +12,21 @@ use crate::native::traits::present::{
 
 use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
 
-fn vk_err(operation: &str, err: impl std::fmt::Debug) -> Error {
+fn vk_err(operation: &str, err: vk::Result) -> Error {
+    let code = match err {
+        vk::Result::ERROR_OUT_OF_DATE_KHR
+        | vk::Result::SUBOPTIMAL_KHR
+        | vk::Result::ERROR_SURFACE_LOST_KHR => Errc::GraphicsSurfaceLost,
+        vk::Result::ERROR_DEVICE_LOST => Errc::GraphicsDeviceLost,
+        vk::Result::ERROR_OUT_OF_DEVICE_MEMORY | vk::Result::ERROR_OUT_OF_HOST_MEMORY => {
+            Errc::GraphicsOutOfMemory
+        }
+        _ => Errc::PlatformError,
+    };
+    Error::new(code, format!("VulkanContext: {operation} failed: {err:?}"))
+}
+
+fn loader_err(operation: &str, err: impl std::fmt::Debug) -> Error {
     Error::new(
         Errc::PlatformError,
         format!("VulkanContext: {operation} failed: {err:?}"),
@@ -71,7 +85,8 @@ impl VulkanContext {
             height: height as u32,
         };
 
-        let entry = unsafe { Entry::load() }.map_err(|err| vk_err("load Vulkan loader", err))?;
+        let entry =
+            unsafe { Entry::load() }.map_err(|err| loader_err("load Vulkan loader", err))?;
         let app_name = CStr::from_bytes_with_nul(b"uix\0").expect("static C string");
         let engine_name = CStr::from_bytes_with_nul(b"uix\0").expect("static C string");
         let app_info = vk::ApplicationInfo::default()
@@ -388,8 +403,10 @@ impl VulkanContext {
         } {
             Ok((index, suboptimal)) => (index, suboptimal),
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                self.recreate_swapchain(self.extent)?;
-                return Ok(());
+                return self.recreate_after_surface_change(
+                    "vkAcquireNextImageKHR",
+                    vk::Result::ERROR_OUT_OF_DATE_KHR,
+                );
             }
             Err(err) => return Err(vk_err("vkAcquireNextImageKHR", err)),
         };
@@ -420,13 +437,28 @@ impl VulkanContext {
             .image_indices(std::slice::from_ref(&image_index));
         match unsafe { self.swapchain_loader.queue_present(self.queue, &present) } {
             Ok(present_suboptimal) if acquire_suboptimal || present_suboptimal => {
-                self.recreate_swapchain(self.extent)
+                self.recreate_after_surface_change("vkQueuePresentKHR", vk::Result::SUBOPTIMAL_KHR)
             }
             Ok(_) => Ok(()),
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) | Err(vk::Result::SUBOPTIMAL_KHR) => {
-                self.recreate_swapchain(self.extent)
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => self.recreate_after_surface_change(
+                "vkQueuePresentKHR",
+                vk::Result::ERROR_OUT_OF_DATE_KHR,
+            ),
+            Err(vk::Result::SUBOPTIMAL_KHR) => {
+                self.recreate_after_surface_change("vkQueuePresentKHR", vk::Result::SUBOPTIMAL_KHR)
             }
             Err(err) => Err(vk_err("vkQueuePresentKHR", err)),
+        }
+    }
+
+    /// A swapchain status requires recreation, but the frame that observed it
+    /// was not presented. Return a typed failure after a successful rebuild so
+    /// the engine preserves dirty state and retries on the next frame.
+    fn recreate_after_surface_change(&mut self, operation: &str, status: vk::Result) -> Result<()> {
+        let surface_failure = vk_err(operation, status);
+        match self.recreate_swapchain(self.extent) {
+            Ok(()) => Err(surface_failure),
+            Err(recreate_failure) => Err(surface_failure.with_source(recreate_failure)),
         }
     }
 
@@ -812,6 +844,26 @@ mod tests {
     fn staging_size_is_full_rgba_frame() {
         assert_eq!(staging_size(4, 3), 48);
         assert_eq!(staging_size(0, 0), 4);
+    }
+
+    #[test]
+    fn vulkan_present_statuses_are_typed_graphics_failures() {
+        assert_eq!(
+            vk_err("vkQueuePresentKHR", vk::Result::ERROR_OUT_OF_DATE_KHR).code(),
+            Errc::GraphicsSurfaceLost
+        );
+        assert_eq!(
+            vk_err("vkQueuePresentKHR", vk::Result::SUBOPTIMAL_KHR).code(),
+            Errc::GraphicsSurfaceLost
+        );
+        assert_eq!(
+            vk_err("vkQueuePresentKHR", vk::Result::ERROR_DEVICE_LOST).code(),
+            Errc::GraphicsDeviceLost
+        );
+        assert_eq!(
+            vk_err("vkQueuePresentKHR", vk::Result::ERROR_OUT_OF_DEVICE_MEMORY).code(),
+            Errc::GraphicsOutOfMemory
+        );
     }
 
     #[test]
