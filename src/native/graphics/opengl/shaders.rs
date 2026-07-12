@@ -1,10 +1,9 @@
-// ============================================================================
-// draw/gpu_engine/shaders.rs — GLES 3.0 着色器
-//
-// 矩形实例化渲染管线着色器，支持：纯色/纹理/渐变/圆角/阴影模糊。
-// ============================================================================
+//! Native OpenGL ES shader sources.
+//!
+//! These sources are part of the GL API implementation. Program, texture and
+//! framebuffer lifetime are still migrated separately from the draw layer.
 
-/// 矩形顶点着色器 —— 单 quad 变换。
+/// Instanced rectangle vertex shader.
 pub const RECT_VERT: &str = r#"#version 300 es
 precision highp float;
 
@@ -27,7 +26,7 @@ void main() {
 }
 "#;
 
-/// 矩形片段着色器 —— 纯色 + 圆角 SDF。
+/// Rounded-rectangle fragment shader.
 pub const RECT_FRAG: &str = r#"#version 300 es
 precision highp float;
 
@@ -39,7 +38,6 @@ uniform vec4 u_radius;
 
 out vec4 fragColor;
 
-// 圆角 SDF 遮罩
 float corner_mask(vec2 p, float r) {
     return 1.0 - smoothstep(r - 1.0, r + 1.0, length(p));
 }
@@ -66,14 +64,14 @@ void main() {
 }
 "#;
 
-/// 高斯模糊片段着色器 —— 单 Pass（9-tap 水平模糊）
+/// Gaussian blur fragment shader.
 pub const BLUR_FRAG: &str = r#"#version 300 es
 precision highp float;
 
 in vec2 v_uv;
 uniform sampler2D u_source;
 uniform vec2 u_texel_size;
-uniform vec2 u_direction; // (1,0)=水平, (0,1)=垂直
+uniform vec2 u_direction;
 
 out vec4 fragColor;
 
@@ -90,7 +88,8 @@ void main() {
 }
 "#;
 
-/// CPU 回退纹理合成片段着色器。
+/// CPU fallback texture composite shader, including the little-endian BGRA
+/// swizzle required for AARRGGBB upload data.
 pub const BLIT_FRAG: &str = r#"#version 300 es
 precision highp float;
 
@@ -101,13 +100,11 @@ uniform vec4 u_uv_rect;
 out vec4 fragColor;
 
 void main() {
-    // CPU AARRGGBB pixels arrive as BGRA bytes on little-endian targets, while
-    // GLES 3 guarantees RGBA uploads but does not guarantee BGRA uploads.
     fragColor = texture(u_tex, u_uv_rect.xy + v_uv * u_uv_rect.zw).bgra;
 }
 "#;
 
-/// FBO / native GL 纹理合成（无 BGRA swizzle）。
+/// Native GL texture composite shader without a BGRA swizzle.
 pub const BLIT_RGBA_FRAG: &str = r#"#version 300 es
 precision highp float;
 
@@ -122,7 +119,7 @@ void main() {
 }
 "#;
 
-/// 全屏 quad 的顶点着色器（用于模糊 pass / CPU 回退合成）
+/// Full-screen quad vertex shader for blur and texture composite passes.
 pub const FULLSCREEN_VERT: &str = r#"#version 300 es
 precision highp float;
 
@@ -135,3 +132,23 @@ void main() {
     v_uv.y = 1.0 - v_uv.y;
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_shader_sources_cover_all_current_gl_pipeline_stages() {
+        for source in [
+            RECT_VERT,
+            RECT_FRAG,
+            BLUR_FRAG,
+            BLIT_FRAG,
+            BLIT_RGBA_FRAG,
+            FULLSCREEN_VERT,
+        ] {
+            assert!(source.starts_with("#version 300 es"));
+            assert!(source.contains("void main()"));
+        }
+    }
+}
