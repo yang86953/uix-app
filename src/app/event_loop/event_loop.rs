@@ -476,15 +476,21 @@ where
                                 }
                             }
                             initial_size = (d.width, d.height);
+                            // 最小化后经 SIZE_MAXIMIZED/RESTORED 带 Resize 回来时须恢复可见，
+                            // 否则 layout/render 整帧跳过 → 黑屏（与副窗 application 路径对齐）。
+                            window_visible = true;
                             tree.mark_full_frame_dirty();
                         }
                     }
                 }
                 UiEventType::WindowMaximize => {
+                    // 从最小化点任务栏最大化走 SIZE_MAXIMIZED，不发 WindowRestore。
+                    window_visible = true;
                     if engine.canvas_2d().width() != initial_size.0
                         || engine.canvas_2d().height() != initial_size.1
                     {
-                        // 已通过 resize 事件调整
+                        // 同批 WindowResize 会校正尺寸；仍须标脏以强制重绘。
+                        tree.mark_full_frame_dirty();
                     } else {
                         let info = platform.display().info(0);
                         let w = info.bounds.w as i32;
@@ -495,8 +501,8 @@ where
                                 "window maximize resize_notify failed",
                                 platform_window.resize_notify(w, h),
                             );
-                            tree.mark_full_frame_dirty();
                         }
+                        tree.mark_full_frame_dirty();
                     }
                 }
                 UiEventType::WindowRestore => {
