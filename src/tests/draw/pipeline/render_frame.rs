@@ -14,6 +14,7 @@ struct RecordingEngine {
     begin_failure: Option<crate::draw::engine::GraphicsFailure>,
     begin_outcome: Option<RenderOutcome>,
     encoded_frame_failure: Option<Error>,
+    encoded_frames: Vec<Vec<crate::draw::pipeline::FrameCommand>>,
     end_outcome: RenderOutcome,
     presentation_mode: crate::draw::traits::PresentationMode,
 }
@@ -27,6 +28,7 @@ impl RecordingEngine {
             begin_failure: None,
             begin_outcome: None,
             encoded_frame_failure: None,
+            encoded_frames: Vec::new(),
             end_outcome: RenderOutcome::Present(DamageRegion::full()),
             presentation_mode: crate::draw::traits::PresentationMode::EngineManaged,
         }
@@ -118,9 +120,10 @@ impl GraphicsEngine for RecordingEngine {
 
     fn try_execute_encoded_frame(
         &mut self,
-        _encoder: &crate::draw::pipeline::FrameEncoder,
+        encoder: &crate::draw::pipeline::FrameEncoder,
     ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
         self.events.push("encoded_frame");
+        self.encoded_frames.push(encoder.commands().to_vec());
         match &self.encoded_frame_failure {
             Some(error) => Err(error.clone()),
             None => Ok(crate::draw::pipeline::EncodedFrameExecution::Executed),
@@ -459,6 +462,18 @@ fn root_and_direct_scene_execute_one_encoded_frame_before_final_present() {
         encoded < end,
         "FrameEncoder must execute before final present"
     );
+    let commands = engine
+        .encoded_frames
+        .last()
+        .expect("main producer must record one command stream");
+    assert!(matches!(
+        commands.as_slice(),
+        [
+            crate::draw::pipeline::FrameCommand::Clear { .. },
+            crate::draw::pipeline::FrameCommand::Native { .. },
+            crate::draw::pipeline::FrameCommand::Native { .. },
+        ]
+    ));
 }
 
 #[test]

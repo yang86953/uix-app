@@ -3,6 +3,7 @@
 pub mod animation_registry;
 pub mod frame;
 pub mod frame_encoder;
+pub(crate) mod frame_recording;
 pub mod invalidation;
 pub mod metrics;
 pub mod render_frame;
@@ -15,8 +16,8 @@ pub use frame_encoder::{
     FrameImage, FramePresenter, FrameRasterOp, FrameRect, PresentOutcome, ReferenceFrame,
 };
 pub use invalidation::{
-    invalidate_paint_handle, Invalidation, InvalidationQueue, InvalidationQueueHandle, NodeId,
-    ScrollDelta,
+    Invalidation, InvalidationQueue, InvalidationQueueHandle, NodeId, ScrollDelta,
+    invalidate_paint_handle,
 };
 pub use metrics::{InvalidationSource, RenderMetrics};
 pub use render_frame::{FrameRenderInput, FrameRenderOutput, FrameRenderer};

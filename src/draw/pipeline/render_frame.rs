@@ -11,10 +11,10 @@ use crate::draw::font::text::TextRenderService;
 use crate::draw::image::ImageService;
 use crate::draw::painting::ThemeSnapshot;
 use crate::draw::pipeline::{
-    EncodedFrameExecution, FrameEncoder, FrameImage, FrameRect, InvalidationSource, RenderMetrics,
+    EncodedFrameExecution, InvalidationSource, RenderMetrics, frame_recording::FrameRecordingEngine,
 };
 use crate::draw::traits::{GraphicsEngine, UpdateStrategy};
-use crate::draw::{Color, FontHandle, RenderOutcome, SoftwareEngine};
+use crate::draw::{Color, FontHandle, RenderOutcome};
 
 /// 单帧渲染输入。
 pub struct FrameRenderInput<'a> {
@@ -43,11 +43,12 @@ pub struct FrameRenderer {
     layer_tree: LayerTree,
     render_object_tree: RenderObjectTree,
     last_tree_version: u64,
-    /// Private reference surface that records every scene path before the
-    /// real backend consumes one ordered main `FrameEncoder` (#181). It never
-    /// presents and therefore cannot become a second submission boundary.
-    reference_engine: SoftwareEngine,
-    reference_extent: Option<(i32, i32)>,
+    /// Private API-neutral producer for every scene path before the real
+    /// backend consumes the one ordered main `FrameEncoder` (#181). It never
+    /// owns a presentation surface and therefore cannot become a second
+    /// submission boundary.
+    recording_engine: FrameRecordingEngine,
+    recording_extent: Option<(i32, i32)>,
 }
 
 impl FrameRenderer {
@@ -56,8 +57,8 @@ impl FrameRenderer {
             layer_tree: LayerTree::new(),
             render_object_tree: RenderObjectTree::new(),
             last_tree_version: 0,
-            reference_engine: SoftwareEngine::new(),
-            reference_extent: None,
+            recording_engine: FrameRecordingEngine::new(),
+            recording_extent: None,
         }
     }
 
@@ -154,8 +155,8 @@ impl FrameRenderer {
             }
         }
 
-        let (reference_w, reference_h) = Self::reference_extent(engine, scene);
-        if let Err(error) = self.ensure_reference_surface(reference_w, reference_h) {
+        let (recording_w, recording_h) = Self::reference_extent(engine, scene);
+        if let Err(error) = self.ensure_recording_surface(recording_w, recording_h) {
             return FrameRenderOutput {
                 outcome: RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(
                     error,
@@ -166,55 +167,29 @@ impl FrameRenderer {
         }
 
         if self.last_tree_version != cur_version || !self.layer_tree.is_ready() {
-            // The reference surface supports offscreen Picture composition, so
-            // cached and direct paths are both included before the one real
-            // main-surface FrameEncoder is executed.
+            // The private producer owns CPU Picture targets, so cached and
+            // direct paths are both included before the one real main-surface
+            // FrameEncoder is executed.
             self.layer_tree.build(scene, true);
             self.layer_tree
-                .sweep_orphaned_offscreens(&mut self.reference_engine);
+                .sweep_orphaned_offscreens(&mut self.recording_engine);
             self.last_tree_version = cur_version;
         }
         self.layer_tree.update_dirty(scene);
         self.render_object_tree.sync(scene);
 
-        // The private reference image is the complete correctness carrier for
-        // the real main FrameEncoder. Until R6 adds retained/damage-aware
-        // reference composition, it must be rebuilt in full: clearing only a
-        // partial region could discard an unchanged ancestor/overlay before
-        // the final image is submitted.
+        // The producer rebuilds the complete ordered command stream. Until R6
+        // adds retained/damage-aware recording, a partial stream could omit
+        // an unchanged ancestor or overlay before final execution.
         let reference_region = DirtyRegion::full();
-        match self
-            .reference_engine
-            .begin_frame(UpdateStrategy::FullRedraw)
-        {
-            RenderOutcome::FrameReady(_) => {}
-            RenderOutcome::Failed(error) => {
-                return FrameRenderOutput {
-                    outcome: RenderOutcome::Failed(error),
-                    inv_source: InvalidationSource::None,
-                    tree_version: cur_version,
-                };
-            }
-            outcome => {
-                return FrameRenderOutput {
-                    outcome: RenderOutcome::Failed(
-                        crate::draw::engine::GraphicsFailure::from_error(Error::new(
-                            crate::core::Errc::InvalidState,
-                            format!(
-                                "private FrameEncoder reference surface returned {outcome:?} from begin_frame"
-                            ),
-                        )),
-                    ),
-                    inv_source: InvalidationSource::None,
-                    tree_version: cur_version,
-                };
-            }
-        }
-
-        if let Some((frame, dx, dy)) = input.scroll_move {
-            self.reference_engine
-                .canvas_2d()
-                .scroll_region(frame, dx, dy);
+        if let Err(error) = self.recording_engine.begin_recording() {
+            return FrameRenderOutput {
+                outcome: RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::from_error(
+                    error,
+                )),
+                inv_source: InvalidationSource::None,
+                tree_version: cur_version,
+            };
         }
         // 首帧绕过 DisplayList 缓存，避免空缓存重放导致侧栏等节点漏绘
         let render_objects = if input.rendered_first {
@@ -223,7 +198,7 @@ impl FrameRenderer {
             None
         };
         if let Err(error) = self.layer_tree.render(
-            &mut self.reference_engine,
+            &mut self.recording_engine,
             scene,
             &reference_region,
             &input.theme,
@@ -249,14 +224,14 @@ impl FrameRenderer {
 
         if input.debug_mode {
             draw_debug_telemetry(
-                &mut self.reference_engine,
+                &mut self.recording_engine,
                 input.metrics,
                 input.font,
                 input.font_service,
             );
         }
 
-        let encoded_frame = match self.encode_reference_frame() {
+        let encoded_frame = match self.recording_engine.finish_recording() {
             Ok(encoder) => encoder,
             Err(error) => {
                 self.layer_tree.invalidate();
@@ -362,52 +337,21 @@ impl FrameRenderer {
             .unwrap_or((1, 1))
     }
 
-    fn ensure_reference_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
+    fn ensure_recording_surface(&mut self, width: i32, height: i32) -> Result<(), Error> {
         let extent = (width.max(1), height.max(1));
-        match self.reference_extent {
+        match self.recording_extent {
             Some(current) if current == extent => Ok(()),
             Some(_) => {
-                self.reference_engine.resize(extent.0, extent.1)?;
-                self.reference_extent = Some(extent);
+                self.recording_engine.resize(extent.0, extent.1)?;
+                self.recording_extent = Some(extent);
                 Ok(())
             }
             None => {
-                self.reference_engine.initialize(extent.0, extent.1)?;
-                self.reference_extent = Some(extent);
+                self.recording_engine.initialize(extent.0, extent.1)?;
+                self.recording_extent = Some(extent);
                 Ok(())
             }
         }
-    }
-
-    fn encode_reference_frame(&self) -> Result<FrameEncoder, Error> {
-        let cpu = self
-            .reference_engine
-            .session()
-            .cpu_backend()
-            .ok_or_else(|| {
-                Error::new(
-                    crate::core::Errc::InvalidState,
-                    "FrameEncoder reference surface lost its CPU backend",
-                )
-            })?;
-        let width = cpu.width();
-        let height = cpu.height();
-        let image = FrameImage::new(width, height, cpu.pixels().to_vec()).map_err(|error| {
-            Error::new(
-                crate::core::Errc::InvalidState,
-                format!("could not encode main reference frame: {error}"),
-            )
-        })?;
-        let mut encoder = FrameEncoder::new(width, height).map_err(|error| {
-            Error::new(
-                crate::core::Errc::InvalidState,
-                format!("could not allocate main FrameEncoder: {error}"),
-            )
-        })?;
-        let full = FrameRect::new(0, 0, width, height);
-        encoder.clear(Color::transparent());
-        encoder.blit_picture(image, full, full);
-        Ok(encoder)
     }
 }
 
