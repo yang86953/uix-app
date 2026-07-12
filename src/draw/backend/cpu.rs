@@ -7,7 +7,7 @@ use crate::draw::backend::offscreen_pool::CpuOffscreenPool;
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::canvas_2d::CpuCanvas2D;
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
-use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
+use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::rasterizer::image::blit_image;
@@ -220,6 +220,29 @@ impl RenderBackend for CpuBackend {
             .pixels_mut()
             .copy_from_slice(encoder.render_reference().pixels());
         Ok(EncodedPictureExecution::Executed)
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        if (self.width, self.height) != (encoder.width(), encoder.height()) {
+            return Err(Error::new(
+                crate::core::Errc::InvalidState,
+                format!(
+                    "FrameEncoder {}x{} does not match main CPU target {}x{}",
+                    encoder.width(),
+                    encoder.height(),
+                    self.width,
+                    self.height
+                ),
+            ));
+        }
+        self.main
+            .canvas_mut()
+            .pixels_mut()
+            .copy_from_slice(encoder.render_reference().pixels());
+        Ok(EncodedFrameExecution::Executed)
     }
 
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {

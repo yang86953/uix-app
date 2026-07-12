@@ -4,13 +4,13 @@
 //! frame pixels to a non-GL swapchain at present time.
 
 use crate::core::{Error, Rect};
+use crate::draw::ImageHandle;
 use crate::draw::backend::{BackendKind, CpuBackend, DamageRegion};
 use crate::draw::engine::{GraphicsFailure, RenderOutcome};
 use crate::draw::pipeline::RenderSession;
-use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
+use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
-use crate::draw::ImageHandle;
 use crate::native::traits::present::{IGraphicsContext, PresentDamage, PresentFrame};
 
 pub struct PresentUploadEngine {
@@ -183,6 +183,15 @@ impl GraphicsEngine for PresentUploadEngine {
         self.session
             .backend_mut()
             .try_execute_encoded_picture(handle, encoder)
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        self.session
+            .backend_mut()
+            .try_execute_encoded_frame(encoder)
     }
 
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {

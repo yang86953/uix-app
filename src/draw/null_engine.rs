@@ -3,8 +3,9 @@
 
 use crate::core::Error;
 use crate::draw::backend::DamageRegion;
-use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
 use crate::draw::engine::RenderOutcome;
+use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+use crate::draw::pipeline::{EncodedFrameExecution, FrameEncoder};
 use crate::draw::traits::{Canvas2D, GraphicsEngine, UpdateStrategy};
 
 /// 空图形引擎——不做任何渲染。
@@ -56,5 +57,12 @@ impl GraphicsEngine for NullEngine {
 
     fn canvas_2d(&mut self) -> &mut dyn Canvas2D {
         &mut self.canvas_2d
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        _encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        Ok(EncodedFrameExecution::Executed)
     }
 }

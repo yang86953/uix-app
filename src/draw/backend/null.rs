@@ -4,6 +4,7 @@ use crate::core::{Error, Point, Rect};
 
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
+use crate::draw::pipeline::{EncodedFrameExecution, FrameEncoder};
 use crate::draw::traits::Canvas2D;
 
 /// Null DrawSurface。
@@ -65,6 +66,13 @@ impl RenderBackend for NullBackend {
 
     fn surface(&mut self) -> &mut dyn DrawSurface {
         &mut self.surface
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        _encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        Ok(EncodedFrameExecution::Executed)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

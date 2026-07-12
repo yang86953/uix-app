@@ -1,10 +1,10 @@
 use super::*;
 use crate::core::Error;
+use crate::draw::SoftwareEngine;
 use crate::draw::engine::cpu::noop_canvas_2d::NoopCanvas2D;
 use crate::draw::null_engine::NullEngine;
 use crate::draw::painting::PaintContext;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
-use crate::draw::SoftwareEngine;
 use std::cell::Cell;
 
 struct RecordingEngine {
@@ -13,7 +13,7 @@ struct RecordingEngine {
     partial_redraw: bool,
     begin_failure: Option<crate::draw::engine::GraphicsFailure>,
     begin_outcome: Option<RenderOutcome>,
-    offscreen_failure: Option<Error>,
+    encoded_frame_failure: Option<Error>,
     end_outcome: RenderOutcome,
     presentation_mode: crate::draw::traits::PresentationMode,
 }
@@ -26,7 +26,7 @@ impl RecordingEngine {
             partial_redraw: true,
             begin_failure: None,
             begin_outcome: None,
-            offscreen_failure: None,
+            encoded_frame_failure: None,
             end_outcome: RenderOutcome::Present(DamageRegion::full()),
             presentation_mode: crate::draw::traits::PresentationMode::EngineManaged,
         }
@@ -57,8 +57,8 @@ impl RecordingEngine {
         self
     }
 
-    fn with_offscreen_failure(mut self, error: Error) -> Self {
-        self.offscreen_failure = Some(error);
+    fn with_encoded_frame_failure(mut self, error: Error) -> Self {
+        self.encoded_frame_failure = Some(error);
         self
     }
 }
@@ -116,14 +116,14 @@ impl GraphicsEngine for RecordingEngine {
         }
     }
 
-    fn try_begin_offscreen_paint(
+    fn try_execute_encoded_frame(
         &mut self,
-        _handle: &crate::draw::ImageHandle,
-    ) -> Result<(), Error> {
-        self.events.push("offscreen_begin");
-        match &self.offscreen_failure {
+        _encoder: &crate::draw::pipeline::FrameEncoder,
+    ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+        self.events.push("encoded_frame");
+        match &self.encoded_frame_failure {
             Some(error) => Err(error.clone()),
-            None => Ok(()),
+            None => Ok(crate::draw::pipeline::EncodedFrameExecution::Executed),
         }
     }
 
@@ -142,6 +142,7 @@ impl GraphicsEngine for RecordingEngine {
 struct EncodedSoftwareEngine {
     inner: SoftwareEngine,
     encoded_picture_executions: usize,
+    encoded_frame_executions: usize,
 }
 
 impl EncodedSoftwareEngine {
@@ -149,6 +150,7 @@ impl EncodedSoftwareEngine {
         Self {
             inner: SoftwareEngine::new(),
             encoded_picture_executions: 0,
+            encoded_frame_executions: 0,
         }
     }
 }
@@ -226,6 +228,20 @@ impl GraphicsEngine for EncodedSoftwareEngine {
             crate::draw::pipeline::EncodedPictureExecution::Executed
         ) {
             self.encoded_picture_executions += 1;
+        }
+        Ok(result)
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &crate::draw::pipeline::FrameEncoder,
+    ) -> Result<crate::draw::pipeline::EncodedFrameExecution, Error> {
+        let result = self.inner.try_execute_encoded_frame(encoder)?;
+        if matches!(
+            result,
+            crate::draw::pipeline::EncodedFrameExecution::Executed
+        ) {
+            self.encoded_frame_executions += 1;
         }
         Ok(result)
     }
@@ -402,13 +418,10 @@ fn frame_renderer_preserves_typed_graphics_failure() {
 }
 
 #[test]
-fn picture_offscreen_failure_aborts_before_end_frame_or_final_present() {
+fn root_and_direct_scene_execute_one_encoded_frame_before_final_present() {
     let mut renderer = FrameRenderer::new();
-    let mut engine = RecordingEngine::new().with_offscreen_failure(Error::new(
-        crate::core::Errc::GraphicsSurfaceLost,
-        "injected Picture bind failure",
-    ));
-    let scene = EligiblePictureScene::new();
+    let mut engine = RecordingEngine::new();
+    let scene = EligiblePictureScene::direct();
     let tokens = MockTokens;
     let fonts = FontService::new();
     let images = ImageService::new();
@@ -431,18 +444,92 @@ fn picture_offscreen_failure_aborts_before_end_frame_or_final_present() {
         },
     );
 
-    assert!(matches!(
-        output.outcome,
-        RenderOutcome::Failed(crate::draw::engine::GraphicsFailure::SurfaceLost(error))
-            if error.code() == crate::core::Errc::GraphicsSurfaceLost
-    ));
-    assert_eq!(output.inv_source, InvalidationSource::None);
-    assert!(engine.events.contains(&"offscreen_begin"));
-    assert!(!engine.events.contains(&"end"));
+    assert!(matches!(output.outcome, RenderOutcome::Present(_)));
+    let encoded = engine
+        .events
+        .iter()
+        .position(|event| *event == "encoded_frame")
+        .expect("root/direct scene must reach the main FrameEncoder executor");
+    let end = engine
+        .events
+        .iter()
+        .position(|event| *event == "end")
+        .expect("one final presentation boundary");
+    assert!(
+        encoded < end,
+        "FrameEncoder must execute before final present"
+    );
 }
 
 #[test]
-fn cached_cpu_picture_executes_frame_encoder_before_its_existing_present_boundary() {
+fn main_frame_encoder_failure_skips_final_present_and_preserves_retry() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new().with_encoded_frame_failure(Error::new(
+        crate::core::Errc::GraphicsSurfaceLost,
+        "injected main FrameEncoder failure",
+    ));
+    let scene = EligiblePictureScene::direct();
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let output = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    assert!(matches!(output.outcome, RenderOutcome::Failed(_)));
+    assert!(engine.events.contains(&"encoded_frame"));
+    assert!(
+        !engine.events.contains(&"end"),
+        "failed main FrameEncoder execution cannot reach final present"
+    );
+
+    engine.encoded_frame_failure = None;
+    let retry = renderer.render_frame(
+        &mut engine,
+        &scene,
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(matches!(retry.outcome, RenderOutcome::Present(_)));
+    assert_eq!(
+        engine
+            .events
+            .iter()
+            .filter(|event| **event == "encoded_frame")
+            .count(),
+        2,
+        "retry must re-execute the dirty main FrameEncoder rather than reuse a failed frame"
+    );
+}
+
+#[test]
+fn cached_picture_is_consumed_by_the_main_frame_encoder_before_present() {
     let mut renderer = FrameRenderer::new();
     let mut engine = EncodedSoftwareEngine::new();
     engine.initialize(300, 300).expect("software init");
@@ -470,10 +557,10 @@ fn cached_cpu_picture_executes_frame_encoder_before_its_existing_present_boundar
     );
     assert!(matches!(first.outcome, RenderOutcome::PresentPending(_)));
     assert_eq!(engine.encoded_picture_executions, 0);
+    assert_eq!(engine.encoded_frame_executions, 1);
 
-    // Root itself is now cacheable; a child invalidation requires the Picture
-    // to re-rasterize while reusing its root DisplayList. That is the narrow
-    // production path that must consume FrameEncoder rather than only tests.
+    // The reference compositor may reuse a cached Picture, but its result is
+    // still consumed only through the one main-surface FrameEncoder.
     scene.root_dirty.set(false);
     scene.child_dirty.set(true);
     let second = renderer.render_frame(
@@ -495,7 +582,8 @@ fn cached_cpu_picture_executes_frame_encoder_before_its_existing_present_boundar
     );
 
     assert!(matches!(second.outcome, RenderOutcome::PresentPending(_)));
-    assert_eq!(engine.encoded_picture_executions, 1);
+    assert_eq!(engine.encoded_picture_executions, 0);
+    assert_eq!(engine.encoded_frame_executions, 2);
     let pixels = engine
         .inner
         .session()
@@ -573,6 +661,7 @@ impl ScenePaint for EmptyScene {
 struct EligiblePictureScene {
     root_dirty: Cell<bool>,
     child_dirty: Cell<bool>,
+    picture_policy: crate::draw::compositor::PicturePolicy,
 }
 
 impl EligiblePictureScene {
@@ -580,6 +669,14 @@ impl EligiblePictureScene {
         Self {
             root_dirty: Cell::new(true),
             child_dirty: Cell::new(false),
+            picture_policy: crate::draw::compositor::PicturePolicy::Eligible,
+        }
+    }
+
+    fn direct() -> Self {
+        Self {
+            picture_policy: crate::draw::compositor::PicturePolicy::Never,
+            ..Self::new()
         }
     }
 }
@@ -640,7 +737,7 @@ impl ScenePaint for EligiblePictureScene {
         &self,
         _: crate::draw::pipeline::NodeId,
     ) -> crate::draw::compositor::PicturePolicy {
-        crate::draw::compositor::PicturePolicy::Eligible
+        self.picture_policy
     }
 
     fn children_clip(&self, _: crate::draw::pipeline::NodeId, _: Rect) -> Option<Rect> {

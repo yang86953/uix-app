@@ -8,7 +8,7 @@
 use crate::core::{Error, Rect};
 use crate::draw::backend::DamageRegion;
 use crate::draw::engine::{GraphicsFailure, GraphicsRecovery, RecoveryAction, RenderOutcome};
-use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
+use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::types::ImageHandle;
 use crate::draw::traits::{Canvas2D, GraphicsCapabilities, GraphicsEngine, UpdateStrategy};
 
@@ -233,6 +233,17 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
         encoder: &FrameEncoder,
     ) -> Result<EncodedPictureExecution, Error> {
         self.engine.try_execute_encoded_picture(handle, encoder)
+    }
+
+    fn try_execute_encoded_frame(
+        &mut self,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedFrameExecution, Error> {
+        let result = self.engine.try_execute_encoded_frame(encoder);
+        if let Err(error) = &result {
+            self.record_failure(GraphicsFailure::from_error(error.clone()));
+        }
+        result
     }
 
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
