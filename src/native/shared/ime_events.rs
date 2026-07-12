@@ -61,7 +61,9 @@ mod tests {
     use super::*;
     use crate::native::traits::event::{UiEventPayload, UiEventType};
 
-    fn queue(events: &Arc<Mutex<VecDeque<UiEvent>>>) -> std::sync::MutexGuard<'_, VecDeque<UiEvent>> {
+    fn queue(
+        events: &Arc<Mutex<VecDeque<UiEvent>>>,
+    ) -> std::sync::MutexGuard<'_, VecDeque<UiEvent>> {
         events.lock().unwrap()
     }
 

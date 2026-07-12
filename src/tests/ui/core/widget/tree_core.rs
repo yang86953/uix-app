@@ -3885,7 +3885,11 @@ fn typography_drag_selection_extends_to_sibling_above() {
         EventResult::Handled
     );
     assert_eq!(tree.managers().interaction.pressed_component(), Some(h3));
-    assert!(tree.get(h3).unwrap().component().as_any()
+    assert!(tree
+        .get(h3)
+        .unwrap()
+        .component()
+        .as_any()
         .downcast_ref::<Typography>()
         .unwrap()
         .is_cross_text_dragging());
@@ -3921,18 +3925,9 @@ fn typography_drag_selection_extends_through_middle_sibling() {
 
     let mut tree = WidgetTree::new();
     let root = tree.set_root(Box::new(PassThroughContainer::new(400.0, 240.0, vec![])));
-    let h1 = tree.add_child(
-        root,
-        Box::new(Typography::heading("Heading 1", 1)),
-    );
-    let h2 = tree.add_child(
-        root,
-        Box::new(Typography::heading("Heading 2", 2)),
-    );
-    let h3 = tree.add_child(
-        root,
-        Box::new(Typography::heading("Heading 3", 3)),
-    );
+    let h1 = tree.add_child(root, Box::new(Typography::heading("Heading 1", 1)));
+    let h2 = tree.add_child(root, Box::new(Typography::heading("Heading 2", 2)));
+    let h3 = tree.add_child(root, Box::new(Typography::heading("Heading 3", 3)));
     tree.get_mut(root)
         .unwrap()
         .set_frame(Rect::new(0.0, 0.0, 400.0, 240.0));

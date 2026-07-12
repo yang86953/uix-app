@@ -42,12 +42,7 @@ mod cocoa {
         fn sel_registerName(name: *const c_char) -> Sel;
         fn objc_msgSend();
         fn objc_allocateClassPair(superclass: Id, name: *const c_char, extra_bytes: usize) -> Id;
-        fn class_addMethod(
-            cls: Id,
-            name: Sel,
-            imp: *const c_void,
-            types: *const c_char,
-        ) -> u8;
+        fn class_addMethod(cls: Id, name: Sel, imp: *const c_void, types: *const c_char) -> u8;
         fn objc_registerClassPair(cls: Id);
         fn objc_setAssociatedObject(object: Id, key: Sel, value: Id, policy: usize);
         fn objc_getAssociatedObject(object: Id, key: Sel) -> Id;
@@ -93,7 +88,8 @@ mod cocoa {
     }
 
     unsafe fn delegate_context(delegate: Id) -> Option<&'static WindowDelegateContext> {
-        let ptr = objc_getAssociatedObject(delegate, DELEGATE_CONTEXT_KEY) as *mut WindowDelegateContext;
+        let ptr =
+            objc_getAssociatedObject(delegate, DELEGATE_CONTEXT_KEY) as *mut WindowDelegateContext;
         if ptr.is_null() {
             None
         } else {

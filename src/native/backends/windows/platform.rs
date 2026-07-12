@@ -454,13 +454,12 @@ mod tests {
         // TSF 会话激活后 IMM32 composition 消息被跳过（避免双发）；WM_CHAR 仍走 TextInput。
         let events: Vec<_> = std::iter::from_fn(|| platform.next_event()).collect();
         assert_eq!(
-            events
-                .iter()
-                .map(|event| event.type_)
-                .collect::<Vec<_>>(),
+            events.iter().map(|event| event.type_).collect::<Vec<_>>(),
             vec![UiEventType::TextInput]
         );
-        assert!(events.iter().all(|event| event.window_id == Some(window_id)));
+        assert!(events
+            .iter()
+            .all(|event| event.window_id == Some(window_id)));
         let UiEventPayload::TextInput(text) = &events[0].payload else {
             panic!("expected text payload");
         };
