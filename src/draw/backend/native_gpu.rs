@@ -15,6 +15,7 @@ use crate::core::{DamageRegion, Errc, Error, Point, Rect};
 use crate::draw::backend::traits::{BackendCapabilities, BackendKind, DrawSurface, RenderBackend};
 use crate::draw::engine::cpu::pixel_surface::PixelSurface;
 use crate::draw::engine::cpu::shared_rasterizer::SharedRasterizer;
+use crate::draw::pipeline::{EncodedPictureExecution, FrameEncoder};
 use crate::draw::primitives::color::Color;
 use crate::draw::primitives::path::{FillRule, Path};
 use crate::draw::primitives::stroker::StrokeOptions;
@@ -1271,6 +1272,61 @@ impl RenderBackend for NativeGpuBackend {
             .get_mut(idx)?
             .as_mut()
             .map(|o| &mut o.canvas as &mut dyn Canvas2D)
+    }
+
+    fn try_execute_encoded_picture(
+        &mut self,
+        handle: &ImageHandle,
+        encoder: &FrameEncoder,
+    ) -> Result<EncodedPictureExecution, Error> {
+        if self.active_offscreen != Some(handle.0) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                "FrameEncoder Picture execution requires its bound offscreen target",
+            ));
+        }
+        let off = self
+            .offscreens
+            .get(handle.0 as usize)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| {
+                Error::new(
+                    Errc::InvalidState,
+                    "Picture offscreen target disappeared before FrameEncoder execution",
+                )
+            })?;
+        if (off.width, off.height) != (encoder.width(), encoder.height()) {
+            return Err(Error::new(
+                Errc::InvalidState,
+                format!(
+                    "FrameEncoder {}x{} does not match Picture target {}x{}",
+                    encoder.width(),
+                    encoder.height(),
+                    off.width,
+                    off.height
+                ),
+            ));
+        }
+
+        // `FrameEncoder` is the source of truth for this cached Picture: replay
+        // it into a CPU reference, clear the already-bound native target with
+        // replace semantics, then submit only the alpha-visible tile. This
+        // preserves its complete painter order without exposing API objects to
+        // draw or silently falling back to an unrelated DisplayList path.
+        let frame = encoder.render_reference();
+        self.gpu_ctx.bind_offscreen_target(off.target)?;
+        self.gpu_ctx.clear_render_target(0.0, 0.0, 0.0, 0.0)?;
+        if let Some(tile) =
+            visible_soft_fallback_tile(frame.pixels(), frame.width(), frame.height())
+        {
+            self.gpu_ctx.blit_soft_fallback_tile(
+                frame.pixels(),
+                frame.width(),
+                frame.height(),
+                tile,
+            )?;
+        }
+        Ok(EncodedPictureExecution::Executed)
     }
 
     fn begin_offscreen_paint(&mut self, handle: &ImageHandle) -> bool {
