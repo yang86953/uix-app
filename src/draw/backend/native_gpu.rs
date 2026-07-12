@@ -1334,24 +1334,22 @@ impl RenderBackend for NativeGpuBackend {
     }
 
     fn shutdown(&mut self) {
+        if let Err(error) = self.try_shutdown() {
+            crate::core::log::error_fn(format!(
+                "NativeGpuBackend: checked shutdown failed: {}",
+                error.short_what()
+            ));
+        }
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
         if self.shutdown {
-            return;
+            return Ok(());
         }
-        if let Err(error) = self.destroy_all_offscreens() {
-            crate::core::log::error_fn(format!(
-                "NativeGpuBackend: offscreen shutdown failed: {}",
-                error.short_what()
-            ));
-            return;
-        }
-        if let Err(error) = self.gpu_ctx.try_shutdown() {
-            crate::core::log::error_fn(format!(
-                "NativeGpuBackend: context shutdown failed: {}",
-                error.short_what()
-            ));
-            return;
-        }
+        self.destroy_all_offscreens()?;
+        self.gpu_ctx.try_shutdown()?;
         self.shutdown = true;
+        Ok(())
     }
 
     fn surface(&mut self) -> &mut dyn DrawSurface {

@@ -166,6 +166,13 @@ pub trait RenderBackend {
 
     fn shutdown(&mut self);
 
+    /// Checked counterpart of [`Self::shutdown`]. Native backends override
+    /// this so recovery can retain an owner when teardown has not completed.
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.shutdown();
+        Ok(())
+    }
+
     fn surface(&mut self) -> &mut dyn DrawSurface;
 
     /// Bind or begin recording against the backend's current graphics target.
