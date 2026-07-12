@@ -1006,10 +1006,12 @@ impl NativeGpuBackend {
                 ),
             ));
         }
+        let actual_w = gpu_ctx.width().max(1);
+        let actual_h = gpu_ctx.height().max(1);
         Ok(Self {
             gpu_ctx,
-            width: 0,
-            height: 0,
+            width: actual_w,
+            height: actual_h,
             shutdown: false,
             offscreens: Vec::new(),
             free_offscreen_ids: Vec::new(),
@@ -1017,10 +1019,10 @@ impl NativeGpuBackend {
             active_offscreen: None,
             frame_failure: None,
             surface: NativeGpuDrawSurface {
-                canvas: NativeGpuCanvas2D::new(1, 1, native_caps),
+                canvas: NativeGpuCanvas2D::new(actual_w, actual_h, native_caps),
                 native_caps,
-                width: 1,
-                height: 1,
+                width: actual_w,
+                height: actual_h,
                 needs_gpu_clear: true,
                 pending_clear_rects: Vec::new(),
             },
@@ -1049,6 +1051,19 @@ impl NativeGpuBackend {
         // target.  The next retained-dirty retry must start from a known full
         // clear rather than alpha-blending on that partial target.
         self.surface.needs_gpu_clear = true;
+    }
+
+    fn adopt_factory_drawable_extent(&mut self) -> (i32, i32) {
+        let actual_w = self.gpu_ctx.width().max(1);
+        let actual_h = self.gpu_ctx.height().max(1);
+        self.width = actual_w;
+        self.height = actual_h;
+        self.surface.width = actual_w;
+        self.surface.height = actual_h;
+        self.surface.canvas.resize(actual_w, actual_h);
+        self.surface.needs_gpu_clear = true;
+        self.surface.pending_clear_rects.clear();
+        (actual_w, actual_h)
     }
 
     /// Submit all commands that precede an immediate ordered operation such
@@ -1109,16 +1124,15 @@ impl RenderBackend for NativeGpuBackend {
         self.gpu_ctx.resize(logical_w, logical_h)?;
         // D3D11/D3D12 等会按 HWND GetClientRect 校正缓冲尺寸；canvas/布局必须跟
         // 实际 RT 一致，否则清出更大黑底而 UI 仍画旧几何 → 窗口黑边。
-        let actual_w = self.gpu_ctx.width().max(1);
-        let actual_h = self.gpu_ctx.height().max(1);
-        self.width = actual_w;
-        self.height = actual_h;
-        self.surface.width = actual_w;
-        self.surface.height = actual_h;
-        self.surface.canvas.resize(actual_w, actual_h);
-        self.surface.needs_gpu_clear = true;
-        self.surface.pending_clear_rects.clear();
+        self.adopt_factory_drawable_extent();
         Ok(())
+    }
+
+    fn initialize_prepared(&mut self, _width: i32, _height: i32) -> Result<(i32, i32), Error> {
+        // `IGraphicsContext::initialize` already ran in the factory against
+        // the real surface. Startup only synchronizes draw-owned state to the
+        // factory-reported drawable; it must not recreate the swapchain.
+        Ok(self.adopt_factory_drawable_extent())
     }
 
     fn shutdown(&mut self) {

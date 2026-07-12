@@ -145,6 +145,18 @@ pub trait RenderBackend {
     fn capabilities(&self) -> BackendCapabilities;
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
+
+    /// Initializes draw-owned state for a context whose factory has already
+    /// created and bound its native surface. The default preserves legacy
+    /// backends; GPU backends override it to avoid treating startup as a
+    /// second native resize/recreate.
+    fn initialize_prepared(&mut self, width: i32, height: i32) -> Result<(i32, i32), Error> {
+        let width = width.max(1);
+        let height = height.max(1);
+        self.resize(width, height)?;
+        Ok((width, height))
+    }
+
     fn shutdown(&mut self);
 
     fn surface(&mut self) -> &mut dyn DrawSurface;
