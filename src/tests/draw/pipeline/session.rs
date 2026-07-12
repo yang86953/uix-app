@@ -13,6 +13,7 @@ struct CountingGraphicsContext {
 
 struct FailingShutdownGraphicsContext {
     attempts: Arc<AtomicUsize>,
+    message: &'static str,
 }
 
 impl IGraphicsContext for CountingGraphicsContext {
@@ -98,7 +99,7 @@ impl IGraphicsContext for FailingShutdownGraphicsContext {
         self.attempts.fetch_add(1, Ordering::SeqCst);
         Err(crate::core::Error::new(
             crate::core::Errc::PlatformError,
-            "injected shutdown failure",
+            self.message,
         ))
     }
 
@@ -173,6 +174,7 @@ fn failed_staged_context_shutdown_keeps_the_old_context_and_closes_the_replaceme
     session
         .set_gpu_context(Box::new(FailingShutdownGraphicsContext {
             attempts: Arc::clone(&failed_attempts),
+            message: "injected shutdown failure",
         }))
         .expect("stage context");
 
@@ -191,6 +193,7 @@ fn session_shutdown_retries_a_staged_checked_shutdown_failure() {
     session
         .set_gpu_context(Box::new(FailingShutdownGraphicsContext {
             attempts: Arc::clone(&attempts),
+            message: "injected shutdown failure",
         }))
         .expect("stage context");
 
@@ -199,6 +202,40 @@ fn session_shutdown_retries_a_staged_checked_shutdown_failure() {
 
     session.shutdown();
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn staged_replacement_preserves_both_checked_shutdown_failures() {
+    let previous_attempts = Arc::new(AtomicUsize::new(0));
+    let replacement_attempts = Arc::new(AtomicUsize::new(0));
+    let mut session = RenderSession::new(BackendKind::Cpu).expect("Cpu session");
+    session
+        .set_gpu_context(Box::new(FailingShutdownGraphicsContext {
+            attempts: Arc::clone(&previous_attempts),
+            message: "injected retained context shutdown failure",
+        }))
+        .expect("stage context");
+
+    let error = session
+        .set_gpu_context(Box::new(FailingShutdownGraphicsContext {
+            attempts: Arc::clone(&replacement_attempts),
+            message: "injected replacement context shutdown failure",
+        }))
+        .expect_err("both checked shutdown failures must remain observable");
+
+    assert_eq!(
+        error.message(),
+        "injected replacement context shutdown failure"
+    );
+    assert_eq!(
+        error
+            .source_error()
+            .expect("retained context failure")
+            .message(),
+        "injected retained context shutdown failure"
+    );
+    assert_eq!(previous_attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(replacement_attempts.load(Ordering::SeqCst), 1);
 }
 
 #[test]
