@@ -379,5 +379,5 @@ pub trait Canvas2D {
     /// `(viewport.x, viewport.y)`，避免全帧重绘。dx/dy 应是整数像素偏移。
     /// 调用此方法后，viewport 中非 strip 区域的内容已正确偏移，
     /// 调用者只需重绘新暴露的 strip 区域（与滚动方向相反的一侧）。
-    fn scroll_region(&mut self, _viewport: Rect, _dx: f32, _dy: f32) {}
+    fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32);
 }

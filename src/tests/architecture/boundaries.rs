@@ -667,6 +667,18 @@ fn graphics_backend_public_api_exposes_enum_not_context_factory() {
 }
 
 #[test]
+fn canvas_scroll_copy_requires_an_explicit_backend_semantic() {
+    let canvas =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/draw/traits/canvas.rs"))
+            .expect("read Canvas2D contract");
+
+    assert!(
+        canvas.contains("fn scroll_region(&mut self, viewport: Rect, dx: f32, dy: f32);"),
+        "Canvas2D scroll copy must not regain a silent no-op default"
+    );
+}
+
+#[test]
 fn low_level_widget_loop_stays_off_prelude() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let prelude = fs::read_to_string(src.join("prelude.rs")).unwrap();
