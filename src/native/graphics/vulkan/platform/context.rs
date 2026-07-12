@@ -564,13 +564,16 @@ impl VulkanContext {
         Ok(())
     }
 
-    fn cleanup(&mut self) {
+    fn shutdown_result(&mut self) -> Result<()> {
         if self.shutdown {
-            return;
+            return Ok(());
         }
-        self.shutdown = true;
         unsafe {
-            let _ = self.device.device_wait_idle();
+            self.device
+                .device_wait_idle()
+                .map_err(|err| vk_err("vkDeviceWaitIdle during shutdown", err))?;
+        }
+        unsafe {
             if self.upload.buffer != vk::Buffer::null() {
                 self.device.destroy_buffer(self.upload.buffer, None);
             }
@@ -599,6 +602,8 @@ impl VulkanContext {
             }
             self.instance.destroy_instance(None);
         }
+        self.shutdown = true;
+        Ok(())
     }
 }
 
@@ -639,12 +644,24 @@ impl IGraphicsContext for VulkanContext {
         Ok(())
     }
 
+    fn try_shutdown(&mut self) -> Result<()> {
+        self.shutdown_result()
+    }
+
     fn shutdown(&mut self) {
-        self.cleanup();
+        if let Err(error) = self.shutdown_result() {
+            crate::core::log::error_fn(format!(
+                "VulkanContext: shutdown failed: {}",
+                error.short_what()
+            ));
+        }
     }
 
     fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u32>> {
-        Ok(Vec::new())
+        Err(Error::new(
+            Errc::NotImplemented,
+            "VulkanContext: native readback is not supported",
+        ))
     }
 
     fn width(&self) -> i32 {
@@ -675,7 +692,7 @@ impl IGraphicsContext for VulkanContext {
 
 impl Drop for VulkanContext {
     fn drop(&mut self) {
-        self.cleanup();
+        self.shutdown();
     }
 }
 
