@@ -3606,7 +3606,7 @@ mod tests {
             .expect("window");
         let surface = window.native_surface_ptr();
         assert!(!surface.is_null(), "Windows HWND must be available");
-        let context = crate::native::create_gpu_context_with_backend(
+        let context = crate::native::factory::create_gpu_context_with_backend(
             surface,
             256,
             128,

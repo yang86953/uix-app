@@ -22,7 +22,7 @@ fn open_engine(
         .window_manager()
         .create_window(title, width, height)
         .expect("window");
-    let context = crate::native::create_gpu_context_with_backend(
+    let context = crate::native::factory::create_gpu_context_with_backend(
         window.native_surface_ptr(),
         width,
         height,

@@ -73,6 +73,30 @@ fn metal_identity_stays_named_as_cpu_pixel_upload() {
     );
 }
 
+#[test]
+fn raw_gpu_factory_creation_stays_inside_the_native_factory_bridge() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let native_mod = fs::read_to_string(src.join("native/mod.rs")).expect("read native module");
+    let factory =
+        fs::read_to_string(src.join("native/factory/mod.rs")).expect("read native factory module");
+    let registry =
+        fs::read_to_string(src.join("native/factory/registry.rs")).expect("read graphics registry");
+
+    assert!(
+        !native_mod.contains("create_gpu_context_with_backend"),
+        "the public native module must not re-export raw surface context creation"
+    );
+    assert!(
+        factory.contains("pub(crate) fn create_gpu_context_with_backend"),
+        "the explicit raw-surface factory helper is only for crate-local test and native wiring"
+    );
+    assert!(
+        registry.contains("pub(crate) fn try_create_context")
+            && registry.contains("pub(crate) fn try_create_gpu_context"),
+        "registry raw-surface constructors must stay inside the factory bridge"
+    );
+}
+
 fn rust_code_without_comments(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut output = Vec::with_capacity(bytes.len());
