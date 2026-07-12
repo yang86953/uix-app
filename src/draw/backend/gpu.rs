@@ -136,6 +136,29 @@ impl GpuBackend {
         })
     }
 
+    fn adopt_prepared_draw_surface(
+        &mut self,
+        logical_w: i32,
+        logical_h: i32,
+    ) -> Result<(i32, i32), Error> {
+        let logical_w = logical_w.max(1);
+        let logical_h = logical_h.max(1);
+        let physical_w = self.gpu_ctx.width().max(1);
+        let physical_h = self.gpu_ctx.height().max(1);
+        let dpr = self.gpu_ctx.device_pixel_ratio().max(1.0);
+        self.width = logical_w;
+        self.height = logical_h;
+        self.surface.width = logical_w;
+        self.surface.height = logical_h;
+        self.surface.canvas.resize(logical_w, logical_h)?;
+        self.surface.canvas.set_device_pixel_ratio(dpr);
+        self.gpu_ctx.make_current()?;
+        unsafe {
+            self.gl.viewport(0, 0, physical_w, physical_h);
+        }
+        Ok((logical_w, logical_h))
+    }
+
     pub fn read_pixels(&self) {
         let mut rb = self.readback.borrow_mut();
         let len = (self.width * self.height * 4) as usize;
@@ -314,20 +337,14 @@ impl RenderBackend for GpuBackend {
         let logical_w = width.max(1);
         let logical_h = height.max(1);
         self.gpu_ctx.resize(logical_w, logical_h)?;
-        let physical_w = self.gpu_ctx.width();
-        let physical_h = self.gpu_ctx.height();
-        let dpr = self.gpu_ctx.device_pixel_ratio().max(1.0);
-        self.width = logical_w;
-        self.height = logical_h;
-        self.surface.width = logical_w;
-        self.surface.height = logical_h;
-        self.surface.canvas.resize(logical_w, logical_h)?;
-        self.surface.canvas.set_device_pixel_ratio(dpr);
-        self.gpu_ctx.make_current()?;
-        unsafe {
-            self.gl.viewport(0, 0, physical_w, physical_h);
-        }
+        self.adopt_prepared_draw_surface(logical_w, logical_h)?;
         Ok(())
+    }
+
+    fn initialize_prepared(&mut self, width: i32, height: i32) -> Result<(i32, i32), Error> {
+        // The GL context/surface is factory-created already. Only configure
+        // draw-owned objects and the viewport from its current drawable.
+        self.adopt_prepared_draw_surface(width, height)
     }
 
     fn shutdown(&mut self) {

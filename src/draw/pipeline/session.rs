@@ -111,6 +111,18 @@ impl RenderSession {
         self.backend.resize(width, height)
     }
 
+    /// Starts a session on a native target the factory has already prepared.
+    /// The backend reports the drawable extent it actually adopted so the
+    /// session never assumes the requested logical size matches a corrected
+    /// swapchain/client extent.
+    pub(crate) fn initialize_prepared(&mut self, width: i32, height: i32) -> Result<(), Error> {
+        self.require_owner("initialize_prepared")?;
+        let (actual_width, actual_height) = self.backend.initialize_prepared(width, height)?;
+        self.width = actual_width.max(1);
+        self.height = actual_height.max(1);
+        Ok(())
+    }
+
     pub fn shutdown(&mut self) {
         if let Err(error) = self.require_owner("shutdown") {
             crate::core::log::error_fn(format!("RenderSession: {}", error.short_what()));

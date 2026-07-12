@@ -339,12 +339,12 @@ mod tests {
     }
 
     #[cfg(feature = "d3d11")]
-    struct ResizeFailingNativeContext {
+    struct MakeCurrentFailingNativeContext {
         shutdown_called: Rc<Cell<bool>>,
     }
 
     #[cfg(feature = "d3d11")]
-    impl IGraphicsContext for ResizeFailingNativeContext {
+    impl IGraphicsContext for MakeCurrentFailingNativeContext {
         fn caps(&self) -> GraphicsContextCaps {
             GraphicsContextCaps::gpu_native_swapchain(GraphicsBackend::D3d11, false, 1.0)
         }
@@ -363,11 +363,14 @@ mod tests {
         }
 
         fn resize(&mut self, _width: i32, _height: i32) -> crate::core::Result<()> {
-            Err(Error::new(Errc::PlatformError, "resize failed for test"))
+            Ok(())
         }
 
         fn make_current(&mut self) -> crate::core::Result<()> {
-            Ok(())
+            Err(Error::new(
+                Errc::PlatformError,
+                "make-current failed for test",
+            ))
         }
 
         fn swap_buffers(&mut self, _damage: PresentDamage) -> crate::core::Result<()> {
@@ -411,7 +414,7 @@ mod tests {
             480,
             GraphicsBackend::D3d11,
             |_candidate| {
-                Ok(Box::new(ResizeFailingNativeContext {
+                Ok(Box::new(MakeCurrentFailingNativeContext {
                     shutdown_called: Rc::clone(&shutdown_called),
                 }) as Box<dyn IGraphicsContext>)
             },
@@ -425,7 +428,7 @@ mod tests {
                 assert!(failure
                     .message
                     .contains("selected=backend=d3d11; raster=gpu_native; present=swapchain"));
-                assert!(failure.message.contains("resize failed for test"));
+                assert!(failure.message.contains("make-current failed for test"));
             }
         }
     }
