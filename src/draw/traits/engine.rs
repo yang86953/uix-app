@@ -129,6 +129,15 @@ pub trait GraphicsEngine: 'static {
     fn destroy_offscreen(&mut self, handle: ImageHandle) {
         let _ = handle;
     }
+
+    /// Checked counterpart of [`Self::destroy_offscreen`]. Production
+    /// compositor paths use this boundary to preserve an offscreen handle
+    /// when native destruction fails.
+    fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
+        self.destroy_offscreen(handle);
+        Ok(())
+    }
+
     fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
         let _ = handle;
         None

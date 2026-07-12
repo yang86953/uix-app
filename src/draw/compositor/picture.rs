@@ -65,7 +65,7 @@ pub(crate) fn rasterize_picture_to_offscreen<S: ScenePaint>(
     if *retry_count >= MAX_OFFSCREEN_RETRY {
         return Ok(());
     }
-    if !ensure_offscreen(engine, offscreen_handle, w, h) {
+    if !ensure_offscreen(engine, offscreen_handle, w, h)? {
         *retry_count = retry_count.saturating_add(1);
         if *retry_count == MAX_OFFSCREEN_RETRY {
             crate::core::log::warn_fn(format!(
@@ -193,21 +193,21 @@ fn ensure_offscreen(
     handle: &mut Option<ImageHandle>,
     w: i32,
     h: i32,
-) -> bool {
+) -> Result<bool, Error> {
     if w <= 0 || h <= 0 {
-        return false;
+        return Ok(false);
     }
     if let Some(hdl) = *handle {
         if let Some(canvas) = engine.offscreen_canvas(&hdl) {
             if canvas.width() == w && canvas.height() == h {
-                return true;
+                return Ok(true);
             }
         }
-        engine.destroy_offscreen(hdl);
+        engine.try_destroy_offscreen(hdl)?;
         *handle = None;
     }
     *handle = engine.create_offscreen(w, h);
-    handle.is_some()
+    Ok(handle.is_some())
 }
 
 /// Turns a complete cached DisplayList into the only actual Picture submission
@@ -404,6 +404,7 @@ mod tests {
     struct CountingEngine {
         inner: SoftwareEngine,
         encoded_picture_executions: usize,
+        destroy_error: Option<Error>,
     }
 
     impl CountingEngine {
@@ -411,6 +412,7 @@ mod tests {
             Self {
                 inner: SoftwareEngine::new(),
                 encoded_picture_executions: 0,
+                destroy_error: None,
             }
         }
     }
@@ -442,6 +444,14 @@ mod tests {
 
         fn create_offscreen(&mut self, width: i32, height: i32) -> Option<ImageHandle> {
             self.inner.create_offscreen(width, height)
+        }
+
+        fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
+            if let Some(error) = &self.destroy_error {
+                return Err(error.clone());
+            }
+            self.inner.destroy_offscreen(handle);
+            Ok(())
         }
 
         fn offscreen_canvas(&mut self, handle: &ImageHandle) -> Option<&mut dyn Canvas2D> {
@@ -502,6 +512,36 @@ mod tests {
             frame.pixel(1, 1),
             Some(crate::draw::Color::transparent().premultiplied())
         );
+    }
+
+    #[test]
+    fn picture_resize_preserves_its_handle_when_checked_destroy_fails() {
+        let mut engine = CountingEngine::new();
+        engine.initialize(16, 16).expect("software engine");
+        let original = engine.create_offscreen(4, 4).expect("initial Picture");
+        let mut handle = Some(original);
+        engine.destroy_error = Some(Error::new(
+            Errc::GraphicsDeviceLost,
+            "injected Picture destroy failure",
+        ));
+
+        let error = ensure_offscreen(&mut engine, &mut handle, 8, 8)
+            .expect_err("Picture resize must surface a checked destroy failure");
+        assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+        assert_eq!(handle, Some(original));
+        assert!(
+            engine.inner.offscreen_canvas(&original).is_some(),
+            "failed destruction must retain the original Picture target"
+        );
+
+        engine.destroy_error = None;
+        assert!(ensure_offscreen(&mut engine, &mut handle, 8, 8).expect("retry resize"));
+        let replacement = handle.expect("replacement Picture");
+        let canvas = engine
+            .inner
+            .offscreen_canvas(&replacement)
+            .expect("replacement Picture target");
+        assert_eq!((canvas.width(), canvas.height()), (8, 8));
     }
 
     #[test]

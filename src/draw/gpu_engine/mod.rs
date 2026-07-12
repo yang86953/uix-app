@@ -101,6 +101,10 @@ impl GraphicsEngine for GpuEngine {
         self.session.backend_mut().destroy_offscreen(handle);
     }
 
+    fn try_destroy_offscreen(&mut self, handle: crate::draw::ImageHandle) -> Result<(), Error> {
+        self.session.backend_mut().try_destroy_offscreen(handle)
+    }
+
     fn offscreen_canvas(&mut self, handle: &crate::draw::ImageHandle) -> Option<&mut dyn Canvas2D> {
         self.session.backend_mut().offscreen_canvas(handle)
     }

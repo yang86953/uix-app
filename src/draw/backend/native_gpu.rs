@@ -1097,10 +1097,14 @@ impl NativeGpuBackend {
     fn destroy_all_offscreens(&mut self) -> Result<(), Error> {
         self.active_offscreen = None;
         let _ = self.gpu_ctx.bind_swapchain_target();
-        for slot in self.offscreens.iter_mut() {
-            if let Some(off) = slot.take() {
-                self.gpu_ctx.try_destroy_offscreen_target(off.target)?;
-            }
+        let handles = self
+            .offscreens
+            .iter()
+            .enumerate()
+            .filter_map(|(id, target)| target.as_ref().map(|_| ImageHandle(id as u32)))
+            .collect::<Vec<_>>();
+        for handle in handles {
+            self.try_destroy_offscreen(handle)?;
         }
         self.offscreens.clear();
         self.free_offscreen_ids.clear();
@@ -1363,19 +1367,26 @@ impl RenderBackend for NativeGpuBackend {
         Some(ImageHandle(id))
     }
 
-    fn destroy_offscreen(&mut self, handle: ImageHandle) {
+    fn try_destroy_offscreen(&mut self, handle: ImageHandle) -> Result<(), Error> {
+        let idx = handle.0 as usize;
+        let Some(off) = self.offscreens.get(idx).and_then(Option::as_ref) else {
+            return Ok(());
+        };
+        if self.active_offscreen == Some(handle.0) {
+            self.gpu_ctx.bind_swapchain_target()?;
+        }
+        self.gpu_ctx.try_destroy_offscreen_target(off.target)?;
+        self.offscreens[idx] = None;
         if self.active_offscreen == Some(handle.0) {
             self.active_offscreen = None;
-            let _ = self.gpu_ctx.bind_swapchain_target();
         }
-        let idx = handle.0 as usize;
-        if idx < self.offscreens.len() {
-            if let Some(off) = self.offscreens[idx].take() {
-                match self.gpu_ctx.try_destroy_offscreen_target(off.target) {
-                    Ok(()) => self.free_offscreen_ids.push(handle.0),
-                    Err(error) => self.remember_frame_failure(error),
-                }
-            }
+        self.free_offscreen_ids.push(handle.0);
+        Ok(())
+    }
+
+    fn destroy_offscreen(&mut self, handle: ImageHandle) {
+        if let Err(error) = self.try_destroy_offscreen(handle) {
+            self.remember_frame_failure(error);
         }
     }
 
@@ -2460,6 +2471,7 @@ mod tests {
             blits: Rc<Cell<usize>>,
             clears: Rc<Cell<usize>>,
             fail_native: Rc<Cell<bool>>,
+            fail_destroy: Rc<Cell<bool>>,
             presents: Rc<Cell<usize>>,
         }
         impl IGraphicsContext for OffscreenFake {
@@ -2557,6 +2569,16 @@ mod tests {
                     self.bound.set(None);
                 }
             }
+            fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+                if self.fail_destroy.get() {
+                    return Err(Error::new(
+                        Errc::PlatformError,
+                        "injected offscreen destroy failure",
+                    ));
+                }
+                self.destroy_offscreen_target(id);
+                Ok(())
+            }
             fn bind_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
                 if self
                     .targets
@@ -2601,6 +2623,7 @@ mod tests {
         let clears = Rc::new(Cell::new(0));
         let blits = Rc::new(Cell::new(0));
         let fail_native = Rc::new(Cell::new(false));
+        let fail_destroy = Rc::new(Cell::new(false));
         let presents = Rc::new(Cell::new(0));
         let fake = OffscreenFake {
             next_id: Cell::new(0),
@@ -2609,6 +2632,7 @@ mod tests {
             blits: Rc::clone(&blits),
             clears: Rc::clone(&clears),
             fail_native: Rc::clone(&fail_native),
+            fail_destroy: Rc::clone(&fail_destroy),
             presents: Rc::clone(&presents),
         };
         let mut backend = NativeGpuBackend::new(Box::new(fake)).expect("backend");
@@ -2676,7 +2700,28 @@ mod tests {
             .expect_err("offscreen failure must reach final present");
         assert_eq!(error.code(), Errc::PlatformError);
         assert_eq!(presents.get(), 0, "no swapchain present after failure");
-        backend.destroy_offscreen(handle);
+
+        fail_native.set(false);
+        fail_destroy.set(true);
+        let error = backend
+            .try_destroy_offscreen(handle)
+            .expect_err("checked offscreen destroy must surface the native failure");
+        assert_eq!(error.code(), Errc::PlatformError);
+        assert!(
+            backend.offscreens[handle.0 as usize].is_some(),
+            "a failed destroy must retain the target ownership for retry"
+        );
+        assert!(
+            !backend.free_offscreen_ids.contains(&handle.0),
+            "a failed destroy must not recycle the still-live handle"
+        );
+
+        fail_destroy.set(false);
+        backend
+            .try_destroy_offscreen(handle)
+            .expect("a retained target must be destroyable on retry");
+        assert!(backend.offscreens[handle.0 as usize].is_none());
+        assert!(backend.free_offscreen_ids.contains(&handle.0));
     }
 
     #[test]
