@@ -998,7 +998,7 @@ impl NativeGpuBackend {
             let backend = caps.backend;
             let raster = caps.raster;
             let present = caps.present;
-            gpu_ctx.shutdown();
+            gpu_ctx.try_shutdown()?;
             return Err(Error::new(
                 Errc::InvalidArgument,
                 format!(
@@ -1027,17 +1027,18 @@ impl NativeGpuBackend {
         })
     }
 
-    fn destroy_all_offscreens(&mut self) {
+    fn destroy_all_offscreens(&mut self) -> Result<(), Error> {
         self.active_offscreen = None;
         let _ = self.gpu_ctx.bind_swapchain_target();
         for slot in self.offscreens.iter_mut() {
             if let Some(off) = slot.take() {
-                self.gpu_ctx.destroy_offscreen_target(off.target);
+                self.gpu_ctx.try_destroy_offscreen_target(off.target)?;
             }
         }
         self.offscreens.clear();
         self.free_offscreen_ids.clear();
         self.next_offscreen_id = 0;
+        Ok(())
     }
 
     fn remember_frame_failure(&mut self, error: Error) {
@@ -1125,9 +1126,19 @@ impl RenderBackend for NativeGpuBackend {
             return;
         }
         self.shutdown = true;
-        self.destroy_all_offscreens();
+        if let Err(error) = self.destroy_all_offscreens() {
+            crate::core::log::error_fn(format!(
+                "NativeGpuBackend: offscreen shutdown failed: {}",
+                error.short_what()
+            ));
+        }
         let _ = self.gpu_ctx.make_current();
-        self.gpu_ctx.shutdown();
+        if let Err(error) = self.gpu_ctx.try_shutdown() {
+            crate::core::log::error_fn(format!(
+                "NativeGpuBackend: context shutdown failed: {}",
+                error.short_what()
+            ));
+        }
     }
 
     fn surface(&mut self) -> &mut dyn DrawSurface {
@@ -1185,8 +1196,10 @@ impl RenderBackend for NativeGpuBackend {
         let idx = handle.0 as usize;
         if idx < self.offscreens.len() {
             if let Some(off) = self.offscreens[idx].take() {
-                self.gpu_ctx.destroy_offscreen_target(off.target);
-                self.free_offscreen_ids.push(handle.0);
+                match self.gpu_ctx.try_destroy_offscreen_target(off.target) {
+                    Ok(()) => self.free_offscreen_ids.push(handle.0),
+                    Err(error) => self.remember_frame_failure(error),
+                }
             }
         }
     }

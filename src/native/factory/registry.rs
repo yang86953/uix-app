@@ -135,7 +135,7 @@ pub fn try_create_context(
         // Creation succeeded, so a context whose live caps do not match the
         // registry row must be shut down before returning the mismatch.
         let mut ctx = ctx;
-        ctx.shutdown();
+        ctx.try_shutdown()?;
         return Err(Error::new(Errc::PlatformError, msg));
     }
     Ok(bind_to_current_thread(ctx))

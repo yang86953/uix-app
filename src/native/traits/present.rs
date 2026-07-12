@@ -412,7 +412,32 @@ pub trait IGraphicsContext {
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;
     fn make_current(&mut self) -> Result<(), Error>;
     fn swap_buffers(&mut self, damage: PresentDamage) -> Result<(), Error>;
+
+    /// Checked shutdown boundary for thread-affine native resources.
+    ///
+    /// New lifecycle code must use this method.  The legacy [`Self::shutdown`]
+    /// hook remains temporarily so platform implementations can migrate
+    /// independently; its default preserves the old behavior but cannot
+    /// surface a native teardown error.
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.shutdown();
+        Ok(())
+    }
+
     fn shutdown(&mut self);
+
+    /// Checked readback boundary.  This lets a thread-affine wrapper reject a
+    /// foreign caller before it reaches the native context.
+    fn try_read_pixels(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<Vec<u32>, Error> {
+        Ok(self.read_pixels(x, y, width, height))
+    }
+
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32>;
     fn width(&self) -> i32;
     fn height(&self) -> i32;
@@ -461,6 +486,12 @@ pub trait IGraphicsContext {
     /// Drawable pixels per logical client pixel (HiDPI). Default `1.0`.
     fn device_pixel_ratio(&self) -> f32 {
         1.0
+    }
+
+    /// Checked GL proc-loader boundary.  It is transitional: the GL object
+    /// itself still lives in `draw` until the R4 native raster split.
+    fn try_get_proc_address(&self, name: &str) -> Result<Option<*const std::ffi::c_void>, Error> {
+        Ok(self.get_proc_address(name))
     }
 
     fn get_proc_address(&self, name: &str) -> Option<*const std::ffi::c_void> {
@@ -717,6 +748,12 @@ pub trait IGraphicsContext {
                 self.graphics_backend()
             ),
         ))
+    }
+
+    /// Checked destruction boundary for a native offscreen target.
+    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<(), Error> {
+        self.destroy_offscreen_target(id);
+        Ok(())
     }
 
     fn destroy_offscreen_target(&mut self, _id: OffscreenTargetId) {}

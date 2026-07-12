@@ -8,12 +8,10 @@
 //! `InvalidState` error instead of reaching an API object from the wrong
 //! thread.
 //!
-//! `IGraphicsContext` still has four legacy non-fallible operations
-//! (`shutdown`, `destroy_offscreen_target`, readback and metadata access).
-//! They cannot report a typed error without changing that public trait.  A
-//! violation on those operations is loud (panic), except `shutdown`, which
-//! records the failure because it can be reached by `Drop`.  This is an
-//! intentional compatibility boundary, not a successful no-op.
+//! The former non-fallible lifecycle operations now have checked `try_*`
+//! counterparts.  The legacy hooks remain compatibility adapters while each
+//! platform implementation migrates; they log and return a safe empty value
+//! on an owner violation rather than panicking or reaching native state.
 
 use std::cell::Cell;
 use std::ffi::c_void;
@@ -101,13 +99,11 @@ impl ThreadBoundGraphicsContext {
         run(self.inner.as_mut())
     }
 
-    fn require_owner_or_panic(&self, operation: &str) {
-        if let Err(error) = self.require_owner(operation) {
-            panic!(
-                "non-fallible graphics context operation violated thread affinity: {}",
-                error.what()
-            );
-        }
+    fn log_legacy_rejection(operation: &str, error: &Error) {
+        crate::core::log::error_fn(format!(
+            "legacy graphics context {operation} rejected: {}",
+            error.what()
+        ));
     }
 
     #[cfg(test)]
@@ -152,19 +148,30 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(make_current() -> ());
     forward_result!(swap_buffers(damage: PresentDamage) -> ());
 
+    fn try_shutdown(&mut self) -> Result<()> {
+        self.with_owner("try_shutdown", |inner| inner.try_shutdown())
+    }
+
     fn shutdown(&mut self) {
-        match self.require_owner("shutdown") {
-            Ok(()) => self.inner.shutdown(),
-            Err(error) => crate::core::log::error_fn(format!(
-                "graphics context shutdown rejected: {}",
-                error.what()
-            )),
+        if let Err(error) = self.try_shutdown() {
+            Self::log_legacy_rejection("shutdown", &error);
         }
     }
 
+    fn try_read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+        self.with_owner("try_read_pixels", |inner| {
+            inner.try_read_pixels(x, y, width, height)
+        })
+    }
+
     fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32> {
-        self.require_owner_or_panic("read_pixels");
-        self.inner.read_pixels(x, y, width, height)
+        match self.try_read_pixels(x, y, width, height) {
+            Ok(pixels) => pixels,
+            Err(error) => {
+                Self::log_legacy_rejection("read_pixels", &error);
+                Vec::new()
+            }
+        }
     }
 
     fn width(&self) -> i32 {
@@ -193,9 +200,19 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         self.device_pixel_ratio
     }
 
+    fn try_get_proc_address(&self, name: &str) -> Result<Option<*const c_void>> {
+        self.require_owner("try_get_proc_address")?;
+        self.inner.try_get_proc_address(name)
+    }
+
     fn get_proc_address(&self, name: &str) -> Option<*const c_void> {
-        self.require_owner_or_panic("get_proc_address");
-        self.inner.get_proc_address(name)
+        match self.try_get_proc_address(name) {
+            Ok(address) => address,
+            Err(error) => {
+                Self::log_legacy_rejection("get_proc_address", &error);
+                None
+            }
+        }
     }
 
     forward_result!(clear_render_target(r: f32, g: f32, b: f32, a: f32) -> ());
@@ -212,9 +229,16 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
     forward_result!(clear_rects(viewport_w: f32, viewport_h: f32, rects: &[GpuSolidRect]) -> ());
     forward_result!(create_offscreen_target(width: i32, height: i32) -> OffscreenTargetId);
 
+    fn try_destroy_offscreen_target(&mut self, id: OffscreenTargetId) -> Result<()> {
+        self.with_owner("try_destroy_offscreen_target", |inner| {
+            inner.try_destroy_offscreen_target(id)
+        })
+    }
+
     fn destroy_offscreen_target(&mut self, id: OffscreenTargetId) {
-        self.require_owner_or_panic("destroy_offscreen_target");
-        self.inner.destroy_offscreen_target(id);
+        if let Err(error) = self.try_destroy_offscreen_target(id) {
+            Self::log_legacy_rejection("destroy_offscreen_target", &error);
+        }
     }
 
     forward_result!(bind_offscreen_target(id: OffscreenTargetId) -> ());
@@ -259,10 +283,12 @@ mod tests {
             panic!("foreign thread must not call the native context")
         }
 
-        fn shutdown(&mut self) {}
+        fn shutdown(&mut self) {
+            panic!("foreign thread must not call the native context")
+        }
 
         fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-            Vec::new()
+            panic!("foreign thread must not call the native context")
         }
 
         fn width(&self) -> i32 {
@@ -274,6 +300,17 @@ mod tests {
         }
 
         fn present(&mut self, _frame: &PresentFrame) -> Result<()> {
+            panic!("foreign thread must not call the native context")
+        }
+
+        fn get_proc_address(&self, _name: &str) -> Option<*const c_void> {
+            panic!("foreign thread must not call the native context")
+        }
+
+        fn destroy_offscreen_target(
+            &mut self,
+            _id: crate::native::traits::present::OffscreenTargetId,
+        ) {
             panic!("foreign thread must not call the native context")
         }
     }
@@ -305,6 +342,28 @@ mod tests {
             .expect_err("owner mismatch");
         assert_eq!(offscreen.code(), Errc::InvalidState);
         assert!(offscreen.message().contains("create_offscreen_target"));
+
+        let shutdown = context.try_shutdown().expect_err("owner mismatch");
+        assert_eq!(shutdown.code(), Errc::InvalidState);
+        assert!(shutdown.message().contains("try_shutdown"));
+
+        let readback = context
+            .try_read_pixels(0, 0, 1, 1)
+            .expect_err("owner mismatch");
+        assert_eq!(readback.code(), Errc::InvalidState);
+        assert!(readback.message().contains("try_read_pixels"));
+
+        let proc = context
+            .try_get_proc_address("glGetString")
+            .expect_err("owner mismatch");
+        assert_eq!(proc.code(), Errc::InvalidState);
+        assert!(proc.message().contains("try_get_proc_address"));
+
+        let destroy = context
+            .try_destroy_offscreen_target(crate::native::traits::present::OffscreenTargetId(7))
+            .expect_err("owner mismatch");
+        assert_eq!(destroy.code(), Errc::InvalidState);
+        assert!(destroy.message().contains("try_destroy_offscreen_target"));
 
         // Legacy metadata access cannot return a typed failure, so it must be
         // served from the creation-thread snapshot rather than touch native

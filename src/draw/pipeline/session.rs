@@ -60,11 +60,27 @@ impl RenderSession {
     /// it therefore closes the old one on the owner thread rather than letting
     /// `Drop` silently skip its native shutdown protocol.
     #[allow(dead_code)] // Retained for crate-local staged recipe transitions and regression coverage.
-    pub(crate) fn set_gpu_context(&mut self, ctx: Box<dyn IGraphicsContext>) -> Result<(), Error> {
+    pub(crate) fn set_gpu_context(
+        &mut self,
+        mut ctx: Box<dyn IGraphicsContext>,
+    ) -> Result<(), Error> {
         self.require_owner("set_gpu_context")?;
-        if let Some(mut previous) = self.gpu_ctx.replace(ctx) {
-            previous.shutdown();
+        if let Some(mut previous) = self.gpu_ctx.take() {
+            if let Err(error) = previous.try_shutdown() {
+                // The old native resource remains live after a failed checked
+                // teardown. Keep it owned by this session and close the
+                // incoming resource before returning the typed failure.
+                self.gpu_ctx = Some(previous);
+                if let Err(cleanup_error) = ctx.try_shutdown() {
+                    crate::core::log::error_fn(format!(
+                        "RenderSession: replacement context cleanup failed after retained context shutdown error: {}",
+                        cleanup_error.short_what()
+                    ));
+                }
+                return Err(error);
+            }
         }
+        self.gpu_ctx = Some(ctx);
         Ok(())
     }
 

@@ -213,7 +213,7 @@ impl<O: WindowOps> PlatformWindow for PlatformWindowCore<O> {
             return Ok(());
         }
         if let Some(gpu_ctx) = self.gpu_ctx.as_mut() {
-            gpu_ctx.shutdown();
+            gpu_ctx.try_shutdown()?;
         }
         self.ops.os_close()?;
         self.closed = true;

@@ -16,7 +16,7 @@ pub(crate) fn create_native_raster_backend(
 ) -> Result<Box<dyn RenderBackend>, Error> {
     if ctx.caps().raster != RasterMode::GpuNative {
         let raster = ctx.caps().raster;
-        ctx.shutdown();
+        ctx.try_shutdown()?;
         return Err(Error::new(
             Errc::InvalidArgument,
             format!("RenderBackendRegistry: expected RasterMode::GpuNative, got {raster}"),
@@ -31,7 +31,7 @@ pub(crate) fn create_native_raster_backend(
             }
             #[cfg(not(feature = "opengles"))]
             {
-                ctx.shutdown();
+                ctx.try_shutdown()?;
                 Err(Error::new(
                     Errc::NotImplemented,
                     "RenderBackendRegistry: OpenGL ES is disabled by feature=opengles",
@@ -42,14 +42,14 @@ pub(crate) fn create_native_raster_backend(
             NativeGpuBackend::new(ctx).map(|backend| Box::new(backend) as _)
         }
         GraphicsBackend::Metal => {
-            ctx.shutdown();
+            ctx.try_shutdown()?;
             Err(Error::new(
                 Errc::NotImplemented,
                 "RenderBackendRegistry: Metal native raster is planned (use Cpu × PixelUpload context)",
             ))
         }
         other => {
-            ctx.shutdown();
+            ctx.try_shutdown()?;
             Err(Error::new(
                 Errc::InvalidArgument,
                 format!("RenderBackendRegistry: no native raster backend for {other}"),
