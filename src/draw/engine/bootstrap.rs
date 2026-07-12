@@ -148,7 +148,7 @@ pub fn bootstrap_graphics_engine(
     request: GraphicsBackend,
 ) -> Result<GpuBootstrap, ProbeReport> {
     bootstrap_graphics_engine_with(surface, width, height, request, |candidate| {
-        try_create_gpu_recipe(candidate, surface.as_raw(), width, height)
+        try_create_gpu_recipe(candidate, surface, width, height)
     })
 }
 

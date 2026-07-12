@@ -4,7 +4,9 @@ use std::ffi::c_void;
 
 use crate::core::error::{Errc, Error};
 use crate::native::factory::thread_bound::bind_to_current_thread;
-use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, PresentMode, RasterMode};
+use crate::native::traits::present::{
+    GraphicsBackend, IGraphicsContext, NativeSurfaceHandle, PresentMode, RasterMode,
+};
 
 /// One probeable graphics configuration.
 ///
@@ -182,7 +184,7 @@ pub fn gpu_probe_candidates(requested: GraphicsBackend) -> Vec<GraphicsBackend> 
 /// Creates a context for one exact recipe row (no probe loop).
 pub fn try_create_gpu_recipe(
     recipe: GraphicsRecipe,
-    native_surface: *mut c_void,
+    native_surface: NativeSurfaceHandle,
     width: i32,
     height: i32,
 ) -> Result<Box<dyn IGraphicsContext>, Error> {
@@ -192,7 +194,9 @@ pub fn try_create_gpu_recipe(
             format!("Graphics factory: no registry entry for recipe {recipe}"),
         )
     })?;
-    try_create_context(entry, native_surface, width, height)
+    // Only the native factory bridge unwraps the opaque surface handle before
+    // it reaches an API/platform constructor.
+    try_create_context(entry, native_surface.as_raw(), width, height)
 }
 
 /// Creates a single GPU context for one backend (compatibility helper).
