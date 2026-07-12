@@ -641,7 +641,10 @@ impl IGraphicsContext for VulkanContext {
     }
 
     fn swap_buffers(&mut self, _damage: PresentDamage) -> Result<()> {
-        Ok(())
+        Err(Error::new(
+            Errc::NotImplemented,
+            "VulkanContext: swapchain present is not supported for the PixelUpload recipe; use PresentFrame::PixelBuffer",
+        ))
     }
 
     fn try_shutdown(&mut self) -> Result<()> {
