@@ -4244,6 +4244,79 @@ mod tests {
 
     #[cfg(feature = "d3d11")]
     #[test]
+    fn d3d11_warp_executes_encoded_picture_in_its_bound_offscreen_target() {
+        use crate::draw::pipeline::{FrameRasterOp, FrameRect};
+
+        if !crate::native::factory::d3d11_warp_test_context_available() {
+            return;
+        }
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("encoded Picture WARP test", 96, 64)
+            .expect("window");
+        let context = crate::native::factory::create_d3d11_warp_test_context(
+            window.native_surface_ptr(),
+            96,
+            64,
+        )
+        .expect("D3D11 WARP context");
+        let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
+        native.resize(96, 64).expect("resize native WARP backend");
+
+        let picture = native.create_offscreen(32, 24).expect("Picture target");
+        native
+            .try_begin_offscreen_paint(&picture)
+            .expect("bind Picture target");
+        let mut encoder = FrameEncoder::new(32, 24).expect("FrameEncoder");
+        encoder.clear(Color::transparent());
+        encoder.cpu_segment([FrameRasterOp::FillRect {
+            rect: FrameRect::new(8, 4, 16, 12),
+            color: Color::blue(),
+        }]);
+        assert_eq!(
+            native
+                .try_execute_encoded_picture(&picture, &encoder)
+                .expect("execute encoded Picture"),
+            EncodedPictureExecution::Executed
+        );
+        native
+            .try_flush_offscreen_paint(&picture)
+            .expect("flush encoded Picture");
+        native
+            .try_end_offscreen_paint()
+            .expect("restore swapchain target");
+        native
+            .try_blit_offscreen_src(
+                &picture,
+                Rect::new(0.0, 0.0, 32.0, 24.0),
+                Rect::new(32.0, 16.0, 32.0, 24.0),
+            )
+            .expect("blit encoded Picture");
+
+        let expected = encoder
+            .render_reference()
+            .pixel(12, 8)
+            .expect("encoded blue pixel");
+        let stride = native.gpu_ctx.width() as usize;
+        let pixels = native.try_readback().expect("read encoded Picture frame");
+        assert_premultiplied_probes_match(
+            &[expected],
+            &[pixels[24 * stride + 44]],
+            "D3D11 WARP encoded Picture",
+        );
+
+        native
+            .present(&DamageRegion::full())
+            .expect("present encoded Picture frame");
+        native.destroy_offscreen(picture);
+        native.shutdown();
+        window.close().expect("close encoded Picture WARP window");
+    }
+
+    #[cfg(feature = "d3d11")]
+    #[test]
     fn software_and_d3d11_warp_match_offscreen_source_crop_and_post_blit_clip_script() {
         if !crate::native::factory::d3d11_warp_test_context_available() {
             return;
