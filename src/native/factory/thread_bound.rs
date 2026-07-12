@@ -158,20 +158,10 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
         }
     }
 
-    fn try_read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
-        self.with_owner("try_read_pixels", |inner| {
-            inner.try_read_pixels(x, y, width, height)
+    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>> {
+        self.with_owner("read_pixels", |inner| {
+            inner.read_pixels(x, y, width, height)
         })
-    }
-
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32> {
-        match self.try_read_pixels(x, y, width, height) {
-            Ok(pixels) => pixels,
-            Err(error) => {
-                Self::log_legacy_rejection("read_pixels", &error);
-                Vec::new()
-            }
-        }
     }
 
     fn width(&self) -> i32 {
@@ -234,13 +224,29 @@ impl IGraphicsContext for ThreadBoundGraphicsContext {
 #[cfg(test)]
 mod tests {
     use super::ThreadBoundGraphicsContext;
-    use crate::core::{Errc, Result};
+    use crate::core::{Errc, Error, Result};
     use crate::native::traits::present::{
         GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage, PresentFrame,
     };
     use std::ffi::c_void;
 
-    struct PanicIfCalled;
+    struct PanicIfCalled {
+        readback_error: Option<Error>,
+    }
+
+    impl PanicIfCalled {
+        fn foreign_only() -> Self {
+            Self {
+                readback_error: None,
+            }
+        }
+
+        fn with_readback_error(error: Error) -> Self {
+            Self {
+                readback_error: Some(error),
+            }
+        }
+    }
 
     impl IGraphicsContext for PanicIfCalled {
         fn caps(&self) -> GraphicsContextCaps {
@@ -272,7 +278,10 @@ mod tests {
             panic!("foreign thread must not call the native context")
         }
 
-        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
+        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u32>> {
+            if let Some(error) = &self.readback_error {
+                return Err(error.clone());
+            }
             panic!("foreign thread must not call the native context")
         }
 
@@ -301,8 +310,10 @@ mod tests {
         let foreign_owner = std::thread::spawn(|| std::thread::current().id())
             .join()
             .expect("thread id");
-        let mut context =
-            ThreadBoundGraphicsContext::with_test_owner(Box::new(PanicIfCalled), foreign_owner);
+        let mut context = ThreadBoundGraphicsContext::with_test_owner(
+            Box::new(PanicIfCalled::foreign_only()),
+            foreign_owner,
+        );
 
         let initialize = context
             .initialize(std::ptr::null_mut(), 1, 1)
@@ -328,11 +339,9 @@ mod tests {
         assert_eq!(shutdown.code(), Errc::InvalidState);
         assert!(shutdown.message().contains("try_shutdown"));
 
-        let readback = context
-            .try_read_pixels(0, 0, 1, 1)
-            .expect_err("owner mismatch");
+        let readback = context.read_pixels(0, 0, 1, 1).expect_err("owner mismatch");
         assert_eq!(readback.code(), Errc::InvalidState);
-        assert!(readback.message().contains("try_read_pixels"));
+        assert!(readback.message().contains("read_pixels"));
 
         let destroy = context
             .try_destroy_offscreen_target(crate::native::traits::present::OffscreenTargetId(7))
@@ -347,5 +356,22 @@ mod tests {
         assert_eq!(context.width(), 1);
         assert_eq!(context.height(), 1);
         assert_eq!(context.device_pixel_ratio(), 1.0);
+    }
+
+    #[test]
+    fn owner_readback_propagates_the_native_typed_failure() {
+        let mut context = ThreadBoundGraphicsContext::with_test_owner(
+            Box::new(PanicIfCalled::with_readback_error(Error::new(
+                Errc::GraphicsDeviceLost,
+                "injected native readback failure",
+            ))),
+            std::thread::current().id(),
+        );
+
+        let error = context
+            .read_pixels(0, 0, 1, 1)
+            .expect_err("readback must preserve the native failure");
+        assert_eq!(error.code(), Errc::GraphicsDeviceLost);
+        assert!(error.message().contains("injected native readback failure"));
     }
 }

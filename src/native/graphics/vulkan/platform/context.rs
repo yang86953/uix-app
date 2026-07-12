@@ -1,9 +1,9 @@
 //! Vulkan graphics context for Linux Wayland.
 
-use std::ffi::{c_void, CStr};
+use std::ffi::{CStr, c_void};
 use std::ptr;
 
-use ash::{vk, Entry};
+use ash::{Entry, vk};
 
 use crate::core::{Errc, Error, Result};
 use crate::native::traits::present::{
@@ -643,8 +643,8 @@ impl IGraphicsContext for VulkanContext {
         self.cleanup();
     }
 
-    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-        Vec::new()
+    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Result<Vec<u32>> {
+        Ok(Vec::new())
     }
 
     fn width(&self) -> i32 {
@@ -868,10 +868,12 @@ mod tests {
 
     #[test]
     fn composite_alpha_prefers_opaque_but_uses_a_supported_fallback() {
-        assert!(choose_composite_alpha(
-            vk::CompositeAlphaFlagsKHR::OPAQUE | vk::CompositeAlphaFlagsKHR::INHERIT
-        )
-        .is_some_and(|mode| mode == vk::CompositeAlphaFlagsKHR::OPAQUE));
+        assert!(
+            choose_composite_alpha(
+                vk::CompositeAlphaFlagsKHR::OPAQUE | vk::CompositeAlphaFlagsKHR::INHERIT
+            )
+            .is_some_and(|mode| mode == vk::CompositeAlphaFlagsKHR::OPAQUE)
+        );
         assert!(
             choose_composite_alpha(vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED)
                 .is_some_and(|mode| mode == vk::CompositeAlphaFlagsKHR::PRE_MULTIPLIED)

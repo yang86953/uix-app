@@ -4,8 +4,8 @@ use crate::native::traits::present::{
     GraphicsBackend, GraphicsContextCaps, IGraphicsContext, PresentDamage,
 };
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct CountingGraphicsContext {
     shutdowns: Arc<AtomicUsize>,
@@ -45,8 +45,14 @@ impl IGraphicsContext for CountingGraphicsContext {
         self.shutdowns.fetch_add(1, Ordering::SeqCst);
     }
 
-    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-        Vec::new()
+    fn read_pixels(
+        &mut self,
+        _x: i32,
+        _y: i32,
+        _width: i32,
+        _height: i32,
+    ) -> crate::core::Result<Vec<u32>> {
+        Ok(Vec::new())
     }
 
     fn width(&self) -> i32 {
@@ -101,8 +107,14 @@ impl IGraphicsContext for FailingShutdownGraphicsContext {
         // asserts that the fallible replacement path itself never uses it.
     }
 
-    fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-        Vec::new()
+    fn read_pixels(
+        &mut self,
+        _x: i32,
+        _y: i32,
+        _width: i32,
+        _height: i32,
+    ) -> crate::core::Result<Vec<u32>> {
+        Ok(Vec::new())
     }
 
     fn width(&self) -> i32 {

@@ -1,7 +1,7 @@
 //! Presentation contracts for CPU presenters and GPU graphics contexts.
 
-use crate::core::error::{Error, Result};
 pub use crate::core::PresentDamage;
+use crate::core::error::{Error, Result};
 use std::fmt;
 use std::str::FromStr;
 
@@ -476,19 +476,10 @@ pub trait IGraphicsContext {
 
     fn shutdown(&mut self);
 
-    /// Checked readback boundary.  This lets a thread-affine wrapper reject a
-    /// foreign caller before it reaches the native context.
-    fn try_read_pixels(
-        &mut self,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-    ) -> Result<Vec<u32>, Error> {
-        Ok(self.read_pixels(x, y, width, height))
-    }
-
-    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Vec<u32>;
+    /// Reads native pixels through the checked, thread-affine lifecycle
+    /// boundary. Readback failure is never represented as an empty pixel
+    /// buffer: callers must receive the typed error and retain recovery state.
+    fn read_pixels(&mut self, x: i32, y: i32, width: i32, height: i32) -> Result<Vec<u32>, Error>;
     fn width(&self) -> i32;
     fn height(&self) -> i32;
 
@@ -837,8 +828,8 @@ pub trait IGraphicsContext {
 #[cfg(test)]
 mod tests {
     use super::{
-        validate_pixel_buffer, GraphicsBackend, GraphicsContextCaps, IGraphicsContext,
-        NativeRasterCaps, PresentDamage, PresentFrame,
+        GraphicsBackend, GraphicsContextCaps, IGraphicsContext, NativeRasterCaps, PresentDamage,
+        PresentFrame, validate_pixel_buffer,
     };
     use crate::core::{Errc, Error, Result};
     use std::str::FromStr;
@@ -933,8 +924,14 @@ mod tests {
 
         fn shutdown(&mut self) {}
 
-        fn read_pixels(&mut self, _x: i32, _y: i32, _width: i32, _height: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _width: i32,
+            _height: i32,
+        ) -> Result<Vec<u32>, Error> {
+            Ok(Vec::new())
         }
 
         fn width(&self) -> i32 {

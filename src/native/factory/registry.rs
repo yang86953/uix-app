@@ -252,8 +252,8 @@ mod tests {
         fn shutdown(&mut self) {
             IDENTITY_MISMATCH_SHUTDOWNS.fetch_add(1, Ordering::SeqCst);
         }
-        fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(&mut self, _: i32, _: i32, _: i32, _: i32) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
         fn width(&self) -> i32 {
             1

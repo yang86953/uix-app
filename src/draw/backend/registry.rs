@@ -76,8 +76,14 @@ mod tests {
             Ok(())
         }
         fn shutdown(&mut self) {}
-        fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _w: i32,
+            _h: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
         fn width(&self) -> i32 {
             1
@@ -126,8 +132,14 @@ mod tests {
             Ok(())
         }
         fn shutdown(&mut self) {}
-        fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _w: i32,
+            _h: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
         fn width(&self) -> i32 {
             1
@@ -179,8 +191,14 @@ mod tests {
         fn shutdown(&mut self) {
             self.shutdowns.set(self.shutdowns.get() + 1);
         }
-        fn read_pixels(&mut self, _x: i32, _y: i32, _w: i32, _h: i32) -> Vec<u32> {
-            Vec::new()
+        fn read_pixels(
+            &mut self,
+            _x: i32,
+            _y: i32,
+            _w: i32,
+            _h: i32,
+        ) -> crate::core::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
         fn width(&self) -> i32 {
             1
