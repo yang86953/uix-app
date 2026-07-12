@@ -476,6 +476,117 @@ fn root_and_direct_scene_execute_one_encoded_frame_before_final_present() {
     ));
 }
 
+#[cfg(feature = "d3d11")]
+#[test]
+fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_present() {
+    use crate::draw::backend::NativeGpuBackend;
+    use crate::draw::gpu_engine::GpuEngine;
+
+    if !crate::native::factory::d3d11_warp_test_context_available() {
+        return;
+    }
+
+    let mut platform = crate::native::create_platform().expect("platform");
+    let mut window = platform
+        .window_manager()
+        .create_window("FrameRenderer WARP recording test", 300, 300)
+        .expect("window");
+    let context = crate::native::factory::create_d3d11_warp_test_context(
+        window.native_surface_ptr(),
+        300,
+        300,
+    )
+    .expect("D3D11 WARP context");
+    let mut engine = GpuEngine::new(context).expect("native WARP engine");
+    engine
+        .initialize(300, 300)
+        .expect("initialize native WARP engine");
+    let tokens = MockTokens;
+    let fonts = FontService::new();
+    let images = ImageService::new();
+
+    let mut direct_renderer = FrameRenderer::new();
+    let direct_scene = EligiblePictureScene::direct();
+    let direct = direct_renderer.render_frame(
+        &mut engine,
+        &direct_scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(matches!(direct.outcome, RenderOutcome::Present(_)));
+    let direct_pixels = engine
+        .session_mut()
+        .backend_mut()
+        .as_any_mut()
+        .downcast_mut::<NativeGpuBackend>()
+        .expect("D3D11 WARP must retain the native backend")
+        .try_readback()
+        .expect("read direct WARP frame");
+    assert_eq!(
+        direct_pixels[0],
+        Color::from_rgb(160, 20, 20).premultiplied(),
+        "direct root must reach the real FrameEncoder executor"
+    );
+    assert_eq!(
+        direct_pixels[8 * 300 + 8],
+        Color::from_rgb(20, 40, 220).premultiplied(),
+        "direct child must retain painter order on the real target"
+    );
+
+    let mut picture_renderer = FrameRenderer::new();
+    let picture_scene = EligiblePictureScene::new();
+    let picture = picture_renderer.render_frame(
+        &mut engine,
+        &picture_scene,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &DirtyRegion::full(),
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fonts,
+            image_service: &images,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+    assert!(matches!(picture.outcome, RenderOutcome::Present(_)));
+    let picture_pixels = engine
+        .session_mut()
+        .backend_mut()
+        .as_any_mut()
+        .downcast_mut::<NativeGpuBackend>()
+        .expect("D3D11 WARP must retain the native backend")
+        .try_readback()
+        .expect("read Picture WARP frame");
+    assert_eq!(
+        picture_pixels[0],
+        Color::from_rgb(160, 20, 20).premultiplied(),
+        "Picture root must reach the real FrameEncoder executor"
+    );
+    assert_eq!(
+        picture_pixels[8 * 300 + 8],
+        Color::from_rgb(20, 40, 220).premultiplied(),
+        "Picture child must retain painter order on the real target"
+    );
+
+    engine.shutdown();
+    window.close().expect("close WARP window");
+}
+
 #[test]
 fn main_frame_encoder_failure_skips_final_present_and_preserves_retry() {
     let mut renderer = FrameRenderer::new();
