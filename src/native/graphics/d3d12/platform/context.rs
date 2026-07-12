@@ -1033,6 +1033,10 @@ impl IGraphicsContext for D3d12Context {
         }
     }
 
+    fn try_shutdown(&mut self) -> Result<()> {
+        self.shutdown_result()
+    }
+
     fn shutdown(&mut self) {
         if let Err(error) = self.shutdown_result() {
             crate::core::log::error_fn(format!(
@@ -1440,9 +1444,9 @@ mod tests {
             .is_err()
         );
         assert!(warp.read_pixels_result(0, 0, 1, 1).is_err());
-        warp.shutdown_result()
+        warp.try_shutdown()
             .expect("faulted context should still terminal-fence drain");
-        warp.shutdown_result().expect("shutdown remains idempotent");
+        warp.try_shutdown().expect("shutdown remains idempotent");
         drop(warp);
 
         let hardware_factory: IDXGIFactory4 =

@@ -679,6 +679,21 @@ fn canvas_scroll_copy_requires_an_explicit_backend_semantic() {
 }
 
 #[test]
+fn d3d12_checked_shutdown_cannot_fall_back_to_the_void_hook() {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics/d3d12/platform/context.rs"),
+    )
+    .expect("read D3D12 context");
+
+    assert!(
+        source.contains(
+            "fn try_shutdown(&mut self) -> Result<()> {\n        self.shutdown_result()\n    }"
+        ),
+        "D3D12 checked shutdown must return shutdown_result instead of the legacy void hook"
+    );
+}
+
+#[test]
 fn low_level_widget_loop_stays_off_prelude() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let prelude = fs::read_to_string(src.join("prelude.rs")).unwrap();
