@@ -1059,7 +1059,7 @@ impl NativeGpuBackend {
     /// Flushes the current ordered segment without presenting, then reads the
     /// native drawable. This is a crate-local diagnostic/test boundary; it
     /// deliberately uses the same command ordering as a final present.
-    #[cfg(all(test, feature = "opengles"))]
+    #[cfg(all(test, any(feature = "opengles", feature = "d3d11", feature = "d3d12")))]
     pub(crate) fn try_readback(&mut self) -> Result<Vec<u32>, Error> {
         if self.active_offscreen.is_some() {
             return Err(Error::new(
@@ -1073,7 +1073,7 @@ impl NativeGpuBackend {
         self.gpu_ctx.try_read_pixels(0, 0, width, height)
     }
 
-    #[cfg(all(test, feature = "opengles"))]
+    #[cfg(all(test, any(feature = "opengles", feature = "d3d11", feature = "d3d12")))]
     pub(crate) fn last_soft_upload_bytes(&self) -> usize {
         self.surface.canvas.last_soft_upload_bytes
     }
@@ -4080,5 +4080,219 @@ mod tests {
         GraphicsEngine::shutdown(&mut engine);
         drop(engine);
         window.close().expect("close window after D3D12 engine");
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn record_common_hybrid_clip_scene(canvas: &mut dyn Canvas2D) {
+        canvas.fill_rect(
+            Rect::new(0.0, 0.0, 96.0, 64.0),
+            Color::from_rgba(0, 0, 0, 255),
+            None,
+        );
+        canvas.fill_rect(
+            Rect::new(16.0, 12.0, 48.0, 32.0),
+            Color::from_rgba(255, 0, 0, 255),
+            None,
+        );
+        canvas.push_clip(Rect::new(28.0, 18.0, 24.0, 20.0));
+        canvas.fill_ellipse(
+            Rect::new(20.0, 10.0, 40.0, 40.0),
+            Color::from_rgba(0, 0, 255, 128),
+        );
+        canvas.pop_clip();
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn common_hybrid_probes(pixels: &[u32], stride: usize) -> Vec<u32> {
+        [(4usize, 4usize), (20, 16), (22, 12), (40, 28), (85, 55)]
+            .into_iter()
+            .map(|(x, y)| pixels[y * stride + x])
+            .collect()
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn assert_premultiplied_probes_match(reference: &[u32], actual: &[u32], label: &str) {
+        assert_eq!(reference.len(), actual.len(), "{label}: probe count");
+        for (index, (expected, observed)) in reference.iter().zip(actual).enumerate() {
+            for shift in [24, 16, 8, 0] {
+                let expected_channel = ((expected >> shift) & 0xff) as i16;
+                let observed_channel = ((observed >> shift) & 0xff) as i16;
+                assert!(
+                    (expected_channel - observed_channel).abs() <= 1,
+                    "{label}: probes expected={reference:?}, actual={actual:?}; probe {index}, channel {shift}: expected {expected:#010X}, got {observed:#010X}",
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn software_common_hybrid_clip_reference() -> Vec<u32> {
+        let mut backend = crate::draw::backend::CpuBackend::new();
+        backend.resize(96, 64).expect("resize software reference");
+        record_common_hybrid_clip_scene(backend.surface().canvas());
+        backend.pixels().to_vec()
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn record_offscreen_crop_order_script(backend: &mut dyn RenderBackend) -> Result<(), Error> {
+        let picture = backend
+            .create_offscreen(32, 24)
+            .expect("offscreen target must be available");
+        backend.try_begin_offscreen_paint(&picture)?;
+        {
+            let canvas = backend
+                .offscreen_canvas(&picture)
+                .expect("offscreen canvas must be available");
+            canvas.fill_rect(
+                Rect::new(0.0, 0.0, 32.0, 24.0),
+                Color::from_rgba(0, 0, 255, 255),
+                None,
+            );
+            canvas.fill_rect(
+                Rect::new(8.0, 4.0, 12.0, 12.0),
+                Color::from_rgba(255, 0, 0, 255),
+                None,
+            );
+        }
+        backend.try_flush_offscreen_paint(&picture)?;
+        backend.try_end_offscreen_paint()?;
+
+        backend.surface().canvas().fill_rect(
+            Rect::new(0.0, 0.0, 96.0, 64.0),
+            Color::from_rgba(0, 0, 0, 255),
+            None,
+        );
+        backend.try_blit_offscreen_src(
+            &picture,
+            Rect::new(8.0, 4.0, 12.0, 12.0),
+            Rect::new(36.0, 16.0, 12.0, 12.0),
+        )?;
+        let canvas = backend.surface().canvas();
+        canvas.push_clip(Rect::new(40.0, 20.0, 8.0, 8.0));
+        canvas.fill_rect(
+            Rect::new(36.0, 16.0, 12.0, 12.0),
+            Color::from_rgba(0, 255, 0, 255),
+            None,
+        );
+        canvas.pop_clip();
+        Ok(())
+    }
+
+    #[cfg(feature = "d3d11")]
+    fn offscreen_crop_order_probes(pixels: &[u32], stride: usize) -> Vec<u32> {
+        [(4usize, 4usize), (38, 18), (42, 22), (50, 30)]
+            .into_iter()
+            .map(|(x, y)| pixels[y * stride + x])
+            .collect()
+    }
+
+    #[cfg(feature = "d3d11")]
+    #[test]
+    fn software_and_d3d11_warp_match_offscreen_source_crop_and_post_blit_clip_script() {
+        if !crate::native::factory::d3d11_warp_test_context_available() {
+            return;
+        }
+        let mut software = crate::draw::backend::CpuBackend::new();
+        software.resize(96, 64).expect("resize software reference");
+        record_offscreen_crop_order_script(&mut software).expect("software offscreen script");
+        let reference = offscreen_crop_order_probes(software.pixels(), 96);
+
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("offscreen crop parity WARP test", 96, 64)
+            .expect("window");
+        let context = crate::native::factory::create_d3d11_warp_test_context(
+            window.native_surface_ptr(),
+            96,
+            64,
+        )
+        .expect("D3D11 WARP context");
+        let mut native = NativeGpuBackend::new(context).expect("native WARP backend");
+        native.resize(96, 64).expect("resize native WARP backend");
+        assert!(native.capabilities().offscreen);
+        record_offscreen_crop_order_script(&mut native).expect("D3D11 WARP offscreen script");
+        let stride = native.gpu_ctx.width() as usize;
+        let pixels = native.try_readback().expect("read native WARP frame");
+        assert_premultiplied_probes_match(
+            &reference,
+            &offscreen_crop_order_probes(&pixels, stride),
+            "D3D11 WARP offscreen crop",
+        );
+
+        window.close().expect("close offscreen crop parity window");
+    }
+
+    #[cfg(all(feature = "d3d11", feature = "d3d12"))]
+    fn native_common_hybrid_clip_pixels(
+        context: Box<dyn IGraphicsContext>,
+    ) -> (Vec<u32>, i32, i32, usize) {
+        let mut backend = NativeGpuBackend::new(context).expect("native WARP backend");
+        backend.resize(96, 64).expect("resize native WARP backend");
+        record_common_hybrid_clip_scene(&mut backend.surface.canvas);
+        assert!(
+            backend.surface.canvas.soft_has_content,
+            "ellipse must use the shared bounded soft fallback path"
+        );
+        let pixels = backend.try_readback().expect("read native WARP frame");
+        let width = backend.gpu_ctx.width();
+        let height = backend.gpu_ctx.height();
+        let upload_bytes = backend.last_soft_upload_bytes();
+        (pixels, width, height, upload_bytes)
+    }
+
+    #[cfg(all(feature = "d3d11", feature = "d3d12"))]
+    #[test]
+    fn software_and_warp_backends_match_common_hybrid_clip_and_bounded_tile_script() {
+        if !crate::native::factory::d3d11_warp_test_context_available()
+            || !crate::native::factory::d3d12_warp_test_context_available()
+        {
+            return;
+        }
+
+        let reference = common_hybrid_probes(&software_common_hybrid_clip_reference(), 96);
+        let mut platform = crate::native::create_platform().expect("platform");
+        let mut window = platform
+            .window_manager()
+            .create_window("hybrid parity WARP test", 96, 64)
+            .expect("window");
+        let surface = window.native_surface_ptr();
+        assert!(!surface.is_null(), "Windows HWND must be available");
+
+        let d3d11 = crate::native::factory::create_d3d11_warp_test_context(surface, 96, 64)
+            .expect("D3D11 WARP context");
+        assert_eq!(d3d11.graphics_backend(), GraphicsBackend::D3d11);
+        assert!(d3d11.native_raster_caps().offscreen_targets);
+        let (d3d11_pixels, d3d11_width, d3d11_height, d3d11_upload_bytes) =
+            native_common_hybrid_clip_pixels(d3d11);
+
+        let d3d12 = crate::native::factory::create_d3d12_warp_test_context(surface, 96, 64)
+            .expect("D3D12 WARP context");
+        assert_eq!(d3d12.graphics_backend(), GraphicsBackend::D3d12);
+        assert!(
+            !d3d12.native_raster_caps().offscreen_targets,
+            "D3D12 must not claim an offscreen API it does not implement"
+        );
+        let (d3d12_pixels, d3d12_width, d3d12_height, d3d12_upload_bytes) =
+            native_common_hybrid_clip_pixels(d3d12);
+
+        assert_premultiplied_probes_match(
+            &reference,
+            &common_hybrid_probes(&d3d11_pixels, d3d11_width as usize),
+            "D3D11 WARP",
+        );
+        assert_premultiplied_probes_match(
+            &reference,
+            &common_hybrid_probes(&d3d12_pixels, d3d12_width as usize),
+            "D3D12 WARP",
+        );
+        let d3d11_full_frame_bytes =
+            d3d11_width as usize * d3d11_height as usize * std::mem::size_of::<u32>();
+        let d3d12_full_frame_bytes =
+            d3d12_width as usize * d3d12_height as usize * std::mem::size_of::<u32>();
+        assert!(d3d11_upload_bytes > 0 && d3d11_upload_bytes < d3d11_full_frame_bytes);
+        assert!(d3d12_upload_bytes > 0 && d3d12_upload_bytes < d3d12_full_frame_bytes);
+
+        window.close().expect("close hybrid parity window");
     }
 }

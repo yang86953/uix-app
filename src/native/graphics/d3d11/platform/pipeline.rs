@@ -724,6 +724,7 @@ pub struct D3d11Pipeline {
     cb_mesh: ID3D11Buffer,
     cb_shadow: ID3D11Buffer,
     blend_alpha: ID3D11BlendState,
+    blend_premultiplied: ID3D11BlendState,
     blend_replace: ID3D11BlendState,
     rasterizer: ID3D11RasterizerState,
     sampler: ID3D11SamplerState,
@@ -1155,6 +1156,33 @@ impl D3d11Pipeline {
         let blend_alpha = blend_alpha
             .ok_or_else(|| Error::new(Errc::PlatformError, "D3d11Pipeline: no blend state"))?;
 
+        let mut blend_premultiplied = None;
+        let premultiplied_desc = D3D11_BLEND_DESC {
+            AlphaToCoverageEnable: FALSE,
+            IndependentBlendEnable: FALSE,
+            RenderTarget: [D3D11_RENDER_TARGET_BLEND_DESC {
+                BlendEnable: TRUE,
+                SrcBlend: D3D11_BLEND_ONE,
+                DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
+                BlendOp: D3D11_BLEND_OP_ADD,
+                SrcBlendAlpha: D3D11_BLEND_ONE,
+                DestBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
+                BlendOpAlpha: D3D11_BLEND_OP_ADD,
+                RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
+            }; 8],
+        };
+        unsafe {
+            device
+                .CreateBlendState(&premultiplied_desc, Some(&mut blend_premultiplied))
+                .map_err(|e| d3d_error("CreateBlendState(premultiplied)", e))?;
+        }
+        let blend_premultiplied = blend_premultiplied.ok_or_else(|| {
+            Error::new(
+                Errc::PlatformError,
+                "D3d11Pipeline: no premultiplied blend state",
+            )
+        })?;
+
         let mut blend_replace = None;
         let replace_desc = D3D11_BLEND_DESC {
             AlphaToCoverageEnable: FALSE,
@@ -1248,6 +1276,7 @@ impl D3d11Pipeline {
             cb_mesh,
             cb_shadow,
             blend_alpha,
+            blend_premultiplied,
             blend_replace,
             rasterizer,
             sampler,
@@ -2417,7 +2446,9 @@ impl D3d11Pipeline {
             context.PSSetShaderResources(0, Some(&[Some(srv.clone())]));
             context.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
             context.RSSetState(&self.rasterizer);
-            context.OMSetBlendState(&self.blend_alpha, None, 0xffff_ffff);
+            // CPU fallback pixels use AARRGGBB premultiplied-alpha storage.
+            // Applying SRC_ALPHA here would multiply their RGB a second time.
+            context.OMSetBlendState(&self.blend_premultiplied, None, 0xffff_ffff);
             context.Draw(6, 0);
             // Unbind SRV so the texture can be updated next frame.
             context.PSSetShaderResources(0, Some(&[None]));
