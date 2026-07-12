@@ -18,7 +18,7 @@ use crate::native::traits::present::{
     NativeRasterCaps, OffscreenTargetId, PresentDamage, PresentFrame, SoftFallbackTile,
 };
 use ::windows::core::Interface;
-use ::windows::Win32::Foundation::{HMODULE, HWND, TRUE};
+use ::windows::Win32::Foundation::{E_OUTOFMEMORY, HMODULE, HWND, TRUE};
 use ::windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
@@ -35,8 +35,10 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use ::windows::Win32::Graphics::Dxgi::{
-    IDXGIDevice, IDXGISwapChain, DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    IDXGIDevice, IDXGISwapChain, DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED,
+    DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_ERROR_REMOTE_OUTOFMEMORY,
+    DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_DISCARD,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
 type HWND_PTR = *mut c_void;
@@ -83,9 +85,20 @@ fn swap_chain_desc(hwnd: HWND_PTR, width: i32, height: i32) -> DXGI_SWAP_CHAIN_D
     }
 }
 
+fn d3d_hresult_code(result: ::windows::core::HRESULT) -> Errc {
+    match result {
+        DXGI_ERROR_DEVICE_HUNG
+        | DXGI_ERROR_DEVICE_REMOVED
+        | DXGI_ERROR_DEVICE_RESET
+        | DXGI_ERROR_DRIVER_INTERNAL_ERROR => Errc::GraphicsDeviceLost,
+        E_OUTOFMEMORY | DXGI_ERROR_REMOTE_OUTOFMEMORY => Errc::GraphicsOutOfMemory,
+        _ => Errc::PlatformError,
+    }
+}
+
 fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
     Error::new(
-        Errc::PlatformError,
+        d3d_hresult_code(err.code()),
         format!("D3d11Context: {operation} failed: {err}"),
     )
 }
@@ -93,7 +106,7 @@ fn d3d_error(operation: &str, err: ::windows::core::Error) -> Error {
 fn map_dxgi_present_result(result: ::windows::core::HRESULT) -> Result<()> {
     if result.is_err() {
         return Err(Error::new(
-            Errc::PlatformError,
+            d3d_hresult_code(result),
             format!("D3d11Context: IDXGISwapChain::Present failed: {result:?}"),
         ));
     }
@@ -985,12 +998,20 @@ mod tests {
     }
 
     #[test]
-    fn dxgi_present_failure_is_a_platform_error() {
+    fn dxgi_present_device_removed_is_a_typed_device_failure() {
         let error = map_dxgi_present_result(::windows::core::HRESULT(0x887A_0005u32 as i32))
             .expect_err("DXGI present failure must propagate");
 
-        assert_eq!(error.code(), Errc::PlatformError);
+        assert_eq!(error.code(), Errc::GraphicsDeviceLost);
         assert!(error.what().contains("IDXGISwapChain::Present"));
+    }
+
+    #[test]
+    fn dxgi_present_out_of_memory_is_typed() {
+        let error = map_dxgi_present_result(::windows::core::HRESULT(0x8007_000Eu32 as i32))
+            .expect_err("DXGI out-of-memory must propagate");
+
+        assert_eq!(error.code(), Errc::GraphicsOutOfMemory);
     }
 
     #[test]

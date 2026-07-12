@@ -16,7 +16,7 @@ use crate::native::traits::present::{
     PresentDamage, PresentFrame, SoftFallbackTile,
 };
 use ::windows::core::Interface;
-use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
+use ::windows::Win32::Foundation::{CloseHandle, E_OUTOFMEMORY, HANDLE, HWND, WAIT_OBJECT_0};
 use ::windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use ::windows::Win32::Graphics::Direct3D12::*;
 use ::windows::Win32::Graphics::Dxgi::Common::{
@@ -24,9 +24,11 @@ use ::windows::Win32::Graphics::Dxgi::Common::{
 };
 use ::windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory2, IDXGIAdapter1, IDXGIFactory4, IDXGIOutput, IDXGISwapChain3,
-    DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS, DXGI_MWA_NO_ALT_ENTER, DXGI_PRESENT,
-    DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS, DXGI_ERROR_DEVICE_HUNG,
+    DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR,
+    DXGI_ERROR_REMOTE_OUTOFMEMORY, DXGI_MWA_NO_ALT_ENTER, DXGI_PRESENT, DXGI_SCALING_STRETCH,
+    DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_DISCARD,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use ::windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFINITE};
 
@@ -36,15 +38,43 @@ const FRAME_COUNT: usize = 2;
 
 use super::pipeline::D3d12Pipeline;
 
+fn d3d12_hresult_code(result: ::windows::core::HRESULT) -> Errc {
+    match result {
+        DXGI_ERROR_DEVICE_HUNG
+        | DXGI_ERROR_DEVICE_REMOVED
+        | DXGI_ERROR_DEVICE_RESET
+        | DXGI_ERROR_DRIVER_INTERNAL_ERROR => Errc::GraphicsDeviceLost,
+        E_OUTOFMEMORY | DXGI_ERROR_REMOTE_OUTOFMEMORY => Errc::GraphicsOutOfMemory,
+        _ => Errc::PlatformError,
+    }
+}
+
 fn d3d12_error(operation: &str, error: ::windows::core::Error) -> Error {
     Error::new(
-        Errc::PlatformError,
+        d3d12_hresult_code(error.code()),
         format!("D3d12Context: {operation} failed: {error}"),
     )
 }
 
 fn platform_error(message: impl Into<String>) -> Error {
     Error::new(Errc::PlatformError, message)
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn d3d12_hresult_classifies_device_loss_and_out_of_memory() {
+        assert_eq!(
+            d3d12_hresult_code(::windows::core::HRESULT(0x887A_0005u32 as i32)),
+            Errc::GraphicsDeviceLost
+        );
+        assert_eq!(
+            d3d12_hresult_code(::windows::core::HRESULT(0x8007_000Eu32 as i32)),
+            Errc::GraphicsOutOfMemory
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
