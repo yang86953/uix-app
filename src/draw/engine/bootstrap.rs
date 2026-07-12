@@ -129,7 +129,10 @@ pub(crate) fn assemble_graphics_engine(
             error,
         })?;
     if let Err(error) = engine.initialize(width, height) {
-        engine.shutdown();
+        let error = match engine.try_shutdown() {
+            Ok(()) => error,
+            Err(cleanup_error) => cleanup_error.with_source(error),
+        };
         return Err(GraphicsEngineAssemblyFailure {
             stage: GraphicsEngineAssemblyStage::Initialize,
             error,
@@ -393,6 +396,7 @@ mod tests {
     #[cfg(feature = "d3d11")]
     struct MakeCurrentFailingNativeContext {
         shutdown_called: Rc<Cell<bool>>,
+        checked_shutdown_failures: Rc<Cell<usize>>,
     }
 
     #[cfg(feature = "d3d11")]
@@ -433,6 +437,19 @@ mod tests {
             self.shutdown_called.set(true);
         }
 
+        fn try_shutdown(&mut self) -> crate::core::Result<()> {
+            self.shutdown_called.set(true);
+            let failures = self.checked_shutdown_failures.get();
+            if failures > 0 {
+                self.checked_shutdown_failures.set(failures - 1);
+                return Err(Error::new(
+                    Errc::InvalidState,
+                    "checked shutdown failed for test",
+                ));
+            }
+            Ok(())
+        }
+
         fn read_pixels(
             &mut self,
             _x: i32,
@@ -466,6 +483,7 @@ mod tests {
     #[test]
     fn bootstrap_shuts_down_context_when_engine_initialize_fails() {
         let shutdown_called = Rc::new(Cell::new(false));
+        let checked_shutdown_failures = Rc::new(Cell::new(0));
         match bootstrap_graphics_engine_with(
             null_surface(),
             640,
@@ -474,6 +492,7 @@ mod tests {
             |_candidate| {
                 Ok(Box::new(MakeCurrentFailingNativeContext {
                     shutdown_called: Rc::clone(&shutdown_called),
+                    checked_shutdown_failures: Rc::clone(&checked_shutdown_failures),
                 }) as Box<dyn IGraphicsContext>)
             },
         ) {
@@ -491,6 +510,33 @@ mod tests {
                 assert!(failure.message.contains("make-current failed for test"));
             }
         }
+    }
+
+    #[cfg(feature = "d3d11")]
+    #[test]
+    fn bootstrap_preserves_initialize_failure_when_checked_teardown_fails() {
+        let shutdown_called = Rc::new(Cell::new(false));
+        let checked_shutdown_failures = Rc::new(Cell::new(1));
+        let report = match bootstrap_graphics_engine_with(
+            null_surface(),
+            640,
+            480,
+            GraphicsBackend::D3d11,
+            |_candidate| {
+                Ok(Box::new(MakeCurrentFailingNativeContext {
+                    shutdown_called: Rc::clone(&shutdown_called),
+                    checked_shutdown_failures: Rc::clone(&checked_shutdown_failures),
+                }) as Box<dyn IGraphicsContext>)
+            },
+        ) {
+            Ok(_) => panic!("checked teardown failure must reject bootstrap"),
+            Err(report) => report,
+        };
+
+        assert!(shutdown_called.get());
+        let failure = report.failures.first().expect("init failure");
+        assert!(failure.message.contains("checked shutdown failed for test"));
+        assert!(failure.message.contains("make-current failed for test"));
     }
 
     #[cfg(all(feature = "d3d12", feature = "d3d11", feature = "opengles"))]

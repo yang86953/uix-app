@@ -67,19 +67,23 @@ impl GraphicsEngine for PresentUploadEngine {
     }
 
     fn shutdown(&mut self) {
-        if self.shutdown {
-            return;
-        }
-        self.session.shutdown();
-        if let Err(error) = self.gpu_ctx.try_shutdown() {
+        if let Err(error) = self.try_shutdown() {
             crate::core::log::error_fn(format!(
                 "PresentUploadEngine {} checked shutdown failed: {}",
                 self.backend_name(),
                 error.short_what()
             ));
-            return;
         }
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        if self.shutdown {
+            return Ok(());
+        }
+        self.session.try_shutdown()?;
+        self.gpu_ctx.try_shutdown()?;
         self.shutdown = true;
+        Ok(())
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {

@@ -91,6 +91,13 @@ impl GraphicsCapabilities {
 pub trait GraphicsEngine: 'static {
     fn initialize(&mut self, width: i32, height: i32) -> Result<(), Error>;
     fn shutdown(&mut self);
+    /// Checked counterpart of [`Self::shutdown`]. The default retains legacy
+    /// CPU/test engines while native engines can preserve a failed teardown
+    /// for recovery instead of reducing it to a log-only event.
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.shutdown();
+        Ok(())
+    }
     /// Resize is a graphics lifecycle operation and must propagate a typed
     /// failure. Callers retain invalidation and enter bounded recovery.
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error>;

@@ -56,6 +56,10 @@ impl GraphicsEngine for GpuEngine {
         self.session.shutdown();
     }
 
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.session.try_shutdown()
+    }
+
     fn resize(&mut self, w: i32, h: i32) -> Result<(), Error> {
         self.session.resize(w, h)?;
         self.make_current()?;

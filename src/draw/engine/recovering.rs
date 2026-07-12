@@ -80,9 +80,17 @@ impl RecoveringGraphicsEngine {
         }
 
         match (self.rebuilder)(action, self.width.max(1), self.height.max(1)) {
-            Ok(engine) => {
-                self.engine.shutdown();
-                self.engine = engine;
+            Ok(mut replacement) => {
+                if let Err(previous_error) = self.engine.try_shutdown() {
+                    let error = match replacement.try_shutdown() {
+                        Ok(()) => previous_error,
+                        Err(cleanup_error) => cleanup_error.with_source(previous_error),
+                    };
+                    let failure = GraphicsFailure::from_error(error);
+                    self.record_failure(failure.clone());
+                    return Some(RenderOutcome::Failed(failure));
+                }
+                self.engine = replacement;
                 None
             }
             Err(error) => {
@@ -108,13 +116,23 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
     }
 
     fn shutdown(&mut self) {
-        if self.shutdown {
-            return;
+        if let Err(error) = self.try_shutdown() {
+            crate::core::log::error_fn(format!(
+                "RecoveringGraphicsEngine checked shutdown failed: {}",
+                error.short_what()
+            ));
         }
+    }
+
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        if self.shutdown {
+            return Ok(());
+        }
+        self.engine.try_shutdown()?;
         self.shutdown = true;
         self.pending_failure = None;
         self.terminal_failure = None;
-        self.engine.shutdown();
+        Ok(())
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -312,6 +330,7 @@ mod tests {
         failure: GraphicsFailure,
         frame_failure: Option<Error>,
         shutdowns: Option<Rc<std::cell::Cell<usize>>>,
+        checked_shutdown_failures: Option<Rc<std::cell::Cell<usize>>>,
     }
 
     impl EndFailingEngine {
@@ -321,6 +340,7 @@ mod tests {
                 failure,
                 frame_failure: None,
                 shutdowns: None,
+                checked_shutdown_failures: None,
             }
         }
 
@@ -331,6 +351,11 @@ mod tests {
 
         fn with_frame_failure(mut self, failure: Error) -> Self {
             self.frame_failure = Some(failure);
+            self
+        }
+
+        fn with_checked_shutdown_failures(mut self, failures: Rc<std::cell::Cell<usize>>) -> Self {
+            self.checked_shutdown_failures = Some(failures);
             self
         }
     }
@@ -345,6 +370,21 @@ mod tests {
             if let Some(shutdowns) = &self.shutdowns {
                 shutdowns.set(shutdowns.get() + 1);
             }
+        }
+
+        fn try_shutdown(&mut self) -> Result<(), Error> {
+            if let Some(failures) = &self.checked_shutdown_failures {
+                let remaining = failures.get();
+                if remaining > 0 {
+                    failures.set(remaining - 1);
+                    return Err(Error::new(
+                        Errc::InvalidState,
+                        "injected checked engine shutdown failure",
+                    ));
+                }
+            }
+            self.shutdown();
+            Ok(())
         }
 
         fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -463,6 +503,51 @@ mod tests {
         assert_eq!(
             actions.borrow().as_slice(),
             [RecoveryAction::RebuildSurface]
+        );
+    }
+
+    #[test]
+    fn recovery_retains_the_old_engine_when_checked_teardown_blocks_replacement() {
+        let actions = Rc::new(RefCell::new(Vec::new()));
+        let recorded_actions = Rc::clone(&actions);
+        let checked_shutdown_failures = Rc::new(std::cell::Cell::new(1));
+        let replacement_shutdowns = Rc::new(std::cell::Cell::new(0));
+        let recorded_replacement_shutdowns = Rc::clone(&replacement_shutdowns);
+        let mut engine = RecoveringGraphicsEngine::new(
+            Box::new(
+                EndFailingEngine::new(surface_lost())
+                    .with_checked_shutdown_failures(Rc::clone(&checked_shutdown_failures)),
+            ),
+            Box::new(move |action, _, _| {
+                recorded_actions.borrow_mut().push(action);
+                Ok(Box::new(
+                    EndFailingEngine::new(surface_lost())
+                        .with_shutdown_counter(Rc::clone(&recorded_replacement_shutdowns)),
+                ))
+            }),
+        );
+        engine.initialize(4, 3).expect("initial engine");
+        let _ = engine.end_frame(&DamageRegion::full());
+
+        let outcome = engine.begin_frame(UpdateStrategy::FullRedraw);
+        let RenderOutcome::Failed(GraphicsFailure::Other(error)) = outcome else {
+            panic!("failed checked teardown must remain a typed recovery failure");
+        };
+        assert_eq!(error.code(), Errc::InvalidState);
+        assert_eq!(error.message(), "injected checked engine shutdown failure");
+        assert_eq!(checked_shutdown_failures.get(), 0);
+        assert_eq!(replacement_shutdowns.get(), 1);
+
+        assert!(matches!(
+            engine.begin_frame(UpdateStrategy::FullRedraw),
+            RenderOutcome::FrameReady(_)
+        ));
+        assert_eq!(
+            actions.borrow().as_slice(),
+            [
+                RecoveryAction::RebuildSurface,
+                RecoveryAction::RebuildRecipe
+            ]
         );
     }
 

@@ -124,22 +124,26 @@ impl RenderSession {
     }
 
     pub fn shutdown(&mut self) {
-        if let Err(error) = self.require_owner("shutdown") {
+        if let Err(error) = self.try_shutdown() {
             crate::core::log::error_fn(format!("RenderSession: {}", error.short_what()));
-            return;
         }
-        self.backend.shutdown();
+    }
+
+    /// Closes the active backend and any staged context on the owner thread.
+    /// A failure deliberately leaves the still-live owner in place for a
+    /// later retry by the recovery or Drop path.
+    pub(crate) fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.require_owner("shutdown")?;
+        self.backend.try_shutdown()?;
         if let Some(mut staged_context) = self.gpu_ctx.take() {
             if let Err(error) = staged_context.try_shutdown() {
-                crate::core::log::error_fn(format!(
-                    "RenderSession: staged context shutdown failed; retaining it for retry: {}",
-                    error.short_what()
-                ));
                 self.gpu_ctx = Some(staged_context);
+                return Err(error);
             }
         }
         self.width = 0;
         self.height = 0;
+        Ok(())
     }
 
     pub fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
