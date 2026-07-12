@@ -20,8 +20,9 @@ use crate::app::window_config::WindowConfig;
 use crate::app::window_session::{WindowLoopState, WindowSession};
 use crate::core::{Errc, Error, Point, WindowId};
 use crate::data::SettingsService;
-use crate::draw::engine::bootstrap::{bootstrap_graphics_engine, ProbeReport};
-use crate::draw::engine::factory::create_graphics_engine;
+use crate::draw::engine::bootstrap::{
+    assemble_graphics_engine, bootstrap_graphics_engine, ProbeReport,
+};
 use crate::draw::engine::{GraphicsEngineRebuilder, RecoveringGraphicsEngine, RecoveryAction};
 use crate::draw::font::font_service::FontService;
 use crate::draw::image::ImageService;
@@ -1380,12 +1381,7 @@ fn recreate_exact_graphics_recipe(
     recipe: GraphicsRecipe,
 ) -> Result<Box<dyn GraphicsEngine>, Error> {
     let context = try_create_gpu_recipe(recipe, surface, width, height)?;
-    let mut engine = create_graphics_engine(context)?;
-    if let Err(error) = engine.initialize(width, height) {
-        engine.shutdown();
-        return Err(error);
-    }
-    Ok(engine)
+    assemble_graphics_engine(context, width, height).map_err(|failure| failure.into_error())
 }
 
 fn create_software_recovery_engine(
