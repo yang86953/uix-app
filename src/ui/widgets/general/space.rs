@@ -365,6 +365,51 @@ mod tests {
     }
 
     #[test]
+    fn wrap_row_uses_frame_width_not_intrinsic_overflow() {
+        // flow_row 场景：无固定宽 + wrap，窄 frame 下必须换行，而不是撑破父级。
+        let mut tree = WidgetTree::new();
+        let root = tree.set_root(Box::new(
+            Space::new()
+                .height(56.0)
+                .direction(FlexDirection::Row)
+                .wrap(true)
+                .align(AlignItems::Start)
+                .child(FixedChild(Size::new(40.0, 20.0)))
+                .child(FixedChild(Size::new(40.0, 20.0)))
+                .child(FixedChild(Size::new(40.0, 20.0)))
+                .child(FixedChild(Size::new(40.0, 20.0)))
+                .child(FixedChild(Size::new(40.0, 20.0)))
+                .child(FixedChild(Size::new(40.0, 20.0))),
+        ));
+        if let Some(node) = tree.get_mut(root) {
+            // 两列才够：40+gap+40 ≈ 96，第三项必须换行。
+            node.set_frame(Rect::new(0.0, 0.0, 100.0, 56.0));
+        }
+        tree.layout();
+
+        let kids = tree.get(root).unwrap().children().to_vec();
+        let frames: Vec<_> = kids
+            .iter()
+            .map(|&id| tree.get(id).unwrap().frame())
+            .collect();
+        let max_right = frames.iter().map(|f| f.x + f.w).fold(0.0f32, f32::max);
+        let unique_ys = {
+            let mut ys: Vec<i32> = frames.iter().map(|f| f.y.round() as i32).collect();
+            ys.sort_unstable();
+            ys.dedup();
+            ys
+        };
+        assert!(
+            unique_ys.len() > 1,
+            "wrap row should use multiple lines under narrow frame, frames={frames:?}"
+        );
+        assert!(
+            max_right <= 100.5,
+            "wrapped children must stay within frame width, max_right={max_right}, frames={frames:?}"
+        );
+    }
+
+    #[test]
     fn nested_sample_block_bootstraps_from_zero_frame() {
         // 复现 showcase::sample_block：无固定尺寸的 Column Space 嵌在 Row 里。
         let mut tree = WidgetTree::new();

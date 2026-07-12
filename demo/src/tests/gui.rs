@@ -349,6 +349,87 @@ fn gallery_page_lists_coverage() {
     assert!(tree.root_id().is_some());
 }
 
+/// 窄窗通用页：`flow_row`（wrap）应变为多行，且内容列不得撑破 ScrollView 视口宽。
+#[test]
+fn general_page_flow_row_wraps_instead_of_horizontal_scroll() {
+    let active = State::new(PAGE_GENERAL);
+    let timer_ticks = State::new(0u32);
+    let anim_time = State::new(0.0f32);
+    let root = app_shell(active, timer_ticks, anim_time);
+    let mut tree = ViewAdapter::build(root);
+    if let Some(r) = tree.root_mut() {
+        // 侧栏 220 + 窄内容区：Icon 行（8 个 sample_block）在 wrap 下应折行。
+        r.set_frame(Rect::new(0.0, 0.0, 640.0, 800.0));
+    }
+    tree.layout();
+
+    let scroll = tree
+        .find_all_by_type::<ScrollView>()
+        .into_iter()
+        .find(|(id, _)| {
+            tree.get(*id)
+                .is_some_and(|n| n.frame().x >= SIDEBAR_W - 2.0 && n.frame().h > 100.0)
+        })
+        .expect("content ScrollView");
+    let scroll_frame = tree.get(scroll.0).unwrap().frame();
+    let page_col = tree.get(scroll.0).unwrap().children()[0];
+    let page_col_frame = tree.get(page_col).unwrap().frame();
+
+    let icon_spaces: Vec<_> = tree
+        .find_all_by_type::<uix::ui::widgets::Space>()
+        .into_iter()
+        .filter_map(|(id, _space)| {
+            let kids = tree.get(id)?.children().to_vec();
+            if kids.len() < 6 {
+                return None;
+            }
+            let labels: Vec<String> = kids
+                .iter()
+                .filter_map(|&cid| {
+                    let sample = tree.get(cid)?;
+                    let label_id = *sample.children().first()?;
+                    tree.get(label_id)?
+                        .component()
+                        .as_any()
+                        .downcast_ref::<Label>()
+                        .map(|l| l.text().to_string())
+                })
+                .collect();
+            if labels.iter().any(|t| t == "search") && labels.iter().any(|t| t == "home") {
+                Some((id, kids))
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        !icon_spaces.is_empty(),
+        "expected Icon Lucide flow_row on general page"
+    );
+    let (space_id, kids) = &icon_spaces[0];
+    let space_frame = tree.get(*space_id).unwrap().frame();
+    let child_frames: Vec<Rect> = kids
+        .iter()
+        .filter_map(|&id| tree.get(id).map(|n| n.frame()))
+        .collect();
+    let unique_ys = {
+        let mut ys: Vec<i32> = child_frames.iter().map(|f| f.y.round() as i32).collect();
+        ys.sort_unstable();
+        ys.dedup();
+        ys
+    };
+    assert!(
+        unique_ys.len() > 1,
+        "Icon flow_row should wrap under narrow content ({:.0}px), ys={unique_ys:?}, space={space_frame:?}, kids={child_frames:?}",
+        scroll_frame.w
+    );
+    assert!(
+        (page_col_frame.w - scroll_frame.w).abs() < 10.0
+            || page_col_frame.w <= scroll_frame.w + 1.0,
+        "page column should stay within scroll viewport, page_col={page_col_frame:?}, scroll={scroll_frame:?}"
+    );
+}
+
 /// 内容超出视口时 ScrollView 须产生 max_scroll（否则窗口裁切且无滚动条）。
 #[test]
 fn content_scrollview_reports_overflow_scroll_range() {
