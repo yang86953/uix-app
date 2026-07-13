@@ -1,4 +1,4 @@
-//! Metal identity PixelUpload context — CALayer CPU upload path.
+//! Metal identity PixelUpload context — CAMetalLayer CPU upload path.
 //!
 //! Native GPU raster via Metal remains planned. This context declares
 //! [`RasterMode::Cpu`] × [`PresentMode::PixelUpload`] and does not own a Metal
@@ -28,7 +28,7 @@ impl MetalPixelUploadContext {
         if native_surface.is_null() {
             return Err(Error::new(
                 Errc::PlatformError,
-                "MetalPixelUploadContext: native CALayer surface is null",
+                "MetalPixelUploadContext: native CAMetalLayer surface is null",
             ));
         }
         Ok(Self {
@@ -108,7 +108,7 @@ impl IGraphicsContext for MetalPixelUploadContext {
             ));
         }
         validate_pixel_buffer(pixels, width, height)?;
-        // SAFETY: layer pointer comes from AppKit-owned CALayer on the UI thread.
+        // SAFETY: layer pointer comes from AppKit-owned CAMetalLayer on the UI thread.
         unsafe {
             platform::present_layer_pixels(self.layer, pixels, width, height, damage)?;
         }

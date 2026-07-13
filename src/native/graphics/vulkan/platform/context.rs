@@ -1,4 +1,5 @@
-//! Vulkan graphics context for Linux Wayland and Windows Win32 (PixelUpload).
+//! Vulkan graphics context for Linux Wayland, Windows Win32, and macOS MoltenVK
+//! (PixelUpload via shared swapchain stage/present).
 
 use std::ffi::{CStr, c_void};
 use std::ptr;
@@ -12,6 +13,9 @@ use crate::native::traits::present::{
 
 #[cfg(all(unix, not(target_os = "macos")))]
 use crate::native::graphics::platform::linux::WaylandSurfaceHandle;
+
+#[cfg(target_os = "macos")]
+use crate::native::backends::macos::platform as macos_surface;
 
 #[cfg(windows)]
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -61,6 +65,11 @@ pub struct VulkanContext {
     _wayland_surface_loader: ash::khr::wayland_surface::Instance,
     #[cfg(windows)]
     _win32_surface_loader: ash::khr::win32_surface::Instance,
+    #[cfg(target_os = "macos")]
+    _metal_surface_loader: ash::ext::metal_surface::Instance,
+    /// AppKit-owned `CAMetalLayer` (macOS MoltenVK WSI); used to sync drawableSize.
+    #[cfg(target_os = "macos")]
+    metal_layer: *mut c_void,
     surface: vk::SurfaceKHR,
     physical_device: vk::PhysicalDevice,
     device: ash::Device,
@@ -106,6 +115,14 @@ impl VulkanContext {
             .engine_version(1)
             .api_version(vk::API_VERSION_1_0);
         let instance_extensions = surface_instance_extensions();
+        #[cfg(target_os = "macos")]
+        let instance_info = vk::InstanceCreateInfo::default()
+            .application_info(&app_info)
+            .enabled_extension_names(&instance_extensions)
+            // MoltenVK physical devices are portability drivers; without this flag
+            // enumerate_physical_devices returns an empty list.
+            .flags(vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR);
+        #[cfg(not(target_os = "macos"))]
         let instance_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .enabled_extension_names(&instance_extensions);
@@ -128,7 +145,14 @@ impl VulkanContext {
         let queue_info = vk::DeviceQueueCreateInfo::default()
             .queue_family_index(selection.family_index)
             .queue_priorities(&queue_priority);
-        let device_extensions = [ash::khr::swapchain::NAME.as_ptr()];
+        let device_extensions = match device_extension_names(&instance, selection.physical_device) {
+            Ok(exts) => exts,
+            Err(err) => {
+                destroy_failed_surface(&surface_loader, surface);
+                unsafe { instance.destroy_instance(None) };
+                return Err(err);
+            }
+        };
         let device_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(std::slice::from_ref(&queue_info))
             .enabled_extension_names(&device_extensions);
@@ -231,6 +255,10 @@ impl VulkanContext {
             _wayland_surface_loader: platform_loader,
             #[cfg(windows)]
             _win32_surface_loader: platform_loader,
+            #[cfg(target_os = "macos")]
+            _metal_surface_loader: platform_loader,
+            #[cfg(target_os = "macos")]
+            metal_layer: native_surface,
             surface,
             physical_device: selection.physical_device,
             device,
@@ -268,6 +296,18 @@ impl VulkanContext {
     }
 
     fn recreate_swapchain(&mut self, extent: vk::Extent2D) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            // MoltenVK surface capabilities follow CAMetalLayer.drawableSize.
+            // SAFETY: metal_layer is the AppKit-owned layer passed as native_surface.
+            unsafe {
+                macos_surface::set_metal_layer_drawable_size(
+                    self.metal_layer,
+                    extent.width as i32,
+                    extent.height as i32,
+                );
+            }
+        }
         let old_swapchain = self.swapchain;
         if old_swapchain != vk::SwapchainKHR::null() {
             unsafe {
@@ -794,14 +834,18 @@ fn destroy_failed_surface(surface_loader: &ash::khr::surface::Instance, surface:
     }
 }
 
-fn surface_instance_extensions() -> [*const std::ffi::c_char; 2] {
-    [
-        ash::khr::surface::NAME.as_ptr(),
-        #[cfg(all(unix, not(target_os = "macos")))]
-        ash::khr::wayland_surface::NAME.as_ptr(),
-        #[cfg(windows)]
-        ash::khr::win32_surface::NAME.as_ptr(),
-    ]
+fn surface_instance_extensions() -> Vec<*const std::ffi::c_char> {
+    let mut extensions = vec![ash::khr::surface::NAME.as_ptr()];
+    #[cfg(all(unix, not(target_os = "macos")))]
+    extensions.push(ash::khr::wayland_surface::NAME.as_ptr());
+    #[cfg(windows)]
+    extensions.push(ash::khr::win32_surface::NAME.as_ptr());
+    #[cfg(target_os = "macos")]
+    {
+        extensions.push(ash::ext::metal_surface::NAME.as_ptr());
+        extensions.push(ash::khr::portability_enumeration::NAME.as_ptr());
+    }
+    extensions
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -809,6 +853,9 @@ type PlatformSurfaceLoader = ash::khr::wayland_surface::Instance;
 
 #[cfg(windows)]
 type PlatformSurfaceLoader = ash::khr::win32_surface::Instance;
+
+#[cfg(target_os = "macos")]
+type PlatformSurfaceLoader = ash::ext::metal_surface::Instance;
 
 fn create_platform_surface(
     entry: &Entry,
@@ -847,6 +894,43 @@ fn create_platform_surface(
         let surface = unsafe { win32_surface_loader.create_win32_surface(&surface_info, None) }
             .map_err(|err| vk_err("vkCreateWin32SurfaceKHR", err))?;
         Ok((surface, win32_surface_loader))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if native_surface.is_null() {
+            return Err(invalid(
+                "VulkanContext: CAMetalLayer native_surface must not be null",
+            ));
+        }
+        let metal_surface_loader = ash::ext::metal_surface::Instance::new(entry, instance);
+        let surface_info =
+            vk::MetalSurfaceCreateInfoEXT::default().layer(native_surface as *const vk::CAMetalLayer);
+        let surface = unsafe { metal_surface_loader.create_metal_surface(&surface_info, None) }
+            .map_err(|err| vk_err("vkCreateMetalSurfaceEXT", err))?;
+        Ok((surface, metal_surface_loader))
+    }
+}
+
+fn device_extension_names(
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+) -> Result<Vec<*const std::ffi::c_char>> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut extensions = vec![ash::khr::swapchain::NAME.as_ptr()];
+        if !device_has_extension(instance, physical_device, ash::khr::portability_subset::NAME)? {
+            return Err(Error::new(
+                Errc::PlatformError,
+                "VulkanContext: MoltenVK requires VK_KHR_portability_subset on the selected device",
+            ));
+        }
+        extensions.push(ash::khr::portability_subset::NAME.as_ptr());
+        Ok(extensions)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (instance, physical_device);
+        Ok(vec![ash::khr::swapchain::NAME.as_ptr()])
     }
 }
 
@@ -918,11 +1002,19 @@ fn device_supports_swapchain(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
 ) -> Result<bool> {
+    device_has_extension(instance, physical_device, ash::khr::swapchain::NAME)
+}
+
+fn device_has_extension(
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+    name: &CStr,
+) -> Result<bool> {
     let extensions = unsafe { instance.enumerate_device_extension_properties(physical_device) }
         .map_err(|err| vk_err("vkEnumerateDeviceExtensionProperties", err))?;
     Ok(extensions.iter().any(|extension| {
-        let name = unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) };
-        name == ash::khr::swapchain::NAME
+        let extension_name = unsafe { CStr::from_ptr(extension.extension_name.as_ptr()) };
+        extension_name == name
     }))
 }
 

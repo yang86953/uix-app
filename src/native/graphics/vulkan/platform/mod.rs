@@ -5,13 +5,13 @@ use std::ffi::c_void;
 use crate::core::{Error, Result};
 use crate::native::traits::present::IGraphicsContext;
 
-#[cfg(any(all(unix, not(target_os = "macos")), windows))]
+#[cfg(any(unix, windows))]
 mod context;
 
-#[cfg(any(all(unix, not(target_os = "macos")), windows))]
+#[cfg(any(unix, windows))]
 pub use context::VulkanContext;
 
-#[cfg(any(all(unix, not(target_os = "macos")), windows))]
+#[cfg(any(unix, windows))]
 pub(super) fn create(
     surface: *mut c_void,
     width: i32,
@@ -20,29 +20,7 @@ pub(super) fn create(
     VulkanContext::new(surface, width, height).map(|ctx| Box::new(ctx) as _)
 }
 
-/// macOS Vulkan remains Planned: needs MoltenVK + a Metal-compatible layer
-/// (`CAMetalLayer`), while the current window surface exposes `CALayer`.
-/// Keep a typed stub so Auto probe skips and explicit requests fail honestly.
-#[cfg(target_os = "macos")]
-#[allow(dead_code)]
-pub(super) fn create(
-    _surface: *mut c_void,
-    _width: i32,
-    _height: i32,
-) -> Result<Box<dyn IGraphicsContext>, Error> {
-    use crate::core::Errc;
-
-    Err(Error::new(
-        Errc::PlatformError,
-        "GraphicsBackend vulkan portability adapter is not implemented on macOS (requires MoltenVK + CAMetalLayer)",
-    ))
-}
-
-#[cfg(not(any(
-    all(unix, not(target_os = "macos")),
-    windows,
-    target_os = "macos"
-)))]
+#[cfg(not(any(unix, windows)))]
 #[allow(dead_code)]
 pub(super) fn create(
     _surface: *mut c_void,
@@ -69,11 +47,40 @@ mod tests {
         );
     }
 
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn linux_vulkan_adapter_compiles_wayland_surface_path() {
+        let source = include_str!("context.rs");
+        assert!(
+            source.contains("create_wayland_surface") && source.contains("wayland_surface"),
+            "Linux Vulkan adapter must create a Wayland WSI surface"
+        );
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
-    fn macos_vulkan_stub_names_moltenvk_gap() {
-        let err = super::create(std::ptr::null_mut(), 1, 1).expect_err("macOS stub");
-        assert!(err.message().contains("MoltenVK"));
-        assert!(err.message().contains("CAMetalLayer"));
+    fn macos_vulkan_adapter_compiles_metal_surface_path() {
+        let source = include_str!("context.rs");
+        assert!(
+            source.contains("create_metal_surface")
+                && source.contains("metal_surface")
+                && source.contains("CAMetalLayer")
+                && source.contains("portability_enumeration")
+                && source.contains("portability_subset"),
+            "macOS Vulkan adapter must use MoltenVK metal surface + portability"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_vulkan_null_layer_is_typed() {
+        let err = super::create(std::ptr::null_mut(), 1, 1).expect_err("null CAMetalLayer");
+        assert!(
+            err.message().contains("CAMetalLayer")
+                || err.message().contains("load Vulkan")
+                || err.message().contains("vkCreate"),
+            "unexpected macOS Vulkan null-layer error: {}",
+            err.message()
+        );
     }
 }

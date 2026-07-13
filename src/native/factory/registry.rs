@@ -503,6 +503,40 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn explicit_vulkan_includes_active_registry_row_on_macos() {
+        if !cfg!(feature = "vulkan") {
+            return;
+        }
+        let candidates = gpu_recipe_candidates(GraphicsBackend::Vulkan);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].backend, GraphicsBackend::Vulkan);
+        assert_eq!(
+            entry_for(GraphicsBackend::Vulkan)
+                .expect("vulkan row")
+                .status,
+            BackendStatus::Active
+        );
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn explicit_vulkan_includes_active_registry_row_on_linux() {
+        if !cfg!(feature = "vulkan") {
+            return;
+        }
+        let candidates = gpu_recipe_candidates(GraphicsBackend::Vulkan);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].backend, GraphicsBackend::Vulkan);
+        assert_eq!(
+            entry_for(GraphicsBackend::Vulkan)
+                .expect("vulkan row")
+                .status,
+            BackendStatus::Active
+        );
+    }
+
     #[test]
     fn registry_rejects_context_with_wrong_backend_identity() {
         IDENTITY_MISMATCH_SHUTDOWNS.store(0, Ordering::SeqCst);
@@ -581,7 +615,16 @@ mod tests {
         );
 
         #[cfg(target_os = "macos")]
-        assert_eq!(candidates, vec![GraphicsBackend::Metal]);
+        {
+            let mut expected = Vec::new();
+            if cfg!(feature = "vulkan") {
+                expected.push(GraphicsBackend::Vulkan);
+            }
+            if cfg!(feature = "metal") {
+                expected.push(GraphicsBackend::Metal);
+            }
+            assert_eq!(candidates, expected);
+        }
     }
 
     #[test]

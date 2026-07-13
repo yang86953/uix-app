@@ -1051,9 +1051,22 @@ mod cocoa {
             session_active,
         );
         msg_void_id(window, "setContentView:", content_view);
+        // Vulkan/MoltenVK and Metal identity both consume a CAMetalLayer as the
+        // native surface (VK_EXT_metal_surface / CPU setContents).
         msg_void_bool(content_view, "setWantsLayer:", YES);
-        let layer = msg_id(content_view, "layer");
+        let layer = msg_id(class("CAMetalLayer"), "layer");
         msg_void_bool(layer, "setNeedsDisplayOnBoundsChange:", YES);
+        // PixelUpload stages via TRANSFER_DST; MoltenVK needs non-framebufferOnly.
+        msg_void_bool(layer, "setFramebufferOnly:", NO);
+        msg_void_cgsize(
+            layer,
+            "setDrawableSize:",
+            CGSize {
+                width: width as CGFloat,
+                height: height as CGFloat,
+            },
+        );
+        msg_void_id(content_view, "setLayer:", layer);
         (
             window,
             CreatedWindow {
@@ -1181,36 +1194,36 @@ mod cocoa {
         height: i32,
     ) -> std::result::Result<(), String> {
         if layer.is_null() || width <= 0 || height <= 0 || pixels.is_empty() {
-            return Err("invalid CALayer pixel payload".to_owned());
+            return Err("invalid CAMetalLayer pixel payload".to_owned());
         }
         let len = (width as usize)
             .checked_mul(height as usize)
-            .ok_or_else(|| format!("CALayer pixel extent overflows usize: {width}x{height}"))?;
+            .ok_or_else(|| format!("CAMetalLayer pixel extent overflows usize: {width}x{height}"))?;
         if pixels.len() < len {
             return Err(format!(
-                "CALayer pixel payload too short: got {}, need {len} for {width}x{height}",
+                "CAMetalLayer pixel payload too short: got {}, need {len} for {width}x{height}",
                 pixels.len()
             ));
         }
         let byte_len = len
             .checked_mul(std::mem::size_of::<u32>())
-            .ok_or_else(|| format!("CALayer byte length overflows for {width}x{height}"))?;
+            .ok_or_else(|| format!("CAMetalLayer byte length overflows for {width}x{height}"))?;
         let byte_len = isize::try_from(byte_len)
-            .map_err(|_| format!("CALayer byte length exceeds CFData limit: {byte_len}"))?;
+            .map_err(|_| format!("CAMetalLayer byte length exceeds CFData limit: {byte_len}"))?;
         let data = CFDataCreate(std::ptr::null_mut(), pixels.as_ptr() as *const u8, byte_len);
         if data.is_null() {
-            return Err("CFDataCreate for CALayer pixels failed".to_owned());
+            return Err("CFDataCreate for CAMetalLayer pixels failed".to_owned());
         }
         let provider = CGDataProviderCreateWithCFData(data);
         if provider.is_null() {
             CFRelease(data);
-            return Err("CGDataProviderCreateWithCFData for CALayer pixels failed".to_owned());
+            return Err("CGDataProviderCreateWithCFData for CAMetalLayer pixels failed".to_owned());
         }
         let color_space = CGColorSpaceCreateDeviceRGB();
         if color_space.is_null() {
             CFRelease(provider);
             CFRelease(data);
-            return Err("CGColorSpaceCreateDeviceRGB for CALayer pixels failed".to_owned());
+            return Err("CGColorSpaceCreateDeviceRGB for CAMetalLayer pixels failed".to_owned());
         }
         let image = CGImageCreate(
             width as usize,
@@ -1229,7 +1242,7 @@ mod cocoa {
             CFRelease(color_space);
             CFRelease(provider);
             CFRelease(data);
-            return Err("CGImageCreate for CALayer pixels failed".to_owned());
+            return Err("CGImageCreate for CAMetalLayer pixels failed".to_owned());
         }
         msg_void_id(layer, "setContents:", image);
         msg_void(layer, "setNeedsDisplay");
@@ -1514,10 +1527,30 @@ mod cocoa {
         f(receiver, sel(selector), value);
     }
 
+    unsafe fn msg_void_cgsize(receiver: Id, selector: &str, size: CGSize) {
+        type FnType = unsafe extern "C" fn(Id, Sel, CGSize);
+        let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+        f(receiver, sel(selector), size);
+    }
+
     unsafe fn msg_void_isize(receiver: Id, selector: &str, value: isize) {
         type FnType = unsafe extern "C" fn(Id, Sel, isize);
         let f: FnType = std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
         f(receiver, sel(selector), value);
+    }
+
+    pub unsafe fn set_metal_layer_drawable_size(layer: Id, width: i32, height: i32) {
+        if layer.is_null() {
+            return;
+        }
+        msg_void_cgsize(
+            layer,
+            "setDrawableSize:",
+            CGSize {
+                width: width.max(1) as CGFloat,
+                height: height.max(1) as CGFloat,
+            },
+        );
     }
 
     unsafe fn msg_void_rect_bool(receiver: Id, selector: &str, rect: CGRect, value: Bool) {
@@ -1573,7 +1606,12 @@ pub(crate) unsafe fn present_layer_pixels(
     cocoa::set_layer_pixels(layer, pixels, width, height).map_err(|message| {
         Error::new(
             Errc::PlatformError,
-            format!("MacosPresenter: CALayer pixel present failed: {message}"),
+            format!("MacosPresenter: CAMetalLayer pixel present failed: {message}"),
         )
     })
+}
+
+/// Update MoltenVK / Metal drawable extent before Vulkan swapchain recreate.
+pub(crate) unsafe fn set_metal_layer_drawable_size(layer: cocoa::Id, width: i32, height: i32) {
+    cocoa::set_metal_layer_drawable_size(layer, width, height);
 }
