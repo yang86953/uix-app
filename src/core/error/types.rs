@@ -1,6 +1,7 @@
 // 框架级 Error 结构体
 
 use std::fmt;
+use std::panic::Location;
 use std::time::SystemTime;
 
 use super::codes::Errc;
@@ -33,42 +34,49 @@ impl Error {
     // ── 构造器 ──
 
     /// 创建一个默认严重度为 Error 的框架错误。
+    #[track_caller]
     pub fn new(code: Errc, message: impl Into<String>) -> Self {
+        let location = Location::caller();
         Self {
             code,
             message: message.into(),
             severity: ErrorSeverity::Error,
-            file: file!(),
-            line: line!(),
+            file: location.file(),
+            line: location.line(),
             timestamp: SystemTime::now(),
             source: None,
         }
     }
 
     /// 创建一个指定严重度的错误。
+    #[track_caller]
     pub fn with_severity(code: Errc, message: impl Into<String>, severity: ErrorSeverity) -> Self {
+        let location = Location::caller();
         Self {
             code,
             message: message.into(),
             severity,
-            file: file!(),
-            line: line!(),
+            file: location.file(),
+            line: location.line(),
             timestamp: SystemTime::now(),
             source: None,
         }
     }
 
     /// 创建一个 Warning 级别的错误。
+    #[track_caller]
     pub fn warn(code: Errc, message: impl Into<String>) -> Self {
         Self::with_severity(code, message, ErrorSeverity::Warning)
     }
 
     /// 创建一个 Info 级别的错误。
+    #[track_caller]
     pub fn info(code: Errc, message: impl Into<String>) -> Self {
         Self::with_severity(code, message, ErrorSeverity::Info)
     }
 
     /// 创建一个 Fatal 级别的错误。
+    #[track_caller]
     pub fn fatal(code: Errc, message: impl Into<String>) -> Self {
         Self::with_severity(code, message, ErrorSeverity::Fatal)
     }
@@ -175,30 +183,37 @@ impl Error {
 
     // ── 便利工厂方法 ──
 
+    #[track_caller]
     pub fn invalid_arg(message: impl Into<String>) -> Self {
         Self::new(Errc::InvalidArgument, message)
     }
 
+    #[track_caller]
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::new(Errc::NotFound, message)
     }
 
+    #[track_caller]
     pub fn invalid_state(message: impl Into<String>) -> Self {
         Self::new(Errc::InvalidState, message)
     }
 
+    #[track_caller]
     pub fn not_implemented(message: impl Into<String>) -> Self {
         Self::new(Errc::NotImplemented, message)
     }
 
+    #[track_caller]
     pub fn io_error(message: impl Into<String>) -> Self {
         Self::new(Errc::IoError, message)
     }
 
+    #[track_caller]
     pub fn write_failure(message: impl Into<String>) -> Self {
         Self::new(Errc::WriteFailure, message)
     }
 
+    #[track_caller]
     pub fn unknown(message: impl Into<String>) -> Self {
         Self::new(Errc::Unknown, message)
     }

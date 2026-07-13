@@ -184,6 +184,13 @@ impl Collector {
         let stored = inner.errors.len();
         self.total_collected.fetch_add(1, Ordering::Relaxed);
 
+        // 在不持有内部锁时按快照调用回调，避免重入死锁
+        let callbacks: Vec<&ErrorCallback> = inner.callbacks.values().collect();
+        let err_ref = inner.errors.back().unwrap();
+        for cb in &callbacks {
+            cb(err_ref);
+        }
+
         if inner.config.auto_log || severity >= ErrorSeverity::Error {
             let level = match severity {
                 ErrorSeverity::Info => Level::Info,

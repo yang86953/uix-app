@@ -161,8 +161,8 @@ impl WindowsPlatform {
             }
             WM_MOVE => {
                 let mut state = window.borrow_mut();
-                state.pos_x = Self::loword(lparam) as i32;
-                state.pos_y = Self::hiword(lparam) as i32;
+                state.pos_x = Self::loword_signed(lparam) as i32;
+                state.pos_y = Self::hiword_signed(lparam) as i32;
                 0
             }
             WM_SETFOCUS => {
@@ -309,8 +309,8 @@ impl WindowsPlatform {
             }
             WM_MOUSEWHEEL => {
                 let screen_pt = POINT {
-                    x: Self::loword(lparam) as i32,
-                    y: Self::hiword(lparam) as i32,
+                    x: Self::loword_signed(lparam) as i32,
+                    y: Self::hiword_signed(lparam) as i32,
                 };
                 let mut client_pt = screen_pt;
                 unsafe {

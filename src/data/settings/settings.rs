@@ -113,7 +113,7 @@ pub(crate) fn parse_json_flat(input: &str) -> Result<HashMap<String, String>> {
     Ok(map)
 }
 
-/// JSON 字符串 unescape。
+/// JSON 字符串 unescape（含 \uXXXX 解码）。
 fn unescape_json_str(s: &str) -> String {
     if !s.contains('\\') {
         return s.to_string();
@@ -125,9 +125,26 @@ fn unescape_json_str(s: &str) -> String {
             match chars.next() {
                 Some('"') => out.push('"'),
                 Some('\\') => out.push('\\'),
+                Some('/') => out.push('/'),
                 Some('n') => out.push('\n'),
                 Some('r') => out.push('\r'),
                 Some('t') => out.push('\t'),
+                Some('u') => {
+                    let hex: String = chars.by_ref().take(4).collect();
+                    if hex.len() == 4 {
+                        if let Ok(code) = u32::from_str_radix(&hex, 16) {
+                            if let Some(ch) = char::from_u32(code) {
+                                out.push(ch);
+                            } else {
+                                out.push_str(&format!("\\u{hex}"));
+                            }
+                        } else {
+                            out.push_str(&format!("\\u{hex}"));
+                        }
+                    } else {
+                        out.push_str(&format!("\\u{hex}"));
+                    }
+                }
                 Some(c) => {
                     out.push('\\');
                     out.push(c);
@@ -197,27 +214,28 @@ impl SettingsService {
     }
 
     /// 从 JSON 文件加载设置。
+    /// 先读入并解析，成功后一次提交 path / values / dirty；失败时保持原状态不变。
     pub fn load(&mut self, path: &str) -> Result<()> {
-        self.path = Some(path.to_string());
-        self.values.clear();
-
         if !Path::new(path).exists() {
+            self.path = Some(path.to_string());
+            self.values.clear();
             self.dirty = false;
             return Ok(());
         }
 
         let content = fs::read_to_string(path)?;
-        if content.trim().is_empty() {
-            self.dirty = false;
-            return Ok(());
-        }
-
-        self.values = parse_json_flat(&content)?;
+        let parsed = if content.trim().is_empty() {
+            HashMap::new()
+        } else {
+            parse_json_flat(&content)?
+        };
+        self.path = Some(path.to_string());
+        self.values = parsed;
         self.dirty = false;
         Ok(())
     }
 
-    /// 保存设置到 JSON 文件。
+    /// 保存设置到 JSON 文件（临时文件 + rename 保证原子性）。
     pub fn save(&mut self) -> Result<()> {
         if !self.dirty {
             return Ok(());
@@ -226,7 +244,10 @@ impl SettingsService {
             return Ok(());
         };
         let json = serialize_json_flat(&self.values);
-        fs::write(path, &json)?;
+        let tmp_path = format!("{path}.tmp");
+        fs::write(&tmp_path, &json)?;
+        let _ = fs::remove_file(path);
+        fs::rename(&tmp_path, path)?;
         self.dirty = false;
         Ok(())
     }

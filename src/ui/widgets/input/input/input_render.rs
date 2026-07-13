@@ -50,10 +50,20 @@ impl Input {
 
         let composed_value = self.value_with_composition();
         let has_composition = !self.composition.is_empty();
-        let display_text = if self.value.is_empty() && !has_composition && !self.focused {
-            self.placeholder.as_str()
+        let display_text: String = if self.password && !self.password_visible && !self.value.is_empty() {
+            if has_composition {
+                format!(
+                    "{}{}",
+                    "\u{2022}".repeat(self.value.chars().count()),
+                    &self.composition
+                )
+            } else {
+                "\u{2022}".repeat(self.value.chars().count())
+            }
+        } else if self.value.is_empty() && !has_composition && !self.focused {
+            self.placeholder.to_string()
         } else {
-            composed_value.as_ref()
+            composed_value.to_string()
         };
         let disp_color = if self.value.is_empty() && !has_composition && !self.focused {
             text_tertiary
@@ -61,10 +71,14 @@ impl Input {
             text_color
         };
 
-        let lines: Vec<&str> = if display_text == self.placeholder.as_str() {
-            vec![self.placeholder.as_str()]
+        let lines: Vec<String> = if !self.password || self.password_visible {
+            if display_text == self.placeholder {
+                vec![self.placeholder.clone()]
+            } else {
+                display_text.lines().map(String::from).collect()
+            }
         } else {
-            display_text.lines().collect()
+            display_text.lines().map(String::from).collect()
         };
 
         // 计算光标所在行
@@ -85,6 +99,8 @@ impl Input {
         // 逐行绘制
         let line_h = LINE_HEIGHT;
         let mut y = text_area.y;
+        let mut line_glyph_xs = self.line_glyph_xs.borrow_mut();
+        line_glyph_xs.clear();
         for (li, line) in lines.iter().enumerate() {
             if li < adj_scroll {
                 continue;
@@ -130,6 +146,16 @@ impl Input {
             let text_y =
                 ctx.visual_center_y(Rect::new(text_area.x, y, text_area.w, line_h), FONT_SIZE);
             ctx.draw_text(line, Point::new(text_area.x, text_y), disp_color, FONT_SIZE);
+
+            // 收集该行每个字符的 x 坐标（用于 char_at_xy 命中）
+            let mut xs = Vec::with_capacity(line.chars().count());
+            let mut prefix = String::new();
+            xs.push(text_area.x); // cursor before first char
+            for ch in line.chars() {
+                prefix.push(ch);
+                xs.push(text_area.x + ctx.measure_text(&prefix, FONT_SIZE).w);
+            }
+            line_glyph_xs.push(xs);
 
             if li == cursor_line {
                 let col = self.cursor_line_col().1;
@@ -314,10 +340,20 @@ impl Input {
 
         let composed_value = self.value_with_composition();
         let has_composition = !self.composition.is_empty();
-        let display_text = if self.value.is_empty() && !has_composition {
-            self.placeholder.as_str()
+        let display_text: String = if self.password && !self.password_visible && !self.value.is_empty() {
+            if has_composition {
+                format!(
+                    "{}{}",
+                    "\u{2022}".repeat(self.value.chars().count()),
+                    &self.composition
+                )
+            } else {
+                "\u{2022}".repeat(self.value.chars().count())
+            }
+        } else if self.value.is_empty() && !has_composition {
+            self.placeholder.to_string()
         } else {
-            composed_value.as_ref()
+            composed_value.to_string()
         };
         let disp_color = if self.value.is_empty() && !has_composition && !self.focused {
             text_tertiary
@@ -335,7 +371,7 @@ impl Input {
 
         let mut scroll_off = self.scroll_offset_x.get();
         let total_text_w = if !display_text.is_empty() {
-            ctx.measure_text(display_text, FONT_SIZE).w
+            ctx.measure_text(&display_text, FONT_SIZE).w
         } else {
             0.0
         };
@@ -386,7 +422,7 @@ impl Input {
             let fh = *ctx.font();
             let layout = ctx
                 .font_service()
-                .layout_text(&fh, display_text, &backend_opts);
+                .layout_text(&fh, &display_text, &backend_opts);
 
             let abs_pos = Point::new(draw_x, draw_y);
             {
@@ -396,6 +432,7 @@ impl Input {
                     xs.push(g.x);
                 }
             }
+            self.line_glyph_xs.borrow_mut().clear();
             if !self.value.is_empty() && !has_composition {
                 if let Some((sel_s, sel_e)) = self.selection.get() {
                     if sel_s < sel_e {
@@ -463,6 +500,7 @@ impl Input {
         if self.password {
             let px = inner_frame.x + inner_frame.w - pwd_w;
             let py = ctx.visual_center_y(inner_frame, 12.0);
+            self.pwd_icon_rect.set(Rect::new(px, inner_frame.y, pwd_w, inner_frame.h));
             ctx.draw_text(
                 if self.password_visible { "◎" } else { "◉" },
                 Point::new(px, py),

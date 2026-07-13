@@ -288,8 +288,10 @@ impl WidgetTree {
     }
 
     /// 注册 View 构建期捕获的 Effect。
+    /// 每次 rebuild 创建新的 Effect 实例，先清除旧实例避免累积。
     pub fn bind_pending_effects(&mut self) {
         use crate::ui::foundation::state::drain_pending_effects;
+        self.effects.clear();
         self.effects.extend(drain_pending_effects());
     }
 
@@ -298,8 +300,15 @@ impl WidgetTree {
     }
 
     /// 每帧 tick 已注册的 Effect；任一 Effect 重新执行时返回 true。
+    /// 完整遍历所有 Effect，不短路，确保同一事件轮次全部执行。
     pub fn tick_effects(&self) -> bool {
-        self.effects.iter().any(|eff| eff.tick())
+        let mut any_changed = false;
+        for eff in &self.effects {
+            if eff.tick() {
+                any_changed = true;
+            }
+        }
+        any_changed
     }
 }
 

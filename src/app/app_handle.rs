@@ -121,7 +121,7 @@ impl AppHandle {
         self.app_state.clone()
     }
 
-    pub fn resolve<T: 'static + Send + Clone>(&self) -> Option<T> {
+    pub fn resolve<T: 'static + Send + Sync + Clone>(&self) -> Option<T> {
         self.container.resolve_clone::<T>()
     }
 

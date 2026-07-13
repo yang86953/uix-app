@@ -18,37 +18,87 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
         };
     }
 
-    // ── Phase 1: auto-place children, create implicit rows as needed ──
+    // ── Phase 1: register explicit placements ──
     let init_rows = input.rows.len().max(1);
-    let mut occupied = vec![false; n_cols * init_rows];
-    let mut assignments = Vec::with_capacity(input.children.len());
-    let mut next_cell = 0;
+    let mut occupied: Vec<bool> = Vec::new();
+    let mut assignments: Vec<CellAssignment> = Vec::with_capacity(input.children.len());
+    let mut auto_items: Vec<(usize, &GridChild)> = Vec::new();
 
+    // 先登记显式 cell，同时扩展 occupied 矩阵
     for (ci, child) in input.children.iter().enumerate() {
-        let (start_cell, col, row) = if let Some(cell) = child.cell {
-            let min_rows = (cell / n_cols) + (child.row_span as usize);
-            let cur_rows = occupied.len() / n_cols;
-            if min_rows > cur_rows {
-                occupied.resize(n_cols * min_rows, false);
-            }
-            (cell, cell % n_cols, cell / n_cols)
-        } else {
-            while next_cell < occupied.len() && occupied[next_cell] {
-                next_cell += 1;
-            }
-            // 确保有足够行容纳 row_span（与手动 cell 指定路径的 min_rows 逻辑一致）
-            let needed_rows = (next_cell / n_cols) + child.row_span as usize;
+        if let Some(cell) = child.cell {
+            let col = cell % n_cols;
+            let row = cell / n_cols;
+            let needed_rows = row + child.row_span as usize;
             let cur_rows = occupied.len() / n_cols;
             if needed_rows > cur_rows {
                 occupied.resize(n_cols * needed_rows, false);
             }
-            let cell = next_cell;
-            (cell, cell % n_cols, cell / n_cols)
+            let span_cols = (child.col_span as usize).min(n_cols - col);
+            let span_rows = (child.row_span as usize).min(needed_rows - row);
+            for r in 0..span_rows {
+                for c in 0..span_cols {
+                    occupied[(row + r) * n_cols + (col + c)] = true;
+                }
+            }
+            assignments.push(CellAssignment {
+                child_idx: ci,
+                col,
+                row,
+                col_span: span_cols as u32,
+                row_span: span_rows as u32,
+            });
+        } else {
+            auto_items.push((ci, child));
+        }
+    }
+
+    // 再为 auto 项搜索完整可用矩形
+    for (ci, child) in auto_items {
+        let span_cols = child.col_span as usize;
+        let span_rows = child.row_span as usize;
+        // 搜索下一个完整可用矩形
+        let (col, row) = 'search: loop {
+            let cur_rows = occupied.len() / n_cols;
+            let mut found = false;
+            for base_row in 0..cur_rows.max(1) {
+                'row_search: for base_col in 0..n_cols {
+                    // 验证完整 span 是否可用
+                    if base_col + span_cols > n_cols {
+                        continue 'row_search;
+                    }
+                    if base_row + span_rows > cur_rows.max(1) {
+                        // 需要扩展行
+                        break 'row_search;
+                    }
+                    let mut ok = true;
+                    for r in 0..span_rows {
+                        for c in 0..span_cols {
+                            if occupied[(base_row + r) * n_cols + (base_col + c)] {
+                                ok = false;
+                                break 'row_search;
+                            }
+                        }
+                    }
+                    if ok {
+                        found = true;
+                        break 'search (base_col, base_row);
+                    }
+                }
+            }
+            if !found {
+                // 扩展一行继续搜索
+                let cur_rows = occupied.len() / n_cols;
+                occupied.resize(n_cols * (cur_rows + 1), false);
+            }
         };
 
-        let total_rows = occupied.len() / n_cols;
-        let span_cols = (child.col_span as usize).min(n_cols - col);
-        let span_rows = (child.row_span as usize).min(total_rows - row);
+        // 确保有足够行
+        let needed_rows = row + span_rows;
+        let cur_rows = occupied.len() / n_cols;
+        if needed_rows > cur_rows {
+            occupied.resize(n_cols * needed_rows, false);
+        }
 
         for r in 0..span_rows {
             for c in 0..span_cols {
@@ -63,7 +113,6 @@ pub fn compute_grid_layout(input: &GridInput) -> GridOutput {
             col_span: span_cols as u32,
             row_span: span_rows as u32,
         });
-        next_cell = start_cell + span_cols;
     }
 
     let n_rows = occupied.len() / n_cols;
