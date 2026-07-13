@@ -144,7 +144,7 @@ impl WindowSession {
         }
         self.tree.shutdown();
         self.engine_shutdown = true;
-        self.engine.shutdown();
+        let _ = self.engine.try_shutdown();
     }
 
     pub(crate) fn window_id(&self) -> WindowId {

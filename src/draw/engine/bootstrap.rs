@@ -662,7 +662,7 @@ mod tests {
                 .iter()
                 .all(|failure| failure.message.contains("stage=context_create"))
         );
-        bootstrap.engine.shutdown();
+        bootstrap.engine.try_shutdown().expect("checked shutdown");
     }
 
     #[test]
@@ -712,7 +712,7 @@ mod tests {
                 .message
                 .contains("recipe=backend=d3d11; raster=gpu_native; present=swapchain")
         );
-        bootstrap.engine.shutdown();
+        bootstrap.engine.try_shutdown().expect("checked shutdown");
     }
 
     #[test]

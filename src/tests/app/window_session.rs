@@ -81,9 +81,9 @@ impl GraphicsEngine for ShutdownTrackingEngine {
         self.inner.initialize(w, h)
     }
 
-    fn shutdown(&mut self) {
+    fn try_shutdown(&mut self) -> Result<(), Error> {
         self.shutdown_calls.set(self.shutdown_calls.get() + 1);
-        self.inner.shutdown();
+        self.inner.try_shutdown()
     }
 
     fn resize(&mut self, w: i32, h: i32) -> Result<(), Error> {

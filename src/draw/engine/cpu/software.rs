@@ -72,15 +72,6 @@ impl GraphicsEngine for SoftwareEngine {
         self.session.try_shutdown()
     }
 
-    fn shutdown(&mut self) {
-        if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format!(
-                "SoftwareEngine: checked shutdown failed: {}",
-                error.short_what()
-            ));
-        }
-    }
-
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
         self.sync_clear_color();
         self.session.resize(width, height)

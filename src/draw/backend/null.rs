@@ -62,7 +62,9 @@ impl RenderBackend for NullBackend {
         Ok(())
     }
 
-    fn shutdown(&mut self) {}
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 
     fn surface(&mut self) -> &mut dyn DrawSurface {
         &mut self.surface

@@ -115,15 +115,6 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
         Ok(())
     }
 
-    fn shutdown(&mut self) {
-        if let Err(error) = self.try_shutdown() {
-            crate::core::log::error_fn(format!(
-                "RecoveringGraphicsEngine checked shutdown failed: {}",
-                error.short_what()
-            ));
-        }
-    }
-
     fn try_shutdown(&mut self) -> Result<(), Error> {
         if self.shutdown {
             return Ok(());
@@ -313,7 +304,12 @@ impl GraphicsEngine for RecoveringGraphicsEngine {
 
 impl Drop for RecoveringGraphicsEngine {
     fn drop(&mut self) {
-        <Self as GraphicsEngine>::shutdown(self);
+        if let Err(error) = self.try_shutdown() {
+            crate::core::log::error_fn(format!(
+                "RecoveringGraphicsEngine checked shutdown failed: {}",
+                error.short_what()
+            ));
+        }
     }
 }
 
@@ -365,13 +361,6 @@ mod tests {
             self.inner.initialize(width, height)
         }
 
-        fn shutdown(&mut self) {
-            self.inner.shutdown();
-            if let Some(shutdowns) = &self.shutdowns {
-                shutdowns.set(shutdowns.get() + 1);
-            }
-        }
-
         fn try_shutdown(&mut self) -> Result<(), Error> {
             if let Some(failures) = &self.checked_shutdown_failures {
                 let remaining = failures.get();
@@ -383,7 +372,10 @@ mod tests {
                     ));
                 }
             }
-            self.shutdown();
+            self.inner.try_shutdown()?;
+            if let Some(shutdowns) = &self.shutdowns {
+                shutdowns.set(shutdowns.get() + 1);
+            }
             Ok(())
         }
 
@@ -629,7 +621,7 @@ mod tests {
             Box::new(|_, _, _| Ok(Box::new(NullEngine::new()))),
         );
 
-        engine.shutdown();
+        engine.try_shutdown().expect("checked shutdown");
         drop(engine);
 
         assert_eq!(shutdowns.get(), 1);

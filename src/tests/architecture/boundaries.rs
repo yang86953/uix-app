@@ -803,6 +803,38 @@ fn igraphics_context_has_no_legacy_void_shutdown() {
 }
 
 #[test]
+fn graphics_engine_has_no_legacy_void_shutdown() {
+    let source = read_source(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/draw/traits/engine.rs"),
+    );
+
+    assert!(
+        source.contains("fn try_shutdown(&mut self) -> Result<(), Error>;"),
+        "GraphicsEngine must require checked try_shutdown"
+    );
+    assert!(
+        !source.contains("fn shutdown(&mut self);"),
+        "GraphicsEngine must not keep a legacy void shutdown hook"
+    );
+}
+
+#[test]
+fn render_backend_has_no_legacy_void_shutdown() {
+    let source = read_source(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/draw/backend/traits.rs"),
+    );
+
+    assert!(
+        source.contains("fn try_shutdown(&mut self) -> Result<(), Error>;"),
+        "RenderBackend must require checked try_shutdown"
+    );
+    assert!(
+        !source.contains("fn shutdown(&mut self);"),
+        "RenderBackend must not keep a legacy void shutdown hook"
+    );
+}
+
+#[test]
 fn thread_bound_drop_guards_foreign_thread_teardown() {
     let source = read_source(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/factory/thread_bound.rs"),
@@ -860,6 +892,28 @@ fn d3d11_checked_offscreen_destroy_cannot_ignore_swapchain_restore_failure() {
         source.contains("self.bind_swapchain_target()?;"),
         "D3D11 checked offscreen destroy must propagate the swapchain restore failure"
     );
+}
+
+#[test]
+fn replace_upload_is_declared_on_destination_dependent_backends() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics");
+    let d3d12 = fs::read_to_string(src.join("d3d12/platform/context.rs")).expect("D3D12");
+    let wgl = fs::read_to_string(src.join("opengl/platform/wgl.rs")).expect("WGL");
+    let egl = fs::read_to_string(src.join("opengl/platform/egl.rs")).expect("EGL");
+    let vulkan =
+        fs::read_to_string(src.join("vulkan/platform/context.rs")).expect("Vulkan");
+
+    for (name, source) in [
+        ("D3D12", d3d12.as_str()),
+        ("WGL", wgl.as_str()),
+        ("EGL", egl.as_str()),
+        ("Vulkan", vulkan.as_str()),
+    ] {
+        assert!(
+            source.contains("fn upload_surface_pixels("),
+            "{name} must declare upload_surface_pixels for Additive/Scroll replace upload"
+        );
+    }
 }
 
 #[test]

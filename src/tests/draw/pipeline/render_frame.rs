@@ -70,7 +70,9 @@ impl GraphicsEngine for RecordingEngine {
         Ok(())
     }
 
-    fn shutdown(&mut self) {}
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 
     fn resize(&mut self, _width: i32, _height: i32) -> Result<(), Error> {
         Ok(())
@@ -158,8 +160,8 @@ impl GraphicsEngine for CaptureBeforePresentEngine {
         self.inner.initialize(width, height)
     }
 
-    fn shutdown(&mut self) {
-        self.inner.shutdown();
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.inner.try_shutdown()
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -224,8 +226,8 @@ impl GraphicsEngine for EncodedSoftwareEngine {
         self.inner.initialize(width, height)
     }
 
-    fn shutdown(&mut self) {
-        self.inner.shutdown();
+    fn try_shutdown(&mut self) -> Result<(), Error> {
+        self.inner.try_shutdown()
     }
 
     fn resize(&mut self, width: i32, height: i32) -> Result<(), Error> {
@@ -654,7 +656,7 @@ fn frame_renderer_d3d11_warp_executes_direct_and_picture_recordings_before_prese
         "Picture CPU fallback must retain painter order on the real target"
     );
 
-    engine.shutdown();
+    engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close WARP window");
 }
 
@@ -782,7 +784,7 @@ fn frame_renderer_wgl_executes_direct_and_picture_recordings_before_present() {
         "Picture CPU fallback must retain painter order on the real target"
     );
 
-    engine.shutdown();
+    engine.try_shutdown().expect("checked shutdown");
     window.close().expect("close WGL window");
 }
 
