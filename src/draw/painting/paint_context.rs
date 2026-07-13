@@ -468,8 +468,10 @@ impl<'a> PaintContext<'a> {
             color,
             font_size,
         });
+        let text_t0 = std::time::Instant::now();
         self.text
             .draw_text(self.spatial.canvas_2d(), text, pos, color, font_size);
+        crate::draw::perf_probe::add_text_draw(text_t0.elapsed().as_micros());
     }
 
     /// 基于基线绘制文本。
