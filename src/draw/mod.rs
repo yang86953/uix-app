@@ -9,7 +9,6 @@ pub mod gpu_engine;
 pub mod image;
 pub mod null_engine;
 pub mod painting;
-pub mod perf_probe;
 pub mod pipeline;
 pub mod primitives;
 pub mod rasterizer;

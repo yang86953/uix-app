@@ -793,13 +793,13 @@ impl LayerTree {
             if let Some(ro) = render_objects {
                 ro.paint_content(id, frame, scene, ctx);
                 ctx.restore();
-                crate::draw::perf_probe::add_widget_painted();
+                crate::core::perf_probe::add_widget_painted();
                 return;
             }
         }
         scene.paint(id, frame, ctx);
         ctx.restore();
-        crate::draw::perf_probe::add_widget_painted();
+        crate::core::perf_probe::add_widget_painted();
     }
 
     fn draw_debug_for_widget(
