@@ -11,10 +11,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Unicode escapes avoid source-encoding issues on Windows consoles.
 PRODUCT = "\u4ea7\u54c1.md"
-DECISIONS = "\u51b3\u7b56.md"
 PROGRESS = "\u8fdb\u5ea6.md"
-ISSUES = "\u95ee\u9898.md"
 ARCH = "\u67b6\u6784.md"
+USAGE = "\u4f7f\u7528.md"
 DOMAIN = "\u9886\u57df"
 DEMAND = "\u6309\u9700\u9a71\u52a8.md"
 PUBLIC_API = "\u516c\u5f00API.md"
@@ -109,10 +108,9 @@ def main() -> int:
     required = [
         ROOT / "AGENTS.md",
         ROOT / "docs" / PRODUCT,
-        ROOT / "docs" / DECISIONS,
-        ROOT / "docs" / PROGRESS,
-        ROOT / "docs" / ISSUES,
         ROOT / "docs" / ARCH,
+        ROOT / "docs" / PROGRESS,
+        ROOT / "docs" / USAGE,
     ]
     for p in required:
         if not p.is_file():

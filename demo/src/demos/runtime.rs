@@ -200,7 +200,7 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
             column_fit([
                 info_note(
                     tk,
-                    "Eligible 静态子树可 Picture 缓存；动态 widget 走窄 paint。见决策 #122。",
+                    "Eligible 静态子树可 Picture 缓存；动态 widget 走窄 paint。",
                 ),
                 embed(
                     flow_row(56.0)
@@ -220,7 +220,7 @@ pub fn page_runtime(ctx: &DemoCtx<'_>) -> ViewNode {
                 open_window,
                 info_note(
                     tk,
-                    "open_window 独立 WindowSession；post_to_ui 仅入目标 session（决策 #133）。",
+                    "open_window 独立 WindowSession；post_to_ui 仅入目标 session。",
                 ),
             ])
             .gap(12.0),

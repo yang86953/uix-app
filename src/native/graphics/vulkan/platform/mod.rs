@@ -20,7 +20,7 @@ pub(super) fn create(
     VulkanContext::new(surface, width, height).map(|ctx| Box::new(ctx) as _)
 }
 
-#[cfg(not(all(unix, not(target_os = "macos"))))]
+#[cfg(windows)]
 #[allow(dead_code)]
 pub(super) fn create(
     _surface: *mut c_void,
@@ -31,6 +31,40 @@ pub(super) fn create(
 
     Err(Error::new(
         Errc::PlatformError,
-        "GraphicsBackend vulkan is only supported on Linux Wayland",
+        "GraphicsBackend vulkan WSI adapter is not implemented on Windows",
+    ))
+}
+
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+pub(super) fn create(
+    _surface: *mut c_void,
+    _width: i32,
+    _height: i32,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    use crate::core::Errc;
+
+    Err(Error::new(
+        Errc::PlatformError,
+        "GraphicsBackend vulkan portability adapter is not implemented on macOS",
+    ))
+}
+
+#[cfg(not(any(
+    all(unix, not(target_os = "macos")),
+    windows,
+    target_os = "macos"
+)))]
+#[allow(dead_code)]
+pub(super) fn create(
+    _surface: *mut c_void,
+    _width: i32,
+    _height: i32,
+) -> Result<Box<dyn IGraphicsContext>, Error> {
+    use crate::core::Errc;
+
+    Err(Error::new(
+        Errc::PlatformError,
+        "GraphicsBackend vulkan is not supported on this platform",
     ))
 }

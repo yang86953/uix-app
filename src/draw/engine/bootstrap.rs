@@ -3,7 +3,9 @@
 use crate::core::{Errc, Error, Result};
 use crate::draw::engine::factory::create_graphics_engine;
 use crate::draw::traits::GraphicsEngine;
-use crate::native::factory::{GraphicsRecipe, gpu_recipe_candidates, try_create_gpu_recipe};
+use crate::native::factory::{
+    describe_backend_availability, GraphicsRecipe, gpu_recipe_candidates, try_create_gpu_recipe,
+};
 use crate::native::traits::present::{GraphicsBackend, IGraphicsContext, NativeSurfaceHandle};
 
 /// One failed probe attempt recorded for diagnostics and tests.
@@ -187,11 +189,14 @@ where
     let mut report = ProbeReport::default();
 
     if candidates.is_empty() {
+        let availability = describe_backend_availability(request)
+            .map(|reason| format!(" ({reason})"))
+            .unwrap_or_default();
         report.record_no_candidates(
             request,
             &Error::new(
                 Errc::PlatformError,
-                format!("Graphics bootstrap: no GPU backend candidates for {request}"),
+                format!("Graphics bootstrap: no GPU backend candidates for {request}{availability}"),
             ),
         );
         return Err(report);

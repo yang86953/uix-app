@@ -8,7 +8,7 @@ use crate::draw::pipeline::{EncodedFrameExecution, EncodedPictureExecution, Fram
 use crate::draw::traits::{Canvas2D, PresentationMode};
 use crate::draw::ImageHandle;
 
-/// Engine-level raster preference ([#169](docs/决策.md#d169)).
+/// Engine-level raster preference ([架构 · 图形](docs/架构.md#图形-api与帧提交硬约束)).
 ///
 /// Aligned with orthogonal axes: `Cpu` / `Gpu` select raster path preference;
 /// concrete API is [`crate::native::traits::GraphicsBackend`]. Not a bundled

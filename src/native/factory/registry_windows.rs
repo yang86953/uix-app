@@ -6,19 +6,22 @@ use crate::native::traits::present::{GraphicsBackend, PresentMode, RasterMode};
 #[cfg(any(
     not(feature = "d3d11"),
     not(feature = "d3d12"),
-    not(feature = "opengles")
+    not(feature = "opengles"),
+    not(feature = "vulkan")
 ))]
 use crate::core::{Errc, Error};
 #[cfg(any(
     not(feature = "d3d11"),
     not(feature = "d3d12"),
-    not(feature = "opengles")
+    not(feature = "opengles"),
+    not(feature = "vulkan")
 ))]
 use crate::native::traits::present::IGraphicsContext;
 #[cfg(any(
     not(feature = "d3d11"),
     not(feature = "d3d12"),
-    not(feature = "opengles")
+    not(feature = "opengles"),
+    not(feature = "vulkan")
 ))]
 use std::ffi::c_void;
 
@@ -28,6 +31,8 @@ use crate::native::graphics::d3d11::create as create_d3d11;
 use crate::native::graphics::d3d12::create as create_d3d12;
 #[cfg(feature = "opengles")]
 use crate::native::graphics::opengl::create as create_opengles;
+#[cfg(feature = "vulkan")]
+use crate::native::graphics::vulkan::create as create_vulkan;
 
 #[cfg(not(feature = "d3d11"))]
 fn create_d3d11(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
@@ -44,10 +49,16 @@ fn create_opengles(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsCo
     Err(feature_disabled("opengles"))
 }
 
+#[cfg(not(feature = "vulkan"))]
+fn create_vulkan(_: *mut c_void, _: i32, _: i32) -> Result<Box<dyn IGraphicsContext>, Error> {
+    Err(feature_disabled("vulkan"))
+}
+
 #[cfg(any(
     not(feature = "d3d11"),
     not(feature = "d3d12"),
-    not(feature = "opengles")
+    not(feature = "opengles"),
+    not(feature = "vulkan")
 ))]
 fn feature_disabled(feature: &str) -> Error {
     Error::new(
@@ -74,7 +85,21 @@ const OPENGL_STATUS: BackendStatus = if cfg!(feature = "opengles") {
     BackendStatus::Disabled
 };
 
+const VULKAN_STATUS: BackendStatus = if cfg!(feature = "vulkan") {
+    BackendStatus::Planned
+} else {
+    BackendStatus::Disabled
+};
+
 pub(crate) const PLATFORM_ENTRIES: &[GraphicsBackendEntry] = &[
+    GraphicsBackendEntry {
+        id: GraphicsBackend::Vulkan,
+        priority: 30,
+        status: VULKAN_STATUS,
+        raster: RasterMode::Cpu,
+        present: PresentMode::PixelUpload,
+        create: create_vulkan,
+    },
     GraphicsBackendEntry {
         id: GraphicsBackend::D3d12,
         // First native slice stays behind the established D3D11/WGL paths.

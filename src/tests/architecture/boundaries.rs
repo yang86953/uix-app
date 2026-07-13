@@ -1,6 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+fn read_source(path: impl AsRef<Path>) -> String {
+    fs::read_to_string(path)
+        .expect("read source")
+        .replace("\r\n", "\n")
+}
+
 fn rust_files_under(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     collect_rust_files(dir, &mut files);
@@ -695,10 +701,9 @@ fn canvas_scroll_copy_requires_an_explicit_backend_semantic() {
 
 #[test]
 fn d3d12_checked_shutdown_cannot_fall_back_to_the_void_hook() {
-    let source = fs::read_to_string(
+    let source = read_source(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics/d3d12/platform/context.rs"),
-    )
-    .expect("read D3D12 context");
+    );
 
     assert!(
         source.contains(
@@ -710,10 +715,9 @@ fn d3d12_checked_shutdown_cannot_fall_back_to_the_void_hook() {
 
 #[test]
 fn wgl_checked_shutdown_cannot_fall_back_to_the_void_hook() {
-    let source = fs::read_to_string(
+    let source = read_source(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics/opengl/platform/wgl.rs"),
-    )
-    .expect("read WGL context");
+    );
 
     assert!(
         source.contains(
@@ -725,10 +729,9 @@ fn wgl_checked_shutdown_cannot_fall_back_to_the_void_hook() {
 
 #[test]
 fn egl_checked_shutdown_cannot_fall_back_to_the_void_hook() {
-    let source = fs::read_to_string(
+    let source = read_source(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src/native/graphics/opengl/platform/egl.rs"),
-    )
-    .expect("read EGL context");
+    );
 
     assert!(
         source.contains("fn try_shutdown(&mut self) -> Result<(), Error> {\n        self.shutdown_result()\n    }"),
@@ -738,11 +741,10 @@ fn egl_checked_shutdown_cannot_fall_back_to_the_void_hook() {
 
 #[test]
 fn vulkan_checked_shutdown_cannot_fall_back_to_the_void_hook() {
-    let source = fs::read_to_string(
+    let source = read_source(
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("src/native/graphics/vulkan/platform/context.rs"),
-    )
-    .expect("read Vulkan context");
+    );
 
     assert!(
         source.contains(
@@ -1019,7 +1021,7 @@ fn architecture_document_stays_in_the_qualified_docs_tree() {
         .filter(|name| root.join(name).exists())
         .collect();
 
-    let required_generic = ["产品.md", "决策.md", "进度.md", "问题.md", "架构.md"];
+    let required_generic = ["产品.md", "架构.md", "进度.md", "使用.md"];
     for name in required_generic {
         let path = root.join("docs").join(name);
         assert!(
@@ -1036,7 +1038,7 @@ fn architecture_document_stays_in_the_qualified_docs_tree() {
     );
     assert!(
         !domain_dir.exists(),
-        "docs/领域/ must not exist; project depth lives in 架构 + 决策 + 产品: {}",
+        "docs/领域/ must not exist; project depth lives in 产品/架构/进度/使用: {}",
         domain_dir.display()
     );
 
