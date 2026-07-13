@@ -205,7 +205,11 @@ fn present_upload_engine_submits_cpu_pixels_to_context() {
     );
     assert_eq!(
         engine.capabilities(),
-        GraphicsCapabilities::engine_managed_with_offscreen()
+        GraphicsCapabilities {
+            presentation_mode: crate::draw::traits::PresentationMode::EngineManaged,
+            partial_redraw: true,
+            offscreen: true,
+        }
     );
 }
 

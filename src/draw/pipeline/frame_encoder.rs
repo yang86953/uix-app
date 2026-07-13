@@ -317,13 +317,16 @@ impl FrameEncoder {
     /// Executes the ordered command stream into a CPU target of this
     /// encoder's extent. This is used by the CPU backend; API-native backends
     /// consume the same [`FrameCommand`] variants at their own boundaries.
+    ///
+    /// Does **not** wipe the target before commands: full frames start with
+    /// [`FrameCommand::Clear`]; dirty frames rely on `begin_frame(DirtyRects)`
+    /// having cleared only the damage AABB so undamaged pixels stay retained.
     pub(crate) fn execute_into_pixels(&self, pixels: &mut [u32]) {
         assert_eq!(
             pixels.len(),
             self.pixel_count,
             "FrameEncoder target must match its recorded extent"
         );
-        pixels.fill(Color::transparent().premultiplied());
         for command in &self.commands {
             match command {
                 // Clear is a replace operation, never transparent source-over.

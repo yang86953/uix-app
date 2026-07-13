@@ -11,7 +11,7 @@ use crate::draw::pipeline::frame_recording::*;
 fn recording_canvas_emits_native_cpu_and_picture_commands_in_painter_order() {
     let mut engine = FrameRecordingEngine::new();
     engine.initialize(12, 8).expect("initialize recorder");
-    engine.begin_recording().expect("begin recording");
+    engine.begin_recording(true).expect("begin recording");
     engine
         .canvas_2d()
         .fill_rect(Rect::new(1.0, 1.0, 2.0, 2.0), Color::red(), None);
@@ -69,7 +69,7 @@ fn recording_canvas_emits_native_cpu_and_picture_commands_in_painter_order() {
 fn recording_canvas_retains_compact_cpu_segment_tiles() {
     let mut engine = FrameRecordingEngine::new();
     engine.initialize(1200, 800).expect("initialize recorder");
-    engine.begin_recording().expect("begin recording");
+    engine.begin_recording(true).expect("begin recording");
     let color = Color::from_rgba(20, 40, 60, 128);
     engine
         .canvas_2d()
@@ -108,7 +108,7 @@ fn recording_canvas_retains_compact_cpu_segment_tiles() {
 fn additive_axis_aligned_fill_records_native_additive_op() {
     let mut engine = FrameRecordingEngine::new();
     engine.initialize(2, 2).expect("initialize recorder");
-    engine.begin_recording().expect("begin recording");
+    engine.begin_recording(true).expect("begin recording");
     engine.canvas_2d().set_blend_mode(BlendMode::Additive);
     engine
         .canvas_2d()
@@ -131,7 +131,7 @@ fn additive_axis_aligned_fill_records_native_additive_op() {
 fn additive_rounded_fill_still_fails_instead_of_cpu_segment_approximation() {
     let mut engine = FrameRecordingEngine::new();
     engine.initialize(2, 2).expect("initialize recorder");
-    engine.begin_recording().expect("begin recording");
+    engine.begin_recording(true).expect("begin recording");
     engine.canvas_2d().set_blend_mode(BlendMode::Additive);
     engine.canvas_2d().fill_rect(
         Rect::new(0.0, 0.0, 1.0, 1.0),
@@ -149,7 +149,7 @@ fn additive_rounded_fill_still_fails_instead_of_cpu_segment_approximation() {
 fn scroll_region_records_native_scroll_copy() {
     let mut engine = FrameRecordingEngine::new();
     engine.initialize(8, 6).expect("initialize recorder");
-    engine.begin_recording().expect("begin recording");
+    engine.begin_recording(true).expect("begin recording");
     engine
         .canvas_2d()
         .fill_rect(Rect::new(0.0, 0.0, 4.0, 4.0), Color::red(), None);

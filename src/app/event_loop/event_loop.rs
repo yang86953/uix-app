@@ -448,6 +448,16 @@ where
             on_foreign_event(&ev, platform);
         }
 
+        let frame_t0 = Instant::now();
+        let mut phase_input_ms = 0u128;
+        let mut phase_reconcile_ms = 0u128;
+        let mut phase_layout_ms = 0u128;
+        let mut phase_paint_ms = 0u128;
+        let mut phase_present_ms = 0u128;
+        let mut reconcile_ran = false;
+        let mut layout_calls_this_frame = 0u32;
+
+        let input_t0 = Instant::now();
         let had_events = !pending_events.borrow().is_empty();
         let mut had_layout_event = false;
         for ev in pending_events.borrow_mut().drain(..) {
@@ -614,6 +624,7 @@ where
                 (*bus_ptr).event_bus().publish(&ev);
             }
         }
+        phase_input_ms = input_t0.elapsed().as_millis();
 
         active_work.sync_timers(tree.active_timers(), clock.now());
         active_work.sync_app_timers(app_timers.deadlines());
@@ -678,13 +689,16 @@ where
         }
 
         if *reconcile_pending {
+            let reconcile_t0 = Instant::now();
             let root = pending_root
                 .take()
                 .or_else(|| view_factory.and_then(|factory| factory.build()));
             if let Some(root) = root {
                 crate::ui::view::ViewAdapter::reconcile_nodes(tree, root);
+                reconcile_ran = true;
             }
             *reconcile_pending = false;
+            phase_reconcile_ms = reconcile_t0.elapsed().as_millis();
         }
 
         // 每帧用窗口客户区校正 engine/根：WM_SIZE 入队与 Present 之间若有缺口，
@@ -703,10 +717,12 @@ where
 
         let mut laid_out = false;
         if window_visible && (needs_work || has_layout_work) {
+            let layout_t0 = Instant::now();
             let before_version = tree.tree_version();
             tree.layout();
             record_layout(metrics);
             laid_out = true;
+            layout_calls_this_frame += 1;
 
             sync_root_frame_to_engine(tree, engine);
             on_frame(tree, engine, platform);
@@ -715,8 +731,10 @@ where
             if tree.tree_version() != before_version {
                 tree.layout();
                 record_layout(metrics);
+                layout_calls_this_frame += 1;
                 tree.mark_full_frame_dirty();
             }
+            phase_layout_ms = layout_t0.elapsed().as_millis();
         }
 
         let need_render = window_visible && (!rendered_first || tree.has_render_work());
@@ -726,16 +744,21 @@ where
             tree.mark_full_frame_dirty();
             // 本帧已 layout 则跳过重复首帧 layout（启动连跑 2–3 次的主因之一）。
             if !laid_out {
+                let layout_t0 = Instant::now();
                 tree.layout();
                 record_layout(metrics);
+                layout_calls_this_frame += 1;
+                phase_layout_ms += layout_t0.elapsed().as_millis();
             }
         }
 
         let dirty_region = tree.dirty_region();
+        let dirty_full = dirty_region.full_frame;
 
         let (outcome, outcome_source) = if !need_render {
             (RenderOutcome::Idle, InvalidationSource::None)
         } else {
+            let paint_t0 = Instant::now();
             let theme_ref = theme.borrow();
             let snapshot = ThemeSnapshot::new(theme_ref.tokens());
             let scroll_move = tree.drain_scroll_region_move();
@@ -762,6 +785,7 @@ where
                     metrics: metrics_ref.as_ref(),
                 },
             );
+            phase_paint_ms = paint_t0.elapsed().as_millis();
             (frame_out.outcome, frame_out.inv_source)
         };
 
@@ -795,6 +819,7 @@ where
                     );
                     rendered_first = false;
                 } else {
+                    let present_t0 = Instant::now();
                     let canvas = engine.canvas_2d();
                     let cw = canvas.width();
                     let ch = canvas.height();
@@ -805,12 +830,14 @@ where
                         damage.to_present_damage(),
                     ) {
                         Ok(()) => {
+                            phase_present_ms = present_t0.elapsed().as_millis();
                             engine.external_present_succeeded();
                             record_present(metrics, outcome_source);
                             rendered_first = true;
                             frame_committed = true;
                         }
                         Err(error) => {
+                            phase_present_ms = present_t0.elapsed().as_millis();
                             engine.external_present_failed(error.clone());
                             crate::core::log::error_fn(format!(
                                 "[EventLoop] external present failed: {}",
@@ -837,6 +864,27 @@ where
                 ));
                 rendered_first = false;
             }
+        }
+
+        // Engine-managed present (Vulkan PixelUpload) is timed inside
+        // PresentUploadEngine::end_frame as present_upload_ms; paint_ms already
+        // includes that work — do not invent a second present bucket here.
+
+        if frame_committed && (had_events || reconcile_ran || layout_calls_this_frame > 0) {
+            let frame_ms = frame_t0.elapsed().as_millis();
+            crate::core::log::info_fn(format!(
+                "frame_ms={} input={} reconcile={} layout={} paint={} present={} events={} reconcile={} layouts={} dirty_full={}",
+                frame_ms,
+                phase_input_ms,
+                phase_reconcile_ms,
+                phase_layout_ms,
+                phase_paint_ms,
+                phase_present_ms,
+                if had_events { 1 } else { 0 },
+                if reconcile_ran { 1 } else { 0 },
+                layout_calls_this_frame,
+                if dirty_full { 1 } else { 0 },
+            ));
         }
 
         if frame_committed && deferred_show {

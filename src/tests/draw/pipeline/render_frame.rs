@@ -20,6 +20,8 @@ struct RecordingEngine {
     encoded_frames: Vec<Vec<crate::draw::pipeline::FrameCommand>>,
     end_outcome: RenderOutcome,
     presentation_mode: crate::draw::traits::PresentationMode,
+    last_begin_strategy: Option<UpdateStrategy>,
+    end_damages: Vec<DamageRegion>,
 }
 
 impl RecordingEngine {
@@ -34,6 +36,8 @@ impl RecordingEngine {
             encoded_frames: Vec::new(),
             end_outcome: RenderOutcome::Present(DamageRegion::full()),
             presentation_mode: crate::draw::traits::PresentationMode::EngineManaged,
+            last_begin_strategy: None,
+            end_damages: Vec::new(),
         }
     }
 
@@ -83,6 +87,7 @@ impl GraphicsEngine for RecordingEngine {
 
     fn begin_frame(&mut self, strategy: UpdateStrategy) -> RenderOutcome {
         self.events.push("begin");
+        self.last_begin_strategy = Some(strategy.clone());
         if let Some(failure) = &self.begin_failure {
             return RenderOutcome::Failed(failure.clone());
         }
@@ -99,6 +104,7 @@ impl GraphicsEngine for RecordingEngine {
 
     fn end_frame(&mut self, present_damage: &DamageRegion) -> RenderOutcome {
         self.events.push("end");
+        self.end_damages.push(present_damage.clone());
         match &self.end_outcome {
             RenderOutcome::Idle => RenderOutcome::Idle,
             RenderOutcome::FrameReady(_) => RenderOutcome::FrameReady(present_damage.clone()),
@@ -1582,7 +1588,7 @@ fn rendered_frame_with_empty_dirty_region_is_idle() {
 }
 
 #[test]
-fn full_frame_recorder_promotes_partial_dirty_to_full_present_damage() {
+fn rendered_frame_with_partial_dirty_outputs_padded_partial_damage() {
     let mut renderer = FrameRenderer::new();
     let mut engine = NullEngine::new();
     let _ = engine.initialize(64, 64);
@@ -1613,13 +1619,13 @@ fn full_frame_recorder_promotes_partial_dirty_to_full_present_damage() {
 
     assert_eq!(
         out.outcome,
-        RenderOutcome::PresentPending(DamageRegion::full())
+        RenderOutcome::PresentPending(DamageRegion::partial(vec![Rect::new(2.0, 3.0, 7.0, 8.0)]))
     );
     assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
 }
 
 #[test]
-fn full_frame_recorder_promotes_multi_rect_dirty_to_full_present_damage() {
+fn multi_rect_dirty_expands_to_union_for_paint_and_damage() {
     let mut renderer = FrameRenderer::new();
     let mut engine = NullEngine::new();
     let _ = engine.initialize(64, 64);
@@ -1653,12 +1659,14 @@ fn full_frame_recorder_promotes_multi_rect_dirty_to_full_present_damage() {
     // for_paint_clear → [0,0,20,100]，再 pad ±1
     assert_eq!(
         out.outcome,
-        RenderOutcome::PresentPending(DamageRegion::full())
+        RenderOutcome::PresentPending(DamageRegion::partial(vec![Rect::new(
+            0.0, 0.0, 22.0, 102.0
+        )]))
     );
 }
 
 #[test]
-fn full_frame_recorder_promotes_scroll_move_to_full_present_damage() {
+fn rendered_frame_with_scroll_move_adds_scroll_frame_to_partial_damage() {
     let mut renderer = FrameRenderer::new();
     let mut engine = NullEngine::new();
     let _ = engine.initialize(128, 128);
@@ -1689,7 +1697,10 @@ fn full_frame_recorder_promotes_scroll_move_to_full_present_damage() {
 
     assert_eq!(
         out.outcome,
-        RenderOutcome::PresentPending(DamageRegion::full())
+        RenderOutcome::PresentPending(DamageRegion::partial(vec![
+            Rect::new(9.0, 19.0, 6.0, 7.0),
+            Rect::new(29.0, 39.0, 52.0, 62.0),
+        ]))
     );
     assert_eq!(out.inv_source, InvalidationSource::DirtyRegion);
 }
@@ -1843,4 +1854,261 @@ fn frame_renderer_marks_external_presenter_output_as_pending() {
         RenderOutcome::PresentPending(DamageRegion::full())
     );
     assert_eq!(output.inv_source, InvalidationSource::FirstFrame);
+}
+
+#[test]
+fn partial_dirty_uses_dirty_rects_strategy_and_padded_damage() {
+    let mut renderer = FrameRenderer::new();
+    let mut engine = RecordingEngine::new();
+    let _ = engine.initialize(64, 64);
+    let tokens = MockTokens;
+    let theme = ThemeSnapshot::new(&tokens);
+    let fs = FontService::new();
+    let img = ImageService::new();
+    let mut region = DirtyRegion::empty();
+    region.add_rect(Rect::new(10.0, 12.0, 8.0, 6.0));
+
+    let out = renderer.render_frame(
+        &mut engine,
+        &EmptyScene::new(),
+        FrameRenderInput {
+            rendered_first: true,
+            dirty_region: &region,
+            tree_version: 0,
+            scroll_move: None,
+            theme,
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    match engine.last_begin_strategy.as_ref() {
+        Some(UpdateStrategy::DirtyRects(rects)) => {
+            assert_eq!(rects, &[Rect::new(10.0, 12.0, 8.0, 6.0)]);
+        }
+        other => panic!("expected DirtyRects, got {other:?}"),
+    }
+    assert_eq!(
+        engine.end_damages.last(),
+        Some(&DamageRegion::partial(vec![Rect::new(9.0, 11.0, 10.0, 8.0)]))
+    );
+    assert_eq!(
+        out.outcome,
+        RenderOutcome::Present(DamageRegion::partial(vec![Rect::new(9.0, 11.0, 10.0, 8.0)]))
+    );
+}
+
+#[test]
+fn dirty_frame_paint_is_faster_than_full_frame_on_dense_scene() {
+    use crate::draw::SoftwareEngine;
+    use std::time::Instant;
+
+    struct DenseScene {
+        dirty: DirtyRegion,
+        version: u64,
+    }
+
+    impl ScenePaint for DenseScene {
+        fn root_id(&self) -> Option<crate::draw::pipeline::NodeId> {
+            Some(crate::draw::pipeline::NodeId::new(1))
+        }
+        fn tree_version(&self) -> u64 {
+            self.version
+        }
+        fn dirty_region(&self) -> DirtyRegion {
+            self.dirty.clone()
+        }
+        fn node_visible(&self, id: crate::draw::pipeline::NodeId) -> bool {
+            let slot = id.slot();
+            (1..=101).contains(&slot)
+        }
+        fn node_frame(&self, id: crate::draw::pipeline::NodeId) -> Rect {
+            if id.slot() == 1 {
+                return Rect::new(0.0, 0.0, 400.0, 400.0);
+            }
+            let i = (id.slot() - 2) as f32;
+            let col = i % 10.0;
+            let row = (i / 10.0).floor();
+            Rect::new(col * 40.0, row * 40.0, 36.0, 36.0)
+        }
+        fn node_dirty(&self, id: crate::draw::pipeline::NodeId) -> bool {
+            self.dirty.intersects(self.node_frame(id))
+        }
+        fn node_z_index(&self, _: crate::draw::pipeline::NodeId) -> i32 {
+            0
+        }
+        fn node_children(
+            &self,
+            id: crate::draw::pipeline::NodeId,
+        ) -> &[crate::draw::pipeline::NodeId] {
+            static CHILDREN: [crate::draw::pipeline::NodeId; 100] = {
+                let mut kids = [crate::draw::pipeline::NodeId::new(0); 100];
+                let mut i = 0;
+                while i < 100 {
+                    kids[i] = crate::draw::pipeline::NodeId::new(i + 2);
+                    i += 1;
+                }
+                kids
+            };
+            if id.slot() == 1 {
+                &CHILDREN
+            } else {
+                &[]
+            }
+        }
+        fn node_picture_policy(
+            &self,
+            _: crate::draw::pipeline::NodeId,
+        ) -> crate::draw::compositor::PicturePolicy {
+            crate::draw::compositor::PicturePolicy::Never
+        }
+        fn children_clip(&self, _: crate::draw::pipeline::NodeId, _: Rect) -> Option<Rect> {
+            None
+        }
+        fn dirty_rect(&self, _: crate::draw::pipeline::NodeId, frame: Rect) -> Rect {
+            frame
+        }
+        fn scroll_offset(&self, _: crate::draw::pipeline::NodeId) -> Option<(f32, f32)> {
+            None
+        }
+        fn focused_node(&self) -> Option<crate::draw::pipeline::NodeId> {
+            None
+        }
+        fn node_focusable(&self, _: crate::draw::pipeline::NodeId) -> bool {
+            false
+        }
+        fn hit_test(&self, _: Point) -> Option<crate::draw::pipeline::NodeId> {
+            None
+        }
+        fn parent(&self, id: crate::draw::pipeline::NodeId) -> Option<crate::draw::pipeline::NodeId> {
+            if id.slot() == 1 {
+                None
+            } else {
+                Some(crate::draw::pipeline::NodeId::new(1))
+            }
+        }
+        fn paint(&self, id: crate::draw::pipeline::NodeId, frame: Rect, ctx: &mut PaintContext<'_>) {
+            if id.slot() == 1 {
+                return;
+            }
+            let s = id.slot() as u32;
+            ctx.fill_rect(
+                frame,
+                Color::from_rgba(
+                    ((s * 17) % 255) as u8,
+                    ((s * 29) % 255) as u8,
+                    ((s * 41) % 255) as u8,
+                    255,
+                ),
+                None,
+            );
+        }
+    }
+
+    let tokens = MockTokens;
+    let fs = FontService::new();
+    let img = ImageService::new();
+
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(400, 400).expect("init");
+    let mut renderer = FrameRenderer::new();
+
+    let full = DirtyRegion::full();
+    let scene_full = DenseScene {
+        dirty: full.clone(),
+        version: 1,
+    };
+    let _ = renderer.render_frame(
+        &mut engine,
+        &scene_full,
+        FrameRenderInput {
+            rendered_first: false,
+            dirty_region: &full,
+            tree_version: 1,
+            scroll_move: None,
+            theme: ThemeSnapshot::new(&tokens),
+            font: FontHandle::default(),
+            font_service: &fs,
+            image_service: &img,
+            debug_mode: false,
+            hover_pos: None,
+            metrics: None,
+        },
+    );
+
+    let mut full_ms = 0u128;
+    for _ in 0..5 {
+        let t0 = Instant::now();
+        let out = renderer.render_frame(
+            &mut engine,
+            &scene_full,
+            FrameRenderInput {
+                rendered_first: true,
+                dirty_region: &full,
+                tree_version: 1,
+                scroll_move: None,
+                theme: ThemeSnapshot::new(&tokens),
+                font: FontHandle::default(),
+                font_service: &fs,
+                image_service: &img,
+                debug_mode: false,
+                hover_pos: None,
+                metrics: None,
+            },
+        );
+        full_ms += t0.elapsed().as_millis();
+        assert!(matches!(
+            out.outcome,
+            RenderOutcome::PresentPending(DamageRegion { full: true, .. })
+                | RenderOutcome::Present(DamageRegion { full: true, .. })
+        ));
+    }
+
+    let mut dirty = DirtyRegion::empty();
+    dirty.add_rect(Rect::new(0.0, 0.0, 40.0, 40.0));
+    let scene_dirty = DenseScene {
+        dirty: dirty.clone(),
+        version: 1,
+    };
+    let mut dirty_ms = 0u128;
+    for _ in 0..5 {
+        let t0 = Instant::now();
+        let out = renderer.render_frame(
+            &mut engine,
+            &scene_dirty,
+            FrameRenderInput {
+                rendered_first: true,
+                dirty_region: &dirty,
+                tree_version: 1,
+                scroll_move: None,
+                theme: ThemeSnapshot::new(&tokens),
+                font: FontHandle::default(),
+                font_service: &fs,
+                image_service: &img,
+                debug_mode: false,
+                hover_pos: None,
+                metrics: None,
+            },
+        );
+        dirty_ms += t0.elapsed().as_millis();
+        match &out.outcome {
+            RenderOutcome::PresentPending(d) | RenderOutcome::Present(d) => {
+                assert!(!d.full, "dirty frame must not expand to full present damage");
+            }
+            other => panic!("expected present, got {other:?}"),
+        }
+    }
+
+    eprintln!(
+        "L4 evidence: full_paint_5x={}ms dirty_paint_5x={}ms (dirty should be <= full)",
+        full_ms, dirty_ms
+    );
+    assert!(
+        dirty_ms <= full_ms,
+        "dirty paint should not exceed full paint cost: dirty={dirty_ms}ms full={full_ms}ms"
+    );
 }
