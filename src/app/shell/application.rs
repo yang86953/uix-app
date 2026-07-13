@@ -84,6 +84,8 @@ pub(crate) struct SecondaryWindowSession {
     pub(crate) last_frame: Option<Instant>,
     window_visible: bool,
     initial_size: (i32, i32),
+    /// 首帧 present 成功后再 ShowWindow，避免空内容白屏。
+    deferred_show: bool,
 }
 
 impl SecondaryWindowSession {
@@ -332,9 +334,11 @@ impl SecondaryWindowSession {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .has_layout();
+        let mut laid_out = false;
         if self.window_visible && (!self.rendered_first || has_layout_work) {
             let before_version = parts.tree.tree_version();
             parts.tree.layout();
+            laid_out = true;
             sync_secondary_root_frame_to_engine(parts.tree, parts.engine);
             if parts.tree.tree_version() != before_version {
                 parts.tree.layout();
@@ -348,7 +352,10 @@ impl SecondaryWindowSession {
 
         if !self.rendered_first && need_render {
             parts.tree.mark_full_frame_dirty();
-            parts.tree.layout();
+            // 本帧已 layout 则跳过重复首帧 layout（避免启动连跑 2–3 次）。
+            if !laid_out {
+                parts.tree.layout();
+            }
         }
 
         let dirty_region = parts.tree.dirty_region();
@@ -446,9 +453,25 @@ impl SecondaryWindowSession {
             }
         }
 
+        if frame_committed && self.deferred_show {
+            if let Err(error) = self._window.show() {
+                crate::core::log::error_fn(format!(
+                    "secondary deferred show failed: {}",
+                    error.short_what()
+                ));
+            } else {
+                report_window_operation_error(
+                    "secondary deferred raise failed",
+                    self._window.raise(),
+                );
+                crate::core::log::info_fn("secondary first_present: window revealed after present");
+            }
+            self.deferred_show = false;
+        }
+
         if self.window_visible
             && frame_committed
-            && (!self.rendered_first || has_layout_work || need_render)
+            && (has_layout_work || need_render)
         {
             // Failed external presentation must retain the invalidation for a retry.
             parts.tree.reset_invalidation();
@@ -783,30 +806,23 @@ impl App {
                     return 1;
                 }
             };
-        if let Err(error) = platform_window.show() {
-            crate::core::log::error_fn(format!(
-                "initial window show failed: {}",
-                error.short_what()
-            ));
-            let _ = engine.try_shutdown();
-            report_window_operation_error(
-                "initial show failure cleanup close failed",
-                platform_window.close(),
-            );
-            return 1;
-        }
-        report_window_operation_error("initial window raise failed", platform_window.raise());
+        // 推迟 ShowWindow 到首帧 present 成功：否则 Vulkan/字体/首 layout 期间用户看到白屏。
         let event_loop_waker = platform.event_loop().waker();
         self.runtime.set_event_loop_waker(event_loop_waker.clone());
         self.app_state.set_event_loop_waker(event_loop_waker);
 
         let mut font_service = FontService::new();
+        let font_t0 = std::time::Instant::now();
         font_service.load_default_system_font(14.0, platform.system_info());
         // Icon 依赖 Lucide PUA 字形；未加载时会回退为首字母。
         crate::ui::widgets::icon::init_lucide_font(
             include_bytes!("../../../assets/fonts/lucide.ttf"),
             &mut font_service,
         );
+        crate::core::log::info_fn(format!(
+            "startup fonts ready in {}ms (primary+CJK only; show deferred)",
+            font_t0.elapsed().as_millis()
+        ));
         let image_service = ImageService::new();
 
         let system_theme_tokens = if self.follow_system_theme {
@@ -1210,20 +1226,7 @@ fn create_secondary_window(
                 return None;
             }
         };
-    if let Err(error) = platform_window.show() {
-        crate::core::log::error_fn(format!(
-            "secondary window show failed: {}",
-            error.short_what()
-        ));
-        let _ = engine.try_shutdown();
-        report_window_operation_error(
-            "secondary show failure cleanup close failed",
-            platform_window.close(),
-        );
-        runtime.close_session(window_id);
-        return None;
-    }
-    report_window_operation_error("secondary window raise failed", platform_window.raise());
+    // 与主窗一致：首帧 present 成功后再 show，避免空窗白屏。
 
     let notifications = container.resolve_clone::<AppNotificationState>();
     let wrapped_root = move || {
@@ -1255,6 +1258,7 @@ fn create_secondary_window(
         last_frame: None,
         window_visible: true,
         initial_size: (width, height),
+        deferred_show: true,
     })
 }
 

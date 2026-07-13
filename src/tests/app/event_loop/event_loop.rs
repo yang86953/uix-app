@@ -2512,3 +2512,96 @@ fn debug_pointer_move_dirties_only_when_hover_target_changes() {
         "same-hit moves must not full-dirty each time, present_calls={presents}"
     );
 }
+
+#[test]
+fn deferred_show_reveals_window_only_after_first_present() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 120, 80);
+    assert!(!window.is_visible());
+    assert_eq!(window.state.show_calls, 0);
+
+    let mut session = WindowSession::from_root(
+        button("ready").into(),
+        Box::new(SoftwareEngine::new()),
+        120,
+        80,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(metrics.get().present_calls, 1);
+    assert!(window.is_visible(), "window must show only after first present");
+    assert_eq!(window.state.show_calls, 1);
+    assert_eq!(window.state.raise_calls, 1);
+}
+
+#[test]
+fn first_frame_skips_redundant_forced_layout_when_already_laid_out() {
+    let mut platform = FakePlatform::new();
+    platform.event_source.state.exit_after_blocking_calls = Some(1);
+    platform.event_source.state.exit_after_timeout_calls = Some(1);
+
+    let mut window = FakeWindow::new(1, "test", 120, 80);
+    let mut engine = SoftwareEngine::new();
+    engine.initialize(120, 80).expect("init engine to window size");
+    let mut session = WindowSession::from_root(
+        button("layout once").into(),
+        Box::new(engine),
+        120,
+        80,
+    );
+    let font_service = FontService::new();
+    let image_service = ImageService::new();
+    let theme = RefCell::new(Theme::default());
+    let debug_mode = Cell::new(false);
+    let cursor_pos = Cell::new(Point::default());
+    let metrics = Cell::new(RenderMetrics::default());
+
+    let status = run_window_session_loop(
+        &mut platform,
+        &mut window,
+        &mut session,
+        &font_service,
+        &image_service,
+        &theme,
+        &debug_mode,
+        &cursor_pos,
+        Some(&metrics),
+        |_| None,
+        |_| false,
+        |_, _, _| {},
+    );
+
+    assert_eq!(status, 0);
+    assert_eq!(metrics.get().present_calls, 1);
+    // Session 构造时已 layout；首帧 needs_work 再 layout 一次即可。
+    // 旧路径还会在 !rendered_first 再强制一次 → layout_calls≥2。
+    assert_eq!(
+        metrics.get().layout_calls,
+        1,
+        "first frame must not force a redundant second layout"
+    );
+}

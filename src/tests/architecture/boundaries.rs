@@ -119,6 +119,7 @@ fn vulkan_pixel_upload_is_active_on_all_desktop_registries() {
             && context.contains("portability_subset")
             && context.contains("CAMetalLayer")
             && context.contains("cpu_shadow")
+            && context.contains("hydrate_cpu_shadow_from_staging")
             && context.contains("fn upload_surface_pixels(")
             && context.contains("fn shutdown_result("),
         "Vulkan PixelUpload must cover Win32/Wayland/MoltenVK WSI, CPU-shadow readback, replace upload, and checked shutdown"
@@ -907,6 +908,31 @@ fn thread_bound_drop_guards_foreign_thread_teardown() {
 }
 
 #[test]
+fn application_defers_show_until_first_present() {
+    let application = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/shell/application.rs"),
+    )
+    .expect("read application");
+    let event_loop = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/event_loop/event_loop.rs"),
+    )
+    .expect("read event loop");
+
+    assert!(
+        application.contains("show deferred")
+            && application.contains("deferred_show")
+            && !application.contains("initial window show failed"),
+        "Application must not ShowWindow before fonts/session/first present"
+    );
+    assert!(
+        event_loop.contains("deferred_show")
+            && event_loop.contains("first_present_ms=")
+            && event_loop.contains("deferred show after first present"),
+        "event loop must reveal the window only after a successful first present"
+    );
+}
+
+#[test]
 fn vulkan_readback_cannot_report_an_empty_success() {
     let source = fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -918,6 +944,10 @@ fn vulkan_readback_cannot_report_an_empty_success() {
         source.contains("cpu_shadow")
             && source.contains("no uploaded frame to read back (cpu_shadow empty)"),
         "Vulkan must fail typed when no staged frame exists, not return an empty success buffer"
+    );
+    assert!(
+        source.contains("hydrate_cpu_shadow_from_staging"),
+        "Vulkan must lazy-hydrate CPU shadow on readback instead of copying every present"
     );
     assert!(
         !source.contains("VulkanContext: native readback is not supported"),

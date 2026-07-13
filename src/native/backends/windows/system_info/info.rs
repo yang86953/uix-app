@@ -58,6 +58,14 @@ impl ISystemInfo for WindowsSystemInfo {
         crate::native::backends::windows::util::system_default_font_paths()
     }
 
+    fn probe_cjk_font_path(&self) -> Option<String> {
+        crate::native::backends::windows::util::probe_cjk_font_path()
+    }
+
+    fn probe_cjk_font_paths(&self) -> Vec<String> {
+        crate::native::backends::windows::util::probe_cjk_font_paths()
+    }
+
     fn probe_family_font_path(&self, family: &str) -> Option<String> {
         crate::native::backends::windows::util::probe_family_font_path(family)
     }

@@ -48,17 +48,12 @@ pub fn system_default_font_paths() -> Vec<String> {
         return Vec::new();
     };
 
+    // 主字体候选（Latin UI）；CJK 走 probe_cjk_font_path，避免启动同步装一堆 fallback。
     let candidates = [
         "segoeui.ttf",
         "segoeuib.ttf",
         "arial.ttf",
         "tahoma.ttf",
-        "msyh.ttc",
-        "msjh.ttc",
-        "simsun.ttc",
-        "simhei.ttf",
-        "msgothic.ttc",
-        "malgun.ttf",
     ];
 
     let mut paths = Vec::new();
@@ -75,6 +70,34 @@ pub fn system_default_font_paths() -> Vec<String> {
         }
     }
 
+    paths
+}
+
+/// 探测一枚可用的 CJK 字体路径（启动至多再装这一枚）。
+pub fn probe_cjk_font_path() -> Option<String> {
+    probe_cjk_font_paths().into_iter().next()
+}
+
+/// 有序 CJK 候选（存在的文件）；调用方依次尝试直至加载成功。
+pub fn probe_cjk_font_paths() -> Vec<String> {
+    let Some(fonts_dir) = windows_fonts_dir() else {
+        return Vec::new();
+    };
+    let candidates = [
+        "msyh.ttc",
+        "msjh.ttc",
+        "simsun.ttc",
+        "simhei.ttf",
+        "msgothic.ttc",
+        "malgun.ttf",
+    ];
+    let mut paths = Vec::new();
+    for name in candidates {
+        let full = format!("{}{}", fonts_dir, name);
+        if file_exists(&full) {
+            paths.push(full);
+        }
+    }
     paths
 }
 
