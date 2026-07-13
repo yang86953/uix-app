@@ -161,11 +161,8 @@ impl WidgetTree {
                     node.layout_children(frame, &children, self)
                 };
                 for (child_id, rect) in positions {
-                    if let Some(child) = self.get_mut(child_id) {
-                        let old = child.frame();
-                        if old != rect {
-                            self.set_frame_dirty(child_id, rect);
-                        }
+                    if self.set_layout_frame(child_id, rect) {
+                        any_change = true;
                     }
                 }
             }
@@ -463,11 +460,12 @@ impl WidgetTree {
                         max_right,
                         max_bottom,
                     ));
-                    if let Some(_node_mut) = self.get_mut(id) {
-                        self.set_frame_dirty(
-                            id,
-                            Rect::new(old_frame.x, old_frame.y, effective_w, effective_h),
-                        );
+                    if self.set_layout_frame(
+                        id,
+                        Rect::new(old_frame.x, old_frame.y, effective_w, effective_h),
+                    ) {
+                        any_resized = true;
+                        resized_children.insert(id);
                     }
                 } else if has_resized_child {
                     crate::core::log::debug_fn(format!(
@@ -485,16 +483,18 @@ impl WidgetTree {
                     .get(id)
                     .map(|n| n.layout_children(relayout_frame, &children, self))
                     .unwrap_or_default();
+                let mut child_moved = false;
                 for (child_id, rect) in new_positions {
-                    if let Some(child) = self.get_mut(child_id) {
-                        let old = child.frame();
-                        if old != rect {
-                            self.set_frame_dirty(child_id, rect);
-                        }
+                    if self.set_layout_frame(child_id, rect) {
+                        child_moved = true;
+                        resized_children.insert(child_id);
                     }
                 }
-                any_resized = true;
-                resized_children.insert(id);
+                // 仅在 frame 实际变化时计为 progress，避免「结果不变的 sibling re-layout」空转收敛循环
+                if child_moved {
+                    any_resized = true;
+                    resized_children.insert(id);
+                }
             }
         }
         any_resized
@@ -579,6 +579,24 @@ impl WidgetTree {
         false
     }
 
+    /// 父级当前会分配给 `id` 的 frame（Phase 1 槽位）。
+    /// Phase 4 不得收缩到该高度以下，否则 Stretch/flex 分配会被下一轮 Phase 1 拉回，形成 thrashing。
+    fn parent_allocated_frame(&self, id: WidgetId) -> Option<Rect> {
+        let parent_id = self.get(id).and_then(|n| n.parent())?;
+        let parent_frame = self.get(parent_id)?.frame();
+        let children = self.get(parent_id)?.children().to_vec();
+        if children.is_empty() {
+            return None;
+        }
+        let positions = self
+            .get(parent_id)?
+            .layout_children(parent_frame, &children, self);
+        positions
+            .into_iter()
+            .find(|(cid, _)| *cid == id)
+            .map(|(_, rect)| rect)
+    }
+
     /// 收缩过大的容器。与 layout_expand 相反——当子节点高度
     /// 显著小于容器当前高度，且子节点延伸到可见区域时，收缩容器。
     /// 每轮先重新布局子节点（确保兄弟组件靠拢），再检查是否需要收缩。
@@ -586,6 +604,7 @@ impl WidgetTree {
     fn layout_shrink(&mut self, rev_order: &[WidgetId]) -> bool {
         let mut any_changed = false;
         for _pass in 0..3 {
+            let mut pass_changed = false;
             // Phase A: 收集需要收缩的容器
             #[derive(Clone)]
             struct ShrinkOp {
@@ -630,12 +649,8 @@ impl WidgetTree {
                     node.layout_children(frame, &children, self)
                 };
                 for (child_id, rect) in positions {
-                    if let Some(child) = self.get_mut(child_id) {
-                        let old = child.frame();
-                        if old != rect {
-                            self.set_frame_dirty(child_id, rect);
-                            any_changed = true;
-                        }
+                    if self.set_layout_frame(child_id, rect) {
+                        pass_changed = true;
                     }
                 }
 
@@ -673,10 +688,25 @@ impl WidgetTree {
                     .map(|n| n.measure(measure_constraints).h)
                     .unwrap_or(0.0);
                 let min_h = needed_h.max(pref_h).max(1.0);
-                let effective_needed = min_h;
+                // 不得低于父级 Phase 1 分配高度（Stretch / flex-grow 槽位）。
+                // demo 侧栏 column_fit 被 row Stretch 拉到客户区高后，若按内容缩回，
+                // 下一轮 Phase 1 会再次拉满 → 同结果 Phase 4 空转 thrashing。
+                let parent_floor_h = self
+                    .parent_allocated_frame(id)
+                    .map(|r| r.h)
+                    .unwrap_or(0.0);
+                let effective_needed = min_h.max(parent_floor_h);
                 if node_frame.h - effective_needed > 0.5 {
-                    crate::core::log::debug_fn(format!("[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0})",
-                        id, node_frame.h - effective_needed, node_frame.h, effective_needed, needed_h, pref_h,));
+                    crate::core::log::debug_fn(format!(
+                        "[Layout] Phase 4: id={} shrink {:.0}px {:.0}→{:.0} (needed={:.0} pref={:.0} floor={:.0})",
+                        id,
+                        node_frame.h - effective_needed,
+                        node_frame.h,
+                        effective_needed,
+                        needed_h,
+                        pref_h,
+                        parent_floor_h,
+                    ));
                     ops.push(ShrinkOp {
                         id,
                         needed_h: effective_needed,
@@ -686,11 +716,16 @@ impl WidgetTree {
             // Phase B: 执行收缩
             for op in &ops {
                 if let Some(old_frame) = self.get(op.id).map(|n| n.frame()) {
-                    if let Some(_node_mut) = self.get_mut(op.id) {
-                        self.set_frame_dirty(
-                            op.id,
-                            Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h),
-                        );
+                    if !self.set_layout_frame(
+                        op.id,
+                        Rect::new(old_frame.x, old_frame.y, old_frame.w, op.needed_h),
+                    ) {
+                        continue;
+                    }
+                    #[cfg(test)]
+                    {
+                        self.layout_shrink_ops
+                            .set(self.layout_shrink_ops.get().wrapping_add(1));
                     }
                     let children: Vec<WidgetId> = self
                         .get(op.id)
@@ -703,12 +738,7 @@ impl WidgetTree {
                         .map(|n| n.layout_children(new_frame, &children, self))
                         .unwrap_or_default();
                     for (child_id, rect) in new_positions {
-                        if let Some(child) = self.get_mut(child_id) {
-                            let old = child.frame();
-                            if old != rect {
-                                self.set_frame_dirty(child_id, rect);
-                            }
-                        }
+                        let _ = self.set_layout_frame(child_id, rect);
                     }
                     // 重新布局父容器，让兄弟组件靠拢
                     if let Some(pid) = self.get(op.id).and_then(|n| n.parent()) {
@@ -723,21 +753,17 @@ impl WidgetTree {
                                 .map(|n| n.layout_children(parent_frame, &parent_children, self))
                                 .unwrap_or_default();
                             for (child_id, rect) in parent_positions {
-                                if let Some(child) = self.get_mut(child_id) {
-                                    let old = child.frame();
-                                    if old != rect {
-                                        self.set_frame_dirty(child_id, rect);
-                                    }
-                                }
+                                let _ = self.set_layout_frame(child_id, rect);
                             }
                         }
                     }
-                    any_changed = true;
+                    pass_changed = true;
                 }
             }
-            if !any_changed {
+            if !pass_changed {
                 break;
             }
+            any_changed = true;
         }
         any_changed
     }

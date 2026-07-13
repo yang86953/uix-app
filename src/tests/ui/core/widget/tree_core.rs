@@ -16,7 +16,7 @@ use crate::ui::core::widget::tree_core::*;
 use crate::ui::layout::engine::{child_from_tree, child_from_tree_with_constraints};
 use crate::ui::managers::StyleManager;
 use crate::ui::view::combinators::label;
-use crate::ui::view::{column, row, ViewAdapter};
+use crate::ui::view::{column, column_fit, row, scroll, ViewAdapter};
 use crate::ui::{ Button, Drawer, Grid, Label, Modal, OverlayEntry, QRCode, TextManager, Tooltip };
 
 struct SpyWidget {
@@ -3368,6 +3368,140 @@ fn resize_root_survives_layout_without_engine_sync() {
     assert!(
         content_w > 700.0,
         "flex content should grow with window, got {content_w}"
+    );
+}
+
+/// 复现 demo 卡顿：row Stretch 把 column_fit 侧栏拉到客户区高后，
+/// Phase 4 不得再按内容缩回（否则 Phase 1 拉满 ↔ Phase 4 收缩空转）。
+#[test]
+fn stretch_sidebar_does_not_phase4_thrash_against_parent_allocation() {
+    let shell = column([
+        row([
+            column_fit([
+                label("brand"),
+                label("nav-a"),
+                label("nav-b"),
+                label("nav-c"),
+                label("").flex_grow(1.0),
+                label("footer"),
+            ])
+            .width(220.0),
+            column([
+                label("header").height(48.0),
+                scroll(column_fit([
+                    label("block-1").height(120.0),
+                    label("block-2").height(120.0),
+                    label("block-3").height(120.0),
+                ]))
+                .flex_grow(1.0)
+                .into(),
+            ])
+            .flex_grow(1.0),
+        ])
+        .flex_grow(1.0),
+        label("status").height(28.0),
+    ])
+    .flex_grow(1.0);
+
+    let mut tree = ViewAdapter::build(shell);
+    let rid = tree.root_id().expect("root");
+    tree.get_mut(rid)
+        .expect("root mut")
+        .set_frame(Rect::new(0.0, 0.0, 1200.0, 800.0));
+    let _ = tree.take_layout_frame_writes();
+    let _ = tree.take_layout_shrink_ops();
+
+    tree.layout();
+    let shrink_ops = tree.take_layout_shrink_ops();
+    let first_writes = tree.take_layout_frame_writes();
+    assert!(
+        first_writes > 0,
+        "initial layout should place frames, got writes={first_writes}"
+    );
+
+    let main = tree.get(rid).expect("root").children()[0];
+    let sidebar = tree.get(main).expect("main row").children()[0];
+    let sidebar_h = tree.get(sidebar).expect("sidebar").frame().h;
+    let row_h = tree.get(main).expect("main row").frame().h;
+    assert!(
+        (sidebar_h - row_h).abs() < 0.5,
+        "stretch sidebar must keep parent allocation, sidebar={sidebar_h} row={row_h}"
+    );
+    assert!(
+        shrink_ops == 0,
+        "Phase 4 must not shrink stretch-allocated sidebar (thrash fuel), got {shrink_ops} ops"
+    );
+
+    // 再次强制 layout：结果不变时不得再写 frame / Phase 4
+    let frames_before: Vec<_> = tree
+        .traverse()
+        .into_iter()
+        .map(|id| (id, tree.get(id).expect("node").frame()))
+        .collect();
+    let _ = tree.take_layout_frame_writes();
+    let _ = tree.take_layout_shrink_ops();
+    tree.push_layout_invalidation(rid);
+    tree.layout();
+    let second_writes = tree.take_layout_frame_writes();
+    let second_shrink = tree.take_layout_shrink_ops();
+    assert_eq!(
+        second_writes, 0,
+        "stable re-layout must not rewrite frames (got {second_writes})"
+    );
+    assert_eq!(
+        second_shrink, 0,
+        "stable re-layout must not Phase 4 shrink (got {second_shrink})"
+    );
+    for (id, before) in frames_before {
+        let after = tree.get(id).expect("node").frame();
+        assert_eq!(before, after, "frame changed on stable re-layout for {id}");
+    }
+}
+
+/// intrinsic column_fit（无 Stretch 拉满）布局后应稳定：二次 layout 零 frame 写、零 Phase 4。
+#[test]
+fn intrinsic_column_fit_layout_converges_without_empty_phase4() {
+    let view = column_fit([
+        label("title").height(24.0),
+        label("body").height(80.0),
+        label("foot").height(20.0),
+    ])
+    .width(240.0)
+    .padding(8.0);
+
+    let mut tree = ViewAdapter::build(view);
+    let rid = tree.root_id().expect("root");
+    tree.get_mut(rid)
+        .expect("root mut")
+        .set_frame(Rect::new(0.0, 0.0, 240.0, 1.0));
+    tree.push_layout_invalidation(rid);
+    let _ = tree.take_layout_frame_writes();
+    let _ = tree.take_layout_shrink_ops();
+
+    tree.layout();
+    let h1 = tree.get(rid).expect("root").frame().h;
+    assert!(
+        h1 > 100.0,
+        "intrinsic column should expand to content, got h={h1}"
+    );
+    let _ = tree.take_layout_frame_writes();
+    let _ = tree.take_layout_shrink_ops();
+
+    tree.push_layout_invalidation(rid);
+    tree.layout();
+    assert_eq!(
+        tree.take_layout_frame_writes(),
+        0,
+        "stable intrinsic layout must not rewrite frames"
+    );
+    assert_eq!(
+        tree.take_layout_shrink_ops(),
+        0,
+        "stable intrinsic layout must not empty-Phase-4"
+    );
+    assert!(
+        (tree.get(rid).expect("root").frame().h - h1).abs() < 0.5,
+        "intrinsic height must stay converged"
     );
 }
 
